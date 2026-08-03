@@ -859,3 +859,83 @@ describe("boundCallReturnType — owner-scoped qualification of an unqualified f
     });
   });
 });
+
+// ── Caller-form-aware self-member lookup (bd z5gqv) ──────────────────────────
+//
+// A bare call binds `self`, and WHICH `self` that is depends on the caller:
+// inside `Klass.build` it is the class object, inside `Klass#render` an
+// instance. The caller's own symbolId already says which, so a class-method
+// caller may read the `.` coordinate an `@!method self.x` directive (or the
+// service-entry fold) claims, and an instance-method caller must not. Both keep
+// the `#` fallback — that is where every declared fact is keyed today, and the
+// 439 live class-method reads on taxdome all land there.
+
+describe("selfMemberReturnType — the caller's form picks the coordinate (z5gqv)", () => {
+  it("a CLASS-method caller reads the `.` coordinate first", () => {
+    const ctx = emptyCtx({
+      callerScope: ["Reports", "Builder"],
+      callerSymbolId: "Reports::Builder.build",
+      localCallBindings: { row: "data" },
+      structuredReturnTypes: {
+        "Reports::Builder.data": { form: "instance", name: "ClassLevelRow" },
+        "Reports::Builder#data": { form: "instance", name: "InstanceRow" },
+      },
+    });
+    expect(boundCallReturnType("row", ctx)).toEqual({ form: "instance", name: "ClassLevelRow" });
+  });
+
+  it("a CLASS-method caller still falls back to `#` when no `.` twin exists", () => {
+    const ctx = emptyCtx({
+      callerScope: ["Reports", "Builder"],
+      callerSymbolId: "Reports::Builder.build",
+      localCallBindings: { row: "data" },
+      structuredReturnTypes: { "Reports::Builder#data": { form: "instance", name: "InstanceRow" } },
+    });
+    expect(boundCallReturnType("row", ctx)).toEqual({ form: "instance", name: "InstanceRow" });
+  });
+
+  it("an INSTANCE-method caller never reads the `.` coordinate", () => {
+    const ctx = emptyCtx({
+      callerScope: ["Reports", "Builder"],
+      callerSymbolId: "Reports::Builder#render",
+      localCallBindings: { row: "data" },
+      structuredReturnTypes: { "Reports::Builder.data": { form: "instance", name: "ClassLevelRow" } },
+    });
+    expect(boundCallReturnType("row", ctx)).toBeUndefined();
+  });
+
+  it("a CLASS/MODULE-BODY caller keeps the instance coordinate (no method separator)", () => {
+    const ctx = emptyCtx({
+      callerScope: ["Reports", "Builder"],
+      callerSymbolId: "Reports::Builder",
+      localCallBindings: { row: "data" },
+      structuredReturnTypes: { "Reports::Builder.data": { form: "instance", name: "ClassLevelRow" } },
+    });
+    expect(boundCallReturnType("row", ctx)).toBeUndefined();
+  });
+
+  it("the `.` coordinate answers from an ANCESTOR for a class-method caller", () => {
+    const ctx = emptyCtx({
+      callerScope: ["Reports", "Builder"],
+      callerSymbolId: "Reports::Builder.build",
+      localCallBindings: { row: "data" },
+      classAncestors: { "Reports::Builder": ["Reports::BaseBuilder"] },
+      structuredReturnTypes: { "Reports::BaseBuilder.data": { form: "instance", name: "ClassLevelRow" } },
+    });
+    expect(boundCallReturnType("row", ctx)).toEqual({ form: "instance", name: "ClassLevelRow" });
+  });
+
+  it("the NEAREST coordinate still wins — an own `#` fact beats an ancestor's `.` one", () => {
+    const ctx = emptyCtx({
+      callerScope: ["Reports", "Builder"],
+      callerSymbolId: "Reports::Builder.build",
+      localCallBindings: { row: "data" },
+      classAncestors: { "Reports::Builder": ["Reports::BaseBuilder"] },
+      structuredReturnTypes: {
+        "Reports::Builder#data": { form: "instance", name: "OwnRow" },
+        "Reports::BaseBuilder.data": { form: "instance", name: "AncestorRow" },
+      },
+    });
+    expect(boundCallReturnType("row", ctx)).toEqual({ form: "instance", name: "OwnRow" });
+  });
+});

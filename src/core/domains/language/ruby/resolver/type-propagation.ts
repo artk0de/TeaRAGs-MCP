@@ -668,8 +668,20 @@ function boundCallTypeRef(binding: string, ctx: CallContext): RubyTypeRef | unde
  * describes some other class's method. A fact sitting on the caller's own MRO
  * describes the method this call actually reaches, and outranks it.
  *
- * Instance (`#`) form only: a bare call binds `self`, never the class object, so
- * the `.` coordinate an `@!method self.x` directive claims is not consulted.
+ * WHICH coordinate is asked follows the CALLER's own form (bd tea-rags-mcp-z5gqv).
+ * A bare call binds `self`, and `ctx.callerSymbolId` says what `self` is: inside
+ * `Klass.build` it is the class object, so the `.` coordinate an
+ * `@!method self.x` directive (or the service-entry fold) claims is legal and is
+ * read FIRST; inside `Klass#render` it is an instance, and that coordinate must
+ * stay invisible or the reader answers a call Ruby would reject. Both forms keep
+ * the `#` fallback — that is where every declared fact is keyed today, which is
+ * why all 439 measured class-method reads on taxdome land there and only the 7
+ * instance-method ones were reading a class-level fact they had no right to.
+ *
+ * A class/module-BODY caller carries neither separator. It is left on the
+ * instance coordinate deliberately: `self` there IS the class object, but no
+ * measured read moves, and widening the reader beyond the population the switch
+ * was priced over would be an unmeasured behavior change.
  *
  * ONE level, not two: the caller's class and its ancestors are asked as a single
  * {@link linearizeAncestors} walk, and the NEAREST coordinate carrying a fact
@@ -692,11 +704,27 @@ function boundCallTypeRef(binding: string, ctx: CallContext): RubyTypeRef | unde
  */
 function selfMemberReturnType(member: string, ctx: CallContext): RubyTypeRef | undefined {
   if (ctx.callerScope.length === 0) return undefined;
+  const classSelf = callerBindsClassSelf(ctx);
   for (const owner of linearizeAncestors(ctx.callerScope.join("::"), ctx)) {
-    const declared = declaredReturnTypeOn(owner, member, ctx);
+    const declared = declaredReturnTypeOn(owner, member, ctx, classSelf);
     if (declared !== undefined) return declared;
   }
   return undefined;
+}
+
+/**
+ * Does `self` at the CALL SITE name the class object rather than an instance?
+ *
+ * The caller's symbolId encodes its own form: `Klass.build` is a class method,
+ * `Klass#render` an instance method, and a class/module-body chunk carries
+ * neither separator (its symbolId is the bare class FQ — the same shape
+ * `RubyBareCallSymbolResolutionStrategy` keys on). Absent symbolId means the
+ * form is unknown, and the instance coordinate is the safe reading: it is where
+ * every declared fact is keyed.
+ */
+function callerBindsClassSelf(ctx: CallContext): boolean {
+  const symbolId = ctx.callerSymbolId;
+  return symbolId !== undefined && !symbolId.includes("#") && symbolId.lastIndexOf(".") > 0;
 }
 
 /**

@@ -381,6 +381,56 @@ describe("deriveServiceEntryReturnTypes (j9xpf)", () => {
     );
     expect(derived["Shared#call"]).toEqual(RESULT);
   });
+
+  // ── two-coordinate TEMPLATE lookup (bd z5gqv) ─────────────────────────────
+  //
+  // The template symbolId carries its own form. A `.`-form template names a
+  // CLASS method, so the `.` coordinate is the one a class receiver reads first
+  // — `declaredReturnTypeOn`'s rule, restated on the write side. The `#`
+  // fallback stays, because that is where every fact is keyed today, and the
+  // yt3im existence gate applies to the `.` reading too: a fact naming a type
+  // the project declares nowhere is not evidence and must not be threaded.
+
+  it("a CLASS-form template reads its `.` coordinate first", () => {
+    const classLevel: RubyTypeRef = { form: "instance", name: "KindOfService::ClassResult" };
+    const derived = deriveServiceEntryReturnTypes(
+      ["KindOfService.call"],
+      { "KindOfService.call": classLevel, "KindOfService#call": RESULT },
+      related({ KindOfService: ["Billing::Create"] }),
+      () => true,
+    );
+    expect(derived["Billing::Create#call"]).toEqual(classLevel);
+  });
+
+  it("a CLASS-form template falls back to `#` when no `.` twin exists", () => {
+    const derived = deriveServiceEntryReturnTypes(
+      ["KindOfService.call"],
+      { "KindOfService#call": RESULT },
+      related({ KindOfService: ["Billing::Create"] }),
+      () => true,
+    );
+    expect(derived["Billing::Create#call"]).toEqual(RESULT);
+  });
+
+  it("a `.`-keyed FICTION does not outrank the `#` fact it shadows", () => {
+    const derived = deriveServiceEntryReturnTypes(
+      ["KindOfService.call"],
+      { "KindOfService.call": { form: "instance", name: "ServiceResult" }, "KindOfService#call": RESULT },
+      related({ KindOfService: ["Billing::Create"] }),
+      (name) => name === "KindOfService::Result",
+    );
+    expect(derived["Billing::Create#call"]).toEqual(RESULT);
+  });
+
+  it("an INSTANCE-form template never reads the `.` coordinate", () => {
+    const derived = deriveServiceEntryReturnTypes(
+      ["KindOfService#call"],
+      { "KindOfService.call": { form: "instance", name: "KindOfService::ClassResult" } },
+      related({ KindOfService: ["Billing::Create"] }),
+      () => true,
+    );
+    expect(derived).toEqual({});
+  });
 });
 
 // ---------------------------------------------------------------------------
