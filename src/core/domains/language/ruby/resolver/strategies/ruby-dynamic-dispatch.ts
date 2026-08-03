@@ -19,8 +19,9 @@ import { isExternalQualifiedMember } from "../../dsl/index.js";
 import { SUPER_RECEIVER_SENTINEL } from "../../walker/walker.js";
 import { typeOfReceiver } from "../type-propagation.js";
 import { receiverLooksLikeArRelationChain } from "./ruby-ar-relation-guard.js";
+import { resolveConventionReceiverTarget } from "./ruby-convention-receiver.js";
 import { RUBY_DUCK_VOCAB } from "./ruby-duck-vocabulary.js";
-import { resolveIvarFieldTarget } from "./ruby-ivar-field.js";
+import { ivarFieldOwnsReceiver, resolveIvarFieldTarget } from "./ruby-ivar-field.js";
 import { resolveBoundCallTarget } from "./ruby-return-type-binding.js";
 import {
   DYNAMIC_RECEIVER_CONFIDENCE_DEFAULT,
@@ -199,6 +200,27 @@ export class RubyDynamicDispatchResolver implements DispatchResolverComponent {
     // a single call — the recall hole is untouched, only false positives go.
     const t = typeOfReceiver(r, call.startLine, ctx);
     if (t && (t.form === "class" || t.form === "instance")) return emptyDispatchFanout();
+    // CONVENTION tier of the same deferral (bd tea-rags-mcp-htffz, residual C2).
+    // The gate above defers when a FACT types the receiver. `conventionReceiver`
+    // (bd wob7g) derives one exact target for a class of receivers no fact
+    // types — the very population that reaches this line — and the fan-out did
+    // not know it, so 2704 taxdome sites kept 15554 discounted `dynamic` edges
+    // while an exact edge was derivable for every one of them.
+    //
+    // Gated on the RESOLVED target, exactly like the `ivarField` and bound-call
+    // gates above: a receiver the convention cannot type, whose derived class has
+    // subtypes, or whose class declares no such member still fans out, so the
+    // resolve tally is unchanged and only wrong-type edges go.
+    //
+    // `ivarFieldOwnsReceiver` is the one carve-out, and it is a REACHABILITY fact
+    // rather than a precision one: `ivarField` DROPs an untyped `@ivar` inside a
+    // class nine slots before `conventionReceiver` runs, so deferring for such a
+    // receiver would trade N discounted edges for NO edge at all. Measured: 1173
+    // of the 2704 sites are that shape, and at all 1531 others the chain returns
+    // the convention's own target (`CODEGRAPH_C2COLLAPSE_ORACLE=1`, cut 3).
+    if (!ivarFieldOwnsReceiver(call, ctx) && resolveConventionReceiverTarget(call, ctx, this.cfg.mode) !== null) {
+      return emptyDispatchFanout();
+    }
     // AR/core instance member on an untyped receiver (`agent.update`): the true
     // target is an external base class (ActiveRecord::Base, ActiveModel). Fanning
     // out to a coincidental in-project def of the same name is wrong-type noise.

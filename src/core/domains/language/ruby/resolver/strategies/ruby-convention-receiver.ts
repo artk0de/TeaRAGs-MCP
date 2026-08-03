@@ -1,8 +1,49 @@
 import { CONTINUE, resolved } from "../../../../../contracts/resolution.js";
-import type { CallContext, CallRef } from "../../../../../contracts/types/codegraph.js";
+import type {
+  AmbiguousResolveMode,
+  CallContext,
+  CallRef,
+  SymbolResolutionTarget,
+} from "../../../../../contracts/types/codegraph.js";
 import type { SymbolResolutionOutcome, SymbolResolutionStrategy } from "../../../../../contracts/types/language.js";
 import { conventionReceiverType, typeOfReceiver } from "../type-propagation.js";
 import { resolveTypeInstanceMethod, type ResolverConfig } from "./shared.js";
+
+/**
+ * The single precise target the `conventionReceiver` pass emits for `call`, or
+ * `null` when it cannot answer. Same single-authority discipline as
+ * {@link resolveIvarFieldTarget} and `resolveBoundCallTarget`: read by the
+ * strategy below AND by `RubyDynamicDispatchResolver`, which must know whether
+ * the exact path ACTUALLY answers before it decides to fan out (bd
+ * tea-rags-mcp-htffz). Two separate lookups would drift, and a receiver the
+ * fan-out believes untyped while the pass pins it produces N wrong-type edges
+ * that bury the right one.
+ *
+ * The three gates are the strategy's, unchanged and documented on it. The order
+ * differs by one step for cost only: the convention's own receiver-shape regex
+ * rejects the overwhelming majority of receivers with no map lookup at all, so it
+ * runs before the `typeOfReceiver` fact probe. Both predicates are pure, so the
+ * swap cannot change an answer.
+ */
+export function resolveConventionReceiverTarget(
+  call: CallRef,
+  ctx: CallContext,
+  mode: AmbiguousResolveMode,
+): SymbolResolutionTarget | null {
+  const { receiver } = call;
+  if (receiver === null) return null;
+  // The convention only ever yields the `instance` form; the narrowing keeps
+  // that a compile-time fact rather than a comment.
+  const type = conventionReceiverType(receiver, ctx);
+  if (type?.form !== "instance") return null;
+  if (typeOfReceiver(receiver, call.startLine, ctx) !== undefined) return null;
+  const target = resolveTypeInstanceMethod(type.name, call.member, ctx, mode);
+  // Two distinct declines: the MRO offered nothing at all, and the MRO offered
+  // only the file-only degradation. Gate 3 refuses both.
+  if (target === null) return null;
+  if (target.targetSymbolId === null) return null;
+  return target;
+}
 
 /**
  * Naming-convention receiver typing (bd tea-rags-mcp-wob7g) — `payment.refund`
@@ -52,18 +93,7 @@ export class RubyConventionReceiverSymbolResolutionStrategy implements SymbolRes
   constructor(private readonly cfg: ResolverConfig) {}
 
   attempt(call: CallRef, ctx: CallContext): SymbolResolutionOutcome {
-    const { receiver } = call;
-    if (receiver === null) return CONTINUE;
-    if (typeOfReceiver(receiver, call.startLine, ctx) !== undefined) return CONTINUE;
-    const type = conventionReceiverType(receiver, ctx);
-    // The convention only ever yields the `instance` form; the narrowing keeps
-    // that a compile-time fact rather than a comment.
-    if (type?.form !== "instance") return CONTINUE;
-    const target = resolveTypeInstanceMethod(type.name, call.member, ctx, this.cfg.mode);
-    // Two distinct declines: the MRO offered nothing at all, and the MRO offered
-    // only the file-only degradation. Gate 3 refuses both.
-    if (target === null) return CONTINUE;
-    if (target.targetSymbolId === null) return CONTINUE;
-    return resolved(target);
+    const target = resolveConventionReceiverTarget(call, ctx, this.cfg.mode);
+    return target === null ? CONTINUE : resolved(target);
   }
 }
