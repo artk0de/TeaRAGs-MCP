@@ -90,6 +90,7 @@ conclude absence from a graph the index says is incomplete.
 - **Ruby** — 15-strategy chain + 4 dispatch components
   (table/union/cone/dynamic) + 20-grammar DSL catalogue + arity/kwarg-narrowed
   fan-out (corpus-adaptive p99 cap) + YARD type-source + db/schema.rb column
-  accessors + naming-convention receiver typing (subtype-gated)
+  accessors + naming-convention receiver typing for bare and @ivar receivers
+  (subtype-gated)
 - **Bash** — function-call extraction only, no dispatch
 - **Markdown** — no call graph
