@@ -19,6 +19,7 @@ import type { CompositeRerankPreset } from "../../../../../../src/core/contracts
 import {
   ArchitecturalHubPreset,
   BlastRadiusPreset,
+  BugHuntCompositePreset,
   buildCompositePresets,
   CodeReviewCompositePreset,
   CriticalPathPreset,
@@ -47,6 +48,7 @@ describe("CompositeRerankPreset contract", () => {
       new DecompositionCompositePreset(),
       new GodModuleCompositePreset(),
       new CriticalPathPreset(),
+      new BugHuntCompositePreset(),
     ];
 
     for (const p of composites) {
@@ -58,7 +60,7 @@ describe("CompositeRerankPreset contract", () => {
     }
   });
 
-  it("override composites (hotspots, techDebt, dangerous, ownership, securityAudit, codeReview) require codegraph.symbols AND git", () => {
+  it("override composites (hotspots, techDebt, dangerous, ownership, securityAudit, codeReview, bugHunt) require codegraph.symbols AND git", () => {
     const overrides: CompositeRerankPreset[] = [
       new HotspotsCompositePreset(),
       new TechDebtCompositePreset(),
@@ -66,6 +68,7 @@ describe("CompositeRerankPreset contract", () => {
       new OwnershipCompositePreset(),
       new SecurityAuditCompositePreset(),
       new CodeReviewCompositePreset(),
+      new BugHuntCompositePreset(),
     ];
     for (const p of overrides) {
       expect(p.requires).toContain("codegraph.symbols");
@@ -111,14 +114,15 @@ describe("buildCompositePresets — declarative requires gating", () => {
     expect(result.some((p) => p instanceof EntryPointPreset)).toBe(true);
   });
 
-  it("returns all 12 composites when both codegraph.symbols AND git are registered", () => {
+  it("returns all 13 composites when both codegraph.symbols AND git are registered", () => {
     const result = buildCompositePresets(new Set(["codegraph.symbols", "git"]));
-    expect(result).toHaveLength(12);
+    expect(result).toHaveLength(13);
     const names = result.map((p) => p.name).sort();
     expect(names).toEqual(
       [
         "architecturalHub",
         "blastRadius",
+        "bugHunt",
         "codeReview",
         "criticalPath",
         "dangerous",
@@ -135,7 +139,7 @@ describe("buildCompositePresets — declarative requires gating", () => {
 
   it("ignores unknown registered keys (extra keys do not enable extra presets)", () => {
     const result = buildCompositePresets(new Set(["codegraph.symbols", "git", "future-trajectory"]));
-    expect(result).toHaveLength(12);
+    expect(result).toHaveLength(13);
   });
 
   it("dropped composites are silently absent, not error", () => {

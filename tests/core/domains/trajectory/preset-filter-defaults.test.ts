@@ -4,6 +4,7 @@ import type { RerankPreset } from "../../../../src/core/contracts/types/reranker
 import {
   ArchitecturalHubPreset,
   BlastRadiusPreset,
+  BugHuntCompositePreset,
   CodeReviewCompositePreset,
   CriticalPathPreset,
   DangerousCompositePreset,
@@ -27,6 +28,7 @@ const COMPOSITE_PRESETS: RerankPreset[] = [
   new ArchitecturalHubPreset(),
   new EntryPointPreset(),
   new CriticalPathPreset(),
+  new BugHuntCompositePreset(),
 ];
 
 const ALL_PRESETS: RerankPreset[] = [...GIT_PRESETS, ...STATIC_PRESETS, ...COMPOSITE_PRESETS];
@@ -37,7 +39,7 @@ function findIn(list: RerankPreset[], name: string): RerankPreset | undefined {
 }
 
 /** Names defined in BOTH git and composite — assert default on both. */
-const DUAL_DEFINED = ["hotspots", "techDebt", "dangerous", "ownership", "securityAudit"];
+const DUAL_DEFINED = ["hotspots", "techDebt", "dangerous", "ownership", "securityAudit", "bugHunt"];
 
 describe("rerank preset hygiene defaults", () => {
   it.each([
