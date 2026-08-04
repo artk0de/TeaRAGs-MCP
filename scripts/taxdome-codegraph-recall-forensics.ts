@@ -10179,9 +10179,23 @@ function runConstChainOracle(extractions: FileExtraction[]): void {
 //
 // Cost discipline: the hook rides `resolvePass2`, which has already built the
 // context and already run the dispatch fan-out, so the baseline costs nothing
-// extra. The widened chain runs only where the widened guard actually FIRES
-// (a receiver the engine types to a class/instance) — everywhere else the two
-// chains are the same object graph taking the same branch.
+// extra. The WIDENED chain still runs only where the widened guard actually
+// FIRES (a receiver the engine types to a class/instance) — everywhere else the
+// two chains are the same object graph taking the same branch. The BASE chain
+// runs over the whole single-segment population, because that is the population
+// the fidelity mirror has to grade ({@link ssCheckMirror}); a guard that cannot
+// fail is not worth its zero.
+//
+// SHIPPED SINCE (bd tea-rags-mcp-b5qr6, 2026-08-04). The candidate is no longer a
+// candidate. `eb316633` removed `chainType`'s dot/index entry guard, so
+// production's `RubyChainTypeSymbolResolutionStrategy` now IS
+// `SsWidenedChainTypeStrategy(dropOnAbsentMember=true)`, statement for statement.
+// The A/B below therefore compares the shipped guard with itself and every
+// movement cut reads zero: the 2026-08-02 verdicts (363 miss->resolved,
+// 88.30% -> 88.58%, +0.2804pp) are what the change BOUGHT, banked, not what it
+// would buy again. What still measures something is the mirror (this chain copy
+// against the live resolver), the DROP-vs-CONTINUE terminal comparison, and the
+// population/verdict census.
 // ===========================================================================
 const SINGLESEG_ENABLED = process.env.CODEGRAPH_SINGLESEG_ORACLE === "1";
 const OUT_SINGLESEG = join(OUT_DIR, "singleseg-oracle-report.json");
@@ -10205,6 +10219,11 @@ function ssIsSingleSegment(receiver: string): boolean {
  * `RubyChainTypeSymbolResolutionStrategy`, including the union/container
  * CONTINUE and the class-vs-instance lookup split, so the only variable under
  * measurement is the guard itself.
+ *
+ * Since `eb316633` production has no entry guard either, which makes
+ * `dropOnAbsentMember=true` an exact copy of the shipped pass rather than a
+ * candidate — see SHIPPED SINCE in this oracle's header for what that does to
+ * the movement cuts.
  *
  * `dropOnAbsentMember` selects the semantics for "the receiver types but the
  * type declares no such member": the production strategy DROPs there, and the
@@ -10231,10 +10250,21 @@ class SsWidenedChainTypeStrategy implements SymbolResolutionStrategy {
 }
 
 /**
- * `RubyCallResolver`'s strategy array, rebuilt with `slot` in `chainType`'s
- * position. The order is copied from `ruby-resolver.ts` and validated against the
- * production resolver on every call the oracle touches (`ssMirrorDisagreed`), so
- * a future re-ordering that this array does not track cannot pass silently.
+ * `RubyCallResolver`'s strategy array as it stands on this branch, rebuilt with
+ * `slot` in `chainType`'s position. Restated from `ruby-resolver.ts` rather than
+ * imported — an oracle sharing its chain with the code it evaluates cannot
+ * disagree with it — and validated against the production resolver on every call
+ * the oracle touches (`ssMirrorDisagreed`), so a re-ordering this copy fails to
+ * track cannot pass silently.
+ *
+ * This copy predated wob7g until 2026-08-04: no `conventionReceiver` slot at all,
+ * and `ssMirrorDisagreed` still read 0 (bd tea-rags-mcp-b5qr6). That was not
+ * fidelity but a blind spot, and a sharper one than the residual oracle's twin
+ * (4ys8s): the mirror ran ONLY where the widened guard FIRES, which needs
+ * `typeOfReceiver` to answer, while `conventionReceiver`'s first gate declines
+ * every receiver a fact channel types. Disjoint populations, so no missing
+ * convention pass could ever surface here however wrong this array was.
+ * {@link ssCheckMirror} now grades the whole single-segment population.
  */
 function ssBuildChain(cfg: ResolverConfig, slot: SymbolResolutionStrategy): SymbolResolutionStrategy[] {
   return [
@@ -10249,6 +10279,10 @@ function ssBuildChain(cfg: ResolverConfig, slot: SymbolResolutionStrategy): Symb
     new RubyExplicitRequireSymbolResolutionStrategy(cfg),
     slot,
     new RubyArRelationGuardSymbolResolutionStrategy(cfg),
+    // Last chance before the catch-all DROP (bd tea-rags-mcp-wob7g). Never DROPs,
+    // so the only calls it can move are ones it RESOLVES — which is why the
+    // mirror below had to stop grading the firing side alone.
+    new RubyConventionReceiverSymbolResolutionStrategy(cfg),
     new RubyReceiverSetDropSymbolResolutionStrategy(cfg),
     new RubyBareCallSymbolResolutionStrategy(cfg),
     new RubySchemaColumnSymbolResolutionStrategy(),
@@ -10441,6 +10475,36 @@ function ssChainIsConsulted(call: CallRef, dispatchEdges: number): boolean {
 }
 
 /**
+ * Fidelity guard: {@link ssBaseChain} must answer exactly what the production
+ * resolver answers.
+ *
+ * Graded over the WHOLE single-segment population, not just the calls where the
+ * widened guard fires — restricting it to the firing side is what let the missing
+ * wob7g slot sit in {@link ssBuildChain} undetected (bd tea-rags-mcp-b5qr6). The
+ * widened guard fires only where `typeOfReceiver` answers, and
+ * `conventionReceiver`'s first gate declines exactly those receivers, so the pass
+ * this copy was missing lived entirely outside the graded set. A guard whose
+ * population excludes the drift it exists to catch reports 0 forever.
+ *
+ * No `ssChainIsConsulted` gate: both sides here ARE the chain, so a disagreement
+ * is a defect in this copy whether or not `resolvePass2` reads the answer at that
+ * particular call site.
+ */
+function ssCheckMirror(call: CallRef, ctx: CallContext, mine: SymbolResolutionTarget | null, relPath: string): void {
+  const rs = resolver;
+  if (rs === undefined) return;
+  ssMirrorChecked += 1;
+  const real = rs.resolve(call, ctx);
+  if (ssSameTarget(mine, real)) return;
+  ssMirrorDisagreed += 1;
+  if (ssMirrorExamples.length < SS_EXAMPLE_CAP) {
+    ssMirrorExamples.push(
+      `${relPath}:${call.startLine} ${call.receiver ?? "-"}.${call.member} mirror=${ssTargetText(mine)} real=${ssTargetText(real)}`,
+    );
+  }
+}
+
+/**
  * The one call-site hook, invoked from `resolvePass2` after the baseline outcome
  * is known. Everything it needs — the context, the dispatch outcome, the receiver
  * kind — is already computed there.
@@ -10489,9 +10553,16 @@ function noteSingleSegCall(
     if (recovery.startsWith("RECOVERABLE")) ssHoleRecoverable += 1;
   }
 
+  // ── mirror fidelity: the oracle's chain vs the production resolver ───────
+  // AHEAD of the CONTINUE bail, so the untyped-receiver side is graded too. That
+  // is where `conventionReceiver` fires, and it is the side this guard used to be
+  // blind to (bd tea-rags-mcp-b5qr6).
+  const baseTarget = ssRunChain(ssBaseChain, call, ctx);
+  ssCheckMirror(call, ctx, baseTarget, relPath);
+
   // A guard that CONTINUEs changes nothing: the widened chain is the baseline
   // chain taking the same branch at the same index. Only a firing guard can move
-  // an outcome, so only a firing guard pays for the extra chain runs.
+  // an outcome, so only a firing guard pays for the remaining chain runs.
   if (outcome.kind === "continue") {
     ssBump(ssTransitions, `${baseOutcome}->${baseOutcome}`);
     return;
@@ -10499,20 +10570,7 @@ function noteSingleSegCall(
   kindRow.fires += 1;
 
   const dispatchEdges = dispatchOutcome?.kind === "edges" ? dispatchOutcome.edges.length : 0;
-  const baseTarget = ssRunChain(ssBaseChain, call, ctx);
   const wideTarget = ssRunChain(ssDropChain, call, ctx);
-
-  // ── mirror fidelity: the oracle's chain vs the production resolver ───────
-  const realTarget = rs.resolve(call, ctx);
-  ssMirrorChecked += 1;
-  if (!ssSameTarget(baseTarget, realTarget)) {
-    ssMirrorDisagreed += 1;
-    if (ssMirrorExamples.length < SS_EXAMPLE_CAP) {
-      ssMirrorExamples.push(
-        `${relPath}:${call.startLine} ${receiver}.${call.member} mirror=${ssTargetText(baseTarget)} real=${ssTargetText(realTarget)}`,
-      );
-    }
-  }
 
   // ── DROP-on-absent vs CONTINUE-on-absent ─────────────────────────────────
   // They can only differ where the widened guard answers DROP; everywhere else
@@ -10619,7 +10677,8 @@ function runSingleSegOracle(extractions: FileExtraction[]): void {
   L("  SINGLE-SEGMENT RECEIVER DROP-SURFACE ORACLE (bd e8feo, ikyqu inc. 0)");
   L("═══════════════════════════════════════════════════════════════════");
   L("");
-  L("─── (1) population: every call chainType bails on for lack of a dot ───");
+  L("─── (1) population: every single-segment receiver call site ───────────");
+  L("    (chainType stopped bailing on this shape in eb316633 — see the header)");
   L(`single-segment receiver call sites: ${total} of ${callsAttempted} attempted`);
   L("baseline outcome            calls   by receiver kind");
   for (const [outcome, n] of Object.entries(ssPopulation).sort((a, b) => b[1] - a[1])) {
@@ -10643,6 +10702,9 @@ function runSingleSegOracle(extractions: FileExtraction[]): void {
   L("");
   L("─── mirror fidelity (oracle chain vs the production resolver) ─────");
   L(`calls checked: ${ssMirrorChecked}   disagreements: ${ssMirrorDisagreed}`);
+  L("  (the WHOLE single-segment population since b5qr6, not just where the widened");
+  L("   guard fires — the firing side alone cannot see a `conventionReceiver` drift,");
+  L("   whose first gate declines every receiver `typeOfReceiver` answers for.)");
   for (const e of ssMirrorExamples) L(`    ${e}`);
 
   L("");
@@ -10650,8 +10712,10 @@ function runSingleSegOracle(extractions: FileExtraction[]): void {
   L(`sites where the widened guard answers DROP: ${ssDropVsContinueChecked}`);
   L(`  of those, the two semantics produce a DIFFERENT edge: ${ssDropVsContinueDiffer}`);
   L("  (a single-segment receiver that CONTINUEs past chainType meets arRelationGuard,");
-  L("   which needs a dot, and then receiverSetDrop, which DROPs every receiver-set");
-  L("   call — so the two variants can only differ if some pass between them resolves.)");
+  L("   which needs a dot, then conventionReceiver, whose first gate declines every");
+  L("   receiver typeOfReceiver answers for — and this population is exactly those —");
+  L("   and then receiverSetDrop, which DROPs every receiver-set call. So the two");
+  L("   variants can only differ if some pass between them resolves.)");
 
   L("");
   L("─── (2b) outcome transitions (baseline -> widened) ────────────────");
