@@ -6,11 +6,14 @@ import {
   type CallContext,
   type DispatchEdge,
   type DispatchFanoutOutcome,
+  type HierarchyView,
+  type InheritanceEdge,
   type SymbolDefinition,
 } from "../../../../../../../src/core/contracts/types/codegraph.js";
 import {
   DYNAMIC_RECEIVER_CONFIDENCE_DEFAULT,
   RubyDynamicDispatchResolver,
+  RubyIvarFieldSymbolResolutionStrategy,
   RubyLocalTypeSymbolResolutionStrategy,
   type ResolverConfig,
 } from "../../../../../../../src/core/domains/language/ruby/resolver/strategies/index.js";
@@ -729,5 +732,221 @@ describe("RubyDynamicDispatchResolver — defers to the returnTypeBinding pass (
       }),
     );
     expect(edgesOf(outcome)).toHaveLength(2);
+  });
+});
+
+/**
+ * Convention-typed receiver deferral (bd tea-rags-mcp-htffz, residual item C2).
+ * The fan-out steps aside for a receiver the `conventionReceiver` pass pins,
+ * exactly as it already does for one `typeOfReceiver` answers (epydb / 55950) and
+ * for the `ivarField` / `returnTypeBinding` targets above. Same gate shape and
+ * same reasoning: gated on the RESOLVED target, so a receiver the exact path
+ * cannot answer still fans out and the resolve tally is unchanged.
+ */
+describe("RubyDynamicDispatchResolver — convention-typed receiver deferral (htffz)", () => {
+  const resolver = new RubyDynamicDispatchResolver(cfg);
+
+  /** `Payment` pins `recalc`; two other classes declare the same short name. */
+  const conventionTable = (declarePaymentMember = true): InMemoryGlobalSymbolTable =>
+    tableWith(
+      [
+        "app/models/payment.rb",
+        declarePaymentMember
+          ? [
+              sym("Payment", "Payment", "app/models/payment.rb", []),
+              sym("Payment#recalc", "recalc", "app/models/payment.rb", ["Payment"]),
+            ]
+          : [sym("Payment", "Payment", "app/models/payment.rb", [])],
+      ],
+      ["app/models/ledger.rb", [sym("Ledger#recalc", "recalc", "app/models/ledger.rb", ["Ledger"])]],
+      ["app/models/journal.rb", [sym("Journal#recalc", "recalc", "app/models/journal.rb", ["Journal"])]],
+    );
+
+  /** Minimal HierarchyView: a flat descendants map keyed by fqName. */
+  const hierarchyOf = (descendants: Record<string, string[]>): HierarchyView => {
+    const toEdges = (names: string[]): InheritanceEdge[] =>
+      names.map((sourceFqName) => ({
+        sourceFqName,
+        ancestorFqName: "",
+        ancestorSymbolId: null,
+        kind: "super" as const,
+        depth: 1,
+      }));
+    return {
+      getAncestors: () => [],
+      getDescendants: (fqName) => toEdges(descendants[fqName] ?? []),
+    };
+  };
+
+  const callOn = (receiver: string) => ({
+    callText: `${receiver}.recalc`,
+    receiver,
+    member: "recalc",
+    startLine: 1,
+  });
+
+  const targetsOf = (outcome: DispatchFanoutOutcome): (string | null)[] =>
+    edgesOf(outcome)
+      .map((e) => e.targetSymbolId)
+      .sort();
+
+  it("returns [] for a bare receiver the convention pass pins — the exact edge owns it", () => {
+    expect(edgesOf(resolver.resolveDispatch(callOn("payment"), ctx({ symbolTable: conventionTable() })))).toEqual([]);
+  });
+
+  it("STILL fans out when the convention class has declared subtypes (precision gate closed)", () => {
+    const outcome = resolver.resolveDispatch(
+      callOn("payment"),
+      ctx({ symbolTable: conventionTable(), hierarchy: hierarchyOf({ Payment: ["CardPayment"] }) }),
+    );
+    expect(targetsOf(outcome)).toEqual(["Journal#recalc", "Ledger#recalc", "Payment#recalc"]);
+  });
+
+  it("STILL fans out when the convention class declares no such member (no file-only edge)", () => {
+    const outcome = resolver.resolveDispatch(callOn("payment"), ctx({ symbolTable: conventionTable(false) }));
+    expect(targetsOf(outcome)).toEqual(["Journal#recalc", "Ledger#recalc"]);
+  });
+
+  it("STILL fans out when the receiver names no declared class", () => {
+    expect(edgesOf(resolver.resolveDispatch(callOn("widget"), ctx({ symbolTable: conventionTable() })))).toHaveLength(
+      3,
+    );
+  });
+
+  // ── the carve-out the C2 oracle demanded, and what retired it ──────────────
+  // htffz kept the fan-out for an untyped `@ivar` inside a class because
+  // `ivarField` DROPped nine slots ahead of `conventionReceiver`: deferring
+  // would have traded N discounted edges for NO edge at all, at 1173 of 2704
+  // convention-typed taxdome sites. bd r2gjj then moved the convention INSIDE
+  // `ivarField` as its last tier, so the chain now answers those very sites —
+  // measured 1173 of 1173 — and the deferral is a strict win (bd eaml5). The
+  // carve-out itself is unchanged and still guards the population `ivarField`
+  // DROPs; see the eaml5 block below for its remaining shapes.
+  it("defers for an untyped @ivar inside a class the convention types — ivarField's last tier pins it", () => {
+    const outcome = resolver.resolveDispatch(
+      callOn("@payment"),
+      ctx({ symbolTable: conventionTable(), callerScope: ["Reporter"] }),
+    );
+    expect(edgesOf(outcome)).toEqual([]);
+  });
+
+  it("defers for an @ivar receiver at top level, where ivarField CONTINUEs and the chain reaches the pass", () => {
+    expect(edgesOf(resolver.resolveDispatch(callOn("@payment"), ctx({ symbolTable: conventionTable() })))).toEqual([]);
+  });
+});
+
+/**
+ * `@ivar` fan-out collapse over the convention tier (bd tea-rags-mcp-eaml5).
+ *
+ * The deferral gate reads ONE authority — `resolveIvarFieldTarget`, whatever
+ * `ivarField` resolves through — so the fan-out and the chain cannot disagree
+ * about which `@ivar` receivers the exact path owns. These tests state that
+ * agreement as behaviour: whenever the fan-out steps aside the pass MUST pin a
+ * target, and wherever the pass DROPs the fan-out MUST survive. A gate reading
+ * only the fact channels (the pre-eaml5 shape) leaves the first case emitting N
+ * discounted edges while the chain had an exact one; a gate that defers on
+ * receiver SHAPE instead of on the resolved target loses the rest outright,
+ * because `ivarField` terminates the chain at position 4.
+ */
+describe("RubyDynamicDispatchResolver — @ivar convention-tier collapse (eaml5)", () => {
+  const resolver = new RubyDynamicDispatchResolver(cfg);
+  const ivarField = new RubyIvarFieldSymbolResolutionStrategy(cfg);
+
+  /** `Payment` pins `recalc`; two unrelated classes declare the same short name. */
+  const table = (declarePaymentMember = true): InMemoryGlobalSymbolTable =>
+    tableWith(
+      [
+        "app/models/payment.rb",
+        declarePaymentMember
+          ? [
+              sym("Payment", "Payment", "app/models/payment.rb", []),
+              sym("Payment#recalc", "recalc", "app/models/payment.rb", ["Payment"]),
+            ]
+          : [sym("Payment", "Payment", "app/models/payment.rb", [])],
+      ],
+      ["app/models/ledger.rb", [sym("Ledger#recalc", "recalc", "app/models/ledger.rb", ["Ledger"])]],
+      ["app/models/journal.rb", [sym("Journal#recalc", "recalc", "app/models/journal.rb", ["Journal"])]],
+    );
+
+  const hierarchyOf = (descendants: Record<string, string[]>): HierarchyView => ({
+    getAncestors: () => [],
+    getDescendants: (fqName) =>
+      (descendants[fqName] ?? []).map(
+        (sourceFqName): InheritanceEdge => ({
+          sourceFqName,
+          ancestorFqName: "",
+          ancestorSymbolId: null,
+          kind: "super",
+          depth: 1,
+        }),
+      ),
+  });
+
+  const callOn = (receiver: string) => ({
+    callText: `${receiver}.recalc`,
+    receiver,
+    member: "recalc",
+    startLine: 1,
+  });
+
+  const targetsOf = (outcome: DispatchFanoutOutcome): (string | null)[] =>
+    edgesOf(outcome)
+      .map((e) => e.targetSymbolId)
+      .sort();
+
+  /** Inside a class, so `ivarFieldOwnsReceiver` holds and the pass terminates the chain. */
+  const inClass = (over: Partial<CallContext> & Pick<CallContext, "symbolTable">): CallContext =>
+    ctx({ callerScope: ["Reporter"], ...over });
+
+  it("collapses the fan-out to the exact edge the ivarField pass pins for the same call", () => {
+    const call = callOn("@payment");
+    const context = inClass({ symbolTable: table() });
+
+    // The collapse is only sound because BOTH halves hold at the same site: the
+    // fan-out yields, and the pass that runs instead answers.
+    expect(edgesOf(resolver.resolveDispatch(call, context))).toEqual([]);
+    expect(ivarField.attempt(call, context)).toEqual({
+      kind: "resolved",
+      target: expect.objectContaining({ targetSymbolId: "Payment#recalc" }),
+    });
+  });
+
+  it("STILL fans out when the convention class has declared subtypes — the pass DROPs there", () => {
+    const call = callOn("@payment");
+    const context = inClass({ symbolTable: table(), hierarchy: hierarchyOf({ Payment: ["CardPayment"] }) });
+
+    expect(targetsOf(resolver.resolveDispatch(call, context))).toEqual([
+      "Journal#recalc",
+      "Ledger#recalc",
+      "Payment#recalc",
+    ]);
+    expect(ivarField.attempt(call, context).kind).toBe("drop");
+  });
+
+  it("STILL fans out when the convention class declares no such member (no file-only edge)", () => {
+    const call = callOn("@payment");
+    const context = inClass({ symbolTable: table(false) });
+
+    expect(targetsOf(resolver.resolveDispatch(call, context))).toEqual(["Journal#recalc", "Ledger#recalc"]);
+    expect(ivarField.attempt(call, context).kind).toBe("drop");
+  });
+
+  it("STILL fans out when the @ivar names no declared class", () => {
+    const call = callOn("@widget");
+    const context = inClass({ symbolTable: table() });
+
+    expect(edgesOf(resolver.resolveDispatch(call, context))).toHaveLength(3);
+    expect(ivarField.attempt(call, context).kind).toBe("drop");
+  });
+
+  it("keeps deferring for an @ivar a fact channel types — the fact gate owns it, not the convention", () => {
+    const call = callOn("@payment");
+    const context = inClass({ symbolTable: table(), ivarTypes: { Reporter: { "@payment": "Payment" } } });
+
+    expect(edgesOf(resolver.resolveDispatch(call, context))).toEqual([]);
+    expect(ivarField.attempt(call, context)).toEqual({
+      kind: "resolved",
+      target: expect.objectContaining({ targetSymbolId: "Payment#recalc" }),
+    });
   });
 });

@@ -10,7 +10,10 @@ import {
 } from "../../../../../../../src/core/contracts/types/codegraph.js";
 import { RubyCallResolver } from "../../../../../../../src/core/domains/language/ruby/resolver/ruby-resolver.js";
 import type { ResolverConfig } from "../../../../../../../src/core/domains/language/ruby/resolver/strategies/index.js";
-import { RubyConventionReceiverSymbolResolutionStrategy } from "../../../../../../../src/core/domains/language/ruby/resolver/strategies/ruby-convention-receiver.js";
+import {
+  resolveConventionReceiverTarget,
+  RubyConventionReceiverSymbolResolutionStrategy,
+} from "../../../../../../../src/core/domains/language/ruby/resolver/strategies/ruby-convention-receiver.js";
 import { InMemoryGlobalSymbolTable } from "../../../../../../../src/core/domains/trajectory/codegraph/symbols/symbol-table.js";
 
 const cfg: ResolverConfig = { mode: DEFAULT_AMBIGUOUS_RESOLVE_MODE };
@@ -197,6 +200,61 @@ describe("RubyConventionReceiverSymbolResolutionStrategy (bd tea-rags-mcp-wob7g)
     const symbolTable = paymentTable();
     const call: CallRef = { callText: "Payment.refund", receiver: "Payment", member: "refund", startLine: 1 };
     expect(strat.attempt(call, ctx({ symbolTable })).kind).toBe("continue");
+  });
+});
+
+/**
+ * The pass and the dynamic-dispatch deferral must read ONE predicate (bd
+ * tea-rags-mcp-htffz) — two lookups would drift, and a receiver the fan-out
+ * believes untyped while the pass pins it produces N wrong-type edges that bury
+ * the right one. These pin the helper's answer against the strategy's.
+ */
+describe("resolveConventionReceiverTarget — the single authority (bd tea-rags-mcp-htffz)", () => {
+  const agreesWith = (call: CallRef, context: CallContext): void => {
+    const outcome = new RubyConventionReceiverSymbolResolutionStrategy(cfg).attempt(call, context);
+    const target = resolveConventionReceiverTarget(call, context, cfg.mode);
+    expect(target?.targetSymbolId ?? null).toBe(outcome.kind === "resolved" ? outcome.target.targetSymbolId : null);
+  };
+
+  it("pins the convention target the strategy resolves", () => {
+    const symbolTable = paymentTable();
+    const call: CallRef = { callText: "payment.refund", receiver: "payment", member: "refund", startLine: 1 };
+    expect(resolveConventionReceiverTarget(call, ctx({ symbolTable }), cfg.mode)?.targetSymbolId).toBe(
+      "Payment#refund",
+    );
+    agreesWith(call, ctx({ symbolTable }));
+  });
+
+  it("returns null under the subtype gate, exactly as the strategy CONTINUEs", () => {
+    const symbolTable = tableWith([
+      "app/models/actor.rb",
+      [sym("Actor", "Actor", "app/models/actor.rb", []), sym("Actor#user", "user", "app/models/actor.rb", ["Actor"])],
+    ]);
+    const hierarchy = hierarchyOf({ Actor: ["System"] });
+    const call: CallRef = { callText: "actor.user", receiver: "actor", member: "user", startLine: 1 };
+    expect(resolveConventionReceiverTarget(call, ctx({ symbolTable, hierarchy }), cfg.mode)).toBeNull();
+    agreesWith(call, ctx({ symbolTable, hierarchy }));
+  });
+
+  it("returns null when a real fact already types the receiver", () => {
+    const symbolTable = paymentTable();
+    const context = ctx({ symbolTable, localBindings: { payment: [{ line: 1, type: "Charge" }] } });
+    const call: CallRef = { callText: "payment.refund", receiver: "payment", member: "refund", startLine: 5 };
+    expect(resolveConventionReceiverTarget(call, context, cfg.mode)).toBeNull();
+    agreesWith(call, context);
+  });
+
+  it("returns null when the class declares no such member (refuses the file-only edge)", () => {
+    const symbolTable = tableWith(["app/models/payment.rb", [sym("Payment", "Payment", "app/models/payment.rb", [])]]);
+    const call: CallRef = { callText: "payment.refund", receiver: "payment", member: "refund", startLine: 1 };
+    expect(resolveConventionReceiverTarget(call, ctx({ symbolTable }), cfg.mode)).toBeNull();
+    agreesWith(call, ctx({ symbolTable }));
+  });
+
+  it("returns null on a null receiver", () => {
+    const symbolTable = paymentTable();
+    const call: CallRef = { callText: "refund", receiver: null, member: "refund", startLine: 1 };
+    expect(resolveConventionReceiverTarget(call, ctx({ symbolTable }), cfg.mode)).toBeNull();
   });
 });
 

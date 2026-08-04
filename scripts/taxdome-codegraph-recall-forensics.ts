@@ -63,6 +63,7 @@ import {
   DuckVocabularyNarrower,
   KwargNarrower,
   LiteralReceiverNarrower,
+  resolveNarrowedFanout,
   VisibilityNarrower,
   type DispatchCandidateNarrower,
 } from "../src/core/domains/language/kernel/dispatch-narrowing.js";
@@ -78,6 +79,7 @@ import {
   RubyBareCallSymbolResolutionStrategy,
   RubyChainTypeSymbolResolutionStrategy,
   RubyConstantSymbolResolutionStrategy,
+  RubyConventionReceiverSymbolResolutionStrategy,
   RubyEnqueueDispatchSymbolResolutionStrategy,
   RubyExplicitRequireSymbolResolutionStrategy,
   RubyIvarFieldSymbolResolutionStrategy,
@@ -91,11 +93,13 @@ import {
 } from "../src/core/domains/language/ruby/resolver/strategies/index.js";
 import { RUBY_DUCK_VOCAB } from "../src/core/domains/language/ruby/resolver/strategies/ruby-duck-vocabulary.js";
 import { classifyRubyLiteralReceiver } from "../src/core/domains/language/ruby/resolver/strategies/ruby-dynamic-dispatch.js";
+import { ivarFieldOwnsReceiver } from "../src/core/domains/language/ruby/resolver/strategies/ruby-ivar-field.js";
 import { RUBY_RUNTIME_HOOKS } from "../src/core/domains/language/ruby/resolver/strategies/ruby-super.js";
 import {
   collectAncestorChain,
   collectResolvedAncestorChain,
   CONE_MAX_DEFAULT,
+  DYNAMIC_RECEIVER_CONFIDENCE_DEFAULT,
   firstDefinerAfter,
   isRubyPath,
   lastConstantSegment,
@@ -110,6 +114,7 @@ import {
   boundCallReturnType,
   CHAIN_MAX_HOPS_DEFAULT,
   CONTAINER_ELEMENT_RETURNING_METHODS,
+  conventionReceiverType,
   ivarTypeName,
   returnTypeOf,
   typeOfReceiver,
@@ -881,7 +886,14 @@ function resolvePass2(extraction: FileExtraction): void {
       let dispatchOutcome: DispatchFanoutOutcome | undefined;
       const noteDispatch = (out: DispatchFanoutOutcome | undefined): boolean => {
         if (
-          (SIGGAP_ORACLE_ENABLED || SINGLESEG_ENABLED || BAREDEFER_ENABLED || BOUNDCALL_ENABLED || RESIDUAL_ENABLED) &&
+          (SIGGAP_ORACLE_ENABLED ||
+            SINGLESEG_ENABLED ||
+            BAREDEFER_ENABLED ||
+            BOUNDCALL_ENABLED ||
+            RESIDUAL_ENABLED ||
+            C2COLLAPSE_ENABLED ||
+            IVARCONV_ENABLED ||
+            AMBIGCHAIN_ENABLED) &&
           out !== undefined
         ) {
           dispatchOutcome = out;
@@ -976,6 +988,15 @@ function resolvePass2(extraction: FileExtraction): void {
       }
       if (RESIDUAL_ENABLED) {
         noteResidualCall(call, ctx, dispatchOutcome, outcome, receiverKind, extraction.relPath);
+      }
+      if (C2COLLAPSE_ENABLED) {
+        noteC2CollapseCall(call, ctx, dispatchOutcome, outcome, receiverKind, extraction.relPath);
+      }
+      if (IVARCONV_ENABLED) {
+        noteIvarConvCall(call, ctx, dispatchOutcome, outcome, receiverKind, extraction.relPath);
+      }
+      if (AMBIGCHAIN_ENABLED) {
+        noteAmbigChainCall(call, ctx, dispatchOutcome, outcome, receiverKind, extraction.relPath, chunk.symbolId);
       }
     }
   }
@@ -13195,6 +13216,9 @@ async function main(): Promise<void> {
   if (BOUNDCALL_ENABLED) runBoundCallOracle();
   if (SCOPEKEY_ENABLED) runScopeKeyOracle();
   if (RESIDUAL_ENABLED) runResidualOracle();
+  if (C2COLLAPSE_ENABLED) runC2CollapseOracle();
+  if (IVARCONV_ENABLED) runIvarConvOracle();
+  if (AMBIGCHAIN_ENABLED) runAmbigChainOracle();
   L(`elapsed: ${((Date.now() - t0) / 1000).toFixed(1)}s`);
 }
 
@@ -13246,6 +13270,18 @@ async function main(): Promise<void> {
 // convention test has already fired. A call resolved or dropped BEFORE the
 // candidate's slot takes the identical path in the variant chain, so it is
 // skipped rather than re-run.
+//
+// SHIPPED SINCE (bd tea-rags-mcp-4ys8s, 2026-08-04). Cut 2's candidate is no
+// longer a candidate. It shipped as `RubyConventionReceiverSymbolResolutionStrategy`
+// (wob7g), and r2gjj carried the same convention into `ivarField`'s terminal
+// tier. {@link rsBuildChain} therefore restates the chain WITH that pass, and
+// each A/B variant SWAPS that one slot rather than splicing a second copy in
+// front of it — so every movement row below reads as an INCREMENT over what
+// already ships, not as the value of the mechanism. What the variants still
+// price is the two axes the shipped pass does NOT have: the plural stem
+// (`clients` -> `Client`) and the `resolveConstant` second tier of the existence
+// gate, which the shipped `conventionReceiverType` lacks because it gates on
+// `lookupByShortName` alone.
 // ===========================================================================
 const RESIDUAL_ENABLED = process.env.CODEGRAPH_RESIDUAL_ORACLE === "1";
 const OUT_RESIDUAL = join(OUT_DIR, "residual-oracle-report.json");
@@ -13391,15 +13427,21 @@ function rsConventionClass(
 }
 
 /**
- * The candidate strategy. Sits immediately BEFORE `receiverSetDrop`, so every
- * fact-based channel, the Zeitwerk constant pass and the AR-relation guard all
- * win first and only a call already on its way to the catch-all DROP is offered
- * a naming-convention guess.
+ * The parameterised convention pass. It OCCUPIES the shipped `conventionReceiver`
+ * slot rather than sitting beside it (see {@link rsBuildChain}), so each variant
+ * answers the question "what would the shipped pass say with one gate moved" and
+ * its movement is an increment over today's chain.
+ *
+ * Two axes the shipped pass does not have, and neither is priced there:
+ * {@link rsSingularize}'s plural stem, and {@link rsClassExists}'s
+ * `resolveConstant` second tier — production's {@link conventionReceiverType}
+ * gates on `lookupByShortName` alone and so rejects every compact-FQ class.
  *
  * `acceptFileOnly` selects the terminal policy: `false` demands a method-level
- * pin (a real `Type#member` symbol), `true` also takes the file-only edge
- * `resolveTypeInstanceMethod` returns when the class resolves but declares no
- * such member. Both are built and compared rather than argued.
+ * pin (a real `Type#member` symbol), exactly as the shipped pass does; `true`
+ * also takes the file-only edge `resolveTypeInstanceMethod` returns when the
+ * class resolves but declares no such member. Both are built and compared rather
+ * than argued.
  */
 class RsConventionReceiverSymbolResolutionStrategy implements SymbolResolutionStrategy {
   readonly name = "conventionReceiver";
@@ -13425,15 +13467,28 @@ class RsConventionReceiverSymbolResolutionStrategy implements SymbolResolutionSt
 }
 
 /**
- * `RubyCallResolver`'s strategy array, rebuilt with `extra` spliced in ahead of
- * `receiverSetDrop`. The order is restated from `ruby-resolver.ts` rather than
- * imported for the reason the single-segment oracle gives: an oracle sharing its
- * chain with the code it evaluates cannot disagree with it. `rsMirrorDisagreed`
- * validates the no-extra build against the production resolver on every call the
- * oracle touches, so a re-ordering this copy fails to track cannot pass silently.
+ * `RubyCallResolver`'s strategy array as it stands on this branch, with the
+ * `conventionReceiver` slot filled by `slot`. Passing the production strategy
+ * reproduces the shipped chain exactly; passing a variant swaps that ONE pass —
+ * the same slot-substitution shape {@link ssBuildChain} and `icBuildChain` use,
+ * and the reason a variant's movement is an increment over what ships rather
+ * than a re-pricing of the mechanism.
+ *
+ * Restated from `ruby-resolver.ts` rather than imported for the reason the
+ * single-segment oracle gives: an oracle sharing its chain with the code it
+ * evaluates cannot disagree with it.
+ *
+ * This copy predated wob7g until 2026-08-04 — it had no `conventionReceiver`
+ * slot at all — and `rsMirrorDisagreed` still read 0 (bd tea-rags-mcp-4ys8s).
+ * That was not fidelity but a blind spot: the guard only fired where the BASE
+ * outcome was not `resolved`, and a pass that never DROPs can only differ on
+ * calls it RESOLVES. {@link rsCheckMirror} now grades the resolved-and-chain-
+ * consulted population too, which is what makes the guard load-bearing:
+ * neutralising this slot back to its pre-wob7g shape moves it from 0 to 3169
+ * disagreements over the same 29116 checks.
  */
-function rsBuildChain(cfg: ResolverConfig, extra: SymbolResolutionStrategy | null): SymbolResolutionStrategy[] {
-  const head: SymbolResolutionStrategy[] = [
+function rsBuildChain(cfg: ResolverConfig, slot: SymbolResolutionStrategy): SymbolResolutionStrategy[] {
+  return [
     new RubySuperSymbolResolutionStrategy(cfg),
     new RubySelfMemberSymbolResolutionStrategy(cfg),
     new RubyLocalTypeSymbolResolutionStrategy(cfg),
@@ -13445,19 +13500,18 @@ function rsBuildChain(cfg: ResolverConfig, extra: SymbolResolutionStrategy | nul
     new RubyExplicitRequireSymbolResolutionStrategy(cfg),
     new RubyChainTypeSymbolResolutionStrategy(cfg),
     new RubyArRelationGuardSymbolResolutionStrategy(cfg),
-  ];
-  const tail: SymbolResolutionStrategy[] = [
+    slot,
     new RubyReceiverSetDropSymbolResolutionStrategy(cfg),
     new RubyBareCallSymbolResolutionStrategy(cfg),
     new RubySchemaColumnSymbolResolutionStrategy(),
   ];
-  return extra === null ? [...head, ...tail] : [...head, extra, ...tail];
 }
 
-const rsBaseChain = rsBuildChain(RS_CFG, null);
+/** The shipped chain, verbatim — the fidelity mirror and the A/B baseline. */
+const rsBaseChain = rsBuildChain(RS_CFG, new RubyConventionReceiverSymbolResolutionStrategy(RS_CFG));
 const rsPinnedChain = rsBuildChain(RS_CFG, new RsConventionReceiverSymbolResolutionStrategy(RS_CFG, false));
 const rsFileOkChain = rsBuildChain(RS_CFG, new RsConventionReceiverSymbolResolutionStrategy(RS_CFG, true));
-/** The two SHIPPABLE shapes: pinned terminal + the mandatory subtype gate. */
+/** The two shapes closest to what SHIPPED: pinned terminal + the subtype gate. */
 const rsPinnedGatedChain = rsBuildChain(
   RS_CFG,
   new RsConventionReceiverSymbolResolutionStrategy(RS_CFG, false, RS_OPT_GATED),
@@ -13467,8 +13521,8 @@ const rsPinnedGatedNoPluralChain = rsBuildChain(
   new RsConventionReceiverSymbolResolutionStrategy(RS_CFG, false, RS_OPT_GATED_NO_PLURAL),
 );
 
-/** Position of `receiverSetDrop` in the base chain — the candidate's insertion point. */
-const RS_SLOT_INDEX = rsBaseChain.findIndex((s) => s.name === "receiverSetDrop");
+/** Position of the `conventionReceiver` slot — where every variant is swapped in. */
+const RS_SLOT_INDEX = rsBaseChain.findIndex((s) => s.name === "conventionReceiver");
 
 type RsReplay = { owner: string; slotReached: boolean; target: SymbolResolutionTarget | null };
 
@@ -13476,8 +13530,8 @@ type RsReplay = { owner: string; slotReached: boolean; target: SymbolResolutionT
  * `resolveViaChain` with the winning pass recorded. `owner` is the strategy that
  * returned the decisive outcome (prefixed `resolved:` when it produced a target),
  * or `exhausted` when every pass CONTINUEd. `slotReached` says whether the chain
- * got as far as the candidate's insertion point — the exact precondition under
- * which splicing a pass in there can change the answer.
+ * got as far as the `conventionReceiver` slot — the exact precondition under
+ * which swapping the pass in there can change the answer.
  */
 function rsReplay(call: CallRef, ctx: CallContext): RsReplay {
   for (let i = 0; i < rsBaseChain.length; i += 1) {
@@ -13538,11 +13592,17 @@ const rsEdgeWrongExample: string[] = [];
 const RS_VARIANTS = ["pinned", "fileOk", "pinnedGated", "pinnedGatedNoPlural"] as const;
 type RsVariant = (typeof RS_VARIANTS)[number];
 
+/**
+ * What each variant CHANGES about the shipped `conventionReceiver` pass. The slot
+ * is swapped, not doubled, so every movement row is an increment over the chain
+ * that ships today (bd tea-rags-mcp-4ys8s) rather than the 2026-08-02 numbers,
+ * which were measured against a chain with no convention pass at all.
+ */
 const RS_VARIANT_LABEL: Record<RsVariant, string> = {
-  pinned: "PINNED-ONLY, ungated (the 2026-08-02 reference number)",
-  fileOk: "FILE-OK, ungated (also file-only edges)",
-  pinnedGated: "PINNED-ONLY + subtype gate  <-- SHIPPABLE",
-  pinnedGatedNoPlural: "PINNED-ONLY + subtype gate, no plural stem",
+  pinned: "shipped + plural stem + resolveConstant tier, subtype gate REMOVED",
+  fileOk: "as `pinned`, and the file-only terminal accepted too",
+  pinnedGated: "shipped + plural stem + resolveConstant existence tier",
+  pinnedGatedNoPlural: "shipped + resolveConstant existence tier only",
 };
 
 function rsEmptyByVariant<T>(make: () => T): Record<RsVariant, T> {
@@ -13554,9 +13614,10 @@ const rsMove: Record<RsVariant, Map<string, number>> = rsEmptyByVariant(() => ne
 const rsMoveExample: Record<RsVariant, string[]> = rsEmptyByVariant((): string[] => []);
 /** Distinct NEW method-level targets the candidate would light up. */
 const rsNewTargets: Record<RsVariant, Set<string>> = rsEmptyByVariant(() => new Set<string>());
-/** Fidelity guard: the oracle's own no-extra chain vs the production resolver. */
+/** Fidelity guard: the oracle's own shipped-chain copy vs the production resolver. */
 let rsMirrorChecked = 0;
 let rsMirrorDisagreed = 0;
+const rsMirrorExample: string[] = [];
 /** Precision side — the core-homonym carve-out and the dynamic fan-out population. */
 const rsCoreAmbByMember = new Map<string, number>();
 const rsCoreAmbByKind = new Map<ReceiverKind, number>();
@@ -13621,6 +13682,37 @@ function rsChainIsConsulted(call: CallRef, dispatchEdges: number): boolean {
 function rsRunChain(chain: SymbolResolutionStrategy[], call: CallRef, ctx: CallContext): SymbolResolutionTarget | null {
   const target = resolveViaChain(chain, call, ctx);
   return target === null ? null : redirectSelfDispatchTemplate(target, call, ctx, RS_CFG.mode);
+}
+
+/**
+ * Fidelity guard: {@link rsBaseChain} must answer exactly what the production
+ * resolver answers, wherever the chain's answer is actually read.
+ *
+ * Graded on BOTH sides of the base outcome, resolved included — restricting it to
+ * unresolved outcomes is precisely what let the missing wob7g slot sit here
+ * undetected for two days (bd tea-rags-mcp-4ys8s). `conventionReceiver` never
+ * DROPs, so the only calls it can move are ones the production chain RESOLVES,
+ * and those were the calls the guard skipped. A guard whose population excludes
+ * the drift it exists to catch reports 0 forever.
+ */
+function rsCheckMirror(call: CallRef, ctx: CallContext, mine: SymbolResolutionTarget | null, relPath: string): void {
+  const rs = resolver;
+  if (rs === undefined) return;
+  rsMirrorChecked += 1;
+  const production = rs.resolve(call, ctx);
+  const same =
+    production === null || mine === null
+      ? production === mine
+      : production.targetRelPath === mine.targetRelPath && production.targetSymbolId === mine.targetSymbolId;
+  if (same) return;
+  rsMirrorDisagreed += 1;
+  const show = (t: SymbolResolutionTarget | null): string =>
+    t === null ? "null" : (t.targetSymbolId ?? `${t.targetRelPath} (file-only)`);
+  if (rsMirrorExample.length < RS_EXAMPLE_CAP) {
+    rsMirrorExample.push(
+      `${relPath}:${call.startLine}  ${call.receiver ?? "-"}.${call.member}  mirror=${show(mine)}  production=${show(production)}`,
+    );
+  }
 }
 
 /**
@@ -13758,6 +13850,12 @@ function noteResidualCall(
   // is derivable — the collapse N->1 is edges REMOVED, not edges added, and is
   // priced separately from any recall claim.
   if (baseOutcome === "resolved") {
+    // Fidelity on the RESOLVED side — the only side a pass that never DROPs can
+    // move. Cost stays bounded by the `conventionFires` pre-test above: a call no
+    // convention can type never reaches here.
+    if (rsChainIsConsulted(call, dispatchEdges)) {
+      rsCheckMirror(call, ctx, rsRunChain(rsBaseChain, call, ctx), relPath);
+    }
     if (conventionFires && dispatchOutcome?.kind === "edges" && dispatchEdges > 0) {
       const klass = rsConventionClass(bare, ctx);
       const exact = klass === undefined ? null : resolveTypeInstanceMethod(klass, call.member, ctx, RS_CFG.mode);
@@ -13814,20 +13912,14 @@ function noteResidualCall(
     }
   }
 
-  // ---- cut 3: the honest A/B, only where splicing can change the answer.
+  // ---- cut 3: the honest A/B, only where swapping the slot can change the answer.
   if (!replay.slotReached || !rsChainIsConsulted(call, dispatchEdges)) return;
-  // Fidelity: the oracle's own chain must agree with the production resolver.
-  const rs = resolver;
-  if (rs !== undefined) {
-    rsMirrorChecked += 1;
-    const production = rs.resolve(call, ctx);
-    const mine = replay.target === null ? null : redirectSelfDispatchTemplate(replay.target, call, ctx, RS_CFG.mode);
-    const same =
-      production === null || mine === null
-        ? production === mine
-        : production.targetRelPath === mine.targetRelPath && production.targetSymbolId === mine.targetSymbolId;
-    if (!same) rsMirrorDisagreed += 1;
-  }
+  rsCheckMirror(
+    call,
+    ctx,
+    replay.target === null ? null : redirectSelfDispatchTemplate(replay.target, call, ctx, RS_CFG.mode),
+    relPath,
+  );
   for (const [variant, chain] of [
     ["pinned", rsPinnedChain],
     ["fileOk", rsFileOkChain],
@@ -13860,9 +13952,13 @@ function runResidualOracle(): void {
   L("═══════════════════════════════════════════════════════════════════");
   L(`recall hole (misses):                     ${hole}`);
   L(`chain-fidelity checks / disagreements:    ${rsMirrorChecked} / ${rsMirrorDisagreed}`);
+  for (const ex of rsMirrorExample) L(`    ${ex}`);
   L("");
 
   L("─── CUT 1: which strategy OWNS the drop ───────────────────────────");
+  L("(`conventionReceiver` never DROPs, and any answer it gives makes the call a");
+  L(" non-miss — so it cannot own a row here. Its absence is structural, not");
+  L(" evidence that the pass is idle.)");
   L("owner                     total   share   by receiverKind");
   const ownerRows = [...rsDropOwner.entries()]
     .map(([owner, byKind]) => {
@@ -13956,7 +14052,8 @@ function runResidualOracle(): void {
   }
   L("");
 
-  L("─── CUT 3b: A/B bucket movement with the candidate spliced in ─────");
+  L("─── CUT 3b: A/B movement, the shipped conventionReceiver slot SWAPPED ─");
+  L("    (increments over today's chain, NOT the 2026-08-02 pre-wob7g numbers)");
   for (const variant of RS_VARIANTS) {
     const rows = [...rsMove[variant].entries()].sort((a, b) => b[1] - a[1]);
     let gained = 0;
@@ -14023,7 +14120,7 @@ function runResidualOracle(): void {
     JSON.stringify(
       {
         hole,
-        fidelity: { checked: rsMirrorChecked, disagreed: rsMirrorDisagreed },
+        fidelity: { checked: rsMirrorChecked, disagreed: rsMirrorDisagreed, examples: rsMirrorExample },
         dropOwner: ownerRows.map((r) => ({ owner: r.owner, total: r.total, byKind: Object.fromEntries(r.byKind) })),
         residualBuckets: bucketRows.map(([key, n]) => ({ key, n, examples: rsResidualExample.get(key) ?? [] })),
         conventionProbe: rsProbe,
@@ -14048,6 +14145,1577 @@ function runResidualOracle(): void {
     ),
   );
   L(`residual report → ${OUT_RESIDUAL}`);
+}
+
+// ===========================================================================
+// CONVENTION-COLLAPSE ORACLE (bd tea-rags-mcp-htffz / residual item C2,
+// CODEGRAPH_C2COLLAPSE_ORACLE=1). Same additive, env-gated contract as every
+// oracle above: with the flag unset nothing extra is computed or reported and
+// the A/B recall metrics are byte-identical.
+//
+// It prices the CONVENTION tier of the deferral 55950 shipped for the FACT tier.
+// `RubyDynamicDispatchResolver` steps aside for a receiver `typeOfReceiver`
+// answers (bd epydb, widened to bare receivers by 55950) because the exact chain
+// has one precise edge for it. `RubyConventionReceiverSymbolResolutionStrategy`
+// (bd wob7g) now derives ONE precise edge for a class of receivers
+// `typeOfReceiver` does NOT answer — and the fan-out does not know that, so those
+// sites keep their N discounted `dynamic` edges and the exact edge never lands.
+//
+// The candidate change is one more gate beside the epydb one:
+//
+//     if (resolveConventionReceiverTarget(call, ctx, this.cfg.mode) !== null)
+//       return emptyDispatchFanout();
+//
+// Measurable EXACTLY rather than by projection, for the reason 55950 gives: the
+// gate is a pure SUBTRACTION from the fan-out, sitting after every earlier
+// `return emptyDispatchFanout()`, so a site that produced edges is a site that
+// reached the gate. The convention answer at a firing site comes from the
+// PRODUCTION strategy object, not from a re-implementation of it.
+//
+// Six cuts, in report order:
+//
+//   1. POPULATION — sites whose fan-out is all-`dynamic` and whose receiver the
+//      production convention strategy types with a method-level pin, plus the
+//      edges they emit today (the removable set).
+//   2. CONTAINMENT — is the convention's exact edge ALREADY one of the N? Yes ⇒
+//      the collapse is a strict subtraction of N-1 wrong-type edges. No ⇒ it is
+//      a SWAP, and every one of the N was wrong-type under the convention.
+//   3. CHAIN FIDELITY — the collapsed edge is whatever the CHAIN answers once the
+//      fan-out steps aside, which is the convention's target only if no earlier
+//      pass owns the call. Asked of `resolver.resolve`, the same object
+//      `resolvePass2` calls.
+//   4. RECALL RISK — the `dispatch` call shape has NO chain fallback in
+//      production (`resolution-runner` returns straight from the fan-out), so
+//      deferring there loses the call outright. Counted so the gate can exclude
+//      it. The over-cap `ambiguous` outcome runs the other way: production emits
+//      NOTHING there today, so deferring RESTORES the chain — a recall gain.
+//   5. GATE GAP — the 2026-08-02 residual report priced this item at 2938 calls /
+//      16126 edges / 416 non-containment with the UNGATED convention predicate
+//      (no subtype gate, plural stem on, two-tier class existence). Production
+//      shipped the gated one. Both are computed here and the delta is attributed
+//      per rejected gate, so a shrink reads as a known gate rather than as
+//      mirror infidelity.
+//   6. EDGE TRUTH — the regression channel the bead demands priced BEFORE code.
+//      The C2 population is untyped by every fact channel BY CONSTRUCTION (the
+//      epydb gate already deferred everything a fact types), so it carries no
+//      internal ground truth. The labelled sample is therefore the neighbouring
+//      population: receivers a real fact DOES type and the convention ALSO types.
+//      Graded exactly as wob7g graded it — `silent` / `sameTarget` /
+//      `rightTarget` / `wrongTarget` — with one axis added that the collapse
+//      needs and wob7g did not: is the FACT's target inside the fan-out the
+//      collapse would remove? `wrongTarget AND truth-in-fan-out` is the shape
+//      that loses a true edge; `wrongTarget AND truth-not-in-fan-out` swaps one
+//      wrong edge set for one wrong edge and costs nothing.
+//
+// Cost discipline: the population cut rides `resolvePass2` after the fan-out has
+// already run, so the baseline costs one convention probe per call that produced
+// dynamic edges. `resolver.resolve` and the simulated fan-out run only where the
+// gate FIRES / where both terminals answer.
+// ===========================================================================
+const C2COLLAPSE_ENABLED = process.env.CODEGRAPH_C2COLLAPSE_ORACLE === "1";
+const OUT_C2COLLAPSE = join(OUT_DIR, "c2collapse-oracle-report.json");
+/** Worked examples kept per bucket — enough to read, small enough to print. */
+const C2_EXAMPLE_CAP = 15;
+
+const C2_CFG: ResolverConfig = { mode: DEFAULT_AMBIGUOUS_RESOLVE_MODE, coneMax: CONE_MAX_DEFAULT };
+/** The PRODUCTION pass the gate would defer to, asked what IT answers. */
+const c2ConventionStrategy = new RubyConventionReceiverSymbolResolutionStrategy(C2_CFG);
+/** `RubyDynamicDispatchResolver`'s narrower stack, restated for the truth cut's simulated fan-out. */
+const C2_NARROWERS: DispatchCandidateNarrower[] = [
+  new DuckVocabularyNarrower(RUBY_DUCK_VOCAB),
+  new LiteralReceiverNarrower(classifyRubyLiteralReceiver),
+  new ArityNarrower(),
+  new KwargNarrower(),
+  new VisibilityNarrower(),
+  new BlockNarrower(),
+];
+
+// ---- global edge census — the denominator behind the exactRatio ------------
+let c2CallsWithFanout = 0;
+let c2FanoutEdgesTotal = 0;
+const c2FanoutEdgesByKind: Record<string, number> = {};
+let c2ExactEdgesTotal = 0;
+let c2DispatchArgsCalls = 0;
+
+// ---- cut 1/2: the population and the containment split --------------------
+let c2Sites = 0;
+let c2Edges = 0;
+const c2ByShape: Record<string, number> = {};
+const c2EdgesByShape: Record<string, number> = {};
+const c2ByKind: Record<string, { sites: number; edges: number; contains: number; lacks: number }> = {};
+let c2Contains = 0;
+let c2ContainsEdges = 0;
+let c2Lacks = 0;
+let c2LacksEdges = 0;
+let c2WideSites = 0;
+const c2ContainsExamples: string[] = [];
+const c2LacksExamples: string[] = [];
+/** Distinct targets the collapse would light up, and the ones it would extinguish. */
+const c2KeptTargets = new Set<string>();
+const c2RemovedTargets = new Set<string>();
+
+// ---- cut 3: what the CHAIN answers once the fan-out steps aside ------------
+let c2ChainAgrees = 0;
+let c2ChainDiffers = 0;
+let c2ChainNull = 0;
+const c2ChainDifferExamples: string[] = [];
+const c2ChainNullByShape: Record<string, number> = {};
+
+// ---- cut 4: recall risk ----------------------------------------------------
+/** `dispatch`-shaped firing sites: production has NO chain fallback, so deferring loses the call. */
+let c2DispatchShapeSites = 0;
+let c2DispatchShapeEdges = 0;
+/** Over-cap fan-outs the gate would also defer — production emits nothing there today. */
+let c2AmbiguousWouldDefer = 0;
+
+// ---- cut 5: the 2026-08-02 residual predicate, replicated -------------------
+let c2RsSites = 0;
+let c2RsEdges = 0;
+let c2RsContains = 0;
+let c2RsLacks = 0;
+const c2GateGapReason: Record<string, number> = {};
+
+// ---- cut 6: the labelled edge-truth sample ---------------------------------
+const c2Truth = {
+  graded: 0,
+  factTypeAbsentFromTable: 0,
+  silent: 0,
+  rightTarget: 0,
+  sameTarget: 0,
+  wrongTarget: 0,
+  factHasNoTarget: 0,
+};
+/** The axis wob7g did not need: is the FACT's target inside the fan-out the collapse removes? */
+const c2TruthInFanout = { rightTarget: 0, sameTarget: 0, wrongTarget: 0 };
+const c2TruthNoFanout = { rightTarget: 0, sameTarget: 0, wrongTarget: 0 };
+const c2WrongExamples: string[] = [];
+
+// ---- cut 6b: the same sample, scoped to the population C2b collapses -------
+// Cut 1's receiver-kind table says the whole firing population is `@ivar`, so
+// the cut-6 sample — dominated by bare single-segment receivers — is a NEIGHBOUR
+// of a neighbour. Scoping it to the receivers `ivarFieldOwnsReceiver` claims
+// gives the closest labelled evidence that exists for the sites C2b actually
+// collapses: ivars a fact channel types AND the convention types too. bd r2gjj
+// graded those same sites at class and edge level; the fan-out-containment axis
+// is what that grading lacks and what a REMOVAL of edges needs.
+const c2IvarTruth = {
+  graded: 0,
+  factTypeAbsentFromTable: 0,
+  silent: 0,
+  rightTarget: 0,
+  sameTarget: 0,
+  wrongTarget: 0,
+  factHasNoTarget: 0,
+};
+const c2IvarTruthInFanout = { rightTarget: 0, sameTarget: 0, wrongTarget: 0 };
+const c2IvarTruthNoFanout = { rightTarget: 0, sameTarget: 0, wrongTarget: 0 };
+
+function c2Bump(bag: Record<string, number>, key: string): void {
+  bag[key] = (bag[key] ?? 0) + 1;
+}
+
+/**
+ * The production convention answer at this site — the strategy object itself, so
+ * the oracle cannot disagree with the pass it is pricing. `null` when the pass
+ * CONTINUEs (wrong receiver shape, a fact already owns it, no such class, the
+ * class has subtypes, or the terminal declines to pin a method).
+ */
+function c2ConventionTarget(call: CallRef, ctx: CallContext): SymbolResolutionTarget | null {
+  const outcome = c2ConventionStrategy.attempt(call, ctx);
+  return outcome.kind === "resolved" ? outcome.target : null;
+}
+
+/**
+ * The class name the PRODUCTION `conventionClassName` derives — restated (it is
+ * not exported) because it is exactly the predicate cut 5 attributes the gap to.
+ * Single tier: the short-name index only, no plural stem.
+ */
+function c2ProdClassName(bare: string, ctx: CallContext): string | undefined {
+  const name = rsCamelize(bare);
+  return name.length > 0 && ctx.symbolTable.lookupByShortName(name).length > 0 ? name : undefined;
+}
+
+/**
+ * The 2026-08-02 residual predicate: two-tier existence (short-name index, then
+ * the scope-aware `resolveConstant`), plural stem, NO subtype gate. Restated
+ * locally rather than reusing `rsConventionClass`, whose `rsClassExists` mutates
+ * the residual oracle's own tier counters — two flags on at once must not make
+ * either report lie.
+ */
+function c2RsClassName(bare: string, ctx: CallContext): string | undefined {
+  const exists = (name: string): boolean =>
+    name.length > 0 && (ctx.symbolTable.lookupByShortName(name).length > 0 || resolveConstant(name, ctx) !== null);
+  const direct = rsCamelize(bare);
+  if (exists(direct)) return direct;
+  const singular = rsSingularize(bare);
+  if (singular === bare) return undefined;
+  const stemmed = rsCamelize(singular);
+  return exists(stemmed) ? stemmed : undefined;
+}
+
+/** Why the production gate declines a site the residual predicate accepts. */
+function c2GapReason(bare: string, ctx: CallContext): string {
+  const direct = c2ProdClassName(bare, ctx);
+  if (direct === undefined) {
+    const singular = rsSingularize(bare);
+    if (singular !== bare && ctx.symbolTable.lookupByShortName(rsCamelize(singular)).length > 0) {
+      return "plural stem (production does not singularize)";
+    }
+    return "class reachable only via resolveConstant (production gates on the short-name index)";
+  }
+  if (rsHasSubtypes(direct, ctx)) return "subtype gate (polymorphic base)";
+  return "terminal declined (member not pinned on the derived class)";
+}
+
+/** The fan-out `RubyDynamicDispatchResolver` WOULD emit here, as target ids. */
+function c2SimulatedFanoutTargets(call: CallRef, ctx: CallContext): Set<string> {
+  const ids = new Set<string>();
+  const candidates = ctx.symbolTable.lookupByShortName(call.member).filter((d) => isRubyPath(d.relPath));
+  if (candidates.length === 0) return ids;
+  const outcome = resolveNarrowedFanout(call, candidates, ctx, C2_NARROWERS, DYNAMIC_RECEIVER_CONFIDENCE_DEFAULT);
+  if (outcome.kind !== "edges") return ids;
+  for (const e of outcome.edges) if (e.targetSymbolId !== null) ids.add(e.targetSymbolId);
+  return ids;
+}
+
+/**
+ * Cut 6. This receiver IS typed by a real fact channel AND the convention types
+ * it too, so the convention's edge can be graded against the fact's. Same four
+ * buckets wob7g used, plus the fan-out-containment axis the collapse needs.
+ *
+ * Divergence stated honestly: the C2 population itself has NO fact, by
+ * construction. This sample is the neighbouring population — the closest labelled
+ * evidence that exists, not the population under change.
+ */
+function c2NoteEdgeTruth(call: CallRef, ctx: CallContext, relPath: string): void {
+  const receiver = call.receiver;
+  if (receiver === null) return;
+  // Cheap first: the convention's own regex rejects most receivers outright.
+  // The convention only ever yields the `instance` form; narrowing keeps that a
+  // compile-time fact, exactly as the production strategy does.
+  const guess = conventionReceiverType(receiver, ctx);
+  if (guess?.form !== "instance") return;
+  const fact = typeOfReceiver(receiver, call.startLine, ctx);
+  if (fact === undefined || (fact.form !== "instance" && fact.form !== "class")) return;
+  // Cut 6b rides the same walk: the ivar scope is a filter on the sample, never
+  // a second traversal, so the two bags cannot disagree about a graded site.
+  const ivarScoped = ivarFieldOwnsReceiver(call, ctx);
+  const factTail = lastConstantSegment(fact.name);
+  if (ctx.symbolTable.lookupByShortName(factTail).length === 0) {
+    c2Truth.factTypeAbsentFromTable += 1;
+    if (ivarScoped) c2IvarTruth.factTypeAbsentFromTable += 1;
+    return;
+  }
+  c2Truth.graded += 1;
+  if (ivarScoped) c2IvarTruth.graded += 1;
+  const pinnedOn = (typeName: string): string | null =>
+    resolveTypeInstanceMethod(typeName, call.member, ctx, C2_CFG.mode)?.targetSymbolId ?? null;
+  const guessId = pinnedOn(guess.name);
+  if (guessId === null) {
+    // No edge is born, so nothing can be mis-collapsed. Agreement that emits
+    // nothing is not evidence either way.
+    if (guess.name !== factTail) {
+      c2Truth.silent += 1;
+      if (ivarScoped) c2IvarTruth.silent += 1;
+    }
+    return;
+  }
+  const factId = pinnedOn(factTail);
+  if (factId === null) {
+    c2Truth.factHasNoTarget += 1;
+    if (ivarScoped) c2IvarTruth.factHasNoTarget += 1;
+    return;
+  }
+  const inFanout = c2SimulatedFanoutTargets(call, ctx).has(factId);
+  const bucket = inFanout ? c2TruthInFanout : c2TruthNoFanout;
+  const ivarBucket = inFanout ? c2IvarTruthInFanout : c2IvarTruthNoFanout;
+  if (guess.name === factTail) {
+    c2Truth.rightTarget += 1;
+    bucket.rightTarget += 1;
+    if (ivarScoped) {
+      c2IvarTruth.rightTarget += 1;
+      ivarBucket.rightTarget += 1;
+    }
+    return;
+  }
+  if (guessId === factId) {
+    c2Truth.sameTarget += 1;
+    bucket.sameTarget += 1;
+    if (ivarScoped) {
+      c2IvarTruth.sameTarget += 1;
+      ivarBucket.sameTarget += 1;
+    }
+    return;
+  }
+  c2Truth.wrongTarget += 1;
+  bucket.wrongTarget += 1;
+  if (ivarScoped) {
+    c2IvarTruth.wrongTarget += 1;
+    ivarBucket.wrongTarget += 1;
+  }
+  if (c2WrongExamples.length < C2_EXAMPLE_CAP * 2) {
+    c2WrongExamples.push(
+      `${relPath}:${call.startLine}  ${receiver}.${call.member}  emit=${guessId} truth=${factId}` +
+        `  ${inFanout ? "truth IS in the removable fan-out" : "truth NOT in the fan-out"}`,
+    );
+  }
+}
+
+/**
+ * The one call-site hook, invoked from `resolvePass2` after the baseline outcome
+ * is known. Everything it needs is already computed there.
+ */
+function noteC2CollapseCall(
+  call: CallRef,
+  ctx: CallContext,
+  dispatchOutcome: DispatchFanoutOutcome | undefined,
+  baseOutcome: LcOutcome,
+  receiverKind: ReceiverKind,
+  relPath: string,
+): void {
+  const rs = resolver;
+  if (rs === undefined) return;
+  const { receiver } = call;
+  const shape = bdCallShape(call);
+  const edges = dispatchOutcome?.kind === "edges" ? dispatchOutcome.edges : [];
+
+  // ── global edge census (every call, cheap) ───────────────────────────────
+  if (edges.length > 0) {
+    c2CallsWithFanout += 1;
+    c2FanoutEdgesTotal += edges.length;
+    for (const e of edges) c2Bump(c2FanoutEdgesByKind, e.edgeKind ?? "exact(default)");
+  }
+  if (shape === "dispatchArgs") {
+    c2DispatchArgsCalls += 1;
+    if (rs.resolve(call, ctx) !== null) c2ExactEdgesTotal += 1;
+  } else if (shape === "normal" && edges.length === 0 && baseOutcome === "resolved") {
+    c2ExactEdgesTotal += 1;
+  }
+
+  if (receiver === null) return;
+  // ── cut 6, independent of the fan-out ────────────────────────────────────
+  c2NoteEdgeTruth(call, ctx, relPath);
+
+  if (edges.length === 0) {
+    // Over-cap fan-outs carry no edges but DO suppress the exact chain in
+    // production. Deferring turns such a site into a plain empty fan-out, which
+    // restores the chain — a recall channel this harness cannot show (it falls
+    // back to the chain already).
+    if (dispatchOutcome?.kind === "ambiguous" && c2ConventionTarget(call, ctx) !== null) {
+      c2AmbiguousWouldDefer += 1;
+    }
+    return;
+  }
+  // `edgeKind: "dynamic"` is set in exactly one place (`resolveNarrowedFanout`,
+  // whose only caller is `RubyDynamicDispatchResolver`), so it is an exact
+  // discriminator for "the DYNAMIC component produced this outcome" rather than
+  // a heuristic. The cone / table components sit BEFORE the gate and are
+  // untouched by it; counting them would invent a channel the change cannot
+  // exercise.
+  if (!edges.every((e) => e.edgeKind === "dynamic")) return;
+
+  // ── cut 5: the 2026-08-02 predicate, on the same site ────────────────────
+  const bare = rsBareIdentifier(receiver);
+  const rsKlass =
+    bare !== undefined && typeOfReceiver(receiver, call.startLine, ctx) === undefined
+      ? c2RsClassName(bare, ctx)
+      : undefined;
+  const rsTargetId =
+    rsKlass === undefined ? null : (resolveTypeInstanceMethod(rsKlass, call.member, ctx, C2_CFG.mode)?.targetSymbolId ?? null);
+
+  // ── the production gate, asked of the production pass ────────────────────
+  const target = c2ConventionTarget(call, ctx);
+  const targetId = target?.targetSymbolId ?? null;
+
+  if (rsTargetId !== null) {
+    c2RsSites += 1;
+    c2RsEdges += edges.length;
+    if (edges.some((e) => e.targetSymbolId === rsTargetId)) c2RsContains += 1;
+    else c2RsLacks += 1;
+    if (targetId === null && bare !== undefined) c2Bump(c2GateGapReason, c2GapReason(bare, ctx));
+  }
+
+  if (target === null || targetId === null) return;
+
+  c2Sites += 1;
+  c2Edges += edges.length;
+  if (edges.length >= 5) c2WideSites += 1;
+  c2Bump(c2ByShape, shape);
+  c2EdgesByShape[shape] = (c2EdgesByShape[shape] ?? 0) + edges.length;
+  const kindRow = (c2ByKind[receiverKind] ??= { sites: 0, edges: 0, contains: 0, lacks: 0 });
+  kindRow.sites += 1;
+  kindRow.edges += edges.length;
+  if (shape === "dispatch") {
+    c2DispatchShapeSites += 1;
+    c2DispatchShapeEdges += edges.length;
+  }
+
+  // ── cut 2: containment ───────────────────────────────────────────────────
+  const contains = edges.some((e) => e.targetSymbolId === targetId);
+  c2KeptTargets.add(targetId);
+  for (const e of edges) if (e.targetSymbolId !== null && e.targetSymbolId !== targetId) c2RemovedTargets.add(e.targetSymbolId);
+  if (contains) {
+    c2Contains += 1;
+    c2ContainsEdges += edges.length;
+    kindRow.contains += 1;
+    if (c2ContainsExamples.length < C2_EXAMPLE_CAP) {
+      c2ContainsExamples.push(`${relPath}:${call.startLine}  ${receiver}.${call.member}  ${edges.length} -> ${targetId}`);
+    }
+  } else {
+    c2Lacks += 1;
+    c2LacksEdges += edges.length;
+    kindRow.lacks += 1;
+    if (c2LacksExamples.length < C2_EXAMPLE_CAP) {
+      c2LacksExamples.push(
+        `${relPath}:${call.startLine}  ${receiver}.${call.member}  ${edges.length} -> ${targetId}  (SWAP: not in the fan-out)`,
+      );
+    }
+  }
+
+  // ── cut 3: what the chain actually answers ───────────────────────────────
+  // The `dispatch` shape reads no chain in production, so asking it there would
+  // model an edge that never lands.
+  const chainTarget = shape === "dispatch" ? null : rs.resolve(call, ctx);
+  if (chainTarget === null) {
+    c2ChainNull += 1;
+    c2Bump(c2ChainNullByShape, shape);
+  } else if (chainTarget.targetSymbolId === targetId) {
+    c2ChainAgrees += 1;
+  } else {
+    c2ChainDiffers += 1;
+    if (c2ChainDifferExamples.length < C2_EXAMPLE_CAP) {
+      c2ChainDifferExamples.push(
+        `${relPath}:${call.startLine}  ${receiver}.${call.member}  convention=${targetId} chain=${chainTarget.targetSymbolId ?? `${chainTarget.targetRelPath} (file-only)`}`,
+      );
+    }
+  }
+}
+
+function runC2CollapseOracle(): void {
+  const L = (s: string) => {
+    console.log(s);
+  };
+  L("");
+  L("═══════════════════════════════════════════════════════════════════");
+  L("  CONVENTION-COLLAPSE ORACLE (bd htffz / residual C2)");
+  L("═══════════════════════════════════════════════════════════════════");
+  L("");
+  L("─── (1) population: all-dynamic fan-outs the convention pass types ──");
+  L(`calls with a non-empty fan-out:                  ${c2CallsWithFanout}`);
+  L(`  ...all-dynamic AND convention-pinned (FIRING): ${c2Sites}`);
+  L(`fan-out edges those firing sites emit today:     ${c2Edges}   <-- removable`);
+  L(`  mean edges/site: ${(c2Sites === 0 ? 0 : c2Edges / c2Sites).toFixed(2)}   fan-outs of 5+: ${c2WideSites}`);
+  L("by call shape (resolvePass2 branch):");
+  for (const [k, n] of Object.entries(c2ByShape).sort((a, b) => b[1] - a[1])) {
+    L(`  ${String(n).padStart(8)}  ${k}   (${c2EdgesByShape[k] ?? 0} edges)`);
+  }
+  L("by receiver kind:");
+  L("kind            sites     edges   contains     lacks");
+  for (const kind of RECEIVER_KINDS) {
+    const row = c2ByKind[kind];
+    if (row === undefined) continue;
+    L(
+      `${kind.padEnd(12)}  ${String(row.sites).padStart(7)}  ${String(row.edges).padStart(8)}` +
+        `  ${String(row.contains).padStart(9)}  ${String(row.lacks).padStart(8)}`,
+    );
+  }
+
+  L("");
+  L("─── (2) containment: is the convention edge already one of the N? ──");
+  L(`convention edge IS in the fan-out:  ${c2Contains}  (${c2ContainsEdges} edges -> ${c2Contains}; strict subtraction)`);
+  L(`convention edge is NOT in it:       ${c2Lacks}  (${c2LacksEdges} edges -> ${c2Lacks}; SWAP)`);
+  L(`distinct targets kept: ${c2KeptTargets.size}   distinct targets extinguished: ${c2RemovedTargets.size}`);
+  for (const e of c2ContainsExamples.slice(0, 8)) L(`    ${e}`);
+  for (const e of c2LacksExamples.slice(0, 8)) L(`    ${e}`);
+
+  L("");
+  L("─── (3) chain fidelity: what lands once the fan-out steps aside ────");
+  L(`chain answers the SAME target as the convention: ${c2ChainAgrees}`);
+  L(`chain answers a DIFFERENT target (earlier pass): ${c2ChainDiffers}`);
+  L(`chain answers null (no edge at all would land):  ${c2ChainNull}`);
+  for (const [k, n] of Object.entries(c2ChainNullByShape).sort((a, b) => b[1] - a[1])) {
+    L(`      ${String(n).padStart(6)}  ${k}`);
+  }
+  for (const e of c2ChainDifferExamples.slice(0, 8)) L(`    ${e}`);
+
+  L("");
+  L("─── (4) recall risk ────────────────────────────────────────────────");
+  L(`firing sites of the \`dispatch\` shape (NO chain fallback -> LOSS): ${c2DispatchShapeSites}  (${c2DispatchShapeEdges} edges)`);
+  L(`over-cap "ambiguous" fan-outs the gate would also defer (GAIN):   ${c2AmbiguousWouldDefer}`);
+  L("  (production emits nothing at an over-cap site and does NOT fall back to the");
+  L("   chain; this harness does, so the A/B below does not credit those.)");
+
+  L("");
+  L("─── (5) gate gap vs the 2026-08-02 residual predicate ──────────────");
+  L(`ungated predicate (no subtype gate, plural stem, 2-tier existence): ${c2RsSites} sites / ${c2RsEdges} edges`);
+  L(`  of those: exact IS in the fan-out ${c2RsContains}, NOT in it ${c2RsLacks}`);
+  L(`production predicate (shipped wob7g gate):                          ${c2Sites} sites / ${c2Edges} edges`);
+  L("  sites the ungated predicate accepts and production declines, by reason:");
+  for (const [k, n] of Object.entries(c2GateGapReason).sort((a, b) => b[1] - a[1])) {
+    L(`      ${String(n).padStart(6)}  ${k}`);
+  }
+
+  L("");
+  L("─── (6) EDGE TRUTH — the regression channel, on the labelled sample ─");
+  L("population: receivers a REAL fact types AND the convention types too.");
+  L("(the C2 population itself carries no fact, by construction — see header)");
+  L(`graded samples:                       ${c2Truth.graded}`);
+  L(`  fact type absent from the table:    ${c2Truth.factTypeAbsentFromTable}  (cannot referee)`);
+  L(`  silent (convention emits no edge):  ${c2Truth.silent}`);
+  L(`  fact's own class pins nothing:      ${c2Truth.factHasNoTarget}`);
+  L(`  rightTarget (guess == fact):        ${c2Truth.rightTarget}`);
+  L(`  sameTarget  (differs, same symbol): ${c2Truth.sameTarget}`);
+  L(`  wrongTarget (differs, real error):  ${c2Truth.wrongTarget}   <-- the regression shape`);
+  const emitted = c2Truth.rightTarget + c2Truth.sameTarget + c2Truth.wrongTarget;
+  L(
+    `  edge accuracy over emitting samples: ${emitted === 0 ? "n/a" : fmtPct((emitted - c2Truth.wrongTarget) / emitted)}` +
+      `  (${emitted} emitting samples)`,
+  );
+  L("  crossed with fan-out containment of the TRUE target:");
+  L(`      truth IS in the removable fan-out: right=${c2TruthInFanout.rightTarget} same=${c2TruthInFanout.sameTarget} wrong=${c2TruthInFanout.wrongTarget}`);
+  L(`      truth NOT in the fan-out:          right=${c2TruthNoFanout.rightTarget} same=${c2TruthNoFanout.sameTarget} wrong=${c2TruthNoFanout.wrongTarget}`);
+  L("  only `wrong AND truth-in-fan-out` LOSES a true edge; `wrong AND not-in-fan-out`");
+  L("  swaps one wrong edge set for one wrong edge and costs nothing.");
+  const lossRate = emitted === 0 ? 0 : c2TruthInFanout.wrongTarget / emitted;
+  L(`  measured loss rate: ${fmtPct(lossRate)}  ->  projected onto ${c2Sites} firing sites: ${(lossRate * c2Sites).toFixed(1)} calls`);
+  for (const e of c2WrongExamples.slice(0, 10)) L(`    ${e}`);
+
+  L("");
+  L("─── (6b) EDGE TRUTH scoped to @ivar — the C2b population's own sample ─");
+  L("same grading, restricted to receivers `ivarFieldOwnsReceiver` claims: cut 1");
+  L("says every firing site is one, so this is the labelled evidence closest to");
+  L("the sites the collapse actually removes edges from.");
+  L(`graded samples:                       ${c2IvarTruth.graded}`);
+  L(`  fact type absent from the table:    ${c2IvarTruth.factTypeAbsentFromTable}  (cannot referee)`);
+  L(`  silent (convention emits no edge):  ${c2IvarTruth.silent}`);
+  L(`  fact's own class pins nothing:      ${c2IvarTruth.factHasNoTarget}`);
+  L(`  rightTarget (guess == fact):        ${c2IvarTruth.rightTarget}`);
+  L(`  sameTarget  (differs, same symbol): ${c2IvarTruth.sameTarget}`);
+  L(`  wrongTarget (differs, real error):  ${c2IvarTruth.wrongTarget}   <-- the regression shape`);
+  const ivarEmitted = c2IvarTruth.rightTarget + c2IvarTruth.sameTarget + c2IvarTruth.wrongTarget;
+  L(
+    `  edge accuracy over emitting samples: ${ivarEmitted === 0 ? "n/a" : fmtPct((ivarEmitted - c2IvarTruth.wrongTarget) / ivarEmitted)}` +
+      `  (${ivarEmitted} emitting samples)`,
+  );
+  L("  crossed with fan-out containment of the TRUE target:");
+  L(`      truth IS in the removable fan-out: right=${c2IvarTruthInFanout.rightTarget} same=${c2IvarTruthInFanout.sameTarget} wrong=${c2IvarTruthInFanout.wrongTarget}`);
+  L(`      truth NOT in the fan-out:          right=${c2IvarTruthNoFanout.rightTarget} same=${c2IvarTruthNoFanout.sameTarget} wrong=${c2IvarTruthNoFanout.wrongTarget}`);
+  const ivarLossRate = ivarEmitted === 0 ? 0 : c2IvarTruthInFanout.wrongTarget / ivarEmitted;
+  L(
+    `  measured loss rate: ${fmtPct(ivarLossRate)}  ->  projected onto ${c2Sites} firing sites: ` +
+      `${(ivarLossRate * c2Sites).toFixed(1)} calls`,
+  );
+  L("  (a containment count of 0 would make the sample UNINFORMATIVE about removal;");
+  L("   it is the `truth IS in the removable fan-out` row that gives it standing.)");
+
+  // ── edge arithmetic + exactRatio ─────────────────────────────────────────
+  // The SHIPPABLE gate excludes the `dispatch` shape (cut 4). `dispatchArgs`
+  // sites already contribute their chain edge to the baseline census, so the
+  // collapse ADDS an exact edge only at `normal`-shaped sites.
+  const shipSites = c2Sites - c2DispatchShapeSites;
+  const shipRemoved = c2Edges - c2DispatchShapeEdges;
+  const shipAdded = c2ByShape.normal ?? 0;
+  const exactBase = c2ExactEdgesTotal;
+  const fanBase = c2FanoutEdgesTotal;
+  const ratio = (e: number, f: number): number => (e + f === 0 ? 0 : e / (e + f));
+  const exactWide = exactBase + shipAdded;
+  const fanWide = fanBase - shipRemoved;
+  const ratioDelta = (ratio(exactWide, fanWide) - ratio(exactBase, fanBase)) * 100;
+  L("");
+  L("─── edge arithmetic — graph precision (shippable gate, no `dispatch`) ─");
+  L(`fan-out edges emitted run-wide:        ${fanBase}`);
+  L(`exact (single-target chain) edges:     ${exactBase}`);
+  L(`edges REMOVED by the collapse:         ${shipRemoved}   (${shipSites} sites)`);
+  L(`edges ADDED by the collapse:           ${shipAdded}`);
+  L(`net edge delta:                        ${shipAdded - shipRemoved}`);
+  L(
+    `exactRatio (exact / (exact + fan-out)): ${fmtPct(ratio(exactBase, fanBase))} -> ${fmtPct(ratio(exactWide, fanWide))}` +
+      `   (${(ratioDelta >= 0 ? "+" : "") + ratioDelta.toFixed(4)}pp)`,
+  );
+  L("fan-out edges by edgeKind (baseline):");
+  for (const [k, n] of Object.entries(c2FanoutEdgesByKind).sort((a, b) => b[1] - a[1])) {
+    L(`      ${String(n).padStart(8)}  ${k}`);
+  }
+  L(`dispatchArgs-shaped calls the census had to re-resolve: ${c2DispatchArgsCalls}`);
+  L("");
+  L("─── recall projection ──────────────────────────────────────────────");
+  L("Every firing site is `resolved` at baseline (a non-empty fan-out sets it), and");
+  L("stays resolved after the collapse whenever the chain answers — so call-level");
+  L(`recall moves only through the ${c2ChainNull} chain-null sites and the`);
+  L(`${c2DispatchShapeSites} \`dispatch\`-shaped ones the shippable gate excludes.`);
+
+  if (!existsSync(OUT_DIR)) mkdirSync(OUT_DIR, { recursive: true });
+  writeFileSync(
+    OUT_C2COLLAPSE,
+    JSON.stringify(
+      {
+        meta: {
+          generatedAt: new Date().toISOString(),
+          callsAttempted,
+          callsWithFanout: c2CallsWithFanout,
+          dispatchArgsCalls: c2DispatchArgsCalls,
+        },
+        population: {
+          sites: c2Sites,
+          edges: c2Edges,
+          wideSites: c2WideSites,
+          byCallShape: c2ByShape,
+          edgesByCallShape: c2EdgesByShape,
+          byReceiverKind: c2ByKind,
+        },
+        containment: {
+          conventionEdgeInFanout: c2Contains,
+          conventionEdgeInFanoutEdges: c2ContainsEdges,
+          conventionEdgeMissingFromFanout: c2Lacks,
+          conventionEdgeMissingFromFanoutEdges: c2LacksEdges,
+          distinctTargetsKept: c2KeptTargets.size,
+          distinctTargetsExtinguished: c2RemovedTargets.size,
+          examplesContains: c2ContainsExamples,
+          examplesLacks: c2LacksExamples,
+        },
+        chainFidelity: {
+          agrees: c2ChainAgrees,
+          differs: c2ChainDiffers,
+          nulls: c2ChainNull,
+          nullByCallShape: c2ChainNullByShape,
+          examplesDiffer: c2ChainDifferExamples,
+        },
+        recallRisk: {
+          dispatchShapeSites: c2DispatchShapeSites,
+          dispatchShapeEdges: c2DispatchShapeEdges,
+          ambiguousWouldDefer: c2AmbiguousWouldDefer,
+        },
+        gateGap: {
+          ungated: { sites: c2RsSites, edges: c2RsEdges, contains: c2RsContains, lacks: c2RsLacks },
+          production: { sites: c2Sites, edges: c2Edges, contains: c2Contains, lacks: c2Lacks },
+          declinedByReason: c2GateGapReason,
+        },
+        edgeTruth: {
+          ...c2Truth,
+          truthInRemovableFanout: c2TruthInFanout,
+          truthNotInFanout: c2TruthNoFanout,
+          measuredLossRate: emitted === 0 ? 0 : c2TruthInFanout.wrongTarget / emitted,
+          projectedLostCalls: emitted === 0 ? 0 : (c2TruthInFanout.wrongTarget / emitted) * c2Sites,
+          wrongExamples: c2WrongExamples,
+        },
+        edgeTruthIvarScoped: {
+          ...c2IvarTruth,
+          truthInRemovableFanout: c2IvarTruthInFanout,
+          truthNotInFanout: c2IvarTruthNoFanout,
+          measuredLossRate: ivarLossRate,
+          projectedLostCalls: ivarLossRate * c2Sites,
+        },
+        edges: {
+          fanoutTotal: fanBase,
+          fanoutByKind: c2FanoutEdgesByKind,
+          exactTotal: exactBase,
+          shippable: { sites: shipSites, removed: shipRemoved, added: shipAdded, net: shipAdded - shipRemoved },
+          exactRatioBaseline: ratio(exactBase, fanBase),
+          exactRatioProjected: ratio(exactWide, fanWide),
+        },
+      },
+      null,
+      2,
+    ),
+  );
+  L("");
+  L(`convention-collapse oracle detail -> ${OUT_C2COLLAPSE}`);
+}
+
+// ===========================================================================
+// C3 — THE ivarField TERMINAL CONVENTION TIER (CODEGRAPH_IVARCONV_ORACLE=1,
+// bd tea-rags-mcp-r2gjj). Same additive, env-gated contract as every oracle
+// above: with the flag unset nothing extra is replayed or reported and the A/B
+// recall metrics are byte-identical.
+//
+// The 2026-08-02 residual taxonomy attributed 2685 misses (16.8% of the hole
+// then) to the `ivarField` terminal. Those receivers are the SAME
+// convention-typable names the wob7g convention pass acts on — `@user`,
+// `@firm`, `@recurring_invoice` — but `ivarField` DROPs at chain position 4 and
+// `conventionReceiver` sits at position 12, so the pass that would type them
+// never sees them. That is a chain-ORDER fact, not a typing fact, and it is
+// what this oracle prices.
+//
+// Three cuts:
+//
+//   1. DROP OWNERSHIP over the CURRENT chain. The residual oracle's own chain
+//      copy predates wob7g (it has no `conventionReceiver` slot), so its owner
+//      table can no longer be read as today's. This one restates the production
+//      array as it stands and validates every replay against the live resolver,
+//      giving the `ivarField` bucket a number measured on the branch under test.
+//
+//   2. THE ADDRESSABLE SUBSET. For each `ivarField`-owned miss, ask the
+//      PRODUCTION `conventionReceiverType` — the wob7g helper, with its
+//      existence gate and its mandatory no-subtypes gate — and then the same
+//      pinned terminal `conventionReceiver` demands. Splitting the declines by
+//      reason (shape / keyword / no such class / subtype-gated / MRO silent /
+//      file-only) is what turns "16.8% of the hole" into a prediction.
+//
+//   3. THE HONEST A/B. The production chain rebuilt with ONE slot swapped: an
+//      `ivarField` that consults the convention when — and only when — every
+//      existing ivar channel has declined. Movement is scored through the same
+//      `resolvePass2` semantics the residual oracle uses (`rsResolvedFlag` /
+//      `rsChainIsConsulted`), so the number is comparable to every prior A/B.
+//
+// Plus the regression channel the bead names: ivars a fact channel ALREADY
+// types are graded against the convention guess (class level and edge level),
+// and any `resolved -> …` transition in the A/B is reported as a defect rather
+// than a trade-off — the tier is strictly additive by construction and the
+// measurement has to show it.
+// ===========================================================================
+const IVARCONV_ENABLED = process.env.CODEGRAPH_IVARCONV_ORACLE === "1";
+const OUT_IVARCONV = join(OUT_DIR, "c3ivar-oracle.json");
+const IC_EXAMPLE_CAP = 15;
+
+const IC_CFG: ResolverConfig = { mode: DEFAULT_AMBIGUOUS_RESOLVE_MODE, coneMax: CONE_MAX_DEFAULT };
+
+/** A single instance-variable receiver — the `ivarField` entry guard's shape. */
+const IC_IVAR_RECEIVER = /^@\w+$/;
+/** The convention tier's own surface (`CONVENTION_RECEIVER` in type-propagation). */
+const IC_CONVENTION_SHAPE = /^@{0,2}[a-z_][a-z0-9_]*$/;
+
+/**
+ * The candidate: `ivarField` with a convention tier appended AFTER its existing
+ * channels. Wraps the production strategy rather than restating it, so the
+ * entry guard, the fact channels and the DROP semantics cannot drift from what
+ * ships — the tier is reached only on the exact outcome it is meant to replace,
+ * a DROP, and every CONTINUE / resolved answer passes through untouched.
+ *
+ * `requireNoFact` is the axis under test, and it is not cosmetic. An ivar the
+ * fact channels DID type can still reach the DROP: a gem type has no project
+ * file, so the terminal declines and `RubyExternalVocabulary` reclassifies the
+ * call as external (`ivarTargetsExternal`) — honestly out of the denominator.
+ * Letting the convention answer there overrides a DECLARED type with a guess
+ * AND drags the call back into the denominator as a resolution. `true` gates on
+ * "no channel recorded a type at all", which is what "every existing ivar
+ * channel declined" actually means; `false` measures the upper bound so the
+ * cost of the gate is a number rather than an assertion.
+ */
+class IcIvarFieldConventionStrategy implements SymbolResolutionStrategy {
+  readonly name = "ivarField";
+  private readonly inner: RubyIvarFieldSymbolResolutionStrategy;
+  constructor(
+    private readonly cfg: ResolverConfig,
+    private readonly requireNoFact: boolean,
+  ) {
+    this.inner = new RubyIvarFieldSymbolResolutionStrategy(cfg);
+  }
+
+  attempt(call: CallRef, ctx: CallContext): SymbolResolutionOutcome {
+    const outcome = this.inner.attempt(call, ctx);
+    if (outcome.kind !== "drop") return outcome;
+    if (this.requireNoFact && ivarTypeName(call.receiver as string, ctx) !== undefined) return outcome;
+    const target = icConventionTarget(call, ctx, this.cfg.mode);
+    return target === null ? outcome : resolvedOutcome(target);
+  }
+}
+
+/**
+ * The tier itself, isolated so the probe and the spliced strategy ask exactly
+ * the same question. Gates, in order: the wob7g helper (`@` stripped, class
+ * exists, no declared subtypes), instance-method MRO walk, and the pinned
+ * terminal — a file-only edge is declined for the reason `conventionReceiver`
+ * declines it (invisible to `get_callers`, inflates file fan-in on the biggest
+ * models in the app).
+ */
+function icConventionTarget(
+  call: CallRef,
+  ctx: CallContext,
+  mode: typeof DEFAULT_AMBIGUOUS_RESOLVE_MODE,
+): SymbolResolutionTarget | null {
+  const { receiver } = call;
+  if (receiver === null) return null;
+  const type = conventionReceiverType(receiver, ctx);
+  if (type?.form !== "instance") return null;
+  const target = resolveTypeInstanceMethod(type.name, call.member, ctx, mode);
+  if (target === null) return null;
+  return target.targetSymbolId === null ? null : target;
+}
+
+/**
+ * `RubyCallResolver`'s strategy array as it stands on this branch, optionally
+ * with the `ivarField` slot swapped for the candidate. Restated rather than
+ * imported for the reason every oracle here gives: a chain shared with the code
+ * it evaluates cannot disagree with it. `icMirrorDisagreed` grades this copy
+ * against the live resolver on every call the oracle replays, so a re-ordering
+ * this copy fails to track cannot pass silently.
+ */
+function icBuildChain(cfg: ResolverConfig, ivarField: SymbolResolutionStrategy): SymbolResolutionStrategy[] {
+  return [
+    new RubySuperSymbolResolutionStrategy(cfg),
+    new RubySelfMemberSymbolResolutionStrategy(cfg),
+    new RubyLocalTypeSymbolResolutionStrategy(cfg),
+    ivarField,
+    new RubyReturnTypeBindingSymbolResolutionStrategy(cfg),
+    new RubyEnqueueDispatchSymbolResolutionStrategy(cfg),
+    new RubySelfDispatchEntrySymbolResolutionStrategy(cfg),
+    new RubyConstantSymbolResolutionStrategy(cfg),
+    new RubyExplicitRequireSymbolResolutionStrategy(cfg),
+    new RubyChainTypeSymbolResolutionStrategy(cfg),
+    new RubyArRelationGuardSymbolResolutionStrategy(cfg),
+    new RubyConventionReceiverSymbolResolutionStrategy(cfg),
+    new RubyReceiverSetDropSymbolResolutionStrategy(cfg),
+    new RubyBareCallSymbolResolutionStrategy(cfg),
+    new RubySchemaColumnSymbolResolutionStrategy(),
+  ];
+}
+
+/** The two shapes priced side by side; `gated` is the shippable one. */
+const IC_VARIANTS = ["gated", "ungated"] as const;
+type IcVariant = (typeof IC_VARIANTS)[number];
+const IC_VARIANT_LABEL: Record<IcVariant, string> = {
+  gated: "tier fires only when NO channel recorded a type   <-- SHIPPABLE",
+  ungated: "tier fires on any ivarField DROP (upper bound, overrides declared gem types)",
+};
+
+const icBaseChain = icBuildChain(IC_CFG, new RubyIvarFieldSymbolResolutionStrategy(IC_CFG));
+const icVariantChain: Record<IcVariant, SymbolResolutionStrategy[]> = {
+  gated: icBuildChain(IC_CFG, new IcIvarFieldConventionStrategy(IC_CFG, true)),
+  ungated: icBuildChain(IC_CFG, new IcIvarFieldConventionStrategy(IC_CFG, false)),
+};
+
+function icEmptyByVariant<T>(make: () => T): Record<IcVariant, T> {
+  return Object.fromEntries(IC_VARIANTS.map((v) => [v, make()])) as Record<IcVariant, T>;
+}
+
+// ---- state ---------------------------------------------------------------
+/** Every miss attributed to the strategy that DROPped it, on the CURRENT chain. */
+const icDropOwner = new Map<string, number>();
+/** The `ivarField`-owned bucket, cut by why the convention tier does or does not fire. */
+const icCut = {
+  total: 0,
+  chainNotConsulted: 0,
+  factRecorded: 0,
+  notConventionShape: 0,
+  keywordOrLiteral: 0,
+  noSuchClass: 0,
+  subtypeGated: 0,
+  mroSilent: 0,
+  fileOnly: 0,
+  pinned: 0,
+};
+const icIvarMissByReceiver = new Map<string, number>();
+const icPinnedByReceiver = new Map<string, number>();
+const icPinnedExample: string[] = [];
+const icSubtypeGatedBy = new Map<string, number>();
+const icNoClassBy = new Map<string, number>();
+
+/** A/B movement through the full `resolvePass2` semantics, per variant. */
+const icMove: Record<IcVariant, Map<string, number>> = icEmptyByVariant(() => new Map<string, number>());
+const icMoveExample: Record<IcVariant, string[]> = icEmptyByVariant((): string[] => []);
+const icNewTargets: Record<IcVariant, Set<string>> = icEmptyByVariant(() => new Set<string>());
+
+/** Fidelity: the oracle's own no-swap chain vs the production resolver. */
+let icMirrorChecked = 0;
+let icMirrorDisagreed = 0;
+
+/**
+ * REGRESSION CHANNEL — ivars a fact channel ALREADY types. The tier can never
+ * fire on them (it runs only on a DROP, and a typed ivar either resolves or is
+ * dropped for a member the type does not declare), so these are pure labelled
+ * examples: what WOULD the convention have said, and would it have emitted a
+ * different edge?
+ */
+const icTyped = { graded: 0, agree: 0, disagree: 0, factAbsentFromTable: 0, noGuess: 0 };
+const icTypedDisagreeBy = new Map<string, number>();
+const icEdge = { rightTarget: 0, sameTarget: 0, wrongTarget: 0, silent: 0 };
+const icEdgeWrongBy = new Map<string, number>();
+const icEdgeWrongExample: string[] = [];
+
+/** The strategy that decided this call on the current chain, and its target. */
+function icReplay(call: CallRef, ctx: CallContext): { owner: string; target: SymbolResolutionTarget | null } {
+  for (const strategy of icBaseChain) {
+    const outcome = strategy.attempt(call, ctx);
+    if (outcome.kind === "resolved") return { owner: `resolved:${strategy.name}`, target: outcome.target };
+    if (outcome.kind === "drop") return { owner: strategy.name, target: null };
+  }
+  return { owner: "exhausted", target: null };
+}
+
+/** Why `conventionReceiverType` declined — diagnostics only, never a decision. */
+function icDeclineReason(receiver: string, ctx: CallContext): "shape" | "keyword" | "noClass" | "subtypes" {
+  if (!IC_CONVENTION_SHAPE.test(receiver)) return "shape";
+  const bare = receiver.replace(/^@{1,2}/, "");
+  if (RS_RECEIVER_KEYWORDS.has(bare)) return "keyword";
+  const name = rsCamelize(bare);
+  if (name.length === 0 || ctx.symbolTable.lookupByShortName(name).length === 0) return "noClass";
+  return "subtypes";
+}
+
+/**
+ * Grade the convention against a REAL ivar fact. Class level first (does
+ * camelize name the type the fact names), then edge level — the number that
+ * decides, because a wrong class only does damage when its MRO also answers the
+ * member, and even then the two can share the definer.
+ */
+function icNoteTypedIvar(call: CallRef, ctx: CallContext, relPath: string): void {
+  const receiver = call.receiver as string;
+  const factName = ivarTypeName(receiver, ctx);
+  if (factName === undefined) return;
+  const guess = conventionReceiverType(receiver, ctx);
+  if (guess?.form !== "instance") {
+    icTyped.noGuess += 1;
+    return;
+  }
+  const factTail = lastConstantSegment(factName);
+  if (ctx.symbolTable.lookupByShortName(factTail).length === 0) {
+    icTyped.factAbsentFromTable += 1;
+    return;
+  }
+  icTyped.graded += 1;
+  const agrees = factTail === guess.name;
+  if (agrees) icTyped.agree += 1;
+  else {
+    icTyped.disagree += 1;
+    rsBump(icTypedDisagreeBy, `${receiver} → guess ${guess.name}, fact ${factTail}`);
+  }
+
+  const pinnedOn = (typeName: string): string | null =>
+    resolveTypeInstanceMethod(typeName, call.member, ctx, IC_CFG.mode)?.targetSymbolId ?? null;
+  const guessTarget = pinnedOn(guess.name);
+  if (guessTarget === null) {
+    if (!agrees) icEdge.silent += 1;
+    return;
+  }
+  if (agrees) {
+    icEdge.rightTarget += 1;
+    return;
+  }
+  const factTarget = pinnedOn(factTail);
+  if (factTarget === guessTarget) {
+    icEdge.sameTarget += 1;
+    return;
+  }
+  icEdge.wrongTarget += 1;
+  rsBump(icEdgeWrongBy, `${receiver}.${call.member} → guess ${guessTarget}, fact ${factTarget ?? "(none)"}`);
+  if (icEdgeWrongExample.length < IC_EXAMPLE_CAP) {
+    icEdgeWrongExample.push(`${relPath}:${call.startLine}  ${receiver}.${call.member}  ${guessTarget} vs ${factTarget}`);
+  }
+}
+
+/** The one call-site hook, invoked from `resolvePass2` once the outcome is known. */
+function noteIvarConvCall(
+  call: CallRef,
+  ctx: CallContext,
+  dispatchOutcome: DispatchFanoutOutcome | undefined,
+  baseOutcome: LcOutcome,
+  _receiverKind: ReceiverKind,
+  relPath: string,
+): void {
+  const { receiver } = call;
+  const isIvar = receiver !== null && IC_IVAR_RECEIVER.test(receiver) && ctx.callerScope.length > 0;
+
+  // ---- regression channel: every fact-typed ivar is a labelled example.
+  if (isIvar) icNoteTypedIvar(call, ctx, relPath);
+
+  // Outside a miss, only a call the tier could actually fire on is worth a replay.
+  const tierCouldFire = isIvar && icConventionTarget(call, ctx, IC_CFG.mode) !== null;
+  if (baseOutcome !== "miss" && !tierCouldFire) return;
+
+  const dispatchEdges = dispatchOutcome?.kind === "edges" ? dispatchOutcome.edges.length : 0;
+  const replay = icReplay(call, ctx);
+
+  if (baseOutcome === "miss") {
+    rsBump(icDropOwner, replay.owner);
+    if (replay.owner === "ivarField") {
+      icCut.total += 1;
+      rsBump(icIvarMissByReceiver, receiver as string);
+      const ivar = receiver as string;
+      const type = conventionReceiverType(ivar, ctx);
+      if (ivarTypeName(ivar, ctx) !== undefined) icCut.factRecorded += 1;
+      if (!rsChainIsConsulted(call, dispatchEdges)) icCut.chainNotConsulted += 1;
+      else if (type?.form !== "instance") {
+        const reason = icDeclineReason(ivar, ctx);
+        if (reason === "shape") icCut.notConventionShape += 1;
+        else if (reason === "keyword") icCut.keywordOrLiteral += 1;
+        else if (reason === "noClass") {
+          icCut.noSuchClass += 1;
+          rsBump(icNoClassBy, ivar);
+        } else {
+          icCut.subtypeGated += 1;
+          rsBump(icSubtypeGatedBy, ivar);
+        }
+      } else {
+        const target = resolveTypeInstanceMethod(type.name, call.member, ctx, IC_CFG.mode);
+        if (target === null) icCut.mroSilent += 1;
+        else if (target.targetSymbolId === null) icCut.fileOnly += 1;
+        else {
+          icCut.pinned += 1;
+          rsBump(icPinnedByReceiver, `${ivar} → ${type.name}`);
+          if (icPinnedExample.length < IC_EXAMPLE_CAP) {
+            icPinnedExample.push(`${relPath}:${call.startLine}  ${ivar}.${call.member}  ->  ${target.targetSymbolId}`);
+          }
+        }
+      }
+    }
+  }
+
+  // ---- cut 3: the honest A/B, only where the chain's answer is READ.
+  if (!rsChainIsConsulted(call, dispatchEdges)) return;
+  const rs = resolver;
+  if (rs !== undefined) {
+    icMirrorChecked += 1;
+    const production = rs.resolve(call, ctx);
+    const mine = replay.target === null ? null : redirectSelfDispatchTemplate(replay.target, call, ctx, IC_CFG.mode);
+    const same =
+      production === null || mine === null
+        ? production === mine
+        : production.targetRelPath === mine.targetRelPath && production.targetSymbolId === mine.targetSymbolId;
+    if (!same) icMirrorDisagreed += 1;
+  }
+  for (const variant of IC_VARIANTS) {
+    const target = rsRunChain(icVariantChain[variant], call, ctx);
+    const after: LcOutcome = rsResolvedFlag(call, dispatchEdges, target) ? "resolved" : baseOutcome;
+    if (after === baseOutcome) continue;
+    rsBump(icMove[variant], `${baseOutcome} -> ${after}`);
+    if (target !== null && target.targetSymbolId !== null) icNewTargets[variant].add(target.targetSymbolId);
+    if (icMoveExample[variant].length < IC_EXAMPLE_CAP * 2) {
+      icMoveExample[variant].push(
+        `${relPath}:${call.startLine}  ${receiver ?? "-"}.${call.member}  ->  ${target?.targetSymbolId ?? "(file-only)"}`,
+      );
+    }
+  }
+}
+
+function runIvarConvOracle(): void {
+  const L = (s: string) => {
+    console.log(s);
+  };
+  const hole = misses.length;
+  const pct = (n: number) => `${((n / Math.max(1, hole)) * 100).toFixed(1)}%`;
+  const share = (n: number) => `${((n / Math.max(1, icCut.total)) * 100).toFixed(1)}%`;
+  L("");
+  L("═══════════════════════════════════════════════════════════════════");
+  L("  C3 — ivarField TERMINAL CONVENTION TIER (bd tea-rags-mcp-r2gjj)");
+  L("═══════════════════════════════════════════════════════════════════");
+  L(`recall hole (misses):                     ${hole}`);
+  L(`chain-fidelity checks / disagreements:    ${icMirrorChecked} / ${icMirrorDisagreed}`);
+  L("");
+
+  L("─── CUT 1: drop ownership on the CURRENT chain ────────────────────");
+  L("owner                     total   share of hole");
+  for (const [owner, n] of [...icDropOwner.entries()].sort((a, b) => b[1] - a[1])) {
+    L(`${owner.padEnd(24)}  ${String(n).padStart(6)}  ${pct(n).padStart(7)}`);
+  }
+  L("");
+
+  L("─── CUT 2: the ivarField bucket, cut by the convention tier ───────");
+  L(`  ivarField-owned misses:                  ${icCut.total}  ${pct(icCut.total)} of the hole`);
+  L(`    a channel DID record a type (gem etc):  ${icCut.factRecorded}  ${share(icCut.factRecorded)}`);
+  L(`    chain answer not read (dispatch call):  ${icCut.chainNotConsulted}  ${share(icCut.chainNotConsulted)}`);
+  L(`    receiver not convention-shaped:         ${icCut.notConventionShape}  ${share(icCut.notConventionShape)}`);
+  L(`    receiver is a keyword / literal:        ${icCut.keywordOrLiteral}  ${share(icCut.keywordOrLiteral)}`);
+  L(`    convention names no in-project class:   ${icCut.noSuchClass}  ${share(icCut.noSuchClass)}`);
+  L(`    class exists but HAS SUBTYPES (gated):  ${icCut.subtypeGated}  ${share(icCut.subtypeGated)}`);
+  L(`    class typed, MRO yields NO target:      ${icCut.mroSilent}  ${share(icCut.mroSilent)}`);
+  L(`    class typed, FILE-ONLY edge (declined): ${icCut.fileOnly}  ${share(icCut.fileOnly)}`);
+  L(`    class typed, METHOD-PINNED edge:        ${icCut.pinned}  ${share(icCut.pinned)}   <-- PREDICTED`);
+  L("");
+  L("  top ivarField-owned miss receivers:");
+  for (const [k, n] of [...icIvarMissByReceiver.entries()].sort((a, b) => b[1] - a[1]).slice(0, 20)) {
+    L(`      ${String(n).padStart(5)}  ${k}`);
+  }
+  L("  top PINNED receivers (what the tier would type):");
+  for (const [k, n] of [...icPinnedByReceiver.entries()].sort((a, b) => b[1] - a[1]).slice(0, 20)) {
+    L(`      ${String(n).padStart(5)}  ${k}`);
+  }
+  for (const ex of icPinnedExample.slice(0, 8)) L(`      e.g. ${ex}`);
+  L("  top subtype-GATED receivers (precision gate earning its keep):");
+  for (const [k, n] of [...icSubtypeGatedBy.entries()].sort((a, b) => b[1] - a[1]).slice(0, 12)) {
+    L(`      ${String(n).padStart(5)}  ${k}`);
+  }
+  L("  top receivers naming no class:");
+  for (const [k, n] of [...icNoClassBy.entries()].sort((a, b) => b[1] - a[1]).slice(0, 12)) {
+    L(`      ${String(n).padStart(5)}  ${k}`);
+  }
+  L("");
+
+  L("─── CUT 3: A/B with the tier spliced into ivarField ───────────────");
+  const abByVariant = icEmptyByVariant(() => ({ fromMiss: 0, gained: 0, regressions: 0, newHole: 0, recallAfter: 0 }));
+  for (const variant of IC_VARIANTS) {
+    const moveRows = [...icMove[variant].entries()].sort((a, b) => b[1] - a[1]);
+    const ab = abByVariant[variant];
+    for (const [k, n] of moveRows) {
+      ab.gained += n;
+      if (k.startsWith("miss ->")) ab.fromMiss += n;
+      if (k.startsWith("resolved ->")) ab.regressions += n;
+    }
+    ab.newHole = hole - ab.fromMiss;
+    const resolvedAfter = callsResolved + ab.gained;
+    ab.recallAfter = resolvedAfter + ab.newHole === 0 ? 0 : resolvedAfter / (resolvedAfter + ab.newHole);
+    L(`  variant ${IC_VARIANT_LABEL[variant]}:`);
+    for (const [k, n] of moveRows) L(`      ${String(n).padStart(6)}  ${k}`);
+    L(`      distinct NEW method targets:  ${icNewTargets[variant].size}`);
+    L(`      hole ${hole} -> ${ab.newHole}   (-${ab.fromMiss})`);
+    L(
+      `      inProjectEdgeRecall ${fmtPct(callsResolved / Math.max(1, callsResolved + hole))} -> ${fmtPct(ab.recallAfter)}`,
+    );
+    L(`      REGRESSIONS (resolved -> anything):  ${ab.regressions}   <-- MUST be 0`);
+    for (const ex of icMoveExample[variant].slice(0, 8)) L(`      e.g. ${ex}`);
+  }
+  L("");
+
+  L("─── REGRESSION CHANNEL: convention graded on fact-typed ivars ─────");
+  L(`  fact-typed ivar sites graded:            ${icTyped.graded}`);
+  L(`    convention AGREES with the fact:       ${icTyped.agree}`);
+  L(`    convention DISAGREES:                  ${icTyped.disagree}`);
+  L(
+    `    class accuracy:                        ${icTyped.graded === 0 ? "n/a" : `${((icTyped.agree / icTyped.graded) * 100).toFixed(2)}%`}`,
+  );
+  L(`  fact names a type absent from the table: ${icTyped.factAbsentFromTable}  (unrefereeable)`);
+  L(`  convention declines to guess at all:     ${icTyped.noGuess}`);
+  for (const [k, n] of [...icTypedDisagreeBy.entries()].sort((a, b) => b[1] - a[1]).slice(0, 12)) {
+    L(`      ${String(n).padStart(5)}  ${k}`);
+  }
+  const emitted = icEdge.rightTarget + icEdge.sameTarget + icEdge.wrongTarget;
+  L("  EDGE-LEVEL (what the tier would actually emit on these sites):");
+  L(`    emits the SAME target the fact does:   ${icEdge.rightTarget + icEdge.sameTarget}`);
+  L(`        class guess AGREED:                ${icEdge.rightTarget}`);
+  L(`        different class, same target:      ${icEdge.sameTarget}  (shared definer — harmless)`);
+  L(`    emits a DIFFERENT target (real error): ${icEdge.wrongTarget}`);
+  L(
+    `    edge accuracy:                         ${emitted === 0 ? "n/a" : `${(((emitted - icEdge.wrongTarget) / emitted) * 100).toFixed(2)}%`}`,
+  );
+  L(`    wrong class but terminal DECLINES:     ${icEdge.silent}  (no edge — harmless)`);
+  for (const [k, n] of [...icEdgeWrongBy.entries()].sort((a, b) => b[1] - a[1]).slice(0, 12)) {
+    L(`      ${String(n).padStart(5)}  ${k}`);
+  }
+  for (const ex of icEdgeWrongExample.slice(0, 6)) L(`      e.g. ${ex}`);
+  L("");
+
+  if (!existsSync(OUT_DIR)) mkdirSync(OUT_DIR, { recursive: true });
+  writeFileSync(
+    OUT_IVARCONV,
+    JSON.stringify(
+      {
+        hole,
+        fidelity: { checked: icMirrorChecked, disagreed: icMirrorDisagreed },
+        dropOwner: Object.fromEntries([...icDropOwner.entries()].sort((a, b) => b[1] - a[1])),
+        ivarFieldCut: icCut,
+        ivarMissByReceiver: Object.fromEntries([...icIvarMissByReceiver.entries()].sort((a, b) => b[1] - a[1])),
+        pinnedByReceiver: Object.fromEntries([...icPinnedByReceiver.entries()].sort((a, b) => b[1] - a[1])),
+        pinnedExamples: icPinnedExample,
+        subtypeGatedByReceiver: Object.fromEntries([...icSubtypeGatedBy.entries()].sort((a, b) => b[1] - a[1])),
+        noClassByReceiver: Object.fromEntries([...icNoClassBy.entries()].sort((a, b) => b[1] - a[1])),
+        recallBefore: callsResolved / Math.max(1, callsResolved + hole),
+        ab: Object.fromEntries(
+          IC_VARIANTS.map((v) => [
+            v,
+            {
+              label: IC_VARIANT_LABEL[v],
+              moves: Object.fromEntries(icMove[v]),
+              newTargets: icNewTargets[v].size,
+              holeBefore: hole,
+              holeAfter: abByVariant[v].newHole,
+              recallAfter: abByVariant[v].recallAfter,
+              regressions: abByVariant[v].regressions,
+              examples: icMoveExample[v],
+            },
+          ]),
+        ),
+        typedIvarGrading: {
+          ...icTyped,
+          disagreements: Object.fromEntries(icTypedDisagreeBy),
+          edge: { ...icEdge, wrongBy: Object.fromEntries(icEdgeWrongBy), examples: icEdgeWrongExample },
+        },
+      },
+      null,
+      2,
+    ),
+  );
+  L(`c3 ivar-convention report → ${OUT_IVARCONV}`);
+}
+
+// ===========================================================================
+// OVER-CAP AMBIGUOUS EXACT-CHAIN FALLBACK ORACLE (CODEGRAPH_AMBIGCHAIN_ORACLE=1,
+// bd tea-rags-mcp-btxx6). Same additive, env-gated contract as every oracle
+// above: with the flag unset nothing extra is replayed or reported and the A/B
+// recall metrics are byte-identical.
+//
+// The bead it prices is the 55950 leftover. `CODEGRAPH_BAREDEFER_ORACLE=1`
+// reported 405 over-cap `ambiguous` fan-outs on 2026-08-02 that carried a TYPED
+// bare receiver, and flagged them as a channel the harness cannot credit:
+// `CallEdgeResolutionRunner.dispatchCall` returns `"ambiguous"` on an over-cap
+// fan-out with NO exact-chain fallback, while `resolvePass2` here DOES fall back
+// (`noteDispatch` sees an empty edge list and calls `resolver.resolve`). So a
+// site production concedes is a site this harness may already have resolved,
+// and the recall gap between the two is invisible to any harness A/B.
+//
+// Two things that oracle could not answer, and this one does:
+//
+//   1. THE RE-PRICE. `bdAmbiguousWouldDefer` counts only the typed-BARE cut, and
+//      it counts it against a resolver where the typedness gate has since been
+//      widened (commit 35143c48, bd 55950). A typed receiver now returns
+//      `emptyDispatchFanout()` at that gate, several statements BEFORE
+//      `resolveNarrowedFanout` — the one place in the tree that can emit
+//      `{kind: "ambiguous"}` (`dispatch-narrowing.ts`). The typed cut is
+//      therefore 0 by construction, and the population that actually remains is
+//      the UNTYPED one the bead never measured.
+//
+//   2. THE WHOLE POPULATION. Every over-cap `ambiguous` site, asked what the
+//      PRODUCTION chain (`resolver.resolve`, the object `resolvePass2` itself
+//      calls) answers — because a receiver no TYPE channel reaches can still be
+//      answered by a later strategy, and only the chain knows.
+//
+// Production's counters are then RECONSTRUCTED rather than assumed. The two
+// engines differ at exactly one place, so for the `normal` call shape:
+//
+//     production(site) = "ambiguous"          when the fan-out is over-cap
+//     harness(site)    = fallback outcome     (resolved | externalSkipped | …)
+//
+// and every other counter is shared. Subtracting this run's own bucket tallies
+// over the over-cap population from the harness aggregates therefore yields the
+// production aggregates exactly, with no modelling in between. The other two
+// shapes are NOT in the population: `call.dispatch` reads `tableOutcome.edges`
+// (an `ambiguous` outcome is an empty list → `"unresolved"` → miss classifiers,
+// same as here), and `dispatchArgs` runs `resolver.resolve` FIRST, so neither
+// concedes anything the chain could have answered.
+//
+// Both candidate designs are then scored against that reconstruction:
+//
+//   A. CONSULT-THEN-CONCEDE — ask the chain, take its answer when it has one,
+//      otherwise record the `cg_ambiguous_fanout` aggregate exactly as today.
+//      Strictly additive: no site leaves the ambiguous bucket unresolved.
+//   B. FULL FALL-THROUGH — ask the chain, and on null let the call fall to
+//      `classifyMiss`. That is what this harness already does, so variant B's
+//      projection IS the headline recall, and the bucket flips it needs
+//      (`ambiguous → externalSkipped | noInProjectDef | coreAmbiguous | miss`)
+//      are the regression channel the bead demands be priced before code.
+// ===========================================================================
+const AMBIGCHAIN_ENABLED = process.env.CODEGRAPH_AMBIGCHAIN_ORACLE === "1";
+const OUT_AMBIGCHAIN = join(OUT_DIR, "ambigchain-oracle.json");
+const AC_EXAMPLE_CAP = 20;
+
+const AC_CFG: ResolverConfig = { mode: DEFAULT_AMBIGUOUS_RESOLVE_MODE, coneMax: CONE_MAX_DEFAULT };
+/** The production strategy, asked what IT alone answers — the DROP channel. */
+const acChainTypeStrategy = new RubyChainTypeSymbolResolutionStrategy(AC_CFG);
+
+interface AcExample {
+  where: string;
+  caller: string;
+  receiver: string;
+  member: string;
+  kind: ReceiverKind;
+  shape: string;
+  candidateCount: number;
+  receiverType: string;
+  chainTarget: string;
+  chainTypeVerdict: string;
+  harnessOutcome: LcOutcome;
+}
+
+/** Population: every call whose dispatch fan-out came back over-cap `ambiguous`. */
+let acTotal = 0;
+const acByShape: Record<string, number> = {};
+const acByKind: Record<string, number> = {};
+const acByMember: Record<string, number> = {};
+let acCandidateSum = 0;
+/** Fidelity: after 55950 the typedness gate precedes the cap, so this must be 0. */
+let acTypedReceiver = 0;
+let acTypedBare = 0;
+/** The `normal` shape — the ONLY shape production concedes on. */
+let acNormal = 0;
+/** Harness bucket over the normal-shape population = what production gives up. */
+const acNormalByBucket: Record<string, number> = {};
+/** The chain's own answer at those sites (production `resolver.resolve`). */
+let acChainResolved = 0;
+let acChainMethodLevel = 0;
+let acChainFileOnly = 0;
+const acChainResolvedByKind: Record<string, number> = {};
+const acChainResolvedByMember: Record<string, number> = {};
+/** `chainType` standing alone — separates "the type is fiction" from "no member". */
+const acChainTypeVerdict: Record<string, number> = {};
+/** Fidelity: the chain answer must agree with the outcome `resolvePass2` recorded. */
+let acDisagreed = 0;
+const acDisagreeExamples: string[] = [];
+const acGainExamples: AcExample[] = [];
+const acConcedeExamples: AcExample[] = [];
+
+function acBump(bag: Record<string, number>, key: string): void {
+  bag[key] = (bag[key] ?? 0) + 1;
+}
+
+/** Which of the three `resolvePass2` call shapes this call takes. */
+function acCallShape(call: CallRef): "dispatch" | "dispatchArgs" | "normal" {
+  if (call.dispatch) return "dispatch";
+  if (call.dispatchArgs && call.dispatchArgs.length > 0) return "dispatchArgs";
+  return "normal";
+}
+
+function acRefText(ref: ReturnType<typeof typeOfReceiver>): string {
+  if (ref === undefined) return "-";
+  if (ref.form === "nil") return "nil";
+  if (ref.form === "container") return "container";
+  if (ref.form === "union") return "union";
+  return `${ref.form === "class" ? "class " : ""}${ref.name}`;
+}
+
+/**
+ * The one call-site hook, invoked from `resolvePass2` after the baseline outcome
+ * is known. Only over-cap `ambiguous` outcomes enter — every other call returns
+ * on the first line, so the cost is one branch per call site plus one
+ * `resolver.resolve` over the population itself.
+ */
+function noteAmbigChainCall(
+  call: CallRef,
+  ctx: CallContext,
+  dispatchOutcome: DispatchFanoutOutcome | undefined,
+  baseOutcome: LcOutcome,
+  receiverKind: ReceiverKind,
+  relPath: string,
+  callerSymbolId: string,
+): void {
+  if (dispatchOutcome?.kind !== "ambiguous") return;
+  const rs = resolver;
+  if (rs === undefined) return;
+  const receiver = call.receiver ?? "";
+  const shape = acCallShape(call);
+
+  acTotal += 1;
+  acCandidateSum += dispatchOutcome.candidateCount;
+  acBump(acByShape, shape);
+  acBump(acByKind, receiverKind);
+  acBump(acByMember, call.member);
+
+  const typeRef = typeOfReceiver(receiver, call.startLine, ctx);
+  const typed = typeRef !== undefined && (typeRef.form === "class" || typeRef.form === "instance");
+  if (typed) {
+    acTypedReceiver += 1;
+    if (!receiver.includes(".")) acTypedBare += 1;
+  }
+
+  // The PRODUCTION chain, asked the question production never asks here.
+  const chainTarget = rs.resolve(call, ctx);
+  const ctOutcome = acChainTypeStrategy.attempt(call, ctx);
+  acBump(
+    acChainTypeVerdict,
+    ctOutcome.kind === "resolved"
+      ? ctOutcome.target.targetSymbolId === null
+        ? "chainType RESOLVED - file-only"
+        : "chainType RESOLVED - method-level"
+      : ctOutcome.kind === "drop"
+        ? "chainType DROP - member absent on the derived closure"
+        : "chainType CONTINUE",
+  );
+
+  if (shape === "normal") {
+    acNormal += 1;
+    acBump(acNormalByBucket, baseOutcome);
+    // `resolvePass2` fell back to this same `resolve` for this shape, so the two
+    // answers are the same call. A disagreement would mean the population is not
+    // the one the projection subtracts — report it rather than average over it.
+    if ((chainTarget !== null) !== (baseOutcome === "resolved")) {
+      acDisagreed += 1;
+      if (acDisagreeExamples.length < AC_EXAMPLE_CAP) {
+        acDisagreeExamples.push(`${relPath}:${call.startLine} ${receiver}.${call.member} outcome=${baseOutcome}`);
+      }
+    }
+  }
+
+  const example = (): AcExample => ({
+    where: `${relPath}:${call.startLine}`,
+    caller: callerSymbolId,
+    receiver,
+    member: call.member,
+    kind: receiverKind,
+    shape,
+    candidateCount: dispatchOutcome.candidateCount,
+    receiverType: acRefText(typeRef),
+    chainTarget:
+      chainTarget === null ? "-" : (chainTarget.targetSymbolId ?? `${chainTarget.targetRelPath} (file-only)`),
+    chainTypeVerdict: ctOutcome.kind === "resolved" ? "RESOLVED" : ctOutcome.kind === "drop" ? "DROP" : "CONTINUE",
+    harnessOutcome: baseOutcome,
+  });
+
+  if (chainTarget !== null) {
+    acChainResolved += 1;
+    if (chainTarget.targetSymbolId === null) acChainFileOnly += 1;
+    else acChainMethodLevel += 1;
+    acBump(acChainResolvedByKind, receiverKind);
+    acBump(acChainResolvedByMember, call.member);
+    if (acGainExamples.length < AC_EXAMPLE_CAP) acGainExamples.push(example());
+  } else if (acConcedeExamples.length < AC_EXAMPLE_CAP) {
+    acConcedeExamples.push(example());
+  }
+}
+
+function runAmbigChainOracle(): void {
+  const L = (s: string) => {
+    console.log(s);
+  };
+  L("");
+  L("═══════════════════════════════════════════════════════════════════");
+  L("  OVER-CAP AMBIGUOUS — EXACT-CHAIN FALLBACK (bd btxx6 / 55950 leftover)");
+  L("═══════════════════════════════════════════════════════════════════");
+  L(`over-cap ambiguous fan-outs run-wide:      ${acTotal}`);
+  L(`  mean survivors over the cap:             ${acTotal === 0 ? 0 : (acCandidateSum / acTotal).toFixed(1)}`);
+  L(`  of which the "normal" call shape:        ${acNormal}   <-- the population production concedes`);
+  L("  by call shape:");
+  for (const [k, n] of Object.entries(acByShape).sort((a, b) => b[1] - a[1])) {
+    L(`      ${String(n).padStart(7)}  ${k}`);
+  }
+  L("  by receiver kind:");
+  for (const [k, n] of Object.entries(acByKind).sort((a, b) => b[1] - a[1])) {
+    L(`      ${String(n).padStart(7)}  ${k}`);
+  }
+  L("");
+  L("─── the bead's own cut, re-priced on this branch ──────────────────");
+  L(`typed receiver (class | instance) at an over-cap site: ${acTypedReceiver}`);
+  L(`  of which BARE (the 405 the 2026-08-02 oracle priced): ${acTypedBare}`);
+  L("  (0 is the EXPECTED reading: commit 35143c48 moved the typedness gate ahead");
+  L("   of `resolveNarrowedFanout`, so a typed receiver returns an empty fan-out");
+  L("   and can no longer reach the cap that produces `ambiguous`.)");
+  L("");
+  L("─── what the PRODUCTION chain answers at those sites ──────────────");
+  L(`chain resolves:                          ${acChainResolved}`);
+  L(`  method-level:                          ${acChainMethodLevel}`);
+  L(`  file-only:                             ${acChainFileOnly}`);
+  L(`chain answers null (production concedes): ${acTotal - acChainResolved}`);
+  L(`fidelity — chain answer vs recorded outcome disagreements: ${acDisagreed}`);
+  for (const ex of acDisagreeExamples.slice(0, 6)) L(`      e.g. ${ex}`);
+  L("  standalone chainType verdict at the population:");
+  for (const [k, n] of Object.entries(acChainTypeVerdict).sort((a, b) => b[1] - a[1])) {
+    L(`      ${String(n).padStart(7)}  ${k}`);
+  }
+  L("  chain-resolved by receiver kind:");
+  for (const [k, n] of Object.entries(acChainResolvedByKind).sort((a, b) => b[1] - a[1])) {
+    L(`      ${String(n).padStart(7)}  ${k}`);
+  }
+  L("  top members over the population:");
+  for (const [k, n] of Object.entries(acByMember)
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 12)) {
+    L(`      ${String(n).padStart(7)}  ${k}`);
+  }
+  for (const ex of acGainExamples.slice(0, 8)) {
+    L(`      GAIN  ${ex.where} ${ex.receiver}.${ex.member} cand=${ex.candidateCount} -> ${ex.chainTarget}`);
+  }
+  for (const ex of acConcedeExamples.slice(0, 8)) {
+    L(
+      `      CONCEDE  ${ex.where} ${ex.receiver}.${ex.member} cand=${ex.candidateCount} type=${ex.receiverType} chainType=${ex.chainTypeVerdict} -> ${ex.harnessOutcome}`,
+    );
+  }
+
+  // ── production counters, reconstructed from this run ─────────────────────
+  const nb = (k: string): number => acNormalByBucket[k] ?? 0;
+  const prodResolved = callsResolved - nb("resolved");
+  const prodExternal = callsExternalSkipped - nb("externalSkipped");
+  const prodUnresolvable = callsUnresolvable - nb("dynamicSend");
+  const prodNoDef = callsNoInProjectDef - nb("noInProjectDef");
+  const prodCoreAmb = callsCoreAmbiguous - nb("coreAmbiguous");
+  const holeOf = (res: number, ext: number, unr: number, nod: number, core: number): number =>
+    Math.max(0, callsAttempted - res - ext - unr - nod - core);
+  const recallOf = (res: number, hole: number): number => (res + hole === 0 ? 0 : res / (res + hole));
+
+  const prodHole = holeOf(prodResolved, prodExternal, prodUnresolvable, prodNoDef, prodCoreAmb);
+  const prodRecall = recallOf(prodResolved, prodHole);
+  // A — consult, take an answer, otherwise concede exactly as today.
+  const aResolved = prodResolved + nb("resolved");
+  const aHole = holeOf(aResolved, prodExternal, prodUnresolvable, prodNoDef, prodCoreAmb);
+  const aRecall = recallOf(aResolved, aHole);
+  // B — consult, and on null fall through to the miss classifiers. Identical to
+  // what this harness already does, so its projection IS the headline.
+  const bRecall = recallOf(
+    callsResolved,
+    holeOf(callsResolved, callsExternalSkipped, callsUnresolvable, callsNoInProjectDef, callsCoreAmbiguous),
+  );
+
+  L("");
+  L("─── PRODUCTION projection (reconstructed, not modelled) ───────────");
+  L("counter                  production      A: consult      B: fallthrough");
+  const row = (label: string, a: number, b: number, c: number): void => {
+    L(`  ${label.padEnd(22)}${String(a).padStart(8)}${String(b).padStart(15)}${String(c).padStart(17)}`);
+  };
+  row("callsResolved", prodResolved, aResolved, callsResolved);
+  row("callsExternalSkipped", prodExternal, prodExternal, callsExternalSkipped);
+  row("callsUnresolvable", prodUnresolvable, prodUnresolvable, callsUnresolvable);
+  row("callsNoInProjectDef", prodNoDef, prodNoDef, callsNoInProjectDef);
+  row("callsCoreAmbiguous", prodCoreAmb, prodCoreAmb, callsCoreAmbiguous);
+  row("callsAmbiguousFanout", acNormal, acNormal - nb("resolved"), 0);
+  row(
+    "missWithInProjectDef",
+    prodHole,
+    aHole,
+    holeOf(callsResolved, callsExternalSkipped, callsUnresolvable, callsNoInProjectDef, callsCoreAmbiguous),
+  );
+  L("");
+  L(
+    `inProjectEdgeRecall:  production ${fmtPct(prodRecall)}  ->  A ${fmtPct(aRecall)} (${((aRecall - prodRecall) * 100 >= 0 ? "+" : "") + ((aRecall - prodRecall) * 100).toFixed(4)}pp)  ->  B ${fmtPct(bRecall)} (${((bRecall - prodRecall) * 100 >= 0 ? "+" : "") + ((bRecall - prodRecall) * 100).toFixed(4)}pp)`,
+  );
+  L("─── regression channel: what leaves the ambiguous bucket under B ──");
+  for (const [k, n] of Object.entries(acNormalByBucket).sort((a, b) => b[1] - a[1])) {
+    L(`      ${String(n).padStart(7)}  ambiguous -> ${k}`);
+  }
+
+  if (!existsSync(OUT_DIR)) mkdirSync(OUT_DIR, { recursive: true });
+  writeFileSync(
+    OUT_AMBIGCHAIN,
+    JSON.stringify(
+      {
+        meta: {
+          generatedAt: new Date().toISOString(),
+          callsAttempted,
+          population: acTotal,
+          normalShape: acNormal,
+          meanSurvivors: acTotal === 0 ? 0 : acCandidateSum / acTotal,
+          byShape: acByShape,
+          byKind: acByKind,
+          byMember: acByMember,
+          typedReceiver: acTypedReceiver,
+          typedBare: acTypedBare,
+          fidelityDisagreements: acDisagreed,
+        },
+        chain: {
+          resolved: acChainResolved,
+          methodLevel: acChainMethodLevel,
+          fileOnly: acChainFileOnly,
+          byKind: acChainResolvedByKind,
+          byMember: acChainResolvedByMember,
+          chainTypeVerdicts: acChainTypeVerdict,
+        },
+        normalShapeBuckets: acNormalByBucket,
+        projection: {
+          production: {
+            callsResolved: prodResolved,
+            callsExternalSkipped: prodExternal,
+            callsUnresolvable: prodUnresolvable,
+            callsNoInProjectDef: prodNoDef,
+            callsCoreAmbiguous: prodCoreAmb,
+            callsAmbiguousFanout: acNormal,
+            missWithInProjectDef: prodHole,
+            inProjectEdgeRecall: prodRecall,
+          },
+          consultThenConcede: {
+            callsResolved: aResolved,
+            callsAmbiguousFanout: acNormal - nb("resolved"),
+            missWithInProjectDef: aHole,
+            inProjectEdgeRecall: aRecall,
+          },
+          fullFallthrough: {
+            callsResolved,
+            callsExternalSkipped,
+            callsUnresolvable,
+            callsNoInProjectDef,
+            callsCoreAmbiguous,
+            callsAmbiguousFanout: 0,
+            missWithInProjectDef: holeOf(
+              callsResolved,
+              callsExternalSkipped,
+              callsUnresolvable,
+              callsNoInProjectDef,
+              callsCoreAmbiguous,
+            ),
+            inProjectEdgeRecall: bRecall,
+          },
+        },
+        examples: { gains: acGainExamples, concedes: acConcedeExamples, disagreements: acDisagreeExamples },
+      },
+      null,
+      2,
+    ),
+  );
+  L("");
+  L(`over-cap ambiguous fallback oracle detail -> ${OUT_AMBIGCHAIN}`);
 }
 
 let includedBy: Record<string, string[]> = {};
