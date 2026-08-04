@@ -41,9 +41,10 @@ Full list: [references/anti-patterns.md](./references/anti-patterns.md).
 
 ---
 
-Multi-dimensional risk scan via rank_chunks × 4 rerank presets, cross-referenced
-by overlap count, plus a git-independent structural axis (2 presets) reported
-separately. Semantic/hybrid search resolves intent-based scopes.
+Multi-dimensional risk scan via rank_chunks × 5 rerank presets (4 when codegraph
+off — criticalPath is codegraph-gated), cross-referenced by overlap count, plus
+a git-independent structural axis (2 presets) reported separately.
+Semantic/hybrid search resolves intent-based scopes.
 
 ## Rules
 
@@ -56,15 +57,16 @@ separately. Semantic/hybrid search resolves intent-based scopes.
    `Read(path, offset=startLine, limit=endLine-startLine)` using coordinates
    from search results. Never read full files.
 6. **Minimize tool calls.** Batch: all rank_chunks one message, all Critical
-   UUIDs one find_similar, all symbol names one hybrid_search. Target: ≤14 calls
-   domain scope, ≤18 broad scope. Phase 4 god-class fallback adds ≤7 (2 probes +
-   5 outlines) — only when symbol-mass fields are absent.
+   UUIDs one find_similar, all symbol names one hybrid_search. Target: ≤15 calls
+   domain scope, ≤20 broad scope (codegraph off: −1 / −2 — no criticalPath).
+   Phase 4 god-class fallback adds ≤7 (2 probes + 5 outlines) — only when
+   symbol-mass fields are absent.
 
 ## Flow
 
 ```
 0. SCOPE RESOLUTION   → pathPattern + scopeType
-1. SCAN               → rank_chunks × 4 risk presets      ─┐ one parallel block
+1. SCAN               → rank_chunks × 5 risk presets      ─┐ one parallel block
 1b STRUCTURAL         → rank_chunks × decomposition, godModule ─┘
 2. MERGE              → risk presets ONLY — structural results never enter tiers
 3. EXPAND             → find_similar from Critical only
@@ -108,20 +110,28 @@ picomatch. Always extract directory-level prefixes.
 
 ## Phase 1: SCAN
 
-Run `rank_chunks` × 4 presets. **All 4 calls in ONE message** (parallel).
+Run `rank_chunks` × 5 presets. **All 5 calls in ONE message** (parallel).
+Codegraph off → 4: skip `criticalPath` (composite, exists in the preset enum
+only when codegraph registered — no fallback name).
 
-| Preset      | Surfaces                                         | Filter preset       |
-| ----------- | ------------------------------------------------ | ------------------- |
-| `bugHunt`   | Burst activity + volatility + bug fix rate       | `panicZone`         |
-| `hotspots`  | Chunk-level churn + burst + instability          | `godMethods`        |
-| `techDebt`  | Old + churny + bug-prone + dense code            | `abandonedHotspots` |
-| `dangerous` | Bug-prone + volatile + single-owner (bus factor) | `fragileSilo`       |
+| Preset         | Surfaces                                                               | Filter preset       |
+| -------------- | ---------------------------------------------------------------------- | ------------------- |
+| `bugHunt`      | Burst activity + volatility + bug fix rate                             | `panicZone`         |
+| `hotspots`     | Chunk-level churn + burst + instability                                | `godMethods`        |
+| `techDebt`     | Old + churny + bug-prone + dense code                                  | `abandonedHotspots` |
+| `dangerous`    | Bug-prone + volatile + single-owner (bus factor)                       | `fragileSilo`       |
+| `criticalPath` | Central methods (pageRank) with bugFix+churn history — regression cost | `hubs,production`   |
+
+`criticalPath` decorrelates from the git-only rows by population: `hubs` narrows
+to high-fanIn hub files (`production` AND-merged strips tests), so an N/N hit
+now also means "in the central population". Empty = no hubs in scope = valid
+clean answer.
 
 **Codegraph transparency:** when codegraph active (prime `## Enrichment` lists
-`codegraph.symbols`), `techDebt` and `dangerous` already absorb structural
-signals via reranker override — no parameter change, risk map sharpens
-automatically. Explicit structural axis (blast-radius hubs + cycles) added in
-Phase 4, not here.
+`codegraph.symbols`), `bugHunt`, `techDebt` and `dangerous` already absorb
+structural signals via reranker override (`bugHunt` gains method-level pageRank)
+— no parameter change, risk map sharpens automatically. Explicit structural axis
+(blast-radius hubs + cycles) added in Phase 4, not here.
 
 Parameters per call:
 
@@ -151,23 +161,23 @@ Unfiltered `rank_chunks` returns results dominated by highest-churn domain.
 Other domains invisible regardless of actual risk.
 
 ```
-After first scan (4 presets × no pathPattern):
+After first scan (5 presets × no pathPattern):
 1. Identify dominant domain:
    Count unique relativePath directory prefixes across all results.
    The domain with the most slots is dominant.
 
 2. ALWAYS run second scan (broad scope):
-   4 presets × pathPattern = "!**/dominant-domain/**"
+   5 presets × pathPattern = "!**/dominant-domain/**"
    Same parameters, same limit.
    Feed both scans into Phase 2 MERGE.
 ```
 
-Doubles scan calls for broad scope (8 instead of 4), but guarantees every domain
-gets representation. Cost acceptable: rank_chunks is scroll operation, not
-vector search. No threshold — always run both scans.
+Doubles scan calls for broad scope (10 instead of 5), but guarantees every
+domain gets representation. Cost acceptable: rank_chunks is scroll operation,
+not vector search. No threshold — always run both scans.
 
 **Empty results:** preset returns 0 → exclude from overlap count. N = presets
-with results (may be < 4).
+with results (may be < 5; codegraph off caps at 4).
 
 **Pagination:** Stop conditions per-preset:
 
