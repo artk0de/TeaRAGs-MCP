@@ -13264,6 +13264,18 @@ async function main(): Promise<void> {
 // convention test has already fired. A call resolved or dropped BEFORE the
 // candidate's slot takes the identical path in the variant chain, so it is
 // skipped rather than re-run.
+//
+// SHIPPED SINCE (bd tea-rags-mcp-4ys8s, 2026-08-04). Cut 2's candidate is no
+// longer a candidate. It shipped as `RubyConventionReceiverSymbolResolutionStrategy`
+// (wob7g), and r2gjj carried the same convention into `ivarField`'s terminal
+// tier. {@link rsBuildChain} therefore restates the chain WITH that pass, and
+// each A/B variant SWAPS that one slot rather than splicing a second copy in
+// front of it — so every movement row below reads as an INCREMENT over what
+// already ships, not as the value of the mechanism. What the variants still
+// price is the two axes the shipped pass does NOT have: the plural stem
+// (`clients` -> `Client`) and the `resolveConstant` second tier of the existence
+// gate, which the shipped `conventionReceiverType` lacks because it gates on
+// `lookupByShortName` alone.
 // ===========================================================================
 const RESIDUAL_ENABLED = process.env.CODEGRAPH_RESIDUAL_ORACLE === "1";
 const OUT_RESIDUAL = join(OUT_DIR, "residual-oracle-report.json");
@@ -13409,15 +13421,21 @@ function rsConventionClass(
 }
 
 /**
- * The candidate strategy. Sits immediately BEFORE `receiverSetDrop`, so every
- * fact-based channel, the Zeitwerk constant pass and the AR-relation guard all
- * win first and only a call already on its way to the catch-all DROP is offered
- * a naming-convention guess.
+ * The parameterised convention pass. It OCCUPIES the shipped `conventionReceiver`
+ * slot rather than sitting beside it (see {@link rsBuildChain}), so each variant
+ * answers the question "what would the shipped pass say with one gate moved" and
+ * its movement is an increment over today's chain.
+ *
+ * Two axes the shipped pass does not have, and neither is priced there:
+ * {@link rsSingularize}'s plural stem, and {@link rsClassExists}'s
+ * `resolveConstant` second tier — production's {@link conventionReceiverType}
+ * gates on `lookupByShortName` alone and so rejects every compact-FQ class.
  *
  * `acceptFileOnly` selects the terminal policy: `false` demands a method-level
- * pin (a real `Type#member` symbol), `true` also takes the file-only edge
- * `resolveTypeInstanceMethod` returns when the class resolves but declares no
- * such member. Both are built and compared rather than argued.
+ * pin (a real `Type#member` symbol), exactly as the shipped pass does; `true`
+ * also takes the file-only edge `resolveTypeInstanceMethod` returns when the
+ * class resolves but declares no such member. Both are built and compared rather
+ * than argued.
  */
 class RsConventionReceiverSymbolResolutionStrategy implements SymbolResolutionStrategy {
   readonly name = "conventionReceiver";
@@ -13443,15 +13461,28 @@ class RsConventionReceiverSymbolResolutionStrategy implements SymbolResolutionSt
 }
 
 /**
- * `RubyCallResolver`'s strategy array, rebuilt with `extra` spliced in ahead of
- * `receiverSetDrop`. The order is restated from `ruby-resolver.ts` rather than
- * imported for the reason the single-segment oracle gives: an oracle sharing its
- * chain with the code it evaluates cannot disagree with it. `rsMirrorDisagreed`
- * validates the no-extra build against the production resolver on every call the
- * oracle touches, so a re-ordering this copy fails to track cannot pass silently.
+ * `RubyCallResolver`'s strategy array as it stands on this branch, with the
+ * `conventionReceiver` slot filled by `slot`. Passing the production strategy
+ * reproduces the shipped chain exactly; passing a variant swaps that ONE pass —
+ * the same slot-substitution shape {@link ssBuildChain} and `icBuildChain` use,
+ * and the reason a variant's movement is an increment over what ships rather
+ * than a re-pricing of the mechanism.
+ *
+ * Restated from `ruby-resolver.ts` rather than imported for the reason the
+ * single-segment oracle gives: an oracle sharing its chain with the code it
+ * evaluates cannot disagree with it.
+ *
+ * This copy predated wob7g until 2026-08-04 — it had no `conventionReceiver`
+ * slot at all — and `rsMirrorDisagreed` still read 0 (bd tea-rags-mcp-4ys8s).
+ * That was not fidelity but a blind spot: the guard only fired where the BASE
+ * outcome was not `resolved`, and a pass that never DROPs can only differ on
+ * calls it RESOLVES. {@link rsCheckMirror} now grades the resolved-and-chain-
+ * consulted population too, which is what makes the guard load-bearing:
+ * neutralising this slot back to its pre-wob7g shape moves it from 0 to 3169
+ * disagreements over the same 29116 checks.
  */
-function rsBuildChain(cfg: ResolverConfig, extra: SymbolResolutionStrategy | null): SymbolResolutionStrategy[] {
-  const head: SymbolResolutionStrategy[] = [
+function rsBuildChain(cfg: ResolverConfig, slot: SymbolResolutionStrategy): SymbolResolutionStrategy[] {
+  return [
     new RubySuperSymbolResolutionStrategy(cfg),
     new RubySelfMemberSymbolResolutionStrategy(cfg),
     new RubyLocalTypeSymbolResolutionStrategy(cfg),
@@ -13463,19 +13494,18 @@ function rsBuildChain(cfg: ResolverConfig, extra: SymbolResolutionStrategy | nul
     new RubyExplicitRequireSymbolResolutionStrategy(cfg),
     new RubyChainTypeSymbolResolutionStrategy(cfg),
     new RubyArRelationGuardSymbolResolutionStrategy(cfg),
-  ];
-  const tail: SymbolResolutionStrategy[] = [
+    slot,
     new RubyReceiverSetDropSymbolResolutionStrategy(cfg),
     new RubyBareCallSymbolResolutionStrategy(cfg),
     new RubySchemaColumnSymbolResolutionStrategy(),
   ];
-  return extra === null ? [...head, ...tail] : [...head, extra, ...tail];
 }
 
-const rsBaseChain = rsBuildChain(RS_CFG, null);
+/** The shipped chain, verbatim — the fidelity mirror and the A/B baseline. */
+const rsBaseChain = rsBuildChain(RS_CFG, new RubyConventionReceiverSymbolResolutionStrategy(RS_CFG));
 const rsPinnedChain = rsBuildChain(RS_CFG, new RsConventionReceiverSymbolResolutionStrategy(RS_CFG, false));
 const rsFileOkChain = rsBuildChain(RS_CFG, new RsConventionReceiverSymbolResolutionStrategy(RS_CFG, true));
-/** The two SHIPPABLE shapes: pinned terminal + the mandatory subtype gate. */
+/** The two shapes closest to what SHIPPED: pinned terminal + the subtype gate. */
 const rsPinnedGatedChain = rsBuildChain(
   RS_CFG,
   new RsConventionReceiverSymbolResolutionStrategy(RS_CFG, false, RS_OPT_GATED),
@@ -13485,8 +13515,8 @@ const rsPinnedGatedNoPluralChain = rsBuildChain(
   new RsConventionReceiverSymbolResolutionStrategy(RS_CFG, false, RS_OPT_GATED_NO_PLURAL),
 );
 
-/** Position of `receiverSetDrop` in the base chain — the candidate's insertion point. */
-const RS_SLOT_INDEX = rsBaseChain.findIndex((s) => s.name === "receiverSetDrop");
+/** Position of the `conventionReceiver` slot — where every variant is swapped in. */
+const RS_SLOT_INDEX = rsBaseChain.findIndex((s) => s.name === "conventionReceiver");
 
 type RsReplay = { owner: string; slotReached: boolean; target: SymbolResolutionTarget | null };
 
@@ -13494,8 +13524,8 @@ type RsReplay = { owner: string; slotReached: boolean; target: SymbolResolutionT
  * `resolveViaChain` with the winning pass recorded. `owner` is the strategy that
  * returned the decisive outcome (prefixed `resolved:` when it produced a target),
  * or `exhausted` when every pass CONTINUEd. `slotReached` says whether the chain
- * got as far as the candidate's insertion point — the exact precondition under
- * which splicing a pass in there can change the answer.
+ * got as far as the `conventionReceiver` slot — the exact precondition under
+ * which swapping the pass in there can change the answer.
  */
 function rsReplay(call: CallRef, ctx: CallContext): RsReplay {
   for (let i = 0; i < rsBaseChain.length; i += 1) {
@@ -13556,11 +13586,17 @@ const rsEdgeWrongExample: string[] = [];
 const RS_VARIANTS = ["pinned", "fileOk", "pinnedGated", "pinnedGatedNoPlural"] as const;
 type RsVariant = (typeof RS_VARIANTS)[number];
 
+/**
+ * What each variant CHANGES about the shipped `conventionReceiver` pass. The slot
+ * is swapped, not doubled, so every movement row is an increment over the chain
+ * that ships today (bd tea-rags-mcp-4ys8s) rather than the 2026-08-02 numbers,
+ * which were measured against a chain with no convention pass at all.
+ */
 const RS_VARIANT_LABEL: Record<RsVariant, string> = {
-  pinned: "PINNED-ONLY, ungated (the 2026-08-02 reference number)",
-  fileOk: "FILE-OK, ungated (also file-only edges)",
-  pinnedGated: "PINNED-ONLY + subtype gate  <-- SHIPPABLE",
-  pinnedGatedNoPlural: "PINNED-ONLY + subtype gate, no plural stem",
+  pinned: "shipped + plural stem + resolveConstant tier, subtype gate REMOVED",
+  fileOk: "as `pinned`, and the file-only terminal accepted too",
+  pinnedGated: "shipped + plural stem + resolveConstant existence tier",
+  pinnedGatedNoPlural: "shipped + resolveConstant existence tier only",
 };
 
 function rsEmptyByVariant<T>(make: () => T): Record<RsVariant, T> {
@@ -13572,9 +13608,10 @@ const rsMove: Record<RsVariant, Map<string, number>> = rsEmptyByVariant(() => ne
 const rsMoveExample: Record<RsVariant, string[]> = rsEmptyByVariant((): string[] => []);
 /** Distinct NEW method-level targets the candidate would light up. */
 const rsNewTargets: Record<RsVariant, Set<string>> = rsEmptyByVariant(() => new Set<string>());
-/** Fidelity guard: the oracle's own no-extra chain vs the production resolver. */
+/** Fidelity guard: the oracle's own shipped-chain copy vs the production resolver. */
 let rsMirrorChecked = 0;
 let rsMirrorDisagreed = 0;
+const rsMirrorExample: string[] = [];
 /** Precision side — the core-homonym carve-out and the dynamic fan-out population. */
 const rsCoreAmbByMember = new Map<string, number>();
 const rsCoreAmbByKind = new Map<ReceiverKind, number>();
@@ -13639,6 +13676,37 @@ function rsChainIsConsulted(call: CallRef, dispatchEdges: number): boolean {
 function rsRunChain(chain: SymbolResolutionStrategy[], call: CallRef, ctx: CallContext): SymbolResolutionTarget | null {
   const target = resolveViaChain(chain, call, ctx);
   return target === null ? null : redirectSelfDispatchTemplate(target, call, ctx, RS_CFG.mode);
+}
+
+/**
+ * Fidelity guard: {@link rsBaseChain} must answer exactly what the production
+ * resolver answers, wherever the chain's answer is actually read.
+ *
+ * Graded on BOTH sides of the base outcome, resolved included — restricting it to
+ * unresolved outcomes is precisely what let the missing wob7g slot sit here
+ * undetected for two days (bd tea-rags-mcp-4ys8s). `conventionReceiver` never
+ * DROPs, so the only calls it can move are ones the production chain RESOLVES,
+ * and those were the calls the guard skipped. A guard whose population excludes
+ * the drift it exists to catch reports 0 forever.
+ */
+function rsCheckMirror(call: CallRef, ctx: CallContext, mine: SymbolResolutionTarget | null, relPath: string): void {
+  const rs = resolver;
+  if (rs === undefined) return;
+  rsMirrorChecked += 1;
+  const production = rs.resolve(call, ctx);
+  const same =
+    production === null || mine === null
+      ? production === mine
+      : production.targetRelPath === mine.targetRelPath && production.targetSymbolId === mine.targetSymbolId;
+  if (same) return;
+  rsMirrorDisagreed += 1;
+  const show = (t: SymbolResolutionTarget | null): string =>
+    t === null ? "null" : (t.targetSymbolId ?? `${t.targetRelPath} (file-only)`);
+  if (rsMirrorExample.length < RS_EXAMPLE_CAP) {
+    rsMirrorExample.push(
+      `${relPath}:${call.startLine}  ${call.receiver ?? "-"}.${call.member}  mirror=${show(mine)}  production=${show(production)}`,
+    );
+  }
 }
 
 /**
@@ -13776,6 +13844,12 @@ function noteResidualCall(
   // is derivable — the collapse N->1 is edges REMOVED, not edges added, and is
   // priced separately from any recall claim.
   if (baseOutcome === "resolved") {
+    // Fidelity on the RESOLVED side — the only side a pass that never DROPs can
+    // move. Cost stays bounded by the `conventionFires` pre-test above: a call no
+    // convention can type never reaches here.
+    if (rsChainIsConsulted(call, dispatchEdges)) {
+      rsCheckMirror(call, ctx, rsRunChain(rsBaseChain, call, ctx), relPath);
+    }
     if (conventionFires && dispatchOutcome?.kind === "edges" && dispatchEdges > 0) {
       const klass = rsConventionClass(bare, ctx);
       const exact = klass === undefined ? null : resolveTypeInstanceMethod(klass, call.member, ctx, RS_CFG.mode);
@@ -13832,20 +13906,14 @@ function noteResidualCall(
     }
   }
 
-  // ---- cut 3: the honest A/B, only where splicing can change the answer.
+  // ---- cut 3: the honest A/B, only where swapping the slot can change the answer.
   if (!replay.slotReached || !rsChainIsConsulted(call, dispatchEdges)) return;
-  // Fidelity: the oracle's own chain must agree with the production resolver.
-  const rs = resolver;
-  if (rs !== undefined) {
-    rsMirrorChecked += 1;
-    const production = rs.resolve(call, ctx);
-    const mine = replay.target === null ? null : redirectSelfDispatchTemplate(replay.target, call, ctx, RS_CFG.mode);
-    const same =
-      production === null || mine === null
-        ? production === mine
-        : production.targetRelPath === mine.targetRelPath && production.targetSymbolId === mine.targetSymbolId;
-    if (!same) rsMirrorDisagreed += 1;
-  }
+  rsCheckMirror(
+    call,
+    ctx,
+    replay.target === null ? null : redirectSelfDispatchTemplate(replay.target, call, ctx, RS_CFG.mode),
+    relPath,
+  );
   for (const [variant, chain] of [
     ["pinned", rsPinnedChain],
     ["fileOk", rsFileOkChain],
@@ -13878,9 +13946,13 @@ function runResidualOracle(): void {
   L("═══════════════════════════════════════════════════════════════════");
   L(`recall hole (misses):                     ${hole}`);
   L(`chain-fidelity checks / disagreements:    ${rsMirrorChecked} / ${rsMirrorDisagreed}`);
+  for (const ex of rsMirrorExample) L(`    ${ex}`);
   L("");
 
   L("─── CUT 1: which strategy OWNS the drop ───────────────────────────");
+  L("(`conventionReceiver` never DROPs, and any answer it gives makes the call a");
+  L(" non-miss — so it cannot own a row here. Its absence is structural, not");
+  L(" evidence that the pass is idle.)");
   L("owner                     total   share   by receiverKind");
   const ownerRows = [...rsDropOwner.entries()]
     .map(([owner, byKind]) => {
@@ -13974,7 +14046,8 @@ function runResidualOracle(): void {
   }
   L("");
 
-  L("─── CUT 3b: A/B bucket movement with the candidate spliced in ─────");
+  L("─── CUT 3b: A/B movement, the shipped conventionReceiver slot SWAPPED ─");
+  L("    (increments over today's chain, NOT the 2026-08-02 pre-wob7g numbers)");
   for (const variant of RS_VARIANTS) {
     const rows = [...rsMove[variant].entries()].sort((a, b) => b[1] - a[1]);
     let gained = 0;
@@ -14041,7 +14114,7 @@ function runResidualOracle(): void {
     JSON.stringify(
       {
         hole,
-        fidelity: { checked: rsMirrorChecked, disagreed: rsMirrorDisagreed },
+        fidelity: { checked: rsMirrorChecked, disagreed: rsMirrorDisagreed, examples: rsMirrorExample },
         dropOwner: ownerRows.map((r) => ({ owner: r.owner, total: r.total, byKind: Object.fromEntries(r.byKind) })),
         residualBuckets: bucketRows.map(([key, n]) => ({ key, n, examples: rsResidualExample.get(key) ?? [] })),
         conventionProbe: rsProbe,
