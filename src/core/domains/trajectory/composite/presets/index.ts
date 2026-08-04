@@ -30,7 +30,9 @@
 import type { CompositeRerankPreset, RerankPreset } from "../../../../contracts/types/reranker.js";
 import { ArchitecturalHubPreset } from "./architectural-hub.js";
 import { BlastRadiusPreset } from "./blast-radius.js";
+import { BugHuntCompositePreset } from "./bug-hunt.js";
 import { CodeReviewCompositePreset } from "./code-review.js";
+import { CriticalPathPreset } from "./critical-path.js";
 import { DangerousCompositePreset } from "./dangerous.js";
 import { DecompositionCompositePreset } from "./decomposition.js";
 import { EntryPointPreset } from "./entry-point.js";
@@ -43,7 +45,9 @@ import { TechDebtCompositePreset } from "./tech-debt.js";
 export {
   ArchitecturalHubPreset,
   BlastRadiusPreset,
+  BugHuntCompositePreset,
   CodeReviewCompositePreset,
+  CriticalPathPreset,
   DangerousCompositePreset,
   DecompositionCompositePreset,
   EntryPointPreset,
@@ -69,10 +73,12 @@ const ALL_COMPOSITE_PRESETS: readonly CompositeRerankPreset[] = [
   new CodeReviewCompositePreset(),
   new DecompositionCompositePreset(),
   new GodModuleCompositePreset(),
+  new BugHuntCompositePreset(),
   // New composite names — no trajectory equivalent.
   new BlastRadiusPreset(),
   new ArchitecturalHubPreset(),
   new EntryPointPreset(),
+  new CriticalPathPreset(),
 ];
 
 /**
