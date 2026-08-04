@@ -21,6 +21,7 @@ import {
   BlastRadiusPreset,
   buildCompositePresets,
   CodeReviewCompositePreset,
+  CriticalPathPreset,
   DangerousCompositePreset,
   DecompositionCompositePreset,
   EntryPointPreset,
@@ -45,6 +46,7 @@ describe("CompositeRerankPreset contract", () => {
       new EntryPointPreset(),
       new DecompositionCompositePreset(),
       new GodModuleCompositePreset(),
+      new CriticalPathPreset(),
     ];
 
     for (const p of composites) {
@@ -76,6 +78,10 @@ describe("CompositeRerankPreset contract", () => {
     expect(new ArchitecturalHubPreset().requires).toEqual(expect.arrayContaining(["codegraph.symbols", "git"]));
   });
 
+  it("CriticalPath requires codegraph.symbols AND git (pageRank + bugFix/churn)", () => {
+    expect(new CriticalPathPreset().requires).toEqual(expect.arrayContaining(["codegraph.symbols", "git"]));
+  });
+
   it("EntryPointPreset requires codegraph.symbols only (no git weights)", () => {
     const preset = new EntryPointPreset();
     expect(preset.requires).toEqual(expect.arrayContaining(["codegraph.symbols"]));
@@ -105,15 +111,16 @@ describe("buildCompositePresets — declarative requires gating", () => {
     expect(result.some((p) => p instanceof EntryPointPreset)).toBe(true);
   });
 
-  it("returns all 11 composites when both codegraph.symbols AND git are registered", () => {
+  it("returns all 12 composites when both codegraph.symbols AND git are registered", () => {
     const result = buildCompositePresets(new Set(["codegraph.symbols", "git"]));
-    expect(result).toHaveLength(11);
+    expect(result).toHaveLength(12);
     const names = result.map((p) => p.name).sort();
     expect(names).toEqual(
       [
         "architecturalHub",
         "blastRadius",
         "codeReview",
+        "criticalPath",
         "dangerous",
         "decomposition",
         "entryPoint",
@@ -128,7 +135,7 @@ describe("buildCompositePresets — declarative requires gating", () => {
 
   it("ignores unknown registered keys (extra keys do not enable extra presets)", () => {
     const result = buildCompositePresets(new Set(["codegraph.symbols", "git", "future-trajectory"]));
-    expect(result).toHaveLength(11);
+    expect(result).toHaveLength(12);
   });
 
   it("dropped composites are silently absent, not error", () => {

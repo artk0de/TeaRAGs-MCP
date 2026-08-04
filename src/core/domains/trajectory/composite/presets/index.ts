@@ -31,6 +31,7 @@ import type { CompositeRerankPreset, RerankPreset } from "../../../../contracts/
 import { ArchitecturalHubPreset } from "./architectural-hub.js";
 import { BlastRadiusPreset } from "./blast-radius.js";
 import { CodeReviewCompositePreset } from "./code-review.js";
+import { CriticalPathPreset } from "./critical-path.js";
 import { DangerousCompositePreset } from "./dangerous.js";
 import { DecompositionCompositePreset } from "./decomposition.js";
 import { EntryPointPreset } from "./entry-point.js";
@@ -44,6 +45,7 @@ export {
   ArchitecturalHubPreset,
   BlastRadiusPreset,
   CodeReviewCompositePreset,
+  CriticalPathPreset,
   DangerousCompositePreset,
   DecompositionCompositePreset,
   EntryPointPreset,
@@ -73,6 +75,7 @@ const ALL_COMPOSITE_PRESETS: readonly CompositeRerankPreset[] = [
   new BlastRadiusPreset(),
   new ArchitecturalHubPreset(),
   new EntryPointPreset(),
+  new CriticalPathPreset(),
 ];
 
 /**

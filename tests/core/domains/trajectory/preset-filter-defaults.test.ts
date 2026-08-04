@@ -5,6 +5,7 @@ import {
   ArchitecturalHubPreset,
   BlastRadiusPreset,
   CodeReviewCompositePreset,
+  CriticalPathPreset,
   DangerousCompositePreset,
   EntryPointPreset,
   HotspotsCompositePreset,
@@ -25,6 +26,7 @@ const COMPOSITE_PRESETS: RerankPreset[] = [
   new BlastRadiusPreset(),
   new ArchitecturalHubPreset(),
   new EntryPointPreset(),
+  new CriticalPathPreset(),
 ];
 
 const ALL_PRESETS: RerankPreset[] = [...GIT_PRESETS, ...STATIC_PRESETS, ...COMPOSITE_PRESETS];
@@ -49,6 +51,7 @@ describe("rerank preset hygiene defaults", () => {
     ["blastRadius", "production"],
     ["architecturalHub", "production"],
     ["entryPoint", "production"],
+    ["criticalPath", "production"],
     ["decomposition", "coreLogic"],
     ["refactoring", "coreLogic"],
   ])("%s defaults to {presets:%s}", (name, preset) => {

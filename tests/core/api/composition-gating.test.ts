@@ -22,7 +22,12 @@ import { DuckDbGraphClient } from "../../../src/core/adapters/duckdb/client.js";
 import { createComposition } from "../../../src/core/api/index.js";
 import { InMemoryGlobalSymbolTable } from "../../../src/core/domains/trajectory/codegraph/symbols/symbol-table.js";
 
-const NEW_CODEGRAPH_COMPOSITES = ["blastRadius", "architecturalHub", "entryPoint"];
+const NEW_CODEGRAPH_COMPOSITES = ["blastRadius", "architecturalHub", "entryPoint", "criticalPath"];
+/**
+ * Pure codegraph trajectory presets carry no `requires` — the trajectory's own
+ * registration gates them, because the class files load with the trajectory.
+ */
+const CODEGRAPH_TRAJECTORY_PRESETS = ["criticalMethod", "hotMethod", "godMethod"];
 const OVERRIDE_COMPOSITES = ["hotspots", "techDebt", "dangerous", "ownership", "securityAudit", "codeReview"];
 
 function makeCodegraphDeps(graphDb: DuckDbGraphClient) {
@@ -68,6 +73,22 @@ describe("Composition + Reranker — end-to-end provider gating", () => {
     const { reranker } = createComposition({ codegraph: makeCodegraphDeps(graphDb) });
     const semanticPresets = new Set(reranker.getPresetNames("semantic_search"));
     for (const name of NEW_CODEGRAPH_COMPOSITES) {
+      expect(semanticPresets.has(name), `${name} must be in preset enum when codegraph is ON`).toBe(true);
+    }
+  });
+
+  it("codegraph OFF: pure codegraph presets (criticalMethod, hotMethod, godMethod) absent from preset enum", () => {
+    const { reranker } = createComposition();
+    const semanticPresets = new Set(reranker.getPresetNames("semantic_search"));
+    for (const name of CODEGRAPH_TRAJECTORY_PRESETS) {
+      expect(semanticPresets.has(name), `${name} must NOT be in preset enum when codegraph is OFF`).toBe(false);
+    }
+  });
+
+  it("codegraph ON: pure codegraph presets present in preset enum", () => {
+    const { reranker } = createComposition({ codegraph: makeCodegraphDeps(graphDb) });
+    const semanticPresets = new Set(reranker.getPresetNames("semantic_search"));
+    for (const name of CODEGRAPH_TRAJECTORY_PRESETS) {
       expect(semanticPresets.has(name), `${name} must be in preset enum when codegraph is ON`).toBe(true);
     }
   });
