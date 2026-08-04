@@ -892,7 +892,8 @@ function resolvePass2(extraction: FileExtraction): void {
             BOUNDCALL_ENABLED ||
             RESIDUAL_ENABLED ||
             C2COLLAPSE_ENABLED ||
-            IVARCONV_ENABLED) &&
+            IVARCONV_ENABLED ||
+            AMBIGCHAIN_ENABLED) &&
           out !== undefined
         ) {
           dispatchOutcome = out;
@@ -993,6 +994,9 @@ function resolvePass2(extraction: FileExtraction): void {
       }
       if (IVARCONV_ENABLED) {
         noteIvarConvCall(call, ctx, dispatchOutcome, outcome, receiverKind, extraction.relPath);
+      }
+      if (AMBIGCHAIN_ENABLED) {
+        noteAmbigChainCall(call, ctx, dispatchOutcome, outcome, receiverKind, extraction.relPath, chunk.symbolId);
       }
     }
   }
@@ -13214,6 +13218,7 @@ async function main(): Promise<void> {
   if (RESIDUAL_ENABLED) runResidualOracle();
   if (C2COLLAPSE_ENABLED) runC2CollapseOracle();
   if (IVARCONV_ENABLED) runIvarConvOracle();
+  if (AMBIGCHAIN_ENABLED) runAmbigChainOracle();
   L(`elapsed: ${((Date.now() - t0) / 1000).toFixed(1)}s`);
 }
 
@@ -15246,6 +15251,398 @@ function runIvarConvOracle(): void {
     ),
   );
   L(`c3 ivar-convention report → ${OUT_IVARCONV}`);
+}
+
+// ===========================================================================
+// OVER-CAP AMBIGUOUS EXACT-CHAIN FALLBACK ORACLE (CODEGRAPH_AMBIGCHAIN_ORACLE=1,
+// bd tea-rags-mcp-btxx6). Same additive, env-gated contract as every oracle
+// above: with the flag unset nothing extra is replayed or reported and the A/B
+// recall metrics are byte-identical.
+//
+// The bead it prices is the 55950 leftover. `CODEGRAPH_BAREDEFER_ORACLE=1`
+// reported 405 over-cap `ambiguous` fan-outs on 2026-08-02 that carried a TYPED
+// bare receiver, and flagged them as a channel the harness cannot credit:
+// `CallEdgeResolutionRunner.dispatchCall` returns `"ambiguous"` on an over-cap
+// fan-out with NO exact-chain fallback, while `resolvePass2` here DOES fall back
+// (`noteDispatch` sees an empty edge list and calls `resolver.resolve`). So a
+// site production concedes is a site this harness may already have resolved,
+// and the recall gap between the two is invisible to any harness A/B.
+//
+// Two things that oracle could not answer, and this one does:
+//
+//   1. THE RE-PRICE. `bdAmbiguousWouldDefer` counts only the typed-BARE cut, and
+//      it counts it against a resolver where the typedness gate has since been
+//      widened (commit 35143c48, bd 55950). A typed receiver now returns
+//      `emptyDispatchFanout()` at that gate, several statements BEFORE
+//      `resolveNarrowedFanout` — the one place in the tree that can emit
+//      `{kind: "ambiguous"}` (`dispatch-narrowing.ts`). The typed cut is
+//      therefore 0 by construction, and the population that actually remains is
+//      the UNTYPED one the bead never measured.
+//
+//   2. THE WHOLE POPULATION. Every over-cap `ambiguous` site, asked what the
+//      PRODUCTION chain (`resolver.resolve`, the object `resolvePass2` itself
+//      calls) answers — because a receiver no TYPE channel reaches can still be
+//      answered by a later strategy, and only the chain knows.
+//
+// Production's counters are then RECONSTRUCTED rather than assumed. The two
+// engines differ at exactly one place, so for the `normal` call shape:
+//
+//     production(site) = "ambiguous"          when the fan-out is over-cap
+//     harness(site)    = fallback outcome     (resolved | externalSkipped | …)
+//
+// and every other counter is shared. Subtracting this run's own bucket tallies
+// over the over-cap population from the harness aggregates therefore yields the
+// production aggregates exactly, with no modelling in between. The other two
+// shapes are NOT in the population: `call.dispatch` reads `tableOutcome.edges`
+// (an `ambiguous` outcome is an empty list → `"unresolved"` → miss classifiers,
+// same as here), and `dispatchArgs` runs `resolver.resolve` FIRST, so neither
+// concedes anything the chain could have answered.
+//
+// Both candidate designs are then scored against that reconstruction:
+//
+//   A. CONSULT-THEN-CONCEDE — ask the chain, take its answer when it has one,
+//      otherwise record the `cg_ambiguous_fanout` aggregate exactly as today.
+//      Strictly additive: no site leaves the ambiguous bucket unresolved.
+//   B. FULL FALL-THROUGH — ask the chain, and on null let the call fall to
+//      `classifyMiss`. That is what this harness already does, so variant B's
+//      projection IS the headline recall, and the bucket flips it needs
+//      (`ambiguous → externalSkipped | noInProjectDef | coreAmbiguous | miss`)
+//      are the regression channel the bead demands be priced before code.
+// ===========================================================================
+const AMBIGCHAIN_ENABLED = process.env.CODEGRAPH_AMBIGCHAIN_ORACLE === "1";
+const OUT_AMBIGCHAIN = join(OUT_DIR, "ambigchain-oracle.json");
+const AC_EXAMPLE_CAP = 20;
+
+const AC_CFG: ResolverConfig = { mode: DEFAULT_AMBIGUOUS_RESOLVE_MODE, coneMax: CONE_MAX_DEFAULT };
+/** The production strategy, asked what IT alone answers — the DROP channel. */
+const acChainTypeStrategy = new RubyChainTypeSymbolResolutionStrategy(AC_CFG);
+
+interface AcExample {
+  where: string;
+  caller: string;
+  receiver: string;
+  member: string;
+  kind: ReceiverKind;
+  shape: string;
+  candidateCount: number;
+  receiverType: string;
+  chainTarget: string;
+  chainTypeVerdict: string;
+  harnessOutcome: LcOutcome;
+}
+
+/** Population: every call whose dispatch fan-out came back over-cap `ambiguous`. */
+let acTotal = 0;
+const acByShape: Record<string, number> = {};
+const acByKind: Record<string, number> = {};
+const acByMember: Record<string, number> = {};
+let acCandidateSum = 0;
+/** Fidelity: after 55950 the typedness gate precedes the cap, so this must be 0. */
+let acTypedReceiver = 0;
+let acTypedBare = 0;
+/** The `normal` shape — the ONLY shape production concedes on. */
+let acNormal = 0;
+/** Harness bucket over the normal-shape population = what production gives up. */
+const acNormalByBucket: Record<string, number> = {};
+/** The chain's own answer at those sites (production `resolver.resolve`). */
+let acChainResolved = 0;
+let acChainMethodLevel = 0;
+let acChainFileOnly = 0;
+const acChainResolvedByKind: Record<string, number> = {};
+const acChainResolvedByMember: Record<string, number> = {};
+/** `chainType` standing alone — separates "the type is fiction" from "no member". */
+const acChainTypeVerdict: Record<string, number> = {};
+/** Fidelity: the chain answer must agree with the outcome `resolvePass2` recorded. */
+let acDisagreed = 0;
+const acDisagreeExamples: string[] = [];
+const acGainExamples: AcExample[] = [];
+const acConcedeExamples: AcExample[] = [];
+
+function acBump(bag: Record<string, number>, key: string): void {
+  bag[key] = (bag[key] ?? 0) + 1;
+}
+
+/** Which of the three `resolvePass2` call shapes this call takes. */
+function acCallShape(call: CallRef): "dispatch" | "dispatchArgs" | "normal" {
+  if (call.dispatch) return "dispatch";
+  if (call.dispatchArgs && call.dispatchArgs.length > 0) return "dispatchArgs";
+  return "normal";
+}
+
+function acRefText(ref: ReturnType<typeof typeOfReceiver>): string {
+  if (ref === undefined) return "-";
+  if (ref.form === "nil") return "nil";
+  if (ref.form === "container") return "container";
+  if (ref.form === "union") return "union";
+  return `${ref.form === "class" ? "class " : ""}${ref.name}`;
+}
+
+/**
+ * The one call-site hook, invoked from `resolvePass2` after the baseline outcome
+ * is known. Only over-cap `ambiguous` outcomes enter — every other call returns
+ * on the first line, so the cost is one branch per call site plus one
+ * `resolver.resolve` over the population itself.
+ */
+function noteAmbigChainCall(
+  call: CallRef,
+  ctx: CallContext,
+  dispatchOutcome: DispatchFanoutOutcome | undefined,
+  baseOutcome: LcOutcome,
+  receiverKind: ReceiverKind,
+  relPath: string,
+  callerSymbolId: string,
+): void {
+  if (dispatchOutcome?.kind !== "ambiguous") return;
+  const rs = resolver;
+  if (rs === undefined) return;
+  const receiver = call.receiver ?? "";
+  const shape = acCallShape(call);
+
+  acTotal += 1;
+  acCandidateSum += dispatchOutcome.candidateCount;
+  acBump(acByShape, shape);
+  acBump(acByKind, receiverKind);
+  acBump(acByMember, call.member);
+
+  const typeRef = typeOfReceiver(receiver, call.startLine, ctx);
+  const typed = typeRef !== undefined && (typeRef.form === "class" || typeRef.form === "instance");
+  if (typed) {
+    acTypedReceiver += 1;
+    if (!receiver.includes(".")) acTypedBare += 1;
+  }
+
+  // The PRODUCTION chain, asked the question production never asks here.
+  const chainTarget = rs.resolve(call, ctx);
+  const ctOutcome = acChainTypeStrategy.attempt(call, ctx);
+  acBump(
+    acChainTypeVerdict,
+    ctOutcome.kind === "resolved"
+      ? ctOutcome.target.targetSymbolId === null
+        ? "chainType RESOLVED - file-only"
+        : "chainType RESOLVED - method-level"
+      : ctOutcome.kind === "drop"
+        ? "chainType DROP - member absent on the derived closure"
+        : "chainType CONTINUE",
+  );
+
+  if (shape === "normal") {
+    acNormal += 1;
+    acBump(acNormalByBucket, baseOutcome);
+    // `resolvePass2` fell back to this same `resolve` for this shape, so the two
+    // answers are the same call. A disagreement would mean the population is not
+    // the one the projection subtracts — report it rather than average over it.
+    if ((chainTarget !== null) !== (baseOutcome === "resolved")) {
+      acDisagreed += 1;
+      if (acDisagreeExamples.length < AC_EXAMPLE_CAP) {
+        acDisagreeExamples.push(`${relPath}:${call.startLine} ${receiver}.${call.member} outcome=${baseOutcome}`);
+      }
+    }
+  }
+
+  const example = (): AcExample => ({
+    where: `${relPath}:${call.startLine}`,
+    caller: callerSymbolId,
+    receiver,
+    member: call.member,
+    kind: receiverKind,
+    shape,
+    candidateCount: dispatchOutcome.candidateCount,
+    receiverType: acRefText(typeRef),
+    chainTarget:
+      chainTarget === null ? "-" : (chainTarget.targetSymbolId ?? `${chainTarget.targetRelPath} (file-only)`),
+    chainTypeVerdict: ctOutcome.kind === "resolved" ? "RESOLVED" : ctOutcome.kind === "drop" ? "DROP" : "CONTINUE",
+    harnessOutcome: baseOutcome,
+  });
+
+  if (chainTarget !== null) {
+    acChainResolved += 1;
+    if (chainTarget.targetSymbolId === null) acChainFileOnly += 1;
+    else acChainMethodLevel += 1;
+    acBump(acChainResolvedByKind, receiverKind);
+    acBump(acChainResolvedByMember, call.member);
+    if (acGainExamples.length < AC_EXAMPLE_CAP) acGainExamples.push(example());
+  } else if (acConcedeExamples.length < AC_EXAMPLE_CAP) {
+    acConcedeExamples.push(example());
+  }
+}
+
+function runAmbigChainOracle(): void {
+  const L = (s: string) => {
+    console.log(s);
+  };
+  L("");
+  L("═══════════════════════════════════════════════════════════════════");
+  L("  OVER-CAP AMBIGUOUS — EXACT-CHAIN FALLBACK (bd btxx6 / 55950 leftover)");
+  L("═══════════════════════════════════════════════════════════════════");
+  L(`over-cap ambiguous fan-outs run-wide:      ${acTotal}`);
+  L(`  mean survivors over the cap:             ${acTotal === 0 ? 0 : (acCandidateSum / acTotal).toFixed(1)}`);
+  L(`  of which the "normal" call shape:        ${acNormal}   <-- the population production concedes`);
+  L("  by call shape:");
+  for (const [k, n] of Object.entries(acByShape).sort((a, b) => b[1] - a[1])) {
+    L(`      ${String(n).padStart(7)}  ${k}`);
+  }
+  L("  by receiver kind:");
+  for (const [k, n] of Object.entries(acByKind).sort((a, b) => b[1] - a[1])) {
+    L(`      ${String(n).padStart(7)}  ${k}`);
+  }
+  L("");
+  L("─── the bead's own cut, re-priced on this branch ──────────────────");
+  L(`typed receiver (class | instance) at an over-cap site: ${acTypedReceiver}`);
+  L(`  of which BARE (the 405 the 2026-08-02 oracle priced): ${acTypedBare}`);
+  L("  (0 is the EXPECTED reading: commit 35143c48 moved the typedness gate ahead");
+  L("   of `resolveNarrowedFanout`, so a typed receiver returns an empty fan-out");
+  L("   and can no longer reach the cap that produces `ambiguous`.)");
+  L("");
+  L("─── what the PRODUCTION chain answers at those sites ──────────────");
+  L(`chain resolves:                          ${acChainResolved}`);
+  L(`  method-level:                          ${acChainMethodLevel}`);
+  L(`  file-only:                             ${acChainFileOnly}`);
+  L(`chain answers null (production concedes): ${acTotal - acChainResolved}`);
+  L(`fidelity — chain answer vs recorded outcome disagreements: ${acDisagreed}`);
+  for (const ex of acDisagreeExamples.slice(0, 6)) L(`      e.g. ${ex}`);
+  L("  standalone chainType verdict at the population:");
+  for (const [k, n] of Object.entries(acChainTypeVerdict).sort((a, b) => b[1] - a[1])) {
+    L(`      ${String(n).padStart(7)}  ${k}`);
+  }
+  L("  chain-resolved by receiver kind:");
+  for (const [k, n] of Object.entries(acChainResolvedByKind).sort((a, b) => b[1] - a[1])) {
+    L(`      ${String(n).padStart(7)}  ${k}`);
+  }
+  L("  top members over the population:");
+  for (const [k, n] of Object.entries(acByMember)
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 12)) {
+    L(`      ${String(n).padStart(7)}  ${k}`);
+  }
+  for (const ex of acGainExamples.slice(0, 8)) {
+    L(`      GAIN  ${ex.where} ${ex.receiver}.${ex.member} cand=${ex.candidateCount} -> ${ex.chainTarget}`);
+  }
+  for (const ex of acConcedeExamples.slice(0, 8)) {
+    L(
+      `      CONCEDE  ${ex.where} ${ex.receiver}.${ex.member} cand=${ex.candidateCount} type=${ex.receiverType} chainType=${ex.chainTypeVerdict} -> ${ex.harnessOutcome}`,
+    );
+  }
+
+  // ── production counters, reconstructed from this run ─────────────────────
+  const nb = (k: string): number => acNormalByBucket[k] ?? 0;
+  const prodResolved = callsResolved - nb("resolved");
+  const prodExternal = callsExternalSkipped - nb("externalSkipped");
+  const prodUnresolvable = callsUnresolvable - nb("dynamicSend");
+  const prodNoDef = callsNoInProjectDef - nb("noInProjectDef");
+  const prodCoreAmb = callsCoreAmbiguous - nb("coreAmbiguous");
+  const holeOf = (res: number, ext: number, unr: number, nod: number, core: number): number =>
+    Math.max(0, callsAttempted - res - ext - unr - nod - core);
+  const recallOf = (res: number, hole: number): number => (res + hole === 0 ? 0 : res / (res + hole));
+
+  const prodHole = holeOf(prodResolved, prodExternal, prodUnresolvable, prodNoDef, prodCoreAmb);
+  const prodRecall = recallOf(prodResolved, prodHole);
+  // A — consult, take an answer, otherwise concede exactly as today.
+  const aResolved = prodResolved + nb("resolved");
+  const aHole = holeOf(aResolved, prodExternal, prodUnresolvable, prodNoDef, prodCoreAmb);
+  const aRecall = recallOf(aResolved, aHole);
+  // B — consult, and on null fall through to the miss classifiers. Identical to
+  // what this harness already does, so its projection IS the headline.
+  const bRecall = recallOf(
+    callsResolved,
+    holeOf(callsResolved, callsExternalSkipped, callsUnresolvable, callsNoInProjectDef, callsCoreAmbiguous),
+  );
+
+  L("");
+  L("─── PRODUCTION projection (reconstructed, not modelled) ───────────");
+  L("counter                  production      A: consult      B: fallthrough");
+  const row = (label: string, a: number, b: number, c: number): void => {
+    L(`  ${label.padEnd(22)}${String(a).padStart(8)}${String(b).padStart(15)}${String(c).padStart(17)}`);
+  };
+  row("callsResolved", prodResolved, aResolved, callsResolved);
+  row("callsExternalSkipped", prodExternal, prodExternal, callsExternalSkipped);
+  row("callsUnresolvable", prodUnresolvable, prodUnresolvable, callsUnresolvable);
+  row("callsNoInProjectDef", prodNoDef, prodNoDef, callsNoInProjectDef);
+  row("callsCoreAmbiguous", prodCoreAmb, prodCoreAmb, callsCoreAmbiguous);
+  row("callsAmbiguousFanout", acNormal, acNormal - nb("resolved"), 0);
+  row(
+    "missWithInProjectDef",
+    prodHole,
+    aHole,
+    holeOf(callsResolved, callsExternalSkipped, callsUnresolvable, callsNoInProjectDef, callsCoreAmbiguous),
+  );
+  L("");
+  L(
+    `inProjectEdgeRecall:  production ${fmtPct(prodRecall)}  ->  A ${fmtPct(aRecall)} (${((aRecall - prodRecall) * 100 >= 0 ? "+" : "") + ((aRecall - prodRecall) * 100).toFixed(4)}pp)  ->  B ${fmtPct(bRecall)} (${((bRecall - prodRecall) * 100 >= 0 ? "+" : "") + ((bRecall - prodRecall) * 100).toFixed(4)}pp)`,
+  );
+  L("─── regression channel: what leaves the ambiguous bucket under B ──");
+  for (const [k, n] of Object.entries(acNormalByBucket).sort((a, b) => b[1] - a[1])) {
+    L(`      ${String(n).padStart(7)}  ambiguous -> ${k}`);
+  }
+
+  if (!existsSync(OUT_DIR)) mkdirSync(OUT_DIR, { recursive: true });
+  writeFileSync(
+    OUT_AMBIGCHAIN,
+    JSON.stringify(
+      {
+        meta: {
+          generatedAt: new Date().toISOString(),
+          callsAttempted,
+          population: acTotal,
+          normalShape: acNormal,
+          meanSurvivors: acTotal === 0 ? 0 : acCandidateSum / acTotal,
+          byShape: acByShape,
+          byKind: acByKind,
+          byMember: acByMember,
+          typedReceiver: acTypedReceiver,
+          typedBare: acTypedBare,
+          fidelityDisagreements: acDisagreed,
+        },
+        chain: {
+          resolved: acChainResolved,
+          methodLevel: acChainMethodLevel,
+          fileOnly: acChainFileOnly,
+          byKind: acChainResolvedByKind,
+          byMember: acChainResolvedByMember,
+          chainTypeVerdicts: acChainTypeVerdict,
+        },
+        normalShapeBuckets: acNormalByBucket,
+        projection: {
+          production: {
+            callsResolved: prodResolved,
+            callsExternalSkipped: prodExternal,
+            callsUnresolvable: prodUnresolvable,
+            callsNoInProjectDef: prodNoDef,
+            callsCoreAmbiguous: prodCoreAmb,
+            callsAmbiguousFanout: acNormal,
+            missWithInProjectDef: prodHole,
+            inProjectEdgeRecall: prodRecall,
+          },
+          consultThenConcede: {
+            callsResolved: aResolved,
+            callsAmbiguousFanout: acNormal - nb("resolved"),
+            missWithInProjectDef: aHole,
+            inProjectEdgeRecall: aRecall,
+          },
+          fullFallthrough: {
+            callsResolved,
+            callsExternalSkipped,
+            callsUnresolvable,
+            callsNoInProjectDef,
+            callsCoreAmbiguous,
+            callsAmbiguousFanout: 0,
+            missWithInProjectDef: holeOf(
+              callsResolved,
+              callsExternalSkipped,
+              callsUnresolvable,
+              callsNoInProjectDef,
+              callsCoreAmbiguous,
+            ),
+            inProjectEdgeRecall: bRecall,
+          },
+        },
+        examples: { gains: acGainExamples, concedes: acConcedeExamples, disagreements: acDisagreeExamples },
+      },
+      null,
+      2,
+    ),
+  );
+  L("");
+  L(`over-cap ambiguous fallback oracle detail -> ${OUT_AMBIGCHAIN}`);
 }
 
 let includedBy: Record<string, string[]> = {};
