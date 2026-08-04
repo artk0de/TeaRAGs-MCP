@@ -93,6 +93,7 @@ import {
 } from "../src/core/domains/language/ruby/resolver/strategies/index.js";
 import { RUBY_DUCK_VOCAB } from "../src/core/domains/language/ruby/resolver/strategies/ruby-duck-vocabulary.js";
 import { classifyRubyLiteralReceiver } from "../src/core/domains/language/ruby/resolver/strategies/ruby-dynamic-dispatch.js";
+import { ivarFieldOwnsReceiver } from "../src/core/domains/language/ruby/resolver/strategies/ruby-ivar-field.js";
 import { RUBY_RUNTIME_HOOKS } from "../src/core/domains/language/ruby/resolver/strategies/ruby-super.js";
 import {
   collectAncestorChain,
@@ -14211,6 +14212,26 @@ const c2TruthInFanout = { rightTarget: 0, sameTarget: 0, wrongTarget: 0 };
 const c2TruthNoFanout = { rightTarget: 0, sameTarget: 0, wrongTarget: 0 };
 const c2WrongExamples: string[] = [];
 
+// ---- cut 6b: the same sample, scoped to the population C2b collapses -------
+// Cut 1's receiver-kind table says the whole firing population is `@ivar`, so
+// the cut-6 sample — dominated by bare single-segment receivers — is a NEIGHBOUR
+// of a neighbour. Scoping it to the receivers `ivarFieldOwnsReceiver` claims
+// gives the closest labelled evidence that exists for the sites C2b actually
+// collapses: ivars a fact channel types AND the convention types too. bd r2gjj
+// graded those same sites at class and edge level; the fan-out-containment axis
+// is what that grading lacks and what a REMOVAL of edges needs.
+const c2IvarTruth = {
+  graded: 0,
+  factTypeAbsentFromTable: 0,
+  silent: 0,
+  rightTarget: 0,
+  sameTarget: 0,
+  wrongTarget: 0,
+  factHasNoTarget: 0,
+};
+const c2IvarTruthInFanout = { rightTarget: 0, sameTarget: 0, wrongTarget: 0 };
+const c2IvarTruthNoFanout = { rightTarget: 0, sameTarget: 0, wrongTarget: 0 };
+
 function c2Bump(bag: Record<string, number>, key: string): void {
   bag[key] = (bag[key] ?? 0) + 1;
 }
@@ -14298,40 +14319,62 @@ function c2NoteEdgeTruth(call: CallRef, ctx: CallContext, relPath: string): void
   if (guess?.form !== "instance") return;
   const fact = typeOfReceiver(receiver, call.startLine, ctx);
   if (fact === undefined || (fact.form !== "instance" && fact.form !== "class")) return;
+  // Cut 6b rides the same walk: the ivar scope is a filter on the sample, never
+  // a second traversal, so the two bags cannot disagree about a graded site.
+  const ivarScoped = ivarFieldOwnsReceiver(call, ctx);
   const factTail = lastConstantSegment(fact.name);
   if (ctx.symbolTable.lookupByShortName(factTail).length === 0) {
     c2Truth.factTypeAbsentFromTable += 1;
+    if (ivarScoped) c2IvarTruth.factTypeAbsentFromTable += 1;
     return;
   }
   c2Truth.graded += 1;
+  if (ivarScoped) c2IvarTruth.graded += 1;
   const pinnedOn = (typeName: string): string | null =>
     resolveTypeInstanceMethod(typeName, call.member, ctx, C2_CFG.mode)?.targetSymbolId ?? null;
   const guessId = pinnedOn(guess.name);
   if (guessId === null) {
     // No edge is born, so nothing can be mis-collapsed. Agreement that emits
     // nothing is not evidence either way.
-    if (guess.name !== factTail) c2Truth.silent += 1;
+    if (guess.name !== factTail) {
+      c2Truth.silent += 1;
+      if (ivarScoped) c2IvarTruth.silent += 1;
+    }
     return;
   }
   const factId = pinnedOn(factTail);
   if (factId === null) {
     c2Truth.factHasNoTarget += 1;
+    if (ivarScoped) c2IvarTruth.factHasNoTarget += 1;
     return;
   }
   const inFanout = c2SimulatedFanoutTargets(call, ctx).has(factId);
   const bucket = inFanout ? c2TruthInFanout : c2TruthNoFanout;
+  const ivarBucket = inFanout ? c2IvarTruthInFanout : c2IvarTruthNoFanout;
   if (guess.name === factTail) {
     c2Truth.rightTarget += 1;
     bucket.rightTarget += 1;
+    if (ivarScoped) {
+      c2IvarTruth.rightTarget += 1;
+      ivarBucket.rightTarget += 1;
+    }
     return;
   }
   if (guessId === factId) {
     c2Truth.sameTarget += 1;
     bucket.sameTarget += 1;
+    if (ivarScoped) {
+      c2IvarTruth.sameTarget += 1;
+      ivarBucket.sameTarget += 1;
+    }
     return;
   }
   c2Truth.wrongTarget += 1;
   bucket.wrongTarget += 1;
+  if (ivarScoped) {
+    c2IvarTruth.wrongTarget += 1;
+    ivarBucket.wrongTarget += 1;
+  }
   if (c2WrongExamples.length < C2_EXAMPLE_CAP * 2) {
     c2WrongExamples.push(
       `${relPath}:${call.startLine}  ${receiver}.${call.member}  emit=${guessId} truth=${factId}` +
@@ -14559,6 +14602,34 @@ function runC2CollapseOracle(): void {
   L(`  measured loss rate: ${fmtPct(lossRate)}  ->  projected onto ${c2Sites} firing sites: ${(lossRate * c2Sites).toFixed(1)} calls`);
   for (const e of c2WrongExamples.slice(0, 10)) L(`    ${e}`);
 
+  L("");
+  L("─── (6b) EDGE TRUTH scoped to @ivar — the C2b population's own sample ─");
+  L("same grading, restricted to receivers `ivarFieldOwnsReceiver` claims: cut 1");
+  L("says every firing site is one, so this is the labelled evidence closest to");
+  L("the sites the collapse actually removes edges from.");
+  L(`graded samples:                       ${c2IvarTruth.graded}`);
+  L(`  fact type absent from the table:    ${c2IvarTruth.factTypeAbsentFromTable}  (cannot referee)`);
+  L(`  silent (convention emits no edge):  ${c2IvarTruth.silent}`);
+  L(`  fact's own class pins nothing:      ${c2IvarTruth.factHasNoTarget}`);
+  L(`  rightTarget (guess == fact):        ${c2IvarTruth.rightTarget}`);
+  L(`  sameTarget  (differs, same symbol): ${c2IvarTruth.sameTarget}`);
+  L(`  wrongTarget (differs, real error):  ${c2IvarTruth.wrongTarget}   <-- the regression shape`);
+  const ivarEmitted = c2IvarTruth.rightTarget + c2IvarTruth.sameTarget + c2IvarTruth.wrongTarget;
+  L(
+    `  edge accuracy over emitting samples: ${ivarEmitted === 0 ? "n/a" : fmtPct((ivarEmitted - c2IvarTruth.wrongTarget) / ivarEmitted)}` +
+      `  (${ivarEmitted} emitting samples)`,
+  );
+  L("  crossed with fan-out containment of the TRUE target:");
+  L(`      truth IS in the removable fan-out: right=${c2IvarTruthInFanout.rightTarget} same=${c2IvarTruthInFanout.sameTarget} wrong=${c2IvarTruthInFanout.wrongTarget}`);
+  L(`      truth NOT in the fan-out:          right=${c2IvarTruthNoFanout.rightTarget} same=${c2IvarTruthNoFanout.sameTarget} wrong=${c2IvarTruthNoFanout.wrongTarget}`);
+  const ivarLossRate = ivarEmitted === 0 ? 0 : c2IvarTruthInFanout.wrongTarget / ivarEmitted;
+  L(
+    `  measured loss rate: ${fmtPct(ivarLossRate)}  ->  projected onto ${c2Sites} firing sites: ` +
+      `${(ivarLossRate * c2Sites).toFixed(1)} calls`,
+  );
+  L("  (a containment count of 0 would make the sample UNINFORMATIVE about removal;");
+  L("   it is the `truth IS in the removable fan-out` row that gives it standing.)");
+
   // ── edge arithmetic + exactRatio ─────────────────────────────────────────
   // The SHIPPABLE gate excludes the `dispatch` shape (cut 4). `dispatchArgs`
   // sites already contribute their chain edge to the baseline census, so the
@@ -14648,6 +14719,13 @@ function runC2CollapseOracle(): void {
           measuredLossRate: emitted === 0 ? 0 : c2TruthInFanout.wrongTarget / emitted,
           projectedLostCalls: emitted === 0 ? 0 : (c2TruthInFanout.wrongTarget / emitted) * c2Sites,
           wrongExamples: c2WrongExamples,
+        },
+        edgeTruthIvarScoped: {
+          ...c2IvarTruth,
+          truthInRemovableFanout: c2IvarTruthInFanout,
+          truthNotInFanout: c2IvarTruthNoFanout,
+          measuredLossRate: ivarLossRate,
+          projectedLostCalls: ivarLossRate * c2Sites,
         },
         edges: {
           fanoutTotal: fanBase,
