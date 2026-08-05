@@ -1,3 +1,5 @@
+[![MCP Toplist](https://mcptoplist.com/badge/glama%2Fartk0de%2FTeaRAGs-MCP.svg)](https://mcptoplist.com/server/glama%2Fartk0de%2FTeaRAGs-MCP)
+
 <p align="center">
   <a href="https://artk0de.github.io/TeaRAGs-MCP/">
     <img src="public/logo.png" alt="TeaRAGs logo">
