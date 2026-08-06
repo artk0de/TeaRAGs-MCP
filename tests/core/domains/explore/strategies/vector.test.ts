@@ -53,4 +53,43 @@ describe("VectorSearchStrategy", () => {
     const strategy = createStrategy();
     await expect(strategy.execute({ collectionName: "test_col", limit: 5 })).rejects.toThrow("requires an embedding");
   });
+
+  // tea-rags-mcp-zrma: server-side grouping asked Qdrant for one hit per file,
+  // so there was nothing left to aggregate. Ask for several and collapse them
+  // into an outline of what matched.
+  it("collects several hits per file and attaches a members outline at file level", async () => {
+    const qdrant = {
+      queryGroups: vi.fn().mockResolvedValue([
+        {
+          id: "1",
+          score: 0.9,
+          payload: { relativePath: "src/a.ts", name: "Alpha", symbolId: "Alpha", startLine: 1 },
+        },
+        {
+          id: "2",
+          score: 0.7,
+          payload: {
+            relativePath: "src/a.ts",
+            name: "run",
+            symbolId: "Alpha#run",
+            parentSymbolId: "Alpha",
+            startLine: 5,
+          },
+        },
+      ]),
+    } as unknown as QdrantManager;
+    const strategy = createStrategy(qdrant);
+
+    const results = await strategy.execute({
+      collectionName: "test_col",
+      embedding: [0.1, 0.2, 0.3],
+      limit: 10,
+      level: "file",
+    });
+
+    const groupSize = (qdrant.queryGroups as ReturnType<typeof vi.fn>).mock.calls[0][2].groupSize as number;
+    expect(groupSize).toBeGreaterThan(1);
+    expect(results).toHaveLength(1);
+    expect(results[0].payload?.members).toBe("src/a.ts\n  Alpha\n    Alpha#run");
+  });
 });

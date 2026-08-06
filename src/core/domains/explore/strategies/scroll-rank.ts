@@ -7,6 +7,7 @@
 
 import { scrollOrderedBy } from "../../../adapters/qdrant/scroll.js";
 import type { RankingOverlay, RerankableResult } from "../../../contracts/types/reranker.js";
+import { FileLevelGrouper } from "../chunk-grouping/index.js";
 import { InvalidQueryError } from "../errors.js";
 import { RankModule, type RankOptions } from "../rank-module.js";
 import { BaseExploreStrategy } from "./base.js";
@@ -132,7 +133,7 @@ export class ScrollRankStrategy extends BaseExploreStrategy {
 
     // File-level dedup: keep highest-scored chunk per file
     if (originalCtx.level === "file") {
-      processed = this.groupByFile(processed, processed.length);
+      processed = FileLevelGrouper.group(processed, processed.length);
     }
 
     const effectiveOffset = originalCtx.offset || 0;

@@ -298,6 +298,30 @@ describe("SimilarSearchStrategy", () => {
     expect(callArgs.limit).toBeGreaterThan(5); // strictly greater than user-requested limit
   });
 
+  // tea-rags-mcp-zrma: the collapsed chunks are the answer to "what in this
+  // file is similar" — they must survive as an outline, not be thrown away.
+  it("attaches a members outline of the collapsed chunks at file level", async () => {
+    const qdrant = createMockQdrant([
+      { id: "1", score: 0.95, payload: { relativePath: "src/a.ts", name: "Alpha", symbolId: "Alpha", startLine: 1 } },
+      {
+        id: "2",
+        score: 0.9,
+        payload: {
+          relativePath: "src/a.ts",
+          name: "run",
+          symbolId: "Alpha#run",
+          parentSymbolId: "Alpha",
+          startLine: 5,
+        },
+      },
+    ]);
+    const strategy = createStrategy({ qdrant });
+
+    const results = await strategy.execute({ collectionName: "col", limit: 5, level: "file" });
+
+    expect(results[0].payload?.members).toBe("src/a.ts\n  Alpha\n    Alpha#run");
+  });
+
   it("returns userFilter unchanged when buildFilter produces no must clauses (empty must, has should)", async () => {
     // Edge case: userFilter only has `should`/`must_not` (no must, no extensions).
     // mustClauses stays empty after the merge loop → buildFilter returns the
