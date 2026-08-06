@@ -43,7 +43,19 @@ export function getZodConfig(): ReturnType<typeof parseAppConfigZod> {
 export function parseAppConfig(): AppConfig {
   const zodConfig = parseAppConfigZod();
   _lastZodConfig = zodConfig;
+  return buildAppConfig(zodConfig);
+}
 
+/**
+ * Bridge an already-parsed Zod config to the typed AppConfig consumers use.
+ *
+ * Split out from `parseAppConfig` because the MCP server bridges a config it
+ * parsed from a PROJECT's registry env — re-reading process.env there would
+ * hand the run the server's values, which is the bug this exists to close
+ * (tea-rags-mcp-pmfm4). Pure: the only environment it touches is the path
+ * resolution, which is process-owned by definition.
+ */
+export function buildAppConfig(zodConfig: ReturnType<typeof parseAppConfigZod>): AppConfig {
   const paths: ResolvedPaths = {
     appData: appDataDir(),
     snapshots: snapshotsDir(),

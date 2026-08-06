@@ -907,3 +907,37 @@ describe("printDeprecationWarnings", () => {
     stderrSpy.mockRestore();
   });
 });
+
+// ---------------------------------------------------------------------------
+// Explicit env source. A long-lived MCP server parses a request-scoped config
+// from a per-project env map, so the parse cannot read process.env for that
+// caller — reading the global would be the race (tea-rags-mcp-pmfm4).
+// ---------------------------------------------------------------------------
+
+describe("parseAppConfigZod with an explicit env source", () => {
+  it("reads values from the supplied map instead of process.env", async () => {
+    const { parseAppConfigZod } = await freshImport();
+    process.env.INGEST_CHUNK_OVERLAP = "300";
+
+    const config = parseAppConfigZod({ INGEST_CHUNK_OVERLAP: "450", INGEST_PIPELINE_CONCURRENCY: "6" });
+
+    expect(config.ingest.chunkOverlap).toBe(450);
+    expect(config.ingest.tune.pipelineConcurrency).toBe(6);
+  });
+
+  it("resolves deprecated spellings from the supplied map too", async () => {
+    const { parseAppConfigZod } = await freshImport();
+
+    const config = parseAppConfigZod({ CODE_CHUNK_OVERLAP: "111" });
+
+    expect(config.ingest.chunkOverlap).toBe(111);
+    expect(config.deprecations.map((d) => d.oldName)).toContain("CODE_CHUNK_OVERLAP");
+  });
+
+  it("still reads process.env when no source is supplied", async () => {
+    const { parseAppConfigZod } = await freshImport();
+    process.env.INGEST_CHUNK_OVERLAP = "222";
+
+    expect(parseAppConfigZod().ingest.chunkOverlap).toBe(222);
+  });
+});

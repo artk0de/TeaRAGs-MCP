@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { replayRegistryEnv } from "../../src/cli/registry-env-replay.js";
+import { replayRegistryEnv } from "../../../../../src/core/domains/maintenance/registry/env-replay.js";
 
 describe("replayRegistryEnv", () => {
   it("fills unset target keys from the tuning snapshot (registry fills the gaps)", () => {

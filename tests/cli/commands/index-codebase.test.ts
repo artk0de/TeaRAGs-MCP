@@ -64,13 +64,12 @@ vi.mock("../../../src/core/api/public/index.js", async () => {
       listProjects = vi.fn().mockReturnValue([]);
       findByPath = vi.fn().mockReturnValue(null);
     },
+    // Registry env resolution moved into domains/maintenance/registry and now
+    // reaches the CLI through this barrel, so its stubs live here too.
+    resolveRegistryEnv: vi.fn().mockReturnValue({}),
+    pickRegistryEntry: vi.fn().mockReturnValue(null),
   };
 });
-
-vi.mock("../../../src/cli/index-progress/registry-env.js", () => ({
-  resolveRegistryEnv: vi.fn().mockReturnValue({}),
-  pickRegistryEntry: vi.fn().mockReturnValue(null),
-}));
 
 // Worker main — used in __worker handler branch
 vi.mock("../../../src/cli/index-progress/worker.js", () => ({
