@@ -4,9 +4,9 @@ import { join } from "node:path";
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+import type { CollectionEntry } from "../../../../../src/core/contracts/types/registry.js";
 import { CollectionRegistry } from "../../../../../src/core/domains/maintenance/registry/collection-registry.js";
 import { saveRegistryFile } from "../../../../../src/core/domains/maintenance/registry/registry-file.js";
-import type { CollectionEntry } from "../../../../../src/core/contracts/types/registry.js";
 
 function makeEntry(over: Partial<CollectionEntry> = {}): Omit<CollectionEntry, "name"> {
   return {
@@ -535,6 +535,79 @@ describe("CollectionRegistry", () => {
       r.updatePath("code_rt", "/repo/new");
       expect(r.findByPath("/repo/new")?.collectionName).toBe("code_rt");
       expect(r.findByPath("/repo/old")).toBeNull();
+    });
+  });
+
+  describe("autoUpdate stickiness", () => {
+    it("record() preserves existing autoUpdate block", () => {
+      const r = new CollectionRegistry(dir);
+      r.record(makeEntry());
+      r.setAutoUpdate("code_abc", { enabled: true, targetBranch: "master" });
+      r.record(makeEntry({ chunksCount: 99 }));
+      expect(r.get("code_abc")?.autoUpdate).toEqual({ enabled: true, targetBranch: "master" });
+      expect(r.get("code_abc")?.chunksCount).toBe(99);
+    });
+
+    it("setAutoUpdate(null) removes the block", () => {
+      const r = new CollectionRegistry(dir);
+      r.record(makeEntry());
+      r.setAutoUpdate("code_abc", { enabled: true, targetBranch: "master" });
+      r.setAutoUpdate("code_abc", null);
+      const got = r.get("code_abc");
+      expect(got?.autoUpdate).toBeUndefined();
+      expect(got !== null && "autoUpdate" in got).toBe(false);
+    });
+
+    it("setAutoUpdate throws on unknown collection", () => {
+      const r = new CollectionRegistry(dir);
+      expect(() => {
+        r.setAutoUpdate("nope", { enabled: true, targetBranch: "m" });
+      }).toThrow("not in registry");
+    });
+
+    it("recordAutoUpdateRun merges lastRun and persists across instances", () => {
+      const r = new CollectionRegistry(dir);
+      r.record(makeEntry());
+      r.setAutoUpdate("code_abc", { enabled: true, targetBranch: "master" });
+      r.recordAutoUpdateRun("code_abc", {
+        at: "2026-08-06T12:00:00Z",
+        outcome: "ok",
+        durationMs: 1200,
+        filesChanged: 3,
+      });
+      const fresh = new CollectionRegistry(dir);
+      const auto = fresh.get("code_abc")?.autoUpdate;
+      expect(auto?.lastRun?.outcome).toBe("ok");
+      expect(auto?.enabled).toBe(true);
+      expect(auto?.targetBranch).toBe("master");
+    });
+
+    it("recordAutoUpdateRun is a no-op when entry or block missing", () => {
+      const r = new CollectionRegistry(dir);
+      const run = { at: "2026-08-06T12:00:00Z", outcome: "failed" as const, durationMs: 1, filesChanged: 0 };
+      expect(() => {
+        r.recordAutoUpdateRun("nope", run);
+      }).not.toThrow();
+      r.record(makeEntry({ collectionName: "code_nb" }));
+      expect(() => {
+        r.recordAutoUpdateRun("code_nb", run);
+      }).not.toThrow();
+      expect(r.get("code_nb")?.autoUpdate).toBeUndefined();
+    });
+
+    it("record() round-trips the git block", () => {
+      const r = new CollectionRegistry(dir);
+      r.record(
+        makeEntry({
+          git: { indexedBranch: "master", indexedCommit: "abc123", indexedDirty: false },
+        }),
+      );
+      const fresh = new CollectionRegistry(dir);
+      expect(fresh.get("code_abc")?.git).toEqual({
+        indexedBranch: "master",
+        indexedCommit: "abc123",
+        indexedDirty: false,
+      });
     });
   });
 });

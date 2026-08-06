@@ -1,9 +1,14 @@
 import { watch, type FSWatcher } from "node:fs";
 
-import { RegistryNameConflictError } from "./errors.js";
+import type {
+  AutoUpdateRunRecord,
+  CollectionEntry,
+  RecordEntryInput,
+  RegistryAutoUpdateConfig,
+} from "../../../contracts/types/registry.js";
 import { PROJECT_NAME_RE } from "./constants.js";
+import { RegistryNameConflictError } from "./errors.js";
 import { flushWithCAS, loadRegistryFile } from "./registry-file.js";
-import type { CollectionEntry, RecordEntryInput } from "../../../contracts/types/registry.js";
 
 export class CollectionRegistry {
   private cache: Map<string, CollectionEntry> | null = null;
@@ -50,6 +55,9 @@ export class CollectionRegistry {
     map.set(entry.collectionName, {
       ...entry,
       name: existing?.name ?? null,
+      // autoUpdate is sticky like name — pipeline reruns must not wipe
+      // CLI-set policy (managed via setAutoUpdate / recordAutoUpdateRun).
+      ...(existing?.autoUpdate !== undefined ? { autoUpdate: existing.autoUpdate } : {}),
     });
     // Re-registering a previously-removed collection clears its tombstone.
     this.tombstones.delete(entry.collectionName);
@@ -127,6 +135,40 @@ export class CollectionRegistry {
       }
     }
     map.set(collectionName, { ...entry, name });
+    this.flush();
+  }
+
+  /**
+   * Set or clear the auto-update policy for a collection. `null` removes the
+   * block entirely (disable-and-forget). Throws on unknown collection —
+   * callers resolve the alias first and want a loud failure on typos.
+   */
+  setAutoUpdate(collectionName: string, config: RegistryAutoUpdateConfig | null): void {
+    const map = this.ensureLoaded();
+    const entry = map.get(collectionName);
+    if (!entry) {
+      throw new Error(`Collection '${collectionName}' not in registry`);
+    }
+    if (config === null) {
+      const { autoUpdate: _dropped, ...rest } = entry;
+      map.set(collectionName, rest as CollectionEntry);
+    } else {
+      map.set(collectionName, { ...entry, autoUpdate: config });
+    }
+    this.flush();
+  }
+
+  /**
+   * Merge the outcome of one auto-update run into the entry's autoUpdate
+   * block. No-op when the entry or block is missing — the project may have
+   * been unregistered (or auto-update disabled) while the detached updater
+   * ran; the updater must not fail on that race.
+   */
+  recordAutoUpdateRun(collectionName: string, lastRun: AutoUpdateRunRecord): void {
+    const map = this.ensureLoaded();
+    const entry = map.get(collectionName);
+    if (!entry?.autoUpdate) return;
+    map.set(collectionName, { ...entry, autoUpdate: { ...entry.autoUpdate, lastRun } });
     this.flush();
   }
 
