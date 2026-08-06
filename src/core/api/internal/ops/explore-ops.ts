@@ -30,6 +30,7 @@ import {
   EmptyFilterPresetError,
   UnknownFilterPresetError,
 } from "../../../domains/explore/errors.js";
+import { computeSearchConfidence, type SearchConfidenceInput } from "../../../domains/explore/index.js";
 import { IndexMetricsQuery } from "../../../domains/explore/queries/index-metrics.js";
 import type { Reranker } from "../../../domains/explore/reranker.js";
 import {
@@ -39,6 +40,7 @@ import {
   SymbolSearchStrategy,
   type BaseExploreStrategy,
   type ExploreContext,
+  type ExploreResult,
 } from "../../../domains/explore/strategies/index.js";
 import { NotIndexedError } from "../../../domains/ingest/errors.js";
 import { StatsRecomputeService } from "../../../domains/ingest/infra/stats-recompute.js";
@@ -200,7 +202,7 @@ export class ExploreOps {
     // fallbacks. Guarded + idempotent — the call in executeExplore is a no-op.
     await this.ensureStats(collectionName);
     const filter = this.buildFilter(request, level);
-    return this.executeExplore(strategy, buildFindSimilarContext(request, collectionName, filter, level), path);
+    return this.executeExplore(strategy, buildFindSimilarContext(request, collectionName, filter, level), path, true);
   }
 
   async findSymbol(request: FindSymbolRequest): Promise<ExploreResponse> {
@@ -243,11 +245,19 @@ export class ExploreOps {
   // Private pipeline helpers
   // ---------------------------------------------------------------------------
 
-  /** Unified pipeline: ensureStats → strategy.execute → shape → drift warning. */
+  /**
+   * Unified pipeline: ensureStats → strategy.execute → shape → drift warning.
+   *
+   * `attachConfidence` is opt-in per operation rather than global: the shape of
+   * the score distribution only answers "is this in the project" where the
+   * score came from a semantic comparison. On rank_chunks (scroll + rerank) and
+   * find_symbol (exact lookup) it would be a number attesting nothing.
+   */
   private async executeExplore(
     strategy: BaseExploreStrategy,
     ctx: ExploreContext,
     path?: string,
+    attachConfidence = false,
   ): Promise<ExploreResponse> {
     await this.ensureStats(ctx.collectionName);
     const results = await strategy.execute(ctx);
@@ -261,6 +271,7 @@ export class ExploreOps {
       })),
       driftWarning,
       ...(ctx.level ? { level: ctx.level } : {}),
+      ...(attachConfidence ? { confidence: computeSearchConfidence(toConfidenceInput(results)) } : {}),
     };
   }
 
@@ -282,6 +293,7 @@ export class ExploreOps {
       strategy,
       buildVectorSearchContext(request, collectionName, embedding, filter, rerank, level),
       path,
+      true,
     );
   }
 
@@ -381,6 +393,18 @@ export class ExploreOps {
 // ---------------------------------------------------------------------------
 // File-local helpers (pure functions)
 // ---------------------------------------------------------------------------
+
+/**
+ * Reduce strategy output to the two fields the shape statistics read. Works for
+ * both full and metaOnly result shapes — `relativePath` sits on the payload in
+ * either case.
+ */
+function toConfidenceInput(results: readonly ExploreResult[]): SearchConfidenceInput[] {
+  return results.map((r) => ({
+    score: r.score,
+    relativePath: typeof r.payload?.relativePath === "string" ? r.payload.relativePath : undefined,
+  }));
+}
 
 /** Minimal registry surface resolveFilterSpec needs — pure preset-def lookup. */
 interface FilterPresetLookup {

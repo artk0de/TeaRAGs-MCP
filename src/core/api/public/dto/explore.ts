@@ -4,6 +4,7 @@
 
 import type { RankingOverlay, SignalLevel } from "../../../contracts/types/reranker.js";
 import type { PayloadSignalDescriptor } from "../../../contracts/types/trajectory.js";
+import type { SearchConfidence } from "../../../domains/explore/index.js";
 import type { CollectionIdentifier } from "./common.js";
 
 // ---------------------------------------------------------------------------
@@ -168,6 +169,13 @@ export interface ExploreResponse {
   driftWarning: string | null;
   /** Effective signal level used for scoring and grouping. Present when level was explicitly resolved. */
   level?: SignalLevel;
+  /**
+   * Shape-of-distribution match quality. Present only for the tools whose score
+   * carries semantic evidence (semantic_search, hybrid_search, find_similar);
+   * absent for rank_chunks and find_symbol, where it would attest nothing.
+   * Advisory — never filters results.
+   */
+  confidence?: SearchConfidence;
 }
 
 // ---------------------------------------------------------------------------

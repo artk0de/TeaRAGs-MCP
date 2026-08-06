@@ -151,30 +151,121 @@ prose around it. The gate:
 Calibration constants (`k`, the two cut-points) and the measured separability
 live in the section appended after the corpus run.
 
-## Calibration result
+## Calibration result — the gate is NOT met
 
-Filled in by the corpus run — see the section appended to this file once
-`scripts/search-confidence-corpus.ts` has been executed against the live index.
-Until then the constants in `confidence.ts` are provisional and carry no claim.
+Measured 2026-08-06 by `scripts/search-confidence-corpus.ts` against the live
+`code_8b243ffe` index (17110 chunks, 1743 files, embedding model
+`unclemusclez/jina-embeddings-v2-base-code`), `limit=10`, `level=chunk`, no
+rerank — the un-reranked path that produced the original complaint. Corpus: 25
+nonsense queries, 25 legitimate queries, both the dense and the hybrid leg, 100
+measurements. Constants fitted by quantile rule (`high` = p90 of nonsense,
+`medium` = p10 of legitimate), `k` grid-swept for maximum margin, giving
+`k = 0.11`, `medium = 0.19`, `high = 0.63`. The shipped `medium` is 0.21 rather
+than 0.19 — at 0.19 a completely flat response that happens to sit in one
+directory (locality 1.0 × weight 0.2) escapes `low`, which the design forbids;
+the fitted cut-point and the design's own "locality never decides" rule are 0.02
+apart, which is its own comment on how thin the separation is.
 
-## Where the mechanism is expected to be wrong
+Gate under the shipped constants (`k = 0.11`, `medium = 0.21`, `high = 0.63`):
 
-Failure modes anticipated at design time; the corpus run either confirms them
-with numbers or replaces this list.
+| Leg    | nonsense `high` (gate ≤ 10%) | legit above `low` (gate ≥ 90%) | verdict |
+| ------ | ---------------------------- | ------------------------------ | ------- |
+| dense  | 0/25 = 0.0% ✓                | 19/25 = 76.0% ✗                | FAIL    |
+| hybrid | 6/25 = 24.0% ✗               | 25/25 = 100.0% ✓               | FAIL    |
+| pooled | 6/50 = 12.0% ✗               | 44/50 = 88.0% ✗                | FAIL    |
 
-- **A legitimate query that is genuinely scattered** ("error handling",
-  "logging") loses the entire locality component and part of peak.
-- **A nonsense query that accidentally clusters** — a made-up token whose
-  subtokens resemble one directory's vocabulary — gets a locality boost it has
-  not earned. Locality's low weight is what keeps that out of `high`.
-- **Reranked responses** are scored on the blended rerank score, not on raw
-  similarity. A preset weighting git signals heavily flattens the peak of a
-  genuine find, so confidence reads lower than the semantic evidence warrants.
-  Calibration therefore runs on the un-reranked path.
+At the unadjusted fit (`medium = 0.19`) the pooled numbers are 12.0% / 92.0% —
+still a fail on the nonsense side.
+
+No choice of cut-points fixes this, because the failure is upstream of the
+cut-points. Per-component discrimination, as Mann-Whitney AUC (probability a
+random legitimate query outscores a random nonsense one; 0.5 = coin flip):
+
+| Component               | dense AUC | hybrid AUC |
+| ----------------------- | --------- | ---------- |
+| **peak** (weight 0.4)   | **0.517** | **0.556**  |
+| **spread** (weight 0.4) | **0.518** | **0.482**  |
+| locality (weight 0.2)   | 0.862     | 0.819      |
+| combined value          | 0.742     | 0.702      |
+
+**The two components carrying 80% of the weight are coin flips.** `spread` on
+the hybrid leg is below chance. The component the design deliberately
+subordinated — locality — is the only one that separates anything, and the
+weighting dilutes it.
+
+Even where the gate's letter is nearly satisfiable, its spirit is not: under the
+design weights, 48% of nonsense queries (dense) and 100% (hybrid) still land at
+`medium` or above. A signal that calls half of all garbage "medium" does not
+help an agent decide whether the project contains the thing.
+
+### Why the shape does not carry the information
+
+Raw top-10 scores, one query from each class, dense leg:
+
+```
+nonsense "opera libretto soprano aria"
+  0.448 0.448 0.441 0.436 0.436 0.436 0.427 0.426 0.426 0.421
+legit    "resolve label from percentile thresholds"
+  0.797 0.784 0.734 0.670 0.661 0.657 0.647 0.630 0.628 0.624
+```
+
+Both are gently decaying sheets. What differs is not their shape — it is their
+**height**, and height is precisely what the design rules out:
+
+| Discriminator                | dense AUC | hybrid AUC |
+| ---------------------------- | --------- | ---------- |
+| mean score of the result set | **0.997** | 0.942      |
+| top score `s1`               | **0.990** | 0.826      |
+| peak + spread (shape)        | ~0.52     | ~0.52      |
+
+Absolute magnitude separates the two classes almost perfectly on this index;
+shape does not separate them at all.
+
+The hybrid leg additionally makes the shape components meaningless by
+construction. Qdrant's RRF fusion emits rank-derived scores — the nonsense query
+above returns `0.500 0.333 0.250 0.200 0.167 …`, the harmonic series of
+`1/(1+rank)`. Every hybrid response has the same peaked geometric shape whatever
+the query, which is why `peak` reads 0.542 for nonsense and 0.553 for legitimate
+and `spread` falls below chance.
+
+### What this means for the design
+
+The design's objection to absolute thresholds is sound as far as it goes: a
+hard-coded `0.5` is a property of one embedding model and would rot on a model
+swap. But the conclusion drawn from it — discard magnitude, use shape — is
+refuted by the measurement above. The information lives in the magnitude.
+
+The consistent answer inside this codebase is the one already used everywhere
+else for exactly this problem: calibrate the absolute scale **against the
+collection itself** rather than against a constant.
+`Reranker#computeAdaptiveBounds` normalises signals against the batch p95
+floored by the collection p95; `StatsCache` already persists per-collection
+distributions. A per-collection score distribution, sampled at index time, would
+let `s1` and the result-set mean be read as percentiles of that collection's own
+scores — model-independent, no constant, and measured AUC 0.99 rather than 0.52.
+
+This is a design change, not a calibration tweak, so it is not made here. The
+implementation on this branch follows the approved design exactly; the numbers
+above are the measurement result, reported rather than tuned away.
+
+## Where the mechanism is wrong
+
+Confirmed by the corpus run:
+
+- **`peak` and `spread` do not discriminate at all** (AUC 0.517 / 0.518 dense).
+  The score sheet decays at roughly the same relative rate whether or not the
+  project contains the answer.
+- **Hybrid (RRF) scores encode rank, not similarity.** Their shape is generated
+  by the fusion formula, so `peak` and `spread` measure the formula rather than
+  the match. `find_similar` (Qdrant recommend) was not separately measured and
+  may share this defect.
+- **`locality` is the only working component and is under-weighted.** It also
+  fails exactly where the design predicted: legitimately scattered queries
+  ("error handling") read as noise.
+- **`medium` is not actionable** under the fitted cut-points: 31 of 50 nonsense
+  measurements land there.
 - **Small result sets.** Below three results the shape statistics have almost no
-  data — `n = 1` has no tail to separate from and no dispersion at all. The
-  computer returns a defined value there by convention (documented in the
-  module), and it is a convention, not a measurement.
-- **Single-occurrence symbols.** A query for something that exists exactly once
-  legitimately produces a flat response and reads `low`. This is why there is no
-  gate.
+  data; `n = 1` has no tail and no dispersion. The module returns a defined
+  value by convention, and it is a convention, not a measurement.
+- **Single-occurrence symbols** legitimately produce a flat response and read
+  `low`. This is why there is no gate.

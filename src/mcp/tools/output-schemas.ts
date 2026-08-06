@@ -52,9 +52,18 @@ const SearchResultItemSchema = z
   })
   .passthrough();
 
+const SearchConfidenceSchema = z.object({
+  value: z.number().describe("Shape score 0-1: leader peak + score spread + path clustering"),
+  label: z.string().describe("high | medium | low"),
+});
+
 /** Shared output schema for semantic_search, hybrid_search, rank_chunks, find_similar */
 export const SearchResultOutputSchema = {
   results: z.array(SearchResultItemSchema).describe("Search results with explained metadata"),
   level: z.enum(["chunk", "file"]).optional().describe("Effective signal level used for scoring"),
+  confidence: SearchConfidenceSchema.optional().describe(
+    "Match quality from result-set shape, NOT absolute score. low = query likely has no match in project. " +
+      "Advisory — never filters results. Absent on rank_chunks / find_symbol.",
+  ),
   driftWarning: z.string().nullable().optional().describe("Warning if index may be stale"),
 };
