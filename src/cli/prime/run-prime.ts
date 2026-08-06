@@ -2,9 +2,17 @@ import { existsSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 
+import { spawnDetachedUpdater } from "../../bootstrap/auto-update/spawner.js";
+import { AutoUpdateTrigger, type AutoUpdateTriggerOutcome } from "../../bootstrap/auto-update/trigger.js";
 import { parseAppConfig } from "../../bootstrap/config/index.js";
 import { createAppContext } from "../../bootstrap/factory.js";
-import { CollectionRegistry, resolveCollectionName, type CollectionEntry } from "../../core/api/public/index.js";
+import {
+  CollectionRegistry,
+  IndexFreshnessCheck,
+  resolveCollectionName,
+  type CollectionEntry,
+} from "../../core/api/public/index.js";
+import { autoUpdateLogPath, closeAutoUpdateLog, openAutoUpdateLog } from "../auto-update/updater-log.js";
 import { replayRegistryEnv } from "../registry-env-replay.js";
 import { FileCacheStore } from "../update-check/cache-store.js";
 import { UpdateCheckService } from "../update-check/check-service.js";
@@ -48,7 +56,32 @@ function lookupRegistryEntry(input: { path?: string; project?: string }): Collec
  *      Uses entry.path for path and entry.qdrantUrl for Qdrant.
  *   2. Heuristic: discoverQdrantUrl + the provided --path.
  */
-export async function runPrime(input: { path?: string; project?: string }): Promise<void> {
+/**
+ * Default auto-update trigger for prime (hpg2): freshness check + detached
+ * spawn with the per-project log fd. Constructed only when a registry entry
+ * matched. The spawn is fire-and-forget (~10 ms) — SessionStart latency stays
+ * untouched; the parent's log fd is closed right after the child inherits it.
+ */
+function buildPrimeAutoUpdateTrigger(entry: CollectionEntry, dataDir: string): AutoUpdateTrigger {
+  const label = entry.name ?? entry.collectionName;
+  return new AutoUpdateTrigger({
+    registry: new CollectionRegistry(dataDir),
+    freshness: new IndexFreshnessCheck(),
+    spawn: (project) => {
+      const log = openAutoUpdateLog(dataDir, label);
+      spawnDetachedUpdater({ project, logFd: log.fd });
+      closeAutoUpdateLog(log);
+    },
+    clock: () => Date.now(),
+  });
+}
+
+export async function runPrime(input: {
+  path?: string;
+  project?: string;
+  /** Test seam — production builds the real trigger via buildPrimeAutoUpdateTrigger. */
+  autoUpdateTrigger?: { maybeSpawn: (collectionName: string) => AutoUpdateTriggerOutcome };
+}): Promise<void> {
   // Path resolution priority: explicit --path, then --project alias (via
   // registry), then the current working directory. The cwd fallback covers
   // hooks whose $CLAUDE_PROJECT_DIR expanded empty (`prime ""`): prime then
@@ -149,6 +182,14 @@ export async function runPrime(input: { path?: string; project?: string }): Prom
       return;
     }
 
+    // Auto-update trigger (hpg2): verdict computed BEFORE render so the
+    // digest reflects it; the eligible-path spawn is detached fire-and-forget.
+    const autoUpdateOutcome = registryEntry
+      ? (input.autoUpdateTrigger ?? buildPrimeAutoUpdateTrigger(registryEntry, resolveDataDir())).maybeSpawn(
+          registryEntry.collectionName,
+        )
+      : null;
+
     const data: PrimeData = {
       path,
       projectName: registryEntry?.name ?? null,
@@ -157,6 +198,10 @@ export async function runPrime(input: { path?: string; project?: string }): Prom
       metrics: metricsResult.status === "fulfilled" ? metricsResult.value : null,
       drift: drift.status === "fulfilled" ? drift.value : null,
       update: update.status === "fulfilled" ? update.value : null,
+      autoUpdateOutcome,
+      ...(registryEntry
+        ? { autoUpdateLogPath: autoUpdateLogPath(resolveDataDir(), registryEntry.name ?? registryEntry.collectionName) }
+        : {}),
     };
     process.stdout.write(formatPrime(data));
   } finally {

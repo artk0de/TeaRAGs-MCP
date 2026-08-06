@@ -69,6 +69,17 @@ function formatDigest(data: PrimeData, now: Date): string {
       `⚠ Index is stale (last updated ${staleness.ago} ago). ` +
         "Run `index_codebase` before the next tea-rags search/explore.",
     );
+    // Stale + auto-update off → the one-line cure (hpg2). Verdict "disabled"
+    // covers both a missing block and enabled=false.
+    if (data.autoUpdateOutcome === "disabled" && data.projectName) {
+      lines.push(`enable auto-update: \`tea-rags auto-update enable --project ${data.projectName}\``);
+    }
+  }
+
+  const autoUpdateLine = formatAutoUpdateLine(data, now);
+  if (autoUpdateLine !== null) {
+    lines.push("");
+    lines.push(autoUpdateLine);
   }
 
   lines.push("");
@@ -272,6 +283,35 @@ function formatStatusLine(status: IndexStatus, now: Date): string {
     case "unavailable":
       return "index unavailable.";
   }
+}
+
+/**
+ * Auto-update digest line (hpg2). Null = no line: trigger not fired, or
+ * config disabled (the stale-block hint covers that case instead). A failed
+ * lastRun dominates every fresh verdict — the operator must see the failure
+ * and the log path before anything else.
+ */
+function formatAutoUpdateLine(data: PrimeData, now: Date): string | null {
+  const outcome = data.autoUpdateOutcome;
+  const config = data.registry?.autoUpdate;
+  if (outcome === undefined || outcome === null || !config?.enabled) return null;
+
+  const { lastRun } = config;
+  if (lastRun?.outcome === "failed") {
+    const ago = computeStaleness(new Date(lastRun.at), now)?.ago ?? "recently";
+    return `auto-update: failed ${ago} ago — see ${data.autoUpdateLogPath ?? "the auto-update log"}`;
+  }
+  if (outcome === "eligible") {
+    return `auto-update: on (${config.targetBranch}) · catching up in background`;
+  }
+  if (outcome === "branch-mismatch") {
+    return `auto-update: paused — HEAD not on target ${config.targetBranch}; run \`index_codebase\` to switch the index`;
+  }
+  const lastRunSuffix =
+    lastRun !== undefined
+      ? ` · last run ${lastRun.outcome} ${computeStaleness(new Date(lastRun.at), now)?.ago ?? "just now"} ago`
+      : "";
+  return `auto-update: on (${config.targetBranch})${lastRunSuffix}`;
 }
 
 function computeStaleness(lastUpdated: Date | undefined, now: Date): { ago: string; stale: boolean } | null {

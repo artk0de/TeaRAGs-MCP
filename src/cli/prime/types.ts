@@ -1,3 +1,4 @@
+import type { AutoUpdateTriggerOutcome } from "../../bootstrap/auto-update/trigger.js";
 import type { IndexMetrics, IndexStatus } from "../../core/api/public/dto/index.js";
 import type { CollectionEntry } from "../../core/api/public/index.js";
 import type { UpdateStatus } from "../update-check/types.js";
@@ -24,6 +25,15 @@ export interface PrimeData {
   metrics: IndexMetrics | null;
   drift: string | null;
   update: UpdateStatus | null;
+  /**
+   * Outcome of the auto-update trigger fired for this prime run (hpg2) —
+   * verdict kind or "in-memory-debounced". Absent/null = trigger not fired
+   * (no registry entry, or a pre-hpg2 caller): digest renders no
+   * auto-update line at all.
+   */
+  autoUpdateOutcome?: AutoUpdateTriggerOutcome | null;
+  /** Per-project auto-update log path, shown on failure lines. */
+  autoUpdateLogPath?: string;
 }
 
 /**
