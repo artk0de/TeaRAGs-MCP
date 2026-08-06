@@ -11574,7 +11574,8 @@ function runBareDeferOracle(extractions: FileExtraction[]): void {
 //       the coordinate the resolver looked at: either `resolveConstant` cannot
 //       name ONE file for a declared class, or the return fact is written
 //       UNQUALIFIED (`@return [Result]` inside `A::B` means `A::B::Result`) and
-//       the engine takes the name literally.
+//       the engine took the name literally — until bd tea-rags-mcp-7fn5f
+//       (`1c6723c5`) shipped owner-scoped qualification; see cut (2b).
 //   (c) CONSUMER — the channel produced something its consumer structurally
 //       declines: `resolveBoundCallTarget` threads class/instance only, so a
 //       container / union / nil return reaches nobody. Measured beside it, the
@@ -12227,9 +12228,17 @@ function runBoundCallOracle(): void {
 
   L("");
   L("─── (2b) the qualification probe — is the FACT the coordinate defect? ───");
+  // SHIPPED SINCE (bd tea-rags-mcp-7fn5f, 2026-08-04). `1c6723c5` taught
+  // `boundCallReturnType` exactly this owner-scoped qualification, so the probe
+  // now grades the shipped engine against itself: `unique qualification` reads 0
+  // and the banked 48-call gain (predicted 48 = measured 48, +0.04pp at
+  // bb278440) is what the change BOUGHT, banked — not what it would buy again.
+  // A non-zero row here is a regression in the shipped qualification.
+  L("  SHIPPED SINCE 7fn5f (1c6723c5): `unique qualification` 0 IS the shipped");
+  L("  state — the engine now qualifies owner-scoped; non-zero = regression.");
   L("  An unqualified `@return [Result]` written inside `A::B` names `A::B::Result`");
-  L("  in Ruby; the engine takes the name literally, so the type it derives names");
-  L("  no declared class. This asks what Ruby's own lookup would find instead.");
+  L("  in Ruby; the engine took the name literally until 7fn5f. This asks what");
+  L("  Ruby's own lookup would find instead.");
   for (const [k, n] of rank(bcQualifyVerdict)) L(`      ${String(n).padStart(6)}  ${k}`);
   L("");
   L("  terminal (resolveTypeMethod, the SAME function resolveBoundCallTarget calls)");
