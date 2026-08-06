@@ -104,8 +104,8 @@ Content requirements (ultra prose in the file):
 - Mode detect: `$ARGUMENTS` contains URL → external; else local.
 - Project resolve: `list_projects` → match registered alias by cwd (local) or by
   cloned/available checkout of the MR's repo (external; agent must have a local
-  checkout — the index lives on a path). No match → STOP, print register
-  - index instruction. Never scan an unindexed repo.
+  checkout — the index lives on a path). No match → STOP, print the
+  register/index instruction. Never scan an unindexed repo.
 - Freshness gate: external → `git fetch` target branch, index behind →
   incremental `index_codebase project=<alias>`; local → incremental reindex when
   uncommitted/unindexed edits matter for MAP (keyed off prime staleness banner).
@@ -127,7 +127,7 @@ Content requirements (ultra prose in the file):
 - Per touched source file (cap 15; above → ask user to narrow):
   `find_symbol relativePath=<file> project=<alias>` → outline; intersect changed
   ranges with symbol spans → changed symbols + their chunk UUIDs + full overlay
-  (git.file._, git.chunk._, codegraph.\*).
+  (`git.file.*`, `git.chunk.*`, `codegraph.*`).
 - Output per file: `{file, changedSymbols[], chunkUUIDs[], overlay}` — the
   working set every Phase 3 dimension reads. Non-indexed touched files (new in
   MR, generated, docs) → listed with `overlay: none`, still eligible for D6.
