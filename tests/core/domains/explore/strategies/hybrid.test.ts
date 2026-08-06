@@ -112,7 +112,7 @@ describe("HybridSearchStrategy", () => {
       level: "file",
     });
 
-    // groupByFile deduplicates — 2 unique files from 3 results
+    // FileLevelGrouper deduplicates — 2 unique files from 3 results
     const paths = results.map((r) => r.payload?.["relativePath"]);
     expect(new Set(paths).size).toBeLessThanOrEqual(results.length);
   });
