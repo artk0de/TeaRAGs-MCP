@@ -73,7 +73,25 @@ export type { ConfigErrorCode } from "../../infra/errors.js";
 export { CollectionRegistry } from "../../domains/maintenance/registry/index.js";
 export { PROJECT_NAME_RE } from "../../domains/maintenance/registry/index.js";
 export { REGISTRY_ENV_ALLOWLIST, REGISTRY_ENV_GROUPS } from "../../domains/maintenance/registry/index.js";
-export type { CollectionEntry, ProjectInfo, RegistryEnvGroup } from "../../domains/maintenance/registry/index.js";
+export type {
+  AutoUpdateRunRecord,
+  CollectionEntry,
+  ProjectInfo,
+  RegistryAutoUpdateConfig,
+  RegistryEnvGroup,
+  RegistryGitState,
+} from "../../domains/maintenance/registry/index.js";
+
+// ── Index freshness — auto-update watcher decision surface (hpg2) ─────
+export {
+  AUTO_UPDATE_FAILURE_BACKOFF_MS,
+  AUTO_UPDATE_RUN_TTL_MS,
+  IndexFreshnessCheck,
+} from "../../domains/maintenance/freshness/index.js";
+export type { IndexFreshnessVerdict } from "../../domains/maintenance/freshness/index.js";
+
+// ── Repo git state helpers (infra) — CLI default-branch autodetect ────
+export { detectDefaultBranch } from "../../infra/repo-git-state.js";
 
 // ── Collection-name helpers (infra/collection-name.ts) ────────────────
 export { resolveCollectionName, validatePath } from "../../infra/collection-name.js";
