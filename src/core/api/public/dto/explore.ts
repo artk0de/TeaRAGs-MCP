@@ -170,9 +170,10 @@ export interface ExploreResponse {
   /** Effective signal level used for scoring and grouping. Present when level was explicitly resolved. */
   level?: SignalLevel;
   /**
-   * Shape-of-distribution match quality. Present only for the tools whose score
-   * carries semantic evidence (semantic_search, hybrid_search, find_similar);
-   * absent for rank_chunks and find_symbol, where it would attest nothing.
+   * Match quality read against the collection's own similarity scale. Present
+   * only for the tools whose score is a genuine similarity (semantic_search,
+   * find_similar) and only when that scale has been measured. Absent for
+   * hybrid_search (RRF scores are rank-derived), rank_chunks and find_symbol.
    * Advisory — never filters results.
    */
   confidence?: SearchConfidence;

@@ -1,8 +1,22 @@
-# Search confidence — distribution-shape signal for no-match detection
+# Search confidence — collection-relative no-match detection
 
-Status: approved 2026-08-06 (design fixed by the owner, this document records
-it). Implements `tea-rags-mcp-7vzo`; supersedes the `matchQuality` sketch in
+Status: **shipped design, revision 2** (2026-08-06). Implements
+`tea-rags-mcp-7vzo`; supersedes the `matchQuality` sketch in
 `tea-rags-mcp-v6aa`.
+
+This document has two halves, and the order is deliberate.
+
+- **Part I** records revision 1 — confidence from the SHAPE of the score
+  distribution — and the measurement that killed it. It is kept in full,
+  including the AUC table, because "read the shape instead of the magnitude" is
+  an attractive idea that will occur to the next reader too. It has been
+  measured. It does not work.
+- **Part II** is what shipped: magnitude read against the collection's own
+  similarity scale, plus path locality.
+
+---
+
+# Part I — rejected: distribution shape (revision 1)
 
 ## Problem
 
@@ -86,6 +100,8 @@ are calibrated against measurement.
 
 ## Placement
 
+**Carried into Part II unchanged.**
+
 A pure computer in a new module, `src/core/domains/explore/confidence.ts`: an
 array of `{score, relativePath}` in, `{value, label}` out. No Qdrant, no
 Reranker, no payload readers. It is testable on bare arrays of numbers, which is
@@ -105,6 +121,9 @@ client breaks.
 
 ## Output
 
+**Carried into Part II unchanged**, with one addition: when the collection's
+similarity scale is unknown the field is omitted entirely.
+
 ```json
 { "confidence": { "value": 0.23, "label": "low" } }
 ```
@@ -122,6 +141,8 @@ being solved.
 
 ## Scope: three tools, not five
 
+**Superseded — Part II narrows this to `semantic_search` alone, on measurement.**
+
 | Tool              | Confidence | Why                                                            |
 | ----------------- | ---------- | -------------------------------------------------------------- |
 | `semantic_search` | yes        | dense score answers "is this in the project"                   |
@@ -131,7 +152,8 @@ being solved.
 | `find_symbol`     | **no**     | exact lookup — the question does not arise                     |
 
 Attaching confidence to `rank_chunks` would be a lie with a number on it: every
-chunk in the filtered set is "there", the score only orders them.
+chunk in the filtered set is "there", the score only orders them. That reasoning
+survives; the `hybrid_search` and `find_similar` rows did not.
 
 ## Acceptance — measured, not asserted
 
@@ -244,28 +266,175 @@ distributions. A per-collection score distribution, sampled at index time, would
 let `s1` and the result-set mean be read as percentiles of that collection's own
 scores — model-independent, no constant, and measured AUC 0.99 rather than 0.52.
 
-This is a design change, not a calibration tweak, so it is not made here. The
-implementation on this branch follows the approved design exactly; the numbers
-above are the measurement result, reported rather than tuned away.
+This is a design change, not a calibration tweak. It was taken to the owner with
+the numbers above and approved, and Part II is the result.
+
+## Why revision 1 failed, in one line
+
+Confidence built on shape asked the score sheet a question it does not answer.
+The sheet decays at roughly the same relative rate whether or not the project
+contains the answer (`peak` AUC 0.517, `spread` 0.518); what changes is how high
+the sheet sits. The design forbade looking at exactly that.
+
+Secondary findings from the same run, all carried into Part II:
+
+- **Hybrid (RRF) scores encode rank, not similarity.** `peak` reads 0.542 for
+  nonsense against 0.553 for legitimate because the fusion formula generates the
+  shape. Hybrid is out of scope in Part II for this reason.
+- **`locality` was the only working component and was under-weighted** at 0.2.
+- **`medium` was not actionable**: 31 of 50 nonsense measurements landed there.
+
+---
+
+# Part II — shipped: magnitude against the collection's own scale
+
+## The correction
+
+The objection to absolute thresholds stands: a hard-coded `0.5` belongs to
+`jina-embeddings-v2-base-code` and would rot on a model swap. What was wrong was
+the conclusion drawn from it. Magnitude is not unusable — it is unusable
+*against a constant*. Read against the collection's own similarity distribution
+it is both the strongest discriminator available and model-independent.
+
+That is the same move `Reranker#computeAdaptiveBounds` already makes for
+signals: normalise against the collection, never against a constant. Confidence
+now makes it one level up.
+
+## The collection score background
+
+`ScoreBackground` — the cosine similarity between random pairs of stored vectors
+— is the collection's similarity scale:
+
+```ts
+interface ScoreBackground {
+  mean: number;
+  stddev: number;
+  sampleCount: number; // vector PAIRS
+}
+```
+
+Measured on the tea-rags index: `mean 0.256, sd 0.146` over 1000 pairs. A
+nonsense query's result set means 0.46 (z ≈ 1.4); a legitimate one means 0.63
+(z ≈ 2.5). Same numbers, expressed in units the collection defines.
+
+**This did not exist in `StatsCache`** — it holds per-signal percentiles over
+payload fields and categorical distributions, nothing about scores. What was
+added:
+
+| Piece                                                | Cost                                                                                                            |
+| ---------------------------------------------------- | --------------------------------------------------------------------------------------------------------------- |
+| `ScoreBackground` on `CollectionSignalStats`         | six numbers                                                                                                      |
+| stats-cache file `v6` (readers for v4/v5 unchanged)  | one field, absent-means-undefined                                                                                |
+| `sampleVectors` — bounded scroll with vectors        | 1200 vectors ≈ 3.7 MB at 768 dims, one scroll, does NOT scale with index size                                    |
+| `computeScoreBackground` — 600 disjoint-pair cosines | milliseconds                                                                                                     |
+| call site in `IndexingOps#refreshStatsByCollection`  | runs where stats are already recomputed; failure is non-fatal — signal stats still save, confidence stays absent |
+
+Indexes built before v6 carry no background. Confidence is then **omitted from
+the response** rather than guessed — the same convention the project already
+uses for new payload fields: a reindex fills it in.
+
+## Components
+
+```
+z         = (mean(result scores) − background.mean) / background.stddev
+magnitude = clamp01((z − Z_FLOOR) / (Z_CEILING − Z_FLOOR))
+locality  = 1 − H / ln(n)      # Shannon entropy over result directories
+
+value     = 0.75 · magnitude + 0.25 · locality
+```
+
+`peak` and `spread` are gone. Keeping them at a token weight would mean mixing
+two coin flips into the score; there is no number that justifies it.
+
+`locality` moved from 0.2 to 0.25 — a real 0.862 AUC deserves a weight that can
+move a verdict by one label. It still cannot overturn magnitude, which is
+correct: legitimately scattered queries ("error handling") lose this component
+entirely and must not be punished into `low` for it.
+
+The mean over the returned results rather than the top score alone: measured AUC
+0.997 against 0.990, and a mean is harder to move with one lucky hit.
+
+## Scope: one tool, measured
+
+| Tool              | Confidence | Why                                                                   |
+| ----------------- | ---------- | ---------------------------------------------------------------------- |
+| `semantic_search` | yes        | dense cosine, AUC 0.995 on the acceptance corpus                       |
+| `hybrid_search`   | **no**     | RRF fusion emits `0.500 0.333 0.250 0.200 0.167 …` — rank, not distance |
+| `find_similar`    | **no**     | separates perfectly but on a different scale — see below               |
+| `rank_chunks`     | **no**     | scroll + rerank; the score orders candidates, it does not attest match  |
+| `find_symbol`     | **no**     | exact lookup — the question does not arise                             |
+
+### find_similar, checked separately
+
+It does **not** have the RRF defect — its recommend score is a genuine cosine,
+and within its own leg it separates perfectly: AUC **1.000**, nonsense mean
+0.676 against legitimate 0.831.
+
+It has a different defect. Its query is CODE, and unrelated code sits far closer
+to a code corpus than unrelated prose does. Under the cut-points calibrated on
+prose queries, **10 of 10 nonsense snippets label `high`** — the exact failure
+this feature exists to prevent, with a number on it. Excluded until it has its
+own calibration corpus; the mechanism is ready for it, only the cut-points are
+missing.
+
+## Calibration result — the gate is met
+
+Measured 2026-08-06 by `scripts/search-confidence-corpus.ts` against the live
+`code_8b243ffe` index (17149 chunks, 1746 files), `limit=10`, `level=chunk`, no
+rerank. Corpus: the same 25 nonsense + 25 legitimate queries as revision 1, plus
+10 + 10 code snippets for the find_similar leg.
+
+Shipped constants: `Z_FLOOR = 1`, `Z_CEILING = 3`, weights `0.75 / 0.25`,
+cut-points `medium = 0.35`, `high = 0.55`.
+
+| Leg                  | nonsense `high` (gate ≤ 10%) | legit above `low` (gate ≥ 90%) | AUC   | verdict |
+| -------------------- | ---------------------------- | ------------------------------ | ----- | ------- |
+| **semantic_search**  | **0/25 = 0.0%**              | **25/25 = 100.0%**             | 0.995 | **PASS** |
+| find_similar         | 10/10 = 100.0%               | 10/10 = 100.0%                 | 1.000 | out of scope |
+
+Separation window on the semantic_search leg, which is what justifies the
+cut-points rather than eyeballing them:
+
+| Quantity                       | Value    |
+| ------------------------------ | -------- |
+| nonsense max                   | 0.47     |
+| nonsense p90                   | 0.38     |
+| legitimate min                 | 0.36     |
+| legitimate p10                 | 0.51     |
+| mean confidence — nonsense     | 0.200    |
+| mean confidence — legitimate   | 0.659    |
+
+Any `high` cut above 0.47 keeps nonsense out of `high` entirely; 0.55 has slack.
+Any `medium` cut at or below 0.36 keeps every legitimate query above `low`; 0.35
+has 0.01 of slack, which is tight and is the number to watch on another corpus.
+
+Label mix: nonsense `high=0 medium=3 low=22`, legitimate `high=17 medium=8
+low=0`. Compare revision 1, where 31 of 50 nonsense measurements read `medium`.
+
+An alternative fit is worth recording: setting `medium = 0.51` (the legitimate
+p10, which the quantile rule strictly prescribes) drops nonsense out of `medium`
+altogether, at the cost of labelling 10% of legitimate queries `low`. The
+shipped 0.35 keeps every real find visible and accepts 3 nonsense queries at
+`medium`. For an anti-hallucination signal that trade is defensible either way;
+it was chosen for recall, and `medium` is not `high`.
 
 ## Where the mechanism is wrong
 
-Confirmed by the corpus run:
-
-- **`peak` and `spread` do not discriminate at all** (AUC 0.517 / 0.518 dense).
-  The score sheet decays at roughly the same relative rate whether or not the
-  project contains the answer.
-- **Hybrid (RRF) scores encode rank, not similarity.** Their shape is generated
-  by the fusion formula, so `peak` and `spread` measure the formula rather than
-  the match. `find_similar` (Qdrant recommend) was not separately measured and
-  may share this defect.
-- **`locality` is the only working component and is under-weighted.** It also
-  fails exactly where the design predicted: legitimately scattered queries
-  ("error handling") read as noise.
-- **`medium` is not actionable** under the fitted cut-points: 31 of 50 nonsense
-  measurements land there.
-- **Small result sets.** Below three results the shape statistics have almost no
-  data; `n = 1` has no tail and no dispersion. The module returns a defined
-  value by convention, and it is a convention, not a measurement.
-- **Single-occurrence symbols** legitimately produce a flat response and read
-  `low`. This is why there is no gate.
+- **`find_similar` is unserved** — perfect discrimination, wrong scale, no
+  cut-points. Anyone adding them needs a code-snippet corpus, not a prose one.
+- **`hybrid_search` is unserved** and cannot be served by this mechanism at all:
+  RRF scores carry no distance information to normalise.
+- **Cross-modality queries drift.** The background is measured chunk-to-chunk;
+  prose queries sit lower against it than code queries do. Both are handled by
+  the calibrated bounds, but a query mode unlike either — a stack trace, a UUID
+  — has not been measured.
+- **The `medium` cut has 0.01 of slack** against the legitimate minimum on this
+  corpus. A corpus with a harder legitimate query would push someone below it.
+- **A reranked response is scored on the blended rerank score**, not raw
+  similarity, so a preset weighting git signals heavily reads lower than the
+  semantic evidence warrants. Calibration ran on the un-reranked path.
+- **Small result sets.** With one or two hits the mean is the whole sample. The
+  magnitude reading stays honest; locality stops meaning much.
+- **Single-occurrence symbols** still read low-ish when the one hit is
+  isolated — which is why there is still no gate: results are always returned in
+  full.

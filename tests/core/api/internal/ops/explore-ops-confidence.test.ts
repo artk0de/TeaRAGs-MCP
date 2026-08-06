@@ -2,10 +2,15 @@
  * ExploreOps — search-confidence envelope wiring.
  *
  * Confidence answers "does the project contain this at all", so it rides the
- * response envelope of the three tools whose score carries semantic evidence
- * (semantic_search, hybrid_search, find_similar) and MUST NOT appear on
- * rank_chunks (scroll + rerank: every candidate is already known to be there)
- * or find_symbol (exact lookup).
+ * response envelope of the tools whose score is a genuine similarity —
+ * semantic_search and find_similar. It MUST NOT appear on:
+ *   - hybrid_search: RRF fusion emits rank-derived scores (0.5, 0.333, 0.25 …),
+ *     a magnitude that says nothing about the match
+ *   - rank_chunks: scroll + rerank, every candidate is already known to be there
+ *   - find_symbol: exact lookup, the question does not arise
+ *
+ * It also requires the collection's similarity scale; without it the field is
+ * omitted rather than guessed.
  */
 
 import { beforeEach, describe, expect, it, vi } from "vitest";
@@ -33,23 +38,23 @@ vi.mock("../../../../../src/core/adapters/qdrant/sparse.js", () => ({
 }));
 
 // ---------------------------------------------------------------------------
-// Fixtures — a peaked, clustered hit set vs a flat, scattered one.
+// Fixtures — scores far above the collection background vs scores near it.
 // ---------------------------------------------------------------------------
 
-const PEAKED = [
+const STRONG = [
   { id: "1", score: 0.82, payload: { relativePath: "src/core/domains/explore/reranker.ts" } },
-  { id: "2", score: 0.54, payload: { relativePath: "src/core/domains/explore/post-process.ts" } },
-  { id: "3", score: 0.51, payload: { relativePath: "src/core/domains/explore/label-resolver.ts" } },
-  { id: "4", score: 0.49, payload: { relativePath: "src/core/domains/explore/reranker.ts" } },
-  { id: "5", score: 0.47, payload: { relativePath: "src/core/domains/explore/signal-floors.ts" } },
+  { id: "2", score: 0.65, payload: { relativePath: "src/core/domains/explore/post-process.ts" } },
+  { id: "3", score: 0.62, payload: { relativePath: "src/core/domains/explore/label-resolver.ts" } },
+  { id: "4", score: 0.58, payload: { relativePath: "src/core/domains/explore/reranker.ts" } },
+  { id: "5", score: 0.55, payload: { relativePath: "src/core/domains/explore/signal-floors.ts" } },
 ];
 
-const FLAT = [
-  { id: "1", score: 0.553, payload: { relativePath: "src/core/adapters/qdrant/client.ts" } },
-  { id: "2", score: 0.551, payload: { relativePath: "src/cli/commands/doctor.ts" } },
-  { id: "3", score: 0.55, payload: { relativePath: "src/mcp/tools/explore.ts" } },
-  { id: "4", score: 0.549, payload: { relativePath: "website/docs/api/tools.md" } },
-  { id: "5", score: 0.548, payload: { relativePath: "src/core/infra/errors.ts" } },
+const WEAK = [
+  { id: "1", score: 0.473, payload: { relativePath: "src/core/adapters/qdrant/client.ts" } },
+  { id: "2", score: 0.466, payload: { relativePath: "src/cli/commands/doctor.ts" } },
+  { id: "3", score: 0.462, payload: { relativePath: "src/mcp/tools/explore.ts" } },
+  { id: "4", score: 0.458, payload: { relativePath: "website/docs/api/tools.md" } },
+  { id: "5", score: 0.451, payload: { relativePath: "src/core/infra/errors.ts" } },
 ];
 
 // ---------------------------------------------------------------------------
@@ -79,13 +84,16 @@ function makeMockEmbeddings() {
   } as any;
 }
 
+/** Stand-in collection scale: background similarity 0.25 ± 0.15. */
+const BACKGROUND = { mean: 0.25, stddev: 0.15, sampleCount: 600 };
+
 function makeMockReranker(overrides: Record<string, any> = {}) {
   return {
     hasCollectionStats: false,
     setCollectionStats: vi.fn(),
     getPreset: vi.fn().mockReturnValue({ similarity: 1 }),
     getFullPreset: vi.fn().mockReturnValue({ signalLevel: undefined }),
-    getCollectionStats: vi.fn().mockReturnValue(undefined),
+    getCollectionStats: vi.fn().mockReturnValue({ scoreBackground: BACKGROUND }),
     getDescriptors: vi.fn().mockReturnValue([]),
     rerank: vi.fn((results: any[]) => results),
     ...overrides,
@@ -111,11 +119,11 @@ function makeMockCollectionRegistry() {
   } as any;
 }
 
-function makeOps(qdrant: any) {
+function makeOps(qdrant: any, reranker = makeMockReranker()) {
   return new ExploreOps({
     qdrant,
     embeddings: makeMockEmbeddings(),
-    reranker: makeMockReranker(),
+    reranker,
     registry: makeMockRegistry(),
     collectionRegistry: makeMockCollectionRegistry(),
     payloadSignals: [],
@@ -132,45 +140,58 @@ describe("ExploreOps — search confidence on the response envelope", () => {
     vi.clearAllMocks();
   });
 
-  describe("tools that carry semantic evidence", () => {
-    it("semanticSearch reports high-shape hits above low and flat hits as low", async () => {
-      const peaked = await makeOps(makeMockQdrant({ search: vi.fn().mockResolvedValue(PEAKED) })).semanticSearch({
+  describe("tools whose score is a genuine similarity", () => {
+    it("semanticSearch reports strong hits above low and background-level hits as low", async () => {
+      const strong = await makeOps(makeMockQdrant({ search: vi.fn().mockResolvedValue(STRONG) })).semanticSearch({
         query: "reranker adaptive bounds",
         collection: "code_test_col",
       } as never);
-      const flat = await makeOps(makeMockQdrant({ search: vi.fn().mockResolvedValue(FLAT) })).semanticSearch({
+      const weak = await makeOps(makeMockQdrant({ search: vi.fn().mockResolvedValue(WEAK) })).semanticSearch({
         query: "quantum blockchain orchestration",
         collection: "code_test_col",
       } as never);
 
-      expect(flat.confidence?.label).toBe("low");
-      expect(peaked.confidence?.label).not.toBe("low");
-      expect(peaked.confidence!.value).toBeGreaterThan(flat.confidence!.value);
+      expect(weak.confidence?.label).toBe("low");
+      expect(strong.confidence?.label).not.toBe("low");
+      expect(strong.confidence!.value).toBeGreaterThan(weak.confidence!.value);
     });
 
-    it("hybridSearch carries confidence", async () => {
-      const response = await makeOps(makeMockQdrant({ hybridSearch: vi.fn().mockResolvedValue(PEAKED) })).hybridSearch({
-        query: "reranker adaptive bounds",
-        collection: "code_test_col",
-      } as never);
+    it("omits confidence when the collection has no measured similarity scale", async () => {
+      const noBackground = makeMockReranker({ getCollectionStats: vi.fn().mockReturnValue(undefined) });
+      const ops = makeOps(makeMockQdrant({ search: vi.fn().mockResolvedValue(STRONG) }), noBackground);
 
-      expect(response.confidence).toBeDefined();
-      expect(["low", "medium", "high"]).toContain(response.confidence!.label);
-    });
+      const response = await ops.semanticSearch({ query: "anything", collection: "code_test_col" } as never);
 
-    it("findSimilar carries confidence", async () => {
-      const ops = makeOps(makeMockQdrant({ query: vi.fn().mockResolvedValue(PEAKED) }));
-      const request = { positiveIds: ["1"], collection: "code_test_col" } as never;
-
-      const response = await ops.findSimilar(request, ops.buildSimilarStrategy(request));
-
-      expect(response.confidence).toBeDefined();
+      expect(response.confidence).toBeUndefined();
+      expect(response.results).toHaveLength(STRONG.length);
     });
   });
 
   describe("tools whose score does not attest a match", () => {
+    it("findSimilar omits confidence — its query is code, on a different scale from the cut-points", async () => {
+      // Measured: within-leg AUC 1.000, but unrelated CODE sits far closer to a
+      // code corpus than unrelated prose does, so the shared cut-points label
+      // 10/10 nonsense snippets "high". Out of scope until it has its own
+      // calibration corpus.
+      const ops = makeOps(makeMockQdrant({ query: vi.fn().mockResolvedValue(STRONG) }));
+      const request = { positiveIds: ["1"], collection: "code_test_col" } as never;
+
+      const response = await ops.findSimilar(request, ops.buildSimilarStrategy(request));
+
+      expect(response.confidence).toBeUndefined();
+    });
+
+    it("hybridSearch omits confidence — RRF fusion emits rank-derived scores", async () => {
+      const response = await makeOps(makeMockQdrant({ hybridSearch: vi.fn().mockResolvedValue(STRONG) })).hybridSearch({
+        query: "reranker adaptive bounds",
+        collection: "code_test_col",
+      } as never);
+
+      expect(response.confidence).toBeUndefined();
+    });
+
     it("rankChunks omits confidence entirely", async () => {
-      const response = await makeOps(makeMockQdrant({ scrollAll: vi.fn().mockResolvedValue(FLAT) })).rankChunks({
+      const response = await makeOps(makeMockQdrant({ scrollAll: vi.fn().mockResolvedValue(WEAK) })).rankChunks({
         rerank: "techDebt",
         collection: "code_test_col",
       } as never);
@@ -179,7 +200,7 @@ describe("ExploreOps — search confidence on the response envelope", () => {
     });
 
     it("findSymbol omits confidence entirely", async () => {
-      const response = await makeOps(makeMockQdrant({ scrollFiltered: vi.fn().mockResolvedValue(PEAKED) })).findSymbol({
+      const response = await makeOps(makeMockQdrant({ scrollFiltered: vi.fn().mockResolvedValue(STRONG) })).findSymbol({
         symbol: "Reranker",
         collection: "code_test_col",
       } as never);
@@ -190,13 +211,13 @@ describe("ExploreOps — search confidence on the response envelope", () => {
 
   describe("no gating", () => {
     it("returns every result even when confidence is low", async () => {
-      const response = await makeOps(makeMockQdrant({ search: vi.fn().mockResolvedValue(FLAT) })).semanticSearch({
+      const response = await makeOps(makeMockQdrant({ search: vi.fn().mockResolvedValue(WEAK) })).semanticSearch({
         query: "quantum blockchain orchestration",
         collection: "code_test_col",
       } as never);
 
       expect(response.confidence!.label).toBe("low");
-      expect(response.results).toHaveLength(FLAT.length);
+      expect(response.results).toHaveLength(WEAK.length);
     });
   });
 });

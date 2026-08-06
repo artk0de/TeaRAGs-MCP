@@ -1,152 +1,190 @@
 import { describe, expect, it } from "vitest";
 
+import type { ScoreBackground } from "../../../../src/core/contracts/types/trajectory.js";
 import { computeSearchConfidence } from "../../../../src/core/domains/explore/confidence.js";
 
 /**
- * Shape fixtures. Every assertion below is about the SHAPE of the score
- * distribution — never about the absolute magnitude of any score, which is a
- * property of the embedding model and must not leak into the mechanism.
+ * Confidence reads the MAGNITUDE of a result set against the collection's own
+ * similarity scale, plus how tightly the hits cluster in the tree. Round 1 of
+ * this feature measured the alternative — distribution shape (leader peak,
+ * coefficient of variation) — at AUC 0.517 / 0.518, i.e. coin flips, and it was
+ * removed. See the design spec before reintroducing anything shape-based.
  */
 
-/** A real find: one clear leader, decaying tail, results clustered in one directory. */
+/** Stand-in for a real collection: background similarity 0.25 ± 0.15. */
+const BACKGROUND: ScoreBackground = { mean: 0.25, stddev: 0.15, sampleCount: 600 };
+
+/** A real find on that collection: mean score ≈ 0.63 → z ≈ 2.5, clustered. */
 const FIND = [
   { score: 0.82, relativePath: "src/core/domains/explore/reranker.ts" },
-  { score: 0.54, relativePath: "src/core/domains/explore/post-process.ts" },
-  { score: 0.51, relativePath: "src/core/domains/explore/label-resolver.ts" },
-  { score: 0.49, relativePath: "src/core/domains/explore/reranker.ts" },
-  { score: 0.47, relativePath: "src/core/domains/explore/signal-floors.ts" },
+  { score: 0.65, relativePath: "src/core/domains/explore/post-process.ts" },
+  { score: 0.62, relativePath: "src/core/domains/explore/label-resolver.ts" },
+  { score: 0.58, relativePath: "src/core/domains/explore/reranker.ts" },
+  { score: 0.55, relativePath: "src/core/domains/explore/signal-floors.ts" },
 ];
 
-/** Nonsense: flat plateau of near-identical scores scattered across the tree. */
+/** Nonsense on the same collection: mean ≈ 0.46 → z ≈ 1.4, scattered. */
 const NOISE = [
-  { score: 0.553, relativePath: "src/core/adapters/qdrant/client.ts" },
-  { score: 0.551, relativePath: "src/cli/commands/doctor.ts" },
-  { score: 0.55, relativePath: "src/mcp/tools/explore.ts" },
-  { score: 0.549, relativePath: "website/docs/api/tools.md" },
-  { score: 0.548, relativePath: "src/core/infra/errors.ts" },
+  { score: 0.473, relativePath: "src/core/adapters/qdrant/client.ts" },
+  { score: 0.466, relativePath: "src/cli/commands/doctor.ts" },
+  { score: 0.462, relativePath: "src/mcp/tools/explore.ts" },
+  { score: 0.458, relativePath: "website/docs/api/tools.md" },
+  { score: 0.451, relativePath: "src/core/infra/errors.ts" },
 ];
 
 describe("computeSearchConfidence", () => {
-  describe("shape separation", () => {
-    it("scores a peaked, clustered response above a flat, scattered one", () => {
-      expect(computeSearchConfidence(FIND).value).toBeGreaterThan(computeSearchConfidence(NOISE).value);
+  describe("magnitude against the collection scale", () => {
+    it("separates a result set that scores far above background from one that barely clears it", () => {
+      const find = computeSearchConfidence(FIND, BACKGROUND);
+      const noise = computeSearchConfidence(NOISE, BACKGROUND);
+
+      expect(find!.value).toBeGreaterThan(noise!.value);
+      expect(noise!.label).toBe("low");
+      expect(find!.label).not.toBe("low");
     });
 
-    it("ignores absolute magnitude — a uniformly rescaled response keeps its confidence", () => {
-      // Halving every score preserves peak (ratio), CV (scale-free) and paths.
-      const halved = FIND.map((r) => ({ ...r, score: r.score / 2 }));
-      expect(computeSearchConfidence(halved).value).toBeCloseTo(computeSearchConfidence(FIND).value, 6);
+    it("reads the same scores differently on a collection whose background is higher", () => {
+      // Identical result set, denser collection: the same 0.63 mean is now
+      // ordinary, so confidence must drop. This is the whole point of
+      // normalising against the collection instead of against a constant.
+      const denseCollection: ScoreBackground = { mean: 0.62, stddev: 0.15, sampleCount: 600 };
+
+      expect(computeSearchConfidence(FIND, denseCollection)!.value).toBeLessThan(
+        computeSearchConfidence(FIND, BACKGROUND)!.value,
+      );
     });
 
-    it("labels a flat scattered response low and a peaked clustered response above low", () => {
-      expect(computeSearchConfidence(NOISE).label).toBe("low");
-      expect(computeSearchConfidence(FIND).label).not.toBe("low");
-    });
-  });
+    it("is invariant to a change of embedding scale — background and scores move together", () => {
+      // A model that emits similarities at half the magnitude produces the same
+      // z-score, therefore the same confidence.
+      const halvedScores = FIND.map((r) => ({ ...r, score: r.score / 2 }));
+      const halvedBackground: ScoreBackground = { mean: 0.125, stddev: 0.075, sampleCount: 600 };
 
-  describe("peak — leader separation", () => {
-    it("reaches its maximum when the tail collapses to zero", () => {
-      // peak = (1 - median(0,0,0)) / 1 = 1; spread and locality also maximal here:
-      // one directory, and CV of [1,0,0,0] is large enough to saturate.
-      const { value } = computeSearchConfidence([
-        { score: 1, relativePath: "src/a/x.ts" },
-        { score: 0, relativePath: "src/a/y.ts" },
-        { score: 0, relativePath: "src/a/z.ts" },
-        { score: 0, relativePath: "src/a/w.ts" },
-      ]);
+      expect(computeSearchConfidence(halvedScores, halvedBackground)!.value).toBeCloseTo(
+        computeSearchConfidence(FIND, BACKGROUND)!.value,
+        6,
+      );
+    });
+
+    it("saturates rather than overflowing when a result set sits far above background", () => {
+      const perfect = FIND.map((r) => ({ ...r, score: 0.99 }));
+      const { value } = computeSearchConfidence(perfect, BACKGROUND)!;
+
+      expect(value).toBeLessThanOrEqual(1);
       expect(value).toBeGreaterThan(0.9);
     });
 
-    it("falls to zero when every score is identical", () => {
-      // peak = (0.5 - 0.5) / 0.5 = 0, spread = CV 0 → 0. Only locality survives.
-      const flat = Array.from({ length: 6 }, (_, i) => ({ score: 0.5, relativePath: `src/d${i}/f.ts` }));
-      expect(computeSearchConfidence(flat).value).toBeCloseTo(0, 6);
-    });
-
-    it("is unaffected by a single strong runner-up (median tail, not mean)", () => {
-      const oneRival = [
-        { score: 0.9, relativePath: "src/a/x.ts" },
-        { score: 0.88, relativePath: "src/a/y.ts" },
-        { score: 0.2, relativePath: "src/a/z.ts" },
-        { score: 0.19, relativePath: "src/a/w.ts" },
-        { score: 0.18, relativePath: "src/a/v.ts" },
-      ];
-      // median(0.88, 0.2, 0.19, 0.18) = (0.2 + 0.19) / 2 = 0.195 → peak = (0.9 - 0.195) / 0.9
-      expect(computeSearchConfidence(oneRival).value).toBeGreaterThan(0.5);
+    it("floors at zero for a result set at or below background", () => {
+      const atBackground = FIND.map((r) => ({ ...r, score: 0.2, relativePath: "a/x.ts" }));
+      expect(computeSearchConfidence(atBackground, BACKGROUND)!.value).toBeLessThan(0.4);
     });
   });
 
   describe("locality — directory entropy", () => {
-    it("prefers a clustered response over the same scores scattered", () => {
+    it("lifts a clustered response above the same scores scattered across the tree", () => {
       const scattered = FIND.map((r, i) => ({ ...r, relativePath: `src/pkg${i}/file.ts` }));
-      expect(computeSearchConfidence(FIND).value).toBeGreaterThan(computeSearchConfidence(scattered).value);
+
+      expect(computeSearchConfidence(FIND, BACKGROUND)!.value).toBeGreaterThan(
+        computeSearchConfidence(scattered, BACKGROUND)!.value,
+      );
     });
 
-    it("cannot by itself lift a flat response out of low", () => {
-      // Perfect locality (one directory) on top of zero peak and zero spread:
-      // 0.2 weight alone must stay under the medium cut-point.
-      const flatButClustered = Array.from({ length: 6 }, () => ({ score: 0.5, relativePath: "src/a/f.ts" }));
-      expect(computeSearchConfidence(flatButClustered).label).toBe("low");
+    it("refines but does not decide — magnitude alone outranks locality alone", () => {
+      const strongButScattered = FIND.map((r, i) => ({ ...r, score: 0.95, relativePath: `src/pkg${i}/f.ts` }));
+      const weakButClustered = NOISE.map((r) => ({ ...r, score: 0.3, relativePath: "src/one/f.ts" }));
+
+      expect(computeSearchConfidence(strongButScattered, BACKGROUND)!.value).toBeGreaterThan(
+        computeSearchConfidence(weakButClustered, BACKGROUND)!.value,
+      );
     });
 
     it("treats results without a path as unlocalizable rather than clustered", () => {
       const noPaths = NOISE.map(({ score }) => ({ score }));
-      expect(computeSearchConfidence(noPaths).value).toBeCloseTo(computeSearchConfidence(NOISE).value, 6);
+      expect(computeSearchConfidence(noPaths, BACKGROUND)!.value).toBeCloseTo(
+        computeSearchConfidence(NOISE, BACKGROUND)!.value,
+        6,
+      );
+    });
+  });
+
+  describe("background availability", () => {
+    it("reports nothing at all when the collection scale is unknown", () => {
+      // An index built before the background existed. Guessing here would put a
+      // number on an unmeasured quantity, so the field is simply absent.
+      expect(computeSearchConfidence(FIND, undefined)).toBeUndefined();
+    });
+
+    it("reports nothing when the background carries no dispersion to divide by", () => {
+      expect(computeSearchConfidence(FIND, { mean: 0.25, stddev: 0, sampleCount: 600 })).toBeUndefined();
+    });
+
+    it("reports nothing when the background was measured on too few pairs", () => {
+      expect(computeSearchConfidence(FIND, { mean: 0.25, stddev: 0.15, sampleCount: 3 })).toBeUndefined();
     });
   });
 
   describe("degenerate inputs", () => {
-    it("reports low confidence for an empty result set", () => {
-      expect(computeSearchConfidence([])).toEqual({ value: 0, label: "low" });
+    it("reports low confidence for an empty result set, background or not", () => {
+      expect(computeSearchConfidence([], BACKGROUND)).toEqual({ value: 0, label: "low" });
+      expect(computeSearchConfidence([], undefined)).toEqual({ value: 0, label: "low" });
     });
 
-    it("returns a value in [0,1] for a single result", () => {
-      const { value } = computeSearchConfidence([{ score: 0.7, relativePath: "src/a/x.ts" }]);
-      expect(value).toBeGreaterThanOrEqual(0);
+    it("scores a single result on its own magnitude", () => {
+      const { value, label } = computeSearchConfidence([{ score: 0.9, relativePath: "src/a/x.ts" }], BACKGROUND)!;
+
+      expect(value).toBeGreaterThan(0);
       expect(value).toBeLessThanOrEqual(1);
-    });
-
-    it("survives a non-positive leader without producing NaN", () => {
-      const { value, label } = computeSearchConfidence([
-        { score: 0, relativePath: "src/a/x.ts" },
-        { score: -0.1, relativePath: "src/b/y.ts" },
-        { score: -0.2, relativePath: "src/c/z.ts" },
-      ]);
-      expect(Number.isFinite(value)).toBe(true);
       expect(["low", "medium", "high"]).toContain(label);
     });
-  });
 
-  describe("calibration seam", () => {
-    it("a smaller spread half-point makes the same dispersion count for more", () => {
-      const sensitive = computeSearchConfidence(FIND, { spreadHalfPoint: 0.01 });
-      const dull = computeSearchConfidence(FIND, { spreadHalfPoint: 1 });
-      expect(sensitive.value).toBeGreaterThan(dull.value);
-    });
+    it("survives negative similarities without producing NaN", () => {
+      const { value, label } = computeSearchConfidence(
+        [
+          { score: 0, relativePath: "src/a/x.ts" },
+          { score: -0.1, relativePath: "src/b/y.ts" },
+          { score: -0.2, relativePath: "src/c/z.ts" },
+        ],
+        BACKGROUND,
+      )!;
 
-    it("defaults to the shipped constant when no override is given", () => {
-      const shipped = computeSearchConfidence(FIND);
-      const explicit = computeSearchConfidence(FIND, {});
-      expect(explicit.value).toBe(shipped.value);
+      expect(Number.isFinite(value)).toBe(true);
+      expect(label).toBe("low");
     });
   });
 
   describe("output contract", () => {
     it("returns a two-decimal value and one of the three labels", () => {
-      const { value, label } = computeSearchConfidence(FIND);
+      const { value, label } = computeSearchConfidence(FIND, BACKGROUND)!;
+
       expect(value).toBe(Math.round(value * 100) / 100);
       expect(["low", "medium", "high"]).toContain(label);
     });
 
-    it("never leaves [0,1] regardless of input shape", () => {
+    it("never leaves [0,1] regardless of input", () => {
       const wild = [
         { score: 12, relativePath: "src/a/x.ts" },
-        { score: 0.001, relativePath: "src/a/y.ts" },
+        { score: -3, relativePath: "src/a/y.ts" },
         { score: 0.0005, relativePath: "src/a/z.ts" },
       ];
-      const { value } = computeSearchConfidence(wild);
+      const { value } = computeSearchConfidence(wild, BACKGROUND)!;
+
       expect(value).toBeGreaterThanOrEqual(0);
       expect(value).toBeLessThanOrEqual(1);
+    });
+  });
+
+  describe("calibration seam", () => {
+    it("a lower z ceiling makes the same result set read stronger", () => {
+      const sensitive = computeSearchConfidence(FIND, BACKGROUND, { zCeiling: 2 });
+      const dull = computeSearchConfidence(FIND, BACKGROUND, { zCeiling: 8 });
+
+      expect(sensitive!.value).toBeGreaterThan(dull!.value);
+    });
+
+    it("defaults to the shipped bounds when no override is given", () => {
+      expect(computeSearchConfidence(FIND, BACKGROUND, {})!.value).toBe(
+        computeSearchConfidence(FIND, BACKGROUND)!.value,
+      );
     });
   });
 });

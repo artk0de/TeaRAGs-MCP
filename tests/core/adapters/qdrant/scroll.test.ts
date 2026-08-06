@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-import { scrollAllPoints } from "../../../../src/core/adapters/qdrant/scroll.js";
+import { sampleVectors, scrollAllPoints } from "../../../../src/core/adapters/qdrant/scroll.js";
 
 // Minimal mock matching the shape scrollAllPoints depends on
 function createMockQdrant() {
@@ -120,5 +120,72 @@ describe("scrollAllPoints", () => {
     expect(result).toHaveLength(2);
     expect(result[0].payload.relativePath).toBe("valid.ts");
     expect(result[1].payload.relativePath).toBe("also-valid.ts");
+  });
+});
+
+describe("sampleVectors", () => {
+  let mockQdrant: ReturnType<typeof createMockQdrant>;
+
+  beforeEach(() => {
+    mockQdrant = createMockQdrant();
+  });
+
+  function page(count: number, offset: string | null) {
+    return {
+      points: Array.from({ length: count }, (_, i) => ({ id: `${i}`, vector: [i, 1, 0] })),
+      next_page_offset: offset,
+    };
+  }
+
+  it("asks for vectors and not payload — the background needs geometry, not metadata", async () => {
+    mockQdrant.client.scroll.mockResolvedValueOnce(page(3, null));
+
+    await sampleVectors(mockQdrant as any, "col", 100);
+
+    expect(mockQdrant.client.scroll).toHaveBeenCalledWith(
+      "col",
+      expect.objectContaining({ with_payload: false, with_vector: true }),
+    );
+  });
+
+  it("stops scrolling once the sample cap is reached", async () => {
+    mockQdrant.client.scroll.mockResolvedValue(page(200, "next"));
+
+    const vectors = await sampleVectors(mockQdrant as any, "col", 300);
+
+    expect(vectors.length).toBeGreaterThanOrEqual(300);
+    // Two pages of 200 cover a cap of 300 — a third page would be waste.
+    expect(mockQdrant.client.scroll).toHaveBeenCalledTimes(2);
+  });
+
+  it("unwraps the dense vector from the named-vector shape hybrid collections emit", async () => {
+    mockQdrant.client.scroll.mockResolvedValueOnce({
+      points: [{ id: "1", vector: { dense: [0.1, 0.2], sparse: { indices: [1], values: [0.5] } } }],
+      next_page_offset: null,
+    });
+
+    const vectors = await sampleVectors(mockQdrant as any, "col", 10);
+
+    expect(vectors).toEqual([[0.1, 0.2]]);
+  });
+
+  it("skips points carrying no dense vector", async () => {
+    mockQdrant.client.scroll.mockResolvedValueOnce({
+      points: [{ id: "1", vector: null }, { id: "2" }, { id: "3", vector: [0.3, 0.4] }],
+      next_page_offset: null,
+    });
+
+    const vectors = await sampleVectors(mockQdrant as any, "col", 10);
+
+    expect(vectors).toEqual([[0.3, 0.4]]);
+  });
+
+  it("stops at the end of the collection even when the cap is not reached", async () => {
+    mockQdrant.client.scroll.mockResolvedValueOnce(page(5, null));
+
+    const vectors = await sampleVectors(mockQdrant as any, "col", 1000);
+
+    expect(vectors).toHaveLength(5);
+    expect(mockQdrant.client.scroll).toHaveBeenCalledOnce();
   });
 });
