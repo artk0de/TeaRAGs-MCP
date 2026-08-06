@@ -3,8 +3,10 @@
 - **Date:** 2026-08-06
 - **Program:** `tea-rags-mcp-89k7k` — measure boundaries, responsibilities, placement
 - **Status:** approved phasing; Phase 0 designed in detail, Phases 1–2 sketched
-- **Decisions locked in this session:** gate-first phasing; V-B ticket→domain
-  mapping via bipartite clustering (Jira adapter reserved as second chance)
+- **Decisions locked in this session:** gate-first phasing; reasons derived
+  from "intent units" via a three-rung source cascade (taskIds → conventional
+  scopes → sessions) with bipartite clustering where units need merging (Jira
+  adapter reserved as second chance for the ticket rung)
 
 ## Problem
 
@@ -97,10 +99,12 @@ follows it rather than fighting it.
 
 ## Facts that shaped the ordering
 
-- **B-validation runs on taxdome only.** tea-rags has no ticket discipline
-  (payload `taskIds` are empty; `DEFECT-1`/`#1` are test artifacts). tea-rags
-  serves as the degradation test — B1 must report "unavailable" there, not a
-  confident wrong answer.
+- **B-validation runs on two corpora with different intent sources.** taxdome
+  has ticket discipline (TD-*); tea-rags has no taskIds (payload `taskIds`
+  empty; `DEFECT-1`/`#1` are test artifacts) but has commitlint-enforced
+  conventional scopes — it validates via the scope rung of the B1 cascade.
+  Two independent measurements of one mechanism through different sources
+  make the B4 gate stronger than a single-corpus run.
 - **A1 is pure SQL over DuckDB.** Instability derives from the file-edge table
   by aggregation; no Qdrant reads. Genuinely the cheapest detector in the
   program.
@@ -162,31 +166,49 @@ Output: three numbers before any production investment.
 ### V-B: reasonCount prototype (B1+B2 compressed into one script)
 
 - **Extraction (B1):** `git log` over the trajectory window (12 months, same
-  as `TRAJECTORY_GIT_LOG_MAX_AGE_MONTHS`), taskIds per commit via the existing
-  trajectory taskId patterns (JIRA / GitHub / Azure). Exclude mass commits
-  (>15 files — same rule 9szed uses; mass refactors poison pairs).
-  Squash-aware session bundling per existing `squashOpts`.
-- **Mapping ticket→domain (decision):** bipartite clustering over the
-  ticket↔file graph — tickets whose file-sets overlap heavily form one
-  "reason" community. No external dependencies; portable to any repo with
-  ticket discipline. **Known caveat (must appear in the report):** partial
-  circularity — directory layout influences the communities used to judge the
-  layout. Acceptable for a gate prototype. The mapper is a pluggable
-  interface; a Jira component/epic/label adapter is the designated second
-  chance if B4 lands in the failure band, before the epic is closed.
-- **Metric (B2):** reasonCount(file) = number of distinct reason communities
-  among commits touching the file, with a support floor (a community counts
-  only with ≥2 commits on that file) to suppress drive-by noise.
-- **Output:** top-20 offenders with named reasons — each community labeled by
-  its dominant paths and a sample of ticket IDs, plus per-file commit counts
-  per reason.
-- **Verdict protocol (B4):** architect reviews the top-20 on taxdome.
-  Agreement ≥2/3 → measurement tracks the concept, epic C consumes it.
-  <1/3 → taskId proxy too lossy: try the Jira adapter once; if still <1/3,
-  close epics B and C-basic with the number. Between bands → refine filters,
-  re-measure once.
-- **Degradation check:** run on tea-rags must yield explicit "unavailable —
-  no ticket discipline", not numbers.
+  as `TRAJECTORY_GIT_LOG_MAX_AGE_MONTHS`). Exclude mass commits (>15 files —
+  same rule 9szed uses; mass refactors poison pairs).
+- **Intent units — source cascade (amended in review):** the clustering key
+  is a *unit of intent* — a group of commits made for one purpose. Tickets
+  are the strongest source of units, not the mechanism itself. Three rungs,
+  selected per repo by coverage over the window:
+  1. **taskIds** (existing JIRA / GitHub / Azure trajectory patterns) —
+     unit = ticket. Best unit boundaries and best names.
+  2. **Conventional-commit scope** (`feat(codegraph):`) — a scope IS a
+     self-declared reason label; no clustering needed on this rung, reasons =
+     normalized scopes. Highest circularity (scopes mirror layout), but a
+     self-declared domain taxonomy is exactly what SRP counts.
+  3. **Sessions** (author + time-gap bundles, squash-aware — already computed
+     by the git trajectory) — the universal floor: every repo has them.
+     A single session is a noisy unit; clustering merges recurring sessions
+     over the same file neighborhoods into themes.
+  Rungs 1 and 3 feed bipartite clustering over the unit↔file graph — units
+  whose file-sets overlap heavily form one "reason" community. **Known caveat
+  (must appear in the report):** partial circularity — directory layout
+  influences the communities used to judge the layout; maximal on the scope
+  rung. The report always names the source used and its coverage %; below a
+  coverage floor the verdict is "insufficient signal", never confident
+  numbers. The mapper stays a pluggable interface; a Jira
+  component/epic/label adapter is the designated second chance for the ticket
+  rung if B4 lands in the failure band.
+- **Metric (B2):** reasonCount(file) = number of distinct reasons (communities
+  on rungs 1/3, normalized scopes on rung 2) among commits touching the file,
+  with a support floor (a reason counts only with ≥2 commits on that file) to
+  suppress drive-by noise. reasonCount carries source-based confidence
+  (ticket > scope > session) — same philosophy as per-signal confidence
+  dampening.
+- **Output:** top-20 offenders with named reasons — each labeled by dominant
+  paths plus a sample of ticket IDs / scopes / session digests, with per-file
+  commit counts per reason and the source + coverage header.
+- **Verdict protocol (B4):** architect reviews the top-20 on BOTH corpora —
+  taxdome (ticket rung) and tea-rags (scope rung). Per corpus: agreement
+  ≥2/3 → measurement tracks the concept, epic C consumes it. <1/3 on the
+  ticket rung → try the Jira adapter once; if still <1/3, close epics B and
+  C-basic with the number. Between bands → refine filters, re-measure once.
+- **Degradation disclosure:** the report always prints intent-source coverage;
+  a repo below the floor on all three rungs gets "insufficient signal" — the
+  quality of names and unit boundaries degrades down the cascade, and that
+  degradation is quantified rather than silent.
 
 ### V-T: 9szed
 
@@ -195,14 +217,15 @@ promote / <25% close / between → refine once).
 
 ## Incremental-indexing model for production B1/B2 (Phase 1)
 
-Clustering is a global computation over the ticket↔file graph, while
+Clustering is a global computation over the unit↔file graph (unit = ticket /
+scope / session per the B1 cascade), while
 incremental reindex re-enriches only changed files — the same tension codegraph
 signals already resolved (a commit to file A changes fanIn of file B). The
 production form mirrors that architecture:
 
 1. **Accumulate edges incrementally, never clusters.** A delta commit-walk
-   (since last indexed commit) appends `(ticket, file, commitTime)` rows to a
-   DuckDB table under the `cg_*` family. Window eviction (12 months) by commit
+   (since last indexed commit) appends `(intentUnit, file, commitTime)` rows
+   to a DuckDB table under the `cg_*` family. Window eviction (12 months) by commit
    time — same pattern as the git incremental file-signal cache.
 2. **Recompute clustering globally at finalize, every run.** No incremental
    community detection: the bipartite graph is small (taxdome-scale: ~10⁴
