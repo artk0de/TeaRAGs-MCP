@@ -161,7 +161,27 @@ export class ReindexPipeline extends BaseIndexingPipeline {
       const retryPaths = await this.computeQuarantineRetry(quarantineStore, ctx, changes);
       stats.filesRetried = retryPaths.length;
 
+      // Bring provider stores back in line with the code before the run's own
+      // enrichment (bd tea-rags-mcp-6goqa). Deliberately ABOVE both early
+      // returns (bd tea-rags-mcp-gvw8h): the one run that could notice a
+      // drifted store — nothing changed, nothing to chunk — was the one run
+      // that skipped the check, so a repository that went quiet never healed
+      // and no amount of re-running the reindex fixed it.
+      //
+      // What a repair still needs is the finalize that rebuilds the derived
+      // tables and closes the run it opened. Below, each early return drives
+      // that itself through `finalizeRepairedRun`, and pays nothing when the
+      // stores already matched. Silent either way: the cost shows up as time,
+      // not as a message. Hashes come from the scan detectChanges just did, so
+      // nothing is re-read.
+      const repaired = await this.enrichment.runRepairPass(
+        ctx.targetCollection,
+        ctx.absolutePath,
+        ctx.synchronizer.getCurrentFileHashes(),
+      );
+
       if (this.hasNoChanges(stats) && retryPaths.length === 0) {
+        await this.finalizeRepairedRun(ctx, stats, repaired);
         await storeIndexingMarker(this.qdrant, this.embeddings, ctx.targetCollection, true);
         await ctx.synchronizer.deleteCheckpoint();
         stats.durationMs = Date.now() - startTime;
@@ -171,26 +191,17 @@ export class ReindexPipeline extends BaseIndexingPipeline {
       // Deletion-only: no files to add/modify/retry → skip pipeline init and enrichment
       if (changes.added.length === 0 && changes.modified.length === 0 && retryPaths.length === 0) {
         await this.executeDeletionOnly(ctx, changes, stats, progressCallback);
+        // Removing files needs no enrichment, which is what this path is for —
+        // but a repair on THIS run does, so the finalize below overwrites
+        // "skipped" exactly when it had something to finalize.
+        stats.enrichmentStatus = "skipped";
+        await this.finalizeRepairedRun(ctx, stats, repaired);
         await storeIndexingMarker(this.qdrant, this.embeddings, ctx.targetCollection, true);
         await ctx.synchronizer.updateSnapshot(ctx.currentFiles);
         await ctx.synchronizer.deleteCheckpoint();
-        stats.enrichmentStatus = "skipped";
         stats.durationMs = Date.now() - startTime;
         return stats;
       }
-
-      // Bring provider stores back in line with the code before the run's own
-      // enrichment (bd tea-rags-mcp-6goqa). Deliberately on THIS path only, so a
-      // repair and the finalize that recomputes cycles + metrics always happen
-      // together — a run that took one of the early returns above would extract
-      // rows and leave the derived tables stale. Silent: the cost shows up as
-      // time, not as a message. Hashes come from the scan detectChanges just
-      // did, so nothing is re-read.
-      await this.enrichment.runRepairPass(
-        ctx.targetCollection,
-        ctx.absolutePath,
-        ctx.synchronizer.getCurrentFileHashes(),
-      );
 
       this.startHeartbeat(ctx.targetCollection);
       const { chunksAdded, chunksDeleted, processingCtx, chunkMap, filesSkippedDueToDeleteFailure } =
@@ -598,6 +609,35 @@ export class ReindexPipeline extends BaseIndexingPipeline {
             stats.filesNewlyUnignored > 0 ? `, ${stats.filesNewlyUnignored} newly unignored` : ""
           }. Created ${stats.chunksAdded} chunks in ${(stats.durationMs / 1000).toFixed(1)}s`,
       );
+    }
+  }
+
+  /**
+   * Close a run whose only work was the repair (bd tea-rags-mcp-gvw8h).
+   *
+   * A repair writes base rows and leaves every provider it touched mid-run. The
+   * finalize is what turns those rows back into the derived tables
+   * (`cg_symbols_cycles`, `cg_symbols_metrics`), writes the terminal markers, and
+   * releases the per-run state — the reason the repair could not simply be moved
+   * above the early returns on its own.
+   *
+   * Nothing repaired means nothing drifted, so the untouched-repository path —
+   * the one that runs on every no-op reindex — returns here before paying for a
+   * completion pass it has no use for.
+   *
+   * A failure is reported the way every other enrichment failure is: through the
+   * terminal markers and the log, not by failing a reindex that otherwise
+   * succeeded (mirrors `startEnrichment`'s background catch).
+   */
+  private async finalizeRepairedRun(ctx: ReindexContext, stats: ChangeStats, repaired: number): Promise<void> {
+    if (repaired === 0) return;
+    pipelineLog.reindexPhase("REPAIR_FINALIZE_START", { repaired, collection: ctx.targetCollection });
+    try {
+      stats.enrichmentMetrics = await this.enrichment.runFinalizeOnly(ctx.absolutePath, ctx.targetCollection);
+      stats.enrichmentStatus = "completed";
+    } catch (error) {
+      console.error("[Reindex] Repair finalize failed:", error);
+      stats.enrichmentStatus = "failed";
     }
   }
 
