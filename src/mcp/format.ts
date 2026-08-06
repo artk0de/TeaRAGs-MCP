@@ -41,3 +41,14 @@ export function appendDriftWarning(result: McpToolResult, warning: string | null
   last.text += `\n\n${warning}`;
   return result;
 }
+
+/**
+ * Append auto-update hint (hpg2) as its own text entry. Unlike
+ * appendDriftWarning it works on structuredContent results whose `content`
+ * is empty — the hint becomes the sole text entry. Null hint = no-op.
+ */
+export function appendAutoUpdateHint(result: McpToolResult, hint: string | null): McpToolResult {
+  if (!hint) return result;
+  result.content.push({ type: "text", text: hint });
+  return result;
+}

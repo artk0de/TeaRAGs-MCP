@@ -54,6 +54,7 @@ import { loadPromptsConfig, type PromptsConfig } from "../mcp/prompts/index.js";
 import { registerAllPrompts } from "../mcp/prompts/register.js";
 import { registerAllResources } from "../mcp/resources/index.js";
 import { registerAllTools } from "../mcp/tools/index.js";
+import { buildMcpAutoUpdateTrigger } from "./auto-update/mcp-hint.js";
 import { applyEmbeddedDeleteTuning } from "./config/embedded-tuning.js";
 import { buildRegistryEnvSnapshot } from "./config/env-snapshot.js";
 import { getConfigDump, getZodConfig, type AppConfig } from "./config/index.js";
@@ -827,6 +828,9 @@ export function createConfiguredServer(ctx: AppContext, promptsConfig: PromptsCo
     app: ctx.app,
     schemaBuilder: ctx.schemaBuilder,
     healthProbes: ctx.healthProbes,
+    // Auto-update trigger (hpg2): fires on search tools, spawns the detached
+    // updater when the freshness verdict allows. Config lives in the registry.
+    autoUpdate: buildMcpAutoUpdateTrigger(),
   });
   registerAllResources(server, ctx.app);
   registerAllPrompts(server, promptsConfig);

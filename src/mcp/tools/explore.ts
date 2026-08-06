@@ -13,7 +13,7 @@ import type {
   SemanticSearchRequest,
 } from "../../core/api/public/dto/explore.js";
 import type { App, SchemaBuilder } from "../../core/api/public/index.js";
-import { sanitizeRerank, type McpToolResult } from "../format.js";
+import { appendAutoUpdateHint, sanitizeRerank, type McpToolResult } from "../format.js";
 import type { RegisterToolFn } from "../middleware/error-handler.js";
 import { SearchResultOutputSchema } from "./output-schemas.js";
 import { createSearchSchemas } from "./schemas.js";
@@ -133,11 +133,21 @@ const SEARCH_TOOLS: readonly SearchToolDef[] = [
   },
 ];
 
+/**
+ * Auto-update trigger seam (hpg2) — implemented in bootstrap (composition
+ * root), consumed here structurally so mcp never imports bootstrap. `hintFor`
+ * fires the freshness check + detached spawn behind the scenes and returns a
+ * one-line hint for the response (or null). Contract: never throws, ~1 ms.
+ */
+export interface McpAutoUpdateTrigger {
+  hintFor: (request: { collection?: string; project?: string; path?: string }) => string | null;
+}
+
 export function registerSearchTools(
   server: McpServer,
-  deps: { app: App; schemaBuilder: SchemaBuilder; register: RegisterToolFn },
+  deps: { app: App; schemaBuilder: SchemaBuilder; register: RegisterToolFn; autoUpdate?: McpAutoUpdateTrigger },
 ): void {
-  const { app, register: registerToolSafe } = deps;
+  const { app, register: registerToolSafe, autoUpdate } = deps;
   const searchSchemas = createSearchSchemas(deps.schemaBuilder);
 
   for (const tool of SEARCH_TOOLS) {
@@ -151,7 +161,11 @@ export function registerSearchTools(
         outputSchema: SearchResultOutputSchema,
         annotations: { readOnlyHint: true },
       },
-      async (request: unknown) => formatStructuredResult(await tool.invoke(app, request as SearchRequest)),
+      async (request: unknown) => {
+        const result = formatStructuredResult(await tool.invoke(app, request as SearchRequest));
+        const hint = autoUpdate?.hintFor(request as { collection?: string; project?: string; path?: string }) ?? null;
+        return appendAutoUpdateHint(result, hint);
+      },
     );
   }
 }

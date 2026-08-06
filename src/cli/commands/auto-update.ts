@@ -17,6 +17,7 @@ import { join } from "node:path";
 
 import type { CommandModule } from "yargs";
 
+import { autoUpdateLogPath } from "../../bootstrap/auto-update/updater-log.js";
 import {
   detectDefaultBranch,
   IndexFreshnessCheck as FreshnessCheckImpl,
@@ -26,7 +27,6 @@ import {
   type IndexFreshnessCheck,
 } from "../../core/api/public/index.js";
 import { runUpdater } from "../auto-update/run-updater.js";
-import { autoUpdateLogPath } from "../auto-update/updater-log.js";
 import { replayRegistryEnv } from "../registry-env-replay.js";
 
 export type AutoUpdateCliAction = "enable" | "disable" | "status" | "run";

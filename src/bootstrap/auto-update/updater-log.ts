@@ -4,6 +4,10 @@
  * stdout/stderr both point at this fd, so a failed run leaves a full trace
  * without any live parent process. Truncated (not rotated) past 5 MB —
  * the log is a diagnostic tail, not an archive.
+ *
+ * Lives in bootstrap (not cli): both spawn sites — prime (cli) and the MCP
+ * tool trigger (composed in bootstrap/factory) — need the fd, and bootstrap
+ * may not import cli.
  */
 
 import { closeSync, mkdirSync, openSync, statSync } from "node:fs";

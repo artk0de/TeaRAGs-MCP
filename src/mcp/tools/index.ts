@@ -14,7 +14,7 @@ import { registerCodeTools } from "./code.js";
 import { registerCodegraphTools } from "./codegraph.js";
 import { registerCollectionTools } from "./collection.js";
 import { registerDocumentTools } from "./document.js";
-import { registerSearchTools } from "./explore.js";
+import { registerSearchTools, type McpAutoUpdateTrigger } from "./explore.js";
 import { registerProjectTools } from "./list-projects.js";
 import { registerRegisterProjectTool } from "./register-project.js";
 import { registerUnregisterProjectTool } from "./unregister-project.js";
@@ -23,6 +23,8 @@ export interface ToolDependencies {
   app: App;
   schemaBuilder: SchemaBuilder;
   healthProbes?: HealthProbes;
+  /** Auto-update trigger for search tools (hpg2); absent = feature inert. */
+  autoUpdate?: McpAutoUpdateTrigger;
 }
 
 /**
@@ -33,7 +35,12 @@ export function registerAllTools(server: McpServer, deps: ToolDependencies): voi
   const register = createRegisterTool(deps.healthProbes);
   registerCollectionTools(server, { app: deps.app, register });
   registerDocumentTools(server, { app: deps.app, register });
-  registerSearchTools(server, { app: deps.app, schemaBuilder: deps.schemaBuilder, register });
+  registerSearchTools(server, {
+    app: deps.app,
+    schemaBuilder: deps.schemaBuilder,
+    register,
+    ...(deps.autoUpdate !== undefined ? { autoUpdate: deps.autoUpdate } : {}),
+  });
   registerCodeTools(server, { app: deps.app, schemaBuilder: deps.schemaBuilder, register });
   registerCodegraphTools(server, { app: deps.app, schemaBuilder: deps.schemaBuilder, register });
   registerProjectTools(server, { app: deps.app, register });
