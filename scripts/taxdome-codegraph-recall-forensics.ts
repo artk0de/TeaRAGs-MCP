@@ -11559,7 +11559,7 @@ function runBareDeferOracle(extractions: FileExtraction[]): void {
 // (`x = Svc.call(…)`), which the walker cannot type because the answer lives in
 // another file. The two channels are disjoint by construction, and the second
 // has exactly ONE consumer: `RubyReturnTypeBindingSymbolResolutionStrategy`,
-// slot 4 of the 14-pass chain.
+// slot 4 of the 15-pass chain.
 //
 // The ikyqu premise check sized the leftover at 295 recall-hole misses whose
 // receiver the boundCall channel types and `typeOfReceiver` does not. "The
@@ -11592,6 +11592,16 @@ function runBareDeferOracle(extractions: FileExtraction[]): void {
 // `chainType`'s own `resolveType{Static,Instance}Method`, and the baseline
 // outcome is the one `resolvePass2` just computed. Nothing here re-implements
 // resolution, so the classification cannot drift from production.
+//
+// MIRROR (bd tea-rags-mcp-hg2r8, 2026-08-06). `bcChain` restated the array from
+// before wob7g — no `conventionReceiver` slot — and the fidelity line still read
+// 0. The third distinct reason in this file, after 4ys8s (guard skipped
+// `resolved` outcomes) and b5qr6 (graded set disjoint from the pass): here the
+// chain copy was NOT AN OPERAND. What the guard compared was the production
+// resolver's answer against `null`, an assertion about this harness's own `miss`
+// bucketing. It is kept, under its own counter; `bcCheckMirror` is the actual
+// mirror and runs over every call carrying a receiver, because the boundCall
+// population is a MISS set and `conventionReceiver` never DROPs.
 // ===========================================================================
 const BOUNDCALL_ENABLED = process.env.CODEGRAPH_BOUNDCALL_ORACLE === "1";
 const OUT_BOUNDCALL = join(OUT_DIR, "boundcall-oracle-report.json");
@@ -11600,11 +11610,23 @@ const BC_EXAMPLE_CAP = 12;
 const BC_CFG: ResolverConfig = { mode: DEFAULT_AMBIGUOUS_RESOLVE_MODE, coneMax: CONE_MAX_DEFAULT };
 
 /**
- * `RubyCallResolver`'s strategy array, restated in production order. Walked pass
- * by pass so "which pass answered first" is the chain's answer rather than a
- * reading of `ruby-resolver.ts`; `bcOrderOk` pins the two slots this oracle
- * reasons about, and the per-call mirror below pins the whole array against the
- * production resolver.
+ * `RubyCallResolver`'s strategy array as it stands on this branch, restated in
+ * production order. Walked pass by pass so "which pass answered first" is the
+ * chain's answer rather than a reading of `ruby-resolver.ts`; `bcOrderOk` pins
+ * the two slots this oracle reasons about by NAME, so inserting a pass after
+ * them cannot silently move them.
+ *
+ * This copy predated wob7g until 2026-08-06: no `conventionReceiver` slot at
+ * all, and `bcMirrorDisagreed` still read 0 (bd tea-rags-mcp-hg2r8). That was
+ * not fidelity, and the reason is a third one after the residual oracle's
+ * (4ys8s: the guard skipped `resolved` outcomes) and the single-segment
+ * oracle's (b5qr6: the graded set was disjoint from the pass's population).
+ * Here THIS ARRAY WAS NEVER AN OPERAND. The old guard re-asked the production
+ * resolver and compared its answer with `null` — an assertion about the
+ * harness's own `miss` bucketing, not about this copy — so no drift in it,
+ * however large, could ever move the counter. {@link bcCheckMirror} now
+ * compares the two things whose agreement the oracle depends on, and the
+ * bucketing assertion keeps its own counter.
  */
 const bcChain: SymbolResolutionStrategy[] = [
   new RubySuperSymbolResolutionStrategy(BC_CFG),
@@ -11618,6 +11640,10 @@ const bcChain: SymbolResolutionStrategy[] = [
   new RubyExplicitRequireSymbolResolutionStrategy(BC_CFG),
   new RubyChainTypeSymbolResolutionStrategy(BC_CFG),
   new RubyArRelationGuardSymbolResolutionStrategy(BC_CFG),
+  // Last chance before the catch-all DROP (bd tea-rags-mcp-wob7g). Never DROPs,
+  // so the only calls it can move are ones it RESOLVES — which is why a guard
+  // graded over a MISS population could not have seen its absence either.
+  new RubyConventionReceiverSymbolResolutionStrategy(BC_CFG),
   new RubyReceiverSetDropSymbolResolutionStrategy(BC_CFG),
   new RubyBareCallSymbolResolutionStrategy(BC_CFG),
   new RubySchemaColumnSymbolResolutionStrategy(),
@@ -11785,6 +11811,15 @@ const bcExamples: Record<string, BcRow[]> = {};
 let bcMirrorChecked = 0;
 let bcMirrorDisagreed = 0;
 const bcMirrorExamples: string[] = [];
+/**
+ * A separate assertion that used to be reported AS the mirror: a call the
+ * harness bucketed `miss` is one the production resolver declines. It grades the
+ * harness's own bucketing, never {@link bcChain}, and is kept apart from the
+ * mirror so neither can be read as evidence for the other.
+ */
+let bcMissChecked = 0;
+let bcMissDisagreed = 0;
+const bcMissExamples: string[] = [];
 
 // ── the qualification probe: what an owner-scoped return fact would buy ──
 const bcQualifyVerdict: Record<string, number> = {};
@@ -11849,6 +11884,51 @@ function bcChainTypeTerminal(t: RubyTypeRef, member: string, ctx: CallContext): 
 function bcTargetText(target: SymbolResolutionTarget | null): string {
   if (target === null) return "-";
   return target.targetSymbolId ?? `${target.targetRelPath} (file-only)`;
+}
+
+/** `RubyCallResolver.resolve` reproduced: chain, then the self-dispatch redirect. */
+function bcRunChain(call: CallRef, ctx: CallContext): SymbolResolutionTarget | null {
+  const target = resolveViaChain(bcChain, call, ctx);
+  if (target === null) return null;
+  return redirectSelfDispatchTemplate(target, call, ctx, BC_CFG.mode);
+}
+
+/**
+ * Fidelity guard: {@link bcChain} must answer exactly what the production
+ * resolver answers.
+ *
+ * The array IS an operand now — until 2026-08-06 it was not, and that is the
+ * whole defect (bd tea-rags-mcp-hg2r8). The old guard re-asked `resolver.resolve`
+ * and checked the answer against `null`, which says something true about the
+ * harness's `miss` bucketing and nothing whatever about this copy of the chain.
+ *
+ * Graded over EVERY call carrying a receiver, which is exactly the set
+ * `conventionReceiver` can reach (its first act is `receiver === null` -> decline)
+ * and strictly wider than the boundCall population, which is a MISS set — and a
+ * pass that never DROPs can only move calls it RESOLVES. Both prior guards in
+ * this file reported 0 forever because their populations excluded the drift they
+ * existed to catch; the population has to be the one the pass lives in.
+ *
+ * No consulted-ness gate: both sides here ARE the chain, so a disagreement is a
+ * defect in this copy whether or not `resolvePass2` read the answer at that call.
+ */
+function bcCheckMirror(call: CallRef, ctx: CallContext, relPath: string): void {
+  const rs = resolver;
+  if (rs === undefined) return;
+  bcMirrorChecked += 1;
+  const mine = bcRunChain(call, ctx);
+  const real = rs.resolve(call, ctx);
+  const same =
+    mine === null || real === null
+      ? mine === real
+      : mine.targetRelPath === real.targetRelPath && mine.targetSymbolId === real.targetSymbolId;
+  if (same) return;
+  bcMirrorDisagreed += 1;
+  if (bcMirrorExamples.length < BC_EXAMPLE_CAP) {
+    bcMirrorExamples.push(
+      `${relPath}:${call.startLine} ${call.receiver ?? "-"}.${call.member} mirror=${bcTargetText(mine)} real=${bcTargetText(real)}`,
+    );
+  }
 }
 
 /**
@@ -11942,6 +12022,11 @@ function noteBoundCallCall(
 ): void {
   const { receiver } = call;
   if (receiver === null) return;
+  // Chain fidelity FIRST, over every call carrying a receiver. Ahead of the
+  // `miss` bail on purpose: the population below is a MISS set, and the pass this
+  // copy was missing never DROPs, so it can only move calls the resolver
+  // RESOLVES (bd tea-rags-mcp-hg2r8).
+  bcCheckMirror(call, ctx, relPath);
   const dispatchEdges = dispatchOutcome?.kind === "edges" ? dispatchOutcome.edges.length : 0;
   bcNoteHeadCandidate(call, ctx, dispatchEdges, baseOutcome, relPath);
 
@@ -11964,14 +12049,17 @@ function noteBoundCallCall(
   const factOwner = bcFactOwner(binding, ctx);
   const typeName = bcRefName(bound);
 
-  // Fidelity: this call is a MISS, so the production resolver must answer null.
+  // Bucketing check, NOT the chain mirror ({@link bcCheckMirror} is): this call
+  // is a MISS, so the production resolver must decline it too. Its own counter,
+  // because it can hold while the chain copy is wrong — which is exactly what it
+  // did from wob7g (2026-08-02) until hg2r8, while being reported as fidelity.
   const rs = resolver;
   const realTarget = rs === undefined ? null : rs.resolve(call, ctx);
-  bcMirrorChecked += 1;
+  bcMissChecked += 1;
   if (realTarget !== null) {
-    bcMirrorDisagreed += 1;
-    if (bcMirrorExamples.length < BC_EXAMPLE_CAP) {
-      bcMirrorExamples.push(
+    bcMissDisagreed += 1;
+    if (bcMissExamples.length < BC_EXAMPLE_CAP) {
+      bcMissExamples.push(
         `${relPath}:${call.startLine} ${receiver}.${call.member} miss but resolver answers ${bcTargetText(realTarget)}`,
       );
     }
@@ -12091,8 +12179,14 @@ function runBoundCallOracle(): void {
   L("");
   L("─── fidelity ─────────────────────────────────────────────────────");
   L(`strategy-order pins hold (slot 4 = returnTypeBinding, slot 9 = chainType): ${bcOrderOk ? "yes" : "NO"}`);
-  L(`population calls re-asked of the production resolver: ${bcMirrorChecked}   disagreements: ${bcMirrorDisagreed}`);
+  L(`chain-fidelity checks / disagreements:    ${bcMirrorChecked} / ${bcMirrorDisagreed}`);
+  L("  (this array vs the production resolver, over EVERY call carrying a receiver —");
+  L("   since hg2r8. The array was not an operand at all before that, and the");
+  L("   population below is a MISS set, which no resolve-only pass can reach.)");
   for (const e of bcMirrorExamples) L(`    ${e}`);
+  L(`population misses re-asked of the resolver / disagreements: ${bcMissChecked} / ${bcMissDisagreed}`);
+  L("  (harness bucketing, not chain fidelity — a `miss` the resolver would answer.)");
+  for (const e of bcMissExamples) L(`    ${e}`);
 
   L("");
   L("─── (1) population re-count at this HEAD ──────────────────────────");
@@ -12224,7 +12318,7 @@ function runBoundCallOracle(): void {
   }
   L("");
   L("Kill-tests applied: (1) does an existing strategy already cover it — the real");
-  L("14-pass chain is walked per miss and the pass that answers first is reported;");
+  L("15-pass chain is walked per miss and the pass that answers first is reported;");
   L("(2) does the terminal produce an EDGE — every candidate is priced through the");
   L("production resolve function, not through 'the type would be known'.");
 
@@ -12240,6 +12334,8 @@ function runBoundCallOracle(): void {
           strategyOrderPinsHold: bcOrderOk,
           mirrorChecked: bcMirrorChecked,
           mirrorDisagreed: bcMirrorDisagreed,
+          missBucketingChecked: bcMissChecked,
+          missBucketingDisagreed: bcMissDisagreed,
           note: "Oracle only. No resolver change; every verdict is a production object's own answer.",
         },
         population: {
