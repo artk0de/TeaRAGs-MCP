@@ -193,6 +193,45 @@ Output: three numbers before any production investment.
 Already in progress; decision rule stands as written in the bead (top-3 >50%
 promote / <25% close / between → refine once).
 
+## Incremental-indexing model for production B1/B2 (Phase 1)
+
+Clustering is a global computation over the ticket↔file graph, while
+incremental reindex re-enriches only changed files — the same tension codegraph
+signals already resolved (a commit to file A changes fanIn of file B). The
+production form mirrors that architecture:
+
+1. **Accumulate edges incrementally, never clusters.** A delta commit-walk
+   (since last indexed commit) appends `(ticket, file, commitTime)` rows to a
+   DuckDB table under the `cg_*` family. Window eviction (12 months) by commit
+   time — same pattern as the git incremental file-signal cache.
+2. **Recompute clustering globally at finalize, every run.** No incremental
+   community detection: the bipartite graph is small (taxdome-scale: ~10⁴
+   tickets, ~10⁴–10⁵ files, low-hundreds-of-thousands edges), label
+   propagation / Louvain completes in seconds — same posture as the graph
+   finalizer recomputing SCC/PageRank over the full stored graph.
+3. **Backfill only changed payloads.** Diff new reasonCount against stored
+   values; `set_payload` for files whose value moved — the enrichment
+   backfiller seam already does this for codegraph overlays. reasonCount
+   changing on files untouched by the delta is legitimate (a community split
+   is new information), and backfill is the delivery mechanism.
+
+**Run-to-run partition stability is the real risk, not recompute cost:**
+
+- Community detection is order-sensitive → reasonCount flapping and backfill
+  storms. Mitigations: sorted node order + fixed tie-breaking (deterministic
+  for unchanged input), the ≥2-commit support floor, mass-commit exclusion.
+  Residual drift is monitored: partition Jaccard between runs logged in
+  enrichment health.
+- **C3 compares within one snapshot only.** "Does this change introduce a new
+  reason" = membership of the current task's reason community in the file's
+  community set under the current clustering. Cross-run community identity is
+  needed nowhere: reasonCount is label-free, report names re-derive from
+  dominant paths each run.
+
+**Shared extractor with x4rpp:** if 9szed passes, one delta commit-walk feeds
+two sinks — co-change pairs (temporal) and ticket-file edges (reasons). The
+walk is not duplicated.
+
 ## Not in scope of Phase 0
 
 Production signals, schema migrations, MCP tools, skill edits, reindexes. Every
