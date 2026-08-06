@@ -128,7 +128,19 @@ with user, never silently truncate coverage.
 
 ## Phase 5: DELIVER
 
-_Filled in Task 3 of the implementation plan._
+Contract shape + conventions + degradation:
+[references/delivery-contract.md](./references/delivery-contract.md).
+
+**Local:** chat report — findings by severity (major first), observations,
+dimensions-skipped notes. No posting.
+
+**External:** draft table (`file:line | severity | one-line body`) → ONE
+whole-batch confirmation → agent posts inline comments + summary via session's
+MR-platform mechanism (MCP server preferred, else CLI, else http-client) →
+per-comment posted/failed status, failed retried once then surfaced in chat.
+
+Never post without the gate. Never claim posted without per-comment status. No
+mechanism → print contract in chat, mark "delivered locally".
 
 ## Anti-patterns
 
