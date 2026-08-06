@@ -1,0 +1,110 @@
+---
+name: mr-review
+description:
+  Signal-driven review of merge request or local branch — rank diff risks via
+  tea-rags (blast radius, fragile zones, silo style, missing tests, doc
+  invariants, cycles), emit evidence-citing comments. Triggers on "review this
+  MR <url>", "review MR/PR", "проведи ревью MR", "сделай ревью ветки", "review
+  my branch". External URL → inline comments posted via session's MR-platform
+  mechanism after ONE draft-gate confirm, signed agent, [minor] prefix on style
+  nits. NOT for own-branch pre-merge flow (use
+  dinopowers:requesting-code-review), NOT for health scan without a diff (use
+  risk-assessment), NOT for debugging a concrete failure (use bug-hunt).
+argument-hint: "[MR/PR URL — omit for local review]"
+---
+
+# MR Review
+
+Signal-driven diff review: 7-dimension scan (blast radius, co-change twins,
+fragile zones, silo style, tests, doc invariants, cycles) → evidence-citing
+comments. Local mode = chat report. External mode = inline MR comments behind
+ONE draft-gate, agent-signed, `[minor]` prefix on style nits.
+
+## Phase Order (MANDATORY — do not skip any phase)
+
+1. Phase 0 — RESOLVE mode + project + freshness
+2. Phase 1 — ACQUIRE diff + intent
+3. Phase 2 — MAP diff → symbols + overlay working set
+4. Phase 3 — SCAN 7 dimensions (parallel blocks)
+5. Phase 4 — CLASSIFY severity + evidence filter
+6. Phase 5 — DELIVER (chat report | draft-gate → post)
+
+## Rules
+
+1. **Execute YOURSELF** — no subagents.
+2. **Git signals ONLY from overlay** — never `git log` / `git blame`. Diff
+   acquisition (Phase 1) = sanctioned exception: review INPUT, not signals.
+3. **No built-in Search/Grep** — tea-rags tools per search-cascade.
+4. **Evidence filter is hard.** Every posted comment cites labeled signal value
+   or concrete code (symbol, line, sibling pattern). Can't cite → drop finding
+   in Phase 4, never soften into speculative nit.
+5. **Partial reads only** — chunk coordinates from results.
+6. **External posting ALWAYS behind one whole-batch draft-gate confirm.**
+7. **Never fake skipped dimension** — name it "not assessed" in summary.
+
+## Flow
+
+```text
+0. RESOLVE   → mode (URL? external : local) + registry alias + freshness
+1. ACQUIRE   → unified diff + MR title/description/author
+2. MAP       → hunks → {file, changedSymbols[], chunkUUIDs[], overlay}
+3. SCAN      → 7 dimensions — references/dimension-playbook.md
+4. CLASSIFY  → severity + evidence filter + dedup
+5. DELIVER   → local: chat report | external: draft-gate → post
+              (references/delivery-contract.md)
+```
+
+## Phase 0: RESOLVE
+
+**Mode:** `$ARGUMENTS` contains URL → external. Else local.
+
+**Project:** `list_projects` → match registered alias: local mode → cwd;
+external mode → local checkout of MR's repo (index lives on a path — checkout
+REQUIRED). No match → STOP, print register + index instruction. Never scan
+unindexed repo.
+
+**Freshness:** external → `git fetch` target branch; index behind target →
+incremental `index_codebase project=<alias>`. Local → incremental reindex when
+prime staleness banner fires and MAP needs current symbols.
+
+## Phase 1: ACQUIRE
+
+**External:** unified diff + MR title/description/author via session's
+MR-platform mechanism (platform CLI / platform MCP server / http-client —
+whichever configured; skill names no commands). No mechanism → STOP external
+mode ("no MR-platform mechanism available"), offer local mode on checked-out
+branch instead.
+
+**Local:** `git diff <merge-base main..HEAD>` + uncommitted (`git diff HEAD`).
+On main → uncommitted only. Empty diff → STOP, say so.
+
+MR description = review intent — feeds D6 invariants.
+
+## Phase 2: MAP
+
+1. Parse hunks → touched files + changed line ranges (new side).
+2. Per touched source file — cap 15, above → ask user to narrow scope:
+   `find_symbol relativePath=<file> project=<alias>` → outline. Intersect
+   changed ranges with symbol spans → changed symbols + chunk UUIDs.
+3. Output per file: `{file, changedSymbols[], chunkUUIDs[], overlay}` — working
+   set every Phase 3 dimension reads. Overlay = `git.file.*`, `git.chunk.*`,
+   `codegraph.*` from find_symbol payloads.
+
+Non-indexed touched files (new in MR, generated, docs) → `overlay: none`, still
+eligible for D6.
+
+## Phase 3: SCAN
+
+_Filled in Task 2 of the implementation plan._
+
+## Phase 4: CLASSIFY
+
+_Filled in Task 2 of the implementation plan._
+
+## Phase 5: DELIVER
+
+_Filled in Task 3 of the implementation plan._
+
+## Anti-patterns
+
+_Filled in Task 4 of the implementation plan._
