@@ -291,6 +291,25 @@ indexing / reindexing run with the embedding model, embedding dimensions, Qdrant
 URL, `indexedAt` timestamp, tea-rags version, and chunk count — no manual
 `register-project` call is required for collections you index through tea-rags.
 
+## 🔄 Auto-Update Watcher
+
+Opt-in freshness: pin a project to a target branch and tea-rags keeps its index
+current there — no manual `index_codebase` runs, no daemon, no thrashing on
+branch switches.
+
+```bash
+tea-rags auto-update enable --project myrepo   # target branch autodetected (or --branch <name>)
+tea-rags auto-update status --project myrepo   # config + verdict + last run + log path
+tea-rags auto-update disable --project myrepo
+```
+
+Auto-update fires only when `HEAD` is on the target branch: session start
+(`prime`) and MCP search calls run a ~1 ms check and, when the index lags, spawn
+a detached incremental reindex that survives session close. Branch switches,
+rebases, and merges never trigger it — the paused state is surfaced in the prime
+digest and search-tool hints instead. Details:
+[Auto-Update Watcher](https://artk0de.github.io/TeaRAGs-MCP/operations/auto-update).
+
 ## 📚 Documentation
 
 **[artk0de.github.io/TeaRAGs-MCP](https://artk0de.github.io/TeaRAGs-MCP/)**
