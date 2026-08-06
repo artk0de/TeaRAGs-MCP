@@ -95,11 +95,36 @@ eligible for D6.
 
 ## Phase 3: SCAN
 
-_Filled in Task 2 of the implementation plan._
+Seven dimensions over working set, parallel blocks. Full per-dimension
+parameters + severity mapping:
+[references/dimension-playbook.md](./references/dimension-playbook.md) — execute
+its parameter blocks byte-exact.
+
+| Dimension     | Catches                              | Mechanism                                             |
+| ------------- | ------------------------------------ | ----------------------------------------------------- |
+| blast-radius  | hidden coupling, hub edits           | `get_callers` + overlay fanIn/transitiveImpact/isHub  |
+| shotgun-twins | co-change siblings untouched in MR   | `find_similar` batch on changed chunks + taskIds      |
+| fragile-zone  | edits in panic zones                 | overlay bugFixRate/churnVolatility/burst — 0 calls    |
+| silo-style    | non-owner edits silo file            | blameDominantAuthor\* + proven neighbors as reference |
+| tests         | scenarios at risk, uncovered changes | tests-as-context + stratified per-cluster coverage    |
+| invariants    | diff contradicts docs/specs          | `semantic_search documentation="only"` on concepts    |
+| cycles        | MR introduces import/call cycle      | `find_cycles` scoped to touched dirs                  |
+
+Gating: blast-radius + cycles ONLY when prime lists `codegraph.symbols` — absent
+→ "not assessed" in summary. tests follows tests-as-context preflight.
+
+Call budget: ≤30 tea-rags calls typical MR (≤15 files). Exceeded → narrow scope
+with user, never silently truncate coverage.
 
 ## Phase 4: CLASSIFY
 
-_Filled in Task 2 of the implementation plan._
+1. Dedup findings by file:line — keep highest severity.
+2. Cross-dimension overlap on same file/symbol → escalate one level (fragile +
+   blast-radius → major).
+3. Evidence filter pass: no citable signal label / code reference → DROP
+   finding. Observations (non-posted class) survive only into chat summary,
+   never into posting contract.
+4. Output finding list in delivery-contract shape (Phase 5).
 
 ## Phase 5: DELIVER
 
