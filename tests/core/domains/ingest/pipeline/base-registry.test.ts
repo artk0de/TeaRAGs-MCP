@@ -5,7 +5,7 @@
  * CollectionEntry in CollectionRegistry (T14 of the Project Registry epic).
  */
 
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -190,6 +190,37 @@ describe("BaseIndexingPipeline.finalizeProcessing — registry write", () => {
     const entry = registry.get(status.collectionName!);
     expect(entry).not.toBeNull();
     expect(entry!.env).toBeUndefined();
+  });
+
+  it("records the git block when the codebase is a git repository (hpg2)", async () => {
+    // File-based fixture — the pipeline's finalize reads .git directly via
+    // infra/repo-git-state; indexedDirty stays false because the fake repo
+    // has no objects, so the porcelain probe fails conservative-clean.
+    mkdirSync(join(codebaseDir, ".git", "refs", "heads"), { recursive: true });
+    writeFileSync(join(codebaseDir, ".git", "HEAD"), "ref: refs/heads/master\n");
+    writeFileSync(join(codebaseDir, ".git", "refs", "heads", "master"), "abc123def\n");
+
+    await createTestFile(codebaseDir, "gitstate.ts", "export const x = 1;");
+    await ingest.indexCodebase(codebaseDir);
+    const status = await ingest.getIndexStatus(codebaseDir);
+
+    const entry = registry.get(status.collectionName!);
+    expect(entry).not.toBeNull();
+    expect(entry!.git).toEqual({
+      indexedBranch: "master",
+      indexedCommit: "abc123def",
+      indexedDirty: false,
+    });
+  });
+
+  it("omits entry.git when the codebase is not a git repository (hpg2)", async () => {
+    await createTestFile(codebaseDir, "nogit.ts", "export const x = 1;");
+    await ingest.indexCodebase(codebaseDir);
+    const status = await ingest.getIndexStatus(codebaseDir);
+
+    const entry = registry.get(status.collectionName!);
+    expect(entry).not.toBeNull();
+    expect(entry!.git).toBeUndefined();
   });
 
   it("preserves sticky name on reindex of same collection", async () => {

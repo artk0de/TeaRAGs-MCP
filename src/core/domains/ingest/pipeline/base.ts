@@ -14,9 +14,10 @@ import type { Ignore } from "ignore";
 import type { EmbeddingProvider } from "../../../adapters/embeddings/base.js";
 import type { QdrantManager } from "../../../adapters/qdrant/client.js";
 import { EMBEDDED_MARKER } from "../../../adapters/qdrant/embedded/daemon.js";
+import type { CollectionRegistryPort, RegistryGitState } from "../../../contracts/types/registry.js";
 import { resolveCollectionName, validatePath } from "../../../infra/collection-name.js";
 import { TeaRagsError } from "../../../infra/errors.js";
-import type { CollectionRegistryPort } from "../../../contracts/types/registry.js";
+import { readRepoGitState, readWorkingTreeDirty } from "../../../infra/repo-git-state.js";
 import type { ChunkLookupEntry, EnrichmentMetrics, IngestCodeConfig } from "../../../types.js";
 import type { IngestDependencies } from "../factory.js";
 import type { CodegraphDbLister, CodegraphDbRemover } from "../infra/alias-cleanup.js";
@@ -255,6 +256,7 @@ export abstract class BaseIndexingPipeline {
       // prime re-apply the map registry-first in a fresh shell with the one
       // general rule (outer env > registry env > code default).
       const { envSnapshot } = this;
+      const gitState = this.buildRegistryGitState(absolutePath);
       this.registry.record({
         collectionName,
         path: absolutePath,
@@ -275,6 +277,10 @@ export abstract class BaseIndexingPipeline {
         // this back to re-apply the flag, symmetric with the embedding URLs.
         codegraphEnabled: this.codegraphRemover !== undefined,
         ...(envSnapshot !== undefined ? { env: envSnapshot } : {}),
+        // Git state the index now represents (hpg2 auto-update watcher):
+        // freshness checks compare live HEAD against this block. Absent when
+        // the codebase is not a git repository.
+        ...(gitState !== undefined ? { git: gitState } : {}),
         indexedAt: new Date().toISOString(),
         teaRagsVersion: this.teaRagsVersion,
         chunksCount,
@@ -282,6 +288,21 @@ export abstract class BaseIndexingPipeline {
     } catch (err) {
       process.stderr.write(`[tea-rags] registry record failed: ${(err as Error).message}\n`);
     }
+  }
+
+  /**
+   * Capture the repo git state for the registry entry. The dirty probe spawns
+   * `git status` — acceptable at finalize (the run just scanned every file),
+   * never on a query path.
+   */
+  private buildRegistryGitState(absolutePath: string): RegistryGitState | undefined {
+    const state = readRepoGitState(absolutePath);
+    if (state === null) return undefined;
+    return {
+      indexedBranch: state.branch,
+      indexedCommit: state.commit,
+      indexedDirty: readWorkingTreeDirty(absolutePath),
+    };
   }
 
   // ── Processing components (private) ────────────────────
