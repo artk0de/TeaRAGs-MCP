@@ -144,4 +144,18 @@ mechanism → print contract in chat, mark "delivered locally".
 
 ## Anti-patterns
 
-_Filled in Task 4 of the implementation plan._
+- **Posting without draft-gate** → restart Phase 5. Gate is circuit breaker, not
+  decoration.
+- **Comment without citable evidence** → drop, don't soften into "maybe
+  consider…" nit.
+- **One batched hybrid_search for all clusters' test coverage** → BM25 crowding
+  fabricates "untested". Stratify per domain cluster (playbook D5).
+- **Reviewing MR-branch state instead of diff-vs-indexed-base** → skill reviews
+  the diff like a human reviewer; no MR-branch checkout, no per-MR reindex.
+- **Hardcoding platform commands (glab/gh) into flow or comments** → delivery =
+  agent's session mechanism; skill emits contract only.
+- **Claiming "no cycles" / "no hubs" with codegraph off** → "not assessed".
+- **Skipping freshness gate** → stale-index review misses recent base changes,
+  signals lie.
+- **Fabricating overlay for `overlay: none` files** → new/unindexed files have
+  no signals; only D6 applies to them.
