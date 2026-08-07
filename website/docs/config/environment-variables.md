@@ -37,7 +37,7 @@ variables are optional unless specified otherwise.
 | `EMBEDDING_MODEL`        | Model name                                               | `jina-embeddings-v2-base-code` |
 | `EMBEDDING_BASE_URL`     | Custom API URL                                           | Provider-specific              |
 | `EMBEDDING_FALLBACK_URL` | Fallback Ollama URL when primary is unreachable          | -                              |
-| `EMBEDDING_DIMENSIONS`   | Vector dimensions (auto-detected from model)             | Auto                           |
+| `EMBEDDING_DIMENSIONS`   | Vector width. Ollama and ONNX report it at startup; other providers fall back to a built-in model table. Set it to pin the value. | Resolved |
 | `OPENAI_API_KEY`         | OpenAI API key                                           | -                              |
 | `COHERE_API_KEY`         | Cohere API key                                           | -                              |
 | `VOYAGE_API_KEY`         | Voyage AI API key                                        | -                              |

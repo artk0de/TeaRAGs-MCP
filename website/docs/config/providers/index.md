@@ -37,7 +37,7 @@ All providers share these tuning variables:
 |----------|-------------|---------|
 | `EMBEDDING_PROVIDER` | Provider name: `onnx`, `ollama`, `openai`, `cohere`, `voyage` | `ollama` |
 | `EMBEDDING_MODEL` | Model name (provider-specific) | Provider default |
-| `EMBEDDING_DIMENSIONS` | Vector dimensions (auto-detected from model) | Auto |
+| `EMBEDDING_DIMENSIONS` | Vector width. Ollama and ONNX report it at startup; other providers fall back to a built-in model table. Set it to pin the value. | Resolved |
 | `EMBEDDING_TUNE_BATCH_SIZE` | Texts per embedding batch | **Provider-specific** (see below) |
 | `EMBEDDING_TUNE_RETRY_ATTEMPTS` | Retry count on failure | `3` |
 | `EMBEDDING_TUNE_RETRY_DELAY_MS` | Initial retry delay (exponential backoff) | `1000` |

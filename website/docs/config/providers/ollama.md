@@ -110,6 +110,7 @@ Optional variables:
 | Variable                    | Description                                     | Default                                            |
 | --------------------------- | ----------------------------------------------- | -------------------------------------------------- |
 | `EMBEDDING_MODEL`           | Ollama model name                               | `unclemusclez/jina-embeddings-v2-base-code:latest` |
+| `EMBEDDING_DIMENSIONS`      | Vector width. Resolved from Ollama at startup; set only to pin it | Resolved                     |
 | `EMBEDDING_FALLBACK_URL`    | Fallback Ollama URL when primary is unreachable | -                                                  |
 | `EMBEDDING_TUNE_BATCH_SIZE` | Texts per embedding batch                       | `1024`                                             |
 | `OLLAMA_NUM_GPU`            | GPU layers to offload (`0` = CPU only)          | `999` (all)                                        |
