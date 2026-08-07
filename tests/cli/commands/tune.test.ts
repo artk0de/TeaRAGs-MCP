@@ -271,6 +271,68 @@ describe("tune command", () => {
     });
   });
 
+  describe("registry embedding endpoints (tea-rags-mcp-5jstr)", () => {
+    // The endpoints live in dedicated CollectionEntry fields, NOT in
+    // `entry.env`, so the tuning-snapshot replay below never carries them.
+    // Before the fix `tune --project` therefore calibrated every project
+    // against the localhost:11434 default while `index-codebase --project`
+    // (which goes through resolveRegistryEnv) used the real backend.
+    let dataDir: string;
+    let savedBaseUrl: string | undefined;
+    let savedFallbackUrl: string | undefined;
+
+    beforeEach(() => {
+      dataDir = mkdtempSync(join(tmpdir(), "tune-embed-"));
+      process.env.TEA_RAGS_DATA_DIR = dataDir;
+      savedBaseUrl = process.env.EMBEDDING_BASE_URL;
+      savedFallbackUrl = process.env.EMBEDDING_FALLBACK_URL;
+      delete process.env.EMBEDDING_BASE_URL;
+      delete process.env.EMBEDDING_FALLBACK_URL;
+      const registry = new CollectionRegistry(dataDir);
+      registry.record({
+        collectionName: "code_remote",
+        path: "/repo/remote",
+        embeddingModel: "jina",
+        embeddingDimensions: 768,
+        embeddingBaseUrl: "http://192.168.1.71:11434",
+        embeddingFallbackUrl: "http://127.0.0.1:11434",
+        qdrantUrl: "http://qd:6333",
+        indexedAt: "2026-08-01T00:00:00Z",
+        teaRagsVersion: "1.38.1",
+        chunksCount: 0,
+      });
+      registry.setName("code_remote", "remote");
+    });
+
+    afterEach(() => {
+      delete process.env.TEA_RAGS_DATA_DIR;
+      if (savedBaseUrl === undefined) delete process.env.EMBEDDING_BASE_URL;
+      else process.env.EMBEDDING_BASE_URL = savedBaseUrl;
+      if (savedFallbackUrl === undefined) delete process.env.EMBEDDING_FALLBACK_URL;
+      else process.env.EMBEDDING_FALLBACK_URL = savedFallbackUrl;
+      rmSync(dataDir, { recursive: true, force: true });
+    });
+
+    it("spawns the benchmark against the project's embedding endpoint and fallback", async () => {
+      await (tuneCommand.handler as TuneHandler)({ project: "remote", full: false });
+
+      const [, , opts] = spawnMock.mock.calls[0] as [string, string[], { env: NodeJS.ProcessEnv }];
+      expect(opts.env?.EMBEDDING_BASE_URL).toBe("http://192.168.1.71:11434");
+      expect(opts.env?.EMBEDDING_FALLBACK_URL).toBe("http://127.0.0.1:11434");
+    });
+
+    it("explicit --embedding-url wins over the registry endpoint", async () => {
+      await (tuneCommand.handler as TuneHandler)({
+        project: "remote",
+        "embedding-url": "http://explicit:11434",
+        full: false,
+      });
+
+      const [, , opts] = spawnMock.mock.calls[0] as [string, string[], { env: NodeJS.ProcessEnv }];
+      expect(opts.env?.EMBEDDING_BASE_URL).toBe("http://explicit:11434");
+    });
+  });
+
   describe("registry tuning env replay (GIT_ADAPTER)", () => {
     let dataDir: string;
     let savedGitAdapter: string | undefined;

@@ -76,6 +76,74 @@ describe("applyProjectDefaults", () => {
   });
 });
 
+describe("applyProjectDefaults embedding endpoints (tea-rags-mcp-5jstr)", () => {
+  // `tune --project X` reaches its embedding backend ONLY through the args
+  // applyProjectDefaults returns — unlike `index-codebase`, it never calls
+  // resolveRegistryEnv, and the identity endpoints live in dedicated
+  // CollectionEntry fields rather than `entry.env`. Leaving them unresolved
+  // silently calibrated every remote-ollama project against localhost:11434.
+  let dir: string;
+
+  beforeEach(() => {
+    dir = mkdtempSync(join(tmpdir(), "cli-rr-embed-"));
+    process.env.TEA_RAGS_DATA_DIR = dir;
+    const r = new CollectionRegistry(dir);
+    r.record({
+      collectionName: "code_remote",
+      path: "/repo/remote",
+      embeddingModel: "jina",
+      embeddingDimensions: 768,
+      embeddingBaseUrl: "http://192.168.1.71:11434",
+      embeddingFallbackUrl: "http://127.0.0.1:11434",
+      qdrantUrl: "http://qdrant:6333",
+      indexedAt: "2026-08-01T00:00:00Z",
+      teaRagsVersion: "1.38.1",
+      chunksCount: 42,
+    });
+    r.setName("code_remote", "remote");
+  });
+
+  afterEach(() => {
+    delete process.env.TEA_RAGS_DATA_DIR;
+    rmSync(dir, { recursive: true, force: true });
+  });
+
+  it("resolves the embedding endpoint from the registry entry, not the localhost default", () => {
+    const out = applyProjectDefaults({ project: "remote" });
+    expect(out["embedding-url"]).toBe("http://192.168.1.71:11434");
+  });
+
+  it("resolves the embedding fallback endpoint from the registry entry", () => {
+    const out = applyProjectDefaults({ project: "remote" });
+    expect(out["embedding-fallback-url"]).toBe("http://127.0.0.1:11434");
+  });
+
+  it("explicit --embedding-url wins over the registry endpoint", () => {
+    const out = applyProjectDefaults({ project: "remote", "embedding-url": "http://explicit:11434" });
+    expect(out["embedding-url"]).toBe("http://explicit:11434");
+    expect(out["embedding-fallback-url"]).toBe("http://127.0.0.1:11434");
+  });
+
+  it("leaves both endpoints undefined when the entry stores none (no '' poisoning)", () => {
+    const reg = new CollectionRegistry(dir);
+    reg.record({
+      collectionName: "code_bare",
+      path: "/repo/bare",
+      embeddingModel: "jina",
+      embeddingDimensions: 768,
+      embeddingBaseUrl: "",
+      qdrantUrl: "",
+      indexedAt: "",
+      teaRagsVersion: "",
+      chunksCount: 0,
+    });
+    reg.setName("code_bare", "bare");
+    const out = applyProjectDefaults({ project: "bare" });
+    expect(out["embedding-url"]).toBeUndefined();
+    expect(out["embedding-fallback-url"]).toBeUndefined();
+  });
+});
+
 describe("applyProjectDefaults typed-error refactor (audit #5 + #15)", () => {
   it("throws ProjectNotRegisteredError when the alias is unknown (not process.exit)", async () => {
     const { applyProjectDefaults } = await import("../../src/cli/registry-resolver.js");

@@ -19,9 +19,11 @@ export { loadRegistryFile, saveRegistryFile } from "./registry-file.js";
 export { CollectionRegistry } from "./collection-registry.js";
 export {
   ADAPTIVE_DEFAULT_ENV_KEYS,
+  canonicalRegistryEnvKeys,
   DEDICATED_FIELD_ENV_KEYS,
   REGISTRY_ENV_ALLOWLIST,
   REGISTRY_ENV_GROUPS,
+  registryEnvGroupMembers,
 } from "./env-groups.js";
 export type { RegistryEnvGroup } from "./env-groups.js";
 export { replayRegistryEnv } from "./env-replay.js";
