@@ -43,17 +43,27 @@ function resolveDataDir(): string {
   return process.env.TEA_RAGS_DATA_DIR ?? join(homedir(), ".tea-rags");
 }
 
-export function buildMcpAutoUpdateTrigger(dataDir: string = resolveDataDir()): McpAutoUpdateTrigger {
+export function buildMcpAutoUpdateTrigger(
+  dataDir: string = resolveDataDir(),
+  spawnImpl?: (project: string) => void,
+): McpAutoUpdateTrigger {
   const registry = new CollectionRegistry(dataDir);
+  // The MCP server is LONG-LIVED and CollectionRegistry caches registry.json
+  // in memory — without the watcher, `tea-rags auto-update` config written
+  // AFTER server start stays invisible until the next reconnect. The watcher
+  // invalidates the cache on every external registry write (Audit #2 seam).
+  registry.startWatching();
   const trigger = new AutoUpdateTrigger({
     registry,
     freshness: new IndexFreshnessCheck(),
-    spawn: (project) => {
-      const entry = registry.get(project);
-      const log = openAutoUpdateLog(dataDir, entry?.name ?? project);
-      spawnDetachedUpdater({ project, logFd: log.fd });
-      closeAutoUpdateLog(log);
-    },
+    spawn:
+      spawnImpl ??
+      ((project) => {
+        const entry = registry.get(project);
+        const log = openAutoUpdateLog(dataDir, entry?.name ?? project);
+        spawnDetachedUpdater({ project, logFd: log.fd });
+        closeAutoUpdateLog(log);
+      }),
     clock: () => Date.now(),
   });
 
