@@ -1,13 +1,8 @@
 ## [1.38.1](https://github.com/artk0de/TeaRAGs-MCP/compare/v1.38.0...v1.38.1) (2026-08-07)
 
-### Bug Fixes
+### 🩹 Fixes
 
-- **indexing-marker:** treat vectorSize 0 as absent in the marker size fallback
-  ([741d774](https://github.com/artk0de/TeaRAGs-MCP/commit/741d774147a7a6aae15c9ed411550224f3d4a6b7))
-- **indexing-marker:** use collection vector size for marker upsert
-  ([69f59a7](https://github.com/artk0de/TeaRAGs-MCP/commit/69f59a75cdbf4ad8e6bb75df0eb06fb93b63ad18))
-- **indexing-marker:** use collection vector size for marker upsert
-  ([1bdebf4](https://github.com/artk0de/TeaRAGs-MCP/commit/1bdebf40f3c720acbb6181d836223be289299be3))
+* Fixed a bug where git-derived signals (recency, churn, ownership) could silently go missing from indexed results when the embedding model used a non-standard vector size — indexing now matches the collection's actual dimensions instead of guessing from a static model list
 
 ## [1.38.0](https://github.com/artk0de/TeaRAGs-MCP/compare/v1.37.0...v1.38.0) (2026-08-07)
 

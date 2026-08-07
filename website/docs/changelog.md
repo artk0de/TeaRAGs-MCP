@@ -5,40 +5,66 @@ sidebar_position: 99
 
 ## [1.38.1](https://github.com/artk0de/TeaRAGs-MCP/compare/v1.38.0...v1.38.1) (2026-08-07)
 
-### Bug Fixes
+### 🩹 Fixes
 
-* **indexing-marker:** treat vectorSize 0 as absent in the marker size fallback ([741d774](https://github.com/artk0de/TeaRAGs-MCP/commit/741d774147a7a6aae15c9ed411550224f3d4a6b7))
-* **indexing-marker:** use collection vector size for marker upsert ([69f59a7](https://github.com/artk0de/TeaRAGs-MCP/commit/69f59a75cdbf4ad8e6bb75df0eb06fb93b63ad18))
-* **indexing-marker:** use collection vector size for marker upsert ([1bdebf4](https://github.com/artk0de/TeaRAGs-MCP/commit/1bdebf40f3c720acbb6181d836223be289299be3))
+* Fixed a bug where git-derived signals (recency, churn, ownership) could silently go missing from indexed results when the embedding model used a non-standard vector size — indexing now matches the collection's actual dimensions instead of guessing from a static model list
 
 ## [1.38.0](https://github.com/artk0de/TeaRAGs-MCP/compare/v1.37.0...v1.38.0) (2026-08-07)
 
 ### 🔎 Search & ranking
 
-* File-level search results now include an outline of what matched inside each file — the symbols or headings that hit, in the same shape find_symbol returns — instead of just telling you the file matched.
-* Semantic search results now carry a confidence label (high/medium/low) for how well they actually match your query, calibrated against the collection's own score distribution — a low label is a signal the answer may not be in the codebase at all.
-* The bugHunt ranking preset now also factors in call-graph centrality, so among equally bug-prone methods it favors the one the rest of the codebase actually depends on.
-* Four new ranking presets use the call graph to spot risky code: hotMethod and godMethod rank by how many callers a method has or how many collaborators it reaches, criticalMethod ranks by how central a method is across the whole call graph, and criticalPath combines centrality with churn and bug history to flag methods that are both critical and unstable — a good pre-release QA scan.
+- File-level search results now include an outline of what matched inside each
+  file — the symbols or headings that hit, in the same shape find_symbol returns
+  — instead of just telling you the file matched.
+- Semantic search results now carry a confidence label (high/medium/low) for how
+  well they actually match your query, calibrated against the collection's own
+  score distribution — a low label is a signal the answer may not be in the
+  codebase at all.
+- The bugHunt ranking preset now also factors in call-graph centrality, so among
+  equally bug-prone methods it favors the one the rest of the codebase actually
+  depends on.
+- Four new ranking presets use the call graph to spot risky code: hotMethod and
+  godMethod rank by how many callers a method has or how many collaborators it
+  reaches, criticalMethod ranks by how central a method is across the whole call
+  graph, and criticalPath combines centrality with churn and bug history to flag
+  methods that are both critical and unstable — a good pre-release QA scan.
 
 ### 🧠 Code intelligence
 
-* Ruby call-graph navigation resolves more methods correctly when a `@return` type annotation doesn't spell out its full namespace, by qualifying it against the scope it was written in.
+- Ruby call-graph navigation resolves more methods correctly when a `@return`
+  type annotation doesn't spell out its full namespace, by qualifying it against
+  the scope it was written in.
 
 ### ⚡ Indexing & performance
 
-* If you're on an existing index, the search-confidence signal now backfills automatically on your next reindex instead of requiring a full rebuild for it to show up.
+- If you're on an existing index, the search-confidence signal now backfills
+  automatically on your next reindex instead of requiring a full rebuild for it
+  to show up.
 
 ### 🛠 CLI & workflow
 
-* Added an opt-in auto-update watcher: turn it on via the CLI and tea-rags re-indexes a project in the background whenever its tracked branch gets new commits, with status visible in the session digest, the auto-update status command, and a hint on search results when a refresh just kicked off.
-* Added an mr-review skill for Claude Code that runs a structured, multi-dimension code review — blast radius, style consistency, fragile zones, test coverage, invariants, cycles — and posts the results as a PR comment.
+- Added an opt-in auto-update watcher: turn it on via the CLI and tea-rags
+  re-indexes a project in the background whenever its tracked branch gets new
+  commits, with status visible in the session digest, the auto-update status
+  command, and a hint on search results when a refresh just kicked off.
+- Added an mr-review skill for Claude Code that runs a structured,
+  multi-dimension code review — blast radius, style consistency, fragile zones,
+  test coverage, invariants, cycles — and posts the results as a PR comment.
 
 ### 🩹 Fixes
 
-* Auto-update now notices when it's turned on after the MCP server already started, instead of requiring a reconnect before it activates.
-* Re-running an index on a repo with no file changes now also repairs corrupted call-graph data if it finds any, instead of only checking for repairs when files actually changed.
-* Indexing a project through the MCP server now uses that project's own saved settings (chunk size, concurrency, batch size, etc.) instead of silently falling back to the server's defaults.
-* The risk-assessment skill no longer lets test files and docs crowd out production code in its scan, and its test-coverage check no longer produces false "untested" warnings when different parts of the codebase share similarly named tests.
+- Auto-update now notices when it's turned on after the MCP server already
+  started, instead of requiring a reconnect before it activates.
+- Re-running an index on a repo with no file changes now also repairs corrupted
+  call-graph data if it finds any, instead of only checking for repairs when
+  files actually changed.
+- Indexing a project through the MCP server now uses that project's own saved
+  settings (chunk size, concurrency, batch size, etc.) instead of silently
+  falling back to the server's defaults.
+- The risk-assessment skill no longer lets test files and docs crowd out
+  production code in its scan, and its test-coverage check no longer produces
+  false "untested" warnings when different parts of the codebase share similarly
+  named tests.
 
 ## [1.37.0](https://github.com/artk0de/TeaRAGs-MCP/compare/v1.36.0...v1.37.0) (2026-08-02)
 
