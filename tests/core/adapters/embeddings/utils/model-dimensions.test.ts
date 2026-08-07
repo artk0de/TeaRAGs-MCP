@@ -167,3 +167,37 @@ describe("getModelDimensions", () => {
     expect(getModelDimensions("unknown-model-xyz")).toBeUndefined();
   });
 });
+
+describe("getModelDimensions — Ollama tag normalization", () => {
+  // Invariant: a model resolves to the same dimensions whether or not the user
+  // writes the Ollama tag. `ollama list` and the project's own docs print names
+  // WITH the tag, so a tagged name missing the registry silently degrades to the
+  // 768 fallback — a 1024-wide model then gets 768-wide zero-vectors, which
+  // Qdrant rejects.
+  test("resolves a tagged model to its untagged dimensions", () => {
+    expect(getModelDimensions("mxbai-embed-large:latest")).toBe(getModelDimensions("mxbai-embed-large"));
+    expect(getModelDimensions("mxbai-embed-large:latest")).toBe(1024);
+  });
+
+  test("resolves a parameter-size tag to the base model's dimensions", () => {
+    expect(getModelDimensions("all-minilm:33m")).toBe(384);
+    expect(getModelDimensions("nomic-embed-text:v1.5")).toBe(768);
+  });
+
+  test("prefers an exact tagged entry over tag stripping", () => {
+    // This key is registered WITH its tag; stripping must not shadow it.
+    expect(getModelDimensions("unclemusclez/jina-embeddings-v2-base-code:latest")).toBe(768);
+  });
+
+  test("strips a tag layered on a quantization suffix", () => {
+    expect(getModelDimensions("nomic-ai/nomic-embed-text-v1.5-q8:latest")).toBe(768);
+  });
+
+  test("still returns undefined for an unknown tagged model", () => {
+    expect(getModelDimensions("unknown-model-xyz:latest")).toBeUndefined();
+  });
+
+  test("does not treat a namespace slash as a tag", () => {
+    expect(getModelDimensions("jinaai/jina-embeddings-v2-base-code")).toBe(768);
+  });
+});
