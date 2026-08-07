@@ -11,10 +11,10 @@ import { join } from "node:path";
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+import { createShardedSnapshotAccess } from "../../../../../src/core/domains/ingest/sync/snapshot/sharded-snapshot-access.js";
 import { IndexStoreAdapter } from "../../../../../src/core/domains/maintenance/migration/adapters/index-store-adapter.js";
 import { SnapshotStoreAdapter } from "../../../../../src/core/domains/maintenance/migration/adapters/snapshot-store-adapter.js";
 import { SparseStoreAdapter } from "../../../../../src/core/domains/maintenance/migration/adapters/sparse-store-adapter.js";
-import { createShardedSnapshotAccess } from "../../../../../src/core/domains/ingest/sync/snapshot/sharded-snapshot-access.js";
 
 // ── SnapshotStoreAdapter ──────────────────────────────────────────────────────
 
@@ -572,5 +572,70 @@ describe("SparseStoreAdapter", () => {
       const adapter = new SparseStoreAdapter(qdrant as any);
       await expect(adapter.storeSparseVersion("col", 1)).resolves.toBeUndefined();
     });
+  });
+});
+
+// ── IndexStoreAdapter: bulk payload rewrite surface ───────────────────────────
+//
+// The three operations a backfill/rename migration composes: read every point's
+// payload, write the new shape back in batches, drop the legacy keys.
+
+describe("IndexStoreAdapter bulk payload operations", () => {
+  function makeBulkQdrant(overrides: Record<string, unknown> = {}) {
+    return {
+      scrollFiltered: vi.fn().mockResolvedValue([]),
+      batchSetPayload: vi.fn().mockResolvedValue(undefined),
+      deletePayloadKeys: vi.fn().mockResolvedValue(undefined),
+      ...overrides,
+    };
+  }
+
+  it("scrollAllPayload reads the whole collection unfiltered so no point escapes a backfill", async () => {
+    const points = [
+      { id: 1, payload: { parentSymbolId: "A" } },
+      { id: "b", payload: { parentSymbolId: "B" } },
+    ];
+    const qdrant = makeBulkQdrant({ scrollFiltered: vi.fn().mockResolvedValue(points) });
+    const adapter = new IndexStoreAdapter(qdrant as any);
+
+    const result = await adapter.scrollAllPayload("col");
+
+    expect(qdrant.scrollFiltered).toHaveBeenCalledWith("col", {}, 10000);
+    expect(result).toEqual(points);
+  });
+
+  it("scrollAllPayload yields an empty set for an empty collection rather than throwing", async () => {
+    const adapter = new IndexStoreAdapter(makeBulkQdrant() as any);
+    await expect(adapter.scrollAllPayload("col")).resolves.toEqual([]);
+  });
+
+  it("batchSetPayload forwards grouped point/payload operations verbatim", async () => {
+    const qdrant = makeBulkQdrant();
+    const adapter = new IndexStoreAdapter(qdrant as any);
+    const operations = [
+      { payload: { git: { file: { ageDays: 3 } } }, points: [1, 2] },
+      { payload: { git: { file: { ageDays: 9 } } }, points: ["c"] },
+    ];
+
+    await adapter.batchSetPayload("col", operations);
+
+    expect(qdrant.batchSetPayload).toHaveBeenCalledWith("col", operations);
+  });
+
+  it("deletePayloadKeys drops the legacy keys a rename migration leaves behind", async () => {
+    const qdrant = makeBulkQdrant();
+    const adapter = new IndexStoreAdapter(qdrant as any);
+
+    await adapter.deletePayloadKeys("col", ["parentSymbolId", "ownershipPct"]);
+
+    expect(qdrant.deletePayloadKeys).toHaveBeenCalledWith("col", ["parentSymbolId", "ownershipPct"]);
+  });
+
+  it("propagates a store failure instead of silently reporting success", async () => {
+    const adapter = new IndexStoreAdapter(
+      makeBulkQdrant({ batchSetPayload: vi.fn().mockRejectedValue(new Error("qdrant down")) }) as any,
+    );
+
+    await expect(adapter.batchSetPayload("col", [{ payload: {}, points: [1] }])).rejects.toThrow("qdrant down");
   });
 });

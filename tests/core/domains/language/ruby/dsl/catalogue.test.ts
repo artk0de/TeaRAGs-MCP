@@ -24,6 +24,28 @@ describe("RUBY_DSL catalogue", () => {
     expect(RUBY_DSL.attr_writer.declares?.("a")).toEqual([{ name: "a=", kind: "instance" }]);
   });
 
+  it("cattr_reader / cattr_writer declare one CLASS-level accessor each", () => {
+    expect(RUBY_DSL.cattr_reader.declares?.("cache")).toEqual([{ name: "cache", kind: "static" }]);
+    expect(RUBY_DSL.cattr_writer.declares?.("cache")).toEqual([{ name: "cache=", kind: "static" }]);
+  });
+
+  it("mattr_* mirror the cattr_* forms — module-level accessors are also static", () => {
+    expect(RUBY_DSL.mattr_accessor.declares?.("logger")).toEqual([
+      { name: "logger", kind: "static" },
+      { name: "logger=", kind: "static" },
+    ]);
+    expect(RUBY_DSL.mattr_reader.declares?.("logger")).toEqual([{ name: "logger", kind: "static" }]);
+    expect(RUBY_DSL.mattr_writer.declares?.("logger")).toEqual([{ name: "logger=", kind: "static" }]);
+  });
+
+  it("class_attribute declares reader, writer and predicate at instance level", () => {
+    expect(RUBY_DSL.class_attribute.declares?.("enabled")).toEqual([
+      { name: "enabled", kind: "instance" },
+      { name: "enabled=", kind: "instance" },
+      { name: "enabled?", kind: "instance" },
+    ]);
+  });
+
   it("delegate declares one instance forwarder", () => {
     expect(RUBY_DSL.delegate.category).toBe("delegation");
     expect(RUBY_DSL.delegate.declares?.("name")).toEqual([{ name: "name", kind: "instance" }]);
