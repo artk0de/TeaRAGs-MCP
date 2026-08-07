@@ -74,22 +74,43 @@ dependency noted in Epic 5.
 
 Paths are relative to `src/core/`; `…` elides an intermediate directory.
 
-| File                               | Owner (blame)               | Churn | Age    | bugFixRate\*       | fanIn         | transImpact     |
-| ---------------------------------- | --------------------------- | ----- | ------ | ------------------ | ------------- | --------------- |
-| `contracts/types/codegraph.ts`     | artk0de 57% (3)             | 57    | 1d     | 18% healthy        | **60 hub**    | **86 systemic** |
-| `ingest/…/debug-logger.ts`         | Korochansky 96% (2)         | 7     | 8d     | 14% healthy        | **15 hub**    | 23 regional     |
-| `ruby/…/type-propagation.ts`       | **artk0de 100% (1 — silo)** | 17    | 2d     | 29% healthy        | 10 hub        | **30 systemic** |
-| `ruby/walker/walker.ts`            | artk0de 70% (3)             | 40    | 2d     | 20% healthy        | 7 hub         | 24 regional     |
-| `adapters/duckdb/client.ts`        | artk0de 53% (3)             | 30    | 1d     | 20% healthy        | 2             | 12 systemic     |
-| `ingest/…/enrichment/recovery.ts`  | artk0de 59% (3)             | 13    | 1d     | **62% critical**   | 1             | 1 local         |
-| `ingest/…/enrichment/applier.ts`   | artk0de 41% (3)             | 19    | **0d** | **53% concerning** | 2             | 2 local         |
-| `ingest/…/completion-runner.ts`    | artk0de 54% (3)             | 16    | 1d     | 38% concerning     | 1             | 2 local         |
-| `ingest/…/file-phase.ts`           | Korochansky 39% (3)         | 14    | 0d     | 36% healthy        | 1             | 2 local         |
-| `ingest/…/file-processor.ts`       | Korochansky 79% (2)         | 14    | 0d     | 14% healthy        | 2             | 3 local         |
-| `ingest/…/chunker/tree-sitter.ts`  | Korochansky 82% (4)         | 21    | 8d     | 19% healthy        | 1             | 1 local         |
-| `adapters/duckdb/daemon/server.ts` | Korochansky 51% (3)         | 13    | 1d     | 8% healthy         | 1             | 1 local         |
-| `ruby/…/ruby-dynamic-dispatch.ts`  | **artk0de 100% (1 — silo)** | 15    | 2d     | 13% healthy        | 1 (fanOut 11) | 1 local         |
-| `adapters/embeddings/onnx.ts`      | Korochansky 97% (2)         | 17    | 0d     | 35% healthy        | 1             | 9 local         |
+Ownership and history:
+
+| File                               | Owner (blame)               | Churn | Age    | bugFixRate\*       |
+| ---------------------------------- | --------------------------- | ----- | ------ | ------------------ |
+| `contracts/types/codegraph.ts`     | artk0de 57% (3)             | 57    | 1d     | 18% healthy        |
+| `ingest/…/debug-logger.ts`         | Korochansky 96% (2)         | 7     | 8d     | 14% healthy        |
+| `ruby/…/type-propagation.ts`       | **artk0de 100% (1 — silo)** | 17    | 2d     | 29% healthy        |
+| `ruby/walker/walker.ts`            | artk0de 70% (3)             | 40    | 2d     | 20% healthy        |
+| `adapters/duckdb/client.ts`        | artk0de 53% (3)             | 30    | 1d     | 20% healthy        |
+| `ingest/…/enrichment/recovery.ts`  | artk0de 59% (3)             | 13    | 1d     | **62% critical**   |
+| `ingest/…/enrichment/applier.ts`   | artk0de 41% (3)             | 19    | **0d** | **53% concerning** |
+| `ingest/…/completion-runner.ts`    | artk0de 54% (3)             | 16    | 1d     | 38% concerning     |
+| `ingest/…/file-phase.ts`           | Korochansky 39% (3)         | 14    | 0d     | 36% healthy        |
+| `ingest/…/file-processor.ts`       | Korochansky 79% (2)         | 14    | 0d     | 14% healthy        |
+| `ingest/…/chunker/tree-sitter.ts`  | Korochansky 82% (4)         | 21    | 8d     | 19% healthy        |
+| `adapters/duckdb/daemon/server.ts` | Korochansky 51% (3)         | 13    | 1d     | 8% healthy         |
+| `ruby/…/ruby-dynamic-dispatch.ts`  | **artk0de 100% (1 — silo)** | 15    | 2d     | 13% healthy        |
+| `adapters/embeddings/onnx.ts`      | Korochansky 97% (2)         | 17    | 0d     | 35% healthy        |
+
+Graph signals:
+
+| File                               | fanIn         | transImpact     |
+| ---------------------------------- | ------------- | --------------- |
+| `contracts/types/codegraph.ts`     | **60 hub**    | **86 systemic** |
+| `ingest/…/debug-logger.ts`         | **15 hub**    | 23 regional     |
+| `ruby/…/type-propagation.ts`       | 10 hub        | **30 systemic** |
+| `ruby/walker/walker.ts`            | 7 hub         | 24 regional     |
+| `adapters/duckdb/client.ts`        | 2             | 12 systemic     |
+| `adapters/embeddings/onnx.ts`      | 1             | 9 local         |
+| `ingest/…/file-processor.ts`       | 2             | 3 local         |
+| `ingest/…/enrichment/applier.ts`   | 2             | 2 local         |
+| `ingest/…/completion-runner.ts`    | 1             | 2 local         |
+| `ingest/…/file-phase.ts`           | 1             | 2 local         |
+| `ingest/…/enrichment/recovery.ts`  | 1             | 1 local         |
+| `ingest/…/chunker/tree-sitter.ts`  | 1             | 1 local         |
+| `adapters/duckdb/daemon/server.ts` | 1             | 1 local         |
+| `ruby/…/ruby-dynamic-dispatch.ts`  | 1 (fanOut 11) | 1 local         |
 
 \* `bugFixRate` carried over from the risk-assessment scan — the `blastRadius`
 overlay does not expose it. "Korochansky" is Arthur Korochansky.
@@ -181,12 +202,12 @@ has no fixed length.
 
 **Files and targets:**
 
-| Target                                | File                                                 | Size                     |
-| ------------------------------------- | ---------------------------------------------------- | ------------------------ |
-| `processFiles()`                      | `ingest/pipeline/file-processor.ts:60`               | 243 LOC, chunk fanOut 29 |
-| `TreeSitterChunker#processChildren()` | `ingest/pipeline/chunker/tree-sitter.ts:992`         | 243 LOC, chunk fanOut 21 |
-| `CompletionRunner#run()`              | `ingest/pipeline/enrichment/completion-runner.ts:62` | 184 LOC, chunk fanOut 20 |
-| `FilePhase#onBatch()`                 | `ingest/pipeline/enrichment/file-phase.ts:181`       | 108 LOC, chunk fanOut 15 |
+| Target                                | File                                  | Size                     |
+| ------------------------------------- | ------------------------------------- | ------------------------ |
+| `processFiles()`                      | `ingest/…/file-processor.ts:60`       | 243 LOC, chunk fanOut 29 |
+| `TreeSitterChunker#processChildren()` | `ingest/…/chunker/tree-sitter.ts:992` | 243 LOC, chunk fanOut 21 |
+| `CompletionRunner#run()`              | `ingest/…/completion-runner.ts:62`    | 184 LOC, chunk fanOut 20 |
+| `FilePhase#onBatch()`                 | `ingest/…/file-phase.ts:181`          | 108 LOC, chunk fanOut 15 |
 
 **Approach:** All four are the same shape — a long orchestration body with high
 outgoing call load and no outgoing _dependency_ weight (`transitiveImpact ≤ 3`).
@@ -313,11 +334,11 @@ highest-risk epic in the program and the reason it runs last.
 
 **Files:**
 
-| File                              | Size                               | Signals                                                  |
-| --------------------------------- | ---------------------------------- | -------------------------------------------------------- |
-| `ruby/walker/walker.ts`           | **2380 LOC, 59 callables**         | fanIn 7 hub, transImpact 24                              |
-| `ruby/…/type-propagation.ts`      | 886 LOC, 30 callables              | fanIn 10 hub, transImpact **30 systemic**, **silo 100%** |
-| `ruby/…/ruby-dynamic-dispatch.ts` | 248 LOC, `resolveDispatch` 122 LOC | fanOut **11 heavy**, **silo 100%**                       |
+| File                              | Size                            | Signals                                     |
+| --------------------------------- | ------------------------------- | ------------------------------------------- |
+| `ruby/walker/walker.ts`           | **2380 LOC, 59 callables**      | fanIn 7 hub, tImpact 24                     |
+| `ruby/…/type-propagation.ts`      | 886 LOC, 30 callables           | fanIn 10 hub, **tImpact 30**, **silo 100%** |
+| `ruby/…/ruby-dynamic-dispatch.ts` | 248 LOC (`resolveDispatch` 122) | fanOut **11 heavy**, **silo 100%**          |
 
 **Approach:** `walker.ts` has clear seams already visible in its own outline —
 signature collection, inheritance/ancestor collection, call collection, DSL edge
@@ -371,35 +392,44 @@ routed onto these commits deliberately.
 
 ## Scope estimate
 
-Anchored to the **G2 `CodegraphEnrichmentProvider` split** (2836 → 1511 LOC into
-6 collaborators, 10 commits) — the closest historical operation to Epics 4/5/6 —
-with the substrate-exists discount applied, because the extraction pattern is
-already established in this codebase twice over.
+This program is **not design-bound work**. Every seam it cuts is already visible
+in the symbol outlines, the oracle is `tsc` plus the existing suite, and
+"correct" is defined as "observable behavior unchanged". Nothing has to be
+invented. That makes it a different work class from the historical anchors
+(trajectory framework, codegraph from scratch, `SymbolResolutionStrategy`
+chains), all of which were bounded by design novelty rather than by execution.
 
-| Epic                                   | Burst days (P50)                  |
-| -------------------------------------- | --------------------------------- |
-| E1 enrichment defect hardening         | 2.0 (includes taxonomy buffer)    |
-| E2 ingest god-methods                  | 1.5                               |
-| E3 adapter god-methods                 | 0.75                              |
-| E4 contracts split                     | 1.0                               |
-| E5 infra god-classes                   | 2.0                               |
-| E6 Ruby + bus factor                   | 4.0 (includes measurement buffer) |
-| **Total (raw)**                        | **11.25**                         |
-| After substrate-exists discount (×0.7) | **≈ 8**                           |
+Two consequences, both of which an earlier revision of this section got wrong:
 
-Converted at 2.5–3.5 burst days/week with the parallel-epic multiplier (×1.3):
+- **Epics that do not share files do not add up.** E1–E5 have zero file overlap
+  and can run as parallel agents in separate worktrees. Their cost is the
+  maximum, not the sum.
+- **Effort is not calendar.** Converting through burst-days-per-week models a
+  human work-week with pauses in it. For a focused session the right unit is
+  wall-clock hours.
 
-- **P25 — 2.8 weeks**
-- **P50 — 3.4 weeks**
-- **P75 — 4.5 weeks**
+- **E2 + E3 + E4 + E5 — 1–1.5 h total.** Four parallel agents; the oracle is the
+  compiler plus the existing suite.
+- **E1 — ~1 h, overlapping the above.** The only judgment-bound piece: read the
+  13 + 19 fix commits and classify the defects before cutting anything.
+- **E6 extraction — ~1 h, parallel.** Same mechanics as the rest.
+- **E6 proof — 0.5–1.5 h of _waiting_.** Corpus re-measurement. Ollama
+  serialises embeddings and reindex is user-gated, so this is wall-clock that no
+  amount of parallelism removes.
 
-Spread is slightly wider than this repo's usual ±15% because epic internals have
-not been read yet — scope certainty, not execution certainty, is what widens it.
+- **E1–E5 — P25 1.5 h / P50 2.5 h / P75 4 h**
+- **Whole program including E6 — P25 3 h / P50 4 h / P75 6 h**
 
-**First slice option:** E1 through E4 alone (everything except the two
-class-split epics) is ≈ 3.7 burst days after discount → **≈ 1.3 weeks
-calendar**, and clears the entire defect-density problem plus all seven god
-methods. E5 and E6 are pure mass reduction and can wait.
+The spread is set almost entirely by E6's measurement loop, not by code volume.
+Extraction there is as mechanical as everywhere else, but behavior-neutrality of
+the Ruby resolver can only be shown by re-measuring recall on a real corpus, and
+that wall-clock does not parallelise. A `--force` reindex run serially adds
+30–60 minutes of pure waiting. E6 is the one epic not safely promised inside
+four hours.
+
+**First slice:** E1–E5 clears the entire defect-density problem, all seven god
+methods, both non-Ruby god classes and the contracts hub — in one focused
+session. E6 is the only part that needs a measurement window.
 
 ---
 
