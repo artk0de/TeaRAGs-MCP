@@ -1,8 +1,8 @@
 ---
 paths:
-  - "src/core/trajectory/**/payload-signals.ts"
-  - "src/core/trajectory/**/types.ts"
-  - "src/core/trajectory/**/infra/metrics*.ts"
+  - "src/core/domains/trajectory/**/payload-signals.ts"
+  - "src/core/domains/trajectory/**/types.ts"
+  - "src/core/domains/trajectory/**/infra/metrics*.ts"
 ---
 
 # Payload Signal Descriptors

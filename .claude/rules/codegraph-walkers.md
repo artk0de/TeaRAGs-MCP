@@ -1,10 +1,10 @@
 ---
 paths:
-  - "src/core/domains/ingest/pipeline/chunker/extraction/**"
-  - "src/core/domains/trajectory/codegraph/symbols/resolvers/**"
+  - "src/core/domains/language/*/walker/**"
+  - "src/core/domains/language/*/resolver/**"
   - "src/core/domains/trajectory/codegraph/symbols/provider.ts"
-  - "tests/core/domains/ingest/pipeline/chunker/extraction/**"
-  - "tests/core/domains/trajectory/codegraph/symbols/resolvers/**"
+  - "tests/core/domains/language/*/walker/**"
+  - "tests/core/domains/language/*/resolver/**"
 ---
 
 # Codegraph Walkers — Per-Language Contract

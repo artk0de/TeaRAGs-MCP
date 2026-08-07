@@ -1,6 +1,6 @@
 ---
 paths:
-  - "src/core/adapters/git/**"
+  - "src/core/adapters/vcs/git/**"
   - "src/core/domains/trajectory/git/infra/walk-commits.ts"
   - "src/core/domains/trajectory/git/infra/chunk-reader.ts"
   - "src/core/domains/ingest/pipeline/enrichment/chunk-phase.ts"
@@ -12,8 +12,8 @@ paths:
 
 Bulk git blob/object reads (chunk-churn walk = two blobs per changed file per
 commit — tens of thousands per index) go through **persistent**
-`createCatFileBatch(repoRoot)` in `src/core/adapters/vcs/git/git-cli/client.ts`. One
-long-lived `git cat-file --batch` process per walk by default; close at walk
+`createCatFileBatch(repoRoot)` in `src/core/adapters/vcs/git/git-cli/client.ts`.
+One long-lived `git cat-file --batch` process per walk by default; close at walk
 end.
 
 **Run-scoped sharing (kc93).** Streaming index run: git chunk walk runs once
@@ -54,7 +54,7 @@ e2e confirmed `external` / `arrayBuffers` peak dropped 16–40 GB → **~0.1 GB*
 ## How
 
 ```ts
-import { createCatFileBatch } from "../../adapters/git/client.js";
+import { createCatFileBatch } from "../../adapters/vcs/git/git-cli/client.js";
 
 const reader = createCatFileBatch(repoRoot); // lazy: no process until first read()
 try {
@@ -85,6 +85,6 @@ remains for **one-off** reads only. Don't call in a loop — reach for
 
 - Blame parsing has sibling V8 string-retention hazard: `parseBlameOutput` must
   own-copy `sha`/`author`/`email` (else `SlicedString`s of multi-MB porcelain).
-  See comment in `src/core/adapters/git/parsers.ts`.
+  See comment in `src/core/adapters/vcs/git/git-cli/parsers.ts`.
 - `git blame --porcelain` results held in `GitEnrichmentProvider.blameByRelPath`
   released after chunk enrichment (last reader) — see `provider.ts`.

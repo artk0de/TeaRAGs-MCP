@@ -95,7 +95,7 @@ All paths relative to `src/core/`.
 | `traj-static-stats` | `domains/trajectory/static/stats/`               |
 | `contracts`         | `contracts/`                                     |
 | `infra`             | `infra/`                                         |
-| `migration`         | `infra/migration/`                               |
+| `migration`         | `domains/maintenance/migration/`                 |
 | `bootstrap`         | `bootstrap/`                                     |
 
 ### Design Principle: Don't Generate — Interrogate

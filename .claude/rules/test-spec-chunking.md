@@ -1,9 +1,9 @@
 ---
 paths:
-  - "src/core/domains/ingest/pipeline/chunker/hooks/*/test-*.ts"
-  - "src/core/domains/ingest/pipeline/chunker/hooks/*/rspec-*.ts"
-  - "tests/core/domains/ingest/pipeline/chunker/hooks/*/test-*.test.ts"
-  - "tests/core/domains/ingest/pipeline/chunker/hooks/*/rspec-*.test.ts"
+  - "src/core/domains/language/*/chunking/test-*.ts"
+  - "src/core/domains/language/*/chunking/rspec-*.ts"
+  - "tests/core/domains/language/*/chunking/test-*.test.ts"
+  - "tests/core/domains/language/*/chunking/rspec-*.test.ts"
 ---
 
 # Test-Spec DSL Chunking (MANDATORY canonical structure)
