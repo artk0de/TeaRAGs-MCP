@@ -1,21 +1,53 @@
 import { defineConfig } from "vitest/config";
 
 const isCI = !!process.env.CI;
-// The pre-commit hook and CI both run with --coverage; v8 instrumentation slows
-// worker_threads spawn (ChunkerPool, enrichment pool, codegraph factory) and
-// fs.watch event delivery (collection-registry) enough to blow the 5s default
-// and flake intermittently. Apply CI-grade resilience whenever coverage is on so
-// the local pre-commit gate matches CI; plain `npx vitest` dev runs stay fast
-// and retry-free.
 const coverageRun = process.argv.some((arg) => arg.includes("coverage"));
+// Retry is the one concession that stays environment-gated: it hides a genuinely
+// flaky product path, so a dev running `npx vitest` should see the first failure.
+// The pre-commit hook and CI both run with --coverage, and v8 instrumentation
+// slows worker spawn (ChunkerPool, enrichment pool, codegraph factory) and
+// fs.watch delivery (collection-registry) on top of everything below.
 const resilient = isCI || coverageRun;
+
+/**
+ * Wall-clock budget per test and per hook (bd tea-rags-mcp-lzks3).
+ *
+ * These were vitest's defaults (5s test / 10s hook) for a plain `npx vitest run`
+ * and only widened under CI/coverage. That gate was wrong: what stretches a test
+ * here is not the runner, it is THIS SUITE's own fan-out, which is identical in
+ * every invocation. vitest fans out to one file-worker per core on the premise
+ * that a test file occupies one runnable process; ~160 tests in this suite break
+ * that premise — they spend their time waiting on OS processes the suite spawns
+ * itself (child_process.fork'ed chunker/blame/walk workers, each dlopening
+ * tree-sitter, plus real `git`). Measured on a 12-core machine: 12 file-workers
+ * + up to 20 forked workers + up to 10 concurrent `git`, load average 28-40.
+ *
+ * Measured cost of that contention, same tests serial vs in the full run:
+ * median 2.7x, p90 5.5x, p99 9.5x, max 9.6x. The most expensive test costs
+ * 3.2s with no contention, so the budget has to clear 3.2s x 9.6 = 31s. At the
+ * old 5s a third of the real-process tests were already over budget on a GREEN
+ * run (client-catfile: 1.0s serial, 7.0s in-suite) and survived only because
+ * execFileSync blocks the event loop, which keeps vitest's timer from firing.
+ * Whichever test lost the scheduler's coin flip failed, so the failing set
+ * differed every run and every one of them passed in isolation.
+ *
+ * 30s is not a hang budget being relaxed — a hang is unbounded and still trips
+ * it. It is the smallest budget the measured stretch admits, and it is the
+ * figure the suite already used in ~15 hand-written per-test overrides.
+ */
+const WALL_CLOCK_BUDGET_MS = 30_000;
 
 export default defineConfig({
   test: {
     globals: true,
     environment: "node",
-    // Retry flaky timing tests + widen timeout under coverage / CI (slow runners)
-    ...(resilient && { retry: 2, testTimeout: 30_000 }),
+    // One budget for every invocation — see WALL_CLOCK_BUDGET_MS above. hookTimeout
+    // was never set at all, so real-git fixture setups ran against vitest's 10s
+    // default even on CI; that is what timed out blame-cache's beforeAll while its
+    // per-test `}, 30000)` overrides looked like they had the file covered.
+    testTimeout: WALL_CLOCK_BUDGET_MS,
+    hookTimeout: WALL_CLOCK_BUDGET_MS,
+    ...(resilient && { retry: 2 }),
     // Local: use all CPU cores for faster runs
     ...(!isCI && { pool: "forks" }),
     // Give worker_threads (ChunkerPool) time to terminate before fork exits

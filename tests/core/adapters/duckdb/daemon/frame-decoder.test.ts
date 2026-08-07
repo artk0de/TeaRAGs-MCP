@@ -81,12 +81,21 @@ describe("DaemonFrameDecoder", () => {
   // of that frame, not with its square.
   //
   // The comparison is against the accumulate-and-rescan loop this replaced,
-  // measured on the SAME payload in the SAME process. Contention on a loaded
-  // machine slows both arms alike, so their ratio stays meaningful where an
-  // absolute wall-clock bound — or a size-scaling ratio measured across two
-  // separate timings — does not: the scaling form read 11x under a fully
-  // parallel suite run, ambiguous against a ~15x quadratic and a ~4x linear.
-  // The gap here is ~24x at 16MB, so a 5x floor leaves ample headroom.
+  // measured on the SAME payload in the SAME process. The gap is ~24x at 16MB,
+  // so a 5x floor leaves ample headroom.
+  //
+  // Each arm is timed REPS times and read at its MINIMUM (bd tea-rags-mcp-lzks3).
+  // "Contention slows both arms alike" — the assumption behind the single-sample
+  // form this replaces — does not hold, because the arms are not the same size:
+  // the decoder arm runs on the order of one scheduling quantum, so a SINGLE
+  // preemption landing inside it inflates that arm several-fold, while the ~24x
+  // longer legacy arm absorbs the same preemption proportionally. The ratio then
+  // collapses toward 1 with neither algorithm having changed; it read 4.97
+  // against the 5x floor in a full parallel run. Noise can only ever ADD time to
+  // a measurement, never remove it, so the fastest of N observations is the one
+  // least perturbed — and the residual error is one-sided, able to depress the
+  // ratio (a false red, retried away by more reps) but never to inflate it into
+  // a false green.
   it("decodes a large frame far faster than re-splitting the whole accumulator", () => {
     const row = "x".repeat(1024);
     const rows = Array.from({ length: (16 * 1024 * 1024) / (row.length + 3) }, () => row);
@@ -105,17 +114,27 @@ describe("DaemonFrameDecoder", () => {
       return out;
     };
 
-    const legacyStarted = process.hrtime.bigint();
-    const legacyFrames = legacyDecode();
-    const legacyMs = Number(process.hrtime.bigint() - legacyStarted) / 1e6;
+    const REPS = 7;
+    const fastest = (run: () => string[]): { ms: number; frames: string[] } => {
+      let ms = Number.POSITIVE_INFINITY;
+      let frames: string[] = [];
+      for (let rep = 0; rep < REPS; rep++) {
+        const started = process.hrtime.bigint();
+        frames = run();
+        ms = Math.min(ms, Number(process.hrtime.bigint() - started) / 1e6);
+      }
+      return { ms, frames };
+    };
 
-    const decoderStarted = process.hrtime.bigint();
-    const frames = deliver(new DaemonFrameDecoder(), wire);
-    const decoderMs = Number(process.hrtime.bigint() - decoderStarted) / 1e6;
+    const legacy = fastest(legacyDecode);
+    const decoder = fastest(() => deliver(new DaemonFrameDecoder(), wire));
 
     // Same output — the speedup is not bought by decoding less.
-    expect(frames).toEqual(legacyFrames);
-    expect(frames).toHaveLength(1);
-    expect(legacyMs / Math.max(decoderMs, 0.1)).toBeGreaterThan(5);
+    expect(decoder.frames).toEqual(legacy.frames);
+    expect(decoder.frames).toHaveLength(1);
+    expect(
+      legacy.ms / Math.max(decoder.ms, 0.1),
+      `legacy ${legacy.ms.toFixed(2)}ms vs decoder ${decoder.ms.toFixed(2)}ms (best of ${REPS})`,
+    ).toBeGreaterThan(5);
   });
 });
