@@ -3,6 +3,72 @@ title: Changelog
 sidebar_position: 99
 ---
 
+## [1.38.0](https://github.com/artk0de/TeaRAGs-MCP/compare/v1.37.0...v1.38.0) (2026-08-07)
+
+### Features
+
+* **api:** IndexFreshnessCheck verdict module (hpg2 Task 4, nyfro) ([5b19cc5](https://github.com/artk0de/TeaRAGs-MCP/commit/5b19cc50f4349e2c51d500b844be1049d4abd60b))
+* **bootstrap:** AutoUpdateTrigger + detached spawner (hpg2 Task 6, vuqqj) ([681aca9](https://github.com/artk0de/TeaRAGs-MCP/commit/681aca908346d96ab30dd13445dac95f52435562))
+* **config:** auto-update CLI command — enable/disable/status/run (hpg2 Task 7, lt8rj) ([4289cd7](https://github.com/artk0de/TeaRAGs-MCP/commit/4289cd7bf684b3332e54e734d8885df7d7be8c08))
+* **config:** detached auto-update updater lifecycle (hpg2 Task 5, cj2z7) ([0eacae9](https://github.com/artk0de/TeaRAGs-MCP/commit/0eacae940d9d068b43883b652d36e450cd6d4100))
+* **config:** file-based repo git state reader in infra (hpg2 Task 2, sog3a) ([cb22f0e](https://github.com/artk0de/TeaRAGs-MCP/commit/cb22f0ea8000ea615888a8344bdff7ff86f783f7))
+* **contracts:** registry schema for git state + autoUpdate policy (hpg2 Task 1, cy84x) ([0c1a0cf](https://github.com/artk0de/TeaRAGs-MCP/commit/0c1a0cf253e6a3d120e8cc704afabdb7fd16bd33))
+* **dx:** mr-review anti-patterns + compression pass, plugin 0.31.3 (3ei0s) ([65da29c](https://github.com/artk0de/TeaRAGs-MCP/commit/65da29cccd3466f4a2412c0c86a901e064e32ef2))
+* **dx:** mr-review delivery contract + deliver phase — draft-gate, agent-side posting (3ei0s) ([c558c53](https://github.com/artk0de/TeaRAGs-MCP/commit/c558c5326ebb9a063a8a471065da4baaf983853c))
+* **dx:** mr-review scan dimensions + classify — playbook with exact call params (3ei0s) ([6aa9f33](https://github.com/artk0de/TeaRAGs-MCP/commit/6aa9f33924c2af017b0ef30a64684cdb0d68833a))
+* **dx:** mr-review skill — frontmatter, rules, resolve/acquire/map phases (3ei0s) ([41dc57e](https://github.com/artk0de/TeaRAGs-MCP/commit/41dc57e37a426a52b2ec321561b693b37ea7568a))
+* **explore:** confidence from magnitude vs the collection's own scale (7vzo) ([5d455ec](https://github.com/artk0de/TeaRAGs-MCP/commit/5d455ec65af8eafe71742e6c433f956d60b002c1))
+* **explore:** level=file carries a members outline of what matched (zrma) ([d0f2e89](https://github.com/artk0de/TeaRAGs-MCP/commit/d0f2e89a6ec10afc84e0cd030f166b309172fdf0))
+* **explore:** search confidence on the response envelope (7vzo) ([4dcbdad](https://github.com/artk0de/TeaRAGs-MCP/commit/4dcbdad814f774e398a29ef3f2dc2c3485c9cb33))
+* **ingest:** backfill the score background through a stats migration ([50214d2](https://github.com/artk0de/TeaRAGs-MCP/commit/50214d255b655296a166c9c768505a404ab126b4))
+* **ingest:** record repo git state in registry at finalize (hpg2 Task 3, df8n0) ([869a448](https://github.com/artk0de/TeaRAGs-MCP/commit/869a448b0f09aed32aac6eafd7feaf692c8612a1)), closes [BaseIndexingPipeline#recordRegistryEntry](https://github.com/artk0de/BaseIndexingPipeline/issues/recordRegistryEntry)
+* **mcp:** auto-update trigger on search tools + response hint (hpg2 Task 9, uprq8) ([da5c5d6](https://github.com/artk0de/TeaRAGs-MCP/commit/da5c5d60955112e2da16a7b4135903fc580e473f))
+* **presets:** add bugHunt composite override with call-graph centrality (q63w) ([9a579f3](https://github.com/artk0de/TeaRAGs-MCP/commit/9a579f369048c17690ecef6d42cab9a6e16a457c))
+* **presets:** add criticalMethod codegraph chunk preset (q63w) ([1641e8b](https://github.com/artk0de/TeaRAGs-MCP/commit/1641e8b123ba54e9a016c37cff97e39f3fe7b9c3))
+* **presets:** add criticalPath composite — central methods with unstable history (q63w) ([7ca7337](https://github.com/artk0de/TeaRAGs-MCP/commit/7ca7337f761d5aa133c499fbcf22674169332052))
+* **presets:** add hotMethod and godMethod codegraph chunk presets (q63w) ([719cb05](https://github.com/artk0de/TeaRAGs-MCP/commit/719cb05ce2b03e3108f2d1547ffbc37122d20682))
+
+### Improvements
+
+* **config:** branch-aware prime digest + auto-update spawn at session start (hpg2 Task 8, ezdtb) ([7154103](https://github.com/artk0de/TeaRAGs-MCP/commit/7154103e2defb94441d5b00b4000f723ca2f39b2))
+* **dx:** risk-assessment Phase 1 gains criticalPath dimension (q63w) ([ffb1549](https://github.com/artk0de/TeaRAGs-MCP/commit/ffb15493c887f2bfd0a7b1e03dc0b2730b120573))
+* **scripts:** C2 convention-collapse oracle for the dynamic fan-out (htffz) ([116aadd](https://github.com/artk0de/TeaRAGs-MCP/commit/116aadd96a7926ea2b750d289c84f27cdcdcc79b))
+* **scripts:** price the ivarField terminal convention tier (r2gjj) ([f614b86](https://github.com/artk0de/TeaRAGs-MCP/commit/f614b864ebc93aced7dd6c450aa8325a43c33911))
+* **trajectory:** collapse dynamic fan-out for convention-typed receivers (htffz) ([c0ab14c](https://github.com/artk0de/TeaRAGs-MCP/commit/c0ab14c3cd633f74b756ab6afb420a43d313d61b))
+* **trajectory:** collapse the [@ivar](https://github.com/ivar) dynamic fan-out onto ivarField (eaml5) ([e72f142](https://github.com/artk0de/TeaRAGs-MCP/commit/e72f1428483d2e53e3c08be16861ce332bf7ae0a))
+* **trajectory:** type untyped [@ivar](https://github.com/ivar) receivers by naming convention (r2gjj) ([c05bde9](https://github.com/artk0de/TeaRAGs-MCP/commit/c05bde95f1d2043b91876a67f95c96d6d3c54624))
+
+### Bug Fixes
+
+* **bootstrap:** MCP auto-update trigger watches registry for post-start config (hpg2) ([4ada222](https://github.com/artk0de/TeaRAGs-MCP/commit/4ada2221d02780af1d780448571047213be452b7))
+* **ingest:** self-heal a drifted provider store on a zero-change reindex (gvw8h) ([4e64534](https://github.com/artk0de/TeaRAGs-MCP/commit/4e6453429c91b7dc2bed326e71a82d26508a9a0f))
+* **mcp:** apply per-project registry env to index_codebase at request scope ([98c9de7](https://github.com/artk0de/TeaRAGs-MCP/commit/98c9de719aa66f159d59c70a6cc7fed87d002654))
+* **presets:** scope risk-assessment scan to production, stratify coverage check ([5e4d9ee](https://github.com/artk0de/TeaRAGs-MCP/commit/5e4d9ee17f7f12e6705d45bf4e56444a6f5c834d))
+* **qdrant:** queryGroups returns every hit of a group, not just the first (zrma) ([0d985c7](https://github.com/artk0de/TeaRAGs-MCP/commit/0d985c70550ad51513f7e180d4afbd2db408fffb))
+* **scripts:** sync the boundcall oracle's chain mirror with production (hg2r8) ([244bd9f](https://github.com/artk0de/TeaRAGs-MCP/commit/244bd9fc42cc1c1393c78c93976847c92c097b4a))
+* **scripts:** sync the residual oracle's chain mirror with production (4ys8s) ([7cee82e](https://github.com/artk0de/TeaRAGs-MCP/commit/7cee82eabcea934b78cc9b4c0fa16d161e5a2390))
+* **scripts:** sync the single-segment oracle's chain mirror with production (b5qr6) ([8e2c15e](https://github.com/artk0de/TeaRAGs-MCP/commit/8e2c15e71f6c7df48b64c2f8c166750cf748c396))
+* **trajectory:** pick the self-member coordinate by the caller's own form (z5gqv) ([a6687de](https://github.com/artk0de/TeaRAGs-MCP/commit/a6687dec5ec184553d9666027cd14f17f0423330))
+* **trajectory:** qualify unqualified YARD return facts against their owner scope (7fn5f) ([1c6723c](https://github.com/artk0de/TeaRAGs-MCP/commit/1c6723c54330701cbb8b7d8abebd14d1af635d60))
+
+### Documentation
+
+* auto-update --branch example + worktree-mode section in README (hpg2) ([ae98336](https://github.com/artk0de/TeaRAGs-MCP/commit/ae98336585c156266d33cdcf48b0907ca227840d))
+* auto-update watcher guide + README section (hpg2 Task 10, d5sdb) ([b5e3f38](https://github.com/artk0de/TeaRAGs-MCP/commit/b5e3f384f095dd63e88d426d6fe0912b2f3d49b9))
+* **dx:** fix prettier-mangled markup in mr-review plan (3ei0s) ([70e7ba1](https://github.com/artk0de/TeaRAGs-MCP/commit/70e7ba1e7c4b7604760a8a72f196c0edc94e4bbe))
+* **dx:** mr-review skill design spec — two modes, delivery contract (3ei0s) ([36f5495](https://github.com/artk0de/TeaRAGs-MCP/commit/36f54952c3ac476abd9b7559ab97f44be9672a7c))
+* **dx:** mr-review skill implementation plan — 4 tasks (3ei0s) ([cbd7df1](https://github.com/artk0de/TeaRAGs-MCP/commit/cbd7df12dbaa640a6a3a066f5dd527a26dbc9870))
+* **explore:** search-confidence design — distribution-shape no-match signal (7vzo) ([e7ddbea](https://github.com/artk0de/TeaRAGs-MCP/commit/e7ddbeab0ec5a4615ff552a4cb7107f3d2149cb6))
+* **mcp:** announce payload.members on the level=file schema (zrma) ([3797344](https://github.com/artk0de/TeaRAGs-MCP/commit/37973443bb59497f58523ad148b9eb9c1282a570))
+* **rerank:** point criticalMethod's docblock at FileLevelGrouper (zrma) ([ee37675](https://github.com/artk0de/TeaRAGs-MCP/commit/ee37675d58c51a58b5727dbd3a9c0cb99d9bd181))
+* **rules:** register the stats pipeline and repair paths the domain splits broke ([fdb1f56](https://github.com/artk0de/TeaRAGs-MCP/commit/fdb1f568e941b146a8b96bbf5c4e153b8aa01167))
+* **scripts:** SHIPPED SINCE header on boundcall cut 2b — 7fn5f landed, zero rows are the shipped state (71xzb) ([a740bea](https://github.com/artk0de/TeaRAGs-MCP/commit/a740bea360c279eca134b29e29e8f911c77f4b82))
+* **specs:** 89k7k — incremental-indexing model for production reasonCount ([2e6c7e7](https://github.com/artk0de/TeaRAGs-MCP/commit/2e6c7e73501d56a12ad91bac7dd9ce0fd3f3d48b))
+* **specs:** 89k7k — intent-unit source cascade replaces tickets-only reasons ([1262ff1](https://github.com/artk0de/TeaRAGs-MCP/commit/1262ff1f0b89e238326712ef495f9e8c3921af3b))
+* **specs:** 89k7k program design — gate-first phasing, Phase 0 validators ([b1cde0c](https://github.com/artk0de/TeaRAGs-MCP/commit/b1cde0cbbaee3e239548b5144dd337f470c20cd9))
+* **specs:** add auto-update watcher design (hpg2) ([20c3640](https://github.com/artk0de/TeaRAGs-MCP/commit/20c36400b380685b4ff2c143598f67d945fcb5bb))
+* **specs:** implementation plan for auto-update watcher (hpg2) ([7ba6290](https://github.com/artk0de/TeaRAGs-MCP/commit/7ba62904b68efc2ad9e7631d4ebf2a14a20270cb))
+
 ## [1.37.0](https://github.com/artk0de/TeaRAGs-MCP/compare/v1.36.0...v1.37.0) (2026-08-02)
 
 ### 🔎 Search & ranking
