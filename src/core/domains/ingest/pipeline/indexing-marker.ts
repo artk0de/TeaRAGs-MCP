@@ -69,7 +69,10 @@ export async function storeIndexingMarker(
     // subsequent setPayload/heartbeat on INDEXING_METADATA_ID 404s —
     // silently breaking enrichment markers. schema-manager.ts already does
     // this correctly (info.vectorSize).
-    const vectorSize = collectionInfo.vectorSize ?? embeddings.getDimensions();
+    // `||`, not `??`: getCollectionInfo() reports vectorSize as 0 (never
+    // undefined) when the vector config shape is unrecognized, and an empty
+    // zero-vector is rejected by Qdrant exactly like a mismatched one.
+    const vectorSize = collectionInfo.vectorSize || embeddings.getDimensions();
     const zeroVector: number[] = new Array<number>(vectorSize).fill(0);
 
     const payload = {
