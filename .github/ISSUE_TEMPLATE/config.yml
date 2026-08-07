@@ -1,0 +1,11 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Question, idea, or "is this how it's meant to work?"
+    url: https://github.com/artk0de/TeaRAGs-MCP/discussions
+    about: Setup help, tuning advice, and open-ended design discussion live in Discussions, not in issues.
+  - name: Security vulnerability
+    url: https://github.com/artk0de/TeaRAGs-MCP/blob/main/SECURITY.md
+    about: Report privately by email or GitHub Private Vulnerability Reporting — never as a public issue.
+  - name: Documentation
+    url: https://artk0de.github.io/TeaRAGs-MCP/
+    about: Installation, configuration, skills, and architecture — check here before filing.
