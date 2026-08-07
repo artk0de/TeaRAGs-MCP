@@ -83,6 +83,28 @@ export interface SparseStore {
   storeSparseVersion: (collection: string, version: number) => Promise<void>;
 }
 
+/**
+ * DIP: stats-cache operations for the score-background backfill.
+ *
+ * The state is derived from the data, not declared by a version counter: a
+ * stats file can be at the current format version and still lack the field,
+ * because the writer stores it only when the measurement succeeded.
+ */
+export interface StatsStore {
+  /**
+   * `none` — no stats file at all, nothing to migrate.
+   * `missing-background` — stats exist without a score background.
+   * `complete` — the background is already stored.
+   */
+  getBackgroundState: (collection: string) => Promise<"none" | "missing-background" | "complete">;
+  /**
+   * Sample the live collection, measure the background, persist it into the
+   * existing stats file. Returns false when the sample was too small to
+   * measure — no reindex is involved either way.
+   */
+  backfillScoreBackground: (collection: string) => Promise<boolean>;
+}
+
 /** DIP: enrichedAt backfill operations for enrichment recovery migration. */
 export interface EnrichmentStore {
   /** Check if migration already applied. */

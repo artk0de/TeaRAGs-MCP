@@ -18,7 +18,7 @@ import type { StatsAccumulatorDescriptor } from "../../../contracts/types/stats-
 import type { PayloadSignalDescriptor, ScoreBackground } from "../../../contracts/types/trajectory.js";
 import type { Reranker } from "../../../domains/explore/reranker.js";
 import { computeCollectionStats } from "../../../domains/ingest/infra/collection-stats.js";
-import { computeScoreBackground } from "../../../domains/ingest/infra/score-background.js";
+import { computeScoreBackground } from "../../../infra/score-background.js";
 import type { IndexPipeline } from "../../../domains/ingest/operations/indexing.js";
 import type { ReindexPipeline } from "../../../domains/ingest/operations/reindexing.js";
 import type { EnrichmentCoordinator } from "../../../domains/ingest/pipeline/enrichment/coordinator.js";

@@ -18,10 +18,13 @@ import { EnrichmentStoreAdapter } from "../../domains/maintenance/migration/adap
 import { IndexStoreAdapter } from "../../domains/maintenance/migration/adapters/index-store-adapter.js";
 import { SnapshotStoreAdapter } from "../../domains/maintenance/migration/adapters/snapshot-store-adapter.js";
 import { SparseStoreAdapter } from "../../domains/maintenance/migration/adapters/sparse-store-adapter.js";
+import { StatsStoreAdapter } from "../../domains/maintenance/migration/adapters/stats-store-adapter.js";
 import { Migrator } from "../../domains/maintenance/migration/migrator.js";
 import { SchemaMigrator } from "../../domains/maintenance/migration/schema-migrator.js";
 import { SnapshotMigrator } from "../../domains/maintenance/migration/snapshot-migrator.js";
 import { SparseMigrator } from "../../domains/maintenance/migration/sparse-migrator.js";
+import { StatsMigrator } from "../../domains/maintenance/migration/stats-migrator.js";
+import { StatsCache } from "../../infra/stats-cache.js";
 
 export function createIngestDependencies(
   qdrant: QdrantManager,
@@ -58,6 +61,10 @@ export function createIngestDependencies(
       const indexStore = new IndexStoreAdapter(qdrant);
       const sparseStore = new SparseStoreAdapter(qdrant);
       const enrichmentStore = providerKey ? new EnrichmentStoreAdapter(qdrant) : undefined;
+      // StatsCache is a path wrapper with no state of its own, and the stats
+      // files live under the same directory as the snapshots — so constructing
+      // one here reads exactly what the indexing path writes.
+      const statsStore = new StatsStoreAdapter(qdrant, new StatsCache(snapshotDir));
 
       return new Migrator({
         snapshot: new SnapshotMigrator(snapshotStore),
@@ -69,6 +76,7 @@ export function createIngestDependencies(
           snapshotStore,
         ),
         sparse: new SparseMigrator(collectionName, sparseStore, enableHybrid),
+        stats: new StatsMigrator(collectionName, statsStore),
       });
     },
     payloadBuilder,

@@ -289,6 +289,19 @@ export class ReindexPipeline extends BaseIndexingPipeline {
         steps: sparseResult.steps.map((s) => s.applied?.join(", ") ?? s.name),
       });
     }
+
+    // Stats backfills read the collection that is already stored — no
+    // re-embedding — so they belong on this sweep rather than behind a
+    // reindex prompt. It runs before the change detection early-returns,
+    // which is what lets a quiet repository still pick up a backfill.
+    const statsResult = await migrator.run("stats");
+    if (statsResult.steps.length > 0) {
+      pipelineLog.reindexPhase("stats_migration", {
+        fromVersion: statsResult.fromVersion,
+        toVersion: statsResult.toVersion,
+        steps: statsResult.steps.map((s) => s.applied?.join(", ") ?? s.name),
+      });
+    }
   }
 
   private async checkForCheckpoint(synchronizer: ParallelFileSynchronizer): Promise<boolean> {
