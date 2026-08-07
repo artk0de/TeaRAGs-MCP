@@ -112,8 +112,44 @@ describe("HybridSearchStrategy", () => {
       level: "file",
     });
 
-    // groupByFile deduplicates — 2 unique files from 3 results
+    // FileLevelGrouper deduplicates — 2 unique files from 3 results
     const paths = results.map((r) => r.payload?.["relativePath"]);
     expect(new Set(paths).size).toBeLessThanOrEqual(results.length);
+  });
+
+  // tea-rags-mcp-zrma: file-level dedup used to discard every chunk but the
+  // best one, so the caller saw "something matched in this file" and had to
+  // issue a second query to learn what.
+  it("attaches a members outline of everything that matched inside the file", async () => {
+    const mockResults = [
+      {
+        id: "1",
+        score: 0.9,
+        payload: { relativePath: "src/a.ts", name: "Alpha", symbolId: "Alpha", startLine: 1, endLine: 10 },
+      },
+      {
+        id: "2",
+        score: 0.7,
+        payload: {
+          relativePath: "src/a.ts",
+          name: "run",
+          symbolId: "Alpha#run",
+          parentSymbolId: "Alpha",
+          startLine: 20,
+          endLine: 30,
+        },
+      },
+    ];
+    const strategy = createStrategy(createMockQdrant(true, mockResults));
+
+    const results = await strategy.execute({
+      collectionName: "test_col",
+      embedding: [0.1, 0.2],
+      query: "file level query",
+      limit: 10,
+      level: "file",
+    });
+
+    expect(results[0].payload?.members).toBe("src/a.ts\n  Alpha\n    Alpha#run");
   });
 });

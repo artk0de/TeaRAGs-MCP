@@ -9,6 +9,7 @@ import type { EmbeddingProvider } from "../../../adapters/embeddings/base.js";
 import type { QdrantManager } from "../../../adapters/qdrant/client.js";
 import { QdrantPointNotFoundError } from "../../../adapters/qdrant/errors.js";
 import type { PayloadSignalDescriptor } from "../../../contracts/types/trajectory.js";
+import { FileLevelGrouper } from "../chunk-grouping/index.js";
 import { ChunkNotFoundError } from "../errors.js";
 import type { Reranker } from "../reranker.js";
 import { BaseExploreStrategy } from "./base.js";
@@ -82,7 +83,7 @@ export class SimilarSearchStrategy extends BaseExploreStrategy {
 
     // Client-side grouping for file level
     if (ctx.level === "file") {
-      return this.groupByFile(results, ctx.limit);
+      return FileLevelGrouper.group(results, ctx.limit);
     }
     return results;
   }

@@ -7,6 +7,7 @@
  */
 
 import { generateSparseVector } from "../../../adapters/qdrant/sparse.js";
+import { FileLevelGrouper } from "../chunk-grouping/index.js";
 import { InvalidQueryError } from "../errors.js";
 import { BaseExploreStrategy } from "./base.js";
 import { HybridNotEnabledError, type ExploreContext, type ExploreResult } from "./types.js";
@@ -36,7 +37,7 @@ export class HybridSearchStrategy extends BaseExploreStrategy {
 
     // queryGroups has no fusion=rrf option; fetch limit*3 above and group client-side.
     if (ctx.level === "file") {
-      return this.groupByFile(results, ctx.limit);
+      return FileLevelGrouper.group(results, ctx.limit);
     }
 
     return results;

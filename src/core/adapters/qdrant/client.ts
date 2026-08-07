@@ -872,11 +872,12 @@ export class QdrantManager {
       this.client.queryGroups(collectionName, params as Parameters<QdrantClient["queryGroups"]>[1]),
     );
 
-    // Flatten groups: take first hit from each group
+    // Flatten groups in group order, keeping every hit the server returned.
+    // group_size is forwarded to Qdrant, so dropping all but the first hit
+    // would make the parameter a no-op for callers above (tea-rags-mcp-zrma).
     const results: SearchResult[] = [];
     for (const group of response.groups ?? []) {
-      const hit = group.hits?.[0];
-      if (hit) {
+      for (const hit of group.hits ?? []) {
         results.push({
           id: hit.id,
           score: hit.score ?? 0,

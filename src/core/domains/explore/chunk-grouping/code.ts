@@ -86,14 +86,21 @@ export const CodeChunkGrouper = {
     const first = sorted[0];
     const relativePath = (first.payload.relativePath as string | undefined) ?? "";
 
-    // Separate top-level and nested symbols
-    const topLevel: ScrollChunk[] = [];
+    // Separate roots and nested symbols. A chunk is a root when it declares no
+    // parent — or when its parent is absent from this chunk set: level=file
+    // search hands over only the chunks that matched, so a method routinely
+    // arrives without its declaring class and would otherwise be unreachable
+    // from any rendered parent and vanish (tea-rags-mcp-zrma).
+    const declaredNames = new Set(
+      sorted.filter((c) => !c.payload.parentSymbolId).map((c) => (c.payload.name as string | undefined) ?? ""),
+    );
+    const roots: ScrollChunk[] = [];
     const childrenByParent = new Map<string, ScrollChunk[]>();
 
     for (const c of sorted) {
       const parentSymbolId = c.payload.parentSymbolId as string | undefined;
-      if (!parentSymbolId) {
-        topLevel.push(c);
+      if (!parentSymbolId || !declaredNames.has(parentSymbolId)) {
+        roots.push(c);
       } else {
         const list = childrenByParent.get(parentSymbolId);
         if (list) list.push(c);
@@ -101,12 +108,15 @@ export const CodeChunkGrouper = {
       }
     }
 
-    // Build outline
+    // Build outline. An orphaned member is labelled by its qualified symbolId —
+    // a bare `rerank` would lose the class it belongs to.
     const lines: string[] = [relativePath];
-    for (const tl of topLevel) {
-      const name = (tl.payload.name as string | undefined) ?? (tl.payload.symbolId as string | undefined) ?? "";
-      lines.push(`  ${name}`);
-      const children = childrenByParent.get(name);
+    for (const root of roots) {
+      const name = root.payload.name as string | undefined;
+      const symbolId = root.payload.symbolId as string | undefined;
+      const label = root.payload.parentSymbolId ? (symbolId ?? name ?? "") : (name ?? symbolId ?? "");
+      lines.push(`  ${label}`);
+      const children = name ? childrenByParent.get(name) : undefined;
       if (children) {
         for (const child of children) {
           const childId = (child.payload.symbolId as string | undefined) ?? "";

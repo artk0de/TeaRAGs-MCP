@@ -265,9 +265,12 @@ describe("ExploreFacade — expanded methods", () => {
         level: "file",
       });
 
+      // groupSize is the strategy's own tuning knob (how many hits per file it
+      // collects for the members outline) — the invariant here is the routing:
+      // file level goes through queryGroups, never plain search.
       expect(qdrant.queryGroups).toHaveBeenCalledWith("test_col", [0.1, 0.2, 0.3], {
         groupBy: "relativePath",
-        groupSize: 1,
+        groupSize: expect.any(Number),
         limit: expect.any(Number),
         filter: undefined,
       });

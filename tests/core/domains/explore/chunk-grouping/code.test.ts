@@ -300,6 +300,47 @@ describe("CodeChunkGrouper", () => {
       });
     });
 
+    // tea-rags-mcp-zrma: level=file search hands the grouper a SUBSET of the
+    // file (only the chunks that matched), so a method routinely arrives
+    // without its declaring class. Such a member used to vanish from the
+    // outline entirely — it is neither top-level nor reachable from any
+    // rendered parent. It must surface as a root under its qualified symbolId.
+    it("renders members whose declaring parent is absent as roots", () => {
+      const chunks: ScrollChunk[] = [
+        {
+          id: "o-1",
+          payload: {
+            name: "rerank",
+            symbolId: "Reranker#rerank",
+            chunkType: "function",
+            relativePath: "src/reranker.ts",
+            content: "rerank() {}",
+            startLine: 10,
+            endLine: 20,
+            language: "typescript",
+            parentSymbolId: "Reranker",
+          },
+        },
+        {
+          id: "o-2",
+          payload: {
+            name: "createReranker",
+            symbolId: "createReranker",
+            chunkType: "function",
+            relativePath: "src/reranker.ts",
+            content: "function createReranker() {}",
+            startLine: 55,
+            endLine: 60,
+            language: "typescript",
+          },
+        },
+      ];
+
+      const result = CodeChunkGrouper.groupFile(chunks);
+
+      expect(result.payload?.content).toBe("src/reranker.ts\n  Reranker#rerank\n  createReranker");
+    });
+
     it("handles file with only top-level symbols (no nesting)", () => {
       const chunks: ScrollChunk[] = [
         {

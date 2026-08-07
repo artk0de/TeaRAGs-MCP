@@ -275,6 +275,16 @@ export function filterMetaOnly(
       meta.codegraph = codegraph;
     }
 
+    // Preserve the file-level members outline (tea-rags-mcp-zrma). It is
+    // synthesized by FileLevelGrouper rather than declared in payloadSignals,
+    // so the rebuild above drops it — and rank_chunks defaults to
+    // metaOnly=true, which is precisely where knowing WHAT matched inside a
+    // file (not just that something did) saves the caller a second query.
+    const members = r.payload?.members;
+    if (typeof members === "string") {
+      meta.members = members;
+    }
+
     return meta;
   });
 }
