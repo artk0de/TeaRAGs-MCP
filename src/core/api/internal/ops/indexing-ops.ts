@@ -12,12 +12,13 @@ import type { GraphDbClientPool } from "../../../adapters/duckdb/pool.js";
 import type { EmbeddingProvider } from "../../../adapters/embeddings/base.js";
 import type { QdrantManager } from "../../../adapters/qdrant/client.js";
 import type { EmbeddingModelGuard } from "../../../adapters/qdrant/embedding-model-guard.js";
-import { scrollAllPoints } from "../../../adapters/qdrant/scroll.js";
+import { sampleVectors, scrollAllPoints } from "../../../adapters/qdrant/scroll.js";
 import { INDEXING_METADATA_ID } from "../../../contracts/constants.js";
 import type { StatsAccumulatorDescriptor } from "../../../contracts/types/stats-accumulator.js";
-import type { PayloadSignalDescriptor } from "../../../contracts/types/trajectory.js";
+import type { PayloadSignalDescriptor, ScoreBackground } from "../../../contracts/types/trajectory.js";
 import type { Reranker } from "../../../domains/explore/reranker.js";
 import { computeCollectionStats } from "../../../domains/ingest/infra/collection-stats.js";
+import { computeScoreBackground } from "../../../domains/ingest/infra/score-background.js";
 import type { IndexPipeline } from "../../../domains/ingest/operations/indexing.js";
 import type { ReindexPipeline } from "../../../domains/ingest/operations/reindexing.js";
 import type { EnrichmentCoordinator } from "../../../domains/ingest/pipeline/enrichment/coordinator.js";
@@ -46,6 +47,13 @@ const CONTEXT_SAFETY_FACTOR = 0.8;
 const DEFAULT_HEALTH_CHECK_RETRY_ATTEMPTS = 3;
 /** Default pause between health-probe attempts (ms) — yields the event loop. */
 const DEFAULT_HEALTH_CHECK_RETRY_DELAY_MS = 250;
+
+/**
+ * Vectors sampled to estimate the collection's similarity scale. 1200 vectors
+ * yield 600 disjoint pairs — enough for a stable mean and stddev, small enough
+ * (≈ 3.7 MB at 768 dimensions) that the cost does not scale with index size.
+ */
+const SCORE_BACKGROUND_SAMPLE = 1200;
 
 export interface IndexingOpsDeps {
   qdrant: QdrantManager;
@@ -300,12 +308,29 @@ export class IndexingOps {
     try {
       const points = await scrollAllPoints(this.qdrant, collectionName);
       const stats = computeCollectionStats(points, this.allPayloadSignals, this.statsAccumulators, this.gitTimePeriods);
+      const scoreBackground = await this.measureScoreBackground(collectionName);
+      if (scoreBackground) stats.scoreBackground = scoreBackground;
       const payloadFieldKeys = [...this.allPayloadSignals.map((d) => d.key), "navigation"];
       const cacheKey = await this.resolveAliasForCache(collectionName);
       this.statsCache.save(cacheKey, stats, payloadFieldKeys);
       this.reranker?.invalidateStats();
     } catch (error) {
       console.error("[StatsCache] Failed to refresh collection stats after chunk enrichment:", error);
+    }
+  }
+
+  /**
+   * Measure the collection's similarity scale — the reference search confidence
+   * reads result sets against. Bounded sample, and failure is non-fatal: signal
+   * stats must still be saved, confidence simply stays unavailable until the
+   * next refresh succeeds.
+   */
+  private async measureScoreBackground(collectionName: string): Promise<ScoreBackground | undefined> {
+    try {
+      return computeScoreBackground(await sampleVectors(this.qdrant, collectionName, SCORE_BACKGROUND_SAMPLE));
+    } catch (error) {
+      console.error("[StatsCache] Failed to sample collection score background:", error);
+      return undefined;
     }
   }
 

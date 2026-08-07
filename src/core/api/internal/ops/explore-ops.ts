@@ -30,6 +30,7 @@ import {
   EmptyFilterPresetError,
   UnknownFilterPresetError,
 } from "../../../domains/explore/errors.js";
+import { computeSearchConfidence, type SearchConfidenceInput } from "../../../domains/explore/index.js";
 import { IndexMetricsQuery } from "../../../domains/explore/queries/index-metrics.js";
 import type { Reranker } from "../../../domains/explore/reranker.js";
 import {
@@ -39,6 +40,7 @@ import {
   SymbolSearchStrategy,
   type BaseExploreStrategy,
   type ExploreContext,
+  type ExploreResult,
 } from "../../../domains/explore/strategies/index.js";
 import { NotIndexedError } from "../../../domains/ingest/errors.js";
 import { StatsRecomputeService } from "../../../domains/ingest/infra/stats-recompute.js";
@@ -149,11 +151,12 @@ export class ExploreOps {
   // ---------------------------------------------------------------------------
 
   async semanticSearch(request: SemanticSearchRequest): Promise<ExploreResponse> {
-    return this.embedAndDispatch(request, this.vectorStrategy);
+    return this.embedAndDispatch(request, this.vectorStrategy, true);
   }
 
   async hybridSearch(request: HybridSearchRequest): Promise<ExploreResponse> {
-    return this.embedAndDispatch(request, this.hybridStrategy);
+    // No confidence: RRF fusion scores are a function of rank, not similarity.
+    return this.embedAndDispatch(request, this.hybridStrategy, false);
   }
 
   async rankChunks(request: RankChunksRequest): Promise<ExploreResponse> {
@@ -200,6 +203,11 @@ export class ExploreOps {
     // fallbacks. Guarded + idempotent — the call in executeExplore is a no-op.
     await this.ensureStats(collectionName);
     const filter = this.buildFilter(request, level);
+    // No confidence: the recommend score IS a similarity and separates
+    // perfectly within this leg (measured AUC 1.000), but its query is CODE,
+    // which sits far closer to a code corpus than prose does. The cut-points
+    // are calibrated on prose queries, so applying them here labels every
+    // find_similar response "high". Needs its own calibration corpus first.
     return this.executeExplore(strategy, buildFindSimilarContext(request, collectionName, filter, level), path);
   }
 
@@ -243,15 +251,28 @@ export class ExploreOps {
   // Private pipeline helpers
   // ---------------------------------------------------------------------------
 
-  /** Unified pipeline: ensureStats → strategy.execute → shape → drift warning. */
+  /**
+   * Unified pipeline: ensureStats → strategy.execute → shape → drift warning.
+   *
+   * `attachConfidence` is opt-in per operation rather than global. Confidence
+   * reads score MAGNITUDE against the collection's similarity scale, so it only
+   * means something where the score is a genuine similarity: semantic_search
+   * and find_similar. hybrid_search fuses with RRF and emits rank-derived
+   * scores; rank_chunks scrolls a filtered set; find_symbol is an exact lookup.
+   * On those three the number would attest nothing.
+   */
   private async executeExplore(
     strategy: BaseExploreStrategy,
     ctx: ExploreContext,
     path?: string,
+    attachConfidence = false,
   ): Promise<ExploreResponse> {
     await this.ensureStats(ctx.collectionName);
     const results = await strategy.execute(ctx);
     const driftWarning = await this.checkDrift(path, ctx.collectionName);
+    const confidence = attachConfidence
+      ? computeSearchConfidence(toConfidenceInput(results), this.reranker.getCollectionStats()?.scoreBackground)
+      : undefined;
     return {
       results: results.map((r) => ({
         id: r.id ?? "",
@@ -261,13 +282,19 @@ export class ExploreOps {
       })),
       driftWarning,
       ...(ctx.level ? { level: ctx.level } : {}),
+      ...(confidence ? { confidence } : {}),
     };
   }
 
-  /** Shared flow for semantic + hybrid: embed → resolveDocRerank → level → filter → execute. */
+  /**
+   * Shared flow for semantic + hybrid: embed → resolveDocRerank → level →
+   * filter → execute. `attachConfidence` differs between the two: the dense
+   * score is a similarity, the RRF-fused hybrid score is a rank.
+   */
   private async embedAndDispatch(
     request: SemanticSearchRequest | HybridSearchRequest,
     strategy: BaseExploreStrategy,
+    attachConfidence: boolean,
   ): Promise<ExploreResponse> {
     const { collectionName, path } = await this.resolveAndGuard(request.collection, request.path, request.project);
     const { embedding } = await this.embeddings.embed(request.query);
@@ -282,6 +309,7 @@ export class ExploreOps {
       strategy,
       buildVectorSearchContext(request, collectionName, embedding, filter, rerank, level),
       path,
+      attachConfidence,
     );
   }
 
@@ -381,6 +409,18 @@ export class ExploreOps {
 // ---------------------------------------------------------------------------
 // File-local helpers (pure functions)
 // ---------------------------------------------------------------------------
+
+/**
+ * Reduce strategy output to the two fields the shape statistics read. Works for
+ * both full and metaOnly result shapes — `relativePath` sits on the payload in
+ * either case.
+ */
+function toConfidenceInput(results: readonly ExploreResult[]): SearchConfidenceInput[] {
+  return results.map((r) => ({
+    score: r.score,
+    relativePath: typeof r.payload?.relativePath === "string" ? r.payload.relativePath : undefined,
+  }));
+}
 
 /** Minimal registry surface resolveFilterSpec needs — pure preset-def lookup. */
 interface FilterPresetLookup {

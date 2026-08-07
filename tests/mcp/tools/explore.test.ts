@@ -17,7 +17,7 @@ type CapturedTool = {
   handler: (args: Record<string, unknown>, extra: unknown) => Promise<unknown>;
 };
 
-function makeHarness() {
+function makeHarness(appOverrides: Record<string, unknown> = {}) {
   const captured: CapturedTool[] = [];
   const register = vi.fn((_server, name, config, handler) => {
     captured.push({ name, config, handler });
@@ -30,6 +30,7 @@ function makeHarness() {
     rankChunks: vi.fn().mockResolvedValue(emptyResponse),
     findSimilar: vi.fn().mockResolvedValue(emptyResponse),
     findSymbol: vi.fn().mockResolvedValue(emptyResponse),
+    ...appOverrides,
   } as unknown as App;
 
   const schemaBuilder = {
@@ -97,6 +98,33 @@ describe("registerSearchTools", () => {
     expect(call.path).toBe("/x");
     expect(call.query).toBe("q");
     expect(call.rerank).toBe("relevance");
+  });
+
+  it("passes the confidence envelope field through to structuredContent", async () => {
+    const { captured } = makeHarness({
+      semanticSearch: vi.fn().mockResolvedValue({
+        results: [],
+        confidence: { value: 0.23, label: "low" },
+      } as ExploreResponse),
+    });
+    const tool = captured.find((t) => t.name === "semantic_search");
+
+    const result = (await tool!.handler({ path: "/x", query: "q" }, {})) as {
+      structuredContent: { confidence?: { value: number; label: string } };
+    };
+
+    expect(result.structuredContent.confidence).toEqual({ value: 0.23, label: "low" });
+  });
+
+  it("omits confidence from structuredContent when the operation does not report it", async () => {
+    const { captured } = makeHarness();
+    const tool = captured.find((t) => t.name === "rank_chunks");
+
+    const result = (await tool!.handler({ path: "/x", rerank: "techDebt" }, {})) as {
+      structuredContent: Record<string, unknown>;
+    };
+
+    expect("confidence" in result.structuredContent).toBe(false);
   });
 
   it("handler returns structuredContent shape with results", async () => {

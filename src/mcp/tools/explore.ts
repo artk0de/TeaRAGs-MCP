@@ -36,6 +36,7 @@ function formatStructuredResult(response: ExploreResponse): McpToolResult {
     structuredContent: {
       results: response.results,
       ...(response.level && { level: response.level }),
+      ...(response.confidence && { confidence: response.confidence }),
       ...(response.driftWarning && { driftWarning: response.driftWarning }),
     },
     content: [],
