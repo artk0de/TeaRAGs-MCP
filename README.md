@@ -298,9 +298,10 @@ current there — no manual `index_codebase` runs, no daemon, no thrashing on
 branch switches.
 
 ```bash
-tea-rags auto-update enable --project myrepo   # target branch autodetected (or --branch <name>)
-tea-rags auto-update status --project myrepo   # config + verdict + last run + log path
-tea-rags auto-update disable --project myrepo
+tea-rags auto-update enable --project myrepo                # target = autodetected default branch
+tea-rags auto-update enable --project myrepo --branch dev   # pin any branch instead
+tea-rags auto-update status --project myrepo                # config + verdict + last run + log path
+tea-rags auto-update disable --project myrepo               # keeps the target for re-enable
 ```
 
 Auto-update fires only when `HEAD` is on the target branch: session start
@@ -309,6 +310,22 @@ a detached incremental reindex that survives session close. Branch switches,
 rebases, and merges never trigger it — the paused state is surfaced in the prime
 digest and search-tool hints instead. Details:
 [Auto-Update Watcher](https://artk0de.github.io/TeaRAGs-MCP/operations/auto-update).
+
+**Worktree mode (parallel branches).** Branch work in git worktrees gets its own
+index clone, so branch searches see branch code while the main index stays
+pinned to the target branch:
+
+```bash
+tea-rags worktree create my-feature --from myrepo --path /path/to/worktree --no-git
+tea-rags index-codebase --project myrepo-worktree-my-feature   # incremental diff of the branch
+```
+
+This is built into the agent plugin: the shipped agent skills create the clone
+when work starts in a worktree, reindex it incrementally after each task, and
+tear it down when the branch is finished — no manual clone management. For a
+huge monorepo where an index clone is too expensive (millions of LOC), skip
+worktree mode: the agent then simply reindexes whatever branch is active, and
+auto-update pauses while `HEAD` is off the target branch.
 
 ## 📚 Documentation
 
