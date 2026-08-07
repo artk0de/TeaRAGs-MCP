@@ -97,6 +97,25 @@ export function toPhysicalPayloadKey(logicalKey: string): string {
   return m ? `codegraph.symbols.${m[1]}.${m[2]}` : logicalKey;
 }
 
+/** A key that already names its own `file` / `chunk` level segment. */
+const LEVEL_QUALIFIED_KEY_RE = /(^|\.)(file|chunk)\./;
+
+/**
+ * True when a signal key already carries the level it addresses —
+ * `chunk.commitCount`, `git.file.ageDays`, `codegraph.chunk.pageRank`. False for
+ * a level-RELATIVE name like `commitCount`, whose level comes from context
+ * (which `OverlayMask` bucket lists it, which `DerivedSignalDescriptor` claims
+ * it) and which therefore still needs a `file.` / `chunk.` prefix to resolve.
+ *
+ * Callers that qualify a bare name by prefixing MUST consult this first: prefixing
+ * an already-qualified key produces a path resolving to nothing
+ * (`chunk.codegraph.chunk.pageRank`), and every payload read here answers with
+ * `undefined` rather than an error — the signal vanishes without a trace.
+ */
+export function isLevelQualifiedPayloadKey(key: string): boolean {
+  return LEVEL_QUALIFIED_KEY_RE.test(key);
+}
+
 /**
  * Resolve a dot-notation payload path to its value — the single source of truth
  * for payload addressing across the reranker score/overlay paths and the
