@@ -6,9 +6,8 @@ import { fileURLToPath } from "node:url";
 
 import type { CommandModule } from "yargs";
 
-import { CollectionRegistry, InputValidationError } from "../../core/api/public/index.js";
+import { CollectionRegistry, InputValidationError, replayRegistryEnv } from "../../core/api/public/index.js";
 import { resolveTuneQdrantUrl } from "../qdrant-url-resolver.js";
-import { replayRegistryEnv } from "../registry-env-replay.js";
 import { applyProjectDefaults } from "../registry-resolver.js";
 import { mergeTunedEnvIntoRegistry } from "./tune-registry-write.js";
 

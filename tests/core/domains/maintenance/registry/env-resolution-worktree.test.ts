@@ -14,8 +14,11 @@ import { join } from "node:path";
 
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
-import { pickRegistryEntry, type RegistryLookup } from "../../../src/cli/index-progress/registry-env.js";
-import type { CollectionEntry } from "../../../src/core/api/public/index.js";
+import type { CollectionEntry } from "../../../../../src/core/api/public/index.js";
+import {
+  pickRegistryEntry,
+  type RegistryLookup,
+} from "../../../../../src/core/domains/maintenance/registry/env-resolution.js";
 
 const TEST_TIMEOUT = 60000;
 

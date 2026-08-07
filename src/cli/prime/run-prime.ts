@@ -4,8 +4,12 @@ import { join } from "node:path";
 
 import { parseAppConfig } from "../../bootstrap/config/index.js";
 import { createAppContext } from "../../bootstrap/factory.js";
-import { CollectionRegistry, resolveCollectionName, type CollectionEntry } from "../../core/api/public/index.js";
-import { replayRegistryEnv } from "../registry-env-replay.js";
+import {
+  CollectionRegistry,
+  replayRegistryEnv,
+  resolveCollectionName,
+  type CollectionEntry,
+} from "../../core/api/public/index.js";
 import { FileCacheStore } from "../update-check/cache-store.js";
 import { UpdateCheckService } from "../update-check/check-service.js";
 import { NpmRegistryClient } from "../update-check/registry-client.js";

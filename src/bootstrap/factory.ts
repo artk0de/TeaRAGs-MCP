@@ -56,7 +56,7 @@ import { registerAllResources } from "../mcp/resources/index.js";
 import { registerAllTools } from "../mcp/tools/index.js";
 import { applyEmbeddedDeleteTuning } from "./config/embedded-tuning.js";
 import { buildRegistryEnvSnapshot } from "./config/env-snapshot.js";
-import { getConfigDump, getZodConfig, type AppConfig } from "./config/index.js";
+import { buildAppConfig, getConfigDump, getZodConfig, parseAppConfigZod, type AppConfig } from "./config/index.js";
 import { checkExternalQdrantVersion } from "./config/qdrant-compat.js";
 import {
   reconcileStrictMode,
@@ -64,6 +64,7 @@ import {
   reportTurboMigration,
   type TurboMigrationListener,
 } from "./config/turbo-reconcile.js";
+import { ProjectIngestFactory } from "./project-ingest-factory.js";
 
 /**
  * TurboQuant migration progress poll cap. Bounded so a long background optimizer
@@ -592,6 +593,108 @@ export function wireCodegraph(
   return { deps, graphFacade, pool, indexRunDaemonGuard };
 }
 
+/**
+ * Everything an ingest slice reuses across projects: live infrastructure
+ * handles and the descriptor sets that do not vary with a project's env.
+ *
+ * Qdrant, the embedding provider and the codegraph pool are process-owned by
+ * necessity — a per-project client would mean a second backend connection, a
+ * second ONNX session and a second DuckDB writer. Their identity env
+ * (QDRANT_URL, EMBEDDING_MODEL / *_BASE_URL) therefore stays the server's;
+ * a project whose recorded model disagrees is rejected by EmbeddingModelGuard
+ * rather than silently indexed, so nothing here is applied wrongly in silence.
+ */
+interface IngestSliceDeps {
+  qdrant: QdrantManager;
+  embeddings: EmbeddingProvider;
+  modelGuard: EmbeddingModelGuard;
+  statsCache: StatsCache;
+  collectionRegistry: CollectionRegistry;
+  snapshotDir: string;
+  enrichmentExecutor: WorkerPoolEnrichmentExecutor;
+  codegraphDeps?: CodegraphDeps;
+  codegraphPool?: GraphDbClientPool;
+  indexRunDaemonGuard?: IndexRunDaemonGuard;
+  payloadSignals: CompositionContext["allPayloadSignalDescriptors"];
+  statsAccumulators: CompositionContext["allStatsAccumulators"];
+  reranker: CompositionContext["reranker"];
+}
+
+/**
+ * Build the ingest slice for ONE configuration.
+ *
+ * Called once per distinct env: at startup for the server's own config, and
+ * again per project whose registry env differs (see `ProjectIngestFactory`).
+ * Everything env-dependent is rebuilt — the enrichment providers (git chunk
+ * concurrency and friends live on the provider), the pipelines, the chunk
+ * sizing, the tuning, and the env snapshot recorded back into the registry —
+ * while `shared` supplies the handles that must stay process-wide.
+ */
+function createIngestFacade(
+  zodConfig: ReturnType<typeof getZodConfig>,
+  config: AppConfig,
+  shared: IngestSliceDeps,
+): IngestFacade {
+  // Registry is the single source of truth for enrichment providers. Git
+  // is constructed inside GitTrajectory at composition time with proper
+  // config, so the registry returns a ready-to-use provider list. Bootstrap
+  // applies the user-visible toggle (`enableGitMetadata`) here rather than
+  // inside the facade — keeps IngestFacade free of provider construction or
+  // config-aware filtering.
+  const enrichmentProviders = wireComposition(zodConfig, config.trajectoryIngest, shared.codegraphDeps)
+    .registry.getAllEnrichmentProviders()
+    .filter((p) => p.key !== "git" || config.trajectoryIngest.enableGitMetadata);
+
+  const pipelineTuning = {
+    pipelineConfig: buildPipelineConfig(
+      zodConfig.ingest.tune.pipelineConcurrency,
+      zodConfig.embedding.tune,
+      zodConfig.qdrantTune,
+    ),
+    chunkerPoolSize: zodConfig.ingest.tune.chunkerPoolSize,
+    fileConcurrency: zodConfig.ingest.tune.fileConcurrency,
+  };
+
+  return new IngestFacade({
+    qdrant: shared.qdrant,
+    embeddings: shared.embeddings,
+    config: config.ingestCode,
+    // kc93 + w2dlu: run-scoped blob reader from the GIT_ADAPTER-selected
+    // adapter; es-git selection fail-louds here on first git blob read.
+    blobReaderFactory: async (repoRoot: string) =>
+      (await VcsAdapterFactory.create(zodConfig.vcs.adapter, repoRoot)).createBlobBatchReader(),
+    trajectoryConfig: config.trajectoryIngest,
+    statsCache: shared.statsCache,
+    allPayloadSignals: shared.payloadSignals,
+    statsAccumulators: shared.statsAccumulators,
+    reranker: shared.reranker,
+    deleteConfig: {
+      batchSize: zodConfig.qdrantTune.deleteBatchSize,
+      concurrency: zodConfig.qdrantTune.deleteConcurrency,
+    },
+    pipelineTuning,
+    syncTuning: {
+      concurrency: zodConfig.ingest.tune.pipelineConcurrency,
+      ioConcurrency: zodConfig.ingest.tune.ioConcurrency,
+    },
+    snapshotDir: shared.snapshotDir,
+    modelGuard: shared.modelGuard,
+    collectionRegistry: shared.collectionRegistry,
+    teaRagsVersion: pkg.version,
+    // Full effective env set of this run (defaults materialized, 9vpnz).
+    // Built AFTER the adaptive adjustments in resolveInfrastructure
+    // (GPU-calibrated batch size, embedded delete tuning) so user-set values
+    // reflect what actually ran.
+    envSnapshot: buildRegistryEnvSnapshot(zodConfig),
+    enrichmentProviders,
+    codegraphPool: shared.codegraphPool,
+    indexRunDaemonGuard: shared.indexRunDaemonGuard,
+    enrichmentExecutor: shared.enrichmentExecutor,
+    healthCheckRetryAttempts: zodConfig.embedding.tune.healthCheckRetryAttempts,
+    healthCheckRetryDelayMs: zodConfig.embedding.tune.healthCheckRetryDelayMs,
+  });
+}
+
 /** Optional bootstrap hooks the CLI wires to surface startup progress over IPC. */
 export interface AppContextHooks {
   /** Notified while a startup TurboQuant collection migration's optimizer pass runs. */
@@ -630,35 +733,8 @@ export async function createAppContext(config: AppConfig, hooks?: AppContextHook
     : undefined;
 
   const statsCache = new StatsCache(config.paths.snapshots);
-  const deleteConfig = {
-    batchSize: zodConfig.qdrantTune.deleteBatchSize,
-    concurrency: zodConfig.qdrantTune.deleteConcurrency,
-  };
-  const pipelineConfig = buildPipelineConfig(
-    zodConfig.ingest.tune.pipelineConcurrency,
-    zodConfig.embedding.tune,
-    zodConfig.qdrantTune,
-  );
-  const pipelineTuning = {
-    pipelineConfig,
-    chunkerPoolSize: zodConfig.ingest.tune.chunkerPoolSize,
-    fileConcurrency: zodConfig.ingest.tune.fileConcurrency,
-  };
-  const syncTuning = {
-    concurrency: zodConfig.ingest.tune.pipelineConcurrency,
-    ioConcurrency: zodConfig.ingest.tune.ioConcurrency,
-  };
 
   const registryWatchStop = collectionRegistry.startWatching();
-  // Registry is the single source of truth for enrichment providers. Git
-  // is now constructed inside GitTrajectory at composition time with
-  // proper config, so the registry returns a ready-to-use provider list.
-  // Bootstrap applies the user-visible toggle (`enableGitMetadata`) here
-  // rather than inside the facade — keeps IngestFacade free of provider
-  // construction or config-aware filtering.
-  const enrichmentProviders = composition.registry
-    .getAllEnrichmentProviders()
-    .filter((p) => p.key !== "git" || config.trajectoryIngest.enableGitMetadata);
 
   // Phase 2 of unified-enrichment-worker-pool plan. Production runs through
   // the worker-pool executor unconditionally so heavy trajectory work (git
@@ -668,41 +744,46 @@ export async function createAppContext(config: AppConfig, hooks?: AppContextHook
   // need to skip the worker spawn. Worker entry path resolves relative to the
   // compiled bootstrap module so both the npm-linked global install and the
   // local dev path work.
+  //
+  // PROCESS-SCOPED on purpose: the pool spawns its threads eagerly, so it is
+  // shared by every project's ingest slice rather than rebuilt per project.
+  // Provider instances and their serializable config travel per dispatch, so
+  // per-project provider settings still reach the worker — only the thread
+  // COUNT is fixed at the server's own INGEST_TUNE_ENRICHMENT_POOL_SIZE.
   const enrichmentExecutor = new WorkerPoolEnrichmentExecutor(
     zodConfig.ingest.tune.enrichmentPoolSize,
     join(dirname(fileURLToPath(import.meta.url)), "../core/domains/ingest/pipeline/enrichment/infra/worker.js"),
   );
 
-  const ingest = new IngestFacade({
+  const ingestSlice: IngestSliceDeps = {
     qdrant: infra.qdrant,
     embeddings: infra.embeddings,
-    config: config.ingestCode,
-    // kc93 + w2dlu: run-scoped blob reader from the GIT_ADAPTER-selected
-    // adapter; es-git selection fail-louds here on first git blob read.
-    blobReaderFactory: async (repoRoot: string) =>
-      (await VcsAdapterFactory.create(zodConfig.vcs.adapter, repoRoot)).createBlobBatchReader(),
-    trajectoryConfig: config.trajectoryIngest,
-    statsCache,
-    allPayloadSignals: composition.allPayloadSignalDescriptors,
-    statsAccumulators: composition.allStatsAccumulators,
-    reranker: composition.reranker,
-    deleteConfig,
-    pipelineTuning,
-    syncTuning,
-    snapshotDir: config.paths.snapshots,
     modelGuard: infra.modelGuard,
+    statsCache,
     collectionRegistry,
-    teaRagsVersion: pkg.version,
-    // Full effective env set of this run (defaults materialized, 9vpnz).
-    // Built AFTER the adaptive adjustments above (GPU-calibrated batch size,
-    // embedded delete tuning) so user-set values reflect what actually ran.
-    envSnapshot: buildRegistryEnvSnapshot(zodConfig),
-    enrichmentProviders,
+    snapshotDir: config.paths.snapshots,
+    enrichmentExecutor,
+    codegraphDeps: codegraphContext?.deps,
     codegraphPool: codegraphContext?.pool,
     indexRunDaemonGuard: codegraphContext?.indexRunDaemonGuard,
-    enrichmentExecutor,
-    healthCheckRetryAttempts: zodConfig.embedding.tune.healthCheckRetryAttempts,
-    healthCheckRetryDelayMs: zodConfig.embedding.tune.healthCheckRetryDelayMs,
+    payloadSignals: composition.allPayloadSignalDescriptors,
+    statsAccumulators: composition.allStatsAccumulators,
+    reranker: composition.reranker,
+  };
+  const ingest = createIngestFacade(zodConfig, config, ingestSlice);
+
+  // Per-project registry env at request scope. The server's process env is
+  // fixed for its lifetime, so an index run can only pick up the target
+  // project's recorded tuning through the facade it is handed — building it
+  // from a per-request env MAP, never by writing process.env, so concurrent
+  // runs on different projects stay isolated (tea-rags-mcp-pmfm4).
+  const projectIngestFactory = new ProjectIngestFactory({
+    registry: collectionRegistry,
+    processIngest: ingest,
+    buildIngest: (env) => {
+      const projectZodConfig = parseAppConfigZod(env);
+      return createIngestFacade(projectZodConfig, buildAppConfig(projectZodConfig), ingestSlice);
+    },
   });
   const essentialTrajectoryFields = composition.registry.getEssentialPayloadKeys();
   const schemaDriftMonitor = new SchemaDriftMonitor(statsCache, [
@@ -760,6 +841,7 @@ export async function createAppContext(config: AppConfig, hooks?: AppContextHook
     qdrant: infra.qdrant,
     embeddings: infra.embeddings,
     ingest,
+    ingestForPath: (path) => projectIngestFactory.forPath(path),
     explore,
     reranker: composition.reranker,
     schemaDriftMonitor,

@@ -1,7 +1,10 @@
 import { describe, expect, it } from "vitest";
 
-import { pickRegistryEntry, resolveRegistryEnv } from "../../../src/cli/index-progress/registry-env.js";
-import type { CollectionEntry } from "../../../src/core/contracts/types/registry.js";
+import type { CollectionEntry } from "../../../../../src/core/contracts/types/registry.js";
+import {
+  pickRegistryEntry,
+  resolveRegistryEnv,
+} from "../../../../../src/core/domains/maintenance/registry/env-resolution.js";
 
 function entry(over: Partial<CollectionEntry>): CollectionEntry {
   return {

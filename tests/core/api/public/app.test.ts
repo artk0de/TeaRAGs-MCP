@@ -164,4 +164,33 @@ describe("createApp", () => {
     const result = await app.getCallers({ symbol: "foo" } as never);
     expect(result).toEqual({ callers: [] });
   });
+
+  // -------------------------------------------------------------------------
+  // Per-project ingest scope. An MCP server is long-lived with a fixed process
+  // env, so a project's registry env can only reach an index run through a
+  // per-request facade — the CLI's "replay into the forked worker" trick has no
+  // counterpart here.
+  // -------------------------------------------------------------------------
+
+  it("routes indexCodebase to the ingest facade resolved for the target path", async () => {
+    const deps = makeDeps();
+    const projectScoped = { indexCodebase: vi.fn().mockResolvedValue({ indexedCount: 0 }) };
+    const ingestForPath = vi.fn().mockReturnValue(projectScoped);
+    const app = createApp({ ...deps, ingestForPath } as never);
+
+    await app.indexCodebase("/repo/alpha", { forceReindex: false });
+
+    expect(ingestForPath).toHaveBeenCalledWith("/repo/alpha");
+    expect(projectScoped.indexCodebase).toHaveBeenCalledTimes(1);
+    expect(deps.ingest.indexCodebase).not.toHaveBeenCalled();
+  });
+
+  it("falls back to the process-wide ingest facade when no per-path resolver is wired", async () => {
+    const deps = makeDeps();
+    const app = createApp(deps as never);
+
+    await app.indexCodebase("/repo/alpha", { forceReindex: false });
+
+    expect(deps.ingest.indexCodebase).toHaveBeenCalledTimes(1);
+  });
 });
