@@ -2391,7 +2391,39 @@ describe("QdrantManager", () => {
   });
 
   describe("queryGroups", () => {
-    it("should group results by payload field and return one hit per group", async () => {
+    it("should group results by payload field, one hit per group at groupSize 1", async () => {
+      mockClient.getCollection.mockResolvedValueOnce({
+        config: { params: { vectors: { size: 384, distance: "Cosine" } } },
+        points_count: 100,
+      });
+      mockClient.queryGroups.mockResolvedValueOnce({
+        groups: [
+          {
+            id: "src/auth.ts",
+            hits: [{ id: "id1", score: 0.9, payload: { relativePath: "src/auth.ts" } }],
+          },
+          {
+            id: "src/db.ts",
+            hits: [{ id: "id2", score: 0.8, payload: { relativePath: "src/db.ts" } }],
+          },
+        ],
+      });
+
+      const results = await manager.queryGroups("test", [0.1, 0.2], {
+        groupBy: "relativePath",
+        groupSize: 1,
+        limit: 10,
+      });
+
+      expect(results).toHaveLength(2);
+      expect(results[0]).toEqual({ id: "id1", score: 0.9, payload: { relativePath: "src/auth.ts" } });
+      expect(results[1]).toEqual({ id: "id2", score: 0.8, payload: { relativePath: "src/db.ts" } });
+    });
+
+    // tea-rags-mcp-zrma: group_size is forwarded to Qdrant, so the server sends
+    // that many hits per group — the adapter used to keep only the first,
+    // making the parameter a no-op for every caller above it.
+    it("returns every hit of each group in group order when groupSize exceeds 1", async () => {
       mockClient.getCollection.mockResolvedValueOnce({
         config: { params: { vectors: { size: 384, distance: "Cosine" } } },
         points_count: 100,
@@ -2414,13 +2446,12 @@ describe("QdrantManager", () => {
 
       const results = await manager.queryGroups("test", [0.1, 0.2], {
         groupBy: "relativePath",
-        groupSize: 1,
+        groupSize: 3,
         limit: 10,
       });
 
-      expect(results).toHaveLength(2);
-      expect(results[0]).toEqual({ id: "id1", score: 0.9, payload: { relativePath: "src/auth.ts" } });
-      expect(results[1]).toEqual({ id: "id2", score: 0.8, payload: { relativePath: "src/db.ts" } });
+      expect(results.map((r) => r.id)).toEqual(["id1", "id2", "id3"]);
+      expect(mockClient.queryGroups.mock.calls.at(-1)?.[1]).toMatchObject({ group_size: 3 });
     });
 
     it("should pass filter to queryGroups", async () => {

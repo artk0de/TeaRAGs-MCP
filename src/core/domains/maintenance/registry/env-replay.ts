@@ -17,11 +17,13 @@
  * degrade to same-key checks and replay verbatim.
  *
  * Shared by `index-codebase` (worker env seeding via resolveRegistryEnv, with
- * ambient process.env), `prime` (process.env before parseAppConfig), and
- * `tune` (process.env before the benchmark script spawns).
+ * ambient process.env), `prime` (process.env before parseAppConfig), `tune`
+ * (process.env before the benchmark script spawns), and the MCP server's
+ * per-request `ProjectIngestFactory` (registry env over the fixed server env,
+ * into a request-scoped map — never into process.env).
  */
 
-import { REGISTRY_ENV_GROUPS } from "../core/api/public/index.js";
+import { REGISTRY_ENV_GROUPS } from "./env-groups.js";
 
 /**
  * Every spelling that can shadow the given key: the UNION of all alias

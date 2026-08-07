@@ -10,10 +10,10 @@ import { createAppContext } from "../../bootstrap/factory.js";
 import {
   CollectionRegistry,
   IndexFreshnessCheck,
+  replayRegistryEnv,
   resolveCollectionName,
   type CollectionEntry,
 } from "../../core/api/public/index.js";
-import { replayRegistryEnv } from "../registry-env-replay.js";
 import { FileCacheStore } from "../update-check/cache-store.js";
 import { UpdateCheckService } from "../update-check/check-service.js";
 import { NpmRegistryClient } from "../update-check/registry-client.js";

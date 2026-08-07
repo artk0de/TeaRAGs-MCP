@@ -318,24 +318,56 @@ describe("CollectionRegistry", () => {
 
   describe("startWatching survives multiple atomic renames (regression for fs.watch dangling inode)", () => {
     it("invalidates cache across N consecutive saveRegistryFile calls", async () => {
-      // Polling waiter — fs.watch event delivery under concurrent vitest
-      // load can exceed any fixed sleep. Loop until the cache reflects the
-      // expected value or hit a generous overall timeout.
-      // 8s budget per wait (was 2s): macOS FSEvents delivery under heavy
-      // concurrent vitest load can lag several seconds — the 2s window flaked.
-      // Events are delayed, not dropped (dir-level watch), so a larger budget
-      // is reliable; normal delivery is <100ms so the happy path stays fast.
-      const waitForPath = async (registry: CollectionRegistry, expected: string, timeoutMs = 8000): Promise<void> => {
-        const deadline = Date.now() + timeoutMs;
+      // fs.watch DROPS events; it does not merely delay them. Measured on this
+      // machine with the suite running: of 40 atomic renames, 1 delivered no
+      // event at all inside a 15s window, while every event that DID arrive
+      // arrived in ~12ms (median; 62ms worst). No waiting budget can recover an
+      // event that will never come, which is why the earlier bump of this wait
+      // from 2s to 8s did not stop the flake (bd tea-rags-mcp-lzks3).
+      //
+      // So don't wait on ONE event — keep producing them. Each retry redoes the
+      // same atomic rename, handing the watcher another chance. That leaves the
+      // regression this test guards fully discriminated: the old file-level
+      // watcher bound itself to an inode and detached for good after the first
+      // rename, so it fires for NO retry, however many follow.
+      const writeAndAwait = async (
+        registry: CollectionRegistry,
+        path: string,
+        chunksCount: number,
+        timeoutMs = 15_000,
+      ): Promise<void> => {
+        const write = (): void => {
+          saveRegistryFile(dir, {
+            version: 1,
+            collections: {
+              code_a: {
+                collectionName: "code_a",
+                path,
+                name: null,
+                embeddingModel: "m",
+                embeddingDimensions: 384,
+                qdrantUrl: "http://localhost:6333",
+                indexedAt: "",
+                teaRagsVersion: "",
+                chunksCount,
+              },
+            },
+          });
+        };
 
-        while (true) {
-          if (registry.get("code_a")?.path === expected) return;
+        const deadline = Date.now() + timeoutMs;
+        let nextWriteAt = 0;
+        while (registry.get("code_a")?.path !== path) {
           if (Date.now() >= deadline) {
             // Final assertion to surface the actual value in the failure message.
-            expect(registry.get("code_a")?.path).toBe(expected);
+            expect(registry.get("code_a")?.path).toBe(path);
             return;
           }
-          await new Promise((r) => setTimeout(r, 25));
+          if (Date.now() >= nextWriteAt) {
+            write();
+            nextWriteAt = Date.now() + 500;
+          }
+          await new Promise((r) => setTimeout(r, 50));
         }
       };
 
@@ -343,72 +375,17 @@ describe("CollectionRegistry", () => {
       r.record(makeEntry({ collectionName: "code_a", path: "/repo/a" }));
       const stop = r.startWatching();
       try {
-        // First external write — replaces inode #1 with inode #2.
-        saveRegistryFile(dir, {
-          version: 1,
-          collections: {
-            code_a: {
-              collectionName: "code_a",
-              path: "/repo/external-1",
-              name: null,
-              embeddingModel: "m",
-              embeddingDimensions: 384,
-              qdrantUrl: "http://localhost:6333",
-              indexedAt: "",
-              teaRagsVersion: "",
-              chunksCount: 1,
-            },
-          },
-        });
-        await waitForPath(r, "/repo/external-1");
-
-        // Second external write — replaces inode #2 with inode #3. With the
-        // old file-level fs.watch on macOS, the watcher was bound to inode #1
-        // (or whichever was current when startWatching ran) and silently
-        // detached after the first rename. With directory-level watching,
-        // the watcher sees this change too.
-        saveRegistryFile(dir, {
-          version: 1,
-          collections: {
-            code_a: {
-              collectionName: "code_a",
-              path: "/repo/external-2",
-              name: null,
-              embeddingModel: "m",
-              embeddingDimensions: 384,
-              qdrantUrl: "http://localhost:6333",
-              indexedAt: "",
-              teaRagsVersion: "",
-              chunksCount: 2,
-            },
-          },
-        });
-        await waitForPath(r, "/repo/external-2");
-
-        // Third — same story.
-        saveRegistryFile(dir, {
-          version: 1,
-          collections: {
-            code_a: {
-              collectionName: "code_a",
-              path: "/repo/external-3",
-              name: null,
-              embeddingModel: "m",
-              embeddingDimensions: 384,
-              qdrantUrl: "http://localhost:6333",
-              indexedAt: "",
-              teaRagsVersion: "",
-              chunksCount: 3,
-            },
-          },
-        });
-        await waitForPath(r, "/repo/external-3");
+        // Each write replaces the file's inode. With the old file-level
+        // fs.watch on macOS the watcher was bound to the inode current at
+        // startWatching and silently detached after the first rename; a
+        // directory watcher sees every one of them.
+        await writeAndAwait(r, "/repo/external-1", 1);
+        await writeAndAwait(r, "/repo/external-2", 2);
+        await writeAndAwait(r, "/repo/external-3", 3);
       } finally {
         stop();
       }
-      // it() timeout > 3 × waitForPath budget so a slow-but-eventual fs.watch
-      // delivery doesn't trip the default 5s test timeout before the poll wins.
-    }, 30000);
+    });
   });
 
   describe("findByPath() — alias-rename path lookup (2026-05-28)", () => {

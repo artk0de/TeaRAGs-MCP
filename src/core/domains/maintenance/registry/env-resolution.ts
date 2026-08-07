@@ -1,18 +1,23 @@
 /**
- * Registry-first environment resolution for `index-codebase`.
+ * Registry-first environment resolution for an indexing run.
  *
- * The forked worker bootstraps its embedding / codegraph config from process
- * env (`parseAppConfig`). Rather than forcing the operator to re-export
- * EMBEDDING_* by hand, the command pulls the actual config from the project
- * registry — the same register-first source `prime` reads — and injects it into
- * the worker env. For a brand-new project (no entry yet) it borrows the config
- * of the most recently indexed project, so a fresh index "just works" against
- * the same backend the operator last used. Ambient env still wins (the command
- * merges process.env over these), preserving explicit overrides.
+ * An index run bootstraps its embedding / codegraph / tuning config from env
+ * (`parseAppConfig`). Rather than forcing the operator to re-export EMBEDDING_*
+ * by hand, the run pulls the actual config from the project registry — the same
+ * register-first source `prime` reads. For a brand-new project (no entry yet) it
+ * borrows the config of the most recently indexed project, so a fresh index
+ * "just works" against the same backend the operator last used. Ambient env
+ * still wins, preserving explicit overrides.
+ *
+ * Both entry points consume this: the CLI seeds the resolved map into its forked
+ * worker's env, while the long-lived MCP server — whose process env is fixed for
+ * its lifetime — applies it per request through `ProjectIngestFactory`.
  */
 
-import { EMBEDDED_MARKER, resolveGitCommonDir, type CollectionEntry } from "../../core/api/public/index.js";
-import { replayRegistryEnv } from "../registry-env-replay.js";
+import { EMBEDDED_MARKER } from "../../../adapters/qdrant/embedded/daemon.js";
+import { resolveGitCommonDir } from "../../../adapters/vcs/git/common-dir.js";
+import type { CollectionEntry } from "../../../contracts/types/registry.js";
+import { replayRegistryEnv } from "./env-replay.js";
 
 /** Structural subset of CollectionRegistry used here — keeps tests fake-friendly. */
 export interface RegistryLookup {

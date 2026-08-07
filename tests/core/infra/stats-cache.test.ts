@@ -316,4 +316,24 @@ describe("StatsCache", () => {
       expect(loaded!.perLanguage.size).toBe(0);
     });
   });
+
+  describe("scoreBackground (v6 — collection similarity scale)", () => {
+    it("should round-trip the background through save/load", () => {
+      const stats = makeStats({ scoreBackground: { mean: 0.255, stddev: 0.147, sampleCount: 600 } });
+
+      cache.save("bg-test", stats);
+      const loaded = cache.load("bg-test");
+
+      expect(loaded!.scoreBackground).toEqual({ mean: 0.255, stddev: 0.147, sampleCount: 600 });
+    });
+
+    it("should load an older file with no background as undefined, not as zero", () => {
+      const stats = makeStats();
+
+      cache.save("no-bg", stats);
+      const loaded = cache.load("no-bg");
+
+      expect(loaded!.scoreBackground).toBeUndefined();
+    });
+  });
 });

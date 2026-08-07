@@ -172,6 +172,43 @@ describe("ScrollRankStrategy", () => {
     expect(paths).toContain("src/b.ts");
   });
 
+  // tea-rags-mcp-zrma: rank_chunks defaults to metaOnly=true, and metaOnly
+  // rebuilds the payload from payloadSignals — the synthetic outline has to
+  // survive that projection or the feature is invisible on this tool.
+  it("attaches a members outline at file level and keeps it through metaOnly", async () => {
+    const qdrant = {
+      scrollOrdered: vi.fn().mockResolvedValue([
+        {
+          id: "1",
+          payload: { methodLines: 200, relativePath: "src/a.ts", name: "Alpha", symbolId: "Alpha", startLine: 1 },
+        },
+        {
+          id: "2",
+          payload: {
+            methodLines: 100,
+            relativePath: "src/a.ts",
+            name: "run",
+            symbolId: "Alpha#run",
+            parentSymbolId: "Alpha",
+            startLine: 5,
+          },
+        },
+      ]),
+      ensurePayloadIndex: vi.fn().mockResolvedValue(true),
+    } as unknown as QdrantManager;
+
+    const strategy = createStrategy(qdrant, undefined);
+
+    const results = await strategy.execute({
+      collectionName: "test_col",
+      weights: { chunkSize: 1.0 },
+      level: "file",
+      limit: 10,
+    });
+
+    expect(results[0].payload?.members).toBe("src/a.ts\n  Alpha\n    Alpha#run");
+  });
+
   it("adaptively fetches more chunks when first batch has too few unique files", async () => {
     // 5 chunks per file × 4 files = 20 chunks total, limit=4 unique files requested.
     // First fetch (limit * 3 = 12 chunks) likely covers only ~2-3 files.

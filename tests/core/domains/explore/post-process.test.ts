@@ -356,6 +356,30 @@ describe("filterMetaOnly", () => {
       "codegraph.chunk.pageRank": 0.01,
     });
   });
+
+  // tea-rags-mcp-zrma — the file-level members outline is synthetic, so it is
+  // absent from payloadSignals and gets dropped when filterMetaOnly rebuilds
+  // the payload. rank_chunks defaults to metaOnly=true, which is exactly where
+  // the outline earns its keep: without it the caller learns a file matched
+  // but not what inside it did.
+  it("preserves the synthetic members outline in metaOnly projection", () => {
+    const results: SearchResult[] = [
+      {
+        score: 0.9,
+        payload: {
+          relativePath: "src/reranker.ts",
+          members: "src/reranker.ts\n  Reranker\n    Reranker#rerank",
+        },
+      },
+    ];
+    const meta = filterMetaOnly(results, payloadSignals, []);
+    expect(meta[0].members).toBe("src/reranker.ts\n  Reranker\n    Reranker#rerank");
+  });
+
+  it("omits members when the payload carries none", () => {
+    const results: SearchResult[] = [{ score: 0.9, payload: { relativePath: "src/a.ts" } }];
+    expect(filterMetaOnly(results, payloadSignals, [])[0].members).toBeUndefined();
+  });
 });
 
 // ---------------------------------------------------------------------------

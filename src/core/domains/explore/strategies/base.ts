@@ -95,14 +95,4 @@ export abstract class BaseExploreStrategy implements ExploreStrategy {
       payload: meta,
     }));
   }
-
-  /** Client-side dedup: keep highest-scored hit per file (for file-level grouping). */
-  protected groupByFile(results: ExploreResult[], limit: number): ExploreResult[] {
-    const seen = new Map<string, ExploreResult>();
-    for (const r of results) {
-      const path = (r.payload?.relativePath as string) ?? "";
-      if (!seen.has(path)) seen.set(path, r);
-    }
-    return [...seen.values()].slice(0, limit);
-  }
 }

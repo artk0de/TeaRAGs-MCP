@@ -15,7 +15,7 @@ import {
   type TrajectoryGitConfig,
   type VcsConfig,
 } from "./schemas.js";
-import { envWithFallback, type DeprecationNotice } from "./utils.js";
+import { createEnvReader, type DeprecationNotice, type EnvReader, type EnvSource } from "./utils.js";
 
 function validateSchema<T>(
   schema: {
@@ -61,7 +61,7 @@ const PROVIDER_BATCH_DEFAULTS: Record<string, number> = {
   voyage: 128,
 };
 
-function buildEnvInputs(env: (name: string, ...fallbacks: string[]) => string | undefined) {
+function buildEnvInputs(env: EnvReader) {
   const userSetBatchSize = env("EMBEDDING_TUNE_BATCH_SIZE", "EMBEDDING_BATCH_SIZE", "CODE_BATCH_SIZE");
 
   const core = {
@@ -188,7 +188,12 @@ function buildEnvInputs(env: (name: string, ...fallbacks: string[]) => string | 
   };
 }
 
-export function parseAppConfigZod(): {
+/**
+ * Parse the full config from `source` (the process env by default). An explicit
+ * source is what lets the long-lived MCP server derive a request-scoped config
+ * from a project's registry env without touching process.env.
+ */
+export function parseAppConfigZod(source: EnvSource = process.env): {
   core: CoreConfig;
   embedding: EmbeddingConfig;
   ingest: IngestConfig;
@@ -205,9 +210,7 @@ export function parseAppConfigZod(): {
   };
 } {
   const deprecations: DeprecationNotice[] = [];
-  const env = (name: string, ...fallbacks: string[]) => envWithFallback(deprecations, name, ...fallbacks);
-
-  const inputs = buildEnvInputs(env);
+  const inputs = buildEnvInputs(createEnvReader(deprecations, source));
 
   const core = validateSchema(coreSchema, inputs.core, "core");
   const embedding = validateSchema(embeddingSchema, inputs.embedding, "embedding");

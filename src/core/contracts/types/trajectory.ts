@@ -231,6 +231,19 @@ export interface Distributions {
   enrichmentTimeRange?: EnrichmentTimeRange;
 }
 
+/**
+ * Similarity scale of one collection: cosine between random pairs of stored
+ * vectors. Search confidence reads a result set as a z-score against it, so
+ * that no absolute score threshold — a property of the embedding model — ever
+ * enters the mechanism. Sampled at index time by `computeScoreBackground`.
+ */
+export interface ScoreBackground {
+  mean: number;
+  stddev: number;
+  /** Number of vector PAIRS the background was measured over. */
+  sampleCount: number;
+}
+
 /** Collection-wide signal statistics, cached between reindexes. */
 export interface CollectionSignalStats {
   perSignal: Map<string, SignalStats>;
@@ -238,6 +251,12 @@ export interface CollectionSignalStats {
   perLanguage: Map<string, Map<string, ScopedSignalStats>>;
   distributions: Distributions;
   computedAt: number;
+  /**
+   * Similarity scale of this collection. Absent on indexes built before the
+   * background was introduced — search confidence is omitted rather than
+   * guessed when it is missing, and a reindex fills it in.
+   */
+  scoreBackground?: ScoreBackground;
 }
 
 /** Context passed to DerivedSignalDescriptor.extract() for adaptive normalization. */

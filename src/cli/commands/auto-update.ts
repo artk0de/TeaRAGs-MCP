@@ -22,12 +22,12 @@ import {
   detectDefaultBranch,
   IndexFreshnessCheck as FreshnessCheckImpl,
   CollectionRegistry as RegistryImpl,
+  replayRegistryEnv,
   type CollectionEntry,
   type CollectionRegistry,
   type IndexFreshnessCheck,
 } from "../../core/api/public/index.js";
 import { runUpdater } from "../auto-update/run-updater.js";
-import { replayRegistryEnv } from "../registry-env-replay.js";
 
 export type AutoUpdateCliAction = "enable" | "disable" | "status" | "run";
 

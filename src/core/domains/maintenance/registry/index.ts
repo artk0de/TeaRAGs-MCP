@@ -24,3 +24,6 @@ export {
   REGISTRY_ENV_GROUPS,
 } from "./env-groups.js";
 export type { RegistryEnvGroup } from "./env-groups.js";
+export { replayRegistryEnv } from "./env-replay.js";
+export { pickRegistryEntry, resolveRegistryEnv } from "./env-resolution.js";
+export type { RegistryLookup } from "./env-resolution.js";

@@ -5,8 +5,21 @@ import type {
   CollectionSignalStats,
   Distributions,
   ScopedSignalStats,
+  ScoreBackground,
   SignalStats,
 } from "../contracts/types/trajectory.js";
+
+interface StatsFileContentV6 {
+  version: 6;
+  collectionName: string;
+  computedAt: number;
+  perSignal: Record<string, SignalStats>;
+  perLanguage: Record<string, Record<string, { source: SignalStats; test?: SignalStats }>>;
+  distributions: Distributions;
+  payloadFieldKeys?: string[];
+  /** Collection similarity scale — absent in files written before v6. */
+  scoreBackground?: ScoreBackground;
+}
 
 interface StatsFileContentV5 {
   version: 5;
@@ -28,9 +41,9 @@ interface StatsFileContentV4 {
   payloadFieldKeys?: string[];
 }
 
-type StatsFileContent = StatsFileContentV5 | StatsFileContentV4;
+type StatsFileContent = StatsFileContentV6 | StatsFileContentV5 | StatsFileContentV4;
 
-const CURRENT_VERSION = 5;
+const CURRENT_VERSION = 6;
 
 export interface SchemaDrift {
   added: string[];
@@ -47,7 +60,7 @@ export class StatsCache {
     try {
       const raw = readFileSync(filePath, "utf-8");
       const data = JSON.parse(raw) as StatsFileContent;
-      if (data.version !== 4 && data.version !== 5) return null;
+      if (data.version !== 4 && data.version !== 5 && data.version !== 6) return null;
 
       const perLanguage = new Map<string, Map<string, ScopedSignalStats>>();
       if (data.version === 4) {
@@ -74,6 +87,7 @@ export class StatsCache {
         distributions: data.distributions,
         computedAt: data.computedAt,
         payloadFieldKeys: data.payloadFieldKeys,
+        ...(data.version === 6 && data.scoreBackground ? { scoreBackground: data.scoreBackground } : {}),
       };
     } catch {
       return null;
@@ -91,14 +105,15 @@ export class StatsCache {
       }
       perLanguageObj[lang] = signalObj;
     }
-    const content: StatsFileContentV5 = {
-      version: CURRENT_VERSION as 5,
+    const content: StatsFileContentV6 = {
+      version: CURRENT_VERSION as 6,
       collectionName,
       computedAt: stats.computedAt,
       perSignal: Object.fromEntries(stats.perSignal),
       perLanguage: perLanguageObj,
       distributions: stats.distributions,
       payloadFieldKeys,
+      ...(stats.scoreBackground ? { scoreBackground: stats.scoreBackground } : {}),
     };
     writeFileSync(this.filePath(collectionName), JSON.stringify(content, null, 2), "utf-8");
   }

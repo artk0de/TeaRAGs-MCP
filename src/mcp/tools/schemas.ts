@@ -296,7 +296,9 @@ function levelField() {
       .describe(
         "Analysis level. 'chunk' = rank individual code chunks (functions, classes, blocks) — " +
           "use for decomposition candidates, hotspot detection. " +
-          "'file' = rank files as aggregated units — use for tech debt and ownership analysis. " +
+          "'file' = rank files as aggregated units — use for tech debt and ownership analysis; " +
+          "each result carries payload.members, an outline of what matched inside that file " +
+          "(markdown files get their heading TOC), in the same format find_symbol(relativePath) returns. " +
           "Default: determined by preset signalLevel. Explicit value overrides preset.",
       ),
   };

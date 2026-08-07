@@ -18,6 +18,15 @@ import { EnrichmentCoordinator } from "../../../../../../src/core/domains/ingest
 
 const qdrant = {} as never;
 
+/** Marker-store surface — `runFinalizeOnly` writes terminal markers for real. */
+function makeMarkerQdrant() {
+  return {
+    getPoint: vi.fn().mockResolvedValue(null),
+    batchSetPayload: vi.fn().mockResolvedValue(undefined),
+    setPayload: vi.fn().mockResolvedValue(undefined),
+  } as never;
+}
+
 function makeProvider(overrides: Record<string, unknown> = {}) {
   return {
     key: "codegraph.symbols",
@@ -32,12 +41,14 @@ function makeProvider(overrides: Record<string, unknown> = {}) {
   } as never;
 }
 
-function makeExecutor(runFileSignals: ReturnType<typeof vi.fn>) {
+function makeExecutor(runFileSignals: ReturnType<typeof vi.fn>, overrides: Record<string, unknown> = {}) {
   return {
     runFileSignals,
     runFileSignalsStreaming: vi.fn().mockResolvedValue(new Map()),
     runChunkSignals: vi.fn().mockResolvedValue(new Map()),
     runFinalize: vi.fn().mockResolvedValue(new Map()),
+    releaseCollection: vi.fn().mockResolvedValue(undefined),
+    ...overrides,
   } as never;
 }
 
@@ -127,5 +138,56 @@ describe("EnrichmentCoordinator.runRepairPass", () => {
 
     const [, , paths] = runFileSignals.mock.calls[0] as [unknown, string, string[]];
     expect([...paths].sort()).toEqual(["src/a.ts", "src/b.ts"]);
+  });
+});
+
+/**
+ * `EnrichmentCoordinator.runFinalizeOnly` (bd tea-rags-mcp-gvw8h).
+ *
+ * A repair opens a run on the provider — it extracts, it accumulates run-global
+ * state, it leaves counters behind. On the reindex path that ends with a chunk
+ * pass, the pipeline's own finalize closes that run. A reindex that took an
+ * early return has no chunk pass and therefore no closer, which is why the
+ * repair used to be skipped there entirely and a quiet repo never healed.
+ *
+ * This is the closer for that case: the same completion sequence, minus every
+ * assumption that chunks were stored.
+ */
+describe("EnrichmentCoordinator.runFinalizeOnly", () => {
+  it("runs the provider finalize with no chunk pass behind it", async () => {
+    const runFinalize = vi.fn().mockResolvedValue(new Map());
+    const provider = makeProvider({ finalizeSignals: vi.fn().mockResolvedValue(new Map()) });
+    const coordinator = new EnrichmentCoordinator(
+      makeMarkerQdrant(),
+      provider,
+      undefined,
+      makeExecutor(vi.fn().mockResolvedValue(new Map()), { runFinalize }),
+    );
+
+    await coordinator.runFinalizeOnly("/repo", "code_x_v1");
+
+    expect(runFinalize).toHaveBeenCalledTimes(1);
+    const [, root, options] = runFinalize.mock.calls[0] as [unknown, string, { collectionName?: string }];
+    expect(root).toBe("/repo");
+    expect(options.collectionName).toBe("code_x_v1");
+  });
+
+  it("closes the run it opened, so the next one starts from a clean slate", async () => {
+    const provider = makeProvider({ finalizeSignals: vi.fn().mockResolvedValue(new Map()) });
+    const releaseCollection = vi.fn().mockResolvedValue(undefined);
+    const coordinator = new EnrichmentCoordinator(
+      makeMarkerQdrant(),
+      provider,
+      undefined,
+      makeExecutor(vi.fn().mockResolvedValue(new Map()), { releaseCollection }),
+    );
+
+    await coordinator.runFinalizeOnly("/repo", "code_x_v1");
+
+    // The release is the executor-side end-of-run signal — reaching it means the
+    // completion sequence ran to the end rather than being short-circuited.
+    expect(releaseCollection).toHaveBeenCalledTimes(1);
+    // whenComplete resolves against the SETTLED run, not a new one.
+    await expect(coordinator.whenComplete()).resolves.toBeUndefined();
   });
 });

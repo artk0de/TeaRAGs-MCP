@@ -14,7 +14,7 @@ import type { OverlayMask, RerankPreset, SignalLevel } from "../../../../../../c
  * Use it to prioritise code review and to size change risk before editing.
  *
  * `signalLevel: "chunk"` is load-bearing. PageRank is a per-method number;
- * file-level presets aggregate through `groupByFile`, which attaches the
+ * file-level presets aggregate through `FileLevelGrouper`, which attaches the
  * payload of ONE representative chunk to the file row and would report a random
  * method's centrality as the file's.
  *

@@ -73,6 +73,7 @@ export type { ConfigErrorCode } from "../../infra/errors.js";
 export { CollectionRegistry } from "../../domains/maintenance/registry/index.js";
 export { PROJECT_NAME_RE } from "../../domains/maintenance/registry/index.js";
 export { REGISTRY_ENV_ALLOWLIST, REGISTRY_ENV_GROUPS } from "../../domains/maintenance/registry/index.js";
+export { pickRegistryEntry, replayRegistryEnv, resolveRegistryEnv } from "../../domains/maintenance/registry/index.js";
 export type {
   AutoUpdateRunRecord,
   CollectionEntry,
@@ -80,6 +81,7 @@ export type {
   RegistryAutoUpdateConfig,
   RegistryEnvGroup,
   RegistryGitState,
+  RegistryLookup,
 } from "../../domains/maintenance/registry/index.js";
 
 // ── Index freshness — auto-update watcher decision surface (hpg2) ─────

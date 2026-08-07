@@ -150,3 +150,22 @@ describe("parseAppConfig (Zod bridge)", () => {
     expect(config.ingestCode.ignorePatterns.length).toBeGreaterThan(0);
   });
 });
+
+// ---------------------------------------------------------------------------
+// buildAppConfig — the zodConfig -> AppConfig mapping on its own, so a
+// request-scoped config parsed from a project's registry env can be bridged
+// without re-reading process.env (tea-rags-mcp-pmfm4).
+// ---------------------------------------------------------------------------
+
+describe("buildAppConfig", () => {
+  it("bridges the supplied zodConfig rather than re-reading the environment", async () => {
+    const { buildAppConfig, parseAppConfigZod } = await freshImport();
+    process.env.INGEST_CHUNK_OVERLAP = "300";
+
+    const zodConfig = parseAppConfigZod({ INGEST_CHUNK_OVERLAP: "450", TRAJECTORY_GIT_CHUNK_CONCURRENCY: "6" });
+    const config = buildAppConfig(zodConfig);
+
+    expect(config.ingestCode.chunkOverlap).toBe(450);
+    expect(config.trajectoryIngest.trajectoryGit?.chunkConcurrency).toBe(6);
+  });
+});

@@ -11,7 +11,7 @@
  * file".
  */
 
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -73,5 +73,53 @@ describe("CodegraphEnrichmentProvider.readPersistedFileHashes", () => {
     const hashes = await provider.readPersistedFileHashes("code_never_indexed");
 
     expect(hashes.size).toBe(0);
+  });
+
+  /**
+   * The write half of the repair, and the assumption the whole self-healing
+   * design rests on (bd tea-rags-mcp-gvw8h): re-extracting the drifted set must
+   * leave the DERIVED tables consistent with it, not just the base rows. A
+   * repair that refreshed `cg_symbols_edges_file` while `cg_symbols_cycles` kept
+   * serving a cycle the source no longer has would be worse than no repair —
+   * `find_cycles` would still be wrong, and the run that was supposed to fix it
+   * would report success.
+   */
+  it("rebuilds the derived tables from the repaired graph, not just the base rows", async () => {
+    const repo = mkdtempSync(join(tmpdir(), "cg-repair-derived-"));
+    try {
+      mkdirSync(join(repo, "src"), { recursive: true });
+      // a ↔ b: a genuine two-file circular dependency.
+      writeFileSync(
+        join(repo, "src", "a.ts"),
+        'import { b } from "./b.js";\nexport function a(): number {\n  return b();\n}\n',
+      );
+      writeFileSync(
+        join(repo, "src", "b.ts"),
+        'import { a } from "./a.js";\nexport function b(): number {\n  return a() + 1;\n}\n',
+      );
+
+      const opts = { collectionName: "code_repair_v1" };
+      await provider.streamFileBatch(repo, ["src/a.ts", "src/b.ts"], opts);
+      await provider.finalizeSignals(repo, opts);
+
+      const { graphDb } = await pool.acquire("code_repair_v1");
+      expect(await graphDb.findCycles("file")).not.toHaveLength(0);
+
+      // The cycle is broken in source. Only a.ts drifted, so only a.ts is in the
+      // repair set — the same one-sided set `runRepairPass` hands the executor.
+      writeFileSync(join(repo, "src", "a.ts"), "export function a(): number {\n  return 1;\n}\n");
+      await provider.buildFileSignals(repo, {
+        paths: ["src/a.ts"],
+        ...opts,
+        contentHashes: new Map([["src/a.ts", "after"]]),
+      });
+
+      expect(await graphDb.findCycles("file")).toHaveLength(0);
+      // ...and the repaired row now carries the hash it was repaired to, so the
+      // next run's check converges instead of repairing the same file forever.
+      expect((await provider.readPersistedFileHashes("code_repair_v1")).get("src/a.ts")).toBe("after");
+    } finally {
+      rmSync(repo, { recursive: true, force: true });
+    }
   });
 });
