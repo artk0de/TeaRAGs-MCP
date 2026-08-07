@@ -216,6 +216,32 @@ export class IndexPipeline extends BaseIndexingPipeline {
 
   // ── Collection setup ───────────────────────────────────
 
+  /**
+   * The width to build the collection at, in descending order of authority:
+   * the provider's own model-info answer, then a measured probe embedding, then
+   * the configured value.
+   *
+   * The probe exists for providers with no model-info API — Cohere and Voyage
+   * never expose one and send no dimension parameter, so without it their width
+   * comes from a static table that is silently wrong for any unlisted model, and
+   * the collection itself ends up the wrong size. One short embedding settles
+   * what no API will tell us. Costs a single request, and only when a collection
+   * is actually being created.
+   */
+  private async resolveVectorSize(dimensionsOverride?: number): Promise<number> {
+    if (dimensionsOverride !== undefined && dimensionsOverride > 0) return dimensionsOverride;
+    try {
+      const probe = await this.embeddings.embed("tea-rags vector width probe");
+      if (probe.embedding.length > 0) return probe.embedding.length;
+    } catch (error) {
+      // A failed probe is not fatal: the configured width remains the best
+      // answer available, and a real width conflict now surfaces as a typed
+      // error at the first upsert rather than as an opaque Qdrant rejection.
+      if (isDebug()) console.error("[Index] Vector-width probe failed, using configured dimensions:", error);
+    }
+    return this.embeddings.getDimensions();
+  }
+
   private async setupCollection(
     collectionName: string,
     absolutePath: string,
@@ -292,7 +318,7 @@ export class IndexPipeline extends BaseIndexingPipeline {
     }
 
     // Create new versioned collection
-    const vectorSize = dimensionsOverride ?? this.embeddings.getDimensions();
+    const vectorSize = await this.resolveVectorSize(dimensionsOverride);
     await this.qdrant.createCollection(
       versionedName,
       vectorSize,

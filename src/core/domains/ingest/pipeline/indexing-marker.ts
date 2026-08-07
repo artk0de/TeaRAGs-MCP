@@ -31,14 +31,23 @@ export async function storeIndexingMarker(
   try {
     if (complete) {
       const completedAt = new Date().toISOString();
+      // Carry modelInfo through when the caller resolved it. A full index learns
+      // the real model capabilities during the run and passes them here; dropping
+      // them means the marker never holds what this run already knew, and the
+      // next incremental reindex pays a live provider round-trip to rediscover it.
+      const completionFields = {
+        indexingComplete: true,
+        completedAt,
+        // `indexedAt` mirrors `completedAt` for registry-enrichment readers
+        // that want a single source-of-truth field name.
+        indexedAt: completedAt,
+        ...(modelInfo && { modelInfo }),
+      };
       try {
-        await qdrant.setPayload(
-          collectionName,
-          // `indexedAt` mirrors `completedAt` for registry-enrichment readers
-          // that want a single source-of-truth field name.
-          { indexingComplete: true, completedAt, indexedAt: completedAt },
-          { points: [INDEXING_METADATA_ID], wait: true },
-        );
+        await qdrant.setPayload(collectionName, completionFields, {
+          points: [INDEXING_METADATA_ID],
+          wait: true,
+        });
       } catch (error) {
         console.error("[IndexingMarker] Failed to set completion marker via setPayload:", error);
         // Recreate the point rather than patch it. Both its width and its vector
@@ -48,12 +57,7 @@ export async function storeIndexingMarker(
         const collectionInfo = await qdrant.getCollectionInfo(collectionName);
         const vectorSize = collectionInfo.vectorSize || embeddings.getDimensions();
         const zeroVector: number[] = new Array<number>(vectorSize).fill(0);
-        const completionPayload = {
-          _type: "indexing_metadata",
-          indexingComplete: true,
-          completedAt,
-          indexedAt: completedAt,
-        };
+        const completionPayload = { _type: "indexing_metadata", ...completionFields };
         if (collectionInfo.hybridEnabled) {
           await qdrant.addPointsWithSparse(collectionName, [
             {

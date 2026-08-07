@@ -99,6 +99,22 @@ describe("storeIndexingMarker", () => {
       );
     });
 
+    it("persists the model info it was given", async () => {
+      // A full index resolves modelInfo and passes it to the completion call, but
+      // the completion branch ignored the parameter — so a full index never wrote
+      // it, and the next incremental run paid a live /api/show round-trip to
+      // rediscover what this run already knew.
+      const modelInfo = { model: "mxbai-embed-large:latest", contextLength: 512, dimensions: 1024 };
+
+      await storeIndexingMarker(mockQdrant, mockEmbeddings, "col", true, modelInfo);
+
+      expect(mockQdrant.setPayload).toHaveBeenCalledWith(
+        "col",
+        expect.objectContaining({ modelInfo }),
+        expect.objectContaining({ points: [INDEXING_METADATA_ID] }),
+      );
+    });
+
     it("recreates the marker at the collection's vector size, not the registry guess", async () => {
       // The recovery point must fit the collection it is written into. Sizing it
       // from the static model registry produces a rejected upsert, so the marker

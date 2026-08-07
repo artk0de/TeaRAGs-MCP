@@ -19,7 +19,12 @@ export class CollectionOps {
   ) {}
 
   async create(request: CreateCollectionRequest): Promise<CollectionInfo> {
-    const vectorSize = this.embeddings.getDimensions();
+    // Ask the provider what its model really is before sizing the collection.
+    // getDimensions() alone is the static model-table guess, and a collection
+    // built on a wrong guess fails at the first add_documents — after this call
+    // has already reported it created successfully, at the wrong width.
+    const resolved = await this.embeddings.resolveModelInfo?.().catch(() => undefined);
+    const vectorSize = resolved?.dimensions || this.embeddings.getDimensions();
     const enableHybrid = request.enableHybrid || false;
 
     await this.qdrant.createCollection(
