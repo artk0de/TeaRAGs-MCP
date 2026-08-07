@@ -317,6 +317,31 @@ export class EnrichmentCoordinator {
     return repaired;
   }
 
+  /**
+   * Drive the completion sequence for a pass that never opened a chunk pipeline
+   * (bd tea-rags-mcp-gvw8h).
+   *
+   * A repair does not merely write rows — it OPENS a run on every provider it
+   * touches: run-global resolution state, per-run counters, the markers that
+   * describe what the pass did. On the reindex path that ends in a chunk pass
+   * the pipeline's own finalize closes that run. A reindex that takes an early
+   * return has no chunk pass and so had no closer, which is why the repair used
+   * to be skipped there and a repository where nothing changed never healed.
+   *
+   * Closing it is the whole job here: begin a run, run the same
+   * `CompletionRunner` sequence the chunk path ends with, let it settle. Every
+   * step keyed off stored chunks — the backfill, the deferred chunk pass —
+   * reads an empty chunk map and no-ops by itself, so nothing needs a
+   * "were there chunks?" flag.
+   *
+   * Callers gate this on the repair having found work. An untouched repository
+   * must not pay for a completion pass it has no use for.
+   */
+  async runFinalizeOnly(absolutePath: string, collectionName: string): Promise<EnrichmentMetrics> {
+    this.beginRun(absolutePath, collectionName);
+    return this.awaitCompletion(collectionName);
+  }
+
   async notifyDeletions(paths: string[], collectionName?: string): Promise<void> {
     if (paths.length === 0) return;
     await Promise.all(

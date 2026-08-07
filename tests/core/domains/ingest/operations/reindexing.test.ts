@@ -693,6 +693,129 @@ console.log('This file has secrets');`,
     });
   });
 
+  // bd tea-rags-mcp-gvw8h — the repair pass used to sit BELOW both early
+  // returns, so the one run that could have noticed a drifted provider store
+  // (nothing changed, nothing to chunk) was the one run that skipped the check.
+  // A repo that went quiet never healed: whoever spotted find_cycles serving a
+  // dead cycle could not fix it by re-running the reindex.
+  describe("self-healing repair on a run with nothing to chunk (gvw8h)", () => {
+    it("checks the provider stores for drift even when no file changed", async () => {
+      await createTestFile(codebaseDir, "steady.ts", "export const steady = 1;\nconsole.log('Steady');");
+      await ingest.indexCodebase(codebaseDir);
+
+      const repairSpy = vi.spyOn(EnrichmentCoordinator.prototype, "runRepairPass");
+
+      const stats = await ingest.reindexChanges(codebaseDir);
+
+      expect(stats.filesAdded).toBe(0);
+      expect(stats.filesModified).toBe(0);
+      expect(stats.filesDeleted).toBe(0);
+      expect(repairSpy).toHaveBeenCalledTimes(1);
+      const [collection, root, hashes] = repairSpy.mock.calls[0] as [string, string, Map<string, string>];
+      // Physical target, not the alias — the store the codegraph DuckDB opens.
+      expect(collection).toMatch(/_v\d+$/);
+      // validatePath resolves symlinks (/var → /private/var on macOS).
+      expect(root).toBe(await fs.realpath(codebaseDir));
+      // Hashes come from the scan detectChanges just did, so nothing is re-read.
+      expect(hashes.has("steady.ts")).toBe(true);
+
+      repairSpy.mockRestore();
+    });
+
+    it("drives the enrichment finalize when the repair re-extracted files", async () => {
+      await createTestFile(codebaseDir, "drifted.ts", "export const drifted = 1;\nconsole.log('Drifted');");
+      await ingest.indexCodebase(codebaseDir);
+
+      // A repair writes base rows; only the finalize turns them back into the
+      // derived tables (cg_symbols_cycles / cg_symbols_metrics) and closes the
+      // run the extraction opened.
+      const repairSpy = vi.spyOn(EnrichmentCoordinator.prototype, "runRepairPass").mockResolvedValue(2);
+      const beginRunSpy = vi.spyOn(EnrichmentCoordinator.prototype, "beginRun");
+      const awaitCompletionSpy = vi.spyOn(EnrichmentCoordinator.prototype, "awaitCompletion");
+
+      const stats = await ingest.reindexChanges(codebaseDir);
+
+      expect(stats.filesAdded).toBe(0);
+      expect(stats.filesModified).toBe(0);
+      expect(beginRunSpy).toHaveBeenCalledTimes(1);
+      expect(awaitCompletionSpy).toHaveBeenCalledTimes(1);
+      // Addressed by the physical target, same as every other enrichment seam.
+      expect(beginRunSpy.mock.calls[0]?.[1]).toMatch(/_v\d+$/);
+
+      repairSpy.mockRestore();
+      beginRunSpy.mockRestore();
+      awaitCompletionSpy.mockRestore();
+    });
+
+    it("opens no enrichment run when nothing drifted, so an untouched repo stays cheap", async () => {
+      await createTestFile(codebaseDir, "quiet.ts", "export const quiet = 1;\nconsole.log('Quiet');");
+      await ingest.indexCodebase(codebaseDir);
+
+      const repairSpy = vi.spyOn(EnrichmentCoordinator.prototype, "runRepairPass").mockResolvedValue(0);
+      const beginRunSpy = vi.spyOn(EnrichmentCoordinator.prototype, "beginRun");
+
+      await ingest.reindexChanges(codebaseDir);
+
+      expect(repairSpy).toHaveBeenCalledTimes(1);
+      expect(beginRunSpy).not.toHaveBeenCalled();
+
+      repairSpy.mockRestore();
+      beginRunSpy.mockRestore();
+    });
+
+    it("reports a failed repair finalize without failing the reindex", async () => {
+      await createTestFile(codebaseDir, "unlucky.ts", "export const unlucky = 1;\nconsole.log('Unlucky');");
+      await ingest.indexCodebase(codebaseDir);
+
+      const repairSpy = vi.spyOn(EnrichmentCoordinator.prototype, "runRepairPass").mockResolvedValue(1);
+      const finalizeSpy = vi
+        .spyOn(EnrichmentCoordinator.prototype, "runFinalizeOnly")
+        .mockRejectedValue(new Error("graph resolve blew up"));
+      const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+
+      try {
+        const stats = await ingest.reindexChanges(codebaseDir);
+
+        // Enrichment failures are reported through the markers and the log, the
+        // same as on the chunk path — a self-heal that could not finish must not
+        // turn an otherwise-clean reindex into a hard error.
+        expect(stats.status).toBe("completed");
+        expect(stats.enrichmentStatus).toBe("failed");
+        expect(finalizeSpy).toHaveBeenCalledTimes(1);
+        expect(
+          errorSpy.mock.calls.some((call) =>
+            call.some((arg) => typeof arg === "string" && arg.includes("Repair finalize failed")),
+          ),
+        ).toBe(true);
+      } finally {
+        repairSpy.mockRestore();
+        finalizeSpy.mockRestore();
+        errorSpy.mockRestore();
+      }
+    });
+
+    it("finalizes a deletion-only reindex that repaired something", async () => {
+      await createTestFile(codebaseDir, "keep.ts", "export const keep = 1;\nconsole.log('Keep');");
+      await createTestFile(codebaseDir, "gone.ts", "export const gone = 2;\nconsole.log('Gone');");
+      await ingest.indexCodebase(codebaseDir);
+
+      const repairSpy = vi.spyOn(EnrichmentCoordinator.prototype, "runRepairPass").mockResolvedValue(1);
+      const beginRunSpy = vi.spyOn(EnrichmentCoordinator.prototype, "beginRun");
+
+      await fs.unlink(join(codebaseDir, "gone.ts"));
+
+      const stats = await ingest.reindexChanges(codebaseDir);
+
+      expect(stats.filesDeleted).toBe(1);
+      expect(stats.filesAdded).toBe(0);
+      expect(stats.filesModified).toBe(0);
+      expect(beginRunSpy).toHaveBeenCalledTimes(1);
+
+      repairSpy.mockRestore();
+      beginRunSpy.mockRestore();
+    });
+  });
+
   describe("enrichment scope during reindex", () => {
     it("should pass changed file paths to enrichment prefetch", async () => {
       await createTestFile(codebaseDir, "existing.ts", "export const v1 = 1;\nconsole.log('Existing');");
