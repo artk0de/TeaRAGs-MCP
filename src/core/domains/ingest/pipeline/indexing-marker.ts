@@ -41,20 +41,33 @@ export async function storeIndexingMarker(
         );
       } catch (error) {
         console.error("[IndexingMarker] Failed to set completion marker via setPayload:", error);
-        const vectorSize = embeddings.getDimensions();
+        // Recreate the point rather than patch it. Both its width and its vector
+        // shape have to match the collection: sizing from the model registry
+        // yields a rejected upsert, and a bare unnamed vector is refused by a
+        // hybrid collection ("Not existing vector name") whatever its width.
+        const collectionInfo = await qdrant.getCollectionInfo(collectionName);
+        const vectorSize = collectionInfo.vectorSize || embeddings.getDimensions();
         const zeroVector: number[] = new Array<number>(vectorSize).fill(0);
-        await qdrant.addPoints(collectionName, [
-          {
-            id: INDEXING_METADATA_ID,
-            vector: zeroVector,
-            payload: {
-              _type: "indexing_metadata",
-              indexingComplete: true,
-              completedAt,
-              indexedAt: completedAt,
+        const completionPayload = {
+          _type: "indexing_metadata",
+          indexingComplete: true,
+          completedAt,
+          indexedAt: completedAt,
+        };
+        if (collectionInfo.hybridEnabled) {
+          await qdrant.addPointsWithSparse(collectionName, [
+            {
+              id: INDEXING_METADATA_ID,
+              vector: zeroVector,
+              sparseVector: { indices: [], values: [] },
+              payload: completionPayload,
             },
-          },
-        ]);
+          ]);
+        } else {
+          await qdrant.addPoints(collectionName, [
+            { id: INDEXING_METADATA_ID, vector: zeroVector, payload: completionPayload },
+          ]);
+        }
       }
       return;
     }

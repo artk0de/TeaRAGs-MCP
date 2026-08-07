@@ -68,9 +68,12 @@ export class EmbeddingModelGuard {
         return this.currentModel;
       }
 
-      // No marker point at all — create one with zero vector
-      const zeroVector = new Array<number>(this.dimensions).fill(0);
+      // No marker point at all — create one with zero vector. Its width comes
+      // from the collection, not from `this.dimensions`: the constructor value is
+      // the model registry's guess, frozen at bootstrap, and a wrong guess makes
+      // this very upsert fail — which disables the guard (see the catch below).
       const collectionInfo = await this.qdrant.getCollectionInfo(collectionName);
+      const zeroVector = new Array<number>(collectionInfo.vectorSize || this.dimensions).fill(0);
 
       if (collectionInfo.hybridEnabled) {
         await this.qdrant.addPointsWithSparse(collectionName, [
@@ -105,10 +108,11 @@ export class EmbeddingModelGuard {
       return this.currentModel;
     } catch (error) {
       if (error instanceof EmbeddingModelMismatchError) throw error;
-      // Qdrant read failed — skip guard silently (don't block operations)
-      if (isDebug()) {
-        console.error(`[ModelGuard] Failed to read/write marker for ${collectionName}:`, error);
-      }
+      // Marker access failed — skip the guard so an unreachable Qdrant cannot
+      // block search. Unconditional log: from here on this collection accepts
+      // vectors from any model, and a debug-gated line would leave that
+      // invisible on the default path.
+      console.error(`[ModelGuard] Model-mixing guard disabled for ${collectionName}:`, error);
       this.cache.set(collectionName, null);
       return undefined;
     }

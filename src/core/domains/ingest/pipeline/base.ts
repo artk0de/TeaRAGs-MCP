@@ -235,10 +235,29 @@ export abstract class BaseIndexingPipeline {
    * MUST be called with the canonical (alias) name, not the versioned target.
    * countPoints transparently resolves the alias to its current collection.
    */
+  /**
+   * The collection's actual vector width, falling back to the provider's
+   * configured dimensions when Qdrant cannot report one. Never lets a registry
+   * write fail the run — the fallback is the pre-existing behaviour.
+   */
+  private async resolveCollectionVectorSize(collectionName: string): Promise<number> {
+    try {
+      const info = await this.qdrant.getCollectionInfo(collectionName);
+      return info.vectorSize || this.embeddings.getDimensions();
+    } catch {
+      return this.embeddings.getDimensions();
+    }
+  }
+
   protected async recordRegistryEntry(collectionName: string, absolutePath: string): Promise<void> {
     if (!this.registry) return;
     try {
       const chunksCount = await this.qdrant.countPoints(collectionName);
+      // Vector width comes from the collection, not from the provider. The
+      // provider reports the static model-registry guess, which is wrong for any
+      // model outside that table; register_project already stores the true width
+      // read back from Qdrant, and this write must not degrade it.
+      const embeddingDimensions = await this.resolveCollectionVectorSize(collectionName);
       // Capture embedding endpoints live — symmetric with qdrantUrl. The
       // prime CLI digest reads these back so the operator sees the actual
       // remote endpoints the project was indexed against, not the current
@@ -261,7 +280,7 @@ export abstract class BaseIndexingPipeline {
         collectionName,
         path: absolutePath,
         embeddingModel: this.embeddings.getModel(),
-        embeddingDimensions: this.embeddings.getDimensions(),
+        embeddingDimensions,
         // Embedded daemon: persist the SENTINEL, never the concrete
         // http://127.0.0.1:<random-port> URL — the daemon rebinds an ephemeral
         // port per lifetime, so a frozen URL goes stale on every restart

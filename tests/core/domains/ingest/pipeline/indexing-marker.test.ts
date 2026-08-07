@@ -98,6 +98,49 @@ describe("storeIndexingMarker", () => {
         ]),
       );
     });
+
+    it("recreates the marker at the collection's vector size, not the registry guess", async () => {
+      // The recovery point must fit the collection it is written into. Sizing it
+      // from the static model registry produces a rejected upsert, so the marker
+      // stays missing and every later heartbeat keeps 404ing.
+      mockQdrant.getCollectionInfo.mockResolvedValue({ hybridEnabled: false, vectorSize: 1024 });
+      mockEmbeddings.getDimensions.mockReturnValue(768);
+      mockQdrant.setPayload.mockRejectedValue(new Error("point not found"));
+
+      await storeIndexingMarker(mockQdrant, mockEmbeddings, "col", true);
+
+      const [, points] = (mockQdrant.addPoints as ReturnType<typeof vi.fn>).mock.calls[0];
+      expect(points[0].vector).toHaveLength(1024);
+    });
+
+    it("recreates the marker through the sparse path on a hybrid collection", async () => {
+      // Hybrid collections carry a NAMED `dense` vector; a bare unnamed vector is
+      // rejected with "Not existing vector name" regardless of its width. Hybrid
+      // is the default, so the plain-addPoints recovery cannot work there.
+      mockQdrant.getCollectionInfo.mockResolvedValue({ hybridEnabled: true, vectorSize: 8 });
+      mockQdrant.setPayload.mockRejectedValue(new Error("point not found"));
+
+      await storeIndexingMarker(mockQdrant, mockEmbeddings, "col", true);
+
+      expect(mockQdrant.addPointsWithSparse).toHaveBeenCalledWith(
+        "col",
+        expect.arrayContaining([
+          expect.objectContaining({
+            id: INDEXING_METADATA_ID,
+            sparseVector: { indices: [], values: [] },
+            payload: expect.objectContaining({ indexingComplete: true }),
+          }),
+        ]),
+      );
+      expect(mockQdrant.addPoints).not.toHaveBeenCalled();
+    });
+
+    it("still resolves when the recovery upsert itself fails", async () => {
+      mockQdrant.setPayload.mockRejectedValue(new Error("point not found"));
+      mockQdrant.addPoints.mockRejectedValue(new Error("dimension error"));
+
+      await expect(storeIndexingMarker(mockQdrant, mockEmbeddings, "col", true)).resolves.toBeUndefined();
+    });
   });
 
   describe("updateHeartbeat", () => {
