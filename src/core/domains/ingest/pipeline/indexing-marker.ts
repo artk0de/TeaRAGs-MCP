@@ -31,30 +31,47 @@ export async function storeIndexingMarker(
   try {
     if (complete) {
       const completedAt = new Date().toISOString();
+      // Carry modelInfo through when the caller resolved it. A full index learns
+      // the real model capabilities during the run and passes them here; dropping
+      // them means the marker never holds what this run already knew, and the
+      // next incremental reindex pays a live provider round-trip to rediscover it.
+      const completionFields = {
+        indexingComplete: true,
+        completedAt,
+        // `indexedAt` mirrors `completedAt` for registry-enrichment readers
+        // that want a single source-of-truth field name.
+        indexedAt: completedAt,
+        ...(modelInfo && { modelInfo }),
+      };
       try {
-        await qdrant.setPayload(
-          collectionName,
-          // `indexedAt` mirrors `completedAt` for registry-enrichment readers
-          // that want a single source-of-truth field name.
-          { indexingComplete: true, completedAt, indexedAt: completedAt },
-          { points: [INDEXING_METADATA_ID], wait: true },
-        );
+        await qdrant.setPayload(collectionName, completionFields, {
+          points: [INDEXING_METADATA_ID],
+          wait: true,
+        });
       } catch (error) {
         console.error("[IndexingMarker] Failed to set completion marker via setPayload:", error);
-        const vectorSize = embeddings.getDimensions();
+        // Recreate the point rather than patch it. Both its width and its vector
+        // shape have to match the collection: sizing from the model registry
+        // yields a rejected upsert, and a bare unnamed vector is refused by a
+        // hybrid collection ("Not existing vector name") whatever its width.
+        const collectionInfo = await qdrant.getCollectionInfo(collectionName);
+        const vectorSize = collectionInfo.vectorSize || embeddings.getDimensions();
         const zeroVector: number[] = new Array<number>(vectorSize).fill(0);
-        await qdrant.addPoints(collectionName, [
-          {
-            id: INDEXING_METADATA_ID,
-            vector: zeroVector,
-            payload: {
-              _type: "indexing_metadata",
-              indexingComplete: true,
-              completedAt,
-              indexedAt: completedAt,
+        const completionPayload = { _type: "indexing_metadata", ...completionFields };
+        if (collectionInfo.hybridEnabled) {
+          await qdrant.addPointsWithSparse(collectionName, [
+            {
+              id: INDEXING_METADATA_ID,
+              vector: zeroVector,
+              sparseVector: { indices: [], values: [] },
+              payload: completionPayload,
             },
-          },
-        ]);
+          ]);
+        } else {
+          await qdrant.addPoints(collectionName, [
+            { id: INDEXING_METADATA_ID, vector: zeroVector, payload: completionPayload },
+          ]);
+        }
       }
       return;
     }

@@ -49,16 +49,48 @@ const MODEL_DIMENSIONS: Record<string, number> = {
 /** Regex matching quantization suffixes: -fp16, -fp32, -q4, -q8, -q8_0, etc. */
 const QUANT_SUFFIX = /-(fp16|fp32|q\d+[_\d]*)$/;
 
+/**
+ * Regex matching an Ollama tag: everything after the last `:`. Namespaces use
+ * `/`, so a slash is never a tag boundary — `jinaai/model` keeps its namespace
+ * while `mxbai-embed-large:latest` loses `:latest`.
+ */
+const OLLAMA_TAG = /:[^:/]+$/;
+
 /** Strip quantization suffix (-fp16, -fp32, -q8, -q8_0, etc.) from a model name. */
 export function stripQuantizationSuffix(model: string): string {
   return model.replace(QUANT_SUFFIX, "");
 }
 
 /**
+ * Strip an Ollama tag (`:latest`, `:33m`, `:v1.5`) from a model name.
+ *
+ * The tag selects a weight variant, not a vector width, so it must not change
+ * the dimension lookup. This matters because `ollama list` — and this project's
+ * own setup docs — print names WITH the tag, while the registry keys are
+ * canonical untagged names.
+ */
+export function stripOllamaTag(model: string): string {
+  return model.replace(OLLAMA_TAG, "");
+}
+
+/**
  * Look up default dimensions for a known model.
- * Tries exact match first, then strips quantization suffix and retries.
+ *
+ * Tries the exact name first so an entry registered with its tag always wins,
+ * then peels the variant markers that do not affect dimensionality:
+ * quantization suffix, Ollama tag, and both together.
  * Returns `undefined` for unknown models.
  */
 export function getModelDimensions(model: string): number | undefined {
-  return MODEL_DIMENSIONS[model] ?? MODEL_DIMENSIONS[stripQuantizationSuffix(model)];
+  const candidates = [
+    model,
+    stripQuantizationSuffix(model),
+    stripOllamaTag(model),
+    stripQuantizationSuffix(stripOllamaTag(model)),
+  ];
+  for (const candidate of candidates) {
+    const dimensions = MODEL_DIMENSIONS[candidate];
+    if (dimensions !== undefined) return dimensions;
+  }
+  return undefined;
 }

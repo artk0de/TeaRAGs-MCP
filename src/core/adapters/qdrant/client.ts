@@ -15,12 +15,14 @@ import {
 import type { StartupPhase } from "./embedded/types.js";
 import {
   CollectionAlreadyExistsError,
+  isVectorDimensionRejection,
   QdrantOperationError,
   QdrantOptimizationInProgressError,
   QdrantPointNotFoundError,
   QdrantRecoveringError,
   QdrantStartingError,
   QdrantUnavailableError,
+  QdrantVectorDimensionMismatchError,
 } from "./errors.js";
 
 export interface EmbeddedDaemonProbe {
@@ -71,6 +73,18 @@ export interface SparseVector {
 const QUANTIZATION_SEARCH_PARAMS = {
   quantization: { rescore: true, oversampling: 2.0 },
 } as const;
+
+/**
+ * Fail a point-write, separating a vector-width conflict from generic operation
+ * failure. Every write path funnels through here so the width remedy is stated
+ * identically no matter which one hit it.
+ */
+function failPointWrite(operation: string, collectionName: string, errorMessage: string, cause?: Error): never {
+  if (isVectorDimensionRejection(errorMessage)) {
+    throw new QdrantVectorDimensionMismatchError(operation, collectionName, errorMessage, cause);
+  }
+  throw new QdrantOperationError(operation, `collection "${collectionName}": ${errorMessage}`, cause);
+}
 
 export class QdrantManager {
   /** Page size for scroll pagination when collecting point IDs by filter. */
@@ -596,11 +610,7 @@ export class QdrantManager {
       if (error instanceof QdrantUnavailableError) throw error;
       const errorData = error as { data?: { status?: { error?: string } }; message?: string };
       const errorMessage = errorData?.data?.status?.error || errorData?.message || String(error);
-      throw new QdrantOperationError(
-        "addPoints",
-        `collection "${collectionName}": ${errorMessage}`,
-        error instanceof Error ? error : undefined,
-      );
+      failPointWrite("addPoints", collectionName, errorMessage, error instanceof Error ? error : undefined);
     }
   }
 
@@ -648,11 +658,7 @@ export class QdrantManager {
       if (error instanceof QdrantUnavailableError) throw error;
       const errorData = error as { data?: { status?: { error?: string } }; message?: string };
       const errorMessage = errorData?.data?.status?.error || errorData?.message || String(error);
-      throw new QdrantOperationError(
-        "addPointsOptimized",
-        `collection "${collectionName}": ${errorMessage}`,
-        error instanceof Error ? error : undefined,
-      );
+      failPointWrite("addPointsOptimized", collectionName, errorMessage, error instanceof Error ? error : undefined);
     }
   }
 
@@ -1260,11 +1266,7 @@ export class QdrantManager {
       if (error instanceof QdrantUnavailableError) throw error;
       const errorData = error as { data?: { status?: { error?: string } }; message?: string };
       const errorMessage = errorData?.data?.status?.error || errorData?.message || String(error);
-      throw new QdrantOperationError(
-        "addPointsWithSparse",
-        `collection "${collectionName}": ${errorMessage}`,
-        error instanceof Error ? error : undefined,
-      );
+      failPointWrite("addPointsWithSparse", collectionName, errorMessage, error instanceof Error ? error : undefined);
     }
   }
 
@@ -1317,9 +1319,10 @@ export class QdrantManager {
       if (error instanceof QdrantUnavailableError) throw error;
       const errorData = error as { data?: { status?: { error?: string } }; message?: string };
       const errorMessage = errorData?.data?.status?.error || errorData?.message || String(error);
-      throw new QdrantOperationError(
+      failPointWrite(
         "addPointsWithSparseOptimized",
-        `collection "${collectionName}": ${errorMessage}`,
+        collectionName,
+        errorMessage,
         error instanceof Error ? error : undefined,
       );
     }

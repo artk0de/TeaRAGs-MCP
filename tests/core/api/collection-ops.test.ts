@@ -57,6 +57,34 @@ describe("CollectionOps", () => {
       });
     });
 
+    it("creates at the width the provider reports for its model", async () => {
+      // getDimensions() is the static-table guess. When the provider can report
+      // the real model width, the collection — and the size echoed back to the
+      // caller as a success — must be that, not the guess. Otherwise the first
+      // add_documents dies on a rejected upsert against a collection this very
+      // call reported as created successfully.
+      const resolving = createMockEmbeddings(768) as any;
+      resolving.resolveModelInfo = vi
+        .fn()
+        .mockResolvedValue({ model: "test-model", contextLength: 512, dimensions: 1024 });
+      ops = new CollectionOps(qdrant, resolving, false, false);
+
+      const result = await ops.create({ name: "my-col" });
+
+      expect(qdrant.createCollection).toHaveBeenCalledWith("my-col", 1024, undefined, false, false, false);
+      expect(result.vectorSize).toBe(1024);
+    });
+
+    it("falls back to the configured width when the provider cannot report one", async () => {
+      const failing = createMockEmbeddings(768) as any;
+      failing.resolveModelInfo = vi.fn().mockResolvedValue(undefined);
+      ops = new CollectionOps(qdrant, failing, false, false);
+
+      const result = await ops.create({ name: "my-col" });
+
+      expect(result.vectorSize).toBe(768);
+    });
+
     it("passes distance metric when provided", async () => {
       const result = await ops.create({ name: "my-col", distance: "Dot" });
 

@@ -18,7 +18,14 @@ const DEFAULT_SOCKET_PATH = "/tmp/onnx-embedding-daemon.sock";
 
 export class OnnxEmbeddings implements EmbeddingProvider {
   private readonly model: string;
-  private readonly dimensions: number;
+  /**
+   * Vector width this provider reports. Starts as the static model-registry
+   * guess and is corrected once the daemon reports what it actually loaded —
+   * unless an operator pinned it explicitly.
+   */
+  private dimensions: number;
+  /** True when the width came from configuration, which outranks the daemon. */
+  private readonly dimensionsPinned: boolean;
   private readonly cacheDir: string | undefined;
   private readonly device: string;
   private readonly socketPath: string;
@@ -52,6 +59,7 @@ export class OnnxEmbeddings implements EmbeddingProvider {
     spawnTimeoutMs = 30_000,
   ) {
     this.model = model;
+    this.dimensionsPinned = dimensions !== undefined && dimensions > 0;
     this.dimensions = dimensions || getModelDimensions(model) || DEFAULT_ONNX_DIMENSIONS;
     this.cacheDir = cacheDir;
     this.device = device;
@@ -218,6 +226,10 @@ export class OnnxEmbeddings implements EmbeddingProvider {
               dimensions: msg.dimensions,
               contextLength: msg.contextLength,
             };
+            // The daemon read the width off the model config; the constructor
+            // could only guess it. Adopt the truth so every artifact sized from
+            // getDimensions() matches the vectors this provider will emit.
+            if (!this.dimensionsPinned) this.dimensions = msg.dimensions;
           }
           this.startHeartbeat();
           resolve();

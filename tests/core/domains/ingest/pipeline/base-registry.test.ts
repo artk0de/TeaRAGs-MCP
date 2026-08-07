@@ -110,6 +110,22 @@ describe("BaseIndexingPipeline.finalizeProcessing — registry write", () => {
     expect(entry!.teaRagsVersion).toMatch(/^\d+\.\d+\.\d+/);
   });
 
+  it("records the collection's real vector size, not the provider's configured guess", async () => {
+    // embeddingDimensions is persisted metadata that outlives the process, and
+    // register_project already writes the true width read back from Qdrant. The
+    // indexing path must not overwrite that with the model registry's guess,
+    // which is wrong for any model missing from the static table.
+    await createTestFile(codebaseDir, "dims.ts", "export const value = 1;");
+    qdrant.getCollectionInfo = vi.fn().mockResolvedValue({ hybridEnabled: false, vectorSize: 1024 }) as any;
+
+    await ingest.indexCodebase(codebaseDir);
+    const status = await ingest.getIndexStatus(codebaseDir);
+    const entry = registry.get(status.collectionName!);
+
+    expect(embeddings.getDimensions()).not.toBe(1024);
+    expect(entry!.embeddingDimensions).toBe(1024);
+  });
+
   it("records codegraphEnabled=false when indexed without codegraph deps", async () => {
     // The default IngestFacade wires no codegraph remover/lister, so the
     // pipeline indexes without the codegraph trajectory family. The registry

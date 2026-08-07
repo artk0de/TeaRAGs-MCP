@@ -670,12 +670,31 @@ describe("QdrantManager", () => {
       mockClient.upsert.mockRejectedValue({
         data: {
           status: {
-            error: "Vector dimension mismatch",
+            error: "Payload key not indexed",
           },
         },
       });
 
       await expect(manager.addPoints("test-collection", points)).rejects.toThrow(QdrantOperationError);
+    });
+
+    it("names the width conflict when Qdrant rejects a wrong-sized vector", async () => {
+      // A width conflict is a configuration problem with an exact remedy, not an
+      // opaque infra failure. Reported as "check Qdrant logs" it costs a full
+      // debugging session — the numbers Qdrant already gave us must survive into
+      // the message, and the hint must say what to actually do.
+      const points = [{ id: 1, vector: [0.1, 0.2, 0.3] }];
+      mockClient.upsert.mockRejectedValue({
+        data: {
+          status: { error: "Wrong input: Vector dimension error: expected dim: 1024, got 768 for vector 'dense'" },
+        },
+      });
+
+      await expect(manager.addPoints("test-collection", points)).rejects.toMatchObject({
+        code: "INFRA_QDRANT_VECTOR_DIMENSION_MISMATCH",
+        message: expect.stringMatching(/1024.*768|768.*1024/),
+        hint: expect.stringContaining("EMBEDDING_DIMENSIONS"),
+      });
     });
 
     it("should throw error with error.message fallback", async () => {
@@ -1754,7 +1773,7 @@ describe("QdrantManager", () => {
       mockClient.upsert.mockRejectedValue({
         data: {
           status: {
-            error: "Sparse vector dimension mismatch",
+            error: "Sparse vector not configured for this collection",
           },
         },
       });

@@ -329,6 +329,46 @@ describe("OllamaEmbeddings", () => {
       const customEmbeddings = new OllamaEmbeddings("nomic-embed-text", 512);
       expect(customEmbeddings.getDimensions()).toBe(512);
     });
+
+    // Invariant: once the provider has asked Ollama what the model actually is,
+    // getDimensions() reports that truth. Otherwise the collection is created at
+    // the real width while every zero-vector artifact is built at the guess.
+    it("adopts the width Ollama reports for the model", async () => {
+      const provider = new OllamaEmbeddings("some-unlisted-model");
+      expect(provider.getDimensions()).toBe(768); // registry miss → fallback
+
+      vi.mocked(global.fetch).mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({ model_info: { "bert.embedding_length": 1024, "bert.context_length": 512 } }),
+      } as Response);
+
+      await provider.resolveModelInfo();
+
+      expect(provider.getDimensions()).toBe(1024);
+    });
+
+    it("keeps an operator-supplied width even when Ollama reports another", async () => {
+      // EMBEDDING_DIMENSIONS is an explicit override; probing must not undo it.
+      const provider = new OllamaEmbeddings("some-unlisted-model", 512);
+
+      vi.mocked(global.fetch).mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({ model_info: { "bert.embedding_length": 1024, "bert.context_length": 512 } }),
+      } as Response);
+
+      await provider.resolveModelInfo();
+
+      expect(provider.getDimensions()).toBe(512);
+    });
+
+    it("keeps the fallback width when the probe fails", async () => {
+      const provider = new OllamaEmbeddings("some-unlisted-model");
+      vi.mocked(global.fetch).mockRejectedValueOnce(new Error("connection refused"));
+
+      await provider.resolveModelInfo();
+
+      expect(provider.getDimensions()).toBe(768);
+    });
   });
 
   describe("getModel", () => {

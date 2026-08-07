@@ -591,6 +591,28 @@ describe("OnnxEmbeddings resolveModelInfo (with model info)", () => {
     expect(info1).toEqual(info2);
   });
 
+  it("adopts the width the daemon reports for the model", async () => {
+    // Same invariant as Ollama: once the real width is known, getDimensions()
+    // must report it, or artifacts sized from the guess get rejected by Qdrant.
+    // Registry says 384 for this name; the daemon loads a 768-wide model.
+    const drifted = new OnnxEmbeddings("Xenova/all-MiniLM-L6-v2", undefined, undefined, "cpu", socketPath);
+    expect(drifted.getDimensions()).toBe(384);
+
+    await drifted.resolveModelInfo();
+
+    expect(drifted.getDimensions()).toBe(768);
+    await drifted.terminate();
+  });
+
+  it("keeps an operator-supplied width even when the daemon reports another", async () => {
+    const pinned = new OnnxEmbeddings("some/unlisted-model", 512, undefined, "cpu", socketPath);
+
+    await pinned.resolveModelInfo();
+
+    expect(pinned.getDimensions()).toBe(512);
+    await pinned.terminate();
+  });
+
   it("should return model info even without prior embed call", async () => {
     // resolveModelInfo triggers connection if not yet connected
     const info = await provider.resolveModelInfo();

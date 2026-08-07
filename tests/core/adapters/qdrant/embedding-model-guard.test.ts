@@ -140,4 +140,57 @@ describe("EmbeddingModelGuard", () => {
     // col-1 still cached and ok
     await expect(guard.ensureMatch("col-1")).resolves.toBeUndefined();
   });
+
+  describe("marker width follows the collection, not the configured guess", () => {
+    // The guard is constructed at bootstrap with the model registry's guess. When
+    // that guess is wrong the marker upsert is rejected, the guard caches null and
+    // disables ITSELF — so two models can then be mixed in one collection. Its own
+    // marker must therefore be sized from the collection it writes into.
+    it("sizes the marker from the collection's vector size", async () => {
+      qdrant = createMockQdrant(null);
+      qdrant.getCollectionInfo.mockResolvedValue({ hybridEnabled: false, vectorSize: 1024 });
+      const guard = new EmbeddingModelGuard(qdrant, "model-y", 768);
+
+      await guard.ensureMatch("col");
+
+      const [, points] = qdrant.addPoints.mock.calls[0];
+      expect(points[0].vector).toHaveLength(1024);
+    });
+
+    it("sizes the hybrid marker from the collection's vector size", async () => {
+      qdrant = createMockQdrant(null);
+      qdrant.getCollectionInfo.mockResolvedValue({ hybridEnabled: true, vectorSize: 1024 });
+      const guard = new EmbeddingModelGuard(qdrant, "model-y", 768);
+
+      await guard.ensureMatch("col");
+
+      const [, points] = qdrant.addPointsWithSparse.mock.calls[0];
+      expect(points[0].vector).toHaveLength(1024);
+    });
+
+    it("falls back to the configured dimensions when the collection reports none", async () => {
+      qdrant = createMockQdrant(null);
+      qdrant.getCollectionInfo.mockResolvedValue({ hybridEnabled: false, vectorSize: 0 });
+      const guard = new EmbeddingModelGuard(qdrant, "model-y", 384);
+
+      await guard.ensureMatch("col");
+
+      const [, points] = qdrant.addPoints.mock.calls[0];
+      expect(points[0].vector).toHaveLength(384);
+    });
+
+    it("reports the collection it stopped guarding when marker access fails", async () => {
+      // Self-disabling is deliberate — an unreachable Qdrant must not block search.
+      // But it must never be inaudible: this is the moment model mixing becomes
+      // possible, so it is reported regardless of debug mode.
+      const consoleError = vi.spyOn(console, "error").mockImplementation(() => {});
+      qdrant.getPoint.mockRejectedValue(new Error("qdrant down"));
+      const guard = new EmbeddingModelGuard(qdrant, "model-a", 768);
+
+      await expect(guard.ensureMatch("col")).resolves.toBeUndefined();
+
+      expect(consoleError).toHaveBeenCalledWith(expect.stringContaining("col"), expect.anything());
+      consoleError.mockRestore();
+    });
+  });
 });

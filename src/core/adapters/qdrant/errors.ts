@@ -130,6 +130,40 @@ export class QdrantOperationError extends InfraError {
   }
 }
 
+/**
+ * A write was rejected because the vector's width does not match the
+ * collection's.
+ *
+ * Distinct from the generic operation failure because the remedy is exact and
+ * the cause is configuration, not infrastructure: the embedding model in use is
+ * not the one this collection was built for, or its width was guessed from the
+ * built-in model table and guessed wrong. Reported generically, this reads as
+ * "Qdrant is broken" and the actual numbers — which Qdrant already told us —
+ * never reach the operator.
+ */
+export class QdrantVectorDimensionMismatchError extends InfraError {
+  constructor(operation: string, collectionName: string, detail: string, cause?: Error) {
+    super({
+      code: "INFRA_QDRANT_VECTOR_DIMENSION_MISMATCH",
+      message: `Qdrant ${operation} rejected a vector whose width does not match collection "${collectionName}": ${detail}`,
+      hint:
+        "The embedding model does not match this collection. Point EMBEDDING_MODEL back at the model the index was built with, " +
+        "set EMBEDDING_DIMENSIONS to pin the width if the model is not in the built-in table, or re-index from scratch to rebuild " +
+        "the collection at the new width.",
+      httpStatus: 500,
+      cause,
+    });
+  }
+}
+
+/** Qdrant's wording for a width conflict, in every phrasing it uses. */
+const VECTOR_DIMENSION_REJECTION = /vector dimension (error|mismatch)|expected dim:/i;
+
+/** True when this Qdrant error message describes a vector-width conflict. */
+export function isVectorDimensionRejection(errorMessage: string): boolean {
+  return VECTOR_DIMENSION_REJECTION.test(errorMessage);
+}
+
 export class QdrantPointNotFoundError extends InfraError {
   constructor(pointId: string, collectionName: string, cause?: Error) {
     super({
