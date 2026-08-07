@@ -1,7 +1,8 @@
 ---
 paths:
-  - "src/core/trajectory/**/rerank/presets/**/*.ts"
-  - "src/core/explore/rerank/presets/**/*.ts"
+  - "src/core/domains/trajectory/**/rerank/presets/**/*.ts"
+  - "src/core/domains/trajectory/composite/presets/**/*.ts"
+  - "src/core/domains/explore/rerank/presets/**/*.ts"
 ---
 
 # Rerank Preset Rules

@@ -1,5 +1,6 @@
 ---
 paths:
+  - "src/core/domains/language/*/chunking/**/*.ts"
   - "src/core/domains/ingest/pipeline/chunker/hooks/**/*.ts"
   - "src/core/domains/ingest/pipeline/chunker/tree-sitter.ts"
   - "src/core/domains/ingest/pipeline/chunker/config.ts"
@@ -60,9 +61,8 @@ Reordering breaks invariant. Don't reorder without revising this rule.
 
 ## Reference implementations
 
-- TypeScript chain:
-  `src/core/domains/ingest/pipeline/chunker/hooks/typescript/index.ts`
-- Ruby chain: `src/core/domains/ingest/pipeline/chunker/hooks/ruby/index.ts`
+- TypeScript chain: `src/core/domains/language/typescript/chunking/index.ts`
+- Ruby chain: `src/core/domains/language/ruby/chunking/index.ts`
 - Orchestrator short-circuit:
   `src/core/domains/ingest/pipeline/chunker/tree-sitter.ts`
   (`chunkWithChildExtraction` + `processChildren`)

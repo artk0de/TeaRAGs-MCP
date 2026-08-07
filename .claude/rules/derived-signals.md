@@ -1,7 +1,6 @@
 ---
 paths:
-  - "src/core/trajectory/**/rerank/derived-signals/**/*.ts"
-  - "src/core/explore/rerank/derived-signals/**/*.ts"
+  - "src/core/domains/trajectory/**/rerank/derived-signals/**/*.ts"
 ---
 
 # Derived Signal Rules

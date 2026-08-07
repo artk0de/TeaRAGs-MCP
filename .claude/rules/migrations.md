@@ -1,32 +1,73 @@
 ---
 description:
-  When and how to add Qdrant schema migrations, snapshot format migrations, or
-  sparse vector migrations. Triggers when changing payload structure, adding
-  indexes, modifying persisted data format, or working with migration code.
+  When and how to add Qdrant schema migrations, snapshot format migrations,
+  sparse vector migrations, or stats-cache backfills. Triggers when changing
+  payload structure, adding indexes, changing the shape of ANY persisted store,
+  or working with migration code.
 paths:
   - "src/core/domains/maintenance/migration/**/*.ts"
   - "src/core/api/internal/ingest-dependencies.ts"
-  - "src/core/domains/ingest/pipeline/payload/**/*.ts"
-  - "src/core/contracts/types/payload.ts"
-  - "src/core/contracts/types/qdrant.ts"
+  - "src/core/contracts/types/migration.ts"
+  - "src/core/domains/ingest/operations/reindexing.ts"
+  - "src/core/domains/ingest/sync/snapshot/**/*.ts"
+  - "src/core/domains/trajectory/*/payload-signals.ts"
+  - "src/core/infra/stats-cache.ts"
+  - "src/core/adapters/qdrant/types.ts"
+  - "tests/core/domains/maintenance/migration/**/*.ts"
 ---
 
 # Migration Rules
 
+## The General Rule
+
+**Change the shape of anything already written to disk or to Qdrant → ship a
+migration in the same change.** Not a follow-up bead, not a note in the release
+docs, not a drift warning telling the user to reindex. The store and its upgrade
+path land together, or existing installs silently keep the old shape.
+
+That covers every persisted store this project owns, not just the Qdrant
+payload:
+
+| Persisted store             | Lives in                              | Pipeline   |
+| --------------------------- | ------------------------------------- | ---------- |
+| Qdrant collection + payload | the collection itself                 | `schema`   |
+| BM25 sparse vectors         | the collection's sparse config        | `sparse`   |
+| File snapshot               | `<snapshots>/<collection>.snapshot*`  | `snapshot` |
+| Collection stats cache      | `<snapshots>/<collection>.stats.json` | `stats`    |
+| Codegraph tables            | the per-collection DuckDB file        | `database` |
+
+**Reindex is not a migration.** Telling the user to reindex is acceptable ONLY
+when the new state genuinely cannot be derived from what is already stored — new
+embeddings, new chunk boundaries. If the value CAN be computed from data already
+on disk, it is a partial-update path, and a partial-update path means a
+migration. See `.claude/rules/.local/schema-drift-vs-migration.md` for the
+distinction; `stats-v6-score-background` is the worked example — it measures the
+similarity scale from vectors already stored, so demanding a full reindex for it
+would have been the wrong price.
+
+**Drift detection is not a substitute either, and often cannot even see the
+change.** `SchemaDriftMonitor` compares Qdrant _payload_ keys. A field that
+lives anywhere else — the stats cache, the snapshot, the DuckDB file — is
+invisible to it, so "the user will be warned" is false by construction outside
+the payload.
+
 ## When to Add a Migration
 
 Add migration when change affects **persisted state** existing
-collections/snapshots already contain:
+collections/snapshots/caches already contain:
 
-| Change type                             | Pipeline   | Example                            |
-| --------------------------------------- | ---------- | ---------------------------------- |
-| New Qdrant payload index                | `schema`   | Add keyword index on `symbolId`    |
-| Change index type (keyword → text)      | `schema`   | Enable full-text on `relativePath` |
-| Enable/configure sparse vectors         | `schema`   | Activate BM25 for hybrid search    |
-| Backfill payload fields                 | `schema`   | Set `enrichedAt` on old points     |
-| Qdrant collection config change         | `schema`   | Modify vector params               |
-| Sparse vector rebuild after BM25 change | `sparse`   | Regenerate BM25 vectors            |
-| Snapshot format change                  | `snapshot` | Add new fields to snapshot entries |
+| Change type                             | Pipeline   | Example                             |
+| --------------------------------------- | ---------- | ----------------------------------- |
+| New Qdrant payload index                | `schema`   | Add keyword index on `symbolId`     |
+| Change index type (keyword → text)      | `schema`   | Enable full-text on `relativePath`  |
+| Enable/configure sparse vectors         | `schema`   | Activate BM25 for hybrid search     |
+| Backfill payload fields                 | `schema`   | Set `enrichedAt` on old points      |
+| Qdrant collection config change         | `schema`   | Modify vector params                |
+| Sparse vector rebuild after BM25 change | `sparse`   | Regenerate BM25 vectors             |
+| Snapshot format change                  | `snapshot` | Add new fields to snapshot entries  |
+| Snapshot store gains/renames a field    | `snapshot` | mtime+size added alongside the hash |
+| Stats-cache gains a computed field      | `stats`    | Backfill `scoreBackground` (v6)     |
+| Codegraph table/column change           | `database` | New `cg_symbols` column or index    |
 
 **Do NOT add a migration when:**
 
@@ -36,13 +77,29 @@ collections/snapshots already contain:
 - Changing MCP tool schemas or DTOs
 - Refactoring code without changing persisted data format
 
-## Three Migration Pipelines
+## Migration Pipelines
+
+Four run through `Migrator` on the reindex sweep; `database` runs separately,
+against the DuckDB client, on graph open.
 
 | Pipeline   | What it upgrades         | Version storage                           | Runner class       |
 | ---------- | ------------------------ | ----------------------------------------- | ------------------ |
 | `schema`   | Qdrant collection schema | `__schema_metadata__` point in collection | `SchemaMigrator`   |
 | `snapshot` | On-disk snapshot format  | Implicit (derived from format on disk)    | `SnapshotMigrator` |
 | `sparse`   | BM25 sparse vectors      | `__schema_metadata__.sparseVersion`       | `SparseMigrator`   |
+| `stats`    | Collection stats cache   | Implicit (derived from the data present)  | `StatsMigrator`    |
+| `database` | Codegraph DuckDB tables  | `schema_migrations` table in the DB       | `runMigrations`    |
+
+### Deriving the version from data, not from a declaration
+
+`snapshot` and `stats` both report their version by INSPECTING what is on disk
+rather than reading a version field, and that is deliberate. A stats file can
+carry `version: 6` and still lack `scoreBackground`, because the writer stores
+that field only when the measurement succeeded. Trusting the declared number
+would report 6, the runner would filter the migration out as already-applied,
+and the gap would never close. When a field is written conditionally, derive the
+version from the field's presence — `setVersion` then stays a no-op, because the
+data itself is the record.
 
 ## Migration Interface
 
@@ -81,6 +138,7 @@ Migrations MUST NOT depend on concrete infra classes. Use store interfaces:
 | `SnapshotStore`   | Filesystem snapshot read/write    | `SnapshotStoreAdapter`   |
 | `SparseStore`     | Sparse vector rebuild, version    | `SparseStoreAdapter`     |
 | `EnrichmentStore` | Payload backfill operations       | `EnrichmentStoreAdapter` |
+| `StatsStore`      | Stats-cache state + backfill      | `StatsStoreAdapter`      |
 
 New migration needs capability not in existing stores → extend interface+adapter
 first — do NOT inject `QdrantManager` directly.
@@ -171,11 +229,32 @@ Migrations hardcoded in runner constructors — no auto-discovery:
 - Schema: `src/core/domains/maintenance/migration/schema-migrator.ts`
 - Snapshot: `src/core/domains/maintenance/migration/snapshot-migrator.ts`
 - Sparse: `src/core/domains/maintenance/migration/sparse-migrator.ts`
+- Stats: `src/core/domains/maintenance/migration/stats-migrator.ts`
+- Database:
+  `src/core/domains/maintenance/migration/database/migrations/index.ts`
 
 Runner instantiation in `src/core/api/internal/ingest-dependencies.ts` →
 `createIngestDependencies()`. The pipelines live in the maintenance domain, so
 composition happens at the api layer — ingest triggers them through
 `MigratorPort` (`contracts/types/migration.ts`).
+
+**Adding a pipeline is a four-point change**, and missing any one of them turns
+into a runtime failure of every reindex rather than a type error:
+
+1. `PipelineName` in `migration/migrator.ts`
+2. `MigrationPipelineName` in `contracts/types/migration.ts` — the port the
+   ingest domain calls through
+3. registration in `createIngestDependencies()` — `Migrator` throws on a
+   pipeline it does not know
+4. the `migrator.run("<name>")` call in `reindexing.ts` → `runMigrations()`
+
+`tests/core/api/internal/ingest-dependencies-migrations.test.ts` guards 3 and 4
+without needing a collection or a build.
+
+**Where the sweep runs matters.** `runMigrations()` is called from
+`prepareReindexContext()`, ahead of every change-detection early return. That
+placement is what lets a repository with no file changes at all still pick up a
+migration — do not move it below the early returns.
 
 ## Testing
 

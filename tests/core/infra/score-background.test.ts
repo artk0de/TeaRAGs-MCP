@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { computeScoreBackground } from "../../../../../src/core/domains/ingest/infra/score-background.js";
+import { computeScoreBackground } from "../../../src/core/infra/score-background.js";
 
 /**
  * The score background is the collection's own similarity scale: cosine between

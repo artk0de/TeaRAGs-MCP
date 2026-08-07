@@ -90,9 +90,10 @@ For every `pN` referenced by any descriptor's
 N** — either `pN` key in `stats.labels` OR number in
 `stats.percentilesToCompute`.
 
-`validateSignalDependencies` (in `src/core/domains/ingest/collection-stats.ts`)
-walks all descriptors at composition time, throws if any reference unwired. Loud
-failure at startup — never silent fallback in production.
+`validateSignalDependencies` (in
+`src/core/domains/ingest/infra/collection-stats.ts`) walks all descriptors at
+composition time, throws if any reference unwired. Loud failure at startup —
+never silent fallback in production.
 
 `percentilesToCompute` declares percentiles to compute at index time beyond
 signal's own `labels` keys imply. Example:
@@ -112,8 +113,8 @@ signal's own `labels` keys imply. Example:
 ### Lazy recompute (operative — at rerank time)
 
 **Status:** Live. `StatsRecomputeService`
-(`src/core/domains/ingest/stats-recompute.ts`) runs at **rerank time**, not
-stats-load. Lives in `ingest/` because it does ingest work (scroll → compute
+(`src/core/domains/ingest/infra/stats-recompute.ts`) runs at **rerank time**,
+not stats-load. Lives in `ingest/` because it does ingest work (scroll → compute
 percentiles → write stats cache); consumed by `Reranker` via DI
 (`setRecomputeService`) from `explore/` domain. `Reranker.rerank()` async;
 pre-pass calls
@@ -327,5 +328,5 @@ throws if not — caught at first use, not descriptor load (no Zod in
 - Domain layer rule (why no Zod in contracts/):
   `.claude/rules/domain-boundaries.md`
 - Validation entry point: `validateSignalDependencies` in
-  `src/core/domains/ingest/collection-stats.ts` — wired in
+  `src/core/domains/ingest/infra/collection-stats.ts` — wired in
   `src/core/api/internal/composition.ts`

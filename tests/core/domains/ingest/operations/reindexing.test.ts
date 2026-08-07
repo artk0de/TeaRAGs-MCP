@@ -521,6 +521,23 @@ console.log('This file has secrets');`,
 
       runSpy.mockRestore();
     });
+
+    it("should run the stats migration via Migrator.run()", async () => {
+      await createTestFile(codebaseDir, "file1.ts", "export const v1 = 1;\nconsole.log('Initial');");
+      await ingest.indexCodebase(codebaseDir);
+
+      const runSpy = vi.spyOn(Migrator.prototype, "run");
+
+      await createTestFile(codebaseDir, "file2.ts", "export const v2 = 2;\nconsole.log('Added');");
+      await ingest.reindexChanges(codebaseDir);
+
+      // The score background backfills an existing stats file without touching
+      // embeddings — it belongs on the migration sweep, not behind a reindex
+      // prompt the user has no way to know they need.
+      expect(runSpy).toHaveBeenCalledWith("stats");
+
+      runSpy.mockRestore();
+    });
   });
 
   describe("no snapshot error", () => {

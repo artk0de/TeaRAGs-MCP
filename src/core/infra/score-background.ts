@@ -15,7 +15,7 @@
  * `docs/superpowers/specs/2026-08-06-search-confidence-design.md`.
  */
 
-import type { ScoreBackground } from "../../../contracts/types/trajectory.js";
+import type { ScoreBackground } from "../contracts/types/trajectory.js";
 
 /**
  * Below this many pairs the mean and stddev describe the sample rather than the
