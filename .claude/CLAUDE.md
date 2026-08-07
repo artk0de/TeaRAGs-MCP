@@ -222,19 +222,25 @@ reproduces it.
 
 ### Never auto-build / auto-reindex (MANDATORY)
 
-- **Do NOT `npm run build` a worktree automatically** when MORE than one
-  worktree active (`git worktree list` shows >1 under `.claude/worktrees/` —
-  parallel sessions). Wait for explicit "build"/"собери". Build+relink can
-  collide with concurrent session's build/link.
+- **Do NOT `npm run build && npm link` a worktree automatically** when MORE than
+  one worktree active (`git worktree list` shows >1 under `.claude/worktrees/` —
+  parallel sessions). Wait for explicit "build"/"собери". It is the **relink**
+  that collides with a concurrent session, so this gate gates the linked build;
+  a bare local build is unrestricted (see below).
 - **Single active worktree is the exception:** `git worktree list` shows exactly
   one → MAY build automatically to verify — no parallel session to disturb.
-- **A worktree build is ALWAYS paired with `npm link` (MANDATORY).** When build
-  IS authorized (single-worktree auto-build OR explicit "build"/"собери") — run
-  `npm run build && npm link` as **one unit**. Never bare `npm run build` a
-  worktree: bare build leaves global `tea-rags` pointer on stale checkout (or
-  another worktree), so fresh `build/` never loaded by MCP server. Link is
-  yours; parallel session re-links on resume. (Gates only _whether_ to build —
-  doesn't loosen ">1 worktree → ask first"; once you build, you link.)
+- **Pair the build with `npm link` when the MCP server must load it
+  (MANDATORY).** For MCP-side testing the global `tea-rags` pointer has to reach
+  the fresh `build/` — there, run `npm run build && npm link` as **one unit**,
+  or the compiled output is never the one loaded. Link is yours; parallel
+  session re-links on resume.
+- **A bare `npm run build` in a worktree is FINE when the build is only needed
+  locally.** It touches nothing global, so it cannot collide with a parallel
+  session — **the link is the shared resource, not the build.** Standing case: a
+  fresh worktree has no `build/`, and `chunker/infra/pool.ts` forks the
+  _compiled_ worker (`POOL_DIR` rewrites `/src/` → `/build/`), so every
+  worker-forking test — and therefore pre-commit — fails until the worktree is
+  built once. Build it, don't link it. (Tracked as `tea-rags-mcp-hyj9d`.)
 - **Reindex / `index-codebase --force` is ALWAYS user-gated**, regardless of
   worktree count — rewrites shared Qdrant index, depends on ollama embeddings
   (can flap mid-run). NEVER chain reindex off build; stop at green tests, wait
@@ -255,10 +261,10 @@ reproduces it.
 
 - **Linking without building.** Leaves stale `build/` under link. Run
   `npm run build` first.
-- **Building without linking (for a worktree).** Mirror image: bare
-  `npm run build` in worktree, no paired `npm link`, leaves global `tea-rags`
-  pointer on another checkout — new `build/` compiled but never loaded. Worktree
-  build is `npm run build && npm link`, always together.
+- **Building without linking _when the MCP server is what must load it_.** Bare
+  `npm run build` in a worktree leaves the global `tea-rags` pointer on another
+  checkout — new `build/` compiled but never loaded. Scoped to MCP-side testing:
+  a build done only to make local tests runnable is correct _unlinked_.
 - **Building+linking main BEFORE merging.** Main's `build/` doesn't yet have
   worktree changes. Global link points at main's pre-merge state, MCP tests
   regress to un-tested baseline.
