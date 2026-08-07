@@ -7,6 +7,9 @@ import {
 } from "../../../../src/core/domains/trajectory/codegraph/symbols/payload-signals.js";
 import { CODEGRAPH_SYMBOLS_DERIVED_SIGNALS } from "../../../../src/core/domains/trajectory/codegraph/symbols/rerank/derived-signals/index.js";
 import { CODEGRAPH_SYMBOLS_PRESETS } from "../../../../src/core/domains/trajectory/codegraph/symbols/rerank/presets/index.js";
+import { CriticalPathPreset } from "../../../../src/core/domains/trajectory/composite/presets/critical-path.js";
+import { gitPayloadSignalDescriptors } from "../../../../src/core/domains/trajectory/git/payload-signals.js";
+import { gitDerivedSignals } from "../../../../src/core/domains/trajectory/git/rerank/derived-signals/index.js";
 import { staticDerivedSignals } from "../../../../src/core/domains/trajectory/static/rerank/derived-signals/index.js";
 
 /**
@@ -57,6 +60,50 @@ describe("criticalMethod through the Reranker", () => {
   it("attributes the ranking to the preset that produced it", async () => {
     const [top] = await reranker.rerank([method("high", 0.009)], "criticalMethod", "semantic_search");
     expect(top.rankingOverlay?.preset).toBe("criticalMethod");
+  });
+
+  it("surfaces every signal its overlayMask.chunk names", async () => {
+    const [top] = await reranker.rerank([method("high", 0.009, 3, 4)], "criticalMethod", "semantic_search");
+    // criticalMethod's mask names its chunk signals as FULL logical keys
+    // (`codegraph.chunk.pageRank`). A mask entry that resolves to a value in the
+    // payload must reach the overlay — a preset asking for centrality numbers
+    // and getting an empty overlay is indistinguishable from unenriched code.
+    expect(top.rankingOverlay?.chunk).toEqual({ pageRank: 0.009, fanIn: 3, fanOut: 4 });
+  });
+});
+
+describe("a preset whose overlayMask.chunk mixes full logical and level-relative keys", () => {
+  const compositeReranker = new Reranker(
+    [...staticDerivedSignals, ...CODEGRAPH_SYMBOLS_DERIVED_SIGNALS, ...gitDerivedSignals],
+    [new CriticalPathPreset()],
+    [...CODEGRAPH_SYMBOLS_FILE_SIGNALS, ...CODEGRAPH_SYMBOLS_CHUNK_SIGNALS, ...gitPayloadSignalDescriptors],
+  );
+
+  /** A method carrying both codegraph centrality and git chunk history. */
+  const enrichedMethod = {
+    score: 0.7,
+    payload: {
+      relativePath: "src/checkout.ts",
+      language: "typescript",
+      symbolId: "Checkout#submit",
+      codegraph: { symbols: { chunk: { pageRank: 0.009, fanIn: 3, fanOut: 4 } } },
+      git: { chunk: { bugFixRate: 35, commitCount: 12 } },
+    },
+  };
+
+  it("surfaces both key forms in the same chunk overlay", async () => {
+    const [top] = await compositeReranker.rerank([enrichedMethod], "criticalPath", "semantic_search");
+    // `criticalPath` names its codegraph signals absolutely
+    // (`codegraph.chunk.pageRank`) and its git signals relative to the chunk
+    // level (`bugFixRate`). Both forms are legal in the same mask, so both must
+    // resolve — neither may be silently dropped.
+    expect(top.rankingOverlay?.chunk).toEqual({
+      pageRank: 0.009,
+      fanIn: 3,
+      fanOut: 4,
+      bugFixRate: 35,
+      commitCount: 12,
+    });
   });
 });
 

@@ -9,7 +9,7 @@
  * 4. Attaches ranking overlay (raw file/chunk signals for transparency)
  */
 
-import { p95, resolvePayloadValue } from "../../contracts/signal-utils.js";
+import { isLevelQualifiedPayloadKey, p95, resolvePayloadValue } from "../../contracts/signal-utils.js";
 import type { ScoringWeights } from "../../contracts/types/provider.js";
 import type {
   DerivedSignalDescriptor,
@@ -549,7 +549,15 @@ export class Reranker {
       }
       if (mask.chunk && !skipChunk) {
         for (const field of mask.chunk) {
-          this.extractRawSource(result, `chunk.${field}`, rawFile, rawChunk);
+          // A mask entry may be level-RELATIVE (`commitCount`, whose level is
+          // the bucket it sits in) or an ABSOLUTE logical key that already names
+          // its level (`codegraph.chunk.pageRank`). Only the first kind takes
+          // the prefix; prefixing the second builds
+          // `chunk.codegraph.chunk.pageRank`, which matches no signalKeyMap
+          // entry and no payload path, so the signal drops out of the overlay
+          // with no error to notice.
+          const source = isLevelQualifiedPayloadKey(field) ? field : `chunk.${field}`;
+          this.extractRawSource(result, source, rawFile, rawChunk);
         }
       }
     } else {
