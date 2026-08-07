@@ -105,7 +105,14 @@ export interface FallbackSwitchEvent {
 
 export class OllamaEmbeddings implements EmbeddingProvider {
   private readonly model: string;
-  private readonly dimensions: number;
+  /**
+   * Vector width this provider reports. Starts as the static model-registry
+   * guess and is corrected by `resolveModelInfo()` once Ollama has been asked
+   * what the model really is — unless an operator pinned it explicitly.
+   */
+  private dimensions: number;
+  /** True when the width came from configuration, which outranks any probe. */
+  private readonly dimensionsPinned: boolean;
   private readonly limiter: Bottleneck;
   private readonly retryAttempts: number;
   private readonly retryDelayMs: number;
@@ -144,6 +151,7 @@ export class OllamaEmbeddings implements EmbeddingProvider {
     // Enable native batch by default unless legacyApi is true
     this.useNativeBatch = !legacyApi;
 
+    this.dimensionsPinned = dimensions !== undefined && dimensions > 0;
     this.dimensions = dimensions || getModelDimensions(model) || 768;
 
     // Rate limiting configuration (more lenient for local models)
@@ -569,7 +577,13 @@ export class OllamaEmbeddings implements EmbeddingProvider {
       if (!data.model_info) return undefined;
 
       const info = parseModelInfo(this.model, data.model_info);
-      if (info) this.cachedModelInfo = info;
+      if (info) {
+        this.cachedModelInfo = info;
+        // Adopt the width the server reports. The constructor could only guess
+        // it from a static table, and a stale guess propagates into every
+        // zero-vector artifact sized from getDimensions().
+        if (!this.dimensionsPinned) this.dimensions = info.dimensions;
+      }
       return info;
     } catch {
       return undefined;
