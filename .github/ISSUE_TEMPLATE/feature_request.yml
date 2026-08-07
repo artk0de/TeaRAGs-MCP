@@ -1,0 +1,66 @@
+name: Feature request
+description: Propose a capability TeaRAGs does not have yet
+title: "[feature]: "
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Lead with the problem, not the API. The use case decides whether this
+        belongs in TeaRAGs at all, and it usually decides the shape of the
+        solution too.
+
+        Open-ended "how do I…" questions fit better in
+        [Discussions](https://github.com/artk0de/TeaRAGs-MCP/discussions).
+
+  - type: textarea
+    id: use-case
+    attributes:
+      label: Use case
+      description: >-
+        What are you trying to accomplish? Describe the situation you are in
+        when you need this — the repository, the agent workflow, the question
+        you are asking it.
+    validations:
+      required: true
+
+  - type: textarea
+    id: workaround
+    attributes:
+      label: Current workaround
+      description: >-
+        How do you handle this today with what TeaRAGs already ships — a
+        different tool, a custom rerank weight set, a manual step, or nothing at
+        all? Say so if there is no workaround.
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed solution
+      description: >-
+        What should TeaRAGs do? Be concrete where you can — a new MCP tool
+        parameter, a derived signal, a rerank preset, a CLI flag. A rough sketch
+        is fine.
+    validations:
+      required: true
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+      description: >-
+        Other shapes you thought about and why you rejected them. This is the
+        part that saves a design round trip.
+    validations:
+      required: false
+
+  - type: textarea
+    id: context
+    attributes:
+      label: Anything else
+      description: >-
+        Repository scale, languages involved, links to prior discussion, or a
+        sketch of what the output should look like.
+      render: text
