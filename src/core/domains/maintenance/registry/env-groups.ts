@@ -117,6 +117,52 @@ export const REGISTRY_ENV_ALLOWLIST: readonly string[] = [
 ];
 
 /**
+ * Both group lookups derived from the ONE table above, so no consumer has to
+ * restate the alias families. A spelling shared by two groups (CODE_BATCH_SIZE
+ * sits in both the embedding-batch and the qdrant-upsert family, because
+ * parse.ts feeds it into both) belongs to BOTH, and every consumer treats it
+ * as affecting both — conservatively, in whichever direction is safe for it.
+ */
+const GROUPS_BY_SPELLING: ReadonlyMap<string, readonly RegistryEnvGroup[]> = (() => {
+  const byKey = new Map<string, RegistryEnvGroup[]>();
+  for (const group of REGISTRY_ENV_GROUPS) {
+    for (const spelling of [group.canonical, ...group.aliases]) {
+      const groups = byKey.get(spelling) ?? [];
+      groups.push(group);
+      byKey.set(spelling, groups);
+    }
+  }
+  return byKey;
+})();
+
+/**
+ * Every spelling that can shadow `key`: the UNION of all alias families it
+ * belongs to. Replay uses it to decide whether an externally-set spelling
+ * already covers a stored key; the tune → registry write uses it to evict the
+ * siblings of a key it just measured.
+ *
+ * A spelling outside every known group (written by a newer tea-rags) is its own
+ * sole member, so callers degrade to same-key behavior instead of failing.
+ */
+export function registryEnvGroupMembers(key: string): readonly string[] {
+  const groups = GROUPS_BY_SPELLING.get(key);
+  if (!groups) return [key];
+  return [...new Set(groups.flatMap((g) => [g.canonical, ...g.aliases]))];
+}
+
+/**
+ * The CANONICAL key(s) `key` resolves to — the spelling the registry stores
+ * (see `bootstrap/config/env-snapshot.ts`, which emits one canonical key per
+ * group). A canonical key resolves to itself, an alias to its group's
+ * canonical, a two-group alias to both, and an unknown spelling to itself.
+ */
+export function canonicalRegistryEnvKeys(key: string): readonly string[] {
+  const groups = GROUPS_BY_SPELLING.get(key);
+  if (!groups) return [key];
+  return [...new Set(groups.map((g) => g.canonical))];
+}
+
+/**
  * Identity keys persisted in DEDICATED CollectionEntry fields (embeddingModel,
  * embeddingBaseUrl, embeddingFallbackUrl, qdrantUrl, codegraphEnabled) rather
  * than the generic `env` map — richer semantics than a verbatim string

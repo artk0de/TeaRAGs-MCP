@@ -23,27 +23,7 @@
  * into a request-scoped map — never into process.env).
  */
 
-import { REGISTRY_ENV_GROUPS } from "./env-groups.js";
-
-/**
- * Every spelling that can shadow the given key: the UNION of all alias
- * families the key belongs to. A shared alias (CODE_BATCH_SIZE sits in both
- * the embedding-batch and qdrant-upsert families) replayed from a legacy
- * snapshot would affect both groups at once, so an external override in
- * either family conservatively blocks it.
- */
-const GROUP_MEMBERS_BY_KEY: ReadonlyMap<string, readonly string[]> = (() => {
-  const byKey = new Map<string, Set<string>>();
-  for (const group of REGISTRY_ENV_GROUPS) {
-    const members = [group.canonical, ...group.aliases];
-    for (const member of members) {
-      const union = byKey.get(member) ?? new Set<string>();
-      for (const m of members) union.add(m);
-      byKey.set(member, union);
-    }
-  }
-  return new Map([...byKey].map(([key, union]) => [key, [...union]]));
-})();
+import { registryEnvGroupMembers } from "./env-groups.js";
 
 const isSet = (env: NodeJS.ProcessEnv | Record<string, string>, key: string): boolean => {
   const value = env[key];
@@ -57,7 +37,10 @@ export function replayRegistryEnv(
 ): void {
   for (const [key, value] of Object.entries(snapshot ?? {})) {
     if (value === "") continue;
-    const members = GROUP_MEMBERS_BY_KEY.get(key) ?? [key];
+    // A shared alias (CODE_BATCH_SIZE sits in both the embedding-batch and
+    // qdrant-upsert families) replayed from a legacy snapshot would affect both
+    // groups at once, so an external override in either family blocks it.
+    const members = registryEnvGroupMembers(key);
     const shadowed = members.some((member) => isSet(ambient, member) || isSet(target, member));
     if (!shadowed) target[key] = value;
   }

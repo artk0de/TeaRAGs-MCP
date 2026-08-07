@@ -109,14 +109,21 @@ function nextRunNumber(benchmarkDir, projectName) {
 }
 
 /**
- * Write environment file to project root and ~/.tea-rags/benchmarks/.
+ * Write the environment file to the TUNED PROJECT's directory, plus a
+ * run-numbered history copy in ~/.tea-rags/benchmarks/.
+ *
+ * `projectPath` is the single "which project" input — the env file describes
+ * the project that was tuned, and `tea-rags tune --project X` reads it back
+ * from exactly that directory before merging the measured envs into the
+ * registry. It used to be written beside this script instead, so the registry
+ * write found nothing whenever the tuned project was not the tea-rags checkout
+ * (tea-rags-mcp-ifmfi).
  */
-export function writeEnvFile(projectRoot, optimal, metrics, totalTime, { qdrantMode, projectPath } = {}) {
+export function writeEnvFile(optimal, metrics, totalTime, { qdrantMode, projectPath = process.cwd() } = {}) {
   const mode = qdrantMode || detectQdrantMode();
   const envContent = generateEnvContent(optimal, metrics, totalTime, mode);
 
-  // Write to project root (existing behavior)
-  const envPath = join(projectRoot, "tuned_environment_variables.env");
+  const envPath = join(projectPath, "tuned_environment_variables.env");
   writeFileSync(envPath, envContent);
 
   // Write to ~/.tea-rags/benchmarks/<project>-run<N>.env
