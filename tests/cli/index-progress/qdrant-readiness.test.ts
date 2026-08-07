@@ -103,4 +103,20 @@ describe("awaitQdrantReadiness", () => {
     );
     expect(elapsed).toEqual([0, 3_000, 6_000]);
   });
+
+  it("pauses on a real timer when no sleep is injected, then returns the retried value", async () => {
+    // Exercises the built-in setTimeout-backed pause (the production default);
+    // pollMs is squeezed to keep the test fast while still crossing a real tick.
+    let calls = 0;
+    const startedAt = Date.now();
+
+    const result = await awaitQdrantReadiness(
+      async () => (calls++ === 0 ? Promise.reject(new FakeTypedError("INFRA_QDRANT_STARTING")) : Promise.resolve("up")),
+      { pollMs: 5 },
+    );
+
+    expect(result).toBe("up");
+    expect(calls).toBe(2);
+    expect(Date.now() - startedAt).toBeGreaterThanOrEqual(4);
+  });
 });

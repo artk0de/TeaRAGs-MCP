@@ -1,6 +1,14 @@
-import { describe, expect, it, vi } from "vitest";
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 
-import { runAutoUpdateCliCommand, type AutoUpdateCliDeps } from "../../../src/cli/commands/auto-update.js";
+import { afterEach, describe, expect, it, vi } from "vitest";
+
+import {
+  autoUpdateCommand,
+  runAutoUpdateCliCommand,
+  type AutoUpdateCliDeps,
+} from "../../../src/cli/commands/auto-update.js";
 import type { CollectionEntry } from "../../../src/core/api/public/index.js";
 
 const entry: CollectionEntry = {
@@ -133,5 +141,86 @@ describe("runAutoUpdateCliCommand", () => {
     await runAutoUpdateCliCommand("status", { project: "nope" }, d.base);
     expect(d.errOut.join("\n")).toContain("tea-rags projects");
     expect(d.exit).toHaveBeenCalledWith(1);
+  });
+});
+
+// ── yargs registration ────────────────────────────────────────────────────────
+//
+// The command module is what the CLI actually mounts. These cover the wiring
+// itself — the declared argv surface and the handler's default dependency
+// construction — which the deps-injected tests above deliberately bypass.
+
+describe("autoUpdateCommand (yargs registration)", () => {
+  it("mounts under an <action> positional with the four supported verbs", () => {
+    expect(autoUpdateCommand.command).toBe("auto-update <action>");
+    expect(autoUpdateCommand.describe).toMatch(/enable\/disable\/status\/run/);
+
+    const positionals: Record<string, unknown> = {};
+    const options: Record<string, unknown> = {};
+    const y = {
+      positional: (name: string, cfg: unknown) => {
+        positionals[name] = cfg;
+        return y;
+      },
+      option: (name: string, cfg: unknown) => {
+        options[name] = cfg;
+        return y;
+      },
+    };
+
+    (autoUpdateCommand.builder as (y: unknown) => unknown)(y);
+
+    expect((positionals.action as { choices: string[] }).choices).toEqual(["enable", "disable", "status", "run"]);
+    expect(options.project).toMatchObject({ type: "string", demandOption: true });
+    // --branch stays optional: enable autodetects the default branch when omitted.
+    expect(options.branch).toMatchObject({ type: "string" });
+    expect((options.branch as { demandOption?: boolean }).demandOption).toBeUndefined();
+  });
+
+  describe("handler with real default dependencies", () => {
+    const originalDataDir = process.env.TEA_RAGS_DATA_DIR;
+    let dataDir: string | undefined;
+
+    afterEach(() => {
+      if (originalDataDir === undefined) delete process.env.TEA_RAGS_DATA_DIR;
+      else process.env.TEA_RAGS_DATA_DIR = originalDataDir;
+      if (dataDir) rmSync(dataDir, { recursive: true, force: true });
+      dataDir = undefined;
+      vi.restoreAllMocks();
+    });
+
+    it("builds its own deps against TEA_RAGS_DATA_DIR and fails cleanly on an unregistered project", async () => {
+      dataDir = mkdtempSync(join(tmpdir(), "tea-rags-auto-update-cli-"));
+      process.env.TEA_RAGS_DATA_DIR = dataDir;
+
+      const stderr = vi.spyOn(process.stderr, "write").mockReturnValue(true);
+      const exit = vi.spyOn(process, "exit").mockImplementation((() => undefined) as never);
+
+      await (autoUpdateCommand.handler as (argv: unknown) => Promise<void>)({
+        action: "status",
+        project: "definitely-not-registered",
+      });
+
+      expect(exit).toHaveBeenCalledWith(1);
+      expect(stderr.mock.calls.map((c) => String(c[0])).join("")).toContain("tea-rags projects");
+    });
+
+    it("threads an explicit --branch through to the command instead of dropping it", async () => {
+      dataDir = mkdtempSync(join(tmpdir(), "tea-rags-auto-update-cli-"));
+      process.env.TEA_RAGS_DATA_DIR = dataDir;
+
+      vi.spyOn(process.stderr, "write").mockReturnValue(true);
+      const exit = vi.spyOn(process, "exit").mockImplementation((() => undefined) as never);
+
+      await (autoUpdateCommand.handler as (argv: unknown) => Promise<void>)({
+        action: "enable",
+        project: "definitely-not-registered",
+        branch: "trunk",
+      });
+
+      // Unknown project still short-circuits to exit(1); what this pins is that
+      // supplying --branch does not change the resolution path or throw.
+      expect(exit).toHaveBeenCalledWith(1);
+    });
   });
 });

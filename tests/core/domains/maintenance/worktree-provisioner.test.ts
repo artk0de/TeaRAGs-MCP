@@ -401,3 +401,111 @@ describe("WorktreeProvisioner.remove physical resolution", () => {
     expect((buildCalls[0].target as { physicalName: string }).physicalName).toBe("code_dst_v1");
   });
 });
+
+// ── Best-effort teardown paths ────────────────────────────────────────────────
+//
+// Rollback and teardown are deliberately forgiving: a half-written artifact must
+// not be able to strand the operation. These pin that forgiveness so a future
+// refactor cannot turn a swallowed cleanup failure into a thrown one.
+
+describe("WorktreeProvisioner teardown resilience", () => {
+  const worktreeEntry = {
+    collectionName: "code_dst",
+    worktreeOf: "code_src",
+    path: "/repo/wt",
+    name: "proj-worktree-feat",
+    embeddingModel: "j",
+    embeddingDimensions: 768,
+    qdrantUrl: "http://h",
+    codegraphEnabled: false,
+  };
+
+  it("create rollback survives an artifact whose remove also fails, and still surfaces the clone error", async () => {
+    const calls: string[] = [];
+    const { deps } = makeDeps({}, calls);
+    deps.footprintFactory.build = vi.fn(() => ({
+      context: { source: {}, target: { logicalName: "code_dst" } },
+      artifacts: [
+        {
+          id: "qdrant",
+          clone: vi.fn(async () => {
+            calls.push("clone:qdrant");
+          }),
+          // Rollback of this one fails — must be swallowed, not masked over the real cause.
+          remove: vi.fn(async () => {
+            calls.push("remove:qdrant");
+            throw new Error("qdrant delete refused");
+          }),
+        },
+        {
+          id: "codegraph",
+          clone: vi.fn(async () => {
+            calls.push("clone:codegraph");
+            throw new Error("boom codegraph");
+          }),
+          remove: vi.fn(async () => {
+            calls.push("remove:codegraph");
+          }),
+        },
+      ],
+    }));
+
+    const ops = new WorktreeProvisioner(deps);
+
+    await expect(ops.create({ name: "x", createGit: false })).rejects.toThrow("boom codegraph");
+    // Reverse order, and the failing rollback did not stop the earlier artifact from being undone.
+    expect(calls).toEqual(["clone:qdrant", "clone:codegraph", "remove:codegraph", "remove:qdrant"]);
+    expect(deps.registry.record).not.toHaveBeenCalled();
+  });
+
+  it("remove falls back to the logical source name when the source alias cannot be resolved", async () => {
+    const { deps, buildCalls } = makeDeps();
+    deps.registry.findWorktree = vi.fn(() => worktreeEntry);
+    deps.registry.get = vi.fn(() => ({ path: "/repo" }));
+    deps.qdrant.aliases.resolveActive = vi.fn(async () => {
+      throw new Error("alias gone");
+    });
+
+    const ops = new WorktreeProvisioner(deps);
+    const res = await ops.remove({ name: "feat", force: false, keepGit: true });
+
+    expect(res).toEqual({ removed: true });
+    // Source physical name degrades to the logical name rather than aborting teardown.
+    expect((buildCalls[0].source as { physicalName: string }).physicalName).toBe("code_src");
+    expect((buildCalls[0].target as { physicalName: string }).physicalName).toBe("code_dst_v1");
+  });
+
+  it("remove deregisters the clone even when an artifact teardown rejects", async () => {
+    const { deps } = makeDeps();
+    deps.registry.findWorktree = vi.fn(() => worktreeEntry);
+    deps.registry.get = vi.fn(() => ({ path: "/repo" }));
+    const removed: string[] = [];
+    deps.footprintFactory.build = vi.fn(() => ({
+      context: { source: {}, target: { logicalName: "code_dst" } },
+      artifacts: [
+        {
+          id: "qdrant",
+          clone: vi.fn(),
+          remove: vi.fn(async () => {
+            removed.push("qdrant");
+          }),
+        },
+        {
+          id: "stats",
+          clone: vi.fn(),
+          remove: vi.fn(async () => {
+            removed.push("stats");
+            throw new Error("stats file locked");
+          }),
+        },
+      ],
+    }));
+
+    const ops = new WorktreeProvisioner(deps);
+    const res = await ops.remove({ name: "feat", force: false, keepGit: true });
+
+    expect(res).toEqual({ removed: true });
+    expect(removed).toEqual(["stats", "qdrant"]);
+    expect(deps.registry.remove).toHaveBeenCalledWith("code_dst");
+  });
+});
