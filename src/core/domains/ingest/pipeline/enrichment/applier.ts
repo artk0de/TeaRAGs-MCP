@@ -480,6 +480,24 @@ export class EnrichmentApplier {
      *  on chunks that buildChunkSignals found no commits for — so they don't
      *  remain "unenriched" forever and trigger infinite recovery loops. */
     allRequestedChunkIds?: Set<string>,
+    /**
+     * Chunk IDs the policy already settled with a `skippedAs` stamp.
+     *
+     * `enrichedAt` and `skippedAs` are the two terminal states of one decision
+     * and a point must carry exactly one of them — a point carrying both is a
+     * contradiction the health mapper cannot resolve. Every other write path
+     * here takes a policy predicate for that reason; this one did not, so its
+     * bare-stamp loop would happily put `enrichedAt` on an already-declined
+     * point if a caller ever stopped filtering upstream.
+     *
+     * Today both callers do filter (recovery splits `declined` out of its scan,
+     * ChunkPhase runs `filterChunkEnrichMap`), so passing nothing preserves
+     * current behavior exactly. The parameter exists so the invariant is
+     * enforced at the chokepoint every enrichment write flows through, rather
+     * than by an implicit contract that five separate fix commits have already
+     * shown callers do not reliably keep.
+     */
+    declinedChunkIds?: ReadonlySet<string>,
   ): Promise<number> {
     const enrichedChunkIds = new Set<string>();
     let batch: {
@@ -491,6 +509,11 @@ export class EnrichmentApplier {
 
     for (const [, overlayMap] of chunkMetadata) {
       for (const [chunkId, overlay] of overlayMap) {
+        // An overlay CAN arrive for a declined point: a deferred provider reads
+        // a persisted graph, so a run made after the policy tightened is still
+        // handed rows for paths indexed under the old config. Writing it would
+        // land the second terminal marker.
+        if (declinedChunkIds?.has(chunkId)) continue;
         enrichedChunkIds.add(chunkId);
         const payload = enrichedAt
           ? { ...(overlay as Record<string, unknown>), enrichedAt }
@@ -521,6 +544,10 @@ export class EnrichmentApplier {
     if (enrichedAt && allRequestedChunkIds) {
       const missed: string[] = [];
       for (const id of allRequestedChunkIds) {
+        // Declined points are already settled by their `skippedAs` stamp — they
+        // are not "missed", and stamping them here is the double-terminal-state
+        // contradiction described on `declinedChunkIds`.
+        if (declinedChunkIds?.has(id)) continue;
         if (!enrichedChunkIds.has(id)) missed.push(id);
       }
 
