@@ -56,10 +56,11 @@ only on graph-shape phrasing about the loop itself ("circular dependency",
 **Codegraph availability:** sub-patterns need codegraph index. Prime digest
 lists `codegraph.symbols` under `## Enrichment` when active; when that line
 absent, graph tools (`get_callers` / `get_callees` / `find_cycles`) **not
-registered** — absent from tool list, not returning empty. Check prime first.
-Codegraph off → fall back to content-matching table below — TRACE covers usage,
-EXPLAIN covers architecture — never read absent tool as positive fact. Each
-sub-pattern states own fallback.
+registered** — absent from tool list, not returning empty. Check prime first. No
+prime available (subagent context) → presence of `get_callers` in YOUR tool list
+IS the availability signal. Codegraph off → fall back to content-matching table
+below — TRACE covers usage, EXPLAIN covers architecture — never read absent tool
+as positive fact. Each sub-pattern states own fallback.
 
 ## Pattern-search keyword groups (used by EXEMPLAR routing)
 
@@ -92,8 +93,9 @@ over keyword classification. EXPLAIN more specific than generic Collect.
 
 ---
 
-Unified code investigation. Breadth-first discovery → depth-first tracing →
-output shaped by intent (human explanation OR pre-generation context).
+Unified code investigation. Orientation (broad scope only) → breadth-first
+discovery → depth-first tracing → output shaped by intent (human explanation OR
+pre-generation context).
 
 Use tea-rags tools for code discovery. Built-in Search/Grep/Glob prohibited.
 Search results complete — no ripgrep verification passes.
@@ -140,23 +142,59 @@ straight to find_similar with code as input. Then EXPLAIN similarities.
 ## Explore Flow (human understanding)
 
 ```
-BREADTH (search) → pick interesting results →
+[broad scope? → ORIENT (entry points)] → BREADTH (search) →
+  pick interesting results →
   LATERAL (find_similar) — same pattern elsewhere?
   DEPTH (find_symbol) — trace specific symbol?
 → explain to developer
 ```
 
-### 1. BREADTH
+### 1. ORIENT (broad scope ONLY)
 
-Search with query=$ARGUMENTS. Tool selection: behavior/intent → semantic_search,
-known symbol → hybrid_search, bare symbol name → hybrid_search.
+**Gate by request target.** Target = system / domain / directory ("introduce me
+to the project", "full picture of X", "walk me through domain Y") → ORIENT
+first. Target = named symbol / narrow question ("what does Reranker#rerank do",
+"where is X used") → SKIP, go straight to BREADTH.
+
+Architecture/structure phrasing ("how is X organized", "architecture of X")
+never reaches here — codegraph intent row 4 catches it first;
+architecture-pattern.md Step 0 runs the SAME orientation, so nothing is lost.
+
+Entry points give the flow skeleton every broad exploration needs — see them
+BEFORE breadth search, so BREADTH results land on a map, not in a void.
+
+- **Codegraph on** (prime `## Enrichment` lists `codegraph.symbols`):
+  `semantic_search rerank="entryPoint" pathPattern=<scope> limit=5` —
+  graph-confirmed composition roots (fanOutPerLine↑, fanIn↓). Overlay shows
+  `fanIn` / `fanOut` / `imports`.
+- **Codegraph off**:
+  `semantic_search rerank="onboarding" pathPattern=<scope> limit=5` — stable +
+  documented + mature files as starting ground. FLAG results content-inferred,
+  NOT graph-confirmed entry points.
+- Small / flat scope (no clear driver) → say ranking degraded, don't present a
+  utility as "the entry point" (same honesty rule as entry-point-pattern.md).
+
+ORIENT output = orientation for BREADTH, not the answer. Explicit "entry point"
+INTENT ("where does X start") stays with the codegraph intent table row 3 →
+entry-point-pattern.md, not here.
+
+### 2. BREADTH
+
+Search with query=$ARGUMENTS. Tool selection: behavior/intent → semantic_search;
+known symbol + need DEFINITION → find_symbol (instant, no embedding); known /
+bare symbol name + need USAGES → hybrid_search.
+
+**Broad scope → split axes** per `rules/references/axis-splitting.md` (sources
+FIRST via `testFile: "exclude", documentation: "exclude"`; tests axis for
+expected behavior; docs axis for intent — docs = hypothesis, behavioral claims
+verified by code). Point questions: no split, axis implied.
 
 Filter presets (`filter:{presets}`) are available but explore does NOT set them
 by default — understanding and navigation require breadth; no specific filter.
 
 Scan results: files, modules, patterns. Note domain boundaries.
 
-### 2. PICK + EXPLORE
+### 3. PICK + EXPLORE
 
 For each interesting result:
 
@@ -168,7 +206,7 @@ For each interesting result:
 
 Repeat as needed. Fewer deep dives > many shallow ones.
 
-### 3. EXPLAIN / TRACE / PRE-GEN
+### 4. EXPLAIN / TRACE / PRE-GEN
 
 Format answer per strategy reference selected in Step 0:
 

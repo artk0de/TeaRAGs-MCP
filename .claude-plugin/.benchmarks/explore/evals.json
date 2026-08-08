@@ -24,6 +24,15 @@
       "with_rule": "8/8 PASS (100%)",
       "without_rule": "2/8 PASS (25%)",
       "delta": "+75pp"
+    },
+    {
+      "id": 4,
+      "description": "ORIENT phase + axis splitting + docs-hypothesis (feature eval, cases 17-26)",
+      "date": "2026-08-08",
+      "with_rule": "8/10 PASS (80%) pre-fix; 10/10 (100%) after 6 fixes (re-run: 2 failed + 2 controls)",
+      "without_rule": "7/10 PASS (70%)",
+      "delta": "+30pp",
+      "notes": "Baseline unusually strong: preset names (onboarding, entryPoint) + typed filters self-describe. Skill value = deterministic ORIENT gate, codegraph-off degradation without unavailable presets, subagent availability signal. Pre-fix failures exposed Defect A: ORIENT unreachable for its own 'how is X organized' examples (intercepted by codegraph row 4); fixed by absorbing ORIENT into architecture-pattern Step 0."
     }
   ],
   "evals": [
@@ -330,6 +339,224 @@
           "text": "Correctly identifies this as exact-text pattern case",
           "type": "classification"
         }
+      ]
+    },
+    {
+      "id": 17,
+      "prompt": "How is the domain src/core/domains/ingest organized? Walk me through it.",
+      "expected_output": "Codegraph row 4 → architecture-pattern: Step 0 ORIENT rerank=entryPoint (sources-axis filters) BEFORE Step 1 rerank=architecturalHub, then find_symbol depth.",
+      "failure_mode": "orientation-skipped-on-broad-target",
+      "audit_finding": "D1-orient-gate",
+      "results": {
+        "iteration_4_prefix": "FAIL (Defect A: row 4 intercepted, ORIENT unreachable)",
+        "iteration_4_postfix": "PASS",
+        "baseline": "FAIL (onboarding rerank, no entryPoint orientation)"
+      },
+      "assertions": [
+        {
+          "text": "Runs semantic_search rerank=entryPoint over scope BEFORE hub/breadth ranking",
+          "type": "tool_selection"
+        },
+        {
+          "text": "Applies testFile:exclude + documentation:exclude on broad orientation calls",
+          "type": "parameters"
+        },
+        {
+          "text": "Does NOT start with unfiltered breadth search",
+          "type": "negative"
+        }
+      ]
+    },
+    {
+      "id": 18,
+      "prompt": "What does Reranker#rerank do?",
+      "expected_output": "NO ORIENT. find_symbol(symbol=Reranker#rerank) directly; empty → partial-match fallback, never ripgrep.",
+      "failure_mode": "orient-overhead-on-point-question",
+      "audit_finding": "D1-gate-skip-control",
+      "results": {
+        "iteration_4_prefix": "PASS",
+        "iteration_4_postfix": "PASS (control re-run)",
+        "baseline": "PASS"
+      },
+      "assertions": [
+        {
+          "text": "Uses find_symbol as first and primary call",
+          "type": "tool_selection"
+        },
+        {
+          "text": "Does NOT run ORIENT / entryPoint preset",
+          "type": "negative"
+        }
+      ]
+    },
+    {
+      "id": 19,
+      "prompt": "[codegraph OFF — prime has no codegraph.symbols line] Introduce me to this project — how is it structured?",
+      "expected_output": "ORIENT degradation: rerank=onboarding + explicit content-inferred flag; NO graph tools, NO codegraph-gated presets.",
+      "failure_mode": "graph-preset-without-codegraph",
+      "audit_finding": "D1-degradation",
+      "results": {
+        "iteration_4_prefix": "PASS",
+        "baseline": "FAIL (called architecturalHub which requires codegraph.symbols)"
+      },
+      "assertions": [
+        {
+          "text": "Uses rerank=onboarding for orientation",
+          "type": "tool_selection"
+        },
+        {
+          "text": "Flags results content-inferred, not graph-confirmed",
+          "type": "honesty"
+        },
+        {
+          "text": "Does NOT call entryPoint/architecturalHub or graph tools",
+          "type": "negative"
+        }
+      ]
+    },
+    {
+      "id": 20,
+      "prompt": "Where does the indexing flow start?",
+      "expected_output": "Codegraph intent row 3 → entry-point-pattern: rerank=entryPoint as the ANSWER, chunkSize post-filter, tail get_callees.",
+      "failure_mode": "explicit-entry-intent-misrouted",
+      "audit_finding": "control-row3-intact",
+      "results": {
+        "iteration_4_prefix": "PASS",
+        "baseline": "PASS (preset name self-describes)"
+      },
+      "assertions": [
+        {
+          "text": "Routes via intent table row 3 to entry-point-pattern",
+          "type": "routing"
+        },
+        {
+          "text": "Applies small-utility mitigation (chunkSize/minFanOut) and states it",
+          "type": "parameters"
+        }
+      ]
+    },
+    {
+      "id": 21,
+      "prompt": "Give me a full picture of the explore domain: what it does, how it's tested, and what the design intent was.",
+      "expected_output": "Three separate axis calls, sources FIRST (testFile:exclude+documentation:exclude), then tests (testFile:only), then docs (documentation:only).",
+      "failure_mode": "mixed-axis-single-query",
+      "audit_finding": "D3-axis-split",
+      "results": {
+        "iteration_4_prefix": "PASS",
+        "baseline": "PASS (Opus split axes unprompted)"
+      },
+      "assertions": [
+        {
+          "text": "Issues separate per-axis calls with correct filters",
+          "type": "tool_selection"
+        },
+        { "text": "Sources axis queried first", "type": "ordering" },
+        {
+          "text": "Does NOT merge axes into one unfiltered query",
+          "type": "negative"
+        }
+      ]
+    },
+    {
+      "id": 22,
+      "prompt": "Is SymbolSearchStrategy tested?",
+      "expected_output": "Point question: hybrid_search/find_symbol with testFile:only. NO three-axis ceremony, NO built-in Glob test-dir discovery.",
+      "failure_mode": "axis-ceremony-on-point-question / prohibited-glob",
+      "audit_finding": "D3-no-split-control + Defect-C",
+      "results": {
+        "iteration_4_prefix": "PASS (agent deliberately refused explain-pattern's Glob step, flagging the contradiction)",
+        "baseline": "PASS"
+      },
+      "assertions": [
+        {
+          "text": "Single tests-scoped lookup via testFile:only",
+          "type": "tool_selection"
+        },
+        {
+          "text": "Does NOT use built-in Glob for test-dir discovery",
+          "type": "negative"
+        }
+      ]
+    },
+    {
+      "id": 23,
+      "prompt": "Explain how embedding batching works. [A website/docs chunk claims batches are capped at 512 items]",
+      "expected_output": "Claim verified against code (docs-excluded search + find_symbol) BEFORE entering answer; conflict → code wins + explicit drift flag.",
+      "failure_mode": "doc-claim-taken-as-fact",
+      "audit_finding": "D2-docs-hypothesis",
+      "results": {
+        "iteration_4_prefix": "PASS",
+        "baseline": "PASS (Opus verifies doc claims unprompted)"
+      },
+      "assertions": [
+        {
+          "text": "Verifies 512 against source before stating it",
+          "type": "verification"
+        },
+        {
+          "text": "On conflict states code value and names the drifted doc",
+          "type": "honesty"
+        },
+        {
+          "text": "Does NOT repeat doc number on doc authority alone",
+          "type": "negative"
+        }
+      ]
+    },
+    {
+      "id": 24,
+      "prompt": "What does the README say about installation?",
+      "expected_output": "Docs are the SUBJECT: find_symbol(relativePath=README.md) TOC → doc:<hash> section. No code verification pass.",
+      "failure_mode": "spurious-verification-on-doc-subject",
+      "audit_finding": "D2-docs-subject-control",
+      "results": {
+        "iteration_4_prefix": "PASS",
+        "iteration_4_postfix": "PASS (control re-run)",
+        "baseline": "PASS"
+      },
+      "assertions": [
+        {
+          "text": "Uses doc TOC navigation, reports content as-is",
+          "type": "tool_selection"
+        },
+        {
+          "text": "Does NOT add code cross-check for doc-subject question",
+          "type": "negative"
+        }
+      ]
+    },
+    {
+      "id": 25,
+      "prompt": "[subagent: explore context, no prime digest] How is the ingest pipeline organized end to end?",
+      "expected_output": "Codegraph availability from OWN tool list (get_callers present = ON) → architecture-pattern Step 0 ORIENT → hubs → get_callees walk.",
+      "failure_mode": "skill-unusable-without-session-context",
+      "audit_finding": "D1-subagent-routing",
+      "results": {
+        "iteration_4_prefix": "FAIL (Defect A + no subagent availability signal)",
+        "iteration_4_postfix": "PASS",
+        "baseline": "FAIL (no entryPoint orientation)"
+      },
+      "assertions": [
+        {
+          "text": "Determines codegraph availability from own tool list, not prime",
+          "type": "classification"
+        },
+        { "text": "Runs ORIENT before backbone/breadth", "type": "ordering" }
+      ]
+    },
+    {
+      "id": 26,
+      "prompt": "[subagent: plan-executor] What does ChunkerPool do? Need its definition before Task 3 edits.",
+      "expected_output": "find_symbol(symbol=ChunkerPool) — full class outline. NO ORIENT, NO axis split, NO Read after find_symbol.",
+      "failure_mode": "orientation-overhead-in-plan-step",
+      "audit_finding": "D1-subagent-point-control",
+      "results": { "iteration_4_prefix": "PASS", "baseline": "PASS" },
+      "assertions": [
+        {
+          "text": "Single find_symbol lookup as primary call",
+          "type": "tool_selection"
+        },
+        { "text": "Does NOT run ORIENT or axis splitting", "type": "negative" }
       ]
     }
   ]
