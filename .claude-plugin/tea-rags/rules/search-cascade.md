@@ -20,6 +20,15 @@ non-native on CharacterChunker) a chunk may split a symbol mid-body — there
 fine for docs). `Read` always allowed to MODIFY — never _needed_ to gather code
 for a full-AST language.
 
+**Code is evidence, docs are hypothesis.** Doc chunks (`.md`, `isDocumentation`)
+carry intent + navigation (why / what-for) — NOT behavior truth. Behavioral
+claim from doc chunk entering final answer → verify against code FIRST
+(`find_symbol` / `hybrid_search`). Conflict → code wins; flag drift explicitly
+("docs say X, code does Y"). Questions ABOUT docs themselves (README content,
+doc TOC) — doc is the subject, no verification needed. Tests = executable spec
+(what system SHOULD do); src↔test conflict → report both facts. Axis roles +
+broad-search splitting: `references/axis-splitting.md`.
+
 **MANDATORY:** ALWAYS prefer tea-rags and ripgrep MCP over built-in Search/Grep.
 
 ## Tool Invocation Under Deferred Loading
@@ -318,6 +327,10 @@ non-search tasks.
   start-of-session SNAPSHOT. Confirm a suspected embedding/index outage with a
   LIVE get_index_status before downgrading; find_symbol + hybrid_search BM25
   work with embedding down anyway
+- **Doc-sourced behavior claim without code verification** — docs = hypothesis;
+  verify via find_symbol/hybrid_search, flag drift (see Principles)
+- **Mixed-axis broad exploration** — one unfiltered query over src+tests+docs
+  lets dominant class take all slots; split per `references/axis-splitting.md`
 - **hybrid_search for TODO/FIXME/HACK markers** — use ripgrep MCP
 - **git log/diff for code history** — overlay already has git signals
 - **10+ ripgrep calls instead of reading a file** — just read it
@@ -358,6 +371,8 @@ For detailed guidance on specific topics, read these when needed:
   examples
 - `references/polyglot-rule.md` — mandatory per-language splitting for polyglot
   codebases
+- `references/axis-splitting.md` — sources/tests/docs axis roles + per-axis
+  splitting for broad exploration
 - `references/pagination.md` — pagination, reformulation, stop conditions,
   no-match detection, disambiguation
 - `references/signal-interpretation.md` — pair diagnostics for overlay signals

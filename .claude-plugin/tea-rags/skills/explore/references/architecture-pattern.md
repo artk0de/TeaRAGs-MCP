@@ -5,11 +5,26 @@
 rerank preset over codegraph fan-graph signals, so the answer reflects real
 dependency centrality, not prose that happens to say "architecture".
 
+## Step 0 — ORIENT (entry points first)
+
+Broad target (system / domain / directory) → see the flow's ENTRY POINTS before
+ranking hubs — hubs say what everything routes THROUGH, entries say where flow
+STARTS; an architecture answer needs both:
+`semantic_search rerank="entryPoint" pathPattern=<scope> limit=5 testFile:"exclude" documentation:"exclude"`.
+This IS the Explore Flow ORIENT step, absorbed here — architecture phrasing
+routes to this pattern before the flow, orientation must not be lost. Same
+small-utility bias as entry-point-pattern.md — post-filter tiny `chunkSize` /
+pass `minFanOut`, state the filter applied.
+
+## Step 1 — backbone (hubs)
+
 - **"Architecture of X?" / "structure of Y" / "what's central" / "backbone" /
   "show me how X is organized"** →
-  `semantic_search rerank="architecturalHub" pathPattern=<scope>`. Overlay shows
-  `isHub`, `fanIn`, `fanOutPerLine`. The ranked hub list IS the backbone — the
-  files everything else routes through.
+  `semantic_search rerank="architecturalHub" pathPattern=<scope> testFile:"exclude" documentation:"exclude"`
+  (broad target = sources axis by construction — see
+  `rules/references/axis-splitting.md`). Overlay shows `isHub`, `fanIn`,
+  `fanOutPerLine`. The ranked hub list IS the backbone — the files everything
+  else routes through.
 
 ## Honest fallback (no hubs in scope)
 
