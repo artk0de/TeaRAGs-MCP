@@ -74,7 +74,7 @@ metaOnly:    true
 blast radius). Line absent → `fanIn` gone, fall back to
 `{ custom: { imports: 0.5, churn: 0.3, ownership: 0.2 } }` (import-proxy,
 approximate). **impact analysis** idiom from `tea-rags:data-driven-generation`
-Step 6, documented in `tea-rags-analytics.md`. Do NOT substitute the tool.
+IMPACT step, documented in `tea-rags-analytics.md`. Do NOT substitute the tool.
 
 Do NOT substitute:
 
@@ -92,7 +92,7 @@ Do NOT pass:
 - `metaOnly: false` — content not needed for impact analysis; bloats payload
 - Wrong rerank for codegraph state — `"blastRadius"` when codegraph on,
   `{imports 0.5, churn 0.3, ownership 0.2}` fallback when off. Both match
-  `tea-rags:data-driven-generation` Step 6; don't invent other weights
+  `tea-rags:data-driven-generation` IMPACT step; don't invent other weights
 - `filter` on `git.ageDays` / `git.commitCount` — weights already encode these;
   extra filters hide signal
 
