@@ -63,6 +63,44 @@ export class RegistryConcurrencyError extends InfraError {
   }
 }
 
+/** The registry facts an unresolvable-backend report quotes back to the operator. */
+export interface RegistryQdrantBackendClaim {
+  name: string | null;
+  collectionName: string;
+  qdrantUrl: string;
+  teaRagsVersion?: string;
+}
+
+/**
+ * Thrown when a registry entry's two records of its Qdrant backend contradict
+ * each other and the release that wrote them is one whose pair cannot be
+ * trusted (pre-1.34.0 stored `qdrantUrl` and `qdrantEmbedded` from independent
+ * reads). Seeding either fact would silently point the run at the wrong
+ * backend — most visibly at a frozen ephemeral port the embedded daemon
+ * abandoned months ago, which surfaced as a bare "Qdrant is not reachable at
+ * http://127.0.0.1:<dead>" with nothing in it the operator could act on.
+ *
+ * Re-registering rewrites the entry through the current write path, where both
+ * fields come from one `isEmbedded` read and therefore always agree.
+ */
+export class RegistryQdrantBackendUnresolvedError extends InfraError {
+  constructor(entry: RegistryQdrantBackendClaim) {
+    const project = entry.name ?? entry.collectionName;
+    const writer = entry.teaRagsVersion ?? "an unknown version";
+    super({
+      code: "INFRA_REGISTRY_QDRANT_BACKEND_UNRESOLVED",
+      message:
+        `Project '${project}' has a registry entry written by tea-rags ${writer} that is flagged embedded ` +
+        `yet stores ${entry.qdrantUrl}, which is not an embedded-daemon address — the backend cannot be resolved`,
+      hint:
+        `Releases before 1.34.0 wrote qdrantUrl and qdrantEmbedded independently, so neither can be believed here. ` +
+        `Re-register the project to rewrite the entry through the current path: ` +
+        `tea-rags index-codebase --path <dir> --name ${project}`,
+      httpStatus: 409,
+    });
+  }
+}
+
 /**
  * Thrown by CollectionRegistry.setName when the requested name is already
  * bound to a different collection. Infra-level defensive check — api callers

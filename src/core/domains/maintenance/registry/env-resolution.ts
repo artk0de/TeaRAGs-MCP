@@ -18,6 +18,7 @@ import { EMBEDDED_MARKER } from "../../../adapters/qdrant/embedded/daemon.js";
 import { resolveGitCommonDir } from "../../../adapters/vcs/git/common-dir.js";
 import type { CollectionEntry } from "../../../contracts/types/registry.js";
 import { replayRegistryEnv } from "./env-replay.js";
+import { resolveRegistryQdrantBackend } from "./qdrant-backend-resolution.js";
 
 /** Structural subset of CollectionRegistry used here — keeps tests fake-friendly. */
 export interface RegistryLookup {
@@ -63,30 +64,6 @@ function entriesSharingRepo(entries: CollectionEntry[], path: string): Collectio
   return entries.filter((e) => resolveGitCommonDir(e.path) === identity);
 }
 
-/** External Qdrant's conventional port; the embedded daemon never binds it. */
-const EXTERNAL_QDRANT_DEFAULT_PORT = "6333";
-
-/**
- * Backward-compat shim for registry entries written BEFORE the `qdrantEmbedded`
- * flag existed (the field is absent → `undefined`). The embedded daemon always
- * binds `127.0.0.1` on an OS-assigned free port — never 6333, the external
- * default — so a flagless entry whose `qdrantUrl` matches that exact shape was
- * the embedded daemon. Its frozen port is stale after a daemon restart, so the
- * worker must re-resolve via the marker rather than pin the dead port. Scoped to
- * the daemon's exact host so a user's external `localhost` / `127.0.0.1:6333`
- * Qdrant is never misread as embedded. Consulted ONLY when `qdrantEmbedded` is
- * absent — an explicit flag (true or false) always wins over this heuristic.
- */
-function isLegacyEmbeddedLoopback(qdrantUrl: string): boolean {
-  let parsed: URL;
-  try {
-    parsed = new URL(qdrantUrl);
-  } catch {
-    return false;
-  }
-  return parsed.hostname === "127.0.0.1" && parsed.port !== "" && parsed.port !== EXTERNAL_QDRANT_DEFAULT_PORT;
-}
-
 /**
  * Map a registry entry's stored config to worker env-var overrides.
  *
@@ -94,18 +71,21 @@ function isLegacyEmbeddedLoopback(qdrantUrl: string): boolean {
  * otherwise leave QDRANT_URL unset, so the worker probes localhost:6333 and then
  * spawns / attaches the embedded daemon — racing its RocksDB lock (SIGSEGV).
  *
- * For an EMBEDDED entry (`qdrantEmbedded`), seed the embedded marker rather than
- * the stored port: the daemon rebinds an ephemeral port on restart, so the
+ * Which backend the entry addresses is `resolveRegistryQdrantBackend`'s call —
+ * it weighs the stored flag against the URL's shape according to how much the
+ * writing release can be trusted. An EMBEDDED verdict seeds the marker rather
+ * than the stored port: the daemon rebinds an ephemeral port on restart, so the
  * frozen `qdrantUrl` can be stale, and pinning it would force external mode —
  * losing the embedded reconnect path. The marker keeps the worker in embedded
  * mode (`resolveQdrantUrl` → `ensureDaemon`), re-resolving the daemon fresh.
- * Legacy entries written before the flag existed (field absent) are caught by
- * the daemon's URL shape via `isLegacyEmbeddedLoopback` — same marker path.
  *
- * For an EXTERNAL entry, seed the stored `qdrantUrl` so the worker connects
- * directly (external mode) to the same backend the operator last indexed
- * against. Empty-string values (recovered registry stubs) are skipped so they
- * don't poison the env.
+ * An EXTERNAL verdict seeds the stored `qdrantUrl` so the worker connects
+ * directly to the same backend the operator last indexed against. Empty-string
+ * values (recovered registry stubs) resolve as `unaddressed` and seed nothing,
+ * so they don't poison the env.
+ *
+ * @throws RegistryQdrantBackendUnresolvedError when the entry's own records of
+ *   its backend contradict each other beyond rescue.
  */
 export function resolveRegistryEnv(
   entry: CollectionEntry | null,
@@ -123,15 +103,9 @@ export function resolveRegistryEnv(
   if (entry.embeddingModel) replaySet.EMBEDDING_MODEL = entry.embeddingModel;
   if (entry.embeddingBaseUrl) replaySet.EMBEDDING_BASE_URL = entry.embeddingBaseUrl;
   if (entry.embeddingFallbackUrl) replaySet.EMBEDDING_FALLBACK_URL = entry.embeddingFallbackUrl;
-  if (
-    entry.qdrantEmbedded === true ||
-    (entry.qdrantEmbedded === undefined && isLegacyEmbeddedLoopback(entry.qdrantUrl)) ||
-    entry.qdrantUrl === EMBEDDED_MARKER
-  ) {
-    replaySet.QDRANT_URL = EMBEDDED_MARKER;
-  } else if (entry.qdrantUrl) {
-    replaySet.QDRANT_URL = entry.qdrantUrl;
-  }
+  const backend = resolveRegistryQdrantBackend(entry);
+  if (backend.kind === "embedded") replaySet.QDRANT_URL = EMBEDDED_MARKER;
+  else if (backend.kind === "external") replaySet.QDRANT_URL = backend.url;
   if (entry.codegraphEnabled) replaySet.CODEGRAPH_ENABLED = "true";
 
   const env: Record<string, string> = {};
