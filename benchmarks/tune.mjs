@@ -15,9 +15,6 @@
  * Run: npm run tune
  * Output: tuned_environment_variables.env
  */
-import { dirname, join } from "path";
-import { fileURLToPath } from "url";
-
 import { QdrantManager } from "../build/core/adapters/qdrant/client.js";
 import {
   benchmarkBatchFormationTimeout,
@@ -57,9 +54,6 @@ import { checkProviderConnectivity, createEmbeddingProvider } from "./lib/provid
 import { smartSteppingSearch } from "./lib/smart-stepping.mjs";
 import { StoppingDecision } from "./lib/stopping.mjs";
 
-const __dirname = dirname(fileURLToPath(import.meta.url));
-const PROJECT_ROOT = join(__dirname, "..");
-
 // Global cleanup handler
 let qdrantClient = null;
 
@@ -77,7 +71,9 @@ async function checkConnectivity() {
   const qdrantCheck = await (async () => {
     const deadline = Date.now() + 90_000;
     let notified = false;
-    let lastErr = `Cannot connect to Qdrant at ${config.QDRANT_URL}`;
+    // Assigned on every path that reaches the deadline check below, so an
+    // initializer here would be dead (no-useless-assignment).
+    let lastErr;
     for (;;) {
       try {
         const response = await fetch(`${config.QDRANT_URL}/collections`, {
@@ -733,7 +729,7 @@ async function main() {
     storageRate,
     deletionRate: bestDel?.rate || 0,
   };
-  const { envPath, historyPath } = writeEnvFile(PROJECT_ROOT, optimal, metrics, totalTime, {
+  const { envPath, historyPath } = writeEnvFile(optimal, metrics, totalTime, {
     qdrantMode,
     projectPath: PROJECT_PATH,
   });

@@ -129,3 +129,44 @@ eval cases testing search injection enforcement and skill-conflict priority.
    delegate, don't search before or after
 5. **Injection overrides skills** — subagent search injection takes priority
    over any skill-specific or prompt-specific search instructions
+
+## Iteration 4 — ORIENT + axis-splitting + docs-hypothesis (2026-08-08)
+
+Feature eval (not standalone optimization): new ORIENT phase (entry-point
+orientation for broad targets, codegraph-gated with onboarding degradation),
+axis-splitting rule (sources/tests/docs), "code is evidence, docs are
+hypothesis" principle. Cases 17-26 in evals.json.
+
+**Results:**
+
+| Run                  | Score | Notes                                              |
+| -------------------- | ----- | -------------------------------------------------- |
+| Baseline (no skill)  | 7/10  | strong: preset names + typed filters self-describe |
+| With-rule (pre-fix)  | 8/10  | failed 17, 25 — Defect A                           |
+| With-rule (post-fix) | 10/10 | re-run: 2 failed + 2 controls, all PASS            |
+| Delta                | +30pp |                                                    |
+
+**Defect A (confirmed by eval, fixed):** ORIENT gate cited "how is X organized"
+/ "architecture of X" as its own trigger examples, but codegraph intent row 4
+intercepts those phrases BEFORE the Explore Flow — ORIENT was dead code for 2 of
+its 3 examples. Fix: architecture-pattern.md absorbed ORIENT as Step 0 (entry
+points BEFORE hubs); SKILL gate examples replaced with non-intercepted
+phrasing + explicit cross-reference.
+
+**Other eval-confirmed fixes:** (B) BREADTH known-symbol line contradicted
+cascade — now find_symbol for DEFINITION, hybrid_search for USAGES; (C)
+explain-pattern "Is X tested?" prescribed prohibited built-in Glob — replaced
+with testFile:"only"; (D) subagent codegraph availability signal added
+(get_callers in own tool list); (E) codegraph sub-patterns now carry
+sources-axis filters; (F) entry-point-pattern unscoped-search failure path.
+
+**Baseline observations:** Opus without the skill already splits axes when a
+question names them (case 21) and treats doc claims as hypotheses (case 23) —
+the skill's marginal value there is determinism, not capability. Baseline hard
+failures: no entry-point orientation on broad targets (17, 25) and calling a
+codegraph-gated preset with codegraph off (19).
+
+**Follow-up candidates (pre-existing, out of feature scope):** addressing param
+(`project:`) not mentioned in SKILL for subagent contexts; scope extraction
+names no allowed tool; "pick deepest" scope rule inverts on end-to-end phrasing;
+docs-as-subject route lives only in cascade, not in the SKILL intent table.

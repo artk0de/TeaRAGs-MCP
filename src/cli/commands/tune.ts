@@ -23,6 +23,7 @@ interface TuneArgs {
   full?: boolean;
   "qdrant-url"?: string;
   "embedding-url"?: string;
+  "embedding-fallback-url"?: string;
   model?: string;
   provider?: string;
   device?: string;
@@ -33,6 +34,7 @@ function buildEnv(argv: TuneArgs): NodeJS.ProcessEnv {
   const env = { ...process.env };
   if (argv["qdrant-url"]) env.QDRANT_URL = argv["qdrant-url"];
   if (argv["embedding-url"]) env.EMBEDDING_BASE_URL = argv["embedding-url"];
+  if (argv["embedding-fallback-url"]) env.EMBEDDING_FALLBACK_URL = argv["embedding-fallback-url"];
   if (argv.model) env.EMBEDDING_MODEL = argv.model;
   if (argv.provider) env.EMBEDDING_PROVIDER = argv.provider;
   if (argv.device) env.EMBEDDING_DEVICE = argv.device;
@@ -80,7 +82,7 @@ export const tuneCommand: CommandModule<object, TuneArgs> = {
       })
       .option("project", {
         type: "string",
-        describe: "Resolve --path / --qdrant-url / --model from registry by project name",
+        describe: "Resolve --path / --qdrant-url / --embedding-url / --model from registry by project name",
       })
       .option("path", {
         type: "string",
@@ -94,6 +96,10 @@ export const tuneCommand: CommandModule<object, TuneArgs> = {
       .option("embedding-url", {
         type: "string",
         describe: "Embedding provider URL (default: http://localhost:11434)",
+      })
+      .option("embedding-fallback-url", {
+        type: "string",
+        describe: "Embedding fallback URL used when the primary endpoint is unreachable",
       })
       .option("model", {
         type: "string",

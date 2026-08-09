@@ -5,9 +5,15 @@ fan-out — code that drives others but isn't driven) via the `entryPoint` reran
 preset over codegraph fan-graph signals, not content matching.
 
 - **"Where does X start?" / "entry point" / "main flow" / "where does X begin"**
-  → `semantic_search rerank="entryPoint" pathPattern=<scope>`. Overlay shows
-  `fanIn`, `fanOutPerLine`, `chunkSize`. Top results are the drivers of the
-  scope's flow.
+  →
+  `semantic_search rerank="entryPoint" pathPattern=<scope> testFile:"exclude" documentation:"exclude"`
+  (broad target = sources axis by construction — see
+  `rules/references/axis-splitting.md`). Overlay shows `fanIn`, `fanOutPerLine`,
+  `chunkSize`. Top results are the drivers of the scope's flow.
+- Scope extraction found NO directory match for X → run UNSCOPED (no
+  pathPattern), honestly — never hardcode an alias. Unscoped + small-utility
+  bias below = worst-case input; apply the chunkSize/minFanOut post-filter
+  aggressively and say so.
 
 ## Pitfall — small-utility bias
 

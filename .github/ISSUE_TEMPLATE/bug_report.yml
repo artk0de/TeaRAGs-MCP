@@ -1,0 +1,128 @@
+name: Bug report
+description: Something in TeaRAGs behaves incorrectly — wrong results, a crash, a broken index
+title: "[bug]: "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time to file this.
+
+        Two things before you start:
+
+        - **Search the existing issues first** — indexing and embedding failures
+          repeat across setups more often than you would expect.
+        - **Security problems do not go here.** Report them privately, see
+          [SECURITY.md](https://github.com/artk0de/TeaRAGs-MCP/blob/main/SECURITY.md).
+
+  - type: input
+    id: version
+    attributes:
+      label: TeaRAGs version
+      description: Output of `tea-rags --version`.
+      placeholder: "1.38.1"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: client
+    attributes:
+      label: MCP client
+      description: Where the tools were called from. Pick "CLI only" if you never went through an MCP client.
+      options:
+        - Claude Code
+        - Cursor
+        - Continue
+        - Zed
+        - CLI only (tea-rags command, no MCP client)
+        - Other (name it in the reproduction steps)
+    validations:
+      required: true
+
+  - type: input
+    id: embedding
+    attributes:
+      label: Embedding provider and model
+      description: "Provider is one of `onnx`, `ollama`, `openai`, `cohere`, `voyage`. Include the model id — vector width matters."
+      placeholder: "ollama / nomic-embed-text"
+    validations:
+      required: true
+
+  - type: input
+    id: qdrant
+    attributes:
+      label: Qdrant mode and version
+      description: External or embedded, plus the version. `tea-rags doctor --json` reports both.
+      placeholder: "embedded 1.18.2 — or external 1.18.2 at http://localhost:6333"
+    validations:
+      required: true
+
+  - type: input
+    id: platform
+    attributes:
+      label: OS and Node version
+      description: Output of `node --version`, plus the operating system.
+      placeholder: "macOS 15.5 (arm64) / Node 22.14.0"
+    validations:
+      required: true
+
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Reproduction steps
+      description: >-
+        Numbered steps someone else can follow. A minimal repository or a single
+        file that triggers the behavior is worth more than a description of one.
+      placeholder: |
+        1. tea-rags index-codebase --project myrepo --force
+        2. Ask the agent "how does auth work"
+        3. ...
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+    validations:
+      required: true
+
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behavior
+      description: Include the error code, message, and hint verbatim if there is one.
+    validations:
+      required: true
+
+  - type: textarea
+    id: index-status
+    attributes:
+      label: get_index_status output
+      description: >-
+        Run the `get_index_status` MCP tool for the affected project, or
+        `tea-rags doctor <path> --json` from the CLI, and paste the output.
+        Skip this only if the bug happens before any index exists.
+      render: text
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs
+      description: >-
+        Relevant output from a `DEBUG=1` run. Redact API keys and anything else
+        you would not put in a public issue — and do not paste proprietary
+        source code.
+      render: text
+
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Before submitting
+      options:
+        - label: I searched the existing issues and this is not a duplicate
+          required: true
+        - label: I reproduced this on the latest published release
+          required: true
+        - label: This is not a security vulnerability (those go through SECURITY.md)
+          required: true

@@ -16,7 +16,7 @@ import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import { mergeTunedEnvIntoRegistry, parseTunedEnvFile } from "../../../src/cli/commands/tune-registry-write.js";
-import { CollectionRegistry } from "../../../src/core/api/public/index.js";
+import { CollectionRegistry, replayRegistryEnv } from "../../../src/core/api/public/index.js";
 
 const ENV_FILE = `# Tea Rags MCP - Tuned Environment Variables
 # Generated: 2026-07-05T00:00:00.000Z
@@ -38,11 +38,13 @@ NOT_A_TEA_RAGS_KEY=1
 
 describe("parseTunedEnvFile", () => {
   it("parses KEY=VALUE lines, skipping comments, blanks and non-registry keys", () => {
+    // Keys come back in the registry's canonical vocabulary — see the
+    // normalization suite at the bottom of this file.
     expect(parseTunedEnvFile(ENV_FILE)).toEqual({
-      EMBEDDING_BATCH_SIZE: "512",
-      EMBEDDING_CONCURRENCY: "4",
-      QDRANT_UPSERT_BATCH_SIZE: "256",
-      QDRANT_BATCH_ORDERING: "weak",
+      EMBEDDING_TUNE_BATCH_SIZE: "512",
+      INGEST_PIPELINE_CONCURRENCY: "4",
+      QDRANT_TUNE_UPSERT_BATCH_SIZE: "256",
+      QDRANT_TUNE_UPSERT_ORDERING: "weak",
       INGEST_TUNE_CHUNKER_POOL_SIZE: "3",
     });
   });
@@ -83,9 +85,9 @@ describe("mergeTunedEnvIntoRegistry", () => {
     const entry = registry.findByName("proj");
     expect(entry!.env).toMatchObject({
       GIT_ADAPTER: "es-git", // untouched — tune did not measure it
-      EMBEDDING_CONCURRENCY: "4", // measured value wins over the old snapshot
-      EMBEDDING_BATCH_SIZE: "512",
-      QDRANT_UPSERT_BATCH_SIZE: "256",
+      INGEST_PIPELINE_CONCURRENCY: "4", // measured value wins over the old snapshot
+      EMBEDDING_TUNE_BATCH_SIZE: "512",
+      QDRANT_TUNE_UPSERT_BATCH_SIZE: "256",
       INGEST_TUNE_CHUNKER_POOL_SIZE: "3",
     });
   });
@@ -113,11 +115,75 @@ describe("mergeTunedEnvIntoRegistry", () => {
     registry.setName("code_y", "legacy");
     mergeTunedEnvIntoRegistry(registry, "legacy", ENV_FILE);
     const entry = registry.findByName("legacy");
-    expect(entry!.env).toMatchObject({ GIT_ADAPTER: "git", EMBEDDING_BATCH_SIZE: "512" });
+    expect(entry!.env).toMatchObject({ GIT_ADAPTER: "git", EMBEDDING_TUNE_BATCH_SIZE: "512" });
   });
 
   it("is a no-op returning 0 for an unknown project or an empty env file", () => {
     expect(mergeTunedEnvIntoRegistry(registry, "ghost", ENV_FILE)).toBe(0);
     expect(mergeTunedEnvIntoRegistry(registry, "proj", "# nothing\n")).toBe(0);
+  });
+});
+
+describe("alias → canonical normalization (tea-rags-mcp-ifmfi)", () => {
+  // The benchmark writes DEPRECATED spellings (EMBEDDING_CONCURRENCY,
+  // QDRANT_UPSERT_BATCH_SIZE); the registry's storage contract is the CANONICAL
+  // key (see buildRegistryEnvSnapshot). Storing a measured value under an alias
+  // while its canonical sibling still holds a stale value makes replay a
+  // coin-flip on key order, and envWithFallback then prefers whichever spelling
+  // won. The canonical key is the single source of truth, so the write
+  // normalizes to it and evicts the group's other spellings.
+  let dir: string;
+  let registry: CollectionRegistry;
+
+  beforeEach(() => {
+    dir = mkdtempSync(join(tmpdir(), "tea-rags-tune-canonical-"));
+    registry = new CollectionRegistry(dir);
+    registry.record({
+      collectionName: "code_c",
+      path: "/repo",
+      embeddingModel: "jina",
+      embeddingDimensions: 768,
+      qdrantUrl: "embedded",
+      // A snapshot carrying BOTH spellings of the pipeline-concurrency family:
+      // the canonical one written by a real indexing run, the alias left behind
+      // by an earlier (unnormalized) tune write.
+      env: { INGEST_PIPELINE_CONCURRENCY: "8", EMBEDDING_CONCURRENCY: "1", GIT_ADAPTER: "es-git" },
+      indexedAt: "2026-08-01T00:00:00.000Z",
+      teaRagsVersion: "1.38.1",
+      chunksCount: 10,
+    });
+    registry.setName("code_c", "canon");
+  });
+
+  afterEach(() => {
+    rmSync(dir, { recursive: true, force: true });
+  });
+
+  it("parses alias spellings into their canonical registry keys", () => {
+    expect(parseTunedEnvFile(ENV_FILE)).toEqual({
+      EMBEDDING_TUNE_BATCH_SIZE: "512",
+      INGEST_PIPELINE_CONCURRENCY: "4",
+      QDRANT_TUNE_UPSERT_BATCH_SIZE: "256",
+      QDRANT_TUNE_UPSERT_ORDERING: "weak",
+      INGEST_TUNE_CHUNKER_POOL_SIZE: "3",
+    });
+  });
+
+  it("stores the measured value under the canonical key and evicts the group's aliases", () => {
+    mergeTunedEnvIntoRegistry(registry, "canon", ENV_FILE);
+    const { env } = registry.findByName("canon")!;
+    expect(env!.INGEST_PIPELINE_CONCURRENCY).toBe("4");
+    expect(env).not.toHaveProperty("EMBEDDING_CONCURRENCY");
+    expect(env!.GIT_ADAPTER).toBe("es-git");
+  });
+
+  it("the measured value survives replay instead of losing to a stale alias", () => {
+    mergeTunedEnvIntoRegistry(registry, "canon", ENV_FILE);
+    const replayed: Record<string, string> = {};
+    replayRegistryEnv(registry.findByName("canon")!.env, replayed, {});
+    // envWithFallback reads INGEST_PIPELINE_CONCURRENCY first, so the tuned
+    // value is what the next indexing run actually uses.
+    expect(replayed.INGEST_PIPELINE_CONCURRENCY).toBe("4");
+    expect(replayed.EMBEDDING_CONCURRENCY).toBeUndefined();
   });
 });

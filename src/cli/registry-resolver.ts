@@ -1,13 +1,14 @@
 import { homedir } from "node:os";
 import { join } from "node:path";
 
-import { ProjectNotRegisteredError, ProjectPathMissingError } from "../core/api/public/index.js";
-import { CollectionRegistry } from "../core/api/public/index.js";
+import { CollectionRegistry, ProjectNotRegisteredError, ProjectPathMissingError } from "../core/api/public/index.js";
 
 export interface ProjectAwareArgs {
   project?: string;
   path?: string;
   "qdrant-url"?: string;
+  "embedding-url"?: string;
+  "embedding-fallback-url"?: string;
   model?: string;
 }
 
@@ -16,10 +17,16 @@ function resolveDataDir(): string {
 }
 
 /**
- * Resolve --path / --qdrant-url / --model defaults from the project registry
- * when the caller passed --project. The function throws typed
- * InputValidationError subclasses (not process.exit) so callers can catch
- * and present the failure in their own UX (CLI, JSON, MCP).
+ * Resolve --path / --qdrant-url / --embedding-url / --embedding-fallback-url /
+ * --model defaults from the project registry when the caller passed --project.
+ * The function throws typed InputValidationError subclasses (not process.exit)
+ * so callers can catch and present the failure in their own UX (CLI, JSON, MCP).
+ *
+ * The embedding endpoints are resolved from their DEDICATED CollectionEntry
+ * fields, the same source `resolveRegistryEnv` composes into its replay set —
+ * they are identity keys and never appear in `entry.env`. A consumer that
+ * replays only `entry.env` (`tune`) would otherwise fall through to the
+ * localhost:11434 default and calibrate against the wrong backend.
  *
  * Empty-string values stored in the registry (recovered stubs from
  * `tea-rags doctor --recover-registry`) are coerced to undefined before
@@ -52,6 +59,8 @@ export function applyProjectDefaults<A extends ProjectAwareArgs>(argv: A): A {
     ...argv,
     path: argv.path ?? entry.path,
     "qdrant-url": argv["qdrant-url"] ?? (entry.qdrantUrl || undefined),
+    "embedding-url": argv["embedding-url"] ?? (entry.embeddingBaseUrl || undefined),
+    "embedding-fallback-url": argv["embedding-fallback-url"] ?? (entry.embeddingFallbackUrl || undefined),
     model: argv.model ?? (entry.embeddingModel || undefined),
   };
 }

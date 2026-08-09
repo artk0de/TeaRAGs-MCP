@@ -8,7 +8,7 @@ import { CohereClient } from "cohere-ai";
 import type { EmbeddingProvider, EmbeddingResult, RateLimitConfig } from "./base.js";
 import { CohereApiError, CohereRateLimitError } from "./cohere/errors.js";
 import { withRateLimitRetry } from "./retry.js";
-import { getModelDimensions } from "./utils/model-dimensions.js";
+import { resolveStartingDimensions } from "./utils/model-dimensions.js";
 
 interface CohereError {
   status?: number;
@@ -45,7 +45,7 @@ export class CohereEmbeddings implements EmbeddingProvider {
     this.model = model;
     this.inputType = inputType;
 
-    this.dimensions = dimensions || getModelDimensions(model) || 1024;
+    this.dimensions = resolveStartingDimensions(model, dimensions, 1024);
 
     // Rate limiting configuration
     const maxRequestsPerMinute = rateLimitConfig?.maxRequestsPerMinute || 100;

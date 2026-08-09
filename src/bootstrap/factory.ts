@@ -65,6 +65,7 @@ import {
   reportTurboMigration,
   type TurboMigrationListener,
 } from "./config/turbo-reconcile.js";
+import { resolveEmbeddingModelParameters } from "./embedding-parameters.js";
 import { ProjectIngestFactory } from "./project-ingest-factory.js";
 
 /**
@@ -188,6 +189,11 @@ async function resolveInfrastructure(
   if ("initialize" in embeddings && typeof embeddings.initialize === "function") {
     await (embeddings as { initialize: () => Promise<void> }).initialize();
   }
+
+  // Ask the model what it actually is before anything consumes getDimensions().
+  // The constructor could only read a static table; the model's own config is
+  // the authority, and the guard built below is the first thing to depend on it.
+  await resolveEmbeddingModelParameters(embeddings, zodConfig.embedding.dimensions);
 
   // If user didn't explicitly set batch size, use GPU-calibrated recommendation
   if (

@@ -109,7 +109,7 @@ Do NOT pass:
 
 - `metaOnly: false` — verdict inputs are signals, not content
 - Different weights — must match `dinopowers:writing-plans` / `executing-plans`
-  / `tea-rags:data-driven-generation` Step 6 for cross-skill comparability
+  / `tea-rags:data-driven-generation` IMPACT step for cross-skill comparability
 - `filter` narrowing — `pathPattern` already scopes
 
 Results empty (files brand-new committed this session, or not in git yet): skip

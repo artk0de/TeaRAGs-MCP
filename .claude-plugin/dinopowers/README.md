@@ -39,7 +39,7 @@ bypass the enrichment layer.
 **One project idiom for impact analysis.** Every wrapper that measures blast
 radius uses the same custom rerank weights:
 `{imports: 0.5, churn: 0.3, ownership: 0.2}`. Established in
-`tea-rags:data-driven-generation` Step 6. Deviation breaks cross-wrapper
+`tea-rags:data-driven-generation` IMPACT step. Deviation breaks cross-wrapper
 comparability.
 
 **Composition where the domain skill exists.** `dinopowers:systematic-debugging`

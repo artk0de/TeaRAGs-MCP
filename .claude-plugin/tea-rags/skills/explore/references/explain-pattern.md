@@ -29,11 +29,21 @@ EXPLAIN step by what was asked.
   (commit-based, useful for finding who's mentally loaded in for fast review).
   Different from ownership: a long-time owner who stopped contributing still
   shows in `blame*` but not in `recent*`.
-- **"Is X tested?" / "Show tests for X"** → find_symbol for X with pathPattern
-  targeting test directories. Discover test dir first: Glob for
-  `**/{test,tests,spec,specs,__tests__}` to find project's test convention, then
-  use that as pathPattern. `metaOnly=true` for existence check, `metaOnly=false`
-  for test content. Fallback: hybrid_search for X name + pathPattern if
-  find_symbol returns 0 results (test files may not use exact symbolId).
+- **"Is X tested?" / "Show tests for X"** → hybrid_search for X name with
+  `testFile: "only"` — typed filter, convention-agnostic, no test-dir discovery
+  needed (built-in Glob prohibited for code discovery — search-cascade).
+  `metaOnly=true` for existence check, `metaOnly=false` for test content. Zero
+  hits → find_symbol X `metaOnly=true` to split "exists but untested" from
+  "wrong name" before concluding.
+
+## Evidence discipline (broad EXPLAIN)
+
+- Explanation built from SOURCES axis first (behavior truth). Tests = executable
+  spec — cite for "should do". Docs = intent/hypothesis — cite for "why", NEVER
+  as sole evidence of behavior.
+- Behavioral claim taken from a doc chunk → verify via find_symbol /
+  hybrid_search BEFORE it enters the answer. Conflict → code wins, flag drift
+  ("docs say X, code does Y"). Full rule: `rules/references/axis-splitting.md` +
+  search-cascade Principles.
 
 Code citations: `file:line`. Quote 3-5 relevant lines, don't dump functions.
