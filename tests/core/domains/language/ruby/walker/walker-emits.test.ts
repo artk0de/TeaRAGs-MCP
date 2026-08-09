@@ -260,3 +260,45 @@ describe("emitDslEdges — per-emits edge shape via extractFromRubyFile", () => 
     expect(calls.filter((c) => c.receiver === null && c.member === "name")).toHaveLength(0);
   });
 });
+
+/**
+ * Every `emits` arm is TERMINAL — it contributes its own shape and nothing else.
+ *
+ * `emitDslEdges` is a `switch`, so an arm that omits its `return` is correct only
+ * while it happens to sit last; appending a case turns it into a fall-through that
+ * silently doubles the macro's edges. Pinning the exact edge SET (not a
+ * `toContainEqual` subset like the shape block above) is what makes that
+ * regression visible: a fall-through shows up as an extra pair, and the arms most
+ * at risk are the ones at the bottom of the switch.
+ */
+describe("emitDslEdges — arms are terminal (exact edge set per macro)", () => {
+  /** `{receiver, member}` pairs a source produces, sorted for order-independence. */
+  function edgePairs(src: string, chunks: Parameters<typeof callsOf>[1]): string[] {
+    return callsOf(src, chunks)
+      .map((c) => `${c.receiver ?? "∅"}→${c.member}`)
+      .sort();
+  }
+
+  it("model-constant-ref: `has_many :posts` emits the model edge and the literal call, nothing more", () => {
+    const src = "class User\n  has_many :posts\nend\n";
+    const chunks = [{ symbolId: "User", scope: ["User"], startLine: 1, endLine: 3 }];
+    // Post→Post is the synthetic model reference; ∅→has_many is the macro call
+    // itself. A third pair means the arm leaked into a neighbouring shape.
+    expect(edgePairs(src, chunks)).toEqual(["Post→Post", "∅→has_many"]);
+  });
+
+  it("ability-subject-ref: `can :read, Post` emits the subject edge and the literal call, nothing more", () => {
+    const src = "class Ability\n  def initialize(user)\n    can :read, Post\n  end\nend\n";
+    const chunks = [{ symbolId: "Ability#initialize", scope: ["Ability", "initialize"], startLine: 2, endLine: 4 }];
+    expect(edgePairs(src, chunks)).toEqual(["Post→Post", "∅→can"]);
+  });
+
+  it("ability-dispatch: `load_and_authorize_resource` emits the Ability edge and nothing more", () => {
+    // The argument-less filter is not itself collected as a literal call, so the
+    // synthetic Ability edge is the WHOLE output — the tightest terminality check
+    // of the three.
+    const src = "class PostsController\n  load_and_authorize_resource\nend\n";
+    const chunks = [{ symbolId: "PostsController", scope: ["PostsController"], startLine: 1, endLine: 3 }];
+    expect(edgePairs(src, chunks)).toEqual(["Ability→initialize"]);
+  });
+});

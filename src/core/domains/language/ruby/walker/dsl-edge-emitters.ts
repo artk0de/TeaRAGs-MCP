@@ -97,6 +97,12 @@ function callbackNameFromArg(arg: AstNode): string | null {
  *   - `"model-constant-ref"` iff the keyword is in RUBY_ASSOCIATION_MACROS
  * so routing dispatch through `emits` fires for the exact same name set as the
  * four predicates did.
+ *
+ * EVERY arm returns. A shape contributes its own edges and never a neighbour's,
+ * so the arms can be reordered or appended to freely — an omitted `return` would
+ * make the last arm's correctness depend on it staying last, which is a trap for
+ * whoever adds the tenth shape. Pinned by the exact-edge-set cases in
+ * walker-emits.test.ts.
  */
 export function emitDslEdges(node: AstNode, emits: RubyDslEmits, startLine: number, out: CallRef[]): void {
   switch (emits) {

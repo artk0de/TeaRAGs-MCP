@@ -24,12 +24,7 @@
  *    `cg_ambiguous_fanout` aggregate, so recall is not falsely penalised.
  */
 
-import {
-  resolveLocalBinding,
-  type AmbiguousResolveMode,
-  type CallContext,
-  type CallRef,
-} from "../../../../../contracts/types/codegraph.js";
+import type { AmbiguousResolveMode, CallContext, CallRef } from "../../../../../contracts/types/codegraph.js";
 import { isExternalQualifiedMember } from "../../dsl/index.js";
 import { SUPER_RECEIVER_SENTINEL } from "../../walker/walker.js";
 import { typeOfReceiver } from "../type-propagation.js";
@@ -50,6 +45,25 @@ const CONSTANT_RE = /^[A-Z][A-Za-z0-9_]*(?:::[A-Z][A-Za-z0-9_]*)*$/;
  * fires is the same one that fired before the extraction. Reordering them would
  * be a silent behaviour change measurable only as `resolveSuccessRate` /
  * `inProjectEdgeRecall` drift on a real corpus; do not.
+ *
+ * INDEX-ACCESS (`opts[k]`, `arr[i]`) is an unconditional suppress, and both of
+ * its cases arrive at that for their own reason (bd tea-rags-mcp-mktkk increment
+ * A; Task 1.6 typed-container lift):
+ *
+ *   - UNTYPED base — the element type is untrackable, so a fan-out is ~10%-
+ *     precision noise. This gate is the only thing stopping it: delete the gate
+ *     and `opts[k].fetch` sprays an edge at every in-project `#fetch`.
+ *   - TYPED container base (`posts : Array<Post>`) — the element type IS known,
+ *     so `chainType` resolves the method precisely and a discounted spray beside
+ *     an exact answer is noise of a different kind.
+ *
+ * The gate used to probe `resolveLocalBinding` to tell the two apart and then
+ * return `true` either way. Removed: it decided nothing, and the deferral it was
+ * written to express is already implemented downstream — with this gate stubbed
+ * out, `exactChainTypesReceiver` catches the typed-container case on its own
+ * (`typeOfReceiver("posts[0]")` threads the element type), while the untyped
+ * case falls through to a live fan-out. Both halves pinned in
+ * ruby-dynamic-dispatch.test.ts.
  */
 export function rubyDynamicFanoutSuppressed(call: CallRef, ctx: CallContext, mode: AmbiguousResolveMode): boolean {
   const r = call.receiver;
@@ -58,7 +72,7 @@ export function rubyDynamicFanoutSuppressed(call: CallRef, ctx: CallContext, mod
     exactChainOwnsReceiverShape(r, ctx) ||
     exactPassAnswersReceiver(call, ctx, mode) ||
     receiverLooksLikeArRelationChain(r) || // AR::Relation chain
-    indexAccessReceiverIsSuppressed(r, ctx, call.startLine) ||
+    receiverIsIndexAccess(r) || // `opts[k]`, `arr[i]` — element type untrackable
     receiverChainIsExternal(r, ctx) ||
     exactChainTypesReceiver(r, call, ctx, mode) ||
     externalQualifiedMemberOnUntypedReceiver(call)
@@ -110,37 +124,6 @@ function exactChainOwnsReceiverShape(receiver: string, ctx: CallContext): boolea
 function exactPassAnswersReceiver(call: CallRef, ctx: CallContext, mode: AmbiguousResolveMode): boolean {
   if (resolveBoundCallTarget(call, ctx, mode) !== null) return true;
   return resolveIvarFieldTarget(call, ctx, mode) !== null;
-}
-
-/**
- * Index-access receiver (`opts[k]`, `arr[i]`): suppress dynamic fan-out by
- * default (element type is untrackable → ~10%-precision noise). EXCEPTION:
- * when the base var has a typed container binding, the element type IS known
- * and `chainType` will resolve the method precisely — suppress here to defer
- * to it rather than fanning out speculative dynamic edges. Untyped index-access
- * keeps the existing suppress behaviour (bd tea-rags-mcp-mktkk increment A;
- * Task 1.6 typed-container lift).
- *
- * Both arms suppress, so the typed-container probe changes no outcome today. It
- * is kept because it is the seam the lift is written against: a future caller
- * that wants the two apart needs the distinction stated, and deleting it would
- * take the reasoning with it.
- */
-function indexAccessReceiverIsSuppressed(receiver: string, ctx: CallContext, atLine: number): boolean {
-  if (!receiverIsIndexAccess(receiver)) return false;
-  // Attempt to extract the base var: `arr[…]` → `arr`.
-  const rtrim = receiver.trimEnd();
-  const bracketIdx = rtrim.indexOf("[");
-  const baseVar = bracketIdx > 0 ? rtrim.slice(0, bracketIdx) : "";
-  if (baseVar && /^[a-z_]\w*$/.test(baseVar)) {
-    const baseBinding = resolveLocalBinding(ctx.localBindings, baseVar, atLine);
-    if (baseBinding?.typeRef?.form === "container") {
-      // Typed container — chainType owns the resolution; defer to it.
-      return true;
-    }
-  }
-  // Untyped index-access — suppress as before.
-  return true;
 }
 
 /**

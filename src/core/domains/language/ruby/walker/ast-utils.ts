@@ -50,6 +50,28 @@ export function forEachClassScope(
 }
 
 /**
+ * The block (`{ … }` / `do … end`) attached to a statement, either as a direct
+ * child or inside its argument list — the two positions the grammar puts one in.
+ *
+ * A Ruby block keeps the `self` of the code that wrote it, so a block attached to
+ * a class-body call is still that class's body: `included do … end`,
+ * `concerning :X do … end` and `Helper.class_eval do … end` all carry defs and
+ * mixins that belong to a class rather than opening a new lexical scope. WHICH
+ * class is the caller's question — a receiver-ful call like `Helper.class_eval`
+ * re-points `self` — so this returns the block and leaves attribution alone.
+ *
+ * Shared by the signature pass (`collectRubyMethodSignatures`) and the heritage
+ * pass (`class-hierarchy.ts`); they used to disagree about whether these blocks
+ * existed, which is how `include Mod` inside `included do` went uncollected.
+ */
+export function attachedBlockOf(node: AstNode): AstNode | undefined {
+  const direct = node.children.find((c) => c.type === "block" || c.type === "do_block");
+  if (direct) return direct;
+  const args = node.childForFieldName("arguments") ?? node.children.find((c) => c.type === "argument_list");
+  return args?.namedChildren.find((c) => c.type === "block" || c.type === "do_block");
+}
+
+/**
  * Read a `scope_resolution` node into its fully-qualified constant string.
  * `scope_resolution` has fields `scope` (left) and `name` (right); recurse on
  * `scope` when it is another `scope_resolution`, otherwise take its constant

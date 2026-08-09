@@ -242,6 +242,34 @@ describe("RubyDynamicDispatchResolver (wbj3 — dynamic receivers)", () => {
     expect(edges).toEqual([]);
   });
 
+  it("suppresses fan-out for a TYPED-container index-access receiver too (Task 1.6 lift)", () => {
+    // The sibling of the case above: `posts` IS bound to `Array<Post>`, so the
+    // element type is known and `chainType` resolves the method precisely — a
+    // discounted spray beside an exact answer is noise. Same outcome as the
+    // untyped form, different reason, which is why the gate needs no branch to
+    // tell them apart. Belt and braces: the index-access gate fires first, and
+    // with it stubbed out `exactChainTypesReceiver` still suppresses this one
+    // (only the untyped case above depends on the index gate existing).
+    const symbolTable = tableWith(
+      ["app/a.rb", [sym("A#fetch", "fetch", "app/a.rb", ["A"])]],
+      ["app/b.rb", [sym("B#fetch", "fetch", "app/b.rb", ["B"])]],
+    );
+    const edges = edgesOf(
+      resolver.resolveDispatch(
+        { callText: "posts[0].fetch", receiver: "posts[0]", member: "fetch", startLine: 2 },
+        ctx({
+          symbolTable,
+          localBindings: {
+            posts: [
+              { line: 1, type: "Post", typeRef: { form: "container", element: { form: "instance", name: "Post" } } },
+            ],
+          },
+        }),
+      ),
+    );
+    expect(edges).toEqual([]);
+  });
+
   it("still fans out a bare-identifier untyped receiver (increment B, NOT suppressed here)", () => {
     // Same two-`fetch`-defs table; a bare-identifier receiver `obj` is the
     // generic untyped fan-out the index guard must NOT touch.

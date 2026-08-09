@@ -8,16 +8,74 @@
  *     list with precise `super` / `include` / `extend` / `prepend` kinds, which
  *     the hierarchy graph consumes.
  *   - {@link collectRubyClassAncestors} — the flat per-kind Records the resolver
- *     reads (ancestors, prepended, extends, compact-declared FQs, and the
+ *     reads (ancestors, prepended, superclasses, compact-declared FQs, and the
  *     `self.table_name` schema override).
  *
  * Both share the mixin-statement reader below, so a heritage form recognised by
  * one is recognised by the other.
+ *
+ * TWO THINGS SPELLED "EXTEND", and this file produces both — keep them apart:
+ *
+ *   - `class Foo < Bar` is SUPERCLASS inheritance. It fills the `superclasses`
+ *     Record here and travels as `kind: "super"` on the edges; the walker
+ *     publishes it as `FileExtraction.classExtends`, the cross-language field
+ *     where "extends" means the JS/TS/Java single-inheritance parent.
+ *   - `extend Mod` is Ruby's class-method MIXIN. It is one of the three mixin
+ *     keywords, travels as `kind: "extend"`, and is folded into the flat
+ *     `ancestors` list. It never touches `superclasses`.
+ *
+ * Naming them both "extends" is what invites reading a mixin as a superclass,
+ * which then feeds every `super` resolution downstream.
  */
 
 import type { AstNode } from "../../../../contracts/types/ast.js";
 import type { InheritanceEdgeDecl } from "../../../../contracts/types/codegraph.js";
-import { lexicalScopeFqName, readScopeResolution } from "./ast-utils.js";
+import { attachedBlockOf, lexicalScopeFqName, readScopeResolution } from "./ast-utils.js";
+
+/**
+ * Flatten a class/module body into every statement that DECLARES FOR IT — the
+ * direct statements, plus the ones nested where `self` still resolves to this
+ * declaration. Both collectors below read the same flattened list, so a heritage
+ * form one of them recognises is a form the other recognises too.
+ *
+ * Two kinds of nesting are pulled up, in source order, so ordinals and the flat
+ * ancestor list stay in declaration order:
+ *
+ *   - `class << self` (singleton_class) — a mixin inside it contributes to the
+ *     enclosing class's ancestor chain (bd tea-rags-mcp-08tss).
+ *   - a block attached to a SELF-SCOPED class-body call — `included do … end`,
+ *     `concerning :X do … end`, `class_eval do … end` on implicit self. A Ruby
+ *     block keeps the `self` of the code that wrote it, so `include Mod` inside
+ *     `included do … end` really does mix into the enclosing module, and that
+ *     block is the ActiveSupport::Concern idiom (bd tea-rags-mcp-uetqq).
+ *
+ * A receiver-ful call is NOT descended: `Helper.class_eval do include Bar end`
+ * re-points `self` at Helper, so the mixin is Helper's, not ours. An explicit
+ * `self` receiver still counts as ours, matching the class-body-form guard in
+ * `collectRubyAssociationTypes`.
+ */
+function classBodyStatements(stmts: readonly AstNode[]): AstNode[] {
+  const out: AstNode[] = [];
+  const visit = (list: readonly AstNode[]): void => {
+    for (const stmt of list) {
+      out.push(stmt);
+      if (stmt.type === "singleton_class") {
+        const singBody = stmt.childForFieldName("body");
+        visit(singBody ? singBody.children : stmt.children);
+        continue;
+      }
+      if (stmt.type !== "call" && stmt.type !== "method_call") continue;
+      const receiver = stmt.childForFieldName("receiver");
+      if (receiver && receiver.type !== "self") continue; // block belongs to another object
+      const block = attachedBlockOf(stmt);
+      if (!block) continue;
+      const blockBody = block.childForFieldName("body");
+      visit(blockBody ? blockBody.children : block.children);
+    }
+  };
+  visit(stmts);
+  return out;
+}
 
 /**
  * Collect class-hierarchy edges with precise kinds (bd tea-rags-mcp-lz8t):
@@ -64,30 +122,9 @@ export function collectRubyInheritanceEdges(root: AstNode): InheritanceEdgeDecl[
       const body = node.childForFieldName("body");
       const stmtSource = body ? body.children : node.children;
       const ordinals: Record<"include" | "extend" | "prepend", number> = { include: 0, extend: 0, prepend: 0 };
-      for (const stmt of stmtSource) {
+      for (const stmt of classBodyStatements(stmtSource)) {
         const mixin = mixinTargetFromStatement(stmt);
-        if (mixin) {
-          edges.push({ source: fq, ancestor: mixin.name, kind: mixin.kind, ordinal: ordinals[mixin.kind]++ });
-          continue;
-        }
-        // `class << self` (singleton_class) — descend its body and attribute
-        // any include/extend/prepend inside it to the enclosing class/module.
-        // Pattern: `module M; class << self; include Configurable; end; end`
-        // emits an ancestor edge `M → Configurable` (bd tea-rags-mcp-08tss).
-        if (stmt.type === "singleton_class") {
-          const singBody = stmt.childForFieldName("body");
-          const singStmts = singBody ? singBody.children : stmt.children;
-          for (const singStmt of singStmts) {
-            const singMixin = mixinTargetFromStatement(singStmt);
-            if (!singMixin) continue;
-            edges.push({
-              source: fq,
-              ancestor: singMixin.name,
-              kind: singMixin.kind,
-              ordinal: ordinals[singMixin.kind]++,
-            });
-          }
-        }
+        if (mixin) edges.push({ source: fq, ancestor: mixin.name, kind: mixin.kind, ordinal: ordinals[mixin.kind]++ });
       }
       const recurseChildren = body ? body.children : node.children;
       for (const child of recurseChildren) walkScope(child, [...scope, ...localName.split("::")]);
@@ -110,17 +147,22 @@ export function collectRubyInheritanceEdges(root: AstNode): InheritanceEdgeDecl[
  * Returns an empty map when no class declarations or no mixins exist.
  * Mixin module references are emitted as the textual qualified name
  * the source uses (`PaginatableForm` or `Acme::Concern::Trackable`).
+ *
+ * `superclasses` holds ONLY the `class Foo < Bar` parent — the `extend Mod`
+ * mixin is a different declaration and lives in `ancestors` with the includes
+ * (see the file header).
  */
 export function collectRubyClassAncestors(root: AstNode): {
   ancestors: Map<string, string[]>;
   prepended: Map<string, string[]>;
-  extends: Map<string, string>;
+  superclasses: Map<string, string>;
   compact: Set<string>;
   schemaTables: Map<string, string>;
 } {
   const out = new Map<string, string[]>();
   const prependedOut = new Map<string, string[]>();
-  const extendsOut = new Map<string, string>();
+  /** class FQ → the `class Foo < Bar` parent. NOT the `extend Mod` mixin. */
+  const superclassOut = new Map<string, string>();
   /** class FQ → explicit `self.table_name` override (bd tea-rags-mcp-8l5fo). */
   const schemaTablesOut = new Map<string, string>();
   // FQs declared in COMPACT form (`class A::B::C`): their intermediate namespaces
@@ -149,7 +191,7 @@ export function collectRubyClassAncestors(root: AstNode): {
               const supText = child.type === "scope_resolution" ? readScopeResolution(child) : child.text;
               if (supText && /^[A-Z][A-Za-z0-9_]*(?:::[A-Z][A-Za-z0-9_]*)*$/.test(supText)) {
                 ancestors.push(supText);
-                extendsOut.set(fq, supText);
+                superclassOut.set(fq, supText);
               }
               break;
             }
@@ -162,35 +204,24 @@ export function collectRubyClassAncestors(root: AstNode): {
       // `prepend Mod` is collected separately (bd tea-rags-mcp-3jvn) because
       // it inserts BEFORE the class itself in Ruby's MRO — the resolver
       // checks prepended modules first, then the class, then includes/super.
-      // `class << self` (singleton_class) bodies are also descended —
-      // include/extend/prepend inside them contribute to the enclosing class
-      // ancestor chain so `module M; class << self; include C; end; end`
-      // populates classAncestors["M"] (bd tea-rags-mcp-08tss).
+      // `class << self` bodies and self-scoped class-body blocks
+      // (`included do … end`) are pulled up by `classBodyStatements`, so what
+      // they declare lands on THIS class (bd tea-rags-mcp-08tss / uetqq).
       const body = node.childForFieldName("body");
-      const stmtSource = body ? body.children : node.children;
+      const stmtSource = classBodyStatements(body ? body.children : node.children);
       for (const stmt of stmtSource) {
         const mixin = mixinTargetFromStatement(stmt);
-        if (mixin) {
-          if (mixin.kind === "prepend") prepended.push(mixin.name);
-          else ancestors.push(mixin.name);
-          continue;
-        }
-        if (stmt.type === "singleton_class") {
-          const singBody = stmt.childForFieldName("body");
-          const singStmts = singBody ? singBody.children : stmt.children;
-          for (const singStmt of singStmts) {
-            const singMixin = mixinTargetFromStatement(singStmt);
-            if (!singMixin) continue;
-            if (singMixin.kind === "prepend") prepended.push(singMixin.name);
-            else ancestors.push(singMixin.name);
-          }
-        }
+        if (!mixin) continue;
+        if (mixin.kind === "prepend") prepended.push(mixin.name);
+        else ancestors.push(mixin.name);
       }
       if (ancestors.length > 0) out.set(fq, ancestors);
       if (prepended.length > 0) prependedOut.set(fq, prepended);
       // `self.table_name = "companies"` — the explicit ORM table override
       // (bd tea-rags-mcp-8l5fo). Collected on THIS traversal (which already
-      // owns the namespace stack that yields `fq`) rather than in a second walk.
+      // owns the namespace stack that yields `fq`) rather than in a second walk,
+      // over the SAME flattened statements as the mixins — so the override is
+      // found whether it sits in the body or in an `included do … end`.
       for (const stmt of stmtSource) {
         const table = schemaTableOverrideFromStatement(stmt);
         if (table !== null) schemaTablesOut.set(fq, table);
@@ -208,7 +239,7 @@ export function collectRubyClassAncestors(root: AstNode): {
   return {
     ancestors: out,
     prepended: prependedOut,
-    extends: extendsOut,
+    superclasses: superclassOut,
     compact: compactOut,
     schemaTables: schemaTablesOut,
   };
