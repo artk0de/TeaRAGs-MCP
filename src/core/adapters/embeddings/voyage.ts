@@ -6,7 +6,7 @@ import Bottleneck from "bottleneck";
 
 import type { EmbeddingProvider, EmbeddingResult, RateLimitConfig } from "./base.js";
 import { withRateLimitRetry } from "./retry.js";
-import { getModelDimensions } from "./utils/model-dimensions.js";
+import { resolveStartingDimensions } from "./utils/model-dimensions.js";
 import { VoyageApiError, VoyageRateLimitError } from "./voyage/errors.js";
 
 interface VoyageError {
@@ -50,7 +50,7 @@ export class VoyageEmbeddings implements EmbeddingProvider {
     this.baseUrl = baseUrl;
     this.inputType = inputType;
 
-    this.dimensions = dimensions || getModelDimensions(model) || 1024;
+    this.dimensions = resolveStartingDimensions(model, dimensions, 1024);
 
     // Rate limiting configuration
     const maxRequestsPerMinute = rateLimitConfig?.maxRequestsPerMinute || 300;

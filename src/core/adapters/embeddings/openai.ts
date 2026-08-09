@@ -8,7 +8,7 @@ import OpenAI from "openai";
 import type { EmbeddingProvider, EmbeddingResult, RateLimitConfig } from "./base.js";
 import { OpenAIAuthError, OpenAIRateLimitError } from "./openai/errors.js";
 import { withRateLimitRetry } from "./retry.js";
-import { getModelDimensions } from "./utils/model-dimensions.js";
+import { resolveStartingDimensions } from "./utils/model-dimensions.js";
 
 interface OpenAIError {
   status?: number;
@@ -54,7 +54,7 @@ export class OpenAIEmbeddings implements EmbeddingProvider {
     this.client = new OpenAI({ apiKey });
     this.model = model;
 
-    this.dimensions = dimensions || getModelDimensions(model) || 1536;
+    this.dimensions = resolveStartingDimensions(model, dimensions, 1536);
 
     // Rate limiting configuration
     const maxRequestsPerMinute = rateLimitConfig?.maxRequestsPerMinute || 3500;
