@@ -169,11 +169,7 @@ export class FilePhase {
       const stampWork = this.stampDeclinedFiles(coll, ctx, items, root);
       if (stampWork) state.fileWork.push(stampWork);
 
-      const relPaths = this.uniqueRelPaths(items, root);
-      // Per-file enrichment policy: drop files this provider declines entirely
-      // ("none"). "file-only" still enriches file-level here — only chunk-phase
-      // skips those. Providers without shouldEnrich get "full" (no-op filter).
-      const enrichPaths = relPaths.filter((rel) => enrichmentScope(ctx.provider, rel) !== "none");
+      const enrichPaths = this.enrichablePaths(ctx, items, root);
       if (enrichPaths.length === 0) {
         // Nothing to enrich, but the provider still belongs in the gate map:
         // the coordinator drives ChunkPhase off it, and ChunkPhase has to see
@@ -184,79 +180,109 @@ export class FilePhase {
         continue;
       }
 
-      // Fully-deferred providers (codegraph): still DRIVE streamFileBatch so the
-      // run sink extracts the batch into the graph during embedding overlap, but
-      // do NOT apply the (empty) result and do NOT miss-track — file overlays
-      // are read back once the graph is finalized via finalizeSignals →
-      // applyFinalize. Skipping the call entirely would leave the graph empty
-      // (degraded file signals + zero chunk signals).
-      if (ctx.provider.defersChunkEnrichment) {
-        // Keep the streamFileBatch existence guard: defer providers without
-        // streamFileBatch must skip (the run sink has nothing to accumulate).
-        // The executor would otherwise transparently fall back to
-        // buildFileSignals({ paths }), which is wrong for defer providers —
-        // they want the extraction side-effects of streamFileBatch, not a
-        // pure whole-set read.
-        if (!ctx.provider.streamFileBatch) continue;
-        const extractWork = this.executor
-          .runFileBatch(ctx.provider, root, enrichPaths, {
-            collectionName: this.coll || undefined,
-            ignoreFilter: ctx.ignoreFilter ?? undefined,
-            // yl9tv Task 5b — on a cross-pass run the worker no-ops this parse
-            // (the input spill is fed from the chunker's single parse); finalize
-            // drains the spill. Off cross-pass it keeps the extractOneFile path.
-            crossPass: this.crossPass,
-            contentHashes: this.contentHashes,
-          })
-          .then(() => undefined)
-          .catch(async (error: unknown) => {
-            await this.recordPrefetchFailure(ctx, state, error);
-          });
-        state.fileWork.push(extractWork);
-        perProvider.set(ctx.key, extractWork);
-        continue;
-      }
-
-      const work = this.executor
-        .runFileBatch(ctx.provider, root, enrichPaths, {
-          collectionName: this.coll || undefined,
-          ignoreFilter: ctx.ignoreFilter ?? undefined,
-          // bd tea-rags-mcp-v2mlw: per-blame-pass telemetry → [GitEnrich] BLAME
-          // line + "blame" stage (inline-only dispatch path; never serialized —
-          // precedent: chunk-phase onWalkStats).
-          onBlameStats: (stats) => {
-            pipelineLog.step({ component: "GitEnrich" }, "BLAME", { provider: ctx.key, ...stats });
-            pipelineLog.addStageTime("blame", stats.durationMs);
-          },
-        })
-        .then(async (overlays) => {
-          await this.applier.applyFileSignals(
-            coll,
-            ctx.key,
-            overlays,
-            root,
-            items,
-            ctx.provider.fileSignalTransform,
-            this.runStartedAt,
-            // A file the provider declined at this level is intentionally
-            // unenriched — counted as ignored, not missed, and never stamped
-            // `enrichedAt` (its terminal marker is the skip stamp).
-            (rel, level) => enrichmentSkipReason(ctx.provider, rel, level) !== null,
-          );
-          state.streamingApplies++;
-          pipelineLog.enrichmentPhase("STREAMING_APPLY", {
-            provider: ctx.key,
-            chunks: items.length,
-          });
-        })
-        .catch(async (error: unknown) => {
-          await this.recordPrefetchFailure(ctx, state, error);
-        });
+      const work = ctx.provider.defersChunkEnrichment
+        ? this.startDeferredExtraction(ctx, state, root, enrichPaths)
+        : this.startStreamingApply(coll, ctx, state, root, items, enrichPaths);
+      // Undefined only on the defer-without-streamFileBatch skip — that
+      // provider contributes neither file work nor a gate entry.
+      if (!work) continue;
 
       state.fileWork.push(work);
       perProvider.set(ctx.key, work);
     }
     return perProvider;
+  }
+
+  /**
+   * Per-file enrichment policy: the batch's distinct relative paths minus the
+   * ones this provider declines entirely ("none"). "file-only" still enriches
+   * file-level here — only chunk-phase skips those. Providers without
+   * shouldEnrich get "full" (no-op filter).
+   */
+  private enrichablePaths(ctx: ProviderContext, items: ChunkItem[], root: string): string[] {
+    return this.uniqueRelPaths(items, root).filter((rel) => enrichmentScope(ctx.provider, rel) !== "none");
+  }
+
+  /**
+   * Fully-deferred providers (codegraph): still DRIVE streamFileBatch so the run
+   * sink extracts the batch into the graph during embedding overlap, but do NOT
+   * apply the (empty) result and do NOT miss-track — file overlays are read back
+   * once the graph is finalized via finalizeSignals → applyFinalize. Skipping the
+   * call entirely would leave the graph empty (degraded file signals + zero chunk
+   * signals).
+   *
+   * @returns the extraction promise, or undefined when the provider has no
+   *   streamFileBatch — the executor would otherwise transparently fall back to
+   *   buildFileSignals({ paths }), which is wrong for defer providers: they want
+   *   the extraction side-effects of streamFileBatch, not a pure whole-set read.
+   */
+  private startDeferredExtraction(
+    ctx: ProviderContext,
+    state: FilePhaseState,
+    root: string,
+    enrichPaths: string[],
+  ): Promise<void> | undefined {
+    if (!ctx.provider.streamFileBatch) return undefined;
+    return this.executor
+      .runFileBatch(ctx.provider, root, enrichPaths, {
+        collectionName: this.coll || undefined,
+        ignoreFilter: ctx.ignoreFilter ?? undefined,
+        // yl9tv Task 5b — on a cross-pass run the worker no-ops this parse
+        // (the input spill is fed from the chunker's single parse); finalize
+        // drains the spill. Off cross-pass it keeps the extractOneFile path.
+        crossPass: this.crossPass,
+        contentHashes: this.contentHashes,
+      })
+      .then(() => undefined)
+      .catch(async (error: unknown) => {
+        await this.recordPrefetchFailure(ctx, state, error);
+      });
+  }
+
+  /** Stream this batch's file signals for a non-deferring provider and apply them. */
+  private async startStreamingApply(
+    coll: string,
+    ctx: ProviderContext,
+    state: FilePhaseState,
+    root: string,
+    items: ChunkItem[],
+    enrichPaths: string[],
+  ): Promise<void> {
+    return this.executor
+      .runFileBatch(ctx.provider, root, enrichPaths, {
+        collectionName: this.coll || undefined,
+        ignoreFilter: ctx.ignoreFilter ?? undefined,
+        // bd tea-rags-mcp-v2mlw: per-blame-pass telemetry → [GitEnrich] BLAME
+        // line + "blame" stage (inline-only dispatch path; never serialized —
+        // precedent: chunk-phase onWalkStats).
+        onBlameStats: (stats) => {
+          pipelineLog.step({ component: "GitEnrich" }, "BLAME", { provider: ctx.key, ...stats });
+          pipelineLog.addStageTime("blame", stats.durationMs);
+        },
+      })
+      .then(async (overlays) => {
+        await this.applier.applyFileSignals(
+          coll,
+          ctx.key,
+          overlays,
+          root,
+          items,
+          ctx.provider.fileSignalTransform,
+          this.runStartedAt,
+          // A file the provider declined at this level is intentionally
+          // unenriched — counted as ignored, not missed, and never stamped
+          // `enrichedAt` (its terminal marker is the skip stamp).
+          (rel, level) => enrichmentSkipReason(ctx.provider, rel, level) !== null,
+        );
+        state.streamingApplies++;
+        pipelineLog.enrichmentPhase("STREAMING_APPLY", {
+          provider: ctx.key,
+          chunks: items.length,
+        });
+      })
+      .catch(async (error: unknown) => {
+        await this.recordPrefetchFailure(ctx, state, error);
+      });
   }
 
   /**
