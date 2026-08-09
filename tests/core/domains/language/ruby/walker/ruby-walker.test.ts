@@ -1147,6 +1147,38 @@ describe("extractFromRubyFile — classAncestors (inheritance + mixins)", () => 
   });
 });
 
+// Ruby spells two unrelated things with the same four letters, and both reach
+// the extraction: `class Foo < Bar` is SUPERCLASS inheritance, and `extend Mod`
+// is the class-method mixin. `classExtends` (the cross-language contract field,
+// where "extends" means the JS/TS/Java single-inheritance parent) carries the
+// FIRST; the second travels as `kind: "extend"` on the inheritance edges and is
+// folded into the flat `classAncestors` list. Confusing them fabricates a
+// superclass out of a mixin, which then feeds every `super` resolution.
+describe("extractFromRubyFile — superclass vs `extend Mod` mixin", () => {
+  it("`class Foo < Bar` with `extend Mod`: only Bar is the superclass", () => {
+    const src = "class Foo < Bar\n  extend Mod\nend\n";
+    const tree = parse(src);
+    const r = extractFromRubyFile({ tree, code: src, relPath: "x.rb", language: "ruby", chunks: [] });
+    // classExtends = superclass only. `Mod` must NOT appear here.
+    expect(r.classExtends).toEqual({ Foo: "Bar" });
+    // Both land in the flat ancestor list (both contribute to method lookup).
+    expect(r.classAncestors?.["Foo"]).toEqual(["Bar", "Mod"]);
+    // The edge list is where the two are told apart by kind.
+    expect(r.inheritanceEdges).toEqual([
+      { source: "Foo", ancestor: "Bar", kind: "super", ordinal: 0 },
+      { source: "Foo", ancestor: "Mod", kind: "extend", ordinal: 0 },
+    ]);
+  });
+
+  it("`extend Mod` alone leaves classExtends undefined — a mixin is not a superclass", () => {
+    const src = "class Foo\n  extend Mod\nend\n";
+    const tree = parse(src);
+    const r = extractFromRubyFile({ tree, code: src, relPath: "x.rb", language: "ruby", chunks: [] });
+    expect(r.classExtends).toBeUndefined();
+    expect(r.inheritanceEdges).toEqual([{ source: "Foo", ancestor: "Mod", kind: "extend", ordinal: 0 }]);
+  });
+});
+
 // bd tea-rags-mcp-3jvn — `prepend M` differs from `include M`: prepended
 // modules sit BEFORE the class in MRO so `M#foo` shadows `A#foo` even when
 // A defines `foo` itself. Walker emits prepended targets into a separate

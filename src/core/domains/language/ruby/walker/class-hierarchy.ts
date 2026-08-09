@@ -8,11 +8,24 @@
  *     list with precise `super` / `include` / `extend` / `prepend` kinds, which
  *     the hierarchy graph consumes.
  *   - {@link collectRubyClassAncestors} — the flat per-kind Records the resolver
- *     reads (ancestors, prepended, extends, compact-declared FQs, and the
+ *     reads (ancestors, prepended, superclasses, compact-declared FQs, and the
  *     `self.table_name` schema override).
  *
  * Both share the mixin-statement reader below, so a heritage form recognised by
  * one is recognised by the other.
+ *
+ * TWO THINGS SPELLED "EXTEND", and this file produces both — keep them apart:
+ *
+ *   - `class Foo < Bar` is SUPERCLASS inheritance. It fills the `superclasses`
+ *     Record here and travels as `kind: "super"` on the edges; the walker
+ *     publishes it as `FileExtraction.classExtends`, the cross-language field
+ *     where "extends" means the JS/TS/Java single-inheritance parent.
+ *   - `extend Mod` is Ruby's class-method MIXIN. It is one of the three mixin
+ *     keywords, travels as `kind: "extend"`, and is folded into the flat
+ *     `ancestors` list. It never touches `superclasses`.
+ *
+ * Naming them both "extends" is what invites reading a mixin as a superclass,
+ * which then feeds every `super` resolution downstream.
  */
 
 import type { AstNode } from "../../../../contracts/types/ast.js";
@@ -110,17 +123,22 @@ export function collectRubyInheritanceEdges(root: AstNode): InheritanceEdgeDecl[
  * Returns an empty map when no class declarations or no mixins exist.
  * Mixin module references are emitted as the textual qualified name
  * the source uses (`PaginatableForm` or `Acme::Concern::Trackable`).
+ *
+ * `superclasses` holds ONLY the `class Foo < Bar` parent — the `extend Mod`
+ * mixin is a different declaration and lives in `ancestors` with the includes
+ * (see the file header).
  */
 export function collectRubyClassAncestors(root: AstNode): {
   ancestors: Map<string, string[]>;
   prepended: Map<string, string[]>;
-  extends: Map<string, string>;
+  superclasses: Map<string, string>;
   compact: Set<string>;
   schemaTables: Map<string, string>;
 } {
   const out = new Map<string, string[]>();
   const prependedOut = new Map<string, string[]>();
-  const extendsOut = new Map<string, string>();
+  /** class FQ → the `class Foo < Bar` parent. NOT the `extend Mod` mixin. */
+  const superclassOut = new Map<string, string>();
   /** class FQ → explicit `self.table_name` override (bd tea-rags-mcp-8l5fo). */
   const schemaTablesOut = new Map<string, string>();
   // FQs declared in COMPACT form (`class A::B::C`): their intermediate namespaces
@@ -149,7 +167,7 @@ export function collectRubyClassAncestors(root: AstNode): {
               const supText = child.type === "scope_resolution" ? readScopeResolution(child) : child.text;
               if (supText && /^[A-Z][A-Za-z0-9_]*(?:::[A-Z][A-Za-z0-9_]*)*$/.test(supText)) {
                 ancestors.push(supText);
-                extendsOut.set(fq, supText);
+                superclassOut.set(fq, supText);
               }
               break;
             }
@@ -208,7 +226,7 @@ export function collectRubyClassAncestors(root: AstNode): {
   return {
     ancestors: out,
     prepended: prependedOut,
-    extends: extendsOut,
+    superclasses: superclassOut,
     compact: compactOut,
     schemaTables: schemaTablesOut,
   };

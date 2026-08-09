@@ -107,7 +107,7 @@ export function extractFromRubyFile(input: RubyExtractInput): FileExtraction {
   const {
     ancestors: ancestorMap,
     prepended: prependedMap,
-    extends: extendsMap,
+    superclasses: superclassMap,
     compact: compactClassSet,
     schemaTables: schemaTableMap,
   } = collectRubyClassAncestors(input.tree.rootNode);
@@ -242,10 +242,13 @@ export function extractFromRubyFile(input: RubyExtractInput): FileExtraction {
     for (const [k, v] of prependedMap) prependedRecord[k] = v;
     out.classPrependedAncestors = prependedRecord;
   }
-  if (extendsMap.size > 0) {
-    const extendsRecord: Record<string, string> = {};
-    for (const [k, v] of extendsMap) extendsRecord[k] = v;
-    out.classExtends = extendsRecord;
+  // `classExtends` is the cross-language SUPERCLASS channel (JS/TS/Java
+  // `extends`), so only `class Foo < Bar` feeds it. Ruby's `extend Mod` mixin
+  // is a different declaration and already rode out in `classAncestors` above.
+  if (superclassMap.size > 0) {
+    const superclassRecord: Record<string, string> = {};
+    for (const [k, v] of superclassMap) superclassRecord[k] = v;
+    out.classExtends = superclassRecord;
   }
   // Unified hierarchy edges with precise kinds (bd tea-rags-mcp-lz8t). Parity
   // with the TS walker's `collectInheritanceEdges`: where the legacy

@@ -106,6 +106,12 @@ export interface FileExtraction {
    *   2. `implements` clauses and TS interface heritage do NOT populate
    *      this map — those are type-only and carry no runtime dispatch.
    *
+   * "Extends" here is always the SUPERCLASS. Ruby's `extend Mod` is a
+   * class-method mixin that happens to share the word: it belongs in
+   * `classAncestors` / an `inheritanceEdges` entry with `kind: "extend"`, and a
+   * walker that files it here fabricates a superclass every `super` resolution
+   * then trusts.
+   *
    * Plain Record (NOT Map) so the value round-trips through the NDJSON
    * spill in the codegraph provider — Map serialises to `{}` and loses
    * every entry.
