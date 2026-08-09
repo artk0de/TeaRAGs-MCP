@@ -8,7 +8,7 @@ import type { EmbeddingProvider, EmbeddingResult } from "./base.js";
 import { parseLine, serialize, type DaemonRequest, type DaemonResponse } from "./onnx/daemon-types.js";
 import { OnnxInferenceError, OnnxModelLoadError } from "./onnx/errors.js";
 import { LineSplitter } from "./onnx/line-splitter.js";
-import { getModelDimensions } from "./utils/model-dimensions.js";
+import { resolveStartingDimensions } from "./utils/model-dimensions.js";
 
 export const DEFAULT_ONNX_MODEL = "jinaai/jina-embeddings-v2-base-code-fp16";
 export const DEFAULT_ONNX_DIMENSIONS = 768;
@@ -60,7 +60,7 @@ export class OnnxEmbeddings implements EmbeddingProvider {
   ) {
     this.model = model;
     this.dimensionsPinned = dimensions !== undefined && dimensions > 0;
-    this.dimensions = dimensions || getModelDimensions(model) || DEFAULT_ONNX_DIMENSIONS;
+    this.dimensions = resolveStartingDimensions(model, dimensions, DEFAULT_ONNX_DIMENSIONS);
     this.cacheDir = cacheDir;
     this.device = device;
     this.socketPath = socketPath;

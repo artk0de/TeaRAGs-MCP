@@ -25,7 +25,7 @@ import {
 } from "./ollama/errors.js";
 import { parseModelInfo, type OllamaModelInfo } from "./ollama/model-info.js";
 import { withRateLimitRetry } from "./retry.js";
-import { getModelDimensions } from "./utils/model-dimensions.js";
+import { resolveStartingDimensions } from "./utils/model-dimensions.js";
 
 /** Full request timeout for single embed calls (connect + model load + inference).
  *  30s allows for cold model loads after successful health check. */
@@ -152,7 +152,7 @@ export class OllamaEmbeddings implements EmbeddingProvider {
     this.useNativeBatch = !legacyApi;
 
     this.dimensionsPinned = dimensions !== undefined && dimensions > 0;
-    this.dimensions = dimensions || getModelDimensions(model) || 768;
+    this.dimensions = resolveStartingDimensions(model, dimensions, 768);
 
     // Rate limiting configuration (more lenient for local models)
     const maxRequestsPerMinute = rateLimitConfig?.maxRequestsPerMinute || 1000;

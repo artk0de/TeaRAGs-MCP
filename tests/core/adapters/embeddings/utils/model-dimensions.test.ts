@@ -1,7 +1,8 @@
-import { describe, expect, test } from "vitest";
+import { afterEach, describe, expect, test, vi } from "vitest";
 
 import {
   getModelDimensions,
+  resolveStartingDimensions,
   stripQuantizationSuffix,
 } from "../../../../../src/core/adapters/embeddings/utils/model-dimensions.js";
 
@@ -166,6 +167,28 @@ describe("getModelDimensions", () => {
   test("returns undefined for unknown model", () => {
     expect(getModelDimensions("unknown-model-xyz")).toBeUndefined();
   });
+
+  // Widths below were read from Ollama's own /api/show `*.embedding_length`,
+  // not inferred from model cards. Every one of them is 1024 except gemma —
+  // 1024 is the common non-768 width, which is why a 768 fallback misses so
+  // loudly (PR #2).
+  test("returns 1024 for qwen3-embedding", () => {
+    expect(getModelDimensions("qwen3-embedding:0.6b")).toBe(1024);
+  });
+
+  test("returns 1024 for bge-m3", () => {
+    expect(getModelDimensions("bge-m3")).toBe(1024);
+  });
+
+  test("returns 768 for embeddinggemma", () => {
+    expect(getModelDimensions("embeddinggemma")).toBe(768);
+  });
+
+  // A user-namespace repack stays out of the table on purpose: the name can be
+  // re-uploaded with different weights. The provider is asked instead.
+  test("leaves a user-namespace repack unknown", () => {
+    expect(getModelDimensions("leoipulsar/harrier-0.6b:latest")).toBeUndefined();
+  });
 });
 
 describe("getModelDimensions — Ollama tag normalization", () => {
@@ -199,5 +222,39 @@ describe("getModelDimensions — Ollama tag normalization", () => {
 
   test("does not treat a namespace slash as a tag", () => {
     expect(getModelDimensions("jinaai/jina-embeddings-v2-base-code")).toBe(768);
+  });
+});
+
+describe("resolveStartingDimensions", () => {
+  // This is the pre-verification width: what a constructor can answer before
+  // anyone has asked the provider what the model actually is. It must stay
+  // silent — the composition root resolves the real parameters straight after
+  // and reports there.
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  test("prefers an explicitly configured width over everything else", () => {
+    expect(resolveStartingDimensions("mxbai-embed-large:latest", 512, 768)).toBe(512);
+  });
+
+  test("ignores a non-positive configured width and keeps resolving", () => {
+    expect(resolveStartingDimensions("mxbai-embed-large:latest", 0, 768)).toBe(1024);
+  });
+
+  test("uses the registry width for a known model", () => {
+    expect(resolveStartingDimensions("mxbai-embed-large:latest", undefined, 768)).toBe(1024);
+  });
+
+  test("falls back to the provider default for an unknown model", () => {
+    expect(resolveStartingDimensions("unknown-fallback-xyz", undefined, 1536)).toBe(1536);
+  });
+
+  test("stays silent — reporting a guess belongs to the composition root", () => {
+    const warn = vi.spyOn(console, "error").mockImplementation(() => {});
+
+    resolveStartingDimensions("someone/unlisted-embed-1.2b:latest", undefined, 768);
+
+    expect(warn).not.toHaveBeenCalled();
   });
 });

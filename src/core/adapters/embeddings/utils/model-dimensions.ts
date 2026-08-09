@@ -31,11 +31,22 @@ const MODEL_DIMENSIONS: Record<string, number> = {
   "voyage-3.5-lite": 512,
 
   // ── Ollama ──
+  // Widths below come from each model's own `/api/show` `*.embedding_length`,
+  // never from a model card. Only add an entry you have measured — a wrong one
+  // is worse than an absent one, because an absent one gets resolved from the
+  // model itself and says so when it cannot be.
+  //
+  // Library models only (no user namespace). A `user/model` repack can be
+  // re-uploaded under the same name with different weights, so an entry for one
+  // rots silently; the eager resolve covers those without this table's help.
   "nomic-embed-text": 768,
   "mxbai-embed-large": 1024,
   "all-minilm": 384,
   "jina-embeddings-v2-base-code": 768,
   "unclemusclez/jina-embeddings-v2-base-code:latest": 768,
+  "qwen3-embedding": 1024,
+  "bge-m3": 1024,
+  embeddinggemma: 768,
 
   // ── HuggingFace / ONNX ──
   "jinaai/jina-embeddings-v2-base-code": 768,
@@ -93,4 +104,24 @@ export function getModelDimensions(model: string): number | undefined {
     if (dimensions !== undefined) return dimensions;
   }
   return undefined;
+}
+
+/**
+ * The width a provider starts from before it can ask anyone: the operator's
+ * configured value, then this table, then the provider's own default.
+ *
+ * Deliberately silent and synchronous — it runs in a constructor, where the
+ * answer cannot yet be verified. The provider's REAL parameters come from the
+ * model's own config (`resolveModelInfo`), which the composition root resolves
+ * eagerly; `resolveEmbeddingModelParameters` is what reports a width that
+ * survived as a guess. Warning here would fire before that resolve and cry wolf
+ * on every model the provider is perfectly able to describe.
+ */
+export function resolveStartingDimensions(
+  model: string,
+  configured: number | undefined,
+  providerDefault: number,
+): number {
+  if (configured !== undefined && configured > 0) return configured;
+  return getModelDimensions(model) ?? providerDefault;
 }
