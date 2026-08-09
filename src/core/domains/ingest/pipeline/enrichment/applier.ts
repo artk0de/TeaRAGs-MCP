@@ -41,6 +41,28 @@ export interface EnrichmentApplyEvent {
   applied: number;
 }
 
+/** One `set_payload` operation the file pass will flush. */
+type FilePayloadOp = { payload: Record<string, unknown>; points: (string | number)[]; key?: string };
+
+/**
+ * The matched `(relativePath, chunk)` an op carries, or `null` for a stamp op
+ * whose file is already in the missed tracker.
+ */
+type FileOpResidual = { relativePath: string; chunk: MissedFileChunk } | null;
+
+/**
+ * An op bound to its residual.
+ *
+ * These used to be two arrays kept parallel by hand, with the residual read
+ * back BY INDEX after a failed flush to route matched files into backfill. A
+ * desync there is silent and routes the wrong file, so the pairing is a value
+ * now — the arrays are unzipped once, at the boundary that still wants them.
+ */
+interface FileOpEntry {
+  readonly op: FilePayloadOp;
+  readonly residual: FileOpResidual;
+}
+
 export class EnrichmentApplier {
   private readonly matchedPaths = new Set<string>();
   private readonly missedTracker = new MissedFileTracker({
@@ -220,10 +242,9 @@ export class EnrichmentApplier {
   }
 
   /**
-   * Per-file transform + payload-op assembly, plus matched/ignored/missed
-   * tracking. Returns the file-level operations and their parallel residual
-   * sidecar (matched (relPath, chunk) for backfill routing; null for stamp ops).
-   * Moved verbatim from applyFileSignals.
+   * Per-file payload-op assembly. Each file resolves to exactly one of two
+   * outcomes — the overlay has something for it, or it does not — and the whole
+   * difficulty lives in the second one, so each gets its own method.
    */
   private buildFilePayloadOps(
     byFile: Map<string, ChunkItem[]>,
@@ -233,91 +254,102 @@ export class EnrichmentApplier {
     transform: FileSignalTransform | undefined,
     enrichedAt: string | undefined,
     isIgnored: ((relativePath: string, level: "file" | "chunk") => boolean) | undefined,
-  ): {
-    operations: { payload: Record<string, unknown>; points: (string | number)[]; key?: string }[];
-    opResidual: ({ relativePath: string; chunk: MissedFileChunk } | null)[];
-  } {
-    const operations: {
-      payload: Record<string, unknown>;
-      points: (string | number)[];
-      key?: string;
-    }[] = [];
-    // Parallel to `operations`: for a MATCHED-file op, the (relativePath, chunk)
-    // it carries; `null` for missed-file stamp ops (already in missedTracker).
-    // Used to route a failed-batch's matched files into the backfill loop so a
-    // dropped file-apply write doesn't strand chunks without git.file.enrichedAt.
-    const opResidual: ({ relativePath: string; chunk: MissedFileChunk } | null)[] = [];
+  ): { operations: FilePayloadOp[]; opResidual: FileOpResidual[] } {
+    const entries: FileOpEntry[] = [];
 
     for (const [filePath, fileItems] of byFile) {
       const relativePath = relative(pathBase, filePath);
       const data = fileMetadata.get(relativePath);
-      if (!data) {
-        // Intentional policy skip — record as ignored, NOT missed, and write no
-        // `enrichedAt` (the file gets a `skippedAs` stamp from FilePhase, which
-        // sees the batches this apply pass never runs for). Recovery's
-        // scrollUnenriched also filters these, so they never go degraded.
-        if (isIgnored?.(relativePath, "file")) {
-          this.ignoredPaths.add(relativePath);
-          continue;
-        }
-        this.missedTracker.track(
-          relativePath,
-          fileItems.map((item) => ({
-            chunkId: item.chunkId,
-            startLine: item.chunk.startLine,
-            endLine: item.chunk.endLine,
-          })),
-        );
-        // A file can be owed enrichment at file level and declined at chunk
-        // level (git takes a doc's file signals but never walks its chunks).
-        // ChunkPhase stamps `skippedAs` on those chunks, so stamping
-        // `enrichedAt` here too would put both terminal states on one point.
-        const chunkDeclined = isIgnored?.(relativePath, "chunk") === true;
-        if (enrichedAt) {
-          for (const item of fileItems) {
-            // File-level stamp: marks "we tried, no git history".
-            operations.push({
-              payload: { enrichedAt },
-              points: [item.chunkId],
-              key: `${providerKey}.file`,
-            });
-            opResidual.push(null);
-            if (chunkDeclined) continue;
-            // Chunk-level stamp: same semantics. Without this, recovery keeps
-            // counting these chunks forever and forces chunk.status=degraded
-            // even though there is nothing retriable.
-            operations.push({
-              payload: { enrichedAt },
-              points: [item.chunkId],
-              key: `${providerKey}.chunk`,
-            });
-            opResidual.push(null);
-          }
-        }
-        continue;
-      }
-      this.matchedPaths.add(relativePath);
-
-      const maxEndLine = fileItems.reduce((max, item) => Math.max(max, item.chunk.endLine), 0);
-      const finalData = transform ? transform(data, maxEndLine) : data;
-      const payload = enrichedAt
-        ? { ...(finalData as Record<string, unknown>), enrichedAt }
-        : (finalData as Record<string, unknown>);
-
-      for (const item of fileItems) {
-        operations.push({
-          payload,
-          points: [item.chunkId],
-          key: `${providerKey}.file`,
-        });
-        opResidual.push({
-          relativePath,
-          chunk: { chunkId: item.chunkId, startLine: item.chunk.startLine, endLine: item.chunk.endLine },
-        });
-      }
+      entries.push(
+        ...(data
+          ? this.matchedFileEntries(relativePath, fileItems, providerKey, data, transform, enrichedAt)
+          : this.unmatchedFileEntries(relativePath, fileItems, providerKey, enrichedAt, isIgnored)),
+      );
     }
 
-    return { operations, opResidual };
+    return { operations: entries.map((e) => e.op), opResidual: entries.map((e) => e.residual) };
+  }
+
+  /**
+   * Ops for a file the overlay HAS signals for: transform, stamp, one write per
+   * chunk. Each op carries its residual so a failed flush can re-route the file
+   * into backfill.
+   */
+  private matchedFileEntries(
+    relativePath: string,
+    fileItems: ChunkItem[],
+    providerKey: string,
+    data: FileSignalOverlay,
+    transform: FileSignalTransform | undefined,
+    enrichedAt: string | undefined,
+  ): FileOpEntry[] {
+    this.matchedPaths.add(relativePath);
+
+    const maxEndLine = fileItems.reduce((max, item) => Math.max(max, item.chunk.endLine), 0);
+    const finalData = transform ? transform(data, maxEndLine) : data;
+    const payload = enrichedAt
+      ? { ...(finalData as Record<string, unknown>), enrichedAt }
+      : (finalData as Record<string, unknown>);
+
+    return fileItems.map((item) => ({
+      op: { payload, points: [item.chunkId], key: `${providerKey}.file` },
+      residual: {
+        relativePath,
+        chunk: { chunkId: item.chunkId, startLine: item.chunk.startLine, endLine: item.chunk.endLine },
+      },
+    }));
+  }
+
+  /**
+   * Ops for a file the overlay has NOTHING for. Which of the three outcomes
+   * applies is the decision this whole method exists to get right:
+   *
+   * - policy declined it ⇒ `ignored`, and NO marker from here: FilePhase writes
+   *   its `skippedAs`, and a second terminal marker would contradict it;
+   * - genuine gap ⇒ `missed` for backfill, plus a bare `enrichedAt` so recovery
+   *   stops counting it and chunk.status stops sticking at degraded;
+   * - owed at file level but declined at CHUNK level (git takes a doc's file
+   *   signals, never walks its chunks) ⇒ file stamp only, chunk stamp withheld
+   *   for the same no-two-markers reason.
+   */
+  private unmatchedFileEntries(
+    relativePath: string,
+    fileItems: ChunkItem[],
+    providerKey: string,
+    enrichedAt: string | undefined,
+    isIgnored: ((relativePath: string, level: "file" | "chunk") => boolean) | undefined,
+  ): FileOpEntry[] {
+    if (isIgnored?.(relativePath, "file")) {
+      this.ignoredPaths.add(relativePath);
+      return [];
+    }
+
+    this.missedTracker.track(
+      relativePath,
+      fileItems.map((item) => ({
+        chunkId: item.chunkId,
+        startLine: item.chunk.startLine,
+        endLine: item.chunk.endLine,
+      })),
+    );
+
+    if (!enrichedAt) return [];
+
+    const chunkDeclined = isIgnored?.(relativePath, "chunk") === true;
+    const entries: FileOpEntry[] = [];
+    for (const item of fileItems) {
+      // File-level stamp: marks "we tried, no git history".
+      entries.push({
+        op: { payload: { enrichedAt }, points: [item.chunkId], key: `${providerKey}.file` },
+        residual: null,
+      });
+      if (chunkDeclined) continue;
+      entries.push({
+        op: { payload: { enrichedAt }, points: [item.chunkId], key: `${providerKey}.chunk` },
+        residual: null,
+      });
+    }
+    return entries;
   }
 
   /**
@@ -331,8 +363,8 @@ export class EnrichmentApplier {
     providerKey: string,
     pathBase: string,
     byFile: Map<string, ChunkItem[]>,
-    operations: { payload: Record<string, unknown>; points: (string | number)[]; key?: string }[],
-    opResidual: ({ relativePath: string; chunk: MissedFileChunk } | null)[],
+    operations: FilePayloadOp[],
+    opResidual: FileOpResidual[],
   ): Promise<void> {
     // Track every file that was processed in this batch (including missed/ignored
     // paths that produced no overlay — they were still seen). Do this BEFORE the
@@ -593,7 +625,7 @@ export class EnrichmentApplier {
    * chunks with git.chunk signals but no git.file.enrichedAt — a permanent
    * degraded that no in-run pass corrects.
    */
-  private trackResidualBatch(metas: ({ relativePath: string; chunk: MissedFileChunk } | null)[]): void {
+  private trackResidualBatch(metas: FileOpResidual[]): void {
     const byPath = new Map<string, MissedFileChunk[]>();
     for (const m of metas) {
       if (!m) continue;
