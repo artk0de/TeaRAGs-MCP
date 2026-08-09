@@ -377,6 +377,12 @@ routed onto these commits deliberately.
 
 ## Cross-cutting guardrails
 
+- **Every epic clears the completion gate** in
+  `.claude/rules/epic-completion-gate.md`: build the worktree, run
+  `npm run test:coverage` (not `npm test`), then live-validate against a real
+  index. No epic here closes on unit evidence alone, and "it is only a refactor"
+  is not an exception — a behaviour-preserving change is a claim, and the
+  pipeline is what checks it. The reindex step is user-gated; ask and wait.
 - **Worktree per epic**, not per program. Six epics running in one branch makes
   bisection useless when a corpus metric drifts.
 - **Do not batch merges.** Each epic merges on its own green suite and its own
