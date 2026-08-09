@@ -20,8 +20,9 @@ import { getModelDimensions } from "../core/adapters/embeddings/utils/model-dime
 
 /**
  * Ask the provider what its model actually is, and report if nothing could tell
- * us. Never throws: an unreachable provider is a reason to fall back to the
- * configured width, not to refuse to start.
+ * us. Never throws and never stalls: a provider that is unreachable, broken, or
+ * merely silent past `MODEL_INFO_BUDGET_MS` is a reason to fall back to the
+ * configured width, not to refuse to start or to hold startup open.
  *
  * The warning is unconditional rather than DEBUG-gated. The operator who needs
  * it is precisely the one running with default logging, and the failure it
@@ -46,11 +47,45 @@ export async function resolveEmbeddingModelParameters(
   );
 }
 
-/** Resolve model info, treating any provider failure as "could not tell us". */
+/**
+ * How long the composition root is willing to wait for a provider to describe
+ * its model.
+ *
+ * The provider's own probe budget is sized for the index path, which can afford
+ * to wait; this one runs on every MCP server start and every CLI command. A
+ * refused connection fails instantly, but an endpoint that black-holes packets
+ * does not — it sits until the full probe budget expires, on every bootstrap.
+ * Measured `/api/show` latency against a LAN Ollama is 19–27ms, so a second is
+ * a wide margin over a live host and a short one to lose to a dead route.
+ */
+export const MODEL_INFO_BUDGET_MS = 1000;
+
+/**
+ * Resolve model info within the startup budget, treating any provider failure —
+ * and any silence past the budget — as "could not tell us".
+ */
 async function resolveQuietly(embeddings: EmbeddingProvider): Promise<boolean> {
+  const pending = embeddings.resolveModelInfo?.();
+  if (pending === undefined) return false;
+
+  // Observe the outcome HERE rather than inside the race. When the budget wins,
+  // this promise is left running, and an unobserved rejection would take the
+  // process down. A late success is not wasted either: it still populates the
+  // provider's cache, so the index path gets the answer for free.
+  const answered = pending.then((info) => info !== undefined).catch(() => false);
+
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const budget = new Promise<boolean>((resolve) => {
+    timer = setTimeout(() => {
+      resolve(false);
+    }, MODEL_INFO_BUDGET_MS);
+  });
+
   try {
-    return (await embeddings.resolveModelInfo?.()) !== undefined;
-  } catch {
-    return false;
+    return await Promise.race([answered, budget]);
+  } finally {
+    // Either the answer won and the timer is still armed, or the timer fired and
+    // this is a no-op. Both leave nothing pending past the budget.
+    clearTimeout(timer);
   }
 }

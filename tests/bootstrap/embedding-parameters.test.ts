@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, test, vi } from "vitest";
 
-import { resolveEmbeddingModelParameters } from "../../src/bootstrap/embedding-parameters.js";
+import { MODEL_INFO_BUDGET_MS, resolveEmbeddingModelParameters } from "../../src/bootstrap/embedding-parameters.js";
 import type { EmbeddingProvider } from "../../src/core/adapters/embeddings/base.js";
 
 /**
@@ -128,5 +128,78 @@ describe("resolveEmbeddingModelParameters", () => {
     await resolveEmbeddingModelParameters(provider, undefined);
 
     expect(warn).not.toHaveBeenCalled();
+  });
+
+  // A refused connection fails instantly, but an endpoint that black-holes packets
+  // does not: the request sits until the provider's own probe budget expires, and
+  // that budget is sized for the index path, which can afford to wait. Startup
+  // cannot — this runs on every MCP server start and every CLI command.
+  describe("unresponsive endpoint", () => {
+    afterEach(() => {
+      vi.useRealTimers();
+    });
+
+    test("gives up on its own budget instead of stalling startup", async () => {
+      vi.useFakeTimers();
+      const warn = vi.spyOn(console, "error").mockImplementation(() => {});
+      const { provider } = stubProvider({
+        model: "someone/unlisted-embed:latest",
+        dimensions: 768,
+        // Never settles — the shape of a black-holed endpoint.
+        resolveModelInfo: async () => new Promise<never>(() => {}),
+      });
+
+      const pending = resolveEmbeddingModelParameters(provider, undefined);
+      await vi.advanceTimersByTimeAsync(MODEL_INFO_BUDGET_MS + 1);
+
+      await expect(pending).resolves.toBeUndefined();
+      expect(warn).toHaveBeenCalledTimes(1);
+    });
+
+    test("still prefers a live answer that arrives inside the budget", async () => {
+      vi.useFakeTimers();
+      const warn = vi.spyOn(console, "error").mockImplementation(() => {});
+      const { provider, currentDimensions } = stubProvider({
+        model: "someone/unlisted-embed:latest",
+        dimensions: 768,
+        resolveModelInfo: async () => {
+          await new Promise((r) => setTimeout(r, MODEL_INFO_BUDGET_MS / 2));
+          return { model: "someone/unlisted-embed:latest", contextLength: 32768, dimensions: 1024 };
+        },
+      });
+
+      const pending = resolveEmbeddingModelParameters(provider, undefined);
+      await vi.advanceTimersByTimeAsync(MODEL_INFO_BUDGET_MS + 1);
+
+      await pending;
+      expect(currentDimensions()).toBe(1024);
+      expect(warn).not.toHaveBeenCalled();
+    });
+
+    test("survives a rejection that lands after the budget already expired", async () => {
+      vi.useFakeTimers();
+      vi.spyOn(console, "error").mockImplementation(() => {});
+      const unhandled = vi.fn();
+      process.on("unhandledRejection", unhandled);
+      const { provider } = stubProvider({
+        model: "someone/unlisted-embed:latest",
+        dimensions: 768,
+        resolveModelInfo: async () => {
+          await new Promise((r) => setTimeout(r, MODEL_INFO_BUDGET_MS * 3));
+          throw new Error("host unreachable");
+        },
+      });
+
+      const pending = resolveEmbeddingModelParameters(provider, undefined);
+      await vi.advanceTimersByTimeAsync(MODEL_INFO_BUDGET_MS + 1);
+      await pending;
+
+      // The abandoned request rejects long after nobody is awaiting it.
+      await vi.advanceTimersByTimeAsync(MODEL_INFO_BUDGET_MS * 3);
+      await Promise.resolve();
+
+      process.off("unhandledRejection", unhandled);
+      expect(unhandled).not.toHaveBeenCalled();
+    });
   });
 });
