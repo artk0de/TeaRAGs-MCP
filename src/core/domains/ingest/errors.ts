@@ -11,6 +11,7 @@ import type { DeletionOutcome } from "./sync/deletion/outcome.js";
 export type IngestErrorCode =
   | "INGEST_NOT_INDEXED"
   | "INGEST_COLLECTION_EXISTS"
+  | "INGEST_VERSION_CLAIM_FAILED"
   | "INGEST_SNAPSHOT_MISSING"
   | "INGEST_SNAPSHOT_CORRUPTED"
   | "INGEST_MIGRATION_FAILED"
@@ -62,6 +63,22 @@ export class CollectionExistsError extends IngestError {
       code: "INGEST_COLLECTION_EXISTS",
       message: `Collection "${collectionName}" already exists`,
       hint: "Use a different collection name or delete the existing collection first",
+      httpStatus: 409,
+    });
+  }
+}
+
+/**
+ * Every version number in the attempt window is held by a live indexing run, so
+ * this run has nowhere to build. Contention, not corruption: the versions are
+ * legitimately owned and nothing was deleted.
+ */
+export class VersionedCollectionClaimError extends IngestError {
+  constructor(baseCollectionName: string, firstVersion: number, attempts: number) {
+    super({
+      code: "INGEST_VERSION_CLAIM_FAILED",
+      message: `Versions v${firstVersion}..v${firstVersion + attempts - 1} of "${baseCollectionName}" are all held by live indexing runs`,
+      hint: "Wait for the runs in flight to finish, then retry. If nothing is actually indexing, the markers are stale and will age out within 10 minutes.",
       httpStatus: 409,
     });
   }

@@ -13,6 +13,7 @@ import {
 } from "../__helpers__/test-helpers.js";
 import { OllamaUnavailableError } from "../../../../../src/core/adapters/embeddings/ollama/errors.js";
 import { IngestFacade } from "../../../../../src/core/api/index.js";
+import { INDEXING_METADATA_ID } from "../../../../../src/core/contracts/constants.js";
 import { IndexingFailedError } from "../../../../../src/core/domains/ingest/errors.js";
 import { EnrichmentCoordinator } from "../../../../../src/core/domains/ingest/pipeline/enrichment/coordinator.js";
 import type { IngestCodeConfig } from "../../../../../src/core/types.js";
@@ -771,6 +772,80 @@ function third() {
 
       // Migration deletes the real unversioned collection — its codegraph DB too.
       expect(codegraphPool.removeCollection).toHaveBeenCalledWith(collName);
+    });
+
+    // Two force runs that start close together read the same alias target and
+    // compute the SAME next version. The loser used to find the winner's freshly
+    // created, actively filling collection, read it as "a stale target from a
+    // previously failed attempt", and delete it — the symptom cleanupOrphanedVersions
+    // was taught to avoid, reached through the other branch (bd tea-rags-mcp-nrylk).
+    //
+    // The concurrent run's collection is hidden from listCollections to place it
+    // exactly where the race puts it: created AFTER this run took its snapshot of
+    // Qdrant, so the version it computed is already taken by the time it looks.
+    it("leaves a concurrent force run's half-built version alone and takes the next one", async () => {
+      await createTestFile(codebaseDir, "test.ts", "export const x = 1;");
+      await ingest.indexCodebase(codebaseDir);
+      const alias = (await ingest.getIndexStatus(codebaseDir)).collectionName!;
+
+      const concurrentTarget = `${alias}_v2`;
+      await qdrant.createCollection(concurrentTarget, 384, "Cosine");
+      await qdrant.addPoints(concurrentTarget, [
+        {
+          id: INDEXING_METADATA_ID,
+          vector: new Array(384).fill(0),
+          payload: {
+            _type: "indexing_metadata",
+            indexingComplete: false,
+            startedAt: new Date().toISOString(),
+            lastHeartbeat: new Date().toISOString(),
+          },
+        },
+      ]);
+      const listCollections = qdrant.listCollections.bind(qdrant);
+      vi.spyOn(qdrant, "listCollections").mockImplementation(async () =>
+        (await listCollections()).filter((c) => c !== concurrentTarget),
+      );
+
+      const stats = await ingest.indexCodebase(codebaseDir, { forceReindex: true });
+
+      expect(stats.status).toBe("completed");
+      // The other run's build survives, marker and all.
+      expect(await qdrant.collectionExists(concurrentTarget)).toBe(true);
+      expect((await qdrant.getPoint(concurrentTarget, INDEXING_METADATA_ID))?.payload?.indexingComplete).toBe(false);
+      // …and this run indexed somewhere else entirely, so the two never
+      // interleaved into one collection.
+      const target = (await qdrant.aliases.listAliases()).find((a) => a.aliasName === alias)!.collectionName;
+      expect(target).not.toBe(concurrentTarget);
+      expect(target).toMatch(/_v3$/);
+
+      vi.restoreAllMocks();
+    });
+
+    // Between creating the versioned collection and publishing its in-progress
+    // marker, nothing can tell another run this build is alive. Schema init used
+    // to sit in that gap — a dozen payload indexes, each a round trip. The marker
+    // goes first so the blind window is one create plus one upsert.
+    it("publishes the in-progress marker before initializing the schema", async () => {
+      await createTestFile(codebaseDir, "test.ts", "export const x = 1;");
+
+      const order: string[] = [];
+      const addPoints = qdrant.addPoints.bind(qdrant);
+      vi.spyOn(qdrant, "addPoints").mockImplementation(async (name: string, points: any[]) => {
+        if (points.some((p) => p.id === INDEXING_METADATA_ID)) order.push("marker");
+        return addPoints(name, points);
+      });
+      const createPayloadIndex = qdrant.createPayloadIndex.bind(qdrant);
+      vi.spyOn(qdrant, "createPayloadIndex").mockImplementation(async (...args: [string, string, string]) => {
+        order.push("schema");
+        return createPayloadIndex(...args);
+      });
+
+      await ingest.indexCodebase(codebaseDir);
+
+      expect(order[0]).toBe("marker");
+
+      vi.restoreAllMocks();
     });
   });
 

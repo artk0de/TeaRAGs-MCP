@@ -25,10 +25,11 @@ export interface IndexingMarkerPayload {
  * before the run that owns it is presumed dead.
  *
  * Shared because two callers must agree on the number: `status-module` decides
- * whether to report `stale_indexing`, and `infra/alias-cleanup` decides whether
- * a half-built versioned collection may be reclaimed. If those drift apart, one
- * of them is wrong about whether a run is alive — and the cleanup side deletes
- * a collection when it guesses wrong.
+ * whether to report `stale_indexing`, and `infra/collection-build-lease` decides
+ * whether a half-built versioned collection may be reclaimed — by orphan cleanup
+ * and by the next run picking a version. If those drift apart, one of them is
+ * wrong about whether a run is alive — and the reclaim side deletes a collection
+ * when it guesses wrong.
  *
  * They deliberately do NOT share the treatment of an UNDATED marker: cleanup
  * treats it as dead (never hoard collections), status treats it as live (never
