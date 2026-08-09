@@ -64,3 +64,54 @@ describe("collectRubyAssociationTypes — Rails association type map", () => {
     expect(assocTypes("class C\n  def m\n    obj.has_many(:x)\n  end\nend\n")).toEqual({});
   });
 });
+
+/**
+ * Where the walk stops, and why Ruby says so.
+ *
+ * `has_many` is a class method of `ActiveRecord::Base`. It declares an
+ * association only where `self` is the class — which is the class body, and
+ * everything a block reaches from it, because a Ruby block keeps the `self` of
+ * the scope that wrote it. A `def` body is the one place that is NOT true: at
+ * call time `self` is an instance, `has_many` is not in its method table, and a
+ * bare `has_many :posts` written there raises NoMethodError or names some
+ * unrelated app method. Either way it declares nothing, and typing every
+ * `x.posts` in the project off it is a claim the source does not make.
+ *
+ * `def self.x` is excluded on a second ground: `self` IS the class there, but the
+ * macro only runs if something calls that class method, at a time the walker
+ * cannot know. The association map types receivers unconditionally, so a
+ * conditionally-declared association does not belong in it.
+ */
+describe("collectRubyAssociationTypes — class-body scope boundary", () => {
+  it("does NOT record an association declared inside an instance method body", () => {
+    // `self` is an instance when this runs — not the class. Nothing is declared.
+    expect(assocTypes("class User\n  def setup\n    has_many :posts\n  end\nend\n")).toEqual({});
+  });
+
+  it("does NOT record an association declared inside a `def self.` class method", () => {
+    // `self` is the class, but only when someone calls `User.setup` — unknowable
+    // statically, so the unconditional type map must not carry it.
+    expect(assocTypes("class User\n  def self.setup\n    has_many :posts\n  end\nend\n")).toEqual({});
+  });
+
+  it("keeps the class's real associations when a method body also mentions one", () => {
+    const src = "class User\n  has_many :posts\n  def setup\n    belongs_to :author\n  end\nend\n";
+    expect(assocTypes(src)).toEqual({ User: { posts: "Post" } });
+  });
+
+  it("still records an association guarded by a class-body conditional", () => {
+    // An `if` in a class body runs at load time with `self` still the class —
+    // this is class-body scope and must keep working.
+    expect(assocTypes("class User\n  if legacy?\n    has_many :posts\n  end\nend\n")).toEqual({
+      User: { posts: "Post" },
+    });
+  });
+
+  it("still records an association inside a Concern's `included do … end` block", () => {
+    // A block carries the enclosing `self`, so the macro genuinely declares here.
+    // Attributed to the CONCERN, which every includer reaches through its MRO.
+    expect(assocTypes("module Trackable\n  included do\n    has_many :audits\n  end\nend\n")).toEqual({
+      Trackable: { audits: "Audit" },
+    });
+  });
+});

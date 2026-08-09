@@ -93,6 +93,24 @@ export function associationModelConstant(callNode: AstNode): string | null {
 }
 
 /**
+ * Node types that END this class's association scope, because `self` inside them
+ * is no longer the class whose map is being built (bd tea-rags-mcp-uetqq):
+ *
+ *   - `class` / `module` — a nested declaration owns its own fq map, filled by
+ *     the outer scope walk when it reaches that node.
+ *   - `method` / `singleton_method` — a `def` body. `has_many` is a class method
+ *     of `ActiveRecord::Base`: in an instance method `self` is an instance and
+ *     the call raises (or names an unrelated app method); in a `def self.x` the
+ *     macro runs only when that class method is CALLED, which the walker cannot
+ *     know, so an unconditional receiver-type map must not carry it.
+ *
+ * Everything else stays in scope, including blocks — a Ruby block keeps the
+ * `self` of the code that wrote it, so `included do … end`, `concerning :X do …
+ * end` and a class-body `if` all still declare associations for this class.
+ */
+const ASSOCIATION_SCOPE_STOPS: ReadonlySet<string> = new Set(["class", "module", "method", "singleton_method"]);
+
+/**
  * Per-class Rails association map for the `associationTypes` channel (B1):
  * `className → accessorName → modelType`. Mirrors {@link collectRubyIvarFieldTypes}'s
  * scope-stack walk — each class / module records its OWN class-body association
@@ -104,8 +122,10 @@ export function associationModelConstant(callNode: AstNode): string | null {
  * `Author`). The class key is the fully-qualified scope-stack name
  * (`Outer::Inner`), matching `collectRubyClassAncestors` and the resolver's
  * `ctx.callerScope.join("::")`. Only class-body macro calls (no receiver, or a
- * `self` receiver) record; an instance call `obj.has_many` is ignored.
- * Within-class conflict is last-write-wins (source-order DFS).
+ * `self` receiver) record; an instance call `obj.has_many` is ignored, and so is
+ * anything written inside a `def` — see {@link ASSOCIATION_SCOPE_STOPS} for
+ * where the scope ends and why. Within-class conflict is last-write-wins
+ * (source-order DFS).
  */
 export function collectRubyAssociationTypes(root: AstNode): Record<string, Record<string, string>> {
   const out: Record<string, Record<string, string>> = {};
@@ -121,10 +141,11 @@ export function collectRubyAssociationTypes(root: AstNode): Record<string, Recor
       const body = node.childForFieldName("body");
 
       // Collect association macros across THIS class's own body. Stop at any
-      // nested class/module — those are attributed to their own fq below.
+      // nested class/module — those are attributed to their own fq below — and
+      // at any `def`, which is NOT class-body scope (see ASSOCIATION_SCOPE_STOPS).
       const assocs: Record<string, string> = {};
       const collectAssocs = (n: AstNode): void => {
-        if (n.type === "class" || n.type === "module") return;
+        if (ASSOCIATION_SCOPE_STOPS.has(n.type)) return;
         if (n.type === "call" || n.type === "method_call") {
           const method = n.childForFieldName("method");
           const receiver = n.childForFieldName("receiver");
