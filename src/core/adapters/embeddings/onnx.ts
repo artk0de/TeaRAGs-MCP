@@ -7,6 +7,7 @@ import { fileURLToPath } from "node:url";
 import type { EmbeddingProvider, EmbeddingResult } from "./base.js";
 import { parseLine, serialize, type DaemonRequest, type DaemonResponse } from "./onnx/daemon-types.js";
 import { OnnxInferenceError, OnnxModelLoadError } from "./onnx/errors.js";
+import { OnnxHandshakeGate } from "./onnx/handshake-gate.js";
 import { LineSplitter } from "./onnx/line-splitter.js";
 import { resolveStartingDimensions } from "./utils/model-dimensions.js";
 
@@ -15,6 +16,15 @@ export const DEFAULT_ONNX_DIMENSIONS = 768;
 
 const HEARTBEAT_INTERVAL_MS = 30_000;
 const DEFAULT_SOCKET_PATH = "/tmp/onnx-embedding-daemon.sock";
+/**
+ * Timeout for the connect handshake.
+ * Model loading can take 30-60s on cold start (download + ONNX init + warm-up + calibration).
+ * The gate resets it on each "log" message from the daemon (proves the daemon is alive and loading).
+ */
+const HANDSHAKE_TIMEOUT_MS = 120_000;
+
+/** The daemon's handshake frame — what a successful connect reports back. */
+type OnnxConnectedFrame = Extract<DaemonResponse, { type: "connected" }>;
 
 export class OnnxEmbeddings implements EmbeddingProvider {
   private readonly model: string;
@@ -154,111 +164,120 @@ export class OnnxEmbeddings implements EmbeddingProvider {
     return new Promise<void>((resolve, reject) => {
       const socket = createConnection(this.socketPath);
       const splitter = new LineSplitter();
-
-      // Timeout for connect handshake.
-      // Model loading can take 30-60s on cold start (download + ONNX init + warm-up + calibration).
-      // Timer resets on each "log" message from daemon (proves daemon is alive and loading).
-      const HANDSHAKE_TIMEOUT_MS = 120_000;
-      /* v8 ignore start */
-      let timeout = setTimeout(() => {
-        socket.destroy();
-        reject(new OnnxModelLoadError(this.socketPath, new Error("Timeout connecting to ONNX daemon")));
-      }, HANDSHAKE_TIMEOUT_MS);
-      /* v8 ignore stop */
-
-      /* v8 ignore next 7 -- resets timeout on daemon log (real socket path, not unit-testable) */
-      const resetTimeout = () => {
-        clearTimeout(timeout);
-        timeout = setTimeout(() => {
+      const gate = new OnnxHandshakeGate({
+        timeoutMs: HANDSHAKE_TIMEOUT_MS,
+        resolve,
+        reject,
+        /* v8 ignore start -- expiry needs a 120s wait (real socket path, not unit-testable) */
+        onExpire: () => {
           socket.destroy();
-          reject(new OnnxModelLoadError(this.socketPath, new Error("Timeout connecting to ONNX daemon")));
-        }, HANDSHAKE_TIMEOUT_MS);
-      };
-
-      socket.on("error", (err) => {
-        clearTimeout(timeout);
-        if (!handshakeDone) {
-          handshakeDone = true;
-          reject(new OnnxModelLoadError(this.socketPath, err));
-        } else {
-          /* v8 ignore start */
-          this.cleanup();
-          this.rejectAllPending(new Error(`Socket error: ${err.message}`));
-          /* v8 ignore stop */
-        }
+          return new OnnxModelLoadError(this.socketPath, new Error("Timeout connecting to ONNX daemon"));
+        },
+        /* v8 ignore stop */
       });
 
-      socket.on("close", () => {
-        this.cleanup();
-        // Reject any pending requests
-        this.rejectAllPending(new Error("Socket closed"));
-      });
-
-      socket.on("data", (data) => {
-        splitter.feed(data.toString());
-      });
-
-      // Wait for "connected" response after sending "connect"
-      let handshakeDone = false;
-
+      this.bindDaemonSocket(socket, splitter, gate);
       splitter.onLine((line) => {
-        const msg = parseLine(line) as DaemonResponse | null;
-        if (!msg) return;
-
-        // Forward logs even during handshake — reset timeout to prove daemon is alive
-        if (msg.type === "log") {
-          console.error(msg.message);
-          if (!handshakeDone) resetTimeout();
-          return;
-        }
-
-        if (!handshakeDone && msg.type === "connected") {
-          handshakeDone = true;
-          clearTimeout(timeout);
-          this.socket = socket;
-          this.splitter = splitter;
-          if (msg.recommendedBatchSize !== undefined) {
-            this.recommendedBatchSize = msg.recommendedBatchSize;
-          }
-          if (msg.dimensions !== undefined && msg.contextLength !== undefined) {
-            this.cachedModelInfo = {
-              model: this.model,
-              dimensions: msg.dimensions,
-              contextLength: msg.contextLength,
-            };
-            // The daemon read the width off the model config; the constructor
-            // could only guess it. Adopt the truth so every artifact sized from
-            // getDimensions() matches the vectors this provider will emit.
-            if (!this.dimensionsPinned) this.dimensions = msg.dimensions;
-          }
-          this.startHeartbeat();
-          resolve();
-          return;
-        }
-
-        if (!handshakeDone && msg.type === "error") {
-          handshakeDone = true;
-          clearTimeout(timeout);
-          socket.destroy();
-          reject(new Error(msg.message));
-          return;
-        }
-
-        // Route responses after handshake
-        this.handleResponse(msg);
-      });
-
-      // Once TCP connection is established, send connect message
-      socket.on("connect", () => {
-        const req: DaemonRequest = {
-          type: "connect",
-          model: this.model,
-          device: this.device,
-          ...(this.cacheDir ? { cacheDir: this.cacheDir } : {}),
-        };
-        socket.write(serialize(req));
+        this.routeDaemonFrame(line, socket, splitter, gate);
       });
     });
+  }
+
+  /**
+   * Wire the transport: socket lifecycle events, and the "connect" request that
+   * opens the handshake once TCP is up. Everything a frame means is decided in
+   * `routeDaemonFrame` — this method only moves bytes and reacts to the socket
+   * dying, which it does differently before and after the handshake settles.
+   */
+  private bindDaemonSocket(socket: Socket, splitter: LineSplitter, gate: OnnxHandshakeGate): void {
+    socket.on("error", (err) => {
+      if (!gate.settled) {
+        // Still handshaking — the connect promise owns this failure. (The gate
+        // has already cleared its timer by the time it reports settled, so
+        // there is nothing left to stop on the post-handshake path below.)
+        gate.fail(new OnnxModelLoadError(this.socketPath, err));
+        return;
+      }
+      /* v8 ignore start */
+      this.cleanup();
+      this.rejectAllPending(new Error(`Socket error: ${err.message}`));
+      /* v8 ignore stop */
+    });
+
+    socket.on("close", () => {
+      this.cleanup();
+      // Reject any pending requests
+      this.rejectAllPending(new Error("Socket closed"));
+    });
+
+    socket.on("data", (data) => {
+      splitter.feed(data.toString());
+    });
+
+    // Once TCP connection is established, send connect message
+    socket.on("connect", () => {
+      const req: DaemonRequest = {
+        type: "connect",
+        model: this.model,
+        device: this.device,
+        ...(this.cacheDir ? { cacheDir: this.cacheDir } : {}),
+      };
+      socket.write(serialize(req));
+    });
+  }
+
+  /**
+   * Interpret one daemon frame. Until the gate settles this is the handshake
+   * protocol — "connected" completes it, "error" fails it, "log" only proves
+   * the daemon is still working. Afterwards every frame is an embed response
+   * and goes to `handleResponse`.
+   */
+  private routeDaemonFrame(line: string, socket: Socket, splitter: LineSplitter, gate: OnnxHandshakeGate): void {
+    const msg = parseLine(line) as DaemonResponse | null;
+    if (!msg) return;
+
+    // Forward logs even during handshake — reset timeout to prove daemon is alive
+    if (msg.type === "log") {
+      console.error(msg.message);
+      if (!gate.settled) gate.keepAlive();
+      return;
+    }
+
+    if (!gate.settled && msg.type === "connected") {
+      this.socket = socket;
+      this.splitter = splitter;
+      this.adoptConnectedFrame(msg);
+      this.startHeartbeat();
+      gate.succeed();
+      return;
+    }
+
+    if (!gate.settled && msg.type === "error") {
+      socket.destroy();
+      gate.fail(new Error(msg.message));
+      return;
+    }
+
+    // Route responses after handshake
+    this.handleResponse(msg);
+  }
+
+  /** Take on what the daemon reported about the model it actually loaded. */
+  private adoptConnectedFrame(msg: OnnxConnectedFrame): void {
+    if (msg.recommendedBatchSize !== undefined) {
+      this.recommendedBatchSize = msg.recommendedBatchSize;
+    }
+    if (msg.dimensions !== undefined && msg.contextLength !== undefined) {
+      this.cachedModelInfo = {
+        model: this.model,
+        dimensions: msg.dimensions,
+        contextLength: msg.contextLength,
+      };
+      // The daemon read the width off the model config; the constructor
+      // could only guess it. Adopt the truth so every artifact sized from
+      // getDimensions() matches the vectors this provider will emit.
+      if (!this.dimensionsPinned) this.dimensions = msg.dimensions;
+    }
   }
 
   // ---------------------------------------------------------------------------

@@ -8,7 +8,9 @@
 
 export { decodeFrames, encodeFrame, type DaemonOp, type DaemonRequest, type DaemonResponse } from "./protocol.js";
 export { DaemonGraphDbClient, UnsupportedDaemonReadError } from "./client.js";
-export { CodegraphDaemonServer, computeAndPersistCyclesAndSignals } from "./server.js";
+export { computeAndPersistCyclesAndSignals } from "./graph-analysis.js";
+export { DAEMON_OP_COMMANDS, type DaemonOpCommand, type DaemonOpContext } from "./op-commands.js";
+export { CodegraphDaemonServer } from "./server.js";
 export {
   type CodegraphDaemonPaths,
   IDLE_SHUTDOWN_MS,
