@@ -4,8 +4,8 @@
 
 ## Approach
 
-- Find stable template (Step 3) and follow its patterns
-- Match domain owner's style (Step 5)
+- Find stable template (TEMPLATE step) and follow its patterns
+- Match domain owner's style (STYLE step)
 - Generate clean, idiomatic code
 - Standard test coverage — unit tests for new logic, integration test if
   touching boundaries
