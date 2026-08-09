@@ -1,5 +1,7 @@
 import type { QdrantManager } from "../../../adapters/qdrant/client.js";
+import { INDEXING_METADATA_ID } from "../../../contracts/constants.js";
 import { isDebug } from "../../../infra/runtime.js";
+import { isIndexingRunStale, parseMarkerPayload } from "../pipeline/index.js";
 
 /**
  * Drops the per-version codegraph DuckDB file (and its WAL sidecar) for a
@@ -40,7 +42,24 @@ export async function cleanupOrphanedVersions(
   if (!activeCollection) return 0;
 
   const allCollections = await qdrant.listCollections();
-  const orphans = allCollections.filter((c) => c.startsWith(`${collectionName}_v`) && c !== activeCollection);
+  const candidates = allCollections.filter((c) => c.startsWith(`${collectionName}_v`) && c !== activeCollection);
+
+  // Not pointed at by the alias is NOT the same as abandoned. A force reindex
+  // builds its next version off to the side and only switches the alias at the
+  // end, so between those two moments its target looks exactly like an orphan.
+  // Deleting it kills the run that owns it — the foreground reindex fails on its
+  // next upload with "Collection … doesn't exist" while the run that deleted it
+  // reports success (bd tea-rags-mcp-nrylk).
+  const orphans: string[] = [];
+  for (const candidate of candidates) {
+    if (await isBuildInFlight(qdrant, candidate)) {
+      if (isDebug()) {
+        console.error(`[AliasCleanup] ${candidate} is being built by a live run — leaving it alone`);
+      }
+      continue;
+    }
+    orphans.push(candidate);
+  }
 
   for (const orphan of orphans) {
     await qdrant.deleteCollection(orphan);
@@ -54,6 +73,33 @@ export async function cleanupOrphanedVersions(
   }
 
   return orphans.length;
+}
+
+/**
+ * Is a live indexing run building this collection right now?
+ *
+ * The in-progress marker and its heartbeat ARE the lease — `setupCollection`
+ * writes the marker the moment it creates the versioned collection, and the run
+ * refreshes the heartbeat throughout. So no new coordination mechanism is
+ * needed; cleanup only has to read what indexing already publishes.
+ *
+ * A read failure answers "no". Cleanup is best-effort and its job is to reclaim
+ * space — it must not start hoarding collections because one marker read
+ * flaked. The cost of that choice is the pre-fix behaviour for that one
+ * collection, which is strictly no worse than before.
+ */
+async function isBuildInFlight(qdrant: QdrantManager, collection: string): Promise<boolean> {
+  try {
+    const point = await qdrant.getPoint(collection, INDEXING_METADATA_ID);
+    if (!point?.payload) return false;
+    const marker = parseMarkerPayload(point.payload);
+    return !marker.indexingComplete && !isIndexingRunStale(marker);
+  } catch (err) {
+    if (isDebug()) {
+      console.error(`[AliasCleanup] could not read the indexing marker of ${collection} (treating as orphan):`, err);
+    }
+    return false;
+  }
 }
 
 /**

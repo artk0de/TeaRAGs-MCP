@@ -20,6 +20,36 @@ export interface IndexingMarkerPayload {
   enrichment?: EnrichmentMarkerMap;
 }
 
+/**
+ * How long a marker may sit at `indexingComplete: false` without advancing
+ * before the run that owns it is presumed dead.
+ *
+ * Shared because two callers must agree on the number: `status-module` decides
+ * whether to report `stale_indexing`, and `infra/alias-cleanup` decides whether
+ * a half-built versioned collection may be reclaimed. If those drift apart, one
+ * of them is wrong about whether a run is alive — and the cleanup side deletes
+ * a collection when it guesses wrong.
+ *
+ * They deliberately do NOT share the treatment of an UNDATED marker: cleanup
+ * treats it as dead (never hoard collections), status treats it as live (never
+ * cry failure). Opposite safe directions, so each keeps its own guard.
+ */
+export const STALE_INDEXING_THRESHOLD_MS = 10 * 60 * 1000; // 10 minutes
+
+/**
+ * Is the run that wrote this marker presumed dead? Cleanup's reading.
+ *
+ * `lastHeartbeat` is the live signal; `startedAt` is the fallback for markers
+ * written before heartbeats existed. A marker with neither cannot be aged, so
+ * it counts as stale — an un-datable in-progress marker would otherwise pin its
+ * collection forever.
+ */
+export function isIndexingRunStale(marker: IndexingMarkerPayload, now: number = Date.now()): boolean {
+  const referenceTime = marker.lastHeartbeat ?? marker.startedAt;
+  if (referenceTime === undefined) return true;
+  return now - new Date(referenceTime).getTime() > STALE_INDEXING_THRESHOLD_MS;
+}
+
 /** Parse raw Qdrant payload into typed IndexingMarkerPayload. */
 export function parseMarkerPayload(raw: Record<string, unknown>): IndexingMarkerPayload {
   return {

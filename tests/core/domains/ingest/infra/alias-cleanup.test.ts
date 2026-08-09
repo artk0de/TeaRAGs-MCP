@@ -6,15 +6,27 @@ import {
   sweepCodegraphOrphans,
 } from "../../../../../src/core/domains/ingest/infra/alias-cleanup.js";
 
-function createMockQdrant(aliases: { aliasName: string; collectionName: string }[], collections: string[]) {
+function createMockQdrant(
+  aliases: { aliasName: string; collectionName: string }[],
+  collections: string[],
+  /** collectionName → its `__indexing_metadata__` payload; absent ⇒ no marker. */
+  markers: Record<string, Record<string, unknown>> = {},
+) {
   return {
     aliases: {
       listAliases: vi.fn().mockResolvedValue(aliases),
     },
     listCollections: vi.fn().mockResolvedValue(collections),
     deleteCollection: vi.fn().mockResolvedValue(undefined),
+    getPoint: vi
+      .fn()
+      .mockImplementation(async (collection: string) =>
+        Promise.resolve(markers[collection] ? { payload: markers[collection] } : null),
+      ),
   } as unknown as QdrantManager;
 }
+
+const minutesAgo = (n: number) => new Date(Date.now() - n * 60 * 1000).toISOString();
 
 describe("cleanupOrphanedVersions", () => {
   it("deletes versioned collections not pointed to by alias", async () => {
@@ -29,6 +41,54 @@ describe("cleanupOrphanedVersions", () => {
     expect(qdrant.deleteCollection).toHaveBeenCalledWith("code_abc_v1");
     expect(qdrant.deleteCollection).toHaveBeenCalledWith("code_abc_v3");
     expect(qdrant.deleteCollection).not.toHaveBeenCalledWith("code_abc_v2");
+  });
+
+  // A versioned collection is not an orphan just because the alias does not
+  // point at it yet — that is exactly what a force reindex is building. Deleting
+  // it kills the run that owns it: the foreground reindex dies on its next
+  // upload with "Collection <base>_v60 doesn't exist" while the background
+  // auto-update run that deleted it reports success (bd tea-rags-mcp-nrylk).
+  it("spares a versioned collection an indexing run is still building", async () => {
+    const qdrant = createMockQdrant(
+      [{ aliasName: "code_abc", collectionName: "code_abc_v2" }],
+      ["code_abc_v1", "code_abc_v2", "code_abc_v3"],
+      { code_abc_v3: { indexingComplete: false, startedAt: minutesAgo(2), lastHeartbeat: minutesAgo(1) } },
+    );
+
+    const result = await cleanupOrphanedVersions(qdrant, "code_abc");
+
+    expect(qdrant.deleteCollection).not.toHaveBeenCalledWith("code_abc_v3");
+    // The genuinely abandoned one still goes.
+    expect(qdrant.deleteCollection).toHaveBeenCalledWith("code_abc_v1");
+    expect(result).toBe(1);
+  });
+
+  it("reclaims a versioned collection whose indexing run went stale", async () => {
+    const qdrant = createMockQdrant(
+      [{ aliasName: "code_abc", collectionName: "code_abc_v2" }],
+      ["code_abc_v2", "code_abc_v3"],
+      // In progress on paper, but nothing has advanced it for 11 minutes: the
+      // run that owned it is gone, so this is a crash leftover, not a live build.
+      { code_abc_v3: { indexingComplete: false, startedAt: minutesAgo(30), lastHeartbeat: minutesAgo(11) } },
+    );
+
+    const result = await cleanupOrphanedVersions(qdrant, "code_abc");
+
+    expect(qdrant.deleteCollection).toHaveBeenCalledWith("code_abc_v3");
+    expect(result).toBe(1);
+  });
+
+  it("reclaims a versioned collection whose indexing already completed", async () => {
+    const qdrant = createMockQdrant(
+      [{ aliasName: "code_abc", collectionName: "code_abc_v2" }],
+      ["code_abc_v2", "code_abc_v3"],
+      { code_abc_v3: { indexingComplete: true, completedAt: minutesAgo(1) } },
+    );
+
+    const result = await cleanupOrphanedVersions(qdrant, "code_abc");
+
+    expect(qdrant.deleteCollection).toHaveBeenCalledWith("code_abc_v3");
+    expect(result).toBe(1);
   });
 
   it("does nothing when no orphans exist", async () => {
