@@ -1179,6 +1179,68 @@ describe("extractFromRubyFile — superclass vs `extend Mod` mixin", () => {
   });
 });
 
+/**
+ * Heritage declared inside a class-body BLOCK.
+ *
+ * A Ruby block keeps the `self` of the code that wrote it, so `include Mod`
+ * inside `included do … end` is a real mixin declaration for the enclosing
+ * module — and `included do … end` is the ActiveSupport::Concern idiom, which
+ * means it is where a large share of Rails heritage is actually written. The
+ * signature pass already descends these blocks; the heritage pass did not, so
+ * every concern that mixes in through `included do` lost its ancestor edge.
+ *
+ * Attributing the edge to the CONCERN rather than to the eventual includer is
+ * the right approximation: `included do include Auditable end` gives every class
+ * that includes Trackable a path to Auditable, and `Trackable → Auditable` is
+ * exactly that path in the hierarchy graph.
+ *
+ * A block on a RECEIVER-ful call is the exception — `Helper.class_eval do … end`
+ * re-points `self` at Helper, so what it declares is not ours to claim.
+ */
+describe("extractFromRubyFile — heritage inside class-body blocks", () => {
+  it("collects `include Mod` from a Concern's `included do … end`", () => {
+    const src =
+      "module Trackable\n  extend ActiveSupport::Concern\n\n  included do\n    include Auditable\n  end\nend\n";
+    const tree = parse(src);
+    const r = extractFromRubyFile({ tree, code: src, relPath: "x.rb", language: "ruby", chunks: [] });
+    expect(r.classAncestors?.["Trackable"]).toEqual(["ActiveSupport::Concern", "Auditable"]);
+    expect(r.inheritanceEdges).toEqual([
+      { source: "Trackable", ancestor: "ActiveSupport::Concern", kind: "extend", ordinal: 0 },
+      { source: "Trackable", ancestor: "Auditable", kind: "include", ordinal: 0 },
+    ]);
+  });
+
+  it("collects `prepend Mod` from a block into the prepended map, not the ancestor list", () => {
+    const src = "module Trackable\n  included do\n    prepend Overrides\n  end\nend\n";
+    const tree = parse(src);
+    const r = extractFromRubyFile({ tree, code: src, relPath: "x.rb", language: "ruby", chunks: [] });
+    expect(r.classPrependedAncestors?.["Trackable"]).toEqual(["Overrides"]);
+    expect(r.classAncestors).toBeUndefined();
+  });
+
+  it("collects `self.table_name` from a Concern's `included do … end`", () => {
+    const src = 'module Legacy\n  included do\n    self.table_name = "legacy_rows"\n  end\nend\n';
+    const tree = parse(src);
+    const r = extractFromRubyFile({ tree, code: src, relPath: "x.rb", language: "ruby", chunks: [] });
+    expect(r.classSchemaTables?.["Legacy"]).toBe("legacy_rows");
+  });
+
+  it("does NOT claim a mixin from a block on a RECEIVER-ful call (`Helper.class_eval do`)", () => {
+    // `self` inside is Helper, so `include Bar` mixes into Helper, not into A.
+    const src = "class A\n  Helper.class_eval do\n    include Bar\n  end\nend\n";
+    const tree = parse(src);
+    const r = extractFromRubyFile({ tree, code: src, relPath: "x.rb", language: "ruby", chunks: [] });
+    expect(r.classAncestors).toBeUndefined();
+  });
+
+  it("keeps block-declared mixins in source order alongside body-declared ones", () => {
+    const src = "class A\n  include First\n  included do\n    include Second\n  end\n  include Third\nend\n";
+    const tree = parse(src);
+    const r = extractFromRubyFile({ tree, code: src, relPath: "x.rb", language: "ruby", chunks: [] });
+    expect(r.classAncestors?.["A"]).toEqual(["First", "Second", "Third"]);
+  });
+});
+
 // bd tea-rags-mcp-3jvn — `prepend M` differs from `include M`: prepended
 // modules sit BEFORE the class in MRO so `M#foo` shadows `A#foo` even when
 // A defines `foo` itself. Walker emits prepended targets into a separate

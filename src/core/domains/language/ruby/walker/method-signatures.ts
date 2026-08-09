@@ -19,7 +19,7 @@
 
 import type { AstNode } from "../../../../contracts/types/ast.js";
 import type { AritySignature, KwargSignature } from "../../../../contracts/types/codegraph.js";
-import { walk } from "./ast-utils.js";
+import { attachedBlockOf, walk } from "./ast-utils.js";
 import { positionalParamNames } from "./param-arg-types.js";
 
 const VISIBILITY_KEYWORDS = new Set<string>(["private", "protected", "public"]);
@@ -205,18 +205,6 @@ export function computeCallPassesBlock(callNode: AstNode): boolean {
  *  per body, so a `private` in the enclosing class does not reach into
  *  `class << self` and vice versa (bd tea-rags-mcp-jn5j0). */
 const DEF_BODY_NODE_TYPES: ReadonlySet<string> = new Set(["class", "module", "singleton_class"]);
-
-/** The block (`{ … }` / `do … end`) attached to a statement, either as a direct
- *  child or inside its argument list — the same two positions
- *  `computeCallPassesBlock` looks in. `included do … end`,
- *  `Helper.class_eval do … end` and `concerning :X do … end` all define methods
- *  inside one, and those defs belong to the enclosing class. */
-function attachedBlockOf(node: AstNode): AstNode | undefined {
-  const direct = node.children.find((c) => c.type === "block" || c.type === "do_block");
-  if (direct) return direct;
-  const args = node.childForFieldName("arguments") ?? node.children.find((c) => c.type === "argument_list");
-  return args?.namedChildren.find((c) => c.type === "block" || c.type === "do_block");
-}
 
 /**
  * Walk the AST and collect arity + visibility for every `method` /
