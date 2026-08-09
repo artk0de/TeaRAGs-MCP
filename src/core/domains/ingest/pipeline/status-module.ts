@@ -29,10 +29,12 @@ import { MIN_LANGUAGE_SHARE } from "../infra/index.js";
 import { QuarantineStore } from "../sync/index.js";
 import { ParallelFileSynchronizer } from "../sync/parallel-synchronizer.js";
 import { mapMarkerToHealth } from "./enrichment/health-mapper.js";
-import { parseMarkerPayload } from "./indexing-marker-codec.js";
+import { parseMarkerPayload, STALE_INDEXING_THRESHOLD_MS } from "./indexing-marker-codec.js";
 
-/** If indexing marker says "in progress" for longer than this, report as stale */
-const STALE_INDEXING_THRESHOLD_MS = 10 * 60 * 1000; // 10 minutes
+// The threshold itself lives with the marker codec: `infra/alias-cleanup` reads
+// the same number to decide whether a half-built collection may be reclaimed,
+// and the two must not drift. Status keeps its own undated-marker handling
+// below — an undated marker reads as live here, dead there, on purpose.
 
 /** Running tally aggregated from `cg_run_stats` rows (per language or per kind). */
 interface ResolveTally {

@@ -306,9 +306,25 @@ tea-rags index-codebase --project <alias> --wait-enrichments --force --json
   per-provider bars + **durations** — enrichment timing free (perf-regression
   signal) + precise "done" marker.
 - `--force` full re-index from scratch; drop for incremental.
-- `--json` emits final result machine-readable (file counts, per-provider
-  enrichment durations, `codegraphResolve` byReceiverKind) instead of human bars
-  — parse directly. Always pass when agent consumes result.
+- `--json` emits the final result machine-readable — file counts, phase
+  durations, `outcome.failed` / `outcome.degraded`, `infraHealth`,
+  `enrichmentHealth` — instead of human bars. Parse directly. Always pass when
+  an agent consumes the result.
+- **`--json` does NOT carry the codegraph resolve breakdown**, and neither does
+  `get_index_status` or the pipeline debug log. `resolveSuccessRate` per
+  receiver kind is rendered by **`prime`**, under `## Codegraph resolve`:
+
+  ```bash
+  DEBUG=1 tea-rags prime <path>   # bareCall 0.93 7816/15114, dynamic 0.88 …
+  ```
+
+  It reads the `cg_run_stats` the last index run persisted, so run the index
+  first and prime after. This is the ONLY supported read path for those numbers
+  — querying DuckDB directly is not one.
+
+- Do not pipe a `--json` run through `head`/`tail` when you also want the
+  diagnostics: they share the stream, and the truncation silently drops the half
+  you were not looking at.
 - MCP `mcp__tea-rags__index_codebase` returns once embeddings stored,
   **detaches** enrichment to background — MCP-side testing forces polling
   `get_index_status` + guessing when enrichment settled. CLI's synchronous wait

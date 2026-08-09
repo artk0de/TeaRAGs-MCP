@@ -14,6 +14,7 @@ import { isDebug } from "../../../infra/runtime.js";
 import type { IndexOptions, IndexStats, ProgressCallback } from "../../../types.js";
 import { IndexingFailedError } from "../errors.js";
 import { cleanupOrphanedVersions, sweepCodegraphOrphans } from "../infra/alias-cleanup.js";
+import { claimVersionedCollection } from "../infra/collection-build-lease.js";
 import { HeartbeatGuard } from "../infra/heartbeat-guard.js";
 import { OptimizerLifecycle } from "../infra/optimizer-lifecycle.js";
 import { BaseIndexingPipeline, type ProcessingContext } from "../pipeline/base.js";
@@ -277,13 +278,12 @@ export class IndexPipeline extends BaseIndexingPipeline {
     // Compute new version from the live alias target + any leftover versioned
     // collections (orphans), so a new version never re-collides with state Qdrant
     // already holds.
-    const newVersion = computeNewVersion({
+    const computedVersion = computeNewVersion({
       collectionName,
       aliasTargetCollection,
       allCollections,
       isMigration,
     });
-    const versionedName = `${collectionName}_v${newVersion}`;
     // The collection to switch the alias away from is exactly what the alias
     // currently points to (undefined on first index / migration).
     const previousCollection = aliasTargetCollection;
@@ -300,43 +300,49 @@ export class IndexPipeline extends BaseIndexingPipeline {
       await sweepCodegraphOrphans(this.qdrant, collectionName, this.codegraphLister, this.codegraphRemover);
     }
 
-    // Clean up stale target from a previously failed attempt (e.g. crashed mid-index)
-    const targetAlreadyExists = await this.qdrant.collectionExists(versionedName);
-    /* v8 ignore next 6 -- defensive cleanup: hard to simulate in unit tests (requires mid-index crash) */
-    if (targetAlreadyExists) {
-      if (isDebug()) {
-        console.error(`[Index] Stale collection ${versionedName} found from failed attempt, deleting`);
-      }
-      await this.qdrant.deleteCollection(versionedName);
-    }
+    // Take the version. `computedVersion` is only a starting point: it comes
+    // from a snapshot of Qdrant taken moments ago, and a concurrent force run
+    // that read the same snapshot computes the same number. The claim skips a
+    // version a live run holds (never deleting it — that is what killed the
+    // owning run before) and reclaims one nothing holds, so a crash leftover is
+    // still reused rather than hoarded. See infra/collection-build-lease.ts.
+    const vectorSize = await this.resolveVectorSize(dimensionsOverride);
+    const claim = await claimVersionedCollection({
+      qdrant: this.qdrant,
+      baseCollectionName: collectionName,
+      firstVersion: computedVersion,
+      createLeasedCollection: async (name) => {
+        await this.qdrant.createCollection(
+          name,
+          vectorSize,
+          "Cosine",
+          this.config.enableHybridSearch,
+          this.config.quantizationScalar,
+          this.config.turboQuant,
+        );
+        // Publish the lease immediately: until this marker lands, no other run
+        // can tell this collection apart from an abandoned one. Schema init
+        // waits — it is a dozen round trips of blind window otherwise.
+        await storeIndexingMarker(this.qdrant, this.embeddings, name, false, undefined, this.teaRagsVersion);
+      },
+    });
+    const versionedName = claim.collectionName;
 
     if (isDebug()) {
       console.error(
-        `[Index] Setup: version=${newVersion}, target=${versionedName}, ` +
+        `[Index] Setup: version=${claim.version} (computed ${computedVersion}), target=${versionedName}, ` +
           `previous=${previousCollection ?? "none"}, migration=${isMigration}`,
       );
     }
 
-    // Create new versioned collection
-    const vectorSize = await this.resolveVectorSize(dimensionsOverride);
-    await this.qdrant.createCollection(
-      versionedName,
-      vectorSize,
-      "Cosine",
-      this.config.enableHybridSearch,
-      this.config.quantizationScalar,
-      this.config.turboQuant,
-    );
-
     const schemaManager = this.deps.createSchemaManager(versionedName);
     await schemaManager.initializeSchema(versionedName);
-    await storeIndexingMarker(this.qdrant, this.embeddings, versionedName, false, undefined, this.teaRagsVersion);
 
     return {
       ready: true,
       targetCollection: versionedName,
       previousCollection,
-      aliasVersion: newVersion,
+      aliasVersion: claim.version,
       // First index: nothing exists yet (no alias, no real collection).
       isFirstIndex: !exists && !isMigration,
       isMigration,

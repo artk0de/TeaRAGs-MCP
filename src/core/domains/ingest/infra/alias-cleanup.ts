@@ -1,5 +1,6 @@
 import type { QdrantManager } from "../../../adapters/qdrant/client.js";
 import { isDebug } from "../../../infra/runtime.js";
+import { isCollectionBuildInFlight } from "./collection-build-lease.js";
 
 /**
  * Drops the per-version codegraph DuckDB file (and its WAL sidecar) for a
@@ -40,7 +41,24 @@ export async function cleanupOrphanedVersions(
   if (!activeCollection) return 0;
 
   const allCollections = await qdrant.listCollections();
-  const orphans = allCollections.filter((c) => c.startsWith(`${collectionName}_v`) && c !== activeCollection);
+  const candidates = allCollections.filter((c) => c.startsWith(`${collectionName}_v`) && c !== activeCollection);
+
+  // Not pointed at by the alias is NOT the same as abandoned. A force reindex
+  // builds its next version off to the side and only switches the alias at the
+  // end, so between those two moments its target looks exactly like an orphan.
+  // Deleting it kills the run that owns it — the foreground reindex fails on its
+  // next upload with "Collection … doesn't exist" while the run that deleted it
+  // reports success (bd tea-rags-mcp-nrylk).
+  const orphans: string[] = [];
+  for (const candidate of candidates) {
+    if (await isCollectionBuildInFlight(qdrant, candidate)) {
+      if (isDebug()) {
+        console.error(`[AliasCleanup] ${candidate} is being built by a live run — leaving it alone`);
+      }
+      continue;
+    }
+    orphans.push(candidate);
+  }
 
   for (const orphan of orphans) {
     await qdrant.deleteCollection(orphan);
