@@ -16,7 +16,7 @@ import type { EnrichmentMetrics } from "../../../../types.js";
 import { pipelineLog } from "../infra/debug-logger.js";
 import type { EnrichmentApplier } from "./applier.js";
 import type { EnrichmentBackfiller } from "./backfiller.js";
-import type { ChunkPhase } from "./chunk-phase.js";
+import type { ChunkPhase, ChunkPhaseMetrics } from "./chunk-phase.js";
 import type { FilePhase } from "./file-phase.js";
 import type { EnrichmentMarkerStore } from "./marker-store.js";
 import type { ChunkFinalInput, EnrichmentProvider, ProviderContext } from "./types.js";
@@ -67,7 +67,7 @@ export class CompletionRunner {
     runStartedAt = "",
     runId = "",
   ): Promise<EnrichmentMetrics> {
-    const { filePhase, chunkPhase, applier, markerStore, executor } = this.deps;
+    const { filePhase, chunkPhase } = this.deps;
     const readUnenriched: UnenrichedReader = unenrichedReader ?? (async () => 0);
 
     // 1. drain prefetch (no-op) + drain streaming fileWork
@@ -91,39 +91,7 @@ export class CompletionRunner {
     // 2. finalize-file pass — deferred whole-repo FILE overlays (codegraph graph
     //    metrics) read back after the run sink finishes, applied by the
     //    accumulated chunkMap. git's finalizeSignals returns an empty map.
-    await this.timedStep("fileFinalize", async () => {
-      for (const ctx of contexts.values()) {
-        // Method-existence is no longer guarded here: runFinalize returns an
-        // empty map when the provider has no finalizeSignals (executor smooths
-        // over the optional method), and the size-zero branch below skips the
-        // apply step — equivalent to the old `if (!finalizeSignals) continue`.
-        if (filePhase.hasPrefetchFailed(ctx.key)) continue;
-        const root = ctx.effectiveRoot ?? "";
-        // Cross-pass end-of-file-phase flush: the MAIN-thread provider instance
-        // buffered node defs via `acceptExtraction` and flushed only complete
-        // cadence batches during embedding — its `N mod cadence` remainder is still
-        // buffered. `runFinalize` dispatches to a SEPARATE worker instance whose own
-        // buffer is empty, so flush the MAIN remainder HERE (on `ctx.provider`, the
-        // main instance) and await it BEFORE the worker resolves + upserts edges —
-        // nodes-before-edges across the instance boundary. Mirrors the cross-pass
-        // `beginExtractionRun` call in `coordinator.beginRun`. No-op off cross-pass
-        // (incremental finalize runs on this same instance and owns its own flush)
-        // and for providers without the seam (git omits it).
-        if (filePhase.crossPassEnabled) await ctx.provider.endExtractionRun?.(coll || undefined);
-        // yl9tv Task 5b — thread crossPass so the codegraph worker's finalize
-        // drains the main-written input spill (pass-1) before resolving (pass-2),
-        // instead of relying on a streamFileBatch that no-opped. Other providers
-        // (git) ignore the flag.
-        const fileOverlays = await executor.runFinalize(ctx.provider, root, {
-          collectionName: coll || undefined,
-          crossPass: filePhase.crossPassEnabled,
-        });
-        if (fileOverlays.size > 0) {
-          await filePhase.applyFinalize(coll, ctx, fileOverlays, chunkPhase.getDeferredChunkMap(ctx.key));
-        }
-      }
-      await filePhase.drain();
-    });
+    await this.timedStep("fileFinalize", async () => this.applyFileFinalize(coll, contexts));
 
     // 3. await the backfill kicked off before the finalize pass (see 2‖3 above).
     //    Must resolve before the terminal file markers below read per-provider
@@ -131,55 +99,10 @@ export class CompletionRunner {
     const backfillOccurred = await this.timedStep("backfillAwait", async () => backfillPromise);
 
     // 4. markFileFinal per ctx — reconcile to degraded on residual file-unenriched.
-    await this.timedStep("fileMarkers", async () => {
-      for (const ctx of contexts.values()) {
-        const fileUnenriched = await readUnenriched(coll, ctx.provider, "file");
-        const fileStatus = filePhase.hasPrefetchFailed(ctx.key)
-          ? "failed"
-          : fileUnenriched > 0
-            ? "degraded"
-            : "completed";
-        await markerStore.markFileFinal(coll, ctx.key, {
-          runId,
-          status: fileStatus,
-          durationMs: filePhase.getPrefetchDurationMs(ctx.key),
-          unenrichedChunks: fileUnenriched,
-          matchedFiles: applier.matchedFiles,
-          missedFiles: applier.missedFiles,
-          ignoredFiles: applier.ignoredFiles,
-          // Carry the prefetch failure cause into the TERMINAL marker — this
-          // write used to overwrite markPrefetchFailed's errorMessage, leaving
-          // `failed` with no cause anywhere (worker stderr is detached).
-          ...(fileStatus === "failed" ? { errorMessage: filePhase.getPrefetchError(ctx.key) } : {}),
-        });
-      }
-    });
+    await this.timedStep("fileMarkers", async () => this.markFileTerminals(coll, contexts, readUnenriched, runId));
 
     // 5. aggregate metrics
-    const fileMetrics = filePhase.getMetrics();
-    const chunkMetrics = chunkPhase.getMetrics();
-    const metrics: EnrichmentMetrics = {
-      prefetchDurationMs: fileMetrics.maxPrefetchDurationMs,
-      streamingApplies: fileMetrics.totalStreamingApplies,
-      flushApplies: fileMetrics.totalFlushApplies,
-      chunkChurnDurationMs: chunkMetrics.totalChunkEnrichmentDurationMs,
-      totalDurationMs: Date.now() - (startTime || Date.now()),
-      matchedFiles: applier.matchedFiles,
-      missedFiles: applier.missedFiles,
-      missedPathSamples: [...applier.missedPathSamples],
-    };
-
-    // 5b. provider-specific counters (codegraph extractedFiles, etc.).
-    // Top-level fields above remain coordinator-owned and git-historical
-    // for back-compat; new providers expose their counters here.
-    let byProvider: Record<string, Record<string, unknown>> | undefined;
-    for (const ctx of contexts.values()) {
-      const providerMetrics = ctx.provider.getRunMetrics?.();
-      if (!providerMetrics) continue;
-      byProvider ??= {};
-      byProvider[ctx.key] = providerMetrics;
-    }
-    if (byProvider) metrics.byProvider = byProvider;
+    const metrics = this.buildMetrics(contexts, startTime);
 
     // 6. drain chunkWork (git streaming)
     // Heartbeats now fire at the applier apply-site (EnrichmentApplier.onApply →
@@ -195,42 +118,15 @@ export class CompletionRunner {
     // here. The previously-tracked limitation (tea-rags-mcp-xlhu) about the
     // codegraph.chunk phase potentially reporting "stalled" during a long
     // PageRank/resolve pass is resolved: the applier-site hook covers it.
-    await this.timedStep("deferredChunk", async () => {
-      for (const ctx of contexts.values()) {
-        if (!ctx.provider.defersChunkEnrichment || filePhase.hasPrefetchFailed(ctx.key)) continue;
-        const cm = chunkPhase.getDeferredChunkMap(ctx.key);
-        if (cm.size > 0) {
-          await chunkPhase.runDeferredChunk(coll, ctx, ctx.effectiveRoot ?? "", cm);
-        }
-      }
-    });
+    await this.timedStep("deferredChunk", async () => this.runDeferredChunkPass(coll, contexts));
 
     const finalChunkMetrics = chunkPhase.getMetrics();
     metrics.chunkChurnDurationMs = finalChunkMetrics.totalChunkEnrichmentDurationMs;
 
     // 8. markChunkFinal per ctx
-    await this.timedStep("chunkMarkers", async () => {
-      for (const ctx of contexts.values()) {
-        const chunkUnenriched = await readUnenriched(coll, ctx.provider, "chunk");
-        let chunkStatus: ChunkFinalInput["status"];
-        if (filePhase.hasPrefetchFailed(ctx.key) || chunkPhase.hasChunkEnrichmentFailed(ctx.key)) {
-          chunkStatus = "failed";
-        } else if (chunkUnenriched > 0) {
-          chunkStatus = "degraded";
-        } else {
-          chunkStatus = "completed";
-        }
-        await markerStore.markChunkFinal(coll, ctx.key, {
-          runId,
-          status: chunkStatus,
-          // iqpuu: per-provider wall span — the marker no longer inherits the
-          // cross-provider span (deferred codegraph used to stretch git's).
-          durationMs: finalChunkMetrics.providerDurationsMs[ctx.key] ?? 0,
-          unenrichedChunks: chunkUnenriched,
-          ...(chunkStatus === "failed" ? { errorMessage: filePhase.getPrefetchError(ctx.key) } : {}),
-        });
-      }
-    });
+    await this.timedStep("chunkMarkers", async () =>
+      this.markChunkTerminals(coll, contexts, readUnenriched, runId, finalChunkMetrics),
+    );
 
     // 9. Re-fire stats callback if backfill wrote post-streaming overlays.
     // First fire (streaming end inside ChunkPhase) preserves the 896f343c
@@ -242,6 +138,160 @@ export class CompletionRunner {
 
     pipelineLog.enrichmentPhase("ALL_COMPLETE", { ...metrics });
     return metrics;
+  }
+
+  /**
+   * Step 2 — read back each provider's deferred whole-repo FILE overlays and
+   * apply them through the accumulated chunkMap. Runs CONCURRENTLY with the
+   * out-of-window backfill; see the 2‖3 note in `run`.
+   */
+  private async applyFileFinalize(coll: string, contexts: ReadonlyMap<string, ProviderContext>): Promise<void> {
+    const { filePhase, chunkPhase, executor } = this.deps;
+    for (const ctx of contexts.values()) {
+      // Method-existence is no longer guarded here: runFinalize returns an
+      // empty map when the provider has no finalizeSignals (executor smooths
+      // over the optional method), and the size-zero branch below skips the
+      // apply step — equivalent to the old `if (!finalizeSignals) continue`.
+      if (filePhase.hasPrefetchFailed(ctx.key)) continue;
+      const root = ctx.effectiveRoot ?? "";
+      // Cross-pass end-of-file-phase flush: the MAIN-thread provider instance
+      // buffered node defs via `acceptExtraction` and flushed only complete
+      // cadence batches during embedding — its `N mod cadence` remainder is still
+      // buffered. `runFinalize` dispatches to a SEPARATE worker instance whose own
+      // buffer is empty, so flush the MAIN remainder HERE (on `ctx.provider`, the
+      // main instance) and await it BEFORE the worker resolves + upserts edges —
+      // nodes-before-edges across the instance boundary. Mirrors the cross-pass
+      // `beginExtractionRun` call in `coordinator.beginRun`. No-op off cross-pass
+      // (incremental finalize runs on this same instance and owns its own flush)
+      // and for providers without the seam (git omits it).
+      if (filePhase.crossPassEnabled) await ctx.provider.endExtractionRun?.(coll || undefined);
+      // yl9tv Task 5b — thread crossPass so the codegraph worker's finalize
+      // drains the main-written input spill (pass-1) before resolving (pass-2),
+      // instead of relying on a streamFileBatch that no-opped. Other providers
+      // (git) ignore the flag.
+      const fileOverlays = await executor.runFinalize(ctx.provider, root, {
+        collectionName: coll || undefined,
+        crossPass: filePhase.crossPassEnabled,
+      });
+      if (fileOverlays.size > 0) {
+        await filePhase.applyFinalize(coll, ctx, fileOverlays, chunkPhase.getDeferredChunkMap(ctx.key));
+      }
+    }
+    await filePhase.drain();
+  }
+
+  /**
+   * Step 4 — terminal FILE marker per provider. Reads post-backfill unenriched
+   * counts, so it must run after the backfill await.
+   */
+  private async markFileTerminals(
+    coll: string,
+    contexts: ReadonlyMap<string, ProviderContext>,
+    readUnenriched: UnenrichedReader,
+    runId: string,
+  ): Promise<void> {
+    const { filePhase, applier, markerStore } = this.deps;
+    for (const ctx of contexts.values()) {
+      const fileUnenriched = await readUnenriched(coll, ctx.provider, "file");
+      const fileStatus = filePhase.hasPrefetchFailed(ctx.key)
+        ? "failed"
+        : fileUnenriched > 0
+          ? "degraded"
+          : "completed";
+      await markerStore.markFileFinal(coll, ctx.key, {
+        runId,
+        status: fileStatus,
+        durationMs: filePhase.getPrefetchDurationMs(ctx.key),
+        unenrichedChunks: fileUnenriched,
+        matchedFiles: applier.matchedFiles,
+        missedFiles: applier.missedFiles,
+        ignoredFiles: applier.ignoredFiles,
+        // Carry the prefetch failure cause into the TERMINAL marker — this
+        // write used to overwrite markPrefetchFailed's errorMessage, leaving
+        // `failed` with no cause anywhere (worker stderr is detached).
+        ...(fileStatus === "failed" ? { errorMessage: filePhase.getPrefetchError(ctx.key) } : {}),
+      });
+    }
+  }
+
+  /**
+   * Step 5 (+5b) — snapshot the run's counters. Top-level fields stay
+   * coordinator-owned and git-historical for back-compat; provider-specific
+   * counters (codegraph extractedFiles, etc.) go under `byProvider`.
+   *
+   * `chunkChurnDurationMs` is a PRELIMINARY read here — the deferred-chunk pass
+   * (step 7) still has to run, and `run` overwrites the field afterwards.
+   */
+  private buildMetrics(contexts: ReadonlyMap<string, ProviderContext>, startTime: number): EnrichmentMetrics {
+    const { filePhase, chunkPhase, applier } = this.deps;
+    const fileMetrics = filePhase.getMetrics();
+    const chunkMetrics = chunkPhase.getMetrics();
+    const metrics: EnrichmentMetrics = {
+      prefetchDurationMs: fileMetrics.maxPrefetchDurationMs,
+      streamingApplies: fileMetrics.totalStreamingApplies,
+      flushApplies: fileMetrics.totalFlushApplies,
+      chunkChurnDurationMs: chunkMetrics.totalChunkEnrichmentDurationMs,
+      totalDurationMs: Date.now() - (startTime || Date.now()),
+      matchedFiles: applier.matchedFiles,
+      missedFiles: applier.missedFiles,
+      missedPathSamples: [...applier.missedPathSamples],
+    };
+
+    let byProvider: Record<string, Record<string, unknown>> | undefined;
+    for (const ctx of contexts.values()) {
+      const providerMetrics = ctx.provider.getRunMetrics?.();
+      if (!providerMetrics) continue;
+      byProvider ??= {};
+      byProvider[ctx.key] = providerMetrics;
+    }
+    if (byProvider) metrics.byProvider = byProvider;
+    return metrics;
+  }
+
+  /**
+   * Step 7 — codegraph buildChunkSignals against the finished graph, keyed by
+   * the full accumulated chunkMap.
+   */
+  private async runDeferredChunkPass(coll: string, contexts: ReadonlyMap<string, ProviderContext>): Promise<void> {
+    const { filePhase, chunkPhase } = this.deps;
+    for (const ctx of contexts.values()) {
+      if (!ctx.provider.defersChunkEnrichment || filePhase.hasPrefetchFailed(ctx.key)) continue;
+      const cm = chunkPhase.getDeferredChunkMap(ctx.key);
+      if (cm.size > 0) {
+        await chunkPhase.runDeferredChunk(coll, ctx, ctx.effectiveRoot ?? "", cm);
+      }
+    }
+  }
+
+  /** Step 8 — terminal CHUNK marker per provider, after the deferred pass. */
+  private async markChunkTerminals(
+    coll: string,
+    contexts: ReadonlyMap<string, ProviderContext>,
+    readUnenriched: UnenrichedReader,
+    runId: string,
+    finalChunkMetrics: ChunkPhaseMetrics,
+  ): Promise<void> {
+    const { filePhase, chunkPhase, markerStore } = this.deps;
+    for (const ctx of contexts.values()) {
+      const chunkUnenriched = await readUnenriched(coll, ctx.provider, "chunk");
+      let chunkStatus: ChunkFinalInput["status"];
+      if (filePhase.hasPrefetchFailed(ctx.key) || chunkPhase.hasChunkEnrichmentFailed(ctx.key)) {
+        chunkStatus = "failed";
+      } else if (chunkUnenriched > 0) {
+        chunkStatus = "degraded";
+      } else {
+        chunkStatus = "completed";
+      }
+      await markerStore.markChunkFinal(coll, ctx.key, {
+        runId,
+        status: chunkStatus,
+        // iqpuu: per-provider wall span — the marker no longer inherits the
+        // cross-provider span (deferred codegraph used to stretch git's).
+        durationMs: finalChunkMetrics.providerDurationsMs[ctx.key] ?? 0,
+        unenrichedChunks: chunkUnenriched,
+        ...(chunkStatus === "failed" ? { errorMessage: filePhase.getPrefetchError(ctx.key) } : {}),
+      });
+    }
   }
 
   /**

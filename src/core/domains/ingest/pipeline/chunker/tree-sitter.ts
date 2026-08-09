@@ -18,15 +18,36 @@ import type {
   SymbolIdComposer,
 } from "../../../../contracts/types/language.js";
 import { materializeTree } from "../../../../infra/materialize.js";
+import { isDebug } from "../../../../infra/runtime.js";
 import { isStaticMethodNode } from "../../../../infra/symbolid/index.js";
 import type { ChunkerConfig, CodeChunk } from "../../../../types.js";
 import { AST_NOT_PROCESSED_REASON, FileParseError } from "../../errors.js";
-import { isDebug } from "../../../../infra/runtime.js";
 import type { CodeChunker } from "./base.js";
 import { CharacterChunker } from "./character.js";
 import type { LanguageConfig } from "./config.js";
 import { createHookContext, type ChunkingHook, type HookContext } from "./hooks/types.js";
 import { MarkdownChunker } from "./markdown-chunker.js";
+import { SymbolIdDisambiguator } from "./symbol-id-disambiguator.js";
+
+/**
+ * Everything one `processChildren` pass holds constant while it routes each
+ * child to an emitter. Bundled so the three emitters take (node, pass) instead
+ * of re-threading ten positional arguments each.
+ */
+interface ChildChunkEmissionPass {
+  ctx: HookContext;
+  langConfig: LanguageConfig;
+  code: string;
+  filePath: string;
+  language: string;
+  parentName: string | undefined;
+  parentType: string;
+  /** Output accumulator — emitters push in emission order. */
+  chunks: CodeChunk[];
+  hierarchyHeaders: string[];
+  /** Per-pass overload counter shared by the oversized and leaf emitters. */
+  overloads: SymbolIdDisambiguator;
+}
 
 export class TreeSitterChunker implements CodeChunker {
   /** Cache of initialized parsers (lazy-loaded) */
@@ -861,6 +882,10 @@ export class TreeSitterChunker implements CodeChunker {
   /**
    * Process child nodes of a container, recursing into nested containers.
    * Handles the child extraction loop with support for arbitrary nesting depth.
+   *
+   * Each child takes exactly one of three exits — oversized (character
+   * fallback), nested container (recurse), or leaf (emit) — so the loop stays a
+   * routing decision and each exit owns its own emission rules.
    */
   private async processChildren(
     validChildren: AstNode[],
@@ -878,82 +903,28 @@ export class TreeSitterChunker implements CodeChunker {
     // skip child emission — all chunks are in ctx.bodyChunks
     if (ctx.skipChildren) return;
 
-    // bd tea-rags-mcp-a466 — overload disambiguation. Multiple
-    // `method_declaration` nodes with the same name produce identical
-    // composed symbolIds (e.g. three `upperCase(...)` overloads under
-    // `class StringUtils` all compose as `StringUtils.upperCase`). When
-    // the language opts in via `disambiguateOverloads: true`, track
-    // occurrences per composed symbolId WITHIN this processChildren
-    // pass and suffix every occurrence after the first with `~N`
-    // (1-based, first stays unchanged). The same convention runs on
-    // the codegraph provider's `collectSymbols` so cg_symbols + Qdrant
-    // payload agree on the same physical AST node. Per
-    // `.claude/rules/symbolid-convention.md`. Default-off so TS get/set
-    // pairs and Python `@functools.singledispatch` stub/impl pairs keep
-    // their first-occurrence behaviour.
-    const symbolIdOccurrences = new Map<string, number>();
-    const disambiguateOverloads = langConfig.disambiguateOverloads === true;
-    const disambiguateSymbolId = (baseId: string | undefined): string | undefined => {
-      if (baseId === undefined) return undefined;
-      if (!disambiguateOverloads) return baseId;
-      const seen = symbolIdOccurrences.get(baseId) ?? 0;
-      const next = seen + 1;
-      symbolIdOccurrences.set(baseId, next);
-      return next === 1 ? baseId : `${baseId}~${next}`;
+    const pass: ChildChunkEmissionPass = {
+      ctx,
+      langConfig,
+      code,
+      filePath,
+      language,
+      parentName,
+      parentType,
+      chunks,
+      hierarchyHeaders,
+      // bd tea-rags-mcp-a466 — occurrence counting is scoped to THIS pass, so
+      // sibling overloads collide (and get `~N`) while the same name under a
+      // different container does not.
+      overloads: new SymbolIdDisambiguator(langConfig.disambiguateOverloads === true),
     };
 
     for (let ci = 0; ci < validChildren.length; ci++) {
       const childNode = validChildren[ci];
       const childContent = code.substring(childNode.startIndex, childNode.endIndex);
 
-      // If child is too large, use character fallback. Mirror the
-      // `chunkOversizedNode` invariant at the method scope: every
-      // sub-chunk shares the composed method symbolId (`Foo#__init__`)
-      // and `chunkType: "function"`. Before bd tea-rags-mcp-5xie, the
-      // raw fallback chunks carried `symbolId: undefined` /
-      // `chunkType: "block"`, so `find_symbol("Flask#__init__")` came up
-      // empty even though cg_symbols had the entry. See
-      // .claude/rules/symbolid-convention.md and the regression test in
-      // tree-sitter.oversized-symbolid.test.ts.
       if (childContent.length > this.config.maxChunkSize) {
-        const childMethodLines = childNode.endPosition.row - childNode.startPosition.row + 1;
-        const semanticNode = this.unwrapDecoratedDefinition(childNode);
-        const childName = this.extractName(semanticNode, code, langConfig.nameExtractor);
-        const isStatic = isStaticMethodNode(semanticNode);
-        const intermediateScopes = this.collectIntermediateScopes(childNode, langConfig, code);
-        const effectiveParent = this.composeParentSymbol(parentName, intermediateScopes, langConfig.scopeSeparator);
-        // bd tea-rags-mcp-a466 — disambiguate overloads BEFORE deciding
-        // the chunk's symbolId so oversized-method splits inherit the
-        // already-suffixed id (each split shares the composed method id;
-        // see bd tea-rags-mcp-5xie invariant). Without this, two oversized
-        // overloads would collapse into the same symbolId across parts.
-        const methodSymbolId = disambiguateSymbolId(this.buildSymbolId(childName, effectiveParent, isStatic));
-        const methodChunkType = this.getChunkType(semanticNode.type);
-        const subChunks = await this.fallbackChunker.chunk(childContent, filePath, language);
-        for (const subChunk of subChunks) {
-          chunks.push({
-            ...subChunk,
-            startLine: childNode.startPosition.row + 1 + subChunk.startLine - 1,
-            endLine: childNode.endPosition.row + 1 + subChunk.endLine - 1,
-            metadata: {
-              ...subChunk.metadata,
-              chunkIndex: chunks.length,
-              chunkType: methodChunkType,
-              name: childName,
-              // Every split shares the composed METHOD symbolId
-              // (bd tea-rags-mcp-5xie invariant).
-              symbolId: methodSymbolId,
-              // bd tea-rags-mcp-cpbv — parts point at the CLASS as their
-              // parent, not at the method itself. The 5xie self-reference
-              // (parentSymbolId === symbolId) created a self-loop that
-              // broke MCP navigation between parts and shadowed the
-              // class lineage.
-              parentSymbolId: effectiveParent ?? parentName,
-              parentType,
-              methodLines: childMethodLines,
-            },
-          });
-        }
+        await this.emitOversizedChild(childNode, childContent, pass);
         continue;
       }
 
@@ -967,143 +938,228 @@ export class TreeSitterChunker implements CodeChunker {
       );
       const validGrandChildren = grandChildren.filter((c) => code.substring(c.startIndex, c.endIndex).length >= 50);
 
-      // bd tea-rags-mcp-07fr — Recurse-as-container is correct only when
-      // the child is itself a SCOPE container (class / module). If a
-      // class method (`def route`) contains an inner function
-      // (`def decorator`), recursing here would emit ONLY the inner
-      // function and shadow the outer method. The outer method must be
-      // emitted as a leaf chunk so `find_symbol("Scaffold#route")`
-      // resolves. The grandchildren (inner defs) are intentionally NOT
-      // chunked separately — decorator-factories and helper closures
-      // rarely need standalone search hits.
-      const isScopeContainerChild = langConfig.scopeContainerTypes?.includes(childNode.type) ?? false;
-      const childIsRubyHookContainer = (langConfig.hooks?.length ?? 0) > 0;
-      const canRecurseAsContainer = isScopeContainerChild || childIsRubyHookContainer;
-
-      if (validGrandChildren.length > 0 && langConfig.alwaysExtractChildren && canRecurseAsContainer) {
-        // Recurse: treat this child as a container
-        const childName = this.extractName(childNode, code, langConfig.nameExtractor);
-        const childHeader = this.extractContainerHeader(childNode, code);
-        const childCtx = createHookContext(
-          childNode,
-          validGrandChildren,
-          code,
-          {
-            maxChunkSize: this.config.maxChunkSize,
-          },
-          filePath,
-        );
-        for (const hook of langConfig.hooks ?? []) {
-          if (childCtx.bodyChunks.length > 0) break;
-          hook.process(childCtx);
-        }
-
-        const fullParentName = this.buildParentPath(
-          [...(parentName ? [parentName] : []), ...(childName ? [childName] : [])],
-          langConfig.scopeSeparator,
-        );
-
-        await this.processChildren(
-          validGrandChildren,
-          childCtx,
-          langConfig,
-          code,
-          filePath,
-          language,
-          fullParentName,
-          childNode.type,
-          chunks,
-          [...hierarchyHeaders, childHeader],
-        );
-
-        // Body chunks from hook chain for this nested container
-        const hierarchyPrefix = this.buildHierarchyPrefix(hierarchyHeaders);
-        for (const result of childCtx.bodyChunks) {
-          const bodyContent =
-            hierarchyHeaders.length > 0 ? `${hierarchyPrefix}${childHeader}\n${result.content}` : result.content;
-          chunks.push({
-            content: bodyContent,
-            startLine: result.startLine,
-            endLine: result.endLine,
-            metadata: {
-              filePath,
-              language,
-              chunkIndex: chunks.length,
-              chunkType: (result.chunkType as CodeChunk["metadata"]["chunkType"]) ?? "block",
-              name: result.name ?? childName,
-              parentSymbolId: result.parentSymbolId ?? fullParentName ?? parentName,
-              parentType,
-              symbolId: result.symbolId ?? this.buildSymbolId(childName),
-              lineRanges: result.lineRanges,
-            },
-          });
-        }
-
+      if (
+        validGrandChildren.length > 0 &&
+        langConfig.alwaysExtractChildren &&
+        this.canRecurseAsContainer(childNode, langConfig)
+      ) {
+        await this.emitNestedContainer(childNode, validGrandChildren, pass);
         continue;
       }
 
-      // Leaf child — emit as chunk with hierarchy context
-      let finalContent = childContent.trim();
-      let startLine = childNode.startPosition.row + 1;
+      this.emitLeafChild(childNode, ci, childContent, pass);
+    }
+  }
 
-      const prefix = ctx.methodPrefixes.get(ci);
-      if (prefix) {
-        finalContent = `${prefix}\n${finalContent}`;
-      }
-      const overrideStart = ctx.methodStartLines.get(ci);
-      if (overrideStart !== undefined) {
-        startLine = overrideStart;
-      }
+  /**
+   * bd tea-rags-mcp-07fr — Recurse-as-container is correct only when the child
+   * is itself a SCOPE container (class / module). If a class method
+   * (`def route`) contains an inner function (`def decorator`), recursing would
+   * emit ONLY the inner function and shadow the outer method. The outer method
+   * must be emitted as a leaf chunk so `find_symbol("Scaffold#route")`
+   * resolves. The grandchildren (inner defs) are intentionally NOT chunked
+   * separately — decorator-factories and helper closures rarely need standalone
+   * search hits.
+   */
+  private canRecurseAsContainer(childNode: AstNode, langConfig: LanguageConfig): boolean {
+    const isScopeContainerChild = langConfig.scopeContainerTypes?.includes(childNode.type) ?? false;
+    const childIsRubyHookContainer = (langConfig.hooks?.length ?? 0) > 0;
+    return isScopeContainerChild || childIsRubyHookContainer;
+  }
 
-      // Prepend hierarchy headers for context (e.g., describe > context > context)
-      if (hierarchyHeaders.length > 0) {
-        const hierarchyPrefix = this.buildHierarchyPrefix(hierarchyHeaders);
-        finalContent = `${hierarchyPrefix}${finalContent}`;
-      }
-
-      // Python `decorated_definition` wraps a `function_definition` whose
-      // decorators (@classmethod / @staticmethod) drive the instance vs
-      // class-method classification. The outer wrapper has no `name` field
-      // and `classifyMethod` only branches on the inner type, so name
-      // extraction and static detection must read the inner node — but
-      // chunk content/range stays on the outer wrapper so the decorator
-      // remains visible. See `.claude/rules/symbolid-convention.md`.
-      const semanticNode = this.unwrapDecoratedDefinition(childNode);
-      const childName = this.extractName(semanticNode, code, langConfig.nameExtractor);
-      // Universal `#` (instance) vs `.` (class/static) — single source
-      // of truth in `infra/symbolid`. See
-      // `.claude/rules/symbolid-convention.md`.
-      const isStatic = isStaticMethodNode(semanticNode);
-      // Accumulate intermediate scope-container ancestor names between
-      // the outer container and the leaf (Ruby: nested `module`/`class`).
-      // Without this, the leaf's parentSymbolId stays at the OUTERMOST
-      // container's name and diverges from the codegraph form
-      // (bd tea-rags-mcp-bdvm). When `scopeContainerTypes` is unset, the
-      // returned list is empty and behaviour is unchanged.
-      const intermediateScopes = this.collectIntermediateScopes(childNode, langConfig, code);
-      const effectiveParent = this.composeParentSymbol(parentName, intermediateScopes, langConfig.scopeSeparator);
-      // bd tea-rags-mcp-a466 — disambiguate per-overload (see comment at
-      // the top of processChildren). The first occurrence under a given
-      // (parent, name) keeps its symbolId; subsequent occurrences get
-      // a `~N` suffix.
-      const symbolId = disambiguateSymbolId(this.buildSymbolId(childName, effectiveParent, isStatic));
+  /**
+   * Child too large for one chunk — split it with the character fallback.
+   *
+   * Mirrors the `chunkOversizedNode` invariant at the method scope: every
+   * sub-chunk shares the composed method symbolId (`Foo#__init__`) and
+   * `chunkType: "function"`. Before bd tea-rags-mcp-5xie, the raw fallback
+   * chunks carried `symbolId: undefined` / `chunkType: "block"`, so
+   * `find_symbol("Flask#__init__")` came up empty even though cg_symbols had
+   * the entry. See `.claude/rules/symbolid-convention.md` and the regression
+   * test in tree-sitter.oversized-symbolid.test.ts.
+   */
+  private async emitOversizedChild(
+    childNode: AstNode,
+    childContent: string,
+    pass: ChildChunkEmissionPass,
+  ): Promise<void> {
+    const { langConfig, code, filePath, language, parentName, parentType, chunks } = pass;
+    const childMethodLines = childNode.endPosition.row - childNode.startPosition.row + 1;
+    const semanticNode = this.unwrapDecoratedDefinition(childNode);
+    const childName = this.extractName(semanticNode, code, langConfig.nameExtractor);
+    const isStatic = isStaticMethodNode(semanticNode);
+    const intermediateScopes = this.collectIntermediateScopes(childNode, langConfig, code);
+    const effectiveParent = this.composeParentSymbol(parentName, intermediateScopes, langConfig.scopeSeparator);
+    // bd tea-rags-mcp-a466 — disambiguate overloads BEFORE deciding
+    // the chunk's symbolId so oversized-method splits inherit the
+    // already-suffixed id (each split shares the composed method id;
+    // see bd tea-rags-mcp-5xie invariant). Without this, two oversized
+    // overloads would collapse into the same symbolId across parts.
+    const methodSymbolId = pass.overloads.disambiguate(this.buildSymbolId(childName, effectiveParent, isStatic));
+    const methodChunkType = this.getChunkType(semanticNode.type);
+    const subChunks = await this.fallbackChunker.chunk(childContent, filePath, language);
+    for (const subChunk of subChunks) {
       chunks.push({
-        content: finalContent,
-        startLine,
-        endLine: this.computeEndLine(childNode),
+        ...subChunk,
+        startLine: childNode.startPosition.row + 1 + subChunk.startLine - 1,
+        endLine: childNode.endPosition.row + 1 + subChunk.endLine - 1,
+        metadata: {
+          ...subChunk.metadata,
+          chunkIndex: chunks.length,
+          chunkType: methodChunkType,
+          name: childName,
+          // Every split shares the composed METHOD symbolId
+          // (bd tea-rags-mcp-5xie invariant).
+          symbolId: methodSymbolId,
+          // bd tea-rags-mcp-cpbv — parts point at the CLASS as their
+          // parent, not at the method itself. The 5xie self-reference
+          // (parentSymbolId === symbolId) created a self-loop that
+          // broke MCP navigation between parts and shadowed the
+          // class lineage.
+          parentSymbolId: effectiveParent ?? parentName,
+          parentType,
+          methodLines: childMethodLines,
+        },
+      });
+    }
+  }
+
+  /**
+   * Child is itself a container (nested describe/context, nested class) —
+   * recurse into its grandchildren, then emit whatever the hook chain produced
+   * for the container's own body.
+   */
+  private async emitNestedContainer(
+    childNode: AstNode,
+    validGrandChildren: AstNode[],
+    pass: ChildChunkEmissionPass,
+  ): Promise<void> {
+    const { langConfig, code, filePath, language, parentName, parentType, chunks, hierarchyHeaders } = pass;
+    const childName = this.extractName(childNode, code, langConfig.nameExtractor);
+    const childHeader = this.extractContainerHeader(childNode, code);
+    const childCtx = createHookContext(
+      childNode,
+      validGrandChildren,
+      code,
+      {
+        maxChunkSize: this.config.maxChunkSize,
+      },
+      filePath,
+    );
+    for (const hook of langConfig.hooks ?? []) {
+      if (childCtx.bodyChunks.length > 0) break;
+      hook.process(childCtx);
+    }
+
+    const fullParentName = this.buildParentPath(
+      [...(parentName ? [parentName] : []), ...(childName ? [childName] : [])],
+      langConfig.scopeSeparator,
+    );
+
+    await this.processChildren(
+      validGrandChildren,
+      childCtx,
+      langConfig,
+      code,
+      filePath,
+      language,
+      fullParentName,
+      childNode.type,
+      chunks,
+      [...hierarchyHeaders, childHeader],
+    );
+
+    // Body chunks from hook chain for this nested container
+    const hierarchyPrefix = this.buildHierarchyPrefix(hierarchyHeaders);
+    for (const result of childCtx.bodyChunks) {
+      const bodyContent =
+        hierarchyHeaders.length > 0 ? `${hierarchyPrefix}${childHeader}\n${result.content}` : result.content;
+      chunks.push({
+        content: bodyContent,
+        startLine: result.startLine,
+        endLine: result.endLine,
         metadata: {
           filePath,
           language,
           chunkIndex: chunks.length,
-          chunkType: this.getChunkType(semanticNode.type),
-          name: childName,
-          parentSymbolId: effectiveParent,
+          chunkType: (result.chunkType as CodeChunk["metadata"]["chunkType"]) ?? "block",
+          name: result.name ?? childName,
+          parentSymbolId: result.parentSymbolId ?? fullParentName ?? parentName,
           parentType,
-          symbolId,
-          methodLines: this.computeEndLine(childNode) - (childNode.startPosition.row + 1),
+          symbolId: result.symbolId ?? this.buildSymbolId(childName),
+          lineRanges: result.lineRanges,
         },
       });
     }
+  }
+
+  /**
+   * Leaf child — emit as a single chunk with hierarchy context.
+   *
+   * `ci` is the child's index within the pass: the hook chain addresses its
+   * per-method prefix / start-line overrides by that index.
+   */
+  private emitLeafChild(childNode: AstNode, ci: number, childContent: string, pass: ChildChunkEmissionPass): void {
+    const { ctx, langConfig, code, filePath, language, parentName, parentType, chunks, hierarchyHeaders } = pass;
+    let finalContent = childContent.trim();
+    let startLine = childNode.startPosition.row + 1;
+
+    const prefix = ctx.methodPrefixes.get(ci);
+    if (prefix) {
+      finalContent = `${prefix}\n${finalContent}`;
+    }
+    const overrideStart = ctx.methodStartLines.get(ci);
+    if (overrideStart !== undefined) {
+      startLine = overrideStart;
+    }
+
+    // Prepend hierarchy headers for context (e.g., describe > context > context)
+    if (hierarchyHeaders.length > 0) {
+      const hierarchyPrefix = this.buildHierarchyPrefix(hierarchyHeaders);
+      finalContent = `${hierarchyPrefix}${finalContent}`;
+    }
+
+    // Python `decorated_definition` wraps a `function_definition` whose
+    // decorators (@classmethod / @staticmethod) drive the instance vs
+    // class-method classification. The outer wrapper has no `name` field
+    // and `classifyMethod` only branches on the inner type, so name
+    // extraction and static detection must read the inner node — but
+    // chunk content/range stays on the outer wrapper so the decorator
+    // remains visible. See `.claude/rules/symbolid-convention.md`.
+    const semanticNode = this.unwrapDecoratedDefinition(childNode);
+    const childName = this.extractName(semanticNode, code, langConfig.nameExtractor);
+    // Universal `#` (instance) vs `.` (class/static) — single source
+    // of truth in `infra/symbolid`. See
+    // `.claude/rules/symbolid-convention.md`.
+    const isStatic = isStaticMethodNode(semanticNode);
+    // Accumulate intermediate scope-container ancestor names between
+    // the outer container and the leaf (Ruby: nested `module`/`class`).
+    // Without this, the leaf's parentSymbolId stays at the OUTERMOST
+    // container's name and diverges from the codegraph form
+    // (bd tea-rags-mcp-bdvm). When `scopeContainerTypes` is unset, the
+    // returned list is empty and behaviour is unchanged.
+    const intermediateScopes = this.collectIntermediateScopes(childNode, langConfig, code);
+    const effectiveParent = this.composeParentSymbol(parentName, intermediateScopes, langConfig.scopeSeparator);
+    // bd tea-rags-mcp-a466 — disambiguate per-overload. The first occurrence
+    // under a given (parent, name) keeps its symbolId; subsequent occurrences
+    // get a `~N` suffix.
+    const symbolId = pass.overloads.disambiguate(this.buildSymbolId(childName, effectiveParent, isStatic));
+    chunks.push({
+      content: finalContent,
+      startLine,
+      endLine: this.computeEndLine(childNode),
+      metadata: {
+        filePath,
+        language,
+        chunkIndex: chunks.length,
+        chunkType: this.getChunkType(semanticNode.type),
+        name: childName,
+        parentSymbolId: effectiveParent,
+        parentType,
+        symbolId,
+        methodLines: this.computeEndLine(childNode) - (childNode.startPosition.row + 1),
+      },
+    });
   }
 
   /**
