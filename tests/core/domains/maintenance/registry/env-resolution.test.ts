@@ -5,6 +5,7 @@ import {
   pickRegistryEntry,
   resolveRegistryEnv,
 } from "../../../../../src/core/domains/maintenance/registry/env-resolution.js";
+import { RegistryQdrantBackendUnresolvedError } from "../../../../../src/core/domains/maintenance/registry/errors.js";
 
 function entry(over: Partial<CollectionEntry>): CollectionEntry {
   return {
@@ -122,6 +123,105 @@ describe("resolveRegistryEnv", () => {
   it("keeps localhost (non-127.0.0.1) literal for a legacy entry — shim is scoped to the daemon's 127.0.0.1 shape", () => {
     const env = resolveRegistryEnv(entry({ qdrantUrl: "http://localhost:6334", qdrantEmbedded: undefined }));
     expect(env.QDRANT_URL).toBe("http://localhost:6334");
+  });
+});
+
+describe("resolveRegistryEnv — qdrantEmbedded trust by writer version", () => {
+  // 1.34.0 is the first release whose write path derives BOTH qdrantUrl and
+  // qdrantEmbedded from one `isEmbedded` read (pipeline/base.ts), so the pair
+  // always agrees. 1.33.0 wrote them independently: on 2026-06-27 it stored
+  // `false` for octokit and `true` for bench-graphql-ruby against the SAME
+  // embedded daemon URL. Below 1.34.0 the flag is evidence of nothing.
+
+  it("re-seeds the embedded marker for a 1.33.0 entry whose qdrantEmbedded=false froze the daemon's ephemeral port", () => {
+    const env = resolveRegistryEnv(
+      entry({ name: "octokit", teaRagsVersion: "1.33.0", qdrantUrl: "http://127.0.0.1:51269", qdrantEmbedded: false }),
+    );
+    expect(env.QDRANT_URL).toBe("embedded");
+  });
+
+  it("re-seeds the embedded marker for a 1.33.0 entry whose qdrantEmbedded=true agrees with the daemon's shape", () => {
+    const env = resolveRegistryEnv(
+      entry({ teaRagsVersion: "1.33.0", qdrantUrl: "http://127.0.0.1:51269", qdrantEmbedded: true }),
+    );
+    expect(env.QDRANT_URL).toBe("embedded");
+  });
+
+  it("keeps a published docker loopback port literal for a 1.38.1 entry — a trusted writer's false is believed", () => {
+    // `docker run -p 7000:6333`: external Qdrant on loopback. The current write
+    // path stored `false` from the same read that stored the URL, so it holds.
+    const env = resolveRegistryEnv(
+      entry({ teaRagsVersion: "1.38.1", qdrantUrl: "http://127.0.0.1:7000", qdrantEmbedded: false }),
+    );
+    expect(env.QDRANT_URL).toBe("http://127.0.0.1:7000");
+  });
+
+  it("keeps a published docker loopback port literal even for a 1.33.0 entry — 7000 is below the OS ephemeral range", () => {
+    const env = resolveRegistryEnv(
+      entry({ teaRagsVersion: "1.33.0", qdrantUrl: "http://127.0.0.1:7000", qdrantEmbedded: false }),
+    );
+    expect(env.QDRANT_URL).toBe("http://127.0.0.1:7000");
+  });
+
+  it("believes qdrantEmbedded=true from a trusted writer even when the entry froze a concrete URL", () => {
+    const env = resolveRegistryEnv(
+      entry({ teaRagsVersion: "1.34.0", qdrantUrl: "http://127.0.0.1:51269", qdrantEmbedded: true }),
+    );
+    expect(env.QDRANT_URL).toBe("embedded");
+  });
+
+  it("falls back to the loopback heuristic when teaRagsVersion is absent (pre-1.31.1 entry)", () => {
+    const legacy = entry({ qdrantUrl: "http://127.0.0.1:57331" });
+    delete (legacy as Partial<CollectionEntry>).teaRagsVersion;
+    expect(resolveRegistryEnv(legacy).QDRANT_URL).toBe("embedded");
+  });
+
+  it("falls back to the loopback heuristic when teaRagsVersion is unparseable", () => {
+    const env = resolveRegistryEnv(entry({ teaRagsVersion: "dev", qdrantUrl: "http://127.0.0.1:57331" }));
+    expect(env.QDRANT_URL).toBe("embedded");
+  });
+});
+
+describe("resolveRegistryEnv — unresolvable backend", () => {
+  const contradictory = (over: Partial<CollectionEntry> = {}): CollectionEntry =>
+    entry({
+      name: "legacy-remote",
+      teaRagsVersion: "1.33.0",
+      qdrantUrl: "http://192.168.1.71:6333",
+      qdrantEmbedded: true,
+      ...over,
+    });
+
+  it("raises a typed failure instead of seeding an address the entry itself contradicts", () => {
+    expect(() => resolveRegistryEnv(contradictory())).toThrow(RegistryQdrantBackendUnresolvedError);
+  });
+
+  it("names the project and both contradicting facts so the operator can act", () => {
+    try {
+      resolveRegistryEnv(contradictory());
+      expect.unreachable("expected an unresolvable-backend failure");
+    } catch (err) {
+      expect(err).toBeInstanceOf(RegistryQdrantBackendUnresolvedError);
+      const typed = err as RegistryQdrantBackendUnresolvedError;
+      expect(typed.code).toBe("INFRA_REGISTRY_QDRANT_BACKEND_UNRESOLVED");
+      expect(typed.message).toContain("legacy-remote");
+      expect(typed.message).toContain("1.33.0");
+      expect(typed.message).toContain("http://192.168.1.71:6333");
+      expect(typed.hint).toMatch(/index-codebase .*--name legacy-remote/);
+    }
+  });
+
+  it("falls back to the collection name when the entry carries no alias", () => {
+    try {
+      resolveRegistryEnv(contradictory({ name: null, collectionName: "code_deadbeef" }));
+      expect.unreachable("expected an unresolvable-backend failure");
+    } catch (err) {
+      expect((err as RegistryQdrantBackendUnresolvedError).message).toContain("code_deadbeef");
+    }
+  });
+
+  it("never fires for a trusted writer — a modern entry always has an agreeing pair", () => {
+    expect(() => resolveRegistryEnv(contradictory({ teaRagsVersion: "1.38.1" }))).not.toThrow();
   });
 });
 

@@ -20,7 +20,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { indexCodebaseCommand } from "../../../src/cli/commands/index-codebase.js";
 import { superviseIndexing } from "../../../src/cli/index-progress/supervisor.js";
 import { main as workerMain } from "../../../src/cli/index-progress/worker.js";
-import { CollectionRegistry } from "../../../src/core/api/public/index.js";
+import { CollectionRegistry, resolveRegistryEnv } from "../../../src/core/api/public/index.js";
 
 // ---------------------------------------------------------------------------
 // Mocks (declared before imports so vi.mock hoisting works)
@@ -187,6 +187,44 @@ describe("indexCodebaseCommand handler — supervisor branch", () => {
       expect.anything(),
       expect.objectContaining({ waitEnrichments: true }),
     );
+    exitSpy.mockRestore();
+  });
+
+  it("renders an actionable message and exits 1 when the registry entry's Qdrant backend cannot be resolved", async () => {
+    const { RegistryQdrantBackendUnresolvedError } = await import("../../../src/core/api/public/index.js");
+    const failure = new RegistryQdrantBackendUnresolvedError({
+      name: "octokit",
+      collectionName: "code_beef",
+      teaRagsVersion: "1.33.0",
+      qdrantUrl: "http://127.0.0.1:51269",
+    });
+    vi.mocked(resolveRegistryEnv).mockImplementationOnce(() => {
+      throw failure;
+    });
+    // Stand in for the real exit's `never` return, so the assertion below
+    // measures the handler's control flow rather than the spy's fallthrough.
+    const exitSpy = vi.spyOn(process, "exit").mockImplementation(((code?: number) => {
+      throw new Error(`process.exit:${code}`);
+    }) as never);
+    const stderrSpy = vi.spyOn(process.stderr, "write").mockImplementation(() => true);
+
+    await expect(
+      (indexCodebaseCommand.handler as (a: unknown) => Promise<void>)({
+        path: "/repo",
+        project: "octokit",
+        __worker: false,
+        force: false,
+        "wait-enrichments": false,
+      }),
+    ).rejects.toThrow("process.exit:1");
+
+    const rendered = stderrSpy.mock.calls.map((c) => String(c[0])).join("");
+    expect(rendered).toContain("octokit");
+    expect(rendered).toContain(failure.hint);
+    // The dead port must never reach a worker — the run stops before the fork.
+    expect(fork).not.toHaveBeenCalled();
+
+    stderrSpy.mockRestore();
     exitSpy.mockRestore();
   });
 

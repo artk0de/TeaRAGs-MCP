@@ -7,10 +7,10 @@ import type { CommandModule } from "yargs";
 
 import {
   CollectionRegistry,
-  InputValidationError,
   pickRegistryEntry,
   ProjectRegistryOps,
   resolveRegistryEnv,
+  TeaRagsError,
   type IndexOptions,
 } from "../../core/api/public/index.js";
 import { createRenderer } from "../index-progress/renderer.js";
@@ -93,17 +93,21 @@ function resolveProjectName(registry: CollectionRegistry, resolvedPath: string):
 }
 
 /**
- * Render a typed registration failure and let the handler exit(1) before any
- * worker is forked. JSON mode emits a parseable { error } object on stdout;
- * text mode writes a colorized one-liner to stderr. Non-typed errors (program
- * bugs) propagate unchanged.
+ * Render a typed pre-flight failure and let the handler exit(1) before any
+ * worker is forked. Covers both things that can go wrong while setting the run
+ * up: registering the alias, and resolving the backend the registry entry
+ * addresses. JSON mode emits a parseable { error } object on stdout; text mode
+ * writes a colorized one-liner to stderr, followed by the hint — for a stale
+ * registry entry the hint IS the fix, so dropping it leaves the operator with
+ * nothing to do. Non-typed errors (program bugs) propagate unchanged.
  */
-function renderRegisterError(err: unknown, opts: { json: boolean; colors: Colorizer }): void {
-  if (!(err instanceof InputValidationError)) throw err;
+function renderIndexSetupError(err: unknown, opts: { json: boolean; colors: Colorizer }): void {
+  if (!(err instanceof TeaRagsError)) throw err;
   if (opts.json) {
-    process.stdout.write(`${JSON.stringify({ error: { code: err.code, message: err.message } })}\n`);
+    process.stdout.write(`${JSON.stringify({ error: { code: err.code, message: err.message, hint: err.hint } })}\n`);
   } else {
     process.stderr.write(`${opts.colors.alert(`index-codebase: ${err.message}`)}\n`);
+    process.stderr.write(`${opts.colors.dim(err.hint)}\n`);
   }
 }
 
@@ -158,15 +162,25 @@ export const indexCodebaseCommand: CommandModule<object, IndexCodebaseArgs> = {
     const waitEnrichments = Boolean(argv["wait-enrichments"]);
     const jsonMode = Boolean(argv.json);
 
-    // Seed the worker's embedding / codegraph config from the registry (the
-    // named project, this path's entry, or — for a new project — the most
-    // recently indexed one) so the operator need not re-export EMBEDDING_* envs.
     const dataDir = resolveDataDir();
     const registry = new CollectionRegistry(dataDir);
-    const registryEnv = resolveRegistryEnv(pickRegistryEntry(registry, { project: argv.project, path }));
 
     // JSON mode forces NO_COLOR semantics so the output is clean for parsing.
     const colors = createColorizer(jsonMode ? { env: { NO_COLOR: "1" }, isTTY: false } : undefined);
+
+    // Seed the worker's embedding / codegraph config from the registry (the
+    // named project, this path's entry, or — for a new project — the most
+    // recently indexed one) so the operator need not re-export EMBEDDING_* envs.
+    // An entry whose backend cannot be resolved stops the run HERE: forking on
+    // an unresolved backend only defers the failure to the worker, where it
+    // resurfaces as a bare "Qdrant is not reachable at <dead port>".
+    let registryEnv: Record<string, string>;
+    try {
+      registryEnv = resolveRegistryEnv(pickRegistryEntry(registry, { project: argv.project, path }));
+    } catch (err) {
+      renderIndexSetupError(err, { json: jsonMode, colors });
+      process.exit(1);
+    }
 
     // --name: register this path under the alias BEFORE indexing so a new
     // project gets its alias in one command. Env is already resolved above, so
@@ -177,7 +191,7 @@ export const indexCodebaseCommand: CommandModule<object, IndexCodebaseArgs> = {
       try {
         await new ProjectRegistryOps({ registry }).register({ path, name: argv.name });
       } catch (err) {
-        renderRegisterError(err, { json: jsonMode, colors });
+        renderIndexSetupError(err, { json: jsonMode, colors });
         process.exit(1);
       }
     }

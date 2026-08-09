@@ -29,3 +29,7 @@ export type { RegistryEnvGroup } from "./env-groups.js";
 export { replayRegistryEnv } from "./env-replay.js";
 export { pickRegistryEntry, resolveRegistryEnv } from "./env-resolution.js";
 export type { RegistryLookup } from "./env-resolution.js";
+export { RegistryQdrantBackendUnresolvedError } from "./errors.js";
+export type { RegistryQdrantBackendClaim } from "./errors.js";
+export { resolveRegistryQdrantBackend } from "./qdrant-backend-resolution.js";
+export type { RegistryQdrantBackend } from "./qdrant-backend-resolution.js";
