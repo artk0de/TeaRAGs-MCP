@@ -5,65 +5,28 @@ sidebar_position: 99
 
 ## [1.39.0](https://github.com/artk0de/TeaRAGs-MCP/compare/v1.38.1...v1.39.0) (2026-08-09)
 
-### Features
+### 🗣 Language support
 
-* **dx:** data-driven-generation v2 — mode matrix + reuse gate, plugin 0.32.0 ([d3ef648](https://github.com/artk0de/TeaRAGs-MCP/commit/d3ef64825fb4a049721dda9694a57cc875600e5d))
-* **dx:** explore ORIENT phase + axis-splitting + docs-as-hypothesis, plugin 0.32.0 ([456ad3e](https://github.com/artk0de/TeaRAGs-MCP/commit/456ad3e6555f9dac3f68c08289e1e8918ad46909))
-* **language:** collect Ruby heritage declared inside class-body blocks (uetqq) ([1cc2135](https://github.com/artk0de/TeaRAGs-MCP/commit/1cc2135231c3d33431b799abb668f9f1a899206f))
+* Ruby call-graph and type resolution now follow mixins (`include`, `extend`, `prepend`) declared inside class-body blocks such as `included do ... end` — the common ActiveSupport::Concern pattern — so classes that use concerns resolve their full ancestry.
 
-### Improvements
+### 🩹 Fixes
 
-* **ingest:** enforce the one-terminal-state invariant at the applier chokepoint ([3772722](https://github.com/artk0de/TeaRAGs-MCP/commit/37727223cc7c84c05ed07b8dc3b91df24b95bdc9))
-
-### Bug Fixes
-
-* **bootstrap:** bound the startup model-info resolve to its own budget ([a025c7b](https://github.com/artk0de/TeaRAGs-MCP/commit/a025c7b27fd8e0f9c6bca43d43530c0c924e40ce))
-* **config:** land tune's measured env where the registry write reads it (ifmfi) ([fde0424](https://github.com/artk0de/TeaRAGs-MCP/commit/fde04245e275c9a1bcc8305ecbcbef025f481327))
-* **config:** resolve tune's embedding endpoints from the registry (5jstr) ([e60b475](https://github.com/artk0de/TeaRAGs-MCP/commit/e60b47598de3c15b173e3c4bf6d9dc76e857b1c9)), closes [#5](https://github.com/artk0de/TeaRAGs-MCP/issues/5)
-* **config:** trust a registry entry's embedded flag only from writers that wrote it right ([370c7cd](https://github.com/artk0de/TeaRAGs-MCP/commit/370c7cdd2c5e1194366950ed1418396ec580a974))
-* **embedding:** adopt the width the provider actually reports ([b328ade](https://github.com/artk0de/TeaRAGs-MCP/commit/b328ade7d0bb6d49674c22d5b4bc39a42148253c))
-* **embedding:** resolve model dimensions through the Ollama tag ([e5f7d6e](https://github.com/artk0de/TeaRAGs-MCP/commit/e5f7d6e138ce91e3df7f0927a1b5dfe2dbae90a5))
-* **embedding:** resolve the model's real parameters before anything reads them ([7b82330](https://github.com/artk0de/TeaRAGs-MCP/commit/7b823304ff06bd6afce3d0c56c264a4a4f757def)), closes [#2](https://github.com/artk0de/TeaRAGs-MCP/issues/2)
-* **ingest:** measure the vector width when no provider can report it ([63eaf40](https://github.com/artk0de/TeaRAGs-MCP/commit/63eaf40f446244c728ed66bcb1c512f44736241d))
-* **ingest:** stop a second force run from deleting the version another run just claimed ([087b634](https://github.com/artk0de/TeaRAGs-MCP/commit/087b6348da345ab661d9b05661352aada8f650bc))
-* **ingest:** stop alias cleanup from deleting a collection another run is building ([0083202](https://github.com/artk0de/TeaRAGs-MCP/commit/0083202922145411adfe7bc458a9bbaa92bc8b8f))
-* **language:** end the Ruby association scope at a `def` (uetqq) ([2d6de04](https://github.com/artk0de/TeaRAGs-MCP/commit/2d6de0411e925bc57687d9b7863e8e89dc3699ae))
-* **language:** terminate every emitDslEdges arm (uetqq) ([9eaad3e](https://github.com/artk0de/TeaRAGs-MCP/commit/9eaad3e05d0e5549499e9f78f87016ca02edf592))
-* **qdrant:** size every zero-vector artifact from the collection ([0382f41](https://github.com/artk0de/TeaRAGs-MCP/commit/0382f419eaac47a063b9690541261ee0e6150b23))
-* **rerank:** stop prefixing overlay mask keys that already name their level ([c52b461](https://github.com/artk0de/TeaRAGs-MCP/commit/c52b461a7d4ee5e266580f8ffd3fde3c54a2b132))
-
-### Documentation
-
-* **config:** state how the vector width is actually resolved ([4416f75](https://github.com/artk0de/TeaRAGs-MCP/commit/4416f75b72236fd6913b960de31ad5fdf944d4aa))
-* **docs:** add issue forms and pull request template ([002ad7c](https://github.com/artk0de/TeaRAGs-MCP/commit/002ad7ca117e0e477a80316b2d360d6e096c6cfd))
-* **docs:** add security policy and code of conduct ([871c298](https://github.com/artk0de/TeaRAGs-MCP/commit/871c2986448abc96097b92900b6e0c20151b6eb4))
-* **dx:** design spec for data-driven-generation v2 (mode matrix + reuse gate) ([3c717af](https://github.com/artk0de/TeaRAGs-MCP/commit/3c717af79213505a9fe4a174d21ea086151a78a9))
-* **dx:** implementation plan for data-driven-generation v2 ([213b7be](https://github.com/artk0de/TeaRAGs-MCP/commit/213b7bea24f926f21266d199fcc0a0e4fbb22224))
-* **dx:** name-based DDG step refs in dinopowers, plugin 0.19.2 ([53e8e76](https://github.com/artk0de/TeaRAGs-MCP/commit/53e8e760167f299d3cfe5bee0bd6555aef6a3cfc))
-* **plans:** map structural debt program into six sequenced epics ([f85c57f](https://github.com/artk0de/TeaRAGs-MCP/commit/f85c57f79ee472676e7c56858648c90f4e060dc9))
-* **plans:** re-estimate structural debt program in hours, not weeks ([26999ac](https://github.com/artk0de/TeaRAGs-MCP/commit/26999aceb182f2cc1fbef7868c0dbe8561f6847b))
-* **rules:** correct where the codegraph resolve breakdown actually comes from ([081e804](https://github.com/artk0de/TeaRAGs-MCP/commit/081e804bb350d6c997882e1c1950f9bc1a288d2e))
-* **rules:** make build-from-worktree plus live validation a mandatory epic gate ([ef9a122](https://github.com/artk0de/TeaRAGs-MCP/commit/ef9a12273d401513d318c3c19e76c57e6d65e59e))
-* **rules:** scope the worktree build-link pairing to MCP-side testing ([9feb2c9](https://github.com/artk0de/TeaRAGs-MCP/commit/9feb2c98bb7603b42548234a4439becbb8906388))
-
-### Code Refactoring
-
-* **adapters:** make the daemon op table data and split the ONNX handshake (lq321) ([60e7ab0](https://github.com/artk0de/TeaRAGs-MCP/commit/60e7ab0dc20a52f0088ee5942ab9139126683ec3))
-* **adapters:** split DuckDbGraphClient into role collaborators over one session (ixnjf) ([ce17609](https://github.com/artk0de/TeaRAGs-MCP/commit/ce17609916d828986d4d9cd4cd43e32268f1605d))
-* **contracts:** split codegraph.ts into eight concern files behind a barrel ([e089b61](https://github.com/artk0de/TeaRAGs-MCP/commit/e089b61bd167d7ea6126c5f5b2bfa9fde87c2682))
-* **ingest:** fold the duplicated recovery traversal and split the file-op builder ([b326cdf](https://github.com/artk0de/TeaRAGs-MCP/commit/b326cdf8781119f74d93bf76282f40bef031ab24))
-* **ingest:** split four ingest orchestration god-methods at their real seams ([bca61fe](https://github.com/artk0de/TeaRAGs-MCP/commit/bca61fec2f0e9269cce14cdc0f6d5886432eb2df)), closes [CompletionRunner#run](https://github.com/artk0de/CompletionRunner/issues/run) [FilePhase#onBatch](https://github.com/artk0de/FilePhase/issues/onBatch)
-* **language:** collapse the dead typed-container probe in the index gate (uetqq) ([d789625](https://github.com/artk0de/TeaRAGs-MCP/commit/d7896256c6b2430c9de2951ceb609d311bb6ba77))
-* **language:** name the Ruby superclass map for what it holds (uetqq) ([06d0330](https://github.com/artk0de/TeaRAGs-MCP/commit/06d0330bdaefcf9bf929ae1ad08e3d518e78ab46))
-* **language:** split ruby type-propagation and the dynamic fan-out gates (uetqq) ([002a2e8](https://github.com/artk0de/TeaRAGs-MCP/commit/002a2e810d6c8fc260e8106c8a0f547ac6110773))
-* **language:** split the ruby walker into eight extraction modules (uetqq) ([4f93a46](https://github.com/artk0de/TeaRAGs-MCP/commit/4f93a463c2d3e239b4293bbaa2cafd3e90aa00e9))
-* **pipeline:** split DebugLogger god class behind an unchanged facade ([aaa862a](https://github.com/artk0de/TeaRAGs-MCP/commit/aaa862a17252bf91fe35cdff1fb7a7796c0e53b5))
+* Fixed indexing failures caused by an incorrect embedding vector width — covers tagged Ollama model names, models missing from the built-in size table, providers (Cohere, Voyage) with no model-info API, and downstream artifacts sized from a stale guess instead of the real width.
+* `tea-rags tune` now actually writes its measured settings to the project registry and correctly resolves a project's embedding endpoint overrides, so tuned values are no longer silently discarded or overridden by stale defaults.
+* Fixed `index-codebase` failing to connect to an embedded Qdrant daemon after a stale port was left behind by an older release.
+* Concurrent or background reindex runs no longer delete an in-progress collection out from under each other, which could silently corrupt or kill another run's index.
+* The MCP server and CLI no longer hang for several seconds on startup when the embedding endpoint is unreachable.
+* Restored ranking overlay signals (method centrality, hotspot, and related metrics) that had gone missing from several rerank presets, including criticalMethod, hotMethod, godMethod, blastRadius, and entryPoint.
+* Ruby associations (`has_many`, `has_one`, `belongs_to`, etc.) declared inside a method body are no longer mistakenly attributed to the enclosing class, which was causing incorrect type resolution for calls on those objects.
 
 ## [1.38.1](https://github.com/artk0de/TeaRAGs-MCP/compare/v1.38.0...v1.38.1) (2026-08-07)
 
 ### 🩹 Fixes
 
-* Fixed a bug where git-derived signals (recency, churn, ownership) could silently go missing from indexed results when the embedding model used a non-standard vector size — indexing now matches the collection's actual dimensions instead of guessing from a static model list
+- Fixed a bug where git-derived signals (recency, churn, ownership) could
+  silently go missing from indexed results when the embedding model used a
+  non-standard vector size — indexing now matches the collection's actual
+  dimensions instead of guessing from a static model list
 
 ## [1.38.0](https://github.com/artk0de/TeaRAGs-MCP/compare/v1.37.0...v1.38.0) (2026-08-07)
 
