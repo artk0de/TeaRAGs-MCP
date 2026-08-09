@@ -150,8 +150,8 @@ Do NOT pass:
 - `metaOnly: false` — we want verdict inputs, not content
 - Wrong rerank for codegraph state — `"blastRadius"` when on, the
   `{imports 0.5, churn 0.3, ownership 0.2}` fallback when off, matching
-  `dinopowers:writing-plans` and `tea-rags:data-driven-generation` Step 6 for
-  cross-skill comparability
+  `dinopowers:writing-plans` and `tea-rags:data-driven-generation` IMPACT step
+  for cross-skill comparability
 - `filter` narrowing file set — `pathPattern` already scopes; filters hide
   signal
 

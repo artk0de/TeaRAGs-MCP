@@ -1,3 +1,70 @@
+# Data-Driven Generation v2 Implementation Plan
+
+> **For agentic workers:** REQUIRED SUB-SKILL: Use
+> superpowers:subagent-driven-development (recommended) or
+> superpowers:executing-plans to implement this plan task-by-task. Steps use
+> checkbox (`- [ ]`) syntax for tracking. In this repo the executing wrapper is
+> `dinopowers:executing-plans`.
+
+**Goal:** Rewrite the `data-driven-generation` skill per the approved spec —
+mode matrix (CREATE/EXTEND/MODIFY), REUSE gate, PLACEMENT guard,
+tests-as-context wiring, find_similar self-check — and fix every cross-reference
+the step renumbering breaks.
+
+**Architecture:** Single prose artifact rewrite plus mechanical reference fixes.
+The skill body ships caveman `ultra`, the frontmatter description caveman
+`full`. Cross-references to DDG steps switch from numbers to step names so the
+next renumbering costs nothing.
+
+**Tech Stack:** Markdown skill files, markdownlint MCP, plugin.json versioning.
+
+**Spec:** `docs/superpowers/specs/2026-08-08-ddg-mode-reuse-design.md`
+
+## Global Constraints
+
+- Skill body prose: caveman `ultra`; frontmatter description: caveman `full`
+  (`.claude/rules/caveman-compression.md`). Tables, code fences, tool names,
+  output formats stay byte-exact.
+- All plugin docs English-only.
+- Every commit touching `.claude-plugin/` bumps the affected plugin's
+  `plugin.json` (`.claude/rules/plugin-versioning.md`): tea-rags 0.31.3 →
+  **0.32.0** (feature-class skill upgrade — precedent: explore ORIENT phase
+  shipped as 0.32.0-style minor), dinopowers 0.19.1 → **0.19.2** (mechanical
+  reference fixes).
+- markdownlint clean on every edited file before commit.
+- No edits to `extract-project-patterns/SKILL.md` or `tests-as-context/SKILL.md`
+  (consumed as-is; their "Step 2 (TEMPLATE)" references stay valid).
+- Impact enrichment unavailable: `.claude-plugin/**` is excluded from the
+  tea-rags index (measured this session) — no signal table for these files.
+- TDD note: prose artifact — validation is lint + spec-coverage check + the four
+  eval scenarios in Task 3, not failing unit tests.
+
+---
+
+### Task 1: Rewrite data-driven-generation SKILL.md + strategy name-refs + tea-rags bump
+
+**Files:**
+
+- Modify: `.claude-plugin/tea-rags/skills/data-driven-generation/SKILL.md` (full
+  replacement below)
+- Modify:
+  `.claude-plugin/tea-rags/skills/data-driven-generation/strategies/standard.md:7-8`
+- Modify: `.claude-plugin/tea-rags/.claude-plugin/plugin.json` (version)
+
+**Interfaces:**
+
+- Consumes: spec sections "Step 0: MODE", "Step 4: REUSE", "Step 3: PLACEMENT",
+  "tests-as-context wiring", "find_similar self-check".
+- Produces: step names
+  `MODE, STRATEGY, TEMPLATE, PLACEMENT, REUSE, STYLE, GENERATE, VERIFY, IMPACT`
+  — Task 2 rewrites dinopowers references against exactly these names.
+
+- [ ] **Step 1: Replace SKILL.md content entirely**
+
+Write this exact content to
+`.claude-plugin/tea-rags/skills/data-driven-generation/SKILL.md`:
+
+```markdown
 ---
 name: data-driven-generation
 description:
@@ -236,3 +303,151 @@ Assess blast radius of change you just generated.
   propagates through real call edges; import proxy insufficient.
 
 Warn on high-impact modules. Flag shared taskIds → coordinated change.
+```
+
+- [ ] **Step 2: Fix stale step numbers in strategies/standard.md**
+
+In
+`.claude-plugin/tea-rags/skills/data-driven-generation/strategies/standard.md`
+replace:
+
+```text
+- Find stable template (Step 3) and follow its patterns
+- Match domain owner's style (Step 5)
+```
+
+with:
+
+```text
+- Find stable template (TEMPLATE step) and follow its patterns
+- Match domain owner's style (STYLE step)
+```
+
+(Other three strategy files carry no step references — verified by grep.)
+
+- [ ] **Step 3: Lint both edited files**
+
+Run `mcp__markdownlint__lint_markdown` on SKILL.md and standard.md. Fix any
+issue (wide tables → trim cell text, keep column meaning).
+
+- [ ] **Step 4: Spec-coverage check**
+
+Confirm against the spec, section by section: MODE table + matrix + hotfix /
+greenfield / REUSE-never-skipped notes; PLACEMENT priority list + guard; REUSE 5
+items incl. codegraph-off fallback + almost-fits user gate; template-imports
+line in Step 2; fixture-lookup in Step 6; self-check + tests-at-risk in Step 7;
+get_callers line in Step 8; description triggers for modification; NOT-clauses
+preserved.
+
+- [ ] **Step 5: Bump tea-rags plugin version**
+
+In `.claude-plugin/tea-rags/.claude-plugin/plugin.json`: `"version": "0.31.3"` →
+`"version": "0.32.0"`. If a merge from main has already moved the version past
+0.31.3, bump minor from whatever is current.
+
+- [ ] **Step 6: Commit**
+
+```bash
+git add .claude-plugin/tea-rags/skills/data-driven-generation/SKILL.md \
+        .claude-plugin/tea-rags/skills/data-driven-generation/strategies/standard.md \
+        .claude-plugin/tea-rags/.claude-plugin/plugin.json
+git commit -m "feat(dx): data-driven-generation v2 — mode matrix + reuse gate, plugin 0.32.0"
+```
+
+---
+
+### Task 2: Name-based DDG step references in dinopowers + bump
+
+**Files:**
+
+- Modify: `.claude-plugin/dinopowers/README.md:42`
+- Modify: `.claude-plugin/dinopowers/skills/writing-plans/SKILL.md:76,95`
+- Modify:
+  `.claude-plugin/dinopowers/skills/verification-before-completion/SKILL.md:112`
+- Modify: `.claude-plugin/dinopowers/skills/executing-plans/SKILL.md:153`
+- Modify: `.claude-plugin/dinopowers/.claude-plugin/plugin.json` (version)
+
+**Interfaces:**
+
+- Consumes: step name `IMPACT` from Task 1 (old "Step 6" = IMPACT, now Step 8).
+- Produces: nothing downstream; mechanical de-drift.
+
+- [ ] **Step 1: Replace "Step 6" with "IMPACT step" in all four files**
+
+Each occurrence references the DDG impact-analysis idiom. Replace the exact
+phrase `` `tea-rags:data-driven-generation` Step 6 `` with
+`` `tea-rags:data-driven-generation` IMPACT step `` in:
+
+1. `README.md` line 42 (context: "Deviation breaks cross-wrapper")
+2. `skills/writing-plans/SKILL.md` line 76 (context: "**impact analysis** idiom
+   from") — the phrase wraps across lines 76-77; keep wrapping natural
+3. `skills/writing-plans/SKILL.md` line 95 (context: "don't invent other
+   weights")
+4. `skills/verification-before-completion/SKILL.md` line 112 (context:
+   "cross-skill comparability")
+5. `skills/executing-plans/SKILL.md` line 153 (context: "for" + comparability
+   sentence)
+
+Names survive future renumbering; numbers don't. Do NOT touch `executing-plans`
+line 64 ("Step 5 below" — its own internal step) or any "Step 2 (TEMPLATE)"
+reference (still valid; TEMPLATE stays Step 2).
+
+- [ ] **Step 2: Lint the four edited files**
+
+`mcp__markdownlint__lint_markdown` on each; fix issues.
+
+- [ ] **Step 3: Bump dinopowers plugin version**
+
+`.claude-plugin/dinopowers/.claude-plugin/plugin.json`: `"version": "0.19.1"` →
+`"version": "0.19.2"`.
+
+- [ ] **Step 4: Commit**
+
+```bash
+git add .claude-plugin/dinopowers/README.md \
+        .claude-plugin/dinopowers/skills/writing-plans/SKILL.md \
+        .claude-plugin/dinopowers/skills/verification-before-completion/SKILL.md \
+        .claude-plugin/dinopowers/skills/executing-plans/SKILL.md \
+        .claude-plugin/dinopowers/.claude-plugin/plugin.json
+git commit -m "docs(dx): name-based DDG step refs in dinopowers, plugin 0.19.2"
+```
+
+---
+
+### Task 3: Eval-scenario walkthrough (validation)
+
+**Files:**
+
+- Read: `.claude-plugin/tea-rags/skills/data-driven-generation/SKILL.md` (as
+  rewritten by Task 1)
+
+**Interfaces:**
+
+- Consumes: final SKILL.md text.
+- Produces: pass/fail verdict per scenario; failures loop back into Task 1
+  content fixes before merge.
+
+Walk the four spec eval scenarios against the literal skill text — for each,
+read ONLY the skill and check the described behavior is unambiguously derivable
+from it:
+
+- [ ] **Scenario 1 — mode misclassification:** "change the retry backoff in
+      `HttpClient.fetchWithRetry`" (symbol exists). Text must route MODIFY: no
+      TEMPLATE, no PLACEMENT, style from the symbol, tests-at-risk in VERIFY,
+      get_callers in IMPACT.
+- [ ] **Scenario 2 — reuse gate, deny branch:** helper found at L3, fanIn label
+      "typical". Text must produce copy-approach, no import — and name the
+      reason (fails both gate arms).
+- [ ] **Scenario 3 — extend-vs-new escalation:** helper passes gate (hub), lacks
+      a parameter. Text must produce minimal-diff extension + MANDATORY user
+      confirmation before editing the hub helper.
+- [ ] **Scenario 4 — self-check firing:** generated code near-duplicates a chunk
+      in another module. Text must send the agent back to the Step 4 gate or to
+      the user — not silently keep the duplicate.
+
+Any scenario where the text is ambiguous → fix SKILL.md wording inline, re-lint,
+amend into a follow-up commit (do not rewrite Task 1's commit).
+
+Out of scope (file as follow-up bead at teardown): full
+`/optimize-skill data-driven-generation` eval loop with parallel subagents;
+`evals/cases.json` fixtures for the four scenarios above.
