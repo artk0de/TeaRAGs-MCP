@@ -29,6 +29,20 @@
  * bounded import closure, so counting those against the chain would measure the
  * oracle's blind spot rather than the resolver's.
  *
+ * MEASUREMENT CUTOVER — `phantom` changed meaning on 2026-08-10, in the commit
+ * carrying bd tea-rags-mcp-ffju3 (`git log --grep=ffju3 -- scripts/`). RAW
+ * PHANTOM COUNTS FROM BEFORE THAT COMMIT ARE NOT COMPARABLE WITH COUNTS FROM
+ * AFTER IT. The external branch of
+ * `diffResolution` used to call ANY non-null chain answer a phantom, and the
+ * chain routinely answers with a `node_modules` declaration — the very
+ * conclusion the checker reached. On this repo's `src/` that misfiled 3510 of
+ * 3614 raw phantoms as fabricated edges. The branch now compares conclusions,
+ * and the same corpus reads 104 raw. Nothing about the resolver changed: the
+ * decomposed defect residual is 93 both before and after. So a historical
+ * headline of 1341 (Track C), 1344 (`pmxuv`) or 3612 (`cko34`) is measuring
+ * something this script no longer measures — do not read a drop against one as
+ * a precision win, and do not read a rise as a regression.
+ *
  * WHAT THIS SHARES WITH PRODUCTION, AND WHY
  *
  * The `ts.Program`s come from the resolver's OWN `TSProgramCache`
@@ -108,7 +122,7 @@ export interface OracleAnswer {
  * What the checker concluded about a call site. Three outcomes, because
  * "resolved to something outside the project" is a real answer and not the same
  * as "no answer": it says there IS no in-project edge here, which is exactly
- * what makes a chain answer on the same call a fabricated one.
+ * what makes an IN-PROJECT chain answer on the same call a fabricated one.
  */
 export type OracleOutcome = { kind: "inProject"; answer: OracleAnswer } | { kind: "external" } | { kind: "unknown" };
 
@@ -118,10 +132,11 @@ export type OracleOutcome = { kind: "inProject"; answer: OracleAnswer } | { kind
  * Against IN-PROJECT ground truth: `match` / `fileOnly` are agreement at symbol
  * / file granularity; `wrongFile` and `missed` are the mismatch kinds.
  *
- * Against EXTERNAL ground truth: `agreeExternal` is correct silence, `phantom`
- * is the chain inventing an in-project target for a call that provably leaves
- * the project — a precision defect strictly worse than declining, and invisible
- * unless external is tracked separately.
+ * Against EXTERNAL ground truth: `agreeExternal` is the two sides reaching the
+ * same conclusion — the chain either declined outright or named an external
+ * declaration itself. `phantom` is the chain inventing an IN-PROJECT target for
+ * a call that provably leaves the project: a precision defect strictly worse
+ * than declining, and invisible unless external is tracked separately.
  *
  * `chainOnly` and `bothUnresolved` carry no ground truth at all and sit outside
  * every rate.
@@ -217,16 +232,34 @@ export interface OracleTally {
 }
 
 /**
+ * A repo-relative path that is not project source — package typings, generated
+ * output, or any declaration file. A chain answer landing here is the chain
+ * saying "this call leaves the project", which is a conclusion and not an edge.
+ */
+function isOutsideProjectSource(relPath: string): boolean {
+  return relPath.startsWith("node_modules/") || isNonSourceTarget(relPath);
+}
+
+/**
  * Classify one call site by comparing the two answers.
  *
  * Symbol-level disagreement degrades to `fileOnly` rather than `wrongFile`: the
  * emitted edge still lands on the right file, and the contract explicitly
  * allows a null `targetSymbolId` for "the file is certain, the member is not".
  * Counting that as a mismatch would drown the real precision bugs.
+ *
+ * Against external ground truth the comparison is between CONCLUSIONS, not
+ * paths. The checker's answer there is "no in-project edge exists here", and
+ * the chain says the same thing two ways: by declining, or by naming an
+ * external declaration of its own. Only an in-project chain answer contradicts
+ * the checker, and only that is a phantom (bd tea-rags-mcp-ffju3).
  */
 export function diffResolution(chain: OracleAnswer | null, oracle: OracleOutcome): OracleVerdict {
   if (oracle.kind === "unknown") return chain === null ? "bothUnresolved" : "chainOnly";
-  if (oracle.kind === "external") return chain === null ? "agreeExternal" : "phantom";
+  if (oracle.kind === "external") {
+    if (chain === null) return "agreeExternal";
+    return isOutsideProjectSource(chain.targetRelPath) ? "agreeExternal" : "phantom";
+  }
   if (chain === null) return "missed";
   if (chain.targetRelPath !== oracle.answer.targetRelPath) return "wrongFile";
   return chain.targetSymbolId === oracle.answer.targetSymbolId ? "match" : "fileOnly";
@@ -404,7 +437,6 @@ export type OracleMissedReason = "anonymousCallable" | "unpinnedTarget" | "defec
 
 /** Why a `phantom` is, or is not, a fabricated edge. */
 export type OraclePhantomReason =
-  | "externalAgreement"
   | "generatedInRepo"
   | "builtinMember"
   | "externalInterfaceMatch"
@@ -434,15 +466,6 @@ function isDeclarationSitePath(relPath: string | null): boolean {
  * defect, and without this check every same-file-family disagreement would be
  * excused.
  */
-/**
- * A repo-relative path that is not project source — package typings, generated
- * output, or any declaration file. Both sides can land here, and when they both
- * do there is no in-project edge for anyone to have fabricated.
- */
-function isOutsideProjectSource(relPath: string): boolean {
-  return relPath.startsWith("node_modules/") || isNonSourceTarget(relPath);
-}
-
 function namesTheSameMember(chain: OracleAnswer | undefined, target: OracleTargetFacts): boolean {
   const chainSymbolId = chain?.targetSymbolId ?? null;
   if (chainSymbolId === null || target.shortName === null) return false;
@@ -478,16 +501,13 @@ export function reconcileOracleMissed(row: OracleRow): OracleMissedReason {
  * is declared on an interface too, but `Array#push` is not something the
  * project could be implementing, so it must not reach the arguable bucket.
  *
- * `externalAgreement` comes first and is the largest correction. `phantom`
- * means "the chain invented an IN-PROJECT edge for a call that leaves the
- * project", but `diffResolution` only checks that the chain answered at all —
- * and the chain routinely answers with a `node_modules` declaration, which is
- * the same conclusion the checker reached. Those rows are agreement wearing a
- * defect's label, and they dominate the raw phantom count.
+ * Every row reaching here has a chain answer naming PROJECT SOURCE — the
+ * verdict itself now excuses a chain answer that also leaves the project
+ * (bd tea-rags-mcp-ffju3), so this reconciler no longer carries the
+ * `externalAgreement` correction that used to dominate it.
  */
 export function reconcileOraclePhantom(row: OracleRow): OraclePhantomReason {
   const { target } = row;
-  if (row.chain !== undefined && isOutsideProjectSource(row.chain.targetRelPath)) return "externalAgreement";
   if (target === undefined) return "externalPackageMember";
   if (target.origin === "generatedInRepo") return "generatedInRepo";
   if (target.origin === "defaultLib") return "builtinMember";
@@ -504,7 +524,6 @@ export interface OracleMismatchDecomposition {
   missed: { total: number; anonymousCallable: number; unpinnedTarget: number; defect: number };
   phantom: {
     total: number;
-    externalAgreement: number;
     generatedInRepo: number;
     builtinMember: number;
     externalInterfaceMatch: number;
@@ -521,7 +540,6 @@ function emptyDecomposition(label: string): OracleMismatchDecomposition {
     missed: { total: 0, anonymousCallable: 0, unpinnedTarget: 0, defect: 0 },
     phantom: {
       total: 0,
-      externalAgreement: 0,
       generatedInRepo: 0,
       builtinMember: 0,
       externalInterfaceMatch: 0,
@@ -591,7 +609,6 @@ export function formatDecompositionTable(
     "unpinned",
     "msDefect",
     "phantom",
-    "extAgree",
     "generated",
     "extIface",
     "phDefect",
@@ -619,7 +636,6 @@ export function formatDecompositionTable(
           d.missed.unpinnedTarget,
           d.missed.defect,
           d.phantom.total,
-          d.phantom.externalAgreement,
           d.phantom.generatedInRepo,
           d.phantom.externalInterfaceMatch,
           d.phantom.defect,
@@ -1304,8 +1320,7 @@ async function main(): Promise<void> {
         `(anonymous callable ${missed.anonymousCallable}, unpinned target ${missed.unpinnedTarget})`,
       `  phantom ${phantom.total} raw → ${phantom.defect} fabricated edges ` +
         `(builtin ${phantom.builtinMember}, external package ${phantom.externalPackageMember}; ` +
-        `both sides external ${phantom.externalAgreement}, arguable external-interface ` +
-        `${phantom.externalInterfaceMatch}, artifact ${phantom.generatedInRepo})`,
+        `arguable external-interface ${phantom.externalInterfaceMatch}, artifact ${phantom.generatedInRepo})`,
     );
   }
 

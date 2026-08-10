@@ -97,6 +97,32 @@ describe("diffResolution", () => {
   });
 });
 
+describe("diffResolution against external ground truth (bd tea-rags-mcp-ffju3)", () => {
+  it("reads a chain answer naming the same external declaration as agreement rather than a fabricated edge", () => {
+    const chain = { targetRelPath: "node_modules/typescript/lib/lib.es5.d.ts", targetSymbolId: null };
+
+    expect(diffResolution(chain, { kind: "external" })).toEqual("agreeExternal");
+  });
+
+  it("reads a chain answer naming a different external declaration as agreement, since neither side claims an in-project edge", () => {
+    const chain = { targetRelPath: "node_modules/pino/lib/proto.d.ts", targetSymbolId: null };
+
+    expect(diffResolution(chain, { kind: "external" })).toEqual("agreeExternal");
+  });
+
+  it("reads a chain answer naming a declaration file under the project's own tree as agreement", () => {
+    const chain = { targetRelPath: "src/core/contracts/types/codegraph.d.ts", targetSymbolId: null };
+
+    expect(diffResolution(chain, { kind: "external" })).toEqual("agreeExternal");
+  });
+
+  it("reads a chain answer naming the project's compiled output as agreement rather than a fabricated edge", () => {
+    const chain = { targetRelPath: "build/core/runner.js", targetSymbolId: "Runner.run" };
+
+    expect(diffResolution(chain, { kind: "external" })).toEqual("agreeExternal");
+  });
+});
+
 describe("tallyBy", () => {
   it("counts every verdict bucket for a category", () => {
     const input = [
@@ -447,23 +473,6 @@ describe("reconcileOraclePhantom", () => {
     expect(reconcileOraclePhantom(phantom)).toEqual("externalPackageMember");
   });
 
-  it("reads a phantom whose chain answer also left the project as agreement, not a fabricated edge", () => {
-    const phantom = row({
-      verdict: "phantom",
-      chain: { targetRelPath: "node_modules/typescript/lib/lib.es5.d.ts", targetSymbolId: null },
-      target: target({
-        relPath: "node_modules/typescript/lib/lib.es5.d.ts",
-        symbolId: null,
-        shortName: "join",
-        declarationKind: "MethodSignature",
-        declarationOnly: true,
-        origin: "defaultLib",
-      }),
-    });
-
-    expect(reconcileOraclePhantom(phantom)).toEqual("externalAgreement");
-  });
-
   it("still counts a fabricated edge when the chain named project source for a call that leaves the project", () => {
     const phantom = row({
       verdict: "phantom",
@@ -606,7 +615,6 @@ describe("decomposeOracleMismatches", () => {
     expect(decomposition.missed).toEqual({ total: 2, anonymousCallable: 1, unpinnedTarget: 0, defect: 1 });
     expect(decomposition.phantom).toEqual({
       total: 1,
-      externalAgreement: 0,
       generatedInRepo: 0,
       builtinMember: 1,
       externalInterfaceMatch: 0,
