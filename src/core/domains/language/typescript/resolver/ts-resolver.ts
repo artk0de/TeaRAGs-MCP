@@ -20,12 +20,18 @@
  *   9. globalShortName (global short-name lookup)
  *  10. importNarrowedFallback (narrow ambiguous N>1 by caller's imports)
  *  11. typeCheckerFallback (ts.Program/typeChecker — generics + overloads)
+ *  12. structuralTyping (ts.Program/typeChecker — duck typing + interface merging)
  *
- * Pass 11 is the only one that reads type information rather than AST shape,
- * and the only one that touches the file system on the resolve path. It runs
- * last by construction: everything above it is cheaper, so the checker is
- * consulted only for calls nothing else could decide. `CODEGRAPH_TS_TYPECHECKER=0`
- * removes it from the chain entirely (bd tea-rags-mcp-uclbn).
+ * Passes 11-12 are the only ones that read type information rather than AST
+ * shape, and the only ones that touch the file system on the resolve path. They
+ * run last by construction: everything above them is cheaper, so the checker is
+ * consulted only for calls nothing else could decide, and they share ONE
+ * `TSProgramCache` so a file is never typed twice. Pass 12 follows 11 because
+ * `getResolvedSignature` picks the overload the ARGUMENTS select, which is the
+ * sharper answer whenever it applies; pass 12 then handles the receivers that
+ * have no name to look up at all (bd tea-rags-mcp-icmnr).
+ * `CODEGRAPH_TS_TYPECHECKER=0` removes both from the chain entirely
+ * (bd tea-rags-mcp-uclbn).
  *
  * `resolveDispatch` is a separate fan-out contract (lookup-table dispatch, bd
  * tea-rags-mcp-n0zj) and stays in the orchestrator — it is not part of the
@@ -63,6 +69,7 @@ import {
   TSNamedImportSymbolResolutionStrategy,
   TSReceiverSymbolSymbolResolutionStrategy,
   TSSameFileSymbolResolutionStrategy,
+  TSStructuralTypingSymbolResolutionStrategy,
   TSSuperSymbolResolutionStrategy,
   TSThisMemberSymbolResolutionStrategy,
   TSTypeCheckerFallbackSymbolResolutionStrategy,
@@ -133,6 +140,7 @@ export class TSCallResolver implements CallResolver {
     ];
     if (this.programCache) {
       this.strategies.push(new TSTypeCheckerFallbackSymbolResolutionStrategy(cfg, this.programCache));
+      this.strategies.push(new TSStructuralTypingSymbolResolutionStrategy(cfg, this.programCache));
     }
   }
 
