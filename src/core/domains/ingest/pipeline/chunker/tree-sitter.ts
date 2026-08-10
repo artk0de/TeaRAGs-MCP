@@ -19,7 +19,11 @@ import type {
 } from "../../../../contracts/types/language.js";
 import { materializeTree } from "../../../../infra/materialize.js";
 import { isDebug } from "../../../../infra/runtime.js";
-import { constObjectNamespaceOwner, isStaticMethodNode } from "../../../../infra/symbolid/index.js";
+import {
+  classifyMethod,
+  constObjectNamespaceOwner,
+  type MethodClassification,
+} from "../../../../infra/symbolid/index.js";
 import type { ChunkerConfig, CodeChunk } from "../../../../types.js";
 import { AST_NOT_PROCESSED_REASON, FileParseError } from "../../errors.js";
 import type { CodeChunker } from "./base.js";
@@ -68,12 +72,31 @@ export class TreeSitterChunker implements CodeChunker {
    * Build symbolId from name and optional parentName.
    * Instance methods use "#" separator: "Parent#method"
    * Static methods use "." separator: "Parent.method"
+   * Everything else joins with the language's scope separator: "Parent.nested"
    * Top-level symbols have no separator: "name"
+   *
+   * `methodKind` is the TRI-state `classifyMethod` returns, not a boolean.
+   * bd tea-rags-mcp-pdv8m — the parameter used to be `isStatic: boolean`, which
+   * collapsed `classifyMethod`'s third state (null = binds no instance, join as
+   * a namespace) into `"instance"`. A `method_definition` inside an object
+   * literal passed as a CALL ARGUMENT — `install({ handle() {} })` — is exactly
+   * that state: cg_symbols holds `register.handle` while the chunker wrote
+   * `register#handle`, an id no graph row carries. bd tea-rags-mcp-62hzr fixed
+   * the sibling declarator shape (`const X = { m() {} }`) upstream in
+   * `constObjectNamespaceOwner` instead of widening this composer, so the
+   * non-declarator shape stayed broken. The `#`/`.` rule for real class methods
+   * is unchanged: `classifyMethod` still decides, this just stops discarding
+   * what it decided.
    */
-  private buildSymbolId(name?: string, parentName?: string, isStatic?: boolean): string | undefined {
+  private buildSymbolId(
+    name?: string,
+    parentName?: string,
+    methodKind?: MethodClassification | null,
+    scopeSeparator?: string,
+  ): string | undefined {
     if (!name) return undefined;
     if (!parentName) return name;
-    return this.symbolIds.compose(parentName, name, { methodKind: isStatic ? "static" : "instance" });
+    return this.symbolIds.compose(parentName, name, { methodKind: methodKind ?? undefined, scopeSeparator });
   }
 
   /**
@@ -1002,7 +1025,7 @@ export class TreeSitterChunker implements CodeChunker {
     const childMethodLines = childNode.endPosition.row - childNode.startPosition.row + 1;
     const semanticNode = this.unwrapDecoratedDefinition(childNode);
     const childName = this.extractName(semanticNode, code, langConfig.nameExtractor);
-    const isStatic = isStaticMethodNode(semanticNode);
+    const methodKind = classifyMethod(semanticNode);
     const intermediateScopes = this.collectIntermediateScopes(childNode, langConfig, code);
     const effectiveParent = this.composeParentSymbol(parentName, intermediateScopes, langConfig.scopeSeparator);
     // bd tea-rags-mcp-a466 — disambiguate overloads BEFORE deciding
@@ -1010,7 +1033,9 @@ export class TreeSitterChunker implements CodeChunker {
     // already-suffixed id (each split shares the composed method id;
     // see bd tea-rags-mcp-5xie invariant). Without this, two oversized
     // overloads would collapse into the same symbolId across parts.
-    const methodSymbolId = pass.overloads.disambiguate(this.buildSymbolId(childName, effectiveParent, isStatic));
+    const methodSymbolId = pass.overloads.disambiguate(
+      this.buildSymbolId(childName, effectiveParent, methodKind, langConfig.scopeSeparator),
+    );
     const methodChunkType = this.getChunkType(semanticNode.type);
     const subChunks = await this.fallbackChunker.chunk(childContent, filePath, language);
     for (const subChunk of subChunks) {
@@ -1143,10 +1168,11 @@ export class TreeSitterChunker implements CodeChunker {
     // remains visible. See `.claude/rules/symbolid-convention.md`.
     const semanticNode = this.unwrapDecoratedDefinition(childNode);
     const childName = this.extractName(semanticNode, code, langConfig.nameExtractor);
-    // Universal `#` (instance) vs `.` (class/static) — single source
-    // of truth in `infra/symbolid`. See
-    // `.claude/rules/symbolid-convention.md`.
-    const isStatic = isStaticMethodNode(semanticNode);
+    // Universal `#` (instance) vs `.` (class/static) vs scope separator
+    // (namespace member, e.g. a `method_definition` in an object literal) —
+    // single source of truth in `infra/symbolid`. See
+    // `.claude/rules/symbolid-convention.md` and bd tea-rags-mcp-pdv8m.
+    const methodKind = classifyMethod(semanticNode);
     // Accumulate intermediate scope-container ancestor names between
     // the outer container and the leaf (Ruby: nested `module`/`class`).
     // Without this, the leaf's parentSymbolId stays at the OUTERMOST
@@ -1158,7 +1184,9 @@ export class TreeSitterChunker implements CodeChunker {
     // bd tea-rags-mcp-a466 — disambiguate per-overload. The first occurrence
     // under a given (parent, name) keeps its symbolId; subsequent occurrences
     // get a `~N` suffix.
-    const symbolId = pass.overloads.disambiguate(this.buildSymbolId(childName, effectiveParent, isStatic));
+    const symbolId = pass.overloads.disambiguate(
+      this.buildSymbolId(childName, effectiveParent, methodKind, langConfig.scopeSeparator),
+    );
     chunks.push({
       content: finalContent,
       startLine,
