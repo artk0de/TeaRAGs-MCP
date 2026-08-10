@@ -104,6 +104,10 @@ export class TypeScriptLanguage implements LanguageProvider {
       resolve: (call: CallRef, ctx: CallContext): SymbolResolutionTarget | null => callResolver.resolve(call, ctx),
       resolveDispatch: (call: CallRef, ctx: CallContext): DispatchFanoutOutcome =>
         callResolver.resolveDispatch?.(call, ctx) ?? emptyDispatchFanout(),
+      // Forwarded so imports map through `mapImportToFile` rather than through
+      // the provider's synthesised-call loop, whose fake `member` a member-keyed
+      // pass can answer (bd tea-rags-mcp-5onmn). Mirrors the Ruby adapter.
+      resolveFileEdges: (extraction, ctx) => callResolver.resolveFileEdges?.(extraction, ctx) ?? [],
       targetsExternalImport: (call: CallRef, ctx: CallContext): boolean =>
         callResolver.targetsExternalImport?.(call, ctx) ?? false,
     };
