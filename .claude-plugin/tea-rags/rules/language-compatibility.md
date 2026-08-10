@@ -88,7 +88,8 @@ conclude absence from a graph the index says is incomplete.
   out-of-project-receiver precision guards (pre-resolution short-name match,
   checker-backed declaration-site test covering builtins, default-lib and
   dependency types, and imported-constant container members on the
-  import-mapping fallback) + edges restricted to project sources +
+  import-mapping fallback) + local-callee guard (bare calls whose callee is a
+  destructured prop / hook binding) + edges restricted to project sources +
   tsx/tsconfig-paths-aware import mapping
 - **JavaScript** — 6-strategy; CommonJS/ESM require resolution (dynamic gaps)
 - **Python** — 6-strategy + ConeDispatch CHA; type hints where present

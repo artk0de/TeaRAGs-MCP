@@ -2,6 +2,7 @@ import { CONTINUE, resolved } from "../../../../../contracts/resolution.js";
 import { pickSingleCandidate, type CallContext, type CallRef } from "../../../../../contracts/types/codegraph.js";
 import type { SymbolResolutionOutcome, SymbolResolutionStrategy } from "../../../../../contracts/types/language.js";
 import { targetsExternalImport } from "../ts-external-call.js";
+import { calleeIsLocalValueBinding } from "../ts-local-callee.js";
 import type { TSProgramCache } from "../ts-program-cache.js";
 import type { ResolverConfig } from "./shared.js";
 
@@ -18,6 +19,15 @@ import type { ResolverConfig } from "./shared.js";
  * A call that provably leaves the project CONTINUEs instead — the later
  * type-checker passes still get their turn, and a call none of them can answer
  * ends up correctly classified external rather than silently fabricated.
+ *
+ * A BARE call needs a second guard, because every arm of the external one
+ * inspects a receiver and a free call has none (bd tea-rags-mcp-5tatv). There
+ * the member IS the callee identifier, so `onRemove(attachment)` matched an
+ * unrelated `Tooltip#onRemove` — see {@link calleeIsLocalValueBinding} for why a
+ * destructured prop or a hook's returned setter was invisible to the chain. It
+ * stays a separate predicate rather than a fifth case of the external one: those
+ * calls are not external, they are simply unpinnable, and the two verdicts feed
+ * different denominators.
  *
  * The guard reads the resolver's `TSProgramCache` when one exists (bd
  * tea-rags-mcp-335eu), which is what lets it decline a receiver only the checker
@@ -36,6 +46,7 @@ export class TSGlobalShortNameSymbolResolutionStrategy implements SymbolResoluti
 
   attempt(call: CallRef, ctx: CallContext): SymbolResolutionOutcome {
     if (targetsExternalImport(call, ctx, this.cfg.tsOptions, this.programCache)) return CONTINUE;
+    if (calleeIsLocalValueBinding(call, ctx, this.programCache)) return CONTINUE;
     const fallback = ctx.symbolTable.lookupByShortName(call.member);
     const hit = pickSingleCandidate(fallback, this.cfg.mode);
     if (hit) return resolved({ targetRelPath: hit.relPath, targetSymbolId: hit.symbolId });
