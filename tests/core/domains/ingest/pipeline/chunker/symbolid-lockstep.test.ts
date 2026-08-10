@@ -240,12 +240,14 @@ describe("symbolId lockstep — chunker payload vs cg_symbols (bd tea-rags-mcp-6
     // JavaScript shares `method_definition` and delegates `jsNameOf` to
     // `tsNameOf`, so the const-object namespace reaches cg_symbols there too.
     //
-    // Declared WITHOUT `export`: `export_statement` is a JavaScript chunkable
-    // type and the walk never descends into one, so every exported declaration
-    // — class, function, arrow, namespace alike — currently collapses into a
-    // single nameless block chunk carrying no symbolId at all. That is a
-    // separate defect with its own root cause and its own reindex-gated blast
-    // radius (bd tea-rags-mcp-8mrfj); it is not what this guard is pinning.
+    // This case is declared WITHOUT `export` for a historical reason worth
+    // keeping: `export_statement` used to sit in JavaScript's chunkableTypes, so
+    // the walk stopped at it and every exported declaration — class, function,
+    // arrow, namespace alike — collapsed into one nameless block chunk with no
+    // symbolId, which no lockstep assertion could survive. Removing that entry
+    // (bd tea-rags-mcp-hlgak) is what lets the exported twin below be pinned
+    // too. The unexported form stays as its own case: it is the shape the
+    // original bead reduced, and dropping it would lose a corner case.
     const JS_CONST_OBJECT_NAMESPACE = [
       "const FileLevelGrouper = {",
       "  group(results, limit) {",
@@ -264,6 +266,25 @@ describe("symbolId lockstep — chunker payload vs cg_symbols (bd tea-rags-mcp-6
     it("emits no callable id absent from cg_symbols", async () => {
       const graphIds = new Set(codegraphIds(JAVASCRIPT, JS_CONST_OBJECT_NAMESPACE));
       for (const id of await chunkerCallableIds(JAVASCRIPT, JS_CONST_OBJECT_NAMESPACE)) {
+        expect([...graphIds]).toContain(id);
+      }
+    });
+
+    // The same shape behind an `export`. `jsNameOf` always named it; the chunker
+    // reached it only once `export_statement` left chunkableTypes, so this is the
+    // half of the lockstep hlgak restores.
+    const JS_EXPORTED_CONST_OBJECT_NAMESPACE = `export ${JS_CONST_OBJECT_NAMESPACE}`;
+
+    it("names an EXPORTED const-object namespace member the same on both sides", async () => {
+      expect(await chunkerCallableIds(JAVASCRIPT, JS_EXPORTED_CONST_OBJECT_NAMESPACE)).toEqual([
+        "FileLevelGrouper.group",
+      ]);
+      expect(codegraphIds(JAVASCRIPT, JS_EXPORTED_CONST_OBJECT_NAMESPACE)).toContain("FileLevelGrouper.group");
+    });
+
+    it("emits no callable id absent from cg_symbols for an exported declaration", async () => {
+      const graphIds = new Set(codegraphIds(JAVASCRIPT, JS_EXPORTED_CONST_OBJECT_NAMESPACE));
+      for (const id of await chunkerCallableIds(JAVASCRIPT, JS_EXPORTED_CONST_OBJECT_NAMESPACE)) {
         expect([...graphIds]).toContain(id);
       }
     });

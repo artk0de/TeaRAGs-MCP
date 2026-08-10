@@ -2671,12 +2671,13 @@ class DataProcessor {
       // JavaScript parses the identical shape — `method_definition < object <
       // variable_declarator` — so it needs the same composition, not a copy.
       //
-      // Declared WITHOUT `export`: JavaScript lists `export_statement` in its
-      // chunkableTypes and the assignment filter has no opinion on that type, so
-      // any `export …` is claimed whole as one anonymous `block` chunk — an
-      // exported const-object never reaches this composition at all. That is a
-      // separate and much broader JS defect (it swallows `export function` and
-      // `export class` too), tracked apart from this bead.
+      // Declared WITHOUT `export` because, when this was written, JavaScript
+      // listed `export_statement` in its chunkableTypes and any `export …` was
+      // claimed whole as one anonymous `block` chunk, so an exported
+      // const-object never reached this composition. That was a broader JS
+      // defect — it swallowed `export function` and `export class` too — fixed
+      // separately in bd tea-rags-mcp-hlgak, whose describe block below covers
+      // the exported form. This case stays on the unexported shape.
       it("emits `FileLevelGrouper.group` for the same JavaScript shape", async () => {
         const code = [
           "const FileLevelGrouper = {",
@@ -2764,6 +2765,184 @@ class DataProcessor {
         expect(deepChunk, "chunk for the `deep` method missing").toBeDefined();
         expect(deepChunk!.metadata.symbolId).toBe("deep");
         expect(deepChunk!.metadata.parentSymbolId).toBeUndefined();
+      });
+    });
+
+    // bd tea-rags-mcp-hlgak — `export …` is a MODIFIER on a declaration, not a
+    // declaration of its own: it names no symbol, so it never belonged in
+    // JavaScript's `chunkableTypes`. While it was listed there,
+    // `findChunkableNodes` accepted the `export_statement` and stopped
+    // descending, so every exported declaration in every `.js` file collapsed
+    // into ONE chunk with `chunkType: "block"`, `name: undefined`,
+    // `symbolId: undefined` — while `jsNameOf` named the very same nodes
+    // correctly in `cg_symbols`. That is the severe form of the divergence
+    // `.claude/rules/symbolid-convention.md` exists to prevent: not a
+    // mismatched id, but no id at all.
+    //
+    // The invariant these pin: an exported declaration chunks EXACTLY like the
+    // same declaration without `export`. TypeScript — same export syntax, same
+    // engine — has always behaved this way because it never listed
+    // `export_statement`.
+    describe("JS exported declarations chunk like unexported ones (bd tea-rags-mcp-hlgak)", () => {
+      it("names `export function` instead of collapsing it into a block", async () => {
+        const code = [
+          "export function tally(values) {",
+          "  let total = 0;",
+          "  for (const value of values) total += value;",
+          "  return total;",
+          "}",
+          "",
+        ].join("\n");
+
+        const chunks = await chunker.chunk(code, "tally.js", "javascript");
+
+        const tallyChunk = chunks.find((c) => c.metadata.name === "tally");
+        expect(tallyChunk, "chunk for the exported `tally` function missing").toBeDefined();
+        expect(tallyChunk!.metadata.symbolId).toBe("tally");
+        expect(tallyChunk!.metadata.chunkType).toBe("function");
+        expect(chunks.map((c) => c.metadata.chunkType)).not.toContain("block");
+      });
+
+      it("names `export class` and its methods with the convention separators", async () => {
+        const code = [
+          "export class Calculator {",
+          "  add(a, b) {",
+          "    // Padded so the chunk clears the 50-character content floor.",
+          "    return a + b;",
+          "  }",
+          "",
+          "  static of(seed) {",
+          "    // Padded so the chunk clears the 50-character content floor.",
+          "    return new Calculator(seed);",
+          "  }",
+          "}",
+          "",
+        ].join("\n");
+
+        const chunks = await chunker.chunk(code, "calculator.js", "javascript");
+
+        const classChunk = chunks.find((c) => c.metadata.name === "Calculator");
+        expect(classChunk, "chunk for the exported `Calculator` class missing").toBeDefined();
+        expect(classChunk!.metadata.symbolId).toBe("Calculator");
+        expect(classChunk!.metadata.chunkType).toBe("class");
+      });
+
+      it("names `export const <fn>` through the assignment filter", async () => {
+        const code = [
+          "export const tally = function (values) {",
+          "  let total = 0;",
+          "  for (const value of values) total += value;",
+          "  return total;",
+          "};",
+          "",
+        ].join("\n");
+
+        const chunks = await chunker.chunk(code, "tally-const.js", "javascript");
+
+        const tallyChunk = chunks.find((c) => c.metadata.name === "tally");
+        expect(tallyChunk, "chunk for the exported `tally` const missing").toBeDefined();
+        expect(tallyChunk!.metadata.symbolId).toBe("tally");
+        expect(chunks.map((c) => c.metadata.chunkType)).not.toContain("block");
+      });
+
+      // The 62hzr composition, reached through an `export`. Its non-exported
+      // twin above already emits `FileLevelGrouper.group`; the exported form
+      // reached nothing at all.
+      it("composes `Grouper.group` for an exported const-object namespace", async () => {
+        const code = [
+          "export const Grouper = {",
+          "  group(results, limit) {",
+          "    const byPath = new Map();",
+          "    for (const result of results) {",
+          "      const path = result.payload?.relativePath ?? '';",
+          "      const hits = byPath.get(path);",
+          "      if (hits) hits.push(result);",
+          "      else byPath.set(path, [result]);",
+          "    }",
+          "    return [...byPath.values()].slice(0, limit);",
+          "  },",
+          "};",
+          "",
+        ].join("\n");
+
+        const chunks = await chunker.chunk(code, "grouper.js", "javascript");
+
+        const groupChunk = chunks.find((c) => c.metadata.name === "group");
+        expect(groupChunk, "chunk for the exported `group` method missing").toBeDefined();
+        expect(groupChunk!.metadata.symbolId).toBe("Grouper.group");
+        expect(groupChunk!.metadata.parentSymbolId).toBe("Grouper");
+      });
+
+      it("names the declaration behind `export default class`", async () => {
+        const code = [
+          "export default class Widget {",
+          "  render(props) {",
+          "    // Padded so the chunk clears the 50-character content floor.",
+          "    return '<div>' + props.label + '</div>';",
+          "  }",
+          "}",
+          "",
+        ].join("\n");
+
+        const chunks = await chunker.chunk(code, "widget.js", "javascript");
+
+        const widgetChunk = chunks.find((c) => c.metadata.name === "Widget");
+        expect(widgetChunk, "chunk for the default-exported `Widget` class missing").toBeDefined();
+        expect(widgetChunk!.metadata.symbolId).toBe("Widget");
+        expect(widgetChunk!.metadata.chunkType).toBe("class");
+      });
+
+      // `export { a, b }` re-exports declarations that already chunked on their
+      // own. The statement itself declares nothing, so it must add no chunk —
+      // exactly as `export { a, b }` in a `.ts` file has always behaved. Before
+      // the fix it claimed the list as one more anonymous block.
+      it("leaves an `export { … }` list to the declarations it re-exports", async () => {
+        // The list is deliberately long enough to clear the 50-character noise
+        // gate — a short one is dropped for size and would hide the defect.
+        const code = [
+          "function alphaCounter(values) {",
+          "  // Padded so the chunk clears the 50-character content floor.",
+          "  return values.map((value) => value + 1);",
+          "}",
+          "",
+          "function betaFilter(values) {",
+          "  // Padded so the chunk clears the 50-character content floor.",
+          "  return values.filter((value) => value > 0);",
+          "}",
+          "",
+          "export { alphaCounter, betaFilter, alphaCounter as tally };",
+          "",
+        ].join("\n");
+
+        const chunks = await chunker.chunk(code, "barrel.js", "javascript");
+
+        expect(chunks.map((c) => c.metadata.name)).toEqual(expect.arrayContaining(["alphaCounter", "betaFilter"]));
+        expect(chunks.map((c) => c.metadata.chunkType)).not.toContain("block");
+      });
+
+      // The whole point of the bead: exported and unexported forms of the same
+      // declaration must produce identical chunk metadata.
+      it("emits the same chunk metadata with and without the `export` keyword", async () => {
+        const body = [
+          "function tally(values) {",
+          "  let total = 0;",
+          "  for (const value of values) total += value;",
+          "  return total;",
+          "}",
+          "",
+        ].join("\n");
+
+        const plain = await chunker.chunk(body, "plain.js", "javascript");
+        const exported = await chunker.chunk(`export ${body}`, "exported.js", "javascript");
+
+        const shape = (chunks: Awaited<ReturnType<typeof chunker.chunk>>) =>
+          chunks.map((c) => ({
+            name: c.metadata.name,
+            symbolId: c.metadata.symbolId,
+            chunkType: c.metadata.chunkType,
+          }));
+
+        expect(shape(exported)).toEqual(shape(plain));
       });
     });
 
