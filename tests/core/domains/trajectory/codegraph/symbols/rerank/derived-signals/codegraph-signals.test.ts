@@ -405,9 +405,84 @@ describe("codegraph derived signals", () => {
     expect(preset.tools).toContain("hybrid_search");
     expect(preset.tools).toContain("rank_chunks");
     expect(preset.weights.similarity).toBe(0.2);
-    expect(preset.weights.fanIn).toBe(0.3);
+    expect(preset.weights.fanIn).toBe(0.15);
     expect(preset.weights.churn).toBe(0.2);
     expect(preset.weights.bugFix).toBe(0.15);
     expect(preset.weights.chunkFanIn).toBe(0.05);
+  });
+
+  /**
+   * Blast radius is TRANSITIVE reach. `fanIn` counts the files that import this
+   * one; `codegraph.file.transitiveImpact` counts the files that reach it at any
+   * depth (reverse BFS, depth-capped at index time) — the literal definition the
+   * preset is named for. `CriticalPathPreset` already argues this for its own
+   * axis: "the cost of a regression is how far it propagates, not how many call
+   * sites touch it directly". A preset called `blastRadius` cannot disagree with
+   * that while scoring only one-hop signals.
+   *
+   * The transitive weight comes out of the ONE-HOP structural budget
+   * (`fanIn` + `isHub` + `chunkFanIn`), never out of the process budget —
+   * Yatish et al. 2020 (ICSME) puts process metrics ahead of product metrics
+   * (AUC 95% vs 54%) and that ordering is what the existing docblock cites.
+   */
+  describe("BlastRadiusPreset ranks by transitive reach, not one-hop fan-in", () => {
+    const preset = new BlastRadiusPreset();
+    const CODEGRAPH_SIGNAL_NAMES = new Set(CODEGRAPH_SYMBOLS_DERIVED_SIGNALS.map((s) => s.name));
+    const STRUCTURAL_KEYS = ["transitiveImpact", "fanIn", "isHub", "chunkFanIn"] as const;
+    const PROCESS_KEYS = ["churn", "bugFix"] as const;
+    const total = (keys: readonly string[]): number =>
+      keys.reduce((acc, k) => acc + Math.abs(preset.weights[k as keyof typeof preset.weights] ?? 0), 0);
+
+    it("weights transitiveImpact — the signal that literally counts blast radius", () => {
+      expect(preset.weights.transitiveImpact).toBe(0.2);
+    });
+
+    it("funds the transitive weight from the one-hop budget, leaving the process budget intact", () => {
+      // churn 0.2 + bugFix 0.15 — same 0.35 the Yatish-aligned retune set.
+      expect(total(PROCESS_KEYS)).toBeCloseTo(0.35, 6);
+      // 0.45 structural total unchanged: transitiveImpact 0.2 is paid for by
+      // fanIn 0.3 -> 0.15 and isHub 0.1 -> 0.05.
+      expect(total(STRUCTURAL_KEYS)).toBeCloseTo(0.45, 6);
+      expect(preset.weights.fanIn).toBe(0.15);
+      expect(preset.weights.isHub).toBe(0.05);
+    });
+
+    it("keeps every product metric at or below the leading process metric", () => {
+      const leadingProcess = Math.max(...PROCESS_KEYS.map((k) => preset.weights[k] ?? 0));
+      for (const key of STRUCTURAL_KEYS) {
+        expect(preset.weights[key] ?? 0).toBeLessThanOrEqual(leadingProcess);
+      }
+    });
+
+    it("holds the preset-invariant contract: sum 1.0, similarity >= 0.2, no weight > 0.5", () => {
+      const sum = Object.values(preset.weights).reduce((a, b) => a + Math.abs(b ?? 0), 0);
+      expect(sum).toBeCloseTo(1.0, 6);
+      expect(preset.weights.similarity ?? 0).toBeGreaterThanOrEqual(0.2);
+      for (const w of Object.values(preset.weights)) {
+        expect(Math.abs(w ?? 0)).toBeLessThanOrEqual(0.5);
+      }
+    });
+
+    it("names only registered codegraph derived signals in its structural weights", () => {
+      for (const key of STRUCTURAL_KEYS) {
+        expect(CODEGRAPH_SIGNAL_NAMES.has(key)).toBe(true);
+        expect(preset.weights).toHaveProperty(key);
+      }
+    });
+
+    /**
+     * `pageRank` is the method-level analogue and stays out: it reads
+     * `codegraph.chunk.pageRank`, a representative chunk's centrality, which
+     * says nothing about the file's reach. This is the same mistake `ownership`
+     * and `securityAudit` document backing out of ("chunkChurn dropped —
+     * signalLevel 'file' -> payloadAlpha 0 -> always-0 dead weight").
+     */
+    it("refuses pageRank — a chunk-scoped signal has no place in the file-shaped reach axis", () => {
+      expect(preset.weights).not.toHaveProperty("pageRank");
+    });
+
+    it("surfaces the raw transitive count in the file overlay", () => {
+      expect(preset.overlayMask.file).toContain("codegraph.file.transitiveImpact");
+    });
   });
 });
