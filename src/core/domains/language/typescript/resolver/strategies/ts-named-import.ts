@@ -1,4 +1,4 @@
-import { CONTINUE, resolved } from "../../../../../contracts/resolution.js";
+import { CONTINUE, deferred, resolved } from "../../../../../contracts/resolution.js";
 import { pickSingleCandidate, type CallContext, type CallRef } from "../../../../../contracts/types/codegraph.js";
 import type { SymbolResolutionOutcome, SymbolResolutionStrategy } from "../../../../../contracts/types/language.js";
 import { mapImportToFile } from "../ts-path-mapper.js";
@@ -14,9 +14,11 @@ import type { ResolverConfig } from "./shared.js";
  * (`scope[-1] === receiver`) before short-name so multi-export modules pin the
  * right class.
  *
- * Once the target FILE resolves this strategy is TERMINAL — even when the
- * member is not indexed it returns a file-only edge (`targetSymbolId: null`),
- * never continuing to a later pass.
+ * Once the target FILE resolves, an unindexed member yields a file-only edge
+ * (`targetSymbolId: null`) — DEFERRED rather than committed (bd
+ * tea-rags-mcp-5onmn). The import statement is real evidence of a module edge,
+ * so the answer is kept; parking it lets the tail `typeChecker` passes pin the
+ * member when they can, and the chain emits the module edge when they cannot.
  */
 export class TSNamedImportSymbolResolutionStrategy implements SymbolResolutionStrategy {
   readonly name = "namedImport";
@@ -40,6 +42,6 @@ export class TSNamedImportSymbolResolutionStrategy implements SymbolResolutionSt
     const target = pickSingleCandidate(candidates, this.cfg.mode);
     if (target) return resolved({ targetRelPath: target.relPath, targetSymbolId: target.symbolId });
 
-    return resolved({ targetRelPath: targetFile, targetSymbolId: null });
+    return deferred({ targetRelPath: targetFile, targetSymbolId: null });
   }
 }

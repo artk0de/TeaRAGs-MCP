@@ -1,4 +1,4 @@
-import { CONTINUE, resolved } from "../../../../../contracts/resolution.js";
+import { CONTINUE, deferred, resolved } from "../../../../../contracts/resolution.js";
 import { pickSingleCandidate, type CallContext, type CallRef } from "../../../../../contracts/types/codegraph.js";
 import type { SymbolResolutionOutcome, SymbolResolutionStrategy } from "../../../../../contracts/types/language.js";
 import { collectImportedFiles, type ResolverConfig } from "./shared.js";
@@ -10,7 +10,8 @@ import { collectImportedFiles, type ResolverConfig } from "./shared.js";
  * symbol. For each imported file, check if any definition with
  * `fqName === receiver` lives there. The intersection picks the single file
  * that imports AND declares the receiver as a top-level symbol. Then resolve
- * `member` within that file. Terminal once that single file is found.
+ * `member` within that file; when the member misses, the file-only edge is
+ * DEFERRED rather than committed (bd tea-rags-mcp-5onmn).
  */
 export class TSReceiverSymbolSymbolResolutionStrategy implements SymbolResolutionStrategy {
   readonly name = "receiverSymbol";
@@ -35,7 +36,8 @@ export class TSReceiverSymbolSymbolResolutionStrategy implements SymbolResolutio
     const target = pickSingleCandidate(candidates, this.cfg.mode);
     if (target) return resolved({ targetRelPath: target.relPath, targetSymbolId: target.symbolId });
     // Method not indexed yet — file-only edge so fan-graph stays accurate even
-    // when method-level pinning fails.
-    return resolved({ targetRelPath: targetFile, targetSymbolId: null });
+    // when method-level pinning fails. Parked, not committed, so a later pass
+    // that CAN pin the method still wins.
+    return deferred({ targetRelPath: targetFile, targetSymbolId: null });
   }
 }

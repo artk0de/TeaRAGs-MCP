@@ -155,8 +155,10 @@ function structuralFieldContext(symbolTable: InMemoryGlobalSymbolTable): CallCon
  * `interface Plugin` declared twice — once in the origin module, once in an
  * augmenting one. `teardown` exists ONLY on the second declaration, so a pass
  * that took the first `interface Plugin` it found would name the wrong file.
- * The receiver is a typed PARAMETER, the shape that actually reaches this pass:
- * a named-import receiver is claimed terminally by the `namedImport` pass.
+ * The receiver is a typed PARAMETER, the shape this fixture exercises. A
+ * named-import receiver now reaches this pass too — `namedImport` DEFERS its
+ * file-only fallback instead of committing it (bd tea-rags-mcp-5onmn), so the
+ * chain runs on and a pin here outranks the parked module edge.
  */
 function writeMergedInterfaceFixture(repoRoot: string): void {
   writeSource(repoRoot, "src/plugin-api.ts", [`export interface Plugin {`, `  init(): void;`, `}`, ``].join("\n"));

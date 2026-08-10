@@ -169,13 +169,15 @@ describe("TSNamedImportSymbolResolutionStrategy", () => {
     });
   });
 
-  it("emits a terminal file-only edge when the member is not indexed (does NOT continue)", () => {
+  it("defers a file-only edge when the member is not indexed (does NOT commit, does NOT continue)", () => {
     const symbolTable = tableWith(["src/rank.ts", [sym("RankModule", "RankModule", "src/rank.ts", [])]]);
     const outcome = strat.attempt(
       call,
       ctx({ symbolTable, imports: [{ importText: "./rank.js", importedNames: ["RankModule"] }] }),
     );
-    expect(outcome).toEqual({ kind: "resolved", target: { targetRelPath: "src/rank.ts", targetSymbolId: null } });
+    // the import statement IS evidence of a module edge, so the answer is kept —
+    // but parked, so the tail typeChecker passes still get to pin the member
+    expect(outcome).toEqual({ kind: "deferred", target: { targetRelPath: "src/rank.ts", targetSymbolId: null } });
   });
 
   it("continues when no import carries the receiver in importedNames", () => {
@@ -198,6 +200,18 @@ describe("TSImportBasenameSymbolResolutionStrategy", () => {
     expect(outcome).toEqual({
       kind: "resolved",
       target: { targetRelPath: "src/rank-module.ts", targetSymbolId: "RankModule#run" },
+    });
+  });
+
+  it("defers a file-only edge when the member is not indexed in the mirrored file", () => {
+    const symbolTable = tableWith([
+      "src/rank-module.ts",
+      [sym("RankModule", "RankModule", "src/rank-module.ts", [])],
+    ]);
+    const outcome = strat.attempt(call, ctx({ symbolTable, imports: [{ importText: "./rank-module.js" }] }));
+    expect(outcome).toEqual({
+      kind: "deferred",
+      target: { targetRelPath: "src/rank-module.ts", targetSymbolId: null },
     });
   });
 
@@ -224,6 +238,15 @@ describe("TSReceiverSymbolSymbolResolutionStrategy", () => {
     expect(outcome).toEqual({
       kind: "resolved",
       target: { targetRelPath: "src/helper.ts", targetSymbolId: "Helper#run" },
+    });
+  });
+
+  it("defers a file-only edge when the receiver's file is found but the member is not", () => {
+    const symbolTable = tableWith(["src/helper.ts", [sym("Helper", "Helper", "src/helper.ts", [])]]);
+    const outcome = strat.attempt(call, ctx({ symbolTable, imports: [{ importText: "./helper.js" }] }));
+    expect(outcome).toEqual({
+      kind: "deferred",
+      target: { targetRelPath: "src/helper.ts", targetSymbolId: null },
     });
   });
 
