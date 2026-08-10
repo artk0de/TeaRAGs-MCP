@@ -42,7 +42,7 @@ function returnFacts(code: string) {
 
 describe("rubyAssociationTypeSource — singular associations (belongs_to / has_one)", () => {
   it("belongs_to with class_name literal → instance of the literal model (class_name wins)", () => {
-    const facts = returnFacts(['class Firm', '  belongs_to :owner, class_name: "User"', 'end'].join("\n"));
+    const facts = returnFacts(["class Firm", '  belongs_to :owner, class_name: "User"', "end"].join("\n"));
     const owner = facts.find((f) => f.methodName === "owner");
     expect(owner?.symbolScope).toEqual(["Firm"]);
     expect(owner?.type).toEqual({ form: "instance", name: "User" });
@@ -116,6 +116,49 @@ describe("rubyAssociationTypeSource — silence gates (precision, never fabricat
   });
 });
 
+/**
+ * Where the walk stops — the return-type twin of the same boundary in
+ * `collectRubyAssociationTypes` (walker/association-types.ts).
+ *
+ * The macros are class methods of `ActiveRecord::Base`, so they declare
+ * something only where `self` is the class: the class body, plus everything a
+ * block reaches from it, because a Ruby block keeps the `self` of the scope that
+ * wrote it. A `def` body is the one place that is not true — at call time `self`
+ * is an instance, the macro is not in its method table, and a bare
+ * `has_many :posts` there raises NoMethodError or names some unrelated app
+ * method. Neither reading declares an accessor, so neither justifies giving
+ * every `x.posts` in the project a static return type.
+ *
+ * `def self.x` is excluded on a second ground: `self` IS the class, but the macro
+ * runs only if something calls that class method, at a time no static walker can
+ * know. A return fact is unconditional, so a conditionally-declared accessor
+ * does not belong in one.
+ */
+describe("rubyAssociationTypeSource — class-body scope boundary", () => {
+  it("emits NO fact for an association written inside an instance method body", () => {
+    expect(returnFacts("class User\n  def setup\n    has_many :posts\n  end\nend\n")).toEqual([]);
+  });
+
+  it("emits NO fact for an association written inside a `def self.` class method", () => {
+    expect(returnFacts("class User\n  def self.setup\n    has_many :posts\n  end\nend\n")).toEqual([]);
+  });
+
+  it("emits NO fact for a `scope` written inside a method body", () => {
+    expect(returnFacts("class Post\n  def refresh\n    scope :active, -> { where(x: 1) }\n  end\nend\n")).toEqual([]);
+  });
+
+  it("keeps the class's real association when a method body also mentions one", () => {
+    const facts = returnFacts("class User\n  has_many :posts\n  def setup\n    belongs_to :author\n  end\nend\n");
+    expect(facts.map((f) => f.methodName)).toEqual(["posts"]);
+    expect(facts[0]?.type).toEqual({ form: "container", element: { form: "instance", name: "Post" } });
+  });
+
+  it("still collects through a class-body block — a block keeps the class as `self`", () => {
+    const facts = returnFacts("class User\n  if Rails.env.test?\n    has_many :posts\n  end\nend\n");
+    expect(facts.find((f) => f.methodName === "posts")?.symbolScope).toEqual(["User"]);
+  });
+});
+
 describe("rubyAssociationTypeSource — concern included-do attribution (ancestor lookup)", () => {
   it("association inside `included do` attributes the fact to the CONCERN, not the includer", () => {
     const code = [
@@ -160,13 +203,14 @@ describe("rubyAssociationTypeSource — store precedence (YARD > associations)",
 
 describe("rubyAssociationTypeSource — registered in the inline source pipeline", () => {
   it("extractFromRubyFile surfaces association return types in structuredReturnTypes end-to-end", () => {
-    const code = [
-      "class Firm",
-      '  belongs_to :owner, class_name: "User"',
-      "  has_many :employees",
-      "end",
-    ].join("\n");
-    const r = extractFromRubyFile({ tree: parse(code), code, relPath: "app/models/firm.rb", language: "ruby", chunks: [] });
+    const code = ["class Firm", '  belongs_to :owner, class_name: "User"', "  has_many :employees", "end"].join("\n");
+    const r = extractFromRubyFile({
+      tree: parse(code),
+      code,
+      relPath: "app/models/firm.rb",
+      language: "ruby",
+      chunks: [],
+    });
     expect(r.structuredReturnTypes?.["Firm#owner"]).toEqual({ form: "instance", name: "User" });
     expect(r.structuredReturnTypes?.["Firm#employees"]).toEqual({
       form: "container",
