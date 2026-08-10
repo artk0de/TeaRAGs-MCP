@@ -6,6 +6,7 @@ import {
   flagTrackBPriorities,
   formatOracleTable,
   tallyBy,
+  tallyChainOutput,
   type OracleOutcome,
   type OracleRow,
   type OracleVerdict,
@@ -20,6 +21,7 @@ function row(overrides: Partial<OracleRow> = {}): OracleRow {
     receiverKind: "bareCall",
     categories: ["plain"],
     verdict: "match",
+    chainOutput: "pinned",
     ...overrides,
   };
 }
@@ -87,6 +89,24 @@ describe("diffResolution", () => {
 
   it("reports bothUnresolved when neither side has an answer", () => {
     expect(diffResolution(null, { kind: "unknown" })).toEqual("bothUnresolved");
+  });
+});
+
+describe("tallyChainOutput", () => {
+  it("counts every emitted edge, the file-only subset, and the declines", () => {
+    const tally = tallyChainOutput([
+      ...rows("match", 3, { chainOutput: "pinned" }),
+      ...rows("fileOnly", 2, { chainOutput: "fileOnly" }),
+      ...rows("missed", 4, { chainOutput: "none" }),
+    ]);
+    // fileOnly edges are a SUBSET of edges, not a sibling bucket — the -156
+    // regression bd pmxuv measured was a drop in `edges`, invisible to every
+    // verdict table because the checker had no opinion on those sites
+    expect(tally).toEqual({ edges: 5, fileOnly: 2, unresolved: 4 });
+  });
+
+  it("counts nothing for an empty run", () => {
+    expect(tallyChainOutput([])).toEqual({ edges: 0, fileOnly: 0, unresolved: 0 });
   });
 });
 
