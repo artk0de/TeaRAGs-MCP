@@ -86,8 +86,9 @@ conclude absence from a graph the index says is incomplete.
   getResolvedSignature, structural typing + interface declaration merging) +
   ConeDispatch + typeChecker-backed union-receiver fan-out + builtin-receiver
   precision guards (pre-resolution short-name match, and imported-constant
-  container members on the import-mapping fallback) + tsx/tsconfig-paths-aware
-  import mapping
+  container members on the import-mapping fallback) + local-callee guard (bare
+  calls whose callee is a destructured prop / hook binding) +
+  tsx/tsconfig-paths-aware import mapping
 - **JavaScript** — 6-strategy; CommonJS/ESM require resolution (dynamic gaps)
 - **Python** — 6-strategy + ConeDispatch CHA; type hints where present
 - **Go** — 6-strategy; explicit interfaces (no poly dispatch)
