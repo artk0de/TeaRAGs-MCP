@@ -24,8 +24,10 @@ import { resolveLocalBindingType, type CallContext, type CallRef } from "../../.
 import {
   ECMASCRIPT_BUILTIN_PROTOTYPE_METHODS,
   ECMASCRIPT_BUILTIN_TYPES,
+  ECMASCRIPT_CONTAINER_PROTOTYPE_METHODS,
   ECMASCRIPT_GLOBALS,
 } from "../../shared/ecmascript-globals.js";
+import { importSpecifierNamesReceiver } from "./ts-import-basename-match.js";
 import { mapImportToFile, type TsCompilerOptions } from "./ts-path-mapper.js";
 
 /**
@@ -43,7 +45,10 @@ import { mapImportToFile, type TsCompilerOptions } from "./ts-path-mapper.js";
  *   4. the receiver carries NO type information at all AND the member is a word
  *      from the builtin-only prototype vocabulary (`push`, `splice`, `flatMap`,
  *      …) — see {@link ECMASCRIPT_BUILTIN_PROTOTYPE_METHODS} for why that set
- *      is deliberately small.
+ *      is deliberately small;
+ *   5. the receiver is an imported project CONSTANT and the member is a builtin
+ *      container operation (`YARD_CONST.test(t)`, `CODE_LANGUAGES.has(l)`) —
+ *      see {@link receiverIsImportedBuiltinContainer}.
  *
  * PRECISION: cases 3 and 4 are mutually exclusive BY CONSTRUCTION, and that is
  * the load-bearing detail. A receiver whose type IS known decides the question
@@ -66,7 +71,41 @@ export function targetsExternalImport(call: CallRef, ctx: CallContext, tsOptions
       return true;
     }
   }
-  return receiverIsBuiltinInstance(call, ctx);
+  return receiverIsBuiltinInstance(call, ctx) || receiverIsImportedBuiltinContainer(call, ctx);
+}
+
+/**
+ * Case 5 of {@link targetsExternalImport} (bd tea-rags-mcp-4kx9f): the receiver
+ * is a CONSTANT this project imports, and the member is an operation on the
+ * builtin container it holds.
+ *
+ * The four cases above cannot reach this shape. `ECMASCRIPT_GLOBALS` matches
+ * receiver TEXT, and the receiver here is a project name. The import-specifier
+ * case asks whether the specifier leaves the project, and this one does not —
+ * it maps to the file that DECLARES the constant, which is precisely why the
+ * import-mapping passes were emitting an edge onto that file. And no type is
+ * recorded for it: the walker types locals and fields in the CALLER's file,
+ * while the constant's initializer lives in the file it was imported from.
+ *
+ * So the evidence is the pair of facts that remain. The receiver is bound by an
+ * import — by name, or by the basename convention the strategies match on. And
+ * nothing declares that receiver as a symbol: `tsNameOf` names classes,
+ * functions and methods, so a bound name the table does not know is a
+ * module-level `const`, never a class. Only then does
+ * {@link ECMASCRIPT_CONTAINER_PROTOTYPE_METHODS} get a vote, which is what lets
+ * that set carry words the last-resort vocabulary could not afford.
+ *
+ * `this` / `super` are excluded for the reason they always are — a self-call is
+ * an earlier pass's business, and no import binds them.
+ */
+function receiverIsImportedBuiltinContainer(call: CallRef, ctx: CallContext): boolean {
+  const receiver = call.receiver ?? null;
+  if (receiver === null || receiver.length === 0 || receiver === "this" || receiver === "super") return false;
+  if (!ECMASCRIPT_CONTAINER_PROTOTYPE_METHODS.has(call.member)) return false;
+  if (ctx.symbolTable.lookup(receiver).length > 0) return false;
+  return ctx.imports.some(
+    (imp) => imp.importedNames?.includes(receiver) || importSpecifierNamesReceiver(imp.importText, receiver),
+  );
 }
 
 /**
