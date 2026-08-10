@@ -150,6 +150,22 @@ export class TSProgramCache {
   private readonly compilerOptions: ts.CompilerOptions;
   /** Parsed-SourceFile cache shared by every Program this instance builds. */
   private readonly sourceFiles = new Map<string, ts.SourceFile | undefined>();
+  /**
+   * The PROJECT-source keys of {@link sourceFiles}, in insertion order — the
+   * population {@link TSProgramCacheOptions.maxParsedFiles} bounds, indexed
+   * rather than recomputed (bd tea-rags-mcp-ajvnq).
+   *
+   * Kept as a set beside the map, not as a bare integer, because
+   * {@link evictParsedOverflow} needs BOTH facts a scan used to produce: how
+   * many project sources are held, and which ones to drop first. A counter
+   * answers only the first, leaving the eviction walk to re-scan the whole map
+   * — including the dependency entries that are never eligible and, after
+   * bd tea-rags-mcp-qb2s3, outnumber the project sources.
+   *
+   * Insertion order is the eviction order, and matches the map's, because both
+   * are written in the same breath by {@link rememberParse}.
+   */
+  private readonly parsedProjectSources = new Set<string>();
   private readonly host: ts.CompilerHost;
   /** Insertion-ordered LRU — the first key is the least recently used. */
   private readonly entries = new Map<RelPath, CacheEntry>();
@@ -175,13 +191,13 @@ export class TSProgramCache {
    * Project sources currently held in the shared parse cache — the quantity
    * {@link TSProgramCacheOptions.maxParsedFiles} bounds. Dependencies and the
    * default lib are excluded, matching what the bound counts.
+   *
+   * Read off the maintained index rather than derived, because
+   * {@link evictParsedOverflow} reads this on every parse and deriving it cost
+   * a `node:path.relative` per map entry — see {@link parsedProjectSources}.
    */
   get parsedProjectFileCount(): number {
-    let count = 0;
-    for (const fileName of this.sourceFiles.keys()) {
-      if (this.isProjectSourceFile(fileName)) count++;
-    }
-    return count;
+    return this.parsedProjectSources.size;
   }
 
   /**
@@ -215,6 +231,7 @@ export class TSProgramCache {
   reset(): void {
     this.entries.clear();
     this.sourceFiles.clear();
+    this.parsedProjectSources.clear();
   }
 
   /**
@@ -291,7 +308,31 @@ export class TSProgramCache {
     this.entries.delete(relPath);
     // The changed file's parse is stale in the shared host cache too — a later
     // Program that imports it must not be handed the previous revision.
-    this.sourceFiles.delete(this.toAbsolute(relPath));
+    this.forgetParse(this.toAbsolute(relPath));
+  }
+
+  /**
+   * Record a parse in the shared map and, when the file is one of the
+   * project's own sources, in the index that bounds them.
+   *
+   * The two writes are colocated here, and {@link forgetParse} is the only
+   * other place either collection is mutated, because the index's whole cost
+   * is that it CAN disagree with the map — a derived count could not. Keeping
+   * both edges of that risk in one pair of methods is what makes the
+   * disagreement testable instead of scattered across four call sites.
+   *
+   * A parse that produced nothing is still recorded, exactly as the derived
+   * count treated it: the map key exists, so the slot is held.
+   */
+  private rememberParse(fileName: string, parsed: ts.SourceFile | undefined): void {
+    this.sourceFiles.set(fileName, parsed);
+    if (this.isProjectSourceFile(fileName)) this.parsedProjectSources.add(fileName);
+  }
+
+  /** Drop a parse from the shared map and from the project-source index. */
+  private forgetParse(fileName: string): void {
+    this.sourceFiles.delete(fileName);
+    this.parsedProjectSources.delete(fileName);
   }
 
   private evictOverflow(): void {
@@ -313,7 +354,7 @@ export class TSProgramCache {
     base.getSourceFile = (fileName, languageVersionOrOptions, onError, shouldCreate) => {
       if (this.sourceFiles.has(fileName)) return this.sourceFiles.get(fileName);
       const parsed = getSourceFile(fileName, languageVersionOrOptions, onError, shouldCreate);
-      this.sourceFiles.set(fileName, parsed);
+      this.rememberParse(fileName, parsed);
       this.evictParsedOverflow();
       return parsed;
     };
@@ -330,16 +371,25 @@ export class TSProgramCache {
    * to hold: re-parsing `lib.es2022.full.d.ts` is the single largest fixed cost
    * in `ts.createProgram`, and the set is bounded by what the project depends
    * on rather than by how long the process has been alive.
+   *
+   * Both halves read {@link parsedProjectSources} rather than the parse map,
+   * which is what keeps this affordable on the hot path — it runs on EVERY
+   * parse, and against the map both the count and the walk were O(map size)
+   * with a `node:path.relative` per entry (bd tea-rags-mcp-ajvnq). The walk was
+   * the worse half on a real dependency tree: it also had to step over every
+   * dependency parse to find the project sources among them, and those are the
+   * majority. Now the common case — under the bound, nothing to do — is a size
+   * comparison, and the overflow case iterates only eviction candidates.
    */
   private evictParsedOverflow(): void {
-    // One count, not two — this runs on every parse, and the scan is O(map).
-    let over = this.parsedProjectFileCount - this.maxParsedFiles;
+    let over = this.parsedProjectSources.size - this.maxParsedFiles;
     if (over <= 0) return;
-    for (const fileName of [...this.sourceFiles.keys()]) {
-      if (over === 0) return;
-      if (!this.isProjectSourceFile(fileName)) continue;
-      this.sourceFiles.delete(fileName);
-      over--;
+    // Deleting the entry the iterator is standing on is well-defined for a Set,
+    // and insertion order means the oldest parse is always the one it reaches
+    // first — the same order the map walk produced.
+    for (const fileName of this.parsedProjectSources) {
+      this.forgetParse(fileName);
+      if (--over === 0) return;
     }
   }
 
