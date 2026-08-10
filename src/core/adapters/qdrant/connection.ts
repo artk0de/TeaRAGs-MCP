@@ -34,6 +34,28 @@ import {
 import type { StartupPhase } from "./embedded/types.js";
 import { QdrantRecoveringError, QdrantStartingError, QdrantUnavailableError } from "./errors.js";
 
+/**
+ * Build the REST client with the library's own version probe turned OFF.
+ *
+ * `@qdrant/js-client-rest` fetches the server version from inside its
+ * constructor, unawaited, to warn about client/server incompatibility. This
+ * package already owns that decision and owns it better:
+ * `.qdrant-required-version` is the single source of truth, the embedded daemon
+ * runs exactly that version, and `checkExternalQdrantVersion` validates an
+ * external `QDRANT_URL` at startup with a typed error rather than a log line.
+ *
+ * Leaving the probe on costs two things and buys none. It makes constructing a
+ * manager perform network I/O, so every construction against a server that is
+ * not up yet — a cold embedded daemon, any unit test — prints "Failed to obtain
+ * server version" to stderr. And because the write is unawaited it can still be
+ * in flight when the process that started it goes away: in a vitest worker the
+ * pending console write surfaces as `EnvironmentTeardownError: Closing rpc while
+ * "onUserConsoleLog" was pending`, which fails the run with every test passing.
+ */
+function createRestClient(url: string, apiKey?: string): QdrantClient {
+  return new QdrantClient({ url, apiKey, checkCompatibility: false });
+}
+
 export interface EmbeddedDaemonProbe {
   /** Current startup phase of the embedded daemon, or null if daemon is dead / not an embedded daemon. */
   startupPhase: () => StartupPhase | null;
@@ -67,7 +89,7 @@ export class QdrantConnection {
     this.apiKey = apiKey;
     this.reconnect = reconnect;
     this.daemon = daemon;
-    this.client = new QdrantClient({ url, apiKey });
+    this.client = createRestClient(url, apiKey);
   }
 
   get aliases(): QdrantAliasManager {
@@ -126,7 +148,7 @@ export class QdrantConnection {
     const newUrl = await this.reconnect();
     if (!newUrl) return false;
     this.url = newUrl;
-    this.client = new QdrantClient({ url: newUrl, apiKey: this.apiKey });
+    this.client = createRestClient(newUrl, this.apiKey);
     this._aliases = undefined;
     return true;
   }

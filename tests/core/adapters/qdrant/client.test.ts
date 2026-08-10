@@ -71,6 +71,24 @@ describe("QdrantManager", () => {
     manager = new QdrantManager("http://localhost:6333");
   });
 
+  /**
+   * The Qdrant client library probes the server for version compatibility from
+   * inside its own constructor, unawaited. This package already owns that
+   * decision: `.qdrant-required-version` is the single source of truth, the
+   * embedded daemon runs exactly that version, and `checkExternalQdrantVersion`
+   * validates an external server at startup. The library's probe is therefore a
+   * duplicate that fires a network call from a constructor and outlives whatever
+   * built it — it logs "Failed to obtain server version" every time a manager is
+   * constructed before the server is up, and in a test worker the still-pending
+   * console write lands during teardown as an EnvironmentTeardownError that
+   * fails the whole run while every test passes.
+   */
+  describe("server-version compatibility probe", () => {
+    it("is disabled — this package validates the server version itself", () => {
+      expect(vi.mocked(QdrantClient)).toHaveBeenCalledWith(expect.objectContaining({ checkCompatibility: false }));
+    });
+  });
+
   describe("aliases", () => {
     it("returns a QdrantAliasManager instance", () => {
       expect(manager.aliases).toBeInstanceOf(QdrantAliasManager);
@@ -91,19 +109,23 @@ describe("QdrantManager", () => {
     it("should pass apiKey to QdrantClient when provided", () => {
       new QdrantManager("http://localhost:6333", "test-api-key");
 
-      expect(QdrantClient).toHaveBeenCalledWith({
-        url: "http://localhost:6333",
-        apiKey: "test-api-key",
-      });
+      expect(QdrantClient).toHaveBeenCalledWith(
+        expect.objectContaining({
+          url: "http://localhost:6333",
+          apiKey: "test-api-key",
+        }),
+      );
     });
 
     it("should work without apiKey for unauthenticated instances", () => {
       new QdrantManager("http://localhost:6333");
 
-      expect(QdrantClient).toHaveBeenCalledWith({
-        url: "http://localhost:6333",
-        apiKey: undefined,
-      });
+      expect(QdrantClient).toHaveBeenCalledWith(
+        expect.objectContaining({
+          url: "http://localhost:6333",
+          apiKey: undefined,
+        }),
+      );
     });
   });
 
