@@ -1711,4 +1711,35 @@ describe("TSCallResolver .tsx import resolution (bd tea-rags-mcp-f3zcy)", () => 
       rmSync(repoRoot, { recursive: true, force: true });
     }
   });
+
+  // bd tea-rags-mcp-5onmn. The generic file-edge loop asks the CALL chain a
+  // MODULE question by synthesising `{ receiver: basename, member: basename }`.
+  // That member is a filename, not a member, so any member-keyed pass that
+  // answers it points the import's edge at whatever file happens to declare a
+  // symbol with that short name. Deferral removed the accident that used to
+  // hide this (an early pass committing the module edge), so the module answer
+  // has to be authoritative here by construction, not by luck.
+  it("resolves an import to its own module even when the basename collides with another file's symbol", () => {
+    const symbolTable = new InMemoryGlobalSymbolTable();
+    // `src/other.ts` declares `Other.bar` — short name "bar", the same text as
+    // the basename of the `./bar` specifier below.
+    symbolTable.upsertFile("src/other.ts", [
+      { symbolId: "Other.bar", fqName: "Other.bar", shortName: "bar", relPath: "src/other.ts", scope: ["Other"] },
+    ]);
+    symbolTable.upsertFile("src/bar.ts", [
+      { symbolId: "Bar.baz", fqName: "Bar.baz", shortName: "baz", relPath: "src/bar.ts", scope: ["Bar"] },
+    ]);
+    const resolver = new TSCallResolver({ baseUrl: ".", paths: {} });
+    const edges = resolver.resolveFileEdges?.(
+      {
+        relPath: "src/main.ts",
+        language: "typescript",
+        imports: [{ importText: "./bar", startLine: 1 }],
+        chunks: [],
+        fileScope: [],
+      },
+      { callerFile: "src/main.ts", callerScope: [], imports: [{ importText: "./bar", startLine: 1 }], symbolTable },
+    );
+    expect(edges).toEqual([{ targetRelPath: "src/bar.ts", importText: "./bar" }]);
+  });
 });

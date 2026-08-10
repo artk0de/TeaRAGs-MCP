@@ -3,10 +3,13 @@
  *
  * `resolve` runs an ordered chain of single-purpose `SymbolResolutionStrategy`
  * passes (see `./strategies/`) via the shared `resolveViaChain` engine. The
- * array order encodes precedence, and the three-state outcome
- * (resolved / drop / continue) makes the load-bearing guard drops explicit —
- * e.g. `super` without `classExtends` DROPS rather than falling through to a
- * same-file lookup that would emit a self-loop edge (bd tea-rags-mcp-4rgg).
+ * array order encodes precedence, and the four-state outcome
+ * (resolved / deferred / drop / continue) makes the load-bearing guard drops
+ * explicit — e.g. `super` without `classExtends` DROPS rather than falling
+ * through to a same-file lookup that would emit a self-loop edge (bd
+ * tea-rags-mcp-4rgg). Passes 5-7 DEFER their file-only fallback rather than
+ * committing it, so 11-14 still get a chance to pin the member (bd
+ * tea-rags-mcp-5onmn).
  *
  * The pass order (each `name` in parens):
  *   1. super (super.X via classExtends — terminal guard)
@@ -66,6 +69,8 @@ import {
   type DispatchRef,
   type DispatchTable,
   type DispatchTableDef,
+  type FileExtraction,
+  type GraphEdges,
   type SymbolResolutionTarget,
 } from "../../../../contracts/types/codegraph.js";
 import type { SymbolResolutionStrategy } from "../../../../contracts/types/language.js";
@@ -93,7 +98,12 @@ import {
   type ResolverConfig,
 } from "./strategies/index.js";
 import { targetsExternalImport } from "./ts-external-call.js";
-import { createProjectFileProbe, type ProjectFileProbe, type TsCompilerOptions } from "./ts-path-mapper.js";
+import {
+  createProjectFileProbe,
+  mapImportToFile,
+  type ProjectFileProbe,
+  type TsCompilerOptions,
+} from "./ts-path-mapper.js";
 import { TSProgramCache } from "./ts-program-cache.js";
 
 /** Parse `CODEGRAPH_TS_CONE_MAX`; fall back to the TS default on absent/invalid. */
@@ -193,6 +203,37 @@ export class TSCallResolver implements CallResolver {
 
   resolve(call: CallRef, ctx: CallContext): SymbolResolutionTarget | null {
     return resolveViaChain(this.strategies, call, ctx);
+  }
+
+  /**
+   * Import → file edges, mapped directly instead of through the call chain (bd
+   * tea-rags-mcp-5onmn).
+   *
+   * The provider's generic fallback loop asks the CALL chain a MODULE question:
+   * it synthesises `{ receiver: basename, member: basename }` per import and
+   * keeps whatever the chain returns. But that `member` is a filename, so any
+   * member-keyed pass answering it points the import's edge at whichever file
+   * declares a symbol sharing the module's short name — `import './bar'`
+   * landing on `Other.bar` in another file. Until deferral that misfire was
+   * masked: `importBasename` committed the module edge and the chain stopped
+   * before a member-keyed pass could speak. It is masked no longer, so the
+   * module answer is made authoritative here rather than left to pass ordering.
+   *
+   * `mapImportToFile` IS that answer — the same function `namedImport` and
+   * `importBasename` consult, and it resolves every relative specifier (falling
+   * back to the first candidate extension when the probe finds no file on
+   * disk). A bare package specifier that matches no `paths` pattern maps to
+   * nothing and yields no edge, which is correct: an unmapped module has no
+   * in-project file, and the only edge the old loop could have produced for it
+   * came from a member-name coincidence.
+   */
+  resolveFileEdges(extraction: FileExtraction, _ctx: CallContext): GraphEdges["fileEdges"] {
+    const fileEdges: GraphEdges["fileEdges"] = [];
+    for (const imp of extraction.imports) {
+      const targetRelPath = mapImportToFile(imp.importText, extraction.relPath, this.tsOptions, this.fileExists);
+      if (targetRelPath) fileEdges.push({ targetRelPath, importText: imp.importText });
+    }
+    return fileEdges;
   }
 
   /**

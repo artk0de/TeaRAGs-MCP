@@ -203,10 +203,50 @@ export interface OracleRow {
   receiverKind: string;
   categories: string[];
   verdict: OracleVerdict;
+  /**
+   * What the CHAIN emitted, independent of what the checker concluded. Every
+   * verdict bucket is a comparison, so none of them can see a change that moves
+   * edges into or out of the checker's blind spots — and 2307 of these call
+   * sites sit in one (`checkerUnknown` + `nodeNotLocated`).
+   */
+  chainOutput: ChainOutput;
   /** What the chain answered, carried so mismatch samples are actionable. */
   chain?: OracleAnswer;
   /** What the checker's declaration is. Absent when the checker located none. */
   target?: OracleTargetFacts;
+}
+
+/** The chain's own answer shape: a pinned symbol, a bare file, or nothing. */
+export type ChainOutput = "pinned" | "fileOnly" | "none";
+
+/**
+ * The chain's raw output, the number no verdict table reports.
+ *
+ * bd tea-rags-mcp-pmxuv flipped one strategy to `continue`, watched every
+ * oracle verdict improve, and only caught a 156-edge (2.0%) loss by
+ * hand-instrumenting a throwaway copy of this harness. That instrumentation
+ * lives here now so the next such change cannot hide.
+ */
+export interface ChainOutputTally {
+  /** Call sites the chain resolved to anything. */
+  edges: number;
+  /** Of those, edges carrying no `targetSymbolId` — a SUBSET of `edges`. */
+  fileOnly: number;
+  /** Call sites the chain declined. */
+  unresolved: number;
+}
+
+export function tallyChainOutput(rows: readonly OracleRow[]): ChainOutputTally {
+  const tally: ChainOutputTally = { edges: 0, fileOnly: 0, unresolved: 0 };
+  for (const row of rows) {
+    if (row.chainOutput === "none") {
+      tally.unresolved++;
+      continue;
+    }
+    tally.edges++;
+    if (row.chainOutput === "fileOnly") tally.fileOnly++;
+  }
+  return tally;
 }
 
 /** Verdict counts for one label, plus the two rates the ranking reads. */
@@ -1186,6 +1226,7 @@ async function runOracle(repoRoot: string, targetDir: string, limit: number, qui
           receiverKind: classifyReceiverKind(call, chunk.localBindings),
           categories: probe.categories,
           verdict: diffResolution(chain, probe.outcome),
+          chainOutput: chain === null ? "none" : chain.targetSymbolId === null ? "fileOnly" : "pinned",
           ...(chain !== null && { chain }),
           ...(probe.target !== undefined && { target: probe.target }),
         });
@@ -1261,6 +1302,7 @@ async function main(): Promise<void> {
 
   const byFeature = tallyBy(rows, (row) => row.categories);
   const byReceiver = tallyBy(rows, (row) => [row.receiverKind]);
+  const chainOutput = tallyChainOutput(rows);
   const priorities = flagTrackBPriorities(byFeature);
   const uncovered = findUncoveredCategories(byFeature, TYPE_FEATURE_CATEGORIES);
   const decomposedByFeature = decomposeOracleMismatches(rows, (row) => row.categories);
@@ -1273,6 +1315,15 @@ async function main(): Promise<void> {
     `skipped: dispatch ${counters.dispatchSkipped} · no program ${counters.programUnavailable} · node not located ${counters.nodeNotLocated}`,
     `checker external ${counters.checkerExternal} (of which non-source in-repo ${counters.checkerExternalNonSource}) · unknown ${counters.checkerUnknown}`,
     `elapsed ${((Date.now() - started) / 1000).toFixed(1)}s`,
+    "",
+    // Deliberately ahead of the verdict tables: this is what the chain SHIPPED,
+    // and it is the only figure that moves when a change trades edges for
+    // precision inside the checker's blind spots. Note `fileOnly` here counts
+    // EDGES with a null symbol id — not the same quantity as the `fileOnly`
+    // VERDICT below, which means "both sides agree on the file, differ on the
+    // member".
+    "CHAIN OUTPUT (what the resolver emitted, before any comparison)",
+    `  edges ${chainOutput.edges} (of which file-only ${chainOutput.fileOnly}) · unresolved ${chainOutput.unresolved}`,
     "",
     formatOracleTable("BY TYPE FEATURE (rows overlap — a call site can carry several)", byFeature),
     "",
@@ -1338,6 +1389,7 @@ async function main(): Promise<void> {
       rows.filter((row) => row.verdict === verdict).slice(0, options.samples);
     const payload = {
       counters,
+      chainOutput,
       byFeature,
       byReceiver,
       priorities,

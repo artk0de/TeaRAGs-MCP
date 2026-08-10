@@ -1,4 +1,4 @@
-import { CONTINUE, resolved } from "../../../../../contracts/resolution.js";
+import { CONTINUE, deferred, resolved } from "../../../../../contracts/resolution.js";
 import { pickSingleCandidate, type CallContext, type CallRef } from "../../../../../contracts/types/codegraph.js";
 import type { SymbolResolutionOutcome, SymbolResolutionStrategy } from "../../../../../contracts/types/language.js";
 import { targetsExternalImport } from "../ts-external-call.js";
@@ -15,15 +15,21 @@ import type { ResolverConfig } from "./shared.js";
  * (`scope[-1] === receiver`) before short-name so multi-export modules pin the
  * right class.
  *
- * Once the target FILE resolves this strategy is TERMINAL — even when the
- * member is not indexed it returns a file-only edge (`targetSymbolId: null`),
- * never continuing to a later pass. That is why the file has to be the RIGHT
- * one: no later pass gets a chance to correct it. Hence the barrel hop below.
+ * Once the target FILE resolves, an unindexed member yields a file-only edge
+ * (`targetSymbolId: null`) — DEFERRED rather than committed (bd
+ * tea-rags-mcp-5onmn). The import statement is real evidence of a module edge,
+ * so the answer is kept; parking it lets the tail `typeChecker` passes pin the
+ * member when they can, and the chain emits the module edge when they cannot.
  *
- * The single exception is the builtin-container guard on that fallback (bd
- * tea-rags-mcp-4kx9f): `YARD_CONST.test(text)` maps to the file DECLARING the
- * constant, and the call enters `RegExp.prototype` instead, so there is no file
- * for a terminal answer to name.
+ * The barrel hop below still matters, and for a sharper reason than before.
+ * A later pass can now correct a parked file, but only by pinning a SYMBOL —
+ * nothing downstream re-answers "which module is this?", so a park naming the
+ * barrel instead of the declaring file is an edge nobody fixes.
+ *
+ * The builtin-container guard on that fallback is what still declines outright
+ * (bd tea-rags-mcp-4kx9f): `YARD_CONST.test(text)` maps to the file DECLARING
+ * the constant, and the call enters `RegExp.prototype` instead, so there is no
+ * file worth parking.
  */
 export class TSNamedImportSymbolResolutionStrategy implements SymbolResolutionStrategy {
   readonly name = "namedImport";
@@ -54,9 +60,10 @@ export class TSNamedImportSymbolResolutionStrategy implements SymbolResolutionSt
     // constant (bd tea-rags-mcp-4kx9f). Guarding here rather than at the top of
     // the pass is deliberate — a member the target file really declares has
     // already won above, so this can only ever drop a file-level edge, never a
-    // pinned one.
+    // pinned one. CONTINUE and not a park: this is the one case where we know
+    // the module answer is wrong, and parking a wrong file is worse than none.
     if (targetsExternalImport(call, ctx, this.cfg.tsOptions)) return CONTINUE;
-    return resolved({ targetRelPath: targetFile, targetSymbolId: null });
+    return deferred({ targetRelPath: targetFile, targetSymbolId: null });
   }
 }
 

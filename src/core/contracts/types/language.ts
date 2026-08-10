@@ -13,7 +13,6 @@
 
 import type { AstNode, MaterializedTree } from "./ast.js";
 import type { ChunkingHook, LanguageChunkClassifier } from "./chunker.js";
-import type { SignalFloors } from "./trajectory.js";
 import type {
   CallContext,
   CallRef,
@@ -24,6 +23,7 @@ import type {
   RelPath,
   SymbolResolutionTarget,
 } from "./codegraph.js";
+import type { SignalFloors } from "./trajectory.js";
 
 /** A loaded tree-sitter language module. Some packages expose the grammar
  *  under a nested key (`{ typescript, tsx }`); `LanguageKernel.extractLanguage`
@@ -35,23 +35,37 @@ interface TreeSitterLanguageModule {
 }
 
 /**
- * The three-state result of a single resolution pass. Replaces the old
- * two-state `SymbolResolutionTarget | null` return so a pass can express the
- * load-bearing **drop** — "this is my case, but it resolves to NO edge, and the
- * chain must stop here" — distinctly from **continue** — "not my case, try the
- * next pass". Conflating the two as `null` hid bugs where a guard pass (e.g.
- * `super` without `classExtends`) silently fell through to a later pass and
- * emitted a wrong edge (bd tea-rags-mcp-4rgg).
+ * The four-state result of a single resolution pass. Replaces the old two-state
+ * `SymbolResolutionTarget | null` return so a pass can express the load-bearing
+ * **drop** — "this is my case, but it resolves to NO edge, and the chain must
+ * stop here" — distinctly from **continue** — "not my case, try the next pass".
+ * Conflating the two as `null` hid bugs where a guard pass (e.g. `super`
+ * without `classExtends`) silently fell through to a later pass and emitted a
+ * wrong edge (bd tea-rags-mcp-4rgg).
  *
  *   - `resolved` — pass owns the call and produced a target (edge to emit).
+ *   - `deferred` — pass has a WEAK target (typically module-level, member not
+ *                  pinned) and OFFERS it: the chain keeps running, and the
+ *                  offer is emitted only if nothing stronger turns up.
  *   - `drop`     — pass owns the call but emits NO edge; STOP the chain.
  *   - `continue` — not this pass's case; try the next pass.
  *
- * Runtime constructors `resolved()`, `DROP`, `CONTINUE` live in
+ * `deferred` exists because `resolved` and `continue` are both wrong for a pass
+ * that located the target FILE but not the member (bd tea-rags-mcp-5onmn).
+ * Committing costs precision — the four `typeChecker` passes at the tail of the
+ * TS chain can often pin that member, and never run once an earlier pass
+ * commits. Continuing costs recall — flipping TS pass 5 to `continue` was
+ * measured to lose 156 edges (2.0% of all TS edges) on tea-rags' own `src`,
+ * because 178 file-only module edges have no replacement anywhere downstream
+ * (bd tea-rags-mcp-pmxuv). Deferring keeps both: the member gets pinned when
+ * someone can, and the module edge survives when nobody can.
+ *
+ * Runtime constructors `resolved()`, `deferred()`, `DROP`, `CONTINUE` live in
  * `contracts/resolution.ts` (this types file stays runtime-free).
  */
 export type SymbolResolutionOutcome =
   | { kind: "resolved"; target: SymbolResolutionTarget }
+  | { kind: "deferred"; target: SymbolResolutionTarget }
   | { kind: "drop" }
   | { kind: "continue" };
 

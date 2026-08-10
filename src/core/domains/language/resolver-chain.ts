@@ -13,30 +13,54 @@ import type { DispatchResolverComponent, SymbolResolutionStrategy } from "../../
  * language-neutral engine a per-language `LanguageSymbolResolver` uses to run
  * its `SymbolResolutionStrategy[]`.
  *
- * Three-state semantics (the reason this engine exists rather than a bare
+ * Four-state semantics (the reason this engine exists rather than a bare
  * first-non-null loop):
  *
  *   - `resolved` — return the target immediately; the chain stops.
- *   - `drop`     — STOP the chain and return `null` (no edge). A guard pass
+ *   - `deferred` — PARK the target and keep going. A pass with a weak answer
+ *                  (target file known, member not pinned) offers it rather than
+ *                  committing, so later passes still get their chance
+ *                  (bd tea-rags-mcp-5onmn).
+ *   - `drop`     — STOP the chain, emitting whatever is parked. A guard pass
  *                  owns the call but it resolves to nothing — later passes must
  *                  NOT see it (bd tea-rags-mcp-4rgg: `super` without
  *                  `classExtends` must not fall through to same-file lookup).
  *   - `continue` — try the next strategy.
  *
- * Exhausting the chain without a decisive outcome returns `null`.
+ * Exhausting the chain emits the parked proposal, or `null` when there is none.
+ *
+ * Parking obeys the same precedence as everything else here:
+ *
+ *   - a `resolved` from ANY position beats a park — a pinned symbol always
+ *     outranks a module-level guess;
+ *   - the FIRST park wins, because chain order is precedence and a pass that
+ *     defers waives it only in favour of a stronger POSITIVE answer;
+ *   - `drop` bars every LATER pass from answering, but does not retroactively
+ *     veto an EARLIER pass's offer. That distinction is what makes deferral
+ *     edge-preserving by construction: where a pass used to commit a file-only
+ *     edge and a downstream guard therefore never ran, the same edge now comes
+ *     out of the park. Ruby is the case that forces it — `receiverSetDrop` sits
+ *     at chain position 13 and drops every remaining receiver-set call, so a
+ *     drop that cleared the park would shed Ruby's parked edges wholesale.
+ *
+ * A guard that positively knows NO edge should exist would need to veto a park
+ * rather than merely drop. No such guard exists today (TypeScript's external
+ * checks return `continue`, not `drop`), so that state is not modelled.
  */
 export function resolveViaChain(
   strategies: readonly SymbolResolutionStrategy[],
   call: CallRef,
   ctx: CallContext,
 ): SymbolResolutionTarget | null {
+  let parked: SymbolResolutionTarget | null = null;
   for (const strategy of strategies) {
     const outcome = strategy.attempt(call, ctx);
     if (outcome.kind === "resolved") return outcome.target;
-    if (outcome.kind === "drop") return null;
+    if (outcome.kind === "drop") return parked;
+    if (outcome.kind === "deferred") parked ??= outcome.target;
     // continue → next strategy
   }
-  return null;
+  return parked;
 }
 
 /**

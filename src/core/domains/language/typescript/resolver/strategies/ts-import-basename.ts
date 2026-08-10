@@ -1,4 +1,4 @@
-import { CONTINUE, resolved } from "../../../../../contracts/resolution.js";
+import { CONTINUE, deferred, resolved } from "../../../../../contracts/resolution.js";
 import { pickSingleCandidate, type CallContext, type CallRef } from "../../../../../contracts/types/codegraph.js";
 import type { SymbolResolutionOutcome, SymbolResolutionStrategy } from "../../../../../contracts/types/language.js";
 import { targetsExternalImport } from "../ts-external-call.js";
@@ -11,8 +11,10 @@ import type { ResolverConfig } from "./shared.js";
  * naming convention (`rank-module.js` → `RankModule`) by stripping extensions
  * and non-alphanumeric characters before case-folded equality (bd
  * tea-rags-mcp-kiuw). LOWER-PRECEDENCE fallback for imports that lack
- * `importedNames` (stale index re-indexed before the field landed). Terminal
- * once the target FILE resolves (file-only edge when the member misses).
+ * `importedNames` (stale index re-indexed before the field landed). Once the
+ * target FILE resolves, a missing member yields a file-only edge that is
+ * DEFERRED, not committed — same reasoning as `namedImport` (bd
+ * tea-rags-mcp-5onmn).
  *
  * The comparator itself lives in `../ts-import-basename-match.ts` so the
  * external classifier can recognise the same receivers without importing this
@@ -39,6 +41,6 @@ export class TSImportBasenameSymbolResolutionStrategy implements SymbolResolutio
     // array collides with a `sessions.ts` the caller imports and `sessions.map`
     // lands a file-only edge on a module the call never enters.
     if (targetsExternalImport(call, ctx, this.cfg.tsOptions)) return CONTINUE;
-    return resolved({ targetRelPath: targetFile, targetSymbolId: null });
+    return deferred({ targetRelPath: targetFile, targetSymbolId: null });
   }
 }

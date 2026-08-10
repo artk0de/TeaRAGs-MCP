@@ -118,8 +118,11 @@ describe("TSNamedImportSymbolResolutionStrategy — imported-constant container 
         imports: [{ importText: "./rank-module.js", startLine: 1, importedNames: ["RankModule"] }],
       }),
     );
+    // The guard must not swallow this one — the edge survives. It is DEFERRED
+    // rather than committed since bd tea-rags-mcp-5onmn; what this test pins is
+    // that the guard leaves the answer alone, not which outcome carries it.
     expect(outcome).toEqual({
-      kind: "resolved",
+      kind: "deferred",
       target: { targetRelPath: "src/rank-module.ts", targetSymbolId: null },
     });
   });
@@ -133,7 +136,7 @@ describe("TSNamedImportSymbolResolutionStrategy — imported-constant container 
         imports: [{ importText: "./yard.js", startLine: 1, importedNames: ["REGISTRY"] }],
       }),
     );
-    expect(outcome).toEqual({ kind: "resolved", target: { targetRelPath: "src/yard.ts", targetSymbolId: null } });
+    expect(outcome).toEqual({ kind: "deferred", target: { targetRelPath: "src/yard.ts", targetSymbolId: null } });
   });
 
   it("STILL pins the symbol when the declaring file really defines that member (FORMATTERS.map(x))", () => {
@@ -191,8 +194,11 @@ describe("TSImportBasenameSymbolResolutionStrategy — imported-constant contain
       call,
       ctx({ symbolTable, imports: [{ importText: "./rank-module.js", startLine: 1 }] }),
     );
+    // The guard must not swallow this one — the edge survives. It is DEFERRED
+    // rather than committed since bd tea-rags-mcp-5onmn; what this test pins is
+    // that the guard leaves the answer alone, not which outcome carries it.
     expect(outcome).toEqual({
-      kind: "resolved",
+      kind: "deferred",
       target: { targetRelPath: "src/rank-module.ts", targetSymbolId: null },
     });
   });
