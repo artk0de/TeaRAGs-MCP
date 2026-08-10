@@ -101,6 +101,15 @@ export const ECMASCRIPT_BUILTIN_TYPES: ReadonlySet<string> = new Set([
   "Set",
   "WeakSet",
   "WeakRef",
+  // Read-only VIEWS of the collections above (bd tea-rags-mcp-6b3gj). These are
+  // TS-only type names with no runtime constructor, like `Record` / `Partial`
+  // below — but unlike those they DENOTE a builtin instance: a value annotated
+  // `ReadonlySet<string>` is a `Set` at runtime and its `.has()` is
+  // `Set.prototype.has`. The exclusion below is about types with no runtime
+  // object behind them, not about every type TS adds.
+  "ReadonlyMap",
+  "ReadonlySet",
+  "ReadonlyArray",
   // Async
   "Promise",
   // Indexed / structural objects
@@ -147,4 +156,58 @@ export const ECMASCRIPT_BUILTIN_TYPES: ReadonlySet<string> = new Set([
   "TextEncoder",
   "TextDecoder",
   "Buffer",
+]);
+
+/**
+ * bd tea-rags-mcp-6b3gj — builtin prototype METHOD names, the last-resort
+ * vocabulary for a receiver nothing in the chain could type.
+ *
+ * The oracle (`scripts/ts-codegraph-typechecker-oracle.ts`) found that most
+ * phantom edges on real code sit on receivers with no type information at all:
+ * `const out: string[] = []` carries no constructor to read, so
+ * `out.push(name)` reached the short-name passes untyped and matched whatever
+ * single project symbol happened to be called `push`. Type-based classification
+ * (`ECMASCRIPT_BUILTIN_TYPES`) cannot see those; the member name is the only
+ * evidence left.
+ *
+ * Which makes the curation the whole design. Guessing wrong here is the
+ * OPPOSITE bug — a real project method suppressed, recall traded away to buy
+ * precision — so membership is limited to words with no comparably-common
+ * project-code meaning. `push` / `splice` / `flatMap` are Array vocabulary
+ * wherever they appear; `get`, `set`, `has`, `write`, `map` are NOT, because
+ * project code defines those constantly, and they are deliberately absent even
+ * though they cost phantom edges. Those cases are left to the type-based path,
+ * which answers them without guessing.
+ *
+ * Read only when {@link ECMASCRIPT_BUILTIN_TYPES} could not decide: a receiver
+ * with a known type never consults this set, so a project class exposing
+ * `push()` keeps its edges as long as the receiver is typed.
+ */
+export const ECMASCRIPT_BUILTIN_PROTOTYPE_METHODS: ReadonlySet<string> = new Set([
+  // Array mutators — no comparably-common project meaning
+  "push",
+  "pop",
+  "shift",
+  "unshift",
+  "splice",
+  "copyWithin",
+  "fill",
+  "reverse",
+  // Array queries / transforms of the same family
+  "concat",
+  "flat",
+  "flatMap",
+  "indexOf",
+  "lastIndexOf",
+  "findIndex",
+  "findLastIndex",
+  // Membership on the keyed collections. `has` is the one Map/Set word that
+  // survives the "no comparably-common project meaning" test: a project type
+  // that answers `has` is a registry or cache wrapper, and those are reached
+  // through a receiver the walker types (`this.registry`, `new Registry()`),
+  // where the TYPE decides and this set is never consulted. Its siblings `get`
+  // / `set` / `add` / `delete` fail that test outright — accessors, caches and
+  // repositories define them constantly — and stay out even though they cost
+  // measured phantom edges.
+  "has",
 ]);

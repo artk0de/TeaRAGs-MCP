@@ -27,7 +27,7 @@ export class TSNamedImportSymbolResolutionStrategy implements SymbolResolutionSt
     const named = ctx.imports.find((imp) => imp.importedNames?.includes(call.receiver as string));
     if (!named) return CONTINUE;
 
-    const targetFile = mapImportToFile(named.importText, ctx.callerFile, this.cfg.tsOptions);
+    const targetFile = mapImportToFile(named.importText, ctx.callerFile, this.cfg.tsOptions, this.cfg.fileExists);
     if (!targetFile) return CONTINUE;
 
     const scopedCandidates = ctx.symbolTable

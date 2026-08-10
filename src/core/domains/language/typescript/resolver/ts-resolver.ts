@@ -57,7 +57,6 @@
 import {
   DEFAULT_AMBIGUOUS_RESOLVE_MODE,
   pickSingleCandidate,
-  resolveLocalBindingType,
   type AmbiguousResolveMode,
   type CallContext,
   type CallRef,
@@ -72,7 +71,6 @@ import {
 import type { SymbolResolutionStrategy } from "../../../../contracts/types/language.js";
 import { ConeDispatchResolver } from "../../cone-dispatch.js";
 import { resolveViaChain } from "../../resolver-chain.js";
-import { ECMASCRIPT_BUILTIN_TYPES, ECMASCRIPT_GLOBALS } from "../../shared/ecmascript-globals.js";
 import {
   collectImportedFiles,
   CONE_MAX_DEFAULT,
@@ -94,7 +92,8 @@ import {
   TSTypeCheckerUnionReceiverDispatchResolver,
   type ResolverConfig,
 } from "./strategies/index.js";
-import { mapImportToFile, type TsCompilerOptions } from "./ts-path-mapper.js";
+import { targetsExternalImport } from "./ts-external-call.js";
+import { createProjectFileProbe, type ProjectFileProbe, type TsCompilerOptions } from "./ts-path-mapper.js";
 import { TSProgramCache } from "./ts-program-cache.js";
 
 /** Parse `CODEGRAPH_TS_CONE_MAX`; fall back to the TS default on absent/invalid. */
@@ -137,6 +136,14 @@ export class TSCallResolver implements CallResolver {
   private readonly unionReceiver: TSTypeCheckerUnionReceiverDispatchResolver | null;
 
   /**
+   * Project-tree oracle the path mapper consults to pick a specifier's real
+   * extension (bd tea-rags-mcp-f3zcy). One memoized instance per resolver,
+   * shared with every strategy and with the Program cache, so a resolve pass
+   * stats each candidate path once rather than once per call site.
+   */
+  private readonly fileExists: ProjectFileProbe;
+
+  /**
    * @param repoRoot Absolute project root the typeChecker fallback resolves
    *   `RelPath`s against. Defaults to `process.cwd()`, mirroring the
    *   `loadTsConfig(process.cwd())` the composition root already passes for
@@ -148,10 +155,16 @@ export class TSCallResolver implements CallResolver {
     private readonly mode: AmbiguousResolveMode = DEFAULT_AMBIGUOUS_RESOLVE_MODE,
     repoRoot: string = process.cwd(),
   ) {
-    const cfg: ResolverConfig = { tsOptions, mode, coneMax: resolveConeMax(process.env.CODEGRAPH_TS_CONE_MAX) };
+    this.fileExists = createProjectFileProbe(repoRoot);
+    const cfg: ResolverConfig = {
+      tsOptions,
+      mode,
+      coneMax: resolveConeMax(process.env.CODEGRAPH_TS_CONE_MAX),
+      fileExists: this.fileExists,
+    };
     this.cone = new ConeDispatchResolver(new TSConeTypeLocator(cfg), cfg.coneMax ?? CONE_MAX_DEFAULT);
     this.programCache = typeCheckerFallbackEnabled(process.env.CODEGRAPH_TS_TYPECHECKER)
-      ? new TSProgramCache({ repoRoot, tsOptions })
+      ? new TSProgramCache({ repoRoot, tsOptions, fileExists: this.fileExists })
       : null;
     this.unionReceiver = this.programCache
       ? new TSTypeCheckerUnionReceiverDispatchResolver(cfg, this.programCache)
@@ -183,70 +196,18 @@ export class TSCallResolver implements CallResolver {
   }
 
   /**
-   * tea-rags-mcp-ykj7 — external-import classifier for an UNRESOLVED call.
-   * `true` when any of:
-   *   1. the receiver is an ECMAScript ambient global (`Math.max`,
-   *      `console.log` — no import to match);
-   *   2. the receiver / member binds to an import whose specifier does NOT map
-   *      to a project file (`node:fs`, bare npm packages) — `mapImportToFile`
-   *      returns `null` for exactly those (relative + tsconfig-`paths` resolve);
-   *   3. the receiver's declared TYPE is an ECMAScript runtime builtin (`Map`,
-   *      `Set`, `Promise`, typed arrays, …): `m.get()`, `this.pending.set()`,
-   *      `arr.map()`, `p.then()` target the JS runtime instance method, not an
-   *      in-repo symbol — same class of miss as a `node:fs` import.
+   * tea-rags-mcp-ykj7 — external-call classifier, used by the provider to move
+   * an unresolved call out of the internal `resolveSuccessRate` denominator.
    *
-   * PRECISION: case 3 only fires on a CONFIDENTLY-bound builtin type (an actual
-   * local-binding / class-field type that is a builtin name). An unknown /
-   * unbound receiver stays an internal miss — we never hide a real in-repo gap.
-   * Because the provider only calls this on unresolved calls, a path-aliased
-   * internal import (or an in-repo-typed receiver) that resolved never reaches
-   * here.
+   * The predicate itself lives in `./ts-external-call.ts` because it is no
+   * longer only a post-hoc classifier: the same question guards the two
+   * short-name passes BEFORE they match, which is what stops a bare `push` /
+   * `error` from being matched to an unrelated project symbol of that name
+   * (bd tea-rags-mcp-6b3gj). One definition, so the edge the chain declines to
+   * emit and the call the metric excludes are always the same call.
    */
   targetsExternalImport(call: CallRef, ctx: CallContext): boolean {
-    const { receiver } = call;
-    if (receiver !== null && ECMASCRIPT_GLOBALS.has(receiver)) return true;
-    // Receiver-bound external, or a bare named import called directly
-    // (`import { readFile } from "node:fs"` → `readFile()`).
-    const boundName = receiver ?? call.member;
-    if (boundName.length === 0) return false;
-    for (const imp of ctx.imports) {
-      if (
-        imp.importedNames?.includes(boundName) &&
-        mapImportToFile(imp.importText, ctx.callerFile, this.tsOptions) === null
-      ) {
-        return true;
-      }
-    }
-    return this.receiverTypeIsBuiltin(call, ctx);
-  }
-
-  /**
-   * Case 3 of {@link targetsExternalImport}: resolve the receiver's declared
-   * type and report whether it is an ECMAScript runtime builtin.
-   *
-   *   - `this.<field>.x()` → field type from `ctx.classFieldTypes[scope][field]`
-   *     (mirrors {@link TSFieldTypeSymbolResolutionStrategy}); chained
-   *     `this.a.b.x()` is out of scope (one level only).
-   *   - bare `<name>.x()` → walker-bound local type via
-   *     {@link resolveLocalBindingType} (mirrors
-   *     {@link TSLocalBindingSymbolResolutionStrategy}).
-   *
-   * Returns `false` when the receiver has no confidently-bound type — keeping
-   * unknown receivers as internal misses (precision over recall).
-   */
-  private receiverTypeIsBuiltin(call: CallRef, ctx: CallContext): boolean {
-    const { receiver } = call;
-    if (receiver === null || receiver.length === 0) return false;
-    let typeName: string | undefined;
-    if (receiver.startsWith("this.")) {
-      const fieldSegment = receiver.slice("this.".length);
-      if (fieldSegment.includes(".") || ctx.callerScope.length === 0) return false;
-      const enclosing = ctx.callerScope[ctx.callerScope.length - 1];
-      typeName = ctx.classFieldTypes?.[enclosing]?.[fieldSegment];
-    } else {
-      typeName = resolveLocalBindingType(ctx.localBindings, receiver, call.startLine) ?? undefined;
-    }
-    return typeName !== undefined && ECMASCRIPT_BUILTIN_TYPES.has(typeName);
+    return targetsExternalImport(call, ctx, this.tsOptions);
   }
 
   /**
@@ -346,7 +307,7 @@ export class TSCallResolver implements CallResolver {
     const defs = ctx.dispatchTables?.[name];
     if (!defs || defs.length === 0) return null;
     if (defs.length === 1) return defs[0];
-    const importedFiles = collectImportedFiles(ctx, this.tsOptions);
+    const importedFiles = collectImportedFiles(ctx, this.tsOptions, this.fileExists);
     const imported = defs.filter((d) => importedFiles.has(d.relPath));
     if (imported.length === 1) return imported[0];
     const inFile = defs.filter((d) => d.relPath === ctx.callerFile);
@@ -364,7 +325,7 @@ export class TSCallResolver implements CallResolver {
     const sole = pickSingleCandidate(candidates, this.mode);
     if (sole) return { targetRelPath: sole.relPath, targetSymbolId: sole.symbolId };
     if (candidates.length > 1) {
-      const importedFiles = collectImportedFiles(ctx, this.tsOptions);
+      const importedFiles = collectImportedFiles(ctx, this.tsOptions, this.fileExists);
       const narrowed = candidates.filter((def) => importedFiles.has(def.relPath));
       const narrowedHit = pickSingleCandidate(narrowed, this.mode);
       if (narrowedHit) return { targetRelPath: narrowedHit.relPath, targetSymbolId: narrowedHit.symbolId };
