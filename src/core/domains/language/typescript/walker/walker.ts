@@ -164,38 +164,136 @@ function assignCallsToInnermostChunks(
   return out;
 }
 
+/**
+ * Every runtime module dependency the file declares, in one channel.
+ *
+ * Three source shapes reach `imports[]`, each with its own collector:
+ *   - `import … from "./y"` — ESM (`collectEsmImport`)
+ *   - `export … from "./y"` — re-export (`collectReexport`, bd tea-rags-mcp-f2u54)
+ *   - `require("./y")`      — CJS interop (`collectRequire`, bd tea-rags-mcp-f2u54)
+ *
+ * They share the channel because the graph asks one question of all three —
+ * "which files does this file load at runtime" — and answers it identically.
+ */
 function collectImports(root: AstNode): ImportRef[] {
   const out: ImportRef[] = [];
   walk(root, (node) => {
-    if (node.type !== "import_statement") return;
-    // Skip top-level type-only imports (bd tea-rags-mcp-m19a):
-    // `import type { X } from "./x"` is erased at compile time and
-    // produces no runtime dependency. Including it in imports[] inflates
-    // codegraph fanOut/fanIn for type-only relationships. The grammar
-    // emits the `type` keyword as a direct child of `import_statement`
-    // right after the `import` keyword for the statement-level type-only
-    // form. Per-specifier `import { type X, Y }` is NOT filtered — the
-    // statement is still a runtime import that loads `Y`.
-    const importIdx = node.children.findIndex((c) => c.type === "import" || c.text === "import");
-    if (importIdx >= 0) {
-      const next = node.children[importIdx + 1];
-      if (next && (next.type === "type" || next.text === "type")) return;
-    }
-    const src = node.children.find((c) => c.type === "string");
-    if (!src) return;
-    const text = src.text.replace(/^["']|["']$/g, "");
-    // bd tea-rags-mcp-2v16 — capture the LOCAL binding names this import
-    // introduces so the resolver can map `Receiver.method()` straight to
-    // this module by exact name. Populated in this ONE place (colocation):
-    // default import, `* as ns` namespace, and each named specifier's
-    // local name (alias when present, else the imported name). Bare
-    // side-effect imports have no `import_clause` → undefined.
-    const importedNames = collectImportedNames(node);
-    const ref: ImportRef = { importText: text, startLine: node.startPosition.row + 1 };
-    if (importedNames.length > 0) ref.importedNames = importedNames;
-    out.push(ref);
+    if (node.type === "import_statement") collectEsmImport(node, out);
+    else if (node.type === "export_statement") collectReexport(node, out);
+    else if (node.type === "call_expression") collectRequire(node, out);
   });
   return out;
+}
+
+/** Strip the surrounding quotes from a tree-sitter `string` node's text. */
+function stringLiteralText(node: AstNode): string {
+  return node.text.replace(/^['"`]|['"`]$/g, "");
+}
+
+function collectEsmImport(node: AstNode, out: ImportRef[]): void {
+  // Skip top-level type-only imports (bd tea-rags-mcp-m19a):
+  // `import type { X } from "./x"` is erased at compile time and
+  // produces no runtime dependency. Including it in imports[] inflates
+  // codegraph fanOut/fanIn for type-only relationships. The grammar
+  // emits the `type` keyword as a direct child of `import_statement`
+  // right after the `import` keyword for the statement-level type-only
+  // form. Per-specifier `import { type X, Y }` is NOT filtered — the
+  // statement is still a runtime import that loads `Y`.
+  if (hasTypeOnlyModifier(node, "import")) return;
+  const src = node.children.find((c) => c.type === "string");
+  if (!src) return;
+  // bd tea-rags-mcp-2v16 — capture the LOCAL binding names this import
+  // introduces so the resolver can map `Receiver.method()` straight to
+  // this module by exact name. Populated in this ONE place (colocation):
+  // default import, `* as ns` namespace, and each named specifier's
+  // local name (alias when present, else the imported name). Bare
+  // side-effect imports have no `import_clause` → undefined.
+  const importedNames = collectImportedNames(node);
+  const ref: ImportRef = { importText: stringLiteralText(src), startLine: node.startPosition.row + 1 };
+  if (importedNames.length > 0) ref.importedNames = importedNames;
+  out.push(ref);
+}
+
+/**
+ * Statement-level `type` modifier — `import type { X } from …` /
+ * `export type { X } from …`. The grammar emits the keyword as a direct child
+ * right after the `import` / `export` keyword. Per-specifier `{ type X, Y }`
+ * is deliberately NOT matched: that statement still loads `Y` at runtime.
+ */
+function hasTypeOnlyModifier(node: AstNode, keyword: "import" | "export"): boolean {
+  const idx = node.children.findIndex((c) => c.type === keyword || c.text === keyword);
+  if (idx < 0) return false;
+  const next = node.children[idx + 1];
+  return next !== undefined && (next.type === "type" || next.text === "type");
+}
+
+/**
+ * Re-export with a source module (bd tea-rags-mcp-f2u54): `export { X } from
+ * "./y"`, `export * from "./y"` (the index.ts barrel), `export * as ns from
+ * "./y"`. All three load the source module at runtime, so they are file
+ * dependencies exactly like an import — without this a barrel file looked
+ * like a leaf with zero fan-out.
+ *
+ * No `importedNames`: a re-export introduces NO local binding. `X` in
+ * `export { X } from "./y"` is not in scope in this file, so recording it as
+ * a receiver name the resolver can match would be a lie. Consumers reach `X`
+ * by importing THIS file, and that hop is the resolver's to make.
+ *
+ * The `source` FIELD is what gates the emit, not the presence of a string
+ * child: `export default "literal"` has a direct string child and no source.
+ * Type-only re-exports are erased at compile time and excluded, mirroring the
+ * import-side filter (bd tea-rags-mcp-m19a).
+ */
+function collectReexport(node: AstNode, out: ImportRef[]): void {
+  const src = node.childForFieldName("source");
+  if (src?.type !== "string") return;
+  if (hasTypeOnlyModifier(node, "export")) return;
+  out.push({ importText: stringLiteralText(src), startLine: node.startPosition.row + 1 });
+}
+
+/**
+ * CommonJS `require("./y")` (bd tea-rags-mcp-f2u54). Mixed ESM/CJS files are
+ * ordinary in real repos, and before this the whole CJS half of a file's
+ * dependencies was invisible to the graph.
+ *
+ * The local binding comes from the enclosing declarator, so the same
+ * receiver→module match the ESM `importedNames` channel enables works for
+ * `const helper = require("./helper"); helper.run()`. A non-literal specifier
+ * (`require(path)`) is not a knowable dependency and contributes nothing.
+ */
+function collectRequire(node: AstNode, out: ImportRef[]): void {
+  const callee = node.childForFieldName("function");
+  if (callee?.type !== "identifier" || callee.text !== "require") return;
+  const first = node.childForFieldName("arguments")?.namedChildren[0];
+  if (first?.type !== "string") return;
+  const ref: ImportRef = { importText: stringLiteralText(first), startLine: node.startPosition.row + 1 };
+  const names = requireBindingNames(node.parent);
+  if (names.length > 0) ref.importedNames = names;
+  out.push(ref);
+}
+
+/**
+ * Local names a `require()` call binds, read from the declarator that owns it.
+ * Mirrors {@link collectImportedNames}' alias discipline — the LOCAL name wins
+ * (`const { a: local } = require(…)` binds `local`, exactly as `import { a as
+ * local }` does). A bare side-effect `require("./polyfill")` has no declarator
+ * parent and binds nothing.
+ */
+function requireBindingNames(declarator: AstNode | null): string[] {
+  if (declarator?.type !== "variable_declarator") return [];
+  const target = declarator.childForFieldName("name");
+  if (!target) return [];
+  if (target.type === "identifier") return [target.text];
+  if (target.type !== "object_pattern") return [];
+  const names: string[] = [];
+  for (const child of target.namedChildren) {
+    if (child.type === "shorthand_property_identifier_pattern") names.push(child.text);
+    else if (child.type === "pair_pattern") {
+      const local = child.childForFieldName("value");
+      if (local?.type === "identifier") names.push(local.text);
+    }
+  }
+  return names;
 }
 
 /**
@@ -324,23 +422,26 @@ function emitCall(node: AstNode, scopes: DispatchScope[], tableNames: ReadonlySe
     return;
   }
 
-  // Normal call (unchanged behaviour) — plus a scan of its arguments for
-  // dispatch candidate-sets passed positionally (the callback-param channel).
+  if (emitFunctionInvokerUnwrap(node, callee, startLine, out)) return;
+
+  // Normal call — plus a scan of its arguments for dispatch candidate-sets
+  // passed positionally (the callback-param channel).
+  const shape = calleeToCallShape(callee);
   let ref: CallRef;
-  if (callee.type === "member_expression") {
-    const obj = callee.childForFieldName("object");
-    const prop = callee.childForFieldName("property");
-    if (!obj || !prop) return;
-    ref = { callText: node.text, receiver: obj.text, member: prop.text, startLine };
-  } else if (callee.type === "super") {
-    // Bare `super(arg)` in a constructor (bd tea-rags-mcp-3a84). The
-    // tree-sitter grammar emits `super` as the callee node type (no
-    // member access). Without this branch, the walker emitted
-    // `{ receiver: null, member: "super" }` which the resolver then
-    // tried to look up by short-name (always fails). Re-shape to the
-    // super-method form so ts-resolver's `super.X()` branch routes
-    // the call to `<EnclosingClass>#constructor` of the parent.
-    ref = { callText: node.text, receiver: "super", member: "constructor", startLine };
+  if (shape) {
+    ref = { callText: node.text, receiver: shape.receiver, member: shape.member, startLine };
+  } else if (callee.type === "member_expression") {
+    // Malformed member access (a partial parse with no object or property):
+    // no receiver, no member, nothing to emit. Dropped, as before.
+    return;
+  } else if (callee.type === "subscript_expression") {
+    // A computed callee whose index is not a string literal (`obj[key]()`) is
+    // the one callee shape with no knowable member (bd tea-rags-mcp-f2u54).
+    // Keep the edge but tag it `dynamicSend` so it leaves the
+    // resolveSuccessRate denominator instead of sitting in the bare-call
+    // bucket as an unresolvable `obj[key]` short name — the same accounting
+    // the Ruby walker gives `send(var)`.
+    ref = { callText: node.text, receiver: null, member: callee.text, startLine, dynamicSend: true };
   } else {
     ref = { callText: node.text, receiver: null, member: callee.text, startLine };
   }
@@ -355,6 +456,170 @@ function emitCall(node: AstNode, scopes: DispatchScope[], tableNames: ReadonlySe
     if (dispatchArgs.length > 0) ref.dispatchArgs = dispatchArgs;
   }
   out.push(ref);
+  if (argsNode) emitMethodReferenceArgs(ref.member, argsNode, out);
+}
+
+/**
+ * Callees that INVOKE a function they are handed (bd tea-rags-mcp-f2u54).
+ * The vocabulary is the precision gate for {@link emitMethodReferenceArgs}:
+ * a method passed as a value is a real call edge, but `f(a.b)` in general is
+ * a data argument, and emitting an edge for every one of those would bury the
+ * resolve denominator under property reads. Inside a callback position of one
+ * of these, a member expression is a function reference by construction.
+ *
+ * Array iteration, promise continuations, scheduling, and event registration
+ * — the four families that account for nearly every method-as-value site in
+ * ECMAScript. Project-defined higher-order functions are deliberately NOT
+ * covered: recognising them needs the callee's own signature, which is a
+ * resolver-side fact, not something the walker can see.
+ */
+const HIGHER_ORDER_CALLEE_MEMBERS = new Set([
+  // Array iteration callbacks
+  "map",
+  "forEach",
+  "filter",
+  "reduce",
+  "reduceRight",
+  "find",
+  "findIndex",
+  "findLast",
+  "findLastIndex",
+  "some",
+  "every",
+  "flatMap",
+  "sort",
+  // Promise continuations
+  "then",
+  "catch",
+  "finally",
+  // Scheduling
+  "setTimeout",
+  "setInterval",
+  "setImmediate",
+  "queueMicrotask",
+  "requestAnimationFrame",
+  // Event registration
+  "addEventListener",
+  "removeEventListener",
+  "on",
+  "once",
+  "off",
+]);
+
+/**
+ * A method handed to a higher-order callee as a VALUE — `arr.map(this.foo)`,
+ * `setTimeout(this.tick, 100)`, `emitter.on("x", handler.run)` — is called,
+ * just not on this line. Before this the edge existed nowhere: the argument is
+ * not a `call_expression`, so nothing in the walk ever looked at it, and the
+ * method appeared to have no callers at all (bd tea-rags-mcp-f2u54).
+ *
+ * Only member expressions qualify. A bare identifier argument
+ * (`arr.reduce(merge, seed)`) is deliberately skipped — `seed` is as plausible
+ * a value as `merge` is a function, and one phantom edge per accumulator is a
+ * worse trade than the recall it would buy.
+ */
+function emitMethodReferenceArgs(calleeMember: string, argsNode: AstNode, out: CallRef[]): void {
+  if (!HIGHER_ORDER_CALLEE_MEMBERS.has(calleeMember)) return;
+  for (const arg of argsNode.namedChildren) {
+    if (arg.type !== "member_expression") continue;
+    const obj = arg.childForFieldName("object");
+    const prop = arg.childForFieldName("property");
+    if (!obj || !prop) continue;
+    out.push({
+      callText: arg.text,
+      receiver: obj.text,
+      member: prop.text,
+      startLine: arg.startPosition.row + 1,
+    });
+  }
+}
+
+/**
+ * `Function.prototype` members that invoke (or bind) their RECEIVER rather
+ * than being the target themselves (bd tea-rags-mcp-f2u54).
+ */
+const FUNCTION_INVOKER_MEMBERS = new Set(["call", "apply", "bind"]);
+
+/**
+ * `f.call(obj, …)` / `f.apply(obj, args)` / `f.bind(obj)` — the function that
+ * runs is `f`, the RECEIVER of the invoker, not the invoker itself. Emit the
+ * unwrapped edge and report `true` so the caller drops the literal `.call`
+ * edge: one logical call, one edge. Direct mirror of the Ruby walker's
+ * `send`-unwrap (`emitDynamicSendUnwrap`), which likewise pushes the real
+ * target and suppresses the meta-call.
+ *
+ * `.bind` does not invoke at this site, but the bound function is reachable
+ * only through `f`, so the edge is the same edge one hop later. Recording it
+ * as a call keeps the graph connected without a second edge vocabulary.
+ *
+ * When the invoked expression carries no static name (`registry[k].call(x)`,
+ * `getFn().call(x)`) there is nothing to unwrap TO: keep the literal edge and
+ * tag it `dynamicSend`, so the site is accounted as statically undeterminable
+ * rather than counted as a resolution miss — Ruby's "dynamic" branch exactly.
+ */
+function emitFunctionInvokerUnwrap(node: AstNode, callee: AstNode, startLine: number, out: CallRef[]): boolean {
+  if (callee.type !== "member_expression") return false;
+  const obj = callee.childForFieldName("object");
+  const prop = callee.childForFieldName("property");
+  if (!obj || !prop || !FUNCTION_INVOKER_MEMBERS.has(prop.text)) return false;
+  const invoked = calleeToCallShape(obj);
+  out.push(
+    invoked
+      ? { callText: node.text, receiver: invoked.receiver, member: invoked.member, startLine }
+      : { callText: node.text, receiver: obj.text, member: prop.text, startLine, dynamicSend: true },
+  );
+  return true;
+}
+
+/** The `{ receiver, member }` pair a `CallRef` carries for one call site. */
+interface CallShape {
+  receiver: string | null;
+  member: string;
+}
+
+/**
+ * Reduce a callee expression to the receiver/member pair that names its
+ * target. One shaper, two callers: the ordinary call path, and the
+ * `.call` / `.apply` / `.bind` unwrap, which shapes the INVOKED expression
+ * rather than the invoker (bd tea-rags-mcp-f2u54) — the two have always
+ * needed the same answer to the same question.
+ *
+ * Returns null when no static target name exists, which is the caller's cue
+ * to tag the site rather than invent a member:
+ *   - `obj[key]()`  — computed index that is not a string literal
+ *   - `getFn()()`   — the callee is itself a call result
+ *   - `(a || b)()`  — a parenthesized / conditional expression
+ *
+ * `obj["foo"]()` DOES shape, to `{ receiver: "obj", member: "foo" }`: a
+ * string-literal computed access is exactly as knowable as `obj.foo()`, only
+ * the AST shape differs. `arr[i].foo()` keeps its brackets in the receiver
+ * text (`"arr[i]"`) — that is what puts the call in the `index` receiver-kind
+ * bucket rather than fabricating a receiver the source never named.
+ */
+function calleeToCallShape(callee: AstNode): CallShape | null {
+  if (callee.type === "member_expression") {
+    const obj = callee.childForFieldName("object");
+    const prop = callee.childForFieldName("property");
+    if (!obj || !prop) return null;
+    return { receiver: obj.text, member: prop.text };
+  }
+  if (callee.type === "super") {
+    // Bare `super(arg)` in a constructor (bd tea-rags-mcp-3a84). The
+    // tree-sitter grammar emits `super` as the callee node type (no
+    // member access). Without this branch, the walker emitted
+    // `{ receiver: null, member: "super" }` which the resolver then
+    // tried to look up by short-name (always fails). Re-shape to the
+    // super-method form so ts-resolver's `super.X()` branch routes
+    // the call to `<EnclosingClass>#constructor` of the parent.
+    return { receiver: "super", member: "constructor" };
+  }
+  if (callee.type === "subscript_expression") {
+    const obj = callee.childForFieldName("object");
+    const key = staticKeyOf(callee);
+    return obj && key !== null ? { receiver: obj.text, member: key } : null;
+  }
+  if (callee.type === "identifier") return { receiver: null, member: callee.text };
+  return null;
 }
 
 /**
