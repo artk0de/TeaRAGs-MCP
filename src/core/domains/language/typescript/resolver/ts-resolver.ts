@@ -20,23 +20,34 @@
  *   9. globalShortName (global short-name lookup)
  *  10. importNarrowedFallback (narrow ambiguous N>1 by caller's imports)
  *  11. typeCheckerJsxComponent (ts.Program/typeChecker — JSX component tags)
- *  12. typeCheckerFallback (ts.Program/typeChecker — generics + overloads)
- *  13. structuralTyping (ts.Program/typeChecker — duck typing + interface merging)
+ *  12. typeCheckerReturnType (ts.Program/typeChecker — receiver typed by a
+ *      call's inferred return type, bd tea-rags-mcp-l3uob)
+ *  13. typeCheckerFallback (ts.Program/typeChecker — generics + overloads)
+ *  14. structuralTyping (ts.Program/typeChecker — duck typing + interface merging)
  *
- * Passes 11-13 are the only ones that read type information rather than AST
+ * Passes 11-14 are the only ones that read type information rather than AST
  * shape, and the only ones that touch the file system on the resolve path. They
  * run last by construction: everything above them is cheaper, so the checker is
  * consulted only for calls nothing else could decide, and they share ONE
  * `TSProgramCache` so a file is never typed twice. `CODEGRAPH_TS_TYPECHECKER=0`
- * removes all three from the chain entirely (bd tea-rags-mcp-uclbn).
+ * removes all four from the chain entirely (bd tea-rags-mcp-uclbn).
  *
- * Pass 11 sits ahead of 12-13 because it answers a disjoint question and its
- * gate is a single flag read: a JSX tag site (`call.jsx`) is never a
- * `CallExpression`, so neither 12 nor 13 could resolve it anyway
- * (bd tea-rags-mcp-b4pvp). Pass 13 follows 12 because `getResolvedSignature`
- * picks the overload the ARGUMENTS select, which is the sharper answer
- * whenever it applies; pass 13 then handles the receivers that have no name
- * to look up at all (bd tea-rags-mcp-icmnr).
+ * Pass 11 sits first because it answers a disjoint question and its gate is a
+ * single flag read: a JSX tag site (`call.jsx`) is never a `CallExpression`,
+ * so none of 12-14 could resolve it anyway (bd tea-rags-mcp-b4pvp). Among
+ * 12-14 the relative order is a precision question, not a cost one — all
+ * three share the Program, so nothing is saved by reordering them, but
+ * getting the order wrong hides a call from the pass that should have
+ * answered it:
+ *   - 12 gates on a narrow receiver shape (typed by ANOTHER call's inferred
+ *     return, no explicit annotation) and pins the receiver TYPE before
+ *     reading the member off it, while 13's `getResolvedSignature` answers a
+ *     superset of shapes from the call's own resolved signature alone —
+ *     behind 13, pass 12 would never see a call (bd tea-rags-mcp-l3uob).
+ *   - 14 follows 13 because `getResolvedSignature` picks the overload the
+ *     ARGUMENTS select, which is the sharper answer whenever it applies; 14
+ *     then handles the receivers that have no name to look up at all
+ *     (bd tea-rags-mcp-icmnr).
  *
  * `resolveDispatch` is a separate fan-out contract (lookup-table dispatch, bd
  * tea-rags-mcp-n0zj) and stays in the orchestrator — it is not part of the
@@ -79,6 +90,7 @@ import {
   TSThisMemberSymbolResolutionStrategy,
   TSTypeCheckerFallbackSymbolResolutionStrategy,
   TSTypeCheckerJsxComponentSymbolResolutionStrategy,
+  TSTypeCheckerReturnTypeInferenceSymbolResolutionStrategy,
   TSTypeCheckerUnionReceiverDispatchResolver,
   type ResolverConfig,
 } from "./strategies/index.js";
@@ -157,9 +169,12 @@ export class TSCallResolver implements CallResolver {
       new TSImportNarrowedFallbackSymbolResolutionStrategy(cfg),
     ];
     if (this.programCache) {
-      this.strategies.push(new TSTypeCheckerJsxComponentSymbolResolutionStrategy(cfg, this.programCache));
-      this.strategies.push(new TSTypeCheckerFallbackSymbolResolutionStrategy(cfg, this.programCache));
-      this.strategies.push(new TSStructuralTypingSymbolResolutionStrategy(cfg, this.programCache));
+      this.strategies.push(
+        new TSTypeCheckerJsxComponentSymbolResolutionStrategy(cfg, this.programCache),
+        new TSTypeCheckerReturnTypeInferenceSymbolResolutionStrategy(cfg, this.programCache),
+        new TSTypeCheckerFallbackSymbolResolutionStrategy(cfg, this.programCache),
+        new TSStructuralTypingSymbolResolutionStrategy(cfg, this.programCache),
+      );
     }
   }
 

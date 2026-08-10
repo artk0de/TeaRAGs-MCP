@@ -20,5 +20,6 @@ export {
   type TSStructuralTypingCase,
 } from "./ts-type-checker-structural-typing.js";
 export { TSTypeCheckerUnionReceiverDispatchResolver } from "./ts-type-checker-union-receiver.js";
+export { TSTypeCheckerReturnTypeInferenceSymbolResolutionStrategy } from "./ts-type-checker-return-type-inference.js";
 export { TSConeTypeLocator } from "./ts-cone-type-locator.js";
 export { collectImportedFiles, CONE_MAX_DEFAULT, type ResolverConfig } from "./shared.js";
