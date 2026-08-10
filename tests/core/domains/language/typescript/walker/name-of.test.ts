@@ -2,12 +2,12 @@ import Parser from "tree-sitter";
 import TsLang from "tree-sitter-typescript";
 import { describe, expect, it } from "vitest";
 
+import type { CollectedSymbolRange } from "../../../../../../src/core/contracts/types/language.js";
 import { collectSymbols } from "../../../../../../src/core/domains/language/kernel/collect-symbols.js";
 import { DefaultSymbolIdComposer } from "../../../../../../src/core/domains/language/kernel/symbol-id.js";
 import { typescriptKernel } from "../../../../../../src/core/domains/language/typescript/kernel.js";
 import { tsNameOf } from "../../../../../../src/core/domains/language/typescript/walker/name-of.js";
 import { materializeTree } from "../../../../../../src/core/infra/materialize.js";
-import type { CollectedSymbolRange } from "../../../../../../src/core/contracts/types/language.js";
 
 const composer = new DefaultSymbolIdComposer();
 
@@ -161,7 +161,9 @@ describe("tsNameOf — const-object namespaces (bd tea-rags-mcp-2jhwk)", () => {
 
   it("leaves a function-valued declarator to its existing top-level form", () => {
     // `const foo = () => {}` has no object literal — it must not acquire a
-    // namespace symbol, and (for TypeScript) still emits nothing here.
+    // NAMESPACE symbol. Since bd tea-rags-mcp-grz07 the declarator is named
+    // (as a plain top-level `foo`), but naming it never composes members onto
+    // it; that is still the const-object gate's job alone.
     expect(idsOf("export const foo = (a: number) => a;\n")).not.toContain("foo.a");
   });
 });
@@ -183,5 +185,53 @@ describe("tsNameOf — class and function shapes stay put (bd tea-rags-mcp-2jhwk
 
   it("still names a top-level function", () => {
     expect(idsOf("export function helper(a: number) {\n  return a;\n}\n")).toContain("helper");
+  });
+});
+
+describe("tsNameOf — module-level const-bound function expressions (bd tea-rags-mcp-grz07)", () => {
+  it("names a module-level const arrow so a bare call has something to target", () => {
+    // The measured gap: on the taxdome React corpus the checker resolved 179
+    // bare calls to a module-level const arrow the symbol table could not name,
+    // so no edge could be emitted however good the resolver chain got.
+    expect(idsOf("export const genValidationSchema = (msg: string) => msg.trim();\n")).toContain("genValidationSchema");
+  });
+
+  it("names a module-level const bound to a function expression", () => {
+    expect(idsOf("const legacy = function (value: number) {\n  return value;\n};\n")).toContain("legacy");
+  });
+
+  it("does NOT name a function-scoped const arrow", () => {
+    // bd tea-rags-mcp-w7qv4's guard declines a bare call on a function-scoped
+    // const by inspecting the DECLARATION's scope. Naming these would fill the
+    // symbol table with exactly the candidates it exists to keep away from
+    // `globalShortName` — 452 of them on the measured corpus, named
+    // `handleClick` / `renderContent` / `setRef` in hundreds of files apiece.
+    const ids = idsOf("export function render(id: string): void {\n  const handler = () => id;\n  handler();\n}\n");
+    expect(ids).toContain("render");
+    expect(ids).not.toContain("render.handler");
+    expect(ids).not.toContain("handler");
+  });
+
+  it("does NOT name a const arrow declared inside a class method", () => {
+    const ids = idsOf(
+      "export class Panel {\n  open(): void {\n    const onClose = () => undefined;\n    onClose();\n  }\n}\n",
+    );
+    expect(ids).toContain("Panel#open");
+    expect(ids).not.toContain("Panel#open.onClose");
+  });
+
+  it("composes a nested declaration under the named arrow, like a function declaration", () => {
+    // `function outer() { function inner() {} }` already composes `outer.inner`;
+    // a named const arrow is the same kind of container and behaves the same.
+    const ids = idsOf(
+      "export const outer = () => {\n  function inner(a: number) {\n    return a;\n  }\n  return inner;\n};\n",
+    );
+    expect(ids).toContain("outer");
+    expect(ids).toContain("outer.inner");
+  });
+
+  it("still declines a data-only const and a const bound to a call", () => {
+    expect(idsOf("export const PALETTE = { red: '#f00' };\n")).not.toContain("PALETTE");
+    expect(idsOf("export const t = useTranslation();\n")).not.toContain("t");
   });
 });

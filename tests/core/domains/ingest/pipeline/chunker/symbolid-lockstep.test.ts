@@ -234,6 +234,79 @@ describe("symbolId lockstep — chunker payload vs cg_symbols (bd tea-rags-mcp-6
         expect([...graphIds]).toContain(id);
       }
     });
+
+    /**
+     * bd tea-rags-mcp-grz07 — the module-level const-bound function expression,
+     * the dominant declaration shape in React code. Before the fix NEITHER side
+     * named it: cg_symbols had no row a bare call could target, and the chunker
+     * emitted no chunk at all, so the function was invisible to `find_symbol`
+     * as well as to `get_callers`.
+     */
+    const MODULE_LEVEL_CONST_ARROW = [
+      "export const genValidationSchema = (message: string): string => {",
+      "  const trimmed = message.trim();",
+      "  return trimmed.toUpperCase();",
+      "};",
+    ].join("\n");
+
+    const MODULE_LEVEL_CONST_FUNCTION_EXPRESSION = [
+      "const legacyExpression = function (value: number): number {",
+      "  const doubled = value * 2;",
+      "  return doubled + 1;",
+      "};",
+    ].join("\n");
+
+    /** The boundary case: the SAME shape, one scope deeper. */
+    const FUNCTION_SCOPED_CONST_ARROW = [
+      "export function render(id: string): void {",
+      "  const handler = (value: string): string => {",
+      "    const trimmed = value.trim();",
+      "    return trimmed.toUpperCase();",
+      "  };",
+      "  handler(id);",
+      "}",
+    ].join("\n");
+
+    it("names a module-level const arrow the same on both sides", async () => {
+      expect(await chunkerCallableIds(TYPESCRIPT, MODULE_LEVEL_CONST_ARROW)).toEqual(["genValidationSchema"]);
+      expect(codegraphIds(TYPESCRIPT, MODULE_LEVEL_CONST_ARROW)).toContain("genValidationSchema");
+    });
+
+    it("names a module-level const function expression the same on both sides", async () => {
+      expect(await chunkerCallableIds(TYPESCRIPT, MODULE_LEVEL_CONST_FUNCTION_EXPRESSION)).toEqual([
+        "legacyExpression",
+      ]);
+      expect(codegraphIds(TYPESCRIPT, MODULE_LEVEL_CONST_FUNCTION_EXPRESSION)).toContain("legacyExpression");
+    });
+
+    it("names a function-scoped const arrow on NEITHER side", async () => {
+      // Both producers must decline together. A chunk carrying `handler` with no
+      // cg_symbols row is the ghost this file exists to catch, and a cg_symbols
+      // row for `handler` is what bd tea-rags-mcp-w7qv4's guard exists to avoid.
+      expect(await chunkerCallableIds(TYPESCRIPT, FUNCTION_SCOPED_CONST_ARROW)).toEqual(["render"]);
+      expect(codegraphIds(TYPESCRIPT, FUNCTION_SCOPED_CONST_ARROW)).not.toContain("handler");
+      expect(codegraphIds(TYPESCRIPT, FUNCTION_SCOPED_CONST_ARROW)).not.toContain("render.handler");
+    });
+
+    it.each([
+      ["module-level const arrow", MODULE_LEVEL_CONST_ARROW],
+      ["module-level const function expression", MODULE_LEVEL_CONST_FUNCTION_EXPRESSION],
+      ["function-scoped const arrow", FUNCTION_SCOPED_CONST_ARROW],
+    ])("emits no callable id absent from cg_symbols — %s", async (_shape, src) => {
+      const graphIds = new Set(codegraphIds(TYPESCRIPT, src));
+      for (const id of await chunkerCallableIds(TYPESCRIPT, src)) {
+        expect([...graphIds]).toContain(id);
+      }
+    });
+
+    it("still emits no chunk for a data-only const or a const bound to a call", async () => {
+      const src = [
+        "export const PALETTE = { red: '#f00', blue: '#00f', green: '#0f0' };",
+        "export const translate = useTranslation('some-namespace-key');",
+      ].join("\n");
+      expect(await chunkerCallableIds(TYPESCRIPT, src)).toEqual([]);
+      expect(codegraphIds(TYPESCRIPT, src)).toEqual([]);
+    });
   });
 
   describe("JavaScript", () => {
@@ -287,6 +360,34 @@ describe("symbolId lockstep — chunker payload vs cg_symbols (bd tea-rags-mcp-6
       for (const id of await chunkerCallableIds(JAVASCRIPT, JS_EXPORTED_CONST_OBJECT_NAMESPACE)) {
         expect([...graphIds]).toContain(id);
       }
+    });
+
+    /**
+     * bd tea-rags-mcp-grz07 parity guard. `jsNameOf` DELEGATES to `tsNameOf`
+     * first and only then applies its own pattern #5
+     * (`const Foo = function () {}` / arrow, at ANY scope). Teaching `tsNameOf`
+     * the module-level half of that shape therefore re-routes which branch
+     * answers for JavaScript, and the answer must not change:
+     *
+     *   - module level — `tsNameOf` now answers, so it must return exactly what
+     *     pattern #5 returned (`{ name, descendsInto: false }`);
+     *   - function scope — `tsNameOf` declines by design, so pattern #5 still
+     *     answers and JavaScript keeps naming it, as it always has.
+     *
+     * The two languages deliberately DIFFER on the second case, and that is not
+     * drift: JavaScript's `jsNameOf` has named function-scoped consts since long
+     * before the TypeScript resolver grew a scope guard to protect.
+     */
+    it("keeps naming a const arrow at BOTH scopes, module-level via the shared branch", () => {
+      const moduleLevel = codegraphIds(JAVASCRIPT, "export const handler = (value) => value;\n");
+      expect(moduleLevel).toContain("handler");
+
+      const functionScoped = codegraphIds(
+        JAVASCRIPT,
+        "export function render(id) {\n  const handler = (value) => value;\n  return handler(id);\n}\n",
+      );
+      expect(functionScoped).toContain("render");
+      expect(functionScoped).toContain("render.handler");
     });
   });
 });
