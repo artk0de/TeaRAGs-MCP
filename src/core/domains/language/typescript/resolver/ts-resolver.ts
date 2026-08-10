@@ -185,7 +185,11 @@ export class TSCallResolver implements CallResolver {
       new TSFieldTypeSymbolResolutionStrategy(cfg),
       new TSLocalBindingSymbolResolutionStrategy(cfg),
       new TSNamedImportSymbolResolutionStrategy(cfg),
-      new TSImportBasenameSymbolResolutionStrategy(cfg),
+      // 6 takes it for the guard on its PARK (bd tea-rags-mcp-83iz5): the
+      // basename match fires on receiver TEXT, so a local `cache` collides with
+      // the `cache.ts` its own file imports, and only the checker can see that
+      // the receiver is a `Map`.
+      new TSImportBasenameSymbolResolutionStrategy(cfg, this.programCache),
       new TSReceiverSymbolSymbolResolutionStrategy(cfg),
       new TSSameFileSymbolResolutionStrategy(cfg),
       // 9 and 10 take the Program cache for their three GUARDS, not to resolve
