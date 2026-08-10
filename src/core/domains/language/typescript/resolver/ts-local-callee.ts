@@ -74,14 +74,111 @@ export function calleeIsLocalValueBinding(
   ctx: CallContext,
   programCache: TSProgramCache | null,
 ): boolean {
-  if (programCache === null || call.receiver !== null || call.member.length === 0) return false;
+  if (call.receiver !== null) return false;
   if (ctx.symbolTable.lookupByShortName(call.member).length === 0) return false;
+  return classifyLocalCallee(call, ctx, programCache) !== "notLocalBinding";
+}
+
+/**
+ * `true` when the callee is a local value binding AND every call signature of
+ * its type is declared outside the project — a hook RETURN, which is a different
+ * animal from a prop callback (bd tea-rags-mcp-qdjfu).
+ *
+ * {@link calleeIsLocalValueBinding} declines the edge for both, and that is
+ * right: neither can be pinned to a project symbol. But the two calls belong in
+ * different METRIC buckets, and lumping them together is what this predicate
+ * fixes. React's `useState` setter, `useFieldArray`'s `remove`, i18n's `t`, the
+ * router's `navigate` are declared in `node_modules` / `@types`, so the value
+ * behind the binding provably never reaches project code — counting them as
+ * internal misses penalises the resolver for calls nothing could have resolved.
+ * A destructured PROP is the opposite: the function the parent passes is usually
+ * project code we cannot dataflow-trace, so it stays an honest internal miss.
+ *
+ * Deliberately NOT gated on the symbol table, which is the one place this
+ * diverges from its sibling. There, the lookup is a pure COST gate — with no
+ * project symbol of that name the short-name passes could not have produced an
+ * edge, so the verdict could not matter. Here it would be a correctness bug: a
+ * hook-returned `t()` leaves the project whether or not something in the repo
+ * happens to be named `t`, and gating on a collision would reclassify only the
+ * accidental subset.
+ */
+export function calleeIsExternalLocalBinding(
+  call: CallRef,
+  ctx: CallContext,
+  programCache: TSProgramCache | null,
+): boolean {
+  return classifyLocalCallee(call, ctx, programCache) === "externalSignature";
+}
+
+/**
+ * What the checker can say about a bare call's callee identifier, in one
+ * traversal.
+ *
+ *   - `notLocalBinding` — no evidence, or the callee is something the project
+ *     may declare. The edge stands and the call is nobody's business here.
+ *   - `unresolvable` — a local value binding whose target cannot be pinned and
+ *     may well be project code: an internal miss, honestly counted.
+ *   - `externalSignature` — a local value binding whose call signatures are all
+ *     declared outside the project: an external call.
+ *
+ * One function rather than two predicates because the evidence is the same walk
+ * — locate the call node, resolve the callee symbol, read its declarations —
+ * and running it twice would double the AST scan on the dominant call shape in
+ * React code for an answer already in hand.
+ */
+type TSLocalCalleeBinding = "notLocalBinding" | "unresolvable" | "externalSignature";
+
+function classifyLocalCallee(
+  call: CallRef,
+  ctx: CallContext,
+  programCache: TSProgramCache | null,
+): TSLocalCalleeBinding {
+  if (programCache === null || call.receiver !== null || call.member.length === 0) return "notLocalBinding";
   const handle = programCache.acquire(ctx.callerFile);
-  if (handle === null) return false;
+  if (handle === null) return "notLocalBinding";
   const node = findCallExpression(handle.sourceFile, call.startLine, call.member);
-  if (node === null || !ts.isIdentifier(node.expression)) return false;
+  if (node === null || !ts.isIdentifier(node.expression)) return "notLocalBinding";
   const declarations = handle.checker.getSymbolAtLocation(node.expression)?.getDeclarations() ?? [];
-  return declarations.length > 0 && declarations.every(isLocalValueBinding);
+  if (declarations.length === 0 || !declarations.every(isLocalValueBinding)) return "notLocalBinding";
+  return signaturesDeclaredOutsideProject(handle.checker, node.expression, programCache)
+    ? "externalSignature"
+    : "unresolvable";
+}
+
+/**
+ * Is every call signature of the type at `callee` declared outside the project's
+ * own sources?
+ *
+ * The question is asked of the SIGNATURES rather than of the type's symbol,
+ * because a callable binding often has no useful symbol of its own: the type
+ * behind `setDate` is the alias `Dispatch<SetStateAction<Date>>`, and what pins
+ * it to React is the function-type node the alias expands to. Signatures point
+ * straight at that node.
+ *
+ * Two answers mean "no evidence" rather than "external", for the reason every
+ * arm of this guard family shares — it may only ever ADD an external verdict.
+ * No signature at all is an untyped or `any` callee, where the checker knows
+ * nothing; a signature with no declaration is synthetic, built by the checker
+ * with no source behind it. Both leave the call an internal miss.
+ *
+ * `isProjectSourceFile`, NOT a non-null `toRelPath`: `node_modules` sits INSIDE
+ * the repo root, so a dependency's `.d.ts` maps to a perfectly ordinary
+ * `RelPath` and would read as project code — the trap bd tea-rags-mcp-otm6n
+ * documented after five call sites were written against the opposite promise.
+ * Under a repo-relative test this predicate would answer `false` for every
+ * dependency there is, which is to say it would do nothing at all.
+ */
+function signaturesDeclaredOutsideProject(
+  checker: ts.TypeChecker,
+  callee: ts.Identifier,
+  programCache: TSProgramCache,
+): boolean {
+  const signatures = checker.getTypeAtLocation(callee).getCallSignatures();
+  if (signatures.length === 0) return false;
+  return signatures.every((signature) => {
+    const { declaration } = signature;
+    return declaration !== undefined && !programCache.isProjectSourceFile(declaration.getSourceFile().fileName);
+  });
 }
 
 /**

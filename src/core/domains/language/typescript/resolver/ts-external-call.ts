@@ -31,6 +31,7 @@ import {
 } from "../../shared/ecmascript-globals.js";
 import { findReceiverExpression } from "./strategies/ts-type-checker-shared.js";
 import { importSpecifierNamesReceiver } from "./ts-import-basename-match.js";
+import { calleeIsExternalLocalBinding } from "./ts-local-callee.js";
 import { mapImportToFile, type TsCompilerOptions } from "./ts-path-mapper.js";
 import type { TSProgramCache } from "./ts-program-cache.js";
 
@@ -58,7 +59,12 @@ import type { TSProgramCache } from "./ts-program-cache.js";
  *      declares nothing by (bd tea-rags-mcp-3somv);
  *   5. the receiver is an imported project CONSTANT and the member is a builtin
  *      container operation (`YARD_CONST.test(t)`, `CODE_LANGUAGES.has(l)`) —
- *      see {@link receiverIsImportedBuiltinContainer}.
+ *      see {@link receiverIsImportedBuiltinContainer};
+ *   6. there is NO receiver, and the bare callee is a local value binding whose
+ *      call signatures are all declared outside the project — a hook return
+ *      (`useState`'s setter, `t`, `navigate`), see
+ *      {@link calleeIsExternalLocalBinding}. The only arm that speaks for a free
+ *      call; every other one inspects a receiver (bd tea-rags-mcp-qdjfu).
  *
  * PRECISION: cases 3 and 4 are mutually exclusive BY CONSTRUCTION, and that is
  * the load-bearing detail. A receiver whose type IS known decides the question
@@ -93,8 +99,13 @@ export function targetsExternalImport(
   // Case 5 is asked FIRST purely for cost: it reads the symbol table and the
   // import list, while case 4b may build a `ts.Program`. Both are pure
   // predicates, so the order changes only what gets paid for, never the answer.
+  // Case 6 is LAST because it is the only arm a BARE call can reach — the two
+  // before it return early without a receiver — so ordering it here costs a
+  // receiver-bearing call nothing.
   return (
-    receiverIsImportedBuiltinContainer(call, ctx) || receiverIsExternalInstance(call, ctx, tsOptions, programCache)
+    receiverIsImportedBuiltinContainer(call, ctx) ||
+    receiverIsExternalInstance(call, ctx, tsOptions, programCache) ||
+    calleeIsExternalLocalBinding(call, ctx, programCache)
   );
 }
 
