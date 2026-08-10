@@ -3,6 +3,7 @@ import { pickSingleCandidate, type CallContext, type CallRef } from "../../../..
 import type { SymbolResolutionOutcome, SymbolResolutionStrategy } from "../../../../../contracts/types/language.js";
 import { targetsExternalImport } from "../ts-external-call.js";
 import { calleeIsLocalValueBinding } from "../ts-local-callee.js";
+import { receiverIsUnpinnableLocalValueBinding } from "../ts-local-receiver.js";
 import type { TSProgramCache } from "../ts-program-cache.js";
 import type { ResolverConfig } from "./shared.js";
 
@@ -29,6 +30,15 @@ import type { ResolverConfig } from "./shared.js";
  * calls are not external, they are simply unpinnable, and the two verdicts feed
  * different denominators.
  *
+ * A DISPATCHING call needs the receiver twin of that guard, for the half the
+ * external one declines to answer (bd tea-rags-mcp-z0zqd). Its checker arm
+ * decides every receiver whose type resolves outside the project, but says
+ * nothing about one with no resolvable type at all — an unannotated destructured
+ * parameter, an `any`-returning hook — because it may only ever ADD an external
+ * verdict. {@link receiverIsUnpinnableLocalValueBinding} decides those on the
+ * DECLARATION instead, and only when the checker also names no in-project type,
+ * so a destructured receiver holding a real project instance keeps its edge.
+ *
  * The guard reads the resolver's `TSProgramCache` when one exists (bd
  * tea-rags-mcp-335eu), which is what lets it decline a receiver only the checker
  * could type — `const map = readRegistry(); map.set(k, v)`. The cache arrives as
@@ -47,6 +57,7 @@ export class TSGlobalShortNameSymbolResolutionStrategy implements SymbolResoluti
   attempt(call: CallRef, ctx: CallContext): SymbolResolutionOutcome {
     if (targetsExternalImport(call, ctx, this.cfg.tsOptions, this.programCache)) return CONTINUE;
     if (calleeIsLocalValueBinding(call, ctx, this.programCache)) return CONTINUE;
+    if (receiverIsUnpinnableLocalValueBinding(call, ctx, this.programCache)) return CONTINUE;
     const fallback = ctx.symbolTable.lookupByShortName(call.member);
     const hit = pickSingleCandidate(fallback, this.cfg.mode);
     if (hit) return resolved({ targetRelPath: hit.relPath, targetSymbolId: hit.symbolId });

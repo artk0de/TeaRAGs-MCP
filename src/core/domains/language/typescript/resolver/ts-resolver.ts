@@ -188,10 +188,13 @@ export class TSCallResolver implements CallResolver {
       new TSImportBasenameSymbolResolutionStrategy(cfg),
       new TSReceiverSymbolSymbolResolutionStrategy(cfg),
       new TSSameFileSymbolResolutionStrategy(cfg),
-      // 9 and 10 take the Program cache for their two GUARDS, not to resolve
+      // 9 and 10 take the Program cache for their three GUARDS, not to resolve
       // with: `targetsExternalImport` for receivers only the checker can type
-      // (bd tea-rags-mcp-335eu), and `calleeIsLocalValueBinding` for a bare
-      // call whose callee is a local binding (bd tea-rags-mcp-5tatv).
+      // (bd tea-rags-mcp-335eu), `calleeIsLocalValueBinding` for a bare call
+      // whose callee is a local binding (bd tea-rags-mcp-5tatv), and
+      // `receiverIsUnpinnableLocalValueBinding` for the dispatching twin —
+      // a receiver that is itself a local binding the checker can name no
+      // in-project type for (bd tea-rags-mcp-z0zqd).
       new TSGlobalShortNameSymbolResolutionStrategy(cfg, this.programCache),
       new TSImportNarrowedFallbackSymbolResolutionStrategy(cfg, this.programCache),
     ];

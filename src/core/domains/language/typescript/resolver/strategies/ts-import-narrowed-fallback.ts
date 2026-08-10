@@ -3,6 +3,7 @@ import { pickSingleCandidate, type CallContext, type CallRef } from "../../../..
 import type { SymbolResolutionOutcome, SymbolResolutionStrategy } from "../../../../../contracts/types/language.js";
 import { targetsExternalImport } from "../ts-external-call.js";
 import { calleeIsLocalValueBinding } from "../ts-local-callee.js";
+import { receiverIsUnpinnableLocalValueBinding } from "../ts-local-receiver.js";
 import type { TSProgramCache } from "../ts-program-cache.js";
 import { collectImportedFiles, type ResolverConfig } from "./shared.js";
 
@@ -31,6 +32,12 @@ import { collectImportedFiles, type ResolverConfig } from "./shared.js";
  * tea-rags-mcp-5tatv): a bare `onRemove(attachment)` whose callee is a
  * destructured prop is ambiguous by short name across N implementers, and
  * narrowing by the caller's imports would pick one and commit to it.
+ *
+ * And {@link receiverIsUnpinnableLocalValueBinding} for the dispatching twin of
+ * that shape (bd tea-rags-mcp-z0zqd): `handlers.remove(index)` on a receiver the
+ * checker can name no in-project type for is ambiguous across every project
+ * `remove`, and narrowing by imports is again the confident version of the same
+ * mistake.
  */
 export class TSImportNarrowedFallbackSymbolResolutionStrategy implements SymbolResolutionStrategy {
   readonly name = "importNarrowedFallback";
@@ -42,6 +49,7 @@ export class TSImportNarrowedFallbackSymbolResolutionStrategy implements SymbolR
   attempt(call: CallRef, ctx: CallContext): SymbolResolutionOutcome {
     if (targetsExternalImport(call, ctx, this.cfg.tsOptions, this.programCache)) return CONTINUE;
     if (calleeIsLocalValueBinding(call, ctx, this.programCache)) return CONTINUE;
+    if (receiverIsUnpinnableLocalValueBinding(call, ctx, this.programCache)) return CONTINUE;
     const fallback = ctx.symbolTable.lookupByShortName(call.member);
     if (fallback.length <= 1 || ctx.imports.length === 0) return CONTINUE;
 
