@@ -50,11 +50,12 @@ import type { TSProgramCache } from "./ts-program-cache.js";
  *      from the builtin-only prototype vocabulary (`push`, `splice`, `flatMap`,
  *      …) — see {@link ECMASCRIPT_BUILTIN_PROTOTYPE_METHODS} for why that set
  *      is deliberately small;
- *   4b. the receiver carries no type information the WALKER could see, the
- *      vocabulary does not know the member either, and the type checker finds
- *      the receiver's type DECLARED outside the project's own sources — a
- *      builtin, a default-lib type, or an npm package's — see
- *      {@link checkerTypesReceiverOutsideProject};
+ *   4b. the type checker finds the receiver's type DECLARED outside the
+ *      project's own sources — a builtin, a default-lib type, or an npm
+ *      package's — see {@link checkerTypesReceiverOutsideProject}. Reached both
+ *      by receivers nothing could type (with the vocabulary having declined
+ *      too) and by receivers the walker DID annotate with a name the project
+ *      declares nothing by (bd tea-rags-mcp-3somv);
  *   5. the receiver is an imported project CONSTANT and the member is a builtin
  *      container operation (`YARD_CONST.test(t)`, `CODE_LANGUAGES.has(l)`) —
  *      see {@link receiverIsImportedBuiltinContainer}.
@@ -92,7 +93,9 @@ export function targetsExternalImport(
   // Case 5 is asked FIRST purely for cost: it reads the symbol table and the
   // import list, while case 4b may build a `ts.Program`. Both are pure
   // predicates, so the order changes only what gets paid for, never the answer.
-  return receiverIsImportedBuiltinContainer(call, ctx) || receiverIsExternalInstance(call, ctx, programCache);
+  return (
+    receiverIsImportedBuiltinContainer(call, ctx) || receiverIsExternalInstance(call, ctx, tsOptions, programCache)
+  );
 }
 
 /**
@@ -199,29 +202,91 @@ const TS_UTILITY_TYPES: ReadonlySet<string> = new Set([
  * inherited calls that earlier passes own, and a class with a method named
  * `push` is an ordinary thing to write.
  *
- * The checker arm (bd tea-rags-mcp-335eu, widened by bd tea-rags-mcp-otm6n) is
- * strictly LAST. It sees only the receivers the walker could not type AND the
- * vocabulary does not recognise — which is the residue by construction, since a
- * known type has already decided and a known member has already returned `true`.
- * It can only ever ADD an external verdict, never withdraw one, so the
- * vocabulary's answers are untouched and no edge this guard used to allow is
- * newly suppressed by a checker answer of "declared in the project".
+ * The checker arm (bd tea-rags-mcp-335eu, widened by bd tea-rags-mcp-otm6n and
+ * again by bd tea-rags-mcp-3somv) is strictly LAST, and it can only ever ADD an
+ * external verdict, never withdraw one — a checker answer of "declared in the
+ * project" leaves the previous verdict standing.
  *
- * The walker-typed branch above still decides by NAME, and deliberately so. A
- * receiver the walker DID type is answered from the annotation the author wrote,
- * where a non-builtin name means an ordinary project type; widening that branch
- * to ask the checker as well would put every annotated receiver in the guard's
- * reach, which is a far larger recall surface than the residue this arm sees.
+ * What reaches it changed with bd tea-rags-mcp-3somv. The walker-typed branch
+ * used to decide by NAME alone: not an `ECMASCRIPT_BUILTIN_TYPES` member meant
+ * "an ordinary project type", so `native: Parser.SyntaxNode` and
+ * `response: Response` were ruled INTERNAL and `globalShortName` went on to
+ * match the bare member against the whole symbol table. On a project that owns
+ * a deliberate look-alike of an external type — `src/core/infra/materialize.ts`
+ * mirrors tree-sitter's `SyntaxNode` interface on purpose — that match lands on
+ * the look-alike, which is coincidence of SHAPE, never dispatch.
+ *
+ * So the branch now asks where the ANNOTATION comes from rather than what it is
+ * called. A builtin name is external; {@link annotationOrigin} settles every
+ * imported name from the import list alone, in both directions and for free.
+ * Only an annotation nothing imports and no project declaration backs reaches
+ * the checker, which answers by where the type LIVES. That keeps the recall
+ * surface off every annotated receiver (the reason this branch was left alone
+ * before) and keeps the checker off all but a residue. A project that declares
+ * its own `Response` keeps deciding by type — the declaration is proof the name
+ * means that class here.
+ *
+ * The member-name vocabulary stays unreachable for an annotated receiver, which
+ * is the mutual exclusion cases 3 and 4 rest on: a project-typed receiver with
+ * a method called `push` must stay internal.
  */
-function receiverIsExternalInstance(call: CallRef, ctx: CallContext, programCache: TSProgramCache | null): boolean {
+function receiverIsExternalInstance(
+  call: CallRef,
+  ctx: CallContext,
+  tsOptions: TsCompilerOptions,
+  programCache: TSProgramCache | null,
+): boolean {
   const receiver = call.receiver ?? null;
   if (receiver === null || receiver.length === 0 || receiver === "this" || receiver === "super") return false;
   const typeName = receiverTypeName(call, ctx);
   if (typeName !== undefined && !receiverNamesTypeLevelOperator(typeName, ctx)) {
-    return ECMASCRIPT_BUILTIN_TYPES.has(typeName);
+    if (ECMASCRIPT_BUILTIN_TYPES.has(typeName)) return true;
+    // The name is not a builtin — which is NOT the same as "a project type"
+    // (bd tea-rags-mcp-3somv). Where the annotation was IMPORTED from settles
+    // it outright and for free; only a name no import binds and no project
+    // declaration backs is worth a Program. The member-name vocabulary stays
+    // unreachable either way, preserving the mutual exclusion cases 3 and 4
+    // rest on.
+    const origin = annotationOrigin(typeName, ctx, tsOptions);
+    if (origin !== "unbound") return origin === "package";
+    if (ctx.symbolTable.lookup(typeName).length > 0) return false;
+  } else if (ECMASCRIPT_BUILTIN_PROTOTYPE_METHODS.has(call.member)) {
+    return true;
   }
-  if (ECMASCRIPT_BUILTIN_PROTOTYPE_METHODS.has(call.member)) return true;
   return programCache !== null && checkerTypesReceiverOutsideProject(call, ctx, programCache);
+}
+
+/** Where the import list says a receiver's annotated TYPE comes from. */
+type TSAnnotationOrigin = "project" | "package" | "unbound";
+
+/**
+ * Read the receiver's ANNOTATION the way case 2 of {@link targetsExternalImport}
+ * reads the receiver itself: by asking whether the import that binds the name
+ * maps into the project (bd tea-rags-mcp-3somv).
+ *
+ * This is the cheap half of the annotated-receiver question, and it answers
+ * most of it. `native: Parser.SyntaxNode` and `multibar: MultiBar` name types
+ * bound by bare specifiers — `mapImportToFile` returns `null` for exactly those
+ * — so the annotation ITSELF says the receiver is a dependency's, which is
+ * stronger evidence than any shape match and needs no `ts.Program` to read. The
+ * mirror case is just as decisive: a specifier that resolves to a project file
+ * means the author annotated with a project type, and the edge stands.
+ *
+ * The ROOT of a dotted annotation is what an import can bind — `Parser` in
+ * `Parser.SyntaxNode`, never the qualified name.
+ *
+ * `unbound` is the honest third answer, not a default: a name nothing imports
+ * is either declared locally or a global the default lib provides, and only
+ * those two are worth paying the checker to tell apart. `Response` is the
+ * reason that residue cannot simply be called "project".
+ */
+function annotationOrigin(typeName: string, ctx: CallContext, tsOptions: TsCompilerOptions): TSAnnotationOrigin {
+  const rootName = typeName.split(".")[0];
+  for (const imp of ctx.imports) {
+    if (!imp.importedNames?.includes(rootName)) continue;
+    return mapImportToFile(imp.importText, ctx.callerFile, tsOptions) === null ? "package" : "project";
+  }
+  return "unbound";
 }
 
 /**
