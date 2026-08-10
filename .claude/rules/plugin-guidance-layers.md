@@ -32,6 +32,21 @@ bolt onto first file you open.
 | The complete enumeration of presets / signals / filters / index opts          | **MCP resources**  | the relevant `tea-rags://schema/*` content behind `src/mcp/resources/`                                     |
 | When/which tool to reach for, what NOT to do, how to recover, when to reindex | **search cascade** | a `.claude-plugin/tea-rags/rules/*.md` file (new file → wire into `inject-rules.sh` + bump plugin version) |
 
+## Delivery budget — the cascade arrives in parts
+
+A hook's stdout stops reaching the model past roughly 16KB: the harness writes
+it to a file and shows a 2KB preview instead, with no error. The corpus is
+larger than that, so `inject-rules.sh` emits it as `--part N --parts M`, one
+hook command per part, each under `--max-bytes` (10000 by default) and packed on
+`## ` boundaries.
+
+**Growing the corpus is therefore a two-file change.** After adding or extending
+a rule file, run `scripts/inject-rules.sh --count`; if it exceeds the number of
+`--part` commands declared in `plugin.json`, add the missing ones and raise
+`--parts` on all of them. The last declared part prints which rules had no slot,
+so the overflow surfaces in context rather than vanishing — but it is still lost
+guidance until the slot exists.
+
 ## Precedence — why placement matters (don't duplicate across layers)
 
 Two layers mention same topic → OWNER above wins; others = stale copy / shorter
