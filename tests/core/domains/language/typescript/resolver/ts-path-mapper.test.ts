@@ -152,6 +152,76 @@ describe("mapImportToFile .tsx probing (bd tea-rags-mcp-f3zcy)", () => {
   });
 });
 
+describe("mapImportToFile directory/index resolution (bd tea-rags-mcp-hzsxy)", () => {
+  it("maps an extensionless specifier to the directory's index.tsx", () => {
+    // The barrel-style directory module every React/TS project writes:
+    // `import { Button } from "./components"` where the module IS
+    // `components/index.tsx`. Probing only `components.{ts,tsx,d.ts}` found
+    // nothing, so the edge landed on a path no file table entry matches.
+    const exists = (rel: string) => rel === "src/components/index.tsx";
+    expect(mapImportToFile("./components", "src/Page.tsx", NO_ALIASES, exists)).toBe("src/components/index.tsx");
+  });
+
+  it("maps an extensionless specifier to the directory's index.ts", () => {
+    const exists = (rel: string) => rel === "src/components/index.ts";
+    expect(mapImportToFile("./components", "src/Page.tsx", NO_ALIASES, exists)).toBe("src/components/index.ts");
+  });
+
+  it("prefers the sibling FILE over the directory index when both exist", () => {
+    // tsc resolves a specifier as a file before it resolves it as a
+    // directory, so a project holding BOTH `components.ts` and
+    // `components/index.ts` must land on the file — the same precedence
+    // question `.ts` over `.tsx` already answers one level up.
+    const exists = (rel: string) => rel === "src/components.ts" || rel === "src/components/index.ts";
+    expect(mapImportToFile("./components", "src/Page.tsx", NO_ALIASES, exists)).toBe("src/components.ts");
+  });
+
+  it("falls back to the directory's index.d.ts when no source index exists", () => {
+    const exists = (rel: string) => rel === "src/components/index.d.ts";
+    expect(mapImportToFile("./components", "src/Page.tsx", NO_ALIASES, exists)).toBe("src/components/index.d.ts");
+  });
+
+  it("never fabricates a directory index when nothing on disk matches", () => {
+    // Precision guard, mirroring the extension probe's: a probe that finds
+    // nothing must leave the mapper exactly where it was. A guessed
+    // `components/index.ts` would be a wrongFile phantom, where the
+    // unchanged `components.ts` is merely a dropped edge.
+    expect(mapImportToFile("./components", "src/Page.tsx", NO_ALIASES, () => false)).toBe("src/components.ts");
+  });
+
+  it("probes the directory index behind a tsconfig alias too", () => {
+    const exists = (rel: string) => rel === "src/components/index.tsx";
+    const result = mapImportToFile(
+      "@/components",
+      "src/Page.tsx",
+      { baseUrl: ".", paths: { "@/*": ["src/*"] } },
+      exists,
+    );
+    expect(result).toBe("src/components/index.tsx");
+  });
+
+  it("does NOT treat a NodeNext .js specifier as a directory", () => {
+    // `./components.js` names a FILE under the NodeNext convention the
+    // extension probe implements — the directory form is written
+    // `./components/index.js`. Probing `components.js/index.ts` here would
+    // invent a module the author never referenced.
+    const exists = (rel: string) => rel === "src/components/index.ts";
+    expect(mapImportToFile("./components.js", "src/Page.tsx", NO_ALIASES, exists)).toBe("src/components.ts");
+  });
+
+  it("resolves a directory module against a real project tree", () => {
+    const repoRoot = mkdtempSync(join(tmpdir(), "ts-path-mapper-dir-"));
+    mkdirSync(join(repoRoot, "src", "components"), { recursive: true });
+    writeFileSync(join(repoRoot, "src", "components", "index.tsx"), "export const Button = () => null;\n");
+    try {
+      const probe = createProjectFileProbe(repoRoot);
+      expect(mapImportToFile("./components", "src/Page.tsx", NO_ALIASES, probe)).toBe("src/components/index.tsx");
+    } finally {
+      rmSync(repoRoot, { recursive: true, force: true });
+    }
+  });
+});
+
 describe("createProjectFileProbe (bd tea-rags-mcp-f3zcy)", () => {
   const repoRoot = mkdtempSync(join(tmpdir(), "ts-path-mapper-"));
   mkdirSync(join(repoRoot, "src"), { recursive: true });
