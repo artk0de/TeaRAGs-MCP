@@ -52,7 +52,11 @@ export function extractFromTypescriptFile(input: ExtractInput): FileExtraction {
   // Callback params keyed by the symbolId of the chunk that owns each
   // function/method body — feeds the resolver's bounded inter-proc join.
   const callbackParams = collectCallbackParams(input.tree.rootNode, input.chunks);
-  const classFieldTypes = collectClassFieldTypes(input.tree.rootNode);
+  // bd tea-rags-mcp-yjqi5 — file-local `type X = …` declarations, read by every
+  // annotation reduction below so a binding records what the annotation MEANS
+  // rather than the local name it was spelled with.
+  const typeAliases = collectTypeAliases(input.tree.rootNode);
+  const classFieldTypes = collectClassFieldTypes(input.tree.rootNode, typeAliases);
   const classExtends = collectClassExtends(input.tree.rootNode);
   // Convert nested Map → nested Record so the contract survives NDJSON
   // spill between walker emit and resolver consume.
@@ -74,7 +78,7 @@ export function extractFromTypescriptFile(input: ExtractInput): FileExtraction {
   // chunk containing its declaration line — a method's parameter belongs
   // to the method chunk, not the enclosing class chunk that also spans
   // the `def` line (mirrors the innermost call-attribution discipline).
-  const paramBindings = collectParamBindings(input.tree.rootNode);
+  const paramBindings = collectParamBindings(input.tree.rootNode, typeAliases);
   // bd tea-rags-mcp-2yfi — also bind concrete-class types from variable
   // declarations and re-assignments so the SAME `localBindings` channel (and
   // thus the existing ts-local-binding resolver strategy) resolves
@@ -82,7 +86,7 @@ export function extractFromTypescriptFile(input: ExtractInput): FileExtraction {
   // Merged with the typed-parameter bindings and sorted by declaration line
   // so `resolveLocalBindingType` sees the bindings in source order (the
   // re-assignment / shadowing case relies on the most-recent line ≤ call).
-  const variableBindings = collectVariableBindings(input.tree.rootNode);
+  const variableBindings = collectVariableBindings(input.tree.rootNode, typeAliases);
   const allBindings = [...paramBindings, ...variableBindings].sort((a, b) => a.startLine - b.startLine);
   const bindingOwnership = assignParamBindingsToInnermostChunks(allBindings, input.chunks);
   const byChunk: ChunkExtraction[] = input.chunks.map((c, chunkIndex) => {
@@ -922,7 +926,10 @@ function walk(node: AstNode, visit: (n: AstNode) => void): void {
  *
  * Returns an empty Map when no class declarations are found.
  */
-function collectClassFieldTypes(root: AstNode): ReadonlyMap<string, ReadonlyMap<string, string>> {
+function collectClassFieldTypes(
+  root: AstNode,
+  typeAliases: ReadonlyMap<string, AstNode>,
+): ReadonlyMap<string, ReadonlyMap<string, string>> {
   const result = new Map<string, Map<string, string>>();
   walk(root, (node) => {
     // bd tea-rags-mcp-q3o2 — same abstract-class shape as collectClassExtends.
@@ -943,7 +950,10 @@ function collectClassFieldTypes(root: AstNode): ReadonlyMap<string, ReadonlyMap<
       if (member.type === "public_field_definition") {
         const fieldName = member.childForFieldName("name")?.text;
         // Annotated field wins: `field: T`.
-        const annotated = extractTypeNameFromAnnotation(member.children.find((c) => c.type === "type_annotation"));
+        const annotated = extractTypeNameFromAnnotation(
+          member.children.find((c) => c.type === "type_annotation"),
+          typeAliases,
+        );
         if (fieldName && annotated) {
           fields.set(fieldName, annotated);
           continue;
@@ -972,7 +982,10 @@ function collectClassFieldTypes(root: AstNode): ReadonlyMap<string, ReadonlyMap<
           if (!hasAccess) continue;
           const pattern = param.childForFieldName("pattern");
           const fieldName = pattern?.text;
-          const typeName = extractTypeNameFromAnnotation(param.children.find((c) => c.type === "type_annotation"));
+          const typeName = extractTypeNameFromAnnotation(
+            param.children.find((c) => c.type === "type_annotation"),
+            typeAliases,
+          );
           if (fieldName && typeName) fields.set(fieldName, typeName);
         }
       }
@@ -1009,7 +1022,7 @@ interface ParamBinding {
  * owned by `collectClassFieldTypes`, not local parameter bindings.
  * Untyped or destructured / rest parameters contribute nothing.
  */
-function collectParamBindings(root: AstNode): ParamBinding[] {
+function collectParamBindings(root: AstNode, typeAliases: ReadonlyMap<string, AstNode>): ParamBinding[] {
   const out: ParamBinding[] = [];
   walk(root, (node) => {
     if (node.type !== "required_parameter" && node.type !== "optional_parameter") return;
@@ -1021,7 +1034,10 @@ function collectParamBindings(root: AstNode): ParamBinding[] {
     // Only bare-identifier patterns bind cleanly — destructured / rest
     // patterns (`{ a }`, `...rest`) have no single receiver name.
     if (pattern?.type !== "identifier") return;
-    const typeName = extractTypeNameFromAnnotation(node.children.find((c) => c.type === "type_annotation"));
+    const typeName = extractTypeNameFromAnnotation(
+      node.children.find((c) => c.type === "type_annotation"),
+      typeAliases,
+    );
     if (typeName) out.push({ name: pattern.text, type: typeName, startLine: node.startPosition.row + 1 });
   });
   return out;
@@ -1045,7 +1061,7 @@ function collectParamBindings(root: AstNode): ParamBinding[] {
  * (`new Map<K,V>()`) and qualified names (`new ns.Foo()`) normalise
  * identically to the field-type / extends paths.
  */
-function collectVariableBindings(root: AstNode): ParamBinding[] {
+function collectVariableBindings(root: AstNode, typeAliases: ReadonlyMap<string, AstNode>): ParamBinding[] {
   const out: ParamBinding[] = [];
   walk(root, (node) => {
     // `const/let x = …` — one or more `variable_declarator` children.
@@ -1056,7 +1072,10 @@ function collectVariableBindings(root: AstNode): ParamBinding[] {
         if (name?.type !== "identifier") continue; // skip destructuring patterns
         // Form B precedence: an explicit `: T` annotation pins the type even
         // when the initializer is a call / cast we can't read.
-        const annotated = extractTypeNameFromAnnotation(decl.children.find((c) => c.type === "type_annotation"));
+        const annotated = extractTypeNameFromAnnotation(
+          decl.children.find((c) => c.type === "type_annotation"),
+          typeAliases,
+        );
         if (annotated) {
           out.push({ name: name.text, type: annotated, startLine: decl.startPosition.row + 1 });
           continue;
@@ -1271,15 +1290,72 @@ function collectClassExtends(root: AstNode): ReadonlyMap<string, string> {
 }
 
 /**
+ * Collect every `type X = …` declared in this file, as `X → the aliased type
+ * node` (bd tea-rags-mcp-yjqi5). Consumed by
+ * {@link extractTypeNameFromAnnotation} to answer with what an annotation
+ * MEANS rather than which local name it was written with.
+ */
+function collectTypeAliases(root: AstNode): ReadonlyMap<string, AstNode> {
+  const aliases = new Map<string, AstNode>();
+  walk(root, (node) => {
+    if (node.type !== "type_alias_declaration") return;
+    const name = node.childForFieldName("name")?.text;
+    const value = node.childForFieldName("value");
+    if (name && value) aliases.set(name, value);
+  });
+  return aliases;
+}
+
+/**
  * Extract the bare type name from a `type_annotation` node. Strips generics
  * (`Foo<T>` → `Foo`) and qualified names (`Namespace.Foo` → keeps `Namespace.Foo`).
  * Returns null for union types, function types, or anything we can't pin
  * to a single class name.
+ *
+ * A name the file declares as a `type` alias resolves ONE hop further, to the
+ * reduction of what it aliases (bd tea-rags-mcp-yjqi5). An alias name is never
+ * an answer on its own: nothing indexes type aliases as symbols, so recording
+ * `MethodEdges` for `type MethodEdges = GraphEdges["methodEdges"]` resolved
+ * nothing while still reading downstream as "type known, and not a builtin" —
+ * the one conclusion the evidence does not support. After the hop the same
+ * declaration answers honestly: `Array` for an aliased array, the wrapper name
+ * for an aliased `NonNullable<…>`, and nothing for an indexed-access or union
+ * type. Aliasing a class is the case that gains — `type Svc = Store` now binds
+ * `Store`, which the symbol table can actually resolve.
+ *
+ * One hop only: chasing `type A = B; type B = C` would need cycle detection,
+ * and no measured call site needs it.
  */
-function extractTypeNameFromAnnotation(annotation: AstNode | undefined): string | null {
+function extractTypeNameFromAnnotation(
+  annotation: AstNode | undefined,
+  typeAliases: ReadonlyMap<string, AstNode>,
+): string | null {
   if (!annotation) return null;
   // type_annotation has form `: <type>` — first non-`:` child is the type
-  const typeNode = annotation.children.find((c) => c.type !== ":");
+  const name = typeNodeName(annotation.children.find((c) => c.type !== ":"));
+  if (name === null) return null;
+  const aliased = typeAliases.get(name);
+  return aliased === undefined ? name : typeNodeName(aliased);
+}
+
+/**
+ * Reduce one TYPE node to the single type name it denotes, or null when it
+ * denotes none.
+ *
+ * Split out of {@link extractTypeNameFromAnnotation} for `readonly_type`, which
+ * is the one shape that wraps another type node and so needs the reduction
+ * applied twice.
+ *
+ * `array_type` answers `Array` (bd tea-rags-mcp-yjqi5). It used to fall through
+ * to null, which made `const rows: Row[] = []` an UNTYPED receiver everywhere
+ * downstream — while the identical `Array<Row>` annotation, a `generic_type`,
+ * resolved fine. Nothing about the declared type differs between those two; the
+ * gap was purely which syntax the author picked. `Array` is already in
+ * `ECMASCRIPT_BUILTIN_TYPES`, so recording it is all the resolver's
+ * builtin-receiver guard needed to decide the call by TYPE instead of falling
+ * back to guessing from the member name.
+ */
+function typeNodeName(typeNode: AstNode | undefined): string | null {
   if (!typeNode) return null;
   // type_identifier — simple `Foo`
   if (typeNode.type === "type_identifier") return typeNode.text;
@@ -1290,5 +1366,10 @@ function extractTypeNameFromAnnotation(annotation: AstNode | undefined): string 
   }
   // nested_type_identifier — `Namespace.Foo`
   if (typeNode.type === "nested_type_identifier") return typeNode.text;
+  // array_type — `Foo[]`, an Array instance whatever the element type is.
+  if (typeNode.type === "array_type") return "Array";
+  // readonly_type — `readonly Foo[]`: the modifier changes nothing about the
+  // runtime object, so reduce the type it wraps.
+  if (typeNode.type === "readonly_type") return typeNodeName(typeNode.children.find((c) => c.type !== "readonly"));
   return null;
 }

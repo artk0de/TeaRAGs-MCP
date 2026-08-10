@@ -1681,3 +1681,119 @@ describe("extractFromTypescriptFile — tree-sitter-only edge gaps (bd tea-rags-
     });
   });
 });
+
+// ─────────────────────────────────────────────────────────────────────
+// bd tea-rags-mcp-yjqi5 — an array-shaped annotation names a type the
+// walker can pin, and that type is `Array`.
+//
+// `extractTypeNameFromAnnotation` reduces an annotation to the one class
+// name it denotes, and returned null for `array_type` — so `const rows:
+// Row[] = []` recorded NOTHING and every call on `rows` reached the
+// resolver as an untyped receiver. `Array` is already in
+// `ECMASCRIPT_BUILTIN_TYPES`, so the only thing missing was the walker
+// saying so. `Array<T>` (a `generic_type`) already worked, which is what
+// made the gap invisible: the same declared type resolved or not purely
+// by which syntax the author picked.
+// ─────────────────────────────────────────────────────────────────────
+describe("extractFromTypescriptFile — array-shaped annotations bind as `Array` (bd tea-rags-mcp-yjqi5)", () => {
+  function extract(code: string, chunks: { symbolId: string; startLine: number; endLine: number; scope: string[] }[]) {
+    return extractFromTypescriptFile({ tree: parse(code), code, relPath: "src/f.ts", language: "typescript", chunks });
+  }
+
+  it("binds a `T[]`-annotated local to Array (const rows: Row[] = [])", () => {
+    const code = ["function run() {", "  const rows: Row[] = [];", "  rows.push(r);", "}", ""].join("\n");
+    const e = extract(code, [{ symbolId: "run", startLine: 1, endLine: 4, scope: [] }]);
+    expect(e.chunks[0].localBindings?.["rows"]).toEqual([{ line: 2, type: "Array" }]);
+  });
+
+  it("binds a `readonly T[]`-annotated local to Array (const rows: readonly Row[] = [])", () => {
+    const code = ["function run() {", "  const rows: readonly Row[] = [];", "  rows.map(f);", "}", ""].join("\n");
+    const e = extract(code, [{ symbolId: "run", startLine: 1, endLine: 4, scope: [] }]);
+    expect(e.chunks[0].localBindings?.["rows"]).toEqual([{ line: 2, type: "Array" }]);
+  });
+
+  it("binds a `T[]`-annotated typed parameter to Array (function run(rows: Row[]))", () => {
+    const code = ["function run(rows: Row[]) {", "  rows.push(r);", "}", ""].join("\n");
+    const e = extract(code, [{ symbolId: "run", startLine: 1, endLine: 3, scope: [] }]);
+    expect(e.chunks[0].localBindings?.["rows"]).toEqual([{ line: 1, type: "Array" }]);
+  });
+
+  it("binds a `T[]`-annotated class field to Array (private items: Item[])", () => {
+    const code = ["class Store {", "  private items: Item[] = [];", "  add(i) { this.items.push(i); }", "}", ""].join(
+      "\n",
+    );
+    const e = extract(code, [{ symbolId: "Store#add", startLine: 3, endLine: 3, scope: ["Store"] }]);
+    expect(e.classFieldTypes?.["Store"]?.["items"]).toBe("Array");
+  });
+
+  it("STILL binds an `Array<T>`-annotated local to Array (const rows: Array<Row> = [])", () => {
+    const code = ["function run() {", "  const rows: Array<Row> = [];", "  rows.push(r);", "}", ""].join("\n");
+    const e = extract(code, [{ symbolId: "run", startLine: 1, endLine: 4, scope: [] }]);
+    expect(e.chunks[0].localBindings?.["rows"]).toEqual([{ line: 2, type: "Array" }]);
+  });
+
+  it("STILL binds a project-class annotation to that class, not Array (const s: Stack = make())", () => {
+    const code = ["function run() {", "  const s: Stack = make();", "  s.push(x);", "}", ""].join("\n");
+    const e = extract(code, [{ symbolId: "run", startLine: 1, endLine: 4, scope: [] }]);
+    expect(e.chunks[0].localBindings?.["s"]).toEqual([{ line: 2, type: "Stack" }]);
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────
+// bd tea-rags-mcp-yjqi5 — a file-local `type X = …` alias is recorded as
+// what it ALIASES, not as its own name.
+//
+// `type MethodEdges = GraphEdges["methodEdges"]` names a type the walker
+// cannot pin, but it recorded the string `MethodEdges` anyway — and
+// downstream that reads as "type known, and not a builtin", which is the
+// one conclusion the evidence does not support. The alias name is never a
+// nominal answer by itself: no symbol table indexes type aliases, so it
+// resolved nothing while still suppressing every fallback. Reducing the
+// alias's right-hand side through the same reduction the annotation path
+// uses gives the honest answer in all three shapes — a name, `Array`, or
+// nothing at all.
+//
+// One hop only. Chasing `type A = B; type B = C` would need cycle
+// detection to be safe, and buys nothing measured.
+// ─────────────────────────────────────────────────────────────────────
+describe("extractFromTypescriptFile — file-local type aliases reduce to what they alias (bd tea-rags-mcp-yjqi5)", () => {
+  function extract(code: string, chunks: { symbolId: string; startLine: number; endLine: number; scope: string[] }[]) {
+    return extractFromTypescriptFile({ tree: parse(code), code, relPath: "src/f.ts", language: "typescript", chunks });
+  }
+
+  it("binds an alias of an array type to Array (type Rows = Row[]; const rows: Rows = [])", () => {
+    const code = ["type Rows = Row[];", "function run() {", "  const rows: Rows = [];", "}", ""].join("\n");
+    const e = extract(code, [{ symbolId: "run", startLine: 2, endLine: 4, scope: [] }]);
+    expect(e.chunks[0].localBindings?.["rows"]).toEqual([{ line: 3, type: "Array" }]);
+  });
+
+  it("records NOTHING for an alias of an indexed-access type (type Edges = G['edges']; const es: Edges = [])", () => {
+    const code = ['type Edges = G["edges"];', "function run() {", "  const es: Edges = [];", "}", ""].join("\n");
+    const e = extract(code, [{ symbolId: "run", startLine: 2, endLine: 4, scope: [] }]);
+    expect(e.chunks[0].localBindings?.["es"]).toBeUndefined();
+  });
+
+  it("reduces an alias of a wrapper type to the wrapper (type F = NonNullable<G['f']>; const f: F = [])", () => {
+    const code = ['type F = NonNullable<G["f"]>;', "function run() {", "  const f: F = [];", "}", ""].join("\n");
+    const e = extract(code, [{ symbolId: "run", startLine: 2, endLine: 4, scope: [] }]);
+    expect(e.chunks[0].localBindings?.["f"]).toEqual([{ line: 3, type: "NonNullable" }]);
+  });
+
+  it("records NOTHING for an alias of a union type (type Either = A | B; const v: Either = x)", () => {
+    const code = ["type Either = A | B;", "function run() {", "  const v: Either = x;", "}", ""].join("\n");
+    const e = extract(code, [{ symbolId: "run", startLine: 2, endLine: 4, scope: [] }]);
+    expect(e.chunks[0].localBindings?.["v"]).toBeUndefined();
+  });
+
+  it("binds an alias of a project class to that class (type Svc = SomeClass; const s: Svc = make())", () => {
+    const code = ["type Svc = SomeClass;", "function run() {", "  const s: Svc = make();", "}", ""].join("\n");
+    const e = extract(code, [{ symbolId: "run", startLine: 2, endLine: 4, scope: [] }]);
+    expect(e.chunks[0].localBindings?.["s"]).toEqual([{ line: 3, type: "SomeClass" }]);
+  });
+
+  it("STILL binds an annotation naming a class the file does NOT alias (const s: Stack = make())", () => {
+    const code = ["type Rows = Row[];", "function run() {", "  const s: Stack = make();", "}", ""].join("\n");
+    const e = extract(code, [{ symbolId: "run", startLine: 2, endLine: 4, scope: [] }]);
+    expect(e.chunks[0].localBindings?.["s"]).toEqual([{ line: 3, type: "Stack" }]);
+  });
+});
