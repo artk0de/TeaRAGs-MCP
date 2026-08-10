@@ -14,6 +14,17 @@ function writeSource(repoRoot: string, relPath: string, content: string): string
   return abs;
 }
 
+/**
+ * Install a declaration-only package under `repoRoot/node_modules`, the layout
+ * every real project has. Returns the absolute path of its `.d.ts` — the file
+ * the compiler parses through the cache's shared host when a project source
+ * imports `name`.
+ */
+function writeDependency(repoRoot: string, name: string): string {
+  writeSource(repoRoot, `node_modules/${name}/package.json`, `{ "name": "${name}", "types": "index.d.ts" }\n`);
+  return writeSource(repoRoot, `node_modules/${name}/index.d.ts`, `export declare const ${name}: number;\n`);
+}
+
 describe("TSProgramCache builds per-file Programs from a bounded import closure (bd tea-rags-mcp-uclbn)", () => {
   let repoRoot: string;
 
@@ -286,5 +297,73 @@ describe("TSProgramCache tells project sources from dependencies (bd tea-rags-mc
 
   it("yields null for a dependency, so no edge can point at a file the index lacks", () => {
     expect(cache().toProjectSourceRelPath(join(repoRoot, "node_modules", "express", "index.d.ts"))).toBeNull();
+  });
+});
+
+/**
+ * bd tea-rags-mcp-qb2s3 — the parse-cache bound counts PROJECT sources, and a
+ * dependency parse is never evicted.
+ *
+ * {@link TSProgramCacheOptions.maxParsedFiles} promises exactly that: a
+ * dependency's `.d.ts` and the default lib "do not count and are never evicted
+ * — re-parsing those is the cost the map exists to avoid, and their number is
+ * bounded by the dependency set rather than by how long the process has been
+ * alive."
+ *
+ * Bounding by {@link TSProgramCache.toRelPath} breaks that promise wherever
+ * `node_modules` sits under the indexed root, which is the normal layout. The
+ * boundary that check draws is the repo DIRECTORY, so every dependency parse
+ * counts against the cap and is eligible for eviction — and the eviction walks
+ * insertion order, so the expensive early parses go first. The default lib is
+ * the worst case: with the running compiler installed under the root,
+ * `lib.es2022.full.d.ts` is evicted and re-parsed for later Programs, which is
+ * the single cost this cache was built to avoid.
+ */
+describe("TSProgramCache bounds the parse cache by project sources, not by repo directory (bd tea-rags-mcp-qb2s3)", () => {
+  let repoRoot: string;
+  const tsOptions = { baseUrl: ".", paths: {} };
+
+  beforeEach(() => {
+    repoRoot = realpathSync(mkdtempSync(join(tmpdir(), "ts-parse-bound-")));
+  });
+
+  afterEach(() => {
+    rmSync(repoRoot, { recursive: true, force: true });
+  });
+
+  it("does not count a dependency parsed under the repo root toward the bound", () => {
+    const depAbs = writeDependency(repoRoot, "dep");
+    writeSource(repoRoot, "src/a.ts", `import { dep } from "dep";\nexport const a = dep;\n`);
+    const cache = new TSProgramCache({ repoRoot, tsOptions });
+
+    const handle = cache.acquire("src/a.ts");
+
+    // The dependency really did go through the shared host — without this the
+    // count below would be trivially right for the wrong reason.
+    expect(handle?.program.getSourceFile(depAbs)).toBeDefined();
+    // Only `src/a.ts` is a project source; the dependency is the cache's asset,
+    // not its debt.
+    expect(cache.parsedProjectFileCount).toBe(1);
+  });
+
+  it("never evicts a dependency parse, however far project sources overflow the bound", () => {
+    const depAbs = writeDependency(repoRoot, "dep");
+    for (let i = 0; i < 5; i++) {
+      writeSource(repoRoot, `src/f${i}.ts`, `import { dep } from "dep";\nexport const f${i} = dep;\n`);
+    }
+    const cache = new TSProgramCache({ repoRoot, tsOptions, maxEntries: 8, maxParsedFiles: 2 });
+
+    const first = cache.acquire("src/f0.ts");
+    const depSourceFile = first?.program.getSourceFile(depAbs);
+    // Overflow the bound several times over with project sources.
+    for (let i = 1; i <= 3; i++) cache.acquire(`src/f${i}.ts`);
+    const last = cache.acquire("src/f4.ts");
+
+    // Object identity: the last Program was handed the SAME parse the first one
+    // made. A re-parse would be a different object — the cost the map exists to
+    // avoid, paid because a project-source cap reached across into dependencies.
+    expect(last?.program.getSourceFile(depAbs)).toBe(depSourceFile);
+    // The bound still binds the thing it is meant to bind.
+    expect(cache.parsedProjectFileCount).toBeLessThanOrEqual(2);
   });
 });
