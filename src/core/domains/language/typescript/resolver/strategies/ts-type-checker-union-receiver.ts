@@ -43,7 +43,7 @@
  * it is only constructed when the shared {@link TSProgramCache} exists.
  */
 
-import ts from "typescript";
+import type ts from "typescript";
 
 import {
   pickSingleCandidate,
@@ -58,7 +58,7 @@ import {
 import type { DispatchResolverComponent } from "../../../../../contracts/types/language.js";
 import type { TSProgramCache } from "../ts-program-cache.js";
 import { CONE_MAX_DEFAULT, type ResolverConfig } from "./shared.js";
-import { declarationOwnerName } from "./ts-type-checker-shared.js";
+import { declarationOwnerName, findReceiverExpression } from "./ts-type-checker-shared.js";
 
 /**
  * A branch's member pinned to a concrete symbol. Narrower than
@@ -216,34 +216,4 @@ function declaredTypeIsUnion(receiver: ts.Expression, checker: ts.TypeChecker): 
   const declaration = symbol?.valueDeclaration ?? symbol?.declarations?.[0];
   if (!symbol || !declaration) return false;
   return checker.getTypeOfSymbolAtLocation(symbol, declaration).isUnion();
-}
-
-/**
- * The receiver expression of the call `member` on line `startLine` (1-based,
- * matching `CallRef.startLine`) — `x` in `x.process()`.
- *
- * Both coordinates are matched because one line routinely holds several calls,
- * and only a property access has a receiver at all: a bare `process()` yields
- * `null` rather than the enclosing expression.
- */
-function findReceiverExpression(sourceFile: ts.SourceFile, startLine: number, member: string): ts.Expression | null {
-  let found: ts.Expression | null = null;
-
-  const visit = (node: ts.Node): void => {
-    if (found !== null) return;
-    if (ts.isCallExpression(node) && ts.isPropertyAccessExpression(node.expression)) {
-      const callee = node.expression;
-      if (ts.isIdentifier(callee.name) && callee.name.text === member) {
-        const line = sourceFile.getLineAndCharacterOfPosition(node.getStart(sourceFile)).line + 1;
-        if (line === startLine) {
-          found = callee.expression;
-          return;
-        }
-      }
-    }
-    ts.forEachChild(node, visit);
-  };
-
-  ts.forEachChild(sourceFile, visit);
-  return found;
 }

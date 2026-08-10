@@ -36,6 +36,55 @@ import { INSTANCE_METHOD_SEPARATOR } from "../../../../../infra/symbolid/index.j
 /** TypeScript joins namespaces and static members with a dot. */
 export const TS_SCOPE_SEPARATOR = ".";
 
+/**
+ * The RECEIVER expression of the call to `member` on `startLine` (1-based, to
+ * match `CallRef.startLine`) — `x` in `x.process()`.
+ *
+ * Both coordinates are matched because one line routinely holds several calls,
+ * and only a property access has a receiver at all: a bare `process()` yields
+ * `null` rather than the enclosing expression.
+ *
+ * The two passes that need this are the two whose question is "what IS the
+ * receiver": {@link TSStructuralTypingSymbolResolutionStrategy} asks the checker
+ * for its apparent type and reads the member off that, and
+ * `TSTypeCheckerUnionReceiverDispatchResolver` asks whether that type is a
+ * union. They carried byte-identical copies through the epic's Wave 2 — one
+ * returning the `PropertyAccessExpression` and the other its `.expression` —
+ * which read like two helpers but was one, since neither ever used the access
+ * node for anything but reaching that child (bd tea-rags-mcp-un8mv). Handing
+ * back the receiver directly is what makes it honestly one function.
+ *
+ * Not merged with `findCallExpression` in `./ts-type-checker-fallback.ts`: that
+ * one matches BARE calls too and returns the `CallExpression`, because its pass
+ * asks the checker to select a signature rather than to type a receiver. Same
+ * traversal shape, different question, different answer type.
+ */
+export function findReceiverExpression(
+  sourceFile: ts.SourceFile,
+  startLine: number,
+  member: string,
+): ts.Expression | null {
+  let found: ts.Expression | null = null;
+
+  const visit = (node: ts.Node): void => {
+    if (found !== null) return;
+    if (ts.isCallExpression(node) && ts.isPropertyAccessExpression(node.expression)) {
+      const callee = node.expression;
+      if (ts.isIdentifier(callee.name) && callee.name.text === member) {
+        const line = sourceFile.getLineAndCharacterOfPosition(node.getStart(sourceFile)).line + 1;
+        if (line === startLine) {
+          found = callee.expression;
+          return;
+        }
+      }
+    }
+    ts.forEachChild(node, visit);
+  };
+
+  ts.forEachChild(sourceFile, visit);
+  return found;
+}
+
 /** `#` for instance members, `.` for `static` ones — the universal convention. */
 export function memberSeparator(declaration: ts.Declaration): string {
   const isStatic = ts.canHaveModifiers(declaration)
