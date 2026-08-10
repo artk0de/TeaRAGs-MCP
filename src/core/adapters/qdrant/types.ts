@@ -1,10 +1,21 @@
 /**
- * Qdrant filter primitives.
+ * Qdrant wire primitives.
  *
  * These are infrastructure-level types describing the shape of
- * Qdrant filter conditions. Domain code (trajectory, search, etc.)
+ * Qdrant filter conditions and vectors. Domain code (trajectory, search, etc.)
  * imports from here rather than defining its own duplicates.
  */
+
+/**
+ * A Qdrant sparse vector: parallel index/value arrays. Produced by the BM25
+ * generator in `sparse.ts`, written by `QdrantPointStore`, queried by
+ * `QdrantSearchExecutor` — declared here because it is shared by all three and
+ * owned by none of them.
+ */
+export interface SparseVector {
+  indices: number[];
+  values: number[];
+}
 
 export interface QdrantMatchCondition {
   key: string;
