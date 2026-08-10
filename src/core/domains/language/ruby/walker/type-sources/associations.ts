@@ -130,15 +130,33 @@ function emitMacroReturnFact(node: AstNode, scope: readonly string[], out: RubyT
 }
 
 /**
+ * Where class-body scope ends: the `def` forms, past which `self` is no longer
+ * the class that would be declaring the accessor.
+ *
+ * Deliberately NARROWER than `ASSOCIATION_SCOPE_STOPS` in
+ * `walker/association-types.ts`, which carries the same two plus `class` and
+ * `module`. That set feeds a collector that must not leak into a nested class;
+ * this walk RE-SCOPES into one instead, attributing its macros to the nested
+ * name, so stopping there would drop facts the sibling never had to emit.
+ *
+ * Everything else keeps collecting, blocks included — a Ruby block keeps the
+ * `self` of the code that wrote it, so `included do … end`, `concerning :X do …
+ * end` and a plain class-body `if` are all still declaring scope.
+ */
+const DEF_SCOPE_STOPS: ReadonlySet<string> = new Set(["method", "singleton_method"]);
+
+/**
  * Walk the tree tracking the enclosing class/module scope (mirroring
  * `collectRubyAssociationTypes` / `buildDefScopeMap`), attributing each macro's
  * return fact to that scope. A macro inside a Concern's `included do` block is
  * NOT a class/module node, so it keeps the module scope — attributing the fact to
- * the CONCERN, which the includer reaches via its ancestor MRO.
+ * the CONCERN, which the includer reaches via its ancestor MRO. Descent ends at a
+ * `def` — see {@link DEF_SCOPE_STOPS} for where the scope stops and why.
  */
 function collectAssociationReturnFacts(root: AstNode): RubyTypeFact[] {
   const facts: RubyTypeFact[] = [];
   const walkScope = (node: AstNode, scope: readonly string[]): void => {
+    if (DEF_SCOPE_STOPS.has(node.type)) return;
     if (node.type === "class" || node.type === "module") {
       const nameNode = node.childForFieldName("name");
       if (nameNode) {

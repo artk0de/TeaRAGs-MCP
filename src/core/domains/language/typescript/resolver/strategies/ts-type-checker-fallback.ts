@@ -117,7 +117,7 @@ export class TSTypeCheckerFallbackSymbolResolutionStrategy implements SymbolReso
 }
 
 /** Composed project symbolId for a declaration, plus its bare short name. */
-interface ComposedDeclarationSymbol {
+export interface ComposedDeclarationSymbol {
   symbolId: string;
   shortName: string;
 }
@@ -138,8 +138,13 @@ type ResolvedSignatureDeclaration = ts.SignatureDeclaration | ts.JSDocSignature;
  * Returns `null` for declaration shapes with no stable name (an inline callback,
  * a call signature) — the caller then degrades to a file-only edge instead of
  * inventing an id.
+ *
+ * Exported for `scripts/ts-codegraph-typechecker-oracle.ts`, which pins the
+ * checker's declarations the same way this strategy does. A hand-copied second
+ * implementation would drift, and a symbol-level disagreement caused by drift
+ * is indistinguishable in the report from a real one.
  */
-function composeSymbolId(declaration: ResolvedSignatureDeclaration): ComposedDeclarationSymbol | null {
+export function composeSymbolId(declaration: ResolvedSignatureDeclaration): ComposedDeclarationSymbol | null {
   if (ts.isJSDocSignature(declaration)) return null;
   const shortName = declarationShortName(declaration);
   if (shortName === null) return null;
@@ -193,8 +198,12 @@ function prefixWithNamespaces(node: ts.Node, name: string): string {
  * `CallRef.startLine`) whose callee's own name is `member`. Both coordinates
  * are checked because one line routinely holds several calls — matching on the
  * line alone would type-check a neighbour and emit its target.
+ *
+ * Exported for `scripts/ts-codegraph-typechecker-oracle.ts` so both sides of
+ * that harness's diff type-check the SAME node — a differently-written finder
+ * would score the two answers against different call expressions.
  */
-function findCallExpression(sourceFile: ts.SourceFile, startLine: number, member: string): ts.CallExpression | null {
+export function findCallExpression(sourceFile: ts.SourceFile, startLine: number, member: string): ts.CallExpression | null {
   let found: ts.CallExpression | null = null;
 
   const visit = (node: ts.Node): void => {

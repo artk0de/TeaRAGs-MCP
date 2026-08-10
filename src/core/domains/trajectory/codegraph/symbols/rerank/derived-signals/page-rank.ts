@@ -21,7 +21,7 @@ export class PageRankSignal implements DerivedSignalDescriptor {
   readonly sources = ["chunk.pageRank"];
   readonly defaultBound = 0.01;
   extract(raw: Record<string, unknown>, ctx?: ExtractContext): number {
-    const v = codegraphChunkNum(raw, "pageRank");
+    const v = codegraphChunkNum(raw, "pageRank", ctx?.signalLevel);
     const bound = ctx?.bounds?.["chunk.pageRank"] ?? this.defaultBound;
     return normalize(v, bound);
   }
