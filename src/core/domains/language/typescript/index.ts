@@ -94,7 +94,12 @@ export class TypeScriptLanguage implements LanguageProvider {
   readonly resolver: LanguageSymbolResolver;
 
   constructor(mode: AmbiguousResolveMode = DEFAULT_AMBIGUOUS_RESOLVE_MODE) {
-    const callResolver: CallResolver = new TSCallResolver(loadTsConfig(process.cwd()), mode);
+    // One root for both concerns: the tsconfig the path mapper reads and the
+    // project the typeChecker fallback resolves files against must be the same
+    // directory, or a Program would be built from paths the mapper never
+    // produces (bd tea-rags-mcp-uclbn).
+    const repoRoot = process.cwd();
+    const callResolver: CallResolver = new TSCallResolver(loadTsConfig(repoRoot), mode, repoRoot);
     this.resolver = {
       resolve: (call: CallRef, ctx: CallContext): SymbolResolutionTarget | null => callResolver.resolve(call, ctx),
       resolveDispatch: (call: CallRef, ctx: CallContext): DispatchFanoutOutcome =>
