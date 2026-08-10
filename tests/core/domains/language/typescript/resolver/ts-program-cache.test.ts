@@ -301,6 +301,125 @@ describe("TSProgramCache tells project sources from dependencies (bd tea-rags-mc
 });
 
 /**
+ * The count `parsedProjectFileCount` reports, recomputed the expensive way:
+ * every key of the shared parse map that names a project source.
+ *
+ * This is exactly what the getter USED to do on every read, and it is the
+ * definition the maintained index has to keep agreeing with. Deriving it here
+ * is what gives these tests teeth — an assertion comparing the getter to
+ * itself would pass no matter how far the index had drifted.
+ */
+function deriveProjectFileCount(cache: TSProgramCache): number {
+  const parsed = (cache as unknown as { sourceFiles: Map<string, unknown> }).sourceFiles;
+  return [...parsed.keys()].filter((fileName) => cache.isProjectSourceFile(fileName)).length;
+}
+
+/**
+ * bd tea-rags-mcp-ajvnq — the project-source count is MAINTAINED, not derived,
+ * so it must stay in lockstep with the map it summarizes.
+ *
+ * Deriving it was O(map size) — a `node:path.relative` per entry — and
+ * `evictParsedOverflow` read it on EVERY parse, so the cost was quadratic over
+ * a run and grew with the dependency set after bd tea-rags-mcp-qb2s3 stopped
+ * evicting dependency parses. Measured on this repo's own `src` (899 files,
+ * 2444 parses): 6.1s of a 24.5s program-construction wall, and 30.97% of a full
+ * resolver run under `--cpu-prof`, with `path.relative` the hottest self-time
+ * frame in the profile. None of it bought an eviction — 899 project sources
+ * never reached the 2000 default bound.
+ *
+ * The trade the fix makes is drift risk: a maintained index can disagree with
+ * the map, where a derived count structurally cannot. That is what these tests
+ * exist to pin. They assert the maintained count against the derived one after
+ * every kind of mutation the map undergoes — insert, evict, invalidate, reset —
+ * rather than spot-checking a single path, because drift shows up at whichever
+ * site was forgotten.
+ */
+describe("TSProgramCache keeps its project-source count in lockstep with the parse map (bd tea-rags-mcp-ajvnq)", () => {
+  let repoRoot: string;
+  const tsOptions = { baseUrl: ".", paths: {} };
+
+  beforeEach(() => {
+    repoRoot = realpathSync(mkdtempSync(join(tmpdir(), "ts-parse-lockstep-")));
+  });
+
+  afterEach(() => {
+    rmSync(repoRoot, { recursive: true, force: true });
+  });
+
+  it("tracks inserts, counting project sources while the dependency parses beside them stay out", () => {
+    writeDependency(repoRoot, "dep");
+    writeSource(repoRoot, "src/a.ts", `import { dep } from "dep";\nexport const a = dep;\n`);
+    writeSource(repoRoot, "src/b.ts", `import { a } from "./a.js";\nexport const b = a;\n`);
+    const cache = new TSProgramCache({ repoRoot, tsOptions });
+
+    expect(cache.parsedProjectFileCount).toBe(deriveProjectFileCount(cache));
+
+    cache.acquire("src/a.ts");
+    expect(cache.parsedProjectFileCount).toBe(deriveProjectFileCount(cache));
+    expect(cache.parsedProjectFileCount).toBe(1);
+
+    cache.acquire("src/b.ts");
+    expect(cache.parsedProjectFileCount).toBe(deriveProjectFileCount(cache));
+    // Both project sources counted; the dependency and the default lib parsed
+    // through the same map and counted for neither.
+    expect(cache.parsedProjectFileCount).toBe(2);
+  });
+
+  it("tracks the evictions it performs when project sources overflow the bound", () => {
+    writeDependency(repoRoot, "dep");
+    for (let i = 0; i < 6; i++) {
+      writeSource(repoRoot, `src/f${i}.ts`, `import { dep } from "dep";\nexport const f${i} = dep;\n`);
+    }
+    const cache = new TSProgramCache({ repoRoot, tsOptions, maxEntries: 8, maxParsedFiles: 2 });
+
+    // Assert after EVERY acquire: eviction fires mid-run, and a count that
+    // forgot to follow a delete would still look right on the acquire before it.
+    for (let i = 0; i < 6; i++) {
+      cache.acquire(`src/f${i}.ts`);
+      expect(cache.parsedProjectFileCount).toBe(deriveProjectFileCount(cache));
+      expect(cache.parsedProjectFileCount).toBeLessThanOrEqual(2);
+    }
+  });
+
+  it("tracks the re-parse an mtime change forces, where the entry is dropped and inserted again", () => {
+    const abs = writeSource(repoRoot, "src/a.ts", `export const a = 1;\n`);
+    const cache = new TSProgramCache({ repoRoot, tsOptions });
+    cache.acquire("src/a.ts");
+    expect(cache.parsedProjectFileCount).toBe(deriveProjectFileCount(cache));
+
+    // Move the mtime forward so the next acquire invalidates and rebuilds —
+    // the incremental-reindex path, and the only one that deletes a single
+    // parse rather than a batch.
+    const future = new Date(Date.now() + 10_000);
+    utimesSync(abs, future, future);
+    cache.acquire("src/a.ts");
+
+    expect(cache.parsedProjectFileCount).toBe(deriveProjectFileCount(cache));
+    expect(cache.parsedProjectFileCount).toBe(1);
+  });
+
+  it("tracks a reset back to empty rather than leaving a stale count behind", () => {
+    writeSource(repoRoot, "src/a.ts", `export const a = 1;\n`);
+    writeSource(repoRoot, "src/b.ts", `export const b = 2;\n`);
+    const cache = new TSProgramCache({ repoRoot, tsOptions });
+    cache.acquire("src/a.ts");
+    cache.acquire("src/b.ts");
+    expect(cache.parsedProjectFileCount).toBeGreaterThan(0);
+
+    cache.reset();
+
+    expect(cache.parsedProjectFileCount).toBe(deriveProjectFileCount(cache));
+    expect(cache.parsedProjectFileCount).toBe(0);
+
+    // And it counts up again from the cleared state, rather than resuming from
+    // a number the clear failed to zero.
+    cache.acquire("src/a.ts");
+    expect(cache.parsedProjectFileCount).toBe(deriveProjectFileCount(cache));
+    expect(cache.parsedProjectFileCount).toBe(1);
+  });
+});
+
+/**
  * bd tea-rags-mcp-qb2s3 — the parse-cache bound counts PROJECT sources, and a
  * dependency parse is never evicted.
  *
