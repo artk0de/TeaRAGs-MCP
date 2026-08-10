@@ -67,6 +67,21 @@ const JAVA_LANG_AUTO_IMPORTED_TYPES: ReadonlySet<string> = new Set([
  *      owning class name equals the receiver).
  *   3. java.lang whitelist → EXTERNAL type-qualified static target.
  *   4. otherwise DROP (receiver present, unresolvable — no fall-through).
+ *
+ * **Step 1's file-only edge stays a `resolved` commit, NOT a `deferred` park**
+ * (bd tea-rags-mcp-86qfb, measured; contract in `contracts/resolution.ts`). The
+ * only pass that could ever beat a park here is 6, `globalShortName` — pass 5
+ * declines every receiver-present call — and that is precisely the fall-through
+ * the guard above exists to forbid. `mapJavaImportToFile` synthesises a path for
+ * EVERY import without probing disk, so for a JDK import the file-only edge is
+ * this resolver's "the call leaves the project" marker; replacing it with an
+ * in-project symbol of the same short name does not sharpen an edge, it invents
+ * one. Measured with `scripts/codegraph-chain-tally.ts --lang java --defer
+ * importReceiver` over commons-lang: 599 fabricated in-project edges (6.1% of
+ * all its Java edges), zero same-file upgrades — 494 of them
+ * `Objects.requireNonNull(...)` reattributed to a project helper, 56 of them
+ * self-loops such as `Array.newInstance` landing on `ArrayUtils.newInstance` in
+ * the calling file.
  */
 export class JavaImportReceiverSymbolResolutionStrategy implements SymbolResolutionStrategy {
   readonly name = "importReceiver";

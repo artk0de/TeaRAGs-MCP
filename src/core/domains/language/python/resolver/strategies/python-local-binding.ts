@@ -25,6 +25,19 @@ import { lastSegment, walkClassExtendsForMethod, type ResolverConfig } from "./s
  * or file-only). The DROP prevents attributing the call to an unrelated class
  * that happens to define `<member>` (the `serializer.is_valid()` false
  * positive).
+ *
+ * **The file-only target is NOT a `deferred` park** (bd tea-rags-mcp-86qfb,
+ * measured). It looks like the shape the deferral contract was built for, but it
+ * is not: `resolveByLocalType` returns it INSTEAD OF `null`, and `null` becomes
+ * `DROP` one line below — so within this pass the choice is a file-only edge
+ * versus NO edge, never "commit now vs let a later pass answer". The pass is
+ * terminal either way, exactly like `ts-super`'s intra-strategy fallback.
+ * Parking it would newly expose locally-bound receivers to passes 5 and 6, which
+ * is the fall-through this guard exists to prevent — and does: measured with
+ * `scripts/codegraph-chain-tally.ts --lang python --defer localBinding` against
+ * the very project that produced the guard, a park reproduces the documented
+ * false positive 68 times (`serializer.is_valid()` → `ConfirmationCode#is_valid`
+ * in an unrelated domain), with zero same-file upgrades.
  */
 export class PythonLocalBindingSymbolResolutionStrategy implements SymbolResolutionStrategy {
   readonly name = "localBinding";

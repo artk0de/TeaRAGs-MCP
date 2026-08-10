@@ -191,6 +191,9 @@ resolution is definitive for `super` calls, and no later pass knows better.
 Out of scope, filed separately: Python (`python-import-match.ts:32`,
 `python-local-binding.ts:90`) and Java (`java-import-receiver.ts:88`) carry the
 same shape and want the same treatment, each with its own corpus measurement.
+(Measured under bd `86qfb` and REJECTED for all three — see "Measured outcome
+(Python and Java)" below. `python-local-binding.ts:90` turned out not to be the
+preempting shape at all.)
 
 JavaScript carries the defect too, at `javascript-resolver.ts:78`, but cannot be
 fixed the same way: that resolver is still a monolithic if-ladder with no
@@ -418,6 +421,104 @@ One trap for whoever reads the raw harness output: its
 core-homonym carve-out, printed identically in both runs. It has nothing to do
 with this change.
 
+### Measured outcome (Python and Java) — deferral REJECTED for both
+
+bd `86qfb`. The three call sites this design listed as "same shape, wants the
+same treatment" were measured, and the measurement says do not convert any of
+them. All three stay terminal.
+
+The instrument is `scripts/codegraph-chain-tally.ts`: it walks a corpus, runs
+the production chain, and — with `--defer <passName>` — runs a second chain that
+differs only in that pass's file-only branch being converted to a park, then
+diffs the two per call site. Both sides run in one process over one symbol
+table, so there is no baseline to drift; the rebuilt chain is cross-checked
+against the real `LanguageProvider.resolver` on every call site (`chain drift 0`
+in every run below).
+
+| Pass                  | Corpus       | Call sites | file-only | changed | upgraded-same-file | relocated | of which fabricated | lost |
+| --------------------- | ------------ | ---------- | --------- | ------- | ------------------ | --------- | ------------------- | ---- |
+| py `importMatch`      | flask        | 2172       | 148       | 2       | **0**              | 2         | 0                   | 0    |
+| py `importMatch`      | ugnest       | 7331       | 315       | 2       | **0**              | 2         | **2**               | 0    |
+| py `localBinding`     | ugnest       | 7331       | 315       | 68      | **0**              | 68        | 0                   | 0    |
+| java `importReceiver` | commons-lang | 17641      | 1586      | 599     | **0**              | 599       | **599**             | 0    |
+
+"Fabricated" = the parked edge named a file that does not exist in the corpus —
+a phantom path both import mappers synthesise for an EXTERNAL import
+(`mapPythonImportToFile("re")` → `re.py`,
+`mapJavaImportToFile("java.util.Objects")` → `java/util/Objects.java`; neither
+probes disk). A file-only edge on such a path is the resolver's de-facto "this
+call leaves the project" marker, so replacing it with an in-project symbol does
+not sharpen an edge — it invents one.
+
+#### Why the zero column decides it
+
+`upgraded-same-file` is **0 in every run**, and that is structural rather than
+corpus luck. Each of these passes already searched its own target file for the
+member and found nothing (or found it ambiguous, in which case a wider search is
+more ambiguous still). So the parked file is the one place a later pass provably
+cannot pin. A park here can only ever be RELOCATED, never sharpened in place.
+
+That is the difference from TypeScript, and it is what does not transfer. TS's
+tail is four `typeChecker` passes holding evidence the syntactic chain lacks, so
+they can pin a symbol inside the parked file that the symbol table never
+indexed. Python's and Java's tails are `globalShortName` — an unrestricted
+`lookupByShortName(member)` with no receiver evidence at all. Deferring hands
+precedence from the strongest surviving evidence to the weakest pass in the
+chain.
+
+**Deferral pays only where a later pass holds evidence the parking pass lacks.**
+Where the tail is a global short-name guess, it cannot.
+
+#### Per call site
+
+**`java/resolver/strategies/java-import-receiver.ts:88` — REJECTED.** The chain
+order does not pay off: pass 5 (`enclosingBareCall`) returns `continue` for
+every receiver-present call, so the only pass that can ever beat the park is
+pass 6, `globalShortName`. Its docblock already says why that must not happen —
+the terminal guard is what keeps `random().nextBytes()` / `cs.charAt()` /
+`Helper.compute()` from misrouting to a same-short-name project symbol. Deferral
+reopens exactly that hole for the external population: 599 fabricated in-project
+edges, 6.1% of commons-lang's 9821 Java edges, zero upgrades. 494 of them are
+`Objects.requireNonNull(...)` reattributed to a project helper of the same name;
+56 become self-loops in the calling file (`Array.newInstance` →
+`ArrayUtils.newInstance`, a private static in the file making the call).
+
+**`python/resolver/strategies/python-local-binding.ts:90` — REJECTED, and it was
+never the preempting shape.** The file-only value is returned by the private
+`resolveByLocalType`, whose `null` maps to `DROP` in `attempt`. So within its
+own answer the choice is file-only edge versus NO edge, exactly the case this
+design excluded for `ts-super` and `ruby/shared.ts`. It is terminal either way;
+making it park would newly expose locally-bound receivers to passes 5 and 6,
+which is the fall-through the bd `yrs0` guard exists to prevent. Measured on
+ugnest — the project that produced that guard — deferral reproduces the
+documented false positive verbatim, 68 times: `serializer.is_valid()` moving off
+the bound serializer's file onto `ConfirmationCode#is_valid` in an unrelated
+domain.
+
+**`python/resolver/strategies/python-import-match.ts:32` — genuinely the
+preempting shape, but not worth landing.** This pass is not a guard (its miss
+path already returns `continue`), so it does preempt `globalShortName`.
+Measured, it is a wash: flask moves 2 edges and both are right —
+`app.update_template_context` comes off `sansio/app.py`, matched only because a
+`TYPE_CHECKING` import's trailing segment collides with the receiver VARIABLE
+name, and lands on the sole real definition in `app.py`. ugnest moves 2 and both
+are wrong — `re.match(...)` comes off the phantom `re.py` and lands on an
+unrelated `DistrictMatcher#match`. Four call sites out of 463 file-only edges,
+net zero, with a new false-positive channel opened for stdlib receivers. No
+measured gain is not a reason to ship added risk.
+
+The Python case is the one that could be revisited, because the two outcomes
+separate cleanly on a property the harness already reports: park when the mapped
+file is IN-PROJECT, keep committing when it is a phantom external path. That
+needs a "does this file exist in the corpus" query the `GlobalSymbolTable`
+contract does not expose today, so it is a contract change with its own design,
+not a one-line flip. Filed as its own bead rather than smuggled in here.
+
+JavaScript (`javascript-resolver.ts:78`) remains out of scope for the reason
+recorded above, and now for a second one: its chain tail is also a global
+short-name fallback, so migrating it to `resolveViaChain` would buy the same
+negative result unless the in-project gate lands first.
+
 ## Beads
 
 | Bead               | Scope                                                    |
@@ -425,3 +526,6 @@ with this change.
 | tea-rags-mcp-5onmn | contract, engine, TypeScript passes 5/6/7, harness tally |
 | tea-rags-mcp-xipzw | Ruby passes 8/9 + terminal-guard audit (same session)    |
 | tea-rags-mcp-86qfb | Python and Java file-only fallbacks; JavaScript noted    |
+
+Note that `86qfb` closed as REJECTED-with-evidence: the chain-tally harness
+landed, no strategy changed.
