@@ -55,6 +55,7 @@ import { ECMASCRIPT_BUILTIN_TYPES, ECMASCRIPT_GLOBALS } from "../../../shared/ec
 import { mapImportToFile, type TsCompilerOptions } from "../ts-path-mapper.js";
 import type { TSProgramCache } from "../ts-program-cache.js";
 import type { ResolverConfig } from "./shared.js";
+import { declarationOwnerName, TS_SCOPE_SEPARATOR } from "./ts-type-checker-shared.js";
 
 /**
  * Why a receiver is worth asking the checker about.
@@ -68,9 +69,6 @@ import type { ResolverConfig } from "./shared.js";
  *     composed id.
  */
 export type TSStructuralTypingCase = "structural" | "merged";
-
-/** TypeScript joins namespaces and static members with a dot. */
-const TS_SCOPE_SEPARATOR = ".";
 
 /** `this.<field>` receivers are one level deep by convention across the TS passes. */
 const THIS_PREFIX = "this.";
@@ -238,25 +236,12 @@ interface DeclarationSite {
  * carries no such symbol in that file.
  */
 function ownerExactSymbolId(site: DeclarationSite, member: string, ctx: CallContext): string | null {
-  const owner = nominalOwnerName(site.declaration);
+  const owner = declarationOwnerName(site.declaration);
   if (owner === null) return null;
   for (const separator of [INSTANCE_METHOD_SEPARATOR, TS_SCOPE_SEPARATOR]) {
     const hits = ctx.symbolTable.lookup(`${owner}${separator}${member}`).filter((def) => def.relPath === site.relPath);
     if (hits.length > 0) return hits[0].symbolId;
   }
-  return null;
-}
-
-/**
- * The name of the interface or class the declaration hangs off, or `null` for
- * the structural containers — an object literal, a type literal, a mapped type
- * — which is precisely the case that has no name to look up.
- */
-function nominalOwnerName(declaration: ts.Declaration): string | null {
-  const owner = declaration.parent;
-  if (owner === undefined) return null;
-  if (ts.isInterfaceDeclaration(owner)) return owner.name.text;
-  if (ts.isClassLike(owner)) return owner.name?.text ?? null;
   return null;
 }
 

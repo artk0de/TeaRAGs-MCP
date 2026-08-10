@@ -51,11 +51,14 @@
  * not". The cost is one Program per caller file that reaches this pass, which
  * the shared cache already amortizes across both checker passes.
  *
- * NOTE — symbolId composition (`composeMemberSymbolId`, `memberSeparator`,
- * `prefixWithNamespaces`) is deliberately duplicated from
- * `./ts-type-checker-fallback.ts` rather than shared: three checker passes were
- * authored in parallel branches and a shared edit collides on every merge. Lift
- * the trio into one module once the tier has settled (bd tea-rags-mcp-un8mv).
+ * NOTE — the symbolId MECHANICS (`memberSeparator`, `prefixWithNamespaces`) now
+ * come from `./ts-type-checker-shared.js`; they were duplicated across the
+ * checker passes only while those passes were being authored on parallel
+ * branches (bd tea-rags-mcp-un8mv). `composeMemberSymbolId` stays local because
+ * it is not the same function as the fallback's `composeSymbolId`: it takes the
+ * member name from the CALL rather than deriving it from the declaration, and it
+ * declines an owner it cannot name where the fallback degrades to a bare short
+ * name. Same mechanics, different contract.
  */
 
 import ts from "typescript";
@@ -68,13 +71,10 @@ import {
   type CallRef,
 } from "../../../../../contracts/types/codegraph.js";
 import type { SymbolResolutionOutcome, SymbolResolutionStrategy } from "../../../../../contracts/types/language.js";
-import { INSTANCE_METHOD_SEPARATOR } from "../../../../../infra/symbolid/index.js";
 import { ECMASCRIPT_GLOBALS } from "../../../shared/ecmascript-globals.js";
 import type { TSProgramCache } from "../ts-program-cache.js";
 import type { ResolverConfig } from "./shared.js";
-
-/** TypeScript joins namespaces and static members with a dot. */
-const TS_SCOPE_SEPARATOR = ".";
+import { memberSeparator, prefixWithNamespaces } from "./ts-type-checker-shared.js";
 
 export class TSTypeCheckerReturnTypeInferenceSymbolResolutionStrategy implements SymbolResolutionStrategy {
   readonly name = "typeCheckerReturnType";
@@ -254,23 +254,4 @@ function composeMemberSymbolId(declaration: ts.Declaration, member: string): str
   const ownerName = owner.name?.text;
   if (ownerName === undefined) return null;
   return `${prefixWithNamespaces(owner, ownerName)}${memberSeparator(declaration)}${member}`;
-}
-
-/** `#` for instance members, `.` for `static` ones — the universal convention. */
-function memberSeparator(declaration: ts.Declaration): string {
-  const isStatic = ts.canHaveModifiers(declaration)
-    ? (ts.getModifiers(declaration)?.some((m) => m.kind === ts.SyntaxKind.StaticKeyword) ?? false)
-    : false;
-  return isStatic ? TS_SCOPE_SEPARATOR : INSTANCE_METHOD_SEPARATOR;
-}
-
-/** Prepend the enclosing `namespace` / `module` names, outermost first. */
-function prefixWithNamespaces(node: ts.Node, name: string): string {
-  const scopes: string[] = [];
-  let cursor: ts.Node | undefined = node.parent;
-  while (cursor !== undefined) {
-    if (ts.isModuleDeclaration(cursor) && ts.isIdentifier(cursor.name)) scopes.unshift(cursor.name.text);
-    cursor = cursor.parent;
-  }
-  return scopes.length === 0 ? name : `${scopes.join(TS_SCOPE_SEPARATOR)}${TS_SCOPE_SEPARATOR}${name}`;
 }

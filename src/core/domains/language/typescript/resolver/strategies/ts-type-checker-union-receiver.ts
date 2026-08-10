@@ -58,6 +58,7 @@ import {
 import type { DispatchResolverComponent } from "../../../../../contracts/types/language.js";
 import type { TSProgramCache } from "../ts-program-cache.js";
 import { CONE_MAX_DEFAULT, type ResolverConfig } from "./shared.js";
+import { declarationOwnerName } from "./ts-type-checker-shared.js";
 
 /**
  * A branch's member pinned to a concrete symbol. Narrower than
@@ -215,14 +216,6 @@ function declaredTypeIsUnion(receiver: ts.Expression, checker: ts.TypeChecker): 
   const declaration = symbol?.valueDeclaration ?? symbol?.declarations?.[0];
   if (!symbol || !declaration) return false;
   return checker.getTypeOfSymbolAtLocation(symbol, declaration).isUnion();
-}
-
-/** The class / interface a declaration is a member of, when it is one. */
-function declarationOwnerName(declaration: ts.Declaration): string | null {
-  const owner = declaration.parent as ts.Node | undefined;
-  if (owner === undefined) return null;
-  if (!ts.isClassLike(owner) && !ts.isInterfaceDeclaration(owner)) return null;
-  return owner.name?.text ?? null;
 }
 
 /**
