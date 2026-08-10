@@ -23,6 +23,7 @@ import { jsAssignmentFilterHook } from "./assignment-filter.js";
 export const javascriptHooks: ChunkingHook[] = [jsAssignmentFilterHook];
 
 export { jsAssignmentFilterHook } from "./assignment-filter.js";
+export { jsExportNameExtractor } from "./name-extractor.js";
 export { jsChunkSymbols } from "./chunk-symbols.js";
 export { JsChunkClassifier } from "./classifier.js";
 export {
