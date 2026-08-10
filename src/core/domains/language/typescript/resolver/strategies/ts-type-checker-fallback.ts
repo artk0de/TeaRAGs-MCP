@@ -32,9 +32,9 @@ import ts from "typescript";
 import { CONTINUE, resolved } from "../../../../../contracts/resolution.js";
 import { pickSingleCandidate, type CallContext, type CallRef } from "../../../../../contracts/types/codegraph.js";
 import type { SymbolResolutionOutcome, SymbolResolutionStrategy } from "../../../../../contracts/types/language.js";
-import { INSTANCE_METHOD_SEPARATOR } from "../../../../../infra/symbolid/index.js";
 import type { TSProgramCache } from "../ts-program-cache.js";
 import type { ResolverConfig } from "./shared.js";
+import { memberSeparator, prefixWithNamespaces } from "./ts-type-checker-shared.js";
 
 /**
  * Why a call site is worth a type check.
@@ -47,9 +47,6 @@ import type { ResolverConfig } from "./shared.js";
  *     receiver actually is.
  */
 export type TSTypeCheckerFallbackCase = "generic" | "overload";
-
-/** TypeScript joins namespaces and static members with a dot. */
-const TS_SCOPE_SEPARATOR = ".";
 
 /**
  * Decide whether a call the tree-sitter chain declined is worth a type check,
@@ -159,14 +156,6 @@ export function composeSymbolId(declaration: ResolvedSignatureDeclaration): Comp
   return { symbolId: prefixWithNamespaces(declaration, shortName), shortName };
 }
 
-/** `#` for instance members, `.` for `static` ones — the universal convention. */
-function memberSeparator(declaration: ts.SignatureDeclaration): string {
-  const isStatic = ts.canHaveModifiers(declaration)
-    ? (ts.getModifiers(declaration)?.some((m) => m.kind === ts.SyntaxKind.StaticKeyword) ?? false)
-    : false;
-  return isStatic ? TS_SCOPE_SEPARATOR : INSTANCE_METHOD_SEPARATOR;
-}
-
 /**
  * The declaration's own name. A constructor is named `constructor` (matching
  * the synthetic the walker emits for classes without an explicit one); a
@@ -180,17 +169,6 @@ function declarationShortName(declaration: ts.SignatureDeclaration): string | nu
   const { parent } = declaration;
   if (ts.isVariableDeclaration(parent) && ts.isIdentifier(parent.name)) return parent.name.text;
   return null;
-}
-
-/** Prepend the enclosing `namespace` / `module` names, outermost first. */
-function prefixWithNamespaces(node: ts.Node, name: string): string {
-  const scopes: string[] = [];
-  let cursor: ts.Node | undefined = node.parent;
-  while (cursor !== undefined) {
-    if (ts.isModuleDeclaration(cursor) && ts.isIdentifier(cursor.name)) scopes.unshift(cursor.name.text);
-    cursor = cursor.parent;
-  }
-  return scopes.length === 0 ? name : `${scopes.join(TS_SCOPE_SEPARATOR)}${TS_SCOPE_SEPARATOR}${name}`;
 }
 
 /**
