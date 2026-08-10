@@ -202,18 +202,22 @@ describe("symbolId lockstep — chunker payload vs cg_symbols (bd tea-rags-mcp-6
       }
     });
 
-    // KNOWN GAP — bd tea-rags-mcp-cv4k1, the residual pdv8m did NOT fix. pdv8m
-    // widened `buildSymbolId` so the LEAF separator is right (`.handle` on both
-    // sides), but the PARENT CHAIN still collapses the same tri-state:
-    // `composeParentSymbol` joins intermediate scope names with the language's
-    // scopeSeparator unconditionally, so the enclosing instance method composes
-    // as `Registry.register` while the codegraph walker composes
-    // `Registry#register`. Chunker emits `Registry.register.handle`, cg_symbols
-    // holds `Registry#register.handle`.
-    //
-    // `it.fails` keeps the reproducer in the suite: when cv4k1 lands this turns
-    // into an unexpected pass, which is the signal to flip it back to `it`.
-    it.fails("emits no callable id absent from cg_symbols — call-argument object inside a method", async () => {
+    // FIXED by bd tea-rags-mcp-cv4k1, the residual pdv8m left behind. pdv8m
+    // widened `buildSymbolId` so the LEAF separator was right (`.handle` on both
+    // sides), but the PARENT CHAIN still collapsed the same tri-state: the
+    // enclosing instance method entered the chain through `buildParentPath`,
+    // which joined every segment with the language's scopeSeparator
+    // unconditionally, so `register` composed as `Registry.register` while the
+    // codegraph walker composed `Registry#register`. The chunker emitted
+    // `Registry.register.handle` against a cg_symbols holding
+    // `Registry#register.handle`.
+    it("scopes a call-argument object member under the enclosing INSTANCE METHOD, `#` not `.`", async () => {
+      const ids = await chunkerCallableIds(TYPESCRIPT, CALL_ARGUMENT_OBJECT_IN_METHOD);
+      expect(ids).toContain("Registry#register.handle");
+      expect(ids).not.toContain("Registry.register.handle");
+    });
+
+    it("emits no callable id absent from cg_symbols — call-argument object inside a method", async () => {
       const graphIds = new Set(codegraphIds(TYPESCRIPT, CALL_ARGUMENT_OBJECT_IN_METHOD));
       for (const id of await chunkerCallableIds(TYPESCRIPT, CALL_ARGUMENT_OBJECT_IN_METHOD)) {
         expect([...graphIds]).toContain(id);

@@ -902,22 +902,6 @@ export class TreeSitterChunker implements CodeChunker {
   }
 
   /**
-   * Build full parent name path from hierarchy names.
-   *
-   * bd tea-rags-mcp-ksb8 — Previously joined with ` > ` (spaces),
-   * producing invalid `Scaffold > route#decorator` symbolIds. The
-   * canonical separator is the language's `scopeSeparator` (`.` for
-   * Python/TS/JS, `::` for Ruby/Rust). See
-   * `.claude/rules/symbolid-convention.md`.
-   */
-  private buildParentPath(hierarchyNames: string[], scopeSeparator?: string): string | undefined {
-    if (hierarchyNames.length === 0) return undefined;
-    // Namespace fold through the composer (scopeSeparator), mirroring
-    // composeParentSymbol — keeps the separator rule in one place.
-    return hierarchyNames.reduce((acc, name) => this.symbolIds.compose(acc, name, { scopeSeparator }), "");
-  }
-
-  /**
    * Process child nodes of a container, recursing into nested containers.
    * Handles the child extraction loop with support for arbitrary nesting depth.
    *
@@ -1091,10 +1075,28 @@ export class TreeSitterChunker implements CodeChunker {
       hook.process(childCtx);
     }
 
-    const fullParentName = this.buildParentPath(
-      [...(parentName ? [parentName] : []), ...(childName ? [childName] : [])],
-      langConfig.scopeSeparator,
-    );
+    // The recursed container becomes the PARENT of everything below it, so its
+    // own segment obeys the same tri-state rule its leaf siblings do — an
+    // instance method joins its class with `#`, a static one with `.`, and a
+    // non-method scope container with the language's scopeSeparator.
+    //
+    // bd tea-rags-mcp-cv4k1 — this used to fold the chain through
+    // `buildParentPath`, which joined every segment with `scopeSeparator`
+    // unconditionally. That discarded exactly what bd tea-rags-mcp-pdv8m had
+    // just taught the LEAF composer: `install({ handle() {} })` inside
+    // `Registry#register` composed as `Registry.register.handle` while the
+    // codegraph walker composed `Registry#register.handle`, so the parent
+    // segment named a symbol no cg_symbols row carries. `classifyMethod`
+    // returns null for every scope container that is not a method
+    // (`class_definition`, `module`, `impl_item`), so namespace folds are
+    // unchanged. `bd tea-rags-mcp-ksb8` still applies: the separator comes from
+    // the composer, never a hand-written ` > ` join.
+    //
+    // An anonymous container keeps its parent's id rather than dropping to
+    // `undefined` — the chain must not lose the levels already composed.
+    const fullParentName = childName
+      ? this.buildSymbolId(childName, parentName, classifyMethod(childNode), langConfig.scopeSeparator)
+      : parentName;
 
     await this.processChildren(
       validGrandChildren,
