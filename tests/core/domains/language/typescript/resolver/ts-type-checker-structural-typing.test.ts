@@ -598,6 +598,139 @@ describe("TSStructuralTypingSymbolResolutionStrategy resolves duck-typed receive
   });
 });
 
+/**
+ * The precision invariant `tea-rags-mcp-7mud8` was filed to ADD, pinned instead
+ * because the pass already holds it.
+ *
+ * The bead's hypothesis was that this pass matches a member on a structurally
+ * typed receiver and then confirms it against an unrelated project symbol of the
+ * same short name — the failure mode `tea-rags-mcp-6b3gj` fixed for the
+ * short-name passes, restated for interface-shaped externals. It cannot happen
+ * here, and the reason is structural rather than lucky: the member's declaration
+ * comes from the CHECKER, and {@link TSStructuralTypingSymbolResolutionStrategy}
+ * drops every declaration `TSProgramCache.toRelPath` places outside the project
+ * BEFORE any symbol-table lookup runs. Short-name narrowing only ever sees a
+ * file the checker already proved is in-project.
+ *
+ * That ordering is worth a test because it is invisible: a later edit that moved
+ * the short-name fallback up to cover the empty-sites case — the obvious way to
+ * buy recall here — would fabricate exactly these edges and break nothing else.
+ *
+ * The oracle run behind the bead measured the two shapes below as the live
+ * corpus's top phantom producers (`Map#set` matched to a project `set`), so
+ * these are the real call sites, not invented ones. On this pass they resolve to
+ * `continue`; the edges the oracle counted came from passes 5/6/9/10.
+ */
+describe("TSStructuralTypingSymbolResolutionStrategy never pins an external member to a same-named project symbol (bd tea-rags-mcp-7mud8)", () => {
+  let repoRoot: string;
+
+  beforeEach(() => {
+    repoRoot = realpathSync(mkdtempSync(join(tmpdir(), "ts-structural-external-")));
+  });
+
+  afterEach(() => {
+    rmSync(repoRoot, { recursive: true, force: true });
+  });
+
+  function buildStrategy(): TSStructuralTypingSymbolResolutionStrategy {
+    return new TSStructuralTypingSymbolResolutionStrategy(
+      { tsOptions: TS_OPTIONS, mode: "strict" },
+      new TSProgramCache({ repoRoot, tsOptions: TS_OPTIONS }),
+    );
+  }
+
+  /**
+   * `Map#set` on a receiver the walker bound NO type to, in a project whose
+   * symbol table carries exactly one `set`. The builtin-type gate in
+   * `classifyStructuralTypingCase` cannot fire — it reads walker bindings, and
+   * there are none — so the call reaches the checker, which is the whole point:
+   * the decline has to come from the declaration filter, not from the gate.
+   */
+  it("declines a builtin member when the symbol table holds a lone project symbol of that name", () => {
+    writeSource(
+      repoRoot,
+      "src/memo.ts",
+      [`export class CommitDiffMemo {`, `  set(key: string, value: number): void {}`, `}`, ``].join("\n"),
+    );
+    writeSource(
+      repoRoot,
+      "src/caller.ts",
+      [`export function run(cache: Map<string, number>): void {`, `  cache.set("a", 1);`, `}`, ``].join("\n"),
+    );
+    const symbolTable = new InMemoryGlobalSymbolTable();
+    symbolTable.upsertFile("src/memo.ts", [
+      {
+        symbolId: "CommitDiffMemo#set",
+        fqName: "CommitDiffMemo#set",
+        shortName: "set",
+        relPath: "src/memo.ts",
+        scope: ["CommitDiffMemo"],
+      },
+    ]);
+
+    const outcome = buildStrategy().attempt(
+      { callText: 'cache.set("a", 1)', receiver: "cache", member: "set", startLine: 2 },
+      { callerFile: "src/caller.ts", callerScope: [], imports: [], symbolTable },
+    );
+
+    expect(outcome).toEqual({ kind: "continue" });
+  });
+
+  /**
+   * The bead's literal shape: a receiver typed by an INTERFACE that lives
+   * outside the project — a test framework's matcher, a schema library's shape.
+   * The import is relative and therefore maps to a real file, so nothing in
+   * `classifyStructuralTypingCase` declines it; the interface simply sits
+   * outside `repoRoot`, which is what makes its member external.
+   */
+  it("declines a member declared only on an interface outside the project root", () => {
+    const external = realpathSync(mkdtempSync(join(tmpdir(), "ts-structural-lib-")));
+    try {
+      writeSource(
+        external,
+        "matchers.ts",
+        [`export interface Matchers {`, `  toBe(value: unknown): void;`, `}`, ``].join("\n"),
+      );
+      writeSource(
+        repoRoot,
+        "src/assert.ts",
+        [`export class Assertions {`, `  toBe(value: unknown): void {}`, `}`, ``].join("\n"),
+      );
+      writeSource(
+        repoRoot,
+        "src/caller.ts",
+        [
+          `import type { Matchers } from "${join(external, "matchers.js")}";`,
+          ``,
+          `export function run(m: Matchers): void {`,
+          `  m.toBe(1);`,
+          `}`,
+          ``,
+        ].join("\n"),
+      );
+      const symbolTable = new InMemoryGlobalSymbolTable();
+      symbolTable.upsertFile("src/assert.ts", [
+        {
+          symbolId: "Assertions#toBe",
+          fqName: "Assertions#toBe",
+          shortName: "toBe",
+          relPath: "src/assert.ts",
+          scope: ["Assertions"],
+        },
+      ]);
+
+      const outcome = buildStrategy().attempt(
+        { callText: "m.toBe(1)", receiver: "m", member: "toBe", startLine: 4 },
+        { callerFile: "src/caller.ts", callerScope: [], imports: [], symbolTable },
+      );
+
+      expect(outcome).toEqual({ kind: "continue" });
+    } finally {
+      rmSync(external, { recursive: true, force: true });
+    }
+  });
+});
+
 describe("TSCallResolver runs the structural-typing pass for calls every other pass declines (bd tea-rags-mcp-icmnr)", () => {
   let repoRoot: string;
 
