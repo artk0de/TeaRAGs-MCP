@@ -1,6 +1,7 @@
 import { CONTINUE, resolved } from "../../../../../contracts/resolution.js";
 import { pickSingleCandidate, type CallContext, type CallRef } from "../../../../../contracts/types/codegraph.js";
 import type { SymbolResolutionOutcome, SymbolResolutionStrategy } from "../../../../../contracts/types/language.js";
+import { targetsExternalImport } from "../ts-external-call.js";
 import { mapImportToFile } from "../ts-path-mapper.js";
 import type { ResolverConfig } from "./shared.js";
 
@@ -18,6 +19,11 @@ import type { ResolverConfig } from "./shared.js";
  * member is not indexed it returns a file-only edge (`targetSymbolId: null`),
  * never continuing to a later pass. That is why the file has to be the RIGHT
  * one: no later pass gets a chance to correct it. Hence the barrel hop below.
+ *
+ * The single exception is the builtin-container guard on that fallback (bd
+ * tea-rags-mcp-4kx9f): `YARD_CONST.test(text)` maps to the file DECLARING the
+ * constant, and the call enters `RegExp.prototype` instead, so there is no file
+ * for a terminal answer to name.
  */
 export class TSNamedImportSymbolResolutionStrategy implements SymbolResolutionStrategy {
   readonly name = "namedImport";
@@ -42,6 +48,14 @@ export class TSNamedImportSymbolResolutionStrategy implements SymbolResolutionSt
     const target = pickSingleCandidate(candidates, this.cfg.mode);
     if (target) return resolved({ targetRelPath: target.relPath, targetSymbolId: target.symbolId });
 
+    // The file-only edge is a claim that the call ENTERS `targetFile`, and for a
+    // container constant it does not: `YARD_CONST.test(text)` runs
+    // `RegExp.prototype.test` while the import points at the file declaring the
+    // constant (bd tea-rags-mcp-4kx9f). Guarding here rather than at the top of
+    // the pass is deliberate — a member the target file really declares has
+    // already won above, so this can only ever drop a file-level edge, never a
+    // pinned one.
+    if (targetsExternalImport(call, ctx, this.cfg.tsOptions)) return CONTINUE;
     return resolved({ targetRelPath: targetFile, targetSymbolId: null });
   }
 }
