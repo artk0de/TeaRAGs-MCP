@@ -79,6 +79,7 @@ import {
   TSThisMemberSymbolResolutionStrategy,
   TSTypeCheckerFallbackSymbolResolutionStrategy,
   TSTypeCheckerJsxComponentSymbolResolutionStrategy,
+  TSTypeCheckerUnionReceiverDispatchResolver,
   type ResolverConfig,
 } from "./strategies/index.js";
 import { mapImportToFile, type TsCompilerOptions } from "./ts-path-mapper.js";
@@ -116,6 +117,14 @@ export class TSCallResolver implements CallResolver {
   readonly programCache: TSProgramCache | null;
 
   /**
+   * Union / guard-narrowed receiver fan-out (bd tea-rags-mcp-3yj7d). A dispatch
+   * component rather than a chain pass because its answer is N edges with a
+   * confidence split, which the single-target strategy contract cannot carry.
+   * `null` whenever the type checker is disabled — it shares `programCache`.
+   */
+  private readonly unionReceiver: TSTypeCheckerUnionReceiverDispatchResolver | null;
+
+  /**
    * @param repoRoot Absolute project root the typeChecker fallback resolves
    *   `RelPath`s against. Defaults to `process.cwd()`, mirroring the
    *   `loadTsConfig(process.cwd())` the composition root already passes for
@@ -131,6 +140,9 @@ export class TSCallResolver implements CallResolver {
     this.cone = new ConeDispatchResolver(new TSConeTypeLocator(cfg), cfg.coneMax ?? CONE_MAX_DEFAULT);
     this.programCache = typeCheckerFallbackEnabled(process.env.CODEGRAPH_TS_TYPECHECKER)
       ? new TSProgramCache({ repoRoot, tsOptions })
+      : null;
+    this.unionReceiver = this.programCache
+      ? new TSTypeCheckerUnionReceiverDispatchResolver(cfg, this.programCache)
       : null;
     this.strategies = [
       new TSSuperSymbolResolutionStrategy(cfg),
@@ -274,8 +286,14 @@ export class TSCallResolver implements CallResolver {
       }
     }
     if (edges.length > 0) return { kind: "edges", edges };
-    // The lookup-table path found nothing — the cone outcome (bounded by
-    // design, always kind "edges") is the answer either way.
+    // Union receivers are decided before the CHA cone: the checker NAMES the
+    // possible types, whereas CHA only knows a base type's descendants — and a
+    // union annotation yields no `localBinding` at all, so the cone has no base
+    // type to expand and would return `[]` here regardless (bd tea-rags-mcp-3yj7d).
+    const union = this.unionReceiver?.resolveDispatch(call, ctx);
+    if (union?.kind === "edges" && union.edges.length > 0) return union;
+    // Neither table nor union matched — the cone outcome (bounded by design,
+    // always kind "edges") is the answer either way.
     return this.cone.resolveDispatch(call, ctx);
   }
 
