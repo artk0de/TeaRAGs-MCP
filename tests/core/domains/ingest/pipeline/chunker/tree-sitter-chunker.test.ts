@@ -2821,10 +2821,20 @@ class DataProcessor {
 
         const chunks = await chunker.chunk(code, "calculator.js", "javascript");
 
-        const classChunk = chunks.find((c) => c.metadata.name === "Calculator");
-        expect(classChunk, "chunk for the exported `Calculator` class missing").toBeDefined();
-        expect(classChunk!.metadata.symbolId).toBe("Calculator");
-        expect(classChunk!.metadata.chunkType).toBe("class");
+        // A class with extractable method children never gets a standalone
+        // class-level chunk in a hook-chain language (JS/TS) -- only the
+        // method chunks, same as the long-standing "should chunk TypeScript
+        // classes into methods" behavior (chunkWithChildExtraction's
+        // hasHookChain branch emits ctx.bodyChunks only). Pin the convention
+        // separators the title promises: `#` for the instance method, `.`
+        // for the static one.
+        const addChunk = chunks.find((c) => c.metadata.symbolId === "Calculator#add");
+        const ofChunk = chunks.find((c) => c.metadata.symbolId === "Calculator.of");
+        expect(addChunk, "chunk for the exported `Calculator#add` instance method missing").toBeDefined();
+        expect(ofChunk, "chunk for the exported `Calculator.of` static method missing").toBeDefined();
+        expect(addChunk!.metadata.parentSymbolId).toBe("Calculator");
+        expect(ofChunk!.metadata.parentSymbolId).toBe("Calculator");
+        expect(chunks.map((c) => c.metadata.chunkType)).not.toContain("block");
       });
 
       it("names `export const <fn>` through the assignment filter", async () => {
@@ -2886,10 +2896,12 @@ class DataProcessor {
 
         const chunks = await chunker.chunk(code, "widget.js", "javascript");
 
-        const widgetChunk = chunks.find((c) => c.metadata.name === "Widget");
-        expect(widgetChunk, "chunk for the default-exported `Widget` class missing").toBeDefined();
-        expect(widgetChunk!.metadata.symbolId).toBe("Widget");
-        expect(widgetChunk!.metadata.chunkType).toBe("class");
+        // Same convention as the `Calculator` case above: a class with a
+        // method child chunks as the method, not as a standalone class chunk.
+        const renderChunk = chunks.find((c) => c.metadata.symbolId === "Widget#render");
+        expect(renderChunk, "chunk for the default-exported `Widget#render` method missing").toBeDefined();
+        expect(renderChunk!.metadata.parentSymbolId).toBe("Widget");
+        expect(chunks.map((c) => c.metadata.chunkType)).not.toContain("block");
       });
 
       // `export { a, b }` re-exports declarations that already chunked on their
