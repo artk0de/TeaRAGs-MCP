@@ -21,17 +21,22 @@
  *  10. importNarrowedFallback (narrow ambiguous N>1 by caller's imports)
  *  11. typeCheckerJsxComponent (ts.Program/typeChecker — JSX component tags)
  *  12. typeCheckerFallback (ts.Program/typeChecker — generics + overloads)
+ *  13. structuralTyping (ts.Program/typeChecker — duck typing + interface merging)
  *
- * Passes 11-12 are the only ones that read type information rather than AST
+ * Passes 11-13 are the only ones that read type information rather than AST
  * shape, and the only ones that touch the file system on the resolve path. They
  * run last by construction: everything above them is cheaper, so the checker is
- * consulted only for calls nothing else could decide. `CODEGRAPH_TS_TYPECHECKER=0`
- * removes both from the chain entirely (bd tea-rags-mcp-uclbn).
+ * consulted only for calls nothing else could decide, and they share ONE
+ * `TSProgramCache` so a file is never typed twice. `CODEGRAPH_TS_TYPECHECKER=0`
+ * removes all three from the chain entirely (bd tea-rags-mcp-uclbn).
  *
- * Pass 11 sits ahead of pass 12 because the two answer disjoint questions and
- * pass 11's gate is a single flag read: a JSX tag site (`call.jsx`) is never a
- * `CallExpression`, so pass 12 could not resolve it anyway
- * (bd tea-rags-mcp-b4pvp).
+ * Pass 11 sits ahead of 12-13 because it answers a disjoint question and its
+ * gate is a single flag read: a JSX tag site (`call.jsx`) is never a
+ * `CallExpression`, so neither 12 nor 13 could resolve it anyway
+ * (bd tea-rags-mcp-b4pvp). Pass 13 follows 12 because `getResolvedSignature`
+ * picks the overload the ARGUMENTS select, which is the sharper answer
+ * whenever it applies; pass 13 then handles the receivers that have no name
+ * to look up at all (bd tea-rags-mcp-icmnr).
  *
  * `resolveDispatch` is a separate fan-out contract (lookup-table dispatch, bd
  * tea-rags-mcp-n0zj) and stays in the orchestrator — it is not part of the
@@ -69,6 +74,7 @@ import {
   TSNamedImportSymbolResolutionStrategy,
   TSReceiverSymbolSymbolResolutionStrategy,
   TSSameFileSymbolResolutionStrategy,
+  TSStructuralTypingSymbolResolutionStrategy,
   TSSuperSymbolResolutionStrategy,
   TSThisMemberSymbolResolutionStrategy,
   TSTypeCheckerFallbackSymbolResolutionStrategy,
@@ -141,6 +147,7 @@ export class TSCallResolver implements CallResolver {
     if (this.programCache) {
       this.strategies.push(new TSTypeCheckerJsxComponentSymbolResolutionStrategy(cfg, this.programCache));
       this.strategies.push(new TSTypeCheckerFallbackSymbolResolutionStrategy(cfg, this.programCache));
+      this.strategies.push(new TSStructuralTypingSymbolResolutionStrategy(cfg, this.programCache));
     }
   }
 

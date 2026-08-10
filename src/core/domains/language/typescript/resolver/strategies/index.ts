@@ -14,5 +14,10 @@ export {
   type TSTypeCheckerFallbackCase,
 } from "./ts-type-checker-fallback.js";
 export { TSTypeCheckerJsxComponentSymbolResolutionStrategy } from "./ts-type-checker-jsx-component.js";
+export {
+  classifyStructuralTypingCase,
+  TSStructuralTypingSymbolResolutionStrategy,
+  type TSStructuralTypingCase,
+} from "./ts-type-checker-structural-typing.js";
 export { TSConeTypeLocator } from "./ts-cone-type-locator.js";
 export { collectImportedFiles, CONE_MAX_DEFAULT, type ResolverConfig } from "./shared.js";
