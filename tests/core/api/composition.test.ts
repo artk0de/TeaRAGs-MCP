@@ -187,8 +187,12 @@ describe("createComposition", () => {
       expect(blastRadiusWith).toBeDefined();
       expect(blastRadiusWithout).toBeUndefined();
       // Retuned (Slice 2) weights — process metrics dominate per Yatish 2020.
+      // `fanIn` halved to 0.15 when `transitiveImpact` took the lead on the
+      // structural half: blast radius is transitive reach, and fanIn is that
+      // measurement truncated at depth 1.
       expect(blastRadiusWith?.weights.churn).toBe(0.2);
-      expect(blastRadiusWith?.weights.fanIn).toBe(0.3);
+      expect(blastRadiusWith?.weights.transitiveImpact).toBe(0.2);
+      expect(blastRadiusWith?.weights.fanIn).toBe(0.15);
     });
 
     // Phase D4 — composite presets that override trajectory presets by
