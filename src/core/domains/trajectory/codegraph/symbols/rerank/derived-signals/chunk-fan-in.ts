@@ -18,7 +18,7 @@ export class ChunkFanInSignal implements DerivedSignalDescriptor {
   readonly sources = ["chunk.fanIn"];
   readonly defaultBound = 40;
   extract(raw: Record<string, unknown>, ctx?: ExtractContext): number {
-    const v = codegraphChunkNum(raw, "fanIn");
+    const v = codegraphChunkNum(raw, "fanIn", ctx?.signalLevel);
     const bound = ctx?.bounds?.["chunk.fanIn"] ?? this.defaultBound;
     return normalize(v, bound);
   }
