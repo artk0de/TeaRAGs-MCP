@@ -35,7 +35,7 @@
     "semantic-search",
     "embeddings"
   ],
-  "author": "mhalder",
+  "author": "Arthur Korochansky",
   "license": "MIT",
   "engines": {
     "node": ">=22.0.0 <26.0.0"
