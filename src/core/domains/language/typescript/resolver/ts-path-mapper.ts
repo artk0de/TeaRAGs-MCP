@@ -109,6 +109,13 @@ const SOURCE_EXTENSION_CANDIDATES: readonly { suffix: string; extensions: readon
 const EXTENSIONLESS_CANDIDATES: readonly string[] = [".ts", ".tsx", ".d.ts"];
 
 /**
+ * Basename of the module file a directory stands for. `"./components"` is a
+ * legal specifier for `components/index.tsx`, and in a React or barrel-heavy
+ * project it is the usual one (bd tea-rags-mcp-hzsxy).
+ */
+const DIRECTORY_MODULE_STEM = "index";
+
+/**
  * Rewrite a mapped path's suffix to the TypeScript source file it stands for,
  * so graph edges land on paths that match the codegraph file table.
  *
@@ -116,6 +123,14 @@ const EXTENSIONLESS_CANDIDATES: readonly string[] = [".ts", ".tsx", ".d.ts"];
  * Everything else has candidates, and `fileExists` picks among them — the
  * FIRST candidate that exists wins, so a project holding both `foo.ts` and
  * `foo.tsx` resolves the way `tsc` would.
+ *
+ * Candidate order IS `tsc`'s resolution order: the specifier as a file first,
+ * then — for a specifier that named no extension — the directory it could be,
+ * via its `index` module (bd tea-rags-mcp-hzsxy). A specifier that DID write a
+ * suffix gets no directory candidates: `"./components.js"` names a file under
+ * the NodeNext convention, and `"./components/index.js"` is how the directory
+ * form is spelled, so probing `components.js/index.ts` would invent a module
+ * nothing referenced.
  *
  * With no probe, or when no candidate exists, the first candidate is returned
  * unverified. That is deliberate: it is the pre-probe behaviour, and it is
@@ -130,6 +145,9 @@ function resolveTsSourcePath(path: string, fileExists?: ProjectFileProbe): strin
   const stem = rule ? path.slice(0, -rule.suffix.length) : path;
   const extensions = rule ? rule.extensions : EXTENSIONLESS_CANDIDATES;
 
-  const candidates = extensions.map((extension) => `${stem}${extension}`);
+  const asFile = extensions.map((extension) => `${stem}${extension}`);
+  const candidates = rule
+    ? asFile
+    : [...asFile, ...extensions.map((extension) => `${stem}/${DIRECTORY_MODULE_STEM}${extension}`)];
   return candidates.find((candidate) => fileExists?.(candidate)) ?? candidates[0];
 }

@@ -29,6 +29,20 @@
  * bounded import closure, so counting those against the chain would measure the
  * oracle's blind spot rather than the resolver's.
  *
+ * MEASUREMENT CUTOVER — `phantom` changed meaning on 2026-08-10, in the commit
+ * carrying bd tea-rags-mcp-ffju3 (`git log --grep=ffju3 -- scripts/`). RAW
+ * PHANTOM COUNTS FROM BEFORE THAT COMMIT ARE NOT COMPARABLE WITH COUNTS FROM
+ * AFTER IT. The external branch of
+ * `diffResolution` used to call ANY non-null chain answer a phantom, and the
+ * chain routinely answers with a `node_modules` declaration — the very
+ * conclusion the checker reached. On this repo's `src/` that misfiled 3510 of
+ * 3614 raw phantoms as fabricated edges. The branch now compares conclusions,
+ * and the same corpus reads 104 raw. Nothing about the resolver changed: the
+ * decomposed defect residual is 93 both before and after. So a historical
+ * headline of 1341 (Track C), 1344 (`pmxuv`) or 3612 (`cko34`) is measuring
+ * something this script no longer measures — do not read a drop against one as
+ * a precision win, and do not read a rise as a regression.
+ *
  * WHAT THIS SHARES WITH PRODUCTION, AND WHY
  *
  * The `ts.Program`s come from the resolver's OWN `TSProgramCache`
@@ -108,7 +122,7 @@ export interface OracleAnswer {
  * What the checker concluded about a call site. Three outcomes, because
  * "resolved to something outside the project" is a real answer and not the same
  * as "no answer": it says there IS no in-project edge here, which is exactly
- * what makes a chain answer on the same call a fabricated one.
+ * what makes an IN-PROJECT chain answer on the same call a fabricated one.
  */
 export type OracleOutcome = { kind: "inProject"; answer: OracleAnswer } | { kind: "external" } | { kind: "unknown" };
 
@@ -118,10 +132,11 @@ export type OracleOutcome = { kind: "inProject"; answer: OracleAnswer } | { kind
  * Against IN-PROJECT ground truth: `match` / `fileOnly` are agreement at symbol
  * / file granularity; `wrongFile` and `missed` are the mismatch kinds.
  *
- * Against EXTERNAL ground truth: `agreeExternal` is correct silence, `phantom`
- * is the chain inventing an in-project target for a call that provably leaves
- * the project — a precision defect strictly worse than declining, and invisible
- * unless external is tracked separately.
+ * Against EXTERNAL ground truth: `agreeExternal` is the two sides reaching the
+ * same conclusion — the chain either declined outright or named an external
+ * declaration itself. `phantom` is the chain inventing an IN-PROJECT target for
+ * a call that provably leaves the project: a precision defect strictly worse
+ * than declining, and invisible unless external is tracked separately.
  *
  * `chainOnly` and `bothUnresolved` carry no ground truth at all and sit outside
  * every rate.
@@ -149,6 +164,37 @@ export const TYPE_FEATURE_CATEGORIES = [
 
 export type TypeFeatureCategory = (typeof TYPE_FEATURE_CATEGORIES)[number];
 
+/**
+ * Where the checker's chosen declaration lives. `defaultLib` and
+ * `externalPackage` are both outside the project but mean different things to
+ * precision analysis: a default-lib member (`Array#push`) is something the
+ * project can never own, while an external package's interface may well be
+ * implemented in-project. `generatedInRepo` is the artifact class — the
+ * project's OWN compiled output, where an in-project chain answer may be right.
+ */
+export type OracleTargetOrigin = "project" | "defaultLib" | "externalPackage" | "generatedInRepo" | "outsideRepo";
+
+/**
+ * What the checker's declaration IS, as opposed to merely where it points.
+ * Decomposition reads these facts to tell a genuine resolver defect from the
+ * two things that look like one: a declaration site answered with its
+ * implementation, and a callable with no name to resolve to in the first place.
+ */
+export interface OracleTargetFacts {
+  /** Repo-relative path of the declaration; `null` when it sits outside the repo. */
+  relPath: string | null;
+  /** Project symbolId the declaration pinned to, `null` when the graph has no node for it. */
+  symbolId: string | null;
+  shortName: string | null;
+  /** `ts.SyntaxKind` name, carried so a surprising bucket can be read back to source. */
+  declarationKind: string;
+  /** A declaration site with no body: interface member, abstract method, overload signature, ambient. */
+  declarationOnly: boolean;
+  /** A callable with no nameable declaration site: arrow function, function expression, parameter. */
+  anonymousCallable: boolean;
+  origin: OracleTargetOrigin;
+}
+
 /** One scored call site. */
 export interface OracleRow {
   relPath: string;
@@ -164,9 +210,10 @@ export interface OracleRow {
    * sites sit in one (`checkerUnknown` + `nodeNotLocated`).
    */
   chainOutput: ChainOutput;
-  /** What each side answered, carried so mismatch samples are actionable. */
-  chainTarget?: string;
-  oracleTarget?: string;
+  /** What the chain answered, carried so mismatch samples are actionable. */
+  chain?: OracleAnswer;
+  /** What the checker's declaration is. Absent when the checker located none. */
+  target?: OracleTargetFacts;
 }
 
 /** The chain's own answer shape: a pinned symbol, a bare file, or nothing. */
@@ -225,16 +272,34 @@ export interface OracleTally {
 }
 
 /**
+ * A repo-relative path that is not project source — package typings, generated
+ * output, or any declaration file. A chain answer landing here is the chain
+ * saying "this call leaves the project", which is a conclusion and not an edge.
+ */
+function isOutsideProjectSource(relPath: string): boolean {
+  return relPath.startsWith("node_modules/") || isNonSourceTarget(relPath);
+}
+
+/**
  * Classify one call site by comparing the two answers.
  *
  * Symbol-level disagreement degrades to `fileOnly` rather than `wrongFile`: the
  * emitted edge still lands on the right file, and the contract explicitly
  * allows a null `targetSymbolId` for "the file is certain, the member is not".
  * Counting that as a mismatch would drown the real precision bugs.
+ *
+ * Against external ground truth the comparison is between CONCLUSIONS, not
+ * paths. The checker's answer there is "no in-project edge exists here", and
+ * the chain says the same thing two ways: by declining, or by naming an
+ * external declaration of its own. Only an in-project chain answer contradicts
+ * the checker, and only that is a phantom (bd tea-rags-mcp-ffju3).
  */
 export function diffResolution(chain: OracleAnswer | null, oracle: OracleOutcome): OracleVerdict {
   if (oracle.kind === "unknown") return chain === null ? "bothUnresolved" : "chainOnly";
-  if (oracle.kind === "external") return chain === null ? "agreeExternal" : "phantom";
+  if (oracle.kind === "external") {
+    if (chain === null) return "agreeExternal";
+    return isOutsideProjectSource(chain.targetRelPath) ? "agreeExternal" : "phantom";
+  }
   if (chain === null) return "missed";
   if (chain.targetRelPath !== oracle.answer.targetRelPath) return "wrongFile";
   return chain.targetSymbolId === oracle.answer.targetSymbolId ? "match" : "fileOnly";
@@ -380,6 +445,248 @@ export function formatOracleTable(title: string, tallies: readonly OracleTally[]
 }
 
 // ---------------------------------------------------------------------------
+// Mismatch decomposition — separating defects from disagreements that are not.
+//
+// A raw mismatch count is an upper bound on the resolver's defects, not the
+// defect count. Two classes inflate it, and both are mechanical to recognise:
+//
+//   - a `wrongFile` where the checker named a DECLARATION SITE (an interface
+//     member, an abstract method) and the chain named the implementation of
+//     that same member. The two sides agree about which call this is; they
+//     disagree about which end of the declaration/implementation pair to name,
+//     and the graph deliberately prefers the implementation.
+//   - a `missed` whose target has no name to resolve TO — a returned closure,
+//     a local arrow function, a callback parameter. No strategy can emit an
+//     edge to a node the graph does not contain, so declining is correct.
+//
+// Track C computed both by hand on the first oracle run and reported "4 sites"
+// while the raw output said hundreds; the two numbers were never reconcilable
+// afterwards because the filtering existed only in that session. These
+// functions are that filtering, written down (bd tea-rags-mcp-cko34).
+//
+// Every reconciler is conservative in the same direction: missing facts count
+// AGAINST the resolver. A bucket can therefore understate agreement but never
+// manufacture it.
+// ---------------------------------------------------------------------------
+
+/** Why a `wrongFile` is, or is not, a precision defect. */
+export type OracleWrongFileReason = "interfaceVsImpl" | "declarationSitePath" | "defect";
+
+/** Why a `missed` is, or is not, a recall defect. */
+export type OracleMissedReason = "anonymousCallable" | "unpinnedTarget" | "defect";
+
+/** Why a `phantom` is, or is not, a fabricated edge. */
+export type OraclePhantomReason =
+  | "generatedInRepo"
+  | "builtinMember"
+  | "externalInterfaceMatch"
+  | "externalPackageMember";
+
+/**
+ * Path fragments that mark a file as a declaration site by convention rather
+ * than by syntax. This is the weaker of the two `wrongFile` rules — it reads
+ * project layout, not the AST — so it is counted in its own bucket and never
+ * folded into `interfaceVsImpl`.
+ */
+const DECLARATION_SITE_PATH_FRAGMENTS = ["/contracts/", "/types/"] as const;
+const DECLARATION_SITE_BASENAMES = ["base.ts", "types.ts", "contracts.ts"] as const;
+
+function isDeclarationSitePath(relPath: string | null): boolean {
+  if (relPath === null) return false;
+  const normalized = `/${relPath}`;
+  return (
+    DECLARATION_SITE_PATH_FRAGMENTS.some((fragment) => normalized.includes(fragment)) ||
+    DECLARATION_SITE_BASENAMES.some((basename) => normalized.endsWith(`/${basename}`))
+  );
+}
+
+/**
+ * The two sides named the same member. Required by both `wrongFile` rules: an
+ * interface member answered with a DIFFERENT implementation member is a real
+ * defect, and without this check every same-file-family disagreement would be
+ * excused.
+ */
+function namesTheSameMember(chain: OracleAnswer | undefined, target: OracleTargetFacts): boolean {
+  const chainSymbolId = chain?.targetSymbolId ?? null;
+  if (chainSymbolId === null || target.shortName === null) return false;
+  return lastSegment(chainSymbolId) === target.shortName;
+}
+
+/**
+ * Reconcile one `wrongFile`. Interface-versus-implementation is agreement
+ * expressed differently, not a heuristic firing wrong.
+ */
+export function reconcileOracleWrongFile(row: OracleRow): OracleWrongFileReason {
+  const { target } = row;
+  if (target === undefined || !namesTheSameMember(row.chain, target)) return "defect";
+  if (target.declarationOnly) return "interfaceVsImpl";
+  return isDeclarationSitePath(target.relPath) ? "declarationSitePath" : "defect";
+}
+
+/**
+ * Reconcile one `missed`. A target the graph has no node for is unmodellable at
+ * symbol granularity — note that a FILE-level edge would still have been
+ * possible, so `unpinnedTarget` is "not a symbol-resolution gap" rather than
+ * "not a gap at all".
+ */
+export function reconcileOracleMissed(row: OracleRow): OracleMissedReason {
+  const { target } = row;
+  if (target === undefined) return "defect";
+  if (target.anonymousCallable) return "anonymousCallable";
+  return target.symbolId === null ? "unpinnedTarget" : "defect";
+}
+
+/**
+ * Reconcile one `phantom`. Origin is decided before shape: a default-lib member
+ * is declared on an interface too, but `Array#push` is not something the
+ * project could be implementing, so it must not reach the arguable bucket.
+ *
+ * Every row reaching here has a chain answer naming PROJECT SOURCE — the
+ * verdict itself now excuses a chain answer that also leaves the project
+ * (bd tea-rags-mcp-ffju3), so this reconciler no longer carries the
+ * `externalAgreement` correction that used to dominate it.
+ */
+export function reconcileOraclePhantom(row: OracleRow): OraclePhantomReason {
+  const { target } = row;
+  if (target === undefined) return "externalPackageMember";
+  if (target.origin === "generatedInRepo") return "generatedInRepo";
+  if (target.origin === "defaultLib") return "builtinMember";
+  if (target.origin === "externalPackage" && target.declarationOnly && namesTheSameMember(row.chain, target)) {
+    return "externalInterfaceMatch";
+  }
+  return "externalPackageMember";
+}
+
+/** Raw mismatch counts for one label, split by reason, with the residual named. */
+export interface OracleMismatchDecomposition {
+  label: string;
+  wrongFile: { total: number; interfaceVsImpl: number; declarationSitePath: number; defect: number };
+  missed: { total: number; anonymousCallable: number; unpinnedTarget: number; defect: number };
+  phantom: {
+    total: number;
+    generatedInRepo: number;
+    builtinMember: number;
+    externalInterfaceMatch: number;
+    externalPackageMember: number;
+    /** Fabricated edges: builtin plus concrete external. Excludes the arguable bucket. */
+    defect: number;
+  };
+}
+
+function emptyDecomposition(label: string): OracleMismatchDecomposition {
+  return {
+    label,
+    wrongFile: { total: 0, interfaceVsImpl: 0, declarationSitePath: 0, defect: 0 },
+    missed: { total: 0, anonymousCallable: 0, unpinnedTarget: 0, defect: 0 },
+    phantom: {
+      total: 0,
+      generatedInRepo: 0,
+      builtinMember: 0,
+      externalInterfaceMatch: 0,
+      externalPackageMember: 0,
+      defect: 0,
+    },
+  };
+}
+
+/**
+ * Decompose every mismatch under each label a row carries — same labelling
+ * contract as `tallyBy`, so a feature table and its decomposition are read on
+ * the same denominator. Agreement verdicts contribute to nothing.
+ */
+export function decomposeOracleMismatches(
+  rows: readonly OracleRow[],
+  labelsOf: (row: OracleRow) => readonly string[],
+): OracleMismatchDecomposition[] {
+  const byLabel = new Map<string, OracleMismatchDecomposition>();
+
+  for (const row of rows) {
+    if (row.verdict !== "wrongFile" && row.verdict !== "missed" && row.verdict !== "phantom") continue;
+
+    for (const label of labelsOf(row)) {
+      let decomposition = byLabel.get(label);
+      if (!decomposition) {
+        decomposition = emptyDecomposition(label);
+        byLabel.set(label, decomposition);
+      }
+
+      if (row.verdict === "wrongFile") {
+        decomposition.wrongFile.total++;
+        decomposition.wrongFile[reconcileOracleWrongFile(row)]++;
+      } else if (row.verdict === "missed") {
+        decomposition.missed.total++;
+        decomposition.missed[reconcileOracleMissed(row)]++;
+      } else {
+        decomposition.phantom.total++;
+        decomposition.phantom[reconcileOraclePhantom(row)]++;
+      }
+    }
+  }
+
+  const decompositions = [...byLabel.values()];
+  for (const decomposition of decompositions) {
+    decomposition.phantom.defect = decomposition.phantom.builtinMember + decomposition.phantom.externalPackageMember;
+  }
+  return decompositions.sort(
+    (a, b) =>
+      b.wrongFile.total + b.missed.total + b.phantom.total - (a.wrongFile.total + a.missed.total + a.phantom.total) ||
+      a.label.localeCompare(b.label),
+  );
+}
+
+/** Fixed-width console table, one row per label, defects last so they read as the answer. */
+export function formatDecompositionTable(
+  title: string,
+  decompositions: readonly OracleMismatchDecomposition[],
+): string {
+  const columns = [
+    "wrongFile",
+    "ifaceImpl",
+    "declPath",
+    "wfDefect",
+    "missed",
+    "anonFn",
+    "unpinned",
+    "msDefect",
+    "phantom",
+    "generated",
+    "extIface",
+    "phDefect",
+  ];
+  const labelWidth = Math.max(12, ...decompositions.map((d) => d.label.length));
+  const header = ["category".padEnd(labelWidth), ...columns.map((c) => c.padStart(10))].join(" ");
+  const lines = [title, "-".repeat(header.length), header, "-".repeat(header.length)];
+
+  if (decompositions.length === 0) {
+    lines.push("(no mismatches)");
+    return lines.join("\n");
+  }
+
+  for (const d of decompositions) {
+    lines.push(
+      [
+        d.label.padEnd(labelWidth),
+        ...[
+          d.wrongFile.total,
+          d.wrongFile.interfaceVsImpl,
+          d.wrongFile.declarationSitePath,
+          d.wrongFile.defect,
+          d.missed.total,
+          d.missed.anonymousCallable,
+          d.missed.unpinnedTarget,
+          d.missed.defect,
+          d.phantom.total,
+          d.phantom.generatedInRepo,
+          d.phantom.externalInterfaceMatch,
+          d.phantom.defect,
+        ].map((value) => String(value).padStart(10)),
+      ].join(" "),
+    );
+  }
+  return lines.join("\n");
+}
+
+// ---------------------------------------------------------------------------
 // Type-checker oracle — the independent ground-truth query.
 // ---------------------------------------------------------------------------
 
@@ -397,6 +704,8 @@ interface OracleQueryResult {
    */
   nonSource: boolean;
   categories: string[];
+  /** What the located declaration IS, for decomposition. Absent when none was located. */
+  target?: OracleTargetFacts;
 }
 
 const NO_ORACLE: OracleQueryResult = {
@@ -437,20 +746,139 @@ function queryTypeChecker(handle: TSProgramHandle, cache: TSProgramCache, call: 
 
   if (declaration === undefined) return { outcome: { kind: "unknown" }, located: true, nonSource: false, categories };
 
-  const targetRelPath = cache.toRelPath(declaration.getSourceFile().fileName);
+  const { fileName } = declaration.getSourceFile();
+  const targetRelPath = cache.toRelPath(fileName);
   if (targetRelPath === null || isNonSourceTarget(targetRelPath)) {
-    return { outcome: { kind: "external" }, located: true, nonSource: targetRelPath !== null, categories };
+    return {
+      outcome: { kind: "external" },
+      located: true,
+      nonSource: targetRelPath !== null,
+      categories,
+      target: buildTargetFacts(declaration, fileName, targetRelPath, null),
+    };
   }
 
+  const targetSymbolId = pinOracleSymbol(declaration, targetRelPath, symbolTableRef);
   return {
-    outcome: {
-      kind: "inProject",
-      answer: { targetRelPath, targetSymbolId: pinOracleSymbol(declaration, targetRelPath, symbolTableRef) },
-    },
+    outcome: { kind: "inProject", answer: { targetRelPath, targetSymbolId } },
     located: true,
     nonSource: false,
     categories,
+    target: buildTargetFacts(declaration, fileName, targetRelPath, targetSymbolId),
   };
+}
+
+/**
+ * The declaration facts decomposition reads. Populated in one place alongside
+ * the outcome it belongs to, so a fact can never describe a different
+ * declaration than the verdict was computed from.
+ */
+function buildTargetFacts(
+  declaration: ts.Declaration,
+  fileName: string,
+  relPath: string | null,
+  symbolId: string | null,
+): OracleTargetFacts {
+  return {
+    relPath,
+    symbolId,
+    origin: classifyTargetOrigin(fileName, relPath),
+    ...describeOracleDeclaration(declaration),
+  };
+}
+
+/** The syntax-level half of the facts — everything decidable without a Program. */
+export type OracleDeclarationShape = Pick<
+  OracleTargetFacts,
+  "shortName" | "declarationKind" | "declarationOnly" | "anonymousCallable"
+>;
+
+/**
+ * What a declaration is, read off the AST alone. Split out from the rest of the
+ * facts because origin and pinning need a Program and a symbol table while this
+ * needs neither, which is what makes the shape rules testable against parsed
+ * snippets rather than against a whole indexed corpus.
+ */
+export function describeOracleDeclaration(declaration: ts.Declaration): OracleDeclarationShape {
+  const shortName = declarationShortName(declaration);
+  return {
+    shortName,
+    declarationKind: ts.SyntaxKind[declaration.kind],
+    declarationOnly: isDeclarationOnly(declaration),
+    anonymousCallable: isAnonymousCallable(declaration, shortName),
+  };
+}
+
+/**
+ * Where the declaration lives. `node_modules` is UNDER the repo root, so
+ * `toRelPath` happily returns a relative path for it and the existing
+ * `nonSource` counter cannot tell a package's `.d.ts` from the project's own
+ * `build/` output. Origin makes that distinction, which is the whole basis of
+ * telling a builtin phantom from a measurement artifact.
+ */
+function classifyTargetOrigin(fileName: string, relPath: string | null): OracleTargetOrigin {
+  if (/(^|\/)lib\.[a-z0-9_.]*d\.ts$/.test(fileName)) return "defaultLib";
+  if (fileName.includes("/node_modules/")) return "externalPackage";
+  if (relPath === null) return "outsideRepo";
+  return isNonSourceTarget(relPath) ? "generatedInRepo" : "project";
+}
+
+/**
+ * The name an edge could point at. An arrow function bound to a name
+ * (`const run = () => {}`) HAS one and is deliberately not excused — only a
+ * genuinely unnamed callable is.
+ */
+function declarationShortName(declaration: ts.Declaration): string | null {
+  const named = declaration as ts.Declaration & { name?: ts.Node };
+  if (named.name !== undefined && (ts.isIdentifier(named.name) || ts.isStringLiteral(named.name))) {
+    return named.name.text;
+  }
+
+  // A function TYPE carries no name of its own; the member it types does, and
+  // that member is what an edge would name. Missing this reads every
+  // `hydrate: (p) => void` interface member as anonymous and silently empties
+  // the interface-vs-impl bucket.
+  const { parent } = declaration;
+  if (
+    parent !== undefined &&
+    (ts.isVariableDeclaration(parent) ||
+      ts.isPropertyAssignment(parent) ||
+      ts.isPropertyDeclaration(parent) ||
+      ts.isPropertySignature(parent) ||
+      ts.isMethodSignature(parent)) &&
+    ts.isIdentifier(parent.name)
+  ) {
+    return parent.name.text;
+  }
+  return null;
+}
+
+/** A declaration site carrying no body: interface member, abstract, overload signature, ambient. */
+function isDeclarationOnly(declaration: ts.Declaration): boolean {
+  if (
+    ts.isMethodSignature(declaration) ||
+    ts.isPropertySignature(declaration) ||
+    ts.isCallSignatureDeclaration(declaration) ||
+    ts.isConstructSignatureDeclaration(declaration) ||
+    ts.isFunctionTypeNode(declaration)
+  ) {
+    return true;
+  }
+
+  const owner: ts.Node | undefined = declaration.parent;
+  if (owner !== undefined && (ts.isInterfaceDeclaration(owner) || ts.isTypeLiteralNode(owner))) return true;
+
+  const { body } = declaration as ts.Declaration & { body?: ts.Node };
+  if (isSignatureLike(declaration) && body === undefined) return true;
+
+  const modifiers = ts.canHaveModifiers(declaration) ? ts.getModifiers(declaration) : undefined;
+  return modifiers?.some((modifier) => modifier.kind === ts.SyntaxKind.AbstractKeyword) ?? false;
+}
+
+/** A callable with nothing to name it by — an inline closure, or a callback parameter. */
+function isAnonymousCallable(declaration: ts.Declaration, shortName: string | null): boolean {
+  if (ts.isParameter(declaration)) return true;
+  return (ts.isArrowFunction(declaration) || ts.isFunctionExpression(declaration)) && shortName === null;
 }
 
 /**
@@ -799,10 +1227,8 @@ async function runOracle(repoRoot: string, targetDir: string, limit: number, qui
           categories: probe.categories,
           verdict: diffResolution(chain, probe.outcome),
           chainOutput: chain === null ? "none" : chain.targetSymbolId === null ? "fileOnly" : "pinned",
-          ...(chain !== null && { chainTarget: `${chain.targetRelPath}::${chain.targetSymbolId ?? "?"}` }),
-          ...(probe.outcome.kind === "inProject" && {
-            oracleTarget: `${probe.outcome.answer.targetRelPath}::${probe.outcome.answer.targetSymbolId ?? "?"}`,
-          }),
+          ...(chain !== null && { chain }),
+          ...(probe.target !== undefined && { target: probe.target }),
         });
       }
     }
@@ -879,6 +1305,8 @@ async function main(): Promise<void> {
   const chainOutput = tallyChainOutput(rows);
   const priorities = flagTrackBPriorities(byFeature);
   const uncovered = findUncoveredCategories(byFeature, TYPE_FEATURE_CATEGORIES);
+  const decomposedByFeature = decomposeOracleMismatches(rows, (row) => row.categories);
+  const [decomposedOverall] = decomposeOracleMismatches(rows, () => ["all call sites"]);
 
   const out: string[] = [
     "",
@@ -926,6 +1354,27 @@ async function main(): Promise<void> {
     }
   }
 
+  out.push(
+    "",
+    formatDecompositionTable("DECOMPOSED MISMATCHES BY TYPE FEATURE (raw counts split by reason)", decomposedByFeature),
+    "",
+    "TRUE DEFECT RESIDUAL — what is left after reconciling agreement and unmodellable targets",
+  );
+  if (decomposedOverall === undefined) {
+    out.push("  none — the chain and the checker agree on every scored call site");
+  } else {
+    const { wrongFile, missed, phantom } = decomposedOverall;
+    out.push(
+      `  wrongFile ${wrongFile.total} raw → ${wrongFile.defect} defects ` +
+        `(interface-vs-impl ${wrongFile.interfaceVsImpl}, declaration-site path ${wrongFile.declarationSitePath})`,
+      `  missed ${missed.total} raw → ${missed.defect} defects ` +
+        `(anonymous callable ${missed.anonymousCallable}, unpinned target ${missed.unpinnedTarget})`,
+      `  phantom ${phantom.total} raw → ${phantom.defect} fabricated edges ` +
+        `(builtin ${phantom.builtinMember}, external package ${phantom.externalPackageMember}; ` +
+        `arguable external-interface ${phantom.externalInterfaceMatch}, artifact ${phantom.generatedInRepo})`,
+    );
+  }
+
   if (uncovered.length > 0) {
     out.push("", `NO COVERAGE ON THIS CORPUS: ${uncovered.join(", ")} — this corpus cannot rank those tracks`);
   }
@@ -945,6 +1394,9 @@ async function main(): Promise<void> {
       byReceiver,
       priorities,
       uncovered,
+      decomposedOverall,
+      decomposedByFeature,
+      decomposedByReceiver: decomposeOracleMismatches(rows, (row) => [row.receiverKind]),
       samples: { missed: sample("missed"), wrongFile: sample("wrongFile"), phantom: sample("phantom") },
     };
     writeFileSync(options.json, `${JSON.stringify(payload, null, 2)}\n`);

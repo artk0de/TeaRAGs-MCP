@@ -31,7 +31,19 @@ function methodKindFromClassify(node: AstNode): "instance" | "static" | undefine
 export function tsNameOf(node: AstNode): NamedSymbol | null {
   if (node.type === "method_definition") {
     const id = node.childForFieldName("name");
-    if (id) return { name: id.text, descendsInto: false, methodKind: methodKindFromClassify(node) };
+    // bd tea-rags-mcp-2jhwk — a `method_definition` sitting directly in an
+    // OBJECT LITERAL is a namespace member, not a class method: it is invoked
+    // as `X.member()` on the object itself and there is no instance to bind.
+    // `classifyMethod` only knows the class-body question ("is the `static`
+    // keyword present?") and answers "instance" for every object-literal
+    // method, which would compose `X#member`. Leaving `methodKind` unset lets
+    // the language `scopeSeparator` compose the `Outer.Nested` namespace form
+    // the convention reserves for exactly this case
+    // (`.claude/rules/symbolid-convention.md`).
+    if (id) {
+      const methodKind = node.parent?.type === "object" ? undefined : methodKindFromClassify(node);
+      return { name: id.text, descendsInto: false, methodKind };
+    }
   }
   if (node.type === "function_declaration") {
     const id = node.childForFieldName("name");
@@ -55,5 +67,62 @@ export function tsNameOf(node: AstNode): NamedSymbol | null {
     const id = node.childForFieldName("name");
     if (id) return { name: id.text, descendsInto: true, syntheticConstructorIfMissing: true };
   }
+  // bd tea-rags-mcp-2jhwk — const-object NAMESPACE:
+  //
+  //   export const FileLevelGrouper = { group(...) { … } };
+  //
+  // A widely-used alternative to a static-only class, and previously invisible:
+  // the members landed as bare top-level symbols (fq `group`, scope `[]`) and
+  // the receiver name had no symbol at all. Two consequences, both measured by
+  // `scripts/ts-codegraph-typechecker-oracle.ts` over this repo's own `src`:
+  // `FileLevelGrouper.group()` could not be pinned (the barrel re-export hop in
+  // `TSNamedImportSymbolResolutionStrategy` gates on the receiver being in the
+  // symbol table, so those calls held a file-only edge on the BARREL), and
+  // three different files each declared a symbol called plain `group`, so
+  // `find_symbol` / `get_callers` could not tell them apart.
+  //
+  // Naming the declarator with `descendsInto: true` fixes both at once: the
+  // receiver becomes lookup-able and its members compose as `X.member`.
+  //
+  // Gated on the object carrying at least one `method_definition`. A data-only
+  // object (`const PALETTE = { red: "#f00" }`) declares nothing callable, and
+  // naming it would add symbols no call site can ever target.
+  if (node.type === "variable_declarator") {
+    const id = node.childForFieldName("name");
+    // `const { a, b } = …` binds an `object_pattern`, which names no namespace.
+    if (id?.type !== "identifier") return null;
+    const value = node.childForFieldName("value");
+    if (!value) return null;
+    const object = unwrapTypeAssertions(value);
+    if (object.type !== "object") return null;
+    if (!object.children.some((child) => child.type === "method_definition")) return null;
+    return { name: id.text, descendsInto: true };
+  }
   return null;
+}
+
+/**
+ * Peel the TypeScript-only wrappers that sit between a declarator's `value`
+ * field and the object literal underneath: `as const` / `as Shape`
+ * (`as_expression`), `satisfies Shape` (`satisfies_expression`), and explicit
+ * parentheses. All three are type-level annotations — the declared value is
+ * still the object literal, so the namespace shape must be recognised through
+ * them.
+ */
+function unwrapTypeAssertions(node: AstNode): AstNode {
+  let current = node;
+  // Bounded by the AST depth of the wrapper chain; each step strips one level.
+  while (
+    current.type === "as_expression" ||
+    current.type === "satisfies_expression" ||
+    current.type === "parenthesized_expression"
+  ) {
+    // `namedChildren[0]` is the wrapped expression in all three shapes; using
+    // it rather than `children[0]` skips the anonymous punctuation tokens
+    // (`(`, `as`, `satisfies`) tree-sitter keeps in the full child list.
+    const inner = current.namedChildren[0];
+    if (!inner || inner === current) break;
+    current = inner;
+  }
+  return current;
 }

@@ -66,6 +66,23 @@ re-exported file → `namedImport`/`importNarrowedFallback` miss. Investigate
 re-export resolution; may be a small deterministic win independent of the type
 ladder.
 
+**ANSWERED — the gap was real, and is now half closed (bd tea-rags-mcp-hzsxy).**
+`namedImport` (pass 5) resolves the barrel hop by asking the symbol table where
+the receiver is declared, rather than by reading the barrel's re-export list.
+Measured over `src`: 611 named imports reach the hop, 144 take it, and all 144
+were a file-only edge on a barrel before and a symbol-pinned edge on the
+declaring file after — no site that already pinned a symbol was touched.
+
+What remains is bounded by SYMBOL EXTRACTION, not by import mapping. The
+`Barrel.staticMember()` `wrongFile` rows the oracle reports (`FileLevelGrouper`,
+`DocChunkGrouper`, `CodeChunkGrouper`) are namespaces written
+`export const X = { method() {} }`, and `tsNameOf` names only classes, functions
+and methods — so the receiver is absent from the symbol table and there is
+nothing to hop to. Closing those needs either const-object namespaces in
+`tsNameOf`, or the walker recording re-export NAMES (`collectReexport` drops
+them today) plus a run-global file→re-exports map through the pass-1→pass-2
+barrier. Both are contract-level changes, tracked separately.
+
 ## Q6 — Promote the probe harness to a real-chunker metric (T-MEASURE, 6x6e)
 
 The throwaway probe used an APPROXIMATE chunker (function/method/class only),

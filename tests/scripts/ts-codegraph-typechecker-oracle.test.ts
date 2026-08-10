@@ -1,14 +1,21 @@
+import ts from "typescript";
 import { describe, expect, it } from "vitest";
 
 import {
+  decomposeOracleMismatches,
+  describeOracleDeclaration,
   diffResolution,
   findUncoveredCategories,
   flagTrackBPriorities,
   formatOracleTable,
+  reconcileOracleMissed,
+  reconcileOraclePhantom,
+  reconcileOracleWrongFile,
   tallyBy,
   tallyChainOutput,
   type OracleOutcome,
   type OracleRow,
+  type OracleTargetFacts,
   type OracleVerdict,
 } from "../../scripts/ts-codegraph-typechecker-oracle.js";
 
@@ -107,6 +114,32 @@ describe("tallyChainOutput", () => {
 
   it("counts nothing for an empty run", () => {
     expect(tallyChainOutput([])).toEqual({ edges: 0, fileOnly: 0, unresolved: 0 });
+  });
+});
+
+describe("diffResolution against external ground truth (bd tea-rags-mcp-ffju3)", () => {
+  it("reads a chain answer naming the same external declaration as agreement rather than a fabricated edge", () => {
+    const chain = { targetRelPath: "node_modules/typescript/lib/lib.es5.d.ts", targetSymbolId: null };
+
+    expect(diffResolution(chain, { kind: "external" })).toEqual("agreeExternal");
+  });
+
+  it("reads a chain answer naming a different external declaration as agreement, since neither side claims an in-project edge", () => {
+    const chain = { targetRelPath: "node_modules/pino/lib/proto.d.ts", targetSymbolId: null };
+
+    expect(diffResolution(chain, { kind: "external" })).toEqual("agreeExternal");
+  });
+
+  it("reads a chain answer naming a declaration file under the project's own tree as agreement", () => {
+    const chain = { targetRelPath: "src/core/contracts/types/codegraph.d.ts", targetSymbolId: null };
+
+    expect(diffResolution(chain, { kind: "external" })).toEqual("agreeExternal");
+  });
+
+  it("reads a chain answer naming the project's compiled output as agreement rather than a fabricated edge", () => {
+    const chain = { targetRelPath: "build/core/runner.js", targetSymbolId: "Runner.run" };
+
+    expect(diffResolution(chain, { kind: "external" })).toEqual("agreeExternal");
   });
 });
 
@@ -295,5 +328,352 @@ describe("formatOracleTable", () => {
 
   it("renders a placeholder row when there is nothing to tally", () => {
     expect(formatOracleTable("By type feature", [])).toContain("(no call sites)");
+  });
+});
+
+/** The checker's declaration, defaulted to an ordinary in-project method. */
+function target(overrides: Partial<OracleTargetFacts> = {}): OracleTargetFacts {
+  return {
+    relPath: "src/core/runner.ts",
+    symbolId: "Runner.run",
+    shortName: "run",
+    declarationKind: "MethodDeclaration",
+    declarationOnly: false,
+    anonymousCallable: false,
+    origin: "project",
+    ...overrides,
+  };
+}
+
+describe("reconcileOracleWrongFile", () => {
+  it("reads a checker answer naming an interface member as agreement when the chain named a same-named implementation", () => {
+    const mismatch = row({
+      verdict: "wrongFile",
+      chain: { targetRelPath: "src/core/runner.ts", targetSymbolId: "Runner.run" },
+      target: target({
+        relPath: "src/core/contracts/runnable.ts",
+        symbolId: "Runnable.run",
+        declarationKind: "MethodSignature",
+        declarationOnly: true,
+      }),
+    });
+
+    expect(reconcileOracleWrongFile(mismatch)).toEqual("interfaceVsImpl");
+  });
+
+  it("counts a wrongFile as a defect when the two sides named different members", () => {
+    const mismatch = row({
+      verdict: "wrongFile",
+      chain: { targetRelPath: "src/core/runner.ts", targetSymbolId: "Runner.stop" },
+      target: target({
+        relPath: "src/core/contracts/runnable.ts",
+        symbolId: "Runnable.run",
+        declarationKind: "MethodSignature",
+        declarationOnly: true,
+      }),
+    });
+
+    expect(reconcileOracleWrongFile(mismatch)).toEqual("defect");
+  });
+
+  it("reconciles by declaration-site path when the checker's target sits under contracts and the members agree", () => {
+    const mismatch = row({
+      verdict: "wrongFile",
+      chain: { targetRelPath: "src/core/runner.ts", targetSymbolId: "Runner.run" },
+      target: target({ relPath: "src/core/contracts/types/codegraph.ts", symbolId: "Runnable.run" }),
+    });
+
+    expect(reconcileOracleWrongFile(mismatch)).toEqual("declarationSitePath");
+  });
+
+  it("counts a wrongFile as a defect when the checker named a concrete declaration on an ordinary path", () => {
+    const mismatch = row({
+      verdict: "wrongFile",
+      chain: { targetRelPath: "src/core/runner.ts", targetSymbolId: "Runner.run" },
+      target: target({ relPath: "src/core/domains/explore/searcher.ts", symbolId: "Searcher.run" }),
+    });
+
+    expect(reconcileOracleWrongFile(mismatch)).toEqual("defect");
+  });
+
+  it("counts a wrongFile with no recorded checker declaration as a defect rather than excusing it", () => {
+    expect(reconcileOracleWrongFile(row({ verdict: "wrongFile" }))).toEqual("defect");
+  });
+});
+
+describe("reconcileOracleMissed", () => {
+  it("calls a missed call site unmodellable when the checker's target is an anonymous callable", () => {
+    const mismatch = row({
+      verdict: "missed",
+      target: target({
+        symbolId: null,
+        shortName: null,
+        declarationKind: "ArrowFunction",
+        anonymousCallable: true,
+      }),
+    });
+
+    expect(reconcileOracleMissed(mismatch)).toEqual("anonymousCallable");
+  });
+
+  it("calls a missed call site unmodellable when the target has no symbol the graph could point an edge at", () => {
+    const mismatch = row({ verdict: "missed", target: target({ symbolId: null }) });
+
+    expect(reconcileOracleMissed(mismatch)).toEqual("unpinnedTarget");
+  });
+
+  it("counts a missed call site as a defect when the checker's target is a pinned project symbol", () => {
+    expect(reconcileOracleMissed(row({ verdict: "missed", target: target() }))).toEqual("defect");
+  });
+});
+
+describe("reconcileOraclePhantom", () => {
+  it("calls a phantom on a default-lib member a builtin match even though the lib declares it on an interface", () => {
+    const phantom = row({
+      verdict: "phantom",
+      chain: { targetRelPath: "src/core/infra/buffer.ts", targetSymbolId: "ChunkBuffer.push" },
+      target: target({
+        relPath: "node_modules/typescript/lib/lib.es5.d.ts",
+        symbolId: null,
+        shortName: "push",
+        declarationKind: "MethodSignature",
+        declarationOnly: true,
+        origin: "defaultLib",
+      }),
+    });
+
+    expect(reconcileOraclePhantom(phantom)).toEqual("builtinMember");
+  });
+
+  it("holds back a verdict when an external package declares the member on an interface the project may implement", () => {
+    const phantom = row({
+      verdict: "phantom",
+      chain: { targetRelPath: "src/core/adapters/qdrant.ts", targetSymbolId: "QdrantStore.search" },
+      target: target({
+        relPath: "node_modules/@qdrant/js-client-rest/dist/types/api.d.ts",
+        symbolId: null,
+        shortName: "search",
+        declarationKind: "MethodSignature",
+        declarationOnly: true,
+        origin: "externalPackage",
+      }),
+    });
+
+    expect(reconcileOraclePhantom(phantom)).toEqual("externalInterfaceMatch");
+  });
+
+  it("counts a phantom on a concrete external declaration as a fabricated edge", () => {
+    const phantom = row({
+      verdict: "phantom",
+      chain: { targetRelPath: "src/core/infra/log.ts", targetSymbolId: "Logger.write" },
+      target: target({
+        relPath: "node_modules/pino/lib/proto.d.ts",
+        symbolId: null,
+        shortName: "write",
+        origin: "externalPackage",
+      }),
+    });
+
+    expect(reconcileOraclePhantom(phantom)).toEqual("externalPackageMember");
+  });
+
+  it("counts a phantom whose external interface declares a different member as a fabricated edge", () => {
+    const phantom = row({
+      verdict: "phantom",
+      chain: { targetRelPath: "src/core/infra/log.ts", targetSymbolId: "Logger.write" },
+      target: target({
+        relPath: "node_modules/pino/lib/proto.d.ts",
+        symbolId: null,
+        shortName: "flush",
+        declarationOnly: true,
+        origin: "externalPackage",
+      }),
+    });
+
+    expect(reconcileOraclePhantom(phantom)).toEqual("externalPackageMember");
+  });
+
+  it("still counts a fabricated edge when the chain named project source for a call that leaves the project", () => {
+    const phantom = row({
+      verdict: "phantom",
+      chain: { targetRelPath: "src/core/infra/buffer.ts", targetSymbolId: "ChunkBuffer.join" },
+      target: target({
+        relPath: "node_modules/typescript/lib/lib.es5.d.ts",
+        symbolId: null,
+        shortName: "join",
+        declarationOnly: true,
+        origin: "defaultLib",
+      }),
+    });
+
+    expect(reconcileOraclePhantom(phantom)).toEqual("builtinMember");
+  });
+
+  it("sets aside a phantom whose target is the project's own compiled output as a measurement artifact", () => {
+    const phantom = row({
+      verdict: "phantom",
+      chain: { targetRelPath: "src/core/runner.ts", targetSymbolId: "Runner.run" },
+      target: target({ relPath: "build/core/runner.d.ts", symbolId: null, origin: "generatedInRepo" }),
+    });
+
+    expect(reconcileOraclePhantom(phantom)).toEqual("generatedInRepo");
+  });
+});
+
+/** The first node of `kind` in a parsed snippet — the declaration under test. */
+function declarationOfKind(code: string, kind: ts.SyntaxKind): ts.Declaration {
+  const source = ts.createSourceFile("fixture.ts", code, ts.ScriptTarget.Latest, true);
+  let found: ts.Node | undefined;
+  const visit = (node: ts.Node): void => {
+    if (found === undefined && node.kind === kind) found = node;
+    if (found === undefined) ts.forEachChild(node, visit);
+  };
+  visit(source);
+  if (found === undefined) throw new Error(`no ${ts.SyntaxKind[kind]} in fixture`);
+  return found as ts.Declaration;
+}
+
+describe("describeOracleDeclaration", () => {
+  it("names a function-typed interface property by the property it hangs off", () => {
+    const declaration = declarationOfKind(
+      "interface SymbolTable { hydrate: (persisted: string) => void; }",
+      ts.SyntaxKind.FunctionType,
+    );
+
+    expect(describeOracleDeclaration(declaration).shortName).toEqual("hydrate");
+  });
+
+  it("treats a function-typed interface property as a declaration site", () => {
+    const declaration = declarationOfKind(
+      "interface SymbolTable { hydrate: (persisted: string) => void; }",
+      ts.SyntaxKind.FunctionType,
+    );
+
+    expect(describeOracleDeclaration(declaration).declarationOnly).toEqual(true);
+  });
+
+  it("treats an interface method signature as a declaration site", () => {
+    const declaration = declarationOfKind("interface Runnable { run(): void; }", ts.SyntaxKind.MethodSignature);
+
+    expect(describeOracleDeclaration(declaration)).toEqual({
+      shortName: "run",
+      declarationKind: "MethodSignature",
+      declarationOnly: true,
+      anonymousCallable: false,
+    });
+  });
+
+  it("treats an abstract method as a declaration site", () => {
+    const declaration = declarationOfKind(
+      "abstract class Base { abstract run(): void; }",
+      ts.SyntaxKind.MethodDeclaration,
+    );
+
+    expect(describeOracleDeclaration(declaration).declarationOnly).toEqual(true);
+  });
+
+  it("treats a concrete class method as neither a declaration site nor anonymous", () => {
+    const declaration = declarationOfKind("class Runner { run(): void {} }", ts.SyntaxKind.MethodDeclaration);
+
+    expect(describeOracleDeclaration(declaration)).toEqual({
+      shortName: "run",
+      declarationKind: "MethodDeclaration",
+      declarationOnly: false,
+      anonymousCallable: false,
+    });
+  });
+
+  it("names an arrow function bound to a const rather than calling it unmodellable", () => {
+    const declaration = declarationOfKind("const run = () => {};", ts.SyntaxKind.ArrowFunction);
+
+    expect(describeOracleDeclaration(declaration)).toMatchObject({ shortName: "run", anonymousCallable: false });
+  });
+
+  it("calls an inline callback argument unmodellable", () => {
+    const declaration = declarationOfKind("items.map(() => 1);", ts.SyntaxKind.ArrowFunction);
+
+    expect(describeOracleDeclaration(declaration)).toMatchObject({ shortName: null, anonymousCallable: true });
+  });
+
+  it("calls a callback parameter unmodellable even though it carries a name", () => {
+    const declaration = declarationOfKind("function each(cb: () => void) { cb(); }", ts.SyntaxKind.Parameter);
+
+    expect(describeOracleDeclaration(declaration).anonymousCallable).toEqual(true);
+  });
+});
+
+describe("decomposeOracleMismatches", () => {
+  it("splits every mismatch kind into its reasons and reports the residual defect count", () => {
+    const input = [
+      row({
+        verdict: "wrongFile",
+        chain: { targetRelPath: "src/core/runner.ts", targetSymbolId: "Runner.run" },
+        target: target({ relPath: "src/core/contracts/runnable.ts", declarationOnly: true }),
+      }),
+      row({
+        verdict: "wrongFile",
+        chain: { targetRelPath: "src/core/runner.ts", targetSymbolId: "Runner.run" },
+        target: target({ relPath: "src/core/domains/explore/searcher.ts" }),
+      }),
+      row({ verdict: "missed", target: target({ symbolId: null, anonymousCallable: true }) }),
+      row({ verdict: "missed", target: target() }),
+      row({
+        verdict: "phantom",
+        chain: { targetRelPath: "src/core/infra/buffer.ts", targetSymbolId: "ChunkBuffer.push" },
+        target: target({ relPath: "node_modules/typescript/lib/lib.es5.d.ts", origin: "defaultLib" }),
+      }),
+    ];
+
+    const [decomposition] = decomposeOracleMismatches(input, () => ["all"]);
+
+    expect(decomposition.wrongFile).toEqual({
+      total: 2,
+      interfaceVsImpl: 1,
+      declarationSitePath: 0,
+      defect: 1,
+    });
+    expect(decomposition.missed).toEqual({ total: 2, anonymousCallable: 1, unpinnedTarget: 0, defect: 1 });
+    expect(decomposition.phantom).toEqual({
+      total: 1,
+      generatedInRepo: 0,
+      builtinMember: 1,
+      externalInterfaceMatch: 0,
+      externalPackageMember: 0,
+      defect: 1,
+    });
+  });
+
+  it("counts a multi-label row once under each of its categories", () => {
+    const input = [
+      row({
+        categories: ["generic", "structuralTyping"],
+        verdict: "missed",
+        target: target({ symbolId: null, anonymousCallable: true }),
+      }),
+    ];
+
+    const decompositions = decomposeOracleMismatches(input, (r) => r.categories);
+
+    expect(decompositions.map((d) => d.label).sort()).toEqual(["generic", "structuralTyping"]);
+    expect(decompositions.every((d) => d.missed.anonymousCallable === 1)).toEqual(true);
+  });
+
+  it("reports nothing for a corpus the chain and the checker agree on", () => {
+    const input = [...rows("match", 3), ...rows("fileOnly", 2), ...rows("agreeExternal", 4)];
+
+    expect(decomposeOracleMismatches(input, () => ["all"])).toEqual([]);
+  });
+
+  it("counts only the mismatches of a category that also carries agreement", () => {
+    const input = [
+      ...rows("match", 7, { categories: ["generic"] }),
+      ...rows("agreeExternal", 5, { categories: ["generic"] }),
+      row({ categories: ["generic"], verdict: "missed", target: target() }),
+    ];
+
+    const [decomposition] = decomposeOracleMismatches(input, (r) => r.categories);
+
+    expect(decomposition.label).toEqual("generic");
+    expect(decomposition.missed).toEqual({ total: 1, anonymousCallable: 0, unpinnedTarget: 0, defect: 1 });
   });
 });

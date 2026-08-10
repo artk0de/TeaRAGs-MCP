@@ -96,6 +96,35 @@ describe("DaemonFrameDecoder", () => {
   // least perturbed — and the residual error is one-sided, able to depress the
   // ratio (a false red, retried away by more reps) but never to inflate it into
   // a false green.
+  //
+  // Wall-clock budget, 180s against the suite's 30s (bd tea-rags-mcp-aowxw).
+  // WALL_CLOCK_BUDGET_MS in vitest.config.ts is derived as "worst serial test
+  // 3.2s x 9.6x max measured contention"; timing two arms over a 16MB payload
+  // costs 4.1s serial, so this test sits ABOVE the premise that budget was sized
+  // on and has no tail margin left — it timed out on a box carrying parallel
+  // suites, taking the whole coverage run down with it before coverage/ was
+  // written.
+  //
+  // Measured under 12 concurrent copies of itself: 22.9s median on a quiet box,
+  // but 60-68s with six worktrees live at load average 59 on 12 cores. Two runs
+  // of the SAME experiment spread 3x, because the arms are memory-bandwidth
+  // bound and every parallel suite on the machine competes for that bandwidth.
+  // A cost with that variance has to be budgeted at its tail, not its median:
+  // 180s is 2.6x the worst observed.
+  //
+  // Generous rather than snug, deliberately. The test is pure CPU with no I/O,
+  // so it cannot hang on a resource — a genuine hang is unbounded and trips any
+  // finite budget. What the headroom buys instead is diagnosability: a decoder
+  // regressed to quadratic must still FINISH and fail on the ratio assertion,
+  // which prints both timings, rather than expiring on a timeout that says only
+  // that something was slow. Such a regression roughly doubles the cost (~136s
+  // at the observed tail), so the budget has to clear that too.
+  //
+  // Cutting REPS or shrinking the payload would both buy time by degrading the
+  // measurement lzks3 landed: fewer reps weakens the min-of-N noise floor, and
+  // the ~24x gap is itself a function of payload size — at 4MB it narrows toward
+  // the 5x floor, which is the ambiguity 3bbacc7b already rewrote this test to
+  // escape.
   it("decodes a large frame far faster than re-splitting the whole accumulator", () => {
     const row = "x".repeat(1024);
     const rows = Array.from({ length: (16 * 1024 * 1024) / (row.length + 3) }, () => row);
@@ -136,5 +165,5 @@ describe("DaemonFrameDecoder", () => {
       legacy.ms / Math.max(decoder.ms, 0.1),
       `legacy ${legacy.ms.toFixed(2)}ms vs decoder ${decoder.ms.toFixed(2)}ms (best of ${REPS})`,
     ).toBeGreaterThan(5);
-  });
+  }, 180_000);
 });

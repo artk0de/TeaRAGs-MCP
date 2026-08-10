@@ -39,7 +39,7 @@
  * structurally-typed member the file is very often all that exists to know.
  */
 
-import ts from "typescript";
+import type ts from "typescript";
 
 import { CONTINUE, resolved } from "../../../../../contracts/resolution.js";
 import {
@@ -55,7 +55,7 @@ import { ECMASCRIPT_BUILTIN_TYPES, ECMASCRIPT_GLOBALS } from "../../../shared/ec
 import { mapImportToFile, type TsCompilerOptions } from "../ts-path-mapper.js";
 import type { TSProgramCache } from "../ts-program-cache.js";
 import type { ResolverConfig } from "./shared.js";
-import { declarationOwnerName, TS_SCOPE_SEPARATOR } from "./ts-type-checker-shared.js";
+import { declarationOwnerName, findReceiverExpression, TS_SCOPE_SEPARATOR } from "./ts-type-checker-shared.js";
 
 /**
  * Why a receiver is worth asking the checker about.
@@ -115,13 +115,13 @@ export class TSStructuralTypingSymbolResolutionStrategy implements SymbolResolut
     const handle = this.programCache.acquire(ctx.callerFile);
     if (!handle) return CONTINUE;
 
-    const access = findMemberAccess(handle.sourceFile, call.startLine, call.member);
-    if (!access) return CONTINUE;
-
     // The receiver EXPRESSION, not its text: this is what lets `this.out.emit()`
     // and `handlers.onSave()` take the same path, and what makes the structural
     // match the compiler's rather than ours.
-    const receiverType = handle.checker.getApparentType(handle.checker.getTypeAtLocation(access.expression));
+    const receiver = findReceiverExpression(handle.sourceFile, call.startLine, call.member);
+    if (!receiver) return CONTINUE;
+
+    const receiverType = handle.checker.getApparentType(handle.checker.getTypeAtLocation(receiver));
     if (kind === "merged" && !isMergedDeclaration(receiverType)) return CONTINUE;
 
     const declarations = receiverType.getProperty(call.member)?.getDeclarations() ?? [];
@@ -284,37 +284,4 @@ function bindsToExternalImport(name: string, ctx: CallContext, tsOptions: TsComp
     }
   }
   return false;
-}
-
-/**
- * The property access of the first call on `startLine` (1-based, matching
- * `CallRef.startLine`) whose member name is `member`. Only property accesses
- * qualify — a bare `run()` has no receiver to type, and this pass exists for
- * receivers. Both coordinates are checked because one line routinely holds
- * several calls.
- */
-function findMemberAccess(
-  sourceFile: ts.SourceFile,
-  startLine: number,
-  member: string,
-): ts.PropertyAccessExpression | null {
-  let found: ts.PropertyAccessExpression | null = null;
-
-  const visit = (node: ts.Node): void => {
-    if (found !== null) return;
-    if (ts.isCallExpression(node) && ts.isPropertyAccessExpression(node.expression)) {
-      const callee = node.expression;
-      if (ts.isIdentifier(callee.name) && callee.name.text === member) {
-        const line = sourceFile.getLineAndCharacterOfPosition(node.getStart(sourceFile)).line + 1;
-        if (line === startLine) {
-          found = callee;
-          return;
-        }
-      }
-    }
-    ts.forEachChild(node, visit);
-  };
-
-  ts.forEachChild(sourceFile, visit);
-  return found;
 }

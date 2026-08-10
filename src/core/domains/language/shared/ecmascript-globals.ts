@@ -211,3 +211,51 @@ export const ECMASCRIPT_BUILTIN_PROTOTYPE_METHODS: ReadonlySet<string> = new Set
   // measured phantom edges.
   "has",
 ]);
+
+/**
+ * bd tea-rags-mcp-4kx9f — prototype methods of the builtin CONTAINERS
+ * (`Array`, `Set`, `Map`, `RegExp`), read only for a receiver that is an
+ * IMPORTED CONSTANT.
+ *
+ * Separate from {@link ECMASCRIPT_BUILTIN_PROTOTYPE_METHODS} because the
+ * evidence behind it is different, and stronger. That set is last-resort: it
+ * sees receivers nothing could type, anywhere, so a word in it suppresses the
+ * member everywhere and its curation has to survive that. This set is consulted
+ * only after the resolver has established two facts about the call — the
+ * receiver is bound by an import that maps INTO the project, and no file
+ * declares that receiver as a symbol. `tsNameOf` names classes, functions and
+ * methods, so a receiver missing from the symbol table is a module-level
+ * `const`; an imported CLASS is a symbol and never reaches here.
+ *
+ * That precondition is what makes words this set could not otherwise afford
+ * safe. `find` is `UserRepo.find` all over real code — but `UserRepo` is a
+ * class, so the guard never fires on it, while `STRUCTURED_MACROS.find(…)` is
+ * `Array.prototype.find` on a constant array. The measured shape is
+ * `YARD_CONST.test(text)` / `CODE_LANGUAGES.has(lang)` /
+ * `UNSUPPORTED_FALLBACK.map(…)`: the import resolves to the file DECLARING the
+ * constant, and the call enters the JS runtime instead.
+ *
+ * The accessor family (`get` / `set` / `add` / `delete` / `clear`) stays out for
+ * the same reason it is absent above: a constant CAN be an object-literal
+ * namespace whose methods `tsNameOf` does not index, and those namespaces are
+ * named with exactly those verbs. Iteration and matching verbs carry no such
+ * risk.
+ */
+export const ECMASCRIPT_CONTAINER_PROTOTYPE_METHODS: ReadonlySet<string> = new Set([
+  // RegExp matching — a constant regex is the single most common shape here.
+  "test",
+  "exec",
+  // Array iteration / transformation. Every one of these takes a callback or
+  // produces a new collection; none is a plausible name for a namespace's own
+  // operation.
+  "map",
+  "filter",
+  "find",
+  "findLast",
+  "some",
+  "every",
+  "forEach",
+  "reduce",
+  "reduceRight",
+  "join",
+]);
