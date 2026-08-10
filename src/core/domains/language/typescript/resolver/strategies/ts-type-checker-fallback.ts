@@ -34,7 +34,7 @@ import { pickSingleCandidate, type CallContext, type CallRef } from "../../../..
 import type { SymbolResolutionOutcome, SymbolResolutionStrategy } from "../../../../../contracts/types/language.js";
 import type { TSProgramCache } from "../ts-program-cache.js";
 import type { ResolverConfig } from "./shared.js";
-import { memberSeparator, prefixWithNamespaces } from "./ts-type-checker-shared.js";
+import { callSiteAt, memberSeparator, prefixWithNamespaces } from "./ts-type-checker-shared.js";
 
 /**
  * Why a call site is worth a type check.
@@ -186,30 +186,7 @@ export function findCallExpression(
   startLine: number,
   member: string,
 ): ts.CallExpression | null {
-  let found: ts.CallExpression | null = null;
-
-  const visit = (node: ts.Node): void => {
-    if (found !== null) return;
-    if (ts.isCallExpression(node) && calleeName(node) === member) {
-      const line = sourceFile.getLineAndCharacterOfPosition(node.getStart(sourceFile)).line + 1;
-      if (line === startLine) {
-        found = node;
-        return;
-      }
-    }
-    ts.forEachChild(node, visit);
-  };
-
-  ts.forEachChild(sourceFile, visit);
-  return found;
-}
-
-/** Rightmost identifier of a callee — `fetch` in `repo.fetch(…)`, `run` in `run(…)`. */
-function calleeName(node: ts.CallExpression): string | null {
-  const callee = node.expression;
-  if (ts.isPropertyAccessExpression(callee) && ts.isIdentifier(callee.name)) return callee.name.text;
-  if (ts.isIdentifier(callee)) return callee.text;
-  return null;
+  return callSiteAt(sourceFile, startLine, member)?.call ?? null;
 }
 
 /**

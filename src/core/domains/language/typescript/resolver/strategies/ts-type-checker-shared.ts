@@ -37,12 +37,106 @@ import { INSTANCE_METHOD_SEPARATOR } from "../../../../../infra/symbolid/index.j
 export const TS_SCOPE_SEPARATOR = ".";
 
 /**
+ * What the passes need to know about one `(line, member)` coordinate: the call
+ * node itself, and the receiver — kept as two slots because they are answers to
+ * two questions and do not always come from the same node.
+ *
+ * `run(); helper.run();` is the shape that forces the split. Both calls sit on
+ * one line under one member name; the bare one is what a signature question
+ * resolves, and only the second has a receiver to type at all.
+ */
+export interface TSCallSiteEntry {
+  /** First call on the line whose callee names `member`, whatever its shape. */
+  readonly call: ts.CallExpression;
+  /** Receiver of the first PROPERTY-ACCESS call among those, if any. */
+  receiver: ts.Expression | null;
+}
+
+/** Every call site of one SourceFile, keyed `${startLine}:${member}`. */
+type TSCallSiteIndex = Map<string, TSCallSiteEntry>;
+
+/**
+ * One index per SourceFile, discarded with it (bd tea-rags-mcp-skzu9).
+ *
+ * A `WeakMap` rather than a keyed cache because `TSProgramCache` already owns
+ * SourceFile lifetime: it drops a file's parse when the file's mtime moves and
+ * clears everything at a run boundary, so a re-parse yields a NEW SourceFile
+ * object and the stale index becomes unreachable on its own. Keying by file NAME
+ * would instead hand a changed file the previous revision's coordinates.
+ */
+const callSiteIndexes = new WeakMap<ts.SourceFile, TSCallSiteIndex>();
+
+/** Rightmost identifier of a callee — `fetch` in `repo.fetch(…)`, `run` in `run(…)`. */
+function calleeName(node: ts.CallExpression): string | null {
+  const callee = node.expression;
+  if (ts.isPropertyAccessExpression(callee) && ts.isIdentifier(callee.name)) return callee.name.text;
+  if (ts.isIdentifier(callee)) return callee.text;
+  return null;
+}
+
+/**
+ * Index every call in the file by `(start line, member)`, first occurrence in
+ * traversal order winning each slot.
+ *
+ * First-write-wins over a FULL pre-order walk is what makes this exactly the
+ * answer the two finders used to compute by walking until their first match and
+ * stopping. Pre-order visits a parent before its children, so in
+ * `outer.run(inner.run())` the outer call claims the key before the inner one is
+ * reached — the same node the old early-exit returned. The two slots fill
+ * independently, which is what preserves the mixed-shape line.
+ */
+function buildCallSiteIndex(sourceFile: ts.SourceFile): TSCallSiteIndex {
+  const index: TSCallSiteIndex = new Map();
+
+  const visit = (node: ts.Node): void => {
+    if (ts.isCallExpression(node)) {
+      const member = calleeName(node);
+      if (member !== null) {
+        const line = sourceFile.getLineAndCharacterOfPosition(node.getStart(sourceFile)).line + 1;
+        const key = `${line}:${member}`;
+        const receiver = ts.isPropertyAccessExpression(node.expression) ? node.expression.expression : null;
+        const existing = index.get(key);
+        if (existing === undefined) index.set(key, { call: node, receiver });
+        else if (existing.receiver === null) existing.receiver = receiver;
+      }
+    }
+    ts.forEachChild(node, visit);
+  };
+
+  ts.forEachChild(sourceFile, visit);
+  return index;
+}
+
+/**
+ * The indexed call site at `(startLine, member)` — 1-based line, matching
+ * `CallRef.startLine` — or `undefined` when the file has none.
+ *
+ * Both coordinates are matched because one line routinely holds several calls;
+ * matching on the line alone would hand back a neighbour's node.
+ *
+ * The index exists because this question is asked about the same file thousands
+ * of times in a run and the file never changes between them. The external guard
+ * asks it, then passes 12, 13 and 14 each ask it again for the same call, and
+ * `scripts/ts-codegraph-typechecker-oracle.ts` asks once more per call site — up
+ * to five full walks of one SourceFile per call, where the answers were always
+ * going to agree. Now the file is walked once and every later question is a map
+ * lookup (bd tea-rags-mcp-skzu9).
+ */
+export function callSiteAt(sourceFile: ts.SourceFile, startLine: number, member: string): TSCallSiteEntry | undefined {
+  let index = callSiteIndexes.get(sourceFile);
+  if (index === undefined) {
+    index = buildCallSiteIndex(sourceFile);
+    callSiteIndexes.set(sourceFile, index);
+  }
+  return index.get(`${startLine}:${member}`);
+}
+
+/**
  * The RECEIVER expression of the call to `member` on `startLine` (1-based, to
  * match `CallRef.startLine`) — `x` in `x.process()`.
  *
- * Both coordinates are matched because one line routinely holds several calls,
- * and only a property access has a receiver at all: a bare `process()` yields
- * `null` rather than the enclosing expression.
+ * Only a property access has a receiver at all: a bare `process()` yields `null`
+ * rather than the enclosing expression.
  *
  * The two passes that need this are the two whose question is "what IS the
  * receiver": {@link TSStructuralTypingSymbolResolutionStrategy} asks the checker
@@ -54,35 +148,19 @@ export const TS_SCOPE_SEPARATOR = ".";
  * node for anything but reaching that child (bd tea-rags-mcp-un8mv). Handing
  * back the receiver directly is what makes it honestly one function.
  *
- * Not merged with `findCallExpression` in `./ts-type-checker-fallback.ts`: that
- * one matches BARE calls too and returns the `CallExpression`, because its pass
- * asks the checker to select a signature rather than to type a receiver. Same
- * traversal shape, different question, different answer type.
+ * Still not the same function as `findCallExpression` in
+ * `./ts-type-checker-fallback.ts`, which matches BARE calls too and returns the
+ * `CallExpression`, because its pass asks the checker to select a signature
+ * rather than to type a receiver. What the two now share is the TRAVERSAL, via
+ * {@link callSiteAt} — one walk answering both questions, which is honest
+ * precisely because the index keeps their two answers in separate slots.
  */
 export function findReceiverExpression(
   sourceFile: ts.SourceFile,
   startLine: number,
   member: string,
 ): ts.Expression | null {
-  let found: ts.Expression | null = null;
-
-  const visit = (node: ts.Node): void => {
-    if (found !== null) return;
-    if (ts.isCallExpression(node) && ts.isPropertyAccessExpression(node.expression)) {
-      const callee = node.expression;
-      if (ts.isIdentifier(callee.name) && callee.name.text === member) {
-        const line = sourceFile.getLineAndCharacterOfPosition(node.getStart(sourceFile)).line + 1;
-        if (line === startLine) {
-          found = callee.expression;
-          return;
-        }
-      }
-    }
-    ts.forEachChild(node, visit);
-  };
-
-  ts.forEachChild(sourceFile, visit);
-  return found;
+  return callSiteAt(sourceFile, startLine, member)?.receiver ?? null;
 }
 
 /** `#` for instance members, `.` for `static` ones — the universal convention. */
