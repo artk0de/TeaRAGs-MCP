@@ -47,7 +47,7 @@ const collidingTable = (): InMemoryGlobalSymbolTable =>
  * bd tea-rags-mcp-yjqi5 — a TS utility-type wrapper is not a type the guard may
  * decide on.
  *
- * `receiverIsBuiltinInstance` treats a KNOWN receiver type as decisive: builtin
+ * `receiverIsExternalInstance` treats a KNOWN receiver type as decisive: builtin
  * means external, anything else means internal, and the member vocabulary never
  * gets a vote. That invariant assumes the recorded name says something about
  * the runtime object. `Awaited<ReturnType<EmbeddingProvider["embedBatch"]>>`

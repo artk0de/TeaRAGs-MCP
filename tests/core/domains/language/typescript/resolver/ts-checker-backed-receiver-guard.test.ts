@@ -227,7 +227,7 @@ const PROJECT_TYPED_SET: CallRef = { callText: 'memo.set("a", 1)', receiver: "me
 /**
  * bd tea-rags-mcp-335eu — root causes 2 and 3 of bd tea-rags-mcp-yjqi5.
  *
- * `receiverIsBuiltinInstance` decides on the WALKER's type hints, and falls
+ * `receiverIsExternalInstance` decides on the WALKER's type hints, and falls
  * through to {@link ECMASCRIPT_BUILTIN_PROTOTYPE_METHODS} when there are none.
  * That vocabulary deliberately excludes `set` / `next` / `toString`, because a
  * project method is just as likely to carry those names — so a receiver the

@@ -84,10 +84,12 @@ conclude absence from a graph the index says is incomplete.
 - **TypeScript** — 14-strategy chain (10 tree-sitter + 4 ts.Program/typeChecker:
   JSX component resolution, cross-call return-type inference, generics/overload
   getResolvedSignature, structural typing + interface declaration merging) +
-  ConeDispatch + typeChecker-backed union-receiver fan-out + builtin-receiver
-  precision guards (pre-resolution short-name match, and imported-constant
-  container members on the import-mapping fallback) + tsx/tsconfig-paths-aware
-  import mapping
+  ConeDispatch + typeChecker-backed union-receiver fan-out +
+  out-of-project-receiver precision guards (pre-resolution short-name match,
+  checker-backed declaration-site test covering builtins, default-lib and
+  dependency types, and imported-constant container members on the
+  import-mapping fallback) + edges restricted to project sources +
+  tsx/tsconfig-paths-aware import mapping
 - **JavaScript** — 6-strategy; CommonJS/ESM require resolution (dynamic gaps)
 - **Python** — 6-strategy + ConeDispatch CHA; type hints where present
 - **Go** — 6-strategy; explicit interfaces (no poly dispatch)

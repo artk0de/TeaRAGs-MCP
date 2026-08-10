@@ -99,7 +99,7 @@ export class TSTypeCheckerReturnTypeInferenceSymbolResolutionStrategy implements
     const memberDeclaration = this.memberOfInferredType(handle.checker, declaration, call.member);
     if (!memberDeclaration) return CONTINUE;
 
-    const targetRelPath = this.programCache.toRelPath(memberDeclaration.getSourceFile().fileName);
+    const targetRelPath = this.programCache.toProjectSourceRelPath(memberDeclaration.getSourceFile().fileName);
     if (targetRelPath === null) return CONTINUE;
 
     return resolved({

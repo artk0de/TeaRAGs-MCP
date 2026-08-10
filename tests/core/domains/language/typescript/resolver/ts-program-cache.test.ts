@@ -218,4 +218,73 @@ describe("TSProgramCache maps absolute compiler paths back to repo-relative ones
 
     expect(cache.toRelPath(join(repoRoot, "..", "outside.ts"))).toBeNull();
   });
+
+  it("maps a dependency under the repo root to an ordinary RelPath — the boundary is the DIRECTORY", () => {
+    const cache = new TSProgramCache({ repoRoot, tsOptions: { baseUrl: ".", paths: {} } });
+
+    expect(cache.toRelPath(join(repoRoot, "node_modules", "express", "index.d.ts"))).toBe(
+      "node_modules/express/index.d.ts",
+    );
+  });
+});
+
+/**
+ * bd tea-rags-mcp-otm6n — "inside the repo directory" and "one of the project's
+ * sources" are different questions, and conflating them is a defect.
+ *
+ * `node_modules` lives inside the repo root, so {@link TSProgramCache.toRelPath}
+ * hands a dependency's `.d.ts` a perfectly ordinary `RelPath` — as the case
+ * directly above pins. Consumers that read that as "this declaration belongs to
+ * the project" therefore count every dependency as project code, and, wherever
+ * the running compiler resolves under the same root, every default-lib file too.
+ */
+describe("TSProgramCache tells project sources from dependencies (bd tea-rags-mcp-otm6n)", () => {
+  let repoRoot: string;
+  const tsOptions = { baseUrl: ".", paths: {} };
+
+  beforeEach(() => {
+    repoRoot = realpathSync(mkdtempSync(join(tmpdir(), "ts-project-source-")));
+  });
+
+  afterEach(() => {
+    rmSync(repoRoot, { recursive: true, force: true });
+  });
+
+  const cache = (): TSProgramCache => new TSProgramCache({ repoRoot, tsOptions });
+
+  it("does not count a dependency declaration under the repo root as a project source", () => {
+    expect(cache().isProjectSourceFile(join(repoRoot, "node_modules/express/index.d.ts"))).toBe(false);
+  });
+
+  it("does not count a default lib shipped inside the repo root as a project source", () => {
+    expect(cache().isProjectSourceFile(join(repoRoot, "node_modules/typescript/lib/lib.es2022.full.d.ts"))).toBe(false);
+  });
+
+  it("does not count a NESTED workspace dependency as a project source", () => {
+    expect(cache().isProjectSourceFile(join(repoRoot, "packages/web/node_modules/left-pad/index.d.ts"))).toBe(false);
+  });
+
+  it("counts an ordinary project file as a project source", () => {
+    expect(cache().isProjectSourceFile(join(repoRoot, "src/core/app.ts"))).toBe(true);
+  });
+
+  it("counts a project's own hand-written .d.ts as a project source", () => {
+    expect(cache().isProjectSourceFile(join(repoRoot, "types/globals.d.ts"))).toBe(true);
+  });
+
+  it("counts a path merely NAMED like a dependency as a project source", () => {
+    expect(cache().isProjectSourceFile(join(repoRoot, "src/node_modules_helper.ts"))).toBe(true);
+  });
+
+  it("does not count a file outside the repo root at all", () => {
+    expect(cache().isProjectSourceFile("/elsewhere/lib.d.ts")).toBe(false);
+  });
+
+  it("yields the RelPath for a project source, so an edge can point at it", () => {
+    expect(cache().toProjectSourceRelPath(join(repoRoot, "src", "nested", "a.ts"))).toBe("src/nested/a.ts");
+  });
+
+  it("yields null for a dependency, so no edge can point at a file the index lacks", () => {
+    expect(cache().toProjectSourceRelPath(join(repoRoot, "node_modules", "express", "index.d.ts"))).toBeNull();
+  });
 });
