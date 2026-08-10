@@ -1,6 +1,7 @@
 import { CONTINUE, resolved } from "../../../../../contracts/resolution.js";
 import { pickSingleCandidate, type CallContext, type CallRef } from "../../../../../contracts/types/codegraph.js";
 import type { SymbolResolutionOutcome, SymbolResolutionStrategy } from "../../../../../contracts/types/language.js";
+import { targetsExternalImport } from "../ts-external-call.js";
 import { collectImportedFiles, type ResolverConfig } from "./shared.js";
 
 /**
@@ -13,12 +14,18 @@ import { collectImportedFiles, type ResolverConfig } from "./shared.js";
  * to it; otherwise ambiguity is real and we continue (→ chain returns null).
  * Only engages when N>1 (so the N=1 fast path in `globalShortName` keeps current
  * semantics) and only when imports could resolve.
+ *
+ * Shares `globalShortName`'s external guard, and needs it more (bd
+ * tea-rags-mcp-6b3gj): narrowing by imports turns an ambiguous bare member name
+ * into a CONFIDENT answer, so an unguarded `out.push()` here does not merely
+ * guess — it picks one implementer and commits to it.
  */
 export class TSImportNarrowedFallbackSymbolResolutionStrategy implements SymbolResolutionStrategy {
   readonly name = "importNarrowedFallback";
   constructor(private readonly cfg: ResolverConfig) {}
 
   attempt(call: CallRef, ctx: CallContext): SymbolResolutionOutcome {
+    if (targetsExternalImport(call, ctx, this.cfg.tsOptions)) return CONTINUE;
     const fallback = ctx.symbolTable.lookupByShortName(call.member);
     if (fallback.length <= 1 || ctx.imports.length === 0) return CONTINUE;
 
