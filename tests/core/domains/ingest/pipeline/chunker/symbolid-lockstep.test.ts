@@ -141,6 +141,20 @@ describe("symbolId lockstep — chunker payload vs cg_symbols (bd tea-rags-mcp-6
     "}",
   ].join("\n");
 
+  /** Same shape, but the enclosing scope is an INSTANCE METHOD rather than a function. */
+  const CALL_ARGUMENT_OBJECT_IN_METHOD = [
+    "export class Registry {",
+    "  register(): void {",
+    "    install({",
+    "      handle(event: string): string {",
+    "        const trimmed = event.trim();",
+    "        return trimmed.toUpperCase();",
+    "      },",
+    "    });",
+    "  }",
+    "}",
+  ].join("\n");
+
   describe("TypeScript", () => {
     it("names a const-object namespace member the same on both sides", async () => {
       // The defect: cg_symbols held `FileLevelGrouper.group` while the payload
@@ -166,25 +180,42 @@ describe("symbolId lockstep — chunker payload vs cg_symbols (bd tea-rags-mcp-6
       expect(await chunkerCallableIds(TYPESCRIPT, TOP_LEVEL_FUNCTION)).toEqual(["groupResults"]);
     });
 
-    // KNOWN GAP — bd tea-rags-mcp-pdv8m. `install({ handle() {} })` declares no
+    // FIXED by bd tea-rags-mcp-pdv8m. `install({ handle() {} })` declares no
     // namespace of its own, so both sides scope the member under the enclosing
     // function; the member still binds no instance, and cg_symbols holds
-    // `register.handle`. The chunker writes `register#handle` — an id nothing
-    // resolves — because `buildSymbolId` takes a BOOLEAN isStatic and collapses
-    // the namespace classification into "instance". bd 62hzr fixed the
-    // declarator shape upstream instead of widening that composer.
-    //
-    // `it.fails` keeps the reproducer in the suite: when pdv8m lands these turn
-    // into unexpected passes, which is the signal to flip them back to `it`.
-    it.fails("joins an object literal in a call argument with the namespace separator, never `#`", async () => {
+    // `register.handle`. The chunker used to write `register#handle` — an id
+    // nothing resolves — because `buildSymbolId` took a BOOLEAN isStatic and
+    // collapsed `classifyMethod`'s namespace classification into "instance".
+    // bd 62hzr had fixed only the sibling DECLARATOR shape upstream
+    // (`const X = { m() {} }`) instead of widening that composer, so this
+    // non-declarator shape stayed broken until the composer took the tri-state.
+    it("joins an object literal in a call argument with the namespace separator, never `#`", async () => {
       const ids = await chunkerCallableIds(TYPESCRIPT, CALL_ARGUMENT_OBJECT);
       expect(ids).toContain("register.handle");
       expect(ids).not.toContain("register#handle");
     });
 
-    it.fails("emits no callable id absent from cg_symbols — object literal in a call argument", async () => {
+    it("emits no callable id absent from cg_symbols — object literal in a call argument", async () => {
       const graphIds = new Set(codegraphIds(TYPESCRIPT, CALL_ARGUMENT_OBJECT));
       for (const id of await chunkerCallableIds(TYPESCRIPT, CALL_ARGUMENT_OBJECT)) {
+        expect([...graphIds]).toContain(id);
+      }
+    });
+
+    // KNOWN GAP — bd tea-rags-mcp-cv4k1, the residual pdv8m did NOT fix. pdv8m
+    // widened `buildSymbolId` so the LEAF separator is right (`.handle` on both
+    // sides), but the PARENT CHAIN still collapses the same tri-state:
+    // `composeParentSymbol` joins intermediate scope names with the language's
+    // scopeSeparator unconditionally, so the enclosing instance method composes
+    // as `Registry.register` while the codegraph walker composes
+    // `Registry#register`. Chunker emits `Registry.register.handle`, cg_symbols
+    // holds `Registry#register.handle`.
+    //
+    // `it.fails` keeps the reproducer in the suite: when cv4k1 lands this turns
+    // into an unexpected pass, which is the signal to flip it back to `it`.
+    it.fails("emits no callable id absent from cg_symbols — call-argument object inside a method", async () => {
+      const graphIds = new Set(codegraphIds(TYPESCRIPT, CALL_ARGUMENT_OBJECT_IN_METHOD));
+      for (const id of await chunkerCallableIds(TYPESCRIPT, CALL_ARGUMENT_OBJECT_IN_METHOD)) {
         expect([...graphIds]).toContain(id);
       }
     });
