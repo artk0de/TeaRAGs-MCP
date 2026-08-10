@@ -91,7 +91,12 @@ export function calleeIsLocalValueBinding(
  * EVERY declaration of the symbol must be one of them, which is what makes a
  * merged declaration (a name that is also a project function elsewhere in the
  * file) keep its edge rather than lose it to one local shadow.
+ *
+ * Shared with `./ts-local-receiver.ts` (bd tea-rags-mcp-z0zqd), which asks the
+ * same question of the RECEIVER identifier. One definition, because "which
+ * declaration kinds bind a name to a value the scope receives" has one answer —
+ * the two guards differ in what they do with it, not in how they recognise it.
  */
-function isLocalValueBinding(declaration: ts.Declaration): boolean {
+export function isLocalValueBinding(declaration: ts.Declaration): boolean {
   return ts.isParameter(declaration) || ts.isBindingElement(declaration);
 }
