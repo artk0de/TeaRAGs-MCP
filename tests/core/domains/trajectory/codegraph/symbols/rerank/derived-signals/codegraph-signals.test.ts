@@ -120,6 +120,75 @@ describe("codegraph derived signals", () => {
     expect(sig.extract({ "codegraph.chunk.fanOut": 15 }, { bounds: { "chunk.fanOut": 30 } })).toBeCloseTo(0.5, 5);
   });
 
+  /**
+   * Chunk-scoped codegraph signals under `signalLevel: "file"`.
+   *
+   * There is no `codegraph.file.pageRank` / `.chunk`-equivalent at file scope —
+   * the file-level codegraph signals are fanIn / fanOut / instability /
+   * connectionCount / transitiveImpact. A file-aggregated result still carries a
+   * `codegraph.chunk.*` block, but it belongs to that file's REPRESENTATIVE
+   * chunk, so reading it at file level attributes one arbitrary method's
+   * centrality to the whole file. That is worse than a dead weight: it scores on
+   * noise, and the chunk overlay is dropped at file level (`skipChunk`), so it
+   * scores INVISIBLY.
+   *
+   * Git's chunk-primary signals already refuse this — `chunkChurn` and
+   * `blockPenalty` route through `payloadAlpha(payload, signalLevel)`, which is 0
+   * at file scope, and `ownership` / `securityAudit` both document dropping
+   * chunkChurn for exactly that reason. These three are the codegraph
+   * counterpart and must answer the same way: an honest 0.
+   */
+  describe("chunk-scoped signals contribute 0 under signalLevel 'file'", () => {
+    const representativeChunk = {
+      "codegraph.chunk.fanIn": 20,
+      "codegraph.chunk.fanOut": 15,
+      "codegraph.chunk.pageRank": 0.005,
+    };
+
+    it("ChunkFanInSignal reads 0 at file level", () => {
+      const sig = new ChunkFanInSignal();
+      expect(sig.extract(representativeChunk, { bounds: { "chunk.fanIn": 40 }, signalLevel: "file" })).toBe(0);
+    });
+
+    it("ChunkFanOutSignal reads 0 at file level", () => {
+      const sig = new ChunkFanOutSignal();
+      expect(sig.extract(representativeChunk, { bounds: { "chunk.fanOut": 30 }, signalLevel: "file" })).toBe(0);
+    });
+
+    it("PageRankSignal reads 0 at file level", () => {
+      const sig = new PageRankSignal();
+      expect(sig.extract(representativeChunk, { bounds: { "chunk.pageRank": 0.01 }, signalLevel: "file" })).toBe(0);
+    });
+
+    it("all three still score normally at chunk level", () => {
+      expect(
+        new ChunkFanInSignal().extract(representativeChunk, {
+          bounds: { "chunk.fanIn": 40 },
+          signalLevel: "chunk",
+        }),
+      ).toBeCloseTo(0.5, 5);
+      expect(
+        new ChunkFanOutSignal().extract(representativeChunk, {
+          bounds: { "chunk.fanOut": 30 },
+          signalLevel: "chunk",
+        }),
+      ).toBeCloseTo(0.5, 5);
+      expect(
+        new PageRankSignal().extract(representativeChunk, {
+          bounds: { "chunk.pageRank": 0.01 },
+          signalLevel: "chunk",
+        }),
+      ).toBeCloseTo(0.5, 5);
+    });
+
+    it("an absent signalLevel keeps scoring — the tool default is chunk", () => {
+      expect(new PageRankSignal().extract(representativeChunk, { bounds: { "chunk.pageRank": 0.01 } })).toBeCloseTo(
+        0.5,
+        5,
+      );
+    });
+  });
+
   describe("FanOutPerLineSignal", () => {
     it("returns 0 when codegraph.file.fanOut is absent or zero", () => {
       const sig = new FanOutPerLineSignal();
