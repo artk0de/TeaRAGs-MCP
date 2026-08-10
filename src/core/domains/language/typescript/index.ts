@@ -41,7 +41,7 @@ import type {
   LanguageSymbolResolver,
   LanguageWalker,
 } from "../../../contracts/types/language.js";
-import { typescriptHooks } from "./chunking/index.js";
+import { typescriptChunkClassifier, typescriptHooks } from "./chunking/index.js";
 import { typescriptKernel } from "./kernel.js";
 import { loadTsConfig, TSCallResolver } from "./resolver/index.js";
 import { tsNameOf } from "./walker/name-of.js";
@@ -70,10 +70,24 @@ const typescriptChunkerHooks: LanguageChunkerHooks = {
     "type_alias_declaration",
     "enum_declaration",
     "call_expression", // Filtered by testDslFilterHook to DSL calls in test files
+    // bd tea-rags-mcp-grz07 — kept ONLY when the declaration binds a
+    // MODULE-LEVEL function expression (`export const fn = () => {}`), the
+    // dominant declaration shape in React code, which produced no chunk at all
+    // before. `typescriptFunctionDeclarationFilterHook` rejects every other
+    // declaration so `findChunkableNodes` keeps DESCENDING through it — which is
+    // what the const-object namespace (`export const X = { m() {} }`) needs to
+    // reach its `method_definition` (bd tea-rags-mcp-62hzr). The symbolId is
+    // then composed by `typescriptChunkClassifier`, since a
+    // `lexical_declaration` carries no `name` field of its own.
+    //
+    // Mirrors JavaScript, which has listed both since bd tea-rags-mcp-kfzx.
+    "lexical_declaration",
+    "variable_declaration",
   ],
   childChunkTypes: ["method_definition", "call_expression"],
   alwaysExtractChildren: true,
   hooks: typescriptHooks,
+  classifier: typescriptChunkClassifier,
 };
 
 /**

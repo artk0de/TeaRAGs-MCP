@@ -1,11 +1,13 @@
 import type { ChunkingHook } from "../../../../contracts/types/chunker.js";
 import { typescriptBodyChunkingHook } from "./class-body-chunker.js";
 import { typescriptCommentCaptureHook } from "./comment-capture.js";
+import { typescriptFunctionDeclarationFilterHook } from "./function-declaration-filter.js";
 import { testDslFilterHook } from "./test-dsl-filter.js";
 import { testScopeChunkerHook } from "./test-scope-chunker.js";
 
 export const typescriptHooks: ChunkingHook[] = [
   testDslFilterHook, // filterNode: accept DSL call_expression in test files only
+  typescriptFunctionDeclarationFilterHook, // filterNode: keep only function-valued module-level declarations
   typescriptCommentCaptureHook, // Must run before body chunker (populates excludedRows)
   testScopeChunkerHook, // process: scope-tree → chunks for describe/context/suite, skipChildren=true
   typescriptBodyChunkingHook, // Reads excludedRows; non-DSL containers still chunked normally
@@ -13,6 +15,7 @@ export const typescriptHooks: ChunkingHook[] = [
 
 export { typescriptBodyChunkingHook, extractBodyChunks } from "./class-body-chunker.js";
 export { typescriptCommentCaptureHook } from "./comment-capture.js";
+export { typescriptChunkClassifier, typescriptFunctionDeclarationFilterHook } from "./function-declaration-filter.js";
 export { testDslFilterHook, isTestFile, getCallName } from "./test-dsl-filter.js";
 export { testScopeChunkerHook, isDslContainerCall, buildScopeTree, produceScopeChunks } from "./test-scope-chunker.js";
 export { findClassBody } from "./utils.js";

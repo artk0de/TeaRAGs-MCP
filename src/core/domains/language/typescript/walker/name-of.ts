@@ -21,7 +21,11 @@
 
 import type { AstNode } from "../../../../contracts/types/ast.js";
 import type { NamedSymbol } from "../../../../contracts/types/codegraph.js";
-import { classifyMethod, constObjectNamespaceName } from "../../../../infra/symbolid/index.js";
+import {
+  classifyMethod,
+  constObjectNamespaceName,
+  moduleLevelFunctionDeclaratorName,
+} from "../../../../infra/symbolid/index.js";
 
 function methodKindFromClassify(node: AstNode): "instance" | "static" | undefined {
   const c = classifyMethod(node);
@@ -86,5 +90,34 @@ export function tsNameOf(node: AstNode): NamedSymbol | null {
   // (bd tea-rags-mcp-62hzr).
   const namespaceName = constObjectNamespaceName(node);
   if (namespaceName) return { name: namespaceName, descendsInto: true };
+
+  // bd tea-rags-mcp-grz07 — MODULE-LEVEL const-bound FUNCTION expression:
+  //
+  //   export const genValidationSchema = (message: string) => …
+  //   const legacyExpression = function (value) { … };
+  //
+  // The dominant declaration shape in React code, and previously unnamed on
+  // BOTH sides — so the checker could resolve a bare call to a real project
+  // declaration the symbol table had no way to name, and no edge could be
+  // emitted however good the resolver chain got. Measured on the taxdome
+  // `react-app/components` corpus: 179 of the bare-call targets the checker
+  // pinned to a module-level const arrow, every one of them landing in the
+  // oracle's "unpinned target" bucket.
+  //
+  // `descendsInto: false` matches `function_declaration` — a function is a
+  // container for scope purposes but composes no members onto itself, which is
+  // what separates this from the const-object namespace above. It is also what
+  // keeps JavaScript byte-identical: `jsNameOf` DELEGATES here before applying
+  // its own pattern #5 for the same shape, and #5 returns exactly this.
+  //
+  // The MODULE-LEVEL restriction is the whole boundary, and it lives in the
+  // shared gate so the chunker cannot drift from it. A function-scoped const is
+  // a local variable, not an addressable symbol; bd tea-rags-mcp-w7qv4's
+  // resolver guard declines bare calls on those by DECLARATION SCOPE, and
+  // naming them here would hand `globalShortName` precisely the candidates that
+  // guard exists to withhold (452 of them on the same corpus, named
+  // `handleClick` / `renderContent` / `setRef` across hundreds of files).
+  const functionName = moduleLevelFunctionDeclaratorName(node);
+  if (functionName) return { name: functionName, descendsInto: false };
   return null;
 }
