@@ -46,7 +46,7 @@ import type {
   LanguageSymbolResolver,
   LanguageWalker,
 } from "../../../contracts/types/language.js";
-import { javascriptHooks, JsChunkClassifier } from "./chunking/index.js";
+import { javascriptHooks, JsChunkClassifier, jsExportNameExtractor } from "./chunking/index.js";
 import { javascriptKernel } from "./kernel.js";
 import { JavascriptCallResolver } from "./resolver/index.js";
 import { jsNameOf } from "./walker/name-of.js";
@@ -56,10 +56,10 @@ import { extractFromJavascriptFile, type JsExtractInput } from "./walker/walker.
  * Chunk-boundary config for JavaScript — mirrors the chunker slice of the legacy
  * `LANGUAGE_DEFINITIONS.javascript` entry 1:1 (chunkableTypes + the ordered hook
  * chain), PLUS the node-level `chunkSymbols` capability (the analog of Ruby's
- * `macroSymbols`) the engine reads in `chunkSingleNode`. No `childChunkTypes` /
- * `alwaysExtractChildren` / `nameExtractor` — JavaScript declares none (its
- * containers are the same `class_declaration` / `function_declaration` shapes
- * TypeScript handles via the default extraction).
+ * `macroSymbols`) the engine reads in `chunkSingleNode`, and the child-descent
+ * pair TypeScript has always declared (`childChunkTypes` /
+ * `alwaysExtractChildren`) with the `nameExtractor` that descent needs to name
+ * an `export_statement` container.
  */
 const javascriptChunkerHooks: LanguageChunkerHooks = {
   // `expression_statement` / `lexical_declaration` / `variable_declaration` are
@@ -75,6 +75,27 @@ const javascriptChunkerHooks: LanguageChunkerHooks = {
     "lexical_declaration",
     "variable_declaration",
   ],
+  // `method_definition` is a chunkable type above, but `findChunkableNodes`
+  // stops descending the moment it claims a node — so a method nested in a
+  // container it already claimed (a `class_declaration`, or an object literal
+  // inside a `function_declaration` body) was never reached, and the chunker
+  // emitted NO chunk for it. cg_symbols still carried the id, leaving
+  // `find_symbol("register.handle")` empty while `get_callers` resolved it.
+  // TypeScript never had the gap because it declares this pair; JavaScript
+  // shares the `method_definition` shape, so it needs the same descent.
+  // `call_expression` is deliberately absent — TypeScript lists it only to
+  // reach test-DSL calls through `testDslFilterHook`, and JavaScript has
+  // neither that hook nor `call_expression` among its chunkable types.
+  // bd tea-rags-mcp-ll0u9.
+  childChunkTypes: ["method_definition"],
+  alwaysExtractChildren: true,
+  // `export_statement` is chunkable above, so the engine claims the export
+  // rather than the `class_declaration` it wraps — and an export carries no
+  // `name` field for the default extraction to find. Without this the descent
+  // would scope `Registry`'s method at file level as a bare `register`, an id
+  // no cg_symbols row carries. Names ONLY `export_statement`; every other node
+  // falls through to the engine's default extraction.
+  nameExtractor: jsExportNameExtractor,
   hooks: javascriptHooks,
   // Node→chunk classifier capability — the LanguageChunkClassifier wrapper over
   // jsChunkSymbols (CommonJS `obj.method = fn` / `exports.foo` / `module.exports`,
