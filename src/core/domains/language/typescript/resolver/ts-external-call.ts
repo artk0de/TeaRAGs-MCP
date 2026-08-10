@@ -51,9 +51,10 @@ import type { TSProgramCache } from "./ts-program-cache.js";
  *      …) — see {@link ECMASCRIPT_BUILTIN_PROTOTYPE_METHODS} for why that set
  *      is deliberately small;
  *   4b. the receiver carries no type information the WALKER could see, the
- *      vocabulary does not know the member either, and the type checker names
- *      the receiver's type as a runtime builtin — see
- *      {@link checkerNamesBuiltinReceiverType};
+ *      vocabulary does not know the member either, and the type checker finds
+ *      the receiver's type DECLARED outside the project's own sources — a
+ *      builtin, a default-lib type, or an npm package's — see
+ *      {@link checkerTypesReceiverOutsideProject};
  *   5. the receiver is an imported project CONSTANT and the member is a builtin
  *      container operation (`YARD_CONST.test(t)`, `CODE_LANGUAGES.has(l)`) —
  *      see {@link receiverIsImportedBuiltinContainer}.
@@ -91,7 +92,7 @@ export function targetsExternalImport(
   // Case 5 is asked FIRST purely for cost: it reads the symbol table and the
   // import list, while case 4b may build a `ts.Program`. Both are pure
   // predicates, so the order changes only what gets paid for, never the answer.
-  return receiverIsImportedBuiltinContainer(call, ctx) || receiverIsBuiltinInstance(call, ctx, programCache);
+  return receiverIsImportedBuiltinContainer(call, ctx) || receiverIsExternalInstance(call, ctx, programCache);
 }
 
 /**
@@ -177,8 +178,9 @@ const TS_UTILITY_TYPES: ReadonlySet<string> = new Set([
 ]);
 
 /**
- * Cases 3 and 4 of {@link targetsExternalImport}: is the RECEIVER a JS runtime
- * builtin instance?
+ * Cases 3, 4 and 4b of {@link targetsExternalImport}: does the RECEIVER belong
+ * to something outside this project — a JS runtime builtin, a default-lib type,
+ * or a dependency's?
  *
  * A known type answers definitively — builtin name means external, a project
  * class means internal. Only when no type can be resolved does the member-name
@@ -197,15 +199,21 @@ const TS_UTILITY_TYPES: ReadonlySet<string> = new Set([
  * inherited calls that earlier passes own, and a class with a method named
  * `push` is an ordinary thing to write.
  *
- * The checker arm (bd tea-rags-mcp-335eu) is strictly LAST. It sees only the
- * receivers the walker could not type AND the vocabulary does not recognise —
- * which is the residue by construction, since a known type has already decided
- * and a known member has already returned `true`. It can only ever ADD an
- * external verdict, never withdraw one, so the vocabulary's answers are
- * untouched and no edge this guard used to allow is newly suppressed by a
- * checker answer of "not a builtin".
+ * The checker arm (bd tea-rags-mcp-335eu, widened by bd tea-rags-mcp-otm6n) is
+ * strictly LAST. It sees only the receivers the walker could not type AND the
+ * vocabulary does not recognise — which is the residue by construction, since a
+ * known type has already decided and a known member has already returned `true`.
+ * It can only ever ADD an external verdict, never withdraw one, so the
+ * vocabulary's answers are untouched and no edge this guard used to allow is
+ * newly suppressed by a checker answer of "declared in the project".
+ *
+ * The walker-typed branch above still decides by NAME, and deliberately so. A
+ * receiver the walker DID type is answered from the annotation the author wrote,
+ * where a non-builtin name means an ordinary project type; widening that branch
+ * to ask the checker as well would put every annotated receiver in the guard's
+ * reach, which is a far larger recall surface than the residue this arm sees.
  */
-function receiverIsBuiltinInstance(call: CallRef, ctx: CallContext, programCache: TSProgramCache | null): boolean {
+function receiverIsExternalInstance(call: CallRef, ctx: CallContext, programCache: TSProgramCache | null): boolean {
   const receiver = call.receiver ?? null;
   if (receiver === null || receiver.length === 0 || receiver === "this" || receiver === "super") return false;
   const typeName = receiverTypeName(call, ctx);
@@ -213,12 +221,12 @@ function receiverIsBuiltinInstance(call: CallRef, ctx: CallContext, programCache
     return ECMASCRIPT_BUILTIN_TYPES.has(typeName);
   }
   if (ECMASCRIPT_BUILTIN_PROTOTYPE_METHODS.has(call.member)) return true;
-  return programCache !== null && checkerNamesBuiltinReceiverType(call, ctx, programCache);
+  return programCache !== null && checkerTypesReceiverOutsideProject(call, ctx, programCache);
 }
 
 /**
- * Case 4b (bd tea-rags-mcp-335eu): ask the type checker what the receiver IS,
- * for the receivers nothing else could type.
+ * Case 4b (bd tea-rags-mcp-335eu, widened by bd tea-rags-mcp-otm6n): ask the
+ * type checker what the receiver IS, for the receivers nothing else could type.
  *
  * Root causes 2 and 3 of bd tea-rags-mcp-yjqi5 are one gap seen twice. A Map
  * obtained from a call (`const map = this.ensureLoaded()`), a module-level
@@ -238,26 +246,44 @@ function receiverIsBuiltinInstance(call: CallRef, ctx: CallContext, programCache
  * who answers.
  *
  * Precision comes from asking a question with only one safe answer. The checker
- * says "external" only when EVERY constituent of the receiver's type is a
- * builtin whose declaration lies outside the project — so `any`, an unresolved
- * import, an anonymous object type and every project class all yield `false`
- * and leave the previous verdict standing.
+ * says "external" only when EVERY constituent of the receiver's type is DECLARED
+ * outside the project's own sources — so `any`, an unresolved import, an
+ * anonymous object type and every project class all yield `false` and leave the
+ * previous verdict standing.
+ *
+ * WIDENED (bd tea-rags-mcp-otm6n) from "is this receiver's type a KNOWN BUILTIN
+ * declared outside the project" to the question above. The narrow form left a
+ * residual it could not reach by construction: `MapIterator` and `Response` are
+ * real default-lib types that {@link ECMASCRIPT_BUILTIN_TYPES} does not
+ * enumerate, and an npm package type is not a builtin at all — so closing them
+ * by NAME would mean growing that set with every dependency a project happens to
+ * install. Where the type is declared answers all three shapes at once, and it is
+ * the question `targetsExternalImport` is named after.
  */
-function checkerNamesBuiltinReceiverType(call: CallRef, ctx: CallContext, programCache: TSProgramCache): boolean {
+function checkerTypesReceiverOutsideProject(call: CallRef, ctx: CallContext, programCache: TSProgramCache): boolean {
   const handle = programCache.acquire(ctx.callerFile);
   if (handle === null) return false;
   const receiver = findReceiverExpression(handle.sourceFile, call.startLine, call.member);
   if (receiver === null) return false;
-  return typeIsBuiltinInstance(handle.checker, handle.checker.getTypeAtLocation(receiver), programCache);
+  return typeDeclaredOutsideProject(handle.checker, handle.checker.getTypeAtLocation(receiver), programCache);
 }
 
 /**
- * Is EVERY constituent of `type` an ECMAScript runtime builtin declared outside
- * the project?
+ * Is EVERY constituent of `type` declared entirely outside the project's own
+ * sources?
  *
- * A union is walked constituent by constituent, and one non-builtin constituent
+ * A union is walked constituent by constituent, and one in-project constituent
  * sinks the verdict: `Map<string, T> | ProjectStore` may reach the project on
- * this call, so declining it would trade a fabricated edge for a lost one.
+ * this call, so declining it would trade a fabricated edge for a lost one. A
+ * type declared in BOTH places — an interface the project merges into a
+ * dependency's — is in-project for the same reason.
+ *
+ * Two answers deliberately mean "no evidence" rather than "external", because
+ * this arm may only ever ADD an external verdict. A type with no symbol is
+ * `any`, an unresolved import, or an anonymous shape the checker never named. A
+ * symbol with no declarations is synthetic — the checker built it, no source
+ * declares it — and a guard that read absence of declarations as "declared
+ * elsewhere" would decline calls on no evidence at all.
  *
  * Nullable annotations need no special case, which is worth stating because it
  * looks like an omission. `parallel-synchronizer.ts:216` writes
@@ -267,27 +293,24 @@ function checkerNamesBuiltinReceiverType(call: CallRef, ctx: CallContext, progra
  * reports the bare `Map`. A union that survives to here is a genuine multi-type
  * union.
  *
- * The out-of-project check is what makes matching on a NAME safe. A project that
- * declares its own `class Map` would otherwise have every `Map`-typed receiver
- * declined; here the checker resolves that receiver to the project declaration,
- * {@link TSProgramCache.toRelPath} reports a real `RelPath`, and the guard
- * declines to decide — the same evidence `TSStructuralTypingSymbolResolutionStrategy`
- * uses to tell an in-project declaration site from a `node_modules` one.
+ * {@link TSProgramCache.isProjectSourceFile} is the load-bearing half, and it is
+ * NOT the same test as a non-null `toRelPath`: `node_modules` sits inside the
+ * repo root, so a repo-root-relative path counts every dependency — and, where
+ * the compiler resolves under that root, every BUILTIN — as project code. A
+ * project that declares its own `class Map` still keeps its edges: the checker
+ * resolves that receiver to the project declaration and this returns `false`.
  */
-function typeIsBuiltinInstance(checker: ts.TypeChecker, type: ts.Type, programCache: TSProgramCache): boolean {
+function typeDeclaredOutsideProject(checker: ts.TypeChecker, type: ts.Type, programCache: TSProgramCache): boolean {
   for (const constituent of type.isUnion() ? type.types : [type]) {
     const symbol = checker.getApparentType(constituent).getSymbol();
-    if (symbol === undefined || !ECMASCRIPT_BUILTIN_TYPES.has(symbol.getName())) return false;
-    if (declaredInProject(symbol, programCache)) return false;
+    if (symbol === undefined) return false;
+    const declarations = symbol.getDeclarations() ?? [];
+    if (declarations.length === 0) return false;
+    if (declarations.some((declaration) => programCache.isProjectSourceFile(declaration.getSourceFile().fileName))) {
+      return false;
+    }
   }
   return true;
-}
-
-/** Does any declaration of `symbol` live inside the indexed project? */
-function declaredInProject(symbol: ts.Symbol, programCache: TSProgramCache): boolean {
-  return (symbol.getDeclarations() ?? []).some(
-    (declaration) => programCache.toRelPath(declaration.getSourceFile().fileName) !== null,
-  );
 }
 
 /**
