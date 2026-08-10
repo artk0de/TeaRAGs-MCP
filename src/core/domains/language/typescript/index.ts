@@ -113,5 +113,12 @@ export class TypeScriptLanguage implements LanguageProvider {
 export { typescriptKernel } from "./kernel.js";
 export { typescriptHooks } from "./chunking/index.js";
 export { extractFromTypescriptFile, tsNameOf } from "./walker/index.js";
-export { TSCallResolver, loadTsConfig, mapImportToFile, type TsCompilerOptions } from "./resolver/index.js";
+export {
+  createProjectFileProbe,
+  loadTsConfig,
+  mapImportToFile,
+  TSCallResolver,
+  type ProjectFileProbe,
+  type TsCompilerOptions,
+} from "./resolver/index.js";
 export type { FileExtraction, ExtractInput };

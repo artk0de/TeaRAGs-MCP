@@ -1,3 +1,7 @@
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+
 import { describe, expect, it } from "vitest";
 
 import type {
@@ -1640,5 +1644,71 @@ describe("TSCallResolver.resolveDispatch", () => {
       ),
     );
     expect(edges).toEqual([]);
+  });
+});
+
+describe("TSCallResolver .tsx import resolution (bd tea-rags-mcp-f3zcy)", () => {
+  // A React page importing a component the NodeNext way. Before the extension
+  // probe the mapper committed `./Button.js` to `src/Button.ts`, which matches
+  // no symbol and no file — the import edge, and every narrowing that reads
+  // the imported-file set, silently lost the component.
+  function reactFixture(): string {
+    const repoRoot = mkdtempSync(join(tmpdir(), "ts-resolver-tsx-"));
+    mkdirSync(join(repoRoot, "src"), { recursive: true });
+    writeFileSync(join(repoRoot, "src", "Button.tsx"), "export class Button {\n  static render() {}\n}\n");
+    writeFileSync(join(repoRoot, "src", "Page.tsx"), 'import { Button } from "./Button.js";\nButton.render();\n');
+    return repoRoot;
+  }
+
+  it("resolves a named import of a .tsx component to the .tsx file on disk", () => {
+    const repoRoot = reactFixture();
+    try {
+      const symbolTable = new InMemoryGlobalSymbolTable();
+      symbolTable.upsertFile("src/Button.tsx", [
+        {
+          symbolId: "Button.render",
+          fqName: "Button.render",
+          shortName: "render",
+          relPath: "src/Button.tsx",
+          scope: ["Button"],
+        },
+      ]);
+      const resolver = new TSCallResolver({ baseUrl: ".", paths: {} }, "strict", repoRoot);
+
+      const result = resolver.resolve(
+        { callText: "Button.render()", receiver: "Button", member: "render", startLine: 2 },
+        {
+          callerFile: "src/Page.tsx",
+          callerScope: [],
+          imports: [{ importText: "./Button.js", startLine: 1, importedNames: ["Button"] }],
+          symbolTable,
+        },
+      );
+
+      expect(result).toEqual({ targetRelPath: "src/Button.tsx", targetSymbolId: "Button.render" });
+    } finally {
+      rmSync(repoRoot, { recursive: true, force: true });
+    }
+  });
+
+  it("keeps a .tsx relative import out of the external bucket", () => {
+    // targetsExternalImport buckets a call as external when the specifier maps
+    // to no project file. A `.tsx` component must never land in that bucket —
+    // it is an in-repo miss, and hiding it would understate the recall gap.
+    const repoRoot = reactFixture();
+    try {
+      const external = new TSCallResolver({ baseUrl: ".", paths: {} }, "strict", repoRoot).targetsExternalImport(
+        { callText: "Button.render()", receiver: "Button", member: "render", startLine: 2 },
+        {
+          callerFile: "src/Page.tsx",
+          callerScope: [],
+          imports: [{ importText: "./Button.js", startLine: 1, importedNames: ["Button"] }],
+          symbolTable: new InMemoryGlobalSymbolTable(),
+        },
+      );
+      expect(external).toBe(false);
+    } finally {
+      rmSync(repoRoot, { recursive: true, force: true });
+    }
   });
 });

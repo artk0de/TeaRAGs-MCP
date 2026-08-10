@@ -1,6 +1,11 @@
 export { TSCallResolver } from "./ts-resolver.js";
 export { loadTsConfig } from "./ts-config-loader.js";
-export { mapImportToFile, type TsCompilerOptions } from "./ts-path-mapper.js";
+export {
+  createProjectFileProbe,
+  mapImportToFile,
+  type ProjectFileProbe,
+  type TsCompilerOptions,
+} from "./ts-path-mapper.js";
 export {
   TSProgramCache,
   TS_PROGRAM_CACHE_MAX_DEFAULT,

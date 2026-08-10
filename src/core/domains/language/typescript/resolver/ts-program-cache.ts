@@ -43,7 +43,12 @@ import { isAbsolute, posix, relative, resolve as resolvePath, sep } from "node:p
 import ts from "typescript";
 
 import type { RelPath } from "../../../../contracts/types/codegraph.js";
-import { mapImportToFile, type TsCompilerOptions } from "./ts-path-mapper.js";
+import {
+  createProjectFileProbe,
+  mapImportToFile,
+  type ProjectFileProbe,
+  type TsCompilerOptions,
+} from "./ts-path-mapper.js";
 
 /** Max Programs retained before the least-recently-used one is dropped. */
 export const TS_PROGRAM_CACHE_MAX_DEFAULT = 8;
@@ -59,6 +64,12 @@ export interface TSProgramCacheOptions {
   repoRoot: string;
   /** tsconfig `baseUrl` / `paths`, as parsed by `loadTsConfig`. */
   tsOptions: TsCompilerOptions;
+  /**
+   * Extension oracle for the closure walk's path mapping (bd
+   * tea-rags-mcp-f3zcy). Pass the resolver's instance so both share one
+   * memoized cache; defaults to a fresh probe rooted at `repoRoot`.
+   */
+  fileExists?: ProjectFileProbe;
   /** LRU capacity. Default {@link TS_PROGRAM_CACHE_MAX_DEFAULT}. */
   maxEntries?: number;
   /** Root-file cap per Program. Default {@link TS_PROGRAM_ROOT_FILES_MAX_DEFAULT}. */
@@ -131,6 +142,7 @@ export class TSProgramCache {
   /** Absolute, realpath-normalized project root. */
   readonly repoRoot: string;
   private readonly tsOptions: TsCompilerOptions;
+  private readonly fileExists: ProjectFileProbe;
   private readonly maxEntries: number;
   private readonly maxRootFiles: number;
   private readonly maxImportDepth: number;
@@ -145,6 +157,7 @@ export class TSProgramCache {
   constructor(options: TSProgramCacheOptions) {
     this.repoRoot = options.repoRoot;
     this.tsOptions = options.tsOptions;
+    this.fileExists = options.fileExists ?? createProjectFileProbe(this.repoRoot);
     this.maxEntries = options.maxEntries ?? TS_PROGRAM_CACHE_MAX_DEFAULT;
     this.maxRootFiles = options.maxRootFiles ?? TS_PROGRAM_ROOT_FILES_MAX_DEFAULT;
     this.maxImportDepth = options.maxImportDepth ?? TS_PROGRAM_IMPORT_DEPTH_DEFAULT;
@@ -324,7 +337,7 @@ export class TSProgramCache {
     }
     const out: string[] = [];
     for (const ref of ts.preProcessFile(source, true, true).importedFiles) {
-      const targetRel = mapImportToFile(ref.fileName, callerRel, this.tsOptions);
+      const targetRel = mapImportToFile(ref.fileName, callerRel, this.tsOptions, this.fileExists);
       if (targetRel === null) continue;
       out.push(resolvePath(this.repoRoot, posix.normalize(targetRel)));
     }

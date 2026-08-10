@@ -22,7 +22,7 @@ export class TSImportNarrowedFallbackSymbolResolutionStrategy implements SymbolR
     const fallback = ctx.symbolTable.lookupByShortName(call.member);
     if (fallback.length <= 1 || ctx.imports.length === 0) return CONTINUE;
 
-    const importedFiles = collectImportedFiles(ctx, this.cfg.tsOptions);
+    const importedFiles = collectImportedFiles(ctx, this.cfg.tsOptions, this.cfg.fileExists);
     if (importedFiles.size === 0) return CONTINUE;
 
     const narrowed = fallback.filter((def) => importedFiles.has(def.relPath));

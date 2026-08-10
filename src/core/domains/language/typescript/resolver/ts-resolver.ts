@@ -94,7 +94,12 @@ import {
   TSTypeCheckerUnionReceiverDispatchResolver,
   type ResolverConfig,
 } from "./strategies/index.js";
-import { mapImportToFile, type TsCompilerOptions } from "./ts-path-mapper.js";
+import {
+  createProjectFileProbe,
+  mapImportToFile,
+  type ProjectFileProbe,
+  type TsCompilerOptions,
+} from "./ts-path-mapper.js";
 import { TSProgramCache } from "./ts-program-cache.js";
 
 /** Parse `CODEGRAPH_TS_CONE_MAX`; fall back to the TS default on absent/invalid. */
@@ -137,6 +142,14 @@ export class TSCallResolver implements CallResolver {
   private readonly unionReceiver: TSTypeCheckerUnionReceiverDispatchResolver | null;
 
   /**
+   * Project-tree oracle the path mapper consults to pick a specifier's real
+   * extension (bd tea-rags-mcp-f3zcy). One memoized instance per resolver,
+   * shared with every strategy and with the Program cache, so a resolve pass
+   * stats each candidate path once rather than once per call site.
+   */
+  private readonly fileExists: ProjectFileProbe;
+
+  /**
    * @param repoRoot Absolute project root the typeChecker fallback resolves
    *   `RelPath`s against. Defaults to `process.cwd()`, mirroring the
    *   `loadTsConfig(process.cwd())` the composition root already passes for
@@ -148,10 +161,16 @@ export class TSCallResolver implements CallResolver {
     private readonly mode: AmbiguousResolveMode = DEFAULT_AMBIGUOUS_RESOLVE_MODE,
     repoRoot: string = process.cwd(),
   ) {
-    const cfg: ResolverConfig = { tsOptions, mode, coneMax: resolveConeMax(process.env.CODEGRAPH_TS_CONE_MAX) };
+    this.fileExists = createProjectFileProbe(repoRoot);
+    const cfg: ResolverConfig = {
+      tsOptions,
+      mode,
+      coneMax: resolveConeMax(process.env.CODEGRAPH_TS_CONE_MAX),
+      fileExists: this.fileExists,
+    };
     this.cone = new ConeDispatchResolver(new TSConeTypeLocator(cfg), cfg.coneMax ?? CONE_MAX_DEFAULT);
     this.programCache = typeCheckerFallbackEnabled(process.env.CODEGRAPH_TS_TYPECHECKER)
-      ? new TSProgramCache({ repoRoot, tsOptions })
+      ? new TSProgramCache({ repoRoot, tsOptions, fileExists: this.fileExists })
       : null;
     this.unionReceiver = this.programCache
       ? new TSTypeCheckerUnionReceiverDispatchResolver(cfg, this.programCache)
@@ -209,6 +228,10 @@ export class TSCallResolver implements CallResolver {
     // (`import { readFile } from "node:fs"` → `readFile()`).
     const boundName = receiver ?? call.member;
     if (boundName.length === 0) return false;
+    // No `fileExists` probe here on purpose: this is a nullness test, and the
+    // probe only chooses BETWEEN extensions. A specifier that maps to a project
+    // file maps to one with or without it, so probing would cost a lookup per
+    // import per unresolved call to reach the same answer.
     for (const imp of ctx.imports) {
       if (
         imp.importedNames?.includes(boundName) &&
@@ -346,7 +369,7 @@ export class TSCallResolver implements CallResolver {
     const defs = ctx.dispatchTables?.[name];
     if (!defs || defs.length === 0) return null;
     if (defs.length === 1) return defs[0];
-    const importedFiles = collectImportedFiles(ctx, this.tsOptions);
+    const importedFiles = collectImportedFiles(ctx, this.tsOptions, this.fileExists);
     const imported = defs.filter((d) => importedFiles.has(d.relPath));
     if (imported.length === 1) return imported[0];
     const inFile = defs.filter((d) => d.relPath === ctx.callerFile);
@@ -364,7 +387,7 @@ export class TSCallResolver implements CallResolver {
     const sole = pickSingleCandidate(candidates, this.mode);
     if (sole) return { targetRelPath: sole.relPath, targetSymbolId: sole.symbolId };
     if (candidates.length > 1) {
-      const importedFiles = collectImportedFiles(ctx, this.tsOptions);
+      const importedFiles = collectImportedFiles(ctx, this.tsOptions, this.fileExists);
       const narrowed = candidates.filter((def) => importedFiles.has(def.relPath));
       const narrowedHit = pickSingleCandidate(narrowed, this.mode);
       if (narrowedHit) return { targetRelPath: narrowedHit.relPath, targetSymbolId: narrowedHit.symbolId };
