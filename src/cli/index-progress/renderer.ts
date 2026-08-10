@@ -241,6 +241,9 @@ interface BarState {
   totalFinal: boolean;
 }
 
+/** One variant of the {@link WorkerMessage} union, selected by its `type` discriminant. */
+type WorkerMessageOf<K extends WorkerMessage["type"]> = Extract<WorkerMessage, { type: K }>;
+
 /** TTY renderer: a cli-progress multibar with an embedding bar + per-provider bars. */
 export class TtyProgressRenderer implements ProgressRenderer {
   private readonly multibar: cliProgress.MultiBar;
@@ -318,227 +321,260 @@ export class TtyProgressRenderer implements ProgressRenderer {
     }
   }
 
+  /**
+   * Route one worker frame to the renderer that owns its bar. Frames carrying no
+   * bar state (status/done/outcome/error) are the JSON renderer's and the
+   * supervisor's business, not the multibar's.
+   */
   handle(message: WorkerMessage): void {
-    if (message.type === "turbo-migration") {
-      // One-time TurboQuant collection migration. The optimizer rebuilds the
-      // quantized vectors with no clean percentage, so the bar is INDETERMINATE
-      // (totalFinal=false, no numerator) — a spinner-style glyph row that ticks
-      // elapsed until the terminal stage freezes it.
-      const key = `turbo:${message.collection}`;
-      const label = this.colors.brand("turbo migration".padEnd(LABEL_WIDTH));
-      if (message.stage === "start") {
-        if (!this.barStates.has(key)) {
-          const bar = this.multibar.create(0, 0, {
-            label,
-            rate: this.colors.dim("optimizing…"),
-            eta: "",
-            elapsed: "",
-            totalFinal: false,
-          });
-          this.barStates.set(key, {
-            bar,
-            startMs: this.now(),
-            value: 0,
-            total: 0,
-            label,
-            rate: this.colors.dim("optimizing…"),
-            done: false,
-            etaBaseSeconds: null,
-            etaBaseAtMs: this.now(),
-            totalFinal: false,
-          });
-          this.startTickIfNeeded();
-        }
-        return;
-      }
-      // Terminal stage (done | background): freeze the bar so the tick loop stops.
-      const state = this.barStates.get(key);
-      if (!state) return;
-      state.done = true;
-      const elapsed = fmtDuration(message.elapsedMs ?? this.now() - state.startMs);
-      if (message.stage === "done") {
-        state.bar.update(state.value, { label: state.label, rate: "", elapsed: "", eta: "", done: { elapsed } });
-      } else {
-        // Hit the poll cap still optimizing — keep the indeterminate glyph row but
-        // stop ticking; the hint tells the user the optimizer continues unattended.
-        state.bar.update(state.value, {
-          label: state.label,
-          rate: this.colors.dim("continues in background"),
-          elapsed,
+    switch (message.type) {
+      case "turbo-migration":
+        this.renderTurboMigrationBar(message);
+        break;
+      case "qdrant-state":
+        this.renderQdrantStateBar(message);
+        break;
+      case "embedding":
+        this.renderEmbeddingBar(message);
+        break;
+      case "enrichment":
+        this.renderEnrichmentBar(message);
+        break;
+      case "phase-done":
+        this.markPhaseBarsDone(message);
+        break;
+      case "status":
+      case "done":
+      case "error":
+        // Not progress: nothing on the multibar to drive.
+        break;
+    }
+  }
+
+  /**
+   * One-time TurboQuant collection migration. The optimizer rebuilds the
+   * quantized vectors with no clean percentage, so the bar is INDETERMINATE
+   * (totalFinal=false, no numerator) — a spinner-style glyph row that ticks
+   * elapsed until the terminal stage freezes it.
+   */
+  private renderTurboMigrationBar(message: WorkerMessageOf<"turbo-migration">): void {
+    const key = `turbo:${message.collection}`;
+    const label = this.colors.brand("turbo migration".padEnd(LABEL_WIDTH));
+    if (message.stage === "start") {
+      if (!this.barStates.has(key)) {
+        const bar = this.multibar.create(0, 0, {
+          label,
+          rate: this.colors.dim("optimizing…"),
           eta: "",
+          elapsed: "",
           totalFinal: false,
         });
+        this.barStates.set(key, {
+          bar,
+          startMs: this.now(),
+          value: 0,
+          total: 0,
+          label,
+          rate: this.colors.dim("optimizing…"),
+          done: false,
+          etaBaseSeconds: null,
+          etaBaseAtMs: this.now(),
+          totalFinal: false,
+        });
+        this.startTickIfNeeded();
       }
       return;
     }
-    if (message.type === "qdrant-state") {
-      // Daemon readiness wait (2nfdm): an indeterminate spinner-style row —
-      // recovery has no observable percentage — shown BEFORE any embedding
-      // bar exists, frozen with Done ✓ once the daemon answers.
-      const key = "qdrant-state";
-      const label = this.colors.brand("qdrant".padEnd(LABEL_WIDTH));
-      const rate =
-        message.state === "recovering" ? this.colors.dim("recovering shards…") : this.colors.dim("starting up…");
-      if (message.state === "ready") {
-        const state = this.barStates.get(key);
-        if (!state) return;
-        state.done = true;
-        state.bar.update(state.value, {
-          label: state.label,
-          rate: "",
-          elapsed: "",
-          eta: "",
-          done: { elapsed: fmtDuration(message.elapsedMs) },
-        });
-        return;
-      }
-      const existing = this.barStates.get(key);
-      if (existing) {
-        existing.rate = rate;
-        return;
-      }
-      const bar = this.multibar.create(0, 0, { label, rate, eta: "", elapsed: "", totalFinal: false });
-      this.barStates.set(key, {
-        bar,
-        startMs: this.now() - message.elapsedMs,
-        value: 0,
-        total: 0,
+    // Terminal stage (done | background): freeze the bar so the tick loop stops.
+    const state = this.barStates.get(key);
+    if (!state) return;
+    state.done = true;
+    const elapsed = fmtDuration(message.elapsedMs ?? this.now() - state.startMs);
+    if (message.stage === "done") {
+      state.bar.update(state.value, { label: state.label, rate: "", elapsed: "", eta: "", done: { elapsed } });
+    } else {
+      // Hit the poll cap still optimizing — keep the indeterminate glyph row but
+      // stop ticking; the hint tells the user the optimizer continues unattended.
+      state.bar.update(state.value, {
+        label: state.label,
+        rate: this.colors.dim("continues in background"),
+        elapsed,
+        eta: "",
+        totalFinal: false,
+      });
+    }
+  }
+
+  /**
+   * Daemon readiness wait (2nfdm): an indeterminate spinner-style row —
+   * recovery has no observable percentage — shown BEFORE any embedding
+   * bar exists, frozen with Done ✓ once the daemon answers.
+   */
+  private renderQdrantStateBar(message: WorkerMessageOf<"qdrant-state">): void {
+    const key = "qdrant-state";
+    const label = this.colors.brand("qdrant".padEnd(LABEL_WIDTH));
+    const rate =
+      message.state === "recovering" ? this.colors.dim("recovering shards…") : this.colors.dim("starting up…");
+    if (message.state === "ready") {
+      const state = this.barStates.get(key);
+      if (!state) return;
+      state.done = true;
+      state.bar.update(state.value, {
+        label: state.label,
+        rate: "",
+        elapsed: "",
+        eta: "",
+        done: { elapsed: fmtDuration(message.elapsedMs) },
+      });
+      return;
+    }
+    const existing = this.barStates.get(key);
+    if (existing) {
+      existing.rate = rate;
+      return;
+    }
+    const bar = this.multibar.create(0, 0, { label, rate, eta: "", elapsed: "", totalFinal: false });
+    this.barStates.set(key, {
+      bar,
+      startMs: this.now() - message.elapsedMs,
+      value: 0,
+      total: 0,
+      label,
+      rate,
+      done: false,
+      etaBaseSeconds: null,
+      etaBaseAtMs: this.now(),
+      totalFinal: false,
+    });
+    this.startTickIfNeeded();
+  }
+
+  /** The single embedding bar, shared by every pipeline phase the worker reports. */
+  private renderEmbeddingBar(message: WorkerMessageOf<"embedding">): void {
+    const label = this.colors.brand("embeddings".padEnd(LABEL_WIDTH));
+    // The worker forwards EVERY ProgressUpdate (scanning/chunking/storing/embedding)
+    // onto this single bar. Only the embedding phase carries the chunk numerator
+    // and a meaningful total — the others must not hijack value/total/totalFinal
+    // (a chunking update is filesProcessed/files.length, not chunks).
+    const isEmbeddingPhase = message.phase === "embedding";
+    let state = this.barStates.get("embedding");
+    if (!state) {
+      // Born indeterminate: the bar is visible while chunking runs, before any
+      // embedding-phase message has supplied a trustworthy chunk total.
+      const bar = this.multibar.create(message.total, 0, {
         label,
-        rate,
+        rate: "",
+        eta: "",
+        elapsed: "",
+        totalFinal: false,
+      });
+      state = {
+        bar,
+        startMs: this.now(),
+        value: 0,
+        total: message.total,
+        label,
+        rate: "",
         done: false,
         etaBaseSeconds: null,
         etaBaseAtMs: this.now(),
         totalFinal: false,
-      });
+      };
+      this.barStates.set("embedding", state);
       this.startTickIfNeeded();
-      return;
     }
-    if (message.type === "embedding") {
-      const label = this.colors.brand("embeddings".padEnd(LABEL_WIDTH));
-      // The worker forwards EVERY ProgressUpdate (scanning/chunking/storing/embedding)
-      // onto this single bar. Only the embedding phase carries the chunk numerator
-      // and a meaningful total — the others must not hijack value/total/totalFinal
-      // (a chunking update is filesProcessed/files.length, not chunks).
-      const isEmbeddingPhase = message.phase === "embedding";
-      let state = this.barStates.get("embedding");
-      if (!state) {
-        // Born indeterminate: the bar is visible while chunking runs, before any
-        // embedding-phase message has supplied a trustworthy chunk total.
-        const bar = this.multibar.create(message.total, 0, {
-          label,
-          rate: "",
-          eta: "",
-          elapsed: "",
-          totalFinal: false,
-        });
-        state = {
-          bar,
-          startMs: this.now(),
-          value: 0,
-          total: message.total,
-          label,
-          rate: "",
-          done: false,
-          etaBaseSeconds: null,
-          etaBaseAtMs: this.now(),
-          totalFinal: false,
-        };
-        this.barStates.set("embedding", state);
-        this.startTickIfNeeded();
+    const nowMs = this.now();
+    state.label = label;
+    if (isEmbeddingPhase) {
+      const rate =
+        message.throughput !== null && message.throughput !== undefined ? `${message.throughput.toFixed(1)} ch/s` : "";
+      state.total = message.total;
+      state.rate = rate;
+      // Missing flag (legacy emitters) → determinate; only an explicit false is indeterminate.
+      state.totalFinal = message.totalFinal !== false;
+      state.value = Math.min(message.current, message.total);
+      // Recompute ETA base from fresh message data
+      if (message.throughput !== null && message.throughput !== undefined && message.throughput > 0) {
+        state.etaBaseSeconds = Math.max(0, (message.total - message.current) / message.throughput);
+      } else {
+        state.etaBaseSeconds = computeEtaSeconds(state.value, state.total, nowMs - state.startMs);
       }
-      const nowMs = this.now();
-      state.label = label;
-      if (isEmbeddingPhase) {
-        const rate =
-          message.throughput !== null && message.throughput !== undefined
-            ? `${message.throughput.toFixed(1)} ch/s`
-            : "";
-        state.total = message.total;
-        state.rate = rate;
-        // Missing flag (legacy emitters) → determinate; only an explicit false is indeterminate.
-        state.totalFinal = message.totalFinal !== false;
-        state.value = Math.min(message.current, message.total);
-        // Recompute ETA base from fresh message data
-        if (message.throughput !== null && message.throughput !== undefined && message.throughput > 0) {
-          state.etaBaseSeconds = Math.max(0, (message.total - message.current) / message.throughput);
-        } else {
-          state.etaBaseSeconds = computeEtaSeconds(state.value, state.total, nowMs - state.startMs);
-        }
-        state.etaBaseAtMs = nowMs;
-        state.bar.setTotal(message.total);
-      }
-      const elapsed = fmtDuration(nowMs - state.startMs);
-      const eta = formatEta(countdownEta(state.etaBaseSeconds, state.etaBaseAtMs, nowMs));
+      state.etaBaseAtMs = nowMs;
+      state.bar.setTotal(message.total);
+    }
+    const elapsed = fmtDuration(nowMs - state.startMs);
+    const eta = formatEta(countdownEta(state.etaBaseSeconds, state.etaBaseAtMs, nowMs));
+    state.bar.update(state.value, {
+      label: state.label,
+      rate: state.rate,
+      eta,
+      elapsed,
+      totalFinal: state.totalFinal,
+    });
+  }
+
+  /** One bar per `providerKey:level` enrichment stream. */
+  private renderEnrichmentBar(message: WorkerMessageOf<"enrichment">): void {
+    const key = `${message.providerKey}:${message.level}`;
+    const rawLabel = enrichmentLabel(message.providerKey, message.level);
+    const label = this.colors.brand(rawLabel.padEnd(LABEL_WIDTH));
+    // File-level events are always final; chunk-level are false until the final
+    // chunk total is pinned. Missing flag (legacy) → determinate.
+    const totalFinal = message.totalFinal !== false;
+    let state = this.barStates.get(key);
+    if (!state) {
+      const bar = this.multibar.create(message.total, 0, { label, rate: "", eta: "", elapsed: "", totalFinal });
+      state = {
+        bar,
+        startMs: this.now(),
+        value: 0,
+        total: message.total,
+        label,
+        rate: "",
+        done: false,
+        etaBaseSeconds: null,
+        etaBaseAtMs: this.now(),
+        totalFinal,
+      };
+      this.barStates.set(key, state);
+      this.startTickIfNeeded();
+    }
+    const nowMs = this.now();
+    state.total = message.total;
+    state.label = label;
+    state.totalFinal = totalFinal;
+    state.value = Math.min(message.applied, message.total);
+    // Recompute ETA base from fresh message data
+    state.etaBaseSeconds = computeEtaSeconds(state.value, state.total, nowMs - state.startMs);
+    state.etaBaseAtMs = nowMs;
+    const elapsed = fmtDuration(nowMs - state.startMs);
+    const eta = formatEta(countdownEta(state.etaBaseSeconds, state.etaBaseAtMs, nowMs));
+    state.bar.setTotal(message.total);
+    state.bar.update(state.value, { label, rate: "", eta, elapsed, totalFinal });
+  }
+
+  /** Freeze the bars a finished phase owns with their Done ✓ elapsed. */
+  private markPhaseBarsDone(message: WorkerMessageOf<"phase-done">): void {
+    let keysToMark: string[];
+    if (message.phase === "embedding") {
+      keysToMark = ["embedding"];
+    } else {
+      // all non-embedding bars (enrichment)
+      keysToMark = [...this.barStates.keys()].filter((k) => k !== "embedding");
+    }
+    for (const key of keysToMark) {
+      const state = this.barStates.get(key);
+      if (!state) continue;
+      state.done = true;
+      state.value = state.total;
+      state.doneElapsed = fmtDuration(this.now() - state.startMs);
       state.bar.update(state.value, {
         label: state.label,
         rate: state.rate,
-        eta,
-        elapsed,
-        totalFinal: state.totalFinal,
+        elapsed: "",
+        eta: "",
+        done: { elapsed: state.doneElapsed },
       });
-      return;
-    }
-    if (message.type === "enrichment") {
-      const key = `${message.providerKey}:${message.level}`;
-      const rawLabel = enrichmentLabel(message.providerKey, message.level);
-      const label = this.colors.brand(rawLabel.padEnd(LABEL_WIDTH));
-      // File-level events are always final; chunk-level are false until the final
-      // chunk total is pinned. Missing flag (legacy) → determinate.
-      const totalFinal = message.totalFinal !== false;
-      let state = this.barStates.get(key);
-      if (!state) {
-        const bar = this.multibar.create(message.total, 0, { label, rate: "", eta: "", elapsed: "", totalFinal });
-        state = {
-          bar,
-          startMs: this.now(),
-          value: 0,
-          total: message.total,
-          label,
-          rate: "",
-          done: false,
-          etaBaseSeconds: null,
-          etaBaseAtMs: this.now(),
-          totalFinal,
-        };
-        this.barStates.set(key, state);
-        this.startTickIfNeeded();
-      }
-      const nowMs = this.now();
-      state.total = message.total;
-      state.label = label;
-      state.totalFinal = totalFinal;
-      state.value = Math.min(message.applied, message.total);
-      // Recompute ETA base from fresh message data
-      state.etaBaseSeconds = computeEtaSeconds(state.value, state.total, nowMs - state.startMs);
-      state.etaBaseAtMs = nowMs;
-      const elapsed = fmtDuration(nowMs - state.startMs);
-      const eta = formatEta(countdownEta(state.etaBaseSeconds, state.etaBaseAtMs, nowMs));
-      state.bar.setTotal(message.total);
-      state.bar.update(state.value, { label, rate: "", eta, elapsed, totalFinal });
-      return;
-    }
-    if (message.type === "phase-done") {
-      let keysToMark: string[];
-      if (message.phase === "embedding") {
-        keysToMark = ["embedding"];
-      } else {
-        // all non-embedding bars (enrichment)
-        keysToMark = [...this.barStates.keys()].filter((k) => k !== "embedding");
-      }
-      for (const key of keysToMark) {
-        const state = this.barStates.get(key);
-        if (!state) continue;
-        state.done = true;
-        state.value = state.total;
-        state.doneElapsed = fmtDuration(this.now() - state.startMs);
-        state.bar.update(state.value, {
-          label: state.label,
-          rate: state.rate,
-          elapsed: "",
-          eta: "",
-          done: { elapsed: state.doneElapsed },
-        });
-      }
     }
   }
 
