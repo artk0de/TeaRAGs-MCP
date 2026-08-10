@@ -185,6 +185,121 @@ describe("TSNamedImportSymbolResolutionStrategy", () => {
   });
 });
 
+describe("TSNamedImportSymbolResolutionStrategy barrel/re-export hop (bd tea-rags-mcp-hzsxy)", () => {
+  const strat = new TSNamedImportSymbolResolutionStrategy(cfg);
+  const call: CallRef = {
+    callText: "FileLevelGrouper.group(results)",
+    receiver: "FileLevelGrouper",
+    member: "group",
+    startLine: 1,
+  };
+  const barrelImport = [{ importText: "./grouping/index.js", importedNames: ["FileLevelGrouper"] }];
+
+  it("pins the member in the file the barrel re-exports it from", () => {
+    // The measured defect: `import { FileLevelGrouper } from "./grouping/index.js"`
+    // maps to the BARREL, which declares nothing, so the pass emitted a
+    // file-only edge to `index.ts` — a wrongFile against the type checker,
+    // six times over on this repo's own src.
+    const symbolTable = tableWith(
+      ["src/grouping/index.ts", []],
+      [
+        "src/grouping/file-level.ts",
+        [
+          sym("FileLevelGrouper", "FileLevelGrouper", "src/grouping/file-level.ts", []),
+          sym("FileLevelGrouper.group", "group", "src/grouping/file-level.ts", ["FileLevelGrouper"]),
+        ],
+      ],
+    );
+    const outcome = strat.attempt(call, ctx({ symbolTable, imports: barrelImport }));
+    expect(outcome).toEqual({
+      kind: "resolved",
+      target: { targetRelPath: "src/grouping/file-level.ts", targetSymbolId: "FileLevelGrouper.group" },
+    });
+  });
+
+  it("emits the file-only edge against the re-exporting file, not the barrel", () => {
+    // Member not indexed (inherited, or a shape the walker does not name).
+    // The fallback edge still exists — but it must point at the file that
+    // actually holds the receiver, because fanIn/fanOut are file-granular.
+    const symbolTable = tableWith(
+      ["src/grouping/index.ts", []],
+      ["src/grouping/file-level.ts", [sym("FileLevelGrouper", "FileLevelGrouper", "src/grouping/file-level.ts", [])]],
+    );
+    const outcome = strat.attempt(call, ctx({ symbolTable, imports: barrelImport }));
+    expect(outcome).toEqual({
+      kind: "resolved",
+      target: { targetRelPath: "src/grouping/file-level.ts", targetSymbolId: null },
+    });
+  });
+
+  it("follows a multi-level barrel chain in ONE step", () => {
+    // The hop asks where the receiver is DECLARED, not what each barrel
+    // re-exports, so `index.ts` → `nested/index.ts` → `impl.ts` costs the
+    // same as a single hop and no chain depth needs bounding.
+    const symbolTable = tableWith(
+      ["src/grouping/index.ts", []],
+      ["src/grouping/nested/index.ts", []],
+      [
+        "src/grouping/nested/impl.ts",
+        [
+          sym("FileLevelGrouper", "FileLevelGrouper", "src/grouping/nested/impl.ts", []),
+          sym("FileLevelGrouper.group", "group", "src/grouping/nested/impl.ts", ["FileLevelGrouper"]),
+        ],
+      ],
+    );
+    const outcome = strat.attempt(call, ctx({ symbolTable, imports: barrelImport }));
+    expect(outcome).toEqual({
+      kind: "resolved",
+      target: { targetRelPath: "src/grouping/nested/impl.ts", targetSymbolId: "FileLevelGrouper.group" },
+    });
+  });
+
+  it("declines the hop when the receiver name is declared in more than one file", () => {
+    // Precision guard. Two definitions of the name mean the barrel could be
+    // re-exporting either, and this pass has no re-export list to consult —
+    // so it keeps today's barrel edge instead of picking a winner.
+    const symbolTable = tableWith(
+      ["src/grouping/index.ts", []],
+      ["src/grouping/file-level.ts", [sym("FileLevelGrouper", "FileLevelGrouper", "src/grouping/file-level.ts", [])]],
+      ["src/other/file-level.ts", [sym("FileLevelGrouper", "FileLevelGrouper", "src/other/file-level.ts", [])]],
+    );
+    const outcome = strat.attempt(call, ctx({ symbolTable, imports: barrelImport }));
+    expect(outcome).toEqual({
+      kind: "resolved",
+      target: { targetRelPath: "src/grouping/index.ts", targetSymbolId: null },
+    });
+  });
+
+  it("leaves a direct import alone when the imported file declares the receiver", () => {
+    // Regression guard for the terminal fallback: the mapped file DOES hold
+    // the receiver, so nothing was re-exported and there is no hop to make.
+    const symbolTable = tableWith([
+      "src/grouping/index.ts",
+      [sym("FileLevelGrouper", "FileLevelGrouper", "src/grouping/index.ts", [])],
+    ]);
+    const outcome = strat.attempt(call, ctx({ symbolTable, imports: barrelImport }));
+    expect(outcome).toEqual({
+      kind: "resolved",
+      target: { targetRelPath: "src/grouping/index.ts", targetSymbolId: null },
+    });
+  });
+
+  it("declines the hop for a receiver the symbol table does not carry", () => {
+    // Top-level `const` bindings are not indexed by `tsNameOf`, so a
+    // re-exported constant leaves no trace to hop to. Silence here is what
+    // keeps `SOME_TABLE.has(x)` from being retargeted at a same-named class.
+    const symbolTable = tableWith(
+      ["src/grouping/index.ts", []],
+      ["src/grouping/file-level.ts", [sym("Unrelated", "Unrelated", "src/grouping/file-level.ts", [])]],
+    );
+    const outcome = strat.attempt(call, ctx({ symbolTable, imports: barrelImport }));
+    expect(outcome).toEqual({
+      kind: "resolved",
+      target: { targetRelPath: "src/grouping/index.ts", targetSymbolId: null },
+    });
+  });
+});
+
 describe("TSImportBasenameSymbolResolutionStrategy", () => {
   const strat = new TSImportBasenameSymbolResolutionStrategy(cfg);
   const call: CallRef = { callText: "RankModule.run()", receiver: "RankModule", member: "run", startLine: 1 };
@@ -302,7 +417,10 @@ describe("TSSameFileSymbolResolutionStrategy", () => {
   it("resolves a same-file `new X()` to X#constructor", () => {
     const symbolTable = tableWith([
       "src/caller.ts",
-      [sym("Widget#constructor", "constructor", "src/caller.ts", ["Widget"]), sym("Widget", "Widget", "src/caller.ts", [])],
+      [
+        sym("Widget#constructor", "constructor", "src/caller.ts", ["Widget"]),
+        sym("Widget", "Widget", "src/caller.ts", []),
+      ],
     ]);
     const call: CallRef = { callText: "new Widget()", receiver: "Widget", member: "constructor", startLine: 2 };
     const outcome = strat.attempt(call, ctx({ symbolTable, callerFile: "src/caller.ts" }));
@@ -313,10 +431,7 @@ describe("TSSameFileSymbolResolutionStrategy", () => {
   });
 
   it("resolves a same-file `Class.staticMember()`", () => {
-    const symbolTable = tableWith([
-      "src/caller.ts",
-      [sym("Widget.make", "make", "src/caller.ts", ["Widget"])],
-    ]);
+    const symbolTable = tableWith(["src/caller.ts", [sym("Widget.make", "make", "src/caller.ts", ["Widget"])]]);
     const call: CallRef = { callText: "Widget.make()", receiver: "Widget", member: "make", startLine: 3 };
     const outcome = strat.attempt(call, ctx({ symbolTable, callerFile: "src/caller.ts" }));
     expect(outcome).toEqual({
@@ -350,10 +465,7 @@ describe("TSSameFileSymbolResolutionStrategy", () => {
   });
 
   it("continues for a Capitalized receiver whose class is defined in another file (namedImport owns imports)", () => {
-    const symbolTable = tableWith([
-      "src/other.ts",
-      [sym("Widget#make", "make", "src/other.ts", ["Widget"])],
-    ]);
+    const symbolTable = tableWith(["src/other.ts", [sym("Widget#make", "make", "src/other.ts", ["Widget"])]]);
     const call: CallRef = { callText: "Widget.make()", receiver: "Widget", member: "make", startLine: 7 };
     const outcome = strat.attempt(call, ctx({ symbolTable, callerFile: "src/caller.ts" }));
     expect(outcome.kind).toBe("continue");
@@ -362,10 +474,7 @@ describe("TSSameFileSymbolResolutionStrategy", () => {
   it("continues for a bare call when a free function and a same-named method coexist in the caller file (never guesses)", () => {
     const symbolTable = tableWith([
       "src/caller.ts",
-      [
-        sym("helper", "helper", "src/caller.ts", []),
-        sym("Widget#helper", "helper", "src/caller.ts", ["Widget"]),
-      ],
+      [sym("helper", "helper", "src/caller.ts", []), sym("Widget#helper", "helper", "src/caller.ts", ["Widget"])],
     ]);
     const call: CallRef = { callText: "helper()", receiver: null, member: "helper", startLine: 8 };
     const outcome = strat.attempt(call, ctx({ symbolTable, callerFile: "src/caller.ts" }));
