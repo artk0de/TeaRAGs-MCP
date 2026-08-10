@@ -3,8 +3,8 @@
  *
  * `resolve` runs an ordered chain of single-purpose `SymbolResolutionStrategy`
  * passes (see `./strategies/`) via the shared `resolveViaChain` engine. The
- * array order encodes precedence, and the three-state outcome
- * (resolved / drop / continue) makes the load-bearing guard drops explicit —
+ * array order encodes precedence, and the four-state outcome
+ * (resolved / deferred / drop / continue) makes the load-bearing guard drops explicit —
  * e.g. `super`/`zsuper` without a resolvable ancestor DROPS rather than falling
  * through to the bare-call fallback that would fabricate a wrong edge
  * (bd tea-rags-mcp-jsa0 / lttd; same family as the TS bug 4rgg).

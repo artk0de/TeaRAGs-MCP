@@ -21,6 +21,7 @@ const strategy = (name: string, outcome: SymbolResolutionOutcome): SymbolResolut
   attempt: vi.fn().mockReturnValue(outcome),
 });
 const resolved = (id: string): SymbolResolutionOutcome => ({ kind: "resolved", target: target(id) });
+const deferred = (id: string): SymbolResolutionOutcome => ({ kind: "deferred", target: target(id) });
 const DROP: SymbolResolutionOutcome = { kind: "drop" };
 const CONTINUE: SymbolResolutionOutcome = { kind: "continue" };
 const call = {} as CallRef;
@@ -51,6 +52,31 @@ describe("resolveViaChain", () => {
 
   it("returns null for an empty chain", () => {
     expect(resolveViaChain([], call, ctx)).toBeNull();
+  });
+
+  it("emits a deferred proposal when the chain exhausts without a stronger answer", () => {
+    const result = resolveViaChain([strategy("weak", deferred("Weak#m")), strategy("after", CONTINUE)], call, ctx);
+    // the park is the best answer that exists — losing it loses a real edge
+    expect(result?.targetSymbolId).toBe("Weak#m");
+  });
+
+  it("keeps the first deferred proposal when two strategies both defer", () => {
+    const result = resolveViaChain(
+      [strategy("first", deferred("First#m")), strategy("second", deferred("Second#m"))],
+      call,
+      ctx,
+    );
+    // chain order is precedence — parking does not reorder it
+    expect(result?.targetSymbolId).toBe("First#m");
+  });
+
+  it("stops the chain on a drop but still emits an earlier deferred proposal", () => {
+    const later = strategy("later", resolved("Later#m"));
+    const result = resolveViaChain([strategy("weak", deferred("Weak#m")), strategy("guard", DROP), later], call, ctx);
+    // drop bars LATER passes from answering; it does not veto an EARLIER pass's
+    // offer, so the edge that exists today survives
+    expect(result?.targetSymbolId).toBe("Weak#m");
+    expect(later.attempt).not.toHaveBeenCalled();
   });
 });
 

@@ -12,8 +12,8 @@
  *
  * `resolve` runs an ordered chain of single-purpose `SymbolResolutionStrategy`
  * passes (see `./strategies/`) via the shared `resolveViaChain` engine. The
- * array order encodes precedence, and the three-state outcome
- * (resolved / drop / continue) makes the load-bearing guard drop explicit — a
+ * array order encodes precedence, and the four-state outcome
+ * (resolved / deferred / drop / continue) makes the load-bearing guard drop explicit — a
  * receiver-present call that matches no import / binding / java.lang type DROPS
  * rather than falling through to the bare-call short-name lookup that would
  * fabricate a same-class false-positive edge (mirrors the TS `super` guard, bd

@@ -6,8 +6,8 @@
  *
  * `resolve` runs an ordered chain of single-purpose `SymbolResolutionStrategy`
  * passes (see `./strategies/`) via the shared `resolveViaChain` engine. The
- * array order encodes precedence, and the three-state outcome
- * (resolved / drop / continue) makes the load-bearing guard drops explicit —
+ * array order encodes precedence, and the four-state outcome
+ * (resolved / deferred / drop / continue) makes the load-bearing guard drops explicit —
  * a `self.<field>` / `self` / `super()` / locally-bound receiver that fails to
  * resolve DROPS rather than falling through to the ambiguous global short-name
  * path (which is exactly the source of the ugnest false positive,

@@ -6,8 +6,8 @@
  *
  * `resolve` runs an ordered chain of single-purpose `SymbolResolutionStrategy`
  * passes (see `./strategies/`) via the shared `resolveViaChain` engine. The
- * array order encodes precedence, and the three-state outcome
- * (resolved / drop / continue) makes the load-bearing guard drops explicit —
+ * array order encodes precedence, and the four-state outcome
+ * (resolved / deferred / drop / continue) makes the load-bearing guard drops explicit —
  * e.g. a `self.<field>` receiver whose field type is unknown DROPS rather than
  * falling through to the import-match / global short-name paths that would
  * route to an unrelated type's member (bd tea-rags-mcp-q1pl).
