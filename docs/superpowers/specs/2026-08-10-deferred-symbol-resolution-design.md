@@ -342,17 +342,45 @@ every one of them agreed with it; the wrongFile bucket empties. The remaining
 twelve landed in the checker's blind spots, which is exactly why the edge tally
 had to exist — no verdict table can see them.
 
-The Ruby half needs a Ruby corpus.
-`scripts/taxdome-codegraph-recall-forensics.ts` is the available harness;
-whether it runs against the existing index or needs a reindex is settled during
-implementation. A reindex is user-gated, and if it is required the Ruby bead
-closes on that measurement rather than on unit evidence, per
-`.claude/rules/epic-completion-gate.md`.
+### Measured outcome (Ruby)
+
+`scripts/taxdome-codegraph-recall-forensics.ts` turned out to need no reindex at
+all — it re-resolves the corpus in process, read-only, without DuckDB — so the
+Ruby half was measured in the same session rather than waiting on a user-gated
+index rebuild. taxdome, 8711 Ruby files, 67177 symbols, no parse failures.
+Baseline by reverting only the two Ruby strategy files, so engine, contract and
+TypeScript were identical on both sides.
+
+| Metric               | Baseline | Deferred | Delta      |
+| -------------------- | -------- | -------- | ---------- |
+| callsResolved        | 129425   | 129427   | +2         |
+| callsExternalSkipped | 56719    | 56718    | −1         |
+| callsNoInProjectDef  | 27562    | 27562    | 0          |
+| callsCoreAmbiguous   | 3912     | 3912     | 0          |
+| missWithInProjectDef | 14179    | 14180    | +1         |
+| inProjectEdgeRecall  | 90.13%   | 90.13%   | **0.00pp** |
+
+Ruby is flat. Two extra resolved calls out of 129k is 0.0015%, and recall does
+not move at two decimal places; the +1 miss against −1 external is one call
+reclassifying between buckets, not a lost edge — the edge count went up, not
+down. The `conventionReceiver` upgrade the audit predicted, where a bare
+`require 'payment'` lets pass 12 pin `Payment#<member>` over the parked module
+edge, essentially never fires on this corpus.
+
+That is the honest result and it should not be dressed up: the Ruby side buys no
+recall today. What it buys is the removal of a latent early-commit defect and
+one contract across both languages, at a measured cost of zero. Do not cite a
+Ruby recall gain — there is none.
+
+One trap for whoever reads the raw harness output: its
+`87.74% → 90.13% (+2.39pp)` line is the harness's own annotation for bd 83cl7's
+core-homonym carve-out, printed identically in both runs. It has nothing to do
+with this change.
 
 ## Beads
 
 | Bead               | Scope                                                    |
 | ------------------ | -------------------------------------------------------- |
 | tea-rags-mcp-5onmn | contract, engine, TypeScript passes 5/6/7, harness tally |
-| new                | Ruby passes 8/9 + terminal-guard audit (same session)    |
-| new                | Python and Java file-only fallbacks                      |
+| tea-rags-mcp-xipzw | Ruby passes 8/9 + terminal-guard audit (same session)    |
+| tea-rags-mcp-86qfb | Python and Java file-only fallbacks; JavaScript noted    |
