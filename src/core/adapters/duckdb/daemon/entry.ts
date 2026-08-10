@@ -380,6 +380,12 @@ async function main(): Promise<void> {
 // Run only when executed directly (not when imported by tests/factory). The
 // argv[1] comparison mirrors the standard ESM "is this the entrypoint" guard.
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
-  void main();
+  void main().catch((err: unknown) => {
+    // The daemon is detached and its caller only ever learns "the socket never
+    // appeared". Stating the cause on stderr is what puts it in the spawn log;
+    // the non-zero exit distinguishes a startup failure from an idle teardown.
+    process.stderr.write(`[codegraph-daemon] failed to start: ${(err as Error)?.stack ?? String(err)}\n`);
+    process.exit(1);
+  });
 }
 /* v8 ignore stop */

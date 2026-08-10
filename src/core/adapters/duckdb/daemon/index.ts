@@ -13,11 +13,14 @@ export { DAEMON_OP_COMMANDS, type DaemonOpCommand, type DaemonOpContext } from "
 export { CodegraphDaemonServer } from "./server.js";
 export {
   type CodegraphDaemonPaths,
+  DAEMON_LOG_MAX_BYTES,
   IDLE_SHUTDOWN_MS,
   decrementRefs,
+  getDaemonLogPath,
   getDaemonPaths,
   getStorageDir,
   incrementRefs,
+  openDaemonLogFd,
   readRefs,
   scheduleIdleWatcher,
 } from "./lifecycle.js";

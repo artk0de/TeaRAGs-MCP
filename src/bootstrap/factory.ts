@@ -1,12 +1,17 @@
 // src/bootstrap/factory.ts
 import { spawn } from "node:child_process";
-import { existsSync, readFileSync } from "node:fs";
+import { closeSync, existsSync, readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 
-import { getDaemonPaths, getStorageDir, type CodegraphDaemonPaths } from "../core/adapters/duckdb/daemon/index.js";
+import {
+  getDaemonPaths,
+  getStorageDir,
+  openDaemonLogFd,
+  type CodegraphDaemonPaths,
+} from "../core/adapters/duckdb/daemon/index.js";
 import { GraphDbClientPool } from "../core/adapters/duckdb/index.js";
 import type { EmbeddingProvider } from "../core/adapters/embeddings/base.js";
 import { EmbeddingProviderFactory } from "../core/adapters/embeddings/factory.js";
@@ -353,23 +358,36 @@ function ensureCodegraphDaemon(
     if (isCodegraphDaemonAlive(paths)) return;
     const entryUrl = new URL("../core/adapters/duckdb/daemon/entry.js", import.meta.url);
     const entryPath = fileURLToPath(entryUrl);
-    const child = spawn(process.execPath, [entryPath], {
-      detached: true,
-      stdio: "ignore",
-      env: {
-        ...process.env,
-        TEA_RAGS_CODEGRAPH_DAEMON_ROOT: rootDir,
-        TEA_RAGS_CODEGRAPH_DAEMON_DIR: paths.storageDir,
-        // The daemon creates graph DBs in its own process and `adapters` may
-        // not import the maintenance domain, so the DDL module travels as a
-        // URL it imports in-process.
-        TEA_RAGS_CODEGRAPH_DAEMON_MIGRATIONS: DATABASE_MIGRATIONS_MODULE_URL,
-        ...(resources.memoryLimit ? { TEA_RAGS_CODEGRAPH_DAEMON_MEMORY: resources.memoryLimit } : {}),
-        ...(resources.memoryLimitMax ? { TEA_RAGS_CODEGRAPH_DAEMON_MEMORY_MAX: resources.memoryLimitMax } : {}),
-        ...(resources.threads !== undefined ? { TEA_RAGS_CODEGRAPH_DAEMON_THREADS: String(resources.threads) } : {}),
-      },
-    });
-    child.unref();
+    // The daemon is detached, so its output has nowhere to go unless it is
+    // given a file. With it discarded, a daemon that dies during startup is
+    // indistinguishable from one that was never spawned — both reach the caller
+    // as ENOENT on a socket that never appeared, with no cause recorded
+    // anywhere. The fd is the child's stdout AND stderr; the parent closes its
+    // own copy once the child owns it.
+    const logFd = openDaemonLogFd(paths);
+    try {
+      const child = spawn(process.execPath, [entryPath], {
+        detached: true,
+        stdio: ["ignore", logFd, logFd],
+        env: {
+          ...process.env,
+          TEA_RAGS_CODEGRAPH_DAEMON_ROOT: rootDir,
+          TEA_RAGS_CODEGRAPH_DAEMON_DIR: paths.storageDir,
+          // The daemon creates graph DBs in its own process and `adapters` may
+          // not import the maintenance domain, so the DDL module travels as a
+          // URL it imports in-process.
+          TEA_RAGS_CODEGRAPH_DAEMON_MIGRATIONS: DATABASE_MIGRATIONS_MODULE_URL,
+          ...(resources.memoryLimit ? { TEA_RAGS_CODEGRAPH_DAEMON_MEMORY: resources.memoryLimit } : {}),
+          ...(resources.memoryLimitMax ? { TEA_RAGS_CODEGRAPH_DAEMON_MEMORY_MAX: resources.memoryLimitMax } : {}),
+          ...(resources.threads !== undefined
+            ? { TEA_RAGS_CODEGRAPH_DAEMON_THREADS: String(resources.threads) }
+            : {}),
+        },
+      });
+      child.unref();
+    } finally {
+      closeSync(logFd);
+    }
   } catch {
     /* best-effort: fall back to in-process write path */
   } finally {

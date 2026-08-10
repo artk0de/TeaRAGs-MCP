@@ -1,4 +1,4 @@
-import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { mkdirSync, openSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 
@@ -11,6 +11,13 @@ const IDLE_POLL_INTERVAL_MS = 5_000;
 
 export { IDLE_SHUTDOWN_MS };
 
+/**
+ * Size at which the daemon log is started over on the next spawn. The daemon
+ * writes only startup and failure output, so this holds many spawns' worth of
+ * history while keeping an unattended install from growing a log forever.
+ */
+export const DAEMON_LOG_MAX_BYTES = 1024 * 1024;
+
 export interface CodegraphDaemonPaths {
   storageDir: string;
   socketPath: string;
@@ -18,6 +25,8 @@ export interface CodegraphDaemonPaths {
   portFile: string;
   refsFile: string;
   lockFile: string;
+  /** Where the spawned daemon's stdout + stderr are recorded. */
+  logFile: string;
 }
 
 /* v8 ignore next 3 -- fallback for backward compat when DI app-data path not provided */
@@ -42,7 +51,32 @@ export function getDaemonPaths(storageDir: string): CodegraphDaemonPaths {
     portFile: join(storageDir, "codegraph-daemon.port"),
     refsFile: join(storageDir, "codegraph-daemon.refs"),
     lockFile: join(storageDir, "codegraph-daemon.lock"),
+    logFile: getDaemonLogPath(storageDir),
   };
+}
+
+/**
+ * The daemon log sits next to the socket, which is what lets a client derive it
+ * from the socket path alone when it has to name the file in an error.
+ */
+export function getDaemonLogPath(storageDir: string): string {
+  return join(storageDir, "codegraph-daemon.log");
+}
+
+/**
+ * Open the daemon log for the spawner to hand to the child as stdout + stderr.
+ * Appends, so the output of a spawn that died is still there after the next one
+ * starts — an intermittent startup failure is only diagnosable across attempts.
+ * A log past `DAEMON_LOG_MAX_BYTES` is started over rather than grown.
+ */
+export function openDaemonLogFd(paths: CodegraphDaemonPaths): number {
+  mkdirSync(dirname(paths.logFile), { recursive: true });
+  try {
+    if (statSync(paths.logFile).size > DAEMON_LOG_MAX_BYTES) return openSync(paths.logFile, "w");
+  } catch {
+    /* no log yet — the append below creates it */
+  }
+  return openSync(paths.logFile, "a");
 }
 
 export function readRefs(paths: CodegraphDaemonPaths): number {

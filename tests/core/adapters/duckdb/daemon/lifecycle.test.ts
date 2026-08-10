@@ -1,15 +1,17 @@
-import { mkdtempSync, rmSync } from "node:fs";
+import { closeSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import {
+  DAEMON_LOG_MAX_BYTES,
   decrementRefs,
   getDaemonPaths,
   getStorageDir,
   IDLE_SHUTDOWN_MS,
   incrementRefs,
+  openDaemonLogFd,
   readRefs,
   scheduleIdleWatcher,
 } from "../../../../../src/core/adapters/duckdb/daemon/lifecycle.js";
@@ -26,6 +28,34 @@ describe("codegraph daemon lifecycle refcount", () => {
     expect(p.socketPath.endsWith("codegraph-daemon.sock")).toBe(true);
     expect(p.refsFile.endsWith("codegraph-daemon.refs")).toBe(true);
     expect(p.lockFile.endsWith("codegraph-daemon.lock")).toBe(true);
+  });
+
+  it("paths include the log the spawned daemon writes its output to", () => {
+    dir = mkdtempSync(join(tmpdir(), "cgl-"));
+    const p = getDaemonPaths(dir);
+    expect(p.logFile).toBe(join(dir, "codegraph-daemon.log"));
+  });
+
+  it("openDaemonLogFd appends, so an earlier spawn's crash survives the next one", () => {
+    dir = mkdtempSync(join(tmpdir(), "cgl-"));
+    const p = getDaemonPaths(dir);
+    writeFileSync(p.logFile, "first spawn died\n", "utf-8");
+
+    const fd = openDaemonLogFd(p);
+    closeSync(fd);
+
+    expect(readFileSync(p.logFile, "utf-8")).toContain("first spawn died");
+  });
+
+  it("openDaemonLogFd truncates a log that grew past the size cap", () => {
+    dir = mkdtempSync(join(tmpdir(), "cgl-"));
+    const p = getDaemonPaths(dir);
+    writeFileSync(p.logFile, "x".repeat(DAEMON_LOG_MAX_BYTES + 1), "utf-8");
+
+    const fd = openDaemonLogFd(p);
+    closeSync(fd);
+
+    expect(statSync(p.logFile).size).toBe(0);
   });
 
   it("increment/decrement refs are symmetric and floored at 0", () => {

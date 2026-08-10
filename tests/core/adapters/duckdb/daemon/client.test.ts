@@ -442,6 +442,20 @@ describe("DaemonGraphDbClient", () => {
     expect(elapsed).toBeLessThan(2000);
   });
 
+  // The spawn discards the daemon's own output, so a daemon that died on
+  // startup reaches the caller as a bare ENOENT on the socket. The message has
+  // to say where the daemon's side of the story was written down.
+  it("init() failure names the daemon log so the operator can find the cause", async () => {
+    dir = mkdtempSync(join(tmpdir(), "cgc-"));
+    const socketPath = join(dir, "codegraph-daemon.sock");
+    const client = new DaemonGraphDbClient(socketPath, "code_never_v1", {
+      connectTimeoutMs: 200,
+      retryDelayMs: 50,
+    });
+
+    await expect(client.init()).rejects.toThrow(join(dir, "codegraph-daemon.log"));
+  });
+
   // The daemon proxies whole result sets as one frame, so any response bigger
   // than a socket chunk (~64KB) reaches the client split across several `data`
   // events. Non-ASCII content must survive that split: decoding each chunk on
