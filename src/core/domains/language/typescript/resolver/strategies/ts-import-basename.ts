@@ -21,7 +21,7 @@ export class TSImportBasenameSymbolResolutionStrategy implements SymbolResolutio
     const match = ctx.imports.find((imp) => importMatchesReceiver(imp.importText, call.receiver as string));
     if (!match) return CONTINUE;
 
-    const targetFile = mapImportToFile(match.importText, ctx.callerFile, this.cfg.tsOptions);
+    const targetFile = mapImportToFile(match.importText, ctx.callerFile, this.cfg.tsOptions, this.cfg.fileExists);
     if (!targetFile) return CONTINUE;
 
     const candidates = ctx.symbolTable.lookupByShortName(call.member).filter((def) => def.relPath === targetFile);

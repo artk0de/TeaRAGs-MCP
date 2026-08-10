@@ -21,7 +21,7 @@ export class TSReceiverSymbolSymbolResolutionStrategy implements SymbolResolutio
     const receiverHits = ctx.symbolTable.lookup(call.receiver);
     if (receiverHits.length === 0) return CONTINUE;
 
-    const importedFiles = collectImportedFiles(ctx, this.cfg.tsOptions);
+    const importedFiles = collectImportedFiles(ctx, this.cfg.tsOptions, this.cfg.fileExists);
     const receiverFiles = new Set<string>();
     for (const hit of receiverHits) {
       if (importedFiles.has(hit.relPath)) receiverFiles.add(hit.relPath);

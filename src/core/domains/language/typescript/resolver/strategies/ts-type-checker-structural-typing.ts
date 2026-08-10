@@ -273,6 +273,9 @@ function boundReceiverType(call: CallRef, ctx: CallContext): string | null {
  * project file? `mapImportToFile` returns `null` for exactly those (bare npm
  * specifiers, `node:` builtins), which is the same test
  * `TSCallResolver.targetsExternalImport` uses to bucket a call as external.
+ *
+ * Deliberately probe-free: nullness does not depend on which extension the
+ * file carries, so a `ProjectFileProbe` would only add lookups here.
  */
 function bindsToExternalImport(name: string, ctx: CallContext, tsOptions: TsCompilerOptions): boolean {
   for (const imp of ctx.imports) {

@@ -35,7 +35,7 @@ export class TSConeTypeLocator implements ConeTypeLocator {
     const matches = ctx.symbolTable.lookupByShortName(typeName).filter((def) => def.scope.length === 0);
     if (matches.length === 1) return matches[0].relPath;
     if (matches.length > 1) {
-      const importedFiles = collectImportedFiles(ctx, this.cfg.tsOptions);
+      const importedFiles = collectImportedFiles(ctx, this.cfg.tsOptions, this.cfg.fileExists);
       const filtered = matches.filter((def) => importedFiles.has(def.relPath));
       if (filtered.length === 1) return filtered[0].relPath;
       return null;
@@ -44,7 +44,7 @@ export class TSConeTypeLocator implements ConeTypeLocator {
     // a project file anchors it (rare — interfaces are usually in-project).
     for (const imp of ctx.imports) {
       if (!imp.importedNames?.includes(typeName)) continue;
-      const file = mapImportToFile(imp.importText, ctx.callerFile, this.cfg.tsOptions);
+      const file = mapImportToFile(imp.importText, ctx.callerFile, this.cfg.tsOptions, this.cfg.fileExists);
       if (file) return file;
     }
     return null;
