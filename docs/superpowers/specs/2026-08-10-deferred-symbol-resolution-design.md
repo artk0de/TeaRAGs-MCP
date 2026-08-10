@@ -342,6 +342,47 @@ every one of them agreed with it; the wrongFile bucket empties. The remaining
 twelve landed in the checker's blind spots, which is exactly why the edge tally
 had to exist — no verdict table can see them.
 
+### Re-measured after merging main — the TypeScript win is gone
+
+The table above is superseded. It was taken against a tree that did not yet have
+bd `4kx9f` (the imported-container guard) or bd `hzsxy` (the barrel/re-export
+hop), both of which landed on main while this branch was in flight and both of
+which attack the same file-only population. Re-run on the merged tree, 896
+files, 14737 call sites:
+
+| Chain output       | Baseline | Deferred | Delta  |
+| ------------------ | -------- | -------- | ------ |
+| edges              | 6366     | 6366     | 0      |
+| of which file-only | 560      | 559      | **−1** |
+| unresolved         | 8370     | 8370     | 0      |
+
+Every verdict bucket is byte-identical between the two runs. In particular the
+`constant` receiver kind now reads match 26 / wrongFile 0 / phantom 0 / mismatch
+0.0% on BOTH sides — main reached that on its own. The pre-merge measurement
+credited deferral with 20→26 match and 6→0 wrongFile; those calls are now fixed
+by the barrel hop and the container guard, more specifically and before the
+chain ever reaches a fallback. File-only edges fell 738 → 560 for the same
+reason, so most of the population deferral could have upgraded no longer exists.
+
+What deferral is worth on this corpus today: **one upgraded edge, zero lost, no
+verdict moved.** State it that way and nothing else. The pre-merge numbers
+remain valid as evidence that the mechanism does what it claims when those
+specific fixes are absent — they are not a live claim about main.
+
+The reasons to keep it are therefore structural, not numeric:
+
+- it is the contract Ruby (`xipzw`), Python and Java (`86qfb`) need, and it
+  costs nothing measurable to carry;
+- it removes the terminal-commit accident that the import file-edge defect was
+  relying on — that defect was real, and it surfaced only because the accident
+  went away;
+- it unblocks `structuralTyping` for named-import receivers, which is the shape
+  bd `icmnr` deferred in the first place and which no verdict on this corpus
+  exercises.
+
+A reader deciding whether to extend this to another language should measure that
+language rather than inherit any number from here.
+
 ### Measured outcome (Ruby)
 
 `scripts/taxdome-codegraph-recall-forensics.ts` turned out to need no reindex at
