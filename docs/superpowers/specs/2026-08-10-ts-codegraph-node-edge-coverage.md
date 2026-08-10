@@ -160,6 +160,11 @@ compare.
 | `missed`    | 739  | 733 unpinned target, 2 anonymous callable | **4**        |
 | `phantom`   | 3612 | 3508 both sides external                  | **104**      |
 
+> The raw `phantom` column above is a PRE-CUTOVER number. `diffResolution` was
+> corrected later the same day and no longer produces it — see "Measurement
+> cutover" at the end of this document before comparing it against any newer
+> run.
+
 The three earlier headlines all reconcile against this, and none of them
 contradicted each other — they were counting different things:
 
@@ -252,3 +257,62 @@ different fix in a different strategy.
   is the working version of that probe.
 - The corpus has no `.tsx`, so `jsx` gets no signal here.
 - `unionNarrowing` reaches 8 call sites total; its rates are noise.
+
+## Measurement cutover: `phantom` changed meaning (2026-08-10, bd tea-rags-mcp-ffju3)
+
+The cutover commit is the one carrying this bead id — `git log --grep=ffju3`.
+
+**Raw `phantom` counts produced before this change are not comparable with raw
+`phantom` counts produced after it.** Every phantom figure above this heading —
+the 3612 in the table, Track C's 1341, `pmxuv`'s 1344 / 5592, `6b3gj`'s runs —
+was produced by the old verdict and remains valid only as a record of what that
+verdict counted.
+
+`cko34` (`de24ba39`) deliberately left the verdict alone and corrected for this
+one layer up, in `reconcileOraclePhantom`, so its own run stayed comparable with
+the runs before it. This change is the root fix, and it spends that
+comparability on purpose.
+
+### What changed
+
+`diffResolution`'s external branch tested `chain !== null`: against external
+ground truth, ANY chain answer was a phantom. But the chain routinely answers
+with a `node_modules` declaration, which is the same conclusion the checker
+reached — and an external answer cannot become an edge in the first place, since
+`file-graph-store.ts` drops every method edge whose `targetSymbolId` is null and
+an out-of-project path can never pin one. The branch now compares conclusions: a
+chain answer that also lands outside project source is `agreeExternal`, and only
+an in-project answer against external ground truth is a `phantom`.
+
+### Before and after, same commit, same corpus
+
+Measured on this repo's `src/` at `d10e5dc0` (895 files, 14721 scored call
+sites, 5876 external checker answers):
+
+| Measure                         | Before    | After     |
+| ------------------------------- | --------- | --------- |
+| raw `phantom`                   | 3614      | **104**   |
+| of which both sides external    | 3510      | 0         |
+| decomposed fabricated edges     | 93        | **93**    |
+| arguable external-interface     | 11        | 11        |
+| raw `wrongFile` / `missed`      | 709 / 739 | 709 / 739 |
+| `structuralTyping` phantom rate | 63.3%     | 1.8%      |
+
+The defect residual is byte-identical, which is the check that the verdict fix
+moved measurement and not the resolver. Raw and decomposed now converge on the
+external axis — 104 raw = 93 fabricated + 11 arguable — because the verdict
+finally computes what the decomposition was already computing.
+
+### Consequences
+
+- `OraclePhantomReason` no longer carries `externalAgreement`, and
+  `reconcileOraclePhantom` no longer tests for it. The reconciler measured 3510
+  such rows before the fix and 0 after, on 5876 external ground-truth answers,
+  so the branch was dead code rather than a rule that still caught something.
+  The `extAgree` column is gone from the decomposition table.
+- A future run reporting ~100 raw phantoms has NOT repaired 3500 fabricated
+  edges. Do not read a drop across this boundary as a precision win, or a rise
+  as a regression. Compare post-cutover runs only against post-cutover runs.
+- The 93 fabricated edges are unchanged and remain the real precision surface:
+  91 default-lib members matched by bare short name, 2 concrete external package
+  declarations.
