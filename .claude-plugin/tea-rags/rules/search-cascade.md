@@ -268,7 +268,9 @@ Has query?
    └─ Describing behavior / intent (no exact name) → semantic_search
 ```
 
-All except find_similar accept a rerank preset. For preset choice + custom
+Every tool above accepts a rerank preset, find_similar included — its preset
+list omits only `documentationRelevance` and `blastRadius`. `rank_chunks`
+requires one rather than accepting it optionally. For preset choice + custom
 weights → `/tea-rags:analytics-rerank`. For filter shape (typed sugar, level,
 raw filter) → `/tea-rags:filter-building`. Code-only filtering: add language
 filter or pathPattern to exclude non-code files.
