@@ -42,7 +42,16 @@ export type MethodClassification = "instance" | "static";
  */
 export function classifyMethod(node: AstNode): MethodClassification | null {
   // TypeScript / JavaScript — explicit `static` keyword child.
-  if (node.type === "method_definition") return hasChildOfTypeOrText(node, "static") ? "static" : "instance";
+  if (node.type === "method_definition") {
+    // bd tea-rags-mcp-2jhwk / 62hzr — a `method_definition` sitting directly in
+    // an OBJECT LITERAL is a namespace member, not a class method: it is invoked
+    // as `X.member()` on the object itself and there is no instance to bind.
+    // Declining to classify it lets the caller compose the `Outer.Nested`
+    // namespace form the convention reserves for exactly this case. See
+    // `./const-object-namespace.ts` for who the enclosing namespace is.
+    if (node.parent?.type === "object") return null;
+    return hasChildOfTypeOrText(node, "static") ? "static" : "instance";
+  }
   // Java — `static` modifier nested under a `modifiers` child.
   if (node.type === "method_declaration") return javaHasStaticModifier(node) ? "static" : "instance";
   // Java constructor — instance-bound (initializes an instance).
