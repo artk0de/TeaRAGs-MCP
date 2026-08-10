@@ -2620,6 +2620,153 @@ class DataProcessor {
       });
     });
 
+    // bd tea-rags-mcp-62hzr — const-object NAMESPACE members in the CHUNKER.
+    // bd tea-rags-mcp-2jhwk taught the codegraph walker (`tsNameOf`) to name
+    // `export const X = { m() {} }`, so cg_symbols now holds `X.m`. The chunker
+    // composes its Qdrant payload symbolId on a different path
+    // (`buildSymbolId` driven by chunkableTypes / childChunkTypes) and still
+    // emitted a bare `m` with no parentSymbolId — the two sides fell out of the
+    // lockstep `.claude/rules/symbolid-convention.md` requires for the same
+    // physical AST node. A user copying `symbolId` out of a find_symbol hit into
+    // `get_callers` got [] because the graph row is keyed `X.m`.
+    //
+    // Separator is the namespace `.`, not the instance `#`: an object-literal
+    // method binds no instance (same reasoning as 2jhwk).
+    describe("const-object namespace symbolId (bd tea-rags-mcp-62hzr)", () => {
+      // The bead's concrete example — src/core/domains/explore/chunk-grouping/file-level.ts.
+      const fileLevelGrouperSource = [
+        "import type { ExploreResult } from '../strategies/index.js';",
+        "",
+        "export const FileLevelGrouper = {",
+        "  group(results: ExploreResult[], limit: number): ExploreResult[] {",
+        "    const byPath = new Map<string, ExploreResult[]>();",
+        "    for (const result of results) {",
+        "      const path = (result.payload?.relativePath as string | undefined) ?? '';",
+        "      const hits = byPath.get(path);",
+        "      if (hits) hits.push(result);",
+        "      else byPath.set(path, [result]);",
+        "    }",
+        "    return [...byPath.values()].slice(0, limit);",
+        "  },",
+        "};",
+        "",
+      ].join("\n");
+
+      it("emits `FileLevelGrouper.group` for the bead's TypeScript example", async () => {
+        const chunks = await chunker.chunk(fileLevelGrouperSource, "file-level.ts", "typescript");
+
+        const groupChunk = chunks.find((c) => c.metadata.name === "group");
+        expect(groupChunk, "chunk for the `group` method missing").toBeDefined();
+        expect(groupChunk!.metadata.symbolId).toBe("FileLevelGrouper.group");
+        expect(groupChunk!.metadata.parentSymbolId).toBe("FileLevelGrouper");
+        expect(groupChunk!.metadata.chunkType).toBe("function");
+      });
+
+      it("never composes the instance form `FileLevelGrouper#group`", async () => {
+        const chunks = await chunker.chunk(fileLevelGrouperSource, "file-level.ts", "typescript");
+
+        expect(chunks.map((c) => c.metadata.symbolId)).not.toContain("FileLevelGrouper#group");
+      });
+
+      // JavaScript parses the identical shape — `method_definition < object <
+      // variable_declarator` — so it needs the same composition, not a copy.
+      //
+      // Declared WITHOUT `export`: JavaScript lists `export_statement` in its
+      // chunkableTypes and the assignment filter has no opinion on that type, so
+      // any `export …` is claimed whole as one anonymous `block` chunk — an
+      // exported const-object never reaches this composition at all. That is a
+      // separate and much broader JS defect (it swallows `export function` and
+      // `export class` too), tracked apart from this bead.
+      it("emits `FileLevelGrouper.group` for the same JavaScript shape", async () => {
+        const code = [
+          "const FileLevelGrouper = {",
+          "  group(results, limit) {",
+          "    const byPath = new Map();",
+          "    for (const result of results) {",
+          "      const path = result.payload?.relativePath ?? '';",
+          "      const hits = byPath.get(path);",
+          "      if (hits) hits.push(result);",
+          "      else byPath.set(path, [result]);",
+          "    }",
+          "    return [...byPath.values()].slice(0, limit);",
+          "  },",
+          "};",
+          "",
+        ].join("\n");
+
+        const chunks = await chunker.chunk(code, "file-level.js", "javascript");
+
+        const groupChunk = chunks.find((c) => c.metadata.name === "group");
+        expect(groupChunk, "chunk for the `group` method missing").toBeDefined();
+        expect(groupChunk!.metadata.symbolId).toBe("FileLevelGrouper.group");
+        expect(groupChunk!.metadata.parentSymbolId).toBe("FileLevelGrouper");
+      });
+
+      // `as const` / `satisfies` / parentheses are type-level annotations — the
+      // declared value is still the object literal. 2jhwk sees through all three
+      // on the walker side, so the chunker must too or the two disagree again.
+      it("sees through an `as const` wrapper", async () => {
+        const code = [
+          "export const Registry = {",
+          "  lookup(key: string): string {",
+          "    const table: Record<string, string> = { a: 'alpha', b: 'beta' };",
+          "    return table[key] ?? 'unknown value for the requested key';",
+          "  },",
+          "} as const;",
+          "",
+        ].join("\n");
+
+        const chunks = await chunker.chunk(code, "registry.ts", "typescript");
+
+        const lookupChunk = chunks.find((c) => c.metadata.name === "lookup");
+        expect(lookupChunk, "chunk for the `lookup` method missing").toBeDefined();
+        expect(lookupChunk!.metadata.symbolId).toBe("Registry.lookup");
+      });
+
+      // A class method still binds an instance — the `#` form must not regress.
+      it("leaves class methods on the instance `#` form", async () => {
+        const code = [
+          "export class Calculator {",
+          "  add(a: number, b: number): number {",
+          "    // Padded so the chunk clears the 50-character content floor.",
+          "    return a + b;",
+          "  }",
+          "}",
+          "",
+        ].join("\n");
+
+        const chunks = await chunker.chunk(code, "calculator.ts", "typescript");
+
+        const addChunk = chunks.find((c) => c.metadata.name === "add");
+        expect(addChunk, "chunk for the `add` method missing").toBeDefined();
+        expect(addChunk!.metadata.symbolId).toBe("Calculator#add");
+      });
+
+      // 2jhwk deliberately DECLINES to name a nested object literal (naming the
+      // outer would claim members it does not own). The chunker must decline the
+      // same shape, or it composes `outer.deep` against cg_symbols' bare `deep`.
+      it("declines a nested object literal, matching the walker", async () => {
+        const code = [
+          "export const outer = {",
+          "  inner: {",
+          "    deep(value: string): string {",
+          "      // Padded so the chunk clears the 50-character content floor.",
+          "      return value.trim().toUpperCase();",
+          "    },",
+          "  },",
+          "};",
+          "",
+        ].join("\n");
+
+        const chunks = await chunker.chunk(code, "nested.ts", "typescript");
+
+        const deepChunk = chunks.find((c) => c.metadata.name === "deep");
+        expect(deepChunk, "chunk for the `deep` method missing").toBeDefined();
+        expect(deepChunk!.metadata.symbolId).toBe("deep");
+        expect(deepChunk!.metadata.parentSymbolId).toBeUndefined();
+      });
+    });
+
     // bd tea-rags-mcp-n7x5 + j2b7 — Go method/struct/interface symbolId in chunker.
     // The chunker writes the Qdrant payload symbolId; the codegraph provider
     // writes cg_symbols.symbol_id for the SAME AST node. Both must agree per

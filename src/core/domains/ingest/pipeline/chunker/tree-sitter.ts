@@ -19,7 +19,7 @@ import type {
 } from "../../../../contracts/types/language.js";
 import { materializeTree } from "../../../../infra/materialize.js";
 import { isDebug } from "../../../../infra/runtime.js";
-import { isStaticMethodNode } from "../../../../infra/symbolid/index.js";
+import { constObjectNamespaceOwner, isStaticMethodNode } from "../../../../infra/symbolid/index.js";
 import type { ChunkerConfig, CodeChunk } from "../../../../types.js";
 import { AST_NOT_PROCESSED_REASON, FileParseError } from "../../errors.js";
 import type { CodeChunker } from "./base.js";
@@ -335,7 +335,7 @@ export class TreeSitterChunker implements CodeChunker {
           if (handled) continue;
         }
 
-        this.chunkSingleNode(node, index, code, filePath, language, chunks, decision);
+        this.chunkSingleNode(node, langConfig, index, code, filePath, language, chunks, decision);
       }
 
       // Parse produced usable chunks (or the file is too short to bother with a
@@ -576,6 +576,7 @@ export class TreeSitterChunker implements CodeChunker {
    */
   private chunkSingleNode(
     node: AstNode,
+    langConfig: LanguageConfig,
     index: number,
     code: string,
     filePath: string,
@@ -617,6 +618,19 @@ export class TreeSitterChunker implements CodeChunker {
 
     // passthrough — generic shaping (the floor was already applied in the chunk() loop).
     const nodeName = this.extractName(node, code);
+    // bd tea-rags-mcp-62hzr — a member of a const-object NAMESPACE
+    // (`export const X = { m() {} }`) reaches this path as a TOP-LEVEL chunkable
+    // `method_definition`: the declaration wrapping it is not a chunkable type,
+    // so `findChunkableNodes` descends through it and the member never acquires
+    // a parent. Emitting the bare `m` broke lockstep with `cg_symbols`, which
+    // holds `X.m` since bd tea-rags-mcp-2jhwk — `get_callers` on an id copied
+    // out of a search hit returned []. The separator is the namespace one, not
+    // the instance `#`: an object-literal method binds no instance.
+    const namespaceOwner = constObjectNamespaceOwner(node);
+    const symbolId =
+      namespaceOwner && nodeName
+        ? this.symbolIds.compose(namespaceOwner, nodeName, { scopeSeparator: langConfig.scopeSeparator })
+        : this.buildSymbolId(nodeName);
     chunks.push({
       content: content.trim(),
       startLine: node.startPosition.row + 1,
@@ -627,7 +641,8 @@ export class TreeSitterChunker implements CodeChunker {
         chunkIndex: index,
         chunkType: this.getChunkType(node.type),
         name: nodeName,
-        symbolId: this.buildSymbolId(nodeName),
+        parentSymbolId: namespaceOwner ?? undefined,
+        symbolId,
         methodLines: this.computeEndLine(node) - (node.startPosition.row + 1),
       },
     });

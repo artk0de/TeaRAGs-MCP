@@ -21,7 +21,7 @@
 
 import type { AstNode } from "../../../../contracts/types/ast.js";
 import type { NamedSymbol } from "../../../../contracts/types/codegraph.js";
-import { classifyMethod } from "../../../../infra/symbolid/index.js";
+import { classifyMethod, constObjectNamespaceName } from "../../../../infra/symbolid/index.js";
 
 function methodKindFromClassify(node: AstNode): "instance" | "static" | undefined {
   const c = classifyMethod(node);
@@ -34,16 +34,11 @@ export function tsNameOf(node: AstNode): NamedSymbol | null {
     // bd tea-rags-mcp-2jhwk — a `method_definition` sitting directly in an
     // OBJECT LITERAL is a namespace member, not a class method: it is invoked
     // as `X.member()` on the object itself and there is no instance to bind.
-    // `classifyMethod` only knows the class-body question ("is the `static`
-    // keyword present?") and answers "instance" for every object-literal
-    // method, which would compose `X#member`. Leaving `methodKind` unset lets
-    // the language `scopeSeparator` compose the `Outer.Nested` namespace form
+    // `classifyMethod` declines to classify those, leaving `methodKind` unset so
+    // the language `scopeSeparator` composes the `Outer.Nested` namespace form
     // the convention reserves for exactly this case
     // (`.claude/rules/symbolid-convention.md`).
-    if (id) {
-      const methodKind = node.parent?.type === "object" ? undefined : methodKindFromClassify(node);
-      return { name: id.text, descendsInto: false, methodKind };
-    }
+    if (id) return { name: id.text, descendsInto: false, methodKind: methodKindFromClassify(node) };
   }
   if (node.type === "function_declaration") {
     const id = node.childForFieldName("name");
@@ -84,45 +79,12 @@ export function tsNameOf(node: AstNode): NamedSymbol | null {
   // Naming the declarator with `descendsInto: true` fixes both at once: the
   // receiver becomes lookup-able and its members compose as `X.member`.
   //
-  // Gated on the object carrying at least one `method_definition`. A data-only
-  // object (`const PALETTE = { red: "#f00" }`) declares nothing callable, and
-  // naming it would add symbols no call site can ever target.
-  if (node.type === "variable_declarator") {
-    const id = node.childForFieldName("name");
-    // `const { a, b } = …` binds an `object_pattern`, which names no namespace.
-    if (id?.type !== "identifier") return null;
-    const value = node.childForFieldName("value");
-    if (!value) return null;
-    const object = unwrapTypeAssertions(value);
-    if (object.type !== "object") return null;
-    if (!object.children.some((child) => child.type === "method_definition")) return null;
-    return { name: id.text, descendsInto: true };
-  }
+  // The shape gate (object literal carrying at least one `method_definition`,
+  // seen through `as const` / `satisfies` / parentheses) lives in
+  // `infra/symbolid/const-object-namespace.ts` — the CHUNKER asks the same
+  // question about the same node and the two must not drift apart
+  // (bd tea-rags-mcp-62hzr).
+  const namespaceName = constObjectNamespaceName(node);
+  if (namespaceName) return { name: namespaceName, descendsInto: true };
   return null;
-}
-
-/**
- * Peel the TypeScript-only wrappers that sit between a declarator's `value`
- * field and the object literal underneath: `as const` / `as Shape`
- * (`as_expression`), `satisfies Shape` (`satisfies_expression`), and explicit
- * parentheses. All three are type-level annotations — the declared value is
- * still the object literal, so the namespace shape must be recognised through
- * them.
- */
-function unwrapTypeAssertions(node: AstNode): AstNode {
-  let current = node;
-  // Bounded by the AST depth of the wrapper chain; each step strips one level.
-  while (
-    current.type === "as_expression" ||
-    current.type === "satisfies_expression" ||
-    current.type === "parenthesized_expression"
-  ) {
-    // `namedChildren[0]` is the wrapped expression in all three shapes; using
-    // it rather than `children[0]` skips the anonymous punctuation tokens
-    // (`(`, `as`, `satisfies`) tree-sitter keeps in the full child list.
-    const inner = current.namedChildren[0];
-    if (!inner || inner === current) break;
-    current = inner;
-  }
-  return current;
 }
