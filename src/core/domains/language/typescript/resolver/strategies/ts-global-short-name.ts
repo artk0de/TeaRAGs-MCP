@@ -2,6 +2,7 @@ import { CONTINUE, resolved } from "../../../../../contracts/resolution.js";
 import { pickSingleCandidate, type CallContext, type CallRef } from "../../../../../contracts/types/codegraph.js";
 import type { SymbolResolutionOutcome, SymbolResolutionStrategy } from "../../../../../contracts/types/language.js";
 import { targetsExternalImport } from "../ts-external-call.js";
+import type { TSProgramCache } from "../ts-program-cache.js";
 import type { ResolverConfig } from "./shared.js";
 
 /**
@@ -17,13 +18,24 @@ import type { ResolverConfig } from "./shared.js";
  * A call that provably leaves the project CONTINUEs instead — the later
  * type-checker passes still get their turn, and a call none of them can answer
  * ends up correctly classified external rather than silently fabricated.
+ *
+ * The guard reads the resolver's `TSProgramCache` when one exists (bd
+ * tea-rags-mcp-335eu), which is what lets it decline a receiver only the checker
+ * could type — `const map = readRegistry(); map.set(k, v)`. The cache arrives as
+ * its own constructor argument rather than through {@link ResolverConfig}, for
+ * the same reason passes 11-14 take it that way: `ResolverConfig` is the
+ * compiler-free config every strategy shares, and the cache is `null` whenever
+ * `CODEGRAPH_TS_TYPECHECKER=0` removed the checker tier.
  */
 export class TSGlobalShortNameSymbolResolutionStrategy implements SymbolResolutionStrategy {
   readonly name = "globalShortName";
-  constructor(private readonly cfg: ResolverConfig) {}
+  constructor(
+    private readonly cfg: ResolverConfig,
+    private readonly programCache: TSProgramCache | null = null,
+  ) {}
 
   attempt(call: CallRef, ctx: CallContext): SymbolResolutionOutcome {
-    if (targetsExternalImport(call, ctx, this.cfg.tsOptions)) return CONTINUE;
+    if (targetsExternalImport(call, ctx, this.cfg.tsOptions, this.programCache)) return CONTINUE;
     const fallback = ctx.symbolTable.lookupByShortName(call.member);
     const hit = pickSingleCandidate(fallback, this.cfg.mode);
     if (hit) return resolved({ targetRelPath: hit.relPath, targetSymbolId: hit.symbolId });

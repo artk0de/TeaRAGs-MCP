@@ -188,8 +188,10 @@ export class TSCallResolver implements CallResolver {
       new TSImportBasenameSymbolResolutionStrategy(cfg),
       new TSReceiverSymbolSymbolResolutionStrategy(cfg),
       new TSSameFileSymbolResolutionStrategy(cfg),
-      new TSGlobalShortNameSymbolResolutionStrategy(cfg),
-      new TSImportNarrowedFallbackSymbolResolutionStrategy(cfg),
+      // 9 and 10 take the Program cache for their external GUARD, not to
+      // resolve with (bd tea-rags-mcp-335eu) — see `targetsExternalImport`.
+      new TSGlobalShortNameSymbolResolutionStrategy(cfg, this.programCache),
+      new TSImportNarrowedFallbackSymbolResolutionStrategy(cfg, this.programCache),
     ];
     if (this.programCache) {
       this.strategies.push(
@@ -246,9 +248,14 @@ export class TSCallResolver implements CallResolver {
    * `error` from being matched to an unrelated project symbol of that name
    * (bd tea-rags-mcp-6b3gj). One definition, so the edge the chain declines to
    * emit and the call the metric excludes are always the same call.
+   *
+   * The Program cache goes with it (bd tea-rags-mcp-335eu): the guard's
+   * checker-backed arm must reach the same verdict here as it did inside passes
+   * 9 and 10, or a call declined as `Map.prototype.set` would stay in the
+   * internal denominator and count as a resolver miss.
    */
   targetsExternalImport(call: CallRef, ctx: CallContext): boolean {
-    return targetsExternalImport(call, ctx, this.tsOptions);
+    return targetsExternalImport(call, ctx, this.tsOptions, this.programCache);
   }
 
   /**
