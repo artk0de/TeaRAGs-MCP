@@ -54,8 +54,9 @@ import type { TSProgramCache } from "./ts-program-cache.js";
 
 /**
  * `true` when `call` dispatches on a receiver that is declared by a local value
- * binding — a parameter, or a binding element of a destructuring pattern — AND
- * the type checker names no in-project declaration for it.
+ * binding — a parameter, a binding element of a destructuring pattern, or a
+ * variable declared inside a function body (bd tea-rags-mcp-w7qv4) — AND the
+ * type checker names no in-project declaration for it.
  *
  * Three cheap gates come first, and the symbol-table one is load-bearing for
  * cost exactly as it is in {@link calleeIsLocalValueBinding}: with no project

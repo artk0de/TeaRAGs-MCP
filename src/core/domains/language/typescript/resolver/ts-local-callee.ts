@@ -8,8 +8,9 @@
  * the resolver had no way to tell the two apart. A destructured component prop
  * (`function Row({ onRemove }: Props)`), a hook's returned setter
  * (`const [date, setDate] = useState()`), a destructured handler
- * (`const { remove } = useFieldArray()`), a callback parameter — every one of
- * them reached pass 9 invisible:
+ * (`const { remove } = useFieldArray()`), a callback parameter, a locally
+ * declared callback (`const handler = () => {}` inside a function body, bd
+ * tea-rags-mcp-w7qv4) — every one of them reached pass 9 invisible:
  *
  *   - the walker's `localBindings` builder skips destructuring patterns outright
  *     (there is no single receiver name to bind, and the only type in reach
@@ -44,8 +45,9 @@ import type { TSProgramCache } from "./ts-program-cache.js";
 
 /**
  * `true` when `call` is a BARE call whose callee identifier is declared by a
- * local value binding — a parameter, or a binding element of a destructuring
- * pattern. Both are, by construction, values supplied at runtime: nothing the
+ * local value binding — a parameter, a binding element of a destructuring
+ * pattern, or a variable declared inside a function body. Each is, by
+ * construction, a value only the running scope holds: nothing the
  * `GlobalSymbolTable` names can be their target, so a short-name match on them
  * is always fabricated.
  *
@@ -182,18 +184,49 @@ function signaturesDeclaredOutsideProject(
 }
 
 /**
- * A parameter, or an element of a destructuring pattern — the two declaration
- * kinds that bind a name to a value the scope receives.
+ * A parameter, an element of a destructuring pattern, or a variable declared
+ * INSIDE a function body — the declaration kinds that bind a name to a value
+ * only the running scope holds.
  *
  * EVERY declaration of the symbol must be one of them, which is what makes a
  * merged declaration (a name that is also a project function elsewhere in the
  * file) keep its edge rather than lose it to one local shadow.
  *
+ * The third kind is a SCOPE test, not one more kind, and that is the whole of bd
+ * tea-rags-mcp-w7qv4. `const handler = () => {}` inside a function body is a
+ * `VariableDeclaration`, so the parameter/binding-element pair did not recognise
+ * it and `handler()` reached `globalShortName` free to land on an unrelated
+ * project `Panel#handler`. The identically-shaped declaration at MODULE level is
+ * a top-level declaration of the file — the sort of thing a symbol table names
+ * and a bare call should resolve TO — so accepting `ts.isVariableDeclaration`
+ * outright would have suppressed real edges and called it a precision fix.
+ *
  * Shared with `./ts-local-receiver.ts` (bd tea-rags-mcp-z0zqd), which asks the
  * same question of the RECEIVER identifier. One definition, because "which
- * declaration kinds bind a name to a value the scope receives" has one answer —
- * the two guards differ in what they do with it, not in how they recognise it.
+ * declaration kinds bind a name to a value only the running scope holds" has one
+ * answer — the two guards differ in what they do with it, not in how they
+ * recognise it. The receiver guard is the reason the scope test carries no
+ * recall cost there either: it declines only when the type ALSO names no
+ * in-project declaration, so a local holding a `ProjectStore` keeps its edge.
  */
 export function isLocalValueBinding(declaration: ts.Declaration): boolean {
-  return ts.isParameter(declaration) || ts.isBindingElement(declaration);
+  if (ts.isParameter(declaration) || ts.isBindingElement(declaration)) return true;
+  return ts.isVariableDeclaration(declaration) && declaredInsideFunctionBody(declaration);
+}
+
+/**
+ * Does any ancestor between `node` and its `SourceFile` introduce a function
+ * scope?
+ *
+ * The walk stops at the `SourceFile` rather than at the first `Block`, because
+ * what matters is the SCOPE the value lives in and not the syntax bracketing it:
+ * a `const` inside an `if` inside a method is still function-scoped, while one
+ * inside a `namespace` block or a class static block is not — those keep their
+ * edge, which is the conservative answer for shapes this bead did not measure.
+ */
+function declaredInsideFunctionBody(node: ts.Node): boolean {
+  for (let ancestor = node.parent; !ts.isSourceFile(ancestor); ancestor = ancestor.parent) {
+    if (ts.isFunctionLike(ancestor)) return true;
+  }
+  return false;
 }
