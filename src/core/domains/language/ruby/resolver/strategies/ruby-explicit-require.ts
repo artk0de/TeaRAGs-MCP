@@ -1,6 +1,6 @@
 import { posix } from "node:path";
 
-import { CONTINUE, resolved } from "../../../../../contracts/resolution.js";
+import { CONTINUE, deferred, resolved } from "../../../../../contracts/resolution.js";
 import { pickSingleCandidate, type CallContext, type CallRef } from "../../../../../contracts/types/codegraph.js";
 import type { SymbolResolutionOutcome, SymbolResolutionStrategy } from "../../../../../contracts/types/language.js";
 import { ZEITWERK_PREFIX } from "../../walker/walker.js";
@@ -17,7 +17,9 @@ import { collectKnownPaths, type ResolverConfig } from "./shared.js";
  *
  * Continues (NOT drops) when no import matches the receiver or the matched
  * require can't be resolved to a file — later passes still apply. Once the
- * require resolves to a file this pass always resolves (a file-only edge counts).
+ * require resolves to a file, an unpinnable member yields a file-only edge that
+ * is DEFERRED rather than committed — same reasoning as the `constant` pass
+ * above it (bd tea-rags-mcp-xipzw).
  */
 export class RubyExplicitRequireSymbolResolutionStrategy implements SymbolResolutionStrategy {
   readonly name = "explicitRequire";
@@ -47,7 +49,7 @@ export class RubyExplicitRequireSymbolResolutionStrategy implements SymbolResolu
     const candidates = ctx.symbolTable.lookupByShortName(call.member).filter((def) => def.relPath === targetFile);
     const target = pickSingleCandidate(candidates, this.cfg.mode);
     if (target) return resolved({ targetRelPath: target.relPath, targetSymbolId: target.symbolId });
-    return resolved({ targetRelPath: targetFile, targetSymbolId: null });
+    return deferred({ targetRelPath: targetFile, targetSymbolId: null });
   }
 
   private resolveExplicitRequire(importText: string, callerFile: string, knownPaths: Iterable<string>): string | null {

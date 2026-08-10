@@ -365,11 +365,13 @@ describe("RubyConstantSymbolResolutionStrategy", () => {
     });
   });
 
-  it("resolves to a file-only edge when the constant's file is known but the method is not", () => {
+  it("defers a file-only edge when the constant's file is known but the method is not", () => {
     const symbolTable = tableWith(["app/models/user.rb", [sym("User", "User", "app/models/user.rb", [])]]);
     const outcome = strat.attempt(call, ctx({ symbolTable }));
+    // parked, so chainType and conventionReceiver still get to pin the member;
+    // receiverSetDrop at position 13 then emits the park, so the edge survives
     expect(outcome).toEqual({
-      kind: "resolved",
+      kind: "deferred",
       target: { targetRelPath: "app/models/user.rb", targetSymbolId: null },
     });
   });
@@ -441,14 +443,14 @@ describe("RubyExplicitRequireSymbolResolutionStrategy", () => {
     });
   });
 
-  it("resolves a `require_relative './foo'` receiver against the caller's directory (file-only)", () => {
+  it("defers a `require_relative './foo'` receiver resolved against the caller's directory (file-only)", () => {
     const symbolTable = tableWith();
     const outcome = strat.attempt(
       { callText: "foo.bar", receiver: "foo", member: "bar", startLine: 1 },
       ctx({ symbolTable, callerFile: "lib/app.rb", imports: [{ importText: "./foo", startLine: 1 }] }),
     );
     expect(outcome).toEqual({
-      kind: "resolved",
+      kind: "deferred",
       target: { targetRelPath: "lib/foo.rb", targetSymbolId: null },
     });
   });

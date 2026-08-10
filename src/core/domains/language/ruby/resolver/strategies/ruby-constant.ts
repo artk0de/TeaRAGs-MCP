@@ -1,4 +1,4 @@
-import { CONTINUE, resolved } from "../../../../../contracts/resolution.js";
+import { CONTINUE, deferred, resolved } from "../../../../../contracts/resolution.js";
 import {
   pickSingleCandidate,
   type CallContext,
@@ -19,7 +19,11 @@ import { resolveConstant, type ResolverConfig } from "./shared.js";
  * Continues (NOT drops) when the receiver doesn't look like a constant or the
  * constant can't be resolved to a file — later passes (explicit require,
  * AR-relation guard, receiver-set drop, bare-call fallback) still apply. Once a
- * constant file IS found this pass always resolves (a file-only edge counts).
+ * constant file IS found, an unpinnable member yields a file-only edge that is
+ * DEFERRED rather than committed (bd tea-rags-mcp-xipzw): `chainType` and
+ * `conventionReceiver` sit further down the chain and may still pin the member,
+ * and `receiverSetDrop` — the catch-all at position 13 — emits the park rather
+ * than clearing it, so the module edge survives either way.
  */
 export class RubyConstantSymbolResolutionStrategy implements SymbolResolutionStrategy {
   readonly name = "constant";
@@ -40,7 +44,7 @@ export class RubyConstantSymbolResolutionStrategy implements SymbolResolutionStr
     if (target) return resolved({ targetRelPath: target.relPath, targetSymbolId: target.symbolId });
     const inherited = this.walkAncestorsForConstantCall(call.receiver, call.member, ctx, new Set([call.receiver]));
     if (inherited) return resolved(inherited);
-    return resolved({ targetRelPath: targetFile, targetSymbolId: null });
+    return deferred({ targetRelPath: targetFile, targetSymbolId: null });
   }
 
   /**
