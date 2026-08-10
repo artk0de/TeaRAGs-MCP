@@ -1425,3 +1425,259 @@ describe("extractFromTypescriptFile — import without string src guard (line 16
     expect(extraction.imports.map((i) => i.importText)).toContain("./side-effect");
   });
 });
+
+// ─────────────────────────────────────────────────────────────────────
+// Track A — tree-sitter-only edge gaps (bd tea-rags-mcp-f2u54).
+//
+// Ten shapes a coverage audit found the walker dropping or misattributing,
+// every one solvable with more AST pattern-matching and no type information.
+// Four feed `imports[]` (the file-edge channel), six feed the per-chunk
+// `calls[]` (the method-edge channel). Grouped one describe per gap so a
+// regression names the gap it broke.
+// ─────────────────────────────────────────────────────────────────────
+describe("extractFromTypescriptFile — tree-sitter-only edge gaps (bd tea-rags-mcp-f2u54)", () => {
+  function extract(code: string, chunks: { symbolId: string; startLine: number; endLine: number; scope: string[] }[]) {
+    return extractFromTypescriptFile({ tree: parse(code), code, relPath: "src/f.ts", language: "typescript", chunks });
+  }
+
+  // Gap 1 — CommonJS `require()`. Mixed ESM/CJS files are common in real
+  // repos; before this the whole CJS half of a file's dependencies was
+  // invisible to the graph.
+  describe("gap 1 — CJS require() interop", () => {
+    it("records `const helper = require('./helper')` as a file dependency bound to `helper`", () => {
+      const code = ["const helper = require('./helper');", "function go() { helper.run(); }", ""].join("\n");
+      const e = extract(code, [{ symbolId: "go", startLine: 2, endLine: 2, scope: [] }]);
+      const ref = e.imports.find((i) => i.importText === "./helper");
+      expect(ref).toBeDefined();
+      expect(ref?.importedNames).toEqual(["helper"]);
+    });
+
+    it("records destructured `const { alpha, beta } = require('./pair')` binding names", () => {
+      const code = "const { alpha, beta } = require('./pair');\n";
+      const e = extract(code, []);
+      expect(e.imports.find((i) => i.importText === "./pair")?.importedNames).toEqual(["alpha", "beta"]);
+    });
+
+    it("records the LOCAL name for a renamed destructure (`{ a: local }` → `local`)", () => {
+      const code = "const { a: local } = require('./pair');\n";
+      const e = extract(code, []);
+      expect(e.imports.find((i) => i.importText === "./pair")?.importedNames).toEqual(["local"]);
+    });
+
+    it("records a bare side-effect `require('./polyfill')` with no importedNames", () => {
+      const code = "require('./polyfill');\n";
+      const e = extract(code, []);
+      const ref = e.imports.find((i) => i.importText === "./polyfill");
+      expect(ref).toBeDefined();
+      expect(ref?.importedNames).toBeUndefined();
+    });
+
+    it("ignores a require() whose specifier is not a string literal", () => {
+      const code = "const mod = require(dynamicPath);\n";
+      const e = extract(code, []);
+      expect(e.imports).toEqual([]);
+    });
+  });
+
+  // Gap 2 — `export { X } from "./y"`. A re-export is a runtime dependency
+  // on the source module, so it belongs in the same file-edge channel as an
+  // import. It binds no local name, so it carries no importedNames.
+  describe("gap 2 — named re-export `export { X } from './y'`", () => {
+    it("records the re-exported module as a file dependency carrying no local binding", () => {
+      const code = "export { X, Y as Z } from './y';\n";
+      const e = extract(code, []);
+      const ref = e.imports.find((i) => i.importText === "./y");
+      expect(ref).toBeDefined();
+      expect(ref?.importedNames).toBeUndefined();
+    });
+
+    it("excludes a type-only re-export `export type { X } from './y'`", () => {
+      const code = ["export type { X } from './types';", "export { Y } from './runtime';", ""].join("\n");
+      const e = extract(code, []);
+      expect(e.imports.map((i) => i.importText)).toEqual(["./runtime"]);
+    });
+
+    it("does not treat a local `export { Local }` (no `from`) as a dependency", () => {
+      const code = ["const Local = 1;", "export { Local };", ""].join("\n");
+      const e = extract(code, []);
+      expect(e.imports).toEqual([]);
+    });
+
+    it('does not mistake `export default "literal"` for a module specifier', () => {
+      const code = 'export default "not-a-module";\n';
+      const e = extract(code, []);
+      expect(e.imports).toEqual([]);
+    });
+  });
+
+  // Gap 3 — `export * from "./y"`, the index.ts barrel pattern. Without it a
+  // barrel file looks like a leaf with zero dependencies.
+  describe("gap 3 — barrel re-export `export * from './y'`", () => {
+    it("records the barrel target as a file dependency", () => {
+      const code = ["export * from './a';", "export * from './b';", ""].join("\n");
+      const e = extract(code, []);
+      expect(e.imports.map((i) => i.importText)).toEqual(["./a", "./b"]);
+    });
+
+    it("records a namespace re-export `export * as ns from './y'`", () => {
+      const code = "export * as ns from './y';\n";
+      const e = extract(code, []);
+      expect(e.imports.map((i) => i.importText)).toEqual(["./y"]);
+    });
+  });
+
+  // Gap 4 — `import * as ns from "./y"` must thread the namespace binding
+  // through to the `ns.foo()` call site so the resolver's named-import
+  // strategy can match the receiver back to the module.
+  describe("gap 4 — namespace import member access", () => {
+    it("binds `* as ns` and emits `ns.foo()` with receiver 'ns'", () => {
+      const code = ["import * as ns from './y';", "function go() { ns.foo(); }", ""].join("\n");
+      const e = extract(code, [{ symbolId: "go", startLine: 2, endLine: 2, scope: [] }]);
+      expect(e.imports.find((i) => i.importText === "./y")?.importedNames).toEqual(["ns"]);
+      const call = e.chunks[0].calls.find((c) => c.member === "foo");
+      expect(call?.receiver).toBe("ns");
+    });
+
+    it("keeps the full chain for a qualified `ns.Sub.foo()` receiver", () => {
+      const code = ["import * as ns from './y';", "function go() { ns.Sub.foo(); }", ""].join("\n");
+      const e = extract(code, [{ symbolId: "go", startLine: 2, endLine: 2, scope: [] }]);
+      const call = e.chunks[0].calls.find((c) => c.member === "foo");
+      expect(call?.receiver).toBe("ns.Sub");
+    });
+  });
+
+  // Gap 5 — `arr[i].foo()`. The receiver text must survive with its brackets
+  // intact: that is what puts the call in the `index` ReceiverKind bucket
+  // instead of a bogus bare-call.
+  describe("gap 5 — computed member access on an indexed receiver", () => {
+    it("emits `arr[i].foo()` with receiver 'arr[i]' (index receiver kind)", () => {
+      const code = ["function go(i: number) {", "  arr[i].foo();", "}", ""].join("\n");
+      const e = extract(code, [{ symbolId: "go", startLine: 1, endLine: 3, scope: [] }]);
+      const call = e.chunks[0].calls.find((c) => c.member === "foo");
+      expect(call?.receiver).toBe("arr[i]");
+    });
+  });
+
+  // Gap 6 — `obj['foo']()`. A string-literal computed member access is
+  // exactly as knowable as `obj.foo()` — only the AST shape differs. A
+  // NON-literal index is genuinely undeterminable and is tagged dynamicSend
+  // so it leaves the resolveSuccessRate denominator instead of polluting the
+  // bare-call bucket (mirrors Ruby's `send(var)` treatment).
+  describe("gap 6 — string-literal computed call", () => {
+    it("emits `obj['foo']()` as receiver 'obj' member 'foo'", () => {
+      const code = ["function go() {", "  obj['foo']();", "}", ""].join("\n");
+      const e = extract(code, [{ symbolId: "go", startLine: 1, endLine: 3, scope: [] }]);
+      const call = e.chunks[0].calls.find((c) => c.member === "foo");
+      expect(call?.receiver).toBe("obj");
+    });
+
+    it("tags a non-literal computed call `obj[key]()` as dynamicSend", () => {
+      const code = ["function go(key: string) {", "  obj[key]();", "}", ""].join("\n");
+      const e = extract(code, [{ symbolId: "go", startLine: 1, endLine: 3, scope: [] }]);
+      const call = e.chunks[0].calls.find((c) => c.callText.startsWith("obj[key]"));
+      expect(call?.dynamicSend).toBe(true);
+      // No fabricated member name — nothing for short-name lookup to hit.
+      expect(e.chunks[0].calls.some((c) => c.member === "key")).toBe(false);
+    });
+  });
+
+  // Gap 7 — `.call` / `.apply` / `.bind`. The invoked function is the
+  // RECEIVER of the invoker, not the invoker itself. Unwrap to the function
+  // and DROP the literal `.call` edge, mirroring the Ruby walker's
+  // `send`-unwrap (emitDynamicSendUnwrap): one logical call, one edge.
+  describe("gap 7 — .call / .apply / .bind dynamic invocation", () => {
+    it("unwraps `foo.call(obj, 1)` to the invoked function `foo`", () => {
+      const code = ["function go() {", "  foo.call(obj, 1);", "}", ""].join("\n");
+      const e = extract(code, [{ symbolId: "go", startLine: 1, endLine: 3, scope: [] }]);
+      const call = e.chunks[0].calls.find((c) => c.member === "foo");
+      expect(call).toBeDefined();
+      expect(call?.receiver).toBeNull();
+      // The `.call` meta-edge must not survive alongside the unwrapped one.
+      expect(e.chunks[0].calls.some((c) => c.member === "call")).toBe(false);
+    });
+
+    it("unwraps `this.tick.apply(this, args)` to receiver 'this' member 'tick'", () => {
+      const code = ["class C {", "  go() {", "    this.tick.apply(this, args);", "  }", "}", ""].join("\n");
+      const e = extract(code, [{ symbolId: "C#go", startLine: 2, endLine: 4, scope: ["C"] }]);
+      const call = e.chunks[0].calls.find((c) => c.member === "tick");
+      expect(call?.receiver).toBe("this");
+      expect(e.chunks[0].calls.some((c) => c.member === "apply")).toBe(false);
+    });
+
+    it("unwraps `foo.bind(obj)` to `foo` — a bound reference still reaches foo", () => {
+      const code = ["function go() {", "  const bound = foo.bind(obj);", "}", ""].join("\n");
+      const e = extract(code, [{ symbolId: "go", startLine: 1, endLine: 3, scope: [] }]);
+      const call = e.chunks[0].calls.find((c) => c.member === "foo");
+      expect(call).toBeDefined();
+      expect(e.chunks[0].calls.some((c) => c.member === "bind")).toBe(false);
+    });
+
+    it("tags the literal edge dynamicSend when the invoked expression has no static name", () => {
+      const code = ["function go(k: string) {", "  registry[k].call(obj);", "}", ""].join("\n");
+      const e = extract(code, [{ symbolId: "go", startLine: 1, endLine: 3, scope: [] }]);
+      const call = e.chunks[0].calls.find((c) => c.member === "call");
+      expect(call?.dynamicSend).toBe(true);
+    });
+  });
+
+  // Gap 8 — a method passed as a VALUE to a higher-order callee. The
+  // function is invoked, just not on this line, so the edge is real. Gated
+  // on a higher-order callee vocabulary: without the gate every `f(a.b)`
+  // data argument in the repo would become a call edge and swamp the
+  // resolve denominator.
+  describe("gap 8 — method passed as a value to a higher-order callee", () => {
+    it("emits a call edge for `arr.map(this.foo)` alongside the map call itself", () => {
+      const code = ["class C {", "  go() {", "    arr.map(this.foo);", "  }", "}", ""].join("\n");
+      const e = extract(code, [{ symbolId: "C#go", startLine: 2, endLine: 4, scope: ["C"] }]);
+      const ref = e.chunks[0].calls.find((c) => c.member === "foo");
+      expect(ref?.receiver).toBe("this");
+      // The higher-order call itself is still recorded.
+      expect(e.chunks[0].calls.some((c) => c.member === "map" && c.receiver === "arr")).toBe(true);
+    });
+
+    it("emits a call edge for `setTimeout(this.tick, 100)`", () => {
+      const code = ["class C {", "  go() {", "    setTimeout(this.tick, 100);", "  }", "}", ""].join("\n");
+      const e = extract(code, [{ symbolId: "C#go", startLine: 2, endLine: 4, scope: ["C"] }]);
+      const ref = e.chunks[0].calls.find((c) => c.member === "tick");
+      expect(ref?.receiver).toBe("this");
+    });
+
+    it("does NOT emit an edge for a data argument to an ordinary callee", () => {
+      const code = ["class C {", "  go() {", "    log(this.name);", "  }", "}", ""].join("\n");
+      const e = extract(code, [{ symbolId: "C#go", startLine: 2, endLine: 4, scope: ["C"] }]);
+      expect(e.chunks[0].calls.some((c) => c.member === "name")).toBe(false);
+    });
+  });
+
+  // Gap 9 — default import. Verification gap: the binding capture existed
+  // (bd 2v16) but nothing pinned it end-to-end with the call site it feeds.
+  describe("gap 9 — default import receiver", () => {
+    it("binds `import X from './y'` and emits `X.foo()` with receiver 'X'", () => {
+      const code = ["import X from './y';", "function go() { X.foo(); }", ""].join("\n");
+      const e = extract(code, [{ symbolId: "go", startLine: 2, endLine: 2, scope: [] }]);
+      expect(e.imports.find((i) => i.importText === "./y")?.importedNames).toEqual(["X"]);
+      expect(e.chunks[0].calls.find((c) => c.member === "foo")?.receiver).toBe("X");
+    });
+  });
+
+  // Gap 10 — inferred-type local. Same verification gap as 9: `const x =
+  // new Foo()` binding existed (bd 2yfi) but the binding-plus-call-site pair
+  // was never asserted together.
+  describe("gap 10 — inferred-type local from `new Foo()`", () => {
+    it("binds `const x = new Foo()` to Foo and emits `x.go()` with receiver 'x'", () => {
+      const code = ["function run() {", "  const x = new Foo();", "  x.go();", "}", ""].join("\n");
+      const e = extract(code, [{ symbolId: "run", startLine: 1, endLine: 4, scope: [] }]);
+      expect(e.chunks[0].localBindings?.["x"]).toEqual([{ line: 2, type: "Foo" }]);
+      expect(e.chunks[0].calls.find((c) => c.member === "go")?.receiver).toBe("x");
+    });
+  });
+
+  // Malformed / partial input must degrade, never throw — the same
+  // tolerance the "edge cases" suite above locks for the older paths.
+  describe("malformed input tolerance", () => {
+    it("does not throw on a truncated require / re-export / computed call", () => {
+      const code = ["const a = require(", "export { X } from", "obj[", ""].join("\n");
+      expect(() => extract(code, [{ symbolId: "x", startLine: 1, endLine: 3, scope: [] }])).not.toThrow();
+    });
+  });
+});
