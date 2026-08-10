@@ -92,7 +92,10 @@ export const ECMASCRIPT_GLOBALS: ReadonlySet<string> = new Set([
  * Curated to the builtins whose instances carry runtime instance methods that
  * show up as call heads. Deliberately EXCLUDES TS-only utility types
  * (`Record`, `Partial`, `Readonly`, …) — they have no runtime constructor and a
- * receiver typed as one is not a builtin instance (keeps it an internal miss).
+ * receiver typed as one is not a builtin instance. Absence here does NOT make
+ * such a receiver internal: those names are type-level operators pinning no
+ * runtime object at all, so `ts-external-call.ts` treats them as UNKNOWN and
+ * lets the member vocabulary decide (bd tea-rags-mcp-yjqi5).
  */
 export const ECMASCRIPT_BUILTIN_TYPES: ReadonlySet<string> = new Set([
   // Collections

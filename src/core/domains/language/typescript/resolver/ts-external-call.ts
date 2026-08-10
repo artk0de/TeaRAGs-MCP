@@ -109,13 +109,69 @@ function receiverIsImportedBuiltinContainer(call: CallRef, ctx: CallContext): bo
 }
 
 /**
+ * TypeScript's own type-level operators — the complete `type X<…> = …` list
+ * from `lib.es5.d.ts`, which is where every one of them is declared.
+ *
+ * These are not types in the sense the guard below needs. Each is a FUNCTION
+ * over types, and the name records which transformation was applied, not what
+ * the value is: `Awaited<ReturnType<EmbeddingProvider["embedBatch"]>>` is an
+ * array of numbers, and the name says `Awaited`. So a receiver annotated with
+ * one carries no nominal information at all, and treating the name as a type
+ * the guard may decide on is what produced the measured defect
+ * (bd tea-rags-mcp-yjqi5).
+ *
+ * Distinct from the exclusion noted on {@link ECMASCRIPT_BUILTIN_TYPES}: that
+ * set omits these because they are not BUILTIN INSTANCES. This set says the
+ * stronger thing — they are not evidence either way. `ReadonlyMap` /
+ * `ReadonlySet` / `ReadonlyArray` are deliberately absent here for exactly that
+ * reason: they have no runtime constructor either, but they DENOTE a builtin
+ * instance, so they belong in the builtin set and decide outright.
+ */
+const TS_UTILITY_TYPES: ReadonlySet<string> = new Set([
+  // Object shape transformations
+  "Partial",
+  "Required",
+  "Readonly",
+  "Record",
+  "Pick",
+  "Omit",
+  // Union filters
+  "Exclude",
+  "Extract",
+  "NonNullable",
+  "NoInfer",
+  // Function / constructor introspection
+  "Parameters",
+  "ConstructorParameters",
+  "ReturnType",
+  "InstanceType",
+  "ThisParameterType",
+  "OmitThisParameter",
+  // Promise unwrapping
+  "Awaited",
+  // String-literal transformations
+  "Uppercase",
+  "Lowercase",
+  "Capitalize",
+  "Uncapitalize",
+]);
+
+/**
  * Cases 3 and 4 of {@link targetsExternalImport}: is the RECEIVER a JS runtime
  * builtin instance?
  *
- * A known type answers definitively — builtin name means external, anything
- * else (a project class, a TS utility type like `Record`) means internal. Only
- * when no type can be resolved does the member-name vocabulary get a vote, and
- * then only for words that carry no comparably-common project meaning.
+ * A known type answers definitively — builtin name means external, a project
+ * class means internal. Only when no type can be resolved does the member-name
+ * vocabulary get a vote, and then only for words that carry no comparably-common
+ * project meaning.
+ *
+ * "Known" has to mean NOMINALLY known, which is what
+ * {@link receiverNamesTypeLevelOperator} enforces: an annotation naming a TS
+ * type-level operator is recorded by the walker like any other, but it pins no
+ * runtime object, so it must not be allowed to decide the question outright.
+ * Before that check, `const survivorEmbeddings: Awaited<…> = []` read as "type
+ * known, not a builtin" — internal — and `survivorEmbeddings.push(e)` went on
+ * to match the single project symbol named `push`.
  *
  * `this` / `super` receivers are excluded outright: those are self- and
  * inherited calls that earlier passes own, and a class with a method named
@@ -125,8 +181,25 @@ function receiverIsBuiltinInstance(call: CallRef, ctx: CallContext): boolean {
   const receiver = call.receiver ?? null;
   if (receiver === null || receiver.length === 0 || receiver === "this" || receiver === "super") return false;
   const typeName = receiverTypeName(call, ctx);
-  if (typeName !== undefined) return ECMASCRIPT_BUILTIN_TYPES.has(typeName);
+  if (typeName !== undefined && !receiverNamesTypeLevelOperator(typeName, ctx)) {
+    return ECMASCRIPT_BUILTIN_TYPES.has(typeName);
+  }
   return ECMASCRIPT_BUILTIN_PROTOTYPE_METHODS.has(call.member);
+}
+
+/**
+ * `true` when the recorded type name is one of TypeScript's type-level
+ * operators AND nothing in the project declares a symbol by that name.
+ *
+ * The symbol-table half is the same evidence
+ * {@link receiverIsImportedBuiltinContainer} leans on, used the same way: these
+ * names are ordinary identifiers, and a project is free to own one. A repo with
+ * its own `class Record` or `class Parameters` keeps deciding by TYPE — the
+ * declaration is proof the name means that class here, and suppressing it would
+ * trade a fabricated edge for a lost one.
+ */
+function receiverNamesTypeLevelOperator(typeName: string, ctx: CallContext): boolean {
+  return TS_UTILITY_TYPES.has(typeName) && ctx.symbolTable.lookup(typeName).length === 0;
 }
 
 /**
