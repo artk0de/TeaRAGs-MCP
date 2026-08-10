@@ -73,7 +73,7 @@ describe("renderReadme", () => {
   });
 
   it("includes the human-facing resolution tech", () => {
-    expect(out).toContain("8-strategy chain + ConeDispatch");
+    expect(out).toContain("14-strategy chain (10 tree-sitter + 4 ts.Program/typeChecker");
   });
 
   it("renders Ruby typing tiers with per-tier moon badges", () => {

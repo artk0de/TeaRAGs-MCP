@@ -12,5 +12,8 @@ export const capability: LanguageCapability = {
     ],
   },
   tests: { tier: "high", detection: "*.test.ts / *.spec.ts", tech: "testScopeChunker (describe/it scopes)" },
-  codegraph: { tier: "high", tech: "8-strategy chain + ConeDispatch" },
+  codegraph: {
+    tier: "high",
+    tech: "14-strategy chain (10 tree-sitter + 4 ts.Program/typeChecker: JSX component resolution, cross-call return-type inference, generics/overload getResolvedSignature, structural typing + interface declaration merging) + ConeDispatch + typeChecker-backed union-receiver fan-out + pre-resolution builtin-receiver precision guard + tsx/tsconfig-paths-aware import mapping",
+  },
 };
