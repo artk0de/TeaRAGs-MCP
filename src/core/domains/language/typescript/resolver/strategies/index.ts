@@ -13,5 +13,6 @@ export {
   TSTypeCheckerFallbackSymbolResolutionStrategy,
   type TSTypeCheckerFallbackCase,
 } from "./ts-type-checker-fallback.js";
+export { TSTypeCheckerReturnTypeInferenceSymbolResolutionStrategy } from "./ts-type-checker-return-type-inference.js";
 export { TSConeTypeLocator } from "./ts-cone-type-locator.js";
 export { collectImportedFiles, CONE_MAX_DEFAULT, type ResolverConfig } from "./shared.js";

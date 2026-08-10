@@ -19,13 +19,20 @@
  *   8. sameFile (caller-file-local definition wins over global ambiguity)
  *   9. globalShortName (global short-name lookup)
  *  10. importNarrowedFallback (narrow ambiguous N>1 by caller's imports)
- *  11. typeCheckerFallback (ts.Program/typeChecker — generics + overloads)
+ *  11. typeCheckerReturnType (ts.Program/typeChecker — receiver typed by a
+ *      call's inferred return type, bd tea-rags-mcp-l3uob)
+ *  12. typeCheckerFallback (ts.Program/typeChecker — generics + overloads)
  *
- * Pass 11 is the only one that reads type information rather than AST shape,
- * and the only one that touches the file system on the resolve path. It runs
- * last by construction: everything above it is cheaper, so the checker is
- * consulted only for calls nothing else could decide. `CODEGRAPH_TS_TYPECHECKER=0`
- * removes it from the chain entirely (bd tea-rags-mcp-uclbn).
+ * Passes 11–12 are the only ones that read type information rather than AST
+ * shape, and the only ones that touch the file system on the resolve path. They
+ * run last by construction: everything above them is cheaper, so the checker is
+ * consulted only for calls nothing else could decide. Both share ONE
+ * `TSProgramCache`, so their relative order is a precision question, not a cost
+ * one: 11 gates on a narrow receiver shape and pins the receiver TYPE before
+ * reading the member off it, while 12 answers a superset of shapes from the
+ * resolved signature alone — behind 12, pass 11 would never see a call.
+ * `CODEGRAPH_TS_TYPECHECKER=0` removes both from the chain entirely
+ * (bd tea-rags-mcp-uclbn).
  *
  * `resolveDispatch` is a separate fan-out contract (lookup-table dispatch, bd
  * tea-rags-mcp-n0zj) and stays in the orchestrator — it is not part of the
@@ -66,6 +73,7 @@ import {
   TSSuperSymbolResolutionStrategy,
   TSThisMemberSymbolResolutionStrategy,
   TSTypeCheckerFallbackSymbolResolutionStrategy,
+  TSTypeCheckerReturnTypeInferenceSymbolResolutionStrategy,
   type ResolverConfig,
 } from "./strategies/index.js";
 import { mapImportToFile, type TsCompilerOptions } from "./ts-path-mapper.js";
@@ -132,7 +140,10 @@ export class TSCallResolver implements CallResolver {
       new TSImportNarrowedFallbackSymbolResolutionStrategy(cfg),
     ];
     if (this.programCache) {
-      this.strategies.push(new TSTypeCheckerFallbackSymbolResolutionStrategy(cfg, this.programCache));
+      this.strategies.push(
+        new TSTypeCheckerReturnTypeInferenceSymbolResolutionStrategy(cfg, this.programCache),
+        new TSTypeCheckerFallbackSymbolResolutionStrategy(cfg, this.programCache),
+      );
     }
   }
 
