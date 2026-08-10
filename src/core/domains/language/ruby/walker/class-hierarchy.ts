@@ -29,7 +29,7 @@
  */
 
 import type { AstNode } from "../../../../contracts/types/ast.js";
-import type { InheritanceEdgeDecl } from "../../../../contracts/types/codegraph.js";
+import type { FileExtraction, InheritanceEdgeDecl } from "../../../../contracts/types/codegraph.js";
 import { attachedBlockOf, lexicalScopeFqName, readScopeResolution } from "./ast-utils.js";
 
 /**
@@ -282,4 +282,59 @@ function mixinTargetFromStatement(node: AstNode): { name: string; kind: "include
         : null;
   if (!text || !/^[A-Z][A-Za-z0-9_]*(?:::[A-Z][A-Za-z0-9_]*)*$/.test(text)) return null;
   return { name: text, kind: methodField.text as "include" | "extend" | "prepend" };
+}
+
+/**
+ * Fill the FileExtraction's class-hierarchy channels from this file's
+ * declarations: `classAncestors`, `compactDeclaredClasses`, `classSchemaTables`,
+ * `classPrependedAncestors`, `classExtends` and `inheritanceEdges`.
+ *
+ * Both collectors above run here rather than at the call site, because the six
+ * channels are the ONLY consumers of what they return — the ancestor Maps exist
+ * to be published and nothing else reads them.
+ *
+ * Each channel is written only when non-empty, and every Map is converted to a
+ * plain Record on the way out: the codegraph provider spills FileExtraction to
+ * NDJSON, and `JSON.stringify` turns a Map into `{}`, silently losing every
+ * entry. Plain objects survive the round-trip intact.
+ */
+export function attachRubyClassHierarchyChannels(out: FileExtraction, root: AstNode): void {
+  const {
+    ancestors: ancestorMap,
+    prepended: prependedMap,
+    superclasses: superclassMap,
+    compact: compactClassSet,
+    schemaTables: schemaTableMap,
+  } = collectRubyClassAncestors(root);
+  if (ancestorMap.size > 0) {
+    const ancestorRecord: Record<string, readonly string[]> = {};
+    for (const [k, v] of ancestorMap) ancestorRecord[k] = v;
+    out.classAncestors = ancestorRecord;
+  }
+  if (compactClassSet.size > 0) out.compactDeclaredClasses = [...compactClassSet];
+  if (schemaTableMap.size > 0) {
+    const schemaTableRecord: Record<string, string> = {};
+    for (const [k, v] of schemaTableMap) schemaTableRecord[k] = v;
+    out.classSchemaTables = schemaTableRecord;
+  }
+  if (prependedMap.size > 0) {
+    const prependedRecord: Record<string, readonly string[]> = {};
+    for (const [k, v] of prependedMap) prependedRecord[k] = v;
+    out.classPrependedAncestors = prependedRecord;
+  }
+  // `classExtends` is the cross-language SUPERCLASS channel (JS/TS/Java
+  // `extends`), so only `class Foo < Bar` feeds it. Ruby's `extend Mod` mixin
+  // is a different declaration and already rode out in `classAncestors` above.
+  if (superclassMap.size > 0) {
+    const superclassRecord: Record<string, string> = {};
+    for (const [k, v] of superclassMap) superclassRecord[k] = v;
+    out.classExtends = superclassRecord;
+  }
+  // Unified hierarchy edges with precise kinds (bd tea-rags-mcp-lz8t). Parity
+  // with the TS walker's `collectInheritanceEdges`: where the legacy
+  // classAncestors Record flattens superclass + include + extend into one
+  // include-tagged list, this distinguishes super / include / extend / prepend
+  // for the hierarchy graph. The legacy Records stay (resolver-forward path).
+  const inheritanceEdges = collectRubyInheritanceEdges(root);
+  if (inheritanceEdges.length > 0) out.inheritanceEdges = inheritanceEdges;
 }
