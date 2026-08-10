@@ -173,13 +173,13 @@ export class TSProgramCache {
 
   /**
    * Project sources currently held in the shared parse cache — the quantity
-   * {@link TSProgramCacheOptions.maxParsedFiles} bounds. Files outside the repo
-   * root are excluded, matching what the bound counts.
+   * {@link TSProgramCacheOptions.maxParsedFiles} bounds. Dependencies and the
+   * default lib are excluded, matching what the bound counts.
    */
   get parsedProjectFileCount(): number {
     let count = 0;
     for (const fileName of this.sourceFiles.keys()) {
-      if (this.toRelPath(fileName) !== null) count++;
+      if (this.isProjectSourceFile(fileName)) count++;
     }
     return count;
   }
@@ -270,11 +270,12 @@ export class TSProgramCache {
    * default lib, and for anything outside the root.
    *
    * Kept separate from {@link toRelPath} rather than folded into it because the
-   * two answer different questions and both are needed: the parse-cache bound
-   * counts by repo directory, while an EDGE may only ever land on a file the
-   * index contains. Pointing one at `node_modules` produces an edge whose target
-   * is not in the symbol table at all, and simultaneously keeps the call out of
-   * the external classification it deserves (bd tea-rags-mcp-otm6n).
+   * two answer different questions and both are needed: the closure walk maps
+   * an import against the CALLER's position in the repo directory, while an
+   * EDGE may only ever land on a file the index contains. Pointing one at
+   * `node_modules` produces an edge whose target is not in the symbol table at
+   * all, and simultaneously keeps the call out of the external classification
+   * it deserves (bd tea-rags-mcp-otm6n).
    */
   toProjectSourceRelPath(absolutePath: string): RelPath | null {
     const relPath = this.toRelPath(absolutePath);
@@ -324,13 +325,19 @@ export class TSProgramCache {
    * oldest insertion first. Without this the map is append-only for the life of
    * the process — a `LanguageProvider` outlives any single indexing run, so
    * every file of every project ever indexed would stay parsed in memory.
+   *
+   * Dependencies are skipped rather than trimmed. They are what the map exists
+   * to hold: re-parsing `lib.es2022.full.d.ts` is the single largest fixed cost
+   * in `ts.createProgram`, and the set is bounded by what the project depends
+   * on rather than by how long the process has been alive.
    */
   private evictParsedOverflow(): void {
-    if (this.parsedProjectFileCount <= this.maxParsedFiles) return;
+    // One count, not two — this runs on every parse, and the scan is O(map).
     let over = this.parsedProjectFileCount - this.maxParsedFiles;
+    if (over <= 0) return;
     for (const fileName of [...this.sourceFiles.keys()]) {
       if (over === 0) return;
-      if (this.toRelPath(fileName) === null) continue;
+      if (!this.isProjectSourceFile(fileName)) continue;
       this.sourceFiles.delete(fileName);
       over--;
     }
