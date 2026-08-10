@@ -66,11 +66,21 @@ const javascriptChunkerHooks: LanguageChunkerHooks = {
   // kept ONLY when they carry a function value — `jsAssignmentFilterHook` drops
   // the others so we don't chunk `const x = 1` / bare statements with no
   // symbolId. The symbolId is then composed by the classifier (jsChunkSymbols).
+  //
+  // `export_statement` is deliberately ABSENT (bd tea-rags-mcp-hlgak). `export`
+  // is a modifier on a declaration, not a declaration: it has no `name` field
+  // and no direct `identifier` child, so listing it made `findChunkableNodes`
+  // claim the whole `export …` subtree — and stop descending — leaving every
+  // exported declaration as one anonymous `block` chunk with no symbolId, while
+  // `jsNameOf` named the same nodes correctly in cg_symbols. Left out, the walk
+  // descends to the `function_declaration` / `class_declaration` /
+  // `lexical_declaration` underneath and chunks it exactly as its unexported
+  // twin. TypeScript — same export syntax — has always omitted it for this
+  // reason.
   chunkableTypes: [
     "function_declaration",
     "method_definition",
     "class_declaration",
-    "export_statement",
     "expression_statement",
     "lexical_declaration",
     "variable_declaration",

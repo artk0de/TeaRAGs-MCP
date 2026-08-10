@@ -152,11 +152,13 @@ export const LANGUAGE_DEFINITIONS: Record<string, LanguageDefinition> = {
     // resolves the proper symbolId via `chunkSymbols` (the native provider's
     // capability) in `tree-sitter.ts:chunkSingleNode`. Mirrors codegraph
     // `jsNameOf` — see `.claude/rules/symbolid-convention.md` (bd tea-rags-mcp-kfzx).
+    // `export_statement` is deliberately absent — see the native provider
+    // (`domains/language/javascript/index.ts`) for why listing it collapsed
+    // every exported declaration into one anonymous block (bd tea-rags-mcp-hlgak).
     chunkableTypes: [
       "function_declaration",
       "method_definition",
       "class_declaration",
-      "export_statement",
       "expression_statement",
       "lexical_declaration",
       "variable_declaration",
