@@ -219,14 +219,66 @@ export class TSProgramCache {
 
   /**
    * Repo-relative POSIX path for an absolute compiler file name, or `null` when
-   * it lies outside the project (a `node_modules` dependency, the default lib).
-   * Consumers use it to decide whether a resolved declaration is in-project at
-   * all.
+   * it lies outside the repo DIRECTORY.
+   *
+   * Read the boundary literally: it is the repo directory, not the project's
+   * sources. `node_modules` is inside the repo root, so a dependency's `.d.ts`
+   * gets an ordinary `RelPath` here — and where the running compiler resolves
+   * under that root, so does every default-lib file. This docblock used to
+   * promise the opposite ("`null` … a `node_modules` dependency, the default
+   * lib") and five call sites were written against that promise
+   * (bd tea-rags-mcp-otm6n).
+   *
+   * Deciding whether a declaration may be an EDGE TARGET, or whether a type
+   * belongs to this project, needs {@link toProjectSourceRelPath} /
+   * {@link isProjectSourceFile} instead.
    */
   toRelPath(absolutePath: string): RelPath | null {
     const rel = relative(this.repoRoot, absolutePath);
     if (rel.length === 0 || rel.startsWith("..") || isAbsolute(rel)) return null;
     return sep === "/" ? rel : rel.split(sep).join("/");
+  }
+
+  /**
+   * Is `absolutePath` one of the project's OWN sources?
+   *
+   * {@link toRelPath} answers a narrower question than most of its callers
+   * need. It reports whether a path lies inside the repo DIRECTORY — and
+   * `node_modules` lies inside it, so a dependency's `.d.ts` maps to a perfectly
+   * ordinary `RelPath` and reads as project code (bd tea-rags-mcp-otm6n).
+   *
+   * That is not a hypothetical. Whether it bites depends on where the running
+   * `typescript` resolves from, which is why it stayed hidden: with the compiler
+   * installed under the indexed root, the DEFAULT LIB maps to
+   * `node_modules/typescript/lib/lib.*.d.ts` and every builtin — `Map`, `Promise`,
+   * `Array` — reports as declared in-project. A guard asking "is this type
+   * declared outside the project" then answers `false` for every type there is.
+   *
+   * So the test consumers actually want is this one: inside the repo root AND
+   * not inside any `node_modules`, nested workspace copies included. A path
+   * merely NAMED like a dependency (`src/node_modules_helper.ts`) is project
+   * code — the segment has to be whole.
+   */
+  isProjectSourceFile(absolutePath: string): boolean {
+    return this.toProjectSourceRelPath(absolutePath) !== null;
+  }
+
+  /**
+   * Repo-relative path for an absolute compiler file name, but ONLY when it
+   * names one of the project's own sources — the answer every consumer deciding
+   * "may an edge point here" actually wants. `null` for a dependency, for the
+   * default lib, and for anything outside the root.
+   *
+   * Kept separate from {@link toRelPath} rather than folded into it because the
+   * two answer different questions and both are needed: the parse-cache bound
+   * counts by repo directory, while an EDGE may only ever land on a file the
+   * index contains. Pointing one at `node_modules` produces an edge whose target
+   * is not in the symbol table at all, and simultaneously keeps the call out of
+   * the external classification it deserves (bd tea-rags-mcp-otm6n).
+   */
+  toProjectSourceRelPath(absolutePath: string): RelPath | null {
+    const relPath = this.toRelPath(absolutePath);
+    return relPath !== null && !isDependencyPath(relPath) ? relPath : null;
   }
 
   /** Absolute path for a repo-relative one, POSIX separators normalized. */
@@ -343,6 +395,15 @@ export class TSProgramCache {
     }
     return out;
   }
+}
+
+/**
+ * Does a repo-relative path lead into an installed dependency? Matches whole
+ * segments only, at the root or in a nested workspace — `toRelPath` has already
+ * normalized separators to POSIX, so `/` is the only one to look for.
+ */
+function isDependencyPath(relPath: RelPath): boolean {
+  return relPath === "node_modules" || relPath.startsWith("node_modules/") || relPath.includes("/node_modules/");
 }
 
 /** Entry-file mtime, or `null` when the path is not a readable file. */

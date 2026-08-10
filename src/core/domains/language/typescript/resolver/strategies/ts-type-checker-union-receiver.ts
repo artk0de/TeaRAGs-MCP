@@ -172,7 +172,7 @@ export class TSTypeCheckerUnionReceiverDispatchResolver implements DispatchResol
     const declaration = branch.getProperty(member)?.declarations?.[0];
     if (!declaration) return null;
 
-    const targetRelPath = this.programCache.toRelPath(declaration.getSourceFile().fileName);
+    const targetRelPath = this.programCache.toProjectSourceRelPath(declaration.getSourceFile().fileName);
     if (targetRelPath === null) return null;
 
     const ownerName = declarationOwnerName(declaration);

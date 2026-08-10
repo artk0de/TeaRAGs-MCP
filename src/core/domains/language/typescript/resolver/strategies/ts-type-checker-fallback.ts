@@ -83,7 +83,7 @@ export class TSTypeCheckerFallbackSymbolResolutionStrategy implements SymbolReso
     const declaration = handle.checker.getResolvedSignature(node)?.declaration;
     if (!declaration) return CONTINUE;
 
-    const targetRelPath = this.programCache.toRelPath(declaration.getSourceFile().fileName);
+    const targetRelPath = this.programCache.toProjectSourceRelPath(declaration.getSourceFile().fileName);
     if (targetRelPath === null) return CONTINUE;
 
     return resolved({ targetRelPath, targetSymbolId: this.pinSymbol(declaration, targetRelPath, ctx) });

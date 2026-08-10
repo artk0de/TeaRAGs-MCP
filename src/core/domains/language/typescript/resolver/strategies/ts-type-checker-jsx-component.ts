@@ -58,7 +58,7 @@ export class TSTypeCheckerJsxComponentSymbolResolutionStrategy implements Symbol
     if (!symbol) return CONTINUE;
 
     for (const declaration of symbol.declarations ?? []) {
-      const targetRelPath = this.programCache.toRelPath(declaration.getSourceFile().fileName);
+      const targetRelPath = this.programCache.toProjectSourceRelPath(declaration.getSourceFile().fileName);
       if (targetRelPath === null) continue;
       return resolved({ targetRelPath, targetSymbolId: this.pinSymbol(declaration, targetRelPath, ctx) });
     }

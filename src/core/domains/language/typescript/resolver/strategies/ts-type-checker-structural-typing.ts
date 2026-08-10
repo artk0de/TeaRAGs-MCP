@@ -140,7 +140,7 @@ export class TSStructuralTypingSymbolResolutionStrategy implements SymbolResolut
   private inProjectSites(declarations: readonly ts.Declaration[]): DeclarationSite[] {
     const sites: DeclarationSite[] = [];
     for (const declaration of declarations) {
-      const relPath = this.programCache.toRelPath(declaration.getSourceFile().fileName);
+      const relPath = this.programCache.toProjectSourceRelPath(declaration.getSourceFile().fileName);
       if (relPath !== null) sites.push({ declaration, relPath });
     }
     return sites;
