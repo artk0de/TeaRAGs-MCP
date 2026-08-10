@@ -453,6 +453,20 @@ export interface CallRef {
    * (framework) and from a genuine internal miss (bd cai0).
    */
   dynamicSend?: boolean;
+  /**
+   * Set by the walker when this call site is a JSX component tag rather than a
+   * call expression — `<Foo prop={x} />`, which is sugar over
+   * `React.createElement(Foo, …)` (or the automatic runtime's `jsx(Foo, …)`).
+   * `member` is the tag's own name and `receiver` the qualifier of a dotted tag
+   * (`<UI.Panel />` → `UI` / `Panel`), so every receiver-shaped pass reads the
+   * site exactly as it reads `UI.Panel()`.
+   *
+   * Load-bearing for the JSX resolution pass, which locates the site by JSX AST
+   * shape (`JsxOpeningElement` / `JsxSelfClosingElement`) rather than by
+   * `CallExpression` and must not pay for a Program build on ordinary calls
+   * (bd tea-rags-mcp-b4pvp).
+   */
+  jsx?: boolean;
   /** Positional argument count at the call site (bd xlnub). */
   argCount?: number;
   /** Keyword-arg key names at the call site (bd d9o7o). */

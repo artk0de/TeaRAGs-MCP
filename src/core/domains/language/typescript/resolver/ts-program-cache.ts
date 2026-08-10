@@ -101,6 +101,15 @@ interface CacheEntry {
  * `noEmit` (nothing is written), `skipLibCheck` (diagnostics are never read),
  * and `types: []` so an ambient `@types/*` sweep never runs — resolution only
  * needs the project's own declarations plus the default lib.
+ *
+ * `jsx` is not cosmetic here even though nothing is emitted: with the option
+ * unset, module resolution refuses to consider the `.tsx` extension at all, so
+ * `import Button from "./button.js"` finds no file and every symbol in a React
+ * codebase resolves to `unknown` with zero declarations. `Preserve` is the
+ * cheapest setting that turns the extension back on — it neither requires a
+ * `react/jsx-runtime` declaration to exist nor cares which runtime the project
+ * targets, and the checker resolves tag names identically under all of them
+ * (bd tea-rags-mcp-b4pvp).
  */
 function buildCompilerOptions(repoRoot: string, tsOptions: TsCompilerOptions): ts.CompilerOptions {
   return {
@@ -111,6 +120,7 @@ function buildCompilerOptions(repoRoot: string, tsOptions: TsCompilerOptions): t
     target: ts.ScriptTarget.ES2022,
     module: ts.ModuleKind.ESNext,
     moduleResolution: ts.ModuleResolutionKind.Bundler,
+    jsx: ts.JsxEmit.Preserve,
     baseUrl: resolvePath(repoRoot, tsOptions.baseUrl || "."),
     paths: tsOptions.paths,
     types: [],

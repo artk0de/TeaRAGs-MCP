@@ -382,6 +382,7 @@ function walkCalls(node: AstNode, scopes: DispatchScope[], tableNames: ReadonlyS
 }
 
 function emitCall(node: AstNode, scopes: DispatchScope[], tableNames: ReadonlySet<string>, out: CallRef[]): void {
+  if (emitJsxComponentTag(node, out)) return;
   // `new ClassName(args)` (bd tea-rags-mcp-i252). The grammar emits a
   // dedicated `new_expression` node whose `constructor` field is the
   // class identifier (plain identifier or member_expression for
@@ -457,6 +458,79 @@ function emitCall(node: AstNode, scopes: DispatchScope[], tableNames: ReadonlySe
   }
   out.push(ref);
   if (argsNode) emitMethodReferenceArgs(ref.member, argsNode, out);
+}
+
+/**
+ * The two tag nodes that USE a component. `jsx_closing_element` carries the
+ * same name and is deliberately absent: `<Card>text</Card>` is one usage, and
+ * counting the closing tag would double every paired element's fan-in.
+ */
+const JSX_COMPONENT_TAG_NODES = new Set(["jsx_opening_element", "jsx_self_closing_element"]);
+
+/**
+ * `<Foo prop={x} />` is a call (bd tea-rags-mcp-b4pvp). It desugars to
+ * `React.createElement(Foo, {prop: x})` — or the automatic runtime's
+ * `jsx(Foo, …)` — so the component's body runs, its fan-in is real, and before
+ * this branch none of it existed in the graph: the walk only ever emitted for
+ * `call_expression` / `new_expression`, and a JSX tag is neither. A React
+ * codebase's whole component-to-component edge set was invisible.
+ *
+ * WHICH TAGS. React's own rule decides, and it is purely syntactic: a
+ * lowercase bare tag (`<div>`, `<span>`) is an intrinsic host element that
+ * names no project symbol, while a capitalized tag or ANY dotted tag
+ * (`<UI.Panel />`) is a reference to a value in scope. Fragments (`<></>`)
+ * carry no name field and fall out for free. Emitting host elements would bury
+ * the resolve denominator under `div` / `span` misses for nothing.
+ *
+ * SHAPE. `receiver`/`member` mirror the ordinary member call — `<UI.Panel />`
+ * reads as `UI.Panel`, so every receiver-shaped pass in the chain applies
+ * unchanged, and a component resolvable by short name or by import basename is
+ * caught by a cheap tree-sitter pass long before the type checker is consulted.
+ * The `jsx` flag marks the site as one the checker must locate by JSX AST shape
+ * rather than by `CallExpression`.
+ *
+ * Returns `true` when the node was a tag, so the caller stops — a tag is never
+ * also a call expression.
+ */
+function emitJsxComponentTag(node: AstNode, out: CallRef[]): boolean {
+  if (!JSX_COMPONENT_TAG_NODES.has(node.type)) return false;
+  const nameNode = node.childForFieldName("name");
+  if (!nameNode) return true;
+
+  if (nameNode.type === "identifier") {
+    if (!isComponentTagName(nameNode.text)) return true;
+    out.push({
+      callText: node.text,
+      receiver: null,
+      member: nameNode.text,
+      startLine: node.startPosition.row + 1,
+      jsx: true,
+    });
+    return true;
+  }
+
+  // A dotted tag is a component by construction, whatever its casing. The
+  // grammar spells it `member_expression` (fields `object` / `property`);
+  // `<svg:circle />` is a `jsx_namespace_name` — an XML-namespaced host
+  // element, not a project symbol — and is skipped along with every other shape.
+  if (nameNode.type !== "member_expression") return true;
+  const object = nameNode.childForFieldName("object");
+  const property = nameNode.childForFieldName("property");
+  if (!object || !property) return true;
+  out.push({
+    callText: node.text,
+    receiver: object.text,
+    member: property.text,
+    startLine: node.startPosition.row + 1,
+    jsx: true,
+  });
+  return true;
+}
+
+/** React's rule: a bare tag is a component only when it starts uppercase. */
+function isComponentTagName(name: string): boolean {
+  const first = name[0];
+  return first !== undefined && first !== first.toLowerCase();
 }
 
 /**
