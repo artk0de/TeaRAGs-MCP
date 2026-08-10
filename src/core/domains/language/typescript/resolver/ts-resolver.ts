@@ -19,6 +19,13 @@
  *   8. sameFile (caller-file-local definition wins over global ambiguity)
  *   9. globalShortName (global short-name lookup)
  *  10. importNarrowedFallback (narrow ambiguous N>1 by caller's imports)
+ *  11. typeCheckerFallback (ts.Program/typeChecker — generics + overloads)
+ *
+ * Pass 11 is the only one that reads type information rather than AST shape,
+ * and the only one that touches the file system on the resolve path. It runs
+ * last by construction: everything above it is cheaper, so the checker is
+ * consulted only for calls nothing else could decide. `CODEGRAPH_TS_TYPECHECKER=0`
+ * removes it from the chain entirely (bd tea-rags-mcp-uclbn).
  *
  * `resolveDispatch` is a separate fan-out contract (lookup-table dispatch, bd
  * tea-rags-mcp-n0zj) and stays in the orchestrator — it is not part of the
@@ -58,9 +65,11 @@ import {
   TSSameFileSymbolResolutionStrategy,
   TSSuperSymbolResolutionStrategy,
   TSThisMemberSymbolResolutionStrategy,
+  TSTypeCheckerFallbackSymbolResolutionStrategy,
   type ResolverConfig,
 } from "./strategies/index.js";
 import { mapImportToFile, type TsCompilerOptions } from "./ts-path-mapper.js";
+import { TSProgramCache } from "./ts-program-cache.js";
 
 /** Parse `CODEGRAPH_TS_CONE_MAX`; fall back to the TS default on absent/invalid. */
 function resolveConeMax(raw: string | undefined): number {
@@ -68,17 +77,48 @@ function resolveConeMax(raw: string | undefined): number {
   return Number.isInteger(parsed) && parsed > 0 ? parsed : CONE_MAX_DEFAULT;
 }
 
+/**
+ * Is the typeChecker fallback pass enabled? On by default — it is the only pass
+ * that can resolve the generic / overload cases at all. `CODEGRAPH_TS_TYPECHECKER=0`
+ * (or `false`) is the kill switch for an environment where the extra file reads
+ * on the resolve path are unwelcome; disabled, the pass is never constructed,
+ * so no Program is ever built (bd tea-rags-mcp-uclbn).
+ */
+function typeCheckerFallbackEnabled(raw: string | undefined): boolean {
+  return raw !== "0" && raw !== "false";
+}
+
 export class TSCallResolver implements CallResolver {
   readonly language = "typescript";
   private readonly strategies: SymbolResolutionStrategy[];
   private readonly cone: ConeDispatchResolver;
 
+  /**
+   * Program cache backing the typeChecker fallback pass. Exposed so a later
+   * pass built on the same machinery (union narrowing, structural typing)
+   * shares ONE cache rather than building a second set of Programs, and so a
+   * caller owning a run boundary can `reset()` it. `null` when the fallback is
+   * disabled.
+   */
+  readonly programCache: TSProgramCache | null;
+
+  /**
+   * @param repoRoot Absolute project root the typeChecker fallback resolves
+   *   `RelPath`s against. Defaults to `process.cwd()`, mirroring the
+   *   `loadTsConfig(process.cwd())` the composition root already passes for
+   *   `tsOptions`. A root that does not match the indexed project simply finds
+   *   no files, and the fallback declines every call — it never guesses.
+   */
   constructor(
     private readonly tsOptions: TsCompilerOptions,
     private readonly mode: AmbiguousResolveMode = DEFAULT_AMBIGUOUS_RESOLVE_MODE,
+    repoRoot: string = process.cwd(),
   ) {
     const cfg: ResolverConfig = { tsOptions, mode, coneMax: resolveConeMax(process.env.CODEGRAPH_TS_CONE_MAX) };
     this.cone = new ConeDispatchResolver(new TSConeTypeLocator(cfg), cfg.coneMax ?? CONE_MAX_DEFAULT);
+    this.programCache = typeCheckerFallbackEnabled(process.env.CODEGRAPH_TS_TYPECHECKER)
+      ? new TSProgramCache({ repoRoot, tsOptions })
+      : null;
     this.strategies = [
       new TSSuperSymbolResolutionStrategy(cfg),
       new TSThisMemberSymbolResolutionStrategy(cfg),
@@ -91,6 +131,9 @@ export class TSCallResolver implements CallResolver {
       new TSGlobalShortNameSymbolResolutionStrategy(cfg),
       new TSImportNarrowedFallbackSymbolResolutionStrategy(cfg),
     ];
+    if (this.programCache) {
+      this.strategies.push(new TSTypeCheckerFallbackSymbolResolutionStrategy(cfg, this.programCache));
+    }
   }
 
   resolve(call: CallRef, ctx: CallContext): SymbolResolutionTarget | null {
