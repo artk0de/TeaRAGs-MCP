@@ -24,7 +24,7 @@
  * bd tea-rags-mcp-kfzx
  */
 import type { AstNode } from "../../../../contracts/types/ast.js";
-import { INSTANCE_METHOD_SEPARATOR } from "../../../../infra/symbolid/index.js";
+import { INSTANCE_METHOD_SEPARATOR, isFunctionValuedExpression } from "../../../../infra/symbolid/index.js";
 
 function walkAssignmentChainToTerminalRhs(node: AstNode): AstNode | null {
   let cur: AstNode | null = node;
@@ -34,10 +34,6 @@ function walkAssignmentChainToTerminalRhs(node: AstNode): AstNode | null {
     cur = right;
   }
   return cur;
-}
-
-function isFunctionValuedExpression(node: AstNode): boolean {
-  return node.type === "function_expression" || node.type === "arrow_function" || node.type === "generator_function";
 }
 
 /**
