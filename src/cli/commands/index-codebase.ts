@@ -170,7 +170,17 @@ export const indexCodebaseCommand: CommandModule<object, IndexCodebaseArgs> = {
           "Use this to validate a new signal, walker, or resolver; use --force only when " +
           "chunking, parsing, or the vectors themselves changed.",
       })
-      .conflicts("force", "force-enrichments")
+      // NOT `.conflicts()`: `--force` declares `default: false`, and yargs
+      // treats a key carrying a default as PRESENT, so `.conflicts()` rejected
+      // every `--force-enrichments` run even when `--force` was never typed.
+      // Checking the values directly is the only form that distinguishes
+      // "defaulted" from "passed".
+      .check((argv) => {
+        if (argv.force === true && argv["force-enrichments"] !== undefined) {
+          throw new Error("Arguments force and force-enrichments are mutually exclusive");
+        }
+        return true;
+      })
       .option("json", {
         type: "boolean",
         default: false,
