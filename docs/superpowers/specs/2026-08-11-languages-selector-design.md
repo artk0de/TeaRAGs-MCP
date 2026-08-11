@@ -59,14 +59,12 @@ languages. Everything else disappears from search until a later unrestricted
 `--force` rebuilds it. This is the accepted trade for the speed (embeddings are
 ~92% of a force run's wall clock).
 
-Because the cost is irreversible-in-practice rather than merely slow, the CLI
-prints what will be dropped before it starts, listing the languages present in
-the current index that the filter excludes:
-
-```
---force --languages typescript will REBUILD the collection with typescript only.
-Currently indexed and about to be dropped: ruby (8 041 chunks), python (312).
-```
+The flag's own help text carries that warning, in the words an operator reads
+before running it. A pre-flight diff of what is about to be dropped was designed
+and NOT built: it needs a per-language count from the live index on a path that
+otherwise touches nothing, and the same sentence in `--help` reaches the reader
+earlier. If a restricted `--force` ever gets run against a real project by
+accident, revisit this.
 
 ## Run-stats merge
 
@@ -85,16 +83,25 @@ untouched languages survive; `prime` keeps showing them.
 
 ## Validation
 
-- Unknown language → typed `InvalidParameterError` listing the languages
-  actually present in the index, not the ones the build could parse. A language
-  the parser supports but the corpus does not contain would silently select zero
-  points, which reads as success.
+- Unknown language → typed `InvalidParameterError` naming every unsupported
+  entry and listing what IS supported. Validated against `SELECTABLE_LANGUAGES`
+  — the distinct values of `LANGUAGE_MAP` — rather than against the languages
+  the index happens to contain. That keeps the check synchronous, and it makes
+  "passes validation" and "can actually select files" the same set: a language
+  with a parser but no extension mapping would pass a definitions-based check
+  and then select nothing under `--force`.
 - Empty list after parsing → refused, same as an empty provider selector.
 - `--languages` without `--force` or `--force-enrichments` → refused (see
   table).
 - Value is REQUIRED and takes exactly one argument (`nargs: 1`, comma-split).
   yargs would otherwise swallow the command's positional `[path]` — the same
   trap `--force-enrichments` hit and the reason it is shaped this way.
+
+The earlier draft validated against the languages present in the index, to catch
+a supported-but-absent language. That check needs a scan and buys little: a
+supported language the corpus lacks selects zero points and the run reports
+zero, which is legible on its own. The typo case — the one worth erroring on —
+is caught either way.
 
 ## Testing
 
@@ -106,6 +113,39 @@ Red-first, one behaviour each:
 4. unknown language is refused, and the message names the indexed languages
 5. `recordRunStats` keeps rows of a language absent from the incoming set
 6. no `--languages` leaves both paths byte-identical to today
+
+## Live validation (2026-08-11)
+
+Recompute path, against the tea-rags self-index
+(`--force-enrichments codegraph --languages typescript`):
+
+| Check                     | Result                                                                |
+| ------------------------- | --------------------------------------------------------------------- |
+| Filter reaches the scroll | 906 of 1936 files touched, 53s wall clock                             |
+| Selective by language     | typescript codegraph stamp `18:57:30` → `22:31:30`; markdown /        |
+|                           | javascript / sql stayed at `18:57:30`                                 |
+| Selective by provider     | every language's `git.file.enrichedAt` unchanged                      |
+| Run-stats merge           | bash and javascript rows survived intact (javascript `attempted=196`, |
+|                           | `resolved=47` before and after); typescript refreshed; 27 rows total  |
+| No shadow DuckDB          | one `code_8b243ffe_v62.duckdb`, no alias-named sibling (snbzk holds)  |
+| Health                    | `codegraph.symbols` file+chunk healthy, `failed` / `degraded` empty   |
+
+Force path, against a throwaway 4-file polyglot fixture (ts / js / py / md),
+because running it on a real index would rebuild that index with one language:
+
+| Command                                 | Files indexed |
+| --------------------------------------- | ------------- |
+| baseline, no filter                     | 4 (7 chunks)  |
+| `--force --languages typescript`        | 1 (3 chunks)  |
+| `--force --languages typescript,python` | 2 (4 chunks)  |
+| `--force`, filter removed               | 4 (7 chunks)  |
+
+The rebuilt collection after the restricted run contained typescript points and
+nothing else — the documented consequence, observed.
+
+Refusals, live: `--languages` on a plain incremental and an unsupported language
+both fail with `INPUT_INVALID_PARAMETER` before any work starts, the latter
+listing all 31 supported languages.
 
 ## Rejected
 
