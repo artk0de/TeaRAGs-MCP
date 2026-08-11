@@ -452,10 +452,20 @@ export class IndexingOps {
     }
 
     const changeStats = await this.reindex.reindexChanges(path, progressCallback);
-    await this.enrichment.recomputeEnrichments(collectionName, absolutePath, selectors);
+    const startedAt = Date.now();
+    const enrichmentMetrics = await this.enrichment.recomputeEnrichments(collectionName, absolutePath, selectors);
+    const enrichmentDurationMs = Date.now() - startedAt;
     await this.refreshStats(path);
 
-    return toIndexStats(changeStats);
+    // Report the RECOMPUTE's own numbers, not the sync's. The sync leg is a
+    // near-no-op here, so inheriting its (empty) enrichment fields would state
+    // that nothing was enriched on a pass whose entire purpose was enriching.
+    return {
+      ...toIndexStats(changeStats),
+      enrichmentStatus: "completed",
+      enrichmentDurationMs,
+      enrichmentMetrics,
+    };
   }
 
   private async fullIndex(
