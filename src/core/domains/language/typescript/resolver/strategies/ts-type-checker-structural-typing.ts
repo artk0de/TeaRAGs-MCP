@@ -52,7 +52,7 @@ import {
 import type { SymbolResolutionOutcome, SymbolResolutionStrategy } from "../../../../../contracts/types/language.js";
 import { INSTANCE_METHOD_SEPARATOR } from "../../../../../infra/symbolid/index.js";
 import { ECMASCRIPT_BUILTIN_TYPES, ECMASCRIPT_GLOBALS } from "../../../shared/ecmascript-globals.js";
-import { mapImportToFile, type TsCompilerOptions } from "../ts-path-mapper.js";
+import { mapImportToFile, type ProjectFileProbe, type TsCompilerOptions } from "../ts-path-mapper.js";
 import type { TSProgramCache } from "../ts-program-cache.js";
 import type { ResolverConfig } from "./shared.js";
 import { declarationOwnerName, findReceiverExpression, TS_SCOPE_SEPARATOR } from "./ts-type-checker-shared.js";
@@ -89,11 +89,12 @@ export function classifyStructuralTypingCase(
   call: CallRef,
   ctx: CallContext,
   tsOptions: TsCompilerOptions,
+  fileExists?: ProjectFileProbe,
 ): TSStructuralTypingCase | null {
   const { receiver } = call;
   if (receiver === null || receiver.length === 0) return null;
   if (ECMASCRIPT_GLOBALS.has(rootIdentifier(receiver))) return null;
-  if (bindsToExternalImport(rootIdentifier(receiver), ctx, tsOptions)) return null;
+  if (bindsToExternalImport(rootIdentifier(receiver), ctx, tsOptions, fileExists)) return null;
 
   const boundType = boundReceiverType(call, ctx);
   if (boundType !== null && ECMASCRIPT_BUILTIN_TYPES.has(boundType)) return null;
@@ -109,7 +110,7 @@ export class TSStructuralTypingSymbolResolutionStrategy implements SymbolResolut
   ) {}
 
   attempt(call: CallRef, ctx: CallContext): SymbolResolutionOutcome {
-    const kind = classifyStructuralTypingCase(call, ctx, this.cfg.tsOptions);
+    const kind = classifyStructuralTypingCase(call, ctx, this.cfg.tsOptions, this.cfg.fileExists);
     if (kind === null) return CONTINUE;
 
     const handle = this.programCache.acquire(ctx.callerFile);
@@ -274,12 +275,25 @@ function boundReceiverType(call: CallRef, ctx: CallContext): string | null {
  * specifiers, `node:` builtins), which is the same test
  * `TSCallResolver.targetsExternalImport` uses to bucket a call as external.
  *
- * Deliberately probe-free: nullness does not depend on which extension the
- * file carries, so a `ProjectFileProbe` would only add lookups here.
+ * This used to be deliberately probe-free, on the argument that nullness does
+ * not depend on which extension the file carries. That stopped being true with
+ * the bare `"*"` catch-all (bd tea-rags-mcp-t6ycg): the pattern matches every
+ * specifier there is, so it may only answer with a path a file backs, and
+ * without a probe it answers `null` for project modules and npm packages
+ * alike. On a project mapped that way — taxdome maps 86 296 imports through it
+ * — every alias-bound receiver would be declined here as external.
  */
-function bindsToExternalImport(name: string, ctx: CallContext, tsOptions: TsCompilerOptions): boolean {
+function bindsToExternalImport(
+  name: string,
+  ctx: CallContext,
+  tsOptions: TsCompilerOptions,
+  fileExists?: ProjectFileProbe,
+): boolean {
   for (const imp of ctx.imports) {
-    if (imp.importedNames?.includes(name) && mapImportToFile(imp.importText, ctx.callerFile, tsOptions) === null) {
+    if (
+      imp.importedNames?.includes(name) &&
+      mapImportToFile(imp.importText, ctx.callerFile, tsOptions, fileExists) === null
+    ) {
       return true;
     }
   }

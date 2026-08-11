@@ -58,12 +58,110 @@ export function createProjectFileProbe(repoRoot: string): ProjectFileProbe {
 }
 
 /**
+ * The winning `paths` entry for one specifier, and what its `*` captured.
+ *
+ * `prefixLength` is the ranking key, not a convenience: `tsc` resolves a
+ * specifier against the pattern with the LONGEST matching prefix, so
+ * `api/mocks/*` must beat both `api/*` and `*` on `api/mocks/getClient`
+ * regardless of the order `paths` happens to declare them in.
+ */
+interface AliasPatternMatch {
+  targets: readonly string[];
+  /** Text the pattern's `*` stood for; empty for an exact (starless) pattern. */
+  captured: string;
+  prefixLength: number;
+  /**
+   * The pattern is the bare `"*"` — the one that matches EVERY bare specifier,
+   * npm packages included, and therefore the one whose answers must be backed
+   * by a file on disk.
+   */
+  catchAll: boolean;
+}
+
+/**
+ * The `paths` entry `tsc` would resolve `importText` against, or `null`.
+ *
+ * Patterns are `prefix*suffix` — the general form, of which `"<prefix>/*"` and
+ * the bare `"*"` are both cases. Matching only `pattern.endsWith("/*")` is what
+ * left taxdome's `"*": ["./app/javascript/*"]` inert (bd tea-rags-mcp-t6ycg).
+ *
+ * An exact pattern wins outright and short-circuits: at most one literal can
+ * equal the specifier, so there is nothing left to rank.
+ */
+function selectAliasPattern(importText: string, paths: Record<string, string[]>): AliasPatternMatch | null {
+  let best: AliasPatternMatch | null = null;
+
+  for (const [pattern, targets] of Object.entries(paths)) {
+    const star = pattern.indexOf("*");
+    if (star < 0) {
+      if (pattern === importText) {
+        return { targets, captured: "", prefixLength: pattern.length, catchAll: false };
+      }
+      continue;
+    }
+
+    const prefix = pattern.slice(0, star);
+    const suffix = pattern.slice(star + 1);
+    if (!importText.startsWith(prefix) || !importText.endsWith(suffix)) continue;
+    if (importText.length < prefix.length + suffix.length) continue;
+
+    if (best !== null && prefix.length <= best.prefixLength) continue;
+    best = {
+      targets,
+      captured: importText.slice(prefix.length, importText.length - suffix.length),
+      prefixLength: prefix.length,
+      catchAll: pattern === "*",
+    };
+  }
+
+  return best;
+}
+
+/**
+ * Walk the matched entry's substitutions in declaration order and take the
+ * first one a file actually backs; `tsc` does the same, and only `targets[0]`
+ * was ever consulted here, which made a second root dead config.
+ *
+ * When none of them can be verified the answer depends on how discriminating
+ * the pattern was, and that split is the whole precision argument:
+ *
+ *   - a bare `"*"` matches every specifier there is, so an unverified answer
+ *     fabricates an in-project path for `lodash/debounce`. Worse than a lost
+ *     edge: `targetsExternalImport` reads a non-null mapping as "this call
+ *     stays in the project", so one fabricated path switches the external
+ *     classifier OFF for every npm package the project imports. Declining
+ *     leaves the call external, which is where it belongs.
+ *   - an author-declared pattern (`@/*`, `api/mocks/*`, a literal) cannot
+ *     match an npm specifier in the first place, so it keeps the established
+ *     behaviour of answering with its first candidate — a path no file table
+ *     entry matches merely drops the edge (see {@link resolveTsSourcePath}).
+ */
+function resolveAliasMatch(
+  match: AliasPatternMatch,
+  options: TsCompilerOptions,
+  fileExists?: ProjectFileProbe,
+): string | null {
+  const substituted = match.targets.map((target) =>
+    posix.normalize(posix.join(options.baseUrl, target.replace("*", match.captured))),
+  );
+  if (substituted.length === 0) return null;
+
+  for (const path of substituted) {
+    const verified = verifiedTsSourcePath(path, fileExists);
+    if (verified !== null) return verified;
+  }
+  return match.catchAll ? null : resolveTsSourcePath(substituted[0], fileExists);
+}
+
+/**
  * Repo-relative path of the file `importText` points at, or `null` when the
  * specifier does not name a project file (bare npm packages, `node:` builtins).
  *
  * `fileExists` lets the mapper pick the extension that is actually on disk
  * instead of committing to `.ts`; omit it and the mapper keeps its `.ts`-only
- * mapping rather than guessing (see {@link resolveTsSourcePath}).
+ * mapping rather than guessing (see {@link resolveTsSourcePath}). Under a bare
+ * `"*"` catch-all the probe is not an optimisation but the only thing telling a
+ * project module from an npm package, so without one that pattern declines.
  */
 export function mapImportToFile(
   importText: string,
@@ -76,22 +174,8 @@ export function mapImportToFile(
     const joined = posix.normalize(posix.join(dir, importText));
     return resolveTsSourcePath(joined, fileExists);
   }
-  for (const [pattern, targets] of Object.entries(options.paths)) {
-    if (pattern.endsWith("/*")) {
-      const prefix = pattern.slice(0, -1); // "@/"
-      if (importText.startsWith(prefix)) {
-        const suffix = importText.slice(prefix.length);
-        const target = targets[0]?.replace("/*", `/${suffix}`);
-        if (!target) return null;
-        return resolveTsSourcePath(posix.normalize(posix.join(options.baseUrl, target)), fileExists);
-      }
-    } else if (pattern === importText) {
-      const target = targets[0];
-      if (!target) return null;
-      return resolveTsSourcePath(posix.normalize(posix.join(options.baseUrl, target)), fileExists);
-    }
-  }
-  return null;
+  const match = selectAliasPattern(importText, options.paths);
+  return match === null ? null : resolveAliasMatch(match, options, fileExists);
 }
 
 /**
@@ -139,15 +223,38 @@ const DIRECTORY_MODULE_STEM = "index";
  * codebase defers rather than fabricates (see `MethodEdgeKind`).
  */
 function resolveTsSourcePath(path: string, fileExists?: ProjectFileProbe): string {
+  // An explicit `.ts` / `.tsx` specifier has nothing to choose between, and
+  // this returns BEFORE the probe on purpose: the probe's cache is what keeps
+  // a resolve pass off one syscall per import per call site, and a lookup whose
+  // answer cannot change the result is pure cost.
   if (path.endsWith(".ts") || path.endsWith(".tsx")) return path;
+  const candidates = tsSourcePathCandidates(path);
+  return candidates.find((candidate) => fileExists?.(candidate)) ?? candidates[0];
+}
+
+/**
+ * The candidate a probe CONFIRMED, or `null` when none exists — the same walk
+ * as {@link resolveTsSourcePath} without its unverified fallback.
+ *
+ * Split out because one caller needs to tell "found it" from "guessed it", and
+ * a return value that conflates them cannot express that: a bare `"*"` pattern
+ * may only answer with a path a file backs (see {@link resolveAliasMatch}).
+ * No probe means nothing can be confirmed, so the answer is `null` rather than
+ * a guess.
+ */
+function verifiedTsSourcePath(path: string, fileExists?: ProjectFileProbe): string | null {
+  if (fileExists === undefined) return null;
+  return tsSourcePathCandidates(path).find((candidate) => fileExists(candidate)) ?? null;
+}
+
+/** Source files a mapped specifier could stand for, in `tsc`'s resolution order. */
+function tsSourcePathCandidates(path: string): readonly string[] {
+  if (path.endsWith(".ts") || path.endsWith(".tsx")) return [path];
 
   const rule = SOURCE_EXTENSION_CANDIDATES.find((entry) => path.endsWith(entry.suffix));
   const stem = rule ? path.slice(0, -rule.suffix.length) : path;
   const extensions = rule ? rule.extensions : EXTENSIONLESS_CANDIDATES;
 
   const asFile = extensions.map((extension) => `${stem}${extension}`);
-  const candidates = rule
-    ? asFile
-    : [...asFile, ...extensions.map((extension) => `${stem}/${DIRECTORY_MODULE_STEM}${extension}`)];
-  return candidates.find((candidate) => fileExists?.(candidate)) ?? candidates[0];
+  return rule ? asFile : [...asFile, ...extensions.map((extension) => `${stem}/${DIRECTORY_MODULE_STEM}${extension}`)];
 }

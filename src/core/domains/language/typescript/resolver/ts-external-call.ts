@@ -33,7 +33,7 @@ import {
 import { findReceiverExpression } from "./strategies/ts-type-checker-shared.js";
 import { importSpecifierNamesReceiver } from "./ts-import-basename-match.js";
 import { calleeIsExternalLocalBinding } from "./ts-local-callee.js";
-import { mapImportToFile, type TsCompilerOptions } from "./ts-path-mapper.js";
+import { mapImportToFile, type ProjectFileProbe, type TsCompilerOptions } from "./ts-path-mapper.js";
 import type { TSProgramCache } from "./ts-program-cache.js";
 
 /**
@@ -88,6 +88,7 @@ export function targetsExternalImport(
   ctx: CallContext,
   tsOptions: TsCompilerOptions,
   programCache: TSProgramCache | null = null,
+  fileExists?: ProjectFileProbe,
 ): boolean {
   // `?? null` rather than a bare destructure: this now runs on EVERY call
   // reaching the short-name passes, not only on the ones already known to have
@@ -105,7 +106,10 @@ export function targetsExternalImport(
   const boundName = receiver ?? call.member;
   if (boundName.length === 0) return false;
   for (const imp of ctx.imports) {
-    if (imp.importedNames?.includes(boundName) && mapImportToFile(imp.importText, ctx.callerFile, tsOptions) === null) {
+    if (
+      imp.importedNames?.includes(boundName) &&
+      mapImportToFile(imp.importText, ctx.callerFile, tsOptions, fileExists) === null
+    ) {
       return true;
     }
   }
@@ -117,7 +121,7 @@ export function targetsExternalImport(
   // receiver-bearing call nothing.
   return (
     receiverIsImportedBuiltinContainer(call, ctx) ||
-    receiverIsExternalInstance(call, ctx, tsOptions, programCache) ||
+    receiverIsExternalInstance(call, ctx, tsOptions, programCache, fileExists) ||
     calleeIsExternalLocalBinding(call, ctx, programCache)
   );
 }
@@ -259,6 +263,7 @@ function receiverIsExternalInstance(
   ctx: CallContext,
   tsOptions: TsCompilerOptions,
   programCache: TSProgramCache | null,
+  fileExists?: ProjectFileProbe,
 ): boolean {
   const receiver = call.receiver ?? null;
   if (receiver === null || receiver.length === 0 || receiver === "this" || receiver === "super") return false;
@@ -271,7 +276,7 @@ function receiverIsExternalInstance(
     // declaration backs is worth a Program. The member-name vocabulary stays
     // unreachable either way, preserving the mutual exclusion cases 3 and 4
     // rest on.
-    const origin = annotationOrigin(typeName, ctx, tsOptions);
+    const origin = annotationOrigin(typeName, ctx, tsOptions, fileExists);
     if (origin !== "unbound") return origin === "package";
     if (ctx.symbolTable.lookup(typeName).length > 0) return false;
   } else if (ECMASCRIPT_BUILTIN_PROTOTYPE_METHODS.has(call.member)) {
@@ -304,11 +309,16 @@ type TSAnnotationOrigin = "project" | "package" | "unbound";
  * those two are worth paying the checker to tell apart. `Response` is the
  * reason that residue cannot simply be called "project".
  */
-function annotationOrigin(typeName: string, ctx: CallContext, tsOptions: TsCompilerOptions): TSAnnotationOrigin {
+function annotationOrigin(
+  typeName: string,
+  ctx: CallContext,
+  tsOptions: TsCompilerOptions,
+  fileExists?: ProjectFileProbe,
+): TSAnnotationOrigin {
   const rootName = typeName.split(".")[0];
   for (const imp of ctx.imports) {
     if (!imp.importedNames?.includes(rootName)) continue;
-    return mapImportToFile(imp.importText, ctx.callerFile, tsOptions) === null ? "package" : "project";
+    return mapImportToFile(imp.importText, ctx.callerFile, tsOptions, fileExists) === null ? "package" : "project";
   }
   return "unbound";
 }

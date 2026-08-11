@@ -62,7 +62,7 @@ export class TSNamedImportSymbolResolutionStrategy implements SymbolResolutionSt
     // already won above, so this can only ever drop a file-level edge, never a
     // pinned one. CONTINUE and not a park: this is the one case where we know
     // the module answer is wrong, and parking a wrong file is worse than none.
-    if (targetsExternalImport(call, ctx, this.cfg.tsOptions)) return CONTINUE;
+    if (targetsExternalImport(call, ctx, this.cfg.tsOptions, null, this.cfg.fileExists)) return CONTINUE;
     return deferred({ targetRelPath: targetFile, targetSymbolId: null });
   }
 }
