@@ -55,7 +55,7 @@ export class TSGlobalShortNameSymbolResolutionStrategy implements SymbolResoluti
   ) {}
 
   attempt(call: CallRef, ctx: CallContext): SymbolResolutionOutcome {
-    if (targetsExternalImport(call, ctx, this.cfg.tsOptions, this.programCache)) return CONTINUE;
+    if (targetsExternalImport(call, ctx, this.cfg.tsOptions, this.programCache, this.cfg.fileExists)) return CONTINUE;
     if (calleeIsLocalValueBinding(call, ctx, this.programCache)) return CONTINUE;
     if (receiverIsUnpinnableLocalValueBinding(call, ctx, this.programCache)) return CONTINUE;
     const fallback = ctx.symbolTable.lookupByShortName(call.member);

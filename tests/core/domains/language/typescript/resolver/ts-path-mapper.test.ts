@@ -222,6 +222,131 @@ describe("mapImportToFile directory/index resolution (bd tea-rags-mcp-hzsxy)", (
   });
 });
 
+/**
+ * The `paths` pattern language, as `tsc` actually defines it (bd tea-rags-mcp-t6ycg).
+ *
+ * The mapper understood two shapes — `"<prefix>/*"` and an exact literal — and
+ * taxdome routes 97.2% of its imports through neither: its mapping is the bare
+ * `"*": ["./app/javascript/*"]` catch-all. Every alias import returned `null`,
+ * which `targetsExternalImport` reads as "this call leaves the project", so
+ * 78 259 of 189 630 call sites were misfiled as external.
+ *
+ * Three rules make a catch-all safe, and the third is the one with teeth:
+ * `"*"` matches EVERY bare specifier including every npm package, so an answer
+ * it cannot verify on disk is a fabricated in-project path.
+ */
+describe("mapImportToFile paths pattern language (bd tea-rags-mcp-t6ycg)", () => {
+  const CATCH_ALL = { baseUrl: ".", paths: { "*": ["./app/javascript/*"] } };
+
+  it("resolves a bare `*` catch-all against the mapped directory", () => {
+    const exists = (rel: string) => rel === "app/javascript/react-app/hooks/useDebounce.ts";
+    expect(mapImportToFile("react-app/hooks/useDebounce", "app/javascript/react-app/Page.tsx", CATCH_ALL, exists)).toBe(
+      "app/javascript/react-app/hooks/useDebounce.ts",
+    );
+  });
+
+  it("resolves a catch-all specifier that names a directory module", () => {
+    const exists = (rel: string) => rel === "app/javascript/Routes/index.ts";
+    expect(mapImportToFile("Routes", "app/javascript/react-app/Page.tsx", CATCH_ALL, exists)).toBe(
+      "app/javascript/Routes/index.ts",
+    );
+  });
+
+  it("prefers the longer matching prefix over a catch-all declared first", () => {
+    // Declaration order is deliberately hostile: first-match-wins would send
+    // `api/mocks/getClient` to `app/javascript/api/mocks/getClient`, and tsc
+    // sends it to the mocks root because `api/mocks/*` is the longer prefix.
+    const paths = {
+      "*": ["./app/javascript/*"],
+      "api/mocks/*": ["./app/javascript/api/codegen/__generated__/mocks/*"],
+    };
+    const exists = () => true;
+    expect(mapImportToFile("api/mocks/getClient", "app/javascript/x.ts", { baseUrl: ".", paths }, exists)).toBe(
+      "app/javascript/api/codegen/__generated__/mocks/getClient.ts",
+    );
+  });
+
+  it("prefers the longer prefix between two wildcards, whatever the declaration order", () => {
+    // The precedence bug on its own, with no catch-all involved: both patterns
+    // are the `"<prefix>/*"` shape the mapper already matched, and iteration
+    // order alone decided the winner. tsc picks the longest matching prefix.
+    const paths = { "api/*": ["./generic/*"], "api/mocks/*": ["./mocks/*"] };
+    const exists = () => true;
+    expect(mapImportToFile("api/mocks/getClient", "src/x.ts", { baseUrl: ".", paths }, exists)).toBe(
+      "mocks/getClient.ts",
+    );
+  });
+
+  it("lets an exact pattern beat a wildcard that also matches", () => {
+    const paths = { "*": ["./app/javascript/*"], Routes: ["./app/javascript/Routes/table.ts"] };
+    const exists = () => true;
+    expect(mapImportToFile("Routes", "app/javascript/x.ts", { baseUrl: ".", paths }, exists)).toBe(
+      "app/javascript/Routes/table.ts",
+    );
+  });
+
+  it("declines an npm specifier the catch-all matched but no file backs", () => {
+    // The precision guard this whole block exists for. `resolveTsSourcePath`
+    // answers with its first candidate when nothing on disk matches, so an
+    // ungated catch-all maps `lodash/debounce` to a fabricated
+    // `app/javascript/lodash/debounce.ts` — and a fabricated in-project path
+    // silently switches OFF the external classifier for every npm package.
+    expect(mapImportToFile("lodash/debounce", "app/javascript/x.ts", CATCH_ALL, () => false)).toBeNull();
+    expect(mapImportToFile("react", "app/javascript/x.ts", CATCH_ALL, () => false)).toBeNull();
+  });
+
+  it("declines a catch-all match when no probe can verify it, rather than guessing", () => {
+    // Same rule with the oracle missing entirely: unverifiable means unmapped,
+    // which leaves the call external — the safe direction.
+    expect(mapImportToFile("react-app/hooks/useDebounce", "app/javascript/x.ts", CATCH_ALL)).toBeNull();
+  });
+
+  it("takes the first of several catch-all roots that verifiably exists", () => {
+    // A `paths` entry may list more than one root; tsc tries them in order.
+    // Only `targets[0]` was ever consulted, so a second root was dead config.
+    const paths = { "*": ["./packages/a/*", "./packages/b/*"] };
+    const exists = (rel: string) => rel === "packages/b/thing.ts";
+    expect(mapImportToFile("thing", "packages/a/x.ts", { baseUrl: ".", paths }, exists)).toBe("packages/b/thing.ts");
+  });
+
+  it("takes the first of several EXPLICIT-pattern roots that verifiably exists", () => {
+    const paths = { "@/*": ["./src/*", "./legacy/*"] };
+    const exists = (rel: string) => rel === "legacy/foo.ts";
+    expect(mapImportToFile("@/foo", "src/x.ts", { baseUrl: ".", paths }, exists)).toBe("legacy/foo.ts");
+  });
+
+  it("keeps the unverified fallback for an EXPLICIT pattern that matches nothing on disk", () => {
+    // Only the catch-all is gated. `@/*` cannot match an npm specifier, so its
+    // pre-existing "answer with the first candidate" behaviour stands — a path
+    // no file table entry matches drops the edge, where the gate here would
+    // change behaviour the extension-probe tests already pin.
+    expect(mapImportToFile("@/foo", "src/x.ts", { baseUrl: ".", paths: { "@/*": ["./src/*"] } }, () => false)).toBe(
+      "src/foo.ts",
+    );
+  });
+
+  it("resolves taxdome's real shape against a real project tree", () => {
+    const repoRoot = mkdtempSync(join(tmpdir(), "ts-path-mapper-catchall-"));
+    mkdirSync(join(repoRoot, "app", "javascript", "react-app", "hooks"), { recursive: true });
+    mkdirSync(join(repoRoot, "app", "javascript", "Routes"), { recursive: true });
+    writeFileSync(join(repoRoot, "app", "javascript", "react-app", "hooks", "useDebounce.ts"), "export const x = 1;\n");
+    writeFileSync(join(repoRoot, "app", "javascript", "Routes", "index.ts"), "export const routes = [];\n");
+    try {
+      const probe = createProjectFileProbe(repoRoot);
+      const caller = "app/javascript/react-app/Page.tsx";
+      expect(mapImportToFile("react-app/hooks/useDebounce", caller, CATCH_ALL, probe)).toBe(
+        "app/javascript/react-app/hooks/useDebounce.ts",
+      );
+      expect(mapImportToFile("Routes", caller, CATCH_ALL, probe)).toBe("app/javascript/Routes/index.ts");
+      expect(mapImportToFile("react", caller, CATCH_ALL, probe)).toBeNull();
+      expect(mapImportToFile("lodash/debounce", caller, CATCH_ALL, probe)).toBeNull();
+      expect(mapImportToFile("@tanstack/react-query", caller, CATCH_ALL, probe)).toBeNull();
+    } finally {
+      rmSync(repoRoot, { recursive: true, force: true });
+    }
+  });
+});
+
 describe("createProjectFileProbe (bd tea-rags-mcp-f3zcy)", () => {
   const repoRoot = mkdtempSync(join(tmpdir(), "ts-path-mapper-"));
   mkdirSync(join(repoRoot, "src"), { recursive: true });

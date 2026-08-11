@@ -55,7 +55,7 @@ export class TSImportBasenameSymbolResolutionStrategy implements SymbolResolutio
     // compares receiver TEXT to the specifier's basename, so a local `sessions`
     // array collides with a `sessions.ts` the caller imports and `sessions.map`
     // lands a file-only edge on a module the call never enters.
-    if (targetsExternalImport(call, ctx, this.cfg.tsOptions, this.programCache)) return CONTINUE;
+    if (targetsExternalImport(call, ctx, this.cfg.tsOptions, this.programCache, this.cfg.fileExists)) return CONTINUE;
     return deferred({ targetRelPath: targetFile, targetSymbolId: null });
   }
 }

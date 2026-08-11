@@ -264,7 +264,7 @@ export class TSCallResolver implements CallResolver {
    * internal denominator and count as a resolver miss.
    */
   targetsExternalImport(call: CallRef, ctx: CallContext): boolean {
-    return targetsExternalImport(call, ctx, this.tsOptions, this.programCache);
+    return targetsExternalImport(call, ctx, this.tsOptions, this.programCache, this.fileExists);
   }
 
   /**

@@ -1,10 +1,10 @@
-import { describe, expect, it } from "vitest";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 
-import type {
-  CallContext,
-  CallRef,
-  LocalBinding,
-} from "../../../../../../src/core/contracts/types/codegraph.js";
+import { afterAll, describe, expect, it } from "vitest";
+
+import type { CallContext, CallRef, LocalBinding } from "../../../../../../src/core/contracts/types/codegraph.js";
 import { TSCallResolver } from "../../../../../../src/core/domains/language/typescript/resolver/ts-resolver.js";
 import { InMemoryGlobalSymbolTable } from "../../../../../../src/core/domains/trajectory/codegraph/symbols/symbol-table.js";
 
@@ -157,5 +157,50 @@ describe("TSCallResolver.targetsExternalImport — builtin receiver type", () =>
     const call: CallRef = { callText: "this.store.read()", receiver: "this.store", member: "read", startLine: 5 };
     const ctx = makeTypedCtx({ callerScope: ["Service"], classFieldTypes: { Service: { store: "Store" } } });
     expect(resolver.targetsExternalImport(call, ctx)).toBe(false);
+  });
+});
+
+/**
+ * The classifier under a bare `"*"` catch-all (bd tea-rags-mcp-t6ycg).
+ *
+ * Case 2 asks `mapImportToFile` whether a specifier names a project file and
+ * calls the call external when it does not. Under a catch-all that question is
+ * only answerable with a `ProjectFileProbe` — the pattern matches npm packages
+ * and project modules alike, so an unverified answer would either fabricate an
+ * in-project path for `lodash` or, without the probe, call every one of
+ * taxdome's 86 296 alias-bound imports external.
+ *
+ * Both directions are pinned here because they are the same bug seen from
+ * either side, and only the pair proves the probe is actually reaching the
+ * predicate rather than the mapper defaulting one way.
+ */
+describe("TSCallResolver.targetsExternalImport under a `*` catch-all (bd tea-rags-mcp-t6ycg)", () => {
+  const repoRoot = mkdtempSync(join(tmpdir(), "ts-external-catchall-"));
+  mkdirSync(join(repoRoot, "app", "javascript", "api"), { recursive: true });
+  writeFileSync(join(repoRoot, "app", "javascript", "api", "client.ts"), "export const client = {};\n");
+
+  afterAll(() => {
+    rmSync(repoRoot, { recursive: true, force: true });
+  });
+
+  const resolver = new TSCallResolver({ baseUrl: ".", paths: { "*": ["./app/javascript/*"] } }, "strict", repoRoot);
+
+  function ctxFor(importText: string, importedNames: string[]): CallContext {
+    return {
+      callerFile: "app/javascript/react-app/Page.tsx",
+      callerScope: [],
+      imports: [{ importText, startLine: 1, importedNames }],
+      symbolTable: new InMemoryGlobalSymbolTable(),
+    };
+  }
+
+  it("does NOT call an alias-mapped project import external", () => {
+    const call: CallRef = { callText: "client.get(u)", receiver: "client", member: "get", startLine: 5 };
+    expect(resolver.targetsExternalImport(call, ctxFor("api/client", ["client"]))).toBe(false);
+  });
+
+  it("still calls a genuine npm import external under the same catch-all", () => {
+    const call: CallRef = { callText: "debounce(fn)", receiver: null, member: "debounce", startLine: 5 };
+    expect(resolver.targetsExternalImport(call, ctxFor("lodash/debounce", ["debounce"]))).toBe(true);
   });
 });
