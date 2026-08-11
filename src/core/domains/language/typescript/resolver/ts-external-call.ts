@@ -24,6 +24,7 @@ import type ts from "typescript";
 
 import { resolveLocalBindingType, type CallContext, type CallRef } from "../../../../contracts/types/codegraph.js";
 import {
+  BARE_GLOBAL_CALLABLES,
   ECMASCRIPT_BUILTIN_PROTOTYPE_METHODS,
   ECMASCRIPT_BUILTIN_TYPES,
   ECMASCRIPT_CONTAINER_PROTOTYPE_METHODS,
@@ -63,8 +64,14 @@ import type { TSProgramCache } from "./ts-program-cache.js";
  *   6. there is NO receiver, and the bare callee is a local value binding whose
  *      call signatures are all declared outside the project — a hook return
  *      (`useState`'s setter, `t`, `navigate`), see
- *      {@link calleeIsExternalLocalBinding}. The only arm that speaks for a free
- *      call; every other one inspects a receiver (bd tea-rags-mcp-qdjfu).
+ *      {@link calleeIsExternalLocalBinding} (bd tea-rags-mcp-qdjfu);
+ *   7. there is NO receiver, and the member name is a JS/Node/browser ambient
+ *      global callable with no project-local declaration possible — see
+ *      {@link BARE_GLOBAL_CALLABLES} (bd tea-rags-mcp-4008o). Case 6 only
+ *      covers LOCAL value bindings (closures, hook returns); this is the
+ *      arm for a TRUE ambient global (`parseInt`, `fetch`, `setTimeout`),
+ *      whose declaration lives in `lib.es5.d.ts` / `lib.dom.d.ts`, never in
+ *      any file this project owns.
  *
  * PRECISION: cases 3 and 4 are mutually exclusive BY CONSTRUCTION, and that is
  * the load-bearing detail. A receiver whose type IS known decides the question
@@ -87,6 +94,12 @@ export function targetsExternalImport(
   // a receiver, and a free call carries no receiver at all.
   const receiver = call.receiver ?? null;
   if (receiver !== null && ECMASCRIPT_GLOBALS.has(receiver)) return true;
+  // case 7: a bare call to a known ambient global function/constructor —
+  // parseInt(x), fetch(url), setTimeout(fn) — no receiver, so cases 1-5 never
+  // see it, and case 6 only covers LOCAL value bindings (closures, hook
+  // returns), never a true ambient declared outside any file this project
+  // owns (bd tea-rags-mcp-4008o).
+  if (receiver === null && BARE_GLOBAL_CALLABLES.has(call.member)) return true;
   // Receiver-bound external, or a bare named import called directly
   // (`import { readFile } from "node:fs"` → `readFile()`).
   const boundName = receiver ?? call.member;
