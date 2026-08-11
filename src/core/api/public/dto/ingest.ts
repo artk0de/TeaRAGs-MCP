@@ -27,6 +27,18 @@ export interface IndexOptions {
   forceReindex?: boolean;
   extensions?: string[];
   ignorePatterns?: string[];
+  /**
+   * Rebuild the enrichment layer for the whole index, restricted to these
+   * provider-key selectors (`all`, `git`, `codegraph`, `codegraph.symbols`, …).
+   *
+   * The working tree is synced incrementally first — embeddings are paid only
+   * for files that actually changed — and the enrichment layer is then rebuilt
+   * for every point, not just the unenriched ones. Use when a provider's OUTPUT
+   * changed (new signal, new walker, new resolution strategy) while the source
+   * did not. Mutually exclusive with `forceReindex`, which rebuilds everything
+   * including the vectors.
+   */
+  forceEnrichments?: string[];
 }
 
 // ---------------------------------------------------------------------------

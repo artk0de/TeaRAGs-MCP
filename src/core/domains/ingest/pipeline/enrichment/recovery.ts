@@ -21,6 +21,22 @@ export interface RecoveryResult {
   remainingUnenriched: number;
 }
 
+/**
+ * Which points a pass considers candidates.
+ *
+ * - `unenriched` — the healing default: points settled by neither terminal
+ *   marker, i.e. genuine damage.
+ * - `all` — a deliberate recompute: every enrichable point, including ones
+ *   already carrying a fresh `enrichedAt`. Used when the provider's OUTPUT
+ *   changed (new signal, new resolver) and the existing payload is stale even
+ *   though it is present.
+ *
+ * The two differ only in the candidate filter; everything downstream — policy
+ * skips, batching, the failed-batch floor — is shared, so a recompute cannot
+ * quietly diverge from recovery's behaviour.
+ */
+export type RecoveryScope = "unenriched" | "all";
+
 interface UnenrichedPoint {
   id: string | number;
   relativePath: string;
@@ -122,8 +138,9 @@ export class EnrichmentRecovery {
     absolutePath: string,
     provider: EnrichmentProvider,
     enrichedAt: string,
+    scope: RecoveryScope = "unenriched",
   ): Promise<RecoveryResult> {
-    return this.recoverLevel(collectionName, absolutePath, provider, "file", async (batch, root) => {
+    return this.recoverLevel(collectionName, absolutePath, provider, "file", scope, async (batch, root) => {
       // Batched recovery — must NOT route through streamFileBatch; the
       // streaming extraction side-effects belong to the live file phase, not
       // to post-hoc recovery.
@@ -168,8 +185,9 @@ export class EnrichmentRecovery {
     absolutePath: string,
     provider: EnrichmentProvider,
     enrichedAt: string,
+    scope: RecoveryScope = "unenriched",
   ): Promise<RecoveryResult> {
-    return this.recoverLevel(collectionName, absolutePath, provider, "chunk", async (batch, root) => {
+    return this.recoverLevel(collectionName, absolutePath, provider, "chunk", scope, async (batch, root) => {
       // Build chunkMap for this batch: Map<relativePath, ChunkLookupEntry[]>
       const chunkMap = new Map<string, { chunkId: string; startLine: number; endLine: number }[]>();
       const batchChunkIds = new Set<string>();
@@ -221,9 +239,10 @@ export class EnrichmentRecovery {
     absolutePath: string,
     provider: EnrichmentProvider,
     level: "file" | "chunk",
+    scope: RecoveryScope,
     healBatch: (batch: RecoveryBatch, root: string) => Promise<RecoveredCounts>,
   ): Promise<RecoveryResult> {
-    const scan = await this.scanUnenriched(collectionName, provider, level);
+    const scan = await this.scanUnenriched(collectionName, provider, level, scope);
     await this.stampDeclined(collectionName, provider.key, level, scan.declined);
 
     if (scan.owed.length === 0) {
@@ -313,13 +332,14 @@ export class EnrichmentRecovery {
     absolutePath: string,
     contexts: ReadonlyMap<string, ProviderContext>,
     markerStore: EnrichmentMarkerStore,
+    scope: RecoveryScope = "unenriched",
   ): Promise<void> {
     const enrichedAt = new Date().toISOString();
     for (const ctx of contexts.values()) {
       const baselineRunId = await markerStore.getRunId(coll, ctx.key);
 
-      const fileResult = await this.recoverFileLevel(coll, absolutePath, ctx.provider, enrichedAt);
-      const chunkResult = await this.recoverChunkLevel(coll, absolutePath, ctx.provider, enrichedAt);
+      const fileResult = await this.recoverFileLevel(coll, absolutePath, ctx.provider, enrichedAt, scope);
+      const chunkResult = await this.recoverChunkLevel(coll, absolutePath, ctx.provider, enrichedAt, scope);
 
       const currentRunId = await markerStore.getRunId(coll, ctx.key);
       if (baselineRunId !== currentRunId) {
@@ -349,16 +369,26 @@ export class EnrichmentRecovery {
   /**
    * Build the Qdrant filter for chunks missing `{providerKey}.{level}.enrichedAt`.
    */
-  private buildUnenrichedFilter(providerKey: string, level: "file" | "chunk"): Record<string, unknown> {
+  private buildUnenrichedFilter(
+    providerKey: string,
+    level: "file" | "chunk",
+    scope: RecoveryScope = "unenriched",
+  ): Record<string, unknown> {
     const enrichedAtField = `${providerKey}.${level}.enrichedAt`;
     const skippedAsField = `${providerKey}.${level}.skippedAs`;
+    // A forced recompute drops BOTH terminal-state conditions: the payload it
+    // rewrites is present and stamped, so filtering on "not yet settled" would
+    // select nothing. The must_not exclusions stay — those points cannot be
+    // enriched at any scope.
+    const settled =
+      scope === "all" ? [] : [{ is_empty: { key: enrichedAtField } }, { is_empty: { key: skippedAsField } }];
     return {
       // Two terminal states, both of which settle a point: it was enriched, or
       // policy declined it. A candidate carries neither. Without the second
       // condition the filter cannot express the policy server-side, so the whole
       // declined population is shipped to the client and discarded there on
       // every run — see the skip-stamp design spec.
-      must: [{ is_empty: { key: enrichedAtField } }, { is_empty: { key: skippedAsField } }],
+      must: settled,
       must_not: [
         { key: "_type", match: { value: "indexing_metadata" } },
         { key: "_type", match: { value: "schema_metadata" } },
@@ -383,8 +413,9 @@ export class EnrichmentRecovery {
     collectionName: string,
     provider: EnrichmentProvider,
     level: "file" | "chunk",
+    scope: RecoveryScope = "unenriched",
   ): Promise<UnenrichedScan> {
-    const filter = this.buildUnenrichedFilter(provider.key, level);
+    const filter = this.buildUnenrichedFilter(provider.key, level, scope);
     const points = await this.qdrant.scrollFiltered(
       collectionName,
       filter,

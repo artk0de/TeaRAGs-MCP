@@ -17,6 +17,7 @@ import { randomUUID } from "node:crypto";
 import type { Ignore } from "ignore";
 
 import type { QdrantManager } from "../../../../adapters/qdrant/client.js";
+import { selectProviderKeys } from "../../../../contracts/provider-selector.js";
 import type { FileExtraction } from "../../../../contracts/types/codegraph.js";
 import type {
   EnrichmentExecutor,
@@ -392,6 +393,43 @@ export class EnrichmentCoordinator {
       await this.recovery.recoverAll(collectionName, absolutePath, contexts, this.markerStore);
     } finally {
       // Never let a failing release mask the recovery outcome.
+      await release().catch(() => undefined);
+    }
+  }
+
+  /**
+   * Rebuild enrichment payload for EVERY point of the selected providers.
+   *
+   * Recovery heals what is missing; this rebuilds what is already present but
+   * stale — the case where a provider's output changed (new signal, new
+   * resolver, new walker) while the points themselves did not. It reuses
+   * recovery's traversal at `"all"` scope rather than duplicating the batching,
+   * policy-skip and failed-batch handling.
+   *
+   * Selectors resolve through the shared provider-selector rules, so
+   * `codegraph` reaches every provider under that namespace. A selector
+   * matching nothing dispatches nothing: callers validate up front and this is
+   * only the last line.
+   */
+  async recomputeEnrichments(
+    collectionName: string,
+    absolutePath: string,
+    selectors: readonly string[],
+  ): Promise<void> {
+    if (!this.recovery) return;
+    const { matched } = selectProviderKeys(this.providerKeys, selectors);
+    if (matched.length === 0) return;
+
+    const selected = this.providers.filter((p) => matched.includes(p.key));
+    // Same keep-alive reasoning as runRecovery: this runs outside a run-scoped
+    // window, and codegraph batches reach a connect-only daemon worker.
+    const release = await this.daemonGuard.begin(collectionName).catch(() => NOOP_RELEASE);
+    try {
+      const contexts = new Map<string, ProviderContext>(
+        selected.map((p) => [p.key, { key: p.key, provider: p, effectiveRoot: null, ignoreFilter: null }]),
+      );
+      await this.recovery.recoverAll(collectionName, absolutePath, contexts, this.markerStore, "all");
+    } finally {
       await release().catch(() => undefined);
     }
   }

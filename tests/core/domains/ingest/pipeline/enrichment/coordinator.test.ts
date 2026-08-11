@@ -1789,8 +1789,11 @@ describe("EnrichmentCoordinator — recovery integration", () => {
 
     await coordWithRecovery.runRecovery("col", "/root");
 
-    expect(fileSpy).toHaveBeenCalledWith("col", "/root", mockProvider, expect.any(String));
-    expect(chunkSpy).toHaveBeenCalledWith("col", "/root", mockProvider, expect.any(String));
+    // "unenriched" is the invariant here, not an incidental argument: recovery
+    // HEALS what is missing. Rebuilding payload that is already present is the
+    // separate, explicitly-requested recomputeEnrichments path.
+    expect(fileSpy).toHaveBeenCalledWith("col", "/root", mockProvider, expect.any(String), "unenriched");
+    expect(chunkSpy).toHaveBeenCalledWith("col", "/root", mockProvider, expect.any(String), "unenriched");
   });
 
   it("should be no-op when recovery not provided", async () => {

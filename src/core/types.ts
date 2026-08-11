@@ -74,6 +74,14 @@ export interface IndexOptions {
   forceReindex?: boolean;
   extensions?: string[];
   ignorePatterns?: string[];
+  /**
+   * Rebuild the enrichment layer for the whole index, restricted to these
+   * provider-key selectors (`all`, `git`, `codegraph`, `codegraph.symbols`, …).
+   * Syncs the working tree incrementally first, so embeddings are paid only for
+   * files that changed. Mutually exclusive with `forceReindex`. Mirrors the
+   * public DTO in `api/public/dto/ingest.ts`.
+   */
+  forceEnrichments?: string[];
 }
 
 export interface IndexStats {
