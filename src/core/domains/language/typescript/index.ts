@@ -107,12 +107,24 @@ export class TypeScriptLanguage implements LanguageProvider {
   };
   readonly resolver: LanguageSymbolResolver;
 
-  constructor(mode: AmbiguousResolveMode = DEFAULT_AMBIGUOUS_RESOLVE_MODE) {
-    // One root for both concerns: the tsconfig the path mapper reads and the
-    // project the typeChecker fallback resolves files against must be the same
-    // directory, or a Program would be built from paths the mapper never
-    // produces (bd tea-rags-mcp-uclbn).
-    const repoRoot = process.cwd();
+  /**
+   * @param mode Ambiguous-resolution behaviour, matching the legacy adapter's
+   *   `TSCallResolver` default.
+   * @param repoRoot Root of the project being INDEXED. One root serves both
+   *   concerns: the tsconfig the path mapper reads and the project the
+   *   typeChecker fallback resolves files against must be the same directory,
+   *   or a Program would be built from paths the mapper never produces
+   *   (bd tea-rags-mcp-uclbn).
+   *
+   *   This was `process.cwd()`, computed here with no way to override it, and
+   *   `LanguageFactory.create(lang)` took no root either — so an index run
+   *   launched from anywhere but the target repo loaded the wrong
+   *   `tsconfig.json` and silently lost every path alias
+   *   (bd tea-rags-mcp-f4wcm). It defaults to `process.cwd()` still, so direct
+   *   construction from within the target repo behaves as before; the codegraph
+   *   provider factory passes the real `config.rootDir`.
+   */
+  constructor(mode: AmbiguousResolveMode = DEFAULT_AMBIGUOUS_RESOLVE_MODE, repoRoot: string = process.cwd()) {
     const callResolver: CallResolver = new TSCallResolver(loadTsConfig(repoRoot), mode, repoRoot);
     this.resolver = {
       resolve: (call: CallRef, ctx: CallContext): SymbolResolutionTarget | null => callResolver.resolve(call, ctx),
