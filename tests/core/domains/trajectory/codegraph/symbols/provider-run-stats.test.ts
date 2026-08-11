@@ -252,27 +252,37 @@ describe("CodegraphEnrichmentProvider — run-stats persistence (2jet-D)", () =>
     }
   });
 
-  // A run that observed a language but attempted NO call site produces one
-  // all-zero row per receiver kind — a non-empty array of nothing. recordRunStats
-  // is DELETE+INSERT, so persisting it ERASES the last real measurement, and
-  // prime's "## Codegraph resolve" section disappears. Observed live on
-  // 2026-08-11: consecutive --force-enrichments codegraph runs alternated
-  // between a full breakdown and no section at all.
-  it("keeps the previous measurement when a run tallied nothing", async () => {
+  // A run that WALKS files but finds no call site still registers the language:
+  // `languageKindTally` (resolution-runner.ts:229) is called once per file,
+  // before the per-call loop, so `byLanguageKind` gains a zeroed entry even for
+  // a file with zero calls. `toResolveRunStatsRows` then emits one ALL-ZERO row
+  // per receiver kind — a non-empty array of nothing — which the
+  // `rows.length === 0` guard does not catch. recordRunStats is DELETE+INSERT,
+  // so it erases the last real measurement and prime's "## Codegraph resolve"
+  // section vanishes until some later run happens to observe calls again.
+  //
+  // Observed live 2026-08-11 on the tea-rags self-index: the section alternated
+  // between a full breakdown and nothing across consecutive runs.
+  it("keeps the previous measurement when a run walks files but tallies no call", async () => {
     const root = makeRoot();
+    // A file with a symbol but not a single call site.
+    writeFileSync(join(root, "src", "silent.ts"), "export class Silent {\n  idle(): number { return 1; }\n}\n");
     try {
       await provider.streamFileBatch(root, ["src/foo.ts"]);
       await provider.streamFileBatch(root, ["src/main.ts"]);
       await provider.finalizeSignals(root);
-      const measured = await client.getRunStats();
-      expect(measured.find((r) => r.receiverKind === "constant")).toMatchObject({ attempted: 2, resolved: 1 });
+      expect((await client.getRunStats()).find((r) => r.receiverKind === "constant")).toMatchObject({
+        attempted: 2,
+        resolved: 1,
+      });
 
-      // A second finalize with nothing walked: the tally is empty.
+      // Second run walks a call-free file: the language is registered, every
+      // tally stays zero. That must NOT wipe the measurement above.
+      await provider.streamFileBatch(root, ["src/silent.ts"]);
       await provider.finalizeSignals(root);
 
-      const afterEmptyRun = await client.getRunStats();
-      const constant = afterEmptyRun.find((r) => r.receiverKind === "constant");
-      expect(constant).toMatchObject({ attempted: 2, resolved: 1 });
+      const after = await client.getRunStats();
+      expect(after.find((r) => r.receiverKind === "constant")).toMatchObject({ attempted: 2, resolved: 1 });
     } finally {
       rmSync(root, { recursive: true, force: true });
     }

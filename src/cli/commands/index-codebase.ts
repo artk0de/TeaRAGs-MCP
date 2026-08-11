@@ -92,6 +92,20 @@ function resolveDataDir(): string {
  * selectors actually mean happens in the facade, against the registered
  * providers.
  */
+/**
+ * Should the CLI stay attached until every provider finishes?
+ *
+ * A recompute implies it. The flag exists because an ordinary index run returns
+ * once embeddings are stored and lets enrichment finish in the background — but
+ * a recompute IS the enrichment, so detaching would hand back control before
+ * the layer under test has been rebuilt, leaving nothing to measure and no
+ * per-provider durations. An empty selector list is not a recompute (the facade
+ * rejects it), so it must not turn a plain incremental into a blocking run.
+ */
+export function resolveWaitEnrichments(waitFlag: boolean, forceEnrichments: string[] | undefined): boolean {
+  return waitFlag || (forceEnrichments !== undefined && forceEnrichments.length > 0);
+}
+
 export function parseEnrichmentSelectors(raw: string | undefined): string[] | undefined {
   if (raw === undefined) return undefined;
   return raw
@@ -168,7 +182,8 @@ export const indexCodebaseCommand: CommandModule<object, IndexCodebaseArgs> = {
           "Value is required — comma-separated provider keys or `all` " +
           "(e.g. all, git, codegraph, codegraph.symbols). " +
           "Use this to validate a new signal, walker, or resolver; use --force only when " +
-          "chunking, parsing, or the vectors themselves changed.",
+          "chunking, parsing, or the vectors themselves changed. Implies --wait-enrichments: " +
+          "the recompute IS the enrichment, so detaching would return before it finished.",
       })
       // NOT `.conflicts()`: `--force` declares `default: false`, and yargs
       // treats a key carrying a default as PRESENT, so `.conflicts()` rejected
@@ -203,7 +218,7 @@ export const indexCodebaseCommand: CommandModule<object, IndexCodebaseArgs> = {
       forceReindex: Boolean(argv.force),
       ...(forceEnrichments ? { forceEnrichments } : {}),
     };
-    const waitEnrichments = Boolean(argv["wait-enrichments"]);
+    const waitEnrichments = resolveWaitEnrichments(Boolean(argv["wait-enrichments"]), forceEnrichments);
     const jsonMode = Boolean(argv.json);
 
     const dataDir = resolveDataDir();

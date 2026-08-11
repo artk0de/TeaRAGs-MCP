@@ -8,7 +8,33 @@
 
 import { describe, expect, it } from "vitest";
 
-import { parseEnrichmentSelectors } from "../../src/cli/commands/index-codebase.js";
+import { parseEnrichmentSelectors, resolveWaitEnrichments } from "../../src/cli/commands/index-codebase.js";
+
+describe("resolveWaitEnrichments", () => {
+  it("waits implicitly for a recompute even without the flag", () => {
+    // Detaching mid-recompute returns control before the layer under test has
+    // been rebuilt, so there would be nothing to measure on return.
+    expect(resolveWaitEnrichments(false, ["git"])).toBe(true);
+  });
+
+  it("keeps waiting when the flag is passed alongside", () => {
+    expect(resolveWaitEnrichments(true, ["git"])).toBe(true);
+  });
+
+  it("honours the flag on an ordinary run", () => {
+    expect(resolveWaitEnrichments(true, undefined)).toBe(true);
+  });
+
+  it("still detaches on an ordinary run without the flag", () => {
+    expect(resolveWaitEnrichments(false, undefined)).toBe(false);
+  });
+
+  it("does not wait when the selector list resolved to nothing", () => {
+    // An empty list is rejected downstream; it must not silently turn a plain
+    // incremental into a blocking run.
+    expect(resolveWaitEnrichments(false, [])).toBe(false);
+  });
+});
 
 describe("parseEnrichmentSelectors", () => {
   it("returns undefined when the flag is absent", () => {
