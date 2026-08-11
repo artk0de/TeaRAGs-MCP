@@ -13,7 +13,11 @@
 import { isDebug } from "../../../infra/runtime.js";
 import type { IndexOptions, IndexStats, ProgressCallback } from "../../../types.js";
 import { IndexingFailedError } from "../errors.js";
-import { cleanupOrphanedVersions, sweepCodegraphOrphans } from "../infra/alias-cleanup.js";
+import {
+  cleanupOrphanedVersions,
+  discardFailedCollectionBuild,
+  sweepCodegraphOrphans,
+} from "../infra/alias-cleanup.js";
 import { claimVersionedCollection } from "../infra/collection-build-lease.js";
 import { HeartbeatGuard } from "../infra/heartbeat-guard.js";
 import { OptimizerLifecycle } from "../infra/optimizer-lifecycle.js";
@@ -63,6 +67,9 @@ export class IndexPipeline extends BaseIndexingPipeline {
     };
 
     const { absolutePath, collectionName } = await this.resolveContext(path);
+    // Held outside the try so the failure path knows which versioned collection
+    // this run created and can discard it (bd tea-rags-mcp-8pymz).
+    let build: SetupResult | undefined;
 
     try {
       const { files, scanner } = await this.scanAndReport(absolutePath, options, progressCallback);
@@ -77,6 +84,7 @@ export class IndexPipeline extends BaseIndexingPipeline {
       // create / schema init / alias bookkeeping before any chunk is ingested.
       const qdrantSetupStart = Date.now();
       const setup = await this.setupCollection(collectionName, absolutePath, options, overrides?.modelInfo?.dimensions);
+      build = setup;
       pipelineLog.addStageTime("qdrant-setup", Date.now() - qdrantSetupStart);
       /* v8 ignore next 7 -- defensive guard: facade handles exists-without-force via reindexChanges */
       if (!setup.ready) {
@@ -185,6 +193,14 @@ export class IndexPipeline extends BaseIndexingPipeline {
         });
       });
     } catch (error) {
+      // The run is over and its versioned collection will never be promoted.
+      // Discard it here rather than leaving it for the next run's lazy sweep,
+      // which may be days away or never come — but only when the base name is
+      // still served by something else, so an interrupted FIRST index keeps the
+      // only data it has (bd tea-rags-mcp-8pymz).
+      if (build?.ready) {
+        await discardFailedCollectionBuild(this.qdrant, collectionName, build.targetCollection, this.codegraphRemover);
+      }
       this.wrapUnexpectedError(error, IndexingFailedError);
     } finally {
       const cleaner = new SnapshotCleaner(this.snapshotDir, collectionName);
