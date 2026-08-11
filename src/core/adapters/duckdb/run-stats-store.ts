@@ -19,8 +19,20 @@ export class DuckDbRunStatsStore {
   async recordRunStats(rows: ResolveRunStatsRow[]): Promise<void> {
     // Overwrite semantics: DELETE+INSERT inside one transaction so a prior
     // run's receiver kinds never leak into this run's breakdown.
+    //
+    // Scoped to the languages this run actually observed. A wholesale wipe was
+    // correct only while every run saw the whole corpus; once a run can be
+    // restricted (`--languages`, or simply a corpus where one language changed)
+    // it erases the breakdown of languages it never looked at, and prime then
+    // reports them as gone rather than unchanged.
+    const languages = [...new Set(rows.map((r) => r.language))];
+    if (languages.length === 0) return;
+
     return this.session.transaction(async () => {
-      await this.session.run("DELETE FROM cg_run_stats");
+      await this.session.run(
+        `DELETE FROM cg_run_stats WHERE language IN (${languages.map(() => "?").join(", ")})`,
+        languages,
+      );
       for (const r of rows) {
         await this.session.run(
           "INSERT INTO cg_run_stats (language, receiver_kind, attempted, resolved, external_skipped, unresolvable, no_in_project_def, core_ambiguous, ambiguous_fanout) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",

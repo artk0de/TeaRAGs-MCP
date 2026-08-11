@@ -434,6 +434,13 @@ export class EnrichmentCoordinator {
     collectionName: string,
     absolutePath: string,
     selectors: readonly string[],
+    /**
+     * Restrict the recompute to points of these languages. Omitted (or empty)
+     * means the whole index, which is what every caller did before the
+     * `--languages` flag existed. Validation against the languages actually
+     * present happens in the facade — by here the list is already known-good.
+     */
+    languages?: readonly string[],
   ): Promise<EnrichmentMetrics> {
     const { matched } = selectProviderKeys(this.providerKeys, selectors);
     if (matched.length === 0) return EMPTY_METRICS;
@@ -441,7 +448,7 @@ export class EnrichmentCoordinator {
     // Re-derive the chunk set from the index itself. The points are already
     // stored — this pass rewrites their payload, so the ids and line ranges
     // come from Qdrant rather than from a fresh chunking pass.
-    const stored = await this.scrollStoredChunks(collectionName, absolutePath);
+    const stored = await this.scrollStoredChunks(collectionName, absolutePath, languages);
     if (stored.items.length === 0) return EMPTY_METRICS;
 
     this.beginRun(absolutePath, collectionName, undefined, undefined, false, stored.fileCount, matched);
@@ -473,11 +480,20 @@ export class EnrichmentCoordinator {
   private async scrollStoredChunks(
     collectionName: string,
     absolutePath: string,
+    languages?: readonly string[],
   ): Promise<{ items: ChunkItem[]; chunkMap: Map<string, ChunkLookupEntry[]>; fileCount: number }> {
     const root = absolutePath.endsWith("/") ? absolutePath.slice(0, -1) : absolutePath;
+    // Narrowing here rather than after the read is the point of the flag: a
+    // post-filter would still pull every point of the corpus through memory.
+    // An EMPTY list means "no restriction" — `match: { any: [] }` selects
+    // nothing in Qdrant, which would turn the run into a silent no-op that
+    // still reports success.
+    const languageFilter =
+      languages && languages.length > 0 ? { must: [{ key: "language", match: { any: [...languages] } }] } : {};
     const points = await this.qdrant.scrollFiltered(
       collectionName,
       {
+        ...languageFilter,
         must_not: [
           { key: "_type", match: { value: "indexing_metadata" } },
           { key: "_type", match: { value: "schema_metadata" } },

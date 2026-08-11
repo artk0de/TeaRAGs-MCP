@@ -22,6 +22,7 @@ import { computeCollectionStats } from "../../../domains/ingest/infra/collection
 import { resolveAliasTargetCollection } from "../../../domains/ingest/operations/index.js";
 import type { IndexPipeline } from "../../../domains/ingest/operations/indexing.js";
 import type { ReindexPipeline } from "../../../domains/ingest/operations/reindexing.js";
+import { extensionsForLanguages } from "../../../domains/ingest/pipeline/chunker/config.js";
 import type { EnrichmentCoordinator } from "../../../domains/ingest/pipeline/enrichment/coordinator.js";
 import { parseMarkerPayload } from "../../../domains/ingest/pipeline/indexing-marker-codec.js";
 import { pipelineLog } from "../../../domains/ingest/pipeline/infra/debug-logger.js";
@@ -151,7 +152,7 @@ export class IndexingOps {
     pipelineLog.resetProfiler();
     this.enrichment.setEnrichmentProgress(enrichmentProgress);
     if (options?.forceEnrichments && options.forceEnrichments.length > 0) {
-      return this.recomputeEnrichments(path, options.forceEnrichments, progressCallback);
+      return this.recomputeEnrichments(path, options.forceEnrichments, options.languages, progressCallback);
     }
     if (!options?.forceReindex) {
       const incremental = await this.tryIncrementalIndex(path, progressCallback);
@@ -444,6 +445,7 @@ export class IndexingOps {
   private async recomputeEnrichments(
     path: string,
     selectors: readonly string[],
+    languages: readonly string[] | undefined,
     progressCallback?: ProgressCallback,
   ): Promise<IndexStats> {
     const absolutePath = await validatePath(path);
@@ -462,7 +464,12 @@ export class IndexingOps {
 
     const changeStats = await this.reindex.reindexChanges(path, progressCallback);
     const startedAt = Date.now();
-    const enrichmentMetrics = await this.enrichment.recomputeEnrichments(collectionName, absolutePath, selectors);
+    const enrichmentMetrics = await this.enrichment.recomputeEnrichments(
+      collectionName,
+      absolutePath,
+      selectors,
+      languages,
+    );
     const enrichmentDurationMs = Date.now() - startedAt;
     await this.refreshStats(path);
 
@@ -485,7 +492,7 @@ export class IndexingOps {
     await this.checkEmbeddingHealth();
     const modelInfo = await this.resolveModelInfo();
     const effectiveChunkSize = this.resolveEffectiveChunkSize(modelInfo);
-    const result = await this.indexing.indexCodebase(path, options, progressCallback, {
+    const result = await this.indexing.indexCodebase(path, applyLanguageFilter(options), progressCallback, {
       chunkSize: effectiveChunkSize,
       modelInfo,
     });
@@ -611,4 +618,27 @@ function toIndexStats(changeStats: ChangeStats): IndexStats {
       filesRetried: changeStats.filesRetried,
     },
   };
+}
+
+/**
+ * Turn a `languages` selection into the extension filter the scanner accepts.
+ *
+ * The scanner has no notion of a language, so this is where the two vocabularies
+ * meet — and why restricting a full reindex needed no new plumbing at all.
+ *
+ * When the caller ALSO passed explicit extensions the two are intersected, not
+ * overridden: both are restrictions, and honouring only one would widen the run
+ * past what was asked for. Absent `languages`, options pass through untouched,
+ * which keeps an ordinary force reindex byte-identical to before.
+ */
+export function applyLanguageFilter(options: IndexOptions | undefined): IndexOptions | undefined {
+  const languages = options?.languages;
+  if (!options || !languages || languages.length === 0) return options;
+
+  const fromLanguages = extensionsForLanguages(languages);
+  const extensions = options.extensions
+    ? options.extensions.filter((ext) => fromLanguages.includes(ext))
+    : fromLanguages;
+
+  return { ...options, extensions };
 }

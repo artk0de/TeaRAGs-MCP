@@ -491,3 +491,38 @@ export const LANGUAGE_MAP: Record<string, string> = {
   ".vue": "vue",
   ".svelte": "svelte",
 };
+
+/**
+ * File extensions owned by the given languages.
+ *
+ * The inverse of `LANGUAGE_MAP`, and it lives beside it so the two cannot drift
+ * — a language added above is selectable here with no second edit. Used to turn
+ * a `--languages` selection into the extension list the file scanner already
+ * accepts, which is why a full reindex needs no new plumbing to be restricted.
+ *
+ * A language maps to SEVERAL extensions (`typescript` → `.ts`, `.tsx`), so
+ * collapsing to one would silently skip most of a React codebase. Total by
+ * design: an unmatched language yields nothing rather than throwing, because
+ * validation against the indexed languages has already run by the time a
+ * caller gets here.
+ */
+/**
+ * Languages the `--languages` filter can name.
+ *
+ * Derived from `LANGUAGE_MAP` rather than from `LANGUAGE_DEFINITIONS` on
+ * purpose: this is the set for which `extensionsForLanguages` can produce a
+ * non-empty answer, so validating against it makes "accepted by validation" and
+ * "actually selects files" the same set. A language with a parser but no
+ * extension mapping would pass a `LANGUAGE_DEFINITIONS` check and then select
+ * nothing under `--force`.
+ */
+export const SELECTABLE_LANGUAGES: readonly string[] = [...new Set(Object.values(LANGUAGE_MAP))];
+
+export function extensionsForLanguages(languages: readonly string[]): string[] {
+  const wanted = new Set(languages.map((language) => language.trim().toLowerCase()));
+  const extensions = new Set<string>();
+  for (const [extension, language] of Object.entries(LANGUAGE_MAP)) {
+    if (wanted.has(language)) extensions.add(extension);
+  }
+  return [...extensions];
+}

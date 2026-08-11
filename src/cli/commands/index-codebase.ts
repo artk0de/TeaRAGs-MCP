@@ -27,6 +27,7 @@ export interface IndexCodebaseArgs {
   force?: boolean;
   /** Comma-separated enrichment provider selectors, or `all`. */
   "force-enrichments"?: string;
+  languages?: string;
   json?: boolean;
   /** Hidden: marks the forked child as the detached indexing worker. */
   __worker?: boolean;
@@ -115,6 +116,23 @@ export function parseEnrichmentSelectors(raw: string | undefined): string[] | un
 }
 
 /**
+ * Split the `--languages` value into language names.
+ *
+ * Same shape as the enrichment selectors, and deliberately the same
+ * "undefined ≠ empty" contract: absent means the whole index, while an empty
+ * list is a mistake the facade refuses rather than a silent whole-index run.
+ * Which languages are valid is decided there too, against what this build can
+ * chunk.
+ */
+export function parseLanguageSelectors(raw: string | undefined): string[] | undefined {
+  if (raw === undefined) return undefined;
+  return raw
+    .split(",")
+    .map((s) => s.trim())
+    .filter((s) => s.length > 0);
+}
+
+/**
  * Resolve the registered project alias for the given resolved path.
  * Uses `findByPath` for exact path match, then falls back to `get(collectionName)`
  * when collectionName is known. Returns null when no alias is registered.
@@ -185,6 +203,16 @@ export const indexCodebaseCommand: CommandModule<object, IndexCodebaseArgs> = {
           "chunking, parsing, or the vectors themselves changed. Implies --wait-enrichments: " +
           "the recompute IS the enrichment, so detaching would return before it finished.",
       })
+      .option("languages", {
+        type: "string",
+        nargs: 1,
+        describe:
+          "Restrict the run to these languages — comma-separated (e.g. typescript,ruby). " +
+          "With --force-enrichments it narrows the recompute to points of those languages; " +
+          "with --force it narrows the WHOLE run, chunking included, which means the rebuilt " +
+          "collection contains ONLY them. Not valid on a plain incremental run, whose scope is " +
+          "already the set of changed files.",
+      })
       // NOT `.conflicts()`: `--force` declares `default: false`, and yargs
       // treats a key carrying a default as PRESENT, so `.conflicts()` rejected
       // every `--force-enrichments` run even when `--force` was never typed.
@@ -214,9 +242,11 @@ export const indexCodebaseCommand: CommandModule<object, IndexCodebaseArgs> = {
     const resolved = applyProjectDefaults(argv);
     const path = resolve(resolved.path ?? process.cwd());
     const forceEnrichments = parseEnrichmentSelectors(argv["force-enrichments"]);
+    const languages = parseLanguageSelectors(argv.languages);
     const options: IndexOptions = {
       forceReindex: Boolean(argv.force),
       ...(forceEnrichments ? { forceEnrichments } : {}),
+      ...(languages ? { languages } : {}),
     };
     const waitEnrichments = resolveWaitEnrichments(Boolean(argv["wait-enrichments"]), forceEnrichments);
     const jsonMode = Boolean(argv.json);
