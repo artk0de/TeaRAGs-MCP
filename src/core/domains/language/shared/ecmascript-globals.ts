@@ -72,6 +72,17 @@ export const ECMASCRIPT_GLOBALS: ReadonlySet<string> = new Set([
   "URLSearchParams",
   "TextEncoder",
   "TextDecoder",
+  // DOM / BOM ambient (bd tea-rags-mcp-4008o — taxdome React measurement)
+  "window",
+  "document",
+  "navigator",
+  "localStorage",
+  "sessionStorage",
+  "history",
+  "location",
+  "screen",
+  "crypto",
+  "performance",
 ]);
 
 /**
@@ -159,6 +170,28 @@ export const ECMASCRIPT_BUILTIN_TYPES: ReadonlySet<string> = new Set([
   "TextEncoder",
   "TextDecoder",
   "Buffer",
+  // DOM / BOM instance types (bd tea-rags-mcp-4008o — taxdome React
+  // measurement). `Request` / `Response` are DELIBERATELY excluded: they are
+  // exactly the "look-alike" case this file's own `receiverIsExternalInstance`
+  // docblock warns about — Express-style backend frameworks routinely declare
+  // their own `Request`/`Response`, and `ts-annotated-external-receiver-guard.test.ts`
+  // (bd tea-rags-mcp-3somv) already pins that a bare type name must not decide
+  // this outright; those two stay on the checker-arm path (case 4b), same as
+  // before this change.
+  "Event",
+  "CustomEvent",
+  "FormData",
+  "Blob",
+  "File",
+  "FileReader",
+  "AbortController",
+  "Headers",
+  "IntersectionObserver",
+  "MutationObserver",
+  "ResizeObserver",
+  "WebSocket",
+  "Image",
+  "Audio",
 ]);
 
 /**
@@ -261,4 +294,58 @@ export const ECMASCRIPT_CONTAINER_PROTOTYPE_METHODS: ReadonlySet<string> = new S
   "reduce",
   "reduceRight",
   "join",
+]);
+
+/**
+ * bd tea-rags-mcp-4008o — JS/Node/browser ambient globals callable with NO
+ * receiver at all (`parseInt(x)`, `fetch(url)`, `setTimeout(fn, ms)`). Distinct
+ * from {@link ECMASCRIPT_GLOBALS}, which matches receiver TEXT for
+ * namespace-style calls (`Math.max`) — this set matches the bare call's
+ * `member` directly, since a free call carries no receiver for that set to
+ * match against.
+ *
+ * `ts-external-call.ts`'s `targetsExternalImport` case 6
+ * (`calleeIsExternalLocalBinding`) only classifies identifiers whose TS
+ * declaration is a local `Parameter` / `BindingElement` / function-body-local
+ * `VariableDeclaration` (closures, hook returns) — never a true ambient global,
+ * whose declaration lives in `lib.es5.d.ts` / `lib.dom.d.ts` at the global
+ * scope. Before this set existed, these names left the `resolveSuccessRate`
+ * denominator only when no project symbol happened to share them (lexical
+ * accident, tea-rags-mcp-4008o) — this set excludes them by classification,
+ * unconditionally.
+ *
+ * `String` / `Number` / `Boolean` appear here in their BARE CONVERTER-CALL
+ * shape (`String(x)`), distinct from their entries in {@link ECMASCRIPT_GLOBALS}
+ * which match the receiver-text namespace-call shape (`String.fromCharCode(c)`).
+ */
+export const BARE_GLOBAL_CALLABLES: ReadonlySet<string> = new Set([
+  // Numeric / string conversion
+  "parseInt",
+  "parseFloat",
+  "isNaN",
+  "isFinite",
+  "String",
+  "Number",
+  "Boolean",
+  // Timers
+  "setTimeout",
+  "clearTimeout",
+  "setInterval",
+  "clearInterval",
+  "requestAnimationFrame",
+  "cancelAnimationFrame",
+  "queueMicrotask",
+  // Networking / encoding
+  "fetch",
+  "encodeURIComponent",
+  "decodeURIComponent",
+  "encodeURI",
+  "decodeURI",
+  "btoa",
+  "atob",
+  "structuredClone",
+  // User-interaction ambient globals (browser)
+  "alert",
+  "confirm",
+  "prompt",
 ]);
