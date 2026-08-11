@@ -381,7 +381,9 @@ DEBUG=1 tea-rags index-codebase --project <alias> --wait-enrichments --force-enr
 
 - `--wait-enrichments` stays attached until every provider finishes, renders
   per-provider bars + **durations** — enrichment timing free (perf-regression
-  signal) + precise "done" marker.
+  signal) + precise "done" marker. **`--force-enrichments` implies it** — the
+  recompute IS the enrichment, so detaching would return before the layer under
+  test is rebuilt. Passing it explicitly alongside is harmless, just redundant.
 - **`--force-enrichments <keys>` is the flag for this job, NOT `--force`.** It
   syncs the working tree incrementally, then rebuilds the enrichment layer for
   every point of the selected providers — no re-embedding. Values: `all`, `git`,
