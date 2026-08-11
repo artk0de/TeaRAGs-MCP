@@ -1,0 +1,30 @@
+/**
+ * Drop `cg_symbols_cycles`' secondary indexes (bd tea-rags-mcp-oucyv).
+ *
+ * `replaceCycles` rewrites this table one scope at a time — `DELETE ... WHERE
+ * scope = ?` followed by an INSERT of the freshly computed components — and
+ * `findCycles` reads back through the same predicate. 003 put non-unique ART
+ * indexes on `scope` and `member`, and DuckDB's filter pushdown answers that
+ * predicate from the ART instead of scanning the table. An ART that has drifted
+ * from its table then reports zero matches: the DELETE removes nothing, the
+ * re-INSERT collides with rows the PRIMARY KEY still holds, and the whole index
+ * run dies on `Duplicate key "cycle_id: 0, scope: method, member: insertable"`.
+ * The same drift makes `find_cycles` answer "no cycles" with no error at all,
+ * which is the worse half of the failure.
+ *
+ * Neither index earns that exposure. Nothing in the codebase queries this table
+ * by `member`, and `scope` holds two distinct values over a table whose row
+ * count is the repository's total cycle membership (27 rows on this project's
+ * own index). A sequential scan over that is free, and it cannot disagree with
+ * the rows it is scanning. The PRIMARY KEY — the constraint that actually
+ * matters — stays.
+ *
+ * Existing databases heal on their next open, since the runner applies this
+ * once and records it in `schema_migrations`.
+ *
+ * Companion `.sql` mirrors this for the disk-loading test path. Keep in sync.
+ */
+export const SQL_018_CG_CYCLES_DROP_SECONDARY_INDEXES = `
+DROP INDEX IF EXISTS idx_cg_symbols_cycles_scope;
+DROP INDEX IF EXISTS idx_cg_symbols_cycles_member;
+`;
