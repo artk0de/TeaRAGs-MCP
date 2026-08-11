@@ -241,10 +241,11 @@ reproduces it.
   _compiled_ worker (`POOL_DIR` rewrites `/src/` → `/build/`), so every
   worker-forking test — and therefore pre-commit — fails until the worktree is
   built once. Build it, don't link it. (Tracked as `tea-rags-mcp-hyj9d`.)
-- **Reindex / `index-codebase --force` is ALWAYS user-gated**, regardless of
-  worktree count — rewrites shared Qdrant index, depends on ollama embeddings
-  (can flap mid-run). NEVER chain reindex off build; stop at green tests, wait
-  for explicit "reindex"/"замер".
+- **Reindex is ALWAYS user-gated**, regardless of worktree count — rewrites the
+  shared Qdrant index, depends on ollama embeddings (can flap mid-run). This
+  covers `--force` AND `--force-enrichments`: the recompute skips embeddings but
+  still rewrites shared payload for the whole index. NEVER chain either off a
+  build; stop at green tests, wait for explicit "reindex"/"замер".
 - **Commit after successful live validation is auto-authorized.** User-triggered
   live validation SUCCEEDS (reindex clean + measured resolveSuccessRate delta
   confirms change) → MAY commit on worktree branch without explicit "commit" —
@@ -299,13 +300,23 @@ Change touches **enrichment** + validating needs reindex → use CLI, NOT MCP
 `index_codebase`:
 
 ```bash
-tea-rags index-codebase --project <alias> --wait-enrichments --force --json
+tea-rags index-codebase --project <alias> --wait-enrichments --force-enrichments <keys> --json
 ```
 
 - `--wait-enrichments` stays attached until every provider finishes, renders
   per-provider bars + **durations** — enrichment timing free (perf-regression
   signal) + precise "done" marker.
-- `--force` full re-index from scratch; drop for incremental.
+- **`--force-enrichments <keys>` is the flag for this job, NOT `--force`.** It
+  syncs the working tree incrementally, then rebuilds the enrichment layer for
+  every point of the selected providers — no re-embedding. Values: `all`, `git`,
+  `codegraph`, `codegraph.symbols`, or a comma-separated list. Embeddings are
+  ~92% of a full reindex's wall clock, so this turns an hours-long validation
+  loop into a minutes-long one. Refuses to run when the project has no index.
+- `--force` full re-index from scratch. Reserve it for changes that MOVE THE
+  CHUNK SET — AST chunking, chunk boundaries, parser, sparse/dense vectors or
+  embedding model. Chunk point ids hash content + line range, so those changes
+  relocate every id and nothing short of a full rebuild is coherent. Drop both
+  flags for a plain incremental.
 - `--json` emits the final result machine-readable — file counts, phase
   durations, `outcome.failed` / `outcome.degraded`, `infraHealth`,
   `enrichmentHealth` — instead of human bars. Parse directly. Always pass when
@@ -330,21 +341,29 @@ tea-rags index-codebase --project <alias> --wait-enrichments --force --json
   `get_index_status` + guessing when enrichment settled. CLI's synchronous wait
   removes polling + guesswork.
 
-### Schema drift — reindex from scratch (tea-rags self-test only)
+### Schema drift — which reset the new field actually needs
 
-Testing **new payload schema** on tea-rags project itself (`code_8b243ffe`):
-existing index built by previous schema. Incremental reindex won't reset
-unchanged-file payloads — schema-drift guard rejects run. Force full re-index:
+Testing a **new payload field** on tea-rags itself (`code_8b243ffe`): the
+existing index was built by the previous schema, and an incremental reindex
+won't reset unchanged-file payloads. Which reset you need depends on who owns
+the field:
 
 ```bash
+# Enrichment-owned field (git.*, codegraph.*) — the common case.
+# Rebuilds payload in place, no embeddings.
+tea-rags index-codebase --project tea-rags --wait-enrichments --force-enrichments <keys> --json
+
+# Chunker-owned field (navigation, static payload) or a chunking/parser change.
 mcp__tea-rags__force_reindex project=tea-rags    # explicit user confirmation required
 ```
 
-Or via CLI: `tea-rags reindex --force /Users/artk0re/Dev/Tools/tea-rags-mcp`.
+The drift warning itself names the right command — it knows each key's owning
+trajectory. See `.claude/rules/.local/schema-drift-vs-migration.md`.
 
-Only on tea-rags self-test index. Real user projects (`production-rails-app`,
-etc.) wait for regular incremental migration — force reindex on large project =
-hours, rarely right tool for testing unreleased changes.
+Full reindex only on the tea-rags self-test index. Real user projects
+(`production-rails-app`, etc.) wait for regular incremental migration — a force
+reindex on a large project is hours, rarely the right tool for testing
+unreleased changes.
 
 ### Test sequence when new functionality affects payload
 
@@ -354,8 +373,10 @@ cd .claude/worktrees/<branch>
 npm run build
 npm link
 # → reconnect MCP servers
-# enrichment-affecting change: prefer the CLI (synchronous + timed)
-tea-rags index-codebase --project tea-rags --wait-enrichments --force --json   # full reset
+# enrichment-affecting change: prefer the CLI (synchronous + timed).
+# --force-enrichments, NOT --force: rebuilds the payload under test without
+# re-embedding. --force only when the chunk set itself moves (chunking/parser/vectors).
+tea-rags index-codebase --project tea-rags --wait-enrichments --force-enrichments <keys> --json
 mcp__tea-rags__index_codebase project=production-rails-app              # other projects: incremental
 
 # 2. Validate via mcp__tea-rags__semantic_search / find_symbol against

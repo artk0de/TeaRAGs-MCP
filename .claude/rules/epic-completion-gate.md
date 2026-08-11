@@ -51,14 +51,45 @@ what you intend to run, and wait for explicit "reindex" / "замер".
 
 Pick the validation that matches what the epic changed:
 
-| Epic touched                                    | Live validation                                                                                                                                                                  |
-| ----------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Enrichment, payload shape, signal descriptors   | `tea-rags index-codebase --project <alias> --wait-enrichments --force --json`, then confirm enrichment health has no `degraded` / `failed` and the unenriched count settles at 0 |
-| Language resolver, walker, codegraph resolution | Re-measure `resolveSuccessRate` / `inProjectEdgeRecall` on the corpus the epic targets, against a baseline recorded BEFORE the first edit                                        |
-| Query path, rerank presets, derived signals     | `npm run build && npm link`, ask for `/mcp reconnect`, then exercise the change through `mcp__tea-rags__*` — not through DuckDB-direct probes                                    |
-| Migrations, schema versions                     | Run the migration against a real index and verify the drift guard reports clean                                                                                                  |
+| Epic touched                                    | Live validation                                                                                                                                                                                     |
+| ----------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Enrichment, payload shape, signal descriptors   | `tea-rags index-codebase --project <alias> --wait-enrichments --force-enrichments <keys> --json`, then confirm enrichment health has no `degraded` / `failed` and the unenriched count settles at 0 |
+| Language resolver, walker, codegraph resolution | `--force-enrichments codegraph`, then re-measure `resolveSuccessRate` / `inProjectEdgeRecall` on the corpus the epic targets, against a baseline recorded BEFORE the first edit                     |
+| Chunking, parsing, sparse/dense vectors         | `--force` — the chunk set itself changes, so point ids move and the vectors must be rebuilt. This is the ONLY class that needs a full reindex                                                       |
+| Query path, rerank presets, derived signals     | `npm run build && npm link`, ask for `/mcp reconnect`, then exercise the change through `mcp__tea-rags__*` — not through DuckDB-direct probes                                                       |
+| Migrations, schema versions                     | Run the migration against a real index and verify the drift guard reports clean                                                                                                                     |
 
 Always `DEBUG=1` on the index CLI, for per-phase timing.
+
+### `--force-enrichments` is the default validation tool (MANDATORY)
+
+Validating a new enrichment mechanism, a new payload field, or a new codegraph
+walker / resolver / resolution strategy MUST use `--force-enrichments <keys>`,
+never `--force`.
+
+Both rebuild the payload under test, but `--force` also re-embeds every chunk,
+and embeddings are ~92% of a full reindex's wall clock. Reaching for `--force`
+buys nothing the recompute does not already give and turns a minutes-long
+measurement loop into an hours-long one — which in practice means the loop gets
+run once instead of per iteration.
+
+| Change under test                                                        | Validate with                       |
+| ------------------------------------------------------------------------ | ----------------------------------- |
+| New / changed git signal, blame metric, churn field                      | `--force-enrichments git`           |
+| New codegraph signal, walker, resolver, `SymbolResolutionStrategy`, edge | `--force-enrichments codegraph`     |
+| Both layers in one epic                                                  | `--force-enrichments git,codegraph` |
+| Anything else enrichment-owned, or unsure which provider                 | `--force-enrichments all`           |
+| AST chunking, chunk boundaries, parser, sparse/dense vectors, model      | `--force`                           |
+
+The dividing line is whether the CHUNK SET moves. Chunk point ids hash file
+content and line range, so a chunking or parsing change relocates every id and
+only a full reindex is coherent. An enrichment change leaves the ids alone and
+rewrites payload in place — exactly what the recompute does.
+
+The recompute syncs the working tree incrementally first, so it is safe on a
+repo with uncommitted edits: changed files are re-embedded, everything else is
+not. It refuses to run when the project has no index yet, rather than quietly
+turning into a full first index.
 
 ## Closing rule
 
