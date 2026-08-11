@@ -10,13 +10,18 @@
  * chunker's Qdrant payload symbolId set agrees with cg_symbols on the
  * same physical AST node.
  *
- * MUST stay in sync with `../walker/name-of.ts:jsNameOf` /
- * `isFunctionValuedExpression`. See `.claude/rules/symbolid-convention.md`.
+ * MUST stay in sync with `../walker/name-of.ts:jsNameOf`. See
+ * `.claude/rules/symbolid-convention.md`. The narrower "is this value a
+ * function?" question both producers ask is no longer restated here — it is the
+ * shared `isFunctionValuedExpression` gate in `infra/symbolid`, which is where
+ * questions both the chunker and the walker must answer identically about the
+ * same physical AST node live (bd tea-rags-mcp-qrjc5).
  *
  * bd tea-rags-mcp-kfzx
  */
 import type { AstNode } from "../../../../contracts/types/ast.js";
 import type { ChunkingHook } from "../../../../contracts/types/chunker.js";
+import { isFunctionValuedExpression } from "../../../../infra/symbolid/index.js";
 
 /**
  * Walk an `assignment_expression` chain (`a = b = c = fn`) and return the
@@ -31,14 +36,6 @@ function walkAssignmentChainToTerminalRhs(node: AstNode): AstNode | null {
     cur = right;
   }
   return cur;
-}
-
-/**
- * Accept the shapes a callable value can take. Mirrors
- * `name-of.ts:isFunctionValuedExpression`.
- */
-function isFunctionValuedExpression(node: AstNode): boolean {
-  return node.type === "function_expression" || node.type === "arrow_function" || node.type === "generator_function";
 }
 
 function expressionStatementCarriesFunction(node: AstNode): boolean {

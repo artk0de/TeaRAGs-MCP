@@ -64,6 +64,16 @@ import type { AstNode } from "../../contracts/types/ast.js";
  * function it returns is declared wherever `useTranslation` is. That bucket is
  * the single largest class of unpinnable bare-call targets on the measured
  * corpus (2105 rows) and naming it would fabricate declarations.
+ *
+ * Bound expressions (`fn.bind(this)`) and `class_expression` are out of scope
+ * for the same reason from the other direction: they are rarer, and pinning what
+ * they carry would need receiver typing before the symbol table gained anything.
+ *
+ * Used beyond the declarator gate below — JavaScript's assignment shapes
+ * (`obj.method = function () {}`, `a = b = fn`, `forEach` dispatch) ask the same
+ * question about a value node that is not a declarator's, so `walker/name-of.ts`
+ * and the two chunking hooks beside it import this predicate directly rather
+ * than restating it (bd tea-rags-mcp-qrjc5).
  */
 export function isFunctionValuedExpression(node: AstNode): boolean {
   return node.type === "function_expression" || node.type === "arrow_function" || node.type === "generator_function";

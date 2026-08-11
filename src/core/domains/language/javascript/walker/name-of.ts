@@ -30,7 +30,7 @@
 
 import type { AstNode } from "../../../../contracts/types/ast.js";
 import type { NamedSymbol } from "../../../../contracts/types/codegraph.js";
-import { INSTANCE_METHOD_SEPARATOR } from "../../../../infra/symbolid/index.js";
+import { INSTANCE_METHOD_SEPARATOR, isFunctionValuedExpression } from "../../../../infra/symbolid/index.js";
 import { tsNameOf } from "../../typescript/walker/name-of.js";
 
 export function jsNameOf(node: AstNode): NamedSymbol | NamedSymbol[] | null {
@@ -638,17 +638,6 @@ function walkAssignmentChainToTerminalRhs(node: AstNode): AstNode | null {
     cur = right;
   }
   return cur;
-}
-
-/**
- * `expr` is the value being assigned — accept any expression form that
- * carries a callable: named/anonymous function_expression, arrow_function.
- * Bound expressions (`fn.bind(this)`) and class_expression are out of
- * scope for this slice — they're rarer and would need receiver typing
- * to be useful in the symbol table.
- */
-function isFunctionValuedExpression(node: AstNode): boolean {
-  return node.type === "function_expression" || node.type === "arrow_function" || node.type === "generator_function";
 }
 
 /**
