@@ -90,6 +90,8 @@ function makePool(
     respawn?: () => void;
     exitTimeoutMs?: number;
     pollIntervalMs?: number;
+    maxRestartAttempts?: number;
+    restartDelayMs?: number;
   },
 ): GraphDbClientPool {
   return new GraphDbClientPool({
@@ -254,7 +256,40 @@ describe("daemon build-handshake auto-restart (integration, real spawned daemon)
     await pool.closeAll();
   });
 
-  it("throws CodegraphDaemonStaleBuildError when the daemon is STILL stale after the single retry", async () => {
+  // bd tea-rags-mcp-ryoqn — the machine runs several `tea-rags server` processes
+  // against ONE daemon socket, and `ensureCodegraphDaemon` is single-flighted by
+  // a cross-process DaemonLock. So losing the race is routine: our drain lands,
+  // another session wins the lock and cold-spawns from ITS build, our respawn
+  // no-ops on the alive check, and the reconnect meets a build that is neither
+  // the original stale one nor ours. That session settles once it has its own
+  // daemon, so the very next attempt runs against a clear field.
+  it("recovers when a racing session wins the first restart and settles before the next attempt", async () => {
+    const paths = makePaths();
+    await startDaemon(paths, "OLD-BUILD");
+
+    let respawns = 0;
+    const pool = makePool(paths, {
+      buildFingerprint: "NEW-BUILD",
+      pollIntervalMs: 20,
+      restartDelayMs: 5,
+      respawn: () => {
+        respawns++;
+        void startDaemon(paths, respawns === 1 ? "OTHER-SESSION-BUILD" : "NEW-BUILD");
+      },
+    });
+
+    const handle = await pool.acquireWrite("code_hs_race_v1");
+    expect(respawns).toBe(2);
+
+    // Live against the daemon from OUR build — a real write+read round-trip
+    // proves the recovered connection is usable, not merely established.
+    await handle.graphDb.upsertFile({ relPath: "a.ts", language: "typescript" }, { fileEdges: [], methodEdges: [] });
+    expect(await handle.graphDb.hasData()).toBe(true);
+
+    await pool.closeAll();
+  });
+
+  it("throws CodegraphDaemonStaleBuildError once the bounded restart attempts are exhausted", async () => {
     const paths = makePaths();
     await startDaemon(paths, "OLD-BUILD-1");
 
@@ -262,15 +297,90 @@ describe("daemon build-handshake auto-restart (integration, real spawned daemon)
     const pool = makePool(paths, {
       buildFingerprint: "NEW-BUILD",
       pollIntervalMs: 20,
+      restartDelayMs: 5,
       respawn: () => {
         respawns++;
-        // The respawned daemon is ALSO from a different build — retry must not loop.
+        // Every restart brings the SAME foreign build back: waiting wins
+        // nothing, so the bound — not luck — is what has to stop this.
         void startDaemon(paths, "OLD-BUILD-2");
       },
     });
 
     await expect(pool.acquireWrite("code_hs_stale_v1")).rejects.toThrow(CodegraphDaemonStaleBuildError);
+    expect(respawns).toBe(3);
+
+    await pool.closeAll();
+  });
+
+  it("honours a caller-supplied restart bound instead of the default", async () => {
+    const paths = makePaths();
+    await startDaemon(paths, "OLD-BUILD-1");
+
+    let respawns = 0;
+    const pool = makePool(paths, {
+      buildFingerprint: "NEW-BUILD",
+      pollIntervalMs: 20,
+      restartDelayMs: 5,
+      maxRestartAttempts: 1,
+      respawn: () => {
+        respawns++;
+        void startDaemon(paths, "OLD-BUILD-2");
+      },
+    });
+
+    await expect(pool.acquireWrite("code_hs_bound1_v1")).rejects.toThrow(CodegraphDaemonStaleBuildError);
     expect(respawns).toBe(1);
+
+    await pool.closeAll();
+  });
+
+  // The two exhaustion modes are indistinguishable from the message alone, and
+  // telling them apart is what cost real diagnosis time during the live
+  // incident. The evidence is whether the fingerprint that came back CHANGED
+  // between restarts (someone else keeps spawning) or stayed put (our own
+  // respawn hook keeps launching one stale binary).
+  it("diagnoses a persistently stale respawn as a wedged daemon, not a race", async () => {
+    const paths = makePaths();
+    await startDaemon(paths, "OLD-BUILD-1");
+
+    const pool = makePool(paths, {
+      buildFingerprint: "NEW-BUILD",
+      pollIntervalMs: 20,
+      restartDelayMs: 5,
+      respawn: () => {
+        void startDaemon(paths, "OLD-BUILD-2");
+      },
+    });
+
+    const err = await pool.acquireWrite("code_hs_wedged_diag_v1").catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(CodegraphDaemonStaleBuildError);
+    expect((err as CodegraphDaemonStaleBuildError).hint).toMatch(/same build came back/i);
+    expect((err as CodegraphDaemonStaleBuildError).message).toMatch(/3 restart attempts/i);
+
+    await pool.closeAll();
+  });
+
+  it("diagnoses a different build on every restart as a multi-process race", async () => {
+    const paths = makePaths();
+    await startDaemon(paths, "FOREIGN-0");
+
+    let respawns = 0;
+    const pool = makePool(paths, {
+      buildFingerprint: "NEW-BUILD",
+      pollIntervalMs: 20,
+      restartDelayMs: 5,
+      respawn: () => {
+        respawns++;
+        // A different session grabs the lock each time — the race never lets up.
+        void startDaemon(paths, `FOREIGN-${respawns}`);
+      },
+    });
+
+    const err = await pool.acquireWrite("code_hs_race_lost_v1").catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(CodegraphDaemonStaleBuildError);
+    expect((err as CodegraphDaemonStaleBuildError).hint).toMatch(/parallel tea-rags session/i);
+    // Names the distinct builds it met, so the reader can see WHICH sessions collided.
+    expect((err as CodegraphDaemonStaleBuildError).hint).toMatch(/FOREIGN-1/);
 
     await pool.closeAll();
   });

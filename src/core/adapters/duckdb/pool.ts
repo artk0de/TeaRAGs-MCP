@@ -43,6 +43,17 @@ import {
 } from "./errors.js";
 
 /**
+ * Drain-respawn attempts before `CodegraphDaemonStaleBuildError`. Three covers
+ * losing a spawn race to another MCP process (the winner stops racing once it
+ * owns the daemon) while still failing fast on a respawn hook that keeps
+ * launching a stale binary — see `connectWithBuildHandshake`.
+ */
+const DEFAULT_MAX_RESTART_ATTEMPTS = 3;
+
+/** Base delay between restart attempts; jittered per attempt. */
+const DEFAULT_RESTART_DELAY_MS = 250;
+
+/**
  * Initialiser hook the pool calls once per newly-opened collection
  * client. Receives the per-collection symbol table so the caller can
  * hydrate it from disk. The pool itself does not import the in-memory
@@ -100,8 +111,8 @@ export interface GraphDbClientPoolOptions {
    * mode only. When the daemon's handshake fingerprint differs from ours, the
    * pool drains it (graceful `shutdown` op), waits for its lifecycle files to
    * clear, invokes `respawn` to cold-spawn a daemon from THIS build, and
-   * reconnects (one retry max). Absent fingerprint on either side (legacy
-   * peer) → no restart, proceed as before.
+   * reconnects — repeated up to `maxRestartAttempts` times. Absent fingerprint
+   * on either side (legacy peer) → no restart, proceed as before.
    */
   daemonRestart?: {
     /** Cold-spawn hook — wired to `ensureCodegraphDaemon` by the bootstrap factory. */
@@ -112,6 +123,14 @@ export interface GraphDbClientPoolOptions {
     exitTimeoutMs?: number;
     /** Lifecycle-file poll interval while waiting for the exit. */
     pollIntervalMs?: number;
+    /**
+     * Drain-respawn attempts before the typed error (default 3, floor 1). Kept
+     * small on purpose: it widens the window for losing a spawn race, it is not
+     * a wait-until-healthy loop.
+     */
+    maxRestartAttempts?: number;
+    /** Base delay between restart attempts; jittered (default 250ms). */
+    restartDelayMs?: number;
   };
 }
 
@@ -427,7 +446,21 @@ export class GraphDbClientPool {
    * fingerprint means the daemon runs stale code (spawned before the last
    * `npm run build` / `npm link` flip): drain it gracefully, cold-spawn a
    * fresh daemon from THIS build via the respawn hook, reconnect, and
-   * re-verify — one retry max, then a typed error.
+   * re-verify — retried up to `maxRestartAttempts` times, then a typed error.
+   *
+   * Why a bound and not a single shot (bd tea-rags-mcp-ryoqn). One shot was
+   * too tight: this machine runs several MCP processes against ONE daemon
+   * socket, and `ensureCodegraphDaemon` is single-flighted by a cross-process
+   * lock, so a session that loses the race saw the WINNER's build come back
+   * and failed outright — no deadlock, just bad luck. The winner stops racing
+   * as soon as it has its daemon, so a second attempt usually settles it.
+   *
+   * Why the bound stays small. Each attempt drains a daemon every other
+   * process on the machine shares, so looping until healthy would thrash them
+   * and could livelock two sessions draining each other forever. Three
+   * attempts absorb the race while keeping a genuinely stale respawn hook
+   * (same build back every time) failing in about a second, and
+   * `CodegraphDaemonExitTimeoutError` from the drain is never retried at all.
    */
   private async connectWithBuildHandshake(socketPath: string, collectionName: string): Promise<DaemonGraphDbClient> {
     // Dynamic so direct/test mode never loads the node:net socket code.
@@ -463,19 +496,41 @@ export class GraphDbClientPool {
           `client=${localFingerprint}) — draining stale daemon and respawning from this build\n`,
       );
     }
-    await this.drainStaleDaemon(first, socketPath);
-    respawn();
+    const maxAttempts = Math.max(1, restart?.maxRestartAttempts ?? DEFAULT_MAX_RESTART_ATTEMPTS);
+    const baseDelayMs = restart?.restartDelayMs ?? DEFAULT_RESTART_DELAY_MS;
+    // Post-restart observations only — the pre-restart fingerprint is a
+    // mismatch by definition, so including it would make every wedged daemon
+    // look like a race.
+    const observedDaemonFingerprints: string[] = [];
+    let stale = first;
+    let lastFingerprint = daemonFingerprint;
 
-    // One retry: reconnect (init retries the connect while the fresh daemon
-    // boots) and re-verify the fingerprint.
-    const second = new DaemonGraphDbClient(socketPath, collectionName);
-    await second.init();
-    const retryFingerprint = (await second.handshake(localFingerprint))?.buildFingerprint;
-    if (retryFingerprint !== undefined && retryFingerprint !== localFingerprint) {
-      await second.close();
-      throw new CodegraphDaemonStaleBuildError(socketPath, localFingerprint, retryFingerprint);
+    for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+      // Linear backoff with full jitter, so two sessions retrying in lockstep
+      // decorrelate instead of trading the daemon back and forth.
+      if (attempt > 1) {
+        const waitMs = baseDelayMs * (attempt - 1) + Math.random() * baseDelayMs;
+        await new Promise((resolve) => setTimeout(resolve, waitMs));
+      }
+      // Re-drain each round: our respawn no-ops while another session's daemon
+      // is alive, so without this the next attempt would observe the same
+      // foreign build it just saw.
+      await this.drainStaleDaemon(stale, socketPath);
+      respawn();
+
+      // Reconnect (init retries the connect while the fresh daemon boots) and
+      // re-verify the fingerprint.
+      const next = new DaemonGraphDbClient(socketPath, collectionName);
+      await next.init();
+      const fingerprint = (await next.handshake(localFingerprint))?.buildFingerprint;
+      if (fingerprint === undefined || fingerprint === localFingerprint) return next;
+      observedDaemonFingerprints.push(fingerprint);
+      lastFingerprint = fingerprint;
+      stale = next;
     }
-    return second;
+
+    await stale.close();
+    throw new CodegraphDaemonStaleBuildError(socketPath, localFingerprint, lastFingerprint, observedDaemonFingerprints);
   }
 
   /**

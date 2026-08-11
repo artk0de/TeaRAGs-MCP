@@ -32,22 +32,45 @@ export class DuckDbOpenFailedError extends InfraError {
 }
 
 /**
- * The codegraph daemon still presents a DIFFERENT build fingerprint after the
- * single drain-restart retry (bd tea-rags-mcp-ji56r). Usually another live
- * session keeps cold-spawning the daemon from ITS build — a transient during
- * parallel-worktree testing — or the respawn hook launched a stale binary.
+ * The codegraph daemon still presents a DIFFERENT build fingerprint after every
+ * bounded drain-restart attempt (bd tea-rags-mcp-ji56r, bound widened by
+ * tea-rags-mcp-ryoqn).
+ *
+ * The two ways to get here need opposite responses, and the fingerprints seen
+ * AFTER each restart tell them apart. A different build each time means other
+ * live sessions keep winning the cross-process spawn lock and cold-spawning
+ * from their own trees — transient, worth retrying. The same build every time
+ * means nobody is racing us: our own respawn hook keeps launching one stale
+ * binary, which retrying will never fix.
  */
 export class CodegraphDaemonStaleBuildError extends InfraError {
-  constructor(socketPath: string, clientFingerprint: string, daemonFingerprint: string, cause?: Error) {
+  constructor(
+    socketPath: string,
+    clientFingerprint: string,
+    daemonFingerprint: string,
+    /** Fingerprint observed after each restart attempt, in order. */
+    observedDaemonFingerprints: readonly string[],
+    cause?: Error,
+  ) {
+    const attempts = observedDaemonFingerprints.length;
+    const distinct = [...new Set(observedDaemonFingerprints)];
     super({
       code: "INFRA_CODEGRAPH_DAEMON_STALE_BUILD",
       message:
-        `Codegraph daemon at ${socketPath} still runs a different build after a restart ` +
+        `Codegraph daemon at ${socketPath} still runs a different build after ` +
+        `${attempts} restart attempt${attempts === 1 ? "" : "s"} ` +
         `(daemon=${daemonFingerprint}, client=${clientFingerprint})`,
       hint:
-        "A parallel tea-rags session is likely respawning the daemon from another build " +
-        "(npm link points elsewhere). Retry once the other session finishes, or re-run " +
-        "`npm run build && npm link` so both sessions share one build.",
+        distinct.length > 1
+          ? "A parallel tea-rags session kept cold-spawning the daemon from another build — a " +
+            `different one answered after each restart (${distinct.join(", ")}), which is the ` +
+            "signature of a transient multi-process race, not a wedged daemon. Retry once the " +
+            "other session finishes, or re-run `npm run build && npm link` so every session " +
+            "shares one build."
+          : `The same build came back after every restart (${distinct.join(", ")}), so no other ` +
+            "session is racing us — the respawn hook itself is launching a stale binary (a " +
+            "`build/` that was never rebuilt, or an `npm link` pointing at another checkout). " +
+            "Re-run `npm run build && npm link` in the checkout you intend to use.",
       httpStatus: 503,
       cause,
     });

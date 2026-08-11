@@ -847,6 +847,51 @@ function third() {
 
       vi.restoreAllMocks();
     });
+
+    // A force reindex that dies before the alias swap used to leave its fully
+    // built `_vN` in Qdrant with nothing automatic to remove it — the taxdome
+    // incident left code_27622aef_v12 (12830 points) beside a healthy v11, and
+    // only a manual doctor/orphans/delete cycle cleared it (bd tea-rags-mcp-8pymz).
+    // The alias never moved, so the previous version is provably intact and the
+    // dead build is safe to drop at the moment the run fails.
+    it("discards the half-built version when a force reindex of an indexed project fails", async () => {
+      await createTestFile(codebaseDir, "test.ts", "export const x = 1;");
+      await ingest.indexCodebase(codebaseDir);
+
+      const alias = (await ingest.getIndexStatus(codebaseDir)).collectionName!;
+      const previous = (await qdrant.aliases.listAliases()).find((a) => a.aliasName === alias)!.collectionName;
+
+      vi.spyOn(qdrant.aliases, "switchAlias").mockRejectedValue(new Error("interrupted mid-rebuild"));
+
+      await expect(ingest.indexCodebase(codebaseDir, { forceReindex: true })).rejects.toThrow(IndexingFailedError);
+
+      vi.restoreAllMocks();
+
+      // Nothing versioned survives except the version the alias still serves.
+      const leftovers = (await qdrant.listCollections()).filter((c) => c.startsWith(`${alias}_v`));
+      expect(leftovers).toEqual([previous]);
+      const target = (await qdrant.aliases.listAliases()).find((a) => a.aliasName === alias)!.collectionName;
+      expect(target).toBe(previous);
+    });
+
+    // The scope boundary at pipeline level: a first-ever index that fails has no
+    // prior version to fall back on, so its partial `_v1` is the only data the
+    // project has. It stays put for the user to inspect, resume, or clear.
+    it("keeps the partial collection when the first-ever index fails", async () => {
+      await createTestFile(codebaseDir, "test.ts", "export const x = 1;");
+
+      vi.spyOn(qdrant.aliases, "createAlias").mockRejectedValue(new Error("interrupted mid-bootstrap"));
+
+      await expect(ingest.indexCodebase(codebaseDir)).rejects.toThrow(IndexingFailedError);
+
+      vi.restoreAllMocks();
+
+      const { resolveCollectionName, validatePath } = await import("../../../../../src/core/infra/collection-name.js");
+      const alias = resolveCollectionName(await validatePath(codebaseDir));
+      const leftovers = (await qdrant.listCollections()).filter((c) => c.startsWith(`${alias}_v`));
+      expect(leftovers).toHaveLength(1);
+      expect(await qdrant.collectionExists(leftovers[0])).toBe(true);
+    });
   });
 
   describe("Error propagation", () => {

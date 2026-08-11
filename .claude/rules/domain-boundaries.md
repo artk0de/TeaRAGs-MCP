@@ -224,6 +224,6 @@ Example flow (stats accumulator):
   registered trajectories; `createComposition()` pipes the merged list through
   `IngestFacadeDeps.statsAccumulators` → `IndexingOps.statsAccumulators` →
   `computeCollectionStats(points, signals, trajectoryAccumulators, ...)`
-- `computeCollectionStats` in `domains/ingest/collection-stats.ts` only
+- `computeCollectionStats` in `domains/ingest/infra/collection-stats.ts` only
   orchestrates — derives a shared `PointContext` per point, calls `accept` on
   each accumulator instance, then collects results by key
