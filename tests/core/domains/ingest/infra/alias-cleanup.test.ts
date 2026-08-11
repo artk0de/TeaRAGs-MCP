@@ -3,6 +3,7 @@ import { describe, expect, it, vi } from "vitest";
 import type { QdrantManager } from "../../../../../src/core/adapters/qdrant/client.js";
 import {
   cleanupOrphanedVersions,
+  discardFailedCollectionBuild,
   sweepCodegraphOrphans,
 } from "../../../../../src/core/domains/ingest/infra/alias-cleanup.js";
 
@@ -17,6 +18,7 @@ function createMockQdrant(
       listAliases: vi.fn().mockResolvedValue(aliases),
     },
     listCollections: vi.fn().mockResolvedValue(collections),
+    collectionExists: vi.fn().mockImplementation(async (name: string) => collections.includes(name)),
     deleteCollection: vi.fn().mockResolvedValue(undefined),
     getPoint: vi
       .fn()
@@ -240,5 +242,101 @@ describe("sweepCodegraphOrphans", () => {
     expect(removeCodegraphDb).toHaveBeenCalledWith("code_abc_v1");
     expect(removeCodegraphDb).toHaveBeenCalledWith("code_abc_v2");
     expect(removeCodegraphDb).not.toHaveBeenCalledWith("code_abc_v3");
+  });
+});
+
+// An interrupted force reindex used to leave its half-built `<base>_vN` in
+// Qdrant until some LATER run happened to sweep it — on taxdome that left
+// code_27622aef_v12 (12830 points) sitting next to a healthy v11 with nothing
+// automatic to remove it (bd tea-rags-mcp-8pymz). Discarding the build the
+// moment the run fails closes that window, but only where a prior good version
+// is provably still serving: a first-ever index has no fallback, and its
+// partial data is the only data that exists.
+describe("discardFailedCollectionBuild", () => {
+  it("deletes the half-built version when the alias still serves the previous one", async () => {
+    const qdrant = createMockQdrant(
+      [{ aliasName: "code_abc", collectionName: "code_abc_v11" }],
+      ["code_abc_v11", "code_abc_v12"],
+    );
+
+    const discarded = await discardFailedCollectionBuild(qdrant, "code_abc", "code_abc_v12");
+
+    expect(discarded).toBe(true);
+    expect(qdrant.deleteCollection).toHaveBeenCalledWith("code_abc_v12");
+    expect(qdrant.deleteCollection).not.toHaveBeenCalledWith("code_abc_v11");
+  });
+
+  // THE scope boundary. A bootstrap index owns no fallback: the base name is
+  // neither an alias nor a real collection, so `_v1` holds every point the
+  // project has. Deleting it turns a resumable/diagnosable partial index into
+  // total data loss.
+  it("keeps the partial collection when nothing else serves the base name (bootstrap)", async () => {
+    const qdrant = createMockQdrant([], ["code_abc_v1"]);
+
+    const discarded = await discardFailedCollectionBuild(qdrant, "code_abc", "code_abc_v1");
+
+    expect(discarded).toBe(false);
+    expect(qdrant.deleteCollection).not.toHaveBeenCalled();
+  });
+
+  // The other catastrophic direction: the run failed AFTER the alias swap, so
+  // the "half-built" target is now the live index. Deleting it would destroy
+  // the collection the swap just promoted.
+  it("keeps the target when the alias already points at it", async () => {
+    const qdrant = createMockQdrant([{ aliasName: "code_abc", collectionName: "code_abc_v12" }], ["code_abc_v12"]);
+
+    const discarded = await discardFailedCollectionBuild(qdrant, "code_abc", "code_abc_v12");
+
+    expect(discarded).toBe(false);
+    expect(qdrant.deleteCollection).not.toHaveBeenCalled();
+  });
+
+  // Migration (pre-alias legacy layout): no alias yet, but the unversioned real
+  // collection is still intact and still serving, so the new version is safe to
+  // drop.
+  it("deletes the half-built version when an unversioned collection still serves the base name", async () => {
+    const qdrant = createMockQdrant([], ["code_abc", "code_abc_v2"]);
+
+    const discarded = await discardFailedCollectionBuild(qdrant, "code_abc", "code_abc_v2");
+
+    expect(discarded).toBe(true);
+    expect(qdrant.deleteCollection).toHaveBeenCalledWith("code_abc_v2");
+  });
+
+  it("drops the discarded version's codegraph DB alongside it", async () => {
+    const qdrant = createMockQdrant(
+      [{ aliasName: "code_abc", collectionName: "code_abc_v11" }],
+      ["code_abc_v11", "code_abc_v12"],
+    );
+    const removeCodegraphDb = vi.fn().mockResolvedValue(undefined);
+
+    await discardFailedCollectionBuild(qdrant, "code_abc", "code_abc_v12", removeCodegraphDb);
+
+    expect(removeCodegraphDb).toHaveBeenCalledWith("code_abc_v12");
+  });
+
+  // Qdrant being unreachable is a plausible reason the run failed in the first
+  // place. Unable to prove a fallback exists ⇒ keep the collection and leave it
+  // to the next run's sweep, which can re-check when Qdrant answers again.
+  it("keeps the target when the fallback cannot be established", async () => {
+    const qdrant = createMockQdrant([], []);
+    vi.mocked(qdrant.aliases.listAliases).mockRejectedValue(new Error("qdrant unreachable"));
+
+    const discarded = await discardFailedCollectionBuild(qdrant, "code_abc", "code_abc_v12");
+
+    expect(discarded).toBe(false);
+    expect(qdrant.deleteCollection).not.toHaveBeenCalled();
+  });
+
+  it("reports a delete failure as not discarded instead of throwing", async () => {
+    const qdrant = createMockQdrant(
+      [{ aliasName: "code_abc", collectionName: "code_abc_v11" }],
+      ["code_abc_v11", "code_abc_v12"],
+    );
+    vi.mocked(qdrant.deleteCollection).mockRejectedValue(new Error("delete failed"));
+
+    const discarded = await discardFailedCollectionBuild(qdrant, "code_abc", "code_abc_v12");
+
+    expect(discarded).toBe(false);
   });
 });

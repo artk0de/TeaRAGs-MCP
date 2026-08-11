@@ -75,6 +75,80 @@ export async function cleanupOrphanedVersions(
 }
 
 /**
+ * Drops the versioned collection a failed run was building — the eager
+ * counterpart to `cleanupOrphanedVersions`.
+ *
+ * The sweep above is lazy: it reclaims leftovers at the START of the next run.
+ * That is enough when another run actually comes, and nothing at all when it
+ * does not. Two interrupted force reindexes on taxdome left `code_27622aef_v12`
+ * (12830 points) sitting beside a healthy v11 with no automatic remediation —
+ * `doctor` and `projects orphans` could name it, but only a manual
+ * `delete_collection` removed it (bd tea-rags-mcp-8pymz). Discarding the build
+ * when the run fails closes that window instead of deferring it.
+ *
+ * **It discards only what the base name is not currently serving.** One live
+ * lookup decides that, and every case falls out of it:
+ *
+ * - alias → previous version, target is the new one: the rebuild never
+ *   promoted, the old version still answers queries → discard.
+ * - alias → the target itself: the swap already happened and this IS the live
+ *   index. A later step failing (marker, snapshot, registry) must never cost
+ *   the collection the swap just promoted → keep.
+ * - no alias, but the base exists as a real unversioned collection: a migration
+ *   that has not yet cut over, prior data intact → discard.
+ * - neither: a FIRST-EVER index. Its half-built `_v1` holds every point the
+ *   project has, and a user may want to inspect, resume, or diagnose it rather
+ *   than find it silently gone → keep.
+ *
+ * Liveness is read from Qdrant at failure time rather than from a flag captured
+ * at setup, because only the live state knows whether the alias swap got far
+ * enough to matter — a setup-time `isFirstIndex` cannot. One source of truth,
+ * so the two can never disagree about which collection is safe to delete.
+ *
+ * Never throws, and answers `false` whenever it cannot PROVE a fallback exists:
+ * Qdrant being unreachable is a plausible reason the run failed at all, and a
+ * leftover collection costs disk while a wrong delete costs the index. The next
+ * run's sweep re-checks once Qdrant answers again.
+ *
+ * @returns true when the collection was discarded.
+ */
+export async function discardFailedCollectionBuild(
+  qdrant: QdrantManager,
+  collectionName: string,
+  targetCollection: string,
+  removeCodegraphDb?: CodegraphDbRemover,
+): Promise<boolean> {
+  try {
+    // Not a versioned build off to the side — nothing safe to discard.
+    if (targetCollection === collectionName) return false;
+
+    const aliases = await qdrant.aliases.listAliases();
+    const activeCollection = aliases.find((a) => a.aliasName === collectionName)?.collectionName;
+
+    if (activeCollection) {
+      if (activeCollection === targetCollection) return false;
+    } else if (!(await qdrant.collectionExists(collectionName))) {
+      return false;
+    }
+
+    await qdrant.deleteCollection(targetCollection);
+    if (removeCodegraphDb) {
+      await removeCodegraphDb(targetCollection).catch((err) => {
+        if (isDebug()) {
+          console.error(`[AliasCleanup] codegraph DB cleanup failed for discarded ${targetCollection}:`, err);
+        }
+      });
+    }
+    return true;
+  } catch (err) {
+    if (isDebug()) {
+      console.error(`[AliasCleanup] could not discard the failed build ${targetCollection} (non-fatal):`, err);
+    }
+    return false;
+  }
+}
+
+/**
  * Sweeps ancient codegraph DuckDB files whose Qdrant collection no longer
  * exists. `cleanupOrphanedVersions` only sees codegraph DBs whose Qdrant
  * collection is a live orphan (it iterates `qdrant.listCollections()` and
