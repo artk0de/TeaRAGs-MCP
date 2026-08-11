@@ -21,14 +21,14 @@ self-describing. Optimize for reader landing on symbol cold.
 
 ## Before / After
 
-| Generic (rejected)      | Domain-qualified (correct)       | Context preserved                     |
-| ----------------------- | -------------------------------- | ------------------------------------- |
-| `ResolutionOutcome`     | `SymbolResolutionOutcome`        | a call-site→symbol resolution result  |
-| `Strategy`              | `SymbolResolutionStrategy`       | a resolution pass, not any strategy   |
-| `ResolvedTarget`        | `SymbolResolutionTarget`         | the resolved target symbol definition |
-| `Metadata` / `FieldDoc` | `GitFileSignals` / `Signal`      | git trajectory signal, not meta       |
-| `buildMetadata`         | `buildFileSignals`               | builds signals, scope = file          |
-| `Stats` (user-facing)   | `SignalMetrics` / `IndexMetrics` | DTO layer, not the compute `Stats`    |
+| Generic (rejected)      | Domain-qualified (correct)                   | Context preserved                     |
+| ----------------------- | -------------------------------------------- | ------------------------------------- |
+| `ResolutionOutcome`     | `SymbolResolutionOutcome`                    | a call-site→symbol resolution result  |
+| `Strategy`              | `SymbolResolutionStrategy`                   | a resolution pass, not any strategy   |
+| `ResolvedTarget`        | `SymbolResolutionTarget`                     | the resolved target symbol definition |
+| `Metadata` / `FieldDoc` | `GitFileSignals` / `PayloadSignalDescriptor` | git trajectory signal, not meta       |
+| `buildMetadata`         | `buildFileSignals`                           | builds signals, scope = file          |
+| `Stats` (user-facing)   | `SignalMetrics` / `IndexMetrics`             | DTO layer, not the compute `Stats`    |
 
 ## Boundaries (don't over-qualify)
 
@@ -42,5 +42,6 @@ self-describing. Optimize for reader landing on symbol cold.
 ## Cross-reference
 
 Concrete name mappings enforced live in `CLAUDE.md` → "Naming Conventions" (e.g.
-`buildFileSignals` not `buildFileMetadata`, `Signal` not `FieldDoc`). This rule
-= general principle behind those specific cases.
+`buildFileSignals` not `buildFileMetadata`, `PayloadSignalDescriptor` not
+`FieldDoc` and not a bare `Signal` — no such type exists). This rule = general
+principle behind those specific cases.

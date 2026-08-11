@@ -1,6 +1,6 @@
 ---
 paths:
-  - "src/core/domains/**/chunker/hooks/**"
+  - "src/core/domains/language/*/chunking/**"
   - "src/core/domains/**/rerank/**"
   - "src/core/domains/ingest/pipeline/enrichment/**"
   - "src/core/domains/ingest/sync/**"
@@ -8,11 +8,12 @@ paths:
 
 # Deep Path Navigation
 
-Paths deeper than 3 levels (e.g. `chunker/hooks/`, `rerank/derived-signals/`):
+Paths deeper than 3 levels (e.g. `language/<lang>/chunking/`,
+`rerank/derived-signals/`):
 
 1. **Use `pathPattern` globs instead of navigating the tree manually.** Prefer
-   `pathPattern: "**/chunker/hooks/**"` over step-by-step Glob/Read per dir
-   level.
+   `pathPattern: "**/language/*/chunking/**"` over step-by-step Glob/Read per
+   dir level.
 
 2. **Use path shortcuts from CLAUDE.md** to orient fast. Don't re-discover
    already-documented paths.
@@ -22,8 +23,10 @@ Paths deeper than 3 levels (e.g. `chunker/hooks/`, `rerank/derived-signals/`):
    re-discovery next session.
 
 4. **Useful glob patterns for common deep areas:**
-   - `**/chunker/hooks/**` — all language-specific chunking hooks
-   - `**/rerank/presets/**` — all rerank presets (git + static + explore)
+   - `**/language/*/chunking/**` — all language-specific chunking hooks
+   - `**/rerank/presets/**` — provider presets (git + static + codegraph);
+     composites live in `trajectory/composite/presets/`, and
+     `explore/rerank/presets/` holds only the resolver
    - `**/derived-signals/**` — all derived signal implementations
    - `**/enrichment/**` — enrichment pipeline components
    - `**/sync/**` — synchronization strategies

@@ -34,9 +34,11 @@ core/
   domains/                             # Domain modules (orchestration + implementation)
     explore/                           # Query-time exploration engine
       reranker.ts                      # Reranker: scoring, overlay mask, adaptive bounds
-      explore-module.ts                # Vector search execution (dense/hybrid)
       rank-module.ts                   # Scroll-based chunk ranking
       post-process.ts                  # computeFetchLimit, postProcess, filterMetaOnly
+      strategies/                      # Search execution, one file per strategy:
+                                       # vector.ts, hybrid.ts, symbol.ts, similar.ts,
+                                       # file-outline.ts, scroll-rank.ts (+ base.ts, factory.ts)
       rerank/
         presets/
           index.ts                     # resolvePresets() + getPresetNames/Weights
@@ -57,7 +59,7 @@ core/
           docs-code-counts.ts          # DocsCodeCountsAccumulator
           distinct-paths.ts            # DistinctPathsAccumulator
       git/
-        signals.ts                     # gitSignals: Signal[]
+        payload-signals.ts             # gitPayloadSignalDescriptors: PayloadSignalDescriptor[]
         rerank/
           derived-signals/             # Git signal classes (1 per file)
           presets/                      # TechDebt, Hotspots, CodeReview, etc.
@@ -73,15 +75,18 @@ core/
           utils.ts                     # readPayloadPath (flat + nested)
 
     ingest/                            # Indexing pipeline
-      collection-stats.ts              # computeCollectionStats orchestrator + SignalValuesAccumulator
-      stats-recompute.ts               # StatsRecomputeService: lazy percentile backfill at rerank time (injected into Reranker via DI)
+      infra/
+        collection-stats.ts            # computeCollectionStats orchestrator + SignalValuesAccumulator
+        stats-recompute.ts             # StatsRecomputeService: lazy percentile backfill (DI into Reranker)
       pipeline/
         enrichment/                    # coordinator, applier
+
+    maintenance/                       # Registry, migrations, drift, footprint, worktree index lifecycle
+      schema-drift-monitor.ts          # SchemaDriftMonitor: payload signal-descriptor drift detection
 
   infra/                               # Foundation: utilities (lowest layer)
     runtime.ts                         # isDebug(), setDebug()
     collection-name.ts                 # validatePath, resolveCollectionName, resolveCollection
-    schema-drift-monitor.ts            # SchemaDriftMonitor: payload version tracking
     stats-cache.ts                     # StatsCache: collection signal stats persistence
 
   contracts/                           # Foundation: interfaces + registries
@@ -90,10 +95,13 @@ core/
       stats-accumulator.ts             # StatsAccumulator, StatsAccumulatorDescriptor,
                                        # PointContext, STATS_ACCUMULATOR_KEYS (shared vocabulary)
     types/
-      provider.ts                      # Signal, FilterDescriptor, FilterLevel,
+      provider.ts                      # FilterDescriptor, FilterLevel,
                                        # ScoringWeights, PayloadBuilder,
                                        # EnrichmentProvider, FileSignalTransform,
                                        # FileSignalOverlay, ChunkSignalOverlay
+      trajectory.ts                    # PayloadSignalDescriptor, SignalStats —
+                                       # the payload-signal vocabulary; there is
+                                       # no bare `Signal` type
       reranker.ts                      # RerankableResult, RerankPreset,
                                        # OverlayMask, RerankMode,
                                        # DerivedSignalDescriptor,

@@ -1,5 +1,16 @@
 # tea-rags — Project Rules
 
+npm package `tea-rags`, binary `tea-rags` — an MCP server for semantic code
+search over a local Qdrant, with git/codegraph trajectories enriching the
+payload and a reranker turning those signals into ranked answers. It ships both
+an MCP tool surface (`src/mcp/`) and a CLI (`src/cli/`) over one core
+(`src/core/`).
+
+**This repo ships the search tooling, so use it on itself** — the self-index is
+project alias `tea-rags` (collection `code_8b243ffe`). Which tool for which
+intent is owned by `.claude-plugin/tea-rags/rules/search-cascade.md`; do not
+reinvent that decision tree here.
+
 ## Rule File Convention (MANDATORY)
 
 Every `.claude/rules/*.md` MUST start with YAML frontmatter declaring scoped
@@ -20,35 +31,84 @@ explicitly, don't omit.
 
 ## Process Rules
 
-- `.claude/rules/silo-pairing.md` — commits touching deep-silo files must
-  include `Why:` line.
-- `.claude/rules/domains-language.md` — Factory-encapsulates-construction,
-  worker-thread DI via injected module-path, language-migration test rule
-  (preserve examples, validate counts). Scoped `domains/language`, chunker,
-  codegraph, `api/internal`.
-- `.claude/rules/naming.md` — qualify generic suffixes
+`.claude/rules/` holds 37 path-scoped rule files — the loader surfaces the ones
+whose `paths:` globs match what you touch, so do not enumerate them here. Read
+`.claude/rules/plugin-guidance-layers.md` first: it defines the guidance layers
+and which surface owns what.
+
+Six declare `paths: ["**/*"]` and therefore bind every session:
+
+- `naming.md` — qualify generic suffixes
   (`Outcome`/`Strategy`/`Metadata`/`Result`…) with domain context, unambiguous
-  at use. Scoped project-wide (`**/*`).
-- `.claude/rules/worktree-beads-lifecycle.md` — tearing down a worktree (merge
-  OR abandon) MUST first settle every bead the branch touched: close with
-  evidence, reset to `open`, or hand to a named live worktree. Recover the bead
-  set from `git log main..worktree-<name>` before removal. Scoped project-wide
-  (`**/*`).
+  at use.
+- `commit-rules.md` — commit types, scope-based versioning, `BREAKING CHANGE`
+  footer.
+- `epic-completion-gate.md` — build + `npm run test:coverage` + user-gated live
+  validation before an epic closes.
+- `worktree-beads-lifecycle.md` — tearing down a worktree (merge OR abandon)
+  MUST first settle every bead the branch touched: close with evidence, reset to
+  `open`, or hand to a named live worktree. Recover the bead set from
+  `git log main..worktree-<name>` before removal.
+- `session-completion.md` — landing the plane: issues, gates, push, handoff.
+- `parallel-sessions.md` — concurrent sessions on one repo.
+
+Two path-scoped ones are missed often enough to name here:
+
+- `silo-pairing.md` — commits touching deep-silo files must include a `Why:`
+  line.
+- `domains-language.md` — Factory-encapsulates-construction, worker-thread DI
+  via injected module-path, language-migration test rule (preserve examples,
+  validate counts). Scoped `domains/language`, chunker, codegraph,
+  `api/internal`, `contracts/types/language.ts`.
+
+**`.claude/rules/.local/` is gitignored** (`.gitignore:28`), so it exists only
+in the main checkout — a worktree session never sees `mcp-testing.md`,
+`working-style.md`, `plan-beads-sync.md`, `beads-labels.md`. Anything a worktree
+must obey belongs in a tracked rule, not there.
+
+## Domain Navigators
+
+Nested `CLAUDE.md` files auto-load when you touch their directory. They carry
+local code-editing knowledge only — invariants held by convention, ordering
+constraints, units, failure modes a green suite misses. Contract: a navigator
+LINKS to a path-scoped rule, never restates it, and states each fact ONCE — a
+fact two directories share belongs to their deepest common ancestor, a fact
+another domain owns stays a pointer. (`.claude/rules/plugin-guidance-layers.md`
+governs the four PLUGIN-facing layers — prime, tool schema, MCP resources,
+search cascade — not these.)
+
+| Navigator (under `src/core/`)         | What it briefs you on                                                   |
+| ------------------------------------- | ----------------------------------------------------------------------- |
+| `domains/trajectory/`                 | derived-signal namespace, stats scoping, filter-preset compilation      |
+| `domains/trajectory/git/`             | commit vs blame ownership families, walk windows, squash-aware sessions |
+| `domains/trajectory/codegraph/`       | deferred chunk pass, physical-vs-alias DuckDB naming, logical keys      |
+| `domains/ingest/`                     | quarantine store placement, what is quarantinable and what is not       |
+| `domains/ingest/pipeline/`            | poison-pill isolation, process-vs-thread transports, ignore patterns    |
+| `domains/ingest/pipeline/enrichment/` | payload-key scoping, terminal markers, run state, worker affinity       |
+| `domains/ingest/operations/`          | incremental work set, alias-vs-target addressing, finalize order        |
+| `domains/explore/`                    | read path: strategy → rerank → overlay/confidence                       |
+| `domains/explore/strategies/`         | per-strategy post-processing contracts                                  |
+| `domains/language/`                   | resolver-chain ordering, local bindings, deferral economics             |
+| `domains/language/ruby/`              | Ruby walker/resolver/DSL specifics                                      |
+| `domains/maintenance/`                | schema drift, migrations, freshness                                     |
+| `domains/maintenance/registry/`       | sticky registry fields, CAS flush, env replay                           |
+| `domains/maintenance/footprint/`      | the five per-collection artifacts, clone/remove saga                    |
+| `domains/maintenance/worktree/`       | clone provisioning, saga commit point, teardown guard                   |
 
 ## Terminology (MANDATORY)
 
 ### Signal Taxonomy
 
-| Term                             | Definition                                                                                                                                               | Example                                                                                   | Where                                                                                                                          |
-| -------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------ |
-| **Signal** (raw)                 | Value stored in Qdrant payload. Defined by Provider. Not normalized.                                                                                     | `ageDays=142`, `commitCount=23`, `bugFixRate=35`                                          | `payload.git.file.*`, `payload.git.chunk.*`                                                                                    |
-| **Derived Signal**               | Normalized/transformed value computed from one or more raw signals at rerank time. Range 0-1. Used as weight keys in presets.                            | `recency` (from ageDays), `ownership` (from blameDominantAuthorPct+blameAuthors)          | `DerivedSignalDescriptor` in provider                                                                                          |
-| **Structural Signal**            | Derived signal from payload structure, not from any trajectory provider.                                                                                 | `similarity`, `chunkSize`, `documentation`, `imports`, `pathRisk`                         | Reranker built-in                                                                                                              |
-| **Preset** (`RerankPreset`)      | Class with name, description, tools[], weights, overlayMask. 3-level hierarchy: Generic -> Trajectory -> Composite. Each preset is a class file.         | `class TechDebtPreset { tools: ["semantic_search"], weights: {...}, overlayMask: {...} }` | `trajectory/git/rerank/presets/`, `explore/rerank/presets/`                                                                    |
-| **Overlay Mask** (`OverlayMask`) | Curates which signals appear in ranking overlay for a preset. `derived: string[]` + optional `raw: { file?, chunk? }`.                                   | `{ derived: ["age", "churn"], raw: { file: ["ageDays"] } }`                               | Each preset class                                                                                                              |
-| **Ranking Overlay**              | Subset of raw + derived signals filtered by OverlayMask (or weight keys for custom), attached to each reranked result.                                   | `{ raw: { file: { ageDays: 142 } }, derived: { recency: 0.61 } }`                         | Reranker response                                                                                                              |
-| **Stats**                        | Low-level descriptive statistics over the collection: count/min/max/mean/stddev/percentiles. Internal compute artifact, not for direct user consumption. | `count`, `mean`, `percentiles[25..95]`                                                    | `SignalStats` in `contracts/types/trajectory.ts`, `StatsCache` in `infra/stats-cache.ts`, `domains/ingest/collection-stats.ts` |
-| **Metrics**                      | Consumer-facing aggregated frame built ON TOP of Stats — selects fields and attaches labels for the `get_index_metrics` MCP tool.                        | `{ min, max, mean, count, labelMap }`                                                     | `SignalMetrics` / `IndexMetrics` in `api/public/dto/metrics.ts`, built by `IndexMetricsQuery#buildSignalMetrics`               |
+| Term                             | Definition                                                                                                                                                          | Example                                                                                                                                                                   | Where                                                                                                                                |
+| -------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------ |
+| **Signal** (raw)                 | Value stored in Qdrant payload. Defined by Provider. Not normalized.                                                                                                | `ageDays=142`, `commitCount=23`, `bugFixRate=35`                                                                                                                          | `payload.git.{file,chunk}.*`, `payload.codegraph.symbols.{file,chunk}.*`                                                             |
+| **Derived Signal**               | Normalized/transformed value computed from one or more raw signals at rerank time. Range 0-1. Used as weight keys in presets.                                       | `recency` (from ageDays), `ownership` (from blameDominantAuthorPct+blameAuthors)                                                                                          | `DerivedSignalDescriptor` in provider                                                                                                |
+| **Structural Signal**            | Derived signal computed from payload structure alone — no history, no graph. Owned by the **static trajectory**, not by the Reranker.                               | `similarity`, `chunkSize`, `documentation`, `imports`, `pathRisk`                                                                                                         | `domains/trajectory/static/rerank/derived-signals/`                                                                                  |
+| **Preset** (`RerankPreset`)      | Class with name, description, tools[], weights, overlayMask; optional groupBy, signalLevel, filter. 2-level hierarchy: registry -> composite.                       | `class TechDebtPreset { tools: ["semantic_search","hybrid_search","rank_chunks","find_similar"], weights: {...}, overlayMask: {...}, filter: { presets: "production" } }` | `trajectory/{git,static}/rerank/presets/`, `trajectory/composite/presets/`, `trajectory/codegraph/symbols/rerank/presets/`           |
+| **Overlay Mask** (`OverlayMask`) | Curates which **raw** signals appear in ranking overlay for a preset. `{ file?: string[]; chunk?: string[] }` — raw signal names only, no derived.                  | `{ file: ["ageDays", "commitCount"], chunk: ["bugFixRate"] }`                                                                                                             | Each preset class                                                                                                                    |
+| **Ranking Overlay**              | Raw file/chunk signals selected by the preset's OverlayMask (or weight keys for custom), each as `{value,label}`, attached as `rankingOverlay`. No derived signals. | `{ preset: "techDebt", file: { commitCount: { value: 12, label: "high" } } }`                                                                                             | Reranker response                                                                                                                    |
+| **Stats**                        | Low-level descriptive statistics over the collection: count/min/max/mean/stddev/percentiles. Internal compute artifact, not for direct user consumption.            | `count`, `mean`, `percentiles[25..95]`                                                                                                                                    | `SignalStats` in `contracts/types/trajectory.ts`, `StatsCache` in `infra/stats-cache.ts`, `domains/ingest/infra/collection-stats.ts` |
+| **Metrics**                      | Consumer-facing aggregated frame built ON TOP of Stats — selects fields and attaches labels for the `get_index_metrics` MCP tool.                                   | `{ min, max, mean, count, labelMap }`                                                                                                                                     | `SignalMetrics` / `IndexMetrics` in `api/public/dto/metrics.ts`, built by `IndexMetricsQuery#buildSignalMetrics`                     |
 
 **Stats vs Metrics rule.** Stats = distribution math (compute/persist layer).
 Metrics = polished user view (DTO layer). Builder one-directional: `SignalStats`
@@ -59,44 +119,62 @@ percentiles, mean, stddev) → `Stats` types. New user-facing MCP-exposed fields
 
 ### Domain Terms
 
-| Term                 | Meaning                                                                                                                                |
-| -------------------- | -------------------------------------------------------------------------------------------------------------------------------------- |
-| Provider             | Trajectory that defines signals, derived signals, filters, and builds signal data.                                                     |
-| Filter               | Qdrant filter condition builder. Defined by Provider.                                                                                  |
-| Reranker             | Orchestrates derived signal extraction, adaptive bounds, scoring, and ranking overlay. Receives descriptors + resolved presets via DI. |
-| SchemaBuilder        | Generates Zod schemas for MCP tools from Reranker's public API (DIP). Lives in api/.                                                   |
-| Alpha-blending       | L3 confidence-weighted blending of file vs chunk signals: `effective = alpha * chunk + (1-alpha) * file`.                              |
-| Confidence dampening | Quadratic per-signal dampening for unreliable statistical signals: `(n/k)^2` where k is signal-specific threshold.                     |
-| Adaptive bounds      | Per-query normalization bounds computed from result set (p95), floored with defaults.                                                  |
+| Term                 | Meaning                                                                                                                                                                                 |
+| -------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Provider             | Trajectory that defines signals, derived signals, filters, and builds signal data.                                                                                                      |
+| Filter               | Qdrant filter condition builder. Defined by Provider.                                                                                                                                   |
+| Reranker             | Orchestrates derived signal extraction, adaptive bounds, scoring, and ranking overlay. Receives derived signals, resolved presets, payload signal descriptors and signal floors via DI. |
+| SchemaBuilder        | Generates Zod schemas for MCP tools from Reranker's public API (DIP). Lives in api/.                                                                                                    |
+| Alpha-blending       | L3 confidence-weighted blending of file vs chunk signals: `effective = alpha * chunk + (1-alpha) * file`.                                                                               |
+| Confidence dampening | Quadratic per-signal dampening for unreliable statistical signals: `(n/k)^2` where k is signal-specific threshold.                                                                      |
+| Adaptive bounds      | Per-query p95 over the result batch, floored with the collection p95. `defaultBound` applies only when collection stats are unloaded.                                                   |
 
 ### Path Shortcuts
 
-All paths relative to `src/core/`.
+All paths relative to `src/core/`, with one exception marked below.
 
-| Alias               | Path                                             |
-| ------------------- | ------------------------------------------------ |
-| `api-public`        | `api/public/`                                    |
-| `api-internal`      | `api/internal/`                                  |
-| `dto`               | `api/public/dto/`                                |
-| `explore`           | `domains/explore/`                               |
-| `explore-strats`    | `domains/explore/strategies/`                    |
-| `explore-presets`   | `domains/explore/rerank/presets/`                |
-| `ingest`            | `domains/ingest/`                                |
-| `pipeline`          | `domains/ingest/pipeline/`                       |
-| `chunker`           | `domains/ingest/pipeline/chunker/`               |
-| `chunker-hooks`     | `domains/ingest/pipeline/chunker/hooks/`         |
-| `enrichment`        | `domains/ingest/pipeline/enrichment/`            |
-| `sync`              | `domains/ingest/sync/`                           |
-| `traj-git`          | `domains/trajectory/git/`                        |
-| `traj-git-signals`  | `domains/trajectory/git/rerank/derived-signals/` |
-| `traj-git-presets`  | `domains/trajectory/git/rerank/presets/`         |
-| `traj-git-stats`    | `domains/trajectory/git/stats/`                  |
-| `traj-static`       | `domains/trajectory/static/`                     |
-| `traj-static-stats` | `domains/trajectory/static/stats/`               |
-| `contracts`         | `contracts/`                                     |
-| `infra`             | `infra/`                                         |
-| `migration`         | `domains/maintenance/migration/`                 |
-| `bootstrap`         | `bootstrap/`                                     |
+| Alias               | Path                                                        |
+| ------------------- | ----------------------------------------------------------- |
+| `api-public`        | `api/public/`                                               |
+| `api-internal`      | `api/internal/`                                             |
+| `api-facades`       | `api/internal/facades/`                                     |
+| `api-ops`           | `api/internal/ops/`                                         |
+| `dto`               | `api/public/dto/`                                           |
+| `explore`           | `domains/explore/`                                          |
+| `explore-strats`    | `domains/explore/strategies/`                               |
+| `explore-queries`   | `domains/explore/queries/`                                  |
+| `chunk-grouping`    | `domains/explore/chunk-grouping/`                           |
+| `preset-resolver`   | `domains/explore/rerank/presets/` (resolver only)           |
+| `ingest`            | `domains/ingest/`                                           |
+| `ingest-ops`        | `domains/ingest/operations/`                                |
+| `ingest-infra`      | `domains/ingest/infra/`                                     |
+| `pipeline`          | `domains/ingest/pipeline/`                                  |
+| `chunker`           | `domains/ingest/pipeline/chunker/`                          |
+| `enrichment`        | `domains/ingest/pipeline/enrichment/`                       |
+| `sync`              | `domains/ingest/sync/`                                      |
+| `language`          | `domains/language/`                                         |
+| `lang-chunking`     | `domains/language/<lang>/chunking/`                         |
+| `lang-kernel`       | `domains/language/kernel/`                                  |
+| `traj-git`          | `domains/trajectory/git/`                                   |
+| `traj-git-signals`  | `domains/trajectory/git/rerank/derived-signals/`            |
+| `traj-git-presets`  | `domains/trajectory/git/rerank/presets/`                    |
+| `traj-git-stats`    | `domains/trajectory/git/stats/`                             |
+| `traj-static`       | `domains/trajectory/static/`                                |
+| `traj-static-stats` | `domains/trajectory/static/stats/`                          |
+| `traj-codegraph`    | `domains/trajectory/codegraph/symbols/`                     |
+| `traj-composite`    | `domains/trajectory/composite/`                             |
+| `traj-filters`      | `domains/trajectory/filter-presets/`                        |
+| `maint-registry`    | `domains/maintenance/registry/`                             |
+| `maint-footprint`   | `domains/maintenance/footprint/`                            |
+| `maint-worktree`    | `domains/maintenance/worktree/`                             |
+| `maint-freshness`   | `domains/maintenance/freshness/`                            |
+| `migration`         | `domains/maintenance/migration/`                            |
+| `contracts`         | `contracts/`                                                |
+| `infra`             | `infra/`                                                    |
+| `bootstrap`         | **`src/bootstrap/`** — sibling of `src/core/`, not under it |
+
+Per-trajectory filter presets live at
+`domains/trajectory/{git,static,composite,codegraph/symbols}/filter-presets/`.
 
 ### Design Principle: Don't Generate — Interrogate
 
@@ -129,12 +207,17 @@ attention. Get it right in fewer rounds.
 
 - `buildFileSignals` / `buildChunkSignals` (NOT
   buildFileMetadata/buildChunkMetadata)
-- `GitFileSignals` / `GitChunkSignals` (NOT GitFileMetadata/ChunkChurnOverlay)
-- `computeFileSignals` / `computeChunkSignals` (NOT
-  computeFileMetadata/computeChunkOverlay)
+- `GitFileSignals` / `ChunkChurnOverlay` (NOT GitFileMetadata) — the git
+  trajectory's file and chunk payload types
+- In the git trajectory: `computeFileSignals` / `computeChunkSignals` (NOT
+  computeFileMetadata/computeChunkOverlay). The ban is trajectory-scoped —
+  `Synchronizer#computeFileMetadata` legitimately owns sync `FileMetadata`
+  (hash/mtime), a different concern.
 - `fileSignalTransform` (NOT fileTransform)
-- `Signal` type (NOT FieldDoc)
-- `gitSignals: Signal[]` (NOT gitPayloadFields: FieldDoc[])
+- `PayloadSignalDescriptor` (NOT FieldDoc, NOT a bare `Signal` type)
+- Provider payload descriptors are declared as
+  `signals: PayloadSignalDescriptor[]` — provider-agnostic, never prefixed per
+  trajectory
 
 ## Automation Agents
 
@@ -142,22 +225,12 @@ attention. Get it right in fewer rounds.
 
 Pre-commit fails
 `ERROR: Coverage for <metric> (X%) does not meet global threshold (Y%)` → MUST
-delegate to `coverage-expander` subagent, not inline tests. The subagent is a
-thin entry point at `.claude/agents/coverage-expander.md`; its methodology lives
-in the agent-only `expand-coverage` skill (`.claude/skills/expand-coverage/`,
-`user-invocable: false`). That skill:
-
-- **freshness gate** — incrementally reindexes local main before searching, so
-  corner-case discovery sees the just-committed source (never a stale index)
-- **corner-case discovery** — reads `coverage/coverage-final.json` hit maps for
-  the EXACT uncovered branches, then `find_symbol` / `hybrid_search` /
-  `find_similar` / `get_callers` to understand and pattern-match them (no `Read`
-  of `src/`)
-- parses `coverage/coverage-summary.json` instead of grepping vitest stdout
-- runs `npm run test:coverage` at most 2× (3× with one retry) per invocation —
-  hard-capped to keep latency bounded
-- never modifies production code, configs, or thresholds; never adds `v8 ignore`
-  / `eslint-disable`; never rewrites passing tests
+delegate to `coverage-expander` subagent, not inline tests. The subagent is
+registered globally at `~/.claude/agents/coverage-expander.md` (the
+project-local duplicate was deleted in `6e07f63c`); its methodology lives in the
+agent-only `expand-coverage` skill (`.claude/skills/expand-coverage/`,
+`user-invocable: false`) — freshness gate, hit-map corner-case discovery, run
+caps, and the never-modify list all live there. Do not restate them here.
 
 Invoke via `Agent` tool, `subagent_type: "coverage-expander"`,
 `run_in_background: true` (MANDATORY — coverage runs are slow, 30–90s each; the
@@ -173,10 +246,11 @@ pre-commit hook — early-exit stops it when thresholds met.
 ## MCP Integration Testing — `npm link` workflow
 
 tea-rags MCP server registered in Claude Code uses **globally-installed npm
-package** (`npm i -g tea-rags-mcp`), NOT local `build/`. Local `npm run build`
-produces `build/` JS but running server keeps pointing at global install.
-Without re-linking, MCP-side integration tests via `mcp__tea-rags__*` exercise
-last-published, not local changes.
+package** (`npm i -g tea-rags` — the package was renamed from `tea-rags-mcp` in
+`13449f74`), NOT local `build/`. Local `npm run build` produces `build/` JS but
+running server keeps pointing at global install. Without re-linking, MCP-side
+integration tests via `mcp__tea-rags__*` exercise last-published, not local
+changes.
 
 ### Sequence (worktree → merge)
 
@@ -237,10 +311,11 @@ reproduces it.
 - **A bare `npm run build` in a worktree is FINE when the build is only needed
   locally.** It touches nothing global, so it cannot collide with a parallel
   session — **the link is the shared resource, not the build.** Standing case: a
-  fresh worktree has no `build/`, and `chunker/infra/pool.ts` forks the
-  _compiled_ worker (`POOL_DIR` rewrites `/src/` → `/build/`), so every
-  worker-forking test — and therefore pre-commit — fails until the worktree is
-  built once. Build it, don't link it. (Tracked as `tea-rags-mcp-hyj9d`.)
+  fresh worktree has no `build/`, and the chunker pool forks the _compiled_
+  worker, so every worker-forking test — and therefore pre-commit — fails until
+  the worktree is built once. Build it, don't link it. (Tracked as
+  `tea-rags-mcp-hyj9d`; the mechanism is owned by
+  `src/core/domains/ingest/pipeline/CLAUDE.md`.)
 - **Reindex / `index-codebase --force` is ALWAYS user-gated**, regardless of
   worktree count — rewrites shared Qdrant index, depends on ollama embeddings
   (can flap mid-run). NEVER chain reindex off build; stop at green tests, wait
@@ -286,7 +361,8 @@ index-time payloads, so any change touching:
 
 requires re-indexing target project. Otherwise server runs new code but reads
 old payloads — new paths see undefined fields / stale shape, silently behave as
-before.
+before. Which collaborator may write which payload key is owned by
+`src/core/domains/ingest/pipeline/enrichment/CLAUDE.md`.
 
 ```bash
 # Standard: incremental reindex (added + modified files only)
@@ -299,7 +375,7 @@ Change touches **enrichment** + validating needs reindex → use CLI, NOT MCP
 `index_codebase`:
 
 ```bash
-tea-rags index-codebase --project <alias> --wait-enrichments --force --json
+DEBUG=1 tea-rags index-codebase --project <alias> --wait-enrichments --force --json
 ```
 
 - `--wait-enrichments` stays attached until every provider finishes, renders
@@ -311,16 +387,20 @@ tea-rags index-codebase --project <alias> --wait-enrichments --force --json
   `enrichmentHealth` — instead of human bars. Parse directly. Always pass when
   an agent consumes the result.
 - **`--json` does NOT carry the codegraph resolve breakdown**, and neither does
-  `get_index_status` or the pipeline debug log. `resolveSuccessRate` per
-  receiver kind is rendered by **`prime`**, under `## Codegraph resolve`:
+  the MCP `get_index_status` formatter or the pipeline debug log.
+  `resolveSuccessRate` per receiver kind is rendered by **`prime`**, under
+  `## Codegraph resolve`:
 
   ```bash
   DEBUG=1 tea-rags prime <path>   # bareCall 0.93 7816/15114, dynamic 0.88 …
   ```
 
   It reads the `cg_run_stats` the last index run persisted, so run the index
-  first and prime after. This is the ONLY supported read path for those numbers
-  — querying DuckDB directly is not one.
+  first and prime after. That is the only supported read path for the
+  **persisted per-receiverKind rates** — querying DuckDB directly is not one.
+  (The core DTO does carry `codegraphResolve`; only the MCP formatter drops it.)
+  Measuring a RESOLVER change needs no index run at all — the offline harnesses
+  and their preconditions are owned by `src/core/domains/language/CLAUDE.md`.
 
 - Do not pipe a `--json` run through `head`/`tail` when you also want the
   diagnostics: they share the stream, and the truncation silently drops the half
@@ -332,31 +412,36 @@ tea-rags index-codebase --project <alias> --wait-enrichments --force --json
 
 ### Schema drift — reindex from scratch (tea-rags self-test only)
 
-Testing **new payload schema** on tea-rags project itself (`code_8b243ffe`):
-existing index built by previous schema. Incremental reindex won't reset
-unchanged-file payloads — schema-drift guard rejects run. Force full re-index:
+Testing **new payload schema** on tea-rags project itself (`code_8b243ffe`): the
+drift guard compares the current composition's payload descriptor keys against
+the keys the cached index recorded, and an incremental reindex won't reset
+unchanged-file payloads — so the run is rejected. A trajectory flag flip
+produces the same report with zero schema change; the mechanism is owned by
+`src/core/domains/maintenance/CLAUDE.md`. Force full re-index:
 
 ```bash
-mcp__tea-rags__force_reindex project=tea-rags    # explicit user confirmation required
+# MCP: forcing is a PARAMETER, not a separate tool
+mcp__tea-rags__index_codebase project=tea-rags forceReindex=true   # explicit user confirmation required
+
+# CLI (preferred — synchronous + timed):
+DEBUG=1 tea-rags index-codebase --project tea-rags --force --wait-enrichments --json
 ```
 
-Or via CLI: `tea-rags reindex --force /Users/artk0re/Dev/Tools/tea-rags-mcp`.
-
-Only on tea-rags self-test index. Real user projects (`production-rails-app`,
-etc.) wait for regular incremental migration — force reindex on large project =
-hours, rarely right tool for testing unreleased changes.
+Only on the tea-rags self-test index. Real user projects (`taxdome`, etc.) wait
+for regular incremental migration — force reindex on a large project = hours,
+rarely the right tool for testing unreleased changes.
 
 ### Test sequence when new functionality affects payload
 
 ```bash
-# 1. Worktree: build + link + reindex tea-rags + (optionally production-rails-app)
+# 1. Worktree: build + link + reindex tea-rags + (optionally another project)
 cd .claude/worktrees/<branch>
 npm run build
 npm link
 # → reconnect MCP servers
 # enrichment-affecting change: prefer the CLI (synchronous + timed)
-tea-rags index-codebase --project tea-rags --wait-enrichments --force --json   # full reset
-mcp__tea-rags__index_codebase project=production-rails-app              # other projects: incremental
+DEBUG=1 tea-rags index-codebase --project tea-rags --wait-enrichments --force --json   # full reset
+mcp__tea-rags__index_codebase project=<other-project-alias>             # other projects: incremental
 
 # 2. Validate via mcp__tea-rags__semantic_search / find_symbol against
 #    the freshly indexed payload.

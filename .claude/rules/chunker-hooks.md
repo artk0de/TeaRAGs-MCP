@@ -8,8 +8,12 @@ paths:
 
 # Chunker Hook Chain (MANDATORY)
 
-Applies to every `ChunkingHook` registered under
-`src/core/domains/ingest/pipeline/chunker/hooks/<language>/`.
+Applies to every `ChunkingHook` a language contributes from
+`src/core/domains/language/<lang>/chunking/` — the array its `chunking/index.ts`
+exports (e.g. `rubyHooks`), which the `LanguageDefinition` passes on as
+`hooks:`. The `ChunkingHook` type itself lives in `contracts/types/chunker.ts`;
+`chunker/hooks/types.ts` is a re-export kept for legacy import sites, not a
+place to add hooks.
 
 ## Claim invariant (orchestrator-enforced)
 
@@ -35,8 +39,9 @@ Implication for hook authors:
 
 ## Hook ordering (MANDATORY)
 
-Order in `<language>/index.ts` positional — orchestrator runs hooks in
-registration order, stops at first writer. Keep canonical ordering per language:
+Order in `language/<lang>/chunking/index.ts` positional — orchestrator runs
+hooks in registration order, stops at first writer. Keep canonical ordering per
+language:
 
 1. **Filter hooks** — `filterNode` only, no `process` work. Narrow candidate
    node set globally added to `chunkableTypes`.
