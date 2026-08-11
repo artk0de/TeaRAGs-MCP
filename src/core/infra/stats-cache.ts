@@ -4,6 +4,7 @@ import { join } from "node:path";
 import type {
   CollectionSignalStats,
   Distributions,
+  PayloadKeyOwner,
   ScopedSignalStats,
   ScoreBackground,
   SignalStats,
@@ -148,16 +149,65 @@ export class StatsCache {
     return { added, removed };
   }
 
-  /** Format a human-readable warning for schema drift. */
-  static formatSchemaDriftWarning(drift: SchemaDrift): string {
+  /**
+   * Format a human-readable warning for schema drift.
+   *
+   * With `owners` supplied, the hint names the narrowest command that actually
+   * repopulates the drifted keys: an enrichment recompute when every new key
+   * belongs to a trajectory that has an enrichment provider, a full reindex
+   * otherwise, and nothing at all when the drift is removals only. Without
+   * `owners` the legacy full-reindex hint is kept, so callers that have no
+   * attribution to give are unaffected.
+   */
+  static formatSchemaDriftWarning(drift: SchemaDrift, owners?: readonly PayloadKeyOwner[]): string {
+    const remedy = owners ? resolveDriftRemedy(drift, owners) : null;
     const lines: string[] = ["Payload schema changed since last indexing."];
     if (drift.added.length > 0) {
-      lines.push(`New fields: ${drift.added.join(", ")} (require reindex to populate)`);
+      const verb = remedy?.kind === "recompute" ? "recompute" : "reindex";
+      lines.push(`New fields: ${drift.added.join(", ")} (require ${verb} to populate)`);
     }
     if (drift.removed.length > 0) {
       lines.push(`Removed fields: ${drift.removed.join(", ")} (no longer used)`);
     }
-    lines.push("Run index_codebase with forceReindex=true to update.");
+    lines.push(remedy ? remedy.hint : "Run index_codebase with forceReindex=true to update.");
     return lines.join("\n");
   }
+}
+
+/** The single command a drift warning should recommend. */
+interface DriftRemedy {
+  kind: "none" | "recompute" | "reindex";
+  hint: string;
+}
+
+/**
+ * Pick ONE remedy for the whole drift.
+ *
+ * A full reindex rebuilds the enrichment layer as well, so a drift that mixes
+ * enrichment-owned keys with chunker-owned ones escalates to the reindex and
+ * drops the per-trajectory list — emitting two competing commands would leave
+ * the reader to work out which one subsumes the other.
+ */
+function resolveDriftRemedy(drift: SchemaDrift, owners: readonly PayloadKeyOwner[]): DriftRemedy {
+  if (drift.added.length === 0) {
+    return {
+      kind: "none",
+      hint: "Removed fields are simply ignored by the current build — no action required.",
+    };
+  }
+
+  const ownerByKey = new Map(owners.map((o) => [o.key, o]));
+  const trajectories = new Set<string>();
+  for (const key of drift.added) {
+    const owner = ownerByKey.get(key);
+    // An unattributed key is treated as chunker-owned: assuming it is cheap to
+    // recompute would hand back a command that silently populates nothing.
+    if (!owner?.recomputable || owner.trajectory === undefined) {
+      return { kind: "reindex", hint: "Run: tea-rags index-codebase --force" };
+    }
+    trajectories.add(owner.trajectory);
+  }
+
+  const scope = [...trajectories].sort().join(",");
+  return { kind: "recompute", hint: `Run: tea-rags index-codebase --force-enrichments ${scope}` };
 }

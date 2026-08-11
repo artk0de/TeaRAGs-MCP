@@ -322,3 +322,73 @@ describe("TrajectoryRegistry (Trajectory interface)", () => {
     expect(typeof registry.getAllEnrichmentProviders()[0].buildFileSignals).toBe("function");
   });
 });
+
+describe("TrajectoryRegistry.getPayloadKeyOwners", () => {
+  it("attributes every payload key to the trajectory that declares it", () => {
+    const registry = new TrajectoryRegistry();
+    registry.register(
+      mockTrajectory({
+        key: "git",
+        payloadSignals: [{ key: "git.file.commitCount", type: "number", description: "commits" }],
+      }),
+    );
+    registry.register(
+      mockTrajectory({
+        key: "codegraph.symbols",
+        payloadSignals: [{ key: "codegraph.file.fanIn", type: "number", description: "fan-in" }],
+      }),
+    );
+
+    const owners = registry.getPayloadKeyOwners();
+
+    expect(owners).toContainEqual({ key: "git.file.commitCount", trajectory: "git", recomputable: true });
+    expect(owners).toContainEqual({
+      key: "codegraph.file.fanIn",
+      trajectory: "codegraph.symbols",
+      recomputable: true,
+    });
+  });
+
+  it("marks keys of a trajectory without an enrichment provider as not recomputable", () => {
+    // The static trajectory writes its payload during chunking, so no amount of
+    // enrichment recompute repopulates its keys — only a full reindex does.
+    const registry = new TrajectoryRegistry();
+    registry.register(
+      mockTrajectory({
+        key: "static",
+        enrichment: undefined,
+        payloadSignals: [{ key: "chunkSize", type: "number", description: "chunk size" }],
+      }),
+    );
+
+    const owners = registry.getPayloadKeyOwners();
+
+    expect(owners).toContainEqual({ key: "chunkSize", trajectory: "static", recomputable: false });
+  });
+
+  it("covers exactly the keys reported by getAllPayloadSignalDescriptors", () => {
+    // The owner list and the descriptor list must not drift apart: a key the
+    // drift hint cannot attribute would silently escalate to a full reindex.
+    const registry = new TrajectoryRegistry();
+    registry.register(
+      mockTrajectory({
+        key: "git",
+        payloadSignals: [
+          { key: "git.file.commitCount", type: "number", description: "commits" },
+          { key: "git.chunk.ageDays", type: "number", description: "age" },
+        ],
+      }),
+    );
+    registry.register(
+      mockTrajectory({
+        key: "static",
+        enrichment: undefined,
+        payloadSignals: [{ key: "chunkSize", type: "number", description: "chunk size" }],
+      }),
+    );
+
+    expect(registry.getPayloadKeyOwners().map((o) => o.key)).toEqual(
+      registry.getAllPayloadSignalDescriptors().map((d) => d.key),
+    );
+  });
+});

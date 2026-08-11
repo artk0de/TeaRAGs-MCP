@@ -14,13 +14,13 @@ import type { GraphDbClientPool } from "../../../adapters/duckdb/pool.js";
 import type { EmbeddingProvider } from "../../../adapters/embeddings/base.js";
 import type { QdrantManager } from "../../../adapters/qdrant/client.js";
 import type { EmbeddingModelGuard } from "../../../adapters/qdrant/embedding-model-guard.js";
+import { selectProviderKeys } from "../../../contracts/provider-selector.js";
 import type { EnrichmentExecutor, IndexRunDaemonGuard } from "../../../contracts/types/enrichment-executor.js";
 import type { EnrichmentProvider } from "../../../contracts/types/provider.js";
 import type { StatsAccumulatorDescriptor } from "../../../contracts/types/stats-accumulator.js";
 import type { PayloadSignalDescriptor } from "../../../contracts/types/trajectory.js";
 import type { Reranker } from "../../../domains/explore/reranker.js";
 import type { SynchronizerTuning } from "../../../domains/ingest/factory.js";
-import { createIngestDependencies } from "../ingest-dependencies.js";
 import { IndexPipeline } from "../../../domains/ingest/operations/indexing.js";
 import { ReindexPipeline } from "../../../domains/ingest/operations/reindexing.js";
 import type { PipelineRegistryDeps, PipelineTuning } from "../../../domains/ingest/pipeline/base.js";
@@ -30,8 +30,8 @@ import { EnrichmentCoordinator } from "../../../domains/ingest/pipeline/enrichme
 import { InlineEnrichmentExecutor } from "../../../domains/ingest/pipeline/enrichment/executor/index.js";
 import { EnrichmentRecovery } from "../../../domains/ingest/pipeline/enrichment/recovery.js";
 import type { DeletionConfig } from "../../../domains/ingest/sync/deletion/strategy.js";
-import { StaticPayloadBuilder } from "../../../domains/trajectory/static/provider.js";
 import type { CollectionRegistry } from "../../../domains/maintenance/registry/collection-registry.js";
+import { StaticPayloadBuilder } from "../../../domains/trajectory/static/provider.js";
 import type { StatsCache } from "../../../infra/stats-cache.js";
 import type {
   ChangeStats,
@@ -43,6 +43,8 @@ import type {
   ProgressCallback,
   TrajectoryIngestConfig,
 } from "../../../types.js";
+import { InvalidParameterError } from "../../errors.js";
+import { createIngestDependencies } from "../ingest-dependencies.js";
 import { IndexingOps } from "../ops/indexing-ops.js";
 
 type ModelInfo = { model: string; contextLength: number; dimensions: number };
@@ -121,8 +123,11 @@ export interface IngestFacadeDeps {
 
 export class IngestFacade {
   private readonly indexingOps: IndexingOps;
+  /** Provider keys `forceEnrichments` selectors are validated against. */
+  private readonly enrichmentProviderKeys: string[];
 
   constructor(deps: IngestFacadeDeps) {
+    this.enrichmentProviderKeys = (deps.enrichmentProviders ?? []).map((p) => p.key);
     /* v8 ignore next 2 -- fallback for backward compat */
     const snapshotDir =
       deps.snapshotDir ?? join(process.env.TEA_RAGS_DATA_DIR ?? join(homedir(), ".tea-rags"), "snapshots");
@@ -162,6 +167,7 @@ export class IngestFacade {
     progressCallback?: ProgressCallback,
     enrichmentProgress?: EnrichmentProgressCallback,
   ): Promise<IndexStats> {
+    validateForceEnrichments(options ?? {}, this.enrichmentProviderKeys);
     return this.indexingOps.run(path, options, progressCallback, enrichmentProgress);
   }
 
@@ -289,5 +295,37 @@ export class IngestFacade {
     );
 
     return { enrichment, indexing, reindex, gitTimePeriods };
+  }
+}
+
+/**
+ * Validate the `forceEnrichments` selectors against the registered providers.
+ *
+ * A selector that matches nothing is refused rather than ignored: recomputing
+ * a smaller set than the caller intended finishes cleanly and looks exactly
+ * like success, so the mistake would only surface as unexplained stale signals
+ * much later.
+ */
+export function validateForceEnrichments(options: IndexOptions, availableProviderKeys: readonly string[]): void {
+  const selectors = options.forceEnrichments;
+  if (selectors === undefined) return;
+
+  if (selectors.length === 0) {
+    throw new InvalidParameterError("forceEnrichments", "at least one provider selector is required");
+  }
+  if (options.forceReindex) {
+    throw new InvalidParameterError(
+      "forceEnrichments",
+      "cannot be combined with forceReindex — a full reindex already rebuilds the enrichment layer",
+    );
+  }
+
+  const available = availableProviderKeys.length > 0 ? availableProviderKeys.join(", ") : "(none registered)";
+  const { unknown } = selectProviderKeys(availableProviderKeys, selectors);
+  if (unknown.length > 0) {
+    throw new InvalidParameterError(
+      "forceEnrichments",
+      `no enrichment provider matches ${unknown.join(", ")}. Available: ${available}`,
+    );
   }
 }

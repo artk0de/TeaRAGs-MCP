@@ -5,6 +5,7 @@
  * Lazy: drift check triggers on first tool call that provides a collection path.
  */
 
+import type { PayloadKeyOwner } from "../../contracts/types/trajectory.js";
 import { resolveCollectionName, validatePath } from "../../infra/collection-name.js";
 import { StatsCache, type SchemaDrift } from "../../infra/stats-cache.js";
 
@@ -15,6 +16,13 @@ export class SchemaDriftMonitor {
   constructor(
     private readonly statsCache: StatsCache,
     private readonly currentPayloadKeys: string[],
+    /**
+     * Per-key trajectory attribution, when the caller can supply it. Lets the
+     * warning name the narrowest command that repopulates the drifted keys
+     * instead of always demanding a full reindex. Omitted by callers that hold
+     * only a flat key list — they keep the legacy hint.
+     */
+    private readonly payloadKeyOwners?: readonly PayloadKeyOwner[],
   ) {}
 
   /**
@@ -36,7 +44,7 @@ export class SchemaDriftMonitor {
       if (!drift) return null;
 
       this._warned = true;
-      return StatsCache.formatSchemaDriftWarning(drift);
+      return StatsCache.formatSchemaDriftWarning(drift, this.payloadKeyOwners);
     } catch {
       return null;
     }
@@ -55,7 +63,7 @@ export class SchemaDriftMonitor {
     if (!drift) return null;
 
     this._warned = true;
-    return StatsCache.formatSchemaDriftWarning(drift);
+    return StatsCache.formatSchemaDriftWarning(drift, this.payloadKeyOwners);
   }
 
   /** Expose drift detection for testing. */

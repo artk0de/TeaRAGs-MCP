@@ -163,6 +163,31 @@ export interface PayloadSignalDescriptor {
 }
 
 /**
+ * A payload key together with the trajectory that declares it.
+ *
+ * Every payload key already knows its owner at the point the registry
+ * aggregates descriptors — the attribution is lost only because the
+ * aggregation flattens to `descriptor.key`. Carrying it instead lets schema
+ * drift name the exact recompute scope rather than guessing from the key's
+ * string prefix, which would break the first time a provider's key and its
+ * payload namespace diverge (`codegraph.symbols` already writes `codegraph.*`).
+ */
+export interface PayloadKeyOwner {
+  key: string;
+  /**
+   * Trajectory key that declares this payload key. Absent for keys written
+   * outside any trajectory — `navigation` is produced by the chunker.
+   */
+  trajectory?: string;
+  /**
+   * True when the owning trajectory carries an `EnrichmentProvider`, so
+   * re-running enrichment repopulates the key. False for payload written
+   * during chunking, which only a full reindex can rebuild.
+   */
+  recomputable: boolean;
+}
+
+/**
  * Smallest value a label may resolve at, regardless of what the collection's
  * own percentile says — `threshold = max(percentile, floor)`.
  *

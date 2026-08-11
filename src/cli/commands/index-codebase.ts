@@ -25,6 +25,8 @@ export interface IndexCodebaseArgs {
   name?: string;
   "wait-enrichments"?: boolean;
   force?: boolean;
+  /** Comma-separated enrichment provider selectors, or `all`. */
+  "force-enrichments"?: string;
   json?: boolean;
   /** Hidden: marks the forked child as the detached indexing worker. */
   __worker?: boolean;
@@ -80,6 +82,22 @@ function forkWorker(
 
 function resolveDataDir(): string {
   return process.env.TEA_RAGS_DATA_DIR ?? join(homedir(), ".tea-rags");
+}
+
+/**
+ * Split the `--force-enrichments` value into provider selectors.
+ *
+ * The flag takes exactly one argument, so the list travels as a single
+ * comma-separated token. Empty entries are dropped; validation of what the
+ * selectors actually mean happens in the facade, against the registered
+ * providers.
+ */
+export function parseEnrichmentSelectors(raw: string | undefined): string[] | undefined {
+  if (raw === undefined) return undefined;
+  return raw
+    .split(",")
+    .map((s) => s.trim())
+    .filter((s) => s.length > 0);
 }
 
 /**
@@ -141,6 +159,28 @@ export const indexCodebaseCommand: CommandModule<object, IndexCodebaseArgs> = {
         default: false,
         describe: "Force a full re-index from scratch instead of incremental.",
       })
+      .option("force-enrichments", {
+        type: "string",
+        nargs: 1,
+        describe:
+          "Rebuild the enrichment layer across the WHOLE index without re-embedding. " +
+          "Syncs the working tree incrementally first, then recomputes the selected providers. " +
+          "Value is required — comma-separated provider keys or `all` " +
+          "(e.g. all, git, codegraph, codegraph.symbols). " +
+          "Use this to validate a new signal, walker, or resolver; use --force only when " +
+          "chunking, parsing, or the vectors themselves changed.",
+      })
+      // NOT `.conflicts()`: `--force` declares `default: false`, and yargs
+      // treats a key carrying a default as PRESENT, so `.conflicts()` rejected
+      // every `--force-enrichments` run even when `--force` was never typed.
+      // Checking the values directly is the only form that distinguishes
+      // "defaulted" from "passed".
+      .check((argv) => {
+        if (argv.force === true && argv["force-enrichments"] !== undefined) {
+          throw new Error("Arguments force and force-enrichments are mutually exclusive");
+        }
+        return true;
+      })
       .option("json", {
         type: "boolean",
         default: false,
@@ -158,7 +198,11 @@ export const indexCodebaseCommand: CommandModule<object, IndexCodebaseArgs> = {
 
     const resolved = applyProjectDefaults(argv);
     const path = resolve(resolved.path ?? process.cwd());
-    const options: IndexOptions = { forceReindex: Boolean(argv.force) };
+    const forceEnrichments = parseEnrichmentSelectors(argv["force-enrichments"]);
+    const options: IndexOptions = {
+      forceReindex: Boolean(argv.force),
+      ...(forceEnrichments ? { forceEnrichments } : {}),
+    };
     const waitEnrichments = Boolean(argv["wait-enrichments"]);
     const jsonMode = Boolean(argv.json);
 

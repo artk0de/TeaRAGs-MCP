@@ -17,8 +17,8 @@ import { INDEXING_METADATA_ID } from "../../../contracts/constants.js";
 import type { StatsAccumulatorDescriptor } from "../../../contracts/types/stats-accumulator.js";
 import type { PayloadSignalDescriptor, ScoreBackground } from "../../../contracts/types/trajectory.js";
 import type { Reranker } from "../../../domains/explore/reranker.js";
+import { NotIndexedError } from "../../../domains/ingest/errors.js";
 import { computeCollectionStats } from "../../../domains/ingest/infra/collection-stats.js";
-import { computeScoreBackground } from "../../../infra/score-background.js";
 import type { IndexPipeline } from "../../../domains/ingest/operations/indexing.js";
 import type { ReindexPipeline } from "../../../domains/ingest/operations/reindexing.js";
 import type { EnrichmentCoordinator } from "../../../domains/ingest/pipeline/enrichment/coordinator.js";
@@ -26,6 +26,7 @@ import { parseMarkerPayload } from "../../../domains/ingest/pipeline/indexing-ma
 import { pipelineLog } from "../../../domains/ingest/pipeline/infra/debug-logger.js";
 import { StatusModule } from "../../../domains/ingest/pipeline/status-module.js";
 import { resolveCollectionName, validatePath } from "../../../infra/collection-name.js";
+import { computeScoreBackground } from "../../../infra/score-background.js";
 import type { StatsCache } from "../../../infra/stats-cache.js";
 import type {
   ChangeStats,
@@ -148,6 +149,9 @@ export class IndexingOps {
     // wiped their measurements.
     pipelineLog.resetProfiler();
     this.enrichment.setEnrichmentProgress(enrichmentProgress);
+    if (options?.forceEnrichments && options.forceEnrichments.length > 0) {
+      return this.recomputeEnrichments(path, options.forceEnrichments, progressCallback);
+    }
     if (!options?.forceReindex) {
       const incremental = await this.tryIncrementalIndex(path, progressCallback);
       if (incremental) return incremental;
@@ -416,6 +420,52 @@ export class IndexingOps {
 
     void this.refreshStats(path);
     return toIndexStats(changeStats);
+  }
+
+  /**
+   * Rebuild the enrichment layer over the whole index, without re-embedding.
+   *
+   * Three things happen in a fixed order, and each one is load-bearing:
+   *
+   * 1. **Guard.** A collection must already exist. Without this the sync below
+   *    would index the project from scratch and pay for every embedding —
+   *    precisely the cost this path exists to avoid — while still looking like
+   *    a successful recompute.
+   * 2. **Sync.** Chunk point ids hash file content, so a recompute against a
+   *    working tree that has moved on writes payload onto ids that are no
+   *    longer in the index. Qdrant treats that as a no-op, so the signals would
+   *    simply vanish with no error anywhere. The sync is therefore not optional
+   *    and its failure aborts the run rather than degrading it.
+   * 3. **Recompute, then stats.** Percentiles and label maps are computed over
+   *    the payload, so they are refreshed regardless of which providers were
+   *    selected — a partial recompute still moves the distributions.
+   */
+  private async recomputeEnrichments(
+    path: string,
+    selectors: readonly string[],
+    progressCallback?: ProgressCallback,
+  ): Promise<IndexStats> {
+    const absolutePath = await validatePath(path);
+    const collectionName = resolveCollectionName(absolutePath);
+    if (!(await this.qdrant.collectionExists(collectionName))) {
+      throw new NotIndexedError(path);
+    }
+
+    const changeStats = await this.reindex.reindexChanges(path, progressCallback);
+    const startedAt = Date.now();
+    const enrichmentMetrics = await this.enrichment.recomputeEnrichments(collectionName, absolutePath, selectors);
+    const enrichmentDurationMs = Date.now() - startedAt;
+    await this.refreshStats(path);
+
+    // Report the RECOMPUTE's own numbers, not the sync's. The sync leg is a
+    // near-no-op here, so inheriting its (empty) enrichment fields would state
+    // that nothing was enriched on a pass whose entire purpose was enriching.
+    return {
+      ...toIndexStats(changeStats),
+      enrichmentStatus: "completed",
+      enrichmentDurationMs,
+      enrichmentMetrics,
+    };
   }
 
   private async fullIndex(

@@ -17,6 +17,7 @@ import { randomUUID } from "node:crypto";
 import type { Ignore } from "ignore";
 
 import type { QdrantManager } from "../../../../adapters/qdrant/client.js";
+import { selectProviderKeys } from "../../../../contracts/provider-selector.js";
 import type { FileExtraction } from "../../../../contracts/types/codegraph.js";
 import type {
   EnrichmentExecutor,
@@ -50,6 +51,16 @@ const EMPTY_METRICS: EnrichmentMetrics = {
 };
 
 /** No-op keep-alive guard: used when codegraph is disabled or in tests. */
+/**
+ * File-phase dispatch size for a whole-index recompute. Matches the live
+ * pipeline's batching intent: a repo-sized single dispatch would blow worker
+ * memory and delay every payload write to the very end of the pass.
+ */
+const RECOMPUTE_BATCH_SIZE = 500;
+
+/** Runaway backstop for the recompute scroll — not a working cap. */
+const RECOMPUTE_SCROLL_HARD_CAP = 1_000_000;
+
 const NOOP_RELEASE: IndexRunDaemonRelease = async () => {};
 const NOOP_DAEMON_GUARD: IndexRunDaemonGuard = { begin: async () => NOOP_RELEASE };
 
@@ -397,6 +408,111 @@ export class EnrichmentCoordinator {
   }
 
   /**
+   * Rebuild enrichment payload for EVERY point of the selected providers.
+   *
+   * This is a full enrichment RUN, not a repair — the distinction matters.
+   * Recovery heals points that were MISSED and deliberately runs outside a run
+   * window; a recompute rebuilds payload that is present but stale, which is
+   * the same work an ordinary index run does. Driving it through recovery
+   * therefore skipped everything that hangs off the run lifecycle:
+   * `finalizeSignals` never fired, so codegraph never wrote `cg_run_stats` and
+   * its resolve breakdown could not be measured afterwards, and the RunState
+   * metrics reported zero work on a run that had rewritten the whole index.
+   *
+   * So it takes the streamed path instead, with the chunk set read back from
+   * the index rather than produced by a fresh chunking pass: begin a run over
+   * the selected providers, feed the stored chunks through the file phase in
+   * batches, run the chunk phase, then let the normal completion sequence
+   * close it.
+   *
+   * Selectors resolve through the shared provider-selector rules, so
+   * `codegraph` reaches every provider under that namespace. A selector
+   * matching nothing does nothing: callers validate up front and this is only
+   * the last line.
+   */
+  async recomputeEnrichments(
+    collectionName: string,
+    absolutePath: string,
+    selectors: readonly string[],
+  ): Promise<EnrichmentMetrics> {
+    const { matched } = selectProviderKeys(this.providerKeys, selectors);
+    if (matched.length === 0) return EMPTY_METRICS;
+
+    // Re-derive the chunk set from the index itself. The points are already
+    // stored — this pass rewrites their payload, so the ids and line ranges
+    // come from Qdrant rather than from a fresh chunking pass.
+    const stored = await this.scrollStoredChunks(collectionName, absolutePath);
+    if (stored.items.length === 0) return EMPTY_METRICS;
+
+    this.beginRun(absolutePath, collectionName, undefined, undefined, false, stored.fileCount, matched);
+    // File phase, in the same bounded batches the live pipeline uses, so a
+    // whole-repo recompute cannot hand a provider one enormous dispatch.
+    for (let i = 0; i < stored.items.length; i += RECOMPUTE_BATCH_SIZE) {
+      this.onChunksStored(collectionName, absolutePath, stored.items.slice(i, i + RECOMPUTE_BATCH_SIZE));
+    }
+    // Chunk phase, then the same completion sequence a normal run ends with —
+    // which is what makes `finalizeSignals` (and codegraph's `cg_run_stats`
+    // write) fire, and what fills the RunState metrics the CLI reports.
+    this.startChunkEnrichment(collectionName, absolutePath, stored.chunkMap);
+    return this.awaitCompletion(collectionName);
+  }
+
+  /**
+   * Read every enrichable point of the collection back as chunk items.
+   *
+   * Mirrors what the chunk pipeline would have handed the coordinator during a
+   * normal run: one `ChunkItem` per point for the file phase, plus the
+   * path-keyed lookup the chunk phase consumes. `content` stays empty — no
+   * enrichment provider reads it, and shipping it would pull the whole corpus
+   * through memory for nothing.
+   *
+   * `metadata.filePath` is ABSOLUTE, matching what the chunk pipeline emits:
+   * the file phase re-derives the repo-relative path against the provider's
+   * effective root, so handing it an already-relative path yields `../…`.
+   */
+  private async scrollStoredChunks(
+    collectionName: string,
+    absolutePath: string,
+  ): Promise<{ items: ChunkItem[]; chunkMap: Map<string, ChunkLookupEntry[]>; fileCount: number }> {
+    const root = absolutePath.endsWith("/") ? absolutePath.slice(0, -1) : absolutePath;
+    const points = await this.qdrant.scrollFiltered(
+      collectionName,
+      {
+        must_not: [
+          { key: "_type", match: { value: "indexing_metadata" } },
+          { key: "_type", match: { value: "schema_metadata" } },
+          { is_empty: { key: "relativePath" } },
+        ],
+      },
+      RECOMPUTE_SCROLL_HARD_CAP,
+      undefined,
+      ["relativePath", "startLine", "endLine"],
+    );
+
+    const items: ChunkItem[] = [];
+    const chunkMap = new Map<string, ChunkLookupEntry[]>();
+    for (const point of points) {
+      const relativePath = typeof point.payload?.relativePath === "string" ? point.payload.relativePath : null;
+      if (!relativePath) continue;
+      const startLine = typeof point.payload?.startLine === "number" ? point.payload.startLine : 0;
+      const endLine = typeof point.payload?.endLine === "number" ? point.payload.endLine : 0;
+      const chunkId = String(point.id);
+
+      items.push({
+        type: "upsert",
+        chunkId,
+        chunk: { content: "", startLine, endLine, metadata: { filePath: `${root}/${relativePath}` } },
+      } as unknown as ChunkItem);
+
+      const entries = chunkMap.get(relativePath) ?? [];
+      entries.push({ chunkId, startLine, endLine } as unknown as ChunkLookupEntry);
+      chunkMap.set(relativePath, entries);
+    }
+
+    return { items, chunkMap, fileCount: chunkMap.size };
+  }
+
+  /**
    * Begin a new enrichment run. Non-blocking. Call before pipeline.start().
    *
    * There is no whole-repo prefetch anymore — file enrichment streams per batch
@@ -415,6 +531,12 @@ export class EnrichmentCoordinator {
     _changedPaths?: string[],
     crossPass = false,
     fileCount = 0,
+    /**
+     * Restrict the run to these provider keys. Only `recomputeEnrichments`
+     * passes it — an ordinary index run enriches with everything registered.
+     * Omitted means "every provider", so existing callers are unaffected.
+     */
+    onlyProviderKeys?: readonly string[],
   ): void {
     // Build a fresh RunState. Per-run instances guarantee old promise closures
     // mutate their orphaned RunState, never the current one.
@@ -448,8 +570,10 @@ export class EnrichmentCoordinator {
       runState.chunkPhase.setOnComplete(this._onChunkEnrichmentComplete);
     }
 
+    const runProviders =
+      onlyProviderKeys === undefined ? this.providers : this.providers.filter((p) => onlyProviderKeys.includes(p.key));
     runState.contexts = new Map(
-      this.providers.map((provider) => {
+      runProviders.map((provider) => {
         const effectiveRoot = provider.resolveRoot(absolutePath);
         if (effectiveRoot !== absolutePath) {
           pipelineLog.enrichmentPhase("REPO_ROOT_DIFFERS", {
