@@ -1,4 +1,3 @@
-// Copyright (c) 2025 Martin Halder <halderm@arkadia-labs.io>
 // Copyright (c) 2026 Arthur Korochansky
 // SPDX-License-Identifier: MIT
 
@@ -17,8 +16,8 @@ import { promises as fs } from "node:fs";
 import { homedir } from "node:os";
 import { join, relative } from "node:path";
 
-import type { FileChanges } from "../../../types.js";
 import { isDebug } from "../../../infra/runtime.js";
+import type { FileChanges } from "../../../types.js";
 import { MerkleTree } from "./infra/merkle.js";
 import { SnapshotManager } from "./snapshot/snapshot.js";
 
