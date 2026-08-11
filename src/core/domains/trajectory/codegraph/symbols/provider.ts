@@ -1254,16 +1254,21 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
     // a language absent from this run simply has no rows.
     const rows = this.runState.toResolveRunStatsRows();
     // A run that observed NO call site has no breakdown to publish, and
-    // `recordRunStats` is DELETE+INSERT — handing it zero rows does not report
-    // "nothing resolved", it ERASES the last real measurement. A no-op
-    // incremental run (auto-update, 0 changed files) reaches finalize on a
-    // freshly constructed provider whose tally is empty, so without this guard
-    // the resolve breakdown survives only until the next such run: prime and
+    // `recordRunStats` is DELETE+INSERT — persisting such a run does not report
+    // "nothing resolved", it ERASES the last real measurement: prime and
     // get_index_status then drop the `## Codegraph resolve` section entirely and
     // the number behind an epic's claim is gone. Keep the previous run's rows —
     // slightly stale beats absent, and the next run that observes anything
     // overwrites them wholesale.
-    if (rows.length === 0) return;
+    //
+    // The test is "did any call site get attempted", NOT "is the array empty".
+    // `languageKindTally` (resolution-runner.ts) registers a language once per
+    // WALKED FILE, before the per-call loop, so a run over files that contain no
+    // calls at all yields a full set of ALL-ZERO rows — non-empty, yet carrying
+    // no measurement. An emptiness check passes those straight through to the
+    // DELETE. Observed live on 2026-08-11 (bd tea-rags-mcp-snbzk): consecutive
+    // runs alternated between a full breakdown and no section at all.
+    if (!rows.some((r) => r.attempted > 0)) return;
     await graphDb.recordRunStats(rows);
   }
 
