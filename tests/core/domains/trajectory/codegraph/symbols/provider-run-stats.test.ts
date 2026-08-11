@@ -197,6 +197,40 @@ describe("CodegraphEnrichmentProvider — run-stats persistence (2jet-D)", () =>
     }
   });
 
+  // A run that observed NO call sites has no breakdown to report. Publishing its
+  // empty tally is a pure loss: `recordRunStats` is DELETE+INSERT, so zero rows
+  // erase the last real measurement and `get_index_status` / prime then omit the
+  // `## Codegraph resolve` section entirely. That is not hypothetical — a no-op
+  // incremental run (auto-update, 0 changed files) still reaches finalizeSignals,
+  // and it wiped this repo's own breakdown 18 minutes after the force reindex that
+  // produced it, leaving the epic's headline resolveSuccessRate unverifiable.
+  // An empty run must LEAVE the previous run's rows in place.
+  it("an empty run does not erase the previous run's breakdown", async () => {
+    const root = makeRoot();
+    try {
+      await provider.streamFileBatch(root, ["src/foo.ts"]);
+      await provider.streamFileBatch(root, ["src/main.ts"]);
+      await provider.finalizeSignals(root);
+      expect((await client.getRunStats()).find((r) => r.receiverKind === "constant")).toMatchObject({
+        attempted: 2,
+        resolved: 1,
+      });
+
+      // Second run delivers no files at all — the no-op incremental shape. Model
+      // it the way production reaches it: a run-start seam zeroes the tally (or
+      // the run lands on a freshly constructed provider in a new worker), then
+      // finalize publishes a breakdown of nothing.
+      provider.beginExtractionRun();
+      await provider.finalizeSignals(root);
+
+      const persisted = await client.getRunStats();
+      expect(persisted.length).toBeGreaterThan(0);
+      expect(persisted.find((r) => r.receiverKind === "constant")).toMatchObject({ attempted: 2, resolved: 1 });
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
   // bd tea-rags-mcp-cnqrg — the persisted grain is per-(language, receiverKind):
   // every row carries `extraction.language` so get_index_status can break the
   // aggregate resolveSuccessRate down per code language and locate the resolver
