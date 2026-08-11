@@ -315,6 +315,23 @@ describe("discardFailedCollectionBuild", () => {
     expect(removeCodegraphDb).toHaveBeenCalledWith("code_abc_v12");
   });
 
+  // The Qdrant collection is what the discard is FOR; the codegraph DB is a
+  // best-effort extra. A remover that throws must not turn a discard that
+  // actually happened into a reported failure — same contract
+  // cleanupOrphanedVersions holds for its own sweep.
+  it("still reports the discard when the codegraph remover throws", async () => {
+    const qdrant = createMockQdrant(
+      [{ aliasName: "code_abc", collectionName: "code_abc_v11" }],
+      ["code_abc_v11", "code_abc_v12"],
+    );
+    const removeCodegraphDb = vi.fn().mockRejectedValue(new Error("unlink failed"));
+
+    const discarded = await discardFailedCollectionBuild(qdrant, "code_abc", "code_abc_v12", removeCodegraphDb);
+
+    expect(discarded).toBe(true);
+    expect(qdrant.deleteCollection).toHaveBeenCalledWith("code_abc_v12");
+  });
+
   // Qdrant being unreachable is a plausible reason the run failed in the first
   // place. Unable to prove a fallback exists ⇒ keep the collection and leave it
   // to the next run's sweep, which can re-check when Qdrant answers again.
