@@ -1252,7 +1252,19 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
     // bd tea-rags-mcp-cnqrg — one row per (observed language, receiver kind).
     // The client overwrites the whole table so stale prior-run cells never leak;
     // a language absent from this run simply has no rows.
-    await graphDb.recordRunStats(this.runState.toResolveRunStatsRows());
+    const rows = this.runState.toResolveRunStatsRows();
+    // A run that observed NO call site has no breakdown to publish, and
+    // `recordRunStats` is DELETE+INSERT — handing it zero rows does not report
+    // "nothing resolved", it ERASES the last real measurement. A no-op
+    // incremental run (auto-update, 0 changed files) reaches finalize on a
+    // freshly constructed provider whose tally is empty, so without this guard
+    // the resolve breakdown survives only until the next such run: prime and
+    // get_index_status then drop the `## Codegraph resolve` section entirely and
+    // the number behind an epic's claim is gone. Keep the previous run's rows —
+    // slightly stale beats absent, and the next run that observes anything
+    // overwrites them wholesale.
+    if (rows.length === 0) return;
+    await graphDb.recordRunStats(rows);
   }
 
   /**

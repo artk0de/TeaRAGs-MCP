@@ -1063,7 +1063,7 @@ const TS_EXTENSIONS = [".ts", ".tsx"] as const;
 const SKIP_DIRECTORIES = new Set(["node_modules", "build", "dist", ".git", ".claude", "coverage", "website"]);
 
 /** Every `.ts` / `.tsx` file under `dir`, repo-relative, sorted for determinism. */
-async function collectSourceFiles(repoRoot: string, dir: string): Promise<RelPath[]> {
+export async function collectSourceFiles(repoRoot: string, dir: string): Promise<RelPath[]> {
   const found: RelPath[] = [];
 
   const walk = async (absolute: string): Promise<void> => {
@@ -1084,7 +1084,7 @@ async function collectSourceFiles(repoRoot: string, dir: string): Promise<RelPat
 }
 
 /** Walker output for one file, or `null` when the file could not be parsed. */
-function extractFile(
+export function extractFile(
   repoRoot: string,
   relPath: RelPath,
   composer: DefaultSymbolIdComposer,
@@ -1114,7 +1114,7 @@ function extractFile(
 }
 
 /** `SymbolDefinition`s for a file, matching what the production sink upserts. */
-function buildSymbolDefs(extraction: FileExtraction): SymbolDefinition[] {
+export function buildSymbolDefs(extraction: FileExtraction): SymbolDefinition[] {
   return extraction.chunks.map((chunk) => ({
     symbolId: chunk.symbolId,
     fqName: chunk.symbolId,
@@ -1248,17 +1248,18 @@ async function runOracle(repoRoot: string, targetDir: string, limit: number, qui
  * Ruby-only (ivars, associations, Zeitwerk ancestry) and populating them here
  * would be noise pretending to be fidelity.
  */
-function buildCallContext(
+export function buildCallContext(
   extraction: FileExtraction,
   chunk: FileExtraction["chunks"][number],
   classExtends: Record<string, string>,
+  symbolTable: InMemoryGlobalSymbolTable = symbolTableRef,
 ): CallContext {
   return {
     callerFile: extraction.relPath,
     callerScope: chunk.scope,
     callerSymbolId: chunk.symbolId,
     imports: extraction.imports,
-    symbolTable: symbolTableRef,
+    symbolTable,
     classFieldTypes: extraction.classFieldTypes,
     localBindings: chunk.localBindings,
     classExtends,
