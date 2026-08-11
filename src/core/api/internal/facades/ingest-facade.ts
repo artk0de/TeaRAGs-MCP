@@ -14,6 +14,7 @@ import type { GraphDbClientPool } from "../../../adapters/duckdb/pool.js";
 import type { EmbeddingProvider } from "../../../adapters/embeddings/base.js";
 import type { QdrantManager } from "../../../adapters/qdrant/client.js";
 import type { EmbeddingModelGuard } from "../../../adapters/qdrant/embedding-model-guard.js";
+import { selectLanguages } from "../../../contracts/language-selector.js";
 import { selectProviderKeys } from "../../../contracts/provider-selector.js";
 import type { EnrichmentExecutor, IndexRunDaemonGuard } from "../../../contracts/types/enrichment-executor.js";
 import type { EnrichmentProvider } from "../../../contracts/types/provider.js";
@@ -24,6 +25,7 @@ import type { SynchronizerTuning } from "../../../domains/ingest/factory.js";
 import { IndexPipeline } from "../../../domains/ingest/operations/indexing.js";
 import { ReindexPipeline } from "../../../domains/ingest/operations/reindexing.js";
 import type { PipelineRegistryDeps, PipelineTuning } from "../../../domains/ingest/pipeline/base.js";
+import { SELECTABLE_LANGUAGES } from "../../../domains/ingest/pipeline/chunker/config.js";
 import { EnrichmentApplier } from "../../../domains/ingest/pipeline/enrichment/applier.js";
 import type { BlobReaderFactory } from "../../../domains/ingest/pipeline/enrichment/chunk-phase.js";
 import { EnrichmentCoordinator } from "../../../domains/ingest/pipeline/enrichment/coordinator.js";
@@ -168,6 +170,7 @@ export class IngestFacade {
     enrichmentProgress?: EnrichmentProgressCallback,
   ): Promise<IndexStats> {
     validateForceEnrichments(options ?? {}, this.enrichmentProviderKeys);
+    validateLanguages(options ?? {}, SELECTABLE_LANGUAGES);
     return this.indexingOps.run(path, options, progressCallback, enrichmentProgress);
   }
 
@@ -326,6 +329,45 @@ export function validateForceEnrichments(options: IndexOptions, availableProvide
     throw new InvalidParameterError(
       "forceEnrichments",
       `no enrichment provider matches ${unknown.join(", ")}. Available: ${available}`,
+    );
+  }
+}
+
+/**
+ * Validate the `languages` filter: which modes accept it, and what it may name.
+ *
+ * Refused on a plain incremental run. There the scope is already the changed
+ * file set, so a language filter cannot make the run cheaper in any way that
+ * matters — it can only hide files the sync existed to catch up on, leaving
+ * their payload stale with nothing to show that it happened.
+ *
+ * An unsupported language is refused rather than passed through: it would
+ * select zero points, and a run that touches nothing still finishes cleanly,
+ * which reads as success. Validating against the languages this build can
+ * CHUNK (not against the ones this index happens to contain) keeps the check
+ * synchronous; a supported language that the corpus lacks is caught downstream,
+ * where the empty selection is already known.
+ */
+export function validateLanguages(options: IndexOptions, supportedLanguages: readonly string[]): void {
+  const { languages } = options;
+  if (languages === undefined) return;
+
+  if (languages.length === 0) {
+    throw new InvalidParameterError("languages", "at least one language is required");
+  }
+  if (!options.forceReindex && options.forceEnrichments === undefined) {
+    throw new InvalidParameterError(
+      "languages",
+      "only applies to a forced run — pass it with forceReindex or forceEnrichments. " +
+        "An incremental run is already scoped to the files that changed",
+    );
+  }
+
+  const { unknown } = selectLanguages(supportedLanguages, languages);
+  if (unknown.length > 0) {
+    throw new InvalidParameterError(
+      "languages",
+      `unsupported language: ${unknown.join(", ")}. Supported: ${[...supportedLanguages].sort().join(", ")}`,
     );
   }
 }

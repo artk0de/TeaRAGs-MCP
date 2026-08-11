@@ -51,13 +51,13 @@ what you intend to run, and wait for explicit "reindex" / "замер".
 
 Pick the validation that matches what the epic changed:
 
-| Epic touched                                    | Live validation                                                                                                                                                                                     |
-| ----------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Enrichment, payload shape, signal descriptors   | `tea-rags index-codebase --project <alias> --wait-enrichments --force-enrichments <keys> --json`, then confirm enrichment health has no `degraded` / `failed` and the unenriched count settles at 0 |
-| Language resolver, walker, codegraph resolution | `--force-enrichments codegraph`, then re-measure `resolveSuccessRate` / `inProjectEdgeRecall` on the corpus the epic targets, against a baseline recorded BEFORE the first edit                     |
-| Chunking, parsing, sparse/dense vectors         | `--force` — the chunk set itself changes, so point ids move and the vectors must be rebuilt. This is the ONLY class that needs a full reindex                                                       |
-| Query path, rerank presets, derived signals     | `npm run build && npm link`, ask for `/mcp reconnect`, then exercise the change through `mcp__tea-rags__*` — not through DuckDB-direct probes                                                       |
-| Migrations, schema versions                     | Run the migration against a real index and verify the drift guard reports clean                                                                                                                     |
+| Epic touched                                    | Live validation                                                                                                                                                                                            |
+| ----------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Enrichment, payload shape, signal descriptors   | `tea-rags index-codebase --project <alias> --wait-enrichments --force-enrichments <keys> --json`, then confirm enrichment health has no `degraded` / `failed` and the unenriched count settles at 0        |
+| Language resolver, walker, codegraph resolution | `--force-enrichments codegraph --languages <the language>`, then re-measure `resolveSuccessRate` / `inProjectEdgeRecall` on the corpus the epic targets, against a baseline recorded BEFORE the first edit |
+| Chunking, parsing, sparse/dense vectors         | `--force` — the chunk set itself changes, so point ids move and the vectors must be rebuilt. This is the ONLY class that needs a full reindex                                                              |
+| Query path, rerank presets, derived signals     | `npm run build && npm link`, ask for `/mcp reconnect`, then exercise the change through `mcp__tea-rags__*` — not through DuckDB-direct probes                                                              |
+| Migrations, schema versions                     | Run the migration against a real index and verify the drift guard reports clean                                                                                                                            |
 
 Always `DEBUG=1` on the index CLI, for per-phase timing.
 
@@ -85,6 +85,40 @@ The dividing line is whether the CHUNK SET moves. Chunk point ids hash file
 content and line range, so a chunking or parsing change relocates every id and
 only a full reindex is coherent. An enrichment change leaves the ids alone and
 rewrites payload in place — exactly what the recompute does.
+
+### Narrow it to the language you are working on (MANDATORY)
+
+A change to a walker, resolver, or `SymbolResolutionStrategy` belongs to ONE
+language. Validating it MUST pass `--languages <that language>`:
+
+```bash
+DEBUG=1 tea-rags index-codebase --project <alias> \
+  --force-enrichments codegraph --languages typescript --json
+```
+
+Measured on the tea-rags self-index (2026-08-11): the codegraph recompute
+touched 906 files instead of 1936 and finished in 53s. The narrower the corpus,
+the more iterations of the measure-fix-measure loop fit in the same time — and
+that loop is what actually moves `resolveSuccessRate`.
+
+It also keeps the OTHER languages' measurements intact. `cg_run_stats` is
+replaced per language, so a run restricted to typescript leaves the ruby and
+javascript rows exactly as the last full run left them, and `prime` keeps
+reporting them. Without the flag, every validation run overwrites the whole
+table, so a baseline recorded for another language is gone the first time you
+measure yours.
+
+Comma-separate when a change genuinely spans languages
+(`--languages typescript,javascript` for a shared TS/JS resolver). Omit the flag
+only when the change is language-agnostic — the pool, the applier, the run
+lifecycle.
+
+The same flag works on `--force`, where it restricts the WHOLE run, chunking
+included. Be deliberate there: a full reindex builds a NEW collection and flips
+the alias, so a restricted `--force` produces an index containing ONLY those
+languages, and everything else disappears from search until the next
+unrestricted rebuild. On a real project that is a data-loss-shaped mistake; on a
+throwaway fixture it is exactly the right tool.
 
 The recompute syncs the working tree incrementally first, so it is safe on a
 repo with uncommitted edits: changed files are re-embedded, everything else is

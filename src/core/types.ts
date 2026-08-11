@@ -81,6 +81,14 @@ export interface IndexOptions {
    * public DTO in `api/public/dto/ingest.ts`.
    */
   forceEnrichments?: string[];
+
+  /**
+   * Restrict the run to points of these languages. Valid with `forceEnrichments`
+   * (narrows the recompute) and with `forceReindex` (narrows the whole run,
+   * chunking included); refused on a plain incremental. Mirrors the public DTO
+   * in `api/public/dto/ingest.ts`.
+   */
+  languages?: string[];
 }
 
 export interface IndexStats {

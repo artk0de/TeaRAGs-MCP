@@ -85,10 +85,14 @@ describe("IndexingOps — forceEnrichments", () => {
 
     await ops.run("/repo", { forceEnrichments: ["codegraph", "git"] });
 
-    expect(deps.enrichment.recomputeEnrichments).toHaveBeenCalledWith(expect.any(String), expect.any(String), [
-      "codegraph",
-      "git",
-    ]);
+    // Fourth argument is the language filter: undefined here pins that a
+    // recompute without --languages still walks the WHOLE index.
+    expect(deps.enrichment.recomputeEnrichments).toHaveBeenCalledWith(
+      expect.any(String),
+      expect.any(String),
+      ["codegraph", "git"],
+      undefined,
+    );
   });
 
   it("refuses to recompute when the codebase was never indexed", async () => {
@@ -158,9 +162,12 @@ describe("IndexingOps — forceEnrichments", () => {
 
     await ops.run("/repo", { forceEnrichments: ["codegraph"] });
 
-    expect(deps.enrichment.recomputeEnrichments).toHaveBeenCalledWith(`${alias}_v62`, expect.any(String), [
-      "codegraph",
-    ]);
+    expect(deps.enrichment.recomputeEnrichments).toHaveBeenCalledWith(
+      `${alias}_v62`,
+      expect.any(String),
+      ["codegraph"],
+      undefined,
+    );
   });
 
   it("keeps the plain name when no alias points at it", async () => {
@@ -169,9 +176,12 @@ describe("IndexingOps — forceEnrichments", () => {
 
     await ops.run("/repo", { forceEnrichments: ["codegraph"] });
 
-    expect(deps.enrichment.recomputeEnrichments).toHaveBeenCalledWith(expect.any(String), expect.any(String), [
-      "codegraph",
-    ]);
+    expect(deps.enrichment.recomputeEnrichments).toHaveBeenCalledWith(
+      expect.any(String),
+      expect.any(String),
+      ["codegraph"],
+      undefined,
+    );
   });
 
   it("reports the run as completed", async () => {

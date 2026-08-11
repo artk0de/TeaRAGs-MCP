@@ -39,6 +39,21 @@ export interface IndexOptions {
    * including the vectors.
    */
   forceEnrichments?: string[];
+
+  /**
+   * Restrict the run to points of these languages.
+   *
+   * The second, orthogonal selector: `forceEnrichments` says WHAT to recompute,
+   * this says WHICH points to touch. Valid on both force modes and refused on a
+   * plain incremental, where the changed-file set already defines the scope.
+   *
+   * Under `forceEnrichments` it narrows the recompute. Under `forceReindex` it
+   * narrows the WHOLE run, chunking included — and since a full reindex builds
+   * a new collection and flips the alias to it, the result contains ONLY these
+   * languages. That is the accepted trade for skipping the embedding cost of
+   * everything else, not an oversight.
+   */
+  languages?: string[];
 }
 
 // ---------------------------------------------------------------------------
