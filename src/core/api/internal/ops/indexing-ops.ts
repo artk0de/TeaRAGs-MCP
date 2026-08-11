@@ -19,6 +19,7 @@ import type { PayloadSignalDescriptor, ScoreBackground } from "../../../contract
 import type { Reranker } from "../../../domains/explore/reranker.js";
 import { NotIndexedError } from "../../../domains/ingest/errors.js";
 import { computeCollectionStats } from "../../../domains/ingest/infra/collection-stats.js";
+import { resolveAliasTargetCollection } from "../../../domains/ingest/operations/index.js";
 import type { IndexPipeline } from "../../../domains/ingest/operations/indexing.js";
 import type { ReindexPipeline } from "../../../domains/ingest/operations/reindexing.js";
 import type { EnrichmentCoordinator } from "../../../domains/ingest/pipeline/enrichment/coordinator.js";
@@ -446,10 +447,18 @@ export class IndexingOps {
     progressCallback?: ProgressCallback,
   ): Promise<IndexStats> {
     const absolutePath = await validatePath(path);
-    const collectionName = resolveCollectionName(absolutePath);
-    if (!(await this.qdrant.collectionExists(collectionName))) {
+    const aliasName = resolveCollectionName(absolutePath);
+    if (!(await this.qdrant.collectionExists(aliasName))) {
       throw new NotIndexedError(path);
     }
+    // Address the PHYSICAL collection, never the alias. Qdrant resolves aliases
+    // server-side, so its own calls work either way — but the codegraph pool
+    // opens the DuckDB file by the literal string it is handed, so the alias
+    // creates a second, shadow `<alias>.duckdb` that no reader ever opens. The
+    // recompute's graph writes, `cg_run_stats` included, then land in a file
+    // prime does not read and the resolve breakdown looks like it vanished
+    // (bd tea-rags-mcp-snbzk; same mechanism as 6goqa).
+    const collectionName = resolveAliasTargetCollection(aliasName, await this.qdrant.aliases.listAliases());
 
     const changeStats = await this.reindex.reindexChanges(path, progressCallback);
     const startedAt = Date.now();

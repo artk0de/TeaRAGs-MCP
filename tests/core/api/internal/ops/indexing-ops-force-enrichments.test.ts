@@ -7,9 +7,12 @@
  * exist — a silent no-op in Qdrant, not an error.
  */
 
+import { resolve } from "node:path";
+
 import { describe, expect, it, vi } from "vitest";
 
 import { IndexingOps, type IndexingOpsDeps } from "../../../../../src/core/api/internal/ops/indexing-ops.js";
+import { resolveCollectionName } from "../../../../../src/core/infra/collection-name.js";
 import type { ChangeStats } from "../../../../../src/core/types.js";
 
 const changeStats: ChangeStats = {
@@ -27,7 +30,10 @@ const changeStats: ChangeStats = {
 
 function makeDeps(overrides: Partial<IndexingOpsDeps> = {}): IndexingOpsDeps {
   return {
-    qdrant: { collectionExists: vi.fn().mockResolvedValue(true) } as never,
+    qdrant: {
+      collectionExists: vi.fn().mockResolvedValue(true),
+      aliases: { listAliases: vi.fn().mockResolvedValue([]) },
+    } as never,
     embeddings: {
       embed: vi.fn().mockResolvedValue([0]),
       resolveModelInfo: vi.fn().mockResolvedValue(undefined),
@@ -89,7 +95,10 @@ describe("IndexingOps — forceEnrichments", () => {
     // Without this guard the sync would index the whole project from scratch,
     // paying for every embedding — the exact cost the flag exists to avoid.
     const deps = makeDeps({
-      qdrant: { collectionExists: vi.fn().mockResolvedValue(false) } as never,
+      qdrant: {
+        collectionExists: vi.fn().mockResolvedValue(false),
+        aliases: { listAliases: vi.fn().mockResolvedValue([]) },
+      } as never,
     });
     const ops = new IndexingOps(deps);
 
@@ -126,6 +135,43 @@ describe("IndexingOps — forceEnrichments", () => {
 
     expect(deps.enrichment.recomputeEnrichments).not.toHaveBeenCalled();
     expect(deps.reindex.reindexChanges).toHaveBeenCalled();
+  });
+
+  it("addresses the PHYSICAL collection, not the alias", async () => {
+    // GraphDbClientPool#pathFor opens whatever string it is handed, literally.
+    // Handing it the alias opens a SECOND, shadow `<alias>.duckdb` that no
+    // reader ever looks at — so the recompute's codegraph writes (cg_run_stats
+    // among them) land in a file prime never reads, and the resolve breakdown
+    // appears to vanish. Observed live on the tea-rags self-index 2026-08-11:
+    // both code_8b243ffe.duckdb and code_8b243ffe_v62.duckdb existed side by
+    // side (bd tea-rags-mcp-snbzk / 6goqa).
+    const alias = resolveCollectionName(resolve("/repo"));
+    const deps = makeDeps({
+      qdrant: {
+        collectionExists: vi.fn().mockResolvedValue(true),
+        aliases: {
+          listAliases: vi.fn().mockResolvedValue([{ aliasName: alias, collectionName: `${alias}_v62` }]),
+        },
+      } as never,
+    });
+    const ops = new IndexingOps(deps);
+
+    await ops.run("/repo", { forceEnrichments: ["codegraph"] });
+
+    expect(deps.enrichment.recomputeEnrichments).toHaveBeenCalledWith(`${alias}_v62`, expect.any(String), [
+      "codegraph",
+    ]);
+  });
+
+  it("keeps the plain name when no alias points at it", async () => {
+    const deps = makeDeps();
+    const ops = new IndexingOps(deps);
+
+    await ops.run("/repo", { forceEnrichments: ["codegraph"] });
+
+    expect(deps.enrichment.recomputeEnrichments).toHaveBeenCalledWith(expect.any(String), expect.any(String), [
+      "codegraph",
+    ]);
   });
 
   it("reports the run as completed", async () => {
