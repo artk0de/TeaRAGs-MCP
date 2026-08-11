@@ -10,9 +10,9 @@ import { DuckDbGraphClient } from "../../../../../../src/core/adapters/duckdb/cl
 import { collectSymbols } from "../../../../../../src/core/domains/language/kernel/collect-symbols.js";
 import { DefaultSymbolIdComposer } from "../../../../../../src/core/domains/language/kernel/symbol-id.js";
 import { TSCallResolver } from "../../../../../../src/core/domains/language/typescript/resolver/ts-resolver.js";
+import { runMigrations } from "../../../../../../src/core/domains/maintenance/migration/database/runner.js";
 import { CodegraphEnrichmentProvider } from "../../../../../../src/core/domains/trajectory/codegraph/symbols/provider.js";
 import { InMemoryGlobalSymbolTable } from "../../../../../../src/core/domains/trajectory/codegraph/symbols/symbol-table.js";
-import { runMigrations } from "../../../../../../src/core/domains/maintenance/migration/database/runner.js";
 
 const __dirname = fileURLToPath(new URL(".", import.meta.url));
 const MIG_DIR = resolve(__dirname, "../../../../../../src/core/domains/maintenance/migration/database/migrations");
@@ -246,6 +246,32 @@ describe("CodegraphEnrichmentProvider — run-stats persistence (2jet-D)", () =>
       expect(persisted.length).toBeGreaterThan(0);
       for (const r of persisted) expect(r.language).toBe("typescript");
       const constant = persisted.find((r) => r.receiverKind === "constant" && r.language === "typescript");
+      expect(constant).toMatchObject({ attempted: 2, resolved: 1 });
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  // A run that observed a language but attempted NO call site produces one
+  // all-zero row per receiver kind — a non-empty array of nothing. recordRunStats
+  // is DELETE+INSERT, so persisting it ERASES the last real measurement, and
+  // prime's "## Codegraph resolve" section disappears. Observed live on
+  // 2026-08-11: consecutive --force-enrichments codegraph runs alternated
+  // between a full breakdown and no section at all.
+  it("keeps the previous measurement when a run tallied nothing", async () => {
+    const root = makeRoot();
+    try {
+      await provider.streamFileBatch(root, ["src/foo.ts"]);
+      await provider.streamFileBatch(root, ["src/main.ts"]);
+      await provider.finalizeSignals(root);
+      const measured = await client.getRunStats();
+      expect(measured.find((r) => r.receiverKind === "constant")).toMatchObject({ attempted: 2, resolved: 1 });
+
+      // A second finalize with nothing walked: the tally is empty.
+      await provider.finalizeSignals(root);
+
+      const afterEmptyRun = await client.getRunStats();
+      const constant = afterEmptyRun.find((r) => r.receiverKind === "constant");
       expect(constant).toMatchObject({ attempted: 2, resolved: 1 });
     } finally {
       rmSync(root, { recursive: true, force: true });
