@@ -1,5 +1,10 @@
-import { describe, expect, it } from "vitest";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
+
+import type { CallContext, CallRef } from "../../../../src/core/contracts/types/codegraph.js";
 import { BashLanguage } from "../../../../src/core/domains/language/bash/index.js";
 import { UnsupportedLanguageError } from "../../../../src/core/domains/language/errors.js";
 import { LanguageFactory } from "../../../../src/core/domains/language/factory.js";
@@ -11,6 +16,7 @@ import { PythonLanguage } from "../../../../src/core/domains/language/python/ind
 import { RubyLanguage } from "../../../../src/core/domains/language/ruby/index.js";
 import { RustLanguage } from "../../../../src/core/domains/language/rust/index.js";
 import { TypeScriptLanguage } from "../../../../src/core/domains/language/typescript/index.js";
+import { InMemoryGlobalSymbolTable } from "../../../../src/core/domains/trajectory/codegraph/symbols/symbol-table.js";
 
 /**
  * The factory is REAL (consolidation, bd tea-rags-mcp-cat4): `create(lang)`
@@ -119,5 +125,81 @@ describe("LanguageFactory", () => {
 
   it("the thrown error names the requested language", () => {
     expect(() => new LanguageFactory().create("cobol")).toThrow(/cobol/);
+  });
+});
+
+/**
+ * The root the TypeScript resolver reads its tsconfig from (bd tea-rags-mcp-f4wcm).
+ *
+ * `TypeScriptLanguage` used to compute `process.cwd()` itself, and `create(lang)`
+ * offered no way to say otherwise — so an index run launched from anywhere but
+ * the target project's root read the WRONG `tsconfig.json`. That is the normal
+ * case, not an edge one: the CLI is routinely run from tea-rags-mcp's own
+ * checkout with `--project <other>`. It defeated the path-alias work in
+ * bd tea-rags-mcp-9owaa entirely — a live `--force-enrichments codegraph` run on
+ * taxdome moved bareCall 7784 -> 7798 of ~131 460, while the same fix measured
+ * 703 -> 6820 resolved edges when exercised against taxdome's real tsconfig
+ * directly.
+ *
+ * The assertion is behavioural rather than a getter check: with the right root
+ * the alias resolves and the call is INTERNAL; with `process.cwd()` (this repo,
+ * whose own tsconfig declares no `paths`) the specifier maps to nothing and
+ * `targetsExternalImport` calls it external. Nothing else distinguishes the two.
+ */
+describe("LanguageFactory repoRoot threading (bd tea-rags-mcp-f4wcm)", () => {
+  let repoRoot: string;
+
+  beforeEach(() => {
+    repoRoot = mkdtempSync(join(tmpdir(), "language-factory-root-"));
+    mkdirSync(join(repoRoot, "app"), { recursive: true });
+    writeFileSync(join(repoRoot, "app", "client.ts"), "export const client = { get: (u: string) => u };\n");
+    writeFileSync(
+      join(repoRoot, "tsconfig.json"),
+      JSON.stringify({ compilerOptions: { paths: { "*": ["./app/*"] } } }),
+    );
+  });
+
+  afterEach(() => {
+    rmSync(repoRoot, { recursive: true, force: true });
+  });
+
+  function callAndContext(importText: string, bound: string): { call: CallRef; ctx: CallContext } {
+    return {
+      call: { callText: `${bound}.get(u)`, receiver: bound, member: "get", startLine: 5 },
+      ctx: {
+        callerFile: "app/page.tsx",
+        callerScope: [],
+        imports: [{ importText, startLine: 1, importedNames: [bound] }],
+        symbolTable: new InMemoryGlobalSymbolTable(),
+      },
+    };
+  }
+
+  it("reads the tsconfig of the root it was given, not of process.cwd()", () => {
+    const provider = new LanguageFactory({ repoRoot }).create("typescript");
+    const { call, ctx } = callAndContext("client", "client");
+    expect(provider.resolver?.targetsExternalImport?.(call, ctx)).toBe(false);
+  });
+
+  it("still calls a genuine npm import external under that same root", () => {
+    // Guards the other direction: threading a root must not turn the classifier
+    // into a rubber stamp that maps everything into the project.
+    const provider = new LanguageFactory({ repoRoot }).create("typescript");
+    const { call, ctx } = callAndContext("axios", "axios");
+    expect(provider.resolver?.targetsExternalImport?.(call, ctx)).toBe(true);
+  });
+
+  it("defaults to process.cwd() when no root is supplied, so existing callers are unaffected", () => {
+    const provider = new LanguageFactory().create("typescript");
+    const { call, ctx } = callAndContext("node:fs", "fs");
+    expect(provider.resolver?.targetsExternalImport?.(call, ctx)).toBe(true);
+  });
+
+  it("keeps its own default root when TypeScriptLanguage is constructed directly", () => {
+    // Anything building the provider outside the factory (tests, scripts run
+    // from the target repo) must not have to learn a new parameter.
+    const provider = new TypeScriptLanguage();
+    const { call, ctx } = callAndContext("node:fs", "fs");
+    expect(provider.resolver.targetsExternalImport?.(call, ctx)).toBe(true);
   });
 });

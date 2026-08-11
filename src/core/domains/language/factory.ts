@@ -73,15 +73,35 @@ export class LanguageFactory implements LanguageFactoryDescriptor {
    * typescript vertical landed (bd tea-rags-mcp-cen6).
    */
   private readonly ambiguousResolveMode: AmbiguousResolveMode;
+  /**
+   * Root of the project being INDEXED — not of the process that launched the
+   * run (bd tea-rags-mcp-f4wcm).
+   *
+   * Only TypeScript reads it today, and it reads it for something the whole
+   * language's resolution hangs on: `loadTsConfig(repoRoot)` supplies the
+   * `paths` aliases, and the `ts.Program` cache resolves files against the same
+   * directory. `TypeScriptLanguage` used to call `process.cwd()` itself, which
+   * is right only when the CLI happens to be launched from the target repo —
+   * and the normal case is the opposite, `tea-rags index-codebase --project X`
+   * run from wherever the operator's shell is. The wrong tsconfig then loads
+   * silently, every alias import maps to nothing, and the calls behind them are
+   * bucketed external.
+   */
+  private readonly repoRoot: string;
   private readonly cache = new Map<string, LanguageProvider>();
 
   /**
    * @param options.ambiguousResolveMode Threaded into native resolvers
    *   (`RubyLanguage`, `TypeScriptLanguage`, …). Defaults to the codegraph
    *   default (`strict`).
+   * @param options.repoRoot Root of the project being indexed, threaded into
+   *   providers that resolve against project-root-relative configuration
+   *   (TypeScript's tsconfig today). Defaults to `process.cwd()`, which is what
+   *   every caller got before it existed.
    */
-  constructor(options: { ambiguousResolveMode?: AmbiguousResolveMode } = {}) {
+  constructor(options: { ambiguousResolveMode?: AmbiguousResolveMode; repoRoot?: string } = {}) {
     this.ambiguousResolveMode = options.ambiguousResolveMode ?? DEFAULT_AMBIGUOUS_RESOLVE_MODE;
+    this.repoRoot = options.repoRoot ?? process.cwd();
   }
 
   create(lang: string): LanguageProvider {
@@ -97,7 +117,7 @@ export class LanguageFactory implements LanguageFactoryDescriptor {
   private build(lang: string): LanguageProvider {
     // Native switch — extend with one branch per language vertical.
     if (lang === "ruby") return new RubyLanguage(this.ambiguousResolveMode);
-    if (lang === "typescript") return new TypeScriptLanguage(this.ambiguousResolveMode);
+    if (lang === "typescript") return new TypeScriptLanguage(this.ambiguousResolveMode, this.repoRoot);
     if (lang === "javascript") return new JavaScriptLanguage(this.ambiguousResolveMode);
     if (lang === "python") return new PythonLanguage(this.ambiguousResolveMode);
     if (lang === "go") return new GoLanguage(this.ambiguousResolveMode);
