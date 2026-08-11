@@ -110,7 +110,7 @@ Red-first, one behaviour each:
 1. the language filter reaches the Qdrant filter on the recompute path
 2. `--force --languages` reaches the scanner as `extensions`
 3. plain incremental + `--languages` is refused
-4. unknown language is refused, and the message names the indexed languages
+4. an unsupported language is refused, and the message names what IS supported
 5. `recordRunStats` keeps rows of a language absent from the incoming set
 6. no `--languages` leaves both paths byte-identical to today
 
