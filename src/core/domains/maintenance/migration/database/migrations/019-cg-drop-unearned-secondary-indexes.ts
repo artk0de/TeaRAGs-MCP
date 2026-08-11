@@ -1,0 +1,73 @@
+/**
+ * Drop the codegraph secondary indexes that do not earn their drift exposure
+ * (bd tea-rags-mcp-oucyv, second pass).
+ *
+ * 018 removed this hazard from `cg_symbols_cycles`. The audit behind THIS
+ * migration found it still live on `cg_symbols`, where it had already produced
+ * both of its failure modes on this project's own index.
+ *
+ * The mechanism: DuckDB answers `WHERE <col> = ?` from a single-column ART index
+ * whenever one exists — `EXPLAIN ANALYZE` reports `Type: Index Scan` — while a
+ * composite PRIMARY KEY is never used for pushdown, not even for a full-key
+ * lookup. So the PK can never give a wrong answer, and every secondary index on
+ * a table that is rewritten by a scoped DELETE can. An ART drifts from its table
+ * whenever a run dies mid-write: a killed daemon, an invalidated database, an
+ * aborted index pass. This pipeline has all three, so drift is not preventable
+ * here — only survivable.
+ *
+ * Both halves were measured on the live index, where 4 402 `cg_symbols` rows
+ * carried four drifted ARTs:
+ *
+ *   - `DELETE FROM cg_symbols WHERE rel_path = ?` matched nothing while the rows
+ *     were plainly present, so the `INSERT OR IGNORE` behind it skipped every row
+ *     it was meant to replace. A re-walked file's symbols silently stopped
+ *     updating — no error, anywhere.
+ *   - Where the filter column's ART was intact but a SIBLING's was not, the
+ *     DELETE reached the rows and index maintenance failed instead:
+ *     `Failed to delete all rows from index. Only deleted 0 out of N rows`,
+ *     which DuckDB escalates to invalidating the entire database.
+ *
+ * Which is why this drops ALL of a table's secondary indexes or none: removing
+ * only the one the DELETE filters by converts the silent half into the fatal
+ * half, since the DELETE then reaches rows whose entries the remaining ARTs are
+ * missing. That was reproduced against a copy of the live database before
+ * choosing.
+ *
+ * Dropped here, with the cost measured on a taxdome-class table (504k rows)
+ * rather than assumed:
+ *
+ *   - `cg_symbols` — all four. `fq_name` and `short_name` are never filtered by
+ *     anything; `rel_path` is filtered only by the scoped DELETE, and 256 of
+ *     those ran 264ms WITHOUT the indexes against 301ms with them, because ART
+ *     maintenance costs more than the sequential scan it saves; `symbol_id`
+ *     backs `findSymbolChunk`, one lookup per request, which goes from 0.19ms to
+ *     1.34ms. The table is left with its PRIMARY KEY and nothing else.
+ *   - `cg_symbols_metrics` — `page_rank` is written and read back whole, never
+ *     filtered. Its only secondary index, so that table also ends up immune.
+ *   - `cg_symbols_inheritance` — `ancestor_symbol_id` is only ever projected.
+ *     Dropping it removes one drift surface; the table keeps the fq-name indexes
+ *     below, so it is NOT made immune, only less exposed.
+ *
+ * Deliberately kept, because they answer real filters and were measured to earn
+ * it on 1.58M edge rows: `cg_symbols_edges_method`'s three (a `getCallers`-shape
+ * read is 0.24ms indexed against 1.68ms scanned, and the per-file DELETE is
+ * 1 388ms against 1 684ms), `cg_symbols_edges_file.target_rel_path` (`getFanIn`,
+ * called once per file during enrichment), `cg_symbols_inheritance`'s fq-name
+ * pair (`getSupertypes` / `getSubtypes`), and `cg_ambiguous_fanout.member`
+ * (`getAmbiguousCallersByMember`). Those tables stay exposed to drift; making
+ * them safe means detecting and repairing a drifted ART, not deleting it, which
+ * is a different piece of work.
+ *
+ * Existing databases heal on their next open — in-process and daemon alike, both
+ * run the migration ledger.
+ *
+ * Companion `.sql` mirrors this for the disk-loading test path. Keep in sync.
+ */
+export const SQL_019_CG_DROP_UNEARNED_SECONDARY_INDEXES = `
+DROP INDEX IF EXISTS idx_cg_symbols_fq;
+DROP INDEX IF EXISTS idx_cg_symbols_short;
+DROP INDEX IF EXISTS idx_cg_symbols_rel_path;
+DROP INDEX IF EXISTS idx_cg_symbols_symbol;
+DROP INDEX IF EXISTS idx_cg_symbols_metrics_page_rank;
+DROP INDEX IF EXISTS idx_cg_inh_ancestor_sym;
+`;

@@ -20,7 +20,8 @@ import { SQL_014_CG_METHOD_EDGES_SOURCE_PATH_INDEX } from "./014-cg-method-edges
 import { SQL_015_CG_RUN_STATS_CORE_AMBIGUOUS } from "./015-cg-run-stats-core-ambiguous.js";
 import { SQL_016_CG_SYMBOLS_ABSTRACT_STUB } from "./016-cg-symbols-abstract-stub.js";
 import { SQL_017_CG_SYMBOLS_FILES_CONTENT_HASH } from "./017-cg-symbols-files-content-hash.js";
-import { SQL_018_CG_METRICS_DROP_PAGE_RANK_INDEX } from "./018-cg-metrics-drop-page-rank-index.js";
+import { SQL_018_CG_CYCLES_DROP_SECONDARY_INDEXES } from "./018-cg-cycles-drop-secondary-indexes.js";
+import { SQL_019_CG_DROP_UNEARNED_SECONDARY_INDEXES } from "./019-cg-drop-unearned-secondary-indexes.js";
 
 export interface DatabaseMigration {
   filename: string;
@@ -45,5 +46,6 @@ export const DATABASE_MIGRATIONS: DatabaseMigration[] = [
   { filename: "015-cg-run-stats-core-ambiguous.sql", sql: SQL_015_CG_RUN_STATS_CORE_AMBIGUOUS },
   { filename: "016-cg-symbols-abstract-stub.sql", sql: SQL_016_CG_SYMBOLS_ABSTRACT_STUB },
   { filename: "017-cg-symbols-files-content-hash.sql", sql: SQL_017_CG_SYMBOLS_FILES_CONTENT_HASH },
-  { filename: "018-cg-metrics-drop-page-rank-index.sql", sql: SQL_018_CG_METRICS_DROP_PAGE_RANK_INDEX },
+  { filename: "018-cg-cycles-drop-secondary-indexes.sql", sql: SQL_018_CG_CYCLES_DROP_SECONDARY_INDEXES },
+  { filename: "019-cg-drop-unearned-secondary-indexes.sql", sql: SQL_019_CG_DROP_UNEARNED_SECONDARY_INDEXES },
 ];
