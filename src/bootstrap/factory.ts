@@ -36,6 +36,7 @@ import { WorktreeOps } from "../core/api/internal/ops/worktree-ops.js";
 import type { SymbolChunkResolver } from "../core/contracts/types/codegraph.js";
 import type { IndexRunDaemonGuard } from "../core/contracts/types/enrichment-executor.js";
 import type { WorkerEnrichmentDescriptor } from "../core/contracts/types/provider.js";
+import type { PayloadKeyOwner } from "../core/contracts/types/trajectory.js";
 import { WorkerPoolEnrichmentExecutor } from "../core/domains/ingest/pipeline/enrichment/executor/index.js";
 import { initDebugLogger, pipelineLog } from "../core/domains/ingest/pipeline/infra/debug-logger.js";
 import { buildPipelineConfig } from "../core/domains/ingest/pipeline/types.js";
@@ -811,10 +812,19 @@ export async function createAppContext(config: AppConfig, hooks?: AppContextHook
     },
   });
   const essentialTrajectoryFields = composition.registry.getEssentialPayloadKeys();
-  const schemaDriftMonitor = new SchemaDriftMonitor(statsCache, [
-    ...composition.allPayloadSignalDescriptors.map((d) => d.key),
-    "navigation",
-  ]);
+  // Attribution first, key list derived from it — the two must describe the
+  // same set, or the drift hint would recommend a recompute for a key that
+  // recompute never populates. `navigation` is written by the chunker, so it
+  // has no trajectory and is not recomputable.
+  const payloadKeyOwners: PayloadKeyOwner[] = [
+    ...composition.registry.getPayloadKeyOwners(),
+    { key: "navigation", recomputable: false },
+  ];
+  const schemaDriftMonitor = new SchemaDriftMonitor(
+    statsCache,
+    payloadKeyOwners.map((o) => o.key),
+    payloadKeyOwners,
+  );
   const projectRegistryOps = new ProjectRegistryOps({
     registry: collectionRegistry,
     qdrant: infra.qdrant,

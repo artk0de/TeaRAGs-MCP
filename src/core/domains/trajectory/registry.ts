@@ -16,7 +16,7 @@ import type { FilterPresetDef } from "../../contracts/types/filter-preset.js";
 import type { EnrichmentProvider, FilterDescriptor, FilterLevel } from "../../contracts/types/provider.js";
 import type { DerivedSignalDescriptor, RerankPreset } from "../../contracts/types/reranker.js";
 import type { StatsAccumulatorDescriptor } from "../../contracts/types/stats-accumulator.js";
-import type { PayloadSignalDescriptor, Trajectory } from "../../contracts/types/trajectory.js";
+import type { PayloadKeyOwner, PayloadSignalDescriptor, Trajectory } from "../../contracts/types/trajectory.js";
 import { ConfigValueInvalidError } from "../../infra/errors.js";
 
 export class TrajectoryRegistry {
@@ -75,6 +75,25 @@ export class TrajectoryRegistry {
       signals.push(...trajectory.payloadSignals);
     }
     return signals;
+  }
+
+  /**
+   * Every payload key paired with the trajectory that declares it.
+   *
+   * Same traversal as {@link getAllPayloadSignalDescriptors}, but it keeps the
+   * owner instead of flattening to the key. Schema drift consumes this to name
+   * the recompute scope; `recomputable` mirrors whether the trajectory has an
+   * enrichment provider at all.
+   */
+  getPayloadKeyOwners(): PayloadKeyOwner[] {
+    const owners: PayloadKeyOwner[] = [];
+    for (const trajectory of this.trajectories.values()) {
+      const recomputable = trajectory.enrichment !== undefined;
+      for (const signal of trajectory.payloadSignals) {
+        owners.push({ key: signal.key, trajectory: trajectory.key, recomputable });
+      }
+    }
+    return owners;
   }
 
   /** Payload signal keys marked as essential (always shown in metaOnly). */

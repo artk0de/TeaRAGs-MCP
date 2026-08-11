@@ -5,7 +5,7 @@ import { join } from "node:path";
 
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
-import type { CollectionSignalStats } from "../../../../src/core/contracts/types/trajectory.js";
+import type { CollectionSignalStats, PayloadKeyOwner } from "../../../../src/core/contracts/types/trajectory.js";
 import { SchemaDriftMonitor } from "../../../../src/core/domains/maintenance/schema-drift-monitor.js";
 import { StatsCache } from "../../../../src/core/infra/stats-cache.js";
 
@@ -180,6 +180,33 @@ describe("SchemaDriftMonitor", () => {
 
     it("returns null for undefined cached keys", () => {
       expect(SchemaDriftMonitor.detectDrift(undefined, ["a"])).toBeNull();
+    });
+  });
+
+  describe("trajectory-attributed hints", () => {
+    const OWNERS: PayloadKeyOwner[] = [
+      { key: "git.file.commitCount", trajectory: "git", recomputable: true },
+      { key: "git.file.ageDays", trajectory: "git", recomputable: true },
+      { key: "navigation", recomputable: false },
+    ];
+
+    it("recommends an enrichment recompute when the drift is enrichment-owned", () => {
+      cache.save("code_abc123", SAMPLE_STATS, ["git.file.commitCount"]);
+      const monitor = new SchemaDriftMonitor(cache, ["git.file.commitCount", "git.file.ageDays"], OWNERS);
+
+      const warning = monitor.checkByCollectionName("code_abc123");
+
+      expect(warning).toContain("--force-enrichments git");
+    });
+
+    it("escalates to a full reindex when a chunker-owned key drifts", () => {
+      cache.save("code_abc123", SAMPLE_STATS, ["git.file.commitCount"]);
+      const monitor = new SchemaDriftMonitor(cache, ["git.file.commitCount", "navigation"], OWNERS);
+
+      const warning = monitor.checkByCollectionName("code_abc123");
+
+      expect(warning).toContain("--force");
+      expect(warning).not.toContain("--force-enrichments");
     });
   });
 });
