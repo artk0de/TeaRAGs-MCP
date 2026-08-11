@@ -72,6 +72,17 @@ export const ECMASCRIPT_GLOBALS: ReadonlySet<string> = new Set([
   "URLSearchParams",
   "TextEncoder",
   "TextDecoder",
+  // DOM / BOM ambient (bd tea-rags-mcp-4008o — taxdome React measurement)
+  "window",
+  "document",
+  "navigator",
+  "localStorage",
+  "sessionStorage",
+  "history",
+  "location",
+  "screen",
+  "crypto",
+  "performance",
 ]);
 
 /**
@@ -159,6 +170,28 @@ export const ECMASCRIPT_BUILTIN_TYPES: ReadonlySet<string> = new Set([
   "TextEncoder",
   "TextDecoder",
   "Buffer",
+  // DOM / BOM instance types (bd tea-rags-mcp-4008o — taxdome React
+  // measurement). `Request` / `Response` are DELIBERATELY excluded: they are
+  // exactly the "look-alike" case this file's own `receiverIsExternalInstance`
+  // docblock warns about — Express-style backend frameworks routinely declare
+  // their own `Request`/`Response`, and `ts-annotated-external-receiver-guard.test.ts`
+  // (bd tea-rags-mcp-3somv) already pins that a bare type name must not decide
+  // this outright; those two stay on the checker-arm path (case 4b), same as
+  // before this change.
+  "Event",
+  "CustomEvent",
+  "FormData",
+  "Blob",
+  "File",
+  "FileReader",
+  "AbortController",
+  "Headers",
+  "IntersectionObserver",
+  "MutationObserver",
+  "ResizeObserver",
+  "WebSocket",
+  "Image",
+  "Audio",
 ]);
 
 /**
