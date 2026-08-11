@@ -15,7 +15,13 @@ describe("migration 007 — cg_symbols.chunk_id", () => {
     if (dir) rmSync(dir, { recursive: true, force: true });
   });
 
-  it("adds a nullable chunk_id column and a symbol_id index after init", async () => {
+  // 007 shipped the nullable column together with a `symbol_id` index. The
+  // column is the invariant; the index was one way to serve the lookup it
+  // enabled, and 019 removed it — an ART on this table silently voids the scoped
+  // DELETE that rewrites a file's symbols (bd tea-rags-mcp-oucyv). What 007
+  // actually promises is that a symbol can be found by id, which the round-trip
+  // cases below pin directly.
+  it("adds a nullable chunk_id column after init", async () => {
     dir = mkdtempSync(join(tmpdir(), "cg-chunkid-"));
     const client = new DuckDbGraphClient({ path: join(dir, "graph.duckdb") });
     await client.init();
@@ -28,11 +34,6 @@ describe("migration 007 — cg_symbols.chunk_id", () => {
     const chunkId = cols.find((c) => c.column_name === "chunk_id");
     expect(chunkId).toBeDefined();
     expect(chunkId!.is_nullable).toBe("YES");
-
-    const idx = await client.queryAll<{ index_name: string }>(
-      "SELECT index_name FROM duckdb_indexes() WHERE table_name = 'cg_symbols'",
-    );
-    expect(idx.map((r) => r.index_name)).toContain("idx_cg_symbols_symbol");
 
     await client.close();
   });
