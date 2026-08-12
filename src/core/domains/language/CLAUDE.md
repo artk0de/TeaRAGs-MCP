@@ -56,6 +56,17 @@
   ~1.8 MB per resolved file with the Program LRU and project-source count both
   already pinned at their caps — `node_modules` is discovered one import at a
   time, so it bounds the map only in a limit the run never reaches (bd 8qf86).
+- **The host's `fileExists` / `directoryExists` / `realpath` memos are
+  deliberately UNBOUNDED, unlike the parse cache beside them.** Module
+  resolution probes the filesystem before any parse and re-runs per
+  `ts.createProgram`, so these carry the syscall load: on this repo's `src`,
+  2,634,551 calls → 8,691 over 900 entry files. Do not "fix" the missing
+  eviction by copying `evictParsedOverflow`. Why: the distinct probe set
+  SATURATES against the repo's directory tree — 300→900 entry files moved it by
+  three paths (8,688→8,691) with retained keys flat at 1.05 MiB — so an LRU
+  would evict live entries and thrash hardest on `directoryExists`, whose 1604x
+  repeat rate comes from re-walking the same ~1,468 `node_modules` ancestors (bd
+  e6yad).
 
 ## Gotchas
 

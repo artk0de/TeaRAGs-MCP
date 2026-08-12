@@ -35,6 +35,16 @@
  * indexing run climb ~1.8 MB per resolved file for as long as it lasted, with
  * the Program LRU and the project-source count both sitting at their caps.
  *
+ * **The host memoizes probes, not just parses.** Before TypeScript asks for a
+ * single SourceFile it runs module resolution, which probes the filesystem once
+ * per candidate path it generates and re-runs in full per `ts.createProgram` —
+ * so the syscalls, not the parses, are what a per-entry-file Program design
+ * multiplies. {@link TSProgramCache.hostFileExists} and its two siblings hold
+ * those answers for the run; on this repo's own `src` they take the probe count
+ * from 2,634,551 to 8,691 over 900 entry files (bd tea-rags-mcp-e6yad). They
+ * carry no eviction, and that is a measured asymmetry with the parse cache
+ * above rather than an oversight — the reasoning is on the field.
+ *
  * **Scoped to one indexing run.** A `LanguageProvider` outlives a single index
  * in the MCP server, and between two runs a dependency's `.d.ts` may have
  * changed — a stale Program is worse than a cold one, because it answers
@@ -205,6 +215,47 @@ export class TSProgramCache {
    * walk at all — see {@link TSProgramCacheOptions.maxDependencyFiles}.
    */
   private readonly parsedDependencySources = new Set<string>();
+  /**
+   * The host's `fileExists` answers, memoized across every Program this
+   * instance builds (bd tea-rags-mcp-e6yad).
+   *
+   * TypeScript runs its own module resolution BEFORE it ever calls
+   * {@link sourceFiles}'s `getSourceFile`, probing each candidate the algorithm
+   * generates — `.ts`, `.tsx`, `.d.ts`, `/index.ts`, then every `node_modules`
+   * ancestor — and it repeats that search in full for every `ts.createProgram`.
+   * `ts.createCompilerHost` leaves the probe pointing straight at `ts.sys`, so
+   * without this each repeat is a fresh `fs.statSync`.
+   *
+   * Unlike the parse cache beside it these three maps are NOT bounded, and the
+   * asymmetry is measured rather than assumed. Walking this repo's own `src`:
+   * going from 300 to 900 entry files took the probes from 1,095,830 calls to
+   * 2,634,551 while the DISTINCT path set moved from 8,688 to 8,691 — three
+   * paths — and the retained key bytes stayed at 1.05 MiB. The probe set is
+   * bounded by the repo's directory tree and saturates within a few hundred
+   * files, which is exactly what the dependency parse population turned out NOT
+   * to do (bd tea-rags-mcp-8qf86): `node_modules` `.d.ts` are discovered one
+   * import at a time and each retains a whole AST. A path string and a boolean
+   * are a different order of object, and evicting them would thrash hardest on
+   * the hottest population — see {@link hostDirectoryExists}.
+   */
+  private readonly hostFileExists = new Map<string, boolean>();
+  /**
+   * The host's `directoryExists` answers, memoized on the same terms as
+   * {@link hostFileExists} and by far the largest win of the three: over 900
+   * entry files it took 2,354,923 calls over 1,468 distinct directories, a
+   * 1604x repeat rate.
+   *
+   * The concentration is structural, not incidental. Module resolution walks
+   * the `node_modules` ancestor chain for every bare specifier in every root
+   * file of every Program, and that chain is the same handful of directories
+   * every time. `ts.createCompilerHost` does keep a directory memo, but it is
+   * private to its `writeFile` path and records POSITIVE answers only — under
+   * `noEmit` nothing reaches it, and the misses (the ancestors that do not
+   * exist) are the ones being re-asked.
+   */
+  private readonly hostDirectoryExists = new Map<string, boolean>();
+  /** The host's `realpath` answers, memoized on the same terms as {@link hostFileExists}. */
+  private readonly hostRealpath = new Map<string, string>();
   private readonly host: ts.CompilerHost;
   /**
    * Directory the running compiler's default lib files sit in. Every
@@ -291,6 +342,12 @@ export class TSProgramCache {
     this.sourceFiles.clear();
     this.parsedProjectSources.clear();
     this.parsedDependencySources.clear();
+    // The probe answers are run-scoped for the same reason the parses are: a
+    // file may have appeared or been deleted since, and a memoized "no" is
+    // exactly as stale as a memoized AST.
+    this.hostFileExists.clear();
+    this.hostDirectoryExists.clear();
+    this.hostRealpath.clear();
   }
 
   /**
@@ -421,6 +478,14 @@ export class TSProgramCache {
    * A compiler host that memoizes parsed SourceFiles across every Program this
    * cache builds. Without it each Program re-parses the default lib — the
    * single largest fixed cost in `ts.createProgram`.
+   *
+   * The same treatment covers the three filesystem probes MODULE RESOLUTION
+   * runs, which happen before any parse and dominate the syscall count — see
+   * {@link hostFileExists}. Memoizing them is safe on exactly the terms this
+   * cache already documents at the top of the file: it is scoped to one
+   * indexing run, and within a run a file does not appear or vanish for the
+   * purposes these checks serve. {@link reset} is the boundary where that
+   * assumption is retired, so it drops these maps alongside the parses.
    */
   private buildHost(): ts.CompilerHost {
     const base = ts.createCompilerHost(this.compilerOptions, true);
@@ -432,6 +497,16 @@ export class TSProgramCache {
       this.evictParsedOverflow();
       return parsed;
     };
+    base.fileExists = memoizeHostProbe(base.fileExists.bind(base), this.hostFileExists);
+    // Both are optional on `ts.CompilerHost`. `createCompilerHost` supplies
+    // them on Node, but the type is the contract — wrap what is there rather
+    // than asserting it into existence.
+    if (base.directoryExists) {
+      base.directoryExists = memoizeHostProbe(base.directoryExists.bind(base), this.hostDirectoryExists);
+    }
+    if (base.realpath) {
+      base.realpath = memoizeHostProbe(base.realpath.bind(base), this.hostRealpath);
+    }
     return base;
   }
 
@@ -537,6 +612,28 @@ export class TSProgramCache {
     }
     return out;
   }
+}
+
+/**
+ * Wrap one path-keyed `ts.CompilerHost` probe so each path costs one syscall
+ * per run instead of one per `ts.createProgram` (bd tea-rags-mcp-e6yad).
+ *
+ * `undefined` is read as "not asked yet" rather than paying a `Map.has` on
+ * every hit, which is sound for the three probes this wraps and only those:
+ * `fileExists` and `directoryExists` answer `boolean`, `realpath` answers
+ * `string`, so none of them can store `undefined` as a real answer. `false`
+ * memoizes correctly — it is a value, not an absence — and it is the answer
+ * that matters most, since the repeated probes are dominated by candidate paths
+ * that do not exist.
+ */
+function memoizeHostProbe<T>(probe: (path: string) => T, answers: Map<string, T>): (path: string) => T {
+  return (path: string): T => {
+    const memoized = answers.get(path);
+    if (memoized !== undefined) return memoized;
+    const answer = probe(path);
+    answers.set(path, answer);
+    return answer;
+  };
 }
 
 /**
