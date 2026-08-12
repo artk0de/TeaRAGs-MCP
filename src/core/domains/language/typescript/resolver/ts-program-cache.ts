@@ -226,6 +226,15 @@ export class TSProgramCache {
    * `ts.createCompilerHost` leaves the probe pointing straight at `ts.sys`, so
    * without this each repeat is a fresh `fs.statSync`.
    *
+   * This is the idiom `createProjectFileProbe` (bd tea-rags-mcp-f3zcy) already
+   * established one layer out, deliberately rather than coincidentally: that
+   * probe is an unbounded per-path existence memo on this same resolver, held
+   * for the same reason ("an index run reads a fixed snapshot of the tree, so a
+   * path's answer cannot change underneath the run that asked"). The resolver
+   * instance, one per `repoRoot`, is the real lifetime bound on both —
+   * {@link TSProgramCache.reset} clears these maps but has no caller in `src`,
+   * so do not read it as the thing that keeps them fresh.
+   *
    * Unlike the parse cache beside it these three maps are NOT bounded, and the
    * asymmetry is measured rather than assumed. Walking this repo's own `src`:
    * going from 300 to 900 entry files took the probes from 1,095,830 calls to
@@ -484,8 +493,9 @@ export class TSProgramCache {
    * {@link hostFileExists}. Memoizing them is safe on exactly the terms this
    * cache already documents at the top of the file: it is scoped to one
    * indexing run, and within a run a file does not appear or vanish for the
-   * purposes these checks serve. {@link reset} is the boundary where that
-   * assumption is retired, so it drops these maps alongside the parses.
+   * purposes these checks serve — the same assumption `createProjectFileProbe`
+   * runs on. {@link reset} drops them alongside the parses for a caller that
+   * owns a run boundary, though nothing in `src` is such a caller today.
    */
   private buildHost(): ts.CompilerHost {
     const base = ts.createCompilerHost(this.compilerOptions, true);

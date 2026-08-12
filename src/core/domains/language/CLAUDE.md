@@ -66,7 +66,9 @@
   three paths (8,688→8,691) with retained keys flat at 1.05 MiB — so an LRU
   would evict live entries and thrash hardest on `directoryExists`, whose 1604x
   repeat rate comes from re-walking the same ~1,468 `node_modules` ancestors (bd
-  e6yad).
+  e6yad). Same idiom as `createProjectFileProbe` (bd f3zcy) — an unbounded
+  per-path existence memo on the same resolver — and the resolver instance, one
+  per `repoRoot`, is what bounds both lifetimes, NOT `reset()`.
 
 ## Gotchas
 
