@@ -217,6 +217,33 @@ export function buildIncludedBy(
   return out;
 }
 
+/**
+ * The run-global maps whose NON-EMPTINESS pass-2 tests per file, to decide
+ * between the run-global fact and the calling file's own (bd
+ * tea-rags-mcp-8zwl9).
+ *
+ * `instantiatedTypes` is deliberately absent: it is a `Set`, so `.size` already
+ * answers in constant time. These six are plain objects, where the same
+ * question cost a full `Object.keys` array of a map that grows across the whole
+ * run.
+ */
+export type RunGlobalMapName =
+  | "ancestors"
+  | "prependedAncestors"
+  | "classExtends"
+  | "returnTypes"
+  | "ivarTypes"
+  | "structuredReturnTypes";
+
+const RUN_GLOBAL_MAP_NAMES: readonly RunGlobalMapName[] = [
+  "ancestors",
+  "prependedAncestors",
+  "classExtends",
+  "returnTypes",
+  "ivarTypes",
+  "structuredReturnTypes",
+];
+
 export class CodegraphRunState {
   /**
    * Persisted-schema column vocabularies contributed by the registered
@@ -492,6 +519,58 @@ export class CodegraphRunState {
   projectRoot: string | undefined = undefined;
 
   /**
+   * Has anything been written into each run-global map yet?
+   *
+   * Pass-2 asks this once per map per FILE, and the maps grow across the whole
+   * run, so deriving it cost `Object.keys(map).length` — a full key array
+   * allocated to answer a boolean, `files x maps x map-size` of pure waste. The
+   * same shape was already found and fixed once in this mechanism for
+   * `includedBy` (24583x on taxdome — see {@link includedBy}); these six are
+   * that bug's remaining instances (bd tea-rags-mcp-8zwl9).
+   *
+   * Written ONLY by {@link markContributed} and {@link clearContributed}, and
+   * read only by {@link hasRunGlobalEntries}, because an index's whole cost is
+   * that it CAN disagree with the map it describes — the same reasoning that
+   * keeps `rememberParse` / `forgetParse` paired in `TSProgramCache`.
+   */
+  private readonly contributedRunGlobals: Record<RunGlobalMapName, boolean> = {
+    ancestors: false,
+    prependedAncestors: false,
+    classExtends: false,
+    returnTypes: false,
+    ivarTypes: false,
+    structuredReturnTypes: false,
+  };
+
+  /**
+   * Did any file — or any barrier fold — contribute to this run-global map?
+   *
+   * Equivalent to `Object.keys(this[name]).length > 0` and maintained to stay
+   * so: {@link markContributed} fires per ENTRY WRITTEN, never on the mere
+   * presence of an extraction field, so a file declaring `classAncestors: {}`
+   * leaves the map unpopulated and this answer `false`.
+   */
+  hasRunGlobalEntries(name: RunGlobalMapName): boolean {
+    return this.contributedRunGlobals[name];
+  }
+
+  /** Record that a map just received an entry. Call per write, not per field. */
+  private markContributed(name: RunGlobalMapName): void {
+    this.contributedRunGlobals[name] = true;
+  }
+
+  /**
+   * Forget contributions for the maps a reset seam just emptied. Defaults to
+   * all six; callers pass a subset because the seams clear overlapping but NOT
+   * identical field sets — `drainMetrics`'s real-run branch keeps four of these
+   * maps alive, and a flag cleared there would send pass-2 to the per-file
+   * fallback while the run-global map still held facts.
+   */
+  private clearContributed(names: readonly RunGlobalMapName[] = RUN_GLOBAL_MAP_NAMES): void {
+    for (const name of names) this.contributedRunGlobals[name] = false;
+  }
+
+  /**
    * Record the root this run indexes. Unguarded on purpose, unlike
    * {@link loadGemfile}: it reads nothing, and every run-start seam passes the
    * same root, so a plain assignment keeps the field truthful even if a seam
@@ -637,6 +716,7 @@ export class CodegraphRunState {
       );
       for (const [key, ref] of Object.entries(entryReturnTypes)) {
         this.structuredReturnTypes[key] = ref;
+        this.markContributed("structuredReturnTypes");
       }
     }
     // Persisted-schema column VALUE types (bd tea-rags-mcp-2a5oo), merged
@@ -647,7 +727,12 @@ export class CodegraphRunState {
     // must win. The schema is the fallback of last resort, exactly as the
     // `schemaColumn` resolution strategy is the chain's last pass.
     for (const [key, ref] of Object.entries(schemaColumnReturnTypes)) {
-      if (!(key in this.structuredReturnTypes)) this.structuredReturnTypes[key] = ref;
+      if (key in this.structuredReturnTypes) continue;
+      // Barrier-derived, but a contribution all the same: a run where no FILE
+      // typed a structured return yet the schema pre-pass did must still read
+      // as populated, or pass-2 falls back to per-file maps that lack these.
+      this.structuredReturnTypes[key] = ref;
+      this.markContributed("structuredReturnTypes");
     }
     // Interprocedural PARAMETER typing, Increment 1 (bd tea-rags-mcp-bvalc).
     // Composed at this barrier for the same reason as the folds above: only
@@ -728,6 +813,8 @@ export class CodegraphRunState {
       this.selfDispatchTemplates = {};
       this.selfInstantiatingClassMethods = [];
       this.resetInterprocParamState();
+      // The wide reset emptied every run-global map, so every flag goes with it.
+      this.clearContributed();
       return undefined;
     }
     // tea-rags-mcp-ykj7 + cai0.2 (Option A) — the denominator excludes
@@ -794,6 +881,12 @@ export class CodegraphRunState {
     this.schemaSnapshots = {};
     this.schemaSnapshotsLoaded = false;
     this.prependedAncestors = {};
+    // ONLY these two: the real-run branch deliberately leaves classExtends,
+    // returnTypes, ivarTypes and structuredReturnTypes standing, and clearing
+    // their flags here would send pass-2 to the per-file fallback while the
+    // run-global maps still hold facts. The asymmetry is inherited from the
+    // pre-split provider and pinned by provider-run-reset-seams.test.ts.
+    this.clearContributed(["ancestors", "prependedAncestors"]);
     return {
       extractedFiles,
       fileEdgeCount,
@@ -878,6 +971,7 @@ export class CodegraphRunState {
     this.selfDispatchTemplates = {};
     this.selfInstantiatingClassMethods = [];
     this.resetInterprocParamState();
+    this.clearContributed();
   }
 
   /**
@@ -909,6 +1003,7 @@ export class CodegraphRunState {
     this.selfDispatchTemplates = {};
     this.selfInstantiatingClassMethods = [];
     this.resetInterprocParamState();
+    this.clearContributed();
   }
 
   /**
@@ -921,6 +1016,7 @@ export class CodegraphRunState {
     if (extraction.classAncestors) {
       for (const [k, v] of Object.entries(extraction.classAncestors)) {
         this.ancestors[k] = v;
+        this.markContributed("ancestors");
       }
     }
     if (extraction.compactDeclaredClasses) {
@@ -929,11 +1025,13 @@ export class CodegraphRunState {
     if (extraction.classPrependedAncestors) {
       for (const [k, v] of Object.entries(extraction.classPrependedAncestors)) {
         this.prependedAncestors[k] = v;
+        this.markContributed("prependedAncestors");
       }
     }
     if (extraction.classExtends) {
       for (const [k, v] of Object.entries(extraction.classExtends)) {
         this.classExtends[k] = v;
+        this.markContributed("classExtends");
       }
     }
     // Explicit ORM table overrides (`self.table_name`), merged run-global so
@@ -953,6 +1051,7 @@ export class CodegraphRunState {
     if (extraction.functionReturnTypes) {
       for (const [k, v] of Object.entries(extraction.functionReturnTypes)) {
         this.returnTypes[k] = v;
+        this.markContributed("returnTypes");
       }
     }
     // Merge the Ruby type-source PRECISE maps run-global so the resolver's
@@ -962,11 +1061,13 @@ export class CodegraphRunState {
     if (extraction.ivarTypes) {
       for (const [k, v] of Object.entries(extraction.ivarTypes)) {
         this.ivarTypes[k] = v;
+        this.markContributed("ivarTypes");
       }
     }
     if (extraction.structuredReturnTypes) {
       for (const [k, v] of Object.entries(extraction.structuredReturnTypes)) {
         this.structuredReturnTypes[k] = v;
+        this.markContributed("structuredReturnTypes");
       }
     }
     // Union this file's instantiation set into the run-global RTA set so the
