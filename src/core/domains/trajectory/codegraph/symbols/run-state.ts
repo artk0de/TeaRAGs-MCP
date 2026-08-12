@@ -480,6 +480,28 @@ export class CodegraphRunState {
   private gemfileLoaded = false;
 
   /**
+   * Absolute root of the project being indexed by the CURRENT run, recorded by
+   * {@link bindProjectRoot} at the same seams that read the Gemfile and the
+   * schema snapshots, and attached to every resolver `CallContext`. Resolvers
+   * whose answers depend on project-rooted state (TypeScript: `tsconfig.json`,
+   * the file probe, the `ts.Program`) bind to it lazily on first use, because
+   * the provider itself is constructed before any collection — and therefore
+   * any project directory — is known. Same lifecycle as `gemfileContent`:
+   * reset wherever that is reset.
+   */
+  projectRoot: string | undefined = undefined;
+
+  /**
+   * Record the root this run indexes. Unguarded on purpose, unlike
+   * {@link loadGemfile}: it reads nothing, and every run-start seam passes the
+   * same root, so a plain assignment keeps the field truthful even if a seam
+   * fires twice.
+   */
+  bindProjectRoot(root: string): void {
+    this.projectRoot = root;
+  }
+
+  /**
    * Read the project's `Gemfile` ONCE per run (guarded by `gemfileLoaded`) so
    * the Ruby resolver can gate DSL grammar to the declared gems. The provider is
    * already a file-walking provider (see `extractOneFile`), so reading one root
@@ -688,6 +710,7 @@ export class CodegraphRunState {
       this.compactClasses = new Set();
       this.gemfileContent = undefined;
       this.gemfileLoaded = false;
+      this.projectRoot = undefined;
       this.prependedAncestors = {};
       this.classExtends = {};
       this.schemaTables = {};
@@ -767,6 +790,7 @@ export class CodegraphRunState {
     this.compactClasses = new Set();
     this.gemfileContent = undefined;
     this.gemfileLoaded = false;
+    this.projectRoot = undefined;
     this.schemaSnapshots = {};
     this.schemaSnapshotsLoaded = false;
     this.prependedAncestors = {};
@@ -835,6 +859,7 @@ export class CodegraphRunState {
     this.compactClasses = new Set();
     this.gemfileContent = undefined;
     this.gemfileLoaded = false;
+    this.projectRoot = undefined;
     this.prependedAncestors = {};
     this.includedBy = {};
     this.classExtends = {};
@@ -866,6 +891,7 @@ export class CodegraphRunState {
     this.compactClasses = new Set();
     this.gemfileContent = undefined;
     this.gemfileLoaded = false;
+    this.projectRoot = undefined;
     this.prependedAncestors = {};
     this.classExtends = {};
     this.schemaTables = {};

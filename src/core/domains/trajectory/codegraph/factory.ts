@@ -124,10 +124,7 @@ export interface CodegraphWorkerConfig {
  * chunker worker's `LanguageModule` interface exactly.
  */
 interface LanguageModule {
-  LanguageFactory: new (options?: {
-    ambiguousResolveMode?: AmbiguousResolveMode;
-    repoRoot?: string;
-  }) => LanguageFactoryDescriptor;
+  LanguageFactory: new (options?: { ambiguousResolveMode?: AmbiguousResolveMode }) => LanguageFactoryDescriptor;
   DefaultSymbolIdComposer: new () => SymbolIdComposer;
   collectSymbols: CollectSymbolsFn;
 }
@@ -162,14 +159,13 @@ export async function createCodegraphEnrichmentProvider(
   descriptor?: WorkerEnrichmentDescriptor,
 ): Promise<CodegraphEnrichmentProvider> {
   const lang = (await import(config.languageModulePath)) as LanguageModule;
-  // `repoRoot` is the indexed project's root, NOT the launching process's cwd:
-  // TypeScript's resolver loads `tsconfig.json` from it, and a run started
-  // outside the target repo would otherwise read the wrong one and lose every
-  // path alias (bd tea-rags-mcp-f4wcm).
-  const languageFactory = new lang.LanguageFactory({
-    ambiguousResolveMode: config.ambiguousResolveMode,
-    repoRoot: config.rootDir,
-  });
+  // NO root is passed here on purpose. `config.rootDir` is the DuckDB storage
+  // root (`paths.appData`), fixed at bootstrap before any collection exists —
+  // wiring it in as the TypeScript resolver's `repoRoot` pointed `loadTsConfig`
+  // at a directory that holds no project, so every path alias was silently lost
+  // on every project (bd tea-rags-mcp-f4wcm). The root a resolver needs is the
+  // one the RUN is indexing, and it arrives per call on `CallContext.projectRoot`.
+  const languageFactory = new lang.LanguageFactory({ ambiguousResolveMode: config.ambiguousResolveMode });
   const composer = new lang.DefaultSymbolIdComposer();
   const { collectSymbols } = lang;
 

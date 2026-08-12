@@ -201,6 +201,7 @@ export class CallEdgeResolutionRunner {
       ivarTypes: inputs.ivarTypes,
       structuredReturnTypes: inputs.structuredReturnTypes,
       gemfileContent: this.runState.gemfileContent,
+      projectRoot: this.runState.projectRoot,
     };
     return resolver.resolveFileEdges
       ? resolver.resolveFileEdges(extraction, fileEdgeCtx)
@@ -287,6 +288,7 @@ export class CallEdgeResolutionRunner {
       classAncestors: inputs.ancestors,
       compactDeclaredClasses: this.runState.compactClasses,
       gemfileContent: this.runState.gemfileContent,
+      projectRoot: this.runState.projectRoot,
       classPrependedAncestors: inputs.prependedAncestors,
       includedBy: inputs.includedBy,
       classExtends: inputs.classExtends,
