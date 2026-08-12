@@ -49,6 +49,18 @@
  * indexing run climb ~1.8 MB per resolved file for as long as it lasted, with
  * the Program LRU and the project-source count both sitting at their caps.
  *
+ * **Capacity eviction reads through to the Programs before re-parsing** (bd
+ * tea-rags-mcp-5je8t). Once the reachable dependency surface exceeds
+ * `maxDependencyFiles`, the map alone turned every later build into a private
+ * re-parse of what a retained Program still pinned — eviction freed nothing
+ * and duplication multiplied per-build heap 33x on the probe fixture
+ * (`scripts/spikes/ts-program-cache-dependency-growth-probe.ts`), which is how
+ * a live run passed 3.9 GB RSS. {@link TSProgramCache.pinnedParseOf} serves
+ * the pinned parse instead, and
+ * {@link TSProgramCacheOptions.maxRetainedSourceTextBytes} bounds what the
+ * retained Programs may pin at all — LRU-evicted by size, the newest build
+ * always kept, with one full closure as the floor no cache policy can lower.
+ *
  * **The host memoizes probes, not just parses.** Before TypeScript asks for a
  * single SourceFile it runs module resolution, which probes the filesystem once
  * per candidate path it generates and re-runs in full per `ts.createProgram` —
@@ -101,6 +113,11 @@ export const TS_PROGRAM_IMPORT_DEPTH_DEFAULT = 2;
 export const TS_PROGRAM_PARSED_FILES_MAX_DEFAULT = 2000;
 /** Max DEPENDENCY declarations retained in the shared parse cache. */
 export const TS_PROGRAM_PARSED_DEPENDENCY_FILES_MAX_DEFAULT = 2000;
+/**
+ * Max non-lib source text (bytes) the retained Programs may pin, union-counted.
+ * Default {@link TSProgramCacheOptions.maxRetainedSourceTextBytes} rationale.
+ */
+export const TS_PROGRAM_RETAINED_TEXT_BYTES_MAX_DEFAULT = 16 * 1024 * 1024;
 
 export interface TSProgramCacheOptions {
   /** Absolute project root every `RelPath` is resolved against. */
@@ -145,6 +162,33 @@ export interface TSProgramCacheOptions {
    * avoid. A dependency `.d.ts` is neither small nor fixed.
    */
   maxDependencyFiles?: number;
+  /**
+   * Total non-lib source text, in bytes and union-counted across every
+   * retained Program, before the least-recently-used Programs are dropped.
+   * Default {@link TS_PROGRAM_RETAINED_TEXT_BYTES_MAX_DEFAULT}.
+   *
+   * The count-based LRU (`maxEntries`) bounds how MANY Programs are retained
+   * and nothing about how big each one is, and a Program's size is set by the
+   * compiler's own resolution walk, not by any cap here — on a dependency-laden
+   * repository each closure carries the reachable `node_modules` declaration
+   * surface (bd tea-rags-mcp-5je8t). Union-counted because retained Programs
+   * SHARE parses through the host: text held by two Programs is one AST, and
+   * summing it twice would evict Programs that cost nothing to keep.
+   *
+   * Text bytes are a proxy for retained heap, and the multiplier is shape-
+   * dependent — measured on the probe fixture, declaration-dense `.d.ts` text
+   * expands ~60x into AST + binder state, ordinary project code nearer 10-20x.
+   * The default (16 MiB) puts the worst case comfortably under the enrichment
+   * worker's 2 GiB heap ceiling.
+   *
+   * The NEWEST Program is always kept, however far over budget it alone sits:
+   * an entry whose own closure exceeds the budget still needs that Program to
+   * resolve, and dropping it would re-run `ts.createProgram` per file of its
+   * closure — the exact cost bd tea-rags-mcp-4m2vb removed. The floor this
+   * budget cannot lower is therefore one full closure; nothing cache-side can
+   * shrink what the compiler pulls in.
+   */
+  maxRetainedSourceTextBytes?: number;
 }
 
 /**
@@ -173,12 +217,26 @@ interface CacheEntry {
    */
   builtAtMs: number;
   /**
-   * Absolute names of the in-root files the Program actually CONTAINS, which is
-   * a very different set from the root names it was handed —
-   * `ts.createProgram` walks the transitive import graph itself, unbounded by
-   * either closure cap.
+   * Absolute names of every non-lib file the Program actually CONTAINS, each
+   * mapped to its source text length — a very different set from the root
+   * names it was handed, because `ts.createProgram` walks the transitive
+   * import graph itself, unbounded by either closure cap.
+   *
+   * One structure answers two questions: membership is the
+   * {@link TSProgramCache.findCovering} test, and the values sum into the
+   * retention weight {@link TSProgramCacheOptions.maxRetainedSourceTextBytes}
+   * bounds. Deliberately NOT limited to files under the repo root: module
+   * resolution realpaths its targets, so under a symlinked layout — pnpm's
+   * store, macOS's `/tmp` — the dependency surface lands OUTSIDE the root
+   * prefix, and an in-root weight would be blind to exactly the population
+   * that made the live run unbounded. Membership stays unaffected: only
+   * project files are ever asked about, and those keep the path form the
+   * closure walk handed in. The default lib alone is excluded — it is never
+   * an entry, so membership cannot ask about it, and it is one shared fixed
+   * set, so charging it to every Program would spend the whole budget on
+   * files no eviction can free.
    */
-  covers: Set<string>;
+  coveredTextBytes: Map<string, number>;
   /**
    * Handles already derived for covered files, so a file served off this
    * Program gets the same handle identity on every acquire — matching what the
@@ -229,6 +287,7 @@ export class TSProgramCache {
   private readonly maxImportDepth: number;
   private readonly maxParsedFiles: number;
   private readonly maxDependencyFiles: number;
+  private readonly maxRetainedSourceTextBytes: number;
   private readonly compilerOptions: ts.CompilerOptions;
   /** Parsed-SourceFile cache shared by every Program this instance builds. */
   private readonly sourceFiles = new Map<string, ts.SourceFile | undefined>();
@@ -333,6 +392,8 @@ export class TSProgramCache {
    * `lib.*.d.ts` shares it, so one string identifies the whole exempt set.
    */
   private readonly defaultLibDir: string;
+  /** {@link defaultLibDir} in the forward-slash form the COMPILER reports. */
+  private readonly defaultLibCompilerDir: string;
   /** Insertion-ordered LRU — the first key is the least recently used. */
   private readonly entries = new Map<RelPath, CacheEntry>();
 
@@ -345,6 +406,7 @@ export class TSProgramCache {
     this.maxImportDepth = options.maxImportDepth ?? TS_PROGRAM_IMPORT_DEPTH_DEFAULT;
     this.maxParsedFiles = options.maxParsedFiles ?? TS_PROGRAM_PARSED_FILES_MAX_DEFAULT;
     this.maxDependencyFiles = options.maxDependencyFiles ?? TS_PROGRAM_PARSED_DEPENDENCY_FILES_MAX_DEFAULT;
+    this.maxRetainedSourceTextBytes = options.maxRetainedSourceTextBytes ?? TS_PROGRAM_RETAINED_TEXT_BYTES_MAX_DEFAULT;
     this.compilerOptions = buildCompilerOptions(this.repoRoot, this.tsOptions);
     this.inRootPrefix = `${sep === "/" ? this.repoRoot : this.repoRoot.split(sep).join("/")}/`;
     this.host = this.buildHost();
@@ -352,6 +414,7 @@ export class TSProgramCache {
     // itself uses to find the lib, so the exempt directory is exactly the one
     // whose files `ts.createProgram` will ask this cache to parse.
     this.defaultLibDir = dirname(this.host.getDefaultLibFileName(this.compilerOptions));
+    this.defaultLibCompilerDir = this.toCompilerPath(this.defaultLibDir);
   }
 
   /** Programs currently retained. */
@@ -379,6 +442,29 @@ export class TSProgramCache {
    */
   get parsedDependencyFileCount(): number {
     return this.parsedDependencySources.size;
+  }
+
+  /**
+   * Non-lib source text the retained Programs currently pin, in bytes — the
+   * quantity {@link TSProgramCacheOptions.maxRetainedSourceTextBytes} bounds.
+   *
+   * Union-counted, not summed per Program: retained Programs share parses
+   * through the host, so a file held by several of them is one AST, and the
+   * weight says so. Recomputed on demand rather than maintained — it is read
+   * once per build and per budget-eviction round, against at most `maxEntries`
+   * maps, which is noise next to the `ts.createProgram` it follows.
+   */
+  get retainedSourceTextBytes(): number {
+    const counted = new Set<string>();
+    let total = 0;
+    for (const entry of this.entries.values()) {
+      for (const [fileName, textBytes] of entry.coveredTextBytes) {
+        if (counted.has(fileName)) continue;
+        counted.add(fileName);
+        total += textBytes;
+      }
+    }
+    return total;
   }
 
   /**
@@ -441,7 +527,7 @@ export class TSProgramCache {
    */
   private findCovering(compilerPath: string, entryAbsolute: string, mtimeMs: number): TSProgramHandle | null {
     for (const [key, entry] of this.entries) {
-      if (!entry.covers.has(compilerPath) || entry.builtAtMs < mtimeMs) continue;
+      if (!entry.coveredTextBytes.has(compilerPath) || entry.builtAtMs < mtimeMs) continue;
       const existing = entry.derived.get(compilerPath);
       if (existing) return this.touch(key, entry, existing);
       // Looked up by the NATIVE path: `getSourceFile` normalizes its argument,
@@ -591,6 +677,40 @@ export class TSProgramCache {
     this.populationOf(fileName)?.add(fileName);
   }
 
+  /**
+   * A still-fresh parse of `fileName` that a retained Program pins, or
+   * `undefined` when none does — the read-through behind the shared map (bd
+   * tea-rags-mcp-5je8t).
+   *
+   * Capacity eviction and Program retention used to be independent, and their
+   * blind spot compounded: evicting a parse a retained Program pins frees
+   * NOTHING (the Program keeps its AST alive), while the next build re-parses
+   * the file into a fresh PRIVATE copy — so once the reachable dependency
+   * surface exceeded `maxDependencyFiles`, the Program LRU degraded from eight
+   * views of one shared AST pool into eight private pools. Measured on the
+   * probe fixture: 4.6 MB heap per build with sharing intact, 153 MB once the
+   * churn broke it, and a live run past 3.9 GB RSS. Serving the pinned parse
+   * instead costs one map lookup per retained Program plus one stat — and only
+   * on a shared-map MISS, the path that previously paid a full re-parse.
+   *
+   * The stat is the staleness guard, and it deliberately does NOT memoize: a
+   * Program built before the file's current mtime holds the previous revision,
+   * and dependencies never surface through `forgetStaleParse` (they are never
+   * entries), so this comparison is the only thing standing between a changed
+   * `.d.ts` and a confident stale answer. Same `builtAtMs` rule
+   * {@link findCovering} applies to whole Programs, applied per file.
+   */
+  private pinnedParseOf(fileName: string): ts.SourceFile | undefined {
+    for (const entry of this.entries.values()) {
+      const pinned = entry.handle.program.getSourceFile(fileName);
+      if (!pinned) continue;
+      const mtimeMs = entryMtime(fileName);
+      if (mtimeMs === null || entry.builtAtMs < mtimeMs) continue;
+      return pinned;
+    }
+    return undefined;
+  }
+
   /** Drop a parse from the shared map and from whichever index holds it. */
   private forgetParse(fileName: string): void {
     this.sourceFiles.delete(fileName);
@@ -612,8 +732,25 @@ export class TSProgramCache {
     return this.isProjectSourceFile(fileName) ? this.parsedProjectSources : this.parsedDependencySources;
   }
 
+  /**
+   * Enforce both retention bounds, least-recently-used first: the count cap
+   * exactly as it always ran, then the byte budget over what survives.
+   *
+   * The byte loop stops at ONE retained Program no matter the budget. The
+   * newest build is the Program its entry is about to be resolved through, and
+   * every file of its closure is a pending coverage hit — dropping it would
+   * re-run `ts.createProgram` once per file of that closure, the cost bd
+   * tea-rags-mcp-4m2vb removed. So a budget smaller than a single closure
+   * degrades to "retain the newest alone", and the memory floor is one
+   * closure — see {@link TSProgramCacheOptions.maxRetainedSourceTextBytes}.
+   */
   private evictOverflow(): void {
     while (this.entries.size > this.maxEntries) {
+      const lru = this.entries.keys().next();
+      if (lru.done) return;
+      this.entries.delete(lru.value);
+    }
+    while (this.entries.size > 1 && this.retainedSourceTextBytes > this.maxRetainedSourceTextBytes) {
       const lru = this.entries.keys().next();
       if (lru.done) return;
       this.entries.delete(lru.value);
@@ -639,6 +776,8 @@ export class TSProgramCache {
     const getSourceFile = base.getSourceFile.bind(base);
     base.getSourceFile = (fileName, languageVersionOrOptions, onError, shouldCreate) => {
       if (this.sourceFiles.has(fileName)) return this.sourceFiles.get(fileName);
+      const pinned = this.pinnedParseOf(fileName);
+      if (pinned) return pinned;
       const parsed = getSourceFile(fileName, languageVersionOrOptions, onError, shouldCreate);
       this.rememberParse(fileName, parsed);
       this.evictParsedOverflow();
@@ -723,15 +862,20 @@ export class TSProgramCache {
     if (!sourceFile) return null;
     const entryMtimeMs = entryMtime(entryAbsolute);
     if (entryMtimeMs === null) return null;
-    const covers = new Set<string>();
+    const coveredTextBytes = new Map<string, number>();
     for (const file of program.getSourceFiles()) {
-      if (file.fileName.startsWith(this.inRootPrefix)) covers.add(file.fileName);
+      // The default lib is one shared fixed set — never an entry, so excluding
+      // it costs no coverage lookup, and counting it would charge the same
+      // unevictable bytes to every Program. Everything else counts, wherever
+      // resolution's realpathing landed it — see {@link CacheEntry.coveredTextBytes}.
+      if (posix.dirname(file.fileName) === this.defaultLibCompilerDir) continue;
+      coveredTextBytes.set(file.fileName, file.text.length);
     }
     return {
       handle: { program, checker: program.getTypeChecker(), sourceFile, rootFiles },
       entryMtimeMs,
       builtAtMs,
-      covers,
+      coveredTextBytes,
       derived: new Map(),
     };
   }

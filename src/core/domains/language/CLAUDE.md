@@ -56,6 +56,20 @@
   ~1.8 MB per resolved file with the Program LRU and project-source count both
   already pinned at their caps — `node_modules` is discovered one import at a
   time, so it bounds the map only in a limit the run never reaches (bd 8qf86).
+- **Capacity eviction reads through to retained Programs (`pinnedParseOf`)
+  before re-parsing, and the Programs answer to `maxRetainedSourceTextBytes` — a
+  union-counted non-lib text budget, newest build always kept.** Do NOT
+  "simplify" the read-through away or make the budget evict the newest. Why:
+  once the reachable dependency surface exceeds `maxDependencyFiles`, eviction
+  frees nothing (the Program pins the AST) while the next build re-parses a
+  PRIVATE copy — measured 4.6 MB → 153 MB heap per build (33x), a live run past
+  3.9 GB RSS (bd 5je8t, the 4m2vb node_modules regression); and dropping the
+  newest re-runs `createProgram` per file of its closure, the bd 4m2vb cost. The
+  budget's floor is one full closure — the compiler's own resolution walk sets
+  Program size, no cache policy shrinks it. Weight counts files OUTSIDE the repo
+  root too: resolution realpaths its targets, so a symlinked layout (pnpm store,
+  macOS `/tmp`) parks the dependency surface out-of-root and an in-root weight
+  is blind to exactly the population that grew unbounded.
 - **The host's `fileExists` / `directoryExists` / `realpath` memos are
   deliberately UNBOUNDED, unlike the parse cache beside them.** Module
   resolution probes the filesystem before any parse and re-runs per
