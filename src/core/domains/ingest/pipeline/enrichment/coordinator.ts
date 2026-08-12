@@ -152,7 +152,7 @@ export class EnrichmentCoordinator {
    * `ENRICHMENT_WORKER_CPU_PROFILE_DIR` needs to sample and could not otherwise
    * reach on demand (bd tea-rags-mcp-bij2m). It rewrites no state a normal
    * resolve of those files would not rewrite: the same paths go through the same
-   * `runFileSignals` seam with the same run hashes, so each row is re-stamped
+   * `runFileBatch` seam with the same run hashes, so each row is re-stamped
    * with its CURRENT hash and the next ordinary run sees a converged store.
    */
   private readonly forceResolveAll =
@@ -293,8 +293,11 @@ export class EnrichmentCoordinator {
    * stale rows outlive every reindex once their file stops changing. Each
    * provider that can report what it persisted gets diffed against the run's
    * eligible files: what drifted or went missing is re-extracted through the
-   * same `runFileSignals` seam the backfiller and recovery use, and rows for
-   * files that are no longer eligible are pruned.
+   * SAME `runFileBatch` seam the live run's own file phase uses — repair runs
+   * inside this run, not as a standalone sweep, so it shares the run's sink
+   * instead of `runFileSignalsRecovery`'s isolated whole-set path (that one is
+   * for the backfiller and recovery, which run outside any live run) — and
+   * rows for files that are no longer eligible are pruned.
    *
    * Silent by design: a repair shows up as extra time, nothing else. Costs one
    * read per provider when the store already matches. Providers with no
@@ -351,7 +354,19 @@ export class EnrichmentCoordinator {
           // keeping the ordinary run's log line byte-identical.
           ...(this.forceResolveAll ? { forcedResolve: true } : {}),
         });
-        await this.executor.runFileSignals(provider, root, repair, { collectionName, contentHashes: scanned });
+        // `runFileBatch` (NOT `runFileSignalsRecovery`): repair runs INSIDE the live
+        // run this coordinator is orchestrating, same as file-phase's own
+        // streamed batches — it needs the run-shared, `runBatchChains`-
+        // serialized sink (`ensureRunSink`/`extracted`-Set) so a repaired
+        // file that ALSO reaches the run through another path is deduped,
+        // not double-resolved. `runFileSignalsRecovery` was built for backfill/
+        // recovery's deliberately isolated whole-set semantics (see
+        // enrichment-executor.ts) — those run OUTSIDE any live run and must
+        // NOT touch its shared sink; repair has no such requirement, and its
+        // return value (per-file overlays) was already discarded here, so
+        // routing through `runFileSignalsRecovery`'s standalone `buildFileSignals`
+        // paid for a whole-graph overlay read per repaired file for nothing.
+        await this.executor.runFileBatch(provider, root, repair, { collectionName, contentHashes: scanned });
         repaired += repair.length;
       }
     }

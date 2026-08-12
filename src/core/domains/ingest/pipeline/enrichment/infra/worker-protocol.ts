@@ -33,7 +33,7 @@ import type {
 import type { ChunkLookupEntry } from "../../../../../types.js";
 
 /** EnrichmentExecutor method names — the four dispatch verbs the worker honours. */
-export type EnrichmentMethod = "runFileBatch" | "runFileSignals" | "runChunkBatch" | "runFinalize";
+export type EnrichmentMethod = "runFileBatch" | "runFileSignalsRecovery" | "runChunkBatch" | "runFinalize";
 
 /**
  * Build-or-reuse a provider on the worker and invoke a method on it.
@@ -48,7 +48,7 @@ export interface EnrichmentCallRequest {
   collectionName?: string;
   method: EnrichmentMethod;
   root: string;
-  /** runFileBatch / runFileSignals payload. */
+  /** runFileBatch / runFileSignalsRecovery payload. */
   paths?: string[];
   /** runChunkBatch payload. Nested Map is structured-clone-safe. */
   chunkMap?: Map<string, ChunkLookupEntry[]>;

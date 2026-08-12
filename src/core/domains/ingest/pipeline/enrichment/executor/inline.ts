@@ -34,7 +34,7 @@ export class InlineEnrichmentExecutor implements EnrichmentExecutor {
     return provider.buildFileSignals(root, { ...options, paths });
   }
 
-  async runFileSignals(
+  async runFileSignalsRecovery(
     provider: EnrichmentProvider,
     root: string,
     paths: string[],

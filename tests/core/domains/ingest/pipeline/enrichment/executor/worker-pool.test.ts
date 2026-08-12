@@ -224,12 +224,14 @@ describe("WorkerPoolEnrichmentExecutor", () => {
     await exec.shutdown();
   });
 
-  it("runFileSignals dispatches through pool (whole-set, bypasses streamFileBatch)", async () => {
+  it("runFileSignalsRecovery dispatches through pool (whole-set, bypasses streamFileBatch)", async () => {
     const exec = new WorkerPoolEnrichmentExecutor(1, WORKER_PATH);
     const provider = workerProvider(fixturePath, "collection-affinity");
-    // runFileSignals MUST call buildFileSignals (not streamFileBatch) — the
+    // runFileSignalsRecovery MUST call buildFileSignals (not streamFileBatch) — the
     // fixture tags via:"buildFileSignals" so we can see which path was taken.
-    const overlay = await exec.runFileSignals(provider, "/repo", ["a.ts", "b.ts"], { collectionName: "code_xxx" });
+    const overlay = await exec.runFileSignalsRecovery(provider, "/repo", ["a.ts", "b.ts"], {
+      collectionName: "code_xxx",
+    });
     expect(overlay.get("a.ts")).toMatchObject({ via: "buildFileSignals", source: "affinity-tag" });
     expect(overlay.get("b.ts")).toMatchObject({ via: "buildFileSignals", source: "affinity-tag" });
     await exec.shutdown();
@@ -328,11 +330,11 @@ describe("WorkerPoolEnrichmentExecutor", () => {
     expect(routingKeyFor(affinityDescriptor, collectionName)).toBe(routingKeyFor(affinityDescriptor, collectionName));
   });
 
-  it("falls back to inline for runFileSignals when provider has no workerDescriptor", async () => {
+  it("falls back to inline for runFileSignalsRecovery when provider has no workerDescriptor", async () => {
     const exec = new WorkerPoolEnrichmentExecutor(1, WORKER_PATH);
     const provider = fakeInlineProvider();
-    // runFileSignals inline path calls buildFileSignals directly (no streamFileBatch preference).
-    const out = await exec.runFileSignals(provider, "/repo", ["x.ts"], {});
+    // runFileSignalsRecovery inline path calls buildFileSignals directly (no streamFileBatch preference).
+    const out = await exec.runFileSignalsRecovery(provider, "/repo", ["x.ts"], {});
     expect(out.get("inline.ts")).toMatchObject({ via: "inline-build" });
     expect(provider.buildFileSignals).toHaveBeenCalled();
     await exec.shutdown();
@@ -389,9 +391,9 @@ describe("WorkerPoolEnrichmentExecutor", () => {
       buildChunkSignals: async () => new Map(),
       workerDescriptor: descriptor,
     } as unknown as EnrichmentProvider;
-    await expect(exec.runFileSignals(provider, "/repo", ["a.ts"], { collectionName: "code_xxx" })).rejects.toThrow(
-      /boom-from-worker/,
-    );
+    await expect(
+      exec.runFileSignalsRecovery(provider, "/repo", ["a.ts"], { collectionName: "code_xxx" }),
+    ).rejects.toThrow(/boom-from-worker/);
     await exec.shutdown();
   });
 });

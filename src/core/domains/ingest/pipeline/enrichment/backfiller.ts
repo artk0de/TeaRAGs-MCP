@@ -58,7 +58,7 @@ export class EnrichmentBackfiller {
       // Forward the active collection so codegraph (and any other
       // collection-scoped provider) backfills the right per-collection
       // store, not a stale default one.
-      backfillData = await this.executor.runFileSignals(ctx.provider, root, missedPaths, {
+      backfillData = await this.executor.runFileSignalsRecovery(ctx.provider, root, missedPaths, {
         collectionName: coll,
       });
     } catch (error) {

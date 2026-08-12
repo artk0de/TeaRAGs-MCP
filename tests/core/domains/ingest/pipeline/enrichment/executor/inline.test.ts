@@ -46,10 +46,10 @@ describe("InlineEnrichmentExecutor", () => {
     expect(p.buildFileSignals).toHaveBeenCalledWith("/root", { collectionName: "c", paths: ["a.ts"] });
   });
 
-  it("runFileSignals always calls buildFileSignals with paths (no streamFileBatch preference)", async () => {
+  it("runFileSignalsRecovery always calls buildFileSignals with paths (no streamFileBatch preference)", async () => {
     // backfiller / recovery semantics: skip the streaming side-effects.
     const p = fakeProvider();
-    const out = await exec.runFileSignals(p, "/root", ["a.ts"], { collectionName: "c" });
+    const out = await exec.runFileSignalsRecovery(p, "/root", ["a.ts"], { collectionName: "c" });
     expect(out.get("a.ts")).toEqual({ x: 1 });
     expect(p.buildFileSignals).toHaveBeenCalledWith("/root", { collectionName: "c", paths: ["a.ts"] });
     expect(p.streamFileBatch).not.toHaveBeenCalled();

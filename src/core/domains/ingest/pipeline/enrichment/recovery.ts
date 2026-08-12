@@ -144,7 +144,7 @@ export class EnrichmentRecovery {
       // Batched recovery — must NOT route through streamFileBatch; the
       // streaming extraction side-effects belong to the live file phase, not
       // to post-hoc recovery.
-      const signals = await this.executor.runFileSignals(provider, root, [...batch.paths], { collectionName });
+      const signals = await this.executor.runFileSignalsRecovery(provider, root, [...batch.paths], { collectionName });
 
       // Build ChunkItem-like objects for applyFileSignals
       const items = batch.points.map((point) => ({

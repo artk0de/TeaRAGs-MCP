@@ -22,7 +22,7 @@
  *    `streamFileBatch` when the provider declares it, falls back to
  *    `buildFileSignals({ ...options, paths: batchPaths })`. Mirrors what
  *    `file-phase.ts` did inline before the seam.
- *  - `runFileSignals` — the explicit whole-set call site (backfiller,
+ *  - `runFileSignalsRecovery` — the explicit whole-set call site (backfiller,
  *    recovery). Always calls `buildFileSignals({ ...options, paths })`,
  *    bypassing `streamFileBatch`. Backfill/recovery must NOT trigger the
  *    streaming side-effects (codegraph extraction, run sink accumulation)
@@ -56,7 +56,7 @@ export interface EnrichmentExecutor {
    * Always calls `provider.buildFileSignals({ ...options, paths })`; never
    * routes through `streamFileBatch` even when the provider declares it.
    */
-  runFileSignals: (
+  runFileSignalsRecovery: (
     provider: EnrichmentProvider,
     root: string,
     paths: string[],

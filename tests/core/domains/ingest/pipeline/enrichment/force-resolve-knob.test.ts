@@ -40,9 +40,9 @@ function makeProvider(overrides: Record<string, unknown> = {}) {
   } as never;
 }
 
-function makeExecutor(runFileSignals: ReturnType<typeof vi.fn>) {
+function makeExecutor(runFileBatch: ReturnType<typeof vi.fn>) {
   return {
-    runFileSignals,
+    runFileBatch,
     runFileSignalsStreaming: vi.fn().mockResolvedValue(new Map()),
     runChunkSignals: vi.fn().mockResolvedValue(new Map()),
     runFinalize: vi.fn().mockResolvedValue(new Map()),
@@ -120,64 +120,64 @@ describe("computeExtractionRepair force-all", () => {
 
 describe("EnrichmentCoordinator.runRepairPass under CODEGRAPH_FORCE_RESOLVE", () => {
   it("extracts nothing when the knob is absent and the store is current", async () => {
-    const runFileSignals = vi.fn().mockResolvedValue(new Map());
+    const runFileBatch = vi.fn().mockResolvedValue(new Map());
     const coordinator = new EnrichmentCoordinator(
       qdrant,
       currentStoreProvider(),
       undefined,
-      makeExecutor(runFileSignals),
+      makeExecutor(runFileBatch),
     );
 
     expect(await coordinator.runRepairPass("code_x_v1", "/repo", SCANNED)).toBe(0);
-    expect(runFileSignals).not.toHaveBeenCalled();
+    expect(runFileBatch).not.toHaveBeenCalled();
   });
 
   it("re-extracts every eligible file when the knob is set", async () => {
     process.env.CODEGRAPH_FORCE_RESOLVE = "1";
-    const runFileSignals = vi.fn().mockResolvedValue(new Map());
+    const runFileBatch = vi.fn().mockResolvedValue(new Map());
     const coordinator = new EnrichmentCoordinator(
       qdrant,
       currentStoreProvider(),
       undefined,
-      makeExecutor(runFileSignals),
+      makeExecutor(runFileBatch),
     );
 
     expect(await coordinator.runRepairPass("code_x_v1", "/repo", SCANNED)).toBe(2);
-    expect(runFileSignals).toHaveBeenCalledTimes(1);
-    const [, root, paths] = runFileSignals.mock.calls[0] as [unknown, string, string[]];
+    expect(runFileBatch).toHaveBeenCalledTimes(1);
+    const [, root, paths] = runFileBatch.mock.calls[0] as [unknown, string, string[]];
     expect(root).toBe("/repo");
     expect([...paths].sort()).toEqual(["src/a.ts", "src/b.ts"]);
   });
 
   it("accepts `true` as well as `1`", async () => {
     process.env.CODEGRAPH_FORCE_RESOLVE = "true";
-    const runFileSignals = vi.fn().mockResolvedValue(new Map());
+    const runFileBatch = vi.fn().mockResolvedValue(new Map());
     const coordinator = new EnrichmentCoordinator(
       qdrant,
       currentStoreProvider(),
       undefined,
-      makeExecutor(runFileSignals),
+      makeExecutor(runFileBatch),
     );
 
     await coordinator.runRepairPass("code_x_v1", "/repo", SCANNED);
 
-    expect(runFileSignals).toHaveBeenCalledTimes(1);
+    expect(runFileBatch).toHaveBeenCalledTimes(1);
   });
 
   it.each(["0", "false", "yes", ""])("stays off for %o, the same as absent", async (value) => {
     // Anything that is not `1` / `true` is off. A profiling knob that turns
     // itself on for a typo would silently make every run pay a full resolve.
     process.env.CODEGRAPH_FORCE_RESOLVE = value;
-    const runFileSignals = vi.fn().mockResolvedValue(new Map());
+    const runFileBatch = vi.fn().mockResolvedValue(new Map());
     const coordinator = new EnrichmentCoordinator(
       qdrant,
       currentStoreProvider(),
       undefined,
-      makeExecutor(runFileSignals),
+      makeExecutor(runFileBatch),
     );
 
     expect(await coordinator.runRepairPass("code_x_v1", "/repo", SCANNED)).toBe(0);
-    expect(runFileSignals).not.toHaveBeenCalled();
+    expect(runFileBatch).not.toHaveBeenCalled();
   });
 
   it("still threads the run's content hashes, so the stamps stay correct", async () => {
@@ -186,17 +186,17 @@ describe("EnrichmentCoordinator.runRepairPass under CODEGRAPH_FORCE_RESOLVE", ()
     // the hashes here would persist NULL and leave the next ordinary run with a
     // maximal repair set: corruption beyond what forcing itself implies.
     process.env.CODEGRAPH_FORCE_RESOLVE = "1";
-    const runFileSignals = vi.fn().mockResolvedValue(new Map());
+    const runFileBatch = vi.fn().mockResolvedValue(new Map());
     const coordinator = new EnrichmentCoordinator(
       qdrant,
       currentStoreProvider(),
       undefined,
-      makeExecutor(runFileSignals),
+      makeExecutor(runFileBatch),
     );
 
     await coordinator.runRepairPass("code_x_v1", "/repo", SCANNED);
 
-    const [, , , options] = runFileSignals.mock.calls[0] as [
+    const [, , , options] = runFileBatch.mock.calls[0] as [
       unknown,
       string,
       string[],
@@ -211,10 +211,10 @@ describe("EnrichmentCoordinator.runRepairPass under CODEGRAPH_FORCE_RESOLVE", ()
     // Forcing widens a drift check. A provider with no store has no drift check
     // to widen, so git must stay exactly where it was: skipped.
     process.env.CODEGRAPH_FORCE_RESOLVE = "1";
-    const runFileSignals = vi.fn().mockResolvedValue(new Map());
-    const coordinator = new EnrichmentCoordinator(qdrant, makeProvider(), undefined, makeExecutor(runFileSignals));
+    const runFileBatch = vi.fn().mockResolvedValue(new Map());
+    const coordinator = new EnrichmentCoordinator(qdrant, makeProvider(), undefined, makeExecutor(runFileBatch));
 
     expect(await coordinator.runRepairPass("code_x_v1", "/repo", SCANNED)).toBe(0);
-    expect(runFileSignals).not.toHaveBeenCalled();
+    expect(runFileBatch).not.toHaveBeenCalled();
   });
 });

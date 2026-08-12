@@ -41,9 +41,9 @@ function makeProvider(overrides: Record<string, unknown> = {}) {
   } as never;
 }
 
-function makeExecutor(runFileSignals: ReturnType<typeof vi.fn>, overrides: Record<string, unknown> = {}) {
+function makeExecutor(runFileBatch: ReturnType<typeof vi.fn>, overrides: Record<string, unknown> = {}) {
   return {
-    runFileSignals,
+    runFileBatch,
     runFileSignalsStreaming: vi.fn().mockResolvedValue(new Map()),
     runChunkSignals: vi.fn().mockResolvedValue(new Map()),
     runFinalize: vi.fn().mockResolvedValue(new Map()),
@@ -54,7 +54,7 @@ function makeExecutor(runFileSignals: ReturnType<typeof vi.fn>, overrides: Recor
 
 describe("EnrichmentCoordinator.runRepairPass", () => {
   it("re-extracts exactly the drifted and missing files, and prunes orphan rows", async () => {
-    const runFileSignals = vi.fn().mockResolvedValue(new Map());
+    const runFileBatch = vi.fn().mockResolvedValue(new Map());
     const handleDeletedPaths = vi.fn().mockResolvedValue(undefined);
     const provider = makeProvider({
       handleDeletedPaths,
@@ -66,7 +66,7 @@ describe("EnrichmentCoordinator.runRepairPass", () => {
         ]),
       ),
     });
-    const coordinator = new EnrichmentCoordinator(qdrant, provider, undefined, makeExecutor(runFileSignals));
+    const coordinator = new EnrichmentCoordinator(qdrant, provider, undefined, makeExecutor(runFileBatch));
 
     const repaired = await coordinator.runRepairPass(
       "code_x_v1",
@@ -81,8 +81,8 @@ describe("EnrichmentCoordinator.runRepairPass", () => {
     // The count is what tells a no-changes run it still did real work and must
     // not take its early return before the finalize.
     expect(repaired).toBe(2);
-    expect(runFileSignals).toHaveBeenCalledTimes(1);
-    const [, root, paths, options] = runFileSignals.mock.calls[0] as [
+    expect(runFileBatch).toHaveBeenCalledTimes(1);
+    const [, root, paths, options] = runFileBatch.mock.calls[0] as [
       unknown,
       string,
       string[],
@@ -99,33 +99,33 @@ describe("EnrichmentCoordinator.runRepairPass", () => {
   });
 
   it("extracts nothing when the store already matches the code", async () => {
-    const runFileSignals = vi.fn().mockResolvedValue(new Map());
+    const runFileBatch = vi.fn().mockResolvedValue(new Map());
     const provider = makeProvider({
       readPersistedFileHashes: vi.fn().mockResolvedValue(new Map<string, string | null>([["src/a.ts", "h1"]])),
     });
-    const coordinator = new EnrichmentCoordinator(qdrant, provider, undefined, makeExecutor(runFileSignals));
+    const coordinator = new EnrichmentCoordinator(qdrant, provider, undefined, makeExecutor(runFileBatch));
 
     const repaired = await coordinator.runRepairPass("code_x_v1", "/repo", new Map([["src/a.ts", "h1"]]));
 
     expect(repaired).toBe(0);
-    expect(runFileSignals).not.toHaveBeenCalled();
+    expect(runFileBatch).not.toHaveBeenCalled();
   });
 
   it("skips a provider that keeps no per-file store", async () => {
-    const runFileSignals = vi.fn().mockResolvedValue(new Map());
-    const coordinator = new EnrichmentCoordinator(qdrant, makeProvider(), undefined, makeExecutor(runFileSignals));
+    const runFileBatch = vi.fn().mockResolvedValue(new Map());
+    const coordinator = new EnrichmentCoordinator(qdrant, makeProvider(), undefined, makeExecutor(runFileBatch));
 
     await coordinator.runRepairPass("code_x_v1", "/repo", new Map([["src/a.ts", "h1"]]));
 
-    expect(runFileSignals).not.toHaveBeenCalled();
+    expect(runFileBatch).not.toHaveBeenCalled();
   });
 
   it("repairs everything when the store is empty, which is the fresh-collection case", async () => {
-    const runFileSignals = vi.fn().mockResolvedValue(new Map());
+    const runFileBatch = vi.fn().mockResolvedValue(new Map());
     const provider = makeProvider({
       readPersistedFileHashes: vi.fn().mockResolvedValue(new Map<string, string | null>()),
     });
-    const coordinator = new EnrichmentCoordinator(qdrant, provider, undefined, makeExecutor(runFileSignals));
+    const coordinator = new EnrichmentCoordinator(qdrant, provider, undefined, makeExecutor(runFileBatch));
 
     await coordinator.runRepairPass(
       "code_x_v1",
@@ -136,7 +136,7 @@ describe("EnrichmentCoordinator.runRepairPass", () => {
       ]),
     );
 
-    const [, , paths] = runFileSignals.mock.calls[0] as [unknown, string, string[]];
+    const [, , paths] = runFileBatch.mock.calls[0] as [unknown, string, string[]];
     expect([...paths].sort()).toEqual(["src/a.ts", "src/b.ts"]);
   });
 });

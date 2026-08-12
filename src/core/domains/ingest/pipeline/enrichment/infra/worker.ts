@@ -137,7 +137,7 @@ async function invokeMethod(
         : await provider.buildFileSignals(root, { ...fileOptions, paths: pathList });
       return { fileOverlay: overlay };
     }
-    case "runFileSignals": {
+    case "runFileSignalsRecovery": {
       const fileOptions = options as FileSignalOptions | undefined;
       const overlay = await provider.buildFileSignals(root, { ...fileOptions, paths: paths ?? [] });
       return { fileOverlay: overlay };
