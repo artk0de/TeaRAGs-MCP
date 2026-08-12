@@ -208,6 +208,95 @@ describe("TSProgramCache builds per-file Programs from a bounded import closure 
   });
 });
 
+describe("TSProgramCache serves an entry from any retained Program that already contains it (bd tea-rags-mcp-4m2vb)", () => {
+  let repoRoot: string;
+
+  beforeEach(() => {
+    repoRoot = realpathSync(mkdtempSync(join(tmpdir(), "ts-program-cache-reuse-")));
+  });
+
+  afterEach(() => {
+    rmSync(repoRoot, { recursive: true, force: true });
+  });
+
+  /** `caller.ts` imports `dep.ts`, so a Program rooted at either contains both. */
+  function writeImportPair(): void {
+    writeSource(repoRoot, "src/dep.ts", `export function dep(): number {\n  return 1;\n}\n`);
+    writeSource(
+      repoRoot,
+      "src/caller.ts",
+      `import { dep } from "./dep.js";\n\nexport function caller(): number {\n  return dep();\n}\n`,
+    );
+  }
+
+  it("reuses the Program built for an importer when the imported file is acquired next", () => {
+    writeImportPair();
+    const cache = new TSProgramCache({ repoRoot, tsOptions: { baseUrl: ".", paths: {} } });
+
+    const importer = cache.acquire("src/caller.ts");
+    const imported = cache.acquire("src/dep.ts");
+
+    // `ts.createProgram` pulls the whole transitive closure in regardless of the
+    // root cap, so the importer's Program already holds `dep.ts` — building a
+    // second Program for it re-walks that same closure for nothing.
+    expect(imported).not.toBeNull();
+    expect(imported?.program).toBe(importer?.program);
+    expect(imported?.checker).toBe(importer?.checker);
+  });
+
+  it("hands back the acquired file's own SourceFile, not the covering entry's", () => {
+    writeImportPair();
+    const cache = new TSProgramCache({ repoRoot, tsOptions: { baseUrl: ".", paths: {} } });
+
+    cache.acquire("src/caller.ts");
+    const imported = cache.acquire("src/dep.ts");
+
+    expect(imported?.sourceFile.fileName).toBe(join(repoRoot, "src/dep.ts"));
+    expect(imported?.sourceFile.text).toContain("export function dep");
+  });
+
+  it("still builds its own Program for a file no retained Program contains", () => {
+    writeImportPair();
+    writeSource(repoRoot, "src/lonely.ts", `export function lonely(): number {\n  return 2;\n}\n`);
+    const cache = new TSProgramCache({ repoRoot, tsOptions: { baseUrl: ".", paths: {} } });
+
+    const importer = cache.acquire("src/caller.ts");
+    const lonely = cache.acquire("src/lonely.ts");
+
+    expect(lonely).not.toBeNull();
+    expect(lonely?.program).not.toBe(importer?.program);
+  });
+
+  it("rebuilds rather than serving a file that changed after the covering Program was built", () => {
+    writeImportPair();
+    const cache = new TSProgramCache({ repoRoot, tsOptions: { baseUrl: ".", paths: {} } });
+    const importer = cache.acquire("src/caller.ts");
+
+    // The retained Program parsed the OLD `dep.ts`. Serving the new revision out
+    // of it would answer confidently with the previous run's types — the same
+    // staleness the entry-keyed mtime check exists to prevent.
+    const abs = writeSource(repoRoot, "src/dep.ts", `export function dep(): string {\n  return "1";\n}\n`);
+    const future = new Date(Date.now() + 10_000);
+    utimesSync(abs, future, future);
+    const imported = cache.acquire("src/dep.ts");
+
+    expect(imported?.program).not.toBe(importer?.program);
+    expect(imported?.sourceFile.text).toContain('return "1"');
+  });
+
+  it("counts only the Programs it built against maxEntries, not the files they cover", () => {
+    writeImportPair();
+    const cache = new TSProgramCache({ repoRoot, tsOptions: { baseUrl: ".", paths: {} }, maxEntries: 2 });
+
+    cache.acquire("src/caller.ts");
+    cache.acquire("src/dep.ts");
+
+    // Serving `dep.ts` off the retained Program must not consume a second slot —
+    // an LRU that counts covered files evicts the very Program doing the work.
+    expect(cache.size).toBe(1);
+  });
+});
+
 describe("TSProgramCache maps absolute compiler paths back to repo-relative ones (bd tea-rags-mcp-uclbn)", () => {
   let repoRoot: string;
 
