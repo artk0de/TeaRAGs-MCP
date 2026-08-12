@@ -2,7 +2,8 @@
  * Which files a provider must re-extract before its per-file store matches the
  * code, and which of its rows no longer belong (bd tea-rags-mcp-6goqa).
  *
- * Pure on purpose: two maps in, two lists out, no collaborators. That is what
+ * Pure on purpose: maps in, two lists out, no collaborators — the diagnostic
+ * force flag is a PARAMETER rather than an env read for the same reason. That is what
  * makes the exactness invariant cheap to assert, and the check is the whole
  * point — a graph that merely CONTAINS a file tells you nothing about whether
  * its rows are current, which is how a dead import edge survived every
@@ -28,10 +29,21 @@ export interface ExtractionRepair {
  *
  * Both lists empty means the store matches the code and the run has nothing to
  * repair.
+ *
+ * `forceAll` (diagnostic only, off by default) skips the hash comparison and
+ * treats every eligible file as drifted. It exists because this comparison is
+ * the ONLY thing standing between a repeat run and a full re-resolve: pass-2
+ * (`GraphBuildFinalizer#resolveAndUpsert`) resolves whatever reached the spill,
+ * unconditionally, so the file set is decided here or nowhere. Measured on a
+ * 10,374-file TypeScript corpus, resolve was 2,106,536 ms of a 2,159,393 ms
+ * codegraph enrichment — 97.6% — and a repeat run shrank it to 568 ms, which is
+ * why the dominant phase had never been CPU-profiled (bd tea-rags-mcp-bij2m).
+ * Orphan detection is hash-independent and stays untouched under the flag.
  */
 export function computeExtractionRepair(
   eligible: ReadonlyMap<string, string>,
   persisted: ReadonlyMap<string, string | null>,
+  forceAll = false,
 ): ExtractionRepair {
   const repair: string[] = [];
   for (const [path, hash] of eligible) {
@@ -40,7 +52,7 @@ export function computeExtractionRepair(
     // always a string. Spelling either out separately would be a branch no
     // input can reach independently.
     const known = persisted.get(path);
-    if (known !== hash) repair.push(path);
+    if (forceAll || known !== hash) repair.push(path);
   }
 
   const orphans: string[] = [];

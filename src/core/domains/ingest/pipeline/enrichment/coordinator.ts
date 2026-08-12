@@ -133,6 +133,32 @@ export class EnrichmentCoordinator {
   private runContentHashes?: ReadonlyMap<string, string>;
 
   /**
+   * Diagnostic-only: treat every eligible file as drifted in the repair pass,
+   * so a run resolves the whole corpus instead of the handful that changed.
+   * Read ONCE per coordinator, `CODEGRAPH_FORCE_RESOLVE=1|true`, off otherwise —
+   * same parse and same read-once discipline as `CODEGRAPH_BULK_FILES`
+   * (`trajectory/codegraph/symbols/graph-finalizer.ts`) and the pool tunables in
+   * `../infra/pool-defaults.ts`.
+   *
+   * Why it lives here and not in the codegraph provider: pass-2 resolves every
+   * line of the spill unconditionally, so the only lever on WHAT gets resolved
+   * is which files reach pass-1 — and for an already-current graph that is
+   * decided by `computeExtractionRepair` below, nowhere else. The name is
+   * codegraph-scoped because codegraph is the only provider that implements
+   * `readPersistedFileHashes`; a second one would make it a misnomer.
+   *
+   * Costs a full re-resolve of the project — 35 minutes on the corpus that
+   * motivated it — which is exactly the workload
+   * `ENRICHMENT_WORKER_CPU_PROFILE_DIR` needs to sample and could not otherwise
+   * reach on demand (bd tea-rags-mcp-bij2m). It rewrites no state a normal
+   * resolve of those files would not rewrite: the same paths go through the same
+   * `runFileSignals` seam with the same run hashes, so each row is re-stamped
+   * with its CURRENT hash and the next ordinary run sees a converged store.
+   */
+  private readonly forceResolveAll =
+    process.env.CODEGRAPH_FORCE_RESOLVE === "1" || process.env.CODEGRAPH_FORCE_RESOLVE === "true";
+
+  /**
    * Optional callback fired after enrichment milestones. Invoked at most twice
    * per run:
    * 1. After ChunkPhase streaming + initial chunk enrichment settles.
@@ -310,7 +336,7 @@ export class EnrichmentCoordinator {
         providerEligible.set(path, scanned.get(path) as string);
       }
 
-      const { repair, orphans } = computeExtractionRepair(providerEligible, persisted);
+      const { repair, orphans } = computeExtractionRepair(providerEligible, persisted, this.forceResolveAll);
       if (orphans.length > 0) {
         await provider.handleDeletedPaths?.(orphans, { collectionName });
       }
@@ -320,6 +346,10 @@ export class EnrichmentCoordinator {
           collection: collectionName,
           repaired: repair.length,
           orphaned: orphans.length,
+          // Stamped into the log so a profile can be attributed to a forced run
+          // rather than to a coincidentally large changeset. Omitted when off,
+          // keeping the ordinary run's log line byte-identical.
+          ...(this.forceResolveAll ? { forcedResolve: true } : {}),
         });
         await this.executor.runFileSignals(provider, root, repair, { collectionName, contentHashes: scanned });
         repaired += repair.length;
