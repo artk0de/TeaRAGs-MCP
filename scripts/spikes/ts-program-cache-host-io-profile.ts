@@ -76,9 +76,29 @@ interface HostIoProfile {
   fileExists: ProbeTally;
   directoryExists: ProbeTally;
   realpath: ProbeTally;
+  /**
+   * `readFile` is NOT one of the memoized probes, and it is counted to size
+   * what a shared `ts.ModuleResolutionCache` would additionally skip (bd
+   * tea-rags-mcp-i2nqa). Resolution reads `package.json` through it on every
+   * bare-specifier lookup, so a repeat rate here is residual work the existence
+   * memo cannot reach.
+   */
+  readFile: ProbeTally;
+  packageJsonReads: number;
   totalCalls: number;
   totalDistinct: number;
   totalKeyBytes: number;
+  /**
+   * Probes the COMPILER asked the host for, counted above the memo — i.e. the
+   * candidate paths TypeScript's module-resolution algorithm still generates
+   * per `ts.createProgram`, whether or not the answer reached the OS.
+   *
+   * This is the size of the prize a shared `ts.ModuleResolutionCache` would
+   * claim (bd tea-rags-mcp-i2nqa), and it is the number `totalCalls` cannot
+   * show: the memo makes each ask cheap, it does not stop the walk that
+   * produces them. `hostAsks / totalCalls` is the memo's hit rate.
+   */
+  hostAsks: number;
 }
 
 /** Counting wrapper around one `ts.sys` method, keyed by its path argument. */
@@ -107,6 +127,9 @@ function profile(repoRoot: string, targetDir: string, limit: number): HostIoProf
   const fileExists = new ProbeCounter();
   const directoryExists = new ProbeCounter();
   const realpath = new ProbeCounter();
+  const readFile = new ProbeCounter();
+  let packageJsonReads = 0;
+  let hostAsks = 0;
 
   // `ts.createCompilerHost` exposes `fileExists`/`directoryExists`/`realpath`
   // as `(p) => system.fileExists(p)` — the lookup on `ts.sys` happens per call,
@@ -114,6 +137,12 @@ function profile(repoRoot: string, targetDir: string, limit: number): HostIoProf
   const originalFileExists = ts.sys.fileExists.bind(ts.sys);
   const originalDirectoryExists = ts.sys.directoryExists.bind(ts.sys);
   const originalRealpath = ts.sys.realpath?.bind(ts.sys);
+  const originalReadFile = ts.sys.readFile.bind(ts.sys);
+  ts.sys.readFile = (path: string, encoding?: string): string | undefined => {
+    readFile.record(path);
+    if (path.endsWith("package.json")) packageJsonReads++;
+    return originalReadFile(path, encoding);
+  };
   ts.sys.fileExists = (path: string): boolean => {
     fileExists.record(path);
     return originalFileExists(path);
@@ -133,6 +162,24 @@ function profile(repoRoot: string, targetDir: string, limit: number): HostIoProf
     const tsOptions = loadTsConfig(repoRoot);
     // Same construction TSCallResolver uses: default bounds, default probe.
     const cache = new TSProgramCache({ repoRoot, tsOptions });
+
+    // Count ABOVE the cache's memo, by wrapping the host it just built. These
+    // are the asks module resolution makes; the `ts.sys` counters above are the
+    // subset that reached the OS.
+    const { host } = cache as unknown as { host: ts.CompilerHost };
+    const hostFileExists = host.fileExists.bind(host);
+    const hostDirectoryExists = host.directoryExists?.bind(host);
+    host.fileExists = (path: string): boolean => {
+      hostAsks++;
+      return hostFileExists(path);
+    };
+    if (hostDirectoryExists) {
+      host.directoryExists = (path: string): boolean => {
+        hostAsks++;
+        return hostDirectoryExists(path);
+      };
+    }
+
     const files = collectSourceFiles(repoRoot, targetDir).slice(0, limit);
     let acquired = 0;
 
@@ -146,12 +193,15 @@ function profile(repoRoot: string, targetDir: string, limit: number): HostIoProf
       fileExists: fileExists.tally(),
       directoryExists: directoryExists.tally(),
       realpath: realpath.tally(),
+      readFile: readFile.tally(),
     };
     return {
       files: files.length,
       acquired,
       totalWallMs: Number(totalNs) / 1e6,
       ...tallies,
+      packageJsonReads,
+      hostAsks,
       totalCalls: tallies.fileExists.calls + tallies.directoryExists.calls + tallies.realpath.calls,
       totalDistinct: tallies.fileExists.distinct + tallies.directoryExists.distinct + tallies.realpath.distinct,
       totalKeyBytes: tallies.fileExists.keyBytes + tallies.directoryExists.keyBytes + tallies.realpath.keyBytes,
@@ -160,6 +210,7 @@ function profile(repoRoot: string, targetDir: string, limit: number): HostIoProf
     ts.sys.fileExists = originalFileExists;
     ts.sys.directoryExists = originalDirectoryExists;
     if (originalRealpath) ts.sys.realpath = originalRealpath;
+    ts.sys.readFile = originalReadFile;
   }
 }
 
@@ -200,8 +251,12 @@ function main(): void {
     formatTally("fileExists", result.fileExists),
     formatTally("directoryExists", result.directoryExists),
     formatTally("realpath", result.realpath),
+    formatTally("readFile*", result.readFile),
+    `  * not memoized — sizes what a ModuleResolutionCache would add`,
+    `  package.json reads  ${result.packageJsonReads}`,
     ``,
-    `total                ${result.totalCalls} calls over ${result.totalDistinct} distinct paths`,
+    `host asks            ${result.hostAsks} (what module resolution generated)`,
+    `syscalls             ${result.totalCalls} over ${result.totalDistinct} distinct paths`,
     `memo key floor       ${(result.totalKeyBytes / 1024 / 1024).toFixed(2)} MiB`,
   ];
   process.stdout.write(`${lines.join("\n")}\n`);
