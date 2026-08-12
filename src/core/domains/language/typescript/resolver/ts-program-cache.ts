@@ -8,23 +8,37 @@
  * is structurally out of their reach. Those need the real compiler. This cache
  * is what makes paying for it affordable.
  *
- * **One Program per entry file, not one per repository.** `ts.createProgram`
- * over a whole monorepo costs minutes of construction and gigabytes of retained
- * AST; on the resolve path that is not a trade-off, it is a stall. Each entry
- * here is instead built from `[entry file, …transitive import closure]`, with
- * the closure capped on BOTH axes ({@link TSProgramCacheOptions.maxImportDepth},
- * {@link TSProgramCacheOptions.maxRootFiles}) so a hub file cannot drag the
- * whole graph in. The closure walk reuses `mapImportToFile` — the same tsconfig
- * `paths`/`baseUrl` mapping the resolver strategies already resolve imports
- * with — so a Program never disagrees with the rest of the resolver about which
- * file an import names.
+ * **A Program is built per entry file, but it is NOT bounded by the caps.**
+ * Each build starts from `[entry file, …transitive import closure]`, walked by
+ * `mapImportToFile` — the same tsconfig `paths`/`baseUrl` mapping the resolver
+ * strategies resolve imports with, so a Program never disagrees with the rest of
+ * the resolver about which file an import names — and capped on both axes
+ * ({@link TSProgramCacheOptions.maxImportDepth},
+ * {@link TSProgramCacheOptions.maxRootFiles}).
  *
- * **Bounded by entry count, not by time.** A run has a deterministic file
- * count, and `CallEdgeResolutionRunner` resolves a file's calls together, so
- * per-file locality is near-perfect and a small LRU absorbs it. Parsing is
- * shared further by a single `ts.CompilerHost` whose SourceFile cache spans
- * every Program the instance builds: the default lib and any file imported by
- * several entries are parsed once, not once per Program.
+ * Those caps bound the ROOT NAMES handed to `ts.createProgram` and nothing else.
+ * The compiler then runs its OWN module-resolution walk over those roots, and
+ * that walk answers to no cap here: it pulls in the full transitive closure of
+ * everything reachable. Measured on a 405-file synthetic corpus whose features
+ * re-export through barrels, the median Program was handed 6 root names and
+ * contained all 405 project files (bd tea-rags-mcp-4m2vb). A depth-40 import
+ * chain rooted at ONE file yields a Program holding all 40. So "a hub file
+ * cannot drag the whole graph in" is false, and the cost of a build is set by
+ * the entry's reachable closure, not by `maxRootFiles`.
+ *
+ * **Which is why the cache is keyed by COVERAGE, not by entry file alone.** If
+ * the Program built for `a.ts` already contains `b.ts`, building a second
+ * Program for `b.ts` re-walks the same closure to reach the same types.
+ * {@link TSProgramCache.acquire} therefore falls back to
+ * {@link TSProgramCache.findCovering} before building, and on that corpus the
+ * builds a full run performs drop from one per entry file to one, taking pass-2
+ * from 11.3 s to 0.35 s over 805 files with a byte-identical edge set. The
+ * entry-keyed LRU alone could not do this at any size: it missed on data it was
+ * already holding, so raising `maxEntries` bought nothing.
+ *
+ * Parsing is shared further by a single `ts.CompilerHost` whose SourceFile cache
+ * spans every Program the instance builds: the default lib and any file imported
+ * by several entries are parsed once, not once per Program.
  *
  * That shared parse cache holds three populations, and each answers to its own
  * rule (bd tea-rags-mcp-8qf86). Project sources are bounded by
@@ -48,12 +62,20 @@
  * **Scoped to one indexing run.** A `LanguageProvider` outlives a single index
  * in the MCP server, and between two runs a dependency's `.d.ts` may have
  * changed — a stale Program is worse than a cold one, because it answers
- * confidently with last run's types. Two mechanisms keep it honest: every
+ * confidently with last run's types. Three mechanisms keep it honest: every
  * `acquire` re-stats the entry file and rebuilds when its mtime moved (the
- * incremental-reindex case, where only changed files are re-resolved), and
+ * incremental-reindex case, where only changed files are re-resolved); a parse
+ * older than the file's current mtime is dropped before anything reads it, which
+ * the entry re-stat alone did NOT cover, because the shared parse map is filled
+ * by closure walks as well as by entries and a file that has only ever been
+ * somebody else's import carries no entry to re-stat; and
  * {@link TSProgramCache.reset} drops everything for a caller that owns a run
- * boundary. Changes confined to a transitive dependency of an unchanged entry
- * are deliberately NOT tracked — that file is not re-resolved either.
+ * boundary. Coverage reuse answers to the same rule through
+ * {@link CacheEntry.builtAtMs} — a Program cannot re-stat what it holds, so one
+ * built before the file changed is refused rather than served.
+ *
+ * Changes confined to a transitive dependency of an unchanged entry are
+ * deliberately NOT tracked — that file is not re-resolved either.
  */
 
 import { existsSync, readFileSync, statSync } from "node:fs";
@@ -143,6 +165,27 @@ interface CacheEntry {
   handle: TSProgramHandle;
   /** mtime of the entry file when the Program was built (staleness check). */
   entryMtimeMs: number;
+  /**
+   * Wall clock at which `ts.createProgram` returned — the instant this Program's
+   * view of every file it holds was taken. A file whose mtime is NEWER than this
+   * was changed after the Program read it, so the Program's copy is stale and
+   * must not be served (see {@link TSProgramCache.acquire}).
+   */
+  builtAtMs: number;
+  /**
+   * Absolute names of the in-root files the Program actually CONTAINS, which is
+   * a very different set from the root names it was handed —
+   * `ts.createProgram` walks the transitive import graph itself, unbounded by
+   * either closure cap.
+   */
+  covers: Set<string>;
+  /**
+   * Handles already derived for covered files, so a file served off this
+   * Program gets the same handle identity on every acquire — matching what the
+   * entry-keyed path has always done, and saving a lookup on a path the
+   * resolver hits several times per call site.
+   */
+  derived: Map<string, TSProgramHandle>;
 }
 
 /**
@@ -216,6 +259,18 @@ export class TSProgramCache {
    */
   private readonly parsedDependencySources = new Set<string>();
   /**
+   * Wall clock at which each entry of {@link sourceFiles} was read, so a parse
+   * can be told stale without re-reading the file to compare contents.
+   *
+   * Needed because the parse map is shared and populated from TWO directions:
+   * an `acquire` of the file itself, and the closure walk of some other entry
+   * that imports it. Only the first leaves a `CacheEntry` carrying an mtime, so
+   * the entry-keyed staleness check cannot see a change to a file that has so
+   * far only ever been somebody else's import — it would be handed the stale
+   * parse out of the host the first time it becomes an entry in its own right.
+   */
+  private readonly parsedAtMs = new Map<string, number>();
+  /**
    * The host's `fileExists` answers, memoized across every Program this
    * instance builds (bd tea-rags-mcp-e6yad).
    *
@@ -267,6 +322,13 @@ export class TSProgramCache {
   private readonly hostRealpath = new Map<string, string>();
   private readonly host: ts.CompilerHost;
   /**
+   * `repoRoot` as a directory prefix, in the separator the COMPILER reports.
+   * `ts` normalizes every `SourceFile.fileName` to forward slashes whatever the
+   * platform, so the membership test in {@link build} compares like with like
+   * without paying `node:path.relative` per file of every Program.
+   */
+  private readonly inRootPrefix: string;
+  /**
    * Directory the running compiler's default lib files sit in. Every
    * `lib.*.d.ts` shares it, so one string identifies the whole exempt set.
    */
@@ -284,6 +346,7 @@ export class TSProgramCache {
     this.maxParsedFiles = options.maxParsedFiles ?? TS_PROGRAM_PARSED_FILES_MAX_DEFAULT;
     this.maxDependencyFiles = options.maxDependencyFiles ?? TS_PROGRAM_PARSED_DEPENDENCY_FILES_MAX_DEFAULT;
     this.compilerOptions = buildCompilerOptions(this.repoRoot, this.tsOptions);
+    this.inRootPrefix = `${sep === "/" ? this.repoRoot : this.repoRoot.split(sep).join("/")}/`;
     this.host = this.buildHost();
     // Read off the host rather than guessed: it is the same lookup the compiler
     // itself uses to find the lib, so the exempt directory is exactly the one
@@ -328,6 +391,14 @@ export class TSProgramCache {
     const mtimeMs = entryMtime(absolute);
     if (mtimeMs === null) return null;
 
+    // A parse taken before the file's current mtime is stale whoever asks for
+    // it. This has to run ahead of every branch below, because the shared parse
+    // map is populated by CLOSURE walks as much as by entries: a file first read
+    // as somebody else's import carries no cache entry of its own, so the
+    // entry-keyed check under it never sees the change, and `ts.createProgram`
+    // would be handed the previous revision out of the host.
+    this.forgetStaleParse(absolute, mtimeMs);
+
     const cached = this.entries.get(relPath);
     if (cached?.entryMtimeMs === mtimeMs) {
       // Refresh recency: delete + set moves the key to the end of the Map's
@@ -338,17 +409,81 @@ export class TSProgramCache {
     }
     if (cached) this.invalidate(relPath);
 
-    const handle = this.build(absolute);
-    if (!handle) return null;
-    this.entries.set(relPath, { handle, entryMtimeMs: mtimeMs });
+    const covering = this.findCovering(this.toCompilerPath(absolute), absolute, mtimeMs);
+    if (covering) return covering;
+
+    const built = this.build(absolute);
+    if (!built) return null;
+    this.entries.set(relPath, built);
     this.evictOverflow();
+    return built.handle;
+  }
+
+  /**
+   * A retained Program that already contains `entryAbsolute`, as a handle
+   * pointing at that file — or `null` when none does.
+   *
+   * This is the lookup the entry-keyed cache was missing (bd
+   * tea-rags-mcp-4m2vb). Each Program is built from `[entry, …closure]`, but
+   * `ts.createProgram` then runs its OWN transitive walk over those roots and
+   * pulls in everything reachable, so the Program built for one file routinely
+   * contains hundreds of others — measured on a 405-file synthetic corpus with
+   * barrel re-exports, the median Program held all 405 while being handed 6 root
+   * names. Rebuilding for a file already sitting inside a retained Program
+   * re-walks that whole closure to arrive at the same types, which is why an
+   * entry-keyed miss cost one `createProgram` per file of the run.
+   *
+   * `builtAtMs` is the guard that keeps this honest. Reuse is only sound while
+   * the Program's copy of the file matches the disk, and a Program cannot
+   * re-stat what it holds — so a file modified after the Program was
+   * constructed is refused here and rebuilt, the coverage-wide form of the
+   * entry mtime check above.
+   */
+  private findCovering(compilerPath: string, entryAbsolute: string, mtimeMs: number): TSProgramHandle | null {
+    for (const [key, entry] of this.entries) {
+      if (!entry.covers.has(compilerPath) || entry.builtAtMs < mtimeMs) continue;
+      const existing = entry.derived.get(compilerPath);
+      if (existing) return this.touch(key, entry, existing);
+      // Looked up by the NATIVE path: `getSourceFile` normalizes its argument,
+      // and passing what the caller already computed keeps the two forms from
+      // having to agree anywhere but in the membership test above.
+      const sourceFile = entry.handle.program.getSourceFile(entryAbsolute);
+      if (!sourceFile) continue;
+      const handle: TSProgramHandle = {
+        program: entry.handle.program,
+        checker: entry.handle.checker,
+        sourceFile,
+        rootFiles: entry.handle.rootFiles,
+      };
+      entry.derived.set(compilerPath, handle);
+      return this.touch(key, entry, handle);
+    }
+    return null;
+  }
+
+  /** An absolute path in the forward-slash form `ts` reports file names in. */
+  private toCompilerPath(absolutePath: string): string {
+    return sep === "/" ? absolutePath : absolutePath.split(sep).join("/");
+  }
+
+  /** Move `key` to the most-recently-used end and hand `handle` back. */
+  private touch(key: RelPath, entry: CacheEntry, handle: TSProgramHandle): TSProgramHandle {
+    this.entries.delete(key);
+    this.entries.set(key, entry);
     return handle;
+  }
+
+  /** Drop `absolute`'s parse when the file changed after it was read. */
+  private forgetStaleParse(absolute: string, mtimeMs: number): void {
+    const parsedAt = this.parsedAtMs.get(absolute);
+    if (parsedAt !== undefined && parsedAt < mtimeMs) this.forgetParse(absolute);
   }
 
   /** Drop every retained Program — the run-boundary reset. */
   reset(): void {
     this.entries.clear();
     this.sourceFiles.clear();
+    this.parsedAtMs.clear();
     this.parsedProjectSources.clear();
     this.parsedDependencySources.clear();
     // The probe answers are run-scoped for the same reason the parses are: a
@@ -452,12 +587,14 @@ export class TSProgramCache {
    */
   private rememberParse(fileName: string, parsed: ts.SourceFile | undefined): void {
     this.sourceFiles.set(fileName, parsed);
+    this.parsedAtMs.set(fileName, Date.now());
     this.populationOf(fileName)?.add(fileName);
   }
 
   /** Drop a parse from the shared map and from whichever index holds it. */
   private forgetParse(fileName: string): void {
     this.sourceFiles.delete(fileName);
+    this.parsedAtMs.delete(fileName);
     this.parsedProjectSources.delete(fileName);
     this.parsedDependencySources.delete(fileName);
   }
@@ -563,12 +700,40 @@ export class TSProgramCache {
     }
   }
 
-  private build(entryAbsolute: string): TSProgramHandle | null {
+  /**
+   * Build the Program for one entry, packaged as the cache entry that retains
+   * it — the handle plus what {@link findCovering} needs to serve OTHER files
+   * off it.
+   *
+   * The coverage set is read back off the finished Program rather than derived
+   * from `rootFiles`, because the two are not the same set and the difference is
+   * the whole point: the compiler resolves and pulls in the transitive closure
+   * of every root, so what the Program holds is routinely two orders of
+   * magnitude larger than what it was handed.
+   *
+   * Only files under the repo root are recorded. Everything else — the default
+   * lib above all — is never an entry file, so indexing it would grow the set by
+   * the largest population in the Program for a lookup that cannot happen.
+   */
+  private build(entryAbsolute: string): CacheEntry | null {
     const rootFiles = this.collectClosure(entryAbsolute);
     const program = ts.createProgram({ rootNames: [...rootFiles], options: this.compilerOptions, host: this.host });
+    const builtAtMs = Date.now();
     const sourceFile = program.getSourceFile(entryAbsolute);
     if (!sourceFile) return null;
-    return { program, checker: program.getTypeChecker(), sourceFile, rootFiles };
+    const entryMtimeMs = entryMtime(entryAbsolute);
+    if (entryMtimeMs === null) return null;
+    const covers = new Set<string>();
+    for (const file of program.getSourceFiles()) {
+      if (file.fileName.startsWith(this.inRootPrefix)) covers.add(file.fileName);
+    }
+    return {
+      handle: { program, checker: program.getTypeChecker(), sourceFile, rootFiles },
+      entryMtimeMs,
+      builtAtMs,
+      covers,
+      derived: new Map(),
+    };
   }
 
   /**
