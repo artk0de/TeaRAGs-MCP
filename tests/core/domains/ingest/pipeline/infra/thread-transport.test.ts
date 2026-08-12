@@ -27,6 +27,15 @@ parentPort.on("message", () => {
 });
 `;
 
+// A worker that reports back its own execArgv, so the --cpu-prof wiring is
+// observable without actually writing a profile to disk.
+const EXEC_ARGV_WORKER_SRC = `
+import { parentPort } from "node:worker_threads";
+parentPort.on("message", () => {
+  parentPort.postMessage({ execArgv: process.execArgv });
+});
+`;
+
 describe("ThreadTransport", () => {
   const dir = mkdtempSync(join(tmpdir(), "tt-"));
   const workerPath = join(dir, "echo-worker.mjs");
@@ -98,5 +107,47 @@ describe("ThreadTransport", () => {
 
   it("treats a zero ceiling as no ceiling rather than capping the worker at nothing", async () => {
     expect(await appliedHeapCeilingMb(0)).toBeGreaterThan(1024);
+  });
+
+  /**
+   * Diagnostic-only `--cpu-prof` wiring: opt-in, so absence must be the
+   * default, and when present it must not clobber execArgv the worker would
+   * otherwise inherit.
+   */
+  describe("cpuProfileDir", () => {
+    async function workerExecArgv(cpuProfileDir?: string): Promise<string[]> {
+      const path = join(dir, "exec-argv-worker.mjs");
+      writeFileSync(path, EXEC_ARGV_WORKER_SRC, "utf8");
+      const transport = new ThreadTransport<Record<string, never>, { execArgv: string[] }>(
+        path,
+        undefined,
+        cpuProfileDir,
+      );
+      const handle = transport.spawn({});
+      try {
+        return await new Promise<string[]>((resolve, reject) => {
+          handle.onMessage((m) => {
+            resolve((m as { execArgv: string[] }).execArgv);
+          });
+          handle.onError(reject);
+          handle.post({});
+        });
+      } finally {
+        await handle.terminate();
+      }
+    }
+
+    it("leaves execArgv untouched when no profile directory is configured", async () => {
+      expect(await workerExecArgv()).toEqual(process.execArgv);
+    });
+
+    it("adds --cpu-prof and --cpu-prof-dir on top of the inherited execArgv when configured", async () => {
+      const execArgv = await workerExecArgv("/tmp/profiles");
+      expect(execArgv).toContain("--cpu-prof");
+      expect(execArgv).toContain("--cpu-prof-dir=/tmp/profiles");
+      for (const inherited of process.execArgv) {
+        expect(execArgv).toContain(inherited);
+      }
+    });
   });
 });
