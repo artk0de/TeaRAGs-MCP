@@ -1,4 +1,4 @@
-import { mkdirSync, mkdtempSync, realpathSync, rmSync, utimesSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync, utimesSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 
@@ -797,5 +797,174 @@ describe("TSProgramCache memoizes the host's filesystem probes across Programs (
     expect(cache.acquire("src/first.ts")).not.toBeNull();
 
     expect(probes.fileExists.length + probes.directoryExists.length).toBeGreaterThan(0);
+  });
+});
+
+/**
+ * bd tea-rags-mcp-5je8t — the coverage-keyed cache must stay memory-bounded
+ * against a dependency-laden `node_modules`, without losing the build-count
+ * collapse bd tea-rags-mcp-4m2vb bought.
+ *
+ * The live regression: on a real TypeScript/React repository the reachable
+ * dependency `.d.ts` surface exceeds `maxDependencyFiles`, so capacity
+ * eviction drops parses that retained Programs still pin. Evicting those frees
+ * NOTHING — the Program keeps its AST alive — but the next build re-parses
+ * them into a fresh PRIVATE copy, so the Program LRU degrades from eight views
+ * of one shared AST pool into eight private pools. Measured on the probe
+ * fixture (scripts/spikes/ts-program-cache-dependency-growth-probe.ts): heap
+ * per build 4.6 MB with sharing intact versus 153 MB once churn breaks it — a
+ * 33x amplification that took a live run past 3.9 GB RSS.
+ *
+ * Two bounds close it. A parse evicted from the shared map but still pinned by
+ * a retained Program is REUSED via read-through, never re-parsed; and the
+ * retained Programs themselves answer to a byte budget
+ * (`maxRetainedSourceTextBytes`) — union of non-lib source text across
+ * retained entries, LRU-evicted by size, the newest build always kept.
+ */
+describe("TSProgramCache stays bounded against a dependency-laden node_modules (bd tea-rags-mcp-5je8t)", () => {
+  let repoRoot: string;
+  const tsOptions = { baseUrl: ".", paths: {} };
+
+  beforeEach(() => {
+    repoRoot = realpathSync(mkdtempSync(join(tmpdir(), "ts-program-budget-")));
+  });
+
+  afterEach(() => {
+    rmSync(repoRoot, { recursive: true, force: true });
+  });
+
+  it("shares a dependency parse a retained Program pins even after capacity eviction dropped it", () => {
+    // Three declaration-only dependencies against a bound of ONE: parsing the
+    // later ones evicts the earlier ones from the shared map, while the first
+    // Program keeps pinning all three — the exact churn shape of the live run.
+    const depAAbs = writeDependency(repoRoot, "depa");
+    writeDependency(repoRoot, "depb");
+    writeDependency(repoRoot, "depc");
+    writeSource(
+      repoRoot,
+      "src/first.ts",
+      `import { depa } from "depa";\nimport { depb } from "depb";\nimport { depc } from "depc";\nexport const first = depa + depb + depc;\n`,
+    );
+    writeSource(
+      repoRoot,
+      "src/second.ts",
+      `import { depa } from "depa";\nimport { depb } from "depb";\nimport { depc } from "depc";\nexport const second = depa + depb + depc;\n`,
+    );
+    // Bound ZERO: the shared map retains no dependency parse at all, so which
+    // parse TypeScript happens to take last cannot decide the outcome — every
+    // dependency must come back through the retained Program or a re-parse.
+    const cache = new TSProgramCache({ repoRoot, tsOptions, maxDependencyFiles: 0 });
+
+    const first = cache.acquire("src/first.ts");
+    const second = cache.acquire("src/second.ts");
+
+    // Distinct Programs — the two files share no imports, so no coverage hit.
+    expect(second?.program).not.toBe(first?.program);
+    // Object identity is the whole assertion: a re-parse would be a DIFFERENT
+    // SourceFile carrying an identical AST in fresh memory — the duplication
+    // that multiplied per-build heap 33x on the probe fixture.
+    expect(second?.program.getSourceFile(depAAbs)).toBe(first?.program.getSourceFile(depAAbs));
+  });
+
+  it("evicts retained Programs by total source text, not only by count", () => {
+    // Two disjoint entries, each ~4 KB of source, against a budget that fits
+    // only one: the older Program must go even though maxEntries (8) is far
+    // from exceeded.
+    const filler = `// ${"x".repeat(96)}\n`.repeat(40);
+    writeSource(repoRoot, "src/islanda.ts", `${filler}export const islanda = 1;\n`);
+    writeSource(repoRoot, "src/islandb.ts", `${filler}export const islandb = 2;\n`);
+    const cache = new TSProgramCache({ repoRoot, tsOptions, maxRetainedSourceTextBytes: 6000 });
+
+    cache.acquire("src/islanda.ts");
+    cache.acquire("src/islandb.ts");
+
+    expect(cache.size).toBe(1);
+  });
+
+  it("always keeps the newest Program, and keeps serving coverage off it, even alone over budget", () => {
+    writeSource(repoRoot, "src/leaf.ts", `export const leaf = 1;\n`);
+    writeSource(repoRoot, "src/entry.ts", `import { leaf } from "./leaf.js";\nexport const entry = leaf;\n`);
+    const cache = new TSProgramCache({ repoRoot, tsOptions, maxRetainedSourceTextBytes: 1 });
+
+    const entry = cache.acquire("src/entry.ts");
+    const covered = cache.acquire("src/leaf.ts");
+
+    // A budget below any real Program must degrade to "retain the newest
+    // alone", never to "retain nothing" — dropping the just-built Program
+    // would resurrect the one-build-per-file cost bd 4m2vb removed.
+    expect(entry).not.toBeNull();
+    expect(cache.size).toBe(1);
+    // And the over-budget survivor still answers coverage: `leaf.ts` sits
+    // inside the entry's Program, so no second build happens.
+    expect(covered?.program).toBe(entry?.program);
+  });
+
+  it("reports the union text bytes the retained Programs pin, shrinking when one is evicted", () => {
+    const filler = `// ${"y".repeat(96)}\n`.repeat(40);
+    writeSource(repoRoot, "src/islanda.ts", `${filler}export const islanda = 1;\n`);
+    writeSource(repoRoot, "src/islandb.ts", `${filler}export const islandb = 2;\n`);
+    const cache = new TSProgramCache({ repoRoot, tsOptions, maxRetainedSourceTextBytes: 6000 });
+
+    cache.acquire("src/islanda.ts");
+    const afterFirst = cache.retainedSourceTextBytes;
+    cache.acquire("src/islandb.ts");
+    const afterSecond = cache.retainedSourceTextBytes;
+
+    // One ~4 KB island retained each time — the budget evicted the first, so
+    // the reported pin does not stack the two.
+    expect(afterFirst).toBeGreaterThan(0);
+    expect(afterSecond).toBeLessThanOrEqual(6000);
+  });
+
+  it("weighs a dependency resolved through a symlink to outside the repo root", () => {
+    // The pnpm shape: `node_modules/<pkg>` is a symlink into a store elsewhere,
+    // and module resolution REALPATHS its targets — so the dependency's files
+    // live outside the repo-root prefix. An in-root weight is blind to exactly
+    // the population that made the live run unbounded; the budget must see it.
+    const storeRoot = realpathSync(mkdtempSync(join(tmpdir(), "ts-pnpm-store-")));
+    try {
+      const depText = `export declare const linked: number;\n${`// ${"z".repeat(96)}\n`.repeat(50)}`;
+      writeSource(storeRoot, "linked/package.json", `{ "name": "linked", "types": "index.d.ts" }\n`);
+      writeSource(storeRoot, "linked/index.d.ts", depText);
+      mkdirSync(join(repoRoot, "node_modules"), { recursive: true });
+      symlinkSync(join(storeRoot, "linked"), join(repoRoot, "node_modules/linked"), "dir");
+      writeSource(repoRoot, "src/a.ts", `import { linked } from "linked";\nexport const a = linked;\n`);
+      const cache = new TSProgramCache({ repoRoot, tsOptions });
+
+      cache.acquire("src/a.ts");
+
+      expect(cache.retainedSourceTextBytes).toBeGreaterThanOrEqual(depText.length);
+    } finally {
+      rmSync(storeRoot, { recursive: true, force: true });
+    }
+  });
+
+  it("refuses to resurrect a pinned parse whose file changed after the pinning Program was built", () => {
+    const depAbs = writeDependency(repoRoot, "depa");
+    writeDependency(repoRoot, "depb");
+    writeDependency(repoRoot, "depc");
+    writeSource(
+      repoRoot,
+      "src/first.ts",
+      `import { depa } from "depa";\nimport { depb } from "depb";\nimport { depc } from "depc";\nexport const first = depa + depb + depc;\n`,
+    );
+    writeSource(repoRoot, "src/second.ts", `import { depa } from "depa";\nexport const second = depa;\n`);
+    const cache = new TSProgramCache({ repoRoot, tsOptions, maxDependencyFiles: 1 });
+    const first = cache.acquire("src/first.ts");
+    expect(first).not.toBeNull();
+
+    // The dependency changes AFTER the first Program was built; its parse is
+    // long evicted from the shared map, so only read-through could serve it —
+    // and read-through must notice the pinning Program predates the change.
+    // Dependencies never surface through `forgetStaleParse` (they are never
+    // entries), so the guard here is a per-file mtime check on the read-through
+    // path itself.
+    writeFileSync(depAbs, `export declare const depa: string;\n`, "utf8");
+    const future = new Date(Date.now() + 10_000);
+    utimesSync(depAbs, future, future);
+
+    const second = cache.acquire("src/second.ts");
+
+    expect(second?.program.getSourceFile(depAbs)?.text).toContain("string");
   });
 });
