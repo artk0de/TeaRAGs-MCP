@@ -1,4 +1,4 @@
-import { Worker } from "node:worker_threads";
+import { Worker, type WorkerOptions } from "node:worker_threads";
 
 import { SHUTDOWN_MESSAGE, type WorkerHandle, type WorkerTransport } from "./worker-transport.js";
 
@@ -9,10 +9,28 @@ import { SHUTDOWN_MESSAGE, type WorkerHandle, type WorkerTransport } from "./wor
  * the correct thread (avoiding the libc++abi crash a bare terminate() causes).
  */
 export class ThreadTransport<Req, Res> implements WorkerTransport<Req, Res> {
-  constructor(private readonly workerPath: string) {}
+  /**
+   * @param workerPath Module the worker thread runs.
+   * @param maxOldGenerationSizeMb Heap ceiling for each spawned thread, in MB.
+   *   Omitted (or `0`) leaves the thread on the process-wide limit. When a
+   *   thread breaches the ceiling V8 kills THAT THREAD and Node reports it as an
+   *   `error` event carrying `ERR_WORKER_OUT_OF_MEMORY` — which the pool turns
+   *   into a rejected dispatch plus a respawned slot, instead of the whole host
+   *   swapping to a standstill (bd tea-rags-mcp-8qf86).
+   */
+  constructor(
+    private readonly workerPath: string,
+    private readonly maxOldGenerationSizeMb?: number,
+  ) {}
 
   spawn(init: unknown): WorkerHandle<Req, Res> {
-    const worker = new Worker(this.workerPath, { workerData: init });
+    const options: WorkerOptions = { workerData: init };
+    // Set only when a real ceiling was asked for: passing `resourceLimits` with
+    // a zero would cap the thread at nothing rather than leave it unbounded.
+    if (this.maxOldGenerationSizeMb !== undefined && this.maxOldGenerationSizeMb > 0) {
+      options.resourceLimits = { maxOldGenerationSizeMb: this.maxOldGenerationSizeMb };
+    }
+    const worker = new Worker(this.workerPath, options);
     return {
       post: (request) => {
         worker.postMessage(request);

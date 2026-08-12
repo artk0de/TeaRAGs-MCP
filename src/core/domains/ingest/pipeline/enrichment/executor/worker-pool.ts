@@ -50,6 +50,7 @@ import type {
 } from "../../../../../contracts/index.js";
 import { isDebug } from "../../../../../infra/runtime.js";
 import type { ChunkLookupEntry } from "../../../../../types.js";
+import { defaultEnrichmentWorkerMemoryLimitMb } from "../../infra/pool-defaults.js";
 import { ThreadTransport } from "../../infra/thread-transport.js";
 import { WorkerDispatchPool } from "../../infra/worker-dispatch-pool.js";
 import type {
@@ -101,7 +102,13 @@ export class WorkerPoolEnrichmentExecutor implements EnrichmentExecutor {
   constructor(poolSize: number, workerPath: string) {
     this.pool = new WorkerDispatchPool<EnrichmentWorkerRequest, EnrichmentWorkerResponse>(
       poolSize,
-      new ThreadTransport<EnrichmentWorkerRequest, EnrichmentWorkerResponse>(workerPath),
+      // Heap ceiling per worker. This pool disables the liveness timeout below,
+      // so the ceiling is the ONLY bound standing between a runaway provider
+      // and the machine's memory (bd tea-rags-mcp-8qf86).
+      new ThreadTransport<EnrichmentWorkerRequest, EnrichmentWorkerResponse>(
+        workerPath,
+        defaultEnrichmentWorkerMemoryLimitMb(),
+      ),
       // Worker threads get a fresh module registry, so the debug flag does not
       // survive the boundary on its own — ship it in the init payload or every
       // marker the thread emits (the entire codegraph pass-2 phase) is dropped.

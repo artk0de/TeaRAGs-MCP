@@ -55,8 +55,19 @@
   memory. The pool disables the liveness timeout (worker-pool.ts:110-116). Why:
   calling git "stateless dispatch" is wrong both ways — git never reaches the
   pool, and a provider marked `stateless` round-robins and loses affinity state
-  mid-run. An affinity worker crash loses that collection's run state with no
-  auto-respawn; only the recovery scan heals it.
+  mid-run. An affinity worker crash still loses that collection's accumulated
+  run state — only the recovery scan heals THAT — but the pool slot itself is
+  respawned, so the next dispatch is not posted to a dead handle.
+- **With the liveness timeout off, a per-thread HEAP CEILING is the only bound
+  on a runaway provider** — `ENRICHMENT_WORKER_MEMORY_LIMIT_MB`, default 2048,
+  `0` disables, applied as `resourceLimits.maxOldGenerationSizeMb` by
+  `ThreadTransport`. Breaching it kills that thread with
+  `ERR_WORKER_OUT_OF_MEMORY`, which arrives as a transport `error` — and
+  `WorkerDispatchPool#bindHandle` must therefore RECYCLE the slot, not merely
+  clear `busy`. Why: a `worker_threads` error is terminal and posting to a dead
+  handle is silently discarded, so without the respawn the ceiling converts a
+  slow host-wide degradation into a dispatch that never settles for the rest of
+  the run (bd 8qf86).
 
 ## Gotchas
 

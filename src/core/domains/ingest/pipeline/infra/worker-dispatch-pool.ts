@@ -15,9 +15,9 @@
  * distinct name. "WorkerDispatch" denotes the generic transport-backed pool;
  * "worker" remains the in-process executor's vocabulary.
  */
+import { isDebug } from "../../../../infra/runtime.js";
 import { PipelineNotStartedError, WorkerTimeoutError } from "../../errors.js";
 import { defaultWorkerDispatchTimeoutMs } from "./pool-defaults.js";
-import { isDebug } from "../../../../infra/runtime.js";
 import type { WorkerHandle, WorkerTransport } from "./worker-transport.js";
 
 interface Pending<Res> {
@@ -125,9 +125,21 @@ export class WorkerDispatchPool<Req, Res> {
 
     pt.handle.onError((error) => {
       const { pending } = pt;
-      pt.busy = false;
-      pt.pending = null;
       this.clearTimer(pt); // error completion — no leaked timer
+      // A transport `error` is TERMINAL for that worker: a worker_thread that
+      // raised one has exited (an OOM kill under `resourceLimits` arrives this
+      // way), and posting to its handle afterwards is silently discarded. So the
+      // slot needs a live replacement, not just a `busy = false` — otherwise the
+      // next dispatch is handed to a corpse and, in the enrichment pool where the
+      // liveness timeout is disabled on purpose, waits forever (bd
+      // tea-rags-mcp-8qf86). `recycleWorker` resets busy/pending as it swaps the
+      // handle; during shutdown there is nothing to replace.
+      if (this.isShutdown) {
+        pt.busy = false;
+        pt.pending = null;
+      } else {
+        this.recycleWorker(pt);
+      }
       if (pending) pending.reject(error);
       this.processQueue();
     });
