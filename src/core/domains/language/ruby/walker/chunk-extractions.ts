@@ -15,6 +15,7 @@
  */
 
 import type { CallRef, ChunkExtraction, LocalBinding } from "../../../../contracts/types/codegraph.js";
+import { assignCallsToInnermostChunks } from "../../kernel/assign-calls-to-chunks.js";
 import type { RubyDslCatalogue } from "../dsl/index.js";
 import type { RubyFileTypeEnv } from "./file-type-env.js";
 import { bindCompoundReceiverChains, collectRubyLocalCallBindingsForChunk } from "./local-bindings.js";
@@ -124,44 +125,4 @@ export function buildRubyChunkExtractions(
     return best ?? { scope: [] };
   };
   return { chunks: byChunk, siteContextAt };
-}
-
-/**
- * Assign each call to exactly ONE chunk — the smallest containing line
- * range. Tie-breaker: deeper scope (longer `scope[]`) wins, so a method-
- * level chunk beats its enclosing class/module when both happen to span
- * the same number of lines.
- *
- * Returns a Map keyed by chunk index → CallRef[]. Chunks with no calls
- * have no entry (caller defaults to `[]`).
- *
- * Calls whose startLine falls outside every chunk are dropped silently —
- * matches the previous behaviour for unreachable call sites.
- */
-function assignCallsToInnermostChunks(
-  calls: CallRef[],
-  chunks: { startLine: number; endLine: number; scope: string[] }[],
-): Map<number, CallRef[]> {
-  const out = new Map<number, CallRef[]>();
-  for (const call of calls) {
-    let bestIdx = -1;
-    let bestSpan = Number.POSITIVE_INFINITY;
-    let bestDepth = -1;
-    for (let i = 0; i < chunks.length; i++) {
-      const c = chunks[i];
-      if (call.startLine < c.startLine || call.startLine > c.endLine) continue;
-      const span = c.endLine - c.startLine;
-      const depth = c.scope.length;
-      if (span < bestSpan || (span === bestSpan && depth > bestDepth)) {
-        bestIdx = i;
-        bestSpan = span;
-        bestDepth = depth;
-      }
-    }
-    if (bestIdx === -1) continue;
-    const bucket = out.get(bestIdx);
-    if (bucket) bucket.push(call);
-    else out.set(bestIdx, [call]);
-  }
-  return out;
 }
