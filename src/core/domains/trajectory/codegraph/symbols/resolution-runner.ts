@@ -133,9 +133,10 @@ export class CallEdgeResolutionRunner {
     // a bound type's inheritance chain regardless of which file
     // declares that class. Per-file ancestors are merged into
     // `runState.ancestors` during pass-1 (sink.write).
-    const ancestors = Object.keys(state.ancestors).length > 0 ? state.ancestors : extraction.classAncestors;
-    const prependedAncestors =
-      Object.keys(state.prependedAncestors).length > 0 ? state.prependedAncestors : extraction.classPrependedAncestors;
+    const ancestors = state.hasRunGlobalEntries("ancestors") ? state.ancestors : extraction.classAncestors;
+    const prependedAncestors = state.hasRunGlobalEntries("prependedAncestors")
+      ? state.prependedAncestors
+      : extraction.classPrependedAncestors;
     // Reverse include-by index (bd cai0/2oky5 Task 4): find which classes include
     // a given module (`resolveViaIncludingClasses` in ruby-super.ts). When BOTH
     // ancestor inputs ARE the run-global maps (production pass-2) the inversion is
@@ -151,8 +152,8 @@ export class CallEdgeResolutionRunner {
       ancestors,
       prependedAncestors,
       includedBy,
-      classExtends: Object.keys(state.classExtends).length > 0 ? state.classExtends : extraction.classExtends,
-      returnTypes: Object.keys(state.returnTypes).length > 0 ? state.returnTypes : extraction.functionReturnTypes,
+      classExtends: state.hasRunGlobalEntries("classExtends") ? state.classExtends : extraction.classExtends,
+      returnTypes: state.hasRunGlobalEntries("returnTypes") ? state.returnTypes : extraction.functionReturnTypes,
       // Run-global instantiation set if any file contributed, else this file's
       // own (mirrors the returnTypes "run-global if present else extraction"
       // pattern). bd tea-rags-mcp-pffv.
@@ -161,11 +162,10 @@ export class CallEdgeResolutionRunner {
       // Ruby type-source PRECISE maps (Increment 1, Task 1.5): run-global if any
       // file contributed, else this file's own — same "run-global if present else
       // extraction" pattern as ancestors / return types.
-      ivarTypes: Object.keys(state.ivarTypes).length > 0 ? state.ivarTypes : extraction.ivarTypes,
-      structuredReturnTypes:
-        Object.keys(state.structuredReturnTypes).length > 0
-          ? state.structuredReturnTypes
-          : extraction.structuredReturnTypes,
+      ivarTypes: state.hasRunGlobalEntries("ivarTypes") ? state.ivarTypes : extraction.ivarTypes,
+      structuredReturnTypes: state.hasRunGlobalEntries("structuredReturnTypes")
+        ? state.structuredReturnTypes
+        : extraction.structuredReturnTypes,
       // `@ivar = <param>` fields completed at the barrier ride the file's OWN
       // classFieldTypes channel, overlaid UNDERNEATH it (bd tea-rags-mcp-bvalc).
       // Identity-returns when nothing was derived, so a non-Ruby run — or a

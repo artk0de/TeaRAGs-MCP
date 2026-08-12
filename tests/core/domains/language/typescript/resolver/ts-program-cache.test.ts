@@ -2,6 +2,7 @@ import { mkdirSync, mkdtempSync, realpathSync, rmSync, utimesSync, writeFileSync
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 
+import ts from "typescript";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import { TSProgramCache } from "../../../../../../src/core/domains/language/typescript/resolver/ts-program-cache.js";
@@ -585,5 +586,127 @@ describe("TSProgramCache bounds dependency parses, exempting only the default li
     cache.reset();
 
     expect(cache.parsedDependencyFileCount).toBe(0);
+  });
+});
+
+describe("TSProgramCache memoizes the host's filesystem probes across Programs (bd tea-rags-mcp-e6yad)", () => {
+  let repoRoot: string;
+  let restoreSys: (() => void) | null = null;
+  const tsOptions = { baseUrl: ".", paths: {} };
+
+  beforeEach(() => {
+    repoRoot = realpathSync(mkdtempSync(join(tmpdir(), "ts-host-probe-")));
+  });
+
+  afterEach(() => {
+    restoreSys?.();
+    restoreSys = null;
+    rmSync(repoRoot, { recursive: true, force: true });
+  });
+
+  /**
+   * Record every path `ts.sys` is asked about, per probe method.
+   *
+   * `ts.sys` is the real syscall boundary — `ts.createCompilerHost` exposes
+   * `fileExists`/`directoryExists`/`realpath` as `(p) => system.fileExists(p)`,
+   * resolving the property per call — so counting here counts `fs.statSync` /
+   * `fs.realpathSync` rather than counting our own wrapper being entered. A
+   * memo that never reached the OS would still pass a host-level count.
+   */
+  function recordSysProbes(): { fileExists: string[]; directoryExists: string[]; realpath: string[] } {
+    const recorded = { fileExists: [] as string[], directoryExists: [] as string[], realpath: [] as string[] };
+    const originalFileExists = ts.sys.fileExists.bind(ts.sys);
+    const originalDirectoryExists = ts.sys.directoryExists.bind(ts.sys);
+    const originalRealpath = ts.sys.realpath?.bind(ts.sys);
+    ts.sys.fileExists = (path: string): boolean => {
+      recorded.fileExists.push(path);
+      return originalFileExists(path);
+    };
+    ts.sys.directoryExists = (path: string): boolean => {
+      recorded.directoryExists.push(path);
+      return originalDirectoryExists(path);
+    };
+    if (originalRealpath) {
+      ts.sys.realpath = (path: string): string => {
+        recorded.realpath.push(path);
+        return originalRealpath(path);
+      };
+    }
+    restoreSys = (): void => {
+      ts.sys.fileExists = originalFileExists;
+      ts.sys.directoryExists = originalDirectoryExists;
+      if (originalRealpath) ts.sys.realpath = originalRealpath;
+    };
+    return recorded;
+  }
+
+  /** Paths asked about more than once — named, so a failure reads as evidence. */
+  function repeatedPaths(paths: readonly string[]): string[] {
+    const counts = new Map<string, number>();
+    for (const path of paths) counts.set(path, (counts.get(path) ?? 0) + 1);
+    return [...counts.entries()].filter(([, n]) => n > 1).map(([path]) => path);
+  }
+
+  /**
+   * Three entries over one shared import plus one dependency: enough that
+   * TypeScript's module resolution walks the same candidate extensions and the
+   * same `node_modules` ancestors for each Program it builds.
+   */
+  function writeSharedGraph(): void {
+    writeSource(repoRoot, "src/shared.ts", `export const shared = 1;\n`);
+    writeDependency(repoRoot, "dep");
+    for (const name of ["first", "second", "third"]) {
+      writeSource(
+        repoRoot,
+        `src/${name}.ts`,
+        `import { shared } from "./shared.js";\nimport { dep } from "dep";\nexport const ${name} = shared + dep;\n`,
+      );
+    }
+  }
+
+  it("asks the filesystem about each path once, however many Programs share the host", () => {
+    writeSharedGraph();
+    const probes = recordSysProbes();
+    const cache = new TSProgramCache({ repoRoot, tsOptions });
+
+    for (const name of ["first", "second", "third"]) {
+      expect(cache.acquire(`src/${name}.ts`)).not.toBeNull();
+    }
+
+    // Module resolution re-runs in full per `ts.createProgram`, and it probes
+    // every candidate extension and every `node_modules` ancestor. Uncached,
+    // that is the same `stat` reissued once per Program — measured at 126x
+    // redundancy over 300 real files, and 1604x for `directoryExists` alone.
+    expect(repeatedPaths(probes.fileExists)).toEqual([]);
+    expect(repeatedPaths(probes.directoryExists)).toEqual([]);
+    expect(repeatedPaths(probes.realpath)).toEqual([]);
+  });
+
+  it("still answers each probe correctly, memo or not", () => {
+    writeSharedGraph();
+    const cache = new TSProgramCache({ repoRoot, tsOptions });
+    cache.acquire("src/first.ts");
+
+    // A memo that returned a wrong answer would show up as a Program that
+    // cannot see the shared import, so assert the resolution itself — the
+    // observable behavior the memo must leave untouched.
+    const handle = cache.acquire("src/second.ts");
+
+    expect(handle?.rootFiles).toContain(join(repoRoot, "src/shared.ts"));
+    expect(handle?.program.getSourceFile(join(repoRoot, "src/shared.ts"))).toBeDefined();
+  });
+
+  it("re-probes a path whose parse was invalidated, rather than trusting a stale answer", () => {
+    writeSharedGraph();
+    const cache = new TSProgramCache({ repoRoot, tsOptions });
+    expect(cache.acquire("src/first.ts")).not.toBeNull();
+
+    // `reset` is the run boundary: between two indexing runs a file may have
+    // appeared or vanished, so the existence answers must not outlive it.
+    cache.reset();
+    const probes = recordSysProbes();
+    expect(cache.acquire("src/first.ts")).not.toBeNull();
+
+    expect(probes.fileExists.length + probes.directoryExists.length).toBeGreaterThan(0);
   });
 });
