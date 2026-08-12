@@ -12,8 +12,9 @@
  *
  * Created per-context by `LanguageFactoryDescriptor` (each owns its own tree-sitter
  * `Parser`, spec §5). The capability logic here is stateless, so the only
- * per-instance cost is the Parser the chunker/codegraph engines build, plus a
- * one-time `loadTsConfig(process.cwd())` for the resolver's path mapping.
+ * per-instance cost is the Parser the chunker/codegraph engines build, plus the
+ * resolver's one-time `loadTsConfig` — deferred to the first resolve, because
+ * only then is the root of the project being indexed known.
  *
  * Two grammars, one provider: `.ts` and `.tsx` both map to language "typescript"
  * (`LANGUAGE_MAP`). The CHUNKER uses the kernel's `.typescript` grammar for both
@@ -91,12 +92,12 @@ const typescriptChunkerHooks: LanguageChunkerHooks = {
 };
 
 /**
- * Native TypeScript `LanguageProvider`. Construction is cheap — the resolver
- * loads the tsconfig from `process.cwd()` once (mirroring the legacy
- * bootstrap wiring `new TSCallResolver(loadTsConfig(process.cwd()), mode)`); the
- * chunker worker simply never invokes the resolver. `mode` controls
- * ambiguous-resolution behaviour, matching the legacy adapter's `TSCallResolver`
- * default.
+ * Native TypeScript `LanguageProvider`. Construction is cheap and reads nothing
+ * from disk: the resolver — and with it `loadTsConfig`, the project file probe
+ * and the `ts.Program` — is built on FIRST RESOLVE, against the root that
+ * resolve names. The chunker worker never invokes the resolver, so there it is
+ * never built at all. `mode` controls ambiguous-resolution behaviour, matching
+ * the legacy adapter's `TSCallResolver` default.
  */
 export class TypeScriptLanguage implements LanguageProvider {
   readonly kernel = typescriptKernel;
@@ -108,35 +109,60 @@ export class TypeScriptLanguage implements LanguageProvider {
   readonly resolver: LanguageSymbolResolver;
 
   /**
+   * The resolver currently bound, with the root it was built for. Single-entry
+   * rather than a map: one provider instance serves one indexed project at a
+   * time (the same assumption `CodegraphRunState` documents for its own
+   * run-global maps), and a `ts.Program` is far too heavy to keep one per root
+   * that has ever been seen.
+   */
+  private bound: { root: string; resolver: CallResolver } | undefined;
+
+  /**
    * @param mode Ambiguous-resolution behaviour, matching the legacy adapter's
    *   `TSCallResolver` default.
-   * @param repoRoot Root of the project being INDEXED. One root serves both
-   *   concerns: the tsconfig the path mapper reads and the project the
-   *   typeChecker fallback resolves files against must be the same directory,
-   *   or a Program would be built from paths the mapper never produces
-   *   (bd tea-rags-mcp-uclbn).
+   * @param repoRoot FALLBACK root, used only when a resolve arrives with no
+   *   `ctx.projectRoot` — direct construction from inside the target repo
+   *   (scripts, tests). It is not the codegraph path's root: that one arrives
+   *   per run on the call context.
    *
-   *   This was `process.cwd()`, computed here with no way to override it, and
-   *   `LanguageFactory.create(lang)` took no root either — so an index run
-   *   launched from anywhere but the target repo loaded the wrong
-   *   `tsconfig.json` and silently lost every path alias
-   *   (bd tea-rags-mcp-f4wcm). It defaults to `process.cwd()` still, so direct
-   *   construction from within the target repo behaves as before; the codegraph
-   *   provider factory passes the real `config.rootDir`.
+   *   bd tea-rags-mcp-f4wcm made this a constructor parameter and had the
+   *   codegraph provider factory fill it with `config.rootDir` — the DuckDB
+   *   storage root under `paths.appData`, decided at bootstrap before any
+   *   project is bound, and never a repository. Construction is simply too
+   *   early to know which project the calls belong to, so the root now comes
+   *   from the run.
    */
-  constructor(mode: AmbiguousResolveMode = DEFAULT_AMBIGUOUS_RESOLVE_MODE, repoRoot: string = process.cwd()) {
-    const callResolver: CallResolver = new TSCallResolver(loadTsConfig(repoRoot), mode, repoRoot);
+  constructor(
+    private readonly mode: AmbiguousResolveMode = DEFAULT_AMBIGUOUS_RESOLVE_MODE,
+    private readonly repoRoot: string = process.cwd(),
+  ) {
     this.resolver = {
-      resolve: (call: CallRef, ctx: CallContext): SymbolResolutionTarget | null => callResolver.resolve(call, ctx),
+      resolve: (call: CallRef, ctx: CallContext): SymbolResolutionTarget | null =>
+        this.resolverFor(ctx).resolve(call, ctx),
       resolveDispatch: (call: CallRef, ctx: CallContext): DispatchFanoutOutcome =>
-        callResolver.resolveDispatch?.(call, ctx) ?? emptyDispatchFanout(),
+        this.resolverFor(ctx).resolveDispatch?.(call, ctx) ?? emptyDispatchFanout(),
       // Forwarded so imports map through `mapImportToFile` rather than through
       // the provider's synthesised-call loop, whose fake `member` a member-keyed
       // pass can answer (bd tea-rags-mcp-5onmn). Mirrors the Ruby adapter.
-      resolveFileEdges: (extraction, ctx) => callResolver.resolveFileEdges?.(extraction, ctx) ?? [],
+      resolveFileEdges: (extraction, ctx) => this.resolverFor(ctx).resolveFileEdges?.(extraction, ctx) ?? [],
       targetsExternalImport: (call: CallRef, ctx: CallContext): boolean =>
-        callResolver.targetsExternalImport?.(call, ctx) ?? false,
+        this.resolverFor(ctx).targetsExternalImport?.(call, ctx) ?? false,
     };
+  }
+
+  /**
+   * The `TSCallResolver` for the root this call belongs to, built once and
+   * reused while the root holds. One root serves both concerns the resolver
+   * has: the tsconfig the path mapper reads and the project the typeChecker
+   * fallback resolves files against must be the same directory, or a Program
+   * gets built from paths the mapper never produces (bd tea-rags-mcp-uclbn).
+   */
+  private resolverFor(ctx: CallContext): CallResolver {
+    const root = ctx.projectRoot ?? this.repoRoot;
+    if (this.bound?.root !== root) {
+      this.bound = { root, resolver: new TSCallResolver(loadTsConfig(root), this.mode, root) };
+    }
+    return this.bound.resolver;
   }
 }
 

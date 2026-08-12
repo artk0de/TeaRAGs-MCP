@@ -817,6 +817,11 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
     // a current row from a stale one. Assigned before any walk so both the
     // caller-supplied-paths branch and the standalone walk see it.
     if (options?.contentHashes) this.runState.contentHashes = options.contentHashes;
+    // Record the indexed project's root for resolvers that bind project-rooted
+    // state lazily (TypeScript's tsconfig / file probe / ts.Program). Same seam
+    // and same reason as the two manifest reads below: `root` is per-run data,
+    // and provider construction happens before any project is known.
+    this.runState.bindProjectRoot(root);
     // Read the run's Gemfile for gem-gated DSL grammar (adx5p.1) before pass-2
     // resolve reads it off each CallContext. One read per run (guarded).
     this.runState.loadGemfile(root);
@@ -946,6 +951,10 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
     options?: FileSignalOptions,
   ): Promise<Map<string, FileSignalOverlay>> {
     const key = this.collectionKey(options?.collectionName);
+    // Bind the indexed project's root before the crossPass early-return, for the
+    // same reason the Gemfile is read here: finalizeSignals runs pass-2 off this
+    // state, and it receives no usable root of its own.
+    this.runState.bindProjectRoot(root);
     // Gem-gated DSL grammar (adx5p.1): read the run's Gemfile before the crossPass
     // early-return so finalizeSignals resolves pass-2 off this state (one/run).
     this.runState.loadGemfile(root);

@@ -74,18 +74,16 @@ export class LanguageFactory implements LanguageFactoryDescriptor {
    */
   private readonly ambiguousResolveMode: AmbiguousResolveMode;
   /**
-   * Root of the project being INDEXED — not of the process that launched the
-   * run (bd tea-rags-mcp-f4wcm).
+   * FALLBACK root for providers that resolve against project-root-relative
+   * configuration — TypeScript's `tsconfig.json` today (bd tea-rags-mcp-f4wcm).
    *
-   * Only TypeScript reads it today, and it reads it for something the whole
-   * language's resolution hangs on: `loadTsConfig(repoRoot)` supplies the
-   * `paths` aliases, and the `ts.Program` cache resolves files against the same
-   * directory. `TypeScriptLanguage` used to call `process.cwd()` itself, which
-   * is right only when the CLI happens to be launched from the target repo —
-   * and the normal case is the opposite, `tea-rags index-codebase --project X`
-   * run from wherever the operator's shell is. The wrong tsconfig then loads
-   * silently, every alias import maps to nothing, and the calls behind them are
-   * bucketed external.
+   * It is a fallback, not the answer: this factory is built once per process
+   * (composition root, or per-collection in the enrichment worker), and a
+   * codegraph run learns which repository it is indexing only when the run
+   * starts. So the authoritative root travels per run on
+   * `CallContext.projectRoot` and a provider binds to it lazily; this value is
+   * what a resolve falls back to when no context root was supplied, which is
+   * the shape scripts and unit tests running inside the target repo rely on.
    */
   private readonly repoRoot: string;
   private readonly cache = new Map<string, LanguageProvider>();
@@ -94,10 +92,10 @@ export class LanguageFactory implements LanguageFactoryDescriptor {
    * @param options.ambiguousResolveMode Threaded into native resolvers
    *   (`RubyLanguage`, `TypeScriptLanguage`, …). Defaults to the codegraph
    *   default (`strict`).
-   * @param options.repoRoot Root of the project being indexed, threaded into
-   *   providers that resolve against project-root-relative configuration
-   *   (TypeScript's tsconfig today). Defaults to `process.cwd()`, which is what
-   *   every caller got before it existed.
+   * @param options.repoRoot Fallback root for providers that resolve against
+   *   project-root-relative configuration (TypeScript's tsconfig today), used
+   *   when a resolve arrives with no `CallContext.projectRoot`. Defaults to
+   *   `process.cwd()`, which is what every caller got before it existed.
    */
   constructor(options: { ambiguousResolveMode?: AmbiguousResolveMode; repoRoot?: string } = {}) {
     this.ambiguousResolveMode = options.ambiguousResolveMode ?? DEFAULT_AMBIGUOUS_RESOLVE_MODE;

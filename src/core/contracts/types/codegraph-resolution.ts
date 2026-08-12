@@ -218,6 +218,21 @@ export interface CallContext {
    */
   gemfileContent?: string;
   /**
+   * Absolute root of the project THIS run is indexing, threaded per run by the
+   * codegraph provider exactly like {@link gemfileContent}. A resolver whose
+   * answers depend on project-rooted state reads it here rather than capturing
+   * a root when it was constructed: the provider is built once, before any
+   * collection is bound, so construction time is strictly too early to know
+   * which repository the calls belong to.
+   *
+   * The TypeScript resolver is the consumer today — `tsconfig.json` (path
+   * aliases + `baseUrl`), the on-disk file probe, and the `ts.Program` the
+   * typeChecker passes build all hang off this root. Undefined ⇒ the resolver
+   * falls back to whatever root it was constructed with, which is what direct
+   * construction (scripts, tests running inside the target repo) relies on.
+   */
+  projectRoot?: string;
+  /**
    * Optional `className → parentClass` map propagated from
    * `FileExtraction.classExtends`. Resolvers walk this on `super()` /
    * `super.foo()` calls so the edge lands on the PARENT class's method
