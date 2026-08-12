@@ -388,4 +388,86 @@ describe("WorkerDispatchPool transport-level onError", () => {
     await expect(pool.dispatch({ value: "second" })).rejects.toThrow(/transport failure/);
     await pool.shutdown();
   });
+
+  /**
+   * bd tea-rags-mcp-8qf86 — a worker that DIES must be replaced, not merely
+   * marked idle.
+   *
+   * A `worker_threads` `error` is terminal: the thread is gone, and posting to
+   * its handle afterwards is silently discarded. Freeing the slot without
+   * respawning therefore hands the next dispatch to a dead worker — and the
+   * enrichment pool runs with its liveness timeout disabled on purpose
+   * (`executor/worker-pool.ts`, a codegraph finalize legitimately takes
+   * minutes), so nothing would ever time that dispatch out. It would hang for
+   * the rest of the run.
+   *
+   * That matters most for the heap ceiling introduced alongside this: a ceiling
+   * whose only effect was to convert a runaway worker into a permanent hang
+   * would be a worse failure than the one it replaced.
+   */
+  class DieOnceTransport implements WorkerTransport<EchoReq, EchoRes> {
+    spawnCount = 0;
+
+    spawn(_init: unknown): WorkerHandle<EchoReq, EchoRes> {
+      const index = this.spawnCount++;
+      // Only the first worker is poisoned; a replacement behaves normally, the
+      // way a freshly spawned thread does after its predecessor was OOM-killed.
+      const dead = index === 0;
+      let msgCb: ((m: EchoRes | { error: string }) => void) | undefined;
+      let errorCb: ((e: Error) => void) | undefined;
+      let exitCb: (() => void) | undefined;
+      return {
+        post: (request) => {
+          if (dead) {
+            const err: NodeJS.ErrnoException = new Error("worker out of memory");
+            err.code = "ERR_WORKER_OUT_OF_MEMORY";
+            queueMicrotask(() => errorCb?.(err));
+            return;
+          }
+          queueMicrotask(() => msgCb?.({ index, value: request.value }));
+        },
+        onMessage: (cb) => {
+          msgCb = cb;
+        },
+        onError: (cb) => {
+          errorCb = cb;
+        },
+        onExit: (cb) => {
+          exitCb = cb;
+        },
+        shutdown: () => {
+          queueMicrotask(() => exitCb?.());
+        },
+        terminate: async () => {
+          exitCb?.();
+        },
+      };
+    }
+  }
+
+  it("replaces a worker killed by its heap ceiling so the next dispatch is not posted to a corpse", async () => {
+    const transport = new DieOnceTransport();
+    const pool = new WorkerDispatchPool<EchoReq, EchoRes>(1, transport, {});
+
+    await expect(pool.dispatch({ value: "runaway" })).rejects.toThrow(/out of memory/);
+    // The follow-up lands on a LIVE replacement rather than hanging forever on
+    // the dead handle. Without the respawn this dispatch never settles.
+    const after = await pool.dispatch({ value: "next" });
+
+    expect(after.value).toBe("next");
+    expect(transport.spawnCount).toBe(2);
+    await pool.shutdown();
+  });
+
+  it("does not respawn a worker that errors while the pool is shutting down", async () => {
+    const transport = new DieOnceTransport();
+    const pool = new WorkerDispatchPool<EchoReq, EchoRes>(1, transport, {});
+    await pool.shutdown();
+    const spawnsAtShutdown = transport.spawnCount;
+
+    await expect(pool.dispatch({ value: "late" })).rejects.toThrow();
+
+    // A shutdown pool that respawned here would leak a worker per late error.
+    expect(transport.spawnCount).toBe(spawnsAtShutdown);
+  });
 });

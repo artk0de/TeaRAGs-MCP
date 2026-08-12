@@ -4,6 +4,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import {
   defaultChunkerPoolSize,
+  defaultEnrichmentWorkerMemoryLimitMb,
   defaultWorkerDispatchTimeoutMs,
 } from "../../../../../../src/core/domains/ingest/pipeline/infra/pool-defaults.js";
 
@@ -58,5 +59,61 @@ describe("defaultWorkerDispatchTimeoutMs", () => {
   it("falls back to 120000 when CHUNKER_WORKER_TIMEOUT_MS is only whitespace", () => {
     process.env.CHUNKER_WORKER_TIMEOUT_MS = "   ";
     expect(defaultWorkerDispatchTimeoutMs()).toBe(120_000);
+  });
+});
+
+/**
+ * bd tea-rags-mcp-8qf86 — a runaway enrichment worker must fail itself long
+ * before it can swap the host machine.
+ *
+ * The incident this guards against ran the codegraph recompute to 2.6 GB RSS,
+ * still climbing after 46 minutes, taking host swap to 92% full and free RAM to
+ * ~50 MB before the process tree was killed by hand. A heap ceiling turns that
+ * into an ordinary `ERR_WORKER_OUT_OF_MEMORY`: loud, immediate, attributable to
+ * one worker, and survivable by everything else on the machine.
+ */
+describe("defaultEnrichmentWorkerMemoryLimitMb", () => {
+  let savedEnv: string | undefined;
+
+  beforeEach(() => {
+    savedEnv = process.env.ENRICHMENT_WORKER_MEMORY_LIMIT_MB;
+    delete process.env.ENRICHMENT_WORKER_MEMORY_LIMIT_MB;
+  });
+
+  afterEach(() => {
+    if (savedEnv !== undefined) {
+      process.env.ENRICHMENT_WORKER_MEMORY_LIMIT_MB = savedEnv;
+    } else {
+      delete process.env.ENRICHMENT_WORKER_MEMORY_LIMIT_MB;
+    }
+  });
+
+  it("defaults to 2048 MB when ENRICHMENT_WORKER_MEMORY_LIMIT_MB is not set", () => {
+    expect(defaultEnrichmentWorkerMemoryLimitMb()).toBe(2048);
+  });
+
+  it("returns the parsed value when the override is a valid positive integer", () => {
+    process.env.ENRICHMENT_WORKER_MEMORY_LIMIT_MB = "512";
+    expect(defaultEnrichmentWorkerMemoryLimitMb()).toBe(512);
+  });
+
+  it("returns 0 when the override is '0', removing the ceiling", () => {
+    process.env.ENRICHMENT_WORKER_MEMORY_LIMIT_MB = "0";
+    expect(defaultEnrichmentWorkerMemoryLimitMb()).toBe(0);
+  });
+
+  it("falls back to the default when the override is not a number", () => {
+    process.env.ENRICHMENT_WORKER_MEMORY_LIMIT_MB = "not-a-number";
+    expect(defaultEnrichmentWorkerMemoryLimitMb()).toBe(2048);
+  });
+
+  it("falls back to the default when the override is negative", () => {
+    process.env.ENRICHMENT_WORKER_MEMORY_LIMIT_MB = "-1";
+    expect(defaultEnrichmentWorkerMemoryLimitMb()).toBe(2048);
+  });
+
+  it("falls back to the default when the override is only whitespace", () => {
+    process.env.ENRICHMENT_WORKER_MEMORY_LIMIT_MB = "   ";
+    expect(defaultEnrichmentWorkerMemoryLimitMb()).toBe(2048);
   });
 });

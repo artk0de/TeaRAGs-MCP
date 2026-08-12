@@ -15,6 +15,18 @@ parentPort.on("message", (m) => {
 });
 `;
 
+// A worker that reports back the resource limits V8 is actually enforcing on
+// it. `resourceLimits` is the applied value, not the requested one, which makes
+// the ceiling observable without allocating anything: an un-capped worker
+// reports the process-wide old-generation default (4096 MB on Node 24), a
+// capped one reports the cap.
+const LIMITS_WORKER_SRC = `
+import { parentPort, resourceLimits } from "node:worker_threads";
+parentPort.on("message", () => {
+  parentPort.postMessage({ maxOldGenerationSizeMb: resourceLimits.maxOldGenerationSizeMb });
+});
+`;
+
 describe("ThreadTransport", () => {
   const dir = mkdtempSync(join(tmpdir(), "tt-"));
   const workerPath = join(dir, "echo-worker.mjs");
@@ -40,5 +52,51 @@ describe("ThreadTransport", () => {
     });
     handle.shutdown();
     await exited;
+  });
+
+  /**
+   * bd tea-rags-mcp-8qf86 — the heap ceiling that stops a runaway enrichment
+   * worker from taking the host's memory with it.
+   *
+   * Asserted against the limit V8 APPLIED rather than the options object handed
+   * to the constructor, so the test would still catch the cap being silently
+   * dropped or clamped. Nothing is allocated: deliberately, because a test that
+   * proves the cap by exhausting it must allocate the PROCESS default (4 GB on
+   * Node 24) whenever the cap fails to apply — which is the exact hazard this
+   * whole change exists to remove.
+   */
+  async function appliedHeapCeilingMb(limit?: number): Promise<number | undefined> {
+    const path = join(dir, "limits-worker.mjs");
+    writeFileSync(path, LIMITS_WORKER_SRC, "utf8");
+    const transport = new ThreadTransport<Record<string, never>, { maxOldGenerationSizeMb?: number }>(path, limit);
+    const handle = transport.spawn({});
+    try {
+      return await new Promise<number | undefined>((resolve, reject) => {
+        handle.onMessage((m) => {
+          resolve((m as { maxOldGenerationSizeMb?: number }).maxOldGenerationSizeMb);
+        });
+        handle.onError(reject);
+        handle.post({});
+      });
+    } finally {
+      await handle.terminate();
+    }
+  }
+
+  it("caps the spawned worker's heap at the configured ceiling", async () => {
+    expect(await appliedHeapCeilingMb(64)).toBe(64);
+  });
+
+  it("leaves the worker on the process-wide heap limit when no ceiling is configured", async () => {
+    const uncapped = await appliedHeapCeilingMb();
+
+    // The pre-guard behaviour, still reachable by omitting the ceiling: nothing
+    // stops the thread short of the whole process's limit. This is the state
+    // that let one worker climb to 2.6 GB and drive the host into swap.
+    expect(uncapped).toBeGreaterThan(1024);
+  });
+
+  it("treats a zero ceiling as no ceiling rather than capping the worker at nothing", async () => {
+    expect(await appliedHeapCeilingMb(0)).toBeGreaterThan(1024);
   });
 });

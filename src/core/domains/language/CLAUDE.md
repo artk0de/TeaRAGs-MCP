@@ -46,6 +46,16 @@
 - **`TSProgramCache` lives on `TSCallResolver`, refreshed by an mtime re-stat
   per `acquire`; `reset()` has NO caller in `src`.** Why: auditing for a
   run-boundary discard finds nothing and invites a spurious `reset()`.
+- **Its shared parse cache holds THREE populations, each with its own rule:**
+  project sources capped by `maxParsedFiles`, dependency `.d.ts` capped by
+  `maxDependencyFiles`, and the default lib capped by neither. `populationOf`
+  MUST test lib membership before dependency membership — with the compiler
+  installed under the indexed root the lib lives inside `node_modules` and would
+  otherwise read as an ordinary dependency. Why: exempting dependencies
+  wholesale alongside the lib (the bd qb2s3 shape) is what made a real run climb
+  ~1.8 MB per resolved file with the Program LRU and project-source count both
+  already pinned at their caps — `node_modules` is discovered one import at a
+  time, so it bounds the map only in a limit the run never reaches (bd 8qf86).
 
 ## Gotchas
 

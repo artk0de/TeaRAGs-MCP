@@ -486,3 +486,104 @@ describe("TSProgramCache bounds the parse cache by project sources, not by repo 
     expect(cache.parsedProjectFileCount).toBeLessThanOrEqual(2);
   });
 });
+
+/**
+ * bd tea-rags-mcp-8qf86 — the dependency half of the parse cache needs a bound
+ * of its OWN, and only the DEFAULT LIB is exempt from eviction.
+ *
+ * bd tea-rags-mcp-qb2s3 took every non-project file out of the eviction
+ * population to stop a project-source cap from evicting `lib.es2022.full.d.ts`.
+ * That protected the right file by exempting far too much: a dependency `.d.ts`
+ * is not the default lib, and `node_modules` is not a fixed set. It is
+ * discovered incrementally, one import at a time, as the resolve walk reaches
+ * new corners of the project — so on a large polyglot repo the map grows for as
+ * long as the run lasts and never converges.
+ *
+ * Measured on a synthetic corpus (300 files, one distinct dependency each):
+ * retained heap grew 1.84 MB per file, perfectly linearly, with the Program LRU
+ * pinned at 8 and the project-source count pinned at its cap the whole time.
+ * That is the shape of the live incident this bead was filed for.
+ *
+ * So the population splits three ways rather than two: project sources bounded
+ * by `maxParsedFiles`, dependency declarations bounded by `maxDependencyFiles`,
+ * and the default lib — a small fixed set, and the single cost the map was
+ * built to avoid — exempt from both.
+ */
+describe("TSProgramCache bounds dependency parses, exempting only the default lib (bd tea-rags-mcp-8qf86)", () => {
+  let repoRoot: string;
+  const tsOptions = { baseUrl: ".", paths: {} };
+
+  beforeEach(() => {
+    repoRoot = realpathSync(mkdtempSync(join(tmpdir(), "ts-dep-bound-")));
+  });
+
+  afterEach(() => {
+    rmSync(repoRoot, { recursive: true, force: true });
+  });
+
+  /** One project source per dependency, so each acquire pulls a NEW `.d.ts` in. */
+  function writeDependencyFanOut(count: number): void {
+    for (let i = 0; i < count; i++) {
+      writeDependency(repoRoot, `dep${i}`);
+      writeSource(repoRoot, `src/f${i}.ts`, `import { dep${i} } from "dep${i}";\nexport const f${i} = dep${i};\n`);
+    }
+  }
+
+  it("bounds the dependency declarations a long-lived resolver retains", () => {
+    writeDependencyFanOut(6);
+    const cache = new TSProgramCache({ repoRoot, tsOptions, maxDependencyFiles: 2 });
+
+    for (let i = 0; i < 6; i++) cache.acquire(`src/f${i}.ts`);
+
+    // Without the bound this is 6 and keeps climbing with the corpus — the
+    // per-file growth the bead measured.
+    expect(cache.parsedDependencyFileCount).toBeLessThanOrEqual(2);
+  });
+
+  it("never evicts the default lib, however far dependency parses overflow their bound", () => {
+    writeDependencyFanOut(6);
+    const cache = new TSProgramCache({ repoRoot, tsOptions, maxDependencyFiles: 1 });
+
+    const first = cache.acquire("src/f0.ts");
+    const lib = first?.program.getSourceFiles().find((f) => f.fileName.includes("/typescript/lib/"));
+    for (let i = 1; i < 5; i++) cache.acquire(`src/f${i}.ts`);
+    const last = cache.acquire("src/f5.ts");
+
+    // The premise: the running compiler's lib really did go through the shared
+    // host, so the identity check below is not vacuous.
+    expect(lib).toBeDefined();
+    // Object identity — the last Program was handed the SAME lib parse the
+    // first one made. This is exactly what bd tea-rags-mcp-qb2s3 protects, and
+    // bounding dependencies must not cost it.
+    expect(last?.program.getSourceFile(lib!.fileName)).toBe(lib);
+  });
+
+  it("keeps a project-source overflow from reaching across into dependencies", () => {
+    const depAbs = writeDependency(repoRoot, "dep");
+    for (let i = 0; i < 5; i++) {
+      writeSource(repoRoot, `src/f${i}.ts`, `import { dep } from "dep";\nexport const f${i} = dep;\n`);
+    }
+    const cache = new TSProgramCache({ repoRoot, tsOptions, maxParsedFiles: 1, maxDependencyFiles: 50 });
+
+    const first = cache.acquire("src/f0.ts");
+    const depSourceFile = first?.program.getSourceFile(depAbs);
+    for (let i = 1; i < 5; i++) cache.acquire(`src/f${i}.ts`);
+
+    // The two populations are bounded independently: project sources overflow
+    // hard here, and the single dependency is nowhere near ITS cap, so it
+    // survives. Collapsing them back into one counter loses this.
+    expect(cache.acquire("src/f4.ts")?.program.getSourceFile(depAbs)).toBe(depSourceFile);
+    expect(cache.parsedProjectFileCount).toBeLessThanOrEqual(1);
+  });
+
+  it("clears the dependency index on reset rather than leaving a stale count", () => {
+    writeDependencyFanOut(2);
+    const cache = new TSProgramCache({ repoRoot, tsOptions });
+    cache.acquire("src/f0.ts");
+    expect(cache.parsedDependencyFileCount).toBeGreaterThan(0);
+
+    cache.reset();
+
+    expect(cache.parsedDependencyFileCount).toBe(0);
+  });
+});
