@@ -72,6 +72,14 @@ function positiveIntFromEnv(name: string, fallback: number): number {
   return fallback;
 }
 
+/** Max bytes of a raw spill line worth an error message — enough to see the
+ * shape of the corruption without dumping a multi-KB FileExtraction JSON. */
+const SNIPPET_MAX_CHARS = 300;
+
+function snippet(line: string): string {
+  return line.length > SNIPPET_MAX_CHARS ? `${line.slice(0, SNIPPET_MAX_CHARS)}…(${line.length} bytes total)` : line;
+}
+
 /** Resolve the (graphDb, symbolTable) pair for the active collection. */
 export type GraphStoreResolver = (
   collectionName?: string,
@@ -147,7 +155,13 @@ export class GraphBuildFinalizer {
         try {
           extraction = JSON.parse(line) as FileExtraction;
         } catch (err) {
-          throw new CodegraphResolveError(processed, err instanceof Error ? err : undefined);
+          const wrapped = err instanceof Error ? err : new Error(String(err));
+          throw new CodegraphResolveError(
+            processed,
+            Object.assign(wrapped, {
+              message: `JSON.parse failed on spill line at file #${processed + 1}: '${snippet(line)}': ${wrapped.message}`,
+            }),
+          );
         }
         lastRelPath = extraction.relPath;
         const edges = this.resolveOne(extraction, symbolTable, processed, lastRelPath);

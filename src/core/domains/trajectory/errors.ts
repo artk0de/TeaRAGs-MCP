@@ -152,9 +152,18 @@ export class CodegraphSpillIoError extends TrajectoryCodegraphError {
  */
 export class CodegraphResolveError extends TrajectoryCodegraphError {
   constructor(filesProcessed: number, cause?: Error) {
+    // `cause` is stored on the instance (TeaRagsError#cause) but never read
+    // back into `message` — every call site along the streaming loop
+    // (JSON.parse, resolveOne, flushBuffer, the catch-all loop-fatal wrapper)
+    // appends its own file/line context to `cause.message` specifically so an
+    // operator can tell the four failure modes apart, and all four collapse to
+    // this one bare template by the time `toUserMessage()` / the CLI's JSON
+    // error surface reads it. Folding cause.message in here is what makes that
+    // context reach an operator instead of dead-ending on `.cause`.
+    const base = `Codegraph resolve failed after ${filesProcessed} files`;
     super({
       code: "TRAJECTORY_CODEGRAPH_RESOLVE_FAILED",
-      message: `Codegraph resolve failed after ${filesProcessed} files`,
+      message: cause ? `${base}: ${cause.message}` : base,
       hint:
         "The graph DB is consistent up to the last CHECKPOINT (every 500 files). " +
         "Run index_codebase again to retry the unflushed range.",

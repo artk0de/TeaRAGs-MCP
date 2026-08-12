@@ -159,6 +159,38 @@ describe("GraphBuildFinalizer.resolveAndUpsert", () => {
     expect(upsertedBatches[0]?.[0]?.node.relPath).toBe("src/a.ts");
     expect(runState.stats.fileEdgeCount).toBe(1);
   });
+
+  it("includes the malformed line's own content (not just the file count) when a spill line fails JSON.parse", async () => {
+    const graphDb = makeGraphDb();
+    const resolutionRunner = {
+      resolve: (): GraphEdges => ({ fileEdges: [], methodEdges: [] }),
+    } as unknown as CallEdgeResolutionRunner;
+    const runState = new CodegraphRunState();
+    const finalizer = new GraphBuildFinalizer(
+      async () => ({ graphDb, symbolTable: {} as GlobalSymbolTable }),
+      resolutionRunner,
+      runState,
+    );
+
+    // One good line, then a corrupted line (mirrors a mid-stream spill
+    // corruption, not just a malformed first line) — the count alone
+    // ("after 1 files") gives no way to tell what the bad bytes actually
+    // were; a live incident with two of these on record has had no way to
+    // distinguish a truncated write from an interleaved write from garbage.
+    const spillPath = join(tmp, "spill.ndjson");
+    const goodLine = JSON.stringify({ ...EXTRACTION, relPath: "src/a.ts" });
+    const badLine = '{"relPath": "src/b.ts", "broken"';
+    writeFileSync(spillPath, `${goodLine}\n${badLine}\n`);
+
+    let thrown: Error | undefined;
+    try {
+      await finalizer.resolveAndUpsert(spillPath);
+    } catch (err) {
+      thrown = err as Error;
+    }
+    expect(thrown?.message).toContain("after 1 files");
+    expect(thrown?.message).toContain(badLine);
+  });
 });
 
 describe("GraphBuildFinalizer.recomputeMetrics", () => {

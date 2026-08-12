@@ -83,6 +83,22 @@ function defaultImportFileEdges(
   return fileEdges;
 }
 
+/**
+ * One row per (source, target) pair is all `cg_symbols_edges_file` can hold —
+ * its PRIMARY KEY is the pair, not the import statement. First occurrence
+ * wins; later duplicates carry no information the schema has room for.
+ */
+function dedupeFileEdgesByTarget(edges: GraphEdges["fileEdges"]): GraphEdges["fileEdges"] {
+  const seen = new Set<string>();
+  const deduped: GraphEdges["fileEdges"] = [];
+  for (const edge of edges) {
+    if (seen.has(edge.targetRelPath)) continue;
+    seen.add(edge.targetRelPath);
+    deduped.push(edge);
+  }
+  return deduped;
+}
+
 export class CallEdgeResolutionRunner {
   constructor(
     private readonly languageFactory: LanguageFactoryDescriptor,
@@ -180,6 +196,22 @@ export class CallEdgeResolutionRunner {
    * constants + inheritance/mixins). Resolvers that don't fall back to the
    * generic synthesised-call import loop — correct for languages whose file
    * graph comes purely from explicit imports (TS/Python/Go/Java/Rust/JS).
+   *
+   * Both branches emit one candidate edge per IMPORT STATEMENT, so a file
+   * importing the same target twice (default + named import of the same
+   * module, e.g. `import Button from './Button'` alongside
+   * `import type { ButtonProps } from './Button'`) yields two candidates for
+   * one (source, target) pair. `cg_symbols_edges_file` has no room for two —
+   * its PRIMARY KEY is (source, target) — and DuckDB does not reject the
+   * second row gracefully: it aborts the whole `upsertFilesBulk` transaction
+   * with a native FatalException, taking the daemon process down mid-request
+   * (bd tea-rags-mcp-alew8, root-caused live against taxdome). Dedup HERE,
+   * once, after either branch returns, rather than in each resolver: every
+   * language's file graph funnels through this one return, and the schema's
+   * uniqueness is a property of the EDGE, not of any one resolver's import
+   * loop. First occurrence wins — the persisted row has room for one
+   * `importText` regardless, so there is no lossless alternative to picking
+   * one.
    */
   private buildFileEdges(
     extraction: FileExtraction,
@@ -203,9 +235,10 @@ export class CallEdgeResolutionRunner {
       gemfileContent: this.runState.gemfileContent,
       projectRoot: this.runState.projectRoot,
     };
-    return resolver.resolveFileEdges
+    const candidates = resolver.resolveFileEdges
       ? resolver.resolveFileEdges(extraction, fileEdgeCtx)
       : defaultImportFileEdges(extraction, resolver, fileEdgeCtx);
+    return dedupeFileEdgesByTarget(candidates);
   }
 
   /**
