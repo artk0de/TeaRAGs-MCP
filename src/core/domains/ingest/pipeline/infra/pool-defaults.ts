@@ -56,3 +56,15 @@ export function defaultEnrichmentWorkerMemoryLimitMb(): number {
   }
   return 2048;
 }
+
+/**
+ * Diagnostic-only: directory to write a `.cpuprofile` for each enrichment
+ * worker thread, or `undefined` (the default) to leave profiling off. Set via
+ * `ENRICHMENT_WORKER_CPU_PROFILE_DIR` — an empty/unset value disables it, same
+ * shape as the other pool tunables here. No default value, unlike the memory
+ * ceiling: profiling has a real (if small) overhead and must stay opt-in.
+ */
+export function defaultEnrichmentWorkerCpuProfileDir(): string | undefined {
+  const raw = process.env.ENRICHMENT_WORKER_CPU_PROFILE_DIR;
+  return raw !== undefined && raw.trim() !== "" ? raw : undefined;
+}

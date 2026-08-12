@@ -4,6 +4,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import {
   defaultChunkerPoolSize,
+  defaultEnrichmentWorkerCpuProfileDir,
   defaultEnrichmentWorkerMemoryLimitMb,
   defaultWorkerDispatchTimeoutMs,
 } from "../../../../../../src/core/domains/ingest/pipeline/infra/pool-defaults.js";
@@ -115,5 +116,41 @@ describe("defaultEnrichmentWorkerMemoryLimitMb", () => {
   it("falls back to the default when the override is only whitespace", () => {
     process.env.ENRICHMENT_WORKER_MEMORY_LIMIT_MB = "   ";
     expect(defaultEnrichmentWorkerMemoryLimitMb()).toBe(2048);
+  });
+});
+
+/**
+ * Diagnostic-only knob for attaching `--cpu-prof` to enrichment worker
+ * threads. Unlike the memory ceiling, off (`undefined`) is the correct
+ * default: profiling overhead has no business being paid on an ordinary run.
+ */
+describe("defaultEnrichmentWorkerCpuProfileDir", () => {
+  let savedEnv: string | undefined;
+
+  beforeEach(() => {
+    savedEnv = process.env.ENRICHMENT_WORKER_CPU_PROFILE_DIR;
+    delete process.env.ENRICHMENT_WORKER_CPU_PROFILE_DIR;
+  });
+
+  afterEach(() => {
+    if (savedEnv !== undefined) {
+      process.env.ENRICHMENT_WORKER_CPU_PROFILE_DIR = savedEnv;
+    } else {
+      delete process.env.ENRICHMENT_WORKER_CPU_PROFILE_DIR;
+    }
+  });
+
+  it("returns undefined when ENRICHMENT_WORKER_CPU_PROFILE_DIR is not set", () => {
+    expect(defaultEnrichmentWorkerCpuProfileDir()).toBeUndefined();
+  });
+
+  it("returns the configured directory when set", () => {
+    process.env.ENRICHMENT_WORKER_CPU_PROFILE_DIR = "/tmp/profiles";
+    expect(defaultEnrichmentWorkerCpuProfileDir()).toBe("/tmp/profiles");
+  });
+
+  it("returns undefined when the override is only whitespace", () => {
+    process.env.ENRICHMENT_WORKER_CPU_PROFILE_DIR = "   ";
+    expect(defaultEnrichmentWorkerCpuProfileDir()).toBeUndefined();
   });
 });

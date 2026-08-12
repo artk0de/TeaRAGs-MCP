@@ -50,7 +50,10 @@ import type {
 } from "../../../../../contracts/index.js";
 import { isDebug } from "../../../../../infra/runtime.js";
 import type { ChunkLookupEntry } from "../../../../../types.js";
-import { defaultEnrichmentWorkerMemoryLimitMb } from "../../infra/pool-defaults.js";
+import {
+  defaultEnrichmentWorkerCpuProfileDir,
+  defaultEnrichmentWorkerMemoryLimitMb,
+} from "../../infra/pool-defaults.js";
 import { ThreadTransport } from "../../infra/thread-transport.js";
 import { WorkerDispatchPool } from "../../infra/worker-dispatch-pool.js";
 import type {
@@ -108,6 +111,7 @@ export class WorkerPoolEnrichmentExecutor implements EnrichmentExecutor {
       new ThreadTransport<EnrichmentWorkerRequest, EnrichmentWorkerResponse>(
         workerPath,
         defaultEnrichmentWorkerMemoryLimitMb(),
+        defaultEnrichmentWorkerCpuProfileDir(),
       ),
       // Worker threads get a fresh module registry, so the debug flag does not
       // survive the boundary on its own — ship it in the init payload or every
