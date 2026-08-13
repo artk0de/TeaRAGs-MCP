@@ -14,7 +14,7 @@
  * metrics live in `DuckDbFileMetricsReader`, not here.
  */
 
-import type { GraphEdges, GraphFileNode, RelPath } from "../../contracts/types/codegraph.js";
+import type { BulkFileUpsertEntry, GraphEdges, GraphFileNode, RelPath } from "../../contracts/types/codegraph.js";
 import type { DuckDbGraphSession } from "./graph-session.js";
 
 export class DuckDbFileGraphStore {
@@ -125,6 +125,120 @@ export class DuckDbFileGraphStore {
         a.member,
         a.candidateCount,
       ]),
+    );
+  }
+
+  /**
+   * Batched form of {@link writeFileRows}: one DELETE-then-INSERT cycle for
+   * the WHOLE incoming set of files instead of one DELETE per file per table.
+   * Equivalent to calling `writeFileRows(node, edges)` once per entry in
+   * order — a later entry for the same relPath fully REPLACES an earlier one
+   * (last-wins per relPath, matching `writeFileRows`'s own per-file DELETE
+   * lifecycle), and cross-file PK collisions still resolve first-wins by
+   * batch order, same as `INSERT OR IGNORE` racing an already-persisted row
+   * from an earlier file. Empty `entries` is a no-op.
+   *
+   * bd tea-rags-mcp-wgt19 follow-up: the per-file loop this replaces issued
+   * 4 DELETEs per file, each re-scanning/decompressing the FSST-compressed
+   * `source_rel_path` column on cg_symbols_edges_file/cg_symbols_edges_method
+   * — the dominant cost of CODEGRAPH_FORCE_RESOLVE wall clock on taxdome.
+   * Collapsing to one chunked IN-list DELETE per table removes that
+   * per-file dispatch/scan overhead.
+   */
+  async writeFileRowsBulk(entries: readonly BulkFileUpsertEntry[]): Promise<void> {
+    if (entries.length === 0) return;
+    // Same last-wins collapse as DuckDbSymbolStore#upsertSymbolsBulk: a batch
+    // may legitimately carry two entries for the same relPath (a re-walk).
+    // Collapse BEFORE touching the DB so each relPath is deleted once and
+    // only its final entry's edges are inserted — never a union of both.
+    const lastByRelPath = new Map<RelPath, BulkFileUpsertEntry>();
+    for (const entry of entries) lastByRelPath.set(entry.node.relPath, entry);
+    const deduped = [...lastByRelPath.values()];
+    const relPaths = deduped.map((e) => e.node.relPath);
+
+    await this.session.deleteBatched("cg_symbols_edges_file", "source_rel_path", relPaths);
+    await this.session.deleteBatched("cg_symbols_edges_method", "source_rel_path", relPaths);
+    await this.session.deleteBatched("cg_symbols_inheritance", "source_rel_path", relPaths);
+    await this.session.deleteBatched("cg_ambiguous_fanout", "source_rel_path", relPaths);
+
+    await this.session.insertBatched(
+      "cg_symbols_files",
+      ["rel_path", "language", "content_hash"],
+      deduped.map((e) => [e.node.relPath, e.node.language, e.node.contentHash ?? null]),
+      "orReplace",
+    );
+
+    const fileEdgeRows: unknown[][] = [];
+    const methodEdgeRows: unknown[][] = [];
+    const inheritanceRows: unknown[][] = [];
+    const fanoutRows: unknown[][] = [];
+    for (const { node, edges } of deduped) {
+      for (const e of edges.fileEdges) fileEdgeRows.push([node.relPath, e.targetRelPath, e.importText]);
+      // See writeFileRows: targetSymbolId=null must be skipped BEFORE
+      // batching (the PK includes target_symbol_id, NOT NULL).
+      for (const e of edges.methodEdges) {
+        if (e.targetSymbolId === null) continue;
+        methodEdgeRows.push([
+          e.sourceSymbolId,
+          node.relPath,
+          e.targetSymbolId,
+          e.targetRelPath,
+          e.callExpression,
+          e.edgeKind ?? "exact",
+          e.confidence ?? 1.0,
+        ]);
+      }
+      for (const e of edges.inheritance ?? []) {
+        inheritanceRows.push([
+          e.sourceFqName,
+          node.relPath,
+          e.sourceSymbolId,
+          e.ancestorFqName,
+          e.ancestorSymbolId,
+          e.kind,
+          e.ordinal,
+        ]);
+      }
+      for (const a of edges.ambiguousFanouts ?? []) {
+        fanoutRows.push([a.sourceSymbolId, node.relPath, a.callExpression, a.member, a.candidateCount]);
+      }
+    }
+
+    await this.session.insertOrIgnoreBatched(
+      "cg_symbols_edges_file",
+      ["source_rel_path", "target_rel_path", "import_text"],
+      fileEdgeRows,
+    );
+    await this.session.insertOrIgnoreBatched(
+      "cg_symbols_edges_method",
+      [
+        "source_symbol_id",
+        "source_rel_path",
+        "target_symbol_id",
+        "target_rel_path",
+        "call_expression",
+        "edge_kind",
+        "confidence",
+      ],
+      methodEdgeRows,
+    );
+    await this.session.insertOrIgnoreBatched(
+      "cg_symbols_inheritance",
+      [
+        "source_fq_name",
+        "source_rel_path",
+        "source_symbol_id",
+        "ancestor_fq_name",
+        "ancestor_symbol_id",
+        "kind",
+        "ordinal",
+      ],
+      inheritanceRows,
+    );
+    await this.session.insertOrIgnoreBatched(
+      "cg_ambiguous_fanout",
+      ["source_symbol_id", "source_rel_path", "call_expression", "member", "candidate_count"],
+      fanoutRows,
     );
   }
 
