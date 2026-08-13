@@ -333,7 +333,10 @@ describe("CodegraphEnrichmentProvider — Task 2 eager batched node flush (cross
     });
 
     expect(fileFlushSizes).toEqual([4, 1, 4, 1, 1]);
-    expect(checkpointCount).toBe(3);
+    // 2 DuckDB CHECKPOINTs per cadence hit (tea-rags-mcp-wgt19): one before
+    // rebuildEdgeFileTargetIndex's DROP/CREATE INDEX, one after to flush the
+    // DDL's own WAL entry before an in-process READ_ONLY reader might look.
+    expect(checkpointCount).toBe(6);
     // …and the cadence lost nothing: one row per file, no duplicates.
     expect(rows).toHaveLength(11);
     expect(new Set(rows.map((r) => r.relPath)).size).toBe(11);

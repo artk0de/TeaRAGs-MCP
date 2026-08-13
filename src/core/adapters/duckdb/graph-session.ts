@@ -359,25 +359,47 @@ export class DuckDbGraphSession {
    * write shape behind every bulk path here (~48x the per-row prepared INSERT,
    * see that constant's docblock for the measurement).
    *
-   * `mode` picks the duplicate-PK contract, and the two are NOT interchangeable:
+   * `mode` picks the duplicate-PK contract, and these are NOT interchangeable:
    * `"orIgnore"` is load-bearing where the same row can legitimately arrive
-   * twice (a file re-importing one module), while `"insert"` keeps a duplicate
-   * loud for callers that clear the table first and therefore treat a collision
-   * as a bug.
+   * twice (a file re-importing one module); `"orReplace"` is for a node-style
+   * table where the last write should win rather than the first (mirrors the
+   * single-row `INSERT OR REPLACE` `writeFileRows` uses for `cg_symbols_files`);
+   * `"insert"` keeps a duplicate loud for callers that clear the table first
+   * and therefore treat a collision as a bug.
    */
   async insertBatched(
     table: string,
     columns: readonly string[],
     rows: readonly (readonly unknown[])[],
-    mode: "insert" | "orIgnore" = "insert",
+    mode: "insert" | "orIgnore" | "orReplace" = "insert",
   ): Promise<void> {
     if (rows.length === 0) return;
     const tuple = `(${columns.map(() => "?").join(", ")})`;
-    const verb = mode === "orIgnore" ? "INSERT OR IGNORE" : "INSERT";
+    const verb = mode === "orIgnore" ? "INSERT OR IGNORE" : mode === "orReplace" ? "INSERT OR REPLACE" : "INSERT";
     const prefix = `${verb} INTO ${table} (${columns.join(", ")}) VALUES `;
     for (let i = 0; i < rows.length; i += EDGE_INSERT_CHUNK_ROWS) {
       const chunk = rows.slice(i, i + EDGE_INSERT_CHUNK_ROWS);
       await this.run(prefix + chunk.map(() => tuple).join(", "), chunk.flat());
+    }
+  }
+
+  /**
+   * Chunk-safe `DELETE FROM <table> WHERE <column> IN (...)` — collapses N
+   * per-value DELETEs into `ceil(N / EDGE_INSERT_CHUNK_ROWS)` IN-list
+   * statements. Each individual per-file DELETE the bulk file-graph write
+   * used to issue re-scanned/decompressed the FSST-compressed
+   * `source_rel_path` column on its own; batching removes that many
+   * redundant scans (bd tea-rags-mcp-wgt19 follow-up — the DELETE-then-INSERT
+   * cycle on cg_symbols_edges_file/cg_symbols_edges_method dominated
+   * CODEGRAPH_FORCE_RESOLVE wall clock on taxdome). `table`/`column` are
+   * compile-time literals supplied by the caller — never user input.
+   */
+  async deleteBatched(table: string, column: string, values: readonly unknown[]): Promise<void> {
+    if (values.length === 0) return;
+    for (let i = 0; i < values.length; i += EDGE_INSERT_CHUNK_ROWS) {
+      const chunk = values.slice(i, i + EDGE_INSERT_CHUNK_ROWS);
+      const placeholders = chunk.map(() => "?").join(", ");
+      await this.run(`DELETE FROM ${table} WHERE ${column} IN (${placeholders})`, chunk.slice());
     }
   }
 

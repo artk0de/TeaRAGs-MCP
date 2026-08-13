@@ -37,6 +37,7 @@ export type DaemonOp =
   | "replaceCycles"
   | "replacePageRanks"
   | "checkpoint"
+  | "rebuildEdgeFileTargetIndex"
   | "recordRunStats"
   | "computeAndPersistCyclesAndSignals"
   // ── reads (the daemon owns the sole DuckDB connection, so all reads route
@@ -72,7 +73,7 @@ export interface DaemonRequest {
   id: number;
   op: DaemonOp;
   params:
-    | { collection: string } // checkpoint | computeAndPersistCyclesAndSignals | hasData | getRunStats | listAllSymbols | listFileContentHashes | getChunkSignalsBulk | shutdown
+    | { collection: string } // checkpoint | rebuildEdgeFileTargetIndex | computeAndPersistCyclesAndSignals | hasData | getRunStats | listAllSymbols | listFileContentHashes | getChunkSignalsBulk | shutdown
     | { collection: string; buildFingerprint?: string } // handshake (fingerprint absent on legacy peers)
     | { collection: string; node: GraphFileNode; edges: GraphEdges } // upsertFile
     | { collection: string; relPath: RelPath } // removeFile | removeSymbolsForFile | getFanIn | getFanOut

@@ -63,6 +63,7 @@ describe("GraphBuildFinalizer.resolveAndUpsert", () => {
 
   afterEach(() => {
     rmSync(tmp, { recursive: true, force: true });
+    delete process.env.CODEGRAPH_CHECKPOINT_EVERY;
   });
 
   function writeSpill(lines: FileExtraction[]): string {
@@ -158,6 +159,137 @@ describe("GraphBuildFinalizer.resolveAndUpsert", () => {
     expect(upsertedBatches).toHaveLength(1);
     expect(upsertedBatches[0]?.[0]?.node.relPath).toBe("src/a.ts");
     expect(runState.stats.fileEdgeCount).toBe(1);
+  });
+
+  it("rebuilds the edge-file target index at the same cadence as CHECKPOINT (bd tea-rags-mcp-wgt19)", async () => {
+    process.env.CODEGRAPH_CHECKPOINT_EVERY = "1";
+    let checkpointCalls = 0;
+    let rebuildCalls = 0;
+    const graphDb = makeGraphDb({
+      checkpoint: async () => {
+        checkpointCalls += 1;
+      },
+      rebuildEdgeFileTargetIndex: async () => {
+        rebuildCalls += 1;
+      },
+    });
+    const resolutionRunner = {
+      resolve: (): GraphEdges => ({ fileEdges: [], methodEdges: [] }),
+    } as unknown as CallEdgeResolutionRunner;
+    const finalizer = new GraphBuildFinalizer(
+      async () => ({ graphDb, symbolTable: {} as GlobalSymbolTable }),
+      resolutionRunner,
+      new CodegraphRunState(),
+    );
+
+    const spillPath = writeSpill([{ ...EXTRACTION, relPath: "src/a.ts", language: "typescript" }]);
+    await finalizer.resolveAndUpsert(spillPath);
+
+    // checkpoint() runs once before the rebuild and once after — the second
+    // flushes the DROP/CREATE INDEX's own WAL entry so an in-process
+    // READ_ONLY reader sees consistent state instead of racing the next
+    // checkpoint (tests/.../provider-persisted-file-hashes.test.ts caught
+    // the omission live: readPersistedFileHashes read stale data without it).
+    expect(checkpointCalls).toBe(2);
+    expect(rebuildCalls).toBe(1);
+  });
+
+  it("does not let a rebuildEdgeFileTargetIndex failure abort an otherwise-successful checkpoint", async () => {
+    process.env.CODEGRAPH_CHECKPOINT_EVERY = "1";
+    const graphDb = makeGraphDb({
+      checkpoint: async () => undefined,
+      rebuildEdgeFileTargetIndex: async () => {
+        throw new Error("index rebuild boom");
+      },
+    });
+    const resolutionRunner = {
+      resolve: (): GraphEdges => ({ fileEdges: [], methodEdges: [] }),
+    } as unknown as CallEdgeResolutionRunner;
+    const finalizer = new GraphBuildFinalizer(
+      async () => ({ graphDb, symbolTable: {} as GlobalSymbolTable }),
+      resolutionRunner,
+      new CodegraphRunState(),
+    );
+
+    const spillPath = writeSpill([{ ...EXTRACTION, relPath: "src/a.ts", language: "typescript" }]);
+    await expect(finalizer.resolveAndUpsert(spillPath)).resolves.toBeUndefined();
+  });
+
+  it("flushes before buffering a relPath that already has an entry pending in this batch (bd tea-rags-mcp-ksfq1)", async () => {
+    // A relPath can legitimately appear twice in one spill — re-walking the
+    // same file mid-run is supported (symbolTable.upsertFile replaces, not
+    // appends; provider.test.ts "re-walking the same file... idempotent"
+    // pins exactly this). But `cg_symbols_edges_file`'s PRIMARY KEY is
+    // (source, target), and DuckDB does not reject a same-key double-INSERT
+    // gracefully within one transaction: it aborts with a native
+    // FatalException, killing the daemon process (live-reproduced against
+    // taxdome). Two pending entries for one relPath must never land in the
+    // SAME upsertFilesBulk call — flush the first out before buffering the
+    // second, so each gets its own DELETE-then-INSERT transaction.
+    const upsertedBatches: BulkFileUpsertEntry[][] = [];
+    const graphDb = makeGraphDb({
+      upsertFilesBulk: async (entries: readonly BulkFileUpsertEntry[]) => {
+        upsertedBatches.push([...entries]);
+      },
+    });
+    const resolutionRunner = {
+      resolve: (): GraphEdges => ({
+        fileEdges: [{ targetRelPath: "src/util.ts", importText: "./util" }],
+        methodEdges: [],
+      }),
+    } as unknown as CallEdgeResolutionRunner;
+    const runState = new CodegraphRunState();
+    const finalizer = new GraphBuildFinalizer(
+      async () => ({ graphDb, symbolTable: {} as GlobalSymbolTable }),
+      resolutionRunner,
+      runState,
+    );
+
+    // Same relPath twice, well within one BULK_FILES-sized window (default
+    // 256) — nothing here forces an intervening flush except the fix itself.
+    const spillPath = writeSpill([
+      { ...EXTRACTION, relPath: "src/a.ts", language: "typescript" },
+      { ...EXTRACTION, relPath: "src/a.ts", language: "typescript" },
+    ]);
+    await expect(finalizer.resolveAndUpsert(spillPath)).resolves.toBeUndefined();
+
+    expect(upsertedBatches).toHaveLength(2);
+    expect(upsertedBatches[0]).toHaveLength(1);
+    expect(upsertedBatches[1]).toHaveLength(1);
+    expect(upsertedBatches[0]?.[0]?.node.relPath).toBe("src/a.ts");
+    expect(upsertedBatches[1]?.[0]?.node.relPath).toBe("src/a.ts");
+  });
+
+  it("includes the malformed line's own content (not just the file count) when a spill line fails JSON.parse", async () => {
+    const graphDb = makeGraphDb();
+    const resolutionRunner = {
+      resolve: (): GraphEdges => ({ fileEdges: [], methodEdges: [] }),
+    } as unknown as CallEdgeResolutionRunner;
+    const runState = new CodegraphRunState();
+    const finalizer = new GraphBuildFinalizer(
+      async () => ({ graphDb, symbolTable: {} as GlobalSymbolTable }),
+      resolutionRunner,
+      runState,
+    );
+
+    // One good line, then a corrupted line (mirrors a mid-stream spill
+    // corruption, not just a malformed first line) — the count alone
+    // ("after 1 files") gives no way to tell what the bad bytes actually
+    // were; a live incident with two of these on record has had no way to
+    // distinguish a truncated write from an interleaved write from garbage.
+    const spillPath = join(tmp, "spill.ndjson");
+    const goodLine = JSON.stringify({ ...EXTRACTION, relPath: "src/a.ts" });
+    const badLine = '{"relPath": "src/b.ts", "broken"';
+    writeFileSync(spillPath, `${goodLine}\n${badLine}\n`);
+
+    let thrown: Error | undefined;
+    try {
+      await finalizer.resolveAndUpsert(spillPath);
+    } catch (err) {
+      thrown = err as Error;
+    }
+    expect(thrown?.message).toContain("after 1 files");
+    expect(thrown?.message).toContain(badLine);
   });
 });
 

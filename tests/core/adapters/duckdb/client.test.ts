@@ -6,9 +6,9 @@ import { fileURLToPath } from "node:url";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import { DuckDbGraphClient } from "../../../../src/core/adapters/duckdb/client.js";
+import { runMigrations } from "../../../../src/core/domains/maintenance/migration/database/runner.js";
 import { pageRank } from "../../../../src/core/infra/graph/page-rank.js";
 import { tarjanScc } from "../../../../src/core/infra/graph/tarjan-scc.js";
-import { runMigrations } from "../../../../src/core/domains/maintenance/migration/database/runner.js";
 
 // Adapter exposes primitives only (listAdjacency / replaceCycles /
 // replacePageRanks); the orchestration that combines them with the
@@ -49,6 +49,29 @@ describe("DuckDbGraphClient", () => {
 
   it("hasData() returns false on a freshly migrated DB", async () => {
     expect(await client.hasData()).toBe(false);
+  });
+
+  // tea-rags-mcp-wgt19 — the periodic drop+recreate keeps read-time behavior
+  // (getFanIn, the read this index serves) working across the rebuild, on
+  // data written both before and after it.
+  it("rebuildEdgeFileTargetIndex() drops and recreates the index without losing getFanIn correctness", async () => {
+    await client.upsertFile(
+      { relPath: "src/a.ts", language: "typescript" },
+      { fileEdges: [{ targetRelPath: "src/target.ts", importText: "./target" }], methodEdges: [] },
+    );
+    expect(await client.getFanIn("src/target.ts")).toBe(1);
+
+    await client.rebuildEdgeFileTargetIndex();
+
+    // Pre-rebuild data still reads correctly through the fresh index.
+    expect(await client.getFanIn("src/target.ts")).toBe(1);
+
+    // The rebuilt index also serves data written AFTER it.
+    await client.upsertFile(
+      { relPath: "src/b.ts", language: "typescript" },
+      { fileEdges: [{ targetRelPath: "src/target.ts", importText: "./target" }], methodEdges: [] },
+    );
+    expect(await client.getFanIn("src/target.ts")).toBe(2);
   });
 
   // Real-world bug from incremental reindex of tea-rags-worktree on

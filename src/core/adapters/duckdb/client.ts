@@ -114,6 +114,14 @@ export class DuckDbGraphClient implements GraphDbClient {
     return this.fileGraph.hasData();
   }
 
+  /** See `GraphDbClient.rebuildEdgeFileTargetIndex` (contracts/types/codegraph-storage.ts). */
+  async rebuildEdgeFileTargetIndex(): Promise<void> {
+    await this.session.exec(
+      "DROP INDEX IF EXISTS idx_cg_symbols_edges_file_target; " +
+        "CREATE INDEX idx_cg_symbols_edges_file_target ON cg_symbols_edges_file (target_rel_path);",
+    );
+  }
+
   // ── Migration-runner surface (MigrationCapableClient) ──
 
   /** Generic exec — used by the migration runner. Returns no rows. */
@@ -146,17 +154,19 @@ export class DuckDbGraphClient implements GraphDbClient {
    * Bulk variant of `upsertFile` (mirrors `upsertSymbolsBulk`): fold M files'
    * node + edge writes into ONE `BEGIN/COMMIT` instead of M per-file
    * transactions — and, on the daemon path, ONE IPC round-trip instead of M.
-   * Each file keeps its own per-`source_rel_path` DELETE+INSERT (last-wins) via
-   * the shared `upsertFileRows` body, so the persisted edge / inheritance /
-   * ambiguous-fanout set is byte-identical to calling `upsertFile` per file —
-   * only the transaction + round-trip count drops. Any row failure rolls the
-   * whole batch back (callers cap batch size + skip pathological files upstream).
+   * Unlike `upsertFile`, the DELETE+INSERT lifecycle is batched ACROSS the
+   * whole set (`DuckDbFileGraphStore#writeFileRowsBulk`), not looped per file:
+   * a chunked IN-list DELETE per table instead of one DELETE per file per
+   * table. Persisted rows are byte-identical to calling `upsertFile` per
+   * file — last-wins per relPath, cross-file PK collisions first-wins by
+   * batch order — only the statement count drops (bd tea-rags-mcp-wgt19
+   * follow-up: per-file DELETEs re-scanned the FSST-compressed
+   * source_rel_path column on every call). Any row failure rolls the whole
+   * batch back (callers cap batch size + skip pathological files upstream).
    */
   async upsertFilesBulk(entries: readonly BulkFileUpsertEntry[]): Promise<void> {
     if (entries.length === 0) return;
-    return this.session.transaction(async () => {
-      for (const { node, edges } of entries) await this.upsertFileRows(node, edges);
-    });
+    return this.session.transaction(async () => this.fileGraph.writeFileRowsBulk(entries));
   }
 
   /** The per-file DELETE+INSERT body both envelopes above share, unwrapped. */

@@ -234,3 +234,54 @@ describe("CallEdgeResolutionRunner picks its run-global inputs in constant time 
     expect(captured[0]?.classAncestors).toBe(extraction.classAncestors);
   });
 });
+
+describe("CallEdgeResolutionRunner.resolve — file-edge dedup", () => {
+  const emptyExtraction = (relPath: string): FileExtraction => ({
+    relPath,
+    language: "typescript",
+    imports: [],
+    fileScope: [],
+    chunks: [],
+  });
+
+  const factoryWith = (resolver: unknown): LanguageFactoryDescriptor =>
+    ({ supported: () => ["typescript"], create: () => ({ resolver }) }) as unknown as LanguageFactoryDescriptor;
+
+  it("collapses two imports resolving to the same target file into one fileEdges entry (bd tea-rags-mcp-alew8)", () => {
+    // Mirrors a live taxdome crash: AiToasts.tsx imports Button.tsx via both a
+    // default and a named import. resolveFileEdges (TS's own, or the generic
+    // fallback) pushes one row per import statement with no target dedup, so
+    // upsertFilesBulk tried to insert the same (source, target) pair twice in
+    // one transaction — DuckDB's PRIMARY KEY constraint doesn't reject that
+    // gracefully, it crashes the daemon process outright (native
+    // FatalException, taking the whole pass-2 run down with it).
+    const resolver = {
+      resolve: () => null,
+      resolveFileEdges: () => [
+        { targetRelPath: "src/ui-kit/Button.tsx", importText: "./Button" },
+        { targetRelPath: "src/ui-kit/Button.tsx", importText: "{ ButtonProps } from './Button'" },
+      ],
+    };
+    const runner = new CallEdgeResolutionRunner(factoryWith(resolver), new CodegraphRunState());
+
+    const edges = runner.resolve(emptyExtraction("src/AiToasts.tsx"), {} as GlobalSymbolTable);
+
+    expect(edges.fileEdges).toHaveLength(1);
+    expect(edges.fileEdges[0]?.targetRelPath).toBe("src/ui-kit/Button.tsx");
+  });
+
+  it("keeps distinct targets from different imports untouched", () => {
+    const resolver = {
+      resolve: () => null,
+      resolveFileEdges: () => [
+        { targetRelPath: "src/a.tsx", importText: "./a" },
+        { targetRelPath: "src/b.tsx", importText: "./b" },
+      ],
+    };
+    const runner = new CallEdgeResolutionRunner(factoryWith(resolver), new CodegraphRunState());
+
+    const edges = runner.resolve(emptyExtraction("src/caller.tsx"), {} as GlobalSymbolTable);
+
+    expect(edges.fileEdges.map((e) => e.targetRelPath).sort()).toEqual(["src/a.tsx", "src/b.tsx"]);
+  });
+});

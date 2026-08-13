@@ -148,17 +148,17 @@ export class WorkerPoolEnrichmentExecutor implements EnrichmentExecutor {
     return response.fileOverlay ?? new Map();
   }
 
-  async runFileSignals(
+  async runFileSignalsRecovery(
     provider: EnrichmentProvider,
     root: string,
     paths: string[],
     options?: FileSignalOptions,
   ): Promise<Map<string, FileSignalOverlay>> {
     if (!provider.workerDescriptor) {
-      return this.inlineFallback.runFileSignals(provider, root, paths, options);
+      return this.inlineFallback.runFileSignalsRecovery(provider, root, paths, options);
     }
     const collectionName = options?.collectionName;
-    const request = buildCallRequest(provider.workerDescriptor, "runFileSignals", root, collectionName, {
+    const request = buildCallRequest(provider.workerDescriptor, "runFileSignalsRecovery", root, collectionName, {
       paths,
       options,
     });

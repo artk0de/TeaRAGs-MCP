@@ -961,6 +961,15 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
     // Read the run's persisted-schema snapshot(s) for the barrier schema-column
     // pre-pass (bd tea-rags-mcp-8l5fo). One read per run (guarded), same shape.
     this.runState.loadSchemaSnapshots(root);
+    // Repair (runRepairPass → executor.runFileBatch, tea-rags-mcp-b76fe127)
+    // passes the run's per-file content hashes the SAME way buildFileSignals
+    // always did — stamped onto each row at write time (graph-finalizer.ts's
+    // `contentHash: this.runState.contentHashes?.get(...)`) so the next run's
+    // drift check reads the CURRENT hash instead of a stale/missing one and
+    // repairs the same file forever (bd tea-rags-mcp-6goqa/ymjxj). Mirrors
+    // buildFileSignals's own assignment — this seam had none until repair
+    // started routing through it.
+    if (options?.contentHashes) this.runState.contentHashes = options.contentHashes;
     // yl9tv Task 5b — cross-pass: the full-index chunk pass has fed this run's
     // extractions into the input spill (drained in finalizeSignals), so the
     // worker/main re-parse here is redundant AND would race the chunker pool's

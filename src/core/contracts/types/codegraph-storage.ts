@@ -165,6 +165,26 @@ export interface GraphDbClient {
    *  by drift detection. */
   hasData: () => Promise<boolean>;
 
+  /**
+   * Drop and recreate `cg_symbols_edges_file`'s `target_rel_path` secondary
+   * index in place (tea-rags-mcp-wgt19). That index earns its cost on read
+   * (`getFanIn`, once per file during enrichment) but is exposed to the same
+   * ART-drift class 019 removed from other tables: a run dying mid-write
+   * (killed daemon, invalidated database, aborted pass — all recurring here)
+   * can leave it answering a scoped `DELETE ... WHERE target_rel_path`-style
+   * filter pushdown with stale results, so a later per-file DELETE silently
+   * matches nothing while the row it was meant to clear is still present, and
+   * the following INSERT collides with it — live-reproduced as a daemon-
+   * killing native FatalException against taxdome. 019 kept this index rather
+   * than dropping it outright because removing it costs every `getFanIn` call
+   * a full scan; rebuilding it periodically during a long write-heavy pass
+   * keeps that read-time win while bounding how long drift has to accumulate
+   * before it is corrected. Call cadence is the caller's choice — the graph
+   * finalizer's own `checkpoint()` is a natural one, since a run short enough
+   * to never checkpoint is also too short to have meaningfully drifted.
+   */
+  rebuildEdgeFileTargetIndex: () => Promise<void>;
+
   // ── Resolve-stats surface (bd tea-rags-mcp-j431) ──
   /**
    * Replace the whole `cg_run_stats` table with the supplied per-receiver-kind

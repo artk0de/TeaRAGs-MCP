@@ -14,8 +14,30 @@
  * metrics live in `DuckDbFileMetricsReader`, not here.
  */
 
-import type { GraphEdges, GraphFileNode, RelPath } from "../../contracts/types/codegraph.js";
+import type { BulkFileUpsertEntry, GraphEdges, GraphFileNode, RelPath } from "../../contracts/types/codegraph.js";
 import type { DuckDbGraphSession } from "./graph-session.js";
+
+/**
+ * Files per interleaved DELETE-then-INSERT group in {@link DuckDbFileGraphStore#writeFileRowsBulk}.
+ *
+ * bd tea-rags-mcp-wgt19 follow-up, live-crash finding (taxdome
+ * CODEGRAPH_FORCE_RESOLVE, 2026-08-13): batching the DELETE across the WHOLE
+ * incoming set (issue every table's DELETE first, THEN every table's INSERT)
+ * crashed the daemon with a native DuckDB FatalException — "Failed to append
+ * to PRIMARY_cg_symbols_edges_file_2: ... duplicate key" — from inside
+ * `RemoveFromIndexes` during commit. This matches a documented DuckDB engine
+ * bug class (over-eager constraint checking on delete+insert of overlapping
+ * keys within one transaction — duckdb/duckdb#16520, duckdb/duckdb#15092):
+ * a large volume of pending DELETEs sitting in the transaction's undo buffer
+ * with no matching re-INSERT yet can spuriously trip the index's duplicate
+ * check when the re-INSERT finally lands. The per-file loop this module used
+ * for years never hit it because each file's DELETE was immediately followed
+ * by that SAME file's INSERT — the pending-delete window was always tiny.
+ * Grouping bounds that window back down instead of batching the whole set,
+ * trading some of the DELETE-count reduction for staying inside the shape
+ * DuckDB's index maintenance actually tolerates.
+ */
+const BULK_INTERLEAVE_GROUP_FILES = 32;
 
 export class DuckDbFileGraphStore {
   constructor(private readonly session: DuckDbGraphSession) {}
@@ -125,6 +147,128 @@ export class DuckDbFileGraphStore {
         a.member,
         a.candidateCount,
       ]),
+    );
+  }
+
+  /**
+   * Batched form of {@link writeFileRows}: DELETE-then-INSERT per GROUP of
+   * {@link BULK_INTERLEAVE_GROUP_FILES} files instead of one DELETE per file
+   * per table. Equivalent to calling `writeFileRows(node, edges)` once per
+   * entry in order — a later entry for the same relPath fully REPLACES an
+   * earlier one (last-wins per relPath, matching `writeFileRows`'s own
+   * per-file DELETE lifecycle), and cross-file PK collisions still resolve
+   * first-wins by batch order, same as `INSERT OR IGNORE` racing an
+   * already-persisted row from an earlier file. Empty `entries` is a no-op.
+   *
+   * Each group's DELETE is immediately followed by that SAME group's INSERT
+   * — see {@link BULK_INTERLEAVE_GROUP_FILES} for why: batching the DELETE
+   * across the WHOLE set before any INSERT crashed DuckDB's index
+   * maintenance on real taxdome data. Statement count still drops sharply —
+   * a chunked IN-list DELETE per table per group instead of one DELETE per
+   * file per table — without reopening that crash.
+   */
+  async writeFileRowsBulk(entries: readonly BulkFileUpsertEntry[]): Promise<void> {
+    if (entries.length === 0) return;
+    // Same last-wins collapse as DuckDbSymbolStore#upsertSymbolsBulk: a batch
+    // may legitimately carry two entries for the same relPath (a re-walk).
+    // Collapse BEFORE touching the DB so each relPath is deleted once and
+    // only its final entry's edges are inserted — never a union of both.
+    const lastByRelPath = new Map<RelPath, BulkFileUpsertEntry>();
+    for (const entry of entries) lastByRelPath.set(entry.node.relPath, entry);
+    const deduped = [...lastByRelPath.values()];
+
+    for (let i = 0; i < deduped.length; i += BULK_INTERLEAVE_GROUP_FILES) {
+      await this.writeFileRowsGroup(deduped.slice(i, i + BULK_INTERLEAVE_GROUP_FILES));
+    }
+  }
+
+  /** One DELETE-then-INSERT cycle for a single interleave group — see {@link writeFileRowsBulk}. */
+  private async writeFileRowsGroup(group: readonly BulkFileUpsertEntry[]): Promise<void> {
+    const relPaths = group.map((e) => e.node.relPath);
+
+    await this.session.deleteBatched("cg_symbols_edges_file", "source_rel_path", relPaths);
+    await this.session.deleteBatched("cg_symbols_edges_method", "source_rel_path", relPaths);
+    await this.session.deleteBatched("cg_symbols_inheritance", "source_rel_path", relPaths);
+    await this.session.deleteBatched("cg_ambiguous_fanout", "source_rel_path", relPaths);
+
+    await this.session.insertBatched(
+      "cg_symbols_files",
+      ["rel_path", "language", "content_hash"],
+      group.map((e) => [e.node.relPath, e.node.language, e.node.contentHash ?? null]),
+      "orReplace",
+    );
+
+    const fileEdgeRows: unknown[][] = [];
+    const methodEdgeRows: unknown[][] = [];
+    const inheritanceRows: unknown[][] = [];
+    const fanoutRows: unknown[][] = [];
+    for (const { node, edges } of group) {
+      for (const e of edges.fileEdges) fileEdgeRows.push([node.relPath, e.targetRelPath, e.importText]);
+      // See writeFileRows: targetSymbolId=null must be skipped BEFORE
+      // batching (the PK includes target_symbol_id, NOT NULL).
+      for (const e of edges.methodEdges) {
+        if (e.targetSymbolId === null) continue;
+        methodEdgeRows.push([
+          e.sourceSymbolId,
+          node.relPath,
+          e.targetSymbolId,
+          e.targetRelPath,
+          e.callExpression,
+          e.edgeKind ?? "exact",
+          e.confidence ?? 1.0,
+        ]);
+      }
+      for (const e of edges.inheritance ?? []) {
+        inheritanceRows.push([
+          e.sourceFqName,
+          node.relPath,
+          e.sourceSymbolId,
+          e.ancestorFqName,
+          e.ancestorSymbolId,
+          e.kind,
+          e.ordinal,
+        ]);
+      }
+      for (const a of edges.ambiguousFanouts ?? []) {
+        fanoutRows.push([a.sourceSymbolId, node.relPath, a.callExpression, a.member, a.candidateCount]);
+      }
+    }
+
+    await this.session.insertOrIgnoreBatched(
+      "cg_symbols_edges_file",
+      ["source_rel_path", "target_rel_path", "import_text"],
+      fileEdgeRows,
+    );
+    await this.session.insertOrIgnoreBatched(
+      "cg_symbols_edges_method",
+      [
+        "source_symbol_id",
+        "source_rel_path",
+        "target_symbol_id",
+        "target_rel_path",
+        "call_expression",
+        "edge_kind",
+        "confidence",
+      ],
+      methodEdgeRows,
+    );
+    await this.session.insertOrIgnoreBatched(
+      "cg_symbols_inheritance",
+      [
+        "source_fq_name",
+        "source_rel_path",
+        "source_symbol_id",
+        "ancestor_fq_name",
+        "ancestor_symbol_id",
+        "kind",
+        "ordinal",
+      ],
+      inheritanceRows,
+    );
+    await this.session.insertOrIgnoreBatched(
+      "cg_ambiguous_fanout",
+      ["source_symbol_id", "source_rel_path", "call_expression", "member", "candidate_count"],
+      fanoutRows,
     );
   }
 
