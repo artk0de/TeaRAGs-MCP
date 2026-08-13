@@ -3,9 +3,21 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 
 import ts from "typescript";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { TSProgramCache } from "../../../../../../src/core/domains/language/typescript/resolver/ts-program-cache.js";
+
+// `typescript`'s CJS default export is non-configurable, so `vi.spyOn(ts,
+// "createProgram")` fails with "Cannot redefine property". Replacing the
+// module with a `vi.fn` wrapping the real implementation as its default
+// behavior gives every OTHER test in this file (which never touches this
+// mock) the exact real `ts.createProgram`, while the one test below that
+// wants a throw can override it for a single call via
+// `mockImplementationOnce`.
+vi.mock("typescript", async (importOriginal) => {
+  const actual = await importOriginal<{ default: typeof ts }>();
+  return { ...actual, default: { ...actual.default, createProgram: vi.fn(actual.default.createProgram) } };
+});
 
 /** Write `content` at `repoRoot/relPath`, creating parent directories. */
 function writeSource(repoRoot: string, relPath: string, content: string): string {
@@ -966,5 +978,47 @@ describe("TSProgramCache stays bounded against a dependency-laden node_modules (
     const second = cache.acquire("src/second.ts");
 
     expect(second?.program.getSourceFile(depAbs)?.text).toContain("string");
+  });
+});
+
+describe("TSProgramCache degrades to null when ts.createProgram itself throws (bd tea-rags-mcp-2j8s1)", () => {
+  let repoRoot: string;
+  const tsOptions = { baseUrl: ".", paths: {} };
+
+  beforeEach(() => {
+    repoRoot = realpathSync(mkdtempSync(join(tmpdir(), "ts-program-cache-")));
+  });
+
+  afterEach(() => {
+    rmSync(repoRoot, { recursive: true, force: true });
+  });
+
+  // ts.createProgram's own module-resolution walk is unbounded recursion
+  // (processImportedModules -> findSourceFile -> findSourceFileWorker), and a
+  // deep enough transitive closure through barrel re-exports overflows V8's
+  // call stack -- reproduced locally at taxdome's real scale via
+  // scripts/spikes/ts-resolve-path-profile.ts (bd tea-rags-mcp-2j8s1). Mocking
+  // the throw keeps the test fast and deterministic instead of relying on an
+  // actual multi-thousand-file corpus to trigger it.
+  it("returns null instead of crashing the caller when ts.createProgram overflows the stack", () => {
+    writeSource(repoRoot, "src/a.ts", `export function a(): number {\n  return 1;\n}\n`);
+    const cache = new TSProgramCache({ repoRoot, tsOptions });
+    vi.mocked(ts.createProgram).mockImplementationOnce(() => {
+      throw new RangeError("Maximum call stack size exceeded");
+    });
+
+    expect(cache.acquire("src/a.ts")).toBeNull();
+  });
+
+  it("recovers on the next acquire once ts.createProgram stops throwing", () => {
+    writeSource(repoRoot, "src/a.ts", `export function a(): number {\n  return 1;\n}\n`);
+    const cache = new TSProgramCache({ repoRoot, tsOptions });
+    vi.mocked(ts.createProgram).mockImplementationOnce(() => {
+      throw new RangeError("Maximum call stack size exceeded");
+    });
+
+    expect(cache.acquire("src/a.ts")).toBeNull();
+
+    expect(cache.acquire("src/a.ts")).not.toBeNull();
   });
 });
