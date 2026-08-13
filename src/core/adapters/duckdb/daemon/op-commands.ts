@@ -121,6 +121,7 @@ export const DAEMON_OP_COMMANDS: Readonly<Record<DaemonOp, DaemonOpCommand>> = {
   // JSON-serialise) — rebuild the Map before delegating to the adapter.
   replacePageRanks: write(async (graphDb, p) => graphDb.replacePageRanks(new Map(p.ranks as [string, number][]))),
   checkpoint: write(async (graphDb) => graphDb.checkpoint()),
+  rebuildEdgeFileTargetIndex: write(async (graphDb) => graphDb.rebuildEdgeFileTargetIndex()),
   recordRunStats: write(async (graphDb, p) => graphDb.recordRunStats(p.rows as ResolveRunStatsRow[])),
   computeAndPersistCyclesAndSignals: write(async (graphDb) => computeAndPersistCyclesAndSignals(graphDb)),
 

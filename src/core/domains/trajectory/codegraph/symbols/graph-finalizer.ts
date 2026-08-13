@@ -139,9 +139,21 @@ export class GraphBuildFinalizer {
     let lastRelPath: string | null = null;
     let reader: ReturnType<typeof createInterface> | null = null;
     let buffer: BulkFileUpsertEntry[] = [];
+    // Tracks which relPaths already have a pending entry in `buffer` — a file
+    // can legitimately reach the spill twice (re-walking mid-run is a
+    // supported, tested scenario; symbolTable.upsertFile replaces rather than
+    // appends for exactly this reason), but two entries for the SAME relPath
+    // must never land in one `upsertFilesBulk` transaction: the table's
+    // PRIMARY KEY is (source, target), and DuckDB does not reject a same-key
+    // double-INSERT gracefully — it aborts with a native FatalException and
+    // takes the daemon process down mid-request (tea-rags-mcp-ksfq1,
+    // live-reproduced against taxdome). Cleared on every flush alongside the
+    // buffer it tracks.
+    let bufferedRelPaths = new Set<string>();
     const flushBuffer = async (): Promise<void> => {
       const pending = buffer;
       buffer = [];
+      bufferedRelPaths = new Set();
       await this.flushBuffer(graphDb, pending, processed);
     };
     try {
@@ -169,6 +181,10 @@ export class GraphBuildFinalizer {
           processed += 1;
           continue;
         }
+        // A repeat relPath already has an entry pending in this batch — flush
+        // it out first so the repeat starts its own transaction instead of
+        // sharing one with its own earlier self (see `bufferedRelPaths` above).
+        if (bufferedRelPaths.has(extraction.relPath)) await flushBuffer();
         // Buffer for the next bulk flush (fired at BULK_FILES / checkpoint / end)
         // instead of one transaction per file.
         buffer.push({
@@ -183,6 +199,7 @@ export class GraphBuildFinalizer {
           },
           edges,
         });
+        bufferedRelPaths.add(extraction.relPath);
         this.runState.stats.fileEdgeCount += edges.fileEdges.length;
         this.runState.stats.methodEdgeCount += edges.methodEdges.length;
         processed += 1;
@@ -300,6 +317,28 @@ export class GraphBuildFinalizer {
   private async checkpoint(graphDb: GraphDbClient): Promise<void> {
     try {
       await graphDb.checkpoint();
+      // Rebuild cg_symbols_edges_file's target_rel_path index at the same
+      // cadence as the DuckDB CHECKPOINT itself (tea-rags-mcp-wgt19). A run
+      // short enough to never reach a checkpoint is also too short to have
+      // meaningfully drifted this ART from the per-file DELETE+INSERT churn;
+      // a long force-resolve/repair pass gets it refreshed periodically
+      // instead of accumulating drift across the whole run. Best-effort:
+      // this is a correctness safety net, not the checkpoint itself, so a
+      // failure here should not abort a pass-2 run that otherwise succeeded.
+      try {
+        await graphDb.rebuildEdgeFileTargetIndex();
+        // The DDL is its own WAL entry — flush it too, so an in-process
+        // READ_ONLY reader (which reads the on-disk file, not this
+        // connection's WAL) sees a consistent post-rebuild state instead of
+        // racing the next checkpoint.
+        await graphDb.checkpoint();
+      } catch (err) {
+        if (isDebug()) {
+          console.error("[GitEnrich] PHASE: CODEGRAPH_EDGE_INDEX_REBUILD_FAILED", {
+            error: err instanceof Error ? err.message : String(err),
+          });
+        }
+      }
     } catch (err) {
       throw new CodegraphCheckpointError(err instanceof Error ? err : undefined);
     }

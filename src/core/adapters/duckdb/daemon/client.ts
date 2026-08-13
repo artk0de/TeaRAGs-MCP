@@ -281,6 +281,10 @@ export class DaemonGraphDbClient implements GraphDbClient {
     await this.call("checkpoint", {});
   }
 
+  async rebuildEdgeFileTargetIndex(): Promise<void> {
+    await this.call("rebuildEdgeFileTargetIndex", {});
+  }
+
   async recordRunStats(rows: ResolveRunStatsRow[]): Promise<void> {
     await this.call("recordRunStats", { rows });
   }

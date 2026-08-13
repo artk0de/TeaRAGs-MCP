@@ -114,6 +114,14 @@ export class DuckDbGraphClient implements GraphDbClient {
     return this.fileGraph.hasData();
   }
 
+  /** See `GraphDbClient.rebuildEdgeFileTargetIndex` (contracts/types/codegraph-storage.ts). */
+  async rebuildEdgeFileTargetIndex(): Promise<void> {
+    await this.session.exec(
+      "DROP INDEX IF EXISTS idx_cg_symbols_edges_file_target; " +
+        "CREATE INDEX idx_cg_symbols_edges_file_target ON cg_symbols_edges_file (target_rel_path);",
+    );
+  }
+
   // ── Migration-runner surface (MigrationCapableClient) ──
 
   /** Generic exec — used by the migration runner. Returns no rows. */
