@@ -95,6 +95,21 @@ describe("IndexingOps — forceEnrichments", () => {
     );
   });
 
+  it("passes the selectors through to the sync's repair pass, so codegraph actually re-extracts (bd tea-rags-mcp-force-enrich-gap)", async () => {
+    // Without this, `--force-enrichments codegraph` on an already-current
+    // graph found nothing drifted by content hash and silently fell through
+    // to the coordinator's stored-chunk reapply -- no fresh extraction, no
+    // resolve. The repair pass inside reindexChanges is what actually forces
+    // codegraph's pass-1/pass-2, so the selectors must reach it too, not just
+    // the coordinator's recompute call above.
+    const deps = makeDeps();
+    const ops = new IndexingOps(deps);
+
+    await ops.run("/repo", { forceEnrichments: ["codegraph"] });
+
+    expect(deps.reindex.reindexChanges).toHaveBeenCalledWith("/repo", undefined, undefined, ["codegraph"]);
+  });
+
   it("refuses to recompute when the codebase was never indexed", async () => {
     // Without this guard the sync would index the whole project from scratch,
     // paying for every embedding — the exact cost the flag exists to avoid.

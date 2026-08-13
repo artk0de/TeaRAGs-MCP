@@ -218,3 +218,85 @@ describe("EnrichmentCoordinator.runRepairPass under CODEGRAPH_FORCE_RESOLVE", ()
     expect(runFileBatch).not.toHaveBeenCalled();
   });
 });
+
+describe("EnrichmentCoordinator.runRepairPass forced by a --force-enrichments selector (bd tea-rags-mcp-force-enrich-gap)", () => {
+  // `--force-enrichments codegraph` (or `all`) must force a genuine re-extraction
+  // the same way CODEGRAPH_FORCE_RESOLVE=1 does -- it must NOT require the caller
+  // to also know about that env var. This is the selector-driven equivalent of
+  // "EnrichmentCoordinator.runRepairPass under CODEGRAPH_FORCE_RESOLVE" above,
+  // with the env var deliberately left UNSET in every case here.
+  it("forces every eligible file when the provider's key is named directly, with no env var set", async () => {
+    const runFileBatch = vi.fn().mockResolvedValue(new Map());
+    const coordinator = new EnrichmentCoordinator(
+      qdrant,
+      currentStoreProvider(),
+      undefined,
+      makeExecutor(runFileBatch),
+    );
+
+    const repaired = await coordinator.runRepairPass("code_x_v1", "/repo", SCANNED, ["codegraph.symbols"]);
+
+    expect(repaired).toBe(2);
+    expect(runFileBatch).toHaveBeenCalledTimes(1);
+  });
+
+  it("forces every eligible file when selected via the namespace prefix (codegraph -> codegraph.symbols)", async () => {
+    const runFileBatch = vi.fn().mockResolvedValue(new Map());
+    const coordinator = new EnrichmentCoordinator(
+      qdrant,
+      currentStoreProvider(),
+      undefined,
+      makeExecutor(runFileBatch),
+    );
+
+    const repaired = await coordinator.runRepairPass("code_x_v1", "/repo", SCANNED, ["codegraph"]);
+
+    expect(repaired).toBe(2);
+    expect(runFileBatch).toHaveBeenCalledTimes(1);
+  });
+
+  it("forces every eligible file when selected via the `all` selector", async () => {
+    const runFileBatch = vi.fn().mockResolvedValue(new Map());
+    const coordinator = new EnrichmentCoordinator(
+      qdrant,
+      currentStoreProvider(),
+      undefined,
+      makeExecutor(runFileBatch),
+    );
+
+    const repaired = await coordinator.runRepairPass("code_x_v1", "/repo", SCANNED, ["all"]);
+
+    expect(repaired).toBe(2);
+    expect(runFileBatch).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not force a provider the selector does not name", async () => {
+    // Forcing must stay scoped to what --force-enrichments actually selected --
+    // `--force-enrichments codegraph` must not also force an unrelated provider.
+    const runFileBatch = vi.fn().mockResolvedValue(new Map());
+    const coordinator = new EnrichmentCoordinator(
+      qdrant,
+      currentStoreProvider(),
+      undefined,
+      makeExecutor(runFileBatch),
+    );
+
+    const repaired = await coordinator.runRepairPass("code_x_v1", "/repo", SCANNED, ["git"]);
+
+    expect(repaired).toBe(0);
+    expect(runFileBatch).not.toHaveBeenCalled();
+  });
+
+  it("leaves ordinary (unforced) behavior untouched when no selector is passed at all", async () => {
+    const runFileBatch = vi.fn().mockResolvedValue(new Map());
+    const coordinator = new EnrichmentCoordinator(
+      qdrant,
+      currentStoreProvider(),
+      undefined,
+      makeExecutor(runFileBatch),
+    );
+
+    expect(await coordinator.runRepairPass("code_x_v1", "/repo", SCANNED)).toBe(0);
+    expect(runFileBatch).not.toHaveBeenCalled();
+  });
+});
