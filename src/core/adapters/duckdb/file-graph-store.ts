@@ -17,6 +17,28 @@
 import type { BulkFileUpsertEntry, GraphEdges, GraphFileNode, RelPath } from "../../contracts/types/codegraph.js";
 import type { DuckDbGraphSession } from "./graph-session.js";
 
+/**
+ * Files per interleaved DELETE-then-INSERT group in {@link DuckDbFileGraphStore#writeFileRowsBulk}.
+ *
+ * bd tea-rags-mcp-wgt19 follow-up, live-crash finding (taxdome
+ * CODEGRAPH_FORCE_RESOLVE, 2026-08-13): batching the DELETE across the WHOLE
+ * incoming set (issue every table's DELETE first, THEN every table's INSERT)
+ * crashed the daemon with a native DuckDB FatalException — "Failed to append
+ * to PRIMARY_cg_symbols_edges_file_2: ... duplicate key" — from inside
+ * `RemoveFromIndexes` during commit. This matches a documented DuckDB engine
+ * bug class (over-eager constraint checking on delete+insert of overlapping
+ * keys within one transaction — duckdb/duckdb#16520, duckdb/duckdb#15092):
+ * a large volume of pending DELETEs sitting in the transaction's undo buffer
+ * with no matching re-INSERT yet can spuriously trip the index's duplicate
+ * check when the re-INSERT finally lands. The per-file loop this module used
+ * for years never hit it because each file's DELETE was immediately followed
+ * by that SAME file's INSERT — the pending-delete window was always tiny.
+ * Grouping bounds that window back down instead of batching the whole set,
+ * trading some of the DELETE-count reduction for staying inside the shape
+ * DuckDB's index maintenance actually tolerates.
+ */
+const BULK_INTERLEAVE_GROUP_FILES = 32;
+
 export class DuckDbFileGraphStore {
   constructor(private readonly session: DuckDbGraphSession) {}
 
@@ -129,21 +151,21 @@ export class DuckDbFileGraphStore {
   }
 
   /**
-   * Batched form of {@link writeFileRows}: one DELETE-then-INSERT cycle for
-   * the WHOLE incoming set of files instead of one DELETE per file per table.
-   * Equivalent to calling `writeFileRows(node, edges)` once per entry in
-   * order — a later entry for the same relPath fully REPLACES an earlier one
-   * (last-wins per relPath, matching `writeFileRows`'s own per-file DELETE
-   * lifecycle), and cross-file PK collisions still resolve first-wins by
-   * batch order, same as `INSERT OR IGNORE` racing an already-persisted row
-   * from an earlier file. Empty `entries` is a no-op.
+   * Batched form of {@link writeFileRows}: DELETE-then-INSERT per GROUP of
+   * {@link BULK_INTERLEAVE_GROUP_FILES} files instead of one DELETE per file
+   * per table. Equivalent to calling `writeFileRows(node, edges)` once per
+   * entry in order — a later entry for the same relPath fully REPLACES an
+   * earlier one (last-wins per relPath, matching `writeFileRows`'s own
+   * per-file DELETE lifecycle), and cross-file PK collisions still resolve
+   * first-wins by batch order, same as `INSERT OR IGNORE` racing an
+   * already-persisted row from an earlier file. Empty `entries` is a no-op.
    *
-   * bd tea-rags-mcp-wgt19 follow-up: the per-file loop this replaces issued
-   * 4 DELETEs per file, each re-scanning/decompressing the FSST-compressed
-   * `source_rel_path` column on cg_symbols_edges_file/cg_symbols_edges_method
-   * — the dominant cost of CODEGRAPH_FORCE_RESOLVE wall clock on taxdome.
-   * Collapsing to one chunked IN-list DELETE per table removes that
-   * per-file dispatch/scan overhead.
+   * Each group's DELETE is immediately followed by that SAME group's INSERT
+   * — see {@link BULK_INTERLEAVE_GROUP_FILES} for why: batching the DELETE
+   * across the WHOLE set before any INSERT crashed DuckDB's index
+   * maintenance on real taxdome data. Statement count still drops sharply —
+   * a chunked IN-list DELETE per table per group instead of one DELETE per
+   * file per table — without reopening that crash.
    */
   async writeFileRowsBulk(entries: readonly BulkFileUpsertEntry[]): Promise<void> {
     if (entries.length === 0) return;
@@ -154,7 +176,15 @@ export class DuckDbFileGraphStore {
     const lastByRelPath = new Map<RelPath, BulkFileUpsertEntry>();
     for (const entry of entries) lastByRelPath.set(entry.node.relPath, entry);
     const deduped = [...lastByRelPath.values()];
-    const relPaths = deduped.map((e) => e.node.relPath);
+
+    for (let i = 0; i < deduped.length; i += BULK_INTERLEAVE_GROUP_FILES) {
+      await this.writeFileRowsGroup(deduped.slice(i, i + BULK_INTERLEAVE_GROUP_FILES));
+    }
+  }
+
+  /** One DELETE-then-INSERT cycle for a single interleave group — see {@link writeFileRowsBulk}. */
+  private async writeFileRowsGroup(group: readonly BulkFileUpsertEntry[]): Promise<void> {
+    const relPaths = group.map((e) => e.node.relPath);
 
     await this.session.deleteBatched("cg_symbols_edges_file", "source_rel_path", relPaths);
     await this.session.deleteBatched("cg_symbols_edges_method", "source_rel_path", relPaths);
@@ -164,7 +194,7 @@ export class DuckDbFileGraphStore {
     await this.session.insertBatched(
       "cg_symbols_files",
       ["rel_path", "language", "content_hash"],
-      deduped.map((e) => [e.node.relPath, e.node.language, e.node.contentHash ?? null]),
+      group.map((e) => [e.node.relPath, e.node.language, e.node.contentHash ?? null]),
       "orReplace",
     );
 
@@ -172,7 +202,7 @@ export class DuckDbFileGraphStore {
     const methodEdgeRows: unknown[][] = [];
     const inheritanceRows: unknown[][] = [];
     const fanoutRows: unknown[][] = [];
-    for (const { node, edges } of deduped) {
+    for (const { node, edges } of group) {
       for (const e of edges.fileEdges) fileEdgeRows.push([node.relPath, e.targetRelPath, e.importText]);
       // See writeFileRows: targetSymbolId=null must be skipped BEFORE
       // batching (the PK includes target_symbol_id, NOT NULL).

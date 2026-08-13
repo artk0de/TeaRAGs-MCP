@@ -20,6 +20,7 @@ import { DuckDBPreparedStatement } from "@duckdb/node-api";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { DuckDbGraphClient } from "../../../../src/core/adapters/duckdb/client.js";
+import { DuckDbGraphSession } from "../../../../src/core/adapters/duckdb/graph-session.js";
 import type { BulkFileUpsertEntry } from "../../../../src/core/contracts/types/codegraph.js";
 import { DATABASE_MIGRATIONS } from "../../../../src/core/domains/maintenance/migration/database/migrations/index.js";
 import { runMigrations } from "../../../../src/core/domains/maintenance/migration/database/runner.js";
@@ -200,13 +201,16 @@ describe("DuckDbGraphClient — upsertFilesBulk equivalence to per-file upsertFi
     expect((await dumpGraph(db)).files).toHaveLength(0);
   });
 
-  it("collapses per-file DELETEs into a handful of batched IN-list statements", async () => {
-    // bd tea-rags-mcp: the pre-batching path issued one DELETE per file per
-    // table (4 tables x N files), each paying its own scan/FSST-decompress
-    // cost on cg_symbols_edges_file/cg_symbols_edges_method's compressed
-    // VARCHAR columns. 250 files spans more than one 200-row IN-list chunk,
-    // so this also exercises the chunk boundary. Mirrors the prepared-
-    // statement-count assertion style already used for per-file edge
+  it("collapses per-file DELETEs into a handful of batched IN-list statements per group", async () => {
+    // bd tea-rags-mcp-wgt19 follow-up: the pre-batching path issued one
+    // DELETE per file per table (4 tables x N files), each paying its own
+    // scan/FSST-decompress cost on cg_symbols_edges_file/cg_symbols_edges_method's
+    // compressed VARCHAR columns. Writes are now batched per interleave GROUP
+    // (BULK_INTERLEAVE_GROUP_FILES=32 in file-graph-store.ts) rather than
+    // across the whole incoming set — see that constant's doc for why a
+    // whole-set batch crashed DuckDB on real data. 250 files spans 8 groups
+    // (ceil(250/32)), so this also exercises the chunk boundary. Mirrors the
+    // prepared-statement-count assertion style already used for per-file edge
     // batching in client-batched-edge-writes.test.ts.
     const db = await freshDb();
     const N = 250;
@@ -228,14 +232,70 @@ describe("DuckDbGraphClient — upsertFilesBulk equivalence to per-file upsertFi
     const destroySpy = vi.spyOn(DuckDBPreparedStatement.prototype, "destroySync");
     await db.upsertFilesBulk(entries);
     // Old per-file loop: >= 250 files x 5 statements (upsert + 4 deletes) = 1250+.
-    // Batched: ~2 IN-list chunks x 4 delete tables + a few insert chunks.
-    expect(destroySpy.mock.calls.length).toBeLessThanOrEqual(30);
+    // Grouped batching: 8 groups x (4 deletes + 3 inserts) = 56.
+    expect(destroySpy.mock.calls.length).toBeLessThanOrEqual(70);
     destroySpy.mockRestore();
 
     const filesCount = await db.queryAll<{ n: number | bigint }>("SELECT COUNT(*) AS n FROM cg_symbols_files");
     expect(Number(filesCount[0].n)).toBe(N);
     const edgesCount = await db.queryAll<{ n: number | bigint }>("SELECT COUNT(*) AS n FROM cg_symbols_edges_method");
     expect(Number(edgesCount[0].n)).toBe(N);
+  });
+
+  it("interleaves DELETE and INSERT per group instead of deleting the whole batch before inserting any of it", async () => {
+    // bd tea-rags-mcp-wgt19 follow-up: a live CODEGRAPH_FORCE_RESOLVE run
+    // against taxdome crashed the daemon with a native DuckDB FatalException
+    // ("Failed to append to PRIMARY_cg_symbols_edges_file_2: ... duplicate
+    // key") from inside RemoveFromIndexes at commit, when the whole batch's
+    // DELETEs were issued before any of its INSERTs landed — a large pending-
+    // delete volume with no matching re-INSERT yet is a documented DuckDB
+    // engine bug class (duckdb/duckdb#16520, duckdb/duckdb#15092: over-eager
+    // constraint checking on delete+insert within one transaction). The fix
+    // bounds the pending-delete window to one interleave group at a time —
+    // this test asserts that shape directly: DELETE statements never run more
+    // than one group's worth deep before an INSERT breaks the streak.
+    //
+    // N=250 (not just >BULK_INTERLEAVE_GROUP_FILES) is load-bearing: it spans
+    // TWO 200-row IN-list chunks per table (deleteBatched's own internal
+    // chunking), so a whole-batch-first DELETE sweep (the crashing shape)
+    // would show a run of 4 tables x 2 chunks = 8 consecutive DELETEs before
+    // any INSERT — this test would NOT fail against that shape at N<=200,
+    // since a single un-grouped chunk per table also happens to cap at 4.
+    const db = await freshDb();
+    const N = 250;
+    const entries: BulkFileUpsertEntry[] = Array.from({ length: N }, (_, i) => ({
+      node: { relPath: `app/g${i}.rb`, language: "ruby" },
+      edges: { fileEdges: [{ targetRelPath: "app/shared.rb", importText: "./shared" }], methodEdges: [] },
+    }));
+
+    const verbs: string[] = [];
+    const original = DuckDbGraphSession.prototype.run;
+    const spy = vi.spyOn(DuckDbGraphSession.prototype, "run").mockImplementation(async function (
+      this: DuckDbGraphSession,
+      sql: string,
+      params?: unknown[],
+    ) {
+      const verb = sql.trim().split(/\s+/)[0];
+      if (verb === "DELETE" || verb === "INSERT") verbs.push(verb);
+      return original.call(this, sql, params);
+    });
+
+    await db.upsertFilesBulk(entries);
+    spy.mockRestore();
+
+    // Longest consecutive run of DELETE verbs. One group issues at most 4
+    // DELETEs (cg_symbols_edges_file/_method/_inheritance/cg_ambiguous_fanout);
+    // a whole-batch-first DELETE sweep across 3 groups would show a run of
+    // ~12. Assert it stays within one group's worth.
+    let longestDeleteRun = 0;
+    let current = 0;
+    for (const v of verbs) {
+      current = v === "DELETE" ? current + 1 : 0;
+      longestDeleteRun = Math.max(longestDeleteRun, current);
+    }
+    expect(verbs.filter((v) => v === "DELETE").length).toBeGreaterThan(0);
+    expect(verbs.filter((v) => v === "INSERT").length).toBeGreaterThan(0);
+    expect(longestDeleteRun).toBeLessThanOrEqual(4);
   });
 
   it("keeps the first-persisted row when two files in the SAME bulk batch collide on a method-edge PK", async () => {
