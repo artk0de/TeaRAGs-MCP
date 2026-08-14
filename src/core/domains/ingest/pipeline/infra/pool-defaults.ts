@@ -93,6 +93,15 @@ export function defaultEnrichmentWorkerStackSizeMb(): number {
  * `ENRICHMENT_WORKER_CPU_PROFILE_DIR` — an empty/unset value disables it, same
  * shape as the other pool tunables here. No default value, unlike the memory
  * ceiling: profiling has a real (if small) overhead and must stay opt-in.
+ *
+ * V8 flushes an `--cpu-prof` profile only on a CLEAN thread exit, so a run
+ * killed at a wall-clock budget leaves nothing behind. The chunked in-worker
+ * alternative — `ENRICHMENT_WORKER_PROFILE_CHUNK_DIR` /
+ * `ENRICHMENT_WORKER_PROFILE_CHUNK_SEC`, see
+ * `../enrichment/infra/chunked-cpu-profiler.ts` — rotates the profile on an
+ * interval instead and survives a SIGKILL minus the last chunk. The two are
+ * INDEPENDENT mechanisms over the same isolate: setting both is legal, and
+ * neither disables the other.
  */
 export function defaultEnrichmentWorkerCpuProfileDir(): string | undefined {
   const raw = process.env.ENRICHMENT_WORKER_CPU_PROFILE_DIR;

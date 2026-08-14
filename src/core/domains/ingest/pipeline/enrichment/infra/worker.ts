@@ -40,6 +40,7 @@ import type {
 } from "../../../../../contracts/types/provider.js";
 import type { ChunkLookupEntry } from "../../../../../types.js";
 import { applyWorkerDebug } from "../../infra/worker-debug.js";
+import { chunkedCpuProfilerConfigFromEnv, startChunkedCpuProfiler } from "./chunked-cpu-profiler.js";
 import type {
   EnrichmentCallRequest,
   EnrichmentReleaseRequest,
@@ -52,6 +53,16 @@ import type {
 // marker this thread emits — the whole codegraph pass-2 phase among them — is
 // dropped silently, which is why that window was never measurable.
 applyWorkerDebug(workerData);
+
+/**
+ * Opt-in chunked CPU profile of THIS thread (bd tea-rags-mcp-6aytq). Resolves
+ * to `undefined` unless `ENRICHMENT_WORKER_PROFILE_CHUNK_DIR` is set, so the
+ * default worker allocates nothing. Started here rather than in the pool
+ * because `inspector.Session` is per-isolate and the pool lives in another one.
+ * Not awaited at module scope — the first envelope must not queue behind a
+ * diagnostics session; `stop()` is awaited on shutdown for the final chunk.
+ */
+const chunkedCpuProfiler = startChunkedCpuProfiler(chunkedCpuProfilerConfigFromEnv());
 
 /**
  * Factory shape — providers expose this as the named export referenced by
@@ -200,6 +211,9 @@ if (parentPort) {
       try {
         const result = await handle(request);
         if (result === "exit") {
+          // Final profile chunk before the port closes — a graceful shutdown is
+          // the one exit where the last window is not already lost.
+          await (await chunkedCpuProfiler)?.stop();
           parentPort?.close();
           return;
         }
