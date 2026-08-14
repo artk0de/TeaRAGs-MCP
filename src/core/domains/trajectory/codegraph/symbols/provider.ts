@@ -283,6 +283,24 @@ const SUPPORTED_EXTS = new Set(Object.keys(CODEGRAPH_LANGUAGES));
 const PASS1_PROGRESS_EVERY = 500;
 
 /**
+ * Files whose graph reads may be in flight at once during the finalize
+ * read-back (bd tea-rags-mcp-6aytq).
+ *
+ * The read-back is latency-bound, not throughput-bound: three independent
+ * queries per file, each a daemon round-trip, and one of them
+ * (`getTransitiveImpact`) a depth-5 recursive CTE. Serialized, taxdome's 10,476
+ * files cost 31,428 sequential round-trips inside the post-pass-2 tail. The
+ * daemon dispatches frames concurrently and DuckDB reads are not queued behind
+ * the write chain, so overlapping them is free wall clock.
+ *
+ * Bounded rather than unbounded because each in-flight recursive CTE holds its
+ * own intermediate result set — handing the whole repo to the daemon at once
+ * trades a wall-clock win for a memory spike on exactly the pathological
+ * (hub-file) inputs that made the cap on pass-2 edges necessary.
+ */
+const OVERLAY_READ_CONCURRENCY = 16;
+
+/**
  * Codegraph provider dependencies. Two routing modes are supported and
  * exactly one MUST be supplied at construction time:
  *
@@ -929,20 +947,37 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
     out: Map<string, FileSignalOverlay>,
   ): Promise<void> {
     const fanInP95 = await graphDb.getFanInP95();
-    for (const relPath of overlayPaths) {
-      const fanIn = await graphDb.getFanIn(relPath);
-      const fanOut = await graphDb.getFanOut(relPath);
-      const denom = fanIn + fanOut;
-      const transitiveImpact = await graphDb.getTransitiveImpact(relPath);
-      out.set(relPath, {
-        fanIn,
-        fanOut,
-        instability: denom === 0 ? 0 : fanOut / denom,
-        connectionCount: denom,
-        isHub: fanIn > fanInP95,
-        isLeaf: fanOut === 0 && fanIn > 0,
-        transitiveImpact,
-      });
+    // Results land by INDEX, not by completion order, so the map this fills
+    // keeps the caller's path order whatever the reads do among themselves.
+    const overlays = new Array<FileSignalOverlay | undefined>(overlayPaths.length);
+    let cursor = 0;
+    const workers = Math.min(OVERLAY_READ_CONCURRENCY, overlayPaths.length);
+    await Promise.all(
+      Array.from({ length: workers }, async () => {
+        for (let i = cursor++; i < overlayPaths.length; i = cursor++) {
+          const relPath = overlayPaths[i];
+          // The three reads answer independent questions about one file, so
+          // they go out together rather than one round-trip after another.
+          const [fanIn, fanOut, transitiveImpact] = await Promise.all([
+            graphDb.getFanIn(relPath),
+            graphDb.getFanOut(relPath),
+            graphDb.getTransitiveImpact(relPath),
+          ]);
+          const denom = fanIn + fanOut;
+          overlays[i] = {
+            fanIn,
+            fanOut,
+            instability: denom === 0 ? 0 : fanOut / denom,
+            connectionCount: denom,
+            isHub: fanIn > fanInP95,
+            isLeaf: fanOut === 0 && fanIn > 0,
+            transitiveImpact,
+          };
+        }
+      }),
+    );
+    for (const [i, overlay] of overlays.entries()) {
+      if (overlay) out.set(overlayPaths[i], overlay);
     }
   }
 
