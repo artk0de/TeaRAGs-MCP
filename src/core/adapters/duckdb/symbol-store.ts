@@ -13,6 +13,7 @@
 import type {
   BulkSymbolUpsertEntry,
   RelPath,
+  SymbolChunkIdJoinEntry,
   SymbolChunkLocation,
   SymbolDefinition,
   SymbolId,
@@ -110,15 +111,38 @@ export class DuckDbSymbolStore {
   }
 
   async updateSymbolChunkIds(relPath: RelPath, chunkIds: ReadonlyMap<SymbolId, string>): Promise<void> {
-    if (chunkIds.size === 0) return;
-    return this.session.transaction(async () => {
-      for (const [symbolId, chunkId] of chunkIds) {
-        await this.session.run("UPDATE cg_symbols SET chunk_id = ? WHERE rel_path = ? AND symbol_id = ?", [
-          chunkId,
-          relPath,
-          symbolId,
-        ]);
+    return this.updateSymbolChunkIdsBulk([{ relPath, chunkIds }]);
+  }
+
+  /**
+   * Whole-pass form of {@link updateSymbolChunkIds}. The deferred chunk pass
+   * resolves the join for every file at once, so it writes it at once: one
+   * transaction of chunked multi-row UPDATEs instead of one transaction — and,
+   * behind the daemon, one socket round-trip — per file (bd tea-rags-mcp-6aytq).
+   *
+   * Duplicate (relPath, symbolId) pairs are collapsed LAST-WINS here, in a map
+   * keyed per file, rather than left to the statement: DuckDB does not define
+   * which of two colliding VALUES rows an `UPDATE … FROM` applies. Collapsing
+   * reproduces what sequential per-file calls did.
+   */
+  async updateSymbolChunkIdsBulk(entries: readonly SymbolChunkIdJoinEntry[]): Promise<void> {
+    const lastByFile = new Map<RelPath, Map<SymbolId, string>>();
+    for (const { relPath, chunkIds } of entries) {
+      if (chunkIds.size === 0) continue;
+      let perFile = lastByFile.get(relPath);
+      if (perFile === undefined) {
+        perFile = new Map<SymbolId, string>();
+        lastByFile.set(relPath, perFile);
       }
+      for (const [symbolId, chunkId] of chunkIds) perFile.set(symbolId, chunkId);
+    }
+    const rows: [string, string, string][] = [];
+    for (const [relPath, perFile] of lastByFile) {
+      for (const [symbolId, chunkId] of perFile) rows.push([relPath, symbolId, chunkId]);
+    }
+    if (rows.length === 0) return;
+    return this.session.transaction(async () => {
+      await this.session.updateFromRows("cg_symbols", ["rel_path", "symbol_id"], ["chunk_id"], rows);
     });
   }
 

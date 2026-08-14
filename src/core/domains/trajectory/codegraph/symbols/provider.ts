@@ -52,6 +52,7 @@ import type {
   FileGraphMetrics,
   GlobalSymbolTable,
   GraphDbClient,
+  SymbolChunkIdJoinEntry,
   SymbolDefinition,
   SymbolId,
 } from "../../../../contracts/types/codegraph.js";
@@ -1583,6 +1584,14 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
       });
     }
     const out = new Map<string, Map<string, ChunkSignalOverlay>>();
+    // 6aytq — the symbol→chunk join is collected across the WHOLE pass and
+    // written once at the end. Per-file it was one transaction (and, behind the
+    // daemon, one socket round-trip) per file carrying one single-row UPDATE per
+    // symbol: 10,478 round-trips for 44,087 rows on taxdome, which WAS the
+    // measured 14.0s `deferredChunk` step of the completion tail — against a
+    // 0.21s bulk read of the same graph. Nothing in the loop reads it back, so
+    // deferring the write changes only its shape.
+    const chunkIdJoins: SymbolChunkIdJoinEntry[] = [];
     for (const [relPath, entries] of chunkMap) {
       const perChunk = new Map<string, ChunkSignalOverlay>();
       for (const entry of entries) {
@@ -1619,10 +1628,13 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
         }
         const chunkIds = computeSymbolChunkIds(symbolStartLines, entries);
         if (chunkIds.size > 0) {
-          await graphDb.updateSymbolChunkIds(relPath, chunkIds);
+          chunkIdJoins.push({ relPath, chunkIds });
         }
       }
       out.set(relPath, perChunk);
+    }
+    if (chunkIdJoins.length > 0) {
+      await graphDb.updateSymbolChunkIdsBulk(chunkIdJoins);
     }
     return out;
   }

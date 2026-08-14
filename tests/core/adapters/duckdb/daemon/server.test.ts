@@ -567,6 +567,56 @@ describe("CodegraphDaemonServer.handle", () => {
     await pool.closeAll();
   });
 
+  it("updateSymbolChunkIdsBulk dispatches one write op covering every file in the pass", async () => {
+    const { server, pool } = makeServer();
+    const c = "code_chunk_ids_bulk_v1";
+    await server.handle({
+      id: 1,
+      op: "upsertFile",
+      params: {
+        collection: c,
+        node: { relPath: "x.ts", language: "typescript" },
+        edges: { fileEdges: [], methodEdges: [] },
+      },
+    });
+    await server.handle({
+      id: 2,
+      op: "upsertSymbols",
+      params: {
+        collection: c,
+        relPath: "x.ts",
+        definitions: [{ symbolId: "X#run", fqName: "X.run", shortName: "run", relPath: "x.ts", scope: [] }],
+      },
+    });
+    await server.handle({
+      id: 3,
+      op: "upsertSymbols",
+      params: {
+        collection: c,
+        relPath: "y.ts",
+        definitions: [{ symbolId: "Y#go", fqName: "Y.go", shortName: "go", relPath: "y.ts", scope: [] }],
+      },
+    });
+
+    const res = await server.handle({
+      id: 4,
+      op: "updateSymbolChunkIdsBulk",
+      params: {
+        collection: c,
+        entries: [
+          { relPath: "x.ts", chunkIds: [["X#run", "chunk_42"]] },
+          { relPath: "y.ts", chunkIds: [["Y#go", "chunk_43"]] },
+        ],
+      },
+    });
+
+    expect(res.ok).toBe(true);
+    expect((res as { result: null }).result).toBeNull();
+    const found = await server.handle({ id: 5, op: "findSymbolChunk", params: { collection: c, symbolId: "Y#go" } });
+    expect((found as { result: unknown }).result).toEqual({ relPath: "y.ts", chunkId: "chunk_43" });
+    await pool.closeAll();
+  });
+
   it("findSymbolChunk read op returns the stored SymbolChunkLocation", async () => {
     const { server, pool } = makeServer();
     const c = "code_find_chunk_v1";

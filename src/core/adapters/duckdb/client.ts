@@ -47,6 +47,7 @@ import type {
   InheritanceEdge,
   RelPath,
   ResolveRunStatsRow,
+  SymbolChunkIdJoinEntry,
   SymbolChunkLocation,
   SymbolDefinition,
   SymbolId,
@@ -225,6 +226,10 @@ export class DuckDbGraphClient implements GraphDbClient {
 
   async updateSymbolChunkIds(relPath: RelPath, chunkIds: ReadonlyMap<SymbolId, string>): Promise<void> {
     return this.symbols.updateSymbolChunkIds(relPath, chunkIds);
+  }
+
+  async updateSymbolChunkIdsBulk(entries: readonly SymbolChunkIdJoinEntry[]): Promise<void> {
+    return this.symbols.updateSymbolChunkIdsBulk(entries);
   }
 
   async findSymbolChunk(symbolId: SymbolId): Promise<SymbolChunkLocation | null> {
