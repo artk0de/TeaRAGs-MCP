@@ -11,6 +11,7 @@ import type {
   CycleEntry,
   CycleScope,
   EdgeKindCount,
+  FileGraphMetrics,
   GraphDbClient,
   GraphEdges,
   GraphFileNode,
@@ -22,6 +23,7 @@ import type {
   SymbolDefinition,
   SymbolId,
 } from "../../../contracts/types/codegraph.js";
+import { isDebug } from "../../../infra/runtime.js";
 import { DaemonFrameDecoder } from "./frame-decoder.js";
 import { getDaemonLogPath } from "./lifecycle.js";
 import { encodeFrame, type DaemonHandshakeResult, type DaemonOp, type DaemonResponse } from "./protocol.js";
@@ -34,6 +36,17 @@ import { encodeFrame, type DaemonHandshakeResult, type DaemonOp, type DaemonResp
  * runs daemon-side via `computeAndPersistCyclesAndSignals`, so the adjacency
  * stream must NOT cross IPC and still throws this error if called on the client.
  */
+/**
+ * Does this rejection mean "the daemon on the other end is from a build that
+ * has no such op"? The daemon's dispatcher answers an op it does not know with
+ * exactly this message (daemon/server.ts) — the deliberate fall-through kept
+ * for protocol evolution — so the match is on that one sentence and nothing
+ * else. Anything wider would swallow real DuckDB failures.
+ */
+function isUnknownDaemonOp(err: unknown): boolean {
+  return err instanceof Error && err.message.startsWith("unknown daemon op:");
+}
+
 export class UnsupportedDaemonReadError extends Error {
   constructor(op: string) {
     super(`DaemonGraphDbClient is write-only; read op "${op}" must use the in-process RO handle`);
@@ -383,6 +396,52 @@ export class DaemonGraphDbClient implements GraphDbClient {
 
   async getTransitiveImpact(relPath: RelPath, maxDepth?: number): Promise<number> {
     return (await this.call("getTransitiveImpact", { relPath, maxDepth })) as number;
+  }
+
+  async getFileMetricsBulk(relPaths: readonly RelPath[], maxDepth?: number): Promise<Map<RelPath, FileGraphMetrics>> {
+    try {
+      // Server serialises the Map as `[key, value][]` entries — rebuild here
+      // (same pattern as getChunkSignalsBulk / getCalleeEdges). The caller
+      // bounds `relPaths`: this array IS the request frame, and the daemon's
+      // reply frame carries one entry per root it knows about.
+      const entries = (await this.call("getFileMetricsBulk", { relPaths, maxDepth })) as [RelPath, FileGraphMetrics][];
+      return new Map(entries);
+    } catch (err) {
+      if (!isUnknownDaemonOp(err)) throw err;
+      return this.fileMetricsPerFile(relPaths, maxDepth);
+    }
+  }
+
+  /**
+   * Legacy-daemon degrade for `getFileMetricsBulk`. A pool with no respawn hook
+   * TOLERATES a daemon built from other source rather than draining it
+   * (pool.ts — worker-thread pools cannot cold-spawn one), so a client from
+   * this build can meet a daemon that never heard of the setwise op. Rather
+   * than failing the whole finalize pass, walk the same roots through the three
+   * per-file reads the op replaces and assemble the identical map: absent means
+   * all-zero, so a root with nothing in either direction is left out.
+   *
+   * Deliberately serialized and deliberately slow — this is the pre-setwise
+   * cost, on a path that only has to stay CORRECT until the daemon is
+   * restarted from the matching build.
+   */
+  private async fileMetricsPerFile(
+    relPaths: readonly RelPath[],
+    maxDepth?: number,
+  ): Promise<Map<RelPath, FileGraphMetrics>> {
+    if (isDebug()) {
+      process.stderr.write("[tea-rags] codegraph daemon predates getFileMetricsBulk — per-file read-back\n");
+    }
+    const out = new Map<RelPath, FileGraphMetrics>();
+    for (const relPath of relPaths) {
+      const fanIn = await this.getFanIn(relPath);
+      const fanOut = await this.getFanOut(relPath);
+      const transitiveImpact = await this.getTransitiveImpact(relPath, maxDepth);
+      if (fanIn !== 0 || fanOut !== 0 || transitiveImpact !== 0) {
+        out.set(relPath, { fanIn, fanOut, transitiveImpact });
+      }
+    }
+    return out;
   }
 
   async findCycles(scope: CycleScope, pathPattern?: string): Promise<CycleEntry[]> {

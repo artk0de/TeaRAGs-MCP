@@ -49,6 +49,7 @@ import type { GraphDbClientPool } from "../../../../adapters/duckdb/pool.js";
 import type {
   ExtractionSink,
   FileExtraction,
+  FileGraphMetrics,
   GlobalSymbolTable,
   GraphDbClient,
   SymbolDefinition,
@@ -283,22 +284,31 @@ const SUPPORTED_EXTS = new Set(Object.keys(CODEGRAPH_LANGUAGES));
 const PASS1_PROGRESS_EVERY = 500;
 
 /**
- * Files whose graph reads may be in flight at once during the finalize
- * read-back (bd tea-rags-mcp-6aytq).
+ * Files per `getFileMetricsBulk` request during the finalize read-back
+ * (bd tea-rags-mcp-6aytq).
  *
- * The read-back is latency-bound, not throughput-bound: three independent
- * queries per file, each a daemon round-trip, and one of them
- * (`getTransitiveImpact`) a depth-5 recursive CTE. Serialized, taxdome's 10,476
- * files cost 31,428 sequential round-trips inside the post-pass-2 tail. The
- * daemon dispatches frames concurrently and DuckDB reads are not queued behind
- * the write chain, so overlapping them is free wall clock.
+ * The read-back was never latency-bound — it was DAEMON-CPU-bound. Three
+ * queries per file (one of them a depth-5 recursive CTE) is 31,428 statements
+ * for taxdome's 10,476 files, and no amount of client-side concurrency beats a
+ * single-process daemon executing them one after another; worse, those reads
+ * interleave with the pass-2 bulk flush running concurrently, so the flush
+ * queues behind them. The setwise op collapses a batch to THREE statements, so
+ * the whole tail costs ~3 × ceil(files / batch).
  *
- * Bounded rather than unbounded because each in-flight recursive CTE holds its
- * own intermediate result set — handing the whole repo to the daemon at once
- * trades a wall-clock win for a memory spike on exactly the pathological
- * (hub-file) inputs that made the cap on pass-2 edges necessary.
+ * Two costs grow with the batch: the request frame (2000 taxdome paths ≈ 161
+ * KiB of JSON — an order under what `listAllSymbols` already ships in one
+ * frame) and the recursive CTE's live intermediate, which holds every root's
+ * reverse-reachable set at once instead of one root's at a time. Measured
+ * in-process against a real 19,484-file taxdome graph, the whole 10,621-file TS
+ * universe costs 1.31 s in 18 statements at batch 2000, against 30.8 s in
+ * 31,863 statements per-file — and the curve is flat from 500 to 10,621
+ * (1.19–1.56 s), so this sits in the middle of the plateau rather than on the
+ * edge of either cost.
  */
-const OVERLAY_READ_CONCURRENCY = 16;
+const OVERLAY_READ_BATCH = 2000;
+
+/** Reading of a root the graph has no edge for, in either direction. */
+const ZERO_FILE_METRICS: FileGraphMetrics = { fanIn: 0, fanOut: 0, transitiveImpact: 0 };
 
 /**
  * Codegraph provider dependencies. Two routing modes are supported and
@@ -947,37 +957,26 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
     out: Map<string, FileSignalOverlay>,
   ): Promise<void> {
     const fanInP95 = await graphDb.getFanInP95();
-    // Results land by INDEX, not by completion order, so the map this fills
-    // keeps the caller's path order whatever the reads do among themselves.
-    const overlays = new Array<FileSignalOverlay | undefined>(overlayPaths.length);
-    let cursor = 0;
-    const workers = Math.min(OVERLAY_READ_CONCURRENCY, overlayPaths.length);
-    await Promise.all(
-      Array.from({ length: workers }, async () => {
-        for (let i = cursor++; i < overlayPaths.length; i = cursor++) {
-          const relPath = overlayPaths[i];
-          // The three reads answer independent questions about one file, so
-          // they go out together rather than one round-trip after another.
-          const [fanIn, fanOut, transitiveImpact] = await Promise.all([
-            graphDb.getFanIn(relPath),
-            graphDb.getFanOut(relPath),
-            graphDb.getTransitiveImpact(relPath),
-          ]);
-          const denom = fanIn + fanOut;
-          overlays[i] = {
-            fanIn,
-            fanOut,
-            instability: denom === 0 ? 0 : fanOut / denom,
-            connectionCount: denom,
-            isHub: fanIn > fanInP95,
-            isLeaf: fanOut === 0 && fanIn > 0,
-            transitiveImpact,
-          };
-        }
-      }),
-    );
-    for (const [i, overlay] of overlays.entries()) {
-      if (overlay) out.set(overlayPaths[i], overlay);
+    // Batches go out in order and each is walked in the caller's order, so the
+    // map this fills keeps `overlayPaths` order exactly. A root the graph knows
+    // nothing about is absent from the bulk map and reads as all-zero — the
+    // same value the per-file getters returned for it.
+    for (let start = 0; start < overlayPaths.length; start += OVERLAY_READ_BATCH) {
+      const batch = overlayPaths.slice(start, start + OVERLAY_READ_BATCH);
+      const metrics = await graphDb.getFileMetricsBulk(batch);
+      for (const relPath of batch) {
+        const { fanIn, fanOut, transitiveImpact } = metrics.get(relPath) ?? ZERO_FILE_METRICS;
+        const denom = fanIn + fanOut;
+        out.set(relPath, {
+          fanIn,
+          fanOut,
+          instability: denom === 0 ? 0 : fanOut / denom,
+          connectionCount: denom,
+          isHub: fanIn > fanInP95,
+          isLeaf: fanOut === 0 && fanIn > 0,
+          transitiveImpact,
+        });
+      }
     }
   }
 

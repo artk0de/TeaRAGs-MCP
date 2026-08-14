@@ -1,16 +1,16 @@
 /**
- * `finalizeSignals` file-overlay read-back concurrency (bd tea-rags-mcp-6aytq).
+ * `finalizeSignals` file-overlay read-back (bd tea-rags-mcp-6aytq).
  *
- * The read-back used to issue THREE fully serialized DuckDB round-trips per
- * file — getFanIn, getFanOut, and the depth-5 recursive-CTE getTransitiveImpact
- * — over every file the run extracted. On taxdome (10,476 TS files) that is
- * 31,428 sequential daemon IPC calls sitting in the post-pass-2 tail, and the
- * tail measured ~46s.
+ * The read-back used to issue THREE DuckDB round-trips per file — getFanIn,
+ * getFanOut, and the depth-5 recursive-CTE getTransitiveImpact — over every
+ * file the run extracted. On taxdome (10,476 TS files) that is 31,428 daemon
+ * calls sitting in the post-pass-2 tail. Overlapping them 16-wide did not fix
+ * it: the daemon is a single process, so the concurrency only moved the queue,
+ * and the interleaved reads starved the pass-2 bulk flush running alongside.
  *
- * The three reads for one file are independent of each other and of every other
- * file's, so they overlap. What must NOT change: the overlay values, and the
- * insertion order of the returned map (deterministic output regardless of which
- * read wins the race).
+ * The tail now reads the whole set through `getFileMetricsBulk` — a constant
+ * number of statements per batch, whatever the file count. What must NOT
+ * change: the overlay values, and the insertion order of the returned map.
  */
 
 import { describe, expect, it } from "vitest";
@@ -22,35 +22,43 @@ import { TSCallResolver } from "../../../../../../src/core/domains/language/type
 import { CodegraphEnrichmentProvider } from "../../../../../../src/core/domains/trajectory/codegraph/symbols/provider.js";
 import { InMemoryGlobalSymbolTable } from "../../../../../../src/core/domains/trajectory/codegraph/symbols/symbol-table.js";
 
-/** Fan values per file, plus a concurrency probe over every read it serves. */
+/**
+ * Fan values per file, served through the bulk read the finalize tail uses.
+ * Per-file getters are still present — and counted — because a silent fallback
+ * to them is exactly the regression this suite exists to catch.
+ */
 function makeFanGraphDb(fan: Map<string, { fanIn: number; fanOut: number; impact: number }>): {
   graphDb: Record<string, unknown>;
-  peakConcurrency: () => number;
-  totalReads: () => number;
+  bulkRequests: () => string[][];
+  perFileReads: () => number;
 } {
-  let inFlight = 0;
-  let peak = 0;
-  let total = 0;
-  const read = async <T>(value: T): Promise<T> => {
-    inFlight += 1;
-    total += 1;
-    peak = Math.max(peak, inFlight);
-    // One macrotask hop per read — stands in for the daemon round-trip, and
-    // gives a serialized implementation no way to look concurrent.
-    await new Promise((r) => setTimeout(r, 1));
-    inFlight -= 1;
+  const requests: string[][] = [];
+  let perFile = 0;
+  const perFileRead = async <T>(value: T): Promise<T> => {
+    perFile += 1;
     return value;
   };
   return {
     graphDb: {
-      getFanInP95: async () => read(2),
-      getFanIn: async (relPath: string) => read(fan.get(relPath)?.fanIn ?? 0),
-      getFanOut: async (relPath: string) => read(fan.get(relPath)?.fanOut ?? 0),
-      getTransitiveImpact: async (relPath: string) => read(fan.get(relPath)?.impact ?? 0),
+      getFanInP95: async () => 2,
+      getFileMetricsBulk: async (relPaths: string[]) => {
+        requests.push([...relPaths]);
+        // One macrotask hop per request — stands in for the daemon round-trip.
+        await new Promise((r) => setTimeout(r, 1));
+        const out = new Map<string, { fanIn: number; fanOut: number; transitiveImpact: number }>();
+        for (const relPath of relPaths) {
+          const f = fan.get(relPath);
+          if (f) out.set(relPath, { fanIn: f.fanIn, fanOut: f.fanOut, transitiveImpact: f.impact });
+        }
+        return out;
+      },
+      getFanIn: async (relPath: string) => perFileRead(fan.get(relPath)?.fanIn ?? 0),
+      getFanOut: async (relPath: string) => perFileRead(fan.get(relPath)?.fanOut ?? 0),
+      getTransitiveImpact: async (relPath: string) => perFileRead(fan.get(relPath)?.impact ?? 0),
       recordRunStats: async () => undefined,
     },
-    peakConcurrency: () => peak,
-    totalReads: () => total,
+    bulkRequests: () => requests,
+    perFileReads: () => perFile,
   };
 }
 
@@ -65,26 +73,32 @@ function makeProvider(graphDb: Record<string, unknown>): CodegraphEnrichmentProv
 }
 
 describe("CodegraphEnrichmentProvider finalize read-back (bd tea-rags-mcp-6aytq)", () => {
-  it("overlaps the per-file graph reads instead of serializing every round-trip", async () => {
-    const paths = Array.from({ length: 24 }, (_, i) => `src/f${i}.ts`);
+  it("reads the whole file set in a constant number of round-trips, not three per file", async () => {
+    const paths = Array.from({ length: 1000 }, (_, i) => `src/f${i}.ts`);
     const fan = new Map(paths.map((p, i) => [p, { fanIn: i, fanOut: i * 2, impact: i * 3 }]));
-    const { graphDb, peakConcurrency } = makeFanGraphDb(fan);
+    const { graphDb, bulkRequests, perFileReads } = makeFanGraphDb(fan);
 
     await makeProvider(graphDb).finalizeSignals("/repo", { paths });
 
-    // Serialized read-back peaks at 1. Anything above proves the overlap.
-    expect(peakConcurrency()).toBeGreaterThan(1);
+    // 1000 files cost a handful of requests, not 3000 — and not one per file
+    // however finely they are batched.
+    expect(bulkRequests().length).toBeLessThanOrEqual(8);
+    // No per-file round-trip survives in the tail.
+    expect(perFileReads()).toBe(0);
+    // Every requested path is covered exactly once across the requests.
+    expect(bulkRequests().flat()).toEqual(paths);
   });
 
-  it("bounds the overlap rather than firing every file's reads at once", async () => {
-    const paths = Array.from({ length: 200 }, (_, i) => `src/f${i}.ts`);
-    const { graphDb, peakConcurrency } = makeFanGraphDb(new Map());
+  it("splits a large path set into bounded batches rather than one unbounded request", async () => {
+    const paths = Array.from({ length: 20_000 }, (_, i) => `src/f${i}.ts`);
+    const { graphDb, bulkRequests } = makeFanGraphDb(new Map());
 
     await makeProvider(graphDb).finalizeSignals("/repo", { paths });
 
-    // 200 files × 3 reads = 600 possible in flight. The bound keeps the daemon
-    // (and the recursive-CTE memory) from being handed the whole repo at once.
-    expect(peakConcurrency()).toBeLessThanOrEqual(64);
+    // Handing 20k paths to the daemon in one frame is both a message-size and a
+    // recursive-CTE memory hazard, so the set is chunked.
+    expect(bulkRequests().length).toBeGreaterThan(1);
+    for (const batch of bulkRequests()) expect(batch.length).toBeLessThanOrEqual(4096);
   });
 
   it("returns the same overlay values, in input path order, regardless of read interleaving", async () => {

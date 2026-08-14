@@ -59,6 +59,7 @@ export type DaemonOp =
   | "listAllSymbols"
   | "listFileContentHashes"
   | "getTransitiveImpact"
+  | "getFileMetricsBulk"
   | "findCycles"
   | "listAdjacency"
   | "getPageRank"
@@ -82,6 +83,7 @@ export interface DaemonRequest {
     | { collection: string; entries: BulkFileUpsertEntry[] } // upsertFilesBulk
     | { collection: string; relPath: RelPath; chunkIds: [string, string][] } // updateSymbolChunkIds
     | { collection: string; relPath: RelPath; maxDepth?: number } // getTransitiveImpact
+    | { collection: string; relPaths: RelPath[]; maxDepth?: number } // getFileMetricsBulk
     | { collection: string; oldVersion: string; newVersion: string } // finalizeReindex
     | { collection: string; symbolId: SymbolId } // getCallers | getCallees | getCalledByCount | getCallSiteCount | getPageRank
     | { collection: string; member: string; limit?: number } // getAmbiguousCallersByMember
