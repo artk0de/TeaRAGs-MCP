@@ -46,6 +46,25 @@
 - **`TSProgramCache` lives on `TSCallResolver`, refreshed by an mtime re-stat
   per `acquire`; `reset()` has NO caller in `src`.** Why: auditing for a
   run-boundary discard finds nothing and invites a spurious `reset()`.
+- **By default it builds ONE whole-project Program, not one per entry file, and
+  that Program answers to NEITHER retention bound.**
+  `CODEGRAPH_TS_PROGRAM_STRATEGY` = `coverage` | `whole` | `auto` (default).
+  `auto` primes from `loadTsConfigFileNames` — the tsconfig's own
+  include/exclude expansion, i.e. the set `tsc` compiles — once the run has
+  touched `CODEGRAPH_TS_PROGRAM_WHOLE_MIN_ENTRIES` distinct files (200) and the
+  root set fits `CODEGRAPH_TS_PROGRAM_WHOLE_ROOT_MAX` (20,000). It is held
+  OUTSIDE `entries`, so `evictOverflow` cannot reach it, and its text is
+  excluded from `retainedSourceTextBytes`. Do NOT "unify" it into the LRU, and
+  do NOT derive the root set by accumulating acquired files. Why: measured on
+  taxdome (bd 6aytq), per-entry cost 86.1 ms/file and RISES with corpus position
+  (14.6 → 71.6 over 2,200-file segments) while the union of those Programs
+  parses 12,798 project files — the run rebuilds the whole project in slices.
+  One Program costs 10.1 s and then serves everything: at shipping defaults the
+  full corpus resolves in 58.8 s, 5.39 ms/file, 16x, with resolution parity
+  (92,253 of 167,182 against 92,269). Putting it in the LRU evicts the one
+  Program every remaining file is about to be served off; a growing root set
+  rebuilds it repeatedly; and without the warm-up gate a three-file incremental
+  reindex pays the 10.1 s build and ~4 GB of heap to resolve three files.
 - **Its shared parse cache holds THREE populations, each with its own rule:**
   project sources capped by `maxParsedFiles`, dependency `.d.ts` capped by
   `maxDependencyFiles`, and the default lib capped by neither. `populationOf`

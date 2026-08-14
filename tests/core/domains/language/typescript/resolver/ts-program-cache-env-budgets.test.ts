@@ -51,6 +51,16 @@ function withEnv<T>(vars: Readonly<Record<string, string>>, fn: () => T): T {
 }
 
 describe("resolveProgramCacheBudgets (bd tea-rags-mcp-6aytq)", () => {
+  it("carries the budgets measured against taxdome's real working set", () => {
+    // Pinned as literals, not as the constants they come from: these three
+    // numbers ARE the finding (12,798 project files parsed, a 2,220-file
+    // dependency surface, 40-70 MB of retained text), and a test written
+    // against the constant would follow any regression silently.
+    expect(TS_PROGRAM_PARSED_FILES_MAX_DEFAULT).toBe(20000);
+    expect(TS_PROGRAM_PARSED_DEPENDENCY_FILES_MAX_DEFAULT).toBe(8000);
+    expect(TS_PROGRAM_RETAINED_TEXT_BYTES_MAX_DEFAULT).toBe(256 * 1024 * 1024);
+  });
+
   it("falls back to the compiled-in defaults when no knob is set", () => {
     expect(resolveProgramCacheBudgets({})).toEqual({
       maxEntries: TS_PROGRAM_CACHE_MAX_DEFAULT,

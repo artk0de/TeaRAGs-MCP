@@ -26,7 +26,23 @@
  * cannot drag the whole graph in" is false, and the cost of a build is set by
  * the entry's reachable closure, not by `maxRootFiles`.
  *
- * **Which is why the cache is keyed by COVERAGE, not by entry file alone.** If
+ * **At real scale the per-entry design loses to building the project once**
+ * (bd tea-rags-mcp-6aytq). Measured over taxdome's 10,912 TypeScript files:
+ * 1,147 builds, 83% of pass-2 wall clock inside `ts.createProgram`, and a rate
+ * that DEGRADES with corpus position (14.6 ms/file over the first 2,200 files,
+ * 71.6 over the last) because each later entry opens a subgraph no retained
+ * Program covers. The union of those Programs parsed 12,798 project files —
+ * the run was constructing the whole project anyway, one expensive slice at a
+ * time. One Program over every file the tsconfig claims costs 10.1 s and then
+ * nothing: 2.64 ms/file over the complete corpus, zero further builds, 467,308
+ * acquires all served off coverage. What is saved is module resolution, which
+ * `ts.createProgram` re-runs in full per call; the checker is under 1%.
+ * {@link TSProgramCacheOptions.strategy} selects between the two, and `auto` —
+ * the default — takes the whole Program whenever the project is small enough to
+ * hold in memory.
+ *
+ * **Which is why the per-entry path is keyed by COVERAGE, not by entry file
+ * alone.** If
  * the Program built for `a.ts` already contains `b.ts`, building a second
  * Program for `b.ts` re-walks the same closure to reach the same types.
  * {@link TSProgramCache.acquire} therefore falls back to
@@ -109,15 +125,78 @@ export const TS_PROGRAM_CACHE_MAX_DEFAULT = 8;
 export const TS_PROGRAM_ROOT_FILES_MAX_DEFAULT = 200;
 /** Max import hops walked outward from the entry file. */
 export const TS_PROGRAM_IMPORT_DEPTH_DEFAULT = 2;
-/** Max PROJECT sources retained in the shared parse cache (the lib is exempt). */
-export const TS_PROGRAM_PARSED_FILES_MAX_DEFAULT = 2000;
-/** Max DEPENDENCY declarations retained in the shared parse cache. */
-export const TS_PROGRAM_PARSED_DEPENDENCY_FILES_MAX_DEFAULT = 2000;
+/**
+ * Max PROJECT sources retained in the shared parse cache (the lib is exempt).
+ *
+ * 20,000 rather than the original 2,000, measured (bd tea-rags-mcp-6aytq): on
+ * taxdome the union of retained Programs parses 12,798 project files, so a
+ * 2,000 cap kept under 16% of the working set and every build re-parsed what
+ * eviction had just dropped. A parse map holding a tenth of what the run
+ * touches is not a smaller cache, it is a thrash generator.
+ */
+export const TS_PROGRAM_PARSED_FILES_MAX_DEFAULT = 20000;
+/**
+ * Max DEPENDENCY declarations retained in the shared parse cache.
+ *
+ * 8,000 rather than the original 2,000: taxdome's reachable `.d.ts` surface
+ * settles at 2,220 files and saturated the old cap around entry file 1,200,
+ * at which point the `ts.createProgram` rate jumped 6x (0.08 → 0.48 builds per
+ * file) and the rolling cost went 24 → 117 ms/file (bd tea-rags-mcp-6aytq).
+ * The new default clears that surface ~3.6x over while staying a bound —
+ * `node_modules` is discovered one import at a time and the population is not
+ * self-limiting (bd tea-rags-mcp-8qf86).
+ */
+export const TS_PROGRAM_PARSED_DEPENDENCY_FILES_MAX_DEFAULT = 8000;
 /**
  * Max non-lib source text (bytes) the retained Programs may pin, union-counted.
  * Default {@link TSProgramCacheOptions.maxRetainedSourceTextBytes} rationale.
+ *
+ * 256 MiB rather than the original 16 MiB: taxdome's whole-project Program
+ * pins 70 MB of non-lib text on its own, and the eight-Program coverage LRU
+ * reached 40-48 MB — so a 16 MiB budget evicted down to the one-Program floor
+ * on every build, discarding Programs the very next file was going to hit.
  */
-export const TS_PROGRAM_RETAINED_TEXT_BYTES_MAX_DEFAULT = 16 * 1024 * 1024;
+export const TS_PROGRAM_RETAINED_TEXT_BYTES_MAX_DEFAULT = 256 * 1024 * 1024;
+/**
+ * How the cache gets its Programs.
+ *
+ * - `coverage` — one `ts.createProgram` per entry file whose closure no
+ *   retained Program already covers. The original behaviour.
+ * - `whole` — ONE Program over every file the project's tsconfig claims,
+ *   built on first use and serving every acquire that lands inside it.
+ * - `auto` — `whole` when the root set fits
+ *   {@link TSProgramCacheOptions.wholeRootFilesMax}, `coverage` otherwise.
+ */
+export type TSProgramStrategy = "coverage" | "whole" | "auto";
+/** Strategy when none is configured. */
+export const TS_PROGRAM_STRATEGY_DEFAULT: TSProgramStrategy = "auto";
+/**
+ * Root files `auto` will build a whole-project Program from before falling
+ * back to per-entry coverage.
+ *
+ * Sized off measured heap, not off taste (bd tea-rags-mcp-6aytq). taxdome's
+ * 12,335-file tsconfig root set produced a Program holding 16,313 files at
+ * 2.4 GB heap after the build and 3.97 GB at the peak of the resolve — about
+ * 0.32 MB of heap per root. 20,000 roots therefore projects to ~6.4 GB, which
+ * is the largest project that still fits a workstation-class worker; past it
+ * the per-entry strategy's bounded working set is the safer trade even though
+ * it is 17x slower per file.
+ */
+export const TS_PROGRAM_WHOLE_ROOT_FILES_MAX_DEFAULT = 20000;
+/**
+ * Distinct entry files `auto` waits for before it builds the whole-project
+ * Program.
+ *
+ * Without a warm-up gate `auto` would pay taxdome's 10.1 s build and ~4 GB of
+ * heap to re-resolve the three files an incremental reindex touched, where the
+ * per-entry path costs about a second and forgets it. The gate is what makes
+ * `auto` read the WORKLOAD rather than only the project: a run that has already
+ * asked about 200 distinct files is a bulk pass, and the warm-up it pays is
+ * measured at 5.7 s of a 58.8 s full-corpus run (66 per-entry builds before the
+ * gate opens) — a rounding error against the 900 s it avoids. An operator who
+ * wants the whole Program from the first acquire sets the gate to 1.
+ */
+export const TS_PROGRAM_WHOLE_MIN_ENTRIES_DEFAULT = 200;
 
 export interface TSProgramCacheOptions {
   /** Absolute project root every `RelPath` is resolved against. */
@@ -189,6 +268,57 @@ export interface TSProgramCacheOptions {
    * shrink what the compiler pulls in.
    */
   maxRetainedSourceTextBytes?: number;
+  /**
+   * How Programs are obtained. Default {@link TS_PROGRAM_STRATEGY_DEFAULT}.
+   *
+   * The per-entry default was never cheap, it was merely bounded: measured over
+   * taxdome's 10,912 TypeScript files (bd tea-rags-mcp-6aytq), 83% of pass-2
+   * wall clock sat inside `ts.createProgram`, and the rate got WORSE with
+   * corpus position — 14.6 ms/file over the first 2,200 files, 71.6 ms/file
+   * over the last, because each later entry opens a subgraph no retained
+   * Program covers and pays a fresh ~320 ms build for it. The union of those
+   * Programs parsed 12,798 project files: the run was piecewise-constructing
+   * the whole project anyway, one expensive slice at a time.
+   *
+   * Building it in ONE piece costs 10.1 s and then nothing — 2.64 ms/file over
+   * the complete corpus, 0 further builds, 467,308 acquires all served off
+   * coverage, against a 452-900 s projection for the per-entry strategy. The
+   * saving is module resolution, not type checking: the compiler re-runs its
+   * full path canonicalization and `node_modules` probe walk per
+   * `createProgram`, and one Program runs it once per module.
+   */
+  strategy?: TSProgramStrategy;
+  /**
+   * Root-file ceiling for the `auto` strategy's whole-Program choice. Default
+   * {@link TS_PROGRAM_WHOLE_ROOT_FILES_MAX_DEFAULT}. Ignored by an explicit
+   * `whole`, which is an operator stating the trade deliberately.
+   */
+  wholeRootFilesMax?: number;
+  /**
+   * Distinct entry files `auto` waits for before building the whole-project
+   * Program. Default {@link TS_PROGRAM_WHOLE_MIN_ENTRIES_DEFAULT}; ignored by
+   * an explicit `whole`, which primes on the first acquire.
+   */
+  wholeMinEntries?: number;
+  /**
+   * Absolute names of every file the project claims — the root set a
+   * whole-project Program is built from. Called at most ONCE, lazily, and only
+   * when a whole build is actually going to happen.
+   *
+   * Injected rather than discovered here, and the production supplier is
+   * `loadTsConfigFileNames` (see `TSCallResolver`): the tsconfig's own
+   * `include`/`exclude` expansion is the most faithful answer available to
+   * "which files are this project", because it is literally the set `tsc`
+   * compiles. Deliberately NOT a second filesystem walk, and deliberately not
+   * accumulated from the files acquired so far — a root set that grows as the
+   * run proceeds would rebuild the Program repeatedly, which is the cost this
+   * strategy exists to remove.
+   *
+   * Defaults to an empty set, which reads as "this project has no whole-project
+   * root set" and keeps the cache on `coverage` however the strategy is
+   * configured.
+   */
+  projectRoots?: () => readonly string[];
 }
 
 /**
@@ -288,6 +418,36 @@ export class TSProgramCache {
   private readonly maxParsedFiles: number;
   private readonly maxDependencyFiles: number;
   private readonly maxRetainedSourceTextBytes: number;
+  private readonly strategy: TSProgramStrategy;
+  private readonly wholeRootFilesMax: number;
+  private readonly wholeMinEntries: number;
+  private readonly projectRoots: () => readonly string[];
+  /**
+   * Distinct entries acquired so far, until `auto` has made its decision —
+   * then dropped, because nothing reads it afterwards and it would otherwise
+   * retain a string per file of the corpus for the life of the resolver.
+   */
+  private entriesSeen: Set<RelPath> | null = new Set();
+  /**
+   * The whole-project Program, once built — held OUTSIDE {@link entries} on
+   * purpose.
+   *
+   * It answers to neither retention bound. The count LRU would rotate it out
+   * after `maxEntries` per-entry misses, and the byte budget would evict it
+   * first (it is the largest thing the cache holds, and the least recently
+   * INSERTED), which in both cases discards the one Program every remaining
+   * file of the run is about to be served off. That is the same reasoning
+   * {@link evictOverflow} already applies to the newest build, one level up:
+   * a cache policy must not evict the thing that makes the next thousand
+   * lookups free.
+   */
+  private wholeEntry: CacheEntry | null = null;
+  /**
+   * Has the whole-project build been decided? Set before the attempt, not
+   * after, so a strategy that declines — or a build that fails — costs one
+   * decision for the run rather than one per acquire.
+   */
+  private wholeAttempted = false;
   private readonly compilerOptions: ts.CompilerOptions;
   /** Parsed-SourceFile cache shared by every Program this instance builds. */
   private readonly sourceFiles = new Map<string, ts.SourceFile | undefined>();
@@ -407,6 +567,10 @@ export class TSProgramCache {
     this.maxParsedFiles = options.maxParsedFiles ?? TS_PROGRAM_PARSED_FILES_MAX_DEFAULT;
     this.maxDependencyFiles = options.maxDependencyFiles ?? TS_PROGRAM_PARSED_DEPENDENCY_FILES_MAX_DEFAULT;
     this.maxRetainedSourceTextBytes = options.maxRetainedSourceTextBytes ?? TS_PROGRAM_RETAINED_TEXT_BYTES_MAX_DEFAULT;
+    this.strategy = options.strategy ?? TS_PROGRAM_STRATEGY_DEFAULT;
+    this.wholeRootFilesMax = options.wholeRootFilesMax ?? TS_PROGRAM_WHOLE_ROOT_FILES_MAX_DEFAULT;
+    this.wholeMinEntries = options.wholeMinEntries ?? TS_PROGRAM_WHOLE_MIN_ENTRIES_DEFAULT;
+    this.projectRoots = options.projectRoots ?? ((): readonly string[] => []);
     this.compilerOptions = buildCompilerOptions(this.repoRoot, this.tsOptions);
     this.inRootPrefix = `${sep === "/" ? this.repoRoot : this.repoRoot.split(sep).join("/")}/`;
     this.host = this.buildHost();
@@ -417,9 +581,22 @@ export class TSProgramCache {
     this.defaultLibCompilerDir = this.toCompilerPath(this.defaultLibDir);
   }
 
-  /** Programs currently retained. */
+  /**
+   * Programs currently retained — the per-entry LRU plus the whole-project
+   * Program when one has been built. Both are things `acquire` can be served
+   * off, which is what this count is read for.
+   */
   get size(): number {
-    return this.entries.size;
+    return this.entries.size + (this.wholeEntry === null ? 0 : 1);
+  }
+
+  /**
+   * Non-lib files the whole-project Program holds, or `0` when the cache is on
+   * the per-entry strategy. The observable that says which strategy a run
+   * actually took.
+   */
+  get wholeProgramFileCount(): number {
+    return this.wholeEntry?.coveredTextBytes.size ?? 0;
   }
 
   /**
@@ -453,6 +630,13 @@ export class TSProgramCache {
    * weight says so. Recomputed on demand rather than maintained — it is read
    * once per build and per budget-eviction round, against at most `maxEntries`
    * maps, which is noise next to the `ts.createProgram` it follows.
+   *
+   * The whole-project Program is NOT counted, because it is not evictable: this
+   * number exists to drive {@link evictOverflow}, and including a weight no
+   * eviction can free would simply empty the LRU on every build (taxdome's
+   * whole Program pins 70 MB on its own). It is the same exemption the newest
+   * build already has, made permanent for the one Program the strategy is
+   * built around.
    */
   get retainedSourceTextBytes(): number {
     const counted = new Set<string>();
@@ -495,6 +679,11 @@ export class TSProgramCache {
     }
     if (cached) this.invalidate(relPath);
 
+    // Runs before the coverage lookup rather than as a miss handler: the whole
+    // Program exists to make that lookup hit, so priming it after a miss would
+    // build it for a file that then paid a per-entry build anyway.
+    this.ensureWholeProgram(relPath);
+
     const covering = this.findCovering(this.toCompilerPath(absolute), absolute, mtimeMs);
     if (covering) return covering;
 
@@ -526,25 +715,92 @@ export class TSProgramCache {
    * entry mtime check above.
    */
   private findCovering(compilerPath: string, entryAbsolute: string, mtimeMs: number): TSProgramHandle | null {
+    // The whole-project Program first: when one exists it covers essentially
+    // every acquire, so asking it first turns the common case into one map
+    // lookup instead of a walk over the per-entry LRU that will miss.
+    if (this.wholeEntry !== null) {
+      const served = this.serveFrom(this.wholeEntry, compilerPath, entryAbsolute, mtimeMs);
+      if (served) return served;
+    }
     for (const [key, entry] of this.entries) {
-      if (!entry.coveredTextBytes.has(compilerPath) || entry.builtAtMs < mtimeMs) continue;
-      const existing = entry.derived.get(compilerPath);
-      if (existing) return this.touch(key, entry, existing);
-      // Looked up by the NATIVE path: `getSourceFile` normalizes its argument,
-      // and passing what the caller already computed keeps the two forms from
-      // having to agree anywhere but in the membership test above.
-      const sourceFile = entry.handle.program.getSourceFile(entryAbsolute);
-      if (!sourceFile) continue;
-      const handle: TSProgramHandle = {
-        program: entry.handle.program,
-        checker: entry.handle.checker,
-        sourceFile,
-        rootFiles: entry.handle.rootFiles,
-      };
-      entry.derived.set(compilerPath, handle);
-      return this.touch(key, entry, handle);
+      const served = this.serveFrom(entry, compilerPath, entryAbsolute, mtimeMs);
+      if (served) return this.touch(key, entry, served);
     }
     return null;
+  }
+
+  /**
+   * `entry` as a handle pointing at `entryAbsolute`, or `null` when it does not
+   * hold a usable copy of that file.
+   *
+   * Shared by the per-entry LRU and the whole-project Program because the three
+   * conditions are identical for both: membership in `coveredTextBytes`, a
+   * `builtAtMs` no older than the file, and an actual `SourceFile` in the
+   * Program. Only the LRU bookkeeping differs, and that stays with the caller.
+   */
+  private serveFrom(
+    entry: CacheEntry,
+    compilerPath: string,
+    entryAbsolute: string,
+    mtimeMs: number,
+  ): TSProgramHandle | null {
+    if (!entry.coveredTextBytes.has(compilerPath) || entry.builtAtMs < mtimeMs) return null;
+    const existing = entry.derived.get(compilerPath);
+    if (existing) return existing;
+    // Looked up by the NATIVE path: `getSourceFile` normalizes its argument,
+    // and passing what the caller already computed keeps the two forms from
+    // having to agree anywhere but in the membership test above.
+    const sourceFile = entry.handle.program.getSourceFile(entryAbsolute);
+    if (!sourceFile) return null;
+    const handle: TSProgramHandle = {
+      program: entry.handle.program,
+      checker: entry.handle.checker,
+      sourceFile,
+      rootFiles: entry.handle.rootFiles,
+    };
+    entry.derived.set(compilerPath, handle);
+    return handle;
+  }
+
+  /**
+   * Build the whole-project Program, once, if the configured strategy and the
+   * project's size both call for it.
+   *
+   * Every terminal exit sets {@link wholeAttempted} first, so a declined
+   * strategy, an empty root set and a failed build all cost one decision per
+   * run rather than one per acquire — and a failure degrades to the per-entry
+   * path rather than retrying a build that just threw, matching {@link build}'s
+   * null contract. The warm-up gate is the one NON-terminal exit: it is waiting
+   * for evidence, not deciding.
+   */
+  private ensureWholeProgram(relPath: RelPath): void {
+    if (this.wholeAttempted || this.strategy === "coverage") return;
+    if (this.strategy === "auto" && !this.warmedUp(relPath)) return;
+    this.wholeAttempted = true;
+    this.entriesSeen = null;
+
+    const roots = this.projectRoots();
+    if (roots.length === 0) return;
+    // `auto` is the size-aware choice; an explicit `whole` is an operator who
+    // has already made it, and is not second-guessed.
+    if (this.strategy === "auto" && roots.length > this.wholeRootFilesMax) return;
+
+    this.wholeEntry = this.buildFrom(roots, roots[0]);
+  }
+
+  /**
+   * Has this run asked about enough distinct files to look like a bulk pass?
+   *
+   * The count is the workload signal {@link TS_PROGRAM_WHOLE_MIN_ENTRIES_DEFAULT}
+   * describes: an incremental reindex re-resolves a handful of files and must
+   * not pay a whole-project build for them, while a full pass crosses the gate
+   * within its first few seconds.
+   */
+  private warmedUp(relPath: RelPath): boolean {
+    const seen = this.entriesSeen;
+    if (seen === null) return true;
+    seen.add(relPath);
+    return seen.size >= this.wholeMinEntries;
   }
 
   /** An absolute path in the forward-slash form `ts` reports file names in. */
@@ -568,6 +824,12 @@ export class TSProgramCache {
   /** Drop every retained Program — the run-boundary reset. */
   reset(): void {
     this.entries.clear();
+    // Including the whole-project one, and the decision that produced it: a
+    // reset means the tree may have moved underneath the run, and the root set
+    // is as re-derivable as the parses are.
+    this.wholeEntry = null;
+    this.wholeAttempted = false;
+    this.entriesSeen = new Set();
     this.sourceFiles.clear();
     this.parsedAtMs.clear();
     this.parsedProjectSources.clear();
@@ -701,7 +963,10 @@ export class TSProgramCache {
    * {@link findCovering} applies to whole Programs, applied per file.
    */
   private pinnedParseOf(fileName: string): ts.SourceFile | undefined {
-    for (const entry of this.entries.values()) {
+    // The whole-project Program pins by far the largest population, so it is
+    // the likeliest holder of any parse the shared map has evicted.
+    const candidates = this.wholeEntry === null ? this.entries.values() : [this.wholeEntry, ...this.entries.values()];
+    for (const entry of candidates) {
       const pinned = entry.handle.program.getSourceFile(fileName);
       if (!pinned) continue;
       const mtimeMs = entryMtime(fileName);
@@ -864,7 +1129,20 @@ export class TSProgramCache {
    * crashing whichever worker thread is running the resolve.
    */
   private build(entryAbsolute: string): CacheEntry | null {
-    const rootFiles = this.collectClosure(entryAbsolute);
+    return this.buildFrom(this.collectClosure(entryAbsolute), entryAbsolute);
+  }
+
+  /**
+   * One `ts.createProgram` over `rootFiles`, packaged as the cache entry that
+   * retains it and pointed at `entryAbsolute`.
+   *
+   * Shared by the per-entry path — where `rootFiles` is one entry's bounded
+   * import closure — and the whole-project one, where it is every file the
+   * project claims. Nothing below distinguishes the two: the coverage set is
+   * read back off the finished Program either way, precisely because the roots
+   * never predict what the compiler pulls in.
+   */
+  private buildFrom(rootFiles: readonly string[], entryAbsolute: string): CacheEntry | null {
     let program: ts.Program;
     try {
       program = ts.createProgram({ rootNames: [...rootFiles], options: this.compilerOptions, host: this.host });

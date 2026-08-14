@@ -97,6 +97,7 @@ import {
   TSTypeCheckerUnionReceiverDispatchResolver,
   type ResolverConfig,
 } from "./strategies/index.js";
+import { loadTsConfigFileNames } from "./ts-config-loader.js";
 import { targetsExternalImport } from "./ts-external-call.js";
 import {
   createProjectFileProbe,
@@ -109,8 +110,12 @@ import {
   TS_PROGRAM_PARSED_DEPENDENCY_FILES_MAX_DEFAULT,
   TS_PROGRAM_PARSED_FILES_MAX_DEFAULT,
   TS_PROGRAM_RETAINED_TEXT_BYTES_MAX_DEFAULT,
+  TS_PROGRAM_STRATEGY_DEFAULT,
+  TS_PROGRAM_WHOLE_MIN_ENTRIES_DEFAULT,
+  TS_PROGRAM_WHOLE_ROOT_FILES_MAX_DEFAULT,
   TSProgramCache,
   type TSProgramCacheOptions,
+  type TSProgramStrategy,
 } from "./ts-program-cache.js";
 
 /** Parse `CODEGRAPH_TS_CONE_MAX`; fall back to the TS default on absent/invalid. */
@@ -137,15 +142,15 @@ function resolvePositiveBudget(raw: string | undefined, fallback: number): numbe
  * The four {@link TSProgramCache} budgets an operator may raise from the
  * environment, resolved against their compiled-in defaults.
  *
- * The defaults are sized for the enrichment worker's 2 GiB heap on an ordinary
- * repository, and on a large one they bind hard: measured on taxdome (10,912 TS
- * files, bd tea-rags-mcp-6aytq), `parsedDependencyFileCount` saturates the
- * 2000-file cap around file 1,200 and the `ts.createProgram` rate immediately
- * jumps 6x — from 0.08 to 0.48 builds per file — because every later build
- * re-parses the `.d.ts` surface eviction just dropped. Raising the budgets
- * trades heap for that re-parse, and the trade is corpus-specific: only an
- * operator who knows both the repository and the worker's heap can pick it,
- * which is why these are environment knobs and not new defaults.
+ * The original defaults were sized for the enrichment worker's 2 GiB heap on an
+ * ordinary repository, and on a large one they bound hard: measured on taxdome
+ * (10,912 TS files, bd tea-rags-mcp-6aytq), `parsedDependencyFileCount`
+ * saturated the old 2000-file cap around file 1,200 and the `ts.createProgram`
+ * rate immediately jumped 6x — from 0.08 to 0.48 builds per file — because
+ * every later build re-parsed the `.d.ts` surface eviction had just dropped.
+ * That measurement moved the DEFAULTS (see the constants); these knobs remain
+ * for the operator who has to go the other way — a memory-constrained host that
+ * would rather pay the re-parse than the heap.
  *
  * - `CODEGRAPH_TS_PROGRAM_CACHE_MAX` → retained Programs
  * - `CODEGRAPH_TS_PROGRAM_PARSED_FILES_MAX` → parsed project sources
@@ -172,6 +177,39 @@ export function resolveProgramCacheBudgets(
         env.CODEGRAPH_TS_PROGRAM_RETAINED_TEXT_MB,
         TS_PROGRAM_RETAINED_TEXT_BYTES_MAX_DEFAULT / BYTES_PER_MB,
       ) * BYTES_PER_MB,
+  };
+}
+
+/** The three values `CODEGRAPH_TS_PROGRAM_STRATEGY` accepts. */
+const TS_PROGRAM_STRATEGIES: readonly TSProgramStrategy[] = ["coverage", "whole", "auto"];
+
+/**
+ * How the {@link TSProgramCache} should obtain its Programs, and the project
+ * size past which `auto` declines the whole-project one.
+ *
+ * `CODEGRAPH_TS_PROGRAM_STRATEGY` → `coverage` | `whole` | `auto` (default),
+ * `CODEGRAPH_TS_PROGRAM_WHOLE_ROOT_MAX` → the `auto` root-count ceiling,
+ * `CODEGRAPH_TS_PROGRAM_WHOLE_MIN_ENTRIES` → the `auto` warm-up gate.
+ *
+ * An unrecognized strategy falls back to the default rather than failing the
+ * run: this is a performance selector, and a typo in it must not cost an index.
+ * Both numbers follow the same positive-integer rule as the budgets above.
+ */
+export function resolveProgramCacheStrategy(
+  env: NodeJS.ProcessEnv,
+): Required<Pick<TSProgramCacheOptions, "strategy" | "wholeRootFilesMax" | "wholeMinEntries">> {
+  const raw = env.CODEGRAPH_TS_PROGRAM_STRATEGY;
+  const strategy = TS_PROGRAM_STRATEGIES.find((candidate) => candidate === raw) ?? TS_PROGRAM_STRATEGY_DEFAULT;
+  return {
+    strategy,
+    wholeRootFilesMax: resolvePositiveBudget(
+      env.CODEGRAPH_TS_PROGRAM_WHOLE_ROOT_MAX,
+      TS_PROGRAM_WHOLE_ROOT_FILES_MAX_DEFAULT,
+    ),
+    wholeMinEntries: resolvePositiveBudget(
+      env.CODEGRAPH_TS_PROGRAM_WHOLE_MIN_ENTRIES,
+      TS_PROGRAM_WHOLE_MIN_ENTRIES_DEFAULT,
+    ),
   };
 }
 
@@ -241,7 +279,13 @@ export class TSCallResolver implements CallResolver {
           repoRoot,
           tsOptions,
           fileExists: this.fileExists,
+          // The tsconfig's own include/exclude expansion — the set `tsc`
+          // compiles — is the root list a whole-project Program is built from.
+          // A thunk, because the walk costs ~750 ms on a large repo and must
+          // not run for a resolver that never reaches the whole strategy.
+          projectRoots: () => loadTsConfigFileNames(repoRoot),
           ...resolveProgramCacheBudgets(process.env),
+          ...resolveProgramCacheStrategy(process.env),
         })
       : null;
     this.unionReceiver = this.programCache

@@ -31,6 +31,10 @@
  * pure waste. The one diagnostic that suppression provokes (TS18003, "no inputs
  * were found") is expected and filtered; anything else is reported.
  *
+ * The caller that DOES want the file list — the whole-project Program strategy
+ * — asks for it explicitly through {@link loadTsConfigFileNames}, which runs
+ * the same parse with `ts.sys` doing the reading.
+ *
  * ## The `baseUrl` contract: repo-relative, never absolute, never empty
  *
  * Both consumers want a repo-relative value — `mapImportToFile` does
@@ -107,6 +111,37 @@ function toRepoRelativeBaseUrl(repoRoot: string, absoluteBase: string): string {
   const rel = relative(repoRoot, absoluteBase);
   if (rel.length === 0 || rel.startsWith("..") || isAbsolute(rel)) return ".";
   return sep === "/" ? rel : rel.split(sep).join("/");
+}
+
+/**
+ * Every source file the project's `tsconfig.json` claims, absolute — the root
+ * set `tsc` itself would compile, and the one a whole-project
+ * `ts.createProgram` is built from (bd tea-rags-mcp-6aytq).
+ *
+ * This is {@link loadTsConfig}'s glob suppression turned back on, deliberately
+ * as a SEPARATE entry point rather than as a field on the shared result. The
+ * two callers want opposite things: the resolver's path mapping needs two
+ * option fields on every construction and must not pay a directory walk for
+ * them, while the whole-project strategy needs the file list once and only when
+ * it is actually going to build. Measured on taxdome: 12,335 files, 744 ms of
+ * expansion — cheap once, indefensible per resolver.
+ *
+ * `include`/`exclude` are honoured because `ts.sys` is doing the reading, so
+ * the set matches the project's own compilation exactly: generated directories
+ * the config excludes stay out, and `node_modules` never enters (TypeScript's
+ * default exclude). Empty on a project with no `tsconfig.json`, which is the
+ * signal the caller reads as "no whole-project root set exists".
+ */
+export function loadTsConfigFileNames(repoRoot: string): readonly string[] {
+  const configPath = join(repoRoot, "tsconfig.json");
+  if (!existsSync(configPath)) return [];
+
+  const read = ts.readConfigFile(configPath, readFileOrUndefined);
+  if (read.error !== undefined || read.config === undefined) return [];
+
+  // `ts.sys` rather than GLOB_FREE_PARSE_HOST: the file list IS the point here.
+  const parsed = ts.parseJsonConfigFileContent(read.config, ts.sys, repoRoot, undefined, configPath);
+  return parsed.fileNames;
 }
 
 export function loadTsConfig(repoRoot: string): TsCompilerOptions {
