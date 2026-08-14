@@ -21,7 +21,7 @@ const SCHEMA_METADATA_ID = "__schema_metadata__";
 /**
  * Qdrant payload field-schema type accepted by `createPayloadIndex`.
  */
-type IndexSchema = "keyword" | "integer" | "float" | "bool";
+type IndexSchema = "keyword" | "integer" | "float" | "bool" | "datetime";
 
 /**
  * Codegraph filterable payload paths that need a Qdrant field index so the
@@ -54,6 +54,50 @@ const CODEGRAPH_FILTER_INDEXES: readonly { readonly path: string; readonly schem
   { path: "codegraph.symbols.chunk.fanIn", schema: "integer" },
   { path: "codegraph.symbols.chunk.fanOut", schema: "integer" },
   { path: "codegraph.symbols.chunk.pageRank", schema: "float" },
+];
+
+/**
+ * Payload paths the ENRICHMENT RUN filters on to do its own bookkeeping — not
+ * a query-time surface, which is why they are easy to miss.
+ *
+ * Two filters, both built per provider key and level:
+ *
+ *  - `EnrichmentRecovery#buildUnenrichedFilter` — `is_empty(<p>.<lvl>.enrichedAt)
+ *    AND is_empty(<p>.<lvl>.skippedAs)`, the two terminal states of the settle
+ *    decision, plus the `_type` exclusions. Runs twice per provider per run
+ *    (once per level) behind the terminal markers.
+ *  - `EnrichmentCoordinator#scrollStoredChunks` — the recompute's chunk-set
+ *    read, sharing the same `_type` exclusions.
+ *
+ * Qdrant evaluates an UNINDEXED condition by fetching the payload of every
+ * candidate point, so an unindexed field here does not fail — it silently turns
+ * each of those filters into a full scan. Measured on taxdome (116,013 points,
+ * green, idle) before/after creating these:
+ *
+ *  - recompute scroll, 39,202 TS chunks over 197 pages: 6,324 ms → 716 ms
+ *    (all of it the two `_type` conditions)
+ *  - `codegraph.symbols` file-level unenriched scan: 3,274 ms → 6 ms
+ *  - `codegraph.symbols` chunk-level unenriched scan: 3,450 ms → 3 ms
+ *  - `git` file-level unenriched scan: 2,403 ms → 5 ms
+ *
+ * Mirrored here rather than derived, for the same reason as
+ * {@link CODEGRAPH_FILTER_INDEXES}: the adapter layer cannot import the
+ * enrichment domain. `schema-v14-enrichment-scan-indexes` applies the identical
+ * list to collections that already exist;
+ * `tests/…/schema-v14-enrichment-scan-indexes.test.ts` pins the list against
+ * the filter the domain actually builds, so a new provider key or level cannot
+ * drift away unnoticed.
+ */
+export const ENRICHMENT_SCAN_INDEXES: readonly { readonly path: string; readonly schema: IndexSchema }[] = [
+  { path: "_type", schema: "keyword" },
+  { path: "git.file.enrichedAt", schema: "datetime" },
+  { path: "git.file.skippedAs", schema: "keyword" },
+  { path: "git.chunk.enrichedAt", schema: "datetime" },
+  { path: "git.chunk.skippedAs", schema: "keyword" },
+  { path: "codegraph.symbols.file.enrichedAt", schema: "datetime" },
+  { path: "codegraph.symbols.file.skippedAs", schema: "keyword" },
+  { path: "codegraph.symbols.chunk.enrichedAt", schema: "datetime" },
+  { path: "codegraph.symbols.chunk.skippedAs", schema: "keyword" },
 ];
 
 /**
@@ -145,6 +189,17 @@ export class SchemaManager {
     // (minFanIn/isHub/...) match at query time. The nested paths mirror the
     // keys emitted by codegraphFilters — see CODEGRAPH_FILTER_INDEXES.
     for (const { path, schema } of CODEGRAPH_FILTER_INDEXES) {
+      await this.qdrant.createPayloadIndex(collectionName, path, schema);
+      indexes.push(path);
+    }
+
+    // Create indexes the enrichment run's own scans filter on. A new collection
+    // is stamped at the LATEST schema version below, so schema-v12/v14 are
+    // filtered out as already-applied and never run against it — without this
+    // loop a force-rebuilt collection carries none of them for its whole life.
+    // That is what happened to taxdome's `_v13`: schemaVersion 13, zero
+    // enrichedAt indexes, every unenriched scan a full payload scan.
+    for (const { path, schema } of ENRICHMENT_SCAN_INDEXES) {
       await this.qdrant.createPayloadIndex(collectionName, path, schema);
       indexes.push(path);
     }

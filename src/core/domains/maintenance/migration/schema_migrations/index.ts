@@ -8,3 +8,4 @@ export { SchemaV10PurgeMarkdownChunks } from "./schema-v10-purge-markdown-chunks
 export { SchemaV11RenameParentSymbolId } from "./schema-v11-rename-parent-symbol-id.js";
 export { SchemaV12EnrichmentPayloadIndexes } from "./schema-v12-enrichment-payload-indexes.js";
 export { SchemaV13RenameOwnershipPayload } from "./schema-v13-rename-ownership-payload.js";
+export { SchemaV14EnrichmentScanIndexes } from "./schema-v14-enrichment-scan-indexes.js";
