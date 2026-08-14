@@ -64,6 +64,13 @@ interface HarnessConfig {
   readonly name: string;
   readonly stackSizeMb: number;
   readonly maxOldGenerationSizeMb: number;
+  /**
+   * How pass 2 gets its Programs. `coverage` is production's per-entry build
+   * with `findCovering` reuse; `whole` primes ONE `ts.createProgram` over every
+   * discovered project file before the loop starts and expects every later
+   * acquire to be served off it — see the worker's `primeWholeProgram`.
+   */
+  readonly strategy: "coverage" | "whole";
 }
 
 const CONFIGS: Readonly<Record<string, HarnessConfig>> = {
@@ -71,13 +78,47 @@ const CONFIGS: Readonly<Record<string, HarnessConfig>> = {
     name: "A-production-mirror",
     stackSizeMb: PRODUCTION_STACK_SIZE_MB,
     maxOldGenerationSizeMb: PRODUCTION_HEAP_LIMIT_MB,
+    strategy: "coverage",
   },
-  B: { name: "B-heap-uncapped", stackSizeMb: PRODUCTION_STACK_SIZE_MB, maxOldGenerationSizeMb: UNCAPPED_HEAP_LIMIT_MB },
+  B: {
+    name: "B-heap-uncapped",
+    stackSizeMb: PRODUCTION_STACK_SIZE_MB,
+    maxOldGenerationSizeMb: UNCAPPED_HEAP_LIMIT_MB,
+    strategy: "coverage",
+  },
+  W: {
+    name: "W-whole-program",
+    stackSizeMb: PRODUCTION_STACK_SIZE_MB,
+    maxOldGenerationSizeMb: UNCAPPED_HEAP_LIMIT_MB,
+    strategy: "whole",
+  },
 };
 
 function readFlag(argv: readonly string[], flag: string): string | null {
   const index = argv.indexOf(flag);
   return index >= 0 ? (argv[index + 1] ?? null) : null;
+}
+
+/**
+ * Every `--env KEY=VALUE`, applied to this process before the worker spawns —
+ * `new Worker` copies `process.env` at spawn, so a knob set here is a knob the
+ * measured code reads.
+ *
+ * A flag rather than a shell prefix so the run RECORDS its own configuration:
+ * the budgets are the independent variable of this experiment, and a number
+ * whose knob settings live only in somebody's shell history cannot be compared
+ * against the next run's.
+ */
+function readEnvOverrides(argv: readonly string[]): Record<string, string> {
+  const overrides: Record<string, string> = {};
+  for (let index = 0; index < argv.length; index++) {
+    if (argv[index] !== "--env") continue;
+    const pair = argv[index + 1] ?? "";
+    const split = pair.indexOf("=");
+    if (split <= 0) continue;
+    overrides[pair.slice(0, split)] = pair.slice(split + 1);
+  }
+  return overrides;
 }
 
 const argv = process.argv.slice(2);
@@ -93,6 +134,8 @@ const limit = limitRaw === null ? 0 : Number.parseInt(limitRaw, 10);
 const deadlineRaw = readFlag(argv, "--deadline-ms");
 const deadlineMs = deadlineRaw === null ? DEFAULT_DEADLINE_MS : Number.parseInt(deadlineRaw, 10);
 const outDir = readFlag(argv, "--out") ?? DEFAULT_OUT_DIR;
+const envOverrides = readEnvOverrides(argv);
+for (const [key, value] of Object.entries(envOverrides)) process.env[key] = value;
 
 /**
  * The plain-JS bootstrap, not the `.ts` worker — see its docblock: a worker
@@ -104,21 +147,25 @@ process.stdout.write(
   `${JSON.stringify({
     harness: "ts-live-resolve",
     config: config.name,
+    strategy: config.strategy,
     resourceLimits: { stackSizeMb: config.stackSizeMb, maxOldGenerationSizeMb: config.maxOldGenerationSizeMb },
     limit: limit > 0 ? limit : "all",
     deadlineMs,
     outDir,
+    env: envOverrides,
   })}\n`,
 );
 
 const worker = new Worker(workerPath, {
   workerData: {
     configName: config.name,
+    strategy: config.strategy,
     limit,
     deadlineMs,
     outDir,
     heapLimitMb: config.maxOldGenerationSizeMb,
     stackSizeMb: config.stackSizeMb,
+    envOverrides,
   },
   resourceLimits: {
     stackSizeMb: config.stackSizeMb,

@@ -46,14 +46,15 @@
  * work, so a slow result here is a lower bound on the resolver's own cost.
  */
 
-import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { Session } from "node:inspector/promises";
 import { homedir } from "node:os";
-import { extname, join, relative } from "node:path";
+import { extname, join, posix, relative, resolve as resolvePath } from "node:path";
 import { performance } from "node:perf_hooks";
 import { workerData } from "node:worker_threads";
 
 import ignore, { type Ignore } from "ignore";
+import ts from "typescript";
 
 import type { FileExtraction } from "../../src/core/contracts/types/codegraph.js";
 import { BUILTIN_IGNORE_PATTERNS } from "../../src/core/domains/ingest/pipeline/ignore-defaults.js";
@@ -68,11 +69,14 @@ import { buildSymbolDefs, extractFile } from "../ts-codegraph-typechecker-oracle
 
 interface WorkerInput {
   readonly configName: string;
+  readonly strategy: "coverage" | "whole";
   readonly limit: number;
   readonly deadlineMs: number;
   readonly outDir: string;
   readonly heapLimitMb: number;
   readonly stackSizeMb: number;
+  /** Budget knobs the harness set before spawning, recorded with the result. */
+  readonly envOverrides: Readonly<Record<string, string>>;
 }
 
 const input = workerData as WorkerInput;
@@ -217,12 +221,103 @@ function instrumentCache(cache: TSProgramCache, counters: CacheCounters): void {
   };
 }
 
+interface WholeProgramPriming {
+  rootNames: number;
+  buildMs: number;
+  programFiles: number;
+  coveredFiles: number;
+  coveredTextMb: number;
+  parsedProjectFileCount: number;
+  parsedDependencyFileCount: number;
+  heapUsedMb: number;
+  rssMb: number;
+}
+
+/**
+ * Config W's whole-project seam: ONE `ts.createProgram` over every discovered
+ * project file, inserted into the cache as the entry `findCovering` serves
+ * every later `acquire` off.
+ *
+ * The insertion is what keeps the MEASURED path production-real. Handing the
+ * resolver a Program directly would bypass `acquire`, so the ms/file it reports
+ * would omit the coverage lookup, the mtime re-stat and the handle derivation
+ * that production pays per call site — the very costs left once the builds are
+ * gone. Building it off the cache's OWN `compilerOptions` + `CompilerHost`
+ * (rather than a fresh pair) matters for the same reason: the host carries the
+ * shared parse map and the three memoized probes, so what is measured after
+ * priming is the cache as it would behave, not a lookalike.
+ *
+ * The entry is written the way {@link TSProgramCache.build} writes one, field
+ * for field, because `findCovering` reads all of them: `coveredTextBytes` is
+ * the membership test, `builtAtMs` the staleness guard, `derived` the per-file
+ * handle memo.
+ */
+function primeWholeProgram(cache: TSProgramCache, rootAbsolutes: readonly string[]): WholeProgramPriming | null {
+  const internals = cache as unknown as {
+    compilerOptions: ts.CompilerOptions;
+    host: ts.CompilerHost;
+    entries: Map<string, unknown>;
+    defaultLibCompilerDir: string;
+    toCompilerPath: (absolutePath: string) => string;
+  };
+
+  const started = performance.now();
+  const program = ts.createProgram({
+    rootNames: [...rootAbsolutes],
+    options: internals.compilerOptions,
+    host: internals.host,
+  });
+  const checker = program.getTypeChecker();
+  const buildMs = performance.now() - started;
+  const builtAtMs = Date.now();
+
+  const entryAbsolute = rootAbsolutes[0];
+  const sourceFile = entryAbsolute === undefined ? undefined : program.getSourceFile(entryAbsolute);
+  if (entryAbsolute === undefined || sourceFile === undefined) return null;
+
+  const coveredTextBytes = new Map<string, number>();
+  let coveredTextTotal = 0;
+  for (const file of program.getSourceFiles()) {
+    if (posix.dirname(file.fileName) === internals.defaultLibCompilerDir) continue;
+    coveredTextBytes.set(file.fileName, file.text.length);
+    coveredTextTotal += file.text.length;
+  }
+
+  internals.entries.set(relative(cache.repoRoot, entryAbsolute).split("\\").join("/"), {
+    handle: { program, checker, sourceFile, rootFiles: [...rootAbsolutes] },
+    entryMtimeMs: statSync(entryAbsolute).mtimeMs,
+    builtAtMs,
+    coveredTextBytes,
+    derived: new Map(),
+  });
+
+  const memory = process.memoryUsage();
+  return {
+    rootNames: rootAbsolutes.length,
+    buildMs: Math.round(buildMs),
+    programFiles: program.getSourceFiles().length,
+    coveredFiles: coveredTextBytes.size,
+    coveredTextMb: +(coveredTextTotal / 1024 / 1024).toFixed(1),
+    parsedProjectFileCount: cache.parsedProjectFileCount,
+    parsedDependencyFileCount: cache.parsedDependencyFileCount,
+    heapUsedMb: +(memory.heapUsed / 1024 / 1024).toFixed(1),
+    rssMb: +(memory.rss / 1024 / 1024).toFixed(1),
+  };
+}
+
 interface Sample {
   files: number;
   elapsedMs: number;
   msPerFileOverall: number;
   msPerFileRolling: number;
   cacheSize: number;
+  /**
+   * Non-lib files the cache's own whole-project Program holds — 0 when the
+   * production strategy resolved to `coverage`. Distinct from the harness's
+   * `--config W` priming: this is what `TSProgramCache` decided by itself, and
+   * it is the only way a default-configuration run can say which path it took.
+   */
+  wholeProgramFileCount: number;
   parsedProjectFileCount: number;
   parsedDependencyFileCount: number;
   retainedSourceTextMb: number;
@@ -305,6 +400,25 @@ async function main(): Promise<void> {
   };
   const samples: Sample[] = [];
 
+  // Config W primes before the timed loop, so W-build and W-resolve are two
+  // numbers rather than one. The lazy resolver — and therefore its cache — does
+  // not exist until something has resolved, so one throwaway resolve creates it;
+  // that file is resolved a second time inside the loop, which double-counts its
+  // call sites in `resolve.*` and nothing else.
+  let wholeProgram: WholeProgramPriming | null = null;
+  if (input.strategy === "whole" && extractions.length > 0) {
+    runner.resolve(extractions[0], symbolTable);
+    const cache = programCacheOf(language);
+    if (cache === null) {
+      log("INVALID: strategy=whole but no TSProgramCache exists after the first resolve");
+    } else {
+      const roots = files.map((relPath) => resolvePath(ROOT, relPath));
+      log(`priming whole-project Program over ${roots.length} roots …`);
+      wholeProgram = primeWholeProgram(cache, roots);
+      log(`wholeProgram ${JSON.stringify(wholeProgram)}`);
+    }
+  }
+
   const session = new Session();
   session.connect();
   await session.post("Profiler.enable");
@@ -362,6 +476,7 @@ async function main(): Promise<void> {
         msPerFileOverall: +(elapsedMs / processed).toFixed(2),
         msPerFileRolling: +((now - lastSampleAt) / (processed - lastSampleFiles)).toFixed(2),
         cacheSize: cache?.size ?? -1,
+        wholeProgramFileCount: cache?.wholeProgramFileCount ?? -1,
         parsedProjectFileCount: cache?.parsedProjectFileCount ?? -1,
         parsedDependencyFileCount: cache?.parsedDependencyFileCount ?? -1,
         retainedSourceTextMb: cache ? +(cache.retainedSourceTextBytes / 1024 / 1024).toFixed(1) : -1,
@@ -401,6 +516,9 @@ async function main(): Promise<void> {
   const { stats } = runState;
   const result = {
     config: input.configName,
+    strategy: input.strategy,
+    wholeProgram,
+    envOverrides: input.envOverrides,
     resourceLimits: { stackSizeMb: input.stackSizeMb, maxOldGenerationSizeMb: input.heapLimitMb },
     corpus: { root: ROOT, discovered: discovered.length, walked: files.length, tsconfig: tsconfigState },
     pass1: {
@@ -425,6 +543,7 @@ async function main(): Promise<void> {
       buildMs: Math.round(counters.buildMs),
       buildShareOfPass2: +(counters.buildMs / Math.max(1, resolveMs)).toFixed(3),
       size: cache?.size ?? -1,
+      wholeProgramFileCount: cache?.wholeProgramFileCount ?? -1,
       parsedProjectFileCount: cache?.parsedProjectFileCount ?? -1,
       parsedDependencyFileCount: cache?.parsedDependencyFileCount ?? -1,
       retainedSourceTextMb: cache ? +(cache.retainedSourceTextBytes / 1024 / 1024).toFixed(1) : -1,
@@ -456,7 +575,7 @@ async function main(): Promise<void> {
   writeFileSync(statsPath, `${JSON.stringify(result, null, 2)}\n`, "utf8");
   log(`stats -> ${statsPath}`);
   log(
-    `RESULT config=${input.configName} files=${processed} msPerFile=${result.pass2.msPerFile} ` +
+    `RESULT config=${input.configName} strategy=${input.strategy} files=${processed} msPerFile=${result.pass2.msPerFile} ` +
       `builds=${counters.buildsAttempted} null=${counters.buildsNull} userCpuShare=${result.cpu.userCpuShare}`,
   );
 }
