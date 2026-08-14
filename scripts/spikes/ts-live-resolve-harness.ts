@@ -35,11 +35,18 @@
  * mirrored here rather than described.
  *
  *   npx tsx --import tsx scripts/spikes/ts-live-resolve-harness.ts \
- *     [--config A|B] [--limit N] [--deadline-ms MS] [--out DIR]
+ *     [--config A|B|W] [--limit N] [--deadline-ms MS] [--out DIR] \
+ *     [--heap-limit-mb MB] [--no-profile] [--env KEY=VALUE …]
  *
  * Config A is the production mirror; config B lifts the heap ceiling and
- * changes nothing else. Everything the run learns lands in `stats.json` and
- * `chunk-*.cpuprofile` under `<out>/<config>/`.
+ * changes nothing else. Everything the run learns lands in `stats.json`,
+ * `progress.log` and `chunk-*.cpuprofile` under `<out>/<config>/`.
+ *
+ * Run it with `env -u NODE_OPTIONS`, always. A process-wide
+ * `--max_old_space_size` OVERRIDES per-worker `resourceLimits`, so a heap
+ * question asked with it set measures a ceiling that is not there — the same
+ * silent override `enrichment/infra/heap-ceiling-enforcement.ts` reports at
+ * worker boot.
  */
 
 import { fileURLToPath } from "node:url";
@@ -138,6 +145,23 @@ const envOverrides = readEnvOverrides(argv);
 for (const [key, value] of Object.entries(envOverrides)) process.env[key] = value;
 
 /**
+ * `--heap-limit-mb N` overrides the chosen config's declared ceiling, so a
+ * floor search (2048 / 3072 / 4096 / 5120 …) does not need one CONFIGS row per
+ * probe. The ceiling is the independent variable of every memory question this
+ * harness is asked, and it is per-isolate — it can only be set at spawn.
+ */
+const heapLimitRaw = readFlag(argv, "--heap-limit-mb");
+const maxOldGenerationSizeMb =
+  heapLimitRaw === null ? config.maxOldGenerationSizeMb : Number.parseInt(heapLimitRaw, 10);
+/**
+ * `--no-profile` drops the CPU profiler. A profile is what the ORIGINAL
+ * question needed (where does the time go); a memory acceptance run wants the
+ * isolate holding the corpus and nothing else, since the profiler's own sample
+ * buffer is heap the measurement did not ask for.
+ */
+const profile = !argv.includes("--no-profile");
+
+/**
  * The plain-JS bootstrap, not the `.ts` worker — see its docblock: a worker
  * thread has no `tsx` loader, and `execArgv` will not give it one.
  */
@@ -148,11 +172,13 @@ process.stdout.write(
     harness: "ts-live-resolve",
     config: config.name,
     strategy: config.strategy,
-    resourceLimits: { stackSizeMb: config.stackSizeMb, maxOldGenerationSizeMb: config.maxOldGenerationSizeMb },
+    resourceLimits: { stackSizeMb: config.stackSizeMb, maxOldGenerationSizeMb },
     limit: limit > 0 ? limit : "all",
     deadlineMs,
     outDir,
+    profile,
     env: envOverrides,
+    parentNodeOptions: process.env.NODE_OPTIONS ?? null,
   })}\n`,
 );
 
@@ -163,13 +189,14 @@ const worker = new Worker(workerPath, {
     limit,
     deadlineMs,
     outDir,
-    heapLimitMb: config.maxOldGenerationSizeMb,
+    heapLimitMb: maxOldGenerationSizeMb,
     stackSizeMb: config.stackSizeMb,
+    profile,
     envOverrides,
   },
   resourceLimits: {
     stackSizeMb: config.stackSizeMb,
-    maxOldGenerationSizeMb: config.maxOldGenerationSizeMb,
+    maxOldGenerationSizeMb,
   },
 });
 

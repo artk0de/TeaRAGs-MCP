@@ -46,11 +46,12 @@
  * work, so a slow result here is a lower bound on the resolver's own cost.
  */
 
-import { existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
+import { appendFileSync, existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { Session } from "node:inspector/promises";
 import { homedir } from "node:os";
 import { extname, join, posix, relative, resolve as resolvePath } from "node:path";
 import { performance } from "node:perf_hooks";
+import { getHeapStatistics } from "node:v8";
 import { workerData } from "node:worker_threads";
 
 import ignore, { type Ignore } from "ignore";
@@ -75,6 +76,8 @@ interface WorkerInput {
   readonly outDir: string;
   readonly heapLimitMb: number;
   readonly stackSizeMb: number;
+  /** Run the chunked CPU profiler. Off for memory runs — its buffer is heap too. */
+  readonly profile?: boolean;
   /** Budget knobs the harness set before spawning, recorded with the result. */
   readonly envOverrides: Readonly<Record<string, string>>;
 }
@@ -91,9 +94,24 @@ const PROFILE_CHUNK_MS = 60_000;
 
 const runDir = join(input.outDir, input.configName);
 mkdirSync(runDir, { recursive: true });
+const progressPath = join(runDir, "progress.log");
 
+/**
+ * Stdout AND a synchronous file append, because the interesting outcome of a
+ * memory run is the one that destroys the evidence: a V8 heap OOM kills the
+ * isolate, and the worker's stdout is forwarded over the message port, so
+ * everything buffered dies with it. Measured on the 2048-declared floor run —
+ * one line delivered out of a run that reached thousands of files. An
+ * `appendFileSync` is on disk before the next statement runs.
+ */
 function log(line: string): void {
-  process.stdout.write(`${line}\n`);
+  const stamped = `${(performance.now() / 1000).toFixed(1)}s ${line}`;
+  process.stdout.write(`${stamped}\n`);
+  try {
+    appendFileSync(progressPath, `${stamped}\n`, "utf8");
+  } catch {
+    /* progress reporting must never be the reason a run fails */
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -318,6 +336,14 @@ interface Sample {
    * it is the only way a default-configuration run can say which path it took.
    */
   wholeProgramFileCount: number;
+  /**
+   * Whole-project builds so far — 1 until the segment counter rotates, then one
+   * more per segment. The observable that says segmentation actually ran, which
+   * `wholeProgramFileCount` alone cannot: it reads the same either way.
+   */
+  wholeProgramBuilds: number;
+  /** Distinct files acquired since the current segment began. */
+  segmentFiles: number;
   parsedProjectFileCount: number;
   parsedDependencyFileCount: number;
   retainedSourceTextMb: number;
@@ -417,16 +443,34 @@ async function main(): Promise<void> {
       wholeProgram = primeWholeProgram(cache, roots);
       log(`wholeProgram ${JSON.stringify(wholeProgram)}`);
     }
+  } else {
+    // Production parity. Since `prepareResolvePass` landed, pass-2's first act
+    // is to tell each language its file count, and `TSProgramCache` builds the
+    // whole Program there instead of waiting out the 200-entry warm-up gate. A
+    // harness that skips it measures 66 per-entry `ts.createProgram` builds the
+    // real run does not pay — and, for a memory question, an allocation profile
+    // the real run does not have either.
+    language.resolver?.prepareResolvePass?.({ expectedFileCount: extractions.length, projectRoot: ROOT });
+    const primed = programCacheOf(language);
+    log(
+      `prepareResolvePass expected=${extractions.length} wholeProgramFiles=${primed?.wholeProgramFileCount ?? -1} ` +
+        `builds=${primed?.wholeProgramBuildCount ?? -1} typeCheckerDisabled=${primed?.typeCheckerDisabled ?? "n/a"} ` +
+        `heapSizeLimitMb=${Math.round(getHeapStatistics().heap_size_limit / 1024 / 1024)}`,
+    );
   }
 
   const session = new Session();
-  session.connect();
-  await session.post("Profiler.enable");
+  const profiling = input.profile !== false;
+  if (profiling) {
+    session.connect();
+    await session.post("Profiler.enable");
+    await session.post("Profiler.start");
+  }
   let profileSeq = 0;
   let chunkStartedAt = performance.now();
-  await session.post("Profiler.start");
 
   const rotateProfile = async (): Promise<void> => {
+    if (!profiling) return;
     const { profile } = await session.post("Profiler.stop");
     const path = join(runDir, `chunk-${String(profileSeq).padStart(3, "0")}.cpuprofile`);
     writeFileSync(path, JSON.stringify(profile), "utf8");
@@ -477,6 +521,8 @@ async function main(): Promise<void> {
         msPerFileRolling: +((now - lastSampleAt) / (processed - lastSampleFiles)).toFixed(2),
         cacheSize: cache?.size ?? -1,
         wholeProgramFileCount: cache?.wholeProgramFileCount ?? -1,
+        wholeProgramBuilds: cache?.wholeProgramBuildCount ?? -1,
+        segmentFiles: cache?.segmentFileCount ?? -1,
         parsedProjectFileCount: cache?.parsedProjectFileCount ?? -1,
         parsedDependencyFileCount: cache?.parsedDependencyFileCount ?? -1,
         retainedSourceTextMb: cache ? +(cache.retainedSourceTextBytes / 1024 / 1024).toFixed(1) : -1,
@@ -509,8 +555,10 @@ async function main(): Promise<void> {
   const resolveMs = performance.now() - resolveStarted;
   const cpuTotal = process.cpuUsage(cpuAtStart);
   await rotateProfile();
-  await session.post("Profiler.disable");
-  session.disconnect();
+  if (profiling) {
+    await session.post("Profiler.disable");
+    session.disconnect();
+  }
 
   const cache = programCacheOf(language);
   const { stats } = runState;
@@ -519,7 +567,13 @@ async function main(): Promise<void> {
     strategy: input.strategy,
     wholeProgram,
     envOverrides: input.envOverrides,
-    resourceLimits: { stackSizeMb: input.stackSizeMb, maxOldGenerationSizeMb: input.heapLimitMb },
+    resourceLimits: {
+      stackSizeMb: input.stackSizeMb,
+      maxOldGenerationSizeMb: input.heapLimitMb,
+      // What V8 is ACTUALLY enforcing, which is what admission reads and what a
+      // declared ceiling only approximately produces (declared 4096 -> 4288).
+      heapSizeLimitMb: Math.round(getHeapStatistics().heap_size_limit / 1024 / 1024),
+    },
     corpus: { root: ROOT, discovered: discovered.length, walked: files.length, tsconfig: tsconfigState },
     pass1: {
       ms: Math.round(extractMs),
@@ -544,6 +598,8 @@ async function main(): Promise<void> {
       buildShareOfPass2: +(counters.buildMs / Math.max(1, resolveMs)).toFixed(3),
       size: cache?.size ?? -1,
       wholeProgramFileCount: cache?.wholeProgramFileCount ?? -1,
+      wholeProgramBuilds: cache?.wholeProgramBuildCount ?? -1,
+      typeCheckerDisabled: cache?.typeCheckerDisabled ?? null,
       parsedProjectFileCount: cache?.parsedProjectFileCount ?? -1,
       parsedDependencyFileCount: cache?.parsedDependencyFileCount ?? -1,
       retainedSourceTextMb: cache ? +(cache.retainedSourceTextBytes / 1024 / 1024).toFixed(1) : -1,
@@ -557,6 +613,12 @@ async function main(): Promise<void> {
     memory: {
       heapUsedMb: +(process.memoryUsage().heapUsed / 1024 / 1024).toFixed(1),
       rssMb: +(process.memoryUsage().rss / 1024 / 1024).toFixed(1),
+      // Sampled, un-forced heapUsed: an UPPER bound on the live set, because V8
+      // collects lazily. Adequate for the question a memory run asks — whether
+      // the trajectory approaches the ceiling — and the only reading available
+      // without `--expose-gc` in the parent.
+      peakSampledHeapUsedMb: samples.reduce((peak, sample) => Math.max(peak, sample.heapUsedMb), 0),
+      peakSampledRssMb: samples.reduce((peak, sample) => Math.max(peak, sample.rssMb), 0),
     },
     resolve: {
       attempted: stats.callsAttempted,
