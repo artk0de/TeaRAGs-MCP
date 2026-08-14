@@ -1,6 +1,6 @@
 /**
  * `--force-enrichments <keys> --languages <langs>` — the WIRED path, end to end
- * (bd tea-rags-mcp-df1rn).
+ * (bd tea-rags-mcp-df1rn, revised for bd tea-rags-mcp-6aytq).
  *
  * The unit contracts on both ends of this chain were green while the live run
  * ignored the flag entirely: `tests/cli/index-codebase-languages-flag.test.ts`
@@ -13,10 +13,16 @@
  * extracted + resolved ruby (8817 files), bash (39) and js (7) alongside the
  * 10621 typescript ones.
  *
- * So these drive the REAL facade → IndexingOps → ReindexPipeline →
- * EnrichmentCoordinator wiring with the option object the CLI builds, and
- * assert on what the executor was actually asked to re-extract. A test that
- * stops at any one seam is what let the leak through.
+ * That leak is now closed at its source rather than narrowed: the sync leg is
+ * not forced at all, because the recompute leg that follows it re-extracts the
+ * same corpus unconditionally and is the only leg that can write payload. So
+ * the selection has ONE enforcement point (the recompute's stored-chunk scroll)
+ * instead of two that had to agree.
+ *
+ * What these drive is the REAL facade → IndexingOps → ReindexPipeline →
+ * EnrichmentCoordinator wiring with the option object the CLI builds, asserting
+ * on what the executor was actually asked to re-extract. A test that stops at
+ * any one seam is what let the leak through.
  */
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -66,12 +72,18 @@ vi.mock("tree-sitter-typescript", () => ({ default: { typescript: {}, tsx: {} } 
 const repairedPaths: string[] = [];
 /** Every path a provider was told to prune rows for. */
 const prunedPaths: string[] = [];
+/**
+ * What the provider "persisted" — the content hashes of the last batch it was
+ * asked to extract, exactly as the real codegraph provider stamps them onto its
+ * rows at write time. A store that is CURRENT is the state every real
+ * `--force-enrichments` run starts from, and the only state in which "did this
+ * leg force?" is answerable at all.
+ */
+const persistedHashes = new Map<string, string>();
 
 /**
  * Stand-in for the codegraph provider: the only kind that owns a per-file store
- * and therefore the only kind `runRepairPass` can force. `null` hashes make
- * every file look drifted, so the repair set is decided purely by scope — which
- * is the thing under test.
+ * and therefore the only kind `runRepairPass` looks at.
  */
 function graphProvider(): EnrichmentProvider {
   return {
@@ -83,7 +95,7 @@ function graphProvider(): EnrichmentProvider {
     resolveRoot: (p: string) => p,
     buildFileSignals: vi.fn().mockResolvedValue(new Map()),
     buildChunkSignals: vi.fn().mockResolvedValue(new Map()),
-    readPersistedFileHashes: vi.fn().mockResolvedValue(new Map<string, string | null>()),
+    readPersistedFileHashes: vi.fn(async () => new Map<string, string | null>(persistedHashes)),
     handleDeletedPaths: vi.fn(async (paths: string[]) => {
       prunedPaths.push(...paths);
     }),
@@ -92,10 +104,16 @@ function graphProvider(): EnrichmentProvider {
 
 function recordingExecutor(): EnrichmentExecutor {
   return {
-    runFileBatch: vi.fn(async (_provider, _root, paths: string[]) => {
-      repairedPaths.push(...paths);
-      return new Map();
-    }),
+    runFileBatch: vi.fn(
+      async (_provider, _root, paths: string[], options?: { contentHashes?: ReadonlyMap<string, string> }) => {
+        repairedPaths.push(...paths);
+        for (const path of paths) {
+          const hash = options?.contentHashes?.get(path);
+          if (hash) persistedHashes.set(path, hash);
+        }
+        return new Map();
+      },
+    ),
     runFileSignalsRecovery: vi.fn().mockResolvedValue(new Map()),
     runChunkBatch: vi.fn().mockResolvedValue(new Map()),
     runFinalize: vi.fn().mockResolvedValue(new Map()),
@@ -114,6 +132,7 @@ describe("--force-enrichments with --languages — repair-pass scope (bd tea-rag
   beforeEach(async () => {
     repairedPaths.length = 0;
     prunedPaths.length = 0;
+    persistedHashes.clear();
     ({ tempDir, codebaseDir } = await createTempTestDir());
     qdrant = new MockQdrantManager() as never;
     // Two languages in one corpus is the whole fixture: the default helper
@@ -131,6 +150,10 @@ describe("--force-enrichments with --languages — repair-pass scope (bd tea-rag
     await createTestFile(codebaseDir, "app.ts", "export const app = 1;\nconsole.log('App');");
     await createTestFile(codebaseDir, "worker.rb", "class Worker\n  def run\n    1\n  end\nend\n");
     await ingest.indexCodebase(codebaseDir);
+    // One plain incremental brings the store current: until then every file
+    // reads as drifted and the repair pass extracts the corpus for a reason
+    // that has nothing to do with the flag under test.
+    await ingest.indexCodebase(codebaseDir);
 
     // The recompute leg reads its own chunk set back from Qdrant under a
     // language filter that `coordinator-recompute-languages.test.ts` already
@@ -147,27 +170,38 @@ describe("--force-enrichments with --languages — repair-pass scope (bd tea-rag
     await cleanupTempDir(tempDir);
   });
 
-  it("re-extracts only the selected language's files", async () => {
+  it("re-extracts nothing in the sync leg, so no language can leak into it", async () => {
     await ingest.indexCodebase(codebaseDir, { forceEnrichments: ["codegraph"], languages: ["typescript"] });
 
-    expect(repairedPaths).toContain("app.ts");
-    expect(repairedPaths.filter((p) => p.endsWith(".rb"))).toEqual([]);
+    expect(repairedPaths).toEqual([]);
   });
 
-  it("forces every language when the flag is absent, so the default run is unchanged", async () => {
-    // The control: without it, a fix that simply repaired nothing would pass
-    // the assertion above.
+  it("stays out of the sync leg with no --languages either", async () => {
+    // The control for the assertion above: before this leg stopped forcing, the
+    // flag alone was enough to drag every scanned file of every language
+    // through a full extract + resolve here.
     await ingest.indexCodebase(codebaseDir, { forceEnrichments: ["codegraph"] });
 
-    expect(repairedPaths).toContain("app.ts");
-    expect(repairedPaths).toContain("worker.rb");
+    expect(repairedPaths).toEqual([]);
+  });
+
+  it("still heals a drifted file, and does not scope that healing by language", async () => {
+    // Drift repair is the sync leg's own job and is unrelated to what the run
+    // was asked to force: a ruby row that fell behind heals on a run that
+    // selected typescript, because the alternative is a store that never
+    // converges once its files stop changing (bd tea-rags-mcp-6goqa).
+    persistedHashes.set("worker.rb", "stale-hash");
+
+    await ingest.indexCodebase(codebaseDir, { forceEnrichments: ["codegraph"], languages: ["typescript"] });
+
+    expect(repairedPaths).toEqual(["worker.rb"]);
   });
 
   it("does not prune the unselected language's rows as orphans", async () => {
-    // Narrowing the REPAIR set must never narrow the ELIGIBLE set: a file the
-    // run declines to re-extract is still a file the provider owns rows for.
-    // Filtering before `computeExtractionRepair` would report every ruby row as
-    // an orphan and delete the graph this run was told not to touch.
+    // Narrowing anything about the repair must never narrow the ELIGIBLE set: a
+    // file the run declines to re-extract is still a file the provider owns
+    // rows for. Filtering before `computeExtractionRepair` would report every
+    // ruby row as an orphan and delete the graph this run was told not to touch.
     await ingest.indexCodebase(codebaseDir, { forceEnrichments: ["codegraph"], languages: ["typescript"] });
 
     expect(prunedPaths).toEqual([]);

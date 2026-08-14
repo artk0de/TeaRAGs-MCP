@@ -219,75 +219,15 @@ describe("EnrichmentCoordinator.runRepairPass under CODEGRAPH_FORCE_RESOLVE", ()
   });
 });
 
-describe("EnrichmentCoordinator.runRepairPass forced by a --force-enrichments selector (bd tea-rags-mcp-force-enrich-gap)", () => {
-  // `--force-enrichments codegraph` (or `all`) must force a genuine re-extraction
-  // the same way CODEGRAPH_FORCE_RESOLVE=1 does -- it must NOT require the caller
-  // to also know about that env var. This is the selector-driven equivalent of
-  // "EnrichmentCoordinator.runRepairPass under CODEGRAPH_FORCE_RESOLVE" above,
-  // with the env var deliberately left UNSET in every case here.
-  it("forces every eligible file when the provider's key is named directly, with no env var set", async () => {
-    const runFileBatch = vi.fn().mockResolvedValue(new Map());
-    const coordinator = new EnrichmentCoordinator(
-      qdrant,
-      currentStoreProvider(),
-      undefined,
-      makeExecutor(runFileBatch),
-    );
-
-    const repaired = await coordinator.runRepairPass("code_x_v1", "/repo", SCANNED, ["codegraph.symbols"]);
-
-    expect(repaired).toBe(2);
-    expect(runFileBatch).toHaveBeenCalledTimes(1);
-  });
-
-  it("forces every eligible file when selected via the namespace prefix (codegraph -> codegraph.symbols)", async () => {
-    const runFileBatch = vi.fn().mockResolvedValue(new Map());
-    const coordinator = new EnrichmentCoordinator(
-      qdrant,
-      currentStoreProvider(),
-      undefined,
-      makeExecutor(runFileBatch),
-    );
-
-    const repaired = await coordinator.runRepairPass("code_x_v1", "/repo", SCANNED, ["codegraph"]);
-
-    expect(repaired).toBe(2);
-    expect(runFileBatch).toHaveBeenCalledTimes(1);
-  });
-
-  it("forces every eligible file when selected via the `all` selector", async () => {
-    const runFileBatch = vi.fn().mockResolvedValue(new Map());
-    const coordinator = new EnrichmentCoordinator(
-      qdrant,
-      currentStoreProvider(),
-      undefined,
-      makeExecutor(runFileBatch),
-    );
-
-    const repaired = await coordinator.runRepairPass("code_x_v1", "/repo", SCANNED, ["all"]);
-
-    expect(repaired).toBe(2);
-    expect(runFileBatch).toHaveBeenCalledTimes(1);
-  });
-
-  it("does not force a provider the selector does not name", async () => {
-    // Forcing must stay scoped to what --force-enrichments actually selected --
-    // `--force-enrichments codegraph` must not also force an unrelated provider.
-    const runFileBatch = vi.fn().mockResolvedValue(new Map());
-    const coordinator = new EnrichmentCoordinator(
-      qdrant,
-      currentStoreProvider(),
-      undefined,
-      makeExecutor(runFileBatch),
-    );
-
-    const repaired = await coordinator.runRepairPass("code_x_v1", "/repo", SCANNED, ["git"]);
-
-    expect(repaired).toBe(0);
-    expect(runFileBatch).not.toHaveBeenCalled();
-  });
-
-  it("leaves ordinary (unforced) behavior untouched when no selector is passed at all", async () => {
+describe("EnrichmentCoordinator.runRepairPass is a drift check, not a force lever (bd tea-rags-mcp-6aytq)", () => {
+  // `--force-enrichments` used to widen this drift check too, on top of the
+  // recompute leg that immediately re-extracts the same corpus unconditionally
+  // — two full pass-1 + pass-2 cycles per invocation. The forced re-extraction
+  // is owned by `EnrichmentCoordinator#recomputeEnrichments` alone now; the
+  // env knob above stays, because a diagnostic profile of pass-2 has no other
+  // way in. `tests/core/domains/ingest/operations/force-enrichments-single-cycle.test.ts`
+  // pins the whole-invocation count that this one-leg contract feeds.
+  it("extracts nothing for a current store, whatever the run was asked to force", async () => {
     const runFileBatch = vi.fn().mockResolvedValue(new Map());
     const coordinator = new EnrichmentCoordinator(
       qdrant,
@@ -298,5 +238,25 @@ describe("EnrichmentCoordinator.runRepairPass forced by a --force-enrichments se
 
     expect(await coordinator.runRepairPass("code_x_v1", "/repo", SCANNED)).toBe(0);
     expect(runFileBatch).not.toHaveBeenCalled();
+  });
+
+  it("still repairs a genuinely drifted file", async () => {
+    // The control: the repair pass losing its force must not cost it its
+    // reason to exist. A store that fell behind still heals here, and still
+    // heals for EVERY language — drift is not scoped by what the run selected.
+    const runFileBatch = vi.fn().mockResolvedValue(new Map());
+    const staleStore = makeProvider({
+      readPersistedFileHashes: vi.fn().mockResolvedValue(
+        new Map<string, string | null>([
+          ["src/a.ts", "h1"],
+          ["src/b.ts", "stale"],
+        ]),
+      ),
+    });
+    const coordinator = new EnrichmentCoordinator(qdrant, staleStore, undefined, makeExecutor(runFileBatch));
+
+    expect(await coordinator.runRepairPass("code_x_v1", "/repo", SCANNED)).toBe(1);
+    const [, , paths] = runFileBatch.mock.calls[0] as [unknown, string, string[]];
+    expect(paths).toEqual(["src/b.ts"]);
   });
 });
