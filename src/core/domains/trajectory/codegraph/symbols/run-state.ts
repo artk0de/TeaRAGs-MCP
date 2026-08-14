@@ -26,6 +26,7 @@ import type {
   HierarchyView,
   InheritanceEdgeRow,
   KnownTargetCallArgs,
+  RelPath,
   ResolveRunStatsRow,
   SymbolDefinition,
 } from "../../../../contracts/types/codegraph.js";
@@ -279,6 +280,23 @@ export class CodegraphRunState {
    * TypeScript ones is not a bulk pass for TypeScript.
    */
   readonly extractedFilesByLanguage = new Map<string, number>();
+
+  /**
+   * The same files, listed rather than counted (bd tea-rags-mcp-6aytq).
+   *
+   * Kept beside the counter rather than replacing it because they are read by
+   * different decisions: `prepareResolvePass` measures the COUNT against a
+   * bulk-pass threshold, while a resolver that primes builds its cache over the
+   * LIST. TypeScript is the consumer — its whole-project `ts.Program` is rooted
+   * at the tsconfig's include/exclude expansion, which on taxdome misses 936 of
+   * the 10,912 files the run resolves, and each miss costs a per-entry
+   * `ts.createProgram`.
+   *
+   * The retained cost is a path string per extracted file — ~1 MB for a
+   * 10,000-file TypeScript corpus, released with the rest of the run state at
+   * both clear seams.
+   */
+  readonly extractedRelPathsByLanguage = new Map<string, RelPath[]>();
 
   /**
    * Per-file SHA256 for the run, threaded in from `FileSignalOptions`
@@ -967,6 +985,7 @@ export class CodegraphRunState {
   clearForNextRun(): void {
     this.ancestors = {};
     this.extractedFilesByLanguage.clear();
+    this.extractedRelPathsByLanguage.clear();
     this.compactClasses = new Set();
     this.gemfileContent = undefined;
     this.gemfileLoaded = false;
@@ -1001,6 +1020,7 @@ export class CodegraphRunState {
   clearAll(): void {
     this.ancestors = {};
     this.extractedFilesByLanguage.clear();
+    this.extractedRelPathsByLanguage.clear();
     this.compactClasses = new Set();
     this.gemfileContent = undefined;
     this.gemfileLoaded = false;
@@ -1041,6 +1061,9 @@ export class CodegraphRunState {
         extraction.language,
         (this.extractedFilesByLanguage.get(extraction.language) ?? 0) + 1,
       );
+      const relPaths = this.extractedRelPathsByLanguage.get(extraction.language);
+      if (relPaths === undefined) this.extractedRelPathsByLanguage.set(extraction.language, [extraction.relPath]);
+      else relPaths.push(extraction.relPath);
     }
     if (extraction.classAncestors) {
       for (const [k, v] of Object.entries(extraction.classAncestors)) {

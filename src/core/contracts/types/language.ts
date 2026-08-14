@@ -455,6 +455,12 @@ export interface LanguageSymbolResolver {
    */
   prepareResolvePass?: (plan: SymbolResolutionPassPlan) => void;
   /**
+   * Optional: this resolver's run-scoped cache observables, as an opaque
+   * JSON-able record for the pass-2 progress log (bd tea-rags-mcp-6aytq). Read
+   * once per progress line, never per call. Mirrors `CallResolver.diagnostics`.
+   */
+  diagnostics?: () => Record<string, unknown> | undefined;
+  /**
    * Fan-out resolution for lookup-table dispatch (bd tea-rags-mcp-n0zj): one
    * dispatching call site expands to N `(caller, callee)` edges. Returns empty
    * edges when the call does not dispatch through a table; returns an

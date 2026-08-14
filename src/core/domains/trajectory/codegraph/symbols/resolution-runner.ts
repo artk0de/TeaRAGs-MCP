@@ -127,8 +127,37 @@ export class CallEdgeResolutionRunner {
     for (const [language, expectedFileCount] of this.runState.extractedFilesByLanguage) {
       if (!supported.has(language)) continue;
       const { resolver } = this.languageFactory.create(language);
-      resolver?.prepareResolvePass?.({ expectedFileCount, projectRoot: this.runState.projectRoot });
+      resolver?.prepareResolvePass?.({
+        expectedFileCount,
+        // The corpus itself, not only its size: a resolver priming a
+        // whole-project cache has to build it over the files this pass will
+        // ask for, and the project's own declared file set is a different one
+        // (bd tea-rags-mcp-6aytq).
+        expectedRelPaths: this.runState.extractedRelPathsByLanguage.get(language),
+        projectRoot: this.runState.projectRoot,
+      });
     }
+  }
+
+  /**
+   * What each language's run-scoped caches did, keyed by language — the block
+   * the pass-2 progress line carries (bd tea-rags-mcp-6aytq).
+   *
+   * Opaque by construction. The runner does not know what a TypeScript
+   * `ts.Program` observable means and must not learn: it collects whatever each
+   * resolver chooses to report and hands it to the log. A language whose
+   * resolver declares no `diagnostics` is simply absent, which reads correctly
+   * as "nothing to say" rather than as an empty measurement.
+   */
+  resolverDiagnostics(): Record<string, Record<string, unknown>> {
+    const supported = new Set(this.languageFactory.supported());
+    const out: Record<string, Record<string, unknown>> = {};
+    for (const language of this.runState.extractedFilesByLanguage.keys()) {
+      if (!supported.has(language)) continue;
+      const reported = this.languageFactory.create(language).resolver?.diagnostics?.();
+      if (reported !== undefined) out[language] = reported;
+    }
+    return out;
   }
 
   resolve(extraction: FileExtraction, symbolTable: GlobalSymbolTable): GraphEdges {

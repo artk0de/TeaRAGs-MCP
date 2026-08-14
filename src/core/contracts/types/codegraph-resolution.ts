@@ -40,6 +40,24 @@ export interface SymbolResolutionPassPlan {
    */
   expectedFileCount: number;
   /**
+   * The very files {@link expectedFileCount} counts, repo-relative — this
+   * pass's own corpus (bd tea-rags-mcp-6aytq).
+   *
+   * The count and the list answer different questions and a resolver may need
+   * both. The count says whether a cache only a bulk pass repays is worth
+   * building at all; the list says what that cache must be built OVER, which
+   * nothing else can supply: a project's declared file set is not the set a run
+   * resolves. Measured on taxdome — the tsconfig expansion names 12,335 files,
+   * the run resolves 10,912, and 936 of those are outside the expansion, each
+   * one costing TypeScript a `ts.createProgram` its whole-project Program was
+   * supposed to have removed.
+   *
+   * Optional because it is an OPTIMISATION channel, not a contract a resolver
+   * may require: a caller with only a count still primes correctly, just
+   * against the project's own idea of itself.
+   */
+  expectedRelPaths?: readonly RelPath[];
+  /**
    * Project root the pass resolves against — the same value every
    * `CallContext` of the pass carries. Present here because a resolver bound
    * lazily to a root (TypeScript: `tsconfig.json`, the file probe, the
@@ -67,6 +85,18 @@ export interface CallResolver {
    * Mirrors `LanguageSymbolResolver.prepareResolvePass`.
    */
   prepareResolvePass?: (plan: SymbolResolutionPassPlan) => void;
+  /**
+   * Optional: what this resolver's run-scoped caches did, as a JSON-able record
+   * for the pass's progress log (bd tea-rags-mcp-6aytq).
+   *
+   * Deliberately opaque — the seam is language-agnostic and the field names are
+   * the resolver's own, so a TypeScript `ts.Program` observable never becomes
+   * part of the contract every other language implements against. Read at most
+   * once per progress line, never on the resolve path; a resolver with nothing
+   * to report omits the method and its language is simply absent from the line.
+   * Mirrors `LanguageSymbolResolver.diagnostics`.
+   */
+  diagnostics?: () => Record<string, unknown> | undefined;
   /**
    * Optional fan-out resolution for lookup-table dispatch
    * (bd tea-rags-mcp-n0zj). Given a `CallRef` carrying `dispatch` and/or

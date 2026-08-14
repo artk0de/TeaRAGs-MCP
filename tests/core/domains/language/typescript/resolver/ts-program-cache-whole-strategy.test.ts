@@ -420,6 +420,170 @@ describe("TSProgramCache eager prime on a declared bulk pass (bd tea-rags-mcp-6a
   });
 });
 
+describe("TSProgramCache run-corpus root union (bd tea-rags-mcp-6aytq)", () => {
+  let repoRoot: string;
+
+  beforeEach(() => {
+    repoRoot = realpathSync(mkdtempSync(join(tmpdir(), "ts-program-union-")));
+  });
+
+  afterEach(() => {
+    rmSync(repoRoot, { recursive: true, force: true });
+  });
+
+  /**
+   * The production shape, in miniature: a file the tsconfig claims and one the
+   * run resolves but the config excludes. Measured on taxdome — 9,976 of the
+   * run's 10,912 TypeScript files are in the 12,335-name tsconfig expansion and
+   * 936 are not, and those 936 are what the per-entry builds were being paid
+   * for.
+   */
+  function writeConfiguredAndUnconfigured(): { readonly configured: string; readonly outside: string } {
+    return {
+      configured: writeSource(repoRoot, "src/a.ts", `export function a(): number {\n  return 1;\n}\n`),
+      outside: writeSource(repoRoot, "excluded/b.ts", `export function b(): number {\n  return 2;\n}\n`),
+    };
+  }
+
+  it("serves a corpus file the tsconfig omits off the whole Program instead of building for it", () => {
+    const { configured } = writeConfiguredAndUnconfigured();
+    const cache = new TSProgramCache({
+      repoRoot,
+      tsOptions,
+      strategy: "auto",
+      wholeMinEntries: 1,
+      projectRoots: () => [configured],
+    });
+
+    cache.primeForExpectedEntries(1000, ["src/a.ts", "excluded/b.ts"]);
+
+    expect(cache.wholeProgramBuildCount).toBe(1);
+    expect(cache.acquire("excluded/b.ts")?.program).toBe(cache.acquire("src/a.ts")?.program);
+    // Nothing reached the per-entry LRU: the union made both a coverage hit.
+    expect(cache.size).toBe(1);
+  });
+
+  it("normalizes a repo-relative corpus path into the form the coverage membership test reads", () => {
+    // The root set arrives absolute from `loadTsConfigFileNames` and the corpus
+    // arrives as `RelPath`s off the run state. The membership key is the
+    // compiler's own file name, so the two have to meet there — if they do not,
+    // the Program holds the file and `findCovering` still misses it.
+    const { configured } = writeConfiguredAndUnconfigured();
+    const cache = new TSProgramCache({
+      repoRoot,
+      tsOptions,
+      strategy: "whole",
+      projectRoots: () => [configured],
+    });
+
+    cache.primeForExpectedEntries(1000, ["excluded/b.ts"]);
+    const first = cache.acquire("excluded/b.ts");
+    const second = cache.acquire("excluded/b.ts");
+
+    expect(first).not.toBeNull();
+    // Same handle identity: served off the whole Program's `derived` memo, not
+    // rebuilt per acquire.
+    expect(second).toBe(first);
+    expect(cache.size).toBe(1);
+  });
+
+  it("measures the heap projection against the UNION size, not the tsconfig set alone", () => {
+    const { configured, outside } = writeConfiguredAndUnconfigured();
+    const third = writeSource(repoRoot, "src/c.ts", `export function c(): number {\n  return 3;\n}\n`);
+    const cache = new TSProgramCache({
+      repoRoot,
+      tsOptions,
+      strategy: "whole",
+      // Requirement is `rootCount * 1000 MB`; the build term is zero, so
+      // coverage is always affordable and the verdict can only be whole ⇄
+      // coverage. Two roots fit 2,500 MB, three do not.
+      heapBudget: { baseMb: 0, perThousandRootsMb: 0, checkerPerThousandFilesMb: 1_000_000, usableHeapPct: 100 },
+      readHeapSizeLimitMb: () => 2500,
+      projectRoots: () => [configured, third],
+    });
+
+    cache.primeForExpectedEntries(1000, ["excluded/b.ts"]);
+
+    expect(cache.wholeProgramBuildCount).toBe(0);
+    expect(cache.typeCheckerDisabled).toBe(false);
+    expect(outside).toContain("excluded");
+  });
+
+  it("hands the same union to the lazy warm-up gate when the declared volume was below it", () => {
+    const { configured } = writeConfiguredAndUnconfigured();
+    const cache = new TSProgramCache({
+      repoRoot,
+      tsOptions,
+      strategy: "auto",
+      wholeMinEntries: 2,
+      projectRoots: () => [configured],
+    });
+
+    // Below the gate: nothing is built, but the corpus the pass declared is
+    // still what the eventual build must be rooted at.
+    cache.primeForExpectedEntries(1, ["src/a.ts", "excluded/b.ts"]);
+    expect(cache.wholeProgramBuildCount).toBe(0);
+
+    // The first acquire is still a warm-up build; the second opens the gate.
+    cache.acquire("src/a.ts");
+    const warmUpBuilds = cache.diagnostics().entryBuilds;
+    cache.acquire("excluded/b.ts");
+
+    expect(cache.wholeProgramBuildCount).toBe(1);
+    // The corpus-only file came off the Program the gate built, not off a
+    // per-entry build of its own — which is only possible if the lazy path saw
+    // the union the eager prime declared.
+    expect(cache.diagnostics().entryBuilds).toBe(warmUpBuilds);
+    expect(cache.diagnostics().wholeHits).toBe(1);
+  });
+
+  it("rebuilds a rotated segment from the union rather than from the tsconfig set", () => {
+    const { configured } = writeConfiguredAndUnconfigured();
+    const cache = new TSProgramCache({
+      repoRoot,
+      tsOptions,
+      strategy: "whole",
+      wholeSegmentFiles: 1,
+      projectRoots: () => [configured],
+    });
+
+    cache.primeForExpectedEntries(1000, ["src/a.ts", "excluded/b.ts"]);
+    cache.acquire("src/a.ts");
+    // The second distinct file overflows the one-file segment and rotates.
+    const afterRotation = cache.acquire("excluded/b.ts");
+
+    expect(cache.wholeProgramBuildCount).toBe(2);
+    expect(afterRotation).not.toBeNull();
+    expect(cache.size).toBe(1);
+  });
+
+  it("reports what the cache actually did, so a production run says so in its log", () => {
+    const { configured } = writeConfiguredAndUnconfigured();
+    const cache = new TSProgramCache({
+      repoRoot,
+      tsOptions,
+      strategy: "whole",
+      projectRoots: () => [configured],
+    });
+
+    cache.primeForExpectedEntries(1000, ["src/a.ts", "excluded/b.ts"]);
+    cache.acquire("src/a.ts");
+    cache.acquire("excluded/b.ts");
+
+    expect(cache.diagnostics()).toMatchObject({
+      strategy: "whole",
+      wholeProgramFiles: expect.any(Number),
+      wholeProgramBuilds: 1,
+      segmentFiles: 2,
+      acquires: 2,
+      wholeHits: 2,
+      coverageHits: 0,
+      entryBuilds: 0,
+      typeCheckerDisabled: false,
+    });
+  });
+});
+
 describe("loadTsConfigFileNames (bd tea-rags-mcp-6aytq)", () => {
   let repoRoot: string;
 

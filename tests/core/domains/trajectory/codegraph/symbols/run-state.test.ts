@@ -97,6 +97,21 @@ describe("CodegraphRunState extracted-file volume (bd tea-rags-mcp-6aytq)", () =
     expect(runState.extractedFilesByLanguage.size).toBe(0);
   });
 
+  it("keeps each language's file LIST, not only its count, so a resolver can root its caches at the run's corpus", () => {
+    // bd tea-rags-mcp-6aytq: TypeScript's whole-project Program is built from
+    // the tsconfig's world, which on taxdome misses 936 of the run's own files.
+    // The count says a bulk pass is coming; the list says which files it is.
+    const runState = new CodegraphRunState();
+
+    runState.absorb(extractionOf("src/a.ts", "typescript"), []);
+    runState.absorb(extractionOf("src/b.ts", "typescript"), []);
+    runState.absorb(extractionOf("app/models/user.rb", "ruby"), []);
+
+    expect(runState.extractedRelPathsByLanguage.get("typescript")).toEqual(["src/a.ts", "src/b.ts"]);
+    expect(runState.extractedRelPathsByLanguage.get("ruby")).toEqual(["app/models/user.rb"]);
+    expect(runState.extractedRelPathsByLanguage.has("")).toBe(false);
+  });
+
   it("forgets the tally at both run-release seams", () => {
     const forNextRun = new CodegraphRunState();
     forNextRun.absorb(extractionOf("src/a.ts", "typescript"), []);
@@ -108,5 +123,7 @@ describe("CodegraphRunState extracted-file volume (bd tea-rags-mcp-6aytq)", () =
 
     expect(forNextRun.extractedFilesByLanguage.size).toBe(0);
     expect(onRelease.extractedFilesByLanguage.size).toBe(0);
+    expect(forNextRun.extractedRelPathsByLanguage.size).toBe(0);
+    expect(onRelease.extractedRelPathsByLanguage.size).toBe(0);
   });
 });

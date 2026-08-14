@@ -390,7 +390,20 @@ export class TSCallResolver implements CallResolver {
    * is a no-op, which is the correct reading of `CODEGRAPH_TS_TYPECHECKER=0`.
    */
   prepareResolvePass(plan: SymbolResolutionPassPlan): void {
-    this.programCache?.primeForExpectedEntries(plan.expectedFileCount);
+    // The corpus goes with the count: the tsconfig root set the cache would
+    // otherwise build from misses the files a run resolves but the project
+    // excludes — 936 of taxdome's 10,912 (bd tea-rags-mcp-6aytq).
+    this.programCache?.primeForExpectedEntries(plan.expectedFileCount, plan.expectedRelPaths);
+  }
+
+  /**
+   * What the Program cache did over this run, for the pass-2 progress log (bd
+   * tea-rags-mcp-6aytq). `undefined` when the type checker is off and there is
+   * no cache to report on — the seam reads that as "this language has nothing
+   * to say", which is exactly right for `CODEGRAPH_TS_TYPECHECKER=0`.
+   */
+  diagnostics(): Record<string, unknown> | undefined {
+    return this.programCache?.diagnostics();
   }
 
   /**

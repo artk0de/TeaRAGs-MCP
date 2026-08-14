@@ -244,11 +244,13 @@ export const TS_PROGRAM_WHOLE_MIN_ENTRIES_DEFAULT = 200;
  * are NOT re-read: the shared `ts.CompilerHost` hands the new Programs the same
  * SourceFiles, so what a boundary pays for is module resolution, not the AST.
  *
- * Every Program goes, not only the whole one, and that is measured rather than
- * tidy: on taxdome the whole Program answers only ~145 distinct acquires before
- * the per-entry LRU starts serving the rest, because the tsconfig's world and
- * the indexed corpus are different sets. Retiring the whole Program alone would
- * leave eight growing checkers behind and bound nothing.
+ * Every Program goes, not only the whole one, and the reason is that the
+ * per-entry LRU is not empty even under the whole strategy: the tsconfig's
+ * world and the indexed corpus are different sets, so files outside the
+ * project's declared root set still opened per-entry Programs. The root union
+ * (see {@link TSProgramCache.wholeRootSet}) closes most of that gap, and what
+ * survives it is exactly the population a retirement keyed on the whole Program
+ * alone would leave growing.
  *
  * A counter is deliberately the whole mechanism: checker state cannot be
  * shared, migrated or partially evicted across Programs, so there is nothing
@@ -396,6 +398,14 @@ export interface TSProgramCacheOptions {
    * Defaults to an empty set, which reads as "this project has no whole-project
    * root set" and keeps the cache on `coverage` however the strategy is
    * configured.
+   *
+   * NOT the whole root set on its own — {@link TSProgramCache.primeForExpectedEntries}
+   * unions the RUN's own corpus into it, and the reason is measured
+   * (bd tea-rags-mcp-6aytq). On taxdome the two sets overlap but neither
+   * contains the other: 9,976 of the run's 10,912 TypeScript files are among
+   * the tsconfig's 12,335 names, 936 are not, and 2,359 tsconfig names are
+   * files the run never resolves. The 936 are what a whole-Program run still
+   * paid `ts.createProgram` for — 42 builds, 10.2 s, 22% of a 46.4 s pass.
    */
   projectRoots?: () => readonly string[];
 }
@@ -505,21 +515,44 @@ export class TSProgramCache {
   private readonly readHeapSizeLimitMb: () => number;
   private readonly projectRoots: () => readonly string[];
   /**
+   * The RUN's own TypeScript corpus, absolute and in the compiler's path form,
+   * as declared by {@link primeForExpectedEntries} (bd tea-rags-mcp-6aytq).
+   *
+   * The second half of the whole-Program root set. `projectRoots` answers "what
+   * does this project claim", which is not the same question as "what is this
+   * pass about to resolve" — and the difference is not noise: measured on
+   * taxdome, 936 of the run's 10,912 files sit outside the tsconfig's
+   * include/exclude expansion, and every one of them fell through to a
+   * per-entry `ts.createProgram` that the whole strategy exists to remove.
+   *
+   * Held rather than re-derived because it must survive both entry points: the
+   * eager prime that declares it, and the lazy warm-up gate that may build much
+   * later on a run whose declared volume was below the threshold. Empty when
+   * nothing declared one, which is exactly the pre-union behaviour.
+   */
+  private corpusRoots: readonly string[] = [];
+  /**
    * Whole-project builds this instance has performed — the first and every
    * segment rebuild after it. The observable that says segmentation ran.
    */
   private wholeBuilds = 0;
+  /** `acquire` calls this instance has answered — the diagnostics denominator. */
+  private acquires = 0;
+  /** Acquires served off the whole-project Program. */
+  private wholeHits = 0;
+  /** Acquires served off a per-entry Program's coverage, whole one excluded. */
+  private coverageHits = 0;
+  /** Per-entry `ts.createProgram` calls — what the whole strategy exists to drive to zero. */
+  private entryBuilds = 0;
   /**
    * Distinct files acquired since the current segment began — what
    * {@link TSProgramCacheOptions.wholeSegmentFiles} counts.
    *
-   * Run-wide rather than per-Program, and measured: on taxdome the whole
-   * Program serves only ~145 DISTINCT files before the per-entry LRU starts
-   * answering the rest (the tsconfig's world and the indexed corpus are not the
-   * same set), so a counter keyed on the whole Program's own served set stalls
-   * three orders of magnitude below any useful segment and never rotates. What
-   * checker state actually tracks is how far the RUN has got, whichever Program
-   * is answering.
+   * Run-wide rather than per-Program: what checker state tracks is how far the
+   * RUN has got, whichever Program is answering, and under the per-entry
+   * strategy — or in the stretch before a whole build — that is not the whole
+   * Program's own served set. A counter keyed on `wholeEntry.derived` would
+   * measure only one of the several Programs whose checkers are growing.
    *
    * A Set rather than a counter because production acquires ~43 times per file
    * (467,308 over 10,912) — counting acquires would rotate every ~116 files.
@@ -804,6 +837,7 @@ export class TSProgramCache {
    * information and must fall through rather than guess.
    */
   acquire(relPath: RelPath): TSProgramHandle | null {
+    this.acquires += 1;
     // A run admission has refused stays refused for its whole length — see
     // {@link typecheckerOff}. Checked before the stat so a refused run costs
     // one comparison per call site rather than a syscall.
@@ -845,6 +879,7 @@ export class TSProgramCache {
     const covering = this.findCovering(this.toCompilerPath(absolute), absolute, mtimeMs);
     if (covering) return covering;
 
+    this.entryBuilds += 1;
     const built = this.build(absolute);
     if (!built) return null;
     this.entries.set(relPath, built);
@@ -878,11 +913,17 @@ export class TSProgramCache {
     // lookup instead of a walk over the per-entry LRU that will miss.
     if (this.wholeEntry !== null) {
       const served = this.serveFrom(this.wholeEntry, compilerPath, entryAbsolute, mtimeMs);
-      if (served) return served;
+      if (served) {
+        this.wholeHits += 1;
+        return served;
+      }
     }
     for (const [key, entry] of this.entries) {
       const served = this.serveFrom(entry, compilerPath, entryAbsolute, mtimeMs);
-      if (served) return this.touch(key, entry, served);
+      if (served) {
+        this.coverageHits += 1;
+        return this.touch(key, entry, served);
+      }
     }
     return null;
   }
@@ -957,8 +998,15 @@ export class TSProgramCache {
    * churn — spent constructing slices of the very Program that is about to
    * replace them.
    */
-  primeForExpectedEntries(expectedEntries: number): void {
+  primeForExpectedEntries(expectedEntries: number, corpusRelPaths?: readonly RelPath[]): void {
     if (this.typecheckerOff) return;
+    // Recorded before any early return, because the corpus is a FACT about the
+    // run and not a consequence of the decision below it: a volume under the
+    // gate leaves the lazy warm-up in charge, and when that eventually fires it
+    // must build the same union this call declared.
+    if (corpusRelPaths !== undefined) {
+      this.corpusRoots = corpusRelPaths.map((relPath) => this.toCompilerPath(this.toAbsolute(relPath)));
+    }
     if (this.strategy === "coverage") {
       // No whole build to decide, but coverage mode has a floor of its own —
       // one covering Program over the main connectivity component, which a
@@ -989,7 +1037,7 @@ export class TSProgramCache {
     this.wholeAttempted = true;
     this.entriesSeen = null;
 
-    const roots = this.projectRoots();
+    const roots = this.wholeRootSet();
     if (roots.length === 0) return;
     // `auto` is the size-aware choice; an explicit `whole` is an operator who
     // has already made it, and is not second-guessed.
@@ -1003,6 +1051,63 @@ export class TSProgramCache {
 
     this.wholeEntry = this.buildFrom(roots, roots[0]);
     if (this.wholeEntry !== null) this.wholeBuilds += 1;
+  }
+
+  /**
+   * The root set a whole-project Program is built from: what the project
+   * CLAIMS, unioned with what this run will actually RESOLVE
+   * (bd tea-rags-mcp-6aytq).
+   *
+   * Neither half contains the other on a real repository, and the half that was
+   * missing is the expensive one. Measured on taxdome: the tsconfig expansion
+   * names 12,335 files, the run resolves 10,912, they share 9,976 — so 936 of
+   * the files the pass is about to ask for are not roots, and each opens a
+   * subgraph no retained Program covers. A whole-Program run still paid 42
+   * `ts.createProgram` calls for them, 10.2 s, 22% of a 46.4 s pass. Adding
+   * them as roots costs the compiler nothing it was not going to do anyway:
+   * `ts.createProgram` accepts arbitrary root names, and a file the tsconfig
+   * EXCLUDES still parses — exclusion governs what `tsc` compiles, not what the
+   * compiler can be handed.
+   *
+   * Both halves are normalized to the compiler's forward-slash form, which is
+   * also the key {@link serveFrom}'s membership test reads, so a corpus file is
+   * a coverage HIT by construction rather than by coincidence. The union is
+   * de-duplicated for the same reason the count matters: it is the number
+   * {@link admit} and {@link wholeRootFilesMax} are measured against, and
+   * counting the 9,976 shared files twice would refuse builds that fit.
+   */
+  private wholeRootSet(): readonly string[] {
+    const union = new Set<string>();
+    for (const root of this.projectRoots()) union.add(this.toCompilerPath(root));
+    for (const root of this.corpusRoots) union.add(root);
+    return [...union];
+  }
+
+  /**
+   * What this cache did over the run, as a JSON-able record — the observable a
+   * production log carries so the strategy question is answered by the run
+   * rather than by re-deriving it from wall clock (bd tea-rags-mcp-6aytq).
+   *
+   * Every field is already maintained for another purpose; nothing here is
+   * computed on the resolve path. Read once per progress line.
+   */
+  diagnostics(): Record<string, number | string | boolean> {
+    return {
+      strategy: this.strategy,
+      wholeProgramFiles: this.wholeProgramFileCount,
+      wholeProgramBuilds: this.wholeBuilds,
+      wholeRoots: this.wholeEntry?.handle.rootFiles.length ?? 0,
+      corpusRoots: this.corpusRoots.length,
+      segmentFiles: this.segmentFiles.size,
+      acquires: this.acquires,
+      wholeHits: this.wholeHits,
+      coverageHits: this.coverageHits,
+      entryBuilds: this.entryBuilds,
+      retainedPrograms: this.entries.size,
+      parsedProjectFiles: this.parsedProjectSources.size,
+      parsedDependencyFiles: this.parsedDependencySources.size,
+      typeCheckerDisabled: this.typecheckerOff,
+    };
   }
 
   /**
@@ -1133,6 +1238,14 @@ export class TSProgramCache {
     this.wholeBuilds = 0;
     this.segmentFiles.clear();
     this.entriesSeen = new Set();
+    // The corpus belonged to ONE pass. A reset means the next pass declares its
+    // own, and carrying the previous one over would root the next Program at
+    // files that run is not going to resolve.
+    this.corpusRoots = [];
+    this.acquires = 0;
+    this.wholeHits = 0;
+    this.coverageHits = 0;
+    this.entryBuilds = 0;
     // The admission verdict is re-armed with everything else: it was decided
     // against ONE run's root count on ONE isolate reading, and a reset means a
     // new run is about to declare its own.

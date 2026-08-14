@@ -294,7 +294,7 @@ describe("CallEdgeResolutionRunner.prepareResolvePass (bd tea-rags-mcp-6aytq)", 
     }
   }
 
-  it("hands every language its OWN file count plus the run's project root", () => {
+  it("hands every language its OWN file count, file list, and the run's project root", () => {
     const runState = new CodegraphRunState();
     runState.projectRoot = "/repo";
     absorbFiles(runState, "typescript", 3);
@@ -314,8 +314,40 @@ describe("CallEdgeResolutionRunner.prepareResolvePass (bd tea-rags-mcp-6aytq)", 
 
     new CallEdgeResolutionRunner(languageFactory, runState).prepareResolvePass();
 
-    expect(plans["typescript"]).toEqual({ expectedFileCount: 3, projectRoot: "/repo" });
-    expect(plans["ruby"]).toEqual({ expectedFileCount: 1, projectRoot: "/repo" });
+    // The LIST joins the count because the two answer different questions (bd
+    // tea-rags-mcp-6aytq): the count says whether a bulk-only cache is worth
+    // priming, the list says which files that cache must be rooted at — on
+    // taxdome 936 of the run's TypeScript files are outside the set the
+    // project's own tsconfig claims.
+    expect(plans["typescript"]).toEqual({
+      expectedFileCount: 3,
+      expectedRelPaths: ["f0.typescript", "f1.typescript", "f2.typescript"],
+      projectRoot: "/repo",
+    });
+    expect(plans["ruby"]).toEqual({
+      expectedFileCount: 1,
+      expectedRelPaths: ["f0.ruby"],
+      projectRoot: "/repo",
+    });
+  });
+
+  it("collects each language resolver's diagnostics, skipping the ones that declare none", () => {
+    const runState = new CodegraphRunState();
+    absorbFiles(runState, "typescript", 2);
+    absorbFiles(runState, "ruby", 1);
+    const languageFactory = {
+      supported: () => ["typescript", "ruby"],
+      create: (language: string) => ({
+        resolver:
+          language === "typescript"
+            ? { resolve: () => null, diagnostics: () => ({ wholeProgramFiles: 18042, entryBuilds: 0 }) }
+            : { resolve: () => null },
+      }),
+    } as unknown as LanguageFactoryDescriptor;
+
+    const diagnostics = new CallEdgeResolutionRunner(languageFactory, runState).resolverDiagnostics();
+
+    expect(diagnostics).toEqual({ typescript: { wholeProgramFiles: 18042, entryBuilds: 0 } });
   });
 
   it("never creates a resolver for a language the factory does not support", () => {

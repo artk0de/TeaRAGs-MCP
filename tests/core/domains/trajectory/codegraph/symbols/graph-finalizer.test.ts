@@ -106,6 +106,43 @@ describe("GraphBuildFinalizer.resolveAndUpsert", () => {
     expect(runState.stats.methodEdgeCount).toBe(0);
   });
 
+  it("carries each resolver's cache diagnostics in the pass-2 progress line", async () => {
+    // bd tea-rags-mcp-6aytq: whether the TypeScript whole-project Program was
+    // built, and whether it is actually serving the corpus, was invisible in
+    // production — the only evidence was wall clock, which cannot tell a
+    // Program that was never built from one that is being missed.
+    const resolutionRunner = {
+      prepareResolvePass: () => undefined,
+      resolverDiagnostics: () => ({ typescript: { wholeProgramFiles: 18042, entryBuilds: 0 } }),
+      resolve: (): GraphEdges => ({ fileEdges: [], methodEdges: [] }),
+    } as unknown as CallEdgeResolutionRunner;
+    const resolveStore: GraphStoreResolver = async () => ({
+      graphDb: makeGraphDb(),
+      symbolTable: {} as GlobalSymbolTable,
+    });
+    const finalizer = new GraphBuildFinalizer(resolveStore, resolutionRunner, new CodegraphRunState());
+    const lines: string[] = [];
+    const realError = console.error;
+    console.error = (...args: unknown[]): void => {
+      if (args[0] === "[GitEnrich] PHASE: CODEGRAPH_PASS2_PROGRESS") lines.push(String(args[1]));
+    };
+
+    try {
+      // The progress line fires every 100 files.
+      await finalizer.resolveAndUpsert(
+        writeSpill(Array.from({ length: 100 }, (_, i) => ({ ...EXTRACTION, relPath: `src/f${i}.ts` }))),
+      );
+    } finally {
+      console.error = realError;
+    }
+
+    expect(lines).toHaveLength(1);
+    expect(JSON.parse(lines[0])).toMatchObject({
+      processed: 100,
+      resolvers: { typescript: { wholeProgramFiles: 18042, entryBuilds: 0 } },
+    });
+  });
+
   it("completes without upserting or checkpointing when the spill file has zero lines", async () => {
     let upsertCalls = 0;
     let checkpointCalls = 0;

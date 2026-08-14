@@ -792,7 +792,14 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
       // because a metrics failure is swallowed by the sink as best-effort —
       // losing the summary over it would forfeit the whole run's attribution.
       if (isDebug()) {
-        console.error("[GitEnrich] PHASE: CODEGRAPH_PHASE_TIMINGS", this.phaseTimings.toJson());
+        // The resolver block rides the closing summary as well as the periodic
+        // progress line (bd tea-rags-mcp-6aytq): a run that finishes leaves
+        // this as its ONE record of which Program strategy it actually took,
+        // and a run killed mid-pass still has the progress lines.
+        console.error(
+          "[GitEnrich] PHASE: CODEGRAPH_PHASE_TIMINGS",
+          JSON.stringify({ ...this.phaseTimings.toSummary(), resolvers: this.resolutionRunner.resolverDiagnostics() }),
+        );
       }
     }
   }

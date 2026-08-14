@@ -450,12 +450,22 @@ async function main(): Promise<void> {
     // harness that skips it measures 66 per-entry `ts.createProgram` builds the
     // real run does not pay — and, for a memory question, an allocation profile
     // the real run does not have either.
-    language.resolver?.prepareResolvePass?.({ expectedFileCount: extractions.length, projectRoot: ROOT });
+    language.resolver?.prepareResolvePass?.({
+      expectedFileCount: extractions.length,
+      // The run's own corpus, which the cache unions into the tsconfig root set
+      // (bd tea-rags-mcp-6aytq). Production hands the same list off
+      // `CodegraphRunState#extractedRelPathsByLanguage`; omitting it here would
+      // measure a whole Program rooted at the project's declared files alone —
+      // the very shape this config exists to compare against.
+      expectedRelPaths: extractions.map((extraction) => extraction.relPath),
+      projectRoot: ROOT,
+    });
     const primed = programCacheOf(language);
     log(
       `prepareResolvePass expected=${extractions.length} wholeProgramFiles=${primed?.wholeProgramFileCount ?? -1} ` +
         `builds=${primed?.wholeProgramBuildCount ?? -1} typeCheckerDisabled=${primed?.typeCheckerDisabled ?? "n/a"} ` +
-        `heapSizeLimitMb=${Math.round(getHeapStatistics().heap_size_limit / 1024 / 1024)}`,
+        `heapSizeLimitMb=${Math.round(getHeapStatistics().heap_size_limit / 1024 / 1024)} ` +
+        `diagnostics=${JSON.stringify(primed?.diagnostics() ?? null)}`,
     );
   }
 
@@ -600,6 +610,10 @@ async function main(): Promise<void> {
       wholeProgramFileCount: cache?.wholeProgramFileCount ?? -1,
       wholeProgramBuilds: cache?.wholeProgramBuildCount ?? -1,
       typeCheckerDisabled: cache?.typeCheckerDisabled ?? null,
+      // The cache's own report — the same block production now embeds in
+      // CODEGRAPH_PASS2_PROGRESS, so a harness result and a live log are read
+      // the same way (bd tea-rags-mcp-6aytq).
+      diagnostics: cache?.diagnostics() ?? null,
       parsedProjectFileCount: cache?.parsedProjectFileCount ?? -1,
       parsedDependencyFileCount: cache?.parsedDependencyFileCount ?? -1,
       retainedSourceTextMb: cache ? +(cache.retainedSourceTextBytes / 1024 / 1024).toFixed(1) : -1,

@@ -155,6 +155,10 @@ export class TypeScriptLanguage implements LanguageProvider {
       prepareResolvePass: (plan: SymbolResolutionPassPlan): void => {
         this.resolverForRoot(plan.projectRoot ?? this.repoRoot).prepareResolvePass?.(plan);
       },
+      // Reported off the BOUND resolver, never a freshly built one: the numbers
+      // belong to the cache the run has been resolving through, and binding a
+      // new root here would answer with a cache that has done nothing.
+      diagnostics: (): Record<string, unknown> | undefined => this.bound?.resolver.diagnostics?.(),
     };
   }
 

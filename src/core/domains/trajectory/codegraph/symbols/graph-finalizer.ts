@@ -285,6 +285,12 @@ export class GraphBuildFinalizer {
               elapsedMs,
               filesPerSec: elapsedMs > 0 ? Math.round((processed / elapsedMs) * 1000 * 10) / 10 : 0,
               phases: this.timings.toSummary(),
+              // What each language's run-scoped caches are doing, which wall
+              // clock alone cannot say (bd tea-rags-mcp-6aytq): a TypeScript
+              // pass paying per-entry `ts.createProgram` calls and one served
+              // entirely off the whole-project Program differ by 4x and look
+              // identical in every other field of this line.
+              resolvers: this.resolutionRunner.resolverDiagnostics(),
             }),
           );
         }

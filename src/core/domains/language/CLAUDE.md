@@ -49,11 +49,20 @@
 - **By default it builds ONE whole-project Program, not one per entry file, and
   that Program answers to NEITHER retention bound.**
   `CODEGRAPH_TS_PROGRAM_STRATEGY` = `coverage` | `whole` | `auto` (default).
-  `auto` primes from `loadTsConfigFileNames` — the tsconfig's own
-  include/exclude expansion, i.e. the set `tsc` compiles — once the run has
-  touched `CODEGRAPH_TS_PROGRAM_WHOLE_MIN_ENTRIES` distinct files (200) and the
-  root set fits `CODEGRAPH_TS_PROGRAM_WHOLE_ROOT_MAX` (20,000). It is held
-  OUTSIDE `entries`, so `evictOverflow` cannot reach it, and its text is
+  `auto` primes from the UNION of `loadTsConfigFileNames` — the tsconfig's own
+  include/exclude expansion, i.e. the set `tsc` compiles — and the RUN's own
+  corpus, threaded in as `SymbolResolutionPassPlan.expectedRelPaths`, once the
+  run has touched `CODEGRAPH_TS_PROGRAM_WHOLE_MIN_ENTRIES` distinct files (200)
+  and the union fits `CODEGRAPH_TS_PROGRAM_WHOLE_ROOT_MAX` (20,000). Neither
+  half contains the other and the union is what both the root cap AND the heap
+  admission are measured against: on taxdome the tsconfig names 12,335 files,
+  the run resolves 10,912, they share 9,976, and the union is 13,271. The 936
+  corpus files outside the tsconfig are what a whole-Program run was still
+  paying `ts.createProgram` for — 42 builds, 10.2s, 22% of a 46.4s pass
+  (measured offline, `scripts/spikes/ts-live-resolve-harness.ts --config A`). Do
+  NOT drop either half: dropping the tsconfig half loses the declaration files
+  the corpus never names, dropping the corpus half restores the 42 builds. It is
+  held OUTSIDE `entries`, so `evictOverflow` cannot reach it, and its text is
   excluded from `retainedSourceTextBytes`. Do NOT "unify" it into the LRU, and
   do NOT derive the root set by accumulating acquired files. Why: measured on
   taxdome (bd 6aytq), per-entry cost 86.1 ms/file and RISES with corpus position
@@ -72,11 +81,10 @@
   — and the file that overflows it drops EVERY retained Program (`entries`
   cleared as well as `wholeEntry`) and rebuilds the whole one from the same
   roots, old dropped BEFORE `buildFrom` so the two generations are never live
-  together. Measured on taxdome: the whole Program answers only ~145 distinct
-  acquires before the per-entry LRU serves the rest (the tsconfig's world and
-  the indexed corpus are different sets), so a counter keyed on `derived.size`
-  stalls at 145 and never rotates, and retiring only the whole Program would
-  leave eight growing checkers behind. Separately, `TSProgramCache` reads
+  together. A counter keyed on `wholeEntry.derived.size` would see only ONE of
+  the growing checkers — the warm-up stretch before any whole build, and every
+  corpus file the root set still misses, are answered by per-entry Programs
+  whose checkers grow just the same. Separately, `TSProgramCache` reads
   `v8.getHeapStatistics().heap_size_limit` in its own isolate and projects the
   peak (`ts-program-heap-admission.ts`): above the whole requirement → whole,
   between the two → coverage, below coverage's floor → `typecheckerOff`, which
@@ -97,17 +105,20 @@
 - **A BULK pass skips the warm-up and primes up front, from a count pass-1
   already has.** `CallEdgeResolutionRunner#prepareResolvePass` — pass-2's first
   act, before the spill is read — hands each language a
-  `SymbolResolutionPassPlan { expectedFileCount, projectRoot }` off
-  `CodegraphRunState#extractedFilesByLanguage`, and
-  `TSProgramCache#primeForExpectedEntries` builds immediately when that count
-  clears the SAME `wholeMinEntries` threshold. A count BELOW it returns without
-  recording an attempt, so the per-acquire gate still governs an incremental run
-  — keep it that way, and keep the count per LANGUAGE. Why: the gate can only
-  learn a run is bulk by resolving 200 distinct files first, and on taxdome
-  reaching them costs 66 per-entry `ts.createProgram` builds, 9–13 s of a 58.8 s
-  pass, spent constructing slices of the Program about to replace them; while a
-  run-wide count would build a whole TS Program for a Ruby-dominated run that
-  happens to touch 40 `.ts` files.
+  `SymbolResolutionPassPlan { expectedFileCount, expectedRelPaths, projectRoot }`
+  off `CodegraphRunState#extractedFilesByLanguage` and its `…RelPaths…` twin,
+  and `TSProgramCache#primeForExpectedEntries` builds immediately when that
+  count clears the SAME `wholeMinEntries` threshold. The count and the LIST do
+  different jobs: the count decides WHETHER to build, the list decides what to
+  build OVER (the root union above). A count BELOW the threshold returns without
+  recording an attempt — but still records the corpus, so the lazy warm-up gate
+  builds the same union later — so the per-acquire gate still governs an
+  incremental run. Keep it that way, and keep both per LANGUAGE. Why: the gate
+  can only learn a run is bulk by resolving 200 distinct files first, and on
+  taxdome reaching them costs 66 per-entry `ts.createProgram` builds, 9–13 s of
+  a 58.8 s pass, spent constructing slices of the Program about to replace them;
+  while a run-wide count would build a whole TS Program for a Ruby-dominated run
+  that happens to touch 40 `.ts` files.
 - **Its shared parse cache holds THREE populations, each with its own rule:**
   project sources capped by `maxParsedFiles`, dependency `.d.ts` capped by
   `maxDependencyFiles`, and the default lib capped by neither. `populationOf`

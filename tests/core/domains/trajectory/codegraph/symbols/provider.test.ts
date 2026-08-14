@@ -3599,6 +3599,10 @@ describe("CodegraphEnrichmentProvider — daemon write routing (Task 7)", () => 
       graphDb: fakeGraphDb,
       symbolTable: new InMemoryGlobalSymbolTable(),
       resolvers: new Map(),
+      // The deps type has always required this; the recompute's closing summary
+      // now reads resolver diagnostics through it (bd tea-rags-mcp-6aytq), so
+      // the double has to carry the field it was omitting.
+      languageFactory: { supported: () => [], create: () => ({}) },
     });
     await (
       provider as unknown as { recomputeGraphMetricsStreaming: (c?: string) => Promise<void> }
