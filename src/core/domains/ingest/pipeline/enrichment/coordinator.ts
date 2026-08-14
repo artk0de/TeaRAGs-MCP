@@ -13,6 +13,7 @@
  */
 
 import { randomUUID } from "node:crypto";
+import { extname } from "node:path";
 
 import type { Ignore } from "ignore";
 
@@ -25,6 +26,7 @@ import type {
   IndexRunDaemonRelease,
 } from "../../../../contracts/types/enrichment-executor.js";
 import type { ChunkLookupEntry, EnrichmentMetrics, EnrichmentProgressCallback } from "../../../../types.js";
+import { extensionsForLanguages } from "../chunker/config.js";
 import { pipelineLog } from "../infra/debug-logger.js";
 import type { ChunkItem } from "../types.js";
 import { EnrichmentApplier, type EnrichmentApplyEvent } from "./applier.js";
@@ -319,12 +321,24 @@ export class EnrichmentCoordinator {
    * gap `CODEGRAPH_FORCE_RESOLVE` exists to paper over from OUTSIDE the CLI.
    * Forcing here widens the SAME drift check `forceResolveAll` widens; a
    * provider the selector does not name keeps its ordinary hash-diff behavior.
+   *
+   * `languages` is `--languages`'s selection, and it narrows the same set the
+   * force widens — the repair list, and nothing else. Extraction and its pass-2
+   * resolve are decided entirely by which files land here, so a run restricted
+   * to typescript that skips this filter re-resolves the whole corpus: measured
+   * on taxdome 2026-08-14, `--force-enrichments codegraph --languages
+   * typescript` repaired 19,966 files, 8,817 of them ruby (bd
+   * tea-rags-mcp-df1rn). Narrowing ORPHAN detection instead would be a data
+   * loss: every row of an unselected language would read as "no longer
+   * eligible" and be pruned, which is why the filter sits below
+   * `computeExtractionRepair` rather than on its `eligible` input.
    */
   async runRepairPass(
     collectionName: string,
     root: string,
     scanned: ReadonlyMap<string, string>,
     forceSelectors?: readonly string[],
+    languages?: readonly string[],
   ): Promise<number> {
     let repaired = 0;
     this.runContentHashes = scanned;
@@ -332,6 +346,7 @@ export class EnrichmentCoordinator {
       forceSelectors && forceSelectors.length > 0
         ? new Set(selectProviderKeys(this.providerKeys, forceSelectors).matched)
         : null;
+    const scopedExtensions = repairExtensionScope(languages);
     for (const provider of this.providers) {
       const readPersisted = provider.readPersistedFileHashes;
       if (!readPersisted) continue;
@@ -361,10 +376,13 @@ export class EnrichmentCoordinator {
       }
 
       const forceThisProvider = this.forceResolveAll || (forcedKeys?.has(provider.key) ?? false);
-      const { repair, orphans } = computeExtractionRepair(providerEligible, persisted, forceThisProvider);
+      const { repair: drifted, orphans } = computeExtractionRepair(providerEligible, persisted, forceThisProvider);
       if (orphans.length > 0) {
         await provider.handleDeletedPaths?.(orphans, { collectionName });
       }
+      const repair = scopedExtensions
+        ? drifted.filter((path) => scopedExtensions.has(extname(path).toLowerCase()))
+        : drifted;
       if (repair.length > 0) {
         pipelineLog.enrichmentPhase("REPAIR_PASS", {
           provider: provider.key,
@@ -1008,4 +1026,22 @@ export class EnrichmentCoordinator {
     await new Promise((resolve) => setTimeout(resolve, 500));
     return await this.recovery.countUnenriched(collectionName, provider, level).catch(() => first);
   }
+}
+
+/**
+ * Extensions a `--languages` selection admits into the repair set, or `null`
+ * for "no restriction".
+ *
+ * The repair set is a list of PATHS and the selection names LANGUAGES, so the
+ * two vocabularies have to meet somewhere; the chunker's `LANGUAGE_MAP` is the
+ * only thing that knows the mapping, which is why this cannot live beside
+ * `selectLanguages` in contracts.
+ *
+ * An empty selection means the whole corpus, not an empty one — the same
+ * reading `scrollStoredChunks` gives it. A restriction that selected nothing
+ * would finish cleanly and look exactly like a completed recompute.
+ */
+function repairExtensionScope(languages: readonly string[] | undefined): Set<string> | null {
+  if (!languages || languages.length === 0) return null;
+  return new Set(extensionsForLanguages(languages).map((extension) => extension.toLowerCase()));
 }

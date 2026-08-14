@@ -107,7 +107,36 @@ describe("IndexingOps — forceEnrichments", () => {
 
     await ops.run("/repo", { forceEnrichments: ["codegraph"] });
 
-    expect(deps.reindex.reindexChanges).toHaveBeenCalledWith("/repo", undefined, undefined, ["codegraph"]);
+    // Fifth argument is the language filter: undefined here pins that a
+    // recompute without --languages still repairs every language.
+    expect(deps.reindex.reindexChanges).toHaveBeenCalledWith("/repo", undefined, undefined, ["codegraph"], undefined);
+  });
+
+  it("passes --languages to the sync's repair pass too, not only to the recompute (bd tea-rags-mcp-df1rn)", async () => {
+    // The recompute narrows itself through its own stored-chunk scroll, so the
+    // selection reaching it looked like the whole job. It is not: the repair
+    // pass inside reindexChanges decides the forced re-extraction set, and with
+    // it the pass-2 resolve. Dropping the selection here is what made
+    // `--force-enrichments codegraph --languages typescript` re-resolve ruby,
+    // bash and js on taxdome (2026-08-14, REPAIR_PASS repaired:19966).
+    const deps = makeDeps();
+    const ops = new IndexingOps(deps);
+
+    await ops.run("/repo", { forceEnrichments: ["codegraph"], languages: ["typescript"] });
+
+    expect(deps.reindex.reindexChanges).toHaveBeenCalledWith(
+      "/repo",
+      undefined,
+      undefined,
+      ["codegraph"],
+      ["typescript"],
+    );
+    expect(deps.enrichment.recomputeEnrichments).toHaveBeenCalledWith(
+      expect.any(String),
+      expect.any(String),
+      ["codegraph"],
+      ["typescript"],
+    );
   });
 
   it("refuses to recompute when the codebase was never indexed", async () => {

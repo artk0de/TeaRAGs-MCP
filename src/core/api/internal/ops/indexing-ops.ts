@@ -468,7 +468,15 @@ export class IndexingOps {
     // nothing drifted, skipped pass-1/pass-2 entirely, and fell through to
     // the stored-chunk reapply below (payload already on disk, no fresh
     // resolve). See EnrichmentCoordinator#runRepairPass.
-    const changeStats = await this.reindex.reindexChanges(path, progressCallback, undefined, selectors);
+    //
+    // `languages` has to ride along with it. The recompute below narrows itself
+    // through the stored-chunk scroll, but the force it hands the sync leg
+    // reaches the repair pass — which decides the re-extraction set, and with it
+    // the pass-2 resolve. Dropping the selection here left the flag looking
+    // honoured while every language was re-resolved anyway: taxdome 2026-08-14,
+    // `--languages typescript` repaired 19,966 files (8,817 ruby, 39 bash, 7 js)
+    // and replaced their cg_run_stats rows too (bd tea-rags-mcp-df1rn).
+    const changeStats = await this.reindex.reindexChanges(path, progressCallback, undefined, selectors, languages);
     const startedAt = Date.now();
     const enrichmentMetrics = await this.enrichment.recomputeEnrichments(
       collectionName,

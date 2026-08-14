@@ -110,6 +110,12 @@ export class ReindexPipeline extends BaseIndexingPipeline {
     // repair-pass-driven force reaches the same providers that selector names
     // — see EnrichmentCoordinator#runRepairPass.
     forceEnrichmentSelectors?: readonly string[],
+    // `--languages`'s selection, and it rides alongside the force for the same
+    // reason: the repair pass is where the forced re-extraction set is decided,
+    // so it is also the only place the restriction can apply. Deliberately NOT
+    // applied to the scan itself — the sync has to see the whole working tree
+    // or a changed file of another language silently keeps stale points.
+    languages?: readonly string[],
   ): Promise<ChangeStats> {
     const startTime = Date.now();
     const { absolutePath, collectionName } = await this.resolveContext(path);
@@ -183,6 +189,7 @@ export class ReindexPipeline extends BaseIndexingPipeline {
         ctx.absolutePath,
         ctx.synchronizer.getCurrentFileHashes(),
         forceEnrichmentSelectors,
+        languages,
       );
 
       if (this.hasNoChanges(stats) && retryPaths.length === 0) {
