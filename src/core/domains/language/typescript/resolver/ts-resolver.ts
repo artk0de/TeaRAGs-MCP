@@ -104,12 +104,75 @@ import {
   type ProjectFileProbe,
   type TsCompilerOptions,
 } from "./ts-path-mapper.js";
-import { TSProgramCache } from "./ts-program-cache.js";
+import {
+  TS_PROGRAM_CACHE_MAX_DEFAULT,
+  TS_PROGRAM_PARSED_DEPENDENCY_FILES_MAX_DEFAULT,
+  TS_PROGRAM_PARSED_FILES_MAX_DEFAULT,
+  TS_PROGRAM_RETAINED_TEXT_BYTES_MAX_DEFAULT,
+  TSProgramCache,
+  type TSProgramCacheOptions,
+} from "./ts-program-cache.js";
 
 /** Parse `CODEGRAPH_TS_CONE_MAX`; fall back to the TS default on absent/invalid. */
 function resolveConeMax(raw: string | undefined): number {
   const parsed = Number(raw);
   return Number.isInteger(parsed) && parsed > 0 ? parsed : CONE_MAX_DEFAULT;
+}
+
+/** Bytes per megabyte, for the one budget an operator states in MB. */
+const BYTES_PER_MB = 1024 * 1024;
+
+/**
+ * Parse a positive-integer budget knob; fall back to the compiled-in default on
+ * absent, non-numeric, fractional or non-positive input. A budget of zero or
+ * less is not a smaller cache, it is a cache that can retain nothing, so it is
+ * refused the same way a typo is.
+ */
+function resolvePositiveBudget(raw: string | undefined, fallback: number): number {
+  const parsed = Number(raw);
+  return Number.isInteger(parsed) && parsed > 0 ? parsed : fallback;
+}
+
+/**
+ * The four {@link TSProgramCache} budgets an operator may raise from the
+ * environment, resolved against their compiled-in defaults.
+ *
+ * The defaults are sized for the enrichment worker's 2 GiB heap on an ordinary
+ * repository, and on a large one they bind hard: measured on taxdome (10,912 TS
+ * files, bd tea-rags-mcp-6aytq), `parsedDependencyFileCount` saturates the
+ * 2000-file cap around file 1,200 and the `ts.createProgram` rate immediately
+ * jumps 6x — from 0.08 to 0.48 builds per file — because every later build
+ * re-parses the `.d.ts` surface eviction just dropped. Raising the budgets
+ * trades heap for that re-parse, and the trade is corpus-specific: only an
+ * operator who knows both the repository and the worker's heap can pick it,
+ * which is why these are environment knobs and not new defaults.
+ *
+ * - `CODEGRAPH_TS_PROGRAM_CACHE_MAX` → retained Programs
+ * - `CODEGRAPH_TS_PROGRAM_PARSED_FILES_MAX` → parsed project sources
+ * - `CODEGRAPH_TS_PROGRAM_PARSED_DEPENDENCY_FILES_MAX` → parsed dependency declarations
+ * - `CODEGRAPH_TS_PROGRAM_RETAINED_TEXT_MB` → retained non-lib source text, in MB
+ */
+export function resolveProgramCacheBudgets(
+  env: NodeJS.ProcessEnv,
+): Required<
+  Pick<TSProgramCacheOptions, "maxEntries" | "maxParsedFiles" | "maxDependencyFiles" | "maxRetainedSourceTextBytes">
+> {
+  return {
+    maxEntries: resolvePositiveBudget(env.CODEGRAPH_TS_PROGRAM_CACHE_MAX, TS_PROGRAM_CACHE_MAX_DEFAULT),
+    maxParsedFiles: resolvePositiveBudget(
+      env.CODEGRAPH_TS_PROGRAM_PARSED_FILES_MAX,
+      TS_PROGRAM_PARSED_FILES_MAX_DEFAULT,
+    ),
+    maxDependencyFiles: resolvePositiveBudget(
+      env.CODEGRAPH_TS_PROGRAM_PARSED_DEPENDENCY_FILES_MAX,
+      TS_PROGRAM_PARSED_DEPENDENCY_FILES_MAX_DEFAULT,
+    ),
+    maxRetainedSourceTextBytes:
+      resolvePositiveBudget(
+        env.CODEGRAPH_TS_PROGRAM_RETAINED_TEXT_MB,
+        TS_PROGRAM_RETAINED_TEXT_BYTES_MAX_DEFAULT / BYTES_PER_MB,
+      ) * BYTES_PER_MB,
+  };
 }
 
 /**
@@ -174,7 +237,12 @@ export class TSCallResolver implements CallResolver {
     };
     this.cone = new ConeDispatchResolver(new TSConeTypeLocator(cfg), cfg.coneMax ?? CONE_MAX_DEFAULT);
     this.programCache = typeCheckerFallbackEnabled(process.env.CODEGRAPH_TS_TYPECHECKER)
-      ? new TSProgramCache({ repoRoot, tsOptions, fileExists: this.fileExists })
+      ? new TSProgramCache({
+          repoRoot,
+          tsOptions,
+          fileExists: this.fileExists,
+          ...resolveProgramCacheBudgets(process.env),
+        })
       : null;
     this.unionReceiver = this.programCache
       ? new TSTypeCheckerUnionReceiverDispatchResolver(cfg, this.programCache)
