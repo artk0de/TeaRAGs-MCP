@@ -171,11 +171,54 @@ export class GraphBuildFinalizer {
     // live-reproduced against taxdome). Cleared on every flush alongside the
     // buffer it tracks.
     let bufferedRelPaths = new Set<string>();
-    const flushBuffer = async (): Promise<void> => {
+    /**
+     * The ONE bulk write allowed to be open while the loop keeps resolving
+     * (bd tea-rags-mcp-6aytq). Measured on taxdome: the flush was awaited
+     * inline, costing 44.0s over 42 calls — ~1s of dead wall clock per
+     * BULK_FILES window while the daemon committed and the resolver idled.
+     * Double-buffering hides that behind the next window's resolve work.
+     *
+     * Strictly one in flight, never two: `dispatchFlush` settles the previous
+     * write before opening the next, so the daemon session still sees a single
+     * serialized stream of bulk transactions in submission order — the
+     * DELETE+INSERT interleave inside `upsertFilesBulk` stays untouched, and
+     * so does the (source, target) primary-key invariant that
+     * `bufferedRelPaths` guards. At most two batches are alive: the one being
+     * written and the one being filled.
+     */
+    let inFlightFlush: Promise<void> | null = null;
+    /**
+     * Await the open write, and charge the loop ONLY for what it actually
+     * waited on. `flush` telemetry used to span the whole write; now the
+     * overlapped portion is invisible to it by design — the gap between the
+     * ms recorded here and the write's real duration IS the saving.
+     */
+    const settleFlush = async (): Promise<void> => {
+      const open = inFlightFlush;
+      if (!open) return;
+      inFlightFlush = null;
+      const startedAtMs = Date.now();
+      try {
+        await open;
+      } finally {
+        this.timings.record("flush", Date.now() - startedAtMs);
+      }
+    };
+    const dispatchFlush = async (): Promise<void> => {
+      if (buffer.length === 0) return;
       const pending = buffer;
+      const at = processed;
       buffer = [];
       bufferedRelPaths = new Set();
-      await this.flushBuffer(graphDb, pending, processed);
+      // Ordering point: the previous batch must have landed before this one is
+      // handed to the session.
+      await settleFlush();
+      const started = this.flushBuffer(graphDb, pending, at);
+      // The rejection is consumed by `settleFlush`; attach a no-op handler so
+      // the window between dispatch and settle cannot raise an unhandled
+      // rejection and kill the process.
+      void started.catch(() => undefined);
+      inFlightFlush = started;
     };
     try {
       reader = createInterface({
@@ -205,7 +248,7 @@ export class GraphBuildFinalizer {
         // A repeat relPath already has an entry pending in this batch — flush
         // it out first so the repeat starts its own transaction instead of
         // sharing one with its own earlier self (see `bufferedRelPaths` above).
-        if (bufferedRelPaths.has(extraction.relPath)) await flushBuffer();
+        if (bufferedRelPaths.has(extraction.relPath)) await dispatchFlush();
         // Buffer for the next bulk flush (fired at BULK_FILES / checkpoint / end)
         // instead of one transaction per file.
         buffer.push({
@@ -245,17 +288,22 @@ export class GraphBuildFinalizer {
             }),
           );
         }
-        if (buffer.length >= this.bulkFiles) await flushBuffer();
+        if (buffer.length >= this.bulkFiles) await dispatchFlush();
         if (processed % this.checkpointEvery === 0) {
           // Flush the buffered files before the checkpoint so the bounded WAL
-          // reflects the whole processed window.
-          await flushBuffer();
+          // reflects the whole processed window. Both steps are needed: the
+          // dispatch settles the PREVIOUS window's write, the settle waits on
+          // this one — a CHECKPOINT issued with a write still open would bound
+          // a WAL that does not yet hold the window it claims to cover.
+          await dispatchFlush();
+          await settleFlush();
           await this.checkpoint(graphDb);
         }
       }
-      // Flush the sub-batch remainder, then a final checkpoint for any files
-      // written since the last one.
-      await flushBuffer();
+      // Flush the sub-batch remainder, wait for it to land, then a final
+      // checkpoint for any files written since the last one.
+      await dispatchFlush();
+      await settleFlush();
       if (processed > 0 && processed % this.checkpointEvery !== 0) {
         await this.checkpoint(graphDb);
       }
@@ -278,6 +326,15 @@ export class GraphBuildFinalizer {
       );
     } finally {
       reader?.close();
+      // A dispatched write must never outlive the call that opened it: on the
+      // success path this is a no-op (already settled above), on the throw path
+      // it lets the open transaction finish before the error propagates, so the
+      // daemon is not still committing while the caller starts tearing the run
+      // down. Its own failure is swallowed HERE on purpose — the resolve error
+      // that brought us here is the root cause and must be the one that
+      // surfaces; a flush that fails while nothing is being torn down still
+      // aborts the pass through `dispatchFlush`/`settleFlush` above.
+      await settleFlush().catch(() => undefined);
     }
   }
 
@@ -336,10 +393,14 @@ export class GraphBuildFinalizer {
    * dropped pathological files, so no single row can abort a batch. A
    * batch-level failure surfaces batch size + last file so the marker / stderr
    * still points near where pass-2 tripped.
+   *
+   * Deliberately NOT timed here: the caller dispatches this without awaiting it
+   * and records the `flush` phase at the point it actually blocks
+   * (`settleFlush`). Timing it here would report the write's full duration and
+   * hide exactly the overlap double-buffering exists to create.
    */
   private async flushBuffer(graphDb: GraphDbClient, pending: BulkFileUpsertEntry[], processed: number): Promise<void> {
     if (pending.length === 0) return;
-    const startedAtMs = Date.now();
     try {
       await graphDb.upsertFilesBulk(pending);
     } catch (err) {
@@ -350,8 +411,6 @@ export class GraphBuildFinalizer {
           message: `graphDb.upsertFilesBulk failed near file #${processed} (batch=${pending.length}, last=${pending[pending.length - 1]?.node.relPath}): ${wrapped.message}`,
         }),
       );
-    } finally {
-      this.timings.record("flush", Date.now() - startedAtMs);
     }
   }
 
