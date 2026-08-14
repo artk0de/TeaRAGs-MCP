@@ -853,10 +853,24 @@ export class TSProgramCache {
    * Only files under the repo root are recorded. Everything else — the default
    * lib above all — is never an entry file, so indexing it would grow the set by
    * the largest population in the Program for a lookup that cannot happen.
+   *
+   * `ts.createProgram`'s own module-resolution walk (the transitive closure
+   * discussed above) is a recursive implementation with no depth bound of its
+   * own, and a deep enough barrel-chained closure can overflow the call stack
+   * (bd tea-rags-mcp-2j8s1 — reproduced at taxdome's real scale, ~10k files,
+   * via scripts/spikes/ts-resolve-path-profile.ts). `acquire`'s contract is
+   * already "null means no type info, fall through" for the file-not-on-disk
+   * case below; a Program that can't be built degrades the same way instead of
+   * crashing whichever worker thread is running the resolve.
    */
   private build(entryAbsolute: string): CacheEntry | null {
     const rootFiles = this.collectClosure(entryAbsolute);
-    const program = ts.createProgram({ rootNames: [...rootFiles], options: this.compilerOptions, host: this.host });
+    let program: ts.Program;
+    try {
+      program = ts.createProgram({ rootNames: [...rootFiles], options: this.compilerOptions, host: this.host });
+    } catch {
+      return null;
+    }
     const builtAtMs = Date.now();
     const sourceFile = program.getSourceFile(entryAbsolute);
     if (!sourceFile) return null;

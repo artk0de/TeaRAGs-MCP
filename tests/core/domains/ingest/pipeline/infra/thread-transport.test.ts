@@ -36,6 +36,16 @@ parentPort.on("message", () => {
 });
 `;
 
+// A worker that reports back the stack size limit V8 is actually enforcing on
+// it, same observability trick as LIMITS_WORKER_SRC above (applied value, not
+// requested).
+const STACK_LIMITS_WORKER_SRC = `
+import { parentPort, resourceLimits } from "node:worker_threads";
+parentPort.on("message", () => {
+  parentPort.postMessage({ stackSizeMb: resourceLimits.stackSizeMb });
+});
+`;
+
 describe("ThreadTransport", () => {
   const dir = mkdtempSync(join(tmpdir(), "tt-"));
   const workerPath = join(dir, "echo-worker.mjs");
@@ -107,6 +117,57 @@ describe("ThreadTransport", () => {
 
   it("treats a zero ceiling as no ceiling rather than capping the worker at nothing", async () => {
     expect(await appliedHeapCeilingMb(0)).toBeGreaterThan(1024);
+  });
+
+  /**
+   * bd tea-rags-mcp-2j8s1 follow-up — Node's worker_threads default stack
+   * (4 MB) is too small for `ts.createProgram`'s recursive module-resolution
+   * walk on a large, barrel-connected TypeScript corpus: measured in
+   * isolation, the default stack made 270/300 acquire() calls overflow and
+   * fall through TSProgramCache#build's null-return path, each failed attempt
+   * still costing real CPU and never populating the coverage cache (82.4s for
+   * 300 files); an 8 MB stack made every one of those calls succeed on the
+   * first try (1.5s for the same 300 files, programBuilds 300 -> 1). Same
+   * observability approach as the heap ceiling above: assert the APPLIED
+   * limit, not the requested one, and allocate nothing.
+   */
+  async function appliedStackSizeMb(limit?: number): Promise<number | undefined> {
+    const path = join(dir, "stack-limits-worker.mjs");
+    writeFileSync(path, STACK_LIMITS_WORKER_SRC, "utf8");
+    const transport = new ThreadTransport<Record<string, never>, { stackSizeMb?: number }>(
+      path,
+      undefined,
+      undefined,
+      limit,
+    );
+    const handle = transport.spawn({});
+    try {
+      return await new Promise<number | undefined>((resolve, reject) => {
+        handle.onMessage((m) => {
+          resolve((m as { stackSizeMb?: number }).stackSizeMb);
+        });
+        handle.onError(reject);
+        handle.post({});
+      });
+    } finally {
+      await handle.terminate();
+    }
+  }
+
+  it("caps the spawned worker's stack at the configured size", async () => {
+    expect(await appliedStackSizeMb(16)).toBe(16);
+  });
+
+  it("leaves the worker on node's own default stack size when none is configured", async () => {
+    const uncapped = await appliedStackSizeMb();
+
+    // Node's own worker_threads default (4 MB as of Node 24) -- the size that
+    // made ts.createProgram overflow on a large barrel-connected corpus.
+    expect(uncapped).toBe(4);
+  });
+
+  it("treats a zero stack size as no override rather than a zero-byte stack", async () => {
+    expect(await appliedStackSizeMb(0)).toBe(4);
   });
 
   /**

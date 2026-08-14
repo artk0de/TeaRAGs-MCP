@@ -30,19 +30,32 @@ export class ThreadTransport<Req, Res> implements WorkerTransport<Req, Res> {
    *   with `--cpu-prof`, writing a `.cpuprofile` to this directory on
    *   `worker.terminate()` / normal thread exit. Off by default — profiling
    *   has its own (small) overhead and no default run should pay it.
+   * @param stackSizeMb V8 stack size (MB) for the spawned thread. Omitted (or
+   *   `0`) leaves the thread on node:worker_threads' own default (4 MB) —
+   *   too small for `ts.createProgram`'s recursive resolution walk on a
+   *   large TypeScript corpus, see `defaultEnrichmentWorkerStackSizeMb`.
    */
   constructor(
     private readonly workerPath: string,
     private readonly maxOldGenerationSizeMb?: number,
     private readonly cpuProfileDir?: string,
+    private readonly stackSizeMb?: number,
   ) {}
 
   spawn(init: unknown): WorkerHandle<Req, Res> {
     const options: WorkerOptions = { workerData: init };
-    // Set only when a real ceiling was asked for: passing `resourceLimits` with
-    // a zero would cap the thread at nothing rather than leave it unbounded.
+    // Set only when a real value was asked for: passing `resourceLimits` with
+    // a zero would cap the thread at nothing/zero rather than leave it on
+    // node:worker_threads' own default.
+    const resourceLimits: NonNullable<WorkerOptions["resourceLimits"]> = {};
     if (this.maxOldGenerationSizeMb !== undefined && this.maxOldGenerationSizeMb > 0) {
-      options.resourceLimits = { maxOldGenerationSizeMb: this.maxOldGenerationSizeMb };
+      resourceLimits.maxOldGenerationSizeMb = this.maxOldGenerationSizeMb;
+    }
+    if (this.stackSizeMb !== undefined && this.stackSizeMb > 0) {
+      resourceLimits.stackSizeMb = this.stackSizeMb;
+    }
+    if (Object.keys(resourceLimits).length > 0) {
+      options.resourceLimits = resourceLimits;
     }
     if (this.cpuProfileDir) {
       options.execArgv = [...(process.execArgv ?? []), "--cpu-prof", `--cpu-prof-dir=${this.cpuProfileDir}`];

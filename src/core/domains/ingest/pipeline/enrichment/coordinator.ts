@@ -307,10 +307,31 @@ export class EnrichmentCoordinator {
    * needs that number: a run with no file changes would otherwise take its
    * early return and skip the finalize that recomputes the derived tables, so a
    * repair-only run has to be recognised as real work.
+   *
+   * `forceSelectors` is `--force-enrichments`'s own selector list, threaded
+   * straight through from the CLI/facade with no re-interpretation here — the
+   * SAME `selectProviderKeys` resolution `recomputeEnrichments` already uses,
+   * so `codegraph` reaches `codegraph.symbols` and `all` reaches everything,
+   * consistently. Without this, `--force-enrichments codegraph` only ever
+   * reached `recomputeEnrichments`'s stored-chunk reapply (payload already on
+   * disk, no fresh extraction) and silently left codegraph's actual resolve
+   * graph untouched whenever nothing had drifted by content hash — the same
+   * gap `CODEGRAPH_FORCE_RESOLVE` exists to paper over from OUTSIDE the CLI.
+   * Forcing here widens the SAME drift check `forceResolveAll` widens; a
+   * provider the selector does not name keeps its ordinary hash-diff behavior.
    */
-  async runRepairPass(collectionName: string, root: string, scanned: ReadonlyMap<string, string>): Promise<number> {
+  async runRepairPass(
+    collectionName: string,
+    root: string,
+    scanned: ReadonlyMap<string, string>,
+    forceSelectors?: readonly string[],
+  ): Promise<number> {
     let repaired = 0;
     this.runContentHashes = scanned;
+    const forcedKeys =
+      forceSelectors && forceSelectors.length > 0
+        ? new Set(selectProviderKeys(this.providerKeys, forceSelectors).matched)
+        : null;
     for (const provider of this.providers) {
       const readPersisted = provider.readPersistedFileHashes;
       if (!readPersisted) continue;
@@ -339,7 +360,8 @@ export class EnrichmentCoordinator {
         providerEligible.set(path, scanned.get(path) as string);
       }
 
-      const { repair, orphans } = computeExtractionRepair(providerEligible, persisted, this.forceResolveAll);
+      const forceThisProvider = this.forceResolveAll || (forcedKeys?.has(provider.key) ?? false);
+      const { repair, orphans } = computeExtractionRepair(providerEligible, persisted, forceThisProvider);
       if (orphans.length > 0) {
         await provider.handleDeletedPaths?.(orphans, { collectionName });
       }
@@ -352,7 +374,7 @@ export class EnrichmentCoordinator {
           // Stamped into the log so a profile can be attributed to a forced run
           // rather than to a coincidentally large changeset. Omitted when off,
           // keeping the ordinary run's log line byte-identical.
-          ...(this.forceResolveAll ? { forcedResolve: true } : {}),
+          ...(forceThisProvider ? { forcedResolve: true } : {}),
         });
         // `runFileBatch` (NOT `runFileSignalsRecovery`): repair runs INSIDE the live
         // run this coordinator is orchestrating, same as file-phase's own

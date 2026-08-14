@@ -6,6 +6,7 @@ import {
   defaultChunkerPoolSize,
   defaultEnrichmentWorkerCpuProfileDir,
   defaultEnrichmentWorkerMemoryLimitMb,
+  defaultEnrichmentWorkerStackSizeMb,
   defaultWorkerDispatchTimeoutMs,
 } from "../../../../../../src/core/domains/ingest/pipeline/infra/pool-defaults.js";
 
@@ -116,6 +117,68 @@ describe("defaultEnrichmentWorkerMemoryLimitMb", () => {
   it("falls back to the default when the override is only whitespace", () => {
     process.env.ENRICHMENT_WORKER_MEMORY_LIMIT_MB = "   ";
     expect(defaultEnrichmentWorkerMemoryLimitMb()).toBe(2048);
+  });
+});
+
+/**
+ * bd tea-rags-mcp-2j8s1 follow-up — Node's worker_threads default V8 stack
+ * (4 MB, matching --stack-size's own default) is too small for
+ * ts.createProgram's recursive module-resolution walk on a large,
+ * barrel-connected TypeScript corpus. Measured in isolation: at ~13,000
+ * synthetic files, the default stack made 270/300 acquire() calls overflow
+ * and fall through TSProgramCache#build's null-return path (0d271ecf) --
+ * each failed attempt still cost real CPU before failing, and NONE of them
+ * ever populated the coverage cache, so every subsequent file paid its own
+ * failed attempt too (82.4s for 300 files). An 8 MB stack (--stack-size=8000)
+ * made every one of those 300 calls succeed on the FIRST try, `programBuilds`
+ * dropped from 300 to 1 (4m2vb's coverage cache finally doing its job), and
+ * wall time dropped from 82.4s to 1.5s -- a 56x change from stack size alone.
+ * 16 MB default here is double the measured-sufficient value, as headroom for
+ * taxdome's real (larger, not fully characterized) barrel topology.
+ */
+describe("defaultEnrichmentWorkerStackSizeMb", () => {
+  let savedEnv: string | undefined;
+
+  beforeEach(() => {
+    savedEnv = process.env.ENRICHMENT_WORKER_STACK_SIZE_MB;
+    delete process.env.ENRICHMENT_WORKER_STACK_SIZE_MB;
+  });
+
+  afterEach(() => {
+    if (savedEnv !== undefined) {
+      process.env.ENRICHMENT_WORKER_STACK_SIZE_MB = savedEnv;
+    } else {
+      delete process.env.ENRICHMENT_WORKER_STACK_SIZE_MB;
+    }
+  });
+
+  it("defaults to 16 MB when ENRICHMENT_WORKER_STACK_SIZE_MB is not set", () => {
+    expect(defaultEnrichmentWorkerStackSizeMb()).toBe(16);
+  });
+
+  it("returns the parsed value when the override is a valid positive integer", () => {
+    process.env.ENRICHMENT_WORKER_STACK_SIZE_MB = "32";
+    expect(defaultEnrichmentWorkerStackSizeMb()).toBe(32);
+  });
+
+  it("returns 0 when the override is '0', opting back into Node's own worker default", () => {
+    process.env.ENRICHMENT_WORKER_STACK_SIZE_MB = "0";
+    expect(defaultEnrichmentWorkerStackSizeMb()).toBe(0);
+  });
+
+  it("falls back to the default when the override is not a number", () => {
+    process.env.ENRICHMENT_WORKER_STACK_SIZE_MB = "not-a-number";
+    expect(defaultEnrichmentWorkerStackSizeMb()).toBe(16);
+  });
+
+  it("falls back to the default when the override is negative", () => {
+    process.env.ENRICHMENT_WORKER_STACK_SIZE_MB = "-1";
+    expect(defaultEnrichmentWorkerStackSizeMb()).toBe(16);
+  });
+
+  it("falls back to the default when the override is only whitespace", () => {
+    process.env.ENRICHMENT_WORKER_STACK_SIZE_MB = "   ";
+    expect(defaultEnrichmentWorkerStackSizeMb()).toBe(16);
   });
 });
 

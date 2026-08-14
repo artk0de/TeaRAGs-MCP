@@ -462,7 +462,13 @@ export class IndexingOps {
     // (bd tea-rags-mcp-snbzk; same mechanism as 6goqa).
     const collectionName = resolveAliasTargetCollection(aliasName, await this.qdrant.aliases.listAliases());
 
-    const changeStats = await this.reindex.reindexChanges(path, progressCallback);
+    // `selectors` forces the SAME repair-pass drift widening
+    // CODEGRAPH_FORCE_RESOLVE gives from outside the CLI — without it,
+    // `--force-enrichments codegraph` on an already-current graph found
+    // nothing drifted, skipped pass-1/pass-2 entirely, and fell through to
+    // the stored-chunk reapply below (payload already on disk, no fresh
+    // resolve). See EnrichmentCoordinator#runRepairPass.
+    const changeStats = await this.reindex.reindexChanges(path, progressCallback, undefined, selectors);
     const startedAt = Date.now();
     const enrichmentMetrics = await this.enrichment.recomputeEnrichments(
       collectionName,
