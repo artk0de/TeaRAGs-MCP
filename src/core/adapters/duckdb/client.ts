@@ -39,6 +39,7 @@ import type {
   CycleEntry,
   CycleScope,
   EdgeKindCount,
+  FileGraphMetrics,
   GraphDbClient,
   GraphEdges,
   GraphFileNode,
@@ -198,6 +199,10 @@ export class DuckDbGraphClient implements GraphDbClient {
 
   async getTransitiveImpact(relPath: RelPath, maxDepth = 5): Promise<number> {
     return this.fileMetrics.getTransitiveImpact(relPath, maxDepth);
+  }
+
+  async getFileMetricsBulk(relPaths: readonly RelPath[], maxDepth = 5): Promise<Map<RelPath, FileGraphMetrics>> {
+    return this.fileMetrics.getFileMetricsBulk(relPaths, maxDepth);
   }
 
   // ── Symbol persistence ──

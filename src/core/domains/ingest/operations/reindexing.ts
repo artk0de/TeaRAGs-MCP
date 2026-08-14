@@ -106,10 +106,6 @@ export class ReindexPipeline extends BaseIndexingPipeline {
     path: string,
     progressCallback?: ProgressCallback,
     overrides?: { chunkSize?: number; modelInfo?: { model: string; contextLength: number; dimensions: number } },
-    // Threaded straight from `--force-enrichments`'s own selector list, so a
-    // repair-pass-driven force reaches the same providers that selector names
-    // — see EnrichmentCoordinator#runRepairPass.
-    forceEnrichmentSelectors?: readonly string[],
   ): Promise<ChangeStats> {
     const startTime = Date.now();
     const { absolutePath, collectionName } = await this.resolveContext(path);
@@ -182,7 +178,6 @@ export class ReindexPipeline extends BaseIndexingPipeline {
         ctx.targetCollection,
         ctx.absolutePath,
         ctx.synchronizer.getCurrentFileHashes(),
-        forceEnrichmentSelectors,
       );
 
       if (this.hasNoChanges(stats) && retryPaths.length === 0) {

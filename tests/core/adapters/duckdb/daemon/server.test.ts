@@ -414,6 +414,18 @@ describe("CodegraphDaemonServer.handle", () => {
     });
     expect(impact.ok).toBe(true);
 
+    // Setwise file metrics: serialised as entries, one row per requested root
+    // that the graph knows about (b.ts is imported by a.ts; unknown.ts is not).
+    const metrics = await server.handle({
+      id: 20,
+      op: "getFileMetricsBulk",
+      params: { collection: c, relPaths: ["b.ts", "unknown.ts"], maxDepth: 5 },
+    });
+    expect(metrics.ok).toBe(true);
+    expect((metrics as { result: [string, { fanIn: number }][] }).result).toEqual([
+      ["b.ts", { fanIn: 1, fanOut: 0, transitiveImpact: 1 }],
+    ]);
+
     const adj = await server.handle({ id: 14, op: "listAdjacency", params: { collection: c, scope: "file" } });
     expect(adj.ok).toBe(true);
     // Serialised as entries — a.ts → [b.ts].

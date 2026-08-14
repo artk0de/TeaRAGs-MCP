@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-import { SchemaManager } from "../../../../src/core/adapters/qdrant/schema-manager.js";
+import { ENRICHMENT_SCAN_INDEXES, SchemaManager } from "../../../../src/core/adapters/qdrant/schema-manager.js";
 import { SchemaMigrator } from "../../../../src/core/domains/maintenance/migration/schema-migrator.js";
 import { SparseMigrator } from "../../../../src/core/domains/maintenance/migration/sparse-migrator.js";
 
@@ -148,6 +148,21 @@ describe("SchemaManager", () => {
       }
     });
 
+    it("should create payload indexes for the fields the enrichment scans filter on", async () => {
+      mockQdrant.createPayloadIndex.mockResolvedValue(undefined);
+
+      await schemaManager.initializeSchema("new-collection");
+
+      // A fresh collection is stamped at the LATEST schema version, so the
+      // schema migration that adds these never runs on it — every index a
+      // filter depends on has to be created here or the collection never gets
+      // it. Unindexed, the enrichment run's own bookkeeping filters degrade to
+      // a payload lookup per candidate point.
+      for (const { path, schema } of ENRICHMENT_SCAN_INDEXES) {
+        expect(mockQdrant.createPayloadIndex).toHaveBeenCalledWith("new-collection", path, schema);
+      }
+    });
+
     it("should record codegraph index paths in schema metadata", async () => {
       mockQdrant.createPayloadIndex.mockResolvedValue(undefined);
 
@@ -224,8 +239,8 @@ describe("SchemaManager", () => {
   });
 
   describe("LATEST_SCHEMA_VERSION", () => {
-    it("should be 13 with v13 ownership rename migration", () => {
-      expect(LATEST_SCHEMA_VERSION).toBe(13);
+    it("should be 14 with v14 enrichment scan-index migration", () => {
+      expect(LATEST_SCHEMA_VERSION).toBe(14);
     });
   });
 });

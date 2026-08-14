@@ -34,6 +34,7 @@ import {
   CodegraphResolveError,
   CodegraphSpillIoError,
 } from "../../errors.js";
+import { CodegraphPhaseTimings } from "./phase-timings.js";
 import type { CallEdgeResolutionRunner } from "./resolution-runner.js";
 import type { CodegraphRunState } from "./run-state.js";
 
@@ -118,10 +119,17 @@ export class GraphBuildFinalizer {
   private readonly bulkFiles = positiveIntFromEnv("CODEGRAPH_BULK_FILES", BULK_FILES);
   private readonly checkpointEvery = positiveIntFromEnv("CODEGRAPH_CHECKPOINT_EVERY", CHECKPOINT_EVERY);
 
+  /**
+   * @param timings Wall-clock attribution for pass-2's four stages, shared with
+   *   the provider so pass-1 and pass-2 land in ONE summary. Defaulted so a
+   *   caller that only wants the loop (tests, direct mode) need not supply one;
+   *   production passes the provider's instance.
+   */
   constructor(
     private readonly resolveStore: GraphStoreResolver,
     private readonly resolutionRunner: CallEdgeResolutionRunner,
     private readonly runState: CodegraphRunState,
+    private readonly timings: CodegraphPhaseTimings = new CodegraphPhaseTimings(),
   ) {}
 
   /**
@@ -132,9 +140,22 @@ export class GraphBuildFinalizer {
    * Memory footprint: O(1) in the spill size — one JSON line resident at any
    * time. The resolver's working set is the file's own chunks and the global
    * symbol table (already loaded in-memory).
+   *
+   * The pass opens by declaring its own size to the resolvers
+   * (bd tea-rags-mcp-6aytq). Every file this loop will read was counted in
+   * pass-1, so a resolver whose run-scoped caches are worth building in one
+   * piece can do it here — before the first file, where it is a fixed cost —
+   * rather than inferring the same fact from the first few hundred call sites.
    */
   async resolveAndUpsert(spillPath: string, collectionName?: string): Promise<void> {
     const { graphDb, symbolTable } = await this.resolveStore(collectionName);
+    const preparedAtMs = Date.now();
+    this.resolutionRunner.prepareResolvePass();
+    // Attributed to pass-2 with a count of ZERO files: whatever a resolver
+    // built here is pass-2 wall clock (a whole-project `ts.Program` is ~10 s of
+    // it on taxdome), but it is not a file, and charging it as one would move
+    // the ms/file figure this accumulator exists to report.
+    this.timings.record("pass2", Date.now() - preparedAtMs, { count: 0 });
     let processed = 0;
     let lastRelPath: string | null = null;
     let reader: ReturnType<typeof createInterface> | null = null;
@@ -150,11 +171,54 @@ export class GraphBuildFinalizer {
     // live-reproduced against taxdome). Cleared on every flush alongside the
     // buffer it tracks.
     let bufferedRelPaths = new Set<string>();
-    const flushBuffer = async (): Promise<void> => {
+    /**
+     * The ONE bulk write allowed to be open while the loop keeps resolving
+     * (bd tea-rags-mcp-6aytq). Measured on taxdome: the flush was awaited
+     * inline, costing 44.0s over 42 calls — ~1s of dead wall clock per
+     * BULK_FILES window while the daemon committed and the resolver idled.
+     * Double-buffering hides that behind the next window's resolve work.
+     *
+     * Strictly one in flight, never two: `dispatchFlush` settles the previous
+     * write before opening the next, so the daemon session still sees a single
+     * serialized stream of bulk transactions in submission order — the
+     * DELETE+INSERT interleave inside `upsertFilesBulk` stays untouched, and
+     * so does the (source, target) primary-key invariant that
+     * `bufferedRelPaths` guards. At most two batches are alive: the one being
+     * written and the one being filled.
+     */
+    let inFlightFlush: Promise<void> | null = null;
+    /**
+     * Await the open write, and charge the loop ONLY for what it actually
+     * waited on. `flush` telemetry used to span the whole write; now the
+     * overlapped portion is invisible to it by design — the gap between the
+     * ms recorded here and the write's real duration IS the saving.
+     */
+    const settleFlush = async (): Promise<void> => {
+      const open = inFlightFlush;
+      if (!open) return;
+      inFlightFlush = null;
+      const startedAtMs = Date.now();
+      try {
+        await open;
+      } finally {
+        this.timings.record("flush", Date.now() - startedAtMs);
+      }
+    };
+    const dispatchFlush = async (): Promise<void> => {
+      if (buffer.length === 0) return;
       const pending = buffer;
+      const at = processed;
       buffer = [];
       bufferedRelPaths = new Set();
-      await this.flushBuffer(graphDb, pending, processed);
+      // Ordering point: the previous batch must have landed before this one is
+      // handed to the session.
+      await settleFlush();
+      const started = this.flushBuffer(graphDb, pending, at);
+      // The rejection is consumed by `settleFlush`; attach a no-op handler so
+      // the window between dispatch and settle cannot raise an unhandled
+      // rejection and kill the process.
+      void started.catch(() => undefined);
+      inFlightFlush = started;
     };
     try {
       reader = createInterface({
@@ -184,7 +248,7 @@ export class GraphBuildFinalizer {
         // A repeat relPath already has an entry pending in this batch — flush
         // it out first so the repeat starts its own transaction instead of
         // sharing one with its own earlier self (see `bufferedRelPaths` above).
-        if (bufferedRelPaths.has(extraction.relPath)) await flushBuffer();
+        if (bufferedRelPaths.has(extraction.relPath)) await dispatchFlush();
         // Buffer for the next bulk flush (fired at BULK_FILES / checkpoint / end)
         // instead of one transaction per file.
         buffer.push({
@@ -203,26 +267,49 @@ export class GraphBuildFinalizer {
         this.runState.stats.fileEdgeCount += edges.fileEdges.length;
         this.runState.stats.methodEdgeCount += edges.methodEdges.length;
         processed += 1;
-        // Per-N debug log so a slow run shows where it stalled.
+        // Per-N debug log so a slow run shows where it stalled — and, since
+        // bd tea-rags-mcp-6aytq, WHAT it stalled in. Emitted as one JSON line
+        // (not an inspected object) for two reasons: the phase split nests
+        // three levels deep, past `console.error`'s default inspect depth, and
+        // a run killed at a wall-clock budget leaves these lines as the only
+        // record of where its time went — they have to be parseable.
         if (processed % PROGRESS_EVERY === 0 && isDebug()) {
-          console.error("[GitEnrich] PHASE: CODEGRAPH_PASS2_PROGRESS", {
-            processed,
-            lastRelPath,
-            fileEdges: this.runState.stats.fileEdgeCount,
-            methodEdges: this.runState.stats.methodEdgeCount,
-          });
+          const elapsedMs = this.timings.elapsedMs();
+          console.error(
+            "[GitEnrich] PHASE: CODEGRAPH_PASS2_PROGRESS",
+            JSON.stringify({
+              processed,
+              lastRelPath,
+              fileEdges: this.runState.stats.fileEdgeCount,
+              methodEdges: this.runState.stats.methodEdgeCount,
+              elapsedMs,
+              filesPerSec: elapsedMs > 0 ? Math.round((processed / elapsedMs) * 1000 * 10) / 10 : 0,
+              phases: this.timings.toSummary(),
+              // What each language's run-scoped caches are doing, which wall
+              // clock alone cannot say (bd tea-rags-mcp-6aytq): a TypeScript
+              // pass paying per-entry `ts.createProgram` calls and one served
+              // entirely off the whole-project Program differ by 4x and look
+              // identical in every other field of this line.
+              resolvers: this.resolutionRunner.resolverDiagnostics(),
+            }),
+          );
         }
-        if (buffer.length >= this.bulkFiles) await flushBuffer();
+        if (buffer.length >= this.bulkFiles) await dispatchFlush();
         if (processed % this.checkpointEvery === 0) {
           // Flush the buffered files before the checkpoint so the bounded WAL
-          // reflects the whole processed window.
-          await flushBuffer();
+          // reflects the whole processed window. Both steps are needed: the
+          // dispatch settles the PREVIOUS window's write, the settle waits on
+          // this one — a CHECKPOINT issued with a write still open would bound
+          // a WAL that does not yet hold the window it claims to cover.
+          await dispatchFlush();
+          await settleFlush();
           await this.checkpoint(graphDb);
         }
       }
-      // Flush the sub-batch remainder, then a final checkpoint for any files
-      // written since the last one.
-      await flushBuffer();
+      // Flush the sub-batch remainder, wait for it to land, then a final
+      // checkpoint for any files written since the last one.
+      await dispatchFlush();
+      await settleFlush();
       if (processed > 0 && processed % this.checkpointEvery !== 0) {
         await this.checkpoint(graphDb);
       }
@@ -245,6 +332,15 @@ export class GraphBuildFinalizer {
       );
     } finally {
       reader?.close();
+      // A dispatched write must never outlive the call that opened it: on the
+      // success path this is a no-op (already settled above), on the throw path
+      // it lets the open transaction finish before the error propagates, so the
+      // daemon is not still committing while the caller starts tearing the run
+      // down. Its own failure is swallowed HERE on purpose — the resolve error
+      // that brought us here is the root cause and must be the one that
+      // surfaces; a flush that fails while nothing is being torn down still
+      // aborts the pass through `dispatchFlush`/`settleFlush` above.
+      await settleFlush().catch(() => undefined);
     }
   }
 
@@ -259,6 +355,7 @@ export class GraphBuildFinalizer {
     processed: number,
     lastRelPath: string,
   ): GraphEdges {
+    const startedAtMs = Date.now();
     try {
       return this.resolutionRunner.resolve(extraction, symbolTable);
     } catch (err) {
@@ -269,6 +366,10 @@ export class GraphBuildFinalizer {
           message: `resolveExtraction failed at file #${processed + 1} (${lastRelPath}): ${wrapped.message}`,
         }),
       );
+    } finally {
+      // Recorded on the throw path too: a file that burned 40s before failing
+      // is exactly the file worth seeing in the split.
+      this.timings.record("pass2", Date.now() - startedAtMs, { language: extraction.language });
     }
   }
 
@@ -298,6 +399,11 @@ export class GraphBuildFinalizer {
    * dropped pathological files, so no single row can abort a batch. A
    * batch-level failure surfaces batch size + last file so the marker / stderr
    * still points near where pass-2 tripped.
+   *
+   * Deliberately NOT timed here: the caller dispatches this without awaiting it
+   * and records the `flush` phase at the point it actually blocks
+   * (`settleFlush`). Timing it here would report the write's full duration and
+   * hide exactly the overlap double-buffering exists to create.
    */
   private async flushBuffer(graphDb: GraphDbClient, pending: BulkFileUpsertEntry[], processed: number): Promise<void> {
     if (pending.length === 0) return;
@@ -315,6 +421,7 @@ export class GraphBuildFinalizer {
   }
 
   private async checkpoint(graphDb: GraphDbClient): Promise<void> {
+    const startedAtMs = Date.now();
     try {
       await graphDb.checkpoint();
       // Rebuild cg_symbols_edges_file's target_rel_path index at the same
@@ -341,6 +448,10 @@ export class GraphBuildFinalizer {
       }
     } catch (err) {
       throw new CodegraphCheckpointError(err instanceof Error ? err : undefined);
+    } finally {
+      // One unit covers the CHECKPOINT plus the ART rebuild it triggers — they
+      // are one cadence and there is no way to pay for one without the other.
+      this.timings.record("checkpoint", Date.now() - startedAtMs);
     }
   }
 
@@ -363,6 +474,19 @@ export class GraphBuildFinalizer {
    * failure happens silently mid-run.
    */
   async recomputeMetrics(collectionName?: string): Promise<void> {
+    const startedAtMs = Date.now();
+    try {
+      await this.runMetricsRecompute(collectionName);
+    } finally {
+      // Timed around BOTH routes — the daemon delegation and the inline
+      // Tarjan/PageRank — because from the run's point of view they are the
+      // same stage, and which one ran is not what the wall clock is asking.
+      this.timings.record("metrics", Date.now() - startedAtMs);
+    }
+  }
+
+  /** The recompute itself; `recomputeMetrics` owns only its timing. */
+  private async runMetricsRecompute(collectionName?: string): Promise<void> {
     const { graphDb } = await this.resolveStore(collectionName);
     // Daemon-routed write path: the daemon owns the RW connection and runs
     // the (potentially 30 GB) SCC + PageRank build itself, so the MCP client

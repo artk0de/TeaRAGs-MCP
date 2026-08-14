@@ -59,15 +59,25 @@
   run state — only the recovery scan heals THAT — but the pool slot itself is
   respawned, so the next dispatch is not posted to a dead handle.
 - **With the liveness timeout off, a per-thread HEAP CEILING is the only bound
-  on a runaway provider** — `ENRICHMENT_WORKER_MEMORY_LIMIT_MB`, default 2048,
-  `0` disables, applied as `resourceLimits.maxOldGenerationSizeMb` by
-  `ThreadTransport`. Breaching it kills that thread with
-  `ERR_WORKER_OUT_OF_MEMORY`, which arrives as a transport `error` — and
-  `WorkerDispatchPool#bindHandle` must therefore RECYCLE the slot, not merely
-  clear `busy`. Why: a `worker_threads` error is terminal and posting to a dead
-  handle is silently discarded, so without the respawn the ceiling converts a
-  slow host-wide degradation into a dispatch that never settles for the rest of
-  the run (bd 8qf86).
+  on a runaway provider** — `ENRICHMENT_WORKER_MEMORY_LIMIT_MB`, default 6144
+  (raised from 2048 once the whole-project `ts.Program` strategy put the
+  measured taxdome peak at 5,375 MB heapUsed), `0` disables, applied as
+  `resourceLimits.maxOldGenerationSizeMb` by `ThreadTransport`. Breaching it
+  kills that thread with `ERR_WORKER_OUT_OF_MEMORY`, which arrives as a
+  transport `error` — and `WorkerDispatchPool#bindHandle` must therefore RECYCLE
+  the slot, not merely clear `busy`. A process-wide
+  `NODE_OPTIONS --max_old_space_size` OVERRIDES the per-worker limit, making the
+  ceiling inert with no error anywhere; `infra/heap-ceiling-enforcement.ts`
+  compares declared against `v8.getHeapStatistics().heap_size_limit` at worker
+  boot and says so once. The kill leaves NO post-mortem of its own — no
+  exception, and the thread's buffered stdout goes with it — so
+  `ENRICHMENT_WORKER_HEAPSNAPSHOT_DIR` (off by default) is what puts
+  `--heapsnapshot-near-heap-limit=1` on the thread's `execArgv`. Why: a
+  `worker_threads` error is terminal and posting to a dead handle is silently
+  discarded, so without the respawn the ceiling converts a slow host-wide
+  degradation into a dispatch that never settles for the rest of the run (bd
+  8qf86) — and a ceiling set BELOW the shipped configuration's working set turns
+  that same mechanism into a guaranteed kill on every host that enforces it.
 
 ## Gotchas
 

@@ -150,6 +150,10 @@ export const DAEMON_OP_COMMANDS: Readonly<Record<DaemonOp, DaemonOpCommand>> = {
   getTransitiveImpact: read(async (graphDb, p) =>
     graphDb.getTransitiveImpact(p.relPath as RelPath, p.maxDepth as number | undefined),
   ),
+  // Map cannot JSON-serialise — emit entries; the client rebuilds the Map.
+  getFileMetricsBulk: read(async (graphDb, p) => [
+    ...(await graphDb.getFileMetricsBulk(p.relPaths as RelPath[], p.maxDepth as number | undefined)).entries(),
+  ]),
   findCycles: read(async (graphDb, p) =>
     graphDb.findCycles(p.scope as CycleScope, p.pathPattern as string | undefined),
   ),

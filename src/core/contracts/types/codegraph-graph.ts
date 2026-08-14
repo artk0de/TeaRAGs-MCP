@@ -24,6 +24,18 @@ export interface ChunkGraphSignals {
   pageRank: number;
 }
 
+/**
+ * Per-FILE graph metrics read back for file-level enrichment: direct fanIn /
+ * fanOut over import edges plus the depth-bounded reverse-reachability count.
+ * The value shape of `getFileMetricsBulk`'s map (mirrors the three per-file
+ * getters it batches).
+ */
+export interface FileGraphMetrics {
+  fanIn: number;
+  fanOut: number;
+  transitiveImpact: number;
+}
+
 export type CycleScope = "file" | "method";
 
 export interface CycleEntry {

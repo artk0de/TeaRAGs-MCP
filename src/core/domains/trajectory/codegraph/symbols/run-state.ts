@@ -26,6 +26,7 @@ import type {
   HierarchyView,
   InheritanceEdgeRow,
   KnownTargetCallArgs,
+  RelPath,
   ResolveRunStatsRow,
   SymbolDefinition,
 } from "../../../../contracts/types/codegraph.js";
@@ -262,6 +263,40 @@ export class CodegraphRunState {
    * pairs within a single run (e.g. backfill paths).
    */
   stats: RunStats = createEmptyRunStats();
+
+  /**
+   * Files pass-1 absorbed, per language — the volume pass-2 is about to
+   * resolve, known BEFORE it starts (bd tea-rags-mcp-6aytq).
+   *
+   * Every file that reaches `absorb` is spilled in the same breath, so this
+   * count IS the pass-2 file count, and it is a fact rather than a projection:
+   * a force-resolve re-extracts the whole project, an incremental run carries
+   * the handful of files that changed, and the number says which happened
+   * without anything having to consult the repair set. `prepareResolvePass`
+   * hands each language its own figure so a resolver can prime run-scoped
+   * caches whose cost only a bulk pass repays.
+   *
+   * Per LANGUAGE, not a single total: a run of 10,000 Ruby files and 40
+   * TypeScript ones is not a bulk pass for TypeScript.
+   */
+  readonly extractedFilesByLanguage = new Map<string, number>();
+
+  /**
+   * The same files, listed rather than counted (bd tea-rags-mcp-6aytq).
+   *
+   * Kept beside the counter rather than replacing it because they are read by
+   * different decisions: `prepareResolvePass` measures the COUNT against a
+   * bulk-pass threshold, while a resolver that primes builds its cache over the
+   * LIST. TypeScript is the consumer — its whole-project `ts.Program` is rooted
+   * at the tsconfig's include/exclude expansion, which on taxdome misses 936 of
+   * the 10,912 files the run resolves, and each miss costs a per-entry
+   * `ts.createProgram`.
+   *
+   * The retained cost is a path string per extracted file — ~1 MB for a
+   * 10,000-file TypeScript corpus, released with the rest of the run state at
+   * both clear seams.
+   */
+  readonly extractedRelPathsByLanguage = new Map<string, RelPath[]>();
 
   /**
    * Per-file SHA256 for the run, threaded in from `FileSignalOptions`
@@ -949,6 +984,8 @@ export class CodegraphRunState {
    */
   clearForNextRun(): void {
     this.ancestors = {};
+    this.extractedFilesByLanguage.clear();
+    this.extractedRelPathsByLanguage.clear();
     this.compactClasses = new Set();
     this.gemfileContent = undefined;
     this.gemfileLoaded = false;
@@ -982,6 +1019,8 @@ export class CodegraphRunState {
    */
   clearAll(): void {
     this.ancestors = {};
+    this.extractedFilesByLanguage.clear();
+    this.extractedRelPathsByLanguage.clear();
     this.compactClasses = new Set();
     this.gemfileContent = undefined;
     this.gemfileLoaded = false;
@@ -1013,6 +1052,19 @@ export class CodegraphRunState {
    * they happen the later definition is what the runtime would see too.
    */
   absorb(extraction: FileExtraction, selfDispatchMethods: SelfDispatchMethod[]): void {
+    // Counted here rather than beside `stats.extractedFiles` in the sink
+    // because this is a run-global aggregate the pass-2 barrier reads, and
+    // `absorb` is where those are assembled. The defensive empty extraction
+    // carries `language: ""` and is not a file any resolver will be handed.
+    if (extraction.language !== "") {
+      this.extractedFilesByLanguage.set(
+        extraction.language,
+        (this.extractedFilesByLanguage.get(extraction.language) ?? 0) + 1,
+      );
+      const relPaths = this.extractedRelPathsByLanguage.get(extraction.language);
+      if (relPaths === undefined) this.extractedRelPathsByLanguage.set(extraction.language, [extraction.relPath]);
+      else relPaths.push(extraction.relPath);
+    }
     if (extraction.classAncestors) {
       for (const [k, v] of Object.entries(extraction.classAncestors)) {
         this.ancestors[k] = v;

@@ -19,6 +19,7 @@ import type {
   CycleEntry,
   CycleScope,
   EdgeKindCount,
+  FileGraphMetrics,
   GraphEdges,
   GraphFileNode,
   ResolveRunStatsRow,
@@ -266,6 +267,24 @@ export interface GraphDbClient {
    * (default) captures most realistic blast radii.
    */
   getTransitiveImpact: (relPath: RelPath, maxDepth?: number) => Promise<number>;
+
+  /**
+   * Setwise read of `{ fanIn, fanOut, transitiveImpact }` for a SET of roots —
+   * the batched replacement for the `3 × fileCount` per-file getter loop in the
+   * finalize overlay read-back (bd tea-rags-mcp-6aytq). Three statements per
+   * call regardless of set size: two GROUP-BYs and ONE recursive CTE that seeds
+   * every root at once and carries the root through the recursion, so each
+   * root's count is its own — never shared with an overlapping blast radius.
+   *
+   * Values are identical to the per-file getters at the same `maxDepth`, and a
+   * root with no rows in either direction is ABSENT from the map (the caller's
+   * `?? 0` matches the getters, which return 0 on no rows). Empty input is a
+   * no-op returning an empty map.
+   *
+   * Callers bound the set themselves — one call becomes one IPC frame and one
+   * live CTE intermediate, both of which grow with the request.
+   */
+  getFileMetricsBulk: (relPaths: readonly RelPath[], maxDepth?: number) => Promise<Map<RelPath, FileGraphMetrics>>;
 
   // ── Cycle detection (Slice 2 / B2) ──
 

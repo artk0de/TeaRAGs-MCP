@@ -105,6 +105,61 @@ export class CallEdgeResolutionRunner {
     private readonly runState: CodegraphRunState,
   ) {}
 
+  /**
+   * Tell every language whose files this pass will resolve how many of them
+   * there are, before the first file is read (bd tea-rags-mcp-6aytq).
+   *
+   * Pass-1 counted them, so the volume is known at the barrier rather than
+   * discovered mid-pass — which is the whole point: a resolver that primes a
+   * run-scoped cache on a workload HEURISTIC pays per-call-site costs until
+   * the heuristic concludes. TypeScript's warm-up gate is the measured case:
+   * on a full taxdome run it spends 66 per-entry `ts.createProgram` builds,
+   * 9-13 s, establishing what the file count already said.
+   *
+   * Advisory in both directions. Languages the factory does not support are
+   * skipped (`create` throws for them), resolvers without the hook are a
+   * no-op, and a resolver that primes and fails must fall back on its own —
+   * nothing here inspects the outcome, because there is nothing this runner
+   * would do differently either way.
+   */
+  prepareResolvePass(): void {
+    const supported = new Set(this.languageFactory.supported());
+    for (const [language, expectedFileCount] of this.runState.extractedFilesByLanguage) {
+      if (!supported.has(language)) continue;
+      const { resolver } = this.languageFactory.create(language);
+      resolver?.prepareResolvePass?.({
+        expectedFileCount,
+        // The corpus itself, not only its size: a resolver priming a
+        // whole-project cache has to build it over the files this pass will
+        // ask for, and the project's own declared file set is a different one
+        // (bd tea-rags-mcp-6aytq).
+        expectedRelPaths: this.runState.extractedRelPathsByLanguage.get(language),
+        projectRoot: this.runState.projectRoot,
+      });
+    }
+  }
+
+  /**
+   * What each language's run-scoped caches did, keyed by language — the block
+   * the pass-2 progress line carries (bd tea-rags-mcp-6aytq).
+   *
+   * Opaque by construction. The runner does not know what a TypeScript
+   * `ts.Program` observable means and must not learn: it collects whatever each
+   * resolver chooses to report and hands it to the log. A language whose
+   * resolver declares no `diagnostics` is simply absent, which reads correctly
+   * as "nothing to say" rather than as an empty measurement.
+   */
+  resolverDiagnostics(): Record<string, Record<string, unknown>> {
+    const supported = new Set(this.languageFactory.supported());
+    const out: Record<string, Record<string, unknown>> = {};
+    for (const language of this.runState.extractedFilesByLanguage.keys()) {
+      if (!supported.has(language)) continue;
+      const reported = this.languageFactory.create(language).resolver?.diagnostics?.();
+      if (reported !== undefined) out[language] = reported;
+    }
+    return out;
+  }
+
   resolve(extraction: FileExtraction, symbolTable: GlobalSymbolTable): GraphEdges {
     // Resolver capability comes from the injected LanguageFactoryDescriptor (keyed by
     // language NAME) — each native provider carries its own `CallResolver`.

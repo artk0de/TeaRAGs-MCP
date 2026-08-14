@@ -176,13 +176,15 @@ describe("ThreadTransport", () => {
    * otherwise inherit.
    */
   describe("cpuProfileDir", () => {
-    async function workerExecArgv(cpuProfileDir?: string): Promise<string[]> {
+    async function workerExecArgv(cpuProfileDir?: string, heapSnapshotDir?: string): Promise<string[]> {
       const path = join(dir, "exec-argv-worker.mjs");
       writeFileSync(path, EXEC_ARGV_WORKER_SRC, "utf8");
       const transport = new ThreadTransport<Record<string, never>, { execArgv: string[] }>(
         path,
         undefined,
         cpuProfileDir,
+        undefined,
+        heapSnapshotDir,
       );
       const handle = transport.spawn({});
       try {
@@ -209,6 +211,30 @@ describe("ThreadTransport", () => {
       for (const inherited of process.execArgv) {
         expect(execArgv).toContain(inherited);
       }
+    });
+
+    /**
+     * Post-mortem for the one failure this pool cannot catch: a V8 heap OOM
+     * kills the isolate outright, so the only evidence is what V8 writes on the
+     * way down (bd tea-rags-mcp-6aytq).
+     */
+    it("adds the near-heap-limit snapshot flags when a snapshot directory is configured", async () => {
+      const execArgv = await workerExecArgv(undefined, "/tmp/heapsnapshots");
+      expect(execArgv).toContain("--heapsnapshot-near-heap-limit=1");
+      expect(execArgv).toContain("--diagnostic-dir=/tmp/heapsnapshots");
+      for (const inherited of process.execArgv) {
+        expect(execArgv).toContain(inherited);
+      }
+    });
+
+    it("leaves execArgv untouched when neither diagnostic is configured", async () => {
+      expect(await workerExecArgv(undefined, undefined)).toEqual(process.execArgv);
+    });
+
+    it("carries both diagnostics at once — neither disables the other", async () => {
+      const execArgv = await workerExecArgv("/tmp/profiles", "/tmp/heapsnapshots");
+      expect(execArgv).toContain("--cpu-prof");
+      expect(execArgv).toContain("--heapsnapshot-near-heap-limit=1");
     });
   });
 });

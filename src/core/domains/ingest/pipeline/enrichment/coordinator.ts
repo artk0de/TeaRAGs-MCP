@@ -308,30 +308,20 @@ export class EnrichmentCoordinator {
    * early return and skip the finalize that recomputes the derived tables, so a
    * repair-only run has to be recognised as real work.
    *
-   * `forceSelectors` is `--force-enrichments`'s own selector list, threaded
-   * straight through from the CLI/facade with no re-interpretation here — the
-   * SAME `selectProviderKeys` resolution `recomputeEnrichments` already uses,
-   * so `codegraph` reaches `codegraph.symbols` and `all` reaches everything,
-   * consistently. Without this, `--force-enrichments codegraph` only ever
-   * reached `recomputeEnrichments`'s stored-chunk reapply (payload already on
-   * disk, no fresh extraction) and silently left codegraph's actual resolve
-   * graph untouched whenever nothing had drifted by content hash — the same
-   * gap `CODEGRAPH_FORCE_RESOLVE` exists to paper over from OUTSIDE the CLI.
-   * Forcing here widens the SAME drift check `forceResolveAll` widens; a
-   * provider the selector does not name keeps its ordinary hash-diff behavior.
+   * The repair is a DRIFT check and nothing more — `--force-enrichments` does
+   * not widen it. That flag's forced re-extraction is owned by
+   * `recomputeEnrichments`, the leg that runs right after this one on the same
+   * invocation and re-extracts every stored file unconditionally; forcing here
+   * as well bought a second full pass-1 + pass-2 over the same corpus, whose
+   * result the recompute then rebuilt from scratch (bd tea-rags-mcp-6aytq —
+   * taxdome 2026-08-14, 113s+ of duplicate work inside a 330s budget). The
+   * `IndexingOps#recomputeEnrichments` call site carries the measurement.
+   * `CODEGRAPH_FORCE_RESOLVE` still widens the check from outside, for
+   * profiling a resolve that an already-current graph would otherwise skip.
    */
-  async runRepairPass(
-    collectionName: string,
-    root: string,
-    scanned: ReadonlyMap<string, string>,
-    forceSelectors?: readonly string[],
-  ): Promise<number> {
+  async runRepairPass(collectionName: string, root: string, scanned: ReadonlyMap<string, string>): Promise<number> {
     let repaired = 0;
     this.runContentHashes = scanned;
-    const forcedKeys =
-      forceSelectors && forceSelectors.length > 0
-        ? new Set(selectProviderKeys(this.providerKeys, forceSelectors).matched)
-        : null;
     for (const provider of this.providers) {
       const readPersisted = provider.readPersistedFileHashes;
       if (!readPersisted) continue;
@@ -360,8 +350,7 @@ export class EnrichmentCoordinator {
         providerEligible.set(path, scanned.get(path) as string);
       }
 
-      const forceThisProvider = this.forceResolveAll || (forcedKeys?.has(provider.key) ?? false);
-      const { repair, orphans } = computeExtractionRepair(providerEligible, persisted, forceThisProvider);
+      const { repair, orphans } = computeExtractionRepair(providerEligible, persisted, this.forceResolveAll);
       if (orphans.length > 0) {
         await provider.handleDeletedPaths?.(orphans, { collectionName });
       }
@@ -374,7 +363,7 @@ export class EnrichmentCoordinator {
           // Stamped into the log so a profile can be attributed to a forced run
           // rather than to a coincidentally large changeset. Omitted when off,
           // keeping the ordinary run's log line byte-identical.
-          ...(forceThisProvider ? { forcedResolve: true } : {}),
+          ...(this.forceResolveAll ? { forcedResolve: true } : {}),
         });
         // `runFileBatch` (NOT `runFileSignalsRecovery`): repair runs INSIDE the live
         // run this coordinator is orchestrating, same as file-phase's own
@@ -515,7 +504,20 @@ export class EnrichmentCoordinator {
     // Re-derive the chunk set from the index itself. The points are already
     // stored — this pass rewrites their payload, so the ids and line ranges
     // come from Qdrant rather than from a fresh chunking pass.
+    //
+    // Timed and reported because it is a single blocking read of the WHOLE
+    // selected corpus with nothing else running: on taxdome 2026-08-14 it sat
+    // for 37s between the sync leg's last line and this run's first, and a
+    // silent phase that long reads as a hang (bd tea-rags-mcp-6aytq).
+    const scrollStartedAt = Date.now();
     const stored = await this.scrollStoredChunks(collectionName, absolutePath, languages);
+    pipelineLog.enrichmentPhase("RECOMPUTE_SCROLL", {
+      collection: collectionName,
+      chunks: stored.items.length,
+      files: stored.fileCount,
+      durationMs: Date.now() - scrollStartedAt,
+      ...(languages && languages.length > 0 ? { languages: [...languages] } : {}),
+    });
     if (stored.items.length === 0) return EMPTY_METRICS;
 
     this.beginRun(absolutePath, collectionName, undefined, undefined, false, stored.fileCount, matched);

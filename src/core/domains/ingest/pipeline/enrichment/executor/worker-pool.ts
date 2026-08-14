@@ -52,6 +52,7 @@ import { isDebug } from "../../../../../infra/runtime.js";
 import type { ChunkLookupEntry } from "../../../../../types.js";
 import {
   defaultEnrichmentWorkerCpuProfileDir,
+  defaultEnrichmentWorkerHeapSnapshotDir,
   defaultEnrichmentWorkerMemoryLimitMb,
   defaultEnrichmentWorkerStackSizeMb,
 } from "../../infra/pool-defaults.js";
@@ -117,6 +118,10 @@ export class WorkerPoolEnrichmentExecutor implements EnrichmentExecutor {
         // recursive resolution walk at real-corpus scale (bd tea-rags-mcp-2j8s1
         // follow-up) — see defaultEnrichmentWorkerStackSizeMb.
         defaultEnrichmentWorkerStackSizeMb(),
+        // Post-mortem for the ceiling above: an OOM kill raises nothing and
+        // takes the thread's buffered stdout with it, so a snapshot written on
+        // the way down is the only evidence that survives (bd tea-rags-mcp-6aytq).
+        defaultEnrichmentWorkerHeapSnapshotDir(),
       ),
       // Worker threads get a fresh module registry, so the debug flag does not
       // survive the boundary on its own — ship it in the init payload or every

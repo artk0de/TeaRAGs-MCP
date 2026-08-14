@@ -462,13 +462,30 @@ export class IndexingOps {
     // (bd tea-rags-mcp-snbzk; same mechanism as 6goqa).
     const collectionName = resolveAliasTargetCollection(aliasName, await this.qdrant.aliases.listAliases());
 
-    // `selectors` forces the SAME repair-pass drift widening
-    // CODEGRAPH_FORCE_RESOLVE gives from outside the CLI — without it,
-    // `--force-enrichments codegraph` on an already-current graph found
-    // nothing drifted, skipped pass-1/pass-2 entirely, and fell through to
-    // the stored-chunk reapply below (payload already on disk, no fresh
-    // resolve). See EnrichmentCoordinator#runRepairPass.
-    const changeStats = await this.reindex.reindexChanges(path, progressCallback, undefined, selectors);
+    // The sync leg is deliberately NOT forced: the recompute below owns the
+    // forced re-extraction on this path, and forcing both meant paying for it
+    // twice (bd tea-rags-mcp-6aytq).
+    //
+    // The recompute is the only leg that can finish the job. It reads the chunk
+    // set back out of the index, so it is the only one holding the chunk ids a
+    // file overlay is applied through, and the only one that runs the deferred
+    // chunk pass — while its own file phase re-extracts every stored file
+    // unconditionally, no hash gate (EnrichmentCoordinator#recomputeEnrichments
+    // → FilePhase#onBatch → the provider's streamFileBatch). Forcing the repair
+    // pass as well therefore added a whole pass-1 + pass-2 over the same corpus
+    // whose result the recompute immediately rebuilt from scratch.
+    //
+    // Measured on taxdome 2026-08-14 17:30, `--force-enrichments codegraph
+    // --languages typescript`: the forced repair ran pass-1 over 10,621 files
+    // and pass-2 over all of them, reached ALL_COMPLETE at +225.0s having
+    // written payload to `matchedFiles: 0`, and the recompute then started its
+    // own pass-1 from zero at +262s — 113s+ of pure duplication, and the run's
+    // 330s budget was gone before the leg that writes payload could finish.
+    //
+    // The sync keeps its ORDINARY drift repair (unchanged, hash-diffed), which
+    // is what still heals a provider store that fell behind — including rows for
+    // eligible files carrying no chunks, the one set the recompute cannot see.
+    const changeStats = await this.reindex.reindexChanges(path, progressCallback);
     const startedAt = Date.now();
     const enrichmentMetrics = await this.enrichment.recomputeEnrichments(
       collectionName,

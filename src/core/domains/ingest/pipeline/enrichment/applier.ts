@@ -27,6 +27,18 @@ const BATCH_SIZE = 100;
 const MISSED_PATH_SAMPLE_LIMIT = 10;
 
 /**
+ * Payload batches in flight during the deferred FILE finalize apply
+ * (bd tea-rags-mcp-6aytq).
+ *
+ * That apply sits in the serial post-pass-2 tail, where every round-trip is
+ * wall clock one-for-one, and its batches address disjoint point sets. Kept
+ * deliberately small: the win here is hiding request latency, and pushing more
+ * concurrent writes at Qdrant only relocates the queue — the streaming applies
+ * that ran earlier were overlapped with embedding and never needed it.
+ */
+const FINALIZE_WRITE_CONCURRENCY = 4;
+
+/**
  * Emitted once per apply batch. `applied` is the CUMULATIVE per-(provider,level)
  * value as of this batch:
  * - file level: cumulative count of distinct files processed by this provider
@@ -463,9 +475,7 @@ export class EnrichmentApplier {
           entries.map((e) => ({ chunkId: e.chunkId, startLine: e.startLine, endLine: e.endLine })),
         );
         if (enrichedAt) {
-          for (const entry of entries) {
-            ops.push({ payload: { enrichedAt }, points: [entry.chunkId], key: fileKey });
-          }
+          ops.push({ payload: { enrichedAt }, points: entries.map((e) => e.chunkId), key: fileKey });
         }
         continue;
       }
@@ -474,9 +484,10 @@ export class EnrichmentApplier {
       const payload = enrichedAt
         ? { ...(final as Record<string, unknown>), enrichedAt }
         : (final as Record<string, unknown>);
-      for (const entry of entries) {
-        ops.push({ payload, points: [entry.chunkId], key: fileKey });
-      }
+      // ONE operation for the whole file: every chunk of it takes the SAME
+      // payload under the SAME key, so a per-chunk operation only multiplies
+      // the request body and the number of round-trips it takes to drain.
+      ops.push({ payload, points: entries.map((e) => e.chunkId), key: fileKey });
       appliedFiles++;
       this.matchedPaths.add(relPath);
     }
@@ -491,9 +502,22 @@ export class EnrichmentApplier {
       finalizeFileSet.add(relPath);
     }
 
+    // Consecutive batches address DISJOINT point sets — a chunk id belongs to
+    // exactly one file, and each file contributes exactly one operation — so
+    // they may overlap. Bounded, because this runs against the same Qdrant the
+    // rest of the tail is using and an unbounded fan-out just moves the queue.
+    const batches: FilePayloadOp[][] = [];
     for (let i = 0; i < ops.length; i += BATCH_SIZE) {
-      await batchSetPayloadWithRetry(this.qdrant, collectionName, ops.slice(i, i + BATCH_SIZE), this.retryOptions);
+      batches.push(ops.slice(i, i + BATCH_SIZE));
     }
+    let cursor = 0;
+    await Promise.all(
+      Array.from({ length: Math.min(FINALIZE_WRITE_CONCURRENCY, batches.length) }, async () => {
+        for (let i = cursor++; i < batches.length; i = cursor++) {
+          await batchSetPayloadWithRetry(this.qdrant, collectionName, batches[i], this.retryOptions);
+        }
+      }),
+    );
 
     if (chunkMap.size > 0) this.onApply?.({ providerKey, level: "file", applied: finalizeFileSet.size });
     return appliedFiles;

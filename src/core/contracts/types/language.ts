@@ -21,6 +21,7 @@ import type {
   GraphEdges,
   NamedSymbol,
   RelPath,
+  SymbolResolutionPassPlan,
   SymbolResolutionTarget,
 } from "./codegraph.js";
 import type { SignalFloors } from "./trajectory.js";
@@ -443,6 +444,22 @@ export interface LanguageWalker {
 export interface LanguageSymbolResolver {
   /** Resolve a single call site to its target, or `null` to drop the edge. */
   resolve: (call: CallRef, ctx: CallContext) => SymbolResolutionTarget | null;
+  /**
+   * Optional: the pass is about to start, and this is how many files of this
+   * language it will resolve (bd tea-rags-mcp-6aytq). Issued once per language
+   * per pass-2, before the first `resolve`, by `CallEdgeResolutionRunner`.
+   *
+   * Advisory: the plan describes the workload, it does not instruct. A language
+   * with nothing to prime omits the method. Mirrors
+   * `CallResolver.prepareResolvePass`.
+   */
+  prepareResolvePass?: (plan: SymbolResolutionPassPlan) => void;
+  /**
+   * Optional: this resolver's run-scoped cache observables, as an opaque
+   * JSON-able record for the pass-2 progress log (bd tea-rags-mcp-6aytq). Read
+   * once per progress line, never per call. Mirrors `CallResolver.diagnostics`.
+   */
+  diagnostics?: () => Record<string, unknown> | undefined;
   /**
    * Fan-out resolution for lookup-table dispatch (bd tea-rags-mcp-n0zj): one
    * dispatching call site expands to N `(caller, callee)` edges. Returns empty

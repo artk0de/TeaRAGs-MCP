@@ -12,6 +12,7 @@ import type {
   CallContext,
   FileExtraction,
   GlobalSymbolTable,
+  SymbolResolutionPassPlan,
 } from "../../../../../../src/core/contracts/types/codegraph.js";
 import type { LanguageFactoryDescriptor } from "../../../../../../src/core/contracts/types/language.js";
 import { CallEdgeResolutionRunner } from "../../../../../../src/core/domains/trajectory/codegraph/symbols/resolution-runner.js";
@@ -283,5 +284,99 @@ describe("CallEdgeResolutionRunner.resolve — file-edge dedup", () => {
     const edges = runner.resolve(emptyExtraction("src/caller.tsx"), {} as GlobalSymbolTable);
 
     expect(edges.fileEdges.map((e) => e.targetRelPath).sort()).toEqual(["src/a.tsx", "src/b.tsx"]);
+  });
+});
+
+describe("CallEdgeResolutionRunner.prepareResolvePass (bd tea-rags-mcp-6aytq)", () => {
+  function absorbFiles(runState: CodegraphRunState, language: string, count: number): void {
+    for (let i = 0; i < count; i++) {
+      runState.absorb({ relPath: `f${i}.${language}`, language, imports: [], fileScope: [], chunks: [] }, []);
+    }
+  }
+
+  it("hands every language its OWN file count, file list, and the run's project root", () => {
+    const runState = new CodegraphRunState();
+    runState.projectRoot = "/repo";
+    absorbFiles(runState, "typescript", 3);
+    absorbFiles(runState, "ruby", 1);
+    const plans: Record<string, SymbolResolutionPassPlan> = {};
+    const languageFactory = {
+      supported: () => ["typescript", "ruby"],
+      create: (language: string) => ({
+        resolver: {
+          resolve: () => null,
+          prepareResolvePass: (plan: SymbolResolutionPassPlan) => {
+            plans[language] = plan;
+          },
+        },
+      }),
+    } as unknown as LanguageFactoryDescriptor;
+
+    new CallEdgeResolutionRunner(languageFactory, runState).prepareResolvePass();
+
+    // The LIST joins the count because the two answer different questions (bd
+    // tea-rags-mcp-6aytq): the count says whether a bulk-only cache is worth
+    // priming, the list says which files that cache must be rooted at — on
+    // taxdome 936 of the run's TypeScript files are outside the set the
+    // project's own tsconfig claims.
+    expect(plans["typescript"]).toEqual({
+      expectedFileCount: 3,
+      expectedRelPaths: ["f0.typescript", "f1.typescript", "f2.typescript"],
+      projectRoot: "/repo",
+    });
+    expect(plans["ruby"]).toEqual({
+      expectedFileCount: 1,
+      expectedRelPaths: ["f0.ruby"],
+      projectRoot: "/repo",
+    });
+  });
+
+  it("collects each language resolver's diagnostics, skipping the ones that declare none", () => {
+    const runState = new CodegraphRunState();
+    absorbFiles(runState, "typescript", 2);
+    absorbFiles(runState, "ruby", 1);
+    const languageFactory = {
+      supported: () => ["typescript", "ruby"],
+      create: (language: string) => ({
+        resolver:
+          language === "typescript"
+            ? { resolve: () => null, diagnostics: () => ({ wholeProgramFiles: 18042, entryBuilds: 0 }) }
+            : { resolve: () => null },
+      }),
+    } as unknown as LanguageFactoryDescriptor;
+
+    const diagnostics = new CallEdgeResolutionRunner(languageFactory, runState).resolverDiagnostics();
+
+    expect(diagnostics).toEqual({ typescript: { wholeProgramFiles: 18042, entryBuilds: 0 } });
+  });
+
+  it("never creates a resolver for a language the factory does not support", () => {
+    const runState = new CodegraphRunState();
+    absorbFiles(runState, "python", 500);
+    const languageFactory = {
+      supported: () => ["typescript"],
+      create: () => {
+        throw new Error("must not be called for an unregistered language");
+      },
+    } as unknown as LanguageFactoryDescriptor;
+    const runner = new CallEdgeResolutionRunner(languageFactory, runState);
+
+    expect(() => {
+      runner.prepareResolvePass();
+    }).not.toThrow();
+  });
+
+  it("is a no-op for a language whose resolver declares no prepare hook", () => {
+    const runState = new CodegraphRunState();
+    absorbFiles(runState, "ruby", 500);
+    const languageFactory = {
+      supported: () => ["ruby"],
+      create: () => ({ resolver: { resolve: () => null } }),
+    } as unknown as LanguageFactoryDescriptor;
+    const runner = new CallEdgeResolutionRunner(languageFactory, runState);
+
+    expect(() => {
+      runner.prepareResolvePass();
+    }).not.toThrow();
   });
 });

@@ -50,6 +50,39 @@ async function echoServer(socketPath: string, onReq: (r: DaemonRequest) => unkno
   });
 }
 
+/**
+ * Like `echoServer`, but `onReq` may return an `Error` to answer `ok: false` —
+ * used to stand in for a daemon whose build predates an op.
+ */
+async function faultyServer(socketPath: string, onReq: (r: DaemonRequest) => unknown): Promise<void> {
+  srv = createServer((sock) => {
+    let buf = "";
+    sock.on("data", (d) => {
+      buf += d.toString("utf8");
+      const { frames, rest } = decodeFrames(buf);
+      buf = rest;
+      for (const f of frames) {
+        const req = JSON.parse(f) as DaemonRequest;
+        const out = onReq(req);
+        sock.write(
+          encodeFrame(
+            out instanceof Error
+              ? { id: req.id, ok: false, error: { name: out.name, message: out.message } }
+              : { id: req.id, ok: true, result: out },
+          ),
+        );
+      }
+    });
+  });
+  srv.unref();
+  const server = srv;
+  return new Promise((res) => {
+    server.listen(socketPath, () => {
+      res();
+    });
+  });
+}
+
 describe("DaemonGraphDbClient", () => {
   it("upsertFile sends an upsertFile request and resolves on ok", async () => {
     dir = mkdtempSync(join(tmpdir(), "cgc-"));
@@ -192,6 +225,7 @@ describe("DaemonGraphDbClient", () => {
       getCalledByCount: 11,
       getCallSiteCount: 13,
       getTransitiveImpact: 42,
+      getFileMetricsBulk: [["a.ts", { fanIn: 3, fanOut: 7, transitiveImpact: 42 }]],
       getPageRank: 0.25,
       hasData: true,
       listAllSymbols: [{ symbolId: "A#run", fqName: "A.run", shortName: "run", relPath: "a.ts", scope: [] }],
@@ -210,6 +244,10 @@ describe("DaemonGraphDbClient", () => {
     expect(await client.getCalledByCount("Foo#bar")).toBe(11);
     expect(await client.getCallSiteCount("Foo#bar")).toBe(13);
     expect(await client.getTransitiveImpact("a.ts", 4)).toBe(42);
+    // getFileMetricsBulk serialises as entries over the wire; the client rebuilds the Map.
+    expect(await client.getFileMetricsBulk(["a.ts", "b.ts"], 5)).toEqual(
+      new Map([["a.ts", { fanIn: 3, fanOut: 7, transitiveImpact: 42 }]]),
+    );
     expect(await client.getPageRank("Foo#bar")).toBe(0.25);
     expect(await client.hasData()).toBe(true);
     expect(await client.listAllSymbols()).toEqual([
@@ -223,9 +261,61 @@ describe("DaemonGraphDbClient", () => {
     // getTransitiveImpact threads maxDepth; getFanIn/getFanOut/removeFile thread relPath.
     const impact = seen.find((r) => r.op === "getTransitiveImpact");
     expect(impact?.params).toMatchObject({ relPath: "a.ts", maxDepth: 4 });
+    const bulk = seen.find((r) => r.op === "getFileMetricsBulk");
+    expect(bulk?.params).toMatchObject({ relPaths: ["a.ts", "b.ts"], maxDepth: 5 });
     const fanIn = seen.find((r) => r.op === "getFanIn");
     expect((fanIn?.params as { relPath: string }).relPath).toBe("a.ts");
     expect(seen.every((r) => (r.params as { collection: string }).collection === "code_x_v1")).toBe(true);
+  });
+
+  it("degrades getFileMetricsBulk to the per-file reads when the daemon predates the op", async () => {
+    dir = mkdtempSync(join(tmpdir(), "cgc-"));
+    const socketPath = join(dir, "d.sock");
+    const seen: DaemonRequest[] = [];
+    const fan: Record<string, [number, number, number]> = { "a.ts": [3, 7, 42], "b.ts": [0, 0, 0] };
+    // A pool that cannot respawn TOLERATES a daemon from another build
+    // (pool.ts: "no respawn hook wired, proceeding with the running daemon"),
+    // so a new client can meet an old daemon. That daemon answers an op it
+    // never heard of with the dispatcher's fall-through error.
+    await faultyServer(socketPath, (r) => {
+      seen.push(r);
+      if (r.op === "getFileMetricsBulk") return new Error("unknown daemon op: getFileMetricsBulk");
+      const { relPath } = r.params as { relPath: string };
+      if (r.op === "getFanIn") return fan[relPath][0];
+      if (r.op === "getFanOut") return fan[relPath][1];
+      if (r.op === "getTransitiveImpact") return fan[relPath][2];
+      return null;
+    });
+
+    const client = new DaemonGraphDbClient(socketPath, "code_x_v1");
+    await client.init();
+    const metrics = await client.getFileMetricsBulk(["a.ts", "b.ts"]);
+    await client.close();
+
+    // Same shape and same absent-means-zero contract as the setwise op.
+    expect(metrics).toEqual(new Map([["a.ts", { fanIn: 3, fanOut: 7, transitiveImpact: 42 }]]));
+    // It really went the long way round rather than silently answering empty.
+    expect(seen.filter((r) => r.op === "getFanIn")).toHaveLength(2);
+    expect(seen.filter((r) => r.op === "getTransitiveImpact")).toHaveLength(2);
+  });
+
+  it("propagates a genuine daemon failure instead of degrading to the per-file reads", async () => {
+    dir = mkdtempSync(join(tmpdir(), "cgc-"));
+    const socketPath = join(dir, "d.sock");
+    const seen: DaemonRequest[] = [];
+    await faultyServer(socketPath, (r) => {
+      seen.push(r);
+      if (r.op === "getFileMetricsBulk") return new Error("IO Error: database is invalidated");
+      return 0;
+    });
+
+    const client = new DaemonGraphDbClient(socketPath, "code_x_v1");
+    await client.init();
+    await expect(client.getFileMetricsBulk(["a.ts"])).rejects.toThrow("database is invalidated");
+    await client.close();
+
+    // A real error must NOT turn into a 30x-slower read-back that hides it.
+    expect(seen.some((r) => r.op === "getFanIn")).toBe(false);
   });
 
   it("the full codegraph write surface proxies the matching op + injected collection over the socket", async () => {

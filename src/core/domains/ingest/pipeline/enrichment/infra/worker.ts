@@ -31,7 +31,8 @@
  *   Returns:  EnrichmentWorkerResponse (fileOverlay | chunkOverlay | released | error)
  */
 
-import { parentPort, workerData } from "node:worker_threads";
+import { getHeapStatistics } from "node:v8";
+import { parentPort, resourceLimits, workerData } from "node:worker_threads";
 
 import type {
   ChunkSignalOptions,
@@ -40,6 +41,8 @@ import type {
 } from "../../../../../contracts/types/provider.js";
 import type { ChunkLookupEntry } from "../../../../../types.js";
 import { applyWorkerDebug } from "../../infra/worker-debug.js";
+import { chunkedCpuProfilerConfigFromEnv, startChunkedCpuProfiler } from "./chunked-cpu-profiler.js";
+import { describeUnenforcedHeapCeiling } from "./heap-ceiling-enforcement.js";
 import type {
   EnrichmentCallRequest,
   EnrichmentReleaseRequest,
@@ -52,6 +55,43 @@ import type {
 // marker this thread emits — the whole codegraph pass-2 phase among them — is
 // dropped silently, which is why that window was never measurable.
 applyWorkerDebug(workerData);
+
+/**
+ * Say so — once, at boot — when this thread's heap ceiling is not actually in
+ * force (bd tea-rags-mcp-6aytq). `ENRICHMENT_WORKER_MEMORY_LIMIT_MB` is the only
+ * bound on this pool (its liveness timeout is disabled), and a process-wide
+ * `NODE_OPTIONS --max_old_space_size` silently overrides it, so the machine most
+ * likely to be developed on is the one least likely to observe the ceiling
+ * working. Read here rather than in the pool because both readings are
+ * per-ISOLATE: the parent thread's `resourceLimits` and `heap_size_limit`
+ * describe the parent, not the worker doing the enrichment.
+ *
+ * Observation only — wrapped so a diagnostics read can never be the reason an
+ * enrichment run fails, and silent whenever the two figures agree.
+ */
+function reportHeapCeilingEnforcement(): void {
+  try {
+    const warning = describeUnenforcedHeapCeiling({
+      declaredMaxOldGenerationSizeMb: resourceLimits.maxOldGenerationSizeMb,
+      heapSizeLimitBytes: getHeapStatistics().heap_size_limit,
+    });
+    if (warning) process.stderr.write(`[enrichment-worker] ${warning}\n`);
+  } catch {
+    // A thread that cannot introspect its own limits still has enrichment to do.
+  }
+}
+
+reportHeapCeilingEnforcement();
+
+/**
+ * Opt-in chunked CPU profile of THIS thread (bd tea-rags-mcp-6aytq). Resolves
+ * to `undefined` unless `ENRICHMENT_WORKER_PROFILE_CHUNK_DIR` is set, so the
+ * default worker allocates nothing. Started here rather than in the pool
+ * because `inspector.Session` is per-isolate and the pool lives in another one.
+ * Not awaited at module scope — the first envelope must not queue behind a
+ * diagnostics session; `stop()` is awaited on shutdown for the final chunk.
+ */
+const chunkedCpuProfiler = startChunkedCpuProfiler(chunkedCpuProfilerConfigFromEnv());
 
 /**
  * Factory shape — providers expose this as the named export referenced by
@@ -200,6 +240,9 @@ if (parentPort) {
       try {
         const result = await handle(request);
         if (result === "exit") {
+          // Final profile chunk before the port closes — a graceful shutdown is
+          // the one exit where the last window is not already lost.
+          await (await chunkedCpuProfiler)?.stop();
           parentPort?.close();
           return;
         }

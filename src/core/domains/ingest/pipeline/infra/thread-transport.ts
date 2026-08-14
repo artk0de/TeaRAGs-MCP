@@ -34,12 +34,18 @@ export class ThreadTransport<Req, Res> implements WorkerTransport<Req, Res> {
    *   `0`) leaves the thread on node:worker_threads' own default (4 MB) —
    *   too small for `ts.createProgram`'s recursive resolution walk on a
    *   large TypeScript corpus, see `defaultEnrichmentWorkerStackSizeMb`.
+   * @param heapSnapshotDir Diagnostic-only: when set, each spawned thread runs
+   *   with `--heapsnapshot-near-heap-limit=1` and writes the snapshot here as
+   *   it approaches its ceiling — the only post-mortem available for the OOM
+   *   kill above, which raises nothing and drops the thread's buffered stdout.
+   *   Off by default; see `defaultEnrichmentWorkerHeapSnapshotDir`.
    */
   constructor(
     private readonly workerPath: string,
     private readonly maxOldGenerationSizeMb?: number,
     private readonly cpuProfileDir?: string,
     private readonly stackSizeMb?: number,
+    private readonly heapSnapshotDir?: string,
   ) {}
 
   spawn(init: unknown): WorkerHandle<Req, Res> {
@@ -57,9 +63,15 @@ export class ThreadTransport<Req, Res> implements WorkerTransport<Req, Res> {
     if (Object.keys(resourceLimits).length > 0) {
       options.resourceLimits = resourceLimits;
     }
-    if (this.cpuProfileDir) {
-      options.execArgv = [...(process.execArgv ?? []), "--cpu-prof", `--cpu-prof-dir=${this.cpuProfileDir}`];
+    // Both diagnostics are independent switches over the same isolate, so they
+    // accumulate onto the inherited execArgv rather than replacing it or each
+    // other — and the array is only handed over when one of them asked for it.
+    const execArgv = [...(process.execArgv ?? [])];
+    if (this.cpuProfileDir) execArgv.push("--cpu-prof", `--cpu-prof-dir=${this.cpuProfileDir}`);
+    if (this.heapSnapshotDir) {
+      execArgv.push("--heapsnapshot-near-heap-limit=1", `--diagnostic-dir=${this.heapSnapshotDir}`);
     }
+    if (this.cpuProfileDir || this.heapSnapshotDir) options.execArgv = execArgv;
     const worker = new Worker(this.workerPath, options);
     return {
       post: (request) => {

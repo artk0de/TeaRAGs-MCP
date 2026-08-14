@@ -49,6 +49,7 @@ import type { GraphDbClientPool } from "../../../../adapters/duckdb/pool.js";
 import type {
   ExtractionSink,
   FileExtraction,
+  FileGraphMetrics,
   GlobalSymbolTable,
   GraphDbClient,
   SymbolDefinition,
@@ -85,6 +86,7 @@ import { createCodegraphExtractionSink, type CodegraphSinkDeps } from "./extract
 import { GraphBuildFinalizer } from "./graph-finalizer.js";
 import { SymbolNodeFlushQueue } from "./node-flush.js";
 import { CODEGRAPH_SYMBOLS_CHUNK_SIGNALS, CODEGRAPH_SYMBOLS_FILE_SIGNALS } from "./payload-signals.js";
+import { CodegraphPhaseTimings } from "./phase-timings.js";
 import { CallEdgeResolutionRunner } from "./resolution-runner.js";
 import { CodegraphRunState } from "./run-state.js";
 import { lastSegment } from "./symbol-name.js";
@@ -274,6 +276,41 @@ export const CODEGRAPH_LANGUAGES: Record<string, CodegraphLanguageConfig> = {
 const SUPPORTED_EXTS = new Set(Object.keys(CODEGRAPH_LANGUAGES));
 
 /**
+ * Files between pass-1 progress lines. Coarser than pass-2's 100 because
+ * extraction is the cheaper per-file stage and its line carries the same
+ * (larger) phase-split payload — 500 keeps a 20k-file run at ~40 lines while
+ * still bounding what a kill at the 5-minute budget can lose.
+ */
+const PASS1_PROGRESS_EVERY = 500;
+
+/**
+ * Files per `getFileMetricsBulk` request during the finalize read-back
+ * (bd tea-rags-mcp-6aytq).
+ *
+ * The read-back was never latency-bound — it was DAEMON-CPU-bound. Three
+ * queries per file (one of them a depth-5 recursive CTE) is 31,428 statements
+ * for taxdome's 10,476 files, and no amount of client-side concurrency beats a
+ * single-process daemon executing them one after another; worse, those reads
+ * interleave with the pass-2 bulk flush running concurrently, so the flush
+ * queues behind them. The setwise op collapses a batch to THREE statements, so
+ * the whole tail costs ~3 × ceil(files / batch).
+ *
+ * Two costs grow with the batch: the request frame (2000 taxdome paths ≈ 161
+ * KiB of JSON — an order under what `listAllSymbols` already ships in one
+ * frame) and the recursive CTE's live intermediate, which holds every root's
+ * reverse-reachable set at once instead of one root's at a time. Measured
+ * in-process against a real 19,484-file taxdome graph, the whole 10,621-file TS
+ * universe costs 1.31 s in 18 statements at batch 2000, against 30.8 s in
+ * 31,863 statements per-file — and the curve is flat from 500 to 10,621
+ * (1.19–1.56 s), so this sits in the middle of the plateau rather than on the
+ * edge of either cost.
+ */
+const OVERLAY_READ_BATCH = 2000;
+
+/** Reading of a root the graph has no edge for, in either direction. */
+const ZERO_FILE_METRICS: FileGraphMetrics = { fanIn: 0, fanOut: 0, transitiveImpact: 0 };
+
+/**
  * Codegraph provider dependencies. Two routing modes are supported and
  * exactly one MUST be supplied at construction time:
  *
@@ -461,6 +498,14 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
    * something to say.
    */
   private readonly codegraphExclusionFilter: Ignore;
+  /**
+   * Wall-clock attribution across pass-1 and pass-2 (bd tea-rags-mcp-6aytq).
+   * Owned here rather than by the finalizer because pass-1 extraction happens
+   * on this side of the barrier and the two halves have to land in ONE summary.
+   * Lifetime is this provider instance — in the enrichment pool that is one
+   * (collection, run) pair, so no reset seam is needed.
+   */
+  private readonly phaseTimings = new CodegraphPhaseTimings();
 
   /**
    * Worker-pool descriptor — surfaced when the composition root wires this
@@ -483,6 +528,7 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
       async (collectionName) => this.getStore(collectionName),
       this.resolutionRunner,
       this.runState,
+      this.phaseTimings,
     );
     this.codegraphExclusionFilter = buildCodegraphExclusionFilter(
       deps.exclusion ?? { customPatterns: [] },
@@ -738,7 +784,24 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
    * alone is not enough when the failure happens silently mid-run.
    */
   private async recomputeGraphMetricsStreaming(collectionName?: string): Promise<void> {
-    await this.graphFinalizer.recomputeMetrics(collectionName);
+    try {
+      await this.graphFinalizer.recomputeMetrics(collectionName);
+    } finally {
+      // The recompute is the last pass-2 stage, so this is the run's closing
+      // wall-clock statement (bd tea-rags-mcp-6aytq). Emitted from `finally`
+      // because a metrics failure is swallowed by the sink as best-effort —
+      // losing the summary over it would forfeit the whole run's attribution.
+      if (isDebug()) {
+        // The resolver block rides the closing summary as well as the periodic
+        // progress line (bd tea-rags-mcp-6aytq): a run that finishes leaves
+        // this as its ONE record of which Program strategy it actually took,
+        // and a run killed mid-pass still has the progress lines.
+        console.error(
+          "[GitEnrich] PHASE: CODEGRAPH_PHASE_TIMINGS",
+          JSON.stringify({ ...this.phaseTimings.toSummary(), resolvers: this.resolutionRunner.resolverDiagnostics() }),
+        );
+      }
+    }
   }
 
   /**
@@ -901,20 +964,26 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
     out: Map<string, FileSignalOverlay>,
   ): Promise<void> {
     const fanInP95 = await graphDb.getFanInP95();
-    for (const relPath of overlayPaths) {
-      const fanIn = await graphDb.getFanIn(relPath);
-      const fanOut = await graphDb.getFanOut(relPath);
-      const denom = fanIn + fanOut;
-      const transitiveImpact = await graphDb.getTransitiveImpact(relPath);
-      out.set(relPath, {
-        fanIn,
-        fanOut,
-        instability: denom === 0 ? 0 : fanOut / denom,
-        connectionCount: denom,
-        isHub: fanIn > fanInP95,
-        isLeaf: fanOut === 0 && fanIn > 0,
-        transitiveImpact,
-      });
+    // Batches go out in order and each is walked in the caller's order, so the
+    // map this fills keeps `overlayPaths` order exactly. A root the graph knows
+    // nothing about is absent from the bulk map and reads as all-zero — the
+    // same value the per-file getters returned for it.
+    for (let start = 0; start < overlayPaths.length; start += OVERLAY_READ_BATCH) {
+      const batch = overlayPaths.slice(start, start + OVERLAY_READ_BATCH);
+      const metrics = await graphDb.getFileMetricsBulk(batch);
+      for (const relPath of batch) {
+        const { fanIn, fanOut, transitiveImpact } = metrics.get(relPath) ?? ZERO_FILE_METRICS;
+        const denom = fanIn + fanOut;
+        out.set(relPath, {
+          fanIn,
+          fanOut,
+          instability: denom === 0 ? 0 : fanOut / denom,
+          connectionCount: denom,
+          isHub: fanIn > fanInP95,
+          isLeaf: fanOut === 0 && fanIn > 0,
+          transitiveImpact,
+        });
+      }
     }
   }
 
@@ -1413,6 +1482,37 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
    * function/method/class declarations is sufficient.
    */
   private extractOneFile(root: string, relPath: string): FileExtraction {
+    const startedAtMs = Date.now();
+    const extraction = this.parseFileExtraction(root, relPath);
+    this.recordPass1(extraction.language, Date.now() - startedAtMs);
+    return extraction;
+  }
+
+  /**
+   * Fold one file's extraction cost into the run's pass-1 total and, on the
+   * cadence, report where the run stands. The line is the ONLY pass-1 telemetry
+   * a killed run leaves behind, so it carries the cumulative per-language split
+   * and not just a counter. JSON rather than an inspected object: the split
+   * nests past `console.error`'s two-level default.
+   */
+  private recordPass1(language: string, durationMs: number): void {
+    this.phaseTimings.record("pass1", durationMs, { language: language || "unknown" });
+    const extracted = this.phaseTimings.count("pass1");
+    if (extracted % PASS1_PROGRESS_EVERY !== 0 || !isDebug()) return;
+    const elapsedMs = this.phaseTimings.elapsedMs();
+    console.error(
+      "[GitEnrich] PHASE: CODEGRAPH_PASS1_PROGRESS",
+      JSON.stringify({
+        extracted,
+        elapsedMs,
+        filesPerSec: elapsedMs > 0 ? Math.round((extracted / elapsedMs) * 1000 * 10) / 10 : 0,
+        phases: this.phaseTimings.toSummary(),
+      }),
+    );
+  }
+
+  /** Parse + walk one file. Timing and progress belong to `extractOneFile`. */
+  private parseFileExtraction(root: string, relPath: string): FileExtraction {
     const ext = extensionOf(relPath);
     const langConfig = CODEGRAPH_LANGUAGES[ext];
     if (!langConfig) {

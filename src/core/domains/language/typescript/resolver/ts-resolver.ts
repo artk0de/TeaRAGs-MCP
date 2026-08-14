@@ -71,6 +71,7 @@ import {
   type DispatchTableDef,
   type FileExtraction,
   type GraphEdges,
+  type SymbolResolutionPassPlan,
   type SymbolResolutionTarget,
 } from "../../../../contracts/types/codegraph.js";
 import type { SymbolResolutionStrategy } from "../../../../contracts/types/language.js";
@@ -97,6 +98,7 @@ import {
   TSTypeCheckerUnionReceiverDispatchResolver,
   type ResolverConfig,
 } from "./strategies/index.js";
+import { loadTsConfigFileNames } from "./ts-config-loader.js";
 import { targetsExternalImport } from "./ts-external-call.js";
 import {
   createProjectFileProbe,
@@ -104,12 +106,159 @@ import {
   type ProjectFileProbe,
   type TsCompilerOptions,
 } from "./ts-path-mapper.js";
-import { TSProgramCache } from "./ts-program-cache.js";
+import {
+  TS_PROGRAM_CACHE_MAX_DEFAULT,
+  TS_PROGRAM_PARSED_DEPENDENCY_FILES_MAX_DEFAULT,
+  TS_PROGRAM_PARSED_FILES_MAX_DEFAULT,
+  TS_PROGRAM_RETAINED_TEXT_BYTES_MAX_DEFAULT,
+  TS_PROGRAM_STRATEGY_DEFAULT,
+  TS_PROGRAM_WHOLE_MIN_ENTRIES_DEFAULT,
+  TS_PROGRAM_WHOLE_ROOT_FILES_MAX_DEFAULT,
+  TS_PROGRAM_WHOLE_SEGMENT_FILES_DEFAULT,
+  TSProgramCache,
+  type TSProgramCacheOptions,
+  type TSProgramStrategy,
+} from "./ts-program-cache.js";
+import {
+  TS_PROGRAM_HEAP_BASE_MB_DEFAULT,
+  TS_PROGRAM_HEAP_CHECKER_PER_1K_FILES_MB_DEFAULT,
+  TS_PROGRAM_HEAP_PER_1K_ROOTS_MB_DEFAULT,
+  TS_PROGRAM_HEAP_USABLE_PCT_DEFAULT,
+  type TSProgramHeapBudget,
+} from "./ts-program-heap-admission.js";
 
 /** Parse `CODEGRAPH_TS_CONE_MAX`; fall back to the TS default on absent/invalid. */
 function resolveConeMax(raw: string | undefined): number {
   const parsed = Number(raw);
   return Number.isInteger(parsed) && parsed > 0 ? parsed : CONE_MAX_DEFAULT;
+}
+
+/** Bytes per megabyte, for the one budget an operator states in MB. */
+const BYTES_PER_MB = 1024 * 1024;
+
+/**
+ * Parse a positive-integer budget knob; fall back to the compiled-in default on
+ * absent, non-numeric, fractional or non-positive input. A budget of zero or
+ * less is not a smaller cache, it is a cache that can retain nothing, so it is
+ * refused the same way a typo is.
+ */
+function resolvePositiveBudget(raw: string | undefined, fallback: number): number {
+  const parsed = Number(raw);
+  return Number.isInteger(parsed) && parsed > 0 ? parsed : fallback;
+}
+
+/**
+ * The four {@link TSProgramCache} budgets an operator may raise from the
+ * environment, resolved against their compiled-in defaults.
+ *
+ * The original defaults were sized for the enrichment worker's 2 GiB heap on an
+ * ordinary repository, and on a large one they bound hard: measured on taxdome
+ * (10,912 TS files, bd tea-rags-mcp-6aytq), `parsedDependencyFileCount`
+ * saturated the old 2000-file cap around file 1,200 and the `ts.createProgram`
+ * rate immediately jumped 6x — from 0.08 to 0.48 builds per file — because
+ * every later build re-parsed the `.d.ts` surface eviction had just dropped.
+ * That measurement moved the DEFAULTS (see the constants); these knobs remain
+ * for the operator who has to go the other way — a memory-constrained host that
+ * would rather pay the re-parse than the heap.
+ *
+ * - `CODEGRAPH_TS_PROGRAM_CACHE_MAX` → retained Programs
+ * - `CODEGRAPH_TS_PROGRAM_PARSED_FILES_MAX` → parsed project sources
+ * - `CODEGRAPH_TS_PROGRAM_PARSED_DEPENDENCY_FILES_MAX` → parsed dependency declarations
+ * - `CODEGRAPH_TS_PROGRAM_RETAINED_TEXT_MB` → retained non-lib source text, in MB
+ */
+export function resolveProgramCacheBudgets(
+  env: NodeJS.ProcessEnv,
+): Required<
+  Pick<TSProgramCacheOptions, "maxEntries" | "maxParsedFiles" | "maxDependencyFiles" | "maxRetainedSourceTextBytes">
+> {
+  return {
+    maxEntries: resolvePositiveBudget(env.CODEGRAPH_TS_PROGRAM_CACHE_MAX, TS_PROGRAM_CACHE_MAX_DEFAULT),
+    maxParsedFiles: resolvePositiveBudget(
+      env.CODEGRAPH_TS_PROGRAM_PARSED_FILES_MAX,
+      TS_PROGRAM_PARSED_FILES_MAX_DEFAULT,
+    ),
+    maxDependencyFiles: resolvePositiveBudget(
+      env.CODEGRAPH_TS_PROGRAM_PARSED_DEPENDENCY_FILES_MAX,
+      TS_PROGRAM_PARSED_DEPENDENCY_FILES_MAX_DEFAULT,
+    ),
+    maxRetainedSourceTextBytes:
+      resolvePositiveBudget(
+        env.CODEGRAPH_TS_PROGRAM_RETAINED_TEXT_MB,
+        TS_PROGRAM_RETAINED_TEXT_BYTES_MAX_DEFAULT / BYTES_PER_MB,
+      ) * BYTES_PER_MB,
+  };
+}
+
+/** The three values `CODEGRAPH_TS_PROGRAM_STRATEGY` accepts. */
+const TS_PROGRAM_STRATEGIES: readonly TSProgramStrategy[] = ["coverage", "whole", "auto"];
+
+/**
+ * How the {@link TSProgramCache} should obtain its Programs, and the project
+ * size past which `auto` declines the whole-project one.
+ *
+ * `CODEGRAPH_TS_PROGRAM_STRATEGY` → `coverage` | `whole` | `auto` (default),
+ * `CODEGRAPH_TS_PROGRAM_WHOLE_ROOT_MAX` → the `auto` root-count ceiling,
+ * `CODEGRAPH_TS_PROGRAM_WHOLE_MIN_ENTRIES` → the `auto` warm-up gate.
+ *
+ * An unrecognized strategy falls back to the default rather than failing the
+ * run: this is a performance selector, and a typo in it must not cost an index.
+ * Both numbers follow the same positive-integer rule as the budgets above.
+ */
+export function resolveProgramCacheStrategy(
+  env: NodeJS.ProcessEnv,
+): Required<Pick<TSProgramCacheOptions, "strategy" | "wholeRootFilesMax" | "wholeMinEntries" | "wholeSegmentFiles">> {
+  const raw = env.CODEGRAPH_TS_PROGRAM_STRATEGY;
+  const strategy = TS_PROGRAM_STRATEGIES.find((candidate) => candidate === raw) ?? TS_PROGRAM_STRATEGY_DEFAULT;
+  return {
+    strategy,
+    wholeRootFilesMax: resolvePositiveBudget(
+      env.CODEGRAPH_TS_PROGRAM_WHOLE_ROOT_MAX,
+      TS_PROGRAM_WHOLE_ROOT_FILES_MAX_DEFAULT,
+    ),
+    wholeMinEntries: resolvePositiveBudget(
+      env.CODEGRAPH_TS_PROGRAM_WHOLE_MIN_ENTRIES,
+      TS_PROGRAM_WHOLE_MIN_ENTRIES_DEFAULT,
+    ),
+    wholeSegmentFiles: resolvePositiveBudget(
+      env.CODEGRAPH_TS_PROGRAM_WHOLE_SEGMENT_FILES,
+      TS_PROGRAM_WHOLE_SEGMENT_FILES_DEFAULT,
+    ),
+  };
+}
+
+/**
+ * The four terms of the whole-vs-coverage-vs-nothing heap projection, resolved
+ * against the constants fitted on taxdome (bd tea-rags-mcp-6aytq).
+ *
+ * - `CODEGRAPH_TS_PROGRAM_HEAP_BASE_MB` → fixed cost before any Program
+ * - `CODEGRAPH_TS_PROGRAM_HEAP_PER_1K_ROOTS_MB` → built-Program cost per 1,000 roots
+ * - `CODEGRAPH_TS_PROGRAM_HEAP_CHECKER_PER_1K_FILES_MB` → checker growth per 1,000 served files
+ * - `CODEGRAPH_TS_PROGRAM_HEAP_USABLE_PCT` → share of the heap ceiling a projection may claim
+ *
+ * Separate from {@link resolveProgramCacheBudgets} because the two answer
+ * different questions: those knobs tune how much a cache RETAINS on a host that
+ * is coping, these decide whether the host can run the strategy at all. The
+ * percentage is additionally capped at 100 — a projection may not be allowed to
+ * claim more heap than exists, and a typo that let it would defeat the gate
+ * silently rather than loudly.
+ */
+export function resolveProgramHeapBudget(env: NodeJS.ProcessEnv): TSProgramHeapBudget {
+  const usableHeapPct = resolvePositiveBudget(
+    env.CODEGRAPH_TS_PROGRAM_HEAP_USABLE_PCT,
+    TS_PROGRAM_HEAP_USABLE_PCT_DEFAULT,
+  );
+  return {
+    baseMb: resolvePositiveBudget(env.CODEGRAPH_TS_PROGRAM_HEAP_BASE_MB, TS_PROGRAM_HEAP_BASE_MB_DEFAULT),
+    perThousandRootsMb: resolvePositiveBudget(
+      env.CODEGRAPH_TS_PROGRAM_HEAP_PER_1K_ROOTS_MB,
+      TS_PROGRAM_HEAP_PER_1K_ROOTS_MB_DEFAULT,
+    ),
+    checkerPerThousandFilesMb: resolvePositiveBudget(
+      env.CODEGRAPH_TS_PROGRAM_HEAP_CHECKER_PER_1K_FILES_MB,
+      TS_PROGRAM_HEAP_CHECKER_PER_1K_FILES_MB_DEFAULT,
+    ),
+    usableHeapPct: usableHeapPct > 100 ? TS_PROGRAM_HEAP_USABLE_PCT_DEFAULT : usableHeapPct,
+  };
 }
 
 /**
@@ -174,7 +323,19 @@ export class TSCallResolver implements CallResolver {
     };
     this.cone = new ConeDispatchResolver(new TSConeTypeLocator(cfg), cfg.coneMax ?? CONE_MAX_DEFAULT);
     this.programCache = typeCheckerFallbackEnabled(process.env.CODEGRAPH_TS_TYPECHECKER)
-      ? new TSProgramCache({ repoRoot, tsOptions, fileExists: this.fileExists })
+      ? new TSProgramCache({
+          repoRoot,
+          tsOptions,
+          fileExists: this.fileExists,
+          // The tsconfig's own include/exclude expansion — the set `tsc`
+          // compiles — is the root list a whole-project Program is built from.
+          // A thunk, because the walk costs ~750 ms on a large repo and must
+          // not run for a resolver that never reaches the whole strategy.
+          projectRoots: () => loadTsConfigFileNames(repoRoot),
+          ...resolveProgramCacheBudgets(process.env),
+          ...resolveProgramCacheStrategy(process.env),
+          heapBudget: resolveProgramHeapBudget(process.env),
+        })
       : null;
     this.unionReceiver = this.programCache
       ? new TSTypeCheckerUnionReceiverDispatchResolver(cfg, this.programCache)
@@ -214,6 +375,35 @@ export class TSCallResolver implements CallResolver {
 
   resolve(call: CallRef, ctx: CallContext): SymbolResolutionTarget | null {
     return resolveViaChain(this.strategies, call, ctx);
+  }
+
+  /**
+   * The pass is about to hand this resolver `expectedFileCount` files, so build
+   * the whole-project Program now rather than after the cache's warm-up gate
+   * has inferred the same thing (bd tea-rags-mcp-6aytq).
+   *
+   * Nothing else here is run-scoped: the strategies hold per-call state only,
+   * and the path probe memoizes lazily by design. So the plan reaches exactly
+   * one collaborator, and every rule about WHETHER to build — strategy, root
+   * cap, one attempt, fall back to coverage on failure — stays inside the
+   * cache. A resolver with the type checker disabled has no cache and the plan
+   * is a no-op, which is the correct reading of `CODEGRAPH_TS_TYPECHECKER=0`.
+   */
+  prepareResolvePass(plan: SymbolResolutionPassPlan): void {
+    // The corpus goes with the count: the tsconfig root set the cache would
+    // otherwise build from misses the files a run resolves but the project
+    // excludes — 936 of taxdome's 10,912 (bd tea-rags-mcp-6aytq).
+    this.programCache?.primeForExpectedEntries(plan.expectedFileCount, plan.expectedRelPaths);
+  }
+
+  /**
+   * What the Program cache did over this run, for the pass-2 progress log (bd
+   * tea-rags-mcp-6aytq). `undefined` when the type checker is off and there is
+   * no cache to report on — the seam reads that as "this language has nothing
+   * to say", which is exactly right for `CODEGRAPH_TS_TYPECHECKER=0`.
+   */
+  diagnostics(): Record<string, unknown> | undefined {
+    return this.programCache?.diagnostics();
   }
 
   /**
