@@ -65,6 +65,25 @@
   Program every remaining file is about to be served off; a growing root set
   rebuilds it repeatedly; and without the warm-up gate a three-file incremental
   reindex pays the 10.1 s build and ~4 GB of heap to resolve three files.
+- **That whole Program is SEGMENTED, and admission decides whether it is built
+  at all.** `CODEGRAPH_TS_PROGRAM_WHOLE_SEGMENT_FILES` (5,000) retires it after
+  that many DISTINCT files served — `wholeEntry.derived.size`, never the acquire
+  count — and rebuilds from the same roots, dropping the old entry BEFORE
+  `buildFrom` so the two are never live together. Separately, `TSProgramCache`
+  reads `v8.getHeapStatistics().heap_size_limit` in its own isolate and projects
+  the peak (`ts-program-heap-admission.ts`): above the whole requirement →
+  whole, between the two → coverage, below coverage's floor → `typecheckerOff`,
+  which latches `acquire()` to `null` for the run and emits one
+  `[enrichment-worker]` line. Admission overrides an explicit `whole`, unlike
+  `wholeRootFilesMax`. Why: checker state is monotonic (+1.69 GB over taxdome's
+  10,912 files, 2.6 GB build → 4.31 GB live set), so an unsegmented
+  4096-declared worker dies at ~file 6,500; and a V8 heap OOM kills the ISOLATE
+  — `buildFrom`'s try/catch never runs, the dispatch rejects
+  `ERR_WORKER_OUT_OF_MEMORY`, and the run loses every codegraph signal with no
+  retry. Counting acquires instead of distinct files would rebuild every ~116
+  files (production acquires ~43x per file); keeping the old entry alive across
+  the rebuild would put the boundary at the peak the segmentation exists to
+  remove.
 - **A BULK pass skips the warm-up and primes up front, from a count pass-1
   already has.** `CallEdgeResolutionRunner#prepareResolvePass` — pass-2's first
   act, before the spill is read — hands each language a

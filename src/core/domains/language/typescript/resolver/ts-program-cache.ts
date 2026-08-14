@@ -41,6 +41,24 @@
  * the default — takes the whole Program whenever the project is small enough to
  * hold in memory.
  *
+ * **The whole Program is SEGMENTED, and whether it runs at all is decided
+ * against the isolate's actual heap.** A Program's build cost is paid once; its
+ * CHECKER's is not — checker state is monotonic, and on taxdome it grows 1.69 GB
+ * across the resolve, taking a 2.6 GB post-build live set to 4.31 GB by the last
+ * file. So the whole strategy retires its Program every
+ * {@link TSProgramCacheOptions.wholeSegmentFiles} files served and builds a
+ * fresh one from the same roots, which caps that term at one segment's worth
+ * (projected peak ~3.4 GB) for the cost of two extra builds on a 10,912-file
+ * corpus. Parses are not re-read: the shared host hands the successor the same
+ * SourceFiles. And before ANY build, {@link TSProgramCacheOptions.heapBudget}
+ * projects the peak against `v8.getHeapStatistics().heap_size_limit` — a
+ * projection that does not fit degrades to coverage, or, below coverage mode's
+ * own floor, to no Program at all. The reason that is worth a gate rather than a
+ * comment is the failure mode: a V8 heap OOM kills the worker isolate outright,
+ * the `try/catch` in {@link TSProgramCache.buildFrom} never runs, and the run
+ * loses every codegraph signal it had accumulated with no retry
+ * (`./ts-program-heap-admission.ts` carries the measurements).
+ *
  * **Which is why the per-entry path is keyed by COVERAGE, not by entry file
  * alone.** If
  * the Program built for `a.ts` already contains `b.ts`, building a second
@@ -118,6 +136,17 @@ import {
   type ProjectFileProbe,
   type TsCompilerOptions,
 } from "./ts-path-mapper.js";
+import {
+  assessTSProgramAdmission,
+  describeTSProgramTypecheckerDowngrade,
+  readHeapSizeLimitMb,
+  TS_PROGRAM_HEAP_BASE_MB_DEFAULT,
+  TS_PROGRAM_HEAP_CHECKER_PER_1K_FILES_MB_DEFAULT,
+  TS_PROGRAM_HEAP_PER_1K_ROOTS_MB_DEFAULT,
+  TS_PROGRAM_HEAP_USABLE_PCT_DEFAULT,
+  type TSProgramAdmissionAssessment,
+  type TSProgramHeapBudget,
+} from "./ts-program-heap-admission.js";
 
 /** Max Programs retained before the least-recently-used one is dropped. */
 export const TS_PROGRAM_CACHE_MAX_DEFAULT = 8;
@@ -197,6 +226,32 @@ export const TS_PROGRAM_WHOLE_ROOT_FILES_MAX_DEFAULT = 20000;
  * wants the whole Program from the first acquire sets the gate to 1.
  */
 export const TS_PROGRAM_WHOLE_MIN_ENTRIES_DEFAULT = 200;
+/**
+ * Files ONE whole-project Program serves before it is rebuilt from the same
+ * roots and the old one released.
+ *
+ * The Program's own cost is paid once; its CHECKER's is not. Checker state is
+ * monotonic — every type it computes, every symbol link it caches, stays for
+ * the life of that checker — and measured on taxdome it grows 1.69 GB across
+ * the resolve, taking a 2.6 GB post-build live set to 4.31 GB by the last file.
+ * That growth is what kills a 4096-declared worker at about file 6,500.
+ *
+ * None of it is needed across independent files: file 9,000 does not read the
+ * types file 12 asked for. So the whole strategy runs in segments — 5,000 files
+ * served, then a fresh Program over the same roots and the old one dropped,
+ * which caps the checker term at one segment's worth and takes the projected
+ * peak from ~4.3 GB to ~3.4 GB. Parses are NOT re-read: the shared
+ * `ts.CompilerHost` hands the new Program the same SourceFiles, so what the
+ * rebuild pays for is module resolution, not the AST.
+ *
+ * 5,000 buys two extra builds on a 10,912-file corpus, forecast at ~22 s
+ * against a 58.8 s pass. A counter is deliberately the whole mechanism: checker
+ * state cannot be shared, migrated or partially evicted across Programs, so
+ * there is nothing cleverer to be done than to decide when to start over.
+ * Raising it past the corpus size disables segmentation, which is what an
+ * operator with a large heap and no interest in the rebuilds should do.
+ */
+export const TS_PROGRAM_WHOLE_SEGMENT_FILES_DEFAULT = 5000;
 
 export interface TSProgramCacheOptions {
   /** Absolute project root every `RelPath` is resolved against. */
@@ -300,6 +355,25 @@ export interface TSProgramCacheOptions {
    * an explicit `whole`, which primes on the first acquire.
    */
   wholeMinEntries?: number;
+  /**
+   * Files one whole-project Program serves before it is replaced. Default
+   * {@link TS_PROGRAM_WHOLE_SEGMENT_FILES_DEFAULT}, whose docblock carries the
+   * measurement; a value past the project's size disables segmentation.
+   */
+  wholeSegmentFiles?: number;
+  /**
+   * Terms of the heap projection admission is decided on. Default
+   * {@link TS_PROGRAM_HEAP_BASE_MB_DEFAULT} and friends.
+   */
+  heapBudget?: TSProgramHeapBudget;
+  /**
+   * This isolate's V8 old-generation ceiling, in MB. Defaults to
+   * {@link readHeapSizeLimitMb} — a direct `v8.getHeapStatistics()` read, taken
+   * HERE rather than handed down from the pool, because the reading is
+   * per-isolate and the pool lives in a different one. Injectable so the
+   * admission matrix is testable without spawning a thread per row.
+   */
+  readHeapSizeLimitMb?: () => number;
   /**
    * Absolute names of every file the project claims — the root set a
    * whole-project Program is built from. Called at most ONCE, lazily, and only
@@ -421,7 +495,24 @@ export class TSProgramCache {
   private readonly strategy: TSProgramStrategy;
   private readonly wholeRootFilesMax: number;
   private readonly wholeMinEntries: number;
+  private readonly wholeSegmentFiles: number;
+  private readonly heapBudget: TSProgramHeapBudget;
+  private readonly readHeapSizeLimitMb: () => number;
   private readonly projectRoots: () => readonly string[];
+  /**
+   * Whole-project builds this instance has performed — the first and every
+   * segment rebuild after it. The observable that says segmentation ran.
+   */
+  private wholeBuilds = 0;
+  /**
+   * Has admission refused every Program for the rest of this run? Latched
+   * rather than re-decided, because the verdict is a heap projection over the
+   * PROJECT, not a per-file condition — and re-deciding would cost a
+   * `v8.getHeapStatistics()` per call site.
+   */
+  private typecheckerOff = false;
+  /** Has the downgrade already been reported? One line per run, not per acquire. */
+  private downgradeReported = false;
   /**
    * Distinct entries acquired so far, until `auto` has made its decision —
    * then dropped, because nothing reads it afterwards and it would otherwise
@@ -570,6 +661,14 @@ export class TSProgramCache {
     this.strategy = options.strategy ?? TS_PROGRAM_STRATEGY_DEFAULT;
     this.wholeRootFilesMax = options.wholeRootFilesMax ?? TS_PROGRAM_WHOLE_ROOT_FILES_MAX_DEFAULT;
     this.wholeMinEntries = options.wholeMinEntries ?? TS_PROGRAM_WHOLE_MIN_ENTRIES_DEFAULT;
+    this.wholeSegmentFiles = options.wholeSegmentFiles ?? TS_PROGRAM_WHOLE_SEGMENT_FILES_DEFAULT;
+    this.heapBudget = options.heapBudget ?? {
+      baseMb: TS_PROGRAM_HEAP_BASE_MB_DEFAULT,
+      perThousandRootsMb: TS_PROGRAM_HEAP_PER_1K_ROOTS_MB_DEFAULT,
+      checkerPerThousandFilesMb: TS_PROGRAM_HEAP_CHECKER_PER_1K_FILES_MB_DEFAULT,
+      usableHeapPct: TS_PROGRAM_HEAP_USABLE_PCT_DEFAULT,
+    };
+    this.readHeapSizeLimitMb = options.readHeapSizeLimitMb ?? readHeapSizeLimitMb;
     this.projectRoots = options.projectRoots ?? ((): readonly string[] => []);
     this.compilerOptions = buildCompilerOptions(this.repoRoot, this.tsOptions);
     this.inRootPrefix = `${sep === "/" ? this.repoRoot : this.repoRoot.split(sep).join("/")}/`;
@@ -597,6 +696,24 @@ export class TSProgramCache {
    */
   get wholeProgramFileCount(): number {
     return this.wholeEntry?.coveredTextBytes.size ?? 0;
+  }
+
+  /**
+   * Whole-project builds performed so far: one per segment. `0` on the
+   * per-entry strategy, `1` when segmentation never triggered.
+   */
+  get wholeProgramBuildCount(): number {
+    return this.wholeBuilds;
+  }
+
+  /**
+   * Has admission refused this isolate every `ts.Program`? While true
+   * {@link acquire} answers `null` unconditionally, which every consumer
+   * already reads as "no type information, fall through" — the same state
+   * `CODEGRAPH_TS_TYPECHECKER=0` configures, reached from measurement instead.
+   */
+  get typeCheckerDisabled(): boolean {
+    return this.typecheckerOff;
   }
 
   /**
@@ -657,6 +774,10 @@ export class TSProgramCache {
    * information and must fall through rather than guess.
    */
   acquire(relPath: RelPath): TSProgramHandle | null {
+    // A run admission has refused stays refused for its whole length — see
+    // {@link typecheckerOff}. Checked before the stat so a refused run costs
+    // one comparison per call site rather than a syscall.
+    if (this.typecheckerOff) return null;
     const absolute = this.toAbsolute(relPath);
     const mtimeMs = entryMtime(absolute);
     if (mtimeMs === null) return null;
@@ -683,6 +804,10 @@ export class TSProgramCache {
     // Program exists to make that lookup hit, so priming it after a miss would
     // build it for a file that then paid a per-entry build anyway.
     this.ensureWholeProgram(relPath);
+    // That call is also where admission is assessed, and its verdict can be
+    // "no Program at all" — do not fall through to a per-entry build the
+    // projection has just refused.
+    if (this.typecheckerOff) return null;
 
     const covering = this.findCovering(this.toCompilerPath(absolute), absolute, mtimeMs);
     if (covering) return covering;
@@ -720,7 +845,13 @@ export class TSProgramCache {
     // lookup instead of a walk over the per-entry LRU that will miss.
     if (this.wholeEntry !== null) {
       const served = this.serveFrom(this.wholeEntry, compilerPath, entryAbsolute, mtimeMs);
-      if (served) return served;
+      if (served) {
+        // AFTER the serve, never before: the handle just derived is the one the
+        // caller is about to resolve through, and a Program cannot be retired
+        // out from under a handle it has already produced.
+        this.rotateWholeSegmentWhenFull();
+        return served;
+      }
     }
     for (const [key, entry] of this.entries) {
       const served = this.serveFrom(entry, compilerPath, entryAbsolute, mtimeMs);
@@ -800,7 +931,18 @@ export class TSProgramCache {
    * replace them.
    */
   primeForExpectedEntries(expectedEntries: number): void {
-    if (this.wholeAttempted || this.strategy === "coverage") return;
+    if (this.typecheckerOff) return;
+    if (this.strategy === "coverage") {
+      // No whole build to decide, but coverage mode has a floor of its own —
+      // one covering Program over the main connectivity component, which a
+      // 2048-declared worker died building on taxdome. A BULK run is the only
+      // shape that reaches it, and the declared volume is what says so: it is
+      // the run's own count, and asking the tsconfig walk (~750 ms) purely to
+      // refuse a build would pay for a number this one already supports.
+      if (expectedEntries >= this.wholeMinEntries) this.admit(expectedEntries);
+      return;
+    }
+    if (this.wholeAttempted) return;
     // An explicit `whole` primes on first use however small the run, and this
     // is that first use — the gate is documented as ignored for it.
     if (this.strategy === "auto" && expectedEntries < this.wholeMinEntries) return;
@@ -825,8 +967,88 @@ export class TSProgramCache {
     // `auto` is the size-aware choice; an explicit `whole` is an operator who
     // has already made it, and is not second-guessed.
     if (this.strategy === "auto" && roots.length > this.wholeRootFilesMax) return;
+    // Admission IS second-guessed for an explicit `whole`, and the asymmetry is
+    // deliberate: the root ceiling above encodes a preference between two
+    // working strategies, while this one says the build does not fit the
+    // isolate. An operator can prefer a slower trade; nobody can opt into
+    // ERR_WORKER_OUT_OF_MEMORY and the loss of the run's whole graph.
+    if (this.admit(roots.length) !== "whole") return;
 
     this.wholeEntry = this.buildFrom(roots, roots[0]);
+    if (this.wholeEntry !== null) this.wholeBuilds += 1;
+  }
+
+  /**
+   * Replace the whole-project Program once it has served a full segment,
+   * releasing the old one — the checker bound described by
+   * {@link TS_PROGRAM_WHOLE_SEGMENT_FILES_DEFAULT}.
+   *
+   * `derived.size` is the segment counter, and it is the right one BECAUSE it
+   * counts distinct files rather than acquires: production asks for a Program
+   * about 43 times per file (467,308 acquires over 10,912 taxdome files), all
+   * but the first served straight out of that map at no checker cost.
+   *
+   * The old entry is dropped BEFORE the new build starts. Holding both across
+   * `ts.createProgram` would put the segment boundary at the very peak this
+   * exists to remove; the outgoing Program survives only as long as the handles
+   * already handed out, which the callers release as they finish their files. A
+   * rebuild that fails leaves no whole Program at all and the run degrades to
+   * per-entry coverage, exactly as a failed first build does.
+   */
+  private rotateWholeSegmentWhenFull(): void {
+    const retiring = this.wholeEntry;
+    if (retiring === null || retiring.derived.size < this.wholeSegmentFiles) return;
+
+    const roots = retiring.handle.rootFiles;
+    this.wholeEntry = null;
+    this.wholeEntry = this.buildFrom(roots, roots[0]);
+    if (this.wholeEntry !== null) this.wholeBuilds += 1;
+  }
+
+  /**
+   * Which Program strategy this isolate's heap admits, latching the refusal
+   * when the answer is none.
+   *
+   * Assessed at most once per run, at the same point the whole-project
+   * decision is made, because both need the root count and neither may be
+   * re-derived per acquire. The verdict is returned as well as latched so the
+   * caller can tell "build the whole Program" from "fall through to per-entry
+   * coverage" without re-reading state.
+   */
+  private admit(rootCount: number): TSProgramAdmissionAssessment["verdict"] {
+    const assessment = assessTSProgramAdmission({
+      rootCount,
+      segmentFiles: this.wholeSegmentFiles,
+      heapSizeLimitMb: this.readHeapSizeLimitMb(),
+      budget: this.heapBudget,
+    });
+    if (assessment.verdict === "typecheckerOff") this.disableTypeChecker(assessment);
+    return assessment.verdict;
+  }
+
+  /**
+   * Refuse every Program for the rest of the run, drop what is already
+   * retained, and say so once.
+   *
+   * The retained Programs go too. They are the memory the verdict just called
+   * unaffordable, and a run that will build no more of them has no use for the
+   * ones a warm-up happened to build first.
+   *
+   * The emit mirrors `enrichment/infra/heap-ceiling-enforcement.ts`'s idiom —
+   * one `[enrichment-worker]` line on stderr — because this is the same class
+   * of fact reported from the same isolate: a memory bound that changes what
+   * the worker can do, and that nothing else in the run will mention.
+   */
+  private disableTypeChecker(assessment: TSProgramAdmissionAssessment): void {
+    this.typecheckerOff = true;
+    this.wholeAttempted = true;
+    this.entriesSeen = null;
+    this.wholeEntry = null;
+    this.entries.clear();
+    if (this.downgradeReported) return;
+    this.downgradeReported = true;
+    const warning = describeTSProgramTypecheckerDowngrade(assessment);
+    if (warning) process.stderr.write(`[enrichment-worker] ${warning}\n`);
   }
 
   /**
@@ -870,7 +1092,13 @@ export class TSProgramCache {
     // is as re-derivable as the parses are.
     this.wholeEntry = null;
     this.wholeAttempted = false;
+    this.wholeBuilds = 0;
     this.entriesSeen = new Set();
+    // The admission verdict is re-armed with everything else: it was decided
+    // against ONE run's root count on ONE isolate reading, and a reset means a
+    // new run is about to declare its own.
+    this.typecheckerOff = false;
+    this.downgradeReported = false;
     this.sourceFiles.clear();
     this.parsedAtMs.clear();
     this.parsedProjectSources.clear();

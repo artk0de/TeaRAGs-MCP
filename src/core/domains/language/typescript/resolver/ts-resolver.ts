@@ -114,10 +114,18 @@ import {
   TS_PROGRAM_STRATEGY_DEFAULT,
   TS_PROGRAM_WHOLE_MIN_ENTRIES_DEFAULT,
   TS_PROGRAM_WHOLE_ROOT_FILES_MAX_DEFAULT,
+  TS_PROGRAM_WHOLE_SEGMENT_FILES_DEFAULT,
   TSProgramCache,
   type TSProgramCacheOptions,
   type TSProgramStrategy,
 } from "./ts-program-cache.js";
+import {
+  TS_PROGRAM_HEAP_BASE_MB_DEFAULT,
+  TS_PROGRAM_HEAP_CHECKER_PER_1K_FILES_MB_DEFAULT,
+  TS_PROGRAM_HEAP_PER_1K_ROOTS_MB_DEFAULT,
+  TS_PROGRAM_HEAP_USABLE_PCT_DEFAULT,
+  type TSProgramHeapBudget,
+} from "./ts-program-heap-admission.js";
 
 /** Parse `CODEGRAPH_TS_CONE_MAX`; fall back to the TS default on absent/invalid. */
 function resolveConeMax(raw: string | undefined): number {
@@ -198,7 +206,7 @@ const TS_PROGRAM_STRATEGIES: readonly TSProgramStrategy[] = ["coverage", "whole"
  */
 export function resolveProgramCacheStrategy(
   env: NodeJS.ProcessEnv,
-): Required<Pick<TSProgramCacheOptions, "strategy" | "wholeRootFilesMax" | "wholeMinEntries">> {
+): Required<Pick<TSProgramCacheOptions, "strategy" | "wholeRootFilesMax" | "wholeMinEntries" | "wholeSegmentFiles">> {
   const raw = env.CODEGRAPH_TS_PROGRAM_STRATEGY;
   const strategy = TS_PROGRAM_STRATEGIES.find((candidate) => candidate === raw) ?? TS_PROGRAM_STRATEGY_DEFAULT;
   return {
@@ -211,6 +219,45 @@ export function resolveProgramCacheStrategy(
       env.CODEGRAPH_TS_PROGRAM_WHOLE_MIN_ENTRIES,
       TS_PROGRAM_WHOLE_MIN_ENTRIES_DEFAULT,
     ),
+    wholeSegmentFiles: resolvePositiveBudget(
+      env.CODEGRAPH_TS_PROGRAM_WHOLE_SEGMENT_FILES,
+      TS_PROGRAM_WHOLE_SEGMENT_FILES_DEFAULT,
+    ),
+  };
+}
+
+/**
+ * The four terms of the whole-vs-coverage-vs-nothing heap projection, resolved
+ * against the constants fitted on taxdome (bd tea-rags-mcp-6aytq).
+ *
+ * - `CODEGRAPH_TS_PROGRAM_HEAP_BASE_MB` → fixed cost before any Program
+ * - `CODEGRAPH_TS_PROGRAM_HEAP_PER_1K_ROOTS_MB` → built-Program cost per 1,000 roots
+ * - `CODEGRAPH_TS_PROGRAM_HEAP_CHECKER_PER_1K_FILES_MB` → checker growth per 1,000 served files
+ * - `CODEGRAPH_TS_PROGRAM_HEAP_USABLE_PCT` → share of the heap ceiling a projection may claim
+ *
+ * Separate from {@link resolveProgramCacheBudgets} because the two answer
+ * different questions: those knobs tune how much a cache RETAINS on a host that
+ * is coping, these decide whether the host can run the strategy at all. The
+ * percentage is additionally capped at 100 — a projection may not be allowed to
+ * claim more heap than exists, and a typo that let it would defeat the gate
+ * silently rather than loudly.
+ */
+export function resolveProgramHeapBudget(env: NodeJS.ProcessEnv): TSProgramHeapBudget {
+  const usableHeapPct = resolvePositiveBudget(
+    env.CODEGRAPH_TS_PROGRAM_HEAP_USABLE_PCT,
+    TS_PROGRAM_HEAP_USABLE_PCT_DEFAULT,
+  );
+  return {
+    baseMb: resolvePositiveBudget(env.CODEGRAPH_TS_PROGRAM_HEAP_BASE_MB, TS_PROGRAM_HEAP_BASE_MB_DEFAULT),
+    perThousandRootsMb: resolvePositiveBudget(
+      env.CODEGRAPH_TS_PROGRAM_HEAP_PER_1K_ROOTS_MB,
+      TS_PROGRAM_HEAP_PER_1K_ROOTS_MB_DEFAULT,
+    ),
+    checkerPerThousandFilesMb: resolvePositiveBudget(
+      env.CODEGRAPH_TS_PROGRAM_HEAP_CHECKER_PER_1K_FILES_MB,
+      TS_PROGRAM_HEAP_CHECKER_PER_1K_FILES_MB_DEFAULT,
+    ),
+    usableHeapPct: usableHeapPct > 100 ? TS_PROGRAM_HEAP_USABLE_PCT_DEFAULT : usableHeapPct,
   };
 }
 
@@ -287,6 +334,7 @@ export class TSCallResolver implements CallResolver {
           projectRoots: () => loadTsConfigFileNames(repoRoot),
           ...resolveProgramCacheBudgets(process.env),
           ...resolveProgramCacheStrategy(process.env),
+          heapBudget: resolveProgramHeapBudget(process.env),
         })
       : null;
     this.unionReceiver = this.programCache

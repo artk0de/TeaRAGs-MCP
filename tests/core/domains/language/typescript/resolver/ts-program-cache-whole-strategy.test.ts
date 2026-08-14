@@ -21,6 +21,7 @@ import {
   TS_PROGRAM_STRATEGY_DEFAULT,
   TS_PROGRAM_WHOLE_MIN_ENTRIES_DEFAULT,
   TS_PROGRAM_WHOLE_ROOT_FILES_MAX_DEFAULT,
+  TS_PROGRAM_WHOLE_SEGMENT_FILES_DEFAULT,
   TSProgramCache,
 } from "../../../../../../src/core/domains/language/typescript/resolver/ts-program-cache.js";
 import { resolveProgramCacheStrategy } from "../../../../../../src/core/domains/language/typescript/resolver/ts-resolver.js";
@@ -40,6 +41,9 @@ describe("resolveProgramCacheStrategy (bd tea-rags-mcp-6aytq)", () => {
       strategy: TS_PROGRAM_STRATEGY_DEFAULT,
       wholeRootFilesMax: TS_PROGRAM_WHOLE_ROOT_FILES_MAX_DEFAULT,
       wholeMinEntries: TS_PROGRAM_WHOLE_MIN_ENTRIES_DEFAULT,
+      // The segment size joined this resolver when the whole Program stopped
+      // being one Program for the run's length (bd tea-rags-mcp-6aytq).
+      wholeSegmentFiles: TS_PROGRAM_WHOLE_SEGMENT_FILES_DEFAULT,
     });
   });
 
