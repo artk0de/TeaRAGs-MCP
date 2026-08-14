@@ -181,6 +181,21 @@ export class CompletionRunner {
   }
 
   /**
+   * Report a marker step's two halves apart.
+   *
+   * A marker step does exactly two things: scan for residual unenriched points,
+   * and write the terminal marker. The write is `wait: true`, which makes it a
+   * BARRIER on every `wait: false` payload write the preceding apply step
+   * queued — so a marker step's wall clock is mostly not its own work. The
+   * unenriched scans measure ~6ms on taxdome since the v14 payload indexes while
+   * the steps measured 11.6s and 11.4s; without this split that gap is
+   * unattributable and invites re-optimising a scan that is already free.
+   */
+  private reportMarkerSplit(step: string, scanMs: number, writeMs: number): void {
+    pipelineLog.enrichmentPhase("COMPLETION_MARKER_SPLIT", { step, scanMs, writeMs });
+  }
+
+  /**
    * Step 4 — terminal FILE marker per provider. Reads post-backfill unenriched
    * counts, so it must run after the backfill await.
    */
@@ -191,8 +206,13 @@ export class CompletionRunner {
     runId: string,
   ): Promise<void> {
     const { filePhase, applier, markerStore } = this.deps;
+    let scanMs = 0;
+    let writeMs = 0;
     for (const ctx of contexts.values()) {
+      const scanStartedAt = Date.now();
       const fileUnenriched = await readUnenriched(coll, ctx.provider, "file");
+      scanMs += Date.now() - scanStartedAt;
+      const writeStartedAt = Date.now();
       const fileStatus = filePhase.hasPrefetchFailed(ctx.key)
         ? "failed"
         : fileUnenriched > 0
@@ -211,7 +231,9 @@ export class CompletionRunner {
         // `failed` with no cause anywhere (worker stderr is detached).
         ...(fileStatus === "failed" ? { errorMessage: filePhase.getPrefetchError(ctx.key) } : {}),
       });
+      writeMs += Date.now() - writeStartedAt;
     }
+    this.reportMarkerSplit("fileMarkers", scanMs, writeMs);
   }
 
   /**
@@ -272,8 +294,13 @@ export class CompletionRunner {
     finalChunkMetrics: ChunkPhaseMetrics,
   ): Promise<void> {
     const { filePhase, chunkPhase, markerStore } = this.deps;
+    let scanMs = 0;
+    let writeMs = 0;
     for (const ctx of contexts.values()) {
+      const scanStartedAt = Date.now();
       const chunkUnenriched = await readUnenriched(coll, ctx.provider, "chunk");
+      scanMs += Date.now() - scanStartedAt;
+      const writeStartedAt = Date.now();
       let chunkStatus: ChunkFinalInput["status"];
       if (filePhase.hasPrefetchFailed(ctx.key) || chunkPhase.hasChunkEnrichmentFailed(ctx.key)) {
         chunkStatus = "failed";
@@ -291,7 +318,9 @@ export class CompletionRunner {
         unenrichedChunks: chunkUnenriched,
         ...(chunkStatus === "failed" ? { errorMessage: filePhase.getPrefetchError(ctx.key) } : {}),
       });
+      writeMs += Date.now() - writeStartedAt;
     }
+    this.reportMarkerSplit("chunkMarkers", scanMs, writeMs);
   }
 
   /**

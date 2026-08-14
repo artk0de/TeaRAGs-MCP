@@ -76,4 +76,32 @@ describe("CompletionRunner step markers", () => {
       phases.mockRestore();
     }
   });
+
+  // Both marker steps do exactly two things: a filtered scan for residual
+  // unenriched points, and the terminal marker write. The write is `wait: true`,
+  // so it is also a barrier on every `wait: false` payload write the preceding
+  // apply step queued. On taxdome the scans measure ~6ms since the v14 payload
+  // indexes while the steps measure 11.6s and 11.4s — a gap that is only
+  // attributable once the two halves are reported apart.
+  it("splits each marker step into its scan and its terminal write", async () => {
+    const qdrant = new MockQdrantManager();
+    await seedMarkerPoint(qdrant, "coll");
+    const phases = vi.spyOn(pipelineLog, "enrichmentPhase").mockImplementation(() => undefined);
+
+    try {
+      await buildRunner(qdrant).run("coll", new Map([["git", providerCtx as never]]), Date.now(), async () => 0);
+
+      const splits = phases.mock.calls
+        .filter(([name]) => name === "COMPLETION_MARKER_SPLIT")
+        .map(([, payload]) => payload as { step: string; scanMs: number; writeMs: number });
+
+      expect(splits.map((s) => s.step)).toEqual(["fileMarkers", "chunkMarkers"]);
+      for (const split of splits) {
+        expect(split.scanMs).toBeGreaterThanOrEqual(0);
+        expect(split.writeMs).toBeGreaterThanOrEqual(0);
+      }
+    } finally {
+      phases.mockRestore();
+    }
+  });
 });
