@@ -58,6 +58,36 @@ export function defaultEnrichmentWorkerMemoryLimitMb(): number {
 }
 
 /**
+ * Default V8 stack size (MB) for an enrichment worker thread.
+ *
+ * Node's worker_threads default (4 MB, matching V8's own `--stack-size`
+ * default) is too small for `ts.createProgram`'s recursive module-resolution
+ * walk on a large, barrel-connected TypeScript corpus (bd tea-rags-mcp-2j8s1
+ * follow-up). Measured in isolation on a ~13,000-file synthetic corpus: at
+ * the default stack, 270 of 300 `acquire()` calls overflowed and fell
+ * through `TSProgramCache#build`'s null-return path — each failed attempt
+ * still costing real CPU before failing, and none of them ever populated the
+ * coverage cache 4m2vb built, so every subsequent file paid its own failed
+ * attempt too (82.4s for 300 files). An 8 MB stack made every one of those
+ * calls succeed on the first try — `programBuilds` dropped from 300 to 1,
+ * wall time from 82.4s to 1.5s. 16 MB here is double that measured-sufficient
+ * value, as headroom for taxdome's real (larger, not fully characterized)
+ * barrel topology.
+ *
+ * Override with `ENRICHMENT_WORKER_STACK_SIZE_MB`; an explicit `0` opts back
+ * into Node's own worker default (the pre-fix behaviour) — same "0 removes
+ * the override" shape as `defaultEnrichmentWorkerMemoryLimitMb`.
+ */
+export function defaultEnrichmentWorkerStackSizeMb(): number {
+  const raw = process.env.ENRICHMENT_WORKER_STACK_SIZE_MB;
+  if (raw !== undefined && raw.trim() !== "") {
+    const parsed = Number.parseInt(raw, 10);
+    if (Number.isFinite(parsed) && parsed >= 0) return parsed;
+  }
+  return 16;
+}
+
+/**
  * Diagnostic-only: directory to write a `.cpuprofile` for each enrichment
  * worker thread, or `undefined` (the default) to leave profiling off. Set via
  * `ENRICHMENT_WORKER_CPU_PROFILE_DIR` — an empty/unset value disables it, same

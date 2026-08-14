@@ -53,6 +53,7 @@ import type { ChunkLookupEntry } from "../../../../../types.js";
 import {
   defaultEnrichmentWorkerCpuProfileDir,
   defaultEnrichmentWorkerMemoryLimitMb,
+  defaultEnrichmentWorkerStackSizeMb,
 } from "../../infra/pool-defaults.js";
 import { ThreadTransport } from "../../infra/thread-transport.js";
 import { WorkerDispatchPool } from "../../infra/worker-dispatch-pool.js";
@@ -112,6 +113,10 @@ export class WorkerPoolEnrichmentExecutor implements EnrichmentExecutor {
         workerPath,
         defaultEnrichmentWorkerMemoryLimitMb(),
         defaultEnrichmentWorkerCpuProfileDir(),
+        // Node's own 4 MB worker default overflows on ts.createProgram's
+        // recursive resolution walk at real-corpus scale (bd tea-rags-mcp-2j8s1
+        // follow-up) — see defaultEnrichmentWorkerStackSizeMb.
+        defaultEnrichmentWorkerStackSizeMb(),
       ),
       // Worker threads get a fresh module registry, so the debug flag does not
       // survive the boundary on its own — ship it in the init payload or every
