@@ -140,9 +140,22 @@ export class GraphBuildFinalizer {
    * Memory footprint: O(1) in the spill size — one JSON line resident at any
    * time. The resolver's working set is the file's own chunks and the global
    * symbol table (already loaded in-memory).
+   *
+   * The pass opens by declaring its own size to the resolvers
+   * (bd tea-rags-mcp-6aytq). Every file this loop will read was counted in
+   * pass-1, so a resolver whose run-scoped caches are worth building in one
+   * piece can do it here — before the first file, where it is a fixed cost —
+   * rather than inferring the same fact from the first few hundred call sites.
    */
   async resolveAndUpsert(spillPath: string, collectionName?: string): Promise<void> {
     const { graphDb, symbolTable } = await this.resolveStore(collectionName);
+    const preparedAtMs = Date.now();
+    this.resolutionRunner.prepareResolvePass();
+    // Attributed to pass-2 with a count of ZERO files: whatever a resolver
+    // built here is pass-2 wall clock (a whole-project `ts.Program` is ~10 s of
+    // it on taxdome), but it is not a file, and charging it as one would move
+    // the ms/file figure this accumulator exists to report.
+    this.timings.record("pass2", Date.now() - preparedAtMs, { count: 0 });
     let processed = 0;
     let lastRelPath: string | null = null;
     let reader: ReturnType<typeof createInterface> | null = null;

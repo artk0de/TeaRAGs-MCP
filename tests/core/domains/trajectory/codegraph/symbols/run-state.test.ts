@@ -72,3 +72,41 @@ describe("CodegraphRunState.drainMetrics", () => {
     expect(runState.drainMetrics()).toBeUndefined();
   });
 });
+
+describe("CodegraphRunState extracted-file volume (bd tea-rags-mcp-6aytq)", () => {
+  function extractionOf(relPath: string, language: string): FileExtraction {
+    return { relPath, language, imports: [], chunks: [], fileScope: [] };
+  }
+
+  it("tallies absorbed files per language, so pass-2 knows its volume before it starts", () => {
+    const runState = new CodegraphRunState();
+
+    runState.absorb(extractionOf("src/a.ts", "typescript"), []);
+    runState.absorb(extractionOf("src/b.ts", "typescript"), []);
+    runState.absorb(extractionOf("app/models/user.rb", "ruby"), []);
+
+    expect(runState.extractedFilesByLanguage.get("typescript")).toBe(2);
+    expect(runState.extractedFilesByLanguage.get("ruby")).toBe(1);
+  });
+
+  it("ignores the defensive empty extraction, which carries no language", () => {
+    const runState = new CodegraphRunState();
+
+    runState.absorb(extractionOf("", ""), []);
+
+    expect(runState.extractedFilesByLanguage.size).toBe(0);
+  });
+
+  it("forgets the tally at both run-release seams", () => {
+    const forNextRun = new CodegraphRunState();
+    forNextRun.absorb(extractionOf("src/a.ts", "typescript"), []);
+    forNextRun.clearForNextRun();
+
+    const onRelease = new CodegraphRunState();
+    onRelease.absorb(extractionOf("src/a.ts", "typescript"), []);
+    onRelease.clearAll();
+
+    expect(forNextRun.extractedFilesByLanguage.size).toBe(0);
+    expect(onRelease.extractedFilesByLanguage.size).toBe(0);
+  });
+});

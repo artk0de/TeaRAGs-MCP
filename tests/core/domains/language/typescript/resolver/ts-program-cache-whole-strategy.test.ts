@@ -291,6 +291,131 @@ describe("TSProgramCache whole-project strategy (bd tea-rags-mcp-6aytq)", () => 
   });
 });
 
+describe("TSProgramCache eager prime on a declared bulk pass (bd tea-rags-mcp-6aytq)", () => {
+  let repoRoot: string;
+
+  beforeEach(() => {
+    repoRoot = realpathSync(mkdtempSync(join(tmpdir(), "ts-program-eager-")));
+  });
+
+  afterEach(() => {
+    rmSync(repoRoot, { recursive: true, force: true });
+  });
+
+  function writeTwoUnrelatedEntries(): readonly string[] {
+    return [
+      writeSource(repoRoot, "src/a.ts", `export function a(): number {\n  return 1;\n}\n`),
+      writeSource(repoRoot, "src/b.ts", `export function b(): number {\n  return 2;\n}\n`),
+    ];
+  }
+
+  it("builds the whole Program before the first acquire when the pass declares a bulk volume", () => {
+    // A force-resolve knows its file count up front, so the warm-up gate's
+    // per-entry builds (66 of them on taxdome, 9-13 s) buy nothing.
+    const roots = writeTwoUnrelatedEntries();
+    const cache = new TSProgramCache({
+      repoRoot,
+      tsOptions,
+      strategy: "auto",
+      wholeMinEntries: 2,
+      projectRoots: () => roots,
+    });
+
+    cache.primeForExpectedEntries(2);
+
+    expect(cache.wholeProgramFileCount).toBeGreaterThanOrEqual(2);
+    expect(cache.acquire("src/a.ts")?.program).toBe(cache.acquire("src/b.ts")?.program);
+    // Nothing landed in the per-entry LRU: every acquire was a coverage hit.
+    expect(cache.size).toBe(1);
+  });
+
+  it("leaves the warm-up gate in charge when the declared volume is below it", () => {
+    // The incremental-reindex shape must behave exactly as it did before the
+    // hint existed: no eager build, and the per-acquire gate still governs.
+    const roots = writeTwoUnrelatedEntries();
+    const cache = new TSProgramCache({
+      repoRoot,
+      tsOptions,
+      strategy: "auto",
+      wholeMinEntries: 2,
+      projectRoots: () => roots,
+    });
+
+    cache.primeForExpectedEntries(1);
+    expect(cache.wholeProgramFileCount).toBe(0);
+
+    cache.acquire("src/a.ts");
+    expect(cache.wholeProgramFileCount).toBe(0);
+
+    cache.acquire("src/b.ts");
+    expect(cache.wholeProgramFileCount).toBeGreaterThanOrEqual(2);
+  });
+
+  it("declines to prime under the coverage strategy however large the declared volume", () => {
+    const roots = writeTwoUnrelatedEntries();
+    const cache = new TSProgramCache({ repoRoot, tsOptions, strategy: "coverage", projectRoots: () => roots });
+
+    cache.primeForExpectedEntries(10000);
+
+    expect(cache.wholeProgramFileCount).toBe(0);
+    expect(cache.acquire("src/a.ts")?.program).not.toBe(cache.acquire("src/b.ts")?.program);
+  });
+
+  it("primes for an explicit whole strategy however small the declared volume", () => {
+    const roots = writeTwoUnrelatedEntries();
+    const cache = new TSProgramCache({
+      repoRoot,
+      tsOptions,
+      strategy: "whole",
+      wholeMinEntries: TS_PROGRAM_WHOLE_MIN_ENTRIES_DEFAULT,
+      projectRoots: () => roots,
+    });
+
+    cache.primeForExpectedEntries(1);
+
+    expect(cache.wholeProgramFileCount).toBeGreaterThanOrEqual(2);
+  });
+
+  it("still refuses a root set over the auto ceiling, declared volume or not", () => {
+    const roots = writeTwoUnrelatedEntries();
+    const cache = new TSProgramCache({
+      repoRoot,
+      tsOptions,
+      strategy: "auto",
+      wholeRootFilesMax: 1,
+      projectRoots: () => roots,
+    });
+
+    cache.primeForExpectedEntries(10000);
+
+    expect(cache.wholeProgramFileCount).toBe(0);
+    expect(cache.acquire("src/a.ts")?.program).not.toBe(cache.acquire("src/b.ts")?.program);
+  });
+
+  it("falls back to per-entry coverage when the eager build produces nothing, without retrying", () => {
+    writeTwoUnrelatedEntries();
+    let discoveries = 0;
+    const cache = new TSProgramCache({
+      repoRoot,
+      tsOptions,
+      strategy: "auto",
+      wholeMinEntries: 1,
+      projectRoots: () => {
+        discoveries += 1;
+        // A root set naming a file that is not on disk: `ts.createProgram`
+        // returns a Program with no SourceFile for it, so the build yields null.
+        return [join(repoRoot, "src/missing.ts")];
+      },
+    });
+
+    cache.primeForExpectedEntries(1000);
+
+    expect(cache.wholeProgramFileCount).toBe(0);
+    expect(cache.acquire("src/a.ts")).not.toBeNull();
+    expect(discoveries).toBe(1);
+  });
+});
+
 describe("loadTsConfigFileNames (bd tea-rags-mcp-6aytq)", () => {
   let repoRoot: string;
 

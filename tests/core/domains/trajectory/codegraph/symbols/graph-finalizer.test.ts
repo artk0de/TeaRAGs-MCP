@@ -83,6 +83,7 @@ describe("GraphBuildFinalizer.resolveAndUpsert", () => {
     // 11 000 file edges — over the 10 000 MAX_EDGES_PER_FILE cap. Mirrors the
     // minified-bundle shape the cap exists for (ugnest 96k-edge OOM).
     const resolutionRunner = {
+      prepareResolvePass: () => undefined,
       resolve: (): GraphEdges => ({
         fileEdges: Array.from({ length: 11000 }, (_, i) => ({ targetRelPath: `t${i}.ts`, importText: `t${i}` })),
         methodEdges: [],
@@ -117,6 +118,7 @@ describe("GraphBuildFinalizer.resolveAndUpsert", () => {
       },
     });
     const resolutionRunner = {
+      prepareResolvePass: () => undefined,
       resolve: (): GraphEdges => ({ fileEdges: [], methodEdges: [] }),
     } as unknown as CallEdgeResolutionRunner;
     const runState = new CodegraphRunState();
@@ -141,6 +143,7 @@ describe("GraphBuildFinalizer.resolveAndUpsert", () => {
       },
     });
     const resolutionRunner = {
+      prepareResolvePass: () => undefined,
       resolve: (): GraphEdges => ({
         fileEdges: [{ targetRelPath: "src/util.ts", importText: "./util" }],
         methodEdges: [],
@@ -174,6 +177,7 @@ describe("GraphBuildFinalizer.resolveAndUpsert", () => {
       },
     });
     const resolutionRunner = {
+      prepareResolvePass: () => undefined,
       resolve: (): GraphEdges => ({ fileEdges: [], methodEdges: [] }),
     } as unknown as CallEdgeResolutionRunner;
     const finalizer = new GraphBuildFinalizer(
@@ -203,6 +207,7 @@ describe("GraphBuildFinalizer.resolveAndUpsert", () => {
       },
     });
     const resolutionRunner = {
+      prepareResolvePass: () => undefined,
       resolve: (): GraphEdges => ({ fileEdges: [], methodEdges: [] }),
     } as unknown as CallEdgeResolutionRunner;
     const finalizer = new GraphBuildFinalizer(
@@ -233,6 +238,7 @@ describe("GraphBuildFinalizer.resolveAndUpsert", () => {
       },
     });
     const resolutionRunner = {
+      prepareResolvePass: () => undefined,
       resolve: (): GraphEdges => ({
         fileEdges: [{ targetRelPath: "src/util.ts", importText: "./util" }],
         methodEdges: [],
@@ -260,9 +266,40 @@ describe("GraphBuildFinalizer.resolveAndUpsert", () => {
     expect(upsertedBatches[1]?.[0]?.node.relPath).toBe("src/a.ts");
   });
 
+  it("prepares the resolve pass BEFORE the first spill line is resolved (bd tea-rags-mcp-6aytq)", async () => {
+    // Pass-1 already counted the files pass-2 is about to resolve, so a bulk
+    // run must hand that volume to the resolvers before the first acquire —
+    // priming after the first file is what makes a TS run pay the warm-up
+    // gate's 66 per-entry `ts.createProgram` builds (9-13 s on taxdome).
+    const order: string[] = [];
+    const resolutionRunner = {
+      prepareResolvePass: () => {
+        order.push("prepare");
+      },
+      resolve: (): GraphEdges => {
+        order.push("resolve");
+        return { fileEdges: [], methodEdges: [] };
+      },
+    } as unknown as CallEdgeResolutionRunner;
+    const finalizer = new GraphBuildFinalizer(
+      async () => ({ graphDb: makeGraphDb(), symbolTable: {} as GlobalSymbolTable }),
+      resolutionRunner,
+      new CodegraphRunState(),
+    );
+
+    const spillPath = writeSpill([
+      { ...EXTRACTION, relPath: "src/a.ts", language: "typescript" },
+      { ...EXTRACTION, relPath: "src/b.ts", language: "typescript" },
+    ]);
+    await finalizer.resolveAndUpsert(spillPath);
+
+    expect(order).toEqual(["prepare", "resolve", "resolve"]);
+  });
+
   it("includes the malformed line's own content (not just the file count) when a spill line fails JSON.parse", async () => {
     const graphDb = makeGraphDb();
     const resolutionRunner = {
+      prepareResolvePass: () => undefined,
       resolve: (): GraphEdges => ({ fileEdges: [], methodEdges: [] }),
     } as unknown as CallEdgeResolutionRunner;
     const runState = new CodegraphRunState();

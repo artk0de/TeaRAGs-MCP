@@ -21,12 +21,52 @@ import type { GlobalSymbolTable, RelPath, SymbolId } from "./codegraph-symbols.j
 import type { RubyTypeRef } from "./language.js";
 
 /**
+ * What a pass-2 run tells one language's resolver BEFORE its first call site —
+ * the shape of the work about to arrive, not any one call (bd tea-rags-mcp-6aytq).
+ *
+ * Pass-1 has already walked every file the run will resolve, so the volume is a
+ * FACT at the pass-2 barrier rather than something a resolver must infer from
+ * the calls it has seen so far. A resolver whose caches are worth priming in
+ * one go — TypeScript's `ts.Program` above all, where per-entry construction is
+ * 16x the cost of building the project once — reads this instead of waiting for
+ * a warm-up heuristic to conclude the same thing 66 builds later.
+ */
+export interface SymbolResolutionPassPlan {
+  /**
+   * Files of THIS resolver's language the pass will resolve. Per language, not
+   * per run: a run of 10,000 Ruby files and 40 TypeScript ones is not a bulk
+   * pass for TypeScript, and priming a whole-project Program for it would pay
+   * the build the volume does not justify.
+   */
+  expectedFileCount: number;
+  /**
+   * Project root the pass resolves against — the same value every
+   * `CallContext` of the pass carries. Present here because a resolver bound
+   * lazily to a root (TypeScript: `tsconfig.json`, the file probe, the
+   * Program) has no call site to read it off yet.
+   */
+  projectRoot?: string;
+}
+
+/**
  * Language-specific call resolver. One implementation per language. Slice 1
  * ships `TSCallResolver`; slice 3 adds Ruby/Python/Elixir.
  */
 export interface CallResolver {
   readonly language: string;
   resolve: (call: CallRef, ctx: CallContext) => SymbolResolutionTarget | null;
+  /**
+   * Optional: the pass is about to start, and this is what it will ask for
+   * (bd tea-rags-mcp-6aytq). Called at most once per language per pass-2,
+   * before the first `resolve`.
+   *
+   * Advisory by construction — the plan says how much work is coming, never
+   * what to do about it. A resolver with nothing to prime omits the method and
+   * behaves identically; one that primes must still degrade to its per-call
+   * path when the priming fails, because nothing downstream is told either way.
+   * Mirrors `LanguageSymbolResolver.prepareResolvePass`.
+   */
+  prepareResolvePass?: (plan: SymbolResolutionPassPlan) => void;
   /**
    * Optional fan-out resolution for lookup-table dispatch
    * (bd tea-rags-mcp-n0zj). Given a `CallRef` carrying `dispatch` and/or

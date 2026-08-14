@@ -65,6 +65,20 @@
   Program every remaining file is about to be served off; a growing root set
   rebuilds it repeatedly; and without the warm-up gate a three-file incremental
   reindex pays the 10.1 s build and ~4 GB of heap to resolve three files.
+- **A BULK pass skips the warm-up and primes up front, from a count pass-1
+  already has.** `CallEdgeResolutionRunner#prepareResolvePass` — pass-2's first
+  act, before the spill is read — hands each language a
+  `SymbolResolutionPassPlan { expectedFileCount, projectRoot }` off
+  `CodegraphRunState#extractedFilesByLanguage`, and
+  `TSProgramCache#primeForExpectedEntries` builds immediately when that count
+  clears the SAME `wholeMinEntries` threshold. A count BELOW it returns without
+  recording an attempt, so the per-acquire gate still governs an incremental run
+  — keep it that way, and keep the count per LANGUAGE. Why: the gate can only
+  learn a run is bulk by resolving 200 distinct files first, and on taxdome
+  reaching them costs 66 per-entry `ts.createProgram` builds, 9–13 s of a 58.8 s
+  pass, spent constructing slices of the Program about to replace them; while a
+  run-wide count would build a whole TS Program for a Ruby-dominated run that
+  happens to touch 40 `.ts` files.
 - **Its shared parse cache holds THREE populations, each with its own rule:**
   project sources capped by `maxParsedFiles`, dependency `.d.ts` capped by
   `maxDependencyFiles`, and the default lib capped by neither. `populationOf`

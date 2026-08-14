@@ -34,6 +34,7 @@ import {
   type CallResolver,
   type DispatchFanoutOutcome,
   type FileExtraction,
+  type SymbolResolutionPassPlan,
   type SymbolResolutionTarget,
 } from "../../../contracts/types/codegraph.js";
 import type {
@@ -147,6 +148,13 @@ export class TypeScriptLanguage implements LanguageProvider {
       resolveFileEdges: (extraction, ctx) => this.resolverFor(ctx).resolveFileEdges?.(extraction, ctx) ?? [],
       targetsExternalImport: (call: CallRef, ctx: CallContext): boolean =>
         this.resolverFor(ctx).targetsExternalImport?.(call, ctx) ?? false,
+      // The one entry point that arrives BEFORE any call site, so it carries
+      // the run's root itself (bd tea-rags-mcp-6aytq). Binding on it is the
+      // point: the whole-project Program it primes must be built against the
+      // project pass-2 is about to resolve, not against the fallback root.
+      prepareResolvePass: (plan: SymbolResolutionPassPlan): void => {
+        this.resolverForRoot(plan.projectRoot ?? this.repoRoot).prepareResolvePass?.(plan);
+      },
     };
   }
 
@@ -158,7 +166,11 @@ export class TypeScriptLanguage implements LanguageProvider {
    * gets built from paths the mapper never produces (bd tea-rags-mcp-uclbn).
    */
   private resolverFor(ctx: CallContext): CallResolver {
-    const root = ctx.projectRoot ?? this.repoRoot;
+    return this.resolverForRoot(ctx.projectRoot ?? this.repoRoot);
+  }
+
+  /** {@link resolverFor} keyed by the root directly, for callers with no call site. */
+  private resolverForRoot(root: string): CallResolver {
     if (this.bound?.root !== root) {
       this.bound = { root, resolver: new TSCallResolver(loadTsConfig(root), this.mode, root) };
     }

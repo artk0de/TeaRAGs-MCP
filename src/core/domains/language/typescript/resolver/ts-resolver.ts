@@ -71,6 +71,7 @@ import {
   type DispatchTableDef,
   type FileExtraction,
   type GraphEdges,
+  type SymbolResolutionPassPlan,
   type SymbolResolutionTarget,
 } from "../../../../contracts/types/codegraph.js";
 import type { SymbolResolutionStrategy } from "../../../../contracts/types/language.js";
@@ -326,6 +327,22 @@ export class TSCallResolver implements CallResolver {
 
   resolve(call: CallRef, ctx: CallContext): SymbolResolutionTarget | null {
     return resolveViaChain(this.strategies, call, ctx);
+  }
+
+  /**
+   * The pass is about to hand this resolver `expectedFileCount` files, so build
+   * the whole-project Program now rather than after the cache's warm-up gate
+   * has inferred the same thing (bd tea-rags-mcp-6aytq).
+   *
+   * Nothing else here is run-scoped: the strategies hold per-call state only,
+   * and the path probe memoizes lazily by design. So the plan reaches exactly
+   * one collaborator, and every rule about WHETHER to build — strategy, root
+   * cap, one attempt, fall back to coverage on failure — stays inside the
+   * cache. A resolver with the type checker disabled has no cache and the plan
+   * is a no-op, which is the correct reading of `CODEGRAPH_TS_TYPECHECKER=0`.
+   */
+  prepareResolvePass(plan: SymbolResolutionPassPlan): void {
+    this.programCache?.primeForExpectedEntries(plan.expectedFileCount);
   }
 
   /**

@@ -764,18 +764,59 @@ export class TSProgramCache {
 
   /**
    * Build the whole-project Program, once, if the configured strategy and the
-   * project's size both call for it.
+   * project's size both call for it — the ACQUIRE-side entry, where the only
+   * evidence available is the run's own history.
    *
-   * Every terminal exit sets {@link wholeAttempted} first, so a declined
-   * strategy, an empty root set and a failed build all cost one decision per
-   * run rather than one per acquire — and a failure degrades to the per-entry
-   * path rather than retrying a build that just threw, matching {@link build}'s
-   * null contract. The warm-up gate is the one NON-terminal exit: it is waiting
-   * for evidence, not deciding.
+   * The warm-up gate is the one non-terminal exit here: it is waiting for
+   * evidence, not deciding, so it deliberately leaves {@link wholeAttempted}
+   * unset and re-asks on the next acquire. Every terminal exit belongs to
+   * {@link buildWholeProgram}. A caller that knows the run's size up front
+   * skips the wait entirely — {@link primeForExpectedEntries}.
    */
   private ensureWholeProgram(relPath: RelPath): void {
     if (this.wholeAttempted || this.strategy === "coverage") return;
     if (this.strategy === "auto" && !this.warmedUp(relPath)) return;
+    this.buildWholeProgram();
+  }
+
+  /**
+   * Build the whole-project Program NOW, on a caller that already knows this
+   * run is a bulk pass — skipping the warm-up gate, which exists only to infer
+   * exactly that (bd tea-rags-mcp-6aytq).
+   *
+   * `expectedEntries` is measured against the SAME threshold the gate waits
+   * for, so this can only make the decision EARLIER, never different: a
+   * declared volume below `wholeMinEntries` returns without recording an
+   * attempt, leaving the per-acquire gate in charge and an incremental reindex
+   * behaving exactly as it did before this method existed. Every other
+   * eligibility rule — strategy, root-set size, one attempt per run,
+   * fall-back-to-coverage on failure — is
+   * {@link buildWholeProgram}'s and applies unchanged.
+   *
+   * What it saves is the warm-up itself. On a full taxdome run the gate opens
+   * only after 200 distinct entry files, and reaching them costs 66 per-entry
+   * `ts.createProgram` builds — 9-13 s of a 58.8 s pass plus their allocation
+   * churn — spent constructing slices of the very Program that is about to
+   * replace them.
+   */
+  primeForExpectedEntries(expectedEntries: number): void {
+    if (this.wholeAttempted || this.strategy === "coverage") return;
+    // An explicit `whole` primes on first use however small the run, and this
+    // is that first use — the gate is documented as ignored for it.
+    if (this.strategy === "auto" && expectedEntries < this.wholeMinEntries) return;
+    this.buildWholeProgram();
+  }
+
+  /**
+   * The whole-project build proper, once per run whoever asked for it.
+   *
+   * {@link wholeAttempted} is set BEFORE the attempt, so an empty root set, an
+   * over-cap project and a failed build each cost one decision per run rather
+   * than one per acquire — and a failure degrades to the per-entry path rather
+   * than retrying a build that just returned null, matching {@link build}'s
+   * contract.
+   */
+  private buildWholeProgram(): void {
     this.wholeAttempted = true;
     this.entriesSeen = null;
 

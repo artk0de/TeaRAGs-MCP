@@ -105,6 +105,32 @@ export class CallEdgeResolutionRunner {
     private readonly runState: CodegraphRunState,
   ) {}
 
+  /**
+   * Tell every language whose files this pass will resolve how many of them
+   * there are, before the first file is read (bd tea-rags-mcp-6aytq).
+   *
+   * Pass-1 counted them, so the volume is known at the barrier rather than
+   * discovered mid-pass — which is the whole point: a resolver that primes a
+   * run-scoped cache on a workload HEURISTIC pays per-call-site costs until
+   * the heuristic concludes. TypeScript's warm-up gate is the measured case:
+   * on a full taxdome run it spends 66 per-entry `ts.createProgram` builds,
+   * 9-13 s, establishing what the file count already said.
+   *
+   * Advisory in both directions. Languages the factory does not support are
+   * skipped (`create` throws for them), resolvers without the hook are a
+   * no-op, and a resolver that primes and fails must fall back on its own —
+   * nothing here inspects the outcome, because there is nothing this runner
+   * would do differently either way.
+   */
+  prepareResolvePass(): void {
+    const supported = new Set(this.languageFactory.supported());
+    for (const [language, expectedFileCount] of this.runState.extractedFilesByLanguage) {
+      if (!supported.has(language)) continue;
+      const { resolver } = this.languageFactory.create(language);
+      resolver?.prepareResolvePass?.({ expectedFileCount, projectRoot: this.runState.projectRoot });
+    }
+  }
+
   resolve(extraction: FileExtraction, symbolTable: GlobalSymbolTable): GraphEdges {
     // Resolver capability comes from the injected LanguageFactoryDescriptor (keyed by
     // language NAME) — each native provider carries its own `CallResolver`.

@@ -264,6 +264,23 @@ export class CodegraphRunState {
   stats: RunStats = createEmptyRunStats();
 
   /**
+   * Files pass-1 absorbed, per language — the volume pass-2 is about to
+   * resolve, known BEFORE it starts (bd tea-rags-mcp-6aytq).
+   *
+   * Every file that reaches `absorb` is spilled in the same breath, so this
+   * count IS the pass-2 file count, and it is a fact rather than a projection:
+   * a force-resolve re-extracts the whole project, an incremental run carries
+   * the handful of files that changed, and the number says which happened
+   * without anything having to consult the repair set. `prepareResolvePass`
+   * hands each language its own figure so a resolver can prime run-scoped
+   * caches whose cost only a bulk pass repays.
+   *
+   * Per LANGUAGE, not a single total: a run of 10,000 Ruby files and 40
+   * TypeScript ones is not a bulk pass for TypeScript.
+   */
+  readonly extractedFilesByLanguage = new Map<string, number>();
+
+  /**
    * Per-file SHA256 for the run, threaded in from `FileSignalOptions`
    * (bd tea-rags-mcp-6goqa). The graph finalizer stamps each written file row
    * with its hash so a later run can tell a row that is CURRENT from one that
@@ -949,6 +966,7 @@ export class CodegraphRunState {
    */
   clearForNextRun(): void {
     this.ancestors = {};
+    this.extractedFilesByLanguage.clear();
     this.compactClasses = new Set();
     this.gemfileContent = undefined;
     this.gemfileLoaded = false;
@@ -982,6 +1000,7 @@ export class CodegraphRunState {
    */
   clearAll(): void {
     this.ancestors = {};
+    this.extractedFilesByLanguage.clear();
     this.compactClasses = new Set();
     this.gemfileContent = undefined;
     this.gemfileLoaded = false;
@@ -1013,6 +1032,16 @@ export class CodegraphRunState {
    * they happen the later definition is what the runtime would see too.
    */
   absorb(extraction: FileExtraction, selfDispatchMethods: SelfDispatchMethod[]): void {
+    // Counted here rather than beside `stats.extractedFiles` in the sink
+    // because this is a run-global aggregate the pass-2 barrier reads, and
+    // `absorb` is where those are assembled. The defensive empty extraction
+    // carries `language: ""` and is not a file any resolver will be handed.
+    if (extraction.language !== "") {
+      this.extractedFilesByLanguage.set(
+        extraction.language,
+        (this.extractedFilesByLanguage.get(extraction.language) ?? 0) + 1,
+      );
+    }
     if (extraction.classAncestors) {
       for (const [k, v] of Object.entries(extraction.classAncestors)) {
         this.ancestors[k] = v;
