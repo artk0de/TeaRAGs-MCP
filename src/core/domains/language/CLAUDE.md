@@ -65,25 +65,35 @@
   Program every remaining file is about to be served off; a growing root set
   rebuilds it repeatedly; and without the warm-up gate a three-file incremental
   reindex pays the 10.1 s build and ~4 GB of heap to resolve three files.
-- **That whole Program is SEGMENTED, and admission decides whether it is built
-  at all.** `CODEGRAPH_TS_PROGRAM_WHOLE_SEGMENT_FILES` (5,000) retires it after
-  that many DISTINCT files served — `wholeEntry.derived.size`, never the acquire
-  count — and rebuilds from the same roots, dropping the old entry BEFORE
-  `buildFrom` so the two are never live together. Separately, `TSProgramCache`
-  reads `v8.getHeapStatistics().heap_size_limit` in its own isolate and projects
-  the peak (`ts-program-heap-admission.ts`): above the whole requirement →
-  whole, between the two → coverage, below coverage's floor → `typecheckerOff`,
-  which latches `acquire()` to `null` for the run and emits one
-  `[enrichment-worker]` line. Admission overrides an explicit `whole`, unlike
-  `wholeRootFilesMax`. Why: checker state is monotonic (+1.69 GB over taxdome's
-  10,912 files, 2.6 GB build → 4.31 GB live set), so an unsegmented
-  4096-declared worker dies at ~file 6,500; and a V8 heap OOM kills the ISOLATE
-  — `buildFrom`'s try/catch never runs, the dispatch rejects
-  `ERR_WORKER_OUT_OF_MEMORY`, and the run loses every codegraph signal with no
-  retry. Counting acquires instead of distinct files would rebuild every ~116
-  files (production acquires ~43x per file); keeping the old entry alive across
-  the rebuild would put the boundary at the peak the segmentation exists to
-  remove.
+- **The run is SEGMENTED, and admission decides whether the whole Program is
+  built at all.** `CODEGRAPH_TS_PROGRAM_WHOLE_SEGMENT_FILES` (5,000) counts
+  DISTINCT files acquired since the segment began — `segmentFiles`, a run-wide
+  Set, never the acquire count and never the whole Program's own `derived.size`
+  — and the file that overflows it drops EVERY retained Program (`entries`
+  cleared as well as `wholeEntry`) and rebuilds the whole one from the same
+  roots, old dropped BEFORE `buildFrom` so the two generations are never live
+  together. Measured on taxdome: the whole Program answers only ~145 distinct
+  acquires before the per-entry LRU serves the rest (the tsconfig's world and
+  the indexed corpus are different sets), so a counter keyed on `derived.size`
+  stalls at 145 and never rotates, and retiring only the whole Program would
+  leave eight growing checkers behind. Separately, `TSProgramCache` reads
+  `v8.getHeapStatistics().heap_size_limit` in its own isolate and projects the
+  peak (`ts-program-heap-admission.ts`): above the whole requirement → whole,
+  between the two → coverage, below coverage's floor → `typecheckerOff`, which
+  latches `acquire()` to `null` for the run and emits one `[enrichment-worker]`
+  line. Admission overrides an explicit `whole`, unlike `wholeRootFilesMax`.
+  Why: checker state is monotonic (+1.69 GB over taxdome's 10,912 files, 2.6 GB
+  build → 4.31 GB live set), so an unsegmented 4096-declared worker dies at
+  ~file 6,500; and a V8 heap OOM kills the ISOLATE — `buildFrom`'s try/catch
+  never runs, the dispatch rejects `ERR_WORKER_OUT_OF_MEMORY`, and the run loses
+  every codegraph signal with no retry. Counting acquires instead of distinct
+  files would rebuild every ~116 files (production acquires ~43x per file);
+  keeping the old entry alive across the rebuild would put the boundary at the
+  peak the segmentation exists to remove. Validated offline at declared 4096 (V8
+  reports 4288) over the full 10,912-file corpus: completes, 6.97 ms/file, one
+  rotation at ~file 5,900, sampled peak 3,995 MB dropping to 2,885 MB across the
+  boundary, 92,269 of 167,182 calls resolved — the same resolution the
+  unsegmented run produced.
 - **A BULK pass skips the warm-up and primes up front, from a count pass-1
   already has.** `CallEdgeResolutionRunner#prepareResolvePass` — pass-2's first
   act, before the spill is read — hands each language a

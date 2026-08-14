@@ -237,19 +237,24 @@ export const TS_PROGRAM_WHOLE_MIN_ENTRIES_DEFAULT = 200;
  * That growth is what kills a 4096-declared worker at about file 6,500.
  *
  * None of it is needed across independent files: file 9,000 does not read the
- * types file 12 asked for. So the whole strategy runs in segments — 5,000 files
- * served, then a fresh Program over the same roots and the old one dropped,
- * which caps the checker term at one segment's worth and takes the projected
- * peak from ~4.3 GB to ~3.4 GB. Parses are NOT re-read: the shared
- * `ts.CompilerHost` hands the new Program the same SourceFiles, so what the
- * rebuild pays for is module resolution, not the AST.
+ * types file 12 asked for. So the run is cut into segments — after 5,000
+ * DISTINCT files the cache drops every Program it holds and rebuilds the
+ * whole-project one from the same roots, which caps the checker term at one
+ * segment's worth and takes the projected peak from ~4.3 GB to ~3.4 GB. Parses
+ * are NOT re-read: the shared `ts.CompilerHost` hands the new Programs the same
+ * SourceFiles, so what a boundary pays for is module resolution, not the AST.
  *
- * 5,000 buys two extra builds on a 10,912-file corpus, forecast at ~22 s
- * against a 58.8 s pass. A counter is deliberately the whole mechanism: checker
- * state cannot be shared, migrated or partially evicted across Programs, so
- * there is nothing cleverer to be done than to decide when to start over.
- * Raising it past the corpus size disables segmentation, which is what an
- * operator with a large heap and no interest in the rebuilds should do.
+ * Every Program goes, not only the whole one, and that is measured rather than
+ * tidy: on taxdome the whole Program answers only ~145 distinct acquires before
+ * the per-entry LRU starts serving the rest, because the tsconfig's world and
+ * the indexed corpus are different sets. Retiring the whole Program alone would
+ * leave eight growing checkers behind and bound nothing.
+ *
+ * A counter is deliberately the whole mechanism: checker state cannot be
+ * shared, migrated or partially evicted across Programs, so there is nothing
+ * cleverer to be done than to decide when to start over. Raising it past the
+ * corpus size disables segmentation, which is what an operator with a large
+ * heap and no interest in the rebuilds should do.
  */
 export const TS_PROGRAM_WHOLE_SEGMENT_FILES_DEFAULT = 5000;
 
@@ -505,6 +510,22 @@ export class TSProgramCache {
    */
   private wholeBuilds = 0;
   /**
+   * Distinct files acquired since the current segment began — what
+   * {@link TSProgramCacheOptions.wholeSegmentFiles} counts.
+   *
+   * Run-wide rather than per-Program, and measured: on taxdome the whole
+   * Program serves only ~145 DISTINCT files before the per-entry LRU starts
+   * answering the rest (the tsconfig's world and the indexed corpus are not the
+   * same set), so a counter keyed on the whole Program's own served set stalls
+   * three orders of magnitude below any useful segment and never rotates. What
+   * checker state actually tracks is how far the RUN has got, whichever Program
+   * is answering.
+   *
+   * A Set rather than a counter because production acquires ~43 times per file
+   * (467,308 over 10,912) — counting acquires would rotate every ~116 files.
+   */
+  private readonly segmentFiles = new Set<RelPath>();
+  /**
    * Has admission refused every Program for the rest of this run? Latched
    * rather than re-decided, because the verdict is a heap projection over the
    * PROJECT, not a per-file condition — and re-deciding would cost a
@@ -707,6 +728,15 @@ export class TSProgramCache {
   }
 
   /**
+   * Distinct files acquired since the current segment began — the counter
+   * {@link TSProgramCacheOptions.wholeSegmentFiles} bounds. Exposed because a
+   * build count alone cannot say whether a run is approaching a rotation.
+   */
+  get segmentFileCount(): number {
+    return this.segmentFiles.size;
+  }
+
+  /**
    * Has admission refused this isolate every `ts.Program`? While true
    * {@link acquire} answers `null` unconditionally, which every consumer
    * already reads as "no type information, fall through" — the same state
@@ -789,6 +819,9 @@ export class TSProgramCache {
     // entry-keyed check under it never sees the change, and `ts.createProgram`
     // would be handed the previous revision out of the host.
     this.forgetStaleParse(absolute, mtimeMs);
+    // Before anything is looked up, so the file that opens a new segment is
+    // served off the fresh Programs rather than the ones being retired.
+    this.rotateSegmentWhenFull(relPath);
 
     const cached = this.entries.get(relPath);
     if (cached?.entryMtimeMs === mtimeMs) {
@@ -845,13 +878,7 @@ export class TSProgramCache {
     // lookup instead of a walk over the per-entry LRU that will miss.
     if (this.wholeEntry !== null) {
       const served = this.serveFrom(this.wholeEntry, compilerPath, entryAbsolute, mtimeMs);
-      if (served) {
-        // AFTER the serve, never before: the handle just derived is the one the
-        // caller is about to resolve through, and a Program cannot be retired
-        // out from under a handle it has already produced.
-        this.rotateWholeSegmentWhenFull();
-        return served;
-      }
+      if (served) return served;
     }
     for (const [key, entry] of this.entries) {
       const served = this.serveFrom(entry, compilerPath, entryAbsolute, mtimeMs);
@@ -979,28 +1006,39 @@ export class TSProgramCache {
   }
 
   /**
-   * Replace the whole-project Program once it has served a full segment,
-   * releasing the old one — the checker bound described by
+   * Start a new segment when `relPath` is the file that overflows the current
+   * one — releasing every checker the cache holds and rebuilding the
+   * whole-project Program from the same roots. The bound described by
    * {@link TS_PROGRAM_WHOLE_SEGMENT_FILES_DEFAULT}.
    *
-   * `derived.size` is the segment counter, and it is the right one BECAUSE it
-   * counts distinct files rather than acquires: production asks for a Program
-   * about 43 times per file (467,308 acquires over 10,912 taxdome files), all
-   * but the first served straight out of that map at no checker cost.
+   * EVERY retained Program goes, not just the whole one. Checker state is
+   * monotonic in whichever Program answers, and on this corpus the per-entry
+   * LRU answers most acquires (see {@link segmentFiles}) — retiring only the
+   * whole Program would leave eight growing checkers behind and bound nothing.
+   * The parses survive in the shared host map, so what a segment boundary costs
+   * is module resolution: one whole build plus however many per-entry closures
+   * the next stretch re-opens, measured at ~42 builds per 5,000 files.
    *
-   * The old entry is dropped BEFORE the new build starts. Holding both across
-   * `ts.createProgram` would put the segment boundary at the very peak this
-   * exists to remove; the outgoing Program survives only as long as the handles
-   * already handed out, which the callers release as they finish their files. A
-   * rebuild that fails leaves no whole Program at all and the run degrades to
-   * per-entry coverage, exactly as a failed first build does.
+   * The retiring entries are dropped BEFORE the new build starts. Holding both
+   * generations across `ts.createProgram` would put the segment boundary at the
+   * very peak this exists to remove; the outgoing Programs survive only as long
+   * as the handles already handed out, which callers release as they finish
+   * their files. A rebuild that fails leaves no whole Program and the run
+   * degrades to per-entry coverage, exactly as a failed first build does.
    */
-  private rotateWholeSegmentWhenFull(): void {
-    const retiring = this.wholeEntry;
-    if (retiring === null || retiring.derived.size < this.wholeSegmentFiles) return;
+  private rotateSegmentWhenFull(relPath: RelPath): void {
+    if (this.segmentFiles.size < this.wholeSegmentFiles || this.segmentFiles.has(relPath)) {
+      this.segmentFiles.add(relPath);
+      return;
+    }
+    this.segmentFiles.clear();
+    this.segmentFiles.add(relPath);
 
-    const roots = retiring.handle.rootFiles;
+    const retiring = this.wholeEntry;
+    this.entries.clear();
     this.wholeEntry = null;
+    if (retiring === null) return;
+    const roots = retiring.handle.rootFiles;
     this.wholeEntry = this.buildFrom(roots, roots[0]);
     if (this.wholeEntry !== null) this.wholeBuilds += 1;
   }
@@ -1093,6 +1131,7 @@ export class TSProgramCache {
     this.wholeEntry = null;
     this.wholeAttempted = false;
     this.wholeBuilds = 0;
+    this.segmentFiles.clear();
     this.entriesSeen = new Set();
     // The admission verdict is re-armed with everything else: it was decided
     // against ONE run's root count on ONE isolate reading, and a reset means a

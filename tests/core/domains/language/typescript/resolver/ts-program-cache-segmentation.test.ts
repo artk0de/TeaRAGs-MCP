@@ -80,10 +80,12 @@ describe("TSProgramCache whole-Program segmentation (bd tea-rags-mcp-6aytq)", ()
     const b = cache.acquire("src/b.ts");
     const c = cache.acquire("src/c.ts");
 
-    // a and b are the first segment; c is served off the Program that replaced it.
+    // a and b are the first segment; c is the file that overflows it, so c is
+    // already served off the Program that replaced them.
     expect(a?.program).toBe(b?.program);
     expect(c?.program).not.toBe(b?.program);
     expect(cache.wholeProgramBuildCount).toBe(2);
+    expect(cache.segmentFileCount).toBe(1);
   });
 
   it("counts files served, not acquires — a file asked about repeatedly is one served file", () => {
@@ -104,6 +106,7 @@ describe("TSProgramCache whole-Program segmentation (bd tea-rags-mcp-6aytq)", ()
     const cache = segmentedCache(2, writeCorpus());
     const first = cache.acquire("src/a.ts");
     cache.acquire("src/b.ts");
+    cache.acquire("src/c.ts");
 
     // Re-acquiring a file from the retired segment must come back on the NEW
     // Program: if the cache still held the old one, `findCovering` would serve
@@ -131,6 +134,7 @@ describe("TSProgramCache whole-Program segmentation (bd tea-rags-mcp-6aytq)", ()
       const first = cache.acquire("src/a.ts");
       retired = new WeakRef(first?.program as object);
       cache.acquire("src/b.ts");
+      cache.acquire("src/c.ts");
     })();
 
     await new Promise((resolve) => setTimeout(resolve, 0));
@@ -146,8 +150,10 @@ describe("TSProgramCache whole-Program segmentation (bd tea-rags-mcp-6aytq)", ()
     const cache = segmentedCache(2, writeCorpus());
     const before = cache.acquire("src/a.ts");
     cache.acquire("src/b.ts");
+    cache.acquire("src/c.ts");
     const after = cache.acquire("src/a.ts");
 
+    expect(after?.program).not.toBe(before?.program);
     expect(after?.sourceFile).toBe(before?.sourceFile);
   });
 
@@ -164,15 +170,42 @@ describe("TSProgramCache whole-Program segmentation (bd tea-rags-mcp-6aytq)", ()
     const cache = segmentedCache(2, roots);
 
     cache.acquire("src/b.ts");
+    cache.acquire("src/c.ts");
     // The rebuild is handed the same roots, and roots[0] is the file it points
     // the new Program at — removing it makes `buildFrom` return null exactly as
     // a failed `ts.createProgram` does.
     rmSync(roots[0], { force: true });
-    cache.acquire("src/c.ts");
+    cache.acquire("src/d.ts");
 
     expect(cache.wholeProgramFileCount).toBe(0);
-    expect(cache.acquire("src/d.ts")).not.toBeNull();
-    expect(cache.size).toBe(1);
+    expect(cache.acquire("src/e.ts")).not.toBeNull();
+    // d and e each opened their own closure — the per-entry path, unassisted.
+    expect(cache.size).toBe(2);
+  });
+
+  it("retires the per-entry LRU at the boundary too, not only the whole Program", () => {
+    // Measured reason: on taxdome the whole Program answers ~145 distinct
+    // acquires and the per-entry LRU serves the rest, so eight per-entry
+    // checkers accumulate exactly the state the segment exists to bound.
+    const roots = writeCorpus();
+    // A root set of one leaves every other file to the per-entry path.
+    const cache = new TSProgramCache({
+      repoRoot,
+      tsOptions,
+      strategy: "whole",
+      wholeSegmentFiles: 2,
+      projectRoots: () => [roots[0]],
+    });
+
+    const b = cache.acquire("src/b.ts");
+    cache.acquire("src/c.ts");
+    expect(cache.size).toBeGreaterThan(1);
+
+    cache.acquire("src/d.ts");
+
+    // b's Program was retained in the LRU and is now gone: re-acquiring it
+    // builds a new one rather than serving the retired checker.
+    expect(cache.acquire("src/b.ts")?.program).not.toBe(b?.program);
   });
 
   it("reads the segment size from CODEGRAPH_TS_PROGRAM_WHOLE_SEGMENT_FILES", () => {
