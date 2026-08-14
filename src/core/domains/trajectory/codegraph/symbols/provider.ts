@@ -85,6 +85,7 @@ import { createCodegraphExtractionSink, type CodegraphSinkDeps } from "./extract
 import { GraphBuildFinalizer } from "./graph-finalizer.js";
 import { SymbolNodeFlushQueue } from "./node-flush.js";
 import { CODEGRAPH_SYMBOLS_CHUNK_SIGNALS, CODEGRAPH_SYMBOLS_FILE_SIGNALS } from "./payload-signals.js";
+import { CodegraphPhaseTimings } from "./phase-timings.js";
 import { CallEdgeResolutionRunner } from "./resolution-runner.js";
 import { CodegraphRunState } from "./run-state.js";
 import { lastSegment } from "./symbol-name.js";
@@ -274,6 +275,14 @@ export const CODEGRAPH_LANGUAGES: Record<string, CodegraphLanguageConfig> = {
 const SUPPORTED_EXTS = new Set(Object.keys(CODEGRAPH_LANGUAGES));
 
 /**
+ * Files between pass-1 progress lines. Coarser than pass-2's 100 because
+ * extraction is the cheaper per-file stage and its line carries the same
+ * (larger) phase-split payload — 500 keeps a 20k-file run at ~40 lines while
+ * still bounding what a kill at the 5-minute budget can lose.
+ */
+const PASS1_PROGRESS_EVERY = 500;
+
+/**
  * Codegraph provider dependencies. Two routing modes are supported and
  * exactly one MUST be supplied at construction time:
  *
@@ -461,6 +470,14 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
    * something to say.
    */
   private readonly codegraphExclusionFilter: Ignore;
+  /**
+   * Wall-clock attribution across pass-1 and pass-2 (bd tea-rags-mcp-6aytq).
+   * Owned here rather than by the finalizer because pass-1 extraction happens
+   * on this side of the barrier and the two halves have to land in ONE summary.
+   * Lifetime is this provider instance — in the enrichment pool that is one
+   * (collection, run) pair, so no reset seam is needed.
+   */
+  private readonly phaseTimings = new CodegraphPhaseTimings();
 
   /**
    * Worker-pool descriptor — surfaced when the composition root wires this
@@ -483,6 +500,7 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
       async (collectionName) => this.getStore(collectionName),
       this.resolutionRunner,
       this.runState,
+      this.phaseTimings,
     );
     this.codegraphExclusionFilter = buildCodegraphExclusionFilter(
       deps.exclusion ?? { customPatterns: [] },
@@ -738,7 +756,17 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
    * alone is not enough when the failure happens silently mid-run.
    */
   private async recomputeGraphMetricsStreaming(collectionName?: string): Promise<void> {
-    await this.graphFinalizer.recomputeMetrics(collectionName);
+    try {
+      await this.graphFinalizer.recomputeMetrics(collectionName);
+    } finally {
+      // The recompute is the last pass-2 stage, so this is the run's closing
+      // wall-clock statement (bd tea-rags-mcp-6aytq). Emitted from `finally`
+      // because a metrics failure is swallowed by the sink as best-effort —
+      // losing the summary over it would forfeit the whole run's attribution.
+      if (isDebug()) {
+        console.error("[GitEnrich] PHASE: CODEGRAPH_PHASE_TIMINGS", this.phaseTimings.toJson());
+      }
+    }
   }
 
   /**
@@ -1413,6 +1441,37 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
    * function/method/class declarations is sufficient.
    */
   private extractOneFile(root: string, relPath: string): FileExtraction {
+    const startedAtMs = Date.now();
+    const extraction = this.parseFileExtraction(root, relPath);
+    this.recordPass1(extraction.language, Date.now() - startedAtMs);
+    return extraction;
+  }
+
+  /**
+   * Fold one file's extraction cost into the run's pass-1 total and, on the
+   * cadence, report where the run stands. The line is the ONLY pass-1 telemetry
+   * a killed run leaves behind, so it carries the cumulative per-language split
+   * and not just a counter. JSON rather than an inspected object: the split
+   * nests past `console.error`'s two-level default.
+   */
+  private recordPass1(language: string, durationMs: number): void {
+    this.phaseTimings.record("pass1", durationMs, { language: language || "unknown" });
+    const extracted = this.phaseTimings.count("pass1");
+    if (extracted % PASS1_PROGRESS_EVERY !== 0 || !isDebug()) return;
+    const elapsedMs = this.phaseTimings.elapsedMs();
+    console.error(
+      "[GitEnrich] PHASE: CODEGRAPH_PASS1_PROGRESS",
+      JSON.stringify({
+        extracted,
+        elapsedMs,
+        filesPerSec: elapsedMs > 0 ? Math.round((extracted / elapsedMs) * 1000 * 10) / 10 : 0,
+        phases: this.phaseTimings.toSummary(),
+      }),
+    );
+  }
+
+  /** Parse + walk one file. Timing and progress belong to `extractOneFile`. */
+  private parseFileExtraction(root: string, relPath: string): FileExtraction {
     const ext = extensionOf(relPath);
     const langConfig = CODEGRAPH_LANGUAGES[ext];
     if (!langConfig) {

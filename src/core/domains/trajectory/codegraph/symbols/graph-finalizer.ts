@@ -34,6 +34,7 @@ import {
   CodegraphResolveError,
   CodegraphSpillIoError,
 } from "../../errors.js";
+import { CodegraphPhaseTimings } from "./phase-timings.js";
 import type { CallEdgeResolutionRunner } from "./resolution-runner.js";
 import type { CodegraphRunState } from "./run-state.js";
 
@@ -118,10 +119,17 @@ export class GraphBuildFinalizer {
   private readonly bulkFiles = positiveIntFromEnv("CODEGRAPH_BULK_FILES", BULK_FILES);
   private readonly checkpointEvery = positiveIntFromEnv("CODEGRAPH_CHECKPOINT_EVERY", CHECKPOINT_EVERY);
 
+  /**
+   * @param timings Wall-clock attribution for pass-2's four stages, shared with
+   *   the provider so pass-1 and pass-2 land in ONE summary. Defaulted so a
+   *   caller that only wants the loop (tests, direct mode) need not supply one;
+   *   production passes the provider's instance.
+   */
   constructor(
     private readonly resolveStore: GraphStoreResolver,
     private readonly resolutionRunner: CallEdgeResolutionRunner,
     private readonly runState: CodegraphRunState,
+    private readonly timings: CodegraphPhaseTimings = new CodegraphPhaseTimings(),
   ) {}
 
   /**
@@ -203,14 +211,26 @@ export class GraphBuildFinalizer {
         this.runState.stats.fileEdgeCount += edges.fileEdges.length;
         this.runState.stats.methodEdgeCount += edges.methodEdges.length;
         processed += 1;
-        // Per-N debug log so a slow run shows where it stalled.
+        // Per-N debug log so a slow run shows where it stalled — and, since
+        // bd tea-rags-mcp-6aytq, WHAT it stalled in. Emitted as one JSON line
+        // (not an inspected object) for two reasons: the phase split nests
+        // three levels deep, past `console.error`'s default inspect depth, and
+        // a run killed at a wall-clock budget leaves these lines as the only
+        // record of where its time went — they have to be parseable.
         if (processed % PROGRESS_EVERY === 0 && isDebug()) {
-          console.error("[GitEnrich] PHASE: CODEGRAPH_PASS2_PROGRESS", {
-            processed,
-            lastRelPath,
-            fileEdges: this.runState.stats.fileEdgeCount,
-            methodEdges: this.runState.stats.methodEdgeCount,
-          });
+          const elapsedMs = this.timings.elapsedMs();
+          console.error(
+            "[GitEnrich] PHASE: CODEGRAPH_PASS2_PROGRESS",
+            JSON.stringify({
+              processed,
+              lastRelPath,
+              fileEdges: this.runState.stats.fileEdgeCount,
+              methodEdges: this.runState.stats.methodEdgeCount,
+              elapsedMs,
+              filesPerSec: elapsedMs > 0 ? Math.round((processed / elapsedMs) * 1000 * 10) / 10 : 0,
+              phases: this.timings.toSummary(),
+            }),
+          );
         }
         if (buffer.length >= this.bulkFiles) await flushBuffer();
         if (processed % this.checkpointEvery === 0) {
@@ -259,6 +279,7 @@ export class GraphBuildFinalizer {
     processed: number,
     lastRelPath: string,
   ): GraphEdges {
+    const startedAtMs = Date.now();
     try {
       return this.resolutionRunner.resolve(extraction, symbolTable);
     } catch (err) {
@@ -269,6 +290,10 @@ export class GraphBuildFinalizer {
           message: `resolveExtraction failed at file #${processed + 1} (${lastRelPath}): ${wrapped.message}`,
         }),
       );
+    } finally {
+      // Recorded on the throw path too: a file that burned 40s before failing
+      // is exactly the file worth seeing in the split.
+      this.timings.record("pass2", Date.now() - startedAtMs, { language: extraction.language });
     }
   }
 
@@ -301,6 +326,7 @@ export class GraphBuildFinalizer {
    */
   private async flushBuffer(graphDb: GraphDbClient, pending: BulkFileUpsertEntry[], processed: number): Promise<void> {
     if (pending.length === 0) return;
+    const startedAtMs = Date.now();
     try {
       await graphDb.upsertFilesBulk(pending);
     } catch (err) {
@@ -311,10 +337,13 @@ export class GraphBuildFinalizer {
           message: `graphDb.upsertFilesBulk failed near file #${processed} (batch=${pending.length}, last=${pending[pending.length - 1]?.node.relPath}): ${wrapped.message}`,
         }),
       );
+    } finally {
+      this.timings.record("flush", Date.now() - startedAtMs);
     }
   }
 
   private async checkpoint(graphDb: GraphDbClient): Promise<void> {
+    const startedAtMs = Date.now();
     try {
       await graphDb.checkpoint();
       // Rebuild cg_symbols_edges_file's target_rel_path index at the same
@@ -341,6 +370,10 @@ export class GraphBuildFinalizer {
       }
     } catch (err) {
       throw new CodegraphCheckpointError(err instanceof Error ? err : undefined);
+    } finally {
+      // One unit covers the CHECKPOINT plus the ART rebuild it triggers — they
+      // are one cadence and there is no way to pay for one without the other.
+      this.timings.record("checkpoint", Date.now() - startedAtMs);
     }
   }
 
@@ -363,6 +396,19 @@ export class GraphBuildFinalizer {
    * failure happens silently mid-run.
    */
   async recomputeMetrics(collectionName?: string): Promise<void> {
+    const startedAtMs = Date.now();
+    try {
+      await this.runMetricsRecompute(collectionName);
+    } finally {
+      // Timed around BOTH routes — the daemon delegation and the inline
+      // Tarjan/PageRank — because from the run's point of view they are the
+      // same stage, and which one ran is not what the wall clock is asking.
+      this.timings.record("metrics", Date.now() - startedAtMs);
+    }
+  }
+
+  /** The recompute itself; `recomputeMetrics` owns only its timing. */
+  private async runMetricsRecompute(collectionName?: string): Promise<void> {
     const { graphDb } = await this.resolveStore(collectionName);
     // Daemon-routed write path: the daemon owns the RW connection and runs
     // the (potentially 30 GB) SCC + PageRank build itself, so the MCP client
