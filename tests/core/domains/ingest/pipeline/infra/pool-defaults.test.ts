@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
   defaultChunkerPoolSize,
   defaultEnrichmentWorkerCpuProfileDir,
+  defaultEnrichmentWorkerHeapSnapshotDir,
   defaultEnrichmentWorkerMemoryLimitMb,
   defaultEnrichmentWorkerStackSizeMb,
   defaultWorkerDispatchTimeoutMs,
@@ -222,5 +223,41 @@ describe("defaultEnrichmentWorkerCpuProfileDir", () => {
   it("returns undefined when the override is only whitespace", () => {
     process.env.ENRICHMENT_WORKER_CPU_PROFILE_DIR = "   ";
     expect(defaultEnrichmentWorkerCpuProfileDir()).toBeUndefined();
+  });
+});
+
+/**
+ * Post-mortem for the failure that costs a run everything: a V8 heap OOM kills
+ * the worker isolate with no exception anywhere, so the only evidence left is
+ * whatever V8 wrote on its way out (bd tea-rags-mcp-6aytq).
+ */
+describe("defaultEnrichmentWorkerHeapSnapshotDir", () => {
+  let savedEnv: string | undefined;
+
+  beforeEach(() => {
+    savedEnv = process.env.ENRICHMENT_WORKER_HEAPSNAPSHOT_DIR;
+    delete process.env.ENRICHMENT_WORKER_HEAPSNAPSHOT_DIR;
+  });
+
+  afterEach(() => {
+    if (savedEnv !== undefined) {
+      process.env.ENRICHMENT_WORKER_HEAPSNAPSHOT_DIR = savedEnv;
+    } else {
+      delete process.env.ENRICHMENT_WORKER_HEAPSNAPSHOT_DIR;
+    }
+  });
+
+  it("returns undefined when ENRICHMENT_WORKER_HEAPSNAPSHOT_DIR is not set", () => {
+    expect(defaultEnrichmentWorkerHeapSnapshotDir()).toBeUndefined();
+  });
+
+  it("returns the configured directory when set", () => {
+    process.env.ENRICHMENT_WORKER_HEAPSNAPSHOT_DIR = "/tmp/heapsnapshots";
+    expect(defaultEnrichmentWorkerHeapSnapshotDir()).toBe("/tmp/heapsnapshots");
+  });
+
+  it("returns undefined when the override is only whitespace", () => {
+    process.env.ENRICHMENT_WORKER_HEAPSNAPSHOT_DIR = "   ";
+    expect(defaultEnrichmentWorkerHeapSnapshotDir()).toBeUndefined();
   });
 });

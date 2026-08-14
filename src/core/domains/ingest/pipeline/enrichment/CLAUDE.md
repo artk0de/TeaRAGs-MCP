@@ -69,12 +69,15 @@
   `NODE_OPTIONS --max_old_space_size` OVERRIDES the per-worker limit, making the
   ceiling inert with no error anywhere; `infra/heap-ceiling-enforcement.ts`
   compares declared against `v8.getHeapStatistics().heap_size_limit` at worker
-  boot and says so once. Why: a `worker_threads` error is terminal and posting
-  to a dead handle is silently discarded, so without the respawn the ceiling
-  converts a slow host-wide degradation into a dispatch that never settles for
-  the rest of the run (bd 8qf86) — and a ceiling set BELOW the shipped
-  configuration's working set turns that same mechanism into a guaranteed kill
-  on every host that enforces it.
+  boot and says so once. The kill leaves NO post-mortem of its own — no
+  exception, and the thread's buffered stdout goes with it — so
+  `ENRICHMENT_WORKER_HEAPSNAPSHOT_DIR` (off by default) is what puts
+  `--heapsnapshot-near-heap-limit=1` on the thread's `execArgv`. Why: a
+  `worker_threads` error is terminal and posting to a dead handle is silently
+  discarded, so without the respawn the ceiling converts a slow host-wide
+  degradation into a dispatch that never settles for the rest of the run (bd
+  8qf86) — and a ceiling set BELOW the shipped configuration's working set turns
+  that same mechanism into a guaranteed kill on every host that enforces it.
 
 ## Gotchas
 

@@ -121,3 +121,29 @@ export function defaultEnrichmentWorkerCpuProfileDir(): string | undefined {
   const raw = process.env.ENRICHMENT_WORKER_CPU_PROFILE_DIR;
   return raw !== undefined && raw.trim() !== "" ? raw : undefined;
 }
+
+/**
+ * Diagnostic-only: directory V8 writes a heap snapshot into when this thread is
+ * about to die of a heap OOM, or `undefined` (the default) to leave the hook
+ * off. Set via `ENRICHMENT_WORKER_HEAPSNAPSHOT_DIR`.
+ *
+ * This covers the one failure the rest of the pool's instrumentation cannot
+ * (bd tea-rags-mcp-6aytq). A V8 heap OOM does not raise: it kills the isolate,
+ * so no `catch` in the enrichment code runs, the thread's buffered stdout is
+ * dropped, and the pool learns only that the dispatch rejected with
+ * `ERR_WORKER_OUT_OF_MEMORY`. What was actually retained at the moment of death
+ * is unrecoverable afterwards — the forensics behind
+ * `../../../../language/typescript/resolver/ts-program-heap-admission.ts` had to
+ * be reconstructed by re-running the corpus under a scratch harness that
+ * snapshotted before the kill.
+ *
+ * `--heapsnapshot-near-heap-limit=1` makes V8 write ONE snapshot as it
+ * approaches the ceiling, and `--diagnostic-dir` says where. Off by default and
+ * for the same reason as the CPU profile beside it, only more so: writing a
+ * multi-gigabyte snapshot takes minutes and is the last thing a healthy run
+ * should risk.
+ */
+export function defaultEnrichmentWorkerHeapSnapshotDir(): string | undefined {
+  const raw = process.env.ENRICHMENT_WORKER_HEAPSNAPSHOT_DIR;
+  return raw !== undefined && raw.trim() !== "" ? raw : undefined;
+}
