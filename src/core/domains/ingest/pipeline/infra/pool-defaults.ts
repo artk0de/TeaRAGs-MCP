@@ -41,11 +41,25 @@ export function defaultWorkerDispatchTimeoutMs(): number {
  * machine never notices. Failing one worker fast beats degrading everything
  * slowly.
  *
- * 2 GB is deliberately well above any healthy run and well below the point
- * where a laptop starts swapping. Override with
- * `ENRICHMENT_WORKER_MEMORY_LIMIT_MB`; an explicit `0` removes the ceiling and
- * restores the pre-guard behaviour. Sibling to the pool's other tunable
- * defaults, and named for the pool it bounds — the same way
+ * 6 GB is chosen against the working set of the configuration this project
+ * actually ships, not against a round number. The original 2 GB predates the
+ * whole-project `ts.Program` strategy and the raised `TSProgramCache` budgets
+ * (e69abb6d); measured under those defaults on real taxdome — 10,912 TypeScript
+ * files — the worker peaks at 5,375 MB heapUsed and 3,295 MB RSS. A 2 GB ceiling
+ * is therefore no longer a safety net above a healthy run, it is BELOW one: on
+ * any host that enforces it, a normal codegraph pass would be killed mid-run
+ * with `ERR_WORKER_OUT_OF_MEMORY` every time. 6144 clears the measured peak with
+ * ~14% headroom while still failing one thread long before a laptop swaps.
+ *
+ * The 2 GB default survived unnoticed because the dev machine sets a
+ * process-wide `NODE_OPTIONS=--max_old_space_size=8192`, which OVERRIDES
+ * per-worker `resourceLimits` — the ceiling was inert there, so the shipped
+ * defaults were never tested against it. That silence is what
+ * `../enrichment/infra/heap-ceiling-enforcement.ts` now reports at worker boot.
+ *
+ * Override with `ENRICHMENT_WORKER_MEMORY_LIMIT_MB`; an explicit `0` removes the
+ * ceiling and restores the pre-guard behaviour. Sibling to the pool's other
+ * tunable defaults, and named for the pool it bounds — the same way
  * `CHUNKER_WORKER_TIMEOUT_MS` is.
  */
 export function defaultEnrichmentWorkerMemoryLimitMb(): number {
@@ -54,7 +68,7 @@ export function defaultEnrichmentWorkerMemoryLimitMb(): number {
     const parsed = Number.parseInt(raw, 10);
     if (Number.isFinite(parsed) && parsed >= 0) return parsed;
   }
-  return 2048;
+  return 6144;
 }
 
 /**

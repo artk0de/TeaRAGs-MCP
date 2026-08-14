@@ -73,6 +73,13 @@ describe("defaultWorkerDispatchTimeoutMs", () => {
  * ~50 MB before the process tree was killed by hand. A heap ceiling turns that
  * into an ordinary `ERR_WORKER_OUT_OF_MEMORY`: loud, immediate, attributable to
  * one worker, and survivable by everything else on the machine.
+ *
+ * The default moved 2048 -> 6144 with bd tea-rags-mcp-6aytq. 2048 predates the
+ * whole-project `ts.Program` strategy (e69abb6d) and the TSProgramCache budgets
+ * raised alongside it; measured on real taxdome (10,912 TS files) those defaults
+ * peak at 5,375 MB worker heapUsed. A ceiling BELOW the working set of the
+ * shipped configuration is not a safety net — it is a guaranteed mid-run kill on
+ * every host that actually enforces it.
  */
 describe("defaultEnrichmentWorkerMemoryLimitMb", () => {
   let savedEnv: string | undefined;
@@ -90,8 +97,8 @@ describe("defaultEnrichmentWorkerMemoryLimitMb", () => {
     }
   });
 
-  it("defaults to 2048 MB when ENRICHMENT_WORKER_MEMORY_LIMIT_MB is not set", () => {
-    expect(defaultEnrichmentWorkerMemoryLimitMb()).toBe(2048);
+  it("defaults to 6144 MB when ENRICHMENT_WORKER_MEMORY_LIMIT_MB is not set", () => {
+    expect(defaultEnrichmentWorkerMemoryLimitMb()).toBe(6144);
   });
 
   it("returns the parsed value when the override is a valid positive integer", () => {
@@ -106,17 +113,17 @@ describe("defaultEnrichmentWorkerMemoryLimitMb", () => {
 
   it("falls back to the default when the override is not a number", () => {
     process.env.ENRICHMENT_WORKER_MEMORY_LIMIT_MB = "not-a-number";
-    expect(defaultEnrichmentWorkerMemoryLimitMb()).toBe(2048);
+    expect(defaultEnrichmentWorkerMemoryLimitMb()).toBe(6144);
   });
 
   it("falls back to the default when the override is negative", () => {
     process.env.ENRICHMENT_WORKER_MEMORY_LIMIT_MB = "-1";
-    expect(defaultEnrichmentWorkerMemoryLimitMb()).toBe(2048);
+    expect(defaultEnrichmentWorkerMemoryLimitMb()).toBe(6144);
   });
 
   it("falls back to the default when the override is only whitespace", () => {
     process.env.ENRICHMENT_WORKER_MEMORY_LIMIT_MB = "   ";
-    expect(defaultEnrichmentWorkerMemoryLimitMb()).toBe(2048);
+    expect(defaultEnrichmentWorkerMemoryLimitMb()).toBe(6144);
   });
 });
 
