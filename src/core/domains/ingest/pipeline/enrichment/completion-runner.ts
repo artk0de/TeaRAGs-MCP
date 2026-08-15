@@ -172,6 +172,13 @@ export class CompletionRunner {
       const fileOverlays = await executor.runFinalize(ctx.provider, root, {
         collectionName: coll || undefined,
         crossPass: filePhase.crossPassEnabled,
+        // The run's per-file hashes, stamped onto the rows pass-2 writes (bd
+        // tea-rags-mcp-o317j). Finalize is the one dispatch every ingest path
+        // makes, and pass-2 — the only writer of those rows — runs inside it, so
+        // this is what keeps a first index / `--force` from persisting NULL and
+        // making the next run repair the whole corpus. Providers that keep no
+        // per-file store (git) ignore it.
+        contentHashes: filePhase.runContentHashes,
       });
       if (fileOverlays.size > 0) {
         await filePhase.applyFinalize(coll, ctx, fileOverlays, chunkPhase.getDeferredChunkMap(ctx.key));

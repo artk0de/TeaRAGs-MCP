@@ -134,6 +134,20 @@ export class FilePhase {
   }
 
   /**
+   * The run's per-file SHA256, for `CompletionRunner` to thread into the
+   * finalize dispatch (bd tea-rags-mcp-o317j).
+   *
+   * Finalize is where the codegraph rows are actually written — pass-2 stamps
+   * each one from the provider's run state — so it is the ONE dispatch that
+   * every ingest path shares. The per-batch attach below cannot cover the
+   * cross-pass run: there the batch call no-ops on a worker instance and
+   * extraction is deferred to finalize.
+   */
+  get runContentHashes(): ReadonlyMap<string, string> | undefined {
+    return this.contentHashes;
+  }
+
+  /**
    * Stream this batch's file signals and apply immediately. Returns a map
    * keyed by provider whose values are that provider's file-work promise for
    * this batch — so the coordinator can gate EACH provider's chunk enrichment
@@ -231,7 +245,13 @@ export class FilePhase {
         // (the input spill is fed from the chunker's single parse); finalize
         // drains the spill. Off cross-pass it keeps the extractOneFile path.
         crossPass: this.crossPass,
-        contentHashes: this.contentHashes,
+        // Off cross-pass THIS call is what extracts the batch, so it carries the
+        // hashes the provider stamps at write time. On a cross-pass run it is a
+        // no-op the worker returns from immediately, and the map — one entry per
+        // file in the repository — would be structured-cloned into every one of
+        // those round trips for nothing; the finalize dispatch carries it once
+        // instead (bd tea-rags-mcp-o317j).
+        contentHashes: this.crossPass ? undefined : this.contentHashes,
       })
       .then(() => undefined)
       .catch(async (error: unknown) => {

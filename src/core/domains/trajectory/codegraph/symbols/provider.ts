@@ -1298,6 +1298,16 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
     // streamFileBatch pass (loadGemfile, guarded), so the pass-2 resolve below
     // (sink.finish) sees `runGemfileContent` on each CallContext already.
     const file = new Map<string, FileSignalOverlay>();
+    // Seed the hash the finalizer stamps onto every row pass-2 writes
+    // (graph-finalizer's `contentHash: this.runState.contentHashes?.get(...)`),
+    // BEFORE the drain and the `sink.finish()` below — those are the writes.
+    // Every ingest path reaches this seam, which is why it is here and not only
+    // on `streamFileBatch`: a cross-pass run (first index, `--force`) no-ops
+    // that call on a DIFFERENT provider instance, so its run state never learned
+    // the hashes and every row it wrote persisted NULL. The next run then read
+    // NULL as "unknown, re-extract" and repaired the whole corpus, ~128s on
+    // taxdome (bd tea-rags-mcp-o317j).
+    if (options?.contentHashes) this.runState.contentHashes = options.contentHashes;
     try {
       // yl9tv Task 5b — cross-pass: streamFileBatch no-opped (no parse), so
       // pass-1 is deferred to here. Drain the main-written input spill through a

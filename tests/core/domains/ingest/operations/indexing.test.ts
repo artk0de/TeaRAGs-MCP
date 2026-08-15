@@ -567,12 +567,15 @@ function third() {
       await createTestFile(codebaseDir, "test.ts", "const x = 1;");
 
       const originalReadFile = fs.readFile;
-      let callCount = 0;
 
+      // Keyed on the PATH, not on "the first read of the run": the invariant is
+      // that a file which cannot be read is reported and the run still
+      // completes, and the number of reads a run makes before the chunker's is
+      // an implementation detail (bd tea-rags-mcp-o317j added a hashing pass
+      // ahead of it).
       // @ts-expect-error - Mocking for test
       fs.readFile = async (path: any, encoding: any) => {
-        callCount++;
-        if (callCount === 1 && typeof path === "string" && path.endsWith("test.ts")) {
+        if (typeof path === "string" && path.endsWith("test.ts")) {
           throw new Error("String error");
         }
         return originalReadFile(path, encoding);

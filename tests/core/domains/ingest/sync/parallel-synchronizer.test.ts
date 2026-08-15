@@ -93,6 +93,37 @@ describe("ParallelFileSynchronizer", () => {
     });
   });
 
+  describe("computeContentHashes", () => {
+    // A first index / --force run never calls detectChanges, so it has no scan
+    // to project hashes off (bd tea-rags-mcp-o317j). It hashes the corpus here
+    // instead — and the value MUST be the one the next run's repair check will
+    // diff it against, which is the detectChanges projection above. Two hash
+    // definitions would make every row look drifted forever.
+    it("produces exactly the hashes a detectChanges scan would", async () => {
+      const files = await createTestFiles(3);
+      await synchronizer.initialize();
+      await synchronizer.detectChanges(files);
+      const fromScan = synchronizer.getCurrentFileHashes();
+
+      const firstIndex = new ParallelFileSynchronizer(codebaseDir, "test-collection", snapshotDir, 4);
+
+      expect(await firstIndex.computeContentHashes(files)).toEqual(fromScan);
+    });
+
+    // The run's own updateSnapshot used to hash the whole corpus itself (no
+    // detectChanges ran, so its cache was empty). Caching here keeps the total
+    // at one hashing pass instead of two.
+    it("caches for the run's snapshot save, then releases the cache with it", async () => {
+      const files = await createTestFiles(3);
+
+      const hashes = await synchronizer.computeContentHashes(files);
+      expect(synchronizer.getCurrentFileHashes()).toEqual(hashes);
+
+      await synchronizer.updateSnapshot(files);
+      expect(synchronizer.getCurrentFileHashes().size).toBe(0);
+    });
+  });
+
   describe("Initialization", () => {
     it("should return false when no snapshot exists", async () => {
       const hasSnapshot = await synchronizer.initialize();
