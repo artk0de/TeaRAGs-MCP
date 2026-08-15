@@ -39,6 +39,55 @@ const MISSED_PATH_SAMPLE_LIMIT = 10;
 const FINALIZE_WRITE_CONCURRENCY = 4;
 
 /**
+ * Points one COALESCED operation may address (bd tea-rags-mcp-6aytq).
+ *
+ * Qdrant applies `set_payload` operations one after another, so an operation
+ * carrying one point is the most expensive shape there is per point written —
+ * and the terminal marker that follows is a `wait: true` write, i.e. a barrier
+ * on everything queued before it (11.4s of the completion tail for the deferred
+ * chunk pass's 27,555 single-point operations). Points sharing a payload belong
+ * in one operation; the cap keeps a single request body bounded, matching the
+ * 512 upsert idiom.
+ */
+const MAX_POINTS_PER_OP = 512;
+
+/**
+ * Folds writes that carry the SAME payload into one operation per distinct
+ * payload. Signature is the serialized payload, so two payloads coalesce only
+ * when they are byte-identical under a stable key order — the write paths here
+ * build each payload from one code path, so equal content serialises equally,
+ * and a mismatch costs an extra operation rather than a wrong payload.
+ *
+ * Insertion order is preserved: first payload seen emits first, and within a
+ * payload the points keep the order they were added.
+ */
+class PayloadOpCoalescer {
+  private readonly groups = new Map<string, { payload: Record<string, unknown>; points: (string | number)[] }>();
+
+  add(payload: Record<string, unknown>, points: readonly (string | number)[]): void {
+    if (points.length === 0) return;
+    const signature = JSON.stringify(payload);
+    const group = this.groups.get(signature);
+    if (group === undefined) {
+      this.groups.set(signature, { payload, points: [...points] });
+      return;
+    }
+    group.points.push(...points);
+  }
+
+  /** One op per distinct payload, split so no op exceeds {@link MAX_POINTS_PER_OP}. */
+  toOps(key: string): FilePayloadOp[] {
+    const ops: FilePayloadOp[] = [];
+    for (const { payload, points } of this.groups.values()) {
+      for (let i = 0; i < points.length; i += MAX_POINTS_PER_OP) {
+        ops.push({ payload, points: points.slice(i, i + MAX_POINTS_PER_OP), key });
+      }
+    }
+    return ops;
+  }
+}
+
+/**
  * Emitted once per apply batch. `applied` is the CUMULATIVE per-(provider,level)
  * value as of this batch:
  * - file level: cumulative count of distinct files processed by this provider
@@ -446,11 +495,12 @@ export class EnrichmentApplier {
     isIgnored?: (relativePath: string, level: "file" | "chunk") => boolean,
   ): Promise<number> {
     const fileKey = `${providerKey}.file`;
-    const ops: {
-      payload: Record<string, unknown>;
-      points: (string | number)[];
-      key: string;
-    }[] = [];
+    // File overlays repeat across files the graph gave the same fan numbers to
+    // (a leaf file's is the zero tuple), and the bare-stamp branch below emits
+    // ONE payload for every miss — so files are grouped by payload, not just
+    // per file. Same points, same payloads, fewer operations for the terminal
+    // file marker's barrier to drain.
+    const coalescer = new PayloadOpCoalescer();
     let appliedFiles = 0;
 
     for (const [relPath, entries] of chunkMap) {
@@ -475,7 +525,10 @@ export class EnrichmentApplier {
           entries.map((e) => ({ chunkId: e.chunkId, startLine: e.startLine, endLine: e.endLine })),
         );
         if (enrichedAt) {
-          ops.push({ payload: { enrichedAt }, points: entries.map((e) => e.chunkId), key: fileKey });
+          coalescer.add(
+            { enrichedAt },
+            entries.map((e) => e.chunkId),
+          );
         }
         continue;
       }
@@ -487,7 +540,10 @@ export class EnrichmentApplier {
       // ONE operation for the whole file: every chunk of it takes the SAME
       // payload under the SAME key, so a per-chunk operation only multiplies
       // the request body and the number of round-trips it takes to drain.
-      ops.push({ payload, points: entries.map((e) => e.chunkId), key: fileKey });
+      coalescer.add(
+        payload,
+        entries.map((e) => e.chunkId),
+      );
       appliedFiles++;
       this.matchedPaths.add(relPath);
     }
@@ -503,9 +559,11 @@ export class EnrichmentApplier {
     }
 
     // Consecutive batches address DISJOINT point sets — a chunk id belongs to
-    // exactly one file, and each file contributes exactly one operation — so
-    // they may overlap. Bounded, because this runs against the same Qdrant the
-    // rest of the tail is using and an unbounded fan-out just moves the queue.
+    // exactly one file, and every operation over it carries the same payload —
+    // so they may overlap. Bounded, because this runs against the same Qdrant
+    // the rest of the tail is using and an unbounded fan-out just moves the
+    // queue.
+    const ops = coalescer.toOps(fileKey);
     const batches: FilePayloadOp[][] = [];
     for (let i = 0; i < ops.length; i += BATCH_SIZE) {
       batches.push(ops.slice(i, i + BATCH_SIZE));
@@ -556,11 +614,11 @@ export class EnrichmentApplier {
     declinedChunkIds?: ReadonlySet<string>,
   ): Promise<number> {
     const enrichedChunkIds = new Set<string>();
-    let batch: {
-      payload: Record<string, unknown>;
-      points: (string | number)[];
-      key?: string;
-    }[] = [];
+    // Chunk overlays repeat heavily — every symbol the graph found no edge for
+    // is the same zero triple, and the no-signal stamp below is ONE payload for
+    // however many points it settles. Group first, write second: the operation
+    // count is what the terminal chunk marker's barrier drains.
+    const coalescer = new PayloadOpCoalescer();
     let applied = 0;
 
     for (const [, overlayMap] of chunkMetadata) {
@@ -574,24 +632,7 @@ export class EnrichmentApplier {
         const payload = enrichedAt
           ? { ...(overlay as Record<string, unknown>), enrichedAt }
           : (overlay as Record<string, unknown>);
-        batch.push({
-          payload,
-          points: [chunkId],
-          key: `${providerKey}.chunk`,
-        });
-
-        if (batch.length >= BATCH_SIZE) {
-          if (await batchSetPayloadWithRetry(this.qdrant, collectionName, batch, this.retryOptions)) {
-            applied += batch.length;
-          }
-          batch = [];
-        }
-      }
-    }
-
-    if (batch.length > 0) {
-      if (await batchSetPayloadWithRetry(this.qdrant, collectionName, batch, this.retryOptions)) {
-        applied += batch.length;
+        coalescer.add(payload, [chunkId]);
       }
     }
 
@@ -606,18 +647,16 @@ export class EnrichmentApplier {
         if (declinedChunkIds?.has(id)) continue;
         if (!enrichedChunkIds.has(id)) missed.push(id);
       }
+      coalescer.add({ enrichedAt }, missed);
+    }
 
-      if (missed.length > 0) {
-        for (let i = 0; i < missed.length; i += BATCH_SIZE) {
-          const stampBatch = missed.slice(i, i + BATCH_SIZE).map((id) => ({
-            payload: { enrichedAt } as Record<string, unknown>,
-            points: [id] as (string | number)[],
-            key: `${providerKey}.chunk`,
-          }));
-          if (await batchSetPayloadWithRetry(this.qdrant, collectionName, stampBatch, this.retryOptions)) {
-            applied += stampBatch.length;
-          }
-        }
+    const ops = coalescer.toOps(`${providerKey}.chunk`);
+    for (let i = 0; i < ops.length; i += BATCH_SIZE) {
+      const batch = ops.slice(i, i + BATCH_SIZE);
+      if (await batchSetPayloadWithRetry(this.qdrant, collectionName, batch, this.retryOptions)) {
+        // POINTS, not operations — one op now settles many chunks, and the
+        // cumulative figure this feeds is a chunk count.
+        for (const op of batch) applied += op.points.length;
       }
     }
 

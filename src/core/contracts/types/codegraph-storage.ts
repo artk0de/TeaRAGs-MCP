@@ -49,6 +49,17 @@ export interface BulkFileUpsertEntry {
 }
 
 /**
+ * One file's symbol → covering-chunk join, as consumed by
+ * `GraphDbClient.updateSymbolChunkIdsBulk` — the batched form of
+ * `updateSymbolChunkIds(relPath, chunkIds)` that folds a whole deferred chunk
+ * pass into a single transaction (and, on the daemon path, a single round-trip).
+ */
+export interface SymbolChunkIdJoinEntry {
+  relPath: RelPath;
+  chunkIds: ReadonlyMap<SymbolId, string>;
+}
+
+/**
  * Resolved location of a symbol's covering Qdrant chunk. Returned by
  * `GraphDbClient.findSymbolChunk` — null when no chunk_id has been
  * backfilled for the symbol yet.
@@ -249,6 +260,17 @@ export interface GraphDbClient {
    * NULL). Written in the codegraph deferred chunk pass once chunk ids exist.
    */
   updateSymbolChunkIds: (relPath: RelPath, chunkIds: ReadonlyMap<SymbolId, string>) => Promise<void>;
+
+  /**
+   * Batched form of {@link updateSymbolChunkIds}: the whole deferred chunk
+   * pass in ONE transaction of chunked multi-row UPDATEs, instead of one
+   * transaction (and one daemon round-trip) per file. Same per-row semantics —
+   * the join is keyed by (relPath, symbolId), and a symbol absent from every
+   * entry keeps its prior chunk_id. Empty entries is a no-op; when one call
+   * carries the same (relPath, symbolId) twice the LAST value wins, matching
+   * sequential per-file calls.
+   */
+  updateSymbolChunkIdsBulk: (entries: readonly SymbolChunkIdJoinEntry[]) => Promise<void>;
 
   /**
    * Resolve a symbol to its covering Qdrant chunk. Indexed lookup by

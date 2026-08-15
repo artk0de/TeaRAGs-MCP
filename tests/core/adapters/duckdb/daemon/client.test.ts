@@ -357,6 +357,35 @@ describe("DaemonGraphDbClient", () => {
     expect((ranks?.params as { ranks: [string, number][] }).ranks).toEqual([["A#run", 0.5]]);
   });
 
+  it("updateSymbolChunkIdsBulk proxies the whole pass as ONE op with map entries per file", async () => {
+    dir = mkdtempSync(join(tmpdir(), "cgc-"));
+    const socketPath = join(dir, "d.sock");
+    const seen: DaemonRequest[] = [];
+    await echoServer(socketPath, (r) => {
+      seen.push(r);
+      return null;
+    });
+
+    const client = new DaemonGraphDbClient(socketPath, "code_w_v1");
+    await client.init();
+    await client.updateSymbolChunkIdsBulk([
+      { relPath: "a.ts", chunkIds: new Map([["A#run", "chunk_a"]]) },
+      { relPath: "b.ts", chunkIds: new Map([["B#go", "chunk_b"]]) },
+    ]);
+    await client.close();
+
+    // One round-trip for the whole pass — the per-file op must not reappear.
+    expect(seen.map((r) => r.op)).toEqual(["updateSymbolChunkIdsBulk"]);
+    // A Map does not survive JSON, so each file's join travels as entries.
+    expect(seen[0].params).toMatchObject({
+      collection: "code_w_v1",
+      entries: [
+        { relPath: "a.ts", chunkIds: [["A#run", "chunk_a"]] },
+        { relPath: "b.ts", chunkIds: [["B#go", "chunk_b"]] },
+      ],
+    });
+  });
+
   it("findSymbolChunk proxies through the daemon socket and resolves the result", async () => {
     dir = mkdtempSync(join(tmpdir(), "cgc-"));
     const socketPath = join(dir, "d.sock");

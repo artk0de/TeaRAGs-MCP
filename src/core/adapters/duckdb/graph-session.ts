@@ -403,6 +403,44 @@ export class DuckDbGraphSession {
     }
   }
 
+  /**
+   * Chunk-safe join UPDATE: `UPDATE <table> SET <set> FROM (VALUES …) AS v(…)`
+   * matched on `<key>` — the update-side twin of {@link insertBatched}, in the
+   * same {@link EDGE_INSERT_CHUNK_ROWS} chunks. Collapses N per-row prepared
+   * UPDATEs into `ceil(N / chunk)` statements, which is what takes the deferred
+   * chunk pass's symbol→chunk join off the per-file round-trip path (bd
+   * tea-rags-mcp-6aytq).
+   *
+   * Each row supplies the key columns first, then the set columns, in the
+   * declared order. Rows matching no target row update nothing — the same
+   * silent no-op the per-row form has. A row appearing twice for the same key
+   * is the caller's to resolve BEFORE calling: DuckDB does not define which of
+   * two colliding VALUES rows wins.
+   *
+   * `table`/`keyColumns`/`setColumns` are compile-time literals supplied by the
+   * caller — never user input; all VALUES go through positional binds.
+   */
+  async updateFromRows(
+    table: string,
+    keyColumns: readonly string[],
+    setColumns: readonly string[],
+    rows: readonly (readonly unknown[])[],
+  ): Promise<void> {
+    if (rows.length === 0) return;
+    const columns = [...keyColumns, ...setColumns];
+    const tuple = `(${columns.map(() => "?").join(", ")})`;
+    const assignments = setColumns.map((c) => `${c} = v.${c}`).join(", ");
+    const match = keyColumns.map((c) => `${table}.${c} = v.${c}`).join(" AND ");
+    for (let i = 0; i < rows.length; i += EDGE_INSERT_CHUNK_ROWS) {
+      const chunk = rows.slice(i, i + EDGE_INSERT_CHUNK_ROWS);
+      await this.run(
+        `UPDATE ${table} SET ${assignments} FROM (VALUES ${chunk.map(() => tuple).join(", ")}) ` +
+          `AS v(${columns.join(", ")}) WHERE ${match}`,
+        chunk.flat(),
+      );
+    }
+  }
+
   private requireConn(): DuckDBConnection {
     if (!this.conn) throw new Error("DuckDbGraphClient: init() must be called before use");
     return this.conn;

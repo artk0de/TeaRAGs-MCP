@@ -34,6 +34,7 @@ export type DaemonOp =
   | "upsertSymbolsBulk"
   | "upsertFilesBulk"
   | "updateSymbolChunkIds"
+  | "updateSymbolChunkIdsBulk"
   | "replaceCycles"
   | "replacePageRanks"
   | "checkpoint"
@@ -82,6 +83,7 @@ export interface DaemonRequest {
     | { collection: string; entries: BulkSymbolUpsertEntry[] } // upsertSymbolsBulk
     | { collection: string; entries: BulkFileUpsertEntry[] } // upsertFilesBulk
     | { collection: string; relPath: RelPath; chunkIds: [string, string][] } // updateSymbolChunkIds
+    | { collection: string; entries: { relPath: RelPath; chunkIds: [string, string][] }[] } // updateSymbolChunkIdsBulk
     | { collection: string; relPath: RelPath; maxDepth?: number } // getTransitiveImpact
     | { collection: string; relPaths: RelPath[]; maxDepth?: number } // getFileMetricsBulk
     | { collection: string; oldVersion: string; newVersion: string } // finalizeReindex

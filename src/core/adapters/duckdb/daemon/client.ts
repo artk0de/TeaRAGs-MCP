@@ -19,6 +19,7 @@ import type {
   InheritanceEdge,
   RelPath,
   ResolveRunStatsRow,
+  SymbolChunkIdJoinEntry,
   SymbolChunkLocation,
   SymbolDefinition,
   SymbolId,
@@ -275,6 +276,13 @@ export class DaemonGraphDbClient implements GraphDbClient {
 
   async updateSymbolChunkIds(relPath: RelPath, chunkIds: ReadonlyMap<SymbolId, string>): Promise<void> {
     await this.call("updateSymbolChunkIds", { relPath, chunkIds: [...chunkIds.entries()] });
+  }
+
+  async updateSymbolChunkIdsBulk(entries: readonly SymbolChunkIdJoinEntry[]): Promise<void> {
+    // Each file's join travels as Map entries — a Map does not survive JSON.
+    await this.call("updateSymbolChunkIdsBulk", {
+      entries: entries.map((e) => ({ relPath: e.relPath, chunkIds: [...e.chunkIds.entries()] })),
+    });
   }
 
   async findSymbolChunk(symbolId: SymbolId): Promise<SymbolChunkLocation | null> {

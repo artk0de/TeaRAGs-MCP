@@ -114,6 +114,15 @@ export const DAEMON_OP_COMMANDS: Readonly<Record<DaemonOp, DaemonOpCommand>> = {
   updateSymbolChunkIds: write(async (graphDb, p) =>
     graphDb.updateSymbolChunkIds(p.relPath as RelPath, new Map(p.chunkIds as [SymbolId, string][])),
   ),
+  // Same entries → Map rebuild, once per file in the pass.
+  updateSymbolChunkIdsBulk: write(async (graphDb, p) =>
+    graphDb.updateSymbolChunkIdsBulk(
+      (p.entries as { relPath: RelPath; chunkIds: [SymbolId, string][] }[]).map((e) => ({
+        relPath: e.relPath,
+        chunkIds: new Map(e.chunkIds),
+      })),
+    ),
+  ),
   replaceCycles: write(async (graphDb, p) =>
     graphDb.replaceCycles(p.scope as CycleScope, p.sccs as readonly (readonly string[])[]),
   ),
