@@ -125,10 +125,17 @@ export class EnrichmentCoordinator {
   private readonly daemonGuard: IndexRunDaemonGuard;
 
   /**
-   * Per-file SHA256 for the current run, captured by runRepairPass and reused
-   * by the normal file phase (bd tea-rags-mcp-6goqa). Both paths must stamp the
+   * Per-file SHA256 for the current run, reused by the normal file phase (bd
+   * tea-rags-mcp-6goqa). Every path that writes provider rows must stamp the
    * hash, otherwise the path that does not keeps resetting rows to NULL and the
    * repair set never converges.
+   *
+   * Two suppliers, because the two ingest paths learn the hashes differently:
+   * `runRepairPass` projects them off the incremental scan it just diffed, and
+   * `beginRun` takes them from the caller on the streaming path (first index /
+   * `--force`), which has no scan of its own. The streaming path went unstamped
+   * until bd tea-rags-mcp-o317j — it wrote NULL for the whole corpus, so the
+   * next run repaired every file.
    */
   private runContentHashes?: ReadonlyMap<string, string>;
 
@@ -622,7 +629,16 @@ export class EnrichmentCoordinator {
      * Omitted means "every provider", so existing callers are unaffected.
      */
     onlyProviderKeys?: readonly string[],
+    /**
+     * The run's per-file SHA256, for callers that computed it themselves rather
+     * than through `runRepairPass` — the streaming path (bd tea-rags-mcp-o317j).
+     * Omitted leaves whatever the repair pass captured in place; it must never
+     * CLEAR it, or the incremental path would lose its own stamp.
+     */
+    contentHashes?: ReadonlyMap<string, string>,
   ): void {
+    if (contentHashes) this.runContentHashes = contentHashes;
+
     // Build a fresh RunState. Per-run instances guarantee old promise closures
     // mutate their orphaned RunState, never the current one.
     const runState = this.createRunState();

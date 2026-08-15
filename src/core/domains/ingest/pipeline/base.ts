@@ -196,6 +196,13 @@ export abstract class BaseIndexingPipeline {
     changedPaths?: string[],
     chunkSizeOverride?: number,
     fileCount = 0,
+    /**
+     * The run's per-file SHA256, keyed repo-relative. Supplied by the paths that
+     * have no incremental scan to project it off — the full index and `--force`
+     * (bd tea-rags-mcp-o317j). The incremental path leaves it undefined: its
+     * hashes reach the coordinator through `runRepairPass`.
+     */
+    contentHashes?: ReadonlyMap<string, string>,
   ): ProcessingContext {
     const chunkerPool = this.createChunkerPool(chunkSizeOverride, this.readGemfile(absolutePath));
     const chunkPipeline = this.createChunkPipeline(collectionName);
@@ -211,6 +218,7 @@ export abstract class BaseIndexingPipeline {
       scanner.getIgnoreFilter(),
       changedPaths,
       fileCount,
+      contentHashes,
     );
     pipelineLog.addStageTime("codegraph-init", Date.now() - codegraphInitStart);
     chunkPipeline.start();
@@ -383,6 +391,7 @@ export abstract class BaseIndexingPipeline {
     ignoreFilter: Ignore,
     changedPaths?: string[],
     fileCount = 0,
+    contentHashes?: ReadonlyMap<string, string>,
   ): void {
     this.enrichment.beginRun(
       absolutePath,
@@ -391,6 +400,8 @@ export abstract class BaseIndexingPipeline {
       changedPaths,
       this.crossPassExtractionEnabled(),
       fileCount,
+      undefined,
+      contentHashes,
     );
     chunkPipeline.setOnBatchUpserted((items) => {
       this.enrichment.onChunksStored(collectionName, absolutePath, items);

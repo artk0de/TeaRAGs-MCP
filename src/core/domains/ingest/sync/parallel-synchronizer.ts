@@ -177,6 +177,24 @@ export class ParallelFileSynchronizer {
   }
 
   /**
+   * Hash every file of a run that has no `detectChanges` scan to project off —
+   * a first index or a `--force` rebuild (bd tea-rags-mcp-o317j).
+   *
+   * Same hash, same keys, same code path as {@link getCurrentFileHashes}: the
+   * enrichment providers stamp what they are given onto their per-file rows, and
+   * the NEXT run's repair check diffs those rows against a detectChanges scan.
+   * A second hash definition here would make every row read as drifted forever.
+   *
+   * Costs nothing extra over the run as a whole. `updateSnapshot` hashed the
+   * corpus itself on these paths (no scan had run, so its cache was empty); the
+   * result is cached here, so that call reuses it and the corpus is read once.
+   */
+  async computeContentHashes(files: string[]): Promise<Map<string, string>> {
+    this.lastComputedHashes = await this.computeAllFileMetadata(files);
+    return this.getCurrentFileHashes();
+  }
+
+  /**
    * Detect changes since last snapshot (parallel processing)
    * OPTIMIZED: Uses bounded concurrency and caches computed hashes
    */

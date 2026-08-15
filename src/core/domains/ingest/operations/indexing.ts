@@ -26,7 +26,7 @@ import { processFiles } from "../pipeline/file-processor.js";
 import { storeIndexingMarker } from "../pipeline/indexing-marker.js";
 import { pipelineLog } from "../pipeline/infra/debug-logger.js";
 import type { FileScanner } from "../pipeline/scanner.js";
-import { QuarantineStore } from "../sync/index.js";
+import { QuarantineStore, type ParallelFileSynchronizer } from "../sync/index.js";
 import { SnapshotCleaner } from "../sync/snapshot/snapshot-cleaner.js";
 import { computeNewVersion, findAliasTarget } from "./version-resolver.js";
 
@@ -104,6 +104,15 @@ export class IndexPipeline extends BaseIndexingPipeline {
         await quarantineStore.clearAll();
       }
 
+      // The run's own hashes, for the enrichment providers to stamp onto their
+      // per-file rows (bd tea-rags-mcp-o317j). This path has no `detectChanges`
+      // to project them off, so it hashes the corpus itself — and the
+      // synchronizer is held for `saveSnapshot` below, which reuses the cached
+      // result instead of hashing everything a second time. Without the stamp
+      // every row lands NULL and the NEXT run repairs the entire corpus.
+      const synchronizer = this.deps.createSynchronizer(absolutePath, collectionName);
+      const contentHashes = await synchronizer.computeContentHashes(files);
+
       const ctx = this.initProcessing(
         setup.targetCollection,
         absolutePath,
@@ -111,6 +120,7 @@ export class IndexPipeline extends BaseIndexingPipeline {
         undefined,
         overrides?.chunkSize,
         files.length,
+        contentHashes,
       );
       // Embed-phase poison-pill isolation: an oversized chunk quarantines its
       // file instead of aborting the whole pass.
@@ -182,7 +192,7 @@ export class IndexPipeline extends BaseIndexingPipeline {
 
           await this.finalizeAlias(collectionName, setup);
           await storeIndexingMarker(this.qdrant, this.embeddings, setup.targetCollection, true, overrides?.modelInfo);
-          await this.saveSnapshot(absolutePath, collectionName, files, stats, setup.aliasVersion);
+          await this.saveSnapshot(synchronizer, files, stats, setup.aliasVersion);
           await this.recordRegistryEntry(collectionName, absolutePath);
 
           const enrichmentResult = getEnrichmentStatus();
@@ -522,15 +532,19 @@ export class IndexPipeline extends BaseIndexingPipeline {
     }
   }
 
+  /**
+   * Takes the run's synchronizer rather than building its own: that instance is
+   * holding the hashes computed before the pipeline started, so the snapshot is
+   * written from them instead of re-reading and re-hashing the whole corpus
+   * (bd tea-rags-mcp-o317j).
+   */
   private async saveSnapshot(
-    absolutePath: string,
-    collectionName: string,
+    synchronizer: ParallelFileSynchronizer,
     files: string[],
     stats: IndexStats,
     aliasVersion?: number,
   ): Promise<void> {
     try {
-      const synchronizer = this.deps.createSynchronizer(absolutePath, collectionName);
       await synchronizer.updateSnapshot(files, undefined, aliasVersion ? { aliasVersion } : undefined);
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : String(error);
