@@ -17,6 +17,7 @@ import type { EmbeddingModelGuard } from "../../../adapters/qdrant/embedding-mod
 import { selectLanguages } from "../../../contracts/language-selector.js";
 import { selectProviderKeys } from "../../../contracts/provider-selector.js";
 import type { EnrichmentExecutor, IndexRunDaemonGuard } from "../../../contracts/types/enrichment-executor.js";
+import type { LanguageCodeVersions } from "../../../contracts/types/language.js";
 import type { EnrichmentProvider } from "../../../contracts/types/provider.js";
 import type { StatsAccumulatorDescriptor } from "../../../contracts/types/stats-accumulator.js";
 import type { PayloadSignalDescriptor } from "../../../contracts/types/trajectory.js";
@@ -67,6 +68,12 @@ export interface IngestFacadeDeps {
   modelGuard?: EmbeddingModelGuard;
   collectionRegistry?: CollectionRegistry;
   teaRagsVersion?: string;
+  /**
+   * Per-language code versions of this build (bd tea-rags-mcp-frwka), from
+   * `createComposition`. Stamped onto the registry entry by the runs that
+   * actually rebuild a language layer; omitted → nothing is stamped.
+   */
+  languageCodeVersions?: ReadonlyMap<string, LanguageCodeVersions>;
   /**
    * Full effective env set of this run (canonical keys, code defaults
    * materialized) built by bootstrap via `buildRegistryEnvSnapshot`; persisted
@@ -152,6 +159,8 @@ export class IngestFacade {
       codegraphPool: deps.codegraphPool,
       healthCheckRetryAttempts: deps.healthCheckRetryAttempts,
       healthCheckRetryDelayMs: deps.healthCheckRetryDelayMs,
+      collectionRegistry: deps.collectionRegistry,
+      languageCodeVersions: deps.languageCodeVersions,
     });
 
     // Stats refresh when chunk enrichment finishes. Awaited so the

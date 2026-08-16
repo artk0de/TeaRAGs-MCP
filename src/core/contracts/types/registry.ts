@@ -4,6 +4,8 @@
  * See docs/superpowers/specs/2026-05-12-project-registry-design.md §2.
  */
 
+import type { LanguageCodeVersions } from "./language.js";
+
 /**
  * Git state the index represents, captured at Index/ReindexPipeline finalize.
  * Written through `record()` on every run (pipeline owns it). Absent when the
@@ -106,6 +108,24 @@ export interface CollectionEntry {
   git?: RegistryGitState;
   /** Auto-update policy (see RegistryAutoUpdateConfig). Sticky like `name`. */
   autoUpdate?: RegistryAutoUpdateConfig;
+  /**
+   * Per-language code versions the indexed data was produced by — the grammar
+   * we parsed with plus our own chunking / walker / codegraph-schema revisions
+   * (bd tea-rags-mcp-frwka). `LanguageVersionDriftMonitor` compares it against
+   * what the current build declares and routes the reindex hint by which axis
+   * moved; `SchemaDriftMonitor` cannot see any of this, because payload KEYS do
+   * not move when a grammar or a resolver does.
+   *
+   * STICKY like `name` and `autoUpdate`, and for a sharper reason: the stamp
+   * claims a layer was rebuilt corpus-wide, so only the run that rebuilt it may
+   * advance it (`CollectionRegistry#stampLanguageVersions`). A plain
+   * incremental calls `record()` like every other run — letting that erase or
+   * refresh the stamp would have auto-update silently clearing the hint.
+   *
+   * Axes are individually optional: an entry written before this existed has
+   * none, and an enrichment recompute advances only the two it rebuilt.
+   */
+  languageVersions?: Record<string, Partial<LanguageCodeVersions>>;
   indexedAt: string;
   teaRagsVersion: string;
   chunksCount: number;

@@ -90,6 +90,7 @@ describe("runPrime — auto-update trigger wiring", () => {
         }),
         getIndexMetrics: vi.fn().mockResolvedValue(null),
         checkSchemaDrift: vi.fn().mockResolvedValue("none"),
+        checkLanguageVersionDrift: vi.fn().mockResolvedValue(null),
       },
       cleanup: vi.fn(),
       updateService: stubUpdateService(),

@@ -1,5 +1,6 @@
 import { watch, type FSWatcher } from "node:fs";
 
+import type { LanguageCodeVersions } from "../../../contracts/types/language.js";
 import type {
   AutoUpdateRunRecord,
   CollectionEntry,
@@ -58,6 +59,13 @@ export class CollectionRegistry {
       // autoUpdate is sticky like name — pipeline reruns must not wipe
       // CLI-set policy (managed via setAutoUpdate / recordAutoUpdateRun).
       ...(existing?.autoUpdate !== undefined ? { autoUpdate: existing.autoUpdate } : {}),
+      // languageVersions is sticky for a sharper reason than the two above: the
+      // stamp claims a language layer was rebuilt CORPUS-WIDE, and only the run
+      // that rebuilt it may advance it (stampLanguageVersions). Every run calls
+      // record(), incremental ones included, so letting record() carry the
+      // stamp would have auto-update silently clearing the reindex hint
+      // (bd tea-rags-mcp-frwka).
+      ...(existing?.languageVersions !== undefined ? { languageVersions: existing.languageVersions } : {}),
     });
     // Re-registering a previously-removed collection clears its tombstone.
     this.tombstones.delete(entry.collectionName);
@@ -192,6 +200,30 @@ export class CollectionRegistry {
       if (entry.worktreeOf !== undefined && entry.worktreeName === name) return entry;
     }
     return null;
+  }
+
+  /**
+   * Advance the per-language code-version stamp (bd tea-rags-mcp-frwka).
+   *
+   * Merges per language AND per axis: a codegraph enrichment recompute passes
+   * only `walker` / `codegraphSchema`, and the `grammar` / `chunking` values
+   * from the last full reindex must survive it — a recompute leaves point ids
+   * where they are, so claiming the chunk set was rebuilt would be false.
+   *
+   * Silently no-ops for an unregistered collection. The caller is a finished
+   * indexing run; failing it after the data landed would report the whole run
+   * as failed over a bookkeeping write.
+   */
+  stampLanguageVersions(collectionName: string, stamp: Record<string, Partial<LanguageCodeVersions>>): void {
+    const map = this.ensureLoaded();
+    const entry = map.get(collectionName);
+    if (!entry) return;
+    const merged: Record<string, Partial<LanguageCodeVersions>> = { ...entry.languageVersions };
+    for (const [language, versions] of Object.entries(stamp)) {
+      merged[language] = { ...merged[language], ...versions };
+    }
+    map.set(collectionName, { ...entry, languageVersions: merged });
+    this.flush();
   }
 
   setWorktreeProvenance(collectionName: string, worktreeOf: string, worktreeName: string): void {

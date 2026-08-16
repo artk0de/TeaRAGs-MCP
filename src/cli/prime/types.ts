@@ -24,6 +24,13 @@ export interface PrimeData {
   status: IndexStatus;
   metrics: IndexMetrics | null;
   drift: string | null;
+  /**
+   * Per-language code-version drift (bd tea-rags-mcp-frwka) — the index was
+   * built by an older grammar / chunker / walker than the one running. Disjoint
+   * from `drift`, which only sees payload KEYS and stays silent through any
+   * grammar or resolver change. Null/absent = nothing moved, section omitted.
+   */
+  languageVersionDrift?: string | null;
   update: UpdateStatus | null;
   /**
    * Outcome of the auto-update trigger fired for this prime run (hpg2) —

@@ -2,13 +2,18 @@
 
 ## Invariants
 
-- **Only `name` and `autoUpdate` survive a pipeline `record()` — everything else
-  is overwritten.** `CollectionRegistry#record` (`collection-registry.ts:43-65`)
-  replaces the entry with whatever the caller passed and re-attaches exactly two
-  fields from the existing one: `name` (`:57`) and `autoUpdate` (`:60`). Every
-  other CLI-managed field must be supplied by the caller or it is erased.
-  `worktreeOf` / `worktreeName` ARE part of `RecordEntryInput`
-  (`contracts/types/registry.ts:119`, an
+- **Only `name`, `autoUpdate` and `languageVersions` survive a pipeline
+  `record()` — everything else is overwritten.** `CollectionRegistry#record`
+  replaces the entry with whatever the caller passed and re-attaches exactly
+  those three from the existing one. Every other CLI-managed field must be
+  supplied by the caller or it is erased. `languageVersions` is sticky for a
+  sharper reason than the other two: it CLAIMS a language layer was rebuilt
+  corpus-wide, so only the run that rebuilt it may advance it
+  (`#stampLanguageVersions`, called from `IndexingOps` because that is the only
+  layer that knows the run mode). Every run calls `record()`, incremental ones
+  included — carrying the stamp there would have auto-update silently clearing
+  the reindex hint it exists to raise. `worktreeOf` / `worktreeName` ARE part of
+  `RecordEntryInput` (`contracts/types/registry.ts:119`, an
   `Omit<CollectionEntry, "name" | "autoUpdate">`), but
   `BaseIndexingPipeline#recordRegistryEntry` (`domains/ingest/pipeline/base.ts`)
   never passes them, and nothing re-sets provenance after an index run — the

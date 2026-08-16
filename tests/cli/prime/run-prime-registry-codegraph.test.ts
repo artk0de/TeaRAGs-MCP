@@ -77,6 +77,7 @@ describe("runPrime — registry-first codegraph enablement override", () => {
           signals: {},
         }),
         checkSchemaDrift: vi.fn().mockResolvedValue(null),
+        checkLanguageVersionDrift: vi.fn().mockResolvedValue(null),
       },
       cleanup: vi.fn(),
       updateService: stubUpdateService(),
