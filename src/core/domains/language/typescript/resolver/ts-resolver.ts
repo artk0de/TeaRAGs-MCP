@@ -7,8 +7,8 @@
  * (resolved / deferred / drop / continue) makes the load-bearing guard drops
  * explicit — e.g. `super` without `classExtends` DROPS rather than falling
  * through to a same-file lookup that would emit a self-loop edge (bd
- * tea-rags-mcp-4rgg). Passes 5-7 DEFER their file-only fallback rather than
- * committing it, so 11-14 still get a chance to pin the member (bd
+ * tea-rags-mcp-4rgg). Passes 5, 7 and 8 DEFER their file-only fallback rather
+ * than committing it, so 12-15 still get a chance to pin the member (bd
  * tea-rags-mcp-5onmn).
  *
  * The pass order (each `name` in parens):
@@ -17,38 +17,40 @@
  *   3. fieldType (this.field.X via declared field type)
  *   4. localBinding (param.X via walker-bound type — unambiguous local wins)
  *   5. namedImport (receiver ∈ import { … } importedNames — exact)
- *   6. importBasename (kebab→Pascal basename fallback)
- *   7. receiverSymbol (imported-files ∩ receiver-declaring-files)
- *   8. sameFile (caller-file-local definition wins over global ambiguity)
- *   9. globalShortName (global short-name lookup)
- *  10. importNarrowedFallback (narrow ambiguous N>1 by caller's imports)
- *  11. typeCheckerJsxComponent (ts.Program/typeChecker — JSX component tags)
- *  12. typeCheckerReturnType (ts.Program/typeChecker — receiver typed by a
+ *   6. importedCallee (BARE callee ∈ importedBindings — exact, alias-aware,
+ *      bd tea-rags-mcp-w65s7)
+ *   7. importBasename (kebab→Pascal basename fallback)
+ *   8. receiverSymbol (imported-files ∩ receiver-declaring-files)
+ *   9. sameFile (caller-file-local definition wins over global ambiguity)
+ *  10. globalShortName (global short-name lookup)
+ *  11. importNarrowedFallback (narrow ambiguous N>1 by caller's imports)
+ *  12. typeCheckerJsxComponent (ts.Program/typeChecker — JSX component tags)
+ *  13. typeCheckerReturnType (ts.Program/typeChecker — receiver typed by a
  *      call's inferred return type, bd tea-rags-mcp-l3uob)
- *  13. typeCheckerFallback (ts.Program/typeChecker — generics + overloads)
- *  14. structuralTyping (ts.Program/typeChecker — duck typing + interface merging)
+ *  14. typeCheckerFallback (ts.Program/typeChecker — generics + overloads)
+ *  15. structuralTyping (ts.Program/typeChecker — duck typing + interface merging)
  *
- * Passes 11-14 are the only ones that read type information rather than AST
+ * Passes 12-15 are the only ones that read type information rather than AST
  * shape, and the only ones that touch the file system on the resolve path. They
  * run last by construction: everything above them is cheaper, so the checker is
  * consulted only for calls nothing else could decide, and they share ONE
  * `TSProgramCache` so a file is never typed twice. `CODEGRAPH_TS_TYPECHECKER=0`
  * removes all four from the chain entirely (bd tea-rags-mcp-uclbn).
  *
- * Pass 11 sits first because it answers a disjoint question and its gate is a
+ * Pass 12 sits first because it answers a disjoint question and its gate is a
  * single flag read: a JSX tag site (`call.jsx`) is never a `CallExpression`,
- * so none of 12-14 could resolve it anyway (bd tea-rags-mcp-b4pvp). Among
- * 12-14 the relative order is a precision question, not a cost one — all
+ * so none of 13-15 could resolve it anyway (bd tea-rags-mcp-b4pvp). Among
+ * 13-15 the relative order is a precision question, not a cost one — all
  * three share the Program, so nothing is saved by reordering them, but
  * getting the order wrong hides a call from the pass that should have
  * answered it:
- *   - 12 gates on a narrow receiver shape (typed by ANOTHER call's inferred
+ *   - 13 gates on a narrow receiver shape (typed by ANOTHER call's inferred
  *     return, no explicit annotation) and pins the receiver TYPE before
- *     reading the member off it, while 13's `getResolvedSignature` answers a
+ *     reading the member off it, while 14's `getResolvedSignature` answers a
  *     superset of shapes from the call's own resolved signature alone —
- *     behind 13, pass 12 would never see a call (bd tea-rags-mcp-l3uob).
- *   - 14 follows 13 because `getResolvedSignature` picks the overload the
- *     ARGUMENTS select, which is the sharper answer whenever it applies; 14
+ *     behind 14, pass 13 would never see a call (bd tea-rags-mcp-l3uob).
+ *   - 15 follows 14 because `getResolvedSignature` picks the overload the
+ *     ARGUMENTS select, which is the sharper answer whenever it applies; 15
  *     then handles the receivers that have no name to look up at all
  *     (bd tea-rags-mcp-icmnr).
  *
@@ -84,6 +86,7 @@ import {
   TSFieldTypeSymbolResolutionStrategy,
   TSGlobalShortNameSymbolResolutionStrategy,
   TSImportBasenameSymbolResolutionStrategy,
+  TSImportedCalleeSymbolResolutionStrategy,
   TSImportNarrowedFallbackSymbolResolutionStrategy,
   TSLocalBindingSymbolResolutionStrategy,
   TSNamedImportSymbolResolutionStrategy,
@@ -346,14 +349,27 @@ export class TSCallResolver implements CallResolver {
       new TSFieldTypeSymbolResolutionStrategy(cfg),
       new TSLocalBindingSymbolResolutionStrategy(cfg),
       new TSNamedImportSymbolResolutionStrategy(cfg),
-      // 6 takes it for the guard on its PARK (bd tea-rags-mcp-83iz5): the
+      // 6 answers only BARE calls, so every receiver-gated pass reaches it as
+      // CONTINUE and its index against 1-5, 7 and 8 decides nothing. Against 9
+      // it decides a lot, and the direction was MEASURED (bd tea-rags-mcp-w65s7):
+      // `sameFile` matches a bare callee against every short name the caller's
+      // file declares, INCLUDING its own methods, so `GitCliAdapter#getHead`
+      // swallowed the imported free function `getHead` it delegates to. Running
+      // ahead of it turned 18 of this repo's bareCall `wrongFile` rows into
+      // matches and cost none — an imported binding called bare is never the
+      // enclosing class's method. It must also stay above the short-name passes
+      // at 10 and 11, whose guess must not beat exact import evidence. No
+      // Program cache: pure symbol-table work, and acquiring a checker this
+      // early would pay for calls the cheap passes were about to answer.
+      new TSImportedCalleeSymbolResolutionStrategy(cfg),
+      // 7 takes it for the guard on its PARK (bd tea-rags-mcp-83iz5): the
       // basename match fires on receiver TEXT, so a local `cache` collides with
       // the `cache.ts` its own file imports, and only the checker can see that
       // the receiver is a `Map`.
       new TSImportBasenameSymbolResolutionStrategy(cfg, this.programCache),
       new TSReceiverSymbolSymbolResolutionStrategy(cfg),
       new TSSameFileSymbolResolutionStrategy(cfg),
-      // 9 and 10 take the Program cache for their three GUARDS, not to resolve
+      // 10 and 11 take the Program cache for their three GUARDS, not to resolve
       // with: `targetsExternalImport` for receivers only the checker can type
       // (bd tea-rags-mcp-335eu), `calleeIsLocalValueBinding` for a bare call
       // whose callee is a local binding (bd tea-rags-mcp-5tatv), and

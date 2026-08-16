@@ -18,10 +18,16 @@ const IS_CLASS_RECEIVER = /^[A-Z]/u;
  * target is local, not imported). Lexical scope guarantees the same-file
  * definition is the real target, so this is a safe, deterministic resolve.
  *
- * Runs at chain position 8 (after the receiver/import strategies, before
+ * Runs at chain position 9 (after the receiver/import strategies, before
  * `globalShortName`) so it is strictly additive: for a globally-unique name the
  * result is identical to `globalShortName`; for an ambiguous name it resolves
  * the same-file definition instead of dropping.
+ *
+ * Its bare-call arm matches on short name alone within the caller's file, which
+ * includes the file's own METHODS — so a bare call to an IMPORTED function that
+ * a class method of the same name delegates to landed on the method (bd
+ * tea-rags-mcp-w65s7). `importedCallee` at 6 now takes those first; this pass
+ * keeps every bare call no import binds.
  *
  * Three call shapes:
  *   - bare call `helper()`            → same-file symbol with shortName `member`

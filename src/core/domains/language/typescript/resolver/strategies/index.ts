@@ -3,6 +3,7 @@ export { TSThisMemberSymbolResolutionStrategy } from "./ts-this-member.js";
 export { TSFieldTypeSymbolResolutionStrategy } from "./ts-field-type.js";
 export { TSLocalBindingSymbolResolutionStrategy } from "./ts-local-binding.js";
 export { TSNamedImportSymbolResolutionStrategy } from "./ts-named-import.js";
+export { TSImportedCalleeSymbolResolutionStrategy } from "./ts-imported-callee.js";
 export { TSImportBasenameSymbolResolutionStrategy } from "./ts-import-basename.js";
 export { TSReceiverSymbolSymbolResolutionStrategy } from "./ts-receiver-symbol.js";
 export { TSSameFileSymbolResolutionStrategy } from "./ts-same-file.js";
@@ -22,4 +23,4 @@ export {
 export { TSTypeCheckerUnionReceiverDispatchResolver } from "./ts-type-checker-union-receiver.js";
 export { TSTypeCheckerReturnTypeInferenceSymbolResolutionStrategy } from "./ts-type-checker-return-type-inference.js";
 export { TSConeTypeLocator } from "./ts-cone-type-locator.js";
-export { collectImportedFiles, CONE_MAX_DEFAULT, type ResolverConfig } from "./shared.js";
+export { collectImportedFiles, CONE_MAX_DEFAULT, reexportOriginFile, type ResolverConfig } from "./shared.js";
