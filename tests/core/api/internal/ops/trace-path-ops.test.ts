@@ -1,15 +1,43 @@
 import { describe, expect, it, vi } from "vitest";
 
 import { TracePathOps } from "../../../../../src/core/api/internal/ops/trace-path-ops.js";
+import { fileScopedSymbolKey } from "../../../../../src/core/contracts/types/codegraph.js";
 
-function makeOps(overrides: Partial<Record<string, unknown>> = {}) {
-  const graphDb = {
-    getCalleeEdges: vi.fn(async (ids: string[]) => {
-      const g: Record<string, string[]> = { A: ["B"], B: ["C"], C: [] };
-      return new Map(ids.filter((i) => g[i]).map((i) => [i, g[i]]));
+/**
+ * Traversal is keyed on `(relPath, symbolId)` (bd tea-rags-mcp-oxnvl), so these
+ * fixtures give every symbol `X` the file `X.ts` — one file per symbol, no
+ * namesakes, which is what keeps the pre-existing expectations below unchanged.
+ * Namesake behaviour is covered in trace-path-namesakes.test.ts.
+ */
+function scopedGraphDb(adjacency: Record<string, string[]>) {
+  const fileOf = (symbolId: string) => `${symbolId}.ts`;
+  return {
+    getCalleeEdgesScoped: vi.fn(async (refs: { relPath: string; symbolId: string }[]) => {
+      const out = new Map<string, { relPath: string; symbolId: string }[]>();
+      for (const ref of refs) {
+        const targets = adjacency[ref.symbolId];
+        if (!targets) continue;
+        out.set(
+          fileScopedSymbolKey(ref),
+          targets.map((symbolId) => ({ relPath: fileOf(symbolId), symbolId })),
+        );
+      }
+      return out;
     }),
+    getSymbolRelPaths: vi.fn(
+      async (ids: string[]) =>
+        new Map(
+          ids
+            .filter((id) => adjacency[id] !== undefined || Object.values(adjacency).some((t) => t.includes(id)))
+            .map((id) => [id, [fileOf(id)]]),
+        ),
+    ),
     close: vi.fn(async () => undefined),
   };
+}
+
+function makeOps(overrides: Partial<Record<string, unknown>> = {}) {
+  const graphDb = scopedGraphDb({ A: ["B"], B: ["C"], C: [] });
   const pool = { acquireReader: vi.fn(async () => ({ graphDb, symbolTable: {} })) };
   const qdrant = {
     scrollBySymbolIds: vi.fn(async (_c: string, ids: string[]) =>
@@ -87,13 +115,7 @@ describe("TracePathOps.tracePath", () => {
 
   it("sorts the path list by aggregateDanger, most dangerous path first", async () => {
     // Diamond: A->B->D and A->C->D. C is the riskiest node (0.9); B is mild (0.2).
-    const graphDb = {
-      getCalleeEdges: vi.fn(async (ids: string[]) => {
-        const g: Record<string, string[]> = { A: ["B", "C"], B: ["D"], C: ["D"], D: [] };
-        return new Map(ids.filter((i) => g[i]).map((i) => [i, g[i]]));
-      }),
-      close: vi.fn(async () => undefined),
-    };
+    const graphDb = scopedGraphDb({ A: ["B", "C"], B: ["D"], C: ["D"], D: [] });
     const pool = { acquireReader: vi.fn(async () => ({ graphDb, symbolTable: {} })) };
     const danger: Record<string, number> = { A: 0.1, B: 0.2, C: 0.9, D: 0.1 };
     const qdrant = {
@@ -149,13 +171,7 @@ describe("TracePathOps.tracePath", () => {
   it("WITHOUT rerank keeps paths in enumeration order (no danger sort)", async () => {
     // Diamond A->B->D and A->C->D; without rerank both aggregateDanger absent,
     // so order is enumeration order, not danger-sorted.
-    const graphDb = {
-      getCalleeEdges: vi.fn(async (ids: string[]) => {
-        const g: Record<string, string[]> = { A: ["B", "C"], B: ["D"], C: ["D"], D: [] };
-        return new Map(ids.filter((i) => g[i]).map((i) => [i, g[i]]));
-      }),
-      close: vi.fn(async () => undefined),
-    };
+    const graphDb = scopedGraphDb({ A: ["B", "C"], B: ["D"], C: ["D"], D: [] });
     const pool = { acquireReader: vi.fn(async () => ({ graphDb, symbolTable: {} })) };
     const qdrant = {
       scrollBySymbolIds: vi.fn(async (_c: string, ids: string[]) =>
