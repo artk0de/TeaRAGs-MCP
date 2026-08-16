@@ -1660,6 +1660,20 @@ async function runOracle(repoRoot: string, targetDir: string, limit: number, qui
   const selection = await collectSourceFiles(repoRoot, targetDir, await buildCorpusExclusionFilter(repoRoot, factory));
   counters.ingestIgnoredFiles = selection.ingestIgnored;
   counters.codegraphExcludedFiles = selection.codegraphExcluded;
+  // An all-excluded corpus is a configuration answer, not a clean measurement,
+  // and a report of "0 sites, no mismatches" would read as a perfect score. It
+  // is a real configuration: the mastodon BENCH corpus ships a `.contextignore`
+  // excluding `/app/javascript/` and every `*.ts` because it exists to
+  // benchmark Ruby navigation, so production indexes no TypeScript there at all
+  // (bd tea-rags-mcp-2mvc2).
+  if (selection.kept.length === 0) {
+    throw new Error(
+      `No file under ${targetDir} survives the exclusions production applies ` +
+        `(${selection.ingestIgnored} dropped by .gitignore and friends, ` +
+        `${selection.codegraphExcluded} generated/test/non-app). ` +
+        `Check the project's ignore files — this corpus carries no indexable source for this harness.`,
+    );
+  }
   const scored: FileExtraction[] = [];
   const classExtends: Record<string, string> = {};
 
