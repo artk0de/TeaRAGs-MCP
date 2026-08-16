@@ -2,6 +2,7 @@ import { CONTINUE, resolved } from "../../../../../contracts/resolution.js";
 import { pickSingleCandidate, type CallContext, type CallRef } from "../../../../../contracts/types/codegraph.js";
 import type { SymbolResolutionOutcome, SymbolResolutionStrategy } from "../../../../../contracts/types/language.js";
 import { targetsExternalImport } from "../ts-external-call.js";
+import { checkerDeclaresCalleeIn, importBoundProjectFile } from "../ts-import-bound-callee.js";
 import { calleeIsLocalValueBinding } from "../ts-local-callee.js";
 import { receiverIsUnpinnableLocalValueBinding } from "../ts-local-receiver.js";
 import type { TSProgramCache } from "../ts-program-cache.js";
@@ -39,6 +40,15 @@ import type { ResolverConfig } from "./shared.js";
  * DECLARATION instead, and only when the checker also names no in-project type,
  * so a destructured receiver holding a real project instance keeps its edge.
  *
+ * A BARE call the caller IMPORTED is decided by the import, not by the index
+ * (bd tea-rags-mcp-d0xpr). Strict mode's ambiguity refusal only fires at N>1,
+ * and the measured defect is at N=1: taxdome's prototype galleries each own a
+ * `tableHelpers.ts` exporting `getRenderableContent = memoize(renderContent)`,
+ * which the walker does not name, so the only INDEXED symbol of that name sits
+ * in an unrelated `react-app` helper and every gallery's call landed on it. See
+ * {@link importBoundProjectFile} for why the import is authoritative and why the
+ * check is scoped to calls with no receiver.
+ *
  * The guard reads the resolver's `TSProgramCache` when one exists (bd
  * tea-rags-mcp-335eu), which is what lets it decline a receiver only the checker
  * could type — `const map = readRegistry(); map.set(k, v)`. The cache arrives as
@@ -60,7 +70,26 @@ export class TSGlobalShortNameSymbolResolutionStrategy implements SymbolResoluti
     if (receiverIsUnpinnableLocalValueBinding(call, ctx, this.programCache)) return CONTINUE;
     const fallback = ctx.symbolTable.lookupByShortName(call.member);
     const hit = pickSingleCandidate(fallback, this.cfg.mode);
-    if (hit) return resolved({ targetRelPath: hit.relPath, targetSymbolId: hit.symbolId });
-    return CONTINUE;
+    if (!hit) return CONTINUE;
+    if (this.importContradictsCandidate(call, ctx, hit.relPath)) return CONTINUE;
+    return resolved({ targetRelPath: hit.relPath, targetSymbolId: hit.symbolId });
+  }
+
+  /**
+   * Does the caller's own import say this candidate is the wrong FILE
+   * (bd tea-rags-mcp-d0xpr)?
+   *
+   * Cheap half first, and it is the one that keeps the checker out of the
+   * resolving path: an import that binds the bare callee to the candidate's own
+   * file — or no such import at all — agrees, and nothing more is asked. Only a
+   * DISAGREEMENT is worth a checker query, and only the checker can read it,
+   * since a barrel re-export and a same-name coincidence look identical to the
+   * symbol table.
+   */
+  private importContradictsCandidate(call: CallRef, ctx: CallContext, candidateFile: string): boolean {
+    const boundFile = importBoundProjectFile(call, ctx, this.cfg.tsOptions, this.cfg.fileExists);
+    if (boundFile === null || boundFile === candidateFile) return false;
+    const declaredIn = checkerDeclaresCalleeIn(call, ctx, this.programCache);
+    return declaredIn !== null && declaredIn !== candidateFile;
   }
 }
