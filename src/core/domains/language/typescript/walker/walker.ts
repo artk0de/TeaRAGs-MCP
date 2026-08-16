@@ -132,22 +132,68 @@ export function extractFromTypescriptFile(input: ExtractInput): FileExtraction {
 /**
  * Every runtime module dependency the file declares, in one channel.
  *
- * Three source shapes reach `imports[]`, each with its own collector:
- *   - `import … from "./y"` — ESM (`collectEsmImport`)
- *   - `export … from "./y"` — re-export (`collectReexport`, bd tea-rags-mcp-f2u54)
- *   - `require("./y")`      — CJS interop (`collectRequire`, bd tea-rags-mcp-f2u54)
+ * Four source shapes reach `imports[]`, each with its own collector:
+ *   - `import … from "./y"`  — ESM (`collectEsmImport`)
+ *   - `export … from "./y"`  — re-export (`collectReexport`, bd tea-rags-mcp-f2u54)
+ *   - `require("./y")`       — CJS interop (`collectRequire`, bd tea-rags-mcp-f2u54)
+ *   - `await import("./y")`  — dynamic ESM (`collectDynamicImport`, bd tea-rags-mcp-w65s7)
  *
- * They share the channel because the graph asks one question of all three —
+ * They share the channel because the graph asks one question of all four —
  * "which files does this file load at runtime" — and answers it identically.
+ *
+ * A SECOND pass then attributes members destructured off an already-imported
+ * namespace to that namespace's module (`attachNamespaceMemberBindings`). It
+ * cannot run inside the walk above: it needs the finished import list to know
+ * which identifiers name a module in the first place.
  */
 function collectImports(root: AstNode): ImportRef[] {
   const out: ImportRef[] = [];
   walk(root, (node) => {
     if (node.type === "import_statement") collectEsmImport(node, out);
     else if (node.type === "export_statement") collectReexport(node, out);
-    else if (node.type === "call_expression") collectRequire(node, out);
+    else if (node.type === "call_expression") {
+      collectRequire(node, out);
+      collectDynamicImport(node, out);
+    }
   });
+  attachNamespaceMemberBindings(root, out);
   return out;
+}
+
+/**
+ * One local binding a module reference introduces, and the member it names.
+ *
+ * `exported` is `null` for a binding that stands for the WHOLE module — a
+ * default import, a `* as ns` namespace, `const mod = require("./m")`. Those
+ * are real local names (so they belong in `importedNames`) but no single
+ * exported member answers a call on them, so they contribute no
+ * `importedBindings` entry.
+ */
+interface ModuleBinding {
+  local: string;
+  exported: string | null;
+}
+
+/** A {@link ModuleBinding} that DOES name an exported member. */
+interface NamedModuleBinding extends ModuleBinding {
+  exported: string;
+}
+
+/** Narrowing predicate for the `exported !== null` half of a binding list. */
+function namesAnExportedMember(binding: ModuleBinding): binding is NamedModuleBinding {
+  return binding.exported !== null;
+}
+
+/**
+ * Write a collector's bindings onto the `ImportRef` it belongs to — the ONE
+ * place both name channels are populated, so they cannot drift apart
+ * (bd tea-rags-mcp-w65s7).
+ */
+function applyModuleBindings(ref: ImportRef, bindings: readonly ModuleBinding[]): void {
+  if (bindings.length === 0) return;
+  ref.importedNames = bindings.map((b) => b.local);
+  const named = bindings.filter(namesAnExportedMember);
+  if (named.length > 0) ref.importedBindings = Object.fromEntries(named.map((b) => [b.local, b.exported]));
 }
 
 /** Strip the surrounding quotes from a tree-sitter `string` node's text. */
@@ -173,9 +219,10 @@ function collectEsmImport(node: AstNode, out: ImportRef[]): void {
   // default import, `* as ns` namespace, and each named specifier's
   // local name (alias when present, else the imported name). Bare
   // side-effect imports have no `import_clause` → undefined.
-  const importedNames = collectImportedNames(node);
+  // bd tea-rags-mcp-w65s7 — each named specifier ALSO records the member it
+  // reaches, which is the half an alias throws away.
   const ref: ImportRef = { importText: stringLiteralText(src), startLine: node.startPosition.row + 1 };
-  if (importedNames.length > 0) ref.importedNames = importedNames;
+  applyModuleBindings(ref, collectImportedBindings(node));
   out.push(ref);
 }
 
@@ -232,72 +279,192 @@ function collectRequire(node: AstNode, out: ImportRef[]): void {
   const first = node.childForFieldName("arguments")?.namedChildren[0];
   if (first?.type !== "string") return;
   const ref: ImportRef = { importText: stringLiteralText(first), startLine: node.startPosition.row + 1 };
-  const names = requireBindingNames(node.parent);
-  if (names.length > 0) ref.importedNames = names;
+  applyModuleBindings(ref, moduleCallBindings(node));
   out.push(ref);
 }
 
 /**
- * Local names a `require()` call binds, read from the declarator that owns it.
- * Mirrors {@link collectImportedNames}' alias discipline — the LOCAL name wins
- * (`const { a: local } = require(…)` binds `local`, exactly as `import { a as
- * local }` does). A bare side-effect `require("./polyfill")` has no declarator
- * parent and binds nothing.
+ * Dynamic ESM — `await import("./y")` and its non-awaited twin
+ * (bd tea-rags-mcp-w65s7). The grammar gives the call an `import` KEYWORD as
+ * its `function` child rather than an identifier, which is why `collectRequire`
+ * never saw one: before this, a file whose dependencies were all lazily
+ * imported looked like a leaf, and every call on a destructured binding was
+ * unresolvable because no import named the module it came from.
+ *
+ * Measured on this repo (bd tea-rags-mcp-w65s7): 17 of the type-checker
+ * oracle's missed defects were this one shape, across four CLI commands and the
+ * index-progress worker.
+ *
+ * A non-literal specifier (`import(path)`) is not a knowable dependency and
+ * contributes nothing, exactly as for `require`.
  */
-function requireBindingNames(declarator: AstNode | null): string[] {
-  if (declarator?.type !== "variable_declarator") return [];
-  const target = declarator.childForFieldName("name");
-  if (!target) return [];
-  if (target.type === "identifier") return [target.text];
-  if (target.type !== "object_pattern") return [];
-  const names: string[] = [];
-  for (const child of target.namedChildren) {
-    if (child.type === "shorthand_property_identifier_pattern") names.push(child.text);
-    else if (child.type === "pair_pattern") {
-      const local = child.childForFieldName("value");
-      if (local?.type === "identifier") names.push(local.text);
-    }
-  }
-  return names;
+function collectDynamicImport(node: AstNode, out: ImportRef[]): void {
+  const callee = node.childForFieldName("function");
+  if (callee?.type !== "import") return;
+  // A TYPE-position `import()` is erased at compile time and loads nothing —
+  // the same reason `import type { X }` is filtered above (bd tea-rags-mcp-m19a).
+  // The grammar gives it the same `call_expression` node as the runtime form, so
+  // it has to be told apart by where it sits.
+  if (isTypePositionCall(node)) return;
+  const first = node.childForFieldName("arguments")?.namedChildren[0];
+  if (first?.type !== "string") return;
+  const ref: ImportRef = { importText: stringLiteralText(first), startLine: node.startPosition.row + 1 };
+  applyModuleBindings(ref, moduleCallBindings(node));
+  out.push(ref);
 }
 
 /**
- * Read the local binding names introduced by an `import_statement`.
+ * Ancestors that put an expression inside a TYPE — `let a: import("./x").Foo`,
+ * `type A = Array<import("./x").Bar>`, `typeof import("./x")`,
+ * `w as import("./x").T`. All erased at compile time.
+ */
+const TYPE_POSITION_ANCESTORS: ReadonlySet<string> = new Set([
+  "type_annotation",
+  "type_alias_declaration",
+  "type_arguments",
+  "type_parameters",
+  "type_query",
+  "as_expression",
+  "satisfies_expression",
+  "extends_type_clause",
+  "implements_clause",
+  "constraint",
+  "default_type",
+]);
+
+/**
+ * Ancestors that prove the expression is a VALUE, whatever sits above them.
+ * The ascent stops here rather than continuing, because a runtime import can
+ * legitimately be nested inside a type-ish parent further up —
+ * `(await import("./m")) as Facade` is a value cast, not a type import.
+ */
+const VALUE_POSITION_ANCESTORS: ReadonlySet<string> = new Set([
+  "await_expression",
+  "arguments",
+  "call_expression",
+  "statement_block",
+  "program",
+]);
+
+/** Is this call an operand of a TYPE rather than a runtime expression? */
+function isTypePositionCall(call: AstNode): boolean {
+  for (let cur = call.parent; cur; cur = cur.parent) {
+    if (VALUE_POSITION_ANCESTORS.has(cur.type)) return false;
+    if (TYPE_POSITION_ANCESTORS.has(cur.type)) return true;
+  }
+  return false;
+}
+
+/**
+ * Bindings a module-loading CALL introduces, read from the declarator that owns
+ * it — `require("./m")` and `import("./m")` alike. An `await` sits between the
+ * call and its declarator, so it is stepped through; anything else means the
+ * result was not bound to a name (a bare side-effect load, an inline
+ * `(await import("./m")).run()`) and binds nothing.
+ */
+function moduleCallBindings(call: AstNode): ModuleBinding[] {
+  const owner = call.parent?.type === "await_expression" ? call.parent.parent : call.parent;
+  if (owner?.type !== "variable_declarator") return [];
+  const target = owner.childForFieldName("name");
+  if (!target) return [];
+  // A whole-module binding names no single exported member.
+  if (target.type === "identifier") return [{ local: target.text, exported: null }];
+  if (target.type !== "object_pattern") return [];
+  return objectPatternBindings(target);
+}
+
+/**
+ * Local → exported names an object destructuring pattern binds. Mirrors
+ * {@link collectImportedBindings}' alias discipline — the LOCAL name is the
+ * key (`const { a: local } = …` binds `local`, exactly as `import { a as local }`
+ * does) and the property name is what the module exports.
+ */
+function objectPatternBindings(pattern: AstNode): NamedModuleBinding[] {
+  const bindings: NamedModuleBinding[] = [];
+  for (const child of pattern.namedChildren) {
+    if (child.type === "shorthand_property_identifier_pattern") {
+      bindings.push({ local: child.text, exported: child.text });
+    } else if (child.type === "pair_pattern") {
+      const local = child.childForFieldName("value");
+      const key = child.childForFieldName("key");
+      if (local?.type === "identifier" && key) bindings.push({ local: local.text, exported: key.text });
+    }
+  }
+  return bindings;
+}
+
+/**
+ * `const { pathIds } = DirectoryHelper` — a member pulled off a namespace the
+ * file already imported (bd tea-rags-mcp-w65s7). The destructured name is
+ * called BARE from then on, and nothing in the import list connected it to a
+ * module, so the chain had only a global short-name guess to offer.
+ *
+ * The member is recorded on the OWNING import's `importedBindings` and
+ * deliberately NOT on its `importedNames`: that channel drives receiver
+ * matching and gates which subscript receivers count as dispatch tables, and a
+ * destructured member is neither. First writer wins, so a later re-destructure
+ * of the same name under a different namespace cannot retarget the first.
+ */
+function attachNamespaceMemberBindings(root: AstNode, imports: ImportRef[]): void {
+  const byLocalName = new Map<string, ImportRef>();
+  for (const imp of imports) for (const name of imp.importedNames ?? []) byLocalName.set(name, imp);
+  if (byLocalName.size === 0) return;
+  walk(root, (node) => {
+    if (node.type !== "variable_declarator") return;
+    const target = node.childForFieldName("name");
+    const value = node.childForFieldName("value");
+    if (target?.type !== "object_pattern" || value?.type !== "identifier") return;
+    const owner = byLocalName.get(value.text);
+    if (!owner) return;
+    for (const binding of objectPatternBindings(target)) {
+      owner.importedBindings ??= {};
+      owner.importedBindings[binding.local] ??= binding.exported;
+    }
+  });
+}
+
+/**
+ * Read the bindings introduced by an `import_statement` — each LOCAL name and,
+ * where one exists, the member the module exports it under.
  *
  * tree-sitter-typescript shapes inside `import_clause`:
- *   - default import:   `identifier "Foo"`                  → "Foo"
- *   - namespace import: `namespace_import ("*" "as" name)`  → local name
- *   - named imports:    `named_imports → import_specifier`  → alias if
- *     present (`{ A as B }` → "B"), else the imported `name` (`{ A }` → "A").
+ *   - default import:   `identifier "Foo"`                  → local "Foo", no member
+ *   - namespace import: `namespace_import ("*" "as" name)`  → local name, no member
+ *   - named imports:    `named_imports → import_specifier`  → local is the alias
+ *     if present (`{ A as B }` → "B"), else the imported `name` (`{ A }` → "A");
+ *     the exported member is always the `name` field.
  *
- * Returns the names in source order. Empty when the statement is a bare
+ * Returns the bindings in source order. Empty when the statement is a bare
  * side-effect import (`import "./x"`) — no `import_clause` child.
  */
-function collectImportedNames(node: AstNode): string[] {
+function collectImportedBindings(node: AstNode): ModuleBinding[] {
   const clause = node.children.find((c) => c.type === "import_clause");
   if (!clause) return [];
-  const names: string[] = [];
+  const bindings: ModuleBinding[] = [];
   for (const child of clause.children) {
     if (child.type === "identifier") {
-      // Default import binding — `import Foo from "..."`.
-      names.push(child.text);
+      // Default import binding — `import Foo from "..."`. The exported name is
+      // `default`, which no symbol table entry is keyed on, so it names no
+      // member here.
+      bindings.push({ local: child.text, exported: null });
     } else if (child.type === "namespace_import") {
-      // `* as ns` — the local binding is the identifier after `as`.
+      // `* as ns` — the local binding is the identifier after `as`, and it
+      // stands for the whole module rather than one member.
       const local = child.children.find((c) => c.type === "identifier");
-      if (local) names.push(local.text);
+      if (local) bindings.push({ local: local.text, exported: null });
     } else if (child.type === "named_imports") {
       for (const spec of child.children) {
         if (spec.type !== "import_specifier") continue;
         // `alias` field is the local name for `{ A as B }`; otherwise the
         // `name` field is both the imported and the local name.
-        const alias = spec.childForFieldName("alias");
         const name = spec.childForFieldName("name");
-        const local = alias ?? name;
-        if (local) names.push(local.text);
+        if (!name) continue;
+        const alias = spec.childForFieldName("alias");
+        bindings.push({ local: (alias ?? name).text, exported: name.text });
       }
     }
   }
-  return names;
+  return bindings;
 }
 
 /**

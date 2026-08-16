@@ -314,6 +314,28 @@ export interface ImportRef {
    * it — every other-language walker keeps emitting `ImportRef` unchanged.
    */
   importedNames?: string[];
+  /**
+   * Optional map from each LOCAL binding name to the name the MODULE exports it
+   * under (bd tea-rags-mcp-w65s7). `import { create as createAction } from
+   * "./repo"` is `{ createAction: "create" }`; an unaliased `{ create }` is the
+   * identity entry `{ create: "create" }`, so the map is a COMPLETE binding
+   * table for every specifier that names a member.
+   *
+   * Distinct from {@link importedNames}, which answers "what can a RECEIVER be
+   * called here" and is also the dispatch-table gate. This one answers "if this
+   * identifier is CALLED, which exported member does it reach" — the question a
+   * bare call asks, and the one an alias makes unanswerable from the local name
+   * alone. A default import and a `* as ns` namespace bind no single exported
+   * member, so they appear in `importedNames` and NOT here.
+   *
+   * Every shape that introduces a callable module binding feeds it: ESM named
+   * specifiers, `require` destructures, destructured dynamic `import()`, and a
+   * member destructured off an already-imported namespace
+   * (`const { pathIds } = DirectoryHelper`) — the last of which adds a key
+   * WITHOUT adding to `importedNames`, since it is neither a receiver name nor
+   * a dispatch table.
+   */
+  importedBindings?: Record<string, string>;
 }
 
 export interface ChunkExtraction {
