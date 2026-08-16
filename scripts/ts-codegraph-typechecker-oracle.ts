@@ -29,10 +29,45 @@
  * bounded import closure, so counting those against the chain would measure the
  * oracle's blind spot rather than the resolver's.
  *
- * MEASUREMENT CUTOVER — `phantom` changed meaning on 2026-08-10, in the commit
- * carrying bd tea-rags-mcp-ffju3 (`git log --grep=ffju3 -- scripts/`). RAW
- * PHANTOM COUNTS FROM BEFORE THAT COMMIT ARE NOT COMPARABLE WITH COUNTS FROM
- * AFTER IT. The external branch of
+ * MEASUREMENT CUTOVER — 2026-08-16, bd tea-rags-mcp-2mvc2. Three of the
+ * harness's own defects were fixed at once, and each moves counts that were
+ * never about the resolver. `missed`, `wrongFile` and `nodeNotLocated` FROM
+ * BEFORE THAT COMMIT ARE NOT COMPARABLE WITH COUNTS FROM AFTER IT.
+ *
+ *   - EXTERNAL SYMMETRY. The checker branch tested only `build/ | dist/ |
+ *     .d.ts` for "not project source" while the chain branch also tested
+ *     `node_modules/`. A dependency shipping `.d.mts` / `.d.cts` typings
+ *     (zustand, msw, zod, openai) therefore scored as IN-PROJECT ground truth,
+ *     and every chain decline against it read as a recall gap. Both sides now
+ *     ask `isOutsideProjectSource`, which covers the whole `node_modules`
+ *     segment (nested workspace copies included) and every declaration-file
+ *     suffix. On taxdome this removed 812 `missed` and 237 `wrongFile`, and
+ *     with them the `structuralTyping` category's 91.3% mismatch rate — that
+ *     rate was measuring package typings, not structural typing.
+ *   - THE `.js` BLIND SPOT. The walk collected `.ts` / `.tsx` only, so a
+ *     TypeScript call into a `.js` / `.jsx` declaration hit a symbol table that
+ *     had never heard of the target and scored `missed` / `unpinnedTarget`.
+ *     Production indexes those extensions (`CODEGRAPH_LANGUAGES` maps them to
+ *     javascript) into ONE cross-language symbol table per run. The walk now
+ *     does the same. Their own call sites are still NOT scored — that would
+ *     diff the JavaScript resolver against a chain built from `TSCallResolver`.
+ *   - THE ORACLE'S OWN BLIND SPOT. `nodeNotLocated` was 28.1% of taxdome's
+ *     call sites (53,852, 96% of them `bareCall`), i.e. more than a quarter of
+ *     the corpus carried no ground truth at all. The cause was not a defect in
+ *     `findCallExpression`: the walker emits `CallRef`s for THREE AST families
+ *     and only one of them is a `ts.CallExpression`. A JSX component tag and a
+ *     `new` expression are different node kinds, and the coordinates the walker
+ *     records for them (`member` = tag name, `member` = "constructor") are not
+ *     callee names. Both are located now — JSX through the production
+ *     strategy's own `findJsxTagName`, `new` through a harness-local finder,
+ *     since production resolves `new` without the checker and has no second
+ *     implementation to drift from. What remains unlocatable is reported by
+ *     SHAPE rather than as one opaque number; see {@link OracleUnlocatedShape}.
+ *
+ * `phantom` changed meaning earlier, on 2026-08-10, in the commit carrying bd
+ * tea-rags-mcp-ffju3 (`git log --grep=ffju3 -- scripts/`). RAW PHANTOM COUNTS
+ * FROM BEFORE THAT COMMIT ARE NOT COMPARABLE WITH COUNTS FROM AFTER IT. The
+ * external branch of
  * `diffResolution` used to call ANY non-null chain answer a phantom, and the
  * chain routinely answers with a `node_modules` declaration — the very
  * conclusion the checker reached. On this repo's `src/` that misfiled 3510 of
@@ -51,9 +86,14 @@
  * Program per entry file from a depth-bounded import closure, so a second cache
  * with different bounds would produce disagreements that are Program-scope
  * artifacts rather than resolver defects. Symbol pinning reuses the strategy's
- * own `composeSymbolId`, and node lookup its own `findCallExpression`, for the
- * same reason — the Ruby harness's header records a real measurement bug caused
- * by a hand-copied helper drifting from the original.
+ * own `composeSymbolId`, and node lookup its own `findCallExpression` and
+ * `findJsxTagName`, for the same reason — the Ruby harness's header records a
+ * real measurement bug caused by a hand-copied helper drifting from the
+ * original. What is deliberately NOT shared is the QUERY: the oracle asks
+ * `getResolvedSignature` about the located node even where production's JSX
+ * pass asks `getSymbolAtLocation` about the tag, because sharing the coordinate
+ * keeps the two sides pointed at one call site while sharing the question would
+ * make the diff a tautology.
  *
  * The flip side is a bound worth stating: a declaration outside that closure is
  * invisible to BOTH sides, so this measures the resolver, not the ceiling of
@@ -97,6 +137,7 @@ import {
   composeSymbolId,
   findCallExpression,
 } from "../src/core/domains/language/typescript/resolver/strategies/ts-type-checker-fallback.js";
+import { findJsxTagName } from "../src/core/domains/language/typescript/resolver/strategies/ts-type-checker-jsx-component.js";
 import type {
   TSProgramCache,
   TSProgramHandle,
@@ -214,6 +255,12 @@ export interface OracleRow {
   chain?: OracleAnswer;
   /** What the checker's declaration is. Absent when the checker located none. */
   target?: OracleTargetFacts;
+  /**
+   * Why the oracle had no node to ask about. Present exactly on the rows that
+   * carry NO ground truth for that reason, so the harness's own blind spot is
+   * readable off the rows rather than only as an aggregate counter.
+   */
+  unlocatedShape?: OracleUnlocatedShape;
 }
 
 /** The chain's own answer shape: a pinned symbol, a bare file, or nothing. */
@@ -249,6 +296,17 @@ export function tallyChainOutput(rows: readonly OracleRow[]): ChainOutputTally {
   return tally;
 }
 
+/** Call sites the oracle could not locate a node for, by shape. */
+export type OracleUnlocatedTally = Record<OracleUnlocatedShape, number>;
+
+export function tallyUnlocatedShapes(rows: readonly OracleRow[]): OracleUnlocatedTally {
+  const tally = Object.fromEntries(ORACLE_UNLOCATED_SHAPES.map((shape) => [shape, 0])) as OracleUnlocatedTally;
+  for (const row of rows) {
+    if (row.unlocatedShape !== undefined) tally[row.unlocatedShape]++;
+  }
+  return tally;
+}
+
 /** Verdict counts for one label, plus the two rates the ranking reads. */
 export interface OracleTally {
   label: string;
@@ -275,9 +333,24 @@ export interface OracleTally {
  * A repo-relative path that is not project source — package typings, generated
  * output, or any declaration file. A chain answer landing here is the chain
  * saying "this call leaves the project", which is a conclusion and not an edge.
+ *
+ * BOTH sides of the diff ask this one question (bd tea-rags-mcp-2mvc2). They
+ * used not to: the checker branch tested `isNonSourceTarget` alone, so a
+ * dependency's `.d.mts` was in-project ground truth on one side and external on
+ * the other, and the asymmetry manufactured recall gaps out of package typings.
  */
 function isOutsideProjectSource(relPath: string): boolean {
-  return relPath.startsWith("node_modules/") || isNonSourceTarget(relPath);
+  return isDependencyPath(relPath) || isNonSourceTarget(relPath);
+}
+
+/**
+ * Anything under a `node_modules` SEGMENT, nested workspace copies included —
+ * the same whole-segment test `TSProgramCache#toProjectSourceRelPath` applies,
+ * so the harness cannot call a dependency in-project that production would not.
+ * A path merely NAMED like one (`src/node_modules_helper.ts`) is project code.
+ */
+function isDependencyPath(relPath: string): boolean {
+  return relPath === "node_modules" || relPath.startsWith("node_modules/") || relPath.includes("/node_modules/");
 }
 
 /**
@@ -470,7 +543,7 @@ export function formatOracleTable(title: string, tallies: readonly OracleTally[]
 // ---------------------------------------------------------------------------
 
 /** Why a `wrongFile` is, or is not, a precision defect. */
-export type OracleWrongFileReason = "interfaceVsImpl" | "declarationSitePath" | "defect";
+export type OracleWrongFileReason = "interfaceVsImpl" | "declarationSitePath" | "inheritedConstructor" | "defect";
 
 /** Why a `missed` is, or is not, a recall defect. */
 export type OracleMissedReason = "anonymousCallable" | "unpinnedTarget" | "defect";
@@ -513,12 +586,42 @@ function namesTheSameMember(chain: OracleAnswer | undefined, target: OracleTarge
 }
 
 /**
+ * A `super(...)` site where the two sides disagree only about HOW FAR UP the
+ * hierarchy to point (bd tea-rags-mcp-2mvc2).
+ *
+ * `class DuckDBError extends InfraError` calling `super(…)` where `InfraError`
+ * declares no constructor of its own: the checker names the declaration that
+ * actually runs, three classes up in `TeaRagsError`, while the chain names the
+ * IMMEDIATE parent's synthetic `constructor` — the node the chunker emitted and
+ * the one the graph models the hierarchy with. Both edges are well-formed and
+ * they describe the same call; counting the difference as a fabricated target
+ * would have added 38 phantom defects to this repo's residual the day
+ * `super()` first became locatable, with nothing about the resolver changed.
+ *
+ * Deliberately narrow. It fires only on a `super` receiver — the one idiom
+ * whose target is reached through inheritance rather than through a name — so a
+ * `new Foo()` answered with `Bar#constructor`, which IS a wrong target, keeps
+ * counting as a defect.
+ */
+function isInheritedConstructorHop(row: OracleRow): boolean {
+  return (
+    row.receiverKind === "super" &&
+    row.target?.declarationKind === "Constructor" &&
+    row.chain?.targetSymbolId !== null &&
+    row.chain !== undefined &&
+    lastSegment(row.chain.targetSymbolId ?? "") === "constructor"
+  );
+}
+
+/**
  * Reconcile one `wrongFile`. Interface-versus-implementation is agreement
  * expressed differently, not a heuristic firing wrong.
  */
 export function reconcileOracleWrongFile(row: OracleRow): OracleWrongFileReason {
   const { target } = row;
-  if (target === undefined || !namesTheSameMember(row.chain, target)) return "defect";
+  if (target === undefined) return "defect";
+  if (isInheritedConstructorHop(row)) return "inheritedConstructor";
+  if (!namesTheSameMember(row.chain, target)) return "defect";
   if (target.declarationOnly) return "interfaceVsImpl";
   return isDeclarationSitePath(target.relPath) ? "declarationSitePath" : "defect";
 }
@@ -560,7 +663,13 @@ export function reconcileOraclePhantom(row: OracleRow): OraclePhantomReason {
 /** Raw mismatch counts for one label, split by reason, with the residual named. */
 export interface OracleMismatchDecomposition {
   label: string;
-  wrongFile: { total: number; interfaceVsImpl: number; declarationSitePath: number; defect: number };
+  wrongFile: {
+    total: number;
+    interfaceVsImpl: number;
+    declarationSitePath: number;
+    inheritedConstructor: number;
+    defect: number;
+  };
   missed: { total: number; anonymousCallable: number; unpinnedTarget: number; defect: number };
   phantom: {
     total: number;
@@ -576,7 +685,7 @@ export interface OracleMismatchDecomposition {
 function emptyDecomposition(label: string): OracleMismatchDecomposition {
   return {
     label,
-    wrongFile: { total: 0, interfaceVsImpl: 0, declarationSitePath: 0, defect: 0 },
+    wrongFile: { total: 0, interfaceVsImpl: 0, declarationSitePath: 0, inheritedConstructor: 0, defect: 0 },
     missed: { total: 0, anonymousCallable: 0, unpinnedTarget: 0, defect: 0 },
     phantom: {
       total: 0,
@@ -643,6 +752,7 @@ export function formatDecompositionTable(
     "wrongFile",
     "ifaceImpl",
     "declPath",
+    "superCtor",
     "wfDefect",
     "missed",
     "anonFn",
@@ -670,6 +780,7 @@ export function formatDecompositionTable(
           d.wrongFile.total,
           d.wrongFile.interfaceVsImpl,
           d.wrongFile.declarationSitePath,
+          d.wrongFile.inheritedConstructor,
           d.wrongFile.defect,
           d.missed.total,
           d.missed.anonymousCallable,
@@ -706,6 +817,8 @@ interface OracleQueryResult {
   categories: string[];
   /** What the located declaration IS, for decomposition. Absent when none was located. */
   target?: OracleTargetFacts;
+  /** Why no node was located. Present exactly when `located` is `false`. */
+  unlocatedShape?: OracleUnlocatedShape;
 }
 
 const NO_ORACLE: OracleQueryResult = {
@@ -716,6 +829,13 @@ const NO_ORACLE: OracleQueryResult = {
 };
 
 /**
+ * Every declaration-file suffix TypeScript recognises. `.d.ts` alone is not the
+ * set: a package shipping ESM or CJS typings writes `.d.mts` / `.d.cts`, and
+ * those do not END with `.d.ts` (bd tea-rags-mcp-2mvc2).
+ */
+const DECLARATION_FILE_SUFFIXES = [".d.ts", ".d.mts", ".d.cts"] as const;
+
+/**
  * Compiled and generated outputs that are inside the repo root but are not
  * source. `toRelPath` accepts them because they are under the root, and a
  * declaration resolved into `build/` would then be scored against the `src/`
@@ -723,7 +843,178 @@ const NO_ORACLE: OracleQueryResult = {
  * worktree having been built. They are external for measurement purposes.
  */
 function isNonSourceTarget(relPath: string): boolean {
-  return relPath.startsWith("build/") || relPath.startsWith("dist/") || relPath.endsWith(".d.ts");
+  return (
+    relPath.startsWith("build/") ||
+    relPath.startsWith("dist/") ||
+    DECLARATION_FILE_SUFFIXES.some((suffix) => relPath.endsWith(suffix))
+  );
+}
+
+/**
+ * Why the harness could not put a `CallRef` on a node the checker will answer
+ * about — the taxonomy of its OWN blind spot (bd tea-rags-mcp-2mvc2).
+ *
+ * On taxdome this was 28.1% of all call sites reported as one opaque
+ * `nodeNotLocated` counter, which is not a number anybody can act on: it mixes
+ * shapes the harness simply never looked for with coordinates that genuinely
+ * failed to line up. Split by shape it says which, and the first two are now
+ * located rather than counted.
+ *
+ *   - `jsxTag` — `<Card />`. A `ts.JsxSelfClosingElement`, not a
+ *     `CallExpression`; located via the production pass's `findJsxTagName`.
+ *   - `constructorCall` — `new Repo()`. A `ts.NewExpression`, and the walker
+ *     records `member: "constructor"`, which is nobody's callee name; located
+ *     via {@link findNewExpression}.
+ *   - `superCall` — `super(...)`. A `CallExpression` whose callee is the
+ *     `super` keyword rather than an identifier, so `callSiteAt` cannot index
+ *     it; located via {@link findSuperCall}. The walker re-shapes it to
+ *     `{ receiver: "super", member: "constructor" }` (bd tea-rags-mcp-3a84),
+ *     which is why this arm has to be tested BEFORE `constructorCall` —
+ *     otherwise every `super()` reads as a `new` expression and the harness
+ *     hunts for a `new super()` that cannot exist.
+ *   - `dynamicSend` — `obj[key]()`, `registry[k].call(x)`. The walker tags
+ *     these itself and production drops them from the resolve denominator; the
+ *     checker cannot name a target for a computed callee either.
+ *   - `dynamicImport` — `import("./x")`. The walker files it under member
+ *     `import`, and the compiler's `ImportKeyword` is not an identifier, so
+ *     `callSiteAt` never indexed it. Deliberately NOT located: the target of a
+ *     dynamic import is a MODULE, and `getResolvedSignature` has no signature
+ *     to select. The import-edge channel owns these, not the call channel.
+ *   - `methodReference` — `arr.map(this.tick)`. The walker emits an edge for a
+ *     method passed as a VALUE, at the argument's own coordinate. There is no
+ *     call-like node there at all — `callText` carries no `(` — so this is a
+ *     ground-truth gap by construction, not a lookup failure.
+ *   - `coordinateMiss` — everything else: a real call whose `(line, member)`
+ *     the index has no entry for. This is the only bucket that would indicate a
+ *     defect in the finders, and keeping it as the small residual is what makes
+ *     the other six auditable. On this repo's `src` it is 15 of 15,466 sites,
+ *     dominated by `f.bind(x)` — the walker unwraps the invoker and records the
+ *     UNWRAPPED member, while the line's only indexed callee name is `bind`.
+ */
+export type OracleUnlocatedShape =
+  | "jsxTag"
+  | "constructorCall"
+  | "superCall"
+  | "dynamicSend"
+  | "dynamicImport"
+  | "methodReference"
+  | "coordinateMiss";
+
+export const ORACLE_UNLOCATED_SHAPES: readonly OracleUnlocatedShape[] = [
+  "jsxTag",
+  "constructorCall",
+  "superCall",
+  "dynamicSend",
+  "dynamicImport",
+  "methodReference",
+  "coordinateMiss",
+] as const;
+
+/**
+ * Which shape a `CallRef` the harness failed to locate has. Read off the ref
+ * alone — the walker records enough to decide every bucket without re-parsing,
+ * and a classifier that needed the AST could not run on the failure path.
+ *
+ * Order is precedence, worst-understood last. `jsxTag` outranks the rest
+ * because a dotted tag (`<UI.Panel />`) carries a receiver that would otherwise
+ * read as an ordinary member call.
+ */
+export function classifyUnlocatedCallShape(call: CallRef): OracleUnlocatedShape {
+  if (call.jsx === true) return "jsxTag";
+  if (call.receiver === "super" || call.member === "super") return "superCall";
+  if (call.member === "constructor") return "constructorCall";
+  if (call.dynamicSend === true) return "dynamicSend";
+  // `import` is a reserved word, so no project function can be filed under it.
+  if (call.member === "import") return "dynamicImport";
+  return call.callText.includes("(") ? "coordinateMiss" : "methodReference";
+}
+
+/**
+ * The call-like node one `CallRef` names, or `null` when the harness has none
+ * to offer the checker.
+ *
+ * Three AST families, because the walker emits `CallRef`s for three and only
+ * one of them is a `ts.CallExpression`. `ts.CallLikeExpression` is the type
+ * `getResolvedSignature` accepts, so all three reach the same query.
+ */
+function locateCallLike(sourceFile: ts.SourceFile, call: CallRef): ts.CallLikeExpression | null {
+  if (call.jsx === true) {
+    const tagName = findJsxTagName(sourceFile, call.startLine, call.member);
+    return tagName === null ? null : (tagName.parent as ts.JsxOpeningLikeElement);
+  }
+  if (call.member === "constructor" && call.receiver !== null) {
+    return call.receiver === "super"
+      ? findSuperCall(sourceFile, call.startLine)
+      : findNewExpression(sourceFile, call.startLine, call.receiver);
+  }
+  return findCallExpression(sourceFile, call.startLine, call.member);
+}
+
+/**
+ * The `super(...)` call starting on `startLine`. No member coordinate is
+ * needed: a constructor body may contain at most one, so the line identifies
+ * it. `getResolvedSignature` answers with the BASE class's constructor, which
+ * is exactly the edge the chain's `super.X()` branch emits.
+ */
+function findSuperCall(sourceFile: ts.SourceFile, startLine: number): ts.CallExpression | null {
+  let found: ts.CallExpression | null = null;
+
+  const visit = (node: ts.Node): void => {
+    if (found !== null) return;
+    if (ts.isCallExpression(node) && node.expression.kind === ts.SyntaxKind.SuperKeyword) {
+      const line = sourceFile.getLineAndCharacterOfPosition(node.getStart(sourceFile)).line + 1;
+      if (line === startLine) {
+        found = node;
+        return;
+      }
+    }
+    ts.forEachChild(node, visit);
+  };
+
+  ts.forEachChild(sourceFile, visit);
+  return found;
+}
+
+/**
+ * The `new` expression starting on `startLine` (1-based, matching
+ * `CallRef.startLine`) whose constructor's own name is the last segment of
+ * `receiverText` — `Foo` for both `new Foo()` and `new ns.SubNS.Foo()`, which
+ * is the text the walker records as the receiver.
+ *
+ * Harness-local on purpose, unlike the two finders imported from production:
+ * production resolves `new` through the tree-sitter capitalized-receiver
+ * branch and never asks the checker about it, so there is no second
+ * implementation here for this one to drift from.
+ */
+function findNewExpression(
+  sourceFile: ts.SourceFile,
+  startLine: number,
+  receiverText: string,
+): ts.NewExpression | null {
+  const wanted = receiverText.slice(receiverText.lastIndexOf(".") + 1);
+  let found: ts.NewExpression | null = null;
+
+  const visit = (node: ts.Node): void => {
+    if (found !== null) return;
+    if (ts.isNewExpression(node) && constructorShortName(node.expression) === wanted) {
+      const line = sourceFile.getLineAndCharacterOfPosition(node.getStart(sourceFile)).line + 1;
+      if (line === startLine) {
+        found = node;
+        return;
+      }
+    }
+    ts.forEachChild(node, visit);
+  };
+
+  ts.forEachChild(sourceFile, visit);
+  return found;
+}
+
+/** Rightmost identifier of a `new` target — `Foo` in `new ns.Foo()`. */
+function constructorShortName(expression: ts.LeftHandSideExpression): string | null {
+  if (ts.isPropertyAccessExpression(expression) && ts.isIdentifier(expression.name)) return expression.name.text;
+  if (ts.isIdentifier(expression)) return expression.text;
+  return null;
 }
 
 /**
@@ -736,8 +1027,8 @@ function isNonSourceTarget(relPath: string): boolean {
  * resolve the callee identifier, unwrap an import alias, take its declaration.
  */
 function queryTypeChecker(handle: TSProgramHandle, cache: TSProgramCache, call: CallRef): OracleQueryResult {
-  const node = findCallExpression(handle.sourceFile, call.startLine, call.member);
-  if (node === null) return NO_ORACLE;
+  const node = locateCallLike(handle.sourceFile, call);
+  if (node === null) return { ...NO_ORACLE, unlocatedShape: classifyUnlocatedCallShape(call) };
 
   const { checker } = handle;
   const signature = checker.getResolvedSignature(node);
@@ -748,13 +1039,18 @@ function queryTypeChecker(handle: TSProgramHandle, cache: TSProgramCache, call: 
 
   const { fileName } = declaration.getSourceFile();
   const targetRelPath = cache.toRelPath(fileName);
-  if (targetRelPath === null || isNonSourceTarget(targetRelPath)) {
+  if (targetRelPath === null || isOutsideProjectSource(targetRelPath)) {
+    const target = buildTargetFacts(declaration, fileName, targetRelPath, null);
     return {
       outcome: { kind: "external" },
       located: true,
-      nonSource: targetRelPath !== null,
+      // Origin, not mere path-in-repo: `node_modules` is under the root too, so
+      // the old `targetRelPath !== null` counted every package `.d.ts` as the
+      // project's own generated output and the artifact probe read the whole
+      // dependency surface (bd tea-rags-mcp-2mvc2).
+      nonSource: target.origin === "generatedInRepo",
       categories,
-      target: buildTargetFacts(declaration, fileName, targetRelPath, null),
+      target,
     };
   }
 
@@ -829,6 +1125,10 @@ function classifyTargetOrigin(fileName: string, relPath: string | null): OracleT
  * genuinely unnamed callable is.
  */
 function declarationShortName(declaration: ts.Declaration): string | null {
+  // A constructor carries no `name` node, but it HAS a name in the graph's
+  // vocabulary — the chunker emits `Owner#constructor`, and the fallback
+  // strategy's own `declarationShortName` says `"constructor"` here too.
+  if (ts.isConstructorDeclaration(declaration)) return "constructor";
   const named = declaration as ts.Declaration & { name?: ts.Node };
   if (named.name !== undefined && (ts.isIdentifier(named.name) || ts.isStringLiteral(named.name))) {
     return named.name.text;
@@ -886,7 +1186,7 @@ function isAnonymousCallable(declaration: ts.Declaration, shortName: string | nu
  * selected signature — the path that covers plain function references and
  * re-exported bindings, where `getResolvedSignature` has nothing to select.
  */
-function declarationViaSymbol(node: ts.CallExpression, checker: ts.TypeChecker): ts.Declaration | undefined {
+function declarationViaSymbol(node: ts.CallLikeExpression, checker: ts.TypeChecker): ts.Declaration | undefined {
   const nameNode = calleeNameNode(node);
   if (nameNode === null) return undefined;
   let symbol = checker.getSymbolAtLocation(nameNode);
@@ -894,9 +1194,20 @@ function declarationViaSymbol(node: ts.CallExpression, checker: ts.TypeChecker):
   return symbol?.declarations?.[0];
 }
 
-/** The identifier naming the callee — `fetch` in `repo.fetch(…)`, `run` in `run(…)`. */
-function calleeNameNode(node: ts.CallExpression): ts.Identifier | null {
-  const callee = node.expression;
+/**
+ * The identifier naming what is being invoked — `fetch` in `repo.fetch(…)`,
+ * `run` in `run(…)`, `Repo` in `new Repo()`, `Card` in `<Card />`. The JSX and
+ * `new` arms exist because both families reach this file now, and a callee
+ * reader that only understood `CallExpression` would silently return `null` for
+ * them, dropping the symbol fallback and the overload classification with it.
+ */
+function calleeNameNode(node: ts.CallLikeExpression): ts.Identifier | null {
+  const callee = ts.isJsxOpeningLikeElement(node)
+    ? node.tagName
+    : ts.isCallExpression(node) || ts.isNewExpression(node)
+      ? node.expression
+      : null;
+  if (callee === null) return null;
   if (ts.isPropertyAccessExpression(callee) && ts.isIdentifier(callee.name)) return callee.name;
   if (ts.isIdentifier(callee)) return callee;
   return null;
@@ -947,7 +1258,7 @@ function isSignatureLike(declaration: ts.Declaration): declaration is ts.Signatu
  * would understate the other.
  */
 function classifyTypeFeatures(
-  node: ts.CallExpression,
+  node: ts.CallLikeExpression,
   checker: ts.TypeChecker,
   signature: ts.Signature | undefined,
   declaration: ts.Declaration | undefined,
@@ -982,17 +1293,18 @@ function hasJsxAncestor(node: ts.Node): boolean {
  * type parameters — the three ways a call's target depends on instantiation.
  */
 function isGenericCall(
-  node: ts.CallExpression,
+  node: ts.CallLikeExpression,
   signature: ts.Signature | undefined,
   declaration: ts.Declaration | undefined,
 ): boolean {
-  if (node.typeArguments !== undefined && node.typeArguments.length > 0) return true;
+  const { typeArguments } = node as ts.CallLikeExpression & { typeArguments?: ts.NodeArray<ts.TypeNode> };
+  if (typeArguments !== undefined && typeArguments.length > 0) return true;
   if (signature?.getTypeParameters()?.length) return true;
   return declaration !== undefined && isSignatureLike(declaration) && (declaration.typeParameters?.length ?? 0) > 0;
 }
 
 /** The callee resolves to a symbol carrying two or more signature declarations. */
-function isOverloadedCall(node: ts.CallExpression, checker: ts.TypeChecker): boolean {
+function isOverloadedCall(node: ts.CallLikeExpression, checker: ts.TypeChecker): boolean {
   const nameNode = calleeNameNode(node);
   if (nameNode === null) return false;
   let symbol = checker.getSymbolAtLocation(nameNode);
@@ -1006,7 +1318,8 @@ function isOverloadedCall(node: ts.CallExpression, checker: ts.TypeChecker): boo
  * Resolving the member then requires the callee's RETURN type, which is the
  * cross-call inference case; no amount of AST shape-matching recovers it.
  */
-function receiverIsCallResult(node: ts.CallExpression): boolean {
+function receiverIsCallResult(node: ts.CallLikeExpression): boolean {
+  if (!ts.isCallExpression(node)) return false;
   const callee = node.expression;
   if (!ts.isPropertyAccessExpression(callee)) return false;
   let receiver: ts.Expression = callee.expression;
@@ -1021,7 +1334,8 @@ function receiverIsCallResult(node: ts.CallExpression): boolean {
  * `T | undefined` is excluded — optionality is ubiquitous and is not the
  * narrowing case Track B is about.
  */
-function receiverIsUnion(node: ts.CallExpression, checker: ts.TypeChecker): boolean {
+function receiverIsUnion(node: ts.CallLikeExpression, checker: ts.TypeChecker): boolean {
+  if (!ts.isCallExpression(node)) return false;
   const callee = node.expression;
   if (!ts.isPropertyAccessExpression(callee)) return false;
   const type = checker.getTypeAtLocation(callee.expression);
@@ -1059,10 +1373,52 @@ function targetIsStructural(declaration: ts.Declaration | undefined, checker: ts
  */
 let symbolTableRef = new InMemoryGlobalSymbolTable();
 
-const TS_EXTENSIONS = [".ts", ".tsx"] as const;
+/**
+ * Extensions whose CALL SITES are diffed. The chain side of every row comes
+ * from `TSCallResolver`, so scoring a `.js` file's calls would report the
+ * TypeScript resolver's verdict on JavaScript — a different resolver's corpus.
+ */
+const SCORED_EXTENSIONS = [".ts", ".tsx"] as const;
+
+/**
+ * Extensions walked into the symbol table (bd tea-rags-mcp-2mvc2).
+ *
+ * Wider than {@link SCORED_EXTENSIONS} because production builds ONE
+ * cross-language `GlobalSymbolTable` per run and `CODEGRAPH_LANGUAGES` maps all
+ * four JavaScript extensions to a walker. Collecting `.ts` / `.tsx` alone gave
+ * the harness a symbol table production never has: a TypeScript call into a
+ * `.js` declaration found no node to pin, so the oracle answered `missed` with
+ * reason `unpinnedTarget` for a target the graph does contain. Measured at ~11%
+ * of mastodon's sampled gap. Both sides read this table — the chain pins
+ * through `ctx.symbolTable` — so widening it is what makes the harness agree
+ * with production, not a thumb on either scale.
+ */
+const SYMBOL_TABLE_EXTENSIONS = [".ts", ".tsx", ".js", ".jsx", ".mjs", ".cjs"] as const;
+
 const SKIP_DIRECTORIES = new Set(["node_modules", "build", "dist", ".git", ".claude", "coverage", "website"]);
 
-/** Every `.ts` / `.tsx` file under `dir`, repo-relative, sorted for determinism. */
+/** The lowercased extension of a path, `""` when it has none. */
+function extensionOf(relPath: string): string {
+  const dot = relPath.lastIndexOf(".");
+  return dot < 0 ? "" : relPath.slice(dot).toLowerCase();
+}
+
+/** A `.d.ts` / `.d.mts` / `.d.cts` file — typings, never a symbol-table source. */
+function isDeclarationFile(name: string): boolean {
+  return DECLARATION_FILE_SUFFIXES.some((suffix) => name.endsWith(suffix));
+}
+
+/** Is this file's own call set diffed, as opposed to only feeding the symbol table? */
+export function isScoredSource(relPath: string): boolean {
+  return SCORED_EXTENSIONS.some((ext) => extensionOf(relPath) === ext);
+}
+
+/**
+ * Every walkable source file under `dir`, repo-relative, sorted for
+ * determinism. Includes the JavaScript extensions: they populate the symbol
+ * table even though {@link isScoredSource} keeps their call sites out of the
+ * diff.
+ */
 export async function collectSourceFiles(repoRoot: string, dir: string): Promise<RelPath[]> {
   const found: RelPath[] = [];
 
@@ -1073,7 +1429,10 @@ export async function collectSourceFiles(repoRoot: string, dir: string): Promise
       if (entry.isDirectory()) {
         if (SKIP_DIRECTORIES.has(entry.name)) continue;
         await walk(child);
-      } else if (TS_EXTENSIONS.some((ext) => entry.name.endsWith(ext)) && !entry.name.endsWith(".d.ts")) {
+      } else if (
+        SYMBOL_TABLE_EXTENSIONS.some((ext) => extensionOf(entry.name) === ext) &&
+        !isDeclarationFile(entry.name)
+      ) {
         found.push(relative(repoRoot, child).split(sep).join("/"));
       }
     }
@@ -1090,8 +1449,8 @@ export function extractFile(
   composer: DefaultSymbolIdComposer,
   factory: LanguageFactory,
 ): FileExtraction | null {
-  const extension = relPath.endsWith(".tsx") ? ".tsx" : ".ts";
-  const config = CODEGRAPH_LANGUAGES[extension];
+  const config = CODEGRAPH_LANGUAGES[extensionOf(relPath)];
+  if (!config) return null;
   const { walker } = factory.create(config.language);
   if (!walker) return null;
 
@@ -1125,14 +1484,19 @@ export function buildSymbolDefs(extraction: FileExtraction): SymbolDefinition[] 
 }
 
 interface RunCounters {
+  /** Files whose call sites were diffed — `.ts` / `.tsx`. */
   files: number;
+  /** Files walked into the symbol table only, never scored — `.js` / `.jsx` / `.mjs` / `.cjs`. */
+  symbolTableOnlyFiles: number;
   parseFailures: number;
   callSites: number;
   dispatchSkipped: number;
   programUnavailable: number;
   nodeNotLocated: number;
+  /** `nodeNotLocated` split by shape — the harness's own blind spot, itemised. */
+  nodeNotLocatedByShape: OracleUnlocatedTally;
   checkerExternal: number;
-  /** Of `checkerExternal`, those inside the repo but not source — the artifact probe. */
+  /** Of `checkerExternal`, the project's OWN generated output — the artifact probe. */
   checkerExternalNonSource: number;
   checkerUnknown: number;
 }
@@ -1160,19 +1524,24 @@ async function runOracle(repoRoot: string, targetDir: string, limit: number, qui
   symbolTableRef = new InMemoryGlobalSymbolTable();
   const counters: RunCounters = {
     files: 0,
+    symbolTableOnlyFiles: 0,
     parseFailures: 0,
     callSites: 0,
     dispatchSkipped: 0,
     programUnavailable: 0,
     nodeNotLocated: 0,
+    nodeNotLocatedByShape: tallyUnlocatedShapes([]),
     checkerExternal: 0,
     checkerExternalNonSource: 0,
     checkerUnknown: 0,
   };
 
   // Pass 1 — symbol table plus the run-global class hierarchy the chain reads.
+  // Both are populated from EVERY walkable language, as production's run state
+  // does (`CodegraphRunState#classExtends` is run-global, not per-language);
+  // pass 2 then narrows to the files this resolver actually owns.
   const files = (await collectSourceFiles(repoRoot, targetDir)).slice(0, limit);
-  const extractions: FileExtraction[] = [];
+  const scored: FileExtraction[] = [];
   const classExtends: Record<string, string> = {};
 
   for (const relPath of files) {
@@ -1183,17 +1552,26 @@ async function runOracle(repoRoot: string, targetDir: string, limit: number, qui
     }
     symbolTableRef.upsertFile(relPath, buildSymbolDefs(extraction));
     Object.assign(classExtends, extraction.classExtends ?? {});
-    extractions.push(extraction);
-    counters.files++;
+    if (isScoredSource(relPath)) {
+      scored.push(extraction);
+      counters.files++;
+    } else {
+      counters.symbolTableOnlyFiles++;
+    }
   }
 
-  if (!quiet) process.stderr.write(`pass 1: ${counters.files} files, ${symbolTableRef.size()} symbols\n`);
+  if (!quiet) {
+    process.stderr.write(
+      `pass 1: ${counters.files} scored files (+${counters.symbolTableOnlyFiles} symbol-table only), ` +
+        `${symbolTableRef.size()} symbols\n`,
+    );
+  }
 
   // Pass 2 — both answers per call site.
   const rows: OracleRow[] = [];
   let done = 0;
 
-  for (const extraction of extractions) {
+  for (const extraction of scored) {
     const handle = cache.acquire(extraction.relPath);
     if (handle === null) counters.programUnavailable++;
 
@@ -1212,7 +1590,10 @@ async function runOracle(repoRoot: string, targetDir: string, limit: number, qui
           : null;
 
         const probe = handle === null ? NO_ORACLE : queryTypeChecker(handle, cache, call);
-        if (handle !== null && !probe.located) counters.nodeNotLocated++;
+        if (handle !== null && !probe.located) {
+          counters.nodeNotLocated++;
+          if (probe.unlocatedShape !== undefined) counters.nodeNotLocatedByShape[probe.unlocatedShape]++;
+        }
         if (probe.outcome.kind === "external") {
           counters.checkerExternal++;
           if (probe.nonSource) counters.checkerExternalNonSource++;
@@ -1229,13 +1610,14 @@ async function runOracle(repoRoot: string, targetDir: string, limit: number, qui
           chainOutput: chain === null ? "none" : chain.targetSymbolId === null ? "fileOnly" : "pinned",
           ...(chain !== null && { chain }),
           ...(probe.target !== undefined && { target: probe.target }),
+          ...(handle !== null && probe.unlocatedShape !== undefined && { unlocatedShape: probe.unlocatedShape }),
         });
       }
     }
 
     done++;
     if (!quiet && done % 25 === 0) {
-      process.stderr.write(`pass 2: ${done}/${extractions.length} files, ${rows.length} call sites\n`);
+      process.stderr.write(`pass 2: ${done}/${scored.length} files, ${rows.length} call sites\n`);
     }
   }
 
@@ -1312,9 +1694,11 @@ async function main(): Promise<void> {
   const out: string[] = [
     "",
     `TS codegraph type-checker oracle — ${relative(options.repoRoot, options.target) || "."} @ ${options.repoRoot}`,
-    `files ${counters.files} (parse failures ${counters.parseFailures}) · call sites ${counters.callSites} · scored ${rows.length}`,
+    `files ${counters.files} scored (+${counters.symbolTableOnlyFiles} javascript in the symbol table, ` +
+      `parse failures ${counters.parseFailures}) · call sites ${counters.callSites} · scored ${rows.length}`,
     `skipped: dispatch ${counters.dispatchSkipped} · no program ${counters.programUnavailable} · node not located ${counters.nodeNotLocated}`,
-    `checker external ${counters.checkerExternal} (of which non-source in-repo ${counters.checkerExternalNonSource}) · unknown ${counters.checkerUnknown}`,
+    `  by shape: ${ORACLE_UNLOCATED_SHAPES.map((s) => `${s} ${counters.nodeNotLocatedByShape[s]}`).join(" · ")}`,
+    `checker external ${counters.checkerExternal} (of which the project's own generated output ${counters.checkerExternalNonSource}) · unknown ${counters.checkerUnknown}`,
     `elapsed ${((Date.now() - started) / 1000).toFixed(1)}s`,
     "",
     // Deliberately ahead of the verdict tables: this is what the chain SHIPPED,
@@ -1367,7 +1751,8 @@ async function main(): Promise<void> {
     const { wrongFile, missed, phantom } = decomposedOverall;
     out.push(
       `  wrongFile ${wrongFile.total} raw → ${wrongFile.defect} defects ` +
-        `(interface-vs-impl ${wrongFile.interfaceVsImpl}, declaration-site path ${wrongFile.declarationSitePath})`,
+        `(interface-vs-impl ${wrongFile.interfaceVsImpl}, declaration-site path ${wrongFile.declarationSitePath}, ` +
+        `inherited constructor ${wrongFile.inheritedConstructor})`,
       `  missed ${missed.total} raw → ${missed.defect} defects ` +
         `(anonymous callable ${missed.anonymousCallable}, unpinned target ${missed.unpinnedTarget})`,
       `  phantom ${phantom.total} raw → ${phantom.defect} fabricated edges ` +
@@ -1398,7 +1783,20 @@ async function main(): Promise<void> {
       decomposedOverall,
       decomposedByFeature,
       decomposedByReceiver: decomposeOracleMismatches(rows, (row) => [row.receiverKind]),
-      samples: { missed: sample("missed"), wrongFile: sample("wrongFile"), phantom: sample("phantom") },
+      samples: {
+        missed: sample("missed"),
+        wrongFile: sample("wrongFile"),
+        phantom: sample("phantom"),
+        // The blind spot needs its own samples for the same reason the verdicts
+        // do: the shape tally says which case to work on, a row says where to
+        // read. Grouped by shape so a rare bucket is not crowded out.
+        nodeNotLocated: Object.fromEntries(
+          ORACLE_UNLOCATED_SHAPES.map((shape) => [
+            shape,
+            rows.filter((row) => row.unlocatedShape === shape).slice(0, options.samples),
+          ]),
+        ),
+      },
     };
     writeFileSync(options.json, `${JSON.stringify(payload, null, 2)}\n`);
     process.stderr.write(`wrote ${options.json}\n`);
