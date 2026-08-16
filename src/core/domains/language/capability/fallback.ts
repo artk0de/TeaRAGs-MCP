@@ -11,4 +11,7 @@ export const UNSUPPORTED_FALLBACK: readonly LanguageCapability[] = ["sql", "json
   ast: { tier: "none", engine: "CharacterChunker" },
   tests: { tier: "na", detection: "—", tech: "—" },
   codegraph: { tier: "none", tech: "—" },
+  // Documentation rows only — never reach `LanguageFactory.capabilities()`, so
+  // they are never stamped or compared. Declared to satisfy the descriptor.
+  versions: { chunking: 1, walker: 1, codegraphSchema: 1 },
 }));

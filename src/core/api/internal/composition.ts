@@ -7,7 +7,7 @@
  */
 
 import type { FilterPresetDef } from "../../contracts/types/filter-preset.js";
-import type { LanguageFactoryDescriptor } from "../../contracts/types/language.js";
+import type { LanguageCodeVersions, LanguageFactoryDescriptor } from "../../contracts/types/language.js";
 import type { WorkerEnrichmentDescriptor } from "../../contracts/types/provider.js";
 import type { DerivedSignalDescriptor, RerankPreset } from "../../contracts/types/reranker.js";
 import type { StatsAccumulatorDescriptor } from "../../contracts/types/stats-accumulator.js";
@@ -15,6 +15,7 @@ import type { PayloadSignalDescriptor, SignalFloors } from "../../contracts/type
 import { resolvePresets } from "../../domains/explore/rerank/presets/index.js";
 import { Reranker } from "../../domains/explore/reranker.js";
 import { validateSignalDependencies } from "../../domains/ingest/infra/collection-stats.js";
+import { resolveLanguageCodeVersions } from "../../domains/language/capability/versions.js";
 import { LanguageFactory } from "../../domains/language/index.js";
 import { createCodegraphTrajectories, type CodegraphDeps } from "../../domains/trajectory/codegraph/index.js";
 import { CODEGRAPH_FILTER_PRESETS } from "../../domains/trajectory/codegraph/symbols/filter-presets/index.js";
@@ -51,6 +52,15 @@ export interface CompositionResult {
    * to reach into `domains/language` itself.
    */
   signalFloors: Map<string, SignalFloors>;
+  /**
+   * Per-language code versions of THIS build (bd tea-rags-mcp-frwka) — the
+   * grammar each language parses with plus its hand-bumped chunking / walker /
+   * codegraph-schema revisions. Resolved once here for the same reason
+   * `signalFloors` is: the composition root is the only layer allowed to bridge
+   * `domains/language`, and both consumers sit outside it — the ingest path
+   * stamps it onto the registry entry, the maintenance monitor compares it.
+   */
+  languageCodeVersions: Map<string, LanguageCodeVersions>;
 }
 
 export interface CompositionOptions {
@@ -166,5 +176,6 @@ export function createComposition(options: CompositionOptions = {}): Composition
     resolvedPresets,
     languageFactory,
     signalFloors,
+    languageCodeVersions: resolveLanguageCodeVersions(languageFactory.capabilities()),
   };
 }

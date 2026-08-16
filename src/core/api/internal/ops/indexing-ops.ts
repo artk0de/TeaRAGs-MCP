@@ -14,6 +14,7 @@ import type { QdrantManager } from "../../../adapters/qdrant/client.js";
 import type { EmbeddingModelGuard } from "../../../adapters/qdrant/embedding-model-guard.js";
 import { sampleVectors, scrollAllPoints } from "../../../adapters/qdrant/scroll.js";
 import { INDEXING_METADATA_ID } from "../../../contracts/constants.js";
+import type { LanguageCodeVersions } from "../../../contracts/types/language.js";
 import type { StatsAccumulatorDescriptor } from "../../../contracts/types/stats-accumulator.js";
 import type { PayloadSignalDescriptor, ScoreBackground } from "../../../contracts/types/trajectory.js";
 import type { Reranker } from "../../../domains/explore/reranker.js";
@@ -88,6 +89,20 @@ export interface IndexingOpsDeps {
   healthCheckRetryAttempts?: number;
   /** Pause between health-probe attempts (ms). The pause yields the event loop. Defaults to 250. */
   healthCheckRetryDelayMs?: number;
+  /**
+   * Registry surface for the per-language code-version stamp
+   * (bd tea-rags-mcp-frwka). Separate from the pipeline's own `record()`
+   * because the stamp is a claim about WHICH layer this run rebuilt, and only
+   * this layer knows the run mode. Omitted → nothing is stamped.
+   */
+  collectionRegistry?: LanguageVersionStamper;
+  /** Per-language code versions of this build, from the composition root. */
+  languageCodeVersions?: ReadonlyMap<string, LanguageCodeVersions>;
+}
+
+/** The one registry mutation this ops layer performs. */
+export interface LanguageVersionStamper {
+  stampLanguageVersions: (collectionName: string, stamp: Record<string, Partial<LanguageCodeVersions>>) => void;
 }
 
 export class IndexingOps {
@@ -108,6 +123,8 @@ export class IndexingOps {
   private readonly healthCheckRetryAttempts: number;
   private readonly healthCheckRetryDelayMs: number;
   private readonly status: StatusModule;
+  private readonly collectionRegistry?: LanguageVersionStamper;
+  private readonly languageCodeVersions?: ReadonlyMap<string, LanguageCodeVersions>;
 
   constructor(deps: IndexingOpsDeps) {
     this.qdrant = deps.qdrant;
@@ -127,6 +144,8 @@ export class IndexingOps {
     this.healthCheckRetryAttempts = deps.healthCheckRetryAttempts ?? DEFAULT_HEALTH_CHECK_RETRY_ATTEMPTS;
     this.healthCheckRetryDelayMs = deps.healthCheckRetryDelayMs ?? DEFAULT_HEALTH_CHECK_RETRY_DELAY_MS;
     this.status = new StatusModule(deps.qdrant, deps.snapshotDir, deps.codegraphPool);
+    this.collectionRegistry = deps.collectionRegistry;
+    this.languageCodeVersions = deps.languageCodeVersions;
   }
 
   /**
@@ -495,6 +514,13 @@ export class IndexingOps {
     );
     const enrichmentDurationMs = Date.now() - startedAt;
     await this.refreshStats(path);
+    // The recompute rebuilt EDGES for every point of the selected languages and
+    // nothing else — point ids never moved — so only the two edge axes may
+    // advance. Claiming `grammar` / `chunking` here would silence a hint that
+    // is still true. A git-only recompute touches no language layer at all.
+    if (selectors.some(isCodegraphSelector)) {
+      this.stampLanguageVersions(aliasName, languages, "codegraph");
+    }
 
     // Report the RECOMPUTE's own numbers, not the sync's. The sync leg is a
     // near-no-op here, so inheriting its (empty) enrichment fields would state
@@ -520,7 +546,40 @@ export class IndexingOps {
       modelInfo,
     });
     await this.refreshStats(path);
+    // A first index or a force rebuilds the chunk set AND the enrichment layer
+    // from scratch, so every axis is genuinely current afterwards. This is the
+    // only path that may advance `grammar` / `chunking`.
+    this.stampLanguageVersions(resolveCollectionName(await validatePath(path)), options?.languages, "all");
     return result;
+  }
+
+  /**
+   * Record which build produced this index, for the languages the run covered
+   * (bd tea-rags-mcp-frwka). `scope` is the run mode, not a preference: a
+   * recompute may only claim the axes it actually rebuilt.
+   *
+   * No `languages` selector means the run covered everything the build
+   * supports. Stamping absent languages is harmless — the comparison is
+   * restricted to languages the index actually holds — and it is what lets a
+   * later `--force` on a project that gains a new language start from a
+   * truthful stamp.
+   */
+  private stampLanguageVersions(
+    collectionName: string,
+    languages: readonly string[] | undefined,
+    scope: "all" | "codegraph",
+  ): void {
+    const versions = this.languageCodeVersions;
+    if (!this.collectionRegistry || !versions) return;
+    const selected = languages && languages.length > 0 ? languages : [...versions.keys()];
+    const stamp: Record<string, Partial<LanguageCodeVersions>> = {};
+    for (const language of selected) {
+      const current = versions.get(language);
+      if (!current) continue;
+      stamp[language] =
+        scope === "all" ? { ...current } : { walker: current.walker, codegraphSchema: current.codegraphSchema };
+    }
+    if (Object.keys(stamp).length > 0) this.collectionRegistry.stampLanguageVersions(collectionName, stamp);
   }
 
   // ---------------------------------------------------------------------------
@@ -654,6 +713,16 @@ function toIndexStats(changeStats: ChangeStats): IndexStats {
  * past what was asked for. Absent `languages`, options pass through untouched,
  * which keeps an ordinary force reindex byte-identical to before.
  */
+/**
+ * Whether a `forceEnrichments` selector rebuilds the codegraph layer, and so
+ * whether the language version stamp's edge axes may advance. `all` counts;
+ * the family is matched by prefix so `codegraph.symbols` (and any future
+ * sub-key) is covered without a second list to keep in sync.
+ */
+function isCodegraphSelector(selector: string): boolean {
+  return selector === "all" || selector === "codegraph" || selector.startsWith("codegraph.");
+}
+
 export function applyLanguageFilter(options: IndexOptions | undefined): IndexOptions | undefined {
   const languages = options?.languages;
   if (!options || !languages || languages.length === 0) return options;

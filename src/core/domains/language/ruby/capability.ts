@@ -5,6 +5,7 @@ export const capability: LanguageCapability = {
   ast: {
     tier: "full",
     engine: "tree-sitter",
+    grammarPackage: "tree-sitter-ruby",
     hooks: [
       { name: "rspecFilter", short: "RSpec block grouping" },
       { name: "commentCapture", short: "comment attachment" },
@@ -17,6 +18,7 @@ export const capability: LanguageCapability = {
     tier: { untyped: "high", yard: "maximum", "rbs/sorbet": "tbd" },
     tech: "15-strategy chain + 4 dispatch components (table/union/cone/dynamic) + 20-grammar DSL catalogue + arity/kwarg-narrowed fan-out (corpus-adaptive p99 cap) + YARD type-source + db/schema.rb column accessors + naming-convention receiver typing for bare and @ivar receivers (subtype-gated)",
   },
+  versions: { chunking: 1, walker: 1, codegraphSchema: 1 },
   notes:
     "Codegraph trust is corpus-dependent: high untyped, maximum YARD-annotated; un-annotated Rails drops (a prime number, not a language property).",
 };

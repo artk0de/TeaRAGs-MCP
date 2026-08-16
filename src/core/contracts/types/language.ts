@@ -665,11 +665,54 @@ export interface AstHookDescriptor {
   short: string;
 }
 
+/**
+ * The hand-bumped half of {@link LanguageCodeVersions}: which revision of OUR
+ * per-language machinery produced a language's indexed data. Declared on the
+ * capability descriptor, bumped by hand — a version, never a measurement
+ * (`.claude/rules/language-capability-sync.md`).
+ *
+ * Split by REMEDY, not by source file. `chunking` moves the chunk set, so a
+ * bump there costs a full reindex; `walker` and `codegraphSchema` leave point
+ * ids alone and are repaired by an enrichment recompute. One number spanning
+ * both halves could not route the hint, which is the whole point of tracking
+ * them (bd tea-rags-mcp-frwka).
+ */
+export interface LanguageSupportVersions {
+  /** Chunker hooks for this language — what the stored chunks LOOK like. */
+  chunking: number;
+  /** Walker + resolver chain for this language — which edges get emitted. */
+  walker: number;
+  /** The codegraph edge/kind vocabulary this language emits. */
+  codegraphSchema: number;
+}
+
+/**
+ * Every version axis that decides whether a language's indexed data is behind
+ * the code: the upstream grammar we parse with, plus our own three.
+ * `grammar` is read from the installed package, not declared — a language that
+ * parses without a tree-sitter grammar (markdown) simply has none.
+ */
+export interface LanguageCodeVersions extends LanguageSupportVersions {
+  grammar?: string;
+}
+
 export interface LanguageCapability {
   language: string;
-  ast: { tier: "full" | "partial" | "none"; engine: string; hooks?: AstHookDescriptor[] };
+  ast: {
+    tier: "full" | "partial" | "none";
+    engine: string;
+    hooks?: AstHookDescriptor[];
+    /**
+     * npm package supplying the tree-sitter grammar, when there is one. Read at
+     * runtime for the `grammar` axis of {@link LanguageCodeVersions}; omitted by
+     * languages that chunk without a grammar.
+     */
+    grammarPackage?: string;
+  };
   tests: { tier: "high" | "medium" | "low" | "na"; detection: string; tech: string };
   codegraph: { tier: CodegraphTier | TypingTieredCodegraph; tech: string };
+  /** Hand-bumped code versions for this language — see {@link LanguageSupportVersions}. */
+  versions: LanguageSupportVersions;
   /** README prose extras (humans only). */
   notes?: string;
 }

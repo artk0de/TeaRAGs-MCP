@@ -79,8 +79,16 @@ export function registerStatusTools(server: McpServer, deps: { app: App; registe
 
       if (infraHealth) text += `\n\n${formatInfraHealth(infraHealth)}`;
 
-      const driftWarning = await app.checkSchemaDrift({ path });
-      return appendDriftWarning(formatMcpText(text), driftWarning);
+      // Two disjoint drift reports, each appended on its own: payload-KEY drift
+      // and per-language code-version drift (bd tea-rags-mcp-frwka). One cannot
+      // stand in for the other — a resolver bump moves no payload key, and a
+      // new payload field moves no language version.
+      const [driftWarning, languageVersionWarning] = await Promise.all([
+        app.checkSchemaDrift({ path }),
+        app.checkLanguageVersionDrift({ path }),
+      ]);
+      const withDrift = appendDriftWarning(formatMcpText(text), driftWarning);
+      return appendDriftWarning(withDrift, languageVersionWarning);
     },
   );
 

@@ -5,6 +5,7 @@ export const capability: LanguageCapability = {
   ast: {
     tier: "full",
     engine: "tree-sitter",
+    grammarPackage: "tree-sitter-javascript",
     hooks: [
       { name: "jsAssignmentFilter", short: "assignment chunking" },
       { name: "JsChunkClassifier", short: "module/class split" },
@@ -12,4 +13,5 @@ export const capability: LanguageCapability = {
   },
   tests: { tier: "high", detection: "*.test.js / *.spec.jsx", tech: "testScopeChunker (describe/it scopes)" },
   codegraph: { tier: "high", tech: "6-strategy; CommonJS/ESM require resolution (dynamic gaps)" },
+  versions: { chunking: 1, walker: 1, codegraphSchema: 1 },
 };

@@ -44,6 +44,7 @@ import { QuarantineStore } from "../core/domains/ingest/sync/index.js";
 import { ShardedSnapshotManager } from "../core/domains/ingest/sync/snapshot/index.js";
 import { collectSymbols, DefaultSymbolIdComposer } from "../core/domains/language/index.js";
 import { CollectionFootprintFactory } from "../core/domains/maintenance/footprint/index.js";
+import { LanguageVersionDriftMonitor } from "../core/domains/maintenance/language-version-drift-monitor.js";
 import {
   createDatabaseMigrationApplier,
   DATABASE_MIGRATIONS_MODULE_URL,
@@ -135,6 +136,7 @@ interface CompositionContext {
   allPayloadSignalDescriptors: ReturnType<typeof createComposition>["allPayloadSignalDescriptors"];
   allStatsAccumulators: ReturnType<typeof createComposition>["allStatsAccumulators"];
   signalFloors: ReturnType<typeof createComposition>["signalFloors"];
+  languageCodeVersions: ReturnType<typeof createComposition>["languageCodeVersions"];
   schemaBuilder: SchemaBuilder;
 }
 
@@ -290,13 +292,22 @@ function wireComposition(
   // cold-reindex event-loop stall — fans out across GitEnrichmentProvider's own
   // BlameWorkerPool for shallow files while deep blames stay on main's async CLI
   // (bd tea-rags-mcp-dog1v).
-  const { registry, reranker, allPayloadSignalDescriptors, allStatsAccumulators, signalFloors } = createComposition({
-    // w2dlu T6: the provider builds its per-root VcsGitAdapter from this kind.
-    git: { config: { ...zodConfig.trajectoryGit, vcsAdapter: zodConfig.vcs.adapter }, squashOpts },
-    codegraph,
-  });
+  const { registry, reranker, allPayloadSignalDescriptors, allStatsAccumulators, signalFloors, languageCodeVersions } =
+    createComposition({
+      // w2dlu T6: the provider builds its per-root VcsGitAdapter from this kind.
+      git: { config: { ...zodConfig.trajectoryGit, vcsAdapter: zodConfig.vcs.adapter }, squashOpts },
+      codegraph,
+    });
   const schemaBuilder = new SchemaBuilder(reranker);
-  return { registry, reranker, allPayloadSignalDescriptors, allStatsAccumulators, signalFloors, schemaBuilder };
+  return {
+    registry,
+    reranker,
+    allPayloadSignalDescriptors,
+    allStatsAccumulators,
+    signalFloors,
+    languageCodeVersions,
+    schemaBuilder,
+  };
 }
 
 interface CodegraphContext {
@@ -380,9 +391,7 @@ function ensureCodegraphDaemon(
           TEA_RAGS_CODEGRAPH_DAEMON_MIGRATIONS: DATABASE_MIGRATIONS_MODULE_URL,
           ...(resources.memoryLimit ? { TEA_RAGS_CODEGRAPH_DAEMON_MEMORY: resources.memoryLimit } : {}),
           ...(resources.memoryLimitMax ? { TEA_RAGS_CODEGRAPH_DAEMON_MEMORY_MAX: resources.memoryLimitMax } : {}),
-          ...(resources.threads !== undefined
-            ? { TEA_RAGS_CODEGRAPH_DAEMON_THREADS: String(resources.threads) }
-            : {}),
+          ...(resources.threads !== undefined ? { TEA_RAGS_CODEGRAPH_DAEMON_THREADS: String(resources.threads) } : {}),
         },
       });
       child.unref();
@@ -667,8 +676,9 @@ function createIngestFacade(
   // applies the user-visible toggle (`enableGitMetadata`) here rather than
   // inside the facade — keeps IngestFacade free of provider construction or
   // config-aware filtering.
-  const enrichmentProviders = wireComposition(zodConfig, config.trajectoryIngest, shared.codegraphDeps)
-    .registry.getAllEnrichmentProviders()
+  const facadeComposition = wireComposition(zodConfig, config.trajectoryIngest, shared.codegraphDeps);
+  const enrichmentProviders = facadeComposition.registry
+    .getAllEnrichmentProviders()
     .filter((p) => p.key !== "git" || config.trajectoryIngest.enableGitMetadata);
 
   const pipelineTuning = {
@@ -707,6 +717,9 @@ function createIngestFacade(
     modelGuard: shared.modelGuard,
     collectionRegistry: shared.collectionRegistry,
     teaRagsVersion: pkg.version,
+    // Per-language code versions of THIS build, stamped onto the registry entry
+    // by the runs that actually rebuild a language layer (bd tea-rags-mcp-frwka).
+    languageCodeVersions: facadeComposition.languageCodeVersions,
     // Full effective env set of this run (defaults materialized, 9vpnz).
     // Built AFTER the adaptive adjustments in resolveInfrastructure
     // (GPU-calibrated batch size, embedded delete tuning) so user-set values
@@ -825,6 +838,14 @@ export async function createAppContext(config: AppConfig, hooks?: AppContextHook
     payloadKeyOwners.map((o) => o.key),
     payloadKeyOwners,
   );
+  // Complements the payload-key monitor above, never merges into it: a grammar
+  // or resolver bump leaves every payload key identical while relocating chunk
+  // boundaries or retargeting edges (bd tea-rags-mcp-frwka).
+  const languageVersionDriftMonitor = new LanguageVersionDriftMonitor(
+    collectionRegistry,
+    statsCache,
+    composition.languageCodeVersions,
+  );
   const projectRegistryOps = new ProjectRegistryOps({
     registry: collectionRegistry,
     qdrant: infra.qdrant,
@@ -880,6 +901,7 @@ export async function createAppContext(config: AppConfig, hooks?: AppContextHook
     explore,
     reranker: composition.reranker,
     schemaDriftMonitor,
+    languageVersionDriftMonitor,
     projectRegistryOps,
     quantizationScalar: zodConfig.qdrantTune.quantizationScalar,
     turboQuant: zodConfig.qdrantTune.turboQuant,

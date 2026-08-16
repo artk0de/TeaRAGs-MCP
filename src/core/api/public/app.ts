@@ -19,6 +19,7 @@ import type { EmbeddingProvider } from "../../adapters/embeddings/base.js";
 import type { QdrantManager } from "../../adapters/qdrant/client.js";
 import type { EmbeddingModelGuard } from "../../adapters/qdrant/embedding-model-guard.js";
 import type { Reranker } from "../../domains/explore/reranker.js";
+import type { LanguageVersionDriftMonitor } from "../../domains/maintenance/language-version-drift-monitor.js";
 import type { ProjectInfo } from "../../domains/maintenance/registry/index.js";
 import type { SchemaDriftMonitor } from "../../domains/maintenance/schema-drift-monitor.js";
 import type { ExploreFacade } from "../internal/facades/explore-facade.js";
@@ -106,6 +107,14 @@ export interface App {
   // -- Drift monitoring (→ SchemaDriftMonitor via deps) --
   checkSchemaDrift: (ref: { path: string } | { collection: string }) => Promise<string | null>;
 
+  /**
+   * Per-language code-version drift (→ LanguageVersionDriftMonitor via deps).
+   * Separate from `checkSchemaDrift` on purpose: payload KEYS do not move when
+   * a grammar or resolver does, so the two report disjoint conditions and each
+   * names its own command. Null when nothing moved or the monitor is unwired.
+   */
+  checkLanguageVersionDrift: (ref: { path: string } | { collection: string }) => Promise<string | null>;
+
   // -- Project registry (→ internal/ops/project-registry-ops.ts) --
   registerProject: (input: {
     path: string;
@@ -150,6 +159,8 @@ export interface AppDeps {
   explore: ExploreFacade;
   reranker: Reranker;
   schemaDriftMonitor: SchemaDriftMonitor;
+  /** Optional — omitted by direct constructions that wire no registry. */
+  languageVersionDriftMonitor?: LanguageVersionDriftMonitor;
   projectRegistryOps: ProjectRegistryOps;
   quantizationScalar: boolean;
   turboQuant: boolean;
@@ -283,6 +294,13 @@ export function createApp(deps: AppDeps): App {
     checkSchemaDrift: async (ref) => {
       if ("path" in ref) return deps.schemaDriftMonitor.checkAndConsume(ref.path);
       return deps.schemaDriftMonitor.checkByCollectionName(ref.collection);
+    },
+
+    checkLanguageVersionDrift: async (ref) => {
+      const monitor = deps.languageVersionDriftMonitor;
+      if (!monitor) return null;
+      if ("path" in ref) return monitor.checkAndConsume(ref.path);
+      return monitor.checkByCollectionName(ref.collection);
     },
 
     // -- Project registry — delegate to ProjectRegistryOps --

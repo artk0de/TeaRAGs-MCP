@@ -82,6 +82,7 @@ describe("runPrime — registry-first embedding endpoint override", () => {
           signals: {},
         }),
         checkSchemaDrift: vi.fn().mockResolvedValue(null),
+        checkLanguageVersionDrift: vi.fn().mockResolvedValue(null),
       },
       cleanup: vi.fn(),
       updateService: stubUpdateService(),
