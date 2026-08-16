@@ -1,8 +1,14 @@
 /**
- * Recognition of the **module-level const-bound function expression**:
+ * Recognition of the **const-bound function expression**:
  *
  *   export const genValidationSchema = (message: string) => message.trim();
  *   const legacyExpression = function (value) { … };
+ *
+ * Two gates, one shape. {@link functionValuedDeclaratorName} answers the SHAPE
+ * question at any lexical depth; {@link moduleLevelFunctionDeclaratorName} adds
+ * a scope restriction on top of it. They are separate because the two consumers
+ * need different answers, and the reason is measured — see "Why the two gates
+ * differ" below.
  *
  * The dominant way a React/TypeScript codebase declares a function. Until bd
  * tea-rags-mcp-grz07 neither producer named it, and the consequence was
@@ -18,29 +24,59 @@
  * (`.claude/rules/symbolid-convention.md`).
  *
  *   1. The codegraph walker (`domains/language/typescript/walker/name-of.ts`)
- *      names the declarator, so `cg_symbols.symbol_id` carries it.
+ *      names the declarator at ANY depth, so `cg_symbols.symbol_id` carries it.
  *   2. The chunker's TypeScript declaration filter
  *      (`domains/language/typescript/chunking/function-declaration-filter.ts`)
- *      keeps the wrapping declaration chunkable, and the classifier beside it
- *      composes the SAME id into the Qdrant payload `symbolId`.
+ *      keeps the wrapping declaration chunkable only at MODULE level, and the
+ *      classifier beside it composes the SAME id into the Qdrant payload
+ *      `symbolId`.
  *
- * ## Why the boundary is MODULE level, and why that is load-bearing
+ * ## Why the two gates differ
  *
- * A `const` inside a function body is a local variable, not an addressable
- * project symbol, and bd tea-rags-mcp-w7qv4 already made the resolver decline a
- * bare call whose callee is one — deciding on the DECLARATION's scope, not on
- * the symbol table's contents, precisely so this gap could be closed later
- * without fighting that guard. Naming function-scoped consts here would hand
- * `globalShortName` exactly the candidates that guard exists to keep away from
- * it. The corpus says how badly: of 632 named arrow-function bare-call targets,
- * 179 are module-level (`genValidationSchema`, `checkIsGuestPath`) while 452 are
- * function-scoped, and those carry names like `handleClick` / `renderContent` /
- * `setRef` that recur in hundreds of files apiece. Naming them would convert a
- * recall gap into an N-way ambiguity across the index.
+ * grz07 held BOTH producers at module level, and the reason was a real one: a
+ * bare `handler` in the symbol table is exactly the ambiguous short-name
+ * candidate bd tea-rags-mcp-w7qv4's resolver guard exists to withhold from
+ * `globalShortName`. Of 632 named arrow-function bare-call targets on the
+ * taxdome corpus, 452 were function-scoped and carried names like `handleClick`
+ * / `renderContent` / `setRef` that recur in hundreds of files apiece.
  *
- * So the scope test here is the exact complement of `isLocalValueBinding`'s in
- * `resolver/ts-local-callee.ts`: everything this names is something that guard
- * lets through, and everything that guard declines stays unnamed.
+ * bd tea-rags-mcp-29m75 widened the WALKER anyway, and the hazard is real but
+ * PRICED rather than eliminated. `collectSymbols` composes a nested declarator
+ * under its enclosing symbol — `render.handler`, `Panel#open.onClose`, never a
+ * bare `handler` — so `GlobalSymbolTable.lookup(fqName)` never gains the
+ * ambiguous key, and `calleeIsLocalValueBinding` still declines every bare call
+ * on a function-scoped const before `globalShortName` reads anything.
+ *
+ * `lookupByShortName` is the leak, and it is measured, not hypothetical: it
+ * keys on the LEAF segment, so `createSubscribeMock.trigger` does put `trigger`
+ * into the short-name index. A RECEIVER-shaped call (`ref.current?.trigger()`)
+ * reaches that index through paths the bare-call guard never sees, and can now
+ * land on a closure in an unrelated file.
+ *
+ * The exchange rate is what justifies the widening. Measured with the
+ * typechecker oracle:
+ *
+ *   this repo's `src`   raw missed 690 → 333, unpinned ArrowFunction 329 → 0,
+ *                       true missed defects 22 → 22, raw wrongFile 683 → 679,
+ *                       fabricated edges 0 → 0
+ *   taxdome, excluding `__generated__` and test files (the corpus production
+ *   actually indexes)
+ *                       missed 17,539 → 11,439, unpinned ArrowFunction
+ *                       3,921 → 5, wrongFile 189 → 199
+ *
+ * Six thousand recovered misses against ten new wrong files. If that ratio ever
+ * has to be improved rather than accepted, the fix is NOT to re-narrow this
+ * gate: hold nested-closure definitions in a separate short-name index the way
+ * bd tea-rags-mcp-8l5fo holds synthesized schema columns, so a global fan-out
+ * cannot see them while the same-file and checker-narrowed lookups opt in.
+ *
+ * The CHUNKER stays at module level, and that asymmetry is deliberate rather
+ * than unfinished work. Claiming a nested declaration would SPLIT the enclosing
+ * chunk, moving the chunk set and costing a full `--force` reindex — for
+ * navigation the enclosing chunk already provides. The lockstep invariant is
+ * directional (no chunker id absent from cg_symbols), so a codegraph-only id is
+ * the established shape: a nested `function_declaration` has always produced
+ * `outer.inner` in cg_symbols with no chunk of its own.
  *
  * ## Deliberately out of scope
  *
@@ -99,30 +135,49 @@ const FUNCTION_SCOPE_TYPES = new Set([
 ]);
 
 /**
- * The name a MODULE-LEVEL `variable_declarator` binds to a function expression,
- * or null when the declarator is not one.
+ * The name a `variable_declarator` binds to a function expression at ANY
+ * lexical depth, or null when the declarator is not one (bd
+ * tea-rags-mcp-29m75).
  *
- * The keyword is NOT inspected — `let` and `var` are accepted alongside `const`,
- * consistent with the const-object namespace sibling, which likewise reads the
- * VALUE rather than the declaration keyword. A reassignable module-level binding
- * is still the file's declaration of that name.
+ * The SHAPE half of the pair, with no scope opinion. The keyword is NOT
+ * inspected — `let` and `var` are accepted alongside `const`, consistent with
+ * the const-object namespace sibling, which likewise reads the VALUE rather
+ * than the declaration keyword. A reassignable binding is still a declaration
+ * of that name in its scope.
  *
  * The value is read directly, without peeling `as` / `satisfies` / parentheses
  * the way `constObjectNamespaceName` does. That asymmetry is intentional:
- * JavaScript's `jsNameOf` has always recognised this shape unpeeled (its
- * "pattern #5"), and since `jsNameOf` DELEGATES to `tsNameOf` before applying
- * its own patterns, peeling here would silently give JavaScript symbols it never
- * had. Matching the established predicate keeps that delegation byte-identical.
+ * JavaScript's `jsNameOf` has always recognised this shape unpeeled AND at any
+ * depth (its "pattern #5"), and since `jsNameOf` DELEGATES to `tsNameOf` before
+ * applying its own patterns, this predicate is now the one answering that
+ * shape for both languages. Matching the established predicate exactly is what
+ * keeps the delegation byte-identical rather than silently giving JavaScript
+ * symbols it never had — or emitting each of its closures twice.
  */
-export function moduleLevelFunctionDeclaratorName(declarator: AstNode): string | null {
+export function functionValuedDeclaratorName(declarator: AstNode): string | null {
   if (declarator.type !== "variable_declarator") return null;
   const id = declarator.childForFieldName("name");
   // `const { a, b } = …` / `const [x] = …` bind a pattern, which names nothing.
+  // That is the oracle's `BindingElement` class (781 rows on taxdome), out of
+  // scope here for the same reason: nothing at this site declares the member.
   if (id?.type !== "identifier") return null;
   const value = declarator.childForFieldName("value");
   if (!value || !isFunctionValuedExpression(value)) return null;
-  if (declaredInsideFunctionScope(declarator)) return null;
   return id.text;
+}
+
+/**
+ * The same name, but only when the declarator sits at MODULE level.
+ *
+ * The chunker's gate. The scope test is the exact complement of
+ * `isLocalValueBinding`'s in `resolver/ts-local-callee.ts`, so what the chunker
+ * claims as a chunk is exactly what that guard lets through — which is what
+ * keeps the chunk set where grz07 put it while the walker reaches deeper.
+ */
+export function moduleLevelFunctionDeclaratorName(declarator: AstNode): string | null {
+  const name = functionValuedDeclaratorName(declarator);
+  if (name === null) return null;
+  return declaredInsideFunctionScope(declarator) ? null : name;
 }
 
 /**

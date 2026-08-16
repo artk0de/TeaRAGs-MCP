@@ -188,7 +188,7 @@ describe("tsNameOf — class and function shapes stay put (bd tea-rags-mcp-2jhwk
   });
 });
 
-describe("tsNameOf — module-level const-bound function expressions (bd tea-rags-mcp-grz07)", () => {
+describe("tsNameOf — const-bound function expressions (bd tea-rags-mcp-grz07, widened by 29m75)", () => {
   it("names a module-level const arrow so a bare call has something to target", () => {
     // The measured gap: on the taxdome React corpus the checker resolved 179
     // bare calls to a module-level const arrow the symbol table could not name,
@@ -200,24 +200,91 @@ describe("tsNameOf — module-level const-bound function expressions (bd tea-rag
     expect(idsOf("const legacy = function (value: number) {\n  return value;\n};\n")).toContain("legacy");
   });
 
-  it("does NOT name a function-scoped const arrow", () => {
-    // bd tea-rags-mcp-w7qv4's guard declines a bare call on a function-scoped
-    // const by inspecting the DECLARATION's scope. Naming these would fill the
-    // symbol table with exactly the candidates it exists to keep away from
-    // `globalShortName` — 452 of them on the measured corpus, named
-    // `handleClick` / `renderContent` / `setRef` in hundreds of files apiece.
+  it("names a function-scoped const arrow UNDER its enclosing scope, never bare", () => {
+    // bd tea-rags-mcp-29m75 inverts grz07's module-level restriction, and the
+    // SCOPED id is what makes that safe. grz07 declined these because a bare
+    // `handler` would have handed `globalShortName` the 452 `handleClick` /
+    // `renderContent` / `setRef` candidates bd tea-rags-mcp-w7qv4's guard
+    // exists to withhold. Composing under the declaring scope keeps the bare
+    // name out of the table entirely, so that guard still sees nothing to
+    // fabricate from while the same-file and checker-narrowed lookups gain a
+    // real target.
     const ids = idsOf("export function render(id: string): void {\n  const handler = () => id;\n  handler();\n}\n");
     expect(ids).toContain("render");
-    expect(ids).not.toContain("render.handler");
+    expect(ids).toContain("render.handler");
     expect(ids).not.toContain("handler");
   });
 
-  it("does NOT name a const arrow declared inside a class method", () => {
+  it("composes a const arrow declared inside a class method under the `#` method form", () => {
+    // The enclosing chain carries the instance separator through, exactly as
+    // `Registry#register.handle` already does for a call-argument object
+    // member (bd tea-rags-mcp-cv4k1). A `.` here would name a symbol nothing
+    // resolves.
     const ids = idsOf(
       "export class Panel {\n  open(): void {\n    const onClose = () => undefined;\n    onClose();\n  }\n}\n",
     );
     expect(ids).toContain("Panel#open");
-    expect(ids).not.toContain("Panel#open.onClose");
+    expect(ids).toContain("Panel#open.onClose");
+    expect(ids).not.toContain("Panel.open.onClose");
+  });
+
+  it("scopes the nested closure under its declaring symbol so same-name closures stay distinct", () => {
+    // `handleChange` occurs 112 times across the taxdome corpus and `checkGuards`
+    // 202 times. The scope entry is what keeps two of them in ONE file
+    // distinguishable — and what lets the same-file pass narrow to the one the
+    // call site can actually see.
+    const src = [
+      "export const RowEditor = () => {",
+      "  const handleChange = (v: string) => v;",
+      "  return handleChange;",
+      "};",
+      "export const CellEditor = () => {",
+      "  const handleChange = (v: string) => v.trim();",
+      "  return handleChange;",
+      "};",
+    ].join("\n");
+    const symbols = collect(src);
+    const ids = symbols.map((s) => s.symbolId);
+    expect(ids).toContain("RowEditor.handleChange");
+    expect(ids).toContain("CellEditor.handleChange");
+    expect(symbols.find((s) => s.symbolId === "RowEditor.handleChange")?.scope).toEqual(["RowEditor"]);
+  });
+
+  it("names a closure a factory returns, which is the cross-file half of the gap", () => {
+    // 573 of the 3,944 missed rows call the closure from ANOTHER file — a hook
+    // returns it and a component invokes it. Those can only ever be pinned if
+    // the declaration carries an id at all.
+    const ids = idsOf("export function useThing() {\n  const doIt = (n: number) => n + 1;\n  return { doIt };\n}\n");
+    expect(ids).toContain("useThing.doIt");
+  });
+
+  it("lets an ANONYMOUS callback contribute no scope segment of its own", () => {
+    // Oracle class D (`anonymousCallable`) is explicitly out of scope: the
+    // callback itself gets no symbol, so a named closure inside it composes
+    // under the nearest NAMED ancestor rather than under an invented one.
+    const ids = idsOf(
+      "export function mount(): void {\n  effect(() => {\n    const tick = () => 1;\n    tick();\n  });\n}\n",
+    );
+    expect(ids).toContain("mount.tick");
+    expect(ids).not.toContain("tick");
+  });
+
+  it("still declines a destructured binding and a call-valued const inside a function body", () => {
+    // The oracle's BindingElement class (781 rows on taxdome) and the
+    // call-valued bucket stay unnamed — this bead widens the SCOPE the shape
+    // gate accepts, never the shape itself.
+    const ids = idsOf(
+      [
+        "export function useRow(): void {",
+        "  const { onRemove } = props;",
+        "  const t = useTranslation();",
+        "  onRemove();",
+        "  t();",
+        "}",
+      ].join("\n"),
+    );
+    expect(ids).not.toContain("useRow.onRemove");
+    expect(ids).not.toContain("useRow.t");
   });
 
   it("composes a nested declaration under the named arrow, like a function declaration", () => {

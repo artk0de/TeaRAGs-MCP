@@ -24,7 +24,7 @@ import type { NamedSymbol } from "../../../../contracts/types/codegraph.js";
 import {
   classifyMethod,
   constObjectNamespaceName,
-  moduleLevelFunctionDeclaratorName,
+  functionValuedDeclaratorName,
 } from "../../../../infra/symbolid/index.js";
 
 function methodKindFromClassify(node: AstNode): "instance" | "static" | undefined {
@@ -91,7 +91,7 @@ export function tsNameOf(node: AstNode): NamedSymbol | null {
   const namespaceName = constObjectNamespaceName(node);
   if (namespaceName) return { name: namespaceName, descendsInto: true };
 
-  // bd tea-rags-mcp-grz07 — MODULE-LEVEL const-bound FUNCTION expression:
+  // bd tea-rags-mcp-grz07 — const-bound FUNCTION expression, at MODULE level:
   //
   //   export const genValidationSchema = (message: string) => …
   //   const legacyExpression = function (value) { … };
@@ -104,20 +104,28 @@ export function tsNameOf(node: AstNode): NamedSymbol | null {
   // pinned to a module-level const arrow, every one of them landing in the
   // oracle's "unpinned target" bucket.
   //
+  // bd tea-rags-mcp-29m75 — the SAME shape one or more scopes deeper:
+  //
+  //   const RowEditor = () => { const handleChange = (v) => …; … };
+  //   function useThing() { const doIt = () => …; return { doIt }; }
+  //
+  // grz07 stopped at module level to keep a bare `handler` out of
+  // `globalShortName`'s reach. `collectSymbols` composes a nested declarator
+  // under its enclosing symbol — `render.handler`, `Panel#open.onClose`,
+  // `useThing.doIt` — so `lookup(fqName)` never gains the ambiguous key and
+  // `sameFile` / the type-checker passes gain a real target to pin. The
+  // short-name index is the part that is priced rather than avoided, and the
+  // exchange rate is in the shared gate's docblock: on taxdome this shape was
+  // 3,944 missed rows, 21.5% of the whole recall gap.
+  //
   // `descendsInto: false` matches `function_declaration` — a function is a
   // container for scope purposes but composes no members onto itself, which is
   // what separates this from the const-object namespace above. It is also what
   // keeps JavaScript byte-identical: `jsNameOf` DELEGATES here before applying
-  // its own pattern #5 for the same shape, and #5 returns exactly this.
-  //
-  // The MODULE-LEVEL restriction is the whole boundary, and it lives in the
-  // shared gate so the chunker cannot drift from it. A function-scoped const is
-  // a local variable, not an addressable symbol; bd tea-rags-mcp-w7qv4's
-  // resolver guard declines bare calls on those by DECLARATION SCOPE, and
-  // naming them here would hand `globalShortName` precisely the candidates that
-  // guard exists to withhold (452 of them on the same corpus, named
-  // `handleClick` / `renderContent` / `setRef` across hundreds of files).
-  const functionName = moduleLevelFunctionDeclaratorName(node);
+  // its own pattern #5, which has always recognised this shape at ANY depth and
+  // returns exactly this. Widening to match #5 is what keeps the delegation a
+  // no-op there rather than a second emission.
+  const functionName = functionValuedDeclaratorName(node);
   if (functionName) return { name: functionName, descendsInto: false };
   return null;
 }

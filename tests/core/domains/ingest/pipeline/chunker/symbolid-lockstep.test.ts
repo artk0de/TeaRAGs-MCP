@@ -279,13 +279,23 @@ describe("symbolId lockstep — chunker payload vs cg_symbols (bd tea-rags-mcp-6
       expect(codegraphIds(TYPESCRIPT, MODULE_LEVEL_CONST_FUNCTION_EXPRESSION)).toContain("legacyExpression");
     });
 
-    it("names a function-scoped const arrow on NEITHER side", async () => {
-      // Both producers must decline together. A chunk carrying `handler` with no
-      // cg_symbols row is the ghost this file exists to catch, and a cg_symbols
-      // row for `handler` is what bd tea-rags-mcp-w7qv4's guard exists to avoid.
+    it("names a function-scoped const arrow in cg_symbols only, scoped, never bare", async () => {
+      // bd tea-rags-mcp-29m75. The invariant this file guards is DIRECTIONAL —
+      // no chunker id may be absent from cg_symbols — and a codegraph-only id is
+      // the established other direction: nested `function_declaration`s
+      // (`outer.inner`) have always landed in cg_symbols with no chunk of their
+      // own. The chunker deliberately stays at module level here, because
+      // claiming the nested declaration would SPLIT the enclosing chunk and move
+      // the chunk set, which costs a full `--force` reindex for a navigation
+      // gain the enclosing chunk already covers.
+      //
+      // What must never appear on either side is a BARE `handler`: that is the
+      // ambiguous short-name candidate bd tea-rags-mcp-w7qv4's guard exists to
+      // withhold from `globalShortName`, and scoping under the declaring symbol
+      // is what keeps it out of the table.
       expect(await chunkerCallableIds(TYPESCRIPT, FUNCTION_SCOPED_CONST_ARROW)).toEqual(["render"]);
+      expect(codegraphIds(TYPESCRIPT, FUNCTION_SCOPED_CONST_ARROW)).toContain("render.handler");
       expect(codegraphIds(TYPESCRIPT, FUNCTION_SCOPED_CONST_ARROW)).not.toContain("handler");
-      expect(codegraphIds(TYPESCRIPT, FUNCTION_SCOPED_CONST_ARROW)).not.toContain("render.handler");
     });
 
     it.each([

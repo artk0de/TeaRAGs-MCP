@@ -2,6 +2,7 @@ export { INSTANCE_METHOD_SEPARATOR, classifyMethod, isStaticMethodNode, rubyInsi
 export type { MethodClassification } from "./classify.js";
 export { constObjectNamespaceName, constObjectNamespaceOwner } from "./const-object-namespace.js";
 export {
+  functionValuedDeclaratorName,
   isFunctionValuedExpression,
   moduleLevelFunctionDeclarationNames,
   moduleLevelFunctionDeclaratorName,
