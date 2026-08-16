@@ -1,8 +1,14 @@
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { dirname, join } from "node:path";
+
 import ts from "typescript";
-import { describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import {
+  buildCorpusExclusionFilter,
   classifyUnlocatedCallShape,
+  collectSourceFiles,
   decomposeOracleMismatches,
   describeOracleDeclaration,
   diffResolution,
@@ -22,6 +28,7 @@ import {
   type OracleVerdict,
 } from "../../scripts/ts-codegraph-typechecker-oracle.js";
 import type { CallRef } from "../../src/core/contracts/types/codegraph.js";
+import { LanguageFactory } from "../../src/core/domains/language/index.js";
 
 /** One call-site row, defaulted so each test states only the axis it exercises. */
 function row(overrides: Partial<OracleRow> = {}): OracleRow {
@@ -846,5 +853,63 @@ describe("reconcileOracleWrongFile on a super call (bd tea-rags-mcp-2mvc2)", () 
     });
 
     expect(reconcileOracleWrongFile(mismatch)).toEqual("defect");
+  });
+});
+
+/**
+ * The corpus has to be the one production builds nodes for
+ * (bd tea-rags-mcp-2mvc2). Scoring a gitignored or generated file is scoring
+ * code the resolver never sees — on taxdome that inflated `wrongFile` ~8x.
+ */
+describe("collectSourceFiles corpus scope", () => {
+  let repoRoot: string;
+
+  function write(relPath: string, content: string): void {
+    const abs = join(repoRoot, relPath);
+    mkdirSync(dirname(abs), { recursive: true });
+    writeFileSync(abs, content, "utf8");
+  }
+
+  beforeEach(() => {
+    repoRoot = mkdtempSync(join(tmpdir(), "oracle-corpus-"));
+    write(".gitignore", "app/generated/\n");
+    write("app/runner.ts", "export function run() {}\n");
+    write("app/legacy.js", "export function legacy() {}\n");
+    write("app/runner.test.ts", "it('runs', () => {});\n");
+    write("app/generated/api-client.ts", "export function fetchAll() {}\n");
+    write("app/types.d.ts", "export declare function typed(): void;\n");
+  });
+
+  afterEach(() => {
+    rmSync(repoRoot, { recursive: true, force: true });
+  });
+
+  it("keeps the source files production builds codegraph nodes for", async () => {
+    const exclude = await buildCorpusExclusionFilter(repoRoot, new LanguageFactory());
+
+    const selection = await collectSourceFiles(repoRoot, join(repoRoot, "app"), exclude);
+
+    expect(selection.kept).toEqual(["app/legacy.js", "app/runner.ts"]);
+  });
+
+  it("counts a gitignored file apart from one the codegraph layer drops", async () => {
+    const exclude = await buildCorpusExclusionFilter(repoRoot, new LanguageFactory());
+
+    const selection = await collectSourceFiles(repoRoot, join(repoRoot, "app"), exclude);
+
+    expect(selection.ingestIgnored).toEqual(1);
+    expect(selection.codegraphExcluded).toEqual(1);
+  });
+
+  it("scores the whole tree when no filter is supplied, the shape every caller before this used", async () => {
+    const selection = await collectSourceFiles(repoRoot, join(repoRoot, "app"));
+
+    expect(selection.kept).toEqual([
+      "app/generated/api-client.ts",
+      "app/legacy.js",
+      "app/runner.test.ts",
+      "app/runner.ts",
+    ]);
+    expect(selection.ingestIgnored).toEqual(0);
   });
 });

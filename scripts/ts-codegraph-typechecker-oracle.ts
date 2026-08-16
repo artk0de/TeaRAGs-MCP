@@ -29,10 +29,25 @@
  * bounded import closure, so counting those against the chain would measure the
  * oracle's blind spot rather than the resolver's.
  *
- * MEASUREMENT CUTOVER — 2026-08-16, bd tea-rags-mcp-2mvc2. Three of the
+ * MEASUREMENT CUTOVER — 2026-08-16, bd tea-rags-mcp-2mvc2. Four of the
  * harness's own defects were fixed at once, and each moves counts that were
- * never about the resolver. `missed`, `wrongFile` and `nodeNotLocated` FROM
- * BEFORE THAT COMMIT ARE NOT COMPARABLE WITH COUNTS FROM AFTER IT.
+ * never about the resolver. EVERY COUNT FROM BEFORE THAT COMMIT IS
+ * INCOMPARABLE WITH COUNTS FROM AFTER IT — the corpus itself changed, not only
+ * the verdicts computed over it.
+ *
+ *   - THE CORPUS WAS NOT PRODUCTION'S. The walk filtered on `SKIP_DIRECTORIES`
+ *     alone: no `.gitignore`, and none of the codegraph exclusion layer. So the
+ *     harness scored files the resolver never sees. On taxdome, `.gitignore`
+ *     line 132 excludes `app/javascript/api/codegen/__generated__/**\/*.ts`,
+ *     and 1,344 of the 1,723 baseline `wrongFile` rows — 78.0% — were
+ *     generated API clients; roughly 173 more were test files, leaving ~206
+ *     (12%) production-visible. Both layers now come from production's own
+ *     definitions (`BUILTIN_IGNORE_PATTERNS` plus the ignore files
+ *     `FileScanner` reads, then `buildCodegraphExclusionFilter`), and the two
+ *     excluded populations are reported separately so the drop is auditable
+ *     rather than silent. This is also what reconciles the harness with the
+ *     live run: the oracle read `localVar` at 864 mismatches of 1,014 while
+ *     `prime` reported 38 of 543, and the generated files are the difference.
  *
  *   - EXTERNAL SYMMETRY. The checker branch tested only `build/ | dist/ |
  *     .d.ts` for "not project source" while the chain branch also tested
@@ -121,6 +136,7 @@ import { readFileSync, writeFileSync } from "node:fs";
 import { readdir } from "node:fs/promises";
 import { join, relative, resolve as resolvePath, sep } from "node:path";
 
+import ignore, { type Ignore } from "ignore";
 import Parser from "tree-sitter";
 import ts from "typescript";
 
@@ -131,6 +147,7 @@ import type {
   RelPath,
   SymbolDefinition,
 } from "../src/core/contracts/types/codegraph.js";
+import { BUILTIN_IGNORE_PATTERNS } from "../src/core/domains/ingest/pipeline/ignore-defaults.js";
 import { collectSymbols, DefaultSymbolIdComposer, LanguageFactory } from "../src/core/domains/language/index.js";
 import { loadTsConfig, TSCallResolver } from "../src/core/domains/language/typescript/index.js";
 import {
@@ -142,6 +159,7 @@ import type {
   TSProgramCache,
   TSProgramHandle,
 } from "../src/core/domains/language/typescript/resolver/ts-program-cache.js";
+import { buildCodegraphExclusionFilter } from "../src/core/domains/trajectory/codegraph/exclusion.js";
 import { CODEGRAPH_LANGUAGES } from "../src/core/domains/trajectory/codegraph/symbols/provider.js";
 import { classifyReceiverKind } from "../src/core/domains/trajectory/codegraph/symbols/receiver-kind.js";
 import { lastSegment } from "../src/core/domains/trajectory/codegraph/symbols/symbol-name.js";
@@ -1409,6 +1427,62 @@ const SYMBOL_TABLE_EXTENSIONS = [".ts", ".tsx", ".js", ".jsx", ".mjs", ".cjs"] a
 
 const SKIP_DIRECTORIES = new Set(["node_modules", "build", "dist", ".git", ".claude", "coverage", "website"]);
 
+/** The ignore files the ingest scanner reads, in its order. */
+const PROJECT_IGNORE_FILES = [
+  ".gitignore",
+  ".dockerignore",
+  ".npmignore",
+  ".contextignore",
+  ".contextignore.local",
+] as const;
+
+/**
+ * The two exclusion layers production applies before a file can carry a
+ * codegraph node, kept apart so the harness can say WHICH one dropped a file
+ * (bd tea-rags-mcp-2mvc2).
+ *
+ * The harness used to apply neither, and scored a corpus production never
+ * indexes. On taxdome, `.gitignore` line 132 excludes
+ * `app/javascript/api/codegen/__generated__/**\/*.ts`, and 1,344 of the 1,723
+ * baseline `wrongFile` rows — 78.0% — were generated API clients; ~173 more
+ * were test files, leaving ~206 (12%) production-visible. Every raw taxdome
+ * count was inflated roughly 8x on that axis, and it is also what made the
+ * oracle's `localVar` mismatch (864 of 1,014) irreconcilable with the live
+ * resolve rate (38 of 543) — drop the generated files and the two agree.
+ */
+interface CorpusExclusionFilter {
+  /** `.gitignore` and friends plus the ingest baseline — production never indexes these at all. */
+  ingest: Ignore;
+  /** Generated + test + per-language non-app globs — indexed for search, but no codegraph nodes. */
+  codegraph: Ignore;
+}
+
+/**
+ * Build both layers from production's own definitions rather than a local
+ * pattern list — the same reason the node finders are imported rather than
+ * copied. `FileScanner` owns the ingest order (baseline, then each ignore file,
+ * then config patterns), and `buildCodegraphExclusionFilter` owns the codegraph
+ * layer including whatever globs each `LanguageProvider` declares.
+ *
+ * Config-supplied `ignorePatterns` / `customIgnorePatterns` are the one part
+ * not reproduced: they come from a bootstrap this harness does not build, and
+ * a project that sets them is excluding MORE than modelled here, never less.
+ */
+export async function buildCorpusExclusionFilter(
+  repoRoot: string,
+  factory: LanguageFactory,
+): Promise<CorpusExclusionFilter> {
+  const ingest = ignore().add(BUILTIN_IGNORE_PATTERNS);
+  for (const ignoreFile of PROJECT_IGNORE_FILES) {
+    try {
+      ingest.add(readFileSync(join(repoRoot, ignoreFile), "utf8"));
+    } catch {
+      // Absent or unreadable ignore file — production skips it silently too.
+    }
+  }
+  return { ingest, codegraph: buildCodegraphExclusionFilter({ customPatterns: [] }, factory) };
+}
+
 /** The lowercased extension of a path, `""` when it has none. */
 function extensionOf(relPath: string): string {
   const dot = relPath.lastIndexOf(".");
@@ -1425,14 +1499,31 @@ export function isScoredSource(relPath: string): boolean {
   return SCORED_EXTENSIONS.some((ext) => extensionOf(relPath) === ext);
 }
 
+/** Files kept, and the excluded populations named by the layer that dropped them. */
+export interface CorpusSelection {
+  kept: RelPath[];
+  /** Dropped by `.gitignore` and friends — production has no index entry at all. */
+  ingestIgnored: number;
+  /** Indexed for search, but generated / test / non-app code, so no codegraph node. */
+  codegraphExcluded: number;
+}
+
 /**
- * Every walkable source file under `dir`, repo-relative, sorted for
- * determinism. Includes the JavaScript extensions: they populate the symbol
- * table even though {@link isScoredSource} keeps their call sites out of the
- * diff.
+ * Every walkable source file under `dir` production would build a codegraph
+ * node for, repo-relative, sorted for determinism.
+ *
+ * Includes the JavaScript extensions: they populate the symbol table even
+ * though {@link isScoredSource} keeps their call sites out of the diff.
+ * Excludes whatever either production layer drops — a file the resolver never
+ * sees cannot be evidence about the resolver, and counting it inflated
+ * taxdome's `wrongFile` axis roughly 8x (see {@link CorpusExclusionFilter}).
  */
-export async function collectSourceFiles(repoRoot: string, dir: string): Promise<RelPath[]> {
-  const found: RelPath[] = [];
+export async function collectSourceFiles(
+  repoRoot: string,
+  dir: string,
+  exclude?: CorpusExclusionFilter,
+): Promise<CorpusSelection> {
+  const selection: CorpusSelection = { kept: [], ingestIgnored: 0, codegraphExcluded: 0 };
 
   const walk = async (absolute: string): Promise<void> => {
     const entries = await readdir(absolute, { withFileTypes: true });
@@ -1441,17 +1532,25 @@ export async function collectSourceFiles(repoRoot: string, dir: string): Promise
       if (entry.isDirectory()) {
         if (SKIP_DIRECTORIES.has(entry.name)) continue;
         await walk(child);
-      } else if (
-        SYMBOL_TABLE_EXTENSIONS.some((ext) => extensionOf(entry.name) === ext) &&
-        !isDeclarationFile(entry.name)
-      ) {
-        found.push(relative(repoRoot, child).split(sep).join("/"));
+        continue;
+      }
+      if (!SYMBOL_TABLE_EXTENSIONS.some((ext) => extensionOf(entry.name) === ext)) continue;
+      if (isDeclarationFile(entry.name)) continue;
+
+      const relPath = relative(repoRoot, child).split(sep).join("/");
+      if (exclude?.ingest.ignores(relPath) === true) {
+        selection.ingestIgnored++;
+      } else if (exclude?.codegraph.ignores(relPath) === true) {
+        selection.codegraphExcluded++;
+      } else {
+        selection.kept.push(relPath);
       }
     }
   };
 
   await walk(dir);
-  return found.sort();
+  selection.kept.sort();
+  return selection;
 }
 
 /** Walker output for one file, or `null` when the file could not be parsed. */
@@ -1500,6 +1599,10 @@ interface RunCounters {
   files: number;
   /** Files walked into the symbol table only, never scored — `.js` / `.jsx` / `.mjs` / `.cjs`. */
   symbolTableOnlyFiles: number;
+  /** Files `.gitignore` and friends drop — production has no index entry for them. */
+  ingestIgnoredFiles: number;
+  /** Files the codegraph layer drops — generated, test, or per-language non-app code. */
+  codegraphExcludedFiles: number;
   parseFailures: number;
   callSites: number;
   dispatchSkipped: number;
@@ -1537,6 +1640,8 @@ async function runOracle(repoRoot: string, targetDir: string, limit: number, qui
   const counters: RunCounters = {
     files: 0,
     symbolTableOnlyFiles: 0,
+    ingestIgnoredFiles: 0,
+    codegraphExcludedFiles: 0,
     parseFailures: 0,
     callSites: 0,
     dispatchSkipped: 0,
@@ -1552,11 +1657,13 @@ async function runOracle(repoRoot: string, targetDir: string, limit: number, qui
   // Both are populated from EVERY walkable language, as production's run state
   // does (`CodegraphRunState#classExtends` is run-global, not per-language);
   // pass 2 then narrows to the files this resolver actually owns.
-  const files = (await collectSourceFiles(repoRoot, targetDir)).slice(0, limit);
+  const selection = await collectSourceFiles(repoRoot, targetDir, await buildCorpusExclusionFilter(repoRoot, factory));
+  counters.ingestIgnoredFiles = selection.ingestIgnored;
+  counters.codegraphExcludedFiles = selection.codegraphExcluded;
   const scored: FileExtraction[] = [];
   const classExtends: Record<string, string> = {};
 
-  for (const relPath of files) {
+  for (const relPath of selection.kept.slice(0, limit)) {
     const extraction = extractFile(repoRoot, relPath, composer, factory);
     if (extraction === null) {
       counters.parseFailures++;
@@ -1708,6 +1815,8 @@ async function main(): Promise<void> {
     `TS codegraph type-checker oracle — ${relative(options.repoRoot, options.target) || "."} @ ${options.repoRoot}`,
     `files ${counters.files} scored (+${counters.symbolTableOnlyFiles} javascript in the symbol table, ` +
       `parse failures ${counters.parseFailures}) · call sites ${counters.callSites} · scored ${rows.length}`,
+    `excluded as production excludes them: ${counters.ingestIgnoredFiles} by .gitignore and friends · ` +
+      `${counters.codegraphExcludedFiles} generated/test/non-app`,
     `skipped: dispatch ${counters.dispatchSkipped} · no program ${counters.programUnavailable} · node not located ${counters.nodeNotLocated}`,
     `  by shape: ${ORACLE_UNLOCATED_SHAPES.map((s) => `${s} ${counters.nodeNotLocatedByShape[s]}`).join(" · ")}`,
     `checker external ${counters.checkerExternal} (of which the project's own generated output ${counters.checkerExternalNonSource}) · unknown ${counters.checkerUnknown}`,
