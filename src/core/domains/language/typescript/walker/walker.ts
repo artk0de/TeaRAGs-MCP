@@ -743,8 +743,14 @@ function emitMethodReferenceArgs(calleeMember: string, argsNode: AstNode, out: C
 /**
  * `Function.prototype` members that invoke (or bind) their RECEIVER rather
  * than being the target themselves (bd tea-rags-mcp-f2u54).
+ *
+ * Exported for `scripts/ts-codegraph-typechecker-oracle.ts`, which has to
+ * recognise the sites this vocabulary UNWRAPPED to give them ground truth (bd
+ * tea-rags-mcp-0w1py) — a second hand-written list there would drift from the
+ * one the walker actually applied, and the harness's header records what that
+ * kind of drift costs a measurement.
  */
-const FUNCTION_INVOKER_MEMBERS = new Set(["call", "apply", "bind"]);
+export const FUNCTION_INVOKER_MEMBERS = new Set(["call", "apply", "bind"]);
 
 /**
  * `f.call(obj, …)` / `f.apply(obj, args)` / `f.bind(obj)` — the function that

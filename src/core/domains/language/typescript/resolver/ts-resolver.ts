@@ -359,7 +359,35 @@ export class TSCallResolver implements CallResolver {
       new TSFieldTypeSymbolResolutionStrategy(cfg),
       new TSLocalBindingSymbolResolutionStrategy(cfg),
       new TSNamedImportSymbolResolutionStrategy(cfg),
-      // 6 answers only BARE calls, so every receiver-gated pass reaches it as
+      // 6 answers only JSX TAGS, and its index is the whole fix for bd
+      // tea-rags-mcp-33lqo: on taxdome, jsx carried 1,279 of the 1,479
+      // `wrongFile` defects (86%), and the checker had the right answer for
+      // every one of them — it just never got a turn from the tail.
+      //
+      // The cause is a React idiom the walker cannot name.
+      // `export { refForwarded as Card }` over a `forwardRef` / `memo` wrapper
+      // leaves NO `Card` symbol in the file the caller imports it from, so
+      // `importedCallee` maps the import to the right file, finds nothing there,
+      // reads that as "must be a barrel" and hops to the one `Card` the project
+      // does declare — an unrelated component. 942 rows arrived that way; a
+      // further 293 arrived through `globalShortName` on the same missing
+      // symbol. Declining those passes fixes nothing on its own: measured over
+      // the same corpus, 931 of the 942 are then answered IDENTICALLY WRONG by
+      // the next short-name pass down.
+      //
+      // Ordering fixes it because the checker resolves the tag's own symbol
+      // through the alias, whatever the walker managed to record. Measured over
+      // all 50,023 taxdome jsx sites: 1,287 move to the file the checker names
+      // (every one a known `wrongFile` row), 47,409 keep the answer the cheap
+      // passes already gave, and 2 lose an edge.
+      //
+      // It cannot disturb a non-JSX call: the pass returns CONTINUE unless
+      // `call.jsx === true`. It cannot cost recall when the checker is absent
+      // either — `CODEGRAPH_TS_TYPECHECKER=0` removes the cache and with it this
+      // entry, and a warmed-up-but-unavailable Program makes `acquire` return
+      // null, so the tree-sitter passes below answer exactly as they do today.
+      ...(this.programCache ? [new TSTypeCheckerJsxComponentSymbolResolutionStrategy(cfg, this.programCache)] : []),
+      // 7 answers only BARE calls, so every receiver-gated pass reaches it as
       // CONTINUE and its index against 1-5, 7 and 8 decides nothing. Against 9
       // it decides a lot, and the direction was MEASURED (bd tea-rags-mcp-w65s7):
       // `sameFile` matches a bare callee against every short name the caller's
@@ -391,7 +419,6 @@ export class TSCallResolver implements CallResolver {
     ];
     if (this.programCache) {
       this.strategies.push(
-        new TSTypeCheckerJsxComponentSymbolResolutionStrategy(cfg, this.programCache),
         // Head of the checker tier bar the JSX pass, and the index is a
         // correctness argument in one direction only (bd tea-rags-mcp-kf42k).
         // Everything ahead of it either answers a receiver or answers a bare

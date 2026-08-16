@@ -13,12 +13,14 @@ import {
   describeOracleDeclaration,
   diffResolution,
   findUncoveredCategories,
+  findValueReference,
   flagTrackBPriorities,
   formatOracleTable,
   isScoredSource,
   reconcileOracleMissed,
   reconcileOraclePhantom,
   reconcileOracleWrongFile,
+  referencesCallableValue,
   tallyBy,
   tallyChainOutput,
   tallyUnlocatedShapes,
@@ -768,6 +770,98 @@ describe("classifyUnlocatedCallShape", () => {
     const call = callRef({ callText: "handler.run.bind(handler)", receiver: "handler", member: "run" });
 
     expect(classifyUnlocatedCallShape(call)).toEqual("coordinateMiss");
+  });
+});
+
+describe("referencesCallableValue", () => {
+  it("claims a method handed over as a value — there is no call node, but there is a symbol", () => {
+    const call = callRef({ callText: "this.tick", receiver: "this", member: "tick" });
+
+    expect(referencesCallableValue(call)).toEqual(true);
+  });
+
+  it("claims a `.bind` site, whose walker member names the RECEIVER of the invoker", () => {
+    const call = callRef({ callText: "handler.run.bind(handler)", receiver: "handler", member: "run" });
+
+    expect(referencesCallableValue(call)).toEqual(true);
+  });
+
+  it("claims a `.call` site for the same reason", () => {
+    const call = callRef({
+      callText: "toolbar.handlers.video.call(toolbar)",
+      receiver: "toolbar.handlers",
+      member: "video",
+    });
+
+    expect(referencesCallableValue(call)).toEqual(true);
+  });
+
+  it("declines the invoker the walker could NOT unwrap — a computed callee names no value", () => {
+    const call = callRef({
+      callText: "registry[k].call(x)",
+      receiver: "registry[k]",
+      member: "call",
+      dynamicSend: true,
+    });
+
+    expect(referencesCallableValue(call)).toEqual(false);
+  });
+
+  it("declines an ordinary call the finders missed, so the residual bucket keeps its diagnostic value", () => {
+    const call = callRef({ callText: "handleSubmit(onSubmit)()", member: "handleSubmit" });
+
+    expect(referencesCallableValue(call)).toEqual(false);
+  });
+
+  it("declines a JSX tag, which the tag-name finder already locates", () => {
+    const call = callRef({ callText: "<Card />", member: "Card", jsx: true });
+
+    expect(referencesCallableValue(call)).toEqual(false);
+  });
+
+  it("declines a dynamic import, whose target is a module rather than a value", () => {
+    const call = callRef({ callText: 'import("./config.js")', member: "import" });
+
+    expect(referencesCallableValue(call)).toEqual(false);
+  });
+});
+
+describe("findValueReference", () => {
+  /** A parsed fixture, positions preserved so line lookup is real. */
+  function sourceOf(code: string): ts.SourceFile {
+    return ts.createSourceFile("fixture.ts", code, ts.ScriptTarget.Latest, true);
+  }
+
+  it("finds the property a method reference names, at the argument's own coordinate", () => {
+    const source = sourceOf(["class Ticker {", "  start() {", "    items.map(this.tick);", "  }", "}"].join("\n"));
+
+    const found = findValueReference(source, 3, "tick");
+
+    expect(found?.text).toEqual("tick");
+    expect(found?.parent.kind).toEqual(ts.SyntaxKind.PropertyAccessExpression);
+  });
+
+  it("finds the bare identifier a `.bind` site invokes, which is the invoker's receiver", () => {
+    const source = sourceOf(["function wire(f) {", "  return f.bind(null);", "}"].join("\n"));
+
+    expect(findValueReference(source, 2, "f")?.text).toEqual("f");
+  });
+
+  it("reports nothing when the line carries no identifier of that name", () => {
+    const source = sourceOf(["const a = 1;", "const b = 2;"].join("\n"));
+
+    expect(findValueReference(source, 2, "tick")).toEqual(null);
+  });
+
+  it("keeps the two coordinates apart, so a same-named reference on another line is not returned", () => {
+    const source = sourceOf(["run(this.tick);", "run(other.tick);"].join("\n"));
+
+    const first = findValueReference(source, 1, "tick");
+    const second = findValueReference(source, 2, "tick");
+
+    expect(first).not.toEqual(second);
+    expect(first?.parent.getText(source)).toEqual("this.tick");
+    expect(second?.parent.getText(source)).toEqual("other.tick");
   });
 });
 

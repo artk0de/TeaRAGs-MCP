@@ -89,13 +89,33 @@ export function parseFileScopedSymbolKey(key: FileScopedSymbolId): FileScopedSym
 /**
  * A symbol descriptor produced by a language walker's `nameOf(node)`. Names a
  * single declaration (function, method, class, namespace) the walker found at
- * the current AST node, plus the flags that drive symbolId composition and
- * scope descent. Relocated to `contracts/` (from the codegraph provider) so the
- * per-language `LanguageWalker` interface in `types/language.ts` can reference
- * it without a domain→domain import.
+ * the current AST node, plus the flags that drive symbolId composition.
+ * Relocated to `contracts/` (from the codegraph provider) so the per-language
+ * `LanguageWalker` interface in `types/language.ts` can reference it without a
+ * domain→domain import.
  */
 export interface NamedSymbol {
   name: string;
+  /**
+   * Whether the declaration is a scope CONTAINER (class, module, namespace,
+   * const-object namespace) rather than a leaf (function, method).
+   *
+   * DESCRIPTIVE ONLY — no collector reads it (bd tea-rags-mcp-czoif). It used
+   * to gate descent: `collectSymbols` recursed with an EXTENDED scope when the
+   * flag was set and with the SAME scope otherwise, so a function's interior
+   * composed nothing under it. `e8d96a55b` replaced that with unconditional
+   * descent — every named node extends `scope` / `composed` for its children,
+   * whatever the flag says — because two same-named helpers nested in different
+   * outer functions need distinct fully-qualified ids. That is also what lets
+   * `useThing.doIt` compose off a `descendsInto: false` declarator
+   * (bd tea-rags-mcp-29m75).
+   *
+   * So a walker author picking a value is describing the declaration, not
+   * steering the walk: both values produce the same symbol set today. Keep it
+   * honest anyway — the container/leaf distinction is the one fact a future
+   * consumer would need, and a walker that lies about it would be the harder
+   * bug to find.
+   */
   descendsInto: boolean;
   /**
    * Distinguishes the universal class/method separator from the
