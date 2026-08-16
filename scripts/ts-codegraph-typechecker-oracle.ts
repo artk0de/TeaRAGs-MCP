@@ -1063,6 +1063,18 @@ function constructorShortName(expression: ts.LeftHandSideExpression): string | n
  * When it declines (a call through a value whose type has one call signature, a
  * direct reference to an imported function), the symbol path is the fallback:
  * resolve the callee identifier, unwrap an import alias, take its declaration.
+ *
+ * A JSX TAG INVERTS THAT ORDER, and the inversion is load-bearing
+ * (bd tea-rags-mcp-2mvc2). A component written `const Layout: React.FC<Props>`
+ * has no call signature of its own — the one the compiler selects is the
+ * `(props: P): ReactNode` that `@types/react` declares on `FunctionComponent`.
+ * Asking `getResolvedSignature` about `<Layout />` therefore answers
+ * `node_modules/@types/react/index.d.ts`, and the chain's perfectly correct
+ * `ui-kit/components/Layout/Layout.tsx` reads as a fabricated edge. Measured on
+ * taxdome before the inversion: 30,354 such rows, a third of every edge the
+ * chain emitted, all of them the harness naming a component's TYPE instead of
+ * the component. What the tag references is the tag NAME's symbol, which is
+ * what an edge points at and what production's JSX pass asks for too.
  */
 function queryTypeChecker(handle: TSProgramHandle, cache: TSProgramCache, call: CallRef): OracleQueryResult {
   const node = locateCallLike(handle.sourceFile, call);
@@ -1070,7 +1082,9 @@ function queryTypeChecker(handle: TSProgramHandle, cache: TSProgramCache, call: 
 
   const { checker } = handle;
   const signature = checker.getResolvedSignature(node);
-  const declaration = signature?.declaration ?? declarationViaSymbol(node, checker);
+  const declaration = ts.isJsxOpeningLikeElement(node)
+    ? (declarationViaSymbol(node, checker) ?? signature?.declaration)
+    : (signature?.declaration ?? declarationViaSymbol(node, checker));
   const categories = classifyTypeFeatures(node, checker, signature, declaration);
 
   if (declaration === undefined) return { outcome: { kind: "unknown" }, located: true, nonSource: false, categories };
