@@ -384,6 +384,101 @@ describe("TSCallResolver resolves JSX component tags through its chain (bd tea-r
 });
 
 /**
+ * The shape that made JSX 86% of taxdome's `wrongFile` defects (bd
+ * tea-rags-mcp-33lqo). A component exported under a name the walker never
+ * records — `export { refForwarded as Card }` over a `forwardRef` / `memo`
+ * wrapper, the dominant React idiom — leaves the symbol table with no `Card` in
+ * the file the caller imports it from. Every short-name pass then finds exactly
+ * ONE `Card` in the project, the unrelated homonym, and commits to it.
+ *
+ * The checker has the right answer for all 1,287 of those sites; it simply
+ * never got a turn.
+ */
+function writeHomonymCorpus(repoRoot: string): void {
+  writeSource(
+    repoRoot,
+    "src/kit/card.tsx",
+    `function CardInner(props: { n: number }) {\n  return null;\n}\nconst refForwarded = CardInner;\nexport { refForwarded as Card };\n`,
+  );
+  writeSource(repoRoot, "src/legacy/card.tsx", `export function Card() {\n  return null;\n}\n`);
+  writeSource(
+    repoRoot,
+    "src/screen.tsx",
+    [
+      `import { Card } from "./kit/card.js";`, // 1
+      ``, // 2
+      `export function Screen() {`, // 3
+      `  return <Card n={1} />;`, // 4
+      `}`, // 5
+      ``,
+    ].join("\n"),
+  );
+}
+
+/** What the chunker records for {@link writeHomonymCorpus} — no `Card` in `kit/`. */
+function homonymSymbolTable(): InMemoryGlobalSymbolTable {
+  const symbolTable = new InMemoryGlobalSymbolTable();
+  symbolTable.upsertFile("src/kit/card.tsx", [
+    { symbolId: "CardInner", fqName: "CardInner", shortName: "CardInner", relPath: "src/kit/card.tsx", scope: [] },
+  ]);
+  symbolTable.upsertFile("src/legacy/card.tsx", [
+    { symbolId: "Card", fqName: "Card", shortName: "Card", relPath: "src/legacy/card.tsx", scope: [] },
+  ]);
+  symbolTable.upsertFile("src/screen.tsx", [
+    { symbolId: "Screen", fqName: "Screen", shortName: "Screen", relPath: "src/screen.tsx", scope: [] },
+  ]);
+  return symbolTable;
+}
+
+function screenContext(symbolTable: InMemoryGlobalSymbolTable): CallContext {
+  return {
+    callerFile: "src/screen.tsx",
+    callerScope: [],
+    imports: [
+      { importText: "./kit/card.js", startLine: 1, importedNames: ["Card"], importedBindings: { Card: "Card" } },
+    ],
+    symbolTable,
+  };
+}
+
+describe("TSCallResolver prefers the checker's JSX answer over a short-name guess (bd tea-rags-mcp-33lqo)", () => {
+  let repoRoot: string;
+
+  beforeEach(() => {
+    repoRoot = realpathSync(mkdtempSync(join(tmpdir(), "ts-jsx-homonym-")));
+    writeHomonymCorpus(repoRoot);
+  });
+
+  afterEach(() => {
+    rmSync(repoRoot, { recursive: true, force: true });
+    delete process.env.CODEGRAPH_TS_TYPECHECKER;
+  });
+
+  it("resolves a tag to the file its import names, not to the same-named component elsewhere", () => {
+    const resolver = new TSCallResolver({ baseUrl: ".", paths: {} }, "strict", repoRoot);
+
+    const target = resolver.resolve(
+      { callText: "<Card n={1} />", receiver: null, member: "Card", startLine: 4, jsx: true },
+      screenContext(homonymSymbolTable()),
+    );
+
+    expect(target?.targetRelPath).toEqual("src/kit/card.tsx");
+  });
+
+  it("still emits an edge with the checker disabled, so the precedence costs no recall", () => {
+    process.env.CODEGRAPH_TS_TYPECHECKER = "0";
+    const resolver = new TSCallResolver({ baseUrl: ".", paths: {} }, "strict", repoRoot);
+
+    const target = resolver.resolve(
+      { callText: "<Card n={1} />", receiver: null, member: "Card", startLine: 4, jsx: true },
+      screenContext(homonymSymbolTable()),
+    );
+
+    expect(target).not.toBeNull();
+  });
+});
+
+/**
  * The locator is exported so `scripts/ts-codegraph-typechecker-oracle.ts` can
  * score a JSX call site against the SAME tag this pass resolves
  * (bd tea-rags-mcp-2mvc2). These pin the coordinate contract the harness now

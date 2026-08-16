@@ -9,13 +9,27 @@
  * (`jsx: true`, `member` = tag name, `receiver` = qualifier of a dotted tag),
  * which puts those sites through the same resolution chain as every other call.
  *
- * Most of them never reach here, by design. A component declared in the caller's
- * own file, imported under its real name, or named after its file is decided by
- * a tree-sitter pass that costs nothing. What those passes structurally cannot
- * do is follow a BINDING: `import { Chip as Tag }` then `<Tag />`, a default
- * import whose local name is arbitrary, or a barrel that re-exports a component
- * declared three files away. The tag text and the declaration's name are simply
- * different strings, and no amount of AST pattern-matching bridges them.
+ * What the tree-sitter passes structurally cannot do is follow a BINDING:
+ * `import { Chip as Tag }` then `<Tag />`, a default import whose local name is
+ * arbitrary, or a barrel that re-exports a component declared three files away.
+ * The tag text and the declaration's name are simply different strings, and no
+ * amount of AST pattern-matching bridges them.
+ *
+ * This pass therefore runs BEFORE them rather than after (bd tea-rags-mcp-33lqo,
+ * chain position 6 — see `TSCallResolver`'s array for the measurement). It used
+ * to sit in the tail on the reasoning that a component declared in the caller's
+ * own file or imported under its real name is decided by a cheap pass anyway,
+ * and only the un-nameable bindings need a checker. On taxdome that reasoning
+ * cost 1,279 wrongFile defects: `export { refForwarded as Card }` over a
+ * `forwardRef` wrapper leaves NO `Card` in the symbol table, so the cheap passes
+ * did not decline — they found the one same-named component the project DID
+ * declare, somewhere else entirely, and committed to it. A pass that is right
+ * where the cheap ones are wrong has to be asked first.
+ *
+ * Cheapness is preserved by the pass's own gates rather than by its position: a
+ * non-JSX call returns CONTINUE on the first line, and a Program the cache
+ * declines to build (warm-up, admission, `CODEGRAPH_TS_TYPECHECKER=0`) returns
+ * CONTINUE on the second, leaving the tree-sitter passes to answer as before.
  *
  * `getSymbolAtLocation` on the tag name does bridge them, because the checker
  * already understands JSX natively — there is no `createElement` desugaring to
