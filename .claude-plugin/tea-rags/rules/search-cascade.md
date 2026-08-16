@@ -180,7 +180,13 @@ discover it's missing. Precedence — start cheap, escalate only if needed:
    pass `rerank="bugHunt"` (or `dangerous`/`hotspots`/`blastRadius`) to attach
    per-step danger ranking. Escalate here ONLY when the full chain matters ("how
    does control reach B from A?", "which step on the A→B chain is riskiest?"),
-   never for a single hop.
+   never for a single hop. Nodes are file-scoped — namesakes in different files
+   never merge, paths never cross a namesake file boundary. Bare `from`/`to`
+   matching >1 file → trace fans out from EVERY candidate; response carries
+   `namesakes: { from: [...], to: [...] }` (PRE-filter candidate files; omitted
+   when both endpoints unambiguous). Narrow with `fromPath` / `toPath` — exact
+   relativePath, take it from a prior search result. Wrong path → `paths: []` +
+   `namesakes` listing real candidates: disambiguation cue, NOT absence-of-path.
 
 **When codegraph is off** (no `codegraph.symbols` in prime), route by intent to
 a non-graph substitute — never read an absent/empty graph tool as positive fact

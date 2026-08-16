@@ -99,6 +99,13 @@ the endpoints.
 trace_path(from=<entry point>, to=<suspect>, rerank="bugHunt")
 ```
 
+Component codebases (React etc.): top-level names are namesakes by construction
+(`BaseTable` may denote several files). Pin endpoints with
+`fromPath=<relativePath>` / `toPath=<relativePath>` — the suspect chunk from
+triage already carries `relativePath`. Response `namesakes: { from, to }` =
+endpoint matched several files; trace already fanned out per candidate, paths
+never cross namesake boundaries.
+
 Per-step `dangerOverlay` carries the same git signals as triage (bugFixRate,
 relativeChurn) for every hop on the path. Read the response top-down:
 
@@ -107,7 +114,9 @@ relativeChurn) for every hop on the path. Read the response top-down:
   (`critical` → prime, `concerning` + churn → secondary, `healthy` → SKIP).
 - `aggregateDanger` → ranks competing paths when `maxPaths > 1`; the
   highest-danger route is the one to walk first.
-- **Empty result = no static call path** from `from` to `to`. Negative signal:
+- **Empty result: check `namesakes` FIRST.** Present → your `fromPath`/`toPath`
+  matched no candidate file — fix the path (real candidates listed), not the
+  suspect. Absent → genuinely **no static call path** from `from` to `to`:
   suspect not reachable from that entry — wrong entry, dynamic dispatch, or
   wrong suspect. Re-pick before reading code.
 
