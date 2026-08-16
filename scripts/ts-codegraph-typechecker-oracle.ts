@@ -1037,7 +1037,19 @@ function queryTypeChecker(handle: TSProgramHandle, cache: TSProgramCache, call: 
 
   if (declaration === undefined) return { outcome: { kind: "unknown" }, located: true, nonSource: false, categories };
 
-  const { fileName } = declaration.getSourceFile();
+  // A SYNTHESIZED declaration has no source file to place it in. The compiler
+  // fabricates one when the signature it selected belongs to no written node —
+  // an inferred `FunctionType` standing in for a component's props callback is
+  // the shape observed (1 site in mastodon's 10,002). `getSourceFile()` is
+  // typed as always returning, so this arm needs the cast to exist at all; it
+  // reads as "the checker answered, and the answer names nowhere", which is
+  // exactly `unknown` and NOT external — calling it external would let an
+  // in-project chain answer on the same call score as a phantom.
+  const declared = declaration.getSourceFile() as ts.SourceFile | undefined;
+  if (declared === undefined) {
+    return { outcome: { kind: "unknown" }, located: true, nonSource: false, categories };
+  }
+  const { fileName } = declared;
   const targetRelPath = cache.toRelPath(fileName);
   if (targetRelPath === null || isOutsideProjectSource(targetRelPath)) {
     const target = buildTargetFacts(declaration, fileName, targetRelPath, null);
