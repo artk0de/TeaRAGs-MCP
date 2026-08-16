@@ -20,6 +20,8 @@ import { classifyMethod, isStaticMethodNode } from "../../../../src/core/infra/s
 interface MockNode {
   type: string;
   text?: string;
+  /** Keywords and punctuation are UNNAMED nodes; declarations are named. */
+  isNamed?: boolean;
   children?: MockNode[];
   parent?: MockNode | null;
   childForFieldName?: (name: string) => MockNode | null;
@@ -28,12 +30,16 @@ interface MockNode {
 function node(spec: MockNode): MockNode {
   return {
     text: "",
+    isNamed: true,
     children: [],
     parent: null,
     childForFieldName: () => null,
     ...spec,
   };
 }
+
+/** The unnamed `static` keyword node tree-sitter puts before a member's name. */
+const staticKeyword = (): MockNode => node({ type: "static", text: "static", isNamed: false });
 
 describe("classifyMethod — TypeScript / JavaScript `method_definition`", () => {
   it("treats method_definition without `static` keyword as instance", () => {
@@ -293,5 +299,45 @@ describe("classifyMethod — Go and unknown nodes", () => {
 
   it("isStaticMethodNode returns false for non-method nodes", () => {
     expect(isStaticMethodNode(node({ type: "program" }) as never)).toBe(false);
+  });
+});
+
+/**
+ * bd tea-rags-mcp-5ldqu — a class FIELD bound to an arrow
+ * (`class F { request = async () => {} }`) is a member with the same two kinds
+ * a method has, and the same two consumers must agree on which: the codegraph
+ * walker composing `F#request` vs `F.request`, and the chunker's class-body
+ * grouper bucketing the field as a static member vs a plain property.
+ */
+describe("classifyMethod — TypeScript `public_field_definition`", () => {
+  it("treats a field without the `static` keyword as instance-bound", () => {
+    const n = node({
+      type: "public_field_definition",
+      children: [node({ type: "property_identifier", text: "request" })],
+    });
+    expect(classifyMethod(n as never)).toBe("instance");
+    expect(isStaticMethodNode(n as never)).toBe(false);
+  });
+
+  it("treats a field carrying the `static` keyword as class-level", () => {
+    const n = node({
+      type: "public_field_definition",
+      children: [staticKeyword(), node({ type: "property_identifier", text: "build" })],
+    });
+    expect(classifyMethod(n as never)).toBe("static");
+    expect(isStaticMethodNode(n as never)).toBe(true);
+  });
+
+  it("does NOT read a field NAMED `static` as a static field", () => {
+    // `class X { static = () => 1 }` — tree-sitter emits a single NAMED
+    // `property_identifier` whose text is "static" and no modifier node. Matching
+    // on child TEXT the way the `method_definition` branch does would flip the
+    // separator and point every `x.static()` at an id nothing carries.
+    const n = node({
+      type: "public_field_definition",
+      children: [node({ type: "property_identifier", text: "static" })],
+    });
+    expect(classifyMethod(n as never)).toBe("instance");
+    expect(isStaticMethodNode(n as never)).toBe(false);
   });
 });

@@ -22,6 +22,7 @@
 import type { AstNode } from "../../../../contracts/types/ast.js";
 import type { NamedSymbol } from "../../../../contracts/types/codegraph.js";
 import {
+  classPropertyFunction,
   classifyMethod,
   constObjectNamespaceName,
   functionValuedDeclaratorName,
@@ -43,6 +44,28 @@ export function tsNameOf(node: AstNode): NamedSymbol | null {
     // the convention reserves for exactly this case
     // (`.claude/rules/symbolid-convention.md`).
     if (id) return { name: id.text, descendsInto: false, methodKind: methodKindFromClassify(node) };
+  }
+  // bd tea-rags-mcp-5ldqu — a class member declared as a FIELD bound to a
+  // function rather than as a method:
+  //
+  //   class AdminentrypointPostFetcher { request = async () => fetch(url); }
+  //
+  // The same member as a `method_definition` for every purpose that matters
+  // downstream, so it composes the same way — `#` for an instance field, `.` for
+  // a `static` one. The shape-plus-kind gate lives in
+  // `infra/symbolid/class-property-function.ts`, next to `classifyMethod`, which
+  // is what it reads for the kind and what the chunker's class-body grouper
+  // reads to bucket the same field.
+  //
+  // `descendsInto: false` matches `method_definition`: the field is a container
+  // for scope purposes (a closure inside the arrow composes as
+  // `Class#field.inner`) but composes no members onto itself.
+  //
+  // Placed AFTER `method_definition` and before everything else because the node
+  // types are disjoint — the order is readability, not precedence.
+  const classProperty = classPropertyFunction(node);
+  if (classProperty) {
+    return { name: classProperty.name, descendsInto: false, methodKind: classProperty.methodKind };
   }
   if (node.type === "function_declaration") {
     const id = node.childForFieldName("name");

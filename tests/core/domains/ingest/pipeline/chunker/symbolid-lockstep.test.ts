@@ -317,6 +317,81 @@ describe("symbolId lockstep — chunker payload vs cg_symbols (bd tea-rags-mcp-6
       expect(await chunkerCallableIds(TYPESCRIPT, src)).toEqual([]);
       expect(codegraphIds(TYPESCRIPT, src)).toEqual([]);
     });
+
+    /**
+     * bd tea-rags-mcp-5ldqu — the class-property arrow. A class member declared
+     * as a field rather than as a method, and the shape generated API clients
+     * use throughout (`class PostFetcher { request = async () => {} }`).
+     *
+     * Carries a real method alongside the two fields, for two reasons: the class
+     * only becomes a chunk CONTAINER when it has a child chunk, which is what
+     * makes the class-body grouper's buckets reach the output at all; and it
+     * gives the directional invariant an actual chunker id to check. Each field
+     * body is past the grouper's small-chunk merge threshold so the two buckets
+     * survive as separate chunks rather than being folded back together.
+     */
+    const CLASS_PROPERTY_ARROWS = [
+      "export class PostFetcher {",
+      "  request = async (url: string): Promise<string> => {",
+      "    const normalizedUrl = url.trim().toLowerCase();",
+      "    const response = await fetch(normalizedUrl);",
+      "    return response.statusText.trim();",
+      "  };",
+      "",
+      "  static build = (): PostFetcher => {",
+      "    const instance = new PostFetcher();",
+      "    const configured = Object.assign(instance, { retries: 3 });",
+      "    return configured;",
+      "  };",
+      "",
+      "  send(url: string): string {",
+      "    const trimmed = url.trim();",
+      "    return trimmed.toLowerCase();",
+      "  }",
+      "}",
+    ].join("\n");
+
+    it("names a class-property arrow in cg_symbols only, with the member's own separator", async () => {
+      // The asymmetry is the same one bd tea-rags-mcp-29m75 established for
+      // nested declarators, for the same reason: the chunker already carries
+      // these fields inside the CLASS chunk (`class-body-chunker.ts` groups
+      // `public_field_definition` into a body chunk under the class header), so
+      // claiming them separately would SPLIT that chunk, move the chunk set and
+      // cost a full `--force` reindex for navigation the class chunk provides.
+      //
+      // The lockstep invariant is directional — no CHUNKER id absent from
+      // cg_symbols — and a codegraph-only id is its established other side.
+      const graphIds = codegraphIds(TYPESCRIPT, CLASS_PROPERTY_ARROWS);
+      expect(graphIds).toContain("PostFetcher#request");
+      expect(graphIds).toContain("PostFetcher.build");
+
+      const payloadIds = await chunkerCallableIds(TYPESCRIPT, CLASS_PROPERTY_ARROWS);
+      expect(payloadIds).toContain("PostFetcher#send");
+      expect(payloadIds).not.toContain("PostFetcher#request");
+      expect(payloadIds).not.toContain("PostFetcher.build");
+    });
+
+    it("emits no callable id absent from cg_symbols — class-property arrows", async () => {
+      const graphIds = new Set(codegraphIds(TYPESCRIPT, CLASS_PROPERTY_ARROWS));
+      for (const id of await chunkerCallableIds(TYPESCRIPT, CLASS_PROPERTY_ARROWS)) {
+        expect([...graphIds]).toContain(id);
+      }
+    });
+
+    it("agrees with the walker on which field is static, through one shared predicate", async () => {
+      // The lockstep that matters for a FIELD is on the KIND, not on the id: the
+      // walker reads `classifyMethod` to pick `#` vs `.`, and the class-body
+      // grouper reads the same predicate to bucket the field as a static member
+      // rather than a plain property. One predicate means the two cannot drift,
+      // and the two buckets landing in different body chunks is how that shared
+      // decision becomes observable from outside.
+      const chunks = await chunker.chunk(CLASS_PROPERTY_ARROWS, "subject.ts", "typescript");
+      const holding = (needle: string): number => chunks.findIndex((c) => c.content.includes(needle));
+
+      expect(holding("request = async")).toBeGreaterThanOrEqual(0);
+      expect(holding("static build")).toBeGreaterThanOrEqual(0);
+      expect(holding("request = async")).not.toBe(holding("static build"));
+    });
   });
 
   describe("JavaScript", () => {

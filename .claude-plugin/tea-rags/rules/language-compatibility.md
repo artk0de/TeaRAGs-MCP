@@ -91,7 +91,9 @@ conclude absence from a graph the index says is incomplete.
   import-mapping fallback) + local-callee guard (bare calls whose callee is a
   destructured prop / hook binding) + named function-valued declarators
   addressable at any scope depth (module-level and nested closures alike,
-  composed under their declaring symbol) + edges restricted to project sources +
+  composed under their declaring symbol) + class-property arrows addressable as
+  class members (`request = async () => {}` composing `#` instance / `.` static
+  like a method) + edges restricted to project sources +
   tsx/tsconfig-paths-aware import mapping
 - **JavaScript** — 6-strategy; CommonJS/ESM require resolution (dynamic gaps)
 - **Python** — 6-strategy + ConeDispatch CHA; type hints where present

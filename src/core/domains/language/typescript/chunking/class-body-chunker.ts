@@ -19,6 +19,7 @@
 
 import type { AstNode } from "../../../../contracts/types/ast.js";
 import type { BodyChunkResult, ChunkingHook, HookContext } from "../../../../contracts/types/chunker.js";
+import { isStaticMethodNode } from "../../../../infra/symbolid/index.js";
 import { findClassBody } from "./utils.js";
 
 // ── Classification ────────────────────────────────────────────────
@@ -47,8 +48,13 @@ function classifyNode(node: AstNode): GroupType | undefined {
     if (hasChildOfType(node, "decorator")) return "decorated_members";
     // Check abstract
     if (hasModifier(node, "abstract")) return "abstract_members";
-    // Check static
-    if (hasModifier(node, "static")) return "static_members";
+    // Check static — through the SHARED predicate, not a local copy of it.
+    // bd tea-rags-mcp-5ldqu made the codegraph walker compose a field-bound
+    // arrow as `Class#field` / `Class.field`, and it decides that by asking
+    // `classifyMethod` about this same node. Sharing the predicate is what makes
+    // the two answers structurally incapable of drifting
+    // (`.claude/rules/symbolid-convention.md`).
+    if (isStaticMethodNode(node)) return "static_members";
     // Plain property
     return "properties";
   }

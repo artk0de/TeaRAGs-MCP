@@ -82,12 +82,17 @@
  *
  * A CLASS FIELD bound to an arrow (`class X { static handle = () => {} }`) is a
  * `public_field_definition`, not a `variable_declarator`, and is not recognised
- * here. That is a measured decision rather than an oversight: across the 4145
- * missed bare-call targets on the corpus, the declaration kinds present are
- * `VariableDeclaration`, `FunctionType`, `ArrowFunction`, `BindingElement`,
- * `MethodSignature` and `Parameter` — no `PropertyDeclaration` at all. Adding a
- * second node shape to both producers for a class with no observed instances
- * would be cost without evidence; re-measure before adding it.
+ * here. It has its OWN gate — `./class-property-function.ts`, bd
+ * tea-rags-mcp-5ldqu — because it needs something no declarator does: a
+ * `methodKind`, since a class member composes `#` or `.` against its class
+ * rather than standing alone.
+ *
+ * The re-measurement that gate asked for is worth recording, because the shape
+ * was invisible from the bare-call side this file was measured from. Reading the
+ * MISSED bare-call targets found no `PropertyDeclaration` at all; the cost was
+ * sitting in the `wrongFile` column instead, where a `localVar` receiver typed
+ * to the declaring class asked for a row that did not exist and the call fell
+ * through to a same-named symbol elsewhere.
  */
 
 import type { AstNode } from "../../contracts/types/ast.js";
