@@ -51,6 +51,7 @@ import { resolveLocalBindingType, type CallContext, type CallRef } from "../../.
 import { findReceiverExpression } from "./strategies/ts-type-checker-shared.js";
 import { isLocalValueBinding } from "./ts-local-callee.js";
 import type { TSProgramCache } from "./ts-program-cache.js";
+import { typeConstituents } from "./ts-type-constituents.js";
 
 /**
  * `true` when the walker bound this call's RECEIVER to a type the project itself
@@ -157,6 +158,12 @@ function isBareIdentifierText(receiver: string): boolean {
  * `ProjectStore#save`, and a union that merely MIGHT reach the project on this
  * call is not evidence enough to decline.
  *
+ * Both predicates flatten through {@link typeConstituents}, so an INTERSECTION
+ * is walked part by part rather than read as one unnamed type (bd
+ * tea-rags-mcp-6o7bi). Until it was, `ProjectStore & Branded` named no project
+ * declaration here and no external one there — the receiver was declined as
+ * unpinnable AND kept in the denominator, which is the worst of both answers.
+ *
  * The two predicates are near-neighbours but not complements, which is why this
  * one is written out rather than negated from the other. They disagree on
  * precisely the population this module exists for: a type with no symbol (`any`,
@@ -168,8 +175,8 @@ function isBareIdentifierText(receiver: string): boolean {
  * primitive or type-parameter constraint is resolved the same way in both.
  */
 function typeNamesProjectDeclaration(checker: ts.TypeChecker, type: ts.Type, programCache: TSProgramCache): boolean {
-  for (const constituent of type.isUnion() ? type.types : [type]) {
-    const declarations = checker.getApparentType(constituent).getSymbol()?.getDeclarations() ?? [];
+  for (const constituent of typeConstituents(checker, type)) {
+    const declarations = constituent.getSymbol()?.getDeclarations() ?? [];
     for (const declaration of declarations) {
       if (programCache.isProjectSourceFile(declaration.getSourceFile().fileName)) return true;
     }
