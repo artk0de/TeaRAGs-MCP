@@ -302,3 +302,115 @@ describe("tsNameOf — const-bound function expressions (bd tea-rags-mcp-grz07, 
     expect(idsOf("export const t = useTranslation();\n")).not.toContain("t");
   });
 });
+
+/**
+ * bd tea-rags-mcp-5ldqu — the CLASS-PROPERTY arrow:
+ *
+ *   class AdminentrypointPostFetcher { request = async () => {…} }
+ *
+ * A `public_field_definition`, not a `variable_declarator`, so neither the
+ * const-object gate nor the const-bound-function gate reaches it, and bd
+ * tea-rags-mcp-29m75 left it explicitly out of scope. The cost was measured:
+ * `fetcher.request()` had no `AdminentrypointPostFetcher#request` row to land
+ * on, so pass 4 (`localBinding`) could not pin it and the call fell through to a
+ * same-named symbol in an unrelated file.
+ *
+ * The member KIND is what makes this different from every other gate in this
+ * file: a field is invoked on an INSTANCE unless `static` says otherwise, so it
+ * has to carry `methodKind` and compose `#` / `.` exactly as a
+ * `method_definition` does.
+ */
+describe("tsNameOf — class-property arrows (bd tea-rags-mcp-5ldqu)", () => {
+  const FETCHER = [
+    "export class AdminentrypointPostFetcher {",
+    "  request = async (url: string): Promise<Response> => {",
+    "    return fetch(url);",
+    "  };",
+    "",
+    "  static build = (): AdminentrypointPostFetcher => {",
+    "    return new AdminentrypointPostFetcher();",
+    "  };",
+    "}",
+  ].join("\n");
+
+  it("composes an instance field arrow with `#`, exactly as it composes a method", () => {
+    expect(idsOf(FETCHER)).toContain("AdminentrypointPostFetcher#request");
+  });
+
+  it("composes a `static` field arrow with `.`", () => {
+    expect(idsOf(FETCHER)).toContain("AdminentrypointPostFetcher.build");
+  });
+
+  it("never emits the member as a bare top-level id", () => {
+    // A bare `request` is the ambiguous short-name candidate bd
+    // tea-rags-mcp-w7qv4's guard exists to withhold from `globalShortName`, and
+    // scoping under the declaring class is what keeps it out of the table.
+    const ids = idsOf(FETCHER);
+    expect(ids).not.toContain("request");
+    expect(ids).not.toContain("build");
+  });
+
+  it("scopes the member under its class so FQN-narrowing can pin the right one", () => {
+    const member = collect(FETCHER).find((s) => s.symbolId === "AdminentrypointPostFetcher#request");
+    expect(member?.scope).toEqual(["AdminentrypointPostFetcher"]);
+  });
+
+  it("keeps two same-named fields in different classes distinguishable", () => {
+    const ids = idsOf(
+      [
+        "export class PostFetcher {",
+        "  request = async (url: string) => fetch(url);",
+        "}",
+        "export class GetFetcher {",
+        "  request = async (url: string) => fetch(url);",
+        "}",
+      ].join("\n"),
+    );
+    expect(ids).toContain("PostFetcher#request");
+    expect(ids).toContain("GetFetcher#request");
+  });
+
+  it("declines the shapes that declare no callable value", () => {
+    // A datum, a call's return, and a value-less FUNCTION TYPE. The last is the
+    // oracle's `FunctionType` class — a type, not a declaration, and naming it
+    // would put a row in cg_symbols with no body behind it.
+    const ids = idsOf(
+      [
+        "export class Config {",
+        "  retries = 3;",
+        "  translate = useTranslation('ns');",
+        "  declare later: () => void;",
+        "}",
+      ].join("\n"),
+    );
+    expect(ids).not.toContain("Config#retries");
+    expect(ids).not.toContain("Config#translate");
+    expect(ids).not.toContain("Config#later");
+  });
+
+  it("leaves an ordinary method's id untouched", () => {
+    // Regression guard: the new branch must not intercept `method_definition`.
+    const ids = idsOf(
+      "export class Fetcher {\n  send(url: string) {\n    return url;\n  }\n  static make() {\n    return new Fetcher();\n  }\n}\n",
+    );
+    expect(ids).toContain("Fetcher#send");
+    expect(ids).toContain("Fetcher.make");
+  });
+
+  it("composes a closure declared INSIDE the field arrow under the field", () => {
+    // Mirrors bd tea-rags-mcp-29m75: the arrow is a container, and what it
+    // declares composes beneath it rather than leaking to file level.
+    const ids = idsOf(
+      [
+        "export class Fetcher {",
+        "  request = async (url: string) => {",
+        "    const parse = (raw: string) => raw.trim();",
+        "    return parse(url);",
+        "  };",
+        "}",
+      ].join("\n"),
+    );
+    expect(ids).toContain("Fetcher#request.parse");
+    expect(ids).not.toContain("parse");
+  });
+});

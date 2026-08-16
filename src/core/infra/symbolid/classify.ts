@@ -52,6 +52,19 @@ export function classifyMethod(node: AstNode): MethodClassification | null {
     if (node.parent?.type === "object") return null;
     return hasChildOfTypeOrText(node, "static") ? "static" : "instance";
   }
+  // TypeScript — a class FIELD bound to a function (`request = async () => {}`)
+  // is a member with the same two kinds a method has, and two consumers must
+  // agree on which: the codegraph walker composing `F#request` vs `F.request`
+  // (via `./class-property-function.ts`), and the chunker's class-body grouper
+  // bucketing the field as a static member vs a plain property
+  // (bd tea-rags-mcp-5ldqu).
+  //
+  // Detection is deliberately STRICTER than the `method_definition` branch
+  // above: only an UNNAMED `static` keyword counts, never a child whose text
+  // happens to read "static". `class X { static = () => 1 }` declares a field
+  // NAMED `static` — a single named `property_identifier` with no modifier —
+  // and the text fallback would flip its separator.
+  if (node.type === "public_field_definition") return hasStaticModifier(node) ? "static" : "instance";
   // Java — `static` modifier nested under a `modifiers` child.
   if (node.type === "method_declaration") return javaHasStaticModifier(node) ? "static" : "instance";
   // Java constructor — instance-bound (initializes an instance).
@@ -87,6 +100,19 @@ export function isStaticMethodNode(node: AstNode): boolean {
 function hasChildOfTypeOrText(node: AstNode, keyword: string): boolean {
   for (const child of node.children) {
     if (child.type === keyword || child.text === keyword) return true;
+  }
+  return false;
+}
+
+/**
+ * The `static` MODIFIER, told apart from a member merely named `static`.
+ *
+ * A modifier is an unnamed keyword node; a member name is a named identifier.
+ * Testing both is what keeps `class X { static = () => 1 }` an instance member.
+ */
+function hasStaticModifier(node: AstNode): boolean {
+  for (const child of node.children) {
+    if (!child.isNamed && child.type === "static") return true;
   }
   return false;
 }

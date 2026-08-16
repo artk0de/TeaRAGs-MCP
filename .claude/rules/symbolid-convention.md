@@ -42,6 +42,14 @@ lockstep when adding language.
 | -------------- | ----------------------------------------------------- | ------------------------------------------------------------------- |
 | **TypeScript** | `method_definition` without `static` keyword          | `method_definition` with `static` keyword                           |
 | **JavaScript** | Same as TypeScript (shared `method_definition` shape) | Same as TypeScript                                                  |
+
+A TypeScript class member can also be declared as a FIELD bound to a function
+(`class F { request = async () => {} }`) — a `public_field_definition`, not a
+`method_definition`. It takes the same two forms by the same rule: `F#request`
+without the `static` keyword, `F.request` with it. Only the codegraph side names
+it (bd tea-rags-mcp-5ldqu); the chunker carries the field inside the class chunk,
+which is the codegraph-only-id direction the invariant permits — see "Where the
+convention is implemented" below.
 | **Python**     | `function_definition` inside class, no decorator      | `function_definition` decorated with `@classmethod`/`@staticmethod` |
 | **Ruby**       | `method` (`def foo`)                                  | `singleton_method` (`def self.foo`)                                 |
 | **Go**         | `method_declaration` (has a receiver)                 | `function_declaration` (top-level — gets `name` form, no parent)    |
@@ -54,6 +62,11 @@ instance even though invoked via `new Class()`.
 
 ## Where the convention is implemented
 
+- `src/core/infra/symbolid/classify.ts`
+  - `classifyMethod(node)` — the per-language `instance` / `static` detection
+    BOTH producers consult, dispatched by node type
+  - `class-property-function.ts` beside it — the TypeScript class-FIELD gate,
+    reading `classifyMethod` for the kind
 - `src/core/domains/ingest/pipeline/chunker/tree-sitter.ts`
   - `buildSymbolId(name, parentName, isStatic)` — picks `#` vs `.`
   - `isStaticMethod(node)` — per-language detection dispatched by node type
