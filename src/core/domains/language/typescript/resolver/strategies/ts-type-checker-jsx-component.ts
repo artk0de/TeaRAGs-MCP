@@ -125,26 +125,69 @@ function declarationName(declaration: ts.Declaration): string | null {
  * Closing tags are not considered: `JsxClosingElement` is a different node kind
  * and never matches, which is the same one-usage-per-element accounting the
  * walker applies when it emits.
+ *
+ * Exported for `scripts/ts-codegraph-typechecker-oracle.ts`, which has to
+ * locate the SAME tag this pass locates before it can compute ground truth for
+ * a JSX call site. `findCallExpression` cannot answer that coordinate — a JSX
+ * element is not a `ts.CallExpression` — and a second finder written beside it
+ * would score the two sides against different tags (bd tea-rags-mcp-2mvc2).
  */
-function findJsxTagName(sourceFile: ts.SourceFile, startLine: number, member: string): ts.JsxTagNameExpression | null {
-  let found: ts.JsxTagNameExpression | null = null;
+export function findJsxTagName(
+  sourceFile: ts.SourceFile,
+  startLine: number,
+  member: string,
+): ts.JsxTagNameExpression | null {
+  let index = jsxTagIndexes.get(sourceFile);
+  if (index === undefined) {
+    index = buildJsxTagIndex(sourceFile);
+    jsxTagIndexes.set(sourceFile, index);
+  }
+  return index.get(`${startLine}:${member}`) ?? null;
+}
+
+/**
+ * Every JSX component tag of one SourceFile, keyed `${startLine}:${member}`.
+ * Same lifetime argument as {@link callSiteAt}'s index in
+ * `./ts-type-checker-shared.ts`: `TSProgramCache` owns SourceFile lifetime, so
+ * a re-parse yields a NEW object and the stale index becomes unreachable on its
+ * own, while keying by file NAME would hand a changed file stale coordinates.
+ */
+const jsxTagIndexes = new WeakMap<ts.SourceFile, Map<string, ts.JsxTagNameExpression>>();
+
+/**
+ * Index every component tag by `(start line, member)`, first occurrence in
+ * traversal order winning each slot.
+ *
+ * First-write-wins over a FULL pre-order walk is exactly the answer the earlier
+ * walk-until-first-match computed, for the reason the call-site index records:
+ * pre-order visits a parent before its children, so a nested `<Row><Card /></Row>`
+ * fills `Row` before `Card` is reached — the same node the early exit returned —
+ * and the two never contend for one key anyway, since the key carries the tag
+ * name.
+ *
+ * The walk moved here because it was being repeated per tag. This pass asks it
+ * once per tag it is offered, and `scripts/ts-codegraph-typechecker-oracle.ts`
+ * asks it for EVERY tag in the corpus; on taxdome's React tree that was one
+ * full-file traversal per tag, and the harness's taxdome pass went from ~3
+ * minutes to a projected ~60 (bd tea-rags-mcp-2mvc2).
+ */
+function buildJsxTagIndex(sourceFile: ts.SourceFile): Map<string, ts.JsxTagNameExpression> {
+  const index = new Map<string, ts.JsxTagNameExpression>();
 
   const visit = (node: ts.Node): void => {
-    if (found !== null) return;
     if (ts.isJsxOpeningElement(node) || ts.isJsxSelfClosingElement(node)) {
-      if (tagShortName(node.tagName) === member) {
+      const member = tagShortName(node.tagName);
+      if (member !== null) {
         const line = sourceFile.getLineAndCharacterOfPosition(node.getStart(sourceFile)).line + 1;
-        if (line === startLine) {
-          found = node.tagName;
-          return;
-        }
+        const key = `${line}:${member}`;
+        if (!index.has(key)) index.set(key, node.tagName);
       }
     }
     ts.forEachChild(node, visit);
   };
 
   ts.forEachChild(sourceFile, visit);
-  return found;
+  return index;
 }
 
 /** Rightmost identifier of a tag — `Panel` in `<UI.Panel />`, `Card` in `<Card>`. */

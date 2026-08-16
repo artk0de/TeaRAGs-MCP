@@ -1,23 +1,34 @@
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { dirname, join } from "node:path";
+
 import ts from "typescript";
-import { describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import {
+  buildCorpusExclusionFilter,
+  classifyUnlocatedCallShape,
+  collectSourceFiles,
   decomposeOracleMismatches,
   describeOracleDeclaration,
   diffResolution,
   findUncoveredCategories,
   flagTrackBPriorities,
   formatOracleTable,
+  isScoredSource,
   reconcileOracleMissed,
   reconcileOraclePhantom,
   reconcileOracleWrongFile,
   tallyBy,
   tallyChainOutput,
+  tallyUnlocatedShapes,
   type OracleOutcome,
   type OracleRow,
   type OracleTargetFacts,
   type OracleVerdict,
 } from "../../scripts/ts-codegraph-typechecker-oracle.js";
+import type { CallRef } from "../../src/core/contracts/types/codegraph.js";
+import { LanguageFactory } from "../../src/core/domains/language/index.js";
 
 /** One call-site row, defaulted so each test states only the axis it exercises. */
 function row(overrides: Partial<OracleRow> = {}): OracleRow {
@@ -630,6 +641,7 @@ describe("decomposeOracleMismatches", () => {
       total: 2,
       interfaceVsImpl: 1,
       declarationSitePath: 0,
+      inheritedConstructor: 0,
       defect: 1,
     });
     expect(decomposition.missed).toEqual({ total: 2, anonymousCallable: 1, unpinnedTarget: 0, defect: 1 });
@@ -675,5 +687,229 @@ describe("decomposeOracleMismatches", () => {
 
     expect(decomposition.label).toEqual("generic");
     expect(decomposition.missed).toEqual({ total: 1, anonymousCallable: 0, unpinnedTarget: 0, defect: 1 });
+  });
+});
+
+describe("isOutsideProjectSource, through diffResolution (bd tea-rags-mcp-2mvc2)", () => {
+  it("reads a chain answer naming a dependency's ESM typings as agreement rather than a fabricated edge", () => {
+    const chain = { targetRelPath: "node_modules/zustand/esm/index.d.mts", targetSymbolId: "create" };
+
+    expect(diffResolution(chain, { kind: "external" })).toEqual("agreeExternal");
+  });
+
+  it("reads a chain answer naming a dependency's CommonJS typings as agreement", () => {
+    const chain = { targetRelPath: "node_modules/zod/v3/index.d.cts", targetSymbolId: "ZodType.parse" };
+
+    expect(diffResolution(chain, { kind: "external" })).toEqual("agreeExternal");
+  });
+
+  it("reads a chain answer under a nested workspace's node_modules as agreement", () => {
+    const chain = { targetRelPath: "packages/web/node_modules/msw/lib/core/http.d.ts", targetSymbolId: "http.get" };
+
+    expect(diffResolution(chain, { kind: "external" })).toEqual("agreeExternal");
+  });
+
+  it("still calls an in-project chain answer a phantom when the path merely reads like a dependency", () => {
+    const chain = { targetRelPath: "src/core/node_modules_helper.ts", targetSymbolId: "resolvePackage" };
+
+    expect(diffResolution(chain, { kind: "external" })).toEqual("phantom");
+  });
+});
+
+/** One walker-emitted call ref, defaulted so each test states only its own shape. */
+function callRef(overrides: Partial<CallRef> = {}): CallRef {
+  return { callText: "run()", receiver: null, member: "run", startLine: 1, ...overrides };
+}
+
+describe("classifyUnlocatedCallShape", () => {
+  it("names a JSX component tag, whose element is not a call expression at all", () => {
+    const call = callRef({ callText: "<Card title={t} />", member: "Card", jsx: true });
+
+    expect(classifyUnlocatedCallShape(call)).toEqual("jsxTag");
+  });
+
+  it("names a dotted JSX tag by its shape rather than by the receiver it carries", () => {
+    const call = callRef({ callText: "<UI.Panel />", receiver: "UI", member: "Panel", jsx: true });
+
+    expect(classifyUnlocatedCallShape(call)).toEqual("jsxTag");
+  });
+
+  it("names a super call by its receiver, ahead of the constructor member the walker re-shapes it to", () => {
+    const call = callRef({ callText: "super(message)", receiver: "super", member: "constructor" });
+
+    expect(classifyUnlocatedCallShape(call)).toEqual("superCall");
+  });
+
+  it("names an instantiation whose receiver is a real class", () => {
+    const call = callRef({ callText: "new Repo(db)", receiver: "Repo", member: "constructor" });
+
+    expect(classifyUnlocatedCallShape(call)).toEqual("constructorCall");
+  });
+
+  it("names a computed callee the walker already tagged dynamic", () => {
+    const call = callRef({ callText: "handlers[kind](x)", member: "handlers[kind]", dynamicSend: true });
+
+    expect(classifyUnlocatedCallShape(call)).toEqual("dynamicSend");
+  });
+
+  it("names a dynamic import, whose target is a module and not a signature", () => {
+    const call = callRef({ callText: 'import("./config.js")', member: "import" });
+
+    expect(classifyUnlocatedCallShape(call)).toEqual("dynamicImport");
+  });
+
+  it("names a method handed over as a value, which has no call-like node at its coordinate", () => {
+    const call = callRef({ callText: "this.tick", receiver: "this", member: "tick" });
+
+    expect(classifyUnlocatedCallShape(call)).toEqual("methodReference");
+  });
+
+  it("leaves a real call the finders could not place in the residual bucket", () => {
+    const call = callRef({ callText: "handler.run.bind(handler)", receiver: "handler", member: "run" });
+
+    expect(classifyUnlocatedCallShape(call)).toEqual("coordinateMiss");
+  });
+});
+
+describe("tallyUnlocatedShapes", () => {
+  it("counts every shape the oracle failed to locate a node for", () => {
+    const input = [
+      row({ unlocatedShape: "jsxTag" }),
+      row({ unlocatedShape: "jsxTag" }),
+      row({ unlocatedShape: "coordinateMiss" }),
+    ];
+
+    const tally = tallyUnlocatedShapes(input);
+
+    expect(tally.jsxTag).toEqual(2);
+    expect(tally.coordinateMiss).toEqual(1);
+    expect(tally.superCall).toEqual(0);
+  });
+
+  it("reports a zero for every shape when every call site was located", () => {
+    expect(Object.values(tallyUnlocatedShapes(rows("match", 5)))).toEqual([0, 0, 0, 0, 0, 0, 0]);
+  });
+});
+
+describe("isScoredSource", () => {
+  it("scores the TypeScript extensions this harness's chain actually resolves", () => {
+    expect(isScoredSource("app/javascript/Card.tsx")).toEqual(true);
+    expect(isScoredSource("src/core/runner.ts")).toEqual(true);
+  });
+
+  it("keeps JavaScript out of the scored corpus, since a different resolver owns it", () => {
+    expect(isScoredSource("app/javascript/legacy/util.js")).toEqual(false);
+    expect(isScoredSource("app/javascript/legacy/Card.jsx")).toEqual(false);
+    expect(isScoredSource("scripts/build.mjs")).toEqual(false);
+  });
+});
+
+describe("reconcileOracleWrongFile on a super call (bd tea-rags-mcp-2mvc2)", () => {
+  it("reads the checker naming the constructor that RUNS and the chain naming the immediate parent as agreement", () => {
+    const mismatch = row({
+      receiverKind: "super",
+      callText: "super(message)",
+      verdict: "wrongFile",
+      chain: { targetRelPath: "src/core/adapters/errors.ts", targetSymbolId: "InfraError#constructor" },
+      target: target({
+        relPath: "src/core/infra/errors.ts",
+        symbolId: "TeaRagsError#constructor",
+        shortName: "constructor",
+        declarationKind: "Constructor",
+      }),
+    });
+
+    expect(reconcileOracleWrongFile(mismatch)).toEqual("inheritedConstructor");
+  });
+
+  it("still counts an instantiation pointed at the wrong class as a defect", () => {
+    const mismatch = row({
+      receiverKind: "constant",
+      callText: "new Repo(db)",
+      verdict: "wrongFile",
+      chain: { targetRelPath: "src/core/other-repo.ts", targetSymbolId: "OtherRepo#constructor" },
+      target: target({
+        relPath: "src/core/repo.ts",
+        symbolId: "Repo#constructor",
+        shortName: "constructor",
+        declarationKind: "Constructor",
+      }),
+    });
+
+    expect(reconcileOracleWrongFile(mismatch)).toEqual("defect");
+  });
+
+  it("counts a super site as a defect when the checker's target is not a constructor at all", () => {
+    const mismatch = row({
+      receiverKind: "super",
+      callText: "super.run()",
+      verdict: "wrongFile",
+      chain: { targetRelPath: "src/core/base.ts", targetSymbolId: "Base#run" },
+      target: target({
+        relPath: "src/core/domains/explore/searcher.ts",
+        symbolId: "Searcher#start",
+        shortName: "start",
+      }),
+    });
+
+    expect(reconcileOracleWrongFile(mismatch)).toEqual("defect");
+  });
+});
+
+/**
+ * The corpus has to be the one production builds nodes for
+ * (bd tea-rags-mcp-2mvc2). Scoring a gitignored or generated file is scoring
+ * code the resolver never sees — on taxdome that inflated `wrongFile` ~8x.
+ */
+describe("collectSourceFiles corpus scope", () => {
+  let repoRoot: string;
+
+  function write(relPath: string, content: string): void {
+    const abs = join(repoRoot, relPath);
+    mkdirSync(dirname(abs), { recursive: true });
+    writeFileSync(abs, content, "utf8");
+  }
+
+  beforeEach(() => {
+    repoRoot = mkdtempSync(join(tmpdir(), "oracle-corpus-"));
+    write(".gitignore", "app/generated/\n");
+    write("app/runner.ts", "export function run() {}\n");
+    write("app/legacy.js", "export function legacy() {}\n");
+    write("app/runner.test.ts", "it('runs', () => {});\n");
+    write("app/generated/api-client.ts", "export function fetchAll() {}\n");
+    write("app/types.d.ts", "export declare function typed(): void;\n");
+  });
+
+  afterEach(() => {
+    rmSync(repoRoot, { recursive: true, force: true });
+  });
+
+  it("keeps the source files production builds codegraph nodes for", async () => {
+    const exclude = await buildCorpusExclusionFilter(repoRoot, new LanguageFactory());
+
+    const selection = await collectSourceFiles(repoRoot, join(repoRoot, "app"), exclude);
+
+    expect(selection.kept).toEqual(["app/legacy.js", "app/runner.ts"]);
+  });
+
+  it("counts a gitignored file apart from one the codegraph layer drops", async () => {
+    const exclude = await buildCorpusExclusionFilter(repoRoot, new LanguageFactory());
+
+    const selection = await collectSourceFiles(repoRoot, join(repoRoot, "app"), exclude);
+
+    expect(selection.ingestIgnored).toEqual(1);
+    expect(selection.codegraphExcluded).toEqual(1);
+  });
+
+  it("scores the whole tree when no filter is supplied, the shape every caller before this used", async () => {
+    const selection = await collectSourceFiles(repoRoot, join(repoRoot, "app"));
+
+    expect(selection.kept).toEqual([
+      "app/generated/api-client.ts",
+      "app/legacy.js",
+      "app/runner.test.ts",
+      "app/runner.ts",
+    ]);
+    expect(selection.ingestIgnored).toEqual(0);
   });
 });

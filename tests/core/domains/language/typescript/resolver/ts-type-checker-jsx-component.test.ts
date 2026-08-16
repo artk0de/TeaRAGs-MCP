@@ -2,10 +2,14 @@ import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from "nod
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 
+import ts from "typescript";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import type { CallContext, CallRef } from "../../../../../../src/core/contracts/types/codegraph.js";
-import { TSTypeCheckerJsxComponentSymbolResolutionStrategy } from "../../../../../../src/core/domains/language/typescript/resolver/strategies/ts-type-checker-jsx-component.js";
+import {
+  findJsxTagName,
+  TSTypeCheckerJsxComponentSymbolResolutionStrategy,
+} from "../../../../../../src/core/domains/language/typescript/resolver/strategies/ts-type-checker-jsx-component.js";
 import { TSProgramCache } from "../../../../../../src/core/domains/language/typescript/resolver/ts-program-cache.js";
 import { TSCallResolver } from "../../../../../../src/core/domains/language/typescript/resolver/ts-resolver.js";
 import { InMemoryGlobalSymbolTable } from "../../../../../../src/core/domains/trajectory/codegraph/symbols/symbol-table.js";
@@ -376,5 +380,43 @@ describe("TSCallResolver resolves JSX component tags through its chain (bd tea-r
     );
 
     expect(target).toBeNull();
+  });
+});
+
+/**
+ * The locator is exported so `scripts/ts-codegraph-typechecker-oracle.ts` can
+ * score a JSX call site against the SAME tag this pass resolves
+ * (bd tea-rags-mcp-2mvc2). These pin the coordinate contract the harness now
+ * depends on, independently of the strategy's checker plumbing.
+ */
+describe("findJsxTagName", () => {
+  function parse(source: string): ts.SourceFile {
+    return ts.createSourceFile("page.tsx", source, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
+  }
+
+  it("finds a self-closing component tag at its own line and member", () => {
+    const sourceFile = parse([`const page = (`, `  <div>`, `    <Card title="x" />`, `  </div>`, `);`].join("\n"));
+
+    expect(findJsxTagName(sourceFile, 3, "Card")?.getText()).toEqual("Card");
+  });
+
+  it("finds a dotted tag by its rightmost name, the coordinate the walker records", () => {
+    const sourceFile = parse([`const page = (`, `  <UI.Panel />`, `);`].join("\n"));
+
+    expect(findJsxTagName(sourceFile, 2, "Panel")?.getText()).toEqual("UI.Panel");
+  });
+
+  it("tells two tags sharing one line apart by member", () => {
+    const sourceFile = parse(`const page = <Row><Card /><Chip /></Row>;`);
+
+    expect(findJsxTagName(sourceFile, 1, "Chip")?.getText()).toEqual("Chip");
+    expect(findJsxTagName(sourceFile, 1, "Card")?.getText()).toEqual("Card");
+  });
+
+  it("declines when the member names no tag on that line", () => {
+    const sourceFile = parse([`const page = (`, `  <Card />`, `);`].join("\n"));
+
+    expect(findJsxTagName(sourceFile, 2, "Chip")).toBeNull();
+    expect(findJsxTagName(sourceFile, 1, "Card")).toBeNull();
   });
 });
