@@ -30,11 +30,13 @@ import {
   ECMASCRIPT_CONTAINER_PROTOTYPE_METHODS,
   ECMASCRIPT_GLOBALS,
 } from "../../shared/ecmascript-globals.js";
+import { findCallExpression } from "./strategies/ts-type-checker-fallback.js";
 import { findReceiverExpression } from "./strategies/ts-type-checker-shared.js";
 import { importSpecifierNamesReceiver } from "./ts-import-basename-match.js";
 import { calleeIsExternalLocalBinding } from "./ts-local-callee.js";
 import { mapImportToFile, type ProjectFileProbe, type TsCompilerOptions } from "./ts-path-mapper.js";
 import type { TSProgramCache } from "./ts-program-cache.js";
+import { typeConstituents } from "./ts-type-constituents.js";
 
 /**
  * `true` when the call provably — or, for an untyped receiver, near-certainly —
@@ -71,7 +73,12 @@ import type { TSProgramCache } from "./ts-program-cache.js";
  *      covers LOCAL value bindings (closures, hook returns); this is the
  *      arm for a TRUE ambient global (`parseInt`, `fetch`, `setTimeout`),
  *      whose declaration lives in `lib.es5.d.ts` / `lib.dom.d.ts`, never in
- *      any file this project owns.
+ *      any file this project owns;
+ *   8. the type checker SELECTED a signature for the call and that signature is
+ *      declared outside the project — the only arm that asks about the CALLEE
+ *      rather than the receiver, which is what lets it answer a call on a
+ *      project-typed receiver into a dependency's inherited member. See
+ *      {@link checkerResolvesCalleeOutsideProject} (bd tea-rags-mcp-6o7bi).
  *
  * PRECISION: cases 3 and 4 are mutually exclusive BY CONSTRUCTION, and that is
  * the load-bearing detail. A receiver whose type IS known decides the question
@@ -122,8 +129,99 @@ export function targetsExternalImport(
   return (
     receiverIsImportedBuiltinContainer(call, ctx) ||
     receiverIsExternalInstance(call, ctx, tsOptions, programCache, fileExists) ||
-    calleeIsExternalLocalBinding(call, ctx, programCache)
+    calleeIsExternalLocalBinding(call, ctx, programCache) ||
+    checkerResolvesCalleeOutsideProject(call, ctx, programCache)
   );
+}
+
+/**
+ * Does the receiver's type name ANY declaration among the project's own sources?
+ *
+ * The narrowing case 8 rests on, and deliberately the same question
+ * `receiverIsUnpinnableLocalValueBinding` asks — one predicate, so the two arms
+ * cannot drift on what counts as in-project evidence.
+ *
+ * It is what keeps case 8 off bd tea-rags-mcp-otm6n's recall guard. A project
+ * class that EXTENDS a dependency's declares no `emit` of its own, so the
+ * checker's selected signature is the dependency's — yet the receiver IS the
+ * project class and the call reaches project code, so the edge must survive.
+ * Reading the signature alone would decline it. A receiver with no project
+ * evidence at all is the opposite case, and the only one case 8 is allowed to
+ * answer.
+ *
+ * A BARE call has no receiver and therefore no in-project evidence, which is the
+ * right answer rather than a gap: `sanitize(html)` bound to `@types/dompurify`
+ * is the single largest shape case 8 recovers.
+ */
+function receiverNamesProjectDeclaration(
+  call: CallRef,
+  handle: { sourceFile: ts.SourceFile; checker: ts.TypeChecker },
+  programCache: TSProgramCache,
+): boolean {
+  const receiver = findReceiverExpression(handle.sourceFile, call.startLine, call.member);
+  if (receiver === null) return false;
+  for (const constituent of typeConstituents(handle.checker, handle.checker.getTypeAtLocation(receiver))) {
+    for (const declaration of constituent.getSymbol()?.getDeclarations() ?? []) {
+      if (programCache.isProjectSourceFile(declaration.getSourceFile().fileName)) return true;
+    }
+  }
+  return false;
+}
+
+/**
+ * Case 8 (bd tea-rags-mcp-6o7bi): the type checker SELECTED a signature for this
+ * call, and the signature is declared outside the project's own sources.
+ *
+ * Every arm above it asks where the RECEIVER comes from, and that question has a
+ * different answer from "where does the callee live" more often than it looks. A
+ * project class extending a dependency's, a project interface extending one, a
+ * project type aliasing one — in each the receiver is honestly the project's and
+ * the member the call selects is honestly the dependency's. The receiver arms
+ * answer "in project", correctly, and say nothing at all about the call.
+ *
+ * `getResolvedSignature` is not a new capability here. `typeCheckerFallback`
+ * (pass 12) already runs exactly this query and already reads the declaration's
+ * file; it simply CONTINUEs whenever `toProjectSourceRelPath` returns `null`,
+ * discarding a proof it holds. This arm keeps that answer: the compiler resolved
+ * the call, and it did not resolve into this project. It is also the query
+ * `scripts/ts-codegraph-typechecker-oracle.ts` scores the whole chain against,
+ * so a call this arm declines is a call the oracle already counts external.
+ *
+ * The symbol-table gate is the same cost gate {@link calleeIsLocalValueBinding}
+ * and `receiverIsUnpinnableLocalValueBinding` use, and here it carries a second
+ * job. With no project symbol of that member name neither short-name pass can
+ * emit anything, so the verdict cannot change an edge — and the call is ALREADY
+ * outside the denominator via `noInProjectDef`, so it cannot change a rate
+ * either. Gating leaves that bucket byte-identical and keeps the checker off the
+ * overwhelming majority of calls, which is what makes this affordable as a
+ * per-call guard.
+ *
+ * It is NARROWED by {@link receiverNamesProjectDeclaration}, which is what keeps
+ * it off the recall guard bd tea-rags-mcp-otm6n put in place: a project class
+ * extending a dependency's answers "signature outside" while the call genuinely
+ * reaches project code. Where the receiver names any project declaration, the
+ * receiver arms have already spoken and this one stays silent.
+ *
+ * Every other exit is "no evidence", as it must be for an arm that may only ever
+ * ADD an external verdict: no Program, no indexed call node, no selected
+ * signature (an `any` receiver, an unresolved import), or a signature the checker
+ * built with no declaration behind it.
+ */
+function checkerResolvesCalleeOutsideProject(
+  call: CallRef,
+  ctx: CallContext,
+  programCache: TSProgramCache | null,
+): boolean {
+  if (programCache === null || call.member.length === 0) return false;
+  if (ctx.symbolTable.lookupByShortName(call.member).length === 0) return false;
+  const handle = programCache.acquire(ctx.callerFile);
+  if (handle === null) return false;
+  const node = findCallExpression(handle.sourceFile, call.startLine, call.member);
+  if (node === null) return false;
+  const declaration = handle.checker.getResolvedSignature(node)?.declaration;
+  if (declaration === undefined) return false;
+  if (programCache.isProjectSourceFile(declaration.getSourceFile().fileName)) return false;
+  return !receiverNamesProjectDeclaration(call, handle, programCache);
 }
 
 /**
@@ -371,11 +469,13 @@ function checkerTypesReceiverOutsideProject(call: CallRef, ctx: CallContext, pro
  * Is EVERY constituent of `type` declared entirely outside the project's own
  * sources?
  *
- * A union is walked constituent by constituent, and one in-project constituent
- * sinks the verdict: `Map<string, T> | ProjectStore` may reach the project on
- * this call, so declining it would trade a fabricated edge for a lost one. A
- * type declared in BOTH places — an interface the project merges into a
- * dependency's — is in-project for the same reason.
+ * A union OR intersection is walked constituent by constituent
+ * ({@link typeConstituents}), and one in-project constituent sinks the verdict:
+ * `Map<string, T> | ProjectStore` may reach the project on this call, and
+ * `ProjectStore & Branded` carries `ProjectStore`'s members outright, so
+ * declining either would trade a fabricated edge for a lost one. A type declared
+ * in BOTH places — an interface the project merges into a dependency's — is
+ * in-project for the same reason.
  *
  * Two answers deliberately mean "no evidence" rather than "external", because
  * this arm may only ever ADD an external verdict. A type with no symbol is
@@ -400,8 +500,8 @@ function checkerTypesReceiverOutsideProject(call: CallRef, ctx: CallContext, pro
  * resolves that receiver to the project declaration and this returns `false`.
  */
 function typeDeclaredOutsideProject(checker: ts.TypeChecker, type: ts.Type, programCache: TSProgramCache): boolean {
-  for (const constituent of type.isUnion() ? type.types : [type]) {
-    const symbol = checker.getApparentType(constituent).getSymbol();
+  for (const constituent of typeConstituents(checker, type)) {
+    const symbol = constituent.getSymbol();
     if (symbol === undefined) return false;
     const declarations = symbol.getDeclarations() ?? [];
     if (declarations.length === 0) return false;
