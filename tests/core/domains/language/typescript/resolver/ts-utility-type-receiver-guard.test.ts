@@ -106,16 +106,23 @@ describe("TSGlobalShortNameSymbolResolutionStrategy — TS utility-type receiver
     });
   });
 
-  it("STILL decides outright when the PROJECT declares the wrapper name as its own symbol (r: Record; r.has(k))", () => {
+  /**
+   * The project shadowing a TS utility-type NAME must not cost it the edge. The
+   * assertion is on the CHAIN rather than on this pass, because which pass
+   * answers is not the invariant: `localBinding` at position 4 owns a
+   * walker-typed receiver whose member the table carries, and since bd
+   * tea-rags-mcp-dubkx position 9 declines that population outright.
+   */
+  it("STILL emits the edge when the PROJECT declares the wrapper name as its own symbol (r: Record; r.has(k))", () => {
     const call: CallRef = { callText: "r.has(k)", receiver: "r", member: "has", startLine: 9 };
     const symbolTable = tableWith([
       "src/record.ts",
       [sym("Record#has", "has", "src/record.ts", ["Record"]), sym("Record", "Record", "src/record.ts", [])],
     ]);
-    const outcome = strat.attempt(call, ctx({ symbolTable, localBindings: { r: [{ line: 2, type: "Record" }] } }));
-    expect(outcome).toEqual({
-      kind: "resolved",
-      target: { targetRelPath: "src/record.ts", targetSymbolId: "Record#has" },
+    const resolver = new TSCallResolver({ baseUrl: ".", paths: {} }, DEFAULT_AMBIGUOUS_RESOLVE_MODE);
+    expect(resolver.resolve(call, ctx({ symbolTable, localBindings: { r: [{ line: 2, type: "Record" }] } }))).toEqual({
+      targetRelPath: "src/record.ts",
+      targetSymbolId: "Record#has",
     });
   });
 });
