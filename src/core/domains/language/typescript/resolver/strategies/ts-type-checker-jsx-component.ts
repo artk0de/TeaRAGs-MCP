@@ -125,8 +125,18 @@ function declarationName(declaration: ts.Declaration): string | null {
  * Closing tags are not considered: `JsxClosingElement` is a different node kind
  * and never matches, which is the same one-usage-per-element accounting the
  * walker applies when it emits.
+ *
+ * Exported for `scripts/ts-codegraph-typechecker-oracle.ts`, which has to
+ * locate the SAME tag this pass locates before it can compute ground truth for
+ * a JSX call site. `findCallExpression` cannot answer that coordinate — a JSX
+ * element is not a `ts.CallExpression` — and a second finder written beside it
+ * would score the two sides against different tags (bd tea-rags-mcp-2mvc2).
  */
-function findJsxTagName(sourceFile: ts.SourceFile, startLine: number, member: string): ts.JsxTagNameExpression | null {
+export function findJsxTagName(
+  sourceFile: ts.SourceFile,
+  startLine: number,
+  member: string,
+): ts.JsxTagNameExpression | null {
   let found: ts.JsxTagNameExpression | null = null;
 
   const visit = (node: ts.Node): void => {
