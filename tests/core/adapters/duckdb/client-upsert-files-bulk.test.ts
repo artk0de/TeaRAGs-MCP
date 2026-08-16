@@ -298,13 +298,17 @@ describe("DuckDbGraphClient — upsertFilesBulk equivalence to per-file upsertFi
     expect(longestDeleteRun).toBeLessThanOrEqual(4);
   });
 
-  it("keeps the first-persisted row when two files in the SAME bulk batch collide on a method-edge PK", async () => {
-    // Monkey-patch case (same invariant as client-batched-edge-writes.test.ts's
-    // per-file version, now exercised across one bulk call instead of two
-    // sequential upsertFile calls): A#x is "defined" in both app/one.rb and
-    // app/two.rb, both emitting the same (source_symbol_id, call_expression,
-    // target_symbol_id) tuple. Flattening every file's edges into one
-    // INSERT OR IGNORE must preserve first-wins by original batch order.
+  it("keeps both rows when two files in the SAME bulk batch emit the same method-edge tuple", async () => {
+    // Monkey-patch / namesake case (same invariant as
+    // client-batched-edge-writes.test.ts's per-file version, now exercised
+    // across one bulk call instead of two sequential upsertFile calls): A#x is
+    // "defined" in both app/one.rb and app/two.rb, both emitting the same
+    // (source_symbol_id, call_expression, target_symbol_id) tuple.
+    //
+    // INVARIANT CHANGED by bd tea-rags-mcp-ex28m — this used to assert
+    // first-wins by batch order, which silently dropped app/two.rb's edge.
+    // source_rel_path is in the primary key now, so flattening every file's
+    // edges into one INSERT OR IGNORE must carry BOTH files' rows through.
     const db = await freshDb();
     const edge = {
       sourceSymbolId: "A#x",
@@ -318,9 +322,8 @@ describe("DuckDbGraphClient — upsertFilesBulk equivalence to per-file upsertFi
     ]);
 
     const rows = await db.queryAll<{ source_rel_path: string }>(
-      "SELECT source_rel_path FROM cg_symbols_edges_method WHERE source_symbol_id = 'A#x'",
+      "SELECT source_rel_path FROM cg_symbols_edges_method WHERE source_symbol_id = 'A#x' ORDER BY source_rel_path",
     );
-    expect(rows).toHaveLength(1);
-    expect(rows[0].source_rel_path).toBe("app/one.rb");
+    expect(rows.map((r) => r.source_rel_path)).toEqual(["app/one.rb", "app/two.rb"]);
   });
 });

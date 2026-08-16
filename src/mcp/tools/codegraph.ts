@@ -106,6 +106,14 @@ function buildTracePathInputShape(schemaBuilder: SchemaBuilder) {
     ...collectionPathFields(),
     from: z.string().describe("Start symbol id (caller end, e.g. main)"),
     to: z.string().describe("End symbol id (callee end, e.g. Foo.bar)"),
+    fromPath: z
+      .string()
+      .optional()
+      .describe(
+        "Exact relative path pinning 'from' when the symbol id names several files " +
+          "(top-level symbols share bare ids). Omit to trace from all; response lists candidates as 'namesakes'.",
+      ),
+    toPath: z.string().optional().describe("Exact relative path pinning 'to'. Same semantics as fromPath."),
     rerank: schemaBuilder
       .buildPresetSchema("trace_path")
       .optional()
@@ -204,11 +212,22 @@ export function registerCodegraphTools(
       inputSchema: buildTracePathInputShape(schemaBuilder),
       annotations: { readOnlyHint: true, idempotentHint: true },
     },
-    async ({ project, collection, path, from, to, rerank, maxDepth, maxPaths }) => {
+    async ({ project, collection, path, from, to, fromPath, toPath, rerank, maxDepth, maxPaths }) => {
       // `rerank` is a curated preset enum (z.ZodTypeAny erases to unknown after
       // .optional()); narrow to the string preset name the DTO expects.
       const preset = rerank as string | undefined;
-      const response = await app.tracePath({ project, collection, path, from, to, rerank: preset, maxDepth, maxPaths });
+      const response = await app.tracePath({
+        project,
+        collection,
+        path,
+        from,
+        to,
+        fromPath,
+        toPath,
+        rerank: preset,
+        maxDepth,
+        maxPaths,
+      });
       return formatMcpText(JSON.stringify(response, null, 2));
     },
   );

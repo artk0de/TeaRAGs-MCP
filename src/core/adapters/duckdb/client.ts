@@ -40,6 +40,8 @@ import type {
   CycleScope,
   EdgeKindCount,
   FileGraphMetrics,
+  FileScopedSymbolId,
+  FileScopedSymbolRef,
   GraphDbClient,
   GraphEdges,
   GraphFileNode,
@@ -248,6 +250,14 @@ export class DuckDbGraphClient implements GraphDbClient {
 
   async getCalleeEdges(symbolIds: SymbolId[]): Promise<Map<SymbolId, SymbolId[]>> {
     return this.methodEdges.getCalleeEdges(symbolIds);
+  }
+
+  async getCalleeEdgesScoped(refs: FileScopedSymbolRef[]): Promise<Map<FileScopedSymbolId, FileScopedSymbolRef[]>> {
+    return this.methodEdges.getCalleeEdgesScoped(refs);
+  }
+
+  async getSymbolRelPaths(symbolIds: SymbolId[]): Promise<Map<SymbolId, RelPath[]>> {
+    return this.methodEdges.getSymbolRelPaths(symbolIds);
   }
 
   async getAmbiguousCallersByMember(member: string, limit = 50): Promise<AmbiguousCallerSite[]> {

@@ -12,17 +12,30 @@
  * an m-way dispatch weighs one call site in total, not m.
  */
 
-import type {
-  AmbiguousCallerSite,
-  CalleeEdge,
-  CallerEdge,
-  ChunkGraphSignals,
-  MethodEdgeKind,
-  RelPath,
-  SymbolId,
+import {
+  fileScopedSymbolKey,
+  type AmbiguousCallerSite,
+  type CalleeEdge,
+  type CallerEdge,
+  type ChunkGraphSignals,
+  type FileScopedSymbolId,
+  type FileScopedSymbolRef,
+  type MethodEdgeKind,
+  type RelPath,
+  type SymbolId,
 } from "../../contracts/types/codegraph.js";
 import type { DuckDbGraphSession } from "./graph-session.js";
 import { splitMethodSymbol } from "./symbol-id-text.js";
+
+/**
+ * Source ids per `IN (…)` list on the scoped reads (bd tea-rags-mcp-oxnvl).
+ * Mirrors `EDGE_INSERT_CHUNK_ROWS` in graph-session.ts — 200 positional binds is
+ * well inside what the driver handles (that constant runs 1400 per statement),
+ * and chunking keeps a wide BFS frontier from assembling one unbounded
+ * statement. Reads are idempotent, so splitting across statements only changes
+ * how many round-trips happen, never the result set.
+ */
+const SCOPED_EDGE_IN_LIST_CHUNK = 200;
 
 export class DuckDbMethodEdgeReader {
   constructor(private readonly session: DuckDbGraphSession) {}
@@ -123,6 +136,101 @@ export class DuckDbMethodEdgeReader {
       const list = out.get(source);
       if (list) list.push(target);
       else out.set(source, [target]);
+    }
+    return out;
+  }
+
+  /**
+   * File-scoped batch adjacency (bd tea-rags-mcp-oxnvl) — the namesake-safe
+   * counterpart of {@link getCalleeEdges}. Every row of
+   * `cg_symbols_edges_method` already carries `source_rel_path` and
+   * `target_rel_path`; the bare reader projects them away and joins on the
+   * BARE symbolId, which merges the three `BaseTable` declarations of a large
+   * codebase into ONE graph node. Keying on `(relPath, symbolId)` keeps them
+   * apart, so a traced path can no longer enter through one namesake and leave
+   * through another.
+   *
+   * `DISTINCT` is load-bearing, not hygiene: the table holds one row per CALL
+   * SITE, so a source calling the same target from two expressions yielded two
+   * identical adjacency targets and, downstream, two literally identical paths
+   * in the trace_path output.
+   *
+   * The `IN (…)` list filters on `source_symbol_id` ALONE — DuckDB row-value
+   * `IN` over pairs is avoided — and the exact `(relPath, symbolId)` match runs
+   * in JS against the requested set. The over-fetch is bounded by the namesake
+   * count of the frontier symbols (single digits in practice).
+   */
+  async getCalleeEdgesScoped(refs: FileScopedSymbolRef[]): Promise<Map<FileScopedSymbolId, FileScopedSymbolRef[]>> {
+    const out = new Map<FileScopedSymbolId, FileScopedSymbolRef[]>();
+    if (refs.length === 0) return out;
+    const requested = new Set(refs.map(fileScopedSymbolKey));
+    const sourceIds = [...new Set(refs.map((r) => r.symbolId))];
+    for (let i = 0; i < sourceIds.length; i += SCOPED_EDGE_IN_LIST_CHUNK) {
+      const batch = sourceIds.slice(i, i + SCOPED_EDGE_IN_LIST_CHUNK);
+      const placeholders = batch.map(() => "?").join(", ");
+      const rows = await this.session.queryAll<{
+        source: SymbolId;
+        sourcePath: RelPath;
+        target: SymbolId;
+        targetPath: RelPath;
+      }>(
+        // Navigation filter mirrors isNavigationVisibleEdge() in graph-facade.ts (xlnub Task 5):
+        // dynamic edges with confidence < 1 are hidden from BFS traversal; all other
+        // edge kinds (cone/exact/poly-base/registry) and legacy NULL-edgeKind edges are traversable.
+        `SELECT DISTINCT source_symbol_id AS source, source_rel_path AS "sourcePath",
+                target_symbol_id AS target, target_rel_path AS "targetPath"
+         FROM cg_symbols_edges_method
+         WHERE source_symbol_id IN (${placeholders}) AND target_symbol_id IS NOT NULL
+           AND NOT (edge_kind = 'dynamic' AND COALESCE(confidence, 1) < 1)
+         ORDER BY source_rel_path, source_symbol_id, target_rel_path, target_symbol_id`,
+        batch,
+      );
+      for (const row of rows) {
+        const key = fileScopedSymbolKey({ relPath: row.sourcePath, symbolId: row.source });
+        if (!requested.has(key)) continue; // namesake of a requested source, different file
+        const target: FileScopedSymbolRef = { relPath: row.targetPath, symbolId: row.target };
+        const list = out.get(key);
+        if (list) list.push(target);
+        else out.set(key, [target]);
+      }
+    }
+    return out;
+  }
+
+  /**
+   * Every file a symbol appears in, as call SOURCE or as call TARGET (bd
+   * tea-rags-mcp-oxnvl). Resolves a bare `trace_path` endpoint to the set of
+   * concrete graph nodes it could mean: one entry means the seed is
+   * unambiguous, several mean the caller is looking at namesakes and has to
+   * pick (or be shown all of them).
+   *
+   * Reads the method-edge table rather than `cg_symbols` for the same reason
+   * `DuckDbGraphAnalyticsStore#resolveMethodSymbolPaths` does — `cg_symbols` is
+   * only populated by `upsertSymbols`, not by every `upsertFile`, so a symbol
+   * that participates in edges may have no row there. `UNION` (not `UNION ALL`)
+   * dedupes a symbol that is both source and target within one file.
+   */
+  async getSymbolRelPaths(symbolIds: SymbolId[]): Promise<Map<SymbolId, RelPath[]>> {
+    const out = new Map<SymbolId, RelPath[]>();
+    const unique = [...new Set(symbolIds)];
+    if (unique.length === 0) return out;
+    for (let i = 0; i < unique.length; i += SCOPED_EDGE_IN_LIST_CHUNK) {
+      const batch = unique.slice(i, i + SCOPED_EDGE_IN_LIST_CHUNK);
+      const placeholders = batch.map(() => "?").join(", ");
+      const rows = await this.session.queryAll<{ sym: SymbolId; path: RelPath }>(
+        `SELECT source_symbol_id AS sym, source_rel_path AS path
+           FROM cg_symbols_edges_method WHERE source_symbol_id IN (${placeholders})
+         UNION
+         SELECT target_symbol_id AS sym, target_rel_path AS path
+           FROM cg_symbols_edges_method WHERE target_symbol_id IN (${placeholders})
+         ORDER BY sym, path`,
+        [...batch, ...batch],
+      );
+      for (const row of rows) {
+        const paths = out.get(row.sym);
+        if (paths) paths.push(row.path);
+        else out.set(row.sym, [row.path]);
+      }
     }
     return out;
   }
@@ -231,17 +339,24 @@ export class DuckDbMethodEdgeReader {
 }
 
 /**
- * Dedupe caller edges by `(sourceSymbolId, callExpression)` (bd 2jet-E). The
- * symmetric poly-base expansion can re-surface a caller the direct query already
- * returned (e.g. a class that both directly calls the override AND reaches it
- * polymorphically). First occurrence wins; ordering of the merged list is
- * preserved.
+ * Dedupe caller edges by `(sourceRelPath, sourceSymbolId, callExpression)`
+ * (bd 2jet-E; file-scoped by bd tea-rags-mcp-ex28m). The symmetric poly-base
+ * expansion can re-surface a caller the direct query already returned (e.g. a
+ * class that both directly calls the override AND reaches it polymorphically).
+ * First occurrence wins; ordering of the merged list is preserved.
+ *
+ * The FILE is part of the key, not decoration. A symbolId is unique per file, so
+ * `(sourceSymbolId, callExpression)` alone treats two namesake callers in
+ * different directories as one and drops a real call site. That is the same
+ * blindness migration 020 removed from the primary key — leaving it here would
+ * have let the widened key persist both rows only for this Set to discard one on
+ * the way out.
  */
 function dedupeCallerEdges(edges: CallerEdge[]): CallerEdge[] {
   const seen = new Set<string>();
   const out: CallerEdge[] = [];
   for (const e of edges) {
-    const k = `${e.sourceSymbolId} ${e.callExpression}`;
+    const k = `${fileScopedSymbolKey({ relPath: e.sourceRelPath, symbolId: e.sourceSymbolId })} ${e.callExpression}`;
     if (seen.has(k)) continue;
     seen.add(k);
     out.push(e);

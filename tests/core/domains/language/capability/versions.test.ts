@@ -68,12 +68,20 @@ describe("resolveLanguageCodeVersions", () => {
 describe("seeded support versions", () => {
   const versions = resolveLanguageCodeVersions(factory.capabilities(), () => undefined);
 
-  it("seeds every language at 1 except typescript's walker", () => {
+  it("seeds chunking at 1 everywhere, and bumps walker/codegraphSchema only where the code moved", () => {
+    // codegraphSchema 2 on every language that EMITS method edges: bd
+    // tea-rags-mcp-ex28m widened the edge primary key with source_rel_path, and
+    // the rows the old key discarded can only come back by re-extraction.
+    // markdown is doc-only — no call graph, so nothing of its was collapsed and
+    // its axes stay put.
+    const NO_CALL_GRAPH = new Set(["markdown"]);
+
     for (const [language, v] of versions) {
-      const expected = language === "typescript" ? 2 : 1;
-      expect(v.walker, `walker version for ${language}`).toBe(expected);
+      const expectedWalker = language === "typescript" ? 2 : 1;
+      const expectedCodegraph = NO_CALL_GRAPH.has(language) ? 1 : 2;
+      expect(v.walker, `walker version for ${language}`).toBe(expectedWalker);
       expect(v.chunking, `chunking version for ${language}`).toBe(1);
-      expect(v.codegraphSchema, `codegraph schema version for ${language}`).toBe(1);
+      expect(v.codegraphSchema, `codegraph schema version for ${language}`).toBe(expectedCodegraph);
     }
   });
 });

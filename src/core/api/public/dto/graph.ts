@@ -128,6 +128,16 @@ export interface TracePathRequest {
   /** End symbol of the path (callee end). */
   to: SymbolId;
   /**
+   * Exact relative path disambiguating `from` when the symbolId names several
+   * files (bd tea-rags-mcp-oxnvl). Top-level declarations carry bare symbolIds,
+   * so `BaseTable` can denote three files; omit to trace from all of them, pass
+   * one to pin the start. A path matching no candidate yields no paths plus the
+   * `namesakes` listing of what was actually available.
+   */
+  fromPath?: RelPath;
+  /** Exact relative path disambiguating `to`. Same semantics as `fromPath`. */
+  toPath?: RelPath;
+  /**
    * Optional rerank preset that scores per-step "danger" for the overlay.
    * When omitted, trace_path returns a LEAN path enumeration — steps carry
    * only {symbolId, relativePath, startLine, endLine}, paths stay in
@@ -174,4 +184,12 @@ export interface PathTraceResult {
   paths: TracedPath[];
   /** True if maxPaths/maxDepth capped enumeration. */
   truncated: boolean;
+  /**
+   * Candidate files for each endpoint, present ONLY when at least one of them
+   * matched more than one file (bd tea-rags-mcp-oxnvl) — the caller's cue that
+   * the trace spans namesakes and that `fromPath` / `toPath` would narrow it.
+   * Lists the PRE-filter candidates, so a request that already passed a path
+   * still sees what it excluded. Absent when both endpoints are unambiguous.
+   */
+  namesakes?: { from: RelPath[]; to: RelPath[] };
 }

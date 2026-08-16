@@ -2,6 +2,7 @@ import type {
   BulkFileUpsertEntry,
   BulkSymbolUpsertEntry,
   CycleScope,
+  FileScopedSymbolRef,
   GraphEdges,
   GraphFileNode,
   RelPath,
@@ -51,6 +52,8 @@ export type DaemonOp =
   | "getCallees"
   | "getAmbiguousCallersByMember"
   | "getCalleeEdges"
+  | "getCalleeEdgesScoped"
+  | "getSymbolRelPaths"
   | "getCalledByCount"
   | "getCallSiteCount"
   | "getChunkSignalsBulk"
@@ -89,7 +92,8 @@ export interface DaemonRequest {
     | { collection: string; oldVersion: string; newVersion: string } // finalizeReindex
     | { collection: string; symbolId: SymbolId } // getCallers | getCallees | getCalledByCount | getCallSiteCount | getPageRank
     | { collection: string; member: string; limit?: number } // getAmbiguousCallersByMember
-    | { collection: string; symbolIds: SymbolId[] } // getCalleeEdges
+    | { collection: string; symbolIds: SymbolId[] } // getCalleeEdges | getSymbolRelPaths
+    | { collection: string; refs: FileScopedSymbolRef[] } // getCalleeEdgesScoped
     | { collection: string; scope: CycleScope; pathPattern?: string } // findCycles (pathPattern) | listAdjacency
     | { collection: string; scope: CycleScope; sccs: readonly (readonly string[])[] } // replaceCycles
     | { collection: string; ranks: [string, number][] } // replacePageRanks

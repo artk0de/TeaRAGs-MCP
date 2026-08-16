@@ -25,7 +25,13 @@ import type {
   ResolveRunStatsRow,
 } from "./codegraph-graph.js";
 import type { HierarchySnapshot, InheritanceEdge } from "./codegraph-hierarchy.js";
-import type { RelPath, SymbolDefinition, SymbolId } from "./codegraph-symbols.js";
+import type {
+  FileScopedSymbolId,
+  FileScopedSymbolRef,
+  RelPath,
+  SymbolDefinition,
+  SymbolId,
+} from "./codegraph-symbols.js";
 
 /**
  * One file's worth of symbol definitions, as consumed by
@@ -137,6 +143,23 @@ export interface GraphDbClient {
    * are simply absent from the returned map.
    */
   getCalleeEdges: (symbolIds: SymbolId[]) => Promise<Map<SymbolId, SymbolId[]>>;
+  /**
+   * File-scoped batch adjacency (bd tea-rags-mcp-oxnvl) — same frontier
+   * expansion as {@link getCalleeEdges}, but node identity is
+   * `(relPath, symbolId)` instead of the bare symbolId. Top-level declarations
+   * carry unqualified ids, so the bare form merges every namesake into one node
+   * and lets a traced path cross between unrelated files; this form keeps them
+   * apart. Targets are DISTINCT — one entry per edge, not per call site.
+   * Sources with no visible callees are absent from the map.
+   */
+  getCalleeEdgesScoped: (refs: FileScopedSymbolRef[]) => Promise<Map<FileScopedSymbolId, FileScopedSymbolRef[]>>;
+  /**
+   * Files each symbol appears in, as call source or call target (bd
+   * tea-rags-mcp-oxnvl). Resolves a bare symbolId to the concrete graph nodes
+   * it could denote — several entries mean namesakes. Symbols absent from the
+   * method-edge table are absent from the map.
+   */
+  getSymbolRelPaths: (symbolIds: SymbolId[]) => Promise<Map<SymbolId, RelPath[]>>;
   /**
    * Confidence-weighted chunk fanIn (bd tea-rags-mcp-s5ato):
    * SUM(confidence) over incoming method edges — an m-way dynamic/cone

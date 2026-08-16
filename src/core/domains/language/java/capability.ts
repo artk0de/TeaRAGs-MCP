@@ -5,5 +5,6 @@ export const capability: LanguageCapability = {
   ast: { tier: "full", engine: "tree-sitter", grammarPackage: "tree-sitter-java" },
   tests: { tier: "medium", detection: "*Test.java / *IT.java", tech: "generic AST" },
   codegraph: { tier: "moderate", tech: "6-strategy + java.lang stdlib whitelist + overload disambiguation" },
-  versions: { chunking: 1, walker: 1, codegraphSchema: 1 },
+  // codegraphSchema 2: bd tea-rags-mcp-ex28m — see typescript/capability.ts.
+  versions: { chunking: 1, walker: 1, codegraphSchema: 2 },
 };

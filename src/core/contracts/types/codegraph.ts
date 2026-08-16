@@ -40,4 +40,4 @@ export type * from "./codegraph-hierarchy.js";
 export * from "./codegraph-local-binding.js";
 export * from "./codegraph-resolution.js";
 export type * from "./codegraph-storage.js";
-export type * from "./codegraph-symbols.js";
+export * from "./codegraph-symbols.js";

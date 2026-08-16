@@ -2,6 +2,7 @@ import type {
   BulkFileUpsertEntry,
   BulkSymbolUpsertEntry,
   CycleScope,
+  FileScopedSymbolRef,
   GraphDbClient,
   GraphEdges,
   GraphFileNode,
@@ -147,6 +148,15 @@ export const DAEMON_OP_COMMANDS: Readonly<Record<DaemonOp, DaemonOpCommand>> = {
   getCallees: read(async (graphDb, p) => graphDb.getCallees(p.symbolId as SymbolId)),
   // Map cannot JSON-serialise — emit entries; the client rebuilds the Map.
   getCalleeEdges: read(async (graphDb, p) => [...(await graphDb.getCalleeEdges(p.symbolIds as SymbolId[])).entries()]),
+  // File-scoped twin (bd tea-rags-mcp-oxnvl) — a SEPARATE op, so a daemon still
+  // running from an older build never receives `getCalleeEdges` with a payload
+  // shape it predates. Same Map→entries serialisation.
+  getCalleeEdgesScoped: read(async (graphDb, p) => [
+    ...(await graphDb.getCalleeEdgesScoped(p.refs as FileScopedSymbolRef[])).entries(),
+  ]),
+  getSymbolRelPaths: read(async (graphDb, p) => [
+    ...(await graphDb.getSymbolRelPaths(p.symbolIds as SymbolId[])).entries(),
+  ]),
   getCalledByCount: read(async (graphDb, p) => graphDb.getCalledByCount(p.symbolId as SymbolId)),
   getCallSiteCount: read(async (graphDb, p) => graphDb.getCallSiteCount(p.symbolId as SymbolId)),
   // Map cannot JSON-serialise — emit entries; the client rebuilds the Map.
