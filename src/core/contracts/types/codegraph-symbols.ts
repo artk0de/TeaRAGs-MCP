@@ -22,6 +22,71 @@ export type RelPath = string;
 export type SymbolId = string;
 
 /**
+ * A symbol pinned to the file that declares it (bd tea-rags-mcp-oxnvl).
+ *
+ * A `SymbolId` is unique per FILE, not per repository: top-level declarations
+ * (React function components, a `BaseTable` living in three directories) get a
+ * bare, unqualified id, so joining the call graph on `symbolId` alone merges
+ * every namesake into one node. Graph traversal whose node identity has to
+ * survive that — `trace_path` — is phrased in this pair instead.
+ */
+export interface FileScopedSymbolRef {
+  relPath: RelPath;
+  symbolId: SymbolId;
+}
+
+/**
+ * Composite map key for a {@link FileScopedSymbolRef}: `${relPath}|${symbolId}`.
+ * Opaque — build it with {@link fileScopedSymbolKey}, read it back with
+ * {@link parseFileScopedSymbolKey}, and never hand-assemble or split the string
+ * elsewhere (same reason `.claude/rules/symbolid-convention.md` bans hardcoding
+ * the `#` / `.` separator outside its canonical helpers).
+ */
+export type FileScopedSymbolId = string;
+
+/**
+ * Separator between the two halves of a {@link FileScopedSymbolId}.
+ *
+ * `|`, and not `::`, because Ruby symbolIds contain `::` natively
+ * (`Acme::Auth::User#save`) — `::` cannot delimit anything.
+ */
+const FILE_SCOPED_SYMBOL_SEPARATOR = "|";
+
+/**
+ * Compose the composite traversal key for a file-scoped symbol.
+ *
+ * relPath goes FIRST, and that ordering is load-bearing rather than
+ * cosmetic — see {@link parseFileScopedSymbolKey} for why the decode side
+ * depends on it.
+ */
+export function fileScopedSymbolKey(ref: FileScopedSymbolRef): FileScopedSymbolId {
+  return `${ref.relPath}${FILE_SCOPED_SYMBOL_SEPARATOR}${ref.symbolId}`;
+}
+
+/**
+ * Split a {@link FileScopedSymbolId} back into its parts.
+ *
+ * Splits on the FIRST separator, never the last, and that is a correctness
+ * invariant: the symbolId half CAN legally contain `|`. Ruby operator methods
+ * are ordinary method definitions, so `def |(other)` inside `class Matrix`
+ * yields the symbolId `Matrix#|` — split-on-last would hand back `Matrix#` and
+ * an empty file. The relPath half is what must stay `|`-free, which is why it
+ * is encoded first; a repo-relative path containing a pipe is the one residual
+ * shape this key cannot represent, and that risk is accepted (no filesystem in
+ * use here produces one).
+ *
+ * A key with no separator at all (never produced by
+ * {@link fileScopedSymbolKey}) reads as a bare symbolId with an unknown file
+ * rather than throwing — path rendering degrades to an empty string, traversal
+ * identity stays intact.
+ */
+export function parseFileScopedSymbolKey(key: FileScopedSymbolId): FileScopedSymbolRef {
+  const cut = key.indexOf(FILE_SCOPED_SYMBOL_SEPARATOR);
+  if (cut < 0) return { relPath: "", symbolId: key };
+  return { relPath: key.slice(0, cut), symbolId: key.slice(cut + 1) };
+}
+
+/**
  * A symbol descriptor produced by a language walker's `nameOf(node)`. Names a
  * single declaration (function, method, class, namespace) the walker found at
  * the current AST node, plus the flags that drive symbolId composition and

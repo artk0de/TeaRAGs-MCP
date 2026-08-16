@@ -12,6 +12,8 @@ import type {
   CycleScope,
   EdgeKindCount,
   FileGraphMetrics,
+  FileScopedSymbolId,
+  FileScopedSymbolRef,
   GraphDbClient,
   GraphEdges,
   GraphFileNode,
@@ -364,6 +366,23 @@ export class DaemonGraphDbClient implements GraphDbClient {
     // The server serialises the `Map<SymbolId, SymbolId[]>` as `[key, value][]`
     // entries (a Map cannot JSON-serialise) — rebuild the Map here.
     const entries = (await this.call("getCalleeEdges", { symbolIds })) as [SymbolId, SymbolId[]][];
+    return new Map(entries);
+  }
+
+  async getCalleeEdgesScoped(refs: FileScopedSymbolRef[]): Promise<Map<FileScopedSymbolId, FileScopedSymbolRef[]>> {
+    // Own op rather than a widened `getCalleeEdges` payload (bd
+    // tea-rags-mcp-oxnvl): a daemon from an older build stays running across a
+    // rebuild, and reusing the name would hand it a shape it cannot read.
+    // Serialised as `[key, value][]` entries — a Map cannot JSON-serialise.
+    const entries = (await this.call("getCalleeEdgesScoped", { refs })) as [
+      FileScopedSymbolId,
+      FileScopedSymbolRef[],
+    ][];
+    return new Map(entries);
+  }
+
+  async getSymbolRelPaths(symbolIds: SymbolId[]): Promise<Map<SymbolId, RelPath[]>> {
+    const entries = (await this.call("getSymbolRelPaths", { symbolIds })) as [SymbolId, RelPath[]][];
     return new Map(entries);
   }
 
