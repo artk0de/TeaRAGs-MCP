@@ -969,28 +969,63 @@ function locateCallLike(sourceFile: ts.SourceFile, call: CallRef): ts.CallLikeEx
 }
 
 /**
- * The `super(...)` call starting on `startLine`. No member coordinate is
- * needed: a constructor body may contain at most one, so the line identifies
- * it. `getResolvedSignature` answers with the BASE class's constructor, which
- * is exactly the edge the chain's `super.X()` branch emits.
+ * `new` and `super(...)` sites of one SourceFile, keyed by the coordinate the
+ * WALKER records for each: `${line}:new:${constructorShortName}` and
+ * `${line}:super`.
+ *
+ * One index for both because they are asked in the same breath and neither can
+ * collide with the other's key space. Indexed rather than walked per call for
+ * the reason {@link callSiteAt} is: the answer for a file never changes between
+ * questions, and asking it per call site turns one traversal into thousands.
+ * A `WeakMap` keyed on the SourceFile ties the index's lifetime to the parse
+ * `TSProgramCache` owns, so a re-parse silently supersedes it.
  */
-function findSuperCall(sourceFile: ts.SourceFile, startLine: number): ts.CallExpression | null {
-  let found: ts.CallExpression | null = null;
+const constructorSiteIndexes = new WeakMap<ts.SourceFile, Map<string, ts.CallLikeExpression>>();
+
+function constructorSiteAt(sourceFile: ts.SourceFile, key: string): ts.CallLikeExpression | null {
+  let index = constructorSiteIndexes.get(sourceFile);
+  if (index === undefined) {
+    index = buildConstructorSiteIndex(sourceFile);
+    constructorSiteIndexes.set(sourceFile, index);
+  }
+  return index.get(key) ?? null;
+}
+
+function buildConstructorSiteIndex(sourceFile: ts.SourceFile): Map<string, ts.CallLikeExpression> {
+  const index = new Map<string, ts.CallLikeExpression>();
 
   const visit = (node: ts.Node): void => {
-    if (found !== null) return;
-    if (ts.isCallExpression(node) && node.expression.kind === ts.SyntaxKind.SuperKeyword) {
-      const line = sourceFile.getLineAndCharacterOfPosition(node.getStart(sourceFile)).line + 1;
-      if (line === startLine) {
-        found = node;
-        return;
-      }
-    }
+    const key = constructorSiteKey(sourceFile, node);
+    if (key !== null && !index.has(key)) index.set(key, node as ts.CallLikeExpression);
     ts.forEachChild(node, visit);
   };
 
   ts.forEachChild(sourceFile, visit);
-  return found;
+  return index;
+}
+
+function constructorSiteKey(sourceFile: ts.SourceFile, node: ts.Node): string | null {
+  const lineOf = (): number => sourceFile.getLineAndCharacterOfPosition(node.getStart(sourceFile)).line + 1;
+  if (ts.isNewExpression(node)) {
+    const shortName = constructorShortName(node.expression);
+    return shortName === null ? null : `${lineOf()}:new:${shortName}`;
+  }
+  // `super(...)` — a `CallExpression` whose callee is the keyword, so it carries
+  // no callee name and `callSiteAt` never indexed it. A constructor body holds
+  // at most one, so the line alone identifies it.
+  if (ts.isCallExpression(node) && node.expression.kind === ts.SyntaxKind.SuperKeyword) {
+    return `${lineOf()}:super`;
+  }
+  return null;
+}
+
+/**
+ * The `super(...)` call starting on `startLine`. `getResolvedSignature` answers
+ * with the BASE class's constructor, which is exactly the edge the chain's
+ * `super.X()` branch emits.
+ */
+function findSuperCall(sourceFile: ts.SourceFile, startLine: number): ts.CallLikeExpression | null {
+  return constructorSiteAt(sourceFile, `${startLine}:super`);
 }
 
 /**
@@ -1008,24 +1043,9 @@ function findNewExpression(
   sourceFile: ts.SourceFile,
   startLine: number,
   receiverText: string,
-): ts.NewExpression | null {
+): ts.CallLikeExpression | null {
   const wanted = receiverText.slice(receiverText.lastIndexOf(".") + 1);
-  let found: ts.NewExpression | null = null;
-
-  const visit = (node: ts.Node): void => {
-    if (found !== null) return;
-    if (ts.isNewExpression(node) && constructorShortName(node.expression) === wanted) {
-      const line = sourceFile.getLineAndCharacterOfPosition(node.getStart(sourceFile)).line + 1;
-      if (line === startLine) {
-        found = node;
-        return;
-      }
-    }
-    ts.forEachChild(node, visit);
-  };
-
-  ts.forEachChild(sourceFile, visit);
-  return found;
+  return constructorSiteAt(sourceFile, `${startLine}:new:${wanted}`);
 }
 
 /** Rightmost identifier of a `new` target — `Foo` in `new ns.Foo()`. */
