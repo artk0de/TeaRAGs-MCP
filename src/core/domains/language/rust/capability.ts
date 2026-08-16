@@ -10,5 +10,6 @@ export const capability: LanguageCapability = {
   },
   tests: { tier: "medium", detection: "*_test.rs", tech: "generic AST (#[test] attrs not preserved)" },
   codegraph: { tier: "moderate", tech: "6-strategy; trait-based dispatch" },
-  versions: { chunking: 1, walker: 1, codegraphSchema: 1 },
+  // codegraphSchema 2: bd tea-rags-mcp-ex28m — see typescript/capability.ts.
+  versions: { chunking: 1, walker: 1, codegraphSchema: 2 },
 };

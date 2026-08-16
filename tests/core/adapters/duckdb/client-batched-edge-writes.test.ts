@@ -134,13 +134,16 @@ describe("DuckDbGraphClient — batched edge writes in upsertFile (f2jsb)", () =
     expect(Number(fanRows[0].candidate_count)).toBe(240);
   });
 
-  it("keeps the first-persisted row when another file already wrote the same (source, call, target) tuple", async () => {
-    // Monkey-patch case: `A#x` is defined in BOTH app/one.rb and app/two.rb;
-    // walking each file emits the same (source_symbol_id, call_expression,
-    // target_symbol_id) PK tuple with a different source_rel_path. In-JS
-    // dedupe inside ONE file's batch cannot see the other file's persisted
-    // rows — INSERT OR IGNORE is what absorbs the cross-file PK collision,
-    // so it must survive the batching rewrite.
+  it("keeps BOTH rows when another file emits the same (source, call, target) tuple", async () => {
+    // Monkey-patch / namesake case: `A#x` is defined in BOTH app/one.rb and
+    // app/two.rb; walking each file emits the same (source_symbol_id,
+    // call_expression, target_symbol_id) tuple with a different source_rel_path.
+    //
+    // INVARIANT CHANGED by bd tea-rags-mcp-ex28m. This used to assert first-wins
+    // collapse — one row survived and app/two.rb's edge was silently discarded,
+    // because source_rel_path was not in the primary key. Migration 020 puts it
+    // there: both files genuinely call the target, so both edges are real and
+    // both must persist. The batching rewrite this file guards must carry them.
     const edge = {
       sourceSymbolId: "A#x",
       targetSymbolId: "B#y" as string | null,
@@ -151,10 +154,30 @@ describe("DuckDbGraphClient — batched edge writes in upsertFile (f2jsb)", () =
     await db.upsertFile({ relPath: "app/two.rb", language: "ruby" }, { fileEdges: [], methodEdges: [{ ...edge }] });
 
     const rows = await db.queryAll<{ source_rel_path: string }>(
-      "SELECT source_rel_path FROM cg_symbols_edges_method WHERE source_symbol_id = 'A#x'",
+      "SELECT source_rel_path FROM cg_symbols_edges_method WHERE source_symbol_id = 'A#x' ORDER BY source_rel_path",
     );
-    expect(rows).toHaveLength(1);
-    expect(rows[0].source_rel_path).toBe("app/one.rb");
+    expect(rows.map((r) => r.source_rel_path)).toEqual(["app/one.rb", "app/two.rb"]);
+  });
+
+  it("still absorbs a genuine duplicate emitted twice by the SAME file", async () => {
+    // The other half of what INSERT OR IGNORE is for, and the half migration 020
+    // does NOT change: one file emitting the identical edge twice is one edge.
+    // Widening the key must not turn a real duplicate into two rows.
+    const edge = {
+      sourceSymbolId: "A#x",
+      targetSymbolId: "B#y" as string | null,
+      targetRelPath: "app/b.rb",
+      callExpression: "y()",
+    };
+    await db.upsertFile(
+      { relPath: "app/one.rb", language: "ruby" },
+      { fileEdges: [], methodEdges: [edge, { ...edge }] },
+    );
+
+    const rows = await db.queryAll<{ n: number | bigint }>(
+      "SELECT COUNT(*) AS n FROM cg_symbols_edges_method WHERE source_symbol_id = 'A#x'",
+    );
+    expect(Number(rows[0].n)).toBe(1);
   });
 
   it("lands a file with more edges than one statement chunk completely (crosses the batch boundary)", async () => {

@@ -339,17 +339,24 @@ export class DuckDbMethodEdgeReader {
 }
 
 /**
- * Dedupe caller edges by `(sourceSymbolId, callExpression)` (bd 2jet-E). The
- * symmetric poly-base expansion can re-surface a caller the direct query already
- * returned (e.g. a class that both directly calls the override AND reaches it
- * polymorphically). First occurrence wins; ordering of the merged list is
- * preserved.
+ * Dedupe caller edges by `(sourceRelPath, sourceSymbolId, callExpression)`
+ * (bd 2jet-E; file-scoped by bd tea-rags-mcp-ex28m). The symmetric poly-base
+ * expansion can re-surface a caller the direct query already returned (e.g. a
+ * class that both directly calls the override AND reaches it polymorphically).
+ * First occurrence wins; ordering of the merged list is preserved.
+ *
+ * The FILE is part of the key, not decoration. A symbolId is unique per file, so
+ * `(sourceSymbolId, callExpression)` alone treats two namesake callers in
+ * different directories as one and drops a real call site. That is the same
+ * blindness migration 020 removed from the primary key — leaving it here would
+ * have let the widened key persist both rows only for this Set to discard one on
+ * the way out.
  */
 function dedupeCallerEdges(edges: CallerEdge[]): CallerEdge[] {
   const seen = new Set<string>();
   const out: CallerEdge[] = [];
   for (const e of edges) {
-    const k = `${e.sourceSymbolId} ${e.callExpression}`;
+    const k = `${fileScopedSymbolKey({ relPath: e.sourceRelPath, symbolId: e.sourceSymbolId })} ${e.callExpression}`;
     if (seen.has(k)) continue;
     seen.add(k);
     out.push(e);

@@ -13,5 +13,6 @@ export const capability: LanguageCapability = {
   },
   tests: { tier: "high", detection: "*.test.js / *.spec.jsx", tech: "testScopeChunker (describe/it scopes)" },
   codegraph: { tier: "high", tech: "6-strategy; CommonJS/ESM require resolution (dynamic gaps)" },
-  versions: { chunking: 1, walker: 1, codegraphSchema: 1 },
+  // codegraphSchema 2: bd tea-rags-mcp-ex28m — see typescript/capability.ts.
+  versions: { chunking: 1, walker: 1, codegraphSchema: 2 },
 };

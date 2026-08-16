@@ -20,5 +20,10 @@ export const capability: LanguageCapability = {
   // walker 2: the TS-resolver oracle wave. Every index built before it carries
   // old-resolver edges, and no payload KEY moved, so `SchemaDriftMonitor` sees
   // nothing — this bump is what makes the hint fire on those indexes.
-  versions: { chunking: 1, walker: 2, codegraphSchema: 1 },
+  // codegraphSchema 2: bd tea-rags-mcp-ex28m. The method-edge primary key was
+  // missing `source_rel_path`, so two namesake files calling the same target
+  // through the same expression collapsed to ONE row under `INSERT OR IGNORE`.
+  // Migration 020 widens the key, but the rows it already discarded are not on
+  // disk — only re-extraction regenerates them.
+  versions: { chunking: 1, walker: 2, codegraphSchema: 2 },
 };
