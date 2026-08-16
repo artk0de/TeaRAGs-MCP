@@ -80,8 +80,11 @@ export function tsNameOf(node: AstNode): NamedSymbol | null {
   // three different files each declared a symbol called plain `group`, so
   // `find_symbol` / `get_callers` could not tell them apart.
   //
-  // Naming the declarator with `descendsInto: true` fixes both at once: the
-  // receiver becomes lookup-able and its members compose as `X.member`.
+  // Naming the declarator fixes both at once: the receiver becomes lookup-able
+  // and its members compose as `X.member` — `collectSymbols` extends the
+  // composed scope for every named node, so the composition follows from
+  // NAMING it, not from the `descendsInto: true` that describes it
+  // (bd tea-rags-mcp-czoif).
   //
   // The shape gate (object literal carrying at least one `method_definition`,
   // seen through `as const` / `satisfies` / parentheses) lives in
@@ -119,8 +122,10 @@ export function tsNameOf(node: AstNode): NamedSymbol | null {
   // 3,944 missed rows, 21.5% of the whole recall gap.
   //
   // `descendsInto: false` matches `function_declaration` — a function is a
-  // container for scope purposes but composes no members onto itself, which is
-  // what separates this from the const-object namespace above. It is also what
+  // leaf DECLARATION, not a member container like the const-object namespace
+  // above. The flag is descriptive and no collector reads it (bd
+  // tea-rags-mcp-czoif), so it neither grants nor withholds the nested
+  // composition this bead is about. Matching `function_declaration` is also what
   // keeps JavaScript byte-identical: `jsNameOf` DELEGATES here before applying
   // its own pattern #5, which has always recognised this shape at ANY depth and
   // returns exactly this. Widening to match #5 is what keeps the delegation a
