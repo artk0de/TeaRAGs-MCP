@@ -8,7 +8,7 @@
  * explicit — e.g. `super` without `classExtends` DROPS rather than falling
  * through to a same-file lookup that would emit a self-loop edge (bd
  * tea-rags-mcp-4rgg). Passes 5, 7 and 8 DEFER their file-only fallback rather
- * than committing it, so 12-15 still get a chance to pin the member (bd
+ * than committing it, so 12-16 still get a chance to pin the member (bd
  * tea-rags-mcp-5onmn).
  *
  * The pass order (each `name` in parens):
@@ -25,32 +25,41 @@
  *  10. globalShortName (global short-name lookup)
  *  11. importNarrowedFallback (narrow ambiguous N>1 by caller's imports)
  *  12. typeCheckerJsxComponent (ts.Program/typeChecker — JSX component tags)
- *  13. typeCheckerReturnType (ts.Program/typeChecker — receiver typed by a
+ *  13. callResultCallee (ts.Program/typeChecker — BARE callee bound from a
+ *      project function's CALL RESULT, bd tea-rags-mcp-kf42k)
+ *  14. typeCheckerReturnType (ts.Program/typeChecker — receiver typed by a
  *      call's inferred return type, bd tea-rags-mcp-l3uob)
- *  14. typeCheckerFallback (ts.Program/typeChecker — generics + overloads)
- *  15. structuralTyping (ts.Program/typeChecker — duck typing + interface merging)
+ *  15. typeCheckerFallback (ts.Program/typeChecker — generics + overloads)
+ *  16. structuralTyping (ts.Program/typeChecker — duck typing + interface merging)
  *
- * Passes 12-15 are the only ones that read type information rather than AST
+ * Passes 12-16 are the only ones that read type information rather than AST
  * shape, and the only ones that touch the file system on the resolve path. They
  * run last by construction: everything above them is cheaper, so the checker is
  * consulted only for calls nothing else could decide, and they share ONE
  * `TSProgramCache` so a file is never typed twice. `CODEGRAPH_TS_TYPECHECKER=0`
- * removes all four from the chain entirely (bd tea-rags-mcp-uclbn).
+ * removes all five from the chain entirely (bd tea-rags-mcp-uclbn).
  *
  * Pass 12 sits first because it answers a disjoint question and its gate is a
  * single flag read: a JSX tag site (`call.jsx`) is never a `CallExpression`,
- * so none of 13-15 could resolve it anyway (bd tea-rags-mcp-b4pvp). Among
- * 13-15 the relative order is a precision question, not a cost one — all
- * three share the Program, so nothing is saved by reordering them, but
+ * so none of 13-16 could resolve it anyway (bd tea-rags-mcp-b4pvp). Among
+ * 13-16 the relative order is a precision question, not a cost one — all
+ * four share the Program, so nothing is saved by reordering them, but
  * getting the order wrong hides a call from the pass that should have
  * answered it:
- *   - 13 gates on a narrow receiver shape (typed by ANOTHER call's inferred
+ *   - 13 is the only BARE-call pass of the tier, so 14 and 16 (both
+ *     receiver-gated) decide nothing against it. Against 15 it decides the
+ *     whole family: both reach the same declaration through
+ *     `getResolvedSignature`, but 15 degrades to a file-only edge where the
+ *     symbol table cannot confirm the member, and the nested MEMBER
+ *     (`useResolverGuards.checkGuards`, `scopedTranslation.t`) is the entire
+ *     answer here (bd tea-rags-mcp-kf42k).
+ *   - 14 gates on a narrow receiver shape (typed by ANOTHER call's inferred
  *     return, no explicit annotation) and pins the receiver TYPE before
- *     reading the member off it, while 14's `getResolvedSignature` answers a
+ *     reading the member off it, while 15's `getResolvedSignature` answers a
  *     superset of shapes from the call's own resolved signature alone —
- *     behind 14, pass 13 would never see a call (bd tea-rags-mcp-l3uob).
- *   - 15 follows 14 because `getResolvedSignature` picks the overload the
- *     ARGUMENTS select, which is the sharper answer whenever it applies; 15
+ *     behind 15, pass 14 would never see a call (bd tea-rags-mcp-l3uob).
+ *   - 16 follows 15 because `getResolvedSignature` picks the overload the
+ *     ARGUMENTS select, which is the sharper answer whenever it applies; 16
  *     then handles the receivers that have no name to look up at all
  *     (bd tea-rags-mcp-icmnr).
  *
@@ -82,6 +91,7 @@ import { resolveViaChain } from "../../resolver-chain.js";
 import {
   collectImportedFiles,
   CONE_MAX_DEFAULT,
+  TSCallResultCalleeSymbolResolutionStrategy,
   TSConeTypeLocator,
   TSFieldTypeSymbolResolutionStrategy,
   TSGlobalShortNameSymbolResolutionStrategy,
@@ -382,6 +392,18 @@ export class TSCallResolver implements CallResolver {
     if (this.programCache) {
       this.strategies.push(
         new TSTypeCheckerJsxComponentSymbolResolutionStrategy(cfg, this.programCache),
+        // Head of the checker tier bar the JSX pass, and the index is a
+        // correctness argument in one direction only (bd tea-rags-mcp-kf42k).
+        // Everything ahead of it either answers a receiver or answers a bare
+        // call from exact evidence — an import binding, the caller's own file —
+        // and this pass would have nothing to add there. Against
+        // `typeCheckerFallback` it decides the family: both reach the same
+        // declaration through `getResolvedSignature`, but the fallback degrades
+        // to a file-only edge where the symbol table cannot confirm the member,
+        // and the MEMBER is the whole answer here. Behind the JSX pass because a
+        // React component is routinely `const Page = lazy(() => …)` — a
+        // call-result binding by shape — and its tag is that pass's case.
+        new TSCallResultCalleeSymbolResolutionStrategy(cfg, this.programCache),
         new TSTypeCheckerReturnTypeInferenceSymbolResolutionStrategy(cfg, this.programCache),
         new TSTypeCheckerFallbackSymbolResolutionStrategy(cfg, this.programCache),
         new TSStructuralTypingSymbolResolutionStrategy(cfg, this.programCache),

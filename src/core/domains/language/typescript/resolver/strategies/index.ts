@@ -15,6 +15,7 @@ export {
   type TSTypeCheckerFallbackCase,
 } from "./ts-type-checker-fallback.js";
 export { TSTypeCheckerJsxComponentSymbolResolutionStrategy } from "./ts-type-checker-jsx-component.js";
+export { TSCallResultCalleeSymbolResolutionStrategy } from "./ts-call-result-callee.js";
 export {
   classifyStructuralTypingCase,
   TSStructuralTypingSymbolResolutionStrategy,
