@@ -269,11 +269,19 @@ describe("TSGlobalShortNameSymbolResolutionStrategy — annotated out-of-project
     expect(strategy().attempt(ANNOTATED_FIELD_STOP, annotatedFieldCtx()).kind).toBe("continue");
   });
 
-  it("STILL resolves when the annotation names a project class the symbol table declares (store.put)", () => {
+  /**
+   * The recall guard: an annotation naming a project class must keep its edge.
+   * Asserted on the CHAIN rather than on this pass, because which pass answers
+   * is not the invariant: `localBinding` at position 4 owns a walker-typed
+   * receiver whose member the table carries, and since bd tea-rags-mcp-dubkx
+   * position 9 declines that population outright.
+   */
+  it("STILL emits the edge when the annotation names a project class the symbol table declares (store.put)", () => {
     writeAnnotatedProjectTypeFixture(repoRoot);
-    expect(strategy().attempt(ANNOTATED_PROJECT_PUT, annotatedProjectCtx())).toEqual({
-      kind: "resolved",
-      target: { targetRelPath: "src/store.ts", targetSymbolId: "Store#put" },
+    const resolver = new TSCallResolver(tsOptions, DEFAULT_AMBIGUOUS_RESOLVE_MODE, repoRoot);
+    expect(resolver.resolve(ANNOTATED_PROJECT_PUT, annotatedProjectCtx())).toEqual({
+      targetRelPath: "src/store.ts",
+      targetSymbolId: "Store#put",
     });
   });
 

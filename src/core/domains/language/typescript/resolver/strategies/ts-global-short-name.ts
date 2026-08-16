@@ -3,7 +3,7 @@ import { pickSingleCandidate, type CallContext, type CallRef } from "../../../..
 import type { SymbolResolutionOutcome, SymbolResolutionStrategy } from "../../../../../contracts/types/language.js";
 import { targetsExternalImport } from "../ts-external-call.js";
 import { calleeIsLocalValueBinding } from "../ts-local-callee.js";
-import { receiverIsUnpinnableLocalValueBinding } from "../ts-local-receiver.js";
+import { receiverBoundToProjectType, receiverIsUnpinnableLocalValueBinding } from "../ts-local-receiver.js";
 import type { TSProgramCache } from "../ts-program-cache.js";
 import type { ResolverConfig } from "./shared.js";
 
@@ -39,6 +39,14 @@ import type { ResolverConfig } from "./shared.js";
  * DECLARATION instead, and only when the checker also names no in-project type,
  * so a destructured receiver holding a real project instance keeps its edge.
  *
+ * A receiver the walker ALREADY typed needs the fourth guard, and that one is
+ * about chain order rather than about the receiver (bd tea-rags-mcp-dubkx).
+ * `localBinding` at position 4 owns the walker-typed receiver and looks the
+ * member up under that type; a call arriving here carries its negative answer,
+ * so the receiver-blind short-name match this pass would commit is a naming
+ * coincidence. See {@link receiverBoundToProjectType} for the measurement and
+ * for why the guard stops at this pass rather than travelling to 10.
+ *
  * The guard reads the resolver's `TSProgramCache` when one exists (bd
  * tea-rags-mcp-335eu), which is what lets it decline a receiver only the checker
  * could type — `const map = readRegistry(); map.set(k, v)`. The cache arrives as
@@ -55,6 +63,7 @@ export class TSGlobalShortNameSymbolResolutionStrategy implements SymbolResoluti
   ) {}
 
   attempt(call: CallRef, ctx: CallContext): SymbolResolutionOutcome {
+    if (receiverBoundToProjectType(call, ctx)) return CONTINUE;
     if (targetsExternalImport(call, ctx, this.cfg.tsOptions, this.programCache, this.cfg.fileExists)) return CONTINUE;
     if (calleeIsLocalValueBinding(call, ctx, this.programCache)) return CONTINUE;
     if (receiverIsUnpinnableLocalValueBinding(call, ctx, this.programCache)) return CONTINUE;
