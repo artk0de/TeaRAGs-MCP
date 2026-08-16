@@ -79,6 +79,35 @@
  *     implementation to drift from. What remains unlocatable is reported by
  *     SHAPE rather than as one opaque number; see {@link OracleUnlocatedShape}.
  *
+ * MEASUREMENT CUTOVER — 2026-08-17, bd tea-rags-mcp-0w1py. Call sites naming a
+ * callable VALUE now carry ground truth, so the SCORED SET GREW and every
+ * verdict total moved with it. Counts from before this commit are comparable
+ * only in the sense a smaller sample is: nothing about the resolver changed,
+ * and no verdict was recomputed differently — sites that used to score
+ * `bothUnresolved` / `chainOnly` for want of an oracle now score for real.
+ *
+ * The blind spot was the QUERY, not the finders. `arr.map(this.tick)` puts an
+ * edge at the ARGUMENT's coordinate and `f.bind(x)` records the function the
+ * walker unwrapped TO, so neither coordinate holds a call-like node and
+ * `getResolvedSignature` — which needs one — could not be asked. Both are
+ * answered by asking the checker for the referenced expression's SYMBOL
+ * instead; see {@link referencesCallableValue} for which shapes qualify and
+ * {@link queryValueReference} for why the feature axes narrow there.
+ *
+ * Measured across the cutover: on taxdome `nodeNotLocated` 426 → 259
+ * (`methodReference` 86 → 0, `coordinateMiss` 322 → 241, the 81 unwrapped
+ * invoker sites), `wrongFile` defects 1479 → 1489, `missed` defects 1004 →
+ * 1004, `phantom` defects 318 → 318. On this repo's `src` 139 → 72
+ * (`methodReference` 16 → 0, `coordinateMiss` 96 → 45) with the three defect
+ * residuals — 25 / 3 / 0 — identical on both sides. The +10 taxdome
+ * `wrongFile` are new evidence, not a regression: they are the first verdicts
+ * these sites have ever received.
+ *
+ * `dynamicSend` and `dynamicImport` stay unlocated on purpose. A computed
+ * callee names no value to resolve — the walker kept the literal edge precisely
+ * because there was nothing to unwrap to — and a dynamic import targets a
+ * MODULE, which the import-edge channel owns.
+ *
  * `phantom` changed meaning earlier, on 2026-08-10, in the commit carrying bd
  * tea-rags-mcp-ffju3 (`git log --grep=ffju3 -- scripts/`). RAW PHANTOM COUNTS
  * FROM BEFORE THAT COMMIT ARE NOT COMPARABLE WITH COUNTS FROM AFTER IT. The
@@ -159,6 +188,7 @@ import type {
   TSProgramCache,
   TSProgramHandle,
 } from "../src/core/domains/language/typescript/resolver/ts-program-cache.js";
+import { FUNCTION_INVOKER_MEMBERS } from "../src/core/domains/language/typescript/walker/walker.js";
 import { buildCodegraphExclusionFilter } from "../src/core/domains/trajectory/codegraph/exclusion.js";
 import { CODEGRAPH_LANGUAGES } from "../src/core/domains/trajectory/codegraph/symbols/provider.js";
 import { classifyReceiverKind } from "../src/core/domains/trajectory/codegraph/symbols/receiver-kind.js";
@@ -968,6 +998,86 @@ function locateCallLike(sourceFile: ts.SourceFile, call: CallRef): ts.CallLikeEx
   return findCallExpression(sourceFile, call.startLine, call.member);
 }
 
+/** `f.call(…)` / `f.apply(…)` / `f.bind(…)` written out at a call site. */
+const FUNCTION_INVOKER_CALL = /\.(?:call|apply|bind)\s*\(/;
+
+/**
+ * Does this `CallRef` name a callable VALUE rather than a call expression (bd
+ * tea-rags-mcp-0w1py)?
+ *
+ * Two shapes reach the same answer, and the walker produced both by recording
+ * something other than a callee at a coordinate:
+ *
+ *   - `methodReference` — `arr.map(this.tick)`. The edge is emitted at the
+ *     ARGUMENT's coordinate, and an argument is not a call. There is no
+ *     call-like node to select a signature from, and there never was one to
+ *     find: the ground truth here is the symbol `this.tick` resolves to.
+ *   - the invoker UNWRAP — `f.bind(x)`, `handler.run.call(handler)`. The walker
+ *     drops the literal `.bind` edge and records the function that will run
+ *     ({@link FUNCTION_INVOKER_MEMBERS}), so the coordinate's only indexed
+ *     callee name is `bind` and `callSiteAt` never matches the member. Same
+ *     answer, same reason: the RECEIVER of the invoker is a value reference.
+ *
+ * Everything else is declined on purpose, so the residual keeps meaning what
+ * its docblock says. A `dynamicSend` invoker (`registry[k].call(x)`) has no
+ * static name to resolve — the walker kept the literal edge precisely because
+ * there was nothing to unwrap to. And an ordinary `coordinateMiss`
+ * (`handleSubmit(onSubmit)()`, an IIFE) IS a call the finders should have
+ * placed; answering it off some identifier that happens to share the line would
+ * hide the one bucket that indicates a finder defect.
+ */
+export function referencesCallableValue(call: CallRef): boolean {
+  const shape = classifyUnlocatedCallShape(call);
+  if (shape === "methodReference") return true;
+  if (shape !== "coordinateMiss") return false;
+  return FUNCTION_INVOKER_CALL.test(call.callText) && !FUNCTION_INVOKER_MEMBERS.has(call.member);
+}
+
+/** Every identifier of one SourceFile, keyed `${line}:${text}`. */
+const valueReferenceIndexes = new WeakMap<ts.SourceFile, Map<string, ts.Identifier>>();
+
+/**
+ * The identifier naming a callable value at `(startLine, member)` — `tick` in
+ * `arr.map(this.tick)`, `f` in `f.bind(x)` — or `undefined` when the line
+ * carries none (bd tea-rags-mcp-0w1py).
+ *
+ * Indexed per SourceFile for the reason {@link callSiteAt} is, and first-write-
+ * wins in pre-order for the same reason too: the answer for a file never
+ * changes between questions, and the outermost occurrence on a line is the one
+ * a coordinate means. A property access contributes its `.name`, which is what
+ * `getSymbolAtLocation` needs to reach the member rather than the receiver.
+ *
+ * Deliberately NOT restricted to non-callee positions. The finder is consulted
+ * only after {@link locateCallLike} declined AND {@link referencesCallableValue}
+ * claimed the site, so a callee identifier can only be reached by a call whose
+ * own node was already unfindable — and answering that off the callee is the
+ * right answer, not a coincidence.
+ */
+export function findValueReference(sourceFile: ts.SourceFile, startLine: number, member: string): ts.Identifier | null {
+  let index = valueReferenceIndexes.get(sourceFile);
+  if (index === undefined) {
+    index = buildValueReferenceIndex(sourceFile);
+    valueReferenceIndexes.set(sourceFile, index);
+  }
+  return index.get(`${startLine}:${member}`) ?? null;
+}
+
+function buildValueReferenceIndex(sourceFile: ts.SourceFile): Map<string, ts.Identifier> {
+  const index = new Map<string, ts.Identifier>();
+
+  const visit = (node: ts.Node): void => {
+    if (ts.isIdentifier(node)) {
+      const line = sourceFile.getLineAndCharacterOfPosition(node.getStart(sourceFile)).line + 1;
+      const key = `${line}:${node.text}`;
+      if (!index.has(key)) index.set(key, node);
+    }
+    ts.forEachChild(node, visit);
+  };
+
+  ts.forEachChild(sourceFile, visit);
+  return index;
+}
+
 /**
  * `new` and `super(...)` sites of one SourceFile, keyed by the coordinate the
  * WALKER records for each: `${line}:new:${constructorShortName}` and
@@ -1078,7 +1188,7 @@ function constructorShortName(expression: ts.LeftHandSideExpression): string | n
  */
 function queryTypeChecker(handle: TSProgramHandle, cache: TSProgramCache, call: CallRef): OracleQueryResult {
   const node = locateCallLike(handle.sourceFile, call);
-  if (node === null) return { ...NO_ORACLE, unlocatedShape: classifyUnlocatedCallShape(call) };
+  if (node === null) return queryValueReference(handle, cache, call);
 
   const { checker } = handle;
   const signature = checker.getResolvedSignature(node);
@@ -1087,6 +1197,56 @@ function queryTypeChecker(handle: TSProgramHandle, cache: TSProgramCache, call: 
     : (signature?.declaration ?? declarationViaSymbol(node, checker));
   const categories = classifyTypeFeatures(node, checker, signature, declaration);
 
+  return placeDeclaration(declaration, cache, categories);
+}
+
+/**
+ * The checker's answer for a call site that names a callable VALUE — there is
+ * no call-like node at its coordinate, so `getResolvedSignature` has no
+ * signature to select and the symbol path is the ONLY path (bd
+ * tea-rags-mcp-0w1py).
+ *
+ * On taxdome this was 86 `methodReference` sites plus the 81 `.call` / `.apply`
+ * / `.bind` sites the walker unwrapped — 167 real call sites the harness
+ * counted, diffed as `bothUnresolved` / `chainOnly`, and had no opinion about.
+ * The resolver has always answered them; only the ORACLE was missing, so every
+ * one was invisible to the verdict axis the report ranks work by.
+ *
+ * {@link referencesCallableValue} is what keeps this from swallowing the
+ * residual: a site the finders merely FAILED on still lands in
+ * `coordinateMiss`, where a rising count means a finder is broken.
+ */
+function queryValueReference(handle: TSProgramHandle, cache: TSProgramCache, call: CallRef): OracleQueryResult {
+  const unlocated: OracleQueryResult = { ...NO_ORACLE, unlocatedShape: classifyUnlocatedCallShape(call) };
+  if (!referencesCallableValue(call)) return unlocated;
+
+  const reference = findValueReference(handle.sourceFile, call.startLine, call.member);
+  if (reference === null) return unlocated;
+
+  const { checker } = handle;
+  const declaration = declarationOfIdentifier(reference, checker);
+  // No signature was selected, so the feature axes that read one (generic,
+  // overload, union narrowing, return-type inference) have nothing to say here
+  // and claiming them would overstate what was measured. The two that read the
+  // NODE and the DECLARATION still hold.
+  const features: string[] = [];
+  if (hasJsxAncestor(reference)) features.push("jsx");
+  if (targetIsStructural(declaration, checker)) features.push("structuralTyping");
+
+  return placeDeclaration(declaration, cache, features.length === 0 ? ["plain"] : features);
+}
+
+/**
+ * Turn the declaration the checker named into the verdict-bearing outcome:
+ * `unknown` when it named none, `external` when it lies outside project source,
+ * `inProject` otherwise. One implementation for both query paths, so a call
+ * site's placement can never depend on which of them located it.
+ */
+function placeDeclaration(
+  declaration: ts.Declaration | undefined,
+  cache: TSProgramCache,
+  categories: string[],
+): OracleQueryResult {
   if (declaration === undefined) return { outcome: { kind: "unknown" }, located: true, nonSource: false, categories };
 
   // A SYNTHESIZED declaration has no source file to place it in. The compiler
@@ -1252,7 +1412,19 @@ function isAnonymousCallable(declaration: ts.Declaration, shortName: string | nu
  */
 function declarationViaSymbol(node: ts.CallLikeExpression, checker: ts.TypeChecker): ts.Declaration | undefined {
   const nameNode = calleeNameNode(node);
-  if (nameNode === null) return undefined;
+  return nameNode === null ? undefined : declarationOfIdentifier(nameNode, checker);
+}
+
+/**
+ * The declaration one identifier resolves to, import aliases unwrapped.
+ *
+ * Shared by the callee path above and the value-reference path (bd
+ * tea-rags-mcp-0w1py), which differ only in WHICH identifier they hand over —
+ * a callee name for one, the referenced expression for the other. Keeping the
+ * unwrap in one place is why a method passed as a value and the same method
+ * called outright resolve to the same declaration.
+ */
+function declarationOfIdentifier(nameNode: ts.Identifier, checker: ts.TypeChecker): ts.Declaration | undefined {
   let symbol = checker.getSymbolAtLocation(nameNode);
   if (symbol !== undefined && (symbol.flags & ts.SymbolFlags.Alias) !== 0) symbol = checker.getAliasedSymbol(symbol);
   return symbol?.declarations?.[0];
