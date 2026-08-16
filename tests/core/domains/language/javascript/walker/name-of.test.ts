@@ -59,6 +59,17 @@ describe("jsNameOf — variable_declarator patterns", () => {
     const names = collectNames(src);
     expect(names).not.toContain("x");
   });
+
+  it("emits a nested const arrow exactly once — the tsNameOf delegation must not double it", () => {
+    // JavaScript's pattern #5 has ALWAYS named a function-valued declarator at
+    // any depth, so bd tea-rags-mcp-29m75 (which widens `tsNameOf` to the same
+    // boundary) changes nothing here — `jsNameOf` delegates to `tsNameOf`
+    // FIRST and returns its answer, so the widened TS gate now answers a shape
+    // pattern #5 used to answer alone. Identical output, one emission; a second
+    // one would double every closure in every JS file.
+    const src = "function render(id) {\n  const handler = () => id;\n  return handler();\n}\n";
+    expect(collectNames(src).filter((n) => n === "handler")).toEqual(["handler"]);
+  });
 });
 
 describe("jsNameOf — assignment_expression patterns (collectAssignmentTargets + lhsToNamedSymbol)", () => {

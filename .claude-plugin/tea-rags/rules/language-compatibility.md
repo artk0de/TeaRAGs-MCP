@@ -89,7 +89,9 @@ conclude absence from a graph the index says is incomplete.
   checker-backed declaration-site test covering builtins, default-lib and
   dependency types, and imported-constant container members on the
   import-mapping fallback) + local-callee guard (bare calls whose callee is a
-  destructured prop / hook binding) + edges restricted to project sources +
+  destructured prop / hook binding) + named function-valued declarators
+  addressable at any scope depth (module-level and nested closures alike,
+  composed under their declaring symbol) + edges restricted to project sources +
   tsx/tsconfig-paths-aware import mapping
 - **JavaScript** — 6-strategy; CommonJS/ESM require resolution (dynamic gaps)
 - **Python** — 6-strategy + ConeDispatch CHA; type hints where present

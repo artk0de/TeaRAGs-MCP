@@ -15,6 +15,7 @@ import { describe, expect, it } from "vitest";
 import type { AstNode } from "../../../../src/core/contracts/types/ast.js";
 import { materializeTree } from "../../../../src/core/infra/materialize.js";
 import {
+  functionValuedDeclaratorName,
   isFunctionValuedExpression,
   moduleLevelFunctionDeclaratorName,
 } from "../../../../src/core/infra/symbolid/const-bound-function.js";
@@ -36,10 +37,17 @@ function nodesOfType(root: AstNode, type: string): AstNode[] {
   return out;
 }
 
-/** The names the gate accepts across every declarator in `src`. */
+/** The names the MODULE-LEVEL gate accepts across every declarator in `src`. */
 function acceptedNames(src: string): string[] {
   return nodesOfType(parse(src), "variable_declarator")
     .map((d) => moduleLevelFunctionDeclaratorName(d))
+    .filter((name): name is string => name !== null);
+}
+
+/** The names the ANY-SCOPE gate accepts across every declarator in `src`. */
+function anyScopeNames(src: string): string[] {
+  return nodesOfType(parse(src), "variable_declarator")
+    .map((d) => functionValuedDeclaratorName(d))
     .filter((name): name is string => name !== null);
 }
 
@@ -144,6 +152,80 @@ describe("moduleLevelFunctionDeclaratorName — declines (bd tea-rags-mcp-grz07)
     const root = parse("export function plain(): void {}\n");
     expect(moduleLevelFunctionDeclaratorName(root)).toBeNull();
     expect(moduleLevelFunctionDeclaratorName(nodesOfType(root, "function_declaration")[0])).toBeNull();
+  });
+});
+
+describe("functionValuedDeclaratorName — the same shape at ANY scope (bd tea-rags-mcp-29m75)", () => {
+  it("names the module-level declarators its restricted sibling names", () => {
+    // The two gates answer the same SHAPE question; the module-level one adds a
+    // scope restriction on top. Wherever the restriction is vacuous the answers
+    // must be identical, or the chunker and the walker would disagree about a
+    // node neither considers nested.
+    const src = [
+      "export const genValidationSchema = (msg: string) => msg.trim();",
+      "const legacy = function (value: number) {",
+      "  return value;",
+      "};",
+      "export const walk = function* () {",
+      "  yield 1;",
+      "};",
+    ].join("\n");
+    expect(anyScopeNames(src)).toEqual(acceptedNames(src));
+  });
+
+  it("names a const arrow declared inside a function body", () => {
+    // The whole point of bd tea-rags-mcp-29m75. On taxdome the checker resolved
+    // 3,944 bare calls to a nested named arrow the symbol table had no row for
+    // — 21.5% of the whole recall gap — so no edge could be emitted however
+    // good the resolver chain got.
+    expect(
+      anyScopeNames("export function render(id: string): void {\n  const handler = () => id;\n  handler();\n}\n"),
+    ).toEqual(["handler"]);
+  });
+
+  it("names a const arrow declared inside a class method body", () => {
+    expect(
+      anyScopeNames(
+        "export class Panel {\n  open(): void {\n    const onClose = () => undefined;\n    onClose();\n  }\n}\n",
+      ),
+    ).toEqual(["onClose"]);
+  });
+
+  it("names both halves of a const arrow nested inside another const arrow", () => {
+    expect(anyScopeNames("export const outer = () => {\n  const inner = () => 1;\n  return inner();\n};\n")).toEqual([
+      "outer",
+      "inner",
+    ]);
+  });
+
+  it("names a const arrow inside an arrow passed as a callback", () => {
+    expect(anyScopeNames("register(() => {\n  const cb = () => 1;\n  return cb;\n});\n")).toEqual(["cb"]);
+  });
+
+  it("still declines everything the shape gate declines, wherever it sits", () => {
+    // Dropping the SCOPE restriction must not widen the SHAPE. A destructured
+    // binding (the oracle's BindingElement class, deliberately out of scope
+    // here), a call-valued declaration and a data object stay unnamed inside a
+    // function body exactly as they do at module level.
+    const src = [
+      "export function useRow(): void {",
+      "  const { format, parse } = helpers;",
+      "  const t = useTranslation();",
+      "  const PALETTE = { red: '#f00' };",
+      "  const Grouper = {",
+      "    group(a: number) {",
+      "      return a;",
+      "    },",
+      "  };",
+      "}",
+    ].join("\n");
+    expect(anyScopeNames(src)).toEqual([]);
+  });
+
+  it("declines a non-declarator node", () => {
+    const root = parse("export function plain(): void {}\n");
+    expect(functionValuedDeclaratorName(root)).toBeNull();
+    expect(functionValuedDeclaratorName(nodesOfType(root, "function_declaration")[0])).toBeNull();
   });
 });
 
