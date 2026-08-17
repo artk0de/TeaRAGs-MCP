@@ -74,7 +74,7 @@ export class TSTypeCheckerJsxComponentSymbolResolutionStrategy implements Symbol
     for (const declaration of symbol.declarations ?? []) {
       const targetRelPath = this.programCache.toProjectSourceRelPath(declaration.getSourceFile().fileName);
       if (targetRelPath === null) continue;
-      return resolved({ targetRelPath, targetSymbolId: this.pinSymbol(declaration, targetRelPath, ctx) });
+      return resolved({ targetRelPath, targetSymbolId: this.pinSymbol(declaration, targetRelPath, ctx, call.member) });
     }
     return CONTINUE;
   }
@@ -87,19 +87,55 @@ export class TSTypeCheckerJsxComponentSymbolResolutionStrategy implements Symbol
    *
    * Exact fq match first, then the short name narrowed to that one file, which
    * recovers a component the chunker filed under a composed id (nested in a
-   * namespace, or exported from inside a block). Failing both, the FILE is
-   * still certain, so a file-only edge is emitted — the contract allows a null
-   * `targetSymbolId` for exactly that.
+   * namespace, or exported from inside a block).
+   *
+   * Failing both, the TAG's name is tried against that same one file (bd
+   * tea-rags-mcp-ex28m). This is the wrapper-export shape, and it is the
+   * dominant way a real component library exports:
+   *
+   *     function Modal(props) { … }
+   *     const memoized = memo(Modal);
+   *     export { memoized as Modal };
+   *
+   * The checker follows the alias to `memoized`, so the DECLARATION's own name
+   * is an internal binding the chunker never recorded, and both lookups above
+   * come back empty — while the component is sitting in the symbol table under
+   * `Modal`, in the file the checker already proved. Scoping the tag name to
+   * that one file cannot reach a namesake in another package, because the file
+   * is settled before this runs; it only recovers the id INSIDE it.
+   *
+   * Emitting a file-only edge here instead — which is what this did — reads as
+   * harmless because the contract types `targetSymbolId` as nullable. It is
+   * not: `DuckDbFileGraphStore` skips every method edge whose target symbol is
+   * null, since `target_symbol_id` is a PRIMARY KEY column and DuckDB forces PK
+   * columns NOT NULL. A file-only edge is therefore not a weaker edge, it is NO
+   * edge — dropped at write time with no error at any layer. On taxdome that
+   * silently cost five of `ConfirmationModal.tsx`'s six JSX edges, and ~40% of
+   * the corpus's TS edges with them.
+   *
+   * Returning null remains possible (an `export default () => …` names nothing
+   * the table can hold) and still yields a file-only edge that the write path
+   * will drop; closing THAT needs a schema change, not a resolver change.
    */
-  private pinSymbol(declaration: ts.Declaration, targetRelPath: string, ctx: CallContext): string | null {
+  private pinSymbol(
+    declaration: ts.Declaration,
+    targetRelPath: string,
+    ctx: CallContext,
+    tagName: string,
+  ): string | null {
     const name = declarationName(declaration);
-    if (name === null) return null;
+    const inFile = (candidateName: string): string | null => {
+      const exact = ctx.symbolTable.lookup(candidateName).filter((def) => def.relPath === targetRelPath);
+      if (exact.length > 0) return exact[0].symbolId;
+      const byShortName = ctx.symbolTable
+        .lookupByShortName(candidateName)
+        .filter((def) => def.relPath === targetRelPath);
+      return pickSingleCandidate(byShortName, this.cfg.mode)?.symbolId ?? null;
+    };
 
-    const exact = ctx.symbolTable.lookup(name).filter((def) => def.relPath === targetRelPath);
-    if (exact.length > 0) return exact[0].symbolId;
-
-    const byShortName = ctx.symbolTable.lookupByShortName(name).filter((def) => def.relPath === targetRelPath);
-    return pickSingleCandidate(byShortName, this.cfg.mode)?.symbolId ?? null;
+    const byDeclaration = name === null ? null : inFile(name);
+    if (byDeclaration !== null) return byDeclaration;
+    return name === tagName ? null : inFile(tagName);
   }
 }
 
