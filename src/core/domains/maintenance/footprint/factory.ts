@@ -1,6 +1,9 @@
-import type { GraphDbClientPool } from "../../../adapters/duckdb/pool.js";
 import type { QdrantManager } from "../../../adapters/qdrant/client.js";
-import type { QuarantineArtifactStoreFactory, SnapshotArtifactStoreFactory } from "../../../contracts/index.js";
+import type {
+  CodegraphFootprintStore,
+  QuarantineArtifactStoreFactory,
+  SnapshotArtifactStoreFactory,
+} from "../../../contracts/index.js";
 import type { StatsCache } from "../../../infra/stats-cache.js";
 import type { CollectionArtifact, FootprintContext, ResolvedCollection } from "./artifact.js";
 import { CodegraphArtifact } from "./codegraph-artifact.js";
@@ -11,7 +14,8 @@ import { StatsArtifact } from "./stats-artifact.js";
 
 export interface FootprintDeps {
   qdrant: QdrantManager;
-  pool: GraphDbClientPool;
+  /** Structural, not `GraphDbClientPool` — see {@link CodegraphFootprintStore} for why the purge path cannot pass a pool. */
+  pool: CodegraphFootprintStore;
   statsCache: StatsCache;
   snapshotBaseDir: string;
   /** Builds the per-collection snapshot store — concrete is wired by the composition root (DIP, keeps footprint out of ingest). */

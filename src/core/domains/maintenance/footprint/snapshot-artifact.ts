@@ -3,6 +3,7 @@ import type { CollectionArtifact, FootprintContext } from "./artifact.js";
 
 export class SnapshotArtifact implements CollectionArtifact {
   readonly id = "snapshot" as const;
+  readonly addressing = "logical" as const;
   constructor(
     private readonly baseDir: string,
     private readonly makeStore: SnapshotArtifactStoreFactory,

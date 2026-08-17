@@ -112,6 +112,33 @@ describe("QdrantArtifact", () => {
     await expect(artifact.remove(ctx)).resolves.not.toThrow();
     expect(qdrant.aliases.deleteAlias).toHaveBeenCalledWith("code_dst");
   });
+
+  it("remove: still deletes the collection after the alias delete fails", async () => {
+    // A logical name that was never an alias 404s here — normal, not a failure.
+    const qdrant = makeQdrant();
+    qdrant.aliases.deleteAlias.mockRejectedValue(new Error("alias not found"));
+    const artifact = new QdrantArtifact(qdrant as never);
+    const ctx = {
+      source: resolved(),
+      target: resolved({ logicalName: "code_dst", physicalName: "code_dst_v1" }),
+    };
+    await artifact.remove(ctx);
+    expect(qdrant.deleteCollection).toHaveBeenCalledWith("code_dst_v1");
+  });
+
+  it("remove: surfaces a collection-delete failure so the caller can report the reason", async () => {
+    // The alias delete is optional cleanup; deleting the collection IS the job.
+    // Swallowing its reason left a purge unable to say WHY a generation survived.
+    const qdrant = makeQdrant();
+    qdrant.deleteCollection.mockRejectedValue(new Error("network down"));
+    const artifact = new QdrantArtifact(qdrant as never);
+    const ctx = {
+      source: resolved(),
+      target: resolved({ logicalName: "code_dst", physicalName: "code_dst_v1" }),
+    };
+    await expect(artifact.remove(ctx)).rejects.toThrow("network down");
+    expect(qdrant.aliases.deleteAlias).toHaveBeenCalledWith("code_dst");
+  });
 });
 
 describe("CodegraphArtifact", () => {

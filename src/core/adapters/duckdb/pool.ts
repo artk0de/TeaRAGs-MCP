@@ -24,14 +24,14 @@
  * need to reset state.
  */
 
-import { existsSync, mkdirSync, readdirSync, rmSync } from "node:fs";
-import { copyFile, unlink } from "node:fs/promises";
+import { mkdirSync, rmSync } from "node:fs";
 import { dirname, join } from "node:path";
 
 import type { CallResolver, GlobalSymbolTable, GraphDbClient } from "../../contracts/types/codegraph.js";
 import type { DatabaseMigrationApplier } from "../../contracts/types/migration.js";
 import { isDebug } from "../../infra/runtime.js";
 import { DuckDbGraphClient } from "./client.js";
+import { CodegraphDbFiles, sanitiseCollectionName } from "./codegraph-db-files.js";
 import { getBuildFingerprint } from "./daemon/build-fingerprint.js";
 import type { DaemonGraphDbClient } from "./daemon/client.js";
 import { DEFAULT_EXIT_TIMEOUT_MS, getDaemonPaths, readDaemonPid, waitForDaemonExit } from "./daemon/lifecycle.js";
@@ -164,26 +164,13 @@ export interface CollectionGraphHandle {
   symbolTable: GlobalSymbolTable;
 }
 
-/**
- * Sanitise the collection name to a filesystem-safe leaf. The Qdrant
- * collection names tea-rags uses today (`code_<hex>` + ad-hoc CLI names)
- * are already safe, but defend against future shapes containing path
- * separators or control characters.
- */
-function sanitiseCollectionName(name: string): string {
-  return name.replace(/[^a-zA-Z0-9_.-]/g, "_");
-}
-
-/**
- * Escape regex metacharacters in a (sanitised) collection name before
- * embedding it in the versioned-DB-file pattern. Sanitised names may still
- * contain `.` and `-`, which are regex-meaningful.
- */
-function escapeRegExp(value: string): string {
-  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-}
-
 export class GraphDbClientPool {
+  /**
+   * Path layout of the per-collection DuckDB files. Delegated rather than
+   * duplicated so the purge path — which must NOT construct a pool, see
+   * `CodegraphDbFiles` — resolves identical names.
+   */
+  private readonly dbFiles: CodegraphDbFiles;
   private readonly clients = new Map<string, PoolEntry>();
   /**
    * In-flight open promises so concurrent first-callers for the same
@@ -204,6 +191,7 @@ export class GraphDbClientPool {
   private readonly daemonInflight = new Map<string, Promise<DaemonClientEntry>>();
 
   constructor(private readonly options: GraphDbClientPoolOptions) {
+    this.dbFiles = new CodegraphDbFiles(options.rootDir);
     mkdirSync(this.codegraphDir, { recursive: true });
     // Slice 2 — purge stale NDJSON spill files left by a prior
     // process that crashed before its sink.finish() ran. Idempotent;
@@ -224,7 +212,7 @@ export class GraphDbClientPool {
   }
 
   private get codegraphDir(): string {
-    return join(this.options.rootDir, "codegraph");
+    return this.dbFiles.dir;
   }
 
   /**
@@ -239,7 +227,7 @@ export class GraphDbClientPool {
 
   /** Resolve the disk path for a given collection name. Exposed for tests. */
   pathFor(collectionName: string): string {
-    return join(this.codegraphDir, `${sanitiseCollectionName(collectionName)}.duckdb`);
+    return this.dbFiles.pathFor(collectionName);
   }
 
   /**
@@ -252,7 +240,7 @@ export class GraphDbClientPool {
    * where an empty edge list would be a false statement about the code.
    */
   hasDatabase(collectionName: string): boolean {
-    return existsSync(this.pathFor(collectionName));
+    return this.dbFiles.has(collectionName);
   }
 
   /**
@@ -276,21 +264,7 @@ export class GraphDbClientPool {
    * missing (nothing indexed yet).
    */
   listCollectionDbNames(baseCollectionName: string): string[] {
-    const base = sanitiseCollectionName(baseCollectionName);
-    const pattern = new RegExp(`^(${escapeRegExp(base)}(?:_v\\d+)?)\\.duckdb$`);
-    let entries: string[];
-    try {
-      entries = readdirSync(this.codegraphDir);
-    } catch {
-      // Codegraph dir missing (never constructed / removed) — nothing to sweep.
-      return [];
-    }
-    const names: string[] = [];
-    for (const entry of entries) {
-      const match = entry.match(pattern);
-      if (match) names.push(match[1]);
-    }
-    return names;
+    return this.dbFiles.listCollectionDbNames(baseCollectionName);
   }
 
   /**
@@ -685,13 +659,7 @@ export class GraphDbClientPool {
    */
   async cloneDatabase(sourceCollection: string, targetCollection: string): Promise<void> {
     await this.release(sourceCollection);
-    const from = this.pathFor(sourceCollection);
-    if (!existsSync(from)) return;
-    const to = this.pathFor(targetCollection);
-    mkdirSync(dirname(to), { recursive: true });
-    await copyFile(from, to);
-    if (existsSync(`${from}.wal`)) await copyFile(`${from}.wal`, `${to}.wal`);
-    else await unlink(`${to}.wal`).catch(() => undefined);
+    await this.dbFiles.cloneDatabase(sourceCollection, targetCollection);
   }
 
   /**
@@ -728,8 +696,7 @@ export class GraphDbClientPool {
       }
       evicted = true;
     }
-    await unlink(dbPath).catch(() => undefined);
-    await unlink(`${dbPath}.wal`).catch(() => undefined);
+    await this.dbFiles.removeFiles(collectionName);
     return evicted;
   }
 
