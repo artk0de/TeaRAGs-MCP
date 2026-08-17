@@ -1,4 +1,13 @@
-import { mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readdirSync,
+  realpathSync,
+  rmSync,
+  symlinkSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -391,27 +400,55 @@ describe("CLI 'projects' command group", () => {
   });
 
   describe("unregister --purge (audit #8 purge half) + verbose hint (audit #12)", () => {
+    /**
+     * `--purge` now removes the WHOLE per-collection footprint, so the fake has
+     * to answer the enumeration the purge runs: which physical generations
+     * exist, and what the alias resolves to.
+     */
+    function purgeQdrant(collections: string[], aliases: { aliasName: string; collectionName: string }[] = []) {
+      const live = new Set(collections);
+      const aliasList = [...aliases];
+      return {
+        live,
+        listCollections: vi.fn(async () => [...live]),
+        deleteCollection: vi.fn(async (name: string) => {
+          live.delete(name);
+        }),
+        countPoints: vi.fn(async () => 99),
+        aliases: {
+          listAliases: vi.fn(async () => [...aliasList]),
+          deleteAlias: vi.fn(async (name: string) => {
+            const i = aliasList.findIndex((a) => a.aliasName === name);
+            if (i >= 0) aliasList.splice(i, 1);
+          }),
+        },
+      };
+    }
+
+    function record(collectionName: string, alias: string, chunksCount = 99): CollectionRegistry {
+      const reg = new CollectionRegistry(dir);
+      reg.record({
+        collectionName,
+        path: repo,
+        embeddingModel: "m",
+        embeddingDimensions: 1,
+        qdrantUrl: "http://q",
+        indexedAt: "",
+        teaRagsVersion: "",
+        chunksCount,
+      });
+      reg.setName(collectionName, alias);
+      return reg;
+    }
+
     it("--purge calls qdrant.deleteCollection on the removed entry", async () => {
       const stdout = vi.spyOn(process.stdout, "write").mockImplementation(() => true);
       try {
-        const reg = new CollectionRegistry(dir);
-        reg.record({
-          collectionName: "code_purgeme",
-          path: repo,
-          embeddingModel: "m",
-          embeddingDimensions: 1,
-          qdrantUrl: "http://q",
-          indexedAt: "",
-          teaRagsVersion: "",
-          chunksCount: 99,
-        });
-        reg.setName("code_purgeme", "victim");
-        const deleteCollection = vi.fn().mockResolvedValue(undefined);
-        const countPoints = vi.fn().mockResolvedValue(99);
-        const fakeQdrant = { deleteCollection, countPoints } as never;
+        record("code_purgeme", "victim");
+        const fakeQdrant = purgeQdrant(["code_purgeme"]);
         const { runUnregister } = await import("../../../src/cli/commands/projects.js");
-        await runUnregister({ name: "victim", purge: true }, fakeQdrant);
-        expect(deleteCollection).toHaveBeenCalledWith("code_purgeme");
+        await runUnregister({ name: "victim", purge: true }, fakeQdrant as never);
+        expect(fakeQdrant.deleteCollection).toHaveBeenCalledWith("code_purgeme");
         const out = stdout.mock.calls.map((c) => String(c[0])).join("");
         expect(out).toContain("Removed 'victim'");
         expect(out).toContain("code_purgeme");
@@ -421,30 +458,120 @@ describe("CLI 'projects' command group", () => {
       }
     });
 
+    it("--purge deletes every _vN generation, not just the alias name", async () => {
+      const stdout = vi.spyOn(process.stdout, "write").mockImplementation(() => true);
+      try {
+        record("code_gen", "gen");
+        const fakeQdrant = purgeQdrant(
+          ["code_gen_v1", "code_gen_v2", "code_other_v1"],
+          [{ aliasName: "code_gen", collectionName: "code_gen_v2" }],
+        );
+        const { runUnregister } = await import("../../../src/cli/commands/projects.js");
+        await runUnregister({ name: "gen", purge: true }, fakeQdrant as never);
+        expect([...fakeQdrant.live]).toEqual(["code_other_v1"]);
+        const out = stdout.mock.calls.map((c) => String(c[0])).join("");
+        expect(out).toContain("code_gen_v1");
+        expect(out).toContain("code_gen_v2");
+      } finally {
+        stdout.mockRestore();
+      }
+    });
+
+    it("--purge removes the stats cache and snapshot that live outside Qdrant", async () => {
+      const stdout = vi.spyOn(process.stdout, "write").mockImplementation(() => true);
+      try {
+        record("code_files", "files");
+        const snapshots = join(dir, "snapshots");
+        mkdirSync(snapshots, { recursive: true });
+        const statsFile = join(snapshots, "code_files.stats.json");
+        writeFileSync(statsFile, '{"version":6,"collectionName":"code_files"}');
+        const quarantineFile = join(snapshots, "code_files.quarantine.json");
+        writeFileSync(quarantineFile, '{"version":1,"updatedAt":"2026-01-01","files":{}}');
+
+        const fakeQdrant = purgeQdrant(["code_files"]);
+        const { runUnregister } = await import("../../../src/cli/commands/projects.js");
+        await runUnregister({ name: "files", purge: true }, fakeQdrant as never);
+
+        expect(existsSync(statsFile)).toBe(false);
+        expect(existsSync(quarantineFile)).toBe(false);
+      } finally {
+        stdout.mockRestore();
+      }
+    });
+
+    it("--purge removes the codegraph DuckDB generations and their WAL sidecars", async () => {
+      const stdout = vi.spyOn(process.stdout, "write").mockImplementation(() => true);
+      try {
+        record("code_cg", "cg");
+        const codegraphDir = join(dir, "codegraph");
+        mkdirSync(codegraphDir, { recursive: true });
+        for (const name of ["code_cg", "code_cg_v1", "code_cg_v2"]) {
+          writeFileSync(join(codegraphDir, `${name}.duckdb`), "db");
+          writeFileSync(join(codegraphDir, `${name}.duckdb.wal`), "wal");
+        }
+        writeFileSync(join(codegraphDir, "code_other_v1.duckdb"), "db");
+
+        const fakeQdrant = purgeQdrant(["code_cg_v2"], [{ aliasName: "code_cg", collectionName: "code_cg_v2" }]);
+        const { runUnregister } = await import("../../../src/cli/commands/projects.js");
+        await runUnregister({ name: "cg", purge: true }, fakeQdrant as never);
+
+        expect(readdirSync(codegraphDir).sort()).toEqual(["code_other_v1.duckdb"]);
+        const out = stdout.mock.calls.map((c) => String(c[0])).join("");
+        expect(out).toContain("codegraph");
+      } finally {
+        stdout.mockRestore();
+      }
+    });
+
     it("--purge still completes when qdrant.deleteCollection rejects", async () => {
       const stdout = vi.spyOn(process.stdout, "write").mockImplementation(() => true);
       try {
-        const reg = new CollectionRegistry(dir);
-        reg.record({
-          collectionName: "code_qfail",
-          path: repo,
-          embeddingModel: "m",
-          embeddingDimensions: 1,
-          qdrantUrl: "http://q",
-          indexedAt: "",
-          teaRagsVersion: "",
-          chunksCount: 5,
-        });
-        reg.setName("code_qfail", "qfail");
-        const deleteCollection = vi.fn().mockRejectedValue(new Error("network down"));
-        const countPoints = vi.fn().mockResolvedValue(5);
-        const fakeQdrant = { deleteCollection, countPoints } as never;
+        record("code_qfail", "qfail", 5);
+        const fakeQdrant = purgeQdrant(["code_qfail"]);
+        fakeQdrant.deleteCollection.mockRejectedValue(new Error("network down"));
         const { runUnregister } = await import("../../../src/cli/commands/projects.js");
-        await runUnregister({ name: "qfail", purge: true }, fakeQdrant);
+        await runUnregister({ name: "qfail", purge: true }, fakeQdrant as never);
         const out = stdout.mock.calls.map((c) => String(c[0])).join("");
         expect(out).toContain("Removed 'qfail' from registry");
         expect(out.toLowerCase()).toContain("failed to delete");
         expect(out).toContain("network down");
+      } finally {
+        stdout.mockRestore();
+      }
+    });
+
+    it("--purge clears the on-disk stores even when Qdrant is unreachable", async () => {
+      const stdout = vi.spyOn(process.stdout, "write").mockImplementation(() => true);
+      try {
+        record("code_down", "down");
+        const snapshots = join(dir, "snapshots");
+        mkdirSync(snapshots, { recursive: true });
+        const statsFile = join(snapshots, "code_down.stats.json");
+        writeFileSync(statsFile, '{"version":6,"collectionName":"code_down"}');
+
+        const fakeQdrant = purgeQdrant(["code_down"]);
+        fakeQdrant.listCollections.mockRejectedValue(new Error("ECONNREFUSED"));
+        fakeQdrant.deleteCollection.mockRejectedValue(new Error("ECONNREFUSED"));
+        const { runUnregister } = await import("../../../src/cli/commands/projects.js");
+        await runUnregister({ name: "down", purge: true }, fakeQdrant as never);
+
+        expect(existsSync(statsFile)).toBe(false);
+      } finally {
+        stdout.mockRestore();
+      }
+    });
+
+    it("--purge names the project directory it leaves alone", async () => {
+      const stdout = vi.spyOn(process.stdout, "write").mockImplementation(() => true);
+      try {
+        record("code_kept", "kept");
+        const fakeQdrant = purgeQdrant(["code_kept"]);
+        const { runUnregister } = await import("../../../src/cli/commands/projects.js");
+        await runUnregister({ name: "kept", purge: true }, fakeQdrant as never);
+        const out = stdout.mock.calls.map((c) => String(c[0])).join("");
+        expect(out.toLowerCase()).toContain("kept");
+        expect(out).toContain(repo);
+        expect(existsSync(repo)).toBe(true);
       } finally {
         stdout.mockRestore();
       }

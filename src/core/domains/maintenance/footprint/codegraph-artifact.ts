@@ -1,9 +1,10 @@
-import type { GraphDbClientPool } from "../../../adapters/duckdb/pool.js";
+import type { CodegraphFootprintStore } from "../../../contracts/index.js";
 import type { CollectionArtifact, FootprintContext } from "./artifact.js";
 
 export class CodegraphArtifact implements CollectionArtifact {
   readonly id = "codegraph" as const;
-  constructor(private readonly pool: GraphDbClientPool) {}
+  readonly addressing = "physical" as const;
+  constructor(private readonly pool: CodegraphFootprintStore) {}
 
   async clone(ctx: FootprintContext): Promise<void> {
     if (!ctx.source.codegraphEnabled) return;

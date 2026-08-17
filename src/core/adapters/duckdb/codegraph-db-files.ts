@@ -1,0 +1,137 @@
+/**
+ * Path layout of the per-collection codegraph DuckDB files, with no connection
+ * pool attached.
+ *
+ * `GraphDbClientPool` owns the same layout and delegates here, so the naming
+ * rules — the sanitised leaf, the `<base>(_v<N>)?.duckdb` generation pattern,
+ * the WAL sidecar travelling with its database — live in exactly one place.
+ * Splitting them across two implementations is what produced the shadow-DuckDB
+ * defect (bd 6goqa) and its recurrence (bd snbzk).
+ *
+ * It exists separately from the pool because CONSTRUCTING a pool has side
+ * effects: it wipes the shared `.spill` directory, which would destroy the
+ * in-flight spill of an index running in another process. Callers that only
+ * need to enumerate or delete files — the `projects unregister --purge` path —
+ * construct this instead, and touch nothing on the way in.
+ */
+
+import { existsSync, mkdirSync, readdirSync } from "node:fs";
+import { copyFile, unlink } from "node:fs/promises";
+import { dirname, join } from "node:path";
+
+/**
+ * Sanitise the collection name to a filesystem-safe leaf. The Qdrant
+ * collection names tea-rags uses today (`code_<hex>` + ad-hoc CLI names)
+ * are already safe, but defend against future shapes containing path
+ * separators or control characters.
+ */
+export function sanitiseCollectionName(name: string): string {
+  return name.replace(/[^a-zA-Z0-9_.-]/g, "_");
+}
+
+/**
+ * Escape regex metacharacters in a (sanitised) collection name before
+ * embedding it in the versioned-DB-file pattern. Sanitised names may still
+ * contain `.` and `-`, which are regex-meaningful.
+ */
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+export class CodegraphDbFiles {
+  constructor(private readonly rootDir: string) {}
+
+  /** `<rootDir>/codegraph` — where every per-collection database lives. */
+  get dir(): string {
+    return join(this.rootDir, "codegraph");
+  }
+
+  /** Resolve the disk path for a given collection name. */
+  pathFor(collectionName: string): string {
+    return join(this.dir, `${sanitiseCollectionName(collectionName)}.duckdb`);
+  }
+
+  /** Whether a graph database file exists for this collection. */
+  has(collectionName: string): boolean {
+    return existsSync(this.pathFor(collectionName));
+  }
+
+  /**
+   * Enumerate the codegraph DB collection names on disk for a base collection —
+   * every `<base>_v<N>.duckdb` file plus the UNVERSIONED `<base>.duckdb`,
+   * returned as the collection name (suffix stripped).
+   *
+   * The unversioned file is included deliberately (bd tea-rags-mcp-6goqa): it
+   * used to be excluded, which is exactly why the shadow file the incremental
+   * path wrote while addressing collections by their alias was invisible to the
+   * orphan sweep and could never be reclaimed.
+   *
+   * Scoped to `^<base>(_v\d+)?$` so it never touches another project's DBs or
+   * WAL/spill sidecars. Empty when the codegraph dir is missing.
+   */
+  listCollectionDbNames(baseCollectionName: string): string[] {
+    const base = sanitiseCollectionName(baseCollectionName);
+    const pattern = new RegExp(`^(${escapeRegExp(base)}(?:_v\\d+)?)\\.duckdb$`);
+    let entries: string[];
+    try {
+      entries = readdirSync(this.dir);
+    } catch {
+      // Codegraph dir missing (never constructed / removed) — nothing to sweep.
+      return [];
+    }
+    const names: string[] = [];
+    for (const entry of entries) {
+      const match = entry.match(pattern);
+      if (match) names.push(match[1]);
+    }
+    return names;
+  }
+
+  /**
+   * Copy the DuckDB file for sourceCollection to targetCollection, WAL sidecar
+   * included. No-op when the source file does not exist (codegraph disabled /
+   * not built).
+   *
+   * The `.wal` travels with the database because the database file alone is
+   * only the state as of its last checkpoint — everything written since lives
+   * in the sidecar, and a clone that drops it is silently rolled back to that
+   * checkpoint. A target WAL with no source counterpart is REMOVED rather than
+   * left: collection names get reused, and replaying a previous tenant's write
+   * log over a freshly copied database is worse than the truncation this copy
+   * avoids.
+   */
+  async cloneDatabase(sourceCollection: string, targetCollection: string): Promise<void> {
+    const from = this.pathFor(sourceCollection);
+    if (!existsSync(from)) return;
+    const to = this.pathFor(targetCollection);
+    mkdirSync(dirname(to), { recursive: true });
+    await copyFile(from, to);
+    if (existsSync(`${from}.wal`)) await copyFile(`${from}.wal`, `${to}.wal`);
+    else await unlink(`${to}.wal`).catch(() => undefined);
+  }
+
+  /**
+   * Unlink the collection's DuckDB file and its WAL sidecar. Idempotent —
+   * ENOENT means "already gone". Other unlink errors are swallowed too: a stale
+   * file on disk is preferable to aborting a best-effort teardown, and the next
+   * open simply overwrites it.
+   *
+   * Holds no connection, so it never closes one. The pool wraps this with its
+   * own cache eviction; callers without a pool are responsible for making sure
+   * nothing in THIS process still holds the file.
+   */
+  async removeFiles(collectionName: string): Promise<void> {
+    const dbPath = this.pathFor(collectionName);
+    await unlink(dbPath).catch(() => undefined);
+    await unlink(`${dbPath}.wal`).catch(() => undefined);
+  }
+
+  /**
+   * `CodegraphFootprintStore` shape: there is no client cache to evict, so the
+   * "was a cached entry evicted" answer is always false.
+   */
+  async removeCollection(collectionName: string): Promise<boolean> {
+    await this.removeFiles(collectionName);
+    return false;
+  }
+}
