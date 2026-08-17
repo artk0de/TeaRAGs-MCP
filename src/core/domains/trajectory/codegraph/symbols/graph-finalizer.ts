@@ -163,13 +163,14 @@ export class GraphBuildFinalizer {
     // Tracks which relPaths already have a pending entry in `buffer` — a file
     // can legitimately reach the spill twice (re-walking mid-run is a
     // supported, tested scenario; symbolTable.upsertFile replaces rather than
-    // appends for exactly this reason), but two entries for the SAME relPath
-    // must never land in one `upsertFilesBulk` transaction: the table's
-    // PRIMARY KEY is (source, target), and DuckDB does not reject a same-key
-    // double-INSERT gracefully — it aborts with a native FatalException and
-    // takes the daemon process down mid-request (tea-rags-mcp-ksfq1,
-    // live-reproduced against taxdome). Cleared on every flush alongside the
-    // buffer it tracks.
+    // appends for exactly this reason). The second entry gets its own
+    // transaction rather than sharing one with its earlier self, so the
+    // batch's LAST edge set for a relPath is unambiguously the one persisted
+    // — `writeFileRowsBulk` would otherwise collapse the pair silently
+    // (tea-rags-mcp-ksfq1: the collapse used to abort the daemon with a native
+    // FatalException; tea-rags-mcp-8l8d3 removed that failure mode at the
+    // writer, which leaves this guard as the ordering statement it always
+    // was). Cleared on every flush alongside the buffer it tracks.
     let bufferedRelPaths = new Set<string>();
     /**
      * The ONE bulk write allowed to be open while the loop keeps resolving

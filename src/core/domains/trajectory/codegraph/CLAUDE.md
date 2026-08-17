@@ -21,9 +21,11 @@
   literally, so passing the alias opens a second shadow database — which
   artifact keys on the alias and which on the versioned name is
   `../../maintenance/footprint/CLAUDE.md`, the caller-side rule and the measured
-  incident are `../../ingest/operations/CLAUDE.md`. Edges are replaced per file
-  (`DELETE FROM cg_symbols_edges_file|_method|cg_symbols_inheritance WHERE source_rel_path = ?`,
-  adapters/duckdb/file-graph-store.ts:34-35,90); derived tables (cycles,
+  incident are `../../ingest/operations/CLAUDE.md`. Edges are reconciled per
+  source file — `DuckDbFileGraphStore#writeFileRowsGroup` diffs each file's
+  `source_rel_path` slice of `cg_symbols_edges_file|_method`,
+  `cg_symbols_inheritance` and `cg_ambiguous_fanout` against the rows the walk
+  produced, so only genuinely obsolete rows are deleted; derived tables (cycles,
   metrics) are wholesale recomputes and do self-correct. Why: no amount of
   incremental reindexing heals a partial graph, because the files carrying the
   stale edges have not changed — meanwhile every `fanIn` / `instability` /

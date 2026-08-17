@@ -76,10 +76,37 @@ export interface DaemonClientOptions {
   connectTimeoutMs?: number;
   /** Delay between connect attempts when the socket is not yet accepting. */
   retryDelayMs?: number;
+  /**
+   * Called when the daemon drops the connection while requests are still in
+   * flight, BEFORE this client tries to reconnect — the owner's chance to bring
+   * a replacement daemon up (bd tea-rags-mcp-8l8d3).
+   *
+   * Wiring it is what turns a dead daemon from "the whole indexing run fails"
+   * into "one request was retried". The pool points it at the same respawn hook
+   * the stale-build restart path uses. Leave it unset and the client behaves
+   * exactly as it did before: every pending call rejects.
+   *
+   * A daemon killed by a native DuckDB `FatalException` is the case this
+   * exists for. That is a SIGABRT out of C++ — `CodegraphDaemonServer#handle`
+   * cannot turn it into an error response, because it never becomes a JS throw.
+   */
+  onConnectionLost?: () => void | Promise<void>;
 }
 
 const DEFAULT_CONNECT_TIMEOUT_MS = 5000;
 const DEFAULT_RETRY_DELAY_MS = 75;
+
+/**
+ * One request waiting on the daemon. The encoded `frame` is retained so a
+ * request whose daemon died under it can be re-sent verbatim to its
+ * replacement; `retried` bounds that to one attempt (bd tea-rags-mcp-8l8d3).
+ */
+interface PendingDaemonCall {
+  readonly resolve: (v: unknown) => void;
+  readonly reject: (e: Error) => void;
+  readonly frame: string;
+  retried: boolean;
+}
 
 /** ENOENT (socket file not created yet) / ECONNREFUSED (server not listening yet). */
 function isRetryableConnectError(err: NodeJS.ErrnoException): boolean {
@@ -91,9 +118,14 @@ export class DaemonGraphDbClient implements GraphDbClient {
   /** Per-connection frame assembly; replaced on each successful connect. */
   private frames = new DaemonFrameDecoder();
   private nextId = 1;
-  private readonly pending = new Map<number, { resolve: (v: unknown) => void; reject: (e: Error) => void }>();
+  private readonly pending = new Map<number, PendingDaemonCall>();
   private readonly connectTimeoutMs: number;
   private readonly retryDelayMs: number;
+  private readonly onConnectionLost?: () => void | Promise<void>;
+  /** Set by `close()`, so a socket teardown WE asked for never respawns a daemon. */
+  private closedByCaller = false;
+  /** One recovery at a time — every pending call shares the reconnect. */
+  private recovering?: Promise<void>;
 
   constructor(
     private readonly socketPath: string,
@@ -102,6 +134,7 @@ export class DaemonGraphDbClient implements GraphDbClient {
   ) {
     this.connectTimeoutMs = opts?.connectTimeoutMs ?? DEFAULT_CONNECT_TIMEOUT_MS;
     this.retryDelayMs = opts?.retryDelayMs ?? DEFAULT_RETRY_DELAY_MS;
+    this.onConnectionLost = opts?.onConnectionLost;
   }
 
   /**
@@ -158,10 +191,10 @@ export class DaemonGraphDbClient implements GraphDbClient {
         // sets no timeout, so a missed teardown hangs the caller indefinitely
         // (a graph query was seen waiting 30 minutes at 0% CPU).
         sock.on("error", (err: Error) => {
-          this.abandon(`daemon connection failed: ${err.message}`);
+          void this.handleConnectionLoss(`daemon connection failed: ${err.message}`);
         });
         sock.on("close", () => {
-          this.abandon("daemon closed the connection before the response arrived");
+          void this.handleConnectionLoss("daemon closed the connection before the response arrived");
         });
         sock.on("data", (d) => {
           this.onData(d);
@@ -187,19 +220,15 @@ export class DaemonGraphDbClient implements GraphDbClient {
     const { sock } = this;
     if (!sock) throw new Error("DaemonGraphDbClient.call before init() / after close()");
     const id = this.nextId++;
+    const frame = encodeFrame({ id, op, params: { collection: this.collection, ...params } } as never);
     return new Promise((resolve, reject) => {
-      this.pending.set(id, { resolve, reject });
-      sock.write(
-        encodeFrame({
-          id,
-          op,
-          params: { collection: this.collection, ...params },
-        } as never),
-      );
+      this.pending.set(id, { resolve, reject, frame, retried: false });
+      sock.write(frame);
     });
   }
 
   async close(): Promise<void> {
+    this.closedByCaller = true;
     this.sock?.end();
     this.abandon("closed before response arrived");
   }
@@ -212,6 +241,81 @@ export class DaemonGraphDbClient implements GraphDbClient {
    */
   isConnected(): boolean {
     return this.sock !== undefined;
+  }
+
+  /**
+   * The socket went down. Recover the requests riding on it if that is possible
+   * — otherwise settle them, which is what this class always did
+   * (bd tea-rags-mcp-8l8d3).
+   *
+   * Recovery is attempted only when there is something to recover (a pending
+   * request that has not already been retried), the caller did not ask for the
+   * teardown, and an `onConnectionLost` hook is wired to bring a replacement
+   * daemon up. Everything else — an idle-exited daemon with no in-flight work,
+   * an explicit `close()`, a pool that cannot cold-spawn — takes the original
+   * path and rejects.
+   *
+   * The whole recovery is ONE shared promise: a bulk write and a metrics read
+   * that were both in flight when the daemon aborted must not respawn it twice.
+   */
+  private async handleConnectionLoss(reason: string): Promise<void> {
+    this.sock = undefined;
+    if (this.pending.size === 0) return;
+    if (this.closedByCaller || !this.onConnectionLost) {
+      this.abandon(reason);
+      return;
+    }
+    const replayable = [...this.pending.values()].filter((p) => !p.retried);
+    if (replayable.length === 0) {
+      this.abandon(reason);
+      return;
+    }
+    this.recovering ??= this.reconnectAndReplay(reason).finally(() => {
+      this.recovering = undefined;
+    });
+    await this.recovering;
+  }
+
+  /**
+   * Bring a daemon back, reconnect, and re-send every pending request.
+   *
+   * Re-sending is safe because every op this client proxies is idempotent by
+   * construction: file and symbol writes reconcile a scope against the rows
+   * they carry, checkpoints and cycle/PageRank rebuilds are recomputes, run
+   * stats replace their language's rows, and reads mutate nothing. A request
+   * that had ALREADY landed daemon-side before the abort therefore costs a
+   * repeat, never a corruption.
+   *
+   * Each request is replayed at most once (`retried`), so a daemon that dies on
+   * every attempt surfaces the failure instead of looping.
+   */
+  private async reconnectAndReplay(reason: string): Promise<void> {
+    try {
+      await this.onConnectionLost?.();
+      await this.init();
+    } catch (err) {
+      const cause = err instanceof Error ? err.message : String(err);
+      this.abandon(`${reason} and could not be recovered: ${cause}`);
+      return;
+    }
+    const { sock } = this;
+    /* v8 ignore next 4 -- init() either sets the socket or throws; a resolved
+       init with no socket is unreachable, but rejecting beats writing to
+       undefined if that ever changes. */
+    if (!sock) {
+      this.abandon(reason);
+      return;
+    }
+    if (isDebug()) {
+      process.stderr.write(
+        `[tea-rags] codegraph daemon went away (${reason}) — reconnected, replaying ${this.pending.size} request(s)\n`,
+      );
+    }
+    for (const p of this.pending.values()) {
+      if (p.retried) continue;
+      p.retried = true;
+      sock.write(p.frame);
+    }
   }
 
   /**

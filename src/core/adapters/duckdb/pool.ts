@@ -468,7 +468,16 @@ export class GraphDbClientPool {
     const restart = this.options.daemonRestart;
     const localFingerprint = restart?.buildFingerprint ?? getBuildFingerprint();
 
-    const first = new DaemonGraphDbClient(socketPath, collectionName);
+    // The respawn hook doubles as the crash-recovery hook (bd
+    // tea-rags-mcp-8l8d3). A daemon killed by a native DuckDB FatalException
+    // takes every in-flight request down with it and cannot report the failure
+    // — the abort never becomes a JS throw. Handing the client the same
+    // cold-spawn it uses for a stale build lets it bring a daemon back and
+    // replay what was in flight, instead of failing the whole indexing run.
+    // Pools without the hook (worker-thread pools rebuilt from serializable
+    // config) keep the previous reject-everything behaviour.
+    const onConnectionLost = restart?.respawn;
+    const first = new DaemonGraphDbClient(socketPath, collectionName, { onConnectionLost });
     await first.init();
     const daemonFingerprint = (await first.handshake(localFingerprint))?.buildFingerprint;
     // Legacy daemon (no fingerprint) or same build → proceed as today.
@@ -520,7 +529,7 @@ export class GraphDbClientPool {
 
       // Reconnect (init retries the connect while the fresh daemon boots) and
       // re-verify the fingerprint.
-      const next = new DaemonGraphDbClient(socketPath, collectionName);
+      const next = new DaemonGraphDbClient(socketPath, collectionName, { onConnectionLost });
       await next.init();
       const fingerprint = (await next.handshake(localFingerprint))?.buildFingerprint;
       if (fingerprint === undefined || fingerprint === localFingerprint) return next;
