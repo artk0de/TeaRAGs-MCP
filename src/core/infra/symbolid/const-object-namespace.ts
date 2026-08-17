@@ -77,13 +77,20 @@ export function constObjectNamespaceOwner(method: AstNode): string | null {
 
 /**
  * Peel the TypeScript-only wrappers that sit between a declarator's `value`
- * field and the object literal underneath: `as const` / `as Shape`
+ * field and the expression underneath: `as const` / `as Shape`
  * (`as_expression`), `satisfies Shape` (`satisfies_expression`), and explicit
  * parentheses. All three are type-level annotations — the declared value is
- * still the object literal, so the namespace shape must be recognised through
+ * still the expression they wrap, so a value SHAPE must be recognised through
  * them.
+ *
+ * Exported for the walker's call-valued-export gate
+ * (`domains/language/typescript/walker/call-valued-export.ts`), which asks the
+ * same question about the same field of the same node — `export const Card =
+ * forwardRef(Inner) as ComponentType` is the wrapper idiom wearing an
+ * annotation. A second copy there would be free to drift from this one, and the
+ * two gates read the same declarator.
  */
-function unwrapTypeAssertions(node: AstNode): AstNode {
+export function unwrapTypeAssertions(node: AstNode): AstNode {
   let current = node;
   // Bounded by the AST depth of the wrapper chain; each step strips one level.
   while (
