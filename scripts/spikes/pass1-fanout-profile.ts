@@ -8,15 +8,29 @@
  * reports the wall clock of the file-batch phase for each.
  *
  * What is real and what is not: everything from the executor down is
- * production code, including the DuckDB writes the absorb half performs. The
- * only substitution is the graph DB, which opens as a local file under a scratch
- * dir instead of through the daemon socket — the daemon serialises writes across
- * processes and is not part of what pass-1 measures. Pass-2 (`runFinalize`) is
- * deliberately NOT run: it is the resolve stage, unchanged by this work, and it
- * dwarfs and hides the number under test.
+ * production code, including the DuckDB writes both halves perform. The only
+ * substitution is the graph DB, which opens as a local file under a scratch dir
+ * instead of through the daemon socket — the daemon serialises writes across
+ * processes and would add its own IPC to every number here.
+ *
+ * Three modes, because the fan-out moved the bottleneck rather than removing it:
+ *
+ *   serial   — `CODEGRAPH_PASS1_FANOUT=0`, the pre-fan-out shape.
+ *   fanout   — fan-out on, node drain still blocking pass-2.
+ *   overlap  — fan-out on, drain dispatched and pass-2 run against it.
+ *
+ * Each reports the file-batch phase AND `runFinalize`, because the drain is
+ * inside `finalize`: the fan-out cut the batch phase roughly in half on taxdome
+ * and the Ruby codegraph window still went 51.9s → 59.9s, because 24.1s of
+ * `CODEGRAPH_NODES_FLUSH` that used to hide behind the serial parse became a
+ * serial tail in front of pass-2. Only `batch + finalize` shows that; the batch
+ * phase alone reports the fan-out as a pure win, which is how the regression got
+ * past the first round of measurement.
  *
  * Default corpus is this repository's own `src/` (≈900 TypeScript files), so the
- * script needs no fixture generation and no external checkout.
+ * script needs no fixture generation and no external checkout. Run it at
+ * `--batch 60` for the live flush cadence (the absorb path flushes per batch, so
+ * batch size IS files-per-`NODES_FLUSH`) and again enlarged.
  *
  *   npm run build
  *   npx tsx scripts/spikes/pass1-fanout-profile.ts [--batch N] [--pool N] [--root DIR]
@@ -121,7 +135,31 @@ interface ModeResult {
   mode: string;
   files: number;
   batches: number;
-  wallMs: number;
+  /** The file-batch phase alone — what the first round of this profile measured. */
+  batchWallMs: number;
+  /** `runFinalize`: node drain + pass-2 resolve + metric recompute. */
+  finalizeWallMs: number;
+  /** The window a codegraph recompute actually occupies. */
+  totalWallMs: number;
+}
+
+/** One mode's env, applied before the executor is constructed (both flags are read there). */
+interface ModeEnv {
+  fanout: boolean;
+  overlap: boolean;
+}
+
+const MODES: Record<string, ModeEnv> = {
+  serial: { fanout: false, overlap: false },
+  fanout: { fanout: true, overlap: false },
+  overlap: { fanout: true, overlap: true },
+};
+
+function applyModeEnv(env: ModeEnv): void {
+  if (env.fanout) delete process.env.CODEGRAPH_PASS1_FANOUT;
+  else process.env.CODEGRAPH_PASS1_FANOUT = "0";
+  if (env.overlap) delete process.env.CODEGRAPH_NODE_DRAIN_OVERLAP;
+  else process.env.CODEGRAPH_NODE_DRAIN_OVERLAP = "0";
 }
 
 /**
@@ -159,9 +197,13 @@ async function warmWorkers(
  * what lets the fan-out overlap one batch's absorb with the next batch's parse.
  */
 async function runMode(mode: string, root: string, corpus: string[], args: Args): Promise<ModeResult> {
+  // Both flags are read at construction time — the fan-out on the main thread,
+  // the drain overlap inside each worker (which snapshots `process.env` when the
+  // thread is created). So the env has to be right BEFORE the pool exists.
+  applyModeEnv(MODES[mode]);
   const dataDir = mkdtempSync(join(tmpdir(), `pass1-fanout-${mode}-`));
   const exec = new WorkerPoolEnrichmentExecutor(args.pool, WORKER_PATH);
-  const provider = codegraphProviderHandle(dataDir, mode === "fanout");
+  const provider = codegraphProviderHandle(dataDir, MODES[mode].fanout);
   const collectionName = `code_pass1_${mode}`;
   await warmWorkers(exec, provider, root, corpus, args.pool);
   exec.beginRun(collectionName);
@@ -170,9 +212,23 @@ async function runMode(mode: string, root: string, corpus: string[], args: Args)
   const startedAt = performance.now();
   try {
     await Promise.all(batches.map(async (paths) => exec.runFileBatch(provider, root, paths, { collectionName })));
-    const wallMs = Math.round(performance.now() - startedAt);
-    return { mode, files: corpus.length, batches: batches.length, wallMs };
+    const batchWallMs = Math.round(performance.now() - startedAt);
+    // `runFinalize` is where the node drain lives, alongside pass-2 resolve and
+    // the metric recompute. Measuring it is the whole point of this revision:
+    // the drain is exactly the work the fan-out stopped hiding.
+    const finalizeStartedAt = performance.now();
+    await exec.runFinalize(provider, root, { collectionName });
+    const finalizeWallMs = Math.round(performance.now() - finalizeStartedAt);
+    return {
+      mode,
+      files: corpus.length,
+      batches: batches.length,
+      batchWallMs,
+      finalizeWallMs,
+      totalWallMs: batchWallMs + finalizeWallMs,
+    };
   } finally {
+    await exec.releaseCollection([provider], collectionName).catch(() => undefined);
     await exec.shutdown();
     rmSync(dataDir, { recursive: true, force: true });
   }
@@ -184,25 +240,25 @@ async function main(): Promise<void> {
   process.stderr.write(`corpus: ${corpus.length} files under ${join(args.root, "src")}\n`);
   process.stderr.write(`pool: ${args.pool} workers, batch: ${args.batch} files\n`);
 
-  // The kill-switch is read at executor construction, so set it per mode.
-  process.env.CODEGRAPH_PASS1_FANOUT = "0";
   const serial = await runMode("serial", args.root, corpus, args);
-  delete process.env.CODEGRAPH_PASS1_FANOUT;
   const fanout = await runMode("fanout", args.root, corpus, args);
+  const overlap = await runMode("overlap", args.root, corpus, args);
 
-  const speedup = serial.wallMs / Math.max(1, fanout.wallMs);
+  const ratio = (a: number, b: number): number => Math.round((a / Math.max(1, b)) * 100) / 100;
   process.stdout.write(
     `${JSON.stringify(
       {
         corpusFiles: corpus.length,
         pool: args.pool,
         batchSize: args.batch,
-        serialWallMs: serial.wallMs,
-        fanoutWallMs: fanout.wallMs,
-        savedMs: serial.wallMs - fanout.wallMs,
-        speedup: Math.round(speedup * 100) / 100,
-        serialMsPerFile: Math.round((serial.wallMs / corpus.length) * 100) / 100,
-        fanoutMsPerFile: Math.round((fanout.wallMs / corpus.length) * 100) / 100,
+        modes: [serial, fanout, overlap],
+        // What the first round of this profile reported, and still does.
+        batchSpeedupFanoutVsSerial: ratio(serial.batchWallMs, fanout.batchWallMs),
+        // What the live run actually experiences.
+        windowSpeedupFanoutVsSerial: ratio(serial.totalWallMs, fanout.totalWallMs),
+        windowSpeedupOverlapVsSerial: ratio(serial.totalWallMs, overlap.totalWallMs),
+        windowSpeedupOverlapVsFanout: ratio(fanout.totalWallMs, overlap.totalWallMs),
+        overlapSavedMs: fanout.totalWallMs - overlap.totalWallMs,
       },
       null,
       2,
