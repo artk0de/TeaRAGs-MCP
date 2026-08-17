@@ -596,6 +596,32 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
   }
 
   /**
+   * Whether the walk can produce rows for this path at all — the predicate every
+   * pass-1 entry point applies before it parses anything, hoisted to ONE place
+   * (bd tea-rags-mcp-65bkl).
+   *
+   * Two conditions, and `shouldEnrich` above only covers the second. A path
+   * whose extension has no {@link CODEGRAPH_LANGUAGES} entry has no walker, so
+   * nothing reaches the spill and pass-2 writes no `cg_symbols_files` row for
+   * it. That is a legitimate outcome — a `tsconfig.json` still gets its all-zero
+   * codegraph payload block — but it means the file is permanently outside this
+   * provider's store, which the repair diff has to know.
+   */
+  private isExtractablePath(relPath: string): boolean {
+    return SUPPORTED_EXTS.has(extensionOf(relPath)) && !this.codegraphExclusionFilter.ignores(relPath);
+  }
+
+  /**
+   * Repair-diff scope: of the run's eligible files, the ones this graph can
+   * actually persist a row for. Without it the diff asks for every JSON/Markdown
+   * /YAML file the index carries, on every run, forever — they can never acquire
+   * the row it looks for (bd tea-rags-mcp-65bkl).
+   */
+  filterExtractablePaths(paths: readonly string[]): string[] {
+    return paths.filter((p) => this.isExtractablePath(p));
+  }
+
+  /**
    * Resolve the (graphDb, symbolTable) pair for the active call. In pool
    * mode this acquires the per-collection handle; in direct mode it
    * returns the constructor-provided pair regardless of `collectionName`.
@@ -920,7 +946,7 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
     // instance to keep semantics identical.
     const targetRelPaths =
       options?.paths && options.paths.length > 0
-        ? options.paths.filter((p) => SUPPORTED_EXTS.has(extensionOf(p)) && !this.codegraphExclusionFilter.ignores(p))
+        ? this.filterExtractablePaths(options.paths)
         : this.discoverSupportedFiles(root, options?.ignoreFilter);
 
     // Resolve the per-collection store ONCE for the whole pass — the
@@ -1040,9 +1066,7 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
     // → the incremental path keeps its extractOneFile re-parse.
     if (options?.crossPass) return new Map();
     const { sink, extracted } = this.ensureRunSink(key, options?.collectionName);
-    const targets = batchPaths.filter(
-      (p) => SUPPORTED_EXTS.has(extensionOf(p)) && !this.codegraphExclusionFilter.ignores(p),
-    );
+    const targets = this.filterExtractablePaths(batchPaths);
     for (const relPath of targets) {
       // bd tea-rags-mcp-svhqp (residual) — extract each file ONCE per run.
       // `file-phase` dedups relPaths within a batch but not across batches, so a
@@ -1131,7 +1155,7 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
     const extractions: FileExtraction[] = [];
     const pass1ByLanguage: Record<string, FileExtractionPass1Telemetry> = {};
     for (const relPath of paths) {
-      if (!SUPPORTED_EXTS.has(extensionOf(relPath)) || this.codegraphExclusionFilter.ignores(relPath)) continue;
+      if (!this.isExtractablePath(relPath)) continue;
       const startedAtMs = Date.now();
       try {
         const extraction = this.parseFileExtraction(root, relPath);

@@ -450,6 +450,24 @@ export interface EnrichmentProvider {
    */
   readPersistedFileHashes?: (collectionName: string) => Promise<Map<string, string | null>>;
   /**
+   * Narrow repo-relative `paths` to the ones this provider's per-file store can
+   * ever hold a row for (bd tea-rags-mcp-65bkl). The write-side counterpart of
+   * {@link readPersistedFileHashes}, and only the repair diff consults it.
+   *
+   * `shouldEnrich` cannot answer this. It decides whether a POINT is owed a
+   * payload block, which for codegraph is deliberately wider than the walk: a
+   * `tsconfig.json` or a `README.md` comes back `"full"` and carries an all-zero
+   * codegraph block, but has no `CODEGRAPH_LANGUAGES` entry, so pass-1 drops it
+   * and pass-2 writes no `cg_symbols_files` row. Diffing hashes over the wider
+   * set reports every such file missing on EVERY run — `repaired=482` in
+   * perpetuity on taxdome — and the run can do nothing about it.
+   *
+   * Absent ⇒ the provider persists whatever it is asked for and the repair set
+   * is the `shouldEnrich`-eligible set unchanged. Must be a pure filter: same
+   * order, same strings, subset only.
+   */
+  filterExtractablePaths?: (paths: readonly string[]) => string[];
+  /**
    * Factory for the run-scoped commit discovery (bd tea-rags-mcp-82va1) —
    * the provider owns the window config (chunkMaxAgeMonths / timeout),
    * ChunkPhase owns the instance lifecycle (lazy create at first chunk
