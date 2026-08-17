@@ -1753,10 +1753,15 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
         for (const [startLine, symbolId] of lineMap) {
           symbolStartLines.set(symbolId, startLine);
         }
-        const chunkIds = computeSymbolChunkIds(symbolStartLines, entries);
-        if (chunkIds.size > 0) {
-          chunkIdJoins.push({ relPath, chunkIds });
-        }
+        // Named even when the join came back EMPTY (bd tea-rags-mcp-tslvq). The
+        // write is REPLACE-per-named-file now, and naming a file is the ONLY
+        // way its symbols' stale chunk_id gets retired: `upsertSymbolsBulk` is a
+        // row diff, so a re-walked symbol whose definition did not change keeps
+        // the join already on disk. A file whose symbols all fell out of every
+        // chunk's line range is exactly the case that must still reach the
+        // writer. A file absent from this pass's chunkMap, or one this run never
+        // walked, is not named — its join is still valid.
+        chunkIdJoins.push({ relPath, chunkIds: computeSymbolChunkIds(symbolStartLines, entries) });
       }
       out.set(relPath, perChunk);
     }

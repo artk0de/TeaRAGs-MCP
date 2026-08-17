@@ -15,6 +15,20 @@
   (step 8). Why: the step indices moved once already (an out-of-window backfill
   now overlaps the finalize), so citing "step 6" points at git's drain; and
   reading the graph any earlier reads an unfinished graph.
+- **`cg_symbols.chunk_id` belongs to the deferred chunk pass alone, and that
+  pass REPLACES it per file it names.** Every `cg_*` table including
+  `cg_symbols` is now written as a row diff (`applyScopedRowDiff`), so a
+  re-walked symbol whose definition did not change is not rewritten and keeps
+  whatever `chunk_id` it had — the walker no longer resets it.
+  `updateSymbolChunkIdsBulk` therefore clears `chunk_id` for every named
+  `rel_path` before applying the fresh mapping, both set-based inside one
+  transaction. The consequence for `buildChunkSignals` (symbols/provider.ts): a
+  file it re-derived must be pushed onto `chunkIdJoins` even when the join came
+  back EMPTY — that entry is the only thing that retires the stale ids. Dropping
+  the empty-map entry as an optimisation is the bug this shape exists to
+  prevent. Why: the failure is silent and read-side — `find_symbol` answers with
+  a chunk that no longer contains the symbol, and nothing in the write path
+  errors.
 - **The graph DB is addressed by the PHYSICAL versioned collection name, and
   heals only per re-extracted file.** `GraphDbClientPool#pathFor`
   (adapters/duckdb/pool.ts:222) resolves whatever string it is handed,
