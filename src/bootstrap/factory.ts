@@ -575,6 +575,11 @@ export function wireCodegraph(
     providerModulePath: CODEGRAPH_PROVIDER_MODULE_PATH,
     providerFactoryExport: "createCodegraphEnrichmentProvider",
     dispatch: "collection-affinity",
+    // Pass-1 extraction (parse + walk) may leave the pinned worker — it is pure
+    // per file, and pinning it is what made a taxdome recompute run one worker
+    // flat while the other three sat 99.96% idle. Everything stateful still
+    // rides the affinity binding above; `CODEGRAPH_PASS1_FANOUT=0` opts out.
+    extractionFanout: true,
     serializableConfig: codegraphWorkerConfig,
   };
 
