@@ -40,6 +40,17 @@ import type {
 
 export interface EnrichmentExecutor {
   /**
+   * Run-start seam, called by `EnrichmentCoordinator.beginRun` before any
+   * dispatch. Optional: an executor that keeps no cross-batch state omits it.
+   *
+   * The worker-pool executor uses it to drop the pass-1 fan-out's per-run set of
+   * already-extracted paths. That reset belongs at run START, not at release: a
+   * run that dies before releasing would otherwise leave a set behind, and the
+   * next run would silently skip every file the dead one had claimed.
+   */
+  beginRun?: (collectionName?: string) => void;
+
+  /**
    * Per-batch file enrichment for the streaming file phase.
    * Prefers `provider.streamFileBatch` when present; otherwise falls back to
    * `provider.buildFileSignals({ ...options, paths })`.

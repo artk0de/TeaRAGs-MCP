@@ -24,16 +24,31 @@
  *            is a benign no-op (released: false).
  */
 
+import type { FileExtraction } from "../../../../../contracts/types/codegraph.js";
 import type {
   ChunkSignalOptions,
   ChunkSignalOverlay,
+  FileExtractionFanoutBatch,
+  FileExtractionPass1Telemetry,
   FileSignalOptions,
   FileSignalOverlay,
 } from "../../../../../contracts/types/provider.js";
 import type { ChunkLookupEntry } from "../../../../../types.js";
 
-/** EnrichmentExecutor method names — the four dispatch verbs the worker honours. */
-export type EnrichmentMethod = "runFileBatch" | "runFileSignalsRecovery" | "runChunkBatch" | "runFinalize";
+/**
+ * EnrichmentExecutor method names — the dispatch verbs the worker honours.
+ *
+ * The last two are the pass-1 fan-out pair and are dispatched DIFFERENTLY from
+ * the rest: `extractFileBatch` goes out with NO routingKey (any free worker),
+ * `absorbExtractedFiles` with the provider's normal affinity key.
+ */
+export type EnrichmentMethod =
+  | "runFileBatch"
+  | "runFileSignalsRecovery"
+  | "runChunkBatch"
+  | "runFinalize"
+  | "extractFileBatch"
+  | "absorbExtractedFiles";
 
 /**
  * Build-or-reuse a provider on the worker and invoke a method on it.
@@ -52,6 +67,14 @@ export interface EnrichmentCallRequest {
   paths?: string[];
   /** runChunkBatch payload. Nested Map is structured-clone-safe. */
   chunkMap?: Map<string, ChunkLookupEntry[]>;
+  /**
+   * absorbExtractedFiles payload — records another worker already parsed.
+   * Plain data by construction (the same shape the codegraph spill serialises),
+   * so it crosses the structured-clone boundary unchanged.
+   */
+  extractions?: FileExtraction[];
+  /** absorbExtractedFiles payload — merged pass-1 attribution of the units above. */
+  pass1ByLanguage?: Record<string, FileExtractionPass1Telemetry>;
   /** Method-specific options object. Provider reads only the fields it cares about. */
   options?: FileSignalOptions | ChunkSignalOptions;
 }
@@ -87,6 +110,8 @@ export type EnrichmentWorkerRequest = EnrichmentCallRequest | EnrichmentReleaseR
 export interface EnrichmentWorkerResponse {
   fileOverlay?: Map<string, FileSignalOverlay>;
   chunkOverlay?: Map<string, Map<string, ChunkSignalOverlay>>;
+  /** `call` with `extractFileBatch` → the records + their pass-1 attribution. */
+  extractionBatch?: FileExtractionFanoutBatch;
   released?: boolean;
   error?: string;
 }
