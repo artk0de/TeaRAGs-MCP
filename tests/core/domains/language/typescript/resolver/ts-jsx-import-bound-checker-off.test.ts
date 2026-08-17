@@ -21,21 +21,24 @@ import { InMemoryGlobalSymbolTable } from "../../../../../../src/core/domains/tr
  * returns null at N>1 and every tag naming a component the corpus declares more
  * than once — `Button`, `Modal`, `Layout` — silently loses its edge.
  *
- * WHAT THESE CASES ACTUALLY ESTABLISH: with the checker off and the import
- * MAPPABLE, the chain already resolves the tag correctly, namesakes and all —
- * `importedCallee` answers from `ImportRef.importedBindings` before the
- * short-name passes ever run. Every case here passed on first execution against
- * unmodified `main`; none of them was ever red. So the plain "checker-off drops
- * import-bound JSX tags" hypothesis is FALSE as stated, and whatever cost
- * taxdome its edges lies in a narrower gap not reproduced here — the leading
- * remaining candidate being a barrel specifier (`from 'ui-kit'`) whose
- * re-export origin cannot be followed, which would leave exactly the observed
- * split: unique names resolved by the short-name pass, namesakes refused.
+ * The plain form of that hypothesis is FALSE, and most of these cases prove it:
+ * with the checker off and the specifier mapping straight to a FILE, the chain
+ * already resolved the tag correctly, namesakes and all — `importedCallee`
+ * answers from `ImportRef.importedBindings` long before any short-name pass.
+ * Those cases passed against unmodified `main` and are kept as guards, because
+ * the repair and recompute legs run checker-off by design.
  *
- * They are kept because the behaviour is load-bearing and nothing else pinned
- * it: the repair and recompute legs run checker-off by design, so an import
- * that stops being authoritative there would reintroduce precisely this class
- * of silent loss.
+ * The gap was one hop further in: a BARREL specifier. `from 'ui-kit'` maps to
+ * `ui-kit/index.ts`, which declares nothing itself, so the answer depends on
+ * following its re-export — and `reexportOriginFile` did that by looking the
+ * short name up GLOBALLY, then refusing under strict because two packages
+ * declare `Button`. The barrel's own `export { Button } from
+ * 'ui-kit/components/Button/Button'` was never consulted. Measured on the real
+ * `ConfirmationModal.tsx` with the production walker, checker off: 4 edges and
+ * 2 dropped, the drops being `<Button>` twice, while `<Modal>`, `<Layout>` and
+ * `<Preloader>` — each declared once — resolved beside them. After the fix:
+ * 6 edges, 0 dropped. That is the incident's split exactly, and the barrel case
+ * below is the red test that drove the fix.
  *
  * The fixture is a REAL directory tree because import mapping probes the real
  * filesystem (`createProjectFileProbe`), and it declares tsconfig `paths`
@@ -51,14 +54,22 @@ describe("TSCallResolver — import-bound JSX tags with the checker OFF (bd tea-
   const PROTOTYPE_BUTTON = "app/javascript/prototypes/gallery/Button/Button.tsx";
   const PRELOADER = "app/javascript/ui-kit/components/Preloader/Preloader.tsx";
   const CALLER = "app/javascript/react-app/components/ConfirmationModal/ConfirmationModal.tsx";
+  const UI_KIT_BARREL = "app/javascript/ui-kit/index.ts";
+  const UI_KIT_LEGACY_BUTTON = "app/javascript/ui-kit/legacy/Button/Button.tsx";
 
-  /** taxdome's own alias shape — a non-relative specifier resolves only via `paths`. */
+  /**
+   * taxdome's own alias shape — a non-relative specifier resolves ONLY via
+   * `paths`, and the catch-all is what maps a bare barrel specifier like
+   * `ui-kit` (the explicit `ui-kit/*` pattern requires a subpath and would
+   * leave the barrel unmapped).
+   */
   const TSCONFIG = {
     baseUrl: ".",
     paths: {
       "ui-kit/*": ["app/javascript/ui-kit/*"],
       "react-app/*": ["app/javascript/react-app/*"],
       "prototypes/*": ["app/javascript/prototypes/*"],
+      "*": ["app/javascript/*"],
     },
   };
 
@@ -69,7 +80,15 @@ describe("TSCallResolver — import-bound JSX tags with the checker OFF (bd tea-
     previousTypecheckerEnv = process.env.CODEGRAPH_TS_TYPECHECKER;
     process.env.CODEGRAPH_TS_TYPECHECKER = "0";
     repoRoot = mkdtempSync(join(tmpdir(), "ex28m-jsx-"));
-    for (const relPath of [UI_KIT_BUTTON, REACT_APP_BUTTON, PROTOTYPE_BUTTON, PRELOADER, CALLER]) {
+    for (const relPath of [
+      UI_KIT_BUTTON,
+      REACT_APP_BUTTON,
+      PROTOTYPE_BUTTON,
+      PRELOADER,
+      CALLER,
+      UI_KIT_BARREL,
+      UI_KIT_LEGACY_BUTTON,
+    ]) {
       const absolute = join(repoRoot, relPath);
       mkdirSync(dirname(absolute), { recursive: true });
       writeFileSync(absolute, "export const X = 1;\n");
@@ -154,6 +173,35 @@ describe("TSCallResolver — import-bound JSX tags with the checker OFF (bd tea-
     );
 
     expect(result).toEqual({ targetRelPath: PRELOADER, targetSymbolId: "Preloader" });
+  });
+
+  it("follows a BARREL re-export to the namesake inside the barrel's own package", () => {
+    // THE INCIDENT, reduced. taxdome's `ui-kit/index.ts` carries
+    // `export { Button } from 'ui-kit/components/Button/Button'`, so the barrel
+    // states which of the two `Button` files it re-exports. `reexportOriginFile`
+    // ignored that and looked the short name up GLOBALLY, then refused under
+    // strict because two files declare it — the barrel's own package boundary
+    // was never consulted. Verified against the real file with the production
+    // walker: `<Button>` twice -> NO EDGE, while every uniquely-named tag beside
+    // it resolved.
+    const result = resolverWithoutChecker().resolve(
+      jsxTag("Button"),
+      contextFor([importOf("ui-kit", "Button", "Button")], tableWith(UI_KIT_BUTTON, REACT_APP_BUTTON)),
+    );
+
+    expect(result).toEqual({ targetRelPath: UI_KIT_BUTTON, targetSymbolId: "Button" });
+  });
+
+  it("keeps refusing when the barrel's own package declares the name twice", () => {
+    // Narrowing to the barrel's package is EVIDENCE, not a preference. Two
+    // candidates inside ui-kit leave the barrel unable to say which, so the
+    // refusal stands rather than degrading into a coin flip.
+    const result = resolverWithoutChecker().resolve(
+      jsxTag("Button"),
+      contextFor([importOf("ui-kit", "Button", "Button")], tableWith(UI_KIT_BUTTON, UI_KIT_LEGACY_BUTTON)),
+    );
+
+    expect(result).toBeNull();
   });
 
   it("still declines a namesake tag the caller did NOT import — no import, no authority", () => {

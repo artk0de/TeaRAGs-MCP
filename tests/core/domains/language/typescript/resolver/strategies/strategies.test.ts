@@ -258,14 +258,47 @@ describe("TSNamedImportSymbolResolutionStrategy barrel/re-export hop (bd tea-rag
     });
   });
 
-  it("declines the hop when the receiver name is declared in more than one file", () => {
-    // Precision guard. Two definitions of the name mean the barrel could be
-    // re-exporting either, and this pass has no re-export list to consult —
-    // so it keeps today's barrel edge instead of picking a winner.
+  it("narrows an ambiguous name to the declaration inside the barrel's own package", () => {
+    // INVARIANT CHANGED by bd tea-rags-mcp-ex28m. This case used to expect a
+    // decline on the reasoning that two definitions leave the barrel unable to
+    // say which — but the two are not equally plausible: `src/grouping/index.ts`
+    // re-exports what `src/grouping/` OWNS, and a same-named symbol in the
+    // sibling `src/other/` is not a candidate for it. Treating them as equals
+    // is what cost taxdome ~40% of its TS edges: `ui-kit/index.ts` could not be
+    // followed to `ui-kit/components/Button/Button.tsx` because `react-app` also
+    // declares a `Button`, and with the repair pass running without a checker
+    // every barrel-imported namesake component silently lost its edge.
+    //
+    // Residual risk, accepted deliberately: a barrel that re-exports a name from
+    // OUTSIDE its own directory while its own directory declares that same name
+    // now resolves to the in-package one. That shape is pathological; the
+    // measured cost of the old behaviour was not.
+    const symbolTable = tableWith(
+      ["src/grouping/index.ts", []],
+      [
+        "src/grouping/file-level.ts",
+        [
+          sym("FileLevelGrouper", "FileLevelGrouper", "src/grouping/file-level.ts", []),
+          sym("FileLevelGrouper.group", "group", "src/grouping/file-level.ts", ["FileLevelGrouper"]),
+        ],
+      ],
+      ["src/other/file-level.ts", [sym("FileLevelGrouper", "FileLevelGrouper", "src/other/file-level.ts", [])]],
+    );
+    const outcome = strat.attempt(call, ctx({ symbolTable, imports: barrelImport }));
+    expect(outcome).toEqual({
+      kind: "resolved",
+      target: { targetRelPath: "src/grouping/file-level.ts", targetSymbolId: "FileLevelGrouper.group" },
+    });
+  });
+
+  it("still declines the hop when the barrel's OWN package declares the name twice", () => {
+    // The precision guard the case above used to carry, kept where it still
+    // holds: both candidates sit under `src/grouping/`, so narrowing to the
+    // package decides nothing and picking a winner would be a coin flip.
     const symbolTable = tableWith(
       ["src/grouping/index.ts", []],
       ["src/grouping/file-level.ts", [sym("FileLevelGrouper", "FileLevelGrouper", "src/grouping/file-level.ts", [])]],
-      ["src/other/file-level.ts", [sym("FileLevelGrouper", "FileLevelGrouper", "src/other/file-level.ts", [])]],
+      ["src/grouping/legacy.ts", [sym("FileLevelGrouper", "FileLevelGrouper", "src/grouping/legacy.ts", [])]],
     );
     const outcome = strat.attempt(call, ctx({ symbolTable, imports: barrelImport }));
     expect(outcome).toEqual({
