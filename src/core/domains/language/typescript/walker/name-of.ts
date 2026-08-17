@@ -22,18 +22,19 @@
 import type { AstNode } from "../../../../contracts/types/ast.js";
 import type { NamedSymbol } from "../../../../contracts/types/codegraph.js";
 import {
-  classPropertyFunction,
   classifyMethod,
+  classPropertyFunction,
   constObjectNamespaceName,
   functionValuedDeclaratorName,
 } from "../../../../infra/symbolid/index.js";
+import { callValuedExportNames } from "./call-valued-export.js";
 
 function methodKindFromClassify(node: AstNode): "instance" | "static" | undefined {
   const c = classifyMethod(node);
   return c === null ? undefined : c;
 }
 
-export function tsNameOf(node: AstNode): NamedSymbol | null {
+export function tsNameOf(node: AstNode): NamedSymbol | NamedSymbol[] | null {
   if (node.type === "method_definition") {
     const id = node.childForFieldName("name");
     // bd tea-rags-mcp-2jhwk — a `method_definition` sitting directly in an
@@ -155,5 +156,27 @@ export function tsNameOf(node: AstNode): NamedSymbol | null {
   // no-op there rather than a second emission.
   const functionName = functionValuedDeclaratorName(node);
   if (functionName) return { name: functionName, descendsInto: false };
+
+  // bd tea-rags-mcp-llgrz — the WRAPPER-EXPORTED component:
+  //
+  //   const refForwarded = forwardRef(CardInner);
+  //   export { refForwarded as Card };
+  //   export const Panel = memo(PanelBase);
+  //
+  // Disjoint from both gates above by the VALUE node: a call is neither an
+  // object literal nor a function expression, so the order here is readability.
+  // The name recorded is the EXPORTED one, and only when a JSX tag could
+  // reference it — both halves were measured against the type-checker oracle
+  // rather than reasoned, and `./call-valued-export.ts` carries the numbers.
+  //
+  // The ARRAY form is deliberate. `collectSymbols` walks an array result's
+  // children at the SAME scope, so what the call CONTAINS keeps composing
+  // exactly where it did — `createSlice({ reducers: { addItem() {} } })` still
+  // yields a bare `addItem`, which is the id the chunker's classifier writes
+  // into the Qdrant payload for that member. Extending the scope instead would
+  // move it to `slice.addItem` and leave the chunker's id with no cg_symbols row
+  // (`.claude/rules/symbolid-convention.md`).
+  const exportNames = callValuedExportNames(node);
+  if (exportNames) return exportNames.map((name) => ({ name, descendsInto: false }));
   return null;
 }

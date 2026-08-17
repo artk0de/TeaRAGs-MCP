@@ -383,3 +383,36 @@ describe("jsNameOf — jsGetterHelperEmission guard paths", () => {
     expect(names).toContain("req.host");
   });
 });
+
+/**
+ * bd tea-rags-mcp-llgrz — the call-valued exported declarator reaches JavaScript
+ * through the delegation, not through a pattern of its own. `jsNameOf` asks
+ * `tsNameOf` first and returns whatever it answers, so the gate has to arrive
+ * here already correct: JavaScript has no call-valued pattern to collide with,
+ * and pattern #5 below it reads function-valued declarators only.
+ */
+describe("jsNameOf — call-valued exported declarators arrive via the TS delegation", () => {
+  it("names an exported component bound to a wrapper call, exactly once", () => {
+    const names = collectNames("export const Card = memo(CardBase);\n");
+    expect(names.filter((n) => n === "Card")).toHaveLength(1);
+  });
+
+  it("carries the export alias rather than the internal wrapper binding", () => {
+    const names = collectNames(
+      [
+        "function CardInner() {",
+        "  return null;",
+        "}",
+        "const wrapped = memo(CardInner);",
+        "export { wrapped as Card };",
+      ].join("\n"),
+    );
+    expect(names).toContain("Card");
+    expect(names).not.toContain("wrapped");
+  });
+
+  it("still declines a call-valued const the file never exports", () => {
+    const names = collectNames("const parsed = parse(raw);\n");
+    expect(names).not.toContain("parsed");
+  });
+});
