@@ -77,7 +77,9 @@ describe("seeded support versions", () => {
     const NO_CALL_GRAPH = new Set(["markdown"]);
 
     for (const [language, v] of versions) {
-      const expectedWalker = language === "typescript" ? 2 : 1;
+      // typescript walker 3: the wave-2 resolver additions (2a7e774e4), on top
+      // of walker 2's oracle wave. Every other language is still at its seed.
+      const expectedWalker = language === "typescript" ? 3 : 1;
       const expectedCodegraph = NO_CALL_GRAPH.has(language) ? 1 : 2;
       expect(v.walker, `walker version for ${language}`).toBe(expectedWalker);
       expect(v.chunking, `chunking version for ${language}`).toBe(1);
