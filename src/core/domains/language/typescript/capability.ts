@@ -25,5 +25,5 @@ export const capability: LanguageCapability = {
   // through the same expression collapsed to ONE row under `INSERT OR IGNORE`.
   // Migration 020 widens the key, but the rows it already discarded are not on
   // disk — only re-extraction regenerates them.
-  versions: { chunking: 1, walker: 3, codegraphSchema: 2 },
+  versions: { chunking: 1, walker: 4, codegraphSchema: 2 },
 };

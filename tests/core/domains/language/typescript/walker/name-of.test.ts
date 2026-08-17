@@ -414,3 +414,161 @@ describe("tsNameOf — class-property arrows (bd tea-rags-mcp-5ldqu)", () => {
     expect(ids).not.toContain("parse");
   });
 });
+
+/**
+ * bd tea-rags-mcp-llgrz — the WRAPPER-EXPORTED component:
+ *
+ *   function CardInner(props) { … }
+ *   const refForwarded = forwardRef(CardInner);
+ *   export { refForwarded as Card };          // ui-kit: every icon, Checkbox, Modal
+ *
+ * A `variable_declarator` whose value is a CALL, which every existing gate in
+ * this file declines: `constObjectNamespaceName` wants an object literal and
+ * `functionValuedDeclaratorName` wants a function expression. So `Card` — the
+ * name the tag writes and the importer imports — had no row anywhere, bd
+ * tea-rags-mcp-ex28m's tag-name fallback found nothing to pin, and the
+ * null-target edge that resulted was dropped at write time by the primary-key
+ * constraint on `target_symbol_id`.
+ *
+ * Two decisions were settled by measurement against
+ * `scripts/ts-codegraph-typechecker-oracle.ts` rather than by argument, and the
+ * cases below pin both: the EXPORTED name is recorded rather than the local
+ * binding, and only a name a JSX tag could reference is recorded at all. What
+ * naming the wider populations cost is in `call-valued-export.ts`.
+ */
+describe("tsNameOf — wrapper-exported components (bd tea-rags-mcp-llgrz)", () => {
+  it("names an exported component bound to a wrapper call", () => {
+    const ids = idsOf("export const Card = memo(CardBase);\n");
+    expect(ids).toContain("Card");
+  });
+
+  it("declines a wrapped export no JSX tag could reference", () => {
+    // `memoize(fn)` binds a callable, but the checker resolves calls THROUGH it
+    // to lodash's own signature, so an in-project edge for it is a fabricated
+    // one: naming this population moved taxdome's phantom defects 303 → 664
+    // while the JSX population added none (jsx phantom 88 → 88).
+    const ids = idsOf("export const getRenderableContent = memoize(renderContent);\n");
+    expect(ids).not.toContain("getRenderableContent");
+  });
+
+  it("carries the EXPORTED alias — the name importers and JSX tags reference", () => {
+    const ids = idsOf(
+      [
+        "function CardInner(props: { wide: boolean }) {",
+        "  return null;",
+        "}",
+        "const refForwarded = forwardRef(CardInner);",
+        "export { refForwarded as Card };",
+      ].join("\n"),
+    );
+    expect(ids).toContain("Card");
+  });
+
+  it("leaves the internal wrapper binding unnamed", () => {
+    // `refForwarded` is not the module's public name for anything, and putting
+    // it in the table is measurably worse than leaving it out: it preempts
+    // `TSJsxComponentSymbolResolutionStrategy#pinSymbol`'s tag-name branch,
+    // which the taxdome oracle scores as the better of the two answers.
+    const ids = idsOf(
+      [
+        "function CardInner(props: { wide: boolean }) {",
+        "  return null;",
+        "}",
+        "const refForwarded = forwardRef(CardInner);",
+        "export { refForwarded as Card };",
+      ].join("\n"),
+    );
+    expect(ids).not.toContain("refForwarded");
+  });
+
+  it("declines a call-valued const the file never exports", () => {
+    // The precision gate. An internal binding is not the module's public name,
+    // and naming every one of them would put a row in the short-name index for
+    // each `const parsed = parse(raw)` in the corpus.
+    const ids = idsOf("const memoized = memo(Panel);\nfunction Panel() {\n  return null;\n}\n");
+    expect(ids).not.toContain("memoized");
+  });
+
+  it("does not fabricate a symbol for a name the file only RE-exports", () => {
+    // A barrel declares nothing. `export { Card } from "./card.js"` names a
+    // symbol whose declaration lives in the other file, and claiming it here is
+    // how a barrel becomes a namesake competing with the real declaration.
+    const ids = idsOf('export { Card } from "./card.js";\nexport { Icon as Glyph } from "./icon.js";\n');
+    expect(ids).not.toContain("Card");
+    expect(ids).not.toContain("Glyph");
+  });
+
+  it("never emits `default` as a symbol name", () => {
+    // `export { x as default }` publishes the module's default binding, not a
+    // symbol called `default` — a row under that name would answer for every
+    // default-exporting module in the short-name index at once.
+    const ids = idsOf("const wrapped = memo(Panel);\nexport { wrapped as default };\n");
+    expect(ids).not.toContain("default");
+    expect(ids).not.toContain("wrapped");
+  });
+
+  it("declines a data constant a member call builds", () => {
+    // The measured fabrication class. `UNSUPPORTED_FALLBACK = [...].map(f)` in
+    // this repo's own `capability/fallback.ts` is the shape: naming it put
+    // `UNSUPPORTED_FALLBACK.map(…)` — whose target is `Array.prototype.map` —
+    // on an in-project edge, two fabricated edges on `src` alone.
+    expect(idsOf("export const OPTIONS = ITEMS.map((item) => item.id);\n")).not.toContain("OPTIONS");
+    expect(idsOf("export const KEYS = Object.keys(SHAPE);\n")).not.toContain("KEYS");
+  });
+
+  it("declines a factory call that is handed no callable", () => {
+    // `createContext(null)` / `z.object({…})` produce a value the module did not
+    // declare, and every call THROUGH such a binding targets the library that
+    // made it. On taxdome, naming this population moved phantom defects
+    // 303 → 710.
+    expect(idsOf("export const Ctx = createContext(null);\n")).not.toContain("Ctx");
+    expect(idsOf("export const schema = z.object({ id: 1 });\n")).not.toContain("schema");
+  });
+
+  it("leaves what the call CONTAINS composed exactly where it was", () => {
+    // The lockstep guard. The chunker composes an object-literal method inside a
+    // call argument from its own classifier; if naming the declarator re-scoped
+    // that member to `Enhanced.onClick`, the chunker's `onClick` id would have
+    // no cg_symbols row and `get_callers` on it would return [].
+    const ids = idsOf(
+      [
+        "export const Enhanced = withHandlers(BaseCard, {",
+        "  onClick(event: number) {",
+        "    return event;",
+        "  },",
+        "});",
+      ].join("\n"),
+    );
+    expect(ids).toContain("Enhanced");
+    expect(ids).toContain("onClick");
+    expect(ids).not.toContain("Enhanced.onClick");
+  });
+
+  it("emits one row when the exported alias repeats a name the file already declares", () => {
+    // taxdome's `Modal.tsx` shape: the inner component and the export alias are
+    // both `Modal`. `collectSymbols` dedups by symbolId, so the declaration's
+    // own row wins — what must not happen is two rows racing to answer
+    // `lookup("Modal")` with different line ranges.
+    const ids = idsOf(
+      [
+        "function Modal(props: { open: boolean }) {",
+        "  return null;",
+        "}",
+        "const memoized = memo(Modal);",
+        "export { memoized as Modal };",
+      ].join("\n"),
+    );
+    expect(ids.filter((id) => id === "Modal")).toHaveLength(1);
+  });
+
+  it("names each declarator of a comma list independently", () => {
+    const ids = idsOf("export const First = memo(A),\n  Second = memo(B);\n");
+    expect(ids).toContain("First");
+    expect(ids).toContain("Second");
+  });
+
+  it("sees the call through a type assertion", () => {
+    const ids = idsOf("export const Card = forwardRef(CardInner) as ComponentType;\n");
+    expect(ids).toContain("Card");
+  });
+});
