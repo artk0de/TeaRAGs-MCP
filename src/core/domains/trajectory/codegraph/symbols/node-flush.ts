@@ -158,7 +158,7 @@ export class SymbolNodeFlushQueue {
 
   /**
    * One durable batched node write: `graphDb.upsertSymbolsBulk(batch)` (one
-   * transaction, DELETE-per-file + INSERT OR IGNORE, last-wins per relPath).
+   * transaction, a row diff scoped by rel_path, last-wins per relPath).
    * Records the flushed relPaths per collection (once-per-file invariant +
    * honest cumulative count) and emits a DEBUG-gated flush log.
    */
