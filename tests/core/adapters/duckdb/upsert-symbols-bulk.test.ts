@@ -1,7 +1,8 @@
 /**
  * `GraphDbClient.upsertSymbolsBulk` — batched form of the per-file
- * `upsertSymbols`: one transaction for many files (DELETE-per-file + one
- * `INSERT OR IGNORE` over all rows). Same per-file semantics — within-file
+ * `upsertSymbols`: one transaction for many files (one set-based DELETE over
+ * every relPath the batch names + one `INSERT OR IGNORE` over all rows). Same
+ * per-file semantics — each named file's rows are REPLACED, within-file
  * duplicate symbolId first-wins, all-or-nothing on failure — just batched
  * across files instead of one BEGIN/COMMIT per file.
  */
@@ -18,11 +19,11 @@ import { DaemonGraphDbClient } from "../../../../src/core/adapters/duckdb/daemon
 import { decodeFrames, encodeFrame, type DaemonRequest } from "../../../../src/core/adapters/duckdb/daemon/protocol.js";
 import { CodegraphDaemonServer } from "../../../../src/core/adapters/duckdb/daemon/server.js";
 import { GraphDbClientPool } from "../../../../src/core/adapters/duckdb/pool.js";
-import { createDatabaseMigrationApplier } from "../../../../src/core/domains/maintenance/migration/database/index.js";
 import type { SymbolDefinition } from "../../../../src/core/contracts/types/codegraph.js";
-import { InMemoryGlobalSymbolTable } from "../../../../src/core/domains/trajectory/codegraph/symbols/symbol-table.js";
+import { createDatabaseMigrationApplier } from "../../../../src/core/domains/maintenance/migration/database/index.js";
 import { DATABASE_MIGRATIONS } from "../../../../src/core/domains/maintenance/migration/database/migrations/index.js";
 import { runMigrations } from "../../../../src/core/domains/maintenance/migration/database/runner.js";
+import { InMemoryGlobalSymbolTable } from "../../../../src/core/domains/trajectory/codegraph/symbols/symbol-table.js";
 
 function mkDef(relPath: string, symbolId: string, fqName: string, shortName: string): SymbolDefinition {
   return {
@@ -93,6 +94,40 @@ describe("DuckDbGraphClient.upsertSymbolsBulk — direct client", () => {
     expect(sutRows).toEqual(refRows);
     // Only defNew's row survives for a.ts — defOld was replaced, not unioned.
     expect(sutRows.map((r: Record<string, unknown>) => r.symbol_id)).toEqual(["A#new"]);
+  });
+
+  it("a second batch REPLACES each file's rows — symbols that vanished from the walk are gone", async () => {
+    // The invariant the batch's file-scoped DELETE carries, and the one a
+    // single set-based `WHERE rel_path IN (…)` has to reproduce exactly: rows
+    // are removed for every relPath the batch names, not merely overwritten
+    // where the incoming set happens to collide. `INSERT OR IGNORE` alone would
+    // leave `A#gone` behind forever.
+    const first = [
+      {
+        relPath: "a.ts",
+        definitions: [mkDef("a.ts", "A#keep", "A#keep", "keep"), mkDef("a.ts", "A#gone", "A#gone", "gone")],
+      },
+      { relPath: "b.ts", definitions: [mkDef("b.ts", "B#only", "B#only", "only")] },
+      // A file whose walk produced nothing this run must end up with zero rows.
+      { relPath: "c.ts", definitions: [mkDef("c.ts", "C#doomed", "C#doomed", "doomed")] },
+    ];
+    const second = [
+      { relPath: "a.ts", definitions: [mkDef("a.ts", "A#keep", "A#keep", "keep")] },
+      {
+        relPath: "b.ts",
+        definitions: [mkDef("b.ts", "B#only", "B#only", "only"), mkDef("b.ts", "B#new", "B#new", "new")],
+      },
+      { relPath: "c.ts", definitions: [] },
+    ];
+    for (const entry of first) await ref.upsertSymbols(entry.relPath, entry.definitions);
+    for (const entry of second) await ref.upsertSymbols(entry.relPath, entry.definitions);
+    await sut.upsertSymbolsBulk(first);
+    await sut.upsertSymbolsBulk(second);
+
+    const refRows = await ref.queryAll("SELECT * FROM cg_symbols ORDER BY rel_path, symbol_id");
+    const sutRows = await sut.queryAll("SELECT * FROM cg_symbols ORDER BY rel_path, symbol_id");
+    expect(sutRows).toEqual(refRows);
+    expect(sutRows.map((r: Record<string, unknown>) => r.symbol_id)).toEqual(["A#keep", "B#new", "B#only"]);
   });
 
   it("bulk upsert is all-or-nothing: a bad row rolls back the whole batch", async () => {
