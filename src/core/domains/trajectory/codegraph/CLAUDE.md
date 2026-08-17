@@ -32,6 +32,24 @@
   `pageRank` written comes off that graph, and `find_cycles` keeps reporting
   cycles the source dropped weeks ago.
 
+- **"Nodes-before-edges" binds the run's END state, not the start of pass-2.**
+  `createCodegraphExtractionSink#finish` (symbols/extraction-sink.ts) DISPATCHES
+  the node-flush remainder, runs pass-2 against it, and settles the chain before
+  `recomputeMetrics` and again in the `finally`. It is allowed to, because
+  pass-2 resolves against the in-memory `GlobalSymbolTable` and writes only
+  `cg_symbols_files` + the edge / inheritance / fan-out tables — nothing in
+  `GraphBuildFinalizer` reads or writes `cg_symbols`, and migration 001 omits
+  every FOREIGN KEY on purpose and says so. `CODEGRAPH_NODE_DRAIN_OVERLAP=0`
+  restores the blocking form. Two things the overlap relies on and an edit must
+  keep: the flush chain admits ONE write at a time, so pass-2's own writes never
+  queue behind more than a single node write on the shared daemon session; and
+  `DaemonGraphDbClient` multiplexes by request id, so two in-flight calls on one
+  client is a supported shape, not a new one. Why: awaiting the drain here reads
+  like the correctness barrier its old comment claimed it was. It was a serial
+  tail — 24.1s of `CODEGRAPH_NODES_FLUSH` between the last extraction and the
+  first `PASS2_PROGRESS` on a taxdome Ruby recompute, which is what turned the
+  pass-1 fan-out's 18.8s → 9.1s into a 51.9s → 59.9s window REGRESSION.
+
 ## Gotchas
 
 - **Keys are logical (`codegraph.file.X`) but the payload is physical

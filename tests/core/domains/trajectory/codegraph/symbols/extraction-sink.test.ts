@@ -64,6 +64,8 @@ describe("createCodegraphExtractionSink", () => {
       runState: new CodegraphRunState(),
       nodeFlush: {
         buffer: vi.fn(),
+        dispatchRemainder: vi.fn(),
+        settle: vi.fn().mockResolvedValue(undefined),
         flushRemainder: vi.fn().mockResolvedValue(undefined),
       } as unknown as SymbolNodeFlushQueue,
       buildSymbolDefs: () => [],
