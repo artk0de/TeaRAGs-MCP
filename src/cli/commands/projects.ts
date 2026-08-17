@@ -64,12 +64,18 @@ export async function runRegister(args: RegisterArgs): Promise<void> {
   }
 }
 
-export async function runUnregister(
-  args: UnregisterArgs,
-  qdrant?: Pick<QdrantManager, "deleteCollection" | "countPoints">,
-): Promise<void> {
+/**
+ * `--purge` removes the FULL per-collection footprint, so it needs more of
+ * Qdrant than a single delete: the generation listing and the alias resolution
+ * that say which physical collections belong to this project.
+ */
+type PurgeQdrantClient = Pick<QdrantManager, "deleteCollection" | "countPoints" | "listCollections"> & {
+  aliases: Pick<QdrantManager["aliases"], "listAliases" | "deleteAlias">;
+};
+
+export async function runUnregister(args: UnregisterArgs, qdrant?: PurgeQdrantClient): Promise<void> {
   const { registry, ops } = newOps();
-  // Capture the collectionName before the entry is removed so we can purge it.
+  // Capture the entry before it is removed — the purge addresses its collection.
   const entry = registry.findByName(args.name);
   const out = await ops.unregister({ name: args.name });
   if (!out.removed) {
@@ -78,23 +84,62 @@ export async function runUnregister(
   }
   const collectionName = entry?.collectionName ?? "(unknown)";
   if (args.purge) {
-    const client = qdrant ?? (await defaultQdrant());
-    const chunkCount = await safeCount(client, collectionName);
-    try {
-      await client.deleteCollection(collectionName);
-      process.stdout.write(
-        `Removed '${args.name}' from registry; deleted Qdrant collection '${collectionName}' (${chunkCount} chunks)\n`,
-      );
-    } catch (err) {
-      process.stdout.write(
-        `Removed '${args.name}' from registry; failed to delete Qdrant collection '${collectionName}': ${(err as Error).message}\n`,
-      );
-    }
+    await purgeFootprint(
+      { name: args.name, collectionName, registry, ...(entry?.path ? { path: entry.path } : {}) },
+      qdrant,
+    );
     return;
   }
   process.stdout.write(
     `Removed '${args.name}' from registry. Note: Qdrant collection '${collectionName}' is still present. Run 'tea-rags projects unregister --name ${args.name} --purge' to remove it.\n`,
   );
+}
+
+/**
+ * Tear down every artifact the collection owns and print what went, what
+ * stayed, and what failed.
+ *
+ * The purge used to be a single `deleteCollection(entry.collectionName)`, and
+ * that name is the ALIAS — so the versioned `code_<hash>_v1/_v2` collections,
+ * the `~/.tea-rags/codegraph/*.duckdb` files, the snapshot directory and
+ * `<collection>.stats.json` all survived it and had to be cleared by hand
+ * (2026-08-15 and 2026-08-17). The saga now sweeps all of them; the detail
+ * lines are printed whether or not something failed, because a half-completed
+ * purge is exactly the case where the user needs to know what is left.
+ */
+async function purgeFootprint(
+  target: { name: string; collectionName: string; registry: CollectionRegistry; path?: string },
+  qdrant?: PurgeQdrantClient,
+): Promise<void> {
+  const { name, collectionName, registry } = target;
+  const client = qdrant ?? (await defaultQdrant());
+  const chunkCount = await safeCount(client, collectionName);
+  const { createCollectionFootprintPurger } = await import("../../bootstrap/footprint-purge.js");
+  const purger = createCollectionFootprintPurger({
+    qdrant: client as QdrantManager,
+    registry,
+    appDataDir: resolveDataDir(),
+  });
+  const report = await purger.purge({
+    logicalName: collectionName,
+    ...(target.path ? { path: target.path } : {}),
+  });
+
+  const qdrantFailure = report.failures.find((f) => f.artifact === "qdrant");
+  process.stdout.write(
+    qdrantFailure
+      ? `Removed '${name}' from registry; failed to delete Qdrant collection '${qdrantFailure.target}': ${qdrantFailure.reason}\n`
+      : `Removed '${name}' from registry; deleted Qdrant collection '${collectionName}' (${chunkCount} chunks)\n`,
+  );
+
+  const detail = (label: string, value: string): void => {
+    process.stdout.write(`  ${label.padEnd(10)} ${value}\n`);
+  };
+  if (report.qdrantCollections.length > 0) detail("qdrant:", report.qdrantCollections.join(", "));
+  if (report.codegraphDatabases.length > 0) detail("codegraph:", report.codegraphDatabases.join(", "));
+  if (report.clearedStores.length > 0) detail("cleared:", [...report.clearedStores].sort().join(", "));
+  for (const note of report.kept) detail("kept:", note);
+  for (const failure of report.failures) detail("failed:", `${failure.artifact} ${failure.target} — ${failure.reason}`);
 }
 
 export function runList(args: ListArgs): void {
