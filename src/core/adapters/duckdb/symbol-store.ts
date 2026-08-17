@@ -3,11 +3,12 @@
  * `GlobalSymbolTable` that lets a cold start or a partial reindex hydrate
  * without re-walking every file.
  *
- * Writes replace a file's symbols wholesale (DELETE+INSERT in one transaction,
- * so a partial failure leaves either the full new set or the previous one), and
- * `chunk_id` is the one column written separately: it is not part of a
- * definition, it is backfilled once chunking has produced ids. The row codec
- * itself lives in `cg-symbols-row.ts`, shared with the hydration SELECT.
+ * Writes make a file's symbols EQUAL the walk's output, expressed as a row diff
+ * inside one transaction (so a partial failure leaves either the full new set or
+ * the previous one), and `chunk_id` is the one column written separately: it is
+ * not part of a definition, it is backfilled once chunking has produced ids. The
+ * row codec itself lives in `cg-symbols-row.ts`, shared with the hydration
+ * SELECT.
  */
 
 import type {
@@ -20,7 +21,8 @@ import type {
 } from "../../contracts/types/codegraph.js";
 import {
   CG_SYMBOLS_DEF_COLUMNS,
-  CG_SYMBOLS_DEF_INSERT_SQL,
+  CG_SYMBOLS_KEY_COLUMNS,
+  CG_SYMBOLS_VALUE_COLUMNS,
   fromCgSymbolsRow,
   toCgSymbolsRow,
   type CgSymbolsRow,
@@ -33,74 +35,69 @@ export class DuckDbSymbolStore {
   constructor(private readonly session: DuckDbGraphSession) {}
 
   async upsertSymbols(relPath: RelPath, definitions: SymbolDefinition[]): Promise<void> {
-    // DELETE+INSERT inside a transaction so a partial failure leaves
-    // either the full new set or the previous set — never a mix. Empty
-    // definitions list clears the file (idempotent with handleDeletedPaths).
-    //
-    // INSERT OR IGNORE because the walker can legitimately emit the same
-    // symbolId twice for one file: TypeScript get/set accessor pairs,
-    // function overload signatures sharing a name, and other language
-    // patterns where multiple AST nodes contribute to the same logical
-    // identifier. The PK (rel_path, symbol_id) is identity, not
-    // occurrence count — first row wins.
-    return this.session.transaction(async () => {
-      await this.session.run("DELETE FROM cg_symbols WHERE rel_path = ?", [relPath]);
-      for (const def of definitions) {
-        await this.session.run(CG_SYMBOLS_DEF_INSERT_SQL, toCgSymbolsRow(def));
-      }
-    });
+    // One file is the degenerate batch. Routing it through the bulk path keeps a
+    // single write SHAPE for cg_symbols: two shapes on one table means the
+    // chunk_id contract (below) holds on one of them and silently not the other.
+    return this.upsertSymbolsBulk([{ relPath, definitions }]);
   }
 
   /**
-   * Batched form of {@link upsertSymbols}: one transaction — and one set-based
-   * DELETE — for many files instead of one BEGIN/COMMIT and one DELETE per
-   * file. Equivalent to calling
-   * `upsertSymbols(relPath, definitions)` once per entry, in order — so a
-   * later entry for the same relPath fully REPLACES an earlier one (last-wins
-   * per relPath, matching sequential DELETE+INSERT). Empty `entries` is a
-   * no-op.
+   * Make `cg_symbols` equal the walk's output for every file the batch names,
+   * in one transaction. Equivalent to calling
+   * `upsertSymbols(relPath, definitions)` once per entry, in order — so a later
+   * entry for the same relPath fully REPLACES an earlier one (last-wins per
+   * relPath). Empty `entries` is a no-op; an entry with empty `definitions`
+   * clears its file.
    */
   async upsertSymbolsBulk(entries: BulkSymbolUpsertEntry[]): Promise<void> {
     if (entries.length === 0) return;
-    // Same DELETE+INSERT-inside-a-transaction contract as upsertSymbols,
-    // just spanning every file in the batch instead of one.
-    //
     // A batch may legitimately carry TWO entries for the SAME relPath. The
     // contract is "== calling upsertSymbols(relPath, defs) once per entry, in
-    // order" — and sequential per-file upsert is DELETE+INSERT, so a later
-    // entry for a file fully REPLACES an earlier one (the second call's DELETE
-    // wipes the first's rows). Collapse by relPath keeping LAST-wins BEFORE
-    // touching the DB so this holds: each distinct relPath is deleted once and
-    // only its final entry's definitions are inserted — never a union of both
-    // (a union would leak the superseded entry's rows through INSERT OR IGNORE).
-    // Distinct relPaths never share a PK, so cross-file rows never interfere.
-    //
-    // Within a single surviving entry, INSERT OR IGNORE still preserves
-    // first-wins on a duplicate symbolId: row build order iterates definitions
-    // in declaration order, so the first occurrence of a (rel_path, symbol_id)
-    // pair lands first in the batched VALUES list (see insertOrIgnoreBatched's
-    // doc comment for why duplicate-PK rows within one statement are
-    // first-row-wins).
+    // order", and a per-file upsert REPLACES that file's rows — so a later entry
+    // for a file supersedes an earlier one rather than unioning with it.
+    // Collapse by relPath keeping LAST-wins BEFORE touching the DB, so the diff
+    // reconciles each distinct relPath against its final entry's definitions
+    // only. Distinct relPaths never share a PK, so cross-file rows never
+    // interfere.
     const lastByRelPath = new Map<RelPath, SymbolDefinition[]>();
     for (const { relPath, definitions } of entries) {
       lastByRelPath.set(relPath, definitions);
     }
-    return this.session.transaction(async () => {
-      // ONE set-based DELETE for the whole batch rather than one per file. The
-      // row set removed is identical — the predicate is the same list of
-      // rel_paths, and every DELETE already ran before every INSERT — but
-      // `cg_symbols` has carried no index on `rel_path` since migration 019, so
-      // the per-file loop paid a full sequential scan per file. On a taxdome
-      // Ruby recompute that is 8 811 scans of a table growing past 400k rows,
-      // and it is the larger half of the 24.1s node drain the pass-1 fan-out
-      // left exposed (bd pass1-fanout).
-      await this.session.deleteByScopeValuesBatched("cg_symbols", "rel_path", [...lastByRelPath.keys()]);
-      const rows: unknown[][] = [];
-      for (const definitions of lastByRelPath.values()) {
-        for (const def of definitions) rows.push(toCgSymbolsRow(def));
-      }
-      await this.session.insertOrIgnoreBatched("cg_symbols", CG_SYMBOLS_DEF_COLUMNS, rows);
-    });
+    const rows: unknown[][] = [];
+    for (const definitions of lastByRelPath.values()) {
+      for (const def of definitions) rows.push(toCgSymbolsRow(def));
+    }
+    return this.session.transaction(async () =>
+      // A DIFF, not a DELETE+re-INSERT of the same keys (bd tea-rags-mcp-tslvq).
+      // Two reasons, and the first is a crash:
+      //
+      //  - DuckDB's commit path is not exception-safe for a transaction whose
+      //    delete set and insert set share a key; a failed commit re-appends the
+      //    deleted rows onto keys the same transaction inserted and abort()s the
+      //    process from native code. `applyScopedRowDiff`'s docblock carries the
+      //    mechanism and the nine daemon deaths it caused on 2026-08-17.
+      //  - A recompute re-walks files whose symbols did not move, and the INSERT
+      //    floor is ~16k rows/s, so it re-wrote rows it already had. The diff
+      //    leaves them physically untouched. Warm drain of
+      //    `scripts/spikes/node-drain-profile.ts`, 4 000 files / 100k rows, at
+      //    the live cadence of 256: 21 612ms set-based DELETE against 3 345ms.
+      //
+      // Duplicate symbolIds within one file stay FIRST-wins — the walker can
+      // legitimately emit one twice (TS get/set accessor pairs, overload
+      // signatures), and the PK is identity, not occurrence count.
+      //
+      // `chunk_id` is outside both the key and the value columns, so an
+      // unchanged row keeps the join the deferred chunk pass wrote. Retiring a
+      // stale join is that pass's own job — see `updateSymbolChunkIdsBulk`.
+      this.session.applyScopedRowDiff(
+        "cg_symbols",
+        "rel_path",
+        [...lastByRelPath.keys()],
+        CG_SYMBOLS_KEY_COLUMNS,
+        CG_SYMBOLS_VALUE_COLUMNS,
+        rows,
+      ),
+    );
   }
 
   async removeSymbolsForFile(relPath: RelPath): Promise<void> {
@@ -117,6 +114,12 @@ export class DuckDbSymbolStore {
     return rows.map(fromCgSymbolsRow);
   }
 
+  /**
+   * REPLACE one file's symbol → covering-chunk join. Naming the file is what
+   * retires the joins of its symbols the fresh map no longer covers — see
+   * {@link updateSymbolChunkIdsBulk}, whose contract this is the one-file case
+   * of.
+   */
   async updateSymbolChunkIds(relPath: RelPath, chunkIds: ReadonlyMap<SymbolId, string>): Promise<void> {
     return this.updateSymbolChunkIdsBulk([{ relPath, chunkIds }]);
   }
@@ -124,8 +127,27 @@ export class DuckDbSymbolStore {
   /**
    * Whole-pass form of {@link updateSymbolChunkIds}. The deferred chunk pass
    * resolves the join for every file at once, so it writes it at once: one
-   * transaction of chunked multi-row UPDATEs instead of one transaction — and,
-   * behind the daemon, one socket round-trip — per file (bd tea-rags-mcp-6aytq).
+   * transaction of chunked set-based statements instead of one transaction —
+   * and, behind the daemon, one socket round-trip — per file
+   * (bd tea-rags-mcp-6aytq).
+   *
+   * REPLACE, not merge, per file the call NAMES (bd tea-rags-mcp-tslvq): every
+   * named file's chunk_id is cleared first, then the collected mapping applied.
+   * That guarantee used to come from the writer above — `upsertSymbols` deleted
+   * and re-inserted a file's rows, so a re-walked symbol always arrived with
+   * chunk_id NULL and this pass only ever filled values in. `upsertSymbolsBulk`
+   * is a row diff now and leaves an unchanged row alone, chunk_id included, so
+   * the guarantee moves here, to the pass that owns the column and is the only
+   * one that knows the fresh mapping. A symbol whose covering chunk moved out
+   * from under it between runs still ends NULL rather than pointing at a chunk
+   * that no longer contains it.
+   *
+   * Both halves are set-based and share the transaction, so no reader observes
+   * the intermediate all-NULL state. Naming a file with an EMPTY map is
+   * therefore meaningful: it says "re-derived, nothing covers it".
+   *
+   * A file the entries never name is untouched — an incremental pass re-derives
+   * only the chunks it re-chunked, and every other file's join is still valid.
    *
    * Duplicate (relPath, symbolId) pairs are collapsed LAST-WINS here, in a map
    * keyed per file, rather than left to the statement: DuckDB does not define
@@ -133,9 +155,9 @@ export class DuckDbSymbolStore {
    * reproduces what sequential per-file calls did.
    */
   async updateSymbolChunkIdsBulk(entries: readonly SymbolChunkIdJoinEntry[]): Promise<void> {
+    if (entries.length === 0) return;
     const lastByFile = new Map<RelPath, Map<SymbolId, string>>();
     for (const { relPath, chunkIds } of entries) {
-      if (chunkIds.size === 0) continue;
       let perFile = lastByFile.get(relPath);
       if (perFile === undefined) {
         perFile = new Map<SymbolId, string>();
@@ -147,8 +169,12 @@ export class DuckDbSymbolStore {
     for (const [relPath, perFile] of lastByFile) {
       for (const [symbolId, chunkId] of perFile) rows.push([relPath, symbolId, chunkId]);
     }
-    if (rows.length === 0) return;
     return this.session.transaction(async () => {
+      // Clear EVERY named file before applying ANY row: the clear is scoped by
+      // rel_path and the apply is keyed by (rel_path, symbol_id), so the two
+      // must not interleave per chunk — a mapping row in an early chunk would
+      // otherwise be wiped by a clear in a later one.
+      await this.session.clearColumnByScopeValuesBatched("cg_symbols", "chunk_id", "rel_path", [...lastByFile.keys()]);
       await this.session.updateFromRows("cg_symbols", ["rel_path", "symbol_id"], ["chunk_id"], rows);
     });
   }

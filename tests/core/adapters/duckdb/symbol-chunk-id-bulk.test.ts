@@ -11,7 +11,10 @@
  *
  * What must NOT change: which rows end up carrying which chunk_id. The join is
  * keyed by (rel_path, symbol_id), so a symbol with the same id in another file
- * is untouched, and a symbol absent from the entry keeps its prior value.
+ * is untouched, and a file no entry NAMES keeps its prior values.
+ *
+ * Within a named file the write is a replace, not a merge (bd
+ * tea-rags-mcp-tslvq) — `symbol-chunk-id-replace.test.ts` owns that half.
  */
 
 import { mkdtempSync, rmSync } from "node:fs";

@@ -514,29 +514,40 @@ export class DuckDbGraphSession {
   }
 
   /**
-   * `DELETE FROM <table> WHERE <scopeColumn> IN (?, ?, …)` in
-   * {@link EDGE_INSERT_CHUNK_ROWS} chunks — one statement per chunk instead of
-   * one per value (bd pass1-fanout).
+   * `UPDATE <table> SET <column> = NULL WHERE <scopeColumn> IN (?, ?, …)` in
+   * {@link EDGE_INSERT_CHUNK_ROWS} chunks — the reset half of a column whose
+   * writer owns it wholesale for the rows in scope (bd tea-rags-mcp-tslvq:
+   * `cg_symbols.chunk_id`, cleared for every file the deferred chunk pass names
+   * before the fresh join is applied).
    *
-   * The shape it replaces is a `for (const v of values) DELETE … = ?` loop, and
-   * the cost is not the round-trip: none of these tables carries a secondary
-   * index on the filtered column any more (migration 019 dropped them all off
-   * `cg_symbols` and measured the scan as the cheaper half), so every iteration
-   * is its OWN sequential scan of the whole table. Folding the loop into one
-   * predicate turns N scans into one. Measured on a synthetic 4 000-file /
-   * 100 000-row `cg_symbols`: 3 106ms of per-file DELETEs against 1 981ms for
-   * the set-based form, and the gap widens with table size.
+   * One statement per chunk rather than one per value, because none of these
+   * tables carries a secondary index on the filtered column any more — migration
+   * 019 dropped them all off `cg_symbols` — so a per-value loop pays its OWN
+   * sequential scan of the whole table each iteration.
+   *
+   * The `IS NOT NULL` guard is what makes this cheap on the common path: a row
+   * already clear is not rewritten, so a cold index (every chunk_id NULL) costs
+   * a scan and no row versions at all.
    *
    * Chunking is safe for the same reason it is safe in
    * {@link deleteByKeyBatched}: the predicate is an explicit list of values, so
-   * splitting it cannot make one chunk remove a row a later chunk would keep.
-   * A scope DELETE written as a RANGE or a LIKE could not be split this way.
+   * splitting it cannot make one chunk skip a row a later chunk would clear. A
+   * scope predicate written as a RANGE or a LIKE could not be split this way.
    */
-  async deleteByScopeValuesBatched(table: string, scopeColumn: string, scopeValues: readonly unknown[]): Promise<void> {
+  async clearColumnByScopeValuesBatched(
+    table: string,
+    column: string,
+    scopeColumn: string,
+    scopeValues: readonly unknown[],
+  ): Promise<void> {
     if (scopeValues.length === 0) return;
     for (let i = 0; i < scopeValues.length; i += EDGE_INSERT_CHUNK_ROWS) {
       const chunk = scopeValues.slice(i, i + EDGE_INSERT_CHUNK_ROWS);
-      await this.run(`DELETE FROM ${table} WHERE ${scopeColumn} IN (${chunk.map(() => "?").join(", ")})`, chunk);
+      await this.run(
+        `UPDATE ${table} SET ${column} = NULL WHERE ${scopeColumn} IN (${chunk.map(() => "?").join(", ")}) ` +
+          `AND ${column} IS NOT NULL`,
+        chunk,
+      );
     }
   }
 
