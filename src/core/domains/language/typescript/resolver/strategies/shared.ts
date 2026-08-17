@@ -95,6 +95,26 @@ export function collectImportedFiles(
  * there is no way to tell which one the barrel meant, and the existing barrel
  * edge beats a coin flip.
  *
+ * That last gate had a hole, and it cost taxdome its component graph (bd
+ * tea-rags-mcp-ex28m). "Declared in several files" is not the same question as
+ * "ambiguous to THIS barrel": `ui-kit/index.ts` says
+ * `export { Button } from 'ui-kit/components/Button/Button'`, so it is perfectly
+ * specific about which of the project's two `Button` files it re-exports — the
+ * global lookup simply never asked. Every barrel-imported component whose short
+ * name another package also declares therefore resolved to nothing, and with no
+ * checker to fall back on (the repair and recompute legs run without one) the
+ * edge was dropped in silence. Measured on the real
+ * `ConfirmationModal.tsx` with the production walker: `<Button>` twice → NO
+ * EDGE, while `<Modal>`, `<Layout>` and `<Preloader>` — each declared once —
+ * resolved beside it.
+ *
+ * So an ambiguous global answer is retried against the barrel's OWN package,
+ * the directory the barrel file sits in. A barrel re-exports what its package
+ * owns; a same-named component in a sibling package is not a candidate for it,
+ * which makes this narrowing evidence rather than preference. Two candidates
+ * INSIDE the package still decline — there the barrel genuinely cannot say
+ * which, and the original reasoning stands.
+ *
  * That first gate is also this hop's ceiling. The `Barrel.staticMember()`
  * `wrongFile` rows the type-checker oracle reports are exactly the const-object
  * namespace shape, so closing THEM is a symbol-extraction question, not an
@@ -114,5 +134,22 @@ export function reexportOriginFile(
   const declarations = ctx.symbolTable.lookup(name);
   if (declarations.length === 0) return null;
   if (declarations.some((def) => def.relPath === importedFile)) return null;
-  return pickSingleCandidate([...new Set(declarations.map((def) => def.relPath))], mode);
+  const candidates = [...new Set(declarations.map((def) => def.relPath))];
+  const unique = pickSingleCandidate(candidates, mode);
+  if (unique !== null) return unique;
+  // Ambiguous across the project — ask the barrel's own package (bd
+  // tea-rags-mcp-ex28m). Legacy `first` mode never reaches here: it already
+  // picked, so its behaviour is untouched.
+  return pickSingleCandidate(withinPackageOf(importedFile, candidates), mode);
+}
+
+/**
+ * The candidates that live under `barrelFile`'s own directory — the package a
+ * barrel is entitled to re-export from. Prefix-matched on the directory plus a
+ * separator so `ui-kit` cannot claim a sibling named `ui-kit-legacy`.
+ */
+function withinPackageOf(barrelFile: string, candidates: readonly string[]): string[] {
+  const packageDir = barrelFile.includes("/") ? barrelFile.slice(0, barrelFile.lastIndexOf("/")) : "";
+  if (packageDir === "") return [];
+  return candidates.filter((relPath) => relPath.startsWith(`${packageDir}/`));
 }
