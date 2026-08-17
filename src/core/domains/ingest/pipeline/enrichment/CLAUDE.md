@@ -58,6 +58,23 @@
   mid-run. An affinity worker crash still loses that collection's accumulated
   run state — only the recovery scan heals THAT — but the pool slot itself is
   respawned, so the next dispatch is not posted to a dead handle.
+- **Pass-1 EXTRACTION is the one thing that leaves the pinned worker.** A
+  provider may declare `workerDescriptor.extractionFanout`; codegraph does
+  (`factory.ts`). `ExtractionFanoutDispatcher` (`executor/extraction-fanout.ts`)
+  then splits a file batch, dispatches `extractFileBatch` with NO routingKey so
+  the pool's `findFreeStatelessThread` picks UNPINNED workers, and sends the
+  records back through `absorbExtractedFiles` on the affinity key. Absorb,
+  finalize, deferred chunk work and release are untouched — the single-writer
+  invariant holds because only absorb touches the store or run state. Three
+  things gate it: the batch is not `crossPass` (there the chunker already
+  parsed), the pool has a spare worker (`poolSize - 1`), and
+  `CODEGRAPH_PASS1_FANOUT` is not `0`. The dispatcher — not the provider — owns
+  the per-run "already extracted" set, reset from `coordinator.beginRun` via
+  `executor.beginRun`. Why: the file phase batches CHUNKS and a recompute reads
+  them back in scroll order, so one file's chunks are scattered across many
+  batches; the provider's own `extracted` guard used to absorb that redundancy
+  AFTER the parse, and once the parse moved off-thread, dedup had to move BEFORE
+  dispatch or the same file is parsed once per batch it appears in.
 - **With the liveness timeout off, a per-thread HEAP CEILING is the only bound
   on a runaway provider** — `ENRICHMENT_WORKER_MEMORY_LIMIT_MB`, default 6144
   (raised from 2048 once the whole-project `ts.Program` strategy put the

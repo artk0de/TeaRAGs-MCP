@@ -28,6 +28,18 @@ const CODEGRAPH_PHASES: readonly CodegraphPhase[] = ["pass1", "pass2", "flush", 
  * What one recorded unit MEANS per phase — the pass phases record one file per
  * call, the rest record one invocation. Named in the summary so a reader does
  * not have to know which is which.
+ *
+ * `pass1` is the exception since extraction fan-out (bd pass1-fanout): a fan-out
+ * absorb records a whole extraction UNIT in one call, `count` files at a time.
+ * The `files` figure stays exact either way — every file is parsed by exactly
+ * one unit — but `ms` changes meaning. With the fan-out ON it is the parallel
+ * WALL of the extraction phase (per language, the max across the units that ran
+ * concurrently), not the sum of every per-file parse; summing would report three
+ * workers' seconds as if one worker had spent them, and a reader comparing
+ * `pass1.ms` against `elapsedMs` would conclude the run was impossible. With the
+ * fan-out off (`CODEGRAPH_PASS1_FANOUT=0`, or a pool with no spare worker) the
+ * old sum-of-per-file-parses semantics apply unchanged, because on one thread
+ * the two definitions coincide.
  */
 const PHASE_UNIT: Record<CodegraphPhase, "files" | "calls"> = {
   pass1: "files",

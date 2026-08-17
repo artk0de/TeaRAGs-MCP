@@ -16,8 +16,11 @@
  *     `unhandledRejection` handler in this codebase).
  *   - {@link SymbolNodeFlushQueue.flushRemainder} final-flushes the remainder,
  *     awaits the whole chain, and rethrows the latched error — aborting the run
- *     cleanly before pass-2 (nodes-before-edges) without the
- *     unhandled-rejection crash window.
+ *     cleanly without the unhandled-rejection crash window. Its two halves,
+ *     {@link SymbolNodeFlushQueue.dispatchRemainder} and
+ *     {@link SymbolNodeFlushQueue.settle}, are separately callable so the
+ *     incremental finalize can dispatch the drain, run pass-2 against it, and
+ *     settle afterwards (bd pass1-fanout).
  *
  * Order-independent: `upsertSymbolsBulk` is last-wins per relPath, so the
  * accept-order eager flush yields the same `cg_symbols` the sorted drain would.
@@ -81,15 +84,41 @@ export class SymbolNodeFlushQueue {
 
   /**
    * Flush the per-collection remainder, await the whole flush chain, and rethrow
-   * any latched eager-flush error — aborting the run before pass-2. Every chain
-   * link resolves (errors latch rather than reject the tail), so this await
-   * never trips an unhandled rejection. Shared by the cross-pass drain and the
-   * incremental finalize so `cg_symbols` is fully durable before pass-2 edge
-   * resolve (nodes-before-edges).
+   * any latched eager-flush error. Every chain link resolves (errors latch
+   * rather than reject the tail), so this await never trips an unhandled
+   * rejection. Used wherever the drain has nothing to overlap with — the
+   * cross-pass `endExtractionRun`, whose remainder sits on a DIFFERENT instance
+   * from the one that runs pass-2, and the input-spill drain.
    */
   async flushRemainder(key: string, collectionName?: string): Promise<void> {
+    this.dispatchRemainder(key, collectionName);
+    await this.settle();
+  }
+
+  /**
+   * Hand the per-collection remainder to the chain WITHOUT waiting for it — the
+   * two halves of {@link flushRemainder}, split so a caller with real work to do
+   * meanwhile can do it (bd pass1-fanout).
+   *
+   * The chain still admits one write at a time, so a caller that dispatches here
+   * and then issues its own writes to the same session never queues more than a
+   * single pending node write ahead of them.
+   */
+  dispatchRemainder(key: string, collectionName?: string): void {
     const remainder = this.pending.get(key)?.splice(0) ?? [];
     if (remainder.length > 0) this.chainFlush(remainder, key, collectionName);
+  }
+
+  /**
+   * Await the whole flush chain and rethrow the latched error. Keyless on
+   * purpose: the chain is single-valued (see the class docblock), so a settle is
+   * a settle regardless of which collection dispatched into it.
+   *
+   * Idempotent and re-callable — the latch is not consumed, so a caller may
+   * settle on the success path and again in a `finally` without the second call
+   * inventing a second failure.
+   */
+  async settle(): Promise<void> {
     await this.chain;
     if (this.latchedError) throw this.latchedError;
   }

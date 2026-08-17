@@ -55,6 +55,9 @@ import {
   defaultEnrichmentWorkerHeapSnapshotDir,
   defaultEnrichmentWorkerMemoryLimitMb,
   defaultEnrichmentWorkerStackSizeMb,
+  defaultExtractionFanoutEnabled,
+  defaultExtractionFanoutShardSize,
+  defaultExtractionFanoutWorkers,
 } from "../../infra/pool-defaults.js";
 import { ThreadTransport } from "../../infra/thread-transport.js";
 import { WorkerDispatchPool } from "../../infra/worker-dispatch-pool.js";
@@ -65,7 +68,23 @@ import type {
   EnrichmentWorkerRequest,
   EnrichmentWorkerResponse,
 } from "../infra/worker-protocol.js";
+import { ExtractionFanoutDispatcher } from "./extraction-fanout.js";
 import { InlineEnrichmentExecutor } from "./inline.js";
+
+/**
+ * Batches smaller than this go to the affinity worker whole. Splitting a handful
+ * of files buys less than the round trips cost, and the incremental reindex
+ * path — where a batch IS a handful — is exactly where that matters.
+ */
+const MIN_PATHS_TO_FAN_OUT = 16;
+
+/**
+ * Batches whose extraction records may be resident at once. The file phase fires
+ * batches without awaiting them, so this is what stands between a whole-repo
+ * recompute and every batch's records being in memory simultaneously. Two, so
+ * one batch extracts while the previous one absorbs.
+ */
+const MAX_IN_FLIGHT_EXTRACTION_BATCHES = 2;
 
 /** Compute the routingKey for a provider based on its dispatch mode. */
 export function routingKeyFor(descriptor: WorkerEnrichmentDescriptor, collectionName?: string): string | undefined {
@@ -103,6 +122,11 @@ function buildCallRequest(
 export class WorkerPoolEnrichmentExecutor implements EnrichmentExecutor {
   private readonly pool: WorkerDispatchPool<EnrichmentWorkerRequest, EnrichmentWorkerResponse>;
   private readonly inlineFallback = new InlineEnrichmentExecutor();
+  /**
+   * Pass-1 extraction fan-out, or `null` when it cannot help: the kill-switch is
+   * set, or the pool has no worker to spare beyond the pinned one.
+   */
+  private readonly extractionFanout: ExtractionFanoutDispatcher | null;
 
   constructor(poolSize: number, workerPath: string) {
     this.pool = new WorkerDispatchPool<EnrichmentWorkerRequest, EnrichmentWorkerResponse>(
@@ -136,6 +160,27 @@ export class WorkerPoolEnrichmentExecutor implements EnrichmentExecutor {
       // (yl9tv), not enrichment, so the enrichment pool opts out explicitly.
       0,
     );
+
+    const fanoutWorkers = defaultExtractionFanoutWorkers(poolSize);
+    this.extractionFanout =
+      defaultExtractionFanoutEnabled() && fanoutWorkers >= 1
+        ? new ExtractionFanoutDispatcher(async (request, routingKey) => this.pool.dispatch(request, routingKey), {
+            workerCount: fanoutWorkers,
+            shardSize: defaultExtractionFanoutShardSize(),
+            maxInFlightBatches: MAX_IN_FLIGHT_EXTRACTION_BATCHES,
+            minPathsToFanOut: MIN_PATHS_TO_FAN_OUT,
+          })
+        : null;
+  }
+
+  /**
+   * Run-start seam (`EnrichmentCoordinator.beginRun`). Only the fan-out keeps
+   * cross-batch state, and only per run: which paths it has already handed to an
+   * extraction worker. Clearing it HERE rather than at release means an aborted
+   * run cannot leave a set behind that would make the next run skip files.
+   */
+  beginRun(collectionName?: string): void {
+    this.extractionFanout?.beginRun(collectionName);
   }
 
   async runFileBatch(
@@ -153,9 +198,33 @@ export class WorkerPoolEnrichmentExecutor implements EnrichmentExecutor {
       options,
     });
     const routingKey = routingKeyFor(provider.workerDescriptor, collectionName);
-    const response = await this.pool.dispatch(request, routingKey);
+    const fanout = this.canFanOutExtraction(provider.workerDescriptor, options) ? this.extractionFanout : null;
+    const response = fanout
+      ? await fanout.runFileBatch(request, routingKey)
+      : await this.pool.dispatch(request, routingKey);
     this.throwIfErr(response);
     return response.fileOverlay ?? new Map();
+  }
+
+  /**
+   * Whether THIS batch may have its parse spread over the idle workers.
+   *
+   * Three conditions, all of them narrow on purpose:
+   *  - the provider declared `extractionFanout`, i.e. its `extractFileBatch` is
+   *    pure and its `absorbExtractedFiles` owns the stateful half;
+   *  - dispatch is `collection-affinity` — a stateless provider already spreads,
+   *    and there would be no pinned worker to absorb on;
+   *  - the run is NOT cross-pass. There the extraction already happened once, in
+   *    the chunker workers, and the provider's batch call is a deliberate no-op;
+   *    fanning out would re-parse the whole corpus for nothing.
+   */
+  private canFanOutExtraction(descriptor: WorkerEnrichmentDescriptor, options?: FileSignalOptions): boolean {
+    return (
+      this.extractionFanout !== null &&
+      descriptor.extractionFanout === true &&
+      descriptor.dispatch === "collection-affinity" &&
+      options?.crossPass !== true
+    );
   }
 
   async runFileSignalsRecovery(
@@ -247,6 +316,10 @@ export class WorkerPoolEnrichmentExecutor implements EnrichmentExecutor {
         if (routingKey !== undefined) this.pool.releaseAffinity(routingKey);
       }),
     );
+    // Drop the fan-out's per-collection bookkeeping with the binding it belongs
+    // to. `beginRun` is what guarantees a fresh run starts clean; this is the
+    // memory half of the same lifecycle.
+    this.extractionFanout?.releaseCollection(collection);
   }
 
   async shutdown(): Promise<void> {

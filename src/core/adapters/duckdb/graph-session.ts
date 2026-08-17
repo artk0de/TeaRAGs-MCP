@@ -514,6 +514,33 @@ export class DuckDbGraphSession {
   }
 
   /**
+   * `DELETE FROM <table> WHERE <scopeColumn> IN (?, ?, …)` in
+   * {@link EDGE_INSERT_CHUNK_ROWS} chunks — one statement per chunk instead of
+   * one per value (bd pass1-fanout).
+   *
+   * The shape it replaces is a `for (const v of values) DELETE … = ?` loop, and
+   * the cost is not the round-trip: none of these tables carries a secondary
+   * index on the filtered column any more (migration 019 dropped them all off
+   * `cg_symbols` and measured the scan as the cheaper half), so every iteration
+   * is its OWN sequential scan of the whole table. Folding the loop into one
+   * predicate turns N scans into one. Measured on a synthetic 4 000-file /
+   * 100 000-row `cg_symbols`: 3 106ms of per-file DELETEs against 1 981ms for
+   * the set-based form, and the gap widens with table size.
+   *
+   * Chunking is safe for the same reason it is safe in
+   * {@link deleteByKeyBatched}: the predicate is an explicit list of values, so
+   * splitting it cannot make one chunk remove a row a later chunk would keep.
+   * A scope DELETE written as a RANGE or a LIKE could not be split this way.
+   */
+  async deleteByScopeValuesBatched(table: string, scopeColumn: string, scopeValues: readonly unknown[]): Promise<void> {
+    if (scopeValues.length === 0) return;
+    for (let i = 0; i < scopeValues.length; i += EDGE_INSERT_CHUNK_ROWS) {
+      const chunk = scopeValues.slice(i, i + EDGE_INSERT_CHUNK_ROWS);
+      await this.run(`DELETE FROM ${table} WHERE ${scopeColumn} IN (${chunk.map(() => "?").join(", ")})`, chunk);
+    }
+  }
+
+  /**
    * `DELETE FROM <table> WHERE (k1, k2, ...) IN (VALUES (?, ?), ...)` in
    * {@link EDGE_INSERT_CHUNK_ROWS} chunks. Chunking is safe because each chunk
    * names the exact rows it removes — unlike a scope DELETE, whose predicate

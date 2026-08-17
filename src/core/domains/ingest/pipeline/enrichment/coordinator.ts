@@ -703,6 +703,12 @@ export class EnrichmentCoordinator {
       for (const provider of this.providers) provider.beginExtractionRun?.(collectionName);
     }
 
+    // The executor's own run-start seam — the dispatch layer's mirror of the
+    // provider reset above. The worker-pool executor drops the pass-1 fan-out's
+    // per-run set of already-extracted paths here, so a previous run that ended
+    // without releasing cannot make this one skip files.
+    this.executor.beginRun?.(collectionName);
+
     runState.filePhase.init(
       runState.contexts,
       collectionName ?? "",

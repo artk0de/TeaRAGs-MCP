@@ -312,6 +312,19 @@ export interface WorkerEnrichmentDescriptor {
    */
   dispatch: "stateless" | "collection-affinity";
   /**
+   * Opt in to pass-1 EXTRACTION fan-out: the executor may split a file batch
+   * across the workers this provider's affinity binding leaves idle, calling
+   * `extractFileBatch` on each and handing the records to the pinned worker's
+   * `absorbExtractedFiles`. Only meaningful together with
+   * `dispatch: "collection-affinity"` — a stateless provider already spreads.
+   *
+   * Declaring it asserts that `extractFileBatch` is PURE per file: no store
+   * write, no run-global accumulation, nothing the pinned worker owns. The
+   * affinity contract is otherwise untouched — absorb, finalize, deferred
+   * chunk work and release all stay on the one pinned thread.
+   */
+  extractionFanout?: boolean;
+  /**
    * Per-provider structured-clone-safe payload. Each provider declares its
    * own typed config inside its own module; ingest treats it as opaque
    * data. For git: `GitWorkerConfig`; for codegraph: `CodegraphWorkerConfig`.
@@ -319,6 +332,33 @@ export interface WorkerEnrichmentDescriptor {
    * that interprets this payload.
    */
   serializableConfig: unknown;
+}
+
+// --- Pass-1 extraction fan-out ---
+
+/**
+ * One language's share of an extraction unit's pass-1 cost.
+ *
+ * `ms` is that unit's OWN wall clock — an extraction worker measures only what
+ * it parsed itself, so several units' figures are concurrent, not additive.
+ * The executor merges them accordingly (see `FileExtractionFanoutBatch`).
+ */
+export interface FileExtractionPass1Telemetry {
+  /** Wall clock this unit spent parsing files of this language. */
+  ms: number;
+  /** Files of this language the unit produced an extraction for. */
+  files: number;
+}
+
+/**
+ * What one `extractFileBatch` call hands back: the serializable extraction
+ * records plus the pass-1 attribution the pinned worker folds into its own
+ * phase timings at absorb time (the extraction worker has no run of its own to
+ * report against).
+ */
+export interface FileExtractionFanoutBatch {
+  extractions: FileExtraction[];
+  pass1ByLanguage: Record<string, FileExtractionPass1Telemetry>;
 }
 
 // --- Enrichment scope ---
@@ -524,6 +564,32 @@ export interface EnrichmentProvider {
    * this.
    */
   endExtractionRun?: (collectionName?: string) => Promise<void>;
+  /**
+   * Pass-1 fan-out, extraction half. Parse + walk `paths` and return the
+   * records — nothing else. MUST be pure with respect to everything the
+   * collection-pinned worker owns: no store write, no symbol-table upsert, no
+   * run-global merge, no spill. That purity is what lets the executor run this
+   * on ANY free worker while the pinned one keeps its accumulated run state.
+   *
+   * Declared together with `workerDescriptor.extractionFanout`; a provider that
+   * omits either keeps the single-threaded `streamFileBatch` path.
+   */
+  extractFileBatch?: (root: string, paths: string[], options?: FileSignalOptions) => Promise<FileExtractionFanoutBatch>;
+  /**
+   * Pass-1 fan-out, absorb half — the mirror of `extractFileBatch`, and the
+   * ONLY half that runs on the pinned worker. Takes records produced elsewhere
+   * and performs exactly what `streamFileBatch` would have done after its own
+   * parse: symbol table, durable node defs, run-global merge, spill append.
+   *
+   * `pass1ByLanguage` is the merged attribution of the extraction units that
+   * produced these records, folded into the provider's phase timings here
+   * because the pinned worker is the one that reports the run.
+   */
+  absorbExtractedFiles?: (
+    root: string,
+    extractions: FileExtraction[],
+    options?: FileSignalOptions & { pass1ByLanguage?: Record<string, FileExtractionPass1Telemetry> },
+  ) => Promise<void>;
 }
 
 // Re-export for convenience

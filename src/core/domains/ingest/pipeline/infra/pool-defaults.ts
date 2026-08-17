@@ -102,6 +102,61 @@ export function defaultEnrichmentWorkerStackSizeMb(): number {
 }
 
 /**
+ * Whether a collection-affinity provider may spread its pass-1 extraction over
+ * the workers its affinity binding leaves idle. ON by default.
+ *
+ * `CODEGRAPH_PASS1_FANOUT=0` (or `false`) is the kill-switch: every batch then
+ * goes to the pinned worker exactly as it did before, which is the fallback if
+ * fan-out is ever suspected of a correctness problem in the field. Named for
+ * codegraph because it is the only provider that declares
+ * `workerDescriptor.extractionFanout` — the mechanism itself is
+ * provider-agnostic.
+ */
+export function defaultExtractionFanoutEnabled(): boolean {
+  const raw = process.env.CODEGRAPH_PASS1_FANOUT;
+  if (raw === undefined || raw.trim() === "") return true;
+  const value = raw.trim().toLowerCase();
+  return value !== "0" && value !== "false" && value !== "off";
+}
+
+/**
+ * Workers one batch's extraction may be spread over.
+ *
+ * `poolSize - 1` by default: the affinity worker is reserved for the absorb
+ * chain (and, on a real run, for the pass-2 resolve that follows), so handing
+ * extraction the whole pool would just queue behind it. Override with
+ * `CODEGRAPH_PASS1_FANOUT_WORKERS`; the override is CLAMPED to `poolSize - 1`
+ * rather than trusted, because a value above it cannot buy parallelism that
+ * does not exist and would only deepen the pool queue.
+ */
+export function defaultExtractionFanoutWorkers(poolSize: number): number {
+  const ceiling = Math.max(0, poolSize - 1);
+  const raw = process.env.CODEGRAPH_PASS1_FANOUT_WORKERS;
+  if (raw !== undefined && raw.trim() !== "") {
+    const parsed = Number.parseInt(raw, 10);
+    if (Number.isFinite(parsed) && parsed >= 0) return Math.min(parsed, ceiling);
+  }
+  return ceiling;
+}
+
+/**
+ * Files per extract message. Bounds the structured-clone frame each shard
+ * carries back: a shard is `min(shardSize, ceil(batch / workers))` files, so
+ * this only binds on batches large enough that per-worker shards would exceed
+ * it. 128 keeps a frame in the low hundreds of KB for real source files while
+ * still letting a normal file-phase batch go out in one message per worker.
+ * Override with `CODEGRAPH_PASS1_FANOUT_SHARD`.
+ */
+export function defaultExtractionFanoutShardSize(): number {
+  const raw = process.env.CODEGRAPH_PASS1_FANOUT_SHARD;
+  if (raw !== undefined && raw.trim() !== "") {
+    const parsed = Number.parseInt(raw, 10);
+    if (Number.isFinite(parsed) && parsed > 0) return parsed;
+  }
+  return 128;
+}
+
+/**
  * Diagnostic-only: directory to write a `.cpuprofile` for each enrichment
  * worker thread, or `undefined` (the default) to leave profiling off. Set via
  * `ENRICHMENT_WORKER_CPU_PROFILE_DIR` — an empty/unset value disables it, same

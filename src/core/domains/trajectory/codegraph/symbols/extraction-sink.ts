@@ -17,6 +17,15 @@
  *  3. `finish()` drives the pass-2 stages, which read the spill back
  *     line-by-line, resolve calls, issue bulk upserts, and CHECKPOINT every N
  *     files. This keeps the DuckDB WAL bounded throughout the pass.
+ *
+ * `finish()` DISPATCHES the node-flush remainder and then runs pass-2 against
+ * it, settling the chain before the metric recompute rather than before the
+ * resolve (bd pass1-fanout). Once the extraction fan-out halved pass-1 on
+ * taxdome, the drain stopped being hidden behind the parse and became the
+ * serial tail: 24.1s of back-to-back `CODEGRAPH_NODES_FLUSH` between the last
+ * extraction and the first `PASS2_PROGRESS`, which is why the Ruby codegraph
+ * window regressed 51.9s → 59.9s on a pass-1 that itself went 18.8s → 9.1s.
+ * `CODEGRAPH_NODE_DRAIN_OVERLAP=0` restores the blocking barrier.
  */
 
 import { once } from "node:events";
@@ -83,6 +92,9 @@ export function createCodegraphExtractionSink(
   // crashed run are purged at pool init (DuckDbGraphClient.init when
   // `tempDirectory` is set).
   const spillPath = deps.spillPathFor(collectionName, runId);
+  // Read once per sink — i.e. once per run — so a test can stub it and a run
+  // cannot change its mind halfway through `finish`.
+  const overlapNodeDrain = process.env.CODEGRAPH_NODE_DRAIN_OVERLAP !== "0";
   let spillStream: WriteStream | null = null;
   let spillWriteCount = 0;
   let finished = false;
@@ -166,35 +178,52 @@ export function createCodegraphExtractionSink(
     },
     finish: async () => {
       finished = true;
-      // Nodes-before-edges: flush any durable node defs the buffered `write`
-      // path accumulated BEFORE pass-2 resolves + upserts edges that reference
-      // them. Owning it here makes the sink self-contained — correct for every
-      // caller (incremental finalize, standalone sink, cross-pass drain where
-      // the buffer is already empty so this no-ops).
-      await deps.nodeFlush.flushRemainder(deps.collectionKey(collectionName), collectionName);
-      const streamToClose = spillStream;
-      if (streamToClose) {
-        // Close the writable end before the reader opens it. `end` takes a
-        // callback and finishes the file with a final flush.
-        await new Promise<void>((resolve, reject) => {
-          streamToClose.end((err?: Error | null) => {
-            if (err) reject(new CodegraphSpillIoError(spillPath, "write", err));
-            else resolve();
-          });
-        });
-      }
-      // Pass-1→pass-2 barrier (bd tea-rags-mcp-o17v2 + cai0/2oky5 + DEFECT 2):
-      // pass-1 is complete, so the run-global maps are frozen. Build the
-      // hierarchy view + reverse include-by index ONCE and discover the
-      // self-dispatch templates; pass-2 threads all three into every resolve
-      // `CallContext`. The symbol table is resolved lazily — only the
-      // self-dispatch branch needs it, so a run without candidates pays no
-      // extra pool acquire.
-      await deps.runState.seal(async () => deps.resolveSymbolTable(collectionName));
+      const key = deps.collectionKey(collectionName);
+      // Hand the buffered node defs to the flush chain. Owning it here makes the
+      // sink self-contained — correct for every caller (incremental finalize,
+      // standalone sink, cross-pass drain where the buffer is already empty so
+      // this no-ops).
+      //
+      // Whether pass-2 then WAITS for that chain is the one thing
+      // `CODEGRAPH_NODE_DRAIN_OVERLAP` decides. It does not have to: pass-2
+      // resolves against the in-memory symbol table and writes only
+      // `cg_symbols_files` and the edge / inheritance / fan-out tables — it
+      // never reads or writes `cg_symbols`, and the schema declares no foreign
+      // keys (migration 001 omits them deliberately and says why). So
+      // "nodes-before-edges" is a statement about the run's end state, which the
+      // settle below still guarantees, not a precondition of the resolve.
+      deps.nodeFlush.dispatchRemainder(key, collectionName);
       try {
+        // The kill-switch shape: settle the whole chain here and pass-2 starts
+        // against a fully durable `cg_symbols`, exactly as it did before.
+        if (!overlapNodeDrain) await deps.nodeFlush.settle();
+        const streamToClose = spillStream;
+        if (streamToClose) {
+          // Close the writable end before the reader opens it. `end` takes a
+          // callback and finishes the file with a final flush.
+          await new Promise<void>((resolve, reject) => {
+            streamToClose.end((err?: Error | null) => {
+              if (err) reject(new CodegraphSpillIoError(spillPath, "write", err));
+              else resolve();
+            });
+          });
+        }
+        // Pass-1→pass-2 barrier (bd tea-rags-mcp-o17v2 + cai0/2oky5 + DEFECT 2):
+        // pass-1 is complete, so the run-global maps are frozen. Build the
+        // hierarchy view + reverse include-by index ONCE and discover the
+        // self-dispatch templates; pass-2 threads all three into every resolve
+        // `CallContext`. The symbol table is resolved lazily — only the
+        // self-dispatch branch needs it, so a run without candidates pays no
+        // extra pool acquire.
+        await deps.runState.seal(async () => deps.resolveSymbolTable(collectionName));
         if (spillWriteCount > 0) {
           await deps.resolveAndUpsert(spillPath, collectionName);
         }
+        // The real nodes-before-metrics point. A latched flush error surfaces
+        // here instead of before pass-2: the run still aborts on it, one stage
+        // later, having spent that stage on work the failure does not invalidate
+        // (the edge tables are reconciled per source file on the next pass).
+        await deps.nodeFlush.settle();
         // Metric recompute is best-effort by contract: data integrity is
         // preserved by the resolve+upsert stage; only cycle / pagerank freshness
         // is at stake. A failure there degrades find_cycles and rerank rather
@@ -207,6 +236,14 @@ export function createCodegraphExtractionSink(
           if (!(err instanceof CodegraphMetricsError)) throw err;
         }
       } finally {
+        // A dispatched node write must never outlive `finish`. On the success
+        // path this already settled; on a throw path it lets the chain land
+        // before the error propagates, so the run is not torn down with a
+        // `cg_symbols` transaction still open. Its own latched error is
+        // swallowed HERE on purpose — whatever brought us to the `finally` is
+        // the root cause and must be the error that surfaces. Mirrors
+        // `GraphBuildFinalizer#resolveAndUpsert`'s closing `settleFlush`.
+        await deps.nodeFlush.settle().catch(() => undefined);
         await cleanupSpill();
       }
     },

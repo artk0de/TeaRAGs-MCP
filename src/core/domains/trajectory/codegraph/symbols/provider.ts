@@ -69,6 +69,8 @@ import type {
   DeletedPathOptions,
   EnrichmentProvider,
   EnrichmentScope,
+  FileExtractionFanoutBatch,
+  FileExtractionPass1Telemetry,
   FileSignalOptions,
   FileSignalOverlay,
   FilterDescriptor,
@@ -507,6 +509,13 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
    * (collection, run) pair, so no reset seam is needed.
    */
   private readonly phaseTimings = new CodegraphPhaseTimings();
+
+  /**
+   * Next cumulative pass-1 file count that earns a progress line. Held as state
+   * rather than derived with a modulo because a fan-out absorb folds a whole
+   * unit in at once and can jump past an exact multiple (see `recordPass1`).
+   */
+  private nextPass1ProgressAt = PASS1_PROGRESS_EVERY;
 
   /**
    * Worker-pool descriptor — surfaced when the composition root wires this
@@ -1021,25 +1030,7 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
     options?: FileSignalOptions,
   ): Promise<Map<string, FileSignalOverlay>> {
     const key = this.collectionKey(options?.collectionName);
-    // Bind the indexed project's root before the crossPass early-return, for the
-    // same reason the Gemfile is read here: finalizeSignals runs pass-2 off this
-    // state, and it receives no usable root of its own.
-    this.runState.bindProjectRoot(root);
-    // Gem-gated DSL grammar (adx5p.1): read the run's Gemfile before the crossPass
-    // early-return so finalizeSignals resolves pass-2 off this state (one/run).
-    this.runState.loadGemfile(root);
-    // Read the run's persisted-schema snapshot(s) for the barrier schema-column
-    // pre-pass (bd tea-rags-mcp-8l5fo). One read per run (guarded), same shape.
-    this.runState.loadSchemaSnapshots(root);
-    // Repair (runRepairPass → executor.runFileBatch, tea-rags-mcp-b76fe127)
-    // passes the run's per-file content hashes the SAME way buildFileSignals
-    // always did — stamped onto each row at write time (graph-finalizer.ts's
-    // `contentHash: this.runState.contentHashes?.get(...)`) so the next run's
-    // drift check reads the CURRENT hash instead of a stale/missing one and
-    // repairs the same file forever (bd tea-rags-mcp-6goqa/ymjxj). Mirrors
-    // buildFileSignals's own assignment — this seam had none until repair
-    // started routing through it.
-    if (options?.contentHashes) this.runState.contentHashes = options.contentHashes;
+    this.bindRunState(root, options);
     // yl9tv Task 5b — cross-pass: the full-index chunk pass has fed this run's
     // extractions into the input spill (drained in finalizeSignals), so the
     // worker/main re-parse here is redundant AND would race the chunker pool's
@@ -1079,6 +1070,125 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
     this.nodeFlush.flushPending(key, options?.collectionName);
     return new Map(); // signals deferred to finalizeSignals
   }
+
+  /**
+   * Bind the per-RUN state every pass-1 entry point needs before it writes
+   * anything. Shared by `streamFileBatch` and the fan-out's
+   * `absorbExtractedFiles`, which are two doors into the same run:
+   *
+   *  - the indexed project's root, for resolvers that bind project-rooted state
+   *    lazily (TypeScript's tsconfig / file probe / ts.Program) — `finalizeSignals`
+   *    runs pass-2 off this state and receives no usable root of its own;
+   *  - the run's Gemfile (adx5p.1), so gem-gated DSL grammar is decided against
+   *    THIS project's gems. Read once per run (guarded);
+   *  - the persisted-schema snapshot(s) for the barrier schema-column pre-pass
+   *    (bd tea-rags-mcp-8l5fo). One read per run (guarded), same shape;
+   *  - the run's per-file content hashes, stamped onto each row at write time
+   *    (graph-finalizer's `contentHash: this.runState.contentHashes?.get(...)`)
+   *    so the next run's drift check reads the CURRENT hash instead of a
+   *    stale/missing one and repairs the same file forever (6goqa/ymjxj). The
+   *    repair pass (runRepairPass → executor.runFileBatch) reaches this seam too.
+   *
+   * Called before the cross-pass early return on purpose: a cross-pass run still
+   * finalizes off this state even though it parses nothing here.
+   */
+  private bindRunState(root: string, options?: FileSignalOptions): void {
+    this.runState.bindProjectRoot(root);
+    this.runState.loadGemfile(root);
+    this.runState.loadSchemaSnapshots(root);
+    if (options?.contentHashes) this.runState.contentHashes = options.contentHashes;
+  }
+
+  /**
+   * Pass-1 fan-out, extraction half — parse + walk only, and deliberately
+   * stateless with respect to the run (bd pass1-fanout).
+   *
+   * This is the ONE stage of a codegraph run that does not need the
+   * collection-pinned worker: a `FileExtraction` is a pure function of the file
+   * it was parsed from, and it already crosses process boundaries in the normal
+   * streaming path (the chunker workers produce exactly this shape). So the
+   * executor dispatches this method with NO routing key and it lands on
+   * whichever worker the affinity binding left idle — three of four on the
+   * measured taxdome recompute, which sat at 99.96% idle while one worker parsed
+   * 8,811 Ruby files (18.8s) and 10,476 TypeScript files (29.4s) serially.
+   *
+   * What it must NOT do: touch the graph store, upsert symbols, merge run-global
+   * state or append to the spill. All of that is `absorbExtractedFiles`, on the
+   * pinned worker. The only run state bound here is the project root and the
+   * Gemfile, because the WALK itself reads gem-gated grammar off it; the schema
+   * snapshots are a pass-2 input and are left to the pinned side.
+   *
+   * Filtering (supported extension + codegraph exclusion) happens here rather
+   * than in the executor: the rule belongs to this provider, and the executor is
+   * provider-agnostic by design.
+   *
+   * A file that fails to parse is SKIPPED, exactly as `streamFileBatchInner`
+   * skips it — one bad file must not fail the shard and take the batch with it.
+   */
+  extractFileBatch = async (root: string, paths: string[]): Promise<FileExtractionFanoutBatch> => {
+    this.runState.bindProjectRoot(root);
+    this.runState.loadGemfile(root);
+    const extractions: FileExtraction[] = [];
+    const pass1ByLanguage: Record<string, FileExtractionPass1Telemetry> = {};
+    for (const relPath of paths) {
+      if (!SUPPORTED_EXTS.has(extensionOf(relPath)) || this.codegraphExclusionFilter.ignores(relPath)) continue;
+      const startedAtMs = Date.now();
+      try {
+        const extraction = this.parseFileExtraction(root, relPath);
+        const language = extraction.language || "unknown";
+        const total = (pass1ByLanguage[language] ??= { ms: 0, files: 0 });
+        total.ms += Date.now() - startedAtMs;
+        total.files += 1;
+        extractions.push(extraction);
+      } catch (err) {
+        if (process.env.DEBUG === "true") {
+          process.stderr.write(`[codegraph] skip ${relPath}: ${(err as Error).message}\n`);
+        }
+      }
+    }
+    return { extractions, pass1ByLanguage };
+  };
+
+  /**
+   * Pass-1 fan-out, absorb half — everything `streamFileBatchInner` does around
+   * its parse, for records parsed somewhere else (bd pass1-fanout).
+   *
+   * Runs on the collection-pinned worker and nowhere else, which is what keeps
+   * the single-writer invariant intact: the symbol table, the durable node-def
+   * buffer, the run-global merges and the output spill are all still touched by
+   * exactly one thread, in one order.
+   *
+   * Order-independence: the per-file writes are keyed by `relPath` (symbol table
+   * upsert, `upsertSymbolsBulk` last-wins, the line map), so the SET this
+   * produces does not depend on arrival order. The run-global aggregates the
+   * sink merges are last-write-wins across files, so the executor still feeds
+   * batches in admission order to keep a run byte-reproducible — the same reason
+   * the cross-pass drain sorts its spill by `relPath`.
+   */
+  absorbExtractedFiles = async (
+    root: string,
+    extractions: FileExtraction[],
+    options?: FileSignalOptions & { pass1ByLanguage?: Record<string, FileExtractionPass1Telemetry> },
+  ): Promise<void> => {
+    const key = this.collectionKey(options?.collectionName);
+    this.bindRunState(root, options);
+    const { sink, extracted } = this.ensureRunSink(key, options?.collectionName);
+    for (const extraction of extractions) {
+      // Same guard as the serial path: a file whose chunks span several batches
+      // is extracted once per run, or its calls are tallied per spill and
+      // `resolveSuccessRate` jitters with batch composition (svhqp).
+      if (extracted.has(extraction.relPath)) continue;
+      await sink.write(extraction);
+      extracted.add(extraction.relPath);
+    }
+    // Fold the extraction units' attribution into this run's phase timings — the
+    // pinned worker is the one that reports the run, and the units that did the
+    // parsing have no run of their own to report against.
+    for (const [language, total] of Object.entries(options?.pass1ByLanguage ?? {})) {
+      this.recordPass1(language, total.ms, total.files);
+    }
+    this.nodeFlush.flushPending(key, options?.collectionName);
+  };
 
   /**
    * Resolve (or lazily start) the run sink + extracted-path set for a collection
@@ -1500,16 +1610,23 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
   }
 
   /**
-   * Fold one file's extraction cost into the run's pass-1 total and, on the
-   * cadence, report where the run stands. The line is the ONLY pass-1 telemetry
-   * a killed run leaves behind, so it carries the cumulative per-language split
-   * and not just a counter. JSON rather than an inspected object: the split
-   * nests past `console.error`'s two-level default.
+   * Fold extraction cost into the run's pass-1 total and, on the cadence, report
+   * where the run stands. The line is the ONLY pass-1 telemetry a killed run
+   * leaves behind, so it carries the cumulative per-language split and not just
+   * a counter. JSON rather than an inspected object: the split nests past
+   * `console.error`'s two-level default.
+   *
+   * `files` is 1 on the serial path (one call per parsed file) and the unit's
+   * whole count when the fan-out folds an extraction unit's attribution in at
+   * absorb time. The cadence is therefore a THRESHOLD CROSSING, not an exact
+   * multiple: a single fan-out absorb can carry hundreds of files past the mark
+   * at once, and `count % 500 === 0` would silently never fire again.
    */
-  private recordPass1(language: string, durationMs: number): void {
-    this.phaseTimings.record("pass1", durationMs, { language: language || "unknown" });
+  private recordPass1(language: string, durationMs: number, files = 1): void {
+    this.phaseTimings.record("pass1", durationMs, { language: language || "unknown", count: files });
     const extracted = this.phaseTimings.count("pass1");
-    if (extracted % PASS1_PROGRESS_EVERY !== 0 || !isDebug()) return;
+    if (extracted < this.nextPass1ProgressAt || !isDebug()) return;
+    this.nextPass1ProgressAt = extracted - (extracted % PASS1_PROGRESS_EVERY) + PASS1_PROGRESS_EVERY;
     const elapsedMs = this.phaseTimings.elapsedMs();
     console.error(
       "[GitEnrich] PHASE: CODEGRAPH_PASS1_PROGRESS",

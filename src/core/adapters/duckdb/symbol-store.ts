@@ -52,8 +52,9 @@ export class DuckDbSymbolStore {
   }
 
   /**
-   * Batched form of {@link upsertSymbols}: one transaction for many files
-   * instead of one BEGIN/COMMIT per file. Equivalent to calling
+   * Batched form of {@link upsertSymbols}: one transaction — and one set-based
+   * DELETE — for many files instead of one BEGIN/COMMIT and one DELETE per
+   * file. Equivalent to calling
    * `upsertSymbols(relPath, definitions)` once per entry, in order — so a
    * later entry for the same relPath fully REPLACES an earlier one (last-wins
    * per relPath, matching sequential DELETE+INSERT). Empty `entries` is a
@@ -85,9 +86,15 @@ export class DuckDbSymbolStore {
       lastByRelPath.set(relPath, definitions);
     }
     return this.session.transaction(async () => {
-      for (const relPath of lastByRelPath.keys()) {
-        await this.session.run("DELETE FROM cg_symbols WHERE rel_path = ?", [relPath]);
-      }
+      // ONE set-based DELETE for the whole batch rather than one per file. The
+      // row set removed is identical — the predicate is the same list of
+      // rel_paths, and every DELETE already ran before every INSERT — but
+      // `cg_symbols` has carried no index on `rel_path` since migration 019, so
+      // the per-file loop paid a full sequential scan per file. On a taxdome
+      // Ruby recompute that is 8 811 scans of a table growing past 400k rows,
+      // and it is the larger half of the 24.1s node drain the pass-1 fan-out
+      // left exposed (bd pass1-fanout).
+      await this.session.deleteByScopeValuesBatched("cg_symbols", "rel_path", [...lastByRelPath.keys()]);
       const rows: unknown[][] = [];
       for (const definitions of lastByRelPath.values()) {
         for (const def of definitions) rows.push(toCgSymbolsRow(def));

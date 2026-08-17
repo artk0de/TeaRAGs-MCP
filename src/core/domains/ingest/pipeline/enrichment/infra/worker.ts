@@ -167,8 +167,30 @@ async function invokeMethod(
   provider: EnrichmentProvider,
   request: EnrichmentCallRequest,
 ): Promise<EnrichmentWorkerResponse> {
-  const { method, root, paths, chunkMap, options } = request;
+  const { method, root, paths, chunkMap, extractions, pass1ByLanguage, options } = request;
   switch (method) {
+    case "extractFileBatch": {
+      // Pass-1 fan-out, extraction half. Dispatched WITHOUT a routing key, so
+      // this can be any worker — including one that has never seen this
+      // collection. That is safe precisely because the method is pure: it
+      // parses and returns records, touching no store and no run state.
+      if (!provider.extractFileBatch) {
+        return { extractionBatch: { extractions: [], pass1ByLanguage: {} } };
+      }
+      const fileOptions = options as FileSignalOptions | undefined;
+      return { extractionBatch: await provider.extractFileBatch(root, paths ?? [], fileOptions) };
+    }
+    case "absorbExtractedFiles": {
+      // …and the absorb half, which the executor pins to the collection's
+      // worker. A provider that declared the fan-out without this method would
+      // silently drop the run's extractions, so say so instead.
+      if (!provider.absorbExtractedFiles) {
+        throw new Error("enrichment worker: provider declared extractionFanout but has no absorbExtractedFiles");
+      }
+      const fileOptions = options as FileSignalOptions | undefined;
+      await provider.absorbExtractedFiles(root, extractions ?? [], { ...fileOptions, pass1ByLanguage });
+      return { fileOverlay: new Map() };
+    }
     case "runFileBatch": {
       const fileOptions = options as FileSignalOptions | undefined;
       const pathList = paths ?? [];

@@ -252,10 +252,10 @@ export interface GraphDbClient {
   upsertSymbols: (relPath: RelPath, definitions: SymbolDefinition[]) => Promise<void>;
 
   /** Batched form of {@link upsertSymbols}: one transaction for many files
-   *  (DELETE-per-file + one INSERT OR IGNORE over all rows). Same per-file
-   *  semantics; empty entries is a no-op. If `entries` carries more than one
-   *  entry for the same `relPath`, the last one wins — == calling
-   *  `upsertSymbols` sequentially for that path. */
+   *  (one set-based DELETE over every relPath the batch names + one INSERT OR
+   *  IGNORE over all rows). Same per-file semantics; empty entries is a no-op.
+   *  If `entries` carries more than one entry for the same `relPath`, the last
+   *  one wins — == calling `upsertSymbols` sequentially for that path. */
   upsertSymbolsBulk: (entries: BulkSymbolUpsertEntry[]) => Promise<void>;
 
   /** Drop all persisted symbols for a file. Called by `handleDeletedPaths`. */
