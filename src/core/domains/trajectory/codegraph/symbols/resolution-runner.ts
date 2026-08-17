@@ -257,11 +257,12 @@ export class CallEdgeResolutionRunner {
    * module, e.g. `import Button from './Button'` alongside
    * `import type { ButtonProps } from './Button'`) yields two candidates for
    * one (source, target) pair. `cg_symbols_edges_file` has no room for two —
-   * its PRIMARY KEY is (source, target) — and DuckDB does not reject the
-   * second row gracefully: it aborts the whole `upsertFilesBulk` transaction
-   * with a native FatalException, taking the daemon process down mid-request
-   * (bd tea-rags-mcp-alew8, root-caused live against taxdome). Dedup HERE,
-   * once, after either branch returns, rather than in each resolver: every
+   * its PRIMARY KEY is (source, target) — and while the writer now collapses
+   * such a pair itself (bd tea-rags-mcp-8l8d3; before that it aborted the whole
+   * `upsertFilesBulk` transaction with a native FatalException and took the
+   * daemon down mid-request, bd tea-rags-mcp-alew8), WHICH of the two survives
+   * is a resolution question, not a storage one. Dedup HERE, once, after either
+   * branch returns, rather than in each resolver: every
    * language's file graph funnels through this one return, and the schema's
    * uniqueness is a property of the EDGE, not of any one resolver's import
    * loop. First occurrence wins — the persisted row has room for one

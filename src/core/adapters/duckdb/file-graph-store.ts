@@ -18,256 +18,190 @@ import type { BulkFileUpsertEntry, GraphEdges, GraphFileNode, RelPath } from "..
 import type { DuckDbGraphSession } from "./graph-session.js";
 
 /**
- * Files per interleaved DELETE-then-INSERT group in {@link DuckDbFileGraphStore#writeFileRowsBulk}.
+ * Files per write group in {@link DuckDbFileGraphStore#writeFileRowsBulk}.
  *
- * bd tea-rags-mcp-wgt19 follow-up, live-crash finding (taxdome
- * CODEGRAPH_FORCE_RESOLVE, 2026-08-13): batching the DELETE across the WHOLE
- * incoming set (issue every table's DELETE first, THEN every table's INSERT)
- * crashed the daemon with a native DuckDB FatalException — "Failed to append
- * to PRIMARY_cg_symbols_edges_file_2: ... duplicate key" — from inside
- * `RemoveFromIndexes` during commit. This matches a documented DuckDB engine
- * bug class (over-eager constraint checking on delete+insert of overlapping
- * keys within one transaction — duckdb/duckdb#16520, duckdb/duckdb#15092):
- * a large volume of pending DELETEs sitting in the transaction's undo buffer
- * with no matching re-INSERT yet can spuriously trip the index's duplicate
- * check when the re-INSERT finally lands. The per-file loop this module used
- * for years never hit it because each file's DELETE was immediately followed
- * by that SAME file's INSERT — the pending-delete window was always tiny.
- * Grouping bounds that window back down instead of batching the whole set,
- * trading some of the DELETE-count reduction for staying inside the shape
- * DuckDB's index maintenance actually tolerates.
+ * Two live crashes shaped this number, and the second is why the group no
+ * longer issues a blind DELETE at all.
+ *
+ * bd tea-rags-mcp-wgt19 follow-up (taxdome CODEGRAPH_FORCE_RESOLVE,
+ * 2026-08-13): batching the DELETE across the WHOLE incoming set — every
+ * table's DELETE first, then every table's INSERT — crashed the daemon with a
+ * native DuckDB FatalException, "Failed to append to
+ * PRIMARY_cg_symbols_edges_file_2: ... duplicate key", from inside index
+ * maintenance during commit. Grouping bounded the pending-delete window and
+ * the crash rate fell, but it did not go away: the same abort took the daemon
+ * down nine more times on 2026-08-17 (bd tea-rags-mcp-8l8d3).
+ *
+ * It could not go away, because bounding the window was treating the symptom.
+ * The shape DuckDB cannot survive is a transaction that DELETEs a key and
+ * re-INSERTs it — and a per-file "replace the slice" write produced that
+ * overlap for every unchanged edge, which is most of them. The group now
+ * writes through {@link DuckDbGraphSession#applyScopedRowDiff}, which removes
+ * the overlap outright; see that method for the engine mechanism.
+ *
+ * The size therefore stopped being a crash-avoidance knob and is now purely a
+ * batching one: how many files' scope reads and edge rows one round of
+ * statements covers.
  */
-const BULK_INTERLEAVE_GROUP_FILES = 32;
+const BULK_WRITE_GROUP_FILES = 32;
+
+/** Columns of each per-source-file table, split into PRIMARY KEY and the rest. */
+const FILE_EDGE_KEYS = ["source_rel_path", "target_rel_path"] as const;
+const FILE_EDGE_VALUES = ["import_text"] as const;
+const METHOD_EDGE_KEYS = ["source_symbol_id", "source_rel_path", "call_expression", "target_symbol_id"] as const;
+const METHOD_EDGE_VALUES = ["target_rel_path", "edge_kind", "confidence"] as const;
+const INHERITANCE_KEYS = ["source_fq_name", "source_rel_path", "ancestor_fq_name", "kind"] as const;
+const INHERITANCE_VALUES = ["source_symbol_id", "ancestor_symbol_id", "ordinal"] as const;
+const FANOUT_KEYS = ["source_symbol_id", "call_expression"] as const;
+const FANOUT_VALUES = ["source_rel_path", "member", "candidate_count"] as const;
 
 export class DuckDbFileGraphStore {
   constructor(private readonly session: DuckDbGraphSession) {}
 
   /**
-   * The per-file node + edge + inheritance + ambiguous-fanout write body — the
-   * DELETE+INSERT lifecycle scoped by `source_rel_path`, WITHOUT the surrounding
-   * transaction. Shared by `upsertFile` (one BEGIN/COMMIT per file) and
-   * `upsertFilesBulk` (one BEGIN/COMMIT per M files) so both persist identical rows.
+   * The per-file node + edge + inheritance + ambiguous-fanout write body,
+   * WITHOUT the surrounding transaction. Shared by `upsertFile` (one
+   * BEGIN/COMMIT per file) and `upsertFilesBulk` (one BEGIN/COMMIT per M
+   * files) so both persist identical rows — the single-file form is literally
+   * the group form with a group of one, which is what makes that equality a
+   * property of the code rather than of two implementations kept in step.
    */
   async writeFileRows(node: GraphFileNode, edges: GraphEdges): Promise<void> {
-    await this.session.run(
-      "INSERT OR REPLACE INTO cg_symbols_files (rel_path, language, content_hash) VALUES (?, ?, ?)",
-      [node.relPath, node.language, node.contentHash ?? null],
-    );
-    await this.session.run("DELETE FROM cg_symbols_edges_file WHERE source_rel_path = ?", [node.relPath]);
-    await this.session.run("DELETE FROM cg_symbols_edges_method WHERE source_rel_path = ?", [node.relPath]);
-    // INSERT OR IGNORE: dedupe (source, target) — a file may
-    // re-import the same module on different lines, producing the
-    // same edge twice in one extraction batch.
-    await this.session.insertOrIgnoreBatched(
-      "cg_symbols_edges_file",
-      ["source_rel_path", "target_rel_path", "import_text"],
-      edges.fileEdges.map((e) => [node.relPath, e.targetRelPath, e.importText]),
-    );
-    // GraphEdges.methodEdges allows targetSymbolId=null (the
-    // resolver case where an import resolves to a file but the
-    // called member isn't in that file's exported symbol table).
-    // The cg_symbols_edges_method PK includes target_symbol_id —
-    // DuckDB enforces NOT NULL on PK columns, so we must skip
-    // null-target edges at the boundary, BEFORE batching. File-level
-    // reach is already captured by fileEdges; the method graph only
-    // carries edges with a known target symbol.
-    //
-    // INSERT OR IGNORE: same call shape may repeat — e.g.
-    // `this.cache.get(x)` invoked from multiple branches of the
-    // same method body. collectCalls walks every call_expression
-    // and emits one CallRef per occurrence; the PK
-    // (source_symbol_id, call_expression, target_symbol_id) is
-    // edge-existence semantics, not occurrence count.
-    // edge_kind/confidence (bd 2jet) default to exact/1.0 when the
-    // resolver did not mark the edge as CHA fan-out. INSERT OR IGNORE
-    // keeps the first edge's provenance when the same (source, call,
-    // target) tuple repeats — edge-existence semantics, not occurrence.
-    await this.session.insertOrIgnoreBatched(
-      "cg_symbols_edges_method",
-      [
-        "source_symbol_id",
-        "source_rel_path",
-        "target_symbol_id",
-        "target_rel_path",
-        "call_expression",
-        "edge_kind",
-        "confidence",
-      ],
-      edges.methodEdges
-        .filter((e) => e.targetSymbolId !== null)
-        .map((e) => [
-          e.sourceSymbolId,
-          node.relPath,
-          e.targetSymbolId,
-          e.targetRelPath,
-          e.callExpression,
-          e.edgeKind ?? "exact",
-          e.confidence ?? 1.0,
-        ]),
-    );
-    // Inheritance edges (bd tea-rags-mcp-f10y). Per-source-file delete+insert,
-    // same lifecycle as the edge tables: re-walking a file replaces its rows.
-    // INSERT OR IGNORE dedupes a (source, ancestor, kind) declared twice in
-    // one extraction (e.g. duplicate include).
-    await this.session.run("DELETE FROM cg_symbols_inheritance WHERE source_rel_path = ?", [node.relPath]);
-    await this.session.insertOrIgnoreBatched(
-      "cg_symbols_inheritance",
-      [
-        "source_fq_name",
-        "source_rel_path",
-        "source_symbol_id",
-        "ancestor_fq_name",
-        "ancestor_symbol_id",
-        "kind",
-        "ordinal",
-      ],
-      (edges.inheritance ?? []).map((e) => [
-        e.sourceFqName,
-        node.relPath,
-        e.sourceSymbolId,
-        e.ancestorFqName,
-        e.ancestorSymbolId,
-        e.kind,
-        e.ordinal,
-      ]),
-    );
-    // Ambiguous fan-out aggregates (bd tea-rags-mcp-f2jsb / j0pki). Same
-    // per-source-file DELETE+INSERT lifecycle as the edge tables: re-walking
-    // a file replaces its rows (a fan-out resolved away must not survive).
-    // INSERT OR IGNORE dedupes a repeated (source, call_expression) shape —
-    // aggregate-existence semantics, not occurrence count.
-    await this.session.run("DELETE FROM cg_ambiguous_fanout WHERE source_rel_path = ?", [node.relPath]);
-    await this.session.insertOrIgnoreBatched(
-      "cg_ambiguous_fanout",
-      ["source_symbol_id", "source_rel_path", "call_expression", "member", "candidate_count"],
-      (edges.ambiguousFanouts ?? []).map((a) => [
-        a.sourceSymbolId,
-        node.relPath,
-        a.callExpression,
-        a.member,
-        a.candidateCount,
-      ]),
-    );
+    await this.writeFileRowsGroup([{ node, edges }]);
   }
 
   /**
-   * Batched form of {@link writeFileRows}: DELETE-then-INSERT per GROUP of
-   * {@link BULK_INTERLEAVE_GROUP_FILES} files instead of one DELETE per file
-   * per table. Equivalent to calling `writeFileRows(node, edges)` once per
-   * entry in order — a later entry for the same relPath fully REPLACES an
-   * earlier one (last-wins per relPath, matching `writeFileRows`'s own
-   * per-file DELETE lifecycle), and cross-file PK collisions still resolve
-   * first-wins by batch order, same as `INSERT OR IGNORE` racing an
-   * already-persisted row from an earlier file. Empty `entries` is a no-op.
-   *
-   * Each group's DELETE is immediately followed by that SAME group's INSERT
-   * — see {@link BULK_INTERLEAVE_GROUP_FILES} for why: batching the DELETE
-   * across the WHOLE set before any INSERT crashed DuckDB's index
-   * maintenance on real taxdome data. Statement count still drops sharply —
-   * a chunked IN-list DELETE per table per group instead of one DELETE per
-   * file per table — without reopening that crash.
+   * Batched form of {@link writeFileRows}: one scope diff per GROUP of
+   * {@link BULK_WRITE_GROUP_FILES} files instead of one write cycle per file.
+   * Equivalent to calling `writeFileRows(node, edges)` once per entry in order
+   * — a later entry for the same relPath fully REPLACES an earlier one
+   * (last-wins per relPath), and cross-file PK collisions still resolve
+   * first-wins, same as `INSERT OR IGNORE` racing an already-persisted row from
+   * an earlier file. Empty `entries` is a no-op.
    */
   async writeFileRowsBulk(entries: readonly BulkFileUpsertEntry[]): Promise<void> {
     if (entries.length === 0) return;
     // Same last-wins collapse as DuckDbSymbolStore#upsertSymbolsBulk: a batch
     // may legitimately carry two entries for the same relPath (a re-walk).
-    // Collapse BEFORE touching the DB so each relPath is deleted once and
-    // only its final entry's edges are inserted — never a union of both.
+    // Collapse BEFORE touching the DB so each relPath is reconciled once
+    // against its FINAL entry's edges — never a union of both.
     const lastByRelPath = new Map<RelPath, BulkFileUpsertEntry>();
     for (const entry of entries) lastByRelPath.set(entry.node.relPath, entry);
     const deduped = [...lastByRelPath.values()];
 
-    for (let i = 0; i < deduped.length; i += BULK_INTERLEAVE_GROUP_FILES) {
-      await this.writeFileRowsGroup(deduped.slice(i, i + BULK_INTERLEAVE_GROUP_FILES));
+    for (let i = 0; i < deduped.length; i += BULK_WRITE_GROUP_FILES) {
+      await this.writeFileRowsGroup(deduped.slice(i, i + BULK_WRITE_GROUP_FILES));
     }
   }
 
-  /** One DELETE-then-INSERT cycle for a single interleave group — see {@link writeFileRowsBulk}. */
+  /**
+   * Reconcile one group's five tables against the rows the group carries.
+   *
+   * Every table goes through `applyScopedRowDiff` scoped by `source_rel_path`
+   * (`rel_path` for the node table), which is what keeps a re-walk from
+   * deleting and re-inserting the keys it is about to write — the shape that
+   * turns any failed commit into a daemon-killing native abort. See that method
+   * for the engine mechanism and {@link BULK_WRITE_GROUP_FILES} for the two
+   * live crashes that led here.
+   */
   private async writeFileRowsGroup(group: readonly BulkFileUpsertEntry[]): Promise<void> {
     const relPaths = group.map((e) => e.node.relPath);
-
-    await this.session.deleteBatched("cg_symbols_edges_file", "source_rel_path", relPaths);
-    await this.session.deleteBatched("cg_symbols_edges_method", "source_rel_path", relPaths);
-    await this.session.deleteBatched("cg_symbols_inheritance", "source_rel_path", relPaths);
-    await this.session.deleteBatched("cg_ambiguous_fanout", "source_rel_path", relPaths);
-
-    await this.session.insertBatched(
-      "cg_symbols_files",
-      ["rel_path", "language", "content_hash"],
-      group.map((e) => [e.node.relPath, e.node.language, e.node.contentHash ?? null]),
-      "orReplace",
-    );
 
     const fileEdgeRows: unknown[][] = [];
     const methodEdgeRows: unknown[][] = [];
     const inheritanceRows: unknown[][] = [];
     const fanoutRows: unknown[][] = [];
     for (const { node, edges } of group) {
+      // A file may re-import the same module on different lines, so the same
+      // (source, target) can arrive twice in one extraction — the diff keeps
+      // the first, matching the INSERT OR IGNORE this replaced.
       for (const e of edges.fileEdges) fileEdgeRows.push([node.relPath, e.targetRelPath, e.importText]);
-      // See writeFileRows: targetSymbolId=null must be skipped BEFORE
-      // batching (the PK includes target_symbol_id, NOT NULL).
+      // GraphEdges.methodEdges allows targetSymbolId=null (the resolver case
+      // where an import resolves to a file but the called member isn't in that
+      // file's exported symbol table). The cg_symbols_edges_method PK includes
+      // target_symbol_id and DuckDB enforces NOT NULL on PK columns, so
+      // null-target edges are skipped at the boundary, BEFORE batching.
+      // File-level reach is already captured by fileEdges; the method graph
+      // only carries edges with a known target symbol.
+      //
+      // The same call shape may repeat — `this.cache.get(x)` invoked from two
+      // branches of one method body. collectCalls emits one CallRef per
+      // occurrence; the PK is edge-EXISTENCE semantics, not occurrence count,
+      // so the first occurrence's provenance (edge_kind / confidence, bd 2jet,
+      // defaulting to exact/1.0 when the resolver did not mark the edge as CHA
+      // fan-out) is the one persisted.
       for (const e of edges.methodEdges) {
         if (e.targetSymbolId === null) continue;
         methodEdgeRows.push([
           e.sourceSymbolId,
           node.relPath,
+          e.callExpression,
           e.targetSymbolId,
           e.targetRelPath,
-          e.callExpression,
           e.edgeKind ?? "exact",
           e.confidence ?? 1.0,
         ]);
       }
+      // Inheritance edges (bd tea-rags-mcp-f10y) — same per-source-file
+      // lifecycle: a (source, ancestor, kind) declared twice in one extraction
+      // (duplicate include) collapses to one row.
       for (const e of edges.inheritance ?? []) {
         inheritanceRows.push([
           e.sourceFqName,
           node.relPath,
-          e.sourceSymbolId,
           e.ancestorFqName,
-          e.ancestorSymbolId,
           e.kind,
+          e.sourceSymbolId,
+          e.ancestorSymbolId,
           e.ordinal,
         ]);
       }
+      // Ambiguous fan-out aggregates (bd tea-rags-mcp-f2jsb / j0pki) — a
+      // fan-out resolved away must not survive the re-walk, and a repeated
+      // (source, call_expression) is aggregate-existence, not occurrence count.
       for (const a of edges.ambiguousFanouts ?? []) {
-        fanoutRows.push([a.sourceSymbolId, node.relPath, a.callExpression, a.member, a.candidateCount]);
+        fanoutRows.push([a.sourceSymbolId, a.callExpression, node.relPath, a.member, a.candidateCount]);
       }
     }
 
-    await this.session.insertOrIgnoreBatched(
+    await this.session.applyScopedRowDiff(
+      "cg_symbols_files",
+      "rel_path",
+      relPaths,
+      ["rel_path"],
+      ["language", "content_hash"],
+      group.map((e) => [e.node.relPath, e.node.language, e.node.contentHash ?? null]),
+    );
+    await this.session.applyScopedRowDiff(
       "cg_symbols_edges_file",
-      ["source_rel_path", "target_rel_path", "import_text"],
+      "source_rel_path",
+      relPaths,
+      FILE_EDGE_KEYS,
+      FILE_EDGE_VALUES,
       fileEdgeRows,
     );
-    await this.session.insertOrIgnoreBatched(
+    await this.session.applyScopedRowDiff(
       "cg_symbols_edges_method",
-      [
-        "source_symbol_id",
-        "source_rel_path",
-        "target_symbol_id",
-        "target_rel_path",
-        "call_expression",
-        "edge_kind",
-        "confidence",
-      ],
+      "source_rel_path",
+      relPaths,
+      METHOD_EDGE_KEYS,
+      METHOD_EDGE_VALUES,
       methodEdgeRows,
     );
-    await this.session.insertOrIgnoreBatched(
+    await this.session.applyScopedRowDiff(
       "cg_symbols_inheritance",
-      [
-        "source_fq_name",
-        "source_rel_path",
-        "source_symbol_id",
-        "ancestor_fq_name",
-        "ancestor_symbol_id",
-        "kind",
-        "ordinal",
-      ],
+      "source_rel_path",
+      relPaths,
+      INHERITANCE_KEYS,
+      INHERITANCE_VALUES,
       inheritanceRows,
     );
-    await this.session.insertOrIgnoreBatched(
+    await this.session.applyScopedRowDiff(
       "cg_ambiguous_fanout",
-      ["source_symbol_id", "source_rel_path", "call_expression", "member", "candidate_count"],
+      "source_rel_path",
+      relPaths,
+      FANOUT_KEYS,
+      FANOUT_VALUES,
       fanoutRows,
     );
   }

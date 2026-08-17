@@ -242,33 +242,36 @@ describe("DuckDbGraphClient — upsertFilesBulk equivalence to per-file upsertFi
     expect(Number(edgesCount[0].n)).toBe(N);
   });
 
-  it("interleaves DELETE and INSERT per group instead of deleting the whole batch before inserting any of it", async () => {
-    // bd tea-rags-mcp-wgt19 follow-up: a live CODEGRAPH_FORCE_RESOLVE run
-    // against taxdome crashed the daemon with a native DuckDB FatalException
-    // ("Failed to append to PRIMARY_cg_symbols_edges_file_2: ... duplicate
-    // key") from inside RemoveFromIndexes at commit, when the whole batch's
-    // DELETEs were issued before any of its INSERTs landed — a large pending-
-    // delete volume with no matching re-INSERT yet is a documented DuckDB
-    // engine bug class (duckdb/duckdb#16520, duckdb/duckdb#15092: over-eager
-    // constraint checking on delete+insert within one transaction). The fix
-    // bounds the pending-delete window to one interleave group at a time —
-    // this test asserts that shape directly: DELETE statements never run more
-    // than one group's worth deep before an INSERT breaks the streak.
+  it("never DELETEs a row the same write is re-INSERTing", async () => {
+    // bd tea-rags-mcp-wgt19 follow-up, then bd tea-rags-mcp-8l8d3. Live
+    // CODEGRAPH_FORCE_RESOLVE runs against taxdome killed the daemon with a
+    // native DuckDB FatalException — "Failed to append to
+    // PRIMARY_cg_symbols_edges_file_2: ... duplicate key" — from index
+    // maintenance at commit. The trigger is a transaction whose DELETE set and
+    // INSERT set share a primary key: DuckDB's `UndoBuffer::RevertCommit`
+    // restores the deleted rows into the indexes when a commit fails for any
+    // reason, and the re-append collides with the key the same transaction
+    // inserted (duckdb/duckdb#16520, duckdb/duckdb#15092). It surfaces as
+    // `libc++abi: terminating`, which no JavaScript handler can catch.
     //
-    // N=250 (not just >BULK_INTERLEAVE_GROUP_FILES) is load-bearing: it spans
-    // TWO 200-row IN-list chunks per table (deleteBatched's own internal
-    // chunking), so a whole-batch-first DELETE sweep (the crashing shape)
-    // would show a run of 4 tables x 2 chunks = 8 consecutive DELETEs before
-    // any INSERT — this test would NOT fail against that shape at N<=200,
-    // since a single un-grouped chunk per table also happens to cap at 4.
+    // The first fix bounded how MANY such keys were pending at once; the crash
+    // came back. This asserts the invariant instead: across a whole bulk write,
+    // the set of rows deleted and the set of rows inserted are disjoint.
+    //
+    // N=250 spans two 200-row statement chunks per table, so a writer that
+    // reverted to a blind whole-scope DELETE fails here rather than at some
+    // size-dependent boundary.
     const db = await freshDb();
     const N = 250;
     const entries: BulkFileUpsertEntry[] = Array.from({ length: N }, (_, i) => ({
       node: { relPath: `app/g${i}.rb`, language: "ruby" },
       edges: { fileEdges: [{ targetRelPath: "app/shared.rb", importText: "./shared" }], methodEdges: [] },
     }));
+    // Seed, so the re-write below has something it COULD have deleted.
+    await db.upsertFilesBulk(entries);
 
-    const verbs: string[] = [];
+    const deleted: string[] = [];
+    const inserted: string[] = [];
     const original = DuckDbGraphSession.prototype.run;
     const spy = vi.spyOn(DuckDbGraphSession.prototype, "run").mockImplementation(async function (
       this: DuckDbGraphSession,
@@ -276,26 +279,36 @@ describe("DuckDbGraphClient — upsertFilesBulk equivalence to per-file upsertFi
       params?: unknown[],
     ) {
       const verb = sql.trim().split(/\s+/)[0];
-      if (verb === "DELETE" || verb === "INSERT") verbs.push(verb);
+      // Every value the statement touched, as an order-independent bag. A key
+      // that shows up on both sides means the crashing overlap is back —
+      // whatever statement shape produced it.
+      if (verb === "DELETE") deleted.push(...(params ?? []).map(String));
+      if (verb === "INSERT") inserted.push(...(params ?? []).map(String));
       return original.call(this, sql, params);
     });
 
-    await db.upsertFilesBulk(entries);
+    // Same edges, one file gains a target: only that one row may be written,
+    // and nothing at all may be deleted.
+    const rewritten = entries.map((e, i) =>
+      i === 7
+        ? {
+            ...e,
+            edges: {
+              fileEdges: [
+                { targetRelPath: "app/shared.rb", importText: "./shared" },
+                { targetRelPath: "app/extra.rb", importText: "./extra" },
+              ],
+              methodEdges: [],
+            },
+          }
+        : e,
+    );
+    await db.upsertFilesBulk(rewritten);
     spy.mockRestore();
 
-    // Longest consecutive run of DELETE verbs. One group issues at most 4
-    // DELETEs (cg_symbols_edges_file/_method/_inheritance/cg_ambiguous_fanout);
-    // a whole-batch-first DELETE sweep across 3 groups would show a run of
-    // ~12. Assert it stays within one group's worth.
-    let longestDeleteRun = 0;
-    let current = 0;
-    for (const v of verbs) {
-      current = v === "DELETE" ? current + 1 : 0;
-      longestDeleteRun = Math.max(longestDeleteRun, current);
-    }
-    expect(verbs.filter((v) => v === "DELETE").length).toBeGreaterThan(0);
-    expect(verbs.filter((v) => v === "INSERT").length).toBeGreaterThan(0);
-    expect(longestDeleteRun).toBeLessThanOrEqual(4);
+    expect(inserted).toContain("app/extra.rb");
+    expect(new Set(deleted.filter((v) => inserted.includes(v)))).toEqual(new Set());
+    expect(deleted).toEqual([]);
   });
 
   it("keeps the first-persisted row when two files in the SAME bulk batch collide on a method-edge PK", async () => {

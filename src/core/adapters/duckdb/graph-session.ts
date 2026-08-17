@@ -359,47 +359,30 @@ export class DuckDbGraphSession {
    * write shape behind every bulk path here (~48x the per-row prepared INSERT,
    * see that constant's docblock for the measurement).
    *
-   * `mode` picks the duplicate-PK contract, and these are NOT interchangeable:
-   * `"orIgnore"` is load-bearing where the same row can legitimately arrive
-   * twice (a file re-importing one module); `"orReplace"` is for a node-style
-   * table where the last write should win rather than the first (mirrors the
-   * single-row `INSERT OR REPLACE` `writeFileRows` uses for `cg_symbols_files`);
-   * `"insert"` keeps a duplicate loud for callers that clear the table first
-   * and therefore treat a collision as a bug.
+   * `mode` picks the duplicate-PK contract, and the two are NOT
+   * interchangeable: `"orIgnore"` is load-bearing where the same row can
+   * legitimately arrive twice (a file re-importing one module); `"insert"`
+   * keeps a duplicate loud for callers that clear the table first and
+   * therefore treat a collision as a bug.
+   *
+   * There is deliberately no `INSERT OR REPLACE` mode. DuckDB implements it as
+   * a delete plus an insert of the same key, which is the shape that turns a
+   * failed commit into a native abort — see {@link applyScopedRowDiff} for the
+   * mechanism and the crash it caused.
    */
   async insertBatched(
     table: string,
     columns: readonly string[],
     rows: readonly (readonly unknown[])[],
-    mode: "insert" | "orIgnore" | "orReplace" = "insert",
+    mode: "insert" | "orIgnore" = "insert",
   ): Promise<void> {
     if (rows.length === 0) return;
     const tuple = `(${columns.map(() => "?").join(", ")})`;
-    const verb = mode === "orIgnore" ? "INSERT OR IGNORE" : mode === "orReplace" ? "INSERT OR REPLACE" : "INSERT";
+    const verb = mode === "orIgnore" ? "INSERT OR IGNORE" : "INSERT";
     const prefix = `${verb} INTO ${table} (${columns.join(", ")}) VALUES `;
     for (let i = 0; i < rows.length; i += EDGE_INSERT_CHUNK_ROWS) {
       const chunk = rows.slice(i, i + EDGE_INSERT_CHUNK_ROWS);
       await this.run(prefix + chunk.map(() => tuple).join(", "), chunk.flat());
-    }
-  }
-
-  /**
-   * Chunk-safe `DELETE FROM <table> WHERE <column> IN (...)` — collapses N
-   * per-value DELETEs into `ceil(N / EDGE_INSERT_CHUNK_ROWS)` IN-list
-   * statements. Each individual per-file DELETE the bulk file-graph write
-   * used to issue re-scanned/decompressed the FSST-compressed
-   * `source_rel_path` column on its own; batching removes that many
-   * redundant scans (bd tea-rags-mcp-wgt19 follow-up — the DELETE-then-INSERT
-   * cycle on cg_symbols_edges_file/cg_symbols_edges_method dominated
-   * CODEGRAPH_FORCE_RESOLVE wall clock on taxdome). `table`/`column` are
-   * compile-time literals supplied by the caller — never user input.
-   */
-  async deleteBatched(table: string, column: string, values: readonly unknown[]): Promise<void> {
-    if (values.length === 0) return;
-    for (let i = 0; i < values.length; i += EDGE_INSERT_CHUNK_ROWS) {
-      const chunk = values.slice(i, i + EDGE_INSERT_CHUNK_ROWS);
-      const placeholders = chunk.map(() => "?").join(", ");
-      await this.run(`DELETE FROM ${table} WHERE ${column} IN (${placeholders})`, chunk.slice());
     }
   }
 
@@ -441,8 +424,148 @@ export class DuckDbGraphSession {
     }
   }
 
+  /**
+   * Make `table`'s rows for one SCOPE equal `rows`, WITHOUT ever deleting and
+   * re-inserting the same primary key inside the caller's transaction
+   * (bd tea-rags-mcp-8l8d3).
+   *
+   * The naive form of that intent — `DELETE WHERE scope IN (...)` followed by a
+   * re-INSERT of the whole set — is what this replaces, and it is not merely
+   * wasteful. DuckDB's commit path is not exception-safe for a transaction
+   * whose delete set and insert set share a key: when the commit fails for ANY
+   * reason, `UndoBuffer::RevertCommit` restores the deleted rows into the
+   * indexes, and that re-append lands on the key the same transaction just
+   * inserted, raising
+   * `INTERNAL Error: Failed to append to PRIMARY_<table>_N: ... duplicate key`
+   * from a native context — `libc++abi: terminating`, an abort() that no
+   * JavaScript handler can catch. It killed the codegraph daemon nine times on
+   * 2026-08-17 (taxdome, `--force-enrichments codegraph`), and that daemon
+   * serves every collection on the machine.
+   *
+   * So the write is expressed as a DIFF instead:
+   *
+   * - key in scope on disk, absent from `rows`  -> DELETE by key
+   * - key in `rows`, absent on disk             -> INSERT OR IGNORE
+   * - key on both sides, value columns differ   -> UPDATE in place
+   * - key on both sides, value columns equal    -> not touched at all
+   *
+   * No key is ever on both the delete side and the insert side. The UPDATE
+   * branch preserves the previous semantics (a re-walk refreshes non-key
+   * columns) and fires only when a value genuinely changed, so it does not
+   * reintroduce the churn. It is also strictly less work than the old shape: on
+   * a re-index most edges are unchanged, and an unchanged edge now costs one
+   * read instead of a delete plus an insert.
+   *
+   * `rows` are ordered `[...keyColumns, ...valueColumns]`. Duplicate keys
+   * within `rows` are first-wins, matching `INSERT OR IGNORE`. `scopeColumn`
+   * need not be part of the key: a key owned by a row OUTSIDE this scope is
+   * invisible to the scope read, so it falls to `INSERT OR IGNORE` and is
+   * ignored — the same first-wins outcome the previous writer produced.
+   * `table` and the column names are compile-time literals supplied by the
+   * caller, never user input; every value goes through a positional bind.
+   */
+  async applyScopedRowDiff(
+    table: string,
+    scopeColumn: string,
+    scopeValues: readonly unknown[],
+    keyColumns: readonly string[],
+    valueColumns: readonly string[],
+    rows: readonly (readonly unknown[])[],
+  ): Promise<void> {
+    if (scopeValues.length === 0) return;
+    const columns = [...keyColumns, ...valueColumns];
+    const keyWidth = keyColumns.length;
+
+    const existing = new Map<string, { key: unknown[]; values: string }>();
+    for (let i = 0; i < scopeValues.length; i += EDGE_INSERT_CHUNK_ROWS) {
+      const chunk = scopeValues.slice(i, i + EDGE_INSERT_CHUNK_ROWS);
+      const found = await this.queryAll<Record<string, unknown>>(
+        `SELECT ${columns.join(", ")} FROM ${table} WHERE ${scopeColumn} IN (${chunk.map(() => "?").join(", ")})`,
+        chunk.slice(),
+      );
+      for (const row of found) {
+        const tuple = columns.map((c) => row[c]);
+        const key = tuple.slice(0, keyWidth);
+        existing.set(tupleFingerprint(key), { key, values: tupleFingerprint(tuple.slice(keyWidth)) });
+      }
+    }
+
+    const incoming = new Map<string, readonly unknown[]>();
+    for (const row of rows) {
+      const key = tupleFingerprint(row.slice(0, keyWidth));
+      if (!incoming.has(key)) incoming.set(key, row);
+    }
+
+    const toInsert: (readonly unknown[])[] = [];
+    const toUpdate: (readonly unknown[])[] = [];
+    for (const [key, row] of incoming) {
+      const current = existing.get(key);
+      if (current === undefined) toInsert.push(row);
+      else if (valueColumns.length > 0 && current.values !== tupleFingerprint(row.slice(keyWidth))) toUpdate.push(row);
+    }
+    const toDelete: unknown[][] = [];
+    for (const [key, row] of existing) {
+      if (!incoming.has(key)) toDelete.push(row.key);
+    }
+
+    await this.deleteByKeyBatched(table, keyColumns, toDelete);
+    await this.insertOrIgnoreBatched(table, columns, toInsert);
+    await this.updateFromRows(table, keyColumns, valueColumns, toUpdate);
+  }
+
+  /**
+   * `DELETE FROM <table> WHERE (k1, k2, ...) IN (VALUES (?, ?), ...)` in
+   * {@link EDGE_INSERT_CHUNK_ROWS} chunks. Chunking is safe because each chunk
+   * names the exact rows it removes — unlike a scope DELETE, whose predicate
+   * cannot be split without a chunk removing rows a later chunk would keep.
+   *
+   * A NULL key column cannot occur: DuckDB requires every PRIMARY KEY column to
+   * be NOT NULL, so the `IN (VALUES ...)` comparison never meets the SQL NULL
+   * semantics that would silently match nothing.
+   */
+  private async deleteByKeyBatched(
+    table: string,
+    keyColumns: readonly string[],
+    keys: readonly (readonly unknown[])[],
+  ): Promise<void> {
+    if (keys.length === 0) return;
+    const tuple = `(${keyColumns.map(() => "?").join(", ")})`;
+    const prefix = `DELETE FROM ${table} WHERE (${keyColumns.join(", ")}) IN (VALUES `;
+    for (let i = 0; i < keys.length; i += EDGE_INSERT_CHUNK_ROWS) {
+      const chunk = keys.slice(i, i + EDGE_INSERT_CHUNK_ROWS);
+      await this.run(`${prefix}${chunk.map(() => tuple).join(", ")})`, chunk.flat());
+    }
+  }
+
   private requireConn(): DuckDBConnection {
     if (!this.conn) throw new Error("DuckDbGraphClient: init() must be called before use");
     return this.conn;
   }
+}
+
+/**
+ * Collapse a row tuple into one comparable string, for
+ * {@link DuckDbGraphSession#applyScopedRowDiff}.
+ *
+ * Two jobs, both load-bearing. It normalises across the driver boundary —
+ * DuckDB hands BIGINT back as a string and DOUBLE as a number, so comparing raw
+ * driver output against the caller's own JS values would report unchanged rows
+ * as changed, and a spurious UPDATE is exactly the index churn the diff exists
+ * to avoid. And it stays injective: every part is length-prefixed, so no choice
+ * of separator can make `["ab", "c"]` and `["a", "bc"]` collide, and NULL gets
+ * its own marker that no length-prefixed value can imitate.
+ */
+function tupleFingerprint(parts: readonly unknown[]): string {
+  return parts.map(fingerprintCell).join("|");
+}
+
+/** One column's contribution to {@link tupleFingerprint}. */
+function fingerprintCell(value: unknown): string {
+  if (value === null || value === undefined) return "~";
+  // Every column these keys address is a DuckDB scalar, so the primitive
+  // branch is the real one. An object would be a driver surprise: serialise it
+  // rather than let it stringify to `[object Object]` and compare equal to
+  // every other object.
+  const text = typeof value === "object" ? JSON.stringify(value) : String(value as string | number | boolean | bigint);
+  return `${text.length}:${text}`;
 }
