@@ -9,22 +9,24 @@
 import type { AritySignature, KwargSignature, SymbolDefinition } from "../../contracts/types/codegraph.js";
 
 /**
- * The `cg_symbols` columns that carry a {@link SymbolDefinition} — the single
- * source of truth for BOTH write paths (per-file `upsertSymbols` and batched
- * `upsertSymbolsBulk`) and the hydration SELECT. Order matches
- * {@link toCgSymbolsRow}'s tuple; a new definition field means editing this
- * list, that projection and {@link fromCgSymbolsRow} — the three places the
- * compiler and the round-trip tests hold together.
- *
- * `chunk_id` is deliberately absent: it is not part of a definition, it is
- * backfilled after chunking by `updateSymbolChunkIds`.
- *
- * Column names are compile-time literals, never user input; every VALUE goes
- * through a positional bind.
+ * The `cg_symbols` PRIMARY KEY, in schema order (migration 002). Split out from
+ * the value columns because the writer reconciles a file's rows as a DIFF: the
+ * key decides row IDENTITY, the value columns decide whether an existing row
+ * needs refreshing (see `DuckDbGraphSession#applyScopedRowDiff`).
  */
-export const CG_SYMBOLS_DEF_COLUMNS = [
-  "rel_path",
-  "symbol_id",
+export const CG_SYMBOLS_KEY_COLUMNS = ["rel_path", "symbol_id"] as const;
+
+/**
+ * The non-key `cg_symbols` columns that carry a {@link SymbolDefinition} — what
+ * the diff compares to decide "unchanged".
+ *
+ * `chunk_id` is deliberately absent, and its absence is now load-bearing rather
+ * than merely tidy. It is not part of a definition; it is written by the
+ * deferred chunk pass, which owns it end to end (`updateSymbolChunkIdsBulk`).
+ * Excluding it from the comparison is what lets an unchanged symbol keep the
+ * join already on disk instead of having it reset by every re-walk.
+ */
+export const CG_SYMBOLS_VALUE_COLUMNS = [
   "fq_name",
   "short_name",
   "scope_json",
@@ -35,9 +37,19 @@ export const CG_SYMBOLS_DEF_COLUMNS = [
   "is_abstract_stub",
 ] as const;
 
-export const CG_SYMBOLS_DEF_INSERT_SQL = `INSERT OR IGNORE INTO cg_symbols (${CG_SYMBOLS_DEF_COLUMNS.join(", ")}) VALUES (${CG_SYMBOLS_DEF_COLUMNS.map(
-  () => "?",
-).join(", ")})`;
+/**
+ * Every `cg_symbols` column that carries a {@link SymbolDefinition} — the single
+ * source of truth for the write path (`upsertSymbols` / `upsertSymbolsBulk`) and
+ * the hydration SELECT. Order matches {@link toCgSymbolsRow}'s tuple — key
+ * columns first, then values, which is also the order
+ * `applyScopedRowDiff` expects. A new definition field means editing the value
+ * list above, that projection and {@link fromCgSymbolsRow} — the three places
+ * the compiler and the round-trip tests hold together.
+ *
+ * Column names are compile-time literals, never user input; every VALUE goes
+ * through a positional bind.
+ */
+export const CG_SYMBOLS_DEF_COLUMNS: readonly string[] = [...CG_SYMBOLS_KEY_COLUMNS, ...CG_SYMBOLS_VALUE_COLUMNS];
 
 /** Raw `cg_symbols` row as read back by `DuckDbSymbolStore.listAllSymbols`. */
 export interface CgSymbolsRow {

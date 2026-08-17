@@ -37,7 +37,7 @@ import type {
  * One file's worth of symbol definitions, as consumed by
  * `GraphDbClient.upsertSymbolsBulk` — the batched form of
  * `upsertSymbols(relPath, definitions)` that folds many files' worth of
- * DELETE+INSERT into a single transaction.
+ * reconciliation into a single transaction.
  */
 export interface BulkSymbolUpsertEntry {
   relPath: RelPath;
@@ -247,15 +247,20 @@ export interface GraphDbClient {
   // file in the repo. Persistence is keyed by `(relPath, symbolId)`
   // exactly like the in-memory map.
 
-  /** Atomic replacement of all symbols for a file (DELETE+INSERT inside
-   *  a transaction). Idempotent: empty `definitions` clears the file. */
+  /** Atomic replacement of all symbols for a file, reconciled as a row diff
+   *  inside one transaction. Idempotent: empty `definitions` clears the file,
+   *  and a re-walk producing the rows already on disk touches nothing. */
   upsertSymbols: (relPath: RelPath, definitions: SymbolDefinition[]) => Promise<void>;
 
-  /** Batched form of {@link upsertSymbols}: one transaction for many files
-   *  (one set-based DELETE over every relPath the batch names + one INSERT OR
-   *  IGNORE over all rows). Same per-file semantics; empty entries is a no-op.
-   *  If `entries` carries more than one entry for the same `relPath`, the last
-   *  one wins — == calling `upsertSymbols` sequentially for that path. */
+  /** Batched form of {@link upsertSymbols}: one transaction reconciling every
+   *  relPath the batch names against the rows it carries. Same per-file
+   *  semantics; empty entries is a no-op. If `entries` carries more than one
+   *  entry for the same `relPath`, the last one wins — == calling
+   *  `upsertSymbols` sequentially for that path.
+   *
+   *  A symbol's `chunk_id` is NOT part of the reconciliation: an unchanged row
+   *  keeps the join {@link updateSymbolChunkIdsBulk} wrote, and retiring a stale
+   *  one is that call's job. */
   upsertSymbolsBulk: (entries: BulkSymbolUpsertEntry[]) => Promise<void>;
 
   /** Drop all persisted symbols for a file. Called by `handleDeletedPaths`. */
@@ -277,21 +282,25 @@ export interface GraphDbClient {
   listFileContentHashes: () => Promise<{ relPath: RelPath; contentHash: string | null }[]>;
 
   /**
-   * Backfill the covering-chunk reference for symbols of one file. UPDATE-only
-   * — never rewrites identity columns. Keyed by symbolId; symbols absent from
-   * the map keep their prior chunk_id (which a preceding upsertSymbols set to
-   * NULL). Written in the codegraph deferred chunk pass once chunk ids exist.
+   * REPLACE the covering-chunk reference for the symbols of one file. UPDATE-
+   * only — never rewrites identity columns. Keyed by symbolId; a symbol of that
+   * file absent from the map ends with chunk_id NULL, so a stale join cannot
+   * outlive the chunk it pointed at. Written in the codegraph deferred chunk
+   * pass once chunk ids exist.
    */
   updateSymbolChunkIds: (relPath: RelPath, chunkIds: ReadonlyMap<SymbolId, string>) => Promise<void>;
 
   /**
    * Batched form of {@link updateSymbolChunkIds}: the whole deferred chunk
-   * pass in ONE transaction of chunked multi-row UPDATEs, instead of one
-   * transaction (and one daemon round-trip) per file. Same per-row semantics —
-   * the join is keyed by (relPath, symbolId), and a symbol absent from every
-   * entry keeps its prior chunk_id. Empty entries is a no-op; when one call
-   * carries the same (relPath, symbolId) twice the LAST value wins, matching
-   * sequential per-file calls.
+   * pass in ONE transaction of chunked set-based statements, instead of one
+   * transaction (and one daemon round-trip) per file.
+   *
+   * Replace semantics apply per file the entries NAME: those files' chunk_id is
+   * cleared, then the collected mapping applied, both inside the one
+   * transaction. A file no entry names is untouched. Naming a file with an
+   * empty map therefore means "re-derived, nothing covers it" and clears it.
+   * Empty entries is a no-op; when one call carries the same (relPath,
+   * symbolId) twice the LAST value wins.
    */
   updateSymbolChunkIdsBulk: (entries: readonly SymbolChunkIdJoinEntry[]) => Promise<void>;
 

@@ -312,19 +312,48 @@ project is absent. By default it touches only the registry — the underlying
 Qdrant collection (and its indexed chunks) is preserved, and the message
 above tells the user how to remove it.
 
-Pass `--purge` to also delete the Qdrant collection in one step:
+Pass `--purge` to also delete everything the collection owns on disk:
 
 ```bash
 tea-rags projects unregister --name shop-backend --purge
 # Removed 'shop-backend' from registry; deleted Qdrant collection 'code_8f42a1b3' (3832 chunks)
+#   qdrant:    code_8f42a1b3_v1, code_8f42a1b3_v2
+#   codegraph: code_8f42a1b3_v1, code_8f42a1b3_v2
+#   cleared:   quarantine, snapshot, stats
+#   kept:      project directory /src/shop-backend — the source tree is never touched
 ```
 
-If the Qdrant `deleteCollection` call fails (server unreachable, alias in
-use), the registry entry is **still removed**, but the message reports the
-delete failure so the user can retry with `delete_collection`:
+The name in the registry is an **alias**, and most of a project's state is
+addressed by the versioned `code_<hash>_vN` name behind it. `--purge` resolves
+both, so it removes:
+
+| Artifact                                       | Where it lives                                |
+| ---------------------------------------------- | --------------------------------------------- |
+| Every Qdrant generation `code_<hash>_vN`       | Qdrant                                        |
+| The alias itself                               | Qdrant                                        |
+| Every codegraph database (plus `.wal` sidecar) | `~/.tea-rags/codegraph/<collection>_vN.duckdb` |
+| The file-hash snapshot directory               | `~/.tea-rags/snapshots/<collection>/`         |
+| The collection stats cache                     | `~/.tea-rags/snapshots/<collection>.stats.json` |
+| The poison-pill quarantine file                | `~/.tea-rags/snapshots/<collection>.quarantine.json` |
+
+A codegraph database whose Qdrant collection is already gone is reclaimed too —
+those are the files that otherwise accumulate forever after an interrupted
+force reindex.
+
+Anything under `kept:` is left alone deliberately: the project directory, any
+worktree clone derived from this project (each owns its own footprint, so remove
+it with `tea-rags worktree remove <name>`), and the shared codegraph daemon,
+which is never shut down because other projects may be using it.
+
+Every step is best-effort. If one fails — server unreachable, a file held open —
+the registry entry is **still removed**, the rest of the sweep still runs, and
+the report names what survived so it can be retried:
 
 ```
-Removed 'shop-backend' from registry; failed to delete Qdrant collection 'code_8f42a1b3': <reason>
+Removed 'shop-backend' from registry; failed to delete Qdrant collection 'code_8f42a1b3_v2': <reason>
+  qdrant:    code_8f42a1b3_v1
+  cleared:   quarantine, snapshot, stats
+  failed:    qdrant code_8f42a1b3_v2 — <reason>
 ```
 
 For non-destructive inspection of Qdrant collections that no longer have a

@@ -3,16 +3,19 @@
 ## Invariants
 
 - **Which artifact keys on the alias and which on the versioned physical name is
-  fixed and deliberate.** `ResolvedCollection` (`artifact.ts:3-11`) carries both
-  `logicalName` and `physicalName` and gives no hint which to use. Qdrant points
-  (`qdrant-artifact.ts:9-13`) and the codegraph DuckDB file
-  (`codegraph-artifact.ts:10`) address `physicalName` (the versioned `_vN`); the
-  file-hash snapshot (`snapshot-artifact.ts:12`), the stats cache
-  (`stats-artifact.ts:9`) and the quarantine store (`quarantine-artifact.ts:12`)
-  address `logicalName` (the stable alias) so they survive a version bump. A new
-  artifact must pick a side consciously. Why: getting it wrong diverges silently
-  rather than erroring — the measured case is the shadow-DuckDB defect (bd
-  6goqa), told in full by `../../ingest/operations/CLAUDE.md`.
+  fixed, deliberate, and now DECLARED.** `ResolvedCollection` (`artifact.ts`)
+  carries both `logicalName` and `physicalName` and gives no hint which to use,
+  so every artifact states its side in `readonly addressing`
+  (`ArtifactAddressing`, `artifact.ts`). Qdrant points and the codegraph DuckDB
+  file are `"physical"` (the versioned `_vN`, so one exists PER GENERATION); the
+  file-hash snapshot, the stats cache and the quarantine store are `"logical"`
+  (the stable alias, one per collection, surviving a version bump). A new
+  artifact picks its side in that field, not by convention. Why: getting it
+  wrong diverges silently rather than erroring — the measured case is the
+  shadow-DuckDB defect (bd 6goqa), told in full by
+  `../../ingest/operations/CLAUDE.md` — and the field is what lets
+  `CollectionFootprintPurger` sweep every generation without re-encoding the
+  split as a list of artifact ids somewhere else.
 
 ## Mechanics
 
@@ -47,9 +50,36 @@
   other four" instinct costs a parallel session its daemon mid-run, and the
   `finally` is what stops a failed recover leaking a snapshot.
 
+- **Two orchestrators drive `remove`, and they disagree about scope on
+  purpose.** `WorktreeProvisioner#remove` sweeps ONE generation — the clone's
+  own `_v1` — because that is all a clone ever has. `CollectionFootprintPurger`
+  (`purger.ts`, behind `projects unregister --purge`) sweeps EVERY generation of
+  a long-lived project, enumerating them from Qdrant and from the codegraph
+  directory and taking the UNION: a `.duckdb` whose Qdrant collection is already
+  gone is invisible from the Qdrant side, and that is precisely the file that
+  leaks. It also cannot construct a `GraphDbClientPool` — pool construction
+  `rmSync`es the shared `.spill` dir and would destroy a concurrent index's
+  in-flight spill — so `FootprintDeps.pool` is the structural
+  `CodegraphFootprintStore` (`contracts/types/footprint.ts`), satisfied by the
+  pool in the app and by `adapters/duckdb/codegraph-db-files.ts` in the purge.
+  Why: "reuse the pool, it already has these methods" is the obvious move and it
+  silently sabotages another process.
+- **`QdrantArtifact#remove` swallows the alias delete and NOT the collection
+  delete.** A logical name that was never an alias 404s on `deleteAlias` as a
+  matter of course, so that step is best-effort and must never block the one
+  after it; `deleteCollection` is the actual job, and its rejection propagates
+  so a caller can report the reason. The worktree teardown wraps every `remove`
+  in its own `.catch(() => undefined)`, so it is unaffected — the purge is what
+  needs "network down" instead of "the collection is somehow still there". Why:
+  the artifact contract (`artifact.ts`) says an implementation MAY throw and
+  SHOULD attempt every step internally; that is not the same as swallowing
+  everything, and reading it that way costs the only diagnostic the purge has.
+
 ## See also
 
-- `../worktree/CLAUDE.md` — the only orchestrator of this saga; owns the commit
+- `../worktree/CLAUDE.md` — the clone/teardown orchestrator; owns the commit
   point and the teardown guard.
+- `src/bootstrap/footprint-purge.ts` — the purge's composition root, separate
+  from `createAppContext` so a delete does not boot embeddings and the daemon.
 - `.claude/rules/migrations.md` — the per-collection stores these artifacts
   clone, and who upgrades each.

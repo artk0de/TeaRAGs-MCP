@@ -3,6 +3,7 @@ import type { CollectionArtifact, FootprintContext } from "./artifact.js";
 
 export class QuarantineArtifact implements CollectionArtifact {
   readonly id = "quarantine" as const;
+  readonly addressing = "logical" as const;
   constructor(
     private readonly snapshotBaseDir: string,
     private readonly makeStore: QuarantineArtifactStoreFactory,

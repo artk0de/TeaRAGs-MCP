@@ -352,8 +352,19 @@ export class EnrichmentCoordinator {
       // caller: codegraph declines tests and generated files, git takes them.
       // Handing one pre-filtered set to every provider would make each
       // provider's orphan list wrong for the others.
+      //
+      // Two narrowings, and they answer different questions. `shouldEnrich` says
+      // whether a POINT is owed a payload block; `filterExtractablePaths` says
+      // whether the provider's STORE can ever hold a row for the file. Codegraph
+      // answers "full" for a `tsconfig.json` (it gets an all-zero codegraph
+      // block) while its walk has no parser for one — so a diff run over the
+      // payload set alone re-lists every JSON/Markdown/YAML file the index
+      // carries on every run, at `repaired=482` in perpetuity on taxdome, with
+      // no run able to settle it (bd tea-rags-mcp-65bkl). A provider that
+      // persists whatever it is asked for omits the hook and keeps the wider set.
       const providerEligible = new Map<string, string>();
-      for (const path of filterFileEnrichPaths(provider, [...scanned.keys()])) {
+      const enrichable = filterFileEnrichPaths(provider, [...scanned.keys()]);
+      for (const path of provider.filterExtractablePaths?.(enrichable) ?? enrichable) {
         providerEligible.set(path, scanned.get(path) as string);
       }
 

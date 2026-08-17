@@ -19,13 +19,24 @@
  *
  * Three questions, one run:
  *
- *   1. `deleteShape` — one set-based `WHERE rel_path IN (…)` against the
- *      per-file `WHERE rel_path = ?` loop this replaced. Without an index, each
- *      loop iteration is its own sequential scan of the whole table.
- *   2. `cadence` — files per flush call. The live run flushes per absorb batch,
- *      ≈60 files; enlarging it saves round-trips but not scans or inserts.
+ *   1. `shape` — the three write shapes this path has had, in order:
+ *      `perFileDelete` (a `WHERE rel_path = ?` DELETE per file, then one batched
+ *      INSERT), `setBasedDelete` (one `WHERE rel_path IN (…)` DELETE, then the
+ *      same INSERT — bd pass1-fanout), and `rowDiff`, the shipped
+ *      `upsertSymbolsBulk` (bd tea-rags-mcp-tslvq). The first two both re-insert
+ *      every row they just deleted; only the third can leave an unchanged row
+ *      alone, which on a recompute is nearly all of them.
+ *   2. `cadence` — files per flush call (`CODEGRAPH_NODE_FLUSH_FILES`, default
+ *      256). For the DELETE shapes a bigger batch saves round-trips but not
+ *      scans or inserts. For `rowDiff` it INVERTS: the diff materialises its
+ *      scope read per call, so a wide batch pays to pull thousands of rows into
+ *      JS at once. Measured warm, 4 000 files: 851ms at cadence 60 against
+ *      3 345ms at 256 — the opposite of how the DELETE shapes tune, and the
+ *      reason the default deserves its own live measurement.
  *   3. `pass` — a cold table against a warm one. The recompute case is warm, and
- *      it is the one that costs.
+ *      it is the one that costs. Cold numbers are noisy here: the table grows
+ *      during the pass, so a scenario's scan cost depends on where in the run it
+ *      is measured. Read the warm column.
  *
  *   npx tsx scripts/spikes/node-drain-profile.ts [--files N] [--defs N]
  */
@@ -85,19 +96,36 @@ function chunked<T>(xs: readonly T[], n: number): T[][] {
   return out;
 }
 
+/** Chunk size the session's batched statements use — mirrored for the baselines. */
+const STATEMENT_CHUNK_ROWS = 200;
+
 /**
- * The pre-fix write shape, kept here as the baseline it is: one DELETE per file
- * inside the batch transaction, then the same batched INSERT. Reaches past the
- * client into its session on purpose — a benchmark's baseline has to be the code
- * that ran, not a paraphrase of it.
+ * The two superseded write shapes, kept here as the baselines they are: a DELETE
+ * of the file's rows (per file, then set-based) followed by a re-INSERT of the
+ * whole set. Both reach past the client into its session on purpose — a
+ * benchmark's baseline has to be the code that ran, not a paraphrase of it. The
+ * set-based DELETE reproduces `deleteByScopeValuesBatched`, which the row diff
+ * retired.
  */
-async function writePerFileDelete(client: DuckDbGraphClient, entries: BulkSymbolUpsertEntry[]): Promise<void> {
+async function writeDeleteThenInsert(
+  client: DuckDbGraphClient,
+  entries: BulkSymbolUpsertEntry[],
+  deleteShape: "perFile" | "setBased",
+): Promise<void> {
   const lastByRelPath = new Map<string, SymbolDefinition[]>();
   for (const { relPath, definitions } of entries) lastByRelPath.set(relPath, definitions);
+  const relPaths = [...lastByRelPath.keys()];
   const { session } = client as unknown as { session: SessionShape };
   await session.transaction(async () => {
-    for (const relPath of lastByRelPath.keys()) {
-      await session.run("DELETE FROM cg_symbols WHERE rel_path = ?", [relPath]);
+    if (deleteShape === "perFile") {
+      for (const relPath of relPaths) {
+        await session.run("DELETE FROM cg_symbols WHERE rel_path = ?", [relPath]);
+      }
+    } else {
+      for (let i = 0; i < relPaths.length; i += STATEMENT_CHUNK_ROWS) {
+        const chunk = relPaths.slice(i, i + STATEMENT_CHUNK_ROWS);
+        await session.run(`DELETE FROM cg_symbols WHERE rel_path IN (${chunk.map(() => "?").join(", ")})`, chunk);
+      }
     }
     const rows: unknown[][] = [];
     for (const definitions of lastByRelPath.values()) for (const def of definitions) rows.push(toCgSymbolsRow(def));
@@ -115,14 +143,14 @@ interface SessionShape {
   ) => Promise<void>;
 }
 
-type WriteShape = "perFileDelete" | "setBasedDelete";
+type WriteShape = "perFileDelete" | "setBasedDelete" | "rowDiff";
 
 async function drain(client: DuckDbGraphClient, entries: BulkSymbolUpsertEntry[], cadence: number, shape: WriteShape) {
   const batches = chunked(entries, cadence);
   const started = performance.now();
   for (const batch of batches) {
-    if (shape === "setBasedDelete") await client.upsertSymbolsBulk(batch);
-    else await writePerFileDelete(client, batch);
+    if (shape === "rowDiff") await client.upsertSymbolsBulk(batch);
+    else await writeDeleteThenInsert(client, batch, shape === "perFileDelete" ? "perFile" : "setBased");
   }
   const wallMs = Math.round(performance.now() - started);
   return { wallMs, calls: batches.length, msPerCall: Math.round((wallMs / batches.length) * 10) / 10 };
@@ -160,7 +188,7 @@ async function main(): Promise<void> {
     `${JSON.stringify({ files: args.files, defsPerFile: args.defs, rows: args.files * args.defs })}\n`,
   );
   for (const cadence of [60, 256]) {
-    for (const shape of ["perFileDelete", "setBasedDelete"] as const) {
+    for (const shape of ["perFileDelete", "setBasedDelete", "rowDiff"] as const) {
       await scenario(entries, cadence, shape);
     }
   }
