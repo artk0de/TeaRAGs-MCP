@@ -71,14 +71,29 @@ jobs:
           claude -p "Read scripts/release-changelog-prompt.md and follow it exactly. Version is ${TAG} without the leading v. The file commits.json holds this release's commits. Write release-notes.json to the working directory." \
             --allowedTools "Read,Write"
 
+      # Blog posts are written BY HAND; git says which ones this release ships.
+      # A post ADDED inside the release's commit range is that release's
+      # article, and both artifacts link it under the version header. A range
+      # that added none yields `[]` and renders nothing.
+      # The very first release has no previous tag, so `range` is a bare ref —
+      # `git diff` against it would compare the tag to the working tree instead
+      # of to a predecessor, so that case contributes no posts.
+      - name: Build blog-posts.json
+        run: |
+          RANGE='${{ steps.range.outputs.range }}'
+          case "$RANGE" in
+            *..*) git diff --diff-filter=A --name-only "$RANGE" -- website/blog ;;
+            *) printf '' ;;
+          esac | node scripts/blog-posts-to-json.js > blog-posts.json
+
       - name: Build artifacts
         run: node scripts/build-changelog-artifacts.js
 
       - name: Mirror to website
         run: bash scripts/prepare-changelog.sh
 
-      # AFTER the artifact build — that step writes website/blog/<date>-release-*.md,
-      # so this run is what puts the release's own post at the top of the README list.
+      # The README list is generated from whatever posts are on disk, so it picks
+      # up every hand-written post merged since the last release ran this.
       - name: Refresh README blog index
         run: node scripts/update-readme-blog-index.js
 
@@ -91,7 +106,9 @@ jobs:
         run: |
           git config user.name "tea-rags-bot"
           git config user.email "bot@tea-rags"
-          git add CHANGELOG.md website/docs/changelog.md website/blog README.md
+          # README.md carries the generated "From the blog" block, refreshed
+          # above. website/blog itself is hand-written — nothing here writes it.
+          git add CHANGELOG.md website/docs/changelog.md README.md
           # `chore(release):` prefix → release.yml skips its release job (guard)
           # while deploy-docs (if: always) redeploys the website. See release.yml.
           git commit -m "chore(release): ${{ env.TAG }} declarative changelog" || exit 0

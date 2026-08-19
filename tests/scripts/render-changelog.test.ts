@@ -1,12 +1,9 @@
 import { describe, expect, it } from "vitest";
 
 import {
-  blogPostFilename,
-  blogPostSlug,
   collectContributors,
   escapeMentions,
   renderChangelogSection,
-  renderReleaseBlogPost,
   renderReleaseNotes,
   spliceVersionSection,
 } from "../../scripts/lib/render-changelog.js";
@@ -294,153 +291,124 @@ describe("renderReleaseNotes — contributors", () => {
   });
 });
 
-// ── Release blog post ────────────────────────────────────────────────────────
-// The same release-notes.json drives a third artifact: a Docusaurus blog post.
+// ── Blog posts published in the release range ────────────────────────────────
+// Posts are written BY HAND. Git is the source of truth for which ones belong
+// to a release: a post ADDED inside the release's commit range is that
+// release's article. scripts/blog-posts-to-json.js turns the range's added-file
+// list into { slug, title, summary, url }; both artifacts render one line each
+// directly under the version header.
 
-describe("blogPostSlug / blogPostFilename", () => {
-  it("derives a dash-separated slug from the version", () => {
-    expect(blogPostSlug("1.41.0")).toBe("release-v1-41-0");
-    expect(blogPostSlug("2.0.0")).toBe("release-v2-0-0");
+const POSTS = [
+  {
+    slug: "why-ranking-moved",
+    title: "Why ranking moved",
+    summary: "One sentence about the post.",
+    url: "https://artk0de.github.io/TeaRAGs-MCP/blog/why-ranking-moved",
+  },
+  {
+    slug: "what-the-numbers-said",
+    title: "What the numbers said",
+    summary: "A second post in the same range.",
+    url: "https://artk0de.github.io/TeaRAGs-MCP/blog/what-the-numbers-said",
+  },
+];
+
+// Smallest release that still exercises header + one theme + the full-commits
+// spoiler, so the no-posts baseline can be asserted byte-for-byte.
+const MINI = {
+  version: "1.41.0",
+  date: "2026-08-19",
+  compareUrl: "https://github.com/artk0de/TeaRAGs-MCP/compare/v1.40.0...v1.41.0",
+  groups: [{ theme: "search", items: [{ description: "better ranking" }] }],
+  allCommits: [{ hash: "abc1234", subject: "feat(explore): better ranking" }],
+};
+
+const MINI_SECTION = [
+  "## [1.41.0](https://github.com/artk0de/TeaRAGs-MCP/compare/v1.40.0...v1.41.0) (2026-08-19)",
+  "",
+  "### 🔎 Search & ranking",
+  "",
+  "* better ranking",
+  "",
+].join("\n");
+
+const MINI_NOTES = [
+  "## [1.41.0](https://github.com/artk0de/TeaRAGs-MCP/compare/v1.40.0...v1.41.0) (2026-08-19)",
+  "",
+  "### 🔎 Search & ranking",
+  "",
+  "* better ranking",
+  "",
+  "<details>",
+  "<summary>Full Commits</summary>",
+  "",
+  "- abc1234 feat(explore): better ranking",
+  "",
+  "</details>",
+  "",
+].join("\n");
+
+describe("blog posts in the release range", () => {
+  it("links each post with its summary in the changelog section", () => {
+    expect(renderChangelogSection(MINI, { blogPosts: POSTS })).toContain(
+      "📝 [Why ranking moved](https://artk0de.github.io/TeaRAGs-MCP/blog/why-ranking-moved) — One sentence about the post.",
+    );
   });
 
-  it("prefixes the filename with the release date (Docusaurus convention)", () => {
-    expect(blogPostFilename({ version: "1.41.0", date: "2026-08-19" })).toBe("2026-08-19-release-v1-41-0.md");
-  });
-});
-
-describe("renderReleaseBlogPost", () => {
-  it("emits frontmatter with slug, title, author, release tag and date", () => {
-    const out = renderReleaseBlogPost(DATA);
-    expect(out.startsWith("---\n")).toBe(true);
-    expect(out).toContain("slug: release-v1-30-0");
-    expect(out).toContain("title: TeaRAGs v1.30.0");
-    expect(out).toContain("authors: [artk0de]");
-    expect(out).toContain("tags: [release]");
-    expect(out).toContain("date: 2026-06-06");
+  it("links each post with its summary in the GitHub release notes", () => {
+    expect(renderReleaseNotes(MINI, [], { blogPosts: POSTS })).toContain(
+      "📝 [Why ranking moved](https://artk0de.github.io/TeaRAGs-MCP/blog/why-ranking-moved) — One sentence about the post.",
+    );
   });
 
-  it("places the mandatory truncate marker after the lead and before the theme sections", () => {
-    const out = renderReleaseBlogPost(DATA);
-    expect(out).toContain("<!-- truncate -->");
-    expect(out.indexOf("<!-- truncate -->")).toBeGreaterThan(out.indexOf("\n---\n", 4));
-    expect(out.indexOf("<!-- truncate -->")).toBeLessThan(out.indexOf("### 🔎 Search & ranking"));
+  it("places the links directly under the version header and before the themed sections", () => {
+    const artifacts = [
+      renderChangelogSection(MINI, { blogPosts: POSTS }),
+      renderReleaseNotes(MINI, [], { blogPosts: POSTS }),
+    ];
+    for (const out of artifacts) {
+      expect(out.indexOf("## [1.41.0]")).toBeLessThan(out.indexOf("📝"));
+      expect(out.indexOf("📝")).toBeLessThan(out.indexOf("### 🔎 Search & ranking"));
+    }
   });
 
-  it("names the version in the lead paragraph", () => {
-    const lead = renderReleaseBlogPost(DATA).split("<!-- truncate -->")[0];
-    expect(lead).toContain("v1.30.0");
+  it("renders one line per post, in the order given (oldest first)", () => {
+    const lines = renderChangelogSection(MINI, { blogPosts: POSTS })
+      .split("\n")
+      .filter((l) => l.startsWith("📝"));
+    expect(lines).toHaveLength(2);
+    expect(lines[0]).toContain("Why ranking moved");
+    expect(lines[1]).toContain("What the numbers said");
   });
 
-  it("reuses the theme taxonomy order and omits empty themes", () => {
-    const out = renderReleaseBlogPost(DATA);
-    expect(out.indexOf("🔎 Search & ranking")).toBeLessThan(out.indexOf("🧠 Code intelligence"));
-    expect(out.indexOf("🧠 Code intelligence")).toBeLessThan(out.indexOf("🛠 CLI & workflow"));
-    expect(out.indexOf("🛠 CLI & workflow")).toBeLessThan(out.indexOf("🩹 Fixes"));
-    expect(out).not.toContain("Indexing & performance");
-    expect(out).not.toContain("Language support");
+  it("links by ABSOLUTE url — CHANGELOG.md is read on github.com, where /blog 404s", () => {
+    expect(renderChangelogSection(MINI, { blogPosts: POSTS })).not.toContain("](/blog/");
   });
 
-  it("never inlines the full commit list (that stays a GitHub-release concern)", () => {
-    const out = renderReleaseBlogPost(DATA);
-    expect(out).not.toContain("Full Commits");
-    expect(out).not.toContain("refactor(explore): move helper");
+  it("does not autolink a phantom account from an @-token in a summary", () => {
+    const posts = [{ ...POSTS[0], summary: "credit to @nobody for the idea" }];
+    const out = renderChangelogSection(MINI, { blogPosts: posts });
+    expect(out).toContain("`@nobody`");
+    expect(out).not.toContain("to @nobody for");
+    expect(renderReleaseNotes(MINI, [], { blogPosts: posts })).toContain("`@nobody`");
   });
 
-  it("escapes MDX-meaningful characters in commit-derived prose", () => {
-    const data = {
-      ...DATA,
-      groups: [
-        {
-          theme: "search",
-          items: [{ description: "rerank accepts { collectionName } and a generic <T> payload", commits: ["abc1234"] }],
-        },
-      ],
-    };
-    const out = renderReleaseBlogPost(data);
-    expect(out).toContain("&#123; collectionName &#125;");
-    expect(out).toContain("&lt;T&gt;");
-    expect(out).not.toContain("{ collectionName }");
-    expect(out).not.toContain("<T>");
+  it("renders NOTHING when the range added no posts — byte-identical to the baseline", () => {
+    expect(renderChangelogSection(MINI, { blogPosts: [] })).toBe(MINI_SECTION);
+    expect(renderReleaseNotes(MINI, [], { blogPosts: [] })).toBe(MINI_NOTES);
   });
 
-  it("escapes MDX characters in env-change descriptions too", () => {
-    const data = {
-      ...DATA,
-      envChanges: [
-        { name: "TEA_SHAPE", description: "record shape { a, b } for <chunk>", default: "{}", change: "new" },
-      ],
-    };
-    const out = renderReleaseBlogPost(data);
-    expect(out).toContain("&#123; a, b &#125;");
-    expect(out).toContain("&lt;chunk&gt;");
-    expect(out).not.toContain("{ a, b }");
+  it("renders NOTHING when no posts are passed at all", () => {
+    expect(renderChangelogSection(MINI)).toBe(MINI_SECTION);
+    expect(renderReleaseNotes(MINI)).toBe(MINI_NOTES);
+    expect(renderReleaseNotes(MINI, [])).toBe(MINI_NOTES);
   });
 
-  it("keeps mention escaping so a YARD tag cannot autolink a phantom account", () => {
-    const data = {
-      ...DATA,
-      groups: [{ theme: "search", items: [{ description: "exotic YARD tags (@type/@option)", commits: ["abc1234"] }] }],
-    };
-    const out = renderReleaseBlogPost(data);
-    expect(out).toContain("`@type`");
-    expect(out).toContain("`@option`");
-    expect(out).not.toContain("(@type/@option)");
-  });
-
-  it("does NOT escape the frontmatter values it controls", () => {
-    const out = renderReleaseBlogPost(DATA);
-    expect(out).toContain("authors: [artk0de]");
-    expect(out).not.toContain("authors: &#91;");
-  });
-
-  it("renders the env-changes section when present and omits it when absent", () => {
-    const withEnv = renderReleaseBlogPost({
-      ...DATA,
-      envChanges: [{ name: "QDRANT_TURBO_QUANT", description: "Enable TurboQuant", default: "true", change: "new" }],
-    });
-    expect(withEnv).toContain("Environment Variables");
-    expect(withEnv).toContain("`QDRANT_TURBO_QUANT`");
-    expect(renderReleaseBlogPost(DATA)).not.toContain("Environment Variables");
-  });
-
-  it("credits contributors when provided and stays silent when none", () => {
-    expect(renderReleaseBlogPost(DATA, ["@artk0de"])).toContain("@artk0de");
-    expect(renderReleaseBlogPost(DATA, ["@artk0de"])).toContain("Contributors");
-    expect(renderReleaseBlogPost(DATA, [])).not.toContain("Contributors");
-  });
-
-  it("footers the full commit range and the changelog page", () => {
-    const out = renderReleaseBlogPost(DATA);
-    expect(out).toContain(DATA.compareUrl);
-    expect(out).toContain("/changelog");
-  });
-});
-
-describe("blog back-links", () => {
-  it("links the blog post from the GitHub release notes by absolute url", () => {
-    expect(renderReleaseNotes(DATA)).toContain("https://artk0de.github.io/TeaRAGs-MCP/blog/release-v1-30-0");
-  });
-
-  it("links the blog post from the changelog section by absolute url", () => {
-    const out = renderChangelogSection(DATA);
-    expect(out).toContain("https://artk0de.github.io/TeaRAGs-MCP/blog/release-v1-30-0");
-    // CHANGELOG.md is read on GitHub too, where a site-relative /blog path 404s.
-    expect(out).not.toContain("](/blog/");
-  });
-
-  // retro-changelog.js rebuilds sections for tags released long before the blog
-  // existed. Those versions have no post, so the link would resolve to a 404 —
-  // the caller that knows whether a post exists says so.
-  it("omits the back-link from both artifacts when no post was published", () => {
-    expect(renderChangelogSection(DATA, { blogPostPublished: false })).not.toContain("/blog/release-v1-30-0");
-    expect(renderReleaseNotes(DATA, [], { blogPostPublished: false })).not.toContain("/blog/release-v1-30-0");
-  });
-
-  it("keeps the rest of each artifact intact when the back-link is omitted", () => {
-    const section = renderChangelogSection(DATA, { blogPostPublished: false });
-    expect(section).toContain("## [1.30.0]");
-    expect(section).toContain("🔎 Search & ranking");
-    const notes = renderReleaseNotes(DATA, ["@artk0de"], { blogPostPublished: false });
+  it("keeps the rest of each artifact intact when posts ARE rendered", () => {
+    const section = renderChangelogSection(MINI, { blogPosts: POSTS });
+    expect(section).toContain("## [1.41.0]");
+    expect(section).toContain("* better ranking");
+    const notes = renderReleaseNotes(MINI, ["@artk0de"], { blogPosts: POSTS });
     expect(notes).toContain("<summary>Full Commits</summary>");
     expect(notes).toContain("@artk0de");
   });

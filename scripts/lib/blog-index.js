@@ -1,8 +1,9 @@
 // scripts/lib/blog-index.js
 // Pure renderers behind scripts/update-readme-blog-index.js: turn the files in
 // website/blog/ into the "From the blog" block README.md keeps between markers.
-
-const SITE_URL = "https://artk0de.github.io/TeaRAGs-MCP";
+// Reading a post is lib/blog-post.js's job — this module only decides what the
+// README block looks like.
+import { blogPostDate, blogPostSlug, blogPostUrl, parseFrontmatter } from "./blog-post.js";
 
 // Marker pair README.md carries. Everything between them is generated and is
 // replaced wholesale on every run; everything outside is hand-written and is
@@ -12,37 +13,16 @@ export const BLOG_INDEX_END = "<!-- BLOG:END -->";
 
 const DEFAULT_LIMIT = 5;
 
-// Docusaurus names blog files `YYYY-MM-DD-<slug>.md`.
-const FILENAME_RE = /^(\d{4}-\d{2}-\d{2})-(.+?)\.mdx?$/;
-
-// Deliberately dependency-free: the frontmatter this reads is written by
-// renderReleaseBlogPost and by hand, so it is always flat `key: value` scalars.
-// Pulling in a YAML parser for three fields would buy nothing and would put a
-// runtime dependency in the path of a README refresh.
-function parseFrontmatter(source) {
-  const match = /^---\r?\n([\s\S]*?)\r?\n---/.exec(source);
-  if (!match) return {};
-  const fields = {};
-  for (const line of match[1].split(/\r?\n/)) {
-    const kv = /^([A-Za-z_][\w-]*):\s*(.*)$/.exec(line);
-    if (!kv) continue;
-    // Quotes are the author's, not part of the value.
-    fields[kv[1]] = kv[2].trim().replace(/^["'](.*)["']$/, "$1");
-  }
-  return fields;
-}
-
 // One post reduced to what the README block needs. Frontmatter wins; the
 // filename is the fallback, because Docusaurus itself derives date and slug
 // from it when a post omits them.
 export function parseBlogPost(filename, source) {
   const fm = parseFrontmatter(source);
-  const named = FILENAME_RE.exec(filename);
-  const slug = fm.slug || (named ? named[2] : filename.replace(/\.mdx?$/, ""));
+  const slug = blogPostSlug(filename, fm);
   return {
     title: fm.title || slug,
     slug,
-    date: fm.date || (named ? named[1] : ""),
+    date: blogPostDate(filename, fm),
   };
 }
 
@@ -62,7 +42,7 @@ export function renderBlogIndex(posts, limit = DEFAULT_LIMIT) {
   return [...posts]
     .sort(byNewest)
     .slice(0, limit)
-    .map((p) => `- [${p.title} — ${p.date}](${SITE_URL}/blog/${p.slug})`)
+    .map((p) => `- [${p.title} — ${p.date}](${blogPostUrl(p.slug)})`)
     .join("\n");
 }
 

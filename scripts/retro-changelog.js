@@ -10,11 +10,9 @@
 // --dry-run rewrites CHANGELOG.md + release-notes.md locally but SKIPS the
 //   `gh release edit` step — nothing is published to GitHub. Use for review.
 import { execFileSync } from "node:child_process";
-import { existsSync, readFileSync, writeFileSync } from "node:fs";
-import { join } from "node:path";
+import { readFileSync, writeFileSync } from "node:fs";
 
 import {
-  blogPostFilename,
   collectContributors,
   renderChangelogSection,
   renderReleaseNotes,
@@ -47,6 +45,17 @@ for (let i = Math.max(start, 1); i < tags.length; i++) {
   });
   writeFileSync("commits.json", execFileSync("node", ["scripts/git-log-to-json.js"], { input: log, encoding: "utf8" }));
 
+  // Same posts-in-range discovery the release workflow runs. Blog posts are
+  // hand-written, so a tag cut before the blog existed simply added none and
+  // the section renders exactly as it did before the feature.
+  const added = execFileSync("git", ["diff", "--diff-filter=A", "--name-only", range, "--", "website/blog"], {
+    encoding: "utf8",
+  });
+  writeFileSync(
+    "blog-posts.json",
+    execFileSync("node", ["scripts/blog-posts-to-json.js"], { input: added, encoding: "utf8" }),
+  );
+
   execFileSync(
     "claude",
     [
@@ -60,10 +69,7 @@ for (let i = Math.max(start, 1); i < tags.length; i++) {
 
   const data = JSON.parse(readFileSync("release-notes.json", "utf8"));
   const contributors = collectContributors(JSON.parse(readFileSync("commits.json", "utf8")));
-  // This script does NOT write blog posts — it only rebuilds notes for tags that
-  // already shipped, most of them cut before the blog existed. Link the post
-  // only where one is actually on disk, so historical sections carry no 404.
-  const opts = { blogPostPublished: existsSync(join("website", "blog", blogPostFilename(data))) };
+  const opts = { blogPosts: JSON.parse(readFileSync("blog-posts.json", "utf8")) };
   const changelog = readFileSync("CHANGELOG.md", "utf8");
   writeFileSync("CHANGELOG.md", spliceVersionSection(changelog, data.version, renderChangelogSection(data, opts)));
   writeFileSync("release-notes.md", renderReleaseNotes(data, contributors, opts));
