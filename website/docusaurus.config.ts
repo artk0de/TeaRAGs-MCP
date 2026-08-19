@@ -36,8 +36,11 @@ const config: Config = {
       "@easyops-cn/docusaurus-search-local",
       {
         hashed: true,
+        // Docs own the site root, so both base paths must be explicit — the
+        // plugin cannot tell a /blog route from a doc when docs sit at "/".
         docsRouteBasePath: "/",
-        indexBlog: false,
+        indexBlog: true,
+        blogRouteBasePath: "/blog",
       },
     ],
   ],
@@ -65,7 +68,29 @@ const config: Config = {
           remarkPlugins: [remarkMath],
           rehypePlugins: [rehypeKatex],
         },
-        blog: false,
+        blog: {
+          path: "./blog",
+          routeBasePath: "blog",
+          blogTitle: "TeaRAGs Blog",
+          blogDescription: "Engineering notes on trajectory-enriched code retrieval",
+          blogSidebarTitle: "Recent posts",
+          blogSidebarCount: 10,
+          postsPerPage: 10,
+          showReadingTime: true,
+          editUrl: "https://github.com/artk0de/TeaRAGs-MCP/tree/main/website/",
+          remarkPlugins: [remarkMath],
+          rehypePlugins: [rehypeKatex],
+          onInlineAuthors: "throw",
+          onInlineTags: "throw",
+          onUntruncatedBlogPosts: "throw",
+          feedOptions: {
+            type: "all",
+            title: "TeaRAGs Blog",
+            description: "Engineering notes on trajectory-enriched code retrieval",
+            copyright: `Copyright © ${new Date().getFullYear()} TeaRAGs contributors.`,
+            xslt: true,
+          },
+        },
         theme: {
           customCss: "./src/css/custom.css",
         },
@@ -102,6 +127,11 @@ const config: Config = {
           label: "Changelog",
         },
         {
+          to: "/blog",
+          position: "left",
+          label: "Blog",
+        },
+        {
           href: "https://github.com/artk0de/TeaRAGs-MCP",
           label: "GitHub",
           position: "right",
@@ -127,6 +157,16 @@ const config: Config = {
         {
           title: "More",
           items: [
+            {
+              label: "Blog",
+              to: "/blog",
+            },
+            {
+              // Absolute: the feed is a generated file, not a route, so a
+              // site-relative href trips onBrokenLinks on every page.
+              label: "RSS",
+              href: "https://artk0de.github.io/TeaRAGs-MCP/blog/rss.xml",
+            },
             {
               label: "GitHub",
               href: "https://github.com/artk0de/TeaRAGs-MCP",
