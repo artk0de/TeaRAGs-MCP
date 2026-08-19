@@ -10,9 +10,11 @@
 // --dry-run rewrites CHANGELOG.md + release-notes.md locally but SKIPS the
 //   `gh release edit` step — nothing is published to GitHub. Use for review.
 import { execFileSync } from "node:child_process";
-import { readFileSync, writeFileSync } from "node:fs";
+import { existsSync, readFileSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
 
 import {
+  blogPostFilename,
   collectContributors,
   renderChangelogSection,
   renderReleaseNotes,
@@ -58,9 +60,13 @@ for (let i = Math.max(start, 1); i < tags.length; i++) {
 
   const data = JSON.parse(readFileSync("release-notes.json", "utf8"));
   const contributors = collectContributors(JSON.parse(readFileSync("commits.json", "utf8")));
+  // This script does NOT write blog posts — it only rebuilds notes for tags that
+  // already shipped, most of them cut before the blog existed. Link the post
+  // only where one is actually on disk, so historical sections carry no 404.
+  const opts = { blogPostPublished: existsSync(join("website", "blog", blogPostFilename(data))) };
   const changelog = readFileSync("CHANGELOG.md", "utf8");
-  writeFileSync("CHANGELOG.md", spliceVersionSection(changelog, data.version, renderChangelogSection(data)));
-  writeFileSync("release-notes.md", renderReleaseNotes(data, contributors));
+  writeFileSync("CHANGELOG.md", spliceVersionSection(changelog, data.version, renderChangelogSection(data, opts)));
+  writeFileSync("release-notes.md", renderReleaseNotes(data, contributors, opts));
   if (dryRun) {
     console.error(`  [dry-run] skipped gh release edit ${curr}`);
   } else {

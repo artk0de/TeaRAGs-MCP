@@ -26,7 +26,8 @@
     "lint:fix": "eslint --fix src/ tests/",
     "docs:dev": "cd website && npm start",
     "docs:build": "cd website && npm run build",
-    "docs:deploy": "cd website && npm run deploy"
+    "docs:deploy": "cd website && npm run deploy",
+    "docs:blog-index": "node scripts/update-readme-blog-index.js"
   },
   "keywords": [
     "mcp",

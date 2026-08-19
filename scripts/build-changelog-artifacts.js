@@ -1,13 +1,16 @@
 // scripts/build-changelog-artifacts.js
-// Reads release-notes.json (emitted by the agent), renders the two divergent
+// Reads release-notes.json (emitted by the agent), renders the three divergent
 // artifacts, and splices the declarative section into CHANGELOG.md.
 // All logic lives in scripts/lib/render-changelog.js (unit-tested); this is
 // thin orchestration only.
 import { readFileSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
 
 import {
+  blogPostFilename,
   collectContributors,
   renderChangelogSection,
+  renderReleaseBlogPost,
   renderReleaseNotes,
   spliceVersionSection,
 } from "./lib/render-changelog.js";
@@ -23,4 +26,9 @@ writeFileSync("release-notes.md", renderReleaseNotes(data, contributors));
 const changelog = readFileSync("CHANGELOG.md", "utf8");
 writeFileSync("CHANGELOG.md", spliceVersionSection(changelog, data.version, section));
 
-console.error(`built artifacts for v${data.version}`);
+// Third artifact: the release post. Rendered from the same JSON — no second
+// agent pass — so the blog can never disagree with the release notes.
+const postPath = join("website", "blog", blogPostFilename(data));
+writeFileSync(postPath, renderReleaseBlogPost(data, contributors));
+
+console.error(`built artifacts for v${data.version} (+ ${postPath})`);

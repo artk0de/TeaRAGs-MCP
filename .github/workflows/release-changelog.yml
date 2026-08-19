@@ -77,6 +77,11 @@ jobs:
       - name: Mirror to website
         run: bash scripts/prepare-changelog.sh
 
+      # AFTER the artifact build — that step writes website/blog/<date>-release-*.md,
+      # so this run is what puts the release's own post at the top of the README list.
+      - name: Refresh README blog index
+        run: node scripts/update-readme-blog-index.js
+
       - name: Update GitHub release notes
         env:
           GH_TOKEN: ${{ secrets.RELEASE_TOKEN }}
@@ -86,7 +91,7 @@ jobs:
         run: |
           git config user.name "tea-rags-bot"
           git config user.email "bot@tea-rags"
-          git add CHANGELOG.md website/docs/changelog.md
+          git add CHANGELOG.md website/docs/changelog.md website/blog README.md
           # `chore(release):` prefix → release.yml skips its release job (guard)
           # while deploy-docs (if: always) redeploys the website. See release.yml.
           git commit -m "chore(release): ${{ env.TAG }} declarative changelog" || exit 0
