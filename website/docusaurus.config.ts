@@ -130,6 +130,7 @@ const config: Config = {
           to: "/blog",
           position: "left",
           label: "Blog",
+          className: "navbar-blog-link",
         },
         {
           href: "https://github.com/artk0de/TeaRAGs-MCP",
