@@ -36,6 +36,11 @@ export function escapeMentions(text) {
   return text.replace(/(?<!\w)@!?[A-Za-z][\w-]*/g, "`$&`");
 }
 
+// MDX escaping is NOT this module's job. Both artifacts it renders are plain
+// markdown; the ONE that reaches MDX — website/docs/changelog.md — is produced
+// by scripts/prepare-changelog.sh, which escapes `< > { }` across the whole
+// mirrored file. Escaping here too would double-escape that path.
+
 // Co-authored-by trailers in a commit body, parsed to { name, email }.
 function parseCoAuthors(body) {
   const out = [];
@@ -78,8 +83,8 @@ function renderItem(it) {
 
 // Render only the themes present in this release, always in taxonomy order.
 function renderGroups(data) {
-  const byTheme = new Map(data.groups.map((g) => [g.theme, g]));
-  return THEMES.filter((t) => byTheme.has(t.key))
+  const byTheme = new Map((data.groups || []).map((g) => [g.theme, g]));
+  return THEMES.filter((t) => byTheme.get(t.key)?.items?.length)
     .map((t) => {
       const lines = byTheme
         .get(t.key)
@@ -107,12 +112,28 @@ function versionHeader(data) {
   return `## [${data.version}](${data.compareUrl}) (${data.date})`;
 }
 
+// Blog posts are written BY HAND, and git says which ones belong to a release:
+// a post ADDED inside the release's commit range is that release's article.
+// `blogPosts` is that list, already { slug, title, summary, url } and ordered
+// oldest-first by scripts/blog-posts-to-json.js — this renderer neither reads
+// disk nor guesses a url. Each post gets its own paragraph so the two lines of
+// a two-post release don't reflow into one.
+//
+// Only the title and the summary are untrusted prose, and only mention-escaping
+// applies: a bare `@token` in either would otherwise autolink a phantom GitHub
+// account in the release notes.
+function renderBlogPostLinks(blogPosts) {
+  if (blogPosts.length === 0) return "";
+  const lines = blogPosts.map((p) => `📝 [${escapeMentions(p.title)}](${p.url}) — ${escapeMentions(p.summary)}`);
+  return `${lines.join("\n\n")}\n\n`;
+}
+
 // CHANGELOG.md / website: header + product themes only. No inline hash links, no
 // full commit list — release-level traceability via the compareUrl in the header.
-export function renderChangelogSection(data) {
+export function renderChangelogSection(data, { blogPosts = [] } = {}) {
   const env = renderEnvChanges(data);
   const envBlock = env ? `\n\n${env}` : "";
-  return `${versionHeader(data)}\n\n${renderGroups(data)}${envBlock}\n`;
+  return `${versionHeader(data)}\n\n${renderBlogPostLinks(blogPosts)}${renderGroups(data)}${envBlock}\n`;
 }
 
 // GitHub release notes: header (with date) + product themes + full commits
@@ -120,14 +141,14 @@ export function renderChangelogSection(data) {
 // from collectContributors (already `@handle` / plain-name strings) — supplied
 // by build-changelog-artifacts.js from git, NOT by the agent. Commit subjects
 // are mention-escaped so raw YARD tags don't autolink phantom accounts.
-export function renderReleaseNotes(data, contributors = []) {
+export function renderReleaseNotes(data, contributors = [], { blogPosts = [] } = {}) {
   const body = renderGroups(data);
   const env = renderEnvChanges(data);
   const envBlock = env ? `\n\n${env}` : "";
   const commits = data.allCommits.map((c) => `- ${c.hash} ${escapeMentions(c.subject)}`).join("\n");
   const spoiler = `<details>\n<summary>Full Commits</summary>\n\n${commits}\n\n</details>`;
   const credits = contributors.length ? `\n\n### 👥 Contributors\n\n${contributors.join(", ")}` : "";
-  return `${versionHeader(data)}\n\n${body}${envBlock}\n\n${spoiler}${credits}\n`;
+  return `${versionHeader(data)}\n\n${renderBlogPostLinks(blogPosts)}${body}${envBlock}\n\n${spoiler}${credits}\n`;
 }
 
 // Replace the `## [version]...` block in CHANGELOG.md with a freshly rendered

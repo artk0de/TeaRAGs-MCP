@@ -45,6 +45,17 @@ for (let i = Math.max(start, 1); i < tags.length; i++) {
   });
   writeFileSync("commits.json", execFileSync("node", ["scripts/git-log-to-json.js"], { input: log, encoding: "utf8" }));
 
+  // Same posts-in-range discovery the release workflow runs. Blog posts are
+  // hand-written, so a tag cut before the blog existed simply added none and
+  // the section renders exactly as it did before the feature.
+  const added = execFileSync("git", ["diff", "--diff-filter=A", "--name-only", range, "--", "website/blog"], {
+    encoding: "utf8",
+  });
+  writeFileSync(
+    "blog-posts.json",
+    execFileSync("node", ["scripts/blog-posts-to-json.js"], { input: added, encoding: "utf8" }),
+  );
+
   execFileSync(
     "claude",
     [
@@ -58,9 +69,10 @@ for (let i = Math.max(start, 1); i < tags.length; i++) {
 
   const data = JSON.parse(readFileSync("release-notes.json", "utf8"));
   const contributors = collectContributors(JSON.parse(readFileSync("commits.json", "utf8")));
+  const opts = { blogPosts: JSON.parse(readFileSync("blog-posts.json", "utf8")) };
   const changelog = readFileSync("CHANGELOG.md", "utf8");
-  writeFileSync("CHANGELOG.md", spliceVersionSection(changelog, data.version, renderChangelogSection(data)));
-  writeFileSync("release-notes.md", renderReleaseNotes(data, contributors));
+  writeFileSync("CHANGELOG.md", spliceVersionSection(changelog, data.version, renderChangelogSection(data, opts)));
+  writeFileSync("release-notes.md", renderReleaseNotes(data, contributors, opts));
   if (dryRun) {
     console.error(`  [dry-run] skipped gh release edit ${curr}`);
   } else {

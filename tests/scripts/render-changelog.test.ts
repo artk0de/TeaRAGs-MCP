@@ -290,3 +290,126 @@ describe("renderReleaseNotes — contributors", () => {
     expect(out).not.toContain("(@type/@option)");
   });
 });
+
+// ── Blog posts published in the release range ────────────────────────────────
+// Posts are written BY HAND. Git is the source of truth for which ones belong
+// to a release: a post ADDED inside the release's commit range is that
+// release's article. scripts/blog-posts-to-json.js turns the range's added-file
+// list into { slug, title, summary, url }; both artifacts render one line each
+// directly under the version header.
+
+const POSTS = [
+  {
+    slug: "why-ranking-moved",
+    title: "Why ranking moved",
+    summary: "One sentence about the post.",
+    url: "https://artk0de.github.io/TeaRAGs-MCP/blog/why-ranking-moved",
+  },
+  {
+    slug: "what-the-numbers-said",
+    title: "What the numbers said",
+    summary: "A second post in the same range.",
+    url: "https://artk0de.github.io/TeaRAGs-MCP/blog/what-the-numbers-said",
+  },
+];
+
+// Smallest release that still exercises header + one theme + the full-commits
+// spoiler, so the no-posts baseline can be asserted byte-for-byte.
+const MINI = {
+  version: "1.41.0",
+  date: "2026-08-19",
+  compareUrl: "https://github.com/artk0de/TeaRAGs-MCP/compare/v1.40.0...v1.41.0",
+  groups: [{ theme: "search", items: [{ description: "better ranking" }] }],
+  allCommits: [{ hash: "abc1234", subject: "feat(explore): better ranking" }],
+};
+
+const MINI_SECTION = [
+  "## [1.41.0](https://github.com/artk0de/TeaRAGs-MCP/compare/v1.40.0...v1.41.0) (2026-08-19)",
+  "",
+  "### 🔎 Search & ranking",
+  "",
+  "* better ranking",
+  "",
+].join("\n");
+
+const MINI_NOTES = [
+  "## [1.41.0](https://github.com/artk0de/TeaRAGs-MCP/compare/v1.40.0...v1.41.0) (2026-08-19)",
+  "",
+  "### 🔎 Search & ranking",
+  "",
+  "* better ranking",
+  "",
+  "<details>",
+  "<summary>Full Commits</summary>",
+  "",
+  "- abc1234 feat(explore): better ranking",
+  "",
+  "</details>",
+  "",
+].join("\n");
+
+describe("blog posts in the release range", () => {
+  it("links each post with its summary in the changelog section", () => {
+    expect(renderChangelogSection(MINI, { blogPosts: POSTS })).toContain(
+      "📝 [Why ranking moved](https://artk0de.github.io/TeaRAGs-MCP/blog/why-ranking-moved) — One sentence about the post.",
+    );
+  });
+
+  it("links each post with its summary in the GitHub release notes", () => {
+    expect(renderReleaseNotes(MINI, [], { blogPosts: POSTS })).toContain(
+      "📝 [Why ranking moved](https://artk0de.github.io/TeaRAGs-MCP/blog/why-ranking-moved) — One sentence about the post.",
+    );
+  });
+
+  it("places the links directly under the version header and before the themed sections", () => {
+    const artifacts = [
+      renderChangelogSection(MINI, { blogPosts: POSTS }),
+      renderReleaseNotes(MINI, [], { blogPosts: POSTS }),
+    ];
+    for (const out of artifacts) {
+      expect(out.indexOf("## [1.41.0]")).toBeLessThan(out.indexOf("📝"));
+      expect(out.indexOf("📝")).toBeLessThan(out.indexOf("### 🔎 Search & ranking"));
+    }
+  });
+
+  it("renders one line per post, in the order given (oldest first)", () => {
+    const lines = renderChangelogSection(MINI, { blogPosts: POSTS })
+      .split("\n")
+      .filter((l) => l.startsWith("📝"));
+    expect(lines).toHaveLength(2);
+    expect(lines[0]).toContain("Why ranking moved");
+    expect(lines[1]).toContain("What the numbers said");
+  });
+
+  it("links by ABSOLUTE url — CHANGELOG.md is read on github.com, where /blog 404s", () => {
+    expect(renderChangelogSection(MINI, { blogPosts: POSTS })).not.toContain("](/blog/");
+  });
+
+  it("does not autolink a phantom account from an @-token in a summary", () => {
+    const posts = [{ ...POSTS[0], summary: "credit to @nobody for the idea" }];
+    const out = renderChangelogSection(MINI, { blogPosts: posts });
+    expect(out).toContain("`@nobody`");
+    expect(out).not.toContain("to @nobody for");
+    expect(renderReleaseNotes(MINI, [], { blogPosts: posts })).toContain("`@nobody`");
+  });
+
+  it("renders NOTHING when the range added no posts — byte-identical to the baseline", () => {
+    expect(renderChangelogSection(MINI, { blogPosts: [] })).toBe(MINI_SECTION);
+    expect(renderReleaseNotes(MINI, [], { blogPosts: [] })).toBe(MINI_NOTES);
+  });
+
+  it("renders NOTHING when no posts are passed at all", () => {
+    expect(renderChangelogSection(MINI)).toBe(MINI_SECTION);
+    expect(renderReleaseNotes(MINI)).toBe(MINI_NOTES);
+    expect(renderReleaseNotes(MINI, [])).toBe(MINI_NOTES);
+  });
+
+  it("keeps the rest of each artifact intact when posts ARE rendered", () => {
+    const section = renderChangelogSection(MINI, { blogPosts: POSTS });
+    expect(section).toContain("## [1.41.0]");
+    expect(section).toContain("* better ranking");
+    const notes = renderReleaseNotes(MINI, ["@artk0de"], { blogPosts: POSTS });
+    expect(notes).toContain("<summary>Full Commits</summary>");
+    expect(notes).toContain("@artk0de");
+  });
+});

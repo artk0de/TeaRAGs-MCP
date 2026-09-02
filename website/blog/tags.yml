@@ -1,0 +1,24 @@
+release:
+  label: Release
+  permalink: /release
+  description: What shipped and why it matters
+
+codegraph:
+  label: Codegraph
+  permalink: /codegraph
+  description: Call-graph extraction, symbol resolution, graph signals
+
+retrieval:
+  label: Retrieval
+  permalink: /retrieval
+  description: Ranking, rerank presets, trajectory signals
+
+performance:
+  label: Performance
+  permalink: /performance
+  description: Indexing throughput, profiling, measured wins
+
+agents:
+  label: Agents
+  permalink: /agents
+  description: How coding agents consume TeaRAGs

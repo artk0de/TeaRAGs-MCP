@@ -339,6 +339,19 @@ auto-update pauses while `HEAD` is off the target branch.
 | **Look under the hood**      | [Architecture](https://artk0de.github.io/TeaRAGs-MCP/architecture/overview) — pipelines, data model, reranker internals             |
 | **Learn the theory**         | [Knowledge Base](https://artk0de.github.io/TeaRAGs-MCP/knowledge-base/rag-fundamentals) — RAG, code search, software evolution      |
 
+## 📝 From the blog
+
+Engineering notes behind the releases — ranking, codegraph, indexing throughput,
+each with the corpus it was measured on.
+[All posts](https://artk0de.github.io/TeaRAGs-MCP/blog) ·
+[RSS](https://artk0de.github.io/TeaRAGs-MCP/blog/rss.xml)
+
+<!-- BLOG:START -->
+
+- [Why this blog exists — 2026-08-19](https://artk0de.github.io/TeaRAGs-MCP/blog/why-this-blog-exists)
+
+<!-- BLOG:END -->
+
 ## 🤝 Contributing
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) for workflow and conventions.
