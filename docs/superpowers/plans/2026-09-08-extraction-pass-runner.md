@@ -184,10 +184,10 @@ export function mergeExtraction(
 
 **Steps**
 
-- [ ] Build the worktree once so worker-forking specs can run: `npm run build`.
+- [x] Build the worktree once so worker-forking specs can run: `npm run build`.
       Bare build only — no `npm link`, no reindex.
 
-- [ ] Write the failing test file
+- [x] Write the failing test file
       `tests/core/domains/language/kernel/merge-extraction.test.ts`:
 
 ```ts
@@ -606,12 +606,12 @@ describe("mergeExtraction — the rulebook is exhaustive by construction", () =>
 });
 ```
 
-- [ ] Run it and confirm the expected failure — the module does not exist yet:
+- [x] Run it and confirm the expected failure — the module does not exist yet:
       `npx vitest run tests/core/domains/language/kernel/merge-extraction.test.ts`
       Expected: `Failed to resolve import ".../kernel/merge-extraction.js"`
       (vitest reports it as an unresolved import, not a test assertion failure).
 
-- [ ] Write `src/core/domains/language/kernel/merge-extraction.ts`:
+- [x] Write `src/core/domains/language/kernel/merge-extraction.ts`:
 
 ```ts
 /**
@@ -876,18 +876,18 @@ export function mergeExtraction(
 }
 ```
 
-- [ ] Run the unit gate:
+- [x] Run the unit gate:
       `npx vitest run tests/core/domains/language/kernel/merge-extraction.test.ts`
       — all cases green.
 
-- [ ] Run the type-level gate (the `@ts-expect-error` assertions are only
+- [x] Run the type-level gate (the `@ts-expect-error` assertions are only
       checked here; `npm run type-check` covers `src/**` alone):
       `npx tsc --noEmit -p tsconfig.eslint.json` — clean.
 
-- [ ] Run lint on the new files:
+- [x] Run lint on the new files:
       `npx eslint --max-warnings 0 src/core/domains/language/kernel/merge-extraction.ts tests/core/domains/language/kernel/merge-extraction.test.ts`
 
-- [ ] Commit:
+- [x] Commit:
 
 ```text
 feat(language): add the append-only extraction channel merge (qns77)
