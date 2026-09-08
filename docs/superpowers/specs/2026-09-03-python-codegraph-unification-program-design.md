@@ -218,6 +218,70 @@ A hypothesis: E0's oracle attribution confirms or reorders it.
 6. `ReceiverTypePropagation` multi-hop + return-type binding
 7. Dispatch: union (polar 10,343 PEP 604 unions) → dynamic / duck → table (last)
 
+## Decision records (seam level, 2026-09-08)
+
+Each seam gets a short record here when its plan is written; the plan carries
+the code, this section carries the reasoning that survives the plan.
+
+### E1 seam 0 — extraction pass-runner (`pss0q`, `qns77`, `dppsr`, `vqdw1`)
+
+- `ExtractionPass<T>` and `WalkContext` already exist in
+  `contracts/types/language.ts:196–225` with zero consumers; `mergeExtraction` /
+  `mergeProvider` do not exist. Ruby's walker is already an orchestrator over 16
+  modules, but three collaborators (`file-type-env`, the `siteContextAt` closure
+  from `chunk-extractions`, the `type-channels` mutator) are not pass-shaped and
+  reach both risk files transitively.
+- Decision: Model A literally. Native monoliths are NOT re-sliced. A kernel
+  engine (`runExtractionPasses` + `composeExtractionWalker`) runs the native
+  walk, then an ordered list of `ExtractionFacetPass`es, merging
+  `Partial<FileExtraction>` through a typed rulebook (`mergeExtraction`). With
+  zero passes the composed walker returns the native object by identity, so
+  wiring Ruby and Python is a relocation. New Python facets arrive ONLY as
+  passes. `WalkContext` gains `gemfileContent?`.
+- Rulebook: Records union with the base's key kept; arrays concat; set-like
+  arrays dedupe; `chunks` merge by `symbolId` (calls concat, `localBindings`
+  union re-sorted by line, scalars base-wins with `??` fill); an incoming empty
+  channel is a no-op, so a channel the walker left absent is never materialised
+  (NDJSON spill parity); a new channel is a compile error via a mapped type over
+  `keyof`. Precedence inversions inside a native walker stay there.
+- Gate: Ruby parity harness (`scripts/spikes/ruby-walker-composition-parity.ts`,
+  JSON-equality over mastodon), Python chain-tally byte-identical on all five
+  corpora, peak RSS ≤ +20%, existing walker tests untouched.
+- Plan: `docs/superpowers/plans/2026-09-08-extraction-pass-runner.md`.
+
+### E2 seam 1 — Python import file mapper and re-exports (`9fgdi`)
+
+- Evidence: Python file edges come from `defaultImportFileEdges`
+  (`resolution-runner.ts:67–84`), which pushes a fake call through the chain;
+  `importMatch` commits a file-only edge on a path the string synthesiser made
+  up, so 15–62% of first-party absolute imports (package `__init__.py`) land on
+  phantom paths that are persisted unfiltered. Every Python file signal (fanIn,
+  fanOut, instability, transitiveImpact, isHub) is computed over them today.
+  Import root ≠ repo root in netbox (`netbox/`), flask (`src/`), polar
+  (`server/`). The walker discards the names of `from X import Y`. Namespace
+  packages are real and imported (ugnest `domains/`). TypeScript resolves
+  barrels resolver-side (`reexportOriginFile`, hop-agnostic symbol-table
+  lookup), not in the walker.
+- Decisions: (1) `GlobalSymbolTable` gains `hasFile` and `hasFilesUnder`
+  (refcounted directory index, O(1), no disk) — E0 lands them; (2) a shared seam
+  `ImportFileMapper.mapImportToFile(importText, fromFile, ctx) → project | external | unknown`
+  plus a shared `resolveImportFileEdges`; the Python mapper infers source roots
+  from symbol-table paths (manifest-declared roots are a follow-up), resolves
+  `.py` vs `/__init__.py` vs namespace directory, memoises per symbol-table
+  identity and size; (3) `reexportOriginFile` relocates byte-identically to
+  `kernel/reexport-origin.ts` and TypeScript re-imports it; (4) a Python
+  `importedName` strategy sits between `localBinding` and `importMatch` and
+  covers star imports; (5) the native Python walker fills `importedNames` /
+  `importedBindings` (walker version → 2); (6) `importMatch`, `resolveTypeFile`,
+  the external vocabulary and the new `resolveFileEdges` override all consume
+  the one mapper; (7) the two unit assertions pinning phantom targets are
+  updated with rationale.
+- Navigation aliasing for `find_symbol("flask.Flask")` (bead `m5rc`'s navigation
+  half) stays a separate bead: resolution needs declaration lookup, not alias
+  symbols.
+- Plan: `docs/superpowers/plans/2026-09-08-python-import-file-mapper.md`
+  (pending).
+
 ## Measurement policy
 
 - **Oracle** (E0): per call site, the production chain's answer vs jedi's ground
