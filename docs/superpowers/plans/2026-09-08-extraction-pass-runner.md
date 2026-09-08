@@ -963,7 +963,7 @@ export function composeExtractionWalker(
 
 **Steps**
 
-- [ ] Write the failing test file
+- [x] Write the failing test file
       `tests/core/domains/language/kernel/extraction-passes.test.ts`:
 
 ```ts
@@ -1132,13 +1132,13 @@ describe("composeExtractionWalker", () => {
 });
 ```
 
-- [ ] Run it and confirm the expected failure:
+- [x] Run it and confirm the expected failure:
       `npx vitest run tests/core/domains/language/kernel/extraction-passes.test.ts`
       Expected: `Failed to resolve import ".../kernel/extraction-passes.js"`,
       plus a TS complaint about `gemfileContent` on `WalkInput`-derived
       `WalkContext` once the module exists — both are fixed below.
 
-- [ ] Add `gemfileContent` to `WalkContext` in
+- [x] Add `gemfileContent` to `WalkContext` in
       `src/core/contracts/types/language.ts`. Replace:
 
 ```ts
@@ -1181,7 +1181,7 @@ export interface WalkContext {
 }
 ```
 
-- [ ] Write `src/core/domains/language/kernel/extraction-passes.ts`:
+- [x] Write `src/core/domains/language/kernel/extraction-passes.ts`:
 
 ```ts
 /**
@@ -1299,17 +1299,17 @@ export function composeExtractionWalker(
 }
 ```
 
-- [ ] Run the unit gate:
+- [x] Run the unit gate:
       `npx vitest run tests/core/domains/language/kernel/extraction-passes.test.ts`
       — all cases green, including the two `toBe` identity assertions.
 
-- [ ] Run the contract gate: `npm run type-check` then
+- [x] Run the contract gate: `npm run type-check` then
       `npx tsc --noEmit -p tsconfig.eslint.json` — both clean.
 
-- [ ] Run lint:
+- [x] Run lint:
       `npx eslint --max-warnings 0 src/core/contracts/types/language.ts src/core/domains/language/kernel/extraction-passes.ts tests/core/domains/language/kernel/extraction-passes.test.ts`
 
-- [ ] Commit:
+- [x] Commit:
 
 ```text
 feat(contracts): add the extraction pass-runner and walker composer (pss0q)
