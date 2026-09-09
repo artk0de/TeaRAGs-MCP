@@ -260,11 +260,11 @@ export function loadCodegraphCorpus(name: string): CodegraphCorpus;
 
 **Steps**
 
-- [ ] Prepare the worktree: `npm ci`, then a bare `npm run build`. No
+- [x] Prepare the worktree: `npm ci`, then a bare `npm run build`. No
       `npm link`, no reindex. The build is required because worker-forking specs
       fork the COMPILED worker and a fresh worktree has no `build/`.
 
-- [ ] Write the failing test first — `tests/scripts/codegraph-corpora.test.ts`:
+- [x] Write the failing test first — `tests/scripts/codegraph-corpora.test.ts`:
 
 ```ts
 /**
@@ -381,10 +381,10 @@ describe("loadCodegraphCorpus — provisioned interpreters", () => {
 });
 ```
 
-- [ ] Run it and watch it fail on a missing `scripts/lib/codegraph-corpora.js`:
+- [x] Run it and watch it fail on a missing `scripts/lib/codegraph-corpora.js`:
       `npx vitest run tests/scripts/codegraph-corpora.test.ts`.
 
-- [ ] Write `scripts/lib/codegraph-corpora.json`. These venvs are ALREADY
+- [x] Write `scripts/lib/codegraph-corpora.json`. These venvs are ALREADY
       provisioned — this file records them, it does not request them:
 
 ```json
@@ -480,7 +480,7 @@ describe("loadCodegraphCorpus — provisioned interpreters", () => {
 }
 ```
 
-- [ ] Write `scripts/lib/codegraph-corpora.ts`:
+- [x] Write `scripts/lib/codegraph-corpora.ts`:
 
 ```ts
 /**
@@ -582,10 +582,10 @@ export function loadCodegraphCorpus(name: string): CodegraphCorpus {
 }
 ```
 
-- [ ] Run the test until green:
+- [x] Run the test until green:
       `npx vitest run tests/scripts/codegraph-corpora.test.ts`.
 
-- [ ] Confirm the recorded interpreters exist on THIS machine and report the
+- [x] Confirm the recorded interpreters exist on THIS machine and report the
       recorded versions. A mismatch means the manifest is stale — fix the
       manifest, never soften the assertion:
 
@@ -598,7 +598,7 @@ printf 'ugnest: '
 ~/Dev/Collaborate/ugnest/.venv/bin/python --version
 ```
 
-- [ ] Confirm every corpus root and every declared import root resolves:
+- [x] Confirm every corpus root and every declared import root resolves:
 
 ```bash
 npx tsx -e "
@@ -611,7 +611,7 @@ for (const c of Object.values(loadCodegraphCorpora())) {
 }"
 ```
 
-- [ ] Record the chain-tally perf baseline this manifest claims, so later tasks
+- [x] Record the chain-tally perf baseline this manifest claims, so later tasks
       compare against a number measured on this machine rather than the one in
       the plan header. Run the five sequentially, nothing else heavy running,
       and paste the `real` / `maximum resident set size` pair into the task's
@@ -622,7 +622,7 @@ for (const c of Object.values(loadCodegraphCorpora())) {
   --corpus ~/Dev/Tools/tea-rags-bench/corpora/httpx --lang python --quiet
 ```
 
-- [ ] Format and commit:
+- [x] Format and commit:
 
 ```bash
 npx prettier --write scripts/lib/codegraph-corpora.json scripts/lib/codegraph-corpora.ts \

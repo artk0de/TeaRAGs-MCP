@@ -1,0 +1,90 @@
+{
+  "ugnest": {
+    "path": "~/Dev/Collaborate/ugnest",
+    "language": "python",
+    "requiresPython": ">=3.13",
+    "venvPython": "~/Dev/Collaborate/ugnest/.venv/bin/python",
+    "venvPythonVersion": "3.13.5",
+    "roots": ["."],
+    "stack": ["django", "djangorestframework"],
+    "baseline": {
+      "edges": 1432,
+      "fileOnly": 315,
+      "unresolved": 5899,
+      "peakRssMb": 352,
+      "wallSeconds": 2.4
+    },
+    "notes": "The user's own Django 6.0 + DRF project; registry code_035da920 has codegraphEnabled false. The venv lives INSIDE the corpus root, which is why site-packages classification runs before the root-prefix test."
+  },
+  "flask": {
+    "path": "~/Dev/OpenSource/codegraph-test/flask",
+    "language": "python",
+    "requiresPython": ">=3.10",
+    "venvPython": "~/Dev/Tools/tea-rags-bench/venvs/flask/bin/python",
+    "venvPythonVersion": "3.13.7",
+    "roots": ["src"],
+    "stack": ["flask"],
+    "baseline": {
+      "edges": 770,
+      "fileOnly": 148,
+      "unresolved": 1402,
+      "peakRssMb": 275,
+      "wallSeconds": 1.1
+    },
+    "notes": "Deps are installed but the flask package itself fails at runtime import in this venv. Irrelevant to jedi, which is static and reads site-packages sources."
+  },
+  "netbox": {
+    "path": "~/Dev/Tools/tea-rags-bench/corpora/netbox",
+    "language": "python",
+    "sha": "1fae2d01",
+    "requiresPython": ">=3.12",
+    "venvPython": "~/Dev/Tools/tea-rags-bench/venvs/netbox/bin/python",
+    "venvPythonVersion": "3.13.7",
+    "roots": ["netbox"],
+    "stack": ["django", "djangorestframework", "rq"],
+    "baseline": {
+      "edges": 21971,
+      "fileOnly": 8190,
+      "unresolved": 38760,
+      "peakRssMb": 1293,
+      "wallSeconds": 16.2
+    },
+    "notes": "3.4% annotated defs — the untyped-framework end of the trimodal split. Ships JavaScript, so the symbol table is cross-language while only .py call sites are scored. 2 files carry parso grammar errors."
+  },
+  "polar": {
+    "path": "~/Dev/Tools/tea-rags-bench/corpora/polar",
+    "language": "python",
+    "sha": "bddb7508",
+    "requiresPython": ">=3.14",
+    "venvPython": "~/Dev/Tools/tea-rags-bench/venvs/polar/bin/python",
+    "venvPythonVersion": "3.14.0rc2",
+    "roots": ["server"],
+    "stack": ["fastapi", "sqlalchemy", "pydantic", "dramatiq"],
+    "baseline": {
+      "edges": 21336,
+      "fileOnly": 3976,
+      "unresolved": 61218,
+      "peakRssMb": 959,
+      "wallSeconds": 14.5
+    },
+    "notes": "99.4% annotated and resolves worst — the chain reads no annotations. 26 + 53 files (~7.6%) carry PEP 758 / match / type-alias syntax parso 0.8.7 rejects; their rows are oracleDegraded. 82,554 call sites, 15-40 min unbounded."
+  },
+  "httpx": {
+    "path": "~/Dev/Tools/tea-rags-bench/corpora/httpx",
+    "language": "python",
+    "sha": "b5addb64",
+    "requiresPython": ">=3.9",
+    "venvPython": "~/Dev/Tools/tea-rags-bench/venvs/httpx/bin/python",
+    "venvPythonVersion": "3.13.7",
+    "roots": ["httpx"],
+    "stack": ["httpcore", "anyio"],
+    "baseline": {
+      "edges": 1011,
+      "fileOnly": 193,
+      "unresolved": 1632,
+      "peakRssMb": 260,
+      "wallSeconds": 1.7
+    },
+    "notes": "23 files, 100% annotated — the smoke corpus. Every harness change is validated here first."
+  }
+}
