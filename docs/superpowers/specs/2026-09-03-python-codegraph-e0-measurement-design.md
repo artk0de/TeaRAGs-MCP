@@ -690,3 +690,21 @@ The order the data supports:
 `plain` ranks 2nd by absolute loss (1,288, netbox-carried) and is deliberately
 left out of the order: it is the residual bucket for sites carrying no other
 shape, so it names no lever.
+
+## Final measurement record (2026-09-09, integration HEAD 30a1d1891)
+
+Seeded, per-file-rooted jedi oracle (E0.9/E0.11/E0.12/E0.13), calls attributed to their innermost chunk (PW.1). JSON
+denominators exclude oracle-degraded rows (netbox 2,331; polar 20,424). Chain drift 0 and zero file-only call edges on
+every corpus.
+
+| corpus | match | missed | wrongFile | phantom | edges | fabricated+wrongFile / edges | in-project recall |
+| ------ | ----- | ------ | --------- | ------- | ----- | ---------------------------- | ----------------- |
+| ugnest | 741 | 48 | 0 | 0 | 742 | 0.0% | 0.94 |
+| netbox | 7,428 | 463 | 1 | 26 | 8,109 | 0.3% | 0.94 |
+| polar | 9,638 | 2,514 | 5 | 115 | 13,886 | 0.9% | 0.79 |
+| httpx | 421 | 63 | 0 | 8 | 433 | 1.8% | 0.87 |
+| flask | 302 | 60 | 1 | 9 | 330 | 3.0% | 0.83 |
+
+Per receiverKind (n >= 100): bareCall 0.95-0.99, constant 0.99, selfMember 1.0, super 0.96-1.0, dynamic 0.96 (netbox) /
+0.78 (polar); chain 0.004-0.008 and localVar 0.21-0.40 remain the static frontier (types of intermediate calls and of
+unannotated return values). Results: `~/Dev/Tools/tea-rags-bench/results/python/2026-09-09-final-<corpus>.json`.
