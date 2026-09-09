@@ -37,6 +37,7 @@ import type {
 import { DefaultSymbolIdComposer, LanguageFactory } from "../src/core/domains/language/index.js";
 import { createPythonSymbolResolutionChain } from "../src/core/domains/language/python/resolver/index.js";
 import { CONE_MAX_DEFAULT } from "../src/core/domains/language/python/resolver/strategies/index.js";
+import { pythonClassKey } from "../src/core/domains/language/python/resolver/strategies/shared.js";
 import { resolveViaChain } from "../src/core/domains/language/resolver-chain.js";
 import { CODEGRAPH_LANGUAGES } from "../src/core/domains/trajectory/codegraph/symbols/provider.js";
 import { classifyReceiverKind } from "../src/core/domains/trajectory/codegraph/symbols/receiver-kind.js";
@@ -402,6 +403,26 @@ export async function askOracle(
   return replies;
 }
 
+/**
+ * How many bases the call site's enclosing class declares.
+ *
+ * `undefined` means the question does not apply: no enclosing class, or a run
+ * whose index carries no `classAncestors` at all (walker v2). `0` is a real
+ * answer — a class the walker recorded no base for, whose `super()` goes
+ * straight to `object`.
+ *
+ * The key is built exactly as `PythonSuperSymbolResolutionStrategy` builds it,
+ * from the same two context fields, so the count describes the class the super
+ * pass actually linearizes. `callerScope` holds class containers only, so
+ * joining it IS the dotted class FQ.
+ */
+export function countEnclosingBases(ctx: CallContext): number | undefined {
+  const scope = ctx.callerScope;
+  if (scope === undefined || scope.length === 0) return undefined;
+  if (ctx.classAncestors === undefined) return undefined;
+  return ctx.classAncestors[pythonClassKey(ctx.callerFile, scope.join("."))]?.length ?? 0;
+}
+
 /** Join the two answers into scored rows. Pure given its inputs. */
 export function buildRows(sites: readonly PyChainSite[], replies: Map<string, PyOracleFileReply>): PyOracleRow[] {
   const rows: PyOracleRow[] = [];
@@ -430,8 +451,8 @@ export function buildRows(sites: readonly PyChainSite[], replies: Map<string, Py
                     : (targets[0]?.symbolId ?? null),
               },
             } as const);
-    // jedi walks `super()` through the first base only, so a typeshed answer on
-    // a `super()` site is not ground truth. The core withdraws it.
+    // jedi walks `super()` through the first base only, so an external answer
+    // on a MULTI-base `super()` site is not ground truth. The core withdraws it.
     const { oracle, categories } = applySuperMroBlindSpot({
       isSuperCall: isSuperCallSite({
         receiverKind: site.receiverKind,
@@ -440,6 +461,7 @@ export function buildRows(sites: readonly PyChainSite[], replies: Map<string, Py
       }),
       origin: answer?.outcome.origin,
       oracle: reported,
+      enclosingBaseCount: countEnclosingBases(site.ctx),
       categories: categorizePySite(answer?.siteFacts, {
         receiver: site.call.receiver,
         member: site.call.member,

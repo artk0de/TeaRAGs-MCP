@@ -220,6 +220,27 @@
       "startLine": 12
     }
   ],
+  "pkg/mro_lib.py": [
+    {
+      "member": "__init__",
+      "outcome": {
+        "kind": "external",
+        "origin": "stdlib"
+      },
+      "siteFacts": {
+        "enclosingHasReturnAnnotation": true,
+        "isDecoratorSite": false,
+        "isSuperCall": true,
+        "receiverIsAnnotatedParam": false,
+        "receiverIsUnion": false,
+        "targetIsProperty": false,
+        "targetIsStaticOrClassMethod": false,
+        "viaReexport": false,
+        "viaStarImport": false
+      },
+      "startLine": 17
+    }
+  ],
   "pkg/shadow_use.py": [
     {
       "member": "remove_linebreaks",

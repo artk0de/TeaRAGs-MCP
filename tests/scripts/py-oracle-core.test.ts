@@ -258,6 +258,81 @@ describe("applySuperMroBlindSpot", () => {
     ).toEqual({ oracle, categories: ["superMro"] });
   });
 
+  it("withdraws a sitePackages answer when the enclosing class declares two bases", () => {
+    expect(
+      applySuperMroBlindSpot({
+        isSuperCall: true,
+        origin: "sitePackages",
+        oracle: { kind: "external" },
+        categories: ["plain"],
+        enclosingBaseCount: 2,
+      }),
+    ).toEqual({ oracle: { kind: "unknown" }, categories: ["superMro"] });
+  });
+
+  it("keeps jedi's verdict on a SINGLE-base class — there the first base IS the MRO", () => {
+    expect(
+      applySuperMroBlindSpot({
+        isSuperCall: true,
+        origin: "sitePackages",
+        oracle: { kind: "external" },
+        categories: ["plain"],
+        enclosingBaseCount: 1,
+      }),
+    ).toEqual({ oracle: { kind: "external" }, categories: ["plain"] });
+  });
+
+  it("compares a multi-base site jedi resolved INSIDE the project", () => {
+    const oracle = inProject("pkg/base.py", "Base#save");
+    expect(
+      applySuperMroBlindSpot({
+        isSuperCall: true,
+        origin: "project",
+        oracle,
+        categories: ["plain"],
+        enclosingBaseCount: 3,
+      }),
+    ).toEqual({ oracle, categories: ["plain"] });
+  });
+
+  it("withdraws stdlib and builtin answers on a multi-base class too", () => {
+    for (const origin of ["stdlib", "builtin"] as const) {
+      expect(
+        applySuperMroBlindSpot({
+          isSuperCall: true,
+          origin,
+          oracle: { kind: "external" },
+          categories: ["plain"],
+          enclosingBaseCount: 2,
+        }).oracle,
+      ).toEqual({ kind: "unknown" });
+    }
+  });
+
+  it("leaves an outsideRepo answer alone — it is not one of the four external origins", () => {
+    expect(
+      applySuperMroBlindSpot({
+        isSuperCall: true,
+        origin: "outsideRepo",
+        oracle: { kind: "external" },
+        categories: ["plain"],
+        enclosingBaseCount: 4,
+      }),
+    ).toEqual({ oracle: { kind: "external" }, categories: ["plain"] });
+  });
+
+  it("still withdraws typeshed without a base count — the arity gate only WIDENS the guard", () => {
+    expect(
+      applySuperMroBlindSpot({
+        isSuperCall: true,
+        origin: "typeshedStub",
+        oracle: { kind: "external" },
+        categories: ["plain"],
+        enclosingBaseCount: 1,
+      }).oracle,
+    ).toEqual({ kind: "unknown" });
+  });
+
   it("scores the withdrawn row outside every rate rather than as agreement", () => {
     const adjusted = applySuperMroBlindSpot({
       isSuperCall: true,

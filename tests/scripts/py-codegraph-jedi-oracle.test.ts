@@ -10,6 +10,7 @@ import {
   askOracle,
   buildPythonChain,
   buildRows,
+  countEnclosingBases,
   ORACLE_PYTHON_HASH_SEED,
   parseArgs,
   resolveCorpusRoots,
@@ -24,6 +25,22 @@ const call = (member: string): CallRef => ({
   startLine: 1,
 });
 const ctx = {} as CallContext;
+
+/** A caller inside `class DataSource(JobsMixin, PrimaryModel)` — netbox's real shape. */
+const multiBaseCtx = {
+  callerFile: "netbox/core/models/data.py",
+  callerScope: ["DataSource"],
+  classAncestors: {
+    "netbox/core/models/data.py::DataSource": ["netbox.models.features::JobsMixin", "netbox.models::PrimaryModel"],
+  },
+} as CallContext;
+
+/** The same site with a single base, where jedi's first-base walk IS the MRO. */
+const singleBaseCtx = {
+  callerFile: "netbox/core/models/data.py",
+  callerScope: ["DataSource"],
+  classAncestors: { "netbox/core/models/data.py::DataSource": ["django.db.models::Model"] },
+} as CallContext;
 
 class FixedStrategy implements SymbolResolutionStrategy {
   constructor(
@@ -247,6 +264,30 @@ describe("askOracle", () => {
   });
 });
 
+describe("countEnclosingBases", () => {
+  it("reads the base list off the run-global map under the file-qualified class key", () => {
+    expect(countEnclosingBases(multiBaseCtx)).toBe(2);
+  });
+
+  it("reports zero for a class the walker recorded no base for", () => {
+    expect(countEnclosingBases({ ...multiBaseCtx, classAncestors: {} } as CallContext)).toBe(0);
+  });
+
+  it("returns undefined outside a class, so a module-level site cannot be gated on arity", () => {
+    expect(countEnclosingBases({ ...multiBaseCtx, callerScope: [] } as CallContext)).toBeUndefined();
+    expect(countEnclosingBases(ctx)).toBeUndefined();
+  });
+
+  it("joins a nested scope into the dotted FQ the walker keys on", () => {
+    const nested = {
+      callerFile: "pkg/a.py",
+      callerScope: ["Outer", "Inner"],
+      classAncestors: { "pkg/a.py::Outer.Inner": ["a::A", "b::B", "c::C"] },
+    } as CallContext;
+    expect(countEnclosingBases(nested)).toBe(3);
+  });
+});
+
 describe("buildRows", () => {
   const site = (overrides: Record<string, unknown> = {}) =>
     ({
@@ -335,6 +376,39 @@ describe("buildRows", () => {
     // being right.
     expect(rows[0]?.verdict).toBe("chainOnly");
     expect(rows[0]?.categories).toEqual(["superMro"]);
+  });
+
+  it("withdraws jedi's library answer on a MULTI-base super() site", () => {
+    const rows = buildRows(
+      [
+        site({
+          receiverKind: "super",
+          call: { ...call("save"), receiver: "super()" },
+          ctx: multiBaseCtx,
+          chain: { targetRelPath: "netbox/models.py", targetSymbolId: "BaseModel#save" },
+        }),
+      ],
+      reply([{ startLine: 1, member: "save", outcome: { kind: "external", origin: "sitePackages" } }]),
+    );
+    // django's `Model.save` is jedi's FIRST-base answer; the C3 MRO reaches
+    // `BaseModel#save` first. Scoring it would book the chain as a phantom.
+    expect(rows[0]?.verdict).toBe("chainOnly");
+    expect(rows[0]?.categories).toEqual(["superMro"]);
+  });
+
+  it("keeps jedi's library answer when the enclosing class declares ONE base", () => {
+    const rows = buildRows(
+      [
+        site({
+          receiverKind: "super",
+          call: { ...call("save"), receiver: "super()" },
+          ctx: singleBaseCtx,
+          chain: null,
+        }),
+      ],
+      reply([{ startLine: 1, member: "save", outcome: { kind: "external", origin: "sitePackages" } }]),
+    );
+    expect(rows[0]?.verdict).toBe("agreeExternal");
   });
 
   it("still scores a NON-super typeshed answer as external truth", () => {

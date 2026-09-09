@@ -93,6 +93,14 @@ const SITES: Record<
       member: "normalise",
     },
   ],
+  "pkg/mro_lib.py": [
+    {
+      startLine: 17,
+      callText: "super().__init__(name)",
+      receiver: "super()",
+      member: "__init__",
+    },
+  ],
   "pkg/shadow_use.py": [
     {
       startLine: 7,
@@ -229,6 +237,23 @@ describe.skipIf(!uvAvailable)("jedi_oracle.py over the fixture corpus", () => {
     const answer = answersFor("pkg/models.py", "__init__");
     expect(answer.outcome.kind).toBe("external");
     expect(answer.outcome.origin).toBe("typeshedStub");
+  });
+
+  /**
+   * MEASURED, not desired, and the reason `applySuperMroBlindSpot` could not
+   * stay keyed on typeshed alone (bd tea-rags-mcp-7bqru). `Registry(UserDict,
+   * Named)` declares two bases; jedi walks the first and answers
+   * `UserDict.__init__` with origin `stdlib`, while the runtime MRO reaches
+   * `Named#__init__` for the one-argument call. netbox carries the same shape
+   * against django (`origin: sitePackages`), where 64 rows flipped
+   * `agreeExternal → phantom` once the walker started filing these sites under
+   * receiverKind `super`. An external origin on a MULTI-base `super()` site is
+   * a blind spot, not ground truth.
+   */
+  it("reports a LIBRARY origin, not typeshed, for super() into a multi-base class", () => {
+    const answer = answersFor("pkg/mro_lib.py", "__init__");
+    expect(answer.outcome.kind).toBe("external");
+    expect(answer.outcome.origin).toBe("stdlib");
   });
 
   it("follows the package __init__ re-export back to the defining module", () => {
