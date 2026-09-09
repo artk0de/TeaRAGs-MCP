@@ -57,9 +57,9 @@
   a long-lived project, enumerating them from Qdrant and from the codegraph
   directory and taking the UNION: a `.duckdb` whose Qdrant collection is already
   gone is invisible from the Qdrant side, and that is precisely the file that
-  leaks. It also cannot construct a `GraphDbClientPool` — pool construction
-  `rmSync`es the shared `.spill` dir and would destroy a concurrent index's
-  in-flight spill — so `FootprintDeps.pool` is the structural
+  leaks. It also cannot construct a `GraphDbClientPool` — construction sweeps
+  the shared `.spill` dir on behalf of every project (`spill-files.ts`, next to
+  the pool) — so `FootprintDeps.pool` is the structural
   `CodegraphFootprintStore` (`contracts/types/footprint.ts`), satisfied by the
   pool in the app and by `adapters/duckdb/codegraph-db-files.ts` in the purge.
   Why: "reuse the pool, it already has these methods" is the obvious move and it
