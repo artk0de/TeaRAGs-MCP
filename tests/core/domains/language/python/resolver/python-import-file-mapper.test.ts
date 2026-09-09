@@ -17,12 +17,9 @@ import { InMemoryGlobalSymbolTable } from "../../../../../../src/core/domains/tr
 /**
  * relPath -> shortNames declared there.
  *
- * Every `__init__.py` carries at least one symbol on purpose: `upsertFile`
- * returns early on an empty definition list, so a file contributing NO symbol
- * is invisible to `hasFile` — semantics pinned by
- * `symbol-table.test.ts` ("answers false for a file upserted with NO
- * definitions"). A genuinely empty `__init__.py` therefore reaches the mapper
- * as a namespace directory; see the mapper's header note.
+ * The corpus gives every `__init__.py` a symbol because the real ones mostly
+ * have one; a symbol-free marker is a first-class file too since bd
+ * tea-rags-mcp-o7ifx, covered by its own describe block at the bottom.
  */
 const CORPUS_FILES: Record<string, string[]> = {
   // netbox: import root is `netbox/`, packages are directories with __init__.py
@@ -328,5 +325,45 @@ describe("PythonImportFileMapper — memo", () => {
     const first = mapper.mapImportToFile("dcim.models", "netbox/dcim/views.py", ctx);
     const second = mapper.mapImportToFile("dcim.models", "netbox/dcim/views.py", ctx);
     expect(second).toBe(first); // same object identity = served from the memo
+  });
+});
+
+describe("PythonImportFileMapper — a symbol-free __init__.py (bd tea-rags-mcp-o7ifx)", () => {
+  it("resolves a package whose __init__.py declares nothing", () => {
+    // netbox holds 70 empty `__init__.py` files and 39 more that only re-export.
+    // While the table dropped them, every import of those packages answered
+    // `unknown` at best and `external` at worst.
+    const mapper = new PythonImportFileMapper();
+    const table = new InMemoryGlobalSymbolTable();
+    table.upsertFile("pkg/__init__.py", []);
+    const from = "pkg/consumer.py";
+    expect(mapper.mapImportToFile("pkg", from, ctxFor(table, from))).toEqual({
+      kind: "project",
+      relPath: "pkg/__init__.py",
+    });
+  });
+
+  it("prefers the empty package marker over the namespace-directory verdict", () => {
+    // `pkg/` holds a real module, so `hasFilesUnder` already answered
+    // `namespace` -> unknown here. The marker makes it a nameable file edge.
+    const mapper = new PythonImportFileMapper();
+    const table = corpusTable({ "pkg/models.py": ["User"] });
+    table.upsertFile("pkg/__init__.py", []);
+    const from = "pkg/models.py";
+    expect(mapper.mapImportToFile("pkg", from, ctxFor(table, from))).toEqual({
+      kind: "project",
+      relPath: "pkg/__init__.py",
+    });
+  });
+
+  it("sees a package marker that arrived through hydrateFiles on a cold start", () => {
+    const mapper = new PythonImportFileMapper();
+    const table = corpusTable({ "pkg/models.py": ["User"] });
+    table.hydrateFiles(["pkg/__init__.py"]);
+    const from = "pkg/models.py";
+    expect(mapper.mapImportToFile("pkg", from, ctxFor(table, from))).toEqual({
+      kind: "project",
+      relPath: "pkg/__init__.py",
+    });
   });
 });

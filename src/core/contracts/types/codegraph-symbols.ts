@@ -166,7 +166,7 @@ export interface GlobalSymbolTable {
    *  {@link SymbolLookupOptions}. */
   lookupByShortName: (name: string, options?: SymbolLookupOptions) => SymbolDefinition[];
   /**
-   * Does this exact file contribute any symbol to the table?
+   * Is this exact file part of the project the table describes?
    *
    * The question the import mappers could not ask (bd tea-rags-mcp-q9u85):
    * `mapPythonImportToFile` and `mapJavaImportToFile` SYNTHESISE a target path
@@ -174,11 +174,17 @@ export interface GlobalSymbolTable {
    * `java/util/Objects.java` are perfectly ordinary answers. Without this the
    * only way to tell a real first-party target from a synthesised external one
    * was to hit the filesystem, which the resolver must not do.
+   *
+   * Membership, NOT symbol count (bd tea-rags-mcp-o7ifx). A file the table was
+   * told about answers `true` even when it declared nothing: an empty
+   * `__init__.py` is what makes `pkg` a package, and reading it as "absent" put
+   * every import of that package outside the project. `size()` still counts
+   * definitions, so a symbol-free file moves no aggregate.
    */
   hasFile: (relPath: RelPath) => boolean;
   /**
-   * Does any file UNDER this directory contribute a symbol? `""` asks about the
-   * whole table. A trailing slash is ignored; a path PREFIX is not a parent
+   * Does any file UNDER this directory belong to the project? `""` asks about
+   * the whole table. A trailing slash is ignored; a path PREFIX is not a parent
    * (`pkg/a` is not under `pkg/ab`).
    *
    * Needed because a Python package import resolves to a DIRECTORY as often as
@@ -204,6 +210,18 @@ export interface GlobalSymbolTable {
    *  cold start. Equivalent to calling `upsertFile` once per file —
    *  implementations may optimise the bulk path but are not required to. */
   hydrate: (definitions: SymbolDefinition[]) => void;
+  /**
+   * Register project files that persisted NO symbol, typically the `rel_path`
+   * column of the graph's file table on cold start (bd tea-rags-mcp-o7ifx).
+   *
+   * `hydrate` can only see files that own a row in the symbol store, so an
+   * incremental run rebuilds the definitions of every unchanged file and none
+   * of its empty package markers. A path already present keeps its definitions.
+   *
+   * Optional capability: a table that omits it answers `hasFile` false for
+   * symbol-free files on a cold pass, which is the pre-o7ifx behaviour.
+   */
+  hydrateFiles?: (relPaths: readonly RelPath[]) => void;
   /** Definition count per shortName across the corpus — the distribution the
    *  DispatchFanoutPolicy p99 cap derives from (bd tea-rags-mcp-f2jsb). */
   shortNameDefCounts: () => ReadonlyMap<string, number>;

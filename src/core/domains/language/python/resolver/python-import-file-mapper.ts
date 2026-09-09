@@ -16,12 +16,10 @@
  * may have moved on, and a `statSync` per import per file is a syscall storm on
  * a 24k-file corpus besides.
  *
- * One membership limit is inherited, not chosen: `hasFile` answers "does this
- * file contribute a SYMBOL", and `InMemoryGlobalSymbolTable.upsertFile` drops a
- * file with no definitions (pinned by `symbol-table.test.ts`). A genuinely
- * empty `__init__.py` is therefore indistinguishable from a PEP 420 namespace
- * directory here, and both answer `unknown` — conservative in the same
- * direction as decision 4 of
+ * `hasFile` answers MEMBERSHIP, not symbol count (bd tea-rags-mcp-o7ifx), so a
+ * genuinely empty `__init__.py` resolves to itself rather than collapsing into
+ * the PEP 420 namespace-directory verdict. A namespace directory still answers
+ * `unknown` — conservative in the same direction as decision 4 of
  * `docs/superpowers/plans/2026-09-08-python-import-file-mapper.md`: no edge
  * beats a phantom edge.
  */

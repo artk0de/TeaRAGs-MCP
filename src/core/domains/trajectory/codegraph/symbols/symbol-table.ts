@@ -29,7 +29,14 @@ export class InMemoryGlobalSymbolTable implements GlobalSymbolTable {
   private readonly byFq = new Map<string, SymbolDefinition[]>();
   /** shortName -> definitions across files. */
   private readonly byShort = new Map<string, SymbolDefinition[]>();
-  /** relPath -> definitions, for cheap removal on re-upsert. */
+  /**
+   * relPath -> definitions, for cheap removal on re-upsert.
+   *
+   * Also the table's FILE MEMBERSHIP set (bd tea-rags-mcp-o7ifx): a file that
+   * declares nothing gets an entry holding an empty array rather than none at
+   * all, so `hasFile` can answer "in this project" instead of "declares
+   * something". `size()` sums the arrays, so those entries add zero to it.
+   */
   private readonly byFile = new Map<RelPath, SymbolDefinition[]>();
   /**
    * shortName -> SCHEMA-SYNTHESIZED column accessors (bd tea-rags-mcp-8l5fo).
@@ -59,7 +66,10 @@ export class InMemoryGlobalSymbolTable implements GlobalSymbolTable {
 
   upsertFile(relPath: RelPath, definitions: SymbolDefinition[]): void {
     this.removeFile(relPath);
-    if (definitions.length === 0) return;
+    // An empty list still RECORDS the file. Returning early here is what made
+    // an empty `__init__.py` — netbox has 70, plus 39 that only re-export —
+    // read as a directory the project does not own (bd tea-rags-mcp-o7ifx).
+    // The two loops below are no-ops for it, so nothing else changes.
     this.byFile.set(relPath, definitions.slice());
     for (const dir of ancestorDirs(relPath)) {
       this.dirRefCounts.set(dir, (this.dirRefCounts.get(dir) ?? 0) + 1);
@@ -145,6 +155,23 @@ export class InMemoryGlobalSymbolTable implements GlobalSymbolTable {
     }
     for (const [relPath, defs] of grouped) {
       this.upsertFile(relPath, defs);
+    }
+  }
+
+  /**
+   * Register files the graph knows about that carry no definition, typically
+   * `cg_symbols_files.rel_path` on cold start (bd tea-rags-mcp-o7ifx).
+   *
+   * `hydrate` reads the SYMBOL store, so it can only rebuild files that own at
+   * least one row there; an incremental run would otherwise start with every
+   * empty package marker missing and re-derive them only for the files it
+   * happens to re-walk. A path already in the table keeps its definitions —
+   * this never clears one.
+   */
+  hydrateFiles(relPaths: readonly RelPath[]): void {
+    for (const relPath of relPaths) {
+      if (this.byFile.has(relPath)) continue;
+      this.upsertFile(relPath, []);
     }
   }
 }
