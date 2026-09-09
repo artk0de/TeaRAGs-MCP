@@ -18,19 +18,26 @@ import {
   pythonAnnotationTypeSource,
   type PythonTypeSourceInput,
 } from "./python-annotation-type-source.js";
+import { PYTHON_AST_SOURCE, pythonAstTypeSource } from "./python-ast-type-source.js";
 import { PYTHON_DOCSTRING_SOURCE, pythonDocstringTypeSource } from "./python-docstring-type-source.js";
 import { pythonTypeChannels } from "./python-type-channels.js";
 
 /**
- * Python's source precedence, highest first. `"ast"` is the walker's own
- * constructor inference, which still lives in the monolith — the rank is
- * declared here so the day it becomes a source there is nothing to decide.
+ * Python's source precedence, highest first. `"ast"` — a def's return read off
+ * its own `return` statements — is ranked last on purpose: it speaks only where
+ * neither an annotation nor a docstring does, and the store's coordinate dedupe
+ * enforces that without either source knowing about it.
  */
-export const PYTHON_TYPE_SOURCE_ORDER: readonly string[] = [PYTHON_ANNOTATION_SOURCE, PYTHON_DOCSTRING_SOURCE, "ast"];
+export const PYTHON_TYPE_SOURCE_ORDER: readonly string[] = [
+  PYTHON_ANNOTATION_SOURCE,
+  PYTHON_DOCSTRING_SOURCE,
+  PYTHON_AST_SOURCE,
+];
 
 export const PYTHON_INLINE_TYPE_SOURCES: readonly InlineTypeSource<PythonTypeSourceInput>[] = [
   pythonAnnotationTypeSource,
   pythonDocstringTypeSource,
+  pythonAstTypeSource,
 ];
 
 export const pythonAnnotationTypeFacetPass: ExtractionFacetPass = {
