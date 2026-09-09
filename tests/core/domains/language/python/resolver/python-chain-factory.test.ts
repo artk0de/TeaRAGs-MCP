@@ -37,6 +37,7 @@ const PRODUCTION_ORDER = [
   "selfMember",
   "localBinding",
   "chainType",
+  "namingConvention",
   "importedName",
   "globalShortName",
 ];
@@ -52,10 +53,20 @@ describe("createPythonSymbolResolutionChain", () => {
     expect(new PythonCallResolver().strategies.map((pass) => pass.name)).toEqual(PRODUCTION_ORDER);
   });
 
-  it("places chainType between localBinding and importedName — the seam-3 insertion point", () => {
+  it("places chainType directly after localBinding — the seam-3 insertion point", () => {
     const names = createPythonSymbolResolutionChain(cfg).map((pass) => pass.name);
     expect(names.indexOf("chainType")).toBe(names.indexOf("localBinding") + 1);
-    expect(names.indexOf("importedName")).toBe(names.indexOf("chainType") + 1);
+  });
+
+  /**
+   * bd tea-rags-mcp-0g8g5 — `namingConvention` is the one GUESS in the chain.
+   * After `chainType` so every typed channel answers first; before
+   * `importedName` so a guess never preempts a binding the walker recorded.
+   */
+  it("places namingConvention between chainType and importedName — the seam-5 insertion point", () => {
+    const names = createPythonSymbolResolutionChain(cfg).map((pass) => pass.name);
+    expect(names.indexOf("namingConvention")).toBe(names.indexOf("chainType") + 1);
+    expect(names.indexOf("importedName")).toBe(names.indexOf("namingConvention") + 1);
   });
 
   it("builds a fresh chain per call so two harness runs share no per-pass state", () => {

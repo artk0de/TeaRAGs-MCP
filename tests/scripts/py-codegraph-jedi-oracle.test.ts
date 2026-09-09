@@ -71,6 +71,7 @@ describe("buildPythonChain", () => {
       "selfMember",
       "localBinding",
       "chainType",
+      "namingConvention",
       "importedName",
       "globalShortName",
     ]);
