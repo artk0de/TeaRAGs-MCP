@@ -13,11 +13,21 @@
  */
 import { describe, expect, it } from "vitest";
 
-import { DEFAULT_AMBIGUOUS_RESOLVE_MODE } from "../../../../../../src/core/contracts/types/codegraph.js";
+import {
+  DEFAULT_AMBIGUOUS_RESOLVE_MODE,
+  type CallContext,
+  type CallRef,
+  type RelPath,
+} from "../../../../../../src/core/contracts/types/codegraph.js";
+import type {
+  ImportFileTarget,
+  SymbolResolutionStrategy,
+} from "../../../../../../src/core/contracts/types/language.js";
 import { createPythonSymbolResolutionChain } from "../../../../../../src/core/domains/language/python/resolver/index.js";
 import { PythonImportFileMapper } from "../../../../../../src/core/domains/language/python/resolver/python-import-file-mapper.js";
 import { PythonCallResolver } from "../../../../../../src/core/domains/language/python/resolver/python-resolver.js";
 import { CONE_MAX_DEFAULT } from "../../../../../../src/core/domains/language/python/resolver/strategies/index.js";
+import { InMemoryGlobalSymbolTable } from "../../../../../../src/core/domains/trajectory/codegraph/symbols/symbol-table.js";
 
 const cfg = { mode: DEFAULT_AMBIGUOUS_RESOLVE_MODE, coneMax: CONE_MAX_DEFAULT };
 
@@ -64,5 +74,67 @@ describe("createPythonSymbolResolutionChain", () => {
     const resolver = new PythonCallResolver();
     expect(resolver.strategies).toBe(resolver.strategies);
     expect(resolver.strategies.length).toBe(PRODUCTION_ORDER.length);
+  });
+});
+
+/**
+ * bd tea-rags-mcp-6uptm (AF.7) — `selfField` asks the same import question the
+ * rest of the chain does (`pythonTypeNameIsExternal`), so it has to read the
+ * same memo. AF.6 gave it a DEFAULTED private mapper because the factory was
+ * off limits then; the factory now hands its own instance in.
+ *
+ * Discriminated by VERDICT rather than by reaching into the strategy: the
+ * recording mapper calls `app.models` external where the real one calls it
+ * `project`, so only a `selfField` reading THAT instance can DROP.
+ */
+class RecordingImportFileMapper extends PythonImportFileMapper {
+  readonly calls: string[] = [];
+
+  override mapImportToFile(importText: string, fromFile: RelPath, ctx: CallContext): ImportFileTarget {
+    this.calls.push(importText);
+    return importText === "app.models" ? { kind: "external" } : super.mapImportToFile(importText, fromFile, ctx);
+  }
+}
+
+const selfFieldCall: CallRef = {
+  callText: "self.model.greet()",
+  receiver: "self.model",
+  member: "greet",
+  startLine: 3,
+};
+
+/** `Foo` comes from a real project file, so the REAL mapper answers `project`. */
+function selfFieldCtx(): CallContext {
+  const table = new InMemoryGlobalSymbolTable();
+  table.upsertFile("app/models.py", [
+    { symbolId: "Foo", fqName: "Foo", shortName: "Foo", relPath: "app/models.py", scope: [] },
+  ]);
+  return {
+    callerFile: "app/handler.py",
+    callerScope: ["Handler"],
+    imports: [{ importText: "app.models", startLine: 1, importedNames: ["Foo"], importedBindings: { Foo: "Foo" } }],
+    classFieldTypes: { Handler: { model: "Foo" } },
+    symbolTable: table,
+  };
+}
+
+const selfFieldOf = (chain: SymbolResolutionStrategy[]): SymbolResolutionStrategy => {
+  const pass = chain.find((candidate) => candidate.name === "selfField");
+  if (!pass) throw new Error("chain has no selfField pass");
+  return pass;
+};
+
+describe("createPythonSymbolResolutionChain — selfField shares the caller's mapper", () => {
+  it("hands the injected mapper to selfField, whose external verdict then DROPS the call", () => {
+    const mapper = new RecordingImportFileMapper();
+    const outcome = selfFieldOf(createPythonSymbolResolutionChain(cfg, mapper)).attempt(selfFieldCall, selfFieldCtx());
+    expect(outcome.kind).toBe("drop");
+    expect(mapper.calls).toContain("app.models");
+  });
+
+  it("keeps the defaulted mapper when none is passed — the same call CONTINUEs on the real verdict", () => {
+    expect(selfFieldOf(createPythonSymbolResolutionChain(cfg)).attempt(selfFieldCall, selfFieldCtx()).kind).toBe(
+      "continue",
+    );
   });
 });

@@ -43,7 +43,7 @@ export function createPythonSymbolResolutionChain(
 ): SymbolResolutionStrategy[] {
   return [
     new PythonSuperSymbolResolutionStrategy(cfg),
-    new PythonSelfFieldSymbolResolutionStrategy(cfg),
+    new PythonSelfFieldSymbolResolutionStrategy(cfg, mapper),
     new PythonSelfMemberSymbolResolutionStrategy(cfg),
     new PythonLocalBindingSymbolResolutionStrategy(cfg, mapper),
     new PythonChainTypeSymbolResolutionStrategy(cfg, mapper),
