@@ -19,6 +19,12 @@ import { isPythonClassFormDef, pythonAnnotationExpression, walkPythonScopes } fr
 import { pythonReturnExpressionType, type PythonReturnScope } from "./python-return-expression.js";
 import { pythonNominalReceiverName, pythonTypeRefFromNode } from "./python-type-annotation.js";
 
+/**
+ * The rank shared by every source that reads the TREE rather than something a
+ * human wrote down — this one and `python-iteration-facts.ts`. It lives here
+ * because the file is named after it; both sources emit under it, and they
+ * never contend because `coordinateKey` separates their fact kinds.
+ */
 export const PYTHON_AST_SOURCE = "ast";
 
 /** Nodes that open a new function scope — a `return` inside one belongs to IT, not to the outer def. */

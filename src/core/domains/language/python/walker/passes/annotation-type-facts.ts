@@ -20,13 +20,17 @@ import {
 } from "./python-annotation-type-source.js";
 import { PYTHON_AST_SOURCE, pythonAstTypeSource } from "./python-ast-type-source.js";
 import { PYTHON_DOCSTRING_SOURCE, pythonDocstringTypeSource } from "./python-docstring-type-source.js";
+import { pythonIterationTypeSource } from "./python-iteration-facts.js";
 import { pythonTypeChannels } from "./python-type-channels.js";
 
 /**
- * Python's source precedence, highest first. `"ast"` — a def's return read off
- * its own `return` statements — is ranked last on purpose: it speaks only where
- * neither an annotation nor a docstring does, and the store's coordinate dedupe
- * enforces that without either source knowing about it.
+ * Python's source precedence, highest first. `"ast"` is what the walker infers
+ * from the tree itself rather than from anything written down — iteration
+ * variables (R3) and a def's own `return` statements (R1a) — and it ranks below
+ * every written annotation, so a declared type on the same coordinate always
+ * wins. Two sources SHARE that one rank: they are ranked together because they
+ * read the same evidence, and they never contend because `coordinateKey`
+ * separates a `local` at a loop line from a `return` on a def.
  */
 export const PYTHON_TYPE_SOURCE_ORDER: readonly string[] = [
   PYTHON_ANNOTATION_SOURCE,
@@ -37,6 +41,7 @@ export const PYTHON_TYPE_SOURCE_ORDER: readonly string[] = [
 export const PYTHON_INLINE_TYPE_SOURCES: readonly InlineTypeSource<PythonTypeSourceInput>[] = [
   pythonAnnotationTypeSource,
   pythonDocstringTypeSource,
+  pythonIterationTypeSource,
   pythonAstTypeSource,
 ];
 

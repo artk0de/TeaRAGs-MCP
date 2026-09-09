@@ -26,8 +26,9 @@ import {
   stripCallArgs,
   type ReceiverTypePorts,
 } from "../../kernel/receiver-type-propagation.js";
+import type { PythonAncestorLinearizerCache } from "./python-ancestor-policy.js";
 import type { PythonImportFileMapper } from "./python-import-file-mapper.js";
-import { pythonImportMatchesReceiver, resolveTypeFile } from "./strategies/shared.js";
+import { pythonImportMatchesReceiver, pythonInheritedMemberType, resolveTypeFile } from "./strategies/shared.js";
 
 export const PYTHON_CHAIN_MAX_HOPS_ENV = "CODEGRAPH_PY_CHAIN_MAX_HOPS";
 
@@ -119,20 +120,37 @@ function pythonSeedHead(
  * `Array<Post>` would resolve `xs.append` against `Foo`. The annotation facet
  * already declines to emit those as bindings (its decision 4); this is the same
  * rule stated on the read side.
+ *
+ * Both channels are read UP THE MRO, not just on the class the receiver names
+ * (bd tea-rags-mcp-yl85b) — see `pythonInheritedMemberType`. This is the one
+ * place either channel is consulted, so the walk lives there and not in each
+ * strategy.
  */
-function pythonMemberTypeOf(recv: TypeRef, member: string, ctx: CallContext): TypeRef | undefined {
+function pythonMemberTypeOf(
+  recv: TypeRef,
+  member: string,
+  ctx: CallContext,
+  mapper: PythonImportFileMapper,
+  linearizers: PythonAncestorLinearizerCache | undefined,
+): TypeRef | undefined {
   if (recv.form !== "class" && recv.form !== "instance") return undefined;
-  const fieldType = ctx.classFieldTypes?.[recv.name]?.[member];
-  if (fieldType !== undefined) return { form: "instance", name: fieldType };
-  const separator = recv.form === "class" ? "." : "#";
-  return ctx.structuredReturnTypes?.[`${recv.name}${separator}${member}`];
+  return pythonInheritedMemberType(recv.name, member, recv.form, ctx, mapper, linearizers?.for(ctx));
 }
 
 /**
  * Python's `ReceiverTypePorts`, bound to the resolver's own import mapper.
  * Call it ONCE per resolver and hand the result to `propagateReceiverType`.
+ *
+ * `linearizers` is the run's ancestor-MRO cache, threaded exactly as the mapper
+ * is (bd tea-rags-mcp-yl85b). It stays OPTIONAL so every existing construction
+ * site compiles untouched and keeps the own-class-only read; the cache itself
+ * answers `undefined` on an index carrying no `classAncestors`, so the pre-seam
+ * behaviour is a property of the CONTEXT rather than of the caller.
  */
-export function createPythonReceiverTypePorts(mapper: PythonImportFileMapper): ReceiverTypePorts {
+export function createPythonReceiverTypePorts(
+  mapper: PythonImportFileMapper,
+  linearizers?: PythonAncestorLinearizerCache,
+): ReceiverTypePorts {
   return Object.freeze({
     singleHopType: (receiver: string, atLine: number, ctx: CallContext): TypeRef | undefined =>
       pythonSingleHopType(receiver, atLine, ctx, mapper),
@@ -141,7 +159,8 @@ export function createPythonReceiverTypePorts(mapper: PythonImportFileMapper): R
       firstLink: string | undefined,
       ctx: CallContext,
     ): { type: TypeRef; consumedMembers: 0 | 1 } | undefined => pythonSeedHead(head, firstLink, ctx, mapper),
-    memberTypeOf: pythonMemberTypeOf,
+    memberTypeOf: (recv: TypeRef, member: string, ctx: CallContext): TypeRef | undefined =>
+      pythonMemberTypeOf(recv, member, ctx, mapper, linearizers),
     maxHops: pythonMaxHops,
   });
 }

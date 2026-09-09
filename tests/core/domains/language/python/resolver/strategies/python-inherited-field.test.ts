@@ -1,0 +1,157 @@
+/**
+ * Inherited-FIELD resolution for `self.<field>.<member>()` (R4a, bd
+ * tea-rags-mcp-yl85b).
+ *
+ * `PythonSelfFieldSymbolResolutionStrategy` read `classFieldTypes[<enclosing
+ * class>][field]` and DROPped when nothing was there. That channel is keyed by
+ * the SHORT name of the class that ASSIGNED the field, so polar's generated SDK
+ * — `self.client` assigned once in `SyncServiceBase.__init__`
+ * (`sdk/python/polar/base.py:179`) and called from 60-odd subclasses in other
+ * files — missed every time. The field read now walks the same C3 MRO seam 4
+ * built for members, own class first.
+ *
+ * What does NOT change: the verdicts below the read. A field the walk cannot
+ * type still DROPs (the `rjuc` guard — a `self.<field>` receiver is never a
+ * module name, so falling through would hand the call to any class that
+ * happens to define the member), and a KNOWN external field type still DROPs
+ * so the external gate can take the call out of the denominator.
+ */
+import { describe, expect, it } from "vitest";
+
+import type { CallContext, CallRef, ImportRef } from "../../../../../../../src/core/contracts/types/codegraph.js";
+import { PythonAncestorLinearizerCache } from "../../../../../../../src/core/domains/language/python/resolver/python-ancestor-policy.js";
+import { PythonImportFileMapper } from "../../../../../../../src/core/domains/language/python/resolver/python-import-file-mapper.js";
+import { PythonSelfFieldSymbolResolutionStrategy } from "../../../../../../../src/core/domains/language/python/resolver/strategies/python-self-field.js";
+import { InMemoryGlobalSymbolTable } from "../../../../../../../src/core/domains/trajectory/codegraph/symbols/symbol-table.js";
+
+interface Def {
+  readonly symbolId: string;
+  readonly scope?: readonly string[];
+}
+
+function tableWith(files: Record<string, readonly Def[]>): InMemoryGlobalSymbolTable {
+  const table = new InMemoryGlobalSymbolTable();
+  for (const [relPath, defs] of Object.entries(files)) {
+    table.upsertFile(
+      relPath,
+      defs.map((def) => ({
+        symbolId: def.symbolId,
+        fqName: def.symbolId,
+        shortName: def.symbolId.split(/[#.]/).pop() ?? def.symbolId,
+        relPath,
+        scope: [...(def.scope ?? [])],
+      })),
+    );
+  }
+  return table;
+}
+
+/** The production wiring: the chain factory always hands the strategy a cache. */
+function mroSelfField(): PythonSelfFieldSymbolResolutionStrategy {
+  const mapper = new PythonImportFileMapper();
+  return new PythonSelfFieldSymbolResolutionStrategy(
+    { mode: "strict" },
+    mapper,
+    new PythonAncestorLinearizerCache(mapper, "strict"),
+  );
+}
+
+/** A run whose index predates `classAncestors` — the pre-seam read. */
+function plainSelfField(): PythonSelfFieldSymbolResolutionStrategy {
+  return new PythonSelfFieldSymbolResolutionStrategy({ mode: "strict" }, new PythonImportFileMapper());
+}
+
+const sendRequest: CallRef = {
+  callText: "self.client.send_request(req)",
+  receiver: "self.client",
+  member: "send_request",
+  startLine: 42,
+};
+
+interface CtxSpec {
+  readonly table: InMemoryGlobalSymbolTable;
+  readonly imports?: readonly ImportRef[];
+  readonly classAncestors?: Record<string, readonly string[]>;
+  readonly classFieldTypes?: Record<string, Record<string, string>>;
+}
+
+function ctxWith(spec: CtxSpec): CallContext {
+  return {
+    callerFile: "svc/metrics.py",
+    callerScope: ["MetricsSync"],
+    imports: [...(spec.imports ?? [])],
+    symbolTable: spec.table,
+    ...(spec.classAncestors === undefined ? {} : { classAncestors: spec.classAncestors }),
+    ...(spec.classFieldTypes === undefined ? {} : { classFieldTypes: spec.classFieldTypes }),
+  };
+}
+
+const polarTable = (): InMemoryGlobalSymbolTable =>
+  tableWith({
+    "sdk/base.py": [
+      { symbolId: "SyncServiceBase" },
+      { symbolId: "SyncClientBase" },
+      { symbolId: "SyncClientBase#send_request", scope: ["SyncClientBase"] },
+    ],
+    "svc/metrics.py": [{ symbolId: "MetricsSync" }],
+  });
+
+const polarAncestors = { "svc/metrics.py::MetricsSync": ["sdk.base::SyncServiceBase"] } as const;
+
+describe("PythonSelfFieldSymbolResolutionStrategy — a field assigned by an ancestor", () => {
+  it("resolves through a field assigned in a BASE class in another file", () => {
+    const ctx = ctxWith({
+      table: polarTable(),
+      classAncestors: { ...polarAncestors },
+      classFieldTypes: { SyncServiceBase: { client: "SyncClientBase" } },
+    });
+    expect(mroSelfField().attempt(sendRequest, ctx)).toEqual({
+      kind: "resolved",
+      target: { targetRelPath: "sdk/base.py", targetSymbolId: "SyncClientBase#send_request" },
+    });
+  });
+
+  it("prefers the enclosing class's OWN field over the ancestor's", () => {
+    const table = tableWith({
+      "sdk/base.py": [
+        { symbolId: "SyncServiceBase" },
+        { symbolId: "SyncClientBase" },
+        { symbolId: "SyncClientBase#send_request", scope: ["SyncClientBase"] },
+      ],
+      "svc/metrics.py": [{ symbolId: "MetricsSync" }],
+      "sdk/own.py": [{ symbolId: "OwnClient" }, { symbolId: "OwnClient#send_request", scope: ["OwnClient"] }],
+    });
+    const ctx = ctxWith({
+      table,
+      classAncestors: { ...polarAncestors },
+      classFieldTypes: { MetricsSync: { client: "OwnClient" }, SyncServiceBase: { client: "SyncClientBase" } },
+    });
+    expect(mroSelfField().attempt(sendRequest, ctx)).toEqual({
+      kind: "resolved",
+      target: { targetRelPath: "sdk/own.py", targetSymbolId: "OwnClient#send_request" },
+    });
+  });
+
+  it("DROPs when the hierarchy leaves the project before the field — the rjuc guard is unchanged", () => {
+    const ctx = ctxWith({
+      table: polarTable(),
+      classAncestors: { "svc/metrics.py::MetricsSync": ["httpx::Client"] },
+      classFieldTypes: { SyncServiceBase: { client: "SyncClientBase" } },
+    });
+    expect(mroSelfField().attempt(sendRequest, ctx)).toEqual({ kind: "drop" });
+  });
+
+  it("keeps the pre-seam behaviour with no linearizer", () => {
+    const ctx = ctxWith({
+      table: polarTable(),
+      classAncestors: { ...polarAncestors },
+      classFieldTypes: { SyncServiceBase: { client: "SyncClientBase" } },
+    });
+    expect(plainSelfField().attempt(sendRequest, ctx)).toEqual({ kind: "drop" });
+    const noChannel = ctxWith({
+      table: polarTable(),
+      classFieldTypes: { SyncServiceBase: { client: "SyncClientBase" } },
+    });
+    expect(mroSelfField().attempt(sendRequest, noChannel)).toEqual({ kind: "drop" });
+  });
+});
