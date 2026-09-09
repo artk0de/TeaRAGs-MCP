@@ -19,18 +19,25 @@ import {
   type PythonTypeSourceInput,
 } from "./python-annotation-type-source.js";
 import { PYTHON_DOCSTRING_SOURCE, pythonDocstringTypeSource } from "./python-docstring-type-source.js";
+import { PYTHON_AST_SOURCE, pythonIterationTypeSource } from "./python-iteration-facts.js";
 import { pythonTypeChannels } from "./python-type-channels.js";
 
 /**
- * Python's source precedence, highest first. `"ast"` is the walker's own
- * constructor inference, which still lives in the monolith — the rank is
- * declared here so the day it becomes a source there is nothing to decide.
+ * Python's source precedence, highest first. `"ast"` is what the walker infers
+ * from the tree itself — iteration variables today (E2 seam 5 / R3), the
+ * monolith's constructor inference still in place — and ranks below every
+ * written annotation, so a declared type on the same coordinate always wins.
  */
-export const PYTHON_TYPE_SOURCE_ORDER: readonly string[] = [PYTHON_ANNOTATION_SOURCE, PYTHON_DOCSTRING_SOURCE, "ast"];
+export const PYTHON_TYPE_SOURCE_ORDER: readonly string[] = [
+  PYTHON_ANNOTATION_SOURCE,
+  PYTHON_DOCSTRING_SOURCE,
+  PYTHON_AST_SOURCE,
+];
 
 export const PYTHON_INLINE_TYPE_SOURCES: readonly InlineTypeSource<PythonTypeSourceInput>[] = [
   pythonAnnotationTypeSource,
   pythonDocstringTypeSource,
+  pythonIterationTypeSource,
 ];
 
 export const pythonAnnotationTypeFacetPass: ExtractionFacetPass = {
