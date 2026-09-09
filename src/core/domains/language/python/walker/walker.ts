@@ -155,8 +155,19 @@ function collectPythonInheritanceEdges(root: AstNode): InheritanceEdgeDecl[] {
       if (supers) {
         let ordinal = 0;
         for (const base of supers.namedChildren) {
-          if (base.type !== "identifier" && base.type !== "attribute" && base.type !== "dotted_name") continue;
-          const ancestor = base.text;
+          // A `subscript` is a GENERIC base: `RepositoryBase[Account]`. Its
+          // `value` child is the class; the subscript is a type argument and is
+          // never part of the hierarchy. Unwrapping it here mirrors
+          // `collectPythonClassAncestors` (bd tea-rags-mcp-wz956) — polar
+          // declares every repository base that way, so without the unwrap
+          // those files emitted an EMPTY edge list, `inheritanceEdges` stayed
+          // absent, and `inheritance-edges.ts` read the absence as "walker not
+          // migrated" and lifted the `<relPath>::<fq>`-keyed `classAncestors`
+          // into junk `include` rows on every reindex (bd tea-rags-mcp-m1sf0).
+          const named = base.type === "subscript" ? base.childForFieldName("value") : base;
+          if (!named) continue;
+          if (named.type !== "identifier" && named.type !== "attribute" && named.type !== "dotted_name") continue;
+          const ancestor = named.text;
           if (ancestor.length === 0) continue;
           edges.push({ source: fq, ancestor, kind: "super", ordinal: ordinal++ });
         }
