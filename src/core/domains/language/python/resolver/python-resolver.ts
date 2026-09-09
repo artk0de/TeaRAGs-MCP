@@ -18,8 +18,10 @@
  *   2. selfField (self.<field>.X via classFieldTypes — terminal guard)
  *   3. selfMember (self.X via enclosing class + classExtends walk — terminal guard)
  *   4. localBinding (var.X via walker-bound type — terminal guard)
- *   5. importMatch (receiver matches an import's trailing segment)
- *   6. globalShortName (global short-name fallback)
+ *   5. importedName (receiver / bare callee is an imported binding; one
+ *      re-export hop; star imports — bd tea-rags-mcp-9fgdi)
+ *   6. importMatch (receiver matches an import's trailing segment)
+ *   7. globalShortName (global short-name fallback)
  *
  * Python's syntax differs from TS in import style (`from foo import bar`), so
  * the "receiver matches an import" check also considers names imported via
@@ -42,10 +44,12 @@ import { ConeDispatchResolver } from "../../cone-dispatch.js";
 import { ExternalCallClassifier } from "../../external-classifier.js";
 import { resolveViaChain } from "../../resolver-chain.js";
 import { PythonExternalVocabulary } from "./python-external-vocabulary.js";
+import { PythonImportFileMapper } from "./python-import-file-mapper.js";
 import {
   CONE_MAX_DEFAULT,
   PythonConeTypeLocator,
   PythonGlobalShortNameSymbolResolutionStrategy,
+  PythonImportedNameSymbolResolutionStrategy,
   PythonImportMatchSymbolResolutionStrategy,
   PythonLocalBindingSymbolResolutionStrategy,
   PythonSelfFieldSymbolResolutionStrategy,
@@ -65,6 +69,12 @@ export class PythonCallResolver implements CallResolver {
   private readonly strategies: SymbolResolutionStrategy[];
   private readonly cone: ConeDispatchResolver;
   private readonly external: ExternalCallClassifier;
+  /**
+   * ONE mapper for the whole resolver: its memo is per-symbol-table identity,
+   * so every consumer sharing the instance shares the resolved-root cache.
+   * Task 6 moves `localBinding` / `importMatch` / the vocabulary onto it too.
+   */
+  private readonly importFileMapper = new PythonImportFileMapper();
 
   constructor(mode: AmbiguousResolveMode = DEFAULT_AMBIGUOUS_RESOLVE_MODE) {
     const cfg: ResolverConfig = { mode, coneMax: resolveConeMax(process.env.CODEGRAPH_PY_CONE_MAX) };
@@ -73,6 +83,7 @@ export class PythonCallResolver implements CallResolver {
       new PythonSelfFieldSymbolResolutionStrategy(cfg),
       new PythonSelfMemberSymbolResolutionStrategy(cfg),
       new PythonLocalBindingSymbolResolutionStrategy(cfg),
+      new PythonImportedNameSymbolResolutionStrategy(cfg, this.importFileMapper),
       new PythonImportMatchSymbolResolutionStrategy(cfg),
       new PythonGlobalShortNameSymbolResolutionStrategy(cfg),
     ];

@@ -67,9 +67,11 @@ import {
   JavaLocalBindingSymbolResolutionStrategy,
   JavaThisMemberSymbolResolutionStrategy,
 } from "../src/core/domains/language/java/resolver/strategies/index.js";
+import { PythonImportFileMapper } from "../src/core/domains/language/python/resolver/python-import-file-mapper.js";
 import {
   CONE_MAX_DEFAULT,
   PythonGlobalShortNameSymbolResolutionStrategy,
+  PythonImportedNameSymbolResolutionStrategy,
   PythonImportMatchSymbolResolutionStrategy,
   PythonLocalBindingSymbolResolutionStrategy,
   PythonSelfFieldSymbolResolutionStrategy,
@@ -100,11 +102,15 @@ const CHAINS: Record<string, ChainSpec> = {
     extensions: [".py"],
     build: () => {
       const cfg = { mode: MODE, coneMax: CONE_MAX_DEFAULT };
+      // One mapper per rebuilt chain, mirroring the resolver's single instance
+      // so the memo is shared exactly the way production shares it.
+      const mapper = new PythonImportFileMapper();
       return [
         new PythonSuperSymbolResolutionStrategy(cfg),
         new PythonSelfFieldSymbolResolutionStrategy(cfg),
         new PythonSelfMemberSymbolResolutionStrategy(cfg),
         new PythonLocalBindingSymbolResolutionStrategy(cfg),
+        new PythonImportedNameSymbolResolutionStrategy(cfg, mapper),
         new PythonImportMatchSymbolResolutionStrategy(cfg),
         new PythonGlobalShortNameSymbolResolutionStrategy(cfg),
       ];
