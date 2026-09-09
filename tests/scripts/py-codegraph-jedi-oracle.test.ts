@@ -341,6 +341,50 @@ describe("buildRows", () => {
     expect(buildRows([site()], new Map())[0]?.verdict).toBe("bothUnresolved");
   });
 
+  /**
+   * The `self.table(...)` shape (z796g). Without the bucket this reads
+   * `wrongFile`: jedi points at the class attribute in the CALLER's file while
+   * the chain named the module that actually defines a callable, and the
+   * comparison is between an answer and a binding.
+   */
+  it("buckets an in-project answer the composer read as a non-definition", () => {
+    const rows = buildRows(
+      [site({ chain: { targetRelPath: "pkg/tables.py", targetSymbolId: "DeviceTable" } })],
+      reply([
+        {
+          startLine: 1,
+          member: "f",
+          outcome: {
+            kind: "inProject",
+            origin: "project",
+            targets: [{ relPath: "pkg/a.py", symbolId: null, defNodeKind: "nonCallable", pinUncertain: true }],
+          },
+        },
+      ]),
+    );
+    expect(rows[0]?.verdict).toBe("oracleNonCallable");
+  });
+
+  it("leaves a pinUncertain target the composer could not READ scored as before", () => {
+    // `unknown` is an unparseable target file, not a non-definition: the row
+    // still compares at file granularity rather than moving to the new bucket.
+    const rows = buildRows(
+      [site({ chain: { targetRelPath: "pkg/b.py", targetSymbolId: "B#f" } })],
+      reply([
+        {
+          startLine: 1,
+          member: "f",
+          outcome: {
+            kind: "inProject",
+            origin: "project",
+            targets: [{ relPath: "pkg/b.py", symbolId: null, defNodeKind: "unknown", pinUncertain: true }],
+          },
+        },
+      ]),
+    );
+    expect(rows[0]?.verdict).toBe("match");
+  });
+
   it("withdraws jedi's typeshed answer on a super() site instead of scoring the chain against it", () => {
     const rows = buildRows(
       [

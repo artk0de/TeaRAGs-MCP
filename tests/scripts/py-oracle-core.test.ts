@@ -62,6 +62,7 @@ describe("classifyPyVerdict", () => {
         oracle: inProject("pkg/b.py", "B#f"),
         parseFailed: false,
         classifiedExternal: false,
+        oracleTargetNonCallable: false,
       }),
     ).toBe("match");
   });
@@ -73,6 +74,7 @@ describe("classifyPyVerdict", () => {
         oracle: { kind: "unknown" },
         parseFailed: true,
         classifiedExternal: false,
+        oracleTargetNonCallable: false,
       }),
     ).toBe("parseFailed");
   });
@@ -84,6 +86,7 @@ describe("classifyPyVerdict", () => {
         oracle: inProject("pkg/b.py", "B#f"),
         parseFailed: false,
         classifiedExternal: true,
+        oracleTargetNonCallable: false,
       }),
     ).toBe("skippedInProject");
   });
@@ -95,6 +98,7 @@ describe("classifyPyVerdict", () => {
         oracle: { kind: "external" },
         parseFailed: false,
         classifiedExternal: true,
+        oracleTargetNonCallable: false,
       }),
     ).toBe("agreeExternal");
   });
@@ -106,8 +110,75 @@ describe("classifyPyVerdict", () => {
         oracle: inProject("pkg/b.py", "B#f"),
         parseFailed: false,
         classifiedExternal: false,
+        oracleTargetNonCallable: false,
       }),
     ).toBe("missed");
+  });
+
+  /**
+   * `self.table(...)` where `table = None` is a class attribute (z796g). The
+   * host substitutes the chain's own symbol id for a `pinUncertain` target, so
+   * without this rule the same non-definition scores `missed`, `wrongFile` or
+   * even `match` depending only on where the binding happens to live.
+   */
+  it("buckets an in-project answer whose target is not a definition", () => {
+    expect(
+      classifyPyVerdict({
+        chain: null,
+        oracle: inProject("pkg/base.py", null),
+        parseFailed: false,
+        classifiedExternal: false,
+        oracleTargetNonCallable: true,
+      }),
+    ).toBe("oracleNonCallable");
+  });
+
+  it("keeps a non-callable target out of match even when the chain named that file", () => {
+    expect(
+      classifyPyVerdict({
+        chain: { targetRelPath: "pkg/base.py", targetSymbolId: "View#table" },
+        oracle: inProject("pkg/base.py", "View#table"),
+        parseFailed: false,
+        classifiedExternal: false,
+        oracleTargetNonCallable: true,
+      }),
+    ).toBe("oracleNonCallable");
+  });
+
+  it("outranks skippedInProject — jedi found a binding, not the definition it skipped", () => {
+    expect(
+      classifyPyVerdict({
+        chain: null,
+        oracle: inProject("pkg/base.py", null),
+        parseFailed: false,
+        classifiedExternal: true,
+        oracleTargetNonCallable: true,
+      }),
+    ).toBe("oracleNonCallable");
+  });
+
+  it("yields to parseFailed — a file nobody read says nothing about its targets", () => {
+    expect(
+      classifyPyVerdict({
+        chain: null,
+        oracle: inProject("pkg/base.py", null),
+        parseFailed: true,
+        classifiedExternal: false,
+        oracleTargetNonCallable: true,
+      }),
+    ).toBe("parseFailed");
+  });
+
+  it("ignores the flag on an EXTERNAL answer — there is no in-project target to judge", () => {
+    expect(
+      classifyPyVerdict({
+        chain: null,
+        oracle: { kind: "external" },
+        parseFailed: false,
+        classifiedExternal: false,
+        oracleTargetNonCallable: true,
+      }),
+    ).toBe("agreeExternal");
   });
 });
 
@@ -346,6 +417,7 @@ describe("applySuperMroBlindSpot", () => {
         oracle: adjusted.oracle,
         parseFailed: false,
         classifiedExternal: false,
+        oracleTargetNonCallable: false,
       }),
     ).toBe("bothUnresolved");
     expect(
@@ -354,6 +426,7 @@ describe("applySuperMroBlindSpot", () => {
         oracle: adjusted.oracle,
         parseFailed: false,
         classifiedExternal: false,
+        oracleTargetNonCallable: false,
       }),
     ).toBe("chainOnly");
   });
@@ -371,6 +444,19 @@ describe("tallyPyRows", () => {
         }),
         row({ verdict: "match", receiverKind: "localVar" }),
       ],
+      (r) => [r.receiverKind],
+    );
+    const localVar = tallies.find((t) => t.label === "localVar");
+    expect(localVar?.sites).toBe(3);
+    expect(localVar?.oracle).toBe(2);
+    expect(localVar?.mismatchRate).toBeCloseTo(0.5, 10);
+  });
+
+  it("withholds oracleNonCallable rows from the rates but keeps them in sites", () => {
+    // Same treatment as a degraded parse: the row carries no ground truth, so
+    // counting it would let a jedi limitation read as a resolver defect.
+    const tallies = tallyPyRows(
+      [row({ verdict: "oracleNonCallable" }), row({ verdict: "missed" }), row({ verdict: "match" })],
       (r) => [r.receiverKind],
     );
     const localVar = tallies.find((t) => t.label === "localVar");
@@ -433,10 +519,14 @@ describe("tallyPyCoverage", () => {
       row({ verdict: "skippedInProject" }),
       row({ verdict: "skippedInProject" }),
       row({ verdict: "parseFailed" }),
+      row({ verdict: "oracleNonCallable" }),
+      row({ verdict: "oracleNonCallable" }),
+      row({ verdict: "oracleNonCallable" }),
       row({ verdict: "match" }),
     ]);
     expect(counts.skippedInProject).toBe(2);
     expect(counts.parseFailed).toBe(1);
+    expect(counts.oracleNonCallable).toBe(3);
   });
 
   it("counts unlocated sites by shape, sorted, and omits shapes nobody hit", () => {
@@ -457,6 +547,7 @@ describe("tallyPyCoverage", () => {
     expect(tallyPyCoverage([])).toEqual({
       skippedInProject: 0,
       parseFailed: 0,
+      oracleNonCallable: 0,
       unlocated: 0,
       unlocatedByShape: {},
     });

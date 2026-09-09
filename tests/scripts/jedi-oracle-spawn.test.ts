@@ -24,7 +24,7 @@ interface OracleAnswer {
   outcome: {
     kind: string;
     origin?: string;
-    targets?: { relPath: string; symbolId: string | null }[];
+    targets?: { relPath: string; symbolId: string | null; defNodeKind?: string }[];
   };
   unlocated?: string;
 }
@@ -39,6 +39,14 @@ const SITES: Record<
     member: string;
   }[]
 > = {
+  "pkg/attr_call.py": [
+    {
+      startLine: 15,
+      callText: "self.table()",
+      receiver: "self",
+      member: "table",
+    },
+  ],
   "pkg/consumer.py": [
     {
       startLine: 7,
@@ -284,6 +292,24 @@ describe.skipIf(!uvAvailable)("jedi_oracle.py over the fixture corpus", () => {
     expect(answersFor("pkg/shadow_use.py", "render").outcome.targets?.[0]).toMatchObject({
       relPath: "pkg/string.py",
       symbolId: "Formatter#render",
+    });
+  });
+
+  /**
+   * The netbox `self.table(...)` shape (z796g). jedi is not wrong here — it
+   * points at the only binding the name has — but a class attribute is not a
+   * callable definition, so the answer carries no ground truth about a call
+   * target. `defNodeKind` is what says so: jedi's own `defKind` reads
+   * `statement`, and the composer's reading is the one the host buckets on.
+   */
+  it("reports nonCallable when jedi's in-project target is a class attribute", () => {
+    const answer = answersFor("pkg/attr_call.py", "table");
+    expect(answer.outcome.kind).toBe("inProject");
+    expect(answer.outcome.origin).toBe("project");
+    expect(answer.outcome.targets?.[0]).toMatchObject({
+      relPath: "pkg/attr_call.py",
+      symbolId: null,
+      defNodeKind: "nonCallable",
     });
   });
 
