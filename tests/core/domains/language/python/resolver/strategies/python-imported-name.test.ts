@@ -481,4 +481,83 @@ describe("PythonImportedNameSymbolResolutionStrategy — receiver is a module", 
     );
     expect(strategy().attempt(call("models", "CharField"), ctx)).toEqual({ kind: "drop" });
   });
+
+  it("follows one re-export hop out of a package __init__ to the declaring module", () => {
+    const table = tableWith({
+      "netbox/circuits/tables/circuits.py": ["CircuitTable"],
+      "netbox/netbox/__init__.py": ["VERSION"],
+      "netbox/netbox/tables/__init__.py": ["BaseTable"],
+      "netbox/netbox/tables/columns.py": ["ColorColumn"],
+    });
+    const ctx = ctxWith(
+      "netbox/circuits/tables/circuits.py",
+      [{ importText: "netbox", startLine: 1, importedNames: ["tables"], importedBindings: { tables: "tables" } }],
+      table,
+    );
+    expect(strategy().attempt(call("tables", "ColorColumn"), ctx)).toEqual({
+      kind: "resolved",
+      target: { targetRelPath: "netbox/netbox/tables/columns.py", targetSymbolId: "ColorColumn" },
+    });
+  });
+
+  it("declines the hop when the module's own package declares the name twice", () => {
+    const table = tableWith({
+      "netbox/circuits/tables/circuits.py": ["CircuitTable"],
+      "netbox/netbox/__init__.py": ["VERSION"],
+      "netbox/netbox/tables/__init__.py": ["BaseTable"],
+      "netbox/netbox/tables/columns.py": ["ColorColumn"],
+      "netbox/netbox/tables/template_code.py": ["ColorColumn"],
+    });
+    const ctx = ctxWith(
+      "netbox/circuits/tables/circuits.py",
+      [{ importText: "netbox", startLine: 1, importedNames: ["tables"], importedBindings: { tables: "tables" } }],
+      table,
+    );
+    // Both declarations sit INSIDE the mapped package, so the ex28m
+    // within-package retry cannot separate them either. The existing edge beats
+    // a coin flip (bd tea-rags-mcp-ex28m). A homonym in a SIBLING package would
+    // not reach here — the retry filters it out and the hop resolves.
+    expect(strategy().attempt(call("tables", "ColorColumn"), ctx)).toEqual({ kind: "continue" });
+  });
+});
+
+describe("PythonImportedNameSymbolResolutionStrategy — class receiver spellings", () => {
+  const jobsTable = () =>
+    tableWith({
+      "netbox/core/signals.py": ["handle_sync"],
+      "netbox/core/jobs.py": ["SyncDataSourceJob"],
+      "netbox/netbox/__init__.py": ["VERSION"],
+      "netbox/netbox/jobs.py": ["JobRunner", "JobRunner.enqueue", "JobRunner#run", "JobRunner#get_jobs"],
+    });
+  const jobsCtx = (table: ReturnType<typeof jobsTable>, module: string, bound: string) =>
+    ctxWith(
+      "netbox/core/signals.py",
+      [{ importText: module, startLine: 1, importedNames: [bound], importedBindings: { [bound]: bound } }],
+      table,
+    );
+
+  it("prefers the classmethod / staticmethod spelling `Cls.member`", () => {
+    const table = jobsTable();
+    expect(strategy().attempt(call("JobRunner", "enqueue"), jobsCtx(table, "netbox.jobs", "JobRunner"))).toEqual({
+      kind: "resolved",
+      target: { targetRelPath: "netbox/netbox/jobs.py", targetSymbolId: "JobRunner.enqueue" },
+    });
+  });
+
+  it("falls to the instance spelling `Cls#member`", () => {
+    const table = jobsTable();
+    expect(strategy().attempt(call("JobRunner", "run"), jobsCtx(table, "netbox.jobs", "JobRunner"))).toEqual({
+      kind: "resolved",
+      target: { targetRelPath: "netbox/netbox/jobs.py", targetSymbolId: "JobRunner#run" },
+    });
+  });
+
+  it("CONTINUEs when the member is INHERITED, leaving MRO to its own seam", () => {
+    const table = jobsTable();
+    // netbox's only two `missed` rows with a `constant` receiver:
+    // `SyncDataSourceJob.get_jobs()` where jedi answers `JobRunner.get_jobs`.
+    expect(
+      strategy().attempt(call("SyncDataSourceJob", "get_jobs"), jobsCtx(table, ".jobs", "SyncDataSourceJob")),
+    ).toEqual({ kind: "continue" });
+  });
 });
