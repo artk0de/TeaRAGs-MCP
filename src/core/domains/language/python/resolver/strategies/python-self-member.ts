@@ -3,7 +3,7 @@ import type { CallContext, CallRef } from "../../../../../contracts/types/codegr
 import type { SymbolResolutionOutcome, SymbolResolutionStrategy } from "../../../../../contracts/types/language.js";
 import type { PythonAncestorLinearizerCache } from "../python-ancestor-policy.js";
 import {
-  pythonClassKey,
+  pythonEnclosingClass,
   resolvePythonInheritedMember,
   walkClassExtendsForMethod,
   type ResolverConfig,
@@ -46,21 +46,27 @@ export class PythonSelfMemberSymbolResolutionStrategy implements SymbolResolutio
   ) {}
 
   attempt(call: CallRef, ctx: CallContext): SymbolResolutionOutcome {
-    if (call.receiver !== "self" || ctx.callerScope.length === 0) return CONTINUE;
+    if (call.receiver !== "self") return CONTINUE;
+    // The enclosing class, addressed the way the run keys classes — NOT the
+    // whole of `callerScope`, which carries the enclosing `def` for a call made
+    // from a nested one (bd tea-rags-mcp-graiw).
+    const enclosing = pythonEnclosingClass(ctx);
+    if (enclosing === null) return CONTINUE;
     // An index written by walker v2 carries no `classAncestors` at all. Keep
     // the pre-seam single-base walk for it rather than answering from an empty
     // map, and keep its flat DROP with it.
     const linearizer = this.linearizers?.for(ctx);
     if (linearizer === undefined) {
-      const enclosing = ctx.callerScope[ctx.callerScope.length - 1];
-      const legacy = walkClassExtendsForMethod(enclosing, call.member, ctx, this.cfg.mode);
+      const legacy = walkClassExtendsForMethod(enclosing.name, call.member, ctx, this.cfg.mode);
       return legacy ? resolved(legacy) : DROP;
     }
-    // `callerScope` holds class containers only, so it IS the dotted class FQ —
-    // which is what lets a nested `Outer.Inner` caller find `Outer.Inner#m`,
-    // where the old bare `callerScope[last]` looked up `Inner#m` and missed.
-    const classKey = pythonClassKey(ctx.callerFile, ctx.callerScope.join("."));
-    const { target, closure } = resolvePythonInheritedMember(classKey, call.member, ctx, this.cfg.mode, linearizer);
+    const { target, closure } = resolvePythonInheritedMember(
+      enclosing.key,
+      call.member,
+      ctx,
+      this.cfg.mode,
+      linearizer,
+    );
     if (target) return resolved(target);
     return closure === "unknown" ? CONTINUE : DROP;
   }

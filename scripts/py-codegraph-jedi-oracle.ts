@@ -37,7 +37,7 @@ import type {
 import { DefaultSymbolIdComposer, LanguageFactory } from "../src/core/domains/language/index.js";
 import { createPythonSymbolResolutionChain } from "../src/core/domains/language/python/resolver/index.js";
 import { CONE_MAX_DEFAULT } from "../src/core/domains/language/python/resolver/strategies/index.js";
-import { pythonClassKey } from "../src/core/domains/language/python/resolver/strategies/shared.js";
+import { pythonEnclosingClass } from "../src/core/domains/language/python/resolver/strategies/shared.js";
 import { resolveViaChain } from "../src/core/domains/language/resolver-chain.js";
 import { CODEGRAPH_LANGUAGES } from "../src/core/domains/trajectory/codegraph/symbols/provider.js";
 import { classifyReceiverKind } from "../src/core/domains/trajectory/codegraph/symbols/receiver-kind.js";
@@ -418,16 +418,18 @@ export async function askOracle(
  * answer — a class the walker recorded no base for, whose `super()` goes
  * straight to `object`.
  *
- * The key is built exactly as `PythonSuperSymbolResolutionStrategy` builds it,
- * from the same two context fields, so the count describes the class the super
- * pass actually linearizes. `callerScope` holds class containers only, so
- * joining it IS the dotted class FQ.
+ * The key comes from the SAME helper `PythonSuperSymbolResolutionStrategy`
+ * uses, so the count describes the class the super pass actually linearizes.
+ * `callerScope` is not a list of class containers — it carries the enclosing
+ * `def` for a call made from a nested one, and the enclosing `def` for a class
+ * declared inside one — so joining it whole is not the class FQ (bd
+ * tea-rags-mcp-graiw).
  */
 export function countEnclosingBases(ctx: CallContext): number | undefined {
-  const scope = ctx.callerScope;
-  if (scope === undefined || scope.length === 0) return undefined;
-  if (ctx.classAncestors === undefined) return undefined;
-  return ctx.classAncestors[pythonClassKey(ctx.callerFile, scope.join("."))]?.length ?? 0;
+  if (ctx.callerScope === undefined || ctx.classAncestors === undefined) return undefined;
+  const enclosing = pythonEnclosingClass(ctx);
+  if (enclosing === null) return undefined;
+  return ctx.classAncestors[enclosing.key]?.length ?? 0;
 }
 
 /** Join the two answers into scored rows. Pure given its inputs. */

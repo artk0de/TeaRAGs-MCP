@@ -113,6 +113,22 @@ describe("extractFromPythonFile — classAncestors emission", () => {
     expect(ancestorsOf(src)).toEqual({ "x.py::Outer.Inner": ["Base"] });
   });
 
+  it("keys a class nested in a FUNCTION the way the symbol table composes it (bd tea-rags-mcp-graiw)", () => {
+    // polar `server/polar/auth/dependencies.py` declares `_AuthenticatorSignature`
+    // inside `def Authenticator()`. `collectSymbols` puts EVERY named container
+    // on `scope` — `pyNameOf` names a `function_definition` too — so the class's
+    // symbolId is `Authenticator._AuthenticatorSignature`, and its members are
+    // `Authenticator._AuthenticatorSignature#__call__`. A key that drops the
+    // function container names nothing the resolver can look up.
+    const src = "def Authenticator():\n    class _AuthenticatorSignature(_Authenticator):\n        pass\n";
+    expect(ancestorsOf(src)).toEqual({ "x.py::Authenticator._AuthenticatorSignature": ["_Authenticator"] });
+  });
+
+  it("keys a class nested in a nested function through every container", () => {
+    const src = "def outer():\n    def inner():\n        class C(Base):\n            pass\n";
+    expect(ancestorsOf(src)).toEqual({ "x.py::outer.inner.C": ["Base"] });
+  });
+
   it("emits no entry for a class with no bases or an `object`-only base", () => {
     expect(ancestorsOf("class C:\n    pass\n")).toEqual({});
     expect(ancestorsOf("class C(object):\n    pass\n")).toEqual({});

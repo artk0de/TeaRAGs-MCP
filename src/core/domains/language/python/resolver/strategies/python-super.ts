@@ -7,7 +7,7 @@ import {
 } from "../../../../../contracts/types/codegraph.js";
 import type { SymbolResolutionOutcome, SymbolResolutionStrategy } from "../../../../../contracts/types/language.js";
 import type { PythonAncestorLinearizerCache } from "../python-ancestor-policy.js";
-import { pythonClassKey, resolvePythonInheritedMember, type ResolverConfig } from "./shared.js";
+import { pythonEnclosingClass, resolvePythonInheritedMember, type ResolverConfig } from "./shared.js";
 
 /**
  * The explicit two-argument form, `super(Cls, self).m()`. The walker leaves its
@@ -71,8 +71,9 @@ export class PythonSuperSymbolResolutionStrategy implements SymbolResolutionStra
 
   /** Does `named` — the first argument of `super(Cls, self)` — name the caller's own class? */
   private namesEnclosingClass(named: string | undefined, ctx: CallContext): boolean {
-    if (named === undefined || ctx.callerScope.length === 0) return false;
-    return named === ctx.callerScope.join(".") || named === ctx.callerScope[ctx.callerScope.length - 1];
+    const enclosing = named === undefined ? null : pythonEnclosingClass(ctx);
+    if (enclosing === null) return false;
+    return named === enclosing.classFq || named === enclosing.name;
   }
 
   /**
@@ -98,15 +99,18 @@ export class PythonSuperSymbolResolutionStrategy implements SymbolResolutionStra
    * to this pass.
    */
   private resolveSuper(member: string, ctx: CallContext, explicit: boolean): SymbolResolutionTarget | null {
-    if (ctx.callerScope.length === 0) return null;
+    // bd tea-rags-mcp-graiw — the enclosing class, not the whole of
+    // `callerScope`: polar declares `_AuthenticatorSignature` inside
+    // `def Authenticator()`, so the class FQ carries the `def`, and a call made
+    // from a nested `def` carries a method the FQ must not.
+    const enclosing = pythonEnclosingClass(ctx);
+    if (enclosing === null) return null;
     const linearizer = this.linearizers?.for(ctx);
     // An index written by walker v2 carries no `classAncestors`. Keep the
     // pre-seam single-base walk for it — but only for the bare form, whose
     // start position that walk actually models.
     if (linearizer === undefined) return explicit ? null : this.resolveSuperViaClassExtends(member, ctx);
-    // `callerScope` holds class containers only, so it IS the dotted class FQ.
-    const classKey = pythonClassKey(ctx.callerFile, ctx.callerScope.join("."));
-    const { target, closure } = resolvePythonInheritedMember(classKey, member, ctx, this.cfg.mode, linearizer, {
+    const { target, closure } = resolvePythonInheritedMember(enclosing.key, member, ctx, this.cfg.mode, linearizer, {
       startAfter: true,
     });
     if (closure === "closed") return target;
@@ -125,7 +129,8 @@ export class PythonSuperSymbolResolutionStrategy implements SymbolResolutionStra
    */
   private resolveSuperViaClassExtends(member: string, ctx: CallContext): SymbolResolutionTarget | null {
     if (!ctx.classExtends) return null;
-    const enclosing = ctx.callerScope[ctx.callerScope.length - 1];
+    const enclosing = pythonEnclosingClass(ctx)?.name;
+    if (enclosing === undefined) return null;
     let current: string | undefined = ctx.classExtends[enclosing];
     if (!current) return null;
     const visited = new Set<string>([enclosing]);
