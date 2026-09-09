@@ -326,10 +326,10 @@ export function resolveImportFileEdges(
 
 **Steps**
 
-- [ ] Prepare the worktree once: `npm ci`, then `npm run build`. Bare build — no
+- [x] Prepare the worktree once: `npm ci`, then `npm run build`. Bare build — no
       `npm link`, no reindex. Worker-forking specs need the compiled worker.
 
-- [ ] Write the failing test file
+- [x] Write the failing test file
       `tests/core/domains/language/import-file-edges.test.ts`:
 
 ```ts
@@ -458,10 +458,10 @@ describe("resolveImportFileEdges", () => {
 });
 ```
 
-- [ ] Run it and watch it fail on the missing module:
+- [x] Run it and watch it fail on the missing module:
       `npx vitest run tests/core/domains/language/import-file-edges.test.ts`.
 
-- [ ] Add the contract to `src/core/contracts/types/language.ts`, directly ABOVE
+- [x] Add the contract to `src/core/contracts/types/language.ts`, directly ABOVE
       `export interface LanguageSymbolResolver` so the seam and its consumer
       read together. No new imports — `CallContext` and `RelPath` are already in
       the file's `./codegraph.js` import block:
@@ -509,7 +509,7 @@ export interface ImportFileMapper {
 }
 ```
 
-- [ ] Create `src/core/domains/language/import-file-edges.ts`:
+- [x] Create `src/core/domains/language/import-file-edges.ts`:
 
 ```ts
 /**
@@ -569,10 +569,10 @@ export function resolveImportFileEdges(
 }
 ```
 
-- [ ] Green:
+- [x] Green:
       `npx vitest run tests/core/domains/language/import-file-edges.test.ts`.
-- [ ] `npx tsc --noEmit` clean.
-- [ ] Commit both halves as one:
+- [x] `npx tsc --noEmit` clean.
+- [x] Commit both halves as one:
       `feat(contracts): add ImportFileMapper seam and shared import file edges (9fgdi)`.
 
 ---
