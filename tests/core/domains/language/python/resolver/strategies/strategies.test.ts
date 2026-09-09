@@ -328,6 +328,74 @@ describe("PythonImportMatchSymbolResolutionStrategy", () => {
     const outcome = strat.attempt({ ...call, receiver: null }, ctx({ symbolTable }));
     expect(outcome.kind).toBe("continue");
   });
+
+  it("continues when the receiver is a name an import BOUND — importedName owns it", () => {
+    const symbolTable = tableWith(
+      [
+        "netbox/circuits/tables/columns.py",
+        [sym("ColorColumn", "ColorColumn", "netbox/circuits/tables/columns.py", [])],
+      ],
+      ["netbox/netbox/tables/columns.py", [sym("ColorColumn", "ColorColumn", "netbox/netbox/tables/columns.py", [])]],
+    );
+    const outcome = strat.attempt(
+      { callText: "columns.ColorColumn()", receiver: "columns", member: "ColorColumn", startLine: 1 },
+      ctx({
+        symbolTable,
+        callerFile: "netbox/circuits/tables/circuits.py",
+        imports: [
+          {
+            importText: "netbox.tables",
+            startLine: 1,
+            importedNames: ["columns"],
+            importedBindings: { columns: "columns" },
+          },
+          // The caller's OWN `from .columns import CommitRateColumn`, verbatim
+          // from `netbox/circuits/tables/circuits.py`. It binds
+          // `CommitRateColumn`, never `columns` — but its trailing segment IS
+          // `columns`, and that is the import `pythonImportMatchesReceiver`
+          // finds. Without it the fixture cannot reproduce the wrong answer.
+          {
+            importText: ".columns",
+            startLine: 8,
+            importedNames: ["CommitRateColumn"],
+            importedBindings: { CommitRateColumn: "CommitRateColumn" },
+          },
+        ],
+      }),
+    );
+    // Trailing-segment matching picks the caller's own sibling, 437 times on
+    // netbox. The binding pass ran first and had better evidence, whatever it
+    // decided (bd tea-rags-mcp-9fgdi).
+    expect(outcome.kind).toBe("continue");
+  });
+
+  it("still answers when the receiver is bound by NOTHING", () => {
+    const symbolTable = tableWith([
+      "domains/identity/models/user.py",
+      [sym("User#save", "save", "domains/identity/models/user.py", ["User"])],
+    ]);
+    const outcome = strat.attempt(
+      { callText: "user.save()", receiver: "user", member: "save", startLine: 1 },
+      ctx({
+        symbolTable,
+        callerFile: "domains/identity/services/auth/vk_login.py",
+        imports: [
+          {
+            importText: "domains.identity.models.user",
+            startLine: 1,
+            importedNames: ["User"],
+            importedBindings: { User: "User" },
+          },
+        ],
+      }),
+    );
+    // `user` is a local holding a User; the import bound `User`, not `user`.
+    // ugnest's only two `match` rows from this pass are exactly this.
+    expect(outcome).toEqual({
+      kind: "resolved",
+      target: { targetRelPath: "domains/identity/models/user.py", targetSymbolId: "User#save" },
+    });
+  });
 });
 
 describe("PythonGlobalShortNameSymbolResolutionStrategy", () => {
