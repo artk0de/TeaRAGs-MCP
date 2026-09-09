@@ -51,4 +51,12 @@ describe("NoopGlobalSymbolTable — file presence", () => {
     expect(table.hasFilesUnder("pkg")).toBe(false);
     expect(table.hasFilesUnder("")).toBe(false);
   });
+
+  it("accepts hydrateFiles and still stores nothing (bd tea-rags-mcp-o7ifx)", () => {
+    const table = new NoopGlobalSymbolTable();
+    table.hydrateFiles(["pkg/__init__.py"]);
+    expect(table.hasFile("pkg/__init__.py")).toBe(false);
+    expect(table.hasFilesUnder("pkg")).toBe(false);
+    expect(table.size()).toBe(0);
+  });
 });

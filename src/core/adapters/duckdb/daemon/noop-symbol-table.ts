@@ -46,6 +46,10 @@ export class NoopGlobalSymbolTable implements GlobalSymbolTable {
     /* no-op — daemon does not hydrate; persistence is the DuckDB file itself */
   }
 
+  hydrateFiles(_relPaths: readonly RelPath[]): void {
+    /* no-op — file membership only matters to a resolver, which never runs here */
+  }
+
   shortNameDefCounts(): ReadonlyMap<string, number> {
     return new Map();
   }

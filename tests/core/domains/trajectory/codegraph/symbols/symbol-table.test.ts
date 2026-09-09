@@ -132,13 +132,31 @@ describe("InMemoryGlobalSymbolTable#hasFile", () => {
     expect(table.hasFile("pkg/models.py")).toBe(false);
   });
 
-  it("answers false for a file upserted with NO definitions", () => {
-    // `upsertFile` returns early on an empty list, so the file never enters
-    // `byFile`. "Present but contributing nothing" and "absent" are the same
-    // answer to the only question the caller is asking.
+  it("answers true for a file upserted with NO definitions", () => {
+    // Flipped by bd tea-rags-mcp-o7ifx. The old pin read the early return in
+    // `upsertFile` back as a semantic ("contributing nothing" == "absent"), and
+    // that made an empty `__init__.py` — 70 of them in netbox — look like a
+    // dependency to the Python import mapper. Files are first-class now.
     const table = new InMemoryGlobalSymbolTable();
     table.upsertFile("pkg/empty.py", []);
+    expect(table.hasFile("pkg/empty.py")).toBe(true);
+  });
+
+  it("answers false again after a symbol-free file is removed", () => {
+    const table = new InMemoryGlobalSymbolTable();
+    table.upsertFile("pkg/empty.py", []);
+    table.removeFile("pkg/empty.py");
     expect(table.hasFile("pkg/empty.py")).toBe(false);
+  });
+
+  it("does not count a symbol-free file toward size()", () => {
+    // `size()` sums DEFINITIONS, not files — the fan-out policy and the import
+    // mapper's memo key both read it, and neither may move because a package
+    // marker exists.
+    const table = new InMemoryGlobalSymbolTable();
+    table.upsertFile("pkg/empty.py", []);
+    expect(table.size()).toBe(0);
+    expect(table.shortNameDefCounts().size).toBe(0);
   });
 });
 
@@ -201,5 +219,42 @@ describe("InMemoryGlobalSymbolTable#hasFilesUnder", () => {
     table.hydrate([def("A", "pkg/a.py")]);
     expect(table.hasFilesUnder("pkg")).toBe(true);
     expect(table.hasFile("pkg/a.py")).toBe(true);
+  });
+
+  it("counts a symbol-free file toward its ancestor directories", () => {
+    const table = new InMemoryGlobalSymbolTable();
+    table.upsertFile("netbox/dcim/__init__.py", []);
+    expect(table.hasFilesUnder("netbox")).toBe(true);
+    expect(table.hasFilesUnder("netbox/dcim")).toBe(true);
+    table.removeFile("netbox/dcim/__init__.py");
+    expect(table.hasFilesUnder("netbox")).toBe(false);
+  });
+});
+
+describe("InMemoryGlobalSymbolTable#hydrateFiles", () => {
+  it("registers a cold-start path that persisted no symbol (bd tea-rags-mcp-o7ifx)", () => {
+    // The cold-start counterpart of `upsertFile(p, [])`: an incremental run
+    // hydrates `cg_symbols` for the files that HAVE symbols, so without this
+    // the package markers of every unchanged directory stay invisible.
+    const table = new InMemoryGlobalSymbolTable();
+    table.hydrateFiles(["pkg/__init__.py", "pkg/sub/__init__.py"]);
+    expect(table.hasFile("pkg/__init__.py")).toBe(true);
+    expect(table.hasFilesUnder("pkg")).toBe(true);
+    expect(table.size()).toBe(0);
+  });
+
+  it("leaves an already-hydrated file's definitions alone", () => {
+    const table = new InMemoryGlobalSymbolTable();
+    table.hydrate([def("A", "pkg/a.py")]);
+    table.hydrateFiles(["pkg/a.py", "pkg/__init__.py"]);
+    expect(table.lookupByShortName("A").length).toBe(1);
+    expect(table.size()).toBe(1);
+    expect(table.hasFile("pkg/__init__.py")).toBe(true);
+  });
+
+  it("is a no-op on an empty list", () => {
+    const table = new InMemoryGlobalSymbolTable();
+    table.hydrateFiles([]);
+    expect(table.hasFilesUnder("")).toBe(false);
   });
 });
