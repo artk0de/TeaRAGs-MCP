@@ -18,6 +18,7 @@
 import { describe, expect, it } from "vitest";
 
 import type { CallContext, CallRef, ImportRef } from "../../../../../../../src/core/contracts/types/codegraph.js";
+import { PythonAncestorLinearizerCache } from "../../../../../../../src/core/domains/language/python/resolver/python-ancestor-policy.js";
 import { PythonImportFileMapper } from "../../../../../../../src/core/domains/language/python/resolver/python-import-file-mapper.js";
 import { PythonImportedNameSymbolResolutionStrategy } from "../../../../../../../src/core/domains/language/python/resolver/strategies/python-imported-name.js";
 import { InMemoryGlobalSymbolTable } from "../../../../../../../src/core/domains/trajectory/codegraph/symbols/symbol-table.js";
@@ -163,20 +164,21 @@ describe("PythonImportedNameSymbolResolutionStrategy — bare calls", () => {
     expect(strategy().attempt(call("np", "array"), ctx)).toEqual({ kind: "drop" });
   });
 
-  it("CONTINUEs on a DOTTED receiver instead of keying on its root segment", () => {
-    // Was `{ kind: "drop" }`: the pass keyed `np.linalg.norm` on `np` and threw
-    // `.linalg` away. Decision 4 of bd tea-rags-mcp-9fgdi retires that split —
-    // a receiver with a further hop is a FOLD, and folding belongs to
-    // `chainType`, not to a pass that reads one import statement. Keeping the
-    // fixture proves the single-hop guard runs FIRST, ahead of even the
-    // external DROP.
+  it("DROPs a DOTTED receiver whose head is bound to an external module", () => {
+    // Decision 4 of bd tea-rags-mcp-9fgdi stopped this pass from keying
+    // `np.linalg.norm` on `np` and throwing `.linalg` away — a further hop is a
+    // FOLD, and folding belongs to `chainType`. It pinned the guard ORDER too,
+    // ahead of the external DROP, and that half was wrong: `np` is numpy either
+    // way, so the call fell to `globalShortName` and came back a phantom. The
+    // fold verdict is unchanged for a head the project owns; only an EXTERNAL
+    // head is terminal here (bd tea-rags-mcp-cnco6).
     const table = tableWith({ "app/main.py": ["main"] });
     const ctx = ctxWith(
       "app/main.py",
       [{ importText: "numpy", startLine: 1, importedNames: ["np"], importedBindings: { np: "numpy" } }],
       table,
     );
-    expect(strategy().attempt(call("np.linalg", "norm"), ctx)).toEqual({ kind: "continue" });
+    expect(strategy().attempt(call("np.linalg", "norm"), ctx)).toEqual({ kind: "drop" });
   });
 });
 
@@ -559,5 +561,306 @@ describe("PythonImportedNameSymbolResolutionStrategy — class receiver spelling
     expect(
       strategy().attempt(call("SyncDataSourceJob", "get_jobs"), jobsCtx(table, ".jobs", "SyncDataSourceJob")),
     ).toEqual({ kind: "continue" });
+  });
+});
+
+/**
+ * The multi-hop receiver whose HEAD an import bound (bd tea-rags-mcp-cnco6).
+ *
+ * `SINGLE_HOP_RECEIVER` used to CONTINUE at the very top of `attempt`, ahead of
+ * the binding lookup — so `ContentType.objects.filter(...)` under
+ * `from django.contrib.contenttypes.models import ContentType` never reached the
+ * `external -> DROP` verdict its single-hop sibling gets, fell to
+ * `globalShortName`, and became a phantom: 81 such rows on netbox plus 7 `os.*`,
+ * 4 `mptt.*`, 2 `sys.*` and 1 `django.*`, 9 on ugnest, 2 on flask.
+ *
+ * The head is looked up FIRST and only the external verdict is terminal. A head
+ * the import list maps into the PROJECT still CONTINUEs — folding `pkg.mod` hop
+ * by hop is `chainType`'s pass, not this one.
+ */
+describe("PythonImportedNameSymbolResolutionStrategy — multi-hop receiver head", () => {
+  it("DROPs when the head is bound from a third-party module", () => {
+    const table = tableWith({
+      "netbox/netbox/__init__.py": ["VERSION"],
+      "netbox/extras/models/change_logging.py": ["ObjectChange", "ObjectChange#filter"],
+    });
+    const ctx = ctxWith(
+      "netbox/extras/models/change_logging.py",
+      [
+        {
+          importText: "django.contrib.contenttypes.models",
+          startLine: 1,
+          importedNames: ["ContentType"],
+          importedBindings: { ContentType: "ContentType" },
+        },
+      ],
+      table,
+    );
+    expect(strategy().attempt(call("ContentType.objects", "filter"), ctx)).toEqual({ kind: "drop" });
+  });
+
+  it("DROPs when the head is bound from the stdlib", () => {
+    const table = tableWith({
+      "netbox/netbox/__init__.py": ["VERSION"],
+      "netbox/utilities/paths.py": ["join", "resolve"],
+    });
+    const ctx = ctxWith(
+      "netbox/utilities/paths.py",
+      [{ importText: "os", startLine: 1, importedNames: ["os"], importedBindings: { os: "os" } }],
+      table,
+    );
+    expect(strategy().attempt(call("os.path", "join"), ctx)).toEqual({ kind: "drop" });
+  });
+
+  it("CONTINUEs when the head maps into the PROJECT", () => {
+    const table = tableWith({
+      "app/main.py": ["main"],
+      "pkg/__init__.py": ["setup"],
+      "pkg/mod.py": ["func"],
+    });
+    const ctx = ctxWith(
+      "app/main.py",
+      [{ importText: "pkg", startLine: 1, importedNames: ["pkg"], importedBindings: { pkg: "pkg" } }],
+      table,
+    );
+    // `chainType` and receiver-type propagation own a multi-hop project
+    // receiver; this pass reads ONE import statement and has nothing to fold.
+    expect(strategy().attempt(call("pkg.mod", "func"), ctx)).toEqual({ kind: "continue" });
+  });
+
+  it("CONTINUEs when no import bound the head at all", () => {
+    const table = tableWith({ "app/main.py": ["main", "baz"] });
+    const ctx = ctxWith(
+      "app/main.py",
+      [{ importText: ".util", startLine: 1, importedNames: ["other"], importedBindings: { other: "other" } }],
+      table,
+    );
+    expect(strategy().attempt(call("foo.bar", "baz"), ctx)).toEqual({ kind: "continue" });
+  });
+
+  it("CONTINUEs when the head is not an identifier at all", () => {
+    // `helper(x).decode()` reaches the resolver with a receiver carrying call
+    // text; its head is no name any binding table can hold.
+    const table = tableWith({ "app/main.py": ["main"] });
+    const ctx = ctxWith(
+      "app/main.py",
+      [{ importText: ".util", startLine: 1, importedNames: ["helper"], importedBindings: { helper: "helper" } }],
+      table,
+    );
+    expect(strategy().attempt(call("helper(x)", "decode"), ctx)).toEqual({ kind: "continue" });
+  });
+});
+
+/**
+ * The two shapes polar lost when `importMatch` was demoted (bd tea-rags-mcp-cnco6).
+ *
+ * Both are receivers a binding covers, so `importMatch` now CONTINUEs on them —
+ * correctly, since its trailing-segment guess was never the evidence. The
+ * evidence this pass holds had two holes instead.
+ */
+describe("PythonImportedNameSymbolResolutionStrategy — the bound name is not a class", () => {
+  it("falls through to the module receiver when a same-named symbol hijacked the hop", () => {
+    // polar: `from . import pan_transfer` in merchant_migration/service.py, and
+    // `async def pan_transfer(...)` in the package's own endpoints.py is the
+    // project's unique declaration of that bare name. The re-export hop pinned
+    // the route handler, `<name>.<member>` found nothing on it, and the module
+    // arm below — which does resolve — was never reached. 8 rows.
+    const table = tableWith({
+      "pkg/__init__.py": ["setup"],
+      "pkg/main.py": ["run"],
+      "pkg/sub.py": ["helper"],
+      "pkg/endpoints.py": ["sub"],
+    });
+    const ctx = ctxWith(
+      "pkg/main.py",
+      [{ importText: ".", startLine: 1, importedNames: ["sub"], importedBindings: { sub: "sub" } }],
+      table,
+    );
+    expect(strategy().attempt(call("sub", "helper"), ctx)).toEqual({
+      kind: "resolved",
+      target: { targetRelPath: "pkg/sub.py", targetSymbolId: "helper" },
+    });
+  });
+
+  it("resolves a member on a module-level SINGLETON the import bound", () => {
+    // polar: `from .client import client` where client.py ends in
+    // `client = TinybirdClient(...)`. The bound name is neither a declared
+    // symbol nor a submodule, so both arms above decline and 23 rows fell to
+    // `globalShortName`. The import statement still names ONE file, and the
+    // member is declared there exactly once.
+    const table = tableWith({
+      "app/service.py": ["ingest_events"],
+      "app/client.py": ["TinybirdClient", "TinybirdClient#query"],
+    });
+    const ctx = ctxWith(
+      "app/service.py",
+      [{ importText: ".client", startLine: 1, importedNames: ["client"], importedBindings: { client: "client" } }],
+      table,
+    );
+    expect(strategy().attempt(call("client", "query"), ctx)).toEqual({
+      kind: "resolved",
+      target: { targetRelPath: "app/client.py", targetSymbolId: "TinybirdClient#query" },
+    });
+  });
+
+  it("CONTINUEs when the module declares that member twice", () => {
+    const table = tableWith({
+      "app/service.py": ["ingest_events"],
+      "app/client.py": ["Reader#query", "Writer#query"],
+    });
+    const ctx = ctxWith(
+      "app/service.py",
+      [{ importText: ".client", startLine: 1, importedNames: ["client"], importedBindings: { client: "client" } }],
+      table,
+    );
+    expect(strategy().attempt(call("client", "query"), ctx)).toEqual({ kind: "continue" });
+  });
+
+  it("leaves a DECLARED class receiver to the declared-name arm", () => {
+    // `from .jobs import SyncDataSourceJob` then `SyncDataSourceJob.get_jobs()`:
+    // the bound name IS declared, so the singleton arm must not fire and pin the
+    // file's OTHER class by short name. Inheritance owns this one.
+    const table = tableWith({
+      "core/signals.py": ["handle_sync"],
+      "core/jobs.py": ["SyncDataSourceJob", "JobRunner", "JobRunner#get_jobs"],
+    });
+    const ctx = ctxWith(
+      "core/signals.py",
+      [
+        {
+          importText: ".jobs",
+          startLine: 1,
+          importedNames: ["SyncDataSourceJob"],
+          importedBindings: { SyncDataSourceJob: "SyncDataSourceJob" },
+        },
+      ],
+      table,
+    );
+    expect(strategy().attempt(call("SyncDataSourceJob", "get_jobs"), ctx)).toEqual({ kind: "continue" });
+  });
+
+  it("CONTINUEs when the bound name maps to no project file at all", () => {
+    const table = tableWith({ "app/main.py": ["main"], "domains/orders/handlers.py": ["place"] });
+    const ctx = ctxWith(
+      "app/main.py",
+      [{ importText: "domains", startLine: 1, importedNames: ["orders"], importedBindings: { orders: "orders" } }],
+      table,
+    );
+    expect(strategy().attempt(call("orders", "place"), ctx)).toEqual({ kind: "continue" });
+  });
+});
+
+/**
+ * Where the cnco6 arm fall-through meets the 9fgdi MRO arm (bd tea-rags-mcp-cnco6).
+ *
+ * `resolveDeclaredName` gained a third verdict — a class hierarchy read to its
+ * end that does not own the member DROPs — and the fixtures above never see it,
+ * because `strategy()` builds the pass with no linearizer and the arm CONTINUEs.
+ * The corpora DO carry `classAncestors`, so these two pin the interaction with
+ * the linearizer wired the way `createPythonSymbolResolutionChain` wires it.
+ */
+describe("PythonImportedNameSymbolResolutionStrategy — MRO verdict vs the sibling arms", () => {
+  function inheritingStrategy(): PythonImportedNameSymbolResolutionStrategy {
+    const mapper = new PythonImportFileMapper();
+    return new PythonImportedNameSymbolResolutionStrategy(
+      { mode: "strict" },
+      mapper,
+      new PythonAncestorLinearizerCache(mapper, "strict"),
+    );
+  }
+
+  it("still asks the module arm when the hijacked symbol's hierarchy DROPs", () => {
+    // polar's `from . import pan_transfer`, now with the channel the corpora
+    // carry: the MRO arm reads `pkg/endpoints.py::sub` to its end — `sub` is a
+    // top-level `def`, so the hierarchy is empty and CLOSED — and DROPs. That
+    // verdict is about the passes BELOW this one. The module arm is a SIBLING
+    // with its own evidence, and it resolves. 22 polar rows.
+    const table = tableWith({
+      "pkg/__init__.py": ["setup"],
+      "pkg/main.py": ["run"],
+      "pkg/sub.py": ["helper"],
+      "pkg/endpoints.py": ["sub"],
+    });
+    const ctx: CallContext = {
+      ...ctxWith(
+        "pkg/main.py",
+        [{ importText: ".", startLine: 1, importedNames: ["sub"], importedBindings: { sub: "sub" } }],
+        table,
+      ),
+      classAncestors: {},
+    };
+    expect(inheritingStrategy().attempt(call("sub", "helper"), ctx)).toEqual({
+      kind: "resolved",
+      target: { targetRelPath: "pkg/sub.py", targetSymbolId: "helper" },
+    });
+  });
+
+  it("keeps the DROP when the module arm has nothing to say either", () => {
+    // The other side of the same gate: a REAL class receiver whose read
+    // hierarchy does not own the member. `app.models.Widget` names no file, so
+    // the sibling arm declines and the MRO verdict stands.
+    const table = tableWith({ "app/views.py": ["View"], "app/models.py": ["Widget", "Widget#save"] });
+    const ctx: CallContext = {
+      ...ctxWith(
+        "app/views.py",
+        [{ importText: "app.models", startLine: 1, importedNames: ["Widget"], importedBindings: { Widget: "Widget" } }],
+        table,
+      ),
+      classAncestors: {},
+    };
+    expect(inheritingStrategy().attempt(call("Widget", "missing"), ctx)).toEqual({ kind: "drop" });
+  });
+
+  it("resolves a SINGLETON the hop mis-attributed to a same-named task handler", () => {
+    // polar: `from .grant.service import benefit_grant as benefit_grant_service`
+    // over `benefit_grant = BenefitGrantService()`. The bound name is a value,
+    // so the mapped file does not declare it — but the caller's own
+    // `async def benefit_grant(...)` is the project's unique declaration of that
+    // bare name, so the re-export hop lands there and its empty hierarchy DROPs.
+    // The hop is what is suspect; the file the IMPORT names still declares the
+    // member once. 18 rows.
+    const table = tableWith({
+      "app/tasks.py": ["benefit_grant"],
+      "app/grant/service.py": ["BenefitGrantService", "BenefitGrantService#grant_benefit"],
+    });
+    const ctx: CallContext = {
+      ...ctxWith(
+        "app/tasks.py",
+        [
+          {
+            importText: ".grant.service",
+            startLine: 1,
+            importedNames: ["benefit_grant_service"],
+            importedBindings: { benefit_grant_service: "benefit_grant" },
+          },
+        ],
+        table,
+      ),
+      classAncestors: {},
+    };
+    expect(inheritingStrategy().attempt(call("benefit_grant_service", "grant_benefit"), ctx)).toEqual({
+      kind: "resolved",
+      target: { targetRelPath: "app/grant/service.py", targetSymbolId: "BenefitGrantService#grant_benefit" },
+    });
+  });
+
+  it("leaves a class the MAPPED file declares itself to the MRO verdict", () => {
+    // The gate is whether the mapped file declares the bound name ITSELF. Here
+    // it does — a real class receiver — so the value arm stays off and the read
+    // hierarchy's DROP is the answer, exactly as bd tea-rags-mcp-9fgdi measured.
+    // Without the gate, `save` would be pinned off the file's other class.
+    const table = tableWith({
+      "app/views.py": ["View"],
+      "app/models.py": ["Widget", "Gadget", "Gadget#save"],
+    });
+    const ctx: CallContext = {
+      ...ctxWith(
+        "app/views.py",
+        [{ importText: "app.models", startLine: 1, importedNames: ["Widget"], importedBindings: { Widget: "Widget" } }],
+        table,
+      ),
+      classAncestors: {},
+    };
+    expect(inheritingStrategy().attempt(call("Widget", "save"), ctx)).toEqual({ kind: "drop" });
   });
 });
