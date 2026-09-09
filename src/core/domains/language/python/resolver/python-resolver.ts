@@ -13,6 +13,10 @@
  * path (which is exactly the source of the ugnest false positive,
  * `serializer.is_valid()` attributed to `ConfirmationCode`).
  *
+ * The chain itself is composed by `createPythonSymbolResolutionChain`
+ * (`./python-chain-factory.js`), which the offline harnesses call too so their
+ * rebuilt chain cannot drift from this one (bd tea-rags-mcp-3yxmy).
+ *
  * The pass order (each `name` in parens):
  *   1. super (super().X via classExtends — terminal guard)
  *   2. selfField (self.<field>.X via classFieldTypes — terminal guard)
@@ -43,20 +47,10 @@ import type { SymbolResolutionStrategy } from "../../../../contracts/types/langu
 import { ConeDispatchResolver } from "../../cone-dispatch.js";
 import { ExternalCallClassifier } from "../../external-classifier.js";
 import { resolveViaChain } from "../../resolver-chain.js";
+import { createPythonSymbolResolutionChain } from "./python-chain-factory.js";
 import { PythonExternalVocabulary } from "./python-external-vocabulary.js";
 import { PythonImportFileMapper } from "./python-import-file-mapper.js";
-import {
-  CONE_MAX_DEFAULT,
-  PythonConeTypeLocator,
-  PythonGlobalShortNameSymbolResolutionStrategy,
-  PythonImportedNameSymbolResolutionStrategy,
-  PythonImportMatchSymbolResolutionStrategy,
-  PythonLocalBindingSymbolResolutionStrategy,
-  PythonSelfFieldSymbolResolutionStrategy,
-  PythonSelfMemberSymbolResolutionStrategy,
-  PythonSuperSymbolResolutionStrategy,
-  type ResolverConfig,
-} from "./strategies/index.js";
+import { CONE_MAX_DEFAULT, PythonConeTypeLocator, type ResolverConfig } from "./strategies/index.js";
 
 /** Parse `CODEGRAPH_PY_CONE_MAX`; fall back to the Python default on absent/invalid. */
 function resolveConeMax(raw: string | undefined): number {
@@ -66,7 +60,7 @@ function resolveConeMax(raw: string | undefined): number {
 
 export class PythonCallResolver implements CallResolver {
   readonly language = "python";
-  private readonly strategies: SymbolResolutionStrategy[];
+  private readonly chain: SymbolResolutionStrategy[];
   private readonly cone: ConeDispatchResolver;
   private readonly external: ExternalCallClassifier;
   /**
@@ -78,21 +72,21 @@ export class PythonCallResolver implements CallResolver {
 
   constructor(mode: AmbiguousResolveMode = DEFAULT_AMBIGUOUS_RESOLVE_MODE) {
     const cfg: ResolverConfig = { mode, coneMax: resolveConeMax(process.env.CODEGRAPH_PY_CONE_MAX) };
-    this.strategies = [
-      new PythonSuperSymbolResolutionStrategy(cfg),
-      new PythonSelfFieldSymbolResolutionStrategy(cfg),
-      new PythonSelfMemberSymbolResolutionStrategy(cfg),
-      new PythonLocalBindingSymbolResolutionStrategy(cfg),
-      new PythonImportedNameSymbolResolutionStrategy(cfg, this.importFileMapper),
-      new PythonImportMatchSymbolResolutionStrategy(cfg),
-      new PythonGlobalShortNameSymbolResolutionStrategy(cfg),
-    ];
+    this.chain = createPythonSymbolResolutionChain(cfg, this.importFileMapper);
     this.cone = new ConeDispatchResolver(new PythonConeTypeLocator(cfg), cfg.coneMax ?? CONE_MAX_DEFAULT);
     this.external = new ExternalCallClassifier(new PythonExternalVocabulary());
   }
 
+  /**
+   * Read-only view of the composed chain, so an offline harness can PROVE it
+   * mirrors production instead of asserting a copy of the order.
+   */
+  get strategies(): readonly SymbolResolutionStrategy[] {
+    return this.chain;
+  }
+
   resolve(call: CallRef, ctx: CallContext): SymbolResolutionTarget | null {
-    return resolveViaChain(this.strategies, call, ctx);
+    return resolveViaChain(this.chain, call, ctx);
   }
 
   /**

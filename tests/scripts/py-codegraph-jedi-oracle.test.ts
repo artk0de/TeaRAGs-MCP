@@ -28,12 +28,21 @@ class FixedStrategy implements SymbolResolutionStrategy {
 }
 
 describe("buildPythonChain", () => {
-  it("mirrors PythonCallResolver's order exactly — drift here voids every number", () => {
+  /**
+   * This list used to be the harness's OWN copy of the order and it silently
+   * lost `importedName` when that pass landed — `chainDrift` 117 on flask, 552
+   * on ugnest. The order now comes from the production factory, and
+   * `tests/core/domains/language/python/resolver/python-chain-factory.test.ts`
+   * is what pins it against `PythonCallResolver`. The assertion here is the
+   * harness's end of that wiring, not a second source of truth.
+   */
+  it("takes PythonCallResolver's chain from the shared factory", () => {
     expect(buildPythonChain().map((pass) => pass.name)).toEqual([
       "super",
       "selfField",
       "selfMember",
       "localBinding",
+      "importedName",
       "importMatch",
       "globalShortName",
     ]);
@@ -96,10 +105,11 @@ describe("parseArgs", () => {
     return options.pythonArgv[index + 1];
   };
 
-  it("lifts a corpus floor below the oracle's own to the floor jedi runs on", () => {
+  it("launches jedi on the manifest's declared oraclePython, not on requiresPython", () => {
     // httpx declares >=3.9 and flask >=3.10; the oracle environment itself is
     // pinned >=3.13 (scripts/py-oracle/pyproject.toml), so a corpus floor is a
-    // LOWER bound on the grammar, never the version that runs jedi.
+    // LOWER bound on the grammar, never the version that runs jedi. Deriving the
+    // launcher from httpx's 3.9 is what killed the host mid-handshake (3yxmy).
     expect(interpreterOf(["--corpus", "httpx"])).toBe("3.13");
     expect(interpreterOf(["--corpus", "flask"])).toBe("3.13");
     expect(interpreterOf(["--corpus", "netbox"])).toBe("3.13");
@@ -107,6 +117,10 @@ describe("parseArgs", () => {
 
   it("keeps a corpus floor ABOVE the oracle floor — polar needs the 3.14 grammar", () => {
     expect(interpreterOf(["--corpus", "polar"])).toBe("3.14");
+  });
+
+  it("falls back to the derived floor for a corpus the manifest does not declare", () => {
+    expect(interpreterOf(["--corpus", "/tmp/whatever"])).toBe("3.13");
   });
 
   it("lets an explicit --python win over both floors", () => {

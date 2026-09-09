@@ -94,6 +94,30 @@ describe("loadCodegraphCorpus — provisioned interpreters", () => {
     expect(polar.venvPythonVersion.startsWith("3.14")).toBe(true);
   });
 
+  /**
+   * `oraclePython` is the interpreter jedi runs ON; `requiresPython` is what the
+   * corpus needs to run ITSELF. They are not the same number and httpx proves
+   * it: `>=3.9` is below jedi 0.20.0's own floor of 3.10, and using it as the
+   * launcher killed the host during the handshake (bd tea-rags-mcp-3yxmy).
+   */
+  it.each([
+    ["ugnest", "3.13"],
+    ["flask", "3.13"],
+    ["netbox", "3.13"],
+    ["polar", "3.14"],
+    ["httpx", "3.13"],
+  ])("launches the %s oracle on python %s", (name, oraclePython) => {
+    expect(loadCodegraphCorpus(String(name)).oraclePython).toBe(oraclePython);
+  });
+
+  it("keeps every oracle interpreter at or above jedi 0.20.0's 3.10 floor", () => {
+    for (const corpus of Object.values(loadCodegraphCorpora())) {
+      const [major, minor] = corpus.oraclePython.split(".").map(Number);
+      expect(major).toBe(3);
+      expect(minor).toBeGreaterThanOrEqual(10);
+    }
+  });
+
   it("keeps ugnest's interpreter inside its own checkout", () => {
     const ugnest = loadCodegraphCorpus("ugnest");
     expect(ugnest.venvPython.startsWith(`${ugnest.path}/`)).toBe(true);
