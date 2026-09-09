@@ -75,6 +75,21 @@
   (`SUM(confidence)` fanIn/fanOut, PageRank split across the fan); navigation
   hides them via `isNavigationVisibleEdge`. Why: over the cap a multi-survivor
   site emits nothing, and fanIn read unweighted over-counts a fan m-fold.
+- **Receiver chain typing is a kernel fold with per-language ports.**
+  `kernel/receiver-type-propagation.ts` owns the walk — split on `.`, seed the
+  head, thread each hop through `memberTypeOf`, STOP at the first unknown, cap
+  the hop count, collapse the receiver form ONCE at the boundary
+  (`typeRefReceiverForm` in `propagateReceiverType`, never per hop: collapsing a
+  NILABLE intermediate mid-walk changes what the next hop dispatches on). A
+  language supplies four ports — `singleHopType`, `seedHead`, `memberTypeOf`,
+  `maxHops` — and gets multi-hop typing. It supplies them as ONE FROZEN object
+  built once and reused, because the fold runs per call site and `ctx` is
+  threaded as an argument precisely so nothing is allocated there: Ruby's is a
+  module singleton (`RUBY_RECEIVER_TYPE_PORTS`), Python's is
+  `createPythonReceiverTypePorts`, a factory the resolver calls once so the
+  ports close over its ONE `PythonImportFileMapper` instead of a private memo.
+  What an `@ivar` is, what a capitalized head means, which env caps the hops —
+  all language, none of it in the kernel.
 - **`TSProgramCache` lives on `TSCallResolver`, refreshed by an mtime re-stat
   per `acquire`; `reset()` has NO caller in `src`.** Why: auditing for a
   run-boundary discard finds nothing and invites a spurious `reset()`.

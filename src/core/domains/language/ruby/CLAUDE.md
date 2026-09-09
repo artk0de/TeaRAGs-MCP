@@ -28,6 +28,19 @@
 
 ## Gotchas
 
+- **`resolver/type-propagation.ts` is still the ADDRESS every consumer imports,
+  but the chain WALK is not in it.** Its exports are unchanged —
+  `typeOfReceiver`, `ivarTypeName`, `CHAIN_MAX_HOPS_DEFAULT` and the five
+  vocabulary re-exports — while the fold itself moved to
+  `kernel/receiver-type-propagation.ts` in E1 seam 3, supplied from here as
+  `RUBY_RECEIVER_TYPE_PORTS`. What stayed is what is Ruby: `@ivar` resolution
+  over `ivarTypes` then `classFieldTypes`, the nullary self-call receiver, typed
+  container index access, `CONST_HEAD` seeding via `declaredReturnType` then the
+  gem catalogue, and `CODEGRAPH_RB_CHAIN_MAX_HOPS`. Change any of those here;
+  change the walk in the kernel and re-run
+  `scripts/spikes/ruby-resolver-parity.ts --before-root <pre-seam checkout>`.
+  Why: reading this file for the hop threading finds only the ports, and editing
+  the kernel to fix a Ruby-shaped miss moves every other language with it.
 - **The external-member suppression set is `ACTIVE_RECORD_INSTANCE_BUILTINS` in
   `dsl/rails-runtime.ts` — not `dsl/core-members.ts`.** Membership means "the
   Rails idiom cannot override this on a domain object through an explicit
