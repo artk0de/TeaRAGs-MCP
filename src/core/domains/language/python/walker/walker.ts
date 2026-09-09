@@ -70,6 +70,10 @@ export function extractFromPythonFile(input: PythonExtractInput): FileExtraction
   // bd tea-rags-mcp-pic4 — Python class single-base map for super()
   // resolution. Single inheritance only (first listed base).
   const classExtends = collectPythonClassExtends(input.tree.rootNode);
+  // bd tea-rags-mcp-y4hro — the MULTI-base, file-qualified hierarchy channel the
+  // ancestor walk linearizes. `classExtends` stays exactly as it is beside it:
+  // `python-self-field.ts` and `pythonTypeOwnsMembers` both read it.
+  const classAncestors = collectPythonClassAncestors(input.tree.rootNode, input.relPath, imports);
   // bd tea-rags-mcp-rjuc — instance-field types declared in `__init__`
   // (`self.service = SomeService()`) recorded as CLASS-LEVEL state so the
   // resolver can pin `self.service.process()` cross-method. Mirrors the
@@ -98,6 +102,7 @@ export function extractFromPythonFile(input: PythonExtractInput): FileExtraction
     fileScope: [],
   };
   if (Object.keys(classExtends).length > 0) out.classExtends = classExtends;
+  if (Object.keys(classAncestors).length > 0) out.classAncestors = classAncestors;
   if (Object.keys(classFieldTypes).length > 0) out.classFieldTypes = classFieldTypes;
   // Unified hierarchy edges (CHA cone-unification Slice 2). Parity with the
   // Ruby/TS walkers' inheritanceEdges: where the legacy `classExtends` Record
@@ -290,6 +295,123 @@ function collectPythonClassExtends(root: AstNode): Record<string, string> {
       out[className] = parentText;
     }
   });
+  return out;
+}
+
+/** Join two module-path halves, honouring the leading dots of a relative import. */
+function joinModulePath(head: string, tail: string): string {
+  if (head.length === 0) return tail;
+  return head.endsWith(".") ? `${head}${tail}` : `${head}.${tail}`;
+}
+
+function joinModuleSegments(head: string, segments: readonly string[]): string {
+  return segments.reduce(joinModulePath, head);
+}
+
+/**
+ * A base-class spelling with the DEFINING file's import binding applied, so the
+ * resolver can turn it into a class key without the CALLER's imports — which is
+ * what makes a linearization memoizable once per run (bd tea-rags-mcp-y4hro).
+ *
+ *   `Base`     + `from a.b import Base`     → `a.b::Base`
+ *   `D`        + `from a.b import C as D`   → `a.b::C`      (the EXPORTED name)
+ *   `db.Model` + `import django.db as db`   → `django.db::Model`
+ *   `db.Model` + `from django import db`    → `django.db::Model`
+ *   `a.b.Model`+ `import a.b`               → `a.b::Model`
+ *   `Base`     with no binding              → `Base` (same file, or a builtin)
+ *
+ * `::` and not a dot: `Outer.Inner` is a legal class FQ and would not split.
+ *
+ * The discriminator is `importedBindings[local] === importText`, verified
+ * against `collectPythonImports` below. An `import` statement binds a MODULE
+ * PATH and records the module text as the value; a `from` statement binds an
+ * EXPORTED NAME and records that instead. The trap in the module case is the
+ * unaliased `import a.b`, which binds only `a` — recognisable because the value
+ * starts with the bound key. First matching import wins; a name rebound twice
+ * in one file is not a shape any corpus row exercises.
+ */
+function qualifyPythonBase(baseText: string, imports: readonly ImportRef[]): string {
+  const segments = baseText.split(".");
+  const root = segments[0];
+  if (root === undefined || root.length === 0) return baseText;
+  const trailing = segments.slice(1);
+  const tail = (parts: readonly string[]): string => parts[parts.length - 1] ?? "";
+  for (const imp of imports) {
+    const bound = imp.importedBindings?.[root];
+    if (bound === undefined) {
+      // A name with no recorded binding — only `*` today. Read it as the
+      // from-import default: the statement's own module is the container.
+      if (imp.importedNames?.includes(root) !== true) continue;
+      return `${joinModuleSegments(imp.importText, segments.slice(0, -1))}::${tail(segments)}`;
+    }
+    if (bound === imp.importText) {
+      // MODULE-PATH binding. A module used bare as a base is not a class, so
+      // leave it verbatim and let the resolver's short-name lookup decide.
+      if (trailing.length === 0) return baseText;
+      const head = bound === root || bound.startsWith(`${root}.`) ? root : bound;
+      return `${joinModuleSegments(head, trailing.slice(0, -1))}::${tail(trailing)}`;
+    }
+    // EXPORTED-NAME binding.
+    if (trailing.length === 0) return `${imp.importText}::${bound}`;
+    const container = joinModulePath(imp.importText, bound);
+    return `${joinModuleSegments(container, trailing.slice(0, -1))}::${tail(trailing)}`;
+  }
+  return baseText;
+}
+
+/**
+ * `class Child(A, M[T])` → `{ "<relPath>::Child": ["a::A", "m::M"] }`
+ * (bd tea-rags-mcp-y4hro).
+ *
+ * Three things this does that `collectPythonClassExtends` does not, each one a
+ * measured miss family: EVERY base rather than the first (netbox
+ * `ProviderView(GetRelatedModelsMixin, generic.ObjectView)` loses its second
+ * base), `subscript` bases (polar declares every repository base as
+ * `RepositoryBase[Account]`, a node type the old filter skipped entirely, so
+ * those classes recorded NO base at all), and a FILE-QUALIFIED key so two
+ * `Base` classes in two files do not conflate in the run-global map.
+ *
+ * Returns a plain object (Record) for NDJSON round-trip — Map would serialise
+ * to `{}`.
+ */
+function collectPythonClassAncestors(
+  root: AstNode,
+  relPath: string,
+  imports: readonly ImportRef[],
+): Record<string, readonly string[]> {
+  const out: Record<string, readonly string[]> = {};
+  const walkScope = (node: AstNode, scope: string[]): void => {
+    if (node.type !== "class_definition") {
+      for (const child of node.children) walkScope(child, scope);
+      return;
+    }
+    const nameNode = node.childForFieldName("name");
+    if (!nameNode) {
+      for (const child of node.children) walkScope(child, scope);
+      return;
+    }
+    const localName = nameNode.text;
+    const fq = scope.length === 0 ? localName : `${scope.join(".")}.${localName}`;
+    const supers = node.childForFieldName("superclasses");
+    const bases: string[] = [];
+    if (supers) {
+      for (const base of supers.namedChildren) {
+        // A `subscript` is a generic base: `RepositoryBase[Event]`. Its `value`
+        // child is the class; the subscript is a type argument and is never
+        // part of the hierarchy.
+        const named = base.type === "subscript" ? base.childForFieldName("value") : base;
+        if (!named) continue;
+        if (named.type !== "identifier" && named.type !== "attribute" && named.type !== "dotted_name") continue;
+        const { text } = named;
+        if (text.length === 0 || text === "object") continue;
+        bases.push(qualifyPythonBase(text, imports));
+      }
+    }
+    if (bases.length > 0) out[`${relPath}::${fq}`] = bases;
+    const body = node.childForFieldName("body");
+    for (const child of body ? body.children : node.children) walkScope(child, [...scope, localName]);
+  };
+  walkScope(root, []);
   return out;
 }
 
