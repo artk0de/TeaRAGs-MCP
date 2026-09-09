@@ -24,9 +24,9 @@ with no reader. This is E1 seam 3 + its E2 consumer.
 channel, the nullary self-call fallback, the typed-container index access, the
 `CONST_HEAD` / gem-vocabulary head seeding, the `CODEGRAPH_RB_CHAIN_MAX_HOPS`
 env name. Python's ports are net-new and read three channels it already has —
-`localBindings`, `classFieldTypes`, `structuredReturnTypes`. Ports are
-STATELESS module-level singletons taking `ctx` as their last argument, so the
-engine allocates nothing per call site.
+`localBindings`, `classFieldTypes`, `structuredReturnTypes`. Ports are STATELESS
+module-level singletons taking `ctx` as their last argument, so the engine
+allocates nothing per call site.
 
 **Tech Stack:** TypeScript (NodeNext, `strict`), vitest, tsx for the corpus
 harnesses. New code in `src/core/domains/language/kernel/`,
@@ -58,20 +58,21 @@ spec's E1 table calls `propagateChain` rather than "the propagation engine".
 
 **2. Four ports, every one of them read off the Ruby code.**
 
-| Port | Ruby body it holds | Python body it gets |
-| --- | --- | --- |
-| `singleHopType(receiver, atLine, ctx)` | `receiverTypeRef` minus the dot branch: typed-container index access, `@ivar`, local binding, `nullaryReceiverType` | `self` → enclosing class, `Cls(…)` constructor call, plain local binding |
-| `seedHead(head, firstLink, ctx)` | the `CONST_HEAD` branch: `declaredReturnType` first, then the gem catalogue's `instanceReturning` verbs; both consume the first member | module-qualified constructor: `mod.Cls()` where an import maps `mod` to a file defining `Cls` |
-| `memberTypeOf(recv, member, ctx)` | `returnTypeOf` — the five-channel authority, untouched | `classFieldTypes` for an attribute, `structuredReturnTypes` for a call |
-| `maxHops()` | `chainMaxHops()` reading `CODEGRAPH_RB_CHAIN_MAX_HOPS` | `CODEGRAPH_PY_CHAIN_MAX_HOPS`, same default 4 |
+| Port                                   | Ruby body it holds                                                                                                                     | Python body it gets                                                                           |
+| -------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------- |
+| `singleHopType(receiver, atLine, ctx)` | `receiverTypeRef` minus the dot branch: typed-container index access, `@ivar`, local binding, `nullaryReceiverType`                    | `self` → enclosing class, `Cls(…)` constructor call, plain local binding                      |
+| `seedHead(head, firstLink, ctx)`       | the `CONST_HEAD` branch: `declaredReturnType` first, then the gem catalogue's `instanceReturning` verbs; both consume the first member | module-qualified constructor: `mod.Cls()` where an import maps `mod` to a file defining `Cls` |
+| `memberTypeOf(recv, member, ctx)`      | `returnTypeOf` — the five-channel authority, untouched                                                                                 | `classFieldTypes` for an attribute, `structuredReturnTypes` for a call                        |
+| `maxHops()`                            | `chainMaxHops()` reading `CODEGRAPH_RB_CHAIN_MAX_HOPS`                                                                                 | `CODEGRAPH_PY_CHAIN_MAX_HOPS`, same default 4                                                 |
 
 No port exists that only one language can fill. `bindingAt` was considered and
 REJECTED as a separate port: both languages reach `localBindings` through
-`resolveLocalBinding`, but Ruby's reconstruction (`typeRef ?? {form: valueKind
-=== "class" ? "class" : "instance", name: type}`) is Ruby's own rule about a
-`var = CONST` binding, and Python has no `valueKind` at all. Folding it into
-`singleHopType` keeps the reconstruction byte-identical where it belongs and
-drops a port that would have had two different bodies anyway.
+`resolveLocalBinding`, but Ruby's reconstruction
+(`typeRef ?? {form: valueKind === "class" ? "class" : "instance", name: type}`)
+is Ruby's own rule about a `var = CONST` binding, and Python has no `valueKind`
+at all. Folding it into `singleHopType` keeps the reconstruction byte-identical
+where it belongs and drops a port that would have had two different bodies
+anyway.
 
 **3. Ports are stateless singletons; `ctx` is an argument, not a closure.**
 `RUBY_RECEIVER_TYPE_PORTS` and `PYTHON_RECEIVER_TYPE_PORTS` are module-level
@@ -84,14 +85,14 @@ signature is `propagateReceiverType(receiver, atLine, ctx, ports)`.
 
 **4. `--lang ruby` does not exist, so the Ruby parity gate is a cross-checkout
 row diff.** The orchestrator brief and the seam-2 plan both assume
-`scripts/codegraph-chain-tally.ts --lang ruby` works. It does not:
-`CHAINS` holds `python` and `java` only (`codegraph-chain-tally.ts:99`,
-`:104`), and `run()` throws `no chain spec for language 'ruby'` on anything
-else. Adding one would mean rebuilding Ruby's 20-pass chain by hand from
-`RubyCallResolver`'s inline constructor array (`ruby-resolver.ts:108`) — the
-exact hand-copy hazard `3yxmy` removed for Python — and it still would not give
-a BEFORE, because the tally's A/B is `--defer`, a within-process pass swap, not
-a cross-commit comparison.
+`scripts/codegraph-chain-tally.ts --lang ruby` works. It does not: `CHAINS`
+holds `python` and `java` only (`codegraph-chain-tally.ts:99`, `:104`), and
+`run()` throws `no chain spec for language 'ruby'` on anything else. Adding one
+would mean rebuilding Ruby's 20-pass chain by hand from `RubyCallResolver`'s
+inline constructor array (`ruby-resolver.ts:108`) — the exact hand-copy hazard
+`3yxmy` removed for Python — and it still would not give a BEFORE, because the
+tally's A/B is `--defer`, a within-process pass swap, not a cross-commit
+comparison.
 
 So Task 2 is MANDATORY, not the optional extra the brief hedged on:
 `scripts/spikes/ruby-resolver-parity.ts`, the resolver analogue of
@@ -106,35 +107,34 @@ This is strictly stronger than the triple the brief asked for. `edges` /
 `fileOnly` / `unresolved` are counts: a relocation that moved 40 sites off one
 target and onto another scores identically. A row diff cannot. It also removes
 the "which commit is BEFORE" question entirely — there is no earlier run to
-compare against, both answers come from one process over one corpus walk, so
-the E0.8 walk change (`26ed987f3`, which rewrote 211 lines of the tally's
-corpus walk and is why main's tally and this branch's tally are not comparable)
-is irrelevant to it.
+compare against, both answers come from one process over one corpus walk, so the
+E0.8 walk change (`26ed987f3`, which rewrote 211 lines of the tally's corpus
+walk and is why main's tally and this branch's tally are not comparable) is
+irrelevant to it.
 
-**5. Python's `chainType` is terminal on both a hit and a known-external
-miss.** Verdicts, mirroring `RubyChainTypeSymbolResolutionStrategy` and the
-precision discipline `PythonLocalBindingSymbolResolutionStrategy` already
-enforces:
+**5. Python's `chainType` is terminal on both a hit and a known-external miss.**
+Verdicts, mirroring `RubyChainTypeSymbolResolutionStrategy` and the precision
+discipline `PythonLocalBindingSymbolResolutionStrategy` already enforces:
 
 - `CONTINUE` — the fold produced nothing, or produced a `union` / `container`
   form with no single class to look up. Later passes see the call exactly as
   they do today.
-- `resolved(target)` — the folded type resolved to exactly one in-project
-  symbol for the member, directly or through the `classExtends` walk.
-- `DROP` — the folded type is known and is NOT in the project (builtin,
-  stdlib, third-party): `resolveTypeFile` returns `null`. Falling through would
-  hand the call to `importMatch` / `globalShortName`, the two passes that
-  produce 9,892 of the E0 baseline's 12,869 phantoms.
+- `resolved(target)` — the folded type resolved to exactly one in-project symbol
+  for the member, directly or through the `classExtends` walk.
+- `DROP` — the folded type is known and is NOT in the project (builtin, stdlib,
+  third-party): `resolveTypeFile` returns `null`. Falling through would hand the
+  call to `importMatch` / `globalShortName`, the two passes that produce 9,892
+  of the E0 baseline's 12,869 phantoms.
 
 The file-only fallback `PythonLocalBindingSymbolResolutionStrategy` uses — a
 target whose `targetSymbolId` is `null` when the class's file is known but the
-member is inherited from outside the project — is NOT copied here. That
-fallback has measured support for a DIRECT local binding (bd `86qfb`, 68
-false positives when parked); a type arrived at by folding two or three hops
-has no such measurement, and this program is precision-gated. `chainType` that
-knows the file but not the member returns `DROP`, and the oracle A/B in
-decision 6 is what would overturn that: if `lost` is non-zero and concentrated
-on this shape, the file-only fallback is the fix.
+member is inherited from outside the project — is NOT copied here. That fallback
+has measured support for a DIRECT local binding (bd `86qfb`, 68 false positives
+when parked); a type arrived at by folding two or three hops has no such
+measurement, and this program is precision-gated. `chainType` that knows the
+file but not the member returns `DROP`, and the oracle A/B in decision 6 is what
+would overturn that: if `lost` is non-zero and concentrated on this shape, the
+file-only fallback is the fix.
 
 **6. Gates.** Ruby: `scripts/spikes/ruby-resolver-parity.ts` on mastodon with
 `mismatches 0` and `drift 0`; `npx vitest run tests/core/domains/language/ruby`
@@ -165,33 +165,31 @@ edit is a prerequisite of the Python gates, not a follow-up.
 - **No Ruby test edits, at all.**
   `git diff --stat -- tests/core/domains/language/ruby` must be EMPTY after
   every task, and `npx vitest run tests/core/domains/language/ruby` must report
-  the same file count and the same passing count as it did before Task 1.
-  Record both numbers before touching anything. A failing Ruby test means the
-  Ruby ports are wrong — fix the ports, never the test
+  the same file count and the same passing count as it did before Task 1. Record
+  both numbers before touching anything. A failing Ruby test means the Ruby
+  ports are wrong — fix the ports, never the test
   (`.claude/rules/resolver-architecture.md` §4,
   `.claude/rules/test-invariants.md`).
-- **`ruby/resolver/type-propagation.ts` is a risk file: relocation only.**
-  fanIn 10, transitiveImpact 50. Its eight importers
-  (`ruby-convention-receiver`, `ruby-dynamic-fanout-gates`, `ruby-ivar-field`,
-  `ruby-return-type-binding`, `ruby-chain-type`, `ruby-union-dispatch`,
-  `ruby-external-vocabulary`, `template-redirect`, plus
-  `walker/type-sources/ast-inference` and
+- **`ruby/resolver/type-propagation.ts` is a risk file: relocation only.** fanIn
+  10, transitiveImpact 50. Its eight importers (`ruby-convention-receiver`,
+  `ruby-dynamic-fanout-gates`, `ruby-ivar-field`, `ruby-return-type-binding`,
+  `ruby-chain-type`, `ruby-union-dispatch`, `ruby-external-vocabulary`,
+  `template-redirect`, plus `walker/type-sources/ast-inference` and
   `tests/.../type-propagation-union.test.ts`) each keep their import line
   byte-identical. Every export it has today — `typeOfReceiver`, `ivarTypeName`,
   `CHAIN_MAX_HOPS_DEFAULT`, and the five re-exports `boundCallReturnType`,
   `conventionReceiverType`, `returnTypeOf`,
   `CONTAINER_ELEMENT_RETURNING_METHODS`, `CONTAINER_BLOCK_ITERATION_METHODS` —
-  survives with the same name and the same signature. No incidental
-  improvements ride along.
-- **Bodies move byte-identically or the cut moves.** Where a Ruby function
-  mixes neutral and Ruby-specific logic, split at the smallest seam that keeps
-  the neutral body character-for-character what it was, and write down the cut.
-  Task 1 lists all four cuts; there are no others.
-- **The kernel never names a language.**
-  `kernel/receiver-type-propagation.ts` may import from `contracts/` and from
-  `kernel/type-ref.js`. An import from `domains/language/<lang>/` is a
-  review-stopping defect. No `@`, no `::`, no `self`, no gem catalogue, no
-  `CODEGRAPH_RB_` / `CODEGRAPH_PY_` string in it.
+  survives with the same name and the same signature. No incidental improvements
+  ride along.
+- **Bodies move byte-identically or the cut moves.** Where a Ruby function mixes
+  neutral and Ruby-specific logic, split at the smallest seam that keeps the
+  neutral body character-for-character what it was, and write down the cut. Task
+  1 lists all four cuts; there are no others.
+- **The kernel never names a language.** `kernel/receiver-type-propagation.ts`
+  may import from `contracts/` and from `kernel/type-ref.js`. An import from
+  `domains/language/<lang>/` is a review-stopping defect. No `@`, no `::`, no
+  `self`, no gem catalogue, no `CODEGRAPH_RB_` / `CODEGRAPH_PY_` string in it.
 - **No allocation per call site.** The engine takes a ports OBJECT that is a
   module-level singleton; it must not build one, and must not close over `ctx`.
   The fold is O(chain length) with an O(1) lookup per hop. No array `.map` /
@@ -215,29 +213,29 @@ edit is a prerequisite of the Python gates, not a follow-up.
 
 **Created**
 
-| File | Single responsibility |
-| --- | --- |
-| `src/core/domains/language/kernel/receiver-type-propagation.ts` | `ReceiverTypePorts` + `propagateReceiverType` — the dotted-chain fold, hop cap, STOP-at-unknown, receiver-form collapse. |
-| `src/core/domains/language/python/resolver/python-receiver-type-ports.ts` | `PYTHON_RECEIVER_TYPE_PORTS` — Python's four port bodies over `localBindings` / `classFieldTypes` / `structuredReturnTypes`. |
-| `src/core/domains/language/python/resolver/strategies/python-chain-type.ts` | `PythonChainTypeSymbolResolutionStrategy` — the `chainType` pass. |
-| `scripts/spikes/ruby-resolver-parity.ts` | Cross-checkout Ruby resolver row diff (`--before-root`). |
-| `tests/core/domains/language/kernel/receiver-type-propagation.test.ts` | Fold semantics with hand-built ports: hop cap, STOP-at-unknown, seed consumption, collapse. |
-| `tests/core/domains/language/python/resolver/strategies/python-chain-type.test.ts` | Exact `targetSymbolId` assertions, external/builtin DROP guards, position-aware binding. |
+| File                                                                               | Single responsibility                                                                                                        |
+| ---------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------- |
+| `src/core/domains/language/kernel/receiver-type-propagation.ts`                    | `ReceiverTypePorts` + `propagateReceiverType` — the dotted-chain fold, hop cap, STOP-at-unknown, receiver-form collapse.     |
+| `src/core/domains/language/python/resolver/python-receiver-type-ports.ts`          | `PYTHON_RECEIVER_TYPE_PORTS` — Python's four port bodies over `localBindings` / `classFieldTypes` / `structuredReturnTypes`. |
+| `src/core/domains/language/python/resolver/strategies/python-chain-type.ts`        | `PythonChainTypeSymbolResolutionStrategy` — the `chainType` pass.                                                            |
+| `scripts/spikes/ruby-resolver-parity.ts`                                           | Cross-checkout Ruby resolver row diff (`--before-root`).                                                                     |
+| `tests/core/domains/language/kernel/receiver-type-propagation.test.ts`             | Fold semantics with hand-built ports: hop cap, STOP-at-unknown, seed consumption, collapse.                                  |
+| `tests/core/domains/language/python/resolver/strategies/python-chain-type.test.ts` | Exact `targetSymbolId` assertions, external/builtin DROP guards, position-aware binding.                                     |
 
 **Modified**
 
-| File | Change |
-| --- | --- |
-| `src/core/domains/language/ruby/resolver/type-propagation.ts` | `resolveChain` / `receiverTypeRef` bodies become `RUBY_RECEIVER_TYPE_PORTS`; `typeOfReceiver` delegates to the kernel. Exports unchanged. |
-| `src/core/domains/language/python/resolver/python-chain-factory.ts` | One line: `chainType` between `localBinding` and `importedName`. |
-| `src/core/domains/language/python/resolver/strategies/index.ts` | Export the new strategy. |
-| `src/core/domains/language/python/resolver/strategies/python-local-binding.ts` | `resolveByLocalType`'s member lookup extracted to `shared.ts` so `chainType` reuses it. Behaviour unchanged. |
-| `src/core/domains/language/python/resolver/strategies/shared.ts` | Gains `resolvePythonMemberOnType`. |
-| `scripts/codegraph-chain-tally.ts` | `buildCallContext` threads the run-global type channels. |
-| `scripts/py-codegraph-jedi-oracle.ts` | Same threading in `walkCorpus`. |
-| `src/core/domains/language/CLAUDE.md` | Navigator bullet: where the fold lives, what a port owes. |
-| `src/core/domains/language/ruby/CLAUDE.md` | Pointer: the fold moved, the vocabulary did not. |
-| `src/core/domains/language/python/CLAUDE.md` | The `chainType` pass and the channels it reads. Created by the annotation-facet plan's Task 5; if that plan has not landed, create the stub here. |
+| File                                                                           | Change                                                                                                                                            |
+| ------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `src/core/domains/language/ruby/resolver/type-propagation.ts`                  | `resolveChain` / `receiverTypeRef` bodies become `RUBY_RECEIVER_TYPE_PORTS`; `typeOfReceiver` delegates to the kernel. Exports unchanged.         |
+| `src/core/domains/language/python/resolver/python-chain-factory.ts`            | One line: `chainType` between `localBinding` and `importedName`.                                                                                  |
+| `src/core/domains/language/python/resolver/strategies/index.ts`                | Export the new strategy.                                                                                                                          |
+| `src/core/domains/language/python/resolver/strategies/python-local-binding.ts` | `resolveByLocalType`'s member lookup extracted to `shared.ts` so `chainType` reuses it. Behaviour unchanged.                                      |
+| `src/core/domains/language/python/resolver/strategies/shared.ts`               | Gains `resolvePythonMemberOnType`.                                                                                                                |
+| `scripts/codegraph-chain-tally.ts`                                             | `buildCallContext` threads the run-global type channels.                                                                                          |
+| `scripts/py-codegraph-jedi-oracle.ts`                                          | Same threading in `walkCorpus`.                                                                                                                   |
+| `src/core/domains/language/CLAUDE.md`                                          | Navigator bullet: where the fold lives, what a port owes.                                                                                         |
+| `src/core/domains/language/ruby/CLAUDE.md`                                     | Pointer: the fold moved, the vocabulary did not.                                                                                                  |
+| `src/core/domains/language/python/CLAUDE.md`                                   | The `chainType` pass and the channels it reads. Created by the annotation-facet plan's Task 5; if that plan has not landed, create the stub here. |
 
 ---
 
@@ -248,20 +246,20 @@ edit is a prerequisite of the Python gates, not a follow-up.
 `src/core/domains/language/ruby/resolver/type-propagation.ts`, 265 lines. Read
 it in two slices (1–140, 140–265) before editing.
 
-| Symbol | Lines | Verdict |
-| --- | --- | --- |
-| module docblock | 1–40 | Stays. Gains two sentences: the fold moved, the vocabulary did not. |
-| `IVAR_RECEIVER` `/^@\w+$/` | ~58 | Ruby. Stays. |
-| `CONST_HEAD` `/^[A-Z]\w*(?:::[A-Z]\w*)*$/` | ~61 | Ruby (`::`). Stays, used by `seedHead`. |
-| `stripArgs(segment)` | ~64 | **Neutral. Moves** — the kernel needs it for every hop. |
-| `CHAIN_MAX_HOPS_DEFAULT = 4` | ~74 | Value moves to the kernel; the Ruby name re-exports it (it is exported today). |
-| `chainMaxHops()` | ~80 | Ruby (`CODEGRAPH_RB_CHAIN_MAX_HOPS`). Stays, becomes the `maxHops` port. |
-| `typeOfReceiver(receiver, atLine, ctx)` | ~110 | Signature stays; body becomes one delegation line. |
-| `receiverTypeRef` | ~115–170 | **CUT 1** — the `receiver.includes(".")` guard moves to the kernel; the remaining branches become `singleHopType` verbatim. |
-| `resolveChain` | ~180–240 | **CUT 2** — the const-head seeding block becomes `seedHead`; the rest is the kernel fold. |
-| `ivarTypeName(ivar, ctx)` | ~250 | Ruby. Stays exported (two importers). |
-| `resolveIvarType` | ~262 | Ruby. Stays private. |
-| five re-export lines | 50–57 | Untouched. |
+| Symbol                                     | Lines    | Verdict                                                                                                                     |
+| ------------------------------------------ | -------- | --------------------------------------------------------------------------------------------------------------------------- |
+| module docblock                            | 1–40     | Stays. Gains two sentences: the fold moved, the vocabulary did not.                                                         |
+| `IVAR_RECEIVER` `/^@\w+$/`                 | ~58      | Ruby. Stays.                                                                                                                |
+| `CONST_HEAD` `/^[A-Z]\w*(?:::[A-Z]\w*)*$/` | ~61      | Ruby (`::`). Stays, used by `seedHead`.                                                                                     |
+| `stripArgs(segment)`                       | ~64      | **Neutral. Moves** — the kernel needs it for every hop.                                                                     |
+| `CHAIN_MAX_HOPS_DEFAULT = 4`               | ~74      | Value moves to the kernel; the Ruby name re-exports it (it is exported today).                                              |
+| `chainMaxHops()`                           | ~80      | Ruby (`CODEGRAPH_RB_CHAIN_MAX_HOPS`). Stays, becomes the `maxHops` port.                                                    |
+| `typeOfReceiver(receiver, atLine, ctx)`    | ~110     | Signature stays; body becomes one delegation line.                                                                          |
+| `receiverTypeRef`                          | ~115–170 | **CUT 1** — the `receiver.includes(".")` guard moves to the kernel; the remaining branches become `singleHopType` verbatim. |
+| `resolveChain`                             | ~180–240 | **CUT 2** — the const-head seeding block becomes `seedHead`; the rest is the kernel fold.                                   |
+| `ivarTypeName(ivar, ctx)`                  | ~250     | Ruby. Stays exported (two importers).                                                                                       |
+| `resolveIvarType`                          | ~262     | Ruby. Stays private.                                                                                                        |
+| five re-export lines                       | 50–57    | Untouched.                                                                                                                  |
 
 **CUT 1** — `receiverTypeRef`'s first three lines are the chain guard:
 
@@ -284,47 +282,69 @@ returns.
 
 ```ts
 const declaredHead =
-  headMember !== null && CONST_HEAD.test(head) ? declaredReturnType(head, headMember, ctx) : undefined;
-if (declaredHead !== undefined) { current = declaredHead; startLink = 1; }
-else if (headMember !== null && CONST_HEAD.test(head) &&
-         catalogueForGemfile(ctx.gemfileContent).instanceReturning.has(headMember)) {
+  headMember !== null && CONST_HEAD.test(head)
+    ? declaredReturnType(head, headMember, ctx)
+    : undefined;
+if (declaredHead !== undefined) {
+  current = declaredHead;
+  startLink = 1;
+} else if (
+  headMember !== null &&
+  CONST_HEAD.test(head) &&
+  catalogueForGemfile(ctx.gemfileContent).instanceReturning.has(headMember)
+) {
   current = { form: "instance", name: head };
   startLink = 1;
 }
 ```
 
-restated as a function returning `{ type, consumedMembers: 1 } | undefined`.
-Its long comment (the DECLARED-then-VOCABULARY reasoning, bd `6zpds` / `rvw34`)
+restated as a function returning `{ type, consumedMembers: 1 } | undefined`. Its
+long comment (the DECLARED-then-VOCABULARY reasoning, bd `6zpds` / `rvw34`)
 moves with it unchanged.
 
-**CUT 3** — the `else` arm of that chain, `current = typeOfReceiver(head, atLine, ctx)`,
-is the RECURSION into the receiver-form-collapsed entry point. The kernel must
-recurse into `propagateReceiverType` (collapsed), NOT into `receiverTypeRefOf`
-(raw). Getting this backwards changes what a nilable chain head resolves to and
-the Ruby parity harness will catch it.
+**CUT 3** — the `else` arm of that chain,
+`current = typeOfReceiver(head, atLine, ctx)`, is the RECURSION into the
+receiver-form-collapsed entry point. The kernel must recurse into
+`propagateReceiverType` (collapsed), NOT into `receiverTypeRefOf` (raw). Getting
+this backwards changes what a nilable chain head resolves to and the Ruby parity
+harness will catch it.
 
-**CUT 4** — the collapse happens ONCE, at the outer boundary.
-`typeOfReceiver` wraps `receiverTypeRef` in `rubyReceiverForm`; `resolveChain`
-returns raw and each hop's `returnTypeOf` result is raw inside the loop.
-`rubyReceiverForm` is already `typeRefReceiverForm` from `kernel/type-ref.ts`
-(seam 2 shim, `ruby/type-ref.ts:12`), so the kernel calls it directly.
-Collapsing inside the loop would silently change multi-arm chain behaviour.
+**CUT 4** — the collapse happens ONCE, at the outer boundary. `typeOfReceiver`
+wraps `receiverTypeRef` in `rubyReceiverForm`; `resolveChain` returns raw and
+each hop's `returnTypeOf` result is raw inside the loop. `rubyReceiverForm` is
+already `typeRefReceiverForm` from `kernel/type-ref.ts` (seam 2 shim,
+`ruby/type-ref.ts:12`), so the kernel calls it directly. Collapsing inside the
+loop would silently change multi-arm chain behaviour.
 
 ### The engine's exact shape
 
 ```ts
 // kernel/receiver-type-propagation.ts
 export interface ReceiverTypePorts {
-  singleHopType(receiver: string, atLine: number, ctx: CallContext): TypeRef | undefined;
-  seedHead(head: string, firstLink: string | undefined, ctx: CallContext):
-    { type: TypeRef; consumedMembers: 0 | 1 } | undefined;
-  memberTypeOf(recv: TypeRef, member: string, ctx: CallContext): TypeRef | undefined;
+  singleHopType(
+    receiver: string,
+    atLine: number,
+    ctx: CallContext,
+  ): TypeRef | undefined;
+  seedHead(
+    head: string,
+    firstLink: string | undefined,
+    ctx: CallContext,
+  ): { type: TypeRef; consumedMembers: 0 | 1 } | undefined;
+  memberTypeOf(
+    recv: TypeRef,
+    member: string,
+    ctx: CallContext,
+  ): TypeRef | undefined;
   maxHops(): number;
 }
 export const CHAIN_MAX_HOPS_DEFAULT = 4;
 export function stripCallArgs(segment: string): string;
 export function propagateReceiverType(
-  receiver: string, atLine: number, ctx: CallContext, ports: ReceiverTypePorts,
+  receiver: string,
+  atLine: number,
+  ctx: CallContext,
+  ports: ReceiverTypePorts,
 ): TypeRef | undefined;
 ```
 
@@ -337,17 +357,17 @@ type refs does not say what kind of args.
 All three arrive on `CallContext`; the first two exist today, the third is what
 `2026-09-09-python-annotation-type-facet.md` Task 4's channel adapter emits.
 
-| Channel | Shape | Key | Written by |
-| --- | --- | --- | --- |
-| `localBindings` | `Record<varName, LocalBinding[]>` | variable name; each binding carries `line` + `type` | `collectLocalBindingsForChunk` (`python/walker/walker.ts:366`) + the annotation facet's `param` / `local` facts |
-| `classFieldTypes` | `Record<className, Record<attr, typeName>>` | class SHORT name, attribute bare (no `@`) | `collectPythonClassFieldTypes` (`walker.ts:201`) + the facet's `ivar` facts re-keyed |
-| `structuredReturnTypes` | `Record<calleeSymbolId, TypeRef>` | the callee's symbolId: `run` for a module-level def, `Cls#run` for an instance method, `Cls.run` for a `@classmethod` / `@staticmethod`, `Outer.Inner#run` for a nested class | the facet's `return` facts (annotation plan decision 5) |
+| Channel                 | Shape                                       | Key                                                                                                                                                                           | Written by                                                                                                      |
+| ----------------------- | ------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------- |
+| `localBindings`         | `Record<varName, LocalBinding[]>`           | variable name; each binding carries `line` + `type`                                                                                                                           | `collectLocalBindingsForChunk` (`python/walker/walker.ts:366`) + the annotation facet's `param` / `local` facts |
+| `classFieldTypes`       | `Record<className, Record<attr, typeName>>` | class SHORT name, attribute bare (no `@`)                                                                                                                                     | `collectPythonClassFieldTypes` (`walker.ts:201`) + the facet's `ivar` facts re-keyed                            |
+| `structuredReturnTypes` | `Record<calleeSymbolId, TypeRef>`           | the callee's symbolId: `run` for a module-level def, `Cls#run` for an instance method, `Cls.run` for a `@classmethod` / `@staticmethod`, `Outer.Inner#run` for a nested class | the facet's `return` facts (annotation plan decision 5)                                                         |
 
 `structuredReturnTypes` is keyed by symbolId as `DefaultSymbolIdComposer`
 composes it with `pythonKernel.scopeSeparator === "."` (`python/kernel.ts:41`).
 So `memberTypeOf({form:"instance", name:"Repo"}, "get")` looks up `Repo#get`,
-and on a `class` form it looks up `Repo.get` first. Nested owners arrive
-already joined with `.` — do not re-join, and never use Ruby's `::`.
+and on a `class` form it looks up `Repo.get` first. Nested owners arrive already
+joined with `.` — do not re-join, and never use Ruby's `::`.
 
 `LocalBinding` has no `valueKind` on the Python side, so a Python binding is
 always `{ form: "instance", name: binding.type }`. `resolveLocalBinding` /
@@ -361,14 +381,14 @@ never index `localBindings[name][0]`.
 `receiver = fn.childForFieldName("object").text` for an `attribute` callee. So
 the receiver is the FULL text left of the final dot, call parens included:
 
-| Source | `receiver` | `member` |
-| --- | --- | --- |
-| `x.run()` | `x` | `run` |
-| `svc.build().run()` | `svc.build()` | `run` |
-| `self.repo.get(id).save()` | `self.repo.get(id)` | `save` |
-| `Cls().run()` | `Cls()` | `run` |
-| `mod.Cls().run()` | `mod.Cls()` | `run` |
-| `items[0].run()` | `items[0]` | `run` |
+| Source                     | `receiver`          | `member` |
+| -------------------------- | ------------------- | -------- |
+| `x.run()`                  | `x`                 | `run`    |
+| `svc.build().run()`        | `svc.build()`       | `run`    |
+| `self.repo.get(id).save()` | `self.repo.get(id)` | `save`   |
+| `Cls().run()`              | `Cls()`             | `run`    |
+| `mod.Cls().run()`          | `mod.Cls()`         | `run`    |
+| `items[0].run()`           | `items[0]`          | `run`    |
 
 `stripCallArgs` is what makes `build()` → `build` and `get(id)` → `get`. An
 argument list containing a dot (`svc.get(a.b).run()`) splits wrong — the fold
@@ -396,12 +416,13 @@ for c in flask ugnest httpx netbox polar; do
 done
 ```
 
-`--corpus <name>` takes a manifest name from `scripts/lib/codegraph-corpora.json`
-(`parseArgs`, `py-codegraph-jedi-oracle.ts:463`), not a path. BEFORE must be
-dumped with Task 4's harness threading ALREADY applied and Task 3's strategy NOT
-yet inserted — otherwise the two sides differ by two changes and the diff says
-nothing. Read `lost` first: the gate is 0. `annotationReturn` is a `categories`
-label (`scripts/lib/py-oracle-core.ts:37`, set when
+`--corpus <name>` takes a manifest name from
+`scripts/lib/codegraph-corpora.json` (`parseArgs`,
+`py-codegraph-jedi-oracle.ts:463`), not a path. BEFORE must be dumped with Task
+4's harness threading ALREADY applied and Task 3's strategy NOT yet inserted —
+otherwise the two sides differ by two changes and the diff says nothing. Read
+`lost` first: the gate is 0. `annotationReturn` is a `categories` label
+(`scripts/lib/py-oracle-core.ts:37`, set when
 `facts.enclosingHasReturnAnnotation`), and its `missed` count is what should
 fall.
 
@@ -441,31 +462,63 @@ type TypeRef =
 // kernel/type-ref.js
 function typeRefReceiverForm(ref: TypeRef | undefined): TypeRef | undefined;
 // ruby/resolver/ruby-member-return-types.js
-function returnTypeOf(recv: RubyTypeRef, member: string, ctx: CallContext): RubyTypeRef | undefined;
+function returnTypeOf(
+  recv: RubyTypeRef,
+  member: string,
+  ctx: CallContext,
+): RubyTypeRef | undefined;
 // ruby/resolver/ruby-return-facts.js
-function declaredReturnType(constName: string, member: string, ctx: CallContext): RubyTypeRef | undefined;
+function declaredReturnType(
+  constName: string,
+  member: string,
+  ctx: CallContext,
+): RubyTypeRef | undefined;
 // ruby/resolver/ruby-unbound-receiver-types.js
-function nullaryReceiverType(receiver: string, ctx: CallContext): RubyTypeRef | undefined;
+function nullaryReceiverType(
+  receiver: string,
+  ctx: CallContext,
+): RubyTypeRef | undefined;
 ```
 
 Produces:
 
 ```ts
 export interface ReceiverTypePorts {
-  singleHopType(receiver: string, atLine: number, ctx: CallContext): TypeRef | undefined;
-  seedHead(head: string, firstLink: string | undefined, ctx: CallContext):
-    { type: TypeRef; consumedMembers: 0 | 1 } | undefined;
-  memberTypeOf(recv: TypeRef, member: string, ctx: CallContext): TypeRef | undefined;
+  singleHopType(
+    receiver: string,
+    atLine: number,
+    ctx: CallContext,
+  ): TypeRef | undefined;
+  seedHead(
+    head: string,
+    firstLink: string | undefined,
+    ctx: CallContext,
+  ): { type: TypeRef; consumedMembers: 0 | 1 } | undefined;
+  memberTypeOf(
+    recv: TypeRef,
+    member: string,
+    ctx: CallContext,
+  ): TypeRef | undefined;
   maxHops(): number;
 }
 export const CHAIN_MAX_HOPS_DEFAULT = 4;
 export function stripCallArgs(segment: string): string;
 export function propagateReceiverType(
-  receiver: string, atLine: number, ctx: CallContext, ports: ReceiverTypePorts,
+  receiver: string,
+  atLine: number,
+  ctx: CallContext,
+  ports: ReceiverTypePorts,
 ): TypeRef | undefined;
 // ruby/resolver/type-propagation.ts — unchanged public surface
-export function typeOfReceiver(receiver: string, atLine: number, ctx: CallContext): RubyTypeRef | undefined;
-export function ivarTypeName(ivar: string, ctx: CallContext): string | undefined;
+export function typeOfReceiver(
+  receiver: string,
+  atLine: number,
+  ctx: CallContext,
+): RubyTypeRef | undefined;
+export function ivarTypeName(
+  ivar: string,
+  ctx: CallContext,
+): string | undefined;
 export const CHAIN_MAX_HOPS_DEFAULT: number;
 export const RUBY_RECEIVER_TYPE_PORTS: ReceiverTypePorts;
 ```
@@ -509,7 +562,11 @@ import { typeRefReceiverForm } from "./type-ref.js";
 
 export interface ReceiverTypePorts {
   /** The language's answer for a receiver with no dot in it. */
-  singleHopType(receiver: string, atLine: number, ctx: CallContext): TypeRef | undefined;
+  singleHopType(
+    receiver: string,
+    atLine: number,
+    ctx: CallContext,
+  ): TypeRef | undefined;
   /**
    * A chain head that is not itself a value — a bare constant, a module alias.
    * The link arrives RAW, parens included: whether it was a CALL is
@@ -518,10 +575,17 @@ export interface ReceiverTypePorts {
    * the seed accounts for: 1 when the seed IS `head.firstLink`, 0 when it
    * types `head` alone.
    */
-  seedHead(head: string, firstLink: string | undefined, ctx: CallContext):
-    { type: TypeRef; consumedMembers: 0 | 1 } | undefined;
+  seedHead(
+    head: string,
+    firstLink: string | undefined,
+    ctx: CallContext,
+  ): { type: TypeRef; consumedMembers: 0 | 1 } | undefined;
   /** What calling `member` on a receiver of type `recv` yields. */
-  memberTypeOf(recv: TypeRef, member: string, ctx: CallContext): TypeRef | undefined;
+  memberTypeOf(
+    recv: TypeRef,
+    member: string,
+    ctx: CallContext,
+  ): TypeRef | undefined;
   /** Hop cap; a chain longer than this is untyped rather than half-walked. */
   maxHops(): number;
 }
@@ -565,7 +629,8 @@ function receiverTypeRefOf(
   ctx: CallContext,
   ports: ReceiverTypePorts,
 ): TypeRef | undefined {
-  if (receiver.includes(".")) return propagateChain(receiver, atLine, ctx, ports);
+  if (receiver.includes("."))
+    return propagateChain(receiver, atLine, ctx, ports);
   return ports.singleHopType(receiver, atLine, ctx);
 }
 
@@ -631,14 +696,14 @@ export { CHAIN_MAX_HOPS_DEFAULT } from "../../kernel/receiver-type-propagation.j
       kernel applies it. Keep `chainMaxHops()` exactly as it is; it still reads
       `CODEGRAPH_RB_CHAIN_MAX_HOPS` per call so test env overrides work without
       a module reload.
+
 - [ ] Rename `receiverTypeRef` to `rubySingleHopType`, delete its first three
       lines (the `receiver.includes(".")` guard — CUT 1), and leave every
-      remaining character alone: the index-access block with its
-      `/^[a-z_]\w*$/` base-var test and container unwrap, the `IVAR_RECEIVER`
-      branch, the `resolveLocalBinding` lookup, the `nullaryReceiverType`
-      fallback, the `binding.typeRef ?? { form: binding.valueKind === "class" ?
-      "class" : "instance", name: binding.type }` reconstruction. Same
-      parameter list, same order.
+      remaining character alone: the index-access block with its `/^[a-z_]\w*$/`
+      base-var test and container unwrap, the `IVAR_RECEIVER` branch, the
+      `resolveLocalBinding` lookup, the `nullaryReceiverType` fallback, the
+      `binding.typeRef ?? { form: binding.valueKind === "class" ?     "class" : "instance", name: binding.type }`
+      reconstruction. Same parameter list, same order.
 - [ ] Extract CUT 2 from `resolveChain` into `rubySeedHead`, then DELETE
       `resolveChain` — the kernel owns the rest of it now:
 
@@ -667,7 +732,9 @@ function rubySeedHead(
   const firstMember = stripCallArgs(firstLink);
   const declared = declaredReturnType(head, firstMember, ctx);
   if (declared !== undefined) return { type: declared, consumedMembers: 1 };
-  if (catalogueForGemfile(ctx.gemfileContent).instanceReturning.has(firstMember)) {
+  if (
+    catalogueForGemfile(ctx.gemfileContent).instanceReturning.has(firstMember)
+  ) {
     return { type: { form: "instance", name: head }, consumedMembers: 1 };
   }
   return undefined;
@@ -697,42 +764,47 @@ export const RUBY_RECEIVER_TYPE_PORTS: ReceiverTypePorts = Object.freeze({
   maxHops: chainMaxHops,
 });
 
-export function typeOfReceiver(receiver: string, atLine: number, ctx: CallContext): RubyTypeRef | undefined {
+export function typeOfReceiver(
+  receiver: string,
+  atLine: number,
+  ctx: CallContext,
+): RubyTypeRef | undefined {
   return propagateReceiverType(receiver, atLine, ctx, RUBY_RECEIVER_TYPE_PORTS);
 }
 ```
 
 - [ ] Confirm the export surface did not move:
       `/usr/bin/grep -n '^export' src/core/domains/language/ruby/resolver/type-propagation.ts`
-      must still list `boundCallReturnType`, `CONTAINER_BLOCK_ITERATION_METHODS`,
+      must still list `boundCallReturnType`,
+      `CONTAINER_BLOCK_ITERATION_METHODS`,
       `CONTAINER_ELEMENT_RETURNING_METHODS`, `returnTypeOf`,
       `conventionReceiverType`, `CHAIN_MAX_HOPS_DEFAULT`, `typeOfReceiver`,
       `ivarTypeName` — plus the new `RUBY_RECEIVER_TYPE_PORTS`. Nothing removed,
       nothing renamed.
-- [ ] Write `tests/core/domains/language/kernel/receiver-type-propagation.test.ts`
+- [ ] Write
+      `tests/core/domains/language/kernel/receiver-type-propagation.test.ts`
       against HAND-BUILT ports — the kernel test must not import anything under
-      `ruby/` or `python/`. Cases, one `it` each:
-      - single hop: no dot, `singleHopType` answers, result passes through
-        `typeRefReceiverForm` (a `Foo|nil` union collapses to `Foo`);
-      - two hops: `a.b.c` with `singleHopType("a")` seeding and `memberTypeOf`
-        answering twice; assert the exact terminal ref;
-      - STOP-at-unknown: `memberTypeOf` returns `undefined` on hop 2 of 3 —
-        result `undefined`, and hop 3's port is never called (spy on calls);
-      - hop cap: `maxHops()` of 2 against `a.b.c.d` (3 links) → `undefined`,
-        and `singleHopType` is never called;
-      - `seedHead` consuming 1: the walk starts at link index 1;
-      - `seedHead` consuming 0: the walk starts at link index 0;
-      - `seedHead` declining: the head falls through to `singleHopType`;
-      - `stripCallArgs`: `new(post)` → `new`, `find` → `find`, `f(` → `f`;
-      - empty head (`".foo"`) → `undefined`;
-      - a `nil`-only head collapses to `undefined` rather than throwing.
+      `ruby/` or `python/`. Cases, one `it` each: - single hop: no dot,
+      `singleHopType` answers, result passes through `typeRefReceiverForm` (a
+      `Foo|nil` union collapses to `Foo`); - two hops: `a.b.c` with
+      `singleHopType("a")` seeding and `memberTypeOf` answering twice; assert
+      the exact terminal ref; - STOP-at-unknown: `memberTypeOf` returns
+      `undefined` on hop 2 of 3 — result `undefined`, and hop 3's port is never
+      called (spy on calls); - hop cap: `maxHops()` of 2 against `a.b.c.d` (3
+      links) → `undefined`, and `singleHopType` is never called; - `seedHead`
+      consuming 1: the walk starts at link index 1; - `seedHead` consuming 0:
+      the walk starts at link index 0; - `seedHead` declining: the head falls
+      through to `singleHopType`; - `stripCallArgs`: `new(post)` → `new`, `find`
+      → `find`, `f(` → `f`; - empty head (`".foo"`) → `undefined`; - a
+      `nil`-only head collapses to `undefined` rather than throwing.
 - [ ] `npx vitest run tests/core/domains/language/kernel/receiver-type-propagation.test.ts`
       green, then `npx vitest run tests/core/domains/language/ruby` with the
       SAME file and passing counts recorded in step 1, and
       `git diff --stat -- tests/core/domains/language/ruby` empty.
 - [ ] `npm run type-check`; `npx eslint --max-warnings 0` on the two touched
       source files and the new test.
-- [ ] Commit: `refactor(language): relocate the receiver chain fold to the kernel (9fgdi)`.
+- [ ] Commit:
+      `refactor(language): relocate the receiver chain fold to the kernel (9fgdi)`.
 
 ---
 
@@ -751,16 +823,36 @@ Consumes:
 
 ```ts
 // scripts/ts-codegraph-typechecker-oracle.js
-function collectSourceFiles(root: string, base: string, filter: unknown, extensions: readonly string[]):
-  Promise<{ kept: string[]; ingestIgnored: number; codegraphExcluded: number }>;
-function buildCorpusExclusionFilter(root: string, factory: LanguageFactory): Promise<unknown>;
-function extractFile(root: string, relPath: string, composer: DefaultSymbolIdComposer, factory: LanguageFactory):
-  FileExtraction | null;
+function collectSourceFiles(
+  root: string,
+  base: string,
+  filter: unknown,
+  extensions: readonly string[],
+): Promise<{
+  kept: string[];
+  ingestIgnored: number;
+  codegraphExcluded: number;
+}>;
+function buildCorpusExclusionFilter(
+  root: string,
+  factory: LanguageFactory,
+): Promise<unknown>;
+function extractFile(
+  root: string,
+  relPath: string,
+  composer: DefaultSymbolIdComposer,
+  factory: LanguageFactory,
+): FileExtraction | null;
 function buildSymbolDefs(extraction: FileExtraction): SymbolDefinition[];
 // src/core/domains/trajectory/codegraph/symbols/symbol-table.js
-class InMemoryGlobalSymbolTable { upsertFile(relPath, defs): void; size(): number }
+class InMemoryGlobalSymbolTable {
+  upsertFile(relPath, defs): void;
+  size(): number;
+}
 // src/core/domains/language/ruby/resolver/ruby-resolver.js
-class RubyCallResolver { resolve(call: CallRef, ctx: CallContext): SymbolResolutionTarget | null }
+class RubyCallResolver {
+  resolve(call: CallRef, ctx: CallContext): SymbolResolutionTarget | null;
+}
 ```
 
 Produces: a CLI printing `compared N sites · mismatches M · drift D`, exiting
@@ -815,10 +907,17 @@ JSON.
 
 ```ts
 async function beforeResolver(beforeRoot: string): Promise<RubyCallResolver> {
-  const modulePath = resolvePath(beforeRoot, "src/core/domains/language/ruby/resolver/ruby-resolver.ts");
-  const loaded = (await import(modulePath)) as { RubyCallResolver?: new () => RubyCallResolver };
+  const modulePath = resolvePath(
+    beforeRoot,
+    "src/core/domains/language/ruby/resolver/ruby-resolver.ts",
+  );
+  const loaded = (await import(modulePath)) as {
+    RubyCallResolver?: new () => RubyCallResolver;
+  };
   if (typeof loaded.RubyCallResolver !== "function") {
-    throw new Error(`--before-root checkout exports no RubyCallResolver: ${modulePath}`);
+    throw new Error(
+      `--before-root checkout exports no RubyCallResolver: ${modulePath}`,
+    );
   }
   return new loaded.RubyCallResolver();
 }
@@ -827,6 +926,7 @@ async function beforeResolver(beforeRoot: string): Promise<RubyCallResolver> {
       tsx transpiles the other checkout's `.ts` without type-checking it, so the
       structural mismatch between the two trees' `CallContext` declarations is a
       non-issue at runtime — the same property is true of the walker precedent.
+
 - [ ] Compare with the tally's `sameTarget` semantics (both `null`, or same
       `targetRelPath` AND same `targetSymbolId`). Import it rather than
       restating it: `import { sameTarget } from "../codegraph-chain-tally.js"`.
@@ -843,10 +943,12 @@ npx tsx scripts/spikes/ruby-resolver-parity.ts \
       Gate: `mismatches 0`, `drift 0`. A non-zero `mismatches` means a cut was
       not byte-identical — the printed rows name the receiver and the two
       targets, which points at the branch.
+
 - [ ] Time both a BEFORE-only and an AFTER-only run on the same machine to
       confirm the fold costs nothing measurable; the ports indirection is one
       property read per hop.
-- [ ] Commit: `test(scripts): cross-checkout Ruby resolver parity harness (9fgdi)`.
+- [ ] Commit:
+      `test(scripts): cross-checkout Ruby resolver parity harness (9fgdi)`.
 
 ---
 
@@ -854,11 +956,15 @@ npx tsx scripts/spikes/ruby-resolver-parity.ts \
 
 **Files**
 
-- CREATE `src/core/domains/language/python/resolver/python-receiver-type-ports.ts`
-- CREATE `src/core/domains/language/python/resolver/strategies/python-chain-type.ts`
-- CREATE `tests/core/domains/language/python/resolver/strategies/python-chain-type.test.ts`
+- CREATE
+  `src/core/domains/language/python/resolver/python-receiver-type-ports.ts`
+- CREATE
+  `src/core/domains/language/python/resolver/strategies/python-chain-type.ts`
+- CREATE
+  `tests/core/domains/language/python/resolver/strategies/python-chain-type.test.ts`
 - MODIFY `src/core/domains/language/python/resolver/strategies/shared.ts`
-- MODIFY `src/core/domains/language/python/resolver/strategies/python-local-binding.ts`
+- MODIFY
+  `src/core/domains/language/python/resolver/strategies/python-local-binding.ts`
 - MODIFY `src/core/domains/language/python/resolver/strategies/index.ts`
 - MODIFY `src/core/domains/language/python/resolver/python-chain-factory.ts`
 
@@ -891,7 +997,10 @@ export const PYTHON_RECEIVER_TYPE_PORTS: ReceiverTypePorts;
 export const PYTHON_CHAIN_MAX_HOPS_ENV = "CODEGRAPH_PY_CHAIN_MAX_HOPS";
 // python/resolver/strategies/shared.ts
 export function resolvePythonMemberOnType(
-  typeName: string, member: string, ctx: CallContext, mode: AmbiguousResolveMode,
+  typeName: string,
+  member: string,
+  ctx: CallContext,
+  mode: AmbiguousResolveMode,
 ): SymbolResolutionTarget | null;
 // python/resolver/strategies/python-chain-type.ts
 export class PythonChainTypeSymbolResolutionStrategy implements SymbolResolutionStrategy {
@@ -908,11 +1017,11 @@ export class PythonChainTypeSymbolResolutionStrategy implements SymbolResolution
       `shared.ts` so both passes read one implementation
       (`memory/feedback_no_duplication_in_strategies.md`). The extracted
       function is the part AFTER `resolveTypeFile` — the narrowed
-      `lookupByShortName` filter, `pickSingleCandidate`, and the
-      `classExtends` walk — and it returns `null` when the member is not found
-      anywhere in the chain. `resolveByLocalType` keeps its own file-only
-      fallback (`{ targetRelPath, targetSymbolId: null }`) on that `null`, so
-      its behaviour does not move:
+      `lookupByShortName` filter, `pickSingleCandidate`, and the `classExtends`
+      walk — and it returns `null` when the member is not found anywhere in the
+      chain. `resolveByLocalType` keeps its own file-only fallback
+      (`{ targetRelPath, targetSymbolId: null }`) on that `null`, so its
+      behaviour does not move:
 
 ```ts
 /**
@@ -933,9 +1042,14 @@ export function resolvePythonMemberOnType(
   if (!targetFile) return null;
   const candidates = ctx.symbolTable
     .lookupByShortName(member)
-    .filter((def) => def.relPath === targetFile && def.scope[def.scope.length - 1] === bareType);
+    .filter(
+      (def) =>
+        def.relPath === targetFile &&
+        def.scope[def.scope.length - 1] === bareType,
+    );
   const target = pickSingleCandidate(candidates, mode);
-  if (target) return { targetRelPath: target.relPath, targetSymbolId: target.symbolId };
+  if (target)
+    return { targetRelPath: target.relPath, targetSymbolId: target.symbolId };
   const parent = ctx.classExtends?.[bareType];
   return parent ? walkClassExtendsForMethod(parent, member, ctx, mode) : null;
 }
@@ -946,11 +1060,12 @@ export function resolvePythonMemberOnType(
       Re-export it from `python-local-binding.ts` if anything else imports it —
       check with
       `/usr/bin/grep -rn "resolveTypeFile" src tests scripts` first.
+
 - [ ] `npx vitest run tests/core/domains/language/python` — green BEFORE the new
       strategy exists. The extraction is behaviour-preserving; if a Python test
       moves, the extraction was not.
-- [ ] **Thread the run-global type channels into both harnesses, and commit
-      that on its own, BEFORE the strategy exists.** Neither harness builds a
+- [ ] **Thread the run-global type channels into both harnesses, and commit that
+      on its own, BEFORE the strategy exists.** Neither harness builds a
       `CallContext` carrying `structuredReturnTypes` today, so a `chainType`
       inserted first would measure a no-op and report green (decision 7).
       `codegraph-chain-tally.ts:265` and `py-codegraph-jedi-oracle.ts:179`
@@ -976,6 +1091,7 @@ Object.assign(classAncestors, extraction.classAncestors ?? {});
       barrier, which is why `classExtends` was already shaped this way. Commit
       as `test(scripts): thread run-global type channels into the Python
       harnesses (9fgdi)`.
+
 - [ ] Dump the five BEFORE oracle runs now — harness threading applied, strategy
       not yet inserted. Invocation in "Context the implementer needs". Keep
       `/tmp/e1s3-before-*.ndjson`; Task 4 diffs against them.
@@ -1007,18 +1123,27 @@ const PYTHON_CLASS_HEAD = /^[A-Z]\w*$/;
  * `localBinding` runs before `chainType` and is terminal (resolved or DROP)
  * for a bare bound receiver, so a single-segment receiver never gets here.
  */
-function pythonSingleHopType(receiver: string, atLine: number, ctx: CallContext): TypeRef | undefined {
+function pythonSingleHopType(
+  receiver: string,
+  atLine: number,
+  ctx: CallContext,
+): TypeRef | undefined {
   if (receiver === "self") {
     const enclosing = ctx.callerScope[ctx.callerScope.length - 1];
-    return enclosing === undefined ? undefined : { form: "instance", name: enclosing };
+    return enclosing === undefined
+      ? undefined
+      : { form: "instance", name: enclosing };
   }
   if (receiver.endsWith(")")) {
     const bare = stripCallArgs(receiver);
-    if (!PYTHON_CLASS_HEAD.test(bare) || resolveTypeFile(bare, ctx) === null) return undefined;
+    if (!PYTHON_CLASS_HEAD.test(bare) || resolveTypeFile(bare, ctx) === null)
+      return undefined;
     return { form: "instance", name: bare };
   }
   const bound = resolveLocalBinding(ctx.localBindings, receiver, atLine);
-  return bound === undefined ? undefined : { form: "instance", name: bound.type };
+  return bound === undefined
+    ? undefined
+    : { form: "instance", name: bound.type };
 }
 ```
 
@@ -1047,7 +1172,9 @@ function pythonSeedHead(
   if (firstLink === undefined) return undefined;
   const member = stripCallArgs(firstLink);
   if (!PYTHON_CLASS_HEAD.test(member)) return undefined;
-  const imported = ctx.imports.some((imp) => pythonImportMatchesReceiver(imp.importText, head));
+  const imported = ctx.imports.some((imp) =>
+    pythonImportMatchesReceiver(imp.importText, head),
+  );
   if (!imported || resolveTypeFile(member, ctx) === null) return undefined;
   const form = firstLink.endsWith(")") ? "instance" : "class";
   return { type: { form, name: member }, consumedMembers: 1 };
@@ -1079,7 +1206,11 @@ function pythonSeedHead(
  * already declines to emit those as bindings (its decision 4); this is the
  * same rule stated on the read side.
  */
-function pythonMemberTypeOf(recv: TypeRef, member: string, ctx: CallContext): TypeRef | undefined {
+function pythonMemberTypeOf(
+  recv: TypeRef,
+  member: string,
+  ctx: CallContext,
+): TypeRef | undefined {
   if (recv.form !== "class" && recv.form !== "instance") return undefined;
   const fieldType = ctx.classFieldTypes?.[recv.name]?.[member];
   if (fieldType !== undefined) return { form: "instance", name: fieldType };
@@ -1114,12 +1245,27 @@ export const PYTHON_RECEIVER_TYPE_PORTS: ReceiverTypePorts = Object.freeze({
       decides only the three verdicts:
 
 ```ts
-import { CONTINUE, DROP, resolved } from "../../../../../contracts/resolution.js";
-import type { CallContext, CallRef } from "../../../../../contracts/types/codegraph.js";
-import type { SymbolResolutionOutcome, SymbolResolutionStrategy } from "../../../../../contracts/types/language.js";
+import {
+  CONTINUE,
+  DROP,
+  resolved,
+} from "../../../../../contracts/resolution.js";
+import type {
+  CallContext,
+  CallRef,
+} from "../../../../../contracts/types/codegraph.js";
+import type {
+  SymbolResolutionOutcome,
+  SymbolResolutionStrategy,
+} from "../../../../../contracts/types/language.js";
 import { propagateReceiverType } from "../../../kernel/receiver-type-propagation.js";
 import { PYTHON_RECEIVER_TYPE_PORTS } from "../python-receiver-type-ports.js";
-import { resolvePythonMemberOnType, resolveTypeFile, lastSegment, type ResolverConfig } from "./shared.js";
+import {
+  lastSegment,
+  resolvePythonMemberOnType,
+  resolveTypeFile,
+  type ResolverConfig,
+} from "./shared.js";
 
 /**
  * Typed-receiver resolution through the shared chain fold (E1 seam 3).
@@ -1168,14 +1314,25 @@ export class PythonChainTypeSymbolResolutionStrategy implements SymbolResolution
     const receiver = call.receiver;
     if (!receiver) return CONTINUE;
 
-    const type = propagateReceiverType(receiver, call.startLine, ctx, PYTHON_RECEIVER_TYPE_PORTS);
-    if (!type || (type.form !== "class" && type.form !== "instance")) return CONTINUE;
+    const type = propagateReceiverType(
+      receiver,
+      call.startLine,
+      ctx,
+      PYTHON_RECEIVER_TYPE_PORTS,
+    );
+    if (!type || (type.form !== "class" && type.form !== "instance"))
+      return CONTINUE;
 
     // A folded type whose file is not in the project is external — DROP rather
     // than hand the call to the short-name passes.
     if (resolveTypeFile(lastSegment(type.name), ctx) === null) return DROP;
 
-    const target = resolvePythonMemberOnType(type.name, call.member, ctx, this.cfg.mode);
+    const target = resolvePythonMemberOnType(
+      type.name,
+      call.member,
+      ctx,
+      this.cfg.mode,
+    );
     return target ? resolved(target) : DROP;
   }
 }
@@ -1194,50 +1351,47 @@ export class PythonChainTypeSymbolResolutionStrategy implements SymbolResolution
 
       Update the ordered pass list in `python-resolver.ts`'s docblock to match.
       Nothing else in the factory moves.
+
 - [ ] Write
       `tests/core/domains/language/python/resolver/strategies/python-chain-type.test.ts`.
-      Follow the fixture style of the neighbouring
-      `strategies/*.test.ts` — a hand-built `InMemoryGlobalSymbolTable` and a
-      literal `CallContext`, no corpus. Every positive case asserts the EXACT
-      `targetSymbolId`, never just "resolved":
-      - `x = svc.build(); x.run()` — `localBindings.svc` → `Svc`,
-        `structuredReturnTypes["Svc#build"]` → `instance Widget`,
-        `Widget#run` in the table. Receiver `svc.build()`, member `run` →
-        `targetSymbolId === "Widget#run"`.
-      - `self.repo.get(id).save()` — `callerScope` `["Svc"]`,
-        `classFieldTypes.Svc.repo` → `Repo`,
-        `structuredReturnTypes["Repo#get"]` → `instance Row`, `Row#save` in the
-        table → `targetSymbolId === "Row#save"`.
-      - nested owner: `structuredReturnTypes["Outer.Inner#build"]` reached from
-        a receiver typed `Outer.Inner` → asserts the `.`-joined key is read
-        verbatim, not re-composed with `::`.
-      - class form: `mod.Cls.make()` seeds `{form:"class"}`, so the return key
-        read is `Cls.make`, not `Cls#make`.
-      - instance form: `mod.Cls().run()` seeds `{form:"instance"}` → `Cls#run`.
-      - position-aware binding: `svc` bound to `A` at line 3 and to `B` at
-        line 9; a call at line 5 folds through `A#build`, at line 11 through
-        `B#build`. Two different `targetSymbolId`s from the same receiver text.
-      - NEGATIVE — external receiver: the folded type is `Session` with no
-        definition in the table and no import mapping → `DROP`, and assert it
-        is DROP rather than CONTINUE so the later passes are provably cut off.
-      - NEGATIVE — builtin: `d = dict(); d.items().x()` → the head has no
-        binding, the fold yields nothing → `CONTINUE`.
-      - NEGATIVE — union / container: a `structuredReturnTypes` entry of
-        `{form:"union", members:[A,B]}` mid-chain → `CONTINUE`, no fan-out, no
-        first-member guess.
-      - NEGATIVE — unknown hop: `structuredReturnTypes` has no key for the
-        middle member → `CONTINUE` (STOP-at-unknown, nothing fabricated past
-        it).
-      - hop cap: a five-link receiver under the default cap of 4 → `CONTINUE`.
-      - no receiver → `CONTINUE`.
+      Follow the fixture style of the neighbouring `strategies/*.test.ts` — a
+      hand-built `InMemoryGlobalSymbolTable` and a literal `CallContext`, no
+      corpus. Every positive case asserts the EXACT `targetSymbolId`, never just
+      "resolved": - `x = svc.build(); x.run()` — `localBindings.svc` → `Svc`,
+      `structuredReturnTypes["Svc#build"]` → `instance Widget`, `Widget#run` in
+      the table. Receiver `svc.build()`, member `run` →
+      `targetSymbolId === "Widget#run"`. - `self.repo.get(id).save()` —
+      `callerScope` `["Svc"]`, `classFieldTypes.Svc.repo` → `Repo`,
+      `structuredReturnTypes["Repo#get"]` → `instance Row`, `Row#save` in the
+      table → `targetSymbolId === "Row#save"`. - nested owner:
+      `structuredReturnTypes["Outer.Inner#build"]` reached from a receiver typed
+      `Outer.Inner` → asserts the `.`-joined key is read verbatim, not
+      re-composed with `::`. - class form: `mod.Cls.make()` seeds
+      `{form:"class"}`, so the return key read is `Cls.make`, not `Cls#make`. -
+      instance form: `mod.Cls().run()` seeds `{form:"instance"}` → `Cls#run`. -
+      position-aware binding: `svc` bound to `A` at line 3 and to `B` at line 9;
+      a call at line 5 folds through `A#build`, at line 11 through `B#build`.
+      Two different `targetSymbolId`s from the same receiver text. - NEGATIVE —
+      external receiver: the folded type is `Session` with no definition in the
+      table and no import mapping → `DROP`, and assert it is DROP rather than
+      CONTINUE so the later passes are provably cut off. - NEGATIVE — builtin:
+      `d = dict(); d.items().x()` → the head has no binding, the fold yields
+      nothing → `CONTINUE`. - NEGATIVE — union / container: a
+      `structuredReturnTypes` entry of `{form:"union", members:[A,B]}` mid-chain
+      → `CONTINUE`, no fan-out, no first-member guess. - NEGATIVE — unknown hop:
+      `structuredReturnTypes` has no key for the middle member → `CONTINUE`
+      (STOP-at-unknown, nothing fabricated past it). - hop cap: a five-link
+      receiver under the default cap of 4 → `CONTINUE`. - no receiver →
+      `CONTINUE`.
 - [ ] Add ONE case to
       `tests/core/domains/language/python/resolver/python-chain-factory.test.ts`
       asserting the composed order now reads
-      `super, selfField, selfMember, localBinding, chainType, importedName,
-      importMatch, globalShortName`. That test is what stops a future reorder.
+      `super, selfField, selfMember, localBinding, chainType, importedName,     importMatch, globalShortName`.
+      That test is what stops a future reorder.
 - [ ] `npx vitest run tests/core/domains/language/python`; `npm run type-check`;
       `npx eslint --max-warnings 0` on the touched files.
-- [ ] Commit: `feat(language): resolve Python chained receivers by folded type (9fgdi)`.
+- [ ] Commit:
+      `feat(language): resolve Python chained receivers by folded type (9fgdi)`.
 
 ---
 
@@ -1257,7 +1411,7 @@ Produces: measured numbers, three navigator bullets, and a bead-closing
 
 ### Steps
 
-- [ ] Ruby relocation gate. Re-run Task 2's harness against the pre-Task-1
+- [x] Ruby relocation gate. Re-run Task 2's harness against the pre-Task-1
       commit and record the output verbatim:
 
 ```bash
@@ -1270,7 +1424,8 @@ npx tsx scripts/spikes/ruby-resolver-parity.ts \
       `npx vitest run tests/core/domains/language/ruby` with the file and
       passing counts from Task 1 step 1, and
       `git diff --stat -- tests/core/domains/language/ruby` empty.
-- [ ] Python row-level oracle A/B. Dump AFTER for all five corpora and diff
+
+- [x] Python row-level oracle A/B. Dump AFTER for all five corpora and diff
       against Task 3's BEFORE dumps:
 
 ```bash
@@ -1286,15 +1441,16 @@ done
       Record the five triples in the task notes; the `polar` and `netbox`
       numbers are the ones that decide the seam, since they carry the bulk of
       the `annotationReturn` losses.
-- [ ] `lost > 0`: read the LOST SITES block
+
+- [x] `lost > 0`: read the LOST SITES block
       (`node $D/diff-rows.mjs before after lost`) before changing anything.
       Group by `receiverKind` and by `before.answeredBy`. A cluster where the
       previous answer came from `localBinding` means the extraction in Task 3
       step 1 was not behaviour-preserving. A cluster answered by
-      `globalShortName` that the oracle CONFIRMS means the DROP of decision 5
-      is too strict for that shape and the file-only fallback is the fix — make
+      `globalShortName` that the oracle CONFIRMS means the DROP of decision 5 is
+      too strict for that shape and the file-only fallback is the fix — make
       that change explicitly, re-dump, do not widen the gate.
-- [ ] Chain-drift gate, all five corpora:
+- [x] Chain-drift gate, all five corpora:
 
 ```bash
 for c in flask ugnest httpx netbox polar; do
@@ -1305,17 +1461,18 @@ done
       `chainDrift` must be 0 in every run. Non-zero means the rebuilt chain and
       the production resolver disagree — which after this seam can only mean
       something bypassed the factory.
-- [ ] Perf A/B on netbox, same machine, back to back: the tally run with the
+
+- [x] Perf A/B on netbox, same machine, back to back: the tally run with the
       strategy present versus the same command on the pre-Task-3 commit. Budget
       `wall ≤ +25%`, `RSS ≤ +20%`
       (`/usr/bin/time -l npx tsx scripts/codegraph-chain-tally.ts …`, read
       `maximum resident set size`). Over budget → the ports object is being
-      built per call site, or a lookup became a scan. Both are code defects,
-      not reasons to relax the budget.
-- [ ] `npm run test:coverage` exit 0. Below threshold → delegate to the
+      built per call site, or a lookup became a scan. Both are code defects, not
+      reasons to relax the budget.
+- [x] `npm run test:coverage` exit 0. Below threshold → delegate to the
       `coverage-expander` subagent per `.claude/CLAUDE.md`; do not lower a
       threshold and do not write the tests inline.
-- [ ] Navigator bullets. `src/core/domains/language/CLAUDE.md` — one bullet
+- [x] Navigator bullets. `src/core/domains/language/CLAUDE.md` — one bullet
       under the resolver-chain material:
 
 ```markdown
@@ -1324,44 +1481,97 @@ done
   head, thread each hop through `memberTypeOf`, STOP at the first unknown, cap
   the hop count, collapse the receiver form ONCE at the boundary. A language
   supplies four ports and gets multi-hop typing; it supplies them as a FROZEN
-  MODULE SINGLETON, because the fold runs per call site and `ctx` is threaded
-  as an argument precisely so nothing is allocated there. What an `@ivar` is,
-  what a capitalized head means, which env caps the hops — all language, none
-  of it in the kernel.
+  MODULE SINGLETON, because the fold runs per call site and `ctx` is threaded as
+  an argument precisely so nothing is allocated there. What an `@ivar` is, what
+  a capitalized head means, which env caps the hops — all language, none of it
+  in the kernel.
 ```
 
-- [ ] `src/core/domains/language/ruby/CLAUDE.md` — a pointer, not a restatement:
+- [x] `src/core/domains/language/ruby/CLAUDE.md` — a pointer, not a restatement:
 
 ```markdown
 - `resolver/type-propagation.ts` is still the ADDRESS every consumer imports
   (`typeOfReceiver`, `ivarTypeName`, and the five vocabulary re-exports), but
   the chain WALK moved to `kernel/receiver-type-propagation.ts` in E1 seam 3.
-  What stayed is what is Ruby: `@ivar` resolution over
-  `ivarTypes` → `classFieldTypes`, the nullary self-call receiver, typed
-  container index access, `CONST_HEAD` seeding via `declaredReturnType` then
-  the gem catalogue, and `CODEGRAPH_RB_CHAIN_MAX_HOPS`. Change any of those
-  here; change the walk in the kernel and re-run
-  `scripts/spikes/ruby-resolver-parity.ts`.
+  What stayed is what is Ruby: `@ivar` resolution over `ivarTypes` →
+  `classFieldTypes`, the nullary self-call receiver, typed container index
+  access, `CONST_HEAD` seeding via `declaredReturnType` then the gem catalogue,
+  and `CODEGRAPH_RB_CHAIN_MAX_HOPS`. Change any of those here; change the walk
+  in the kernel and re-run `scripts/spikes/ruby-resolver-parity.ts`.
 ```
 
-- [ ] `src/core/domains/language/python/CLAUDE.md` — the read side of the
+- [x] `src/core/domains/language/python/CLAUDE.md` — the read side of the
       annotation facet's channels:
 
 ```markdown
-- `chainType` (`resolver/strategies/python-chain-type.ts`) is the only reader
-  of `structuredReturnTypes`. It sits between `localBinding` and
-  `importedName`, folds the receiver through
-  `PYTHON_RECEIVER_TYPE_PORTS`, and is terminal both ways: a folded type that
-  resolves gives an edge, a folded type outside the project DROPS rather than
-  falling through to the short-name passes. `memberTypeOf` reads
-  `classFieldTypes` (attribute) before `structuredReturnTypes` (return), and
-  the return key IS the callee's symbolId — `Cls#run` on an instance receiver,
-  `Cls.run` on a class one, `Outer.Inner#run` for a nested owner, already
-  `.`-joined. A `container` or `union` receiver yields nothing on purpose:
-  `list[Foo]` types the list, not an element.
+- `chainType` (`resolver/strategies/python-chain-type.ts`) is the only reader of
+  `structuredReturnTypes`. It sits between `localBinding` and `importedName`,
+  folds the receiver through `PYTHON_RECEIVER_TYPE_PORTS`, and is terminal both
+  ways: a folded type that resolves gives an edge, a folded type outside the
+  project DROPS rather than falling through to the short-name passes.
+  `memberTypeOf` reads `classFieldTypes` (attribute) before
+  `structuredReturnTypes` (return), and the return key IS the callee's symbolId
+  — `Cls#run` on an instance receiver, `Cls.run` on a class one,
+  `Outer.Inner#run` for a nested owner, already `.`-joined. A `container` or
+  `union` receiver yields nothing on purpose: `list[Foo]` types the list, not an
+  element.
 ```
 
-- [ ] Commit: `docs(language): record the receiver-propagation seam in the navigators (9fgdi)`.
+- [x] Commit:
+      `docs(language): record the receiver-propagation seam in the navigators (9fgdi)`.
+
+---
+
+## Gate record
+
+Measured on `21032d0fc` (the RP.3 merge) plus this task's docs-only commits.
+Provenance is stated per row: RP.3 ran the Python and perf gates, RP.4 ran the
+two Ruby harnesses and the coverage gate on the exact tree recorded here.
+
+### Ruby — the relocation is behaviour-preserving
+
+| Gate                                                                                              | Result                                                                                                                 | Run by |
+| ------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------- | ------ |
+| `ruby-resolver-parity.ts`, mastodon, `--limit 20000`, `--before-root` the pre-relocation checkout | 42,057 sites compared · **mismatches 0 · drift 0** (1,383 scored files, 12,235 symbols, 0 parse failures, 24.8 s wall) | RP.4   |
+| `ruby-walker-composition-parity.ts`, same corpus and `--before-root`                              | 3,197 files compared · **mismatches 0**                                                                                | RP.4   |
+| `npx vitest run tests/core/domains/language/ruby`                                                 | 89 files / 1,816 tests, all passing                                                                                    | RP.4   |
+| `git diff --stat main..HEAD -- tests/core/domains/language/ruby`                                  | empty                                                                                                                  | RP.4   |
+
+The `--before-root` checkout carries no `kernel/receiver-type-propagation.ts` at
+all, so both harnesses really did load the pre-seam resolver rather than a
+second copy of this tree's — the identity-run failure mode decision 4 warns
+about cannot be what produced these zeros.
+
+### Python — the seam pays and nothing regresses
+
+| Gate                                                                         | Result                                                                                 | Run by |
+| ---------------------------------------------------------------------------- | -------------------------------------------------------------------------------------- | ------ |
+| Row-level oracle A/B, five corpora (flask / ugnest / httpx / netbox / polar) | gross `lost` **0** in all five; `chainType` answers 33 rows, 31 `match`, **0 phantom** | RP.3   |
+| `codegraph-chain-tally.ts --lang python`, same five corpora                  | `chainDrift` **0** in all five                                                         | RP.3   |
+| Perf A/B on netbox, back to back, same machine                               | wall **−0.7 %**, RSS **+3.3 %** (budget `wall ≤ +25 %`, `RSS ≤ +20 %`)                 | RP.3   |
+
+`lost 0` is what settles decision 5: the DROP swallowed nothing that was
+previously answered correctly, so the file-only fallback stays unbuilt. The
+`lost > 0` step never triggered and needs no forensics.
+
+### Both
+
+| Gate                    | Result                                                                                                                                              | Run by |
+| ----------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------- | ------ |
+| `npm run test:coverage` | **exit 0** · statements 96.31 (≥ 96.2) · branches 88.80 (≥ 87) · functions 97.37 (≥ 97) · lines 98.39 (≥ 97) · 849 files / 12,367 passed, 1 skipped | RP.4   |
+
+### Deviation from the plan as written
+
+Invariant 5 and decision 3 say BOTH ports objects are frozen MODULE singletons.
+Ruby's is (`RUBY_RECEIVER_TYPE_PORTS`). Python's is not:
+`createPythonReceiverTypePorts(mapper)` is a factory returning a frozen object,
+called ONCE in `PythonChainTypeSymbolResolutionStrategy`'s constructor, because
+`resolveTypeFile` needs the resolver's single `PythonImportFileMapper` and a
+module-level singleton would either fragment that memo or answer the same import
+differently from `localBinding` / `importedName` / `importMatch`. The property
+the invariant was protecting — nothing allocated per call site — holds either
+way, and the netbox perf row is the evidence. `PYTHON_RECEIVER_TYPE_PORTS`,
+named in Self-review, does not exist; the factory replaced it.
 
 ---
 
@@ -1375,8 +1585,7 @@ done
    `domains/language/<lang>/`.
 4. The fold collapses the receiver form exactly once, at
    `propagateReceiverType`. Hops stay raw.
-5. Ports are frozen module singletons; the fold allocates nothing per call
-   site.
+5. Ports are frozen module singletons; the fold allocates nothing per call site.
 6. `createPythonSymbolResolutionChain` remains the ONE place the Python chain
    order is written down. No harness rebuilds it by hand.
 7. Nothing this seam adds ever fans out. `chainType` returns one target or none.
@@ -1387,11 +1596,11 @@ done
   this plan and the two files named in its **Files** block, nothing else.
 - Tool calls stay under 8 minutes. Reads are ≤ 300-line slices, ≤ 3 files per
   turn. Writes are ≤ 120 lines per call.
-- Commits: `refactor(language): …` for Task 1, `test(scripts): …` for Task 2
-  and the harness-threading commit, `feat(language): …` for Task 3,
+- Commits: `refactor(language): …` for Task 1, `test(scripts): …` for Task 2 and
+  the harness-threading commit, `feat(language): …` for Task 3,
   `docs(language): …` for Task 4. Every subject ends with `(9fgdi)` — the
-  orchestrator replaces it with the real bead id when the beads are filed.
-  Body wrapped at 100 columns, `Co-Authored-By` trailer per
+  orchestrator replaces it with the real bead id when the beads are filed. Body
+  wrapped at 100 columns, `Co-Authored-By` trailer per
   `.claude/rules/commit-rules.md`.
 - No build, no `npm link`, no reindex. Every gate in this plan is offline.
 
@@ -1400,13 +1609,13 @@ done
 - Names are identical across tasks: `ReceiverTypePorts`,
   `propagateReceiverType`, `stripCallArgs`, `CHAIN_MAX_HOPS_DEFAULT`,
   `RUBY_RECEIVER_TYPE_PORTS`, `PYTHON_RECEIVER_TYPE_PORTS`,
-  `resolvePythonMemberOnType`, `PythonChainTypeSymbolResolutionStrategy`,
-  chain name `chainType`.
+  `resolvePythonMemberOnType`, `PythonChainTypeSymbolResolutionStrategy`, chain
+  name `chainType`.
 - Every port has a Ruby body and a Python body — decision 2's table is the
-  check, and `bindingAt` was dropped precisely because its two bodies would
-  have disagreed.
-- Every decision has a task: 1–3 → Task 1, 4 → Task 2, 5 → Task 3, 6 → Task 4,
-  7 → Task 3's harness-threading step.
+  check, and `bindingAt` was dropped precisely because its two bodies would have
+  disagreed.
+- Every decision has a task: 1–3 → Task 1, 4 → Task 2, 5 → Task 3, 6 → Task 4, 7
+  → Task 3's harness-threading step.
 - No undefined symbol: `resolveTypeFile`, `lastSegment`,
   `walkClassExtendsForMethod`, `pickSingleCandidate`,
   `pythonImportMatchesReceiver`, `resolveLocalBinding`, `typeRefReceiverForm`,

@@ -21,6 +21,19 @@
   memo is keyed by symbol-table identity and invalidated on `size()`, so a
   second instance is a second cold cache and a licence for two consumers to
   answer the same import differently.
+- **`chainType` is the ONLY reader of `structuredReturnTypes`.**
+  `resolver/strategies/python-chain-type.ts` sits between `localBinding` and
+  `importedName` and folds the receiver through the kernel walk with
+  `createPythonReceiverTypePorts(mapper)` — called once in the constructor, off
+  the resolver's own mapper, never per call site. It is terminal BOTH ways: a
+  folded type that resolves gives an edge, a folded type whose file is outside
+  the project DROPs rather than falling through to `importMatch` /
+  `globalShortName`. It does NOT copy `localBinding`'s file-only fallback — that
+  is measured for a DIRECT binding and unmeasured for a type reached by folding
+  hops. `memberTypeOf` reads `classFieldTypes` (attribute) before
+  `structuredReturnTypes` (return); their two key conventions are under
+  Mechanics below. A `container` or `union` receiver yields nothing on purpose —
+  `list[Foo]` types the list, not an element.
 - **The vocabulary's stdlib check runs BEFORE the mapper.** The mapper probes
   the caller's ancestor directories first, so `import json` from
   `src/flask/tag.py` would otherwise land on flask's own
