@@ -42,6 +42,7 @@ describe("buildPythonChain", () => {
       "selfField",
       "selfMember",
       "localBinding",
+      "chainType",
       "importedName",
       "importMatch",
       "globalShortName",

@@ -6,9 +6,10 @@
  * has no tsconfig path mapper, so the config carries only the
  * ambiguous-resolve `mode`.
  *
- * `walkClassExtendsForMethod`, `pythonImportMatchesReceiver`, and `lastSegment`
- * are the helpers shared by more than one strategy AND by the local-type walk —
- * factored here so each lives once.
+ * `walkClassExtendsForMethod`, `pythonImportMatchesReceiver`, `lastSegment`,
+ * `resolveTypeFile` and `resolvePythonMemberOnType` are the helpers shared by
+ * more than one strategy AND by the local-type walk — factored here so each
+ * lives once.
  */
 
 import {
@@ -17,6 +18,8 @@ import {
   type CallContext,
   type SymbolResolutionTarget,
 } from "../../../../../contracts/types/codegraph.js";
+import type { PythonImportFileMapper } from "../python-import-file-mapper.js";
+import { mapPythonImportToFile } from "../python-path-mapper.js";
 
 export interface ResolverConfig {
   mode: AmbiguousResolveMode;
@@ -87,4 +90,90 @@ export function pythonImportMatchesReceiver(importText: string, receiver: string
   const segments = cleaned.split(".").filter((s) => s.length > 0);
   const last = segments[segments.length - 1] ?? "";
   return last === receiver;
+}
+
+/**
+ * Find the file path of a bare class name by walking the import list.
+ * Two shapes match:
+ *   - `from <module> import <Bare>` — importText is `<module>`; the
+ *     class name appears in the symbol table at the file `<module>`
+ *     resolves to.
+ *   - `import <module>` where `<module>` ends in the bare type name.
+ *
+ * Returns the file path of the class definition when an import
+ * resolves there, or `null` otherwise.
+ *
+ * Both import-consulting passes go through `PythonImportFileMapper` (bd
+ * tea-rags-mcp-9fgdi): membership in the symbol table, never a path synthesised
+ * from the module text. An `external` verdict contributes NOTHING — attributing
+ * a type to `rest_framework/serializers.py` is the phantom this seam removes.
+ * An `unknown` verdict keeps the pre-seam fallback, per decision 1 of
+ * `docs/superpowers/plans/2026-09-08-python-import-file-mapper.md`: three
+ * states exist precisely so "I cannot tell" and "I know it is a library" behave
+ * differently.
+ */
+export function resolveTypeFile(bareType: string, ctx: CallContext, mapper: PythonImportFileMapper): string | null {
+  // First pass: scan symbol table for ANY definition matching the
+  // bare type name. If it's unique we have the file directly.
+  const tableMatches = ctx.symbolTable.lookupByShortName(bareType);
+  if (tableMatches.length === 1) return tableMatches[0].relPath;
+
+  // Second pass: try to disambiguate via imports — the class file
+  // must be one of the files reachable from the caller's imports. Only a
+  // `project` verdict names a file the table can hold, so it is the only one
+  // that can narrow the candidates.
+  if (tableMatches.length > 1) {
+    const importedFiles = new Set<string>();
+    for (const imp of ctx.imports) {
+      const mapped = mapper.mapImportToFile(imp.importText, ctx.callerFile, ctx);
+      if (mapped.kind === "project") importedFiles.add(mapped.relPath);
+    }
+    const filtered = tableMatches.filter((def) => importedFiles.has(def.relPath));
+    if (filtered.length === 1) return filtered[0].relPath;
+    // Still ambiguous — refuse to guess.
+    return null;
+  }
+
+  // Third pass: bare type not in symbol table (defined outside the
+  // project — e.g. DRF Serializer). Walk imports: if any import path
+  // ends in the type name and maps to a file, attribute to that.
+  for (const imp of ctx.imports) {
+    if (lastSegment(imp.importText) !== bareType) continue;
+    const mapped = mapper.mapImportToFile(imp.importText, ctx.callerFile, ctx);
+    if (mapped.kind === "project") return mapped.relPath;
+    if (mapped.kind === "external") continue;
+    const file = mapPythonImportToFile(imp.importText, ctx.callerFile);
+    if (file) return file;
+  }
+  return null;
+}
+
+/**
+ * Resolve `<typeName>.<member>` inside the file that defines `typeName`, then
+ * up its IN-PROJECT `classExtends` chain. `null` when no class in the chain
+ * defines the member — the CALLER decides whether that is a file-only edge
+ * (a direct local binding, bd tea-rags-mcp-yrs0 / 86qfb) or a DROP (a folded
+ * chain type, which has no measurement supporting the weaker answer).
+ */
+export function resolvePythonMemberOnType(
+  typeName: string,
+  member: string,
+  ctx: CallContext,
+  mode: AmbiguousResolveMode,
+  mapper: PythonImportFileMapper,
+): SymbolResolutionTarget | null {
+  const bareType = lastSegment(typeName);
+  const targetFile = resolveTypeFile(bareType, ctx, mapper);
+  if (!targetFile) return null;
+  const candidates = ctx.symbolTable
+    .lookupByShortName(member)
+    .filter((def) => def.relPath === targetFile && def.scope[def.scope.length - 1] === bareType);
+  const target = pickSingleCandidate(candidates, mode);
+  if (target) return { targetRelPath: target.relPath, targetSymbolId: target.symbolId };
+  // bd tea-rags-mcp-yrs0 — `member` is not defined on the type itself. Walk its
+  // IN-PROJECT base chain before giving up: an inherited `Leaf().shared()`
+  // where `shared` lives on `Base` resolves to `Base#shared`. The walk starts
+  // one level up (the type was already checked above).
+  const parent = ctx.classExtends?.[bareType];
+  return parent ? walkClassExtendsForMethod(parent, member, ctx, mode) : null;
 }

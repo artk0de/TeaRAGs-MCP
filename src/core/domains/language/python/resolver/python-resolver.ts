@@ -22,10 +22,13 @@
  *   2. selfField (self.<field>.X via classFieldTypes — terminal guard)
  *   3. selfMember (self.X via enclosing class + classExtends walk — terminal guard)
  *   4. localBinding (var.X via walker-bound type — terminal guard)
- *   5. importedName (receiver / bare callee is an imported binding; one
+ *   5. chainType (dotted receiver folded to a type through the shared kernel
+ *      engine — `x = svc.build(); x.run()`, `self.repo.get(id).save()`;
+ *      terminal guard — bd tea-rags-mcp-9fgdi)
+ *   6. importedName (receiver / bare callee is an imported binding; one
  *      re-export hop; star imports — bd tea-rags-mcp-9fgdi)
- *   6. importMatch (receiver matches an import's trailing segment)
- *   7. globalShortName (global short-name fallback)
+ *   7. importMatch (receiver matches an import's trailing segment)
+ *   8. globalShortName (global short-name fallback)
  *
  * Python's syntax differs from TS in import style (`from foo import bar`), so
  * the "receiver matches an import" check also considers names imported via
