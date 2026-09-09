@@ -1,11 +1,15 @@
 import { describe, expect, it } from "vitest";
 
-import type { FileExtraction } from "../../../../../../src/core/contracts/types/codegraph.js";
+import type { FileExtraction, InheritanceEdgeRow } from "../../../../../../src/core/contracts/types/codegraph.js";
 import { normalizeInheritanceEdges } from "../../../../../../src/core/domains/trajectory/codegraph/symbols/inheritance-edges.js";
 
 // Minimal resolver: a fixed set of in-project fq names resolve to their own id.
 const IN_PROJECT = new Set(["Animal", "Pet", "Dog", "Comparable", "Logging", "User"]);
 const resolve = (fq: string): string | null => (IN_PROJECT.has(fq) ? fq : null);
+
+/** `source|ancestor|kind` per row, in emission order — the shape bd m1sf0 pins. */
+const triples = (rows: readonly InheritanceEdgeRow[]): string[] =>
+  rows.map((r) => `${r.sourceFqName}|${r.ancestorFqName}|${r.kind}`);
 
 describe("normalizeInheritanceEdges", () => {
   it("resolves ancestors from the unified inheritanceEdges field", () => {
@@ -97,16 +101,116 @@ describe("normalizeInheritanceEdges", () => {
     );
   });
 
-  it("legacy Records still lift for a source ABSENT from inheritanceEdges (per-source, not global)", () => {
-    // Supersede is per-source: a different class with only legacy Records must
-    // still be lifted even when another source carries unified edges.
+  // WAS "legacy Records still lift for a source ABSENT from inheritanceEdges
+  // (per-source, not global)" — that per-source scope is exactly what bd
+  // tea-rags-mcp-m1sf0 replaces. Supersede is now per-EXTRACTION: a walker
+  // emitting the unified field owns the whole file, so a legacy-only source in
+  // the same extraction is no longer lifted. The Python walker keys
+  // classAncestors `<relPath>::<fq>` while its inheritanceEdges sources are
+  // bare fq, so under per-source scope EVERY Python class produced a junk
+  // `include` row per base.
+  it("legacy Records do NOT lift for a source absent from inheritanceEdges (per-extraction, bd m1sf0)", () => {
     const ex = {
       relPath: "mix.rb",
       inheritanceEdges: [{ source: "Dog", ancestor: "Animal", kind: "super", ordinal: 0 }],
       classExtends: { Cat: "Animal" },
     } as FileExtraction;
     const rows = normalizeInheritanceEdges(ex, resolve);
-    expect(rows.filter((r) => r.sourceFqName === "Cat")).toHaveLength(1);
-    expect(rows.find((r) => r.sourceFqName === "Cat")?.kind).toBe("super");
+    expect(rows.filter((r) => r.sourceFqName === "Cat")).toHaveLength(0);
+    expect(triples(rows)).toEqual(["Dog|Animal|super"]);
+  });
+
+  it("Python shape: file-qualified classAncestors never lifts beside bare-fq unified edges (bd m1sf0)", () => {
+    // Faithful `extractFromPythonFile` output for `class C(A, M)` in a.py with
+    // `from a import A` / `from m import M`: classAncestors keys are
+    // `<relPath>::<fq>` with import-qualified values, classExtends keeps the
+    // first base under the BARE name, inheritanceEdges emits every base as
+    // `super`. Only the two super rows are real hierarchy.
+    const ex = {
+      relPath: "a.py",
+      classExtends: { C: "A" },
+      classAncestors: { "a.py::C": ["a.py::A", "m::M"] },
+      inheritanceEdges: [
+        { source: "C", ancestor: "A", kind: "super", ordinal: 0 },
+        { source: "C", ancestor: "M", kind: "super", ordinal: 1 },
+      ],
+    } as FileExtraction;
+    expect(triples(normalizeInheritanceEdges(ex, resolve))).toEqual(["C|A|super", "C|M|super"]);
+  });
+
+  it("Ruby shape stays byte-identical under per-extraction supersede (bd m1sf0)", () => {
+    // `attachRubyClassHierarchyChannels` output for
+    // `class Dog < Animal; include Comparable; extend Logging; prepend Pet; end`
+    // — classAncestors flattens superclass + include + extend, prepend rides its
+    // own Record, and inheritanceEdges tags each channel precisely. All sources
+    // are bare fq, so per-source and per-extraction supersede agree.
+    const ex = {
+      relPath: "dog.rb",
+      classExtends: { Dog: "Animal" },
+      classAncestors: { Dog: ["Animal", "Comparable", "Logging"] },
+      classPrependedAncestors: { Dog: ["Pet"] },
+      inheritanceEdges: [
+        { source: "Dog", ancestor: "Animal", kind: "super", ordinal: 0 },
+        { source: "Dog", ancestor: "Comparable", kind: "include", ordinal: 0 },
+        { source: "Dog", ancestor: "Logging", kind: "extend", ordinal: 0 },
+        { source: "Dog", ancestor: "Pet", kind: "prepend", ordinal: 0 },
+      ],
+    } as FileExtraction;
+    expect(triples(normalizeInheritanceEdges(ex, resolve))).toEqual([
+      "Dog|Animal|super",
+      "Dog|Comparable|include",
+      "Dog|Logging|extend",
+      "Dog|Pet|prepend",
+    ]);
+  });
+
+  it("TypeScript shape stays byte-identical under per-extraction supersede (bd m1sf0)", () => {
+    // `extractFromTypescriptFile` output for `class Dog extends Animal
+    // implements Pet` plus `interface Logging extends Comparable`: classExtends
+    // carries only the runtime superclass, inheritanceEdges adds the heritage
+    // classExtends deliberately omits. Bare class names on both sides.
+    const ex = {
+      relPath: "dog.ts",
+      classExtends: { Dog: "Animal" },
+      inheritanceEdges: [
+        { source: "Dog", ancestor: "Animal", kind: "super", ordinal: 0 },
+        { source: "Dog", ancestor: "Pet", kind: "implements", ordinal: 0 },
+        { source: "Logging", ancestor: "Comparable", kind: "implements", ordinal: 0 },
+      ],
+    } as FileExtraction;
+    expect(triples(normalizeInheritanceEdges(ex, resolve))).toEqual([
+      "Dog|Animal|super",
+      "Dog|Pet|implements",
+      "Logging|Comparable|implements",
+    ]);
+  });
+
+  it("an EMPTY inheritanceEdges array still claims ownership — presence, not content (bd m1sf0)", () => {
+    // A walker that emits the field at all has migrated; `[]` means "this file
+    // declares no hierarchy", not "fall back to the legacy Records". Today's
+    // walkers only assign when non-empty, so this pins the contract, not a
+    // production shape.
+    const ex = {
+      relPath: "empty.py",
+      inheritanceEdges: [],
+      classAncestors: { "empty.py::C": ["m::M"] },
+    } as FileExtraction;
+    expect(normalizeInheritanceEdges(ex, resolve)).toEqual([]);
+  });
+
+  it("legacy-only extraction (field absent) is still fully lifted (bd m1sf0)", () => {
+    // Absence of the field is the un-migrated walker signal — every legacy
+    // Record lifts exactly as before.
+    const ex = {
+      relPath: "legacy.rb",
+      classExtends: { Dog: "Animal" },
+      classAncestors: { Cat: ["Comparable"] },
+      classPrependedAncestors: { Cat: ["Logging"] },
+    } as FileExtraction;
+    expect(triples(normalizeInheritanceEdges(ex, resolve))).toEqual([
+      "Dog|Animal|super",
+      "Cat|Comparable|include",
+      "Cat|Logging|prepend",
+    ]);
   });
 });
