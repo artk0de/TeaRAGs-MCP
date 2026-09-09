@@ -6,15 +6,15 @@
 > checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Teach `PythonImportedNameSymbolResolutionStrategy` the receiver shape
-it does not have — a receiver that is a MODULE, not a symbol. `from netbox.tables
-import columns` then `columns.ColorColumn()` is 435 of netbox's 437
-`wrongFile` rows, all of them answered today by `importMatch`'s proximity
-heuristic, which picks the caller's own sibling `circuits/tables/columns.py`
-over the real `netbox/netbox/tables/columns.py`. The class-receiver half
-(`Cls.method()`) already works and is left alone except for the tests that pin
-its spellings. Then `importMatch` is demoted: it CONTINUEs whenever the receiver
-head is a name an import bound, because `importedName` has already had its say.
-This is E2 seam 3.
+it does not have — a receiver that is a MODULE, not a symbol.
+`from netbox.tables import columns` then `columns.ColorColumn()` is 435 of
+netbox's 437 `wrongFile` rows, all of them answered today by `importMatch`'s
+proximity heuristic, which picks the caller's own sibling
+`circuits/tables/columns.py` over the real `netbox/netbox/tables/columns.py`.
+The class-receiver half (`Cls.method()`) already works and is left alone except
+for the tests that pin its spellings. Then `importMatch` is demoted: it
+CONTINUEs whenever the receiver head is a name an import bound, because
+`importedName` has already had its say. This is E2 seam 3.
 
 **Architecture:** No new class, no new chain pass, no walker change. One
 strategy grows one private branch. `attempt` gains a SINGLE-HOP guard (the
@@ -61,11 +61,11 @@ and applying the walker's own binding rules (`import a.b` binds `a`;
 482 of the 517 (93.2%) have a receiver head that an import BOUND, and they split
 cleanly by import form:
 
-| Shape                                        | Rows | Verdict today                             |
-| -------------------------------------------- | ---: | ----------------------------------------- |
-| `from M import mod` → `mod.Member()`         |  437 | `wrongFile`, every one `receiverKind` `dynamic` |
-| `import json` → `json.loads()`               |   45 | `phantom`, every one `oracleOrigin` `stdlib`   |
-| receiver head bound by nothing                |   35 | 15 typeshed phantoms, 18 `chainOnly`, 2 project |
+| Shape                                | Rows | Verdict today                                   |
+| ------------------------------------ | ---: | ----------------------------------------------- |
+| `from M import mod` → `mod.Member()` |  437 | `wrongFile`, every one `receiverKind` `dynamic` |
+| `import json` → `json.loads()`       |   45 | `phantom`, every one `oracleOrigin` `stdlib`    |
+| receiver head bound by nothing       |   35 | 15 typeshed phantoms, 18 `chainOnly`, 2 project |
 
 That is the whole case for this seam. The 437 are not a heuristic that is
 sometimes wrong; they are a heuristic that is wrong every time it fires on this
@@ -98,36 +98,37 @@ records the MODULE PATH as the value (`import a.b` → `{a: "a.b"}`,
 `importedBindings[local] === imp.importText` is an exact discriminator for the
 module-import form, and the module a single-identifier receiver denotes is:
 
-| Form                             | `importText` | binding    | receiver | module text denoted |
-| -------------------------------- | ------------ | ---------- | -------- | ------------------- |
-| `import a`                       | `a`          | `a → a`    | `a`      | `a`                 |
-| `import a.b`                     | `a.b`        | `a → a.b`  | `a`      | `a`                 |
-| `import a.b as c`                | `a.b`        | `c → a.b`  | `c`      | `a.b`               |
-| `from a.b import c`              | `a.b`        | `c → c`    | `c`      | `a.b.c`             |
-| `from .models import c`          | `.models`    | `c → c`    | `c`      | `.models.c`         |
-| `from . import c`                | `.`          | `c → c`    | `c`      | `.c`                |
+| Form                    | `importText` | binding   | receiver | module text denoted |
+| ----------------------- | ------------ | --------- | -------- | ------------------- |
+| `import a`              | `a`          | `a → a`   | `a`      | `a`                 |
+| `import a.b`            | `a.b`        | `a → a.b` | `a`      | `a`                 |
+| `import a.b as c`       | `a.b`        | `c → a.b` | `c`      | `a.b`               |
+| `from a.b import c`     | `a.b`        | `c → c`   | `c`      | `a.b.c`             |
+| `from .models import c` | `.models`    | `c → c`   | `c`      | `.models.c`         |
+| `from . import c`       | `.`          | `c → c`   | `c`      | `.c`                |
 
 Unaliased `import a.b` binds the TOP package, so the head denotes `a` and not
-`a.b` — the rule is `localName === importedName.split(".")[0] ? that first
-segment : importedName`. The from-form joins, and joins WITHOUT a separator when
-`importText` already ends in a dot, or `from . import c` would compose `..c` and
-climb a package. This matters beyond tidiness: `from netbox import
-denormalized` maps its PARENT (`netbox`) to `unknown` — a PEP 420 namespace
-directory — so composing the submodule text and mapping THAT is what reaches
-`netbox/netbox/denormalized.py` at all. 52 of netbox's 401 `missed` /
-`receiverKind: dynamic` rows are exactly that shape.
+`a.b` — the rule is
+`localName === importedName.split(".")[0] ? that first segment : importedName`.
+The from-form joins, and joins WITHOUT a separator when `importText` already
+ends in a dot, or `from . import c` would compose `..c` and climb a package.
+This matters beyond tidiness: `from netbox import denormalized` maps its PARENT
+(`netbox`) to `unknown` — a PEP 420 namespace directory — so composing the
+submodule text and mapping THAT is what reaches `netbox/netbox/denormalized.py`
+at all. 52 of netbox's 401 `missed` / `receiverKind: dynamic` rows are exactly
+that shape.
 
 **4. SINGLE-HOP ONLY: the receiver must be one identifier, or the pass
 CONTINUEs.** `attempt` currently keys on `call.receiver.split(".")[0]` and then
 throws the remaining segments away, so `Event.id.label("event_id")` looks up
 `Event.label` / `Event#label` and pins `server/polar/models/event.py` for a call
-that is SQLAlchemy's. Measured: on netbox every one of the 6 `importedName`
-rows with a dotted receiver is a `phantom` (`Job.objects.filter(…).delete()`,
-`CablePath.objects.all().delete()` — all `oracleOrigin: typeshedStub`); on
-polar 71 dotted-receiver rows split 58 `chainOnly` / 8 `match` / 5 `phantom`;
-flask, httpx and ugnest have none at all. So a `/^[A-Za-z_]\w*$/` gate on the
-receiver removes 11 measured phantoms and costs 8 matches on the one corpus
-whose oracle is not yet deterministic. Multi-segment receivers, call results
+that is SQLAlchemy's. Measured: on netbox every one of the 6 `importedName` rows
+with a dotted receiver is a `phantom` (`Job.objects.filter(…).delete()`,
+`CablePath.objects.all().delete()` — all `oracleOrigin: typeshedStub`); on polar
+71 dotted-receiver rows split 58 `chainOnly` / 8 `match` / 5 `phantom`; flask,
+httpx and ugnest have none at all. So a `/^[A-Za-z_]\w*$/` gate on the receiver
+removes 11 measured phantoms and costs 8 matches on the one corpus whose oracle
+is not yet deterministic. Multi-segment receivers, call results
 (`Cls().method()`) and subscripts (`Cls.attr[k].m()`) belong to `chainType` and
 the propagation seam, which fold hop by hop; a pass that reads only an import
 statement has no business answering them. The gate goes in `attempt`, before the
@@ -141,14 +142,14 @@ caller's own directories first, finds `netbox/utilities/json.py`, and answers
 new — `PythonExternalVocabulary.importLandsInProject` carries the identical
 guard with the identical rationale (bd `mmckn`, and the navigator bullet "The
 vocabulary's stdlib check runs BEFORE the mapper"). `resolveBinding` gets it
-too: an ABSOLUTE `importText` whose first segment is in
-`PYTHON_STDLIB_MODULES` DROPs before the mapper is asked. Absolute-import
-semantics make this correct rather than merely conservative — a project module
-named `json.py` is reachable as `from utilities import json`, never as
-`import json` — and the guard is restricted to absolute text so a relative
-`.json` import is untouched. It also delivers on the pass's own docblock, which
-already claims `from json import loads` DROPs; the ancestor scan was quietly
-defeating that claim.
+too: an ABSOLUTE `importText` whose first segment is in `PYTHON_STDLIB_MODULES`
+DROPs before the mapper is asked. Absolute-import semantics make this correct
+rather than merely conservative — a project module named `json.py` is reachable
+as `from utilities import json`, never as `import json` — and the guard is
+restricted to absolute text so a relative `.json` import is untouched. It also
+delivers on the pass's own docblock, which already claims
+`from json import loads` DROPs; the ancestor scan was quietly defeating that
+claim.
 
 **6. Precision rules, all four of them decline rather than guess.** No fan-out
 ever. Two or more candidates for the member in the mapped module → `CONTINUE`
@@ -174,9 +175,9 @@ two lines above it already makes: one mechanism, one set of gates, no drift. Its
 three gates (name must be in the table; the mapped file must not declare it
 itself; the declaration must be unique, retried inside the barrel's own package)
 are what keep the hop from becoming a global short-name lookup in disguise. If
-the A/B in decision 10 shows `wrongFile` moving up on module receivers, this
-hop is the first suspect and gating it on `moduleFile.endsWith("/__init__.py")`
-is the pre-designed narrowing.
+the A/B in decision 10 shows `wrongFile` moving up on module receivers, this hop
+is the first suspect and gating it on `moduleFile.endsWith("/__init__.py")` is
+the pre-designed narrowing.
 
 **8. The class-receiver half already ships; this seam only pins it.** Task 5 of
 the mapper plan built `resolveBinding` to try `${importedName}.${member}` then
@@ -200,26 +201,25 @@ left holding.** It CONTINUEs when the receiver head is a name an import bound �
 its proximity heuristic for receivers nothing bound: star imports, module-path
 segments that merely look like the receiver, dynamic attributes. That residual
 is what makes deletion a separate decision: ugnest's only two `importMatch`
-`match` rows are `user.save()` in
-`domains/identity/services/auth/vk_login.py`, where the import is
-`…models.user import User` — it binds `User`, so `user` is UNBOUND, so the
-demotion leaves both answers standing. Netbox's residual is 35 rows (15
-typeshed phantoms, 18 `chainOnly`, 2 project). Record the measured residual in
-the bead so the next seam decides on removal from numbers rather than from
-symmetry.
+`match` rows are `user.save()` in `domains/identity/services/auth/vk_login.py`,
+where the import is `…models.user import User` — it binds `User`, so `user` is
+UNBOUND, so the demotion leaves both answers standing. Netbox's residual is 35
+rows (15 typeshed phantoms, 18 `chainOnly`, 2 project). Record the measured
+residual in the bead so the next seam decides on removal from numbers rather
+than from symmetry.
 
 **10. Gates.** Unit: `npx vitest run tests/core/domains/language/python` green,
 then `npm run test:coverage` exit 0. Rows: oracle A/B on netbox, flask, httpx,
-ugnest with BEFORE dumps taken from the task's own base commit — gross `lost`
-0, `wrongFile` down (netbox target: the 437), `phantom` down (netbox target: the
-45 stdlib rows plus the 6 dotted-receiver rows), `match` up on `dynamic`
-receivers. Polar is TALLY-ONLY: its oracle is non-deterministic while three
-`polar` packages are importable and the host child does not yet pin
-`PYTHONHASHSEED=0` (E0.11 owns that), so quote its per-verdict tally and draw no
-conclusion from it. Chain: `scripts/codegraph-chain-tally.ts --lang python` five
-times, `chainDrift 0` every run. Perf: netbox A/B, wall ≤ +25%, RSS ≤ +20% —
-the new work is one extra `mapImportToFile` (memoised per `<dir> <text>`) and
-one `Map` lookup per module-receiver call, with no per-call allocation.
+ugnest with BEFORE dumps taken from the task's own base commit — gross `lost` 0,
+`wrongFile` down (netbox target: the 437), `phantom` down (netbox target: the 45
+stdlib rows plus the 6 dotted-receiver rows), `match` up on `dynamic` receivers.
+Polar is TALLY-ONLY: its oracle is non-deterministic while three `polar`
+packages are importable and the host child does not yet pin `PYTHONHASHSEED=0`
+(E0.11 owns that), so quote its per-verdict tally and draw no conclusion from
+it. Chain: `scripts/codegraph-chain-tally.ts --lang python` five times,
+`chainDrift 0` every run. Perf: netbox A/B, wall ≤ +25%, RSS ≤ +20% — the new
+work is one extra `mapImportToFile` (memoised per `<dir> <text>`) and one `Map`
+lookup per module-receiver call, with no per-call allocation.
 
 ## Global Constraints
 
@@ -228,9 +228,9 @@ one `Map` lookup per module-receiver call, with no per-call allocation.
   out of scope for this seam and would void the tally's drift check.
 - **`importedName` never fans out and never emits a file-only edge.** Its three
   outcomes stay `resolved` / `DROP` / `CONTINUE`. `deferred` has no meaning
-  here: the pass either pins a symbol or has nothing to park, and the
-  measured verdict against parking `importMatch` (bd `86qfb`) is in the
-  language navigator's Boundaries section.
+  here: the pass either pins a symbol or has nothing to park, and the measured
+  verdict against parking `importMatch` (bd `86qfb`) is in the language
+  navigator's Boundaries section.
 - **Every lookup is filtered to a file.** Python symbolIds carry no module path,
   so `lookup("register")` matches every top-level `register` in the corpus; a
   candidate list that has not been narrowed by `relPath` must never reach
@@ -291,8 +291,8 @@ version 1 carries neither, which is why `findBinding` has a second loop over
 
 **`PythonImportFileMapper.mapImportToFile(importText, fromFile, ctx)`**
 (`resolver/python-import-file-mapper.ts`) → `{ kind: "project", relPath }` |
-`{ kind: "external" }` | `{ kind: "unknown" }`. It splits on ` as ` and takes
-the head, so passing composed module text is safe. Answers are memoised per
+`{ kind: "external" }` | `{ kind: "unknown" }`. It splits on `as` and takes the
+head, so passing composed module text is safe. Answers are memoised per
 `<dirname(fromFile)> <moduleText>` and per symbol-table identity+size; source
 roots are inferred from the table's file set. A PEP 420 namespace directory
 answers `unknown`, never `project` — a directory is not a legal file-edge
@@ -329,8 +329,8 @@ element or `null`; `first` returns `candidates[0]`. Generic — it takes
 **`PYTHON_STDLIB_MODULES`** (`python/vocabulary/stdlib-modules.ts`): a frozen
 `ReadonlySet<string>` of top-level stdlib module names, GENERATED by
 `scripts/py-oracle/gen-stdlib-modules.py`. `PythonExternalVocabulary` at
-`resolver/python-external-vocabulary.ts:101` shows the ahead-of-the-mapper
-idiom this plan copies.
+`resolver/python-external-vocabulary.ts:101` shows the ahead-of-the-mapper idiom
+this plan copies.
 
 **`classifyReceiverKind`**
 (`domains/trajectory/codegraph/symbols/receiver-kind.ts`) is what buckets the
@@ -343,11 +343,11 @@ is `chain`. Read the gate numbers accordingly: this seam moves `dynamic`.
 lines): `tableWith({ relPath: [symbolId, …] })` builds an
 `InMemoryGlobalSymbolTable` deriving `shortName` from the symbolId's last
 `#`/`.` segment; `ctxWith(callerFile, imports, table)` builds the `CallContext`;
-`strategy()` constructs with `{ mode: "strict" }` and a fresh mapper; `call(receiver, member)`
-builds the `CallRef`.
+`strategy()` constructs with `{ mode: "strict" }` and a fresh mapper;
+`call(receiver, member)` builds the `CallRef`.
 
-Two fixture facts the existing cases depend on. `InMemoryGlobalSymbolTable`
-does NOT dedupe: `upsertFile` pushes every definition it is given, so listing a
+Two fixture facts the existing cases depend on. `InMemoryGlobalSymbolTable` does
+NOT dedupe: `upsertFile` pushes every definition it is given, so listing a
 symbolId twice for one file is how an ambiguity case is built. And `hasFile` is
 pure membership (`byFile.has`), so an `__init__.py` with an empty definition
 list still makes its package mappable (bd `o7ifx`) — the test file's docblock
@@ -376,8 +376,16 @@ class PythonImportedNameSymbolResolutionStrategy {
     call: CallRef,
     ctx: CallContext,
   ): SymbolResolutionOutcome;
-  private resolveModuleReceiver(binding: ImportBinding, call: CallRef, ctx: CallContext): SymbolResolutionOutcome;
-  private moduleMemberTarget(member: string, moduleFile: string, ctx: CallContext): SymbolResolutionTarget | null;
+  private resolveModuleReceiver(
+    binding: ImportBinding,
+    call: CallRef,
+    ctx: CallContext,
+  ): SymbolResolutionOutcome;
+  private moduleMemberTarget(
+    member: string,
+    moduleFile: string,
+    ctx: CallContext,
+  ): SymbolResolutionTarget | null;
 }
 ```
 
@@ -418,7 +426,10 @@ describe("PythonImportedNameSymbolResolutionStrategy — receiver is a module", 
     // otherwise, 435 times on netbox (bd tea-rags-mcp-9fgdi).
     expect(strategy().attempt(call("columns", "ColorColumn"), ctx)).toEqual({
       kind: "resolved",
-      target: { targetRelPath: "netbox/netbox/tables/columns.py", targetSymbolId: "ColorColumn" },
+      target: {
+        targetRelPath: "netbox/netbox/tables/columns.py",
+        targetSymbolId: "ColorColumn",
+      },
     });
   });
 
@@ -430,7 +441,14 @@ describe("PythonImportedNameSymbolResolutionStrategy — receiver is a module", 
     });
     const ctx = ctxWith(
       "app/main.py",
-      [{ importText: "pkg.sub", startLine: 1, importedNames: ["pkg"], importedBindings: { pkg: "pkg.sub" } }],
+      [
+        {
+          importText: "pkg.sub",
+          startLine: 1,
+          importedNames: ["pkg"],
+          importedBindings: { pkg: "pkg.sub" },
+        },
+      ],
       table,
     );
     expect(strategy().attempt(call("pkg", "setup"), ctx)).toEqual({
@@ -447,7 +465,14 @@ describe("PythonImportedNameSymbolResolutionStrategy — receiver is a module", 
     });
     const ctx = ctxWith(
       "app/main.py",
-      [{ importText: "pkg.sub", startLine: 1, importedNames: ["ps"], importedBindings: { ps: "pkg.sub" } }],
+      [
+        {
+          importText: "pkg.sub",
+          startLine: 1,
+          importedNames: ["ps"],
+          importedBindings: { ps: "pkg.sub" },
+        },
+      ],
       table,
     );
     expect(strategy().attempt(call("ps", "helper"), ctx)).toEqual({
@@ -465,10 +490,21 @@ describe("PythonImportedNameSymbolResolutionStrategy — receiver is a module", 
 
 ```ts
 it("composes a relative `from . import mod` without doubling the dot", () => {
-  const table = tableWith({ "pkg/__init__.py": ["setup"], "pkg/main.py": ["run"], "pkg/sub.py": ["helper"] });
+  const table = tableWith({
+    "pkg/__init__.py": ["setup"],
+    "pkg/main.py": ["run"],
+    "pkg/sub.py": ["helper"],
+  });
   const ctx = ctxWith(
     "pkg/main.py",
-    [{ importText: ".", startLine: 1, importedNames: ["sub"], importedBindings: { sub: "sub" } }],
+    [
+      {
+        importText: ".",
+        startLine: 1,
+        importedNames: ["sub"],
+        importedBindings: { sub: "sub" },
+      },
+    ],
     table,
   );
   expect(strategy().attempt(call("sub", "helper"), ctx)).toEqual({
@@ -499,7 +535,10 @@ it("reaches the submodule when the PARENT package is a namespace directory", () 
   // `unknown`; only the composed `netbox.denormalized` names a file.
   expect(strategy().attempt(call("denormalized", "register"), ctx)).toEqual({
     kind: "resolved",
-    target: { targetRelPath: "netbox/netbox/denormalized.py", targetSymbolId: "register" },
+    target: {
+      targetRelPath: "netbox/netbox/denormalized.py",
+      targetSymbolId: "register",
+    },
   });
 });
 
@@ -511,12 +550,21 @@ it("CONTINUEs on a multi-hop receiver instead of dropping the middle segment", (
   });
   const ctx = ctxWith(
     "server/polar/event/repository.py",
-    [{ importText: "polar.models", startLine: 1, importedNames: ["Event"], importedBindings: { Event: "Event" } }],
+    [
+      {
+        importText: "polar.models",
+        startLine: 1,
+        importedNames: ["Event"],
+        importedBindings: { Event: "Event" },
+      },
+    ],
     table,
   );
   // `Event.id.label(...)` is SQLAlchemy's; the old head-only split threw `.id`
   // away and fabricated `Event#label` (bd tea-rags-mcp-9fgdi).
-  expect(strategy().attempt(call("Event.id", "label"), ctx)).toEqual({ kind: "continue" });
+  expect(strategy().attempt(call("Event.id", "label"), ctx)).toEqual({
+    kind: "continue",
+  });
 });
 
 it("DROPs a stdlib module receiver even when a project file shares its name", () => {
@@ -527,13 +575,22 @@ it("DROPs a stdlib module receiver even when a project file shares its name", ()
   });
   const ctx = ctxWith(
     "netbox/utilities/forms/fields/fields.py",
-    [{ importText: "json", startLine: 1, importedNames: ["json"], importedBindings: { json: "json" } }],
+    [
+      {
+        importText: "json",
+        startLine: 1,
+        importedNames: ["json"],
+        importedBindings: { json: "json" },
+      },
+    ],
     table,
   );
   // The mapper probes the caller's ancestors first and answers
   // `netbox/utilities/json.py` — 45 phantoms on netbox. Absolute `import json`
   // is the stdlib, whatever the project happens to be named.
-  expect(strategy().attempt(call("json", "loads"), ctx)).toEqual({ kind: "drop" });
+  expect(strategy().attempt(call("json", "loads"), ctx)).toEqual({
+    kind: "drop",
+  });
 });
 
 it("CONTINUEs when the module declares the member twice", () => {
@@ -544,10 +601,19 @@ it("CONTINUEs when the module declares the member twice", () => {
   });
   const ctx = ctxWith(
     "app/main.py",
-    [{ importText: "pkg", startLine: 1, importedNames: ["sub"], importedBindings: { sub: "sub" } }],
+    [
+      {
+        importText: "pkg",
+        startLine: 1,
+        importedNames: ["sub"],
+        importedBindings: { sub: "sub" },
+      },
+    ],
     table,
   );
-  expect(strategy().attempt(call("sub", "helper"), ctx)).toEqual({ kind: "continue" });
+  expect(strategy().attempt(call("sub", "helper"), ctx)).toEqual({
+    kind: "continue",
+  });
 });
 
 it("CONTINUEs when the composed module text names no file", () => {
@@ -557,17 +623,27 @@ it("CONTINUEs when the composed module text names no file", () => {
   });
   const ctx = ctxWith(
     "domains/identity/services.py",
-    [{ importText: "domains", startLine: 1, importedNames: ["identity"], importedBindings: { identity: "identity" } }],
+    [
+      {
+        importText: "domains",
+        startLine: 1,
+        importedNames: ["identity"],
+        importedBindings: { identity: "identity" },
+      },
+    ],
     table,
   );
-  expect(strategy().attempt(call("identity", "User"), ctx)).toEqual({ kind: "continue" });
+  expect(strategy().attempt(call("identity", "User"), ctx)).toEqual({
+    kind: "continue",
+  });
 });
 ```
 
 - [ ] GREEN — widen the imports at the top of `python-imported-name.ts`. Add
-      `type SymbolResolutionTarget` to the existing `contracts/types/codegraph.js`
-      import list and add one new import line, kept in the file's existing
-      alphabetical order (`vocabulary/` sorts before `../python-import-file-mapper.js`):
+      `type SymbolResolutionTarget` to the existing
+      `contracts/types/codegraph.js` import list and add one new import line,
+      kept in the file's existing alphabetical order (`vocabulary/` sorts before
+      `../python-import-file-mapper.js`):
 
 ```ts
 import { PYTHON_STDLIB_MODULES } from "../../vocabulary/stdlib-modules.js";
@@ -617,14 +693,18 @@ function receiverModuleText(binding: ImportBinding): string {
   const { importText } = binding.imp;
   if (binding.importedName === importText) {
     const firstSegment = binding.importedName.split(".")[0];
-    return binding.localName === firstSegment ? firstSegment : binding.importedName;
+    return binding.localName === firstSegment
+      ? firstSegment
+      : binding.importedName;
   }
-  return importText.endsWith(".") ? `${importText}${binding.importedName}` : `${importText}.${binding.importedName}`;
+  return importText.endsWith(".")
+    ? `${importText}${binding.importedName}`
+    : `${importText}.${binding.importedName}`;
 }
 ```
 
-- [ ] GREEN — replace `attempt` so the guard runs before the binding lookup.
-      The receiver IS the head now, so the `split` goes away with it:
+- [ ] GREEN — replace `attempt` so the guard runs before the binding lookup. The
+      receiver IS the head now, so the `split` goes away with it:
 
 ```ts
   attempt(call: CallRef, ctx: CallContext): SymbolResolutionOutcome {
@@ -672,10 +752,10 @@ function receiverModuleText(binding: ImportBinding): string {
   }
 ```
 
-- [ ] GREEN — add the three new private methods directly under
-      `resolveBinding`, before `declaringFile`. `resolveDeclaredName` is the old
-      lookup block moved verbatim; do not change a character of its two `wanted`
-      spellings or their order.
+- [ ] GREEN — add the three new private methods directly under `resolveBinding`,
+      before `declaringFile`. `resolveDeclaredName` is the old lookup block
+      moved verbatim; do not change a character of its two `wanted` spellings or
+      their order.
 
 ```ts
   /**
@@ -749,9 +829,8 @@ function receiverModuleText(binding: ImportBinding): string {
  * a further hop is a fold, and folding is `chainType`'s pass, not this one.
 ```
 
-- [ ] VERIFY —
-      `npx vitest run tests/core/domains/language/python/resolver` green, all
-      nine new cases passing and every pre-existing case in
+- [ ] VERIFY — `npx vitest run tests/core/domains/language/python/resolver`
+      green, all nine new cases passing and every pre-existing case in
       `python-imported-name.test.ts` untouched and still green. Then
       `npx tsc --noEmit`.
 
@@ -761,17 +840,30 @@ function receiverModuleText(binding: ImportBinding): string {
 
 ```ts
 it("DROPs a receiver bound from a third-party module", () => {
-  const table = tableWith({ "app/models.py": ["Thing"], "app/__init__.py": ["VERSION"] });
+  const table = tableWith({
+    "app/models.py": ["Thing"],
+    "app/__init__.py": ["VERSION"],
+  });
   const ctx = ctxWith(
     "app/models.py",
-    [{ importText: "django.db", startLine: 1, importedNames: ["models"], importedBindings: { models: "models" } }],
+    [
+      {
+        importText: "django.db",
+        startLine: 1,
+        importedNames: ["models"],
+        importedBindings: { models: "models" },
+      },
+    ],
     table,
   );
-  expect(strategy().attempt(call("models", "CharField"), ctx)).toEqual({ kind: "drop" });
+  expect(strategy().attempt(call("models", "CharField"), ctx)).toEqual({
+    kind: "drop",
+  });
 });
 ```
 
-- [ ] COMMIT — `feat(language): resolve Python module receivers in importedName (9fgdi)`.
+- [ ] COMMIT —
+      `feat(language): resolve Python module receivers in importedName (9fgdi)`.
       Body: the 437 + 52 + 45 + 6 row counts, the single-hop rationale, and the
       stdlib-ahead-of-the-mapper precedent (bd `mmckn`).
 
@@ -801,12 +893,22 @@ it("follows one re-export hop out of a package __init__ to the declaring module"
   });
   const ctx = ctxWith(
     "netbox/circuits/tables/circuits.py",
-    [{ importText: "netbox", startLine: 1, importedNames: ["tables"], importedBindings: { tables: "tables" } }],
+    [
+      {
+        importText: "netbox",
+        startLine: 1,
+        importedNames: ["tables"],
+        importedBindings: { tables: "tables" },
+      },
+    ],
     table,
   );
   expect(strategy().attempt(call("tables", "ColorColumn"), ctx)).toEqual({
     kind: "resolved",
-    target: { targetRelPath: "netbox/netbox/tables/columns.py", targetSymbolId: "ColorColumn" },
+    target: {
+      targetRelPath: "netbox/netbox/tables/columns.py",
+      targetSymbolId: "ColorColumn",
+    },
   });
 });
 
@@ -820,13 +922,22 @@ it("declines the hop when the name is declared in two files", () => {
   });
   const ctx = ctxWith(
     "netbox/circuits/tables/circuits.py",
-    [{ importText: "netbox", startLine: 1, importedNames: ["tables"], importedBindings: { tables: "tables" } }],
+    [
+      {
+        importText: "netbox",
+        startLine: 1,
+        importedNames: ["tables"],
+        importedBindings: { tables: "tables" },
+      },
+    ],
     table,
   );
   // Two declarations, and the barrel-package retry cannot separate them either
   // — `netbox/dcim/` is not under `netbox/netbox/tables/`. The existing edge
   // beats a coin flip (bd tea-rags-mcp-ex28m).
-  expect(strategy().attempt(call("tables", "ColorColumn"), ctx)).toEqual({ kind: "continue" });
+  expect(strategy().attempt(call("tables", "ColorColumn"), ctx)).toEqual({
+    kind: "continue",
+  });
 });
 ```
 
@@ -869,28 +980,60 @@ describe("PythonImportedNameSymbolResolutionStrategy — class receiver spelling
       "netbox/core/signals.py": ["handle_sync"],
       "netbox/core/jobs.py": ["SyncDataSourceJob"],
       "netbox/netbox/__init__.py": ["VERSION"],
-      "netbox/netbox/jobs.py": ["JobRunner", "JobRunner.enqueue", "JobRunner#run", "JobRunner#get_jobs"],
+      "netbox/netbox/jobs.py": [
+        "JobRunner",
+        "JobRunner.enqueue",
+        "JobRunner#run",
+        "JobRunner#get_jobs",
+      ],
     });
-  const jobsCtx = (table: ReturnType<typeof jobsTable>, module: string, bound: string) =>
+  const jobsCtx = (
+    table: ReturnType<typeof jobsTable>,
+    module: string,
+    bound: string,
+  ) =>
     ctxWith(
       "netbox/core/signals.py",
-      [{ importText: module, startLine: 1, importedNames: [bound], importedBindings: { [bound]: bound } }],
+      [
+        {
+          importText: module,
+          startLine: 1,
+          importedNames: [bound],
+          importedBindings: { [bound]: bound },
+        },
+      ],
       table,
     );
 
   it("prefers the classmethod / staticmethod spelling `Cls.member`", () => {
     const table = jobsTable();
-    expect(strategy().attempt(call("JobRunner", "enqueue"), jobsCtx(table, "netbox.jobs", "JobRunner"))).toEqual({
+    expect(
+      strategy().attempt(
+        call("JobRunner", "enqueue"),
+        jobsCtx(table, "netbox.jobs", "JobRunner"),
+      ),
+    ).toEqual({
       kind: "resolved",
-      target: { targetRelPath: "netbox/netbox/jobs.py", targetSymbolId: "JobRunner.enqueue" },
+      target: {
+        targetRelPath: "netbox/netbox/jobs.py",
+        targetSymbolId: "JobRunner.enqueue",
+      },
     });
   });
 
   it("falls to the instance spelling `Cls#member`", () => {
     const table = jobsTable();
-    expect(strategy().attempt(call("JobRunner", "run"), jobsCtx(table, "netbox.jobs", "JobRunner"))).toEqual({
+    expect(
+      strategy().attempt(
+        call("JobRunner", "run"),
+        jobsCtx(table, "netbox.jobs", "JobRunner"),
+      ),
+    ).toEqual({
       kind: "resolved",
-      target: { targetRelPath: "netbox/netbox/jobs.py", targetSymbolId: "JobRunner#run" },
+      target: {
+        targetRelPath: "netbox/netbox/jobs.py",
+        targetSymbolId: "JobRunner#run",
+      },
     });
   });
 
@@ -898,7 +1041,12 @@ describe("PythonImportedNameSymbolResolutionStrategy — class receiver spelling
     const table = jobsTable();
     // netbox's only two `missed` rows with a `constant` receiver:
     // `SyncDataSourceJob.get_jobs()` where jedi answers `JobRunner.get_jobs`.
-    expect(strategy().attempt(call("SyncDataSourceJob", "get_jobs"), jobsCtx(table, ".jobs", "SyncDataSourceJob"))).toEqual({
+    expect(
+      strategy().attempt(
+        call("SyncDataSourceJob", "get_jobs"),
+        jobsCtx(table, ".jobs", "SyncDataSourceJob"),
+      ),
+    ).toEqual({
       kind: "continue",
     });
   });
@@ -907,7 +1055,8 @@ describe("PythonImportedNameSymbolResolutionStrategy — class receiver spelling
 
 - [ ] VERIFY — `npx vitest run tests/core/domains/language/python/resolver`
       green; `npx tsc --noEmit`.
-- [ ] COMMIT — `feat(language): follow one re-export hop for Python module members (9fgdi)`.
+- [ ] COMMIT —
+      `feat(language): follow one re-export hop for Python module members (9fgdi)`.
 
 ## Task 3: `importMatch` CONTINUEs on a receiver an import bound
 
@@ -927,7 +1076,10 @@ export interface PythonImportBinding {
   localName: string;
   importedName: string;
 }
-export function findPythonImportBinding(imports: readonly ImportRef[], localName: string): PythonImportBinding | null;
+export function findPythonImportBinding(
+  imports: readonly ImportRef[],
+  localName: string,
+): PythonImportBinding | null;
 ```
 
 ### Steps
@@ -947,59 +1099,87 @@ export function findPythonImportBinding(imports: readonly ImportRef[], localName
       residual the demotion is required NOT to touch.
 
 ```ts
-  it("continues when the receiver is a name an import BOUND — importedName owns it", () => {
-    const symbolTable = tableWith(
-      ["netbox/circuits/tables/columns.py", [sym("ColorColumn", "ColorColumn", "netbox/circuits/tables/columns.py", [])]],
-      ["netbox/netbox/tables/columns.py", [sym("ColorColumn", "ColorColumn", "netbox/netbox/tables/columns.py", [])]],
-    );
-    const outcome = strat.attempt(
-      { callText: "columns.ColorColumn()", receiver: "columns", member: "ColorColumn", startLine: 1 },
-      ctx({
-        symbolTable,
-        callerFile: "netbox/circuits/tables/circuits.py",
-        imports: [
-          {
-            importText: "netbox.tables",
-            startLine: 1,
-            importedNames: ["columns"],
-            importedBindings: { columns: "columns" },
-          },
-        ],
-      }),
-    );
-    // Trailing-segment matching picks the caller's own sibling, 437 times on
-    // netbox. The binding pass ran first and had better evidence, whatever it
-    // decided (bd tea-rags-mcp-9fgdi).
-    expect(outcome.kind).toBe("continue");
-  });
+it("continues when the receiver is a name an import BOUND — importedName owns it", () => {
+  const symbolTable = tableWith(
+    [
+      "netbox/circuits/tables/columns.py",
+      [
+        sym(
+          "ColorColumn",
+          "ColorColumn",
+          "netbox/circuits/tables/columns.py",
+          [],
+        ),
+      ],
+    ],
+    [
+      "netbox/netbox/tables/columns.py",
+      [
+        sym(
+          "ColorColumn",
+          "ColorColumn",
+          "netbox/netbox/tables/columns.py",
+          [],
+        ),
+      ],
+    ],
+  );
+  const outcome = strat.attempt(
+    {
+      callText: "columns.ColorColumn()",
+      receiver: "columns",
+      member: "ColorColumn",
+      startLine: 1,
+    },
+    ctx({
+      symbolTable,
+      callerFile: "netbox/circuits/tables/circuits.py",
+      imports: [
+        {
+          importText: "netbox.tables",
+          startLine: 1,
+          importedNames: ["columns"],
+          importedBindings: { columns: "columns" },
+        },
+      ],
+    }),
+  );
+  // Trailing-segment matching picks the caller's own sibling, 437 times on
+  // netbox. The binding pass ran first and had better evidence, whatever it
+  // decided (bd tea-rags-mcp-9fgdi).
+  expect(outcome.kind).toBe("continue");
+});
 
-  it("still answers when the receiver is bound by NOTHING", () => {
-    const symbolTable = tableWith([
-      "domains/identity/models/user.py",
-      [sym("User#save", "save", "domains/identity/models/user.py", ["User"])],
-    ]);
-    const outcome = strat.attempt(
-      { callText: "user.save()", receiver: "user", member: "save", startLine: 1 },
-      ctx({
-        symbolTable,
-        callerFile: "domains/identity/services/auth/vk_login.py",
-        imports: [
-          {
-            importText: "domains.identity.models.user",
-            startLine: 1,
-            importedNames: ["User"],
-            importedBindings: { User: "User" },
-          },
-        ],
-      }),
-    );
-    // `user` is a local holding a User; the import bound `User`, not `user`.
-    // ugnest's only two `match` rows from this pass are exactly this.
-    expect(outcome).toEqual({
-      kind: "resolved",
-      target: { targetRelPath: "domains/identity/models/user.py", targetSymbolId: "User#save" },
-    });
+it("still answers when the receiver is bound by NOTHING", () => {
+  const symbolTable = tableWith([
+    "domains/identity/models/user.py",
+    [sym("User#save", "save", "domains/identity/models/user.py", ["User"])],
+  ]);
+  const outcome = strat.attempt(
+    { callText: "user.save()", receiver: "user", member: "save", startLine: 1 },
+    ctx({
+      symbolTable,
+      callerFile: "domains/identity/services/auth/vk_login.py",
+      imports: [
+        {
+          importText: "domains.identity.models.user",
+          startLine: 1,
+          importedNames: ["User"],
+          importedBindings: { User: "User" },
+        },
+      ],
+    }),
+  );
+  // `user` is a local holding a User; the import bound `User`, not `user`.
+  // ugnest's only two `match` rows from this pass are exactly this.
+  expect(outcome).toEqual({
+    kind: "resolved",
+    target: {
+      targetRelPath: "domains/identity/models/user.py",
+      targetSymbolId: "User#save",
+    },
   });
+});
 ```
 
 - [ ] GREEN — add the early CONTINUE to
@@ -1007,17 +1187,17 @@ export function findPythonImportBinding(imports: readonly ImportRef[], localName
       existing `if (!call.receiver) return CONTINUE;`:
 
 ```ts
-    // Demoted on a receiver an import BOUND (bd tea-rags-mcp-9fgdi).
-    // `importedName` runs one pass earlier and READS the binding table; this
-    // pass GUESSES from a module's trailing segment, and on netbox that guess
-    // is wrong every single time it fires on this shape — 437 `wrongFile` plus
-    // 45 stdlib `phantom` out of 517 answers, and not one `match`. What is left
-    // is receivers nothing bound: star imports, a module-path segment that
-    // merely looks like the receiver, dynamic attributes — 35 rows on netbox.
-    // Whole receiver, not its head: `pythonImportMatchesReceiver` compares a
-    // single module segment against the entire receiver text, so a dotted
-    // receiver never reaches the answer path anyway.
-    if (findPythonImportBinding(ctx.imports, receiver) !== null) return CONTINUE;
+// Demoted on a receiver an import BOUND (bd tea-rags-mcp-9fgdi).
+// `importedName` runs one pass earlier and READS the binding table; this
+// pass GUESSES from a module's trailing segment, and on netbox that guess
+// is wrong every single time it fires on this shape — 437 `wrongFile` plus
+// 45 stdlib `phantom` out of 517 answers, and not one `match`. What is left
+// is receivers nothing bound: star imports, a module-path segment that
+// merely looks like the receiver, dynamic attributes — 35 rows on netbox.
+// Whole receiver, not its head: `pythonImportMatchesReceiver` compares a
+// single module segment against the entire receiver text, so a dotted
+// receiver never reaches the answer path anyway.
+if (findPythonImportBinding(ctx.imports, receiver) !== null) return CONTINUE;
 ```
 
       and extend its import from `./shared.js` with `findPythonImportBinding`.
@@ -1039,7 +1219,8 @@ export function findPythonImportBinding(imports: readonly ImportRef[], localName
 - [ ] VERIFY — `npx vitest run tests/core/domains/language/python` green;
       `npx tsc --noEmit`. The two offline harnesses need NO edit: both call
       `createPythonSymbolResolutionChain`, and the chain is unchanged.
-- [ ] COMMIT — `feat(language): demote Python importMatch on bound receivers (9fgdi)`.
+- [ ] COMMIT —
+      `feat(language): demote Python importMatch on bound receivers (9fgdi)`.
 
 ## Task 4: gates, and the two facts the navigator has to carry
 
@@ -1076,10 +1257,10 @@ done
       never as a headline (measurement policy):
   - gross `lost` **0** on all four. A `match` that became anything else is a
     hard stop, not a trade.
-  - netbox `wrongFile` down by ~437 and `phantom` down by ~51 (45 stdlib
-    module receivers + 6 dotted-receiver rows). `match` up on
-    `receiverKind: dynamic` — module receivers classify as `dynamic`, not
-    `constant`, so a flat `constant` row is expected and correct.
+  - netbox `wrongFile` down by ~437 and `phantom` down by ~51 (45 stdlib module
+    receivers + 6 dotted-receiver rows). `match` up on `receiverKind: dynamic` —
+    module receivers classify as `dynamic`, not `constant`, so a flat `constant`
+    row is expected and correct.
   - flask / httpx / ugnest: no regression. Their `importMatch` output is tiny
     (flask 4 `chainOnly` + 5 `phantom` + 2 `wrongFile`, httpx 2 + 1 + 0, ugnest
     2 `match`), and ugnest's two matches must SURVIVE — they are the unbound
@@ -1098,8 +1279,8 @@ for i in 1 2 3 4 5; do npx tsx scripts/codegraph-chain-tally.ts --lang python --
 
 - [ ] GATE — perf A/B on netbox: wall ≤ +25%, peak RSS ≤ +20% against the same
       BEFORE checkout, measured on the tally run (it walks the corpus and
-      resolves without the oracle's subprocess in the way). The added work is one
-      extra `mapImportToFile` per module receiver — memoised per
+      resolves without the oracle's subprocess in the way). The added work is
+      one extra `mapImportToFile` per module receiver — memoised per
       `<dir> <moduleText>` — and one `Map` lookup; a number outside the budget
       means something is allocating per call site, not that the budget is tight.
 - [ ] GATE — `npm run test:coverage`, exit 0. This is the gate, not `npm test`
@@ -1109,9 +1290,9 @@ for i in 1 2 3 4 5; do npx tsx scripts/codegraph-chain-tally.ts --lang python --
       check runs BEFORE the mapper", to name its second implementation site:
       `PythonImportedNameSymbolResolutionStrategy.resolveBinding` DROPs on an
       absolute stdlib `importText` for the same reason and with the same
-      measured cause (the ancestor scan reaching `netbox/utilities/json.py`).
-      Do NOT add a third bullet repeating it — the navigator contract is one
-      fact, one place.
+      measured cause (the ancestor scan reaching `netbox/utilities/json.py`). Do
+      NOT add a third bullet repeating it — the navigator contract is one fact,
+      one place.
 - [ ] DOC — add two bullets to the same Resolver section:
   - **`importedName` answers TWO receiver shapes, and only SINGLE-HOP ones.** A
     class receiver (`Device.objects`) resolves through the symbol the binding
@@ -1133,22 +1314,23 @@ for i in 1 2 3 4 5; do npx tsx scripts/codegraph-chain-tally.ts --lang python --
       `importMatch` residual after the demotion (count and verdict split per
       corpus), and the polar tally marked informational. The residual is the
       input the removal decision needs.
-- [ ] COMMIT — `docs(language): record Python imported-receiver seam results (9fgdi)`.
+- [ ] COMMIT —
+      `docs(language): record Python imported-receiver seam results (9fgdi)`.
 
 ## Decision-to-task map
 
-| Decision                                       | Task |
-| ---------------------------------------------- | ---- |
-| 1 `importMatch` is pure damage on netbox        | 3    |
-| 2 module receiver hangs off `declaringFile`     | 1    |
-| 3 two `importedBindings` shapes, two compositions | 1  |
-| 4 single-hop only                               | 1    |
-| 5 stdlib ahead of the mapper                    | 1    |
-| 6 four decline rules                            | 1, 2 |
-| 7 re-export hop reuses `reexportOriginFile`     | 2    |
-| 8 class receiver pinned, not changed            | 2    |
-| 9 `importMatch` demoted, residual recorded      | 3, 4 |
-| 10 gates                                        | 4    |
+| Decision                                          | Task |
+| ------------------------------------------------- | ---- |
+| 1 `importMatch` is pure damage on netbox          | 3    |
+| 2 module receiver hangs off `declaringFile`       | 1    |
+| 3 two `importedBindings` shapes, two compositions | 1    |
+| 4 single-hop only                                 | 1    |
+| 5 stdlib ahead of the mapper                      | 1    |
+| 6 four decline rules                              | 1, 2 |
+| 7 re-export hop reuses `reexportOriginFile`       | 2    |
+| 8 class receiver pinned, not changed              | 2    |
+| 9 `importMatch` demoted, residual recorded        | 3, 4 |
+| 10 gates                                          | 4    |
 
 ## Follow-up beads to file
 
@@ -1168,3 +1350,72 @@ for i in 1 2 3 4 5; do npx tsx scripts/codegraph-chain-tally.ts --lang python --
   is a live example of what it costs.
 - **Re-measure whether `importMatch` earns its slot at all**, from the residual
   Task 4 records.
+
+## Gate record (Task 4, measured)
+
+BEFORE is the pre-seam tree `agent-a9eb6ca5c3a2402f3` (E2.3d landed, IR.1–IR.3
+absent), AFTER is `agent-a9056415c636db6de`. Rows keyed by
+`(relPath, startLine, callText)`; polar's BEFORE dump is the seeded per-file
+rooted run at `jobs/dffe3647/tmp/e23d/polar.ndjson`.
+
+| Corpus | match           | missed      | wrongFile    | phantom       | agreeExternal |
+| ------ | --------------- | ----------- | ------------ | ------------- | ------------- |
+| netbox | 9064 → **9551** | 1785 → 1733 | 499 → **64** | 612 → **652** | 38951 → 38908 |
+| flask  | 509 → 509       | 162 → 162   | 11 → 11      | 104 → **101** | 1182 → 1185   |
+| httpx  | 690 → 690       | 192 → 192   | 0 → 0        | 80 → 80       | 1404 → 1405   |
+| ugnest | 1370 → **1374** | 85 → 81     | 0 → 0        | 377 → **386** | 4884 → 4875   |
+| polar¹ | 16457 → 16507   | 9865 → 9857 | 111 → 77     | 1825 → 1670   | 40575 → 40730 |
+
+¹ informational only — non-deterministic oracle (E0.11).
+
+Row-level: gross `lost` **0** on all four deterministic corpora. Gained 487
+(netbox), 4 (ugnest), 0 (flask, httpx). Polar shows gross lost 34 (31
+`importMatch`, 3 `importedName`, all → `missed`) against 84 gained; no
+conclusion drawn.
+
+**PASS.** `lost` 0; netbox `wrongFile` −435, exactly the predicted 437-row
+population less the 2 that were never `importMatch`'s; `match` +487, every one
+on a `dynamic` receiver.
+
+**FAIL — `phantom` is UP, not down: netbox +40, ugnest +9, flask +2.** The
+predicted wins all landed (netbox: 45 stdlib `importMatch` phantoms and 6
+dotted-receiver `importedName` phantoms went to `agreeExternal`, plus 4 from
+`globalShortName`), but 95 NEW netbox phantoms appeared, all
+`agreeExternal → phantom/globalShortName`, all on dotted receivers (81
+`ContentType.objects`, 7 `os.*`, 4 `mptt.*`, 2 `sys.*`, 1 `django.*`). Cause:
+`SINGLE_HOP_RECEIVER` gates the top of `attempt`, ahead of the binding lookup,
+so a dotted receiver whose head an import bound no longer reaches
+`resolveBinding`'s `external` → DROP. It falls to `globalShortName`, which pins
+on short name alone. Decision 4 counted only rows `importedName` ANSWERED with a
+dotted receiver (6 on netbox); it did not count the rows it DROPPED. Same shape
+on ugnest (`Group.objects.get`, `base64.…().decode`) and flask
+(`werkzeug.utils.send_file`). Fix candidate for a follow-up: run the guard AFTER
+the binding lookup and the mapper's `external` verdict, so the DROP survives and
+only the resolution is skipped.
+
+`importMatch` residual after the demotion — the input the removal decision
+needs:
+
+| Corpus | before | after | after split                                          |
+| ------ | -----: | ----: | ---------------------------------------------------- |
+| netbox |    517 |    35 | 18 chainOnly, 15 phantom, 2 wrongFile                |
+| flask  |     11 |     6 | 4 chainOnly, 2 wrongFile                             |
+| httpx  |      0 |     0 | —                                                    |
+| ugnest |      2 |     2 | 2 match (the unbound `user.save()` shape — SURVIVED) |
+| polar¹ |    433 |    60 | 29 phantom, 20 chainOnly, 9 match, 2 wrongFile       |
+
+Not one `match` was lost to the demotion on the four deterministic corpora, and
+outside ugnest's two rows the pass produces no `match` at all. Polar is where
+the cost sits: 71 → 9 matches. Removal is a polar-gated decision.
+
+Chain drift: netbox ×5 consecutive `chain drift vs production resolver: 0`; one
+run each on polar / httpx / flask / ugnest, all 0; every oracle walk in the A/B
+reported `chainDrift 0` as well.
+
+Perf, netbox chain-tally, interleaved B/A/A/B under `/usr/bin/time -l` with
+`NODE_OPTIONS=--max-old-space-size=1024`, min of 2 per side: wall 13.99s →
+13.19s (**−5.7%**, budget +25%); peak RSS 2.304 GB → 2.455 GB (**+6.6%**, budget
++20%). Both inside budget.
+
+`npm run test:coverage`: exit 0 — statements 96.32, branches 88.82, functions
+97.38, lines 98.40; 851 test files, 12414 passed, 1 skipped.
