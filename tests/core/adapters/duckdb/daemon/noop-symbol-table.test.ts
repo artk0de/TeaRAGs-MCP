@@ -30,3 +30,25 @@ describe("NoopGlobalSymbolTable", () => {
     expect(table.size()).toBe(0);
   });
 });
+
+describe("NoopGlobalSymbolTable — file presence", () => {
+  it("answers false for hasFile, because it stores nothing", () => {
+    const table = new NoopGlobalSymbolTable();
+    table.upsertFile("pkg/a.py", [
+      {
+        symbolId: "A",
+        fqName: "A",
+        shortName: "A",
+        relPath: "pkg/a.py",
+        scope: [],
+      },
+    ]);
+    expect(table.hasFile("pkg/a.py")).toBe(false);
+  });
+
+  it("answers false for hasFilesUnder, including the whole-table query", () => {
+    const table = new NoopGlobalSymbolTable();
+    expect(table.hasFilesUnder("pkg")).toBe(false);
+    expect(table.hasFilesUnder("")).toBe(false);
+  });
+});

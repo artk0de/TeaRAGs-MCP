@@ -30,6 +30,14 @@ export class NoopGlobalSymbolTable implements GlobalSymbolTable {
     return [];
   }
 
+  hasFile(_relPath: RelPath): boolean {
+    return false;
+  }
+
+  hasFilesUnder(_dirRelPath: string): boolean {
+    return false;
+  }
+
   size(): number {
     return 0;
   }

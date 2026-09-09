@@ -166,6 +166,28 @@ export interface GlobalSymbolTable {
    *  {@link SymbolLookupOptions}. */
   lookupByShortName: (name: string, options?: SymbolLookupOptions) => SymbolDefinition[];
   /**
+   * Does this exact file contribute any symbol to the table?
+   *
+   * The question the import mappers could not ask (bd tea-rags-mcp-q9u85):
+   * `mapPythonImportToFile` and `mapJavaImportToFile` SYNTHESISE a target path
+   * from the import text without probing disk, so `re.py` and
+   * `java/util/Objects.java` are perfectly ordinary answers. Without this the
+   * only way to tell a real first-party target from a synthesised external one
+   * was to hit the filesystem, which the resolver must not do.
+   */
+  hasFile: (relPath: RelPath) => boolean;
+  /**
+   * Does any file UNDER this directory contribute a symbol? `""` asks about the
+   * whole table. A trailing slash is ignored; a path PREFIX is not a parent
+   * (`pkg/a` is not under `pkg/ab`).
+   *
+   * Needed because a Python package import resolves to a DIRECTORY as often as
+   * to a file — PEP 420 namespace packages have no `__init__.py` at all — so
+   * `hasFile` alone cannot tell "this package is ours" from "this package is a
+   * dependency". O(1), maintained as an index, never a scan.
+   */
+  hasFilesUnder: (dirRelPath: string) => boolean;
+  /**
    * Replace the run's schema-column index with `definitions` (each carrying
    * `isSchemaColumn: true`). Optional capability: a table that omits it simply
    * never holds synthesized columns, and the pre-pass no-ops (bd

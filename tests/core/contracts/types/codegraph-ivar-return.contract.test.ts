@@ -26,6 +26,8 @@ describe("CallContext — ivarTypes + structuredReturnTypes (Task 1.1)", () => {
       lookup: () => [],
       upsertFile: () => undefined,
       removeFile: () => undefined,
+      hasFile: () => false,
+      hasFilesUnder: () => false,
       size: () => 0,
       hydrate: () => undefined,
     };
@@ -56,6 +58,8 @@ describe("CallContext — ivarTypes + structuredReturnTypes (Task 1.1)", () => {
       lookup: () => [],
       upsertFile: () => undefined,
       removeFile: () => undefined,
+      hasFile: () => false,
+      hasFilesUnder: () => false,
       size: () => 0,
       hydrate: () => undefined,
     };
@@ -109,6 +113,8 @@ describe("CallContext — ivarTypes + structuredReturnTypes (Task 1.1)", () => {
       lookup: () => [],
       upsertFile: () => undefined,
       removeFile: () => undefined,
+      hasFile: () => false,
+      hasFilesUnder: () => false,
       size: () => 0,
       hydrate: () => undefined,
     };
