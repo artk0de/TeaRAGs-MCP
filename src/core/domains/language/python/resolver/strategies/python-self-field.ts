@@ -2,7 +2,7 @@ import { CONTINUE, DROP, resolved } from "../../../../../contracts/resolution.js
 import { pickSingleCandidate, type CallContext, type CallRef } from "../../../../../contracts/types/codegraph.js";
 import type { SymbolResolutionOutcome, SymbolResolutionStrategy } from "../../../../../contracts/types/language.js";
 import { PythonImportFileMapper } from "../python-import-file-mapper.js";
-import { pythonTypeNameIsExternal, type ResolverConfig } from "./shared.js";
+import { pythonEnclosingClass, pythonTypeNameIsExternal, type ResolverConfig } from "./shared.js";
 
 /**
  * Cross-method instance-field dispatch — `self.<field>.<method>()` where
@@ -36,12 +36,16 @@ export class PythonSelfFieldSymbolResolutionStrategy implements SymbolResolution
   ) {}
 
   attempt(call: CallRef, ctx: CallContext): SymbolResolutionOutcome {
-    if (!call.receiver || !call.receiver.startsWith("self.") || ctx.callerScope.length === 0) return CONTINUE;
+    if (call.receiver?.startsWith("self.") !== true) return CONTINUE;
     const fieldSegment = call.receiver.slice("self.".length);
     if (fieldSegment.includes(".")) return CONTINUE;
 
-    const enclosing = ctx.callerScope[ctx.callerScope.length - 1];
-    const typeName = ctx.classFieldTypes?.[enclosing]?.[fieldSegment];
+    // `classFieldTypes` is keyed by the class's OWN short name, so this pass
+    // needs the enclosing CLASS — a call made from a nested `def` has that
+    // `def` at the end of `callerScope` (bd tea-rags-mcp-graiw).
+    const enclosing = pythonEnclosingClass(ctx);
+    if (enclosing === null) return CONTINUE;
+    const typeName = ctx.classFieldTypes?.[enclosing.name]?.[fieldSegment];
     if (typeName) {
       // Field type known → resolution is CONSTRAINED to that class.
       // Instance form first (the common dispatch shape), static fallback.

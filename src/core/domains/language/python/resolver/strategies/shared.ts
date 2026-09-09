@@ -47,6 +47,87 @@ export function parsePythonClassKey(classKey: string): { readonly relPath: strin
   return classFq.length === 0 ? null : { relPath: classKey.slice(0, at), classFq };
 }
 
+/**
+ * The dotted FQ a symbol-table definition is addressed by — its scope plus its
+ * own short name (bd tea-rags-mcp-graiw). THE spelling rule for a Python class
+ * key, stated once: `collectSymbols` pushes every `nameOf`-named container onto
+ * `scope`, and `pyNameOf` names a `function_definition` as well as a
+ * `class_definition`, so a class declared inside a `def` reads
+ * `Authenticator._AuthenticatorSignature` here and nowhere reads
+ * `_AuthenticatorSignature`.
+ */
+export function pythonDeclaredClassFq(def: { readonly scope: readonly string[]; readonly shortName: string }): string {
+  return [...def.scope, def.shortName].join(".");
+}
+
+/** The class a call site is written inside, addressed the way the run keys classes. */
+export interface PythonEnclosingClass {
+  /** `<relPath>::<dotted class FQ>` — the {@link pythonClassKey} form the MRO walk starts from. */
+  readonly key: string;
+  /** The dotted FQ alone — what the symbol table composes members under. */
+  readonly classFq: string;
+  /** The class's OWN short name — the key of the bare-name channels (`classFieldTypes`, `classExtends`). */
+  readonly name: string;
+}
+
+/**
+ * The innermost class enclosing the call site, or `null` when the caller has no
+ * scope at all (bd tea-rags-mcp-graiw).
+ *
+ * `callerScope` is not a list of class containers, and reading it as one is the
+ * defect this replaces. Two measured shapes broke on it, in opposite
+ * directions:
+ *
+ *   - polar `server/polar/auth/dependencies.py:207` — `_AuthenticatorSignature`
+ *     is declared inside `def Authenticator()`, so the scope is
+ *     `["Authenticator", "_AuthenticatorSignature"]` and the class FQ needs
+ *     BOTH segments. A key built from the trailing name alone named nothing.
+ *   - flask, 10 sites — a call inside `App#template_filter#decorator` carries
+ *     the scope `["App", "template_filter"]`, and the class FQ is the FIRST
+ *     segment alone. A key built from the whole join named nothing.
+ *
+ * So the answer is the LONGEST prefix that names a class, tried outward from
+ * the call. Two channels of evidence, either sufficient: the run's
+ * `classAncestors` keys (authoritative — the walker only ever writes classes
+ * there), and a symbol-table definition at the caller's own file whose
+ * {@link pythonDeclaredClassFq} is that prefix. The second is what pins a class
+ * that declares no base, and it separates a class from a method because a
+ * container joins with the scope separator while an instance method joins with
+ * `#`: `Outer.Inner` is in the table, `App.template_filter` is not.
+ *
+ * When no prefix is confirmed the WHOLE scope is returned rather than `null`,
+ * which is byte-identically what every caller used to build. A key nothing
+ * declares then reads closure `unknown` in `../python-ancestor-policy.ts`, so
+ * the miss falls through instead of claiming the member is absent.
+ */
+export function pythonEnclosingClass(ctx: CallContext): PythonEnclosingClass | null {
+  const scope = ctx.callerScope;
+  if (scope.length === 0) return null;
+  for (let depth = scope.length; depth > 0; depth--) {
+    const classFq = scope.slice(0, depth).join(".");
+    const key = pythonClassKey(ctx.callerFile, classFq);
+    if (ctx.classAncestors?.[key] !== undefined || pythonClassKeyIsDeclared(key, ctx)) {
+      return { key, classFq, name: scope[depth - 1] };
+    }
+  }
+  const classFq = scope.join(".");
+  return { key: pythonClassKey(ctx.callerFile, classFq), classFq, name: scope[scope.length - 1] };
+}
+
+/**
+ * Does anything in the run DECLARE the class this key addresses (bd
+ * tea-rags-mcp-graiw)?
+ *
+ * The distinction the closure rests on: a class with no bases has no
+ * `classAncestors` entry and a miss under it really is evidence of absence,
+ * while a key nothing declares carries no evidence either way.
+ */
+export function pythonClassKeyIsDeclared(classKey: string, ctx: CallContext): boolean {
+  const parsed = parsePythonClassKey(classKey);
+  if (parsed === null) return false;
+  return ctx.symbolTable.lookup(parsed.classFq).some((def) => def.relPath === parsed.relPath);
+}
+
 /** A member found on a class or one of its ancestors, and how far the walk could see. */
 export interface PythonInheritedMemberResult {
   readonly target: SymbolResolutionTarget | null;

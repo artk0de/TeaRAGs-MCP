@@ -468,6 +468,20 @@ export const PYTHON_UNRESOLVABLE_BASE = "<unresolvable>";
  * those classes recorded NO base at all), and a FILE-QUALIFIED key so two
  * `Base` classes in two files do not conflate in the run-global map.
  *
+ * The dotted FQ counts EVERY named container, a `function_definition` as well
+ * as a `class_definition` (bd tea-rags-mcp-graiw). That is not a choice this
+ * function is free to make: `collectSymbols` in `../../kernel/collect-symbols.ts`
+ * pushes each `nameOf`-named node onto `scope`, `pyNameOf` names a
+ * `function_definition`, and `classKeyIn` in
+ * `../resolver/python-ancestor-policy.ts` already addresses a BASE class as
+ * `[...def.scope, def.shortName].join(".")`. So polar's
+ * `class _AuthenticatorSignature(_Authenticator)` — declared inside
+ * `def Authenticator()` in `server/polar/auth/dependencies.py` — is
+ * `Authenticator._AuthenticatorSignature` to the symbol table and to every
+ * base-key the policy builds. Keying it bare here made the resolver ask for a
+ * class that, by that spelling, nothing declares: `basesOf` returned `[]`, the
+ * closure read `closed`, and `super().__call__()` DROPped.
+ *
  * Returns a plain object (Record) for NDJSON round-trip — Map would serialise
  * to `{}`.
  */
@@ -478,17 +492,20 @@ function collectPythonClassAncestors(
 ): Record<string, readonly string[]> {
   const out: Record<string, readonly string[]> = {};
   const walkScope = (node: AstNode, scope: string[]): void => {
-    if (node.type !== "class_definition") {
-      for (const child of node.children) walkScope(child, scope);
-      return;
-    }
-    const nameNode = node.childForFieldName("name");
+    const isContainer = node.type === "class_definition" || node.type === "function_definition";
+    const nameNode = isContainer ? node.childForFieldName("name") : null;
     if (!nameNode) {
       for (const child of node.children) walkScope(child, scope);
       return;
     }
     const localName = nameNode.text;
-    const fq = scope.length === 0 ? localName : `${scope.join(".")}.${localName}`;
+    const childScope = [...scope, localName];
+    if (node.type !== "class_definition") {
+      const fnBody = node.childForFieldName("body");
+      for (const child of fnBody ? fnBody.children : node.children) walkScope(child, childScope);
+      return;
+    }
+    const fq = childScope.join(".");
     const supers = node.childForFieldName("superclasses");
     const bases: string[] = [];
     if (supers) {
@@ -516,7 +533,7 @@ function collectPythonClassAncestors(
     }
     if (bases.length > 0) out[`${relPath}::${fq}`] = bases;
     const body = node.childForFieldName("body");
-    for (const child of body ? body.children : node.children) walkScope(child, [...scope, localName]);
+    for (const child of body ? body.children : node.children) walkScope(child, childScope);
   };
   walkScope(root, []);
   return out;

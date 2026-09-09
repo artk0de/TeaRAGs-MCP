@@ -17,6 +17,7 @@ import {
 } from "../../scripts/py-codegraph-jedi-oracle.js";
 import type { CallContext, CallRef } from "../../src/core/contracts/types/codegraph.js";
 import type { SymbolResolutionOutcome, SymbolResolutionStrategy } from "../../src/core/contracts/types/language.js";
+import { InMemoryGlobalSymbolTable } from "../../src/core/domains/trajectory/codegraph/symbols/symbol-table.js";
 
 const call = (member: string): CallRef => ({
   callText: `${member}()`,
@@ -30,6 +31,7 @@ const ctx = {} as CallContext;
 const multiBaseCtx = {
   callerFile: "netbox/core/models/data.py",
   callerScope: ["DataSource"],
+  symbolTable: new InMemoryGlobalSymbolTable(),
   classAncestors: {
     "netbox/core/models/data.py::DataSource": ["netbox.models.features::JobsMixin", "netbox.models::PrimaryModel"],
   },
@@ -39,6 +41,7 @@ const multiBaseCtx = {
 const singleBaseCtx = {
   callerFile: "netbox/core/models/data.py",
   callerScope: ["DataSource"],
+  symbolTable: new InMemoryGlobalSymbolTable(),
   classAncestors: { "netbox/core/models/data.py::DataSource": ["django.db.models::Model"] },
 } as CallContext;
 
@@ -281,6 +284,7 @@ describe("countEnclosingBases", () => {
     const nested = {
       callerFile: "pkg/a.py",
       callerScope: ["Outer", "Inner"],
+      symbolTable: new InMemoryGlobalSymbolTable(),
       classAncestors: { "pkg/a.py::Outer.Inner": ["a::A", "b::B", "c::C"] },
     } as CallContext;
     expect(countEnclosingBases(nested)).toBe(3);

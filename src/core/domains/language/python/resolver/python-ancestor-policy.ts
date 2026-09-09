@@ -59,7 +59,12 @@ import { PYTHON_BUILTINS } from "../vocabulary/builtins.js";
 import { PYTHON_UNRESOLVABLE_BASE } from "../walker/walker.js";
 import { linearizeC3 } from "./mro.js";
 import type { PythonImportFileMapper } from "./python-import-file-mapper.js";
-import { parsePythonClassKey, pythonClassKey } from "./strategies/shared.js";
+import {
+  parsePythonClassKey,
+  pythonClassKey,
+  pythonClassKeyIsDeclared,
+  pythonDeclaredClassFq,
+} from "./strategies/shared.js";
 
 /** What a base SPELLING turned out to name. Mirrors the import mapper's three states. */
 type BaseKeyVerdict = { readonly kind: "project"; readonly classKey: string } | { readonly kind: AncestorClosure };
@@ -98,7 +103,17 @@ export function createPythonAncestorPolicy(
     const basesOf = (key: string): readonly string[] => {
       const parsed = parsePythonClassKey(key);
       const spellings = ctx.classAncestors?.[key];
-      if (parsed === null || spellings === undefined) return [];
+      if (parsed === null || spellings === undefined) {
+        // No hierarchy recorded under this key — two different facts wearing
+        // one shape (bd tea-rags-mcp-graiw). A class the run DECLARES and the
+        // walker recorded no base for is a real leaf, and a member missing
+        // under it is evidence of ABSENCE: the closure stays `closed`. A key
+        // nothing declares carries no evidence either way, and reading it
+        // `closed` is what let a mis-spelled enclosing-class key DROP a call
+        // and suppress `super()`'s pre-seam `classExtends` fallback.
+        if (parsed !== null && !pythonClassKeyIsDeclared(key, ctx)) closure = worse(closure, "unknown");
+        return [];
+      }
       const keys: string[] = [];
       for (const spelling of spellings) {
         const verdict = resolveBaseKey(spelling, parsed.relPath, ctx, mapper, mode);
@@ -231,7 +246,7 @@ function classKeyIn(className: string, file: RelPath, ctx: CallContext): BaseKey
   const declared = ctx.symbolTable.lookupByShortName(className).filter((def) => def.relPath === file);
   if (declared.length !== 1) return UNKNOWN_BASE;
   const def = declared[0];
-  return { kind: "project", classKey: pythonClassKey(def.relPath, [...def.scope, def.shortName].join(".")) };
+  return { kind: "project", classKey: pythonClassKey(def.relPath, pythonDeclaredClassFq(def)) };
 }
 
 /**
