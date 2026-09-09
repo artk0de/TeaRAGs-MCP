@@ -3,7 +3,7 @@ import { pickSingleCandidate, type CallContext, type CallRef } from "../../../..
 import type { SymbolResolutionOutcome, SymbolResolutionStrategy } from "../../../../../contracts/types/language.js";
 import { PythonImportFileMapper } from "../python-import-file-mapper.js";
 import { mapPythonImportToFile } from "../python-path-mapper.js";
-import { pythonImportMatchesReceiver, type ResolverConfig } from "./shared.js";
+import { findPythonImportBinding, pythonImportMatchesReceiver, type ResolverConfig } from "./shared.js";
 
 /**
  * Receiver-matches-import — find the `import` whose last module segment matches
@@ -15,6 +15,16 @@ import { pythonImportMatchesReceiver, type ResolverConfig } from "./shared.js";
  * file-only edge so the file-edge still gets attribution. On miss (no import
  * matches the receiver, or the module path does not map to a file) continue —
  * never a drop, it defers to the global short-name fallback.
+ *
+ * **DEMOTED on any receiver an import BOUND** (bd tea-rags-mcp-9fgdi).
+ * `importedName`, one pass up, reads the walker's binding table; this pass
+ * infers the bound name from a module's trailing segment, and the two disagree
+ * exactly where the inference is wrong. Netbox measured it: of 517 answers here,
+ * 437 were `wrongFile` and 45 `phantom` on receivers a binding covered, and not
+ * one was a `match`. So the binding lookup now runs first and CONTINUEs, leaving
+ * this pass the receivers nothing bound — star imports, a module-path segment
+ * that merely looks like the receiver, dynamic attributes. Removing it outright
+ * is a separate decision resting on that residual, not on symmetry.
  *
  * **The file-only edge stays a `resolved` commit, NOT a `deferred` park** (bd
  * tea-rags-mcp-86qfb, measured; contract in `contracts/resolution.ts`). This
@@ -43,6 +53,17 @@ export class PythonImportMatchSymbolResolutionStrategy implements SymbolResoluti
   attempt(call: CallRef, ctx: CallContext): SymbolResolutionOutcome {
     if (!call.receiver) return CONTINUE;
     const { receiver } = call;
+    // Demoted on a receiver an import BOUND (bd tea-rags-mcp-9fgdi).
+    // `importedName` runs one pass earlier and READS the binding table; this
+    // pass GUESSES from a module's trailing segment, and on netbox that guess
+    // is wrong every single time it fires on this shape — 437 `wrongFile` plus
+    // 45 stdlib `phantom` out of 517 answers, and not one `match`. What is left
+    // is receivers nothing bound: star imports, a module-path segment that
+    // merely looks like the receiver, dynamic attributes — 35 rows on netbox.
+    // Whole receiver, not its head: `pythonImportMatchesReceiver` compares a
+    // single module segment against the entire receiver text, so a dotted
+    // receiver never reaches the answer path anyway.
+    if (findPythonImportBinding(ctx.imports, receiver) !== null) return CONTINUE;
     const match = ctx.imports.find((imp) => pythonImportMatchesReceiver(imp.importText, receiver));
     if (!match) return CONTINUE;
 

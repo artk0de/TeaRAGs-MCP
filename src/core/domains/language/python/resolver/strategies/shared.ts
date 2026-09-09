@@ -7,15 +7,16 @@
  * ambiguous-resolve `mode`.
  *
  * `walkClassExtendsForMethod`, `pythonImportMatchesReceiver`, `lastSegment`,
- * `resolveTypeFile` and `resolvePythonMemberOnType` are the helpers shared by
- * more than one strategy AND by the local-type walk — factored here so each
- * lives once.
+ * `findPythonImportBinding`, `resolveTypeFile` and `resolvePythonMemberOnType`
+ * are the helpers shared by more than one strategy AND by the local-type walk
+ * — factored here so each lives once.
  */
 
 import {
   pickSingleCandidate,
   type AmbiguousResolveMode,
   type CallContext,
+  type ImportRef,
   type SymbolResolutionTarget,
 } from "../../../../../contracts/types/codegraph.js";
 import { PYTHON_BUILTINS } from "../../vocabulary/builtins.js";
@@ -154,6 +155,32 @@ export function pythonImportMatchesReceiver(importText: string, receiver: string
   const segments = cleaned.split(".").filter((s) => s.length > 0);
   const last = segments[segments.length - 1] ?? "";
   return last === receiver;
+}
+
+/** One import statement, the local name it bound, and the name the module exports. */
+export interface PythonImportBinding {
+  imp: ImportRef;
+  localName: string;
+  importedName: string;
+}
+
+/**
+ * The import that bound `localName`, with the name the MODULE exports it under.
+ *
+ * `importedBindings` is the authority (it survives aliasing);
+ * `importedNames` alone means the statement bound the name unaliased, which is
+ * the shape `from a import b` produces when a walker-1 file is mixed in.
+ */
+export function findPythonImportBinding(imports: readonly ImportRef[], localName: string): PythonImportBinding | null {
+  for (const imp of imports) {
+    const importedName = imp.importedBindings?.[localName];
+    if (importedName) return { imp, localName, importedName };
+  }
+  for (const imp of imports) {
+    if (imp.importedBindings) continue; // already consulted above; do not re-answer
+    if (imp.importedNames?.includes(localName)) return { imp, localName, importedName: localName };
+  }
+  return null;
 }
 
 /**
