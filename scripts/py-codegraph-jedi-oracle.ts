@@ -281,6 +281,25 @@ export interface PyOracleFileReply {
 }
 
 /**
+ * The hash seed every oracle child runs under (bd tea-rags-mcp-vua9f).
+ *
+ * jedi's answer is NOT a pure function of the corpus. Three polar runs of the
+ * same chain against the same oracle code scored 14,947 / 14,984 / 10,482 sites
+ * `match`, with thousands of rows flipping between `external` and `inProject`
+ * in between: hash randomization reorders the set iteration inside jedi's
+ * import search, and a corpus owning two packages of one name — polar's
+ * `server/polar`, its `sdk/python/polar` and the venv's installed `polar` —
+ * gets a different winner per run. Measured directly on
+ * `sdk/python/polar/v2026_04/services/benefits.py:111`: seeds 0 and 1 answer
+ * site-packages, seeds 2 and 3 answer the repo. Pinning it made two full polar
+ * runs byte-identical, 0 rows gained and 0 lost.
+ *
+ * The VALUE is arbitrary and only has to be fixed. What it must never be is
+ * absent: a baseline nobody can reproduce is not a baseline.
+ */
+export const ORACLE_PYTHON_HASH_SEED = "0";
+
+/**
  * Ask the Python side about every site, one spawn per corpus.
  *
  * NDJSON over pipes rather than a temp file: the input for polar is ~30 MB and
@@ -314,6 +333,8 @@ export async function askOracle(
     // the handshake can be REPORTED. With `inherit` the only symptom of a dead
     // child was an unhandled `write EPIPE` from the loop below (3yxmy).
     stdio: ["pipe", "pipe", "pipe"],
+    // Merged OVER `process.env` so uv keeps PATH, HOME and its own cache.
+    env: { ...process.env, PYTHONHASHSEED: ORACLE_PYTHON_HASH_SEED },
   });
   const stderrTail: string[] = [];
   child.stderr.setEncoding("utf8");
@@ -602,6 +623,10 @@ async function main(): Promise<void> {
       corpus: options.corpusName,
       corpusRoot: options.corpusRoot,
       seed: options.seed,
+      // The sampling seed above reproduces the SAMPLE; this one reproduces the
+      // ANSWERS, and a report carrying only the first would be reproducible in
+      // its rows and not in its numbers (vua9f).
+      pythonHashSeed: ORACLE_PYTHON_HASH_SEED,
       counters: {
         files: walk.files,
         symbolTableOnlyFiles: walk.symbolTableOnlyFiles,

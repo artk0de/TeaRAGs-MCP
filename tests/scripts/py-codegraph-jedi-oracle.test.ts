@@ -10,6 +10,7 @@ import {
   askOracle,
   buildPythonChain,
   buildRows,
+  ORACLE_PYTHON_HASH_SEED,
   parseArgs,
   resolveCorpusRoots,
 } from "../../scripts/py-codegraph-jedi-oracle.js";
@@ -209,6 +210,37 @@ describe("askOracle", () => {
       roots: ["/corpus/server"],
       workers: 4,
     });
+  });
+
+  /**
+   * The same echo, reporting its OWN environment instead of the config. What is
+   * under test is that the child runs under a pinned hash seed (vua9f) — three
+   * polar runs without it disagreed on ~4,500 rows — and that pinning it does
+   * not replace the inherited environment, which uv needs to find its cache.
+   */
+  const ECHO_ENV = [
+    "node",
+    "-e",
+    [
+      "let buf='';process.stdin.on('data',d=>buf+=d);",
+      "process.stdin.on('end',()=>{",
+      "const seen=JSON.stringify({seed:process.env.PYTHONHASHSEED,path:typeof process.env.PATH});",
+      "process.stdout.write(JSON.stringify({relPath:seen,parseFailed:false,parsoErrors:0,answers:[]})+'\\n');",
+      "});",
+    ].join(""),
+  ];
+
+  it("pins PYTHONHASHSEED in the child env without dropping the inherited one", async () => {
+    const replies = await askOracle([], {
+      corpusRoot: "/corpus",
+      python: ECHO_ENV,
+      venvPython: null,
+      roots: ["/corpus"],
+      workers: 1,
+    });
+    const [seen] = [...replies.keys()];
+    expect(JSON.parse(seen ?? "{}")).toEqual({ seed: ORACLE_PYTHON_HASH_SEED, path: "string" });
+    expect(ORACLE_PYTHON_HASH_SEED).toBe("0");
   });
 });
 
