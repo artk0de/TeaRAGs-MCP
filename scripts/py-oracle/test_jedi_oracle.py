@@ -82,3 +82,54 @@ def test_the_empty_entry_and_duplicates_are_dropped() -> None:
     # `Project._get_base_sys_path` drops it for the same reason.
     ordered = build_sys_path(CORPUS, ["."], ["", "/corpus", "/env/site-packages", "/env/site-packages"])
     assert ordered == ["/corpus", "/env/site-packages"]
+
+
+def test_the_containing_root_is_searched_first() -> None:
+    # polar owns two packages called `polar`: `server/polar` and
+    # `sdk/python/polar`. One global order is wrong for one of them by
+    # construction, so the root CONTAINING the file leads.
+    ordered = build_sys_path(
+        CORPUS,
+        ["server", "sdk/python"],
+        ["/env/site-packages"],
+        CORPUS / "sdk/python/polar/v2026_04/services/benefits.py",
+    )
+    assert ordered == ["/corpus/sdk/python", "/corpus/server", "/env/site-packages"]
+
+
+def test_a_file_under_no_declared_root_keeps_the_declared_order() -> None:
+    ordered = build_sys_path(
+        CORPUS, ["server", "sdk/python"], ["/env/site-packages"], CORPUS / "docs/conf.py"
+    )
+    assert ordered == ["/corpus/server", "/corpus/sdk/python", "/env/site-packages"]
+
+
+def test_the_deepest_containing_root_wins_when_roots_nest() -> None:
+    ordered = build_sys_path(
+        CORPUS, ["sdk", "sdk/python"], ["/env"], CORPUS / "sdk/python/polar/base.py"
+    )
+    assert ordered == ["/corpus/sdk/python", "/corpus/sdk", "/env"]
+
+
+def test_a_root_is_not_claimed_by_a_sibling_it_only_prefixes() -> None:
+    # `/corpus/server` must not swallow `/corpus/server-tools/app.py`.
+    ordered = build_sys_path(CORPUS, ["server", "sdk"], ["/env"], CORPUS / "server-tools/app.py")
+    assert ordered == ["/corpus/server", "/corpus/sdk", "/env"]
+
+
+def test_the_reordering_still_dedupes_and_drops_the_empty_entry() -> None:
+    ordered = build_sys_path(
+        CORPUS,
+        ["server", "sdk/python", "sdk/python"],
+        ["", "/corpus/server", "/env"],
+        CORPUS / "sdk/python/polar/base.py",
+    )
+    assert ordered == ["/corpus/sdk/python", "/corpus/server", "/env"]
+
+
+def test_the_file_is_optional_and_absent_means_the_declared_order() -> None:
+    assert build_sys_path(CORPUS, ["server", "sdk"], ["/env"]) == [
+        "/corpus/server",
+        "/corpus/sdk",
+        "/env",
+    ]

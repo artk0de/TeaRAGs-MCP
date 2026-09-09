@@ -310,7 +310,42 @@ def query_site(script: jedi.Script, site: CallSite, corpus_root: Path) -> dict[s
     return {"kind": "external", "origin": origins[0]}
 
 
-def build_sys_path(corpus_root: Path, roots: list[str], env_sys_path: list[str]) -> list[str]:
+def order_roots(declared: list[str], file_path: Path | None) -> list[str]:
+    """Declared roots, the one CONTAINING the file first.
+
+    One global order cannot be right for a corpus that owns two packages of the
+    same name, and polar owns three: `server/polar`, `sdk/python/polar` and the
+    `polar` its venv installs from the `polar_sdk` distribution. With `server`
+    declared alone, every caller under `sdk/python` reached the INSTALLED copy —
+    4,999 sites answered `sitePackages` against 448 answered `project`, and the
+    chain's correct in-repo answers were scored phantom (vua9f). Declaring both
+    roots is not enough on its own: measured on
+    `sdk/python/polar/v2026_04/services/benefits.py:111`, the order
+    `[server, sdk/python]` still answers site-packages and `[sdk/python, server]`
+    answers the repo.
+
+    So the file decides. The declared order survives as the tie-break for a file
+    under NO root — it is the corpus's own statement of search preference — and
+    the DEEPEST containing root wins when roots nest, because the narrower one
+    is the more specific claim. Containment is tested on the separator boundary:
+    `server` must not swallow `server-tools`.
+    """
+    if file_path is None:
+        return list(declared)
+    text = file_path.resolve().as_posix()
+    containing = [root for root in declared if text.startswith(root.rstrip("/") + "/")]
+    if not containing:
+        return list(declared)
+    innermost = max(containing, key=len)
+    return [innermost, *[root for root in declared if root != innermost]]
+
+
+def build_sys_path(
+    corpus_root: Path,
+    roots: list[str],
+    env_sys_path: list[str],
+    file_path: Path | None = None,
+) -> list[str]:
     """The order jedi searches modules in: the corpus's OWN roots, then the venv.
 
     Left to itself jedi orders `[project path] + environment sys path + script
@@ -327,10 +362,14 @@ def build_sys_path(corpus_root: Path, roots: list[str], env_sys_path: list[str])
     own behaviour by falling back to the root itself. `''` is dropped exactly as
     `Project._get_base_sys_path` drops it — it means "the launcher's cwd", which
     here is the harness, never the corpus.
+
+    `file_path` is the file about to be answered, and `order_roots` owns what it
+    changes. Absent, the declared order stands — which is what the host sent
+    before vua9f and what a single-root corpus reduces to either way.
     """
     declared = [str((corpus_root / entry).resolve()) for entry in roots] or [str(corpus_root)]
     ordered: list[str] = []
-    for entry in [*declared, *env_sys_path]:
+    for entry in [*order_roots(declared, file_path), *env_sys_path]:
         if entry and entry not in ordered:
             ordered.append(entry)
     return ordered
@@ -339,22 +378,49 @@ def build_sys_path(corpus_root: Path, roots: list[str], env_sys_path: list[str])
 def init_worker(corpus_root: str, venv_python: str | None, roots: list[str] | None = None) -> None:
     root = Path(corpus_root).resolve()
     _STATE["corpus_root"] = root
-    # `jedi.Project(root, environment=...)` raises TypeError on 0.20.0.
-    # Two Projects on purpose: the first exists only to reach the corpus
-    # environment's sys path, which the second then has to be handed EXPLICITLY —
-    # jedi consults the environment only when `sys_path` is None.
+    _STATE["venv"] = venv_python
+    _STATE["roots"] = list(roots or [])
+    # `jedi.Project(root, environment=...)` raises TypeError on 0.20.0. This one
+    # exists only to reach the corpus environment — its sys path, which every
+    # per-ordering Project is handed EXPLICITLY because jedi consults the
+    # environment only when `sys_path` is None, and the Environment OBJECT,
+    # which they reuse.
     base = (
         jedi.Project(path=str(root), environment_path=venv_python)
         if venv_python
         else jedi.Project(path=str(root))
     )
-    sys_path = build_sys_path(root, list(roots or []), list(base.get_environment().get_sys_path()))
-    _STATE["project"] = (
-        jedi.Project(path=str(root), environment_path=venv_python, sys_path=sys_path)
-        if venv_python
-        else jedi.Project(path=str(root), sys_path=sys_path)
-    )
+    _STATE["environment"] = base.get_environment()
+    _STATE["env_sys_path"] = list(_STATE["environment"].get_sys_path())
+    _STATE["projects"] = {}
     _STATE["grammar"] = parso.load_grammar()
+
+
+def project_for(file_path: Path) -> jedi.Project:
+    """The Project whose sys path leads with `file_path`'s own source root.
+
+    Cached by the ORDERING, not by the file: a corpus needs one Project per
+    declared root plus one for the files under none of them — three for polar,
+    one for every single-root corpus, which is the shape every earlier baseline
+    ran under. Per-file construction would be worse than wasteful: each Project
+    resolving `environment_path` starts its own interpreter subprocess, so the
+    environment is carried over from the worker's first Project instead
+    (`jedi.Project` accepts no `environment` argument, only a path to one).
+    """
+    sys_path = build_sys_path(_STATE["corpus_root"], _STATE["roots"], _STATE["env_sys_path"], file_path)
+    key = tuple(sys_path)
+    cached = _STATE["projects"].get(key)
+    if cached is not None:
+        return cached
+    root, venv = str(_STATE["corpus_root"]), _STATE["venv"]
+    project = (
+        jedi.Project(path=root, environment_path=venv, sys_path=sys_path)
+        if venv
+        else jedi.Project(path=root, sys_path=sys_path)
+    )
+    project._environment = _STATE["environment"]
+    _STATE["projects"][key] = project
+    return project
 
 
 def answer_file(batch: dict[str, Any]) -> dict[str, Any]:
@@ -390,7 +456,7 @@ def answer_file(batch: dict[str, Any]) -> dict[str, Any]:
         }
 
     sites = enumerate_call_sites(tree, code)
-    script = jedi.Script(code, path=str(absolute), project=_STATE["project"])
+    script = jedi.Script(code, path=str(absolute), project=project_for(absolute))
     answers: list[dict[str, Any]] = []
     for record in batch["sites"]:
         site, unlocated = match_site(record, sites)
