@@ -190,6 +190,26 @@
   and the identity return is what makes wiring a language through the engine a
   relocation rather than a behaviour change.
 
+- **Type facts: kernel store, language-owned ranks.** `kernel/type-facts.ts`
+  declares `TypeFact` / `InlineTypeSource<TInput>` / `SidecarTypeSource`,
+  `kernel/type-fact-store.ts` resolves collisions, and
+  `kernel/type-fact-channels.ts` renders a built store as the four channels a
+  pass publishes (`localBindings` per chunk, `functionReturnTypes`,
+  `structuredReturnTypes`, `ivarTypes`, each only when non-empty). Which source
+  outranks which is NOT in the kernel: `fromFacts(facts, sourceOrder)` requires
+  the order and holds it on the instance, so Ruby passes
+  `RUBY_TYPE_SOURCE_ORDER` (seven ranks, `ruby/walker/type-fact-store.ts`) and
+  Python will pass its own. A Python facet is
+  `sources → TypeFactStore.fromFacts(facts, PYTHON_TYPE_SOURCE_ORDER) → typeFactChannels`
+  inside one `ExtractionFacetPass`. Ruby does NOT use `typeFactChannels` —
+  `ruby/walker/type-channels.ts` folds two more sources in around the store
+  (YARD `@return` overwrites body inference at `:44`; owner-qualified body
+  inference fills only where the store was silent at `:79`), and those
+  inversions stay inside the monolith. Why: a kernel default order would
+  silently hand one language another's precedence, and moving Ruby onto the
+  plain projection would turn "annotation wins" into "whichever the merge saw
+  first" — a behaviour change wearing a refactor's clothes.
+
 ## Gotchas
 
 - **`defaultImportFileEdges` asks the CALL chain a MODULE question.**

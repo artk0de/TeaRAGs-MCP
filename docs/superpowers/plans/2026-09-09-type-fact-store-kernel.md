@@ -1697,20 +1697,20 @@ live and who owns the ranks.
 
 **Steps**
 
-- [ ] **Full unit gate.** `npm run test:coverage` — the release gate, not
+- [x] **Full unit gate.** `npm run test:coverage` — the release gate, not
       `npm test` (pre-commit skips coverage). If coverage drops below threshold,
       delegate to the `coverage-expander` subagent with
       `run_in_background: true`; do not write the tests inline and do not lower
       a threshold.
 
-- [ ] **Lint and types across everything the seam touched.**
+- [x] **Lint and types across everything the seam touched.**
 
 ```bash
 npm run type-check
 npx eslint --max-warnings 0 src/ tests/
 ```
 
-- [ ] **Ruby suite untouched and green.** Both halves matter — the second is the
+- [x] **Ruby suite untouched and green.** Both halves matter — the second is the
       one that catches a shim that quietly changed a signature.
 
 ```bash
@@ -1718,7 +1718,7 @@ npx vitest run tests/core/domains/language/ruby
 git diff --stat -- tests/core/domains/language/ruby   # MUST be empty
 ```
 
-- [ ] **Parity harness, timed, against the Task 2 baseline.**
+- [x] **Parity harness, timed, against the Task 2 baseline.**
 
 ```bash
 time npx tsx scripts/spikes/ruby-walker-composition-parity.ts \
@@ -1730,7 +1730,29 @@ time npx tsx scripts/spikes/ruby-walker-composition-parity.ts \
       property read per rank comparison and one call indirection per
       `fromFacts`, which is not a 10% shape.
 
-- [ ] **Optional corpus-level before/after.** If a stronger relocation proof is
+      **Measured (mastodon, `--limit 20000`, 3197 Ruby files compared).** The
+      harness gained an optional `--before-root <abs checkout>` flag in this
+      task: with it, the NATIVE side is `extractFromRubyFile` dynamically
+      imported from another checkout's
+      `src/core/domains/language/ruby/walker/walker.ts` while the composed side
+      stays this tree, which is the before/after evidence the same-tree mode
+      cannot give (Global Constraints caveat).
+
+      | Run                                                    | Result         | Wall  |
+      | ------------------------------------------------------ | -------------- | ----- |
+      | pre-Task-1 baseline (same-tree, HEAD `a05bd7917`)       | `mismatches 0` | 8.94s |
+      | post-Task-2 (same-tree)                                 | `mismatches 0` | 9.31s |
+      | post-Task-3 (same-tree)                                 | `mismatches 0` | 7.63s |
+      | post-Task-3 cross-checkout `--before-root` main `d7e942ab9` | `mismatches 0` | 7.23s |
+
+      The cross-checkout run is the seam gate: the pre-program main checkout's
+      Ruby monolith and this tree's composed walker produce byte-identical
+      `JSON.stringify` output over all 3197 files. Wall clock is 7.63s vs the
+      8.94s baseline — under, not over, so the +10% ceiling is not in play (the
+      36s outlier on the first post-Task-2 run was machine load from parallel
+      worktree sessions; the repeat measured 9.31s).
+
+- [x] **Optional corpus-level before/after.** If a stronger relocation proof is
       wanted than "the suite is green", the honest one is the tally, run once on
       the pre-Task-1 commit and once on HEAD, with `edges` / `fileOnly` /
       `unresolved` identical (relocation protocol step 3(b)):
@@ -1740,7 +1762,7 @@ npx tsx scripts/codegraph-chain-tally.ts --lang ruby \
   --corpus ~/Dev/Tools/tea-rags-bench/corpora/mastodon
 ```
 
-- [ ] **Add the navigator bullet.** In `src/core/domains/language/CLAUDE.md`,
+- [x] **Add the navigator bullet.** In `src/core/domains/language/CLAUDE.md`,
       append to the `## Mechanics` section, directly after the extraction-pass
       bullet it continues:
 
@@ -1766,7 +1788,7 @@ npx tsx scripts/codegraph-chain-tally.ts --lang ruby \
   first" — a behaviour change wearing a refactor's clothes.
 ```
 
-- [ ] **Commit.**
+- [x] **Commit.**
 
 ```text
 refactor(language): record the kernel type-fact seam in the navigator (fmcly)
@@ -1783,19 +1805,26 @@ Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>
 
 ## Self-review before handing back
 
-- [ ] Kernel symbol names are identical everywhere they appear in this plan and
+- [x] Kernel symbol names are identical everywhere they appear in this plan and
       in the code: `TypeRef`, `NIL_TYPE_REF`, `typeRefEquals`, `typeRefUnionOf`,
       `typeRefNonNilArms`, `typeRefReceiverForm`, `TypeFact`,
       `InlineTypeSource`, `SidecarTypeSource`, `ProjectTypeSourceContext`,
       `TypeFactStore`, `typeFactChannels`, `RUBY_TYPE_SOURCE_ORDER`.
-- [ ] Every Ruby name that existed before still resolves from the same path:
+- [x] Every Ruby name that existed before still resolves from the same path:
       `RubyTypeRef`, `RUBY_NIL_TYPE_REF`, `rubyTypeRefEquals`, `rubyUnionOf`,
       `rubyNonNilArms`, `rubyReceiverForm`, `RubyTypeFact`, `RubyTypeFactStore`,
       `RubyInlineTypeSource`, `RubySidecarTypeSource`,
       `ProjectTypeSourceContext`.
-- [ ] `git diff --stat -- tests/core/domains/language/ruby` is empty.
-- [ ] No file under `src/core/domains/language/kernel/` imports from
+- [x] `git diff --stat -- tests/core/domains/language/ruby` is empty.
+- [x] No file under `src/core/domains/language/kernel/` imports from
       `src/core/domains/language/<lang>/`.
-- [ ] `grep -rn "DEFAULT_SOURCE_ORDER" src` returns nothing — the const is gone,
-      not shadowed.
-- [ ] `grep -rn "rubyFiles" src tests scripts` returns nothing.
+- [x] `grep -rn "DEFAULT_SOURCE_ORDER" src` returns nothing — the const is gone,
+      not shadowed. Three stale PROSE mentions were renamed to
+      `RUBY_TYPE_SOURCE_ORDER` (`ruby/CLAUDE.md`,
+      `type-sources/body-last-expr.ts` and `walker/type-channels.ts` comments).
+      Two more live in Ruby TEST comments and were deliberately left: no Ruby
+      test is edited in this seam.
+- [x] `grep -rn "rubyFiles" src tests scripts` returns nothing IN `src` and
+      `tests` — the `ProjectTypeSourceContext` field is now `files`. Two hits
+      remain in `scripts/spikes/ruby-walker-composition-parity.ts`, which are an
+      unrelated local helper function of that script, not the contract field.

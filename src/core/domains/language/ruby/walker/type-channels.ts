@@ -89,7 +89,7 @@ export function attachRubyTypeChannels(
     // corpus-uniqueness gate, plus the memoized-reader tail this channel alone
     // carries (bd tea-rags-mcp-smvyk). Merged only where the store declared
     // nothing, so YARD / associations / the service-entry source keep precedence
-    // exactly as `DEFAULT_SOURCE_ORDER` states.
+    // exactly as `RUBY_TYPE_SOURCE_ORDER` states.
     for (const [key, ref] of Object.entries(collectRubyScopedBodyReturnTypes(root, catalogue))) {
       if (!(key in structuredReturnTypes)) structuredReturnTypes[key] = ref;
     }
