@@ -22,6 +22,7 @@ import { PythonAncestorLinearizerCache } from "../../../../../../../src/core/dom
 import { PythonImportFileMapper } from "../../../../../../../src/core/domains/language/python/resolver/python-import-file-mapper.js";
 import { PythonImportedNameSymbolResolutionStrategy } from "../../../../../../../src/core/domains/language/python/resolver/strategies/python-imported-name.js";
 import { PythonSelfMemberSymbolResolutionStrategy } from "../../../../../../../src/core/domains/language/python/resolver/strategies/python-self-member.js";
+import { PythonSuperSymbolResolutionStrategy } from "../../../../../../../src/core/domains/language/python/resolver/strategies/python-super.js";
 import { InMemoryGlobalSymbolTable } from "../../../../../../../src/core/domains/trajectory/codegraph/symbols/symbol-table.js";
 
 type Def = string | { readonly symbolId: string; readonly scope: readonly string[] };
@@ -309,5 +310,294 @@ describe("PythonImportedNameSymbolResolutionStrategy — class receiver on the M
     });
     const call: CallRef = { callText: "Widget.build()", receiver: "Widget", member: "build", startLine: 9 };
     expect(importedName().attempt(call, ctx)).toEqual({ kind: "continue" });
+  });
+});
+
+/**
+ * `super()` on the MRO (bd tea-rags-mcp-ntnke / tea-rags-mcp-wz956).
+ *
+ * `super()` means "dispatch from the position AFTER my class in the MRO", which
+ * the old single-parent `classExtends[enclosing]` hop cannot express: under
+ * `class C(A, B)` it saw only `A`, so a member declared on `B` was invisible.
+ * `startAfter: true` is exactly that semantics.
+ *
+ * `super` stays the one terminal GUARD pass (bd tea-rags-mcp-pic4 /
+ * tea-rags-mcp-4rgg): a miss DROPs and never falls through to the ambiguous
+ * short-name path, whatever the closure says. That is where `super` parts
+ * company with `selfMember`, which CONTINUEs on an `unknown` boundary.
+ */
+describe("PythonSuperSymbolResolutionStrategy — the MRO after the enclosing class", () => {
+  function superStrategy(): PythonSuperSymbolResolutionStrategy {
+    const mapper = new PythonImportFileMapper();
+    return new PythonSuperSymbolResolutionStrategy(
+      { mode: "strict" },
+      new PythonAncestorLinearizerCache(mapper, "strict"),
+    );
+  }
+
+  const superCall = (member: string, receiver = "super"): CallRef => ({
+    callText: `${receiver}.${member}()`,
+    receiver,
+    member,
+    startLine: 7,
+  });
+
+  it("resolves through the SECOND base when only it defines the member", () => {
+    // `class C(A, B)` with `m` on `B` only — the case the classExtends hop could
+    // not see, and the one jedi 0.20.0 itself gets wrong (its answer is
+    // withdrawn by `applySuperMroBlindSpot`, so the row scores `unknown`).
+    const table = tableWith({
+      "app/a.py": ["A"],
+      "app/b.py": ["B", "B#m"],
+      "app/c.py": ["C", "C#caller"],
+    });
+    const ctx = ctxWith({
+      callerFile: "app/c.py",
+      callerScope: ["C"],
+      table,
+      classAncestors: { "app/c.py::C": ["app.a::A", "app.b::B"] },
+    });
+    expect(superStrategy().attempt(superCall("m"), ctx)).toEqual({
+      kind: "resolved",
+      target: { targetRelPath: "app/b.py", targetSymbolId: "B#m" },
+    });
+  });
+
+  it("skips the caller's OWN class even when it also defines the member", () => {
+    const table = tableWith({ "app/base.py": ["Base", "Base#m"], "app/c.py": ["C", "C#m"] });
+    const ctx = ctxWith({
+      callerFile: "app/c.py",
+      callerScope: ["C"],
+      table,
+      classAncestors: { "app/c.py::C": ["app.base::Base"] },
+    });
+    expect(superStrategy().attempt(superCall("m"), ctx)).toEqual({
+      kind: "resolved",
+      target: { targetRelPath: "app/base.py", targetSymbolId: "Base#m" },
+    });
+  });
+
+  it("still accepts the pre-normalization `super()` receiver text", () => {
+    // An index written before bd ntnke carries the verbatim spelling.
+    const table = tableWith({ "app/base.py": ["Base", "Base#m"], "app/c.py": ["C"] });
+    const ctx = ctxWith({
+      callerFile: "app/c.py",
+      callerScope: ["C"],
+      table,
+      classAncestors: { "app/c.py::C": ["app.base::Base"] },
+    });
+    expect(superStrategy().attempt(superCall("m", "super()"), ctx)).toEqual({
+      kind: "resolved",
+      target: { targetRelPath: "app/base.py", targetSymbolId: "Base#m" },
+    });
+  });
+
+  it("resolves a @classmethod ancestor through the `.` spelling", () => {
+    const table = tableWith({ "app/base.py": ["Base", "Base.build"], "app/c.py": ["C"] });
+    const ctx = ctxWith({
+      callerFile: "app/c.py",
+      callerScope: ["C"],
+      table,
+      classAncestors: { "app/c.py::C": ["app.base::Base"] },
+    });
+    expect(superStrategy().attempt(superCall("build"), ctx)).toEqual({
+      kind: "resolved",
+      target: { targetRelPath: "app/base.py", targetSymbolId: "Base.build" },
+    });
+  });
+
+  it("DROPs when no project ancestor defines the member — closed hierarchy", () => {
+    const table = tableWith({ "app/base.py": ["Base"], "app/c.py": ["C"], "other/x.py": ["Thing", "Thing#m"] });
+    const ctx = ctxWith({
+      callerFile: "app/c.py",
+      callerScope: ["C"],
+      table,
+      classAncestors: { "app/c.py::C": ["app.base::Base"] },
+    });
+    expect(superStrategy().attempt(superCall("m"), ctx)).toEqual({ kind: "drop" });
+  });
+
+  it("DROPs — never CONTINUEs — on an EXTERNAL boundary", () => {
+    const table = tableWith({ "app/models.py": ["Device"], "other/x.py": ["Helper", "Helper#save"] });
+    const ctx = ctxWith({
+      callerFile: "app/models.py",
+      callerScope: ["Device"],
+      table,
+      classAncestors: { "app/models.py::Device": ["django.db.models::Model"] },
+    });
+    expect(superStrategy().attempt(superCall("save"), ctx)).toEqual({ kind: "drop" });
+  });
+
+  it("DROPs — never CONTINUEs — on an UNKNOWN boundary, unlike selfMember", () => {
+    const table = tableWith({ "app/c.py": ["C"], "other/x.py": ["Thing", "Thing#m"] });
+    const ctx = ctxWith({
+      callerFile: "app/c.py",
+      callerScope: ["C"],
+      table,
+      classAncestors: { "app/c.py::C": ["Mystery"] },
+    });
+    expect(superStrategy().attempt(superCall("m"), ctx)).toEqual({ kind: "drop" });
+  });
+
+  it("DROPs when the enclosing class declares no ancestors at all", () => {
+    const table = tableWith({ "app/c.py": ["C"], "other/x.py": ["Thing", "Thing#m"] });
+    const ctx = ctxWith({ callerFile: "app/c.py", callerScope: ["C"], table, classAncestors: {} });
+    expect(superStrategy().attempt(superCall("m"), ctx)).toEqual({ kind: "drop" });
+  });
+
+  it("keys a NESTED caller by its dotted FQ", () => {
+    const table = tableWith({
+      "app/base.py": ["Base", "Base#m"],
+      "app/c.py": ["Outer", { symbolId: "Outer.Inner", scope: ["Outer"] }],
+    });
+    const ctx = ctxWith({
+      callerFile: "app/c.py",
+      callerScope: ["Outer", "Inner"],
+      table,
+      classAncestors: { "app/c.py::Outer.Inner": ["app.base::Base"] },
+    });
+    expect(superStrategy().attempt(superCall("m"), ctx)).toEqual({
+      kind: "resolved",
+      target: { targetRelPath: "app/base.py", targetSymbolId: "Base#m" },
+    });
+  });
+
+  it("CONTINUEs when the receiver is not a super form at all", () => {
+    const table = tableWith({ "app/c.py": ["C"] });
+    const ctx = ctxWith({ callerFile: "app/c.py", callerScope: ["C"], table, classAncestors: {} });
+    expect(superStrategy().attempt(superCall("m", "self"), ctx)).toEqual({ kind: "continue" });
+  });
+
+  it("keeps the pre-seam classExtends walk when the index carries no classAncestors", () => {
+    const table = tableWith({ "app/base.py": ["Base", "Base#m"], "app/c.py": ["C"] });
+    const ctx = ctxWith({ callerFile: "app/c.py", callerScope: ["C"], table, classExtends: { C: "Base" } });
+    expect(superStrategy().attempt(superCall("m"), ctx)).toEqual({
+      kind: "resolved",
+      target: { targetRelPath: "app/base.py", targetSymbolId: "Base#m" },
+    });
+  });
+
+  // A truncated linearization may SUPPLY an answer, never DISPLACE one. The
+  // netbox shape: `netbox/netbox/models/__init__.py` takes every base of
+  // `ChangeLoggedModel` from a star import, so the walker emits them bare, no
+  // file pins them, and the MRO of every model below stops one hop in.
+  it("lets the pre-seam walk keep its answer when the linearization is TRUNCATED", () => {
+    const table = tableWith({ "app/base.py": ["Base", "Base#m"], "app/c.py": ["C"] });
+    const ctx = ctxWith({
+      callerFile: "app/c.py",
+      callerScope: ["C"],
+      table,
+      classAncestors: { "app/c.py::C": ["Mystery"] },
+      classExtends: { C: "Base" },
+    });
+    expect(superStrategy().attempt(superCall("m"), ctx)).toEqual({
+      kind: "resolved",
+      target: { targetRelPath: "app/base.py", targetSymbolId: "Base#m" },
+    });
+  });
+
+  it("prefers a later MRO definer over the bare-name walk when the hierarchy is CLOSED", () => {
+    // Read to the end, the order IS evidence of precedence, and the run-global
+    // bare-name `classExtends` chain is the less sound of the two.
+    const table = tableWith({
+      "app/b.py": ["B", "B#m"],
+      "app/legacy.py": ["Legacy", "Legacy#m"],
+      "app/c.py": ["C"],
+    });
+    const ctx = ctxWith({
+      callerFile: "app/c.py",
+      callerScope: ["C"],
+      table,
+      classAncestors: { "app/c.py::C": ["app.b::B"] },
+      classExtends: { C: "Legacy" },
+    });
+    expect(superStrategy().attempt(superCall("m"), ctx)).toEqual({
+      kind: "resolved",
+      target: { targetRelPath: "app/b.py", targetSymbolId: "B#m" },
+    });
+  });
+
+  it("still DROPs when NEITHER the truncated MRO nor the pre-seam walk has an answer", () => {
+    const table = tableWith({ "app/c.py": ["C"], "other/x.py": ["Thing", "Thing#m"] });
+    const ctx = ctxWith({
+      callerFile: "app/c.py",
+      callerScope: ["C"],
+      table,
+      classAncestors: { "app/c.py::C": ["Mystery"] },
+      classExtends: {},
+    });
+    expect(superStrategy().attempt(superCall("m"), ctx)).toEqual({ kind: "drop" });
+  });
+});
+
+/**
+ * The explicit two-argument `super(Cls, self)`. The walker leaves its receiver
+ * text verbatim, because `Cls` names the class the walk starts AFTER and that
+ * is not always the enclosing class. Where it IS the enclosing class the call
+ * is semantically identical to `super()` and resolves the same way; where it
+ * names anything else this pass declines and the chain carries on.
+ */
+describe("PythonSuperSymbolResolutionStrategy — the two-argument form", () => {
+  function superStrategy(): PythonSuperSymbolResolutionStrategy {
+    const mapper = new PythonImportFileMapper();
+    return new PythonSuperSymbolResolutionStrategy(
+      { mode: "strict" },
+      new PythonAncestorLinearizerCache(mapper, "strict"),
+    );
+  }
+
+  const twoArg = (cls: string, member: string): CallRef => ({
+    callText: `super(${cls}, self).${member}()`,
+    receiver: `super(${cls}, self)`,
+    member,
+    startLine: 7,
+  });
+
+  const table = () => tableWith({ "app/base.py": ["Base", "Base#m"], "app/c.py": ["C", "C#m"] });
+
+  const ctxFor = (t: InMemoryGlobalSymbolTable): CallContext =>
+    ctxWith({
+      callerFile: "app/c.py",
+      callerScope: ["C"],
+      table: t,
+      classAncestors: { "app/c.py::C": ["app.base::Base"] },
+    });
+
+  it("resolves like `super()` when the named class IS the enclosing class", () => {
+    expect(superStrategy().attempt(twoArg("C", "m"), ctxFor(table()))).toEqual({
+      kind: "resolved",
+      target: { targetRelPath: "app/base.py", targetSymbolId: "Base#m" },
+    });
+  });
+
+  it("CONTINUEs when the named class is NOT the enclosing class", () => {
+    // `super(Base, self)` starts after `Base`, not after `C`. This pass has no
+    // answer for it, so it declines rather than guessing the enclosing class's.
+    expect(superStrategy().attempt(twoArg("Base", "m"), ctxFor(table()))).toEqual({ kind: "continue" });
+  });
+
+  it("accepts the dotted FQ of a nested enclosing class", () => {
+    const t = tableWith({
+      "app/base.py": ["Base", "Base#m"],
+      "app/c.py": ["Outer", { symbolId: "Outer.Inner", scope: ["Outer"] }],
+    });
+    const ctx = ctxWith({
+      callerFile: "app/c.py",
+      callerScope: ["Outer", "Inner"],
+      table: t,
+      classAncestors: { "app/c.py::Outer.Inner": ["app.base::Base"] },
+    });
+    expect(superStrategy().attempt(twoArg("Outer.Inner", "m"), ctx)).toEqual({
+      kind: "resolved",
+      target: { targetRelPath: "app/base.py", targetSymbolId: "Base#m" },
+    });
+  });
+
+  it("CONTINUEs on the two-argument form when the index carries no classAncestors", () => {
+    const t = tableWith({ "app/base.py": ["Base", "Base#m"], "app/c.py": ["C"] });
+    const ctx = ctxWith({ callerFile: "app/c.py", callerScope: ["C"], table: t, classExtends: { C: "Base" } });
+    // The pre-seam walk starts at the single parent, which is the right answer
+    // only for `super()`. Declining keeps walker-v2 behaviour byte-identical.
+    expect(superStrategy().attempt(twoArg("C", "m"), ctx)).toEqual({ kind: "continue" });
   });
 });

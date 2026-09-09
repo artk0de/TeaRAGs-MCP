@@ -57,7 +57,7 @@ export function createPythonSymbolResolutionChain(
   linearizers: PythonAncestorLinearizerCache = new PythonAncestorLinearizerCache(mapper, cfg.mode),
 ): SymbolResolutionStrategy[] {
   return [
-    new PythonSuperSymbolResolutionStrategy(cfg),
+    new PythonSuperSymbolResolutionStrategy(cfg, linearizers),
     new PythonSelfFieldSymbolResolutionStrategy(cfg, mapper),
     new PythonSelfMemberSymbolResolutionStrategy(cfg, linearizers),
     new PythonLocalBindingSymbolResolutionStrategy(cfg, mapper),

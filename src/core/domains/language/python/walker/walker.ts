@@ -155,8 +155,19 @@ function collectPythonInheritanceEdges(root: AstNode): InheritanceEdgeDecl[] {
       if (supers) {
         let ordinal = 0;
         for (const base of supers.namedChildren) {
-          if (base.type !== "identifier" && base.type !== "attribute" && base.type !== "dotted_name") continue;
-          const ancestor = base.text;
+          // A `subscript` is a GENERIC base: `RepositoryBase[Account]`. Its
+          // `value` child is the class; the subscript is a type argument and is
+          // never part of the hierarchy. Unwrapping it here mirrors
+          // `collectPythonClassAncestors` (bd tea-rags-mcp-wz956) — polar
+          // declares every repository base that way, so without the unwrap
+          // those files emitted an EMPTY edge list, `inheritanceEdges` stayed
+          // absent, and `inheritance-edges.ts` read the absence as "walker not
+          // migrated" and lifted the `<relPath>::<fq>`-keyed `classAncestors`
+          // into junk `include` rows on every reindex (bd tea-rags-mcp-m1sf0).
+          const named = base.type === "subscript" ? base.childForFieldName("value") : base;
+          if (!named) continue;
+          if (named.type !== "identifier" && named.type !== "attribute" && named.type !== "dotted_name") continue;
+          const ancestor = named.text;
           if (ancestor.length === 0) continue;
           edges.push({ source: fq, ancestor, kind: "super", ordinal: ordinal++ });
         }
@@ -717,6 +728,32 @@ function pickModuleText(node: AstNode): string | null {
   }
 }
 
+/**
+ * A zero-argument `super()` receiver is recorded as the bare text `super` (bd
+ * tea-rags-mcp-ntnke). `classifyReceiverKind`'s `SUPER_MARKERS` holds `"super"`
+ * and `"<super>"`, so the verbatim `"super()"` filed every one of these sites
+ * under `dynamic` — 1,446 rows on netbox, 1,242 on polar. Normalizing here
+ * rather than widening the classifier keeps a shared, language-neutral
+ * instrument free of one language's spelling, and
+ * `PythonSuperSymbolResolutionStrategy` already accepts both texts, so the
+ * resolver needs no change.
+ *
+ * The match is on the node SHAPE — `function` is the identifier `super`, the
+ * argument list is empty — not on the text, so `super ()` normalizes too.
+ *
+ * The explicit two-argument `super(Cls, self)` is NOT normalized: its first
+ * argument names the class the walk starts after, which is not always the
+ * enclosing class, and no E0.9 corpus row uses it. It keeps its verbatim
+ * receiver text and stays `dynamic`.
+ */
+function normalizePythonReceiverText(node: AstNode): string {
+  if (node.type !== "call") return node.text;
+  const fn = node.childForFieldName("function");
+  if (fn?.type !== "identifier" || fn.text !== "super") return node.text;
+  const args = node.childForFieldName("arguments");
+  return args === null || args.namedChildren.length === 0 ? "super" : node.text;
+}
+
 function collectPythonCalls(root: AstNode): CallRef[] {
   const out: CallRef[] = [];
   walk(root, (node) => {
@@ -733,7 +770,7 @@ function collectPythonCalls(root: AstNode): CallRef[] {
       const obj = fn.childForFieldName("object");
       const attr = fn.childForFieldName("attribute");
       if (!obj || !attr) return;
-      out.push({ callText: node.text, receiver: obj.text, member: attr.text, startLine });
+      out.push({ callText: node.text, receiver: normalizePythonReceiverText(obj), member: attr.text, startLine });
     } else {
       // Bare call like `foo(...)`.
       out.push({ callText: node.text, receiver: null, member: fn.text, startLine });
