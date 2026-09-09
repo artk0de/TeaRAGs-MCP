@@ -319,11 +319,11 @@ describe("PythonCallResolver", () => {
           serializer: [{ line: 1, type: "ToggleReactionSerializer" }],
         }),
       );
-      // Type's file resolved (engagement/serializers/reaction.py) but
-      // is_valid not defined on ToggleReactionSerializer → file-only
-      // attribution, NEVER ConfirmationCode#is_valid.
-      expect(target?.targetSymbolId).toBeNull();
-      expect(target?.targetRelPath).toBe("engagement/serializers/reaction.py");
+      // lbtmm: the file-only fallback now needs the bound type corroborated as
+      // class-kind, and this fixture gives `ToggleReactionSerializer` no base
+      // and no members — the same shape a top-level `def` has. The point of the
+      // test is unchanged and stronger: NEVER ConfirmationCode#is_valid.
+      expect(target).toBeNull();
     });
 
     it("resolves correctly when the method IS defined on the bound type", () => {
@@ -794,25 +794,25 @@ describe("PythonCallResolver", () => {
         classFieldTypes: { Handler: { service: "SomeService" } },
       };
       // `inherited()` not defined on SomeService anywhere in the table —
-      // inherited from a base class outside the project. The field type
-      // IS known, so emit a type-qualified best-effort target anchored to
-      // the bare type name rather than dropping. Mirrors the Java resolver's
-      // CharSequence#charAt external path.
+      // inherited from a base class outside the project.
       const target = resolver.resolve(
         { callText: "self.service.inherited()", receiver: "self.service", member: "inherited", startLine: 8 },
         ctx,
       );
-      expect(target?.targetRelPath).toBe("SomeService");
-      expect(target?.targetSymbolId).toBe("SomeService#inherited");
+      // lbtmm: the type-qualified best-effort anchor is gone — its
+      // `targetRelPath` was a TYPE NAME where every consumer expects a file.
+      // No import binds `SomeService` here, so the type is UNKNOWN and the pass
+      // CONTINUEs; nothing downstream defines `inherited`, so the call is
+      // unresolved rather than anchored to a file that does not exist.
+      expect(target).toBeNull();
     });
 
-    it("resolves `self._context_stack.close()` to an external `ExitStack#close` target (stdlib type, not in table)", () => {
+    it("emits NO target for `self._context_stack.close()` — a stdlib type is not a file (lbtmm)", () => {
       const resolver = new PythonCallResolver();
       const table = new InMemoryGlobalSymbolTable();
       // ExitStack is `contextlib` stdlib — NOT in the indexed repo. The
       // field's type is known from the `__init__` constructor assignment
-      // (`self._context_stack = ExitStack()`), so the call resolves to a
-      // type-qualified best-effort target instead of being dropped.
+      // (`self._context_stack = ExitStack()`).
       const ctx: CallContext = {
         callerFile: "flask/testing.py",
         callerScope: ["FlaskClient"],
@@ -824,11 +824,14 @@ describe("PythonCallResolver", () => {
         { callText: "self._context_stack.close()", receiver: "self._context_stack", member: "close", startLine: 12 },
         ctx,
       );
-      expect(target?.targetRelPath).toBe("ExitStack");
-      expect(target?.targetSymbolId).toBe("ExitStack#close");
+      // lbtmm: `{ targetRelPath: "ExitStack" }` named a type where the graph
+      // stores a file path, so the edge joined nothing and inflated the
+      // source's fanOut. `imports` is empty here, so the type is UNKNOWN rather
+      // than externally classified and the pass CONTINUEs into an empty table.
+      expect(target).toBeNull();
     });
 
-    it("resolves `self._context_stack.enter_context(cm)` to an external `ExitStack#enter_context` target", () => {
+    it("emits NO target for `self._context_stack.enter_context(cm)` either (lbtmm)", () => {
       const resolver = new PythonCallResolver();
       const table = new InMemoryGlobalSymbolTable();
       const ctx: CallContext = {
@@ -847,8 +850,8 @@ describe("PythonCallResolver", () => {
         },
         ctx,
       );
-      expect(target?.targetRelPath).toBe("ExitStack");
-      expect(target?.targetSymbolId).toBe("ExitStack#enter_context");
+      // lbtmm: same synthetic anchor, same verdict — see the test above.
+      expect(target).toBeNull();
     });
 
     it("does not apply field resolution outside a class scope (callerScope empty)", () => {

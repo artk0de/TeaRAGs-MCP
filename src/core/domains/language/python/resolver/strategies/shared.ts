@@ -17,6 +17,8 @@ import {
   type CallContext,
   type SymbolResolutionTarget,
 } from "../../../../../contracts/types/codegraph.js";
+import { PYTHON_BUILTINS } from "../../vocabulary/builtins.js";
+import type { PythonImportFileMapper } from "../python-import-file-mapper.js";
 
 export interface ResolverConfig {
   mode: AmbiguousResolveMode;
@@ -77,6 +79,69 @@ export function walkClassExtendsForMethod(
 export function lastSegment(qualified: string): string {
   const parts = qualified.split(".");
   return parts[parts.length - 1] ?? qualified;
+}
+
+/**
+ * Does this TYPE NAME belong to something outside the project (bd
+ * tea-rags-mcp-lbtmm)?
+ *
+ * Two arms, both positive verdicts rather than residuals:
+ *   - a BUILTIN (`dict`, `str`, `list`) — bound by the interpreter, so no
+ *     project file can declare it;
+ *   - a name an import BOUND from a module the {@link PythonImportFileMapper}
+ *     calls `external`. The ROOT segment is what the statement binds, so
+ *     `io.BytesIO` is decided by `io` and `Pattern` by itself.
+ *
+ * Same shape — deliberately — as `PythonExternalVocabulary.isBareCallExternal`:
+ * the vocabulary and the chain must answer one import question the same way, or
+ * a call the chain drops lands back in the recall denominator.
+ *
+ * `false` means UNKNOWN, never "in project": nothing here proves a type is
+ * ours, and the callers act on the two verdicts differently.
+ */
+export function pythonTypeNameIsExternal(typeName: string, ctx: CallContext, mapper: PythonImportFileMapper): boolean {
+  const root = typeName.split(".")[0];
+  if (root.length === 0) return false;
+  if (PYTHON_BUILTINS.has(root)) return true;
+  for (const imp of ctx.imports) {
+    const bound = imp.importedBindings?.[root] ?? (imp.importedNames?.includes(root) ? root : undefined);
+    if (bound === undefined) continue;
+    if (mapper.mapImportToFile(imp.importText, ctx.callerFile, ctx).kind === "external") return true;
+  }
+  return false;
+}
+
+/**
+ * Can `bareType` OWN a member — is it class-kind (bd tea-rags-mcp-lbtmm)?
+ *
+ * A Python `class Foo` and a top-level `def foo` are INDISTINGUISHABLE in the
+ * symbol table: both compose a bare `symbolId` with an empty scope, and
+ * `SymbolDefinition` carries no kind. So the question is answered by
+ * corroboration instead, and any ONE channel is enough:
+ *
+ *   - the walker recorded a BASE class for it (`classExtends`) — the shape
+ *     behind every legitimate file-only edge, since a member the class itself
+ *     does not declare has to be inherited from somewhere;
+ *   - the walker recorded typed FIELDS on it (`classFieldTypes`);
+ *   - the table holds `<Type>#<member>` / `<Type>.<member>` — it owns the very
+ *     member under resolution.
+ *
+ * No member to probe (the cone locator asks about a type, not a call) leaves
+ * the first two channels, so the answer degrades toward "yes" rather than
+ * silently narrowing a caller that never asked for the guard.
+ *
+ * The measured miss this refuses: polar declares `def datetime(value)` in
+ * `server/polar/backoffice/formatters.py`, and it was the sole short-name match
+ * for every `x: datetime` receiver in the repo.
+ */
+export function pythonTypeOwnsMembers(bareType: string, member: string | undefined, ctx: CallContext): boolean {
+  if (ctx.classExtends?.[bareType] !== undefined) return true;
+  if (ctx.classFieldTypes?.[bareType] !== undefined) return true;
+  if (member === undefined) return true;
+  return (
+    ctx.symbolTable.lookup(`${bareType}#${member}`).length > 0 ||
+    ctx.symbolTable.lookup(`${bareType}.${member}`).length > 0
+  );
 }
 
 export function pythonImportMatchesReceiver(importText: string, receiver: string): boolean {

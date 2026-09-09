@@ -10,6 +10,8 @@ export {
   CONE_MAX_DEFAULT,
   lastSegment,
   pythonImportMatchesReceiver,
+  pythonTypeNameIsExternal,
+  pythonTypeOwnsMembers,
   walkClassExtendsForMethod,
   type ResolverConfig,
 } from "./shared.js";

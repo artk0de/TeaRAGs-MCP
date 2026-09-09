@@ -9,7 +9,13 @@ import {
 import type { SymbolResolutionOutcome, SymbolResolutionStrategy } from "../../../../../contracts/types/language.js";
 import { PythonImportFileMapper } from "../python-import-file-mapper.js";
 import { mapPythonImportToFile } from "../python-path-mapper.js";
-import { lastSegment, walkClassExtendsForMethod, type ResolverConfig } from "./shared.js";
+import {
+  lastSegment,
+  pythonTypeNameIsExternal,
+  pythonTypeOwnsMembers,
+  walkClassExtendsForMethod,
+  type ResolverConfig,
+} from "./shared.js";
 
 /**
  * Walker-inferred local type — `var.method()` where `var` maps to a known class
@@ -81,7 +87,7 @@ export class PythonLocalBindingSymbolResolutionStrategy implements SymbolResolut
     // ToggleReactionSerializer`) or as a module path that ends in the
     // class name (rare).
     const bareType = lastSegment(typeName);
-    const targetFile = resolveTypeFile(bareType, ctx, this.mapper);
+    const targetFile = resolveTypeFile(bareType, ctx, this.mapper, member);
     if (!targetFile) return null;
 
     const candidates = ctx.symbolTable
@@ -127,12 +133,33 @@ export class PythonLocalBindingSymbolResolutionStrategy implements SymbolResolut
  * `docs/superpowers/plans/2026-09-08-python-import-file-mapper.md`: three
  * states exist precisely so "I cannot tell" and "I know it is a library" behave
  * differently.
+ *
+ * `member` is the member being resolved ON the type, and it is what lets the
+ * short-name pass tell a class from a same-named `def` (bd tea-rags-mcp-lbtmm)
+ * — see {@link pythonTypeOwnsMembers}. Optional: the cone locator asks about a
+ * TYPE with no call in hand, and omitting it leaves that caller's answers
+ * exactly as they were.
  */
-export function resolveTypeFile(bareType: string, ctx: CallContext, mapper: PythonImportFileMapper): string | null {
+export function resolveTypeFile(
+  bareType: string,
+  ctx: CallContext,
+  mapper: PythonImportFileMapper,
+  member?: string,
+): string | null {
+  // An import-bound name the mapper calls EXTERNAL is a library class, and no
+  // project file declares it. Deciding that FIRST is what stops the short-name
+  // pass below from answering with a namesake: `from datetime import datetime`
+  // in 53 polar files, against polar's own `def datetime(value)` in
+  // `server/polar/backoffice/formatters.py` (bd tea-rags-mcp-lbtmm).
+  if (pythonTypeNameIsExternal(bareType, ctx, mapper)) return null;
+
   // First pass: scan symbol table for ANY definition matching the
-  // bare type name. If it's unique we have the file directly.
+  // bare type name. If it's unique we have the file directly — provided the
+  // match can OWN a member at all, which a top-level `def` cannot.
   const tableMatches = ctx.symbolTable.lookupByShortName(bareType);
-  if (tableMatches.length === 1) return tableMatches[0].relPath;
+  if (tableMatches.length === 1) {
+    return pythonTypeOwnsMembers(bareType, member, ctx) ? tableMatches[0].relPath : null;
+  }
 
   // Second pass: try to disambiguate via imports — the class file
   // must be one of the files reachable from the caller's imports. Only a

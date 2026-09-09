@@ -1,7 +1,8 @@
 import { CONTINUE, DROP, resolved } from "../../../../../contracts/resolution.js";
 import { pickSingleCandidate, type CallContext, type CallRef } from "../../../../../contracts/types/codegraph.js";
 import type { SymbolResolutionOutcome, SymbolResolutionStrategy } from "../../../../../contracts/types/language.js";
-import type { ResolverConfig } from "./shared.js";
+import { PythonImportFileMapper } from "../python-import-file-mapper.js";
+import { pythonTypeNameIsExternal, type ResolverConfig } from "./shared.js";
 
 /**
  * Cross-method instance-field dispatch — `self.<field>.<method>()` where
@@ -23,7 +24,16 @@ import type { ResolverConfig } from "./shared.js";
  */
 export class PythonSelfFieldSymbolResolutionStrategy implements SymbolResolutionStrategy {
   readonly name = "selfField";
-  constructor(private readonly cfg: ResolverConfig) {}
+  /**
+   * `mapper` is the resolver's shared `PythonImportFileMapper` when the caller
+   * has one (bd tea-rags-mcp-9fgdi, E2.6): the external-type verdict below asks
+   * the same import question the rest of the chain does and must read the same
+   * memo. A caller with no chain to share with omits it and gets a private one.
+   */
+  constructor(
+    private readonly cfg: ResolverConfig,
+    private readonly mapper: PythonImportFileMapper = new PythonImportFileMapper(),
+  ) {}
 
   attempt(call: CallRef, ctx: CallContext): SymbolResolutionOutcome {
     if (!call.receiver || !call.receiver.startsWith("self.") || ctx.callerScope.length === 0) return CONTINUE;
@@ -35,20 +45,26 @@ export class PythonSelfFieldSymbolResolutionStrategy implements SymbolResolution
     if (typeName) {
       // Field type known → resolution is CONSTRAINED to that class.
       // Instance form first (the common dispatch shape), static fallback.
-      // When neither matches the type is EXTERNAL (stdlib / third-party —
-      // e.g. `self._context_stack = ExitStack()` from `contextlib`), so emit
-      // a type-qualified best-effort target anchored to the bare type name
-      // rather than dropping. This records the dependency without fabricating
-      // a wrong `.py` file and never falls through to the ambiguous short-name
-      // path — the type is KNOWN from a constructor assignment, so we attach
-      // it to that type (instance `#` form: the call is on a value), never to
-      // an unrelated class that happens to define `<member>`. Mirrors the Java
-      // resolver's CharSequence#charAt external path.
       const instanceHit = pickSingleCandidate(ctx.symbolTable.lookup(`${typeName}#${call.member}`), this.cfg.mode);
       if (instanceHit) return resolved({ targetRelPath: instanceHit.relPath, targetSymbolId: instanceHit.symbolId });
       const staticHit = pickSingleCandidate(ctx.symbolTable.lookup(`${typeName}.${call.member}`), this.cfg.mode);
       if (staticHit) return resolved({ targetRelPath: staticHit.relPath, targetSymbolId: staticHit.symbolId });
-      return resolved({ targetRelPath: typeName, targetSymbolId: `${typeName}#${call.member}` });
+      // Neither form is in the table, so the type is not a project class and
+      // there is nothing to point AT. This used to emit
+      // `{ targetRelPath: typeName, targetSymbolId: "<Type>#<member>" }` — a
+      // best-effort anchor borrowed from the Java resolver's
+      // `CharSequence#charAt` path — and the `targetRelPath` half of it is a
+      // TYPE NAME where every consumer expects a file: `cg_symbols_edges_file`
+      // stores it, nothing joins it, and the source's fanOut inflates against a
+      // row that does not exist. 184 such rows across the five Python corpora,
+      // none of them a match (bd tea-rags-mcp-lbtmm).
+      //
+      // So: never synthesize. An EXTERNAL type (a builtin, or a name an import
+      // bound from outside the project — `io.BytesIO`, `httpx.Client`,
+      // `re.Pattern`) is a verdict, and it DROPS so the external gate can take
+      // the call out of the recall denominator instead. A type nothing can
+      // classify is not a verdict, and CONTINUEs.
+      return pythonTypeNameIsExternal(typeName, ctx, this.mapper) ? DROP : CONTINUE;
     }
     // Field type NOT recorded. A `self.<field>` receiver is an instance-field
     // access, never a module/import name, so DROP rather than fall through to
