@@ -29,6 +29,7 @@ import type { AstNode } from "../../../../../contracts/types/ast.js";
 import type { TypeRef } from "../../../../../contracts/types/language.js";
 import type { InlineTypeSource, TypeFact } from "../../../kernel/type-facts.js";
 import type { PythonTypeSourceInput } from "./python-annotation-type-source.js";
+import { PYTHON_AST_SOURCE } from "./python-ast-type-source.js";
 import { pythonAnnotationExpression, walkPythonScopes, type PythonForStatementSite } from "./python-def-scope-walk.js";
 import {
   PYTHON_CONTAINER_FIRST,
@@ -37,13 +38,6 @@ import {
   pythonNominalReceiverName,
   pythonTypeRefFromNode,
 } from "./python-type-annotation.js";
-
-/**
- * Python's third type source: what the walker infers from the AST itself,
- * outranked by both `annotations` and `docstring`. The rank was reserved in
- * `PYTHON_TYPE_SOURCE_ORDER` before any source claimed it.
- */
-export const PYTHON_AST_SOURCE = "ast";
 
 /** One annotated binding, kept with its line so a later re-annotation cannot type an earlier loop. */
 interface PythonAnnotatedBinding {

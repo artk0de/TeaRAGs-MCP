@@ -261,8 +261,9 @@
 
 - **Python publishes type facts on THREE channels, not the kernel's four.**
   `python/walker/passes/annotation-type-facts.ts` is the only entry in
-  `PYTHON_EXTRACTION_PASSES`: two inline sources (`annotations`, then
-  `docstring`, disjoint by construction) → `TypeFactStore` under
+  `PYTHON_EXTRACTION_PASSES`: three inline sources (`annotations`, then
+  `docstring`, then `ast` — a def's return read off its own `return` statements,
+  which speaks only where the first two are silent) → `TypeFactStore` under
   `PYTHON_TYPE_SOURCE_ORDER` → `pythonTypeChannels`, which wraps
   `typeFactChannels` and re-keys its output. `ivarTypes` becomes
   `classFieldTypes` keyed by class SHORT name, because that is what
