@@ -18,6 +18,7 @@
 import { describe, expect, it } from "vitest";
 
 import type { CallContext, CallRef, ImportRef } from "../../../../../../../src/core/contracts/types/codegraph.js";
+import { PythonAncestorLinearizerCache } from "../../../../../../../src/core/domains/language/python/resolver/python-ancestor-policy.js";
 import { PythonImportFileMapper } from "../../../../../../../src/core/domains/language/python/resolver/python-import-file-mapper.js";
 import { PythonImportedNameSymbolResolutionStrategy } from "../../../../../../../src/core/domains/language/python/resolver/strategies/python-imported-name.js";
 import { InMemoryGlobalSymbolTable } from "../../../../../../../src/core/domains/trajectory/codegraph/symbols/symbol-table.js";
@@ -746,5 +747,120 @@ describe("PythonImportedNameSymbolResolutionStrategy — the bound name is not a
       table,
     );
     expect(strategy().attempt(call("orders", "place"), ctx)).toEqual({ kind: "continue" });
+  });
+});
+
+/**
+ * Where the cnco6 arm fall-through meets the 9fgdi MRO arm (bd tea-rags-mcp-cnco6).
+ *
+ * `resolveDeclaredName` gained a third verdict — a class hierarchy read to its
+ * end that does not own the member DROPs — and the fixtures above never see it,
+ * because `strategy()` builds the pass with no linearizer and the arm CONTINUEs.
+ * The corpora DO carry `classAncestors`, so these two pin the interaction with
+ * the linearizer wired the way `createPythonSymbolResolutionChain` wires it.
+ */
+describe("PythonImportedNameSymbolResolutionStrategy — MRO verdict vs the sibling arms", () => {
+  function inheritingStrategy(): PythonImportedNameSymbolResolutionStrategy {
+    const mapper = new PythonImportFileMapper();
+    return new PythonImportedNameSymbolResolutionStrategy(
+      { mode: "strict" },
+      mapper,
+      new PythonAncestorLinearizerCache(mapper, "strict"),
+    );
+  }
+
+  it("still asks the module arm when the hijacked symbol's hierarchy DROPs", () => {
+    // polar's `from . import pan_transfer`, now with the channel the corpora
+    // carry: the MRO arm reads `pkg/endpoints.py::sub` to its end — `sub` is a
+    // top-level `def`, so the hierarchy is empty and CLOSED — and DROPs. That
+    // verdict is about the passes BELOW this one. The module arm is a SIBLING
+    // with its own evidence, and it resolves. 22 polar rows.
+    const table = tableWith({
+      "pkg/__init__.py": ["setup"],
+      "pkg/main.py": ["run"],
+      "pkg/sub.py": ["helper"],
+      "pkg/endpoints.py": ["sub"],
+    });
+    const ctx: CallContext = {
+      ...ctxWith(
+        "pkg/main.py",
+        [{ importText: ".", startLine: 1, importedNames: ["sub"], importedBindings: { sub: "sub" } }],
+        table,
+      ),
+      classAncestors: {},
+    };
+    expect(inheritingStrategy().attempt(call("sub", "helper"), ctx)).toEqual({
+      kind: "resolved",
+      target: { targetRelPath: "pkg/sub.py", targetSymbolId: "helper" },
+    });
+  });
+
+  it("keeps the DROP when the module arm has nothing to say either", () => {
+    // The other side of the same gate: a REAL class receiver whose read
+    // hierarchy does not own the member. `app.models.Widget` names no file, so
+    // the sibling arm declines and the MRO verdict stands.
+    const table = tableWith({ "app/views.py": ["View"], "app/models.py": ["Widget", "Widget#save"] });
+    const ctx: CallContext = {
+      ...ctxWith(
+        "app/views.py",
+        [{ importText: "app.models", startLine: 1, importedNames: ["Widget"], importedBindings: { Widget: "Widget" } }],
+        table,
+      ),
+      classAncestors: {},
+    };
+    expect(inheritingStrategy().attempt(call("Widget", "missing"), ctx)).toEqual({ kind: "drop" });
+  });
+
+  it("resolves a SINGLETON the hop mis-attributed to a same-named task handler", () => {
+    // polar: `from .grant.service import benefit_grant as benefit_grant_service`
+    // over `benefit_grant = BenefitGrantService()`. The bound name is a value,
+    // so the mapped file does not declare it — but the caller's own
+    // `async def benefit_grant(...)` is the project's unique declaration of that
+    // bare name, so the re-export hop lands there and its empty hierarchy DROPs.
+    // The hop is what is suspect; the file the IMPORT names still declares the
+    // member once. 18 rows.
+    const table = tableWith({
+      "app/tasks.py": ["benefit_grant"],
+      "app/grant/service.py": ["BenefitGrantService", "BenefitGrantService#grant_benefit"],
+    });
+    const ctx: CallContext = {
+      ...ctxWith(
+        "app/tasks.py",
+        [
+          {
+            importText: ".grant.service",
+            startLine: 1,
+            importedNames: ["benefit_grant_service"],
+            importedBindings: { benefit_grant_service: "benefit_grant" },
+          },
+        ],
+        table,
+      ),
+      classAncestors: {},
+    };
+    expect(inheritingStrategy().attempt(call("benefit_grant_service", "grant_benefit"), ctx)).toEqual({
+      kind: "resolved",
+      target: { targetRelPath: "app/grant/service.py", targetSymbolId: "BenefitGrantService#grant_benefit" },
+    });
+  });
+
+  it("leaves a class the MAPPED file declares itself to the MRO verdict", () => {
+    // The gate is whether the mapped file declares the bound name ITSELF. Here
+    // it does — a real class receiver — so the value arm stays off and the read
+    // hierarchy's DROP is the answer, exactly as bd tea-rags-mcp-9fgdi measured.
+    // Without the gate, `save` would be pinned off the file's other class.
+    const table = tableWith({
+      "app/views.py": ["View"],
+      "app/models.py": ["Widget", "Gadget", "Gadget#save"],
+    });
+    const ctx: CallContext = {
+      ...ctxWith(
+        "app/views.py",
+        [{ importText: "app.models", startLine: 1, importedNames: ["Widget"], importedBindings: { Widget: "Widget" } }],
+        table,
+      ),
+      classAncestors: {},
+    };
+    expect(inheritingStrategy().attempt(call("Widget", "save"), ctx)).toEqual({ kind: "drop" });
   });
 });

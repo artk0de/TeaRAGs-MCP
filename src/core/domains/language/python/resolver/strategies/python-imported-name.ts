@@ -171,17 +171,33 @@ export class PythonImportedNameSymbolResolutionStrategy implements SymbolResolut
     if (mapped.kind === "external") return DROP;
     const declaringFile =
       mapped.kind === "project" ? this.declaringFile(binding.importedName, mapped.relPath, ctx) : null;
-    if (declaringFile !== null) {
-      const declared = this.resolveDeclaredName(binding, declaringFile, call, ctx);
-      if (declared.kind === "resolved") return declared;
-    }
+    const declared = declaringFile === null ? CONTINUE : this.resolveDeclaredName(binding, declaringFile, call, ctx);
+    if (declared.kind === "resolved") return declared;
+
     const asModule = this.resolveModuleReceiver(binding, call, ctx);
     if (asModule.kind === "resolved") return asModule;
-    // The bound name is a DECLARED symbol whose member did not resolve on it —
-    // an inherited method, a namespace attribute — and that is somebody else's
-    // seam, not a licence to search the file by short name.
-    if (declaringFile !== null || mapped.kind !== "project") return CONTINUE;
-    return this.resolveModuleValueReceiver(mapped.relPath, call, ctx);
+    // The value arm's gate is whether the MAPPED file declares the bound name
+    // ITSELF — `declaringFile === mapped.relPath`. A `declaringFile` that came
+    // from the re-export HOP is not the same evidence: the hop asks which file
+    // declares the bare name, and over polar's export-a-singleton idiom it
+    // answers with whatever unrelated top-level `def` happens to spell it
+    // (`benefit_grant = BenefitGrantService()` against the caller's own
+    // `async def benefit_grant(...)`). The file the IMPORT names is still the
+    // one to read the member out of.
+    const asValue =
+      mapped.kind === "project" && declaringFile !== mapped.relPath
+        ? this.resolveModuleValueReceiver(mapped.relPath, call, ctx)
+        : CONTINUE;
+    if (asValue.kind === "resolved") return asValue;
+    // The declared-name arm's DROP outranks every CONTINUE below it, but only
+    // AFTER the sibling arms have been asked. It says the passes DOWNSTREAM
+    // must not answer — `globalShortName` off a bare member name — and an arm
+    // of this same pass reading its own evidence is not downstream. polar's
+    // `from . import pan_transfer` is exactly the pair: the hop pins a
+    // same-named top-level `def`, whose empty hierarchy reads CLOSED and DROPs,
+    // while the module arm maps `.pan_transfer` to the file that declares the
+    // member. 22 rows there, 18 more on the singleton shape above.
+    return declared.kind === "continue" ? CONTINUE : declared;
   }
 
   /**
@@ -277,13 +293,16 @@ export class PythonImportedNameSymbolResolutionStrategy implements SymbolResolut
    * `<pkg>.client.client` names no file. What the import statement DOES say is
    * which single file the value came from, and that file declares `query` once.
    *
-   * Reached ONLY when both arms above have declined AND the name is undeclared,
-   * so a class receiver whose member is inherited never lands here — searching
-   * its file by short name would answer with the file's other class, and MRO
-   * owns that question. The one remaining gate is the search itself:
-   * `lookupByShortName` is filtered to `moduleFile` and must come back with
-   * exactly one definition, so a module holding two classes that both spell the
-   * member declines rather than picking.
+   * Reached ONLY when both arms above have declined AND `moduleFile` does not
+   * declare the bound name ITSELF, so a class receiver whose member is inherited
+   * never lands here — searching its file by short name would answer with the
+   * file's other class, and MRO owns that question. A `declaringFile` reached
+   * through the re-export HOP does not close the gate: the hop answers "which
+   * file declares this bare name", which over the singleton idiom is a
+   * coincidence rather than the receiver's type. The one remaining gate is the
+   * search itself: `lookupByShortName` is filtered to `moduleFile` and must come
+   * back with exactly one definition, so a module holding two classes that both
+   * spell the member declines rather than picking.
    */
   private resolveModuleValueReceiver(moduleFile: string, call: CallRef, ctx: CallContext): SymbolResolutionOutcome {
     if (!call.receiver) return CONTINUE; // a bare call names no value to read a member off
