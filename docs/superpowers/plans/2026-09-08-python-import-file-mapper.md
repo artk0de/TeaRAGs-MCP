@@ -638,9 +638,9 @@ member mapping.
 
 **Steps**
 
-- [ ] Build the worktree once if this is a fresh one: `npm ci && npm run build`.
+- [x] Build the worktree once if this is a fresh one: `npm ci && npm run build`.
 
-- [ ] Write the failing test file
+- [x] Write the failing test file
       `tests/core/domains/language/python/walker/python-import-bindings.test.ts`.
       It parses real Python through tree-sitter (same harness as
       `python-walker.test.ts`) so grammar drift is caught, not just regex
@@ -790,11 +790,11 @@ describe("collectPythonImports — importedNames / importedBindings", () => {
 });
 ```
 
-- [ ] Run it and watch the binding assertions fail (the `importText` ones
+- [x] Run it and watch the binding assertions fail (the `importText` ones
       already pass — that is the point):
       `npx vitest run tests/core/domains/language/python/walker/python-import-bindings.test.ts`.
 
-- [ ] Replace `collectPythonImports` in
+- [x] Replace `collectPythonImports` in
       `src/core/domains/language/python/walker/walker.ts` (~line 485). Keep
       `pickModuleText` exactly as it is — it produces `importText`, which must
       not move:
@@ -900,7 +900,7 @@ function collectPythonImports(root: AstNode): ImportRef[] {
 }
 ```
 
-- [ ] Bump the walker version in
+- [x] Bump the walker version in
       `src/core/domains/language/python/capability.ts` — the walker's OUTPUT
       shape changed, which is exactly what the version gates:
 
@@ -912,12 +912,12 @@ function collectPythonImports(root: AstNode): ImportRef[] {
   versions: { chunking: 1, walker: 2, codegraphSchema: 2 },
 ```
 
-- [ ] Green, including the two pre-existing walker suites —
+- [x] Green, including the two pre-existing walker suites —
       `python-walker.test.ts` asserts `importText` for the full import matrix
       and must not need an edit:
       `npx vitest run tests/core/domains/language/python/walker`.
-- [ ] `npx tsc --noEmit` clean.
-- [ ] Commit:
+- [x] `npx tsc --noEmit` clean.
+- [x] Commit:
       `feat(language): fill Python importedNames and importedBindings (9fgdi)`.
 
 ---

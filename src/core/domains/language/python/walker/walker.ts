@@ -483,6 +483,19 @@ function isCapWordsConstructor(typeName: string): boolean {
   return /^[A-Z]/.test(finalSegment);
 }
 
+/**
+ * The LOCAL name an `import` statement binds, and the module it binds it to
+ * (bd tea-rags-mcp-9fgdi).
+ *
+ * Unaliased `import a.b` binds `a`, NOT `a.b` — after `import os.path` the name
+ * in scope is `os`. The aliased form binds the alias to the full submodule
+ * path, so the imported side is the dotted text in both cases.
+ */
+function pythonModuleBinding(moduleText: string, alias: string | null): { local: string; imported: string } {
+  if (alias) return { local: alias, imported: moduleText };
+  return { local: moduleText.split(".")[0], imported: moduleText };
+}
+
 function collectPythonImports(root: AstNode): ImportRef[] {
   const out: ImportRef[] = [];
   walk(root, (node) => {
@@ -493,9 +506,15 @@ function collectPythonImports(root: AstNode): ImportRef[] {
       // `dotted_name` / `aliased_import` nodes.
       for (const child of node.namedChildren) {
         const moduleText = pickModuleText(child);
-        if (moduleText) {
-          out.push({ importText: moduleText, startLine: node.startPosition.row + 1 });
-        }
+        if (!moduleText) continue;
+        const alias = child.type === "aliased_import" ? (child.childForFieldName("alias")?.text ?? null) : null;
+        const { local, imported } = pythonModuleBinding(moduleText, alias);
+        out.push({
+          importText: moduleText,
+          startLine: node.startPosition.row + 1,
+          importedNames: [local],
+          importedBindings: { [local]: imported },
+        });
       }
     } else if (node.type === "import_from_statement") {
       // `from M import x` — the module is in `module_name` field.
@@ -508,11 +527,48 @@ function collectPythonImports(root: AstNode): ImportRef[] {
       for (const child of node.children) {
         if (child.type === "import_prefix") prefix = child.text;
       }
+      // Everything that is not the module and not the dot prefix is an imported
+      // NAME. There is no `childrenForFieldName` on `AstNode`, so the module is
+      // excluded by node IDENTITY — `from a import a` is a real shape and a
+      // text comparison would drop it.
+      const importedNames: string[] = [];
+      const importedBindings: Record<string, string> = {};
+      for (const child of node.namedChildren) {
+        if (child === moduleField || child.type === "import_prefix") continue;
+        if (child.type === "wildcard_import") {
+          // A star binds no single member: it is a name for the resolver's
+          // star-import path and nothing for the binding table.
+          importedNames.push("*");
+          continue;
+        }
+        if (child.type === "aliased_import") {
+          const importedName = child.childForFieldName("name")?.text;
+          const localName = child.childForFieldName("alias")?.text;
+          if (!importedName || !localName) continue;
+          importedNames.push(localName);
+          importedBindings[localName] = importedName;
+          continue;
+        }
+        if (child.type === "dotted_name" || child.type === "identifier") {
+          importedNames.push(child.text);
+          importedBindings[child.text] = child.text;
+        }
+      }
+      // Emit only non-empty: a channel the statement does not carry is absent,
+      // never `[]` / `{}` — same discipline the Ruby walker applies to its
+      // optional channels, and what keeps the NDJSON spill small.
+      const names = importedNames.length > 0 ? { importedNames } : {};
+      const bindings = Object.keys(importedBindings).length > 0 ? { importedBindings } : {};
       if (moduleField) {
-        out.push({ importText: prefix + (pickModuleText(moduleField) ?? ""), startLine });
+        out.push({
+          importText: prefix + (pickModuleText(moduleField) ?? ""),
+          startLine,
+          ...names,
+          ...bindings,
+        });
       } else if (prefix) {
         // `from . import x` — no module name, just the prefix.
-        out.push({ importText: prefix, startLine });
+        out.push({ importText: prefix, startLine, ...names, ...bindings });
       }
     }
   });
