@@ -744,7 +744,7 @@ rename breaks nothing. Verify with
 
 **Steps**
 
-- [ ] **RED.** Create
+- [x] **RED.** Create
       `tests/core/domains/language/kernel/type-fact-store.test.ts`. Three of
       these cases fail today for a reason beyond the missing module: they assert
       the injected order governs the four ranked reads, which the Ruby original
@@ -908,7 +908,7 @@ describe("RubyTypeFactStore shim", () => {
 });
 ```
 
-- [ ] **Create `src/core/domains/language/kernel/type-facts.ts`.** The four
+- [x] **Create `src/core/domains/language/kernel/type-facts.ts`.** The four
       declarations move verbatim; only the names and the `TInput` generic
       change, plus `rubyFiles` → `files`.
 
@@ -977,7 +977,7 @@ export interface SidecarTypeSource {
 }
 ```
 
-- [ ] **Create `src/core/domains/language/kernel/type-fact-store.ts`, part 1 —
+- [x] **Create `src/core/domains/language/kernel/type-fact-store.ts`, part 1 —
       header and the six module-private helpers.** Bodies verbatim from
       `ruby/walker/type-fact-store.ts`; `RubyTypeRef` → `TypeRef`,
       `RubyTypeFact` → `TypeFact`, and the `DEFAULT_SOURCE_ORDER` const is NOT
@@ -1069,7 +1069,7 @@ function ivarCoordKey(scope: string[], ivar: string): string {
 }
 ```
 
-- [ ] **Part 2 — the class, in the same file.** Two changes from the Ruby
+- [x] **Part 2 — the class, in the same file.** Two changes from the Ruby
       original and no others: the constructor takes `sourceOrder` and holds it,
       and the four ranked reads use `this.sourceOrder` where they read
       `DEFAULT_SOURCE_ORDER`. Method bodies otherwise verbatim, including every
@@ -1255,7 +1255,7 @@ export class TypeFactStore {
 }
 ```
 
-- [ ] **Replace `src/core/domains/language/ruby/walker/type-fact-store.ts` with
+- [x] **Replace `src/core/domains/language/ruby/walker/type-fact-store.ts` with
       the shim.** All 231 lines go; these 30 replace them.
       `RUBY_TYPE_SOURCE_ORDER` keeps the original's docblock, because the reason
       those seven ranks are in that order is Ruby knowledge and belongs here,
@@ -1303,7 +1303,7 @@ export const RubyTypeFactStore = {
 };
 ```
 
-- [ ] **Replace `src/core/domains/language/ruby/walker/type-sources/types.ts`
+- [x] **Replace `src/core/domains/language/ruby/walker/type-sources/types.ts`
       with the shim.** All four declarations become re-exports; the
       `RubyExtractInput` binding is what the generic exists for.
 
@@ -1328,7 +1328,7 @@ export type {
 export type RubyInlineTypeSource = InlineTypeSource<RubyExtractInput>;
 ```
 
-- [ ] **Pass the order explicitly at the one production call site.** In
+- [x] **Pass the order explicitly at the one production call site.** In
       `src/core/domains/language/ruby/walker/file-type-env.ts`, add
       `RUBY_TYPE_SOURCE_ORDER` to the existing import from
       `./type-fact-store.js` and change line 54:
@@ -1346,7 +1346,7 @@ import {
 } from "./type-fact-store.js";
 ```
 
-- [ ] **GREEN + gates.**
+- [x] **GREEN + gates.**
 
 ```bash
 npx vitest run tests/core/domains/language/kernel
@@ -1359,7 +1359,7 @@ npx eslint --max-warnings 0 \
 git diff --stat -- tests/core/domains/language/ruby   # MUST be empty
 ```
 
-- [ ] **Re-verify the importer inventory.** These must return the SAME file
+- [x] **Re-verify the importer inventory.** These must return the SAME file
       lists as the ones recorded in "Context the implementer needs":
 
 ```bash
@@ -1369,7 +1369,7 @@ git diff --stat -- tests/core/domains/language/ruby   # MUST be empty
 /usr/bin/grep -rn "rubyFiles" src tests scripts     # must return NOTHING
 ```
 
-- [ ] **Parity harness.** Record the wall clock; it is the Task 4 baseline.
+- [x] **Parity harness.** Record the wall clock; it is the Task 4 baseline.
 
 ```bash
 time npx tsx scripts/spikes/ruby-walker-composition-parity.ts \
@@ -1379,7 +1379,7 @@ time npx tsx scripts/spikes/ruby-walker-composition-parity.ts \
       Expect `mismatches 0`. Read the Global Constraints caveat on what that
       does and does not prove.
 
-- [ ] **Commit.**
+- [x] **Commit.**
 
 ```text
 refactor(language): relocate TypeFactStore and the type-source contracts (fmcly)
