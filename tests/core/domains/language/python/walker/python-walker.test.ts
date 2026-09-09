@@ -258,7 +258,7 @@ describe("extractFromPythonFile — localBindings (type inference)", () => {
     });
   });
 
-  it("emits binding for bare-identifier RHS calls (resolver decides whether the name is a class)", () => {
+  it("leaves a lowercase-callee RHS to callResultBindings — a function is not a type", () => {
     const src = "def view():\n    s = factory()\n    s2 = make_thing()\n";
     const tree = parse(src);
     const r = extractFromPythonFile({
@@ -268,12 +268,19 @@ describe("extractFromPythonFile — localBindings (type inference)", () => {
       language: "python",
       chunks: [{ symbolId: "view", scope: [], startLine: 1, endLine: 3 }],
     });
-    // Walker is generous — emit the binding even when the callee
-    // looks like a factory. The resolver checks the symbol table
-    // (`factory` / `make_thing` as a class?) and drops the binding
-    // when the type cannot be located. Keeps walker rules simple.
-    expect(r.chunks[0].localBindings?.s).toEqual([{ line: 2, type: "factory" }]);
-    expect(r.chunks[0].localBindings?.s2).toEqual([{ line: 3, type: "make_thing" }]);
+    // PIN CHANGED, bd tea-rags-mcp-z68v9. The walker used to record `factory`
+    // and `make_thing` as TYPES on the reasoning that the resolver would drop
+    // what it could not locate. It did drop them — and on polar
+    // `server/polar/account/service.py:37` (`repository =
+    // AccountRepository.from_session(session)`, 470 `localVar` rows of that one
+    // shape) that drop SHADOWED the `callResultBindings` fold, which can type
+    // the site from `RepositoryBase.from_session`'s declared return. A binding
+    // here now means a type the walker READ; a call it could not type is the
+    // other channel's to answer.
+    expect(r.chunks[0].localBindings?.s).toBeUndefined();
+    expect(r.chunks[0].localBindings?.s2).toBeUndefined();
+    expect(r.chunks[0].callResultBindings?.s).toEqual([{ line: 2, callee: "factory" }]);
+    expect(r.chunks[0].callResultBindings?.s2).toEqual([{ line: 3, callee: "make_thing" }]);
   });
 
   it("scopes bindings to chunk line range — function A bindings don't leak into function B", () => {

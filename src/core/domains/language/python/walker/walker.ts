@@ -654,12 +654,23 @@ function collectLocalBindingsForChunk(
       // `function` is an `identifier` (direct) or `attribute`
       // (qualified). Anything else (function literal, lambda,
       // factory, list comprehension, etc.) is left unbound.
+      //
+      // bd tea-rags-mcp-z68v9 — the CapWords gate `collectPythonClassFieldTypes`
+      // has always applied now applies here too. `repository =
+      // AccountRepository.from_session(session)` was recorded as
+      // `type: "AccountRepository.from_session"`, and a method is not a type:
+      // `resolveOnBoundType` takes its last segment, asks for a class called
+      // `from_session`, finds none and DROPs. That was harmless while nothing
+      // else could answer; it is not harmless now that `callResultBindings`
+      // records the same site as a callee the resolver CAN fold, because a
+      // binding here shadows the fold. So a lowercase callee is left to the
+      // channel that can type it — 470 rows on polar, all one shape.
       const right = node.childForFieldName("right");
       if (right?.type === "call") {
         const fnNode = right.childForFieldName("function");
         if (!fnNode) return;
         const typeName = extractConstructorTypeName(fnNode);
-        if (typeName) (out[varName] ??= []).push({ line, type: typeName });
+        if (typeName && isCapWordsConstructor(typeName)) (out[varName] ??= []).push({ line, type: typeName });
       }
       return;
     }
