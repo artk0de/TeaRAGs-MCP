@@ -30,9 +30,10 @@
 
 import { once } from "node:events";
 import { createWriteStream, type WriteStream } from "node:fs";
-import { mkdir, rm } from "node:fs/promises";
+import { mkdir, rm, writeFile } from "node:fs/promises";
 import { dirname as pathDirname } from "node:path";
 
+import { spillLiveMarkerPath } from "../../../../adapters/duckdb/spill-files.js";
 import type {
   ExtractionSink,
   FileExtraction,
@@ -88,9 +89,9 @@ export function createCodegraphExtractionSink(
 ): ExtractionSink {
   // The spill path is `<dataDir>/codegraph/.spill/<coll>-<runId>.ndjson` —
   // `runId` is unique per sink so concurrent ingest passes (rare but possible
-  // across collections) get unique files. Stale spill files left by a prior
-  // crashed run are purged at pool init (DuckDbGraphClient.init when
-  // `tempDirectory` is set).
+  // across collections) get unique files. Spill files left by a CRASHED run are
+  // reclaimed by the sweep every pool construction runs; a live one is spared by
+  // the `.live` marker written in `ensureSpillStream` below.
   const spillPath = deps.spillPathFor(collectionName, runId);
   // Read once per sink — i.e. once per run — so a test can stub it and a run
   // cannot change its mind halfway through `finish`.
@@ -103,6 +104,14 @@ export function createCodegraphExtractionSink(
     if (spillStream) return spillStream;
     try {
       await mkdir(pathDirname(spillPath), { recursive: true });
+      // Claim the spill BEFORE it exists (bd tea-rags-mcp-v6gxr). Every pool
+      // built while this run is in flight — an unpinned fan-out worker's, the
+      // daemon's, a second CLI run's — sweeps this directory on construction,
+      // and the marker's pid is the only thing that tells it apart from the
+      // residue of a crashed run. Written first so the ordering never leaves an
+      // unclaimed spill on disk. `spillLiveMarkerPath` is the pool's, so the
+      // writer and the sweeper cannot disagree about the name.
+      await writeFile(spillLiveMarkerPath(spillPath), `${process.pid}`, "utf8");
       spillStream = createWriteStream(spillPath, { encoding: "utf8" });
     } catch (err) {
       throw new CodegraphSpillIoError(spillPath, "open", err instanceof Error ? err : undefined);
@@ -114,8 +123,11 @@ export function createCodegraphExtractionSink(
     // Best-effort: unlink the spill regardless of success/failure so a failed
     // run does not leak GBs of NDJSON. ENOENT means a prior cleanup already
     // happened (idempotent), all other errors are swallowed because the pool
-    // init re-purges on next process start anyway.
+    // init re-purges on next process start anyway. The marker goes with it —
+    // left behind, it would pin a spill that no longer exists to a pid that
+    // outlives it.
     await rm(spillPath, { force: true }).catch(() => undefined);
+    await rm(spillLiveMarkerPath(spillPath), { force: true }).catch(() => undefined);
   };
 
   return {

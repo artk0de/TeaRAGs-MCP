@@ -24,7 +24,7 @@
  * need to reset state.
  */
 
-import { mkdirSync, rmSync } from "node:fs";
+import { mkdirSync } from "node:fs";
 import { dirname, join } from "node:path";
 
 import type { CallResolver, GlobalSymbolTable, GraphDbClient } from "../../contracts/types/codegraph.js";
@@ -41,6 +41,7 @@ import {
   DuckDbCloseFailedError,
   DuckDbOpenFailedError,
 } from "./errors.js";
+import { purgeStaleSpills } from "./spill-files.js";
 
 /**
  * Drain-respawn attempts before `CodegraphDaemonStaleBuildError`. Three covers
@@ -193,22 +194,17 @@ export class GraphDbClientPool {
   constructor(private readonly options: GraphDbClientPoolOptions) {
     this.dbFiles = new CodegraphDbFiles(options.rootDir);
     mkdirSync(this.codegraphDir, { recursive: true });
-    // Slice 2 — purge stale NDJSON spill files left by a prior
-    // process that crashed before its sink.finish() ran. Idempotent;
-    // runs ONCE at pool construction (not on every acquire) so a
-    // long-running process indexing two collections concurrently
-    // does NOT have its in-flight spill wiped when the second
-    // collection opens its DB. The directory is recreated empty
-    // immediately so the first acquire's DuckDB init can SET
-    // temp_directory against an existing path.
-    try {
-      rmSync(this.spillDir, { recursive: true, force: true });
-    } catch {
-      // Best-effort: a permission error here is not worth aborting
-      // pool construction over. The DuckDB temp_directory setting
-      // also tolerates the dir being missing — driver creates lazily.
-    }
-    mkdirSync(this.spillDir, { recursive: true });
+    // Slice 2 — reclaim NDJSON spill files left by a process that crashed
+    // before its sink.finish() ran, and recreate the directory so the first
+    // acquire's DuckDB init can SET temp_directory against an existing path.
+    //
+    // Per ENTRY, never the whole directory (bd tea-rags-mcp-v6gxr). Construction
+    // is not once per run: an unpinned enrichment worker rebuilds the provider
+    // (and a pool) for the pass-1 extraction fan-out, the daemon builds one in
+    // its own process on the first write, and a second CLI run builds one at
+    // start-up — each of them mid-flight for somebody. `purgeStaleSpills` keeps
+    // whatever a live pid still owns.
+    purgeStaleSpills(this.spillDir);
   }
 
   private get codegraphDir(): string {
@@ -216,10 +212,16 @@ export class GraphDbClientPool {
   }
 
   /**
-   * Per-pool spill directory under the codegraph root. Each opened
-   * `DuckDbGraphClient.init()` purges and recreates it (cleanup of
-   * stale spill files from a prior crashed process). Exposed via
-   * `pathFor*` helpers below for tests.
+   * Spill directory under the codegraph root, SHARED by every pool over the
+   * same `rootDir` — including ones in other processes. Construction sweeps it
+   * (`purgeStaleSpills`) rather than wiping it, because "constructed a pool"
+   * has never implied "started the only run": the pass-1 extraction fan-out
+   * builds one in an unpinned enrichment worker, the daemon builds one in its
+   * own process on the first write, and a second CLI run builds one at
+   * start-up. The `.xpass` sibling below solved the same hazard by opting out
+   * of the wipe entirely; `.spill` cannot, since reclaiming a crashed run's
+   * NDJSON is the whole point — so it opts out per file, on ownership.
+   * Exposed via the `pathFor*` helpers below for tests.
    */
   private get spillDir(): string {
     return this.options.resources?.tempDirectory ?? join(this.codegraphDir, ".spill");

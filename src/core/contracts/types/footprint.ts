@@ -24,10 +24,10 @@ export interface QuarantineArtifactStore {
  * The codegraph DuckDB surface the footprint saga drives.
  *
  * `GraphDbClientPool` satisfies it in the live app. The purge path deliberately
- * does NOT construct a pool: pool construction wipes the shared `.spill`
- * directory, which would sabotage an index running in another process. It
- * passes the file-only `CodegraphDbFiles` instead — same path layout, no client
- * cache, no side effects at construction.
+ * does NOT construct a pool: construction sweeps the shared `.spill` directory
+ * on behalf of every project, which is not a purge's business. It passes the
+ * file-only `CodegraphDbFiles` instead — same path layout, no client cache, no
+ * side effects at construction.
  */
 export interface CodegraphFootprintStore {
   cloneDatabase: (sourceCollection: string, targetCollection: string) => Promise<void>;

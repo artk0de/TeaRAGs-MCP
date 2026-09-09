@@ -9,10 +9,11 @@
  * defect (bd 6goqa) and its recurrence (bd snbzk).
  *
  * It exists separately from the pool because CONSTRUCTING a pool has side
- * effects: it wipes the shared `.spill` directory, which would destroy the
- * in-flight spill of an index running in another process. Callers that only
- * need to enumerate or delete files — the `projects unregister --purge` path —
- * construct this instead, and touch nothing on the way in.
+ * effects on the shared `.spill` directory — it sweeps whatever no live process
+ * still owns, DuckDB's own temp files included (`spill-files.ts`), on behalf of
+ * every project at once. Callers that only need to enumerate or delete files —
+ * the `projects unregister --purge` path — construct this instead, and touch
+ * nothing on the way in.
  */
 
 import { existsSync, mkdirSync, readdirSync } from "node:fs";
