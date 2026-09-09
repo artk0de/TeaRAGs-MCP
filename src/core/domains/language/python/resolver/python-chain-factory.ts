@@ -57,10 +57,10 @@ export function createPythonSymbolResolutionChain(
 ): SymbolResolutionStrategy[] {
   return [
     new PythonSuperSymbolResolutionStrategy(cfg, linearizers),
-    new PythonSelfFieldSymbolResolutionStrategy(cfg, mapper),
+    new PythonSelfFieldSymbolResolutionStrategy(cfg, mapper, linearizers),
     new PythonSelfMemberSymbolResolutionStrategy(cfg, linearizers),
     new PythonLocalBindingSymbolResolutionStrategy(cfg, mapper, linearizers),
-    new PythonChainTypeSymbolResolutionStrategy(cfg, mapper),
+    new PythonChainTypeSymbolResolutionStrategy(cfg, mapper, linearizers),
     new PythonImportedNameSymbolResolutionStrategy(cfg, mapper, linearizers),
     new PythonGlobalShortNameSymbolResolutionStrategy(cfg),
   ];
