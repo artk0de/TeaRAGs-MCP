@@ -41,6 +41,18 @@
   `scripts/spikes/ruby-resolver-parity.ts --before-root <pre-seam checkout>`.
   Why: reading this file for the hop threading finds only the ports, and editing
   the kernel to fix a Ruby-shaped miss moves every other language with it.
+- **`resolver/ancestor-linearization.ts` keeps its signature, but the DRIVER
+  moved.** `linearizeAncestors(klass, hierarchy)` and `RubyAncestorHierarchy`
+  are unchanged for every importer; the recursion, cycle guard, dedupe and memo
+  are `kernel/ancestor-walk.ts` (E2 seam 4), supplied from here as
+  `RUBY_ANCESTOR_POLICY`. What stayed is what is Ruby: prepends first, then the
+  class, then includes ranked last-declared-nearest, then the superclass chain —
+  and Ruby supplies no `boundaryOf`, so every linearization reads `closed`.
+  Ruby's MEMBER walk is NOT the kernel's: `resolveInstanceMethodInClassChain`
+  (`strategies/shared.ts`) carries the prepend pre-pass, the schema-column
+  preference and the file-only fallback ordering, none of which are neutral, and
+  it stays here. Change the order here; change the walk in the kernel and re-run
+  `scripts/spikes/ruby-resolver-parity.ts --before-root <pre-seam checkout>`.
 - **The external-member suppression set is `ACTIVE_RECORD_INSTANCE_BUILTINS` in
   `dsl/rails-runtime.ts` — not `dsl/core-members.ts`.** Membership means "the
   Rails idiom cannot override this on a domain object through an explicit

@@ -76,6 +76,51 @@
   phantom, ugnest 2 / 2 `match`. Eleven right answers against 44 phantoms is a
   losing trade for a precision-gated program, so the pass was deleted rather
   than parked. A dotted or unbound receiver now falls to `globalShortName`.
+- **An inherited member is found on a C3 MRO, and the class KEY is
+  file-qualified while the ancestor VALUES are import-qualified.** The key is
+  `` `${relPath}::${dottedFq}` `` (`pythonClassKey` /`parsePythonClassKey` in
+  `strategies/shared.ts`) — `classAncestors` is run-global, so two `Base`
+  classes in two files must not conflate, and the caller side rebuilds it from
+  `ctx.callerScope`. **The two scopes are not the same scope, and a class
+  declared inside a FUNCTION is where they part**: the walker's
+  `collectPythonClassAncestors` accumulates class containers only, while the
+  chunker's `callerScope` also carries the enclosing `def`, so
+  `_AuthenticatorSignature` inside `def Authenticator()` is keyed
+  `…::_AuthenticatorSignature` and asked for as
+  `…::Authenticator._AuthenticatorSignature`. An absent key is NOT a class with
+  no bases — it linearizes to a singleton and reads `closed`, which suppresses
+  every fallback the flavour below would have allowed (measured: one polar
+  `super()` row, bd `9fgdi` gate record). The VALUES carry the DEFINING file's
+  import binding (`a.b::Base`, `.base::Base`, `django.db::Model`, bare for a
+  same-file class or a builtin), never the asking file's: that is what makes
+  `MRO(RepositoryBase)` one order for every call site and therefore memoizable
+  once per run behind `PythonAncestorLinearizerCache`.
+  `createPythonAncestorPolicy` resolves the spellings and `mro.ts` merges them;
+  the driver is the kernel's.
+- **A base bound by `from m import *` arrives as a DISJUNCTION the walker
+  wrote,** `bare|m1::Base|m2::Base` in declaration order, because only the
+  walker still holds that file's star modules — the read path has the CALLER's
+  imports, never the definer's. First `project` verdict wins; when none does the
+  answer is `unknown`, NOT `external`, since "no candidate I could check is a
+  project class" is weaker evidence than "this base IS a library class" and the
+  two produce opposite verdicts one bullet down. A builtin bare head is decided
+  before the split.
+- **Two boundary flavours, and they are not interchangeable.** A miss reports
+  `closed` (every branch ended on a project class), `external` (a branch left
+  the project) or `unknown` (a branch could not be classified). `selfMember`
+  CONTINUEs on `unknown` alone and DROPs the other two — a blanket CONTINUE
+  hands netbox's 540 and polar's 193 `agreeExternal` rows to `globalShortName`
+  and buys phantoms. `super` never CONTINUEs at all: it walks the same MRO with
+  `startAfter: true` (dispatch begins after the enclosing class, never on it)
+  and DROPs on anything but `closed`, because its fall-through is a known
+  false-edge family (bd `pic4` / `4rgg`).
+- **`classExtends` survives and is not redundant.** It stays single-base and is
+  the walker-v2 fallback every ancestor consumer keeps for an index written
+  before `classAncestors` existed, and it is `pythonTypeOwnsMembers`'s
+  corroboration channel and the tail of `resolvePythonMemberOnType`, which is
+  how `selfField` reaches a base class at all. The cache answers `undefined` for
+  such a run, and each strategy takes its pre-seam path rather than answering
+  from an empty map.
 - **Chain order is a correctness argument, not a preference.** Seven passes:
   `super`, `selfField`, `selfMember`, `localBinding`, `chainType`,
   `importedName`, `globalShortName`. See the pass list in

@@ -1491,3 +1491,82 @@ private resolveSuper(member: string, ctx: CallContext): SymbolResolutionTarget |
       duplicated answer, commented with `9fgdi`.
 - [ ] Each task's writes stay under 120 lines per edit and each tool call under
       8 minutes; a fresh Opus executor per task, each in its own worktree.
+
+---
+
+## Gate record (Task 5, measured)
+
+BEFORE is the pre-seam-4 tree `agent-a9056415c636db6de` (seam 3 landed through
+IR.3, no MRO, seeded per-file-rooted oracle without E0.12's `super` guard);
+AFTER is `agent-ade784bc7955db7fb` at IR.6 plus IN.1–IN.7. Rows keyed by
+`(relPath, startLine, callText)`. Both harnesses already thread `classAncestors`
+(IN.3), so no threading change was needed here.
+
+| Corpus | match             | missed          | wrongFile | phantom     | agreeExternal |
+| ------ | ----------------- | --------------- | --------- | ----------- | ------------- |
+| netbox | 9551 → **9789**   | 1733 → **1510** | 64 → 62   | 652 → 567   | 38908 → 38928 |
+| flask  | 509 → 512         | 162 → 162       | 11 → 8    | 101 → 99    | 1185 → 1186   |
+| httpx  | 690 → 690         | 192 → 192       | 0 → 0     | 80 → 80     | 1405 → 1405   |
+| ugnest | 1374 → 1372       | 81 → 83         | 0 → 0     | 386 → 377   | 4875 → 4884   |
+| polar  | 16507 → **20044** | 9857 → **6445** | 77 → 75   | 1670 → 1548 | 40730 → 40849 |
+
+Row-level gross `lost` / `gained`: netbox 0 / 238, flask 0 / 3, httpx 0 / 0,
+ugnest **2** / 0, polar **7** / 3544.
+
+**Every lost row but one is the `importMatch` removal (IR.6), not this seam** —
+ugnest's 2 and 6 of polar's 7 have `beforeAnsweredBy: importMatch`, a pass that
+no longer exists in AFTER, and they are exactly the residual matches the `rw1qk`
+decision priced in (ugnest 2 of 2, polar 6 of 9).
+
+**One real regression, `super`, one row.**
+`server/polar/auth/dependencies.py:207` — `super().__call__(auth_subject)` in
+`class _AuthenticatorSignature(_Authenticator)`, declared inside the function
+`Authenticator`. Decision 3 assumes `callerScope` is the dotted class FQ, and
+for a class nested in a FUNCTION it is not: the chunker's scope is
+`["Authenticator", "_AuthenticatorSignature"]` while
+`collectPythonClassAncestors` keys on class containers only and writes
+`…::_AuthenticatorSignature`. The caller's key therefore misses the map,
+`basesOf` returns `[]`, and the order is the singleton `[classKey]` with closure
+`closed` — so `startAfter` leaves nothing to scan AND the `closed` verdict
+suppresses the `classExtends` fallback that answered this site before. An absent
+key reads as a complete hierarchy. Narrow (one row across five corpora) but the
+mechanism is general to function-nested classes; needs its own fix and parity
+run, not a widening of `resolveSuper`'s fallback.
+
+Receiver-kind verdicts, BEFORE → AFTER:
+
+| Corpus · kind       | missed         | match       | phantom |
+| ------------------- | -------------- | ----------- | ------- |
+| netbox `selfMember` | 937 → **788**  | 1604 → 1753 | 40 → 40 |
+| netbox `constant`   | 2 → **0**      | 24 → 39     | 6 → 6   |
+| polar `selfMember`  | 1453 → **857** | 2731 → 3327 | 3 → 3   |
+| polar `constant`    | 1784 → **42**  | 306 → 2048  | 93 → 93 |
+
+polar clears both 60 % floors (`selfMember` −596 of a 520 floor, `constant`
+−1742 of a 998 floor). **netbox `selfMember` does not**: −149 against the
+403-row floor decision 9 set, while `constant` there is a 174-row bucket that
+went to zero misses. The netbox residual is (c)-shaped, not inheritance-shaped.
+
+`super` receiver-kind migration (bd `ntnke`), exact on both corpora: netbox
+`dynamic` 19482 → 18036 with 1446 new `super` rows, polar 23064 → 21822
+with 1242. `super` phantoms are 26 (netbox), 10 (polar), 0 elsewhere — all drawn
+out of `dynamic`, whose phantoms fell by more, so total `phantom` is DOWN on
+every corpus and `wrongFile` is down or flat on every corpus.
+
+Chain tally, once per corpus, all `chain drift 0`, all C3 fallbacks 0: polar
+23238/439/59316, flask 657/20/1515, ugnest 1900/116/5258, httpx 789/9/1854 —
+each exactly the predicted value. netbox is **12113/396/48618** against a
+predicted 12089/396/48642: +24 edges, identical across two runs, so it is a
+stale prediction rather than drift.
+
+Perf, netbox chain-tally interleaved B/A/A/B under `/usr/bin/time -l` with
+`NODE_OPTIONS=--max-old-space-size=1024`, min of 2 per side: wall 13.45s →
+13.70s (**+1.9 %**, budget +25 %); peak RSS 2.252 GB → 2.358 GB (**+4.7 %**,
+budget +20 %). The per-class memo holds.
+
+Ruby: `ruby-resolver-parity.ts` on mastodon, 42,057 sites, **mismatches 0 ·
+drift 0**; `ruby-walker-composition-parity.ts`, 3,197 files, **mismatches 0**;
+`git diff --stat -- tests/core/domains/language/ruby` empty.
+
+`npm run test:coverage`: exit 0 — statements 96.30, branches 88.82, functions
+97.35, lines 98.39; 854 test files, 12527 passed, 1 skipped.
