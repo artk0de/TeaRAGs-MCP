@@ -708,9 +708,9 @@ next to `"outcome": {"kind": "unknown"}`. `origin` is `project` |
 
 **Steps**
 
-- [ ] Prepare the worktree: `npm ci`, then a bare `npm run build`.
+- [x] Prepare the worktree: `npm ci`, then a bare `npm run build`.
 
-- [ ] Confirm the toolchain this task depends on, and STOP if either fails — a
+- [x] Confirm the toolchain this task depends on, and STOP if either fails — a
       missing `uv` is a machine problem, not something to work around:
 
 ```bash
@@ -719,7 +719,7 @@ uv run --no-project --python 3.13 --with jedi==0.20.0 python -c \
   "import jedi, parso; print(jedi.__version__, parso.__version__)"
 ```
 
-- [ ] Write `scripts/py-oracle/pyproject.toml`:
+- [x] Write `scripts/py-oracle/pyproject.toml`:
 
 ```toml
 # The oracle's own environment, resolved by `uv run --no-project`. It is NOT the
@@ -741,7 +741,7 @@ dependencies = ["jedi==0.20.0"]
 package = false
 ```
 
-- [ ] Write the fixture corpus. Six files, one per shape the oracle has to get
+- [x] Write the fixture corpus. Six files, one per shape the oracle has to get
       right, and small enough that the expected answers can be read by hand.
 
 `tests/fixtures/py-oracle/pkg/base.py`:
@@ -857,7 +857,7 @@ def probe(source: str) -> int:
     return len(jedi.Script(source).get_names())
 ```
 
-- [ ] Write `scripts/py-oracle/jedi_oracle.py`. It is one file; the plan shows
+- [x] Write `scripts/py-oracle/jedi_oracle.py`. It is one file; the plan shows
       it in two parts only because of length — part 2 is appended verbatim below
       part 1, with nothing between them.
 
@@ -1300,7 +1300,7 @@ if __name__ == "__main__":
     raise SystemExit(main())
 ```
 
-- [ ] Write the spawn test `tests/scripts/jedi-oracle-spawn.test.ts`. It is the
+- [x] Write the spawn test `tests/scripts/jedi-oracle-spawn.test.ts`. It is the
       only test in this plan that starts a Python process, so it is gated on
       `uv` — CI is node-only and must skip it, not fail:
 
@@ -1472,7 +1472,7 @@ function runOracle(): Record<string, OracleAnswer[]> {
 }
 ```
 
-- [ ] Add the assertions to the same file — the named invariants first, the
+- [x] Add the assertions to the same file — the named invariants first, the
       frozen fixture last:
 
 ```ts
@@ -1541,7 +1541,7 @@ describe.skipIf(!uvAvailable)("jedi_oracle.py over the fixture corpus", () => {
 });
 ```
 
-- [ ] Generate `tests/fixtures/py-oracle/expected-oracle.json` ONCE, then read
+- [x] Generate `tests/fixtures/py-oracle/expected-oracle.json` ONCE, then read
       every row against the fixture sources before committing it. A row that
       disagrees with the source is a bug in `jedi_oracle.py`, not a fixture to
       accept:
@@ -1558,7 +1558,7 @@ npx vitest run tests/scripts/jedi-oracle-spawn.test.ts -t "frozen expected outpu
       `Auditable#describe` — the FIRST base wins, and a fixture saying
       `Named#describe` means the MRO order is wrong somewhere.
 
-- [ ] Verify the degraded path on a throwaway file rather than trusting polar
+- [x] Verify the degraded path on a throwaway file rather than trusting polar
       for it. The row must carry `parsoErrors > 0` and still answer:
 
 ```bash
@@ -1567,11 +1567,11 @@ printf '{"kind":"config","corpusRoot":"/tmp","venvPython":null,"workers":1}\n{"k
   | uv run --no-project --python 3.13 --with jedi==0.20.0 python scripts/py-oracle/jedi_oracle.py
 ```
 
-- [ ] Run the whole file, then confirm it SKIPS cleanly when `uv` is not on the
+- [x] Run the whole file, then confirm it SKIPS cleanly when `uv` is not on the
       path: `npx vitest run tests/scripts/jedi-oracle-spawn.test.ts`, then the
       same command with `PATH=/usr/bin`.
 
-- [ ] Format and commit:
+- [x] Format and commit:
 
 ```bash
 npx prettier --write tests/scripts/jedi-oracle-spawn.test.ts tests/fixtures/py-oracle/expected-oracle.json

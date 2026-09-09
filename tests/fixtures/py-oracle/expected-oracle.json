@@ -1,0 +1,282 @@
+{
+  "pkg/consumer.py": [
+    {
+      "member": "User",
+      "outcome": {
+        "kind": "inProject",
+        "origin": "project",
+        "targets": [
+          {
+            "defKind": "class",
+            "defLine": 6,
+            "pinUncertain": false,
+            "relPath": "pkg/models.py",
+            "symbolId": "User"
+          }
+        ]
+      },
+      "siteFacts": {
+        "enclosingHasReturnAnnotation": true,
+        "isDecoratorSite": false,
+        "isSuperCall": false,
+        "receiverIsAnnotatedParam": false,
+        "receiverIsUnion": false,
+        "targetIsProperty": false,
+        "targetIsStaticOrClassMethod": false,
+        "viaReexport": false,
+        "viaStarImport": false
+      },
+      "startLine": 7
+    },
+    {
+      "member": "promote",
+      "outcome": {
+        "kind": "inProject",
+        "origin": "project",
+        "targets": [
+          {
+            "defKind": "function",
+            "defLine": 6,
+            "pinUncertain": false,
+            "relPath": "pkg/service.py",
+            "symbolId": "promote"
+          }
+        ]
+      },
+      "siteFacts": {
+        "enclosingHasReturnAnnotation": true,
+        "isDecoratorSite": false,
+        "isSuperCall": false,
+        "receiverIsAnnotatedParam": false,
+        "receiverIsUnion": false,
+        "targetIsProperty": false,
+        "targetIsStaticOrClassMethod": false,
+        "viaReexport": false,
+        "viaStarImport": false
+      },
+      "startLine": 8
+    }
+  ],
+  "pkg/models.py": [
+    {
+      "member": "__init__",
+      "outcome": {
+        "kind": "external",
+        "origin": "typeshedStub"
+      },
+      "siteFacts": {
+        "enclosingHasReturnAnnotation": true,
+        "isDecoratorSite": false,
+        "isSuperCall": true,
+        "receiverIsAnnotatedParam": false,
+        "receiverIsUnion": false,
+        "targetIsProperty": false,
+        "targetIsStaticOrClassMethod": false,
+        "viaReexport": false,
+        "viaStarImport": false
+      },
+      "startLine": 8
+    },
+    {
+      "member": "touch",
+      "outcome": {
+        "kind": "inProject",
+        "origin": "project",
+        "targets": [
+          {
+            "defKind": "function",
+            "defLine": 5,
+            "pinUncertain": false,
+            "relPath": "pkg/base.py",
+            "symbolId": "Auditable#touch"
+          }
+        ]
+      },
+      "siteFacts": {
+        "enclosingHasReturnAnnotation": true,
+        "isDecoratorSite": false,
+        "isSuperCall": false,
+        "receiverIsAnnotatedParam": false,
+        "receiverIsUnion": false,
+        "targetIsProperty": false,
+        "targetIsStaticOrClassMethod": false,
+        "viaReexport": false,
+        "viaStarImport": false
+      },
+      "startLine": 20
+    },
+    {
+      "member": "describe",
+      "outcome": {
+        "kind": "inProject",
+        "origin": "project",
+        "targets": [
+          {
+            "defKind": "function",
+            "defLine": 8,
+            "pinUncertain": false,
+            "relPath": "pkg/base.py",
+            "symbolId": "Auditable#describe"
+          }
+        ]
+      },
+      "siteFacts": {
+        "enclosingHasReturnAnnotation": true,
+        "isDecoratorSite": false,
+        "isSuperCall": false,
+        "receiverIsAnnotatedParam": false,
+        "receiverIsUnion": false,
+        "targetIsProperty": false,
+        "targetIsStaticOrClassMethod": false,
+        "viaReexport": false,
+        "viaStarImport": false
+      },
+      "startLine": 21
+    }
+  ],
+  "pkg/service.py": [
+    {
+      "member": "touch",
+      "outcome": {
+        "kind": "inProject",
+        "origin": "project",
+        "targets": [
+          {
+            "defKind": "function",
+            "defLine": 5,
+            "pinUncertain": false,
+            "relPath": "pkg/base.py",
+            "symbolId": "Auditable#touch"
+          }
+        ]
+      },
+      "siteFacts": {
+        "enclosingHasReturnAnnotation": true,
+        "isDecoratorSite": false,
+        "isSuperCall": false,
+        "receiverIsAnnotatedParam": true,
+        "receiverIsUnion": false,
+        "targetIsProperty": false,
+        "targetIsStaticOrClassMethod": false,
+        "viaReexport": false,
+        "viaStarImport": false
+      },
+      "startLine": 7
+    },
+    {
+      "member": "rename",
+      "outcome": {
+        "kind": "inProject",
+        "origin": "project",
+        "targets": [
+          {
+            "defKind": "function",
+            "defLine": 19,
+            "pinUncertain": false,
+            "relPath": "pkg/models.py",
+            "symbolId": "User#rename"
+          }
+        ]
+      },
+      "siteFacts": {
+        "enclosingHasReturnAnnotation": true,
+        "isDecoratorSite": false,
+        "isSuperCall": false,
+        "receiverIsAnnotatedParam": true,
+        "receiverIsUnion": false,
+        "targetIsProperty": false,
+        "targetIsStaticOrClassMethod": false,
+        "viaReexport": false,
+        "viaStarImport": false
+      },
+      "startLine": 8
+    },
+    {
+      "member": "normalise",
+      "outcome": {
+        "kind": "inProject",
+        "origin": "project",
+        "targets": [
+          {
+            "defKind": "function",
+            "defLine": 16,
+            "pinUncertain": false,
+            "relPath": "pkg/models.py",
+            "symbolId": "User.normalise"
+          }
+        ]
+      },
+      "siteFacts": {
+        "enclosingHasReturnAnnotation": true,
+        "isDecoratorSite": false,
+        "isSuperCall": false,
+        "receiverIsAnnotatedParam": false,
+        "receiverIsUnion": false,
+        "targetIsProperty": false,
+        "targetIsStaticOrClassMethod": true,
+        "viaReexport": false,
+        "viaStarImport": false
+      },
+      "startLine": 12
+    }
+  ],
+  "pkg/stdlib_use.py": [
+    {
+      "member": "dumps",
+      "outcome": {
+        "kind": "external",
+        "origin": "stdlib"
+      },
+      "siteFacts": {
+        "enclosingHasReturnAnnotation": true,
+        "isDecoratorSite": false,
+        "isSuperCall": false,
+        "receiverIsAnnotatedParam": false,
+        "receiverIsUnion": false,
+        "targetIsProperty": false,
+        "targetIsStaticOrClassMethod": false,
+        "viaReexport": false,
+        "viaStarImport": false
+      },
+      "startLine": 10
+    },
+    {
+      "member": "join",
+      "outcome": {
+        "kind": "external",
+        "origin": "stdlib"
+      },
+      "siteFacts": {
+        "enclosingHasReturnAnnotation": true,
+        "isDecoratorSite": false,
+        "isSuperCall": false,
+        "receiverIsAnnotatedParam": false,
+        "receiverIsUnion": false,
+        "targetIsProperty": false,
+        "targetIsStaticOrClassMethod": false,
+        "viaReexport": false,
+        "viaStarImport": false
+      },
+      "startLine": 14
+    },
+    {
+      "member": "Script",
+      "outcome": {
+        "kind": "external",
+        "origin": "sitePackages"
+      },
+      "siteFacts": {
+        "enclosingHasReturnAnnotation": true,
+        "isDecoratorSite": false,
+        "isSuperCall": false,
+        "receiverIsAnnotatedParam": false,
+        "receiverIsUnion": false,
+        "targetIsProperty": false,
+        "targetIsStaticOrClassMethod": false,
+        "viaReexport": false,
+        "viaStarImport": false
+      },
+      "startLine": 18
+    }
+  ]
+}
