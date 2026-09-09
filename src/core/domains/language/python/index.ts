@@ -50,9 +50,11 @@ import type {
   LanguageSymbolResolver,
   LanguageWalker,
 } from "../../../contracts/types/language.js";
+import { composeExtractionWalker } from "../kernel/extraction-passes.js";
 import { pythonKernel } from "./kernel.js";
 import { PythonCallResolver } from "./resolver/index.js";
 import { pyNameOf } from "./walker/name-of.js";
+import { PYTHON_EXTRACTION_PASSES } from "./walker/passes.js";
 import { extractFromPythonFile, type PythonExtractInput } from "./walker/walker.js";
 
 /**
@@ -79,10 +81,12 @@ const pythonChunkerHooks: LanguageChunkerHooks = {
 export class PythonLanguage implements LanguageProvider {
   readonly kernel = pythonKernel;
   readonly chunkerHooks: LanguageChunkerHooks = pythonChunkerHooks;
-  readonly walker: LanguageWalker = {
+  readonly walker: LanguageWalker = composeExtractionWalker({
     walk: (input) => extractFromPythonFile(input),
     nameOf: (node) => pyNameOf(node),
-  };
+    // Empty today — see ./walker/passes.ts.
+    passes: PYTHON_EXTRACTION_PASSES,
+  });
   readonly resolver: LanguageSymbolResolver;
 
   constructor(mode: AmbiguousResolveMode = DEFAULT_AMBIGUOUS_RESOLVE_MODE) {

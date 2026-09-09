@@ -39,6 +39,7 @@ import type {
   LanguageSymbolResolver,
   LanguageWalker,
 } from "../../../contracts/types/language.js";
+import { composeExtractionWalker } from "../kernel/extraction-passes.js";
 import { rubyHooks } from "./chunking/index.js";
 import { RUBY_CODEGRAPH_EXCLUSION_GLOBS } from "./codegraph-exclusions.js";
 import { catalogueForGemfile } from "./gemfile.js";
@@ -46,6 +47,7 @@ import { rubyKernel } from "./kernel.js";
 import { RubyCallResolver } from "./resolver/ruby-resolver.js";
 import { RAILS_SCHEMA_COLUMN_ACCESSORS } from "./schema/index.js";
 import { rbNameOf } from "./walker/name-of.js";
+import { RUBY_EXTRACTION_PASSES } from "./walker/passes.js";
 import { extractFromRubyFile, type RubyExtractInput } from "./walker/walker.js";
 
 /**
@@ -98,13 +100,15 @@ const rubyChunkerHooks: LanguageChunkerHooks = {
 export class RubyLanguage implements LanguageProvider {
   readonly kernel = rubyKernel;
   readonly chunkerHooks: LanguageChunkerHooks = rubyChunkerHooks;
-  readonly walker: LanguageWalker = {
+  readonly walker: LanguageWalker = composeExtractionWalker({
     walk: (input) => extractFromRubyFile(input),
     // Gem-gated declares/nameOf path (bd tea-rags-mcp-o5kwh): compose this
     // project's catalogue from the run's Gemfile so class-body macro DECLARES
     // are gated to the gems THIS project declares. undefined -> FULL catalogue.
     nameOf: (node, gemfileContent) => rbNameOf(node, catalogueForGemfile(gemfileContent)),
-  };
+    // Empty today — see ./walker/passes.ts for why that is the design, not a gap.
+    passes: RUBY_EXTRACTION_PASSES,
+  });
   readonly resolver: LanguageSymbolResolver;
   /**
    * Rails non-application-code path globs the codegraph exclusion engine
