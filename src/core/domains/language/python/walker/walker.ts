@@ -35,6 +35,7 @@ import type {
   InheritanceEdgeDecl,
   LocalBinding,
 } from "../../../../contracts/types/codegraph.js";
+import { assignCallsToInnermostChunks } from "../../kernel/assign-calls-to-chunks.js";
 
 export interface PythonExtractInput {
   tree: MaterializedTree;
@@ -80,13 +81,26 @@ export function extractFromPythonFile(input: PythonExtractInput): FileExtraction
   // TS/Java `classFieldTypes` channel.
   const classFieldTypes = collectPythonClassFieldTypes(input.tree.rootNode);
   const trackTypes = pythonLocalTypeTrackingEnabled();
-  const byChunk: ChunkExtraction[] = input.chunks.map((c) => {
+  // Innermost-chunk attribution: ONE owning chunk per call site — the smallest
+  // containing range, ties broken by deeper scope (bd tea-rags-mcp-invuy;
+  // mirrors typescript tea-rags-mcp-otjs and ruby tea-rags-mcp-8fnu). A class
+  // chunk's range contains every method nested in it, so the pure-containment
+  // filter this replaces emitted each call TWICE — once from the method chunk
+  // under the method's scope, once from the class chunk under the class's (or,
+  // for a top-level class, an EMPTY) scope. netbox measured 16,988 of 60,731
+  // sites as such duplicates, and the class-chunk copies were 349 of the 351
+  // residual cross-file `selfMember` misses: a nested class's copy keyed the
+  // MRO on the OUTER class and DROPped, a top-level class's copy tripped
+  // `selfMember`'s `callerScope.length === 0` guard and let `globalShortName`
+  // fabricate 40 phantoms.
+  const callOwnership = assignCallsToInnermostChunks(calls, input.chunks);
+  const byChunk: ChunkExtraction[] = input.chunks.map((c, chunkIndex) => {
     const base: ChunkExtraction = {
       symbolId: c.symbolId,
       scope: c.scope,
       startLine: c.startLine,
       endLine: c.endLine,
-      calls: calls.filter((cr) => cr.startLine >= c.startLine && cr.startLine <= c.endLine),
+      calls: callOwnership.get(chunkIndex) ?? [],
     };
     if (trackTypes) {
       const bindings = collectLocalBindingsForChunk(input.tree.rootNode, c.startLine, c.endLine);
@@ -414,6 +428,35 @@ function qualifyThroughStarImports(
 }
 
 /**
+ * The base spelling that says "this branch of the hierarchy is unreadable" (bd
+ * tea-rags-mcp-invuy).
+ *
+ * A base can be an arbitrary expression, and django's
+ * `class Device(Manager.from_queryset(RestrictedQuerySet))` is the shape that
+ * costs rows: the class the call RETURNS is only known at run time. Skipping
+ * such a base silently is the trap — a class whose ONLY base is a call records
+ * no `classAncestors` entry at all, `basesOf` returns `[]`, the closure stays
+ * `closed`, and `selfMember` reads "the hierarchy is fully known and does not
+ * own this member" from what is really an absence of evidence. It then DROPs
+ * every inherited call on the class.
+ *
+ * Writing the marker instead makes the unreadable branch explicit, so
+ * `resolveBaseKey` in `../resolver/python-ancestor-policy.ts` can degrade the
+ * closure to `unknown`. That is strictly a DROP → CONTINUE change: `unknown`
+ * never fabricates a target, it only declines to claim the member is absent.
+ * `unknown` and not `external`, because "I could not read this base" is not the
+ * same evidence as "this base IS a library class" — the latter is what makes a
+ * miss provably right, and a computed base proves nothing either way.
+ *
+ * The spelling is illegal in both halves of the base grammar — `<` and `>`
+ * occur in neither a Python identifier nor a dotted module path — so it cannot
+ * collide with a real spelling, the same argument that lets
+ * {@link qualifyThroughStarImports} use `|` as its disjunction separator. Owned
+ * here and imported by the resolver, mirroring Ruby's `SUPER_RECEIVER_SENTINEL`.
+ */
+export const PYTHON_UNRESOLVABLE_BASE = "<unresolvable>";
+
+/**
  * `class Child(A, M[T])` → `{ "<relPath>::Child": ["a::A", "m::M"] }`
  * (bd tea-rags-mcp-y4hro).
  *
@@ -455,6 +498,16 @@ function collectPythonClassAncestors(
         // part of the hierarchy.
         const named = base.type === "subscript" ? base.childForFieldName("value") : base;
         if (!named) continue;
+        // A COMPUTED base — `Manager.from_queryset(QuerySet)`. The class it
+        // returns is a run-time value, so record that the branch is unreadable
+        // rather than dropping it and leaving the closure to read `closed`.
+        if (named.type === "call") {
+          bases.push(PYTHON_UNRESOLVABLE_BASE);
+          continue;
+        }
+        // Everything else that is not a name is not a base at all — a
+        // `keyword_argument` is the `metaclass=` / `**kwargs` class-keyword
+        // channel, which carries no hierarchy and must NOT degrade the closure.
         if (named.type !== "identifier" && named.type !== "attribute" && named.type !== "dotted_name") continue;
         const { text } = named;
         if (text.length === 0 || text === "object") continue;

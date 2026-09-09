@@ -23,6 +23,7 @@ import { PythonImportFileMapper } from "../../../../../../../src/core/domains/la
 import { PythonImportedNameSymbolResolutionStrategy } from "../../../../../../../src/core/domains/language/python/resolver/strategies/python-imported-name.js";
 import { PythonSelfMemberSymbolResolutionStrategy } from "../../../../../../../src/core/domains/language/python/resolver/strategies/python-self-member.js";
 import { PythonSuperSymbolResolutionStrategy } from "../../../../../../../src/core/domains/language/python/resolver/strategies/python-super.js";
+import { PYTHON_UNRESOLVABLE_BASE } from "../../../../../../../src/core/domains/language/python/walker/walker.js";
 import { InMemoryGlobalSymbolTable } from "../../../../../../../src/core/domains/trajectory/codegraph/symbols/symbol-table.js";
 
 type Def = string | { readonly symbolId: string; readonly scope: readonly string[] };
@@ -172,6 +173,39 @@ describe("PythonSelfMemberSymbolResolutionStrategy — the MRO, not the first ba
     const table = tableWith({ "app/child.py": ["Child", "Child#other"], "elsewhere/x.py": ["Thing", "Thing#m"] });
     const ctx = ctxWith({ callerFile: "app/child.py", callerScope: ["Child"], table, classAncestors: {} });
     expect(selfMember().attempt(selfCall("m"), ctx)).toEqual({ kind: "drop" });
+  });
+
+  it("CONTINUEs when a base is the walker's unresolvable marker (bd invuy)", () => {
+    const table = tableWith({ "netbox/dcim/models.py": ["Device"] });
+    const ctx = ctxWith({
+      callerFile: "netbox/dcim/models.py",
+      callerScope: ["Device"],
+      table,
+      // `class Device(Manager.from_queryset(QuerySet))` — the base is computed
+      // at run time. The walker used to skip it silently, which left the class
+      // with no entry at all and made `boundaryOf` answer `closed`; the marker
+      // says "this branch is unreadable" instead. `unknown`, never `external`:
+      // "I could not read this" is not "the member lives in a library".
+      classAncestors: { "netbox/dcim/models.py::Device": [PYTHON_UNRESOLVABLE_BASE] },
+    });
+    expect(selfMember().attempt(selfCall("save"), ctx)).toEqual({ kind: "continue" });
+  });
+
+  it("keeps a readable base beside the marker and still resolves through it", () => {
+    const table = tableWith({
+      "app/mixin.py": ["Mixin", "Mixin#helper"],
+      "app/child.py": ["Child"],
+    });
+    const ctx = ctxWith({
+      callerFile: "app/child.py",
+      callerScope: ["Child"],
+      table,
+      classAncestors: { "app/child.py::Child": ["app.mixin::Mixin", PYTHON_UNRESOLVABLE_BASE] },
+    });
+    expect(selfMember().attempt(selfCall("helper"), ctx)).toEqual({
+      kind: "resolved",
+      target: { targetRelPath: "app/mixin.py", targetSymbolId: "Mixin#helper" },
+    });
   });
 
   it("resolves a @classmethod through the `.` spelling (polar RepositoryBase)", () => {

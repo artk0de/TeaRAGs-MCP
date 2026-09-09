@@ -56,6 +56,7 @@ import {
 } from "../../kernel/ancestor-walk.js";
 import { reexportOriginFile } from "../../kernel/reexport-origin.js";
 import { PYTHON_BUILTINS } from "../vocabulary/builtins.js";
+import { PYTHON_UNRESOLVABLE_BASE } from "../walker/walker.js";
 import { linearizeC3 } from "./mro.js";
 import type { PythonImportFileMapper } from "./python-import-file-mapper.js";
 import { parsePythonClassKey, pythonClassKey } from "./strategies/shared.js";
@@ -135,6 +136,13 @@ const BASE_ALTERNATIVE_SEPARATOR = "|";
  * One base SPELLING → the class key it names, or the boundary flavour that
  * stopped it.
  *
+ * {@link PYTHON_UNRESOLVABLE_BASE} is the walker's way of saying the base was
+ * an expression it could not read — a computed
+ * `Manager.from_queryset(QuerySet)` (bd tea-rags-mcp-invuy). It answers
+ * `unknown` before the grammar below is consulted, for the same reason a
+ * spent disjunction does: a branch nobody could read is not evidence the
+ * member is absent, and it is not evidence the base is a library class either.
+ *
  * A spelling carrying {@link BASE_ALTERNATIVE_SEPARATOR} is a DISJUNCTION: the
  * defining file star-imports, the name is bound by exactly one of the starred
  * modules, and the walker could not say which. The alternatives are tried in
@@ -159,6 +167,10 @@ function resolveBaseKey(
   mapper: PythonImportFileMapper,
   mode: AmbiguousResolveMode,
 ): BaseKeyVerdict {
+  // A base the walker could not read at all — a computed
+  // `Manager.from_queryset(…)`. Decided before anything else: it names no
+  // module and no class, so neither half of the grammar below applies to it.
+  if (spelling === PYTHON_UNRESOLVABLE_BASE) return UNKNOWN_BASE;
   const alternatives = spelling.split(BASE_ALTERNATIVE_SEPARATOR);
   if (alternatives.length === 1) return resolveOneBaseSpelling(spelling, definingFile, ctx, mapper, mode);
   if (PYTHON_BUILTINS.has(alternatives[0])) return EXTERNAL_BASE;

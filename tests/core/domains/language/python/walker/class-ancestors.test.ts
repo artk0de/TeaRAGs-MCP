@@ -17,7 +17,10 @@ import PyLang from "tree-sitter-python";
 import { describe, expect, it } from "vitest";
 
 import type { CallRef } from "../../../../../../src/core/contracts/types/codegraph.js";
-import { extractFromPythonFile } from "../../../../../../src/core/domains/language/python/walker/walker.js";
+import {
+  extractFromPythonFile,
+  PYTHON_UNRESOLVABLE_BASE,
+} from "../../../../../../src/core/domains/language/python/walker/walker.js";
 import { classifyReceiverKind } from "../../../../../../src/core/domains/trajectory/codegraph/symbols/receiver-kind.js";
 
 function parse(src: string): Parser.Tree {
@@ -121,6 +124,30 @@ describe("extractFromPythonFile — classAncestors emission", () => {
 
   it("leaves classAncestors undefined when the file declares no hierarchy", () => {
     expect(extract("def f():\n    pass\n").classAncestors).toBeUndefined();
+  });
+
+  it("records the unresolvable marker for a call-expression base (django `Manager.from_queryset`)", () => {
+    // bd tea-rags-mcp-invuy. Skipping the base left the class with NO
+    // `classAncestors` entry at all, so `boundaryOf` answered `closed` and
+    // `selfMember` DROPped every inherited member on absence of evidence. The
+    // marker makes the unreadable branch explicit: the closure degrades to
+    // `unknown`, which turns that DROP into a CONTINUE and nothing else.
+    expect(basesOf("class C(Manager.from_queryset(QuerySet)):\n    pass\n")).toEqual([PYTHON_UNRESOLVABLE_BASE]);
+  });
+
+  it("keeps the marker beside the bases it CAN read, in declaration order", () => {
+    expect(basesOf("class C(Base, Manager.from_queryset(QuerySet)):\n    pass\n")).toEqual([
+      "Base",
+      PYTHON_UNRESOLVABLE_BASE,
+    ]);
+  });
+
+  it("marks a subscripted call base too — the subscript strips to the call", () => {
+    expect(basesOf("class C(Manager.from_queryset(QuerySet)[T]):\n    pass\n")).toEqual([PYTHON_UNRESOLVABLE_BASE]);
+  });
+
+  it("does NOT mark a metaclass keyword argument — a class keyword is not a base", () => {
+    expect(basesOf("class C(Base, metaclass=Meta):\n    pass\n")).toEqual(["Base"]);
   });
 
   it("leaves the single-base classExtends channel exactly as it was", () => {
