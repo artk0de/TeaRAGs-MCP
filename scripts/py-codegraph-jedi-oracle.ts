@@ -12,10 +12,12 @@
  * Usage:
  *   npx tsx scripts/py-codegraph-jedi-oracle.ts --corpus <abs path> \
  *     [--python <interpreter running jedi>] [--environment <corpus venv>] \
- *     [--limit N] [--samples N] [--seed N] [--json out.json] [--quiet]
+ *     [--roots src,server] [--limit N] [--samples N] [--seed N]
+ *     [--json out.json] [--quiet]
  *
- * `--corpus` may also be a manifest NAME (`netbox`), in which case the root and
- * the venv interpreter come from `scripts/lib/codegraph-corpora.json`.
+ * `--corpus` may also be a manifest NAME (`netbox`), in which case the root, the
+ * venv interpreter and the source roots come from
+ * `scripts/lib/codegraph-corpora.json`.
  */
 import { spawn } from "node:child_process";
 import { writeFileSync } from "node:fs";
@@ -274,6 +276,8 @@ export async function askOracle(
     corpusRoot: string;
     python: string[];
     venvPython: string | null;
+    /** Absolute source roots jedi must search BEFORE the corpus venv (7dsyq). */
+    roots: readonly string[];
     workers: number;
   },
 ): Promise<Map<string, PyOracleFileReply>> {
@@ -332,7 +336,13 @@ export async function askOracle(
   });
 
   child.stdin.write(
-    `${JSON.stringify({ kind: "config", corpusRoot: options.corpusRoot, venvPython: options.venvPython, workers: options.workers })}\n`,
+    `${JSON.stringify({
+      kind: "config",
+      corpusRoot: options.corpusRoot,
+      venvPython: options.venvPython,
+      roots: [...options.roots],
+      workers: options.workers,
+    })}\n`,
   );
   for (const relPath of [...byFile.keys()].sort()) {
     if (dead !== null) break;
@@ -421,6 +431,8 @@ export interface PyOracleCliOptions {
   corpusRoot: string;
   corpusName: string;
   venvPython: string | null;
+  /** Absolute, manifest order — see `resolveCorpusRoots`. Never empty. */
+  roots: string[];
   pythonArgv: string[];
   limit: number;
   samples: number;
@@ -455,6 +467,27 @@ export function liftToOracleFloor(corpusFloor: string | undefined): string {
   return ORACLE_PYTHON_FLOOR;
 }
 
+/**
+ * The corpus's own source roots, absolute, in the order jedi must search them.
+ *
+ * A manifest declares them relative to the corpus (`server`, `src`, `.`); jedi
+ * needs absolute entries, and it needs them AHEAD of the corpus venv, or an
+ * installed distribution that happens to share a top-level module name with the
+ * corpus wins the lookup — which is what put 1,610 correct polar rows in the
+ * phantom bucket (7dsyq). A corpus the manifest does not describe falls back to
+ * the root itself, which is what jedi would have searched anyway.
+ */
+export function resolveCorpusRoots(
+  override: string | undefined,
+  declared: readonly string[] | undefined,
+  corpusRoot: string,
+): string[] {
+  const source = override === undefined ? (declared ?? []) : override.split(",");
+  const entries = source.map((entry) => entry.trim()).filter((entry) => entry !== "");
+  if (entries.length === 0) return [resolvePath(corpusRoot)];
+  return entries.map((entry) => resolvePath(corpusRoot, entry));
+}
+
 export function parseArgs(argv: readonly string[]): PyOracleCliOptions {
   const read = (flag: string): string | undefined => {
     const index = argv.indexOf(flag);
@@ -468,10 +501,12 @@ export function parseArgs(argv: readonly string[]): PyOracleCliOptions {
   // stays as the derivation for a corpus the manifest does not declare.
   const interpreter =
     read("--python") ?? manifest?.oraclePython ?? liftToOracleFloor(manifest?.requiresPython.replace(">=", ""));
+  const corpusRoot = manifest ? manifest.path : resolvePath(corpusArg);
   return {
-    corpusRoot: manifest ? manifest.path : resolvePath(corpusArg),
+    corpusRoot,
     corpusName: manifest?.name ?? corpusArg,
     venvPython: read("--environment") ?? manifest?.venvPython ?? null,
+    roots: resolveCorpusRoots(read("--roots"), manifest?.roots, corpusRoot),
     // `uv run --no-project` keeps jedi's environment out of the corpus's, which
     // is what lets one oracle build serve three interpreter versions.
     pythonArgv: [
@@ -502,6 +537,7 @@ async function main(): Promise<void> {
     corpusRoot: options.corpusRoot,
     python: options.pythonArgv,
     venvPython: options.venvPython,
+    roots: options.roots,
     workers: options.workers,
   });
   const rows = buildRows(walk.sites, replies);

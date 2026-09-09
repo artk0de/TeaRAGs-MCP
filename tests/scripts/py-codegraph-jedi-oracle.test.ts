@@ -5,7 +5,14 @@
  */
 import { describe, expect, it } from "vitest";
 
-import { AnsweredByProbe, buildPythonChain, buildRows, parseArgs } from "../../scripts/py-codegraph-jedi-oracle.js";
+import {
+  AnsweredByProbe,
+  askOracle,
+  buildPythonChain,
+  buildRows,
+  parseArgs,
+  resolveCorpusRoots,
+} from "../../scripts/py-codegraph-jedi-oracle.js";
 import type { CallContext, CallRef } from "../../src/core/contracts/types/codegraph.js";
 import type { SymbolResolutionOutcome, SymbolResolutionStrategy } from "../../src/core/contracts/types/language.js";
 
@@ -95,6 +102,25 @@ describe("parseArgs", () => {
     expect(parseArgs(["--corpus", "polar", "--environment", "/tmp/py"]).venvPython).toBe("/tmp/py");
   });
 
+  it("resolves the manifest's source roots against the corpus root", () => {
+    expect(parseArgs(["--corpus", "polar"]).roots).toEqual([`${parseArgs(["--corpus", "polar"]).corpusRoot}/server`]);
+    expect(parseArgs(["--corpus", "flask"]).roots).toEqual([`${parseArgs(["--corpus", "flask"]).corpusRoot}/src`]);
+  });
+
+  it("collapses a '.' root to the corpus root itself", () => {
+    const options = parseArgs(["--corpus", "ugnest"]);
+    expect(options.roots).toEqual([options.corpusRoot]);
+  });
+
+  it("falls back to the root for a corpus the manifest does not describe", () => {
+    expect(parseArgs(["--corpus", "/tmp/whatever"]).roots).toEqual(["/tmp/whatever"]);
+  });
+
+  it("lets an explicit --roots win over the manifest", () => {
+    const options = parseArgs(["--corpus", "polar", "--roots", "server, sdk"]);
+    expect(options.roots).toEqual([`${options.corpusRoot}/server`, `${options.corpusRoot}/sdk`]);
+  });
+
   it("defaults the seed so two runs sample identically", () => {
     expect(parseArgs([]).seed).toBe(parseArgs([]).seed);
   });
@@ -125,6 +151,63 @@ describe("parseArgs", () => {
 
   it("lets an explicit --python win over both floors", () => {
     expect(interpreterOf(["--corpus", "polar", "--python", "3.12"])).toBe("3.12");
+  });
+});
+
+describe("resolveCorpusRoots", () => {
+  it("keeps the declared order — jedi searches the list front to back", () => {
+    expect(resolveCorpusRoots(undefined, ["server", "sdk"], "/corpus")).toEqual(["/corpus/server", "/corpus/sdk"]);
+  });
+
+  it("passes an already-absolute root through untouched", () => {
+    expect(resolveCorpusRoots(undefined, ["/elsewhere/src"], "/corpus")).toEqual(["/elsewhere/src"]);
+  });
+
+  it("returns the root itself when nothing is declared", () => {
+    expect(resolveCorpusRoots(undefined, undefined, "/corpus")).toEqual(["/corpus"]);
+    expect(resolveCorpusRoots(undefined, [], "/corpus")).toEqual(["/corpus"]);
+  });
+
+  it("treats an override of only separators as no override at all", () => {
+    expect(resolveCorpusRoots(" , ", ["server"], "/corpus")).toEqual(["/corpus"]);
+  });
+});
+
+describe("askOracle", () => {
+  /**
+   * The child is a node echo rather than jedi: what is under test is the CONFIG
+   * line, and the roots reaching the Python side is the whole of the 7dsyq host
+   * change. It replies with one file record whose relPath carries the config
+   * back, which is enough for the reader loop to accept it.
+   */
+  const ECHO = [
+    "node",
+    "-e",
+    [
+      "let buf='';process.stdin.on('data',d=>buf+=d);",
+      "process.stdin.on('end',()=>{",
+      "const config=buf.split('\\n')[0];",
+      "process.stdout.write(JSON.stringify({relPath:config,parseFailed:false,parsoErrors:0,answers:[]})+'\\n');",
+      "});",
+    ].join(""),
+  ];
+
+  it("hands the corpus root, the venv and the source roots to the child", async () => {
+    const replies = await askOracle([], {
+      corpusRoot: "/corpus",
+      python: ECHO,
+      venvPython: "/venv/bin/python",
+      roots: ["/corpus/server"],
+      workers: 4,
+    });
+    const [config] = [...replies.keys()];
+    expect(JSON.parse(config ?? "{}")).toEqual({
+      kind: "config",
+      corpusRoot: "/corpus",
+      venvPython: "/venv/bin/python",
+      roots: ["/corpus/server"],
+      workers: 4,
+    });
   });
 });
 
