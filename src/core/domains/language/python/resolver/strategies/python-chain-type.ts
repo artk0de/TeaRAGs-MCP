@@ -2,6 +2,7 @@ import { CONTINUE, DROP, resolved } from "../../../../../contracts/resolution.js
 import type { CallContext, CallRef } from "../../../../../contracts/types/codegraph.js";
 import type { SymbolResolutionOutcome, SymbolResolutionStrategy } from "../../../../../contracts/types/language.js";
 import { propagateReceiverType, type ReceiverTypePorts } from "../../../kernel/receiver-type-propagation.js";
+import type { PythonAncestorLinearizerCache } from "../python-ancestor-policy.js";
 import { PythonImportFileMapper } from "../python-import-file-mapper.js";
 import { createPythonReceiverTypePorts } from "../python-receiver-type-ports.js";
 import { lastSegment, resolvePythonMemberOnType, resolveTypeFile, type ResolverConfig } from "./shared.js";
@@ -51,13 +52,20 @@ export class PythonChainTypeSymbolResolutionStrategy implements SymbolResolution
   readonly name = "chainType";
   private readonly ports: ReceiverTypePorts;
 
+  /**
+   * `linearizers` is the run's ancestor-MRO cache (bd tea-rags-mcp-yl85b): the
+   * fold reads `classFieldTypes` and `structuredReturnTypes` up the hierarchy,
+   * and the memo holding that order belongs to the resolver, not to a call
+   * site. Optional — a caller without one keeps the own-class-only read.
+   */
   constructor(
     private readonly cfg: ResolverConfig,
     private readonly mapper: PythonImportFileMapper = new PythonImportFileMapper(),
+    linearizers?: PythonAncestorLinearizerCache,
   ) {
     // ONE ports object for the life of the resolver — the fold allocates
     // nothing per call site.
-    this.ports = createPythonReceiverTypePorts(mapper);
+    this.ports = createPythonReceiverTypePorts(mapper, linearizers);
   }
 
   attempt(call: CallRef, ctx: CallContext): SymbolResolutionOutcome {

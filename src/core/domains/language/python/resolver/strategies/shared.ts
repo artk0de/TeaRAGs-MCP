@@ -20,6 +20,7 @@ import {
   type ImportRef,
   type SymbolResolutionTarget,
 } from "../../../../../contracts/types/codegraph.js";
+import type { TypeRef } from "../../../../../contracts/types/language.js";
 import {
   findMemberInAncestorChain,
   type AncestorClosure,
@@ -199,6 +200,82 @@ export function resolvePythonInheritedMember(
     options,
   );
   return { target: scan.target, closure: scan.closure };
+}
+
+/**
+ * The MRO key to start a receiver-type walk from, anchored in the CALLER's own
+ * file first (bd tea-rags-mcp-yl85b).
+ *
+ * `resolveTypeFile` answers for a name a file IMPORTS, and it is the wrong
+ * question for a `self` receiver: polar declares `MembersSync` in four files
+ * and `MetricsSync` in two, so the short-name pass is ambiguous, the
+ * import-narrowing pass filters against a list that never contains the caller's
+ * own file, and the walk that 1,528 rows depend on never starts. A class the
+ * calling file itself declares is the class a bare name in that file binds —
+ * module scope is what Python resolves it against — so that read comes first
+ * and the import-informed one is the fallback.
+ */
+function pythonReceiverClassKey(bareType: string, ctx: CallContext, mapper: PythonImportFileMapper): string | null {
+  const bare = lastSegment(bareType);
+  const own = pythonBoundClassKey(bare, ctx.callerFile, ctx);
+  if (own !== null) return own;
+  const imported = resolveTypeFile(bare, ctx, mapper);
+  return imported === null ? null : pythonBoundClassKey(bare, imported, ctx);
+}
+
+/**
+ * What `member` yields on a receiver of type `bareType`, consulting the whole
+ * MRO rather than just the class the receiver names (bd tea-rags-mcp-yl85b).
+ *
+ * This is the FIELD and RETURN counterpart of {@link resolvePythonInheritedMember},
+ * and it exists because of one measured shape: polar's generated SDK assigns
+ * `self.client` in `SyncServiceBase.__init__` and calls it from 60-odd
+ * subclasses in other files. `classFieldTypes` is keyed by the SHORT name of
+ * the class that ASSIGNED the field, so the subclass has no entry and the fold
+ * stopped on hop 1 — 1,528 rows, 95 % of that corpus's `chain` hole.
+ *
+ * Order per class, own class first: the FIELD channel (narrower — it names the
+ * class that owns the attribute), then the RETURN channel under the spelling
+ * the receiver form dictates. First answer wins; the walk stops there.
+ *
+ * A hierarchy that leaves the project before a definition yields NOTHING. The
+ * absence is not a verdict here — the caller owns what a miss means, and this
+ * function never fabricates a type to fill one.
+ *
+ * A run with no linearizer (a walker-v2 index carrying no `classAncestors`)
+ * reads the own class only, which is exactly the pre-seam behaviour.
+ */
+export function pythonInheritedMemberType(
+  bareType: string,
+  member: string,
+  form: "class" | "instance",
+  ctx: CallContext,
+  mapper: PythonImportFileMapper,
+  linearizer: AncestorLinearizer<CallContext> | undefined,
+): TypeRef | undefined {
+  const separator = form === "class" ? "." : "#";
+  const onClass = (shortName: string, classFq: string): TypeRef | undefined => {
+    const fieldType = ctx.classFieldTypes?.[shortName]?.[member];
+    if (fieldType !== undefined) return { form: "instance", name: fieldType };
+    return ctx.structuredReturnTypes?.[`${classFq}${separator}${member}`];
+  };
+  // The own-class read is byte-identical to the pre-seam one: `classFieldTypes`
+  // is bare-name-keyed and `structuredReturnTypes` FQ-keyed, and a receiver
+  // type spells both the same way.
+  const own = onClass(bareType, bareType);
+  if (own !== undefined) return own;
+  if (linearizer === undefined) return undefined;
+
+  const classKey = pythonReceiverClassKey(bareType, ctx, mapper);
+  if (classKey === null) return undefined;
+  for (const ancestorKey of linearizer.linearize(classKey).order) {
+    if (ancestorKey === classKey) continue;
+    const parsed = parsePythonClassKey(ancestorKey);
+    if (parsed === null) continue;
+    const hit = onClass(lastSegment(parsed.classFq), parsed.classFq);
+    if (hit !== undefined) return hit;
+  }
+  return undefined;
 }
 
 export interface ResolverConfig {

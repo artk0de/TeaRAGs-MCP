@@ -1,13 +1,20 @@
 import { CONTINUE, DROP, resolved } from "../../../../../contracts/resolution.js";
 import { pickSingleCandidate, type CallContext, type CallRef } from "../../../../../contracts/types/codegraph.js";
 import type { SymbolResolutionOutcome, SymbolResolutionStrategy } from "../../../../../contracts/types/language.js";
+import type { PythonAncestorLinearizerCache } from "../python-ancestor-policy.js";
 import { PythonImportFileMapper } from "../python-import-file-mapper.js";
-import { pythonEnclosingClass, pythonTypeNameIsExternal, type ResolverConfig } from "./shared.js";
+import {
+  pythonEnclosingClass,
+  pythonInheritedMemberType,
+  pythonTypeNameIsExternal,
+  type ResolverConfig,
+} from "./shared.js";
 
 /**
  * Cross-method instance-field dispatch — `self.<field>.<method>()` where
  * `<field>` was bound to a class in `__init__` (recorded by the walker in
- * `classFieldTypes` keyed by the enclosing class). Look up the field's type,
+ * `classFieldTypes` keyed by the class that ASSIGNED it — so the lookup walks
+ * the enclosing class's MRO, not just the enclosing class). Look up the field's type,
  * then resolve `<Type>#<member>` / `<Type>.<member>` against the symbol table.
  * Mirrors the TS resolver's `this.field.method()` path; Python binds fields via
  * `self`. Only one access level is supported (`self.foo.bar()`); chained
@@ -33,6 +40,7 @@ export class PythonSelfFieldSymbolResolutionStrategy implements SymbolResolution
   constructor(
     private readonly cfg: ResolverConfig,
     private readonly mapper: PythonImportFileMapper = new PythonImportFileMapper(),
+    private readonly linearizers?: PythonAncestorLinearizerCache,
   ) {}
 
   attempt(call: CallRef, ctx: CallContext): SymbolResolutionOutcome {
@@ -45,7 +53,20 @@ export class PythonSelfFieldSymbolResolutionStrategy implements SymbolResolution
     // `def` at the end of `callerScope` (bd tea-rags-mcp-graiw).
     const enclosing = pythonEnclosingClass(ctx);
     if (enclosing === null) return CONTINUE;
-    const typeName = ctx.classFieldTypes?.[enclosing.name]?.[fieldSegment];
+    // Own class first, then up the C3 MRO (bd tea-rags-mcp-yl85b): polar
+    // assigns `self.client` once in `SyncServiceBase.__init__` and calls it
+    // from 60-odd subclasses in other files, and `classFieldTypes` is keyed by
+    // the ASSIGNING class's short name. A field the walk cannot type is
+    // `undefined` here and falls to the DROP below exactly as before.
+    const fieldType = pythonInheritedMemberType(
+      enclosing.name,
+      fieldSegment,
+      "instance",
+      ctx,
+      this.mapper,
+      this.linearizers?.for(ctx),
+    );
+    const typeName = fieldType?.form === "instance" ? fieldType.name : undefined;
     if (typeName) {
       // Field type known → resolution is CONSTRAINED to that class.
       // Instance form first (the common dispatch shape), static fallback.
