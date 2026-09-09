@@ -476,6 +476,58 @@ describe("PythonSuperSymbolResolutionStrategy — the MRO after the enclosing cl
       target: { targetRelPath: "app/base.py", targetSymbolId: "Base#m" },
     });
   });
+
+  // A truncated linearization may SUPPLY an answer, never DISPLACE one. The
+  // netbox shape: `netbox/netbox/models/__init__.py` takes every base of
+  // `ChangeLoggedModel` from a star import, so the walker emits them bare, no
+  // file pins them, and the MRO of every model below stops one hop in.
+  it("lets the pre-seam walk keep its answer when the linearization is TRUNCATED", () => {
+    const table = tableWith({ "app/base.py": ["Base", "Base#m"], "app/c.py": ["C"] });
+    const ctx = ctxWith({
+      callerFile: "app/c.py",
+      callerScope: ["C"],
+      table,
+      classAncestors: { "app/c.py::C": ["Mystery"] },
+      classExtends: { C: "Base" },
+    });
+    expect(superStrategy().attempt(superCall("m"), ctx)).toEqual({
+      kind: "resolved",
+      target: { targetRelPath: "app/base.py", targetSymbolId: "Base#m" },
+    });
+  });
+
+  it("prefers a later MRO definer over the bare-name walk when the hierarchy is CLOSED", () => {
+    // Read to the end, the order IS evidence of precedence, and the run-global
+    // bare-name `classExtends` chain is the less sound of the two.
+    const table = tableWith({
+      "app/b.py": ["B", "B#m"],
+      "app/legacy.py": ["Legacy", "Legacy#m"],
+      "app/c.py": ["C"],
+    });
+    const ctx = ctxWith({
+      callerFile: "app/c.py",
+      callerScope: ["C"],
+      table,
+      classAncestors: { "app/c.py::C": ["app.b::B"] },
+      classExtends: { C: "Legacy" },
+    });
+    expect(superStrategy().attempt(superCall("m"), ctx)).toEqual({
+      kind: "resolved",
+      target: { targetRelPath: "app/b.py", targetSymbolId: "B#m" },
+    });
+  });
+
+  it("still DROPs when NEITHER the truncated MRO nor the pre-seam walk has an answer", () => {
+    const table = tableWith({ "app/c.py": ["C"], "other/x.py": ["Thing", "Thing#m"] });
+    const ctx = ctxWith({
+      callerFile: "app/c.py",
+      callerScope: ["C"],
+      table,
+      classAncestors: { "app/c.py::C": ["Mystery"] },
+      classExtends: {},
+    });
+    expect(superStrategy().attempt(superCall("m"), ctx)).toEqual({ kind: "drop" });
+  });
 });
 
 /**

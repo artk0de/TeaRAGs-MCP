@@ -77,12 +77,25 @@ export class PythonSuperSymbolResolutionStrategy implements SymbolResolutionStra
 
   /**
    * The first class AFTER the caller's own in its linearized MRO that owns
-   * `member`. `null` when the caller has no enclosing class, when no ancestor
-   * in the project defines the member, or when a branch of the hierarchy left
-   * the project before one did — each of which the caller turns into a DROP.
+   * `member`. `null` when the caller has no enclosing class and when nothing in
+   * the project defines the member, both of which the caller turns into a DROP.
    *
-   * The `closure` is deliberately discarded: for `super` all three flavours
-   * DROP, so there is nothing for it to decide.
+   * **A truncated linearization may SUPPLY an answer, never DISPLACE one.**
+   * `closure !== "closed"` means a branch could not be read to its end, so
+   * entries are missing from the MIDDLE of the order and "first definer" stops
+   * being evidence of precedence — the membership is still sound, the ordering
+   * is not. Measured on netbox: `netbox/netbox/models/__init__.py` takes every
+   * base of `ChangeLoggedModel` from `from netbox.models.features import *`, so
+   * the walker emits them bare, no file pins them, and the MRO of every model
+   * below it stops one hop in. Seven `super()` sites that the single-parent
+   * walk answered correctly then went to a truncated order, six finding nothing
+   * and one reaching `TrackingModelMixin#__init__` past the
+   * `ChangeLoggingMixin#__init__` the missing branch holds.
+   *
+   * So where the hierarchy was read to the end the MRO is authoritative, and
+   * where it was not the pre-seam walk keeps the answer it already had. The
+   * star-import blind spot itself belongs to the `classAncestors` channel, not
+   * to this pass.
    */
   private resolveSuper(member: string, ctx: CallContext, explicit: boolean): SymbolResolutionTarget | null {
     if (ctx.callerScope.length === 0) return null;
@@ -93,10 +106,11 @@ export class PythonSuperSymbolResolutionStrategy implements SymbolResolutionStra
     if (linearizer === undefined) return explicit ? null : this.resolveSuperViaClassExtends(member, ctx);
     // `callerScope` holds class containers only, so it IS the dotted class FQ.
     const classKey = pythonClassKey(ctx.callerFile, ctx.callerScope.join("."));
-    const { target } = resolvePythonInheritedMember(classKey, member, ctx, this.cfg.mode, linearizer, {
+    const { target, closure } = resolvePythonInheritedMember(classKey, member, ctx, this.cfg.mode, linearizer, {
       startAfter: true,
     });
-    return target;
+    if (closure === "closed") return target;
+    return this.resolveSuperViaClassExtends(member, ctx) ?? target;
   }
 
   /**
