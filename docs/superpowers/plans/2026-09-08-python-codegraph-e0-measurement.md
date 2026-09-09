@@ -1736,9 +1736,9 @@ export function mulberry32(seed: number): () => number;
 
 **Steps**
 
-- [ ] Prepare the worktree: `npm ci`, then a bare `npm run build`.
+- [x] Prepare the worktree: `npm ci`, then a bare `npm run build`.
 
-- [ ] Re-confirm the import probe before writing a line of it — the whole task
+- [x] Re-confirm the import probe before writing a line of it — the whole task
       assumes it, and it is one command:
 
 ```bash
@@ -1750,7 +1750,7 @@ npx tsx -e "import('./scripts/ts-codegraph-typechecker-oracle.ts').then(m => con
       `scripts/lib/codegraph-oracle-core.ts` (tests MOVED, not rewritten)
       before continuing.
 
-- [ ] Write the failing pure-core tests first —
+- [x] Write the failing pure-core tests first —
       `tests/scripts/py-oracle-core.test.ts`:
 
 ```ts
@@ -1865,7 +1865,7 @@ describe("classifyPyVerdict", () => {
 });
 ```
 
-- [ ] Add the remaining pure-core cases to the same file:
+- [x] Add the remaining pure-core cases to the same file:
 
 ```ts
 describe("categorizePySite", () => {
@@ -2007,10 +2007,10 @@ describe("mulberry32", () => {
 });
 ```
 
-- [ ] Run and watch every case fail:
+- [x] Run and watch every case fail:
       `npx vitest run tests/scripts/py-oracle-core.test.ts`.
 
-- [ ] Write `scripts/lib/py-oracle-core.ts`:
+- [x] Write `scripts/lib/py-oracle-core.ts`:
 
 ```ts
 /**
@@ -2167,7 +2167,7 @@ export function categorizePySite(
 }
 ```
 
-- [ ] Append the tally and sampling half to the same file:
+- [x] Append the tally and sampling half to the same file:
 
 ```ts
 /**
@@ -2261,16 +2261,16 @@ export function samplePyRows(
 }
 ```
 
-- [ ] Simplify `tallyPyRows` if the `indexOf` bridge above survives review — it
+- [x] Simplify `tallyPyRows` if the `indexOf` bridge above survives review — it
       is O(n²) and exists only to reuse `tallyBy`'s label callback. Prefer
       mapping each row to a `{ row, mapped }` pair and passing
       `(mapped) => labelsOf(pairs.get(mapped)!.row)` with a `WeakMap`. The
       behaviour asserted by the tests is what matters; the bridge is not.
 
-- [ ] Run the pure-core tests until green:
+- [x] Run the pure-core tests until green:
       `npx vitest run tests/scripts/py-oracle-core.test.ts`.
 
-- [ ] Write `scripts/py-codegraph-jedi-oracle.ts`, first half — corpus parity,
+- [x] Write `scripts/py-codegraph-jedi-oracle.ts`, first half — corpus parity,
       the rebuilt chain, and the `answeredBy` probe:
 
 ```ts
@@ -2382,7 +2382,7 @@ export function buildPythonChain(): SymbolResolutionStrategy[] {
 }
 ```
 
-- [ ] Continue the same file — the two-pass corpus walk and the runner's own
+- [x] Continue the same file — the two-pass corpus walk and the runner's own
       miss order, reproduced verbatim:
 
 ```ts
@@ -2540,7 +2540,7 @@ export async function walkCorpus(
 }
 ```
 
-- [ ] Continue the same file — the subprocess protocol, the row assembly and the
+- [x] Continue the same file — the subprocess protocol, the row assembly and the
       CLI:
 
 ```ts
@@ -2697,7 +2697,7 @@ export function buildRows(
 }
 ```
 
-- [ ] Finish the file with the CLI and the report:
+- [x] Finish the file with the CLI and the report:
 
 ```ts
 export interface PyOracleCliOptions {
@@ -2835,7 +2835,7 @@ if (
 }
 ```
 
-- [ ] Guard `main` exactly as the TS oracle does, and prove it — the whole
+- [x] Guard `main` exactly as the TS oracle does, and prove it — the whole
       import-not-relocate decision rests on that pattern, so the new harness
       must not break it for its own importers:
 
@@ -2843,7 +2843,7 @@ if (
 npx tsx -e "import('./scripts/py-codegraph-jedi-oracle.ts').then(m => console.log(Object.keys(m).length))"
 ```
 
-- [ ] Write `tests/scripts/py-codegraph-jedi-oracle.test.ts` — the host's own
+- [x] Write `tests/scripts/py-codegraph-jedi-oracle.test.ts` — the host's own
       units, no corpus and no subprocess:
 
 ```ts
@@ -3030,7 +3030,7 @@ describe("buildRows", () => {
 });
 ```
 
-- [ ] Smoke the whole harness on httpx — 23 files, seconds, and the only place
+- [x] Smoke the whole harness on httpx — 23 files, seconds, and the only place
       the two processes meet before the baseline run:
 
 ```bash
@@ -3051,7 +3051,7 @@ npx tsx scripts/py-codegraph-jedi-oracle.ts --corpus httpx --json /tmp/httpx-ora
          annotated, so a low coverage number here means the oracle is failing
          to locate nodes, and `unlocatedShape` says which shape.
 
-- [ ] Check determinism before anything downstream reads a number:
+- [x] Check determinism before anything downstream reads a number:
 
 ```bash
 npx tsx scripts/py-codegraph-jedi-oracle.ts --corpus httpx --json /tmp/httpx-1.json --quiet
@@ -3059,7 +3059,7 @@ npx tsx scripts/py-codegraph-jedi-oracle.ts --corpus httpx --json /tmp/httpx-2.j
 diff /tmp/httpx-1.json /tmp/httpx-2.json && echo DETERMINISTIC
 ```
 
-- [ ] Run the perf gate. The harness must not have slowed the chain down — it
+- [x] Run the perf gate. The harness must not have slowed the chain down — it
       imports production, it does not change it:
 
 ```bash
@@ -3067,11 +3067,11 @@ diff /tmp/httpx-1.json /tmp/httpx-2.json && echo DETERMINISTIC
   --corpus ~/Dev/Tools/tea-rags-bench/corpora/httpx --lang python --quiet
 ```
 
-- [ ] Confirm the Ruby tree is untouched:
+- [x] Confirm the Ruby tree is untouched:
       `git diff --stat -- src/core/domains/language/ruby tests/core/domains/language/ruby`
       prints nothing.
 
-- [ ] Format and commit:
+- [x] Format and commit:
 
 ```bash
 npx prettier --write scripts/lib/py-oracle-core.ts scripts/py-codegraph-jedi-oracle.ts \
@@ -3080,6 +3080,29 @@ git add scripts/lib/py-oracle-core.ts scripts/py-codegraph-jedi-oracle.ts \
   tests/scripts/py-oracle-core.test.ts tests/scripts/py-codegraph-jedi-oracle.test.ts
 git commit -m "feat(scripts): diff the Python chain against jedi per call site (mmckn)"
 ```
+
+**Three deviations, measured during execution.** The code above is the design;
+these are the places reality did not match it.
+
+1. `collectSourceFiles` selected TS/JS only. `SYMBOL_TABLE_EXTENSIONS` is this
+   oracle's own `.ts/.tsx/.js/.jsx/.mjs/.cjs` list, so importing the walk
+   verbatim scored **zero** Python files. It now takes the extension set as an
+   optional fourth argument defaulting to that same list — every existing caller
+   is byte-identical, and the Python host passes `CODEGRAPH_LANGUAGES`'s keys,
+   which is what "one symbol table over every codegraph extension" meant. The
+   exclusion LAYERS, which is what corpus parity is actually about, stay shared.
+2. **jedi resolves `super()` through the first base only.** `super().__init__`
+   on `User(Auditable, Named)`, where only `Named` defines `__init__`, answers
+   `object.__init__` from jedi's bundled typeshed. Such a row carries no ground
+   truth: `applySuperMroBlindSpot` maps it to `unknown` (so it lands in
+   `chainOnly` / `bothUnresolved`, outside every rate) and tags `superMro`. On
+   the fixture corpus this converts 2 unearned `agreeExternal` credits into
+   `bothUnresolved`; on httpx it withdraws 8 of 30 `superMro` sites.
+3. The blind spot cannot key on `receiverKind === "super"`. The Python walker
+   emits the receiver of `super().__init__(name)` as the text `"super()"`, which
+   is not in `SUPER_MARKERS` — the classifier files these under `dynamic`.
+   `isSuperCallSite` therefore accepts any of three signals: the classifier's
+   marker, the Python side's measured `isSuperCall`, or the receiver text.
 
 ---
 
