@@ -29,6 +29,7 @@
 import type { AstNode, MaterializedTree } from "../../../../contracts/types/ast.js";
 import type {
   CallRef,
+  CallResultBinding,
   ChunkExtraction,
   FileExtraction,
   ImportRef,
@@ -94,6 +95,12 @@ export function extractFromPythonFile(input: PythonExtractInput): FileExtraction
   // `selfMember`'s `callerScope.length === 0` guard and let `globalShortName`
   // fabricate 40 phantoms.
   const callOwnership = assignCallsToInnermostChunks(calls, input.chunks);
+  // bd tea-rags-mcp-z68v9 — `NAME = <callee>(…)` sites, collected ONCE per file
+  // and sliced per chunk below, because the scan needs whole-file scope nesting
+  // to tell a function-body local from a module global.
+  const callResultBindings = trackTypes
+    ? collectPythonCallResultBindings(input.tree.rootNode)
+    : ({} as Record<string, CallResultBinding[]>);
   const byChunk: ChunkExtraction[] = input.chunks.map((c, chunkIndex) => {
     const base: ChunkExtraction = {
       symbolId: c.symbolId,
@@ -105,6 +112,8 @@ export function extractFromPythonFile(input: PythonExtractInput): FileExtraction
     if (trackTypes) {
       const bindings = collectLocalBindingsForChunk(input.tree.rootNode, c.startLine, c.endLine);
       if (Object.keys(bindings).length > 0) base.localBindings = bindings;
+      const inRange = pythonCallResultBindingsInRange(callResultBindings, c.startLine, c.endLine);
+      if (inRange !== undefined) base.callResultBindings = inRange;
     }
     return base;
   });
@@ -895,4 +904,75 @@ function collectPythonCalls(root: AstNode): CallRef[] {
 function walk(node: AstNode, visit: (n: AstNode) => void): void {
   visit(node);
   for (const child of node.children) walk(child, visit);
+}
+
+/** Scopes whose body is a function body — a local established there is a LOCAL. */
+const PYTHON_NESTED_SCOPES = new Set(["function_definition", "lambda"]);
+
+/** A plain dotted name: `make`, `Repo.from_session`, `self.factory.build`. */
+const PYTHON_CALLEE_SPELLING = /^[A-Za-z_]\w*(\.[A-Za-z_]\w*)*$/;
+
+/**
+ * The callee spelling of a call node, or `null` when it is not a plain dotted
+ * name. A spelling carrying a call, an index or a newline is a CHAIN, not a
+ * name; folding it would mean re-parsing the text and this channel does not do
+ * that (bd tea-rags-mcp-z68v9).
+ */
+function pythonCalleeSpelling(call: AstNode): string | null {
+  const fn = call.childForFieldName("function");
+  if (fn === null) return null;
+  if (fn.type !== "identifier" && fn.type !== "attribute" && fn.type !== "dotted_name") return null;
+  return PYTHON_CALLEE_SPELLING.test(fn.text) ? fn.text : null;
+}
+
+/**
+ * `NAME = <callee>(…)` sites, keyed by the bound name (bd tea-rags-mcp-z68v9).
+ *
+ * The RHS's return TYPE is deliberately not inferred here: for the measured
+ * shape (`repository = SubscriptionRepository.from_session(session)`, polar 470
+ * rows) the callee is cross-file and its return is declared on an ancestor, so
+ * a per-file pass has nothing to read. The spelling is the whole contribution;
+ * `pythonCallBindingType` folds it at resolve time.
+ *
+ * Declined by construction, each because there is no single nominal answer:
+ * tuple unpacking, a chained / subscripted callee, a non-call RHS, an annotated
+ * assignment (the annotation is the better answer and `localBindings` already
+ * carries it), and a MODULE-level assignment — a module global is not a local,
+ * and binding one would type every call site in the file from a single write.
+ * `await <call>` IS unwrapped: awaiting a coroutine yields what it declares.
+ *
+ * Returns a plain object (Record) for NDJSON round-trip — `Map` serialises to
+ * `{}` and loses every entry.
+ */
+function collectPythonCallResultBindings(root: AstNode): Record<string, CallResultBinding[]> {
+  const out: Record<string, CallResultBinding[]> = {};
+  const scan = (node: AstNode, inFunction: boolean): void => {
+    if (node.type === "assignment" && inFunction && node.childForFieldName("type") === null) {
+      const lhs = node.namedChild(0);
+      const rhs = node.childForFieldName("right");
+      const call = rhs?.type === "await" ? (rhs.namedChild(0) ?? rhs) : rhs;
+      if (lhs?.type === "identifier" && call?.type === "call") {
+        const callee = pythonCalleeSpelling(call);
+        if (callee !== null) (out[lhs.text] ??= []).push({ line: node.startPosition.row + 1, callee });
+      }
+    }
+    for (const child of node.namedChildren) scan(child, inFunction || PYTHON_NESTED_SCOPES.has(node.type));
+  };
+  for (const child of root.namedChildren) scan(child, false);
+  for (const list of Object.values(out)) list.sort((a, b) => a.line - b.line);
+  return out;
+}
+
+/** The subset of `bindings` established inside `[startLine, endLine]`, or undefined when none is. */
+function pythonCallResultBindingsInRange(
+  bindings: Record<string, CallResultBinding[]>,
+  startLine: number,
+  endLine: number,
+): Record<string, CallResultBinding[]> | undefined {
+  const out: Record<string, CallResultBinding[]> = {};
+  for (const [name, list] of Object.entries(bindings)) {
+    const kept = list.filter((binding) => binding.line >= startLine && binding.line <= endLine);
+    if (kept.length > 0) out[name] = kept;
+  }
+  return Object.keys(out).length > 0 ? out : undefined;
 }

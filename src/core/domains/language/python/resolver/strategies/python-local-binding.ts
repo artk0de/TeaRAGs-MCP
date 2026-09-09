@@ -1,11 +1,19 @@
 import { CONTINUE, DROP, resolved } from "../../../../../contracts/resolution.js";
-import { resolveLocalBindingType, type CallContext, type CallRef } from "../../../../../contracts/types/codegraph.js";
+import {
+  nearestCallResultBinding,
+  resolveLocalBindingType,
+  type CallContext,
+  type CallRef,
+} from "../../../../../contracts/types/codegraph.js";
 import type { SymbolResolutionOutcome, SymbolResolutionStrategy } from "../../../../../contracts/types/language.js";
+import type { ReceiverTypePorts } from "../../../kernel/receiver-type-propagation.js";
 import type { PythonAncestorLinearizerCache } from "../python-ancestor-policy.js";
 import { PythonImportFileMapper } from "../python-import-file-mapper.js";
+import { createPythonCallBindingPorts } from "../python-receiver-type-ports.js";
 import {
   lastSegment,
   pythonBoundClassKey,
+  pythonCallBindingType,
   resolvePythonInheritedMember,
   resolvePythonMemberOnType,
   resolveTypeFile,
@@ -60,17 +68,38 @@ export { resolveTypeFile } from "./shared.js";
  */
 export class PythonLocalBindingSymbolResolutionStrategy implements SymbolResolutionStrategy {
   readonly name = "localBinding";
+  /** The fold's ports, built ONCE per resolver exactly as `chainType` builds its own. */
+  private readonly ports: ReceiverTypePorts;
+
   constructor(
     private readonly cfg: ResolverConfig,
     private readonly mapper: PythonImportFileMapper = new PythonImportFileMapper(),
     private readonly linearizers?: PythonAncestorLinearizerCache,
-  ) {}
+  ) {
+    this.ports = createPythonCallBindingPorts(mapper, linearizers);
+  }
 
+  /**
+   * The walker's own binding first, the folded call binding second (bd
+   * tea-rags-mcp-z68v9). A `localBindings` entry is a type the walker READ — an
+   * annotation, a constructor call, a parameter hint — and a fold is an
+   * inference, so the read always wins.
+   *
+   * The fold answers only for a `class` / `instance` ref: a container or a
+   * union has no single nominal receiver, and `pythonInheritedMemberType`
+   * already declines to emit one. From there the verdict is
+   * {@link resolveOnBoundType}'s, unchanged — an external type DROPs, an
+   * unreadable hierarchy CONTINUEs.
+   */
   attempt(call: CallRef, ctx: CallContext): SymbolResolutionOutcome {
     if (!call.receiver) return CONTINUE;
     const localType = resolveLocalBindingType(ctx.localBindings, call.receiver, call.startLine);
-    if (!localType) return CONTINUE;
-    return this.resolveOnBoundType(localType, call.member, ctx);
+    if (localType) return this.resolveOnBoundType(localType, call.member, ctx);
+    const bound = nearestCallResultBinding(ctx.callResultBindings, call.receiver, call.startLine);
+    if (bound === undefined) return CONTINUE;
+    const type = pythonCallBindingType(bound.callee, bound.line, ctx, this.ports);
+    if (type === undefined || (type.form !== "class" && type.form !== "instance")) return CONTINUE;
+    return this.resolveOnBoundType(type.name, call.member, ctx);
   }
 
   /**
