@@ -46,6 +46,14 @@ export interface CodegraphCorpus {
   oraclePython: string;
   venvPython: string;
   venvPythonVersion: string;
+  /**
+   * Directories, relative to `path`, that the corpus's own packages are
+   * importable FROM — polar's `server`, flask's `src`, `.` when the checkout is
+   * its own root. The jedi oracle puts them ahead of the corpus venv on jedi's
+   * sys path: left in jedi's default order they arrive after site-packages, and
+   * polar's installed `polar_sdk` (top-level module `polar`) then beats
+   * `server/polar` on every import (7dsyq).
+   */
   roots: string[];
   stack: string[];
   baseline: CodegraphCorpusBaseline;

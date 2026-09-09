@@ -93,6 +93,26 @@ const SITES: Record<
       member: "normalise",
     },
   ],
+  "pkg/shadow_use.py": [
+    {
+      startLine: 7,
+      callText: "remove_linebreaks(value)",
+      receiver: null,
+      member: "remove_linebreaks",
+    },
+    {
+      startLine: 11,
+      callText: "Formatter()",
+      receiver: null,
+      member: "Formatter",
+    },
+    {
+      startLine: 11,
+      callText: "Formatter().render(value)",
+      receiver: "Formatter()",
+      member: "render",
+    },
+  ],
   "pkg/stdlib_use.py": [
     {
       startLine: 10,
@@ -115,12 +135,13 @@ const SITES: Record<
   ],
 };
 
-function runOracle(workers = 1): Record<string, OracleAnswer[]> {
+function runOracle(workers = 1, roots?: string[]): Record<string, OracleAnswer[]> {
   const lines = [
     JSON.stringify({
       kind: "config",
       corpusRoot: FIXTURE_ROOT,
       venvPython: null,
+      ...(roots === undefined ? {} : { roots }),
       workers,
     }),
   ];
@@ -217,6 +238,30 @@ describe.skipIf(!uvAvailable)("jedi_oracle.py over the fixture corpus", () => {
     });
   });
 
+  /**
+   * The netbox and polar shape, minimised (7dsyq). `pkg/string.py` is a PROJECT
+   * module the stdlib also has a name for, and jedi points at it correctly; the
+   * bug was that `classify_origin` overruled jedi on the strength of the stem
+   * and reported stdlib, turning 432 netbox and 46 polar correct chain edges
+   * into phantoms. Containment in the corpus now decides before the stem does.
+   */
+  it("keeps a project module whose name shadows the stdlib in the project", () => {
+    const answer = answersFor("pkg/shadow_use.py", "remove_linebreaks");
+    expect(answer.outcome.kind).toBe("inProject");
+    expect(answer.outcome.origin).toBe("project");
+    expect(answer.outcome.targets?.[0]).toMatchObject({
+      relPath: "pkg/string.py",
+      symbolId: "remove_linebreaks",
+    });
+  });
+
+  it("reaches a method on a class defined in a stdlib-shadowing module", () => {
+    expect(answersFor("pkg/shadow_use.py", "render").outcome.targets?.[0]).toMatchObject({
+      relPath: "pkg/string.py",
+      symbolId: "Formatter#render",
+    });
+  });
+
   it("calls stdlib receivers external with origin stdlib", () => {
     const answer = answersFor("pkg/stdlib_use.py", "dumps");
     expect(answer.outcome.kind).toBe("external");
@@ -235,6 +280,16 @@ describe.skipIf(!uvAvailable)("jedi_oracle.py over the fixture corpus", () => {
       OracleAnswer[]
     >;
     expect(runOracle()).toEqual(expected);
+  });
+
+  /**
+   * The fixture declares no source root, so the two configs describe the same
+   * search order and must therefore answer identically. What this pins is that
+   * `roots` is OPTIONAL on the wire: a config without the key still runs, which
+   * is what keeps the fallback in `build_sys_path` honest (7dsyq).
+   */
+  it("answers the same with an explicit root as with the key absent", () => {
+    expect(runOracle(1, [FIXTURE_ROOT])).toEqual(runOracle(1));
   });
 
   it("answers a striped multi-worker run exactly as the single-worker one", () => {

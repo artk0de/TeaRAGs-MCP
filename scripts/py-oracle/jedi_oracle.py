@@ -64,12 +64,20 @@ _STATE: dict[str, Any] = {}
 def classify_origin(module_path: Path | None, corpus_root: Path) -> str:
     """Where a jedi target lives.
 
-    ORDER IS LOAD-BEARING and is not the obvious one. jedi's bundled stubs sit
-    UNDER site-packages, so the stub test must precede the site-packages test or
-    no target ever reads `typeshedStub`. And both must precede the corpus-root
-    prefix test: ugnest keeps its virtualenv INSIDE its own checkout, so a
+    ORDER IS LOAD-BEARING and is not the obvious one. Three PATH tests come
+    first. jedi's bundled stubs sit UNDER site-packages, so the stub test must
+    precede the site-packages test or no target ever reads `typeshedStub`; and
+    both, with the stdlib DIRECTORY test, must precede the corpus-root prefix
+    test, because ugnest keeps its virtualenv INSIDE its own checkout and a
     root-prefix-first order called Django's own source "project" — 26 of 30
-    sampled targets were misclassified that way before this order was fixed.
+    sampled targets were misclassified that way.
+
+    The stdlib NAME test is a different animal and now runs LAST, only for a
+    path the corpus does not contain. It is a heuristic over the file's stem,
+    and a project is free to own a module called `string`, `types` or `email`.
+    Running it ahead of containment called netbox's `netbox/utilities/string.py`
+    stdlib and polar's `sdk/generator/python/types.py` stdlib, which scored the
+    chain's CORRECT answer a phantom: 432 netbox rows and 46 polar rows (7dsyq).
     """
     if module_path is None:
         return "builtin"
@@ -80,12 +88,10 @@ def classify_origin(module_path: Path | None, corpus_root: Path) -> str:
         return "sitePackages"
     if STDLIB_DIR_RE.search(text) is not None:
         return "stdlib"
-    if module_path.stem in sys.stdlib_module_names:
-        return "stdlib"
     try:
         rel = module_path.resolve().relative_to(corpus_root)
     except ValueError:
-        return "outsideRepo"
+        return "stdlib" if module_path.stem in sys.stdlib_module_names else "outsideRepo"
     return "generatedInRepo" if "migrations" in rel.parts else "project"
 
 
@@ -304,14 +310,49 @@ def query_site(script: jedi.Script, site: CallSite, corpus_root: Path) -> dict[s
     return {"kind": "external", "origin": origins[0]}
 
 
-def init_worker(corpus_root: str, venv_python: str | None) -> None:
+def build_sys_path(corpus_root: Path, roots: list[str], env_sys_path: list[str]) -> list[str]:
+    """The order jedi searches modules in: the corpus's OWN roots, then the venv.
+
+    Left to itself jedi orders `[project path] + environment sys path + script
+    parent dirs`, so a corpus that keeps its sources under a source root —
+    polar's `server`, flask's `src`, netbox's `netbox` — is only reachable
+    through that parent-dir TAIL, i.e. after site-packages. polar installs a
+    `polar_sdk` distribution whose top-level module is also called `polar`, so
+    every `from polar.… import …` inside `server/polar` resolved to the
+    installed package or to nothing at all, and 1,610 rows were scored phantom
+    against a chain that had answered correctly (7dsyq).
+
+    Declared roots may be absolute (what the host sends) or relative to the
+    corpus; `Path.__truediv__` accepts both. An undeclared corpus keeps jedi's
+    own behaviour by falling back to the root itself. `''` is dropped exactly as
+    `Project._get_base_sys_path` drops it — it means "the launcher's cwd", which
+    here is the harness, never the corpus.
+    """
+    declared = [str((corpus_root / entry).resolve()) for entry in roots] or [str(corpus_root)]
+    ordered: list[str] = []
+    for entry in [*declared, *env_sys_path]:
+        if entry and entry not in ordered:
+            ordered.append(entry)
+    return ordered
+
+
+def init_worker(corpus_root: str, venv_python: str | None, roots: list[str] | None = None) -> None:
     root = Path(corpus_root).resolve()
     _STATE["corpus_root"] = root
     # `jedi.Project(root, environment=...)` raises TypeError on 0.20.0.
-    _STATE["project"] = (
+    # Two Projects on purpose: the first exists only to reach the corpus
+    # environment's sys path, which the second then has to be handed EXPLICITLY —
+    # jedi consults the environment only when `sys_path` is None.
+    base = (
         jedi.Project(path=str(root), environment_path=venv_python)
         if venv_python
         else jedi.Project(path=str(root))
+    )
+    sys_path = build_sys_path(root, list(roots or []), list(base.get_environment().get_sys_path()))
+    _STATE["project"] = (
+        jedi.Project(path=str(root), environment_path=venv_python, sys_path=sys_path)
+        if venv_python
+        else jedi.Project(path=str(root), sys_path=sys_path)
     )
     _STATE["grammar"] = parso.load_grammar()
 
@@ -407,11 +448,15 @@ def main() -> int:
         sys.stderr.write("first stdin line must be the config record\n")
         return 2
     corpus_root, venv = config["corpusRoot"], config.get("venvPython") or None
+    # Absent `roots` is not an error: a host that predates 7dsyq, and the fixture
+    # corpus, both have no source root, and `build_sys_path` falls back to the
+    # corpus root — which is what jedi would have used anyway.
+    roots = list(config.get("roots") or [])
     files = [b for b in batches if b.get("kind") == "file"]
     workers = max(1, min(int(config.get("workers", 1)), len(files) or 1))
 
     if workers == 1:
-        init_worker(corpus_root, venv)
+        init_worker(corpus_root, venv, roots)
         results = (answer_file(batch) for batch in files)
     else:
         # Determinism needs a FIXED file -> process assignment, not just a fixed
@@ -423,7 +468,7 @@ def main() -> int:
         # files in the same order, every run. The host keys replies by relPath,
         # so emitting group by group costs nothing.
         groups = [files[index::workers] for index in range(workers)]
-        pool = mp.get_context("fork").Pool(workers, init_worker, (corpus_root, venv), maxtasksperchild=1)
+        pool = mp.get_context("fork").Pool(workers, init_worker, (corpus_root, venv, roots), maxtasksperchild=1)
         results = (answer for group in pool.imap(answer_group, groups) for answer in group)
 
     for result in results:
