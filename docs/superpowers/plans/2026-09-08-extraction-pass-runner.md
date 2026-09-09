@@ -184,10 +184,10 @@ export function mergeExtraction(
 
 **Steps**
 
-- [ ] Build the worktree once so worker-forking specs can run: `npm run build`.
+- [x] Build the worktree once so worker-forking specs can run: `npm run build`.
       Bare build only — no `npm link`, no reindex.
 
-- [ ] Write the failing test file
+- [x] Write the failing test file
       `tests/core/domains/language/kernel/merge-extraction.test.ts`:
 
 ```ts
@@ -606,12 +606,12 @@ describe("mergeExtraction — the rulebook is exhaustive by construction", () =>
 });
 ```
 
-- [ ] Run it and confirm the expected failure — the module does not exist yet:
+- [x] Run it and confirm the expected failure — the module does not exist yet:
       `npx vitest run tests/core/domains/language/kernel/merge-extraction.test.ts`
       Expected: `Failed to resolve import ".../kernel/merge-extraction.js"`
       (vitest reports it as an unresolved import, not a test assertion failure).
 
-- [ ] Write `src/core/domains/language/kernel/merge-extraction.ts`:
+- [x] Write `src/core/domains/language/kernel/merge-extraction.ts`:
 
 ```ts
 /**
@@ -876,18 +876,18 @@ export function mergeExtraction(
 }
 ```
 
-- [ ] Run the unit gate:
+- [x] Run the unit gate:
       `npx vitest run tests/core/domains/language/kernel/merge-extraction.test.ts`
       — all cases green.
 
-- [ ] Run the type-level gate (the `@ts-expect-error` assertions are only
+- [x] Run the type-level gate (the `@ts-expect-error` assertions are only
       checked here; `npm run type-check` covers `src/**` alone):
       `npx tsc --noEmit -p tsconfig.eslint.json` — clean.
 
-- [ ] Run lint on the new files:
+- [x] Run lint on the new files:
       `npx eslint --max-warnings 0 src/core/domains/language/kernel/merge-extraction.ts tests/core/domains/language/kernel/merge-extraction.test.ts`
 
-- [ ] Commit:
+- [x] Commit:
 
 ```text
 feat(language): add the append-only extraction channel merge (qns77)
@@ -963,7 +963,7 @@ export function composeExtractionWalker(
 
 **Steps**
 
-- [ ] Write the failing test file
+- [x] Write the failing test file
       `tests/core/domains/language/kernel/extraction-passes.test.ts`:
 
 ```ts
@@ -1132,13 +1132,13 @@ describe("composeExtractionWalker", () => {
 });
 ```
 
-- [ ] Run it and confirm the expected failure:
+- [x] Run it and confirm the expected failure:
       `npx vitest run tests/core/domains/language/kernel/extraction-passes.test.ts`
       Expected: `Failed to resolve import ".../kernel/extraction-passes.js"`,
       plus a TS complaint about `gemfileContent` on `WalkInput`-derived
       `WalkContext` once the module exists — both are fixed below.
 
-- [ ] Add `gemfileContent` to `WalkContext` in
+- [x] Add `gemfileContent` to `WalkContext` in
       `src/core/contracts/types/language.ts`. Replace:
 
 ```ts
@@ -1181,7 +1181,7 @@ export interface WalkContext {
 }
 ```
 
-- [ ] Write `src/core/domains/language/kernel/extraction-passes.ts`:
+- [x] Write `src/core/domains/language/kernel/extraction-passes.ts`:
 
 ```ts
 /**
@@ -1299,17 +1299,17 @@ export function composeExtractionWalker(
 }
 ```
 
-- [ ] Run the unit gate:
+- [x] Run the unit gate:
       `npx vitest run tests/core/domains/language/kernel/extraction-passes.test.ts`
       — all cases green, including the two `toBe` identity assertions.
 
-- [ ] Run the contract gate: `npm run type-check` then
+- [x] Run the contract gate: `npm run type-check` then
       `npx tsc --noEmit -p tsconfig.eslint.json` — both clean.
 
-- [ ] Run lint:
+- [x] Run lint:
       `npx eslint --max-warnings 0 src/core/contracts/types/language.ts src/core/domains/language/kernel/extraction-passes.ts tests/core/domains/language/kernel/extraction-passes.test.ts`
 
-- [ ] Commit:
+- [x] Commit:
 
 ```text
 feat(contracts): add the extraction pass-runner and walker composer (pss0q)
@@ -1366,11 +1366,11 @@ type does not change, only how the value is built.
 
 **Steps**
 
-- [ ] Record the Ruby BEFORE state so the parity harness has a baseline to be
+- [x] Record the Ruby BEFORE state so the parity harness has a baseline to be
       compared against later. From the repo root: `git rev-parse HEAD` — note
       the sha in the commit body as the pre-wiring point.
 
-- [ ] Record the Python BEFORE state by running the chain tally on all five
+- [x] Record the Python BEFORE state by running the chain tally on all five
       corpora and confirming the numbers match the 2026-09-02 baseline:
 
 ```bash
@@ -1387,7 +1387,7 @@ npx tsx scripts/codegraph-chain-tally.ts --corpus ~/Dev/Tools/tea-rags-bench/cor
       A row that does not match means the tree is already off-baseline — stop and
       report rather than proceeding, because the AFTER comparison would be void.
 
-- [ ] Create `src/core/domains/language/ruby/walker/passes.ts`:
+- [x] Create `src/core/domains/language/ruby/walker/passes.ts`:
 
 ```ts
 /**
@@ -1408,7 +1408,7 @@ import type { ExtractionFacetPass } from "../../kernel/extraction-passes.js";
 export const RUBY_EXTRACTION_PASSES: readonly ExtractionFacetPass[] = [];
 ```
 
-- [ ] Create `src/core/domains/language/python/walker/passes.ts`:
+- [x] Create `src/core/domains/language/python/walker/passes.ts`:
 
 ```ts
 /**
@@ -1423,7 +1423,7 @@ import type { ExtractionFacetPass } from "../../kernel/extraction-passes.js";
 export const PYTHON_EXTRACTION_PASSES: readonly ExtractionFacetPass[] = [];
 ```
 
-- [ ] Re-export both from their walker barrels. In
+- [x] Re-export both from their walker barrels. In
       `src/core/domains/language/ruby/walker/index.ts` add:
 
 ```ts
@@ -1436,7 +1436,7 @@ export { RUBY_EXTRACTION_PASSES } from "./passes.js";
 export { PYTHON_EXTRACTION_PASSES } from "./passes.js";
 ```
 
-- [ ] Wire Ruby. In `src/core/domains/language/ruby/index.ts`, add the imports
+- [x] Wire Ruby. In `src/core/domains/language/ruby/index.ts`, add the imports
       beside the existing walker imports:
 
 ```ts
@@ -1460,7 +1460,7 @@ import { extractFromRubyFile, type RubyExtractInput } from "./walker/walker.js";
   });
 ```
 
-- [ ] Wire Python. In `src/core/domains/language/python/index.ts`, add:
+- [x] Wire Python. In `src/core/domains/language/python/index.ts`, add:
 
 ```ts
 import { composeExtractionWalker } from "../kernel/extraction-passes.js";
@@ -1483,7 +1483,7 @@ import {
   });
 ```
 
-- [ ] Create the Ruby parity harness
+- [x] Create the Ruby parity harness
       `scripts/spikes/ruby-walker-composition-parity.ts`:
 
 ```ts
@@ -1601,7 +1601,7 @@ function main(): void {
 main();
 ```
 
-- [ ] Run the Ruby byte-identical gate:
+- [x] Run the Ruby byte-identical gate:
 
 ```bash
 npx tsx scripts/spikes/ruby-walker-composition-parity.ts \
@@ -1611,7 +1611,7 @@ npx tsx scripts/spikes/ruby-walker-composition-parity.ts \
       Required: `mismatches 0`, `compared` in the low thousands (mastodon's non-test
       Ruby corpus). Exit code 0.
 
-- [ ] Run the relocation gate — no test edits allowed:
+- [x] Run the relocation gate — no test edits allowed:
 
 ```bash
 npx vitest run tests/core/domains/language/ruby tests/core/domains/language/python tests/core/domains/ingest/pipeline/chunker
@@ -1622,7 +1622,7 @@ git diff --stat -- tests/
       kernel test files from Tasks 1 and 2 (already committed, so on a clean tree it
       shows nothing).
 
-- [ ] Run the Python byte-identical gate — the same five commands as the BEFORE
+- [x] Run the Python byte-identical gate — the same five commands as the BEFORE
       step, with the same expected `edges / fileOnly / unresolved` and chain
       drift 0:
 
@@ -1637,7 +1637,7 @@ npx tsx scripts/codegraph-chain-tally.ts --corpus ~/Dev/Tools/tea-rags-bench/cor
       ugnest 1432 / 315 / 5899; flask 770 / 148 / 1402; netbox 21971 / 8190 / 38760;
       polar 21336 / 3976 / 61218; httpx 1011 / 193 / 1632. Any drift is a hard stop.
 
-- [ ] Run the perf gate on all five Python corpora and record peak RSS
+- [x] Run the perf gate on all five Python corpora and record peak RSS
       (`/usr/bin/time -l` reports "maximum resident set size" in BYTES on
       macOS):
 
@@ -1655,14 +1655,30 @@ npx tsx scripts/codegraph-chain-tally.ts --corpus ~/Dev/Tools/tea-rags-bench/cor
       here means the composer is being rebuilt per call — check that `walker` is a
       field initializer and not a getter.
 
-- [ ] Run the epic gate: `npm run build && npm run test:coverage` — green,
+      RESULT (2026-09-09): the 2026-09-02 absolute MB baselines above are not
+      comparable across machines or load, so the gate was re-run as a same-machine
+      A/B by the parent session (BEFORE = main d7e942ab9, AFTER = this worktree,
+      `chain-tally --quiet` under `/usr/bin/time -l`):
+
+      polar BEFORE 10.63 s / 1,195 MB -> AFTER 10.54 s / 1,129 MB
+      (RSS -5.5%, wall -1%). netbox BEFORE 14.37 / 14.28 / 13.57 s,
+      RSS 1,685 / 1,751 / 1,710 MB -> AFTER 14.58 / 12.86 s (one run stalled at
+      314 s real with 14.7 s user = machine contention), RSS 2,190 / 1,614 /
+      2,196 MB — bimodal, contaminated by concurrent gate runs; wall is at parity.
+      netbox RSS re-measured by the parent on an idle machine with a V8 heap cap
+      after this branch is handed back.
+
+      Code-level check done: `walker` is a field initializer, so
+      `composeExtractionWalker` runs once per provider, not per call.
+
+- [x] Run the epic gate: `npm run build && npm run test:coverage` — green,
       thresholds met. If coverage fails, delegate to the `coverage-expander`
       subagent per `.claude/CLAUDE.md`; do not lower a threshold.
 
-- [ ] Run lint on everything touched:
+- [x] Run lint on everything touched:
       `npx eslint --max-warnings 0 src/core/domains/language/ruby src/core/domains/language/python scripts/spikes/ruby-walker-composition-parity.ts`
 
-- [ ] Commit:
+- [x] Commit:
 
 ```text
 refactor(language): compose ruby and python walkers through the pass-runner (dppsr)
@@ -1701,7 +1717,7 @@ bead for wiring the remaining six languages.
 
 **Steps**
 
-- [ ] Add one bullet at the END of the `## Mechanics` section of
+- [x] Add one bullet at the END of the `## Mechanics` section of
       `src/core/domains/language/CLAUDE.md` (immediately before the `## Gotchas`
       heading), matching the section's existing bold-lead / `Why:`-tail style:
 
@@ -1726,7 +1742,7 @@ bead for wiring the remaining six languages.
   relocation rather than a behaviour change.
 ```
 
-- [ ] Verify the navigator still lints:
+- [x] Verify the navigator still lints:
       `npx prettier --check src/core/domains/language/CLAUDE.md` (run
       `npx prettier --write` on it if it does not).
 
@@ -1758,7 +1774,11 @@ bd dep add <issue-id> tea-rags-mcp-fmcly
       > extension. Not urgent — a language with no pass to add gains nothing but
       > uniformity, so pull this when the first facet for that language appears.
 
-- [ ] Commit:
+      NOT DONE by this session: the executing agent was scoped with `bd` off, so no
+      bead was filed. The title, labels, dependency and body above are ready to
+      paste — the parent session files it.
+
+- [x] Commit:
 
 ```text
 docs(language): record the extraction pass-runner in the domain navigator (vqdw1)

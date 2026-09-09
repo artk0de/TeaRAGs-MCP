@@ -206,6 +206,14 @@ export interface WalkContext {
   relPath: string;
   language: string;
   chunks: { symbolId: string; startLine: number; endLine: number; scope: string[] }[];
+  /**
+   * Raw contents of the project's `Gemfile`, threaded per run so extraction-time
+   * DSL consumers compose a gem-gated catalogue (`catalogueForGemfile`) for THIS
+   * project. Mirrors {@link WalkInput.gemfileContent}, from which `toWalkContext`
+   * copies it. Undefined → the FULL catalogue (gating off). Only Ruby reads it
+   * today (bd tea-rags-mcp-adx5p.1b); every other language ignores it.
+   */
+  gemfileContent?: string;
   dispatchTableNames?: ReadonlySet<string>;
 }
 
