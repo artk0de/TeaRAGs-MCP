@@ -17,10 +17,16 @@
  */
 import { describe, expect, it } from "vitest";
 
-import type { CallContext, CallRef, ImportRef } from "../../../../../../../src/core/contracts/types/codegraph.js";
+import type {
+  CallContext,
+  CallRef,
+  ImportRef,
+  LocalBinding,
+} from "../../../../../../../src/core/contracts/types/codegraph.js";
 import { PythonAncestorLinearizerCache } from "../../../../../../../src/core/domains/language/python/resolver/python-ancestor-policy.js";
 import { PythonImportFileMapper } from "../../../../../../../src/core/domains/language/python/resolver/python-import-file-mapper.js";
 import { PythonImportedNameSymbolResolutionStrategy } from "../../../../../../../src/core/domains/language/python/resolver/strategies/python-imported-name.js";
+import { PythonLocalBindingSymbolResolutionStrategy } from "../../../../../../../src/core/domains/language/python/resolver/strategies/python-local-binding.js";
 import { PythonSelfMemberSymbolResolutionStrategy } from "../../../../../../../src/core/domains/language/python/resolver/strategies/python-self-member.js";
 import { PythonSuperSymbolResolutionStrategy } from "../../../../../../../src/core/domains/language/python/resolver/strategies/python-super.js";
 import { PYTHON_UNRESOLVABLE_BASE } from "../../../../../../../src/core/domains/language/python/walker/walker.js";
@@ -54,6 +60,7 @@ interface CtxSpec {
   readonly imports?: readonly ImportRef[];
   readonly classAncestors?: Record<string, readonly string[]>;
   readonly classExtends?: Record<string, string>;
+  readonly localBindings?: Record<string, LocalBinding[]>;
   readonly table: InMemoryGlobalSymbolTable;
 }
 
@@ -65,6 +72,7 @@ function ctxWith(spec: CtxSpec): CallContext {
     symbolTable: spec.table,
     ...(spec.classAncestors === undefined ? {} : { classAncestors: spec.classAncestors }),
     ...(spec.classExtends === undefined ? {} : { classExtends: spec.classExtends }),
+    ...(spec.localBindings === undefined ? {} : { localBindings: spec.localBindings }),
   };
 }
 
@@ -714,5 +722,161 @@ describe("PythonSelfMemberSymbolResolutionStrategy — bases reached through a s
   it("keeps a BUILTIN base external, so a miss under it still DROPs", () => {
     const ctx = netboxCtx(netboxTable(), ["dict|app.models.features::dict"]);
     expect(selfMember().attempt(selfCall("snapshot"), ctx)).toEqual({ kind: "drop" });
+  });
+});
+
+/**
+ * `localBinding` answers with a SYMBOL or with nothing (bd tea-rags-mcp-xasyu).
+ *
+ * The pass used to resolve the bound type to a FILE and, when the member was
+ * not declared on that class, still emit a file-only edge to it — the
+ * fabrication class AF.6 removed from the short-name path. Measured on the
+ * final-chain rows, every one of netbox's 223 `localBinding` phantoms is such
+ * an edge (`chainTargetSymbolId` null), with 108 more rows carrying the
+ * `fileOnly` verdict outright; ugnest reads 56 phantom against 6 match and
+ * polar 187 phantom / 42 wrongFile / 103 fileOnly.
+ *
+ * So the member is looked up on the bound type through the same C3 MRO helper
+ * `selfMember` and `importedName` use, and the verdict follows the evidence the
+ * walk collected rather than the file it started from: a defining class pins
+ * that class's own spelling, a branch that LEFT the project DROPs, and anything
+ * the walk could not settle CONTINUEs to the passes below.
+ */
+describe("PythonLocalBindingSymbolResolutionStrategy — the member on the bound type", () => {
+  function localBinding(): PythonLocalBindingSymbolResolutionStrategy {
+    const mapper = new PythonImportFileMapper();
+    return new PythonLocalBindingSymbolResolutionStrategy(
+      { mode: "strict" },
+      mapper,
+      new PythonAncestorLinearizerCache(mapper, "strict"),
+    );
+  }
+
+  const boundCall = (receiver: string, member: string): CallRef => ({
+    callText: `${receiver}.${member}()`,
+    receiver,
+    member,
+    startLine: 12,
+  });
+
+  it("pins the member the bound type DECLARES to that class's own symbol", () => {
+    const table = tableWith({ "app/service.py": ["Service", "Service#execute"], "app/view.py": ["View"] });
+    const ctx = ctxWith({
+      callerFile: "app/view.py",
+      table,
+      classAncestors: {},
+      localBindings: { svc: [{ line: 1, type: "Service" }] },
+    });
+    expect(localBinding().attempt(boundCall("svc", "execute"), ctx)).toEqual({
+      kind: "resolved",
+      target: { targetRelPath: "app/service.py", targetSymbolId: "Service#execute" },
+    });
+  });
+
+  it("pins an INHERITED member to the BASE's spelling, not to the bound type's file", () => {
+    const table = tableWith({
+      "app/base.py": ["Base", "Base#shared"],
+      "app/leaf.py": ["Leaf"],
+      "app/view.py": ["View"],
+    });
+    const ctx = ctxWith({
+      callerFile: "app/view.py",
+      table,
+      classAncestors: { "app/leaf.py::Leaf": ["app.base::Base"] },
+      localBindings: { leaf: [{ line: 1, type: "Leaf" }] },
+    });
+    expect(localBinding().attempt(boundCall("leaf", "shared"), ctx)).toEqual({
+      kind: "resolved",
+      target: { targetRelPath: "app/base.py", targetSymbolId: "Base#shared" },
+    });
+  });
+
+  it("resolves a @classmethod on the bound type through the `.` spelling", () => {
+    const table = tableWith({ "app/repo.py": ["RepositoryBase", "RepositoryBase.from_session"] });
+    const ctx = ctxWith({
+      callerFile: "app/view.py",
+      table,
+      classAncestors: {},
+      localBindings: { repo: [{ line: 1, type: "RepositoryBase" }] },
+    });
+    expect(localBinding().attempt(boundCall("repo", "from_session"), ctx)).toEqual({
+      kind: "resolved",
+      target: { targetRelPath: "app/repo.py", targetSymbolId: "RepositoryBase.from_session" },
+    });
+  });
+
+  it("keys a NESTED bound class by its dotted FQ", () => {
+    const table = tableWith({
+      "app/outer.py": [
+        "Outer",
+        { symbolId: "Outer.Inner", scope: ["Outer"] },
+        { symbolId: "Outer.Inner#run", scope: ["Outer", "Inner"] },
+      ],
+    });
+    const ctx = ctxWith({
+      callerFile: "app/view.py",
+      table,
+      classAncestors: {},
+      localBindings: { inner: [{ line: 1, type: "Inner" }] },
+    });
+    expect(localBinding().attempt(boundCall("inner", "run"), ctx)).toEqual({
+      kind: "resolved",
+      target: { targetRelPath: "app/outer.py", targetSymbolId: "Outer.Inner#run" },
+    });
+  });
+
+  it("DROPS when the member is inherited from an EXTERNAL base — where the file-only edge used to go", () => {
+    const table = tableWith({
+      "netbox/dcim/models.py": ["Device"],
+      "other/app.py": ["Helper", "Helper#save"],
+    });
+    const ctx = ctxWith({
+      callerFile: "netbox/dcim/views.py",
+      table,
+      classAncestors: { "netbox/dcim/models.py::Device": ["django.db.models::Model"] },
+      // The declared base is what corroborated `Device` as class-kind and let
+      // the old code commit `netbox/dcim/models.py` with a null symbol id.
+      classExtends: { Device: "models.Model" },
+      localBindings: { device: [{ line: 1, type: "Device" }] },
+    });
+    expect(localBinding().attempt(boundCall("device", "save"), ctx)).toEqual({ kind: "drop" });
+  });
+
+  it("CONTINUEs — never a file-only edge — when the readable hierarchy does not own the member", () => {
+    const table = tableWith({ "app/thing.py": ["Thing", "Thing#other"] });
+    const ctx = ctxWith({
+      callerFile: "app/view.py",
+      table,
+      classAncestors: {},
+      localBindings: { thing: [{ line: 1, type: "Thing" }] },
+    });
+    expect(localBinding().attempt(boundCall("thing", "missing"), ctx)).toEqual({ kind: "continue" });
+  });
+
+  it("CONTINUEs when a base could not be bound at all (unknown boundary)", () => {
+    const table = tableWith({ "app/child.py": ["Child"] });
+    const ctx = ctxWith({
+      callerFile: "app/view.py",
+      table,
+      classAncestors: { "app/child.py::Child": ["Mystery"] },
+      localBindings: { child: [{ line: 1, type: "Child" }] },
+    });
+    expect(localBinding().attempt(boundCall("child", "m"), ctx)).toEqual({ kind: "continue" });
+  });
+
+  it("DROPS when an import names the type's file but NO project file declares the class (DRF Serializer)", () => {
+    const table = tableWith({ "app/views.py": ["View"], "app/forms.py": ["Form", "Form#is_valid"] });
+    const ctx = ctxWith({
+      callerFile: "app/views.py",
+      table,
+      imports: [{ importText: ".lib.Serializer", startLine: 1 }],
+      classAncestors: {},
+      localBindings: { s: [{ line: 1, type: "Serializer" }] },
+    });
+    // The bound type is not a class the project declares, so there is no
+    // hierarchy to read and no symbol to name. Falling through would let
+    // `globalShortName` answer `is_valid` with `app/forms.py::Form#is_valid`,
+    // which is the very false positive the terminal guard exists for.
+    expect(localBinding().attempt(boundCall("s", "is_valid"), ctx)).toEqual({ kind: "drop" });
   });
 });

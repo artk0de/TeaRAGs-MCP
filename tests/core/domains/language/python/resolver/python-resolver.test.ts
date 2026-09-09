@@ -478,9 +478,16 @@ describe("PythonCallResolver", () => {
     });
 
     // resolveTypeFile third pass — type NOT in symbol table (external
-    // class like DRF Serializer); fall back to scanning imports whose
-    // last segment matches the bare type name. Covers lines 148-151.
-    it("attributes an external type via import path whose last segment matches the bare type (third-pass fallback)", () => {
+    // class like DRF Serializer); the import whose last segment matches the
+    // bare type name still names a file.
+    //
+    // xasyu: was "attributes an external type via import path whose last
+    // segment matches the bare type (third-pass fallback)", asserting
+    // `targetRelPath === "lib/Serializer.py"` with a null `targetSymbolId`.
+    // The file is still found; what it can no longer do is become an edge —
+    // no project file declares `Serializer`, so there is no class to walk and
+    // no symbol to name.
+    it("DROPS a type reachable only through an import path — the file is not a symbol", () => {
       const resolver = new PythonCallResolver();
       const table = new InMemoryGlobalSymbolTable();
       // No `Serializer` symbol in project — but caller imports it as
@@ -492,9 +499,7 @@ describe("PythonCallResolver", () => {
           s: [{ line: 1, type: "Serializer" }],
         }),
       );
-      // mapPythonImportToFile resolves `.lib.Serializer` → "lib/Serializer.py"
-      expect(target?.targetRelPath).toBe("lib/Serializer.py");
-      expect(target?.targetSymbolId).toBeNull();
+      expect(target).toBeNull();
     });
   });
 

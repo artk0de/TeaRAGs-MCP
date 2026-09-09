@@ -59,7 +59,7 @@ export function createPythonSymbolResolutionChain(
     new PythonSuperSymbolResolutionStrategy(cfg, linearizers),
     new PythonSelfFieldSymbolResolutionStrategy(cfg, mapper),
     new PythonSelfMemberSymbolResolutionStrategy(cfg, linearizers),
-    new PythonLocalBindingSymbolResolutionStrategy(cfg, mapper),
+    new PythonLocalBindingSymbolResolutionStrategy(cfg, mapper, linearizers),
     new PythonChainTypeSymbolResolutionStrategy(cfg, mapper),
     new PythonImportedNameSymbolResolutionStrategy(cfg, mapper, linearizers),
     new PythonGlobalShortNameSymbolResolutionStrategy(cfg),
