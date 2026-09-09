@@ -487,3 +487,81 @@ describe("PythonImportFileMapper — roots seeded from the symbol table file set
     expect(new PythonImportFileMapper().mapImportToFile("flask", from, ctx)).toEqual({ kind: "unknown" });
   });
 });
+
+/**
+ * The caller's OWN source root leads (bd tea-rags-mcp-hg427).
+ *
+ * polar owns three directories named `polar`: `server/polar`, `sdk/python/polar`
+ * and `sdk/generator/python/template/polar` — a template copy of the SDK.
+ * Seeding orders roots deepest-first, so the template root (four segments) beat
+ * `sdk/python` (two) and every caller under `sdk/python/**` resolved `polar.*`
+ * into the template: 1,468 of polar's 1,618 `wrongFile` rows in the E0.11
+ * oracle run.
+ *
+ * The oracle already decides this per file — `order_roots` in
+ * `scripts/py-oracle/jedi_oracle.py`: the declared root CONTAINING the file
+ * leads, the declared order is the tie-break for a file under none of them, and
+ * containment is tested on a separator boundary.
+ */
+describe("PythonImportFileMapper — the caller's own root leads (bd tea-rags-mcp-hg427)", () => {
+  const POLAR_THREE_ROOTS: Record<string, string[]> = {
+    // The SDK the repo ships.
+    "sdk/python/polar/__init__.py": ["Polar"],
+    "sdk/python/polar/base.py": ["SdkBase"],
+    "sdk/python/polar/v1/x.py": ["call_sdk"],
+    // A generator template copying the SDK — a DEEPER root, same package name.
+    "sdk/generator/python/template/polar/__init__.py": ["Polar"],
+    "sdk/generator/python/template/polar/base.py": ["TemplateBase"],
+    "sdk/generator/python/template/polar/y.py": ["call_template"],
+    // The server package.
+    "server/polar/__init__.py": ["__version__"],
+    "server/polar/base.py": ["ServerBase"],
+    "server/polar/a.py": ["call_server"],
+    // Callers under no seeded root at all.
+    "tools/z.py": ["main"],
+    "server-tools/x.py": ["main"],
+  };
+
+  const TEMPLATE_BASE = "sdk/generator/python/template/polar/base.py";
+
+  function mapPolar(from: string, files: Record<string, string[]> = POLAR_THREE_ROOTS): unknown {
+    const table = corpusTable(files);
+    return new PythonImportFileMapper().mapImportToFile("polar.base", from, ctxFor(table, from));
+  }
+
+  it("a caller under sdk/python reaches its own polar, not the deeper template copy", () => {
+    expect(mapPolar("sdk/python/polar/v1/x.py")).toEqual({
+      kind: "project",
+      relPath: "sdk/python/polar/base.py",
+    });
+  });
+
+  it("a caller under server reaches server's polar", () => {
+    expect(mapPolar("server/polar/a.py")).toEqual({ kind: "project", relPath: "server/polar/base.py" });
+  });
+
+  it("a caller inside the template reaches the template's own copy", () => {
+    expect(mapPolar("sdk/generator/python/template/polar/y.py")).toEqual({
+      kind: "project",
+      relPath: TEMPLATE_BASE,
+    });
+  });
+
+  it("a caller sitting directly IN a root counts as contained by it", () => {
+    expect(mapPolar("server/manage.py", { ...POLAR_THREE_ROOTS, "server/manage.py": ["main"] })).toEqual({
+      kind: "project",
+      relPath: "server/polar/base.py",
+    });
+  });
+
+  it("a caller under no seeded root keeps the deepest-first answer", () => {
+    // Nothing to prefer, so the seeded order stands and the deepest root answers
+    // — exactly as before hg427.
+    expect(mapPolar("tools/z.py")).toEqual({ kind: "project", relPath: TEMPLATE_BASE });
+  });
+
+  it("containment stops at a separator: `server` does not contain `server-tools/x.py`", () => {
+    // A bare prefix test would hoist `server` here and answer server's polar.
+    expect(mapPolar("server-tools/x.py")).toEqual({ kind: "project", relPath: TEMPLATE_BASE });
+  });
+});

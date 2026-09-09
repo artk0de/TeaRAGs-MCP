@@ -51,6 +51,12 @@ const MISS: ImportPathProbe = { kind: "miss" };
  * set when it can list one (bd tea-rags-mcp-60nss), then extended lazily by
  * whatever the ancestor scan proves. On a corpus with one source root, the
  * second import onward skips most of the ancestor scan.
+ * `seededCount` marks where the seeded prefix ends, because only a SEEDED root
+ * may be hoisted for containing the caller (bd tea-rags-mcp-hg427) — a lazily
+ * learned one is an ancestor of the caller already and the scan reaches it.
+ * `containingRoots` is that hoist, memoised per `fromDir`: the seeded prefix is
+ * fixed for the memo generation, so the answer is a function of `fromDir` alone
+ * and costs one scan per directory rather than one per import.
  * `answers` is keyed by `<dir> <importText>` because the same text resolves
  * differently from two directories — every relative import, and any absolute
  * one whose root inference depends on the caller's ancestors.
@@ -58,6 +64,8 @@ const MISS: ImportPathProbe = { kind: "miss" };
 interface ImportMapperMemo {
   size: number;
   roots: string[];
+  seededCount: number;
+  containingRoots: Map<string, string>;
   answers: Map<string, ImportFileTarget>;
 }
 
@@ -86,7 +94,14 @@ export class PythonImportFileMapper implements ImportFileMapper {
     // A grown table can turn `external` into `project`; a stale memo would
     // freeze the cold-pass answer for the whole run.
     if (existing?.size === size) return existing;
-    const fresh: ImportMapperMemo = { size, roots: seedRoots(table), answers: new Map() };
+    const roots = seedRoots(table);
+    const fresh: ImportMapperMemo = {
+      size,
+      roots,
+      seededCount: roots.length,
+      containingRoots: new Map(),
+      answers: new Map(),
+    };
     this.memos.set(table, fresh);
     return fresh;
   }
@@ -177,12 +192,21 @@ function mapRelative(head: string, fromDir: string, table: GlobalSymbolTable): I
 /**
  * `a.b.c` — the import root is not the repo root in three of the five corpora,
  * and nothing in the module text says which it is. Try roots cheapest-first:
- * `""`, then the memo's proven ones, then the importing file's ancestors
- * DEEPEST to SHALLOWEST.
+ * `""`, then the seeded root CONTAINING the caller, then the memo's remaining
+ * proven ones, then the importing file's ancestors DEEPEST to SHALLOWEST.
  *
  * Deepest-first is load-bearing. netbox holds both `netbox/netbox/settings.py`
  * and the outer `netbox/` directory; a shallow-first ancestor scan would let
  * the outer one shadow the inner package for `netbox.settings`.
+ *
+ * But one global order cannot be right for a corpus owning two packages of the
+ * same name, and polar owns three `polar` directories. `sdk/generator/python/
+ * template` is four segments deep and `sdk/python` is two, so deepest-first
+ * alone sent every caller under `sdk/python/**` into the generator's template
+ * copy — 1,468 of polar's 1,618 `wrongFile` rows (bd tea-rags-mcp-hg427). The
+ * caller's own root leads instead, which is the rule the deterministic oracle
+ * already applies per file (`order_roots` in `scripts/py-oracle/jedi_oracle.py`,
+ * E0.11); deepest-first survives as the tie-break for a caller under no root.
  */
 function mapAbsolute(
   head: string,
@@ -194,7 +218,7 @@ function mapAbsolute(
   if (segments.length === 0) return UNKNOWN;
   const modulePath = segments.join("/");
 
-  for (const root of candidateRoots(fromDir, memo.roots)) {
+  for (const root of candidateRoots(fromDir, memo.roots, containingSeededRoot(fromDir, memo))) {
     const probe = probePath(root.length === 0 ? modulePath : `${root}/${modulePath}`, table);
     if (probe.kind === "miss") continue;
     if (!memo.roots.includes(root)) memo.roots.push(root);
@@ -210,9 +234,41 @@ function mapAbsolute(
   return table.size() > 0 ? EXTERNAL : UNKNOWN;
 }
 
-/** `""`, then memo-proven roots, then the caller's ancestors deepest-first. */
-function candidateRoots(fromDir: string, provenRoots: readonly string[]): string[] {
+/**
+ * The deepest SEEDED root that contains `fromDir`, or `""` for none.
+ *
+ * `""` doubles as the "none" answer because hoisting it would be a no-op: the
+ * repo root is already `candidateRoots`' first candidate.
+ *
+ * The seeded prefix is sorted deepest-first, so the FIRST containing root in it
+ * is the deepest — two roots at the same depth cannot both be ancestors of one
+ * directory. Containment is tested on a separator boundary, so `server` does
+ * not swallow `server-tools/x.py`, and a file sitting directly in the root
+ * counts as contained.
+ */
+function containingSeededRoot(fromDir: string, memo: ImportMapperMemo): string {
+  const cached = memo.containingRoots.get(fromDir);
+  if (cached !== undefined) return cached;
+  let containing = "";
+  for (let i = 0; i < memo.seededCount; i++) {
+    const root = memo.roots[i];
+    if (root.length === 0) continue;
+    if (fromDir === root || fromDir.startsWith(`${root}/`)) {
+      containing = root;
+      break;
+    }
+  }
+  memo.containingRoots.set(fromDir, containing);
+  return containing;
+}
+
+/**
+ * `""`, the caller's own seeded root, the remaining memo-proven roots, then the
+ * caller's ancestors deepest-first.
+ */
+function candidateRoots(fromDir: string, provenRoots: readonly string[], containing: string): string[] {
   const roots: string[] = [""];
+  if (containing.length > 0) roots.push(containing);
   for (const root of provenRoots) if (!roots.includes(root)) roots.push(root);
   let dir = fromDir === "." ? "" : fromDir;
   while (dir.length > 0) {
