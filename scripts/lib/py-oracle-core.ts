@@ -152,6 +152,19 @@ export function isSuperCallSite(input: {
 }
 
 /**
+ * The four origins that put jedi's target OUTSIDE the project. `outsideRepo`
+ * and `generatedInRepo` are deliberately absent: the first is a path the corpus
+ * manifest placed off the scored tree rather than a library boundary, and the
+ * second is in-repo code the chain is expected to resolve.
+ */
+const EXTERNAL_TARGET_ORIGINS: ReadonlySet<PyTargetOrigin> = new Set([
+  "sitePackages",
+  "stdlib",
+  "typeshedStub",
+  "builtin",
+]);
+
+/**
  * Withdraw jedi's answer where jedi is known to be wrong about `super()`.
  *
  * Measured on the fixture corpus while building the Python side: jedi 0.20.0
@@ -165,21 +178,46 @@ export function isSuperCallSite(input: {
  * the second base would be booked as a `phantom`, and a chain that declined
  * would earn an `agreeExternal` it did not deserve.
  *
- * The withdrawal is narrow on purpose. It needs BOTH the super() shape and the
- * typeshed origin: an ordinary call jedi answered from typeshed really is
- * external, and a `super()` call jedi resolved inside the project is a real
- * in-project answer. `superMro` is tagged either way, so the sites lost to the
- * blind spot stay countable.
+ * The typeshed origin was the whole guard until the walker started filing
+ * `super()` receivers under receiverKind `super`, and the netbox rows then made
+ * the rest of the blind spot visible: 65 sites where jedi's first base is a
+ * LIBRARY class rather than a typeshed stub, 45 of them booked as `phantom`
+ * against a chain that was right. `DataSource(JobsMixin, PrimaryModel).save`
+ * lands in django (`origin: sitePackages`) while the C3 MRO reaches
+ * `BaseModel#save`; `Circuit(…, DistanceMixin, PrimaryModel).clean` the same
+ * way. Both chain answers were hand-verified. So the gate is ARITY: more than
+ * one declared base is exactly the condition under which "first base" stops
+ * being "the MRO", and under it any external origin is withdrawn.
+ *
+ * What is still compared, on purpose:
+ *   - a jedi target INSIDE the project — that is a real answer whatever the
+ *     class's arity, and the chain has to match it;
+ *   - a single-base enclosing class — there jedi's walk IS the MRO, so an
+ *     external answer is ground truth and a chain that misses it is a phantom.
+ *
+ * `typeshedStub` stays unconditional, base count or not: a `super()` site
+ * answered from a stub is the `object.__init__` shape that started this, and
+ * the arity gate only WIDENS the guard rather than re-opening what it held.
+ *
+ * `superMro` is tagged on every withdrawal, so the sites lost to the blind spot
+ * stay countable.
  */
 export function applySuperMroBlindSpot(input: {
   isSuperCall: boolean;
   origin: PyTargetOrigin | undefined;
   oracle: OracleOutcome;
   categories: readonly PyMissedCategory[];
+  /**
+   * How many bases the site's enclosing class declares, `undefined` when the
+   * site has no enclosing class (or the run carries no `classAncestors`).
+   * Absent or `<= 1` keeps every non-typeshed answer.
+   */
+  enclosingBaseCount?: number;
 }): { oracle: OracleOutcome; categories: PyMissedCategory[] } {
-  if (!input.isSuperCall || input.origin !== "typeshedStub") {
-    return { oracle: input.oracle, categories: [...input.categories] };
-  }
+  const keep = { oracle: input.oracle, categories: [...input.categories] };
+  if (!input.isSuperCall) return keep;
+  if (input.origin === undefined || !EXTERNAL_TARGET_ORIGINS.has(input.origin)) return keep;
+  if (input.origin !== "typeshedStub" && (input.enclosingBaseCount ?? 0) <= 1) return keep;
   const categories = [...new Set<PyMissedCategory>([...input.categories, "superMro"])]
     .filter((category) => category !== "plain")
     .sort();
