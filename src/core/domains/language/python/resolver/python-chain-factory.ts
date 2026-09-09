@@ -17,6 +17,7 @@
 import type { SymbolResolutionStrategy } from "../../../../contracts/types/language.js";
 import { PythonImportFileMapper } from "./python-import-file-mapper.js";
 import {
+  PythonChainTypeSymbolResolutionStrategy,
   PythonGlobalShortNameSymbolResolutionStrategy,
   PythonImportedNameSymbolResolutionStrategy,
   PythonImportMatchSymbolResolutionStrategy,
@@ -45,6 +46,7 @@ export function createPythonSymbolResolutionChain(
     new PythonSelfFieldSymbolResolutionStrategy(cfg),
     new PythonSelfMemberSymbolResolutionStrategy(cfg),
     new PythonLocalBindingSymbolResolutionStrategy(cfg, mapper),
+    new PythonChainTypeSymbolResolutionStrategy(cfg, mapper),
     new PythonImportedNameSymbolResolutionStrategy(cfg, mapper),
     new PythonImportMatchSymbolResolutionStrategy(cfg, mapper),
     new PythonGlobalShortNameSymbolResolutionStrategy(cfg),

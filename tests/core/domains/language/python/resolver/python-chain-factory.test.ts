@@ -26,6 +26,7 @@ const PRODUCTION_ORDER = [
   "selfField",
   "selfMember",
   "localBinding",
+  "chainType",
   "importedName",
   "importMatch",
   "globalShortName",
@@ -40,6 +41,12 @@ describe("createPythonSymbolResolutionChain", () => {
 
   it("keeps the production order, importedName ahead of importMatch", () => {
     expect(new PythonCallResolver().strategies.map((pass) => pass.name)).toEqual(PRODUCTION_ORDER);
+  });
+
+  it("places chainType between localBinding and importedName — the seam-3 insertion point", () => {
+    const names = createPythonSymbolResolutionChain(cfg).map((pass) => pass.name);
+    expect(names.indexOf("chainType")).toBe(names.indexOf("localBinding") + 1);
+    expect(names.indexOf("importedName")).toBe(names.indexOf("chainType") + 1);
   });
 
   it("builds a fresh chain per call so two harness runs share no per-pass state", () => {

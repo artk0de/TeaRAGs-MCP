@@ -85,3 +85,7 @@ changelog-*.json
 
 # local presentation decks (contain employer-internal material — never publish)
 docs/presentations/
+
+# byte-code from the jedi oracle's own pytest run (scripts/py-oracle/)
+__pycache__/
+.pytest_cache/

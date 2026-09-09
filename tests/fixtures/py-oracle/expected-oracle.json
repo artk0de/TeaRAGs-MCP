@@ -220,6 +220,92 @@
       "startLine": 12
     }
   ],
+  "pkg/shadow_use.py": [
+    {
+      "member": "remove_linebreaks",
+      "outcome": {
+        "kind": "inProject",
+        "origin": "project",
+        "targets": [
+          {
+            "defKind": "function",
+            "defLine": 12,
+            "pinUncertain": false,
+            "relPath": "pkg/string.py",
+            "symbolId": "remove_linebreaks"
+          }
+        ]
+      },
+      "siteFacts": {
+        "enclosingHasReturnAnnotation": true,
+        "isDecoratorSite": false,
+        "isSuperCall": false,
+        "receiverIsAnnotatedParam": false,
+        "receiverIsUnion": false,
+        "targetIsProperty": false,
+        "targetIsStaticOrClassMethod": false,
+        "viaReexport": false,
+        "viaStarImport": false
+      },
+      "startLine": 7
+    },
+    {
+      "member": "Formatter",
+      "outcome": {
+        "kind": "inProject",
+        "origin": "project",
+        "targets": [
+          {
+            "defKind": "class",
+            "defLine": 16,
+            "pinUncertain": false,
+            "relPath": "pkg/string.py",
+            "symbolId": "Formatter"
+          }
+        ]
+      },
+      "siteFacts": {
+        "enclosingHasReturnAnnotation": true,
+        "isDecoratorSite": false,
+        "isSuperCall": false,
+        "receiverIsAnnotatedParam": false,
+        "receiverIsUnion": false,
+        "targetIsProperty": false,
+        "targetIsStaticOrClassMethod": false,
+        "viaReexport": false,
+        "viaStarImport": false
+      },
+      "startLine": 11
+    },
+    {
+      "member": "render",
+      "outcome": {
+        "kind": "inProject",
+        "origin": "project",
+        "targets": [
+          {
+            "defKind": "function",
+            "defLine": 17,
+            "pinUncertain": false,
+            "relPath": "pkg/string.py",
+            "symbolId": "Formatter#render"
+          }
+        ]
+      },
+      "siteFacts": {
+        "enclosingHasReturnAnnotation": true,
+        "isDecoratorSite": false,
+        "isSuperCall": false,
+        "receiverIsAnnotatedParam": false,
+        "receiverIsUnion": false,
+        "targetIsProperty": false,
+        "targetIsStaticOrClassMethod": false,
+        "viaReexport": false,
+        "viaStarImport": false
+      },
+      "startLine": 11
+    }
+  ],
   "pkg/stdlib_use.py": [
     {
       "member": "dumps",
