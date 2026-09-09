@@ -81,7 +81,7 @@ export class PythonLocalBindingSymbolResolutionStrategy implements SymbolResolut
     // ToggleReactionSerializer`) or as a module path that ends in the
     // class name (rare).
     const bareType = lastSegment(typeName);
-    const targetFile = resolveTypeFile(bareType, ctx, this.mapper);
+    const targetFile = resolveTypeFile(bareType, ctx, this.mapper, member);
     if (!targetFile) return null;
 
     // Steps 2-3 plus the `classExtends` walk (bd tea-rags-mcp-yrs0) are the

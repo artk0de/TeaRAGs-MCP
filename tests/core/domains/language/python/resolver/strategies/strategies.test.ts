@@ -116,16 +116,18 @@ describe("PythonSelfFieldSymbolResolutionStrategy", () => {
     });
   });
 
-  it("emits an external best-effort target when the field type is known but the method is external", () => {
+  it("CONTINUEs when the field type is known but unclassifiable — no synthetic anchor (lbtmm)", () => {
     const symbolTable = tableWith();
     const outcome = strat.attempt(
       { ...call, member: "close", callText: "self._stack.close()", receiver: "self._stack" },
       ctx({ symbolTable, callerScope: ["Client"], classFieldTypes: { Client: { _stack: "ExitStack" } } }),
     );
-    expect(outcome).toEqual({
-      kind: "resolved",
-      target: { targetRelPath: "ExitStack", targetSymbolId: "ExitStack#close" },
-    });
+    // lbtmm: was `resolved({ targetRelPath: "ExitStack", targetSymbolId:
+    // "ExitStack#close" })` — a target whose file half is a type name. With no
+    // import binding `ExitStack` the type is UNKNOWN, so the pass continues;
+    // the external-import shape is covered in
+    // `python-external-type-target-guard.test.ts`.
+    expect(outcome).toEqual({ kind: "continue" });
   });
 
   it("DROPS when the field has no recorded type — never falls through (guard rjuc)", () => {
@@ -239,7 +241,15 @@ describe("PythonLocalBindingSymbolResolutionStrategy", () => {
     ]);
     const outcome = strat.attempt(
       { ...call, member: "is_valid", receiver: "serializer", callText: "serializer.is_valid()" },
-      ctx({ symbolTable, localBindings: { serializer: [{ line: 1, type: "ToggleReactionSerializer" }] } }),
+      ctx({
+        symbolTable,
+        // lbtmm: the file-only fallback now needs the bound type corroborated
+        // as class-kind. A class with an external base is exactly that shape,
+        // and the walker records it — spelling it out here is what makes the
+        // fixture match the code this test describes.
+        classExtends: { ToggleReactionSerializer: "serializers.ModelSerializer" },
+        localBindings: { serializer: [{ line: 1, type: "ToggleReactionSerializer" }] },
+      }),
     );
     expect(outcome).toEqual({
       kind: "resolved",

@@ -11,6 +11,8 @@ export {
   CONE_MAX_DEFAULT,
   lastSegment,
   pythonImportMatchesReceiver,
+  pythonTypeNameIsExternal,
+  pythonTypeOwnsMembers,
   resolvePythonMemberOnType,
   walkClassExtendsForMethod,
   type ResolverConfig,

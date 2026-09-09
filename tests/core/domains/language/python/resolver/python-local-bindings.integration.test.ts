@@ -134,8 +134,13 @@ describe("Python local-binding integration", () => {
     // attribution to the unrelated model is the exact bug being
     // prevented.
     expect(target?.targetSymbolId).not.toBe("ConfirmationCode#is_valid");
-    expect(target?.targetRelPath).toBe("engagement/serializers/reaction.py");
-    expect(target?.targetSymbolId).toBeNull();
+    // lbtmm: the file-only fallback now needs the bound type to be corroborated
+    // as class-kind. This fixture hand-feeds the table without ever walking
+    // `reaction.py`, so `ToggleReactionSerializer` has no base and no members —
+    // indistinguishable from a top-level `def`. Production walks the file, and
+    // `class ToggleReactionSerializer(serializers.ModelSerializer)` puts it in
+    // the run-global `classExtends`, which keeps the file-only edge.
+    expect(target).toBeNull();
   });
 
   it("preserves correct resolution when method IS defined on the bound type", () => {
