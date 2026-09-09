@@ -601,3 +601,84 @@ describe("PythonSuperSymbolResolutionStrategy — the two-argument form", () => 
     expect(superStrategy().attempt(twoArg("C", "m"), ctx)).toEqual({ kind: "continue" });
   });
 });
+
+/**
+ * A base the defining file only STAR-imports (bd tea-rags-mcp-4yh64).
+ *
+ * The fixture mirrors netbox: `app/models/__init__.py` takes its bases from
+ * `from app.models.features import *`, and a model two hops below calls
+ * `self.snapshot()` on a method the starred mixin owns. Before the seam the
+ * bare base pinned nothing, the MRO stopped at `NetBoxFeatureSet`, and every
+ * inherited member below it missed.
+ */
+describe("PythonSelfMemberSymbolResolutionStrategy — bases reached through a star import", () => {
+  const netboxTable = () =>
+    tableWith({
+      "app/models/features.py": ["ChangeLoggingMixin", "ChangeLoggingMixin#snapshot"],
+      "app/models/__init__.py": ["NetBoxFeatureSet"],
+      "app/dcim.py": ["Device"],
+    });
+
+  const netboxCtx = (table: InMemoryGlobalSymbolTable, featureSetBases: readonly string[]): CallContext =>
+    ctxWith({
+      callerFile: "app/dcim.py",
+      callerScope: ["Device"],
+      table,
+      classAncestors: {
+        "app/dcim.py::Device": ["app.models::NetBoxFeatureSet"],
+        "app/models/__init__.py::NetBoxFeatureSet": featureSetBases,
+      },
+    });
+
+  it("pins an inherited member through the starred module that declares the base", () => {
+    const ctx = netboxCtx(netboxTable(), ["ChangeLoggingMixin|app.models.features::ChangeLoggingMixin"]);
+    expect(selfMember().attempt(selfCall("snapshot"), ctx)).toEqual({
+      kind: "resolved",
+      target: { targetRelPath: "app/models/features.py", targetSymbolId: "ChangeLoggingMixin#snapshot" },
+    });
+  });
+
+  it("CLOSES the hierarchy once the base pins, so an absent member DROPs", () => {
+    const ctx = netboxCtx(netboxTable(), ["ChangeLoggingMixin|app.models.features::ChangeLoggingMixin"]);
+    expect(selfMember().attempt(selfCall("nope"), ctx)).toEqual({ kind: "drop" });
+  });
+
+  it("prefers a SAME-FILE class over the starred module — the bare spelling is tried first", () => {
+    const table = tableWith({
+      "app/models/features.py": ["ChangeLoggingMixin", "ChangeLoggingMixin#snapshot"],
+      "app/models/__init__.py": ["NetBoxFeatureSet", "ChangeLoggingMixin", "ChangeLoggingMixin#snapshot"],
+      "app/dcim.py": ["Device"],
+    });
+    const ctx = netboxCtx(table, ["ChangeLoggingMixin|app.models.features::ChangeLoggingMixin"]);
+    expect(selfMember().attempt(selfCall("snapshot"), ctx)).toEqual({
+      kind: "resolved",
+      target: { targetRelPath: "app/models/__init__.py", targetSymbolId: "ChangeLoggingMixin#snapshot" },
+    });
+  });
+
+  it("takes the FIRST starred module that declares the base when several are starred", () => {
+    const table = tableWith({
+      "app/models/features.py": ["ChangeLoggingMixin", "ChangeLoggingMixin#snapshot"],
+      "app/models/mixins.py": ["OwnerMixin"],
+      "app/models/__init__.py": ["NetBoxFeatureSet"],
+      "app/dcim.py": ["Device"],
+    });
+    const ctx = netboxCtx(table, [
+      "ChangeLoggingMixin|app.models.mixins::ChangeLoggingMixin|app.models.features::ChangeLoggingMixin",
+    ]);
+    expect(selfMember().attempt(selfCall("snapshot"), ctx)).toEqual({
+      kind: "resolved",
+      target: { targetRelPath: "app/models/features.py", targetSymbolId: "ChangeLoggingMixin#snapshot" },
+    });
+  });
+
+  it("stays UNKNOWN — and therefore CONTINUEs — when no alternative names a project class", () => {
+    const ctx = netboxCtx(netboxTable(), ["ChangeLoggingMixin|django.db.models::ChangeLoggingMixin"]);
+    expect(selfMember().attempt(selfCall("snapshot"), ctx)).toEqual({ kind: "continue" });
+  });
+
+  it("keeps a BUILTIN base external, so a miss under it still DROPs", () => {
+    const ctx = netboxCtx(netboxTable(), ["dict|app.models.features::dict"]);
+    expect(selfMember().attempt(selfCall("snapshot"), ctx)).toEqual({ kind: "drop" });
+  });
+});

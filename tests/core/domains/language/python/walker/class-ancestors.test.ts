@@ -173,6 +173,46 @@ describe("extractFromPythonFile — base spellings carry the DEFINING file's imp
 });
 
 /**
+ * Star-imported bases (bd tea-rags-mcp-4yh64).
+ *
+ * netbox's `netbox/netbox/models/__init__.py` takes ELEVEN bases from
+ * `from netbox.models.features import *`, so every base of `NetBoxFeatureSet`
+ * was left bare and the MRO of every model below it stopped one hop in.
+ * `from` with a star binds no local name, so the binding table cannot say where
+ * the name came from — the file's star modules are the only candidates, and the
+ * walker is the one place that knows them for the DEFINING file.
+ */
+describe("extractFromPythonFile — a bare base under a star import", () => {
+  it("offers the star-imported module as an alternative, bare spelling first", () => {
+    expect(basesOf("from m.features import *\nclass C(Base):\n    pass\n")).toEqual(["Base|m.features::Base"]);
+  });
+
+  it("offers EVERY star import as an alternative, in declaration order", () => {
+    expect(basesOf("from a import *\nfrom .b import *\nclass C(Base):\n    pass\n")).toEqual(["Base|a::Base|.b::Base"]);
+  });
+
+  it("offers the alternatives for every bare base of a multi-base class", () => {
+    expect(basesOf("from a import *\nclass C(X, Y):\n    pass\n")).toEqual(["X|a::X", "Y|a::Y"]);
+  });
+
+  it("leaves an import-BOUND base alone even when the file also star-imports", () => {
+    expect(basesOf("from a import *\nfrom c.d import Base\nclass C(Base):\n    pass\n")).toEqual(["c.d::Base"]);
+  });
+
+  it("leaves a DOTTED base alone — a star import binds names, not module paths", () => {
+    expect(basesOf("from a import *\nclass C(mod.Base):\n    pass\n")).toEqual(["mod.Base"]);
+  });
+
+  it("leaves a bare base bare when the file star-imports nothing", () => {
+    expect(basesOf("from a import b\nclass C(Base):\n    pass\n")).toEqual(["Base"]);
+  });
+
+  it("records one alternative per module when the same module is starred twice", () => {
+    expect(basesOf("from a import *\nfrom a import *\nclass C(Base):\n    pass\n")).toEqual(["Base|a::Base"]);
+  });
+});
+
+/**
  * `super()` receiver normalization (bd tea-rags-mcp-ntnke, seam 4 Task 4).
  *
  * `classifyReceiverKind`'s `SUPER_MARKERS` holds `"super"` and `"<super>"`. The

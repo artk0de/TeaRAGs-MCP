@@ -24,6 +24,21 @@
  * inside the `basesOf` closure `linearizeC3` calls — the mechanism that module's
  * docblock prescribes.
  *
+ * WHERE THE STAR-IMPORT SEAM LIVES (bd tea-rags-mcp-4yh64). A base bound by
+ * `from m import *` reaches this module ALREADY spelled as a disjunction the
+ * walker built, not as a bare name this module goes looking for. That is a
+ * deliberate choice between two seams:
+ *
+ *   - resolving it here would need the DEFINING file's imports at MRO-build
+ *     time, and nothing on the read path has them. `CallContext.imports` is the
+ *     CALLER's list, and `PythonImportFileMapper` answers from symbol-table
+ *     membership alone — no import lists at all. Reaching them would mean a new
+ *     run-global per-file import channel threaded through the pass-1→pass-2
+ *     barrier, for data pass 1 already held and threw away;
+ *   - the walker holds the file's star modules while it is qualifying that very
+ *     base, so `qualifyThroughStarImports` costs no channel. It writes the
+ *     candidates; `resolveBaseKey` picks the one the symbol table confirms.
+ *
  * The linearization is CALLER-INDEPENDENT: a base spelling carries its DEFINING
  * file's import binding, never the asking file's, so `MRO(RepositoryBase)` is
  * one order whichever call site wants it. That is what makes the per-run memo
@@ -108,22 +123,69 @@ export function createPythonAncestorPolicy(
 }
 
 /**
+ * The walker's separator for a base spelled as ALTERNATIVES (bd
+ * tea-rags-mcp-4yh64). Written by `qualifyThroughStarImports` in
+ * `../walker/walker.ts`; parsed here, the same way `::` is spelled there and
+ * split in `strategies/shared.ts`. Legal in neither a Python identifier nor a
+ * dotted module path, so it cannot collide with either half of a spelling.
+ */
+const BASE_ALTERNATIVE_SEPARATOR = "|";
+
+/**
  * One base SPELLING → the class key it names, or the boundary flavour that
  * stopped it.
  *
- * The two shapes the walker emits are `<moduleText>::<ClassName>` and a BARE
- * name. A bare name is a same-file class or a builtin — `qualifyPythonBase`
- * only leaves a spelling unqualified when no import in the DEFINING file bound
- * its root. A module text goes through the import mapper, whose three states
- * map straight onto the boundary flavours: `external` is a library base and a
- * miss under it proves nothing, `unknown` is a hierarchy we could not finish
- * reading, and only `project` names a file the symbol table can hold.
+ * A spelling carrying {@link BASE_ALTERNATIVE_SEPARATOR} is a DISJUNCTION: the
+ * defining file star-imports, the name is bound by exactly one of the starred
+ * modules, and the walker could not say which. The alternatives are tried in
+ * the order the walker wrote them — the bare same-file spelling first, then one
+ * per star module in declaration order — and the FIRST `project` verdict wins,
+ * because only a module that actually declares the class can be the one that
+ * bound the name.
+ *
+ * When no alternative names a project class the answer is `unknown`, never
+ * `external`. The alternatives are candidates, not branches: "every candidate I
+ * could check said library" is not the same evidence as "this base IS a library
+ * class", and the difference decides whether `selfMember` DROPs a miss or falls
+ * through. Keeping it `unknown` also makes the seam strictly additive — a bare
+ * base that used to be `unknown` either pins now or stays exactly as it was.
+ * The one exception is a BUILTIN bare name, which is decided before the split:
+ * `class C(dict)` in a star-importing file is still a library base.
+ */
+function resolveBaseKey(
+  spelling: string,
+  definingFile: RelPath,
+  ctx: CallContext,
+  mapper: PythonImportFileMapper,
+  mode: AmbiguousResolveMode,
+): BaseKeyVerdict {
+  const alternatives = spelling.split(BASE_ALTERNATIVE_SEPARATOR);
+  if (alternatives.length === 1) return resolveOneBaseSpelling(spelling, definingFile, ctx, mapper, mode);
+  if (PYTHON_BUILTINS.has(alternatives[0])) return EXTERNAL_BASE;
+  for (const alternative of alternatives) {
+    const verdict = resolveOneBaseSpelling(alternative, definingFile, ctx, mapper, mode);
+    if (verdict.kind === "project") return verdict;
+  }
+  return UNKNOWN_BASE;
+}
+
+/**
+ * The two shapes the walker emits for ONE candidate: `<moduleText>::<ClassName>`
+ * and a BARE name. A bare name is a same-file class or a builtin —
+ * `qualifyPythonBase` only leaves a spelling unqualified when no import in the
+ * DEFINING file bound its root. A module text goes through the import mapper,
+ * whose three states map straight onto the boundary flavours: `external` is a
+ * library base and a miss under it proves nothing, `unknown` is a hierarchy we
+ * could not finish reading, and only `project` names a file the symbol table
+ * can hold.
  *
  * The re-export hop is the same one `importedName` takes for a bound name: a
  * package `__init__.py` that re-exports `RepositoryBase` rather than declaring
- * it must not read as "the class is not there".
+ * it must not read as "the class is not there". A star-import alternative gets
+ * it for free, which is what lets `from netbox.models import *` reach a mixin
+ * the package only re-exports.
  */
-function resolveBaseKey(
+function resolveOneBaseSpelling(
   spelling: string,
   definingFile: RelPath,
   ctx: CallContext,
