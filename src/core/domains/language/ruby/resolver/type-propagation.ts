@@ -23,6 +23,14 @@
  * `ctx.structuredReturnTypes` / `ctx.ivarTypes` run-global from the per-file
  * extractions (bd 9bliu) — whatever the type sources put there.
  *
+ * **The fold moved; the vocabulary did not** (E1 seam 3). The dotted-chain walk
+ * itself — hop cap, STOP-at-unknown, the receiver-form collapse — lives in
+ * `kernel/receiver-type-propagation.ts` and is shared with every language. What
+ * stays here is everything that names Ruby: `@ivar`, the `::`-scoped constant
+ * head, the nullary self-call fallback, the gem catalogue, and the
+ * `CODEGRAPH_RB_CHAIN_MAX_HOPS` cap — supplied to the fold as
+ * {@link RUBY_RECEIVER_TYPE_PORTS}.
+ *
  * **This file is the ADDRESS of the whole engine, not all of its code**
  * (bd tea-rags-mcp-uetqq). The channels it threads live in collaborator modules
  * beside it and are re-exported below the imports, so every consumer keeps
@@ -41,13 +49,19 @@
 
 import { resolveLocalBinding, type CallContext } from "../../../../contracts/types/codegraph.js";
 import type { RubyTypeRef } from "../../../../contracts/types/language.js";
+import {
+  CHAIN_MAX_HOPS_DEFAULT,
+  propagateReceiverType,
+  stripCallArgs,
+  type ReceiverTypePorts,
+} from "../../kernel/receiver-type-propagation.js";
 import { catalogueForGemfile } from "../gemfile.js";
-import { rubyReceiverForm } from "../type-ref.js";
 import { returnTypeOf } from "./ruby-member-return-types.js";
 import { declaredReturnType } from "./ruby-return-facts.js";
 import { nullaryReceiverType } from "./ruby-unbound-receiver-types.js";
 
 export { boundCallReturnType } from "./ruby-bound-call-return-types.js";
+export { CHAIN_MAX_HOPS_DEFAULT } from "../../kernel/receiver-type-propagation.js";
 export {
   CONTAINER_BLOCK_ITERATION_METHODS,
   CONTAINER_ELEMENT_RETURNING_METHODS,
@@ -61,24 +75,10 @@ const IVAR_RECEIVER = /^@\w+$/;
 /** A bare constant chain head: `Foo`, `Mod::Svc`. Capitalized, optional `::` scope. */
 const CONST_HEAD = /^[A-Z]\w*(?:::[A-Z]\w*)*$/;
 
-/** Strip a trailing call argument list from a chain segment (`new(post)` → `new`). */
-function stripArgs(segment: string): string {
-  const paren = segment.indexOf("(");
-  return paren === -1 ? segment : segment.slice(0, paren);
-}
-
-/**
- * Default maximum chain hops when `CODEGRAPH_RB_CHAIN_MAX_HOPS` is unset.
- * Mirrors the `CONE_MAX_DEFAULT` / `DYNAMIC_RECEIVER_CONFIDENCE_DEFAULT` pattern
- * in `strategies/shared.ts` — the const documents the default while the env
- * is read per-call so tests can override it without module reload.
- */
-export const CHAIN_MAX_HOPS_DEFAULT = 4;
-
 /**
  * Read the effective chain hop cap from env, falling back to `CHAIN_MAX_HOPS_DEFAULT`.
- * Called per `resolveChain` invocation so env-variable test overrides take effect
- * without needing a module reload.
+ * The `maxHops` port: the kernel fold calls it per chain so env-variable test
+ * overrides take effect without needing a module reload.
  */
 function chainMaxHops(): number {
   const raw = process.env.CODEGRAPH_RB_CHAIN_MAX_HOPS;
@@ -86,6 +86,18 @@ function chainMaxHops(): number {
   const n = parseInt(raw, 10);
   return Number.isFinite(n) && n > 0 ? n : CHAIN_MAX_HOPS_DEFAULT;
 }
+
+/**
+ * Ruby's four answers for the shared chain fold
+ * (`kernel/receiver-type-propagation.ts`). Frozen module-level singleton: the
+ * fold threads `ctx` as an argument, so nothing is allocated per call site.
+ */
+export const RUBY_RECEIVER_TYPE_PORTS: ReceiverTypePorts = Object.freeze({
+  singleHopType: rubySingleHopType,
+  seedHead: rubySeedHead,
+  memberTypeOf: (recv: RubyTypeRef, member: string, ctx: CallContext) => returnTypeOf(recv, member, ctx),
+  maxHops: chainMaxHops,
+});
 
 /**
  * Resolve the static {@link RubyTypeRef} for a receiver — single-hop or
@@ -109,16 +121,11 @@ function chainMaxHops(): number {
  * in-project definition.
  */
 export function typeOfReceiver(receiver: string, atLine: number, ctx: CallContext): RubyTypeRef | undefined {
-  return rubyReceiverForm(receiverTypeRef(receiver, atLine, ctx));
+  return propagateReceiverType(receiver, atLine, ctx, RUBY_RECEIVER_TYPE_PORTS);
 }
 
-/** {@link typeOfReceiver}'s lookup, before the receiver-form collapse. */
-function receiverTypeRef(receiver: string, atLine: number, ctx: CallContext): RubyTypeRef | undefined {
-  // ── Dotted chain: multi-hop threading (Task 1.4) ─────────────────────────
-  if (receiver.includes(".")) {
-    return resolveChain(receiver, atLine, ctx);
-  }
-
+/** Ruby's `singleHopType` port: a receiver with no dot in it. */
+function rubySingleHopType(receiver: string, atLine: number, ctx: CallContext): RubyTypeRef | undefined {
   // ── Index-access on a typed container: `arr[i]` → element type (Task 1.6) ─
   // When the outermost operation is `[...]` and the base var has a container
   // binding, return the element type so call sites like `arr[0].title` can
@@ -171,69 +178,33 @@ function receiverTypeRef(receiver: string, atLine: number, ctx: CallContext): Ru
 }
 
 /**
- * Thread a dotted chain receiver through the propagation engine.
+ * A bare-constant chain head. Two ways the first link can be typed, declared
+ * facts FIRST:
  *
- * Algorithm:
- * 1. Split `receiver` into `[head, link1, link2, ...]`.
- * 2. Seed: resolve `head` via the single-hop path (recurse into `typeOfReceiver`
- *    without the dot guard).
- * 3. For each link left-to-right: `t = returnTypeOf(t, link, ctx)`.
- *    - First `undefined` hop → STOP, return `undefined` (precision invariant:
- *      never fabricate past an unknown hop).
- * 4. Cap at `CHAIN_MAX_HOPS` hops — a chain longer than the cap returns `undefined`.
+ *  1. DECLARED (bd tea-rags-mcp-6zpds) — the project itself states what the
+ *     member returns on that constant (`scope :without_deleted` →
+ *     `container(Owner)`, a YARD `@return`, an inherited fact). Custom scopes
+ *     live only here; the generic vocabulary cannot know them.
+ *  2. VOCABULARY (rvw34 gap b) — a framework/Ruby instance-returning verb
+ *     (`new`/`find`/`create!`…) makes the chain an instance of the constant:
+ *     `PostStatusService.new` is definitionally a PostStatusService.
+ *
+ * Both are zero-fabrication. A bare-const head that is neither declared nor
+ * vocabulary (`Config.value`) is still NOT typed.
  */
-function resolveChain(receiver: string, atLine: number, ctx: CallContext): RubyTypeRef | undefined {
-  const segments = receiver.split(".");
-  // segments[0] is the head; segments[1..] are the member links.
-  const head = segments[0];
-  if (!head) return undefined;
-
-  const links = segments.slice(1);
-
-  // Hop cap: links.length is the number of hops (each `.link` = one hop).
-  if (links.length > chainMaxHops()) return undefined;
-
-  let current: RubyTypeRef | undefined;
-  let startLink = 0;
-  // Bare-constant head. Two ways the first link can be typed, declared facts FIRST:
-  //
-  //  1. DECLARED (bd tea-rags-mcp-6zpds) — the project itself states what the
-  //     member returns on that constant (`scope :without_deleted` →
-  //     `container(Owner)`, a YARD `@return`, an inherited fact). Custom scopes
-  //     live only here; the generic vocabulary cannot know them.
-  //  2. VOCABULARY (rvw34 gap b) — a framework/Ruby instance-returning verb
-  //     (`new`/`find`/`create!`…) makes the chain an instance of the constant:
-  //     `PostStatusService.new` is definitionally a PostStatusService.
-  //
-  // Both are zero-fabrication. A bare-const head that is neither declared nor
-  // vocabulary (`Config.value`) is still NOT typed.
-  const firstLink = links[0];
-  const headMember = firstLink === undefined ? null : stripArgs(firstLink);
-  const declaredHead =
-    headMember !== null && CONST_HEAD.test(head) ? declaredReturnType(head, headMember, ctx) : undefined;
-  if (declaredHead !== undefined) {
-    current = declaredHead;
-    startLink = 1;
-  } else if (
-    headMember !== null &&
-    CONST_HEAD.test(head) &&
-    catalogueForGemfile(ctx.gemfileContent).instanceReturning.has(headMember)
-  ) {
-    current = { form: "instance", name: head };
-    startLink = 1;
-  } else {
-    // Seed: resolve head via single-hop (no dot in head → no recursion risk).
-    current = typeOfReceiver(head, atLine, ctx);
+function rubySeedHead(
+  head: string,
+  firstLink: string | undefined,
+  ctx: CallContext,
+): { type: RubyTypeRef; consumedMembers: 0 | 1 } | undefined {
+  if (firstLink === undefined || !CONST_HEAD.test(head)) return undefined;
+  const firstMember = stripCallArgs(firstLink);
+  const declared = declaredReturnType(head, firstMember, ctx);
+  if (declared !== undefined) return { type: declared, consumedMembers: 1 };
+  if (catalogueForGemfile(ctx.gemfileContent).instanceReturning.has(firstMember)) {
+    return { type: { form: "instance", name: head }, consumedMembers: 1 };
   }
-  if (current === undefined) return undefined;
-
-  // Walk remaining links left-to-right, threading type through each hop.
-  for (let i = startLink; i < links.length; i++) {
-    current = returnTypeOf(current, stripArgs(links[i]), ctx);
-    if (current === undefined) return undefined; // STOP-at-unknown-hop
-  }
-
-  return current;
+  return undefined;
 }
 
 /**
