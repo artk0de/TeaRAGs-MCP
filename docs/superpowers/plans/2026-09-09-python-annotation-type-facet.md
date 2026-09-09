@@ -30,8 +30,8 @@ harnesses (`scripts/codegraph-chain-tally.ts`,
 
 **Spec:**
 docs/superpowers/specs/2026-09-03-python-codegraph-unification-program-design.md
-(E2 seam 2, contract-spine row `TypeSource` + `ExtractionPass`; pull-order entry
-3) — plus the Decision record below.
+(E2 seam 2, contract-spine row `TypeSource` + `ExtractionPass`; pull-order
+entry 3) — plus the Decision record below.
 
 ## Decision record
 
@@ -41,13 +41,13 @@ docs/superpowers/specs/2026-09-03-python-codegraph-unification-program-design.md
 gate.** `python/walker/passes/annotation-type-facts.ts` exports
 `pythonAnnotationTypeFacetPass: ExtractionFacetPass`, and
 `PYTHON_EXTRACTION_PASSES` gains exactly that one entry. That is the whole
-wiring change: `composeExtractionWalker` already runs
-`extractFromPythonFile` first and folds each pass's `Partial<FileExtraction>`
-through `mergeExtraction` (`kernel/extraction-passes.ts:74`). The one edit to
-`walker/walker.ts` is renaming its private `localTypeTrackingEnabled` to
+wiring change: `composeExtractionWalker` already runs `extractFromPythonFile`
+first and folds each pass's `Partial<FileExtraction>` through `mergeExtraction`
+(`kernel/extraction-passes.ts:74`). The one edit to `walker/walker.ts` is
+renaming its private `localTypeTrackingEnabled` to
 `pythonLocalTypeTrackingEnabled` and exporting it, so the pass reads the SAME
-`CODEGRAPH_PY_LOCAL_TYPE_TRACKING` switch instead of a copy that could drift.
-A rename plus an export is not a re-slice.
+`CODEGRAPH_PY_LOCAL_TYPE_TRACKING` switch instead of a copy that could drift. A
+rename plus an export is not a re-slice.
 
 **2. The pass emits only coordinates the monolith declines — and the monolith
 declines more than the seam brief assumed.** `collectLocalBindingsForChunk`
@@ -73,11 +73,11 @@ pass and is NOT implemented here — it exists in the constant so the rank is
 decided once, in the open. `annotations` is this seam's primary source;
 `docstring` covers Google `Args:` / `Returns:` and Sphinx `:type x:` / `:rtype:`
 only, the two dialects the corpora carry (ugnest Google ×252, flask Sphinx
-×230). The two sources are DISJOINT by construction — the docstring source
-emits a param fact only for a param with no annotation node at all, and a return
-fact only when `return_type` is absent — so the rank never fires in production.
-It is a safety net for the day a third source overlaps, and Task 4 pins it with
-a hand-built collision anyway. Both sources coordinate a param fact at the
+×230). The two sources are DISJOINT by construction — the docstring source emits
+a param fact only for a param with no annotation node at all, and a return fact
+only when `return_type` is absent — so the rank never fires in production. It is
+a safety net for the day a third source overlaps, and Task 4 pins it with a
+hand-built collision anyway. Both sources coordinate a param fact at the
 enclosing `def` line, which is what makes a collision possible at all:
 `coordinateKey` includes `line` (`kernel/type-fact-store.ts:80`), so two sources
 that disagreed about the line would both survive instead of one outranking the
@@ -98,8 +98,8 @@ itself the receiver, so `xs.append(y)` would resolve against `Foo` and
 `Foo`'s file rather than dropping. The same argument covers a two-arm union: the
 strategy reads `resolveLocalBindingType`, the string, so `Foo | Bar` would bind
 `Foo` and half the sites would be wrong. `Optional[Foo]` and `Foo | None`
-collapse to one arm and ARE emitted — that is exactly what
-`typeRefReceiverForm` exists for (`kernel/type-ref.ts:96`).
+collapse to one arm and ARE emitted — that is exactly what `typeRefReceiverForm`
+exists for (`kernel/type-ref.ts:96`).
 
 **5. `typeFactChannels`' four channels are not Python's four channels.** The
 kernel helper publishes `chunks[].localBindings`, `functionReturnTypes`,
@@ -109,13 +109,13 @@ third, re-keys the fourth onto a different channel, and drops the second:
 - `ivarTypes` → **`classFieldTypes`**. `PythonSelfFieldSymbolResolutionStrategy`
   reads `ctx.classFieldTypes?.[enclosing]?.[field]` where `enclosing` is
   `ctx.callerScope[callerScope.length - 1]`, a class SHORT name
-  (`python-self-field.ts:34`). `ivarTypes` is keyed by
-  `symbolScope.join("::")` with Ruby's leading `@` on the member; nothing on the
-  Python side reads it, and emitting it would ship a dead nested Record through
-  the NDJSON spill and the run-global absorb. So the adapter takes the last
-  `::` segment as the class key and leaves the attribute name bare — the same
-  key shape `collectPythonClassFieldTypes` already writes, which is what lets
-  the merge dedupe the overlap instead of doubling it.
+  (`python-self-field.ts:34`). `ivarTypes` is keyed by `symbolScope.join("::")`
+  with Ruby's leading `@` on the member; nothing on the Python side reads it,
+  and emitting it would ship a dead nested Record through the NDJSON spill and
+  the run-global absorb. So the adapter takes the last `::` segment as the class
+  key and leaves the attribute name bare — the same key shape
+  `collectPythonClassFieldTypes` already writes, which is what lets the merge
+  dedupe the overlap instead of doubling it.
 - `structuredReturnTypes` keys are rewritten from Ruby's `::` join to Python's
   symbolId convention, so the emitted key IS the callee's symbolId as
   `pyNameOf` + `DefaultSymbolIdComposer` compose it: `run` for a module-level
@@ -131,9 +131,9 @@ third, re-keys the fourth onto a different channel, and drops the second:
 
 `structuredReturnTypes` has no Python reader in this seam — verified, no file
 under `python/` mentions it — so return facts are inert until the propagation
-seam. They are emitted now because collecting them is the same walk, and
-because that seam's first task should be reading a channel that is already
-filled on five corpora.
+seam. They are emitted now because collecting them is the same walk, and because
+that seam's first task should be reading a channel that is already filled on
+five corpora.
 
 ---
 
@@ -144,7 +144,8 @@ filled on five corpora.
   files after every task. `python-walker.test.ts`,
   `python-walker-inheritance-edges.test.ts` and `python-import-bindings.test.ts`
   pin the monolith; if one fails, the pass is writing where the walker already
-  wrote (`.claude/rules/test-invariants.md`, `.claude/rules/resolver-architecture.md` §4).
+  wrote (`.claude/rules/test-invariants.md`,
+  `.claude/rules/resolver-architecture.md` §4).
 - **No kernel file changes.** `kernel/type-facts.ts`, `type-fact-store.ts`,
   `type-fact-channels.ts`, `type-ref.ts`, `merge-extraction.ts` and
   `extraction-passes.ts` are consumed as they stand. If a task feels like it
@@ -165,8 +166,8 @@ filled on five corpora.
   `resolveLocalBindingType` reads "greatest `line <= atLine`"
   (`src/core/domains/language/CLAUDE.md` → Invariants). Every param fact carries
   the enclosing `def` line, so a later `x = Foo()` from the monolith's
-  constructor inference supersedes it at any call below the reassignment —
-  that is Python's actual semantics and it costs nothing to get right.
+  constructor inference supersedes it at any call below the reassignment — that
+  is Python's actual semantics and it costs nothing to get right.
 - **`symbolId` is copied, never composed.** The pass reads `ctx.chunks` and
   `typeFactChannels` copies `chunk.symbolId` verbatim. A divergent id yields
   edges pointing at ids no chunk carries, with no error
@@ -183,17 +184,16 @@ filled on five corpora.
   `fromNode`; `pythonAnnotationTypeSource`, not `annotationSource`. The exact
   names are fixed in Task 1 and Task 2 and MUST be identical everywhere later
   tasks use them.
-- **`passes.ts` and `passes/` coexist deliberately.**
-  `python/walker/passes.ts` stays the registration list;
-  `python/walker/passes/` holds the passes it lists. NodeNext resolves
-  `./passes.js` and `./passes/annotation-type-facts.js` unambiguously. Do not
-  "fix" this by collapsing one into the other.
-- **Commit format.** One commit per task,
-  `<type>(language): <subject> (9fgdi)`, header ≤ 100 chars, body lines ≤ 100
-  cols, `Co-Authored-By` trailer (`.claude/rules/commit-rules.md`). `feat` for
-  Tasks 1–4 — each adds a capability that did not exist. `test` for Task 5 if it
-  lands only gates and docs; `docs` if it is only the navigator paragraph. No
-  per-task beads: `9fgdi` goes in every message.
+- **`passes.ts` and `passes/` coexist deliberately.** `python/walker/passes.ts`
+  stays the registration list; `python/walker/passes/` holds the passes it
+  lists. NodeNext resolves `./passes.js` and `./passes/annotation-type-facts.js`
+  unambiguously. Do not "fix" this by collapsing one into the other.
+- **Commit format.** One commit per task, `<type>(language): <subject> (9fgdi)`,
+  header ≤ 100 chars, body lines ≤ 100 cols, `Co-Authored-By` trailer
+  (`.claude/rules/commit-rules.md`). `feat` for Tasks 1–4 — each adds a
+  capability that did not exist. `test` for Task 5 if it lands only gates and
+  docs; `docs` if it is only the navigator paragraph. No per-task beads: `9fgdi`
+  goes in every message.
 - **No `Why:` line needed.** Nothing touched is on the deep-silo list in
   `.claude/rules/silo-pairing.md`. Do not invent one.
 - **Worktree per task.** A fresh Opus subagent in its own git worktree. A fresh
@@ -213,28 +213,28 @@ filled on five corpora.
 
 **Created**
 
-| File | Single responsibility |
-| --- | --- |
-| `src/core/domains/language/python/walker/passes/python-type-annotation.ts` | Python annotation syntax → kernel `TypeRef`, from a subtree or from text. |
-| `src/core/domains/language/python/walker/passes/python-def-scope-walk.ts` | One scoped descent over `class_definition` / `function_definition`, handing each site its class chain, method name and body kind. |
-| `src/core/domains/language/python/walker/passes/python-annotation-type-source.ts` | The `annotations` `InlineTypeSource` — params, returns, annotated assignments. |
-| `src/core/domains/language/python/walker/passes/python-docstring-type-source.ts` | The `docstring` `InlineTypeSource` — Google `Args:`/`Returns:`, Sphinx `:type:`/`:rtype:`. |
-| `src/core/domains/language/python/walker/passes/python-type-channels.ts` | A built store → the `Partial<FileExtraction>` PYTHON publishes (decision 5). |
-| `src/core/domains/language/python/walker/passes/annotation-type-facts.ts` | `PYTHON_TYPE_SOURCE_ORDER`, `PYTHON_INLINE_TYPE_SOURCES`, `pythonAnnotationTypeFacetPass`. |
-| `tests/core/domains/language/python/walker/passes/python-type-annotation.test.ts` | The mapping table: every form in decision 3, plus the declined list. |
-| `tests/core/domains/language/python/walker/passes/python-annotation-type-source.test.ts` | Emitted facts per site shape; the identifier/attribute skip; the single-arm gate. |
-| `tests/core/domains/language/python/walker/passes/python-docstring-type-source.test.ts` | Both dialects; the "annotation present ⇒ silent" gate. |
-| `tests/core/domains/language/python/walker/passes/python-type-channels.test.ts` | Channel re-keying, the dropped flat map, emit-only-non-empty. |
-| `tests/core/domains/language/python/walker/passes/annotation-type-facet-pass.test.ts` | The composed walker over real Python fixtures: merged channels, precedence by line, source rank. |
+| File                                                                                     | Single responsibility                                                                                                             |
+| ---------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------- |
+| `src/core/domains/language/python/walker/passes/python-type-annotation.ts`               | Python annotation syntax → kernel `TypeRef`, from a subtree or from text.                                                         |
+| `src/core/domains/language/python/walker/passes/python-def-scope-walk.ts`                | One scoped descent over `class_definition` / `function_definition`, handing each site its class chain, method name and body kind. |
+| `src/core/domains/language/python/walker/passes/python-annotation-type-source.ts`        | The `annotations` `InlineTypeSource` — params, returns, annotated assignments.                                                    |
+| `src/core/domains/language/python/walker/passes/python-docstring-type-source.ts`         | The `docstring` `InlineTypeSource` — Google `Args:`/`Returns:`, Sphinx `:type:`/`:rtype:`.                                        |
+| `src/core/domains/language/python/walker/passes/python-type-channels.ts`                 | A built store → the `Partial<FileExtraction>` PYTHON publishes (decision 5).                                                      |
+| `src/core/domains/language/python/walker/passes/annotation-type-facts.ts`                | `PYTHON_TYPE_SOURCE_ORDER`, `PYTHON_INLINE_TYPE_SOURCES`, `pythonAnnotationTypeFacetPass`.                                        |
+| `tests/core/domains/language/python/walker/passes/python-type-annotation.test.ts`        | The mapping table: every form in decision 3, plus the declined list.                                                              |
+| `tests/core/domains/language/python/walker/passes/python-annotation-type-source.test.ts` | Emitted facts per site shape; the identifier/attribute skip; the single-arm gate.                                                 |
+| `tests/core/domains/language/python/walker/passes/python-docstring-type-source.test.ts`  | Both dialects; the "annotation present ⇒ silent" gate.                                                                            |
+| `tests/core/domains/language/python/walker/passes/python-type-channels.test.ts`          | Channel re-keying, the dropped flat map, emit-only-non-empty.                                                                     |
+| `tests/core/domains/language/python/walker/passes/annotation-type-facet-pass.test.ts`    | The composed walker over real Python fixtures: merged channels, precedence by line, source rank.                                  |
 
 **Modified**
 
-| File | Change |
-| --- | --- |
-| `src/core/domains/language/python/walker/passes.ts` | `PYTHON_EXTRACTION_PASSES` gains `pythonAnnotationTypeFacetPass`; docblock updated. |
+| File                                                | Change                                                                                          |
+| --------------------------------------------------- | ----------------------------------------------------------------------------------------------- |
+| `src/core/domains/language/python/walker/passes.ts` | `PYTHON_EXTRACTION_PASSES` gains `pythonAnnotationTypeFacetPass`; docblock updated.             |
 | `src/core/domains/language/python/walker/walker.ts` | `localTypeTrackingEnabled` renamed to `pythonLocalTypeTrackingEnabled` and exported. Two lines. |
-| `src/core/domains/language/CLAUDE.md` | One Mechanics bullet: Python's facet, its channel re-keys, the single-arm rule. |
-| `src/core/domains/language/python/CLAUDE.md` | NEW navigator stub — the pass/monolith split and the two coordinate conventions. |
+| `src/core/domains/language/CLAUDE.md`               | One Mechanics bullet: Python's facet, its channel re-keys, the single-arm rule.                 |
+| `src/core/domains/language/python/CLAUDE.md`        | NEW navigator stub — the pass/monolith split and the two coordinate conventions.                |
 
 **Untouched, deliberately** — listed so nobody sweeps them:
 
@@ -268,16 +268,16 @@ export interface TypeFact {
 }
 ```
 
-| Field | Python's value |
-| --- | --- |
-| `kind` | `"param"` for a typed parameter, `"local"` for a PEP 526 assignment inside a function body, `"ivar"` for a class attribute (class body or `self.x`), `"return"` for a return annotation. **`"attr"` is never used** — no store method reads it, so a fact filed under it is inert. |
-| `source` | `"annotations"` or `"docstring"`. |
-| `symbolScope` | The enclosing CLASS chain, short names, outermost first: `["Outer","Inner"]`. `[]` for a module-level def. Functions do not contribute to it. |
-| `methodName` | The enclosing `def` name for `param` / `local` / `return`. Absent for `ivar`. |
-| `name` | Parameter / variable / attribute name. Absent for `return`. Attribute names carry NO leading `@` — that is Ruby's ivar spelling. |
-| `classForm` | `true` when the `def` carries `@classmethod` or `@staticmethod`; drives `.` vs `#` in the structured-return key. Only meaningful on `return` facts. |
-| `line` | 1-based line of the enclosing `def` for `param`, of the assignment for `local` / `ivar`, absent for `return` (name-keyed). |
-| `type` | The mapper's `TypeRef`. |
+| Field         | Python's value                                                                                                                                                                                                                                                                     |
+| ------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `kind`        | `"param"` for a typed parameter, `"local"` for a PEP 526 assignment inside a function body, `"ivar"` for a class attribute (class body or `self.x`), `"return"` for a return annotation. **`"attr"` is never used** — no store method reads it, so a fact filed under it is inert. |
+| `source`      | `"annotations"` or `"docstring"`.                                                                                                                                                                                                                                                  |
+| `symbolScope` | The enclosing CLASS chain, short names, outermost first: `["Outer","Inner"]`. `[]` for a module-level def. Functions do not contribute to it.                                                                                                                                      |
+| `methodName`  | The enclosing `def` name for `param` / `local` / `return`. Absent for `ivar`.                                                                                                                                                                                                      |
+| `name`        | Parameter / variable / attribute name. Absent for `return`. Attribute names carry NO leading `@` — that is Ruby's ivar spelling.                                                                                                                                                   |
+| `classForm`   | `true` when the `def` carries `@classmethod` or `@staticmethod`; drives `.` vs `#` in the structured-return key. Only meaningful on `return` facts.                                                                                                                                |
+| `line`        | 1-based line of the enclosing `def` for `param`, of the assignment for `local` / `ivar`, absent for `return` (name-keyed).                                                                                                                                                         |
+| `type`        | The mapper's `TypeRef`.                                                                                                                                                                                                                                                            |
 
 ### What `typeFactChannels(store, chunks)` returns
 
@@ -316,18 +316,18 @@ than improving it, so the merge overlaps instead of forking.
 
 ### What the monolith already emits, and where
 
-| Site | Monolith behaviour | Pass adds |
-| --- | --- | --- |
-| `def f(x: Foo)` | `localBindings.x = [{line: <typed_parameter line>, type: "Foo"}]` (`walker.ts:419`) | nothing (identifier annotation) |
-| `def f(x: Optional[Foo])` | nothing — `extractTypeName` returns `null` for `subscript` | `param` fact, `TypeRef` union collapsed to `Foo` |
-| `def f(x: mod.Foo)` | `type: "mod.Foo"`, dotted | nothing (attribute annotation; base wins anyway) |
-| `x: Foo = …` in a body | `localBindings.x` | nothing |
-| `x: list[Foo] = …` | nothing | `local` fact — declined by the single-arm gate, so still nothing. Container refs never become bindings. |
-| `self.x: Foo = …` | `classFieldTypes[C].x = "Foo"` (`walker.ts:222`) | `ivar` fact, same key, merge dedupes |
-| `self.x: Optional[Foo] = …` | nothing | `ivar` fact → `classFieldTypes[C].x = "Foo"` |
-| `class C: x: Foo` (class body) | a LOCAL binding named `x` in C's chunk, nothing on `classFieldTypes` | `ivar` fact → `classFieldTypes[C].x = "Foo"` — the dataclass / pydantic / Django-model case |
-| `def f() -> Foo` | nothing at all | `return` fact → `structuredReturnTypes` |
-| `"""Args:\n    x (Foo): …"""` | nothing | `param` fact, source `docstring`, only when `x` has no annotation |
+| Site                           | Monolith behaviour                                                                  | Pass adds                                                                                               |
+| ------------------------------ | ----------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------- |
+| `def f(x: Foo)`                | `localBindings.x = [{line: <typed_parameter line>, type: "Foo"}]` (`walker.ts:419`) | nothing (identifier annotation)                                                                         |
+| `def f(x: Optional[Foo])`      | nothing — `extractTypeName` returns `null` for `subscript`                          | `param` fact, `TypeRef` union collapsed to `Foo`                                                        |
+| `def f(x: mod.Foo)`            | `type: "mod.Foo"`, dotted                                                           | nothing (attribute annotation; base wins anyway)                                                        |
+| `x: Foo = …` in a body         | `localBindings.x`                                                                   | nothing                                                                                                 |
+| `x: list[Foo] = …`             | nothing                                                                             | `local` fact — declined by the single-arm gate, so still nothing. Container refs never become bindings. |
+| `self.x: Foo = …`              | `classFieldTypes[C].x = "Foo"` (`walker.ts:222`)                                    | `ivar` fact, same key, merge dedupes                                                                    |
+| `self.x: Optional[Foo] = …`    | nothing                                                                             | `ivar` fact → `classFieldTypes[C].x = "Foo"`                                                            |
+| `class C: x: Foo` (class body) | a LOCAL binding named `x` in C's chunk, nothing on `classFieldTypes`                | `ivar` fact → `classFieldTypes[C].x = "Foo"` — the dataclass / pydantic / Django-model case             |
+| `def f() -> Foo`               | nothing at all                                                                      | `return` fact → `structuredReturnTypes`                                                                 |
+| `"""Args:\n    x (Foo): …"""`  | nothing                                                                             | `param` fact, source `docstring`, only when `x` has no annotation                                       |
 
 `collectLocalBindingsForChunk` is gated by `CODEGRAPH_PY_LOCAL_TYPE_TRACKING`
 (`walker.ts:53`); `collectPythonClassFieldTypes` is NOT. The pass matches that
@@ -335,17 +335,17 @@ split exactly: the env flag suppresses its `param` / `local` facts only.
 
 ### tree-sitter-python node shapes the sources read
 
-- `function_definition` — fields `name`, `parameters`, `return_type`, `body`.
-  A `@classmethod` / `@staticmethod` def is wrapped in a `decorated_definition`
+- `function_definition` — fields `name`, `parameters`, `return_type`, `body`. A
+  `@classmethod` / `@staticmethod` def is wrapped in a `decorated_definition`
   whose named children are `decorator`s plus the `function_definition`.
 - `parameters` — named children are `identifier`, `default_parameter`,
   `typed_parameter` (first named child is the pattern; field `type`),
   `typed_default_parameter` (fields `name`, `type`, `value`),
   `list_splat_pattern` / `dictionary_splat_pattern` (untyped) or a
   `typed_parameter` wrapping one of those.
-- `assignment` — optional `left` (first named child), optional `type` field
-  (PEP 526), optional `right` field. A `type` field's own first named child is
-  the annotation expression.
+- `assignment` — optional `left` (first named child), optional `type` field (PEP
+  526), optional `right` field. A `type` field's own first named child is the
+  annotation expression.
 - Annotation expressions: `identifier`, `attribute` (`object` + `attribute`),
   `subscript` (field `value` plus one or more `subscript` children),
   `generic_type` in some grammar builds (`value` + `type_parameter`),
@@ -374,8 +374,10 @@ Baseline numbers to diff against are in the E0 spec's
 
 **Files**
 
-- Create `src/core/domains/language/python/walker/passes/python-type-annotation.ts`
-- Create `tests/core/domains/language/python/walker/passes/python-type-annotation.test.ts`
+- Create
+  `src/core/domains/language/python/walker/passes/python-type-annotation.ts`
+- Create
+  `tests/core/domains/language/python/walker/passes/python-type-annotation.test.ts`
 
 **Interfaces**
 
@@ -388,8 +390,14 @@ Produces:
 ```ts
 export const PYTHON_DECLINED_TYPE_NAMES: ReadonlySet<string>;
 export function pythonBareTypeName(text: string): string;
-export function pythonTypeRefFromNode(node: AstNode, selfClass?: string): TypeRef | undefined;
-export function pythonTypeRefFromText(text: string, selfClass?: string): TypeRef | undefined;
+export function pythonTypeRefFromNode(
+  node: AstNode,
+  selfClass?: string,
+): TypeRef | undefined;
+export function pythonTypeRefFromText(
+  text: string,
+  selfClass?: string,
+): TypeRef | undefined;
 export function pythonNominalReceiverName(ref: TypeRef): string | undefined;
 ```
 
@@ -411,20 +419,77 @@ const CASES: [string, TypeRef | undefined][] = [
   ["pkg.mod.Foo", { form: "instance", name: "Foo" }],
   ["type[Foo]", { form: "class", name: "Foo" }],
   ["Type[Foo]", { form: "class", name: "Foo" }],
-  ["Optional[Foo]", { form: "union", members: [{ form: "instance", name: "Foo" }, { form: "nil" }] }],
-  ["Foo | None", { form: "union", members: [{ form: "instance", name: "Foo" }, { form: "nil" }] }],
-  ["Foo | Bar", { form: "union", members: [{ form: "instance", name: "Foo" }, { form: "instance", name: "Bar" }] }],
-  ["Union[Foo, Bar]", { form: "union", members: [{ form: "instance", name: "Foo" }, { form: "instance", name: "Bar" }] }],
-  ["list[Foo]", { form: "container", element: { form: "instance", name: "Foo" } }],
-  ["List[Foo]", { form: "container", element: { form: "instance", name: "Foo" } }],
-  ["Sequence[Foo]", { form: "container", element: { form: "instance", name: "Foo" } }],
-  ["set[Foo]", { form: "container", element: { form: "instance", name: "Foo" } }],
-  ["tuple[Foo, ...]", { form: "container", element: { form: "instance", name: "Foo" } }],
-  ["dict[str, Foo]", { form: "container", element: { form: "instance", name: "Foo" } }],
-  ["Mapping[str, Foo]", { form: "container", element: { form: "instance", name: "Foo" } }],
+  [
+    "Optional[Foo]",
+    {
+      form: "union",
+      members: [{ form: "instance", name: "Foo" }, { form: "nil" }],
+    },
+  ],
+  [
+    "Foo | None",
+    {
+      form: "union",
+      members: [{ form: "instance", name: "Foo" }, { form: "nil" }],
+    },
+  ],
+  [
+    "Foo | Bar",
+    {
+      form: "union",
+      members: [
+        { form: "instance", name: "Foo" },
+        { form: "instance", name: "Bar" },
+      ],
+    },
+  ],
+  [
+    "Union[Foo, Bar]",
+    {
+      form: "union",
+      members: [
+        { form: "instance", name: "Foo" },
+        { form: "instance", name: "Bar" },
+      ],
+    },
+  ],
+  [
+    "list[Foo]",
+    { form: "container", element: { form: "instance", name: "Foo" } },
+  ],
+  [
+    "List[Foo]",
+    { form: "container", element: { form: "instance", name: "Foo" } },
+  ],
+  [
+    "Sequence[Foo]",
+    { form: "container", element: { form: "instance", name: "Foo" } },
+  ],
+  [
+    "set[Foo]",
+    { form: "container", element: { form: "instance", name: "Foo" } },
+  ],
+  [
+    "tuple[Foo, ...]",
+    { form: "container", element: { form: "instance", name: "Foo" } },
+  ],
+  [
+    "dict[str, Foo]",
+    { form: "container", element: { form: "instance", name: "Foo" } },
+  ],
+  [
+    "Mapping[str, Foo]",
+    { form: "container", element: { form: "instance", name: "Foo" } },
+  ],
   ['"Foo"', { form: "instance", name: "Foo" }],
   ["'pkg.Foo'", { form: "instance", name: "Foo" }],
-  ['Optional["Foo"]', { form: "union", members: [{ form: "instance", name: "Foo" }, { form: "nil" }] }],
+  [
+    'Optional["Foo"]',
+    {
+      form: "union",
+      members: [{ form: "instance", name: "Foo" }, { form: "nil" }],
+    },
+  ],
   ["ClassVar[Foo]", { form: "instance", name: "Foo" }],
   ["Annotated[Foo, Depends()]", { form: "instance", name: "Foo" }],
   ["Awaitable[Foo]", { form: "instance", name: "Foo" }],
@@ -441,8 +506,8 @@ const CASES: [string, TypeRef | undefined][] = [
 - [ ] Add the negative guards the table cannot express: `Self` with no
       `selfClass` is `undefined`; `Self` with `selfClass: "Svc"` is
       `{ form: "instance", name: "Svc" }`; `pythonNominalReceiverName` returns
-      `"Foo"` for `Optional[Foo]` and `undefined` for `list[Foo]`,
-      `Foo | Bar` and `None`.
+      `"Foo"` for `Optional[Foo]` and `undefined` for `list[Foo]`, `Foo | Bar`
+      and `None`.
 - [ ] Run them, watch them fail on the missing module.
 
 - [ ] Write `python-type-annotation.ts`. The text parser is the primitive; the
@@ -479,32 +544,82 @@ const CASES: [string, TypeRef | undefined][] = [
  */
 import type { AstNode } from "../../../../../contracts/types/ast.js";
 import type { TypeRef } from "../../../../../contracts/types/language.js";
-import { NIL_TYPE_REF, typeRefReceiverForm, typeRefUnionOf } from "../../../kernel/type-ref.js";
+import {
+  NIL_TYPE_REF,
+  typeRefReceiverForm,
+  typeRefUnionOf,
+} from "../../../kernel/type-ref.js";
 
 /** Names that carry no receiver: annotated with one of these, a site gets no fact. */
 export const PYTHON_DECLINED_TYPE_NAMES: ReadonlySet<string> = new Set([
-  "Any", "AnyStr", "object", "NoReturn", "Never", "TypeVar", "Ellipsis", "Hashable",
+  "Any",
+  "AnyStr",
+  "object",
+  "NoReturn",
+  "Never",
+  "TypeVar",
+  "Ellipsis",
+  "Hashable",
   // Bare, un-subscripted forms of the constructors handled structurally below.
-  "Optional", "Union", "Type", "Literal", "Callable", "Annotated", "ClassVar", "Final",
+  "Optional",
+  "Union",
+  "Type",
+  "Literal",
+  "Callable",
+  "Annotated",
+  "ClassVar",
+  "Final",
 ]);
 /** Subscripted forms whose argument IS the answer — the wrapper is transparent. */
 const PYTHON_TRANSPARENT_FIRST: ReadonlySet<string> = new Set([
-  "ClassVar", "Final", "Annotated", "Awaitable", "Required", "NotRequired", "InitVar",
+  "ClassVar",
+  "Final",
+  "Annotated",
+  "Awaitable",
+  "Required",
+  "NotRequired",
+  "InitVar",
 ]);
 /** `Coroutine[Send, Yield, Return]` — the LAST argument is the awaited value. */
 const PYTHON_TRANSPARENT_LAST: ReadonlySet<string> = new Set(["Coroutine"]);
 /** Element type is the FIRST argument. */
 const PYTHON_CONTAINER_FIRST: ReadonlySet<string> = new Set([
-  "list", "List", "set", "Set", "frozenset", "FrozenSet", "tuple", "Tuple", "deque", "Deque",
-  "Sequence", "MutableSequence", "Iterable", "Iterator", "Generator", "AsyncIterable",
-  "AsyncIterator", "AsyncGenerator", "Collection",
+  "list",
+  "List",
+  "set",
+  "Set",
+  "frozenset",
+  "FrozenSet",
+  "tuple",
+  "Tuple",
+  "deque",
+  "Deque",
+  "Sequence",
+  "MutableSequence",
+  "Iterable",
+  "Iterator",
+  "Generator",
+  "AsyncIterable",
+  "AsyncIterator",
+  "AsyncGenerator",
+  "Collection",
 ]);
 /** Element type is the LAST argument — the mapping VALUE. */
 const PYTHON_CONTAINER_LAST: ReadonlySet<string> = new Set([
-  "dict", "Dict", "Mapping", "MutableMapping", "OrderedDict", "defaultdict", "DefaultDict", "Counter",
+  "dict",
+  "Dict",
+  "Mapping",
+  "MutableMapping",
+  "OrderedDict",
+  "defaultdict",
+  "DefaultDict",
+  "Counter",
 ]);
 /** Subscripted forms that name no receiver at all. */
-const PYTHON_OPAQUE_GENERICS: ReadonlySet<string> = new Set(["Callable", "Literal"]);
+const PYTHON_OPAQUE_GENERICS: ReadonlySet<string> = new Set([
+  "Callable",
+  "Literal",
+]);
 
 function isTypeRef(ref: TypeRef | undefined): ref is TypeRef {
   return ref !== undefined;
@@ -516,35 +631,56 @@ export function pythonBareTypeName(text: string): string {
   return trimmed.slice(trimmed.lastIndexOf(".") + 1);
 }
 
-function nominalTypeRef(text: string, selfClass: string | undefined): TypeRef | undefined {
+function nominalTypeRef(
+  text: string,
+  selfClass: string | undefined,
+): TypeRef | undefined {
   const bare = pythonBareTypeName(text);
   if (bare.length === 0) return undefined;
   // `None` is an ARM, never an absence — `Foo | None` must stay distinguishable
   // from `Foo` all the way to the consumer (`contracts/types/language.ts:660`).
   if (bare === "None" || bare === "NoneType") return NIL_TYPE_REF;
-  if (bare === "Self") return selfClass === undefined ? undefined : { form: "instance", name: selfClass };
+  if (bare === "Self")
+    return selfClass === undefined
+      ? undefined
+      : { form: "instance", name: selfClass };
   if (PYTHON_DECLINED_TYPE_NAMES.has(bare)) return undefined;
   return { form: "instance", name: bare };
 }
 
 /** The one subscript rule table, shared by both entry points. */
-function subscriptTypeRef(baseText: string, args: (TypeRef | undefined)[], selfClass: string | undefined): TypeRef | undefined {
+function subscriptTypeRef(
+  baseText: string,
+  args: (TypeRef | undefined)[],
+  selfClass: string | undefined,
+): TypeRef | undefined {
   const base = pythonBareTypeName(baseText);
   const first = args[0];
   const last = args[args.length - 1];
-  if (base === "Optional") return first === undefined ? undefined : typeRefUnionOf([first, NIL_TYPE_REF]);
+  if (base === "Optional")
+    return first === undefined
+      ? undefined
+      : typeRefUnionOf([first, NIL_TYPE_REF]);
   if (base === "Union") {
     const members = args.filter(isTypeRef);
     return members.length === 0 ? undefined : typeRefUnionOf(members);
   }
   if (base === "Type" || base === "type") {
-    return first !== undefined && first.form === "instance" ? { form: "class", name: first.name } : undefined;
+    return first !== undefined && first.form === "instance"
+      ? { form: "class", name: first.name }
+      : undefined;
   }
   if (PYTHON_OPAQUE_GENERICS.has(base)) return undefined;
   if (PYTHON_TRANSPARENT_FIRST.has(base)) return first;
   if (PYTHON_TRANSPARENT_LAST.has(base)) return last;
-  if (PYTHON_CONTAINER_FIRST.has(base)) return first === undefined ? undefined : { form: "container", element: first };
-  if (PYTHON_CONTAINER_LAST.has(base)) return last === undefined ? undefined : { form: "container", element: last };
+  if (PYTHON_CONTAINER_FIRST.has(base))
+    return first === undefined
+      ? undefined
+      : { form: "container", element: first };
+  if (PYTHON_CONTAINER_LAST.has(base))
+    return last === undefined
+      ? undefined
+      : { form: "container", element: last };
   // Unknown generic — the base class is the receiver.
   return nominalTypeRef(base, selfClass);
 }
@@ -582,24 +718,39 @@ function splitTopLevel(text: string, separator: string): string[] {
  * or a test's table row. Bounded recursive descent over that string — never a
  * scan of the file.
  */
-export function pythonTypeRefFromText(text: string, selfClass?: string): TypeRef | undefined {
+export function pythonTypeRefFromText(
+  text: string,
+  selfClass?: string,
+): TypeRef | undefined {
   const trimmed = text.trim();
   if (trimmed.length === 0) return undefined;
-  const quote = trimmed.startsWith('"') ? '"' : trimmed.startsWith("'") ? "'" : null;
+  const quote = trimmed.startsWith('"')
+    ? '"'
+    : trimmed.startsWith("'")
+      ? "'"
+      : null;
   // Strip only a WHOLE-string literal. `"A" | "B"` also starts and ends with a
   // quote, and stripping there would corrupt both arms — so require that the
   // opening quote's partner is the final character.
-  if (quote !== null && trimmed.length >= 2 && trimmed.indexOf(quote, 1) === trimmed.length - 1) {
+  if (
+    quote !== null &&
+    trimmed.length >= 2 &&
+    trimmed.indexOf(quote, 1) === trimmed.length - 1
+  ) {
     return pythonTypeRefFromText(trimmed.slice(1, -1), selfClass);
   }
   const arms = splitTopLevel(trimmed, "|");
   if (arms.length > 1) {
-    const members = arms.map((arm) => pythonTypeRefFromText(arm, selfClass)).filter(isTypeRef);
+    const members = arms
+      .map((arm) => pythonTypeRefFromText(arm, selfClass))
+      .filter(isTypeRef);
     return members.length === 0 ? undefined : typeRefUnionOf(members);
   }
   const open = trimmed.indexOf("[");
   if (open > 0 && trimmed.endsWith("]")) {
-    const args = splitTopLevel(trimmed.slice(open + 1, -1), ",").map((arg) => pythonTypeRefFromText(arg, selfClass));
+    const args = splitTopLevel(trimmed.slice(open + 1, -1), ",").map((arg) =>
+      pythonTypeRefFromText(arg, selfClass),
+    );
     return subscriptTypeRef(trimmed.slice(0, open), args, selfClass);
   }
   return nominalTypeRef(trimmed, selfClass);
@@ -610,12 +761,17 @@ export function pythonTypeRefFromText(text: string, selfClass?: string): TypeRef
  * supplied so `Self` resolves; undefined at module level, where `Self` is not
  * legal anyway.
  */
-export function pythonTypeRefFromNode(node: AstNode, selfClass?: string): TypeRef | undefined {
+export function pythonTypeRefFromNode(
+  node: AstNode,
+  selfClass?: string,
+): TypeRef | undefined {
   switch (node.type) {
     case "type":
     case "type_parameter": {
       const inner = node.namedChild(0);
-      return inner === null ? undefined : pythonTypeRefFromNode(inner, selfClass);
+      return inner === null
+        ? undefined
+        : pythonTypeRefFromNode(inner, selfClass);
     }
     case "identifier":
     case "dotted_name":
@@ -629,8 +785,13 @@ export function pythonTypeRefFromNode(node: AstNode, selfClass?: string): TypeRe
       return pythonTypeRefFromText(node.text, selfClass);
     case "binary_operator": {
       if (node.childForFieldName("operator")?.text !== "|") return undefined;
-      const members = [node.childForFieldName("left"), node.childForFieldName("right")]
-        .map((side) => (side === null ? undefined : pythonTypeRefFromNode(side, selfClass)))
+      const members = [
+        node.childForFieldName("left"),
+        node.childForFieldName("right"),
+      ]
+        .map((side) =>
+          side === null ? undefined : pythonTypeRefFromNode(side, selfClass),
+        )
         .filter(isTypeRef);
       return members.length === 0 ? undefined : typeRefUnionOf(members);
     }
@@ -641,7 +802,10 @@ export function pythonTypeRefFromNode(node: AstNode, selfClass?: string): TypeRe
       // `childForFieldName` yields the FIRST match only, and a subscript carries
       // one `subscript` field per argument — so read the arguments positionally.
       const rest = node.namedChildren.slice(1);
-      const argNodes = rest.length === 1 && rest[0].type === "type_parameter" ? [...rest[0].namedChildren] : rest;
+      const argNodes =
+        rest.length === 1 && rest[0].type === "type_parameter"
+          ? [...rest[0].namedChildren]
+          : rest;
       return subscriptTypeRef(
         value.text,
         argNodes.map((arg) => pythonTypeRefFromNode(arg, selfClass)),
@@ -667,13 +831,16 @@ export function pythonTypeRefFromNode(node: AstNode, selfClass?: string): TypeRe
 export function pythonNominalReceiverName(ref: TypeRef): string | undefined {
   const receiver = typeRefReceiverForm(ref);
   if (receiver === undefined) return undefined;
-  return receiver.form === "class" || receiver.form === "instance" ? receiver.name : undefined;
+  return receiver.form === "class" || receiver.form === "instance"
+    ? receiver.name
+    : undefined;
 }
 ```
 
 - [ ] Run the table test — green. Run `npm run type-check` and
       `npx eslint --max-warnings 0` on the new file.
-- [ ] Commit: `feat(language): map Python type annotations to kernel TypeRef (9fgdi)`.
+- [ ] Commit:
+      `feat(language): map Python type annotations to kernel TypeRef (9fgdi)`.
 
 ---
 
@@ -681,10 +848,14 @@ export function pythonNominalReceiverName(ref: TypeRef): string | undefined {
 
 **Files**
 
-- Create `src/core/domains/language/python/walker/passes/python-def-scope-walk.ts`
-- Create `src/core/domains/language/python/walker/passes/python-annotation-type-source.ts`
-- Create `tests/core/domains/language/python/walker/passes/python-annotation-type-source.test.ts`
-- Modify `src/core/domains/language/python/walker/walker.ts` (rename + export the env gate)
+- Create
+  `src/core/domains/language/python/walker/passes/python-def-scope-walk.ts`
+- Create
+  `src/core/domains/language/python/walker/passes/python-annotation-type-source.ts`
+- Create
+  `tests/core/domains/language/python/walker/passes/python-annotation-type-source.test.ts`
+- Modify `src/core/domains/language/python/walker/walker.ts` (rename + export
+  the env gate)
 
 **Interfaces**
 
@@ -697,23 +868,26 @@ Produces:
 ```ts
 // python-def-scope-walk.ts
 export interface PythonDefSite {
-  readonly node: AstNode;                    // the `function_definition`, decorators unwrapped
-  readonly decorators: readonly string[];    // bare last segments: "classmethod", "property"
-  readonly classChain: readonly string[];    // enclosing classes, short names, outermost first
+  readonly node: AstNode; // the `function_definition`, decorators unwrapped
+  readonly decorators: readonly string[]; // bare last segments: "classmethod", "property"
+  readonly classChain: readonly string[]; // enclosing classes, short names, outermost first
   readonly name: string;
-  readonly line: number;                     // 1-based line of the `def`
+  readonly line: number; // 1-based line of the `def`
 }
 export interface PythonAnnotatedAssignmentSite {
-  readonly node: AstNode;                    // the `assignment` node, `type` field present
+  readonly node: AstNode; // the `assignment` node, `type` field present
   readonly classChain: readonly string[];
-  readonly methodName: string | undefined;   // undefined at class-body / module level
+  readonly methodName: string | undefined; // undefined at class-body / module level
   readonly line: number;
 }
 export interface PythonScopeVisitor {
   onDef?: (site: PythonDefSite) => void;
   onAnnotatedAssignment?: (site: PythonAnnotatedAssignmentSite) => void;
 }
-export function walkPythonScopes(root: AstNode, visitor: PythonScopeVisitor): void;
+export function walkPythonScopes(
+  root: AstNode,
+  visitor: PythonScopeVisitor,
+): void;
 export function pythonAnnotationExpression(typeField: AstNode): AstNode;
 export function isPythonClassFormDef(decorators: readonly string[]): boolean;
 
@@ -738,23 +912,23 @@ export const pythonAnnotationTypeSource: InlineTypeSource<PythonTypeSourceInput>
       `tests/core/domains/language/python/walker/python-walker.test.ts`), then
       assert the fact list. Cases, each with its negative guard:
 
-| Fixture | Expected |
-| --- | --- |
-| `def f(x: Foo): ...` | NO fact — the monolith already binds it |
-| `def f(x: mod.Foo): ...` | NO fact — attribute annotation, same reason |
-| `def f(x: Optional[Foo]): ...` | one `param` fact, `line` = the `def` line, `type` the union |
-| `def f(x: list[Foo]): ...` | NO fact — container declined by the single-arm gate |
-| `def f(x: Foo \| Bar): ...` | NO fact — two reachable arms |
-| `def f(x: "Foo"): ...` | one `param` fact, `type` `instance(Foo)` |
-| `def f() -> Optional[Foo]: ...` | one `return` fact, no `line`, no `classForm` |
-| `def f() -> None: ...` | NO fact — a nil-only ref states no receiver |
-| `@classmethod\ndef make(cls) -> Foo:` inside `class C` | `return` fact with `classForm: true`, `symbolScope: ["C"]` |
-| `class C:\n    svc: Optional[Svc]` | one `ivar` fact, `name: "svc"`, `type` collapsed to `instance(Svc)` |
-| `class C:\n    def __init__(self):\n        self.svc: Optional[Svc] = None` | one `ivar` fact, `symbolScope: ["C"]`, no `methodName` |
-| `class Outer:\n    class Inner:\n        x: Foo` | `ivar` fact with `symbolScope: ["Outer","Inner"]` |
-| `def f():\n    x: Optional[Foo] = g()` | one `local` fact at the assignment line |
-| the same with `trackLocalTypes: false` | `param` and `local` facts absent, `ivar` and `return` still emitted |
-| `x: Foo` at module level | NO fact — no channel reads it |
+| Fixture                                                                     | Expected                                                            |
+| --------------------------------------------------------------------------- | ------------------------------------------------------------------- |
+| `def f(x: Foo): ...`                                                        | NO fact — the monolith already binds it                             |
+| `def f(x: mod.Foo): ...`                                                    | NO fact — attribute annotation, same reason                         |
+| `def f(x: Optional[Foo]): ...`                                              | one `param` fact, `line` = the `def` line, `type` the union         |
+| `def f(x: list[Foo]): ...`                                                  | NO fact — container declined by the single-arm gate                 |
+| `def f(x: Foo \| Bar): ...`                                                 | NO fact — two reachable arms                                        |
+| `def f(x: "Foo"): ...`                                                      | one `param` fact, `type` `instance(Foo)`                            |
+| `def f() -> Optional[Foo]: ...`                                             | one `return` fact, no `line`, no `classForm`                        |
+| `def f() -> None: ...`                                                      | NO fact — a nil-only ref states no receiver                         |
+| `@classmethod\ndef make(cls) -> Foo:` inside `class C`                      | `return` fact with `classForm: true`, `symbolScope: ["C"]`          |
+| `class C:\n    svc: Optional[Svc]`                                          | one `ivar` fact, `name: "svc"`, `type` collapsed to `instance(Svc)` |
+| `class C:\n    def __init__(self):\n        self.svc: Optional[Svc] = None` | one `ivar` fact, `symbolScope: ["C"]`, no `methodName`              |
+| `class Outer:\n    class Inner:\n        x: Foo`                            | `ivar` fact with `symbolScope: ["Outer","Inner"]`                   |
+| `def f():\n    x: Optional[Foo] = g()`                                      | one `local` fact at the assignment line                             |
+| the same with `trackLocalTypes: false`                                      | `param` and `local` facts absent, `ivar` and `return` still emitted |
+| `x: Foo` at module level                                                    | NO fact — no channel reads it                                       |
 
 - [ ] Run them; they fail on the missing modules.
 
@@ -785,12 +959,16 @@ import { pythonBareTypeName } from "./python-type-annotation.js";
 
 /** `@classmethod` / `@staticmethod` mark a def whose structured-return key joins with `.`. */
 export function isPythonClassFormDef(decorators: readonly string[]): boolean {
-  return decorators.includes("classmethod") || decorators.includes("staticmethod");
+  return (
+    decorators.includes("classmethod") || decorators.includes("staticmethod")
+  );
 }
 
 /** Unwrap tree-sitter-python's `type` wrapper to the annotation expression itself. */
 export function pythonAnnotationExpression(typeField: AstNode): AstNode {
-  return typeField.type === "type" ? (typeField.namedChild(0) ?? typeField) : typeField;
+  return typeField.type === "type"
+    ? (typeField.namedChild(0) ?? typeField)
+    : typeField;
 }
 
 function decoratorNames(decorated: AstNode): string[] {
@@ -800,13 +978,17 @@ function decoratorNames(decorated: AstNode): string[] {
     const expr = child.namedChild(0);
     if (expr === null) continue;
     // `@app.route("/x")` — the decorator's identity is the CALLEE, not the call.
-    const target = expr.type === "call" ? expr.childForFieldName("function") : expr;
+    const target =
+      expr.type === "call" ? expr.childForFieldName("function") : expr;
     if (target !== null) out.push(pythonBareTypeName(target.text));
   }
   return out;
 }
 
-export function walkPythonScopes(root: AstNode, visitor: PythonScopeVisitor): void {
+export function walkPythonScopes(
+  root: AstNode,
+  visitor: PythonScopeVisitor,
+): void {
   const classChain: string[] = [];
   const fnStack: string[] = [];
 
@@ -816,7 +998,10 @@ export function walkPythonScopes(root: AstNode, visitor: PythonScopeVisitor): vo
     for (const child of body.namedChildren) descend(child);
   };
 
-  const visitDefinition = (node: AstNode, decorators: readonly string[]): void => {
+  const visitDefinition = (
+    node: AstNode,
+    decorators: readonly string[],
+  ): void => {
     const name = node.childForFieldName("name")?.text;
     if (name === undefined) return;
     if (node.type === "class_definition") {
@@ -825,7 +1010,13 @@ export function walkPythonScopes(root: AstNode, visitor: PythonScopeVisitor): vo
       classChain.pop();
       return;
     }
-    visitor.onDef?.({ node, decorators, name, classChain: [...classChain], line: node.startPosition.row + 1 });
+    visitor.onDef?.({
+      node,
+      decorators,
+      name,
+      classChain: [...classChain],
+      line: node.startPosition.row + 1,
+    });
     fnStack.push(name);
     descendBody(node);
     fnStack.pop();
@@ -833,11 +1024,17 @@ export function walkPythonScopes(root: AstNode, visitor: PythonScopeVisitor): vo
 
   const descend = (node: AstNode): void => {
     if (node.type === "decorated_definition") {
-      const inner = node.namedChildren.find((c) => c.type === "function_definition" || c.type === "class_definition");
+      const inner = node.namedChildren.find(
+        (c) =>
+          c.type === "function_definition" || c.type === "class_definition",
+      );
       if (inner !== undefined) visitDefinition(inner, decoratorNames(node));
       return;
     }
-    if (node.type === "function_definition" || node.type === "class_definition") {
+    if (
+      node.type === "function_definition" ||
+      node.type === "class_definition"
+    ) {
       visitDefinition(node, []);
       return;
     }
@@ -857,9 +1054,9 @@ export function walkPythonScopes(root: AstNode, visitor: PythonScopeVisitor): vo
 }
 ```
 
-  The three interfaces from **Interfaces** above (`PythonDefSite`,
-  `PythonAnnotatedAssignmentSite`, `PythonScopeVisitor`) are declared verbatim
-  at the top of this file, above `isPythonClassFormDef`.
+The three interfaces from **Interfaces** above (`PythonDefSite`,
+`PythonAnnotatedAssignmentSite`, `PythonScopeVisitor`) are declared verbatim at
+the top of this file, above `isPythonClassFormDef`.
 
 - [ ] Write `python-annotation-type-source.ts`:
 
@@ -886,7 +1083,10 @@ import {
   pythonAnnotationExpression,
   walkPythonScopes,
 } from "./python-def-scope-walk.js";
-import { pythonNominalReceiverName, pythonTypeRefFromNode } from "./python-type-annotation.js";
+import {
+  pythonNominalReceiverName,
+  pythonTypeRefFromNode,
+} from "./python-type-annotation.js";
 
 export const PYTHON_ANNOTATION_SOURCE = "annotations";
 
@@ -905,7 +1105,11 @@ function typedParameters(fn: AstNode): PythonTypedParam[] {
   if (params === null) return [];
   const out: PythonTypedParam[] = [];
   for (const param of params.namedChildren) {
-    if (param.type !== "typed_parameter" && param.type !== "typed_default_parameter") continue;
+    if (
+      param.type !== "typed_parameter" &&
+      param.type !== "typed_default_parameter"
+    )
+      continue;
     const typeField = param.childForFieldName("type");
     if (typeField === null) continue;
     // `typed_default_parameter` names the identifier; `typed_parameter` puts the
@@ -913,7 +1117,10 @@ function typedParameters(fn: AstNode): PythonTypedParam[] {
     // and is skipped — a splat binds a tuple / dict, never the annotated type.
     const nameNode = param.childForFieldName("name") ?? param.namedChild(0);
     if (nameNode === null || nameNode.type !== "identifier") continue;
-    out.push({ name: nameNode.text, annotation: pythonAnnotationExpression(typeField) });
+    out.push({
+      name: nameNode.text,
+      annotation: pythonAnnotationExpression(typeField),
+    });
   }
   return out;
 }
@@ -923,7 +1130,9 @@ function walkerAlreadyBinds(annotation: AstNode): boolean {
   return annotation.type === "identifier" || annotation.type === "attribute";
 }
 
-function extractPythonAnnotationFacts(input: PythonTypeSourceInput): TypeFact[] {
+function extractPythonAnnotationFacts(
+  input: PythonTypeSourceInput,
+): TypeFact[] {
   const facts: TypeFact[] = [];
   walkPythonScopes(input.root, {
     onDef: (site) => {
@@ -932,7 +1141,8 @@ function extractPythonAnnotationFacts(input: PythonTypeSourceInput): TypeFact[] 
         for (const param of typedParameters(site.node)) {
           if (walkerAlreadyBinds(param.annotation)) continue;
           const ref = pythonTypeRefFromNode(param.annotation, selfClass);
-          if (ref === undefined || pythonNominalReceiverName(ref) === undefined) continue;
+          if (ref === undefined || pythonNominalReceiverName(ref) === undefined)
+            continue;
           facts.push({
             kind: "param",
             source: PYTHON_ANNOTATION_SOURCE,
@@ -949,7 +1159,10 @@ function extractPythonAnnotationFacts(input: PythonTypeSourceInput): TypeFact[] 
       }
       const returnType = site.node.childForFieldName("return_type");
       if (returnType === null) return;
-      const ref = pythonTypeRefFromNode(pythonAnnotationExpression(returnType), selfClass);
+      const ref = pythonTypeRefFromNode(
+        pythonAnnotationExpression(returnType),
+        selfClass,
+      );
       // A nil-only ref states "no receiver" and no consumer reads that yet;
       // emitting it would put a `-> None` entry on every annotated def.
       if (ref === undefined || ref.form === "nil") return;
@@ -963,15 +1176,17 @@ function extractPythonAnnotationFacts(input: PythonTypeSourceInput): TypeFact[] 
       if (isPythonClassFormDef(site.decorators)) fact.classForm = true;
       facts.push(fact);
     },
-    onAnnotatedAssignment: (site) => pushAssignmentFact(facts, site, input.trackLocalTypes),
+    onAnnotatedAssignment: (site) =>
+      pushAssignmentFact(facts, site, input.trackLocalTypes),
   });
   return facts;
 }
 
-export const pythonAnnotationTypeSource: InlineTypeSource<PythonTypeSourceInput> = {
-  name: PYTHON_ANNOTATION_SOURCE,
-  extract: extractPythonAnnotationFacts,
-};
+export const pythonAnnotationTypeSource: InlineTypeSource<PythonTypeSourceInput> =
+  {
+    name: PYTHON_ANNOTATION_SOURCE,
+    extract: extractPythonAnnotationFacts,
+  };
 ```
 
 - [ ] Add `pushAssignmentFact` to the same file — the three annotated-assignment
@@ -1020,7 +1235,12 @@ function pushAssignmentFact(
   if (lhs.type === "attribute") {
     const object = lhs.childForFieldName("object");
     const attribute = lhs.childForFieldName("attribute");
-    if (object?.type !== "identifier" || object.text !== "self" || attribute === null) return;
+    if (
+      object?.type !== "identifier" ||
+      object.text !== "self" ||
+      attribute === null
+    )
+      return;
     if (site.classChain.length === 0) return;
     facts.push(attributeFact(attribute.text));
     return;
@@ -1051,7 +1271,8 @@ function pushAssignmentFact(
       and confirm `git diff --stat -- tests/core/domains/language/python` lists
       only the new file.
 - [ ] `npm run type-check`, `npx eslint --max-warnings 0` on the two new files.
-- [ ] Commit: `feat(language): read Python annotations as ranked type facts (9fgdi)`.
+- [ ] Commit:
+      `feat(language): read Python annotations as ranked type facts (9fgdi)`.
 
 ---
 
@@ -1059,8 +1280,10 @@ function pushAssignmentFact(
 
 **Files**
 
-- Create `src/core/domains/language/python/walker/passes/python-docstring-type-source.ts`
-- Create `tests/core/domains/language/python/walker/passes/python-docstring-type-source.test.ts`
+- Create
+  `src/core/domains/language/python/walker/passes/python-docstring-type-source.ts`
+- Create
+  `tests/core/domains/language/python/walker/passes/python-docstring-type-source.test.ts`
 
 **Interfaces**
 
@@ -1082,10 +1305,10 @@ export const pythonDocstringTypeSource: InlineTypeSource<PythonTypeSourceInput>;
   a `Returns:` section whose first line reads `Type: description`.
 - Sphinx — `:type name: Type` and `:rtype: Type`.
 
-Anything else (numpydoc, epytext, `:param Type name:`) is out of scope and
-files no fact. A docstring type is text, so it goes through
-`pythonTypeRefFromText`, which means `Optional[Foo]`, `List[Foo]` and
-`Foo | None` all read the same as in an annotation.
+Anything else (numpydoc, epytext, `:param Type name:`) is out of scope and files
+no fact. A docstring type is text, so it goes through `pythonTypeRefFromText`,
+which means `Optional[Foo]`, `List[Foo]` and `Foo | None` all read the same as
+in an annotation.
 
 **The disjointness gate.** A param fact is emitted ONLY for a parameter with no
 annotation node, and a return fact ONLY when the def has no `return_type`. So
@@ -1098,18 +1321,18 @@ almost every def.
 
 - [ ] Write the failing test first. Fixtures, with negative guards:
 
-| Fixture | Expected |
-| --- | --- |
+| Fixture                                                         | Expected                                                      |
+| --------------------------------------------------------------- | ------------------------------------------------------------- |
 | Google `Args:\n    req (Request): the request` on `def f(req):` | one `param` fact, `line` = the `def` line, source `docstring` |
-| the same on `def f(req: Request):` | NO fact — the parameter is annotated |
-| Google `Returns:\n    Session: the session` on `def f():` | one `return` fact |
-| the same on `def f() -> Session:` | NO fact — the def has a return annotation |
-| Google `Returns:\n    The open session, if any.` | NO fact — not a type token |
-| Sphinx `:type req: Request` / `:rtype: Session` | one `param` + one `return` fact |
-| Google `Args:\n    xs (list[Foo]): …` | NO fact — container declined by the single-arm gate |
-| Google `Args:\n    self (Foo): …` | NO fact — `self` / `cls` never bind |
-| a def with no docstring | no facts, and `docstringText` returns `undefined` |
-| numpydoc `Parameters\n----------\nreq : Request` | NO fact — out of scope |
+| the same on `def f(req: Request):`                              | NO fact — the parameter is annotated                          |
+| Google `Returns:\n    Session: the session` on `def f():`       | one `return` fact                                             |
+| the same on `def f() -> Session:`                               | NO fact — the def has a return annotation                     |
+| Google `Returns:\n    The open session, if any.`                | NO fact — not a type token                                    |
+| Sphinx `:type req: Request` / `:rtype: Session`                 | one `param` + one `return` fact                               |
+| Google `Args:\n    xs (list[Foo]): …`                           | NO fact — container declined by the single-arm gate           |
+| Google `Args:\n    self (Foo): …`                               | NO fact — `self` / `cls` never bind                           |
+| a def with no docstring                                         | no facts, and `docstringText` returns `undefined`             |
+| numpydoc `Parameters\n----------\nreq : Request`                | NO fact — out of scope                                        |
 
 - [ ] Write `python-docstring-type-source.ts`:
 
@@ -1128,9 +1351,15 @@ almost every def.
  */
 import type { AstNode } from "../../../../../contracts/types/ast.js";
 import type { InlineTypeSource, TypeFact } from "../../../kernel/type-facts.js";
-import { isPythonClassFormDef, walkPythonScopes } from "./python-def-scope-walk.js";
 import type { PythonTypeSourceInput } from "./python-annotation-type-source.js";
-import { pythonNominalReceiverName, pythonTypeRefFromText } from "./python-type-annotation.js";
+import {
+  isPythonClassFormDef,
+  walkPythonScopes,
+} from "./python-def-scope-walk.js";
+import {
+  pythonNominalReceiverName,
+  pythonTypeRefFromText,
+} from "./python-type-annotation.js";
 
 export const PYTHON_DOCSTRING_SOURCE = "docstring";
 
@@ -1161,7 +1390,12 @@ function acceptedType(text: string): string | undefined {
 export function pythonDocstringText(fn: AstNode): string | undefined {
   const first = fn.childForFieldName("body")?.namedChild(0);
   if (first === null || first === undefined) return undefined;
-  const literal = first.type === "string" ? first : first.type === "expression_statement" ? first.namedChild(0) : null;
+  const literal =
+    first.type === "string"
+      ? first
+      : first.type === "expression_statement"
+        ? first.namedChild(0)
+        : null;
   if (literal === null || literal.type !== "string") return undefined;
   const raw = literal.text;
   const quoteAt = raw.search(/["']/);
@@ -1257,7 +1491,9 @@ function extractPythonDocstringFacts(input: PythonTypeSourceInput): TypeFact[] {
   walkPythonScopes(input.root, {
     onDef: (site) => {
       const needsReturn = site.node.childForFieldName("return_type") === null;
-      const openParams = input.trackLocalTypes ? unannotatedParameterNames(site.node) : new Set<string>();
+      const openParams = input.trackLocalTypes
+        ? unannotatedParameterNames(site.node)
+        : new Set<string>();
       if (!needsReturn && openParams.size === 0) return;
       const doc = pythonDocstringText(site.node);
       if (doc === undefined) return;
@@ -1266,7 +1502,8 @@ function extractPythonDocstringFacts(input: PythonTypeSourceInput): TypeFact[] {
       for (const [name, text] of parsed.params) {
         if (!openParams.has(name)) continue;
         const ref = pythonTypeRefFromText(text, selfClass);
-        if (ref === undefined || pythonNominalReceiverName(ref) === undefined) continue;
+        if (ref === undefined || pythonNominalReceiverName(ref) === undefined)
+          continue;
         facts.push({
           kind: "param",
           source: PYTHON_DOCSTRING_SOURCE,
@@ -1294,15 +1531,17 @@ function extractPythonDocstringFacts(input: PythonTypeSourceInput): TypeFact[] {
   return facts;
 }
 
-export const pythonDocstringTypeSource: InlineTypeSource<PythonTypeSourceInput> = {
-  name: PYTHON_DOCSTRING_SOURCE,
-  extract: extractPythonDocstringFacts,
-};
+export const pythonDocstringTypeSource: InlineTypeSource<PythonTypeSourceInput> =
+  {
+    name: PYTHON_DOCSTRING_SOURCE,
+    extract: extractPythonDocstringFacts,
+  };
 ```
 
 - [ ] Run the docstring test — green. `npm run type-check`,
       `npx eslint --max-warnings 0`.
-- [ ] Commit: `feat(language): read Google and Sphinx docstring types as ranked facts (9fgdi)`.
+- [ ] Commit:
+      `feat(language): read Google and Sphinx docstring types as ranked facts (9fgdi)`.
 
 ---
 
@@ -1310,10 +1549,14 @@ export const pythonDocstringTypeSource: InlineTypeSource<PythonTypeSourceInput> 
 
 **Files**
 
-- Create `src/core/domains/language/python/walker/passes/python-type-channels.ts`
-- Create `src/core/domains/language/python/walker/passes/annotation-type-facts.ts`
-- Create `tests/core/domains/language/python/walker/passes/python-type-channels.test.ts`
-- Create `tests/core/domains/language/python/walker/passes/annotation-type-facet-pass.test.ts`
+- Create
+  `src/core/domains/language/python/walker/passes/python-type-channels.ts`
+- Create
+  `src/core/domains/language/python/walker/passes/annotation-type-facts.ts`
+- Create
+  `tests/core/domains/language/python/walker/passes/python-type-channels.test.ts`
+- Create
+  `tests/core/domains/language/python/walker/passes/annotation-type-facet-pass.test.ts`
 - Modify `src/core/domains/language/python/walker/passes.ts`
 
 **Interfaces**
@@ -1328,7 +1571,10 @@ Produces:
 ```ts
 // python-type-channels.ts
 export function pythonStructuredReturnKey(kernelKey: string): string;
-export function pythonTypeChannels(store: TypeFactStore, chunks: WalkContext["chunks"]): Partial<FileExtraction>;
+export function pythonTypeChannels(
+  store: TypeFactStore,
+  chunks: WalkContext["chunks"],
+): Partial<FileExtraction>;
 
 // annotation-type-facts.ts
 export const PYTHON_TYPE_SOURCE_ORDER: readonly string[];
@@ -1342,17 +1588,14 @@ export const pythonAnnotationTypeFacetPass: ExtractionFacetPass;
 ### Steps
 
 - [ ] Write the failing channel test. Build stores from hand-written facts (no
-      parsing) and assert:
-      - a `return` fact with `symbolScope: []`, `methodName: "run"` →
-        `structuredReturnTypes` key `"run"`.
-      - `symbolScope: ["Svc"]` → `"Svc#run"`; with `classForm: true` →
-        `"Svc.run"`.
-      - `symbolScope: ["Outer","Inner"]` → `"Outer.Inner#run"`.
-      - an `ivar` fact with `symbolScope: ["Outer","Inner"]`, `name: "svc"` →
-        `classFieldTypes` `{ Inner: { svc: "Svc" } }`, no `ivarTypes` key.
-      - `functionReturnTypes` is NEVER a key of the result, even when the store
-        answers one.
-      - an empty store → `Object.keys(out)` is `[]`.
+      parsing) and assert: - a `return` fact with `symbolScope: []`,
+      `methodName: "run"` → `structuredReturnTypes` key `"run"`. -
+      `symbolScope: ["Svc"]` → `"Svc#run"`; with `classForm: true` →
+      `"Svc.run"`. - `symbolScope: ["Outer","Inner"]` → `"Outer.Inner#run"`. -
+      an `ivar` fact with `symbolScope: ["Outer","Inner"]`, `name: "svc"` →
+      `classFieldTypes` `{ Inner: { svc: "Svc" } }`, no `ivarTypes` key. -
+      `functionReturnTypes` is NEVER a key of the result, even when the store
+      answers one. - an empty store → `Object.keys(out)` is `[]`.
 - [ ] Write `python-type-channels.ts`:
 
 ```ts
@@ -1382,7 +1625,10 @@ export const pythonAnnotationTypeFacetPass: ExtractionFacetPass;
  * absent stays absent here.
  */
 import type { FileExtraction } from "../../../../../contracts/types/codegraph.js";
-import type { TypeRef, WalkContext } from "../../../../../contracts/types/language.js";
+import type {
+  TypeRef,
+  WalkContext,
+} from "../../../../../contracts/types/language.js";
 import { typeFactChannels } from "../../../kernel/type-fact-channels.js";
 import type { TypeFactStore } from "../../../kernel/type-fact-store.js";
 
@@ -1392,11 +1638,15 @@ import type { TypeFactStore } from "../../../kernel/type-fact-store.js";
  * its bare name (`compose` returns `localName` for an empty prefix).
  */
 export function pythonStructuredReturnKey(kernelKey: string): string {
-  if (kernelKey.startsWith("#") || kernelKey.startsWith(".")) return kernelKey.slice(1);
+  if (kernelKey.startsWith("#") || kernelKey.startsWith("."))
+    return kernelKey.slice(1);
   return kernelKey.split("::").join(".");
 }
 
-export function pythonTypeChannels(store: TypeFactStore, chunks: WalkContext["chunks"]): Partial<FileExtraction> {
+export function pythonTypeChannels(
+  store: TypeFactStore,
+  chunks: WalkContext["chunks"],
+): Partial<FileExtraction> {
   const kernel = typeFactChannels(store, chunks);
   const out: Partial<FileExtraction> = {};
   if (kernel.chunks !== undefined) out.chunks = kernel.chunks;
@@ -1416,7 +1666,10 @@ export function pythonTypeChannels(store: TypeFactStore, chunks: WalkContext["ch
       const shortName = segments[segments.length - 1];
       // Last write wins across same-short-named nested classes, exactly as
       // `collectPythonClassFieldTypes` merges them (`walker/walker.ts:256`).
-      classFieldTypes[shortName] = { ...(classFieldTypes[shortName] ?? {}), ...fields };
+      classFieldTypes[shortName] = {
+        ...(classFieldTypes[shortName] ?? {}),
+        ...fields,
+      };
     }
     out.classFieldTypes = classFieldTypes;
   }
@@ -1441,15 +1694,18 @@ export function pythonTypeChannels(store: TypeFactStore, chunks: WalkContext["ch
  */
 import type { FileExtraction } from "../../../../../contracts/types/codegraph.js";
 import type { ExtractionFacetPass } from "../../../kernel/extraction-passes.js";
-import type { InlineTypeSource } from "../../../kernel/type-facts.js";
 import { TypeFactStore } from "../../../kernel/type-fact-store.js";
+import type { InlineTypeSource } from "../../../kernel/type-facts.js";
 import { pythonLocalTypeTrackingEnabled } from "../walker.js";
 import {
   PYTHON_ANNOTATION_SOURCE,
   pythonAnnotationTypeSource,
   type PythonTypeSourceInput,
 } from "./python-annotation-type-source.js";
-import { PYTHON_DOCSTRING_SOURCE, pythonDocstringTypeSource } from "./python-docstring-type-source.js";
+import {
+  PYTHON_DOCSTRING_SOURCE,
+  pythonDocstringTypeSource,
+} from "./python-docstring-type-source.js";
 import { pythonTypeChannels } from "./python-type-channels.js";
 
 /**
@@ -1463,19 +1719,25 @@ export const PYTHON_TYPE_SOURCE_ORDER: readonly string[] = [
   "ast",
 ];
 
-export const PYTHON_INLINE_TYPE_SOURCES: readonly InlineTypeSource<PythonTypeSourceInput>[] = [
-  pythonAnnotationTypeSource,
-  pythonDocstringTypeSource,
-];
+export const PYTHON_INLINE_TYPE_SOURCES: readonly InlineTypeSource<PythonTypeSourceInput>[] =
+  [pythonAnnotationTypeSource, pythonDocstringTypeSource];
 
 export const pythonAnnotationTypeFacetPass: ExtractionFacetPass = {
   run: (root, ctx): Partial<FileExtraction> => {
     // Read ONCE per file, exactly where the monolith reads it, and pass it down
     // so both sources stay pure functions of their input.
-    const input: PythonTypeSourceInput = { root, trackLocalTypes: pythonLocalTypeTrackingEnabled() };
-    const facts = PYTHON_INLINE_TYPE_SOURCES.flatMap((source) => source.extract(input));
+    const input: PythonTypeSourceInput = {
+      root,
+      trackLocalTypes: pythonLocalTypeTrackingEnabled(),
+    };
+    const facts = PYTHON_INLINE_TYPE_SOURCES.flatMap((source) =>
+      source.extract(input),
+    );
     if (facts.length === 0) return {};
-    return pythonTypeChannels(TypeFactStore.fromFacts(facts, PYTHON_TYPE_SOURCE_ORDER), ctx.chunks);
+    return pythonTypeChannels(
+      TypeFactStore.fromFacts(facts, PYTHON_TYPE_SOURCE_ORDER),
+      ctx.chunks,
+    );
   },
 };
 ```
@@ -1494,7 +1756,9 @@ export const pythonAnnotationTypeFacetPass: ExtractionFacetPass = {
 import type { ExtractionFacetPass } from "../../kernel/extraction-passes.js";
 import { pythonAnnotationTypeFacetPass } from "./passes/annotation-type-facts.js";
 
-export const PYTHON_EXTRACTION_PASSES: readonly ExtractionFacetPass[] = [pythonAnnotationTypeFacetPass];
+export const PYTHON_EXTRACTION_PASSES: readonly ExtractionFacetPass[] = [
+  pythonAnnotationTypeFacetPass,
+];
 ```
 
 - [ ] Write the walker-level test — the one that proves the seam, over real
@@ -1516,7 +1780,7 @@ class Service:
         return target.open()
 ```
 
-  Assertions:
+Assertions:
 
       - `classFieldTypes.Service` is `{ repo: "Repo", session: "Session" }` —
         the class-body declaration and the annotated `self.` assignment, neither
@@ -1531,16 +1795,18 @@ class Service:
         that a later constructor supersedes an earlier parameter annotation.
       - the `Service#__init__` chunk's `localBindings.session` carries `typeRef`
         with the `Optional[Session]` union and `type: "Session"`.
+
 - [ ] Add the rank test the two disjoint sources cannot produce naturally: build
       one `annotations` and one `docstring` `TypeFact` at the SAME coordinate by
-      hand, `TypeFactStore.fromFacts(both, PYTHON_TYPE_SOURCE_ORDER)`, assert the
-      annotation's type survives — and that it survives regardless of which order
-      the two facts were pushed in.
+      hand, `TypeFactStore.fromFacts(both, PYTHON_TYPE_SOURCE_ORDER)`, assert
+      the annotation's type survives — and that it survives regardless of which
+      order the two facts were pushed in.
 - [ ] Run the whole Python suite plus `tests/core/domains/language/kernel/`. The
       staged diff under `tests/core/domains/language/python` must list only new
       files, no modified ones.
 - [ ] `npm run type-check`, `npx eslint --max-warnings 0`.
-- [ ] Commit: `feat(language): publish Python annotation type facts through an extraction pass (9fgdi)`.
+- [ ] Commit:
+      `feat(language): publish Python annotation type facts through an extraction pass (9fgdi)`.
 
 ---
 
@@ -1604,14 +1870,15 @@ npx tsx scripts/py-codegraph-jedi-oracle.ts --corpus polar --seed 20260908 --jso
       losses); netbox is the control, at 3.4% annotation coverage it should
       barely move, and a large netbox swing means something other than
       annotations changed.
+
 - [ ] **Perf A/B.** The pass runs per file, so its cost is real. Same machine,
-      interleaved before/after/before/after, report the MIN of two runs per side,
-      on netbox (the largest file count) and polar (the densest annotations):
-      wall clock from the tally run and peak RSS via `/usr/bin/time -l`.
-      Ceiling: +25% wall, +20% RSS. Over ceiling, the first suspects are the
-      docstring source (confirm the "def needs nothing" early return actually
-      fires — instrument the count of docstrings parsed) and `node.text` on
-      annotation subtrees.
+      interleaved before/after/before/after, report the MIN of two runs per
+      side, on netbox (the largest file count) and polar (the densest
+      annotations): wall clock from the tally run and peak RSS via
+      `/usr/bin/time -l`. Ceiling: +25% wall, +20% RSS. Over ceiling, the first
+      suspects are the docstring source (confirm the "def needs nothing" early
+      return actually fires — instrument the count of docstrings parsed) and
+      `node.text` on annotation subtrees.
 - [ ] **Navigator paragraph** in `src/core/domains/language/CLAUDE.md`, under
       Mechanics, immediately after the existing "Type facts: kernel store,
       language-owned ranks" bullet, which it extends rather than restates:
@@ -1649,11 +1916,10 @@ npx tsx scripts/py-codegraph-jedi-oracle.ts --corpus polar --seed 20260908 --jso
 ## Invariants
 
 - **A new Python extraction facet is a new pass, never an edit to
-  `extractFromPythonFile`.** `walker/passes.ts` lists them;
-  `walker/passes/` holds them. The two paths coexist deliberately — do not
-  collapse one into the other. Why: `mergeExtraction` is append-only, so a facet
-  added inside the monolith silently outranks every pass instead of being
-  ordered against them.
+  `extractFromPythonFile`.** `walker/passes.ts` lists them; `walker/passes/`
+  holds them. The two paths coexist deliberately — do not collapse one into the
+  other. Why: `mergeExtraction` is append-only, so a facet added inside the
+  monolith silently outranks every pass instead of being ordered against them.
 - **`CODEGRAPH_PY_LOCAL_TYPE_TRACKING` gates local bindings ONLY.**
   `pythonLocalTypeTrackingEnabled` (exported from `walker/walker.ts`) suppresses
   the walker's `localBindings` and the pass's `param` / `local` facts. It does
@@ -1665,14 +1931,83 @@ npx tsx scripts/py-codegraph-jedi-oracle.ts --corpus polar --seed 20260908 --jso
 
 - **Two coordinate conventions live side by side.** `classFieldTypes` is keyed
   by class SHORT name with a bare member name (`walker/walker.ts:201` and the
-  pass's `pythonTypeChannels` both write that shape);
-  `structuredReturnTypes` is keyed by the callee's full symbolId
-  (`Outer.Inner#method`). The channel re-keying that reconciles them with the
-  kernel store's Ruby-shaped output is in `passes/python-type-channels.ts`, and
-  the reasoning is in `domains/language/CLAUDE.md` → Mechanics.
+  pass's `pythonTypeChannels` both write that shape); `structuredReturnTypes` is
+  keyed by the callee's full symbolId (`Outer.Inner#method`). The channel
+  re-keying that reconciles them with the kernel store's Ruby-shaped output is
+  in `passes/python-type-channels.ts`, and the reasoning is in
+  `domains/language/CLAUDE.md` → Mechanics.
 ```
 
-- [ ] Commit: `docs(language): record the Python type-fact facet in the navigators (9fgdi)`.
+- [ ] Commit:
+      `docs(language): record the Python type-fact facet in the navigators (9fgdi)`.
+
+### Gate record — measured 2026-09-09 (`4nrou`)
+
+BEFORE is the pre-facet tree at `3991e0e6f` (identical chain and walker, minus
+the facet pass); AFTER is `a24d3585a`. Same machine, oracle runs are full-corpus
+with each corpus's own `oraclePython`, no sampling.
+
+**Chain tally** — `chainDrift 0` on all five, every run completed.
+
+| corpus | edges         | file-only   | unresolved    |
+| ------ | ------------- | ----------- | ------------- |
+| ugnest | 2070 → 2070   | 290 → 290   | 5088 → 5088   |
+| flask  | 705 → 705     | 62 → 62     | 1467 → 1467   |
+| httpx  | 882 → 883     | 60 → 60     | 1761 → 1760   |
+| netbox | 11980 → 11986 | 1184 → 1184 | 48751 → 48745 |
+| polar  | 20700 → 20764 | 1578 → 1589 | 61854 → 61790 |
+
+**jedi oracle A/B**, with the row-level GROSS diff keyed by
+`(relPath, startLine, callText)`.
+
+| corpus | match       | missed      | wrongFile | phantom     | gross lost / gained |
+| ------ | ----------- | ----------- | --------- | ----------- | ------------------- |
+| httpx  | 689 → 689   | 183 → 183   | 10 → 10   | 152 → 153   | 0 / 0               |
+| flask  | 504 → 506   | 153 → 151   | 20 → 20   | 116 → 119   | 0 / 2               |
+| ugnest | 1366 → 1366 | 67 → 67     | 22 → 22   | 479 → 479   | 0 / 0               |
+| netbox | 7653 → 7654 | 1429 → 1428 | 260 → 260 | 1078 → 1083 | 0 / 1               |
+| polar  | 9245 → 9251 | 2213 → 2207 | 101 → 101 | 3280 → 3324 | 0 / 6               |
+
+Target categories over the five corpora: `annotationParam` 140 → 132 (−8),
+`annotationReturn` 2,653 → 2,644 (−9). `match` +9, `missed` −9, `wrongFile`
+flat, `lost` 0 — four of the five oracle gates hold.
+
+**The phantom gate does NOT hold.** +53 net (httpx +1, flask +3, netbox +5,
+polar +44, ugnest flat): 77 gross `agreeExternal → phantom` moves against 24
+polar phantoms that went the other way. The 77 come in two shapes:
+
+- **56 type-anchor targets via `selfField`** (httpx 1, flask 3, netbox 5, polar
+  47). `python-self-field.ts:51` already answers a KNOWN-but-external field type
+  with
+  `resolved({ targetRelPath: typeName, targetSymbolId: "<Type>#<member>" })`
+  rather than dropping; the facet now records field types the
+  constructor-inference path never saw (`Pattern`, `Request`, `MapAdapter`), so
+  that branch fires more often. No `.py` file is attributed and `wrongFile` is
+  flat everywhere, so the cost is a synthetic anchor, not a misrouted edge.
+- **20 polar file-only edges via `localBinding`**, all into
+  `server/polar/backoffice/formatters.py`, which declares
+  `def datetime(value: dt) -> str`. An `x: datetime` annotation now binds the
+  bare name `datetime`, and the short-name lookup finds the project function
+  instead of the stdlib class. This is decision 4's hazard reaching a name
+  COLLISION rather than a container or union arm. (The 77th is one polar
+  `localBinding` site that landed on a type anchor rather than a file.)
+
+polar also DROPPED 24 pre-existing phantoms and 20 oracle-blind `chainOnly`
+edges, which is the predicted "binding onto a stdlib type turns a short-name
+guess into a `DROP`" direction; the +64 polar edge delta reconciles exactly (108
+gained resolutions − 44 lost).
+
+**Perf**, netbox chain-tally, interleaved B/A/A/B,
+`NODE_OPTIONS=--max-old-space-size=1024` on both sides, min of two runs per
+side: wall 13.09 s → 13.34 s (+1.9%, ceiling +25%); peak RSS 2,459.1 MB →
+2,451.2 MB (−0.3%, ceiling +20%). RSS exceeds the heap cap on both sides because
+the cap bounds V8 old space only and the tree-sitter buffers are native; the two
+sides carry the same cap, so the comparison holds.
+
+**Unit + coverage.** `npm run test:coverage` exit 0 — 845 test files, 12,311
+passed / 1 skipped. All-files 96.34 stmts · 88.83 branch · 97.36 funcs · 98.41
+lines. `git diff --stat 3991e0e6f HEAD -- tests/core/domains/language/python`
+shows five ADDED files and nothing else.
 
 ---
 
@@ -1683,15 +2018,15 @@ Run this before declaring the plan executed.
 **Names are identical across tasks.** Every symbol below is defined exactly once
 and referenced by that spelling everywhere else:
 
-| Symbol | Defined in | Read by |
-| --- | --- | --- |
-| `PYTHON_DECLINED_TYPE_NAMES`, `pythonBareTypeName`, `pythonTypeRefFromNode`, `pythonTypeRefFromText`, `pythonNominalReceiverName` | Task 1, `python-type-annotation.ts` | Tasks 2, 3 |
-| `PythonDefSite`, `PythonAnnotatedAssignmentSite`, `PythonScopeVisitor`, `walkPythonScopes`, `pythonAnnotationExpression`, `isPythonClassFormDef` | Task 2, `python-def-scope-walk.ts` | Tasks 2, 3 |
-| `PYTHON_ANNOTATION_SOURCE`, `PythonTypeSourceInput`, `pythonAnnotationTypeSource` | Task 2, `python-annotation-type-source.ts` | Tasks 3, 4 |
-| `pythonLocalTypeTrackingEnabled` | Task 2, `walker/walker.ts` (renamed + exported) | Task 4 |
-| `PYTHON_DOCSTRING_SOURCE`, `pythonDocstringTypeSource`, `pythonDocstringText` | Task 3 | Task 4 |
-| `pythonStructuredReturnKey`, `pythonTypeChannels` | Task 4, `python-type-channels.ts` | Task 4 |
-| `PYTHON_TYPE_SOURCE_ORDER`, `PYTHON_INLINE_TYPE_SOURCES`, `pythonAnnotationTypeFacetPass` | Task 4, `annotation-type-facts.ts` | `walker/passes.ts` |
+| Symbol                                                                                                                                           | Defined in                                      | Read by            |
+| ------------------------------------------------------------------------------------------------------------------------------------------------ | ----------------------------------------------- | ------------------ |
+| `PYTHON_DECLINED_TYPE_NAMES`, `pythonBareTypeName`, `pythonTypeRefFromNode`, `pythonTypeRefFromText`, `pythonNominalReceiverName`                | Task 1, `python-type-annotation.ts`             | Tasks 2, 3         |
+| `PythonDefSite`, `PythonAnnotatedAssignmentSite`, `PythonScopeVisitor`, `walkPythonScopes`, `pythonAnnotationExpression`, `isPythonClassFormDef` | Task 2, `python-def-scope-walk.ts`              | Tasks 2, 3         |
+| `PYTHON_ANNOTATION_SOURCE`, `PythonTypeSourceInput`, `pythonAnnotationTypeSource`                                                                | Task 2, `python-annotation-type-source.ts`      | Tasks 3, 4         |
+| `pythonLocalTypeTrackingEnabled`                                                                                                                 | Task 2, `walker/walker.ts` (renamed + exported) | Task 4             |
+| `PYTHON_DOCSTRING_SOURCE`, `pythonDocstringTypeSource`, `pythonDocstringText`                                                                    | Task 3                                          | Task 4             |
+| `pythonStructuredReturnKey`, `pythonTypeChannels`                                                                                                | Task 4, `python-type-channels.ts`               | Task 4             |
+| `PYTHON_TYPE_SOURCE_ORDER`, `PYTHON_INLINE_TYPE_SOURCES`, `pythonAnnotationTypeFacetPass`                                                        | Task 4, `annotation-type-facts.ts`              | `walker/passes.ts` |
 
 **No undefined symbol.** Everything else the code names is imported from a file
 that exists today: `AstNode` (`contracts/types/ast.ts`), `TypeRef` /
@@ -1705,22 +2040,22 @@ that exists today: `AstNode` (`contracts/types/ast.ts`), `TypeRef` /
 
 **Every decision has a task.**
 
-| Decision | Where it lands |
-| --- | --- |
-| 1 — one pass, monolith untouched but for the env-gate export | Task 2 (rename/export), Task 4 (pass + registration) |
-| 2 — emit only what `extractTypeName` declines | Task 2 (`walkerAlreadyBinds`), tested by the first two rows of Task 2's fixture table |
-| 3 — sources, ranks, disjointness | Tasks 2 and 3; the rank pinned by Task 4's hand-built collision |
-| 3 (mapper) — the full `TypeRef` form table incl. `dict[K,V]` → `container(V)` | Task 1, table test |
-| 4 — single nominal arm gates receiver bindings | Task 1 (`pythonNominalReceiverName`), enforced in Tasks 2 and 3 |
-| 5 — channel re-keying and the dropped flat map | Task 4 (`pythonTypeChannels`) |
-| Gates | Task 5 |
+| Decision                                                                      | Where it lands                                                                        |
+| ----------------------------------------------------------------------------- | ------------------------------------------------------------------------------------- |
+| 1 — one pass, monolith untouched but for the env-gate export                  | Task 2 (rename/export), Task 4 (pass + registration)                                  |
+| 2 — emit only what `extractTypeName` declines                                 | Task 2 (`walkerAlreadyBinds`), tested by the first two rows of Task 2's fixture table |
+| 3 — sources, ranks, disjointness                                              | Tasks 2 and 3; the rank pinned by Task 4's hand-built collision                       |
+| 3 (mapper) — the full `TypeRef` form table incl. `dict[K,V]` → `container(V)` | Task 1, table test                                                                    |
+| 4 — single nominal arm gates receiver bindings                                | Task 1 (`pythonNominalReceiverName`), enforced in Tasks 2 and 3                       |
+| 5 — channel re-keying and the dropped flat map                                | Task 4 (`pythonTypeChannels`)                                                         |
+| Gates                                                                         | Task 5                                                                                |
 
 ## Open items this plan does NOT close
 
 - **`structuredReturnTypes` has no Python reader yet.** The channel is filled on
   five corpora after this seam and consumed by nobody until the receiver-type
-  propagation seam. That is deliberate (decision 5), but it means the oracle
-  A/B measures the `param` / `local` / `classFieldTypes` half of the lever only.
+  propagation seam. That is deliberate (decision 5), but it means the oracle A/B
+  measures the `param` / `local` / `classFieldTypes` half of the lever only.
   Expect `annotationReturn` `missed` to drop by less than its 2,829 headline
   until propagation lands — the category flags any site whose enclosing function
   has a return annotation, which on polar is 80,619 of 82,554 sites, so most of
