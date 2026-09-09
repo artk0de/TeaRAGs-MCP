@@ -53,7 +53,7 @@ export interface PythonExtractInput {
  * Read once at walker-call time (per file) so flipping the env between
  * runs takes effect on the next reindex without restarting.
  */
-function localTypeTrackingEnabled(): boolean {
+export function pythonLocalTypeTrackingEnabled(): boolean {
   const raw = process.env.CODEGRAPH_PY_LOCAL_TYPE_TRACKING;
   if (raw === undefined) return true;
   return raw !== "false" && raw !== "0";
@@ -75,7 +75,7 @@ export function extractFromPythonFile(input: PythonExtractInput): FileExtraction
   // resolver can pin `self.service.process()` cross-method. Mirrors the
   // TS/Java `classFieldTypes` channel.
   const classFieldTypes = collectPythonClassFieldTypes(input.tree.rootNode);
-  const trackTypes = localTypeTrackingEnabled();
+  const trackTypes = pythonLocalTypeTrackingEnabled();
   const byChunk: ChunkExtraction[] = input.chunks.map((c) => {
     const base: ChunkExtraction = {
       symbolId: c.symbolId,
