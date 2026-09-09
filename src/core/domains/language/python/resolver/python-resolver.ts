@@ -39,7 +39,9 @@ import {
 } from "../../../../contracts/types/codegraph.js";
 import type { SymbolResolutionStrategy } from "../../../../contracts/types/language.js";
 import { ConeDispatchResolver } from "../../cone-dispatch.js";
+import { ExternalCallClassifier } from "../../external-classifier.js";
 import { resolveViaChain } from "../../resolver-chain.js";
+import { PythonExternalVocabulary } from "./python-external-vocabulary.js";
 import {
   CONE_MAX_DEFAULT,
   PythonConeTypeLocator,
@@ -62,6 +64,7 @@ export class PythonCallResolver implements CallResolver {
   readonly language = "python";
   private readonly strategies: SymbolResolutionStrategy[];
   private readonly cone: ConeDispatchResolver;
+  private readonly external: ExternalCallClassifier;
 
   constructor(mode: AmbiguousResolveMode = DEFAULT_AMBIGUOUS_RESOLVE_MODE) {
     const cfg: ResolverConfig = { mode, coneMax: resolveConeMax(process.env.CODEGRAPH_PY_CONE_MAX) };
@@ -74,6 +77,7 @@ export class PythonCallResolver implements CallResolver {
       new PythonGlobalShortNameSymbolResolutionStrategy(cfg),
     ];
     this.cone = new ConeDispatchResolver(new PythonConeTypeLocator(cfg), cfg.coneMax ?? CONE_MAX_DEFAULT);
+    this.external = new ExternalCallClassifier(new PythonExternalVocabulary());
   }
 
   resolve(call: CallRef, ctx: CallContext): SymbolResolutionTarget | null {
@@ -94,26 +98,24 @@ export class PythonCallResolver implements CallResolver {
   }
 
   /**
-   * tea-rags-mcp-ykj7 — external-import classifier for an UNRESOLVED call.
-   * Fires for a QUALIFIED module access (`os.path.join`, `numpy.linalg.norm`)
-   * whose receiver root segment matches a NON-RELATIVE import (stdlib /
-   * third-party). Conservative by construction:
-   *   - single-segment receivers (`os.getcwd`) never reach here unresolved —
-   *     the `importMatch` strategy already emits a file-only edge for them;
-   *   - bare calls (no receiver) cannot be told apart from project free
-   *     functions, so they stay attempted-unresolved;
-   *   - a receiver rooted at a RELATIVE import is in-project.
+   * tea-rags-mcp-ykj7, relocated to the shared engine by mmckn. The decision
+   * now lives in `PythonExternalVocabulary`; the shape branch (bare vs
+   * qualified) is the engine's. Behaviour is preserved for every case
+   * `python-resolver-external-import.test.ts` pins, and extended in two
+   * directions only: a bare call to a BUILTIN is now external, and a
+   * first-party ABSOLUTE import is no longer called external.
    */
   targetsExternalImport(call: CallRef, ctx: CallContext): boolean {
-    const { receiver } = call;
-    if (!receiver?.includes(".")) return false;
-    const root = receiver.slice(0, receiver.indexOf("."));
-    for (const imp of ctx.imports) {
-      if (imp.importText.startsWith(".")) continue; // relative → in-project
-      const head = imp.importText.split(/\s+as\s+/)[0].trim();
-      const headRoot = head.split(".")[0];
-      if (headRoot === root) return true;
-    }
-    return false;
+    return this.external.targetsExternal(call, ctx);
+  }
+
+  /**
+   * tea-rags-mcp-83cl7 for Python. A core-named member on an UNTYPED receiver
+   * (`row.get(key)`) whose real callee is the dict / list / str runtime, not the
+   * project class that happens to define the same short name. Consulted only
+   * for calls the chain declined and that the external arm did not claim.
+   */
+  targetsCoreAmbiguousMember(call: CallRef, ctx: CallContext): boolean {
+    return this.external.targetsCoreAmbiguousMember(call, ctx);
   }
 }

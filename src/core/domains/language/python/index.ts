@@ -97,6 +97,8 @@ export class PythonLanguage implements LanguageProvider {
         callResolver.resolveDispatch?.(call, ctx) ?? emptyDispatchFanout(),
       targetsExternalImport: (call: CallRef, ctx: CallContext): boolean =>
         callResolver.targetsExternalImport?.(call, ctx) ?? false,
+      targetsCoreAmbiguousMember: (call: CallRef, ctx: CallContext): boolean =>
+        callResolver.targetsCoreAmbiguousMember?.(call, ctx) ?? false,
     };
   }
 }
