@@ -21,7 +21,7 @@ import {
   type OracleVerdict,
 } from "../ts-codegraph-typechecker-oracle.js";
 
-export type PyOracleVerdict = OracleVerdict | "skippedInProject" | "parseFailed";
+export type PyOracleVerdict = OracleVerdict | "skippedInProject" | "parseFailed" | "oracleNonCallable";
 
 export type PyTargetOrigin =
   | "project"
@@ -82,19 +82,38 @@ export interface PyOracleRow {
  * One call site's verdict.
  *
  * `parseFailed` wins outright: with no AST there is no ground truth, and any
- * other bucket would be an opinion about a file nobody read. `skippedInProject`
- * is the classifier's own precision defect — it declared the site external and
- * jedi found the definition inside the project — and it is kept OUT of `missed`
- * because the two point at different fixes: `missed` asks for a strategy,
- * `skippedInProject` asks for a narrower vocabulary.
+ * other bucket would be an opinion about a file nobody read.
+ *
+ * `oracleNonCallable` comes next and for the same reason, one step narrower:
+ * the file parsed, jedi answered in-project, and the line it pointed at holds
+ * no `def` or `class` — a class attribute (`table = None` called as
+ * `self.table(...)`) or a local name bound to a callable. There is no callable
+ * definition at that target, so nothing the chain could have emitted would
+ * match it, and every comparison it takes part in is an artefact of WHERE the
+ * binding happens to live: the chain's correct answer reads `wrongFile`
+ * against the caller's own file, a decline reads `missed`, and an answer in
+ * the binding's file reads `match` on a symbol id the host substituted from
+ * the chain itself. Measured on netbox: 280 rows, 242 of them booked `missed`.
+ * The bucket is kept OUT of `missed` and out of every rate — `missed` asks for
+ * a resolution strategy, and no strategy fixes a target that is not a
+ * definition. It also outranks `skippedInProject`, which asserts jedi found a
+ * definition the classifier waved off; here jedi found no definition at all.
+ *
+ * `skippedInProject` is the classifier's own precision defect — it declared
+ * the site external and jedi found the definition inside the project — and it
+ * is kept OUT of `missed` because the two point at different fixes: `missed`
+ * asks for a strategy, `skippedInProject` asks for a narrower vocabulary.
  */
 export function classifyPyVerdict(input: {
   chain: OracleAnswer | null;
   oracle: OracleOutcome;
   parseFailed: boolean;
   classifiedExternal: boolean;
+  /** jedi's in-project target is an assignment, not a `def`/`class`. */
+  oracleTargetNonCallable: boolean;
 }): PyOracleVerdict {
   if (input.parseFailed) return "parseFailed";
+  if (input.oracleTargetNonCallable && input.oracle.kind === "inProject") return "oracleNonCallable";
   if (input.classifiedExternal && input.oracle.kind === "inProject") return "skippedInProject";
   return diffResolution(input.chain, input.oracle);
 }
@@ -245,6 +264,18 @@ function emptyTally(label: string): OracleTally {
 }
 
 /**
+ * A row carrying no ground truth: counted in `sites`, withheld from every rate.
+ *
+ * Three populations, one predicate, because the tally treats them identically —
+ * a degraded parse, a file with no AST at all, and an in-project answer whose
+ * target is not a definition. What they share is that no verdict about the
+ * CHAIN can be read off them.
+ */
+function isWithheldFromRates(row: PyOracleRow): boolean {
+  return row.oracleDegraded || row.verdict === "parseFailed" || row.verdict === "oracleNonCallable";
+}
+
+/**
  * Aggregate rows under every label they carry.
  *
  * Degraded rows are counted in `sites` and then withheld from the rate
@@ -262,7 +293,7 @@ export function tallyPyRows(
   const source = new WeakMap<OracleRow, PyOracleRow>();
   const scored: OracleRow[] = [];
   for (const row of rows) {
-    if (row.oracleDegraded || row.verdict === "parseFailed") continue;
+    if (isWithheldFromRates(row)) continue;
     const mapped: OracleRow = {
       relPath: row.relPath,
       startLine: row.startLine,
@@ -287,7 +318,7 @@ export function tallyPyRows(
   // `sites` column stops summing to the corpus.
   const bySite = new Map(shared.map((tally) => [tally.label, tally]));
   for (const row of rows) {
-    if (!row.oracleDegraded && row.verdict !== "parseFailed") continue;
+    if (!isWithheldFromRates(row)) continue;
     for (const label of labelsOf(row)) {
       let tally = bySite.get(label);
       if (tally === undefined) {
@@ -304,6 +335,7 @@ export function tallyPyRows(
 export interface PyCoverageCounts {
   skippedInProject: number;
   parseFailed: number;
+  oracleNonCallable: number;
   unlocated: number;
   unlocatedByShape: Partial<Record<PyUnlocatedShape, number>>;
 }
@@ -311,23 +343,27 @@ export interface PyCoverageCounts {
 /**
  * Count what `tallyPyRows` folds away.
  *
- * `skippedInProject` is deliberately merged into `missed` there and
- * `parseFailed` rows are dropped from the rates entirely, which leaves both
- * unreadable from the per-label rows — yet the baseline reports the first as
- * the precision floor and the second as a gap in the instrument. `unlocated`
- * is a third population the tally never sees at all: it is a site the oracle
- * could not tie back to an AST node, reported by SHAPE so the gap names its
- * own fix. Shapes nobody hit are omitted, and the map is built in the fixed
- * `PY_UNLOCATED_SHAPES` order so two runs serialize identically.
+ * `skippedInProject` is deliberately merged into `missed` there while
+ * `parseFailed` and `oracleNonCallable` rows are dropped from the rates
+ * entirely, which leaves all three unreadable from the per-label rows — yet the
+ * baseline reports the first as the precision floor, the second as a gap in the
+ * instrument, and the third as the share of jedi answers that name a binding
+ * rather than a definition. `unlocated` is a fourth population the tally never
+ * sees at all: it is a site the oracle could not tie back to an AST node,
+ * reported by SHAPE so the gap names its own fix. Shapes nobody hit are
+ * omitted, and the map is built in the fixed `PY_UNLOCATED_SHAPES` order so two
+ * runs serialize identically.
  */
 export function tallyPyCoverage(rows: readonly PyOracleRow[]): PyCoverageCounts {
   const byShape = new Map<PyUnlocatedShape, number>();
   let skippedInProject = 0;
   let parseFailed = 0;
+  let oracleNonCallable = 0;
   let unlocated = 0;
   for (const row of rows) {
     if (row.verdict === "skippedInProject") skippedInProject += 1;
     if (row.verdict === "parseFailed") parseFailed += 1;
+    if (row.verdict === "oracleNonCallable") oracleNonCallable += 1;
     if (row.unlocatedShape === undefined) continue;
     unlocated += 1;
     byShape.set(row.unlocatedShape, (byShape.get(row.unlocatedShape) ?? 0) + 1);
@@ -337,7 +373,7 @@ export function tallyPyCoverage(rows: readonly PyOracleRow[]): PyCoverageCounts 
     const count = byShape.get(shape);
     if (count !== undefined) unlocatedByShape[shape] = count;
   }
-  return { skippedInProject, parseFailed, unlocated, unlocatedByShape };
+  return { skippedInProject, parseFailed, oracleNonCallable, unlocated, unlocatedByShape };
 }
 
 /** Deterministic PRNG — the seed is a CLI flag so a sample can be reproduced. */

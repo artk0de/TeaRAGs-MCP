@@ -23,9 +23,10 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from jedi_oracle import build_sys_path, classify_origin  # noqa: E402
+from jedi_oracle import build_sys_path, classify_origin, compose_symbol_id  # noqa: E402
 
 CORPUS = Path("/corpus")
+FIXTURE_PKG = Path(__file__).resolve().parents[2] / "tests/fixtures/py-oracle/pkg"
 
 
 def test_no_module_path_is_a_builtin() -> None:
@@ -61,6 +62,23 @@ def test_the_stdlib_directory_is_stdlib_even_inside_the_corpus() -> None:
 def test_the_stem_heuristic_still_applies_outside_the_corpus() -> None:
     assert classify_origin(Path("/elsewhere/string.py"), CORPUS) == "stdlib"
     assert classify_origin(Path("/elsewhere/helpers.py"), CORPUS) == "outsideRepo"
+
+
+def test_a_class_attribute_line_is_reported_nonCallable() -> None:
+    # `table = None` in `attr_call.py`. Nothing is composable there, but the
+    # miss has a CAUSE the host acts on: the target is not a definition (z796g).
+    assert compose_symbol_id(FIXTURE_PKG / "attr_call.py", 12) == (None, "nonCallable", True)
+
+
+def test_a_real_def_still_composes_its_symbol_id() -> None:
+    assert compose_symbol_id(FIXTURE_PKG / "attr_call.py", 14) == ("Report#render", "function", False)
+    assert compose_symbol_id(FIXTURE_PKG / "base.py", 4) == ("Auditable", "class", False)
+
+
+def test_an_unreadable_target_stays_unknown_rather_than_nonCallable() -> None:
+    # A file nobody could parse says nothing about what its lines hold, so it
+    # must NOT be reported as a non-definition.
+    assert compose_symbol_id(CORPUS / "does/not/exist.py", 1) == (None, "unknown", True)
 
 
 def test_declared_roots_come_before_the_environment() -> None:

@@ -9,6 +9,7 @@
           {
             "defKind": "class",
             "defLine": 6,
+            "defNodeKind": "class",
             "pinUncertain": false,
             "relPath": "pkg/models.py",
             "symbolId": "User"
@@ -37,6 +38,7 @@
           {
             "defKind": "function",
             "defLine": 6,
+            "defNodeKind": "function",
             "pinUncertain": false,
             "relPath": "pkg/service.py",
             "symbolId": "promote"
@@ -86,6 +88,7 @@
           {
             "defKind": "function",
             "defLine": 5,
+            "defNodeKind": "function",
             "pinUncertain": false,
             "relPath": "pkg/base.py",
             "symbolId": "Auditable#touch"
@@ -114,6 +117,7 @@
           {
             "defKind": "function",
             "defLine": 8,
+            "defNodeKind": "function",
             "pinUncertain": false,
             "relPath": "pkg/base.py",
             "symbolId": "Auditable#describe"
@@ -144,6 +148,7 @@
           {
             "defKind": "function",
             "defLine": 5,
+            "defNodeKind": "function",
             "pinUncertain": false,
             "relPath": "pkg/base.py",
             "symbolId": "Auditable#touch"
@@ -172,6 +177,7 @@
           {
             "defKind": "function",
             "defLine": 19,
+            "defNodeKind": "function",
             "pinUncertain": false,
             "relPath": "pkg/models.py",
             "symbolId": "User#rename"
@@ -200,6 +206,7 @@
           {
             "defKind": "function",
             "defLine": 16,
+            "defNodeKind": "function",
             "pinUncertain": false,
             "relPath": "pkg/models.py",
             "symbolId": "User.normalise"
@@ -251,6 +258,7 @@
           {
             "defKind": "function",
             "defLine": 12,
+            "defNodeKind": "function",
             "pinUncertain": false,
             "relPath": "pkg/string.py",
             "symbolId": "remove_linebreaks"
@@ -279,6 +287,7 @@
           {
             "defKind": "class",
             "defLine": 16,
+            "defNodeKind": "class",
             "pinUncertain": false,
             "relPath": "pkg/string.py",
             "symbolId": "Formatter"
@@ -307,6 +316,7 @@
           {
             "defKind": "function",
             "defLine": 17,
+            "defNodeKind": "function",
             "pinUncertain": false,
             "relPath": "pkg/string.py",
             "symbolId": "Formatter#render"
@@ -384,6 +394,37 @@
         "viaStarImport": false
       },
       "startLine": 18
+    }
+  ],
+  "pkg/attr_call.py": [
+    {
+      "member": "table",
+      "outcome": {
+        "kind": "inProject",
+        "origin": "project",
+        "targets": [
+          {
+            "defKind": "statement",
+            "defLine": 12,
+            "defNodeKind": "nonCallable",
+            "pinUncertain": true,
+            "relPath": "pkg/attr_call.py",
+            "symbolId": null
+          }
+        ]
+      },
+      "siteFacts": {
+        "enclosingHasReturnAnnotation": true,
+        "isDecoratorSite": false,
+        "isSuperCall": false,
+        "receiverIsAnnotatedParam": false,
+        "receiverIsUnion": false,
+        "targetIsProperty": false,
+        "targetIsStaticOrClassMethod": false,
+        "viaReexport": false,
+        "viaStarImport": false
+      },
+      "startLine": 15
     }
   ]
 }

@@ -96,14 +96,21 @@ def classify_origin(module_path: Path | None, corpus_root: Path) -> str:
 
 
 def compose_symbol_id(target_path: Path, def_line: int) -> tuple[str | None, str, bool]:
-    """`(symbolId, defKind, pinUncertain)` for a definition at `def_line`.
+    """`(symbolId, defNodeKind, pinUncertain)` for a definition at `def_line`.
 
     Mirrors `DefaultSymbolIdComposer`: `Class#method` for an instance method,
     `Class.method` when the def carries `staticmethod` / `classmethod`, a bare
-    name at module level, `Outer.Inner` for nesting. When the def node cannot be
-    read back — the file is unparseable, or jedi pointed at a line no `def` or
-    `class` starts on — the target is `pinUncertain` and the host compares at
-    FILE granularity only rather than scoring a mismatch it cannot justify.
+    name at module level, `Outer.Inner` for nesting.
+
+    The two ways that fails are DIFFERENT facts and no longer share a kind.
+    `unknown` is the file itself being unreadable — an instrument gap, and the
+    target could be anything. `nonCallable` is the file parsing cleanly and jedi
+    pointing at a line no `def` or `class` starts on: an assignment, which is
+    what jedi's `goto` answers for `table = None` called as `self.table(...)`
+    (`netbox/netbox/views/generic/base.py:72`) and for any local name bound to a
+    callable. There is no callable target there for a chain to find, so the host
+    scores those rows in their own bucket rather than as a miss (z796g). Both
+    stay `pinUncertain`: neither can be compared at symbol granularity.
     """
     tree = _cached_tree(target_path)
     if tree is None:
@@ -119,7 +126,7 @@ def compose_symbol_id(target_path: Path, def_line: int) -> tuple[str | None, str
                 return _compose_for(child, scope)
             inner = scope + [child.name]
             stack.append((child, inner))
-    return None, "unknown", True
+    return None, "nonCallable", True
 
 
 def _compose_for(node: ast.AST, scope: list[str]) -> tuple[str, str, bool]:
@@ -293,13 +300,18 @@ def query_site(script: jedi.Script, site: CallSite, corpus_root: Path) -> dict[s
         if origin not in IN_PROJECT_ORIGINS or module_path is None:
             continue
         def_line = name.line or 0
-        symbol_id, def_kind, uncertain = compose_symbol_id(module_path, def_line)
+        symbol_id, def_node_kind, uncertain = compose_symbol_id(module_path, def_line)
         targets.append(
             {
                 "relPath": module_path.resolve().relative_to(corpus_root).as_posix(),
                 "symbolId": symbol_id,
                 "defLine": def_line,
-                "defKind": name.type or def_kind,
+                "defKind": name.type or def_node_kind,
+                # jedi's own `name.type` is almost always truthy, so `defKind`
+                # above is jedi's word and the composer's is invisible in it.
+                # The host needs the composer's, unmasked: `nonCallable` there
+                # is what says the target is an assignment (z796g).
+                "defNodeKind": def_node_kind,
                 "pinUncertain": uncertain,
             }
         )

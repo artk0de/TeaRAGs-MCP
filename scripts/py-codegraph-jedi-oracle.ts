@@ -267,6 +267,13 @@ export interface PyOracleAnswer {
     targets?: {
       relPath: string;
       symbolId: string | null;
+      /**
+       * What the COMPOSER found at the target line, unmasked by jedi's own
+       * `name.type`. `nonCallable` says the line holds an assignment rather
+       * than a `def`/`class`, which is the whole of the `oracleNonCallable`
+       * bucket; `unknown` says the target file could not be parsed at all.
+       */
+      defNodeKind?: string;
       pinUncertain: boolean;
     }[];
   };
@@ -480,6 +487,9 @@ export function buildRows(sites: readonly PyChainSite[], replies: Map<string, Py
         oracle,
         parseFailed: reply?.parseFailed === true,
         classifiedExternal: site.missBucket === "external" || site.missBucket === "coreAmbiguous",
+        // Read off the RAW answer, not the withdrawn one: the blind spot only
+        // ever rewrites EXTERNAL origins, so the two cannot both fire.
+        oracleTargetNonCallable: targets[0]?.defNodeKind === "nonCallable",
       }),
       answeredBy: site.answeredBy,
       chainOutput: site.chain === null ? "none" : site.chain.targetSymbolId === null ? "fileOnly" : "pinned",
@@ -633,7 +643,7 @@ async function main(): Promise<void> {
     `call sites ${rows.length} · chain drift ${walk.chainDrift}${walk.chainDrift === 0 ? "" : "  <- REBUILD IS STALE, numbers void"}`,
     `chain output: ${chainOutput.edges} edges (${chainOutput.fileOnly} file-only) · ${chainOutput.unresolved} unresolved`,
     `ground truth ${covered}/${rows.length} (${((covered / Math.max(rows.length, 1)) * 100).toFixed(1)}%) · oracleDegraded ${degraded} · parseFailed ${coverage.parseFailed}`,
-    `skippedInProject ${coverage.skippedInProject} · unlocated ${coverage.unlocated} (${Object.entries(
+    `skippedInProject ${coverage.skippedInProject} · oracleNonCallable ${coverage.oracleNonCallable} · unlocated ${coverage.unlocated} (${Object.entries(
       coverage.unlocatedByShape,
     )
       .map(([shape, count]) => `${shape} ${String(count)}`)
@@ -670,6 +680,7 @@ async function main(): Promise<void> {
         oracleDegraded: degraded,
         skippedInProject: coverage.skippedInProject,
         parseFailed: coverage.parseFailed,
+        oracleNonCallable: coverage.oracleNonCallable,
         unlocated: coverage.unlocated,
         unlocatedByShape: coverage.unlocatedByShape,
         chainOutput,
