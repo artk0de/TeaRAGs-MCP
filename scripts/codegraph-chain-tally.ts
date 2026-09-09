@@ -67,7 +67,11 @@ import {
   JavaLocalBindingSymbolResolutionStrategy,
   JavaThisMemberSymbolResolutionStrategy,
 } from "../src/core/domains/language/java/resolver/strategies/index.js";
-import { createPythonSymbolResolutionChain } from "../src/core/domains/language/python/resolver/index.js";
+import {
+  createPythonSymbolResolutionChain,
+  PythonAncestorLinearizerCache,
+  PythonImportFileMapper,
+} from "../src/core/domains/language/python/resolver/index.js";
 import { CONE_MAX_DEFAULT } from "../src/core/domains/language/python/resolver/strategies/index.js";
 import { resolveViaChain } from "../src/core/domains/language/resolver-chain.js";
 import { CODEGRAPH_LANGUAGES } from "../src/core/domains/trajectory/codegraph/symbols/provider.js";
@@ -92,9 +96,19 @@ interface ChainSpec {
    */
   extensions: readonly string[];
   build: () => SymbolResolutionStrategy[];
+  /** One extra headline line this language's chain can account for, after the run. */
+  report?: () => string;
 }
 
 const MODE = DEFAULT_AMBIGUOUS_RESOLVE_MODE;
+
+/**
+ * The ONE ancestor-linearizer cache the Python chain uses, held here so the
+ * gate can read its fallback counter once the walk is over. `PythonCallResolver`
+ * owns one instance for the same reason (bd tea-rags-mcp-9fgdi, decision 7).
+ */
+const pythonMapper = new PythonImportFileMapper();
+const pythonLinearizers = new PythonAncestorLinearizerCache(pythonMapper, MODE);
 
 const CHAINS: Record<string, ChainSpec> = {
   // The production factory itself, not a copy of it (bd tea-rags-mcp-3yxmy).
@@ -102,7 +116,13 @@ const CHAINS: Record<string, ChainSpec> = {
   // per-chain sharing `PythonCallResolver` gives its single instance.
   python: {
     extensions: [".py"],
-    build: () => createPythonSymbolResolutionChain({ mode: MODE, coneMax: CONE_MAX_DEFAULT }),
+    build: () =>
+      createPythonSymbolResolutionChain({ mode: MODE, coneMax: CONE_MAX_DEFAULT }, pythonMapper, pythonLinearizers),
+    // How often C3 gave up and the left-to-right DFS fallback produced an order
+    // (bd tea-rags-mcp-9fgdi, decision 4). A silent fallback is an unmeasured
+    // order, so the gate prints it. The cache is hoisted out of `build` because
+    // it is what holds the counter; the chain it feeds is the production one.
+    report: () => `  C3 linearization fallbacks: ${pythonLinearizers.linearizationFallbacks}`,
   },
   // Mirrors `JavaCallResolver`'s array (java-resolver.ts).
   java: {
@@ -473,6 +493,8 @@ async function main(): Promise<void> {
     "CHAIN OUTPUT (what the resolver emitted)",
     `  baseline  edges ${baseline.edges} (of which file-only ${baseline.fileOnly}) · unresolved ${baseline.unresolved}`,
   ];
+  const extra = CHAINS[opts.lang]?.report?.();
+  if (extra !== undefined) out.push(extra);
   if (opts.defer) {
     out.push(
       `  deferred(${opts.defer})  edges ${variant.edges} (of which file-only ${variant.fileOnly}) · unresolved ${variant.unresolved}`,

@@ -90,6 +90,22 @@
   ports close over its ONE `PythonImportFileMapper` instead of a private memo.
   What an `@ivar` is, what a capitalized head means, which env caps the hops —
   all language, none of it in the kernel.
+- **The ancestor walk is a kernel driver with a per-language ORDER policy.**
+  `kernel/ancestor-walk.ts` owns the recursion, the per-path cycle guard, the
+  already-reachable dedupe filter, the per-run memo and
+  `findMemberInAncestorChain`'s first-definition-wins scan (`startAfter` skips
+  through the asking class itself — the `super` semantics). A language supplies
+  ONE `AncestorLinearizationPolicy` — `order` always, `boundaryOf` where a base
+  can leave the project — and gets an MRO: Ruby's module-insertion rule
+  (`RUBY_ANCESTOR_POLICY`, behind the unchanged `linearizeAncestors` signature)
+  and Python's C3 merge (`createPythonAncestorPolicy`) are two answers to the
+  same question and neither is neutral. A policy is created ONCE per resolver
+  and its linearizer memoizes per class per run, never per call site — netbox is
+  ~3,600 classes against ~30,000 `self.` sites, so a per-site walk is the
+  difference between the perf gate passing and not. Only the top-level entry
+  memoizes: the inner recursion is path-dependent under the cycle guard.
+  `AncestorClosure` (`closed` / `external` / `unknown`) is how a miss reports
+  WHY, and each language decides what verdict that earns.
 - **`TSProgramCache` lives on `TSCallResolver`, refreshed by an mtime re-stat
   per `acquire`; `reset()` has NO caller in `src`.** Why: auditing for a
   run-boundary discard finds nothing and invites a spurious `reset()`.
