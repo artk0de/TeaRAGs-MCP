@@ -318,6 +318,19 @@ export class CodegraphRunState {
   contentHashes?: ReadonlyMap<string, string>;
 
   /**
+   * The persisted pass-1 slices the MAIN thread read and injected for this run
+   * (bd tea-rags-mcp-weno4), threaded in from `FileSignalOptions.pass1Aggregates`.
+   * The barrier prefers these over its own `graphDb` read, which a stale daemon
+   * in the worker can answer with `unknown daemon op: listAllPass1Aggregates`.
+   * Undefined for direct/test callers, which fall back to the read.
+   *
+   * Per-RUN and cleared at both release seams below: rows injected for one
+   * collection would otherwise hydrate the next run's registries with another
+   * corpus's ancestry.
+   */
+  injectedPass1Aggregates?: readonly CodegraphPass1FileAggregates[];
+
+  /**
    * Per-run aggregation of `FileExtraction.classAncestors` across every
    * file walked in pass-1. The resolver needs ancestors keyed by
    * `targetType` (the class a variable is bound to) — that target type's
@@ -1092,6 +1105,8 @@ export class CodegraphRunState {
     this.gemfileContent = undefined;
     this.gemfileLoaded = false;
     this.projectRoot = undefined;
+    // bd tea-rags-mcp-weno4 — injected for ONE run against ONE collection.
+    this.injectedPass1Aggregates = undefined;
     this.prependedAncestors = {};
     this.includedBy = {};
     this.classExtends = {};
@@ -1127,6 +1142,8 @@ export class CodegraphRunState {
     this.gemfileContent = undefined;
     this.gemfileLoaded = false;
     this.projectRoot = undefined;
+    // bd tea-rags-mcp-weno4 — injected for ONE run against ONE collection.
+    this.injectedPass1Aggregates = undefined;
     this.prependedAncestors = {};
     this.classExtends = {};
     this.schemaTables = {};

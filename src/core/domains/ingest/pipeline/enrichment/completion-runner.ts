@@ -11,6 +11,7 @@
  *  9. re-fire stats callback if backfill wrote overlays
  */
 
+import type { CodegraphPass1FileAggregates } from "../../../../contracts/types/codegraph.js";
 import type { EnrichmentExecutor } from "../../../../contracts/types/enrichment-executor.js";
 import type { EnrichmentMetrics } from "../../../../types.js";
 import { pipelineLog } from "../infra/debug-logger.js";
@@ -39,6 +40,23 @@ export interface CompletionRunnerDeps {
 export type UnenrichedReader = (coll: string, provider: EnrichmentProvider, level: "file" | "chunk") => Promise<number>;
 
 export class CompletionRunner {
+  /**
+   * Provider keys whose persisted pass-1 aggregate read failed THIS run
+   * (bd tea-rags-mcp-weno4).
+   *
+   * The read is best-effort — a store we cannot read is not a reason to abort a
+   * run — but it is not free either: without the injected rows the codegraph
+   * barrier falls back to a read that a stale daemon answers with
+   * `unknown daemon op: listAllPass1Aggregates`, and the znxg8 repair silently
+   * becomes a no-op. Such a run resolves entry calls against a batch-scoped
+   * registry, so it is degraded and the terminal FILE marker has to say so;
+   * stderr alone left it looking clean in every artifact anyone reads.
+   *
+   * Per RUN, not per instance: the coordinator holds one runner across runs, so
+   * `run` clears this before anything can add to it.
+   */
+  private readonly pass1AggregateReadFailures = new Set<string>();
+
   constructor(private readonly deps: CompletionRunnerDeps) {}
 
   /**
@@ -69,6 +87,9 @@ export class CompletionRunner {
   ): Promise<EnrichmentMetrics> {
     const { filePhase, chunkPhase } = this.deps;
     const readUnenriched: UnenrichedReader = unenrichedReader ?? (async () => 0);
+    // Run-scoped, and this is the only run-start seam the runner has — run 2 must
+    // not inherit run 1's failed read (bd tea-rags-mcp-weno4).
+    this.pass1AggregateReadFailures.clear();
 
     // 1. drain prefetch (no-op) + drain streaming fileWork
     await filePhase.awaitPrefetch();
@@ -165,6 +186,17 @@ export class CompletionRunner {
       // (incremental finalize runs on this same instance and owns its own flush)
       // and for providers without the seam (git omits it).
       if (filePhase.crossPassEnabled) await ctx.provider.endExtractionRun?.(coll || undefined);
+      // bd tea-rags-mcp-weno4 — read the provider's persisted pass-1 aggregate
+      // slices HERE, on the MAIN instance, and inject them into the finalize
+      // below. `runFinalize` dispatches to a worker whose `GraphDbClientPool` has
+      // no `daemonRestart` hook, so it tolerates a daemon compiled from other
+      // source and its own read of these rows can come back
+      // `unknown daemon op: listAllPass1Aggregates` — which the codegraph barrier
+      // guards by degrading to a batch-scoped registry, undoing the whole znxg8
+      // repair with nothing but a stderr line (observed on taxdome). This
+      // instance's pool DOES wire the hook, so it respawns the stale daemon and
+      // the read succeeds. Providers with no pass-1 store (git) omit the method.
+      const pass1Aggregates = await this.readPass1Aggregates(coll, ctx);
       // yl9tv Task 5b — thread crossPass so the codegraph worker's finalize
       // drains the main-written input spill (pass-1) before resolving (pass-2),
       // instead of relying on a streamFileBatch that no-opped. Other providers
@@ -179,12 +211,45 @@ export class CompletionRunner {
         // making the next run repair the whole corpus. Providers that keep no
         // per-file store (git) ignore it.
         contentHashes: filePhase.runContentHashes,
+        ...(pass1Aggregates ? { pass1Aggregates } : {}),
       });
       if (fileOverlays.size > 0) {
         await filePhase.applyFinalize(coll, ctx, fileOverlays, chunkPhase.getDeferredChunkMap(ctx.key));
       }
     }
     await filePhase.drain();
+  }
+
+  /**
+   * Read one provider's persisted pass-1 aggregate slices for this run, or
+   * record the failure and return undefined (bd tea-rags-mcp-weno4).
+   *
+   * Modelled on `EnrichmentCoordinator#runRepairPass`'s handling of
+   * `readPersistedFileHashes`: a store we cannot read must not abort the run, and
+   * staying quiet about it would hide a permanently broken provider, so it goes
+   * to the pipeline log. Unlike the repair, the loss is also folded into the
+   * terminal FILE marker — see `pass1AggregateReadFailures`.
+   *
+   * A provider that offers no such store (git) returns undefined with nothing
+   * recorded: absence is not a failure.
+   */
+  private async readPass1Aggregates(
+    coll: string,
+    ctx: ProviderContext,
+  ): Promise<readonly CodegraphPass1FileAggregates[] | undefined> {
+    const read = ctx.provider.readPersistedPass1Aggregates;
+    if (!read) return undefined;
+    try {
+      return await read.call(ctx.provider, coll);
+    } catch (err) {
+      this.pass1AggregateReadFailures.add(ctx.key);
+      pipelineLog.enrichmentPhase("PASS1_AGGREGATE_READ_FAILED", {
+        provider: ctx.key,
+        collection: coll,
+        error: err instanceof Error ? err.message : String(err),
+      });
+      return undefined;
+    }
   }
 
   /**
@@ -220,9 +285,14 @@ export class CompletionRunner {
       const fileUnenriched = await readUnenriched(coll, ctx.provider, "file");
       scanMs += Date.now() - scanStartedAt;
       const writeStartedAt = Date.now();
+      // A failed pass-1 aggregate read (bd tea-rags-mcp-weno4) degrades the run
+      // exactly as residual unenriched points do: everything was written, but the
+      // codegraph barrier resolved against a batch-scoped registry, so the entry
+      // edges this run produced are not the ones a healthy run would produce. It
+      // ranks BELOW `failed` — the prefetch failure is still the stronger verdict.
       const fileStatus = filePhase.hasPrefetchFailed(ctx.key)
         ? "failed"
-        : fileUnenriched > 0
+        : fileUnenriched > 0 || this.pass1AggregateReadFailures.has(ctx.key)
           ? "degraded"
           : "completed";
       await markerStore.markFileFinal(coll, ctx.key, {

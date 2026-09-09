@@ -9,6 +9,7 @@ import { CompletionRunner } from "../../../../../../src/core/domains/ingest/pipe
 import { InlineEnrichmentExecutor } from "../../../../../../src/core/domains/ingest/pipeline/enrichment/executor/index.js";
 import { FilePhase } from "../../../../../../src/core/domains/ingest/pipeline/enrichment/file-phase.js";
 import { EnrichmentMarkerStore } from "../../../../../../src/core/domains/ingest/pipeline/enrichment/marker-store.js";
+import { pipelineLog } from "../../../../../../src/core/domains/ingest/pipeline/infra/debug-logger.js";
 
 // Real Qdrant set_payload requires the point to exist; mirror production seed
 // (storeIndexingMarker) so EnrichmentMarkerStore writes are visible to read().
@@ -465,5 +466,131 @@ describe("CompletionRunner", () => {
     expect(metrics).not.toHaveProperty("overlapRatio");
     expect(metrics).not.toHaveProperty("estimatedSavedMs");
     expect(metrics).not.toHaveProperty("gitLogFileCount");
+  });
+
+  // bd tea-rags-mcp-weno4 — a failed pass-1 aggregate read must show up in the RUN
+  // OUTCOME, not only on stderr.
+  //
+  // The runner reads the persisted pass-1 slices on the MAIN-thread provider
+  // instance and injects them into finalize, because the codegraph worker's own
+  // read can hit a daemon that predates the op. When that main-thread read fails
+  // the injection is absent, the worker falls back to the read that cannot work,
+  // and the znxg8 repair is a no-op — a run that resolves entry calls against a
+  // batch-scoped registry while every marker says `completed`. It is a degraded
+  // run and has to be reported as one.
+  it("marks the file terminal degraded when the pass-1 aggregate read throws", async () => {
+    const qdrant = new MockQdrantManager();
+    await seedMarkerPoint(qdrant, "coll");
+
+    const applier = new EnrichmentApplier(qdrant as any);
+    const marker = new EnrichmentMarkerStore(qdrant as any);
+    const filePhase = new FilePhase(applier, marker, new InlineEnrichmentExecutor());
+    const chunkPhase = new ChunkPhase(applier, new InlineEnrichmentExecutor());
+    const backfiller = new EnrichmentBackfiller(applier, qdrant as any, new InlineEnrichmentExecutor());
+    const runner = new CompletionRunner({
+      filePhase,
+      chunkPhase,
+      backfiller,
+      applier,
+      markerStore: marker,
+      executor: new InlineEnrichmentExecutor(),
+    });
+
+    const finalizeSignals = vi.fn().mockResolvedValue(new Map());
+    const ctx = {
+      key: "codegraph.symbols",
+      provider: {
+        key: "codegraph.symbols",
+        buildFileSignals: vi.fn().mockResolvedValue(new Map()),
+        buildChunkSignals: vi.fn().mockResolvedValue(new Map()),
+        finalizeSignals,
+        readPersistedPass1Aggregates: vi.fn().mockRejectedValue(new Error("unknown daemon op: listAllPass1Aggregates")),
+        resolveRoot: (p: string) => p,
+        fileSignalTransform: undefined,
+      } as any,
+      effectiveRoot: "/repo",
+      ignoreFilter: null,
+    };
+    const contexts = new Map([[ctx.key, ctx]]);
+    filePhase.init(contexts, "coll", "run-weno4", "rb");
+    chunkPhase.init(contexts, "coll", "rb");
+    await marker.markRunStart("coll", ["codegraph.symbols"], "run-weno4", "rb");
+
+    const phases = vi.spyOn(pipelineLog, "enrichmentPhase");
+    let failures: { provider: string; collection: string; error: string }[];
+    try {
+      await runner.run("coll", contexts, Date.now(), async () => 0, "", "run-weno4");
+      // Snapshot before restoring — mockRestore also clears `mock.calls`.
+      failures = phases.mock.calls
+        .filter(([name]) => name === "PASS1_AGGREGATE_READ_FAILED")
+        .map(([, payload]) => payload as { provider: string; collection: string; error: string });
+    } finally {
+      phases.mockRestore();
+    }
+
+    // The run continues — a store we cannot read is not a reason to abort it.
+    expect(finalizeSignals).toHaveBeenCalledTimes(1);
+    // …and it says so where the outcome is read, not only on stderr. A dotted
+    // provider key is stored NESTED (`enrichment.codegraph.symbols`).
+    const final = ((await marker.read("coll"))!.codegraph as any).symbols;
+    expect(final.file.status).toBe("degraded");
+    expect(failures).toHaveLength(1);
+    expect(failures[0].provider).toBe("codegraph.symbols");
+    expect(failures[0].collection).toBe("coll");
+    expect(failures[0].error).toContain("unknown daemon op");
+  });
+
+  // The failure is per RUN. A runner instance outlives the run (the coordinator
+  // holds one), so run 1's broken read must not keep run 2 degraded.
+  it("does not carry a pass-1 aggregate read failure into the next run", async () => {
+    const qdrant = new MockQdrantManager();
+    await seedMarkerPoint(qdrant, "coll");
+
+    const applier = new EnrichmentApplier(qdrant as any);
+    const marker = new EnrichmentMarkerStore(qdrant as any);
+    const filePhase = new FilePhase(applier, marker, new InlineEnrichmentExecutor());
+    const chunkPhase = new ChunkPhase(applier, new InlineEnrichmentExecutor());
+    const backfiller = new EnrichmentBackfiller(applier, qdrant as any, new InlineEnrichmentExecutor());
+    const runner = new CompletionRunner({
+      filePhase,
+      chunkPhase,
+      backfiller,
+      applier,
+      markerStore: marker,
+      executor: new InlineEnrichmentExecutor(),
+    });
+
+    const readPersistedPass1Aggregates = vi
+      .fn()
+      .mockRejectedValueOnce(new Error("unknown daemon op: listAllPass1Aggregates"))
+      .mockResolvedValue([]);
+    const ctx = {
+      key: "codegraph.symbols",
+      provider: {
+        key: "codegraph.symbols",
+        buildFileSignals: vi.fn().mockResolvedValue(new Map()),
+        buildChunkSignals: vi.fn().mockResolvedValue(new Map()),
+        finalizeSignals: vi.fn().mockResolvedValue(new Map()),
+        readPersistedPass1Aggregates,
+        resolveRoot: (p: string) => p,
+        fileSignalTransform: undefined,
+      } as any,
+      effectiveRoot: "/repo",
+      ignoreFilter: null,
+    };
+    const contexts = new Map([[ctx.key, ctx]]);
+
+    filePhase.init(contexts, "coll", "run-1", "rb");
+    chunkPhase.init(contexts, "coll", "rb");
+    await marker.markRunStart("coll", ["codegraph.symbols"], "run-1", "rb");
+    await runner.run("coll", contexts, Date.now(), async () => 0, "", "run-1");
+    expect(((await marker.read("coll"))!.codegraph as any).symbols.file.status).toBe("degraded");
+
+    filePhase.init(contexts, "coll", "run-2", "rb");
+    chunkPhase.init(contexts, "coll", "rb");
+    await marker.markRunStart("coll", ["codegraph.symbols"], "run-2", "rb");
+    await runner.run("coll", contexts, Date.now(), async () => 0, "", "run-2");
+
+    expect(((await marker.read("coll"))!.codegraph as any).symbols.file.status).toBe("completed");
   });
 });

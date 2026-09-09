@@ -47,6 +47,7 @@ import TsLang from "tree-sitter-typescript";
 
 import type { GraphDbClientPool } from "../../../../adapters/duckdb/pool.js";
 import type {
+  CodegraphPass1FileAggregates,
   ExtractionSink,
   FileExtraction,
   FileGraphMetrics,
@@ -667,6 +668,30 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
     return hashes;
   }
 
+  /**
+   * Every persisted per-file pass-1 aggregate slice for `collectionName`
+   * (bd tea-rags-mcp-weno4) — the MAIN-thread half of the znxg8 repair.
+   *
+   * The barrier that absorbs these rows runs in the codegraph WORKER, whose
+   * `GraphDbClientPool` is built without a `daemonRestart` hook
+   * (`codegraph/factory.ts`), so `connectWithBuildHandshake` tolerates a daemon
+   * compiled from other source — one that may not know the
+   * `listAllPass1Aggregates` op at all. Its read then fails with
+   * `unknown daemon op: listAllPass1Aggregates`, the barrier's guard swallows it,
+   * and the repair silently degrades to a batch-scoped registry (observed live on
+   * taxdome). The main thread's pool DOES wire the respawn hook
+   * (`bootstrap/factory.ts`), so the same read there drains and respawns the
+   * stale daemon and succeeds — which is why the rows are read HERE and injected
+   * into the worker through `FileSignalOptions.pass1Aggregates`.
+   *
+   * Same store resolution as every other provider call: `getStore` picks the
+   * per-collection pool handle in production and the constructor-provided pair in
+   * direct/test mode, where `collectionName` is inert.
+   */
+  async readPersistedPass1Aggregates(collectionName: string): Promise<CodegraphPass1FileAggregates[]> {
+    return (await this.getStore(collectionName)).graphDb.listAllPass1Aggregates();
+  }
+
   private async getStore(collectionName?: string): Promise<{
     graphDb: GraphDbClient;
     symbolTable: GlobalSymbolTable;
@@ -767,8 +792,19 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
   private get sinkDeps(): CodegraphSinkDeps {
     return {
       resolveSymbolTable: async (collectionName) => (await this.getStore(collectionName)).symbolTable,
+      // Injected rows WIN (bd tea-rags-mcp-weno4). In production the barrier runs
+      // in the codegraph worker, whose pool tolerates a daemon that predates the
+      // `listAllPass1Aggregates` op — the read below then throws
+      // `unknown daemon op: listAllPass1Aggregates`, the barrier's guard swallows
+      // it, and the znxg8 repair degrades to a batch-scoped registry with nothing
+      // but a stderr line to say so. `finalizeSignals` stashes what the MAIN
+      // thread already read, so that path never needs the op. The read remains
+      // the fallback for direct/test mode, where there is no daemon at all and
+      // the store is the constructor-provided client.
       loadPersistedPass1Aggregates: async (collectionName) =>
-        (await this.getStore(collectionName)).graphDb.listAllPass1Aggregates(),
+        this.runState.injectedPass1Aggregates
+          ? [...this.runState.injectedPass1Aggregates]
+          : (await this.getStore(collectionName)).graphDb.listAllPass1Aggregates(),
       runState: this.runState,
       nodeFlush: this.nodeFlush,
       buildSymbolDefs: (extraction) => this.buildSymbolDefs(extraction),
@@ -1444,6 +1480,14 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
     // NULL as "unknown, re-extract" and repaired the whole corpus, ~128s on
     // taxdome (bd tea-rags-mcp-o317j).
     if (options?.contentHashes) this.runState.contentHashes = options.contentHashes;
+    // The pass-1 slices the MAIN thread read for us (bd tea-rags-mcp-weno4).
+    // Stashed BEFORE the `sink.finish()` below, because that is what runs the
+    // pass-1→pass-2 barrier and the barrier is the only reader. Injected here
+    // rather than read at the barrier because this provider instance may be the
+    // WORKER's, talking to a daemon with no `listAllPass1Aggregates` op — see
+    // `sinkDeps.loadPersistedPass1Aggregates`. Absent for direct/test callers,
+    // which keep the graphDb read.
+    if (options?.pass1Aggregates) this.runState.injectedPass1Aggregates = options.pass1Aggregates;
     try {
       // yl9tv Task 5b — cross-pass: streamFileBatch no-opped (no parse), so
       // pass-1 is deferred to here. Drain the main-written input spill through a
