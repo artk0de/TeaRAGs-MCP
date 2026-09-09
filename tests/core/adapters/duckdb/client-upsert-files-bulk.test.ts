@@ -231,9 +231,13 @@ describe("DuckDbGraphClient — upsertFilesBulk equivalence to per-file upsertFi
 
     const destroySpy = vi.spyOn(DuckDBPreparedStatement.prototype, "destroySync");
     await db.upsertFilesBulk(entries);
+    // The invariant is that statement count scales with GROUPS, not with files.
     // Old per-file loop: >= 250 files x 5 statements (upsert + 4 deletes) = 1250+.
-    // Grouped batching: 8 groups x (4 deletes + 3 inserts) = 56.
-    expect(destroySpy.mock.calls.length).toBeLessThanOrEqual(70);
+    // Grouped batching: 8 groups x a handful of scope reads / deletes / inserts.
+    // The bound moved 70 → 80 when `cg_pass1_aggregates` became the sixth
+    // reconciled table (bd tea-rags-mcp-znxg8) — a constant per group, which is
+    // exactly what this test exists to distinguish from a constant per file.
+    expect(destroySpy.mock.calls.length).toBeLessThanOrEqual(80);
     destroySpy.mockRestore();
 
     const filesCount = await db.queryAll<{ n: number | bigint }>("SELECT COUNT(*) AS n FROM cg_symbols_files");

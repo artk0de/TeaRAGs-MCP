@@ -25,6 +25,7 @@ import type {
   ResolveRunStatsRow,
 } from "./codegraph-graph.js";
 import type { HierarchySnapshot, InheritanceEdge } from "./codegraph-hierarchy.js";
+import type { CodegraphPass1FileAggregates } from "./codegraph-pass1.js";
 import type {
   FileScopedSymbolId,
   FileScopedSymbolRef,
@@ -270,6 +271,22 @@ export interface GraphDbClient {
    *  definition; consumer is expected to feed them through
    *  `GlobalSymbolTable.hydrate`. */
   listAllSymbols: () => Promise<SymbolDefinition[]>;
+
+  /**
+   * Every persisted per-file pass-1 aggregate row (bd tea-rags-mcp-znxg8).
+   *
+   * Read ONCE per run, at the pass-1→pass-2 barrier, so `CodegraphRunState` can
+   * absorb the ancestry and self-dispatch facts of files this run did NOT walk.
+   * Without it an incremental run resolves against a complete symbol table and a
+   * batch-sized registry, which does not merely under-resolve — it mis-resolves,
+   * degrading concrete service entry calls onto the shared template they
+   * inherit from.
+   *
+   * Sibling of {@link listAllSymbols} in every respect that matters: whole-table
+   * read, array rather than Map so it survives the daemon's JSON round trip, and
+   * the consumer decides what to do with the rows.
+   */
+  listAllPass1Aggregates: () => Promise<CodegraphPass1FileAggregates[]>;
 
   /**
    * Every file row with the content hash persisted alongside it, `null` where

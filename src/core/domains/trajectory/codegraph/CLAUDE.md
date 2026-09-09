@@ -38,13 +38,36 @@
   incident are `../../ingest/operations/CLAUDE.md`. Edges are reconciled per
   source file — `DuckDbFileGraphStore#writeFileRowsGroup` diffs each file's
   `source_rel_path` slice of `cg_symbols_edges_file|_method`,
-  `cg_symbols_inheritance` and `cg_ambiguous_fanout` against the rows the walk
+  `cg_symbols_inheritance` and `cg_ambiguous_fanout` (plus its `rel_path` slice
+  of `cg_pass1_aggregates`) against the rows the walk
   produced, so only genuinely obsolete rows are deleted; derived tables (cycles,
   metrics) are wholesale recomputes and do self-correct. Why: no amount of
   incremental reindexing heals a partial graph, because the files carrying the
   stale edges have not changed — meanwhile every `fanIn` / `instability` /
   `pageRank` written comes off that graph, and `find_cycles` keeps reporting
   cycles the source dropped weeks ago.
+
+- **Pass-2 resolves against a PROJECT-wide symbol table, so its run-global maps
+  must be project-wide too — and only `cg_pass1_aggregates` makes them so.** The
+  symbol table hydrates from `cg_symbols` when the collection opens
+  (`codegraph/factory.ts` `initHook`); `CodegraphRunState`'s ancestry, hierarchy
+  view and self-dispatch registry are built in `absorb` from the files the
+  CURRENT batch walked. Matching one against the other does not under-resolve, it
+  MIS-resolves: with `KindOfService#call` absent from `selfDispatchTemplates` the
+  Ruby entry strategy CONTINUEs by design and the constant strategy's ancestor
+  walk lands every concrete `SomeService.call(...)` on the shared mixin's own
+  method — 200 of 200 sampled caller edges of that hub, from 134 files, while
+  `inProjectEdgeRecall` read 1.0 (bd tea-rags-mcp-znxg8). `RunState#seal` now
+  absorbs the persisted slices FIRST, for files this run did not walk, before the
+  hierarchy view / include-by index / discovery that read those maps. Two things
+  an edit must keep: walked files are SKIPPED, not merged (their row on disk
+  still describes the previous content, so absorbing it resurrects renamed-away
+  classes), and hydration never counts as an extraction (`extractedFilesByLanguage`
+  drives run stats and the deferred chunk pass). Why: the fix only takes effect
+  once the table is populated, so an index predating migration 021 keeps the old
+  behaviour until a `--force-enrichments codegraph` run writes the rows — and
+  until then `callsUnnarrowedTemplate` is the only number that says so, because
+  every rate on `cg_run_stats` counts these calls as successes.
 
 - **"Nodes-before-edges" binds the run's END state, not the start of pass-2.**
   `createCodegraphExtractionSink#finish` (symbols/extraction-sink.ts) DISPATCHES

@@ -767,6 +767,8 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
   private get sinkDeps(): CodegraphSinkDeps {
     return {
       resolveSymbolTable: async (collectionName) => (await this.getStore(collectionName)).symbolTable,
+      loadPersistedPass1Aggregates: async (collectionName) =>
+        (await this.getStore(collectionName)).graphDb.listAllPass1Aggregates(),
       runState: this.runState,
       nodeFlush: this.nodeFlush,
       buildSymbolDefs: (extraction) => this.buildSymbolDefs(extraction),

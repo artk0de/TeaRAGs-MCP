@@ -235,6 +235,23 @@ export interface CodegraphResolveSummary {
    */
   ambiguousFanout: number;
   /**
+   * bd tea-rags-mcp-znxg8 — RESOLVED calls that stopped at a SHARED
+   * self-dispatch entry node (a `selfDispatchTemplates` key or a
+   * `selfInstantiatingClassMethods` member) instead of the concrete hook their
+   * constant receiver names.
+   *
+   * The only number here that is not a miss, and the only one no rate consumes.
+   * That is the point: an entry call `Const.call` landing on
+   * `KindOfService.call` is a WRONG target, and every rate above reads it as a
+   * right one — the report that opened znxg8 found 200 of 200 sampled caller
+   * edges of one such node degraded while `inProjectEdgeRecall` sat at 1.0.
+   *
+   * Read it as an invariant, not a metric: near zero is healthy, because a
+   * concrete constant receiver narrows the abstract hook to exactly one target
+   * by construction. A jump means entry narrowing stopped happening.
+   */
+  callsUnnarrowedTemplate: number;
+  /**
    * tea-rags-mcp-cnqrg — per-code-language breakdown of the same rate, so a
    * polyglot index reveals WHICH language's resolver carries the gap. Test
    * call-sites are excluded from every tally (production-code capability only).
@@ -297,6 +314,13 @@ export interface CodegraphResolveLanguageRow {
   callsNoInProjectDef: number;
   /** bd 83cl7 — core-homonym misses in this language (untyped receiver, core member). */
   callsCoreAmbiguous: number;
+  /**
+   * bd znxg8 — resolved calls in this language that stopped at a shared
+   * self-dispatch entry node. An invariant, not a rate input; see
+   * {@link CodegraphResolveSummary.callsUnnarrowedTemplate}. Stays 0 for
+   * languages with no self-dispatch registry.
+   */
+  callsUnnarrowedTemplate: number;
   /**
    * tea-rags-mcp-7m5xz — per-receiver-kind breakdown scoped to this language's
    * call-sites. Present only in the multi-language case (precise lang×kind).
