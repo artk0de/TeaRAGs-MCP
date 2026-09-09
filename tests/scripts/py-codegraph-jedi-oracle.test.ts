@@ -1,0 +1,202 @@
+/**
+ * Host-side units for the Python oracle (bd tea-rags-mcp-xumwz). The corpus
+ * walk and the subprocess are exercised by the smoke run on httpx, not here:
+ * a mocked jedi would assert the mock.
+ */
+import { describe, expect, it } from "vitest";
+
+import { AnsweredByProbe, buildPythonChain, buildRows, parseArgs } from "../../scripts/py-codegraph-jedi-oracle.js";
+import type { CallContext, CallRef } from "../../src/core/contracts/types/codegraph.js";
+import type { SymbolResolutionOutcome, SymbolResolutionStrategy } from "../../src/core/contracts/types/language.js";
+
+const call = (member: string): CallRef => ({
+  callText: `${member}()`,
+  receiver: null,
+  member,
+  startLine: 1,
+});
+const ctx = {} as CallContext;
+
+class FixedStrategy implements SymbolResolutionStrategy {
+  constructor(
+    readonly name: string,
+    private readonly outcome: SymbolResolutionOutcome,
+  ) {}
+  attempt(): SymbolResolutionOutcome {
+    return this.outcome;
+  }
+}
+
+describe("buildPythonChain", () => {
+  it("mirrors PythonCallResolver's order exactly — drift here voids every number", () => {
+    expect(buildPythonChain().map((pass) => pass.name)).toEqual([
+      "super",
+      "selfField",
+      "selfMember",
+      "localBinding",
+      "importMatch",
+      "globalShortName",
+    ]);
+  });
+});
+
+describe("AnsweredByProbe", () => {
+  it("records the pass that resolved and returns the outcome untouched", () => {
+    const record = { answeredBy: "none" };
+    const resolved: SymbolResolutionOutcome = {
+      kind: "resolved",
+      target: { targetRelPath: "pkg/a.py", targetSymbolId: "A#f" },
+    };
+    const probe = new AnsweredByProbe(new FixedStrategy("localBinding", resolved), record);
+    expect(probe.attempt(call("f"), ctx)).toBe(resolved);
+    expect(record.answeredBy).toBe("localBinding");
+  });
+
+  it("leaves the record alone when the pass continues", () => {
+    const record = { answeredBy: "none" };
+    const probe = new AnsweredByProbe(new FixedStrategy("importMatch", { kind: "continue" }), record);
+    probe.attempt(call("f"), ctx);
+    expect(record.answeredBy).toBe("none");
+  });
+
+  it("keeps the wrapped pass's own name so the tally labels match production", () => {
+    expect(
+      new AnsweredByProbe(new FixedStrategy("super", { kind: "continue" }), {
+        answeredBy: "none",
+      }).name,
+    ).toBe("super");
+  });
+});
+
+describe("parseArgs", () => {
+  it("resolves a manifest NAME to its root and its provisioned interpreter", () => {
+    const options = parseArgs(["--corpus", "netbox"]);
+    expect(options.corpusName).toBe("netbox");
+    expect(options.corpusRoot.endsWith("/corpora/netbox")).toBe(true);
+    expect(options.venvPython?.endsWith("/venvs/netbox/bin/python")).toBe(true);
+  });
+
+  it("treats an unknown --corpus as a path and takes no interpreter from it", () => {
+    const options = parseArgs(["--corpus", "/tmp/whatever"]);
+    expect(options.corpusRoot).toBe("/tmp/whatever");
+    expect(options.venvPython).toBeNull();
+  });
+
+  it("lets an explicit --environment win over the manifest", () => {
+    expect(parseArgs(["--corpus", "polar", "--environment", "/tmp/py"]).venvPython).toBe("/tmp/py");
+  });
+
+  it("defaults the seed so two runs sample identically", () => {
+    expect(parseArgs([]).seed).toBe(parseArgs([]).seed);
+  });
+});
+
+describe("buildRows", () => {
+  const site = (overrides: Record<string, unknown> = {}) =>
+    ({
+      relPath: "pkg/a.py",
+      call: call("f"),
+      ctx,
+      receiverKind: "bareCall",
+      chain: null,
+      answeredBy: "none",
+      missBucket: "miss",
+      ...overrides,
+    }) as never;
+
+  const reply = (answers: Record<string, unknown>[], overrides: Record<string, unknown> = {}) =>
+    new Map([
+      [
+        "pkg/a.py",
+        {
+          relPath: "pkg/a.py",
+          parseFailed: false,
+          parsoErrors: 0,
+          answers,
+          ...overrides,
+        },
+      ],
+    ] as never);
+
+  it("marks every row of a parso-damaged file degraded", () => {
+    const rows = buildRows([site()], reply([], { parsoErrors: 3 }));
+    expect(rows[0]?.oracleDegraded).toBe(true);
+  });
+
+  it("scores a classifier-external site with in-project truth as skippedInProject", () => {
+    const rows = buildRows(
+      [site({ missBucket: "external" })],
+      reply([
+        {
+          startLine: 1,
+          member: "f",
+          outcome: {
+            kind: "inProject",
+            origin: "project",
+            targets: [{ relPath: "pkg/b.py", symbolId: "B#f", pinUncertain: false }],
+          },
+        },
+      ]),
+    );
+    expect(rows[0]?.verdict).toBe("skippedInProject");
+  });
+
+  it("gives a site with no reply an unknown verdict rather than inventing one", () => {
+    expect(buildRows([site()], new Map())[0]?.verdict).toBe("bothUnresolved");
+  });
+
+  it("withdraws jedi's typeshed answer on a super() site instead of scoring the chain against it", () => {
+    const rows = buildRows(
+      [
+        site({
+          // The kind the classifier really assigns to `super().__init__(name)`.
+          receiverKind: "dynamic",
+          call: { ...call("__init__"), receiver: "super()" },
+          chain: { targetRelPath: "pkg/named.py", targetSymbolId: "Named#__init__" },
+        }),
+      ],
+      reply([
+        {
+          startLine: 1,
+          member: "__init__",
+          outcome: { kind: "external", origin: "typeshedStub" },
+          siteFacts: {
+            receiverIsAnnotatedParam: false,
+            enclosingHasReturnAnnotation: false,
+            viaReexport: false,
+            viaStarImport: false,
+            isSuperCall: true,
+            targetIsProperty: false,
+            targetIsStaticOrClassMethod: false,
+            receiverIsUnion: false,
+            isDecoratorSite: false,
+          },
+        },
+      ]),
+    );
+    // jedi answered `object.__init__` from its bundled typeshed because it walks
+    // only the FIRST base. Booking that as `phantom` would blame the chain for
+    // being right.
+    expect(rows[0]?.verdict).toBe("chainOnly");
+    expect(rows[0]?.categories).toEqual(["superMro"]);
+  });
+
+  it("still scores a NON-super typeshed answer as external truth", () => {
+    const rows = buildRows(
+      [
+        site({
+          receiverKind: "localVar",
+          chain: { targetRelPath: "pkg/b.py", targetSymbolId: "B#f" },
+        }),
+      ],
+      reply([
+        {
+          startLine: 1,
+          member: "f",
+          outcome: { kind: "external", origin: "typeshedStub" },
+        },
+      ]),
+    );
+    expect(rows[0]?.verdict).toBe("phantom");
+  });
+});
