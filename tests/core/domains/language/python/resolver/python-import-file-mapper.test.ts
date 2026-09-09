@@ -10,7 +10,8 @@
  */
 import { describe, expect, it } from "vitest";
 
-import type { CallContext } from "../../../../../../src/core/contracts/types/codegraph.js";
+import { NoopGlobalSymbolTable } from "../../../../../../src/core/adapters/duckdb/daemon/noop-symbol-table.js";
+import type { CallContext, GlobalSymbolTable } from "../../../../../../src/core/contracts/types/codegraph.js";
 import { PythonImportFileMapper } from "../../../../../../src/core/domains/language/python/resolver/python-import-file-mapper.js";
 import { InMemoryGlobalSymbolTable } from "../../../../../../src/core/domains/trajectory/codegraph/symbols/symbol-table.js";
 
@@ -365,5 +366,124 @@ describe("PythonImportFileMapper — a symbol-free __init__.py (bd tea-rags-mcp-
       kind: "project",
       relPath: "pkg/__init__.py",
     });
+  });
+});
+
+/**
+ * Source roots seeded from the table's file set (bd tea-rags-mcp-60nss).
+ *
+ * The ancestor scan can only prove a root that is an ANCESTOR of the importing
+ * file. flask's `examples/app.py` does `from flask import Flask` while the
+ * package lives at `src/flask/`, and `src` is nobody's ancestor there — so the
+ * scan exhausted, the import fell out `external`, and 15 bare calls the oracle
+ * expects (`render_template`, `flash`, `Flask`, `jsonify`) were dropped before
+ * `globalShortName` ever ran. Lazy learning made the verdict depend on walk
+ * order besides: visiting `src/flask/app.py` first happened to prove `src`.
+ */
+describe("PythonImportFileMapper — roots seeded from the symbol table file set", () => {
+  const FLASK_SRC_LAYOUT: Record<string, string[]> = {
+    "src/flask/__init__.py": ["Flask"],
+    "src/flask/app.py": ["Flask"],
+    "examples/app.py": ["main"],
+  };
+
+  it("flask: an absolute import resolves from a directory the src root does not contain", () => {
+    const table = corpusTable(FLASK_SRC_LAYOUT);
+    const from = "examples/app.py";
+    expect(new PythonImportFileMapper().mapImportToFile("flask", from, ctxFor(table, from))).toEqual({
+      kind: "project",
+      relPath: "src/flask/__init__.py",
+    });
+  });
+
+  it("flask: the same answer when the table saw examples/ before src/", () => {
+    // Seeding reads the whole file set, so insertion order cannot change it.
+    const table = corpusTable({
+      "examples/app.py": ["main"],
+      "src/flask/app.py": ["Flask"],
+      "src/flask/__init__.py": ["Flask"],
+    });
+    const from = "examples/app.py";
+    expect(new PythonImportFileMapper().mapImportToFile("flask", from, ctxFor(table, from))).toEqual({
+      kind: "project",
+      relPath: "src/flask/__init__.py",
+    });
+  });
+
+  it("flask: the answer does not depend on which file the mapper answered for first", () => {
+    const table = corpusTable(FLASK_SRC_LAYOUT);
+    const mapper = new PythonImportFileMapper();
+    // Warm the memo from INSIDE the package first — the order that used to be
+    // the only one that worked — then ask from outside it.
+    mapper.mapImportToFile("flask.app", "src/flask/__init__.py", ctxFor(table, "src/flask/__init__.py"));
+    expect(mapper.mapImportToFile("flask", "examples/app.py", ctxFor(table, "examples/app.py"))).toEqual({
+      kind: "project",
+      relPath: "src/flask/__init__.py",
+    });
+  });
+
+  it("netbox: a root nested one level down is seeded from its package markers", () => {
+    const table = corpusTable({
+      "netbox/dcim/__init__.py": ["__version__"],
+      "netbox/dcim/models/__init__.py": ["Device"],
+      "scripts/tool.py": ["main"],
+    });
+    const from = "scripts/tool.py";
+    expect(new PythonImportFileMapper().mapImportToFile("dcim.models", from, ctxFor(table, from))).toEqual({
+      kind: "project",
+      relPath: "netbox/dcim/models/__init__.py",
+    });
+  });
+
+  it("polar: a package nested inside a seeded root does not become a root itself", () => {
+    // `server/polar` holds `order/__init__.py`, but `server/polar/__init__.py`
+    // exists, so `server/polar` is a PACKAGE and only `server` is a root.
+    const table = corpusTable({
+      "server/polar/__init__.py": ["__version__"],
+      "server/polar/order/__init__.py": ["__all__"],
+      "server/polar/order/service.py": ["OrderService"],
+      "tests/test_order.py": ["test_place"],
+    });
+    const from = "tests/test_order.py";
+    const mapper = new PythonImportFileMapper();
+    expect(mapper.mapImportToFile("polar.order.service", from, ctxFor(table, from))).toEqual({
+      kind: "project",
+      relPath: "server/polar/order/service.py",
+    });
+    // A root inferred as `server/polar` would answer `server/polar/order/...`
+    // for `order.service`; it must not, because `polar` is a package.
+    expect(mapper.mapImportToFile("order.service", from, ctxFor(table, from))).toEqual({ kind: "external" });
+  });
+
+  it("a table without the optional listFiles capability still answers, unseeded", () => {
+    const inner = corpusTable(FLASK_SRC_LAYOUT);
+    const noListFiles: GlobalSymbolTable = {
+      upsertFile: (relPath, defs) => {
+        inner.upsertFile(relPath, defs);
+      },
+      removeFile: (relPath) => {
+        inner.removeFile(relPath);
+      },
+      lookup: (fqName) => inner.lookup(fqName),
+      lookupByShortName: (name, options) => inner.lookupByShortName(name, options),
+      hasFile: (relPath) => inner.hasFile(relPath),
+      hasFilesUnder: (dir) => inner.hasFilesUnder(dir),
+      size: () => inner.size(),
+      hydrate: (defs) => {
+        inner.hydrate(defs);
+      },
+      shortNameDefCounts: () => inner.shortNameDefCounts(),
+    };
+    const from = "examples/app.py";
+    const ctx: CallContext = { callerFile: from, callerScope: [], imports: [], symbolTable: noListFiles };
+    // Pre-60nss behaviour, not a crash: the ancestor scan exhausts.
+    expect(new PythonImportFileMapper().mapImportToFile("flask", from, ctx)).toEqual({ kind: "external" });
+  });
+
+  it("the daemon's no-op table seeds nothing and stays unknown", () => {
+    const table = new NoopGlobalSymbolTable();
+    const from = "examples/app.py";
+    const ctx: CallContext = { callerFile: from, callerScope: [], imports: [], symbolTable: table };
+    expect(new PythonImportFileMapper().mapImportToFile("flask", from, ctx)).toEqual({ kind: "unknown" });
   });
 });

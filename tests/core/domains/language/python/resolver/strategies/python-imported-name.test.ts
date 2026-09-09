@@ -268,3 +268,30 @@ describe("PythonImportedNameSymbolResolutionStrategy — declines", () => {
     expect(strategy().attempt(call("Rack", "missing"), ctx)).toEqual({ kind: "continue" });
   });
 });
+
+/**
+ * The src-layout bare call the E0.4 oracle diff lost (bd tea-rags-mcp-60nss).
+ *
+ * `examples/app.py` is outside `src/`, so the mapper's ancestor scan could not
+ * prove the root and answered `external` — which this pass turns into a DROP,
+ * so `globalShortName` never got the call. With roots seeded from the file set
+ * the import maps, and the re-export hop lands on the declaring module.
+ */
+describe("PythonImportedNameSymbolResolutionStrategy — src layout outside the source root", () => {
+  it("resolves a bare call whose package lives under a root the caller does not share", () => {
+    const table = tableWith({
+      "src/flask/__init__.py": ["__getattr__"],
+      "src/flask/app.py": ["Flask"],
+      "examples/app.py": ["main"],
+    });
+    const ctx = ctxWith(
+      "examples/app.py",
+      [{ importText: "flask", startLine: 1, importedNames: ["Flask"], importedBindings: { Flask: "Flask" } }],
+      table,
+    );
+    expect(strategy().attempt(call(null, "Flask"), ctx)).toEqual({
+      kind: "resolved",
+      target: { targetRelPath: "src/flask/app.py", targetSymbolId: "Flask" },
+    });
+  });
+});
