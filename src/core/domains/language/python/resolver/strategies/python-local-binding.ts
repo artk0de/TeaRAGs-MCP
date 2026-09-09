@@ -7,6 +7,7 @@ import {
   type SymbolResolutionTarget,
 } from "../../../../../contracts/types/codegraph.js";
 import type { SymbolResolutionOutcome, SymbolResolutionStrategy } from "../../../../../contracts/types/language.js";
+import { PythonImportFileMapper } from "../python-import-file-mapper.js";
 import { mapPythonImportToFile } from "../python-path-mapper.js";
 import { lastSegment, walkClassExtendsForMethod, type ResolverConfig } from "./shared.js";
 
@@ -41,7 +42,10 @@ import { lastSegment, walkClassExtendsForMethod, type ResolverConfig } from "./s
  */
 export class PythonLocalBindingSymbolResolutionStrategy implements SymbolResolutionStrategy {
   readonly name = "localBinding";
-  constructor(private readonly cfg: ResolverConfig) {}
+  constructor(
+    private readonly cfg: ResolverConfig,
+    private readonly mapper: PythonImportFileMapper = new PythonImportFileMapper(),
+  ) {}
 
   attempt(call: CallRef, ctx: CallContext): SymbolResolutionOutcome {
     if (!call.receiver) return CONTINUE;
@@ -77,7 +81,7 @@ export class PythonLocalBindingSymbolResolutionStrategy implements SymbolResolut
     // ToggleReactionSerializer`) or as a module path that ends in the
     // class name (rare).
     const bareType = lastSegment(typeName);
-    const targetFile = resolveTypeFile(bareType, ctx);
+    const targetFile = resolveTypeFile(bareType, ctx, this.mapper);
     if (!targetFile) return null;
 
     const candidates = ctx.symbolTable
@@ -114,20 +118,31 @@ export class PythonLocalBindingSymbolResolutionStrategy implements SymbolResolut
  *
  * Returns the file path of the class definition when an import
  * resolves there, or `null` otherwise.
+ *
+ * Both import-consulting passes go through `PythonImportFileMapper` (bd
+ * tea-rags-mcp-9fgdi): membership in the symbol table, never a path synthesised
+ * from the module text. An `external` verdict contributes NOTHING — attributing
+ * a type to `rest_framework/serializers.py` is the phantom this seam removes.
+ * An `unknown` verdict keeps the pre-seam fallback, per decision 1 of
+ * `docs/superpowers/plans/2026-09-08-python-import-file-mapper.md`: three
+ * states exist precisely so "I cannot tell" and "I know it is a library" behave
+ * differently.
  */
-export function resolveTypeFile(bareType: string, ctx: CallContext): string | null {
+export function resolveTypeFile(bareType: string, ctx: CallContext, mapper: PythonImportFileMapper): string | null {
   // First pass: scan symbol table for ANY definition matching the
   // bare type name. If it's unique we have the file directly.
   const tableMatches = ctx.symbolTable.lookupByShortName(bareType);
   if (tableMatches.length === 1) return tableMatches[0].relPath;
 
   // Second pass: try to disambiguate via imports — the class file
-  // must be one of the files reachable from the caller's imports.
+  // must be one of the files reachable from the caller's imports. Only a
+  // `project` verdict names a file the table can hold, so it is the only one
+  // that can narrow the candidates.
   if (tableMatches.length > 1) {
     const importedFiles = new Set<string>();
     for (const imp of ctx.imports) {
-      const file = mapPythonImportToFile(imp.importText, ctx.callerFile);
-      if (file) importedFiles.add(file);
+      const mapped = mapper.mapImportToFile(imp.importText, ctx.callerFile, ctx);
+      if (mapped.kind === "project") importedFiles.add(mapped.relPath);
     }
     const filtered = tableMatches.filter((def) => importedFiles.has(def.relPath));
     if (filtered.length === 1) return filtered[0].relPath;
@@ -137,9 +152,12 @@ export function resolveTypeFile(bareType: string, ctx: CallContext): string | nu
 
   // Third pass: bare type not in symbol table (defined outside the
   // project — e.g. DRF Serializer). Walk imports: if any import path
-  // ends in the type name and resolves to a file, attribute to that.
+  // ends in the type name and maps to a file, attribute to that.
   for (const imp of ctx.imports) {
     if (lastSegment(imp.importText) !== bareType) continue;
+    const mapped = mapper.mapImportToFile(imp.importText, ctx.callerFile, ctx);
+    if (mapped.kind === "project") return mapped.relPath;
+    if (mapped.kind === "external") continue;
     const file = mapPythonImportToFile(imp.importText, ctx.callerFile);
     if (file) return file;
   }

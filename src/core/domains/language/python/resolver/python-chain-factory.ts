@@ -44,9 +44,9 @@ export function createPythonSymbolResolutionChain(
     new PythonSuperSymbolResolutionStrategy(cfg),
     new PythonSelfFieldSymbolResolutionStrategy(cfg),
     new PythonSelfMemberSymbolResolutionStrategy(cfg),
-    new PythonLocalBindingSymbolResolutionStrategy(cfg),
+    new PythonLocalBindingSymbolResolutionStrategy(cfg, mapper),
     new PythonImportedNameSymbolResolutionStrategy(cfg, mapper),
-    new PythonImportMatchSymbolResolutionStrategy(cfg),
+    new PythonImportMatchSymbolResolutionStrategy(cfg, mapper),
     new PythonGlobalShortNameSymbolResolutionStrategy(cfg),
   ];
 }

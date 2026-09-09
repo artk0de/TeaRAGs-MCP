@@ -24,7 +24,13 @@ import { PythonImportFileMapper } from "./python-import-file-mapper.js";
 import { mapPythonImportToFile } from "./python-path-mapper.js";
 
 export class PythonExternalVocabulary implements ExternalVocabulary {
-  private readonly mapper = new PythonImportFileMapper();
+  /**
+   * The resolver's ONE mapper, injected (bd tea-rags-mcp-9fgdi, E2.6). The
+   * vocabulary and the chain answer the same import question, so a second
+   * instance would be a second memo and a licence to disagree. A caller with no
+   * chain to share with omits it and gets a private one.
+   */
+  constructor(private readonly mapper: PythonImportFileMapper = new PythonImportFileMapper()) {}
 
   /**
    * A bare call naming a builtin — bound by the interpreter, never a project
@@ -86,13 +92,22 @@ export class PythonExternalVocabulary implements ExternalVocabulary {
 
   /** Does this import text name a file or a package directory the table holds? */
   private importLandsInProject(importText: string, ctx: CallContext): boolean {
+    // The stdlib check stays AHEAD of the mapper. The mapper probes the
+    // caller's ancestor directories before it consults the stdlib snapshot, so
+    // `import json` from `src/flask/tag.py` would land on flask's own
+    // `src/flask/json/__init__.py`. Which module the interpreter really binds
+    // is a sys.path question no static root inference answers; the vocabulary
+    // keeps its measured answer (bd tea-rags-mcp-mmckn).
     if (PYTHON_STDLIB_MODULES.has(importText.split(".")[0])) return false;
-    const mapped = mapPythonImportToFile(importText, ctx.callerFile);
-    if (mapped === null) return false;
-    if (ctx.symbolTable.hasFile(mapped)) return true;
-    // PEP 420 namespace packages have no `__init__.py`, so the package is only
-    // visible as a DIRECTORY holding files — `hasFile` alone cannot see it.
-    return ctx.symbolTable.hasFilesUnder(mapped.replace(/\.py$/, ""));
+    const mapped = this.mapper.mapImportToFile(importText, ctx.callerFile, ctx);
+    if (mapped.kind === "project") return true;
+    if (mapped.kind === "external") return false;
+    // `unknown` covers a PEP 420 namespace package — ours, but with no
+    // `__init__.py` for the mapper to name, and a directory is not a legal
+    // file-edge target (decision 4 of the plan). It is still first-party for
+    // THIS question, so the directory probe stays.
+    const synthesised = mapPythonImportToFile(importText, ctx.callerFile);
+    return synthesised !== null && ctx.symbolTable.hasFilesUnder(synthesised.replace(/\.py$/, ""));
   }
 
   /** A dict / list / str / set / bytes / file member name. */
