@@ -129,3 +129,60 @@ describe("isReceiverTyped", () => {
     expect(vocab.isReceiverTyped("row", ctxWith([]), 3)).toBe(false);
   });
 });
+
+/**
+ * The bare-call arm added by bd tea-rags-mcp-9fgdi. It must agree with
+ * `PythonImportedNameSymbolResolutionStrategy`: that pass DROPS a bare call
+ * bound to an external module, and a drop the vocabulary does not claim is
+ * counted as an in-project miss — the resolver would read as a regression when
+ * it is the opposite.
+ */
+describe("isBareCallExternal — imported bindings", () => {
+  function ctxBound(imports: CallContext["imports"], files: Record<string, string[]> = {}): CallContext {
+    const symbolTable = new InMemoryGlobalSymbolTable();
+    for (const [relPath, names] of Object.entries(files)) {
+      symbolTable.upsertFile(
+        relPath,
+        names.map((name) => ({ symbolId: name, fqName: name, shortName: name, relPath, scope: [] })),
+      );
+    }
+    return { callerFile: "pkg/main.py", callerScope: [], imports, symbolTable };
+  }
+
+  it("claims a name bound from a stdlib module", () => {
+    const ctx = ctxBound(
+      [{ importText: "json", startLine: 1, importedNames: ["loads"], importedBindings: { loads: "loads" } }],
+      { "pkg/main.py": ["main"] },
+    );
+    expect(vocab.isBareCallExternal("loads", ctx)).toBe(true);
+  });
+
+  it("claims an ALIASED name bound from a third-party module", () => {
+    const ctx = ctxBound(
+      [{ importText: "numpy", startLine: 1, importedNames: ["arr"], importedBindings: { arr: "array" } }],
+      { "pkg/main.py": ["main"] },
+    );
+    expect(vocab.isBareCallExternal("arr", ctx)).toBe(true);
+  });
+
+  it("leaves a name bound from a PROJECT module alone", () => {
+    const ctx = ctxBound(
+      [{ importText: ".util", startLine: 1, importedNames: ["helper"], importedBindings: { helper: "helper" } }],
+      { "pkg/main.py": ["main"], "pkg/util.py": ["helper"] },
+    );
+    expect(vocab.isBareCallExternal("helper", ctx)).toBe(false);
+  });
+
+  it("leaves an unbound name alone", () => {
+    const ctx = ctxBound(
+      [{ importText: "json", startLine: 1, importedNames: ["loads"], importedBindings: { loads: "loads" } }],
+      { "pkg/main.py": ["main"] },
+    );
+    expect(vocab.isBareCallExternal("promote", ctx)).toBe(false);
+  });
+
+  it("answers on builtins alone when no ctx is threaded", () => {
+    expect(vocab.isBareCallExternal("len")).toBe(true);
+    expect(vocab.isBareCallExternal("loads")).toBe(false);
+  });
+});

@@ -20,12 +20,32 @@ import type { ExternalVocabulary } from "../../../../contracts/types/language.js
 import { PYTHON_BUILTINS } from "../vocabulary/builtins.js";
 import { PYTHON_CORE_MEMBERS } from "../vocabulary/core-members.js";
 import { PYTHON_STDLIB_MODULES } from "../vocabulary/stdlib-modules.js";
+import { PythonImportFileMapper } from "./python-import-file-mapper.js";
 import { mapPythonImportToFile } from "./python-path-mapper.js";
 
 export class PythonExternalVocabulary implements ExternalVocabulary {
-  /** A bare call naming a builtin: bound by the interpreter, never a project def. */
-  isBareCallExternal(member: string): boolean {
-    return PYTHON_BUILTINS.has(member);
+  private readonly mapper = new PythonImportFileMapper();
+
+  /**
+   * A bare call naming a builtin — bound by the interpreter, never a project
+   * def — or a name an import BOUND from an external module:
+   * `from json import loads` then `loads(x)` (bd tea-rags-mcp-9fgdi).
+   *
+   * The second arm must agree with
+   * `PythonImportedNameSymbolResolutionStrategy`, which DROPS exactly that
+   * shape. A drop the vocabulary does not classify is counted as an in-project
+   * miss, so the two answers are one decision made twice. `ctx` is optional on
+   * the contract; without it only the builtin arm can answer.
+   */
+  isBareCallExternal(member: string, ctx?: CallContext): boolean {
+    if (PYTHON_BUILTINS.has(member)) return true;
+    if (ctx === undefined) return false;
+    for (const imp of ctx.imports) {
+      const bound = imp.importedBindings?.[member] ?? (imp.importedNames?.includes(member) ? member : undefined);
+      if (bound === undefined) continue;
+      if (this.mapper.mapImportToFile(imp.importText, ctx.callerFile, ctx).kind === "external") return true;
+    }
+    return false;
   }
 
   /**
