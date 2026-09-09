@@ -667,13 +667,21 @@ export interface LanguageFactoryDescriptor {
  * that survives into every downstream hop). It carries no name because there is
  * nothing to name — `nil.foo` reaches no in-project definition, so the RESOLVER
  * drops nil arms before dispatch while the fact keeps stating them. Build and
- * compare these through `domains/language/ruby/type-ref.ts`, never by hand.
+ * compare these through `domains/language/kernel/type-ref.ts`, never by hand.
  */
-export type RubyTypeRef =
+export type TypeRef =
   | { form: "class" | "instance"; name: string }
-  | { form: "union"; members: RubyTypeRef[] }
-  | { form: "container"; element: RubyTypeRef }
+  | { form: "union"; members: TypeRef[] }
+  | { form: "container"; element: TypeRef }
   | { form: "nil" };
+
+/**
+ * The name this type carried while it was Ruby-only (E1 seam 2). Kept as an
+ * alias so the 36 files that reference it — contracts, four Ruby resolver
+ * modules, the codegraph trajectory, and eleven test files that may not be
+ * rewritten — compile unchanged. New code says `TypeRef`.
+ */
+export type RubyTypeRef = TypeRef;
 
 export type CodegraphTier = "maximum" | "high" | "moderate" | "minimal" | "none";
 

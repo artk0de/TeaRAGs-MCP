@@ -376,7 +376,7 @@ Produces, from `ruby/type-ref.ts` (names unchanged from today):
 
 **Steps**
 
-- [ ] **RED.** Create `tests/core/domains/language/kernel/type-ref.test.ts`. It
+- [x] **RED.** Create `tests/core/domains/language/kernel/type-ref.test.ts`. It
       fails on the missing module, which is the red state for a relocation.
 
 ```ts
@@ -463,7 +463,7 @@ describe("ruby/type-ref.ts shim", () => {
 });
 ```
 
-- [ ] **Rename the contract type.** In `src/core/contracts/types/language.ts`,
+- [x] **Rename the contract type.** In `src/core/contracts/types/language.ts`,
       the `export type RubyTypeRef = …` union at `:672` becomes `TypeRef`, and
       an alias takes the old name. Keep the existing docblock above `TypeRef`
       verbatim except its last sentence, which now points at the kernel: change
@@ -486,7 +486,7 @@ export type TypeRef =
 export type RubyTypeRef = TypeRef;
 ```
 
-- [ ] **Create `src/core/domains/language/kernel/type-ref.ts`.** Bodies are the
+- [x] **Create `src/core/domains/language/kernel/type-ref.ts`.** Bodies are the
       Ruby file's, unchanged. Names lose `ruby`; the prose keeps the reasoning
       and drops the Ruby framing where it was incidental.
 
@@ -616,7 +616,7 @@ export function typeRefReceiverForm(
 }
 ```
 
-- [ ] **Replace `src/core/domains/language/ruby/type-ref.ts` with the shim.**
+- [x] **Replace `src/core/domains/language/ruby/type-ref.ts` with the shim.**
       The whole file, replacing all 114 lines. The reasoning docblock moved to
       the kernel with the code; leaving a copy here would be two statements of
       one fact.
@@ -638,7 +638,7 @@ export {
 } from "../kernel/type-ref.js";
 ```
 
-- [ ] **GREEN + gates.** In order, all from the worktree root:
+- [x] **GREEN + gates.** In order, all from the worktree root:
 
 ```bash
 npm run build                                        # fresh worktree has no build/
@@ -653,7 +653,7 @@ npx eslint --max-warnings 0 \
 git diff --stat -- tests/core/domains/language/ruby  # MUST be empty
 ```
 
-- [ ] **Commit.**
+- [x] **Commit.**
 
 ```text
 refactor(language): relocate the TypeRef algebra to the kernel (fmcly)
