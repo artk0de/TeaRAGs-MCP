@@ -38,7 +38,7 @@
  *
  * Usage:
  *   npx tsx scripts/codegraph-chain-tally.ts --corpus <abs path> --lang python \
- *     [--defer importMatch] [--limit N] [--samples 10] [--json out.json]
+ *     [--defer globalShortName] [--limit N] [--samples 10] [--json out.json]
  */
 
 import { writeFileSync } from "node:fs";

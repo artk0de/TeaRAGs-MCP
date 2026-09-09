@@ -69,7 +69,6 @@ describe("buildPythonChain", () => {
       "localBinding",
       "chainType",
       "importedName",
-      "importMatch",
       "globalShortName",
     ]);
   });
@@ -89,7 +88,7 @@ describe("AnsweredByProbe", () => {
 
   it("leaves the record alone when the pass continues", () => {
     const record = { answeredBy: "none" };
-    const probe = new AnsweredByProbe(new FixedStrategy("importMatch", { kind: "continue" }), record);
+    const probe = new AnsweredByProbe(new FixedStrategy("globalShortName", { kind: "continue" }), record);
     probe.attempt(call("f"), ctx);
     expect(record.answeredBy).toBe("none");
   });

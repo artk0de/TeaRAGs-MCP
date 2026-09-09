@@ -21,7 +21,6 @@ import {
   PythonChainTypeSymbolResolutionStrategy,
   PythonGlobalShortNameSymbolResolutionStrategy,
   PythonImportedNameSymbolResolutionStrategy,
-  PythonImportMatchSymbolResolutionStrategy,
   PythonLocalBindingSymbolResolutionStrategy,
   PythonSelfFieldSymbolResolutionStrategy,
   PythonSelfMemberSymbolResolutionStrategy,
@@ -63,7 +62,6 @@ export function createPythonSymbolResolutionChain(
     new PythonLocalBindingSymbolResolutionStrategy(cfg, mapper),
     new PythonChainTypeSymbolResolutionStrategy(cfg, mapper),
     new PythonImportedNameSymbolResolutionStrategy(cfg, mapper, linearizers),
-    new PythonImportMatchSymbolResolutionStrategy(cfg, mapper),
     new PythonGlobalShortNameSymbolResolutionStrategy(cfg),
   ];
 }

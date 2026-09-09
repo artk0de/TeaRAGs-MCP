@@ -92,19 +92,6 @@ describe("PythonCallResolver", () => {
     expect(target?.targetRelPath).toBe("pkg/foo.py");
   });
 
-  it("returns null when the import resolves but no symbol matches by short-name (target file is known)", () => {
-    const resolver = new PythonCallResolver();
-    const table = new InMemoryGlobalSymbolTable();
-    const target = resolver.resolve(
-      { callText: "foo.ghost()", receiver: "foo", member: "ghost", startLine: 1 },
-      makeCtx("main.py", [{ importText: "foo", startLine: 1 }], table),
-    );
-    // No matching symbol in table — resolver records target file with
-    // null symbol id so the file-edge still gets attribution.
-    expect(target?.targetRelPath).toBe("foo.py");
-    expect(target?.targetSymbolId).toBeNull();
-  });
-
   it("falls back to global short-name lookup when no receiver", () => {
     const resolver = new PythonCallResolver();
     const table = new InMemoryGlobalSymbolTable();
@@ -245,28 +232,6 @@ describe("PythonCallResolver", () => {
       const call = { callText: "unknown()", receiver: null, member: "unknown", startLine: 1 };
       expect(new PythonCallResolver("strict").resolve(call, makeCtx("main.py", [], empty))).toBeNull();
       expect(new PythonCallResolver("first").resolve(call, makeCtx("main.py", [], empty))).toBeNull();
-    });
-
-    it("import-restricted path also honors mode: 2 same-file candidates → strict drops, first picks", () => {
-      // Same file declares two classes with same-named method. The
-      // import-restricted path filters to `targetFile`, but cardinality
-      // still > 1 — the mode controls the pick.
-      const table = new InMemoryGlobalSymbolTable();
-      table.upsertFile("foo.py", [
-        { symbolId: "ClassA#run", fqName: "ClassA#run", shortName: "run", relPath: "foo.py", scope: ["ClassA"] },
-        { symbolId: "ClassB#run", fqName: "ClassB#run", shortName: "run", relPath: "foo.py", scope: ["ClassB"] },
-      ]);
-      const call = { callText: "foo.run()", receiver: "foo", member: "run", startLine: 1 };
-      const ctx = makeCtx("main.py", [{ importText: "foo", startLine: 1 }], table);
-
-      const strict = new PythonCallResolver("strict").resolve(call, ctx);
-      // Strict: same file, ambiguous → file-edge with null symbol, not arbitrary pick.
-      expect(strict?.targetRelPath).toBe("foo.py");
-      expect(strict?.targetSymbolId).toBeNull();
-
-      const first = new PythonCallResolver("first").resolve(call, ctx);
-      expect(first?.targetRelPath).toBe("foo.py");
-      expect(first?.targetSymbolId).toBe("ClassA#run");
     });
   });
 

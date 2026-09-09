@@ -37,24 +37,25 @@ const SINGLE_HOP_RECEIVER = /^[A-Za-z_][A-Za-z0-9_]*$/;
  * Imported-name resolution — the call's receiver, or a bare call's own name, is
  * a name an `import` statement BOUND (bd tea-rags-mcp-9fgdi).
  *
- * `from .models import Device` then `Device.objects`: the next pass down,
- * `importMatch`, matches a receiver against the import's LAST MODULE SEGMENT —
- * `models` — so it never considers `Device` at all, and the call falls to
- * `globalShortName`, which carries no receiver evidence whatsoever. The walker
- * now records what the statement actually bound (walker version 2), so this
- * pass reads the binding instead of guessing at it.
+ * `from .models import Device` then `Device.objects`: the pass that used to sit
+ * below this one, `importMatch`, matched a receiver against the import's LAST
+ * MODULE SEGMENT — `models` — so it never considered `Device` at all, and the
+ * call fell to `globalShortName`, which carries no receiver evidence whatsoever.
+ * The walker now records what the statement actually bound (walker version 2),
+ * so this pass reads the binding instead of guessing at it. The guessing pass is
+ * gone (bd tea-rags-mcp-rw1qk).
  *
- * CHAIN INDEX 5, after `localBinding` and before `importMatch`, and both halves
- * of that are correctness arguments:
+ * CHAIN INDEX 5, after `localBinding` and last before `globalShortName`, and
+ * both halves of that are correctness arguments:
  *
  *   - AFTER `localBinding`: a walker-bound local type is narrower evidence than
  *     an import binding (the variable was assigned in this body), and
  *     `localBinding` is a terminal guard whose DROP must keep preempting
  *     everything downstream. Running before it would resurrect the ugnest
  *     false-positive class the guards exist to kill.
- *   - BEFORE `importMatch`: `importMatch` guesses which name a statement bound
- *     from the module's trailing segment. This pass knows. Ordered the other
- *     way, the guess wins whenever both fire.
+ *   - BEFORE `globalShortName`: the fallback carries no receiver evidence at
+ *     all. This pass knows what the statement bound, so it must claim the call
+ *     first or the evidence is thrown away.
  *
  * Three outcomes, no fourth. `resolved` pins a symbol; `DROP` fires when the
  * binding names an EXTERNAL module, because a bare `loads(...)` after

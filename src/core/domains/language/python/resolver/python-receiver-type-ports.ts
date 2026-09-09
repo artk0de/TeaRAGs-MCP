@@ -14,7 +14,7 @@
  * singleton the plan sketched — `resolveTypeFile` needs one, the resolver owns
  * exactly one so every consumer shares its resolved-root cache, and a private
  * one per module would both fragment the cache and diverge from what
- * `localBinding` / `importedName` / `importMatch` ask the same question with.
+ * `localBinding` / `importedName` ask the same question with.
  * Allocation stays at one object per resolver, which is what the perf budget
  * (`wall ≤ +25%` on netbox) actually cares about.
  */

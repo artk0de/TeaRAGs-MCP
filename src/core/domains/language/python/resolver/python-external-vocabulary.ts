@@ -60,9 +60,11 @@ export class PythonExternalVocabulary implements ExternalVocabulary {
    *
    * Three guards, each holding a case the corpora produce:
    *
-   *   - SINGLE-SEGMENT receivers are never claimed. `os.getcwd()` resolves
-   *     through `importMatch` as a file-only edge and never arrives here
-   *     unresolved; claiming it would double-count. Pinned by
+   *   - SINGLE-SEGMENT receivers are never claimed. The guard predates the
+   *     removal of `importMatch` (bd tea-rags-mcp-rw1qk), which used to answer
+   *     `os.getcwd()` with a file-only edge so it never arrived here at all;
+   *     the guard stays because claiming a bare module receiver here is a
+   *     denominator change nothing has measured. Pinned by
    *     `python-resolver-external-import.test.ts`.
    *   - A RELATIVE import is in-project by construction.
    *   - An ABSOLUTE import that maps into the symbol table is FIRST-PARTY. This

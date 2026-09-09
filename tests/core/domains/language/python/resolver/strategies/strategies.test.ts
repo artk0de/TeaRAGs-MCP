@@ -8,7 +8,6 @@ import {
 } from "../../../../../../../src/core/contracts/types/codegraph.js";
 import {
   PythonGlobalShortNameSymbolResolutionStrategy,
-  PythonImportMatchSymbolResolutionStrategy,
   PythonLocalBindingSymbolResolutionStrategy,
   PythonSelfFieldSymbolResolutionStrategy,
   PythonSelfMemberSymbolResolutionStrategy,
@@ -292,109 +291,6 @@ describe("PythonLocalBindingSymbolResolutionStrategy", () => {
     const symbolTable = tableWith();
     const outcome = strat.attempt({ ...call, receiver: null }, ctx({ symbolTable, localBindings: {} }));
     expect(outcome.kind).toBe("continue");
-  });
-});
-
-describe("PythonImportMatchSymbolResolutionStrategy", () => {
-  const strat = new PythonImportMatchSymbolResolutionStrategy(cfg);
-  const call: CallRef = { callText: "foo.bar()", receiver: "foo", member: "bar", startLine: 1 };
-
-  it("resolves via an import whose trailing segment matches the receiver", () => {
-    const symbolTable = tableWith(["foo.py", [sym("foo.bar", "bar", "foo.py", ["foo"])]]);
-    const outcome = strat.attempt(call, ctx({ symbolTable, imports: [{ importText: "foo", startLine: 1 }] }));
-    expect(outcome).toEqual({
-      kind: "resolved",
-      target: { targetRelPath: "foo.py", targetSymbolId: "foo.bar" },
-    });
-  });
-
-  it("emits a terminal file-only edge when the import maps but no symbol matches (does NOT continue)", () => {
-    const symbolTable = tableWith();
-    const outcome = strat.attempt(
-      { ...call, member: "ghost", callText: "foo.ghost()" },
-      ctx({ symbolTable, imports: [{ importText: "foo", startLine: 1 }] }),
-    );
-    expect(outcome).toEqual({ kind: "resolved", target: { targetRelPath: "foo.py", targetSymbolId: null } });
-  });
-
-  it("continues when no import's trailing segment matches the receiver", () => {
-    const symbolTable = tableWith(["foo.py", [sym("foo.bar", "bar", "foo.py", ["foo"])]]);
-    const outcome = strat.attempt(call, ctx({ symbolTable, imports: [{ importText: "unrelated", startLine: 1 }] }));
-    expect(outcome.kind).toBe("continue");
-  });
-
-  it("continues when there is no receiver", () => {
-    const symbolTable = tableWith();
-    const outcome = strat.attempt({ ...call, receiver: null }, ctx({ symbolTable }));
-    expect(outcome.kind).toBe("continue");
-  });
-
-  it("continues when the receiver is a name an import BOUND — importedName owns it", () => {
-    const symbolTable = tableWith(
-      [
-        "netbox/circuits/tables/columns.py",
-        [sym("ColorColumn", "ColorColumn", "netbox/circuits/tables/columns.py", [])],
-      ],
-      ["netbox/netbox/tables/columns.py", [sym("ColorColumn", "ColorColumn", "netbox/netbox/tables/columns.py", [])]],
-    );
-    const outcome = strat.attempt(
-      { callText: "columns.ColorColumn()", receiver: "columns", member: "ColorColumn", startLine: 1 },
-      ctx({
-        symbolTable,
-        callerFile: "netbox/circuits/tables/circuits.py",
-        imports: [
-          {
-            importText: "netbox.tables",
-            startLine: 1,
-            importedNames: ["columns"],
-            importedBindings: { columns: "columns" },
-          },
-          // The caller's OWN `from .columns import CommitRateColumn`, verbatim
-          // from `netbox/circuits/tables/circuits.py`. It binds
-          // `CommitRateColumn`, never `columns` — but its trailing segment IS
-          // `columns`, and that is the import `pythonImportMatchesReceiver`
-          // finds. Without it the fixture cannot reproduce the wrong answer.
-          {
-            importText: ".columns",
-            startLine: 8,
-            importedNames: ["CommitRateColumn"],
-            importedBindings: { CommitRateColumn: "CommitRateColumn" },
-          },
-        ],
-      }),
-    );
-    // Trailing-segment matching picks the caller's own sibling, 437 times on
-    // netbox. The binding pass ran first and had better evidence, whatever it
-    // decided (bd tea-rags-mcp-9fgdi).
-    expect(outcome.kind).toBe("continue");
-  });
-
-  it("still answers when the receiver is bound by NOTHING", () => {
-    const symbolTable = tableWith([
-      "domains/identity/models/user.py",
-      [sym("User#save", "save", "domains/identity/models/user.py", ["User"])],
-    ]);
-    const outcome = strat.attempt(
-      { callText: "user.save()", receiver: "user", member: "save", startLine: 1 },
-      ctx({
-        symbolTable,
-        callerFile: "domains/identity/services/auth/vk_login.py",
-        imports: [
-          {
-            importText: "domains.identity.models.user",
-            startLine: 1,
-            importedNames: ["User"],
-            importedBindings: { User: "User" },
-          },
-        ],
-      }),
-    );
-    // `user` is a local holding a User; the import bound `User`, not `user`.
-    // ugnest's only two `match` rows from this pass are exactly this.
-    expect(outcome).toEqual({
-      kind: "resolved",
-      target: { targetRelPath: "domains/identity/models/user.py", targetSymbolId: "User#save" },
-    });
   });
 });
 
