@@ -1717,7 +1717,7 @@ bead for wiring the remaining six languages.
 
 **Steps**
 
-- [ ] Add one bullet at the END of the `## Mechanics` section of
+- [x] Add one bullet at the END of the `## Mechanics` section of
       `src/core/domains/language/CLAUDE.md` (immediately before the `## Gotchas`
       heading), matching the section's existing bold-lead / `Why:`-tail style:
 
@@ -1742,7 +1742,7 @@ bead for wiring the remaining six languages.
   relocation rather than a behaviour change.
 ```
 
-- [ ] Verify the navigator still lints:
+- [x] Verify the navigator still lints:
       `npx prettier --check src/core/domains/language/CLAUDE.md` (run
       `npx prettier --write` on it if it does not).
 
@@ -1774,7 +1774,11 @@ bd dep add <issue-id> tea-rags-mcp-fmcly
       > extension. Not urgent — a language with no pass to add gains nothing but
       > uniformity, so pull this when the first facet for that language appears.
 
-- [ ] Commit:
+      NOT DONE by this session: the executing agent was scoped with `bd` off, so no
+      bead was filed. The title, labels, dependency and body above are ready to
+      paste — the parent session files it.
+
+- [x] Commit:
 
 ```text
 docs(language): record the extraction pass-runner in the domain navigator (vqdw1)

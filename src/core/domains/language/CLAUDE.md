@@ -157,6 +157,25 @@
   per-path existence memo on the same resolver — and the resolver instance, one
   per `repoRoot`, is what bounds both lifetimes, NOT `reset()`.
 
+- **An extraction pass never re-slices a native walker, and with no passes the
+  composed walker returns the monolith's own object.**
+  `kernel/extraction-passes.ts` runs `<lang>/walker/walker.ts` first, then the
+  language's `<LANG>_EXTRACTION_PASSES` (`<lang>/walker/passes.ts`, empty for
+  Ruby and Python today), folding each pass's `Partial<FileExtraction>` in
+  through `kernel/merge-extraction.ts`. That merge is append-only: arrays concat
+  base-first, set-like arrays dedupe on the first occurrence, Records union with
+  the BASE's value kept on a conflict, Record-of-arrays union KEYS only, chunks
+  merge by `symbolId` with `localBindings` re-sorted by line, and a channel
+  neither side carries is never materialised. The per-channel rulebook is a
+  mapped type over `keyof FileExtraction` / `keyof ChunkExtraction`, so a new
+  channel is a compile error until it gets a row. Why: precedence inversions
+  live INSIDE a monolith (`ruby/walker/type-channels.ts:44` has YARD `@return`
+  overwrite body inference; `:79` has body inference NOT overwrite the store) —
+  a pass that could overwrite would silently re-order them, an empty channel
+  reaching the NDJSON spill moves the payload the schema-drift guard compares,
+  and the identity return is what makes wiring a language through the engine a
+  relocation rather than a behaviour change.
+
 ## Gotchas
 
 - **`defaultImportFileEdges` asks the CALL chain a MODULE question.**
