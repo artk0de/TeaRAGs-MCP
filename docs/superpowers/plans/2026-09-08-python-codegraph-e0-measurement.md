@@ -3664,10 +3664,10 @@ leave it.
 
 **Steps**
 
-- [ ] Prepare the worktree: `npm ci`, then a bare `npm run build`. Task 5a must
+- [x] Prepare the worktree: `npm ci`, then a bare `npm run build`. Task 5a must
       already be merged — `hasFile` / `hasFilesUnder` are required here.
 
-- [ ] Write `scripts/py-oracle/gen-stdlib-modules.py`:
+- [x] Write `scripts/py-oracle/gen-stdlib-modules.py`:
 
 ```python
 #!/usr/bin/env python3
@@ -3734,7 +3734,7 @@ if __name__ == "__main__":
     raise SystemExit(main())
 ```
 
-- [ ] Generate the snapshot and confirm it is a plain `Set` of strings with no
+- [x] Generate the snapshot and confirm it is a plain `Set` of strings with no
       leading-underscore private modules:
 
 ```bash
@@ -3743,7 +3743,7 @@ uv run --no-project --python 3.13 python scripts/py-oracle/gen-stdlib-modules.py
 grep -c '"' src/core/domains/language/python/vocabulary/stdlib-modules.ts
 ```
 
-- [ ] Write `src/core/domains/language/python/vocabulary/builtins.ts`:
+- [x] Write `src/core/domains/language/python/vocabulary/builtins.ts`:
 
 ```ts
 /**
@@ -3832,7 +3832,7 @@ export const PYTHON_BUILTINS: ReadonlySet<string> = new Set([
 ]);
 ```
 
-- [ ] Write `src/core/domains/language/python/vocabulary/core-members.ts`:
+- [x] Write `src/core/domains/language/python/vocabulary/core-members.ts`:
 
 ```ts
 /**
@@ -3895,7 +3895,7 @@ export const PYTHON_CORE_MEMBERS: ReadonlySet<string> = new Set([
       `update` sites dominated by `managerQuerySet`, drop it here and let E3
       own it. Record which way the data went in the commit body.
 
-- [ ] Write the failing tests —
+- [x] Write the failing tests —
       `tests/core/domains/language/python/resolver/python-external-vocabulary.test.ts`:
 
 ```ts
@@ -4028,7 +4028,7 @@ describe("isQualifiedReceiverExternal", () => {
 });
 ```
 
-- [ ] Add the two remaining predicates' cases to the same test file:
+- [x] Add the two remaining predicates' cases to the same test file:
 
 ```ts
 describe("isCoreAmbiguousMember", () => {
@@ -4086,10 +4086,10 @@ describe("isReceiverTyped", () => {
 });
 ```
 
-- [ ] Run and watch them fail:
+- [x] Run and watch them fail:
       `npx vitest run tests/core/domains/language/python/resolver/python-external-vocabulary.test.ts`.
 
-- [ ] Write
+- [x] Write
       `src/core/domains/language/python/resolver/python-external-vocabulary.ts`:
 
 ```ts
@@ -4215,7 +4215,7 @@ export class PythonExternalVocabulary implements ExternalVocabulary {
 }
 ```
 
-- [ ] Wire it into `PythonCallResolver`. The constructor gains one field, and
+- [x] Wire it into `PythonCallResolver`. The constructor gains one field, and
       the inline `targetsExternalImport` body is REPLACED by a delegation — the
       body is relocated into the vocabulary, not rewritten there:
 
@@ -4249,7 +4249,7 @@ export class PythonExternalVocabulary implements ExternalVocabulary {
   }
 ```
 
-- [ ] Run the regression net FIRST, unmodified. Five cases, all must pass with
+- [x] Run the regression net FIRST, unmodified. Five cases, all must pass with
       `git diff` on that file empty:
 
 ```bash
@@ -4257,10 +4257,10 @@ npx vitest run tests/core/domains/language/python/resolver/python-resolver-exter
 git diff --stat -- tests/core/domains/language/python/resolver/python-resolver-external-import.test.ts
 ```
 
-- [ ] Run the whole Python and language suite plus the type check:
+- [x] Run the whole Python and language suite plus the type check:
       `npx vitest run tests/core/domains/language` then `npm run type-check`.
 
-- [ ] Re-run the chain tally on all five corpora. This task is ALLOWED to move
+- [x] Re-run the chain tally on all five corpora. This task is ALLOWED to move
       numbers, in one direction: `edges` / `fileOnly` / `unresolved` must be
       byte-identical (the vocabulary classifies MISSES, it does not resolve),
       while the runner's `externalSkipped` and `coreAmbiguous` buckets grow. A
@@ -4271,11 +4271,23 @@ git diff --stat -- tests/core/domains/language/python/resolver/python-resolver-e
 npx tsx scripts/codegraph-chain-tally.ts --corpus ~/Dev/Collaborate/ugnest --lang python
 ```
 
-- [ ] Perf gate on all five, sequentially, against the recorded baselines. The
+- [x] Perf gate on all five, sequentially, against the recorded baselines. The
       predicates are set lookups plus one path map, so expect no movement; a
       rise means something is scanning.
 
-- [ ] Re-run the oracle on all five and diff against Task 4's baseline. The
+      Measured BEFORE/AFTER back-to-back on ugnest and netbox (the two the task
+      brief scoped): ugnest 2.70 s / 418.3 MB → 2.69 s / 400.0 MB; netbox
+      14.52 s / 2,001.9 MB → 14.65 s / 2,224.2 MB. The netbox RSS delta is
+      measurement noise, not the vocabulary: a repeat of each side lands at
+      14.45 s / 2,317.6 MB (after) and 13.78 s / 2,280.5 MB (before, unchanged
+      code), so run-to-run RSS spans ~280 MB on both sides. Chain-tally never
+      consults the classifier, so the only added cost is three module-level Sets.
+      flask, polar and httpx ran the tally unmetered — identical output.
+
+- [ ] DEFERRED — parent runs the oracle A/B in E0.4.
+      `scripts/py-codegraph-jedi-oracle.ts` is Task 3's deliverable and was
+      absent from this worktree, so nothing was stubbed and no gate was claimed.
+      Re-run the oracle on all five and diff against Task 4's baseline. The
       gate, stated so it cannot be read charitably:
 
       - `agreeExternal` UP — the vocabulary is claiming genuinely external calls.
@@ -4290,15 +4302,16 @@ npx tsx scripts/py-codegraph-jedi-oracle.ts --corpus ugnest \
   --json ~/Dev/Tools/tea-rags-bench/results/python/2026-09-08-ugnest-vocab.json
 ```
 
-- [ ] Append the re-baseline delta to the spec's appendix as a sixth table:
+- [ ] DEFERRED with the step above — the appendix table needs oracle numbers.
+      Append the re-baseline delta to the spec's appendix as a sixth table:
       `corpus | agreeExternal before/after | phantom before/after |     skippedInProject before/after | missed before/after`.
 
-- [ ] Add ONE Mechanics bullet to `src/core/domains/language/CLAUDE.md` naming
+- [x] Add ONE Mechanics bullet to `src/core/domains/language/CLAUDE.md` naming
       the vocabulary, its no-filesystem rule, and the fact that the
       first-party-absolute-import branch depends on `hasFilesUnder`. Link the
       path-scoped rule rather than restating it.
 
-- [ ] Format and commit:
+- [x] Format and commit:
 
 ```bash
 npx prettier --write src/core/domains/language/python src/core/domains/language/CLAUDE.md \
