@@ -105,7 +105,10 @@ describe("parseArgs", () => {
   });
 
   it("resolves the manifest's source roots against the corpus root", () => {
-    expect(parseArgs(["--corpus", "polar"]).roots).toEqual([`${parseArgs(["--corpus", "polar"]).corpusRoot}/server`]);
+    // polar declares BOTH of its packages-called-polar; which one leads is a
+    // per-file decision the Python side makes, not a manifest one (vua9f).
+    const polarRoot = parseArgs(["--corpus", "polar"]).corpusRoot;
+    expect(parseArgs(["--corpus", "polar"]).roots).toEqual([`${polarRoot}/server`, `${polarRoot}/sdk/python`]);
     expect(parseArgs(["--corpus", "flask"]).roots).toEqual([`${parseArgs(["--corpus", "flask"]).corpusRoot}/src`]);
   });
 

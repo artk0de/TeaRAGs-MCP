@@ -313,7 +313,11 @@ export async function askOracle(
     corpusRoot: string;
     python: string[];
     venvPython: string | null;
-    /** Absolute source roots jedi must search BEFORE the corpus venv (7dsyq). */
+    /**
+     * Absolute source roots jedi must search BEFORE the corpus venv (7dsyq).
+     * The Python side reorders them PER FILE — the root containing the file
+     * leads — so this order only decides files under none of them (vua9f).
+     */
     roots: readonly string[];
     workers: number;
   },
@@ -515,6 +519,11 @@ export function liftToOracleFloor(corpusFloor: string | undefined): string {
  * corpus wins the lookup — which is what put 1,610 correct polar rows in the
  * phantom bucket (7dsyq). A corpus the manifest does not describe falls back to
  * the root itself, which is what jedi would have searched anyway.
+ *
+ * The list is a PREFERENCE, not a fixed search order: `order_roots` on the
+ * Python side promotes whichever of these contains the file being answered, so
+ * two roots owning a package of the same name — polar's `server/polar` and
+ * `sdk/python/polar` — each win inside their own subtree (vua9f).
  */
 export function resolveCorpusRoots(
   override: string | undefined,
