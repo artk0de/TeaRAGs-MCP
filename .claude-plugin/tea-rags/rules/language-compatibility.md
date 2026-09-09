@@ -96,7 +96,14 @@ conclude absence from a graph the index says is incomplete.
   like a method) + edges restricted to project sources +
   tsx/tsconfig-paths-aware import mapping
 - **JavaScript** — 6-strategy; CommonJS/ESM require resolution (dynamic gaps)
-- **Python** — 6-strategy + ConeDispatch CHA; type hints where present
+- **Python** — 7-strategy chain (super, selfField, selfMember, localBinding,
+  chainType, importedName, globalShortName) + ConeDispatch CHA + C3
+  linearization over file-qualified class keys, memoized once per run, with
+  `super()` dispatching on that MRO from the entry after the enclosing class +
+  import→file mapper resolving through symbol-table membership (seeded source
+  roots plus a caller-ancestor scan, re-export hops, stdlib guard) + kernel
+  receiver-chain propagation for dotted receivers + annotation and docstring
+  type facts
 - **Go** — 6-strategy; explicit interfaces (no poly dispatch)
 - **Java** — 6-strategy + java.lang stdlib whitelist + overload disambiguation
 - **Rust** — 6-strategy; trait-based dispatch
