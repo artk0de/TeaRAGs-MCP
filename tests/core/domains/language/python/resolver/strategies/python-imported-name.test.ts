@@ -163,14 +163,20 @@ describe("PythonImportedNameSymbolResolutionStrategy — bare calls", () => {
     expect(strategy().attempt(call("np", "array"), ctx)).toEqual({ kind: "drop" });
   });
 
-  it("keys a DOTTED receiver on its root segment", () => {
+  it("CONTINUEs on a DOTTED receiver instead of keying on its root segment", () => {
+    // Was `{ kind: "drop" }`: the pass keyed `np.linalg.norm` on `np` and threw
+    // `.linalg` away. Decision 4 of bd tea-rags-mcp-9fgdi retires that split —
+    // a receiver with a further hop is a FOLD, and folding belongs to
+    // `chainType`, not to a pass that reads one import statement. Keeping the
+    // fixture proves the single-hop guard runs FIRST, ahead of even the
+    // external DROP.
     const table = tableWith({ "app/main.py": ["main"] });
     const ctx = ctxWith(
       "app/main.py",
       [{ importText: "numpy", startLine: 1, importedNames: ["np"], importedBindings: { np: "numpy" } }],
       table,
     );
-    expect(strategy().attempt(call("np.linalg", "norm"), ctx)).toEqual({ kind: "drop" });
+    expect(strategy().attempt(call("np.linalg", "norm"), ctx)).toEqual({ kind: "continue" });
   });
 });
 
@@ -293,5 +299,186 @@ describe("PythonImportedNameSymbolResolutionStrategy — src layout outside the 
       kind: "resolved",
       target: { targetRelPath: "src/flask/app.py", targetSymbolId: "Flask" },
     });
+  });
+});
+
+describe("PythonImportedNameSymbolResolutionStrategy — receiver is a module", () => {
+  it("pins a top-level class in the submodule a `from pkg import mod` binding names", () => {
+    const table = tableWith({
+      "netbox/circuits/tables/circuits.py": ["CircuitTable"],
+      "netbox/circuits/tables/columns.py": ["LocalColumn"],
+      "netbox/netbox/__init__.py": ["VERSION"],
+      "netbox/netbox/tables/__init__.py": ["BaseTable"],
+      "netbox/netbox/tables/columns.py": ["ColorColumn", "TagColumn"],
+    });
+    const ctx = ctxWith(
+      "netbox/circuits/tables/circuits.py",
+      [
+        {
+          importText: "netbox.tables",
+          startLine: 3,
+          importedNames: ["columns"],
+          importedBindings: { columns: "columns" },
+        },
+      ],
+      table,
+    );
+    // The caller's own sibling `circuits/tables/columns.py` is what
+    // `importMatch`'s trailing-segment heuristic picks. The binding says
+    // otherwise, 435 times on netbox (bd tea-rags-mcp-9fgdi).
+    expect(strategy().attempt(call("columns", "ColorColumn"), ctx)).toEqual({
+      kind: "resolved",
+      target: { targetRelPath: "netbox/netbox/tables/columns.py", targetSymbolId: "ColorColumn" },
+    });
+  });
+
+  it("binds the TOP package for an unaliased dotted `import a.b`", () => {
+    const table = tableWith({
+      "app/main.py": ["main"],
+      "pkg/__init__.py": ["setup"],
+      "pkg/sub.py": ["helper"],
+    });
+    const ctx = ctxWith(
+      "app/main.py",
+      [{ importText: "pkg.sub", startLine: 1, importedNames: ["pkg"], importedBindings: { pkg: "pkg.sub" } }],
+      table,
+    );
+    expect(strategy().attempt(call("pkg", "setup"), ctx)).toEqual({
+      kind: "resolved",
+      target: { targetRelPath: "pkg/__init__.py", targetSymbolId: "setup" },
+    });
+  });
+
+  it("binds the FULL module path for an aliased `import a.b as c`", () => {
+    const table = tableWith({
+      "app/main.py": ["main"],
+      "pkg/__init__.py": ["setup"],
+      "pkg/sub.py": ["helper"],
+    });
+    const ctx = ctxWith(
+      "app/main.py",
+      [{ importText: "pkg.sub", startLine: 1, importedNames: ["ps"], importedBindings: { ps: "pkg.sub" } }],
+      table,
+    );
+    expect(strategy().attempt(call("ps", "helper"), ctx)).toEqual({
+      kind: "resolved",
+      target: { targetRelPath: "pkg/sub.py", targetSymbolId: "helper" },
+    });
+  });
+
+  it("composes a relative `from . import mod` without doubling the dot", () => {
+    const table = tableWith({ "pkg/__init__.py": ["setup"], "pkg/main.py": ["run"], "pkg/sub.py": ["helper"] });
+    const ctx = ctxWith(
+      "pkg/main.py",
+      [{ importText: ".", startLine: 1, importedNames: ["sub"], importedBindings: { sub: "sub" } }],
+      table,
+    );
+    expect(strategy().attempt(call("sub", "helper"), ctx)).toEqual({
+      kind: "resolved",
+      target: { targetRelPath: "pkg/sub.py", targetSymbolId: "helper" },
+    });
+  });
+
+  it("reaches the submodule when the PARENT package is a namespace directory", () => {
+    const table = tableWith({
+      "netbox/circuits/apps.py": ["CircuitsConfig"],
+      "netbox/netbox/__init__.py": ["VERSION"],
+      "netbox/netbox/denormalized.py": ["register"],
+    });
+    const ctx = ctxWith(
+      "netbox/circuits/apps.py",
+      [
+        {
+          importText: "netbox",
+          startLine: 2,
+          importedNames: ["denormalized"],
+          importedBindings: { denormalized: "denormalized" },
+        },
+      ],
+      table,
+    );
+    // `netbox` itself has no `__init__.py`, so the mapper calls the PARENT
+    // `unknown`; only the composed `netbox.denormalized` names a file.
+    expect(strategy().attempt(call("denormalized", "register"), ctx)).toEqual({
+      kind: "resolved",
+      target: { targetRelPath: "netbox/netbox/denormalized.py", targetSymbolId: "register" },
+    });
+  });
+
+  it("CONTINUEs on a multi-hop receiver instead of dropping the middle segment", () => {
+    const table = tableWith({
+      "server/polar/event/repository.py": ["EventRepository"],
+      "server/polar/models/__init__.py": ["Base"],
+      "server/polar/models/event.py": ["Event", "Event#label"],
+    });
+    const ctx = ctxWith(
+      "server/polar/event/repository.py",
+      [{ importText: "polar.models", startLine: 1, importedNames: ["Event"], importedBindings: { Event: "Event" } }],
+      table,
+    );
+    // `Event.id.label(...)` is SQLAlchemy's; the old head-only split threw `.id`
+    // away and fabricated `Event#label` (bd tea-rags-mcp-9fgdi).
+    expect(strategy().attempt(call("Event.id", "label"), ctx)).toEqual({ kind: "continue" });
+  });
+
+  it("DROPs a stdlib module receiver even when a project file shares its name", () => {
+    const table = tableWith({
+      "netbox/netbox/__init__.py": ["VERSION"],
+      "netbox/utilities/forms/fields/fields.py": ["JSONField"],
+      "netbox/utilities/json.py": ["CustomFieldJSONEncoder"],
+    });
+    const ctx = ctxWith(
+      "netbox/utilities/forms/fields/fields.py",
+      [{ importText: "json", startLine: 1, importedNames: ["json"], importedBindings: { json: "json" } }],
+      table,
+    );
+    // The mapper probes the caller's ancestors first and answers
+    // `netbox/utilities/json.py` — 45 phantoms on netbox. Absolute `import json`
+    // is the stdlib, whatever the project happens to be named.
+    expect(strategy().attempt(call("json", "loads"), ctx)).toEqual({ kind: "drop" });
+  });
+
+  it("CONTINUEs when the module declares the member twice", () => {
+    const table = tableWith({
+      "app/main.py": ["main"],
+      "pkg/__init__.py": ["setup"],
+      "pkg/sub.py": ["helper", "helper"],
+    });
+    const ctx = ctxWith(
+      "app/main.py",
+      [{ importText: "pkg", startLine: 1, importedNames: ["sub"], importedBindings: { sub: "sub" } }],
+      table,
+    );
+    expect(strategy().attempt(call("sub", "helper"), ctx)).toEqual({ kind: "continue" });
+  });
+
+  it("CONTINUEs when the composed module text names no file", () => {
+    const table = tableWith({
+      "domains/identity/models.py": ["User"],
+      "domains/identity/services.py": ["login"],
+    });
+    const ctx = ctxWith(
+      "domains/identity/services.py",
+      [
+        {
+          importText: "domains",
+          startLine: 1,
+          importedNames: ["identity"],
+          importedBindings: { identity: "identity" },
+        },
+      ],
+      table,
+    );
+    expect(strategy().attempt(call("identity", "User"), ctx)).toEqual({ kind: "continue" });
+  });
+
+  it("DROPs a receiver bound from a third-party module", () => {
+    const table = tableWith({ "app/models.py": ["Thing"], "app/__init__.py": ["VERSION"] });
+    const ctx = ctxWith(
+      "app/models.py",
+      [{ importText: "django.db", startLine: 1, importedNames: ["models"], importedBindings: { models: "models" } }],
+      table,
+    );
+    expect(strategy().attempt(call("models", "CharField"), ctx)).toEqual({ kind: "drop" });
   });
 });
