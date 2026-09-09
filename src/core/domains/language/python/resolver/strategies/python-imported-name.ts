@@ -4,11 +4,24 @@ import {
   type CallContext,
   type CallRef,
   type ImportRef,
+  type SymbolResolutionTarget,
 } from "../../../../../contracts/types/codegraph.js";
 import type { SymbolResolutionOutcome, SymbolResolutionStrategy } from "../../../../../contracts/types/language.js";
 import { reexportOriginFile } from "../../../kernel/reexport-origin.js";
+import { PYTHON_STDLIB_MODULES } from "../../vocabulary/stdlib-modules.js";
 import type { PythonImportFileMapper } from "../python-import-file-mapper.js";
 import type { ResolverConfig } from "./shared.js";
+
+/**
+ * A receiver this pass will answer: exactly ONE identifier. `Event.id.label()`,
+ * `Job.objects.filter(…).delete()` and `Cls().method()` all reach here with a
+ * receiver the old head-only `split(".")[0]` reduced to `Event` / `Job` / `Cls`
+ * — dropping the middle hops and pinning a member the head never declared. Six
+ * netbox rows and five polar rows were fabricated exactly that way, every one a
+ * `phantom`. Folding hop by hop is `chainType`'s job; an import statement is
+ * evidence about ONE name.
+ */
+const SINGLE_HOP_RECEIVER = /^[A-Za-z_][A-Za-z0-9_]*$/;
 
 /**
  * Imported-name resolution — the call's receiver, or a bare call's own name, is
@@ -40,6 +53,14 @@ import type { ResolverConfig } from "./shared.js";
  * `CONTINUE` everywhere else, including every file walked by walker 1, whose
  * `ImportRef`s carry no binding channels at all.
  *
+ * TWO receiver shapes, one binding table. `Device.objects` is a CLASS receiver:
+ * the bound name is a symbol, and the member is `Device.objects` or
+ * `Device#objects` inside the file that declares it. `columns.ColorColumn()` is
+ * a MODULE receiver: no file declares `columns` as a symbol, because it is a
+ * submodule, and the member is a top-level declaration of the file the composed
+ * module text maps to. The receiver must be a SINGLE identifier for either —
+ * a further hop is a fold, and folding is `chainType`'s pass, not this one.
+ *
  * Never `deferred`: this pass either pins a symbol or has nothing to park.
  */
 export class PythonImportedNameSymbolResolutionStrategy implements SymbolResolutionStrategy {
@@ -51,9 +72,10 @@ export class PythonImportedNameSymbolResolutionStrategy implements SymbolResolut
   ) {}
 
   attempt(call: CallRef, ctx: CallContext): SymbolResolutionOutcome {
-    // A qualified call is keyed by its receiver's ROOT segment (`np.linalg.norm`
-    // is bound through `np`); a bare call by the member itself.
-    const localName = call.receiver ? call.receiver.split(".")[0] : call.member;
+    // Single hop only — see SINGLE_HOP_RECEIVER. Bare calls (`receiver: null`)
+    // are unaffected, including the star-import path below.
+    if (call.receiver !== null && !SINGLE_HOP_RECEIVER.test(call.receiver)) return CONTINUE;
+    const localName = call.receiver ?? call.member;
     const binding = findBinding(ctx.imports, localName);
     if (binding) return this.resolveBinding(binding, call, ctx);
     return this.resolveStarImport(call, ctx);
@@ -63,20 +85,43 @@ export class PythonImportedNameSymbolResolutionStrategy implements SymbolResolut
    * The name is bound by an import. Map its module, then find the declaration:
    * in the mapped file, or — when the mapped file is a package `__init__.py`
    * that re-exports rather than declares — through one `reexportOriginFile`
-   * hop, the same engine TypeScript uses for barrels.
+   * hop, the same engine TypeScript uses for barrels. A bound name that NO
+   * file declares as a symbol is a module, and its member is looked up as a
+   * top-level declaration inside it.
    */
   private resolveBinding(binding: ImportBinding, call: CallRef, ctx: CallContext): SymbolResolutionOutcome {
+    // The stdlib check stays AHEAD of the mapper, the same way
+    // `PythonExternalVocabulary.importLandsInProject` keeps it (bd
+    // tea-rags-mcp-mmckn): the mapper probes the caller's ancestor directories
+    // first, so `import json` from `netbox/utilities/forms/fields/fields.py`
+    // lands on netbox's own `netbox/utilities/json.py` and 45 stdlib calls
+    // become in-project phantoms. Absolute-import semantics settle it — a
+    // project module of the same name is reachable through a relative or
+    // package-qualified import, never through bare `import json`.
+    if (importsStdlibModule(binding.imp.importText)) return DROP;
+
     const mapped = this.mapper.mapImportToFile(binding.imp.importText, ctx.callerFile, ctx);
     if (mapped.kind === "external") return DROP;
-    if (mapped.kind !== "project") return CONTINUE;
+    if (mapped.kind === "project") {
+      const declaringFile = this.declaringFile(binding.importedName, mapped.relPath, ctx);
+      if (declaringFile) return this.resolveDeclaredName(binding, declaringFile, call, ctx);
+    }
+    return this.resolveModuleReceiver(binding, call, ctx);
+  }
 
-    // A qualified receiver (`Device.objects`) looks up `<importedName>.<member>`
-    // and `<importedName>#<member>`; a bare call (`make_thing()`) looks up the
-    // imported name itself. Python symbolIds carry no module path, so every
-    // lookup is filtered to the mapped file.
-    const declaringFile = this.declaringFile(binding.importedName, mapped.relPath, ctx);
-    if (!declaringFile) return CONTINUE;
-
+  /**
+   * The bound name IS a symbol, declared in `declaringFile`. A qualified
+   * receiver looks up `<importedName>.<member>` — the classmethod / staticmethod
+   * spelling — then `<importedName>#<member>`, the instance one; a bare call
+   * looks up the imported name itself. Python symbolIds carry no module path,
+   * so every lookup is filtered to the declaring file.
+   */
+  private resolveDeclaredName(
+    binding: ImportBinding,
+    declaringFile: string,
+    call: CallRef,
+    ctx: CallContext,
+  ): SymbolResolutionOutcome {
     const wanted = call.receiver
       ? [`${binding.importedName}.${call.member}`, `${binding.importedName}#${call.member}`]
       : [binding.importedName];
@@ -86,6 +131,49 @@ export class PythonImportedNameSymbolResolutionStrategy implements SymbolResolut
       if (target) return resolved({ targetRelPath: target.relPath, targetSymbolId: target.symbolId });
     }
     return CONTINUE;
+  }
+
+  /**
+   * The receiver names a MODULE — `columns.ColorColumn()` under
+   * `from netbox.tables import columns`, 435 of netbox's 437 `wrongFile` rows.
+   *
+   * The composed module text is mapped INSTEAD of the parent, not after it:
+   * `from netbox import denormalized` has a parent the mapper calls `unknown`
+   * (a PEP 420 namespace directory has no `__init__.py` to name), and only
+   * `netbox.denormalized` resolves to a file. 52 more netbox rows are that
+   * shape.
+   *
+   * Only `project` answers here; `external` CONTINUEs rather than DROPping,
+   * which is where this differs from `resolveBinding` above. The DROP contract
+   * is about a binding that names a LIBRARY, and every such binding has already
+   * left through the stdlib guard or the import-text mapping — so by the time
+   * the composed text is asked, `mapAbsolute` can only be answering its
+   * RESIDUAL `external` ("no project file holds this"), which is exactly what
+   * an ambiguously re-exported CLASS receiver produces: `from ui import Button`
+   * declared in two files under `ui/` declines the barrel hop, falls through
+   * here, and composes the non-module text `ui.Button`. DROPping that would
+   * reverse the ex28m rule that an ambiguous barrel beats a coin flip.
+   */
+  private resolveModuleReceiver(binding: ImportBinding, call: CallRef, ctx: CallContext): SymbolResolutionOutcome {
+    if (!call.receiver) return CONTINUE; // a bare call names no module
+    const mapped = this.mapper.mapImportToFile(receiverModuleText(binding), ctx.callerFile, ctx);
+    if (mapped.kind !== "project") return CONTINUE;
+    const target = this.moduleMemberTarget(call.member, mapped.relPath, ctx);
+    return target ? resolved(target) : CONTINUE;
+  }
+
+  /**
+   * `member` as a TOP-LEVEL declaration of `moduleFile`, or `null`.
+   *
+   * `lookup` is exact-symbolId, and only a top-level `def` / `class` carries
+   * the bare name as its whole id — a method is `Cls#member` or `Cls.member`.
+   * So this cannot reach inside a class the way `lookupByShortName` would, and
+   * a module declaring the name twice yields two candidates and declines.
+   */
+  private moduleMemberTarget(member: string, moduleFile: string, ctx: CallContext): SymbolResolutionTarget | null {
+    const candidates = ctx.symbolTable.lookup(member).filter((def) => def.relPath === moduleFile);
+    const target = pickSingleCandidate(candidates, this.cfg.mode);
+    return target ? { targetRelPath: target.relPath, targetSymbolId: target.symbolId } : null;
   }
 
   /**
@@ -163,4 +251,35 @@ function findBinding(imports: readonly ImportRef[], localName: string): ImportBi
 function packageScopeOf(mappedFile: string): string | null {
   if (!mappedFile.endsWith("/__init__.py")) return null;
   return mappedFile.slice(0, mappedFile.length - "__init__.py".length);
+}
+
+/**
+ * Is this an ABSOLUTE import of a stdlib module? Relative text (`.models`) can
+ * never name the stdlib and its first segment is empty, so it is excluded
+ * rather than tested.
+ */
+function importsStdlibModule(importText: string): boolean {
+  if (importText.startsWith(".")) return false;
+  return PYTHON_STDLIB_MODULES.has(importText.split(".")[0]);
+}
+
+/**
+ * The module text a single-identifier receiver denotes, from the two shapes
+ * `collectPythonImports` records (`walker/walker.ts:499`).
+ *
+ * `importedBindings[local] === importText` IS the `import_statement` form —
+ * there the recorded value is the MODULE PATH. An unaliased `import a.b` binds
+ * the top package, so its head denotes `a`, not `a.b`; an aliased one denotes
+ * the whole path. Everything else is `from M import name`, where the value is
+ * an exported NAME and the receiver denotes the SUBMODULE `M.name` — joined
+ * without a separator when `M` already ends in a dot, or `from . import c`
+ * would compose `..c` and climb a package.
+ */
+function receiverModuleText(binding: ImportBinding): string {
+  const { importText } = binding.imp;
+  if (binding.importedName === importText) {
+    const firstSegment = binding.importedName.split(".")[0];
+    return binding.localName === firstSegment ? firstSegment : binding.importedName;
+  }
+  return importText.endsWith(".") ? `${importText}${binding.importedName}` : `${importText}.${binding.importedName}`;
 }
