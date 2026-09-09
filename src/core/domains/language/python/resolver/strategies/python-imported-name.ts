@@ -19,6 +19,10 @@ import { findPythonImportBinding, type PythonImportBinding, type ResolverConfig 
  * netbox rows and five polar rows were fabricated exactly that way, every one a
  * `phantom`. Folding hop by hop is `chainType`'s job; an import statement is
  * evidence about ONE name.
+ *
+ * It gates RESOLUTION, not the whole pass. A receiver it rejects still has a
+ * HEAD, and an external head is still a refusal this pass owns — see
+ * `multiHopHeadOutcome` (bd tea-rags-mcp-cnco6).
  */
 const SINGLE_HOP_RECEIVER = /^[A-Za-z_][A-Za-z0-9_]*$/;
 
@@ -52,13 +56,21 @@ const SINGLE_HOP_RECEIVER = /^[A-Za-z_][A-Za-z0-9_]*$/;
  * `CONTINUE` everywhere else, including every file walked by walker 1, whose
  * `ImportRef`s carry no binding channels at all.
  *
- * TWO receiver shapes, one binding table. `Device.objects` is a CLASS receiver:
- * the bound name is a symbol, and the member is `Device.objects` or
- * `Device#objects` inside the file that declares it. `columns.ColorColumn()` is
- * a MODULE receiver: no file declares `columns` as a symbol, because it is a
- * submodule, and the member is a top-level declaration of the file the composed
- * module text maps to. The receiver must be a SINGLE identifier for either —
- * a further hop is a fold, and folding is `chainType`'s pass, not this one.
+ * THREE receiver shapes, one binding table, tried in order and each falling to
+ * the next on a decline. `Device.objects` is a CLASS receiver: the bound name is
+ * a symbol, and the member is `Device.objects` or `Device#objects` inside the
+ * file that declares it. `columns.ColorColumn()` is a MODULE receiver: no file
+ * declares `columns` as a symbol, because it is a submodule, and the member is a
+ * top-level declaration of the file the composed module text maps to.
+ * `client.query()` after `from .client import client` is a module-level VALUE:
+ * neither a symbol nor a submodule, so the import statement's own file is the
+ * only evidence and the member is looked up inside it by short name.
+ *
+ * The receiver must be a SINGLE identifier for all three — a further hop is a
+ * fold, and folding is `chainType`'s pass, not this one. What a multi-hop
+ * receiver still gets is the EXTERNAL verdict on its head, which is a refusal
+ * rather than a resolution; see {@link
+ * PythonImportedNameSymbolResolutionStrategy.multiHopHeadOutcome}.
  *
  * Never `deferred`: this pass either pins a symbol or has nothing to park.
  */
@@ -71,13 +83,52 @@ export class PythonImportedNameSymbolResolutionStrategy implements SymbolResolut
   ) {}
 
   attempt(call: CallRef, ctx: CallContext): SymbolResolutionOutcome {
-    // Single hop only — see SINGLE_HOP_RECEIVER. Bare calls (`receiver: null`)
-    // are unaffected, including the star-import path below.
-    if (call.receiver !== null && !SINGLE_HOP_RECEIVER.test(call.receiver)) return CONTINUE;
+    // Single hop only — see SINGLE_HOP_RECEIVER. A further hop is a FOLD, but
+    // the fold verdict is not the same question as the EXTERNAL one, so the
+    // multi-hop receiver goes through its own head check rather than CONTINUEing
+    // blind. Bare calls (`receiver: null`) are unaffected, including the
+    // star-import path below.
+    if (call.receiver !== null && !SINGLE_HOP_RECEIVER.test(call.receiver)) {
+      return this.multiHopHeadOutcome(call.receiver, ctx);
+    }
     const localName = call.receiver ?? call.member;
     const binding = findPythonImportBinding(ctx.imports, localName);
     if (binding) return this.resolveBinding(binding, call, ctx);
     return this.resolveStarImport(call, ctx);
+  }
+
+  /**
+   * A multi-hop receiver: only `DROP` or `CONTINUE`, decided by its HEAD
+   * (bd tea-rags-mcp-cnco6).
+   *
+   * `ContentType.objects.filter(...)` under
+   * `from django.contrib.contenttypes.models import ContentType` is not this
+   * pass's to resolve — folding `.objects` is `chainType`'s job — but it is
+   * this pass's to REFUSE, on exactly the evidence its single-hop sibling
+   * refuses `ContentType.objects()` with: the head is bound to a module no
+   * project file holds. CONTINUEing instead handed the call to
+   * `globalShortName`, which carries no receiver evidence and answered with
+   * whatever in-project `filter` it found — 95 phantoms on netbox, 9 on ugnest,
+   * 2 on flask, every one `agreeExternal -> phantom`.
+   *
+   * The two verdicts that are NOT terminal:
+   *   - a head the mapper calls `project` or `unknown`. `pkg.mod.func()` under
+   *     `import pkg` is a real in-project chain, and folding it is owned by
+   *     `chainType` and receiver-type propagation;
+   *   - a head no import bound — including one that is not an identifier at all,
+   *     which is what `helper(x).decode()` reaches the resolver as.
+   */
+  private multiHopHeadOutcome(receiver: string, ctx: CallContext): SymbolResolutionOutcome {
+    const head = receiver.split(".")[0];
+    if (!SINGLE_HOP_RECEIVER.test(head)) return CONTINUE;
+    const binding = findPythonImportBinding(ctx.imports, head);
+    if (binding === null) return CONTINUE;
+    // The same two-step `resolveBinding` uses, and for the same reason: the
+    // stdlib snapshot is a positive verdict the mapper's ancestor probe would
+    // shadow with a project module of the same name.
+    if (importsStdlibModule(binding.imp.importText)) return DROP;
+    const mapped = this.mapper.mapImportToFile(binding.imp.importText, ctx.callerFile, ctx);
+    return mapped.kind === "external" ? DROP : CONTINUE;
   }
 
   /**
@@ -87,6 +138,15 @@ export class PythonImportedNameSymbolResolutionStrategy implements SymbolResolut
    * hop, the same engine TypeScript uses for barrels. A bound name that NO
    * file declares as a symbol is a module, and its member is looked up as a
    * top-level declaration inside it.
+   *
+   * THREE arms, tried in order of how specific the evidence is, and a declining
+   * arm falls to the next rather than ending the pass (bd tea-rags-mcp-cnco6).
+   * Returning `resolveDeclaredName`'s CONTINUE directly is what cost polar 8
+   * rows: `from . import pan_transfer` maps to the package `__init__.py`, and
+   * the re-export hop pinned the package's own `async def pan_transfer` route
+   * handler — the project's unique declaration of that bare name — so
+   * `pan_transfer.build` found nothing on it and the module arm, which resolves,
+   * was never asked.
    */
   private resolveBinding(binding: PythonImportBinding, call: CallRef, ctx: CallContext): SymbolResolutionOutcome {
     // The stdlib check stays AHEAD of the mapper, the same way
@@ -101,11 +161,19 @@ export class PythonImportedNameSymbolResolutionStrategy implements SymbolResolut
 
     const mapped = this.mapper.mapImportToFile(binding.imp.importText, ctx.callerFile, ctx);
     if (mapped.kind === "external") return DROP;
-    if (mapped.kind === "project") {
-      const declaringFile = this.declaringFile(binding.importedName, mapped.relPath, ctx);
-      if (declaringFile) return this.resolveDeclaredName(binding, declaringFile, call, ctx);
+    const declaringFile =
+      mapped.kind === "project" ? this.declaringFile(binding.importedName, mapped.relPath, ctx) : null;
+    if (declaringFile !== null) {
+      const declared = this.resolveDeclaredName(binding, declaringFile, call, ctx);
+      if (declared.kind === "resolved") return declared;
     }
-    return this.resolveModuleReceiver(binding, call, ctx);
+    const asModule = this.resolveModuleReceiver(binding, call, ctx);
+    if (asModule.kind === "resolved") return asModule;
+    // The bound name is a DECLARED symbol whose member did not resolve on it —
+    // an inherited method, a namespace attribute — and that is somebody else's
+    // seam, not a licence to search the file by short name.
+    if (declaringFile !== null || mapped.kind !== "project") return CONTINUE;
+    return this.resolveModuleValueReceiver(mapped.relPath, call, ctx);
   }
 
   /**
@@ -163,6 +231,33 @@ export class PythonImportedNameSymbolResolutionStrategy implements SymbolResolut
     if (mapped.kind !== "project") return CONTINUE;
     const target = this.moduleMemberTarget(call.member, mapped.relPath, ctx);
     return target ? resolved(target) : CONTINUE;
+  }
+
+  /**
+   * The bound name is neither a declared symbol nor a submodule: it is a
+   * module-level VALUE in `moduleFile` (bd tea-rags-mcp-cnco6).
+   *
+   * `from .client import client` where `client.py` ends in
+   * `client = TinybirdClient(...)` — polar's export-a-singleton idiom, 23 rows,
+   * and the shape `importMatch` used to answer by accident because the module
+   * happens to share the singleton's name. `TinybirdClient` is what `client`
+   * holds, but nothing pass 1 records says so: no symbol carries the name, and
+   * `<pkg>.client.client` names no file. What the import statement DOES say is
+   * which single file the value came from, and that file declares `query` once.
+   *
+   * Reached ONLY when both arms above have declined AND the name is undeclared,
+   * so a class receiver whose member is inherited never lands here — searching
+   * its file by short name would answer with the file's other class, and MRO
+   * owns that question. The one remaining gate is the search itself:
+   * `lookupByShortName` is filtered to `moduleFile` and must come back with
+   * exactly one definition, so a module holding two classes that both spell the
+   * member declines rather than picking.
+   */
+  private resolveModuleValueReceiver(moduleFile: string, call: CallRef, ctx: CallContext): SymbolResolutionOutcome {
+    if (!call.receiver) return CONTINUE; // a bare call names no value to read a member off
+    const candidates = ctx.symbolTable.lookupByShortName(call.member).filter((def) => def.relPath === moduleFile);
+    const target = pickSingleCandidate(candidates, this.cfg.mode);
+    return target ? resolved({ targetRelPath: target.relPath, targetSymbolId: target.symbolId }) : CONTINUE;
   }
 
   /**

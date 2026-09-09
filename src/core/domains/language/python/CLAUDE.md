@@ -47,19 +47,27 @@
   rather than merely conservative: a project `json.py` is reachable as
   `from utilities import json`, never as `import json`, so a RELATIVE `.json`
   import is deliberately left alone.
-- **`importedName` answers TWO receiver shapes, and only SINGLE-HOP ones.** A
-  class receiver (`Device.objects`) resolves through the symbol the binding
-  names; a module receiver (`columns.ColorColumn()`) resolves through the module
-  text the binding composes — an `import_statement` records a MODULE PATH in
-  `importedBindings`, a `from` form records an exported NAME, and
-  `importedBindings[local] === importText` is the discriminator. The composed
-  text is mapped INSTEAD of the parent package, because a PEP 420 namespace
-  parent maps to `unknown`. A receiver with a further hop CONTINUEs: folding
-  belongs to `chainType`. Mind where that guard SITS — it is the first line of
-  `attempt`, ahead of the binding lookup, so a dotted receiver no longer reaches
-  the `external` DROP below it either, and `globalShortName` invents a target
-  from the short name. Measured cost of that ordering on netbox: 95 new phantoms
-  (`ContentType.objects`, `os.path`), on ugnest 9, on flask 2.
+- **`importedName` answers THREE receiver shapes, and only SINGLE-HOP ones, each
+  arm falling to the next on a decline.** A class receiver (`Device.objects`)
+  resolves through the symbol the binding names; a module receiver
+  (`columns.ColorColumn()`) resolves through the module text the binding
+  composes — an `import_statement` records a MODULE PATH in `importedBindings`,
+  a `from` form records an exported NAME, and
+  `importedBindings[local] === importText` is the discriminator; a module-level
+  VALUE (`client.query()` after `from .client import client`) resolves by short
+  name inside the one file the import names, and only when the bound name is
+  declared NOWHERE, so an inherited member on a real class never lands there.
+  The composed module text is mapped INSTEAD of the parent package, because a
+  PEP 420 namespace parent maps to `unknown`. Two ordering facts cost rows when
+  they were wrong, so keep them: a declining arm must FALL THROUGH rather than
+  return (polar's `from . import pan_transfer` maps to the package
+  `__init__.py`, whose re-export hop pins the same-named route handler in
+  `endpoints.py` — 8 rows the module arm resolves once it is asked); and the
+  single-hop guard gates RESOLUTION only. A dotted receiver still gets the
+  `external` verdict on its HEAD, because the fold question and the library
+  question are not the same one. Measured cost of answering CONTINUE there: 95
+  phantoms on netbox (`ContentType.objects`, `os.path`), 9 on ugnest, 2 on
+  flask.
 - **`importMatch` only answers receivers nothing bound.** Its trailing-segment
   heuristic is measured wrong on every import-bound receiver it fires on
   (netbox: 517 answers, 0 `match`, because the caller's own directory usually
