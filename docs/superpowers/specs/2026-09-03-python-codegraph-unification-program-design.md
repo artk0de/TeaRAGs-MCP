@@ -204,19 +204,46 @@ single equivalent; the same question is answered by two layers that both land on
 Dependency graph: `E0 → (E1 ⇄ E2 interleaved by pull order) → E3 → E4`. E1 and
 E2 interleave by design — a seam is relocated when Python pulls on it.
 
-### Predicted pull order
+### Pull order (confirmed 2026-09-08 by the E0 baseline)
 
-A hypothesis: E0's oracle attribution confirms or reorders it.
+The head and the tail survived; the middle moved. Evidence and per-corpus counts
+are in the E0 spec's `## Appendix — E0 baseline (2026-09-08)`.
 
-1. `ExternalVocabulary` — denominator (E0)
-2. `ModuleResolver` + re-exports + star-import + namespace packages
-3. `TypeSource: annotations` → local / param / return types (the largest recall
-   lever: polar and httpx ≈ 100% annotated, ugnest 68%)
-4. `AncestorLinearizer` C3 + `super`
-5. `FrameworkModule`: Django Manager / QuerySet + DRF (netbox 3,657
-   `.objects.`), SQLAlchemy `Mapped[]` / FastAPI `Depends` (polar) — E3
-6. `ReceiverTypePropagation` multi-hop + return-type binding
-7. Dispatch: union (polar 10,343 PEP 604 unions) → dynamic / duck → table (last)
+1. `ExternalVocabulary` — 12,869 phantoms across five corpora, against 4,509
+   misses. Precision, not recall, is Python's largest defect (netbox 5.1:1).
+2. `ModuleResolver` + re-exports + star-import + namespace packages — the same
+   population: `importMatch` alone produces 9,892 of those phantoms (netbox
+   6,877). Re-exports as a recall lever are small (56 losses, rank 6).
+3. `TypeSource: annotations` → local / param / return types — 2,955 recall
+   losses, the largest recall lever, 2,186 of it polar.
+4. **decorator / property receivers — MOVED UP.** 723 losses at 55% mismatch,
+   the only shape-specific category all three framework corpora carry (ugnest
+   379, netbox 231, polar 111).
+5. `AncestorLinearizer` C3 + `super` — MOVED DOWN one place. The worst rate of
+   any ranked category (69.6%) but only 350 losses, almost all netbox.
+6. `FrameworkModule`: Django Manager / QuerySet + DRF, SQLAlchemy `Mapped[]` /
+   FastAPI `Depends` — E3. **Unrankable from E0**: jedi answers 0 of the 4,769
+   `managerQuerySet` / `dependsInjection` sites, so their call-site count is a
+   lower bound on the lever, not a measurement of it.
+7. `ReceiverTypePropagation` multi-hop + return-type binding — no category of
+   its own; it sits inside the residual.
+8. Dispatch: union (polar 10,343 PEP 604 unions) → dynamic / duck → table (last)
+   — confirmed. `unionReceiver` yields 24 oracle answers across all five
+   corpora, barely above the 20-answer ranking floor.
+
+The prediction this replaced, kept because a wrong prediction is evidence about
+the model:
+
+> 1. `ExternalVocabulary` — denominator (E0)
+> 2. `ModuleResolver` + re-exports + star-import + namespace packages
+> 3. `TypeSource: annotations` → local / param / return types (the largest
+>    recall lever: polar and httpx ≈ 100% annotated, ugnest 68%)
+> 4. `AncestorLinearizer` C3 + `super`
+> 5. `FrameworkModule`: Django Manager / QuerySet + DRF (netbox 3,657
+>    `.objects.`), SQLAlchemy `Mapped[]` / FastAPI `Depends` (polar) — E3
+> 6. `ReceiverTypePropagation` multi-hop + return-type binding
+> 7. Dispatch: union (polar 10,343 PEP 604 unions) → dynamic / duck → table
+>    (last)
 
 ## Decision records (seam level, 2026-09-08)
 

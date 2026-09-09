@@ -95,29 +95,36 @@ describe("parseArgs", () => {
     expect(parseArgs(["--corpus", "polar", "--environment", "/tmp/py"]).venvPython).toBe("/tmp/py");
   });
 
-  /**
-   * httpx declares `requiresPython >= 3.9` and jedi 0.20.0 needs >= 3.10, so the
-   * launcher used to be `uv run --python 3.9 --with jedi==0.20.0` — it failed to
-   * resolve, the child died before reading the config line, and the host
-   * surfaced it as an unhandled `write EPIPE`.
-   */
-  it("launches jedi on oraclePython, never on the corpus's own requiresPython", () => {
-    const argv = parseArgs(["--corpus", "httpx"]).pythonArgv;
-    expect(argv[argv.indexOf("--python") + 1]).toBe("3.13");
-  });
-
-  it("runs polar's PEP 758 sources on the 3.14 interpreter parso needs", () => {
-    const argv = parseArgs(["--corpus", "polar"]).pythonArgv;
-    expect(argv[argv.indexOf("--python") + 1]).toBe("3.14");
-  });
-
-  it("lets an explicit --python win over the manifest", () => {
-    const argv = parseArgs(["--corpus", "polar", "--python", "3.12"]).pythonArgv;
-    expect(argv[argv.indexOf("--python") + 1]).toBe("3.12");
-  });
-
   it("defaults the seed so two runs sample identically", () => {
     expect(parseArgs([]).seed).toBe(parseArgs([]).seed);
+  });
+
+  const interpreterOf = (argv: readonly string[]): string | undefined => {
+    const options = parseArgs(argv);
+    const index = options.pythonArgv.indexOf("--python");
+    return options.pythonArgv[index + 1];
+  };
+
+  it("launches jedi on the manifest's declared oraclePython, not on requiresPython", () => {
+    // httpx declares >=3.9 and flask >=3.10; the oracle environment itself is
+    // pinned >=3.13 (scripts/py-oracle/pyproject.toml), so a corpus floor is a
+    // LOWER bound on the grammar, never the version that runs jedi. Deriving the
+    // launcher from httpx's 3.9 is what killed the host mid-handshake (3yxmy).
+    expect(interpreterOf(["--corpus", "httpx"])).toBe("3.13");
+    expect(interpreterOf(["--corpus", "flask"])).toBe("3.13");
+    expect(interpreterOf(["--corpus", "netbox"])).toBe("3.13");
+  });
+
+  it("keeps a corpus floor ABOVE the oracle floor — polar needs the 3.14 grammar", () => {
+    expect(interpreterOf(["--corpus", "polar"])).toBe("3.14");
+  });
+
+  it("falls back to the derived floor for a corpus the manifest does not declare", () => {
+    expect(interpreterOf(["--corpus", "/tmp/whatever"])).toBe("3.13");
+  });
+
+  it("lets an explicit --python win over both floors", () => {
+    expect(interpreterOf(["--corpus", "polar", "--python", "3.12"])).toBe("3.12");
   });
 });
 

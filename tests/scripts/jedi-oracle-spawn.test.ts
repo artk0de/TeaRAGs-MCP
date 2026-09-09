@@ -115,13 +115,13 @@ const SITES: Record<
   ],
 };
 
-function runOracle(): Record<string, OracleAnswer[]> {
+function runOracle(workers = 1): Record<string, OracleAnswer[]> {
   const lines = [
     JSON.stringify({
       kind: "config",
       corpusRoot: FIXTURE_ROOT,
       venvPython: null,
-      workers: 1,
+      workers,
     }),
   ];
   for (const relPath of Object.keys(SITES).sort()) {
@@ -235,5 +235,13 @@ describe.skipIf(!uvAvailable)("jedi_oracle.py over the fixture corpus", () => {
       OracleAnswer[]
     >;
     expect(runOracle()).toEqual(expected);
+  });
+
+  it("answers a striped multi-worker run exactly as the single-worker one", () => {
+    // The pool partitions files by index and pins one group per process, so a
+    // parallel run must cover every file exactly once and answer each of them
+    // the same way. A baseline that changed with the worker count would not be
+    // a baseline.
+    expect(runOracle(3)).toEqual(runOracle(1));
   });
 });

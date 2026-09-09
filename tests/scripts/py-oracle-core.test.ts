@@ -14,6 +14,7 @@ import {
   isSuperCallSite,
   mulberry32,
   samplePyRows,
+  tallyPyCoverage,
   tallyPyRows,
   type PyOracleRow,
   type PySiteFacts,
@@ -345,5 +346,44 @@ describe("mulberry32", () => {
     const draw = (seed: number) => Array.from({ length: 4 }, mulberry32(seed));
     expect(draw(1)).toEqual(draw(1));
     expect(draw(1)).not.toEqual(draw(2));
+  });
+});
+
+describe("tallyPyCoverage", () => {
+  it("counts the two verdicts tallyPyRows folds away or drops", () => {
+    // `skippedInProject` is folded into `missed` by the receiver tally and
+    // `parseFailed` is dropped from it entirely, so neither can be read back
+    // out of the per-label rows. The baseline appendix reports both.
+    const counts = tallyPyCoverage([
+      row({ verdict: "skippedInProject" }),
+      row({ verdict: "skippedInProject" }),
+      row({ verdict: "parseFailed" }),
+      row({ verdict: "match" }),
+    ]);
+    expect(counts.skippedInProject).toBe(2);
+    expect(counts.parseFailed).toBe(1);
+  });
+
+  it("counts unlocated sites by shape, sorted, and omits shapes nobody hit", () => {
+    const counts = tallyPyCoverage([
+      row({ unlocatedShape: "multiLineCall" }),
+      row({ unlocatedShape: "decoratorBare" }),
+      row({ unlocatedShape: "multiLineCall" }),
+      row(),
+    ]);
+    expect(counts.unlocated).toBe(3);
+    expect(Object.entries(counts.unlocatedByShape)).toEqual([
+      ["decoratorBare", 1],
+      ["multiLineCall", 2],
+    ]);
+  });
+
+  it("returns zeros rather than absent keys on an empty corpus", () => {
+    expect(tallyPyCoverage([])).toEqual({
+      skippedInProject: 0,
+      parseFailed: 0,
+      unlocated: 0,
+      unlocatedByShape: {},
+    });
   });
 });
