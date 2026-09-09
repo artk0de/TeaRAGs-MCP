@@ -16,7 +16,9 @@ import Parser from "tree-sitter";
 import PyLang from "tree-sitter-python";
 import { describe, expect, it } from "vitest";
 
+import type { CallRef } from "../../../../../../src/core/contracts/types/codegraph.js";
 import { extractFromPythonFile } from "../../../../../../src/core/domains/language/python/walker/walker.js";
+import { classifyReceiverKind } from "../../../../../../src/core/domains/trajectory/codegraph/symbols/receiver-kind.js";
 
 function parse(src: string): Parser.Tree {
   const parser = new Parser();
@@ -26,6 +28,23 @@ function parse(src: string): Parser.Tree {
 
 function extract(src: string, relPath = "x.py") {
   return extractFromPythonFile({ tree: parse(src), code: src, relPath, language: "python", chunks: [] });
+}
+
+/** Every call in `src`, via a single chunk spanning the whole file. */
+function callsIn(src: string): readonly CallRef[] {
+  const out = extractFromPythonFile({
+    tree: parse(src),
+    code: src,
+    relPath: "x.py",
+    language: "python",
+    chunks: [{ symbolId: "whole", startLine: 1, endLine: 10_000, scope: [] }],
+  });
+  return out.chunks[0]?.calls ?? [];
+}
+
+/** The recorded receiver text of the call whose member is `member`. */
+function receiverOf(src: string, member: string): string | null | undefined {
+  return callsIn(src).find((c) => c.member === member)?.receiver;
 }
 
 function ancestorsOf(src: string, relPath = "x.py"): Record<string, readonly string[]> {
@@ -150,5 +169,65 @@ describe("extractFromPythonFile — base spellings carry the DEFINING file's imp
 
   it("strips the subscript before qualifying", () => {
     expect(basesOf("from a.b import Base\nclass C(Base[T]):\n    pass\n")).toEqual(["a.b::Base"]);
+  });
+});
+
+/**
+ * `super()` receiver normalization (bd tea-rags-mcp-ntnke, seam 4 Task 4).
+ *
+ * `classifyReceiverKind`'s `SUPER_MARKERS` holds `"super"` and `"<super>"`. The
+ * walker used to record the verbatim node text `"super()"`, which matches
+ * neither, so EVERY `super()` call site was filed under `dynamic` — 1,446 rows
+ * on netbox, 1,242 on polar. Normalizing in the walker rather than widening the
+ * classifier keeps a shared, language-neutral instrument free of one language's
+ * spelling.
+ *
+ * The explicit two-argument `super(Cls, self)` is deliberately NOT normalized:
+ * its first argument names the class the walk starts after, which is not always
+ * the enclosing class.
+ */
+describe("extractFromPythonFile — super() receiver normalization", () => {
+  const kindOf = (call: CallRef) => classifyReceiverKind(call, undefined);
+
+  it("records a zero-argument `super()` receiver as the bare text `super`", () => {
+    expect(receiverOf("class C(B):\n    def __init__(self):\n        super().__init__()\n", "__init__")).toBe("super");
+  });
+
+  it("classifies the normalized receiver as `super`, not `dynamic`", () => {
+    const call = callsIn("class C(B):\n    def m(self):\n        super().run()\n").find((c) => c.member === "run");
+    expect(call).toBeDefined();
+    expect(kindOf(call as CallRef)).toBe("super");
+  });
+
+  it("tolerates whitespace between `super` and its empty argument list", () => {
+    // Matching on the node SHAPE rather than the text is what makes this work;
+    // a `/^super\(\)$/` text probe would miss it.
+    expect(receiverOf("class C(B):\n    def m(self):\n        super ().run()\n", "run")).toBe("super");
+  });
+
+  it("keeps the two-argument `super(Foo, self)` verbatim, and it stays `dynamic`", () => {
+    const src = "class C(B):\n    def m(self):\n        super(Foo, self).run()\n";
+    const call = callsIn(src).find((c) => c.member === "run");
+    expect(call?.receiver).toBe("super(Foo, self)");
+    expect(kindOf(call as CallRef)).toBe("dynamic");
+  });
+
+  it("leaves a call on a variable whose name merely STARTS with `super` untouched", () => {
+    expect(receiverOf("supervisor.run()\n", "run")).toBe("supervisor");
+  });
+
+  it("leaves a call on the result of a non-`super` call untouched", () => {
+    expect(receiverOf("make_thing().run()\n", "run")).toBe("make_thing()");
+  });
+
+  it("leaves an argument-carrying same-named call untouched when it is not `super`", () => {
+    expect(receiverOf("supper().run()\n", "run")).toBe("supper()");
+  });
+
+  it("does not touch the inner bare `super()` call itself", () => {
+    // `super()` is its own call node with a null receiver — a bareCall, and the
+    // normalization only ever rewrites a RECEIVER position.
+    const call = callsIn("class C(B):\n    def m(self):\n        super().run()\n").find((c) => c.member === "super");
+    expect(call?.receiver).toBeNull();
   });
 });

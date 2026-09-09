@@ -728,6 +728,32 @@ function pickModuleText(node: AstNode): string | null {
   }
 }
 
+/**
+ * A zero-argument `super()` receiver is recorded as the bare text `super` (bd
+ * tea-rags-mcp-ntnke). `classifyReceiverKind`'s `SUPER_MARKERS` holds `"super"`
+ * and `"<super>"`, so the verbatim `"super()"` filed every one of these sites
+ * under `dynamic` — 1,446 rows on netbox, 1,242 on polar. Normalizing here
+ * rather than widening the classifier keeps a shared, language-neutral
+ * instrument free of one language's spelling, and
+ * `PythonSuperSymbolResolutionStrategy` already accepts both texts, so the
+ * resolver needs no change.
+ *
+ * The match is on the node SHAPE — `function` is the identifier `super`, the
+ * argument list is empty — not on the text, so `super ()` normalizes too.
+ *
+ * The explicit two-argument `super(Cls, self)` is NOT normalized: its first
+ * argument names the class the walk starts after, which is not always the
+ * enclosing class, and no E0.9 corpus row uses it. It keeps its verbatim
+ * receiver text and stays `dynamic`.
+ */
+function normalizePythonReceiverText(node: AstNode): string {
+  if (node.type !== "call") return node.text;
+  const fn = node.childForFieldName("function");
+  if (fn?.type !== "identifier" || fn.text !== "super") return node.text;
+  const args = node.childForFieldName("arguments");
+  return args === null || args.namedChildren.length === 0 ? "super" : node.text;
+}
+
 function collectPythonCalls(root: AstNode): CallRef[] {
   const out: CallRef[] = [];
   walk(root, (node) => {
@@ -744,7 +770,7 @@ function collectPythonCalls(root: AstNode): CallRef[] {
       const obj = fn.childForFieldName("object");
       const attr = fn.childForFieldName("attribute");
       if (!obj || !attr) return;
-      out.push({ callText: node.text, receiver: obj.text, member: attr.text, startLine });
+      out.push({ callText: node.text, receiver: normalizePythonReceiverText(obj), member: attr.text, startLine });
     } else {
       // Bare call like `foo(...)`.
       out.push({ callText: node.text, receiver: null, member: fn.text, startLine });
