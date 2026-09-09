@@ -1,0 +1,58 @@
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { dirname, join } from "node:path";
+
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
+
+import { run, type RunResult } from "../../scripts/codegraph-chain-tally.js";
+
+/**
+ * The tally only means something if it walks the corpus production walks
+ * (bd tea-rags-mcp-q6ber). Two halves, both once wrong: the WALK read no ignore
+ * file, so it scored sources production never indexes; the symbol TABLE held
+ * only `--lang`'s extension, so a call into another language's definition found
+ * no node to pin and the chain reported an absence production does not have.
+ */
+describe("codegraph-chain-tally corpus walk", () => {
+  let corpus: string;
+  let result: RunResult;
+
+  function write(relPath: string, content: string): void {
+    const absolute = join(corpus, relPath);
+    mkdirSync(dirname(absolute), { recursive: true });
+    writeFileSync(absolute, content, "utf8");
+  }
+
+  beforeEach(async () => {
+    corpus = mkdtempSync(join(tmpdir(), "chain-tally-corpus-"));
+    write(".contextignore", "app/vendored/\n");
+    write("app/service.py", "def helper():\n    return 1\n\n\ndef service():\n    return helper()\n");
+    write("app/bridge.js", "export function bridge() {\n  return 2;\n}\n");
+    write("app/vendored/shipped.py", "def shipped():\n    return 3\n");
+    result = await run(corpus, "python", null, Number.MAX_SAFE_INTEGER, true);
+  }, 30_000);
+
+  afterEach(() => {
+    rmSync(corpus, { recursive: true, force: true });
+  });
+
+  it("drops a file a project ignore file excludes, as production never indexes it", () => {
+    expect(result.ingestIgnored).toEqual(1);
+    expect(result.rows.some((row) => row.relPath.startsWith("app/vendored/"))).toBe(false);
+  });
+
+  it("walks another language into the symbol table without scoring its call sites", () => {
+    expect(result.files).toEqual(1);
+    expect(result.symbolTableOnlyFiles).toEqual(1);
+    expect(result.rows.every((row) => row.relPath === "app/service.py")).toBe(true);
+  });
+
+  it("carries both languages' definitions in the one run-global symbol table", () => {
+    expect(result.symbols).toBeGreaterThanOrEqual(3);
+  });
+
+  it("keeps the rebuilt baseline in lockstep with the production resolver", () => {
+    expect(result.rows.length).toBeGreaterThan(0);
+    expect(result.chainDrift).toEqual(0);
+  });
+});

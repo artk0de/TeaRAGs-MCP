@@ -41,10 +41,8 @@
  *     [--defer importMatch] [--limit N] [--samples 10] [--json out.json]
  */
 
-import { readdirSync, readFileSync, writeFileSync } from "node:fs";
-import { extname, join, relative, resolve as resolvePath, sep } from "node:path";
-
-import Parser from "tree-sitter";
+import { writeFileSync } from "node:fs";
+import { extname, resolve as resolvePath, sep } from "node:path";
 
 import { deferred } from "../src/core/contracts/resolution.js";
 import {
@@ -53,12 +51,10 @@ import {
   type CallRef,
   type ChunkExtraction,
   type FileExtraction,
-  type SymbolDefinition,
   type SymbolResolutionTarget,
 } from "../src/core/contracts/types/codegraph.js";
 import type { SymbolResolutionOutcome, SymbolResolutionStrategy } from "../src/core/contracts/types/language.js";
-import { BUILTIN_IGNORE_PATTERNS } from "../src/core/domains/ingest/pipeline/ignore-defaults.js";
-import { collectSymbols, DefaultSymbolIdComposer, LanguageFactory } from "../src/core/domains/language/index.js";
+import { DefaultSymbolIdComposer, LanguageFactory } from "../src/core/domains/language/index.js";
 import {
   JavaEnclosingBareCallSymbolResolutionStrategy,
   JavaFieldTypeSymbolResolutionStrategy,
@@ -71,9 +67,13 @@ import { createPythonSymbolResolutionChain } from "../src/core/domains/language/
 import { CONE_MAX_DEFAULT } from "../src/core/domains/language/python/resolver/strategies/index.js";
 import { resolveViaChain } from "../src/core/domains/language/resolver-chain.js";
 import { CODEGRAPH_LANGUAGES } from "../src/core/domains/trajectory/codegraph/symbols/provider.js";
-import { lastSegment } from "../src/core/domains/trajectory/codegraph/symbols/symbol-name.js";
 import { InMemoryGlobalSymbolTable } from "../src/core/domains/trajectory/codegraph/symbols/symbol-table.js";
-import { materializeTree } from "../src/core/infra/materialize.js";
+import {
+  buildCorpusExclusionFilter,
+  buildSymbolDefs,
+  collectSourceFiles,
+  extractFile,
+} from "./ts-codegraph-typechecker-oracle.js";
 
 // ---------------------------------------------------------------------------
 // Per-language chain rebuild — the production order, verbatim.
@@ -81,6 +81,11 @@ import { materializeTree } from "../src/core/infra/materialize.js";
 
 /** The chain a language's `CallResolver` composes, plus the extensions it owns. */
 interface ChainSpec {
+  /**
+   * Extensions whose CALL SITES are scored. Narrower than the walk: every
+   * language feeds the symbol table, but only this resolver's own files are
+   * diffed, or the tally would report one resolver's verdict on another's corpus.
+   */
   extensions: readonly string[];
   build: () => SymbolResolutionStrategy[];
 }
@@ -235,83 +240,27 @@ export function diffRows(rows: readonly CallSiteRow[]): { tally: DiffTally; chan
 }
 
 // ---------------------------------------------------------------------------
-// Corpus walk — mirrors the oracle's two-pass shape (table first, resolve after).
+// Corpus walk — the oracle's, verbatim (bd tea-rags-mcp-q6ber).
 // ---------------------------------------------------------------------------
 
-const SKIP_DIRECTORIES = new Set([
-  ...BUILTIN_IGNORE_PATTERNS.map((pattern) => pattern.replace(/\/$|^\*\*\//g, "")),
-  "node_modules",
-  "build",
-  "dist",
-  ".git",
-  "coverage",
-  "target",
-  "vendor",
-]);
-
 /**
- * Corpus files for the language, repo-relative and sorted. Test sources are
- * skipped because the production codegraph excludes them unconditionally
- * (`CODEGRAPH_TEST_PATTERNS`) — measuring over them would tally a graph the
- * pipeline never builds.
+ * Every extension production builds a codegraph node for, so the symbol table
+ * this harness hands the chain is the run-global one production builds rather
+ * than a single-language slice of it.
+ *
+ * The two halves of corpus parity are separable and both were wrong here. The
+ * WALK used a hand-rolled skip list and read no ignore file, so it scored files
+ * production never indexes — on ugnest, 20 of them (19 under `domains/media`,
+ * dropped by the repo's `.dockerignore`/`.contextignore`, plus a root
+ * `conftest.py`). The TABLE held only `--lang`'s extension, so a Python call
+ * into a TypeScript definition found no node to pin and the chain reported an
+ * absence production does not have; on polar that is 1,756 extra files, and the
+ * definitions they carry push short names past the cone limit. Importing the
+ * oracle's own walk fixes both at once and keeps the two harnesses reading the
+ * same corpus, which is the only way their `chainOutput` triples can be
+ * compared (bd tea-rags-mcp-wl0e6).
  */
-function collectSourceFiles(root: string, extensions: readonly string[]): string[] {
-  const found: string[] = [];
-  const walk = (absolute: string): void => {
-    for (const entry of readdirSync(absolute, { withFileTypes: true })) {
-      const child = join(absolute, entry.name);
-      if (entry.isDirectory()) {
-        if (SKIP_DIRECTORIES.has(entry.name) || entry.name.startsWith(".")) continue;
-        walk(child);
-        continue;
-      }
-      if (!extensions.includes(extname(entry.name))) continue;
-      const relPath = relative(root, child).split(sep).join("/");
-      if (isTestPath(relPath)) continue;
-      found.push(relPath);
-    }
-  };
-  walk(root);
-  return found.sort();
-}
-
-/** Conventional test locations across the two corpora this harness targets. */
-function isTestPath(relPath: string): boolean {
-  return /(^|\/)(tests?|src\/test)\//.test(relPath) || /(^|\/)test_[^/]+$|_test\.[^/]+$|Test\.java$/.test(relPath);
-}
-
-function extractFile(root: string, relPath: string, composer: DefaultSymbolIdComposer, factory: LanguageFactory) {
-  const config = CODEGRAPH_LANGUAGES[extname(relPath)];
-  const provider = factory.create(config.language);
-  const { walker } = provider;
-  if (!walker) return null;
-  try {
-    const code = readFileSync(join(root, relPath), "utf8");
-    const parser = new Parser();
-    parser.setLanguage(config.loadParser());
-    const tree = { rootNode: materializeTree(parser.parse(code).rootNode, code) };
-    const chunks = collectSymbols(
-      tree,
-      (node) => walker.nameOf(node),
-      config.scopeSeparator,
-      config.disambiguateOverloads ?? false,
-      composer,
-    );
-    return walker.walk({ tree, code, relPath, language: config.language, chunks });
-  } catch {
-    return null;
-  }
-}
-
-function buildSymbolDefs(extraction: FileExtraction): SymbolDefinition[] {
-  return extraction.chunks.map((chunk) => ({
-    symbolId: chunk.symbolId,
-    fqName: chunk.symbolId,
-    shortName: lastSegment(chunk.symbolId),
-    relPath: extraction.relPath,
-    scope: chunk.scope,
-  }));
-}
+const SYMBOL_TABLE_EXTENSIONS: readonly string[] = Object.keys(CODEGRAPH_LANGUAGES);
 
 function buildCallContext(
   extraction: FileExtraction,
@@ -331,9 +280,16 @@ function buildCallContext(
   };
 }
 
-interface RunResult {
+export interface RunResult {
   rows: CallSiteRow[];
+  /** Files whose call sites were scored — the `--lang` extensions. */
   files: number;
+  /** Files walked into the symbol table only, in some OTHER language. */
+  symbolTableOnlyFiles: number;
+  /** Dropped by `.gitignore` and friends — production has no index entry at all. */
+  ingestIgnored: number;
+  /** Indexed for search, but generated / test / non-app code, so no codegraph node. */
+  codegraphExcluded: number;
   parseFailures: number;
   symbols: number;
   dispatchSkipped: number;
@@ -341,7 +297,13 @@ interface RunResult {
   chainDrift: number;
 }
 
-function run(root: string, lang: string, deferPass: string | null, limit: number, quiet: boolean): RunResult {
+export async function run(
+  root: string,
+  lang: string,
+  deferPass: string | null,
+  limit: number,
+  quiet: boolean,
+): Promise<RunResult> {
   const spec = CHAINS[lang];
   if (!spec) throw new Error(`no chain spec for language '${lang}' (have: ${Object.keys(CHAINS).join(", ")})`);
 
@@ -361,12 +323,22 @@ function run(root: string, lang: string, deferPass: string | null, limit: number
   }
 
   const symbolTable = new InMemoryGlobalSymbolTable();
+  // Run-global, as `CodegraphRunState#classExtends` is — every walkable
+  // language feeds it, then pass 2 narrows to the files this resolver owns.
   const classExtends: Record<string, string> = {};
-  const extractions: FileExtraction[] = [];
+  const scored: FileExtraction[] = [];
   const corpusFiles = new Set<string>();
   let parseFailures = 0;
+  let symbolTableOnlyFiles = 0;
 
-  for (const relPath of collectSourceFiles(root, spec.extensions).slice(0, limit)) {
+  const selection = await collectSourceFiles(
+    root,
+    root,
+    await buildCorpusExclusionFilter(root, factory),
+    SYMBOL_TABLE_EXTENSIONS,
+  );
+
+  for (const relPath of selection.kept.slice(0, limit)) {
     const extraction = extractFile(root, relPath, composer, factory);
     if (extraction === null) {
       parseFailures++;
@@ -374,16 +346,22 @@ function run(root: string, lang: string, deferPass: string | null, limit: number
     }
     symbolTable.upsertFile(relPath, buildSymbolDefs(extraction));
     Object.assign(classExtends, extraction.classExtends ?? {});
-    extractions.push(extraction);
     corpusFiles.add(relPath);
+    if (spec.extensions.includes(extname(relPath).toLowerCase())) scored.push(extraction);
+    else symbolTableOnlyFiles++;
   }
-  if (!quiet) process.stderr.write(`pass 1: ${extractions.length} files, ${symbolTable.size()} symbols\n`);
+  if (!quiet) {
+    process.stderr.write(
+      `pass 1: ${scored.length} scored files (+${symbolTableOnlyFiles} symbol-table only), ` +
+        `${symbolTable.size()} symbols\n`,
+    );
+  }
 
   const rows: CallSiteRow[] = [];
   let dispatchSkipped = 0;
   let chainDrift = 0;
 
-  for (const extraction of extractions) {
+  for (const extraction of scored) {
     for (const chunk of extraction.chunks) {
       const ctx = buildCallContext(extraction, chunk, symbolTable, classExtends);
       for (const call of chunk.calls ?? []) {
@@ -407,7 +385,17 @@ function run(root: string, lang: string, deferPass: string | null, limit: number
     }
   }
 
-  return { rows, files: extractions.length, parseFailures, symbols: symbolTable.size(), dispatchSkipped, chainDrift };
+  return {
+    rows,
+    files: scored.length,
+    symbolTableOnlyFiles,
+    ingestIgnored: selection.ingestIgnored,
+    codegraphExcluded: selection.codegraphExcluded,
+    parseFailures,
+    symbols: symbolTable.size(),
+    dispatchSkipped,
+    chainDrift,
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -430,17 +418,20 @@ export function parseArgs(argv: readonly string[]) {
   };
 }
 
-function main(): void {
+async function main(): Promise<void> {
   const opts = parseArgs(process.argv.slice(2));
-  const result = run(opts.corpus, opts.lang, opts.defer, opts.limit, opts.quiet);
+  const result = await run(opts.corpus, opts.lang, opts.defer, opts.limit, opts.quiet);
   const baseline = tallyChainOutput(result.rows.map((r) => r.baseline));
   const variant = tallyChainOutput(result.rows.map((r) => r.variant));
   const { tally, changed } = diffRows(result.rows);
 
   const out: string[] = [
     `CORPUS ${opts.corpus} · lang ${opts.lang}`,
-    `  ${result.files} files, ${result.symbols} symbols, ${result.rows.length} call sites` +
+    `  ${result.files} scored files (+${result.symbolTableOnlyFiles} symbol-table only), ${result.symbols} symbols,` +
+      ` ${result.rows.length} call sites` +
       ` (parse failures ${result.parseFailures}, dispatch skipped ${result.dispatchSkipped})`,
+    `  excluded as production excludes them: ${result.ingestIgnored} by .gitignore and friends · ` +
+      `${result.codegraphExcluded} generated/test/non-app`,
     `  chain drift vs production resolver: ${result.chainDrift}${result.chainDrift === 0 ? "" : "  ← REBUILD IS STALE, numbers void"}`,
     "",
     "CHAIN OUTPUT (what the resolver emitted)",
@@ -480,4 +471,9 @@ function describe(target: SymbolResolutionTarget | null): string {
   return target === null ? "(none)" : `${target.targetRelPath} # ${target.targetSymbolId ?? "file-only"}`;
 }
 
-if (process.argv[1] && import.meta.url.endsWith(process.argv[1].split(sep).pop() ?? "")) main();
+if (process.argv[1] && import.meta.url.endsWith(process.argv[1].split(sep).pop() ?? "")) {
+  main().catch((error: unknown) => {
+    process.stderr.write(`${String(error)}\n`);
+    process.exitCode = 1;
+  });
+}
