@@ -1429,7 +1429,7 @@ exactly what a pass receives in `ctx`, so a pass calls
 
 **Steps**
 
-- [ ] **RED.** Create
+- [x] **RED.** Create
       `tests/core/domains/language/kernel/type-fact-channels.test.ts`.
 
 ```ts
@@ -1573,7 +1573,7 @@ describe("typeFactChannels", () => {
 });
 ```
 
-- [ ] **GREEN.** Create
+- [x] **GREEN.** Create
       `src/core/domains/language/kernel/type-fact-channels.ts`.
 
 ```ts
@@ -1656,7 +1656,7 @@ export function typeFactChannels(
       future reader of this file should not have to go read the store to know
       whether the order is guaranteed.
 
-- [ ] **Gates.**
+- [x] **Gates.**
 
 ```bash
 npx vitest run tests/core/domains/language/kernel
@@ -1667,7 +1667,7 @@ npx eslint --max-warnings 0 \
 git diff --stat -- tests/core/domains/language/ruby   # MUST be empty
 ```
 
-- [ ] **Commit.**
+- [x] **Commit.**
 
 ```text
 feat(language): add typeFactChannels, the type-facts pass projection (fmcly)
