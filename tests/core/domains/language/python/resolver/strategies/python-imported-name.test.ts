@@ -864,3 +864,57 @@ describe("PythonImportedNameSymbolResolutionStrategy — MRO verdict vs the sibl
     expect(inheritingStrategy().attempt(call("Widget", "save"), ctx)).toEqual({ kind: "drop" });
   });
 });
+
+/**
+ * The receiver is a class the CALLER'S OWN FILE declares — no import bound it,
+ * so the binding table has nothing to say, and until bd tea-rags-mcp-99t5y the
+ * call fell to `globalShortName`, which answered off the bare member name.
+ *
+ * ugnest's `constant` bucket is exactly this shape and nothing else: all 27 of
+ * its `globalShortName` matches are `Cls.method()` whose class AND method are
+ * declared in the calling file (`MetroLineService._validate_color`,
+ * `TicketSelector.list_tickets`, …). The 2 phantoms in the same bucket are the
+ * opposite shape — `SHORT_HEX_RE.match(color)` pinned to an unrelated
+ * `DistrictMatcher#match` in another file — so the evidence that separates them
+ * is the symbol table itself: `<receiver>.<member>` / `<receiver>#<member>` must
+ * be an exact symbolId IN the caller's file. No short-name search, no fan-out;
+ * a miss CONTINUEs.
+ */
+describe("PythonImportedNameSymbolResolutionStrategy — same-file class receiver (99t5y)", () => {
+  it("pins a classmethod on a class the calling file declares", () => {
+    const table = tableWith({
+      "svc/base.py": ["MetroLineService", "MetroLineService._validate_color"],
+    });
+    const ctx = ctxWith("svc/base.py", [], table);
+    expect(strategy().attempt(call("MetroLineService", "_validate_color"), ctx)).toEqual({
+      kind: "resolved",
+      target: { targetRelPath: "svc/base.py", targetSymbolId: "MetroLineService._validate_color" },
+    });
+  });
+
+  it("pins the INSTANCE spelling when that is how the member is declared", () => {
+    const table = tableWith({ "svc/base.py": ["Selector", "Selector#list"] });
+    expect(strategy().attempt(call("Selector", "list"), ctxWith("svc/base.py", [], table))).toEqual({
+      kind: "resolved",
+      target: { targetRelPath: "svc/base.py", targetSymbolId: "Selector#list" },
+    });
+  });
+
+  it("continues on a module-level VALUE receiver — the SHORT_HEX_RE phantom shape", () => {
+    // `SHORT_HEX_RE.match(color)`: the caller's file declares the constant but
+    // nothing named `SHORT_HEX_RE.match`, and another file's `match` is not
+    // evidence about this receiver. Fabricating that edge is what 99t5y kills.
+    const table = tableWith({
+      "geo/migrations/0009.py": ["SHORT_HEX_RE"],
+      "geo/district_matcher.py": ["DistrictMatcher", "DistrictMatcher#match"],
+    });
+    expect(strategy().attempt(call("SHORT_HEX_RE", "match"), ctxWith("geo/migrations/0009.py", [], table)).kind).toBe(
+      "continue",
+    );
+  });
+
+  it("continues when the class is declared in ANOTHER file and no import bound it", () => {
+    const table = tableWith({ "svc/caller.py": ["run"], "svc/other.py": ["Helper", "Helper.build"] });
+    expect(strategy().attempt(call("Helper", "build"), ctxWith("svc/caller.py", [], table)).kind).toBe("continue");
+  });
+});
