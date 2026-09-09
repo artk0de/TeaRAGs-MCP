@@ -389,3 +389,118 @@ describe("PythonGlobalShortNameSymbolResolutionStrategy — receiver gate (99t5y
     expect(attemptOn("<super>", "run").kind).toBe("continue");
   });
 });
+
+/**
+ * Module scope wins over project-wide short-name ambiguity (bd tea-rags-mcp-c9tw2,
+ * plan Task 8 / R8). Every corpus's `bareCall` hole is this ONE mechanism:
+ * polar 416/420, netbox 24/24, ugnest 12/12, httpx 7/7, flask 5/5, every row
+ * with `oracleTargetRelPath == relPath`. `validate_email(email)` at
+ * `server/polar/kit/email.py:25` sits fourteen lines under `def validate_email`,
+ * yet `lookupByShortName` answers with every project-wide definition of the
+ * name and strict mode CONTINUEs the whole site away.
+ *
+ * The arm is not a tie-break heuristic — it is Python's own name resolution.
+ * The interpreter walks local → enclosing → MODULE → builtins for a BARE name
+ * and never consults a sibling package, so a module-level `def` / `class` in
+ * the caller's file IS the answer, whatever else the project spells the same
+ * way. Precision-safe by construction, which is why it may overrule the
+ * cardinality guard below it.
+ *
+ * Two restrictions carry that guarantee:
+ *   - `receiver === null` only. `self.x()` is ATTRIBUTE lookup down the MRO,
+ *     not module scope; answering it with a module-level function would be a
+ *     fabrication. The `self` arm keeps its pre-task behaviour exactly.
+ *   - MODULE-LEVEL targets only (`scope.length === 0`). A same-file `Cls#helper`
+ *     is callable bare only from inside `Cls`, and that is enclosing-scope
+ *     evidence this strategy does not read. 372 of polar's 416 and 18 of
+ *     netbox's 24 misses name a top-level symbol; the rest fall through.
+ */
+describe("PythonGlobalShortNameSymbolResolutionStrategy — same-file module scope (c9tw2)", () => {
+  const strat = new PythonGlobalShortNameSymbolResolutionStrategy(cfg);
+  const bare = (member: string, over: Partial<CallContext> = {}) =>
+    strat.attempt(
+      { callText: `${member}()`, receiver: null, member, startLine: 25 },
+      ctx({ symbolTable: tableWith(), callerFile: "kit/email.py", ...over }),
+    );
+
+  it("prefers a module-level def in the caller's own file over cross-file ambiguity", () => {
+    const symbolTable = tableWith(
+      ["kit/email.py", [sym("validate_email", "validate_email", "kit/email.py", [])]],
+      ["api/schemas.py", [sym("validate_email", "validate_email", "api/schemas.py", [])]],
+    );
+    expect(bare("validate_email", { symbolTable })).toEqual({
+      kind: "resolved",
+      target: { targetRelPath: "kit/email.py", targetSymbolId: "validate_email" },
+    });
+  });
+
+  it("prefers a module-level CLASS in the caller's own file", () => {
+    const symbolTable = tableWith(
+      ["kit/email.py", [sym("Config", "Config", "kit/email.py", [])]],
+      ["api/settings.py", [sym("Config", "Config", "api/settings.py", [])]],
+    );
+    expect(bare("Config", { symbolTable })).toEqual({
+      kind: "resolved",
+      target: { targetRelPath: "kit/email.py", targetSymbolId: "Config" },
+    });
+  });
+
+  it("does not answer with a same-file METHOD — that is enclosing-scope evidence", () => {
+    const symbolTable = tableWith(
+      ["kit/email.py", [sym("Cls#helper", "helper", "kit/email.py", ["Cls"])]],
+      ["api/schemas.py", [sym("helper", "helper", "api/schemas.py", [])]],
+    );
+    expect(bare("helper", { symbolTable }).kind).toBe("continue");
+  });
+
+  it("does not answer for a receiver-bound call — the receiver gate is unchanged", () => {
+    const symbolTable = tableWith(
+      ["kit/email.py", [sym("validate_email", "validate_email", "kit/email.py", [])]],
+      ["api/schemas.py", [sym("validate_email", "validate_email", "api/schemas.py", [])]],
+    );
+    const outcome = strat.attempt(
+      { callText: "obj.validate_email()", receiver: "obj", member: "validate_email", startLine: 25 },
+      ctx({ symbolTable, callerFile: "kit/email.py" }),
+    );
+    expect(outcome.kind).toBe("continue");
+  });
+
+  it("still answers self-member calls the old way — `self.x()` is not module scope", () => {
+    const ambiguous = tableWith(
+      ["kit/email.py", [sym("validate_email", "validate_email", "kit/email.py", [])]],
+      ["api/schemas.py", [sym("validate_email", "validate_email", "api/schemas.py", [])]],
+    );
+    const selfCall = (symbolTable: ReturnType<typeof tableWith>) =>
+      strat.attempt(
+        { callText: "self.validate_email()", receiver: "self", member: "validate_email", startLine: 25 },
+        ctx({ symbolTable, callerFile: "kit/email.py" }),
+      );
+    // Ambiguous project-wide: the same-file module def must NOT rescue it.
+    expect(selfCall(ambiguous).kind).toBe("continue");
+    // Unique project-wide: the pre-task fallback still answers.
+    expect(selfCall(tableWith(["kit/email.py", [sym("Cls#run", "run", "kit/email.py", ["Cls"])]])).kind).toBe(
+      "continue",
+    );
+  });
+
+  it("falls through unchanged when the caller's file declares nothing of that name", () => {
+    const symbolTable = tableWith(
+      ["a.py", [sym("do_thing", "do_thing", "a.py", [])]],
+      ["b.py", [sym("do_thing", "do_thing", "b.py", [])]],
+    );
+    expect(bare("do_thing", { symbolTable }).kind).toBe("continue");
+  });
+
+  it("picks nothing when the caller's own file declares TWO module-level defs of the name", () => {
+    const symbolTable = tableWith([
+      "kit/email.py",
+      [
+        sym("validate_email", "validate_email", "kit/email.py", []),
+        sym("validate_email", "validate_email", "kit/email.py", []),
+      ],
+    ]);
+    // A redefinition: the LAST one wins at runtime, but the resolver has no
+    // ordering guarantee across chunks, so it declines rather than guessing.
+    expect(bare("validate_email", { symbolTable }).kind).toBe("continue");
+  });
+});
