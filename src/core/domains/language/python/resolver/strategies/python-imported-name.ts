@@ -3,14 +3,13 @@ import {
   pickSingleCandidate,
   type CallContext,
   type CallRef,
-  type ImportRef,
   type SymbolResolutionTarget,
 } from "../../../../../contracts/types/codegraph.js";
 import type { SymbolResolutionOutcome, SymbolResolutionStrategy } from "../../../../../contracts/types/language.js";
 import { reexportOriginFile } from "../../../kernel/reexport-origin.js";
 import { PYTHON_STDLIB_MODULES } from "../../vocabulary/stdlib-modules.js";
 import type { PythonImportFileMapper } from "../python-import-file-mapper.js";
-import type { ResolverConfig } from "./shared.js";
+import { findPythonImportBinding, type PythonImportBinding, type ResolverConfig } from "./shared.js";
 
 /**
  * A receiver this pass will answer: exactly ONE identifier. `Event.id.label()`,
@@ -76,7 +75,7 @@ export class PythonImportedNameSymbolResolutionStrategy implements SymbolResolut
     // are unaffected, including the star-import path below.
     if (call.receiver !== null && !SINGLE_HOP_RECEIVER.test(call.receiver)) return CONTINUE;
     const localName = call.receiver ?? call.member;
-    const binding = findBinding(ctx.imports, localName);
+    const binding = findPythonImportBinding(ctx.imports, localName);
     if (binding) return this.resolveBinding(binding, call, ctx);
     return this.resolveStarImport(call, ctx);
   }
@@ -89,7 +88,7 @@ export class PythonImportedNameSymbolResolutionStrategy implements SymbolResolut
    * file declares as a symbol is a module, and its member is looked up as a
    * top-level declaration inside it.
    */
-  private resolveBinding(binding: ImportBinding, call: CallRef, ctx: CallContext): SymbolResolutionOutcome {
+  private resolveBinding(binding: PythonImportBinding, call: CallRef, ctx: CallContext): SymbolResolutionOutcome {
     // The stdlib check stays AHEAD of the mapper, the same way
     // `PythonExternalVocabulary.importLandsInProject` keeps it (bd
     // tea-rags-mcp-mmckn): the mapper probes the caller's ancestor directories
@@ -117,7 +116,7 @@ export class PythonImportedNameSymbolResolutionStrategy implements SymbolResolut
    * so every lookup is filtered to the declaring file.
    */
   private resolveDeclaredName(
-    binding: ImportBinding,
+    binding: PythonImportBinding,
     declaringFile: string,
     call: CallRef,
     ctx: CallContext,
@@ -154,7 +153,11 @@ export class PythonImportedNameSymbolResolutionStrategy implements SymbolResolut
    * here, and composes the non-module text `ui.Button`. DROPping that would
    * reverse the ex28m rule that an ambiguous barrel beats a coin flip.
    */
-  private resolveModuleReceiver(binding: ImportBinding, call: CallRef, ctx: CallContext): SymbolResolutionOutcome {
+  private resolveModuleReceiver(
+    binding: PythonImportBinding,
+    call: CallRef,
+    ctx: CallContext,
+  ): SymbolResolutionOutcome {
     if (!call.receiver) return CONTINUE; // a bare call names no module
     const mapped = this.mapper.mapImportToFile(receiverModuleText(binding), ctx.callerFile, ctx);
     if (mapped.kind !== "project") return CONTINUE;
@@ -235,32 +238,6 @@ export class PythonImportedNameSymbolResolutionStrategy implements SymbolResolut
   }
 }
 
-/** One import statement, the local name it bound, and the name the module exports. */
-interface ImportBinding {
-  imp: ImportRef;
-  localName: string;
-  importedName: string;
-}
-
-/**
- * The import that bound `localName`, with the name the MODULE exports it under.
- *
- * `importedBindings` is the authority (it survives aliasing);
- * `importedNames` alone means the statement bound the name unaliased, which is
- * the shape `from a import b` produces when a walker-1 file is mixed in.
- */
-function findBinding(imports: readonly ImportRef[], localName: string): ImportBinding | null {
-  for (const imp of imports) {
-    const importedName = imp.importedBindings?.[localName];
-    if (importedName) return { imp, localName, importedName };
-  }
-  for (const imp of imports) {
-    if (imp.importedBindings) continue; // already consulted above; do not re-answer
-    if (imp.importedNames?.includes(localName)) return { imp, localName, importedName: localName };
-  }
-  return null;
-}
-
 /**
  * The directory a starred PACKAGE covers, or `null` when the star targeted a
  * plain module. `dcim/models/__init__.py` covers `dcim/models/`; a star on
@@ -293,7 +270,7 @@ function importsStdlibModule(importText: string): boolean {
  * without a separator when `M` already ends in a dot, or `from . import c`
  * would compose `..c` and climb a package.
  */
-function receiverModuleText(binding: ImportBinding): string {
+function receiverModuleText(binding: PythonImportBinding): string {
   const { importText } = binding.imp;
   if (binding.importedName === importText) {
     const firstSegment = binding.importedName.split(".")[0];
