@@ -15,6 +15,7 @@
  */
 
 import type { SymbolResolutionStrategy } from "../../../../contracts/types/language.js";
+import { PythonAncestorLinearizerCache } from "./python-ancestor-policy.js";
 import { PythonImportFileMapper } from "./python-import-file-mapper.js";
 import {
   PythonChainTypeSymbolResolutionStrategy,
@@ -36,18 +37,32 @@ import {
  * so every consumer it grows shares the resolved-root cache. A caller that has
  * no other consumer — either harness — omits it and gets a private one, which
  * is exactly the per-chain sharing the resolver has today.
+ *
+ * `linearizers` defaults the same way and for the same reason: an ancestor MRO
+ * is memoized once per RUN (bd tea-rags-mcp-9fgdi, decision 7), so the cache
+ * holding it belongs to whoever owns the resolver, and a caller with no second
+ * consumer gets a private one rather than a per-call-site walk. It is a
+ * PARAMETER and not a local because `PythonCallResolver` shares one instance
+ * across everything it grows, exactly as it shares the mapper.
+ *
+ * Defaulted rather than optional-and-absent because the real pre-seam fallback
+ * is a property of the CONTEXT, not of the caller: the cache answers
+ * `undefined` for a run whose index carries no `classAncestors` (walker v2),
+ * and each strategy keeps its old behaviour there. A harness that threads the
+ * channel gets the seam without having to know the seam exists.
  */
 export function createPythonSymbolResolutionChain(
   cfg: ResolverConfig,
   mapper: PythonImportFileMapper = new PythonImportFileMapper(),
+  linearizers: PythonAncestorLinearizerCache = new PythonAncestorLinearizerCache(mapper, cfg.mode),
 ): SymbolResolutionStrategy[] {
   return [
     new PythonSuperSymbolResolutionStrategy(cfg),
     new PythonSelfFieldSymbolResolutionStrategy(cfg, mapper),
-    new PythonSelfMemberSymbolResolutionStrategy(cfg),
+    new PythonSelfMemberSymbolResolutionStrategy(cfg, linearizers),
     new PythonLocalBindingSymbolResolutionStrategy(cfg, mapper),
     new PythonChainTypeSymbolResolutionStrategy(cfg, mapper),
-    new PythonImportedNameSymbolResolutionStrategy(cfg, mapper),
+    new PythonImportedNameSymbolResolutionStrategy(cfg, mapper, linearizers),
     new PythonImportMatchSymbolResolutionStrategy(cfg, mapper),
     new PythonGlobalShortNameSymbolResolutionStrategy(cfg),
   ];

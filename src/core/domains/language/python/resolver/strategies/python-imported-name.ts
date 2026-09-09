@@ -8,8 +8,15 @@ import {
 import type { SymbolResolutionOutcome, SymbolResolutionStrategy } from "../../../../../contracts/types/language.js";
 import { reexportOriginFile } from "../../../kernel/reexport-origin.js";
 import { PYTHON_STDLIB_MODULES } from "../../vocabulary/stdlib-modules.js";
+import type { PythonAncestorLinearizerCache } from "../python-ancestor-policy.js";
 import type { PythonImportFileMapper } from "../python-import-file-mapper.js";
-import { findPythonImportBinding, type PythonImportBinding, type ResolverConfig } from "./shared.js";
+import {
+  findPythonImportBinding,
+  pythonClassKey,
+  resolvePythonInheritedMember,
+  type PythonImportBinding,
+  type ResolverConfig,
+} from "./shared.js";
 
 /**
  * A receiver this pass will answer: exactly ONE identifier. `Event.id.label()`,
@@ -68,6 +75,7 @@ export class PythonImportedNameSymbolResolutionStrategy implements SymbolResolut
   constructor(
     private readonly cfg: ResolverConfig,
     private readonly mapper: PythonImportFileMapper,
+    private readonly linearizers?: PythonAncestorLinearizerCache,
   ) {}
 
   attempt(call: CallRef, ctx: CallContext): SymbolResolutionOutcome {
@@ -114,6 +122,15 @@ export class PythonImportedNameSymbolResolutionStrategy implements SymbolResolut
    * spelling — then `<importedName>#<member>`, the instance one; a bare call
    * looks up the imported name itself. Python symbolIds carry no module path,
    * so every lookup is filtered to the declaring file.
+   *
+   * A CLASS receiver whose class does not declare the member gets one more
+   * question asked of it: the class's MRO. polar's
+   * `AccountRepository.from_session(...)` is `RepositoryBase.from_session`, and
+   * that ONE shape is all 1,663 of polar's missed `constant` rows (bd
+   * tea-rags-mcp-9fgdi). A hierarchy read to its end that still does not own
+   * the member DROPs, because the only pass left below is `globalShortName`
+   * and its answer would carry no receiver evidence at all; an `unknown`
+   * boundary keeps today's CONTINUE.
    */
   private resolveDeclaredName(
     binding: PythonImportBinding,
@@ -129,7 +146,22 @@ export class PythonImportedNameSymbolResolutionStrategy implements SymbolResolut
       const target = pickSingleCandidate(candidates, this.cfg.mode);
       if (target) return resolved({ targetRelPath: target.relPath, targetSymbolId: target.symbolId });
     }
-    return CONTINUE;
+    return call.receiver ? this.resolveInheritedMember(binding, declaringFile, call, ctx) : CONTINUE;
+  }
+
+  /** The class-receiver arm's ancestor fallback — see {@link resolveDeclaredName}. */
+  private resolveInheritedMember(
+    binding: PythonImportBinding,
+    declaringFile: string,
+    call: CallRef,
+    ctx: CallContext,
+  ): SymbolResolutionOutcome {
+    const linearizer = this.linearizers?.for(ctx);
+    if (linearizer === undefined) return CONTINUE;
+    const classKey = pythonClassKey(declaringFile, binding.importedName);
+    const { target, closure } = resolvePythonInheritedMember(classKey, call.member, ctx, this.cfg.mode, linearizer);
+    if (target) return resolved(target);
+    return closure === "unknown" ? CONTINUE : DROP;
   }
 
   /**

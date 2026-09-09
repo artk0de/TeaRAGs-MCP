@@ -53,6 +53,7 @@ import { ConeDispatchResolver } from "../../cone-dispatch.js";
 import { ExternalCallClassifier } from "../../external-classifier.js";
 import { resolveImportFileEdges } from "../../import-file-edges.js";
 import { resolveViaChain } from "../../resolver-chain.js";
+import { PythonAncestorLinearizerCache } from "./python-ancestor-policy.js";
 import { createPythonSymbolResolutionChain } from "./python-chain-factory.js";
 import { PythonExternalVocabulary } from "./python-external-vocabulary.js";
 import { PythonImportFileMapper } from "./python-import-file-mapper.js";
@@ -77,10 +78,21 @@ export class PythonCallResolver implements CallResolver {
    * `resolveTypeFile`, the external vocabulary, and `resolveFileEdges`.
    */
   private readonly importFileMapper = new PythonImportFileMapper();
+  /**
+   * ONE ancestor linearizer for the whole run, for the same reason the mapper is
+   * one: its MRO memo is keyed by symbol-table identity. netbox has ~3,600
+   * classes against ~30,000 `self.` call sites, so a per-call-site walk is the
+   * difference between a memo hit and re-linearizing the hierarchy 30,000 times
+   * (bd tea-rags-mcp-9fgdi, decision 7). The chain is composed here, before any
+   * `CallContext` exists, so the CACHE is what the strategies hold; it answers
+   * with the run's linearizer on first use.
+   */
+  private readonly ancestorLinearizers: PythonAncestorLinearizerCache;
 
   constructor(mode: AmbiguousResolveMode = DEFAULT_AMBIGUOUS_RESOLVE_MODE) {
     const cfg: ResolverConfig = { mode, coneMax: resolveConeMax(process.env.CODEGRAPH_PY_CONE_MAX) };
-    this.chain = createPythonSymbolResolutionChain(cfg, this.importFileMapper);
+    this.ancestorLinearizers = new PythonAncestorLinearizerCache(this.importFileMapper, mode);
+    this.chain = createPythonSymbolResolutionChain(cfg, this.importFileMapper, this.ancestorLinearizers);
     this.cone = new ConeDispatchResolver(
       new PythonConeTypeLocator(cfg, this.importFileMapper),
       cfg.coneMax ?? CONE_MAX_DEFAULT,
