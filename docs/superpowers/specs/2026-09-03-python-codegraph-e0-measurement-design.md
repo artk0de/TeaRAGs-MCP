@@ -365,3 +365,328 @@ S = shared engine exists; R = Ruby-private.
 | chain composition                    | `resolver-chain.ts`                                                | S                         | ✓                                                          |
 | cone dispatch                        | `cone-dispatch.ts`                                                 | S                         | ✓ (bare, not composed)                                     |
 | calls → innermost chunk              | `kernel/assign-calls-to-chunks.ts`                                 | S                         | duplicated inline                                          |
+
+## Appendix — E0 baseline (2026-09-08)
+
+Oracle: `scripts/py-codegraph-jedi-oracle.ts`, seed 20260908, jedi 0.20.0.
+`chainDrift` 0 on every corpus. Rates exclude `oracleDegraded` and `parseFailed`
+rows; both are reported separately, because a stale parso grammar is a gap in
+the instrument and not a defect in the resolver.
+
+Wall time, one run each, nothing else heavy on the machine: httpx 3.0 s, flask
+2.8 s, ugnest 9.0 s, netbox 154.9 s, polar 283.7 s.
+
+**Determinism scope.** httpx, flask and ugnest were each run twice and the two
+JSON files compared byte for byte; all three are identical. netbox and polar
+were run once each — at 155 s and 284 s a second pass buys less than the flask
+evidence below already establishes. The gate found a real defect first: three
+flask runs disagreed on one site, which moved between `agreeExternal` and
+`bothUnresolved`. The cause was the file → worker assignment, not the reply
+order the plan anticipated. `pool.imap(..., chunksize=4)` hands chunks out as
+workers free up, and jedi's per-process module cache makes one file's answer
+depend on what that process parsed before it. The pool now partitions files by
+index into exactly one group per worker and pins one group per process
+(`maxtasksperchild=1`), so every process sees the same files in the same order
+on every run. Three consecutive flask runs after the fix are byte-identical, and
+`tests/scripts/jedi-oracle-spawn.test.ts` pins single-worker/multi-worker
+parity. The baseline below is entirely post-fix. Determinism holds at a fixed
+`--workers`; the recorded runs all used the default 8.
+
+**Two other harness defects were fixed before the baseline stood.** The
+interpreter that runs jedi was derived from the corpus's own `requiresPython`
+floor, so httpx (3.9) and flask (3.10) resolved to a Python jedi 0.20.0 refuses
+to install on and the run died at the first spawn; the floor is now lifted to
+the oracle environment's own `>=3.13` pin, and polar still gets 3.14 because its
+floor is higher. And the JSON payload carried no `skippedInProject`,
+`parseFailed` or `unlocated` counts — `tallyPyRows` folds the first into
+`missed` and drops the second — so three of the five tables below could not be
+filled from it. `tallyPyCoverage` now supplies them.
+
+### Ground-truth coverage
+
+| corpus | call sites | with ground truth | coverage | oracleDegraded | parseFailed | unlocated (by shape)     |
+| ------ | ---------- | ----------------- | -------- | -------------- | ----------- | ------------------------ |
+| httpx  | 2643       | 2394              | 90.6%    | 0              | 0           | 2 (coordinateMiss 2)     |
+| flask  | 2172       | 1981              | 91.2%    | 0              | 0           | 41 (coordinateMiss 41)   |
+| ugnest | 7158       | 6736              | 94.1%    | 0              | 0           | 0                        |
+| netbox | 60731      | 47700             | 78.5%    | 2331           | 0           | 32 (coordinateMiss 32)   |
+| polar  | 82554      | 54111             | 65.5%    | 20424          | 0           | 125 (coordinateMiss 125) |
+
+### receiverKind × verdict
+
+#### httpx
+
+`skippedInProject` 0 (folded into `missed`)
+
+|            | sites | oracle | match | fileOnly | wrongFile | missed | mismatch% | ext | phantom | phantom% |
+| ---------- | ----- | ------ | ----- | -------- | --------- | ------ | --------- | --- | ------- | -------- |
+| bareCall   | 1195  | 455    | 424   | 8        | 0         | 23     | 5.1%      | 738 | 8       | 1.1%     |
+| dynamic    | 518   | 47     | 12    | 0        | 0         | 35     | 74.5%     | 386 | 185     | 47.9%    |
+| chain      | 334   | 53     | 15    | 0        | 2         | 36     | 71.7%     | 199 | 40      | 20.1%    |
+| localVar   | 328   | 116    | 82    | 6        | 8         | 20     | 24.1%     | 137 | 38      | 27.7%    |
+| selfMember | 240   | 238    | 156   | 0        | 0         | 82     | 34.5%     | 2   | 0       | 0.0%     |
+| index      | 22    | 0      | 0     | 0        | 0         | 0      | 0.0%      | 18  | 0       | 0.0%     |
+| constant   | 6     | 0      | 0     | 0        | 0         | 0      | 0.0%      | 5   | 0       | 0.0%     |
+
+#### flask
+
+`skippedInProject` 0 (folded into `missed`)
+
+|            | sites | oracle | match | fileOnly | wrongFile | missed | mismatch% | ext | phantom | phantom% |
+| ---------- | ----- | ------ | ----- | -------- | --------- | ------ | --------- | --- | ------- | -------- |
+| bareCall   | 905   | 254    | 175   | 12       | 2         | 65     | 26.4%     | 604 | 26      | 4.3%     |
+| dynamic    | 449   | 56     | 37    | 0        | 3         | 16     | 33.9%     | 352 | 136     | 38.6%    |
+| chain      | 315   | 58     | 26    | 0        | 1         | 31     | 55.2%     | 221 | 23      | 10.4%    |
+| selfMember | 298   | 272    | 216   | 0        | 0         | 56     | 20.6%     | 22  | 0       | 0.0%     |
+| localVar   | 164   | 48     | 28    | 2        | 10        | 8      | 37.5%     | 74  | 18      | 24.3%    |
+| index      | 35    | 2      | 0     | 0        | 0         | 2      | 100.0%    | 12  | 2       | 16.7%    |
+| constant   | 6     | 2      | 2     | 0        | 0         | 0      | 0.0%      | 4   | 2       | 50.0%    |
+
+#### ugnest
+
+`skippedInProject` 0 (folded into `missed`)
+
+|            | sites | oracle | match | fileOnly | wrongFile | missed | mismatch% | ext  | phantom | phantom% |
+| ---------- | ----- | ------ | ----- | -------- | --------- | ------ | --------- | ---- | ------- | -------- |
+| bareCall   | 2546  | 672    | 626   | 0        | 0         | 46     | 6.8%      | 1874 | 0       | 0.0%     |
+| dynamic    | 1763  | 21     | 8     | 0        | 0         | 13     | 61.9%     | 1626 | 196     | 12.1%    |
+| chain      | 1490  | 14     | 4     | 0        | 0         | 10     | 71.4%     | 1266 | 244     | 19.3%    |
+| constant   | 598   | 573    | 196   | 0        | 0         | 377    | 65.8%     | 23   | 3       | 13.0%    |
+| localVar   | 534   | 39     | 13    | 0        | 22        | 4      | 66.7%     | 424  | 212     | 50.0%    |
+| selfMember | 192   | 156    | 152   | 0        | 0         | 4      | 2.6%      | 30   | 0       | 0.0%     |
+| index      | 35    | 0      | 0     | 0        | 0         | 0      | 0.0%      | 18   | 0       | 0.0%     |
+
+#### netbox
+
+`skippedInProject` 23 (folded into `missed`)
+
+|            | sites | oracle | match | fileOnly | wrongFile | missed | mismatch% | ext   | phantom | phantom% |
+| ---------- | ----- | ------ | ----- | -------- | --------- | ------ | --------- | ----- | ------- | -------- |
+| bareCall   | 24872 | 5270   | 4973  | 4        | 31        | 262    | 5.6%      | 17977 | 245     | 1.4%     |
+| dynamic    | 19490 | 1712   | 1118  | 0        | 218       | 376    | 34.7%     | 14048 | 7154    | 50.9%    |
+| chain      | 10361 | 372    | 142   | 0        | 1         | 229    | 61.8%     | 3539  | 247     | 7.0%     |
+| selfMember | 3318  | 1752   | 1088  | 0        | 1         | 663    | 37.9%     | 295   | 33      | 11.2%    |
+| localVar   | 2111  | 193    | 41    | 129      | 9         | 14     | 11.9%     | 907   | 278     | 30.7%    |
+| index      | 405   | 1      | 1     | 0        | 0         | 0      | 0.0%      | 38    | 4       | 10.5%    |
+| constant   | 174   | 33     | 11    | 0        | 0         | 22     | 66.7%     | 119   | 7       | 5.9%     |
+
+#### polar
+
+`skippedInProject` 6 (folded into `missed`)
+
+|            | sites | oracle | match | fileOnly | wrongFile | missed | mismatch% | ext   | phantom | phantom% |
+| ---------- | ----- | ------ | ----- | -------- | --------- | ------ | --------- | ----- | ------- | -------- |
+| bareCall   | 32942 | 4865   | 3825  | 25       | 27        | 988    | 20.9%     | 16983 | 213     | 1.3%     |
+| dynamic    | 23298 | 964    | 447   | 0        | 26        | 491    | 53.6%     | 9724  | 3025    | 31.1%    |
+| chain      | 11115 | 15     | 6     | 0        | 0         | 9      | 60.0%     | 4852  | 138     | 2.8%     |
+| localVar   | 7660  | 132    | 74    | 22       | 25        | 11     | 27.3%     | 1458  | 353     | 24.2%    |
+| selfMember | 4478  | 2163   | 1640  | 0        | 0         | 523    | 24.2%     | 158   | 4       | 2.5%     |
+| constant   | 2648  | 71     | 17    | 0        | 0         | 54     | 76.1%     | 267   | 27      | 10.1%    |
+| index      | 413   | 39     | 0     | 0        | 0         | 39     | 100.0%    | 107   | 8       | 7.5%     |
+
+### answeredBy × verdict
+
+#### httpx — by pass
+
+|                 | sites | oracle | match | fileOnly | wrongFile | missed | mismatch% | ext  | phantom | phantom% |
+| --------------- | ----- | ------ | ----- | -------- | --------- | ------ | --------- | ---- | ------- | -------- |
+| none            | 1632  | 196    | 0     | 0        | 0         | 196    | 100.0%    | 1214 | 0       | 0.0%     |
+| globalShortName | 570   | 492    | 484   | 8        | 0         | 0      | 0.0%      | 73   | 73      | 100.0%   |
+| localBinding    | 139   | 96     | 82    | 6        | 8         | 0      | 8.3%      | 38   | 38      | 100.0%   |
+| importMatch     | 136   | 0      | 0     | 0        | 0         | 0      | 0.0%      | 124  | 124     | 100.0%   |
+| selfMember      | 110   | 110    | 110   | 0        | 0         | 0      | 0.0%      | 0    | 0       | 0.0%     |
+| selfField       | 48    | 7      | 5     | 0        | 2         | 0      | 28.6%     | 36   | 36      | 100.0%   |
+| super           | 8     | 8      | 8     | 0        | 0         | 0      | 0.0%      | 0    | 0       | 0.0%     |
+
+#### flask — by pass
+
+|                 | sites | oracle | match | fileOnly | wrongFile | missed | mismatch% | ext  | phantom | phantom% |
+| --------------- | ----- | ------ | ----- | -------- | --------- | ------ | --------- | ---- | ------- | -------- |
+| none            | 1402  | 178    | 0     | 0        | 0         | 178    | 100.0%    | 1082 | 0       | 0.0%     |
+| globalShortName | 476   | 357    | 343   | 12       | 2         | 0      | 0.6%      | 98   | 98      | 100.0%   |
+| selfMember      | 109   | 109    | 109   | 0        | 0         | 0      | 0.0%      | 0    | 0       | 0.0%     |
+| importMatch     | 97    | 2      | 0     | 0        | 2         | 0      | 100.0%    | 88   | 88      | 100.0%   |
+| localBinding    | 80    | 41     | 29    | 2        | 10        | 0      | 24.4%     | 18   | 18      | 100.0%   |
+| selfField       | 4     | 1      | 0     | 0        | 1         | 0      | 100.0%    | 3    | 3       | 100.0%   |
+| super           | 4     | 4      | 3     | 0        | 1         | 0      | 25.0%     | 0    | 0       | 0.0%     |
+
+#### ugnest — by pass
+
+|                 | sites | oracle | match | fileOnly | wrongFile | missed | mismatch% | ext  | phantom | phantom% |
+| --------------- | ----- | ------ | ----- | -------- | --------- | ------ | --------- | ---- | ------- | -------- |
+| none            | 5270  | 454    | 0     | 0        | 0         | 454    | 100.0%    | 4606 | 0       | 0.0%     |
+| globalShortName | 1334  | 907    | 907   | 0        | 0         | 0      | 0.0%      | 274  | 274     | 100.0%   |
+| localBinding    | 302   | 34     | 12    | 0        | 22        | 0      | 64.7%     | 212  | 212     | 100.0%   |
+| importMatch     | 172   | 2      | 2     | 0        | 0         | 0      | 0.0%      | 167  | 167     | 100.0%   |
+| selfMember      | 78    | 78     | 78    | 0        | 0         | 0      | 0.0%      | 0    | 0       | 0.0%     |
+| selfField       | 2     | 0      | 0     | 0        | 0         | 0      | 0.0%      | 2    | 2       | 100.0%   |
+
+#### netbox — by pass
+
+|                 | sites | oracle | match | fileOnly | wrongFile | missed | mismatch% | ext   | phantom | phantom% |
+| --------------- | ----- | ------ | ----- | -------- | --------- | ------ | --------- | ----- | ------- | -------- |
+| none            | 41554 | 1566   | 0     | 0        | 0         | 1566   | 100.0%    | 28955 | 0       | 0.0%     |
+| globalShortName | 9875  | 6645   | 6608  | 4        | 33        | 0      | 0.5%      | 811   | 811     | 100.0%   |
+| importMatch     | 7553  | 217    | 0     | 0        | 217       | 0      | 100.0%    | 6877  | 6877    | 100.0%   |
+| selfMember      | 888   | 589    | 589   | 0        | 0         | 0      | 0.0%      | 2     | 2       | 100.0%   |
+| localBinding    | 706   | 179    | 41    | 129      | 9         | 0      | 5.0%      | 274   | 274     | 100.0%   |
+| super           | 152   | 137    | 136   | 0        | 1         | 0      | 0.7%      | 3     | 3       | 100.0%   |
+| selfField       | 3     | 0      | 0     | 0        | 0         | 0      | 0.0%      | 1     | 1       | 100.0%   |
+
+#### polar — by pass
+
+|                 | sites | oracle | match | fileOnly | wrongFile | missed | mismatch% | ext   | phantom | phantom% |
+| --------------- | ----- | ------ | ----- | -------- | --------- | ------ | --------- | ----- | ------- | -------- |
+| none            | 61930 | 2115   | 0     | 0        | 0         | 2115   | 100.0%    | 29781 | 0       | 0.0%     |
+| globalShortName | 14304 | 5105   | 5053  | 25       | 27        | 0      | 0.5%      | 742   | 742     | 100.0%   |
+| importMatch     | 3329  | 32     | 6     | 0        | 26        | 0      | 81.3%     | 2636  | 2636    | 100.0%   |
+| selfMember      | 1497  | 856    | 856   | 0        | 0         | 0      | 0.0%      | 1     | 1       | 100.0%   |
+| localBinding    | 1358  | 121    | 74    | 22       | 25        | 0      | 20.7%     | 352   | 352     | 100.0%   |
+| super           | 72    | 17     | 17    | 0        | 0         | 0      | 0.0%      | 8     | 8       | 100.0%   |
+| selfField       | 64    | 3      | 3     | 0        | 0         | 0      | 0.0%      | 29    | 29      | 100.0%   |
+
+### Missed-shape category ranking
+
+| rank | category            | oracle answers | mismatch% | missed | wrongFile | corpora it dominates   |
+| ---- | ------------------- | -------------- | --------- | ------ | --------- | ---------------------- |
+| 1    | `annotationReturn`  | 11068          | 26.7%     | 2829   | 126       | polar 2186, ugnest 329 |
+| 2    | `plain`             | 8374           | 15.4%     | 1031   | 257       | netbox 1263, flask 20  |
+| 3    | `decoratorProperty` | 1314           | 55.0%     | 717    | 6         | ugnest 379, netbox 231 |
+| 4    | `superMro`          | 503            | 69.6%     | 349    | 1         | netbox 271, polar 79   |
+| 5    | `annotationParam`   | 464            | 32.1%     | 141    | 8         | httpx 89, flask 43     |
+| 6    | `reexport`          | 253            | 22.1%     | 56     | 0         | netbox 32, polar 24    |
+| 7    | `unionReceiver`     | 24             | 33.3%     | 8      | 0         | httpx 8                |
+
+### Precision floor
+
+| corpus | external proven | phantom | phantom% | skippedInProject |
+| ------ | --------------- | ------- | -------- | ---------------- |
+| httpx  | 1485            | 271     | 18.2%    | 0                |
+| flask  | 1289            | 207     | 16.1%    | 0                |
+| ugnest | 5261            | 655     | 12.5%    | 0                |
+| netbox | 36923           | 7968    | 21.6%    | 23               |
+| polar  | 33549           | 3768    | 11.2%    | 6                |
+
+### Chain-output reconciliation against `codegraph-chain-tally.ts`
+
+The plan asks whether the oracle scores the same population production resolves.
+On httpx and flask it does, exactly. On the other three it does not, and the
+difference is in the baseline instrument rather than in the oracle.
+
+| corpus | chain-tally 2026-09-02 (sites · edges / file-only / unresolved) | oracle 2026-09-08            | gap                     |
+| ------ | --------------------------------------------------------------- | ---------------------------- | ----------------------- |
+| httpx  | 2643 · 1011 / 193 / 1632                                        | 2643 · 1011 / 193 / 1632     | none                    |
+| flask  | 2172 · 770 / 148 / 1402                                         | 2172 · 770 / 148 / 1402      | none                    |
+| ugnest | 7331 · 1432 / 315 / 5899                                        | 7158 · 1888 / 460 / 5270     | file population + table |
+| netbox | 60731 · 21971 / 8190 / 38760                                    | 60731 · 19177 / 8185 / 41554 | symbol table            |
+| polar  | 82554 · 21336 / 3976 / 61218                                    | 82554 · 20624 / 4138 / 61930 | symbol table            |
+
+`codegraph-chain-tally.ts` was re-run on 2026-09-02's corpora at this HEAD and
+reproduces its recorded numbers exactly (ugnest 1432 / 315 / 5899, netbox 21971
+/ 8190 / 38760), so production has not moved. The two harnesses select
+differently:
+
+- chain-tally walks only the scored language's extension behind a hand-rolled
+  skip list and a test-path regex. It reads no ignore file.
+- the oracle applies production's own two exclusion layers and builds ONE symbol
+  table over every `CODEGRAPH_LANGUAGES` extension, which is what the codegraph
+  provider does.
+
+**ugnest** — chain-tally scores 20 files production never indexes: 19 under
+`domains/media`, dropped by the unanchored `media/` entry in the repo's
+`.dockerignore` and `.contextignore`, plus a root `conftest.py` the codegraph
+test exclusion drops. Holding the scored set at production's 258 files and
+adding only those 20 to the SYMBOL TABLE drops the edge count from 1888 to 1415:
+224 sites stop resolving, 177 of them on the member `get`. The direction is the
+point — extra definitions push a short name past the chain's cone limit and the
+pass declines.
+
+**netbox and polar** — the `.py` file sets agree exactly (identical site
+counts), and the whole difference is the non-Python half of the symbol table
+that production has and chain-tally does not: netbox +56 files / +199 symbols,
+polar +1,756 files. Same mechanism, same direction: netbox −2,794 edges, polar
+−712.
+
+So the recorded chain-tally numbers overstate production's Python edge count on
+netbox and polar and understate it on ugnest. The oracle's are the
+production-faithful ones and are what E1 and E2 should be compared against. The
+chain-tally baselines stay usable as a drift invariant — they are stable and
+reproduce — but they are not a statement about what the pipeline builds.
+
+### Pull order (confirmed 2026-09-08 by the E0 baseline)
+
+The original prediction, kept verbatim because a prediction that was wrong is
+evidence about the model:
+
+> 1. `ExternalVocabulary` — denominator (E0)
+> 2. `ModuleResolver` + re-exports + star-import + namespace packages
+> 3. `TypeSource: annotations` → local / param / return types
+> 4. `AncestorLinearizer` C3 + `super`
+> 5. `FrameworkModule`: Django Manager / QuerySet + DRF, SQLAlchemy `Mapped[]` /
+>    FastAPI `Depends`
+> 6. `ReceiverTypePropagation` multi-hop + return-type binding
+> 7. Dispatch: union → dynamic / duck → table
+
+The data confirms the head and the tail and reorders the middle.
+
+**The head is confirmed, and by a wider margin than predicted.** Phantoms
+outnumber misses on every one of the five corpora — 12,869 against 4,509 in
+total, and 5.1:1 on netbox. Python's problem is precision first, recall second,
+which is not what a resolve-rate number alone would suggest. Within that,
+`importMatch` produces 9,892 of the 12,869 phantoms (77%): netbox 6,877, polar
+2,636, ugnest 167, httpx 124, flask 88. Its phantom rate is 91% of everything it
+resolves on netbox. `globalShortName` is a distant second at 1,998.
+
+**#1 and #2 collapse into one population.**
+`PythonImportMatchSymbolResolutionStrategy` matches an imported short name
+against in-project files, so a third-party import becomes an in-project edge.
+`ExternalVocabulary` and an honest import → file mapper are two halves of the
+same fix, and both are read off the same 9,892 rows. Re-exports as a RECALL
+lever are small — `reexport` ranks 6th with 56 losses — so the case for
+`ModuleResolver` rests on precision, not on recall.
+
+**#3 holds.** `annotationReturn` carries the largest recall loss (2,955 of the
+4,509), 2,186 of it from polar alone, at 26.7% mismatch. Read the width
+honestly: the category flags any site whose enclosing function has a return
+annotation, and on polar that is 80,619 of 82,554 sites, so it describes the
+corpus as much as the lever. `annotationParam` is the narrow half and ranks 5th
+with 149 losses, carried by httpx (89) and flask (43).
+
+**#4 and #5 swap, and a new entry lands between them.** `decoratorProperty` —
+`@property` / `@cached_property` receivers — is 723 losses at 55% mismatch and
+is the only shape-specific category that all three framework corpora carry
+(ugnest 379, netbox 231, polar 111). C3 + `super` has the worst RATE of any
+ranked category (69.6%) but only 350 losses, almost all netbox (271). Decorator
+handling therefore moves ahead of the ancestor linearizer.
+
+**Framework vocabularies cannot be ranked from E0 at all, and that is a
+finding.** `managerQuerySet` returns 0 oracle answers on every corpus (netbox
+3,447 sites, ugnest 693) and `dependsInjection` 0 on polar's 629 sites. jedi
+resolves neither Django's `Manager`/`QuerySet` descriptor protocol nor FastAPI's
+`Depends` indirection, so there is no ground truth to score against. Their 4,769
+call sites are a lower bound on the lever's size, not a measurement of it, and
+E3 will need an oracle these are visible to.
+
+**The tail is confirmed.** `unionReceiver` produces 24 oracle answers across all
+five corpora — polar's 605 union sites yield 6 — which is barely above the
+20-answer ranking floor. Dispatch stays last.
+
+The order the data supports:
+
+1. `ExternalVocabulary` — 12,869 phantoms, the single largest defect (netbox,
+   polar carry it)
+2. `ModuleResolver` + re-exports — the same `importMatch` population, 9,892 of
+   those phantoms (netbox 6,877)
+3. `TypeSource: annotations` — 2,955 recall losses, largest recall lever (polar)
+4. decorator / property receivers — 723 losses at 55% (ugnest, netbox, polar) —
+   MOVED UP from inside #3/#5
+5. `AncestorLinearizer` C3 + `super` — 350 losses at 69.6%, the worst rate
+   (netbox) — MOVED DOWN one place
+6. `FrameworkModule` — unrankable here; 4,769 call sites with zero oracle
+   coverage (netbox, ugnest, polar)
+7. `ReceiverTypePropagation` — no category of its own; it is inside the residual
+8. Dispatch / unions — 24 oracle answers, last, as predicted
+
+`plain` ranks 2nd by absolute loss (1,288, netbox-carried) and is deliberately
+left out of the order: it is the residual bucket for sites carrying no other
+shape, so it names no lever.

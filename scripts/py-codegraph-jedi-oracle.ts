@@ -49,6 +49,7 @@ import {
   classifyPyVerdict,
   isSuperCallSite,
   samplePyRows,
+  tallyPyCoverage,
   tallyPyRows,
   type PyOracleRow,
   type PySiteFacts,
@@ -406,6 +407,29 @@ export interface PyOracleCliOptions {
   quiet: boolean;
 }
 
+/**
+ * The interpreter `uv run` starts for jedi itself.
+ *
+ * A corpus's `requiresPython` is the floor its own SYNTAX needs — polar's 3.14
+ * is why the oracle reads its `match` statements at all — so it is a lower
+ * bound on the grammar and never the version that runs jedi. The oracle's own
+ * environment is pinned `>=3.13` (`scripts/py-oracle/pyproject.toml`), and a
+ * corpus declaring 3.9 (httpx) or 3.10 (flask) would otherwise resolve to an
+ * interpreter jedi 0.20.0 refuses to install on, failing the whole run.
+ */
+const ORACLE_PYTHON_FLOOR = "3.13";
+
+export function liftToOracleFloor(corpusFloor: string | undefined): string {
+  if (corpusFloor === undefined) return ORACLE_PYTHON_FLOOR;
+  const parts = (version: string): number[] => version.split(".").map((part) => Number.parseInt(part, 10) || 0);
+  const [corpus, floor] = [parts(corpusFloor), parts(ORACLE_PYTHON_FLOOR)];
+  for (let i = 0; i < Math.max(corpus.length, floor.length); i++) {
+    const [left, right] = [corpus[i] ?? 0, floor[i] ?? 0];
+    if (left !== right) return left > right ? corpusFloor : ORACLE_PYTHON_FLOOR;
+  }
+  return ORACLE_PYTHON_FLOOR;
+}
+
 export function parseArgs(argv: readonly string[]): PyOracleCliOptions {
   const read = (flag: string): string | undefined => {
     const index = argv.indexOf(flag);
@@ -413,7 +437,7 @@ export function parseArgs(argv: readonly string[]): PyOracleCliOptions {
   };
   const corpusArg = read("--corpus") ?? process.cwd();
   const manifest = loadCodegraphCorpora()[corpusArg];
-  const interpreter = read("--python") ?? manifest?.requiresPython.replace(">=", "") ?? "3.13";
+  const interpreter = read("--python") ?? liftToOracleFloor(manifest?.requiresPython.replace(">=", ""));
   return {
     corpusRoot: manifest ? manifest.path : resolvePath(corpusArg),
     corpusName: manifest?.name ?? corpusArg,
@@ -455,6 +479,7 @@ async function main(): Promise<void> {
   const byReceiver = tallyPyRows(rows, (row) => [row.receiverKind]);
   const byAnsweredBy = tallyPyRows(rows, (row) => [row.answeredBy]);
   const byCategory = tallyPyRows(rows, (row) => row.categories);
+  const coverage = tallyPyCoverage(rows);
   const degraded = rows.filter((row) => row.oracleDegraded).length;
   const unknown = rows.filter((row) => row.verdict === "chainOnly" || row.verdict === "bothUnresolved").length;
   const covered = rows.length - unknown;
@@ -471,7 +496,12 @@ async function main(): Promise<void> {
     `excluded as production excludes them: ${walk.ingestIgnored} by .gitignore and friends · ${walk.codegraphExcluded} generated/test/non-app`,
     `call sites ${rows.length} · chain drift ${walk.chainDrift}${walk.chainDrift === 0 ? "" : "  <- REBUILD IS STALE, numbers void"}`,
     `chain output: ${chainOutput.edges} edges (${chainOutput.fileOnly} file-only) · ${chainOutput.unresolved} unresolved`,
-    `ground truth ${covered}/${rows.length} (${((covered / Math.max(rows.length, 1)) * 100).toFixed(1)}%) · oracleDegraded ${degraded} · parseFailed ${rows.filter((r) => r.verdict === "parseFailed").length}`,
+    `ground truth ${covered}/${rows.length} (${((covered / Math.max(rows.length, 1)) * 100).toFixed(1)}%) · oracleDegraded ${degraded} · parseFailed ${coverage.parseFailed}`,
+    `skippedInProject ${coverage.skippedInProject} · unlocated ${coverage.unlocated} (${Object.entries(
+      coverage.unlocatedByShape,
+    )
+      .map(([shape, count]) => `${shape} ${String(count)}`)
+      .join(", ")})`,
     `elapsed ${((Date.now() - started) / 1000).toFixed(1)}s`,
     "",
     formatOracleTable("BY RECEIVER KIND (partition — each call site counted once)", byReceiver),
@@ -498,6 +528,10 @@ async function main(): Promise<void> {
         callSites: rows.length,
         groundTruth: covered,
         oracleDegraded: degraded,
+        skippedInProject: coverage.skippedInProject,
+        parseFailed: coverage.parseFailed,
+        unlocated: coverage.unlocated,
+        unlocatedByShape: coverage.unlocatedByShape,
         chainOutput,
       },
       byReceiver,

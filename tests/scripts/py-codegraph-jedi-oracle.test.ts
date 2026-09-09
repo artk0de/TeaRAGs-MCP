@@ -89,6 +89,29 @@ describe("parseArgs", () => {
   it("defaults the seed so two runs sample identically", () => {
     expect(parseArgs([]).seed).toBe(parseArgs([]).seed);
   });
+
+  const interpreterOf = (argv: readonly string[]): string | undefined => {
+    const options = parseArgs(argv);
+    const index = options.pythonArgv.indexOf("--python");
+    return options.pythonArgv[index + 1];
+  };
+
+  it("lifts a corpus floor below the oracle's own to the floor jedi runs on", () => {
+    // httpx declares >=3.9 and flask >=3.10; the oracle environment itself is
+    // pinned >=3.13 (scripts/py-oracle/pyproject.toml), so a corpus floor is a
+    // LOWER bound on the grammar, never the version that runs jedi.
+    expect(interpreterOf(["--corpus", "httpx"])).toBe("3.13");
+    expect(interpreterOf(["--corpus", "flask"])).toBe("3.13");
+    expect(interpreterOf(["--corpus", "netbox"])).toBe("3.13");
+  });
+
+  it("keeps a corpus floor ABOVE the oracle floor — polar needs the 3.14 grammar", () => {
+    expect(interpreterOf(["--corpus", "polar"])).toBe("3.14");
+  });
+
+  it("lets an explicit --python win over both floors", () => {
+    expect(interpreterOf(["--corpus", "polar", "--python", "3.12"])).toBe("3.12");
+  });
 });
 
 describe("buildRows", () => {
