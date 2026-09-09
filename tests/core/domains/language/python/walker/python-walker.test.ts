@@ -283,6 +283,21 @@ describe("extractFromPythonFile — localBindings (type inference)", () => {
     expect(r.chunks[0].callResultBindings?.s2).toEqual([{ line: 3, callee: "make_thing" }]);
   });
 
+  it("keeps a PEP8-private constructor as a local type (bd tea-rags-mcp-z68v9)", () => {
+    // polar `server/polar/compass/assistant/stream.py:147` — `placer =
+    // _BlockPlacer()`, the one row a plain CapWords gate lost.
+    const src = "def view():\n    placer = _BlockPlacer()\n";
+    const tree = parse(src);
+    const r = extractFromPythonFile({
+      tree,
+      code: src,
+      relPath: "x.py",
+      language: "python",
+      chunks: [{ symbolId: "view", scope: [], startLine: 1, endLine: 2 }],
+    });
+    expect(r.chunks[0].localBindings?.placer).toEqual([{ line: 2, type: "_BlockPlacer" }]);
+  });
+
   it("scopes bindings to chunk line range — function A bindings don't leak into function B", () => {
     const src = "def a():\n    s = Foo()\n\ndef b():\n    t = Bar()\n";
     const tree = parse(src);

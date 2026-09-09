@@ -670,7 +670,7 @@ function collectLocalBindingsForChunk(
         const fnNode = right.childForFieldName("function");
         if (!fnNode) return;
         const typeName = extractConstructorTypeName(fnNode);
-        if (typeName && isCapWordsConstructor(typeName)) (out[varName] ??= []).push({ line, type: typeName });
+        if (typeName && pythonLocalCalleeIsConstructor(typeName)) (out[varName] ??= []).push({ line, type: typeName });
       }
       return;
     }
@@ -986,4 +986,23 @@ function pythonCallResultBindingsInRange(
     if (kept.length > 0) out[name] = kept;
   }
   return Object.keys(out).length > 0 ? out : undefined;
+}
+
+/**
+ * {@link isCapWordsConstructor}, but a leading underscore run does not disqualify
+ * the name (bd tea-rags-mcp-z68v9).
+ *
+ * PEP8 spells a module-private class `_CapWords`, and polar's
+ * `placer = _BlockPlacer()` (`server/polar/compass/assistant/stream.py:147`) is
+ * exactly that — the ONE row the plain CapWords gate lost when
+ * `collectLocalBindingsForChunk` adopted it. A private class is still a class.
+ *
+ * Separate from `isCapWordsConstructor` rather than a fix to it because that
+ * predicate gates the FIELD channel, whose behaviour is measured under its own
+ * bead (tea-rags-mcp-m46z). Widening both at once would put an unmeasured change
+ * inside a measured one.
+ */
+function pythonLocalCalleeIsConstructor(typeName: string): boolean {
+  const finalSegment = typeName.slice(typeName.lastIndexOf(".") + 1);
+  return /^_*[A-Z]/.test(finalSegment);
 }
