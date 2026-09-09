@@ -30,6 +30,9 @@ import type { CallContext, GlobalSymbolTable, RelPath } from "../../../../contra
 import type { ImportFileMapper, ImportFileTarget } from "../../../../contracts/types/language.js";
 import { PYTHON_STDLIB_MODULES } from "../vocabulary/stdlib-modules.js";
 
+/** The suffix that makes a directory a package; `pkg/__init__.py` -> `pkg/`. */
+const INIT_PY = "/__init__.py";
+
 const EXTERNAL: ImportFileTarget = { kind: "external" };
 const UNKNOWN: ImportFileTarget = { kind: "unknown" };
 
@@ -44,8 +47,10 @@ const MISS: ImportPathProbe = { kind: "miss" };
  * invalidated when `size()` moves, which is the same shape the TS path mapper
  * uses for its `existsSync` memo — pass 1 grows the table, pass 2 does not.
  *
- * `roots` is the ordered set of roots already proven to fit: on a corpus with
- * one source root, the second import onward skips most of the ancestor scan.
+ * `roots` is the ordered set of roots that fit: SEEDED from the table's file
+ * set when it can list one (bd tea-rags-mcp-60nss), then extended lazily by
+ * whatever the ancestor scan proves. On a corpus with one source root, the
+ * second import onward skips most of the ancestor scan.
  * `answers` is keyed by `<dir> <importText>` because the same text resolves
  * differently from two directories — every relative import, and any absolute
  * one whose root inference depends on the caller's ancestors.
@@ -81,10 +86,62 @@ export class PythonImportFileMapper implements ImportFileMapper {
     // A grown table can turn `external` into `project`; a stale memo would
     // freeze the cold-pass answer for the whole run.
     if (existing?.size === size) return existing;
-    const fresh: ImportMapperMemo = { size, roots: [], answers: new Map() };
+    const fresh: ImportMapperMemo = { size, roots: seedRoots(table), answers: new Map() };
     this.memos.set(table, fresh);
     return fresh;
   }
+}
+
+/**
+ * The project's source roots, read off the table's file set (bd
+ * tea-rags-mcp-60nss).
+ *
+ * A root is any directory R holding a PACKAGE — some `R/<pkg>/__init__.py` —
+ * that is not itself a package, i.e. `R/__init__.py` is absent. `src` for
+ * flask's `src/flask/__init__.py`; `netbox` for `netbox/dcim/__init__.py`;
+ * `""` for httpx's top-level `httpx/__init__.py`. `netbox/dcim` is excluded
+ * even though it holds `models/__init__.py`, because `netbox/dcim/__init__.py`
+ * makes it a package rather than a root.
+ *
+ * Why this is not the ancestor scan's job: the scan can only ever prove a root
+ * the importing file sits UNDER. flask's `examples/app.py` imports `flask`
+ * absolutely and `src` is nobody's ancestor there, so the scan exhausted and 15
+ * bare calls fell out `external` — and whether it exhausted depended on walk
+ * order, since visiting `src/flask/app.py` first happened to prove `src`
+ * lazily.
+ *
+ * Sorted DEEPEST first, then lexicographically: same tie-break as the ancestor
+ * scan (a nested root must not be shadowed by the one above it), and it makes
+ * the answer independent of the order files entered the table.
+ *
+ * One pass over the file keys per memo generation — O(files), no filesystem.
+ * Pass 2 runs against a table that no longer grows, so it happens once.
+ */
+function seedRoots(table: GlobalSymbolTable): string[] {
+  if (table.listFiles === undefined) return [];
+  const roots = new Set<string>();
+  for (const relPath of table.listFiles()) {
+    if (!relPath.endsWith(INIT_PY)) continue;
+    const pkgDir = relPath.slice(0, relPath.length - INIT_PY.length);
+    // `__init__.py` at the repo root has no enclosing directory to be a root of.
+    if (pkgDir.length === 0) continue;
+    const slash = pkgDir.lastIndexOf("/");
+    const root = slash === -1 ? "" : pkgDir.slice(0, slash);
+    if (roots.has(root)) continue;
+    if (table.hasFile(root.length === 0 ? "__init__.py" : `${root}/__init__.py`)) continue;
+    roots.add(root);
+  }
+  return [...roots].sort(byDepthDesc);
+}
+
+/** Deepest first, then lexicographic — a total order, so seeding is stable. */
+function byDepthDesc(a: string, b: string): number {
+  const depth = segmentCount(b) - segmentCount(a);
+  return depth !== 0 ? depth : a.localeCompare(b);
+}
+
+function segmentCount(dir: string): number {
+  return dir.length === 0 ? 0 : dir.split("/").length;
 }
 
 /**

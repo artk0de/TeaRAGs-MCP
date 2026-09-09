@@ -99,6 +99,15 @@ export class InMemoryGlobalSymbolTable implements GlobalSymbolTable {
     return this.byFile.has(relPath);
   }
 
+  /**
+   * Every file the table holds, insertion-ordered because `Map` is. Callers
+   * that need a deterministic answer must impose their own order — the
+   * insertion order is walk order, and walk order is not stable across runs.
+   */
+  listFiles(): Iterable<RelPath> {
+    return this.byFile.keys();
+  }
+
   hasFilesUnder(dirRelPath: string): boolean {
     const normalized = dirRelPath.endsWith("/") ? dirRelPath.slice(0, -1) : dirRelPath;
     if (normalized === "") return this.byFile.size > 0;

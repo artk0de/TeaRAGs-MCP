@@ -222,6 +222,21 @@ export interface GlobalSymbolTable {
    * symbol-free files on a cold pass, which is the pre-o7ifx behaviour.
    */
   hydrateFiles?: (relPaths: readonly RelPath[]) => void;
+  /**
+   * Every file path the table holds, in no guaranteed order (bd
+   * tea-rags-mcp-60nss).
+   *
+   * `hasFile` and `hasFilesUnder` answer about a path the caller already has;
+   * this is the only way to ask what the SHAPE of the project is. Python's
+   * import mapper needs it to find the source roots — `src/flask/__init__.py`
+   * says `src` is a root, and no ancestor of `examples/app.py` ever will.
+   *
+   * Optional capability: a table that omits it makes root inference fall back
+   * to the importing file's ancestors, which is the pre-60nss behaviour.
+   * Consumers must treat it as a per-generation scan and memoise accordingly —
+   * it is O(files), never O(1).
+   */
+  listFiles?: () => Iterable<RelPath>;
   /** Definition count per shortName across the corpus — the distribution the
    *  DispatchFanoutPolicy p99 cap derives from (bd tea-rags-mcp-f2jsb). */
   shortNameDefCounts: () => ReadonlyMap<string, number>;

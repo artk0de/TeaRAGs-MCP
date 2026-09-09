@@ -38,6 +38,10 @@ export class NoopGlobalSymbolTable implements GlobalSymbolTable {
     return false;
   }
 
+  listFiles(): Iterable<RelPath> {
+    return [];
+  }
+
   size(): number {
     return 0;
   }
