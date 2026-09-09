@@ -34,11 +34,40 @@
   `structuredReturnTypes` (return); their two key conventions are under
   Mechanics below. A `container` or `union` receiver yields nothing on purpose —
   `list[Foo]` types the list, not an element.
-- **The vocabulary's stdlib check runs BEFORE the mapper.** The mapper probes
+- **The stdlib check runs BEFORE the mapper — in two places.** The mapper probes
   the caller's ancestor directories first, so `import json` from
   `src/flask/tag.py` would otherwise land on flask's own
   `src/flask/json/__init__.py`. Which module the interpreter binds is a sys.path
-  question no static root inference answers.
+  question no static root inference answers. `PythonExternalVocabulary` carries
+  the guard, and so does
+  `PythonImportedNameSymbolResolutionStrategy.resolveBinding`, which DROPs when
+  an ABSOLUTE `importText` heads a stdlib module — measured cause, the ancestor
+  scan reaching `netbox/utilities/json.py` and turning 45 stdlib calls into
+  in-project phantoms. Absolute-import semantics are what make the DROP correct
+  rather than merely conservative: a project `json.py` is reachable as
+  `from utilities import json`, never as `import json`, so a RELATIVE `.json`
+  import is deliberately left alone.
+- **`importedName` answers TWO receiver shapes, and only SINGLE-HOP ones.** A
+  class receiver (`Device.objects`) resolves through the symbol the binding
+  names; a module receiver (`columns.ColorColumn()`) resolves through the module
+  text the binding composes — an `import_statement` records a MODULE PATH in
+  `importedBindings`, a `from` form records an exported NAME, and
+  `importedBindings[local] === importText` is the discriminator. The composed
+  text is mapped INSTEAD of the parent package, because a PEP 420 namespace
+  parent maps to `unknown`. A receiver with a further hop CONTINUEs: folding
+  belongs to `chainType`. Mind where that guard SITS — it is the first line of
+  `attempt`, ahead of the binding lookup, so a dotted receiver no longer reaches
+  the `external` DROP below it either, and `globalShortName` invents a target
+  from the short name. Measured cost of that ordering on netbox: 95 new phantoms
+  (`ContentType.objects`, `os.path`), on ugnest 9, on flask 2.
+- **`importMatch` only answers receivers nothing bound.** Its trailing-segment
+  heuristic is measured wrong on every import-bound receiver it fires on
+  (netbox: 517 answers, 0 `match`, because the caller's own directory usually
+  holds a file named like the import's last segment), so it CONTINUEs when
+  `findPythonImportBinding` finds the receiver head. What is left is star
+  imports, module-path segments that merely look like the receiver, and dynamic
+  attributes — 35 rows on netbox after the demotion. Whether that residual earns
+  the pass is a measurement, not a symmetry argument.
 - **Chain order is a correctness argument, not a preference.** See the pass list
   in `resolver/python-resolver.ts`; the guards (`super`, `selfField`,
   `selfMember`, `localBinding`) DROP rather than fall through, which is what
