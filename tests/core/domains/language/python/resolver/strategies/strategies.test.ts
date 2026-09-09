@@ -319,3 +319,75 @@ describe("PythonGlobalShortNameSymbolResolutionStrategy", () => {
     expect(outcome.kind).toBe("continue");
   });
 });
+
+/**
+ * The guess is gated on the RECEIVER (bd tea-rags-mcp-99t5y). A member name is
+ * evidence about what is CALLED, never about what it is called ON, so on a
+ * receiver-bound call the short-name table answers with whatever unrelated class
+ * happens to spell the member. Measured on the seeded oracle, the two kinds
+ * carrying a member the enclosing scope really owns are the only ones in credit
+ * — `bareCall` (netbox 441/0, polar 3259/80, ugnest 129/0) and `selfMember`
+ * (netbox 756/40, polar 1284/3) — while every receiver-bound kind loses:
+ * `chain` (ugnest 0/124, polar 69/567, netbox 142/175), `dynamic` (ugnest 1/17,
+ * polar 357/547, netbox 42/89), `index`, `localVar` and `constant` likewise.
+ *
+ * The gate reads `receiver` directly rather than through the trajectory's
+ * `classifyReceiverKind`: `language` may not import a sibling domain
+ * (domain-boundaries.md), and the two kinds it admits are the classifier's two
+ * unconditional ones — `receiver === null` IS `bareCall`, `receiver === "self"`
+ * IS `selfMember`, with no localBindings or regex input.
+ *
+ * CONTINUE, never DROP: the typed passes above already had their say, and this
+ * is the last strategy in the chain, so a CONTINUE here exhausts to `null`.
+ */
+describe("PythonGlobalShortNameSymbolResolutionStrategy — receiver gate (99t5y)", () => {
+  const strat = new PythonGlobalShortNameSymbolResolutionStrategy(cfg);
+  const uniqueTable = (): InMemoryGlobalSymbolTable =>
+    tableWith(
+      ["helper.py", [sym("run", "run", "helper.py", [])]],
+      ["src/caller.py", [sym("Cls", "Cls", "src/caller.py", []), sym("Cls.build", "build", "src/caller.py", ["Cls"])]],
+    );
+  const attemptOn = (receiver: string | null, member: string, over: Partial<CallContext> = {}) =>
+    strat.attempt(
+      { callText: `${receiver ?? ""}.${member}()`, receiver, member, startLine: 9 },
+      ctx({ symbolTable: uniqueTable(), ...over }),
+    );
+
+  it("answers a bareCall — the guess the pass exists for", () => {
+    expect(attemptOn(null, "run")).toEqual({
+      kind: "resolved",
+      target: { targetRelPath: "helper.py", targetSymbolId: "run" },
+    });
+  });
+
+  it("answers a selfMember fallback — `self` reached here because the MRO read `unknown`", () => {
+    expect(attemptOn("self", "run")).toEqual({
+      kind: "resolved",
+      target: { targetRelPath: "helper.py", targetSymbolId: "run" },
+    });
+  });
+
+  it("continues on a `chain` receiver rather than pinning the member's short name", () => {
+    expect(attemptOn("obj.inner", "run").kind).toBe("continue");
+  });
+
+  it("continues on a `dynamic` receiver — an unbound bare identifier", () => {
+    expect(attemptOn("factory", "run").kind).toBe("continue");
+  });
+
+  it("continues on an `index` receiver", () => {
+    expect(attemptOn("items[0]", "run").kind).toBe("continue");
+  });
+
+  it("continues on a `localVar` receiver whose type the walker bound", () => {
+    expect(attemptOn("svc", "run", { localBindings: { svc: [{ line: 1, type: "Service" }] } }).kind).toBe("continue");
+  });
+
+  it("continues on a `constant` receiver — the same-file class arm owns `Cls.build()`", () => {
+    expect(attemptOn("Cls", "build").kind).toBe("continue");
+  });
+
+  it("continues on a `super` receiver — the terminal super pass already declined", () => {
+    expect(attemptOn("<super>", "run").kind).toBe("continue");
+  });
+});

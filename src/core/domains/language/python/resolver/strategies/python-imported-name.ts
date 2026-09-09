@@ -103,7 +103,41 @@ export class PythonImportedNameSymbolResolutionStrategy implements SymbolResolut
     const localName = call.receiver ?? call.member;
     const binding = findPythonImportBinding(ctx.imports, localName);
     if (binding) return this.resolveBinding(binding, call, ctx);
+    const sameFile = this.resolveSameFileClassReceiver(call, ctx);
+    if (sameFile.kind === "resolved") return sameFile;
     return this.resolveStarImport(call, ctx);
+  }
+
+  /**
+   * The receiver is a class the CALLER'S OWN FILE declares, so no import bound
+   * it and the binding table above had nothing to say (bd tea-rags-mcp-99t5y).
+   *
+   * This pass owns the class-receiver question — `resolveDeclaredName` asks it
+   * of an imported class — and a same-file class is the same question with the
+   * declaring file already in hand. It used to be answered one pass later, by
+   * `globalShortName` searching the member's bare short name, and that pass no
+   * longer speaks about receiver-bound calls at all. ugnest's `constant` bucket
+   * is exactly this shape: all 27 of its `globalShortName` matches are
+   * `Cls.method()` with class and method in the calling file, and the 2 phantoms
+   * beside them (`SHORT_HEX_RE.match(color)` → an unrelated
+   * `DistrictMatcher#match`) are the shape this declines.
+   *
+   * The gate IS the evidence: `<receiver>.<member>` (classmethod / staticmethod)
+   * or `<receiver>#<member>` (instance) must be an EXACT symbolId declared in
+   * `ctx.callerFile`. Python symbolIds carry no module path, so the file filter
+   * is what makes it the caller's own class; and no top-level `def` can spell a
+   * dotted id, so the lookup cannot reach anything but a member of that class.
+   * No short-name search, no MRO walk, no DROP — a miss CONTINUEs, and the only
+   * pass below no longer answers it either.
+   */
+  private resolveSameFileClassReceiver(call: CallRef, ctx: CallContext): SymbolResolutionOutcome {
+    if (!call.receiver) return CONTINUE; // a bare call names no class
+    for (const fqName of [`${call.receiver}.${call.member}`, `${call.receiver}#${call.member}`]) {
+      const candidates = ctx.symbolTable.lookup(fqName).filter((def) => def.relPath === ctx.callerFile);
+      const target = pickSingleCandidate(candidates, this.cfg.mode);
+      if (target) return resolved({ targetRelPath: target.relPath, targetSymbolId: target.symbolId });
+    }
+    return CONTINUE;
   }
 
   /**

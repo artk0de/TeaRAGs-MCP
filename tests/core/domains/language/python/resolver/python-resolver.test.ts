@@ -52,7 +52,14 @@ describe("PythonCallResolver", () => {
     return { callerFile, callerScope: [], imports, symbolTable };
   }
 
-  it("resolves `foo.bar()` when the import matches the receiver", () => {
+  // The next three fixtures carry an `ImportRef` with NO `importedBindings` —
+  // the walker-v1 shape. `importMatch`, the pass that matched a receiver against
+  // an import's trailing segment, was deleted (bd tea-rags-mcp-rw1qk), so since
+  // then they resolved only because `globalShortName` guessed the answer off the
+  // bare member name. That guess no longer speaks about receiver-bound calls
+  // (bd tea-rags-mcp-99t5y), so a v1 import with no binding channel is now no
+  // evidence at all and the call goes unresolved.
+  it("leaves `foo.bar()` unresolved when the import records no binding", () => {
     const resolver = new PythonCallResolver();
     const table = new InMemoryGlobalSymbolTable();
     table.upsertFile("foo.py", [
@@ -62,11 +69,10 @@ describe("PythonCallResolver", () => {
       { callText: "foo.bar()", receiver: "foo", member: "bar", startLine: 5 },
       makeCtx("main.py", [{ importText: "foo", startLine: 1 }], table),
     );
-    expect(target?.targetRelPath).toBe("foo.py");
-    expect(target?.targetSymbolId).toBe("foo.bar");
+    expect(target).toBeNull();
   });
 
-  it("matches dotted import by trailing segment (from a.b import => receiver b)", () => {
+  it("does not match a dotted import by trailing segment (from a.b import => receiver b)", () => {
     const resolver = new PythonCallResolver();
     const table = new InMemoryGlobalSymbolTable();
     table.upsertFile("a/b.py", [
@@ -76,10 +82,10 @@ describe("PythonCallResolver", () => {
       { callText: "b.c()", receiver: "b", member: "c", startLine: 4 },
       makeCtx("main.py", [{ importText: "a.b", startLine: 1 }], table),
     );
-    expect(target?.targetRelPath).toBe("a/b.py");
+    expect(target).toBeNull();
   });
 
-  it("matches relative imports by trailing segment", () => {
+  it("does not match a relative import by trailing segment", () => {
     const resolver = new PythonCallResolver();
     const table = new InMemoryGlobalSymbolTable();
     table.upsertFile("pkg/foo.py", [
@@ -89,7 +95,7 @@ describe("PythonCallResolver", () => {
       { callText: "foo.bar()", receiver: "foo", member: "bar", startLine: 3 },
       makeCtx("pkg/main.py", [{ importText: ".foo", startLine: 1 }], table),
     );
-    expect(target?.targetRelPath).toBe("pkg/foo.py");
+    expect(target).toBeNull();
   });
 
   it("falls back to global short-name lookup when no receiver", () => {
@@ -130,11 +136,15 @@ describe("PythonCallResolver", () => {
     ]);
     const target = resolver.resolve(
       { callText: "FOO.do()", receiver: "FOO", member: "do", startLine: 1 },
-      // 'FOO' doesn't match 'foo' (case-sensitive), so the import-list
-      // path fails → falls back to global short-name (do unique here).
+      // 'FOO' doesn't match 'foo' (case-sensitive), so no import binds the
+      // receiver. The short-name fallback used to answer anyway, pinning
+      // `Foo.do` off a receiver spelled differently and declared in a file the
+      // caller is not — the fabrication bd tea-rags-mcp-99t5y closes. The
+      // case-sensitivity this test names is now visible as a null, not as a
+      // guess that happens to land on the same file.
       makeCtx("main.py", [{ importText: "foo", startLine: 1 }], table),
     );
-    expect(target?.targetRelPath).toBe("foo.py");
+    expect(target).toBeNull();
   });
 
   describe("CODEGRAPH_AMBIGUOUS_RESOLVE_MODE", () => {
@@ -193,14 +203,16 @@ describe("PythonCallResolver", () => {
       expect(target).toBeNull();
     });
 
-    it("`first` mode picks first candidate (legacy behavior)", () => {
+    it("`first` mode no longer reaches the ambiguous candidates at all", () => {
       const resolver = new PythonCallResolver("first");
       const { table, call } = ambiguousCtx();
       const target = resolver.resolve(call, makeCtx("engagement/views.py", [], table));
-      // Exactly the false positive the strict mode prevents — emitted ONLY
-      // when the user opts back into legacy `first` mode.
-      expect(target).not.toBeNull();
-      expect(target?.targetSymbolId).toBe("ConfirmationCode#is_valid");
+      // `serializer.is_valid(...)` is receiver-bound, and the short-name
+      // fallback no longer answers those in EITHER mode (bd tea-rags-mcp-99t5y).
+      // The mode still decides what happens among candidates once a pass is
+      // entitled to look; this call site is not one, so the ugnest false
+      // positive is now closed even for a user who opts back into `first`.
+      expect(target).toBeNull();
     });
 
     it("unique short-name resolves identically in both modes", () => {
@@ -318,20 +330,21 @@ describe("PythonCallResolver", () => {
       expect(target?.targetRelPath).toBe("services/reaction/toggle.py");
     });
 
-    it("falls back to short-name path when localBindings is empty / receiver not bound", () => {
+    it("does NOT fall back to the short-name path when localBindings is empty / receiver not bound", () => {
       const resolver = new PythonCallResolver();
       const table = new InMemoryGlobalSymbolTable();
       table.upsertFile("svc.py", [
         { symbolId: "Helper.do", fqName: "Helper.do", shortName: "do", relPath: "svc.py", scope: ["Helper"] },
       ]);
-      // No localBindings — same legacy behavior. `obj.do()` with no
-      // import or binding falls through to global short-name and the
-      // strict guard passes the single match.
+      // No localBindings, no import: nothing says what `obj` IS. The fallback
+      // used to pin `Helper.do` on the strength of the member name alone, which
+      // is a `dynamic` receiver answered by a class the call never named — the
+      // family bd tea-rags-mcp-99t5y measured at ugnest 1/17, polar 357/547.
       const target = resolver.resolve(
         { callText: "obj.do()", receiver: "obj", member: "do", startLine: 1 },
         makeCtxLocal("main.py", [], table, {}),
       );
-      expect(target?.targetSymbolId).toBe("Helper.do");
+      expect(target).toBeNull();
     });
 
     it("PEP 526 annotation binds the variable (var: ClassName = ...)", () => {
