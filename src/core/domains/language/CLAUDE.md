@@ -210,6 +210,27 @@
   plain projection would turn "annotation wins" into "whichever the merge saw
   first" — a behaviour change wearing a refactor's clothes.
 
+- **Python publishes type facts on THREE channels, not the kernel's four.**
+  `python/walker/passes/annotation-type-facts.ts` is the only entry in
+  `PYTHON_EXTRACTION_PASSES`: two inline sources (`annotations`, then
+  `docstring`, disjoint by construction) → `TypeFactStore` under
+  `PYTHON_TYPE_SOURCE_ORDER` → `pythonTypeChannels`, which wraps
+  `typeFactChannels` and re-keys its output. `ivarTypes` becomes
+  `classFieldTypes` keyed by class SHORT name, because that is what
+  `python-self-field.ts:34` reads and Python has no `@ivar` receiver;
+  `structuredReturnTypes` keys are re-spelled with `.` so a key IS the callee's
+  symbolId; `functionReturnTypes` is dropped entirely. A `param` / `local` /
+  `ivar` fact is emitted only when `pythonNominalReceiverName` answers — one
+  reachable arm — and only for annotation shapes `extractTypeName`
+  (`walker/walker.ts:447`) declines. Why: `LocalBinding.type` is a bare string
+  that flattens a container to its element and a union to its first member, so
+  `xs: list[Foo]` would type the LIST as a `Foo`; `mergeLocalBindings`
+  concatenates rather than dedupes, so re-emitting a shape the walker already
+  bound doubles the payload on every annotated def; and the bare-name
+  `functionReturnTypes` map is absorbed run-global with last-write-wins, where
+  at Python's annotation density one `-> Foo` would speak for every same-named
+  method in the corpus.
+
 ## Gotchas
 
 - **`defaultImportFileEdges` asks the CALL chain a MODULE question.**
