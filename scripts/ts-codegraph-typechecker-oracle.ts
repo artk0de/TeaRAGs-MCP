@@ -1728,6 +1728,12 @@ export async function collectSourceFiles(
   repoRoot: string,
   dir: string,
   exclude?: CorpusExclusionFilter,
+  // Which extensions land in the symbol table. Defaults to this oracle's own
+  // TS/JS set, so every existing caller is byte-identical. The Python oracle
+  // passes `CODEGRAPH_LANGUAGES`'s keys instead — the exclusion LAYERS are what
+  // corpus parity is about, and those are shared; the extension list is
+  // language-specific by construction.
+  extensions: readonly string[] = SYMBOL_TABLE_EXTENSIONS,
 ): Promise<CorpusSelection> {
   const selection: CorpusSelection = { kept: [], ingestIgnored: 0, codegraphExcluded: 0 };
 
@@ -1740,7 +1746,7 @@ export async function collectSourceFiles(
         await walk(child);
         continue;
       }
-      if (!SYMBOL_TABLE_EXTENSIONS.some((ext) => extensionOf(entry.name) === ext)) continue;
+      if (!extensions.some((ext) => extensionOf(entry.name) === ext)) continue;
       if (isDeclarationFile(entry.name)) continue;
 
       const relPath = relative(repoRoot, child).split(sep).join("/");

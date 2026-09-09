@@ -52,7 +52,14 @@ describe("PythonCallResolver", () => {
     return { callerFile, callerScope: [], imports, symbolTable };
   }
 
-  it("resolves `foo.bar()` when the import matches the receiver", () => {
+  // The next three fixtures carry an `ImportRef` with NO `importedBindings` —
+  // the walker-v1 shape. `importMatch`, the pass that matched a receiver against
+  // an import's trailing segment, was deleted (bd tea-rags-mcp-rw1qk), so since
+  // then they resolved only because `globalShortName` guessed the answer off the
+  // bare member name. That guess no longer speaks about receiver-bound calls
+  // (bd tea-rags-mcp-99t5y), so a v1 import with no binding channel is now no
+  // evidence at all and the call goes unresolved.
+  it("leaves `foo.bar()` unresolved when the import records no binding", () => {
     const resolver = new PythonCallResolver();
     const table = new InMemoryGlobalSymbolTable();
     table.upsertFile("foo.py", [
@@ -62,11 +69,10 @@ describe("PythonCallResolver", () => {
       { callText: "foo.bar()", receiver: "foo", member: "bar", startLine: 5 },
       makeCtx("main.py", [{ importText: "foo", startLine: 1 }], table),
     );
-    expect(target?.targetRelPath).toBe("foo.py");
-    expect(target?.targetSymbolId).toBe("foo.bar");
+    expect(target).toBeNull();
   });
 
-  it("matches dotted import by trailing segment (from a.b import => receiver b)", () => {
+  it("does not match a dotted import by trailing segment (from a.b import => receiver b)", () => {
     const resolver = new PythonCallResolver();
     const table = new InMemoryGlobalSymbolTable();
     table.upsertFile("a/b.py", [
@@ -76,10 +82,10 @@ describe("PythonCallResolver", () => {
       { callText: "b.c()", receiver: "b", member: "c", startLine: 4 },
       makeCtx("main.py", [{ importText: "a.b", startLine: 1 }], table),
     );
-    expect(target?.targetRelPath).toBe("a/b.py");
+    expect(target).toBeNull();
   });
 
-  it("matches relative imports by trailing segment", () => {
+  it("does not match a relative import by trailing segment", () => {
     const resolver = new PythonCallResolver();
     const table = new InMemoryGlobalSymbolTable();
     table.upsertFile("pkg/foo.py", [
@@ -89,20 +95,7 @@ describe("PythonCallResolver", () => {
       { callText: "foo.bar()", receiver: "foo", member: "bar", startLine: 3 },
       makeCtx("pkg/main.py", [{ importText: ".foo", startLine: 1 }], table),
     );
-    expect(target?.targetRelPath).toBe("pkg/foo.py");
-  });
-
-  it("returns null when the import resolves but no symbol matches by short-name (target file is known)", () => {
-    const resolver = new PythonCallResolver();
-    const table = new InMemoryGlobalSymbolTable();
-    const target = resolver.resolve(
-      { callText: "foo.ghost()", receiver: "foo", member: "ghost", startLine: 1 },
-      makeCtx("main.py", [{ importText: "foo", startLine: 1 }], table),
-    );
-    // No matching symbol in table — resolver records target file with
-    // null symbol id so the file-edge still gets attribution.
-    expect(target?.targetRelPath).toBe("foo.py");
-    expect(target?.targetSymbolId).toBeNull();
+    expect(target).toBeNull();
   });
 
   it("falls back to global short-name lookup when no receiver", () => {
@@ -143,11 +136,15 @@ describe("PythonCallResolver", () => {
     ]);
     const target = resolver.resolve(
       { callText: "FOO.do()", receiver: "FOO", member: "do", startLine: 1 },
-      // 'FOO' doesn't match 'foo' (case-sensitive), so the import-list
-      // path fails → falls back to global short-name (do unique here).
+      // 'FOO' doesn't match 'foo' (case-sensitive), so no import binds the
+      // receiver. The short-name fallback used to answer anyway, pinning
+      // `Foo.do` off a receiver spelled differently and declared in a file the
+      // caller is not — the fabrication bd tea-rags-mcp-99t5y closes. The
+      // case-sensitivity this test names is now visible as a null, not as a
+      // guess that happens to land on the same file.
       makeCtx("main.py", [{ importText: "foo", startLine: 1 }], table),
     );
-    expect(target?.targetRelPath).toBe("foo.py");
+    expect(target).toBeNull();
   });
 
   describe("CODEGRAPH_AMBIGUOUS_RESOLVE_MODE", () => {
@@ -206,14 +203,16 @@ describe("PythonCallResolver", () => {
       expect(target).toBeNull();
     });
 
-    it("`first` mode picks first candidate (legacy behavior)", () => {
+    it("`first` mode no longer reaches the ambiguous candidates at all", () => {
       const resolver = new PythonCallResolver("first");
       const { table, call } = ambiguousCtx();
       const target = resolver.resolve(call, makeCtx("engagement/views.py", [], table));
-      // Exactly the false positive the strict mode prevents — emitted ONLY
-      // when the user opts back into legacy `first` mode.
-      expect(target).not.toBeNull();
-      expect(target?.targetSymbolId).toBe("ConfirmationCode#is_valid");
+      // `serializer.is_valid(...)` is receiver-bound, and the short-name
+      // fallback no longer answers those in EITHER mode (bd tea-rags-mcp-99t5y).
+      // The mode still decides what happens among candidates once a pass is
+      // entitled to look; this call site is not one, so the ugnest false
+      // positive is now closed even for a user who opts back into `first`.
+      expect(target).toBeNull();
     });
 
     it("unique short-name resolves identically in both modes", () => {
@@ -245,28 +244,6 @@ describe("PythonCallResolver", () => {
       const call = { callText: "unknown()", receiver: null, member: "unknown", startLine: 1 };
       expect(new PythonCallResolver("strict").resolve(call, makeCtx("main.py", [], empty))).toBeNull();
       expect(new PythonCallResolver("first").resolve(call, makeCtx("main.py", [], empty))).toBeNull();
-    });
-
-    it("import-restricted path also honors mode: 2 same-file candidates → strict drops, first picks", () => {
-      // Same file declares two classes with same-named method. The
-      // import-restricted path filters to `targetFile`, but cardinality
-      // still > 1 — the mode controls the pick.
-      const table = new InMemoryGlobalSymbolTable();
-      table.upsertFile("foo.py", [
-        { symbolId: "ClassA#run", fqName: "ClassA#run", shortName: "run", relPath: "foo.py", scope: ["ClassA"] },
-        { symbolId: "ClassB#run", fqName: "ClassB#run", shortName: "run", relPath: "foo.py", scope: ["ClassB"] },
-      ]);
-      const call = { callText: "foo.run()", receiver: "foo", member: "run", startLine: 1 };
-      const ctx = makeCtx("main.py", [{ importText: "foo", startLine: 1 }], table);
-
-      const strict = new PythonCallResolver("strict").resolve(call, ctx);
-      // Strict: same file, ambiguous → file-edge with null symbol, not arbitrary pick.
-      expect(strict?.targetRelPath).toBe("foo.py");
-      expect(strict?.targetSymbolId).toBeNull();
-
-      const first = new PythonCallResolver("first").resolve(call, ctx);
-      expect(first?.targetRelPath).toBe("foo.py");
-      expect(first?.targetSymbolId).toBe("ClassA#run");
     });
   });
 
@@ -319,11 +296,11 @@ describe("PythonCallResolver", () => {
           serializer: [{ line: 1, type: "ToggleReactionSerializer" }],
         }),
       );
-      // Type's file resolved (engagement/serializers/reaction.py) but
-      // is_valid not defined on ToggleReactionSerializer → file-only
-      // attribution, NEVER ConfirmationCode#is_valid.
-      expect(target?.targetSymbolId).toBeNull();
-      expect(target?.targetRelPath).toBe("engagement/serializers/reaction.py");
+      // lbtmm: the file-only fallback now needs the bound type corroborated as
+      // class-kind, and this fixture gives `ToggleReactionSerializer` no base
+      // and no members — the same shape a top-level `def` has. The point of the
+      // test is unchanged and stronger: NEVER ConfirmationCode#is_valid.
+      expect(target).toBeNull();
     });
 
     it("resolves correctly when the method IS defined on the bound type", () => {
@@ -353,20 +330,21 @@ describe("PythonCallResolver", () => {
       expect(target?.targetRelPath).toBe("services/reaction/toggle.py");
     });
 
-    it("falls back to short-name path when localBindings is empty / receiver not bound", () => {
+    it("does NOT fall back to the short-name path when localBindings is empty / receiver not bound", () => {
       const resolver = new PythonCallResolver();
       const table = new InMemoryGlobalSymbolTable();
       table.upsertFile("svc.py", [
         { symbolId: "Helper.do", fqName: "Helper.do", shortName: "do", relPath: "svc.py", scope: ["Helper"] },
       ]);
-      // No localBindings — same legacy behavior. `obj.do()` with no
-      // import or binding falls through to global short-name and the
-      // strict guard passes the single match.
+      // No localBindings, no import: nothing says what `obj` IS. The fallback
+      // used to pin `Helper.do` on the strength of the member name alone, which
+      // is a `dynamic` receiver answered by a class the call never named — the
+      // family bd tea-rags-mcp-99t5y measured at ugnest 1/17, polar 357/547.
       const target = resolver.resolve(
         { callText: "obj.do()", receiver: "obj", member: "do", startLine: 1 },
         makeCtxLocal("main.py", [], table, {}),
       );
-      expect(target?.targetSymbolId).toBe("Helper.do");
+      expect(target).toBeNull();
     });
 
     it("PEP 526 annotation binds the variable (var: ClassName = ...)", () => {
@@ -500,9 +478,16 @@ describe("PythonCallResolver", () => {
     });
 
     // resolveTypeFile third pass — type NOT in symbol table (external
-    // class like DRF Serializer); fall back to scanning imports whose
-    // last segment matches the bare type name. Covers lines 148-151.
-    it("attributes an external type via import path whose last segment matches the bare type (third-pass fallback)", () => {
+    // class like DRF Serializer); the import whose last segment matches the
+    // bare type name still names a file.
+    //
+    // xasyu: was "attributes an external type via import path whose last
+    // segment matches the bare type (third-pass fallback)", asserting
+    // `targetRelPath === "lib/Serializer.py"` with a null `targetSymbolId`.
+    // The file is still found; what it can no longer do is become an edge —
+    // no project file declares `Serializer`, so there is no class to walk and
+    // no symbol to name.
+    it("DROPS a type reachable only through an import path — the file is not a symbol", () => {
       const resolver = new PythonCallResolver();
       const table = new InMemoryGlobalSymbolTable();
       // No `Serializer` symbol in project — but caller imports it as
@@ -514,9 +499,7 @@ describe("PythonCallResolver", () => {
           s: [{ line: 1, type: "Serializer" }],
         }),
       );
-      // mapPythonImportToFile resolves `.lib.Serializer` → "lib/Serializer.py"
-      expect(target?.targetRelPath).toBe("lib/Serializer.py");
-      expect(target?.targetSymbolId).toBeNull();
+      expect(target).toBeNull();
     });
   });
 
@@ -794,25 +777,25 @@ describe("PythonCallResolver", () => {
         classFieldTypes: { Handler: { service: "SomeService" } },
       };
       // `inherited()` not defined on SomeService anywhere in the table —
-      // inherited from a base class outside the project. The field type
-      // IS known, so emit a type-qualified best-effort target anchored to
-      // the bare type name rather than dropping. Mirrors the Java resolver's
-      // CharSequence#charAt external path.
+      // inherited from a base class outside the project.
       const target = resolver.resolve(
         { callText: "self.service.inherited()", receiver: "self.service", member: "inherited", startLine: 8 },
         ctx,
       );
-      expect(target?.targetRelPath).toBe("SomeService");
-      expect(target?.targetSymbolId).toBe("SomeService#inherited");
+      // lbtmm: the type-qualified best-effort anchor is gone — its
+      // `targetRelPath` was a TYPE NAME where every consumer expects a file.
+      // No import binds `SomeService` here, so the type is UNKNOWN and the pass
+      // CONTINUEs; nothing downstream defines `inherited`, so the call is
+      // unresolved rather than anchored to a file that does not exist.
+      expect(target).toBeNull();
     });
 
-    it("resolves `self._context_stack.close()` to an external `ExitStack#close` target (stdlib type, not in table)", () => {
+    it("emits NO target for `self._context_stack.close()` — a stdlib type is not a file (lbtmm)", () => {
       const resolver = new PythonCallResolver();
       const table = new InMemoryGlobalSymbolTable();
       // ExitStack is `contextlib` stdlib — NOT in the indexed repo. The
       // field's type is known from the `__init__` constructor assignment
-      // (`self._context_stack = ExitStack()`), so the call resolves to a
-      // type-qualified best-effort target instead of being dropped.
+      // (`self._context_stack = ExitStack()`).
       const ctx: CallContext = {
         callerFile: "flask/testing.py",
         callerScope: ["FlaskClient"],
@@ -824,11 +807,14 @@ describe("PythonCallResolver", () => {
         { callText: "self._context_stack.close()", receiver: "self._context_stack", member: "close", startLine: 12 },
         ctx,
       );
-      expect(target?.targetRelPath).toBe("ExitStack");
-      expect(target?.targetSymbolId).toBe("ExitStack#close");
+      // lbtmm: `{ targetRelPath: "ExitStack" }` named a type where the graph
+      // stores a file path, so the edge joined nothing and inflated the
+      // source's fanOut. `imports` is empty here, so the type is UNKNOWN rather
+      // than externally classified and the pass CONTINUEs into an empty table.
+      expect(target).toBeNull();
     });
 
-    it("resolves `self._context_stack.enter_context(cm)` to an external `ExitStack#enter_context` target", () => {
+    it("emits NO target for `self._context_stack.enter_context(cm)` either (lbtmm)", () => {
       const resolver = new PythonCallResolver();
       const table = new InMemoryGlobalSymbolTable();
       const ctx: CallContext = {
@@ -847,8 +833,8 @@ describe("PythonCallResolver", () => {
         },
         ctx,
       );
-      expect(target?.targetRelPath).toBe("ExitStack");
-      expect(target?.targetSymbolId).toBe("ExitStack#enter_context");
+      // lbtmm: same synthetic anchor, same verdict — see the test above.
+      expect(target).toBeNull();
     });
 
     it("does not apply field resolution outside a class scope (callerScope empty)", () => {

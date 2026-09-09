@@ -190,6 +190,12 @@ export async function createCodegraphEnrichmentProvider(
       try {
         const persisted = await graphDb.listAllSymbols();
         if (persisted.length > 0) symbolTable.hydrate(persisted);
+        // …and the files that persisted no symbol at all (bd tea-rags-mcp-o7ifx).
+        // `cg_symbols` has no row for an empty `__init__.py`, so hydrating from
+        // it alone leaves every package marker outside the project until some
+        // later run happens to re-walk it. The file table is the full universe.
+        const files = await graphDb.listFileContentHashes();
+        if (files.length > 0) symbolTable.hydrateFiles?.(files.map((f) => f.relPath));
       } catch (err) {
         process.stderr.write(
           `[tea-rags] codegraph symbol-table hydration failed for ${collectionName}: ${(err as Error).message}\n`,

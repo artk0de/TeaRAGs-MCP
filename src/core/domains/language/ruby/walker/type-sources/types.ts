@@ -1,45 +1,18 @@
-import type { RubyTypeRef } from "../../../../../contracts/types/language.js";
+/**
+ * Ruby's names for the kernel type-source contracts (`kernel/type-facts.ts`),
+ * kept as a shim by E1 seam 2 so the five inline sources, the source registry
+ * and the type-source suite keep their imports. `RubyInlineTypeSource` is the
+ * kernel generic bound to Ruby's walker input — the one Ruby-specific fact
+ * left in this file.
+ */
+import type { InlineTypeSource } from "../../../kernel/type-facts.js";
 import type { RubyExtractInput } from "../walker.js";
 
-/** One receiver-type fact a source attributes to a symbol coordinate. */
-export interface RubyTypeFact {
-  kind: "param" | "return" | "ivar" | "local" | "attr";
-  /** Source name that produced this fact — used for precedence resolution in RubyTypeFactStore. */
-  source?: string;
-  /** Enclosing class/module FQ scope, e.g. ["Octokit","Client"]. */
-  symbolScope: string[];
-  /** Owning def short name (param/return/local). Undefined for class-level ivar/attr. */
-  methodName?: string;
-  /** Param / ivar / local var name. Undefined for `return`. */
-  name?: string;
-  /**
-   * `true` when the fact documents a CLASS-level member (`@!method self.call`)
-   * rather than an instance one. The store then joins the coordinate with `.`
-   * instead of `#`, keeping `Class.call` and `Class#call` — genuinely different
-   * methods — from overwriting each other (bd tea-rags-mcp-8ypeu).
-   */
-  classForm?: boolean;
-  /** 1-based source line for position-scoped inline facts; undefined for sidecar/name-keyed facts. */
-  line?: number;
-  type: RubyTypeRef;
-}
+export type {
+  ProjectTypeSourceContext,
+  SidecarTypeSource as RubySidecarTypeSource,
+  TypeFact as RubyTypeFact,
+} from "../../../kernel/type-facts.js";
 
 /** A type source colocated in the `.rb` file (YARD comments, Sorbet `sig {}` / `T.let`). */
-export interface RubyInlineTypeSource {
-  readonly name: string;
-  extract: (input: RubyExtractInput) => RubyTypeFact[];
-}
-
-/** A type source living in separate signature files (`sig/*.rbs`, `sorbet/rbi/`). */
-export interface RubySidecarTypeSource {
-  readonly name: string;
-  extractProject: (ctx: ProjectTypeSourceContext) => RubyTypeFact[];
-}
-
-/** Inputs a sidecar source receives once per project (pre-pass). */
-export interface ProjectTypeSourceContext {
-  /** Absolute project root. */
-  projectRoot: string;
-  /** Relative paths of the `.rb` files being indexed (join target by FQ name). */
-  rubyFiles: readonly string[];
-}
+export type RubyInlineTypeSource = InlineTypeSource<RubyExtractInput>;

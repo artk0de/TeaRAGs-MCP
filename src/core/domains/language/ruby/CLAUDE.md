@@ -28,6 +28,31 @@
 
 ## Gotchas
 
+- **`resolver/type-propagation.ts` is still the ADDRESS every consumer imports,
+  but the chain WALK is not in it.** Its exports are unchanged —
+  `typeOfReceiver`, `ivarTypeName`, `CHAIN_MAX_HOPS_DEFAULT` and the five
+  vocabulary re-exports — while the fold itself moved to
+  `kernel/receiver-type-propagation.ts` in E1 seam 3, supplied from here as
+  `RUBY_RECEIVER_TYPE_PORTS`. What stayed is what is Ruby: `@ivar` resolution
+  over `ivarTypes` then `classFieldTypes`, the nullary self-call receiver, typed
+  container index access, `CONST_HEAD` seeding via `declaredReturnType` then the
+  gem catalogue, and `CODEGRAPH_RB_CHAIN_MAX_HOPS`. Change any of those here;
+  change the walk in the kernel and re-run
+  `scripts/spikes/ruby-resolver-parity.ts --before-root <pre-seam checkout>`.
+  Why: reading this file for the hop threading finds only the ports, and editing
+  the kernel to fix a Ruby-shaped miss moves every other language with it.
+- **`resolver/ancestor-linearization.ts` keeps its signature, but the DRIVER
+  moved.** `linearizeAncestors(klass, hierarchy)` and `RubyAncestorHierarchy`
+  are unchanged for every importer; the recursion, cycle guard, dedupe and memo
+  are `kernel/ancestor-walk.ts` (E2 seam 4), supplied from here as
+  `RUBY_ANCESTOR_POLICY`. What stayed is what is Ruby: prepends first, then the
+  class, then includes ranked last-declared-nearest, then the superclass chain —
+  and Ruby supplies no `boundaryOf`, so every linearization reads `closed`.
+  Ruby's MEMBER walk is NOT the kernel's: `resolveInstanceMethodInClassChain`
+  (`strategies/shared.ts`) carries the prepend pre-pass, the schema-column
+  preference and the file-only fallback ordering, none of which are neutral, and
+  it stays here. Change the order here; change the walk in the kernel and re-run
+  `scripts/spikes/ruby-resolver-parity.ts --before-root <pre-seam checkout>`.
 - **The external-member suppression set is `ACTIVE_RECORD_INSTANCE_BUILTINS` in
   `dsl/rails-runtime.ts` — not `dsl/core-members.ts`.** Membership means "the
   Rails idiom cannot override this on a domain object through an explicit
@@ -46,14 +71,14 @@
   against `RUBY_DSL` looks nonexistent, and a gem module added without
   `activatedBy` is active on every Ruby project.
 - **Type-fact precedence is SEVEN ranks, and the residual is upstream FACT
-  QUALITY, not lookup.** `DEFAULT_SOURCE_ORDER` (`walker/type-fact-store.ts`) is
-  sorbet > rbs > yard > associations > draper > body-last-expr > ast, but only
-  five have a registered source (`walker/type-sources/index.ts`); sorbet and rbs
-  are reserved ranks with no implementation. The 615-miss bucket was FALSIFIED
-  as a lookup problem: it is a flat bare-name return map plus fictional
-  annotation classes shadowing derived facts via the `.`-vs-`#` key split. Why:
-  chasing a wrong receiver type through the propagation engine or the MRO walk
-  is the wrong layer.
+  QUALITY, not lookup.** `RUBY_TYPE_SOURCE_ORDER` (`walker/type-fact-store.ts`)
+  is sorbet > rbs > yard > associations > draper > body-last-expr > ast, but
+  only five have a registered source (`walker/type-sources/index.ts`); sorbet
+  and rbs are reserved ranks with no implementation. The 615-miss bucket was
+  FALSIFIED as a lookup problem: it is a flat bare-name return map plus
+  fictional annotation classes shadowing derived facts via the `.`-vs-`#` key
+  split. Why: chasing a wrong receiver type through the propagation engine or
+  the MRO walk is the wrong layer.
 - **Ruby recall numbers measured before 2026-07-28 sit on a different
   DENOMINATOR.** `RUBY_CODEGRAPH_EXCLUSION_GLOBS` (`codegraph-exclusions.ts`)
   has kept `db/migrate`, `db/data` and the schema snapshots out of the fan-graph

@@ -901,3 +901,120 @@ describe("extractFromPythonFile — localTypeTrackingEnabled gate", () => {
     }
   });
 });
+
+// ─── innermost-chunk call attribution ────────────────────────────────────────
+/**
+ * bd tea-rags-mcp-invuy. A class chunk's line range CONTAINS every method
+ * chunk nested in it, so the old pure-containment filter emitted each call
+ * twice — once from the method chunk with the method's scope, once from the
+ * class chunk with the class's (or, for a top-level class, an EMPTY) scope.
+ * The duplicate is what `assignCallsToInnermostChunks` removes: one call site,
+ * one owning chunk, the smallest range that contains it.
+ */
+describe("extractFromPythonFile — innermost-chunk call attribution (bd invuy)", () => {
+  it("files a method's call on the METHOD chunk, never on the enclosing class chunk", () => {
+    const src = ["class C:", "    def a(self):", "        foo()", "", "    def b(self):", "        bar()", ""].join(
+      "\n",
+    );
+    const tree = parse(src);
+    const r = extractFromPythonFile({
+      tree,
+      code: src,
+      relPath: "x.py",
+      language: "python",
+      chunks: [
+        { symbolId: "C", scope: [], startLine: 1, endLine: 6 },
+        { symbolId: "C#a", scope: ["C"], startLine: 2, endLine: 3 },
+        { symbolId: "C#b", scope: ["C"], startLine: 5, endLine: 6 },
+      ],
+    });
+    expect(r.chunks.map((c) => c.calls.map((call) => call.member))).toEqual([[], ["foo"], ["bar"]]);
+  });
+
+  it("emits each call exactly once across the whole file", () => {
+    const src = ["class C:", "    def a(self):", "        foo()", "        foo()", ""].join("\n");
+    const tree = parse(src);
+    const r = extractFromPythonFile({
+      tree,
+      code: src,
+      relPath: "x.py",
+      language: "python",
+      chunks: [
+        { symbolId: "C", scope: [], startLine: 1, endLine: 4 },
+        { symbolId: "C#a", scope: ["C"], startLine: 2, endLine: 4 },
+      ],
+    });
+    // Two call SITES, not four records: the class chunk used to carry a copy
+    // of each one under an empty scope.
+    expect(r.chunks.flatMap((c) => c.calls)).toHaveLength(2);
+    expect(r.chunks[0].calls).toEqual([]);
+  });
+
+  it("files a nested class's method call under the INNER class scope", () => {
+    const src = ["class Outer:", "    class Inner:", "        def m(self):", "            baz()", ""].join("\n");
+    const tree = parse(src);
+    const r = extractFromPythonFile({
+      tree,
+      code: src,
+      relPath: "x.py",
+      language: "python",
+      chunks: [
+        { symbolId: "Outer", scope: [], startLine: 1, endLine: 4 },
+        { symbolId: "Outer.Inner", scope: ["Outer"], startLine: 2, endLine: 4 },
+        { symbolId: "Outer.Inner#m", scope: ["Outer", "Inner"], startLine: 3, endLine: 4 },
+      ],
+    });
+    const owner = r.chunks.find((c) => c.calls.length > 0);
+    expect(owner?.symbolId).toBe("Outer.Inner#m");
+    expect(owner?.scope).toEqual(["Outer", "Inner"]);
+    expect(r.chunks.flatMap((c) => c.calls)).toHaveLength(1);
+  });
+
+  it("leaves a module-level call on the module chunk no def chunk contains", () => {
+    const src = ["setup()", "", "def run():", "    work()", ""].join("\n");
+    const tree = parse(src);
+    const r = extractFromPythonFile({
+      tree,
+      code: src,
+      relPath: "x.py",
+      language: "python",
+      chunks: [
+        { symbolId: "<module>", scope: [], startLine: 1, endLine: 4 },
+        { symbolId: "run", scope: [], startLine: 3, endLine: 4 },
+      ],
+    });
+    expect(r.chunks[0].calls.map((c) => c.member)).toEqual(["setup"]);
+    expect(r.chunks[1].calls.map((c) => c.member)).toEqual(["work"]);
+  });
+
+  it("drops a call no chunk contains — the kernel contract, same as the old filter", () => {
+    const src = ["orphan()", "", "def run():", "    work()", ""].join("\n");
+    const tree = parse(src);
+    const r = extractFromPythonFile({
+      tree,
+      code: src,
+      relPath: "x.py",
+      language: "python",
+      chunks: [{ symbolId: "run", scope: [], startLine: 3, endLine: 4 }],
+    });
+    expect(r.chunks.flatMap((c) => c.calls).map((c) => c.member)).toEqual(["work"]);
+  });
+
+  it("files a decorator call on the method chunk that spans its decorator line", () => {
+    const src = ["class C:", "    @property", "    def name(self):", "        return 1", ""].join("\n");
+    const tree = parse(src);
+    const r = extractFromPythonFile({
+      tree,
+      code: src,
+      relPath: "x.py",
+      language: "python",
+      chunks: [
+        { symbolId: "C", scope: [], startLine: 1, endLine: 4 },
+        // The production chunker starts a decorated method at its decorator.
+        { symbolId: "C#name", scope: ["C"], startLine: 2, endLine: 4 },
+      ],
+    });
+    expect(r.chunks[0].calls).toEqual([]);
+    expect(r.chunks[1].calls.map((c) => c.member)).toEqual(["property"]);
+  });
+});

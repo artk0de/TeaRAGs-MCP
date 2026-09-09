@@ -8,7 +8,6 @@ import {
 } from "../../../../../../../src/core/contracts/types/codegraph.js";
 import {
   PythonGlobalShortNameSymbolResolutionStrategy,
-  PythonImportMatchSymbolResolutionStrategy,
   PythonLocalBindingSymbolResolutionStrategy,
   PythonSelfFieldSymbolResolutionStrategy,
   PythonSelfMemberSymbolResolutionStrategy,
@@ -116,16 +115,18 @@ describe("PythonSelfFieldSymbolResolutionStrategy", () => {
     });
   });
 
-  it("emits an external best-effort target when the field type is known but the method is external", () => {
+  it("CONTINUEs when the field type is known but unclassifiable — no synthetic anchor (lbtmm)", () => {
     const symbolTable = tableWith();
     const outcome = strat.attempt(
       { ...call, member: "close", callText: "self._stack.close()", receiver: "self._stack" },
       ctx({ symbolTable, callerScope: ["Client"], classFieldTypes: { Client: { _stack: "ExitStack" } } }),
     );
-    expect(outcome).toEqual({
-      kind: "resolved",
-      target: { targetRelPath: "ExitStack", targetSymbolId: "ExitStack#close" },
-    });
+    // lbtmm: was `resolved({ targetRelPath: "ExitStack", targetSymbolId:
+    // "ExitStack#close" })` — a target whose file half is a type name. With no
+    // import binding `ExitStack` the type is UNKNOWN, so the pass continues;
+    // the external-import shape is covered in
+    // `python-external-type-target-guard.test.ts`.
+    expect(outcome).toEqual({ kind: "continue" });
   });
 
   it("DROPS when the field has no recorded type — never falls through (guard rjuc)", () => {
@@ -230,21 +231,27 @@ describe("PythonLocalBindingSymbolResolutionStrategy", () => {
     });
   });
 
-  it("emits a file-only edge when the bound type's file is known but the method is external (does NOT continue)", () => {
+  it("DROPS when the bound type's file is known but the method is external (never a file-only edge)", () => {
     // `ToggleReactionSerializer` is in the table but `is_valid` is not — DRF
-    // inherits it from a base outside the project. File-only attribution.
+    // inherits it from a base outside the project.
     const symbolTable = tableWith([
       "reaction.py",
       [sym("ToggleReactionSerializer", "ToggleReactionSerializer", "reaction.py", [])],
     ]);
     const outcome = strat.attempt(
       { ...call, member: "is_valid", receiver: "serializer", callText: "serializer.is_valid()" },
-      ctx({ symbolTable, localBindings: { serializer: [{ line: 1, type: "ToggleReactionSerializer" }] } }),
+      ctx({
+        symbolTable,
+        // lbtmm: the bare-name probe still gates the walker-v2 path, and a
+        // class with an external base is the shape it was written for.
+        classExtends: { ToggleReactionSerializer: "serializers.ModelSerializer" },
+        localBindings: { serializer: [{ line: 1, type: "ToggleReactionSerializer" }] },
+      }),
     );
-    expect(outcome).toEqual({
-      kind: "resolved",
-      target: { targetRelPath: "reaction.py", targetSymbolId: null },
-    });
+    // xasyu: this used to answer `{ reaction.py, null }`. A call site names a
+    // symbol or nothing — every one of netbox's 223 `localBinding` phantoms
+    // was a file-only edge of exactly this shape.
+    expect(outcome).toEqual({ kind: "drop" });
   });
 
   it("DROPS when the bound type's file is unknown (external lib, no import) — never falls through", () => {
@@ -285,41 +292,6 @@ describe("PythonLocalBindingSymbolResolutionStrategy", () => {
   });
 });
 
-describe("PythonImportMatchSymbolResolutionStrategy", () => {
-  const strat = new PythonImportMatchSymbolResolutionStrategy(cfg);
-  const call: CallRef = { callText: "foo.bar()", receiver: "foo", member: "bar", startLine: 1 };
-
-  it("resolves via an import whose trailing segment matches the receiver", () => {
-    const symbolTable = tableWith(["foo.py", [sym("foo.bar", "bar", "foo.py", ["foo"])]]);
-    const outcome = strat.attempt(call, ctx({ symbolTable, imports: [{ importText: "foo", startLine: 1 }] }));
-    expect(outcome).toEqual({
-      kind: "resolved",
-      target: { targetRelPath: "foo.py", targetSymbolId: "foo.bar" },
-    });
-  });
-
-  it("emits a terminal file-only edge when the import maps but no symbol matches (does NOT continue)", () => {
-    const symbolTable = tableWith();
-    const outcome = strat.attempt(
-      { ...call, member: "ghost", callText: "foo.ghost()" },
-      ctx({ symbolTable, imports: [{ importText: "foo", startLine: 1 }] }),
-    );
-    expect(outcome).toEqual({ kind: "resolved", target: { targetRelPath: "foo.py", targetSymbolId: null } });
-  });
-
-  it("continues when no import's trailing segment matches the receiver", () => {
-    const symbolTable = tableWith(["foo.py", [sym("foo.bar", "bar", "foo.py", ["foo"])]]);
-    const outcome = strat.attempt(call, ctx({ symbolTable, imports: [{ importText: "unrelated", startLine: 1 }] }));
-    expect(outcome.kind).toBe("continue");
-  });
-
-  it("continues when there is no receiver", () => {
-    const symbolTable = tableWith();
-    const outcome = strat.attempt({ ...call, receiver: null }, ctx({ symbolTable }));
-    expect(outcome.kind).toBe("continue");
-  });
-});
-
 describe("PythonGlobalShortNameSymbolResolutionStrategy", () => {
   const strat = new PythonGlobalShortNameSymbolResolutionStrategy(cfg);
   const call: CallRef = { callText: "do_thing()", receiver: null, member: "do_thing", startLine: 1 };
@@ -343,5 +315,77 @@ describe("PythonGlobalShortNameSymbolResolutionStrategy", () => {
     const symbolTable = tableWith();
     const outcome = strat.attempt(call, ctx({ symbolTable }));
     expect(outcome.kind).toBe("continue");
+  });
+});
+
+/**
+ * The guess is gated on the RECEIVER (bd tea-rags-mcp-99t5y). A member name is
+ * evidence about what is CALLED, never about what it is called ON, so on a
+ * receiver-bound call the short-name table answers with whatever unrelated class
+ * happens to spell the member. Measured on the seeded oracle, the two kinds
+ * carrying a member the enclosing scope really owns are the only ones in credit
+ * — `bareCall` (netbox 441/0, polar 3259/80, ugnest 129/0) and `selfMember`
+ * (netbox 756/40, polar 1284/3) — while every receiver-bound kind loses:
+ * `chain` (ugnest 0/124, polar 69/567, netbox 142/175), `dynamic` (ugnest 1/17,
+ * polar 357/547, netbox 42/89), `index`, `localVar` and `constant` likewise.
+ *
+ * The gate reads `receiver` directly rather than through the trajectory's
+ * `classifyReceiverKind`: `language` may not import a sibling domain
+ * (domain-boundaries.md), and the two kinds it admits are the classifier's two
+ * unconditional ones — `receiver === null` IS `bareCall`, `receiver === "self"`
+ * IS `selfMember`, with no localBindings or regex input.
+ *
+ * CONTINUE, never DROP: the typed passes above already had their say, and this
+ * is the last strategy in the chain, so a CONTINUE here exhausts to `null`.
+ */
+describe("PythonGlobalShortNameSymbolResolutionStrategy — receiver gate (99t5y)", () => {
+  const strat = new PythonGlobalShortNameSymbolResolutionStrategy(cfg);
+  const uniqueTable = (): InMemoryGlobalSymbolTable =>
+    tableWith(
+      ["helper.py", [sym("run", "run", "helper.py", [])]],
+      ["src/caller.py", [sym("Cls", "Cls", "src/caller.py", []), sym("Cls.build", "build", "src/caller.py", ["Cls"])]],
+    );
+  const attemptOn = (receiver: string | null, member: string, over: Partial<CallContext> = {}) =>
+    strat.attempt(
+      { callText: `${receiver ?? ""}.${member}()`, receiver, member, startLine: 9 },
+      ctx({ symbolTable: uniqueTable(), ...over }),
+    );
+
+  it("answers a bareCall — the guess the pass exists for", () => {
+    expect(attemptOn(null, "run")).toEqual({
+      kind: "resolved",
+      target: { targetRelPath: "helper.py", targetSymbolId: "run" },
+    });
+  });
+
+  it("answers a selfMember fallback — `self` reached here because the MRO read `unknown`", () => {
+    expect(attemptOn("self", "run")).toEqual({
+      kind: "resolved",
+      target: { targetRelPath: "helper.py", targetSymbolId: "run" },
+    });
+  });
+
+  it("continues on a `chain` receiver rather than pinning the member's short name", () => {
+    expect(attemptOn("obj.inner", "run").kind).toBe("continue");
+  });
+
+  it("continues on a `dynamic` receiver — an unbound bare identifier", () => {
+    expect(attemptOn("factory", "run").kind).toBe("continue");
+  });
+
+  it("continues on an `index` receiver", () => {
+    expect(attemptOn("items[0]", "run").kind).toBe("continue");
+  });
+
+  it("continues on a `localVar` receiver whose type the walker bound", () => {
+    expect(attemptOn("svc", "run", { localBindings: { svc: [{ line: 1, type: "Service" }] } }).kind).toBe("continue");
+  });
+
+  it("continues on a `constant` receiver — the same-file class arm owns `Cls.build()`", () => {
+    expect(attemptOn("Cls", "build").kind).toBe("continue");
+  });
+
+  it("continues on a `super` receiver — the terminal super pass already declined", () => {
+    expect(attemptOn("<super>", "run").kind).toBe("continue");
   });
 });

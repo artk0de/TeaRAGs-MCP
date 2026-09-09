@@ -35,6 +35,7 @@ import type {
   InheritanceEdgeDecl,
   LocalBinding,
 } from "../../../../contracts/types/codegraph.js";
+import { assignCallsToInnermostChunks } from "../../kernel/assign-calls-to-chunks.js";
 
 export interface PythonExtractInput {
   tree: MaterializedTree;
@@ -53,7 +54,7 @@ export interface PythonExtractInput {
  * Read once at walker-call time (per file) so flipping the env between
  * runs takes effect on the next reindex without restarting.
  */
-function localTypeTrackingEnabled(): boolean {
+export function pythonLocalTypeTrackingEnabled(): boolean {
   const raw = process.env.CODEGRAPH_PY_LOCAL_TYPE_TRACKING;
   if (raw === undefined) return true;
   return raw !== "false" && raw !== "0";
@@ -70,19 +71,36 @@ export function extractFromPythonFile(input: PythonExtractInput): FileExtraction
   // bd tea-rags-mcp-pic4 — Python class single-base map for super()
   // resolution. Single inheritance only (first listed base).
   const classExtends = collectPythonClassExtends(input.tree.rootNode);
+  // bd tea-rags-mcp-y4hro — the MULTI-base, file-qualified hierarchy channel the
+  // ancestor walk linearizes. `classExtends` stays exactly as it is beside it:
+  // `python-self-field.ts` and `pythonTypeOwnsMembers` both read it.
+  const classAncestors = collectPythonClassAncestors(input.tree.rootNode, input.relPath, imports);
   // bd tea-rags-mcp-rjuc — instance-field types declared in `__init__`
   // (`self.service = SomeService()`) recorded as CLASS-LEVEL state so the
   // resolver can pin `self.service.process()` cross-method. Mirrors the
   // TS/Java `classFieldTypes` channel.
   const classFieldTypes = collectPythonClassFieldTypes(input.tree.rootNode);
-  const trackTypes = localTypeTrackingEnabled();
-  const byChunk: ChunkExtraction[] = input.chunks.map((c) => {
+  const trackTypes = pythonLocalTypeTrackingEnabled();
+  // Innermost-chunk attribution: ONE owning chunk per call site — the smallest
+  // containing range, ties broken by deeper scope (bd tea-rags-mcp-invuy;
+  // mirrors typescript tea-rags-mcp-otjs and ruby tea-rags-mcp-8fnu). A class
+  // chunk's range contains every method nested in it, so the pure-containment
+  // filter this replaces emitted each call TWICE — once from the method chunk
+  // under the method's scope, once from the class chunk under the class's (or,
+  // for a top-level class, an EMPTY) scope. netbox measured 16,988 of 60,731
+  // sites as such duplicates, and the class-chunk copies were 349 of the 351
+  // residual cross-file `selfMember` misses: a nested class's copy keyed the
+  // MRO on the OUTER class and DROPped, a top-level class's copy tripped
+  // `selfMember`'s `callerScope.length === 0` guard and let `globalShortName`
+  // fabricate 40 phantoms.
+  const callOwnership = assignCallsToInnermostChunks(calls, input.chunks);
+  const byChunk: ChunkExtraction[] = input.chunks.map((c, chunkIndex) => {
     const base: ChunkExtraction = {
       symbolId: c.symbolId,
       scope: c.scope,
       startLine: c.startLine,
       endLine: c.endLine,
-      calls: calls.filter((cr) => cr.startLine >= c.startLine && cr.startLine <= c.endLine),
+      calls: callOwnership.get(chunkIndex) ?? [],
     };
     if (trackTypes) {
       const bindings = collectLocalBindingsForChunk(input.tree.rootNode, c.startLine, c.endLine);
@@ -98,6 +116,7 @@ export function extractFromPythonFile(input: PythonExtractInput): FileExtraction
     fileScope: [],
   };
   if (Object.keys(classExtends).length > 0) out.classExtends = classExtends;
+  if (Object.keys(classAncestors).length > 0) out.classAncestors = classAncestors;
   if (Object.keys(classFieldTypes).length > 0) out.classFieldTypes = classFieldTypes;
   // Unified hierarchy edges (CHA cone-unification Slice 2). Parity with the
   // Ruby/TS walkers' inheritanceEdges: where the legacy `classExtends` Record
@@ -150,8 +169,19 @@ function collectPythonInheritanceEdges(root: AstNode): InheritanceEdgeDecl[] {
       if (supers) {
         let ordinal = 0;
         for (const base of supers.namedChildren) {
-          if (base.type !== "identifier" && base.type !== "attribute" && base.type !== "dotted_name") continue;
-          const ancestor = base.text;
+          // A `subscript` is a GENERIC base: `RepositoryBase[Account]`. Its
+          // `value` child is the class; the subscript is a type argument and is
+          // never part of the hierarchy. Unwrapping it here mirrors
+          // `collectPythonClassAncestors` (bd tea-rags-mcp-wz956) — polar
+          // declares every repository base that way, so without the unwrap
+          // those files emitted an EMPTY edge list, `inheritanceEdges` stayed
+          // absent, and `inheritance-edges.ts` read the absence as "walker not
+          // migrated" and lifted the `<relPath>::<fq>`-keyed `classAncestors`
+          // into junk `include` rows on every reindex (bd tea-rags-mcp-m1sf0).
+          const named = base.type === "subscript" ? base.childForFieldName("value") : base;
+          if (!named) continue;
+          if (named.type !== "identifier" && named.type !== "attribute" && named.type !== "dotted_name") continue;
+          const ancestor = named.text;
           if (ancestor.length === 0) continue;
           edges.push({ source: fq, ancestor, kind: "super", ordinal: ordinal++ });
         }
@@ -290,6 +320,222 @@ function collectPythonClassExtends(root: AstNode): Record<string, string> {
       out[className] = parentText;
     }
   });
+  return out;
+}
+
+/** Join two module-path halves, honouring the leading dots of a relative import. */
+function joinModulePath(head: string, tail: string): string {
+  if (head.length === 0) return tail;
+  return head.endsWith(".") ? `${head}${tail}` : `${head}.${tail}`;
+}
+
+function joinModuleSegments(head: string, segments: readonly string[]): string {
+  return segments.reduce(joinModulePath, head);
+}
+
+/**
+ * A base-class spelling with the DEFINING file's import binding applied, so the
+ * resolver can turn it into a class key without the CALLER's imports — which is
+ * what makes a linearization memoizable once per run (bd tea-rags-mcp-y4hro).
+ *
+ *   `Base`     + `from a.b import Base`     → `a.b::Base`
+ *   `D`        + `from a.b import C as D`   → `a.b::C`      (the EXPORTED name)
+ *   `db.Model` + `import django.db as db`   → `django.db::Model`
+ *   `db.Model` + `from django import db`    → `django.db::Model`
+ *   `a.b.Model`+ `import a.b`               → `a.b::Model`
+ *   `Base`     with no binding              → `Base` (same file, or a builtin)
+ *   `Base`     + `from a.b import *`        → `Base|a.b::Base` (see below)
+ *
+ * `::` and not a dot: `Outer.Inner` is a legal class FQ and would not split.
+ *
+ * The discriminator is `importedBindings[local] === importText`, verified
+ * against `collectPythonImports` below. An `import` statement binds a MODULE
+ * PATH and records the module text as the value; a `from` statement binds an
+ * EXPORTED NAME and records that instead. The trap in the module case is the
+ * unaliased `import a.b`, which binds only `a` — recognisable because the value
+ * starts with the bound key. First matching import wins; a name rebound twice
+ * in one file is not a shape any corpus row exercises.
+ */
+function qualifyPythonBase(baseText: string, imports: readonly ImportRef[]): string {
+  const segments = baseText.split(".");
+  const root = segments[0];
+  if (root === undefined || root.length === 0) return baseText;
+  const trailing = segments.slice(1);
+  const tail = (parts: readonly string[]): string => parts[parts.length - 1] ?? "";
+  for (const imp of imports) {
+    const bound = imp.importedBindings?.[root];
+    if (bound === undefined) {
+      // A name with no recorded binding — only `*` today. Read it as the
+      // from-import default: the statement's own module is the container.
+      if (imp.importedNames?.includes(root) !== true) continue;
+      return `${joinModuleSegments(imp.importText, segments.slice(0, -1))}::${tail(segments)}`;
+    }
+    if (bound === imp.importText) {
+      // MODULE-PATH binding. A module used bare as a base is not a class, so
+      // leave it verbatim and let the resolver's short-name lookup decide.
+      if (trailing.length === 0) return baseText;
+      const head = bound === root || bound.startsWith(`${root}.`) ? root : bound;
+      return `${joinModuleSegments(head, trailing.slice(0, -1))}::${tail(trailing)}`;
+    }
+    // EXPORTED-NAME binding.
+    if (trailing.length === 0) return `${imp.importText}::${bound}`;
+    const container = joinModulePath(imp.importText, bound);
+    return `${joinModuleSegments(container, trailing.slice(0, -1))}::${tail(trailing)}`;
+  }
+  return qualifyThroughStarImports(baseText, segments, imports);
+}
+
+/**
+ * A bare base no import bound, in a file that STAR-imports (bd
+ * tea-rags-mcp-4yh64).
+ *
+ * `from netbox.models.features import *` binds no local name — the walker
+ * records it as the `importedNames` entry `"*"` with the module in
+ * `importText`, and there is nothing in `importedBindings` for the loop above
+ * to match. netbox's `netbox/netbox/models/__init__.py` takes ELEVEN bases of
+ * `NetBoxFeatureSet` from exactly that statement, so every one of them stayed
+ * bare, `classKeyIn` could not pin any of them against `__init__.py`, and the
+ * MRO of all 133 models below stopped one hop in.
+ *
+ * The DEFINING file's star modules are the only candidates for such a name, and
+ * this walker is the one place that knows them: `CallContext` carries the
+ * CALLER's `imports`, and `PythonImportFileMapper` answers from the symbol
+ * table alone. So the spelling becomes a DISJUNCTION the resolver tries in
+ * order — bare first, because a class declared in the file itself shadows
+ * anything a star brought in, then one candidate per star module in declaration
+ * order. `|` cannot occur in a Python identifier or a dotted module path, and
+ * `resolveBaseKey` in `../resolver/python-ancestor-policy.ts` owns the split —
+ * the same division of labour the `::` grammar already uses.
+ *
+ * Only a SINGLE-SEGMENT base takes this path. A dotted `mod.Base` is rooted in
+ * a name, and a star import binds names rather than module paths, so a star
+ * cannot be what bound `mod`.
+ */
+function qualifyThroughStarImports(
+  baseText: string,
+  segments: readonly string[],
+  imports: readonly ImportRef[],
+): string {
+  if (segments.length !== 1) return baseText;
+  const starModules: string[] = [];
+  for (const imp of imports) {
+    if (imp.importedNames?.includes("*") !== true) continue;
+    if (imp.importText.length === 0 || starModules.includes(imp.importText)) continue;
+    starModules.push(imp.importText);
+  }
+  if (starModules.length === 0) return baseText;
+  return [baseText, ...starModules.map((module) => `${module}::${baseText}`)].join("|");
+}
+
+/**
+ * The base spelling that says "this branch of the hierarchy is unreadable" (bd
+ * tea-rags-mcp-invuy).
+ *
+ * A base can be an arbitrary expression, and django's
+ * `class Device(Manager.from_queryset(RestrictedQuerySet))` is the shape that
+ * costs rows: the class the call RETURNS is only known at run time. Skipping
+ * such a base silently is the trap — a class whose ONLY base is a call records
+ * no `classAncestors` entry at all, `basesOf` returns `[]`, the closure stays
+ * `closed`, and `selfMember` reads "the hierarchy is fully known and does not
+ * own this member" from what is really an absence of evidence. It then DROPs
+ * every inherited call on the class.
+ *
+ * Writing the marker instead makes the unreadable branch explicit, so
+ * `resolveBaseKey` in `../resolver/python-ancestor-policy.ts` can degrade the
+ * closure to `unknown`. That is strictly a DROP → CONTINUE change: `unknown`
+ * never fabricates a target, it only declines to claim the member is absent.
+ * `unknown` and not `external`, because "I could not read this base" is not the
+ * same evidence as "this base IS a library class" — the latter is what makes a
+ * miss provably right, and a computed base proves nothing either way.
+ *
+ * The spelling is illegal in both halves of the base grammar — `<` and `>`
+ * occur in neither a Python identifier nor a dotted module path — so it cannot
+ * collide with a real spelling, the same argument that lets
+ * {@link qualifyThroughStarImports} use `|` as its disjunction separator. Owned
+ * here and imported by the resolver, mirroring Ruby's `SUPER_RECEIVER_SENTINEL`.
+ */
+export const PYTHON_UNRESOLVABLE_BASE = "<unresolvable>";
+
+/**
+ * `class Child(A, M[T])` → `{ "<relPath>::Child": ["a::A", "m::M"] }`
+ * (bd tea-rags-mcp-y4hro).
+ *
+ * Three things this does that `collectPythonClassExtends` does not, each one a
+ * measured miss family: EVERY base rather than the first (netbox
+ * `ProviderView(GetRelatedModelsMixin, generic.ObjectView)` loses its second
+ * base), `subscript` bases (polar declares every repository base as
+ * `RepositoryBase[Account]`, a node type the old filter skipped entirely, so
+ * those classes recorded NO base at all), and a FILE-QUALIFIED key so two
+ * `Base` classes in two files do not conflate in the run-global map.
+ *
+ * The dotted FQ counts EVERY named container, a `function_definition` as well
+ * as a `class_definition` (bd tea-rags-mcp-graiw). That is not a choice this
+ * function is free to make: `collectSymbols` in `../../kernel/collect-symbols.ts`
+ * pushes each `nameOf`-named node onto `scope`, `pyNameOf` names a
+ * `function_definition`, and `classKeyIn` in
+ * `../resolver/python-ancestor-policy.ts` already addresses a BASE class as
+ * `[...def.scope, def.shortName].join(".")`. So polar's
+ * `class _AuthenticatorSignature(_Authenticator)` — declared inside
+ * `def Authenticator()` in `server/polar/auth/dependencies.py` — is
+ * `Authenticator._AuthenticatorSignature` to the symbol table and to every
+ * base-key the policy builds. Keying it bare here made the resolver ask for a
+ * class that, by that spelling, nothing declares: `basesOf` returned `[]`, the
+ * closure read `closed`, and `super().__call__()` DROPped.
+ *
+ * Returns a plain object (Record) for NDJSON round-trip — Map would serialise
+ * to `{}`.
+ */
+function collectPythonClassAncestors(
+  root: AstNode,
+  relPath: string,
+  imports: readonly ImportRef[],
+): Record<string, readonly string[]> {
+  const out: Record<string, readonly string[]> = {};
+  const walkScope = (node: AstNode, scope: string[]): void => {
+    const isContainer = node.type === "class_definition" || node.type === "function_definition";
+    const nameNode = isContainer ? node.childForFieldName("name") : null;
+    if (!nameNode) {
+      for (const child of node.children) walkScope(child, scope);
+      return;
+    }
+    const localName = nameNode.text;
+    const childScope = [...scope, localName];
+    if (node.type !== "class_definition") {
+      const fnBody = node.childForFieldName("body");
+      for (const child of fnBody ? fnBody.children : node.children) walkScope(child, childScope);
+      return;
+    }
+    const fq = childScope.join(".");
+    const supers = node.childForFieldName("superclasses");
+    const bases: string[] = [];
+    if (supers) {
+      for (const base of supers.namedChildren) {
+        // A `subscript` is a generic base: `RepositoryBase[Event]`. Its `value`
+        // child is the class; the subscript is a type argument and is never
+        // part of the hierarchy.
+        const named = base.type === "subscript" ? base.childForFieldName("value") : base;
+        if (!named) continue;
+        // A COMPUTED base — `Manager.from_queryset(QuerySet)`. The class it
+        // returns is a run-time value, so record that the branch is unreadable
+        // rather than dropping it and leaving the closure to read `closed`.
+        if (named.type === "call") {
+          bases.push(PYTHON_UNRESOLVABLE_BASE);
+          continue;
+        }
+        // Everything else that is not a name is not a base at all — a
+        // `keyword_argument` is the `metaclass=` / `**kwargs` class-keyword
+        // channel, which carries no hierarchy and must NOT degrade the closure.
+        if (named.type !== "identifier" && named.type !== "attribute" && named.type !== "dotted_name") continue;
+        const { text } = named;
+        if (text.length === 0 || text === "object") continue;
+        bases.push(qualifyPythonBase(text, imports));
+      }
+    }
+    if (bases.length > 0) out[`${relPath}::${fq}`] = bases;
+    const body = node.childForFieldName("body");
+    for (const child of body ? body.children : node.children) walkScope(child, childScope);
+  };
+  walkScope(root, []);
   return out;
 }
 
@@ -483,6 +729,19 @@ function isCapWordsConstructor(typeName: string): boolean {
   return /^[A-Z]/.test(finalSegment);
 }
 
+/**
+ * The LOCAL name an `import` statement binds, and the module it binds it to
+ * (bd tea-rags-mcp-9fgdi).
+ *
+ * Unaliased `import a.b` binds `a`, NOT `a.b` — after `import os.path` the name
+ * in scope is `os`. The aliased form binds the alias to the full submodule
+ * path, so the imported side is the dotted text in both cases.
+ */
+function pythonModuleBinding(moduleText: string, alias: string | null): { local: string; imported: string } {
+  if (alias) return { local: alias, imported: moduleText };
+  return { local: moduleText.split(".")[0], imported: moduleText };
+}
+
 function collectPythonImports(root: AstNode): ImportRef[] {
   const out: ImportRef[] = [];
   walk(root, (node) => {
@@ -493,9 +752,15 @@ function collectPythonImports(root: AstNode): ImportRef[] {
       // `dotted_name` / `aliased_import` nodes.
       for (const child of node.namedChildren) {
         const moduleText = pickModuleText(child);
-        if (moduleText) {
-          out.push({ importText: moduleText, startLine: node.startPosition.row + 1 });
-        }
+        if (!moduleText) continue;
+        const alias = child.type === "aliased_import" ? (child.childForFieldName("alias")?.text ?? null) : null;
+        const { local, imported } = pythonModuleBinding(moduleText, alias);
+        out.push({
+          importText: moduleText,
+          startLine: node.startPosition.row + 1,
+          importedNames: [local],
+          importedBindings: { [local]: imported },
+        });
       }
     } else if (node.type === "import_from_statement") {
       // `from M import x` — the module is in `module_name` field.
@@ -508,11 +773,48 @@ function collectPythonImports(root: AstNode): ImportRef[] {
       for (const child of node.children) {
         if (child.type === "import_prefix") prefix = child.text;
       }
+      // Everything that is not the module and not the dot prefix is an imported
+      // NAME. There is no `childrenForFieldName` on `AstNode`, so the module is
+      // excluded by node IDENTITY — `from a import a` is a real shape and a
+      // text comparison would drop it.
+      const importedNames: string[] = [];
+      const importedBindings: Record<string, string> = {};
+      for (const child of node.namedChildren) {
+        if (child === moduleField || child.type === "import_prefix") continue;
+        if (child.type === "wildcard_import") {
+          // A star binds no single member: it is a name for the resolver's
+          // star-import path and nothing for the binding table.
+          importedNames.push("*");
+          continue;
+        }
+        if (child.type === "aliased_import") {
+          const importedName = child.childForFieldName("name")?.text;
+          const localName = child.childForFieldName("alias")?.text;
+          if (!importedName || !localName) continue;
+          importedNames.push(localName);
+          importedBindings[localName] = importedName;
+          continue;
+        }
+        if (child.type === "dotted_name" || child.type === "identifier") {
+          importedNames.push(child.text);
+          importedBindings[child.text] = child.text;
+        }
+      }
+      // Emit only non-empty: a channel the statement does not carry is absent,
+      // never `[]` / `{}` — same discipline the Ruby walker applies to its
+      // optional channels, and what keeps the NDJSON spill small.
+      const names = importedNames.length > 0 ? { importedNames } : {};
+      const bindings = Object.keys(importedBindings).length > 0 ? { importedBindings } : {};
       if (moduleField) {
-        out.push({ importText: prefix + (pickModuleText(moduleField) ?? ""), startLine });
+        out.push({
+          importText: prefix + (pickModuleText(moduleField) ?? ""),
+          startLine,
+          ...names,
+          ...bindings,
+        });
       } else if (prefix) {
         // `from . import x` — no module name, just the prefix.
-        out.push({ importText: prefix, startLine });
+        out.push({ importText: prefix, startLine, ...names, ...bindings });
       }
     }
   });
@@ -539,6 +841,32 @@ function pickModuleText(node: AstNode): string | null {
   }
 }
 
+/**
+ * A zero-argument `super()` receiver is recorded as the bare text `super` (bd
+ * tea-rags-mcp-ntnke). `classifyReceiverKind`'s `SUPER_MARKERS` holds `"super"`
+ * and `"<super>"`, so the verbatim `"super()"` filed every one of these sites
+ * under `dynamic` — 1,446 rows on netbox, 1,242 on polar. Normalizing here
+ * rather than widening the classifier keeps a shared, language-neutral
+ * instrument free of one language's spelling, and
+ * `PythonSuperSymbolResolutionStrategy` already accepts both texts, so the
+ * resolver needs no change.
+ *
+ * The match is on the node SHAPE — `function` is the identifier `super`, the
+ * argument list is empty — not on the text, so `super ()` normalizes too.
+ *
+ * The explicit two-argument `super(Cls, self)` is NOT normalized: its first
+ * argument names the class the walk starts after, which is not always the
+ * enclosing class, and no E0.9 corpus row uses it. It keeps its verbatim
+ * receiver text and stays `dynamic`.
+ */
+function normalizePythonReceiverText(node: AstNode): string {
+  if (node.type !== "call") return node.text;
+  const fn = node.childForFieldName("function");
+  if (fn?.type !== "identifier" || fn.text !== "super") return node.text;
+  const args = node.childForFieldName("arguments");
+  return args === null || args.namedChildren.length === 0 ? "super" : node.text;
+}
+
 function collectPythonCalls(root: AstNode): CallRef[] {
   const out: CallRef[] = [];
   walk(root, (node) => {
@@ -555,7 +883,7 @@ function collectPythonCalls(root: AstNode): CallRef[] {
       const obj = fn.childForFieldName("object");
       const attr = fn.childForFieldName("attribute");
       if (!obj || !attr) return;
-      out.push({ callText: node.text, receiver: obj.text, member: attr.text, startLine });
+      out.push({ callText: node.text, receiver: normalizePythonReceiverText(obj), member: attr.text, startLine });
     } else {
       // Bare call like `foo(...)`.
       out.push({ callText: node.text, receiver: null, member: fn.text, startLine });

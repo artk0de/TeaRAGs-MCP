@@ -50,7 +50,7 @@
  * channels — no `RubyTypeFactStore` coordinate collides between them — and they
  * agree on the plain `Const.new` case (structured just wins). Within the store,
  * the only same-coordinate collision is a YARD `@return` on the same `call`,
- * where `DEFAULT_SOURCE_ORDER` (yard > associations > body-last-expr) lets the
+ * where `RUBY_TYPE_SOURCE_ORDER` (yard > associations > body-last-expr) lets the
  * annotation win.
  *
  * Runtime imports (`constInstanceType`, `catalogueForGemfile`) stay cycle-free:

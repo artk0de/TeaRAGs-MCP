@@ -1,0 +1,17 @@
+# The oracle's own environment, resolved by `uv run --no-project`. It is NOT the
+# corpus's environment: jedi lives here, and the corpus's interpreter is handed
+# to `jedi.Project(environment_path=...)` so third-party types come from the
+# corpus's own site-packages. Keeping the two apart is what lets one oracle
+# build serve five corpora on three interpreter versions.
+[project]
+name = "tea-rags-py-oracle"
+version = "0.1.0"
+description = "Offline jedi ground truth for the Python codegraph oracle (bd tea-rags-mcp-mmckn)"
+requires-python = ">=3.13"
+dependencies = ["jedi==0.20.0"]
+
+[tool.uv]
+# jedi pins parso; do not float it. parso 0.8.7's grammar is stale for PEP 758
+# and `match`, and the oracle REPORTS that through `parsoErrors` rather than
+# papering over it with a newer parso jedi has not been tested against.
+package = false

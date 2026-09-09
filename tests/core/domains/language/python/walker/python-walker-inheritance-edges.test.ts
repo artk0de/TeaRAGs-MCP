@@ -72,3 +72,39 @@ describe("Python walker inheritanceEdges (Slice 2)", () => {
     expect(out.classExtends?.["C"]).toEqual("A");
   });
 });
+
+/**
+ * Generic bases (bd tea-rags-mcp-wz956). polar declares every repository base
+ * as a `subscript` node — `class AccountRepository(RepositoryBase[Account])` —
+ * and the identifier/attribute/dotted_name filter skipped that node type
+ * entirely, so such a file emitted NO `inheritanceEdges` at all. An ABSENT
+ * `inheritanceEdges` is the migration signal `inheritance-edges.ts` reads: it
+ * falls back to lifting the legacy Records, and the Python `classAncestors`
+ * keys are `<relPath>::<fq>` with `::`-qualified values, so every lifted row is
+ * junk `include` noise (bd tea-rags-mcp-m1sf0). Unwrapping the subscript is
+ * what keeps such a file on the unified path.
+ */
+describe("Python walker inheritanceEdges — subscript (generic) bases", () => {
+  it("unwraps a generic base to its value child", () => {
+    expect(edges("class C(Base[Event]):\n    pass\n")).toEqual(["C:Base:super"]);
+  });
+
+  it("unwraps a qualified generic base", () => {
+    expect(edges("class C(mod.Base[Event]):\n    pass\n")).toEqual(["C:mod.Base:super"]);
+  });
+
+  it("keeps declaration-order ordinals across mixed plain and generic bases", () => {
+    const src = "class C(Mixin[A], Plain, Base[A, B]):\n    pass\n";
+    const out = extractFromPythonFile({ tree: parse(src), code: src, relPath: "x.py", language: "python", chunks: [] });
+    const sorted = (out.inheritanceEdges ?? []).slice().sort((a, b) => a.ordinal - b.ordinal);
+    expect(sorted.map((e) => `${e.ancestor}:${e.ordinal}`)).toEqual(["Mixin:0", "Plain:1", "Base:2"]);
+  });
+
+  it("emits inheritanceEdges for a file whose classes have ONLY generic bases", () => {
+    // PRESENCE of the field is what suppresses the legacy classAncestors lift.
+    const src = "class AccountRepository(RepositoryBase[Account], Mixin[Account]):\n    pass\n";
+    const out = extractFromPythonFile({ tree: parse(src), code: src, relPath: "r.py", language: "python", chunks: [] });
+    expect(out.inheritanceEdges).toBeDefined();
+    expect(out.classAncestors).toBeDefined();
+  });
+});

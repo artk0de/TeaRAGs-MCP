@@ -30,12 +30,28 @@ export class NoopGlobalSymbolTable implements GlobalSymbolTable {
     return [];
   }
 
+  hasFile(_relPath: RelPath): boolean {
+    return false;
+  }
+
+  hasFilesUnder(_dirRelPath: string): boolean {
+    return false;
+  }
+
+  listFiles(): Iterable<RelPath> {
+    return [];
+  }
+
   size(): number {
     return 0;
   }
 
   hydrate(_definitions: SymbolDefinition[]): void {
     /* no-op — daemon does not hydrate; persistence is the DuckDB file itself */
+  }
+
+  hydrateFiles(_relPaths: readonly RelPath[]): void {
+    /* no-op — file membership only matters to a resolver, which never runs here */
   }
 
   shortNameDefCounts(): ReadonlyMap<string, number> {

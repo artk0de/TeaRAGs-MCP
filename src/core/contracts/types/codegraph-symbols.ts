@@ -166,6 +166,34 @@ export interface GlobalSymbolTable {
    *  {@link SymbolLookupOptions}. */
   lookupByShortName: (name: string, options?: SymbolLookupOptions) => SymbolDefinition[];
   /**
+   * Is this exact file part of the project the table describes?
+   *
+   * The question the import mappers could not ask (bd tea-rags-mcp-q9u85):
+   * `mapPythonImportToFile` and `mapJavaImportToFile` SYNTHESISE a target path
+   * from the import text without probing disk, so `re.py` and
+   * `java/util/Objects.java` are perfectly ordinary answers. Without this the
+   * only way to tell a real first-party target from a synthesised external one
+   * was to hit the filesystem, which the resolver must not do.
+   *
+   * Membership, NOT symbol count (bd tea-rags-mcp-o7ifx). A file the table was
+   * told about answers `true` even when it declared nothing: an empty
+   * `__init__.py` is what makes `pkg` a package, and reading it as "absent" put
+   * every import of that package outside the project. `size()` still counts
+   * definitions, so a symbol-free file moves no aggregate.
+   */
+  hasFile: (relPath: RelPath) => boolean;
+  /**
+   * Does any file UNDER this directory belong to the project? `""` asks about
+   * the whole table. A trailing slash is ignored; a path PREFIX is not a parent
+   * (`pkg/a` is not under `pkg/ab`).
+   *
+   * Needed because a Python package import resolves to a DIRECTORY as often as
+   * to a file — PEP 420 namespace packages have no `__init__.py` at all — so
+   * `hasFile` alone cannot tell "this package is ours" from "this package is a
+   * dependency". O(1), maintained as an index, never a scan.
+   */
+  hasFilesUnder: (dirRelPath: string) => boolean;
+  /**
    * Replace the run's schema-column index with `definitions` (each carrying
    * `isSchemaColumn: true`). Optional capability: a table that omits it simply
    * never holds synthesized columns, and the pre-pass no-ops (bd
@@ -182,6 +210,33 @@ export interface GlobalSymbolTable {
    *  cold start. Equivalent to calling `upsertFile` once per file —
    *  implementations may optimise the bulk path but are not required to. */
   hydrate: (definitions: SymbolDefinition[]) => void;
+  /**
+   * Register project files that persisted NO symbol, typically the `rel_path`
+   * column of the graph's file table on cold start (bd tea-rags-mcp-o7ifx).
+   *
+   * `hydrate` can only see files that own a row in the symbol store, so an
+   * incremental run rebuilds the definitions of every unchanged file and none
+   * of its empty package markers. A path already present keeps its definitions.
+   *
+   * Optional capability: a table that omits it answers `hasFile` false for
+   * symbol-free files on a cold pass, which is the pre-o7ifx behaviour.
+   */
+  hydrateFiles?: (relPaths: readonly RelPath[]) => void;
+  /**
+   * Every file path the table holds, in no guaranteed order (bd
+   * tea-rags-mcp-60nss).
+   *
+   * `hasFile` and `hasFilesUnder` answer about a path the caller already has;
+   * this is the only way to ask what the SHAPE of the project is. Python's
+   * import mapper needs it to find the source roots — `src/flask/__init__.py`
+   * says `src` is a root, and no ancestor of `examples/app.py` ever will.
+   *
+   * Optional capability: a table that omits it makes root inference fall back
+   * to the importing file's ancestors, which is the pre-60nss behaviour.
+   * Consumers must treat it as a per-generation scan and memoise accordingly —
+   * it is O(files), never O(1).
+   */
+  listFiles?: () => Iterable<RelPath>;
   /** Definition count per shortName across the corpus — the distribution the
    *  DispatchFanoutPolicy p99 cap derives from (bd tea-rags-mcp-f2jsb). */
   shortNameDefCounts: () => ReadonlyMap<string, number>;

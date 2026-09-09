@@ -206,6 +206,14 @@ export interface WalkContext {
   relPath: string;
   language: string;
   chunks: { symbolId: string; startLine: number; endLine: number; scope: string[] }[];
+  /**
+   * Raw contents of the project's `Gemfile`, threaded per run so extraction-time
+   * DSL consumers compose a gem-gated catalogue (`catalogueForGemfile`) for THIS
+   * project. Mirrors {@link WalkInput.gemfileContent}, from which `toWalkContext`
+   * copies it. Undefined → the FULL catalogue (gating off). Only Ruby reads it
+   * today (bd tea-rags-mcp-adx5p.1b); every other language ignores it.
+   */
+  gemfileContent?: string;
   dispatchTableNames?: ReadonlySet<string>;
 }
 
@@ -435,6 +443,40 @@ export interface LanguageWalker {
 }
 
 /**
+ * What file, if any, an import statement names (bd tea-rags-mcp-9fgdi).
+ *
+ * Three states, not two. `external` is a POSITIVE verdict — the module belongs
+ * to the stdlib or an installed distribution, so a resolver should stop rather
+ * than keep guessing, and the external gate counts the call out of the recall
+ * denominator. `unknown` means the mapper could not decide (an empty symbol
+ * table on a cold pass, a PEP 420 namespace package with no `__init__.py`), and
+ * every consumer must keep its pre-mapper conservative behaviour there.
+ * Collapsing the two into `RelPath | null` is what makes a resolver either
+ * fabricate an edge into numpy or drop a real one.
+ */
+export type ImportFileTarget = { kind: "project"; relPath: RelPath } | { kind: "external" } | { kind: "unknown" };
+
+/**
+ * Translate an import statement's module text into the project file it names.
+ *
+ * The ONE place a language answers "which file is `foo.bar`". Every consumer
+ * that used to synthesise a path itself — the file-edge builder, the
+ * import-match strategy, local-binding type resolution, the external
+ * vocabulary — asks this instead, so the answer cannot disagree with itself
+ * between the file graph and the call graph.
+ *
+ * `fromFile` is the file CONTAINING the import (relative imports and
+ * ancestor-root inference both need it), which is not always `ctx.callerFile`:
+ * the file-edge pass maps a whole `FileExtraction`'s imports at once.
+ *
+ * Implementations answer from `ctx.symbolTable` membership, never from disk —
+ * pass 2 runs against a hydrated table whose working tree may have moved on.
+ */
+export interface ImportFileMapper {
+  mapImportToFile: (importText: string, fromFile: RelPath, ctx: CallContext) => ImportFileTarget;
+}
+
+/**
  * The per-language call-resolution facade. Mirrors `CallResolver`
  * (`contracts/codegraph.ts`) but is the LANGUAGE-domain surface: it composes an
  * ordered `SymbolResolutionStrategy[]` chain internally (first-decisive-wins via
@@ -625,13 +667,21 @@ export interface LanguageFactoryDescriptor {
  * that survives into every downstream hop). It carries no name because there is
  * nothing to name — `nil.foo` reaches no in-project definition, so the RESOLVER
  * drops nil arms before dispatch while the fact keeps stating them. Build and
- * compare these through `domains/language/ruby/type-ref.ts`, never by hand.
+ * compare these through `domains/language/kernel/type-ref.ts`, never by hand.
  */
-export type RubyTypeRef =
+export type TypeRef =
   | { form: "class" | "instance"; name: string }
-  | { form: "union"; members: RubyTypeRef[] }
-  | { form: "container"; element: RubyTypeRef }
+  | { form: "union"; members: TypeRef[] }
+  | { form: "container"; element: TypeRef }
   | { form: "nil" };
+
+/**
+ * The name this type carried while it was Ruby-only (E1 seam 2). Kept as an
+ * alias so the 36 files that reference it — contracts, four Ruby resolver
+ * modules, the codegraph trajectory, and eleven test files that may not be
+ * rewritten — compile unchanged. New code says `TypeRef`.
+ */
+export type RubyTypeRef = TypeRef;
 
 export type CodegraphTier = "maximum" | "high" | "moderate" | "minimal" | "none";
 

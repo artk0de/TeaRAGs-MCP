@@ -5,6 +5,7 @@ import {
   type SymbolResolutionTarget,
 } from "../../../../../contracts/types/codegraph.js";
 import type { ConeTypeLocator } from "../../../../../contracts/types/language.js";
+import { PythonImportFileMapper } from "../python-import-file-mapper.js";
 import { resolveTypeFile } from "./python-local-binding.js";
 import { lastSegment, type ResolverConfig } from "./shared.js";
 
@@ -29,11 +30,20 @@ import { lastSegment, type ResolverConfig } from "./shared.js";
  * locator carries ONLY the Python naming/resolution conventions.
  */
 export class PythonConeTypeLocator implements ConeTypeLocator {
-  constructor(private readonly cfg: ResolverConfig) {}
+  /**
+   * `mapper` is the resolver's shared `PythonImportFileMapper` — the cone
+   * reaches `resolveTypeFile`, so it asks the same import question the chain
+   * does and must read the same memo (bd tea-rags-mcp-9fgdi). A caller with no
+   * other consumer omits it and gets a private one.
+   */
+  constructor(
+    private readonly cfg: ResolverConfig,
+    private readonly mapper: PythonImportFileMapper = new PythonImportFileMapper(),
+  ) {}
 
   /** Resolve a (possibly qualified) Python type name to its declaring file, or null. */
   resolveTypeFile(typeName: string, ctx: CallContext): RelPath | null {
-    return resolveTypeFile(lastSegment(typeName), ctx);
+    return resolveTypeFile(lastSegment(typeName), ctx, this.mapper);
   }
 
   /**
@@ -43,7 +53,7 @@ export class PythonConeTypeLocator implements ConeTypeLocator {
    */
   findDirectMethod(typeName: string, member: string, ctx: CallContext): SymbolResolutionTarget | null {
     const bareType = lastSegment(typeName);
-    const file = resolveTypeFile(bareType, ctx);
+    const file = resolveTypeFile(bareType, ctx, this.mapper);
     if (!file) return null;
     const candidates = ctx.symbolTable.lookupByShortName(member).filter((def) => {
       if (def.relPath !== file) return false;

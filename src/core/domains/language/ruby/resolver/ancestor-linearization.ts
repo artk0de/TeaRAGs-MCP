@@ -10,13 +10,20 @@
  * asks "which definition wins" therefore needs this module rather than the raw
  * list.
  *
- * ZERO imports on purpose. `type-propagation.ts` cannot reach
- * `strategies/shared.ts` (that pulls `walker.ts` → `type-sources/ast-inference`
+ * The driver — the recursion, the per-path guard, the dedupe filter — now lives
+ * in `kernel/ancestor-walk.ts`. What stays here is the ORDER, which is Ruby's
+ * module-insertion rule and nothing a kernel could guess.
+ *
+ * ZERO imports beyond that kernel leaf, on purpose. `type-propagation.ts` cannot
+ * reach `strategies/shared.ts` (that pulls `walker.ts` → `type-sources/ast-inference`
  * → back into `type-propagation`, a cycle that breaks its top-level const init),
- * so the substrate both sides share has to be a leaf. The hierarchy shape is
- * declared structurally here instead of importing `CallContext` for the same
- * reason — a `CallContext` satisfies it by structure.
+ * so the substrate both sides share has to be a leaf — and `ancestor-walk.ts` is
+ * one too, which is why importing it keeps the property rather than spending it.
+ * The hierarchy shape is declared structurally here instead of importing
+ * `CallContext` for the same reason — a `CallContext` satisfies it by structure.
  */
+
+import { createAncestorLinearizer, type AncestorLinearizationPolicy } from "../../kernel/ancestor-walk.js";
 
 /**
  * The hierarchy facts a linearization needs — the three walker-recorded maps,
@@ -31,6 +38,37 @@ export interface RubyAncestorHierarchy {
   /** `class FQ → superclass FQ` — the one entry of `classAncestors` that is a `<`. */
   readonly classExtends?: Readonly<Record<string, string>>;
 }
+
+/**
+ * Ruby's answer to "which ancestor is nearest" — the ORDER half of the walk,
+ * handed to the kernel driver, which supplies the recursion, the per-path cycle
+ * guard, and the dedupe filter that `insertable` closes over.
+ */
+const RUBY_ANCESTOR_POLICY: AncestorLinearizationPolicy<RubyAncestorHierarchy> = {
+  order(klass, hierarchy, recurse, insertable) {
+    // The superclass chain is built FIRST: in Ruby it already exists when the
+    // class body runs, so it is what every `include`/`prepend` in that body checks
+    // itself against before inserting.
+    const superclass = hierarchy.classExtends?.[klass];
+    const tail = superclass === undefined ? [] : recurse(superclass);
+
+    // Includes, declaration order, each inserted at the FRONT of the region — so
+    // the last one declared ends up nearest, as Ruby ranks them.
+    const includes: string[] = [];
+    for (const mixin of hierarchy.classAncestors?.[klass] ?? []) {
+      if (mixin === superclass) continue; // already carried by `tail`
+      includes.unshift(...insertable(mixin, [includes, tail]));
+    }
+
+    // Prepends, same insertion rule, but the region sits BEFORE the class itself.
+    const prepends: string[] = [];
+    for (const mixin of hierarchy.classPrependedAncestors?.[klass] ?? []) {
+      prepends.unshift(...insertable(mixin, [prepends, includes, tail]));
+    }
+
+    return [...prepends, klass, ...includes, ...tail];
+  },
+};
 
 /**
  * `klass`'s ancestors in Ruby's method-lookup order, NEAREST FIRST, with `klass`
@@ -63,46 +101,10 @@ export interface RubyAncestorHierarchy {
  * different axis and not this function's business.
  */
 export function linearizeAncestors(klass: string, hierarchy: RubyAncestorHierarchy): string[] {
-  return linearize(klass, hierarchy, new Set());
-}
-
-function linearize(klass: string, hierarchy: RubyAncestorHierarchy, path: ReadonlySet<string>): string[] {
-  if (path.has(klass)) return [];
-  const nextPath = new Set(path).add(klass);
-
-  // The superclass chain is built FIRST: in Ruby it already exists when the
-  // class body runs, so it is what every `include`/`prepend` in that body checks
-  // itself against before inserting.
-  const superclass = hierarchy.classExtends?.[klass];
-  const tail = superclass === undefined ? [] : linearize(superclass, hierarchy, nextPath);
-
-  // Includes, declaration order, each inserted at the FRONT of the region — so
-  // the last one declared ends up nearest, as Ruby ranks them.
-  const includes: string[] = [];
-  for (const mixin of hierarchy.classAncestors?.[klass] ?? []) {
-    if (mixin === superclass) continue; // already carried by `tail`
-    includes.unshift(...insertable(mixin, hierarchy, nextPath, [includes, tail]));
-  }
-
-  // Prepends, same insertion rule, but the region sits BEFORE the class itself.
-  const prepends: string[] = [];
-  for (const mixin of hierarchy.classPrependedAncestors?.[klass] ?? []) {
-    prepends.unshift(...insertable(mixin, hierarchy, nextPath, [prepends, includes, tail]));
-  }
-
-  return [...prepends, klass, ...includes, ...tail];
-}
-
-/**
- * The entries of `mixin`'s own linearization that are not already reachable
- * through any of `present` — Ruby's "a module already in the chain is not
- * re-inserted" rule, applied to the whole module rather than to its head.
- */
-function insertable(
-  mixin: string,
-  hierarchy: RubyAncestorHierarchy,
-  path: ReadonlySet<string>,
-  present: readonly (readonly string[])[],
-): string[] {
-  return linearize(mixin, hierarchy, path).filter((name) => !present.some((region) => region.includes(name)));
+  // A FRESH linearizer per call, deliberately: today's `linearize` cached
+  // nothing, and a longer-lived memo would have to prove it cannot outlive a
+  // mutation of the run-global ancestors map. Ruby pays one extra Map
+  // allocation per call and gains nothing else; Python's long-lived linearizer
+  // is built once per resolver, where the memo is what makes the walk affordable.
+  return [...createAncestorLinearizer(hierarchy, RUBY_ANCESTOR_POLICY).linearize(klass).order];
 }
