@@ -330,6 +330,7 @@ function joinModuleSegments(head: string, segments: readonly string[]): string {
  *   `db.Model` + `from django import db`    → `django.db::Model`
  *   `a.b.Model`+ `import a.b`               → `a.b::Model`
  *   `Base`     with no binding              → `Base` (same file, or a builtin)
+ *   `Base`     + `from a.b import *`        → `Base|a.b::Base` (see below)
  *
  * `::` and not a dot: `Outer.Inner` is a legal class FQ and would not split.
  *
@@ -367,7 +368,49 @@ function qualifyPythonBase(baseText: string, imports: readonly ImportRef[]): str
     const container = joinModulePath(imp.importText, bound);
     return `${joinModuleSegments(container, trailing.slice(0, -1))}::${tail(trailing)}`;
   }
-  return baseText;
+  return qualifyThroughStarImports(baseText, segments, imports);
+}
+
+/**
+ * A bare base no import bound, in a file that STAR-imports (bd
+ * tea-rags-mcp-4yh64).
+ *
+ * `from netbox.models.features import *` binds no local name — the walker
+ * records it as the `importedNames` entry `"*"` with the module in
+ * `importText`, and there is nothing in `importedBindings` for the loop above
+ * to match. netbox's `netbox/netbox/models/__init__.py` takes ELEVEN bases of
+ * `NetBoxFeatureSet` from exactly that statement, so every one of them stayed
+ * bare, `classKeyIn` could not pin any of them against `__init__.py`, and the
+ * MRO of all 133 models below stopped one hop in.
+ *
+ * The DEFINING file's star modules are the only candidates for such a name, and
+ * this walker is the one place that knows them: `CallContext` carries the
+ * CALLER's `imports`, and `PythonImportFileMapper` answers from the symbol
+ * table alone. So the spelling becomes a DISJUNCTION the resolver tries in
+ * order — bare first, because a class declared in the file itself shadows
+ * anything a star brought in, then one candidate per star module in declaration
+ * order. `|` cannot occur in a Python identifier or a dotted module path, and
+ * `resolveBaseKey` in `../resolver/python-ancestor-policy.ts` owns the split —
+ * the same division of labour the `::` grammar already uses.
+ *
+ * Only a SINGLE-SEGMENT base takes this path. A dotted `mod.Base` is rooted in
+ * a name, and a star import binds names rather than module paths, so a star
+ * cannot be what bound `mod`.
+ */
+function qualifyThroughStarImports(
+  baseText: string,
+  segments: readonly string[],
+  imports: readonly ImportRef[],
+): string {
+  if (segments.length !== 1) return baseText;
+  const starModules: string[] = [];
+  for (const imp of imports) {
+    if (imp.importedNames?.includes("*") !== true) continue;
+    if (imp.importText.length === 0 || starModules.includes(imp.importText)) continue;
+    starModules.push(imp.importText);
+  }
+  if (starModules.length === 0) return baseText;
+  return [baseText, ...starModules.map((module) => `${module}::${baseText}`)].join("|");
 }
 
 /**
