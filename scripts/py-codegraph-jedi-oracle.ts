@@ -29,15 +29,8 @@ import {
 } from "../src/core/contracts/types/codegraph.js";
 import type { SymbolResolutionOutcome, SymbolResolutionStrategy } from "../src/core/contracts/types/language.js";
 import { DefaultSymbolIdComposer, LanguageFactory } from "../src/core/domains/language/index.js";
-import {
-  CONE_MAX_DEFAULT,
-  PythonGlobalShortNameSymbolResolutionStrategy,
-  PythonImportMatchSymbolResolutionStrategy,
-  PythonLocalBindingSymbolResolutionStrategy,
-  PythonSelfFieldSymbolResolutionStrategy,
-  PythonSelfMemberSymbolResolutionStrategy,
-  PythonSuperSymbolResolutionStrategy,
-} from "../src/core/domains/language/python/resolver/strategies/index.js";
+import { createPythonSymbolResolutionChain } from "../src/core/domains/language/python/resolver/index.js";
+import { CONE_MAX_DEFAULT } from "../src/core/domains/language/python/resolver/strategies/index.js";
 import { resolveViaChain } from "../src/core/domains/language/resolver-chain.js";
 import { CODEGRAPH_LANGUAGES } from "../src/core/domains/trajectory/codegraph/symbols/provider.js";
 import { classifyReceiverKind } from "../src/core/domains/trajectory/codegraph/symbols/receiver-kind.js";
@@ -84,23 +77,23 @@ export class AnsweredByProbe implements SymbolResolutionStrategy {
   }
 }
 
-/** The Python chain, in `PythonCallResolver`'s order. Mirrors `CHAINS.python`. */
+/**
+ * The Python chain, from the ONE factory `PythonCallResolver` composes with
+ * (bd tea-rags-mcp-3yxmy). This used to be a hand-copied array, and it silently
+ * lost `importedName` when that pass landed — `chainDrift` 117 on flask, 552 on
+ * ugnest, every verdict void. There is nothing left here to keep in sync.
+ */
 export function buildPythonChain(): SymbolResolutionStrategy[] {
-  const cfg = {
+  return createPythonSymbolResolutionChain({
     mode: DEFAULT_AMBIGUOUS_RESOLVE_MODE,
     coneMax: CONE_MAX_DEFAULT,
-  };
-  return [
-    new PythonSuperSymbolResolutionStrategy(cfg),
-    new PythonSelfFieldSymbolResolutionStrategy(cfg),
-    new PythonSelfMemberSymbolResolutionStrategy(cfg),
-    new PythonLocalBindingSymbolResolutionStrategy(cfg),
-    new PythonImportMatchSymbolResolutionStrategy(cfg),
-    new PythonGlobalShortNameSymbolResolutionStrategy(cfg),
-  ];
+  });
 }
 
 const SCORED_EXTENSION = ".py";
+
+/** Child stderr chunks kept for the failure message. Enough for a uv/jedi traceback. */
+const STDERR_TAIL_CHUNKS = 64;
 
 export interface PyChainSite {
   relPath: string;
@@ -171,6 +164,12 @@ export async function walkCorpus(corpusRoot: string, limit: number, quiet: boole
   if (production === undefined) throw new Error("the python language provider has no resolver");
   const sites: PyChainSite[] = [];
   let chainDrift = 0;
+  // ONE chain for the whole walk, wrapping ONE record the loop resets — the
+  // chain now owns a `PythonImportFileMapper` whose memo is per-instance, and
+  // rebuilding it per call site would both throw that cache away every site and
+  // stop mirroring how production shares a single mapper.
+  const probe = { answeredBy: "none" };
+  const probedChain = buildPythonChain().map((pass) => new AnsweredByProbe(pass, probe));
 
   for (const { relPath, extraction } of extractions) {
     for (const chunk of extraction.chunks) {
@@ -186,12 +185,8 @@ export async function walkCorpus(corpusRoot: string, limit: number, quiet: boole
       };
       for (const call of chunk.calls ?? []) {
         if (call.dispatch !== undefined) continue; // the runner skips normal resolution here
-        const probe = { answeredBy: "none" };
-        const chain = resolveViaChain(
-          buildPythonChain().map((pass) => new AnsweredByProbe(pass, probe)),
-          call,
-          ctx,
-        );
+        probe.answeredBy = "none";
+        const chain = resolveViaChain(probedChain, call, ctx);
         const truth = production.resolve(call, ctx);
         const same =
           (chain === null && truth === null) ||
@@ -291,20 +286,47 @@ export async function askOracle(
   const [command, ...args] = options.python;
   if (command === undefined) throw new Error("no interpreter command to spawn");
   const child = spawn(command, args, {
-    stdio: ["pipe", "pipe", "inherit"],
+    // `pipe`, not `inherit`: the child's stderr is mirrored live so a long run
+    // still shows uv/jedi progress, AND tailed so a launcher that dies during
+    // the handshake can be REPORTED. With `inherit` the only symptom of a dead
+    // child was an unhandled `write EPIPE` from the loop below (3yxmy).
+    stdio: ["pipe", "pipe", "pipe"],
   });
+  const stderrTail: string[] = [];
+  child.stderr.setEncoding("utf8");
+  child.stderr.on("data", (piece: string) => {
+    process.stderr.write(piece);
+    stderrTail.push(piece);
+    if (stderrTail.length > STDERR_TAIL_CHUNKS) stderrTail.shift();
+  });
+  const fail = (reason: string): Error =>
+    new Error([`${options.python.join(" ")}`, reason, stderrTail.join("").trimEnd()].filter(Boolean).join("\n"));
+
   const replies = new Map<string, PyOracleFileReply>();
   const reader = createInterface({ input: child.stdout });
+  /** Set once the child is gone, so the write loop stops instead of EPIPE-ing per line. */
+  let dead: Error | null = null;
   const done = new Promise<void>((resolveDone, rejectDone) => {
+    const die = (error: Error): void => {
+      dead ??= error;
+      rejectDone(dead);
+    };
     reader.on("line", (line) => {
       if (line.trim() === "") return;
       const reply = JSON.parse(line) as PyOracleFileReply;
       replies.set(reply.relPath, reply);
     });
-    child.on("error", rejectDone);
+    child.on("error", (error) => {
+      die(fail(`could not spawn the oracle: ${error.message}`));
+    });
+    // A launcher that cannot provision the interpreter dies BEFORE reading the
+    // config line, and every subsequent write lands on a closed pipe.
+    child.stdin.on("error", (error: NodeJS.ErrnoException) => {
+      die(fail(`the oracle closed its stdin (${error.code ?? error.message}) — it exited before reading the input`));
+    });
     child.on("close", (code) => {
-      if (code === 0) resolveDone();
-      else rejectDone(new Error(`jedi_oracle.py exited ${String(code)}`));
+      if (code === 0 && dead === null) resolveDone();
+      else die(fail(`jedi_oracle.py exited ${String(code)}`));
     });
   });
 
@@ -312,6 +334,7 @@ export async function askOracle(
     `${JSON.stringify({ kind: "config", corpusRoot: options.corpusRoot, venvPython: options.venvPython, workers: options.workers })}\n`,
   );
   for (const relPath of [...byFile.keys()].sort()) {
+    if (dead !== null) break;
     const batch = (byFile.get(relPath) ?? []).map((site) => ({
       startLine: site.call.startLine,
       callText: site.call.callText,
@@ -320,7 +343,7 @@ export async function askOracle(
     }));
     child.stdin.write(`${JSON.stringify({ kind: "file", relPath, sites: batch })}\n`);
   }
-  child.stdin.end();
+  if (dead === null) child.stdin.end();
   await done;
   return replies;
 }
@@ -413,7 +436,10 @@ export function parseArgs(argv: readonly string[]): PyOracleCliOptions {
   };
   const corpusArg = read("--corpus") ?? process.cwd();
   const manifest = loadCodegraphCorpora()[corpusArg];
-  const interpreter = read("--python") ?? manifest?.requiresPython.replace(">=", "") ?? "3.13";
+  // `oraclePython`, NOT `requiresPython`: the latter says what the CORPUS needs
+  // to run, and httpx's `>=3.9` is below jedi 0.20.0's own floor of 3.10, so
+  // deriving the launcher from it killed the host mid-handshake (3yxmy).
+  const interpreter = read("--python") ?? manifest?.oraclePython ?? "3.13";
   return {
     corpusRoot: manifest ? manifest.path : resolvePath(corpusArg),
     corpusName: manifest?.name ?? corpusArg,

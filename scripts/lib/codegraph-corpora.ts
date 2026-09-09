@@ -30,7 +30,20 @@ export interface CodegraphCorpus {
   path: string;
   language: "python";
   sha?: string;
+  /**
+   * What the CORPUS needs to run its own code. Descriptive only — never the
+   * interpreter the oracle launches on. httpx declares `>=3.9`, jedi 0.20.0
+   * needs `>=3.10`, and deriving the launcher from this field is what made
+   * `uv run --python 3.9 --with jedi==0.20.0` die mid-handshake (3yxmy).
+   */
   requiresPython: string;
+  /**
+   * The interpreter `uv run --no-project --python <x> --with jedi==0.20.0`
+   * launches the oracle on. Independent of `requiresPython`: jedi is static and
+   * reads the corpus's sources, so it only has to be new enough to PARSE them —
+   * 3.13 everywhere except polar, whose PEP 758 syntax needs 3.14.
+   */
+  oraclePython: string;
   venvPython: string;
   venvPythonVersion: string;
   roots: string[];

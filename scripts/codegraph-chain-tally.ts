@@ -67,17 +67,8 @@ import {
   JavaLocalBindingSymbolResolutionStrategy,
   JavaThisMemberSymbolResolutionStrategy,
 } from "../src/core/domains/language/java/resolver/strategies/index.js";
-import { PythonImportFileMapper } from "../src/core/domains/language/python/resolver/python-import-file-mapper.js";
-import {
-  CONE_MAX_DEFAULT,
-  PythonGlobalShortNameSymbolResolutionStrategy,
-  PythonImportedNameSymbolResolutionStrategy,
-  PythonImportMatchSymbolResolutionStrategy,
-  PythonLocalBindingSymbolResolutionStrategy,
-  PythonSelfFieldSymbolResolutionStrategy,
-  PythonSelfMemberSymbolResolutionStrategy,
-  PythonSuperSymbolResolutionStrategy,
-} from "../src/core/domains/language/python/resolver/strategies/index.js";
+import { createPythonSymbolResolutionChain } from "../src/core/domains/language/python/resolver/index.js";
+import { CONE_MAX_DEFAULT } from "../src/core/domains/language/python/resolver/strategies/index.js";
 import { resolveViaChain } from "../src/core/domains/language/resolver-chain.js";
 import { CODEGRAPH_LANGUAGES } from "../src/core/domains/trajectory/codegraph/symbols/provider.js";
 import { lastSegment } from "../src/core/domains/trajectory/codegraph/symbols/symbol-name.js";
@@ -97,24 +88,12 @@ interface ChainSpec {
 const MODE = DEFAULT_AMBIGUOUS_RESOLVE_MODE;
 
 const CHAINS: Record<string, ChainSpec> = {
-  // Mirrors `PythonCallResolver`'s array (python-resolver.ts).
+  // The production factory itself, not a copy of it (bd tea-rags-mcp-3yxmy).
+  // The factory allocates its own import-file mapper per chain, which is the
+  // per-chain sharing `PythonCallResolver` gives its single instance.
   python: {
     extensions: [".py"],
-    build: () => {
-      const cfg = { mode: MODE, coneMax: CONE_MAX_DEFAULT };
-      // One mapper per rebuilt chain, mirroring the resolver's single instance
-      // so the memo is shared exactly the way production shares it.
-      const mapper = new PythonImportFileMapper();
-      return [
-        new PythonSuperSymbolResolutionStrategy(cfg),
-        new PythonSelfFieldSymbolResolutionStrategy(cfg),
-        new PythonSelfMemberSymbolResolutionStrategy(cfg),
-        new PythonLocalBindingSymbolResolutionStrategy(cfg),
-        new PythonImportedNameSymbolResolutionStrategy(cfg, mapper),
-        new PythonImportMatchSymbolResolutionStrategy(cfg),
-        new PythonGlobalShortNameSymbolResolutionStrategy(cfg),
-      ];
-    },
+    build: () => createPythonSymbolResolutionChain({ mode: MODE, coneMax: CONE_MAX_DEFAULT }),
   },
   // Mirrors `JavaCallResolver`'s array (java-resolver.ts).
   java: {

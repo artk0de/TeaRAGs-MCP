@@ -28,12 +28,21 @@ class FixedStrategy implements SymbolResolutionStrategy {
 }
 
 describe("buildPythonChain", () => {
-  it("mirrors PythonCallResolver's order exactly — drift here voids every number", () => {
+  /**
+   * This list used to be the harness's OWN copy of the order and it silently
+   * lost `importedName` when that pass landed — `chainDrift` 117 on flask, 552
+   * on ugnest. The order now comes from the production factory, and
+   * `tests/core/domains/language/python/resolver/python-chain-factory.test.ts`
+   * is what pins it against `PythonCallResolver`. The assertion here is the
+   * harness's end of that wiring, not a second source of truth.
+   */
+  it("takes PythonCallResolver's chain from the shared factory", () => {
     expect(buildPythonChain().map((pass) => pass.name)).toEqual([
       "super",
       "selfField",
       "selfMember",
       "localBinding",
+      "importedName",
       "importMatch",
       "globalShortName",
     ]);
@@ -84,6 +93,27 @@ describe("parseArgs", () => {
 
   it("lets an explicit --environment win over the manifest", () => {
     expect(parseArgs(["--corpus", "polar", "--environment", "/tmp/py"]).venvPython).toBe("/tmp/py");
+  });
+
+  /**
+   * httpx declares `requiresPython >= 3.9` and jedi 0.20.0 needs >= 3.10, so the
+   * launcher used to be `uv run --python 3.9 --with jedi==0.20.0` — it failed to
+   * resolve, the child died before reading the config line, and the host
+   * surfaced it as an unhandled `write EPIPE`.
+   */
+  it("launches jedi on oraclePython, never on the corpus's own requiresPython", () => {
+    const argv = parseArgs(["--corpus", "httpx"]).pythonArgv;
+    expect(argv[argv.indexOf("--python") + 1]).toBe("3.13");
+  });
+
+  it("runs polar's PEP 758 sources on the 3.14 interpreter parso needs", () => {
+    const argv = parseArgs(["--corpus", "polar"]).pythonArgv;
+    expect(argv[argv.indexOf("--python") + 1]).toBe("3.14");
+  });
+
+  it("lets an explicit --python win over the manifest", () => {
+    const argv = parseArgs(["--corpus", "polar", "--python", "3.12"]).pythonArgv;
+    expect(argv[argv.indexOf("--python") + 1]).toBe("3.12");
   });
 
   it("defaults the seed so two runs sample identically", () => {
