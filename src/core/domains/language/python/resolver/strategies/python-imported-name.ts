@@ -171,9 +171,27 @@ export class PythonImportedNameSymbolResolutionStrategy implements SymbolResolut
    * a module declaring the name twice yields two candidates and declines.
    */
   private moduleMemberTarget(member: string, moduleFile: string, ctx: CallContext): SymbolResolutionTarget | null {
-    const candidates = ctx.symbolTable.lookup(member).filter((def) => def.relPath === moduleFile);
-    const target = pickSingleCandidate(candidates, this.cfg.mode);
-    return target ? { targetRelPath: target.relPath, targetSymbolId: target.symbolId } : null;
+    const direct = pickSingleCandidate(
+      ctx.symbolTable.lookup(member).filter((def) => def.relPath === moduleFile),
+      this.cfg.mode,
+    );
+    if (direct) return { targetRelPath: direct.relPath, targetSymbolId: direct.symbolId };
+    // The module re-exports rather than declares — a package `__init__.py`
+    // pulling `ColorColumn` out of its own `columns.py`. ONE hop, through the
+    // same engine `declaringFile` uses two methods down, so the two questions
+    // cannot drift apart. Its three gates do the declining: the name must be in
+    // the table, `moduleFile` must not declare it, and the declaration must be
+    // unique (retried inside the package on a global tie). The target module's
+    // OWN `importedBindings` are not reachable from a `CallContext` — see the
+    // helper's docblock — so declaration lookup is the mechanism, and it covers
+    // `from .columns import *` for free.
+    const origin = reexportOriginFile(member, moduleFile, ctx, this.cfg.mode);
+    if (!origin) return null;
+    const hopped = pickSingleCandidate(
+      ctx.symbolTable.lookup(member).filter((def) => def.relPath === origin),
+      this.cfg.mode,
+    );
+    return hopped ? { targetRelPath: hopped.relPath, targetSymbolId: hopped.symbolId } : null;
   }
 
   /**
