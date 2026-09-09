@@ -27,14 +27,13 @@
  *      terminal guard — bd tea-rags-mcp-9fgdi)
  *   6. importedName (receiver / bare callee is an imported binding; one
  *      re-export hop; star imports — bd tea-rags-mcp-9fgdi)
- *   7. importMatch (receiver matches an import's trailing segment)
- *   8. globalShortName (global short-name fallback)
+ *   7. globalShortName (global short-name fallback)
  *
- * Python's syntax differs from TS in import style (`from foo import bar`), so
- * the "receiver matches an import" check also considers names imported via
- * `from X import Y` — Y becomes a locally-bound name even though X is the module
- * file. This is pragmatically handled by accepting the final segment of the
- * import path as the receiver match.
+ * Python's import style (`from foo import bar`) binds Y as a local name while X
+ * names the module file, so `importedName` reads the walker's binding table
+ * rather than inferring the bound name from the module path. The pass that DID
+ * infer it, `importMatch`, was removed once the oracle measured its residual
+ * (bd tea-rags-mcp-rw1qk).
  */
 
 import {
@@ -74,7 +73,7 @@ export class PythonCallResolver implements CallResolver {
    * ONE mapper for the whole resolver: its memo is per-symbol-table identity,
    * so every consumer sharing the instance shares the resolved-root cache.
    * Every Python consumer of "which file is this import" reads it — the chain
-   * (`localBinding`, `importedName`, `importMatch`), the cone locator through
+   * (`localBinding`, `importedName`), the cone locator through
    * `resolveTypeFile`, the external vocabulary, and `resolveFileEdges`.
    */
   private readonly importFileMapper = new PythonImportFileMapper();
@@ -131,7 +130,7 @@ export class PythonCallResolver implements CallResolver {
    *
    * `defaultImportFileEdges` pushed a fake `{receiver, member} = lastSegment`
    * call through the whole chain and committed whatever came back — which, for
-   * Python, was `importMatch`'s file-only edge on a path
+   * Python, was the since-removed `importMatch` pass's file-only edge on a path
    * `mapPythonImportToFile` invented. Answering the import question directly
    * removes the phantom AND the coupling: a change to call-resolution
    * precedence no longer silently rewrites the file graph.

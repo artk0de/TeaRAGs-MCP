@@ -21,8 +21,9 @@ import { lastSegment, resolvePythonMemberOnType, resolveTypeFile, type ResolverC
  * `localBinding` needs the receiver itself to be bound and is terminal for
  * those it owns; `selfField` handles exactly ONE access level and CONTINUEs on
  * `self.foo.bar` (bd tea-rags-mcp-rjuc). Everything with a call or a second dot
- * in it reached `importedName` / `importMatch` / `globalShortName` before this
- * pass — the three that produce 9,892 of the E0 baseline's phantoms.
+ * in it reached `importedName` / `globalShortName` before this pass — those two
+ * plus the since-removed `importMatch` produce 9,892 of the E0 baseline's
+ * phantoms.
  *
  * **Three-state semantics:**
  *

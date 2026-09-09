@@ -4,7 +4,7 @@
 
 - **`importText` is a persisted contract, not an internal string.** The walker's
   `collectPythonImports` emits `"a.b"`, `"a"` for `from a import b, c`, `"."`,
-  `".a"`. The mapper, the external vocabulary and `importMatch` all parse it.
+  `".a"`. The mapper, the external vocabulary and `importedName` all parse it.
   Changing its shape is a walker-version bump and a reindex, not a refactor.
 - **`import a.b` binds `a`.** Python binds the TOP package unless the statement
   aliases; `importedBindings` records `{ a: "a.b" }`. Getting this backwards
@@ -27,13 +27,13 @@
   `createPythonReceiverTypePorts(mapper)` — called once in the constructor, off
   the resolver's own mapper, never per call site. It is terminal BOTH ways: a
   folded type that resolves gives an edge, a folded type whose file is outside
-  the project DROPs rather than falling through to `importMatch` /
-  `globalShortName`. It does NOT copy `localBinding`'s file-only fallback — that
-  is measured for a DIRECT binding and unmeasured for a type reached by folding
-  hops. `memberTypeOf` reads `classFieldTypes` (attribute) before
-  `structuredReturnTypes` (return); their two key conventions are under
-  Mechanics below. A `container` or `union` receiver yields nothing on purpose —
-  `list[Foo]` types the list, not an element.
+  the project DROPs rather than falling through to `globalShortName`. It does
+  NOT copy `localBinding`'s file-only fallback — that is measured for a DIRECT
+  binding and unmeasured for a type reached by folding hops. `memberTypeOf`
+  reads `classFieldTypes` (attribute) before `structuredReturnTypes` (return);
+  their two key conventions are under Mechanics below. A `container` or `union`
+  receiver yields nothing on purpose — `list[Foo]` types the list, not an
+  element.
 - **The stdlib check runs BEFORE the mapper — in two places.** The mapper probes
   the caller's ancestor directories first, so `import json` from
   `src/flask/tag.py` would otherwise land on flask's own
@@ -68,18 +68,20 @@
   question are not the same one. Measured cost of answering CONTINUE there: 95
   phantoms on netbox (`ContentType.objects`, `os.path`), 9 on ugnest, 2 on
   flask.
-- **`importMatch` only answers receivers nothing bound.** Its trailing-segment
-  heuristic is measured wrong on every import-bound receiver it fires on
-  (netbox: 517 answers, 0 `match`, because the caller's own directory usually
-  holds a file named like the import's last segment), so it CONTINUEs when
-  `findPythonImportBinding` finds the receiver head. What is left is star
-  imports, module-path segments that merely look like the receiver, and dynamic
-  attributes — 35 rows on netbox after the demotion. Whether that residual earns
-  the pass is a measurement, not a symmetry argument.
-- **Chain order is a correctness argument, not a preference.** See the pass list
-  in `resolver/python-resolver.ts`; the guards (`super`, `selfField`,
-  `selfMember`, `localBinding`) DROP rather than fall through, which is what
-  keeps `serializer.is_valid()` off an unrelated class.
+- **`importMatch` is GONE — its residual did not earn the slot** (bd
+  tea-rags-mcp-rw1qk). The trailing-segment heuristic survived the
+  `importedName` demotion holding only the receivers nothing bound, and the
+  seeded oracle measured that residual: netbox 35 rows / 0 `match` (15 phantom,
+  2 wrongFile, 18 chainOnly), flask 6 / 0, httpx 0, polar 60 / 9 `match` / 29
+  phantom, ugnest 2 / 2 `match`. Eleven right answers against 44 phantoms is a
+  losing trade for a precision-gated program, so the pass was deleted rather
+  than parked. A dotted or unbound receiver now falls to `globalShortName`.
+- **Chain order is a correctness argument, not a preference.** Seven passes:
+  `super`, `selfField`, `selfMember`, `localBinding`, `chainType`,
+  `importedName`, `globalShortName`. See the pass list in
+  `resolver/python-resolver.ts`; the guards (`super`, `selfField`, `selfMember`,
+  `localBinding`) DROP rather than fall through, which is what keeps
+  `serializer.is_valid()` off an unrelated class.
 - Resolver architecture rules: `.claude/rules/resolver-architecture.md`.
   Cross-language mechanics: `src/core/domains/language/CLAUDE.md`.
 

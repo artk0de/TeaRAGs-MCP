@@ -38,7 +38,6 @@ const PRODUCTION_ORDER = [
   "localBinding",
   "chainType",
   "importedName",
-  "importMatch",
   "globalShortName",
 ];
 
@@ -49,7 +48,7 @@ describe("createPythonSymbolResolutionChain", () => {
     );
   });
 
-  it("keeps the production order, importedName ahead of importMatch", () => {
+  it("keeps the production order, importedName the last import-consulting pass", () => {
     expect(new PythonCallResolver().strategies.map((pass) => pass.name)).toEqual(PRODUCTION_ORDER);
   });
 
