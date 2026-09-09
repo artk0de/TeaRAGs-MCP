@@ -54,6 +54,8 @@ const ctx = (over: Partial<CallContext>): CallContext => ({
     removeFile: () => {},
     lookup: () => [],
     lookupByShortName: () => [],
+    hasFile: () => false,
+    hasFilesUnder: () => false,
     size: () => 0,
     hydrate: () => {},
     shortNameDefCounts: () => new Map(),

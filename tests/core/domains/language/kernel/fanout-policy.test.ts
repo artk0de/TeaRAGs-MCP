@@ -21,6 +21,8 @@ const tableWithCounts = (counts: Record<string, number>): GlobalSymbolTable => (
   removeFile: () => undefined,
   lookup: () => [],
   lookupByShortName: (name) => Array.from({ length: counts[name] ?? 0 }, (_, i) => def(`C${i}#${name}`)),
+  hasFile: () => false,
+  hasFilesUnder: () => false,
   size: () => Object.values(counts).reduce((a, b) => a + b, 0),
   hydrate: () => undefined,
   shortNameDefCounts: () => new Map(Object.entries(counts)),

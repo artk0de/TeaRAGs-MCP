@@ -46,11 +46,24 @@ export class InMemoryGlobalSymbolTable implements GlobalSymbolTable {
    * barrier, so per-file `upsertFile` / `removeFile` deliberately leave it alone.
    */
   private schemaColumnsByShort = new Map<string, SymbolDefinition[]>();
+  /**
+   * Ancestor directory -> number of files under it that hold definitions.
+   *
+   * Refcounted rather than a Set because `removeFile` is a per-file operation
+   * on a directory many files share — a Set would delete `netbox/dcim` the
+   * first time any file under it went away. Every ancestor prefix of a file
+   * gets one count, so a corpus of 1,300 files at depth 5 holds a few thousand
+   * entries: bounded by (files x depth), and no filesystem access at any point.
+   */
+  private readonly dirRefCounts = new Map<string, number>();
 
   upsertFile(relPath: RelPath, definitions: SymbolDefinition[]): void {
     this.removeFile(relPath);
     if (definitions.length === 0) return;
     this.byFile.set(relPath, definitions.slice());
+    for (const dir of ancestorDirs(relPath)) {
+      this.dirRefCounts.set(dir, (this.dirRefCounts.get(dir) ?? 0) + 1);
+    }
     for (const def of definitions) {
       pushTo(this.byFq, def.fqName, def);
       pushTo(this.byShort, def.shortName, def);
@@ -61,10 +74,25 @@ export class InMemoryGlobalSymbolTable implements GlobalSymbolTable {
     const existing = this.byFile.get(relPath);
     if (!existing) return;
     this.byFile.delete(relPath);
+    for (const dir of ancestorDirs(relPath)) {
+      const next = (this.dirRefCounts.get(dir) ?? 0) - 1;
+      if (next <= 0) this.dirRefCounts.delete(dir);
+      else this.dirRefCounts.set(dir, next);
+    }
     for (const def of existing) {
       removeFrom(this.byFq, def.fqName, def);
       removeFrom(this.byShort, def.shortName, def);
     }
+  }
+
+  hasFile(relPath: RelPath): boolean {
+    return this.byFile.has(relPath);
+  }
+
+  hasFilesUnder(dirRelPath: string): boolean {
+    const normalized = dirRelPath.endsWith("/") ? dirRelPath.slice(0, -1) : dirRelPath;
+    if (normalized === "") return this.byFile.size > 0;
+    return this.dirRefCounts.has(normalized);
   }
 
   lookup(fqName: string): SymbolDefinition[] {
@@ -119,6 +147,14 @@ export class InMemoryGlobalSymbolTable implements GlobalSymbolTable {
       this.upsertFile(relPath, defs);
     }
   }
+}
+
+/** Every ancestor directory of a repo-relative path, shallowest first. */
+function ancestorDirs(relPath: RelPath): string[] {
+  const segments = relPath.split("/");
+  const dirs: string[] = [];
+  for (let i = 1; i < segments.length; i++) dirs.push(segments.slice(0, i).join("/"));
+  return dirs;
 }
 
 function pushTo(map: Map<string, SymbolDefinition[]>, key: string, def: SymbolDefinition): void {

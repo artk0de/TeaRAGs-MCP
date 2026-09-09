@@ -115,6 +115,8 @@ describe("codegraph contracts", () => {
       removeFile: () => undefined,
       lookup: () => [],
       lookupByShortName: () => [],
+      hasFile: () => false,
+      hasFilesUnder: () => false,
       size: () => 0,
     };
     const _def: SymbolDefinition = {
