@@ -39,9 +39,26 @@ export interface PythonAnnotatedAssignmentSite {
   readonly line: number;
 }
 
+/**
+ * One `for` binding site. Both spellings arrive here: a `for_statement` and a
+ * comprehension's `for_in_clause`, which bind their target identically and
+ * differ only in that a clause carries no block of its own. `methodName` is the
+ * enclosing def — `undefined` at module level, where a comprehension variable
+ * has no coordinate a `local` fact could be filed under.
+ */
+export interface PythonForStatementSite {
+  /** The `for_statement` / `for_in_clause`, with its `left` and `right` fields. */
+  readonly node: AstNode;
+  readonly classChain: readonly string[];
+  readonly methodName: string | undefined;
+  /** 1-based line of the `for` keyword. */
+  readonly line: number;
+}
+
 export interface PythonScopeVisitor {
   onDef?: (site: PythonDefSite) => void;
   onAnnotatedAssignment?: (site: PythonAnnotatedAssignmentSite) => void;
+  onForStatement?: (site: PythonForStatementSite) => void;
 }
 
 /** `@classmethod` / `@staticmethod` mark a def whose structured-return key joins with `.`. */
@@ -110,6 +127,17 @@ export function walkPythonScopes(root: AstNode, visitor: PythonScopeVisitor): vo
         line: node.startPosition.row + 1,
       });
       return;
+    }
+    // No early return: a `for` body holds the defs and annotated assignments
+    // the other visitors still need, and a comprehension clause sits inside an
+    // expression whose siblings do too.
+    if (node.type === "for_statement" || node.type === "for_in_clause") {
+      visitor.onForStatement?.({
+        node,
+        classChain: [...classChain],
+        methodName: fnStack[fnStack.length - 1],
+        line: node.startPosition.row + 1,
+      });
     }
     for (const child of node.namedChildren) descend(child);
   };
