@@ -3129,10 +3129,10 @@ E2 gates compare against.
 
 **Steps**
 
-- [ ] Prepare the worktree: `npm ci`, then a bare `npm run build`. Create the
+- [x] Prepare the worktree: `npm ci`, then a bare `npm run build`. Create the
       results directory: `mkdir -p ~/Dev/Tools/tea-rags-bench/results/python`.
 
-- [ ] Run the three fast corpora first, in this order, so a harness defect
+- [x] Run the three fast corpora first, in this order, so a harness defect
       surfaces on the cheap ones. Each is a foreground command of seconds to a
       couple of minutes:
 
@@ -3145,7 +3145,7 @@ npx tsx scripts/py-codegraph-jedi-oracle.ts --corpus ugnest \
   --json ~/Dev/Tools/tea-rags-bench/results/python/2026-09-08-ugnest.json
 ```
 
-- [ ] Run the two slow ones in the BACKGROUND with output redirected, and poll
+- [x] Run the two slow ones in the BACKGROUND with output redirected, and poll
       the file. netbox is ~60k sites and polar ~82k; polar is expected at 15–40
       minutes, and a foreground call that long is killed:
 
@@ -3160,7 +3160,7 @@ nohup npx tsx scripts/py-codegraph-jedi-oracle.ts --corpus netbox \
       plus two tree-sitter walks will not fit alongside the perf gate's
       assumptions, and a measurement taken under contention is not a baseline.
 
-- [ ] Check the determinism gate on the two corpora most likely to break it —
+- [x] Check the determinism gate on the two corpora most likely to break it —
       polar because of the degraded rows, netbox because of the JavaScript in
       the symbol table:
 
@@ -3174,18 +3174,18 @@ diff /tmp/netbox-a.json /tmp/netbox-b.json && echo DETERMINISTIC
       unsorted map in the report payload and a `multiprocessing` reply arriving
       out of order. Both are fixed in the harness before the baseline stands.
 
-- [ ] Verify `chainDrift` is 0 on ALL FIVE. A non-zero value on any corpus voids
+- [x] Verify `chainDrift` is 0 on ALL FIVE. A non-zero value on any corpus voids
       that corpus's numbers — the run exits 1 for exactly this reason, so check
       the exit codes rather than reading past the warning line.
 
-- [ ] Reconcile each corpus's chain-output totals against the recorded
+- [x] Reconcile each corpus's chain-output totals against the recorded
       chain-tally baseline (ugnest 1432 / 315 / 5899, flask 770 / 148 / 1402,
       netbox 21971 / 8190 / 38760, polar 21336 / 3976 / 61218, httpx 1011 / 193
       / 1632). Equal numbers mean the oracle scores the population production
       resolves. A gap is a corpus-parity bug in the harness — report the gap and
       its cause in the appendix rather than quietly adopting the new number.
 
-- [ ] Append the appendix to
+- [x] Append the appendix to
       `docs/superpowers/specs/2026-09-03-python-codegraph-e0-measurement-design.md`,
       under a new `## Appendix — E0 baseline (2026-09-08)` heading placed AFTER
       the existing seam-inventory appendix. Five sections, filled from the JSON,
@@ -3230,7 +3230,7 @@ increment is compared against: E1 and E2 may raise `match`, and neither may
 raise these.
 ```
 
-- [ ] Rank the categories across corpora and write the pull order down. The
+- [x] Rank the categories across corpora and write the pull order down. The
       program spec predicted: `ExternalVocabulary` → `ModuleResolver` →
       annotations → C3 / `super` → framework vocabularies → propagation →
       dispatch. Confirm it or reorder it FROM THE DATA, and say which corpus
@@ -3238,19 +3238,19 @@ raise these.
       truth answers does not rank — it is noise, and the TS oracle's
       `PRIORITY_MIN_ORACLE_DEFAULT` exists for exactly this.
 
-- [ ] Update the `### Predicted pull order` section of
+- [x] Update the `### Predicted pull order` section of
       `docs/superpowers/specs/2026-09-03-python-codegraph-unification-program-design.md`
       ONLY if the data reorders it. Change the heading to
       `### Pull order (confirmed 2026-09-08 by the E0 baseline)` either way, and
       keep the original prediction visible beneath any change — a prediction
       that was wrong is evidence about the model, and deleting it destroys that.
 
-- [ ] Report the five headline rows in the commit body, per corpus, never as a
+- [x] Report the five headline rows in the commit body, per corpus, never as a
       cross-corpus average: `.claude/rules` and the program spec both require
       per-corpus and per-receiverKind reporting, and an average over corpora
       this different is a number about nothing.
 
-- [ ] Format and commit — the results JSON is NOT added, it lives outside the
+- [x] Format and commit — the results JSON is NOT added, it lives outside the
       repo by design:
 
 ```bash
@@ -3259,6 +3259,32 @@ npx prettier --write docs/superpowers/specs/2026-09-03-python-codegraph-e0-measu
 git add docs/superpowers/specs
 git commit -m "docs(scripts): record the E0 Python oracle baseline over five corpora (mmckn)"
 ```
+
+**Outcome (2026-09-09, bd `wl0e6`).** Three harness defects surfaced and were
+fixed in the files that own them before the baseline stood, so the commit is not
+docs-only:
+
+1. The jedi interpreter was derived from the CORPUS's `requiresPython` floor, so
+   httpx (3.9) and flask (3.10) resolved to a Python jedi 0.20.0 will not
+   install on and the run died at the first spawn. Lifted to the oracle
+   environment's own `>=3.13` pin; polar still gets 3.14.
+2. The determinism gate failed on flask, not on the two corpora it was aimed at:
+   one site moved between `agreeExternal` and `bothUnresolved` across runs.
+   Cause was the file → worker assignment, not reply order —
+   `pool.imap(chunksize=4)` hands chunks out as workers free up and jedi's
+   per-process cache makes an answer depend on what that process parsed first.
+   The pool now stripes files into one fixed group per worker with
+   `maxtasksperchild=1`.
+3. The JSON carried no `skippedInProject` / `parseFailed` / `unlocated` counts,
+   which three of the five appendix tables need. `tallyPyCoverage` supplies
+   them.
+
+Determinism scope as run: two byte-identical runs each for httpx, flask and
+ugnest; one run each for netbox (154.9 s) and polar (283.7 s).
+
+The chain-output reconciliation found a gap on three corpora. It is in
+`codegraph-chain-tally.ts`, not in the oracle — see the E0 spec appendix's
+`### Chain-output reconciliation` section.
 
 ---
 

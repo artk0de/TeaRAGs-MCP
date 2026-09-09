@@ -262,6 +262,46 @@ export function tallyPyRows(
   return [...bySite.values()].sort((a, b) => b.sites - a.sites || a.label.localeCompare(b.label));
 }
 
+/** The counts the per-label tally cannot carry. */
+export interface PyCoverageCounts {
+  skippedInProject: number;
+  parseFailed: number;
+  unlocated: number;
+  unlocatedByShape: Partial<Record<PyUnlocatedShape, number>>;
+}
+
+/**
+ * Count what `tallyPyRows` folds away.
+ *
+ * `skippedInProject` is deliberately merged into `missed` there and
+ * `parseFailed` rows are dropped from the rates entirely, which leaves both
+ * unreadable from the per-label rows — yet the baseline reports the first as
+ * the precision floor and the second as a gap in the instrument. `unlocated`
+ * is a third population the tally never sees at all: it is a site the oracle
+ * could not tie back to an AST node, reported by SHAPE so the gap names its
+ * own fix. Shapes nobody hit are omitted, and the map is built in the fixed
+ * `PY_UNLOCATED_SHAPES` order so two runs serialize identically.
+ */
+export function tallyPyCoverage(rows: readonly PyOracleRow[]): PyCoverageCounts {
+  const byShape = new Map<PyUnlocatedShape, number>();
+  let skippedInProject = 0;
+  let parseFailed = 0;
+  let unlocated = 0;
+  for (const row of rows) {
+    if (row.verdict === "skippedInProject") skippedInProject += 1;
+    if (row.verdict === "parseFailed") parseFailed += 1;
+    if (row.unlocatedShape === undefined) continue;
+    unlocated += 1;
+    byShape.set(row.unlocatedShape, (byShape.get(row.unlocatedShape) ?? 0) + 1);
+  }
+  const unlocatedByShape: Partial<Record<PyUnlocatedShape, number>> = {};
+  for (const shape of PY_UNLOCATED_SHAPES) {
+    const count = byShape.get(shape);
+    if (count !== undefined) unlocatedByShape[shape] = count;
+  }
+  return { skippedInProject, parseFailed, unlocated, unlocatedByShape };
+}
+
 /** Deterministic PRNG — the seed is a CLI flag so a sample can be reproduced. */
 export function mulberry32(seed: number): () => number {
   let state = seed >>> 0;

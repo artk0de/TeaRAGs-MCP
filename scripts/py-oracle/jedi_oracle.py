@@ -388,6 +388,11 @@ def answer_file(batch: dict[str, Any]) -> dict[str, Any]:
     return {"relPath": rel_path, "parseFailed": False, "parsoErrors": parso_errors, "answers": answers}
 
 
+def answer_group(batches: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """One worker's whole share, answered in a fixed order inside one process."""
+    return [answer_file(batch) for batch in batches]
+
+
 def read_batches(stream: Any) -> Iterator[dict[str, Any]]:
     for line in stream:
         line = line.strip()
@@ -409,10 +414,17 @@ def main() -> int:
         init_worker(corpus_root, venv)
         results = (answer_file(batch) for batch in files)
     else:
-        # `imap` preserves input order, so the output is deterministic even
-        # though the work is not. `fork` inherits the initialised project.
-        pool = mp.get_context("fork").Pool(workers, init_worker, (corpus_root, venv))
-        results = pool.imap(answer_file, files, chunksize=4)
+        # Determinism needs a FIXED file -> process assignment, not just a fixed
+        # output order. jedi's per-process module cache makes one file's answer
+        # depend on what that process parsed before it, and `imap(chunksize=4)`
+        # hands chunks out as workers free up — which run to run moved a flask
+        # site between `external` and `unknown`. A striped partition plus
+        # `maxtasksperchild=1` gives every process exactly one group, the same
+        # files in the same order, every run. The host keys replies by relPath,
+        # so emitting group by group costs nothing.
+        groups = [files[index::workers] for index in range(workers)]
+        pool = mp.get_context("fork").Pool(workers, init_worker, (corpus_root, venv), maxtasksperchild=1)
+        results = (answer for group in pool.imap(answer_group, groups) for answer in group)
 
     for result in results:
         sys.stdout.write(json.dumps(result, sort_keys=True, separators=(",", ":")) + "\n")
