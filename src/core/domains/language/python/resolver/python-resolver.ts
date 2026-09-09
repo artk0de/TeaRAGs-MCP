@@ -41,11 +41,14 @@ import {
   type CallRef,
   type CallResolver,
   type DispatchFanoutOutcome,
+  type FileExtraction,
+  type GraphEdges,
   type SymbolResolutionTarget,
 } from "../../../../contracts/types/codegraph.js";
 import type { SymbolResolutionStrategy } from "../../../../contracts/types/language.js";
 import { ConeDispatchResolver } from "../../cone-dispatch.js";
 import { ExternalCallClassifier } from "../../external-classifier.js";
+import { resolveImportFileEdges } from "../../import-file-edges.js";
 import { resolveViaChain } from "../../resolver-chain.js";
 import { createPythonSymbolResolutionChain } from "./python-chain-factory.js";
 import { PythonExternalVocabulary } from "./python-external-vocabulary.js";
@@ -66,15 +69,20 @@ export class PythonCallResolver implements CallResolver {
   /**
    * ONE mapper for the whole resolver: its memo is per-symbol-table identity,
    * so every consumer sharing the instance shares the resolved-root cache.
-   * Task 6 moves `localBinding` / `importMatch` / the vocabulary onto it too.
+   * Every Python consumer of "which file is this import" reads it — the chain
+   * (`localBinding`, `importedName`, `importMatch`), the cone locator through
+   * `resolveTypeFile`, the external vocabulary, and `resolveFileEdges`.
    */
   private readonly importFileMapper = new PythonImportFileMapper();
 
   constructor(mode: AmbiguousResolveMode = DEFAULT_AMBIGUOUS_RESOLVE_MODE) {
     const cfg: ResolverConfig = { mode, coneMax: resolveConeMax(process.env.CODEGRAPH_PY_CONE_MAX) };
     this.chain = createPythonSymbolResolutionChain(cfg, this.importFileMapper);
-    this.cone = new ConeDispatchResolver(new PythonConeTypeLocator(cfg), cfg.coneMax ?? CONE_MAX_DEFAULT);
-    this.external = new ExternalCallClassifier(new PythonExternalVocabulary());
+    this.cone = new ConeDispatchResolver(
+      new PythonConeTypeLocator(cfg, this.importFileMapper),
+      cfg.coneMax ?? CONE_MAX_DEFAULT,
+    );
+    this.external = new ExternalCallClassifier(new PythonExternalVocabulary(this.importFileMapper));
   }
 
   /**
@@ -100,6 +108,26 @@ export class PythonCallResolver implements CallResolver {
    */
   resolveDispatch(call: CallRef, ctx: CallContext): DispatchFanoutOutcome {
     return this.cone.resolveDispatch(call, ctx);
+  }
+
+  /**
+   * File→file edges from imports, through the mapper rather than through a
+   * synthesised call (bd tea-rags-mcp-9fgdi).
+   *
+   * `defaultImportFileEdges` pushed a fake `{receiver, member} = lastSegment`
+   * call through the whole chain and committed whatever came back — which, for
+   * Python, was `importMatch`'s file-only edge on a path
+   * `mapPythonImportToFile` invented. Answering the import question directly
+   * removes the phantom AND the coupling: a change to call-resolution
+   * precedence no longer silently rewrites the file graph.
+   *
+   * The counts MOVE when this lands. That is the intent — a package import that
+   * pointed at `dcim/models.py` now points at `dcim/models/__init__.py`, and a
+   * stdlib import that had an edge now has none. The jedi oracle is the gate,
+   * not edge-count parity.
+   */
+  resolveFileEdges(extraction: FileExtraction, ctx: CallContext): GraphEdges["fileEdges"] {
+    return resolveImportFileEdges(extraction, this.importFileMapper, ctx);
   }
 
   /**
