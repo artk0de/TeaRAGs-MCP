@@ -9,6 +9,7 @@ export { PythonConeTypeLocator } from "./python-cone-type-locator.js";
 export {
   CONE_MAX_DEFAULT,
   lastSegment,
+  pythonBoundClassKey,
   pythonClassKeyIsDeclared,
   pythonDeclaredClassFq,
   pythonEnclosingClass,

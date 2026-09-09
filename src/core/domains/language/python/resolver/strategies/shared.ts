@@ -128,6 +128,30 @@ export function pythonClassKeyIsDeclared(classKey: string, ctx: CallContext): bo
   return ctx.symbolTable.lookup(parsed.classFq).some((def) => def.relPath === parsed.relPath);
 }
 
+/**
+ * The MRO key of the class `bareName` names INSIDE `relPath`, or `null` when
+ * that file declares no such class — or declares it twice (bd
+ * tea-rags-mcp-xasyu).
+ *
+ * A type name and a file are not yet an address the ancestor walk accepts: the
+ * key is DOTTED-FQ-qualified, so a nested `Outer.Inner` has to be spelled from
+ * its own definition rather than from the short name the binding carried. This
+ * is the same question `resolveBaseKey` asks of a base spelling in
+ * `../python-ancestor-policy.ts`, asked here of a receiver's inferred type; it
+ * stays in this leaf module because the policy imports from here and not the
+ * other way round.
+ *
+ * `null` is a positive answer, not a residual: the run holds no class under
+ * that name in that file, so there is no hierarchy to read and no member to
+ * find. A caller that gets it has evidence the bound type is not a class the
+ * project declares.
+ */
+export function pythonBoundClassKey(bareName: string, relPath: string, ctx: CallContext): string | null {
+  const declared = ctx.symbolTable.lookupByShortName(bareName).filter((def) => def.relPath === relPath);
+  if (declared.length !== 1) return null;
+  return pythonClassKey(relPath, pythonDeclaredClassFq(declared[0]));
+}
+
 /** A member found on a class or one of its ancestors, and how far the walk could see. */
 export interface PythonInheritedMemberResult {
   readonly target: SymbolResolutionTarget | null;

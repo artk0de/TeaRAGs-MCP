@@ -231,9 +231,9 @@ describe("PythonLocalBindingSymbolResolutionStrategy", () => {
     });
   });
 
-  it("emits a file-only edge when the bound type's file is known but the method is external (does NOT continue)", () => {
+  it("DROPS when the bound type's file is known but the method is external (never a file-only edge)", () => {
     // `ToggleReactionSerializer` is in the table but `is_valid` is not — DRF
-    // inherits it from a base outside the project. File-only attribution.
+    // inherits it from a base outside the project.
     const symbolTable = tableWith([
       "reaction.py",
       [sym("ToggleReactionSerializer", "ToggleReactionSerializer", "reaction.py", [])],
@@ -242,18 +242,16 @@ describe("PythonLocalBindingSymbolResolutionStrategy", () => {
       { ...call, member: "is_valid", receiver: "serializer", callText: "serializer.is_valid()" },
       ctx({
         symbolTable,
-        // lbtmm: the file-only fallback now needs the bound type corroborated
-        // as class-kind. A class with an external base is exactly that shape,
-        // and the walker records it — spelling it out here is what makes the
-        // fixture match the code this test describes.
+        // lbtmm: the bare-name probe still gates the walker-v2 path, and a
+        // class with an external base is the shape it was written for.
         classExtends: { ToggleReactionSerializer: "serializers.ModelSerializer" },
         localBindings: { serializer: [{ line: 1, type: "ToggleReactionSerializer" }] },
       }),
     );
-    expect(outcome).toEqual({
-      kind: "resolved",
-      target: { targetRelPath: "reaction.py", targetSymbolId: null },
-    });
+    // xasyu: this used to answer `{ reaction.py, null }`. A call site names a
+    // symbol or nothing — every one of netbox's 223 `localBinding` phantoms
+    // was a file-only edge of exactly this shape.
+    expect(outcome).toEqual({ kind: "drop" });
   });
 
   it("DROPS when the bound type's file is unknown (external lib, no import) — never falls through", () => {

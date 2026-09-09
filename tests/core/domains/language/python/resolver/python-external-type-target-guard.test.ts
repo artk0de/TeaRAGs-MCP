@@ -201,7 +201,12 @@ describe("PythonLocalBindingSymbolResolutionStrategy — external / non-class bo
     expect(outcome.kind).toBe("drop");
   });
 
-  it("keeps the file-only edge when the bound type DECLARES a base class (real class, external member)", () => {
+  // xasyu: was "keeps the file-only edge when the bound type DECLARES a base
+  // class", asserting `{ kind: "resolved", target: { reaction.py, null } }`.
+  // The declared base still proves class-kind to the lbtmm probe; what changed
+  // is the answer on a member the class does not own — a file with no symbol
+  // is not an answer a call site can carry.
+  it("DROPS when the bound type DECLARES a base class but the member is external (real class, external member)", () => {
     const symbolTable = tableWith([
       "reaction.py",
       [sym("ToggleReactionSerializer", "ToggleReactionSerializer", "reaction.py", [])],
@@ -214,7 +219,7 @@ describe("PythonLocalBindingSymbolResolutionStrategy — external / non-class bo
         localBindings: { serializer: [{ line: 1, type: "ToggleReactionSerializer" }] },
       }),
     );
-    expect(outcome).toEqual({ kind: "resolved", target: { targetRelPath: "reaction.py", targetSymbolId: null } });
+    expect(outcome).toEqual({ kind: "drop" });
   });
 
   it("keeps the pinned edge when the type OWNS the member (class-kind proven by the member probe)", () => {
