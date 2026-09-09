@@ -29,7 +29,11 @@ import {
   type CallContext,
   type CallRef,
 } from "../src/core/contracts/types/codegraph.js";
-import type { SymbolResolutionOutcome, SymbolResolutionStrategy } from "../src/core/contracts/types/language.js";
+import type {
+  SymbolResolutionOutcome,
+  SymbolResolutionStrategy,
+  TypeRef,
+} from "../src/core/contracts/types/language.js";
 import { DefaultSymbolIdComposer, LanguageFactory } from "../src/core/domains/language/index.js";
 import { createPythonSymbolResolutionChain } from "../src/core/domains/language/python/resolver/index.js";
 import { CONE_MAX_DEFAULT } from "../src/core/domains/language/python/resolver/strategies/index.js";
@@ -142,7 +146,15 @@ export async function walkCorpus(corpusRoot: string, limit: number, quiet: boole
   const selection = await collectSourceFiles(corpusRoot, corpusRoot, exclude, Object.keys(CODEGRAPH_LANGUAGES));
 
   const symbolTable = new InMemoryGlobalSymbolTable();
+  // Run-global, as `CodegraphRunState` merges them at the pass-1→pass-2
+  // barrier. `classExtends` was already accumulated here; the type channels
+  // ride the same barrier, and the resolver passes that read them — Python's
+  // `chainType` reads `structuredReturnTypes` — measure a no-op without them
+  // (bd tea-rags-mcp-9fgdi, decision 7).
   const classExtends: Record<string, string> = {};
+  const structuredReturnTypes: Record<string, TypeRef> = {};
+  const functionReturnTypes: Record<string, string> = {};
+  const classAncestors: Record<string, readonly string[]> = {};
   const extractions: {
     relPath: string;
     extraction: NonNullable<ReturnType<typeof extractFile>>;
@@ -158,6 +170,9 @@ export async function walkCorpus(corpusRoot: string, limit: number, quiet: boole
     }
     symbolTable.upsertFile(relPath, buildSymbolDefs(extraction));
     Object.assign(classExtends, extraction.classExtends ?? {});
+    Object.assign(structuredReturnTypes, extraction.structuredReturnTypes ?? {});
+    Object.assign(functionReturnTypes, extraction.functionReturnTypes ?? {});
+    Object.assign(classAncestors, extraction.classAncestors ?? {});
     if (extname(relPath) === SCORED_EXTENSION) extractions.push({ relPath, extraction });
     else symbolTableOnlyFiles++;
   }
@@ -185,6 +200,9 @@ export async function walkCorpus(corpusRoot: string, limit: number, quiet: boole
         classFieldTypes: extraction.classFieldTypes,
         localBindings: chunk.localBindings,
         classExtends,
+        structuredReturnTypes,
+        functionReturnTypes,
+        classAncestors,
       };
       for (const call of chunk.calls ?? []) {
         if (call.dispatch !== undefined) continue; // the runner skips normal resolution here

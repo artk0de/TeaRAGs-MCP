@@ -53,7 +53,11 @@ import {
   type FileExtraction,
   type SymbolResolutionTarget,
 } from "../src/core/contracts/types/codegraph.js";
-import type { SymbolResolutionOutcome, SymbolResolutionStrategy } from "../src/core/contracts/types/language.js";
+import type {
+  SymbolResolutionOutcome,
+  SymbolResolutionStrategy,
+  TypeRef,
+} from "../src/core/contracts/types/language.js";
 import { DefaultSymbolIdComposer, LanguageFactory } from "../src/core/domains/language/index.js";
 import {
   JavaEnclosingBareCallSymbolResolutionStrategy,
@@ -262,11 +266,35 @@ export function diffRows(rows: readonly CallSiteRow[]): { tally: DiffTally; chan
  */
 const SYMBOL_TABLE_EXTENSIONS: readonly string[] = Object.keys(CODEGRAPH_LANGUAGES);
 
+/**
+ * The run-global type channels production merges at the pass-1→pass-2 barrier
+ * (`CodegraphRunState`), accumulated here across every walked file.
+ *
+ * `classExtends` was already shaped this way; the other three ride the same
+ * barrier and a resolver pass that reads them — Python's `chainType` reads
+ * `structuredReturnTypes` — measures a no-op without them (bd
+ * tea-rags-mcp-9fgdi, decision 7).
+ */
+interface RunGlobalTypeChannels {
+  classExtends: Record<string, string>;
+  structuredReturnTypes: Record<string, TypeRef>;
+  functionReturnTypes: Record<string, string>;
+  classAncestors: Record<string, readonly string[]>;
+}
+
+/** Absorb one file's contribution to every run-global channel. */
+function absorbTypeChannels(channels: RunGlobalTypeChannels, extraction: FileExtraction): void {
+  Object.assign(channels.classExtends, extraction.classExtends ?? {});
+  Object.assign(channels.structuredReturnTypes, extraction.structuredReturnTypes ?? {});
+  Object.assign(channels.functionReturnTypes, extraction.functionReturnTypes ?? {});
+  Object.assign(channels.classAncestors, extraction.classAncestors ?? {});
+}
+
 function buildCallContext(
   extraction: FileExtraction,
   chunk: ChunkExtraction,
   symbolTable: InMemoryGlobalSymbolTable,
-  classExtends: Record<string, string>,
+  channels: RunGlobalTypeChannels,
 ): CallContext {
   return {
     callerFile: extraction.relPath,
@@ -276,7 +304,10 @@ function buildCallContext(
     symbolTable,
     classFieldTypes: extraction.classFieldTypes,
     localBindings: chunk.localBindings,
-    classExtends,
+    classExtends: channels.classExtends,
+    structuredReturnTypes: channels.structuredReturnTypes,
+    functionReturnTypes: channels.functionReturnTypes,
+    classAncestors: channels.classAncestors,
   };
 }
 
@@ -323,9 +354,14 @@ export async function run(
   }
 
   const symbolTable = new InMemoryGlobalSymbolTable();
-  // Run-global, as `CodegraphRunState#classExtends` is — every walkable
-  // language feeds it, then pass 2 narrows to the files this resolver owns.
-  const classExtends: Record<string, string> = {};
+  // Run-global, as `CodegraphRunState` is — every walkable language feeds
+  // them, then pass 2 narrows to the files this resolver owns.
+  const channels: RunGlobalTypeChannels = {
+    classExtends: {},
+    structuredReturnTypes: {},
+    functionReturnTypes: {},
+    classAncestors: {},
+  };
   const scored: FileExtraction[] = [];
   const corpusFiles = new Set<string>();
   let parseFailures = 0;
@@ -345,7 +381,7 @@ export async function run(
       continue;
     }
     symbolTable.upsertFile(relPath, buildSymbolDefs(extraction));
-    Object.assign(classExtends, extraction.classExtends ?? {});
+    absorbTypeChannels(channels, extraction);
     corpusFiles.add(relPath);
     if (spec.extensions.includes(extname(relPath).toLowerCase())) scored.push(extraction);
     else symbolTableOnlyFiles++;
@@ -363,7 +399,7 @@ export async function run(
 
   for (const extraction of scored) {
     for (const chunk of extraction.chunks) {
-      const ctx = buildCallContext(extraction, chunk, symbolTable, classExtends);
+      const ctx = buildCallContext(extraction, chunk, symbolTable, channels);
       for (const call of chunk.calls ?? []) {
         if (call.dispatch !== undefined) {
           dispatchSkipped++;
