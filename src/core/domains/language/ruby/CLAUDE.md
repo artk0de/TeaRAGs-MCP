@@ -46,14 +46,14 @@
   against `RUBY_DSL` looks nonexistent, and a gem module added without
   `activatedBy` is active on every Ruby project.
 - **Type-fact precedence is SEVEN ranks, and the residual is upstream FACT
-  QUALITY, not lookup.** `DEFAULT_SOURCE_ORDER` (`walker/type-fact-store.ts`) is
-  sorbet > rbs > yard > associations > draper > body-last-expr > ast, but only
-  five have a registered source (`walker/type-sources/index.ts`); sorbet and rbs
-  are reserved ranks with no implementation. The 615-miss bucket was FALSIFIED
-  as a lookup problem: it is a flat bare-name return map plus fictional
-  annotation classes shadowing derived facts via the `.`-vs-`#` key split. Why:
-  chasing a wrong receiver type through the propagation engine or the MRO walk
-  is the wrong layer.
+  QUALITY, not lookup.** `RUBY_TYPE_SOURCE_ORDER` (`walker/type-fact-store.ts`)
+  is sorbet > rbs > yard > associations > draper > body-last-expr > ast, but
+  only five have a registered source (`walker/type-sources/index.ts`); sorbet
+  and rbs are reserved ranks with no implementation. The 615-miss bucket was
+  FALSIFIED as a lookup problem: it is a flat bare-name return map plus
+  fictional annotation classes shadowing derived facts via the `.`-vs-`#` key
+  split. Why: chasing a wrong receiver type through the propagation engine or
+  the MRO walk is the wrong layer.
 - **Ruby recall numbers measured before 2026-07-28 sit on a different
   DENOMINATOR.** `RUBY_CODEGRAPH_EXCLUSION_GLOBS` (`codegraph-exclusions.ts`)
   has kept `db/migrate`, `db/data` and the schema snapshots out of the fan-graph

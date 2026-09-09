@@ -26,7 +26,7 @@
 import type { RubyDslCatalogue } from "../dsl/index.js";
 import { collectRubyAssociationTypes } from "./association-types.js";
 import { collectRubyIvarFieldTypes, localTypeTrackingEnabled } from "./local-bindings.js";
-import { RubyTypeFactStore } from "./type-fact-store.js";
+import { RUBY_TYPE_SOURCE_ORDER, RubyTypeFactStore } from "./type-fact-store.js";
 import { INLINE_TYPE_SOURCES } from "./type-sources/index.js";
 import type { RubyExtractInput } from "./walker.js";
 
@@ -51,7 +51,7 @@ export function buildRubyFileTypeEnv(input: RubyExtractInput, catalogue: RubyDsl
   // build the store once per file. When tracking is off, an empty store is used
   // so localBindingsForChunk / returnTypeByMethod return empty maps cheaply.
   const facts = trackTypes ? INLINE_TYPE_SOURCES.flatMap((s) => s.extract(input)) : [];
-  const store = RubyTypeFactStore.fromFacts(facts);
+  const store = RubyTypeFactStore.fromFacts(facts, RUBY_TYPE_SOURCE_ORDER);
   // Per-class Rails association map (B1): `class → accessor → modelType`. Drives
   // compound-receiver chain typing (`event.user.agents`) in the binding pass and
   // is surfaced on the FileExtraction so resolvers can read it run-global.

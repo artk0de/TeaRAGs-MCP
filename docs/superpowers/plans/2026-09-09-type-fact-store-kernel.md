@@ -376,7 +376,7 @@ Produces, from `ruby/type-ref.ts` (names unchanged from today):
 
 **Steps**
 
-- [ ] **RED.** Create `tests/core/domains/language/kernel/type-ref.test.ts`. It
+- [x] **RED.** Create `tests/core/domains/language/kernel/type-ref.test.ts`. It
       fails on the missing module, which is the red state for a relocation.
 
 ```ts
@@ -463,7 +463,7 @@ describe("ruby/type-ref.ts shim", () => {
 });
 ```
 
-- [ ] **Rename the contract type.** In `src/core/contracts/types/language.ts`,
+- [x] **Rename the contract type.** In `src/core/contracts/types/language.ts`,
       the `export type RubyTypeRef = …` union at `:672` becomes `TypeRef`, and
       an alias takes the old name. Keep the existing docblock above `TypeRef`
       verbatim except its last sentence, which now points at the kernel: change
@@ -486,7 +486,7 @@ export type TypeRef =
 export type RubyTypeRef = TypeRef;
 ```
 
-- [ ] **Create `src/core/domains/language/kernel/type-ref.ts`.** Bodies are the
+- [x] **Create `src/core/domains/language/kernel/type-ref.ts`.** Bodies are the
       Ruby file's, unchanged. Names lose `ruby`; the prose keeps the reasoning
       and drops the Ruby framing where it was incidental.
 
@@ -616,7 +616,7 @@ export function typeRefReceiverForm(
 }
 ```
 
-- [ ] **Replace `src/core/domains/language/ruby/type-ref.ts` with the shim.**
+- [x] **Replace `src/core/domains/language/ruby/type-ref.ts` with the shim.**
       The whole file, replacing all 114 lines. The reasoning docblock moved to
       the kernel with the code; leaving a copy here would be two statements of
       one fact.
@@ -638,7 +638,7 @@ export {
 } from "../kernel/type-ref.js";
 ```
 
-- [ ] **GREEN + gates.** In order, all from the worktree root:
+- [x] **GREEN + gates.** In order, all from the worktree root:
 
 ```bash
 npm run build                                        # fresh worktree has no build/
@@ -653,7 +653,7 @@ npx eslint --max-warnings 0 \
 git diff --stat -- tests/core/domains/language/ruby  # MUST be empty
 ```
 
-- [ ] **Commit.**
+- [x] **Commit.**
 
 ```text
 refactor(language): relocate the TypeRef algebra to the kernel (fmcly)
@@ -744,7 +744,7 @@ rename breaks nothing. Verify with
 
 **Steps**
 
-- [ ] **RED.** Create
+- [x] **RED.** Create
       `tests/core/domains/language/kernel/type-fact-store.test.ts`. Three of
       these cases fail today for a reason beyond the missing module: they assert
       the injected order governs the four ranked reads, which the Ruby original
@@ -908,7 +908,7 @@ describe("RubyTypeFactStore shim", () => {
 });
 ```
 
-- [ ] **Create `src/core/domains/language/kernel/type-facts.ts`.** The four
+- [x] **Create `src/core/domains/language/kernel/type-facts.ts`.** The four
       declarations move verbatim; only the names and the `TInput` generic
       change, plus `rubyFiles` → `files`.
 
@@ -977,7 +977,7 @@ export interface SidecarTypeSource {
 }
 ```
 
-- [ ] **Create `src/core/domains/language/kernel/type-fact-store.ts`, part 1 —
+- [x] **Create `src/core/domains/language/kernel/type-fact-store.ts`, part 1 —
       header and the six module-private helpers.** Bodies verbatim from
       `ruby/walker/type-fact-store.ts`; `RubyTypeRef` → `TypeRef`,
       `RubyTypeFact` → `TypeFact`, and the `DEFAULT_SOURCE_ORDER` const is NOT
@@ -1069,7 +1069,7 @@ function ivarCoordKey(scope: string[], ivar: string): string {
 }
 ```
 
-- [ ] **Part 2 — the class, in the same file.** Two changes from the Ruby
+- [x] **Part 2 — the class, in the same file.** Two changes from the Ruby
       original and no others: the constructor takes `sourceOrder` and holds it,
       and the four ranked reads use `this.sourceOrder` where they read
       `DEFAULT_SOURCE_ORDER`. Method bodies otherwise verbatim, including every
@@ -1255,7 +1255,7 @@ export class TypeFactStore {
 }
 ```
 
-- [ ] **Replace `src/core/domains/language/ruby/walker/type-fact-store.ts` with
+- [x] **Replace `src/core/domains/language/ruby/walker/type-fact-store.ts` with
       the shim.** All 231 lines go; these 30 replace them.
       `RUBY_TYPE_SOURCE_ORDER` keeps the original's docblock, because the reason
       those seven ranks are in that order is Ruby knowledge and belongs here,
@@ -1303,7 +1303,7 @@ export const RubyTypeFactStore = {
 };
 ```
 
-- [ ] **Replace `src/core/domains/language/ruby/walker/type-sources/types.ts`
+- [x] **Replace `src/core/domains/language/ruby/walker/type-sources/types.ts`
       with the shim.** All four declarations become re-exports; the
       `RubyExtractInput` binding is what the generic exists for.
 
@@ -1328,7 +1328,7 @@ export type {
 export type RubyInlineTypeSource = InlineTypeSource<RubyExtractInput>;
 ```
 
-- [ ] **Pass the order explicitly at the one production call site.** In
+- [x] **Pass the order explicitly at the one production call site.** In
       `src/core/domains/language/ruby/walker/file-type-env.ts`, add
       `RUBY_TYPE_SOURCE_ORDER` to the existing import from
       `./type-fact-store.js` and change line 54:
@@ -1346,7 +1346,7 @@ import {
 } from "./type-fact-store.js";
 ```
 
-- [ ] **GREEN + gates.**
+- [x] **GREEN + gates.**
 
 ```bash
 npx vitest run tests/core/domains/language/kernel
@@ -1359,7 +1359,7 @@ npx eslint --max-warnings 0 \
 git diff --stat -- tests/core/domains/language/ruby   # MUST be empty
 ```
 
-- [ ] **Re-verify the importer inventory.** These must return the SAME file
+- [x] **Re-verify the importer inventory.** These must return the SAME file
       lists as the ones recorded in "Context the implementer needs":
 
 ```bash
@@ -1369,7 +1369,7 @@ git diff --stat -- tests/core/domains/language/ruby   # MUST be empty
 /usr/bin/grep -rn "rubyFiles" src tests scripts     # must return NOTHING
 ```
 
-- [ ] **Parity harness.** Record the wall clock; it is the Task 4 baseline.
+- [x] **Parity harness.** Record the wall clock; it is the Task 4 baseline.
 
 ```bash
 time npx tsx scripts/spikes/ruby-walker-composition-parity.ts \
@@ -1379,7 +1379,7 @@ time npx tsx scripts/spikes/ruby-walker-composition-parity.ts \
       Expect `mismatches 0`. Read the Global Constraints caveat on what that
       does and does not prove.
 
-- [ ] **Commit.**
+- [x] **Commit.**
 
 ```text
 refactor(language): relocate TypeFactStore and the type-source contracts (fmcly)
@@ -1429,7 +1429,7 @@ exactly what a pass receives in `ctx`, so a pass calls
 
 **Steps**
 
-- [ ] **RED.** Create
+- [x] **RED.** Create
       `tests/core/domains/language/kernel/type-fact-channels.test.ts`.
 
 ```ts
@@ -1573,7 +1573,7 @@ describe("typeFactChannels", () => {
 });
 ```
 
-- [ ] **GREEN.** Create
+- [x] **GREEN.** Create
       `src/core/domains/language/kernel/type-fact-channels.ts`.
 
 ```ts
@@ -1656,7 +1656,7 @@ export function typeFactChannels(
       future reader of this file should not have to go read the store to know
       whether the order is guaranteed.
 
-- [ ] **Gates.**
+- [x] **Gates.**
 
 ```bash
 npx vitest run tests/core/domains/language/kernel
@@ -1667,7 +1667,7 @@ npx eslint --max-warnings 0 \
 git diff --stat -- tests/core/domains/language/ruby   # MUST be empty
 ```
 
-- [ ] **Commit.**
+- [x] **Commit.**
 
 ```text
 feat(language): add typeFactChannels, the type-facts pass projection (fmcly)
@@ -1697,20 +1697,20 @@ live and who owns the ranks.
 
 **Steps**
 
-- [ ] **Full unit gate.** `npm run test:coverage` — the release gate, not
+- [x] **Full unit gate.** `npm run test:coverage` — the release gate, not
       `npm test` (pre-commit skips coverage). If coverage drops below threshold,
       delegate to the `coverage-expander` subagent with
       `run_in_background: true`; do not write the tests inline and do not lower
       a threshold.
 
-- [ ] **Lint and types across everything the seam touched.**
+- [x] **Lint and types across everything the seam touched.**
 
 ```bash
 npm run type-check
 npx eslint --max-warnings 0 src/ tests/
 ```
 
-- [ ] **Ruby suite untouched and green.** Both halves matter — the second is the
+- [x] **Ruby suite untouched and green.** Both halves matter — the second is the
       one that catches a shim that quietly changed a signature.
 
 ```bash
@@ -1718,7 +1718,7 @@ npx vitest run tests/core/domains/language/ruby
 git diff --stat -- tests/core/domains/language/ruby   # MUST be empty
 ```
 
-- [ ] **Parity harness, timed, against the Task 2 baseline.**
+- [x] **Parity harness, timed, against the Task 2 baseline.**
 
 ```bash
 time npx tsx scripts/spikes/ruby-walker-composition-parity.ts \
@@ -1730,7 +1730,29 @@ time npx tsx scripts/spikes/ruby-walker-composition-parity.ts \
       property read per rank comparison and one call indirection per
       `fromFacts`, which is not a 10% shape.
 
-- [ ] **Optional corpus-level before/after.** If a stronger relocation proof is
+      **Measured (mastodon, `--limit 20000`, 3197 Ruby files compared).** The
+      harness gained an optional `--before-root <abs checkout>` flag in this
+      task: with it, the NATIVE side is `extractFromRubyFile` dynamically
+      imported from another checkout's
+      `src/core/domains/language/ruby/walker/walker.ts` while the composed side
+      stays this tree, which is the before/after evidence the same-tree mode
+      cannot give (Global Constraints caveat).
+
+      | Run                                                    | Result         | Wall  |
+      | ------------------------------------------------------ | -------------- | ----- |
+      | pre-Task-1 baseline (same-tree, HEAD `a05bd7917`)       | `mismatches 0` | 8.94s |
+      | post-Task-2 (same-tree)                                 | `mismatches 0` | 9.31s |
+      | post-Task-3 (same-tree)                                 | `mismatches 0` | 7.63s |
+      | post-Task-3 cross-checkout `--before-root` main `d7e942ab9` | `mismatches 0` | 7.23s |
+
+      The cross-checkout run is the seam gate: the pre-program main checkout's
+      Ruby monolith and this tree's composed walker produce byte-identical
+      `JSON.stringify` output over all 3197 files. Wall clock is 7.63s vs the
+      8.94s baseline — under, not over, so the +10% ceiling is not in play (the
+      36s outlier on the first post-Task-2 run was machine load from parallel
+      worktree sessions; the repeat measured 9.31s).
+
+- [x] **Optional corpus-level before/after.** If a stronger relocation proof is
       wanted than "the suite is green", the honest one is the tally, run once on
       the pre-Task-1 commit and once on HEAD, with `edges` / `fileOnly` /
       `unresolved` identical (relocation protocol step 3(b)):
@@ -1740,7 +1762,7 @@ npx tsx scripts/codegraph-chain-tally.ts --lang ruby \
   --corpus ~/Dev/Tools/tea-rags-bench/corpora/mastodon
 ```
 
-- [ ] **Add the navigator bullet.** In `src/core/domains/language/CLAUDE.md`,
+- [x] **Add the navigator bullet.** In `src/core/domains/language/CLAUDE.md`,
       append to the `## Mechanics` section, directly after the extraction-pass
       bullet it continues:
 
@@ -1766,7 +1788,7 @@ npx tsx scripts/codegraph-chain-tally.ts --lang ruby \
   first" — a behaviour change wearing a refactor's clothes.
 ```
 
-- [ ] **Commit.**
+- [x] **Commit.**
 
 ```text
 refactor(language): record the kernel type-fact seam in the navigator (fmcly)
@@ -1783,19 +1805,26 @@ Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>
 
 ## Self-review before handing back
 
-- [ ] Kernel symbol names are identical everywhere they appear in this plan and
+- [x] Kernel symbol names are identical everywhere they appear in this plan and
       in the code: `TypeRef`, `NIL_TYPE_REF`, `typeRefEquals`, `typeRefUnionOf`,
       `typeRefNonNilArms`, `typeRefReceiverForm`, `TypeFact`,
       `InlineTypeSource`, `SidecarTypeSource`, `ProjectTypeSourceContext`,
       `TypeFactStore`, `typeFactChannels`, `RUBY_TYPE_SOURCE_ORDER`.
-- [ ] Every Ruby name that existed before still resolves from the same path:
+- [x] Every Ruby name that existed before still resolves from the same path:
       `RubyTypeRef`, `RUBY_NIL_TYPE_REF`, `rubyTypeRefEquals`, `rubyUnionOf`,
       `rubyNonNilArms`, `rubyReceiverForm`, `RubyTypeFact`, `RubyTypeFactStore`,
       `RubyInlineTypeSource`, `RubySidecarTypeSource`,
       `ProjectTypeSourceContext`.
-- [ ] `git diff --stat -- tests/core/domains/language/ruby` is empty.
-- [ ] No file under `src/core/domains/language/kernel/` imports from
+- [x] `git diff --stat -- tests/core/domains/language/ruby` is empty.
+- [x] No file under `src/core/domains/language/kernel/` imports from
       `src/core/domains/language/<lang>/`.
-- [ ] `grep -rn "DEFAULT_SOURCE_ORDER" src` returns nothing — the const is gone,
-      not shadowed.
-- [ ] `grep -rn "rubyFiles" src tests scripts` returns nothing.
+- [x] `grep -rn "DEFAULT_SOURCE_ORDER" src` returns nothing — the const is gone,
+      not shadowed. Three stale PROSE mentions were renamed to
+      `RUBY_TYPE_SOURCE_ORDER` (`ruby/CLAUDE.md`,
+      `type-sources/body-last-expr.ts` and `walker/type-channels.ts` comments).
+      Two more live in Ruby TEST comments and were deliberately left: no Ruby
+      test is edited in this seam.
+- [x] `grep -rn "rubyFiles" src tests scripts` returns nothing IN `src` and
+      `tests` — the `ProjectTypeSourceContext` field is now `files`. Two hits
+      remain in `scripts/spikes/ruby-walker-composition-parity.ts`, which are an
+      unrelated local helper function of that script, not the contract field.
