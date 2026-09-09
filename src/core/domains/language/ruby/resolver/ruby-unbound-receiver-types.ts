@@ -20,10 +20,17 @@
  *
  * Split out of `type-propagation.ts` (bd tea-rags-mcp-uetqq); every gate and the
  * tier order are unchanged.
+ *
+ * The convention GATE itself — camelize, then existence, then subtypes — moved
+ * to `kernel/naming-convention.ts` (bd tea-rags-mcp-0g8g5) so Python could ask
+ * the same question. What stayed is everything that is Ruby: the receiver
+ * regexes, the keyword sets, the camelize spelling, the symbol-table and
+ * hierarchy lookups, and both tiers' composition. Every export is unchanged.
  */
 
 import type { CallContext } from "../../../../contracts/types/codegraph.js";
 import type { RubyTypeRef } from "../../../../contracts/types/language.js";
+import { conventionClassNameFor, type NamingConventionPorts } from "../../kernel/naming-convention.js";
 import { catalogueForGemfile } from "../gemfile.js";
 import { selfMemberReturnType } from "./ruby-return-facts.js";
 
@@ -66,6 +73,34 @@ function camelizeScope(snake: string): string {
 }
 
 /**
+ * Ruby's three answers to the neutral gate in `kernel/naming-convention.ts` (bd
+ * tea-rags-mcp-0g8g5). The gate — camelize, then existence, then subtypes — is
+ * the same discipline in every OO language and now lives once; the SPELLING of
+ * each answer is Ruby's and stays here, byte-identical to what this file held
+ * before the relocation.
+ */
+const RUBY_NAMING_CONVENTION_PORTS: NamingConventionPorts<CallContext> = Object.freeze({
+  camelize: camelizeScope,
+  classExists: (name: string, ctx: CallContext) => ctx.symbolTable.lookupByShortName(name).length > 0,
+  hasSubtypes: hasDeclaredSubtypes,
+});
+
+/**
+ * The SCOPED tier's ports: the same existence question, no subtype gate.
+ *
+ * `current_user` is not a variable someone named after a base class; it is a
+ * reader the framework defines for a DECLARED scope, so a `User` that has
+ * subclasses is still exactly the `User` devise returns. Sharing `camelize` and
+ * `classExists` with {@link RUBY_NAMING_CONVENTION_PORTS} is what keeps the two
+ * tiers from drifting on what "the class exists" means; overriding the one port
+ * is how they stay different where they were always different.
+ */
+const RUBY_SCOPED_CONVENTION_PORTS: NamingConventionPorts<CallContext> = Object.freeze({
+  ...RUBY_NAMING_CONVENTION_PORTS,
+  hasSubtypes: () => false,
+});
+
+/**
  * The class a snake_case identifier NAMES by Rails convention, or `undefined`
  * when the run declares no such class.
  *
@@ -77,8 +112,7 @@ function camelizeScope(snake: string): string {
  * exists" means.
  */
 function conventionClassName(snake: string, ctx: CallContext): string | undefined {
-  const name = camelizeScope(snake);
-  return name.length > 0 && ctx.symbolTable.lookupByShortName(name).length > 0 ? name : undefined;
+  return conventionClassNameFor(snake, ctx, RUBY_SCOPED_CONVENTION_PORTS);
 }
 
 /**
@@ -179,7 +213,6 @@ export function conventionReceiverType(receiver: string, ctx: CallContext): Ruby
   if (!CONVENTION_RECEIVER.test(receiver)) return undefined;
   const bare = receiver.replace(/^@{1,2}/, "");
   if (CONVENTION_RECEIVER_KEYWORDS.has(bare)) return undefined;
-  const name = conventionClassName(bare, ctx);
-  if (name === undefined || hasDeclaredSubtypes(name, ctx)) return undefined;
-  return { form: "instance", name };
+  const name = conventionClassNameFor(bare, ctx, RUBY_NAMING_CONVENTION_PORTS);
+  return name === undefined ? undefined : { form: "instance", name };
 }
