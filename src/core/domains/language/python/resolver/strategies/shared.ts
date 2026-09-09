@@ -7,9 +7,10 @@
  * ambiguous-resolve `mode`.
  *
  * `walkClassExtendsForMethod`, `pythonImportMatchesReceiver`, `lastSegment`,
- * `findPythonImportBinding`, `resolveTypeFile` and `resolvePythonMemberOnType`
- * are the helpers shared by more than one strategy AND by the local-type walk
- * — factored here so each lives once.
+ * `findPythonImportBinding`, `resolveTypeFile`, `resolvePythonMemberOnType`,
+ * the `pythonClassKey` / `parsePythonClassKey` pair and
+ * `resolvePythonInheritedMember` are the helpers shared by more than one
+ * strategy AND by the local-type walk — factored here so each lives once.
  */
 
 import {
@@ -19,9 +20,81 @@ import {
   type ImportRef,
   type SymbolResolutionTarget,
 } from "../../../../../contracts/types/codegraph.js";
+import {
+  findMemberInAncestorChain,
+  type AncestorClosure,
+  type AncestorLinearizer,
+} from "../../../kernel/ancestor-walk.js";
 import { PYTHON_BUILTINS } from "../../vocabulary/builtins.js";
 import type { PythonImportFileMapper } from "../python-import-file-mapper.js";
 import { mapPythonImportToFile } from "../python-path-mapper.js";
+
+/**
+ * The run-global address of a Python class: `<relPath>::<dotted class FQ>` (bd
+ * tea-rags-mcp-9fgdi). `classAncestors` is run-global, so a bare class name
+ * cannot be the key — two `Base` classes in two files would conflate. `::` and
+ * not a dot, because `Outer.Inner` is a legal class FQ and would not split.
+ */
+export function pythonClassKey(relPath: string, classFq: string): string {
+  return `${relPath}::${classFq}`;
+}
+
+/** The inverse of {@link pythonClassKey}; `null` for anything not in that shape. */
+export function parsePythonClassKey(classKey: string): { readonly relPath: string; readonly classFq: string } | null {
+  const at = classKey.indexOf("::");
+  if (at <= 0) return null;
+  const classFq = classKey.slice(at + 2);
+  return classFq.length === 0 ? null : { relPath: classKey.slice(0, at), classFq };
+}
+
+/** A member found on a class or one of its ancestors, and how far the walk could see. */
+export interface PythonInheritedMemberResult {
+  readonly target: SymbolResolutionTarget | null;
+  readonly closure: AncestorClosure;
+}
+
+/**
+ * `<member>` on `classKey` or the first ancestor in its MRO that owns it (bd
+ * tea-rags-mcp-9fgdi). Instance spelling (`Cls#m`) first, class spelling
+ * (`Cls.m`) second — `classifyMethod` files an undecorated `def` as instance
+ * and a `@classmethod` / `@staticmethod` one as class-level, and the corpora
+ * carry both (`GetRelatedModelsMixin#get_related_models`,
+ * `RepositoryBase.from_session`).
+ *
+ * Every lookup is FILTERED BY THE CANDIDATE'S OWN FILE. The class key is
+ * file-qualified precisely so two `Base` classes in two files stay apart, and
+ * an unfiltered `symbolTable.lookup("Base#m")` would put them back together.
+ *
+ * `closure` is the caller's evidence for what to do with a miss — a hierarchy
+ * read to the end that does not own the member is evidence of ABSENCE, one that
+ * left the project or could not be bound is not. This function never decides;
+ * see each strategy's verdict table.
+ */
+export function resolvePythonInheritedMember(
+  classKey: string,
+  member: string,
+  ctx: CallContext,
+  mode: AmbiguousResolveMode,
+  linearizer: AncestorLinearizer<CallContext>,
+  options: { readonly startAfter?: boolean } = {},
+): PythonInheritedMemberResult {
+  const scan = findMemberInAncestorChain(
+    classKey,
+    linearizer,
+    (candidateKey) => {
+      const parsed = parsePythonClassKey(candidateKey);
+      if (parsed === null) return null;
+      for (const spelling of [`${parsed.classFq}#${member}`, `${parsed.classFq}.${member}`]) {
+        const inFile = ctx.symbolTable.lookup(spelling).filter((def) => def.relPath === parsed.relPath);
+        const picked = pickSingleCandidate(inFile, mode);
+        if (picked) return { targetRelPath: picked.relPath, targetSymbolId: picked.symbolId };
+      }
+      return null;
+    },
+    options,
+  );
+  return { target: scan.target, closure: scan.closure };
+}
 
 export interface ResolverConfig {
   mode: AmbiguousResolveMode;
