@@ -270,6 +270,17 @@ One piece of evidence says it is near zero on ugnest — E3's live validation re
 770 edges from `prime`, "the oracle's AFTER dump exactly" — but ugnest is 770
 edges and the other four corpora have never been reconciled that way.
 
+**MEASURED (E4.0.3, `w205u`, 2026-09-10).** The gap is 30 sites in 108,462 —
+0.03 %, and 28 of them carry a `localVar` receiver, the cone's own precondition:
+22 on polar, 6 on httpx, 2 on flask, and none at all on ugnest or netbox. Five
+exact `match` edges are lost — four to a fan (flask 1, polar 3), one to a
+`single` cone answer — against two the fan rescues, so the published 1:1 recall
+is the production recall to three decimal places on all five corpora.
+`ambiguousShare` reads 0 everywhere by construction: `ConeDispatchResolver`
+collapses over `coneMax` (8) rather than returning `ambiguous`, so the
+corpus-adaptive cap — 16 on all five, its floor, against a p99 defs-per-member
+of 7 to 11 — never binds a Python call today.
+
 ### Design
 
 Fan scoring is an ADDITIVE second scoring pass over the same walk. The 1:1 bar
