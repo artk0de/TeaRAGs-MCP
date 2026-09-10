@@ -1177,16 +1177,30 @@ matrix is exact.
 | flask  | 39 → 39   | 6 → 6    | 1 → 1     | 0 → 0   | 345 → 345       | 0          |
 | httpx  | 10 → 9    | 5 → 5    | 0 → 0     | 8 → 8   | 491 → 492       | 0          |
 | netbox | 66 → 61   | 2 → 2    | 0 → 0     | 26 → 26 | 8692 → 8697     | 0          |
-| polar  | 717 → 514 | 11 → 29  | 2 → 16    | 84 → 84 | 16,796 → 17,479 | **14**     |
+| polar  | 717 → 514 | 11 → 29  | 2 → 16    | 84 → 84 | 16,796 → 17,479 | 0 (+14 OW) |
 
 `missed → match|fileOnly`: httpx **+1**, netbox **+5**, polar **+203**, flask
 and ugnest byte-identical. Phantom is FLAT on every corpus (Δ 0.000 pp, ugnest
 0); `exactReplacedByFan` and `exactReplacedByAmbiguous` unchanged. `chainDrift`
 and `dispatchDrift` **0** on all 50 oracle runs and all 25 tally runs.
 
-**polar breaks the `gross lost = 0` bar, and the cause is isolated.** A control
-run substituting the DECLARING class for `Self` (everything else identical)
-splits the delta cleanly:
+**Chain regressions 0. The 14 polar rows re-scored `match → wrongFile` are
+ORACLE-WRONG (`Self`), pyright-confirmed.** They are booked as `oracleWrongSelf`
+/ `OW:Self` — a new class in the spec's D9, listed there by `relPath:line` — and
+E4.6-close subtracts them from the gross-lost column the way D9's other `OW:*`
+classes are subtracted from `precisionMissAdjusted`.
+
+pyright, driven straight at those 14 sites through
+`scripts/py-oracle/lsp_oracle.ts` (config `roots: [server, sdk/python]`, the
+corpus venv, pythonVersion 3.14), answered `CustomerRepository#update@98` /
+`#create@71` on **14 of 14** — byte identical to the chain's new target, symbol
+and line. jedi answers the class that DECLARED `from_session`, which is the same
+mistake the walker's own pre-E4.6b-1 `Self` handling made; the two errors
+agreed, which is exactly why these rows read `match` before this task and
+`wrongFile` after it.
+
+A control run substituting the DECLARING class for `Self` (everything else
+identical) attributes the delta:
 
 | mechanism                               | polar `missed → ok`  | `ok → wrongFile` |
 | --------------------------------------- | -------------------- | ---------------- |
@@ -1200,12 +1214,7 @@ runs.** `repository = CustomerRepository.from_session(session)`;
 `kit/repository/base.py:165` reads
 `def from_session(cls, session) -> Self: return cls(session)`; and
 `customer/repository.py` OVERRIDES both `create` (line 71) and `update` (line
-98). The oracle answers the declaring class — the same mistake the pre-change
-walk-time substitution made, which is why these rows scored `match` before. It
-is an ORACLE defect on `Self` through a generic base, not a resolution
-regression, and it is reported rather than engineered around. **The bar is still
-breached as written; whether Step 6 ships is the orchestrator's call, and the
-mechanism is one commit.**
+98). Step 6 therefore ships as measured.
 
 **Family report, A side:** `constructorChainHead` → **0 on every corpus** (httpx
 1 → 0, netbox 4 → 0, polar 39 → 0), exactly as predicted. `callResultChainHead`
