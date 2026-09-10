@@ -997,6 +997,38 @@ export function classifyOrigin(
   report says so and `--oracle merged` is documented as opt-in for that corpus.
 - `git diff --name-only` shows nothing under `src/`.
 
+### Measurement record — E4.0.2, corrected legacy site counts (w205u, E4.0.2b)
+
+Two populations were being compared as one, and the mismatch read as a bug in
+the merge. The HOST REPORT withholds a degraded row from every rate while still
+counting it in `sites`; the scratch dump driver (`dump-rows.mts`) applies no
+withholding at all and its verdict histogram counts every row. On netbox the
+histogram sums 8,314 recall-verdict rows against the report's 7,894 — the 420
+rows in the four parso-damaged files, withheld by the report in BOTH selections.
+The host report is canonical for every E4 rate. The dump driver is the row-level
+A/B tool: use it for gross lost/gained between two trees, never for a rate.
+
+What was actually wrong was narrower. `main` built its legacy population by
+filtering on `oracleEngine === "jedi"`, which dropped a replaced file's sites
+outright, so the three published tables printed a short `sites` column under
+`--oracle merged` — netbox `bareCall` 17,353 against 18,234, polar `bareCall`
+18,067 against 23,367 — while every rate column already matched. A replaced
+file's row now carries the row jedi itself produced (`PyOracleRow#legacy`, read
+through `legacyViewOf`), degraded flag included, so the legacy side counts it in
+`sites` and withholds it from the rates exactly as a jedi-only run does. The
+recall block sorts by label rather than by `nMerged`, or the same numbers print
+in a different order once the merged denominator grows.
+
+Re-measured at `--workers 8`, netbox and polar: the three legacy tables and the
+recall block's legacy columns diff clean between `--oracle jedi` and
+`--oracle merged`. netbox legacy recall is unchanged at `bareCall` 0.997
+n=4,751, `dynamic` 0.972 n=1,480, `selfMember` 1.000 n=1,008, `chain` 0.971
+n=245, `super` 1.000 n=213, `localVar` 0.814 n=167, `constant` 0.897 n=29,
+`index` 0.000 n=1 — merged adds 449 second-engine rows on top. jedi flips one
+netbox row between runs (`agreeExternal` ↔ `bothUnresolved`, an `ext` column
+moving by 1), which is engine noise, not a host defect; a repeat run diffs
+clean.
+
 ---
 
 ## Task E4.0.3 — Fan scoring
