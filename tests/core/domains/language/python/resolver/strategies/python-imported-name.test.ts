@@ -623,9 +623,18 @@ describe("PythonImportedNameSymbolResolutionStrategy — multi-hop receiver head
       [{ importText: "pkg", startLine: 1, importedNames: ["pkg"], importedBindings: { pkg: "pkg" } }],
       table,
     );
-    // `chainType` and receiver-type propagation own a multi-hop project
-    // receiver; this pass reads ONE import statement and has nothing to fold.
-    expect(strategy().attempt(call("pkg.mod", "func"), ctx)).toEqual({ kind: "continue" });
+    // Never a DROP: the head is in the project. It used to CONTINUE here,
+    // because a multi-hop receiver was a fold and this pass reads ONE import
+    // statement. `pkg.mod` is not a fold — it is module text end to end, and
+    // R4b measures 100 netbox rows of exactly this shape (bd tea-rags-mcp-jeqyg;
+    // `import utilities.fields` then `utilities.fields.ColorField(...)` at
+    // `netbox/circuits/migrations/0043_circuittype_color.py:17`), so the
+    // dotted-module arm now answers it. A receiver with a CALL or a capitalized
+    // hop in it is still `chainType`'s.
+    expect(strategy().attempt(call("pkg.mod", "func"), ctx)).toEqual({
+      kind: "resolved",
+      target: { targetRelPath: "pkg/mod.py", targetSymbolId: "func" },
+    });
   });
 
   it("CONTINUEs when no import bound the head at all", () => {
@@ -916,5 +925,87 @@ describe("PythonImportedNameSymbolResolutionStrategy — same-file class receive
   it("continues when the class is declared in ANOTHER file and no import bound it", () => {
     const table = tableWith({ "svc/caller.py": ["run"], "svc/other.py": ["Helper", "Helper.build"] });
     expect(strategy().attempt(call("Helper", "build"), ctxWith("svc/caller.py", [], table)).kind).toBe("continue");
+  });
+});
+
+/**
+ * A DOTTED module path in receiver position (R4b, bd tea-rags-mcp-jeqyg).
+ *
+ * `import utilities.fields` binds the TOP package, so `utilities.fields` is two
+ * hops of pure module text with no value anywhere in it — the chain fold
+ * declines it by construction and the multi-hop head check only ever refused
+ * it. 100 netbox rows, 98 of them generated Django migrations.
+ */
+describe("PythonImportedNameSymbolResolutionStrategy — dotted module receiver", () => {
+  const netbox = (): InMemoryGlobalSymbolTable =>
+    tableWith({
+      "netbox/circuits/migrations/0043.py": ["Migration"],
+      "netbox/utilities/__init__.py": ["VERSION"],
+      "netbox/utilities/fields.py": ["ColorField", "NaturalOrderingField"],
+      "netbox/core/__init__.py": ["APPS"],
+      "netbox/core/models/__init__.py": ["Job"],
+      "netbox/core/models/object_types.py": ["ObjectTypeManager"],
+    });
+
+  const importing = (importText: string, local: string): ImportRef => ({
+    importText,
+    startLine: 3,
+    importedNames: [local],
+    importedBindings: { [local]: importText },
+  });
+
+  it("resolves a dotted module path receiver to a class in that module", () => {
+    const ctx = ctxWith("netbox/circuits/migrations/0043.py", [importing("utilities.fields", "utilities")], netbox());
+    expect(strategy().attempt(call("utilities.fields", "ColorField"), ctx)).toEqual({
+      kind: "resolved",
+      target: { targetRelPath: "netbox/utilities/fields.py", targetSymbolId: "ColorField" },
+    });
+  });
+
+  it("walks a THREE-segment module path to the file it names", () => {
+    const ctx = ctxWith("netbox/core/migrations/0008.py", [importing("core.models.object_types", "core")], netbox());
+    expect(strategy().attempt(call("core.models.object_types", "ObjectTypeManager"), ctx)).toEqual({
+      kind: "resolved",
+      target: { targetRelPath: "netbox/core/models/object_types.py", targetSymbolId: "ObjectTypeManager" },
+    });
+  });
+
+  it("CONTINUEs when the composed module path names no project file", () => {
+    const ctx = ctxWith("netbox/circuits/migrations/0043.py", [importing("utilities.fields", "utilities")], netbox());
+    expect(strategy().attempt(call("utilities.absent", "ColorField"), ctx)).toEqual({ kind: "continue" });
+  });
+
+  it("CONTINUEs when the module declares nothing under the member name", () => {
+    const ctx = ctxWith("netbox/circuits/migrations/0043.py", [importing("utilities.fields", "utilities")], netbox());
+    expect(strategy().attempt(call("utilities.fields", "MissingField"), ctx)).toEqual({ kind: "continue" });
+  });
+
+  it("keeps the DROP on a dotted head bound to the stdlib", () => {
+    const table = tableWith({
+      "netbox/utilities/__init__.py": ["VERSION"],
+      "netbox/utilities/json.py": ["dumps"],
+      "netbox/circuits/views.py": ["view"],
+    });
+    const ctx = ctxWith("netbox/circuits/views.py", [importing("os.path", "os")], table);
+    // The mapper's ancestor probe would land `os.path` on a project file of the
+    // same name; the stdlib snapshot outranks it, exactly as the single-hop arm
+    // keeps it.
+    expect(strategy().attempt(call("os.path", "dumps"), ctx)).toEqual({ kind: "drop" });
+  });
+
+  it("does not read a CLASS receiver as a module path", () => {
+    const table = tableWith({
+      "app/views.py": ["view"],
+      "app/models.py": ["Event", "Event#label"],
+      "app/id.py": ["label"],
+    });
+    const ctx = ctxWith(
+      "app/views.py",
+      [{ importText: "app.models", startLine: 1, importedNames: ["Event"], importedBindings: { Event: "Event" } }],
+      table,
+    );
+    // `Event.id.label(...)` is SQLAlchemy's — a capitalized head is never module
+    // text, and folding it is `chainType`'s question.
+    expect(strategy().attempt(call("Event.id", "label"), ctx)).toEqual({ kind: "continue" });
   });
 });
