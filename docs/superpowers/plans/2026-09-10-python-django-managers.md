@@ -1364,26 +1364,35 @@ this plan doc), seeded jedi oracle, 8 workers, five corpora. Recall denominator
 is `match + missed + wrongFile + phantom` per `receiverKind`, which reproduces
 decision 1's baselines exactly.
 
-| corpus | kind       | n     | recall before | recall after (claimed) | recall after (measured)  |
-| ------ | ---------- | ----- | ------------- | ---------------------- | ------------------------ |
-| netbox | `chain`    | 248   | 0.403         | ≈0.972                 | **0.972 (241/248)**      |
-| netbox | `localVar` | 212   | 0.764         | 0.764 (unchanged)      | 0.764 (unchanged)        |
-| netbox | `dynamic`  | 1,523 | 0.973         | 0.973 (unchanged)      | 0.973 (unchanged)        |
-| netbox | `bareCall` | 5,049 | 0.997         | 0.997 (unchanged)      | 0.997 (unchanged)        |
-| ugnest | all        | —     | —             | byte-identical         | byte-identical           |
-| polar  | `localVar` | 447   | 0.846         | byte-identical         | **0.888 (T2b, dec. 12)** |
-| polar  | `chain`    | 1,610 | 0.952         | byte-identical         | **0.953 (T2b, dec. 12)** |
-| flask  | all        | —     | —             | byte-identical         | byte-identical           |
-| httpx  | all        | —     | —             | byte-identical         | byte-identical           |
+| corpus | kind       | n             | recall before | recall after (claimed) | recall after (measured)  |
+| ------ | ---------- | ------------- | ------------- | ---------------------- | ------------------------ |
+| netbox | `chain`    | 248           | 0.403         | ≈0.972                 | **0.972 (241/248)**      |
+| netbox | `localVar` | 212           | 0.764         | 0.764 (unchanged)      | 0.764 (unchanged)        |
+| netbox | `dynamic`  | 1,523         | 0.973         | 0.973 (unchanged)      | 0.973 (unchanged)        |
+| netbox | `bareCall` | 5,049         | 0.997         | 0.997 (unchanged)      | 0.997 (unchanged)        |
+| ugnest | all        | —             | —             | byte-identical         | byte-identical           |
+| polar  | `localVar` | 447           | 0.846         | byte-identical         | **0.888 (T2b, dec. 12)** |
+| polar  | `chain`    | 1,607 → 1,610 | 0.952         | byte-identical         | **0.953 (T2b, dec. 12)** |
+| flask  | all        | —             | —             | byte-identical         | byte-identical           |
+| httpx  | all        | —             | —             | byte-identical         | byte-identical           |
 
 Row-set diff, gross: `lost` **0** on all five. `gained` — netbox 141 (all
 `missed` → `chainType`), polar 24 (19 `missed` → `localBinding`, 2 `missed` →
-`chainType`, 3 `skippedInProject` → `chainType`), flask / httpx / ugnest 0.
+`chainType`, 3 `skippedInProject` → `chainType`), flask / httpx / ugnest 0. The
+3 `skippedInProject` rows are why polar's `chain` denominator moves 1,607 →
+1,610: a row the oracle had skipped now carries a verdict.
 
-Precision, unchanged on every corpus: netbox phantom 26 / `wrongFile` 1,
-precision-miss `(phantom + wrongFile) / edges` **0.31 %**; polar phantom 181 /
-`wrongFile` 5, **1.12 %**; ugnest phantom **0**. Both are inside the 2 % bar and
-neither moved a single row, so the +0.5 pp phantom bar is met with 0.00 pp used.
+Precision. Not one `phantom` or `wrongFile` row moved on any corpus, so the +0.5
+pp phantom bar is met with **0.00 pp used** and ugnest holds at phantom **0**.
+Precision-miss `(phantom + wrongFile) / edges`, measured on the AFTER edge
+counts: netbox 27/8,651 **0.31 %**, polar 186/16,623 **1.12 %**, httpx 8/491
+**1.63 %**, ugnest 0/770 **0.00 %** — and **flask 10/355 = 2.82 %, which is
+ABOVE the 2 % bar**. flask's rows are byte-identical to BEFORE, so this is a
+pre-existing level rather than anything increment 1 spent: its 9 phantoms and 1
+`wrongFile` are the same rows on the same 355-edge denominator, and a corpus
+that small puts one phantom at 0.28 pp. Recorded rather than rounded away —
+whoever raises flask's edge count or takes a phantom off it is fixing a bar this
+increment inherited, not one it broke.
 
 Chain tally, all five `chainDrift` 0 and C3 linearization fallbacks 0: netbox
 44,126 sites / 8,651 edges, polar 56,710 / 16,623, ugnest 4,731 / 770, httpx
