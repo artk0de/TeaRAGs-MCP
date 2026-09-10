@@ -685,6 +685,64 @@ npx tsx scripts/spikes/py-second-oracle-compare.mts --answers-a a.ndjson \
 - No file under `src/` touched: `git diff --name-only main... | grep '^src/'`
   must print nothing.
 
+### Measurement record — E4.0.1, 2026-09-10, HEAD `52163fa2e`
+
+Versions, as run: pyright **1.1.414**
+(`npx --yes --package pyright@1.1.414 pyright-langserver --stdio`), ty **0.0.80
+(7fd8e1569 2026-09-09)** (`uvx ty@0.0.80 server`), node **v24.14.1**,
+`uv run --no-project --python 3.14 --with jedi==0.20.0` → jedi **0.20.0** /
+parso **0.8.7** on CPython **3.14.0rc2**. Both engines are cache-local and
+pinned; nothing was installed globally and no corpus venv was written to.
+
+**Population.** `scripts/spikes/py-degraded-files.py` finds **107**
+parso-degraded files in polar and **19** in netbox; the production walk carries
+**102** and **4** of them, the rest being tests and other excluded trees. The
+plan predicted ~79 polar / 2 netbox against an 82,554-site corpus; this walk
+reads 56,710 polar sites and 44,126 netbox sites, so the corpus and the
+exclusion set have both moved since the E0 record and every ratio below is
+stated against the walk it was measured on, not against the older absolute
+counts.
+
+| corpus | walk files | walk sites | degraded files walked | degraded sites | share  |
+| ------ | ---------- | ---------- | --------------------- | -------------- | ------ |
+| polar  | 1,339      | 56,710     | 102 of 107            | 12,494         | 22.0 % |
+| netbox | 1,038      | 44,126     | 4 of 19               | 1,732          | 3.9 %  |
+
+**Table 1 — polar's degraded set** (12,491 distinct
+`(relPath, startLine, callText)` keys; 708 of them `coordinateMiss`, identical
+for both engines because the client's line search is shared):
+
+| engine          | inProject      | pinned | external       | unknown        | 2-run diff | wall / 1k | peak RSS |
+| --------------- | -------------- | ------ | -------------- | -------------- | ---------- | --------- | -------- |
+| pyright 1.1.414 | 4,717 (37.8 %) | 4,616  | 6,247 (50.0 %) | 1,527 (12.2 %) | **0**      | 2.2 s     | 1,967 MB |
+| ty 0.0.80       | 4,717 (37.8 %) | 4,665  | 6,291 (50.4 %) | 1,483 (11.9 %) | **0**      | 0.7 s     | 412 MB   |
+
+Both runs are byte-identical at the file level, not merely row-equal. pyright on
+netbox's degraded set for comparison: 449 in-project (25.9 %, all pinned), 735
+external, 548 unknown, 2.5 s per 1k, 723 MB.
+
+**Table 2 — the 500-site agreement sample**, drawn with `mulberry32(20260910)`
+over the Fisher-Yates index shuffle `samplePyRows` uses, restricted to files
+parso reads with zero errors:
+
+| engine      | inProject    | unknown    | same origin / 500 | both inProject | same symbolId     | jedi-only | engine-only |
+| ----------- | ------------ | ---------- | ----------------- | -------------- | ----------------- | --------- | ----------- |
+| jedi 0.20.0 | 133 (26.6 %) | 31 (6.2 %) | —                 | —              | —                 | —         | —           |
+| pyright     | 143 (28.6 %) | 43 (8.6 %) | 427 (85.4 %)      | 132            | 132 (**100.0 %**) | 1         | 11          |
+| ty          | 116 (23.2 %) | 41 (8.2 %) | 419 (83.8 %)      | 105            | 104 (99.0 %)      | **28**    | 11          |
+
+The `jedi-only` column is what decided D7: 28 rows where jedi answers in-project
+and ty answers `sitePackages`, all under `sdk/python/polar/**`. Both engines add
+the same 11 rows jedi cannot answer — `Repository.from_session(...)` receivers,
+the shape E4.0.2's merged denominator gains.
+
+**A defect in the spike client, recorded because E4.0.2 inherits it.** The
+host's `CallRef` carries no column, so the probe locates the callee by searching
+the line for the member name. On `asyncio.run(run())` that finds the wrong
+`run`. One row of 500 — but it is a systematic bias toward the leftmost
+same-named callee, and `lsp_oracle.ts` must take a column from the host rather
+than re-deriving one.
+
 ---
 
 ## Task E4.0.2 — Second-oracle host integration
