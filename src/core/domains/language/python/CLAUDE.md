@@ -247,6 +247,37 @@
   printed). See the pass list in `resolver/python-resolver.ts`; the guards
   (`super`, `selfField`, `selfMember`, `localBinding`) DROP rather than fall
   through, which is what keeps `serializer.is_valid()` off an unrelated class.
+- **`resolveDispatch` composes `[cone, dynamic]`, and the LAST component
+  declines every receiver another layer owns.** The runner asks
+  `resolveDispatch` BEFORE `resolve` and lets a non-empty fan REPLACE the
+  chain's answer, so `resolver/dispatch/python-dispatch-gates.ts` is where the
+  component earns its slot: bare / `self` / `cls` / dotted / call-or-index head
+  / capitalised (`_LEADING_UNDERSCORE` included) / builtin-named receiver, a
+  receiver with a local binding in force or an import binding, a receiver bound
+  to a call the project cannot type (foreign head, or a `self.<member>` no file
+  declares), a `coreAmbiguous` or builtin-named MEMBER — then, last because it
+  is the only expensive one, the chain itself. Python cannot probe two named
+  passes the way Ruby does (a bare name is answered by `namingConvention`,
+  `importedName` OR `globalShortName`, and its guards DROP rather than
+  continue), so `PythonChainAnswerProbe` runs the composed chain and memoises
+  per `CallRef` identity with the `CallContext` identity beside it —
+  `PythonCallResolver.resolve` reads the same entry, which is what keeps the
+  runner's dispatch→resolve pair at ONE chain run per site. The fan cap is
+  Python's own `PY_DISPATCH_FAN_MAX` (4, `CODEGRAPH_PY_DISPATCH_FAN_MAX` to
+  re-measure), read ONCE at composition and floored by the corpus-adaptive
+  policy in `resolveNarrowedFanout`; the cascade takes neither language
+  injection, because the runtime-member question is asked one gate earlier and a
+  literal receiver never survives the shape gates.
+- **The `dynamic` component's measured precision is NOT the plan's estimate, and
+  both E4.1.3 stop rules fired** (bd tea-rags-mcp-w205u; numbers in
+  `docs/superpowers/plans/2026-09-10-python-e4-1-dispatch-fanout.md`, Task
+  E4.1.3). It fires on ~5× the sites E4.0.4 attributed to `untypedNameReceiver`,
+  and the extra ones are receivers whose real type is a LIBRARY type: +83 new
+  1:1 matches against +85 new fabricated edges across the five corpora, and
+  `recall@fan` 0.344 on polar (n=122) against a 0.85 bar. What no gate here can
+  see is the receiver's type — a module-scope `log = structlog.get_logger()` is
+  invisible because `callResultBindings` reach the resolver per CHUNK, and an
+  `except … as e` or a Django queryset local carries no binding fact at all.
 - Resolver architecture rules: `.claude/rules/resolver-architecture.md`.
   Cross-language mechanics: `src/core/domains/language/CLAUDE.md`.
 

@@ -1191,6 +1191,65 @@ resolveDispatch(call: CallRef, ctx: CallContext): DispatchFanoutOutcome {
       prettier / type-check clean. Commit:
       `feat(language): fan untyped python name receivers over member owners (w205u)`.
 
+### Measured — E4.1.3 (2026-09-10, HEAD `493a58916` + this worktree)
+
+`--oracle merged --workers 8`, five corpora, row dumps under
+`~/.claude/jobs/dffe3647/tmp/e413/`. **Both stop rules fired. The component is
+implemented, tested and composed, and it must not merge on these numbers.**
+
+| corpus | gross lost | gained (1:1) | phantom | wrongFile | `single` | `fan` | `ambiguous` | recall@fan (n) | fan p50/p95 | fanPhantom | ambigShare | exReplacedByFan/ByAmbiguous |
+| ------ | ---------- | ------------ | ------- | --------- | -------- | ----- | ----------- | -------------- | ----------- | ---------- | ---------- | --------------------------- |
+| ugnest | 0          | 0            | 0 → 0   | 0 → 0     | 1        | 33    | 0           | 1.000 (1)      | 2 / 2       | 0          | 0          | 0 / 0 (= before)            |
+| flask  | 0          | +6           | 0 → 6   | 1 → 1     | 14       | 5     | 0           | 0.667 (3)      | 3 / 8       | 1          | 0          | 1 / 0 (= before)            |
+| httpx  | 0          | 0            | 8 → 10  | 0 → 0     | 10       | 5     | 2           | 0.667 (3)      | 3 / 3       | 0          | 0.0013     | 0 / 0 (= before)            |
+| netbox | 0          | +5           | 26 → 31 | 0 → 0     | 118      | 51    | 117         | 0.364 (11)     | 2 / 4       | 0          | 0.0027     | 0 / 0 (= before)            |
+| polar  | 0          | +72          | 113→185 | 2 → 2     | 492      | 120   | 317         | 0.344 (122)    | 2 / 4       | 3          | 0.0056     | 3 / 0 (= before)            |
+
+`fanRescued` 1 / 2 / 2 / 4 / 42; `singleRescued` 0 / 6 / 0 / 5 / 181;
+`dispatchDrift` 0 and `chainDrift` 0 on all five (the harness composes the same
+`[cone, dynamic]` stack, `scripts/py-codegraph-jedi-oracle.ts`). Chain-tally
+dispatch-layer edges rise from 0/0, 1+1, 6/0, 0/0, 9+13 (before) to 1+33, 14+5,
+10+5, 118+51, 492+120 (after). Perf, min of 2, chain-tally `--dispatch`: netbox
+13.25 s → 13.78 s (+4.0 %), RSS 2.29 GiB → 2.30 GiB (+0.4 %); polar 17.84 s →
+18.04 s (+1.1 %), RSS 2.27 GiB → 2.23 GiB (−1.6 %) — the probe memo holds, the
+chain runs once per site. Ruby parity 0 mismatches on both spikes vs
+`/Users/artk0re/Dev/Tools/tea-rags-mcp`.
+
+**Where decision 1's estimate parted from the measurement.** It predicted 232
+`single` (1 wrong) and 49 `fan` at recall 0.980 over the 373 attributed rows.
+Measured: **635 `single`, 85 of them fabricated**, and **164 `fan` rows at
+pooled recall 0.36**. The estimate was built by joining the 373 residual rows —
+every one of which HAS an in-project oracle target — against `owners(member)`.
+The component does not fire on that set: it fires on every bare untyped name the
+chain declines, ~5× as many sites, and the extra population is receivers whose
+true type is a LIBRARY type. Every new fabricated edge is one of those, none is
+a `fan` row, and gross `lost` is 0 on all five corpora.
+
+**The rows, and the gate that would have declined them.** Four gates were added
+during execution and each removed its family (ugnest went 4 → 0 that way): a
+receiver spelled like a builtin (`super().add_unredirected_header`,
+`int.__new__` on httpx), a `_SCREAMING_SNAKE` constant (`_TELEGRAM_RE.match` on
+ugnest), a foreign-headed call binding (`logger = logging.getLogger(…)`), and a
+`self.<member>` binding no project file declares
+(`serializer = self.get_serializer(…)` → `ConfirmationCode#is_valid`, ugnest's
+canonical phantom). What is left needs the receiver's TYPE, which no gate at
+this layer has: polar's 31 `log.error` / `logger.error` rows are a MODULE-scope
+`log = structlog.get_logger()` — `callResultBindings` reach the resolver per
+CHUNK, so the method's context cannot see the module's binding at all — 8
+`e.errors` rows are an `except … as e` name the walker binds nowhere, and
+netbox's `queryset.aggregate` / `k.title` / flask's `loader.get_source` are
+Django, `str` and Jinja values with no binding fact of any kind. Closing them is
+a walker/channel seam (a file-level binding view, E4.6b's fold), not a predicate
+this component can write.
+
+**Open decision for the orchestrator** — decision 2 pre-authorised demoting the
+`single` terminal to `discount / 1`, but that does not move these numbers: the
+harness splits by edge COUNT, not confidence, so a demoted single still persists
+a 1:1 edge and still reads `phantom`. It buys navigation-hiding, not precision.
+The three live options are (a) accept +83 / −85 as booked, (b) hold the
+component until a file-scope binding channel lands, (c) ship the `fan` and
+`ambiguous` halves only, dropping the `single` terminal to `[]`.
+
 ---
 
 ## Task E4.1.4 — `PythonUnionDispatchResolver`, and the union fact it needs (`w205u`)
