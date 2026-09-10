@@ -19,7 +19,7 @@
  * (`wall ≤ +25%` on netbox) actually cares about.
  */
 
-import { resolveLocalBinding, type CallContext } from "../../../../contracts/types/codegraph.js";
+import { resolveLocalBinding, type CallContext, type LocalBinding } from "../../../../contracts/types/codegraph.js";
 import type { TypeRef } from "../../../../contracts/types/language.js";
 import {
   CHAIN_MAX_HOPS_DEFAULT,
@@ -28,7 +28,12 @@ import {
 } from "../../kernel/receiver-type-propagation.js";
 import type { PythonAncestorLinearizerCache } from "./python-ancestor-policy.js";
 import type { PythonImportFileMapper } from "./python-import-file-mapper.js";
-import { pythonImportMatchesReceiver, pythonInheritedMemberType, resolveTypeFile } from "./strategies/shared.js";
+import {
+  findPythonImportBinding,
+  pythonImportMatchesReceiver,
+  pythonInheritedMemberType,
+  resolveTypeFile,
+} from "./strategies/shared.js";
 
 export const PYTHON_CHAIN_MAX_HOPS_ENV = "CODEGRAPH_PY_CHAIN_MAX_HOPS";
 
@@ -68,8 +73,35 @@ function pythonSingleHopType(
     if (!PYTHON_CLASS_HEAD.test(bare) || resolveTypeFile(bare, ctx, mapper) === null) return undefined;
     return { form: "instance", name: bare };
   }
-  const bound = resolveLocalBinding(ctx.localBindings, receiver, atLine);
+  const bound = pythonBindingInForceAt(receiver, atLine, ctx);
   return bound === undefined ? undefined : { form: "instance", name: bound.type };
+}
+
+/**
+ * The binding a receiver actually carries at `atLine` — which is NOT always the
+ * one `resolveLocalBinding` returns (R4c, bd tea-rags-mcp-jeqyg).
+ *
+ * `layout = layout.SimpleLayout(...)` in eleven netbox view files: the walker
+ * records `layout -> SimpleLayout` at that line, and the fold then types the
+ * RECEIVER of the very call that produced it. Python evaluates the right-hand
+ * side before it rebinds the name, so on that statement `layout` still denotes
+ * what `from netbox.ui import layout` bound — a MODULE. Typing it as the class
+ * being constructed makes `chainType` look for `SimpleLayout` ON `SimpleLayout`,
+ * find nothing, and DROP, which cuts off the module arm of `importedName` that
+ * answers the site correctly. 165 rows.
+ *
+ * The narrow gate is the import list: the shadow only exists where an import
+ * bound the same name, and there the prior binding is the import rather than
+ * anything the walker recorded. Without that clause the rule would also demote
+ * `x = Foo(); x.run()` on one line, which no evidence asks for. `line <= atLine`
+ * in the shared lookup stays exactly as it is — the retry simply asks it for the
+ * line before, so a name bound EARLIER in the body keeps that earlier type.
+ */
+function pythonBindingInForceAt(receiver: string, atLine: number, ctx: CallContext): LocalBinding | undefined {
+  const bound = resolveLocalBinding(ctx.localBindings, receiver, atLine);
+  if (bound?.line !== atLine) return bound;
+  if (findPythonImportBinding(ctx.imports, receiver) === null) return bound;
+  return resolveLocalBinding(ctx.localBindings, receiver, atLine - 1);
 }
 
 /**

@@ -441,3 +441,79 @@ describe("PythonChainTypeSymbolResolutionStrategy — up the MRO", () => {
     expect(mroStrategy().attempt(call("svc.build()", "append"), ctx)).toEqual({ kind: "continue" });
   });
 });
+
+/**
+ * A module receiver a same-named assignment shadows (R4c, bd tea-rags-mcp-jeqyg).
+ *
+ * `layout = layout.SimpleLayout(...)` inside a netbox view class: the walker
+ * records `layout -> SimpleLayout` at that very line, and the fold then reads
+ * the RECEIVER through the binding its own right-hand side produced. Python
+ * evaluates the RHS before rebinding, so on that line `layout` still denotes
+ * what `from netbox.ui import layout` bound — a module, which this pass cannot
+ * type and must not DROP. 165 netbox rows across 11 view files.
+ */
+describe("PythonChainTypeSymbolResolutionStrategy — a binding does not type its own statement", () => {
+  const uiTable = (): InMemoryGlobalSymbolTable =>
+    tableWith({
+      "netbox/account/views.py": [{ symbolId: "UserTokenView" }],
+      "netbox/netbox/ui/layout.py": [
+        { symbolId: "Layout" },
+        { symbolId: "SimpleLayout" },
+        { symbolId: "SimpleLayout#render", scope: ["SimpleLayout"] },
+      ],
+    });
+
+  const uiImport: ImportRef[] = [
+    { importText: "netbox.ui", startLine: 29, importedNames: ["layout"], importedBindings: { layout: "layout" } },
+  ];
+
+  it("CONTINUEs on the shadowing statement so the module arm below can answer", () => {
+    const ctx = ctxWith(uiTable(), {
+      callerFile: "netbox/account/views.py",
+      imports: uiImport,
+      localBindings: { layout: [{ line: 347, type: "SimpleLayout" }] },
+    });
+    expect(mroStrategy().attempt(call("layout", "SimpleLayout", 347), ctx)).toEqual({ kind: "continue" });
+  });
+
+  it("still types the receiver on every LATER line", () => {
+    const ctx = ctxWith(uiTable(), {
+      callerFile: "netbox/account/views.py",
+      imports: uiImport,
+      localBindings: { layout: [{ line: 347, type: "SimpleLayout" }] },
+    });
+    expect(mroStrategy().attempt(call("layout", "render", 348), ctx)).toEqual({
+      kind: "resolved",
+      target: { targetRelPath: "netbox/netbox/ui/layout.py", targetSymbolId: "SimpleLayout#render" },
+    });
+  });
+
+  it("falls back to the PRIOR binding when the name was bound earlier too", () => {
+    const ctx = ctxWith(uiTable(), {
+      callerFile: "netbox/account/views.py",
+      imports: uiImport,
+      localBindings: {
+        layout: [
+          { line: 300, type: "Layout" },
+          { line: 347, type: "SimpleLayout" },
+        ],
+      },
+    });
+    // `Layout` declares no `render`, and its hierarchy is read to the end — the
+    // pass DROPs rather than reaching for a same-named member elsewhere.
+    expect(mroStrategy().attempt(call("layout", "render", 347), ctx)).toEqual({ kind: "drop" });
+  });
+
+  it("keeps the same-line binding when NO import bound that name", () => {
+    const ctx = ctxWith(uiTable(), {
+      callerFile: "netbox/account/views.py",
+      localBindings: { layout: [{ line: 347, type: "SimpleLayout" }] },
+    });
+    // `x = Foo(); x.run()` on one line is not a module shadow; nothing about
+    // the import list says otherwise, so the binding stands.
+    expect(mroStrategy().attempt(call("layout", "render", 347), ctx)).toEqual({
+      kind: "resolved",
+      target: { targetRelPath: "netbox/netbox/ui/layout.py", targetSymbolId: "SimpleLayout#render" },
+    });
+  });
+});
