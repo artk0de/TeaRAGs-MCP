@@ -306,11 +306,21 @@ export class EnrichmentRecovery {
     collectionName: string,
     provider: EnrichmentProvider,
     level: "file" | "chunk",
+    /**
+     * Restrict the count to points of these languages. Omitted (or empty)
+     * counts the whole collection, which is what every caller did before
+     * language-restricted runs existed.
+     *
+     * BOTH paths below take it. An asymmetry here would put the count and the
+     * scan on different sets — the exact failure the relativePath exclusion in
+     * `buildUnenrichedFilter` exists to prevent (bd tea-rags-mcp-9dg6s).
+     */
+    languages?: readonly string[],
   ): Promise<number> {
     // Fast path: a provider with no per-file policy can't intentionally skip
     // anything, so the server-side count is exact — no payload transfer.
     if (!provider.shouldEnrich) {
-      const filter = this.buildUnenrichedFilter(provider.key, level);
+      const filter = this.buildUnenrichedFilter(provider.key, level, "unenriched", languages);
       return this.qdrant.countPoints(collectionName, filter);
     }
     // Policy path: the server-side count still can't express path-glob skips
@@ -319,7 +329,7 @@ export class EnrichmentRecovery {
     // buildUnenrichedFilter's relativePath exclusion already maintains) — a
     // generated/doc file the policy skips must not keep the marker degraded
     // forever. Counting deliberately does NOT stamp: a query must not mutate.
-    return (await this.scanUnenriched(collectionName, provider, level)).owed.length;
+    return (await this.scanUnenriched(collectionName, provider, level, "unenriched", languages)).owed.length;
   }
 
   /**
@@ -373,6 +383,7 @@ export class EnrichmentRecovery {
     providerKey: string,
     level: "file" | "chunk",
     scope: RecoveryScope = "unenriched",
+    languages?: readonly string[],
   ): Record<string, unknown> {
     const enrichedAtField = `${providerKey}.${level}.enrichedAt`;
     const skippedAsField = `${providerKey}.${level}.skippedAs`;
@@ -382,13 +393,19 @@ export class EnrichmentRecovery {
     // enriched at any scope.
     const settled =
       scope === "all" ? [] : [{ is_empty: { key: enrichedAtField } }, { is_empty: { key: skippedAsField } }];
+    // A language-restricted run is judged only on the languages it processed
+    // (bd tea-rags-mcp-9dg6s). An EMPTY list means "no restriction" —
+    // `match: { any: [] }` selects nothing in Qdrant, which would report a clean
+    // count on a genuinely damaged index.
+    const languageCondition =
+      languages && languages.length > 0 ? [{ key: "language", match: { any: [...languages] } }] : [];
     return {
       // Two terminal states, both of which settle a point: it was enriched, or
       // policy declined it. A candidate carries neither. Without the second
       // condition the filter cannot express the policy server-side, so the whole
       // declined population is shipped to the client and discarded there on
       // every run — see the skip-stamp design spec.
-      must: settled,
+      must: [...settled, ...languageCondition],
       must_not: [
         { key: "_type", match: { value: "indexing_metadata" } },
         { key: "_type", match: { value: "schema_metadata" } },
@@ -408,14 +425,20 @@ export class EnrichmentRecovery {
    *
    * Pure query — it never writes. Stamping the declined half is the caller's
    * job, which keeps `countUnenriched` side-effect free.
+   *
+   * `languages` must reach here as well as the server-side count path, or the
+   * two would disagree about what "the unenriched set" is — see
+   * `countUnenriched` (bd tea-rags-mcp-9dg6s). Healing passes pass nothing:
+   * recovery repairs whatever is damaged, regardless of language.
    */
   private async scanUnenriched(
     collectionName: string,
     provider: EnrichmentProvider,
     level: "file" | "chunk",
     scope: RecoveryScope = "unenriched",
+    languages?: readonly string[],
   ): Promise<UnenrichedScan> {
-    const filter = this.buildUnenrichedFilter(provider.key, level, scope);
+    const filter = this.buildUnenrichedFilter(provider.key, level, scope, languages);
     const points = await this.qdrant.scrollFiltered(
       collectionName,
       filter,
