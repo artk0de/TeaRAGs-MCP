@@ -4,7 +4,7 @@ import { CONTINUE, deferred, resolved } from "../../../../../contracts/resolutio
 import { pickSingleCandidate, type CallContext, type CallRef } from "../../../../../contracts/types/codegraph.js";
 import type { SymbolResolutionOutcome, SymbolResolutionStrategy } from "../../../../../contracts/types/language.js";
 import { ZEITWERK_PREFIX } from "../../walker/walker.js";
-import { collectKnownPaths, type ResolverConfig } from "./shared.js";
+import { collectKnownPaths, lookupRubySymbolsByShortName, type ResolverConfig } from "./shared.js";
 
 /**
  * Explicit `require` / `require_relative`. Fires ONLY when the receiver names
@@ -46,7 +46,7 @@ export class RubyExplicitRequireSymbolResolutionStrategy implements SymbolResolu
     if (!requireMatch) return CONTINUE;
     const targetFile = this.resolveExplicitRequire(requireMatch.importText, ctx.callerFile, collectKnownPaths(ctx));
     if (!targetFile) return CONTINUE;
-    const candidates = ctx.symbolTable.lookupByShortName(call.member).filter((def) => def.relPath === targetFile);
+    const candidates = lookupRubySymbolsByShortName(ctx, call.member).filter((def) => def.relPath === targetFile);
     const target = pickSingleCandidate(candidates, this.cfg.mode);
     if (target) return resolved({ targetRelPath: target.relPath, targetSymbolId: target.symbolId });
     return deferred({ targetRelPath: targetFile, targetSymbolId: null });

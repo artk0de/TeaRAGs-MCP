@@ -27,6 +27,12 @@
  *   npx tsx scripts/spikes/ruby-resolver-parity.ts \
  *     --corpus ~/Dev/Tools/tea-rags-bench/corpora/mastodon \
  *     --before-root /abs/path/to/pre-relocation/checkout [--limit 20000] [--json out.json]
+ *
+ * `--polyglot` skips the corpus `.contextignore` so the symbol table holds the
+ * repo's JS/TS too. The mastodon bench corpus excludes `/app/javascript/` and
+ * every `*.ts` by design, so without it a cross-language namesake never enters
+ * the candidate sets and a change that only fires on a polyglot table scores 0.
+ * A polyglot run is a SEPARATE population, never the baseline for anything else.
  */
 import { readFileSync, writeFileSync } from "node:fs";
 import { extname, join, resolve as resolvePath, sep } from "node:path";
@@ -211,11 +217,20 @@ function readGemfile(root: string): string | undefined {
   }
 }
 
+/**
+ * The corpus ignore file whose only job is to keep a benchmark single-language.
+ * `--polyglot` skips it so the symbol table holds the `.js`/`.jsx`/`.ts`/`.tsx`
+ * files a Rails + React repo really carries (bd tea-rags-mcp-kumq2); `.gitignore`
+ * still applies, so `node_modules/` stays out.
+ */
+const SINGLE_LANGUAGE_IGNORE_FILES = [".contextignore", ".contextignore.local"] as const;
+
 export async function run(
   root: string,
   beforeRoot: string | undefined,
   limit: number,
   quiet: boolean,
+  polyglot = false,
 ): Promise<ResolverParityResult> {
   const composer = new DefaultSymbolIdComposer();
   const factory = new LanguageFactory();
@@ -233,7 +248,7 @@ export async function run(
   const selection = await collectSourceFiles(
     root,
     root,
-    await buildCorpusExclusionFilter(root, factory),
+    await buildCorpusExclusionFilter(root, factory, polyglot ? { skipIgnoreFiles: SINGLE_LANGUAGE_IGNORE_FILES } : {}),
     SYMBOL_TABLE_EXTENSIONS,
   );
   for (const relPath of selection.kept.slice(0, limit)) {
@@ -317,13 +332,14 @@ export function parseArgs(argv: readonly string[]) {
     limit: Number(read("--limit") ?? Number.MAX_SAFE_INTEGER),
     json: read("--json") ?? null,
     quiet: argv.includes("--quiet"),
+    polyglot: argv.includes("--polyglot"),
   };
 }
 
 async function main(): Promise<void> {
   const opts = parseArgs(process.argv.slice(2));
   const started = Date.now();
-  const result = await run(opts.corpus, opts.beforeRoot, opts.limit, opts.quiet);
+  const result = await run(opts.corpus, opts.beforeRoot, opts.limit, opts.quiet, opts.polyglot);
   const out = formatParitySummary(opts.corpus, opts.beforeRoot, result);
   out.push(`  wall ${((Date.now() - started) / 1000).toFixed(1)}s`);
   for (const row of result.mismatches.slice(0, 20)) out.push(`    MISMATCH ${JSON.stringify(row)}`);

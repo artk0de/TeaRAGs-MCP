@@ -3,8 +3,8 @@ import { pickSingleCandidate, type CallContext, type CallRef } from "../../../..
 import type { SymbolResolutionOutcome, SymbolResolutionStrategy } from "../../../../../contracts/types/language.js";
 import {
   collectResolvedAncestorChain,
-  isRubyPath,
   lastConstantSegment,
+  lookupRubySymbolsByShortName,
   resolveViaIncludingClasses,
   resolveViaSuperclassChain,
   symbolIdIsInstanceMethod,
@@ -28,7 +28,7 @@ export class RubyBareCallSymbolResolutionStrategy implements SymbolResolutionStr
   constructor(private readonly cfg: ResolverConfig) {}
 
   attempt(call: CallRef, ctx: CallContext): SymbolResolutionOutcome {
-    const fallback = ctx.symbolTable.lookupByShortName(call.member).filter((def) => isRubyPath(def.relPath));
+    const fallback = lookupRubySymbolsByShortName(ctx, call.member);
     // MRO-aware scope narrowing (bug t5iw + brp1). When multiple short-name
     // candidates exist (e.g. `WebRequestConcern#user_agent` AND
     // `Agents::PhantomJsCloudAgent#user_agent`), strict-mode

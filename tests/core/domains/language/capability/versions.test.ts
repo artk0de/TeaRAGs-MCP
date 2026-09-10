@@ -85,11 +85,15 @@ describe("seeded support versions", () => {
       // `callResultBindings` and the file-level `classFieldTypesByClassKey`;
       // python walker 5: bd tea-rags-mcp-w205u narrowed short-name resolution
       // to same-language, bare-callable, non-builtin candidates, so an index
-      // built by walker 4 holds edges this one never emits.
+      // built by walker 4 holds edges this one never emits. ruby walker 2: bd
+      // tea-rags-mcp-kumq2 routed every Ruby short-name lookup through the same
+      // same-language filter, so an index built by walker 1 holds the
+      // cross-language picks this one never emits.
       // Every other language is still at its seed.
       const WALKER_BUMPED = new Map([
         ["typescript", 4],
         ["python", 5],
+        ["ruby", 2],
       ]);
       const expectedWalker = WALKER_BUMPED.get(language) ?? 1;
       const expectedCodegraph = NO_CALL_GRAPH.has(language) ? 1 : 2;

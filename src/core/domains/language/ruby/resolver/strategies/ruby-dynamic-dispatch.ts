@@ -9,7 +9,7 @@ import { buildDispatchCascade } from "../../../kernel/dispatch-cascade.js";
 import { resolveNarrowedFanout } from "../../../kernel/dispatch-narrowing.js";
 import { RUBY_DUCK_VOCAB } from "./ruby-duck-vocabulary.js";
 import { rubyDynamicFanoutSuppressed } from "./ruby-dynamic-fanout-gates.js";
-import { DYNAMIC_RECEIVER_CONFIDENCE_DEFAULT, isRubyPath, type ResolverConfig } from "./shared.js";
+import { DYNAMIC_RECEIVER_CONFIDENCE_DEFAULT, lookupRubySymbolsByShortName, type ResolverConfig } from "./shared.js";
 
 /**
  * Map a literal-receiver source text to its Ruby core type (bd d9o7o), or
@@ -63,7 +63,7 @@ export function classifyRubyLiteralReceiver(receiver: string | null): string | n
  * Invariant: an `external` receiver is either a constant (gem class →
  * constant path) or an untyped dynamic receiver whose member has no in-project
  * ruby definition (`[]`) — external receivers never produce a dynamic edge that
- * points outside the project, and `isRubyPath` blocks cross-language pollution
+ * points outside the project, and `lookupRubySymbolsByShortName` blocks cross-language pollution
  * (bug pl7k: `arr.map` → vendored `d3.js#map`).
  */
 export class RubyDynamicDispatchResolver implements DispatchResolverComponent {
@@ -78,7 +78,7 @@ export class RubyDynamicDispatchResolver implements DispatchResolverComponent {
     if (rubyDynamicFanoutSuppressed(call, ctx, this.cfg.mode)) return emptyDispatchFanout();
 
     // Truly dynamic receiver: short-name lookup, ruby-files only.
-    const candidates = ctx.symbolTable.lookupByShortName(call.member).filter((def) => isRubyPath(def.relPath));
+    const candidates = lookupRubySymbolsByShortName(ctx, call.member);
     if (candidates.length === 0) return emptyDispatchFanout();
     const discount = this.cfg.dynamicReceiverConfidence ?? DYNAMIC_RECEIVER_CONFIDENCE_DEFAULT;
     return resolveNarrowedFanout(call, candidates, ctx, this.narrowers, discount);

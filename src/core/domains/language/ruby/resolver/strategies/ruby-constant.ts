@@ -6,7 +6,7 @@ import {
   type SymbolResolutionTarget,
 } from "../../../../../contracts/types/codegraph.js";
 import type { SymbolResolutionOutcome, SymbolResolutionStrategy } from "../../../../../contracts/types/language.js";
-import { resolveConstant, type ResolverConfig } from "./shared.js";
+import { lookupRubySymbolsByShortName, resolveConstant, type ResolverConfig } from "./shared.js";
 
 /**
  * Zeitwerk-style: receiver is a (possibly nested) constant chain. The walker's
@@ -37,9 +37,9 @@ export class RubyConstantSymbolResolutionStrategy implements SymbolResolutionStr
     // over the `#`-form (instance method). A class can declare both
     // `def self.authorize!` and `def authorize!` — only the former
     // is reachable via `Klass.authorize!(...)`.
-    const candidates = ctx.symbolTable
-      .lookupByShortName(call.member)
-      .filter((def) => def.relPath === targetFile && symbolIdIsClassMethod(def.symbolId, call.member));
+    const candidates = lookupRubySymbolsByShortName(ctx, call.member).filter(
+      (def) => def.relPath === targetFile && symbolIdIsClassMethod(def.symbolId, call.member),
+    );
     const target = pickSingleCandidate(candidates, this.cfg.mode);
     if (target) return resolved({ targetRelPath: target.relPath, targetSymbolId: target.symbolId });
     const inherited = this.walkAncestorsForConstantCall(call.receiver, call.member, ctx, new Set([call.receiver]));
@@ -71,9 +71,9 @@ export class RubyConstantSymbolResolutionStrategy implements SymbolResolutionStr
       // Same Class.method preference as the outer Zeitwerk branch:
       // only consider class-form symbols (`Ancestor.method`), not
       // instance-form (`Ancestor#method`).
-      const candidates = ctx.symbolTable
-        .lookupByShortName(member)
-        .filter((def) => def.relPath === ancestorFile && symbolIdIsClassMethod(def.symbolId, member));
+      const candidates = lookupRubySymbolsByShortName(ctx, member).filter(
+        (def) => def.relPath === ancestorFile && symbolIdIsClassMethod(def.symbolId, member),
+      );
       const target = pickSingleCandidate(candidates, this.cfg.mode);
       if (target) return { targetRelPath: target.relPath, targetSymbolId: target.symbolId };
       // Method not on this ancestor either — recurse one level deeper.

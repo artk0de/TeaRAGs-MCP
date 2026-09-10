@@ -27,6 +27,7 @@
 import type { CallContext } from "../../../../contracts/types/codegraph.js";
 import type { RubyTypeRef } from "../../../../contracts/types/language.js";
 import { linearizeAncestors } from "./ancestor-linearization.js";
+import { lookupRubySymbolsByShortName } from "./short-name-lookup.js";
 
 /**
  * The DECLARED return type at a `<className>.<member>` coordinate: the precise
@@ -91,7 +92,7 @@ export function declaredReturnTypeOn(
  * its own lead (owner-aware facts, not a wider gate).
  */
 export function flatReturnFactMayOverrideKnownReceiver(member: string, ctx: CallContext): boolean {
-  return ctx.symbolTable.lookupByShortName(member).length <= 1;
+  return lookupRubySymbolsByShortName(ctx, member).length <= 1;
 }
 
 /**

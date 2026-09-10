@@ -33,6 +33,7 @@ import type { RubyTypeRef } from "../../../../contracts/types/language.js";
 import { conventionClassNameFor, type NamingConventionPorts } from "../../kernel/naming-convention.js";
 import { catalogueForGemfile } from "../gemfile.js";
 import { selfMemberReturnType } from "./ruby-return-facts.js";
+import { lookupRubySymbolsByShortName } from "./short-name-lookup.js";
 
 /**
  * A plain lowercase identifier — the only receiver text that can name a nullary
@@ -81,7 +82,7 @@ function camelizeScope(snake: string): string {
  */
 const RUBY_NAMING_CONVENTION_PORTS: NamingConventionPorts<CallContext> = Object.freeze({
   camelize: camelizeScope,
-  classExists: (name: string, ctx: CallContext) => ctx.symbolTable.lookupByShortName(name).length > 0,
+  classExists: (name: string, ctx: CallContext) => lookupRubySymbolsByShortName(ctx, name).length > 0,
   hasSubtypes: hasDeclaredSubtypes,
 });
 
@@ -179,7 +180,7 @@ function hasDeclaredSubtypes(name: string, ctx: CallContext): boolean {
   const { hierarchy } = ctx;
   if (hierarchy === undefined) return false;
   if (hierarchy.getDescendants(name).length > 0) return true;
-  for (const def of ctx.symbolTable.lookupByShortName(name)) {
+  for (const def of lookupRubySymbolsByShortName(ctx, name)) {
     if (def.fqName !== name && hierarchy.getDescendants(def.fqName).length > 0) return true;
   }
   return false;
