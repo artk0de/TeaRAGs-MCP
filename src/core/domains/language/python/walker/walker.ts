@@ -37,6 +37,7 @@ import type {
   LocalBinding,
 } from "../../../../contracts/types/codegraph.js";
 import { assignCallsToInnermostChunks } from "../../kernel/assign-calls-to-chunks.js";
+import { collectPythonClassBodyFieldTypes } from "./passes/python-class-body-fields.js";
 
 export interface PythonExtractInput {
   tree: MaterializedTree;
@@ -86,6 +87,19 @@ export function extractFromPythonFile(input: PythonExtractInput): FileExtraction
   // channel above cannot answer that: it is per-file and its key is ambiguous
   // run-global.
   const classFieldTypesByClassKey = collectPythonClassFieldTypesByClassKey(input.tree.rootNode, input.relPath);
+  // bd tea-rags-mcp-xpl83 — Django binds a model's manager in the CLASS BODY
+  // (`objects = ObjectTypeManager()`), which no `self.<field>` collector can
+  // see. The facts merge UNDERNEATH the two collectors above: a constructor
+  // assignment for the same field is the narrower statement about an instance,
+  // so reversing this spread order would silently retype every field a class
+  // declares twice.
+  const classBodyFields = collectPythonClassBodyFieldTypes(input.tree.rootNode, input.relPath, imports);
+  for (const [key, fields] of Object.entries(classBodyFields.byShortName)) {
+    classFieldTypes[key] = { ...fields, ...(classFieldTypes[key] ?? {}) };
+  }
+  for (const [key, fields] of Object.entries(classBodyFields.byClassKey)) {
+    classFieldTypesByClassKey[key] = { ...fields, ...(classFieldTypesByClassKey[key] ?? {}) };
+  }
   const trackTypes = pythonLocalTypeTrackingEnabled();
   // Innermost-chunk attribution: ONE owning chunk per call site — the smallest
   // containing range, ties broken by deeper scope (bd tea-rags-mcp-invuy;

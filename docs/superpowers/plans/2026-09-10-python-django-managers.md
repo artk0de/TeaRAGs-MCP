@@ -313,6 +313,41 @@ manifest, or no Django). ugnest: **0 rows changed** (decision 4). This is the
 whole honest claim; nothing here moves polar's `dynamic` floor or netbox's
 `index` row.
 
+### Revision (orchestrator, 2026-09-10) — increment 1 is T2 + T4
+
+The attribution above is what cut this plan down. All 141 misses are hop-0 on
+the manager's OWN method, and decision 2 already measured the vocabulary arms at
+zero oracle-scoreable recall. So increment 1 ships **Task 2 and Task 4 only**.
+
+**Task 1 (dependency manifest) and Task 3 (the fluent / terminal /
+`get_object_or_404` arms and the `@`-tagged manager owner) are DEFERRED to E4**,
+beads `w205u.1` and `w205u.2`. Their bodies stay below as the design record —
+nothing in them was found wrong, and whoever picks up E4 starts from them rather
+than from a blank page.
+
+Two reasons the gate went with them, not just the arms it guarded:
+
+- **No arm in increment 1 needs one.** Once the field fact is a language-level
+  mechanism keyed on project-class evidence rather than on a framework name,
+  there is nothing for a manifest to switch off. A project that binds no
+  class-body attribute to one of its own classes emits nothing, whatever it
+  depends on, and that is a property of the rule rather than of a gate.
+- **Root-only manifest reading would not even gate the corpus that needs
+  gating.** polar's manifests are `server/pyproject.toml` and
+  `sdk/python/pyproject.toml`; the root has none. The gate would have fallen
+  through to per-file imports there anyway, which is the same answer as no gate
+  at all — for a facility spanning two contract files, two composition roots, a
+  kernel module and three harnesses.
+
+**Task 2 is rewritten below** with no gate and no framework registry. The one
+Django-specific fact left in the whole increment is the `as_manager` verb, and
+it sits in the walker as a single named constant.
+
+`versions.walker` stays **4**. Decision 10's reasoning is sound for a released
+walker, but 4 is itself unreleased relative to `main` — every index that will
+ever read walker-4 output is recomputed by the same merge that ships this — so
+bumping would only cost a reindex hint nobody can act on yet.
+
 ---
 
 ## Global Constraints
@@ -482,7 +517,7 @@ boundary predicate must treat it as "keep walking the other bases", never as
 
 ---
 
-## Task 1 — Dependency-manifest facility
+## Task 1 — Dependency-manifest facility (DEFERRED → E4)
 
 **Files:**
 
@@ -766,327 +801,140 @@ if (input.dependencyManifest !== undefined) {
 
 ---
 
-## Task 2 — Manager field facts from class-body assignments, and the Django gate
+## Task 2 — Manager field facts from class-body assignments
 
-The recall lever. The framework registry is introduced HERE, not in Task 3,
-because the walker's emit gate is a registry facet, and a facet ships with its
-consumer.
+The recall lever, and after the revision above the whole of it. No manifest
+gate, no framework registry: the field fact is a LANGUAGE-level mechanism whose
+emit rule is project-class EVIDENCE, so a project that binds no class-body
+attribute to one of its own classes walks byte-identically whatever it depends
+on.
 
 **Files:**
 
-- NEW `src/core/domains/language/python/resolver/frameworks/types.ts`
-- NEW `src/core/domains/language/python/resolver/frameworks/framework-module.ts`
-- NEW `src/core/domains/language/python/resolver/frameworks/django.ts`
-- NEW `src/core/domains/language/python/resolver/frameworks/index.ts`
 - NEW
   `src/core/domains/language/python/walker/passes/python-class-body-fields.ts`
-- NEW `tests/core/domains/language/python/walker/class-body-field-types.test.ts`
 - MOD `src/core/domains/language/python/walker/walker.ts`
+- MOD `src/core/domains/language/python/resolver/python-receiver-type-ports.ts`
+- NEW `tests/core/domains/language/python/walker/class-body-field-types.test.ts`
+- NEW
+  `tests/core/domains/language/python/resolver/strategies/python-class-head-chain.test.ts`
 
-**Interfaces:**
+**The emit rule, three clauses and one absence.** In a CLASS BODY,
+`attr = <rhs>` where `attr` is a bare identifier and `<rhs>` is a call:
 
-```ts
-export interface PythonFrameworkVocabulary {
-  readonly framework: string;
-  /** Distribution names that activate this framework, PEP 503 normalised. */
-  readonly activatedBy: ReadonlySet<string>;
-  /** Module prefixes whose presence in a file's imports activate it with NO manifest. */
-  readonly importPrefixes: readonly string[];
-  /** `X.<verb>()` in a class body yields a manager type. `as_manager` yields X. */
-  readonly managerFactoryVerbs: ReadonlySet<string>;
-  /** `X.from_queryset(Q)()` yields Q rather than X. */
-  readonly querysetFactoryVerbs: ReadonlySet<string>;
-  /** `X()` in a class body yields X when X's short name ends with one of these. */
-  readonly managerClassSuffixes: readonly string[];
-  /** Declared by the project, or (no manifest at all) imported by this file. */
-  isActive(
-    manifest: string | undefined,
-    imports: readonly ImportRef[],
-  ): boolean;
-}
+| class-body RHS                             | fact     | evidence                                                                         |
+| ------------------------------------------ | -------- | -------------------------------------------------------------------------------- |
+| `<Name>()`, `<Name>` declared in this file | `<Name>` | the file DECLARES the class — the strongest claim a per-file pass can hold       |
+| `<Name>.as_manager()`, `<Name>` bound      | `<Name>` | Django's own QuerySet classmethod; the VERB carries the claim, so an import does |
+| anything else                              | none     | —                                                                                |
 
-export const PYTHON_FRAMEWORKS: readonly PythonFrameworkVocabulary[];
+The shape is the one RF.10's `self.f = <annotated param>` already emits: a bare
+type NAME into `classFieldTypes` (per file, class short name) and
+`classFieldTypesByClassKey` (run-global, `<relPath>::<dotted class FQ>`), which
+is the channel the RF.4/RF.10 MRO field walk reads for every linearized
+ancestor. Nothing downstream changes — that is the point of reusing the channel.
 
-/** The active frameworks for this project and file. Folded, never disjoined inline. */
-export function pythonActiveFrameworks(
-  manifest: string | undefined,
-  imports: readonly ImportRef[],
-): readonly PythonFrameworkVocabulary[];
-```
+**Why the two clauses take different evidence.** A plain construction `X()` has
+no verb, so the NAME carries the whole claim and only a class this file declares
+can back it. That is what declines `CharField()` — an import binding cannot tell
+`netbox.models.querysets` from `django.db.models`, and a per-file pass has no
+run-global `classAncestors` to ask. `as_manager` is Django's own spelling, so an
+import binding is enough in front of it; netbox reaches 26 project querysets
+that way and zero external ones.
+
+**Why anything else emits ABSENCE and never an external fact.**
+`objects = models.Manager()` is dotted, `CharField(…)` is not declared here, and
+`Manager.from_queryset(Q)()` calls a call. All three stay silent. The fold's
+stop-at-unknown-hop already yields an untyped receiver and `chainType` returns
+CONTINUE on one, so absence is byte-identical to today. A fact that resolves
+external would instead make `chainType` DROP, changing which strategy answers
+3,093 netbox rows for no measured gain.
+
+**The node outline, against the tree-sitter-python grammar.**
+`class_definition > body:block > expression_statement > assignment`, taking only
+DIRECT statements of the class body — an assignment inside a method binds a
+local, not class state. On the assignment: `left` must be `identifier`; a `type`
+field (PEP 526 `objects: Manager = …`) means the annotation facet owns it, so
+skip; `right` must be `call`. Then its `function`:
+
+- `attribute` whose `attribute` is `as_manager` and whose `object` is an
+  `identifier` ⇒ that identifier, when declared here or import-bound;
+- `identifier` ⇒ itself, when declared here;
+- anything else ⇒ `undefined`.
+
+**The seam the field fact needed, measured.** The fact alone is INERT.
+`ObjectType.objects.get_for_model(m)` splits to head `ObjectType`, link
+`objects`, and `propagateChain` seeds the head through `seedHead` — whose only
+arm is the module alias `mod.Cls()` — then falls back to `singleHopType`, whose
+class arm is OFF for `chainType` by design. A probe against the real strategy
+with the field fact present returned `continue`, so all 141 rows would have
+stayed missed.
+
+The fix is the chain-head HALF of that class arm, in `seedHead`:
+`pythonClassChainHeadSeed` types a bare CapWords head that resolves to a project
+file as `{form:"class"}` with `consumedMembers: 0`. It is narrow on both sides.
+`seedHead` is reached ONLY from `propagateChain`, so a single-hop `Cls.member()`
+receiver never sees it and keeps going to `importedName` — which is exactly what
+the `classHead` default protects and why flipping that option instead was
+rejected. And the seed is inert by construction: the first link goes straight to
+`memberTypeOf`, and stop-at-unknown-hop unwinds the whole receiver unless that
+link has a real fact. A local binding on the same name wins, since a rebound
+name is a value rather than the class.
 
 **Steps:**
 
-- [ ] `frameworks/types.ts` — the interface above, with a doc paragraph naming
-      the Ruby precedent: typed array registry, one module file per framework,
-      the engine folds over it (`.claude/rules/resolver-architecture.md`, the
-      "No inline disjunction over data constants" and "Registry is a typed
-      array" sections).
-- [ ] `frameworks/framework-module.ts` — the factory. The activation decision
-      lives here ONCE so no module restates it:
-
-```ts
-export function definePythonFrameworkVocabulary(
-  framework: string,
-  data: Omit<PythonFrameworkVocabulary, "framework" | "isActive">,
-): PythonFrameworkVocabulary {
-  return Object.freeze({
-    framework,
-    ...data,
-    isActive: (manifest, imports) => {
-      // A manifest is EVIDENCE IN BOTH DIRECTIONS: a project that declares its
-      // dependencies and does not name this framework is not using it, whatever
-      // one file's imports say. Only a project with NO manifest at all — polar,
-      // whose manifests are nested one directory below the root — falls back to
-      // the file's own imports, and there a `django.` import IS the evidence.
-      const declared = dependencyNamesOf(manifest);
-      if (declared.size > 0) {
-        for (const name of data.activatedBy)
-          if (declared.has(name)) return true;
-        return false;
-      }
-      return imports.some((imp) =>
-        data.importPrefixes.some(
-          (prefix) =>
-            imp.importText === prefix ||
-            imp.importText.startsWith(prefix + "."),
-        ),
-      );
-    },
-  });
-}
-```
-
-- [ ] `frameworks/django.ts` — the data. Task 3 appends three more facets to
-      this same object; nothing here is provisional.
-
-```ts
-/**
- * Django's receiver vocabulary (bd tea-rags-mcp-9fgdi, E3 increment 1).
- *
- * `managerClassSuffixes` is a NAMING CONVENTION and is deliberately narrow. All
- * nine of netbox's manager classes end in `Manager` — `ObjectTypeManager`,
- * `CustomFieldManager`, `ContactGroupManager`, `UserManager`, `GroupManager`,
- * `IPAddressManager`, `ScriptModuleManager`, `ModuleBayManager`, `TreeManager` —
- * and every `.as_manager()` receiver ends in `QuerySet`. The convention costs
- * little when wrong: the fact it produces is a receiver TYPE, and every answer
- * downstream still has to pin a real symbol on that type's MRO or say nothing.
- */
-export const DJANGO_VOCABULARY = definePythonFrameworkVocabulary("django", {
-  activatedBy: new Set(["django"]),
-  importPrefixes: ["django"],
-  managerFactoryVerbs: new Set(["as_manager"]),
-  querysetFactoryVerbs: new Set(["from_queryset"]),
-  managerClassSuffixes: ["Manager", "QuerySet"],
-});
-```
-
-- [ ] `frameworks/index.ts` — the typed registry and the fold. One line per
-      framework; no consumer ever writes an inline disjunction.
-
-```ts
-export const PYTHON_FRAMEWORKS: readonly PythonFrameworkVocabulary[] =
-  Object.freeze([DJANGO_VOCABULARY]);
-
-export function pythonActiveFrameworks(
-  manifest: string | undefined,
-  imports: readonly ImportRef[],
-): readonly PythonFrameworkVocabulary[] {
-  return PYTHON_FRAMEWORKS.filter((framework) =>
-    framework.isActive(manifest, imports),
-  );
-}
-```
-
-- [ ] Write
-      `tests/core/domains/language/python/walker/class-body-field-types.test.ts`
-      first, RED. Parse real Python with `tree-sitter-python` the way the
-      neighbouring walker tests do, and assert on the two returned maps. The
-      cases, each a shape measured on netbox:
-
-| source                                                                  | `byShortName` entry                                                   |
-| ----------------------------------------------------------------------- | --------------------------------------------------------------------- |
-| `class Site(Model):\n    objects = RestrictedQuerySet.as_manager()`     | `{ Site: { objects: "RestrictedQuerySet" } }`                         |
-| `class ObjectType(Model):\n    objects = ObjectTypeManager()`           | `{ ObjectType: { objects: "ObjectTypeManager" } }`                    |
-| `class MB(Model):\n    _objects_raw = TreeManager()`                    | `{ MB: { _objects_raw: "TreeManager" } }`                             |
-| `class X(Model):\n    objects = Manager.from_queryset(RQS)()`           | `{ X: { objects: "RQS" } }`                                           |
-| `class X(Model):\n    objects = models.Manager()`                       | **nothing** (`Manager` is not the class's own short name — see below) |
-| `class X(Model):\n    name = CharField(max_length=1)`                   | **nothing** (no suffix match)                                         |
-| `class X(Model):\n    objects = []`                                     | **nothing** (RHS not a call)                                          |
-| `class X:\n    def f(self):\n        objects = Manager()`               | **nothing** (not a class BODY assignment)                             |
-| `class Outer:\n    class Inner(Model):\n        objects = FooManager()` | `byClassKey["p.py::Outer.Inner"]`, not `Outer`                        |
-
-      Plus: `dependencyManifest` naming no django ⇒ the walker emits nothing at
-      all; a file with no manifest and no `django` import ⇒ nothing; the
-      existing `self.x = Foo()` facts are UNCHANGED in both channels when the
-      gate is on and when it is off.
-
-- [ ] `walker/passes/python-class-body-fields.ts` — pure, no gate inside it.
-      Mirrors `collectPythonClassFieldTypesByClassKey`'s scope walk so the two
-      channels can never disagree about nesting, and returns BOTH maps from one
-      pass (the colocation rule: every field of a structure populated in one
-      place).
-
-```ts
-export interface PythonClassBodyFieldTypes {
-  /** `shortClassName -> field -> typeName`, the per-file channel. */
-  readonly byShortName: Record<string, Record<string, string>>;
-  /** `<relPath>::<dotted class FQ> -> field -> typeName`, the run-global one. */
-  readonly byClassKey: Record<string, Record<string, string>>;
-}
-
-/**
- * Manager and queryset attributes declared in a CLASS BODY (bd
- * tea-rags-mcp-9fgdi, E3 increment 1) — `objects = RestrictedQuerySet.as_manager()`
- * on `NetBoxModel`, `objects = ObjectTypeManager()` on `ObjectType`.
- *
- * The existing field collectors read `self.<field> = …` inside a method, which
- * is where Python binds INSTANCE state. A Django manager is bound in the class
- * body instead, so nothing read it and `Model.objects` was untyped on hop 1 of
- * the chain fold: 141 of netbox's 148 `chain` misses, all of them resolving on
- * the manager class's own method once the receiver is typed.
- *
- * Attribution is to the INNERMOST enclosing class, and the field name is taken
- * verbatim — netbox uses `objects` on 37 models and `_objects_raw` on one, and
- * nothing here special-cases either spelling.
- *
- * Deliberately silent on `objects = models.Manager()`: the RHS names Django's
- * own default manager, and a fact for it would make the chain fold DROP where
- * the call currently falls through to a later strategy. Absence keeps that path
- * byte-identical. The suffix test below is what declines it — `Manager` is
- * rejected because it is the SUFFIX itself and not a longer name ending in it.
- */
-export function collectPythonClassBodyFieldTypes(
-  root: AstNode,
-  relPath: string,
-  vocabularies: readonly PythonFrameworkVocabulary[],
-): PythonClassBodyFieldTypes;
-```
-
-- [ ] The RHS reader, the one gate both maps share (the shape
-      `pythonSelfFieldType` has in `walker.ts`). Three accepted forms, and the
-      evidence differs per form:
-
-```ts
-/**
- * `<Name>.as_manager()` | `<Name>()` | `<Name>.from_queryset(<Q>)()` read off
- * ONE assignment node, or `undefined`.
- *
- * The evidence is the VERB where there is one and the NAME where there is not.
- * `as_manager` and `from_queryset` are Django's own spellings, so any CapWords
- * receiver in front of them is accepted. A plain construction `<Name>()` has no
- * verb, so the name carries the whole claim: its short name must END with a
- * `managerClassSuffixes` entry and be STRICTLY LONGER than it. That second
- * clause is what declines `models.Manager()` and `QuerySet()` — Django's own
- * classes, whose members the fold must not look for in the project.
- */
-function pythonClassBodyFieldType(
-  node: AstNode,
-  vocabularies: readonly PythonFrameworkVocabulary[],
-): { readonly field: string; readonly type: string } | undefined;
-```
-
-      Body outline, to be written against the tree-sitter-python grammar:
-      accept `node.type === "assignment"`; require `left.type === "identifier"`
-      (a class-body attribute; `self.x` and subscripts are other collectors');
-      require `right.type === "call"`; then match the callee:
-
-      1. callee is a `call` whose own callee is an `attribute` named by
-         `querysetFactoryVerbs` ⇒ the type is the FIRST positional argument of
-         the INNER call, when that argument is a CapWords identifier or dotted
-         name (`Manager.from_queryset(RQS)()` ⇒ `RQS`).
-      2. callee is an `attribute` whose attribute name is in
-         `managerFactoryVerbs` ⇒ the type is `lastSegment(object.text)`, when
-         that is CapWords (`RestrictedQuerySet.as_manager()` ⇒
-         `RestrictedQuerySet`).
-      3. callee is an `identifier` or `attribute` ⇒ take
-         `lastSegment(callee.text)`; accept only when some vocabulary's
-         `managerClassSuffixes` has an entry `s` with
-         `name.endsWith(s) && name.length > s.length`.
-
-      Everything else returns `undefined`. `vocabularies` is folded with
-      `.some(...)`, never disjoined inline.
-
-- [ ] Wire it into `walker.ts`. The gate is evaluated ONCE per file, right after
-      `imports` is collected, and the facts merge INTO the existing channels so
-      the MRO field walk needs no change at all:
-
-```ts
-// bd tea-rags-mcp-9fgdi (E3 increment 1) — Django binds a model's manager in
-// the CLASS BODY (`objects = RestrictedQuerySet.as_manager()`), which no
-// `self.<field>` collector can see. Gated per project by the dependency
-// manifest, per file by its imports when there is no manifest, so a project
-// that does not use the framework walks byte-identically.
-const frameworks = pythonActiveFrameworks(input.dependencyManifest, imports);
-const classBodyFields =
-  frameworks.length === 0
-    ? undefined
-    : collectPythonClassBodyFieldTypes(
-        input.tree.rootNode,
-        input.relPath,
-        frameworks,
-      );
-```
-
-      then merge, AFTER the two existing collectors have run and BEFORE the
-      emit-only-non-empty guards, with the class-body fact yielding to an
-      explicit `self.<field>` one (a constructor assignment is the narrower
-      statement about an instance):
-
-```ts
-for (const [key, fields] of Object.entries(
-  classBodyFields?.byShortName ?? {},
-)) {
-  classFieldTypes[key] = { ...fields, ...(classFieldTypes[key] ?? {}) };
-}
-for (const [key, fields] of Object.entries(classBodyFields?.byClassKey ?? {})) {
-  classFieldTypesByClassKey[key] = {
-    ...fields,
-    ...(classFieldTypesByClassKey[key] ?? {}),
-  };
-}
-```
-
-      Note the spread ORDER — the new facts go in FIRST so an existing
-      `self.<field>` fact overwrites them. That keeps every pre-task answer
-      exactly as it was.
-
-- [ ] `PythonExtractInput` gains `dependencyManifest?: string`, forwarded from
-      `WalkInput` by the same line that forwards `gemfileContent` in the Ruby
-      walker. Python's `index.ts` composes its walker through
-      `composeExtractionWalker`, so no pass signature changes.
-
-- [ ] Turn the new test file GREEN. `npx tsc --noEmit` clean.
+- [ ] Write both test files first, RED. Walker cases, each a shape measured on
+      netbox: `objects = SiteQuerySet.as_manager()` ⇒ `objects: SiteQuerySet`;
+      `objects = ObjectTypeManager()` with the manager declared in the file ⇒
+      `objects: ObjectTypeManager`; `_objects_raw = TreeManager()` keeps the
+      field name verbatim; `objects = models.Manager()`,
+      `name = models.CharField(…)`, a bare `CharField()` this file does not
+      declare, `Manager.from_queryset(RQS)()`, `objects = []` and a
+      non-identifier LHS all emit NOTHING; an assignment in a method body is not
+      a class body; a nested class keys `byClassKey` as `Outer.Inner`; a
+      `self.<field>` assignment for the same field WINS; existing `self.<field>`
+      facts are unchanged in both channels. Resolver cases:
+      `ObjectType.objects.get_for_model(…)` resolves to
+      `ObjectTypeManager#get_for_model`; the same through a base class in
+      another file via the MRO walk; inert with no fact, inert when the head is
+      not a project class, inert when a local shadows the head.
+- [ ] `walker/passes/python-class-body-fields.ts` — pure, returns BOTH maps from
+      ONE pass (the colocation rule), scope tracked through every named
+      container so `byClassKey` spells a nested class the way `classAncestors`
+      does.
+- [ ] Wire into `walker.ts` AFTER the two existing collectors and BEFORE the
+      emit-only-non-empty guards. The class-body facts spread FIRST so an
+      explicit `self.<field>` fact overwrites them — a constructor assignment is
+      the narrower statement about an instance, and reversing the order would
+      silently retype every field a class declares twice.
+- [ ] `python-receiver-type-ports.ts` — split `pythonSeedHead` into the existing
+      module-alias arm plus `pythonClassChainHeadSeed`, in that order.
+- [ ] Turn both test files GREEN. `npm run type-check` clean, eslint
+      `--max-warnings 0`, prettier.
 - [ ] **Row-level oracle A/B, five corpora.** BEFORE = the pre-task tree, same
-      worker count; the dump drivers and diff script live under
-      `/Users/artk0re/.claude/jobs/dffe3647/tmp/flask-lost/`, the headline
-      analyzer under `/Users/artk0re/.claude/jobs/dffe3647/tmp/rf9/`. Expected,
-      and each row is a gate:
+      worker count. Expected, and each row is a gate:
 
 | corpus | expected                                                                                                              |
 | ------ | --------------------------------------------------------------------------------------------------------------------- |
 | netbox | `chain` recall 0.403 → **≈0.97** (141 `missed` → `match`); phantom and wrongFile unchanged; `agreeExternal` unchanged |
 | ugnest | **0 rows changed** — the canary (decision 4)                                                                          |
-| polar  | 0 rows changed (no root manifest, no `django.` imports)                                                               |
+| polar  | 0 rows changed                                                                                                        |
 | flask  | 0 rows changed                                                                                                        |
 | httpx  | 0 rows changed                                                                                                        |
 
-- [ ] **Gross `lost` 0.** Diff the row SETS, not the totals: every row whose
-      BEFORE verdict was `match` must still be `match`, and no `agreeExternal`
-      may become `phantom` or `wrongFile` on any corpus.
+- [ ] **Gross `lost` 0.** Diff the row SETS, not the totals.
 - [ ] **Chain-tally drift 0 on all five.** `edges` rises on netbox by the new
       answers; `chainDrift` must read 0.
-- [ ] **Perf A/B on netbox**, two runs each side: wall ≤ +25 %, RSS ≤ +20 %. The
-      scan is one extra pass over class bodies in files that already parse, so
-      the expectation is inside noise.
-- [ ] **Ruby parity 0** — `walker.ts` is Python's, but `WalkInput` is shared.
-      Ruby walker and resolver suites green, no test edits.
-- [ ] `npm run test:coverage` exit 0.
+- [ ] **Perf A/B on netbox**, min of two runs each side: wall ≤ +25 %, RSS ≤ +20
+      %.
+- [ ] **Ruby parity 0** — `ruby-walker-composition-parity` and, because a shared
+      resolver file changes, `ruby-resolver-parity`.
 - [ ] Commit:
-      `feat(language): type Django manager attributes from class-body assignments (9fgdi)`.
+      `feat(language): type manager attributes from class-body assignments (xpl83)`.
 
 ---
 
-## Task 3 — The Django receiver vocabulary and the two fold arms
+## Task 3 — The Django receiver vocabulary and the two fold arms (DEFERRED → E4)
 
 Zero measured recall (decision 2). It ships for edge density on the rows jedi
 cannot score, and it carries the remove clause from decision 8. Task 2's recall
@@ -1363,21 +1211,14 @@ return undefined;
 
 **Steps:**
 
-- [ ] **Walker version 4 → 5** (decision 10). In `python/capability.ts`, add to
-      the comment block above `versions` and bump the integer:
+- [ ] **Walker version stays 4**, per the revision under the decision record.
+      Decision 10's reasoning holds for a RELEASED walker, and 4 is not one: it
+      is unreleased relative to `main`, so the merge that ships this recomputes
+      every index that could ever have read walker-4 output. A bump would emit a
+      reindex hint against a version no user index carries.
 
-```ts
-  // walker 5: bd tea-rags-mcp-9fgdi (E3 increment 1) — CLASS-BODY assignments
-  // now contribute to `classFieldTypes` / `classFieldTypesByClassKey`:
-  // `objects = RestrictedQuerySet.as_manager()` types `Model.objects`. A file
-  // walked by walker 4 carries no such field, so every `Model.objects.<m>()`
-  // site in it stays untyped until the codegraph layer is recomputed.
-  versions: { chunking: 1, walker: 5, codegraphSchema: 2 },
-```
-
-      Extend `codegraph.tech` with the two new mechanisms, in the same clause
-      style the existing string uses: class-body manager attribute typing, and a
-      dependency-manifest-gated Django receiver vocabulary. Then
+      Extend `codegraph.tech` with the one new mechanism, in the same clause
+      style the existing string uses: class-body manager attribute typing. Then
       `npm run gen:lang-compat` and commit the regenerated rule file and README
       block alongside — the drift-guard test fails CI otherwise.
 
@@ -1391,18 +1232,19 @@ return undefined;
   channels as `self.<field> = …`, and they merge UNDERNEATH: a constructor
   assignment for the same field name wins. Reversing the spread order silently
   retypes every field a class declares twice.
-- The class-body reader runs only when a framework vocabulary is active
-  (`pythonActiveFrameworks`), which is a per-PROJECT decision from the
-  dependency manifest with a per-FILE import fallback. A project with a manifest
-  that does not name the framework is NEVER activated by its imports — a
-  declared manifest is evidence in both directions.
+- The class-body reader emits only on project-class EVIDENCE — a class this file
+  declares, or an import-bound name in front of Django's `as_manager` verb.
+  Anything else is silent rather than external: an external fact makes
+  `chainType` DROP where the call falls through today. There is no manifest gate
+  and no framework registry to consult.
 ```
 
-- [ ] **`domains/language/CLAUDE.md`**, in the section that lists what the
-      kernel owns, add one line for `kernel/dependency-manifest.ts`: it is the
-      language-neutral manifest reader and memo, root-only by design, and it is
-      where `gemfileContent` converges when Ruby is relocated. Link, do not
-      restate, the resolver-architecture rule for the registry shape.
+- [ ] **`domains/language/CLAUDE.md`** — nothing to add in increment 1. The
+      kernel gains no file; the line about `kernel/dependency-manifest.ts` moves
+      to E4 with Task 1. (SUPERSEDED, kept for the E4 record: it is the
+      language-neutral manifest reader and memo, root-only by design, and where
+      `gemfileContent` converges when Ruby is relocated. Link, do not restate,
+      the resolver-architecture rule for the registry shape.)
 
 - [ ] **Record the next increment's measurement, so it is not re-derived.**
       Append to the program spec's "Decision records", verbatim:
