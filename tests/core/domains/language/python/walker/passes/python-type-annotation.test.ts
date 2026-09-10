@@ -52,6 +52,17 @@ const CASES: [string, TypeRef | undefined][] = [
   ["Annotated[Foo, Depends()]", instance("Foo")],
   ["Awaitable[Foo]", instance("Foo")],
   ["QuerySet[Foo]", instance("QuerySet")],
+  // SQLAlchemy's `Mapped[T]` is transparent: the column's VALUE is a T, and a
+  // receiver typed `Mapped` names a class no project declares (bd
+  // tea-rags-mcp-w205u, E4.2a).
+  ["Mapped[Tiers]", instance("Tiers")],
+  ["Mapped[EncryptedString | None]", { form: "union", members: [instance("EncryptedString"), { form: "nil" }] }],
+  ["Mapped[list[Order]]", { form: "container", element: instance("Order") }],
+  ['Mapped["Customer"]', instance("Customer")],
+  ["Mapped[dict[str, Address]]", { form: "container", element: instance("Address") }],
+  ["Mapped[datetime]", instance("datetime")],
+  // The BARE wrapper names no receiver, exactly as bare `Annotated` does.
+  ["Mapped", undefined],
   ["None", { form: "nil" }],
   ["Any", undefined],
   ["object", undefined],
@@ -140,6 +151,10 @@ describe("pythonNominalReceiverName — the single-arm gate", () => {
     ["Optional[Foo]", "Foo"],
     ["Foo | None", "Foo"],
     ["type[Foo]", "Foo"],
+    // The collapse the `ivar` channel depends on: polar's
+    // `slack_app.py:97 Mapped[EncryptedString | None]` is resolvable only if the
+    // wrapper is gone before the single-arm gate runs (bd tea-rags-mcp-w205u).
+    ["Mapped[EncryptedString | None]", "EncryptedString"],
   ])("answers for %j — one reachable nominal arm", (annotation, expected) => {
     const ref = pythonTypeRefFromText(annotation);
     expect(ref).toBeDefined();

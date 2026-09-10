@@ -102,6 +102,15 @@ export function extractFromPythonFile(input: PythonExtractInput): FileExtraction
   for (const [key, fields] of Object.entries(classBodyFields.byClassKey)) {
     classFieldTypesByClassKey[key] = { ...fields, ...(classFieldTypesByClassKey[key] ?? {}) };
   }
+  // bd tea-rags-mcp-w205u, E4.6c — the fields whose RHS is a CALL, recorded as
+  // the callee SPELLING because the walker cannot know what it returns. Built
+  // AFTER the class-body merge above, so a field any of the three type
+  // collectors answered for is excluded on this file's final type map.
+  const classFieldCallResults = collectPythonClassFieldCallResults(
+    input.tree.rootNode,
+    input.relPath,
+    classFieldTypesByClassKey,
+  );
   const trackTypes = pythonLocalTypeTrackingEnabled();
   // Innermost-chunk attribution: ONE owning chunk per call site — the smallest
   // containing range, ties broken by deeper scope (bd tea-rags-mcp-invuy;
@@ -162,6 +171,7 @@ export function extractFromPythonFile(input: PythonExtractInput): FileExtraction
   if (Object.keys(classAncestors).length > 0) out.classAncestors = classAncestors;
   if (Object.keys(classFieldTypes).length > 0) out.classFieldTypes = classFieldTypes;
   if (Object.keys(classFieldTypesByClassKey).length > 0) out.classFieldTypesByClassKey = classFieldTypesByClassKey;
+  if (Object.keys(classFieldCallResults).length > 0) out.classFieldCallResults = classFieldCallResults;
   // bd tea-rags-mcp-xpl83.3 — the names this file's `from` statements bind, so
   // the import mapper can walk past a package that re-exports rather than
   // declares. Absent when the file has none, like every other optional channel.
@@ -380,11 +390,127 @@ function pythonSelfFieldType(inner: AstNode): { readonly field: string; readonly
   // the generous lowercase behavior — its resolver path DROPS rather than
   // emitting an external best-effort, so no phantom can arise there.)
   const right = inner.childForFieldName("right");
-  if (right?.type !== "call") return undefined;
-  const fnNode = right.childForFieldName("function");
+  const ctor = right === null ? undefined : pythonFieldRhsCall(right);
+  if (ctor === undefined) return undefined;
+  const fnNode = ctor.childForFieldName("function");
   if (!fnNode) return undefined;
   const typeName = extractConstructorTypeName(fnNode);
   return typeName && isCapWordsConstructor(typeName) ? { field: fieldName, type: typeName } : undefined;
+}
+
+/**
+ * The CALL an assignment's right-hand side denotes, unwrapping the two guarded
+ * fallback forms (bd tea-rags-mcp-w205u, E4.6c). `undefined` for everything
+ * else, which is what keeps a literal, a lambda and a subscript out.
+ *
+ * Both forms are deterministic reads, not widenings. `param or Default()` is
+ * Python's default-argument idiom: the left side is a bare name whose own type
+ * this scan does not know, and the right side is the only thing in the
+ * expression that names anything — so `A() or B()` (two competing claims) and
+ * `a or b` (no claim) both decline. A ternary declines unless BOTH arms call
+ * the same callee, because a union is not a receiver and the engine never
+ * widens (`kernel/return-inference.ts`, decision 3).
+ */
+function pythonFieldRhsCall(right: AstNode): AstNode | undefined {
+  if (right.type === "call") return right;
+  if (right.type === "boolean_operator") {
+    if (right.childForFieldName("operator")?.text !== "or") return undefined;
+    const left = right.childForFieldName("left");
+    const fallback = right.childForFieldName("right");
+    return left?.type === "identifier" && fallback?.type === "call" ? fallback : undefined;
+  }
+  if (right.type === "conditional_expression") {
+    // No field names on this node: `[consequence, condition, alternative]`.
+    const [consequence, , alternative] = right.namedChildren;
+    if (consequence?.type !== "call" || alternative?.type !== "call") return undefined;
+    const a = consequence.childForFieldName("function");
+    const b = alternative.childForFieldName("function");
+    return a !== null && b !== null && a.text === b.text ? consequence : undefined;
+  }
+  return undefined;
+}
+
+/**
+ * `self.<field> = <call>` where the call names no class — the callee SPELLING,
+ * for the resolver to fold against its run-global return types (bd
+ * tea-rags-mcp-w205u, E4.6c). See
+ * {@link FileExtraction.classFieldCallResults}.
+ *
+ * A field {@link pythonSelfFieldType} already answers for is NOT recorded here:
+ * a declared or constructed type is the narrower statement, and the caller
+ * enforces that across the whole class rather than per assignment.
+ */
+function pythonSelfFieldCallee(inner: AstNode): { readonly field: string; readonly callee: string } | undefined {
+  if (inner.type !== "assignment") return undefined;
+  if (inner.childForFieldName("type") !== null) return undefined;
+  const lhs = inner.childForFieldName("left");
+  if (lhs?.type !== "attribute") return undefined;
+  const obj = lhs.childForFieldName("object");
+  const attr = lhs.childForFieldName("attribute");
+  if (obj?.type !== "identifier" || obj.text !== "self" || attr === null) return undefined;
+  const right = inner.childForFieldName("right");
+  const call = right === null ? undefined : pythonFieldRhsCall(right);
+  if (call === undefined) return undefined;
+  const fnNode = call.childForFieldName("function");
+  // An identifier (`make_thing`) or a dotted attribute (`Repo.from_session`,
+  // `self._init_transport`). A subscripted or otherwise computed callee names
+  // nothing a lookup can start from.
+  const callable =
+    fnNode !== null && (fnNode.type === "identifier" || fnNode.type === "attribute" || fnNode.type === "dotted_name");
+  if (!callable) return undefined;
+  return { field: attr.text, callee: fnNode.text };
+}
+
+/**
+ * {@link pythonSelfFieldCallee} over every class body, under the same
+ * `<relPath>::<dotted class FQ>` key {@link collectPythonClassFieldTypesByClassKey}
+ * writes and the same innermost-class attribution.
+ *
+ * `typed` is the type channel's answer for the same class, and a field in it is
+ * skipped outright. A field two assignments give DIFFERENT callees is dropped
+ * rather than resolved last-write-wins: the two spellings return two types, and
+ * a field that holds either is not evidence for a receiver.
+ */
+function collectPythonClassFieldCallResults(
+  root: AstNode,
+  relPath: string,
+  typed: Record<string, Record<string, string>>,
+): Record<string, Record<string, string>> {
+  const seen: Record<string, Record<string, string | null>> = {};
+  const walkScope = (node: AstNode, scope: readonly string[], classFq: string | undefined): void => {
+    const isContainer = node.type === "class_definition" || node.type === "function_definition";
+    const nameNode = isContainer ? node.childForFieldName("name") : null;
+    if (nameNode) {
+      const childScope = [...scope, nameNode.text];
+      const childClassFq = node.type === "class_definition" ? childScope.join(".") : classFq;
+      const body = node.childForFieldName("body");
+      for (const child of body ? body.children : node.children) walkScope(child, childScope, childClassFq);
+      return;
+    }
+    if (classFq !== undefined) {
+      const found = pythonSelfFieldCallee(node);
+      if (found !== undefined) {
+        const key = `${relPath}::${classFq}`;
+        const fields = (seen[key] ??= {});
+        // `null` is the conflict marker; once set it never goes back.
+        fields[found.field] = found.field in fields && fields[found.field] !== found.callee ? null : found.callee;
+      }
+    }
+    for (const child of node.children) walkScope(child, scope, classFq);
+  };
+  walkScope(root, [], undefined);
+
+  const out: Record<string, Record<string, string>> = {};
+  for (const [key, fields] of Object.entries(seen)) {
+    const typedFields = typed[key] ?? {};
+    const kept: Record<string, string> = {};
+    for (const [field, callee] of Object.entries(fields)) {
+      if (callee === null || field in typedFields) continue;
+      kept[field] = callee;
+    }
+    if (Object.keys(kept).length > 0) out[key] = kept;
+  }
+  return out;
 }
 
 /**

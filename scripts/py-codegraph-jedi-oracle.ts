@@ -264,6 +264,9 @@ export async function walkCorpus(
   // `<relPath>::<class FQ>` → field → type — the run-global field address the
   // MRO fold reads a base class's fields from (bd tea-rags-mcp-f0xaa).
   const classFieldTypesByClassKey: Record<string, Record<string, string>> = {};
+  // The same address for a field assigned from a CALL, carrying the callee
+  // SPELLING the resolver folds one level (bd tea-rags-mcp-w205u, E4.6c).
+  const classFieldCallResults: Record<string, Record<string, string>> = {};
   // `relPath` → the names its `from` statements bind — what lets the import
   // mapper walk past a package that re-exports rather than declares (xpl83.3).
   const moduleReexports: Record<string, readonly ModuleReexport[]> = {};
@@ -296,6 +299,9 @@ export async function walkCorpus(
     Object.assign(classAncestors, extraction.classAncestors ?? {});
     for (const [classKey, fields] of Object.entries(extraction.classFieldTypesByClassKey ?? {})) {
       classFieldTypesByClassKey[classKey] = { ...classFieldTypesByClassKey[classKey], ...fields };
+    }
+    for (const [classKey, fields] of Object.entries(extraction.classFieldCallResults ?? {})) {
+      classFieldCallResults[classKey] = { ...classFieldCallResults[classKey], ...fields };
     }
     if (extraction.moduleReexports) moduleReexports[relPath] = extraction.moduleReexports;
     // `() => null` mirrors the sink: the cone reads ancestors by fqName, and
@@ -365,6 +371,7 @@ export async function walkCorpus(
         functionReturnTypes,
         classAncestors,
         classFieldTypesByClassKey,
+        classFieldCallResults,
         moduleReexports,
         hierarchy,
         instantiatedTypes,

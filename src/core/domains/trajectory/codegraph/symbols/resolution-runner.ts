@@ -50,6 +50,7 @@ interface ResolverInputs {
   structuredReturnTypes: CallContext["structuredReturnTypes"];
   classFieldTypes: CallContext["classFieldTypes"];
   classFieldTypesByClassKey: CallContext["classFieldTypesByClassKey"];
+  classFieldCallResults: CallContext["classFieldCallResults"];
   moduleReexports: CallContext["moduleReexports"];
 }
 
@@ -263,6 +264,10 @@ export class CallEdgeResolutionRunner {
       // file (bd tea-rags-mcp-f0xaa). A run whose walkers never wrote it hands
       // the resolver an empty map, which every reader treats as absent.
       classFieldTypesByClassKey: state.classFieldTypesByClassKey,
+      // Its call-assigned sibling, run-global for the same reason (bd
+      // tea-rags-mcp-w205u, E4.6c). Empty ⇒ the resolver's last field read is
+      // skipped outright, which is the pre-channel path.
+      classFieldCallResults: state.classFieldCallResults,
       // Run-global for the same reason (bd tea-rags-mcp-xpl83.3): the mapper is
       // asked about a package the CALLER does not own, so this file's own list
       // could never answer. An empty map reads as absent to its only reader.
@@ -314,6 +319,10 @@ export class CallEdgeResolutionRunner {
       ivarTypes: inputs.ivarTypes,
       structuredReturnTypes: inputs.structuredReturnTypes,
       moduleReexports: inputs.moduleReexports,
+      // bd tea-rags-mcp-w205u, E4.6c — a field assigned from a CALL, keyed by the
+      // declaring class. Absent ⇒ pythonInheritedMemberType stops where it did.
+      classFieldCallResults: inputs.classFieldCallResults,
+      classFieldTypesByClassKey: inputs.classFieldTypesByClassKey,
       gemfileContent: this.runState.gemfileContent,
       projectRoot: this.runState.projectRoot,
     };
@@ -459,6 +468,15 @@ export class CallEdgeResolutionRunner {
       // mapper walk past a package `__init__.py` that re-exports the name
       // instead of declaring it. Empty ⇒ the mapper stops exactly where it did.
       moduleReexports: inputs.moduleReexports,
+      // bd tea-rags-mcp-w205u, E4.6c — a field assigned from a CALL, keyed by the
+      // declaring class. Absent ⇒ pythonInheritedMemberType stops where it did.
+      classFieldCallResults: inputs.classFieldCallResults,
+      // bd tea-rags-mcp-f0xaa — the field TYPE channel under the same address.
+      // `ResolverInputs` has carried it since f0xaa and no `CallContext` literal
+      // copied it in, so production read it as absent while both measurement
+      // harnesses built it: every oracle number since f0xaa was measured with
+      // this arm live. Threading it makes production agree with the instrument.
+      classFieldTypesByClassKey: inputs.classFieldTypesByClassKey,
       classAncestors: inputs.ancestors,
       compactDeclaredClasses: this.runState.compactClasses,
       gemfileContent: this.runState.gemfileContent,

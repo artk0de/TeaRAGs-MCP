@@ -207,7 +207,32 @@
   the short-name map exactly as before — which is what lets a field declared by
   an ANCESTOR's `__init__` type a `self.<attr>` receiver at all. Both field
   collectors share one `self.<field>` reader so the two addresses cannot
-  disagree about a type.
+  disagree about a type. **`ResolverInputs` carries `classFieldTypesByClassKey`
+  but no `CallContext` literal in `resolution-runner.ts` copies it in**, so
+  `ctx` reads it as absent and the qualified arm is dead in production — the MRO
+  walk currently answers through the SHORT-name map only. Found while wiring
+  E4.6c; unfixed here because activating it moves an unmeasured mechanism.
+- **A field assigned from a CALL is a spelling, not a type.**
+  `classFieldCallResults` (`<relPath>::<dottedFq> → field → callee spelling`) is
+  what the walker writes when it cannot name a class —
+  `self.payment_repo = PaymentRepository.from_session(s)`,
+  `self._provider = provider or get_geo_provider()`,
+  `self._transport = self._init_transport(…)`. `pythonInheritedMemberType` folds
+  it LAST, after both type channels miss on the class and on every ancestor, and
+  ONE level: each arm re-enters the declared-member read, never the exported
+  entry point, so a callee whose own return is itself a field call is silence.
+  Three spellings and no fourth — a bare project function, `Cls.method` on a
+  class that resolves into the project (its `-> Self` naming the RECEIVER
+  class), and `self.<method>`.
+- **A field with a type fact is never also a call-result fact, and a conflict is
+  neither.** The walker excludes a field the type channels already answered for,
+  and DROPS a field two methods assign from different callees rather than taking
+  the last write — two spellings return two types, and a field that holds either
+  is not evidence for a receiver.
+- **A guarded fallback RHS still names a class.** `param or Default()` types
+  from the RIGHT operand (the left is a bare name with no competing claim), and
+  a ternary types only when BOTH arms call the same callee. `A() or B()` and
+  `A(x) if p else B(y)` are unions and decline — the engine never widens.
 - **A member is looked up through the field type's MRO, not verbatim.**
   `resolvePythonMemberOnTypeThroughMro` owns the two steps between a type NAME
   and the C3 walk (name → file, file + name → class key); `selfField`,
@@ -408,14 +433,26 @@
   candidate on absent evidence. A `@property` is not marked in any way — an
   attribute read is not a call site, so no `CallRef` ever reaches its signature.
 - **The class-body reader emits only on project-class EVIDENCE, and is SILENT
-  rather than external otherwise.** A bare `X()` needs `X` declared in THIS
-  file; `X.as_manager()` also accepts an import-bound name, because there
-  Django's own verb rather than the name carries the claim.
-  `objects = models.Manager()` and `name = CharField(…)` emit NOTHING. Why: an
-  external fact makes `chainType` DROP where the call falls through to a later
-  strategy today, so absence — which leaves the receiver untyped and `chainType`
-  on CONTINUE — is what keeps that path byte-identical. There is no manifest
-  gate and no framework registry to consult.
+  rather than external otherwise.** A bare `X()` and `X.as_manager()` both take
+  `declared ∪ importBound` — an import binding is enough because the emitted
+  fact is a NAME, not an edge, and `resolveTypeFile` still has to place it in
+  the project (widened for polar's `_client = SlackClient()`, E4.6c; it was
+  declared-only until then). `objects = models.Manager()` emits NOTHING: the
+  receiver of the dot is a module and nothing per-file can say which one. Why
+  the silence matters: an external fact makes `chainType` DROP where the call
+  falls through to a later strategy today, so absence — which leaves the
+  receiver untyped and `chainType` on CONTINUE — is what keeps that path
+  byte-identical. There is no manifest gate and no framework registry to
+  consult.
+- **A `Mapped[T]` annotation is TRANSPARENT, and that is a language-level
+  reading rather than a framework one.** SQLAlchemy 2.0's declarative column
+  states "this attribute holds a T" exactly as `ClassVar[T]` does, so `Mapped`
+  sits in `PYTHON_TRANSPARENT_FIRST` beside `Annotated` / `Final` / `InitVar`
+  and bare `Mapped` in `PYTHON_DECLINED_TYPE_NAMES`. Nested forms fall out of
+  the existing rules — `Mapped[list[T]]` is a container of `T`,
+  `Mapped["Customer"]` unquotes. An unknown generic base still keeps the BASE
+  (`QuerySet[Foo]` is a `QuerySet`); `Mapped` is the exception the annotation
+  states outright.
 
 ### Mechanics
 

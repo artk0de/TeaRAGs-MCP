@@ -652,6 +652,21 @@ const PYTHON_TRANSPARENT_FIRST: ReadonlySet<string> = new Set([
 - [ ] Commit:
       `feat(language): unwrap SQLAlchemy Mapped[T] as a transparent annotation (w205u)`.
 
+### Measured — E4.2a (2026-09-11)
+
+Shipped in `5ad0cbffc`, inside E4.6c's worktree and measured in ITS A/B — the
+full record, including the four pyright-confirmed `oracleWrongMapped` rows the
+unwrap exposes, is in
+`docs/superpowers/plans/2026-09-10-python-e4-6-typed-residuals.md` → **Measured
+— E4.6c**. Headline: polar's `transparentWrapper` family 9 → 3 and its
+`untypedFieldHop` 82 → 43 (jointly with E4.6c's four reads), phantom Δ +0.007 pp
+from the four oracle-wrong rows and 0.000 pp elsewhere, gross lost 0,
+`chainDrift` 0, and 0 rows changed on ugnest / flask / httpx / netbox from the
+`Mapped` entries — those corpora carry no `Mapped` annotation, exactly as this
+task predicted. The class-body facts do reach the channel a resolver reads:
+`models/checkout.py::Checkout {payment_processor: PaymentProcessor, …}`,
+`models/meter.py::Meter {aggregation: Aggregation, …}`.
+
 ---
 
 ## Task E4.2b — The dependency-manifest facility (bead `w205u.1`)

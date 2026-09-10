@@ -450,6 +450,20 @@ export class CodegraphRunState {
   classFieldTypesByClassKey: Record<string, Record<string, string>> = {};
 
   /**
+   * Per-run aggregation of `FileExtraction.classFieldCallResults` (bd
+   * tea-rags-mcp-w205u, E4.6c). `"<relPath>::<dotted class FQ>" → field →
+   * callee SPELLING` for the fields a walker cannot type, folded ONE level
+   * against `structuredReturnTypes` at resolve time.
+   *
+   * Same lifecycle and same key shape as `classFieldTypesByClassKey`, and for
+   * the same reason: the key already names the declaring file, so a union
+   * across files cannot conflate two same-named classes. NOT persisted — it
+   * rides walker 5's unreleased delta, and an index without it resolves exactly
+   * as it did before.
+   */
+  classFieldCallResults: Record<string, Record<string, string>> = {};
+
+  /**
    * Per-run collection of `FileExtraction.moduleReexports`, keyed by the relPath
    * of the file that wrote each list (bd tea-rags-mcp-xpl83.3). The import
    * mapper reads it to answer "which file DECLARES this name" past a package
@@ -999,6 +1013,7 @@ export class CodegraphRunState {
       this.instantiatedTypes.clear();
       this.ivarTypes = {};
       this.classFieldTypesByClassKey = {};
+      this.classFieldCallResults = {};
       this.moduleReexports = {};
       this.structuredReturnTypes = {};
       this.dispatchTables = {};
@@ -1164,6 +1179,7 @@ export class CodegraphRunState {
     this.instantiatedTypes.clear();
     this.ivarTypes = {};
     this.classFieldTypesByClassKey = {};
+    this.classFieldCallResults = {};
     this.moduleReexports = {};
     this.structuredReturnTypes = {};
     this.dispatchTables = {};
@@ -1202,6 +1218,7 @@ export class CodegraphRunState {
     this.instantiatedTypes.clear();
     this.ivarTypes = {};
     this.classFieldTypesByClassKey = {};
+    this.classFieldCallResults = {};
     this.moduleReexports = {};
     this.structuredReturnTypes = {};
     this.dispatchTables = {};
@@ -1299,6 +1316,13 @@ export class CodegraphRunState {
     if (extraction.classFieldTypesByClassKey) {
       for (const [classKey, fields] of Object.entries(extraction.classFieldTypesByClassKey)) {
         this.classFieldTypesByClassKey[classKey] = { ...this.classFieldTypesByClassKey[classKey], ...fields };
+      }
+    }
+    // Its call-assigned sibling (bd tea-rags-mcp-w205u, E4.6c) — same key, same
+    // union, and the same reason no language gate is needed.
+    if (extraction.classFieldCallResults) {
+      for (const [classKey, fields] of Object.entries(extraction.classFieldCallResults)) {
+        this.classFieldCallResults[classKey] = { ...this.classFieldCallResults[classKey], ...fields };
       }
     }
     // The file's `from` statements, verbatim under its own path (bd
