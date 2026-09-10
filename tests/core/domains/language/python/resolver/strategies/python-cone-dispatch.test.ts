@@ -93,12 +93,19 @@ describe("PythonCallResolver.resolveDispatch (CHA cone)", () => {
     expect(out).toEqual([]);
   });
 
-  it("returns [] when the receiver has no local binding (external never cones)", () => {
+  it("emits no CONE edge when the receiver has no local binding (external never cones)", () => {
+    // bd tea-rags-mcp-w205u (E4.1.3): the cone's answer here is still `[]` — `pet`
+    // has no binding, so `T` is undefined — but `resolveDispatch` is now the
+    // composed `[cone, dynamic]` stack, and an untyped bare name with two
+    // in-project owners of `speak` is precisely what the `dynamic` component
+    // answers. The claim this case pins is the cone's, so it is asserted on the
+    // edgeKind rather than on the composed emptiness.
     const symbolTable = tableWith(animalBase, dog);
     const out = edgesOf(
       resolver.resolveDispatch(call, ctx({ symbolTable, hierarchy: hierarchyWith({ Animal: ["Dog"] }) })),
     );
-    expect(out).toEqual([]);
+    expect(out.some((edge) => edge.edgeKind === "cone")).toBe(false);
+    expect(out.map((edge) => edge.edgeKind)).toEqual(["dynamic", "dynamic"]);
   });
 
   it("returns [] when no hierarchy view is wired", () => {
