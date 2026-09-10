@@ -13,7 +13,7 @@
 
 import type { DispatchRef, DispatchTable } from "./codegraph-dispatch.js";
 import type { InheritanceEdgeDecl } from "./codegraph-hierarchy.js";
-import type { LocalBinding } from "./codegraph-local-binding.js";
+import type { CallResultBinding, LocalBinding } from "./codegraph-local-binding.js";
 import type { AritySignature, KwargSignature, RelPath, SymbolId } from "./codegraph-symbols.js";
 import type { RubyTypeRef } from "./language.js";
 
@@ -387,6 +387,20 @@ export interface ChunkExtraction {
    * Plain Record (NOT Map) for NDJSON-spill round-trip, same as localBindings.
    */
   localCallBindings?: Record<string, string>;
+  /**
+   * Per-chunk `varName → CallResultBinding[]` — the locals assigned from a call
+   * whose RETURN TYPE the walker cannot know, recorded as the callee SPELLING
+   * for the resolver to fold (bd tea-rags-mcp-z68v9). See
+   * {@link CallResultBinding} for why this is a second channel beside
+   * `localCallBindings` rather than a widening of it.
+   *
+   * Populated by the Python walker under `CODEGRAPH_PY_LOCAL_TYPE_TRACKING`,
+   * for single-identifier targets only: tuple unpacking, a chained or
+   * subscripted callee, and a module-level assignment are all omitted.
+   *
+   * Plain Record (NOT Map) for NDJSON-spill round-trip, same as localBindings.
+   */
+  callResultBindings?: Record<string, CallResultBinding[]>;
   /**
    * Positional-arity envelope of the method definition this chunk represents
    * (bd xlnub). Populated by the Ruby walker for `method` / `singleton_method`

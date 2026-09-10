@@ -16,7 +16,7 @@ import type { DispatchFanoutOutcome, DispatchTableDef } from "./codegraph-dispat
 import type { CallRef, FileExtraction, ImportRef } from "./codegraph-extraction.js";
 import type { GraphEdges } from "./codegraph-graph.js";
 import type { HierarchyView } from "./codegraph-hierarchy.js";
-import type { LocalBinding } from "./codegraph-local-binding.js";
+import type { CallResultBinding, LocalBinding } from "./codegraph-local-binding.js";
 import type { GlobalSymbolTable, RelPath, SymbolId } from "./codegraph-symbols.js";
 import type { RubyTypeRef } from "./language.js";
 
@@ -248,6 +248,20 @@ export interface CallContext {
    * caller chunk's `localCallBindings`. bd tea-rags-mcp-6g9c.
    */
   localCallBindings?: Record<string, string>;
+  /**
+   * Per-chunk `varName → CallResultBinding[]` propagated from
+   * `ChunkExtraction.callResultBindings` (bd tea-rags-mcp-z68v9). A resolver
+   * folds the recorded callee SPELLING at resolve time — the only layer where a
+   * cross-file return type and the callee's MRO are both in scope — and types
+   * the local from what that fold yields. Read via
+   * {@link nearestCallResultBinding} at the call's `startLine`, so a
+   * reassignment shadows an earlier binding for every call below it.
+   *
+   * Set by the provider per-call from the caller chunk's own extraction; there
+   * is no run-global merge, because a local's binding is meaningless outside
+   * the body that established it.
+   */
+  callResultBindings?: Record<string, CallResultBinding[]>;
   /**
    * Run-global `functionName → declaredReturnTypeName` map propagated from
    * `FileExtraction.functionReturnTypes` (merged across all pass-1 files so

@@ -26,6 +26,7 @@ import {
   type AncestorClosure,
   type AncestorLinearizer,
 } from "../../../kernel/ancestor-walk.js";
+import { propagateReceiverType, type ReceiverTypePorts } from "../../../kernel/receiver-type-propagation.js";
 import { PYTHON_BUILTINS } from "../../vocabulary/builtins.js";
 import type { PythonImportFileMapper } from "../python-import-file-mapper.js";
 import { mapPythonImportToFile } from "../python-path-mapper.js";
@@ -543,4 +544,39 @@ export function resolvePythonMemberOnType(
   // one level up (the type was already checked above).
   const parent = ctx.classExtends?.[bareType];
   return parent ? walkClassExtendsForMethod(parent, member, ctx, mode) : null;
+}
+
+/**
+ * The type of the call a local was bound from — ONE hop (bd tea-rags-mcp-z68v9).
+ *
+ * The callee's receiver is folded by the shared chain engine (so
+ * `self.factory.build` works), then its return type is read off the class the
+ * fold produced, through the MRO — which is the whole point, since
+ * `SubscriptionRepository.from_session` is declared on `RepositoryBase`.
+ *
+ * A BARE callee (`build_client(…)`) reads `structuredReturnTypes` under the
+ * bare name, which is exactly the key a top-level `def` composes
+ * (`pythonStructuredReturnKey`), gated on the symbol table pinning exactly one
+ * project definition of that name. The channel is run-global and
+ * last-write-wins, so without that gate one `def get() -> Foo` would speak for
+ * every same-named `def` in the corpus — the collision that made Python drop
+ * `functionReturnTypes` outright.
+ *
+ * ONE hop by construction: the returned ref is never itself re-folded. A
+ * fixpoint over return types is a different seam and would need a cycle guard
+ * this does not have.
+ */
+export function pythonCallBindingType(
+  callee: string,
+  atLine: number,
+  ctx: CallContext,
+  ports: ReceiverTypePorts,
+): TypeRef | undefined {
+  const cut = callee.lastIndexOf(".");
+  if (cut < 0) {
+    return ctx.symbolTable.lookupByShortName(callee).length === 1 ? ctx.structuredReturnTypes?.[callee] : undefined;
+  }
+  const receiverType = propagateReceiverType(callee.slice(0, cut), atLine, ctx, ports);
+  if (receiverType === undefined) return undefined;
+  return ports.memberTypeOf(receiverType, callee.slice(cut + 1), ctx);
 }

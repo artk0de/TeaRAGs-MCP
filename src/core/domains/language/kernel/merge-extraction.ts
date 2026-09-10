@@ -31,7 +31,7 @@
  * drop a facet somebody added to the contract.
  */
 
-import type { ChunkExtraction, FileExtraction, LocalBinding } from "../../../contracts/types/codegraph.js";
+import type { ChunkExtraction, FileExtraction } from "../../../contracts/types/codegraph.js";
 
 /**
  * How one channel `K` of `TOwner` merges: the base's value (which may be absent)
@@ -70,11 +70,11 @@ function unionNestedBaseWins<V>(
  * unsorted concat would hand a call the pass's later binding purely because the
  * pass ran second.
  */
-function mergeLocalBindings(
-  base: Record<string, LocalBinding[]> | undefined,
-  pass: Record<string, LocalBinding[]>,
-): Record<string, LocalBinding[]> {
-  const out: Record<string, LocalBinding[]> = { ...(base ?? {}) };
+function mergeLocalBindings<T extends { readonly line: number }>(
+  base: Record<string, T[]> | undefined,
+  pass: Record<string, T[]>,
+): Record<string, T[]> {
+  const out: Record<string, T[]> = { ...(base ?? {}) };
   for (const [variable, incoming] of Object.entries(pass)) {
     const existing = out[variable];
     out[variable] = existing === undefined ? incoming : [...existing, ...incoming].sort((a, b) => a.line - b.line);
@@ -90,6 +90,10 @@ const CHUNK_EXTRACTION_MERGE_RULEBOOK: ExtractionMergeRulebook<ChunkExtraction> 
   calls: (base, pass) => [...base, ...pass],
   localBindings: (base, pass) => mergeLocalBindings(base, pass),
   localCallBindings: (base, pass) => unionBaseWins(base, pass),
+  // Same position-aware read as `localBindings`, so the same union-and-re-sort
+  // (bd tea-rags-mcp-z68v9): an unsorted concat would hand a call the pass's
+  // later binding purely because the pass ran second.
+  callResultBindings: (base, pass) => mergeLocalBindings(base, pass),
   // Scalars: the base's answer stands; a pass may only FILL one the walker left
   // absent. `??` and not a truthiness test — `acceptsBlock: false` is a proven
   // non-yielder, not a missing value.

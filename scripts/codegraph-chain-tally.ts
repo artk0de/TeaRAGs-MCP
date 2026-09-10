@@ -324,6 +324,7 @@ function buildCallContext(
     symbolTable,
     classFieldTypes: extraction.classFieldTypes,
     localBindings: chunk.localBindings,
+    callResultBindings: chunk.callResultBindings,
     classExtends: channels.classExtends,
     structuredReturnTypes: channels.structuredReturnTypes,
     functionReturnTypes: channels.functionReturnTypes,

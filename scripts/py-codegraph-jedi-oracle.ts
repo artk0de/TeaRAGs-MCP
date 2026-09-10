@@ -200,6 +200,7 @@ export async function walkCorpus(corpusRoot: string, limit: number, quiet: boole
         symbolTable,
         classFieldTypes: extraction.classFieldTypes,
         localBindings: chunk.localBindings,
+        callResultBindings: chunk.callResultBindings,
         classExtends,
         structuredReturnTypes,
         functionReturnTypes,

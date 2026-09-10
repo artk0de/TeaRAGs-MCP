@@ -58,6 +58,7 @@ function pythonSingleHopType(
   atLine: number,
   ctx: CallContext,
   mapper: PythonImportFileMapper,
+  classHead: boolean,
 ): TypeRef | undefined {
   if (receiver === "self") {
     const enclosing = ctx.callerScope[ctx.callerScope.length - 1];
@@ -69,7 +70,16 @@ function pythonSingleHopType(
     return { form: "instance", name: bare };
   }
   const bound = resolveLocalBinding(ctx.localBindings, receiver, atLine);
-  return bound === undefined ? undefined : { form: "instance", name: bound.type };
+  if (bound !== undefined) return { form: "instance", name: bound.type };
+  // A bare class name in receiver position: `Repo.from_session(…)` — CLASS
+  // form, so `memberTypeOf` reads the `Cls.member` spelling a `@classmethod`
+  // produces. Gated on the class resolving to a PROJECT file: `os.Path` in a
+  // project that never imports `os` is not evidence, it is a coincidence of
+  // capitalisation.
+  if (!classHead) return undefined;
+  return PYTHON_CLASS_HEAD.test(receiver) && resolveTypeFile(receiver, ctx, mapper) !== null
+    ? { form: "class", name: receiver }
+    : undefined;
 }
 
 /**
@@ -146,14 +156,24 @@ function pythonMemberTypeOf(
  * site compiles untouched and keeps the own-class-only read; the cache itself
  * answers `undefined` on an index carrying no `classAncestors`, so the pre-seam
  * behaviour is a property of the CONTEXT rather than of the caller.
+ *
+ * `options.classHead` opts into the bare-class receiver arm and defaults OFF
+ * (bd tea-rags-mcp-z68v9). `Repo.member()` reaching `chainType` with that arm
+ * on would be answered THERE, one pass earlier than `importedName` and through
+ * the weaker legacy `classExtends` walk rather than the MRO — a strict
+ * downgrade on a receiver kind already sitting at 1,297/1,309 on polar. The arm
+ * therefore belongs to the one consumer with no other way to type a callee's
+ * receiver; see {@link createPythonCallBindingPorts}.
  */
 export function createPythonReceiverTypePorts(
   mapper: PythonImportFileMapper,
   linearizers?: PythonAncestorLinearizerCache,
+  options: { readonly classHead?: boolean } = {},
 ): ReceiverTypePorts {
+  const classHead = options.classHead ?? false;
   return Object.freeze({
     singleHopType: (receiver: string, atLine: number, ctx: CallContext): TypeRef | undefined =>
-      pythonSingleHopType(receiver, atLine, ctx, mapper),
+      pythonSingleHopType(receiver, atLine, ctx, mapper, classHead),
     seedHead: (
       head: string,
       firstLink: string | undefined,
@@ -163,4 +183,22 @@ export function createPythonReceiverTypePorts(
       pythonMemberTypeOf(recv, member, ctx, mapper, linearizers),
     maxHops: pythonMaxHops,
   });
+}
+
+/**
+ * The ports the call-binding fold uses — {@link createPythonReceiverTypePorts}
+ * plus the bare-class receiver arm (bd tea-rags-mcp-z68v9).
+ *
+ * `repository = SubscriptionRepository.from_session(session)` is 338 of polar's
+ * 470 `localVar` misses, and its callee's receiver is a bare CLASS name. No
+ * other consumer needs that arm — every other receiver a chain folds is a
+ * `self`, a constructor call or a local — and turning it on globally would move
+ * `Cls.member()` sites off `importedName`. One extra frozen object per
+ * resolver buys that separation.
+ */
+export function createPythonCallBindingPorts(
+  mapper: PythonImportFileMapper,
+  linearizers?: PythonAncestorLinearizerCache,
+): ReceiverTypePorts {
+  return createPythonReceiverTypePorts(mapper, linearizers, { classHead: true });
 }
