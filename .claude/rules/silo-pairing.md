@@ -8,6 +8,7 @@ paths:
   - "src/core/domains/language/ruby/resolver/type-propagation.ts"
   - "src/core/domains/trajectory/codegraph/symbols/run-state.ts"
   - "src/core/domains/trajectory/codegraph/symbols/self-dispatch-discovery.ts"
+  - "src/core/domains/trajectory/codegraph/symbols/resolution-runner.ts"
   - "src/core/adapters/embeddings/onnx/daemon-types.ts"
   - "src/core/adapters/embeddings/ollama/errors.ts"
 ---
@@ -58,6 +59,12 @@ file scan. Re-run quarterly.
 - `src/core/adapters/embeddings/onnx/daemon-types.ts` — fanIn 2,
   transitiveImpact 10
 - `src/core/adapters/embeddings/ollama/errors.ts` — fanIn 1, transitiveImpact 10
+- `src/core/domains/trajectory/codegraph/symbols/resolution-runner.ts` — fanIn 3
+  (popular), transitiveImpact 22. Added 2026-09-10 from a SINGLE measurement,
+  not a refresh: it surfaced under `dangerous` while scanning a branch's own
+  footprint (`blameDominantAuthorPct` 100, `blameContributorCount` 1), and it
+  clears both listing criteria. Everything else on this list still carries its
+  2026-08-08 numbers.
 
 The Ruby type-propagation cluster is the concentration worth noticing: six of
 the ten files, all one owner, all feeding the same resolver. Epic
@@ -67,6 +74,12 @@ than a side effect.
 **This list is a floor, not a census.** It comes from a top-30 ownership scan,
 so a deep-silo file outside that window is absent rather than cleared. Widen the
 scan when the next refresh runs.
+
+`resolution-runner.ts` is the worked example of that floor being real rather
+than rhetorical: it met both criteria and was simply outside the top-30 window,
+and it took a branch-scoped risk scan a month later to notice. A refresh is
+overdue — treat the entry above as one data point, not as evidence the rest is
+current.
 
 ### Removed at the 2026-08-08 refresh
 
