@@ -710,17 +710,49 @@ E4.0.1 writes throwaway scripts under `scripts/spikes/` and they are NOT kept.
 What ships out of it is a filled-in decision below, naming the engine, the
 measured numbers behind the choice, and the third outcome if it applies.
 
-### D7 — second-oracle choice: **pending E4.0.1**
+### D7 — second-oracle choice: **pyright** (measured 2026-09-10, `52163fa2e`)
 
-To be written here by the E4.0.1 executor, in this shape:
+Chosen: **pyright**. On polar's parso-degraded files — 102 of 107 inside the
+production walk, 12,494 sites / 12,491 distinct keys, 22.0 % of the walk's
+56,710 — pyright answers 10,964/12,491 (87.8 %): 4,717 in-project (37.8 %, 4,616
+symbol-pinned) and 6,247 external. Determinism **byte-identical over two runs,
+different 0**; **2.2 s per 1k sites**; peak server RSS 1,967 MB. Agreement with
+jedi on the 500-site both-parse sample (seed 20260910): **132/132 = 100.0 %**
+where both answer in-project, 85.4 % on origin over all 500, 0 disagreements.
 
-```text
-Chosen: <pyright | ty | neither>. Measured on polar's parso-degraded files
-(<N> files, <N> sites): answerable <n>/<N> (<pct>), determinism <byte-identical |
-diverged on N rows>, wall <s> per 1k sites, agreement with jedi on the 500-site
-both-parse sample <pct> (<n> disagreements, classified). Rejected <other>
-because <one measured reason>. Versions: <tool> <version>, node <v>, python <v>.
-```
+Rejected **ty 0.0.80** on one measured reason: 28 of those 500 rows where jedi
+answers in-project read `sitePackages` under ty, every one under
+`sdk/python/polar/**` — polar's in-repo SDK resolved to the installed
+`polar_sdk`, the duplicate-package trap `order_roots` / `build_sys_path` exist
+for (`vua9f`, `7dsyq`: 1,610 rows scored phantom). pyright's count is 1, and
+that one is the probe's column heuristic. Everything else favoured ty and none
+of it was decisive: 0.7 s per 1k, 412 MB, byte-identical, the same 4,717
+in-project answers (49 more symbol-pinned), 104/105 = 99.0 % agreement.
+
+The five opened disagreements: (1) `server/scripts/loadtest_setup.py:214`
+`run()` — jedi `setup#run`, pyright typeshed `asyncio.run`; **probe-wrong**, the
+client takes the first `run(` on the line and the row is the bare inner call, so
+E4.0.2 must carry a column. (2) `sdk/python/polar/v2026_04/client.py:60`
+`resolve_base_url()` and (3) `…/services/benefits.py:304` `send_request()` —
+jedi in-repo, ty `sitePackages`; **ty-wrong**, the shadow above, on the very
+file `vua9f` measured. (4) `dev/cli/cli.py:90` `check_env_file_exists()` — jedi
+`dev/cli/shared.py#…`, ty `dev/cli/cli.py:41`, the `from … import (` binding;
+**ty-wrong**, it stops at the binding where pyright takes the second hop. (5)
+`server/polar/backoffice/external_events/endpoints.py:193` `get_by_id()` on a
+`Repository.from_session(...)` receiver — jedi `unknown`, both engines
+`kit/repository/base.py#RepositoryIDMixin#get_by_id`; **jedi-wrong**, 11 rows of
+the sample carry it, and it is the class a second oracle adds.
+
+Versions: pyright 1.1.414
+(`npx --yes --package pyright@1.1.414 pyright-langserver --stdio`), ty 0.0.80
+`7fd8e1569` (`uvx ty@0.0.80 server`), node v24.14.1, jedi 0.20.0 / parso 0.8.7
+on CPython 3.14.0rc2 — both engines cache-local and pinned, neither installed
+globally. E4.0.2 must reproduce pyright's per-corpus config: `python.pythonPath`
+at the corpus venv, `python.analysis.pythonVersion` at the manifest's
+`oraclePython`, `python.analysis.extraPaths` at its declared roots,
+`VIRTUAL_ENV` in the child env — and answer `workspace/configuration` PER ITEM,
+since a one-element reply leaves the server on defaults and drove `unknown` from
+8.6 % to 50.4 %.
 
 ### D8 — family attribution table: **pending E4.0.4**
 
