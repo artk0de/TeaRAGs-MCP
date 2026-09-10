@@ -765,12 +765,82 @@ at the corpus venv, `python.analysis.pythonVersion` at the manifest's
 since a one-element reply leaves the server on defaults and drove `unknown` from
 8.6 % to 50.4 %.
 
-### D8 — family attribution table: **pending E4.0.4**
+### D8 — family attribution table (measured 2026-09-10, `181284b9e`)
 
-The ordered E4.1–E4.6 table with per-corpus `missed` counts, `edgesGained`
-counts for the zero-recall families, and the resulting execution order, written
-here by the E4.0.4 executor. Until it exists, the order in this document is the
-scope order, NOT the execution order.
+Five corpora, `--oracle merged --dispatch`, every residual row
+(`missed | fileOnly | wrongFile`) attributed to exactly one family by
+`scripts/lib/py-residual-families.ts`. `other` is **0 on every corpus**. Full
+tables, the receiverKind splits and the E3 cross-check are in the plan's E4.0.4
+measurement record.
+
+**THIS TABLE IS THE EXECUTION ORDER.** The scope order above is superseded.
+
+| #   | increment                            | families and their measured mass                                                                                     | rows         | why here                                                                                                                                                                                                                                                                            |
+| --- | ------------------------------------ | -------------------------------------------------------------------------------------------------------------------- | ------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1   | **E4.1** dispatch fan-out            | `untypedNameReceiver` 432, `unionBranchReceiver` 18, `protocolReceiver` 0                                            | **450**      | Largest recall mass by 133 rows AND the relocation override: the narrowers already exist in the kernel, so cost is bounded by a parity gate rather than by design. Both overrides point the same way.                                                                               |
+| 2   | **E4.6a** module-alias member        | `moduleAliasMember` 317                                                                                              | **317**      | Second-largest single family and the cheapest shape in the set — `from pkg import submodule` where the submodule is a private module the package re-exports (polar `_datatable` as `datatable`, netbox `layout`). One import-mapper arm, no framework knowledge.                    |
+| 3   | **E4.6b** bare calls and chain heads | `sameFileBareCall` 140, `constructorChainHead` 44, `callResultChainHead` 35, `crossFileBareCall` 31                  | **250**      | Four independent shapes on one seam (`globalShortName`'s gate and the call-result fold). `crossFileBareCall` is new: 31 rows the same-file arm cannot reach.                                                                                                                        |
+| 4   | **E4.6c** untyped field hop          | `untypedFieldHop` 111                                                                                                | **111**      | The named residual. Kept last inside E4.6 because it is what remains after the other three, exactly as the spec predicted.                                                                                                                                                          |
+| 5   | **E4.4** class-object and MRO        | `classObjectReceiver` 83, `superMro` 23, `typeVarGeneric` 0                                                          | **106**      | `cls(...)` / `Cls.method()` on an inherited member, plus the `super()` rows the chain resolves to the wrong base. `typeVarGeneric` measured 0 — the `-> Self` arm has no residual mass on these corpora and folds into this increment rather than earning its own.                  |
+| 6   | **E4.5** async and container forms   | `containerElementHop` 4, `asyncForm` 0                                                                               | **4**        | Below the 30-row bar. NOT an increment: fold `containerElementHop` into E4.6b's call-result fold and drop `asyncForm` until a corpus produces rows.                                                                                                                                 |
+| 7   | **E4.2** wrappers and vocabularies   | `transparentWrapper` 9 recall + 68 edges; `sqlalchemyRow` 0 recall / 2,872 edges; `pydanticRow` 0 recall / 223 edges | **9 recall** | The no-recall-mass override: 3,095 edge rows never outrank 450 recall rows, however large. Ships on `edgesGained` + the phantom-exposure bar, after every recall increment.                                                                                                         |
+| 8   | **E4.3** framework vocabularies      | `drfViewAttr` 0, `celeryEnqueue` 0, `djangoUrlRoute` 0, `pytestFixture` 4                                            | **4**        | Every arm measured 0 on these corpora and `pytestFixture` is 4 rows with tests walked. **Not worth an executor.** Fold what survives into E4.2's vocabulary arm and re-measure on a corpus that carries DRF or Celery — netbox is Django without DRF-heavy views, polar is FastAPI. |
+| —   | **OUT**                              | `runtimeOnly` 0 (2 with netbox's tests walked)                                                                       | 0            | Declared out of scope and measured at zero, which is the finding: computed `getattr` / metaclass dispatch is not a Python recall problem on these corpora.                                                                                                                          |
+
+**Below the bar.** Three increments fall under the 30-row threshold and are
+folded rather than scheduled: E4.5 (4 rows), E4.3 (4 rows), and E4.4's
+`typeVarGeneric` arm (0 rows). That removes two whole executors from the program
+and moves their mass into E4.6b and E4.2.
+
+**What the table changes about the spec's own order.** E4.6, written as the
+"three small, measured, independent shapes" increment, carries 678 rows — more
+than half the residual and more than E4.1. It splits into three scheduled
+increments. E4.2 and E4.3, written second and third, drop to last and to
+"folded". Nothing about E4.1 moves.
+
+### D9 — the oracle-disagreement audit: two new blind spots, and flask stands
+
+100 rows, seed 20260910, stratified over `phantom ∪ wrongFile` (207 rows) with
+flask taken as a full census. pyright answered every sampled site as tiebreaker.
+Classes and per-corpus counts are in the plan's E4.0.4 record; the three results
+this decision records are:
+
+1. **flask's 2.82 % is real fabrication, not an instrument reading.** All 11 of
+   its rows are `chainWrong`; nine are `open(path, mode)` resolved by
+   `globalShortName` to `FlaskClient#open`. `precisionMissAdjusted` = the raw
+   rate. E4 owns the bar.
+2. **netbox and httpx are almost entirely instrument.** Adjusted 0.31 % → 0.03 %
+   and 1.63 % → 0.00 %. polar 0.97 % → 0.68 % [0.57–0.77].
+3. **Two blind spots neither `applySuperMroBlindSpot` nor `oracleNonCallable`
+   covers**, found by reading: jedi answers nothing for a `@classmethod` on a
+   `StrEnum` / `IntEnum` subclass (18 rows), and it resolves polar's in-repo SDK
+   to the installed distribution through `server/polar/__init__.py`'s
+   `extend_path` (8 rows) — the same duplicate-package trap D7 rejected ty for,
+   on the other engine. `oracleWrongCache`, `oracleWrongSingleton`, `bothWrong`
+   and `undecidable` drew **zero** rows.
+
+A fourth result is a defect the audit found rather than a rate: **the chain
+fabricates edges ACROSS languages.** polar's `range(...)` resolves to a
+TypeScript `Paginator.tsx#range` and `GitHub()` to `Icons.tsx#GitHub`, through
+`globalShortName` and `importedName`. The harness builds one symbol table over
+every `CODEGRAPH_LANGUAGES` extension on purpose, and neither strategy checks
+the candidate's language. Tracked as its own bead; it is not an E4 family.
+
+The sample list, per corpus, class abbreviated `CW` = `chainWrong`, `OW:*` = the
+oracle-wrong classes:
+
+- **flask (11, all CW):** `examples/tutorial/flaskr/auth.py:27`,
+  `src/flask/app.py:443,445,465,467`, `src/flask/blueprints.py:126,128`,
+  `src/flask/cli.py:1022`, `src/flask/config.py:208,293`,
+  `src/flask/sansio/scaffold.py:46`.
+- **httpx (4, all OW:EnumClassmethod):** `httpx/_main.py:137`,
+  `httpx/_models.py:748,755,769`.
+- **netbox (12):** OW:Mro — `dcim/api/serializers_/devices.py:223`,
+  `dcim/models/cables.py:278,347,356,382`, `dcim/models/devices.py:1248,1338`,
+  `ipam/models/asns.py:59`, `ipam/models/vlans.py:113,318`,
+  `tenancy/models/tenants.py:54`; CW — `utilities/filters.py:42`.
+- **polar (73):** 51 CW, 14 OW:EnumClassmethod, 8 OW:ShadowedPackage. The full
+  list is `audit-sample-list.txt` under the E4.0.4 dumps.
 
 ---
 
