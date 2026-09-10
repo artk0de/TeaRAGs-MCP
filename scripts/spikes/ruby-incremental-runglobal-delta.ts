@@ -9,23 +9,29 @@
  * self-dispatch families by persisting them (`cg_pass1_aggregates`, migration
  * 021) and hydrating them at the barrier. The TYPE-INFERENCE family —
  * `structuredReturnTypes`, `ivarTypes`, `instantiatedTypes`, `dispatchTables`,
- * `callbackParams`, `paramNames`, `classField*` — was left batch-scoped on
- * purpose: those are per-METHOD, so persisting them grows the slice from
- * "proportional to classes" to "proportional to methods", and nothing in the
- * znxg8 field report implicated them.
+ * `callbackParams`, `paramNames`, `classField*` — was left batch-scoped on the
+ * grounds that those are per-METHOD, so persisting them would grow the slice
+ * from "proportional to classes" to "proportional to methods".
  *
- * This measures what that costs before anyone pays the row size for it. Both
- * sides walk the SAME working tree and resolve the SAME files against the SAME
- * project-wide symbol table; the only difference is which run-global maps the
- * barrier had:
+ * This harness is what tested that. Its `--ablate` sweep named the two channels
+ * that actually mattered (`structuredReturnTypes` 111 edges, `returnTypes` 20,
+ * everything else exactly 0) and its size read-out refuted the premise — the
+ * per-method map holds 6518 entries against 11099 per-class ancestry keys the
+ * slice already carried. Both are persisted as of bd tea-rags-mcp-8qyax, so a
+ * plain run now reads a residue rather than the original 168, and the sweep is
+ * kept as the instrument that says so — and that would catch a regression.
+ *
+ * Both sides walk the SAME working tree and resolve the SAME files against the
+ * SAME project-wide symbol table; the only difference is which run-global maps
+ * the barrier had:
  *
  *   FULL — every file absorbed, so every map is complete (the reference).
  *   INC  — only the batch absorbed, then `seal` hydrates the persisted pass-1
  *          slices for every OTHER file, exactly as production does.
  *
  * So the per-kind delta is attributable to the maps hydration does NOT carry.
- * A delta inside the noise floor closes the bead; a delta concentrated in one
- * receiver kind names the map worth persisting.
+ * A delta inside the noise floor means nothing is left worth persisting; a delta
+ * concentrated in one receiver kind names the map that is.
  *
  * Batches are contiguous slices at evenly spaced offsets rather than a random
  * sample: a real incremental run carries whatever files a commit touched, and
@@ -132,10 +138,12 @@ const rate = (s: KindSlice): number => s.resolved / Math.max(1, s.attempted - s.
  * today, so copying one family from the full run answers "what would persisting
  * exactly this recover?" without first building the persistence.
  *
- * `types` and `params` are grouped rather than split per map because they are
- * produced together by the walker's type-source chain — persisting one without
- * the other is not a shipping option, so measuring them apart would name a fix
- * nobody could take.
+ * `types` is the coarse family kept for continuity with the first sweep;
+ * `sret` / `fret` / `ivar` split it, and the split is what made the result
+ * actionable — the three turned out to be independent (111 + 20 + 0), so two
+ * shipped and one did not. `params` stays grouped because its members are
+ * derived from each other at `seal` and handing over a subset would measure a
+ * state no run can be in.
  */
 const ABLATIONS = ["none", "types", "sret", "fret", "ivar", "rta", "dispatch", "params", "all"] as const;
 type Ablation = (typeof ABLATIONS)[number];
@@ -147,11 +155,14 @@ type Ablation = (typeof ABLATIONS)[number];
  */
 function ablate(inc: CodegraphRunState, full: CodegraphRunState, which: Ablation): void {
   const wants = (family: Ablation): boolean => which === "all" || which === family;
-  // `types` is the coarse family; `sret` and `ivar` split it, because the two
-  // halves cost very different amounts to persist — `structuredReturnTypes` is
-  // keyed per METHOD (the row-size objection this bead exists to weigh), while
-  // `ivarTypes` is keyed per CLASS, the same granularity the existing pass-1
-  // slice already carries.
+  // The three `types` halves are handed over separately because they cost very
+  // different amounts to persist and, as it turned out, buy very different
+  // amounts: `structuredReturnTypes` is keyed per METHOD (6518 entries on
+  // taxdome, 111 edges), `returnTypes` per function name (2597, 20 edges), and
+  // `ivarTypes` per CLASS — the cheapest of the three and worth nothing, though
+  // only because taxdome's map is EMPTY (no type source emits `kind:"ivar"`
+  // there, bd wr7ku). Re-run `--ablate ivar` on an ivar-annotated corpus before
+  // reading that zero as a verdict on the map itself.
   if (wants("types") || wants("sret")) {
     Object.assign(inc.structuredReturnTypes, full.structuredReturnTypes);
   }
