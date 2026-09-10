@@ -78,6 +78,8 @@ interface ImportMapperMemo {
   answers: Map<string, ImportFileTarget>;
   /** `<file> <name>` -> the file that DECLARES it, or `null` for "cannot tell". */
   declarers: Map<string, RelPath | null>;
+  /** `<file> <name>` -> the file the package ALIASES it to as a module, or `null`. */
+  moduleAliases: Map<string, RelPath | null>;
 }
 
 /**
@@ -179,6 +181,65 @@ export class PythonImportFileMapper implements ImportFileMapper {
   }
 
   /**
+   * Which FILE the package at `relPath` binds `name` to as a MODULE, or `null`
+   * (bd tea-rags-mcp-w205u, E4.6a).
+   *
+   * {@link PythonImportFileMapper.resolveExportedName} answers "which file
+   * DECLARES this name" and requires a SYMBOL to exist. A package that writes
+   * `from . import _datatable as datatable` declares no symbol at all: the name
+   * denotes a sibling MODULE, and the answer is that module's file. polar's
+   * `server/polar/backoffice/components/__init__.py` is that shape and 259 call
+   * sites read a member off it.
+   *
+   * Same channel (`ctx.moduleReexports`), same hop budget, same cycle guard,
+   * different terminator — a file rather than a declaration. Deterministic
+   * throughout: an explicit alias names exactly ONE module, so there is nothing
+   * to pick between. Stars carry no `sourceName` and are skipped rather than
+   * dereferenced; a star re-exports NAMES, and which module a starred name came
+   * from is `resolveExportedName`'s unanimity question, not this one.
+   */
+  resolveExportedModule(relPath: RelPath, name: string, ctx: CallContext): RelPath | null {
+    if (name.length === 0 || name === "*") return null;
+    const memo = this.memoFor(ctx.symbolTable);
+    const key = `${relPath} ${name}`;
+    const cached = memo.moduleAliases.get(key);
+    if (cached !== undefined) return cached;
+    const answer = this.followModuleAlias(relPath, name, ctx, 0, new Set([relPath]));
+    memo.moduleAliases.set(key, answer);
+    return answer;
+  }
+
+  /** One hop of {@link PythonImportFileMapper.resolveExportedModule}; see its contract. */
+  private followModuleAlias(
+    relPath: RelPath,
+    name: string,
+    ctx: CallContext,
+    depth: number,
+    visited: Set<RelPath>,
+  ): RelPath | null {
+    if (depth >= MAX_REEXPORT_HOPS) return null;
+    const entries = ctx.moduleReexports?.[relPath];
+    if (entries === undefined) return null;
+    for (const entry of entries) {
+      if (entry.exportedName !== name || entry.sourceName === undefined) continue;
+      // Composed exactly as `receiverModuleText` composes, so `.` + `_datatable`
+      // is `._datatable` and never `.._datatable` — a leading-dot module text
+      // that gained a separator would climb a package.
+      const text = entry.sourceModule.endsWith(".")
+        ? `${entry.sourceModule}${entry.sourceName}`
+        : `${entry.sourceModule}.${entry.sourceName}`;
+      const direct = this.mapImportToFile(text, relPath, ctx);
+      if (direct.kind === "project" && !visited.has(direct.relPath)) return direct.relPath;
+      // The alias points at another PACKAGE that aliases further.
+      const source = this.stepToSource(relPath, entry.sourceModule, ctx, visited);
+      if (source === null) continue;
+      const hit = this.followModuleAlias(source, entry.sourceName, ctx, depth + 1, visited);
+      if (hit !== null) return hit;
+    }
+    return null;
+  }
+
+  /**
    * The project file one re-export entry points at, or `null` when it leaves the
    * project or has already been walked.
    *
@@ -214,6 +275,7 @@ export class PythonImportFileMapper implements ImportFileMapper {
       containingRoots: new Map(),
       answers: new Map(),
       declarers: new Map(),
+      moduleAliases: new Map(),
     };
     this.memos.set(table, fresh);
     return fresh;

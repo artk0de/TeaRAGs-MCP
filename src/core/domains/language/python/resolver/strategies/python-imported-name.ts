@@ -351,6 +351,21 @@ export class PythonImportedNameSymbolResolutionStrategy implements SymbolResolut
    * declared in two files under `ui/` declines the barrel hop, falls through
    * here, and composes the non-module text `ui.Button`. DROPping that would
    * reverse the ex28m rule that an ambiguous barrel beats a coin flip.
+   *
+   * The SECOND arm is the package that re-exports a SUBMODULE under the bound
+   * name rather than owning a file spelled that way (bd tea-rags-mcp-w205u,
+   * E4.6a). polar's `components/__init__.py` opens
+   * `from . import _datatable as datatable`, so the composed
+   * `..components.datatable` names no file and 259 sites reading
+   * `datatable.DatatableAttrColumn(…)` exhaust the whole chain. The binding's
+   * own module IS the package; what the receiver denotes is the file that
+   * package aliased. `declaringFile` cannot answer it — the package declares no
+   * symbol at all — so `resolveExportedModule` is asked instead, and it is
+   * deterministic: an explicit alias names exactly ONE module.
+   *
+   * Reached ONLY after the composed text has failed to pin a member, so every
+   * site that resolves today resolves to the same target. A `pkg` that is not a
+   * project file, or a name the package does not alias, keeps the CONTINUE.
    */
   private resolveModuleReceiver(
     binding: PythonImportBinding,
@@ -359,9 +374,16 @@ export class PythonImportedNameSymbolResolutionStrategy implements SymbolResolut
   ): SymbolResolutionOutcome {
     if (!call.receiver) return CONTINUE; // a bare call names no module
     const mapped = this.mapper.mapImportToFile(receiverModuleText(binding), ctx.callerFile, ctx);
-    if (mapped.kind !== "project") return CONTINUE;
-    const target = this.moduleMemberTarget(call.member, mapped.relPath, ctx);
-    return target ? resolved(target) : CONTINUE;
+    if (mapped.kind === "project") {
+      const target = this.moduleMemberTarget(call.member, mapped.relPath, ctx);
+      if (target) return resolved(target);
+    }
+    const pkg = this.mapper.mapImportToFile(binding.imp.importText, ctx.callerFile, ctx);
+    if (pkg.kind !== "project") return CONTINUE;
+    const aliased = this.mapper.resolveExportedModule(pkg.relPath, binding.importedName, ctx);
+    if (aliased === null) return CONTINUE;
+    const viaAlias = this.moduleMemberTarget(call.member, aliased, ctx);
+    return viaAlias ? resolved(viaAlias) : CONTINUE;
   }
 
   /**

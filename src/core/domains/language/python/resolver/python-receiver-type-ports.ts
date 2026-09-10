@@ -106,12 +106,23 @@ function pythonSingleHopType(
  * `x = Foo(); x.run()` on one line, which no evidence asks for. `line <= atLine`
  * in the shared lookup stays exactly as it is — the retry simply asks it for the
  * line before, so a name bound EARLIER in the body keeps that earlier type.
+ *
+ * The window is the STATEMENT, not its first line (bd tea-rags-mcp-w205u,
+ * E4.6a). netbox's `layout = layout.Layout(\n    layout.Row(…))` puts the inner
+ * receivers on lines 205, 206, 212 against a binding at 204, and a same-line
+ * test sees none of them — 50 more rows of the identical shape. `endLine` is
+ * the extent the walker records; ABSENT it degenerates to the same-line test it
+ * replaces, so an index written by an earlier walker behaves exactly as before.
+ *
+ * The retry asks for `bound.line - 1` rather than `atLine - 1`: at line 210
+ * against a binding at 204, the line before the CALL still finds the very
+ * binding being demoted.
  */
 function pythonBindingInForceAt(receiver: string, atLine: number, ctx: CallContext): LocalBinding | undefined {
   const bound = resolveLocalBinding(ctx.localBindings, receiver, atLine);
-  if (bound?.line !== atLine) return bound;
+  if (bound === undefined || atLine > (bound.endLine ?? bound.line)) return bound;
   if (findPythonImportBinding(ctx.imports, receiver) === null) return bound;
-  return resolveLocalBinding(ctx.localBindings, receiver, atLine - 1);
+  return resolveLocalBinding(ctx.localBindings, receiver, bound.line - 1);
 }
 
 /**
