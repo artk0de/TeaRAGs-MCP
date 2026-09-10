@@ -351,6 +351,21 @@ export class PythonImportedNameSymbolResolutionStrategy implements SymbolResolut
    * declared in two files under `ui/` declines the barrel hop, falls through
    * here, and composes the non-module text `ui.Button`. DROPping that would
    * reverse the ex28m rule that an ambiguous barrel beats a coin flip.
+   *
+   * The SECOND arm is the package that re-exports a SUBMODULE under the bound
+   * name rather than owning a file spelled that way (bd tea-rags-mcp-w205u,
+   * E4.6a). polar's `components/__init__.py` opens
+   * `from . import _datatable as datatable`, so the composed
+   * `..components.datatable` names no file and 259 sites reading
+   * `datatable.DatatableAttrColumn(…)` exhaust the whole chain. The binding's
+   * own module IS the package; what the receiver denotes is the file that
+   * package aliased. `declaringFile` cannot answer it — the package declares no
+   * symbol at all — so `resolveExportedModule` is asked instead, and it is
+   * deterministic: an explicit alias names exactly ONE module.
+   *
+   * Reached ONLY after the composed text has failed to pin a member, so every
+   * site that resolves today resolves to the same target. A `pkg` that is not a
+   * project file, or a name the package does not alias, keeps the CONTINUE.
    */
   private resolveModuleReceiver(
     binding: PythonImportBinding,
@@ -359,9 +374,19 @@ export class PythonImportedNameSymbolResolutionStrategy implements SymbolResolut
   ): SymbolResolutionOutcome {
     if (!call.receiver) return CONTINUE; // a bare call names no module
     const mapped = this.mapper.mapImportToFile(receiverModuleText(binding), ctx.callerFile, ctx);
-    if (mapped.kind !== "project") return CONTINUE;
-    const target = this.moduleMemberTarget(call.member, mapped.relPath, ctx);
-    return target ? resolved(target) : CONTINUE;
+    if (mapped.kind === "project") {
+      const target = this.moduleMemberTarget(call.member, mapped.relPath, ctx);
+      if (target) return resolved(target);
+    }
+    const pkg = this.mapper.mapImportToFile(binding.imp.importText, ctx.callerFile, ctx);
+    if (pkg.kind !== "project") return CONTINUE;
+    const aliased = this.mapper.resolveExportedModule(pkg.relPath, binding.importedName, ctx);
+    if (aliased === null) return CONTINUE;
+    // DECLARATION only, no re-export hop — see `moduleDeclarationTarget`. The
+    // alias names one file, and a shim that merely re-exports a LIBRARY name
+    // must not borrow whatever project symbol happens to spell it.
+    const viaAlias = this.moduleDeclarationTarget(call.member, aliased, ctx);
+    return viaAlias ? resolved(viaAlias) : CONTINUE;
   }
 
   /**
@@ -403,11 +428,8 @@ export class PythonImportedNameSymbolResolutionStrategy implements SymbolResolut
    * a module declaring the name twice yields two candidates and declines.
    */
   private moduleMemberTarget(member: string, moduleFile: string, ctx: CallContext): SymbolResolutionTarget | null {
-    const direct = pickSingleCandidate(
-      ctx.symbolTable.lookup(member).filter((def) => def.relPath === moduleFile),
-      this.cfg.mode,
-    );
-    if (direct) return { targetRelPath: direct.relPath, targetSymbolId: direct.symbolId };
+    const direct = this.moduleDeclarationTarget(member, moduleFile, ctx);
+    if (direct) return direct;
     // The module re-exports rather than declares — a package `__init__.py`
     // pulling `ColorColumn` out of its own `columns.py`. ONE hop, through the
     // same engine `declaringFile` uses two methods down, so the two questions
@@ -424,6 +446,29 @@ export class PythonImportedNameSymbolResolutionStrategy implements SymbolResolut
       this.cfg.mode,
     );
     return hopped ? { targetRelPath: hopped.relPath, targetSymbolId: hopped.symbolId } : null;
+  }
+
+  /**
+   * `member` as a top-level declaration of `moduleFile` and NOTHING else — the
+   * direct half of {@link moduleMemberTarget}, without the re-export hop (bd
+   * tea-rags-mcp-w205u, E4.6a).
+   *
+   * The hop asks "which file in the PROJECT declares this bare name", and that
+   * is the wrong question for a module a package ALIASED. polar's
+   * `from .db.postgres import sql` reaches
+   * `kit/extensions/sqlalchemy/sql.py`, which declares nothing and re-exports
+   * sqlalchemy's `select`; the project happens to declare exactly one `select`,
+   * a backoffice form helper, and the hop pinned it on every `sql.select(Model)`
+   * in the codebase — 10 phantoms, measured on the A/B. An alias names ONE file.
+   * A member that file does not declare is not an answer this arm has, and the
+   * chain keeps its CONTINUE.
+   */
+  private moduleDeclarationTarget(member: string, moduleFile: string, ctx: CallContext): SymbolResolutionTarget | null {
+    const direct = pickSingleCandidate(
+      ctx.symbolTable.lookup(member).filter((def) => def.relPath === moduleFile),
+      this.cfg.mode,
+    );
+    return direct ? { targetRelPath: direct.relPath, targetSymbolId: direct.symbolId } : null;
   }
 
   /**

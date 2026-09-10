@@ -156,6 +156,13 @@ describe("extractFromPythonFile — calls", () => {
   });
 });
 
+/**
+ * Every ASSIGNMENT-branch binding below also carries `endLine`, the extent of
+ * the statement that establishes it (bd tea-rags-mcp-w205u, E4.6a). These pins
+ * are single-line assignments, so it reads the same as `line`; the span itself
+ * is pinned in `python-local-binding-span.test.ts`. A `def` parameter hint
+ * records none — a parameter is not a shadowing statement.
+ */
 describe("extractFromPythonFile — localBindings (type inference)", () => {
   it("infers var = ClassName(...) → { var: ClassName }", () => {
     const src =
@@ -168,7 +175,9 @@ describe("extractFromPythonFile — localBindings (type inference)", () => {
       language: "python",
       chunks: [{ symbolId: "view", scope: [], startLine: 1, endLine: 3 }],
     });
-    expect(r.chunks[0].localBindings).toEqual({ serializer: [{ line: 2, type: "ToggleReactionSerializer" }] });
+    expect(r.chunks[0].localBindings).toEqual({
+      serializer: [{ line: 2, type: "ToggleReactionSerializer", endLine: 2 }],
+    });
   });
 
   it("infers var = module.ClassName(...) → { var: 'module.ClassName' } (qualifier preserved)", () => {
@@ -181,7 +190,7 @@ describe("extractFromPythonFile — localBindings (type inference)", () => {
       language: "python",
       chunks: [{ symbolId: "view", scope: [], startLine: 1, endLine: 2 }],
     });
-    expect(r.chunks[0].localBindings).toEqual({ s: [{ line: 2, type: "rest_framework.Serializer" }] });
+    expect(r.chunks[0].localBindings).toEqual({ s: [{ line: 2, type: "rest_framework.Serializer", endLine: 2 }] });
   });
 
   it("infers PEP 526 annotation var: ClassName = expr → { var: ClassName }", () => {
@@ -194,7 +203,7 @@ describe("extractFromPythonFile — localBindings (type inference)", () => {
       language: "python",
       chunks: [{ symbolId: "view", scope: [], startLine: 1, endLine: 2 }],
     });
-    expect(r.chunks[0].localBindings).toEqual({ s: [{ line: 2, type: "ConfirmCode" }] });
+    expect(r.chunks[0].localBindings).toEqual({ s: [{ line: 2, type: "ConfirmCode", endLine: 2 }] });
   });
 
   // PEP 526 with qualified type annotation `var: module.ClassName` —
@@ -209,7 +218,7 @@ describe("extractFromPythonFile — localBindings (type inference)", () => {
       language: "python",
       chunks: [{ symbolId: "view", scope: [], startLine: 1, endLine: 2 }],
     });
-    expect(r.chunks[0].localBindings).toEqual({ s: [{ line: 2, type: "rest_framework.Serializer" }] });
+    expect(r.chunks[0].localBindings).toEqual({ s: [{ line: 2, type: "rest_framework.Serializer", endLine: 2 }] });
   });
 
   it("infers PEP 526 annotation without RHS — var: SomeClass", () => {
@@ -222,7 +231,7 @@ describe("extractFromPythonFile — localBindings (type inference)", () => {
       language: "python",
       chunks: [{ symbolId: "view", scope: [], startLine: 1, endLine: 2 }],
     });
-    expect(r.chunks[0].localBindings).toEqual({ s: [{ line: 2, type: "SomeClass" }] });
+    expect(r.chunks[0].localBindings).toEqual({ s: [{ line: 2, type: "SomeClass", endLine: 2 }] });
   });
 
   it("infers function-arg type hint — def f(self, req: HttpRequest)", () => {
@@ -251,10 +260,10 @@ describe("extractFromPythonFile — localBindings (type inference)", () => {
     // s rebound; both bindings retained (position-aware). t separate binding.
     expect(r.chunks[0].localBindings).toEqual({
       s: [
-        { line: 2, type: "Foo" },
-        { line: 3, type: "Bar" },
+        { line: 2, type: "Foo", endLine: 2 },
+        { line: 3, type: "Bar", endLine: 3 },
       ],
-      t: [{ line: 4, type: "Baz" }],
+      t: [{ line: 4, type: "Baz", endLine: 4 }],
     });
   });
 
@@ -295,7 +304,7 @@ describe("extractFromPythonFile — localBindings (type inference)", () => {
       language: "python",
       chunks: [{ symbolId: "view", scope: [], startLine: 1, endLine: 2 }],
     });
-    expect(r.chunks[0].localBindings?.placer).toEqual([{ line: 2, type: "_BlockPlacer" }]);
+    expect(r.chunks[0].localBindings?.placer).toEqual([{ line: 2, type: "_BlockPlacer", endLine: 2 }]);
   });
 
   it("scopes bindings to chunk line range — function A bindings don't leak into function B", () => {
@@ -311,8 +320,8 @@ describe("extractFromPythonFile — localBindings (type inference)", () => {
         { symbolId: "b", scope: [], startLine: 4, endLine: 5 },
       ],
     });
-    expect(r.chunks[0].localBindings).toEqual({ s: [{ line: 2, type: "Foo" }] });
-    expect(r.chunks[1].localBindings).toEqual({ t: [{ line: 5, type: "Bar" }] });
+    expect(r.chunks[0].localBindings).toEqual({ s: [{ line: 2, type: "Foo", endLine: 2 }] });
+    expect(r.chunks[1].localBindings).toEqual({ t: [{ line: 5, type: "Bar", endLine: 5 }] });
   });
 
   it("does NOT emit localBindings when CODEGRAPH_PY_LOCAL_TYPE_TRACKING=false", () => {
@@ -347,8 +356,11 @@ describe("extractFromPythonFile — localBindings (type inference)", () => {
     });
     const bindings = r.chunks[0].localBindings;
     // Map serializes to {} via JSON.stringify; plain object preserves entries.
-    const roundTripped = JSON.parse(JSON.stringify(bindings ?? {})) as Record<string, { line: number; type: string }[]>;
-    expect(roundTripped).toEqual({ s: [{ line: 2, type: "Foo" }] });
+    const roundTripped = JSON.parse(JSON.stringify(bindings ?? {})) as Record<
+      string,
+      { line: number; type: string; endLine?: number }[]
+    >;
+    expect(roundTripped).toEqual({ s: [{ line: 2, type: "Foo", endLine: 2 }] });
   });
 });
 

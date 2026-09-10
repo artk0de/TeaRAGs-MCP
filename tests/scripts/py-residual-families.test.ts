@@ -182,6 +182,23 @@ const CASES: { family: PyResidualFamily; label: string; row: Partial<PyResidualR
   },
   {
     family: "transparentWrapper",
+    label: "flask LocalProxy global — g",
+    row: { receiver: "g", receiverKind: "dynamic", member: "pop", callText: "g.pop('db', None)" },
+    facts: { imports: ["g", "current_app"] },
+  },
+  {
+    family: "transparentWrapper",
+    label: "flask LocalProxy global — current_app",
+    row: {
+      receiver: "current_app",
+      receiverKind: "dynamic",
+      member: "open_resource",
+      callText: "current_app.open_resource('schema.sql')",
+    },
+    facts: { imports: ["g", "current_app"] },
+  },
+  {
+    family: "transparentWrapper",
     label: "Mapped[T] field",
     row: { receiver: "self.status", receiverKind: "chain", member: "get_display" },
     facts: { binding: { status: "    status: Mapped[Status] = mapped_column()" } },
@@ -364,6 +381,29 @@ describe("precedence", () => {
       makeView(),
     );
     expect(attributed.family).toBe("classObjectReceiver");
+  });
+
+  it("keeps a werkzeug LocalProxy global out of the module-alias family", () => {
+    // `from flask import current_app, g` binds the name exactly as
+    // `from ..components import datatable` does, and both arrive `dynamic`, so
+    // the import test alone cannot tell them apart. The proxy is a wrapper,
+    // not a submodule: jedi answers through `LocalProxy`'s own annotation.
+    // 8 flask rows (bd tea-rags-mcp-w205u, E4.6a).
+    const attributed = classifyResidualFamily(
+      row({ receiver: "g", receiverKind: "dynamic", member: "pop", callText: "g.pop('db', None)" }),
+      makeView({ imports: ["g"] }),
+    );
+    expect(attributed.family).toBe("transparentWrapper");
+  });
+
+  it("still reads a DOTTED proxy receiver as a field hop", () => {
+    // `current_app.json.dumps` is typed by `json`, not by the proxy head, and
+    // that question belongs to the field-hop family.
+    const attributed = classifyResidualFamily(
+      row({ receiver: "current_app.json", receiverKind: "chain", member: "dumps" }),
+      makeView({ imports: ["current_app"] }),
+    );
+    expect(attributed.family).toBe("untypedFieldHop");
   });
 
   it("reports a binding-line miss rather than inventing a family", () => {

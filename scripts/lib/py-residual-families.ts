@@ -144,6 +144,18 @@ const CELERY_MEMBERS = new Set(["delay", "apply_async"]);
 const DRF_MEMBERS = new Set(["get_serializer", "get_object", "get_queryset", "get_serializer_class"]);
 const RUNTIME_HEADS = /^(getattr|setattr|hasattr|globals|locals|vars|eval|exec|__import__)\(/;
 const CLASS_OBJECT_RECEIVERS = new Set(["cls", "self.__class__", "type(self)"]);
+/**
+ * The werkzeug `LocalProxy` globals flask exports (bd tea-rags-mcp-w205u,
+ * E4.6a). `from flask import current_app, g` binds the name exactly the way
+ * `from ..components import datatable` does, and both arrive `dynamic`, so the
+ * import test alone reads a proxy as a submodule alias — 8 flask rows.
+ *
+ * A proxy is a WRAPPER: jedi answers `current_app.open_resource` through
+ * `LocalProxy`'s own annotation, not through any module. `session` is normally
+ * claimed one arm earlier by the SQLAlchemy receivers; it stays here because
+ * the set is the mechanism, not the two spellings that happened to show up.
+ */
+const PROXY_GLOBAL_RECEIVERS = new Set(["current_app", "g", "request", "session"]);
 
 /** The receiver's head name — `self.repo.get` → `self`, `datatable` → `datatable`. */
 export function receiverHead(receiver: string | null): string {
@@ -248,10 +260,19 @@ export function classifyResidualFamily(row: PyResidualRow, view: PyResidualSourc
  * alias (polar's `from ..components import datatable`, netbox's `layout`). A
  * class imported the same way arrives as `receiverKind: "constant"`, which is
  * what keeps the two apart without resolving the import.
+ *
+ * {@link PROXY_GLOBAL_RECEIVERS} runs one step ahead of it: a proxy global is
+ * import-bound and `dynamic` too, and is a wrapper rather than a module. The
+ * test is on the WHOLE receiver, so `current_app.json.dumps` — typed by `json`,
+ * not by the proxy — stays with the field hop further down.
  */
 function classifyFromSource(row: PyResidualRow, view: PyResidualSourceView, head: string): PyFamilyAttribution {
   const valueReceiver = row.receiverKind === "dynamic" || row.receiverKind === "localVar";
-  if (head !== "" && valueReceiver && view.importBindings(row.relPath).has(head)) {
+  const importBound = head !== "" && view.importBindings(row.relPath).has(head);
+  if (importBound && PROXY_GLOBAL_RECEIVERS.has(receiver0(row))) {
+    return { family: "transparentWrapper", tier: 2, bindingFound: true };
+  }
+  if (importBound && valueReceiver) {
     return { family: "moduleAliasMember", tier: 2, bindingFound: true };
   }
   if (CLASS_OBJECT_RECEIVERS.has(receiver0(row)) || row.member === "cls" || row.receiverKind === "constant") {

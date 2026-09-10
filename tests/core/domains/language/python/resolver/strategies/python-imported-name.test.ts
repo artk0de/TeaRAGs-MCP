@@ -17,7 +17,12 @@
  */
 import { describe, expect, it } from "vitest";
 
-import type { CallContext, CallRef, ImportRef } from "../../../../../../../src/core/contracts/types/codegraph.js";
+import type {
+  CallContext,
+  CallRef,
+  ImportRef,
+  ModuleReexport,
+} from "../../../../../../../src/core/contracts/types/codegraph.js";
 import { PythonAncestorLinearizerCache } from "../../../../../../../src/core/domains/language/python/resolver/python-ancestor-policy.js";
 import { PythonImportFileMapper } from "../../../../../../../src/core/domains/language/python/resolver/python-import-file-mapper.js";
 import { PythonImportedNameSymbolResolutionStrategy } from "../../../../../../../src/core/domains/language/python/resolver/strategies/python-imported-name.js";
@@ -1007,5 +1012,146 @@ describe("PythonImportedNameSymbolResolutionStrategy — dotted module receiver"
     // `Event.id.label(...)` is SQLAlchemy's — a capitalized head is never module
     // text, and folding it is `chainType`'s question.
     expect(strategy().attempt(call("Event.id", "label"), ctx)).toEqual({ kind: "continue" });
+  });
+});
+
+/**
+ * The package re-exports a SUBMODULE under the bound name (bd
+ * tea-rags-mcp-w205u, E4.6a) — polar's 259 rows.
+ *
+ * `from ..components import datatable` maps to
+ * `components/__init__.py`, which declares no `datatable` symbol; the composed
+ * `..components.datatable` names no file either, because the module on disk is
+ * `_datatable.py`. Only the package's own `from . import _datatable as
+ * datatable` says which file the name denotes, and the mapper's
+ * `resolveExportedModule` is what reads it.
+ */
+describe("PythonImportedNameSymbolResolutionStrategy — the package aliases a submodule", () => {
+  const POLAR_FILES: Record<string, string[]> = {
+    "server/polar/__init__.py": ["__all__"],
+    "server/polar/backoffice/__init__.py": ["__all__"],
+    "server/polar/backoffice/components/__init__.py": [],
+    "server/polar/backoffice/components/_datatable.py": ["Datatable", "DatatableAttrColumn"],
+    "server/polar/backoffice/benefits/endpoints.py": ["list_benefits"],
+  };
+
+  const ALIAS_IMPORT: ImportRef = {
+    importText: "..components",
+    startLine: 4,
+    importedNames: ["datatable"],
+    importedBindings: { datatable: "datatable" },
+  };
+
+  const aliasCtx = (
+    reexports: Record<string, ModuleReexport[]>,
+    files: Record<string, string[]> = POLAR_FILES,
+    imports: ImportRef[] = [ALIAS_IMPORT],
+  ): CallContext => ({
+    ...ctxWith("server/polar/backoffice/benefits/endpoints.py", imports, tableWith(files)),
+    moduleReexports: reexports,
+  });
+
+  const POLAR_REEXPORTS: Record<string, ModuleReexport[]> = {
+    "server/polar/backoffice/components/__init__.py": [
+      { exportedName: "datatable", sourceModule: ".", sourceName: "_datatable" },
+    ],
+  };
+
+  it("pins the member in the file the package's module alias names", () => {
+    expect(strategy().attempt(call("datatable", "DatatableAttrColumn"), aliasCtx(POLAR_REEXPORTS))).toEqual({
+      kind: "resolved",
+      target: {
+        targetRelPath: "server/polar/backoffice/components/_datatable.py",
+        targetSymbolId: "DatatableAttrColumn",
+      },
+    });
+  });
+
+  it("CONTINUEs when the alias leaves the project", () => {
+    // Never DROP: the DROP contract belongs to a binding that names a library,
+    // and `resolveBinding` has already returned that verdict by the time this
+    // arm is asked.
+    expect(
+      strategy().attempt(
+        call("datatable", "DatatableAttrColumn"),
+        aliasCtx({
+          "server/polar/backoffice/components/__init__.py": [
+            { exportedName: "datatable", sourceModule: "vendor.tables", sourceName: "_datatable" },
+          ],
+        }),
+      ),
+    ).toEqual({ kind: "continue" });
+  });
+
+  it("CONTINUEs when the aliased module does not declare the member", () => {
+    expect(strategy().attempt(call("datatable", "Missing"), aliasCtx(POLAR_REEXPORTS))).toEqual({ kind: "continue" });
+  });
+
+  it("CONTINUEs rather than pinning a project-wide namesake the aliased module only re-exports", () => {
+    // polar's `from .db.postgres import sql` reaches
+    // `kit/extensions/sqlalchemy/sql.py`, which re-exports sqlalchemy's
+    // `select` and declares nothing. The project happens to declare exactly one
+    // `select` — a backoffice form helper — and the barrel hop would pin it on
+    // every `sql.select(Model)` in the codebase. 10 phantoms, measured. The
+    // alias names ONE file; a member that file does not DECLARE is not an
+    // answer this arm has.
+    const files: Record<string, string[]> = {
+      "app/__init__.py": ["__all__"],
+      "app/db/__init__.py": [],
+      "app/db/shim.py": [],
+      "app/forms/widgets.py": ["select"],
+      "app/service.py": ["run"],
+    };
+    const ctx: CallContext = {
+      ...ctxWith(
+        "app/service.py",
+        [{ importText: ".db", startLine: 1, importedNames: ["sql"], importedBindings: { sql: "sql" } }],
+        tableWith(files),
+      ),
+      moduleReexports: { "app/db/__init__.py": [{ exportedName: "sql", sourceModule: ".", sourceName: "shim" }] },
+    };
+    expect(strategy().attempt(call("sql", "select"), ctx)).toEqual({ kind: "continue" });
+  });
+
+  it("CONTINUEs when the aliased module declares the member twice", () => {
+    const files = {
+      ...POLAR_FILES,
+      "server/polar/backoffice/components/_datatable.py": ["Datatable", "Datatable"],
+    };
+    expect(strategy().attempt(call("datatable", "Datatable"), aliasCtx(POLAR_REEXPORTS, files))).toEqual({
+      kind: "continue",
+    });
+  });
+
+  it("leaves a binding whose composed module text DOES map a file untouched", () => {
+    // `from netbox.tables import columns` still answers through the composed
+    // text; the alias arm is reached only when that mapping finds nothing.
+    const files = {
+      "netbox/circuits/tables/circuits.py": ["CircuitTable"],
+      "netbox/netbox/__init__.py": ["VERSION"],
+      "netbox/netbox/tables/__init__.py": ["BaseTable"],
+      "netbox/netbox/tables/columns.py": ["ColorColumn"],
+    };
+    const ctx: CallContext = {
+      ...ctxWith(
+        "netbox/circuits/tables/circuits.py",
+        [
+          {
+            importText: "netbox.tables",
+            startLine: 3,
+            importedNames: ["columns"],
+            importedBindings: { columns: "columns" },
+          },
+        ],
+        tableWith(files),
+      ),
+      moduleReexports: {
+        "netbox/netbox/tables/__init__.py": [{ exportedName: "columns", sourceModule: ".", sourceName: "_columns" }],
+      },
+    };
+    expect(strategy().attempt(call("columns", "ColorColumn"), ctx)).toEqual({
+      kind: "resolved",
+      target: { targetRelPath: "netbox/netbox/tables/columns.py", targetSymbolId: "ColorColumn" },
+    });
   });
 });

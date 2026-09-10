@@ -15,14 +15,14 @@ import RbLang from "tree-sitter-ruby";
 import { typescript as TsLang } from "tree-sitter-typescript";
 import { describe, expect, it } from "vitest";
 
-import { extractFromPythonFile } from "../../../../../../../src/core/domains/language/python/walker/walker.js";
-import { extractFromRubyFile } from "../../../../../../../src/core/domains/language/ruby/walker/walker.js";
-import { extractFromTypescriptFile } from "../../../../../../../src/core/domains/language/typescript/walker/walker.js";
 import {
   extractJsAssignmentSymbol,
   extractJsForEachDispatchSymbols,
   extractJsNestedDefinePropertyThisSymbols,
 } from "../../../../../../../src/core/domains/language/javascript/chunking/symbol-resolver.js";
+import { extractFromPythonFile } from "../../../../../../../src/core/domains/language/python/walker/walker.js";
+import { extractFromRubyFile } from "../../../../../../../src/core/domains/language/ruby/walker/walker.js";
+import { extractFromTypescriptFile } from "../../../../../../../src/core/domains/language/typescript/walker/walker.js";
 
 function parseTs(src: string): Parser.Tree {
   const parser = new Parser();
@@ -178,6 +178,11 @@ describe("python-walker — additional branch coverage", () => {
     expect(r.chunks[0].localBindings?.req).toEqual([{ line: 1, type: "HttpRequest" }]);
   });
 
+  // Every ASSIGNMENT-branch binding also carries `endLine`, the extent of the
+  // statement that establishes it (bd tea-rags-mcp-w205u, E4.6a). These are all
+  // single-line, so it reads the same as `line`; the span itself is pinned in
+  // `tests/core/domains/language/python/walker/python-local-binding-span.test.ts`.
+  // A `def` parameter hint records none — a parameter is not a shadowing statement.
   it("assignment to identifier `var = ClassName()` infers type", () => {
     // Constructor inference branch (line 228): `var = ClassName(...)`.
     const src = "def f():\n  x = ConfirmCode()\n  return x\n";
@@ -188,7 +193,7 @@ describe("python-walker — additional branch coverage", () => {
       language: "python",
       chunks: [{ symbolId: "f", startLine: 1, endLine: 3, scope: [] }],
     });
-    expect(r.chunks[0].localBindings?.x).toEqual([{ line: 2, type: "ConfirmCode" }]);
+    expect(r.chunks[0].localBindings?.x).toEqual([{ line: 2, type: "ConfirmCode", endLine: 2 }]);
   });
 
   it("assignment to identifier `var = mod.ClassName()` infers qualified type", () => {
@@ -200,7 +205,7 @@ describe("python-walker — additional branch coverage", () => {
       language: "python",
       chunks: [{ symbolId: "f", startLine: 1, endLine: 3, scope: [] }],
     });
-    expect(r.chunks[0].localBindings?.x).toEqual([{ line: 2, type: "pkg.Serializer" }]);
+    expect(r.chunks[0].localBindings?.x).toEqual([{ line: 2, type: "pkg.Serializer", endLine: 2 }]);
   });
 
   it("assignment RHS is non-call (literal) — no inference", () => {
@@ -237,7 +242,7 @@ describe("python-walker — additional branch coverage", () => {
       language: "python",
       chunks: [{ symbolId: "f", startLine: 1, endLine: 3, scope: [] }],
     });
-    expect(r.chunks[0].localBindings?.x).toEqual([{ line: 2, type: "TargetType" }]);
+    expect(r.chunks[0].localBindings?.x).toEqual([{ line: 2, type: "TargetType", endLine: 2 }]);
   });
 
   it("assignment with annotation but no RHS (`x: ClassName`) — bound by annotation", () => {
@@ -249,7 +254,7 @@ describe("python-walker — additional branch coverage", () => {
       language: "python",
       chunks: [{ symbolId: "f", startLine: 1, endLine: 3, scope: [] }],
     });
-    expect(r.chunks[0].localBindings?.x).toEqual([{ line: 2, type: "HttpRequest" }]);
+    expect(r.chunks[0].localBindings?.x).toEqual([{ line: 2, type: "HttpRequest", endLine: 2 }]);
   });
 
   it("typed_default_parameter with annotation extracts binding", () => {

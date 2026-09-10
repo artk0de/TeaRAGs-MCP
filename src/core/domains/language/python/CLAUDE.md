@@ -54,6 +54,20 @@
   at. `MAX_REEXPORT_HOPS` is 3 with a visited set — a deeper tower or a
   re-export cycle answers the pre-seam refusal rather than a guess, and `null`
   means "no better answer than the file you came in with", never "absent".
+- **A THIRD question exists, and it terminates on a FILE rather than a
+  declaration.** `resolveExportedModule` asks which file a package binds a name
+  to as a MODULE, for the shape neither of the other two can answer:
+  `from . import _datatable as datatable` declares no symbol, so `declaresName`
+  is false at every hop and `resolveExportedName` returns `null`, while the
+  composed `..components.datatable` names no file for `mapImportToFile` to find.
+  The name denotes a sibling module and the answer is that module's file — 259
+  polar rows. It shares the channel, the hop budget and the visited set with
+  `resolveExportedName`, and it is DETERMINISTIC where that one is
+  unanimity-gated: an explicit alias names exactly one module, so there is
+  nothing to pick between. Stars carry no `sourceName` and are skipped, never
+  dereferenced. `importedName`'s module arm asks it LAST, only once the composed
+  module text has failed to pin a member, so every site that resolves today
+  resolves to the same target.
 - **`chainType` is the ONLY reader of `structuredReturnTypes`.**
   `resolver/strategies/python-chain-type.ts` sits between `localBinding` and
   `importedName` and folds the receiver through the kernel walk with
@@ -300,6 +314,21 @@
   NOT gate `classFieldTypes`, which the walker builds unconditionally and the
   pass extends. Why: flipping the flag to isolate a local-typing regression must
   not silently take the self-field channel with it.
+- **A local binding carries the SPAN of the statement that establishes it, and
+  the span is what the import-shadow rule reads.** `LocalBinding.endLine` is the
+  `assignment` node's last line, emitted on both assignment branches (annotation
+  and constructor) and on NEITHER parameter-hint branch — a `def` parameter is
+  not a shadowing statement. Python evaluates a right-hand side before it
+  rebinds the name, so throughout `line..endLine` the variable still denotes
+  whatever it denoted above: netbox's
+  `layout = layout.Layout(\n    layout.Row(…))` puts the module, not the class,
+  on lines 205 and 206. `pythonBindingInForceAt` demotes the local back to the
+  import over exactly that window, and its retry asks for `bound.line - 1`
+  rather than `atLine - 1` — the line before the CALL would find the very
+  binding being demoted. ABSENT `endLine` degenerates to the same-line test it
+  replaces, so an index written by an earlier walker behaves as before. The
+  binding's scope END is the CHUNK, not this field: `pythonLocalBindingsInRange`
+  already clips a function-local shadow to its own def.
 - **An `@overload` stub yields `Cls#m` to the implementation that follows it,
   but only when there IS one.** `collectSymbols` dedups by symbolId keeping the
   first occurrence, so `walker/name-of.ts` returns `null` for a stub whose

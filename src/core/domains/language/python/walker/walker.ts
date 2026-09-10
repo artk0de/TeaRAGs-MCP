@@ -727,12 +727,17 @@ function collectLocalBindingsForChunk(
       const lhs = node.namedChild(0);
       if (lhs?.type !== "identifier") return;
       const varName = lhs.text;
+      // The extent of the ESTABLISHING statement — `node` is the `assignment`,
+      // so this already spans a multi-line right-hand side. See
+      // `LocalBinding.endLine`: inside it the name still denotes what it
+      // denoted above, because Python evaluates the RHS before rebinding.
+      const endLine = node.endPosition.row + 1;
 
       // PEP 526 — `var: ClassName = ...` or `var: ClassName`
       const typeField = node.childForFieldName("type");
       if (typeField) {
         const typeName = extractTypeName(typeField);
-        if (typeName) (out[varName] ??= []).push({ line, type: typeName });
+        if (typeName) (out[varName] ??= []).push({ line, type: typeName, endLine });
         // Annotation wins — do not also infer from RHS.
         return;
       }
@@ -758,7 +763,9 @@ function collectLocalBindingsForChunk(
         const fnNode = right.childForFieldName("function");
         if (!fnNode) return;
         const typeName = extractConstructorTypeName(fnNode);
-        if (typeName && pythonLocalCalleeIsConstructor(typeName)) (out[varName] ??= []).push({ line, type: typeName });
+        if (typeName && pythonLocalCalleeIsConstructor(typeName)) {
+          (out[varName] ??= []).push({ line, type: typeName, endLine });
+        }
       }
       return;
     }
