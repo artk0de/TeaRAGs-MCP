@@ -18,6 +18,9 @@ const ORDER = ["annotations", "docstring", "ast"] as const;
 
 const CHUNKS: WalkContext["chunks"] = [{ symbolId: "Svc#run", startLine: 1, endLine: 10, scope: ["Svc"] }];
 
+/** The file every channel is keyed against — the run-global field address needs one. */
+const RELPATH = "pkg/svc.py";
+
 function returnFact(symbolScope: string[], methodName: string, classForm?: boolean): TypeFact {
   const fact: TypeFact = {
     kind: "return",
@@ -42,7 +45,7 @@ function ivarFact(symbolScope: string[], name: string, type: string): TypeFact {
 }
 
 function channelsOf(facts: TypeFact[]) {
-  return pythonTypeChannels(TypeFactStore.fromFacts(facts, ORDER), CHUNKS);
+  return pythonTypeChannels(TypeFactStore.fromFacts(facts, ORDER), { chunks: CHUNKS, relPath: RELPATH });
 }
 
 describe("pythonStructuredReturnKey", () => {
@@ -103,13 +106,17 @@ describe("pythonTypeChannels — functionReturnTypes is dropped", () => {
   it("never keys the flat map, even when the store answers one", () => {
     const store = TypeFactStore.fromFacts([returnFact(["Svc"], "run")], ORDER);
     expect(store.returnTypeByMethod()).toEqual({ run: "Session" });
-    expect(Object.keys(pythonTypeChannels(store, CHUNKS))).not.toContain("functionReturnTypes");
+    expect(Object.keys(pythonTypeChannels(store, { chunks: CHUNKS, relPath: RELPATH }))).not.toContain(
+      "functionReturnTypes",
+    );
   });
 });
 
 describe("pythonTypeChannels — emit only non-empty", () => {
   it("returns no keys at all for an empty store", () => {
-    expect(Object.keys(pythonTypeChannels(TypeFactStore.fromFacts([], ORDER), CHUNKS))).toEqual([]);
+    expect(
+      Object.keys(pythonTypeChannels(TypeFactStore.fromFacts([], ORDER), { chunks: CHUNKS, relPath: RELPATH })),
+    ).toEqual([]);
   });
 
   it("passes the kernel's chunk records straight through", () => {

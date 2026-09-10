@@ -52,6 +52,6 @@ export const pythonAnnotationTypeFacetPass: ExtractionFacetPass = {
     const input: PythonTypeSourceInput = { root, trackLocalTypes: pythonLocalTypeTrackingEnabled() };
     const facts = PYTHON_INLINE_TYPE_SOURCES.flatMap((source) => source.extract(input));
     if (facts.length === 0) return {};
-    return pythonTypeChannels(TypeFactStore.fromFacts(facts, PYTHON_TYPE_SOURCE_ORDER), ctx.chunks);
+    return pythonTypeChannels(TypeFactStore.fromFacts(facts, PYTHON_TYPE_SOURCE_ORDER), ctx);
   },
 };

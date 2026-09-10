@@ -412,6 +412,20 @@ export class CodegraphRunState {
   structuredReturnTypes: Record<string, RubyTypeRef> = {};
 
   /**
+   * Per-run aggregation of `FileExtraction.classFieldTypesByClassKey` (bd
+   * tea-rags-mcp-f0xaa). `"<relPath>::<dotted class FQ>" → field → typeName`
+   * merged across pass-1 files so Python's MRO field fold sees a base class's
+   * fields from a subclass declared in ANOTHER file — the shape that carried
+   * polar's `chain` hole.
+   *
+   * Deliberately NOT a {@link RunGlobalMapName}: nothing needs the "did any file
+   * contribute" question, because every reader indexes it by key and an absent
+   * map reads the same as an empty one. Last-write-wins on a duplicate class
+   * key, mirroring `ivarTypes`; reset at the same seams.
+   */
+  classFieldTypesByClassKey: Record<string, Record<string, string>> = {};
+
+  /**
    * Per-run aggregation of `FileExtraction.dispatchTables` keyed by table
    * NAME (bd tea-rags-mcp-n0zj). The value is a `DispatchTableDef[]` because
    * the same name may be declared in several files; the resolver
@@ -839,6 +853,7 @@ export class CodegraphRunState {
       this.returnTypes = {};
       this.instantiatedTypes.clear();
       this.ivarTypes = {};
+      this.classFieldTypesByClassKey = {};
       this.structuredReturnTypes = {};
       this.dispatchTables = {};
       this.callbackParams = {};
@@ -999,6 +1014,7 @@ export class CodegraphRunState {
     this.returnTypes = {};
     this.instantiatedTypes.clear();
     this.ivarTypes = {};
+    this.classFieldTypesByClassKey = {};
     this.structuredReturnTypes = {};
     this.dispatchTables = {};
     this.callbackParams = {};
@@ -1033,6 +1049,7 @@ export class CodegraphRunState {
     this.returnTypes = {};
     this.instantiatedTypes.clear();
     this.ivarTypes = {};
+    this.classFieldTypesByClassKey = {};
     this.structuredReturnTypes = {};
     this.dispatchTables = {};
     this.callbackParams = {};
@@ -1120,6 +1137,15 @@ export class CodegraphRunState {
       for (const [k, v] of Object.entries(extraction.structuredReturnTypes)) {
         this.structuredReturnTypes[k] = v;
         this.markContributed("structuredReturnTypes");
+      }
+    }
+    // The class-key-addressed field channel, run-global (bd tea-rags-mcp-f0xaa).
+    // The key already names the declaring file, so a union across files cannot
+    // conflate two same-named classes and no language gate is needed — a walker
+    // that never writes the channel contributes nothing.
+    if (extraction.classFieldTypesByClassKey) {
+      for (const [classKey, fields] of Object.entries(extraction.classFieldTypesByClassKey)) {
+        this.classFieldTypesByClassKey[classKey] = { ...this.classFieldTypesByClassKey[classKey], ...fields };
       }
     }
     // Union this file's instantiation set into the run-global RTA set so the

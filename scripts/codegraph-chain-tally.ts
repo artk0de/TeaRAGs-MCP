@@ -300,6 +300,8 @@ interface RunGlobalTypeChannels {
   structuredReturnTypes: Record<string, TypeRef>;
   functionReturnTypes: Record<string, string>;
   classAncestors: Record<string, readonly string[]>;
+  /** `<relPath>::<class FQ>` → field → type, the run-global field address (f0xaa). */
+  classFieldTypesByClassKey: Record<string, Record<string, string>>;
 }
 
 /** Absorb one file's contribution to every run-global channel. */
@@ -308,6 +310,9 @@ function absorbTypeChannels(channels: RunGlobalTypeChannels, extraction: FileExt
   Object.assign(channels.structuredReturnTypes, extraction.structuredReturnTypes ?? {});
   Object.assign(channels.functionReturnTypes, extraction.functionReturnTypes ?? {});
   Object.assign(channels.classAncestors, extraction.classAncestors ?? {});
+  for (const [classKey, fields] of Object.entries(extraction.classFieldTypesByClassKey ?? {})) {
+    channels.classFieldTypesByClassKey[classKey] = { ...channels.classFieldTypesByClassKey[classKey], ...fields };
+  }
 }
 
 function buildCallContext(
@@ -329,6 +334,7 @@ function buildCallContext(
     structuredReturnTypes: channels.structuredReturnTypes,
     functionReturnTypes: channels.functionReturnTypes,
     classAncestors: channels.classAncestors,
+    classFieldTypesByClassKey: channels.classFieldTypesByClassKey,
   };
 }
 
@@ -382,6 +388,7 @@ export async function run(
     structuredReturnTypes: {},
     functionReturnTypes: {},
     classAncestors: {},
+    classFieldTypesByClassKey: {},
   };
   const scored: FileExtraction[] = [];
   const corpusFiles = new Set<string>();

@@ -56,3 +56,66 @@ describe("codegraph-chain-tally corpus walk", () => {
     expect(result.chainDrift).toEqual(0);
   });
 });
+
+/**
+ * The tally builds its own `CallContext`, so a run-global channel the production
+ * runner threads is a channel the tally must thread too or the measurement
+ * understates production (bd tea-rags-mcp-f0xaa). `classFieldTypesByClassKey`
+ * carries a base class's fields across files — polar's `SyncServiceBase.__init__`
+ * assigning `self.client` from an annotated parameter, called from a subclass
+ * declared elsewhere.
+ */
+describe("codegraph-chain-tally run-global field channel", () => {
+  let corpus: string;
+  let result: RunResult;
+
+  function write(relPath: string, content: string): void {
+    const absolute = join(corpus, relPath);
+    mkdirSync(dirname(absolute), { recursive: true });
+    writeFileSync(absolute, content, "utf8");
+  }
+
+  beforeEach(async () => {
+    corpus = mkdtempSync(join(tmpdir(), "chain-tally-fields-"));
+    write("sdk/client.py", ["class SyncClientBase:", "    def send_request(self):", "        return 1", ""].join("\n"));
+    write(
+      "sdk/base.py",
+      [
+        "from sdk.client import SyncClientBase",
+        "",
+        "class SyncServiceBase:",
+        "    def __init__(self, client: SyncClientBase) -> None:",
+        "        self.client = client",
+        "",
+      ].join("\n"),
+    );
+    write(
+      "sdk/metrics.py",
+      [
+        "from sdk.base import SyncServiceBase",
+        "",
+        "class MetricsSync(SyncServiceBase):",
+        "    def list(self):",
+        "        return self.client.send_request()",
+        "",
+      ].join("\n"),
+    );
+    result = await run(corpus, "python", null, Number.MAX_SAFE_INTEGER, true);
+  }, 30_000);
+
+  afterEach(() => {
+    rmSync(corpus, { recursive: true, force: true });
+  });
+
+  it("pins a subclass's call through a field its base assigned in another file", () => {
+    const row = result.rows.find((r) => r.relPath === "sdk/metrics.py" && r.member === "send_request");
+    expect(row?.variant).toEqual({
+      targetRelPath: "sdk/client.py",
+      targetSymbolId: "SyncClientBase#send_request",
+    });
+  });
+
+  it("keeps the rebuilt baseline in lockstep with the production resolver", () => {
+    expect(result.chainDrift).toEqual(0);
+  });
+});

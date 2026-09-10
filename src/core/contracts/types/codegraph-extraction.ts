@@ -41,6 +41,24 @@ export interface FileExtraction {
    */
   classFieldTypes?: Record<string, Record<string, string>>;
   /**
+   * The same `fieldName → typeName` facts as {@link FileExtraction.classFieldTypes},
+   * addressed by the RUN-GLOBAL class key `<relPath>::<dotted class FQ>` rather
+   * than by the class's short name (bd tea-rags-mcp-f0xaa).
+   *
+   * Two properties `classFieldTypes` cannot have. A short name is ambiguous
+   * run-global — two `Base` classes in two files conflate — so that channel can
+   * only ever be read per-file, and a base class declared elsewhere is therefore
+   * invisible to a subclass. This key is the one `classAncestors` uses, so a
+   * linearized ancestor key looks the fields up directly: polar's
+   * `SyncServiceBase.__init__` assigns `self.client` once and 60-odd subclasses
+   * in other files call it.
+   *
+   * Populated by the Python walker and its annotation facet pass. Languages that
+   * have not pulled on the cross-file read leave it undefined and keep reading
+   * the short-name channel. Plain Record for NDJSON round-trip.
+   */
+  classFieldTypesByClassKey?: Record<string, Record<string, string>>;
+  /**
    * Optional per-class Rails association map: `className → accessorName →
    * modelType`. Populated by the Ruby walker from class-body association macros
    * (`belongs_to`/`has_one`/`has_many`/`has_and_belongs_to_many`); the accessor

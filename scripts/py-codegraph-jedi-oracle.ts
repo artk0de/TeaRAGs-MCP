@@ -156,6 +156,9 @@ export async function walkCorpus(corpusRoot: string, limit: number, quiet: boole
   const structuredReturnTypes: Record<string, TypeRef> = {};
   const functionReturnTypes: Record<string, string> = {};
   const classAncestors: Record<string, readonly string[]> = {};
+  // `<relPath>::<class FQ>` → field → type — the run-global field address the
+  // MRO fold reads a base class's fields from (bd tea-rags-mcp-f0xaa).
+  const classFieldTypesByClassKey: Record<string, Record<string, string>> = {};
   const extractions: {
     relPath: string;
     extraction: NonNullable<ReturnType<typeof extractFile>>;
@@ -174,6 +177,9 @@ export async function walkCorpus(corpusRoot: string, limit: number, quiet: boole
     Object.assign(structuredReturnTypes, extraction.structuredReturnTypes ?? {});
     Object.assign(functionReturnTypes, extraction.functionReturnTypes ?? {});
     Object.assign(classAncestors, extraction.classAncestors ?? {});
+    for (const [classKey, fields] of Object.entries(extraction.classFieldTypesByClassKey ?? {})) {
+      classFieldTypesByClassKey[classKey] = { ...classFieldTypesByClassKey[classKey], ...fields };
+    }
     if (extname(relPath) === SCORED_EXTENSION) extractions.push({ relPath, extraction });
     else symbolTableOnlyFiles++;
   }
@@ -205,6 +211,7 @@ export async function walkCorpus(corpusRoot: string, limit: number, quiet: boole
         structuredReturnTypes,
         functionReturnTypes,
         classAncestors,
+        classFieldTypesByClassKey,
       };
       for (const call of chunk.calls ?? []) {
         if (call.dispatch !== undefined) continue; // the runner skips normal resolution here

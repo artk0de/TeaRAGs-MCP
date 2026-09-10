@@ -38,8 +38,11 @@ export function pythonStructuredReturnKey(kernelKey: string): string {
   return kernelKey.split("::").join(".");
 }
 
-export function pythonTypeChannels(store: TypeFactStore, chunks: WalkContext["chunks"]): Partial<FileExtraction> {
-  const kernel = typeFactChannels(store, chunks);
+export function pythonTypeChannels(
+  store: TypeFactStore,
+  ctx: Pick<WalkContext, "chunks" | "relPath">,
+): Partial<FileExtraction> {
+  const kernel = typeFactChannels(store, ctx.chunks);
   const out: Partial<FileExtraction> = {};
   if (kernel.chunks !== undefined) out.chunks = kernel.chunks;
 
@@ -53,14 +56,22 @@ export function pythonTypeChannels(store: TypeFactStore, chunks: WalkContext["ch
 
   if (kernel.ivarTypes !== undefined) {
     const classFieldTypes: Record<string, Record<string, string>> = {};
+    const classFieldTypesByClassKey: Record<string, Record<string, string>> = {};
     for (const [fqClass, fields] of Object.entries(kernel.ivarTypes)) {
       const segments = fqClass.split("::");
       const shortName = segments[segments.length - 1];
       // Last write wins across same-short-named nested classes, exactly as
       // `collectPythonClassFieldTypes` merges them (`walker/walker.ts:256`).
       classFieldTypes[shortName] = { ...(classFieldTypes[shortName] ?? {}), ...fields };
+      // The run-global address (bd tea-rags-mcp-f0xaa). Same facts, keyed as
+      // `classAncestors` keys a class, so the MRO fold reads a base's fields
+      // from a subclass's file. The kernel joins a scope with `::`; a Python
+      // class FQ spells it with a dot, as `pythonDeclaredClassFq` does.
+      const key = `${ctx.relPath}::${segments.join(".")}`;
+      classFieldTypesByClassKey[key] = { ...(classFieldTypesByClassKey[key] ?? {}), ...fields };
     }
     out.classFieldTypes = classFieldTypes;
+    out.classFieldTypesByClassKey = classFieldTypesByClassKey;
   }
 
   return out;

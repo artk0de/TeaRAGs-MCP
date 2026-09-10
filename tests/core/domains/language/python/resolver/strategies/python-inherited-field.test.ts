@@ -73,6 +73,7 @@ interface CtxSpec {
   readonly imports?: readonly ImportRef[];
   readonly classAncestors?: Record<string, readonly string[]>;
   readonly classFieldTypes?: Record<string, Record<string, string>>;
+  readonly classFieldTypesByClassKey?: Record<string, Record<string, string>>;
 }
 
 function ctxWith(spec: CtxSpec): CallContext {
@@ -83,6 +84,9 @@ function ctxWith(spec: CtxSpec): CallContext {
     symbolTable: spec.table,
     ...(spec.classAncestors === undefined ? {} : { classAncestors: spec.classAncestors }),
     ...(spec.classFieldTypes === undefined ? {} : { classFieldTypes: spec.classFieldTypes }),
+    ...(spec.classFieldTypesByClassKey === undefined
+      ? {}
+      : { classFieldTypesByClassKey: spec.classFieldTypesByClassKey }),
   };
 }
 
@@ -153,5 +157,77 @@ describe("PythonSelfFieldSymbolResolutionStrategy — a field assigned by an anc
       classFieldTypes: { SyncServiceBase: { client: "SyncClientBase" } },
     });
     expect(mroSelfField().attempt(sendRequest, noChannel)).toEqual({ kind: "drop" });
+  });
+});
+
+/**
+ * The channel the MRO fold actually has in production (bd tea-rags-mcp-f0xaa).
+ * `classFieldTypes` above is the CALLER's per-file map — in a real run it never
+ * carries a base class declared in another file, so every case above resolved
+ * only because the test handed the resolver a map production cannot build.
+ * `classFieldTypesByClassKey` is run-global and addressed exactly as the
+ * linearized ancestor keys are, so the ancestor's fields are readable from the
+ * subclass's file.
+ */
+describe("PythonSelfFieldSymbolResolutionStrategy — the run-global field channel", () => {
+  it("resolves through a base class's field with NOTHING in the per-file map", () => {
+    const ctx = ctxWith({
+      table: polarTable(),
+      classAncestors: { ...polarAncestors },
+      classFieldTypesByClassKey: { "sdk/base.py::SyncServiceBase": { client: "SyncClientBase" } },
+    });
+    expect(mroSelfField().attempt(sendRequest, ctx)).toEqual({
+      kind: "resolved",
+      target: { targetRelPath: "sdk/base.py", targetSymbolId: "SyncClientBase#send_request" },
+    });
+  });
+
+  it("reads the caller's OWN class off the run-global channel too", () => {
+    const table = tableWith({
+      "sdk/base.py": [
+        { symbolId: "SyncClientBase" },
+        { symbolId: "SyncClientBase#send_request", scope: ["SyncClientBase"] },
+      ],
+      "svc/metrics.py": [{ symbolId: "MetricsSync" }],
+    });
+    const ctx = ctxWith({
+      table,
+      classAncestors: { ...polarAncestors },
+      classFieldTypesByClassKey: { "svc/metrics.py::MetricsSync": { client: "SyncClientBase" } },
+    });
+    expect(mroSelfField().attempt(sendRequest, ctx)).toEqual({
+      kind: "resolved",
+      target: { targetRelPath: "sdk/base.py", targetSymbolId: "SyncClientBase#send_request" },
+    });
+  });
+
+  it("keeps the per-file map ahead of the run-global one for the caller's own class", () => {
+    const table = tableWith({
+      "sdk/base.py": [
+        { symbolId: "SyncClientBase" },
+        { symbolId: "SyncClientBase#send_request", scope: ["SyncClientBase"] },
+      ],
+      "sdk/own.py": [{ symbolId: "OwnClient" }, { symbolId: "OwnClient#send_request", scope: ["OwnClient"] }],
+      "svc/metrics.py": [{ symbolId: "MetricsSync" }],
+    });
+    const ctx = ctxWith({
+      table,
+      classAncestors: { ...polarAncestors },
+      classFieldTypes: { MetricsSync: { client: "OwnClient" } },
+      classFieldTypesByClassKey: { "svc/metrics.py::MetricsSync": { client: "SyncClientBase" } },
+    });
+    expect(mroSelfField().attempt(sendRequest, ctx)).toEqual({
+      kind: "resolved",
+      target: { targetRelPath: "sdk/own.py", targetSymbolId: "OwnClient#send_request" },
+    });
+  });
+
+  it("still DROPs when the run-global channel has no entry for any class in the walk", () => {
+    const ctx = ctxWith({
+      table: polarTable(),
+      classAncestors: { ...polarAncestors },
+      classFieldTypesByClassKey: { "sdk/base.py::OtherBase": { client: "SyncClientBase" } },
+    });
+    expect(mroSelfField().attempt(sendRequest, ctx)).toEqual({ kind: "drop" });
   });
 });
