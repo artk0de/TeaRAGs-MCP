@@ -39,6 +39,7 @@ import type {
 } from "../../../../contracts/types/codegraph.js";
 import { assignCallsToInnermostChunks } from "../../kernel/assign-calls-to-chunks.js";
 import { collectPythonClassBodyFieldTypes } from "./passes/python-class-body-fields.js";
+import { collectPythonDefSignatures, pythonCallShape } from "./passes/python-def-signatures.js";
 
 export interface PythonExtractInput {
   tree: MaterializedTree;
@@ -121,6 +122,14 @@ export function extractFromPythonFile(input: PythonExtractInput): FileExtraction
   const callResultBindings = trackTypes
     ? collectPythonCallResultBindings(input.tree.rootNode)
     : ({} as Record<string, CallResultBinding[]>);
+  // bd tea-rags-mcp-w205u — the two neutral signature channels the kernel's
+  // `ArityNarrower` / `KwargNarrower` read. Collected ONCE per file and joined
+  // by `startLine`, which is the `def` line for a decorated method too: the
+  // chunk range comes from `collectSymbols` + `pyNameOf`, and `pyNameOf` names
+  // the `function_definition`, never its `decorated_definition` wrapper. A chunk
+  // that is not a def — a class, a module — simply finds nothing, the same
+  // absence Ruby leaves on a non-method.
+  const defSignatures = collectPythonDefSignatures(input.tree.rootNode);
   const byChunk: ChunkExtraction[] = input.chunks.map((c, chunkIndex) => {
     const base: ChunkExtraction = {
       symbolId: c.symbolId,
@@ -129,6 +138,11 @@ export function extractFromPythonFile(input: PythonExtractInput): FileExtraction
       endLine: c.endLine,
       calls: callOwnership.get(chunkIndex) ?? [],
     };
+    const signature = defSignatures.get(c.startLine);
+    if (signature !== undefined) {
+      base.arity = signature.arity;
+      if (signature.kwargs !== undefined) base.kwargs = signature.kwargs;
+    }
     if (trackTypes) {
       const bindings = collectLocalBindingsForChunk(input.tree.rootNode, c.startLine, c.endLine);
       if (Object.keys(bindings).length > 0) base.localBindings = bindings;
@@ -998,10 +1012,16 @@ function collectPythonCalls(root: AstNode): CallRef[] {
       const obj = fn.childForFieldName("object");
       const attr = fn.childForFieldName("attribute");
       if (!obj || !attr) return;
-      out.push({ callText: node.text, receiver: normalizePythonReceiverText(obj), member: attr.text, startLine });
+      out.push({
+        callText: node.text,
+        receiver: normalizePythonReceiverText(obj),
+        member: attr.text,
+        startLine,
+        ...pythonCallShape(node),
+      });
     } else {
       // Bare call like `foo(...)`.
-      out.push({ callText: node.text, receiver: null, member: fn.text, startLine });
+      out.push({ callText: node.text, receiver: null, member: fn.text, startLine, ...pythonCallShape(node) });
     }
   });
   return out;
