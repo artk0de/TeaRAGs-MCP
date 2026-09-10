@@ -1682,14 +1682,25 @@ interface CorpusExclusionFilter {
  * A run with this on is a SEPARATE population — the symbol table grows, so
  * every short-name ambiguity moves — and never the baseline for any other
  * number.
+ *
+ * `skipIgnoreFiles` drops named entries of {@link PROJECT_IGNORE_FILES} from the
+ * ingest layer, and is likewise a SEPARATE population. It exists for the one
+ * question a Ruby-only corpus cannot answer: the mastodon bench corpus ships a
+ * `.contextignore` excluding `/app/javascript/` and every `*.ts`, so its symbol
+ * table holds three non-Ruby files and a cross-language namesake never appears
+ * (bd tea-rags-mcp-kumq2). Skipping that one file — and only it, so `.gitignore`
+ * still keeps `node_modules/` out — reproduces the polyglot table a Rails +
+ * React repo actually builds.
  */
 export async function buildCorpusExclusionFilter(
   repoRoot: string,
   factory: LanguageFactory,
-  options: { includeTests?: boolean } = {},
+  options: { includeTests?: boolean; skipIgnoreFiles?: readonly string[] } = {},
 ): Promise<CorpusExclusionFilter> {
   const ingest = ignore().add(BUILTIN_IGNORE_PATTERNS);
+  const skipped = new Set(options.skipIgnoreFiles ?? []);
   for (const ignoreFile of PROJECT_IGNORE_FILES) {
+    if (skipped.has(ignoreFile)) continue;
     try {
       ingest.add(readFileSync(join(repoRoot, ignoreFile), "utf8"));
     } catch {
