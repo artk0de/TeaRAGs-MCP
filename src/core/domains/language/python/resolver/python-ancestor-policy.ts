@@ -60,6 +60,7 @@ import { PYTHON_UNRESOLVABLE_BASE } from "../walker/walker.js";
 import { linearizeC3 } from "./mro.js";
 import type { PythonImportFileMapper } from "./python-import-file-mapper.js";
 import {
+  lookupPythonSymbolsByShortName,
   parsePythonClassKey,
   pythonClassKey,
   pythonClassKeyIsDeclared,
@@ -243,7 +244,7 @@ function resolveOneBaseSpelling(
  * one file are `unknown`, not a coin flip.
  */
 function classKeyIn(className: string, file: RelPath, ctx: CallContext): BaseKeyVerdict {
-  const declared = ctx.symbolTable.lookupByShortName(className).filter((def) => def.relPath === file);
+  const declared = lookupPythonSymbolsByShortName(ctx, className).filter((def) => def.relPath === file);
   if (declared.length !== 1) return UNKNOWN_BASE;
   const def = declared[0];
   return { kind: "project", classKey: pythonClassKey(def.relPath, pythonDeclaredClassFq(def)) };

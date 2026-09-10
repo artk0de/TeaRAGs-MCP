@@ -7,7 +7,7 @@ import {
 import type { ConeTypeLocator } from "../../../../../contracts/types/language.js";
 import { PythonImportFileMapper } from "../python-import-file-mapper.js";
 import { resolveTypeFile } from "./python-local-binding.js";
-import { lastSegment, type ResolverConfig } from "./shared.js";
+import { lastSegment, lookupPythonSymbolsByShortName, type ResolverConfig } from "./shared.js";
 
 /**
  * Python specifics for the generic `ConeDispatchResolver` (bd tea-rags-mcp-f10y,
@@ -55,7 +55,7 @@ export class PythonConeTypeLocator implements ConeTypeLocator {
     const bareType = lastSegment(typeName);
     const file = resolveTypeFile(bareType, ctx, this.mapper);
     if (!file) return null;
-    const candidates = ctx.symbolTable.lookupByShortName(member).filter((def) => {
+    const candidates = lookupPythonSymbolsByShortName(ctx, member).filter((def) => {
       if (def.relPath !== file) return false;
       const tail = def.scope[def.scope.length - 1];
       return tail === typeName || tail === bareType;

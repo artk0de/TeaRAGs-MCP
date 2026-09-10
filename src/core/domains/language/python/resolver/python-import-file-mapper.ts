@@ -37,6 +37,7 @@ import { posix } from "node:path";
 import type { CallContext, GlobalSymbolTable, RelPath } from "../../../../contracts/types/codegraph.js";
 import type { ImportFileMapper, ImportFileTarget } from "../../../../contracts/types/language.js";
 import { PYTHON_STDLIB_MODULES } from "../vocabulary/stdlib-modules.js";
+import { lookupPythonSymbolsByShortName } from "./strategies/shared.js";
 
 /** The suffix that makes a directory a package; `pkg/__init__.py` -> `pkg/`. */
 const INIT_PY = "/__init__.py";
@@ -228,7 +229,7 @@ export class PythonImportFileMapper implements ImportFileMapper {
  * trigger for the follow.
  */
 function declaresName(relPath: RelPath, name: string, ctx: CallContext): boolean {
-  return ctx.symbolTable.lookupByShortName(name).some((def) => def.relPath === relPath);
+  return lookupPythonSymbolsByShortName(ctx, name).some((def) => def.relPath === relPath);
 }
 
 /**
