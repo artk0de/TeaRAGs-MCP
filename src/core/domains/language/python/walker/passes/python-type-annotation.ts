@@ -104,6 +104,19 @@ export const PYTHON_CONTAINER_LAST: ReadonlySet<string> = new Set([
 /** Subscripted forms that name no receiver at all. */
 const PYTHON_OPAQUE_GENERICS: ReadonlySet<string> = new Set(["Callable", "Literal"]);
 
+/**
+ * The name a `-> Self` RETURN fact is recorded under, for the resolver to
+ * substitute (bd tea-rags-mcp-w205u, E4.6b-1).
+ *
+ * `Self` on a return is the class the RECEIVER names, and the walker cannot
+ * know it: polar's `AccountRepository.from_session(s)` inherits `from_session`
+ * from `RepositoryBase`, so recording the DECLARING class puts every following
+ * hop on the wrong class. Everywhere else — a parameter, an ivar — `Self` names
+ * a value the caller already holds and the enclosing class is the answer.
+ * `pythonInheritedMemberType` is the one reader that substitutes.
+ */
+export const PYTHON_SELF_RETURN = "Self";
+
 function isTypeRef(ref: TypeRef | undefined): ref is TypeRef {
   return ref !== undefined;
 }

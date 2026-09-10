@@ -14,6 +14,7 @@ import {
   findPythonImportBinding,
   lookupPythonSymbolsByShortName,
   pythonClassKey,
+  receiverModuleText,
   resolvePythonInheritedMember,
   type PythonImportBinding,
   type ResolverConfig,
@@ -532,23 +533,6 @@ function importsStdlibModule(importText: string): boolean {
   return PYTHON_STDLIB_MODULES.has(importText.split(".")[0]);
 }
 
-/**
- * The module text a single-identifier receiver denotes, from the two shapes
- * `collectPythonImports` records (`walker/walker.ts:499`).
- *
- * `importedBindings[local] === importText` IS the `import_statement` form —
- * there the recorded value is the MODULE PATH. An unaliased `import a.b` binds
- * the top package, so its head denotes `a`, not `a.b`; an aliased one denotes
- * the whole path. Everything else is `from M import name`, where the value is
- * an exported NAME and the receiver denotes the SUBMODULE `M.name` — joined
- * without a separator when `M` already ends in a dot, or `from . import c`
- * would compose `..c` and climb a package.
- */
-function receiverModuleText(binding: PythonImportBinding): string {
-  const { importText } = binding.imp;
-  if (binding.importedName === importText) {
-    const firstSegment = binding.importedName.split(".")[0];
-    return binding.localName === firstSegment ? firstSegment : binding.importedName;
-  }
-  return importText.endsWith(".") ? `${importText}${binding.importedName}` : `${importText}.${binding.importedName}`;
-}
+// `receiverModuleText` MOVED to `./shared.js` (bd tea-rags-mcp-w205u, E4.6b-1).
+// The chain ports ask the same question of a module-alias head, and
+// `PythonImportBinding` already lives there; body byte-identical.
