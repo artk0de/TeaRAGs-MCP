@@ -35,6 +35,7 @@ import type {
   ImportRef,
   InheritanceEdgeDecl,
   LocalBinding,
+  ModuleReexport,
 } from "../../../../contracts/types/codegraph.js";
 import { assignCallsToInnermostChunks } from "../../kernel/assign-calls-to-chunks.js";
 import { collectPythonClassBodyFieldTypes } from "./passes/python-class-body-fields.js";
@@ -63,7 +64,7 @@ export function pythonLocalTypeTrackingEnabled(): boolean {
 }
 
 export function extractFromPythonFile(input: PythonExtractInput): FileExtraction {
-  const imports = collectPythonImports(input.tree.rootNode);
+  const { imports, reexports } = collectPythonImports(input.tree.rootNode);
   const calls = collectPythonCalls(input.tree.rootNode);
   // bd tea-rags-mcp-zvsw — Decorator applications are calls. Append the
   // synthetic call edges so `get_callers(decoratorName)` returns every
@@ -147,6 +148,10 @@ export function extractFromPythonFile(input: PythonExtractInput): FileExtraction
   if (Object.keys(classAncestors).length > 0) out.classAncestors = classAncestors;
   if (Object.keys(classFieldTypes).length > 0) out.classFieldTypes = classFieldTypes;
   if (Object.keys(classFieldTypesByClassKey).length > 0) out.classFieldTypesByClassKey = classFieldTypesByClassKey;
+  // bd tea-rags-mcp-xpl83.3 — the names this file's `from` statements bind, so
+  // the import mapper can walk past a package that re-exports rather than
+  // declares. Absent when the file has none, like every other optional channel.
+  if (reexports.length > 0) out.moduleReexports = reexports;
   // Unified hierarchy edges (CHA cone-unification Slice 2). Parity with the
   // Ruby/TS walkers' inheritanceEdges: where the legacy `classExtends` Record
   // keeps only the FIRST base for `super()` resolution, this emits EVERY base
@@ -831,8 +836,24 @@ function pythonModuleBinding(moduleText: string, alias: string | null): { local:
   return { local: moduleText.split(".")[0], imported: moduleText };
 }
 
-function collectPythonImports(root: AstNode): ImportRef[] {
+/**
+ * The import statements of one file, plus the names its `from` statements
+ * re-export (bd tea-rags-mcp-xpl83.3).
+ *
+ * Both come off ONE walk because both read the same nodes, and because the two
+ * are not separable after the fact: `import a` and `from a import a` produce an
+ * IDENTICAL `ImportRef`, and only the node type tells them apart. A re-export
+ * derived from the `ImportRef` list alone would have to guess, and guessing
+ * wrong invents an export the module does not have.
+ */
+interface PythonImportScan {
+  readonly imports: ImportRef[];
+  readonly reexports: ModuleReexport[];
+}
+
+function collectPythonImports(root: AstNode): PythonImportScan {
   const out: ImportRef[] = [];
+  const reexports: ModuleReexport[] = [];
   walk(root, (node) => {
     if (node.type === "import_statement") {
       // `import a`, `import a.b`, `import a as x`, `import a, b`
@@ -868,12 +889,20 @@ function collectPythonImports(root: AstNode): ImportRef[] {
       // text comparison would drop it.
       const importedNames: string[] = [];
       const importedBindings: Record<string, string> = {};
+      // The module text the re-export entries point back at, spelled exactly as
+      // `importText` below spells it — the mapper resolves both through the same
+      // relative/absolute rules and a divergence here would silently miss.
+      const sourceModule = moduleField ? prefix + (pickModuleText(moduleField) ?? "") : prefix;
+      const reexport = (entry: ModuleReexport): void => {
+        if (sourceModule.length > 0) reexports.push(entry);
+      };
       for (const child of node.namedChildren) {
         if (child === moduleField || child.type === "import_prefix") continue;
         if (child.type === "wildcard_import") {
           // A star binds no single member: it is a name for the resolver's
           // star-import path and nothing for the binding table.
           importedNames.push("*");
+          reexport({ exportedName: "*", sourceModule });
           continue;
         }
         if (child.type === "aliased_import") {
@@ -882,11 +911,13 @@ function collectPythonImports(root: AstNode): ImportRef[] {
           if (!importedName || !localName) continue;
           importedNames.push(localName);
           importedBindings[localName] = importedName;
+          reexport({ exportedName: localName, sourceModule, sourceName: importedName });
           continue;
         }
         if (child.type === "dotted_name" || child.type === "identifier") {
           importedNames.push(child.text);
           importedBindings[child.text] = child.text;
+          reexport({ exportedName: child.text, sourceModule, sourceName: child.text });
         }
       }
       // Emit only non-empty: a channel the statement does not carry is absent,
@@ -895,19 +926,14 @@ function collectPythonImports(root: AstNode): ImportRef[] {
       const names = importedNames.length > 0 ? { importedNames } : {};
       const bindings = Object.keys(importedBindings).length > 0 ? { importedBindings } : {};
       if (moduleField) {
-        out.push({
-          importText: prefix + (pickModuleText(moduleField) ?? ""),
-          startLine,
-          ...names,
-          ...bindings,
-        });
+        out.push({ importText: sourceModule, startLine, ...names, ...bindings });
       } else if (prefix) {
         // `from . import x` — no module name, just the prefix.
         out.push({ importText: prefix, startLine, ...names, ...bindings });
       }
     }
   });
-  return out;
+  return { imports: out, reexports };
 }
 
 function pickModuleText(node: AstNode): string | null {
