@@ -1412,6 +1412,18 @@ Ruby parity vs `--before-root` the main checkout: `ruby-resolver-parity` on
 mastodon, 42,057 sites compared, **mismatches 0 · drift 0**;
 `ruby-walker-composition-parity`, 500 files compared, **mismatches 0**.
 
+Live validation (epic-completion-gate step 3, one user-authorized run, build of
+`7e7dcbb91` = seam 5 + E3 + main `f10f704c9`):
+`CODEGRAPH_ENABLED=true DEBUG=1 tea-rags index-codebase --project ugnest --wait-enrichments --force-enrichments codegraph --languages python --json`
+— rc 0, 410 files / 3,110 chunks, `outcome.failed` and `outcome.degraded` both
+empty, `codegraph.symbols` file/chunk `healthy`, 234 files matched / 0 missed,
+enrichment 1.06 s. `prime` afterwards reads bareCall 367/1,717, dynamic
+26/1,631, chain 0/813, constant 293/311, localVar 6/131, selfMember 78/96 =
+**770 edges — the oracle's AFTER dump exactly**, numerators and denominators
+alike (the walker-4 chunk attribution moved dynamic 1,473 → 1,631 and localVar
+289 → 131 to the oracle's own site counts). Before the run the same index held
+742 edges from the seam-4 walker-3 build (bareCall 356, dynamic 9).
+
 Residual after close, and what each bucket is:
 
 | corpus | kind       | missed | biggest bucket                                                                      |
