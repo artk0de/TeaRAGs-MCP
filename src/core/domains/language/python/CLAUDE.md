@@ -280,6 +280,29 @@
   order silently retypes every field a class declares twice. Attribution is to
   the INNERMOST enclosing class and the field name is taken verbatim — no
   spelling is special-cased.
+- **A Python signature is NOT a Ruby signature, because a Python positional
+  parameter may be passed by name.** `walker/passes/python-def-signatures.ts`
+  fills the four neutral channels the kernel's `ArityNarrower` / `KwargNarrower`
+  read (`arity` / `kwargs` on the chunk, `argCount` / `kwargKeys` /
+  `hasKwargSplat` on the `CallRef`). `arity` counts positional slots only, with
+  a leading `self` / `cls` DROPPED for a def declared directly in a class body —
+  the call site never passes the receiver — and kept for a `@staticmethod`,
+  which binds nothing implicitly. `kwargs.required` holds KEYWORD-ONLY params
+  with no default, because those are the only ones a call MUST name;
+  `kwargs.optional` holds every nameable param — the positional-or-keyword names
+  in declaration order, then the keyword-only defaults. That last part is
+  load-bearing: `KwargNarrower`'s extra-unknown-key rule drops a candidate whose
+  declared set misses a passed key, so filing `def f(timeout)` without `timeout`
+  in `optional` would drop it on `f(timeout=3)`. A param left of `/` is
+  positional-ONLY and is absent from `optional` while still counting toward
+  arity. `*args` sets `arity.hasSplat`, `**kw` sets `kwargs.hasSplat`, and a
+  bare `*` opens the keyword-only region without either. On the call side a
+  `*xs` splat OMITS `argCount` rather than guessing — a missing count is "no
+  evidence, keep every candidate", a wrong one drops the right target. Python
+  writes NO `visibility` (`_name` is a convention, not a keyword),
+  `acceptsBlock` or `paramNames`; both narrowers that read them keep every
+  candidate on absent evidence. A `@property` is not marked in any way — an
+  attribute read is not a call site, so no `CallRef` ever reaches its signature.
 - **The class-body reader emits only on project-class EVIDENCE, and is SILENT
   rather than external otherwise.** A bare `X()` needs `X` declared in THIS
   file; `X.as_manager()` also accepts an import-bound name, because there
