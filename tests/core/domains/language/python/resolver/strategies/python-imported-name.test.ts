@@ -1087,6 +1087,32 @@ describe("PythonImportedNameSymbolResolutionStrategy — the package aliases a s
     expect(strategy().attempt(call("datatable", "Missing"), aliasCtx(POLAR_REEXPORTS))).toEqual({ kind: "continue" });
   });
 
+  it("CONTINUEs rather than pinning a project-wide namesake the aliased module only re-exports", () => {
+    // polar's `from .db.postgres import sql` reaches
+    // `kit/extensions/sqlalchemy/sql.py`, which re-exports sqlalchemy's
+    // `select` and declares nothing. The project happens to declare exactly one
+    // `select` — a backoffice form helper — and the barrel hop would pin it on
+    // every `sql.select(Model)` in the codebase. 10 phantoms, measured. The
+    // alias names ONE file; a member that file does not DECLARE is not an
+    // answer this arm has.
+    const files: Record<string, string[]> = {
+      "app/__init__.py": ["__all__"],
+      "app/db/__init__.py": [],
+      "app/db/shim.py": [],
+      "app/forms/widgets.py": ["select"],
+      "app/service.py": ["run"],
+    };
+    const ctx: CallContext = {
+      ...ctxWith(
+        "app/service.py",
+        [{ importText: ".db", startLine: 1, importedNames: ["sql"], importedBindings: { sql: "sql" } }],
+        tableWith(files),
+      ),
+      moduleReexports: { "app/db/__init__.py": [{ exportedName: "sql", sourceModule: ".", sourceName: "shim" }] },
+    };
+    expect(strategy().attempt(call("sql", "select"), ctx)).toEqual({ kind: "continue" });
+  });
+
   it("CONTINUEs when the aliased module declares the member twice", () => {
     const files = {
       ...POLAR_FILES,
