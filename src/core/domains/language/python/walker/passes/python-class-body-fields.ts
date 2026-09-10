@@ -19,12 +19,14 @@
  * verbatim — netbox uses `objects` on 37 models and `_objects_raw` on one, and
  * nothing here special-cases either spelling.
  *
- * Deliberately SILENT on `objects = models.Manager()` and on `name =
- * CharField(…)`: the RHS names a class the project does not declare, and a fact
- * that resolves external would make `chainType` DROP where the call currently
- * falls through to a later strategy. Absence keeps that path byte-identical —
- * the fold's stop-at-unknown-hop already produces an untyped receiver, and
- * `chainType` returns CONTINUE on one.
+ * Deliberately SILENT on the DOTTED form, `objects = models.Manager()`: the
+ * receiver of the dot is a module and nothing here can say which one, so the
+ * name would resolve external and make `chainType` DROP where the call
+ * currently falls through to a later strategy. Absence keeps that path
+ * byte-identical — the fold's stop-at-unknown-hop already produces an untyped
+ * receiver, and `chainType` returns CONTINUE on one. A BARE `CharField()` that
+ * no import bound and no class in the file declares is silent for the same
+ * reason: there is no evidence at all behind the name.
  */
 
 import type { AstNode } from "../../../../../contracts/types/ast.js";
@@ -44,11 +46,15 @@ export interface PythonClassBodyFieldTypes {
  * The names this file can vouch for as PROJECT classes.
  *
  * `declared` is every `class X` in the file at any nesting depth, by short name —
- * the strongest evidence a per-file pass can hold, and the only evidence a bare
- * construction `X()` gets. `importBound` is every local name an import statement
- * bound; it is weaker (it cannot tell `netbox.models.querysets` from
- * `django.db.models`), so only the `as_manager` form accepts it, where Django's
- * own verb rather than the name carries the claim.
+ * the strongest evidence a per-file pass can hold. `importBound` is every local
+ * name an import statement bound; in isolation it cannot tell
+ * `netbox.models.querysets` from `django.db.models`, but the pipeline is not the
+ * walker in isolation. The fact is emitted as a NAME, and the resolve-time
+ * consumer (`resolveTypeFile` inside `pythonInheritedMemberType`) refuses a name
+ * that maps outside the project — so a bare construction takes
+ * `declared ∪ importBound` and the mapper still has to place it (bd
+ * tea-rags-mcp-w205u, E4.6c). `as_manager` accepts the same union, where
+ * Django's own verb rather than the name carries the claim.
  */
 interface PythonClassNameEvidence {
   readonly declared: ReadonlySet<string>;
@@ -113,7 +119,7 @@ function pythonClassBodyFieldType(
   }
 
   if (callee.type !== "identifier") return undefined;
-  if (!evidence.declared.has(callee.text)) return undefined;
+  if (!evidence.declared.has(callee.text) && !evidence.importBound.has(callee.text)) return undefined;
   return { field: left.text, type: callee.text };
 }
 

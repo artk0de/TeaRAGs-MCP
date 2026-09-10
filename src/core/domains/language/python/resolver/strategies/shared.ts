@@ -303,10 +303,42 @@ export function resolvePythonMemberOnTypeThroughMro(
 ): PythonTypeMemberResolution {
   const bareType = lastSegment(typeName);
   const targetFile = resolveTypeFile(bareType, ctx, mapper);
-  if (targetFile === null) return UNBOUND_TYPE_MEMBER;
-  const classKey = pythonBoundClassKey(bareType, targetFile, ctx);
+  const direct = targetFile === null ? null : pythonBoundClassKey(bareType, targetFile, ctx);
+  // Only on a MISS: an import that RENAMED the class carries the source name,
+  // and the annotation recorded the local one (bd tea-rags-mcp-w205u, E4.6c).
+  const classKey = direct ?? pythonAliasedClassKey(bareType, ctx, mapper);
   if (classKey === null) return UNBOUND_TYPE_MEMBER;
   return resolvePythonInheritedMember(classKey, member, ctx, mode, linearizer);
+}
+
+/**
+ * The MRO key a name that an import ALIASED denotes — `OrderSchema` under
+ * `from polar.order.schemas import Order as OrderSchema` is `Order`'s key (bd
+ * tea-rags-mcp-w205u, E4.6c).
+ *
+ * `null` for everything else, and deliberately so: an UNALIASED binding is
+ * already what every other read spells, and an import that maps outside the
+ * project names no class this run holds. The alias is evidence the local name
+ * alone cannot be — `lookupPythonSymbolsByShortName("OrderSchema")` is empty
+ * and `resolveTypeFile`'s import pass matches the module text's last segment,
+ * never the alias.
+ *
+ * The re-export hop is the same one `resolveTypeFile` takes: a package that
+ * only re-exports the source name declares nothing, so ask which file does.
+ */
+export function pythonAliasedClassKey(
+  localName: string,
+  ctx: CallContext,
+  mapper: PythonImportFileMapper,
+): string | null {
+  const binding = findPythonImportBinding(ctx.imports, localName);
+  if (binding === null || binding.importedName === binding.localName) return null;
+  const mapped = mapper.mapImportToFile(binding.imp.importText, ctx.callerFile, ctx);
+  if (mapped.kind !== "project") return null;
+  const direct = pythonBoundClassKey(binding.importedName, mapped.relPath, ctx);
+  if (direct !== null) return direct;
+  const declaring = mapper.resolveExportedName(mapped.relPath, binding.importedName, ctx);
+  return declaring === null ? null : pythonBoundClassKey(binding.importedName, declaring, ctx);
 }
 
 /**
@@ -327,7 +359,10 @@ function pythonReceiverClassKey(bareType: string, ctx: CallContext, mapper: Pyth
   const own = pythonBoundClassKey(bare, ctx.callerFile, ctx);
   if (own !== null) return own;
   const imported = resolveTypeFile(bare, ctx, mapper);
-  return imported === null ? null : pythonBoundClassKey(bare, imported, ctx);
+  const direct = imported === null ? null : pythonBoundClassKey(bare, imported, ctx);
+  // Last, and only on a miss: the name an import RENAMED (bd
+  // tea-rags-mcp-w205u, E4.6c). See {@link pythonAliasedClassKey}.
+  return direct ?? pythonAliasedClassKey(bare, ctx, mapper);
 }
 
 /**
@@ -353,6 +388,22 @@ function pythonReceiverClassKey(bareType: string, ctx: CallContext, mapper: Pyth
  * reads the own class only, which is exactly the pre-seam behaviour.
  */
 export function pythonInheritedMemberType(
+  bareType: string,
+  member: string,
+  form: "class" | "instance",
+  ctx: CallContext,
+  mapper: PythonImportFileMapper,
+  linearizer: AncestorLinearizer<CallContext> | undefined,
+): TypeRef | undefined {
+  const declared = pythonDeclaredMemberType(bareType, member, form, ctx, mapper, linearizer);
+  if (declared !== undefined) return declared;
+  // LAST, and only when the run carries the channel: a field assigned from a
+  // CALL, folded ONE level (bd tea-rags-mcp-w205u, E4.6c).
+  return pythonFieldCallResultType(bareType, member, ctx, mapper, linearizer);
+}
+
+/** {@link pythonInheritedMemberType} minus its call-result tier — the pre-E4.6c body. */
+function pythonDeclaredMemberType(
   bareType: string,
   member: string,
   form: "class" | "instance",
@@ -408,6 +459,103 @@ export function pythonInheritedMemberType(
     if (hit !== undefined) return hit;
   }
   return undefined;
+}
+
+/** A single capitalized identifier — Python's class-name convention. */
+const PYTHON_CLASS_NAME = /^[A-Z]\w*$/;
+/** A single lowercase identifier — a function, never a class. */
+const PYTHON_FUNCTION_NAME = /^[a-z_]\w*$/;
+
+/**
+ * A bare `factory()` call's own recorded return type (bd tea-rags-mcp-w205u,
+ * E4.6b-1 as a chain head, E4.6c at a field).
+ *
+ * The single-candidate gate is not a cardinality guess. `structuredReturnTypes`
+ * keys a top-level `def` by its BARE name, so a second same-named def anywhere
+ * in the corpus would let one file's answer speak for the other. Reachability
+ * is the two arms a bare call has and nothing wider: the caller's own module
+ * scope, or an import that maps into the project.
+ */
+export function pythonBareCallReturnType(
+  callee: string,
+  ctx: CallContext,
+  mapper: PythonImportFileMapper,
+): TypeRef | undefined {
+  if (!PYTHON_FUNCTION_NAME.test(callee)) return undefined;
+  const candidates = lookupPythonSymbolsByShortName(ctx, callee);
+  if (candidates.length !== 1) return undefined;
+  const def = candidates[0];
+  const bound = findPythonImportBinding(ctx.imports, callee);
+  const reachable =
+    (def.relPath === ctx.callerFile && def.scope.length === 0) ||
+    (bound !== null && mapper.mapImportToFile(bound.imp.importText, ctx.callerFile, ctx).kind === "project");
+  return reachable ? ctx.structuredReturnTypes?.[def.symbolId] : undefined;
+}
+
+/**
+ * What the CALLEE recorded in `classFieldCallResults` returns, read ONE level
+ * (bd tea-rags-mcp-w205u, E4.6c).
+ *
+ * Three spellings and no fourth, because those are the three the corpora
+ * measured:
+ *
+ *   `get_geo_provider`             a bare project function — its own return
+ *   `PaymentRepository.from_session`  a class-form call, `-> Self` naming the
+ *                                    RECEIVER class rather than the declaring one
+ *   `self._init_transport`         a method of the class being walked
+ *
+ * Every arm reads {@link pythonDeclaredMemberType}, never the exported entry
+ * point: one level means a callee whose own return is itself only knowable
+ * through this channel is silence, not a worklist (decision 3 of the plan).
+ */
+function pythonFieldCallResultType(
+  bareType: string,
+  member: string,
+  ctx: CallContext,
+  mapper: PythonImportFileMapper,
+  linearizer: AncestorLinearizer<CallContext> | undefined,
+): TypeRef | undefined {
+  const channel = ctx.classFieldCallResults;
+  // The pre-channel path, and the perf gate: a run without it never addresses
+  // the class, which costs symbol-table work.
+  if (channel === undefined) return undefined;
+  const classKey = pythonReceiverClassKey(bareType, ctx, mapper);
+  if (classKey === null) return undefined;
+  const keys = [classKey, ...(linearizer === undefined ? [] : linearizer.linearize(classKey).order)];
+  for (const key of keys) {
+    const callee = channel[key]?.[member];
+    if (callee === undefined) continue;
+    const type = pythonCalleeSpellingType(callee, bareType, ctx, mapper, linearizer);
+    // First fact wins, answer or not — a second class further up the MRO
+    // assigning the same field is shadowed, exactly as the type channels are.
+    return type;
+  }
+  return undefined;
+}
+
+/** One callee SPELLING → the type it yields. See {@link pythonFieldCallResultType}. */
+function pythonCalleeSpellingType(
+  callee: string,
+  ownerType: string,
+  ctx: CallContext,
+  mapper: PythonImportFileMapper,
+  linearizer: AncestorLinearizer<CallContext> | undefined,
+): TypeRef | undefined {
+  const dot = callee.lastIndexOf(".");
+  if (dot === -1) return pythonBareCallReturnType(callee, ctx, mapper);
+  const head = callee.slice(0, dot);
+  const method = callee.slice(dot + 1);
+  // `self.<method>()` — the receiving class IS the one whose field this is.
+  if (head === "self") return pythonDeclaredMemberType(ownerType, method, "instance", ctx, mapper, linearizer);
+  const bareHead = lastSegment(head);
+  if (!PYTHON_CLASS_NAME.test(bareHead)) return undefined;
+  // Gated on the class resolving into the project, exactly as the chain's own
+  // class-head seed is: a capitalised name an import took from a library is a
+  // coincidence of spelling, not evidence.
+  if (resolveTypeFile(bareHead, ctx, mapper) === null && pythonAliasedClassKey(bareHead, ctx, mapper) === null) {
+    return undefined;
+  }
+  return pythonDeclaredMemberType(bareHead, method, "class", ctx, mapper, linearizer);
 }
 
 export interface ResolverConfig {

@@ -79,11 +79,16 @@ describe("class-body manager attributes become field facts", () => {
     expect(out.classFieldTypes).toBeUndefined();
   });
 
-  it("says NOTHING for a bare ctor this file does not declare", () => {
-    // `from django.db.models import CharField` binds the name, but the class is
-    // Django's. An import binding alone is not project evidence.
+  it("records a bare ctor whose name an import bound, leaving the project test to the mapper", () => {
+    // WIDENED by bd tea-rags-mcp-w205u, E4.6c: this used to assert silence on
+    // the ground that "an import binding alone is not project evidence". True of
+    // the walker in isolation, false of the pipeline — the fact is emitted as a
+    // NAME and `resolveTypeFile` refuses one that maps outside the project. The
+    // row that forced it is polar's `_client = SlackClient()` in
+    // `polar/integrations/slack/service.py` (8 rows), which is spelled exactly
+    // like the Django case below and differs only in where the import lands.
     const out = native(["from django.db.models import CharField", "", "class X(Model):", "    name = CharField()"]);
-    expect(out.classFieldTypes).toBeUndefined();
+    expect(out.classFieldTypes).toEqual({ X: { name: "CharField" } });
   });
 
   it("says NOTHING for `from_queryset(…)()`, a literal, or a non-identifier LHS", () => {

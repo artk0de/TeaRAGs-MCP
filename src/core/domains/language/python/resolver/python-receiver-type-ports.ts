@@ -32,7 +32,7 @@ import type { PythonAncestorLinearizerCache } from "./python-ancestor-policy.js"
 import type { PythonImportFileMapper } from "./python-import-file-mapper.js";
 import {
   findPythonImportBinding,
-  lookupPythonSymbolsByShortName,
+  pythonBareCallReturnType,
   pythonImportMatchesReceiver,
   pythonInheritedMemberType,
   receiverModuleText,
@@ -43,9 +43,6 @@ export const PYTHON_CHAIN_MAX_HOPS_ENV = "CODEGRAPH_PY_CHAIN_MAX_HOPS";
 
 /** A single capitalized identifier — Python's class-name convention, no `::`. */
 const PYTHON_CLASS_HEAD = /^[A-Z]\w*$/;
-
-/** A single lowercase identifier — a function, never a class. */
-const PYTHON_CALL_HEAD = /^[a-z_]\w*$/;
 
 /** The two modules that export `Self` and `cast`. */
 const PYTHON_TYPING_MODULES: ReadonlySet<string> = new Set(["typing", "typing_extensions"]);
@@ -118,16 +115,11 @@ function pythonCallHeadReturnType(
   ctx: CallContext,
   mapper: PythonImportFileMapper,
 ): TypeRef | undefined {
-  const callee = stripCallArgs(receiver);
-  if (!PYTHON_CALL_HEAD.test(callee)) return undefined;
-  const candidates = lookupPythonSymbolsByShortName(ctx, callee);
-  if (candidates.length !== 1) return undefined;
-  const def = candidates[0];
-  const bound = findPythonImportBinding(ctx.imports, callee);
-  const reachable =
-    (def.relPath === ctx.callerFile && def.scope.length === 0) ||
-    (bound !== null && mapper.mapImportToFile(bound.imp.importText, ctx.callerFile, ctx).kind === "project");
-  return reachable ? ctx.structuredReturnTypes?.[def.symbolId] : undefined;
+  // The lookup and its reachability gate moved to `strategies/shared.ts` when
+  // E4.6c gave the same question a second asker at a FIELD assignment (bd
+  // tea-rags-mcp-w205u). The lowercase gate lives there too, so a receiver
+  // ending in `)` reduces to the callee and asks once.
+  return pythonBareCallReturnType(stripCallArgs(receiver), ctx, mapper);
 }
 
 /**
