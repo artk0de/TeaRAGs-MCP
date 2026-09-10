@@ -51,6 +51,7 @@ const row = (overrides: Partial<PyOracleRow> = {}): PyOracleRow => ({
   answeredBy: "localBinding",
   chainOutput: "pinned",
   oracleDegraded: false,
+  oracleEngine: "jedi",
   ...overrides,
 });
 
