@@ -32,6 +32,7 @@ import {
 import { propagateReceiverType, type ReceiverTypePorts } from "../../../kernel/receiver-type-propagation.js";
 import { PYTHON_BUILTINS } from "../../vocabulary/builtins.js";
 import { isPythonSourcePath } from "../../vocabulary/source-extensions.js";
+import { PYTHON_SELF_RETURN } from "../../walker/passes/python-type-annotation.js";
 import type { PythonImportFileMapper } from "../python-import-file-mapper.js";
 import { mapPythonImportToFile } from "../python-path-mapper.js";
 
@@ -363,7 +364,14 @@ export function pythonInheritedMemberType(
   const onClass = (shortName: string, classFq: string): TypeRef | undefined => {
     const fieldType = ctx.classFieldTypes?.[shortName]?.[member];
     if (fieldType !== undefined) return { form: "instance", name: fieldType };
-    return ctx.structuredReturnTypes?.[`${classFq}${separator}${member}`];
+    const returned = ctx.structuredReturnTypes?.[`${classFq}${separator}${member}`];
+    // `-> Self` is the class the RECEIVER names, not the one that declared the
+    // method (bd tea-rags-mcp-w205u, E4.6b-1). The annotation facet records the
+    // marker precisely because only this side knows `bareType`; substituting
+    // here rather than in one port covers `selfField` on the same terms.
+    return returned?.form === "instance" && returned.name === PYTHON_SELF_RETURN
+      ? { form: "instance", name: bareType }
+      : returned;
   };
   const byClassKey = (classKey: string): TypeRef | undefined => {
     const fieldType = ctx.classFieldTypesByClassKey?.[classKey]?.[member];
@@ -560,6 +568,27 @@ export function findPythonImportBinding(imports: readonly ImportRef[], localName
     if (imp.importedNames?.includes(localName)) return { imp, localName, importedName: localName };
   }
   return null;
+}
+
+/**
+ * The module text a single-identifier receiver denotes, from the two shapes
+ * `collectPythonImports` records (`walker/walker.ts:499`).
+ *
+ * `importedBindings[local] === importText` IS the `import_statement` form —
+ * there the recorded value is the MODULE PATH. An unaliased `import a.b` binds
+ * the top package, so its head denotes `a`, not `a.b`; an aliased one denotes
+ * the whole path. Everything else is `from M import name`, where the value is
+ * an exported NAME and the receiver denotes the SUBMODULE `M.name` — joined
+ * without a separator when `M` already ends in a dot, or `from . import c`
+ * would compose `..c` and climb a package.
+ */
+export function receiverModuleText(binding: PythonImportBinding): string {
+  const { importText } = binding.imp;
+  if (binding.importedName === importText) {
+    const firstSegment = binding.importedName.split(".")[0];
+    return binding.localName === firstSegment ? firstSegment : binding.importedName;
+  }
+  return importText.endsWith(".") ? `${importText}${binding.importedName}` : `${importText}.${binding.importedName}`;
 }
 
 /**

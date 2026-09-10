@@ -142,6 +142,46 @@
   bound, and `pythonSingleHopType` skips a binding established on the call's own
   line WHEN an import bound that same name. Narrow the gate any less and
   `x = Foo(); x.run()` on one line loses its type.
+- **The hop split is a PORT, and Python is the only language that took the
+  bracket-aware one.** `kernel/receiver-type-propagation.ts` still defaults to
+  `receiver.split(".")`; `createPythonReceiverTypePorts` supplies
+  `splitReceiverHops`, which splits on `.` at bracket depth 0 and counts quotes,
+  so `Notification(user=self.user, …)` is ONE hop and
+  `datatable.Datatable[Benefit, S](…)` is two. It is a port rather than the
+  fold's own rule because the same scan newly types 34 mastodon receivers
+  (`StatusFilter.new(quote.quoted_status, account).filter_state_for_quote`) —
+  gains, but unmeasured ones, and Ruby's gate is parity. An UNBALANCED receiver,
+  which a truncated call text produces, yields the whole string as one hop.
+  `splitAtBracketDepthZero` is the one scanner; the `cast` argument reader asks
+  it for `,` rather than growing a second.
+- **A chain HEAD can be a call, and three arms answer one.**
+  `pythonSingleHopType`'s `endsWith(")")` branch strips the generic subscript
+  before the class test (`Datatable[Benefit, S](…)` → `Datatable`), then tries
+  `typing.cast(T, x)` — where the type IS argument one — then a lowercase call
+  whose callee has a recorded return. That last arm is gated on the symbol table
+  pinning EXACTLY ONE project definition of the name, because
+  `structuredReturnTypes` keys a top-level `def` by its bare name and a second
+  same-named def would speak for the first; reachability is the caller's own
+  module scope or an import that maps into the project, and nothing wider.
+  `PYTHON_CLASS_HEAD` still refuses a bare lowercase NAME — that is E4.1.3's
+  falsified population, and only a CALL with a recorded return qualifies.
+- **A module-alias seed asks the HEAD's own module, not the caller's imports.**
+  `pythonModuleAliasSeed` keeps its original arm (the caller imports the module
+  AND `resolveTypeFile` pins the class) and falls back to one step wider: map
+  the head's import through `receiverModuleText`, then E4.6a's
+  `resolveExportedModule` when that maps nowhere, and require the resulting file
+  to DECLARE the class as a unique top-level symbol — exact-symbolId `lookup`,
+  the same gate `moduleMemberTarget` uses. The caller never imports `Datatable`,
+  only the module that holds it. `receiverModuleText` moved to
+  `strategies/shared.ts` so both readers ask it the same way.
+- **`-> Self` is recorded as a MARKER and substituted by the reader.** The
+  annotation facet resolves `Self` against the enclosing class everywhere except
+  a RETURN, where it emits the literal name `Self` (`PYTHON_SELF_RETURN`).
+  `pythonInheritedMemberType` substitutes the class the RECEIVER names, so
+  `AccountRepository.from_session(s)` types as `AccountRepository` and not as
+  the `RepositoryBase` that declared the classmethod — which is what the
+  following hop needs. Substituting there rather than in one port is what makes
+  `selfField` read it on the same terms.
 - **`callResultBindings` is folded at RESOLVE time, and that is the only layer
   where it can be.** The walker records the callee SPELLING a local was assigned
   from (`repository = SubscriptionRepository.from_session(session)` →

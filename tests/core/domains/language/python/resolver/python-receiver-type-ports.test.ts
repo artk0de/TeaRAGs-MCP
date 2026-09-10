@@ -106,3 +106,213 @@ describe("pythonSingleHopType — a local that shadows an import it is built fro
     expect(ports().singleHopType("x", 4, ctx)).toEqual({ form: "instance", name: "Foo" });
   });
 });
+
+/**
+ * Chain HEADS that are calls, constructors and casts (bd tea-rags-mcp-w205u,
+ * E4.6b-1). The receiver text arrives whole, and before the bracket-aware split
+ * its dots shredded it into segments that typed to nothing — 79 rows.
+ */
+
+const POLAR_FILES: Record<string, readonly string[]> = {
+  "server/polar/backoffice/components/__init__.py": [],
+  "server/polar/backoffice/components/_datatable.py": ["Datatable", "DatatableAttrColumn"],
+  "server/polar/backoffice/benefits/endpoints.py": ["list_benefits"],
+  "server/polar/models/notification.py": ["Notification"],
+  "server/polar/integrations/client.py": ["get_client", "PolarSelfClient"],
+  "server/polar/kit/repository/base.py": ["RepositoryBase"],
+  "server/polar/account/repository.py": ["AccountRepository"],
+};
+
+function polarTable(extra: Record<string, readonly string[]> = {}): InMemoryGlobalSymbolTable {
+  const built = new InMemoryGlobalSymbolTable();
+  for (const [relPath, ids] of Object.entries({ ...POLAR_FILES, ...extra })) {
+    built.upsertFile(
+      relPath,
+      ids.map((symbolId) => ({ symbolId, fqName: symbolId, shortName: symbolId, relPath, scope: [] })),
+    );
+  }
+  return built;
+}
+
+const CALLER = "server/polar/backoffice/benefits/endpoints.py";
+
+function polarCtx(over: Partial<CallContext> = {}): CallContext {
+  return { callerFile: CALLER, callerScope: ["list_benefits"], imports: [], symbolTable: polarTable(), ...over };
+}
+
+/** `from ..components import datatable`, where the package aliases a SUBMODULE. */
+const COMPONENTS_IMPORT: ImportRef = {
+  importText: "..components",
+  startLine: 3,
+  importedNames: ["datatable"],
+  importedBindings: { datatable: "datatable" },
+};
+
+/** `components/__init__.py:1` — `from . import _datatable as datatable`. */
+const COMPONENTS_REEXPORTS = [{ exportedName: "datatable", sourceModule: ".", sourceName: "_datatable" }];
+
+describe("pythonSingleHopType — a constructor call whose ARGUMENTS carry dots", () => {
+  it("types the receiver as an instance of the class being constructed", () => {
+    const ctx = polarCtx({ imports: [{ importText: "polar.models.notification", startLine: 1 }] });
+    expect(ports().singleHopType("Notification(user=self.u, event=self.t())", 40, ctx)).toEqual({
+      form: "instance",
+      name: "Notification",
+    });
+  });
+
+  it("declines a constructor the project does not declare", () => {
+    expect(ports().singleHopType("BackgroundTasks(scope=self.s)", 40, polarCtx())).toBeUndefined();
+  });
+});
+
+describe("pythonModuleAliasSeed — a generic subscript on the head's class", () => {
+  it("strips the subscript and types the alias member through the package's module alias", () => {
+    const ctx = polarCtx({
+      imports: [COMPONENTS_IMPORT],
+      moduleReexports: { "server/polar/backoffice/components/__init__.py": COMPONENTS_REEXPORTS },
+    });
+    expect(ports().seedHead("datatable", "Datatable[Benefit, S](items, sort)", ctx)).toEqual({
+      type: { form: "instance", name: "Datatable" },
+      consumedMembers: 1,
+    });
+  });
+
+  it("keeps the CLASS form when the subscripted head is not called", () => {
+    const ctx = polarCtx({
+      imports: [COMPONENTS_IMPORT],
+      moduleReexports: { "server/polar/backoffice/components/__init__.py": COMPONENTS_REEXPORTS },
+    });
+    expect(ports().seedHead("datatable", "Datatable[Benefit]", ctx)).toEqual({
+      type: { form: "class", name: "Datatable" },
+      consumedMembers: 1,
+    });
+  });
+
+  it("declines when the aliased module does not declare the class", () => {
+    const ctx = polarCtx({
+      imports: [COMPONENTS_IMPORT],
+      moduleReexports: { "server/polar/backoffice/components/__init__.py": COMPONENTS_REEXPORTS },
+    });
+    expect(ports().seedHead("datatable", "Paginator[Benefit](x)", ctx)).toBeUndefined();
+  });
+
+  it("declines when nothing imports the head at all", () => {
+    expect(ports().seedHead("datatable", "Datatable[Benefit](x)", polarCtx())).toBeUndefined();
+  });
+});
+
+describe("pythonCallHeadReturnType — a lowercase CALL as the chain head", () => {
+  const clientImport: ImportRef = {
+    importText: "polar.integrations.client",
+    startLine: 2,
+    importedNames: ["get_client"],
+    importedBindings: { get_client: "get_client" },
+  };
+
+  it("seeds the head from the callee's own recorded return type", () => {
+    const ctx = polarCtx({
+      imports: [clientImport],
+      structuredReturnTypes: { get_client: { form: "instance", name: "PolarSelfClient" } },
+    });
+    expect(ports().singleHopType("get_client()", 30, ctx)).toEqual({ form: "instance", name: "PolarSelfClient" });
+  });
+
+  it("declines a callee with no recorded return", () => {
+    expect(ports().singleHopType("get_client()", 30, polarCtx({ imports: [clientImport] }))).toBeUndefined();
+  });
+
+  it("declines when the project spells that name in more than one file", () => {
+    // The run-global key is the BARE name, so a second definition would let one
+    // file's `get_client` speak for every other.
+    const ctx = polarCtx({
+      imports: [clientImport],
+      symbolTable: polarTable({ "server/polar/oauth/client.py": ["get_client"] }),
+      structuredReturnTypes: { get_client: { form: "instance", name: "PolarSelfClient" } },
+    });
+    expect(ports().singleHopType("get_client()", 30, ctx)).toBeUndefined();
+  });
+
+  it("declines a callee no import binds and the caller's own file does not declare", () => {
+    const ctx = polarCtx({ structuredReturnTypes: { get_client: { form: "instance", name: "PolarSelfClient" } } });
+    expect(ports().singleHopType("get_client()", 30, ctx)).toBeUndefined();
+  });
+
+  it("answers for the caller's OWN module-level def without an import", () => {
+    const ctx = polarCtx({
+      symbolTable: polarTable({ [CALLER]: ["list_benefits", "build_client"] }),
+      structuredReturnTypes: { build_client: { form: "instance", name: "PolarSelfClient" } },
+    });
+    expect(ports().singleHopType("build_client()", 30, ctx)).toEqual({
+      form: "instance",
+      name: "PolarSelfClient",
+    });
+  });
+});
+
+describe("pythonCastHeadType — `typing.cast(T, x)` states the type outright", () => {
+  const typingImport: ImportRef = { importText: "typing", startLine: 1 };
+  const castImport: ImportRef = {
+    importText: "typing",
+    startLine: 1,
+    importedNames: ["cast"],
+    importedBindings: { cast: "cast" },
+  };
+
+  it("types a dotted `typing.cast` head as its first argument", () => {
+    const ctx = polarCtx({ imports: [typingImport, { importText: "polar.models.notification", startLine: 2 }] });
+    expect(ports().seedHead("typing", "cast(Notification, row.value)", ctx)).toEqual({
+      type: { form: "instance", name: "Notification" },
+      consumedMembers: 1,
+    });
+  });
+
+  it("types a bare `cast` head imported from typing", () => {
+    const ctx = polarCtx({ imports: [castImport, { importText: "polar.models.notification", startLine: 2 }] });
+    expect(ports().singleHopType("cast(Notification, row.value)", 30, ctx)).toEqual({
+      form: "instance",
+      name: "Notification",
+    });
+  });
+
+  it("declines when the cast target is not a project type", () => {
+    const ctx = polarCtx({ imports: [castImport] });
+    expect(ports().singleHopType("cast(HTTPResponse, row)", 30, ctx)).toBeUndefined();
+  });
+
+  it("declines a `cast` nothing bound to typing", () => {
+    const ctx = polarCtx({ imports: [{ importText: "polar.models.notification", startLine: 2 }] });
+    expect(ports().singleHopType("cast(Notification, row)", 30, ctx)).toBeUndefined();
+  });
+});
+
+describe("pythonMemberTypeOf — `-> Self` is the RECEIVER's class", () => {
+  // The MRO half — a `Self` recorded on an ANCESTOR — is pinned next to the
+  // walk that finds it, in `strategies/python-shared-helper-edges.test.ts`.
+  const selfReturn = (name: string) =>
+    polarCtx({ structuredReturnTypes: { "AccountRepository.from_session": { form: "instance", name } } });
+
+  it("substitutes the class the receiver names for the `Self` marker", () => {
+    expect(
+      ports().memberTypeOf({ form: "class", name: "AccountRepository" }, "from_session", selfReturn("Self")),
+    ).toEqual({
+      form: "instance",
+      name: "AccountRepository",
+    });
+  });
+
+  it("substitutes on an INSTANCE receiver too — `obj.with_x()` is still an obj", () => {
+    const ctx = polarCtx({
+      structuredReturnTypes: { "AccountRepository#with_org": { form: "instance", name: "Self" } },
+    });
+    expect(ports().memberTypeOf({ form: "instance", name: "AccountRepository" }, "with_org", ctx)).toEqual({
+      form: "instance",
+      name: "AccountRepository",
+    });
+  });
+
+  it("leaves an explicitly named return type alone", () => {
+    expect(
+      ports().memberTypeOf({ form: "class", name: "AccountRepository" }, "from_session", selfReturn("RepositoryBase")),
+    ).toEqual({ form: "instance", name: "RepositoryBase" });
+  });
+});

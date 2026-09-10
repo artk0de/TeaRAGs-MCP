@@ -850,6 +850,36 @@ oracle-wrong classes:
 - **polar (73):** 51 CW, 14 OW:EnumClassmethod, 8 OW:ShadowedPackage. The full
   list is `audit-sample-list.txt` under the E4.0.4 dumps.
 
+**A THIRD oracle-wrong class, found by E4.6b-1 (2026-09-11, bd
+tea-rags-mcp-w205u.16): `oracleWrongSelf`, abbreviated `OW:Self`.** jedi
+resolves the result of a `-> Self` classmethod to the class that DECLARED it
+rather than to the receiver's class, so every member the subclass overrides
+scores against the base. It is the same mistake the walker's own pre-E4.6b-1
+`Self` handling made, which is why these rows read `match` while the chain was
+also wrong — the two errors agreed. pyright and the runtime both say the
+receiver class.
+
+14 polar rows, all `repository = CustomerRepository.from_session(session)` then
+`repository.update(…)` / `.create(…)`. `kit/repository/base.py:165` is
+`def from_session(cls, session) -> Self: return cls(session)`, and
+`customer/repository.py` OVERRIDES `create` (line 71) and `update` (line 98).
+pyright answered `CustomerRepository#update@98` / `#create@71` on **14 of 14**,
+byte-identical to the chain's new target; run with `lsp_oracle.ts` driven
+directly on those sites, dumps under `~/.claude/jobs/dffe3647/tmp/e46b1/`.
+
+- **polar (14, all OW:Self):** `backoffice/customers/endpoints.py:910`,
+  `checkout/service.py:3042`, `customer/service.py:399,614,656,744`,
+  `customer_email_update/service.py:157`,
+  `customer_portal/endpoints/oauth_accounts.py:292`,
+  `customer_portal/service/customer.py:205,288,430,459`,
+  `customer_portal/service/customer_session.py:265`,
+  `customer_seat/service.py:852`.
+
+These 14 moved `match → wrongFile` when E4.6b-1 landed, and they are the WHOLE
+of that task's gross-lost column. They are an instrument reading, not a
+regression: E4.6-close subtracts them exactly as D9's other `OW:*` classes are
+subtracted from `precisionMissAdjusted`.
+
 ### D10 — dynamic `single` falsified (measured 2026-09-10, E4.1.3)
 
 A name-only fan is **not precision-safe for Python**. Built, wired and measured
