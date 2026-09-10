@@ -18,6 +18,8 @@ import {
   type AmbiguousResolveMode,
   type CallContext,
   type ImportRef,
+  type SymbolDefinition,
+  type SymbolLookupOptions,
   type SymbolResolutionTarget,
 } from "../../../../../contracts/types/codegraph.js";
 import type { TypeRef } from "../../../../../contracts/types/language.js";
@@ -28,8 +30,30 @@ import {
 } from "../../../kernel/ancestor-walk.js";
 import { propagateReceiverType, type ReceiverTypePorts } from "../../../kernel/receiver-type-propagation.js";
 import { PYTHON_BUILTINS } from "../../vocabulary/builtins.js";
+import { isPythonSourcePath } from "../../vocabulary/source-extensions.js";
 import type { PythonImportFileMapper } from "../python-import-file-mapper.js";
 import { mapPythonImportToFile } from "../python-path-mapper.js";
+
+/**
+ * Short-name lookup restricted to PYTHON candidates — the ONLY short-name entry
+ * point the Python resolver may use (bd tea-rags-mcp-w205u).
+ *
+ * The symbol table is built once per run over every `CODEGRAPH_LANGUAGES`
+ * extension and carries no `language` field, so `lookupByShortName` alone
+ * answers with any file that spells the name. It is not a hypothetical: polar's
+ * `range(...)` landed on `Paginator.tsx#range` and `GitHub()` on
+ * `Icons.tsx#GitHub`, 46 phantoms across two strategies. Wrapping the call
+ * rather than filtering per site is what keeps the guard from being forgotten
+ * at the next one; see {@link isPythonSourcePath} for why the extension, and
+ * not a `language` field, is the axis.
+ */
+export function lookupPythonSymbolsByShortName(
+  ctx: CallContext,
+  name: string,
+  options?: SymbolLookupOptions,
+): SymbolDefinition[] {
+  return ctx.symbolTable.lookupByShortName(name, options).filter((def) => isPythonSourcePath(def.relPath));
+}
 
 /**
  * The run-global address of a Python class: `<relPath>::<dotted class FQ>` (bd
@@ -149,7 +173,7 @@ export function pythonClassKeyIsDeclared(classKey: string, ctx: CallContext): bo
  * project declares.
  */
 export function pythonBoundClassKey(bareName: string, relPath: string, ctx: CallContext): string | null {
-  const declared = ctx.symbolTable.lookupByShortName(bareName).filter((def) => def.relPath === relPath);
+  const declared = lookupPythonSymbolsByShortName(ctx, bareName).filter((def) => def.relPath === relPath);
   if (declared.length !== 1) return null;
   return pythonClassKey(relPath, pythonDeclaredClassFq(declared[0]));
 }
@@ -549,7 +573,7 @@ export function resolveTypeFile(
   // First pass: scan symbol table for ANY definition matching the
   // bare type name. If it's unique we have the file directly — provided the
   // match can OWN a member at all, which a top-level `def` cannot.
-  const tableMatches = ctx.symbolTable.lookupByShortName(bareType);
+  const tableMatches = lookupPythonSymbolsByShortName(ctx, bareType);
   if (tableMatches.length === 1) {
     return pythonTypeOwnsMembers(bareType, member, ctx) ? tableMatches[0].relPath : null;
   }
@@ -613,9 +637,9 @@ export function resolvePythonMemberOnType(
   const bareType = lastSegment(typeName);
   const targetFile = resolveTypeFile(bareType, ctx, mapper, member);
   if (!targetFile) return null;
-  const candidates = ctx.symbolTable
-    .lookupByShortName(member)
-    .filter((def) => def.relPath === targetFile && def.scope[def.scope.length - 1] === bareType);
+  const candidates = lookupPythonSymbolsByShortName(ctx, member).filter(
+    (def) => def.relPath === targetFile && def.scope[def.scope.length - 1] === bareType,
+  );
   const target = pickSingleCandidate(candidates, mode);
   if (target) return { targetRelPath: target.relPath, targetSymbolId: target.symbolId };
   // bd tea-rags-mcp-yrs0 — `member` is not defined on the type itself. Walk its
@@ -654,7 +678,7 @@ export function pythonCallBindingType(
 ): TypeRef | undefined {
   const cut = callee.lastIndexOf(".");
   if (cut < 0) {
-    return ctx.symbolTable.lookupByShortName(callee).length === 1 ? ctx.structuredReturnTypes?.[callee] : undefined;
+    return lookupPythonSymbolsByShortName(ctx, callee).length === 1 ? ctx.structuredReturnTypes?.[callee] : undefined;
   }
   const receiverType = propagateReceiverType(callee.slice(0, cut), atLine, ctx, ports);
   if (receiverType === undefined) return undefined;

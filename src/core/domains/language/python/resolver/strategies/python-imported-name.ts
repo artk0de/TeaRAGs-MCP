@@ -12,6 +12,7 @@ import type { PythonAncestorLinearizerCache } from "../python-ancestor-policy.js
 import type { PythonImportFileMapper } from "../python-import-file-mapper.js";
 import {
   findPythonImportBinding,
+  lookupPythonSymbolsByShortName,
   pythonClassKey,
   resolvePythonInheritedMember,
   type PythonImportBinding,
@@ -388,7 +389,7 @@ export class PythonImportedNameSymbolResolutionStrategy implements SymbolResolut
    */
   private resolveModuleValueReceiver(moduleFile: string, call: CallRef, ctx: CallContext): SymbolResolutionOutcome {
     if (!call.receiver) return CONTINUE; // a bare call names no value to read a member off
-    const candidates = ctx.symbolTable.lookupByShortName(call.member).filter((def) => def.relPath === moduleFile);
+    const candidates = lookupPythonSymbolsByShortName(ctx, call.member).filter((def) => def.relPath === moduleFile);
     const target = pickSingleCandidate(candidates, this.cfg.mode);
     return target ? resolved({ targetRelPath: target.relPath, targetSymbolId: target.symbolId }) : CONTINUE;
   }
@@ -432,7 +433,7 @@ export class PythonImportedNameSymbolResolutionStrategy implements SymbolResolut
    * ambiguous barrel beats a coin flip (bd tea-rags-mcp-ex28m).
    */
   private declaringFile(importedName: string, mappedFile: string, ctx: CallContext): string | null {
-    const declaredHere = ctx.symbolTable.lookupByShortName(importedName).some((def) => def.relPath === mappedFile);
+    const declaredHere = lookupPythonSymbolsByShortName(ctx, importedName).some((def) => def.relPath === mappedFile);
     if (declaredHere) return mappedFile;
     return reexportOriginFile(importedName, mappedFile, ctx, this.cfg.mode);
   }
@@ -456,9 +457,9 @@ export class PythonImportedNameSymbolResolutionStrategy implements SymbolResolut
       const mapped = this.mapper.mapImportToFile(imp.importText, ctx.callerFile, ctx);
       if (mapped.kind !== "project") continue;
       const scope = packageScopeOf(mapped.relPath);
-      const candidates = ctx.symbolTable
-        .lookupByShortName(call.member)
-        .filter((def) => def.relPath === mapped.relPath || (scope !== null && def.relPath.startsWith(scope)));
+      const candidates = lookupPythonSymbolsByShortName(ctx, call.member).filter(
+        (def) => def.relPath === mapped.relPath || (scope !== null && def.relPath.startsWith(scope)),
+      );
       const target = pickSingleCandidate(candidates, this.cfg.mode);
       if (target) return resolved({ targetRelPath: target.relPath, targetSymbolId: target.symbolId });
     }

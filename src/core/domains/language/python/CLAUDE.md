@@ -16,6 +16,24 @@
 - **Empty `__init__.py` files are real files with zero symbols.**
   `hasFilesUnder` cannot tell one from a PEP 420 namespace directory, and the
   two get different answers — always ask `hasFile` for the `__init__.py` itself.
+- **Never call `symbolTable.lookupByShortName` here — call
+  `lookupPythonSymbolsByShortName`.** One table is built per run over every
+  `CODEGRAPH_LANGUAGES` extension and `SymbolDefinition` carries no `language`
+  field, so the raw lookup answers with any file that spells the name: polar's
+  `range(...)` resolved to `Paginator.tsx#range`. The wrapper in
+  `resolver/strategies/shared.ts` keeps `.py` candidates only, and the extension
+  list is the literal in `vocabulary/source-extensions.ts` because `language` is
+  a leaf domain that may not import the registry from `trajectory/`.
+- **A BARE call reaches module scope, an enclosing function, an import, or a
+  builtin — never a class body.** `globalShortName`'s `receiver === null` arm
+  rejects a pick that is none of those: `open(path, mode)` in one file cannot
+  name `FlaskClient#open` in another, and a builtin the caller's file does not
+  shadow DROPs rather than picking a namesake (`importedName` sits one slot
+  earlier and answers first when an import bound the name). The rejection runs
+  AFTER `pickSingleCandidate`, not as a filter before it — filtering first would
+  let an unreachable candidate stop counting toward ambiguity and mint a new
+  cross-file edge. The `self` arm keeps the full candidate set, because
+  `self.open()` IS attribute lookup down the MRO.
 - **`PythonCallResolver` owns exactly ONE `PythonImportFileMapper`** and hands
   it to the chain factory, the cone locator and the external vocabulary. The
   memo is keyed by symbol-table identity and invalidated on `size()`, so a

@@ -826,6 +826,14 @@ TypeScript `Paginator.tsx#range` and `GitHub()` to `Icons.tsx#GitHub`, through
 every `CODEGRAPH_LANGUAGES` extension on purpose, and neither strategy checks
 the candidate's language. Tracked as its own bead; it is not an E4 family.
 
+**Fixed by E4.0.5 (`08b8d5f12`, bd tea-rags-mcp-w205u.8)** — the cross-language
+defect and result 1's `FlaskClient#open` family turned out to be one seam, and
+one commit closes both. Short-name candidates are now gated to same-language,
+bare-callable, non-builtin definitions. Measured against the merged oracle on
+all five corpora, `phantom + wrongFile` fell 207 → 121: flask 11 → 1
+(precision-miss 3.21 % → 0.30 %), polar 161 → 86 (1.00 % → 0.54 %), netbox 27 →
+26, httpx and ugnest unchanged. Zero correct rows lost anywhere.
+
 The sample list, per corpus, class abbreviated `CW` = `chainWrong`, `OW:*` = the
 oracle-wrong classes:
 

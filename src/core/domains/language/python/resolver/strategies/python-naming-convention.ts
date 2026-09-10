@@ -53,7 +53,13 @@ import { PYTHON_STDLIB_MODULES } from "../../vocabulary/stdlib-modules.js";
 import type { PythonAncestorLinearizerCache } from "../python-ancestor-policy.js";
 import { PythonExternalVocabulary } from "../python-external-vocabulary.js";
 import { PythonImportFileMapper } from "../python-import-file-mapper.js";
-import { pythonBoundClassKey, resolvePythonInheritedMember, resolveTypeFile, type ResolverConfig } from "./shared.js";
+import {
+  lookupPythonSymbolsByShortName,
+  pythonBoundClassKey,
+  resolvePythonInheritedMember,
+  resolveTypeFile,
+  type ResolverConfig,
+} from "./shared.js";
 
 export class PythonNamingConventionSymbolResolutionStrategy implements SymbolResolutionStrategy {
   readonly name = "namingConvention";
@@ -121,7 +127,7 @@ export class PythonNamingConventionSymbolResolutionStrategy implements SymbolRes
     if (binding === undefined) return false;
     const head = binding.callee.split(".")[0] ?? "";
     if (head === "self" || head === "cls" || head.length === 0) return false;
-    return ctx.symbolTable.lookupByShortName(head).length === 0;
+    return lookupPythonSymbolsByShortName(ctx, head).length === 0;
   }
 
   /**
@@ -136,7 +142,7 @@ export class PythonNamingConventionSymbolResolutionStrategy implements SymbolRes
   private ports(): NamingConventionPorts<CallContext> {
     return {
       camelize: pythonCamelize,
-      classExists: (className, ctx) => ctx.symbolTable.lookupByShortName(className).length === 1,
+      classExists: (className, ctx) => lookupPythonSymbolsByShortName(ctx, className).length === 1,
       hasSubtypes: (className, ctx) => this.declaredBases(ctx).has(className),
     };
   }
