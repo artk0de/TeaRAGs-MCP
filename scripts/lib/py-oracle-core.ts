@@ -61,6 +61,66 @@ export interface PySiteFacts {
   isDecoratorSite: boolean;
 }
 
+/**
+ * Which engine produced a reply (bd tea-rags-mcp-w205u, E4.0.2).
+ *
+ * `lsp` is named for the TRANSPORT, not for the engine behind it: both second
+ * oracle candidates speak LSP, so swapping pyright for another one is a
+ * launcher record rather than a new vocabulary term.
+ */
+export type OracleEngine = "jedi" | "lsp";
+export type OracleSelection = OracleEngine | "merged";
+
+/** One answer, in the shape BOTH engines emit. Schema identity is the contract. */
+export interface PyOracleAnswer {
+  startLine: number;
+  member: string;
+  outcome: {
+    kind: "inProject" | "external" | "unknown" | "parseFailed";
+    origin?: PyTargetOrigin;
+    targets?: {
+      relPath: string;
+      symbolId: string | null;
+      defLine?: number;
+      defKind?: string;
+      /**
+       * What the COMPOSER found at the target line, unmasked by jedi's own
+       * `name.type`. `nonCallable` says the line holds an assignment rather
+       * than a `def`/`class`, which is the whole of the `oracleNonCallable`
+       * bucket; `unknown` says the target file could not be parsed at all.
+       */
+      defNodeKind?: string;
+      pinUncertain: boolean;
+    }[];
+  };
+  /**
+   * PARTIAL on purpose. jedi answers every key; an engine with no AST of the
+   * caller cannot, and an absent fact is not a false one — `categorizePySite`
+   * reads each with `=== true`, so omitting is the honest encoding and guessing
+   * would invent shape categories nobody measured.
+   */
+  siteFacts?: Partial<PySiteFacts>;
+  unlocated?: PyUnlocatedShape;
+}
+
+export interface PyOracleFileReply {
+  relPath: string;
+  parseFailed: boolean;
+  /**
+   * How many errors JEDI's parser reported. Always 0 from an engine with no
+   * jedi in it — the field means "jedi's parser was unhappy", and the merge
+   * reads it from the JEDI reply only.
+   */
+  parsoErrors: number;
+  answers: PyOracleAnswer[];
+}
+
+/** One file's reply plus the provenance the report splits every table by. */
+export interface MergedOracleFileReply {
+  reply: PyOracleFileReply;
+  engine: OracleEngine;
+}
+
 export interface PyOracleRow {
   relPath: string;
   startLine: number;
@@ -76,6 +136,57 @@ export interface PyOracleRow {
   origin?: PyTargetOrigin;
   oracleDegraded: boolean;
   unlocatedShape?: PyUnlocatedShape;
+  /** Which engine answered THIS row's file. Defaults to `jedi`, the primary. */
+  oracleEngine: OracleEngine;
+}
+
+/**
+ * Per FILE, never per site (bd tea-rags-mcp-w205u).
+ *
+ * jedi is primary: five corpora of published numbers rest on it, and its blind
+ * spots are hand-audited (`applySuperMroBlindSpot`, `oracleNonCallable`). The
+ * second engine is a REPAIR for files jedi could not read — `parsoErrors > 0`
+ * means jedi answered from a damaged tree, `parseFailed` means it had no tree
+ * at all — and never a tiebreak on a file jedi read cleanly.
+ *
+ * File granularity is not a simplification: jedi's per-process module cache
+ * makes one file's answer depend on what its worker parsed before it
+ * (`jedi_oracle.py:539`), so a per-SITE mix would put two module resolutions
+ * behind one `jedi.Script` cache and make row-level provenance unreadable.
+ */
+export function mergeOracleReplies(
+  jedi: ReadonlyMap<string, PyOracleFileReply>,
+  lsp: ReadonlyMap<string, PyOracleFileReply>,
+): Map<string, MergedOracleFileReply> {
+  const merged = new Map<string, MergedOracleFileReply>();
+  for (const [relPath, reply] of jedi) {
+    const damaged = reply.parseFailed || reply.parsoErrors > 0;
+    const replacement = damaged ? lsp.get(relPath) : undefined;
+    merged.set(relPath, replacement === undefined ? { reply, engine: "jedi" } : { reply: replacement, engine: "lsp" });
+  }
+  // A file only the second engine saw (jedi's launcher skipped it, or its
+  // worker died) still belongs in the population — dropping it would shrink the
+  // denominator silently, which is the failure this whole task exists to end.
+  for (const [relPath, reply] of lsp) {
+    if (!merged.has(relPath)) merged.set(relPath, { reply, engine: "lsp" });
+  }
+  return merged;
+}
+
+/**
+ * Read a reply map entry whichever shape it arrives in.
+ *
+ * The scratch row drivers hand `buildRows` a plain `Map<relPath, reply>` and
+ * must keep working byte-for-byte under `--oracle jedi`, while `main` hands it
+ * the merged map. `PyOracleFileReply` has no `reply` key, so the discrimination
+ * is exact rather than a guess.
+ */
+export function oracleEntryOf(value: PyOracleFileReply | MergedOracleFileReply | undefined): {
+  reply: PyOracleFileReply | undefined;
+  engine: OracleEngine;
+} {
+  if (value === undefined) return { reply: undefined, engine: "jedi" };
+  return "reply" in value ? value : { reply: value, engine: "jedi" };
 }
 
 /**
@@ -129,7 +240,7 @@ const INJECTION_MEMBERS = new Set(["Depends", "Security", "Provide", "inject"]);
  * first. `plain` is the residual and never appears beside another category.
  */
 export function categorizePySite(
-  facts: PySiteFacts | undefined,
+  facts: Partial<PySiteFacts> | undefined,
   row: { receiver: string | null; member: string },
 ): PyMissedCategory[] {
   const found = new Set<PyMissedCategory>();
@@ -163,7 +274,7 @@ export function categorizePySite(
 export function isSuperCallSite(input: {
   receiverKind: string;
   receiver: string | null;
-  facts: PySiteFacts | undefined;
+  facts: Partial<PySiteFacts> | undefined;
 }): boolean {
   if (input.receiverKind === "super") return true;
   if (input.facts?.isSuperCall === true) return true;
@@ -413,4 +524,114 @@ export function samplePyRows(
     .slice(0, count)
     .sort((a, b) => a - b)
     .map((index) => pool[index]);
+}
+
+/**
+ * Where the callee NAME starts on its line, so a second engine can be asked
+ * about the right token (bd tea-rags-mcp-w205u, E4.0.2).
+ *
+ * `CallRef` carries a line and no column, and the spike's client re-derived one
+ * by searching the line for the member name. On `asyncio.run(run())` that finds
+ * the OUTER `run` for a record describing the inner one — one row of 500, but a
+ * systematic bias toward the leftmost same-named callee, so D7 required the
+ * host to send a column rather than let the engine invent one.
+ *
+ * `callText` is what breaks the tie: it is the call expression's own source, so
+ * locating it first pins which occurrence the record means, and the member sits
+ * at a known offset inside it (after `receiver.`, or at 0 for a free call).
+ * `searchFrom` walks successive sites on one line past the occurrences already
+ * claimed. The regex fallback is the spike's heuristic, kept for the shapes
+ * `callText` cannot be found in — a call spanning several lines, or one the
+ * walker normalised.
+ */
+export function locateCalleeColumn(
+  lineText: string,
+  site: { callText: string; receiver: string | null; member: string },
+  searchFrom = 0,
+): number {
+  const offset =
+    site.receiver !== null && site.callText.startsWith(`${site.receiver}.${site.member}`)
+      ? site.receiver.length + 1
+      : site.callText.startsWith(site.member)
+        ? 0
+        : -1;
+  if (offset >= 0) {
+    const at = lineText.indexOf(site.callText, searchFrom);
+    if (at >= 0) return at + offset;
+  }
+  const escaped = site.member.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const tail = lineText.slice(searchFrom);
+  const called = new RegExp(`(?<![A-Za-z0-9_])${escaped}\\s*[([]`).exec(tail);
+  if (called !== null) return searchFrom + called.index;
+  const bare = new RegExp(`(?<![A-Za-z0-9_])${escaped}(?![A-Za-z0-9_])`).exec(tail);
+  return bare === null ? -1 : searchFrom + bare.index;
+}
+
+/** The recall denominator is `match + fileOnly + wrongFile + missed` — `OracleTally#oracle`. */
+const RECALL_VERDICTS: ReadonlySet<PyOracleVerdict> = new Set(["match", "fileOnly", "wrongFile", "missed"]);
+
+/**
+ * One label's recall under BOTH denominators (bd tea-rags-mcp-w205u).
+ *
+ * `recallLegacy` counts only rows the JEDI engine answered, so it reproduces
+ * every published Python number byte-for-byte and is a REGRESSION GATE rather
+ * than a migration aid. `recallMerged` counts every scored row whatever engine
+ * answered it, and is what E4.1–E4.6 are measured against. The two are printed
+ * side by side, always: adding the previously-degraded rows moves every rate
+ * with no resolver change, and a number that moves for that reason must never
+ * be readable as a regression.
+ */
+export interface PyRecallSplit {
+  label: string;
+  recallLegacy: number;
+  nLegacy: number;
+  matchLegacy: number;
+  recallMerged: number;
+  nMerged: number;
+  matchMerged: number;
+  /** Scored rows the second engine contributed — `nMerged - nLegacy`. */
+  nSecondEngine: number;
+}
+
+export function tallyPyRecall(
+  rows: readonly PyOracleRow[],
+  labelsOf: (row: PyOracleRow) => readonly string[],
+): PyRecallSplit[] {
+  const byLabel = new Map<string, PyRecallSplit>();
+  for (const row of rows) {
+    if (isWithheldFromRates(row)) continue;
+    // `skippedInProject` folds into `missed` exactly as `tallyPyRows` folds it,
+    // or the two blocks would disagree about the same rows.
+    const verdict = row.verdict === "skippedInProject" ? "missed" : row.verdict;
+    if (!RECALL_VERDICTS.has(verdict)) continue;
+    for (const label of labelsOf(row)) {
+      let split = byLabel.get(label);
+      if (split === undefined) {
+        split = {
+          label,
+          recallLegacy: 0,
+          nLegacy: 0,
+          matchLegacy: 0,
+          recallMerged: 0,
+          nMerged: 0,
+          matchMerged: 0,
+          nSecondEngine: 0,
+        };
+        byLabel.set(label, split);
+      }
+      split.nMerged += 1;
+      if (verdict === "match") split.matchMerged += 1;
+      if (row.oracleEngine === "jedi") {
+        split.nLegacy += 1;
+        if (verdict === "match") split.matchLegacy += 1;
+      }
+    }
+  }
+  const splits = [...byLabel.values()];
+  for (const split of splits) {
+    split.recallLegacy = split.nLegacy === 0 ? 0 : split.matchLegacy / split.nLegacy;
+    split.recallMerged = split.nMerged === 0 ? 0 : split.matchMerged / split.nMerged;
+    split.nSecondEngine = split.nMerged - split.nLegacy;
+  }
+  return splits.sort((a, b) => b.nMerged - a.nMerged || a.label.localeCompare(b.label));
 }
