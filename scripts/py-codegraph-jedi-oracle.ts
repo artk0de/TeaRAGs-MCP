@@ -221,7 +221,7 @@ export async function walkCorpus(
   corpusRoot: string,
   limit: number,
   quiet: boolean,
-  options: { dispatch?: boolean } = {},
+  options: { dispatch?: boolean; includeTests?: boolean } = {},
 ): Promise<PyCorpusWalk> {
   // Default ON, because production's default channel consults the dispatch
   // layer FIRST and lets a fan-out replace the chain's answer
@@ -230,7 +230,11 @@ export async function walkCorpus(
   const withDispatch = options.dispatch !== false;
   const factory = new LanguageFactory();
   const composer = new DefaultSymbolIdComposer();
-  const exclude = await buildCorpusExclusionFilter(corpusRoot, factory);
+  // `--include-tests` walks the files production excludes unconditionally, so
+  // `pytestFixture` can be counted at all (spec D5). It is a SEPARATE
+  // population, never the baseline: the extra files enter the symbol table and
+  // move every short-name ambiguity, not just the fixture rows.
+  const exclude = await buildCorpusExclusionFilter(corpusRoot, factory, { includeTests: options.includeTests });
   // Every codegraph extension, not just `.py`: netbox ships JavaScript, and a
   // symbol table missing it turns every call into that code into a phantom
   // resolver miss.
@@ -877,6 +881,12 @@ export interface PyOracleCliOptions {
    * identity gate has a run to diff against.
    */
   dispatch: boolean;
+  /**
+   * Walk the test + generated files production excludes unconditionally. OFF
+   * by default; the paired run it enables is what sizes `pytestFixture` and it
+   * is reported as its own population (spec D5, bd tea-rags-mcp-w205u).
+   */
+  includeTests: boolean;
   limit: number;
   samples: number;
   seed: number;
@@ -973,6 +983,7 @@ export function parseArgs(argv: readonly string[]): PyOracleCliOptions {
     oraclePythonVersion: interpreter,
     oracle: parseOracleSelection(read("--oracle")),
     dispatch: !argv.includes("--no-dispatch"),
+    includeTests: argv.includes("--include-tests"),
     limit: Number(read("--limit") ?? Number.MAX_SAFE_INTEGER),
     samples: Number(read("--samples") ?? 25),
     seed: Number(read("--seed") ?? 20260908),
@@ -1083,7 +1094,10 @@ const FAN_LABEL_FLOOR = 100;
 async function main(): Promise<void> {
   const options = parseArgs(process.argv.slice(2));
   const started = Date.now();
-  const walk = await walkCorpus(options.corpusRoot, options.limit, options.quiet, { dispatch: options.dispatch });
+  const walk = await walkCorpus(options.corpusRoot, options.limit, options.quiet, {
+    dispatch: options.dispatch,
+    includeTests: options.includeTests,
+  });
   const replies = await askOracles(walk.sites, {
     corpusRoot: options.corpusRoot,
     jediArgv: options.pythonArgv,
