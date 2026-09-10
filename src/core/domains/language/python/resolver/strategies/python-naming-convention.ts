@@ -26,13 +26,27 @@
  * Never DROPs. A DROP would claim the receiver's type is known-and-foreign,
  * which is exactly what a convention guess cannot establish.
  *
- * **Shipping condition.** This is the one GUESS in the plan. If the row-level
- * A/B shows phantom up by more than +0.5 pp of edges on ANY corpus, or ugnest
- * moving off 0, the strategy is REMOVED — not tuned, not gated further. That
- * decision was taken before it was written.
+ * **Shipping condition, and how it was settled.** This is the one GUESS in the
+ * plan: phantom up by more than +0.5 pp of edges on ANY corpus, or ugnest off
+ * 0, and the strategy is REMOVED. The seam-5 closing A/B measured ten phantoms
+ * — netbox 5, polar 3, ugnest 2 — all inside the bar (ugnest 2/772 = 0.26 pp)
+ * but two of them on the anchor corpus, which is the clause with no slack in
+ * it. Seven of the ten are one shape: a receiver assigned from a library call
+ * (`user = authenticate(…)`, `get_object_or_404(…)`, `RQ_Job.fetch(…)`) whose
+ * snake_case name camelizes onto a real project model. `boundToForeignCall`
+ * below is the gate that answers them, and it costs nothing — ugnest back to
+ * phantom 0 with all 24 of its gains intact. The remaining three are polar's
+ * `_job_queue_manager`, a module global annotated `contextvars.ContextVar[...]`
+ * whose annotation this path never reads; they are a different mechanism and
+ * are left standing rather than tuned against.
  */
 import { CONTINUE, resolved } from "../../../../../contracts/resolution.js";
-import { resolveLocalBindingType, type CallContext, type CallRef } from "../../../../../contracts/types/codegraph.js";
+import {
+  nearestCallResultBinding,
+  resolveLocalBindingType,
+  type CallContext,
+  type CallRef,
+} from "../../../../../contracts/types/codegraph.js";
 import type { SymbolResolutionOutcome, SymbolResolutionStrategy } from "../../../../../contracts/types/language.js";
 import { conventionClassNameFor, type NamingConventionPorts } from "../../../kernel/naming-convention.js";
 import { PYTHON_STDLIB_MODULES } from "../../vocabulary/stdlib-modules.js";
@@ -63,6 +77,12 @@ export class PythonNamingConventionSymbolResolutionStrategy implements SymbolRes
     if (PYTHON_STDLIB_MODULES.has(receiver) || this.vocabulary.isBareCallExternal(receiver, ctx)) return CONTINUE;
     // A real fact wins: this pass speaks only for receivers nothing typed.
     if (resolveLocalBindingType(ctx.localBindings, receiver, call.startLine) !== undefined) return CONTINUE;
+    // And a FOREIGN right-hand side is a fact of the same kind. The walker saw
+    // `user = authenticate(...)`, `localBinding` folded that callee and came
+    // back with nothing; when the callee's own head is a name the project does
+    // not declare, that silence says the receiver's type is decided somewhere
+    // the project cannot read — not that it is undecided.
+    if (this.boundToForeignCall(receiver, call.startLine, ctx)) return CONTINUE;
 
     const className = conventionClassNameFor(receiver, ctx, this.ports());
     if (className === undefined) return CONTINUE;
@@ -76,6 +96,32 @@ export class PythonNamingConventionSymbolResolutionStrategy implements SymbolRes
     // Gate 3: a class that owns nothing under this name emits NOTHING.
     if (target === null) return CONTINUE;
     return target.targetSymbolId === null ? CONTINUE : resolved(target);
+  }
+
+  /**
+   * Was `receiver` assigned, at or above this line, from a call whose CALLEE
+   * the project does not declare?
+   *
+   * The head is what carries the answer, and only the head: `User.objects.get`
+   * starts on a project class and its result is overwhelmingly an instance of
+   * it, while `authenticate(...)`, `get_object_or_404(...)` and `RQ_Job.fetch`
+   * start outside and their results are library values that happen to be spelled
+   * like a project model. Measured on the seam's own A/B: gating on the mere
+   * PRESENCE of a call binding removed 7 phantoms (netbox 5, ugnest 2) but cost
+   * 12 correct answers, eleven of them ugnest rows bound by `User.objects.get`.
+   * Gating on the head's origin removes the same 7 and costs one row, because
+   * that is the axis the two populations actually differ on.
+   *
+   * `self` / `cls` heads are the caller's own object and never foreign. The
+   * lookup is a symbol-table short-name probe, the same one the existence gate
+   * runs, so the pass adds no new scan to a site it was already going to weigh.
+   */
+  private boundToForeignCall(receiver: string, atLine: number, ctx: CallContext): boolean {
+    const binding = nearestCallResultBinding(ctx.callResultBindings, receiver, atLine);
+    if (binding === undefined) return false;
+    const head = binding.callee.split(".")[0] ?? "";
+    if (head === "self" || head === "cls" || head.length === 0) return false;
+    return ctx.symbolTable.lookupByShortName(head).length === 0;
   }
 
   /**

@@ -80,11 +80,13 @@ describe("seeded support versions", () => {
       // typescript walker 3: the wave-2 resolver additions (2a7e774e4), on top
       // of walker 2's oracle wave. python walker 2: bd tea-rags-mcp-9fgdi gave
       // `ImportRef` importedNames / importedBindings; python walker 3: bd
-      // tea-rags-mcp-y4hro added the `classAncestors` channel. Every other
-      // language is still at its seed.
+      // tea-rags-mcp-y4hro added the `classAncestors` channel; python walker 4:
+      // E2 seam 5 (bd tea-rags-mcp-9fgdi) added the chunk-level
+      // `callResultBindings` and the file-level `classFieldTypesByClassKey`.
+      // Every other language is still at its seed.
       const WALKER_BUMPED = new Map([
         ["typescript", 4],
-        ["python", 3],
+        ["python", 4],
       ]);
       const expectedWalker = WALKER_BUMPED.get(language) ?? 1;
       const expectedCodegraph = NO_CALL_GRAPH.has(language) ? 1 : 2;
