@@ -28,6 +28,7 @@ import {
   DEFAULT_AMBIGUOUS_RESOLVE_MODE,
   type CallContext,
   type CallRef,
+  type ModuleReexport,
 } from "../src/core/contracts/types/codegraph.js";
 import type {
   SymbolResolutionOutcome,
@@ -159,6 +160,9 @@ export async function walkCorpus(corpusRoot: string, limit: number, quiet: boole
   // `<relPath>::<class FQ>` → field → type — the run-global field address the
   // MRO fold reads a base class's fields from (bd tea-rags-mcp-f0xaa).
   const classFieldTypesByClassKey: Record<string, Record<string, string>> = {};
+  // `relPath` → the names its `from` statements bind — what lets the import
+  // mapper walk past a package that re-exports rather than declares (xpl83.3).
+  const moduleReexports: Record<string, readonly ModuleReexport[]> = {};
   const extractions: {
     relPath: string;
     extraction: NonNullable<ReturnType<typeof extractFile>>;
@@ -180,6 +184,7 @@ export async function walkCorpus(corpusRoot: string, limit: number, quiet: boole
     for (const [classKey, fields] of Object.entries(extraction.classFieldTypesByClassKey ?? {})) {
       classFieldTypesByClassKey[classKey] = { ...classFieldTypesByClassKey[classKey], ...fields };
     }
+    if (extraction.moduleReexports) moduleReexports[relPath] = extraction.moduleReexports;
     if (extname(relPath) === SCORED_EXTENSION) extractions.push({ relPath, extraction });
     else symbolTableOnlyFiles++;
   }
@@ -212,6 +217,7 @@ export async function walkCorpus(corpusRoot: string, limit: number, quiet: boole
         functionReturnTypes,
         classAncestors,
         classFieldTypesByClassKey,
+        moduleReexports,
       };
       for (const call of chunk.calls ?? []) {
         if (call.dispatch !== undefined) continue; // the runner skips normal resolution here

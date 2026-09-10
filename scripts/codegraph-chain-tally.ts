@@ -51,6 +51,7 @@ import {
   type CallRef,
   type ChunkExtraction,
   type FileExtraction,
+  type ModuleReexport,
   type SymbolResolutionTarget,
 } from "../src/core/contracts/types/codegraph.js";
 import type {
@@ -302,6 +303,8 @@ interface RunGlobalTypeChannels {
   classAncestors: Record<string, readonly string[]>;
   /** `<relPath>::<class FQ>` → field → type, the run-global field address (f0xaa). */
   classFieldTypesByClassKey: Record<string, Record<string, string>>;
+  /** `relPath` → the names its `from` statements bind, for the mapper's re-export hop (xpl83.3). */
+  moduleReexports: Record<string, readonly ModuleReexport[]>;
 }
 
 /** Absorb one file's contribution to every run-global channel. */
@@ -313,6 +316,7 @@ function absorbTypeChannels(channels: RunGlobalTypeChannels, extraction: FileExt
   for (const [classKey, fields] of Object.entries(extraction.classFieldTypesByClassKey ?? {})) {
     channels.classFieldTypesByClassKey[classKey] = { ...channels.classFieldTypesByClassKey[classKey], ...fields };
   }
+  if (extraction.moduleReexports) channels.moduleReexports[extraction.relPath] = extraction.moduleReexports;
 }
 
 function buildCallContext(
@@ -335,6 +339,7 @@ function buildCallContext(
     functionReturnTypes: channels.functionReturnTypes,
     classAncestors: channels.classAncestors,
     classFieldTypesByClassKey: channels.classFieldTypesByClassKey,
+    moduleReexports: channels.moduleReexports,
   };
 }
 
@@ -389,6 +394,7 @@ export async function run(
     functionReturnTypes: {},
     classAncestors: {},
     classFieldTypesByClassKey: {},
+    moduleReexports: {},
   };
   const scored: FileExtraction[] = [];
   const corpusFiles = new Set<string>();

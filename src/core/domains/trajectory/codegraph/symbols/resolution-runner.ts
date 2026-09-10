@@ -48,6 +48,7 @@ interface ResolverInputs {
   structuredReturnTypes: CallContext["structuredReturnTypes"];
   classFieldTypes: CallContext["classFieldTypes"];
   classFieldTypesByClassKey: CallContext["classFieldTypesByClassKey"];
+  moduleReexports: CallContext["moduleReexports"];
 }
 
 /**
@@ -248,6 +249,10 @@ export class CallEdgeResolutionRunner {
       // file (bd tea-rags-mcp-f0xaa). A run whose walkers never wrote it hands
       // the resolver an empty map, which every reader treats as absent.
       classFieldTypesByClassKey: state.classFieldTypesByClassKey,
+      // Run-global for the same reason (bd tea-rags-mcp-xpl83.3): the mapper is
+      // asked about a package the CALLER does not own, so this file's own list
+      // could never answer. An empty map reads as absent to its only reader.
+      moduleReexports: state.moduleReexports,
     };
   }
 
@@ -294,6 +299,7 @@ export class CallEdgeResolutionRunner {
       classExtends: inputs.classExtends,
       ivarTypes: inputs.ivarTypes,
       structuredReturnTypes: inputs.structuredReturnTypes,
+      moduleReexports: inputs.moduleReexports,
       gemfileContent: this.runState.gemfileContent,
       projectRoot: this.runState.projectRoot,
     };
@@ -383,6 +389,10 @@ export class CallEdgeResolutionRunner {
       // reads in `type-propagation.ts`.
       ivarTypes: inputs.ivarTypes,
       structuredReturnTypes: inputs.structuredReturnTypes,
+      // bd tea-rags-mcp-xpl83.3 — run-global re-export lists let the import
+      // mapper walk past a package `__init__.py` that re-exports the name
+      // instead of declaring it. Empty ⇒ the mapper stops exactly where it did.
+      moduleReexports: inputs.moduleReexports,
       classAncestors: inputs.ancestors,
       compactDeclaredClasses: this.runState.compactClasses,
       gemfileContent: this.runState.gemfileContent,

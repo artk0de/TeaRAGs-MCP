@@ -566,6 +566,18 @@ export function resolveTypeFile(
     }
     const filtered = tableMatches.filter((def) => importedFiles.has(def.relPath));
     if (filtered.length === 1) return filtered[0].relPath;
+    // A miss here is often a package that RE-EXPORTS the name rather than
+    // declaring it: netbox's `from core.models import ObjectType` maps to a
+    // `__init__.py` that star-imports six siblings, so the filter above kept
+    // nothing and the second `ObjectType` in `netbox/graphql/types.py` made
+    // guessing illegal — 117 rows. Widening runs only AFTER the direct answer
+    // failed, so every row that resolves today resolves to the same file.
+    for (const relPath of [...importedFiles]) {
+      const declaring = mapper.resolveExportedName(relPath, bareType, ctx);
+      if (declaring !== null) importedFiles.add(declaring);
+    }
+    const followed = tableMatches.filter((def) => importedFiles.has(def.relPath));
+    if (followed.length === 1) return followed[0].relPath;
     // Still ambiguous — refuse to guess.
     return null;
   }

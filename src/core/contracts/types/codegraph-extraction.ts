@@ -280,6 +280,46 @@ export interface FileExtraction {
    * Plain Record (NOT Map) for NDJSON-spill round-trip.
    */
   classFieldParamLinks?: Record<string, Record<string, ClassFieldParamLink>>;
+  /**
+   * Every name this file's `from <module> import <name>` statements bind, and
+   * where each came from (bd tea-rags-mcp-xpl83.3).
+   *
+   * The channel exists for one question the import mapper cannot otherwise
+   * answer: WHICH FILE DECLARES a name an importer asked for. netbox's
+   * `core/models/__init__.py` declares nothing and star-imports six siblings, so
+   * mapping `core.models` to it is right and useless — the `ObjectType` behind
+   * `from core.models import ObjectType` lives one hop further on, and netbox
+   * declares a namesake elsewhere that makes guessing illegal.
+   *
+   * Recorded for EVERY module: a plain module re-exporting is legal Python too,
+   * and the consumer only follows the channel when the file it mapped to
+   * declares nothing under the name. A plain `import a.b` binds a MODULE PATH
+   * rather than an exported name and is deliberately absent.
+   *
+   * Plain array (NOT Map) for NDJSON-spill round-trip. Undefined for a file with
+   * no `from` import, and for languages whose walkers do not collect them.
+   */
+  moduleReexports?: readonly ModuleReexport[];
+}
+
+/**
+ * One name a `from <module> import <name>` statement binds into its own module's
+ * namespace (bd tea-rags-mcp-xpl83.3).
+ */
+export interface ModuleReexport {
+  /**
+   * The LOCAL name the statement binds — what an importer of THIS module sees.
+   * `"*"` for `from <module> import *`, which binds no single name and stands
+   * for whatever the source module exports.
+   */
+  readonly exportedName: string;
+  /** The source module exactly as written: `".object_types"`, `"core.models"`, `".."`. */
+  readonly sourceModule: string;
+  /**
+   * The name the SOURCE module exports it under — the two differ under `as`.
+   * Absent for a star entry, which names nothing in particular.
+   */
+  readonly sourceName?: string;
 }
 
 /**

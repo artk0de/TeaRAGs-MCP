@@ -26,6 +26,7 @@ import type {
   HierarchyView,
   InheritanceEdgeRow,
   KnownTargetCallArgs,
+  ModuleReexport,
   RelPath,
   ResolveRunStatsRow,
   SymbolDefinition,
@@ -424,6 +425,20 @@ export class CodegraphRunState {
    * key, mirroring `ivarTypes`; reset at the same seams.
    */
   classFieldTypesByClassKey: Record<string, Record<string, string>> = {};
+
+  /**
+   * Per-run collection of `FileExtraction.moduleReexports`, keyed by the relPath
+   * of the file that wrote each list (bd tea-rags-mcp-xpl83.3). The import
+   * mapper reads it to answer "which file DECLARES this name" past a package
+   * that only re-exports it.
+   *
+   * Assignment, not union: the list is the whole truth about ONE file's `from`
+   * statements, so re-walking a file must REPLACE what it said rather than
+   * accumulate a statement it has since deleted. Same reason the entry is keyed
+   * by relPath and not folded into a name-addressed map. Reset at the same seams
+   * as `classFieldTypesByClassKey`.
+   */
+  moduleReexports: Record<string, readonly ModuleReexport[]> = {};
 
   /**
    * Per-run aggregation of `FileExtraction.dispatchTables` keyed by table
@@ -854,6 +869,7 @@ export class CodegraphRunState {
       this.instantiatedTypes.clear();
       this.ivarTypes = {};
       this.classFieldTypesByClassKey = {};
+      this.moduleReexports = {};
       this.structuredReturnTypes = {};
       this.dispatchTables = {};
       this.callbackParams = {};
@@ -1015,6 +1031,7 @@ export class CodegraphRunState {
     this.instantiatedTypes.clear();
     this.ivarTypes = {};
     this.classFieldTypesByClassKey = {};
+    this.moduleReexports = {};
     this.structuredReturnTypes = {};
     this.dispatchTables = {};
     this.callbackParams = {};
@@ -1050,6 +1067,7 @@ export class CodegraphRunState {
     this.instantiatedTypes.clear();
     this.ivarTypes = {};
     this.classFieldTypesByClassKey = {};
+    this.moduleReexports = {};
     this.structuredReturnTypes = {};
     this.dispatchTables = {};
     this.callbackParams = {};
@@ -1147,6 +1165,12 @@ export class CodegraphRunState {
       for (const [classKey, fields] of Object.entries(extraction.classFieldTypesByClassKey)) {
         this.classFieldTypesByClassKey[classKey] = { ...this.classFieldTypesByClassKey[classKey], ...fields };
       }
+    }
+    // The file's `from` statements, verbatim under its own path (bd
+    // tea-rags-mcp-xpl83.3). Assignment rather than union: a re-walk must not
+    // resurrect a statement the file no longer has.
+    if (extraction.moduleReexports) {
+      this.moduleReexports[extraction.relPath] = extraction.moduleReexports;
     }
     // Union this file's instantiation set into the run-global RTA set so the
     // cone resolver in pass-2 prunes by program-wide instantiation regardless of
