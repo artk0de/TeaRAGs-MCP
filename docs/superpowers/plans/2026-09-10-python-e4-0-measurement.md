@@ -191,22 +191,29 @@ scripts/
 │   ├── py-oracle-core.ts                  MOD  oracleEngine + fan fields on PyOracleRow,
 │   │                                           mergeOracleReplies, fan tallies
 │   ├── py-oracle-origin.ts                NEW  classifyOrigin ported from jedi_oracle.py
+│   ├── py-residual-families.ts            NEW  E4.0.4, pure family classifier
 │   └── codegraph-corpora.json             —    unchanged
-├── py-codegraph-jedi-oracle.ts            MOD  --oracle, --no-dispatch, fan pass, fan columns
+├── py-codegraph-jedi-oracle.ts            MOD  --oracle, --no-dispatch, --include-tests, fan pass
+├── ts-codegraph-typechecker-oracle.ts     MOD  E4.0.4, includeTests on the exclusion filter
 ├── codegraph-chain-tally.ts               MOD  --with-dispatch, fan counters
-└── py-e4-family-report.mts                NEW  E4.0.4, jq-equivalent over dumps
+└── py-e4-family-report.ts                 NEW  E4.0.4, the family + edge-density tables
 
 tests/scripts/
 ├── py-oracle-core.test.ts                 MOD  merge rule, fan tallies, origin port
 ├── py-codegraph-jedi-oracle.test.ts       MOD  --oracle parsing, fan row shape
+├── py-residual-families.test.ts           NEW  E4.0.4, ≥2 fixtures per family + precedence
 └── py-second-oracle-merge.test.ts         NEW  the per-file fallback table
 
 docs/superpowers/
-├── specs/2026-09-10-python-frontier-e4-design.md   MOD  D7 and D8 filled in
+├── specs/2026-09-10-python-frontier-e4-design.md   MOD  D7, D8 and D9 filled in
 └── plans/2026-09-10-python-e4-0-measurement.md     MOD  Measurement record at close
 
 ~/.claude/jobs/<job>/tmp/e4/                        row dumps, not in the repo
 ```
+
+The report is `.ts`, not the `.mts` sketched above: `tsconfig.eslint.json`
+covers `scripts/**/*.ts` and lint-staged runs on `.ts`, so a `.mts` file would
+have been the one harness script outside both.
 
 ---
 
@@ -1548,6 +1555,174 @@ npx tsx scripts/py-e4-family-report.mts --rows /tmp/e4/final-<corpus>.ndjson \
   classifier's own binding-line miss rate are printed.
 - `npm run test:coverage` green. Nothing under `src/` touched.
 
+### Measurement record — E4.0.4, audit and attribution (w205u, 2026-09-10)
+
+**The residual is exactly `missed | fileOnly | wrongFile | skippedInProject`.**
+The fifth candidate the task named — `bothUnresolved` with an in-project oracle
+target — is EMPTY on all five corpora and on all three tests-walked runs, and
+that is structural rather than lucky: `classifyPyVerdict` cannot book
+`bothUnresolved` for an answer it located in-project. The report prints the
+count so a reader sees it was checked.
+
+**Dumps.** Five corpora at `--oracle merged --dispatch --workers 8`, plus
+netbox, polar and flask with `--include-tests`. `chainDrift` 0 and
+`dispatchDrift` 0 on every run. Under
+`/Users/artk0re/.claude/jobs/dffe3647/tmp/e4-attr/`.
+
+#### The oracle-disagreement audit — 100 rows, seed 20260910
+
+Pool `phantom ∪ wrongFile` over the merged dumps: ugnest 0, flask 11, httpx 8,
+netbox 27, polar 161 = 207. flask over-sampled to all 11; the remaining 89 split
+proportionally (httpx 4, netbox 12, polar 73). pyright answered the same site
+for all 100 via `--oracle lsp` on the sampled files.
+
+| class                        | flask | httpx | netbox | polar | total | answering strategy                                                               |
+| ---------------------------- | ----- | ----- | ------ | ----- | ----- | -------------------------------------------------------------------------------- |
+| `chainWrong`                 | 11    | 0     | 1      | 51    | 63    | globalShortName 42, importedName 11, super 6, coneDispatch 3, namingConvention 1 |
+| `oracleWrongMro`             | 0     | 0     | 11     | 0     | 11    | super 11                                                                         |
+| `oracleWrongEnumClassmethod` | 0     | 4     | 0      | 14    | 18    | importedName 18                                                                  |
+| `oracleWrongShadowedPackage` | 0     | 0     | 0      | 8     | 8     | importedName 8                                                                   |
+| `bothWrong` / `undecidable`  | 0     | 0     | 0      | 0     | 0     | —                                                                                |
+
+`oracleWrongCache` and `oracleWrongSingleton` drew zero rows; the two classes
+the reading ADDED are new blind spots neither `applySuperMroBlindSpot` nor
+`oracleNonCallable` covers:
+
+- **`oracleWrongEnumClassmethod`** — jedi answers nothing for a `@classmethod`
+  on a `StrEnum` / `IntEnum` subclass. `OrderStatus.paid_statuses()`
+  (`server/polar/models/order.py:87`), `codes.is_redirect()`
+  (`httpx/_status_codes.py:8`). The chain and pyright pin the same def.
+- **`oracleWrongShadowedPackage`** — polar's in-repo SDK. `server/polar/`
+  extends its own `__path__`, so `from polar.v2026_04 import PolarAsync` reaches
+  `sdk/python/polar/`; jedi resolves it to the installed distribution and books
+  external. Same trap D7 rejected ty for, on the other engine.
+
+| corpus | pool | sampled | oracleWrong | share [95 % Wilson] | raw    | `precisionMissAdjusted` [CI] |
+| ------ | ---- | ------- | ----------- | ------------------- | ------ | ---------------------------- |
+| ugnest | 0    | 0       | 0           | —                   | 0.00 % | 0.00 %                       |
+| flask  | 11   | 11      | 0           | 0 % [0–26]          | 3.10 % | **3.10 %** [2.30–3.10]       |
+| httpx  | 8    | 4       | 4           | 100 % [51–100]      | 1.63 % | 0.00 % [0.00–0.80]           |
+| netbox | 27   | 12      | 11          | 91.7 % [65–99]      | 0.31 % | 0.03 % [0.00–0.11]           |
+| polar  | 161  | 73      | 22          | 30.1 % [21–41]      | 0.97 % | 0.68 % [0.57–0.77]           |
+
+Denominators are E3's published `edges`; the numerator is the MERGED pool, which
+is why polar reads 0.97 % where E3 published 1.12 % — the second engine repaired
+25 of its phantoms before the audit began.
+
+**flask's 2.82 % was not an instrument reading.** Its pool is 11 rows and the
+audit is a CENSUS of all 11, not a sample: every one is `chainWrong`, and nine
+are the same shape — `open(path, mode)` resolved by `globalShortName` to
+`src/flask/testing.py#FlaskClient#open`, a builtin shadowed by a project method
+of the same short name. The bar was breached and E4 owns it.
+
+**httpx and netbox are almost entirely instrument.** netbox's phantom rate falls
+0.31 % → 0.03 %, httpx's 1.63 % → 0.00 %. Neither corpus has a precision
+problem; jedi has a `super()` and an enum blind spot.
+
+The ten most instructive rows:
+
+1. `flask src/flask/app.py:443` `open(path, mode)` → `FlaskClient#open` —
+   `globalShortName` beats a builtin. Nine flask rows, the whole of its rate.
+2. `polar dev/cli/commands/docker.py:317` `range(...)` →
+   `clients/packages/ui/.../Paginator.tsx#range` — a Python call answered by a
+   **TypeScript** symbol. Cross-language short-name fabrication.
+3. `polar .../secret_scanning.py:166` `GitHub()` →
+   `emails/src/.../Icons.tsx#GitHub` — the same leak through `importedName`.
+4. `polar server/polar/kit/jwt.py:52` `jwt.encode(...)` → the caller file's OWN
+   `encode`. A module alias shadowed by a same-named local def.
+5. `polar .../email_update/service.py:117` `sql.select(...)` →
+   `backoffice/components/_input.py#select` — sqlalchemy's `select` lost to a UI
+   helper of the same name.
+6. `polar server/polar/kit/routing.py:89` `super().__init__(...)` →
+   `VersionedAPIRoute#__init__` where pyright reads fastapi's. The super pass
+   picking a project base that is not the MRO parent — `chainWrong`, six rows.
+7. `netbox .../models/cables.py:347` `super().save(...)` →
+   `CustomFieldsMixin#save`, which pyright confirms and jedi cannot see.
+   `oracleWrongMro`, eleven rows, netbox's whole phantom count.
+8. `httpx httpx/_models.py:748` `codes.is_redirect(...)` — `codes(IntEnum)`, the
+   new enum blind spot.
+9. `polar .../integrations/polar/client.py:93` `PolarSDK(...)` →
+   `sdk/python/polar/v2026_04/client.py#PolarAsync` — the in-repo SDK shadow.
+10. `polar .../integrations/polar/tasks.py:242` `deserialize(...)` — the chain
+    picks `merchant_migration/canonical.py#deserialize`, pyright the SDK's, and
+    `server/polar/__init__.py`'s `extend_path` re-export says pyright is right.
+    Five rows, `chainWrong`, and the only class the two engines split on.
+
+The full 100-row list is `audit-sample-list.txt` beside the dumps and is
+reproduced per corpus in the spec.
+
+#### Family attribution — the whole residual, five corpora
+
+`other` is **0 on every corpus**, after splitting five families the spec's list
+does not name. Binding-line miss rate: polar 4.5 %, netbox 12.7 %, httpx 31.6 %,
+flask 68.8 %, ugnest 45.8 % — high where the residual is small and dominated by
+bare calls, which have no binding to find.
+
+| family                 | inc  | ugnest | flask | httpx | netbox | polar | total |
+| ---------------------- | ---- | ------ | ----- | ----- | ------ | ----- | ----- |
+| `untypedNameReceiver`  | E4.1 | 4      | 22    | 5     | 23     | 378   | 432   |
+| `moduleAliasMember`    | E4.6 | 0      | 0     | 0     | 50     | 267   | 317   |
+| `sameFileBareCall`     | E4.6 | 1      | 11    | 4     | 9      | 115   | 140   |
+| `untypedFieldHop`      | E4.6 | 7      | 11    | 9     | 2      | 82    | 111   |
+| `classObjectReceiver`  | E4.4 | 4      | 1     | 0     | 26     | 52    | 83    |
+| `constructorChainHead` | E4.6 | 0      | 0     | 1     | 4      | 39    | 44    |
+| `callResultChainHead`  | E4.6 | 0      | 2     | 0     | 3      | 30    | 35    |
+| `crossFileBareCall`    | E4.6 | 8      | 0     | 0     | 0      | 23    | 31    |
+| `superMro`             | E4.4 | 0      | 0     | 0     | 0      | 23    | 23    |
+| `unionBranchReceiver`  | E4.1 | 0      | 0     | 0     | 0      | 18    | 18    |
+| `transparentWrapper`   | E4.2 | 0      | 0     | 0     | 0      | 9     | 9     |
+| `containerElementHop`  | E4.5 | 0      | 1     | 0     | 1      | 2     | 4     |
+| `pytestFixture`        | E4.3 | —      | 0     | —     | 0      | 4     | 4     |
+| **residual**           |      | 24     | 48    | 19    | 118    | 1038  | 1247  |
+
+`drfViewAttr`, `celeryEnqueue`, `djangoUrlRoute`, `protocolReceiver`,
+`typeVarGeneric`, `asyncForm`, `runtimeOnly` and `other` read **0** in every
+standard run. `runtimeOnly` reaches 2 only with netbox's tests walked. The
+receiverKind split is in the JSON reports; the two that matter are
+`moduleAliasMember` (polar `dynamic` 264 / `localVar` 3, netbox `localVar` 50)
+and `untypedNameReceiver` (polar `dynamic` 330 / `localVar` 44 / `selfMember`
+4).
+
+**Agreement with E3's hand-bucketed residuals.** netbox `localVar` 50 → 50
+`moduleAliasMember`, exact. netbox `chain` 7 → 4 `constructorChainHead` + 1
+`callResultChainHead` + 2 `untypedFieldHop`, matching the hand count of "4 of
+7". polar `chain` 75 → 82 `untypedFieldHop` over the larger merged residual (E3
+read 71 of 75 on the jedi-only one). polar `bareCall` 103 → 115
+`sameFileBareCall`, the `prompt_setup` shape. Every bucket is inside 10 %.
+
+#### Edge-density families — counted over the whole population, not the residual
+
+| family               | flask | httpx | netbox | polar | in-residual rows |
+| -------------------- | ----- | ----- | ------ | ----- | ---------------- |
+| `sqlalchemyRow`      | 18    | 1     | 3      | 2,850 | 0                |
+| `pydanticRow`        | 0     | 0     | 0      | 223   | 0                |
+| `transparentWrapper` | 0     | 0     | 0      | 68    | 9 (polar)        |
+
+polar's SQLAlchemy rows are 2,258 `agreeExternal` + 592 `bothUnresolved`, and
+E3's 2,550 / 223 reproduce inside the merged population's growth. Zero of them
+carry recall mass, which is the measured basis for the spec's override.
+
+#### The pytest delta, and what else moved (Step 8)
+
+| corpus | sites           | match           | phantom   | residual      | residual in test files | residual outside them |
+| ------ | --------------- | --------------- | --------- | ------------- | ---------------------- | --------------------- |
+| netbox | 44,126 → 81,253 | 8,225 → 17,586  | 26 → 258  | 118 → 1,269   | 1,150                  | 119 (+1)              |
+| polar  | 56,710 → 98,429 | 15,853 → 34,342 | 155 → 343 | 1,038 → 1,315 | 281                    | 1,034 (−4)            |
+| flask  | 1,346 → 4,283   | 326 → 1,113     | 9 → 29    | 48 → 235      | 186                    | 49 (+1)               |
+
+**The collateral D5 feared is not there.** Walking tests nearly doubles the site
+count and adds a larger symbol table, and the residual OUTSIDE test files moves
+by +1, −4 and +1 rows. The baseline population is stable under the flip; what
+grows is the test files' own residual, which is the population being measured.
+
+**`pytestFixture` is 4 rows in total** — all polar, all `dynamic`. netbox reads
+0 because it writes `unittest` TestCase classes rather than pytest fixtures: its
+1,150 in-test residual rows are 688 `selfMember` and 195 `dynamic`, i.e.
+`self.<attr>` on a test-case hierarchy, which is `untypedNameReceiver` and not a
+fixture question at all. flask reads 0 for the same reason its fixtures resolve.
+Whether production should walk tests remains the tests-tier bead's decision;
+E4.3 no longer has a fixture arm worth building.
+
 ---
 
 ## Task order, and what each one unblocks
@@ -1585,23 +1760,36 @@ spike, then decide with what has been measured.
 
 ---
 
-## Measurement record — to be written at close
+## Measurement record — E4.0 closed (w205u, 2026-09-10)
 
-Filled in by the task that closes E4.0, in the shape E3's record uses:
+Each task wrote its own record above; this is the index and the two things only
+the closing task can say.
 
-- Per corpus and per receiverKind: `recallLegacy` / `nLegacy` beside
-  `recallMerged` / `nMerged`, with the E3 closing numbers quoted for comparison
-  on the legacy column.
-- Fan block per corpus: `cap`, `p99DefsPerMember`, fan / ambiguous / untouched
-  counts, `recallAtFan`, size mean / p50 / p95, `ambiguousShare`,
-  `precisionProxy`.
-- Precision: raw `(phantom + wrongFile) / edges` and `precisionMissAdjusted`
-  side by side, per corpus.
-- The audit's six classes with counts, and the sample list.
-- The family table, per corpus, and the execution order it produces.
-- Wall and peak RSS for each harness mode, so the next increment knows what a
-  full measurement costs.
-- Determinism evidence: the two-run diff output for the merged oracle.
+| piece                                                        | where                          |
+| ------------------------------------------------------------ | ------------------------------ |
+| Second-oracle choice, determinism, per-1k wall, peak RSS     | D7 in the spec + E4.0.1 record |
+| `recallLegacy` / `nLegacy` beside `recallMerged` / `nMerged` | E4.0.2 + E4.0.2b records       |
+| Fan block, cap / p99, `dispatchDrift`, the parity finding    | E4.0.3 record                  |
+| Audit classes, `precisionMissAdjusted`, family tables        | E4.0.4 record                  |
+| Execution order for E4.1–E4.6                                | D8 in the spec                 |
+| The audit's own findings                                     | D9 in the spec                 |
+
+**What a full measurement costs, end to end.** All five corpora at
+`--oracle merged --dispatch --workers 8`: ugnest 6.5 s, httpx 2.3 s, flask 2.6
+s, netbox 54.0 s, polar 95.0 s — under three minutes for the whole tree, because
+the second engine is asked only about the 105 polar and 4 netbox files jedi
+could not read. With `--include-tests` the two large corpora roughly double:
+netbox 135.9 s, polar 151.0 s. The family report adds one corpus walk per run
+(polar ~40 s, netbox ~25 s, the rest seconds). E4.1 can therefore A/B the whole
+tree inside a five-minute loop, which is the number that decides whether an
+increment measures itself every commit or once at the end.
+
+**Two claims this program has been carrying are now retired.** The oracle-vs-
+production gap is 30 sites in 108,462 (E4.0.3), so the published 1:1 recall IS
+production's. And the residual is no longer "one shape with nothing above 424":
+it is 1,247 rows over twelve families with `other` at zero, the largest being
+`untypedNameReceiver` at 432 and `moduleAliasMember` at 317. E4's order is
+settled by D8 rather than argued.
 
 ---
 
