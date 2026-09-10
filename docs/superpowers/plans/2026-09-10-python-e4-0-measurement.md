@@ -1702,6 +1702,19 @@ polar's SQLAlchemy rows are 2,258 `agreeExternal` + 592 `bothUnresolved`, and
 E3's 2,550 / 223 reproduce inside the merged population's growth. Zero of them
 carry recall mass, which is the measured basis for the spec's override.
 
+**RECALL or EDGE-DENSITY, and whether the oracle can score it.** Every family in
+the table above is a RECALL family: its rows are `missed` / `fileOnly` /
+`wrongFile`, all inside the denominator, and the oracle scores them directly —
+the row already carries the ground-truth target it was compared against. The
+three families in the edge-density table below are the opposite: their rows are
+`agreeExternal` or `bothUnresolved`, outside the denominator by construction,
+and the oracle CANNOT score them for recall because there is no in-project
+answer to hit. What it can score for them is the reverse question — an increment
+that turns one of those rows into a project edge either matches the oracle or
+becomes a phantom — so their bar is `edgesGained` plus the phantom-exposure
+count, exactly as E4.2 was written. `transparentWrapper` is the one family that
+sits on both sides: 9 recall rows on polar and 68 edge rows.
+
 #### The pytest delta, and what else moved (Step 8)
 
 | corpus | sites           | match           | phantom   | residual      | residual in test files | residual outside them |
