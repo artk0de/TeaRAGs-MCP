@@ -845,6 +845,50 @@ describe("formatPrime — codegraph resolve (7m5xz)", () => {
     expect(out.indexOf("selfMember")).toBeLessThan(out.indexOf("constant"));
   });
 
+  // bd tea-rags-mcp-4vg1i — the aggregate warning says HOW MANY entry calls
+  // stopped at a shared template; only the per-kind suffix says which bucket
+  // carries them, which is what makes the number actionable (and what proves
+  // the constant-receiver gate is holding, since every other kind must read 0).
+  it("suffixes a receiver-kind row with its unnarrowed-entry count, and only when non-zero", () => {
+    const out = formatPrime({
+      path: "/p",
+      status: indexed({
+        codegraphResolve: {
+          resolveSuccessRate: 0.7,
+          callsAttempted: 200,
+          callsResolved: 140,
+          callsExternalSkipped: 0,
+          callsUnnarrowedTemplate: 30,
+          byReceiverKind: [
+            {
+              receiverKind: "constant",
+              attempted: 120,
+              resolved: 100,
+              externalSkipped: 0,
+              resolveSuccessRate: 100 / 120,
+              callsUnnarrowedTemplate: 30,
+            },
+            {
+              receiverKind: "bareCall",
+              attempted: 80,
+              resolved: 40,
+              externalSkipped: 0,
+              resolveSuccessRate: 0.5,
+              callsUnnarrowedTemplate: 0,
+            },
+          ],
+        },
+      }),
+      metrics: monolingualMetricsFixture(),
+      drift: null,
+      update: null,
+    });
+    expect(out).toContain("constant 0.83 100/120 · 30 unnarrowed");
+    expect(out).toContain("bareCall 0.5 40/80");
+    expect(out).not.toContain("bareCall 0.5 40/80 · 0 unnarrowed");
+    expect(out).toContain("⚠ 30 constant-receiver entry call(s)");
+  });
+
   it("renders byReceiverKind nested under each language in the multi-language case", () => {
     const out = formatPrime({
       path: "/p",

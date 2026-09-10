@@ -417,15 +417,28 @@ function formatCodegraphResolveSection(resolve: CodegraphResolve | undefined): s
   // while the callers of every concrete service go missing.
   if (unnarrowed > 0) {
     lines.push(
-      `⚠ ${unnarrowed} entry call(s) resolved to a shared self-dispatch template instead of the concrete hook — recall rates cannot see this`,
+      `⚠ ${unnarrowed} constant-receiver entry call(s) resolved to a shared self-dispatch template instead of the concrete hook — recall rates cannot see this`,
     );
   }
   return lines;
 }
 
-/** Compact one-line per kind: `selfMember 0.96 125/130` (kind · rate · resolved/attempted). */
+/**
+ * Compact one-line per kind: `selfMember 0.96 125/130` (kind · rate ·
+ * resolved/attempted), with ` · N unnarrowed` appended when this bucket carries
+ * unnarrowed entry calls (bd tea-rags-mcp-4vg1i).
+ *
+ * Suffixed rather than columnar, and only when non-zero, for the same reason the
+ * aggregate warning below is conditional: on a healthy index every kind reads 0
+ * and a permanent zero column would be noise in a digest read every session.
+ * The split is what makes the aggregate actionable — the entry strategy can only
+ * narrow a CONSTANT receiver, so the same total means different things depending
+ * on which bucket holds it.
+ */
 function formatResolveKind(k: CodegraphResolveKindRow): string {
-  return `${k.receiverKind} ${roundTwo(k.resolveSuccessRate)} ${k.resolved}/${k.attempted}`;
+  const base = `${k.receiverKind} ${roundTwo(k.resolveSuccessRate)} ${k.resolved}/${k.attempted}`;
+  const unnarrowed = k.callsUnnarrowedTemplate ?? 0;
+  return unnarrowed > 0 ? `${base} · ${unnarrowed} unnarrowed` : base;
 }
 
 function formatRelativeTime(diffMs: number): string {

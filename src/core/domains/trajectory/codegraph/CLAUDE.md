@@ -39,35 +39,54 @@
   source file — `DuckDbFileGraphStore#writeFileRowsGroup` diffs each file's
   `source_rel_path` slice of `cg_symbols_edges_file|_method`,
   `cg_symbols_inheritance` and `cg_ambiguous_fanout` (plus its `rel_path` slice
-  of `cg_pass1_aggregates`) against the rows the walk
-  produced, so only genuinely obsolete rows are deleted; derived tables (cycles,
-  metrics) are wholesale recomputes and do self-correct. Why: no amount of
-  incremental reindexing heals a partial graph, because the files carrying the
-  stale edges have not changed — meanwhile every `fanIn` / `instability` /
-  `pageRank` written comes off that graph, and `find_cycles` keeps reporting
-  cycles the source dropped weeks ago.
+  of `cg_pass1_aggregates`) against the rows the walk produced, so only
+  genuinely obsolete rows are deleted; derived tables (cycles, metrics) are
+  wholesale recomputes and do self-correct. Why: no amount of incremental
+  reindexing heals a partial graph, because the files carrying the stale edges
+  have not changed — meanwhile every `fanIn` / `instability` / `pageRank`
+  written comes off that graph, and `find_cycles` keeps reporting cycles the
+  source dropped weeks ago.
 
 - **Pass-2 resolves against a PROJECT-wide symbol table, so its run-global maps
   must be project-wide too — and only `cg_pass1_aggregates` makes them so.** The
   symbol table hydrates from `cg_symbols` when the collection opens
   (`codegraph/factory.ts` `initHook`); `CodegraphRunState`'s ancestry, hierarchy
   view and self-dispatch registry are built in `absorb` from the files the
-  CURRENT batch walked. Matching one against the other does not under-resolve, it
-  MIS-resolves: with `KindOfService#call` absent from `selfDispatchTemplates` the
-  Ruby entry strategy CONTINUEs by design and the constant strategy's ancestor
-  walk lands every concrete `SomeService.call(...)` on the shared mixin's own
-  method — 200 of 200 sampled caller edges of that hub, from 134 files, while
-  `inProjectEdgeRecall` read 1.0 (bd tea-rags-mcp-znxg8). `RunState#seal` now
-  absorbs the persisted slices FIRST, for files this run did not walk, before the
-  hierarchy view / include-by index / discovery that read those maps. Two things
-  an edit must keep: walked files are SKIPPED, not merged (their row on disk
-  still describes the previous content, so absorbing it resurrects renamed-away
-  classes), and hydration never counts as an extraction (`extractedFilesByLanguage`
-  drives run stats and the deferred chunk pass). Why: the fix only takes effect
-  once the table is populated, so an index predating migration 021 keeps the old
-  behaviour until a `--force-enrichments codegraph` run writes the rows — and
-  until then `callsUnnarrowedTemplate` is the only number that says so, because
-  every rate on `cg_run_stats` counts these calls as successes.
+  CURRENT batch walked. Matching one against the other does not under-resolve,
+  it MIS-resolves: with `KindOfService#call` absent from `selfDispatchTemplates`
+  the Ruby entry strategy CONTINUEs by design and the constant strategy's
+  ancestor walk lands every concrete `SomeService.call(...)` on the shared
+  mixin's own method — 200 of 200 sampled caller edges of that hub, from 134
+  files, while `inProjectEdgeRecall` read 1.0 (bd tea-rags-mcp-znxg8).
+  `RunState#seal` now absorbs the persisted slices FIRST, for files this run did
+  not walk, before the hierarchy view / include-by index / discovery that read
+  those maps. Two things an edit must keep: walked files are SKIPPED, not merged
+  (their row on disk still describes the previous content, so absorbing it
+  resurrects renamed-away classes), and hydration never counts as an extraction
+  (`extractedFilesByLanguage` drives run stats and the deferred chunk pass).
+  Why: the fix only takes effect once the table is populated, so an index
+  predating migration 021 keeps the old behaviour until a
+  `--force-enrichments codegraph` run writes the rows — and until then
+  `callsUnnarrowedTemplate` is the only number that says so, because every rate
+  on `cg_run_stats` counts these calls as successes.
+
+- **`callsUnnarrowedTemplate` counts CONSTANT receivers only, and its per-kind
+  split is how you check that.** Entry narrowing is receiver-anchored, so an
+  idiom naming no concrete type — a bare call to an INHERITED hook most of all —
+  never had a target to narrow to; `resolution-runner.landedOnSharedTemplate`
+  returns false for every other kind, and `cg_run_stats` therefore holds a
+  non-zero `unnarrowed_template` under `constant` alone (`prime` renders it as a
+  ` · N unnarrowed` suffix per kind). Measured on taxdome before the gate: 2507
+  counted call sites, of which 649 (25.9%) were non-constant — 433 bare, 108
+  dynamic, 84 chain — and the samples behind them were unrelated short-name
+  fan-outs (`result.success` reaching three different `Result.success`), not
+  entry calls (bd tea-rags-mcp-4vg1i). Why: the number is read as a defect
+  count, so an ungated counter sends the next reader chasing a quarter more
+  defects than exist — and the residue it does flag is one idiom, not a
+  scattering: 1780 of 1998 hub edges were
+  `SomePolicy.authorize!(user, actor, :ability, res)` landing on
+  `AbstractPolicy.authorize!`, whose hook is composed by
+  `send("can_#{ability}?")` from an ARGUMENT the receiver cannot supply.
 
 - **"Nodes-before-edges" binds the run's END state, not the start of pass-2.**
   `createCodegraphExtractionSink#finish` (symbols/extraction-sink.ts) DISPATCHES

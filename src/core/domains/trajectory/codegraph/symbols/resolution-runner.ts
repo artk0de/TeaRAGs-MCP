@@ -358,7 +358,7 @@ export class CallEdgeResolutionRunner {
         if (outcome === "resolved") {
           stats.callsResolved += 1;
           kindTally[receiverKind].resolved += 1;
-          if (this.landedOnSharedTemplate(methodEdges, edgesBefore, ctx)) {
+          if (this.landedOnSharedTemplate(methodEdges, edgesBefore, ctx, receiverKind)) {
             kindTally[receiverKind].unnarrowedTemplate += 1;
           }
           continue;
@@ -382,10 +382,28 @@ export class CallEdgeResolutionRunner {
    * Counts the call site ONCE however many edges it produced: a fan-out that
    * reaches a template is one call that failed to narrow, not several.
    *
+   * CONSTANT receivers only (bd tea-rags-mcp-4vg1i). Entry narrowing is
+   * receiver-anchored: `Const.member` narrows to `Const#hook` because `Const`
+   * names the concrete type. Every other receiver idiom names no type the
+   * strategy could have narrowed TO, so its edge to the shared method is the
+   * honest answer, not a failure — a subtype calling the hook it INHERITS
+   * (`bareCall`) most of all. Measured on taxdome: of 2507 counted call sites,
+   * 649 (25.9%) carried a non-constant receiver — 433 bare, 108 dynamic, 84
+   * chain, the rest scattered — so an ungated counter reported a quarter more
+   * defects than exist, and the samples behind them were unrelated fan-outs
+   * (`result.success` reaching three different `Result.success`) rather than
+   * entry calls at all.
+   *
    * The registries are Ruby-only and empty everywhere else, so the early return
    * keeps every other language's hot path untouched.
    */
-  private landedOnSharedTemplate(methodEdges: MethodEdges, edgesBefore: number, ctx: CallContext): boolean {
+  private landedOnSharedTemplate(
+    methodEdges: MethodEdges,
+    edgesBefore: number,
+    ctx: CallContext,
+    receiverKind: ReceiverKind,
+  ): boolean {
+    if (receiverKind !== "constant") return false;
     const templates = ctx.selfDispatchTemplates;
     const entries = ctx.selfInstantiatingClassMethods;
     if (templates === undefined && entries === undefined) return false;

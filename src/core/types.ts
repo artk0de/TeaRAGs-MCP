@@ -249,6 +249,13 @@ export interface CodegraphResolveSummary {
    * Read it as an invariant, not a metric: near zero is healthy, because a
    * concrete constant receiver narrows the abstract hook to exactly one target
    * by construction. A jump means entry narrowing stopped happening.
+   *
+   * CONSTANT receivers only (bd tea-rags-mcp-4vg1i). Narrowing is anchored on
+   * the receiver, so an idiom that names no concrete type — a bare call to an
+   * INHERITED hook above all — never had a target to narrow to and is not a
+   * defect. Counting those inflated the taxdome reading from 1858 to 2507, a
+   * quarter of it noise, and a counter that over-reports is worse than none:
+   * the next reader takes the headline for a defect count.
    */
   callsUnnarrowedTemplate: number;
   /**
@@ -356,6 +363,21 @@ export interface CodegraphResolveKindRow {
   /** bd f2jsb / j0pki — over-cap ambiguous dispatch fan-outs in this bucket
    *  (recorded as aggregates, not edges). */
   ambiguousFanout: number;
+  /**
+   * bd znxg8 / 4vg1i — resolved calls in THIS receiver-kind bucket that stopped
+   * at a shared self-dispatch entry node.
+   *
+   * Every bucket but `constant` reads 0 by construction, since the counter is
+   * gated on the one receiver idiom entry narrowing can act on. The split is
+   * kept anyway, and surfaced in `prime`, because it is what makes the gate
+   * checkable from outside: a non-zero elsewhere means the gate broke. It also
+   * localises the count on a multi-language index, where the aggregate alone
+   * cannot say which language carries it.
+   *
+   * Always present (0, never absent), so "measured zero" reads differently from
+   * a pre-migration-022 index whose column was never written.
+   */
+  callsUnnarrowedTemplate: number;
   resolveSuccessRate: number;
 }
 
