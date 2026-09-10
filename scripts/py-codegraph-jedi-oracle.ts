@@ -54,6 +54,7 @@ import {
   categorizePySite,
   classifyPyVerdict,
   isSuperCallSite,
+  legacyViewOf,
   locateCalleeColumn,
   mergeOracleReplies,
   oracleEntryOf,
@@ -62,6 +63,7 @@ import {
   tallyPyRecall,
   tallyPyRows,
   type MergedOracleFileReply,
+  type OracleEngine,
   type OracleSelection,
   type PyOracleFileReply,
   type PyOracleRow,
@@ -540,8 +542,15 @@ export function countEnclosingBases(ctx: CallContext): number | undefined {
  *
  * The reply map arrives in either shape: a plain `relPath -> reply` (what the
  * scratch row drivers hand it, and what `--oracle jedi` reduces to) or the
- * merged `relPath -> {reply, engine}`. `oracleEntryOf` discriminates and
- * defaults the provenance to `jedi`, the primary.
+ * merged `relPath -> {reply, engine, legacy}`. `oracleEntryOf` discriminates
+ * and defaults the provenance to `jedi`, the primary.
+ *
+ * A row whose file the second engine answered also carries `legacy`: the row
+ * jedi's OWN reply produces for the same site, built by the same code off the
+ * same per-file cursor. That is what makes the legacy tables reproduce a
+ * jedi-only run — the shape categories, the origin and the degraded flag all
+ * come from the answering engine, so substituting only the verdict would still
+ * move the published columns (bd tea-rags-mcp-w205u).
  */
 export function buildRows(
   sites: readonly PyChainSite[],
@@ -550,72 +559,85 @@ export function buildRows(
   const rows: PyOracleRow[] = [];
   const cursor = new Map<string, number>();
   for (const site of sites) {
-    const { reply, engine } = oracleEntryOf(replies.get(site.relPath));
+    const { reply, engine, legacy } = oracleEntryOf(replies.get(site.relPath));
     const index = cursor.get(site.relPath) ?? 0;
     cursor.set(site.relPath, index + 1);
-    const answer = reply?.answers[index];
-    const targets = answer?.outcome.targets ?? [];
-    const reported =
-      answer === undefined || answer.outcome.kind === "unknown" || answer.outcome.kind === "parseFailed"
-        ? ({ kind: "unknown" } as const)
-        : answer.outcome.kind === "external"
-          ? ({ kind: "external" } as const)
-          : ({
-              kind: "inProject",
-              answer: {
-                targetRelPath: targets[0]?.relPath ?? "",
-                // A `pinUncertain` target compares at FILE granularity only —
-                // matching a null symbol id here degrades the verdict to
-                // `fileOnly` rather than manufacturing a `wrongFile`.
-                targetSymbolId:
-                  targets[0]?.pinUncertain === true
-                    ? (site.chain?.targetSymbolId ?? null)
-                    : (targets[0]?.symbolId ?? null),
-              },
-            } as const);
-    // jedi walks `super()` through the first base only, so an external answer
-    // on a MULTI-base `super()` site is not ground truth. The core withdraws it.
-    const { oracle, categories } = applySuperMroBlindSpot({
-      isSuperCall: isSuperCallSite({
-        receiverKind: site.receiverKind,
-        receiver: site.call.receiver,
-        facts: answer?.siteFacts,
-      }),
-      origin: answer?.outcome.origin,
-      oracle: reported,
-      enclosingBaseCount: countEnclosingBases(site.ctx),
-      categories: categorizePySite(answer?.siteFacts, {
-        receiver: site.call.receiver,
-        member: site.call.member,
-      }),
-    });
-    rows.push({
-      relPath: site.relPath,
-      startLine: site.call.startLine,
-      callText: site.call.callText,
-      receiver: site.call.receiver,
-      member: site.call.member,
-      receiverKind: site.receiverKind,
-      categories,
-      verdict: classifyPyVerdict({
-        chain: site.chain,
-        oracle,
-        parseFailed: reply?.parseFailed === true,
-        classifiedExternal: site.missBucket === "external" || site.missBucket === "coreAmbiguous",
-        // Read off the RAW answer, not the withdrawn one: the blind spot only
-        // ever rewrites EXTERNAL origins, so the two cannot both fire.
-        oracleTargetNonCallable: targets[0]?.defNodeKind === "nonCallable",
-      }),
-      answeredBy: site.answeredBy,
-      chainOutput: site.chain === null ? "none" : site.chain.targetSymbolId === null ? "fileOnly" : "pinned",
-      chain: site.chain ?? undefined,
-      origin: answer?.outcome.origin,
-      oracleDegraded: (reply?.parsoErrors ?? 0) > 0,
-      unlocatedShape: answer?.unlocated,
-      oracleEngine: engine,
-    });
+    const row = buildRow(site, reply, engine, index);
+    rows.push(
+      engine === "jedi" || legacy === undefined ? row : { ...row, legacy: buildRow(site, legacy, "jedi", index) },
+    );
   }
   return rows;
+}
+
+/** One site's row against ONE engine's reply, at the per-file cursor position. */
+function buildRow(
+  site: PyChainSite,
+  reply: PyOracleFileReply | undefined,
+  engine: OracleEngine,
+  index: number,
+): PyOracleRow {
+  const answer = reply?.answers[index];
+  const targets = answer?.outcome.targets ?? [];
+  const reported =
+    answer === undefined || answer.outcome.kind === "unknown" || answer.outcome.kind === "parseFailed"
+      ? ({ kind: "unknown" } as const)
+      : answer.outcome.kind === "external"
+        ? ({ kind: "external" } as const)
+        : ({
+            kind: "inProject",
+            answer: {
+              targetRelPath: targets[0]?.relPath ?? "",
+              // A `pinUncertain` target compares at FILE granularity only —
+              // matching a null symbol id here degrades the verdict to
+              // `fileOnly` rather than manufacturing a `wrongFile`.
+              targetSymbolId:
+                targets[0]?.pinUncertain === true
+                  ? (site.chain?.targetSymbolId ?? null)
+                  : (targets[0]?.symbolId ?? null),
+            },
+          } as const);
+  // jedi walks `super()` through the first base only, so an external answer
+  // on a MULTI-base `super()` site is not ground truth. The core withdraws it.
+  const { oracle, categories } = applySuperMroBlindSpot({
+    isSuperCall: isSuperCallSite({
+      receiverKind: site.receiverKind,
+      receiver: site.call.receiver,
+      facts: answer?.siteFacts,
+    }),
+    origin: answer?.outcome.origin,
+    oracle: reported,
+    enclosingBaseCount: countEnclosingBases(site.ctx),
+    categories: categorizePySite(answer?.siteFacts, {
+      receiver: site.call.receiver,
+      member: site.call.member,
+    }),
+  });
+  return {
+    relPath: site.relPath,
+    startLine: site.call.startLine,
+    callText: site.call.callText,
+    receiver: site.call.receiver,
+    member: site.call.member,
+    receiverKind: site.receiverKind,
+    categories,
+    verdict: classifyPyVerdict({
+      chain: site.chain,
+      oracle,
+      parseFailed: reply?.parseFailed === true,
+      classifiedExternal: site.missBucket === "external" || site.missBucket === "coreAmbiguous",
+      // Read off the RAW answer, not the withdrawn one: the blind spot only
+      // ever rewrites EXTERNAL origins, so the two cannot both fire.
+      oracleTargetNonCallable: targets[0]?.defNodeKind === "nonCallable",
+    }),
+    answeredBy: site.answeredBy,
+    chainOutput: site.chain === null ? "none" : site.chain.targetSymbolId === null ? "fileOnly" : "pinned",
+    chain: site.chain ?? undefined,
+    origin: answer?.outcome.origin,
+    oracleDegraded: (reply?.parsoErrors ?? 0) > 0,
+    unlocatedShape: answer?.unlocated,
+    oracleEngine: engine,
+  };
 }
 
 /**
@@ -762,9 +784,15 @@ export function parseArgs(argv: readonly string[]): PyOracleCliOptions {
 /**
  * The two recall denominators side by side, never one alone.
  *
- * `recallLegacy` reproduces every published Python number and is the regression
- * gate; `recallMerged` is what E4.1–E4.6 are measured against. Both `n` columns
- * are printed rather than inferred, so a reader can see which rows moved.
+ * `recallLegacy` counts the rows jedi answered with the degraded ones withheld
+ * from the rates, exactly as a jedi-only run withholds them — so it reproduces
+ * every published Python number and is the regression gate. `recallMerged` is
+ * what E4.1–E4.6 are measured against. Both `n` columns are printed rather than
+ * inferred, so a reader can see which rows moved.
+ *
+ * Rows come out ordered by LABEL. A size key would print the same numbers in a
+ * different order under `--oracle merged`, and the block has to diff clean
+ * against a jedi-only run of the same corpus (bd tea-rags-mcp-w205u).
  */
 export function formatRecallSplit(splits: readonly PyRecallSplit[]): string {
   const width = Math.max(12, ...splits.map((split) => split.label.length));
@@ -807,8 +835,17 @@ async function main(): Promise<void> {
 
   // The three published tables stay on the JEDI denominator whatever the
   // selection, so seam-4 / seam-5 / E3's records stay reproducible from them.
+  // Every site jedi was asked about is here, including the ones the second
+  // engine repaired: `legacyViewOf` hands back the row JEDI produced, degraded
+  // and withheld from the rates but still counted in `sites`, which is what a
+  // `--oracle jedi` run counts. Filtering by engine dropped those sites and
+  // shrank the published `sites` column (bd tea-rags-mcp-w205u).
   // The merged block below repeats the same columns over every scored row.
-  const legacyRows = rows.filter((row) => row.oracleEngine === "jedi");
+  const legacyRows = rows.flatMap((row) => {
+    const view = legacyViewOf(row);
+    return view === undefined ? [] : [view];
+  });
+  const jediAnsweredRows = rows.filter((row) => row.oracleEngine === "jedi").length;
   const byReceiver = tallyPyRows(legacyRows, (row) => [row.receiverKind]);
   const byAnsweredBy = tallyPyRows(legacyRows, (row) => [row.answeredBy]);
   const byCategory = tallyPyRows(legacyRows, (row) => row.categories);
@@ -816,7 +853,7 @@ async function main(): Promise<void> {
   const byAnsweredByMerged = tallyPyRows(rows, (row) => [row.answeredBy]);
   const byCategoryMerged = tallyPyRows(rows, (row) => row.categories);
   const recallByReceiver = tallyPyRecall(rows, (row) => [row.receiverKind]);
-  const secondEngineRows = rows.length - legacyRows.length;
+  const secondEngineRows = rows.length - jediAnsweredRows;
   const secondEngineFiles = new Set(rows.filter((row) => row.oracleEngine !== "jedi").map((row) => row.relPath)).size;
   const coverage = tallyPyCoverage(rows);
   const degraded = rows.filter((row) => row.oracleDegraded).length;
@@ -843,7 +880,7 @@ async function main(): Promise<void> {
       .join(", ")})`,
     options.oracle === "lsp"
       ? `oracle lsp · every row answered by the second engine (${secondEngineRows} rows on ${secondEngineFiles} files) — recallLegacy reads 0/0 by construction`
-      : `oracle ${options.oracle} · jedi answered ${legacyRows.length} rows · second engine ${secondEngineRows} rows on ${secondEngineFiles} files jedi could not read`,
+      : `oracle ${options.oracle} · jedi answered ${jediAnsweredRows} rows · second engine ${secondEngineRows} rows on ${secondEngineFiles} files jedi could not read`,
     `elapsed ${((Date.now() - started) / 1000).toFixed(1)}s`,
     "",
     formatOracleTable("BY RECEIVER KIND (partition — each call site counted once)", byReceiver),
@@ -891,7 +928,7 @@ async function main(): Promise<void> {
         unlocated: coverage.unlocated,
         unlocatedByShape: coverage.unlocatedByShape,
         chainOutput,
-        jediRows: legacyRows.length,
+        jediRows: jediAnsweredRows,
         secondEngineRows,
         secondEngineFiles,
       },
