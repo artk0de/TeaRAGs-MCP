@@ -1143,6 +1143,90 @@ function pythonCallHeadReturnType(receiver, ctx, mapper): TypeRef | undefined {
       then append a **Measured — E4.6b-1** block: the A/B table, which Ruby
       branch Step 3 took, the family deltas, and the perf pair.
 
+### Measured — E4.6b-1 (2026-09-11, dumps under `~/.claude/jobs/dffe3647/tmp/e46b1/`)
+
+**Step 3 took the PORT branch.** The kernel splitter drifted Ruby: 34 mastodon
+mismatches on `ruby-resolver-parity --before-root …/tea-rags-mcp`, every one a
+`before: null → after: <resolved>` on the shape
+`StatusFilter.new(quote.quoted_status, account).filter_state_for_quote`. Gains,
+but unmeasured ones, and the gate is parity. `splitReceiverHops` is now an
+OPTIONAL port defaulting to `receiver.split(".")`; only
+`createPythonReceiverTypePorts` supplies the bracket-aware scan. Re-run:
+resolver 42,057 sites / **0 mismatches / 0 drift**, walker 500 files / **0
+mismatches**.
+
+**Step 0's other read found a THIRD state, not the two the task listed.** `Self`
+is neither dropped nor recorded literally — `python-type-annotation.ts:123`
+resolves it to the ENCLOSING class at walk time, so
+`structuredReturnTypes["RepositoryBase.from_session"]` read `RepositoryBase`.
+The facet now passes the marker for a RETURN annotation only
+(`PYTHON_SELF_RETURN`); a parameter and an ivar keep the enclosing-class answer,
+because only a return is polymorphic in the receiver. The substitution lives in
+`pythonInheritedMemberType`, not in one port, so `selfField` reads it on the
+same terms. Walker version stays **5**; `--force-enrichments` would be needed
+before a live read, and no reindex was run.
+
+**Row-level A/B**, five corpora × five runs each side, `--samples 500000` so the
+per-verdict lists are the WHOLE row set. Every corpus was byte-identical across
+its five runs on both sides — zero jedi wobble this time, so the transition
+matrix is exact.
+
+| corpus | missed    | fileOnly | wrongFile | phantom | edges           | gross lost |
+| ------ | --------- | -------- | --------- | ------- | --------------- | ---------- |
+| ugnest | 13 → 13   | 0 → 0    | 0 → 0     | 0 → 0   | 770 → 770       | 0          |
+| flask  | 39 → 39   | 6 → 6    | 1 → 1     | 0 → 0   | 345 → 345       | 0          |
+| httpx  | 10 → 9    | 5 → 5    | 0 → 0     | 8 → 8   | 491 → 492       | 0          |
+| netbox | 66 → 61   | 2 → 2    | 0 → 0     | 26 → 26 | 8692 → 8697     | 0          |
+| polar  | 717 → 514 | 11 → 29  | 2 → 16    | 84 → 84 | 16,796 → 17,479 | **14**     |
+
+`missed → match|fileOnly`: httpx **+1**, netbox **+5**, polar **+203**, flask
+and ugnest byte-identical. Phantom is FLAT on every corpus (Δ 0.000 pp, ugnest
+0); `exactReplacedByFan` and `exactReplacedByAmbiguous` unchanged. `chainDrift`
+and `dispatchDrift` **0** on all 50 oracle runs and all 25 tally runs.
+
+**polar breaks the `gross lost = 0` bar, and the cause is isolated.** A control
+run substituting the DECLARING class for `Self` (everything else identical)
+splits the delta cleanly:
+
+| mechanism                               | polar `missed → ok`  | `ok → wrongFile` |
+| --------------------------------------- | -------------------- | ---------------- |
+| splitter + subscript + call head + cast | **+40** (+3 skipped) | **0**            |
+| `-> Self` substitution                  | **+163**             | **14**           |
+
+All 14 are one shape: `repository.update(…)` / `customer_repository.create(…)`,
+`answeredBy: localBinding`, now targeting `CustomerRepository#update|#create` in
+`server/polar/customer/repository.py`. **The new answers are the ones Python
+runs.** `repository = CustomerRepository.from_session(session)`;
+`kit/repository/base.py:165` reads
+`def from_session(cls, session) -> Self: return cls(session)`; and
+`customer/repository.py` OVERRIDES both `create` (line 71) and `update` (line
+98). The oracle answers the declaring class — the same mistake the pre-change
+walk-time substitution made, which is why these rows scored `match` before. It
+is an ORACLE defect on `Self` through a generic base, not a resolution
+regression, and it is reported rather than engineered around. **The bar is still
+breached as written; whether Step 6 ships is the orchestrator's call, and the
+mechanism is one commit.**
+
+**Family report, A side:** `constructorChainHead` → **0 on every corpus** (httpx
+1 → 0, netbox 4 → 0, polar 39 → 0), exactly as predicted. `callResultChainHead`
+netbox 3 → 2, polar 30 → 19, flask 2 → 2 (the two rows the task pinned rather
+than answered). `untypedFieldHop` polar **82 → 82**, unchanged — its 22
+call-assigned rows stay E4.6c's. NO family grew on any corpus; polar's
+`untypedNameReceiver` fell 377 → 235, which is the `Self` substitution reaching
+E4.1's population.
+
+**Perf**, chain-tally, min of two per side, `/usr/bin/time -l`:
+
+| corpus | wall B → A      | Δ      | peak RSS B → A    | Δ      |
+| ------ | --------------- | ------ | ----------------- | ------ |
+| netbox | 13.51s → 13.58s | +0.5 % | 2468 MB → 2487 MB | +0.8 % |
+| polar  | 18.17s → 18.08s | −0.5 % | 2413 MB → 2429 MB | +0.7 % |
+
+**One harness note.** `codegraph-chain-tally.ts --lang ruby` does not exist —
+`no chain spec for language 'ruby' (have: python, java)`. The Ruby gate is the
+two parity spikes, and both read 0; the plan's gate command list is wrong here,
+not the harness.
+
 ---
 
 ## Task E4.6b-2 — Bare calls: LEGB reaches `E` before `G` (`w205u`)

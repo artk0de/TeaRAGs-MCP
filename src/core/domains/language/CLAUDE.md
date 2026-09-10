@@ -82,10 +82,14 @@
   (`typeRefReceiverForm` in `propagateReceiverType`, never per hop: collapsing a
   NILABLE intermediate mid-walk changes what the next hop dispatches on). A
   language supplies four ports — `singleHopType`, `seedHead`, `memberTypeOf`,
-  `maxHops` — and gets multi-hop typing. It supplies them as ONE FROZEN object
-  built once and reused, because the fold runs per call site and `ctx` is
-  threaded as an argument precisely so nothing is allocated there: Ruby's is a
-  module singleton (`RUBY_RECEIVER_TYPE_PORTS`), Python's is
+  `maxHops` — and gets multi-hop typing. A fifth, `splitReceiverHops`, is
+  OPTIONAL and defaults to that plain `split(".")`: only Python supplies the
+  bracket-aware scan (`splitAtBracketDepthZero`, the one depth-and-quote scanner
+  in the engine), because the same split newly types 34 unmeasured mastodon
+  receivers and Ruby's gate is parity, not inspection. It supplies them as ONE
+  FROZEN object built once and reused, because the fold runs per call site and
+  `ctx` is threaded as an argument precisely so nothing is allocated there:
+  Ruby's is a module singleton (`RUBY_RECEIVER_TYPE_PORTS`), Python's is
   `createPythonReceiverTypePorts`, a factory the resolver calls once so the
   ports close over its ONE `PythonImportFileMapper` instead of a private memo.
   What an `@ivar` is, what a capitalized head means, which env caps the hops —
