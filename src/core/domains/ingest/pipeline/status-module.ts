@@ -150,6 +150,7 @@ function buildByReceiverKind(kinds: Map<string, ResolveTally>): CodegraphResolve
       callsNoInProjectDef: t.noInProjectDef,
       callsCoreAmbiguous: t.coreAmbiguous,
       ambiguousFanout: t.ambiguousFanout,
+      callsUnnarrowedTemplate: t.unnarrowedTemplate,
       resolveSuccessRate: resolveRate(t),
     }))
     .sort((a, b) => b.attempted - a.attempted);

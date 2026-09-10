@@ -46,7 +46,7 @@ type Pass1AggregateSource = Pick<
   FileExtraction,
   "relPath" | "language" | "classAncestors" | "classPrependedAncestors" | "classExtends" | "compactDeclaredClasses"
 > &
-  Pick<FileExtraction, "inheritanceEdges">;
+  Pick<FileExtraction, "inheritanceEdges" | "structuredReturnTypes" | "functionReturnTypes">;
 
 /**
  * Build one file's persisted slice, or `undefined` when the file declares
@@ -76,6 +76,8 @@ export function buildPass1Aggregates(
   }
   if ((extraction.inheritanceEdges?.length ?? 0) > 0) slice.inheritanceEdges = extraction.inheritanceEdges;
   if (selfDispatchMethods.length > 0) slice.selfDispatchMethods = selfDispatchMethods;
+  if (hasKeys(extraction.structuredReturnTypes)) slice.structuredReturnTypes = extraction.structuredReturnTypes;
+  if (hasKeys(extraction.functionReturnTypes)) slice.functionReturnTypes = extraction.functionReturnTypes;
   return carriesFacts(slice) ? slice : undefined;
 }
 
@@ -108,6 +110,8 @@ function carriesFacts(slice: CodegraphPass1FileAggregates): boolean {
     slice.classExtends !== undefined ||
     slice.compactDeclaredClasses !== undefined ||
     slice.inheritanceEdges !== undefined ||
-    slice.selfDispatchMethods !== undefined
+    slice.selfDispatchMethods !== undefined ||
+    slice.structuredReturnTypes !== undefined ||
+    slice.functionReturnTypes !== undefined
   );
 }

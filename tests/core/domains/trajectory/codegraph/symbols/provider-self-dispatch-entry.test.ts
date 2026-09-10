@@ -482,9 +482,9 @@ describe("CodegraphEnrichmentProvider — incremental run, template file outside
     });
     // …and must never degrade onto the shared template node — that is the
     // 2324-fanIn hub the field report found 200/200 entry calls piled onto.
-    expect(edges.filter((e) => e.source_symbol_id === "C#go" && e.target_symbol_id.startsWith("KindOfService"))).toEqual(
-      [],
-    );
+    expect(
+      edges.filter((e) => e.source_symbol_id === "C#go" && e.target_symbol_id.startsWith("KindOfService")),
+    ).toEqual([]);
   });
 });
 
@@ -584,9 +584,9 @@ describe("CodegraphEnrichmentProvider — top-level-qualified entry `::Const.cal
       call_expression: "::Create.call",
     });
     // And it does not pile onto the shared template either.
-    expect(edges.filter((e) => e.source_symbol_id === "C#go" && e.target_symbol_id.startsWith("KindOfService"))).toEqual(
-      [],
-    );
+    expect(
+      edges.filter((e) => e.source_symbol_id === "C#go" && e.target_symbol_id.startsWith("KindOfService")),
+    ).toEqual([]);
   });
 });
 
@@ -690,10 +690,7 @@ describe("CodegraphEnrichmentProvider — unnarrowed-entry invariant on cg_run_s
       join(root, "src", "hollow.rb"),
       ["class Hollow < KindOfService", "  def label", '    "hollow"', "  end", "end", ""].join("\n"),
     );
-    writeFileSync(
-      join(root, "src", "c.rb"),
-      ["class C", "  def go", "    Hollow.call", "  end", "end", ""].join("\n"),
-    );
+    writeFileSync(join(root, "src", "c.rb"), ["class C", "  def go", "    Hollow.call", "  end", "end", ""].join("\n"));
 
     await provider.streamFileBatch(root, ["src/kind_of_service.rb", "src/create.rb", "src/hollow.rb", "src/c.rb"]);
     await provider.finalizeSignals(root);
@@ -710,6 +707,59 @@ describe("CodegraphEnrichmentProvider — unnarrowed-entry invariant on cg_run_s
     const rows = await client.getRunStats();
     const total = rows.reduce((n, r) => n + (r.unnarrowedTemplate ?? 0), 0);
     expect(total).toBeGreaterThanOrEqual(1);
+  });
+
+  // bd tea-rags-mcp-4vg1i — the counter is an ENTRY-narrowing invariant, and
+  // only a constant receiver names the concrete type an entry could narrow to.
+  // Measured on taxdome: 649 of 2507 counted call sites (25.9%) carried a
+  // non-constant receiver, 433 of them bare calls exactly like this fixture —
+  // a subtype invoking the hook it INHERITS, where the shared method is the
+  // honest answer and no narrowing was ever possible. Counting those makes the
+  // headline read as 2507 defects when 1858 of them are the shape at issue.
+  it("does not count a bare call that lands on the template it inherits — nothing to narrow with", async () => {
+    mkdirSync(join(root, "src"), { recursive: true });
+    writeFileSync(
+      join(root, "src", "kind_of_service.rb"),
+      [
+        "class KindOfService",
+        "  def self.call",
+        "    instance = new",
+        "    instance.call",
+        "  end",
+        "  def call",
+        "    perform",
+        "  end",
+        "end",
+        "",
+      ].join("\n"),
+    );
+    writeFileSync(
+      join(root, "src", "create.rb"),
+      ["class Create < KindOfService", "  def perform", "    :done", "  end", "end", ""].join("\n"),
+    );
+    // No constant entry anywhere in this fixture: the ONLY call that reaches a
+    // template is `Hollow#label`'s implicit-self `call`.
+    writeFileSync(
+      join(root, "src", "hollow.rb"),
+      ["class Hollow < KindOfService", "  def label", "    call", "  end", "end", ""].join("\n"),
+    );
+
+    await provider.streamFileBatch(root, ["src/kind_of_service.rb", "src/create.rb", "src/hollow.rb"]);
+    await provider.finalizeSignals(root);
+
+    const edges = await client.queryAll<MethodEdge>(
+      "SELECT source_symbol_id, target_symbol_id, call_expression FROM cg_symbols_edges_method",
+    );
+    // Precondition: the bare call really does land on the shared template. If it
+    // ever stops doing so, the assertion below passes for the wrong reason.
+    const inherited = edges.filter(
+      (e) => e.source_symbol_id === "Hollow#label" && e.target_symbol_id === "KindOfService#call",
+    );
+    expect(inherited).toHaveLength(1);
+
+    const rows = await client.getRunStats();
+    const total = rows.reduce((n, r) => n + (r.unnarrowedTemplate ?? 0), 0);
+    expect(total).toBe(0);
   });
 });
 

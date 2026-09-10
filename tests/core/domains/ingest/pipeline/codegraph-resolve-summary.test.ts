@@ -356,3 +356,53 @@ describe("summarizeCodegraphResolve — ambiguous fan-out dual recall (j0pki)", 
     expect(summary?.coveredRecall).toBeCloseTo((6 + 15 + 2) / (10 + 15), 6);
   });
 });
+
+// bd tea-rags-mcp-4vg1i — the unnarrowed-entry invariant is already tallied per
+// (language, receiverKind) and persisted that way (migration 022), but the
+// summary surfaced only the aggregate. "2507 entry calls" without the
+// receiver-kind split makes an over-reporting counter indistinguishable from
+// 2507 defects: a `localVar` receiver carries no constant to narrow WITH, so its
+// edge to the shared class method is the honest answer, while a `constant`
+// receiver naming a concrete service and still landing on the hub is not.
+describe("summarizeCodegraphResolve — unnarrowed-entry attribution (4vg1i)", () => {
+  const rowUt = (
+    language: string,
+    receiverKind: string,
+    attempted: number,
+    resolved: number,
+    unnarrowedTemplate: number,
+  ): ResolveRunStatsRow => ({
+    language,
+    receiverKind,
+    attempted,
+    resolved,
+    externalSkipped: 0,
+    unnarrowedTemplate,
+  });
+
+  it("splits the unnarrowed-entry count across receiver kinds instead of only aggregating it", () => {
+    const summary = summarizeCodegraphResolve([
+      rowUt("ruby", "constant", 100, 90, 30),
+      rowUt("ruby", "localVar", 40, 20, 12),
+      rowUt("ruby", "chain", 10, 5, 0),
+    ]);
+    expect(summary?.callsUnnarrowedTemplate).toBe(42);
+    const kinds = summary?.byReceiverKind ?? [];
+    expect(kinds.find((k) => k.receiverKind === "constant")?.callsUnnarrowedTemplate).toBe(30);
+    expect(kinds.find((k) => k.receiverKind === "localVar")?.callsUnnarrowedTemplate).toBe(12);
+    // A kind that never reached the hub reports 0, not undefined — the reader
+    // has to be able to tell "measured zero" from "column absent".
+    expect(kinds.find((k) => k.receiverKind === "chain")?.callsUnnarrowedTemplate).toBe(0);
+  });
+
+  it("keeps the split per language when more than one language survives", () => {
+    const summary = summarizeCodegraphResolve([
+      rowUt("ruby", "constant", 100, 90, 30),
+      rowUt("typescript", "constant", 100, 95, 0),
+    ]);
+    const ruby = (summary?.byLanguage ?? []).find((l) => l.language === "ruby");
+    expect(ruby?.byReceiverKind?.find((k) => k.receiverKind === "constant")?.callsUnnarrowedTemplate).toBe(30);
+    const ts = (summary?.byLanguage ?? []).find((l) => l.language === "typescript");
+    expect(ts?.byReceiverKind?.find((k) => k.receiverKind === "constant")?.callsUnnarrowedTemplate).toBe(0);
+  });
+});
