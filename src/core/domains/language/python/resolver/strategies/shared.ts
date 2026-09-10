@@ -14,6 +14,7 @@
  */
 
 import {
+  nearestCallResultBinding,
   pickSingleCandidate,
   type AmbiguousResolveMode,
   type CallContext,
@@ -53,6 +54,36 @@ export function lookupPythonSymbolsByShortName(
   options?: SymbolLookupOptions,
 ): SymbolDefinition[] {
   return ctx.symbolTable.lookupByShortName(name, options).filter((def) => isPythonSourcePath(def.relPath));
+}
+
+/**
+ * Was `receiver` assigned, at or above `atLine`, from a call whose CALLEE the
+ * project does not declare?
+ *
+ * The head is what carries the answer, and only the head: `User.objects.get`
+ * starts on a project class and its result is overwhelmingly an instance of it,
+ * while `authenticate(...)`, `get_object_or_404(...)`, `RQ_Job.fetch` and
+ * `logging.getLogger(...)` start outside and their results are library values
+ * that happen to be spelled like a project name. Measured on seam 5's A/B:
+ * gating on the mere PRESENCE of a call binding removed 7 phantoms (netbox 5,
+ * ugnest 2) but cost 12 correct answers, eleven of them ugnest rows bound by
+ * `User.objects.get`. Gating on the head's origin removes the same 7 and costs
+ * one row, because that is the axis the two populations actually differ on.
+ *
+ * `self` / `cls` heads are the caller's own object and never foreign. The lookup
+ * is a symbol-table short-name probe, so a caller that was already going to weigh
+ * the site adds no new scan.
+ *
+ * Two readers, one definition: `namingConvention` guesses a class from the
+ * receiver's SPELLING, the untyped-name dispatch component fans over the
+ * member's owners — and both are wrong on exactly this shape.
+ */
+export function pythonBoundToForeignCall(receiver: string, atLine: number, ctx: CallContext): boolean {
+  const binding = nearestCallResultBinding(ctx.callResultBindings, receiver, atLine);
+  if (binding === undefined) return false;
+  const head = binding.callee.split(".")[0] ?? "";
+  if (head === "self" || head === "cls" || head.length === 0) return false;
+  return lookupPythonSymbolsByShortName(ctx, head).length === 0;
 }
 
 /**

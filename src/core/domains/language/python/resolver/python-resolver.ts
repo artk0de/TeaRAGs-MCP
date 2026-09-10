@@ -47,11 +47,12 @@ import {
   type GraphEdges,
   type SymbolResolutionTarget,
 } from "../../../../contracts/types/codegraph.js";
-import type { SymbolResolutionStrategy } from "../../../../contracts/types/language.js";
+import type { DispatchResolverComponent, SymbolResolutionStrategy } from "../../../../contracts/types/language.js";
 import { ConeDispatchResolver } from "../../cone-dispatch.js";
 import { ExternalCallClassifier } from "../../external-classifier.js";
 import { resolveImportFileEdges } from "../../import-file-edges.js";
-import { resolveViaChain } from "../../resolver-chain.js";
+import { resolveDispatchViaComponents } from "../../resolver-chain.js";
+import { PythonChainAnswerProbe, PythonDynamicDispatchResolver } from "./dispatch/index.js";
 import { PythonAncestorLinearizerCache } from "./python-ancestor-policy.js";
 import { createPythonSymbolResolutionChain } from "./python-chain-factory.js";
 import { PythonExternalVocabulary } from "./python-external-vocabulary.js";
@@ -69,6 +70,20 @@ export class PythonCallResolver implements CallResolver {
   private readonly chain: SymbolResolutionStrategy[];
   private readonly cone: ConeDispatchResolver;
   private readonly external: ExternalCallClassifier;
+  /**
+   * The chain's answer per call site, computed once (bd tea-rags-mcp-w205u).
+   * `resolve` reads it, and so does the last dispatch component's final gate,
+   * so the runner's `resolveDispatch` → `resolve` pair runs the chain ONCE.
+   */
+  private readonly probe: PythonChainAnswerProbe;
+  /**
+   * Dispatch components in PRECEDENCE order, first non-empty wins
+   * (`resolveDispatchViaComponents`). The CHA cone leads because a receiver
+   * whose static type is known is not a guess; `dynamic` is last because it
+   * answers only what nothing else — the cone, and the exact chain behind its
+   * own probe gate — can.
+   */
+  private readonly dispatchComponents: readonly DispatchResolverComponent[];
   /**
    * ONE mapper for the whole resolver: its memo is per-symbol-table identity,
    * so every consumer sharing the instance shares the resolved-root cache.
@@ -96,7 +111,13 @@ export class PythonCallResolver implements CallResolver {
       new PythonConeTypeLocator(cfg, this.importFileMapper),
       cfg.coneMax ?? CONE_MAX_DEFAULT,
     );
+    // The classifier is built BEFORE the component that closes over it.
     this.external = new ExternalCallClassifier(new PythonExternalVocabulary(this.importFileMapper));
+    this.probe = new PythonChainAnswerProbe(this.chain);
+    this.dispatchComponents = [
+      this.cone,
+      new PythonDynamicDispatchResolver(this.probe, (call, ctx) => this.external.targetsCoreAmbiguousMember(call, ctx)),
+    ];
   }
 
   /**
@@ -108,20 +129,28 @@ export class PythonCallResolver implements CallResolver {
   }
 
   resolve(call: CallRef, ctx: CallContext): SymbolResolutionTarget | null {
-    return resolveViaChain(this.chain, call, ctx);
+    return this.probe.resolve(call, ctx);
   }
 
   /**
-   * CHA cone fan-out for a Python call (bd tea-rags-mcp-f10y, N=2). A
-   * polymorphic TYPED receiver (`pet: Animal`, then `pet.speak()`) whose static
-   * type has subtypes overriding the member fans out to N `cone` edges (or one
-   * `poly-base` edge above the cone cap). Returns `[]` for every non-polymorphic
-   * call — an `external` / unbound receiver carries no `localBinding`, so `T` is
-   * undefined and the cone returns `[]` (external never cones); the provider then
-   * takes the exact `resolve` chain.
+   * Dispatch fan-out for a Python call, over the components in
+   * {@link dispatchComponents} — first non-empty (or `ambiguous`) wins.
+   *
+   *  - `cone` — CHA (bd tea-rags-mcp-f10y, N=2). A polymorphic TYPED receiver
+   *    (`pet: Animal`, then `pet.speak()`) whose static type has subtypes
+   *    overriding the member fans to N `cone` edges, or one `poly-base` edge
+   *    above the cone cap. An unbound or external receiver carries no
+   *    `localBinding`, so `T` is undefined and the cone says nothing.
+   *  - `dynamic` — the untyped bare-name fan (bd tea-rags-mcp-w205u, E4.1.3),
+   *    capped at `PY_DISPATCH_FAN_MAX`. It declines every receiver another
+   *    layer owns, the chain probe included, so the exact chain stays the
+   *    default for everything it can answer.
+   *
+   * The runner consults this BEFORE `resolve` and a non-empty fan REPLACES the
+   * chain's answer, which is why declining is the components' first job.
    */
   resolveDispatch(call: CallRef, ctx: CallContext): DispatchFanoutOutcome {
-    return this.cone.resolveDispatch(call, ctx);
+    return resolveDispatchViaComponents(this.dispatchComponents, call, ctx);
   }
 
   /**

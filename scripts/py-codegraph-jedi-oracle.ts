@@ -47,9 +47,18 @@ import type {
   SymbolResolutionStrategy,
   TypeRef,
 } from "../src/core/contracts/types/language.js";
+import { ExternalCallClassifier } from "../src/core/domains/language/external-classifier.js";
 import { ConeDispatchResolver, DefaultSymbolIdComposer, LanguageFactory } from "../src/core/domains/language/index.js";
 import { dispatchFanoutPolicyFor } from "../src/core/domains/language/kernel/fanout-policy.js";
-import { createPythonSymbolResolutionChain } from "../src/core/domains/language/python/resolver/index.js";
+import {
+  PythonChainAnswerProbe,
+  PythonDynamicDispatchResolver,
+} from "../src/core/domains/language/python/resolver/dispatch/index.js";
+import {
+  createPythonSymbolResolutionChain,
+  PythonImportFileMapper,
+} from "../src/core/domains/language/python/resolver/index.js";
+import { PythonExternalVocabulary } from "../src/core/domains/language/python/resolver/python-external-vocabulary.js";
 import {
   CONE_MAX_DEFAULT,
   PythonConeTypeLocator,
@@ -302,23 +311,23 @@ export async function walkCorpus(
   // `dispatchDrift`'s independent side. `CallEdgeResolutionRunner` cannot be
   // driven one site at a time outside the pipeline — it wants a run state, a
   // spill file and a DB — so the parity check is built the way the orchestrator
-  // specified: a SECOND cone, composed here from the same kernel pieces
-  // `PythonCallResolver`'s constructor composes, run through
-  // `resolveDispatchViaComponents` exactly as a multi-component resolver would
-  // be. It shares no memo with production's cone, so a disagreement is a real
-  // one and not a cache artefact.
+  // specified: a SECOND dispatch stack, composed here from the same kernel
+  // pieces `PythonCallResolver`'s constructor composes, in the same order, run
+  // through `resolveDispatchViaComponents` exactly as production runs it. It
+  // shares no chain, probe, mapper or memo with production, so a disagreement is
+  // a real one and not a cache artefact. It is built ONCE, not per call site:
+  // the dynamic component's chain probe memoises per `CallRef`, and a fresh
+  // component per site would throw that away and re-read its env cap.
+  const parityMapper = new PythonImportFileMapper();
+  const parityExternal = new ExternalCallClassifier(new PythonExternalVocabulary(parityMapper));
+  const parityComponents = [
+    new ConeDispatchResolver(new PythonConeTypeLocator({ mode: DEFAULT_AMBIGUOUS_RESOLVE_MODE }), CONE_MAX_DEFAULT),
+    new PythonDynamicDispatchResolver(new PythonChainAnswerProbe(buildPythonChain()), (call, ctx) =>
+      parityExternal.targetsCoreAmbiguousMember(call, ctx),
+    ),
+  ];
   const parityDispatch = {
-    resolveDispatch: (call: CallRef, ctx: CallContext) =>
-      resolveDispatchViaComponents(
-        [
-          new ConeDispatchResolver(
-            new PythonConeTypeLocator({ mode: DEFAULT_AMBIGUOUS_RESOLVE_MODE }),
-            CONE_MAX_DEFAULT,
-          ),
-        ],
-        call,
-        ctx,
-      ),
+    resolveDispatch: (call: CallRef, ctx: CallContext) => resolveDispatchViaComponents(parityComponents, call, ctx),
   };
   const sites: PyChainSite[] = [];
   let chainDrift = 0;
