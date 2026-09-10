@@ -1243,6 +1243,134 @@ export function tallyPyFan(
   call).
 - Nothing under `src/` touched.
 
+### Measurement record — E4.0.3, fan scoring (w205u, 2026-09-10)
+
+**The layer had never run, and it was missing its input.** Wiring the harnesses
+to call `production.resolveDispatch` was not enough: both hand-built their
+`CallContext` without `hierarchy` or `instantiatedTypes`, so
+`ConeDispatchResolver` returned `[]` at its first guard
+(`cone-dispatch.ts:!baseType || !ctx.hierarchy`) at every site on every corpus.
+A fan pass added without those two channels would have measured its own missing
+input and reported a clean zero. Both harnesses now accumulate
+`normalizeInheritanceEdges` over pass 1 and seal a `MapHierarchyView` at the
+same barrier `CodegraphRunState#seal` builds one at.
+
+**The cap is production's own, not a pinned constant.** The harness calls
+`dispatchFanoutPolicyFor` on its own symbol table — the same function, the same
+memoised `p99` scan over `shortNameDefCounts()`. It reads 16 on all five corpora
+because 16 is `DISPATCH_FANOUT_CAP_FLOOR` and the p99 defs-per-member is 5 to 11
+everywhere. It also never binds a Python call: `ConeDispatchResolver` collapses
+above `coneMax` (8) into one `poly-base` edge instead of returning `ambiguous`,
+so `ambiguousSites` is 0 by construction, not by measurement.
+
+**`dispatchDrift` is 0 on all five, both modes.** `CallEdgeResolutionRunner`
+cannot be driven one site at a time outside the pipeline, so the parity check is
+a SECOND cone composed in the harness from the same kernel pieces the resolver's
+constructor composes — `new ConeDispatchResolver(new PythonConeTypeLocator(…))`
+— run through `resolveDispatchViaComponents` and compared per site on kind and
+on the sorted fan. It shares no memo with production's cone. `chainDrift` is 0
+on all five in both modes as well.
+
+#### Fan table, `--dispatch`, five corpora
+
+`recall@fan` and `precisionProxy` are blank where no fan row carried ground
+truth; a rate over zero rows is not a zero rate.
+
+| corpus | sites  | single | fan | ambiguous | recall@fan | n@fan | p50 | p95 | mean | ambiguousShare | precisionProxy | fanPhantom | rate  | cap/p99 |
+| ------ | ------ | ------ | --- | --------- | ---------- | ----- | --- | --- | ---- | -------------- | -------------- | ---------- | ----- | ------- |
+| ugnest | 4,731  | 0      | 0   | 0         | —          | 0     | —   | —   | —    | 0              | —              | 0          | —     | 16 / 11 |
+| flask  | 1,346  | 1      | 1   | 0         | 0.000      | 1     | 8   | 8   | 8.00 | 0              | 0.000          | 1          | 1.000 | 16 / 9  |
+| httpx  | 1,549  | 6      | 0   | 0         | —          | 0     | —   | —   | —    | 0              | —              | 0          | —     | 16 / 11 |
+| netbox | 44,126 | 0      | 0   | 0         | —          | 0     | —   | —   | —    | 0              | —              | 0          | —     | 16 / 5  |
+| polar  | 56,710 | 9      | 13  | 0         | 0.400      | 5     | 2   | 2   | 2.00 | 0.0000         | 0.077          | 3          | 0.600 | 16 / 7  |
+
+All 14 fan sites are `localVar`, the cone's own precondition — it needs a
+walker-inferred local type on the receiver. The 16 `single` sites are 14
+`localVar` and 2 `selfMember`. No receiverKind reached the n ≥ 100 print floor
+with a non-zero fan, so the per-kind block is all zeros on all five corpora and
+the corpus row carries the finding.
+
+#### The production-vs-oracle gap (Step 9), five corpora
+
+| corpus | dispatch answered | exactReplacedByFan | …ByAmbiguous | fanRescued | …BySingle | singleRescued | 1:1 recall `--no-dispatch` | 1:1 recall `--dispatch` |
+| ------ | ----------------- | ------------------ | ------------ | ---------- | --------- | ------------- | -------------------------- | ----------------------- |
+| ugnest | 0                 | 0                  | 0            | 0          | 0         | 0             | 0.9696 (765/789)           | 0.9696 (765/789)        |
+| flask  | 2                 | 1                  | 0            | 0          | 0         | 0             | 0.8743 (327/374)           | 0.8740 (326/373)        |
+| httpx  | 6                 | 0                  | 0            | 0          | 0         | 0             | 0.9611 (469/488)           | 0.9611 (469/488)        |
+| netbox | 0                 | 0                  | 0            | 0          | 0         | 0             | 0.9875 (7795/7894)         | 0.9875 (7795/7894)      |
+| polar  | 22                | 3                  | 0            | 2          | 1         | 0             | 0.9544 (11647/12203)       | 0.9543 (11644/12201)    |
+
+Recall here is the corpus total over `recallByReceiver`: `Σ matchMerged` over
+`Σ nMerged`, the host report's own denominators. It is built to be comparable
+between the two MODES, not with E3's per-kind headline.
+
+**30 sites in 108,462, 0.03 %.** That is the whole of the gap this program has
+been carrying, and it retroactively validates every published Python number: the
+1:1 recall the oracle reports IS production's recall to three decimals on all
+five corpora. Five exact `match` edges are lost — four to a fan (flask 1,
+polar 3) and one to a `single` cone answer that pinned a different target —
+against two the fan rescues.
+
+**A replaced match barely moves the rate, and that is the point of D3.** flask's
+one fan drops `localVar` from 19 scored rows to 18 — the row leaves the
+numerator AND the denominator, so recall reads 1.000 either way while an edge is
+gone. The loss is legible only in `exactReplacedByFan`. Netting the fan into the
+1:1 columns would have hidden it completely.
+
+**The `single` channel also costs PRECISION, which no fan column catches.**
+flask's one `single` site (`self._check_setup_finished`) is a call the exact
+chain declined; the cone pinned `App#_check_setup_finished` where jedi reads
+`Scaffold#_check_setup_finished`, so a `missed` became a `wrongFile`. It shows
+up where it should — in the 1:1 columns, under the ≤ 2 % fabricated+wrongFile
+bar — and neither `exactReplacedBySingle` nor `singleRescued` counts it, since
+both are about a `match` changing hands. That is the right split: a decline
+turning into a wrong edge is a precision question and the precision bar already
+owns it.
+
+#### Gates
+
+- **Identity, with a run-to-run control.** `--no-dispatch` dumps against the
+  pre-edit ones at `--workers 8`: httpx, flask and ugnest byte-identical; netbox
+  4 rows and polar 1. Every differing row is oracle-side. netbox's four are the
+  documented `agreeExternal` ↔ `bothUnresolved` flip with every chain column
+  (`answeredBy`, `chainOutput`, both chain targets) byte-identical; polar's one
+  is `datetime.replace` moving `typeshedStub` → `builtin`, an origin label on a
+  target both runs call external, with the verdict itself unchanged.
+
+  netbox's 4 is over the ≤ 3 rows per corpus the E4.0.2b note allows, so the
+  control was run rather than argued: **two `--no-dispatch` runs of the SAME
+  post-edit code differ from each other by 2 rows on netbox and 1 on polar.**
+  jedi's answer wobbles by that much per run on these two corpora, the pre-edit
+  comparison spans two such wobbles, and the harness side does not move. An
+  earlier `--no-dispatch` pass in this same task diffed at 2 rows on netbox and
+  0 on polar, which is the same distribution.
+
+- **Perf.** Oracle wall, pre-edit → `--no-dispatch` → `--dispatch`, ±1 s from
+  the driver's own timestamps: httpx 6→4→3 s, flask 2→2→2 s, ugnest 8→7→7 s,
+  netbox 49→50→52 s, polar 72→72→75 s. The `--no-dispatch` side is at or below
+  pre-edit on every corpus, so the +25 % budget is not approached. Isolated in
+  the pure-TS tally, where no jedi runs in the loop and the whole wall is the
+  walk, the layer costs LESS than run-to-run variance: netbox 15.50 s / 2,468 MB
+  peak RSS without it against 13.71 s / 2,458 MB with it, polar 19.08 s / 2,447
+  MB against 18.42 s / 2,398 MB. One `resolveDispatch` per site, returning `[]`
+  at its first guard almost everywhere, is not measurable against a walk that
+  parses the corpus.
+- **Tests.** `npx vitest run tests/scripts` — 394 pass, 15 files. `tests/` is
+  additions-only (`git diff --stat -- tests/`: 287 insertions, 0 deletions).
+  eslint `--max-warnings 0`, prettier and `npm run type-check` clean. Nothing
+  under `src/` touched.
+
+**Two deviations from the task's interfaces, both to keep a number honest.**
+`PyFanOutcome.kind` has four values rather than three: a fan-out that survives
+narrowing to ONE target is a confidence-1 edge that replaces the chain's answer,
+which is a 1:1 claim and belongs in the 1:1 columns, so `single` is split from
+`fan` and only `|fan| > 1` reaches the fan bar. And `ambiguousShare` is
+published under both denominators — the orchestrator's
+`ambiguous / (fan + ambiguous + 1:1)` as `ambiguousShare`, the spec's
+`ambiguous / (fan + ambiguous)` as `ambiguousShareOfFanned` — because one name
+carrying two definitions across two documents is how a rate silently changes
+meaning. Both read 0 on every corpus today.
+
 ---
 
 ## Task E4.0.4 — Disagreement audit and family-attribution report
