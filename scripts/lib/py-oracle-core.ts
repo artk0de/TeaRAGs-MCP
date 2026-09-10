@@ -119,6 +119,16 @@ export interface PyOracleFileReply {
 export interface MergedOracleFileReply {
   reply: PyOracleFileReply;
   engine: OracleEngine;
+  /**
+   * What JEDI said about this file, kept whenever the merge did not use it.
+   * Present on every entry of a run that asked jedi at all, so the legacy side
+   * of the report can rebuild the row a `--oracle jedi` run would have produced
+   * — a degraded row counts in `sites` and is withheld from the rates, and
+   * dropping it shrank the published `sites` column (bd tea-rags-mcp-w205u).
+   * Absent under `--oracle lsp`, where jedi was never asked and there is no
+   * legacy population to reproduce.
+   */
+  legacy?: PyOracleFileReply;
 }
 
 export interface PyOracleRow {
@@ -138,6 +148,26 @@ export interface PyOracleRow {
   unlocatedShape?: PyUnlocatedShape;
   /** Which engine answered THIS row's file. Defaults to `jedi`, the primary. */
   oracleEngine: OracleEngine;
+  /**
+   * The row a `--oracle jedi` run would have produced for this same site, set
+   * only when the merge answered the file from the second engine. Read it
+   * through `legacyViewOf`, never directly: on a row jedi answered the legacy
+   * view IS the row, and the two cases must not be spelled differently at every
+   * call site.
+   */
+  legacy?: PyOracleRow;
+}
+
+/**
+ * The row the legacy (jedi) side of the report counts for this site.
+ *
+ * `undefined` means the run never asked jedi about the file — `--oracle lsp`,
+ * where `recallLegacy` reads 0/0 by construction. Everything else has a legacy
+ * row, including a file jedi stayed silent about: silence is an answer a
+ * jedi-only run books as `bothUnresolved`, not a site that disappears.
+ */
+export function legacyViewOf(row: PyOracleRow): PyOracleRow | undefined {
+  return row.oracleEngine === "jedi" ? row : row.legacy;
 }
 
 /**
@@ -162,13 +192,24 @@ export function mergeOracleReplies(
   for (const [relPath, reply] of jedi) {
     const damaged = reply.parseFailed || reply.parsoErrors > 0;
     const replacement = damaged ? lsp.get(relPath) : undefined;
-    merged.set(relPath, replacement === undefined ? { reply, engine: "jedi" } : { reply: replacement, engine: "lsp" });
+    merged.set(
+      relPath,
+      replacement === undefined ? { reply, engine: "jedi" } : { reply: replacement, engine: "lsp", legacy: reply },
+    );
   }
   // A file only the second engine saw (jedi's launcher skipped it, or its
   // worker died) still belongs in the population — dropping it would shrink the
   // denominator silently, which is the failure this whole task exists to end.
+  // Its legacy reply is jedi's SILENCE spelled out, which is what a jedi-only
+  // run reads for the file: no answers, no parse failure, no parso errors.
   for (const [relPath, reply] of lsp) {
-    if (!merged.has(relPath)) merged.set(relPath, { reply, engine: "lsp" });
+    if (!merged.has(relPath)) {
+      merged.set(relPath, {
+        reply,
+        engine: "lsp",
+        legacy: { relPath, parseFailed: false, parsoErrors: 0, answers: [] },
+      });
+    }
   }
   return merged;
 }
@@ -184,6 +225,7 @@ export function mergeOracleReplies(
 export function oracleEntryOf(value: PyOracleFileReply | MergedOracleFileReply | undefined): {
   reply: PyOracleFileReply | undefined;
   engine: OracleEngine;
+  legacy?: PyOracleFileReply;
 } {
   if (value === undefined) return { reply: undefined, engine: "jedi" };
   return "reply" in value ? value : { reply: value, engine: "jedi" };
@@ -573,13 +615,14 @@ const RECALL_VERDICTS: ReadonlySet<PyOracleVerdict> = new Set(["match", "fileOnl
 /**
  * One label's recall under BOTH denominators (bd tea-rags-mcp-w205u).
  *
- * `recallLegacy` counts only rows the JEDI engine answered, so it reproduces
- * every published Python number byte-for-byte and is a REGRESSION GATE rather
- * than a migration aid. `recallMerged` counts every scored row whatever engine
- * answered it, and is what E4.1–E4.6 are measured against. The two are printed
- * side by side, always: adding the previously-degraded rows moves every rate
- * with no resolver change, and a number that moves for that reason must never
- * be readable as a regression.
+ * `recallLegacy` counts the rows the JEDI engine answered, degraded files
+ * withheld from the rates exactly as a jedi-only run withholds them — so it
+ * reproduces every published Python number byte-for-byte and is a REGRESSION
+ * GATE rather than a migration aid. `recallMerged` counts every scored row
+ * whatever engine answered it, and is what E4.1–E4.6 are measured against. The
+ * two are printed side by side, always: adding the previously-degraded rows
+ * moves every rate with no resolver change, and a number that moves for that
+ * reason must never be readable as a regression.
  */
 export interface PyRecallSplit {
   label: string;
@@ -598,32 +641,51 @@ export function tallyPyRecall(
   labelsOf: (row: PyOracleRow) => readonly string[],
 ): PyRecallSplit[] {
   const byLabel = new Map<string, PyRecallSplit>();
-  for (const row of rows) {
-    if (isWithheldFromRates(row)) continue;
-    // `skippedInProject` folds into `missed` exactly as `tallyPyRows` folds it,
-    // or the two blocks would disagree about the same rows.
+  const ensure = (label: string): PyRecallSplit => {
+    let split = byLabel.get(label);
+    if (split === undefined) {
+      split = {
+        label,
+        recallLegacy: 0,
+        nLegacy: 0,
+        matchLegacy: 0,
+        recallMerged: 0,
+        nMerged: 0,
+        matchMerged: 0,
+        nSecondEngine: 0,
+      };
+      byLabel.set(label, split);
+    }
+    return split;
+  };
+  // `skippedInProject` folds into `missed` exactly as `tallyPyRows` folds it,
+  // or the two blocks would disagree about the same rows. `null` is a row that
+  // carries no ground truth about the chain at all.
+  const scoredVerdict = (row: PyOracleRow | undefined): PyOracleVerdict | null => {
+    if (row === undefined || isWithheldFromRates(row)) return null;
     const verdict = row.verdict === "skippedInProject" ? "missed" : row.verdict;
-    if (!RECALL_VERDICTS.has(verdict)) continue;
-    for (const label of labelsOf(row)) {
-      let split = byLabel.get(label);
-      if (split === undefined) {
-        split = {
-          label,
-          recallLegacy: 0,
-          nLegacy: 0,
-          matchLegacy: 0,
-          recallMerged: 0,
-          nMerged: 0,
-          matchMerged: 0,
-          nSecondEngine: 0,
-        };
-        byLabel.set(label, split);
+    return RECALL_VERDICTS.has(verdict) ? verdict : null;
+  };
+  for (const row of rows) {
+    const merged = scoredVerdict(row);
+    if (merged !== null) {
+      for (const label of labelsOf(row)) {
+        const split = ensure(label);
+        split.nMerged += 1;
+        if (merged === "match") split.matchMerged += 1;
       }
-      split.nMerged += 1;
-      if (verdict === "match") split.matchMerged += 1;
-      if (row.oracleEngine === "jedi") {
+    }
+    // The legacy side reads its OWN row: on a replaced file that is the row
+    // jedi produced, degraded and therefore withheld, which is exactly what a
+    // jedi-only run counts. Its labels come off that row too — the shape
+    // categories are read from the answering engine's own siteFacts.
+    const view = legacyViewOf(row);
+    const legacy = scoredVerdict(view);
+    if (view !== undefined && legacy !== null) {
+      for (const label of labelsOf(view)) {
+        const split = ensure(label);
         split.nLegacy += 1;
-        if (verdict === "match") split.matchLegacy += 1;
+        if (legacy === "match") split.matchLegacy += 1;
       }
     }
   }
@@ -633,5 +695,8 @@ export function tallyPyRecall(
     split.recallMerged = split.nMerged === 0 ? 0 : split.matchMerged / split.nMerged;
     split.nSecondEngine = split.nMerged - split.nLegacy;
   }
-  return splits.sort((a, b) => b.nMerged - a.nMerged || a.label.localeCompare(b.label));
+  // By LABEL, never by size. The two selections have to print this block
+  // byte-identically on its legacy columns, and a size key reorders the rows
+  // the moment the merged denominator grows (bd tea-rags-mcp-w205u).
+  return splits.sort((a, b) => a.label.localeCompare(b.label));
 }
