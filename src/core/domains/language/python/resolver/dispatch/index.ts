@@ -8,6 +8,7 @@ export { pythonDynamicFanoutSuppressed } from "./python-dispatch-gates.js";
 export {
   PY_DISPATCH_FAN_MAX,
   PY_DYNAMIC_RECEIVER_CONFIDENCE,
+  pythonDynamicDispatchEnabled,
   resolvePythonDispatchFanMax,
 } from "./python-dispatch-policy.js";
 export { PythonDynamicDispatchResolver } from "./python-dynamic-dispatch.js";

@@ -14,6 +14,7 @@ import type { SymbolResolutionStrategy } from "../../../../../../../src/core/con
 import {
   PY_DISPATCH_FAN_MAX,
   PythonChainAnswerProbe,
+  pythonDynamicDispatchEnabled,
   PythonDynamicDispatchResolver,
   resolvePythonDispatchFanMax,
 } from "../../../../../../../src/core/domains/language/python/resolver/dispatch/index.js";
@@ -104,6 +105,24 @@ describe("resolvePythonDispatchFanMax (w205u — the cap, read once at compositi
     expect(resolvePythonDispatchFanMax("nope")).toBe(4);
     expect(resolvePythonDispatchFanMax("0")).toBe(4);
     expect(resolvePythonDispatchFanMax("2.5")).toBe(4);
+  });
+});
+
+describe("pythonDynamicDispatchEnabled (w205u — D10, the component is parked)", () => {
+  it("is OFF when the flag is absent or unset to anything but a yes", () => {
+    expect(pythonDynamicDispatchEnabled(undefined)).toBe(false);
+    expect(pythonDynamicDispatchEnabled("")).toBe(false);
+    expect(pythonDynamicDispatchEnabled("0")).toBe(false);
+    expect(pythonDynamicDispatchEnabled("false")).toBe(false);
+    expect(pythonDynamicDispatchEnabled("off")).toBe(false);
+  });
+
+  it("is ON for the four spellings a re-measure would type", () => {
+    expect(pythonDynamicDispatchEnabled("1")).toBe(true);
+    expect(pythonDynamicDispatchEnabled("true")).toBe(true);
+    expect(pythonDynamicDispatchEnabled(" TRUE ")).toBe(true);
+    expect(pythonDynamicDispatchEnabled("on")).toBe(true);
+    expect(pythonDynamicDispatchEnabled("yes")).toBe(true);
   });
 });
 

@@ -48,7 +48,35 @@ const call = (receiver: string, member: string): CallRef => ({
   startLine: 10,
 });
 
-describe("PythonCallResolver.resolveDispatch (w205u — [cone, dynamic])", () => {
+const FLAG = "CODEGRAPH_PY_DYNAMIC_DISPATCH";
+
+/** A resolver composed with the flag in `value`, read once in its constructor. */
+const resolverWith = (value: string | undefined): PythonCallResolver => {
+  const before = process.env[FLAG];
+  if (value === undefined) delete process.env[FLAG];
+  else process.env[FLAG] = value;
+  try {
+    return new PythonCallResolver();
+  } finally {
+    if (before === undefined) delete process.env[FLAG];
+    else process.env[FLAG] = before;
+  }
+};
+
+describe("PythonCallResolver.resolveDispatch (w205u — [cone] by default, [cone, dynamic] under the flag)", () => {
+  it("composes the CONE ALONE by default — the untyped-name fan is parked (D10)", () => {
+    const table = tableWith({
+      "app/models/mirror.py": ["Mirror", "Mirror#sync"],
+      "app/models/replica.py": ["Replica", "Replica#sync"],
+      "app/handlers.py": ["Handler", "Handler#run"],
+    });
+    const ctx = ctxOf(table);
+    const site = call("thing", "sync");
+
+    expect(resolverWith(undefined).resolveDispatch(site, ctx)).toEqual({ kind: "edges", edges: [] });
+    expect(resolverWith("0").resolveDispatch(site, ctx)).toEqual({ kind: "edges", edges: [] });
+  });
+
   it("never replaces an exact chain answer with a fan", () => {
     const table = tableWith({
       "app/models/data_source.py": ["DataSource", "DataSource#sync"],
@@ -56,7 +84,7 @@ describe("PythonCallResolver.resolveDispatch (w205u — [cone, dynamic])", () =>
       "app/models/replica.py": ["Replica", "Replica#sync"],
       "app/handlers.py": ["Handler", "Handler#run"],
     });
-    const resolver = new PythonCallResolver();
+    const resolver = resolverWith("1");
     const ctx = ctxOf(table);
     const site = call("data_source", "sync");
 
@@ -67,13 +95,13 @@ describe("PythonCallResolver.resolveDispatch (w205u — [cone, dynamic])", () =>
     expect(resolver.resolveDispatch(site, ctx)).toEqual({ kind: "edges", edges: [] });
   });
 
-  it("fans an untyped name the chain does not answer over the member's owners", () => {
+  it("fans an untyped name the chain does not answer over the member's owners, under the flag", () => {
     const table = tableWith({
       "app/models/mirror.py": ["Mirror", "Mirror#sync"],
       "app/models/replica.py": ["Replica", "Replica#sync"],
       "app/handlers.py": ["Handler", "Handler#run"],
     });
-    const resolver = new PythonCallResolver();
+    const resolver = resolverWith("1");
     const ctx = ctxOf(table);
     const site = call("thing", "sync");
 

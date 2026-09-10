@@ -37,3 +37,25 @@ export function resolvePythonDispatchFanMax(raw: string | undefined): number {
   const parsed = Number(raw);
   return Number.isInteger(parsed) && parsed > 0 ? parsed : PY_DISPATCH_FAN_MAX;
 }
+
+/**
+ * Is the untyped-name fan composed at all? Read ONCE at composition from
+ * `CODEGRAPH_PY_DYNAMIC_DISPATCH`; **default OFF** (bd tea-rags-mcp-w205u, D10).
+ *
+ * A name-only fan is not precision-safe for Python without receiver-type
+ * evidence. Measured over five corpora it books +83 new 1:1 matches against +85
+ * new fabricated edges and `recall@fan` 0.344 on polar, because it fires on ~5×
+ * the sites E4.0.4 attributed and the surplus is receivers whose real type is a
+ * LIBRARY type with a coincidental single project owner of the member. The
+ * component, its probe, its gates and its tests stay — what is parked is the
+ * COMPOSITION, so a re-attempt with a type channel behind it is a flag flip and
+ * a re-measure rather than an archaeology exercise.
+ *
+ * `1` / `true` / `on` / `yes` turn it on; everything else, absent included,
+ * leaves `resolveDispatch` exactly the cone it was before E4.1.3.
+ */
+export function pythonDynamicDispatchEnabled(raw: string | undefined): boolean {
+  if (raw === undefined) return false;
+  const value = raw.trim().toLowerCase();
+  return value === "1" || value === "true" || value === "on" || value === "yes";
+}

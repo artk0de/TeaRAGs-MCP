@@ -52,7 +52,11 @@ import { ConeDispatchResolver } from "../../cone-dispatch.js";
 import { ExternalCallClassifier } from "../../external-classifier.js";
 import { resolveImportFileEdges } from "../../import-file-edges.js";
 import { resolveDispatchViaComponents } from "../../resolver-chain.js";
-import { PythonChainAnswerProbe, PythonDynamicDispatchResolver } from "./dispatch/index.js";
+import {
+  PythonChainAnswerProbe,
+  pythonDynamicDispatchEnabled,
+  PythonDynamicDispatchResolver,
+} from "./dispatch/index.js";
 import { PythonAncestorLinearizerCache } from "./python-ancestor-policy.js";
 import { createPythonSymbolResolutionChain } from "./python-chain-factory.js";
 import { PythonExternalVocabulary } from "./python-external-vocabulary.js";
@@ -79,9 +83,15 @@ export class PythonCallResolver implements CallResolver {
   /**
    * Dispatch components in PRECEDENCE order, first non-empty wins
    * (`resolveDispatchViaComponents`). The CHA cone leads because a receiver
-   * whose static type is known is not a guess; `dynamic` is last because it
-   * answers only what nothing else — the cone, and the exact chain behind its
+   * whose static type is known is not a guess; `dynamic` would be last because
+   * it answers only what nothing else — the cone, and the exact chain behind its
    * own probe gate — can.
+   *
+   * `dynamic` is composed ONLY under `CODEGRAPH_PY_DYNAMIC_DISPATCH` and is off
+   * by default (D10): its `single` terminal is a name-only claim, and measured
+   * over five corpora it is right about as often as it is wrong. With the flag
+   * absent this array is the cone alone, byte-identically to the pre-E4.1.3
+   * behaviour.
    */
   private readonly dispatchComponents: readonly DispatchResolverComponent[];
   /**
@@ -114,10 +124,14 @@ export class PythonCallResolver implements CallResolver {
     // The classifier is built BEFORE the component that closes over it.
     this.external = new ExternalCallClassifier(new PythonExternalVocabulary(this.importFileMapper));
     this.probe = new PythonChainAnswerProbe(this.chain);
-    this.dispatchComponents = [
-      this.cone,
-      new PythonDynamicDispatchResolver(this.probe, (call, ctx) => this.external.targetsCoreAmbiguousMember(call, ctx)),
-    ];
+    this.dispatchComponents = pythonDynamicDispatchEnabled(process.env.CODEGRAPH_PY_DYNAMIC_DISPATCH)
+      ? [
+          this.cone,
+          new PythonDynamicDispatchResolver(this.probe, (call, ctx) =>
+            this.external.targetsCoreAmbiguousMember(call, ctx),
+          ),
+        ]
+      : [this.cone];
   }
 
   /**
@@ -142,9 +156,10 @@ export class PythonCallResolver implements CallResolver {
    *    above the cone cap. An unbound or external receiver carries no
    *    `localBinding`, so `T` is undefined and the cone says nothing.
    *  - `dynamic` — the untyped bare-name fan (bd tea-rags-mcp-w205u, E4.1.3),
-   *    capped at `PY_DISPATCH_FAN_MAX`. It declines every receiver another
-   *    layer owns, the chain probe included, so the exact chain stays the
-   *    default for everything it can answer.
+   *    capped at `PY_DISPATCH_FAN_MAX`, composed only under
+   *    `CODEGRAPH_PY_DYNAMIC_DISPATCH` (default OFF, D10). It declines every
+   *    receiver another layer owns, the chain probe included, so the exact
+   *    chain stays the default for everything it can answer.
    *
    * The runner consults this BEFORE `resolve` and a non-empty fan REPLACES the
    * chain's answer, which is why declining is the components' first job.

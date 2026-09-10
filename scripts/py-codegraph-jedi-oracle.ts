@@ -43,6 +43,7 @@ import {
   type ModuleReexport,
 } from "../src/core/contracts/types/codegraph.js";
 import type {
+  DispatchResolverComponent,
   SymbolResolutionOutcome,
   SymbolResolutionStrategy,
   TypeRef,
@@ -52,6 +53,7 @@ import { ConeDispatchResolver, DefaultSymbolIdComposer, LanguageFactory } from "
 import { dispatchFanoutPolicyFor } from "../src/core/domains/language/kernel/fanout-policy.js";
 import {
   PythonChainAnswerProbe,
+  pythonDynamicDispatchEnabled,
   PythonDynamicDispatchResolver,
 } from "../src/core/domains/language/python/resolver/dispatch/index.js";
 import {
@@ -317,15 +319,22 @@ export async function walkCorpus(
   // shares no chain, probe, mapper or memo with production, so a disagreement is
   // a real one and not a cache artefact. It is built ONCE, not per call site:
   // the dynamic component's chain probe memoises per `CallRef`, and a fresh
-  // component per site would throw that away and re-read its env cap.
+  // component per site would throw that away and re-read its env cap. The
+  // `CODEGRAPH_PY_DYNAMIC_DISPATCH` branch is production's own (D10): read once,
+  // here as there, so a flag-off run composes the cone alone on BOTH sides and
+  // `dispatchDrift` keeps measuring the composition rather than the flag.
   const parityMapper = new PythonImportFileMapper();
   const parityExternal = new ExternalCallClassifier(new PythonExternalVocabulary(parityMapper));
-  const parityComponents = [
+  const parityComponents: DispatchResolverComponent[] = [
     new ConeDispatchResolver(new PythonConeTypeLocator({ mode: DEFAULT_AMBIGUOUS_RESOLVE_MODE }), CONE_MAX_DEFAULT),
-    new PythonDynamicDispatchResolver(new PythonChainAnswerProbe(buildPythonChain()), (call, ctx) =>
-      parityExternal.targetsCoreAmbiguousMember(call, ctx),
-    ),
   ];
+  if (pythonDynamicDispatchEnabled(process.env.CODEGRAPH_PY_DYNAMIC_DISPATCH)) {
+    parityComponents.push(
+      new PythonDynamicDispatchResolver(new PythonChainAnswerProbe(buildPythonChain()), (call, ctx) =>
+        parityExternal.targetsCoreAmbiguousMember(call, ctx),
+      ),
+    );
+  }
   const parityDispatch = {
     resolveDispatch: (call: CallRef, ctx: CallContext) => resolveDispatchViaComponents(parityComponents, call, ctx),
   };
