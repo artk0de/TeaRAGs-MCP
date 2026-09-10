@@ -74,7 +74,11 @@ The same mechanism handles "I accidentally cancelled" scenarios — the CLI retu
 
 Schema drift happens when a new TeaRAGs version introduces payload fields that didn't exist when the collection was indexed. Two flavours:
 
-- **Additive drift** (new fields, no new indexes) — detected by `SchemaDriftMonitor`. The agent is notified: "New fields X, Y — run `index_codebase` with `forceReindex=true` to populate them." Existing search still works; only the new features need reindexing.
+- **Additive drift** (new fields, no new indexes) — detected by
+  `SchemaDriftMonitor`. The warning names the narrowest command that repopulates
+  the new keys: `tea-rags index-codebase --force-enrichments <trajectory>` when
+  they are enrichment-owned (`git.*`, `codegraph.*`), `--force` only when a
+  chunker-owned key moved. Existing search keeps working meanwhile.
 - **Breaking drift** (new Qdrant indexes required) — detected by `SchemaManager` on startup. Migration runs automatically during the next indexing call; no data loss.
 
 Neither triggers an immediate reindex — you pick when to pay the cost.
