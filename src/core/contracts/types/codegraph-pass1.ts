@@ -59,6 +59,7 @@
 
 import type { InheritanceEdgeDecl } from "./codegraph-hierarchy.js";
 import type { RelPath, SymbolId } from "./codegraph-symbols.js";
+import type { RubyTypeRef } from "./language.js";
 
 /**
  * One method's self-reach: the members it invokes on `self`, normalized to bare
@@ -97,4 +98,36 @@ export interface CodegraphPass1FileAggregates {
   compactDeclaredClasses?: readonly string[];
   inheritanceEdges?: readonly InheritanceEdgeDecl[];
   selfDispatchMethods?: readonly SelfDispatchMethodDecl[];
+  /**
+   * The two RETURN-TYPE channels, added by bd tea-rags-mcp-8qyax after the
+   * measurement that this docblock previously used to justify excluding them.
+   *
+   * `structuredReturnTypes` keys `"<fqClass>#method"`, `functionReturnTypes`
+   * keys a bare function name. Both are read by pass-2 to type a chained
+   * receiver (`repo.fetch.render`), and without them an incremental run does
+   * not merely miss the edge — it fans out over every class declaring the
+   * member, so a pinned edge becomes a cone carrying phantom targets.
+   *
+   * Measured offline on taxdome with
+   * `scripts/spikes/ruby-incremental-runglobal-delta.ts` (9945 attempted calls,
+   * 250 files): an incremental run loses 168 edges, and handing it these two
+   * recovers 131 — `structuredReturnTypes` 111, `functionReturnTypes` 20,
+   * additive. Every OTHER type-inference family recovers exactly ZERO:
+   * `instantiatedTypes`, `dispatchTables` + `callbackParams`, and the whole
+   * param family (`paramNames`, `paramTypes`, `classFieldParamLinks`,
+   * `derivedClassFieldTypes`). Those stay batch-scoped, deliberately.
+   *
+   * The size objection that deferred them did not survive contact either: on
+   * the same corpus `structuredReturnTypes` holds 6518 entries and
+   * `functionReturnTypes` 2597, against the 11099 per-class ancestry keys this
+   * slice ALREADY carries — the per-method map is the smaller one, because most
+   * methods carry no return fact.
+   *
+   * `ivarTypes` is NOT here and is NOT cleared: taxdome's map is empty (no type
+   * source emits `kind:"ivar"` there, bd tea-rags-mcp-wr7ku), so the corpus
+   * cannot see it either way. Re-run the harness's `--ablate ivar` on a corpus
+   * with ivar annotations before concluding anything about it.
+   */
+  structuredReturnTypes?: Record<string, RubyTypeRef>;
+  functionReturnTypes?: Record<string, string>;
 }

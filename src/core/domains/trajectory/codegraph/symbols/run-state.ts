@@ -20,6 +20,7 @@ import { join } from "node:path";
 
 import type {
   ClassFieldParamLink,
+  CodegraphPass1FileAggregates,
   DispatchTableDef,
   FileExtraction,
   GlobalSymbolTable,
@@ -27,7 +28,6 @@ import type {
   InheritanceEdgeRow,
   KnownTargetCallArgs,
   RelPath,
-  CodegraphPass1FileAggregates,
   ResolveRunStatsRow,
   SymbolDefinition,
 } from "../../../../contracts/types/codegraph.js";
@@ -782,6 +782,22 @@ export class CodegraphRunState {
       }
       for (const fq of slice.compactDeclaredClasses ?? []) this.compactClasses.add(fq);
       if (slice.selfDispatchMethods !== undefined) this.selfDispatchMethods.push(...slice.selfDispatchMethods);
+      // Return types (bd tea-rags-mcp-8qyax). Same batch-wins guard as the
+      // ancestry channels above: a key this run already walked is a FRESH fact
+      // and outranks the persisted one, which still describes the file's
+      // previous content. `markContributed` matters here — without it the run
+      // reports the map as un-contributed and pass-2 falls back to each file's
+      // own maps, which is exactly the batch-scoped behaviour being repaired.
+      for (const [k, v] of Object.entries(slice.structuredReturnTypes ?? {})) {
+        if (k in this.structuredReturnTypes) continue;
+        this.structuredReturnTypes[k] = v;
+        this.markContributed("structuredReturnTypes");
+      }
+      for (const [k, v] of Object.entries(slice.functionReturnTypes ?? {})) {
+        if (k in this.returnTypes) continue;
+        this.returnTypes[k] = v;
+        this.markContributed("returnTypes");
+      }
       // Ancestor symbol_ids stay null exactly as they do on the pass-1 path: the
       // hierarchy view reads by fq NAME, and pass-2's per-file persist owns the
       // symbol_id binding for the rows it writes.
