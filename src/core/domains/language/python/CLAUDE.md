@@ -21,6 +21,21 @@
   memo is keyed by symbol-table identity and invalidated on `size()`, so a
   second instance is a second cold cache and a licence for two consumers to
   answer the same import differently.
+- **The mapper answers TWO different questions, and only the second one follows
+  re-exports.** `mapImportToFile` says which file a MODULE names;
+  `resolveExportedName` says which file DECLARES a name, walking the file's own
+  `from` statements out of the walker's `moduleReexports` channel. They diverge
+  wherever a package re-exports — netbox's `core/models/__init__.py` declares
+  nothing and star-imports six siblings. Four rules make the follow safe to add
+  to a shipped path, and all four are load-bearing: it is consulted ONLY after
+  the direct candidate filter fails to leave exactly one candidate, so nothing
+  that resolves today moves; a file that declares the name is returned
+  UNCHANGED; EXPLICIT entries beat stars, because an `as` alias names the source
+  spelling and a star cannot; and stars are unanimous or REFUSED, because two
+  sources declaring the name is the same ambiguity the caller declined to guess
+  at. `MAX_REEXPORT_HOPS` is 3 with a visited set — a deeper tower or a
+  re-export cycle answers the pre-seam refusal rather than a guess, and `null`
+  means "no better answer than the file you came in with", never "absent".
 - **`chainType` is the ONLY reader of `structuredReturnTypes`.**
   `resolver/strategies/python-chain-type.ts` sits between `localBinding` and
   `importedName` and folds the receiver through the kernel walk with
@@ -68,6 +83,17 @@
   question are not the same one. Measured cost of answering CONTINUE there: 95
   phantoms on netbox (`ContentType.objects`, `os.path`), 9 on ugnest, 2 on
   flask.
+- **A bare class name as a CHAIN head is seeded by `pythonClassChainHeadSeed`,
+  and that is deliberately not `singleHopType`'s `classHead` arm.** `seedHead`
+  is reached ONLY from `propagateChain`, so `ObjectType.objects.get_for_model()`
+  gets the seed while a single-hop `Cls.member()` receiver keeps falling to
+  `importedName` exactly as before — which is what the `classHead` default
+  protects, and why the arm was SPLIT rather than switched on. The seed is inert
+  by construction: `consumedMembers: 0` hands the first link straight to
+  `memberTypeOf`, and stop-at-unknown-hop unwinds the receiver to untyped unless
+  that link carries a real field or return fact, so a class with no matching
+  attribute reaches the same strategy it reaches today. A local binding on the
+  same name WINS — a name Python rebound is a value, not the class.
 - **A receiver that is nothing but MODULE TEXT gets a fourth arm, and its
   hardest case is a module shadowed by its own assignment.**
   `utilities.fields.ColorField()` spells two or three lowercase hops with no
@@ -230,6 +256,21 @@
   `pythonEnclosingClass` reads as "no enclosing class". A stub-only group (a
   `Protocol` or ABC body) keeps the first stub: there the stubs ARE the
   declaration, and yielding would delete the symbol rather than relocate it.
+- **Class-body assignments (`objects = <QS>.as_manager()`) feed the SAME two
+  field channels as `self.<field> = …`, and they merge UNDERNEATH:** a
+  constructor assignment for the same field name wins. Reversing the spread
+  order silently retypes every field a class declares twice. Attribution is to
+  the INNERMOST enclosing class and the field name is taken verbatim — no
+  spelling is special-cased.
+- **The class-body reader emits only on project-class EVIDENCE, and is SILENT
+  rather than external otherwise.** A bare `X()` needs `X` declared in THIS
+  file; `X.as_manager()` also accepts an import-bound name, because there
+  Django's own verb rather than the name carries the claim.
+  `objects = models.Manager()` and `name = CharField(…)` emit NOTHING. Why: an
+  external fact makes `chainType` DROP where the call falls through to a later
+  strategy today, so absence — which leaves the receiver untyped and `chainType`
+  on CONTINUE — is what keeps that path byte-identical. There is no manifest
+  gate and no framework registry to consult.
 
 ### Mechanics
 
@@ -242,6 +283,13 @@
   `domains/language/CLAUDE.md` → Mechanics. The field facts are ALSO written
   under a third, file-qualified key — what that address is for is a Resolver
   bullet above, and both writers share one reader so the two cannot disagree.
+- **`moduleReexports` is collected in the SAME walk as `imports`, and it has to
+  be.** One entry per name a file's `import_from_statement`s bind —
+  `{ exportedName, sourceModule, sourceName }`, a star as `exportedName: "*"`
+  with no source name. `import a` and `from a import a` produce an IDENTICAL
+  `ImportRef`, so only the node type separates them and only the walk that sees
+  the node can tell. Reconstructing the channel from `imports` afterwards would
+  be guessing. Who reads it, and under which rules, is a Resolver bullet above.
 - **The annotation pass types a field from an `__init__` PARAMETER, not just
   from a constructor call.** `collectPythonClassFieldTypes` records a field only
   when the RHS is a constructor, so `self.client = client` off a

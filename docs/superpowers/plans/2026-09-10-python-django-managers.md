@@ -313,6 +313,43 @@ manifest, or no Django). ugnest: **0 rows changed** (decision 4). This is the
 whole honest claim; nothing here moves polar's `dynamic` floor or netbox's
 `index` row.
 
+**12. T2b — package re-exports, added after T2 shipped and measured inert on 117
+rows.** The field fact of decision 6 landed and bought 24 of the projected 141
+matches. The other 117 are one blocked shape: netbox writes
+`from core.models import ObjectType` at 117 call sites, and
+`core/models/__init__.py` declares nothing — it is six `from .x import *` lines.
+`PythonImportFileMapper` mapped the module to that `__init__.py` correctly and
+uselessly, `resolveTypeFile` filtered the two same-named candidates
+(`core/models/object_types.py`, `netbox/graphql/types.py`) against a symbol set
+holding only `__init__.py`, kept zero, and refused. Right on the evidence it
+had; the evidence it was missing is the second hop. So the fact was not wrong,
+it was unreachable, and the seam is in the mapper rather than in the walker's
+field channel.
+
+The walker now emits `moduleReexports` — one entry per name a file's
+`import_from_statement`s bind, `{ exportedName, sourceModule, sourceName }`, a
+star as `exportedName: "*"` with no source name — collected in the SAME walk as
+`imports`, because `import a` and `from a import a` produce an identical
+`ImportRef` and only the node type separates them. It folds run-global by
+relPath in `CodegraphRunState`, ASSIGNED per relPath rather than unioned like
+its neighbours: the list is the whole truth about one file's `from` statements,
+so a union would let a re-walk resurrect a statement the file has since deleted.
+`PythonImportFileMapper.resolveExportedName` is the read, and it only ever
+widens — a file that declares the name is returned unchanged, and
+`resolveTypeFile` consults the follow ONLY after the direct filter fails to
+leave exactly one candidate. Explicit entries beat stars (an `as` alias names
+the source spelling, which a star cannot); stars are unanimous or refused; three
+hops with a visited set, so a tower or a cycle answers the pre-seam refusal
+rather than a guess.
+
+Cost of the two steps together, measured: netbox `chain` 0.403 → 0.500 (T2) →
+**0.972** (T2b), gross lost 0 at each step. Decision 11's "polar, flask and
+httpx: 0 rows changed" is **superseded for polar**: the re-export follow is a
+language-level mapper fix, not a Django one, so it also answers polar's
+repository locals — `localVar` 0.846 → **0.888** (+19 rows), plus 5 `chain`
+rows. flask, httpx and ugnest stay byte-identical, and phantom / `wrongFile` are
+unmoved on all five.
+
 ### Revision (orchestrator, 2026-09-10) — increment 1 is T2 + T4
 
 The attribution above is what cut this plan down. All 141 misses are hop-0 on
@@ -883,7 +920,7 @@ name is a value rather than the class.
 
 **Steps:**
 
-- [ ] Write both test files first, RED. Walker cases, each a shape measured on
+- [x] Write both test files first, RED. Walker cases, each a shape measured on
       netbox: `objects = SiteQuerySet.as_manager()` ⇒ `objects: SiteQuerySet`;
       `objects = ObjectTypeManager()` with the manager declared in the file ⇒
       `objects: ObjectTypeManager`; `_objects_raw = TreeManager()` keeps the
@@ -898,20 +935,20 @@ name is a value rather than the class.
       `ObjectTypeManager#get_for_model`; the same through a base class in
       another file via the MRO walk; inert with no fact, inert when the head is
       not a project class, inert when a local shadows the head.
-- [ ] `walker/passes/python-class-body-fields.ts` — pure, returns BOTH maps from
+- [x] `walker/passes/python-class-body-fields.ts` — pure, returns BOTH maps from
       ONE pass (the colocation rule), scope tracked through every named
       container so `byClassKey` spells a nested class the way `classAncestors`
       does.
-- [ ] Wire into `walker.ts` AFTER the two existing collectors and BEFORE the
+- [x] Wire into `walker.ts` AFTER the two existing collectors and BEFORE the
       emit-only-non-empty guards. The class-body facts spread FIRST so an
       explicit `self.<field>` fact overwrites them — a constructor assignment is
       the narrower statement about an instance, and reversing the order would
       silently retype every field a class declares twice.
-- [ ] `python-receiver-type-ports.ts` — split `pythonSeedHead` into the existing
+- [x] `python-receiver-type-ports.ts` — split `pythonSeedHead` into the existing
       module-alias arm plus `pythonClassChainHeadSeed`, in that order.
-- [ ] Turn both test files GREEN. `npm run type-check` clean, eslint
+- [x] Turn both test files GREEN. `npm run type-check` clean, eslint
       `--max-warnings 0`, prettier.
-- [ ] **Row-level oracle A/B, five corpora.** BEFORE = the pre-task tree, same
+- [x] **Row-level oracle A/B, five corpora.** BEFORE = the pre-task tree, same
       worker count. Expected, and each row is a gate:
 
 | corpus | expected                                                                                                              |
@@ -922,15 +959,48 @@ name is a value rather than the class.
 | flask  | 0 rows changed                                                                                                        |
 | httpx  | 0 rows changed                                                                                                        |
 
-- [ ] **Gross `lost` 0.** Diff the row SETS, not the totals.
-- [ ] **Chain-tally drift 0 on all five.** `edges` rises on netbox by the new
+- [x] **Gross `lost` 0.** Diff the row SETS, not the totals.
+- [x] **Chain-tally drift 0 on all five.** `edges` rises on netbox by the new
       answers; `chainDrift` must read 0.
-- [ ] **Perf A/B on netbox**, min of two runs each side: wall ≤ +25 %, RSS ≤ +20
+- [x] **Perf A/B on netbox**, min of two runs each side: wall ≤ +25 %, RSS ≤ +20
       %.
-- [ ] **Ruby parity 0** — `ruby-walker-composition-parity` and, because a shared
+- [x] **Ruby parity 0** — `ruby-walker-composition-parity` and, because a shared
       resolver file changes, `ruby-resolver-parity`.
-- [ ] Commit:
+- [x] Commit:
       `feat(language): type manager attributes from class-body assignments (xpl83)`.
+
+---
+
+## Task 2b — Follow package re-exports to the declaring file (ADDED after T2)
+
+Not in the original plan. Task 2's fact landed and was INERT on 117 of the 141
+rows, blocked in the import file mapper rather than in the field channel —
+decision 12 has the shape and the rules as shipped.
+
+**Files:** ADD `moduleReexports` to `contracts/types/codegraph.ts` +
+`kernel/merge-extraction.ts` (plain array concat); MOD `python/walker/walker.ts`
+(collected in the imports walk); MOD `trajectory/codegraph/run-state.ts` + the
+resolution runner (run-global fold by relPath, ASSIGNED not unioned); MOD
+`python/resolver/python-import-file-mapper.ts` (`resolveExportedName`).
+
+- [x] `PythonImportFileMapper.resolveExportedName` only ever WIDENS — a file
+      that declares the name returns unchanged, so nothing that resolved before
+      moves.
+- [x] Consulted from `resolveTypeFile` ONLY after the direct filter fails to
+      leave exactly one candidate.
+- [x] Explicit entries beat stars; stars unanimous or refused;
+      `MAX_REEXPORT_HOPS` 3 with a visited set, so a cycle answers the pre-seam
+      refusal.
+- [x] **Row-level oracle A/B, five corpora**, gross `lost` 0 everywhere: netbox
+      +117 (`chain` 0.500 → 0.972), polar +19 `localVar` + 5 `chain`, flask /
+      httpx / ugnest byte-identical.
+- [x] **Chain-tally `chainDrift` 0** on all five; edges netbox 8529 → 8651,
+      polar 16604 → 16623.
+- [x] **Ruby parity 0** on both harnesses.
+- [x] `versions.walker` stays 4 — still unreleased, and this rides the same
+      merge.
+- [x] Commit:
+      `feat(language): follow package re-exports to the declaring file (xpl83)`.
 
 ---
 
@@ -1211,7 +1281,7 @@ return undefined;
 
 **Steps:**
 
-- [ ] **Walker version stays 4**, per the revision under the decision record.
+- [x] **Walker version stays 4**, per the revision under the decision record.
       Decision 10's reasoning holds for a RELEASED walker, and 4 is not one: it
       is unreleased relative to `main`, so the merge that ships this recomputes
       every index that could ever have read walker-4 output. A bump would emit a
@@ -1222,7 +1292,7 @@ return undefined;
       `npm run gen:lang-compat` and commit the regenerated rule file and README
       block alongside — the drift-guard test fails CI otherwise.
 
-- [ ] **`python/CLAUDE.md`**, under "Walker — monolith and one type-fact pass",
+- [x] **`python/CLAUDE.md`**, under "Walker — monolith and one type-fact pass",
       add the one invariant a green suite will not catch: the two field channels
       now have TWO sources with a fixed precedence, and the ordering is
       load-bearing.
@@ -1239,14 +1309,14 @@ return undefined;
   and no framework registry to consult.
 ```
 
-- [ ] **`domains/language/CLAUDE.md`** — nothing to add in increment 1. The
+- [x] **`domains/language/CLAUDE.md`** — nothing to add in increment 1. The
       kernel gains no file; the line about `kernel/dependency-manifest.ts` moves
       to E4 with Task 1. (SUPERSEDED, kept for the E4 record: it is the
       language-neutral manifest reader and memo, root-only by design, and where
       `gemfileContent` converges when Ruby is relocated. Link, do not restate,
       the resolver-architecture rule for the registry shape.)
 
-- [ ] **Record the next increment's measurement, so it is not re-derived.**
+- [x] **Record the next increment's measurement, so it is not re-derived.**
       Append to the program spec's "Decision records", verbatim:
 
       > **E3 increment 2 — SQLAlchemy and Pydantic on polar, measured
@@ -1278,38 +1348,91 @@ return undefined;
       > are exposed to the phantom bar, which is nine times increment 1's
       > netbox exposure.
 
-- [ ] `npm run test:coverage` exit 0; drift-guard green.
-- [ ] Commit:
-      `docs(language): record E3 increment 1 and the measured increment-2 baseline (9fgdi)`.
+- [x] `npm run test:coverage` exit 0; drift-guard green.
+- [x] Commit:
+      `docs(language): record E3 increment 1 and the measured increment-2 baseline (9fgdi)`
+      — split three ways as shipped: `docs(plans)` for this record,
+      `docs(language)` for the navigator, `chore(language)` for the capability
+      text and its generated artefacts.
 
 ---
 
-## Measurement record — what to fill in when the plan lands
+## Measurement record — measured at close (T2 + T2b, 2026-09-10)
 
-The plan claims these and nothing else. Fill the AFTER column from the closing
-A/B and put the numbers in the bead.
+Closing A/B at `6d9eee602`. BEFORE = `e0c3e2bef` (pre-E3 = seam-5 final plus
+this plan doc), seeded jedi oracle, 8 workers, five corpora. Recall denominator
+is `match + missed + wrongFile + phantom` per `receiverKind`, which reproduces
+decision 1's baselines exactly.
 
-| corpus | kind       | n     | recall before | recall after (claimed) | recall after (measured) |
-| ------ | ---------- | ----- | ------------- | ---------------------- | ----------------------- |
-| netbox | `chain`    | 248   | 0.403         | ≈0.972                 |                         |
-| netbox | `localVar` | 212   | 0.764         | 0.764 (unchanged)      |                         |
-| netbox | `dynamic`  | 1,524 | 0.972         | 0.972 (unchanged)      |                         |
-| netbox | `bareCall` | 5,051 | 0.997         | 0.997 (unchanged)      |                         |
-| ugnest | all        | —     | —             | byte-identical         |                         |
-| polar  | all        | —     | —             | byte-identical         |                         |
-| flask  | all        | —     | —             | byte-identical         |                         |
-| httpx  | all        | —     | —             | byte-identical         |                         |
+| corpus | kind       | n             | recall before | recall after (claimed) | recall after (measured)  |
+| ------ | ---------- | ------------- | ------------- | ---------------------- | ------------------------ |
+| netbox | `chain`    | 248           | 0.403         | ≈0.972                 | **0.972 (241/248)**      |
+| netbox | `localVar` | 212           | 0.764         | 0.764 (unchanged)      | 0.764 (unchanged)        |
+| netbox | `dynamic`  | 1,523         | 0.973         | 0.973 (unchanged)      | 0.973 (unchanged)        |
+| netbox | `bareCall` | 5,049         | 0.997         | 0.997 (unchanged)      | 0.997 (unchanged)        |
+| ugnest | all        | —             | —             | byte-identical         | byte-identical           |
+| polar  | `localVar` | 447           | 0.846         | byte-identical         | **0.888 (T2b, dec. 12)** |
+| polar  | `chain`    | 1,607 → 1,610 | 0.952         | byte-identical         | **0.953 (T2b, dec. 12)** |
+| flask  | all        | —             | —             | byte-identical         | byte-identical           |
+| httpx  | all        | —             | —             | byte-identical         | byte-identical           |
 
-Precision, every corpus: `phantom` and `wrongFile` counts unchanged after Task
-2; after Task 3, phantom within +0.5 pp of edges and ugnest at exactly 0. Gross
-`lost` 0 on every task.
+Row-set diff, gross: `lost` **0** on all five. `gained` — netbox 141 (all
+`missed` → `chainType`), polar 24 (19 `missed` → `localBinding`, 2 `missed` →
+`chainType`, 3 `skippedInProject` → `chainType`), flask / httpx / ugnest 0. The
+3 `skippedInProject` rows are why polar's `chain` denominator moves 1,607 →
+1,610: a row the oracle had skipped now carries a verdict.
+
+Precision. Not one `phantom` or `wrongFile` row moved on any corpus, so the +0.5
+pp phantom bar is met with **0.00 pp used** and ugnest holds at phantom **0**.
+Precision-miss `(phantom + wrongFile) / edges`, measured on the AFTER edge
+counts: netbox 27/8,651 **0.31 %**, polar 186/16,623 **1.12 %**, httpx 8/491
+**1.63 %**, ugnest 0/770 **0.00 %** — and **flask 10/355 = 2.82 %, which is
+ABOVE the 2 % bar**. flask's rows are byte-identical to BEFORE, so this is a
+pre-existing level rather than anything increment 1 spent: its 9 phantoms and 1
+`wrongFile` are the same rows on the same 355-edge denominator, and a corpus
+that small puts one phantom at 0.28 pp. Recorded rather than rounded away —
+whoever raises flask's edge count or takes a phantom off it is fixing a bar this
+increment inherited, not one it broke.
+
+Chain tally, all five `chainDrift` 0 and C3 linearization fallbacks 0: netbox
+44,126 sites / 8,651 edges, polar 56,710 / 16,623, ugnest 4,731 / 770, httpx
+1,549 / 491, flask 1,346 / 355.
+
+Perf, `codegraph-chain-tally` under `--max-old-space-size=1024`, interleaved
+B/A/A/B ×2, min of 4 per side. Bars: wall ≤ +25 %, RSS ≤ +20 %.
+
+| comparison                                 | corpus | wall                         | peak RSS                       |
+| ------------------------------------------ | ------ | ---------------------------- | ------------------------------ |
+| cumulative seam-5 + E3 vs main `f10f704c9` | netbox | 12.38 → 13.12 s (**+6.0 %**) | 2.196 → 2.285 GiB (**+4.1 %**) |
+| cumulative seam-5 + E3 vs main `f10f704c9` | polar  | 17.30 → 18.24 s (**+5.4 %**) | 1.750 → 1.746 GiB (**−0.2 %**) |
+| E3 only vs seam-5 `fd6108761`              | netbox | 14.95 → 14.43 s (**−3.5 %**) | 1.596 → 1.680 GiB (**+5.3 %**) |
+| E3 only vs seam-5 `fd6108761`              | polar  | 19.91 → 20.64 s (**+3.7 %**) | 1.728 → 1.756 GiB (**+1.6 %**) |
+
+Ruby parity vs `--before-root` the main checkout: `ruby-resolver-parity` on
+mastodon, 42,057 sites compared, **mismatches 0 · drift 0**;
+`ruby-walker-composition-parity`, 500 files compared, **mismatches 0**.
+
+Residual after close, and what each bucket is:
+
+| corpus | kind       | missed | biggest bucket                                                                      |
+| ------ | ---------- | ------ | ----------------------------------------------------------------------------------- |
+| netbox | `chain`    | 7      | 4 of 7 are `<Model>(…).save()` — a CONSTRUCTOR-result chain head, not a field       |
+| netbox | `localVar` | 50     | all bare names; the head is `layout.Row(…)` — a module alias, not a local           |
+| netbox | `dynamic`  | 41     | 22 bare names, 17 `cls` receivers — decision 11's floor, untouched                  |
+| netbox | `bareCall` | 12     | module-level defs called from a sibling migration function                          |
+| polar  | `dynamic`  | 424    | 391 bare names (`input`, `datatable`) — branch-bound receivers, decision 11's floor |
+| polar  | `chain`    | 75     | 71 dotted receivers (`item.type`, `self.payment_repo`) — untyped field hop          |
+| polar  | `localVar` | 50     | all bare names (`review_repo`, `price`) — assigned from an unfolded call result     |
+| polar  | `bareCall` | 103    | `prompt_setup` decorator-registered CLI commands                                    |
 
 ## What this plan does NOT claim
 
 - It does not move netbox `localVar` (0.764) or `dynamic` (0.972). Their misses
   are `cls` receivers, instance locals and iteration variables — measured, not
   assumed (decision 11).
-- It does not touch polar, flask or httpx. Any non-zero delta there is a bug.
+- It does not touch flask or httpx. Any non-zero delta there is a bug. polar was
+  in that list until T2b: the re-export follow is a mapper fix rather than a
+  Django one, so it legitimately moves polar too (decision 12).
 - It does not close the D2 / D3 / D4 families as RECALL. The oracle cannot score
   them; the only honest metric for those rows is edge count.
 - It does not read nested dependency manifests, so a monorepo whose framework is

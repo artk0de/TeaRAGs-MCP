@@ -102,11 +102,12 @@ conclude absence from a graph the index says is incomplete.
   with `super()` dispatching on that MRO from the entry after the enclosing
   class and every member lookup reading up it + import→file mapper resolving
   through symbol-table membership (seeded source roots plus a caller-ancestor
-  scan, re-export hops, stdlib guard) + kernel receiver-chain propagation for
-  dotted receivers, module-text receivers and call-result locals folded to their
+  scan, re-export hops, hop-bounded package re-export following to the file that
+  declares a name, stdlib guard) + kernel receiver-chain propagation for dotted
+  receivers, module-text receivers and call-result locals folded to their
   callee's return type + kernel return inference over return statements +
-  subtype-gated naming-convention receiver typing + annotation and docstring
-  type facts
+  subtype-gated naming-convention receiver typing + class-body manager attribute
+  typing + annotation and docstring type facts
 - **Go** — 6-strategy; explicit interfaces (no poly dispatch)
 - **Java** — 6-strategy + java.lang stdlib whitelist + overload disambiguation
 - **Rust** — 6-strategy; trait-based dispatch
