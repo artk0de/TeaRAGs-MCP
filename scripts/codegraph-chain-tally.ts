@@ -327,6 +327,8 @@ interface RunGlobalTypeChannels {
   classAncestors: Record<string, readonly string[]>;
   /** `<relPath>::<class FQ>` → field → type, the run-global field address (f0xaa). */
   classFieldTypesByClassKey: Record<string, Record<string, string>>;
+  /** The same address for a field assigned from a CALL — the callee spelling (w205u, E4.6c). */
+  classFieldCallResults: Record<string, Record<string, string>>;
   /** `relPath` → the names its `from` statements bind, for the mapper's re-export hop (xpl83.3). */
   moduleReexports: Record<string, readonly ModuleReexport[]>;
   /**
@@ -347,6 +349,9 @@ function absorbTypeChannels(channels: RunGlobalTypeChannels, extraction: FileExt
   Object.assign(channels.classAncestors, extraction.classAncestors ?? {});
   for (const [classKey, fields] of Object.entries(extraction.classFieldTypesByClassKey ?? {})) {
     channels.classFieldTypesByClassKey[classKey] = { ...channels.classFieldTypesByClassKey[classKey], ...fields };
+  }
+  for (const [classKey, fields] of Object.entries(extraction.classFieldCallResults ?? {})) {
+    channels.classFieldCallResults[classKey] = { ...channels.classFieldCallResults[classKey], ...fields };
   }
   if (extraction.moduleReexports) channels.moduleReexports[extraction.relPath] = extraction.moduleReexports;
   // `() => null` mirrors the extraction sink: the cone reads ancestors by
@@ -378,6 +383,7 @@ function buildCallContext(
     functionReturnTypes: channels.functionReturnTypes,
     classAncestors: channels.classAncestors,
     classFieldTypesByClassKey: channels.classFieldTypesByClassKey,
+    classFieldCallResults: channels.classFieldCallResults,
     moduleReexports: channels.moduleReexports,
   };
 }
@@ -452,6 +458,7 @@ export async function run(
     functionReturnTypes: {},
     classAncestors: {},
     classFieldTypesByClassKey: {},
+    classFieldCallResults: {},
     moduleReexports: {},
     inheritanceRows: [],
     instantiatedTypes: new Set<string>(),

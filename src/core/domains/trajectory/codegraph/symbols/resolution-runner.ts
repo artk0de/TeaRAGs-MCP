@@ -322,6 +322,7 @@ export class CallEdgeResolutionRunner {
       // bd tea-rags-mcp-w205u, E4.6c — a field assigned from a CALL, keyed by the
       // declaring class. Absent ⇒ pythonInheritedMemberType stops where it did.
       classFieldCallResults: inputs.classFieldCallResults,
+      classFieldTypesByClassKey: inputs.classFieldTypesByClassKey,
       gemfileContent: this.runState.gemfileContent,
       projectRoot: this.runState.projectRoot,
     };
@@ -470,6 +471,12 @@ export class CallEdgeResolutionRunner {
       // bd tea-rags-mcp-w205u, E4.6c — a field assigned from a CALL, keyed by the
       // declaring class. Absent ⇒ pythonInheritedMemberType stops where it did.
       classFieldCallResults: inputs.classFieldCallResults,
+      // bd tea-rags-mcp-f0xaa — the field TYPE channel under the same address.
+      // `ResolverInputs` has carried it since f0xaa and no `CallContext` literal
+      // copied it in, so production read it as absent while both measurement
+      // harnesses built it: every oracle number since f0xaa was measured with
+      // this arm live. Threading it makes production agree with the instrument.
+      classFieldTypesByClassKey: inputs.classFieldTypesByClassKey,
       classAncestors: inputs.ancestors,
       compactDeclaredClasses: this.runState.compactClasses,
       gemfileContent: this.runState.gemfileContent,

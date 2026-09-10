@@ -1497,6 +1497,119 @@ under `tests/core/domains/language/python/{walker,resolver}/` and
       `feat(language): type python fields from constructors and alias annotations (w205u)`,
       then append a **Measured — E4.6c** block.
 
+### Measured — E4.6c (2026-09-11, dumps under `~/.claude/jobs/dffe3647/tmp/e46c/`)
+
+**E4.2a shipped in the same worktree**, so this record covers both and separates
+them where it can. `Mapped` is now in `PYTHON_TRANSPARENT_FIRST` and in
+`PYTHON_DECLINED_TYPE_NAMES`; nothing else about E4.2 moved.
+
+**Three findings changed the shape of the task.**
+
+1. **A new channel has FOUR wiring sites, not two.** Both measurement harnesses
+   build their own run-global maps and their own `CallContext`
+   (`py-codegraph-jedi-oracle.ts:266,297,367`,
+   `codegraph-chain-tally.ts:329,348,380,454`) — which is what f0xaa's commit
+   did for `classFieldTypesByClassKey`. The first A sweep was run before that
+   and measured the walker half only; it was discarded and re-run. Threading a
+   NEW channel through the harness is not "editing `scripts/` for measurement",
+   and the plan's constraint should say so.
+2. **`ResolverInputs.classFieldTypesByClassKey` reached no `CallContext`.**
+   f0xaa added the field and populated it from run state, and neither the
+   file-edge context nor `buildCallContext` copied it in — so PRODUCTION has
+   read the run-global field channel as absent since f0xaa while both harnesses
+   built it. Every oracle number since then was measured with an arm production
+   did not have. Fixed here (one line per context) because it makes production
+   agree with the instrument rather than changing what the instrument says.
+3. **`classFieldCallResults` is class-key addressed only**, with no short-name
+   twin. The own-class read goes through the same key — the caller's own class
+   is declared in the caller's file — so a second channel would carry nothing.
+
+**Row-level A/B**, five corpora × five runs each side,
+`--oracle merged --dispatch --workers 8 --samples 500000`. Every corpus was
+byte-identical across its five runs on both sides: zero unstable rows, so the
+transition matrix is exact.
+
+| corpus | match         | fileOnly | wrongFile | missed  | phantom | edges           | gross lost |
+| ------ | ------------- | -------- | --------- | ------- | ------- | --------------- | ---------- |
+| ugnest | 765 → 771     | 0 → 0    | 0 → 1     | 24 → 17 | 0 → 0   | 770 → 777       | 0          |
+| flask  | 326 → 330     | 6 → 6    | 1 → 1     | 40 → 36 | 0 → 0   | 345 → 349       | 0          |
+| httpx  | 470 → 477     | 5 → 5    | 0 → 0     | 13 → 6  | 8 → 8   | 492 → 499       | 0          |
+| netbox | 7831 → 7831   | 2 → 2    | 0 → 0     | 61 → 61 | 26 → 26 | 8697 → 8691     | 0          |
+| polar  | 11875 → 11899 | 29 → 32  | 16 → 17   | 281→253 | 79 → 83 | 17,482 → 17,540 | 0 (+4 OW)  |
+
+Transitions: ugnest `missed → ok` 3 + `skippedInProject → ok` 3 + one
+`missed → wrongFile` (bad → bad, not a loss); flask `missed → ok` 4; httpx
+`missed → ok` 5 + `skippedInProject → ok` 2; netbox none; polar `missed → ok`
+46 + `skippedInProject → ok` 3 + one `skippedInProject → wrongFile` +
+`ok → phantom` 4. Phantom rate Δ 0.000 pp on four corpora, **+0.007 pp** on
+polar; `exactReplacedByFan` / `exactReplacedByAmbiguous` unchanged everywhere.
+
+**The 4 polar `ok → phantom` rows are ORACLE-WRONG (`Mapped`),
+pyright-confirmed.** Booked as `oracleWrongMapped` / `OW:Mapped`, the sibling of
+E4.6b-1's `OW:Self`. All four sit behind a SQLAlchemy `declared_attr` returning
+`Mapped[T]` — `Order.organization` and `Checkout.discount` are written
+`def organization(cls) -> Mapped["Organization"]`, so jedi follows the
+descriptor into `sqlalchemy` and answers `sitePackages`. Driven straight at the
+four sites through `scripts/py-oracle/lsp_oracle.ts` (roots
+`[server, sdk/python]`, corpus venv, pythonVersion 3.14), pyright answers
+`inProject` on **4 of 4**: `Organization#statement_descriptor@980`
+(`models/organization.py`, three rows) and `Discount#is_applicable@111`
+(`models/discount.py`, one row). Gross lost adjusted is **0 on every corpus**.
+
+**netbox loses 6 EDGES with zero verdict change, and that is the class-body
+widening measured.** `declared ∪ importBound` adds **2,633** import-bound
+class-body field facts on netbox (`CharField` 191, `DynamicModelChoiceField`
+336, `_` 398 …) — every one of them a name `resolveTypeFile` refuses — and the
+whole cost is six unscored edges where a chain now DROPs instead of falling
+through. That is the strongest available evidence for Step 2's argument: the
+emitted name is a candidate, not an edge.
+
+**Family report, A side:** `untypedFieldHop` **110 → 54** across the corpora
+(ugnest 7 → 1, flask 11 → 7, httpx 8 → 1, netbox 2 → 2, polar 82 → 43); the B
+side reads 110 rather than the plan's 111. `transparentWrapper` 17 → 11 (polar 9
+→ 3, the E4.2a rows), `unionBranchReceiver` 18 → 14. **NO family grew on any
+corpus.**
+
+**The shortfall, and why — a finding, not a retry.** The plan predicted polar
++32 / httpx +9 / ugnest +7 for E4.6c and 27–45 more for E4.2a; delivered is
+polar +49, httpx +7, ugnest +6, flask +4 (unpredicted). polar's 43 remaining
+rows are **not** a walker gap and **not** multi-hop: the full composition does
+publish the unwrapped facts
+(`models/checkout.py::Checkout {payment_processor: PaymentProcessor, …}`,
+`models/meter.py::Meter {aggregation: Aggregation, …}`), and 52 of the 53 dotted
+residual receivers are two-segment `obj.field`. They die one step later, at the
+type NAME → class KEY step: polar declares `Checkout` in BOTH
+`models/checkout.py:104` and `checkout/schemas.py:767`, and `Meter` in both
+`models/meter.py:20` and `meter/schemas.py:99`, so `resolveTypeFile`'s
+import-narrowing pass keeps two candidates and refuses to pick. The
+model-vs-schema short-name collision is a `resolveTypeFile` disambiguation
+problem and belongs with E4.1's `untypedNameReceiver` population, not to a
+second field mechanism.
+
+**Chain tally ×5 per side, five corpora:**
+`chain drift vs production resolver: 0` on all 50 runs; the dispatch layer is
+identical on both sides (polar single 9 / fan 13 carrying 26 edges, netbox 0 /
+0). Tally edges B → A: ugnest 770 → 777, flask 345 → 349, httpx 492 → 499,
+netbox 8697 → 8691, polar 17,479 → 17,537.
+
+**Ruby parity 0**, both spikes against `--before-root …/tea-rags-mcp`: resolver
+42,057 sites / **0 mismatches / 0 drift**, walker 500 files / **0 mismatches**.
+`codegraph-chain-tally.ts --lang ruby` still does not exist — the same harness
+note E4.6b-1 recorded.
+
+**Perf**, chain-tally, TWO interleaved B/A/A/B passes (four samples per side)
+because a sibling executor was running: min wall, max peak RSS.
+
+| corpus | wall B → A      | Δ       | peak RSS B → A    | Δ      |
+| ------ | --------------- | ------- | ----------------- | ------ |
+| netbox | 14.56s → 14.59s | +0.2 %  | 2355 MB → 2382 MB | +1.1 % |
+| polar  | 19.69s → 22.23s | +12.9 % | 2374 MB → 2379 MB | +0.2 % |
+
+polar's wall samples spread 19.7–21.2 (B) against 22.2–30.2 (A) under that
+contention; even the min-of-four is inside the +25 % bar, and RSS is flat.
+
+Walker version stays **5**; `npm run gen:lang-compat` regenerated nothing.
+
 ---
 
 ## Task E4.6-close — Gates, navigators, and the measurement record (`w205u`)
