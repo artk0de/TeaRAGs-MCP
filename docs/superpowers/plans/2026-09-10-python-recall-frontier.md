@@ -2212,25 +2212,25 @@ it("picks nothing when the caller's own file declares TWO module-level defs of t
 `.claude/rules/domains-language.md` (edit if the relocation protocol needs a new
 line).
 
-- [ ] **Full-suite gate.** `npm run build`, then `npm run test:coverage` exit 0.
+- [x] **Full-suite gate.** `npm run build`, then `npm run test:coverage` exit 0.
       No threshold is lowered; a shortfall goes to the `coverage-expander`
       subagent (`subagent_type: "coverage-expander"`,
       `run_in_background: true`), which writes tests only.
-- [ ] **Final A/B ×5 on the integrated tree**, BEFORE dumps taken from
+- [x] **Final A/B ×5 on the integrated tree**, BEFORE dumps taken from
       `45d0830eb`. Report per corpus, per receiverKind: recall before, recall
       after, phantom before, phantom after, gross `lost`. Gross `lost` must be 0
       and ugnest phantom must be 0. Record the table in the bead — it is the
       evidence the epic-completion gate asks for.
-- [ ] **Ruby parity, final.** Full Ruby suite plus a mastodon harness run,
+- [x] **Ruby parity, final.** Full Ruby suite plus a mastodon harness run,
       bit-identical to `45d0830eb`. Tasks 1 and 6 both cut into Ruby; this is
       the check that neither drifted.
-- [ ] **netbox perf, final.** Wall ≤ +25 %, RSS ≤ +20 % against `45d0830eb`,
+- [x] **netbox perf, final.** Wall ≤ +25 %, RSS ≤ +20 % against `45d0830eb`,
       measured on the same machine in the same session. Return inference and the
       two pre-scans run ONCE per file in pass 1; if the wall moved more than
       that, the suspect is the `hasSubtypes` descendant scan in Task 6 (memoise
       it) or the `localCallBindings` walk in Task 3 (it must not descend nested
       scopes twice).
-- [ ] **Navigators.** `python/CLAUDE.md` gains: the `ast` source's silence
+- [x] **Navigators.** `python/CLAUDE.md` gains: the `ast` source's silence
       contract, the fact that `localCallBindings` is folded at RESOLVE time and
       why, the MRO-through-`memberTypeOf` rule and its own-class-first order,
       and the module-scope-wins rule for bare calls. Each one LINKS to the
@@ -2238,7 +2238,7 @@ line).
       `language/CLAUDE.md` gains one line naming `kernel/return-inference.ts`
       and `kernel/naming-convention.ts` as the two new relocated engines, beside
       the existing `ancestor-walk` and `receiver-type-propagation` entries.
-- [ ] **Capability descriptor.** Python's `capability.ts` advertises what the
+- [x] **Capability descriptor.** Python's `capability.ts` advertises what the
       resolver can answer; add the four new receiver shapes (call-bound local,
       inherited field, module receiver, same-file bare call) and — only if it
       shipped — the naming convention. Do not advertise a strategy the A/B
@@ -2248,7 +2248,119 @@ line).
       comment. If Task 6 was dropped, its bead comment records the phantom
       numbers that dropped it — that measurement is the deliverable, not a
       failure.
-- [ ] Commit: `docs(language): record the Python recall-frontier seam (9fgdi)`.
+- [x] Commit: `docs(language): record the Python recall-frontier seam (9fgdi)`.
+
+### Task 9 gate record — seam 5 closed
+
+BEFORE = `45d0830eb` (byte-identical to `main` @ `62b1949f7` on `src/` and
+`scripts/`, verified by blob hash), AFTER = this tree. Seeded jedi oracle,
+default 8 workers on both sides, five corpora.
+
+**A/B ×5, headline.** Recall =
+`match / (match + fileOnly + wrongFile + missed)`; precision-miss =
+`(phantom + wrongFile) / edges`.
+
+| corpus | recall            | phantom   | wrongFile | edges           | precision-miss      | gross lost |
+| ------ | ----------------- | --------- | --------- | --------------- | ------------------- | ---------- |
+| ugnest | 0.939 → **0.970** | 0 → **0** | 0 → 0     | 741 → 769       | 0.00 % → **0.00 %** | 0          |
+| flask  | 0.818 → **0.874** | 9 → 9     | 1 → 1     | 318 → 343       | 3.14 % → 2.92 %     | 0          |
+| httpx  | 0.863 → **0.961** | 8 → 8     | 0 → 0     | 433 → 491       | 1.85 % → 1.63 %     | 0          |
+| netbox | 0.939 → **0.969** | 26 → 26   | 1 → 1     | 8,087 → 8,377   | 0.33 % → 0.32 %     | 0          |
+| polar  | 0.813 → **0.951** | 160 → 181 | 5 → 5     | 13,851 → 16,563 | 1.19 % → 1.12 %     | 0          |
+
+Gross `lost` is 0 on every corpus. polar's row-position diff shows 114 `match`
+rows landing on a non-`match` verdict; every one emits the SAME chain target
+before and after, so all 114 are ORACLE flips caused by the 30 new sites RF.12
+added to those files shifting the per-file answer cursor. Chain regressions: 0.
+Site keys are stable — `onlyBefore` 0 everywhere, `onlyAfter` 11 on flask and 30
+on polar, exactly the `@overload` implementation chunks RF.12 introduced.
+
+**Per receiverKind, n ≥ 100, recall before → after, against decision 11.**
+
+| corpus | kind                   | n           | recall            | floor decision 11 predicts                           |
+| ------ | ---------------------- | ----------- | ----------------- | ---------------------------------------------------- |
+| netbox | `chain`                | 248         | 0.004 → **0.403** | 142 left = 141 Django-manager (E3) + 1; measured 148 |
+| netbox | `localVar`             | 212         | 0.212 → **0.764** | 0 left; measured 50                                  |
+| netbox | `bareCall`             | 5,051       | 0.995 → 0.997     | 0 left; measured 15                                  |
+| netbox | `dynamic`              | 1,524       | 0.966 → 0.972     | 27 left; measured 43                                 |
+| netbox | `selfMember` / `super` | 1,032 / 221 | 1.000 / 1.000     | at ceiling                                           |
+| polar  | `chain`                | 1,617       | 0.009 → **0.946** | 40 left; measured 87                                 |
+| polar  | `localVar`             | 449         | 0.425 → **0.842** | 6 left; measured 71                                  |
+| polar  | `bareCall`             | 8,168       | 0.942 → **0.982** | 4 left; measured 147                                 |
+| polar  | `dynamic`              | 2,279       | 0.788 → 0.814     | 272 left; measured 424                               |
+| polar  | `selfMember`           | 2,073       | 0.998 → **1.000** | 4 left; measured 0                                   |
+| polar  | `super` / `constant`   | 548 / 1,315 | 0.960 / 0.992     | 21 / 12 left; measured 22 / 11                       |
+| ugnest | `bareCall`             | 375         | 0.947 → **0.976** | 0 left; measured 9                                   |
+| httpx  | `bareCall`             | 262         | 0.958 → **0.985** | 0 left; measured 4                                   |
+| flask  | `bareCall`             | 170         | 0.927 → 0.929     | flask's 5 rows call function-valued locals, not defs |
+
+Every kind clears its decision-11 floor in DIRECTION; three land short of the
+predicted residual — polar `bareCall` (147 vs 4) and `localVar` (71 vs 6), and
+netbox `localVar` (50 vs 0). Those are the E3 and branch-typing families the
+plan already names, not a task that under-delivered.
+
+**`namingConvention` phantoms — the shipping condition, settled.** The
+integrated chain emitted ten: netbox 5, polar 3, ugnest 2. All ten are inside
+the +0.5 pp bar (ugnest 2/772 = 0.26 pp), but two of them sit on the anchor
+corpus, and decision 10 leaves no slack there. Seven are one shape — a receiver
+assigned from a library call (`user = authenticate(…)`, `get_object_or_404(…)`,
+`RQ_Job.fetch(…)`) whose snake_case name camelizes onto a real project model.
+Gating on the mere PRESENCE of a `callResultBindings` entry removes those seven
+but costs 12 correct answers, eleven of them ugnest rows bound by
+`User.objects.get(...)`; gating on whether the callee's HEAD is a name the
+project DECLARES removes the same seven and costs one row on netbox, which polar
+then returns with interest:
+
+| corpus        | ungated → head-gated | phantom     | match               |
+| ------------- | -------------------- | ----------- | ------------------- |
+| ugnest        |                      | 2 → **0**   | 765 → 765           |
+| netbox        |                      | 31 → **26** | 8,059 → 8,059       |
+| polar         |                      | 181 → 181   | 15,685 → **15,687** |
+| flask / httpx |                      | unchanged   | unchanged           |
+
+The gate ships. The remaining three are polar's `_job_queue_manager`, a module
+global annotated `contextvars.ContextVar[…]` — a different mechanism, left
+standing rather than tuned against.
+
+**Chain tally ×5, final tree.** `chain drift vs production resolver: 0` and
+`C3 linearization fallbacks: 0` on all five. Edges / call sites: ugnest 770 /
+4,731 · flask 355 / 1,346 · httpx 491 / 1,549 · netbox 8,399 / 44,126 · polar
+16,598 / 56,710. Parse failures 0 everywhere.
+
+**Ruby parity, final.** `ruby-resolver-parity` vs `--before-root` the main
+checkout: 42,057 sites compared, mismatches 0, drift 0.
+`ruby-walker-composition-parity`: 500 files compared, mismatches 0.
+
+**netbox / polar perf, final.** `/usr/bin/time -l`, interleaved B/A/A/B twice,
+`NODE_OPTIONS=--max-old-space-size=1024` both sides, four samples per side per
+corpus, same machine and session.
+
+| corpus | wall before → after (min) | Δ      | RSS before → after (min) | Δ       |
+| ------ | ------------------------- | ------ | ------------------------ | ------- |
+| netbox | 14.42 s → 15.30 s         | +6.1 % | 1.85 GiB → 2.08 GiB      | +12.2 % |
+| polar  | 20.35 s → 21.07 s         | +3.5 % | 1.76 GiB → 1.81 GiB      | +3.2 %  |
+
+Both inside the budget. The netbox RSS figure is at the edge of what the
+measurement resolves: BEFORE spans 1.85–2.13 GiB across its four samples while
+AFTER sits at 2.08–2.11, so min-to-min reads +12.2 % and median-to-median +3.5
+%. No attribution run was needed — nothing crossed +20 %.
+
+**Full-suite gate.** `npm run build` clean; `npm run test:coverage` exit 0 — 867
+files, 12,754 passed, 1 skipped; statements 96.21 %, branches 88.75 %, functions
+97.33 %, lines 98.38 %. No threshold touched. One pin moved:
+`tests/core/domains/language/capability/versions.test.ts` expected Python walker
+3 and the descriptor now declares 4, because the seam added two channels an
+already-indexed project does not have (`callResultBindings` per chunk,
+`classFieldTypesByClassKey` per file). That is a declared-version pin, not a
+business-logic assertion.
+
+**Tier.** Python `codegraph` flips `moderate` → `high`. The program's bar is
+recall ≥ 0.85 with fabricated + wrongFile ≤ 2 % of edges: ugnest, the anchor,
+reads 0.970 / 0.00 %, netbox 0.969 / 0.32 %, polar 0.951 / 1.12 %, httpx 0.961 /
+1.63 %. flask clears recall at 0.874 and misses precision at 2.92 % — 10 rows
+against 343 edges on a 35-file corpus, all 9 phantoms of it inherited unchanged
+from before the seam and improving from 3.14 %. `walker` bumps 3 → 4;
+`gen:lang-compat` regenerated in the same commit.
 
 ---
 

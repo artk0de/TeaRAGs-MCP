@@ -22,7 +22,7 @@ here. Per-project realized numbers live in **prime**, never in this file.
 | ---------------------- | ------------------------------------------------- | ------------------------------------------------------ | -------------------------------------------------------- |
 | **TypeScript**         | **full** · tree-sitter                            | **high** · testScopeChunker (describe/it scopes)       | **high**                                                 |
 | **JavaScript**         | **full** · tree-sitter                            | **high** · testScopeChunker (describe/it scopes)       | **high**                                                 |
-| **Python**             | **full** · tree-sitter                            | **medium** · generic AST                               | **moderate**                                             |
+| **Python**             | **full** · tree-sitter                            | **medium** · generic AST                               | **high**                                                 |
 | **Go**                 | **full** · tree-sitter                            | **medium** · generic AST                               | **moderate**                                             |
 | **Java**               | **full** · tree-sitter                            | **medium** · generic AST                               | **moderate**                                             |
 | **Rust**               | **full** · tree-sitter                            | **medium** · generic AST (#[test] attrs not preserved) | **moderate**                                             |
@@ -96,13 +96,16 @@ conclude absence from a graph the index says is incomplete.
   like a method) + edges restricted to project sources +
   tsx/tsconfig-paths-aware import mapping
 - **JavaScript** — 6-strategy; CommonJS/ESM require resolution (dynamic gaps)
-- **Python** — 7-strategy chain (super, selfField, selfMember, localBinding,
-  chainType, importedName, globalShortName) + ConeDispatch CHA + C3
-  linearization over file-qualified class keys, memoized once per run, with
-  `super()` dispatching on that MRO from the entry after the enclosing class +
-  import→file mapper resolving through symbol-table membership (seeded source
-  roots plus a caller-ancestor scan, re-export hops, stdlib guard) + kernel
-  receiver-chain propagation for dotted receivers + annotation and docstring
+- **Python** — 8-strategy chain (super, selfField, selfMember, localBinding,
+  chainType, namingConvention, importedName, globalShortName) + ConeDispatch
+  CHA + C3 linearization over file-qualified class keys, memoized once per run,
+  with `super()` dispatching on that MRO from the entry after the enclosing
+  class and every member lookup reading up it + import→file mapper resolving
+  through symbol-table membership (seeded source roots plus a caller-ancestor
+  scan, re-export hops, stdlib guard) + kernel receiver-chain propagation for
+  dotted receivers, module-text receivers and call-result locals folded to their
+  callee's return type + kernel return inference over return statements +
+  subtype-gated naming-convention receiver typing + annotation and docstring
   type facts
 - **Go** — 6-strategy; explicit interfaces (no poly dispatch)
 - **Java** — 6-strategy + java.lang stdlib whitelist + overload disambiguation

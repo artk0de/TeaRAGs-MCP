@@ -68,6 +68,80 @@
   question are not the same one. Measured cost of answering CONTINUE there: 95
   phantoms on netbox (`ContentType.objects`, `os.path`), 9 on ugnest, 2 on
   flask.
+- **A receiver that is nothing but MODULE TEXT gets a fourth arm, and its
+  hardest case is a module shadowed by its own assignment.**
+  `utilities.fields.ColorField()` spells two or three lowercase hops with no
+  value in them, because `import utilities.fields` binds the TOP package;
+  `importedName` composes the bound module text with the receiver's remaining
+  segments, maps THAT, and reads the member off the file as a unique top-level
+  declaration — tried before the multi-hop head check and returning only
+  `resolved`, so an external or stdlib head keeps its DROP. The capital-letter
+  test in `DOTTED_MODULE_RECEIVER` is load-bearing: PEP 8 spells modules
+  lowercase, and it is what keeps `Event.id` — a column on a class, whose fold
+  `chainType` owns — out of the module arm. The shadow case is
+  `layout = layout.SimpleLayout(...)`: Python evaluates the RHS before it
+  rebinds the name, so ON that line the receiver still denotes what the import
+  bound, and `pythonSingleHopType` skips a binding established on the call's own
+  line WHEN an import bound that same name. Narrow the gate any less and
+  `x = Foo(); x.run()` on one line loses its type.
+- **`callResultBindings` is folded at RESOLVE time, and that is the only layer
+  where it can be.** The walker records the callee SPELLING a local was assigned
+  from (`repository = SubscriptionRepository.from_session(session)` →
+  `SubscriptionRepository.from_session`); `localBinding` folds it through the
+  shared chain engine and reads the return off that class up the MRO. A
+  cross-file return type and the callee's own hierarchy are both in scope only
+  in the resolver, never in the walker. ONE hop — the returned ref is never
+  re-folded — and a real `localBindings` entry always wins, because a walker
+  binding is a type it READ and a fold is an inference. The bare-callee arm is
+  opt-in through `createPythonCallBindingPorts` rather than added to the shared
+  `pythonSingleHopType`: globally on, `Cls.member()` would be answered by
+  `chainType` one pass EARLIER than `importedName` and through the legacy
+  `classExtends` walk instead of the MRO. This is a SECOND channel and not a
+  widening of `localCallBindings` — that one is bare-name-keyed and pairs with
+  `functionReturnTypes`, which Python drops outright (one `def get(self) -> Foo`
+  would speak for every `get` in the corpus).
+- **A class field has TWO addresses, and the qualified one is what crosses a
+  file.** `classFieldTypes` is per-file and keyed by class SHORT name;
+  `classFieldTypesByClassKey` carries the same facts under the file-qualified
+  `` `${relPath}::${dottedFq}` `` key `classAncestors` already uses, unioned
+  run-global and threaded onto `CallContext`. `pythonInheritedMemberType` reads
+  the own-class key first, then each linearized ancestor key, and falls back to
+  the short-name map exactly as before — which is what lets a field declared by
+  an ANCESTOR's `__init__` type a `self.<attr>` receiver at all. Both field
+  collectors share one `self.<field>` reader so the two addresses cannot
+  disagree about a type.
+- **A member is looked up through the field type's MRO, not verbatim.**
+  `resolvePythonMemberOnTypeThroughMro` owns the two steps between a type NAME
+  and the C3 walk (name → file, file + name → class key); `selfField`,
+  `chainType` and `localBinding` all ask it, so `self.client.build_request()`
+  finds `build_request` on a mixin base of `SyncClientBase` instead of missing.
+  A defining class pins ITS spelling, an external boundary before any definition
+  DROPs, an unreadable hierarchy CONTINUEs, and ambiguity stays a CONTINUE —
+  there is no fan-out here.
+- **`namingConvention` is the one GUESS in the chain, and it survives on four
+  gates.** `data_source.sync()` is a `DataSource` because that is the dominant
+  naming discipline of every OO language. The neutral half — the class must
+  EXIST, and it must have NO subtypes — is `kernel/naming-convention.ts`;
+  Python's end is the alphabet it camelizes on, `classExists` demanding EXACTLY
+  ONE project declaration of the short name (Ruby accepts several because
+  Zeitwerk makes the FQ recoverable; Python has no such guarantee),
+  `hasSubtypes` reading `classAncestors` because there is no `ctx.hierarchy`
+  snapshot on this path, and the TERMINAL — the member must pin a symbol on the
+  guessed class or its MRO, or NOTHING is emitted, never a file-only edge. It
+  also declines for a receiver a real type fact already answers and for one
+  bound from a call whose CALLEE HEAD the project does not declare; the second
+  is the whole phantom story, and gating on the head's origin rather than on the
+  binding's mere presence is what keeps `user = User.objects.get(...)` answered
+  while `user = authenticate(...)` is not. It NEVER DROPs — a DROP would claim
+  the receiver's type is known-and-foreign, which a guess cannot establish.
+- **A bare call resolves to a same-file module def BEFORE the ambiguity guard.**
+  Python resolves local → enclosing → MODULE → builtins for a bare name and
+  never consults another file, so `globalShortName`'s same-file arm is the
+  answer the interpreter gives, not a tie-break. Two restrictions carry that:
+  `receiver === null` only (`self.x()` is attribute lookup down the MRO), and
+  module-level targets only (`scope.length === 0` — a same-file `Cls#helper` is
+  enclosing-scope evidence this pass does not read). A file declaring the name
+  twice declines rather than guessing an order.
 - **`importMatch` is GONE — its residual did not earn the slot** (bd
   tea-rags-mcp-rw1qk). The trailing-segment heuristic survived the
   `importedName` demotion holding only the receivers nothing bound, and the
@@ -121,12 +195,14 @@
   how `selfField` reaches a base class at all. The cache answers `undefined` for
   such a run, and each strategy takes its pre-seam path rather than answering
   from an empty map.
-- **Chain order is a correctness argument, not a preference.** Seven passes:
+- **Chain order is a correctness argument, not a preference.** Eight passes:
   `super`, `selfField`, `selfMember`, `localBinding`, `chainType`,
-  `importedName`, `globalShortName`. See the pass list in
-  `resolver/python-resolver.ts`; the guards (`super`, `selfField`, `selfMember`,
-  `localBinding`) DROP rather than fall through, which is what keeps
-  `serializer.is_valid()` off an unrelated class.
+  `namingConvention`, `importedName`, `globalShortName`, composed in ONE place
+  (`resolver/python-chain-factory.ts` — both offline harnesses call it, because
+  the hand-copied duplicates drifted and voided every number the oracle
+  printed). See the pass list in `resolver/python-resolver.ts`; the guards
+  (`super`, `selfField`, `selfMember`, `localBinding`) DROP rather than fall
+  through, which is what keeps `serializer.is_valid()` off an unrelated class.
 - Resolver architecture rules: `.claude/rules/resolver-architecture.md`.
   Cross-language mechanics: `src/core/domains/language/CLAUDE.md`.
 
@@ -163,4 +239,12 @@
   keyed by the callee's full symbolId (`Outer.Inner#method`). The channel
   re-keying that reconciles them with the kernel store's Ruby-shaped output is
   in `passes/python-type-channels.ts`, and the reasoning is in
-  `domains/language/CLAUDE.md` → Mechanics.
+  `domains/language/CLAUDE.md` → Mechanics. The field facts are ALSO written
+  under a third, file-qualified key — what that address is for is a Resolver
+  bullet above, and both writers share one reader so the two cannot disagree.
+- **The annotation pass types a field from an `__init__` PARAMETER, not just
+  from a constructor call.** `collectPythonClassFieldTypes` records a field only
+  when the RHS is a constructor, so `self.client = client` off a
+  `client: SyncClientBase` parameter wrote nothing; the facet pass emits an
+  `ivar` fact for `self.<field> = <annotated parameter>` in ANY method — one
+  hop, one nominal arm, no attribute chain.

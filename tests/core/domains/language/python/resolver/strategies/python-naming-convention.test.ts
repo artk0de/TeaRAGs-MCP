@@ -18,6 +18,7 @@ import { describe, expect, it } from "vitest";
 import type {
   CallContext,
   CallRef,
+  CallResultBinding,
   ImportRef,
   LocalBinding,
 } from "../../../../../../../src/core/contracts/types/codegraph.js";
@@ -47,6 +48,7 @@ interface CtxSpec {
   readonly imports?: readonly ImportRef[];
   readonly classAncestors?: Record<string, readonly string[]>;
   readonly localBindings?: Record<string, LocalBinding[]>;
+  readonly callResultBindings?: Record<string, CallResultBinding[]>;
   readonly table: InMemoryGlobalSymbolTable;
 }
 
@@ -58,6 +60,7 @@ function ctxWith(spec: CtxSpec): CallContext {
     symbolTable: spec.table,
     ...(spec.classAncestors === undefined ? {} : { classAncestors: spec.classAncestors }),
     ...(spec.localBindings === undefined ? {} : { localBindings: spec.localBindings }),
+    ...(spec.callResultBindings === undefined ? {} : { callResultBindings: spec.callResultBindings }),
   };
 }
 
@@ -176,6 +179,42 @@ describe("PythonNamingConventionSymbolResolutionStrategy — it declines, and it
       localBindings: { data_source: [{ line: 1, type: "Handler" }] },
     });
     continues(strategy().attempt(call("data_source", "sync"), ctx));
+  });
+
+  it("CONTINUEs when the receiver was bound to a call the project cannot see the head of", () => {
+    const ctx = ctxWith({
+      table: dataSourceTable(),
+      classAncestors: {},
+      callResultBindings: { data_source: [{ line: 4, callee: "authenticate" }] },
+    });
+    continues(strategy().attempt(call("data_source", "sync"), ctx));
+  });
+
+  it("CONTINUEs when the binding's callee HEAD is a name the project does not declare", () => {
+    const ctx = ctxWith({
+      table: dataSourceTable(),
+      classAncestors: {},
+      callResultBindings: { data_source: [{ line: 4, callee: "RQJob.fetch" }] },
+    });
+    continues(strategy().attempt(call("data_source", "sync"), ctx));
+  });
+
+  it("still guesses when the binding's callee HEAD is a class the project declares", () => {
+    const ctx = ctxWith({
+      table: dataSourceTable(),
+      classAncestors: {},
+      callResultBindings: { data_source: [{ line: 4, callee: "Handler.build" }] },
+    });
+    expect(strategy().attempt(call("data_source", "sync"), ctx).kind).toBe("resolved");
+  });
+
+  it("still guesses when the only call binding is BELOW the call site", () => {
+    const ctx = ctxWith({
+      table: dataSourceTable(),
+      classAncestors: {},
+      callResultBindings: { data_source: [{ line: 40, callee: "authenticate" }] },
+    });
+    expect(strategy().attempt(call("data_source", "sync"), ctx).kind).toBe("resolved");
   });
 
   it("CONTINUEs on a run with no hierarchy channel — walker v2 keeps its pre-seam silence", () => {
