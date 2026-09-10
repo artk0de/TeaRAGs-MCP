@@ -23,8 +23,10 @@ import type {
 import type { LanguageFactoryDescriptor, LanguageSymbolResolver } from "../../../../contracts/types/language.js";
 import { mergeDerivedClassFieldTypes, seedParamLocalBindings } from "./call-arg-param-types.js";
 import { normalizeInheritanceEdges } from "./inheritance-edges.js";
+import { buildPass1Aggregates } from "./pass1-aggregates.js";
 import { classifyReceiverKind, type ReceiverKind } from "./receiver-kind.js";
 import { buildIncludedBy, languageKindTally, type CodegraphRunState, type ReceiverKindTally } from "./run-state.js";
+import { extractSelfDispatchMethods } from "./self-dispatch-discovery.js";
 import { lastSegment } from "./symbol-name.js";
 
 type ChunkExtraction = FileExtraction["chunks"][number];
@@ -189,6 +191,18 @@ export class CallEdgeResolutionRunner {
     const edges: GraphEdges = { fileEdges, methodEdges };
     if (inheritance.length > 0) edges.inheritance = inheritance;
     if (ambiguousFanouts.length > 0) edges.ambiguousFanouts = ambiguousFanouts;
+    // The pass-1 aggregate slice (bd tea-rags-mcp-znxg8), attached here so it
+    // rides the per-file reconciliation the edges already have. Derived from the
+    // SPILLED extraction rather than handed down from pass-1: pass-1 folds every
+    // file's candidates into one run-global list that is no longer addressable
+    // per file, and re-deriving from the chunks in hand is both cheaper than
+    // keeping a parallel per-file index alive across the barrier and immune to
+    // the two drifting apart.
+    const pass1Aggregates = buildPass1Aggregates(
+      extraction,
+      extraction.language === "ruby" ? extractSelfDispatchMethods(extraction.chunks) : [],
+    );
+    if (pass1Aggregates !== undefined) edges.pass1Aggregates = pass1Aggregates;
     return edges;
   }
 
@@ -332,6 +346,7 @@ export class CallEdgeResolutionRunner {
         const receiverKind = classifyReceiverKind(call, localBindings);
         kindTally[receiverKind].attempted += 1;
         const ctx = this.buildCallContext(extraction, chunk, symbolTable, inputs, localBindings);
+        const edgesBefore = methodEdges.length;
         const outcome = this.dispatchCall(call, chunk, ctx, resolver, methodEdges, ambiguousFanouts);
         if (outcome === "ambiguous") {
           // Over-cap dynamic fan-out (bd f2jsb / j0pki): its own bucket — not a
@@ -343,11 +358,44 @@ export class CallEdgeResolutionRunner {
         if (outcome === "resolved") {
           stats.callsResolved += 1;
           kindTally[receiverKind].resolved += 1;
+          if (this.landedOnSharedTemplate(methodEdges, edgesBefore, ctx)) {
+            kindTally[receiverKind].unnarrowedTemplate += 1;
+          }
           continue;
         }
         this.classifyMiss(call, ctx, resolver, symbolTable, kindTally, receiverKind);
       }
     }
+  }
+
+  /**
+   * Did this call site's edges land on a SHARED self-dispatch entry node rather
+   * than the concrete hook its constant receiver names (bd tea-rags-mcp-znxg8)?
+   *
+   * Both registries count, and the second is the one that matters in practice.
+   * The field report's degraded edges all pointed at `KindOfService.call` — the
+   * CLASS method, a `selfInstantiatingClassMethods` member. The template KEY for
+   * that service idiom is the INSTANCE form `KindOfService#call`, so an
+   * invariant written against `selfDispatchTemplates` alone would have measured
+   * zero on the exact 200 edges that prompted it.
+   *
+   * Counts the call site ONCE however many edges it produced: a fan-out that
+   * reaches a template is one call that failed to narrow, not several.
+   *
+   * The registries are Ruby-only and empty everywhere else, so the early return
+   * keeps every other language's hot path untouched.
+   */
+  private landedOnSharedTemplate(methodEdges: MethodEdges, edgesBefore: number, ctx: CallContext): boolean {
+    const templates = ctx.selfDispatchTemplates;
+    const entries = ctx.selfInstantiatingClassMethods;
+    if (templates === undefined && entries === undefined) return false;
+    for (let i = edgesBefore; i < methodEdges.length; i++) {
+      const target = methodEdges[i].targetSymbolId;
+      if (target === null) continue;
+      if (templates?.[target] !== undefined) return true;
+      if (entries?.includes(target) === true) return true;
+    }
+    return false;
   }
 
   /** One call site's `CallContext` — per-chunk locals plus the run-global maps. */

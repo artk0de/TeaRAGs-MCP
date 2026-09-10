@@ -97,3 +97,76 @@ describe("EnrichmentCoordinator.recomputeEnrichments — language filter", () =>
     expect(scrollFilter(qdrant).must).toBeUndefined();
   });
 });
+
+/**
+ * bd tea-rags-mcp-9dg6s (defect A) — a run must be judged on the SAME set it
+ * was asked to process.
+ *
+ * The scroll above already narrows WHAT gets recomputed, but `beginRun` never
+ * learned about the restriction, so the terminal marker's unenriched count
+ * spanned the whole collection. Measured on taxdome after
+ * `--force-enrichments codegraph --languages ruby`: ruby settled 80401/80401
+ * and the run still reported `degraded` on 13992 typescript+markdown chunks it
+ * had been explicitly told to skip. It recurs on every narrowed run, because
+ * the working-tree sync that precedes the recompute is NOT language-restricted
+ * and keeps minting fresh unsettled points in the other languages.
+ */
+function recoveryDouble(counts: (languages: readonly string[] | undefined) => number): {
+  countUnenriched: ReturnType<typeof vi.fn>;
+} {
+  return {
+    countUnenriched: vi.fn(async (_coll: string, _provider: unknown, _level: string, languages?: readonly string[]) =>
+      counts(languages),
+    ),
+  };
+}
+
+/** Terminal marker payloads written by the completion sequence, by marker key. */
+function markerStatuses(qdrant: Record<string, unknown>, key: string): (string | undefined)[] {
+  const { calls } = (qdrant.batchSetPayload as ReturnType<typeof vi.fn>).mock;
+  return calls
+    .flatMap((call) => call[1] as { key: string; payload?: { status?: string } }[])
+    .filter((op) => op.key === key)
+    .map((op) => op.payload?.status);
+}
+
+describe("EnrichmentCoordinator.recomputeEnrichments — terminal count scope", () => {
+  it("restricts the terminal unenriched count to the run's languages", async () => {
+    const qdrant = qdrantDouble();
+    const recovery = recoveryDouble(() => 0);
+    const coordinator = new EnrichmentCoordinator(qdrant as never, [provider("git")], recovery as never);
+
+    await coordinator.recomputeEnrichments("coll", "/repo", ["git"], ["ruby"]);
+
+    expect(recovery.countUnenriched).toHaveBeenCalledWith("coll", expect.objectContaining({ key: "git" }), "file", [
+      "ruby",
+    ]);
+    expect(recovery.countUnenriched).toHaveBeenCalledWith("coll", expect.objectContaining({ key: "git" }), "chunk", [
+      "ruby",
+    ]);
+  });
+
+  it("counts the whole collection when the recompute is not language-restricted", async () => {
+    // Regression guard: an omitted/empty list must behave exactly as it did
+    // before the restriction existed — the whole collection.
+    const qdrant = qdrantDouble();
+    const recovery = recoveryDouble(() => 0);
+    const coordinator = new EnrichmentCoordinator(qdrant as never, [provider("git")], recovery as never);
+
+    await coordinator.recomputeEnrichments("coll", "/repo", ["git"]);
+
+    expect(recovery.countUnenriched).toHaveBeenCalledWith("coll", expect.objectContaining({ key: "git" }), "file", []);
+  });
+
+  it("ends completed when only languages outside the restriction are unsettled", async () => {
+    const qdrant = qdrantDouble();
+    const recovery = recoveryDouble((languages) => (languages && languages.length > 0 ? 0 : 13_992));
+    const coordinator = new EnrichmentCoordinator(qdrant as never, [provider("git")], recovery as never);
+
+    await coordinator.recomputeEnrichments("coll", "/repo", ["git"], ["ruby"]);
+
+    expect(markerStatuses(qdrant, "enrichment.git.file")).toContain("completed");
+    expect(markerStatuses(qdrant, "enrichment.git.chunk")).toContain("completed");
+    expect(markerStatuses(qdrant, "enrichment.git.file")).not.toContain("degraded");
+  });
+});

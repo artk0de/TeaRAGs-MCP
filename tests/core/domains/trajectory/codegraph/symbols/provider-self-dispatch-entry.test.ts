@@ -365,3 +365,493 @@ describe("CodegraphEnrichmentProvider — abstract-stub REDIRECT terminal (bcdfe
     expect(goToStub).toHaveLength(0);
   });
 });
+
+// bd tea-rags-mcp-znxg8 — entry-call recall collapse on an INCREMENTAL run.
+//
+// Field report (taxdome, `code_27622aef`): `get_callers` for a plain service
+// returns roughly half its real callers; the rest land on the shared mixin entry
+// `KindOfService.call` (file-level fanIn 2324, `isHub: true`). Sampling 200
+// caller edges of that node — 200/200 are concrete `SomeService.call(...)` entry
+// calls, not one a genuine call of the mixin's own method. The seven call sites
+// of ONE service resolved three different ways, and the only thing that varied
+// between them was WHICH enrichment run walked the caller's file.
+//
+// The asymmetry that produces it: `GlobalSymbolTable` IS hydrated from
+// `cg_symbols` when the collection opens (codegraph/factory.ts `initHook`), so
+// cross-file DEFINITION lookups survive an incremental run — but
+// `CodegraphRunState.selfDispatchMethods` and `.inheritanceRows` are built ONLY
+// from files walked in the current batch (extraction-sink.ts `write`). A batch
+// that does not include the template's own file therefore seals a registry
+// without `KindOfService#call` in it, the entry strategy CONTINUEs, and
+// `RubyConstantSymbolResolutionStrategy`'s ancestor walk degrades the entry onto
+// the shared template node.
+//
+// Modelled exactly: run 1 walks the whole corpus (the registry is complete), run
+// 2 re-walks ONLY the caller — the shape of every incremental reindex. The
+// provider keeps its symbol table across both, which is what hydration buys in
+// production.
+describe("CodegraphEnrichmentProvider — incremental run, template file outside the batch (znxg8)", () => {
+  let tmp: string;
+  let root: string;
+  let client: DuckDbGraphClient;
+  let provider: CodegraphEnrichmentProvider;
+
+  const writeFixture = (): string[] => {
+    mkdirSync(join(root, "src"), { recursive: true });
+    const paths: string[] = [];
+    // The taxdome shape: a class-method entry that self-instantiates and
+    // delegates to the same-named instance template, which self-calls `perform`.
+    writeFileSync(
+      join(root, "src", "kind_of_service.rb"),
+      [
+        "class KindOfService",
+        "  def self.call",
+        "    instance = new",
+        "    instance.call",
+        "  end",
+        "  def call",
+        "    perform",
+        "  end",
+        "end",
+        "",
+      ].join("\n"),
+    );
+    paths.push("src/kind_of_service.rb");
+    writeFileSync(
+      join(root, "src", "create.rb"),
+      ["class Create < KindOfService", "  def perform", "    :done", "  end", "end", ""].join("\n"),
+    );
+    paths.push("src/create.rb");
+    writeFileSync(join(root, "src", "c.rb"), ["class C", "  def go", "    Create.call", "  end", "end", ""].join("\n"));
+    paths.push("src/c.rb");
+    return paths;
+  };
+
+  const methodEdges = async (): Promise<MethodEdge[]> =>
+    client.queryAll<MethodEdge>(
+      "SELECT source_symbol_id, target_symbol_id, call_expression FROM cg_symbols_edges_method",
+    );
+
+  beforeEach(async () => {
+    tmp = mkdtempSync(join(tmpdir(), "cg-incremental-prov-"));
+    root = mkdtempSync(join(tmpdir(), "cg-incremental-fixture-"));
+    client = new DuckDbGraphClient({ path: join(tmp, "g.duckdb") });
+    await client.init();
+    await runMigrations(client, MIG_DIR);
+    provider = new CodegraphEnrichmentProvider({
+      graphDb: client,
+      symbolTable: new InMemoryGlobalSymbolTable(),
+      ...buildTestCodegraphDeps(),
+      composer: new DefaultSymbolIdComposer(),
+      collectSymbols,
+    });
+  });
+
+  afterEach(async () => {
+    await client.close();
+    rmSync(tmp, { recursive: true, force: true });
+    rmSync(root, { recursive: true, force: true });
+  });
+
+  it("keeps the entry narrowed to `Create#perform` when only the CALLER is re-walked", async () => {
+    const paths = writeFixture();
+    // Run 1 — full corpus. The registry is complete and the entry narrows.
+    await provider.streamFileBatch(root, paths);
+    await provider.finalizeSignals(root);
+    expect(await methodEdges()).toContainEqual({
+      source_symbol_id: "C#go",
+      target_symbol_id: "Create#perform",
+      call_expression: "Create.call",
+    });
+
+    // Run 2 — the caller alone changed, which is what an incremental reindex
+    // walks. Neither the template's file nor the concrete service's is in it.
+    writeFileSync(
+      join(root, "src", "c.rb"),
+      ["class C", "  def go", "    # touched", "    Create.call", "  end", "end", ""].join("\n"),
+    );
+    await provider.streamFileBatch(root, ["src/c.rb"]);
+    await provider.finalizeSignals(root);
+
+    const edges = await methodEdges();
+    // The edge must SURVIVE the incremental re-walk unchanged.
+    expect(edges).toContainEqual({
+      source_symbol_id: "C#go",
+      target_symbol_id: "Create#perform",
+      call_expression: "Create.call",
+    });
+    // …and must never degrade onto the shared template node — that is the
+    // 2324-fanIn hub the field report found 200/200 entry calls piled onto.
+    expect(edges.filter((e) => e.source_symbol_id === "C#go" && e.target_symbol_id.startsWith("KindOfService"))).toEqual(
+      [],
+    );
+  });
+});
+
+// bd tea-rags-mcp-znxg8 — the TOP-LEVEL-QUALIFIED entry call, `::Const.call`.
+//
+// The field report proposed this as a second, independent defect: `CONSTANT_RE`
+// (ruby-self-dispatch-entry.ts) and `looksLikeConstant` (ruby-constant.ts) both
+// anchor on `^[A-Z]`, so a receiver written `::TaxPreparation::…::ConfigureAndSend`
+// would fail the shape test and the entry strategy would never look at it — 316
+// such sites in taxdome against 3714 plain ones.
+//
+// The premise does not survive contact with the walker. Ruby's `::Foo::Bar` is a
+// `scope_resolution` node whose leading `::` is an EMPTY first segment, and the
+// walker rebuilds the receiver from the named segments, so what reaches the
+// resolver is already `Foo::Bar` — the regexes never see a leading `::` on this
+// shape and relaxing them would resolve nothing new. This test pins that end to
+// end rather than by reading the walker: same fixture as the v2 delegation case,
+// caller written top-level-qualified, and the edge must be identical.
+//
+// (The prefix DOES survive on a chained receiver — `::Foo::Bar.new.call` reaches
+// the resolver as `::Foo::Bar.new` — but that is not a constant receiver and no
+// `^[A-Z]` anchor would match `Foo::Bar.new` either. Whatever the 316 taxdome
+// sites are losing, it is not these two regexes.)
+describe("CodegraphEnrichmentProvider — top-level-qualified entry `::Const.call` (znxg8)", () => {
+  let tmp: string;
+  let root: string;
+  let client: DuckDbGraphClient;
+  let provider: CodegraphEnrichmentProvider;
+
+  const writeFixture = (): string[] => {
+    mkdirSync(join(root, "src"), { recursive: true });
+    const paths: string[] = [];
+    writeFileSync(
+      join(root, "src", "kind_of_service.rb"),
+      [
+        "class KindOfService",
+        "  def self.call",
+        "    instance = new",
+        "    instance.call",
+        "  end",
+        "  def call",
+        "    perform",
+        "  end",
+        "end",
+        "",
+      ].join("\n"),
+    );
+    paths.push("src/kind_of_service.rb");
+    writeFileSync(
+      join(root, "src", "create.rb"),
+      ["class Create < KindOfService", "  def perform", "    :done", "  end", "end", ""].join("\n"),
+    );
+    paths.push("src/create.rb");
+    // The ONLY difference from the v2 fixture: the entry is written with the
+    // top-level scope qualifier.
+    writeFileSync(
+      join(root, "src", "c.rb"),
+      ["class C", "  def go", "    ::Create.call", "  end", "end", ""].join("\n"),
+    );
+    paths.push("src/c.rb");
+    return paths;
+  };
+
+  beforeEach(async () => {
+    tmp = mkdtempSync(join(tmpdir(), "cg-toplevel-qualified-prov-"));
+    root = mkdtempSync(join(tmpdir(), "cg-toplevel-qualified-fixture-"));
+    client = new DuckDbGraphClient({ path: join(tmp, "g.duckdb") });
+    await client.init();
+    await runMigrations(client, MIG_DIR);
+    provider = new CodegraphEnrichmentProvider({
+      graphDb: client,
+      symbolTable: new InMemoryGlobalSymbolTable(),
+      ...buildTestCodegraphDeps(),
+      composer: new DefaultSymbolIdComposer(),
+      collectSymbols,
+    });
+  });
+
+  afterEach(async () => {
+    await client.close();
+    rmSync(tmp, { recursive: true, force: true });
+    rmSync(root, { recursive: true, force: true });
+  });
+
+  it("resolves `::Create.call` to the concrete hook exactly as `Create.call` does", async () => {
+    const paths = writeFixture();
+    await provider.streamFileBatch(root, paths);
+    await provider.finalizeSignals(root);
+
+    const edges = await client.queryAll<MethodEdge>(
+      "SELECT source_symbol_id, target_symbol_id, call_expression FROM cg_symbols_edges_method",
+    );
+
+    expect(edges).toContainEqual({
+      source_symbol_id: "C#go",
+      target_symbol_id: "Create#perform",
+      call_expression: "::Create.call",
+    });
+    // And it does not pile onto the shared template either.
+    expect(edges.filter((e) => e.source_symbol_id === "C#go" && e.target_symbol_id.startsWith("KindOfService"))).toEqual(
+      [],
+    );
+  });
+});
+
+// bd tea-rags-mcp-znxg8 — the UNNARROWED-ENTRY INVARIANT on `cg_run_stats`.
+//
+// Every other counter on that table describes a miss, which is exactly why none
+// of them saw this defect: the degraded edges all RESOLVED. `inProjectEdgeRecall`
+// read 1.0 while 200 of 200 sampled caller edges of one hub node were concrete
+// entry calls that should have narrowed. This counter is the one that can move.
+//
+// The registry it checks matters as much as the check. The report's degraded
+// edges pointed at `KindOfService.call` — the CLASS method, a
+// `selfInstantiatingClassMethods` member. The template KEY for that idiom is the
+// INSTANCE form `KindOfService#call`, so an invariant written against
+// `selfDispatchTemplates` alone would have read zero on the very edges that
+// prompted it. Both registries count, and this fixture pins the class-method
+// half by resolving a `.call` the entry strategy cannot narrow.
+describe("CodegraphEnrichmentProvider — unnarrowed-entry invariant on cg_run_stats (znxg8)", () => {
+  let tmp: string;
+  let root: string;
+  let client: DuckDbGraphClient;
+  let provider: CodegraphEnrichmentProvider;
+
+  beforeEach(async () => {
+    tmp = mkdtempSync(join(tmpdir(), "cg-unnarrowed-prov-"));
+    root = mkdtempSync(join(tmpdir(), "cg-unnarrowed-fixture-"));
+    client = new DuckDbGraphClient({ path: join(tmp, "g.duckdb") });
+    await client.init();
+    await runMigrations(client, MIG_DIR);
+    provider = new CodegraphEnrichmentProvider({
+      graphDb: client,
+      symbolTable: new InMemoryGlobalSymbolTable(),
+      ...buildTestCodegraphDeps(),
+      composer: new DefaultSymbolIdComposer(),
+      collectSymbols,
+    });
+  });
+
+  afterEach(async () => {
+    await client.close();
+    rmSync(tmp, { recursive: true, force: true });
+    rmSync(root, { recursive: true, force: true });
+  });
+
+  it("counts zero when every entry narrows to its concrete hook", async () => {
+    mkdirSync(join(root, "src"), { recursive: true });
+    writeFileSync(
+      join(root, "src", "kind_of_service.rb"),
+      [
+        "class KindOfService",
+        "  def self.call",
+        "    instance = new",
+        "    instance.call",
+        "  end",
+        "  def call",
+        "    perform",
+        "  end",
+        "end",
+        "",
+      ].join("\n"),
+    );
+    writeFileSync(
+      join(root, "src", "create.rb"),
+      ["class Create < KindOfService", "  def perform", "    :done", "  end", "end", ""].join("\n"),
+    );
+    writeFileSync(join(root, "src", "c.rb"), ["class C", "  def go", "    Create.call", "  end", "end", ""].join("\n"));
+
+    await provider.streamFileBatch(root, ["src/kind_of_service.rb", "src/create.rb", "src/c.rb"]);
+    await provider.finalizeSignals(root);
+
+    const rows = await client.getRunStats();
+    const total = rows.reduce((n, r) => n + (r.unnarrowedTemplate ?? 0), 0);
+    expect(total).toBe(0);
+  });
+
+  it("counts the call when a subtype does NOT define the hook, so the entry stops at the shared class method", async () => {
+    mkdirSync(join(root, "src"), { recursive: true });
+    // Same shared entry, but TWO subtypes: one defines the hook (so the template
+    // is discovered at all), the other does not — its `.call` therefore cannot
+    // narrow and falls through to the inherited `KindOfService.call`.
+    writeFileSync(
+      join(root, "src", "kind_of_service.rb"),
+      [
+        "class KindOfService",
+        "  def self.call",
+        "    instance = new",
+        "    instance.call",
+        "  end",
+        "  def call",
+        "    perform",
+        "  end",
+        "end",
+        "",
+      ].join("\n"),
+    );
+    writeFileSync(
+      join(root, "src", "create.rb"),
+      ["class Create < KindOfService", "  def perform", "    :done", "  end", "end", ""].join("\n"),
+    );
+    writeFileSync(
+      join(root, "src", "hollow.rb"),
+      ["class Hollow < KindOfService", "  def label", '    "hollow"', "  end", "end", ""].join("\n"),
+    );
+    writeFileSync(
+      join(root, "src", "c.rb"),
+      ["class C", "  def go", "    Hollow.call", "  end", "end", ""].join("\n"),
+    );
+
+    await provider.streamFileBatch(root, ["src/kind_of_service.rb", "src/create.rb", "src/hollow.rb", "src/c.rb"]);
+    await provider.finalizeSignals(root);
+
+    const edges = await client.queryAll<MethodEdge>(
+      "SELECT source_symbol_id, target_symbol_id, call_expression FROM cg_symbols_edges_method",
+    );
+    const degraded = edges.filter((e) => e.source_symbol_id === "C#go" && e.target_symbol_id === "KindOfService.call");
+    // Precondition: the fixture really does produce the degraded shape. If the
+    // resolver ever learns to decline this edge, the counter below goes to zero
+    // for the RIGHT reason and this guard is what says so.
+    expect(degraded).toHaveLength(1);
+
+    const rows = await client.getRunStats();
+    const total = rows.reduce((n, r) => n + (r.unnarrowedTemplate ?? 0), 0);
+    expect(total).toBeGreaterThanOrEqual(1);
+  });
+});
+
+// bd tea-rags-mcp-weno4 — the znxg8 repair must survive a daemon that predates it.
+//
+// znxg8 made the pass-1→pass-2 barrier hydrate its run-global registries from
+// `cg_pass1_aggregates` for every file the run did not walk. That read goes through
+// `GraphDbClient.listAllPass1Aggregates`, a NEW daemon op — and codegraph enrichment
+// runs in a worker thread whose `GraphDbClientPool` is built WITHOUT a `daemonRestart`
+// hook (`codegraph/factory.ts`; only `bootstrap/factory.ts` wires one). A pool with no
+// respawn hook deliberately TOLERATES a daemon built from other source
+// (`GraphDbClientPool#connectWithBuildHandshake`), so the worker can be talking to a
+// daemon that has no such op at all:
+//
+//   [tea-rags] codegraph pass-1 aggregate hydration failed:
+//   unknown daemon op: listAllPass1Aggregates
+//
+// The existing guard catches it and the run continues — which silently turns the whole
+// znxg8 repair back into the batch-scoped registry it was written to replace. Observed
+// live on taxdome. `acquireRead` is no escape either: DuckDB's RW lock is
+// process-exclusive, so a cross-process READ_ONLY attach throws while the daemon holds
+// RW.
+//
+// The repair therefore cannot depend on the WORKER's own read. The MAIN thread builds
+// its pool through `bootstrap/factory.ts`, which DOES wire the respawn hook, so it
+// drains and respawns a stale daemon and its read succeeds; it hands the rows to the
+// worker through `FileSignalOptions.pass1Aggregates`. The graphDb read survives only as
+// the fallback for direct/test mode, where there is no daemon and the read is safe.
+//
+// This pins the whole seam: the rows are read the way the main thread reads them, then
+// re-injected into a run whose graphDb op is BROKEN. The entry must still narrow.
+describe("CodegraphEnrichmentProvider — pass-1 aggregates injected past a stale daemon (weno4)", () => {
+  let tmp: string;
+  let root: string;
+  let client: DuckDbGraphClient;
+  let provider: CodegraphEnrichmentProvider;
+
+  // Direct mode resolves the constructor-provided store regardless of the name
+  // (`getStore`), exactly as `readPersistedFileHashes` does — the name is carried only
+  // so the call shape matches the pool-mode one the main thread makes.
+  const COLLECTION = "code_weno4";
+
+  // Same fixture shape as the znxg8 incremental case above: a shared class-method entry
+  // that self-instantiates and delegates to the same-named instance template, one
+  // concrete service defining the hook, and a caller naming the concrete entry.
+  const writeFixture = (): string[] => {
+    mkdirSync(join(root, "src"), { recursive: true });
+    const paths: string[] = [];
+    writeFileSync(
+      join(root, "src", "kind_of_service.rb"),
+      [
+        "class KindOfService",
+        "  def self.call",
+        "    instance = new",
+        "    instance.call",
+        "  end",
+        "  def call",
+        "    perform",
+        "  end",
+        "end",
+        "",
+      ].join("\n"),
+    );
+    paths.push("src/kind_of_service.rb");
+    writeFileSync(
+      join(root, "src", "create.rb"),
+      ["class Create < KindOfService", "  def perform", "    :done", "  end", "end", ""].join("\n"),
+    );
+    paths.push("src/create.rb");
+    writeFileSync(join(root, "src", "c.rb"), ["class C", "  def go", "    Create.call", "  end", "end", ""].join("\n"));
+    paths.push("src/c.rb");
+    return paths;
+  };
+
+  const methodEdges = async (): Promise<MethodEdge[]> =>
+    client.queryAll<MethodEdge>(
+      "SELECT source_symbol_id, target_symbol_id, call_expression FROM cg_symbols_edges_method",
+    );
+
+  beforeEach(async () => {
+    tmp = mkdtempSync(join(tmpdir(), "cg-weno4-prov-"));
+    root = mkdtempSync(join(tmpdir(), "cg-weno4-fixture-"));
+    client = new DuckDbGraphClient({ path: join(tmp, "g.duckdb") });
+    await client.init();
+    await runMigrations(client, MIG_DIR);
+    provider = new CodegraphEnrichmentProvider({
+      graphDb: client,
+      symbolTable: new InMemoryGlobalSymbolTable(),
+      ...buildTestCodegraphDeps(),
+      composer: new DefaultSymbolIdComposer(),
+      collectSymbols,
+    });
+  });
+
+  afterEach(async () => {
+    await client.close();
+    rmSync(tmp, { recursive: true, force: true });
+    rmSync(root, { recursive: true, force: true });
+  });
+
+  it("narrows the entry from INJECTED rows when the daemon has no listAllPass1Aggregates op", async () => {
+    const paths = writeFixture();
+    // Run 1 — full corpus. This is the run that WRITES `cg_pass1_aggregates`.
+    await provider.streamFileBatch(root, paths, { collectionName: COLLECTION });
+    await provider.finalizeSignals(root, { collectionName: COLLECTION });
+    expect(await methodEdges()).toContainEqual({
+      source_symbol_id: "C#go",
+      target_symbol_id: "Create#perform",
+      call_expression: "Create.call",
+    });
+
+    // What the MAIN thread does before dispatching finalize to the worker: read the
+    // persisted slices off its own respawn-capable pool.
+    const injected = await provider.readPersistedPass1Aggregates(COLLECTION);
+    expect(injected.length).toBeGreaterThan(0);
+
+    // The stale daemon: the op the worker's own read would call does not exist.
+    client.listAllPass1Aggregates = async () => {
+      throw new Error("unknown daemon op: listAllPass1Aggregates");
+    };
+
+    // Run 2 — the caller alone changed, which is what an incremental reindex walks.
+    // Neither the template's file nor the concrete service's is in the batch, so the
+    // run-global registry can only come from the injected rows.
+    writeFileSync(
+      join(root, "src", "c.rb"),
+      ["class C", "  def go", "    # touched", "    Create.call", "  end", "end", ""].join("\n"),
+    );
+    await provider.streamFileBatch(root, ["src/c.rb"], { collectionName: COLLECTION });
+    await provider.finalizeSignals(root, { collectionName: COLLECTION, pass1Aggregates: injected });
+
+    const edges = await methodEdges();
+    // The edge must SURVIVE the incremental re-walk unchanged…
+    expect(edges).toContainEqual({
+      source_symbol_id: "C#go",
+      target_symbol_id: "Create#perform",
+      call_expression: "Create.call",
+    });
+    // …and must never degrade onto the shared template node — the 2324-fanIn hub the
+    // znxg8 field report found 200/200 entry calls piled onto.
+    expect(
+      edges.filter((e) => e.source_symbol_id === "C#go" && e.target_symbol_id.startsWith("KindOfService")),
+    ).toEqual([]);
+  });
+});

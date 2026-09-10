@@ -36,6 +36,7 @@ import type {
   CalleeEdge,
   CallerEdge,
   ChunkGraphSignals,
+  CodegraphPass1FileAggregates,
   CycleEntry,
   CycleScope,
   EdgeKindCount,
@@ -224,6 +225,10 @@ export class DuckDbGraphClient implements GraphDbClient {
 
   async listAllSymbols(): Promise<SymbolDefinition[]> {
     return this.symbols.listAllSymbols();
+  }
+
+  async listAllPass1Aggregates(): Promise<CodegraphPass1FileAggregates[]> {
+    return this.fileGraph.listAllPass1Aggregates();
   }
 
   async updateSymbolChunkIds(relPath: RelPath, chunkIds: ReadonlyMap<SymbolId, string>): Promise<void> {

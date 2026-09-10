@@ -64,6 +64,35 @@ const RECOMPUTE_SCROLL_HARD_CAP = 1_000_000;
 const NOOP_RELEASE: IndexRunDaemonRelease = async () => {};
 const NOOP_DAEMON_GUARD: IndexRunDaemonGuard = { begin: async () => NOOP_RELEASE };
 
+/**
+ * Delay before each successive re-read of the unenriched count, in ms. The
+ * length is the number of RE-reads, so the total number of reads is
+ * `length + 1` and the total sleep is the sum — 3.75s (bd tea-rags-mcp-9dg6s).
+ *
+ * The wait exists because `batchSetPayload` writes with `wait: false`, so
+ * Qdrant's payload-filter index lags the actual point payloads and the first
+ * count after `Promise.allSettled` can report points that are already written.
+ * It used to be ONE re-poll after a hardcoded 500ms, which is a guess and was
+ * demonstrably short: taxdome wrote its terminal marker with
+ * `unenrichedChunks: 7462` while a direct count immediately afterwards returned
+ * 0, with typescript's `enrichedAt` moving 26548 → 31882 in between — 5334
+ * points of real settling the marker never saw. The machine was in heavy swap
+ * (18.8 GB of 19.4 GB), which is exactly when a constant fails.
+ *
+ * So the wait is a CONDITION — read until two consecutive reads agree — and
+ * this schedule only bounds it. Shape of the numbers:
+ *
+ * - 250ms first, because a count that is NOT moving converges on the second
+ *   read. Genuine damage therefore costs one short delay, not the whole budget;
+ *   only an actively-settling index spends more, which is precisely when
+ *   waiting is the right thing to do.
+ * - Growing delays (250 → 2000) give a swapping Qdrant progressively more room
+ *   per attempt without paying that room on a host that does not need it.
+ * - The sum is a hard ceiling. This runs on the completion path of EVERY ingest
+ *   run and per (provider, level), so it must terminate whatever Qdrant does.
+ */
+export const SETTLE_POLL_DELAYS_MS: readonly number[] = [250, 500, 1000, 2000];
+
 interface RunState {
   runId: string;
   startTime: number;
@@ -101,6 +130,23 @@ interface RunState {
    * `reindex_changes` always leaves it false (worker keeps `extractOneFile`).
    */
   crossPass: boolean;
+  /**
+   * Languages this run was restricted to, empty when it spans the whole
+   * collection (bd tea-rags-mcp-9dg6s).
+   *
+   * A restricted run must be JUDGED on the same set it was asked to process.
+   * `recomputeEnrichments` already narrows its scroll, but the terminal
+   * unenriched count went on spanning everything, so a `--languages ruby` run
+   * that settled every Ruby point still reported `degraded` — on chunks it had
+   * been told to skip. It recurs on every narrowed run, because the
+   * working-tree sync that precedes the recompute is NOT language-restricted
+   * and keeps minting fresh unsettled points in the other languages.
+   *
+   * Per-run, not per-coordinator, for the same reason everything else here is:
+   * a stale closure from a previous run must not be able to widen or narrow
+   * the count this run is judged by.
+   */
+  languages: readonly string[];
 }
 
 export class EnrichmentCoordinator {
@@ -538,7 +584,19 @@ export class EnrichmentCoordinator {
     });
     if (stored.items.length === 0) return EMPTY_METRICS;
 
-    this.beginRun(absolutePath, collectionName, undefined, undefined, false, stored.fileCount, matched);
+    // `languages` reaches the run itself, not just the scroll: the terminal
+    // marker is judged on the run's own scope (bd tea-rags-mcp-9dg6s).
+    this.beginRun(
+      absolutePath,
+      collectionName,
+      undefined,
+      undefined,
+      false,
+      stored.fileCount,
+      matched,
+      undefined,
+      languages,
+    );
     // File phase, in the same bounded batches the live pipeline uses, so a
     // whole-repo recompute cannot hand a provider one enormous dispatch.
     for (let i = 0; i < stored.items.length; i += RECOMPUTE_BATCH_SIZE) {
@@ -647,6 +705,14 @@ export class EnrichmentCoordinator {
      * CLEAR it, or the incremental path would lose its own stamp.
      */
     contentHashes?: ReadonlyMap<string, string>,
+    /**
+     * Restrict the run to these languages. Only `recomputeEnrichments` passes
+     * it — an ordinary index run spans everything the scan produced. Omitted
+     * (or empty) means the whole collection, so existing callers are
+     * unaffected. Carried on the RunState because the terminal marker has to be
+     * judged on the SAME set (bd tea-rags-mcp-9dg6s).
+     */
+    languages?: readonly string[],
   ): void {
     if (contentHashes) this.runContentHashes = contentHashes;
 
@@ -654,6 +720,7 @@ export class EnrichmentCoordinator {
     // mutate their orphaned RunState, never the current one.
     const runState = this.createRunState();
     runState.crossPass = crossPass;
+    runState.languages = languages ?? [];
     this.currentRun = runState;
 
     // Reset per-run progress state. grandFileCount is the denominator for
@@ -953,7 +1020,9 @@ export class EnrichmentCoordinator {
         collectionName,
         run.contexts,
         run.startTime,
-        async (coll, provider, level) => this.countSettledUnenriched(coll, provider, level),
+        // `run.languages`, not `this.currentRun` — the terminal count is scoped
+        // by the run being closed out, even if a newer run has already begun.
+        async (coll, provider, level) => this.countSettledUnenriched(coll, provider, level, run.languages),
         run.startedAt,
         run.runId,
       );
@@ -1020,27 +1089,60 @@ export class EnrichmentCoordinator {
       lastHeartbeatAt: 0,
       daemonReleasePromise: Promise.resolve(NOOP_RELEASE),
       crossPass: false,
+      languages: [],
     };
   }
 
   /**
-   * Count chunks missing enrichedAt for the marker. Re-polls once after a brief
-   * grace period when the first count is non-zero — `batchSetPayload` writes
-   * during enrichment use `wait: false`, so Qdrant's payload-filter index can
-   * lag the actual point payloads by a few hundred milliseconds. The first
-   * snapshot may report stale "unenriched" chunks that have already been
-   * written but not yet indexed; the re-poll catches up to ground truth and
-   * keeps the persisted marker honest.
+   * Count chunks the marker should call unenriched, waiting for the count to
+   * SETTLE rather than for a fixed grace period (bd tea-rags-mcp-9dg6s).
+   *
+   * `batchSetPayload` writes during enrichment use `wait: false`, so Qdrant's
+   * payload-filter index lags the actual point payloads and the first count
+   * after `Promise.allSettled` can report chunks that are already written. The
+   * previous fix re-polled ONCE after a hardcoded 500ms — right about the
+   * cause, wrong about the remedy: a constant cannot describe how long an
+   * arbitrary Qdrant under arbitrary memory pressure takes to catch up, and on
+   * taxdome it was short by 5334 points.
+   *
+   * So: read until two consecutive reads agree (or a read comes back 0, which
+   * is already ground truth), bounded by {@link SETTLE_POLL_DELAYS_MS} — that
+   * constant carries the delay schedule and why it is shaped the way it is. A
+   * count that is not moving therefore costs exactly one extra read, and only
+   * an actively-settling index spends the rest of the budget.
+   *
+   * A read that throws degrades rather than aborts: it yields the last good
+   * value, which also ends the loop (the values agree). Completion must not
+   * fail because a count failed — the run's work is already written.
+   *
+   * @param languages Restrict the count to these languages; empty = whole
+   * collection. A language-restricted run must not be judged on chunks it was
+   * explicitly told to skip.
    */
   private async countSettledUnenriched(
     collectionName: string,
     provider: EnrichmentProvider,
     level: "file" | "chunk",
+    languages: readonly string[] = [],
   ): Promise<number> {
-    if (!this.recovery) return 0;
-    const first = await this.recovery.countUnenriched(collectionName, provider, level).catch(() => 0);
-    if (first === 0) return 0;
-    await new Promise((resolve) => setTimeout(resolve, 500));
-    return await this.recovery.countUnenriched(collectionName, provider, level).catch(() => first);
+    const { recovery } = this;
+    if (!recovery) return 0;
+
+    const read = async (fallback: number): Promise<number> =>
+      recovery.countUnenriched(collectionName, provider, level, languages).catch(() => fallback);
+
+    let settled = await read(0);
+    // The overwhelming common case: a healthy run reads 0 first and pays no
+    // sleep at all.
+    if (settled === 0) return 0;
+
+    for (const delayMs of SETTLE_POLL_DELAYS_MS) {
+      await new Promise((resolve) => setTimeout(resolve, delayMs));
+      const next = await read(settled);
+      if (next === 0) return 0;
+      if (next === settled) return next;
+      settled = next;
+    }
+    return settled;
   }
 }

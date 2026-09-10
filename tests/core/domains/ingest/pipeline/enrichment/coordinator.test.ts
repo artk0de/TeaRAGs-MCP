@@ -2,7 +2,10 @@ import ignore from "ignore";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { EnrichmentProvider } from "../../../../../../src/core/contracts/types/provider.js";
-import { EnrichmentCoordinator } from "../../../../../../src/core/domains/ingest/pipeline/enrichment/coordinator.js";
+import {
+  EnrichmentCoordinator,
+  SETTLE_POLL_DELAYS_MS,
+} from "../../../../../../src/core/domains/ingest/pipeline/enrichment/coordinator.js";
 import { EnrichmentRecovery } from "../../../../../../src/core/domains/ingest/pipeline/enrichment/recovery.js";
 import type { EnrichmentProgressEvent } from "../../../../../../src/core/types.js";
 
@@ -1273,13 +1276,18 @@ describe("EnrichmentCoordinator — marker counters reflect current run", () => 
 });
 
 describe("EnrichmentCoordinator — countSettledUnenriched re-poll", () => {
-  it("re-polls countUnenriched once after grace period when first count is non-zero", async () => {
+  it("persists the settled count rather than the stale first read", async () => {
     // Regression: batchSetPayload writes use wait:false, so Qdrant's
     // payload-filter index can lag the actual point payloads. The first
     // countUnenriched after Promise.allSettled may report stale "unenriched"
     // chunks that have already been written but not yet indexed. The marker
-    // must not lock in this transient stale value — re-poll after a grace
-    // period and persist the settled count.
+    // must not lock in this transient stale value — keep re-reading until the
+    // count stops moving and persist THAT.
+    //
+    // bd tea-rags-mcp-9dg6s changed the wait from one fixed 500ms re-poll to
+    // bounded convergence polling, so the read sequence here is 5 → 3 → 3
+    // (converged) instead of 5 → 3 (stop). The invariant the test pins is
+    // unchanged: the marker carries 3, not the stale 5.
     const mockQdrant: any = {
       batchSetPayload: vi.fn().mockResolvedValue(undefined),
       setPayload: vi.fn().mockResolvedValue(undefined),
@@ -1292,14 +1300,15 @@ describe("EnrichmentCoordinator — countSettledUnenriched re-poll", () => {
       buildChunkSignals: vi.fn().mockResolvedValue(new Map()),
     };
 
-    // First poll returns 5 (stale), second returns 0 (filter index caught up)
+    // First read returns 5 (stale), then 3, then 3 again — two consecutive
+    // equal reads mean the payload-filter index has caught up.
     const recovery = {
       countUnenriched: vi
         .fn()
         .mockResolvedValueOnce(5)
         .mockResolvedValueOnce(3)
-        .mockResolvedValueOnce(0)
-        .mockResolvedValueOnce(0),
+        .mockResolvedValueOnce(3)
+        .mockResolvedValue(0),
     };
 
     const coordinator = new EnrichmentCoordinator(mockQdrant, mockProvider, recovery as any);
@@ -1308,10 +1317,10 @@ describe("EnrichmentCoordinator — countSettledUnenriched re-poll", () => {
 
     await coordinator.awaitCompletion("test-col");
 
-    // file level: first=5 (non-zero) → re-poll → 3 (2 calls)
+    // file level: 5 → 3 → 3, converged (3 calls)
     // chunk level: first=0 (zero) → short-circuit (1 call)
-    // Total: 3 calls, with the helper writing the SETTLED (lower) value 3.
-    expect(recovery.countUnenriched).toHaveBeenCalledTimes(3);
+    // Total: 4 calls, with the helper writing the SETTLED (lower) value 3.
+    expect(recovery.countUnenriched).toHaveBeenCalledTimes(4);
 
     // Marker must persist the settled (lower) value, not the stale first read.
     // file-unenriched > 0 now reconciles the file status to "degraded".
@@ -1348,6 +1357,104 @@ describe("EnrichmentCoordinator — countSettledUnenriched re-poll", () => {
 
     // Each level (file + chunk) called exactly once — no re-poll because first === 0
     expect(recovery.countUnenriched).toHaveBeenCalledTimes(2);
+  });
+});
+
+/**
+ * bd tea-rags-mcp-9dg6s (defect B) — the settle wait is a CONDITION, not a
+ * constant.
+ *
+ * The old single 500ms re-poll was a guess, and taxdome showed it too short:
+ * the marker was written with `unenrichedChunks: 7462` while a direct count
+ * straight afterwards returned 0, with typescript's `enrichedAt` moving
+ * 26548 → 31882 in between — 5334 points of real settling the marker missed.
+ * The machine was in heavy swap, which is exactly when a constant fails.
+ */
+describe("EnrichmentCoordinator — countSettledUnenriched convergence", () => {
+  function qdrantDouble(): Record<string, ReturnType<typeof vi.fn>> {
+    return {
+      batchSetPayload: vi.fn().mockResolvedValue(undefined),
+      setPayload: vi.fn().mockResolvedValue(undefined),
+      getPoint: vi.fn().mockResolvedValue(null),
+    };
+  }
+
+  function providerDouble(): Record<string, unknown> {
+    return {
+      key: "git",
+      resolveRoot: vi.fn((p: string) => p),
+      buildFileSignals: vi.fn().mockResolvedValue(new Map([["src/a.ts", { x: 1 }]])),
+      buildChunkSignals: vi.fn().mockResolvedValue(new Map()),
+    };
+  }
+
+  /** unenrichedChunks written on the terminal FILE marker, whatever its status. */
+  function fileMarkerUnenriched(qdrant: Record<string, ReturnType<typeof vi.fn>>): number | undefined {
+    const ops = qdrant.batchSetPayload.mock.calls.flatMap((c: unknown[]) => c[1] as { key: string; payload?: any }[]);
+    const markers = ops.filter((op) => op.key === "enrichment.git.file" && op.payload?.unenrichedChunks !== undefined);
+    return markers.at(-1)?.payload?.unenrichedChunks;
+  }
+
+  it("keeps reading past the first re-poll until the count reaches zero", async () => {
+    // A count that is still moving (N → N' → 0) must be followed to ground
+    // truth, not sampled once and frozen. The old fixed 500ms wait stopped at
+    // N' and wrote a degraded marker for an index that had already settled.
+    const qdrant = qdrantDouble();
+    const recovery = {
+      countUnenriched: vi.fn().mockResolvedValueOnce(7462).mockResolvedValueOnce(2128).mockResolvedValue(0),
+    };
+
+    const coordinator = new EnrichmentCoordinator(qdrant as never, providerDouble() as never, recovery as never);
+    coordinator.beginRun("/repo", "test-col");
+    await new Promise((r) => setTimeout(r, 20));
+    await coordinator.awaitCompletion("test-col");
+
+    expect(fileMarkerUnenriched(qdrant)).toBe(0);
+    // file: 7462 → 2128 → 0 (3 reads); chunk: 0 (1 read).
+    expect(recovery.countUnenriched).toHaveBeenCalledTimes(4);
+  });
+
+  it("settles on a count that is stable — two equal reads end the wait", async () => {
+    // Genuine damage must NOT cost the whole polling budget: a count that does
+    // not move converges on the second read.
+    const qdrant = qdrantDouble();
+    const recovery = { countUnenriched: vi.fn().mockResolvedValue(41) };
+
+    const coordinator = new EnrichmentCoordinator(qdrant as never, providerDouble() as never, recovery as never);
+    coordinator.beginRun("/repo", "test-col");
+    await new Promise((r) => setTimeout(r, 20));
+    await coordinator.awaitCompletion("test-col");
+
+    expect(fileMarkerUnenriched(qdrant)).toBe(41);
+    // Two reads per level, no more — file (41, 41) + chunk (41, 41).
+    expect(recovery.countUnenriched).toHaveBeenCalledTimes(4);
+  });
+
+  it("stops at the attempt cap when the count never stabilises", async () => {
+    // The convergence condition alone is not a bound: a count that changes on
+    // every read would poll forever. The cap ends it and the LAST read is what
+    // the marker carries. This runs on the completion path of every ingest run,
+    // so the total wait has to stay bounded.
+    const qdrant = qdrantDouble();
+    let next = 100;
+    const recovery = {
+      countUnenriched: vi.fn(async () => {
+        next -= 1;
+        return next;
+      }),
+    };
+
+    const coordinator = new EnrichmentCoordinator(qdrant as never, providerDouble() as never, recovery as never);
+    coordinator.beginRun("/repo", "test-col");
+    await new Promise((r) => setTimeout(r, 20));
+    await coordinator.awaitCompletion("test-col");
+
+    const maxReads = SETTLE_POLL_DELAYS_MS.length + 1;
+    const callsPerLevel = recovery.countUnenriched.mock.calls.length / 2;
+    expect(callsPerLevel).toBe(maxReads);
+    // file consumed reads 1..N, chunk reads N+1..2N — the marker carries the
+    // last file read, not the first.
+    expect(fileMarkerUnenriched(qdrant)).toBe(100 - maxReads);
   });
 });
 
@@ -2148,8 +2255,21 @@ describe("EnrichmentCoordinator — runRecovery stale-marker protection", () => 
     const fileWrites = ops.filter((op: any) => op.key === "enrichment.git.file" && op.payload?.status === "degraded");
     const lastFileWrite = fileWrites[fileWrites.length - 1];
     expect(lastFileWrite.payload.unenrichedChunks).toBe(3);
-    expect(recovery.countUnenriched).toHaveBeenCalledWith("test-col", expect.objectContaining({ key: "git" }), "file");
-    expect(recovery.countUnenriched).toHaveBeenCalledWith("test-col", expect.objectContaining({ key: "git" }), "chunk");
+    // The trailing [] is the run's language restriction — an ordinary run is
+    // unrestricted, so the count spans the whole collection as it always did
+    // (bd tea-rags-mcp-9dg6s).
+    expect(recovery.countUnenriched).toHaveBeenCalledWith(
+      "test-col",
+      expect.objectContaining({ key: "git" }),
+      "file",
+      [],
+    );
+    expect(recovery.countUnenriched).toHaveBeenCalledWith(
+      "test-col",
+      expect.objectContaining({ key: "git" }),
+      "chunk",
+      [],
+    );
   });
 
   it("awaitCompletion falls back to 0 unenrichedChunks when recovery is not provided", async () => {

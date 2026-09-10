@@ -35,7 +35,7 @@ export class DuckDbRunStatsStore {
       );
       for (const r of rows) {
         await this.session.run(
-          "INSERT INTO cg_run_stats (language, receiver_kind, attempted, resolved, external_skipped, unresolvable, no_in_project_def, core_ambiguous, ambiguous_fanout) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+          "INSERT INTO cg_run_stats (language, receiver_kind, attempted, resolved, external_skipped, unresolvable, no_in_project_def, core_ambiguous, ambiguous_fanout, unnarrowed_template) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
           [
             r.language,
             r.receiverKind,
@@ -46,6 +46,7 @@ export class DuckDbRunStatsStore {
             r.noInProjectDef ?? 0,
             r.coreAmbiguous ?? 0,
             r.ambiguousFanout ?? 0,
+            r.unnarrowedTemplate ?? 0,
           ],
         );
       }
@@ -63,8 +64,9 @@ export class DuckDbRunStatsStore {
       no_in_project_def: number | bigint;
       core_ambiguous: number | bigint;
       ambiguous_fanout: number | bigint;
+      unnarrowed_template: number | bigint;
     }>(
-      "SELECT language, receiver_kind, attempted, resolved, external_skipped, unresolvable, no_in_project_def, core_ambiguous, ambiguous_fanout FROM cg_run_stats ORDER BY language, receiver_kind",
+      "SELECT language, receiver_kind, attempted, resolved, external_skipped, unresolvable, no_in_project_def, core_ambiguous, ambiguous_fanout, unnarrowed_template FROM cg_run_stats ORDER BY language, receiver_kind",
     );
     return rows.map((r) => ({
       language: r.language,
@@ -76,6 +78,7 @@ export class DuckDbRunStatsStore {
       noInProjectDef: Number(r.no_in_project_def),
       coreAmbiguous: Number(r.core_ambiguous),
       ambiguousFanout: Number(r.ambiguous_fanout),
+      unnarrowedTemplate: Number(r.unnarrowed_template),
     }));
   }
 

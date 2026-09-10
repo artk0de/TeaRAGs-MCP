@@ -1,6 +1,8 @@
 /**
  * Custody of the file-node tables: `cg_symbols_files` plus everything keyed by
- * `source_rel_path` (file edges, method edges, inheritance, ambiguous fan-out).
+ * `source_rel_path` (file edges, method edges, inheritance, ambiguous fan-out)
+ * and the per-file pass-1 aggregate slice `cg_pass1_aggregates`, which is keyed
+ * by `rel_path` because the row IS the file rather than a slice of its edges.
  *
  * One rule governs the whole module — a file's rows are replaced, never merged.
  * Re-walking a file DELETEs its `source_rel_path` slice and re-INSERTs it, so a
@@ -14,7 +16,21 @@
  * metrics live in `DuckDbFileMetricsReader`, not here.
  */
 
-import type { BulkFileUpsertEntry, GraphEdges, GraphFileNode, RelPath } from "../../contracts/types/codegraph.js";
+import type {
+  BulkFileUpsertEntry,
+  CodegraphPass1FileAggregates,
+  GraphEdges,
+  GraphFileNode,
+  RelPath,
+} from "../../contracts/types/codegraph.js";
+import {
+  CG_PASS1_DEF_COLUMNS,
+  CG_PASS1_KEY_COLUMNS,
+  CG_PASS1_VALUE_COLUMNS,
+  fromCgPass1Row,
+  toCgPass1Row,
+  type CgPass1AggregatesRow,
+} from "./cg-pass1-aggregates-row.js";
 import type { DuckDbGraphSession } from "./graph-session.js";
 
 /**
@@ -111,6 +127,7 @@ export class DuckDbFileGraphStore {
     const methodEdgeRows: unknown[][] = [];
     const inheritanceRows: unknown[][] = [];
     const fanoutRows: unknown[][] = [];
+    const pass1Rows: unknown[][] = [];
     for (const { node, edges } of group) {
       // A file may re-import the same module on different lines, so the same
       // (source, target) can arrive twice in one extraction — the diff keeps
@@ -162,6 +179,11 @@ export class DuckDbFileGraphStore {
       for (const a of edges.ambiguousFanouts ?? []) {
         fanoutRows.push([a.sourceSymbolId, a.callExpression, node.relPath, a.member, a.candidateCount]);
       }
+      // The pass-1 slice, keyed by the NODE's path rather than the slice's own,
+      // so the row can only ever land under the file being written.
+      if (edges.pass1Aggregates !== undefined) {
+        pass1Rows.push(toCgPass1Row({ ...edges.pass1Aggregates, relPath: node.relPath }));
+      }
     }
 
     await this.session.applyScopedRowDiff(
@@ -204,6 +226,32 @@ export class DuckDbFileGraphStore {
       FANOUT_VALUES,
       fanoutRows,
     );
+    // Pass-1 aggregate slice (bd tea-rags-mcp-znxg8). Scoped by `rel_path` like
+    // the node table rather than `source_rel_path`, because the row IS the file.
+    // Riding the same reconciliation as the edges is the point: the slice is
+    // replaced when the file is re-walked and removed when the file stops
+    // declaring anything, with no second lifecycle to keep in step.
+    await this.session.applyScopedRowDiff(
+      "cg_pass1_aggregates",
+      "rel_path",
+      relPaths,
+      CG_PASS1_KEY_COLUMNS,
+      CG_PASS1_VALUE_COLUMNS,
+      pass1Rows,
+    );
+  }
+
+  /**
+   * Every persisted pass-1 aggregate row, for the run-state hydration at the
+   * pass-1→pass-2 barrier (bd tea-rags-mcp-znxg8). Whole-table read, once per
+   * run — the sibling of `DuckDbSymbolStore#listAllSymbols`, and the reason the
+   * table carries no secondary index.
+   */
+  async listAllPass1Aggregates(): Promise<CodegraphPass1FileAggregates[]> {
+    const rows = await this.session.queryAll<CgPass1AggregatesRow>(
+      `SELECT ${CG_PASS1_DEF_COLUMNS.join(", ")} FROM cg_pass1_aggregates`,
+    );
+    return rows.map(fromCgPass1Row);
   }
 
   async removeFile(relPath: RelPath): Promise<void> {
@@ -223,6 +271,7 @@ export class DuckDbFileGraphStore {
       await this.session.run("DELETE FROM cg_symbols_inheritance WHERE source_rel_path = ?", [relPath]);
       await this.session.run("DELETE FROM cg_ambiguous_fanout WHERE source_rel_path = ?", [relPath]);
       await this.session.run("DELETE FROM cg_symbols WHERE rel_path = ?", [relPath]);
+      await this.session.run("DELETE FROM cg_pass1_aggregates WHERE rel_path = ?", [relPath]);
       await this.session.run("DELETE FROM cg_symbols_files WHERE rel_path = ?", [relPath]);
     });
   }

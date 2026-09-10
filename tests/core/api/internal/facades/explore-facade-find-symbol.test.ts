@@ -291,10 +291,12 @@ describe("ExploreFacade.findSymbol", () => {
     expect(result.results).toHaveLength(1);
     expect(result.results[0].payload?.relativePath).toBe("src/utils.ts");
     expect(result.results[0].payload?.chunkCount).toBe(2);
-    // Verify it scrolled by relativePath, not symbolId
+    // Verify it scrolled by relativePath, not symbolId — and by exact keyword
+    // match, not the tokenized text predicate that let a path superset through
+    // (bd tea-rags-mcp-znxg8).
     expect(mockScrollFiltered).toHaveBeenCalledWith(
       "test_collection",
-      { must: [{ key: "relativePath", match: { text: "src/utils.ts" } }] },
+      { must: [{ key: "relativePath", match: { value: "src/utils.ts" } }] },
       200,
     );
   });

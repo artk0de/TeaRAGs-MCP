@@ -32,18 +32,21 @@ import type {
   GlobalSymbolTable,
   HierarchyView,
   InheritanceKind,
+  SelfDispatchMethodDecl,
 } from "../../../../contracts/types/codegraph.js";
 import type { RubyTypeRef } from "../../../../contracts/types/language.js";
 
-/** One method's self-reach: the members it invokes on `self`, normalized to bare names. */
-export interface SelfDispatchMethod {
-  /** symbolId of the method, e.g. `KindOfService#call` or `BaseProcessor.process_result`. */
-  readonly symbolId: string;
-  /** the enclosing type FQ, e.g. `KindOfService`. */
-  readonly enclosingType: string;
-  /** members this method invokes on `self` (bare / `self.X` / `self.new.X`), bare-normalized. */
-  readonly selfHookCandidates: readonly string[];
-}
+/**
+ * One method's self-reach: the members it invokes on `self`, normalized to bare
+ * names.
+ *
+ * Now an alias of the contract-level {@link SelfDispatchMethodDecl} rather than a
+ * second declaration of the same three fields: the record became PERSISTED with
+ * bd tea-rags-mcp-znxg8 (an incremental run reads it back for files it did not
+ * walk), and a shape that crosses the storage boundary has to be owned by the
+ * contracts layer. The alias keeps every existing import of this name working.
+ */
+export type SelfDispatchMethod = SelfDispatchMethodDecl;
 
 /** Structural lookups the discovery folds over — supplied by the provider. */
 export interface SelfDispatchProbe {

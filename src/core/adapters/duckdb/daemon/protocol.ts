@@ -61,6 +61,7 @@ export type DaemonOp =
   | "getRunStats"
   | "getEdgeKindDistribution"
   | "listAllSymbols"
+  | "listAllPass1Aggregates"
   | "listFileContentHashes"
   | "getTransitiveImpact"
   | "getFileMetricsBulk"

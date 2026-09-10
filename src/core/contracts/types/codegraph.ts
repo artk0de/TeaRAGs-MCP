@@ -18,6 +18,7 @@
  *   - `codegraph-dispatch.ts`      lookup-table dispatch, capture to fan-out
  *   - `codegraph-local-binding.ts` flow-sensitive local receiver typing
  *   - `codegraph-extraction.ts`    what a walker emits per file (pass 1)
+ *   - `codegraph-pass1.ts`         the persisted per-file pass-1 aggregate slice
  *   - `codegraph-resolution.ts`    `CallContext` / `CallResolver` (pass 2)
  *   - `codegraph-storage.ts`       `GraphDbClient` and its call shapes
  *
@@ -38,6 +39,7 @@ export type * from "./codegraph-extraction.js";
 export type * from "./codegraph-graph.js";
 export type * from "./codegraph-hierarchy.js";
 export * from "./codegraph-local-binding.js";
+export type * from "./codegraph-pass1.js";
 export * from "./codegraph-resolution.js";
 export type * from "./codegraph-storage.js";
 export * from "./codegraph-symbols.js";

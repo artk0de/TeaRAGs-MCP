@@ -358,6 +358,48 @@ describe("EnrichmentRecovery", () => {
         }),
       );
     });
+
+    // bd tea-rags-mcp-9dg6s — a language-restricted run must be counted on the
+    // languages it actually processed. Both count paths carry the restriction:
+    // the `!shouldEnrich` server-side count AND the policy-split scan. An
+    // asymmetry between them is the exact class of bug the relativePath
+    // exclusion above exists to prevent.
+    it("narrows the server-side count to the requested languages", async () => {
+      mockQdrant.countPoints.mockResolvedValue(0);
+
+      await recovery.countUnenriched("test-collection", { key: "git" } as never, "file", ["ruby"]);
+
+      expect(mockQdrant.countPoints).toHaveBeenCalledWith(
+        "test-collection",
+        expect.objectContaining({
+          must: expect.arrayContaining([{ key: "language", match: { any: ["ruby"] } }]),
+        }),
+      );
+    });
+
+    it("narrows the policy-split scan to the requested languages", async () => {
+      (mockProvider as unknown as { shouldEnrich: () => string }).shouldEnrich = () => "full";
+
+      await recovery.countUnenriched("test-collection", mockProvider as any, "chunk", ["ruby", "typescript"]);
+
+      const [, filter] = mockQdrant.scrollFiltered.mock.calls.at(-1) as [string, { must: unknown[] }];
+      expect(filter.must).toContainEqual({ key: "language", match: { any: ["ruby", "typescript"] } });
+    });
+
+    it("leaves the filter untouched when no languages are given", async () => {
+      // Regression guard: an omitted list must produce exactly today's filter.
+      // `match: { any: [] }` would select nothing and report a clean count on a
+      // genuinely damaged index.
+      mockQdrant.countPoints.mockResolvedValue(0);
+
+      await recovery.countUnenriched("test-collection", { key: "git" } as never, "file", []);
+
+      const [, filter] = mockQdrant.countPoints.mock.calls.at(-1) as [string, { must: unknown[] }];
+      expect(filter.must).toEqual([
+        { is_empty: { key: "git.file.enrichedAt" } },
+        { is_empty: { key: "git.file.skippedAs" } },
+      ]);
+    });
   });
 
   describe("scrollUnenriched — configurable pageSize", () => {
