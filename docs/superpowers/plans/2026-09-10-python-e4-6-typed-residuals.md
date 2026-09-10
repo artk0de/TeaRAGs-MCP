@@ -859,6 +859,71 @@ function pythonBindingInForceAt(
       plan: the per-corpus A/B table, the family report before/after, the perf
       pair, and the walker-version line.
 
+### Measured — E4.6a (2026-09-11, dumps under `~/.claude/jobs/dffe3647/tmp/e46a/`)
+
+**Both predictions landed exactly.** Row-level A/B, five corpora × five runs
+each side, `--oracle merged --dispatch --workers 8`, B taken from a detached
+checkout of the task's base (`3a3283e1d`). The transition matrix runs only over
+rows whose verdict is identical across all five runs on BOTH sides; unstable
+rows are counted, not dropped. The ONLY transition on any corpus is
+`missed → match`.
+
+| corpus | match         | missed    | fileOnly | wrongFile | phantom | gross lost |
+| ------ | ------------- | --------- | -------- | --------- | ------- | ---------- |
+| ugnest | 765 → 765     | 13 → 13   | 0 → 0    | 0 → 0     | 0 → 0   | 0          |
+| flask  | 326 → 326     | 39 → 39   | 6 → 6    | 1 → 1     | 0 → 0   | 0          |
+| httpx  | 469 → 469     | 10 → 10   | 5 → 5    | 0 → 0     | 8 → 8   | 0          |
+| netbox | 8224 → 8275   | 112 → 62  | 2 → 2    | 0 → 0     | 26 → 26 | 0          |
+| polar  | 15859 → 16117 | 975 → 717 | 34 → 34  | 2 → 2     | 84 → 84 | 0          |
+
+netbox **+50**, polar **+258** (predicted 259; the one row is inside jedi's own
+wobble), every gain `answeredBy: importedName`. ugnest / flask / httpx are
+byte-identical — flask's 8 `LocalProxy` rows never move, which is the task's own
+identity control. Phantom is FLAT everywhere; `exactReplacedByFan` and
+`exactReplacedByAmbiguous` are 0 on both sides.
+
+**Family report, both sides re-tagged with the corrected classifier**
+(`moduleAliasMember`, real corpus roots):
+
+| corpus | residual   | `moduleAliasMember` | every other family |
+| ------ | ---------- | ------------------- | ------------------ |
+| netbox | 118 → 68   | 50 → **0**          | byte-identical     |
+| polar  | 1032 → 774 | 259 → **1**         | byte-identical     |
+| flask  | 48 → 48    | 0 → 0               | byte-identical     |
+
+D8's denominators reproduce exactly once the two classifier false positives are
+removed: 259 + 50 = 309 addressable rows, all 309 answered. The 16 rows decision
+1a called non-addressable were a classifier defect, not a population — the
+`import y as z` split and flask's `LocalProxy` globals, both fixed under this
+task.
+
+**Chain tally**, five corpora × five runs per side: `chainDrift` **0** and
+`dispatchDrift` **0** on all 50 oracle runs and all 50 tally runs. Edges netbox
+8642 → 8692 (+50), polar 16538 → 16796 (+258), ugnest / flask / httpx flat.
+
+**Perf**, interleaved B/A/A/B, min per side, `/usr/bin/time -l`:
+
+| corpus | wall B → A      | Δ      | peak RSS B → A    | Δ      |
+| ------ | --------------- | ------ | ----------------- | ------ |
+| netbox | 14.10s → 13.88s | −1.6 % | 2354 MB → 2371 MB | +0.7 % |
+| polar  | 18.73s → 19.17s | +2.3 % | 2328 MB → 2351 MB | +1.0 % |
+
+Well inside the +25 % / +20 % budget. **Ruby parity**: resolver 42,057 sites, 0
+mismatches, 0 drift; walker 500 files, 0 mismatches — both against
+`/Users/artk0re/Dev/Tools/tea-rags-mcp`. **Walker version stays 5**;
+`npm run gen:lang-compat` regenerated nothing.
+
+**One defect the A/B caught, and it is why the A side was measured twice.** The
+alias arm first shipped calling `moduleMemberTarget`, whose re-export hop asks
+which file in the PROJECT declares a bare name. polar's
+`from .db.postgres import sql` reaches a shim that re-exports sqlalchemy's
+`select`, the project declares exactly one `select`, and the hop pinned it on
+every `sql.select(Model)` — 10 rows, `agreeExternal → phantom`, 0.15 % → 0.17 %.
+Inside the cap and still wrong. The arm now takes the DECLARATION half only
+(`moduleDeclarationTarget`); the hop stays on the composed-module-text arm above
+it, where netbox's rows depend on it. Re-measured: phantom back to 84, all 258
+gains kept.
+
 ---
 
 ## Task E4.6b-1 — Chain heads that are calls, constructors and casts (`w205u`)
