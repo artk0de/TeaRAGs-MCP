@@ -181,6 +181,21 @@ describe("pythonAnnotationTypeSource — class attributes", () => {
     ]);
   });
 
+  it("unwraps a SQLAlchemy `Mapped[T]` column down to the T the value actually is", () => {
+    // The end-to-end proof that the transparent-set entry reaches the channel a
+    // resolver reads, not just the ref algebra (bd tea-rags-mcp-w205u, E4.2a).
+    expect(facts("class Benefit:\n    tiers: Mapped[Tiers] = mapped_column(JSONB)\n")).toEqual([
+      {
+        kind: "ivar",
+        source: "annotations",
+        symbolScope: ["Benefit"],
+        name: "tiers",
+        line: 2,
+        type: instance("Tiers"),
+      },
+    ]);
+  });
+
   it("emits an ivar fact for a bare identifier annotation too — the ivar channel unions by key", () => {
     const out = facts("class C:\n    svc: Svc\n");
     expect(out).toEqual([
