@@ -188,6 +188,19 @@ name `server/load_tests/common/test_data.py`; that is the external-vocabulary
 precision defect D9 tracks, not a resolution strategy. 15 more are NAME_DIFF.
 Below the 10-row mass bar for its own task.
 
+**The 140 / 31 split above STANDS (2026-09-11, `w205u` / E5.0b).** It was hand
+re-tagged from rows that carried the oracle's target, so the bug that made this
+table look wrong was never in the table. The oracle host emitted no
+`oracleTargetRelPath`, so re-deriving the split by running
+`scripts/py-e4-family-report.ts` over an e46b1 dump compared every bare call
+against `undefined` and read polar 0 / 110 — an artefact of the dump, not a
+measurement. With the field emitted, polar re-reads **87 / 23**:
+`crossFileBareCall` reproduces this table's polar column (4 + 4 + 15 = 23)
+**exactly**, and `sameFileBareCall` is 115 − 28, the rows E4.6b-1 has already
+resolved. Flask re-reads 5 / 0 against 11 / 0 here — the 6 `nestedDef`
+`fileOnly` rows, gone as predicted. Anything that re-derives this split from a
+dump wants a post-fix one.
+
 #### 1c — chain heads, 79 rows (`constructorChainHead` 44 + `callResultChainHead` 35)
 
 | family                 | sub-shape                                          | flask | httpx | netbox | polar  | total  |
