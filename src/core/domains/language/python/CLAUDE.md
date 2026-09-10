@@ -145,6 +145,15 @@
   NOT gate `classFieldTypes`, which the walker builds unconditionally and the
   pass extends. Why: flipping the flag to isolate a local-typing regression must
   not silently take the self-field channel with it.
+- **An `@overload` stub yields `Cls#m` to the implementation that follows it,
+  but only when there IS one.** `collectSymbols` dedups by symbolId keeping the
+  first occurrence, so `walker/name-of.ts` returns `null` for a stub whose
+  container declares the same name again without an `@overload` decorator. Why:
+  the stub's body is `...`, so the winning range carried no calls and every call
+  in the implementation fell to the enclosing CLASS chunk — `scope: []`, which
+  `pythonEnclosingClass` reads as "no enclosing class". A stub-only group (a
+  `Protocol` or ABC body) keeps the first stub: there the stubs ARE the
+  declaration, and yielding would delete the symbol rather than relocate it.
 
 ### Mechanics
 
