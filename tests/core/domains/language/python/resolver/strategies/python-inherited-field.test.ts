@@ -231,3 +231,108 @@ describe("PythonSelfFieldSymbolResolutionStrategy — the run-global field chann
     expect(mroSelfField().attempt(sendRequest, ctx)).toEqual({ kind: "drop" });
   });
 });
+
+/**
+ * The MEMBER half of the same walk (bd tea-rags-mcp-s2w5g). Typing the field
+ * was only half the dispatch: the pass then looked `<Type>#<member>` up in the
+ * symbol table VERBATIM, so a member the field's type INHERITS was invisible.
+ *
+ * polar's generated SDK is the measured shape. `self.client` types to
+ * `SyncClientBase`, `send_request` is declared on it and resolved, and
+ * `build_request` is declared on `BuildRequestMixin` — a base of
+ * `SyncClientBase` in the same file — and missed 752 times, every one of them a
+ * row jedi answers `BuildRequestMixin#build_request`.
+ *
+ * So the member is resolved the way `selfMember` and `localBinding` resolve
+ * theirs: the field's type becomes a class KEY, and the C3 MRO under it decides
+ * — own class first, the defining class's own spelling on a hit, an external
+ * boundary before any definition a DROP, a hierarchy read to the end without
+ * one a CONTINUE.
+ */
+describe("PythonSelfFieldSymbolResolutionStrategy — the member on the field's type", () => {
+  const buildRequest: CallRef = {
+    callText: "self.client.build_request(method, url)",
+    receiver: "self.client",
+    member: "build_request",
+    startLine: 59,
+  };
+
+  /** The field's type and the class that declares the member are DIFFERENT files. */
+  const sdkTable = (): InMemoryGlobalSymbolTable =>
+    tableWith({
+      "sdk/base.py": [{ symbolId: "SyncServiceBase" }],
+      "sdk/client.py": [
+        { symbolId: "SyncClientBase" },
+        { symbolId: "SyncClientBase#send_request", scope: ["SyncClientBase"] },
+      ],
+      "sdk/mixin.py": [
+        { symbolId: "BuildRequestMixin" },
+        { symbolId: "BuildRequestMixin#build_request", scope: ["BuildRequestMixin"] },
+      ],
+      "svc/metrics.py": [{ symbolId: "MetricsSync" }],
+    });
+
+  const sdkCtx = (
+    over: Partial<CtxSpec> & { readonly classAncestors: Record<string, readonly string[]> },
+  ): CallContext =>
+    ctxWith({
+      table: sdkTable(),
+      classFieldTypesByClassKey: { "sdk/base.py::SyncServiceBase": { client: "SyncClientBase" } },
+      ...over,
+    });
+
+  it("resolves a member declared on a BASE of the field's type, in another file", () => {
+    const ctx = sdkCtx({
+      classAncestors: {
+        "svc/metrics.py::MetricsSync": ["sdk.base::SyncServiceBase"],
+        "sdk/client.py::SyncClientBase": ["sdk.mixin::BuildRequestMixin"],
+      },
+    });
+    expect(mroSelfField().attempt(buildRequest, ctx)).toEqual({
+      kind: "resolved",
+      target: { targetRelPath: "sdk/mixin.py", targetSymbolId: "BuildRequestMixin#build_request" },
+    });
+  });
+
+  it("keeps the field type's OWN declaration ahead of the base's", () => {
+    const ctx = sdkCtx({
+      classAncestors: {
+        "svc/metrics.py::MetricsSync": ["sdk.base::SyncServiceBase"],
+        "sdk/client.py::SyncClientBase": ["sdk.mixin::BuildRequestMixin"],
+      },
+    });
+    expect(mroSelfField().attempt(sendRequest, ctx)).toEqual({
+      kind: "resolved",
+      target: { targetRelPath: "sdk/client.py", targetSymbolId: "SyncClientBase#send_request" },
+    });
+  });
+
+  it("DROPs when the field type's hierarchy leaves the project before the member", () => {
+    const ctx = sdkCtx({
+      classAncestors: {
+        "svc/metrics.py::MetricsSync": ["sdk.base::SyncServiceBase"],
+        "sdk/client.py::SyncClientBase": ["httpx::Client"],
+      },
+    });
+    expect(mroSelfField().attempt(buildRequest, ctx)).toEqual({ kind: "drop" });
+  });
+
+  it("CONTINUEs when the hierarchy is read to the end and declares the member nowhere", () => {
+    const ctx = sdkCtx({
+      classAncestors: { "svc/metrics.py::MetricsSync": ["sdk.base::SyncServiceBase"] },
+    });
+    expect(mroSelfField().attempt(buildRequest, ctx)).toEqual({ kind: "continue" });
+  });
+
+  it("keeps the pre-seam verbatim read for a run with no linearizer", () => {
+    const ctx = ctxWith({
+      table: sdkTable(),
+      classFieldTypes: { MetricsSync: { client: "SyncClientBase" } },
+    });
+    expect(plainSelfField().attempt(sendRequest, ctx)).toEqual({
+      kind: "resolved",
+      target: { targetRelPath: "sdk/client.py", targetSymbolId: "SyncClientBase#send_request" },
+    });
+    expect(plainSelfField().attempt(buildRequest, ctx)).toEqual({ kind: "continue" });
+  });
+});

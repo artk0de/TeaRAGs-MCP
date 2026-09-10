@@ -12,10 +12,9 @@ import { PythonImportFileMapper } from "../python-import-file-mapper.js";
 import { createPythonCallBindingPorts } from "../python-receiver-type-ports.js";
 import {
   lastSegment,
-  pythonBoundClassKey,
   pythonCallBindingType,
-  resolvePythonInheritedMember,
   resolvePythonMemberOnType,
+  resolvePythonMemberOnTypeThroughMro,
   resolveTypeFile,
   type ResolverConfig,
 } from "./shared.js";
@@ -142,12 +141,18 @@ export class PythonLocalBindingSymbolResolutionStrategy implements SymbolResolut
       return legacy ? resolved(legacy) : DROP;
     }
 
-    const targetFile = resolveTypeFile(bareType, ctx, this.mapper);
-    if (targetFile === null) return DROP;
-    const classKey = pythonBoundClassKey(bareType, targetFile, ctx);
-    if (classKey === null) return DROP;
-    const { target, closure } = resolvePythonInheritedMember(classKey, member, ctx, this.cfg.mode, linearizer);
+    const { target, closure } = resolvePythonMemberOnTypeThroughMro(
+      typeName,
+      member,
+      ctx,
+      this.cfg.mode,
+      this.mapper,
+      linearizer,
+    );
     if (target) return resolved(target);
-    return closure === "external" ? DROP : CONTINUE;
+    // `unbound` IS steps 1 and 2 above answering `null`, and it keeps their
+    // terminal DROP (bd tea-rags-mcp-s2w5g moved the two lookups behind the
+    // helper so `selfField` and `chainType` ask them the same way).
+    return closure === "external" || closure === "unbound" ? DROP : CONTINUE;
   }
 }

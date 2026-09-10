@@ -517,3 +517,49 @@ describe("PythonChainTypeSymbolResolutionStrategy — a binding does not type it
     });
   });
 });
+
+/**
+ * The LAST hop resolves its member through the C3 MRO too (bd
+ * tea-rags-mcp-s2w5g). The fold walks the hierarchy for the receiver's TYPE,
+ * and then handed the member to `resolvePythonMemberOnType`, whose fallback is
+ * the single-base `classExtends` chain with an UNFILTERED symbol-table lookup
+ * on each hop. polar declares `BuildRequestMixin` twice — once in the SDK,
+ * once in the generator template it is rendered from — so that lookup is
+ * ambiguous and the walk answered `null` on a member jedi pins exactly.
+ */
+describe("PythonChainTypeSymbolResolutionStrategy — the member through the MRO", () => {
+  const twoMixinCopies = () =>
+    tableWith({
+      "svc/metrics.py": [{ symbolId: "MetricsSync" }],
+      "sdk/client.py": [{ symbolId: "SyncClientBase" }],
+      "sdk/mixin.py": [
+        { symbolId: "BuildRequestMixin" },
+        { symbolId: "BuildRequestMixin#build_request", scope: ["BuildRequestMixin"] },
+      ],
+      "template/mixin.py": [
+        { symbolId: "BuildRequestMixin" },
+        { symbolId: "BuildRequestMixin#build_request", scope: ["BuildRequestMixin"] },
+      ],
+    });
+
+  const parts = {
+    callerFile: "svc/metrics.py",
+    callerScope: ["MetricsSync"],
+    classFieldTypes: { MetricsSync: { client: "SyncClientBase" } },
+    classExtends: { SyncClientBase: "BuildRequestMixin" },
+    classAncestors: { "sdk/client.py::SyncClientBase": ["sdk.mixin::BuildRequestMixin"] },
+  };
+
+  it("pins the base that DECLARES the member when its short name is not unique", () => {
+    expect(mroStrategy().attempt(call("self.client", "build_request"), ctxWith(twoMixinCopies(), parts))).toEqual({
+      kind: "resolved",
+      target: { targetRelPath: "sdk/mixin.py", targetSymbolId: "BuildRequestMixin#build_request" },
+    });
+  });
+
+  it("still DROPs when no class in the folded type's hierarchy declares the member", () => {
+    expect(mroStrategy().attempt(call("self.client", "absent"), ctxWith(twoMixinCopies(), parts))).toEqual({
+      kind: "drop",
+    });
+  });
+});
