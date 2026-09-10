@@ -13,14 +13,19 @@
  *   npx tsx scripts/py-codegraph-jedi-oracle.ts --corpus <abs path> \
  *     [--python <interpreter running jedi>] [--environment <corpus venv>] \
  *     [--roots src,server] [--limit N] [--samples N] [--seed N]
- *     [--json out.json] [--quiet]
+ *     [--oracle jedi|lsp|merged] [--json out.json] [--quiet]
+ *
+ * `--oracle jedi` is the default and is byte-identical to every published
+ * number. `merged` repairs the files parso 0.8.7 cannot read with a second
+ * engine, per file (bd tea-rags-mcp-w205u); the report then carries BOTH
+ * denominators and never one alone.
  *
  * `--corpus` may also be a manifest NAME (`netbox`), in which case the root, the
  * venv interpreter and the source roots come from
  * `scripts/lib/codegraph-corpora.json`.
  */
 import { spawn } from "node:child_process";
-import { writeFileSync } from "node:fs";
+import { readFileSync, writeFileSync } from "node:fs";
 import { extname, join, resolve as resolvePath } from "node:path";
 import { createInterface } from "node:readline";
 
@@ -49,13 +54,18 @@ import {
   categorizePySite,
   classifyPyVerdict,
   isSuperCallSite,
+  locateCalleeColumn,
+  mergeOracleReplies,
+  oracleEntryOf,
   samplePyRows,
   tallyPyCoverage,
+  tallyPyRecall,
   tallyPyRows,
+  type MergedOracleFileReply,
+  type OracleSelection,
+  type PyOracleFileReply,
   type PyOracleRow,
-  type PySiteFacts,
-  type PyTargetOrigin,
-  type PyUnlocatedShape,
+  type PyRecallSplit,
 } from "./lib/py-oracle-core.js";
 import {
   buildCorpusExclusionFilter,
@@ -272,35 +282,12 @@ export async function walkCorpus(corpusRoot: string, limit: number, quiet: boole
   };
 }
 
-export interface PyOracleAnswer {
-  startLine: number;
-  member: string;
-  outcome: {
-    kind: "inProject" | "external" | "unknown" | "parseFailed";
-    origin?: PyTargetOrigin;
-    targets?: {
-      relPath: string;
-      symbolId: string | null;
-      /**
-       * What the COMPOSER found at the target line, unmasked by jedi's own
-       * `name.type`. `nonCallable` says the line holds an assignment rather
-       * than a `def`/`class`, which is the whole of the `oracleNonCallable`
-       * bucket; `unknown` says the target file could not be parsed at all.
-       */
-      defNodeKind?: string;
-      pinUncertain: boolean;
-    }[];
-  };
-  siteFacts?: PySiteFacts;
-  unlocated?: PyUnlocatedShape;
-}
-
-export interface PyOracleFileReply {
-  relPath: string;
-  parseFailed: boolean;
-  parsoErrors: number;
-  answers: PyOracleAnswer[];
-}
+/**
+ * The reply schema moved to the pure core in E4.0.2: it is the CONTRACT two
+ * engines speak, not something the jedi host owns. Re-exported here so every
+ * existing importer — the scratch row drivers included — keeps its path.
+ */
+export type { PyOracleAnswer, PyOracleFileReply } from "./lib/py-oracle-core.js";
 
 /**
  * The hash seed every oracle child runs under (bd tea-rags-mcp-vua9f).
@@ -342,6 +329,19 @@ export async function askOracle(
      */
     roots: readonly string[];
     workers: number;
+    /**
+     * The corpus's `oraclePython`, for an engine that configures its grammar
+     * per workspace (pyright's `python.analysis.pythonVersion`). OMITTED from
+     * the config line when absent, so jedi's record stays byte-identical.
+     */
+    pythonVersion?: string;
+    /**
+     * Attach a 0-based `column` for the callee to every site record. Off for
+     * jedi, which locates the node in its own AST; ON for an engine queried by
+     * POSITION, because `CallRef` carries no column and letting the engine
+     * re-derive one biases it toward the leftmost same-named callee (D7).
+     */
+    columns?: boolean;
   },
 ): Promise<Map<string, PyOracleFileReply>> {
   const byFile = new Map<string, PyChainSite[]>();
@@ -407,21 +407,110 @@ export async function askOracle(
       venvPython: options.venvPython,
       roots: [...options.roots],
       workers: options.workers,
+      // `undefined` drops the key, which is why jedi's config line is unchanged.
+      pythonVersion: options.pythonVersion,
     })}\n`,
   );
   for (const relPath of [...byFile.keys()].sort()) {
     if (dead !== null) break;
-    const batch = (byFile.get(relPath) ?? []).map((site) => ({
-      startLine: site.call.startLine,
-      callText: site.call.callText,
-      receiver: site.call.receiver,
-      member: site.call.member,
-    }));
+    const lines = options.columns === true ? readSourceLines(options.corpusRoot, relPath) : null;
+    // Successive sites on ONE line claim successive occurrences of the callee,
+    // so `f(x), f(y)` does not pin both records to the leftmost `f`.
+    const claimed = new Map<number, number>();
+    const batch = (byFile.get(relPath) ?? []).map((site) => {
+      const record = {
+        startLine: site.call.startLine,
+        callText: site.call.callText,
+        receiver: site.call.receiver,
+        member: site.call.member,
+      };
+      if (lines === null) return record;
+      const from = claimed.get(record.startLine) ?? 0;
+      const column = locateCalleeColumn(lines[record.startLine - 1] ?? "", record, from);
+      if (column >= 0) claimed.set(record.startLine, column + record.member.length);
+      return { ...record, column };
+    });
     child.stdin.write(`${JSON.stringify({ kind: "file", relPath, sites: batch })}\n`);
   }
   if (dead === null) child.stdin.end();
   await done;
   return replies;
+}
+
+/** A source file's lines, or none when it cannot be read. */
+function readSourceLines(corpusRoot: string, relPath: string): string[] {
+  try {
+    return readFileSync(join(corpusRoot, relPath), "utf8").split("\n");
+  } catch {
+    return [];
+  }
+}
+
+export interface PyOracleEnginesOptions {
+  corpusRoot: string;
+  /** jedi's launcher — the primary, and the default engine. */
+  jediArgv: string[];
+  /** The second engine's launcher, spoken to only when the selection asks. */
+  lspArgv: string[];
+  venvPython: string | null;
+  roots: readonly string[];
+  workers: number;
+  pythonVersion?: string;
+  selection: OracleSelection;
+  quiet?: boolean;
+}
+
+/**
+ * Ask the engines the selection requires and merge them PER FILE.
+ *
+ * `merged` runs jedi FIRST and then asks the second engine only about the files
+ * jedi reported damaged. That is not an optimisation of a symmetric design: the
+ * second engine is a repair, so the population it answers is defined by jedi's
+ * own report, and asking it about the whole corpus would spend ~4x the wall to
+ * produce replies the merge would throw away.
+ */
+export async function askOracles(
+  sites: readonly PyChainSite[],
+  options: PyOracleEnginesOptions,
+): Promise<Map<string, MergedOracleFileReply>> {
+  const shared = {
+    corpusRoot: options.corpusRoot,
+    venvPython: options.venvPython,
+    roots: options.roots,
+    workers: options.workers,
+  };
+  if (options.selection === "lsp") {
+    const only = await askOracle(sites, {
+      ...shared,
+      python: options.lspArgv,
+      pythonVersion: options.pythonVersion,
+      columns: true,
+    });
+    return new Map([...only].map(([relPath, reply]) => [relPath, { reply, engine: "lsp" as const }]));
+  }
+
+  const jedi = await askOracle(sites, { ...shared, python: options.jediArgv });
+  if (options.selection === "jedi") {
+    return new Map([...jedi].map(([relPath, reply]) => [relPath, { reply, engine: "jedi" as const }]));
+  }
+
+  const damaged = new Set(
+    [...new Set(sites.map((site) => site.relPath))].filter((relPath) => {
+      const reply = jedi.get(relPath);
+      return reply === undefined || reply.parseFailed || reply.parsoErrors > 0;
+    }),
+  );
+  if (options.quiet !== true) {
+    process.stderr.write(`second oracle: ${String(damaged.size)} files jedi could not read cleanly\n`);
+  }
+  if (damaged.size === 0) {
+    return new Map([...jedi].map(([relPath, reply]) => [relPath, { reply, engine: "jedi" as const }]));
+  }
+  const lsp = await askOracle(
+    sites.filter((site) => damaged.has(site.relPath)),
+    { ...shared, python: options.lspArgv, pythonVersion: options.pythonVersion, columns: true },
+  );
+  return mergeOracleReplies(jedi, lsp);
 }
 
 /**
@@ -446,12 +535,22 @@ export function countEnclosingBases(ctx: CallContext): number | undefined {
   return ctx.classAncestors[enclosing.key]?.length ?? 0;
 }
 
-/** Join the two answers into scored rows. Pure given its inputs. */
-export function buildRows(sites: readonly PyChainSite[], replies: Map<string, PyOracleFileReply>): PyOracleRow[] {
+/**
+ * Join the two answers into scored rows. Pure given its inputs.
+ *
+ * The reply map arrives in either shape: a plain `relPath -> reply` (what the
+ * scratch row drivers hand it, and what `--oracle jedi` reduces to) or the
+ * merged `relPath -> {reply, engine}`. `oracleEntryOf` discriminates and
+ * defaults the provenance to `jedi`, the primary.
+ */
+export function buildRows(
+  sites: readonly PyChainSite[],
+  replies: ReadonlyMap<string, PyOracleFileReply | MergedOracleFileReply>,
+): PyOracleRow[] {
   const rows: PyOracleRow[] = [];
   const cursor = new Map<string, number>();
   for (const site of sites) {
-    const reply = replies.get(site.relPath);
+    const { reply, engine } = oracleEntryOf(replies.get(site.relPath));
     const index = cursor.get(site.relPath) ?? 0;
     cursor.set(site.relPath, index + 1);
     const answer = reply?.answers[index];
@@ -513,10 +612,35 @@ export function buildRows(sites: readonly PyChainSite[], replies: Map<string, Py
       origin: answer?.outcome.origin,
       oracleDegraded: (reply?.parsoErrors ?? 0) > 0,
       unlocatedShape: answer?.unlocated,
+      oracleEngine: engine,
     });
   }
   return rows;
 }
+
+/**
+ * jedi's launcher. `uv run --no-project` keeps jedi's environment out of the
+ * corpus's, which is what lets one oracle build serve three interpreter
+ * versions.
+ */
+export const JEDI_LAUNCHER = (interpreter: string): string[] => [
+  "uv",
+  "run",
+  "--no-project",
+  "--python",
+  interpreter,
+  "--with",
+  "jedi==0.20.0",
+  "python",
+  join(import.meta.dirname, "py-oracle", "jedi_oracle.py"),
+];
+
+/**
+ * The second oracle's launcher (bd tea-rags-mcp-w205u). The engine itself —
+ * pyright, pinned and cache-local per D7 — is spawned by `lsp_oracle.ts`, so
+ * swapping engines never reaches this record.
+ */
+export const LSP_LAUNCHER = (): string[] => ["npx", "tsx", join(import.meta.dirname, "py-oracle", "lsp_oracle.ts")];
 
 export interface PyOracleCliOptions {
   corpusRoot: string;
@@ -525,6 +649,12 @@ export interface PyOracleCliOptions {
   /** Absolute, manifest order — see `resolveCorpusRoots`. Never empty. */
   roots: string[];
   pythonArgv: string[];
+  /** The second engine's launcher — spawned only when `oracle` asks for it. */
+  lspArgv: string[];
+  /** The manifest's `oraclePython`, handed to an engine that configures a grammar. */
+  oraclePythonVersion: string;
+  /** `jedi` (default, byte-identical to every published number), `lsp`, `merged`. */
+  oracle: OracleSelection;
   limit: number;
   samples: number;
   seed: number;
@@ -584,6 +714,19 @@ export function resolveCorpusRoots(
   return entries.map((entry) => resolvePath(corpusRoot, entry));
 }
 
+/**
+ * `--oracle jedi|lsp|merged`, defaulting to `jedi`.
+ *
+ * An unknown value THROWS rather than falling back: a typo that silently ran
+ * the default would publish a jedi-denominator number under a merged label,
+ * and the whole task exists to stop denominators moving unannounced.
+ */
+export function parseOracleSelection(value: string | undefined): OracleSelection {
+  if (value === undefined) return "jedi";
+  if (value === "jedi" || value === "lsp" || value === "merged") return value;
+  throw new Error(`--oracle must be one of jedi|lsp|merged, got ${value}`);
+}
+
 export function parseArgs(argv: readonly string[]): PyOracleCliOptions {
   const read = (flag: string): string | undefined => {
     const index = argv.indexOf(flag);
@@ -603,19 +746,10 @@ export function parseArgs(argv: readonly string[]): PyOracleCliOptions {
     corpusName: manifest?.name ?? corpusArg,
     venvPython: read("--environment") ?? manifest?.venvPython ?? null,
     roots: resolveCorpusRoots(read("--roots"), manifest?.roots, corpusRoot),
-    // `uv run --no-project` keeps jedi's environment out of the corpus's, which
-    // is what lets one oracle build serve three interpreter versions.
-    pythonArgv: [
-      "uv",
-      "run",
-      "--no-project",
-      "--python",
-      interpreter,
-      "--with",
-      "jedi==0.20.0",
-      "python",
-      join(import.meta.dirname, "py-oracle", "jedi_oracle.py"),
-    ],
+    pythonArgv: JEDI_LAUNCHER(interpreter),
+    lspArgv: LSP_LAUNCHER(),
+    oraclePythonVersion: interpreter,
+    oracle: parseOracleSelection(read("--oracle")),
     limit: Number(read("--limit") ?? Number.MAX_SAFE_INTEGER),
     samples: Number(read("--samples") ?? 25),
     seed: Number(read("--seed") ?? 20260908),
@@ -625,22 +759,65 @@ export function parseArgs(argv: readonly string[]): PyOracleCliOptions {
   };
 }
 
+/**
+ * The two recall denominators side by side, never one alone.
+ *
+ * `recallLegacy` reproduces every published Python number and is the regression
+ * gate; `recallMerged` is what E4.1–E4.6 are measured against. Both `n` columns
+ * are printed rather than inferred, so a reader can see which rows moved.
+ */
+export function formatRecallSplit(splits: readonly PyRecallSplit[]): string {
+  const width = Math.max(12, ...splits.map((split) => split.label.length));
+  const columns = ["recallLegacy", "nLegacy", "recallMerged", "nMerged", "+2ndEngine"];
+  const header = ["receiverKind".padEnd(width), ...columns.map((column) => column.padStart(13))].join(" ");
+  const lines = ["RECALL — BOTH DENOMINATORS (match / (match+fileOnly+wrongFile+missed))", "-".repeat(header.length)];
+  lines.push(header, "-".repeat(header.length));
+  if (splits.length === 0) return [...lines, "(no scored call sites)"].join("\n");
+  for (const split of splits) {
+    lines.push(
+      [
+        split.label.padEnd(width),
+        split.recallLegacy.toFixed(3).padStart(13),
+        String(split.nLegacy).padStart(13),
+        split.recallMerged.toFixed(3).padStart(13),
+        String(split.nMerged).padStart(13),
+        String(split.nSecondEngine).padStart(13),
+      ].join(" "),
+    );
+  }
+  return lines.join("\n");
+}
+
 async function main(): Promise<void> {
   const options = parseArgs(process.argv.slice(2));
   const started = Date.now();
   const walk = await walkCorpus(options.corpusRoot, options.limit, options.quiet);
-  const replies = await askOracle(walk.sites, {
+  const replies = await askOracles(walk.sites, {
     corpusRoot: options.corpusRoot,
-    python: options.pythonArgv,
+    jediArgv: options.pythonArgv,
+    lspArgv: options.lspArgv,
     venvPython: options.venvPython,
     roots: options.roots,
     workers: options.workers,
+    pythonVersion: options.oraclePythonVersion,
+    selection: options.oracle,
+    quiet: options.quiet,
   });
   const rows = buildRows(walk.sites, replies);
 
-  const byReceiver = tallyPyRows(rows, (row) => [row.receiverKind]);
-  const byAnsweredBy = tallyPyRows(rows, (row) => [row.answeredBy]);
-  const byCategory = tallyPyRows(rows, (row) => row.categories);
+  // The three published tables stay on the JEDI denominator whatever the
+  // selection, so seam-4 / seam-5 / E3's records stay reproducible from them.
+  // The merged block below repeats the same columns over every scored row.
+  const legacyRows = rows.filter((row) => row.oracleEngine === "jedi");
+  const byReceiver = tallyPyRows(legacyRows, (row) => [row.receiverKind]);
+  const byAnsweredBy = tallyPyRows(legacyRows, (row) => [row.answeredBy]);
+  const byCategory = tallyPyRows(legacyRows, (row) => row.categories);
+  const byReceiverMerged = tallyPyRows(rows, (row) => [row.receiverKind]);
+  const byAnsweredByMerged = tallyPyRows(rows, (row) => [row.answeredBy]);
+  const byCategoryMerged = tallyPyRows(rows, (row) => row.categories);
+  const recallByReceiver = tallyPyRecall(rows, (row) => [row.receiverKind]);
+  const secondEngineRows = rows.length - legacyRows.length;
+  const secondEngineFiles = new Set(rows.filter((row) => row.oracleEngine !== "jedi").map((row) => row.relPath)).size;
   const coverage = tallyPyCoverage(rows);
   const degraded = rows.filter((row) => row.oracleDegraded).length;
   const unknown = rows.filter((row) => row.verdict === "chainOnly" || row.verdict === "bothUnresolved").length;
@@ -664,6 +841,9 @@ async function main(): Promise<void> {
     )
       .map(([shape, count]) => `${shape} ${String(count)}`)
       .join(", ")})`,
+    options.oracle === "lsp"
+      ? `oracle lsp · every row answered by the second engine (${secondEngineRows} rows on ${secondEngineFiles} files) — recallLegacy reads 0/0 by construction`
+      : `oracle ${options.oracle} · jedi answered ${legacyRows.length} rows · second engine ${secondEngineRows} rows on ${secondEngineFiles} files jedi could not read`,
     `elapsed ${((Date.now() - started) / 1000).toFixed(1)}s`,
     "",
     formatOracleTable("BY RECEIVER KIND (partition — each call site counted once)", byReceiver),
@@ -672,6 +852,16 @@ async function main(): Promise<void> {
     "",
     formatOracleTable("BY MISSED-SHAPE CATEGORY (rows overlap — a site can carry several)", byCategory),
     "",
+    "=== MERGED DENOMINATOR (every scored row, whichever engine answered it) ===",
+    "",
+    formatOracleTable("BY RECEIVER KIND — merged denominator", byReceiverMerged),
+    "",
+    formatOracleTable("BY ANSWERING PASS — merged denominator", byAnsweredByMerged),
+    "",
+    formatOracleTable("BY MISSED-SHAPE CATEGORY — merged denominator", byCategoryMerged),
+    "",
+    formatRecallSplit(recallByReceiver),
+    "",
   ];
   process.stdout.write(out.join("\n"));
 
@@ -679,6 +869,7 @@ async function main(): Promise<void> {
     const payload = {
       corpus: options.corpusName,
       corpusRoot: options.corpusRoot,
+      oracle: options.oracle,
       seed: options.seed,
       // The sampling seed above reproduces the SAMPLE; this one reproduces the
       // ANSWERS, and a report carrying only the first would be reproducible in
@@ -700,10 +891,19 @@ async function main(): Promise<void> {
         unlocated: coverage.unlocated,
         unlocatedByShape: coverage.unlocatedByShape,
         chainOutput,
+        jediRows: legacyRows.length,
+        secondEngineRows,
+        secondEngineFiles,
       },
       byReceiver,
       byAnsweredBy,
       byCategory,
+      // Both denominators, always. A merged-denominator table published without
+      // its legacy twin is unreadable against every earlier record.
+      byReceiverMerged,
+      byAnsweredByMerged,
+      byCategoryMerged,
+      recallByReceiver,
       samples: Object.fromEntries(
         (["missed", "wrongFile", "phantom", "skippedInProject"] as const).map((verdict) => [
           verdict,

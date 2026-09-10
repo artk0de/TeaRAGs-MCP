@@ -3,10 +3,12 @@
  * language server `textDocument/definition` at every call site the jedi host
  * enumerated, and emits rows in `jedi_oracle.py`'s schema.
  *
- * This file is the SEED of E4.0.2's `scripts/py-oracle/lsp_oracle.ts`: both
- * candidates speak LSP, so the transport is shared and only the launcher record
- * and the per-corpus configuration differ. It is a spike — it reads a site dump
- * rather than the host's stdin NDJSON contract, and it has no worker pool.
+ * PROMOTED. `scripts/py-oracle/lsp_oracle.ts` is the shipped engine — same
+ * client, speaking the host's stdin/stdout NDJSON contract, with the column
+ * taken from the host instead of re-derived (D7's one opened disagreement).
+ * Read that file, not this one, for anything current; this stays only as the
+ * two-engine comparison harness D7 was measured with, and it is the ONLY place
+ * a `ty` launcher record still exists.
  *
  * Usage:
  *   npx tsx scripts/spikes/lsp-definition-probe.ts --engine pyright|ty \
