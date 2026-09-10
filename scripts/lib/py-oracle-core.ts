@@ -220,6 +220,17 @@ export interface PyOracleRow {
   answeredBy: string;
   chainOutput: "pinned" | "fileOnly" | "none";
   chain?: OracleAnswer;
+  /**
+   * The ORACLE's own answer, flat, where `chain` carries the RESOLVER's
+   * (bd tea-rags-mcp-1v12o.1.2). Flat and always present because it crosses a
+   * process boundary: `PyResidualRow` declares exactly these two names, and a
+   * nested field the NDJSON dump would have to re-project is how the family
+   * report came to compare every bare call against `undefined`.
+   *
+   * `null` is an oracle that named no in-project target, never a key to drop.
+   */
+  oracleTargetRelPath: string | null;
+  oracleTargetSymbolId: string | null;
   origin?: PyTargetOrigin;
   oracleDegraded: boolean;
   unlocatedShape?: PyUnlocatedShape;
