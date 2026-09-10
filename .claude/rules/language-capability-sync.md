@@ -61,3 +61,28 @@ reviewed. `SchemaDriftMonitor` cannot substitute — it compares payload signal
 KEYS, and a grammar or resolver bump moves none of them (bd tea-rags-mcp-frwka;
 comparison + hint live in
 `src/core/domains/maintenance/language-version-drift-monitor.ts`).
+
+## When the bump lands
+
+The bump is part of the branch, not of a later cleanup: it MUST be on the
+worktree branch before the merge into `main`. A `chore(language): declare …`
+commit at the end of a wave is fine (python does this); a release cut between
+the merge and a bump that never came ships an index every user believes is
+current. `tests/core/domains/language/capability/version-pins.test.ts` runs on
+the merged result in CI and fails when walker / resolver / chunking sources
+changed while neither the version nor the pin moved.
+
+## Relocations and other byte-identical changes
+
+Moving code into the kernel, extracting a helper, or renaming leaves `versions`
+alone — but the claim that the output is byte-identical is a claim. Record it:
+re-pin with `npm run pin:lang-versions` and put
+
+    Versions: unchanged — <why the output cannot have moved>
+
+in the commit body, the same way `silo-pairing.md` demands a `Why:` line. For
+resolver relocations the evidence is the harness delta
+(`scripts/codegraph-chain-tally.ts --lang <lang>` before and after, edge count
+and resolveSuccessRate equal), not a reading of the diff. Seven ruby relocations
+(2026-09-09/10) shipped on the reading alone; D4 of the drift program measures
+them after the fact.
