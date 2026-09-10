@@ -47,6 +47,15 @@ Qdrant REST client, tsx scripts, picomatch globs in rule frontmatter.
   (`check-plugin-version.sh`).
 - Every migration change lands as a `.ts` + byte-identical `.sql` twin plus an
   entry in `DATABASE_MIGRATIONS` (`.claude/rules/migrations.md`).
+- Drift detection is documented for users:
+  `website/docs/operations/drift-detection.md` is created in B5 and extended by
+  every task that adds an axis or a heal (C1–C4, D1); `recovery-reindexing.md`
+  links to it (spec decision 12).
+- The `Run:` line is one exact, copy-pasteable, cheapest-sufficient command
+  (spec decision 14): `--project <alias>` comes from the registry entry, never a
+  placeholder when the alias is known.
+- `driftWarning` consumption is per collection per server process and is reset
+  after every index run on that collection (spec decision 13).
 
 ## Beads
 
@@ -258,10 +267,17 @@ Run:
 Expected: PASS, or FAIL naming the drifted pair. Fix a failure in the `.sql` (or
 `.ts`) file, never by normalising whitespace in the test.
 
+- [ ] **Step 2b: Navigator**
+
+In `src/core/domains/maintenance/CLAUDE.md`, the Gotchas bullet that begins
+`**Every database migration ships twice, and only the \`.ts\` twin reaches
+production.\*\*`ends with "so the drift is invisible until someone runs the disk path". Replace that clause with: "so`tests/core/domains/maintenance/migration/database/sql-twins.test.ts`pins every registered migration to its`.sql`
+twin byte-for-byte and fails on the first divergence".
+
 - [ ] **Step 3: Commit**
 
 ```bash
-git add tests/core/domains/maintenance/migration/database/sql-twins.test.ts
+git add src/core/domains/maintenance/CLAUDE.md tests/core/domains/maintenance/migration/database/sql-twins.test.ts
 git commit -m "test(migration): pin every database migration to its .sql twin (c2mh8)"
 ```
 
@@ -275,6 +291,9 @@ git commit -m "test(migration): pin every database migration to its .sql twin (c
 - Create (generated): `tests/core/domains/language/capability/version-pins.json`
 - Test: `tests/core/domains/language/capability/version-pins.test.ts`
 - Modify: `package.json` (`scripts.pin:lang-versions`)
+- Modify: `src/core/domains/language/CLAUDE.md` (Gotchas: the pin guard and the
+  re-pin idiom, next to the "capability drift-guard is one-sided" bullet it
+  completes)
 
 **Interfaces:**
 
@@ -493,10 +512,27 @@ Expected: PASS. Then prove the gate: append a comment line to
 `src/core/domains/language/bash/walker/walker.ts` (or any bash walker file),
 rerun — expected FAIL with the bump-or-re-pin message; revert the line.
 
+- [ ] **Step 6b: Navigator**
+
+In `src/core/domains/language/CLAUDE.md`, directly after the bullet that begins
+`**The capability drift-guard is one-sided.**`, add:
+
+```markdown
+- **The version pins close the other side.**
+  `tests/core/domains/language/capability/version-pins.test.ts` hashes (sha256)
+  every `.ts` under a language's `walker/`, `resolver/`, `dsl/` (axis `walker`)
+  and `chunking/` + its chunker hooks (axis `chunking`) and pins the digest to
+  `versions.<axis>` in `version-pins.json`. Any change under those paths — a
+  comment included — turns the test red until you either bump the axis (output
+  moved) or re-pin (`npm run pin:lang-versions`, byte-identical claim,
+  `Versions: unchanged — <why>` in the commit body). `codegraphSchema` has no
+  digest; it is judged by hand. Sources per axis: `capability/version-axes.ts`.
+```
+
 - [ ] **Step 7: Commit**
 
 ```bash
-git add src/core/domains/language/capability/version-axes.ts src/core/domains/language/capability/version-pins.ts scripts/pin-language-versions.ts tests/core/domains/language/capability/version-pins.json tests/core/domains/language/capability/version-pins.test.ts package.json
+git add src/core/domains/language/CLAUDE.md src/core/domains/language/capability/version-axes.ts src/core/domains/language/capability/version-pins.ts scripts/pin-language-versions.ts tests/core/domains/language/capability/version-pins.json tests/core/domains/language/capability/version-pins.test.ts package.json
 git commit -m "test(language): pin walker and chunking sources to their declared versions (6a4qv)"
 ```
 
@@ -937,15 +973,23 @@ export type IndexDriftRemedy =
 export function foldIndexDriftRemedies(
   remedies: readonly IndexDriftRemedy[],
 ): IndexDriftRemedy;
-export function renderIndexDriftRemedy(remedy: IndexDriftRemedy): string;
+export function renderIndexDriftRemedy(
+  remedy: IndexDriftRemedy,
+  projectAlias?: string,
+): string; // --project filled in when known
 export interface IndexDriftReport {
   findings: readonly IndexDriftFinding[];
   remedy: IndexDriftRemedy;
+  projectAlias?: string; // registry name of the collection, when registered
 }
 export class IndexDriftReporter {
-  constructor(monitors: readonly IndexDriftMonitor[]);
+  constructor(
+    monitors: readonly IndexDriftMonitor[],
+    resolveAlias?: (collectionName: string) => string | undefined,
+  );
   checkByCollectionName(collectionName: string): IndexDriftReport | null;
-  checkAndConsume(path: string): Promise<IndexDriftReport | null>; // once per collection per process
+  checkAndConsume(path: string): Promise<IndexDriftReport | null>; // once per collection per process, until reset
+  reset(collectionName: string): void; // IndexingOps calls it after every run on the collection
 }
 export function formatIndexDriftReport(report: IndexDriftReport): string;
 ```
@@ -1014,6 +1058,12 @@ describe("foldIndexDriftRemedies", () => {
     expect(renderIndexDriftRemedy({ kind: "incremental" })).toBe(
       "Run: tea-rags index-codebase --project <alias>",
     );
+    expect(renderIndexDriftRemedy({ kind: "incremental" }, "taxdome")).toBe(
+      "Run: tea-rags index-codebase --project taxdome",
+    );
+    expect(renderIndexDriftRemedy(recompute(["git"], null), "taxdome")).toBe(
+      "Run: tea-rags index-codebase --project taxdome --force-enrichments git",
+    );
     expect(renderIndexDriftRemedy({ kind: "none" })).toBe(
       "No action required.",
     );
@@ -1071,20 +1121,29 @@ export function foldIndexDriftRemedies(
   };
 }
 
-export function renderIndexDriftRemedy(remedy: IndexDriftRemedy): string {
+/**
+ * One exact command. `--project` is filled in when the alias is known; an
+ * incremental run needs a target, so it keeps a visible placeholder when it is
+ * not, while recompute / force fall back to the CLI's cwd resolution.
+ */
+export function renderIndexDriftRemedy(
+  remedy: IndexDriftRemedy,
+  projectAlias?: string,
+): string {
+  const project = projectAlias ? ` --project ${projectAlias}` : "";
   switch (remedy.kind) {
     case "none":
       return "No action required.";
     case "incremental":
-      return "Run: tea-rags index-codebase --project <alias>";
+      return `Run: tea-rags index-codebase --project ${projectAlias ?? "<alias>"}`;
     case "force":
-      return "Run: tea-rags index-codebase --force";
+      return `Run: tea-rags index-codebase${project} --force`;
     case "recompute": {
       const scope = [...remedy.trajectories].sort().join(",");
       const languages = remedy.languages
         ? ` --languages ${[...remedy.languages].sort().join(",")}`
         : "";
-      return `Run: tea-rags index-codebase --force-enrichments ${scope}${languages}`;
+      return `Run: tea-rags index-codebase${project} --force-enrichments ${scope}${languages}`;
     }
   }
 }
@@ -1137,6 +1196,8 @@ import {
 export interface IndexDriftReport {
   findings: readonly IndexDriftFinding[];
   remedy: IndexDriftRemedy;
+  /** Registry name of the collection, when one is registered — fills `--project`. */
+  projectAlias?: string;
 }
 
 const AXIS_TITLE: Record<IndexDriftAxis, string> = {
@@ -1149,20 +1210,30 @@ const AXIS_TITLE: Record<IndexDriftAxis, string> = {
 export class IndexDriftReporter {
   private readonly consumed = new Set<string>();
 
-  constructor(private readonly monitors: readonly IndexDriftMonitor[]) {}
+  constructor(
+    private readonly monitors: readonly IndexDriftMonitor[],
+    private readonly resolveAlias: (
+      collectionName: string,
+    ) => string | undefined = () => undefined,
+  ) {}
 
   checkByCollectionName(collectionName: string): IndexDriftReport | null {
     const findings = this.monitors.flatMap((monitor) =>
       monitor.check(collectionName),
     );
     if (findings.length === 0) return null;
+    const projectAlias = this.resolveAlias(collectionName);
     return {
       findings,
       remedy: foldIndexDriftRemedies(findings.map((f) => f.remedy)),
+      ...(projectAlias ? { projectAlias } : {}),
     };
   }
 
-  /** Once per collection per process — a search response carries the warning one time. */
+  /**
+   * Once per collection per process, until `reset` — a search response carries
+   * the warning one time per server session, and again after each index run.
+   */
   async checkAndConsume(path: string): Promise<IndexDriftReport | null> {
     let collectionName: string;
     try {
@@ -1173,6 +1244,11 @@ export class IndexDriftReporter {
     if (this.consumed.has(collectionName)) return null;
     this.consumed.add(collectionName);
     return this.checkByCollectionName(collectionName);
+  }
+
+  /** Called by `IndexingOps` after the stamps of a run are written (spec decision 13). */
+  reset(collectionName: string): void {
+    this.consumed.delete(collectionName);
   }
 }
 
@@ -1190,7 +1266,7 @@ export function formatIndexDriftReport(report: IndexDriftReport): string {
       );
     }
   }
-  lines.push(renderIndexDriftRemedy(report.remedy));
+  lines.push(renderIndexDriftRemedy(report.remedy, report.projectAlias));
   return lines.join("\n");
 }
 ```
@@ -1330,6 +1406,25 @@ describe("IndexDriftReporter", () => {
     expect(text.match(/^Run:/gm)).toHaveLength(1);
   });
 
+  it("fills --project from the alias resolver", () => {
+    const report = new IndexDriftReporter(
+      [fixed([keyFinding])],
+      () => "taxdome",
+    ).checkByCollectionName("c");
+    expect(formatIndexDriftReport(report!)).toContain(
+      "Run: tea-rags index-codebase --project taxdome --force-enrichments git",
+    );
+  });
+
+  it("reset makes checkAndConsume report the collection again", async () => {
+    const reporter = new IndexDriftReporter([fixed([keyFinding])]);
+    expect(await reporter.checkAndConsume("/tmp/test-project")).not.toBeNull();
+    reporter.reset(
+      resolveCollectionName(await validatePath("/tmp/test-project")),
+    );
+    expect(await reporter.checkAndConsume("/tmp/test-project")).not.toBeNull();
+  });
+
   // Moved from schema-drift-monitor.test.ts — consumption now lives here.
   it("checkAndConsume reports a collection once per process", async () => {
     const reporter = new IndexDriftReporter([fixed([keyFinding])]);
@@ -1365,8 +1460,11 @@ git commit -m "feat(drift): fold every monitor into one IndexDriftReport with on
   `checkSchemaDrift` + `checkLanguageVersionDrift`)
 - Modify: `src/core/api/internal/ops/explore-ops.ts:401-406` (`checkDrift` uses
   the reporter), `src/core/api/internal/facades/explore-facade.ts` (dep rename)
-- Modify: `src/bootstrap/factory.ts:846-857, 899-911` (build the reporter, pass
-  it)
+- Modify: `src/bootstrap/factory.ts:846-857, 899-911` (build the reporter with
+  the registry alias resolver, pass it)
+- Modify: `src/core/api/internal/ops/indexing-ops.ts` (`driftReporter.reset`
+  after the stamps of every run — `fullIndex`, `tryIncrementalIndex`,
+  `recomputeEnrichments`)
 - Modify: `src/cli/prime/run-prime.ts:167-215`, `src/cli/prime/types.ts:15-44`,
   `src/cli/prime/format.ts:32-143`
 - Modify: `src/mcp/tools/code/register-status-tools.ts` (append the block)
@@ -1455,13 +1553,22 @@ private async checkDrift(path?: string, collectionName?: string): Promise<string
 Replace the two monitor constructions' consumers (keep the constructions):
 
 ```ts
-const driftReporter = new IndexDriftReporter([
-  schemaDriftMonitor,
-  languageVersionDriftMonitor,
-]);
+const driftReporter = new IndexDriftReporter(
+  [schemaDriftMonitor, languageVersionDriftMonitor],
+  (collectionName) => collectionRegistry.get(collectionName)?.name,
+);
 // ExploreFacade deps: driftReporter,
 // createApp deps:     driftReporter,
+// IngestFacade / IndexingOps deps: driftReporter (for reset)
 ```
+
+- [ ] **Step 4b: Reset consumption after every run**
+
+In `IndexingOps`, after `stampLanguageVersions` (full index and codegraph
+recompute) and after the registry record of an incremental run, call
+`this.driftReporter?.reset(collectionName)`. Test in
+`tests/core/api/internal/ops/indexing-ops*.test.ts`: a fake reporter records the
+collection names it was reset for; one per run path.
 
 - [ ] **Step 5: Prime**
 
@@ -1500,11 +1607,18 @@ git add src/core/api src/bootstrap/factory.ts src/cli/prime src/mcp/tools/code/r
 git commit -m "feat(drift): surface one Drift report in search responses, prime and get_index_status (p0phi)"
 ```
 
-### Task B5: Navigator + `.claude/rules/index-drift.md` (`tea-rags-mcp-o7w4u`)
+### Task B5: Navigator, `.claude/rules/index-drift.md` and the website `drift-detection` page (`tea-rags-mcp-o7w4u`)
 
 **Files:**
 
 - Create: `.claude/rules/index-drift.md`
+- Create: `src/core/domains/maintenance/drift/CLAUDE.md` (navigator for the new
+  directory)
+- Modify: `.claude/CLAUDE.md` (Domain Navigators table gains the
+  `domains/maintenance/drift/` row)
+- Create: `website/docs/operations/drift-detection.md`
+- Modify: `website/docs/operations/recovery-reindexing.md` (the "Schema Drift
+  Recovery" section becomes a pointer to the new page)
 - Modify: `src/core/domains/maintenance/CLAUDE.md` (Gotchas: the "Drift compares
   FEATURE-FLAG-dependent descriptors" bullet gains the pointer to the reporter;
   H1 unchanged)
@@ -1587,14 +1701,97 @@ that lives in the stats cache, the snapshot, or the DuckDB file has no stamp, so
 (`.claude/rules/index-drift.md`).
 ```
 
-- [ ] **Step 3: Lint and commit**
+- [ ] **Step 2b: Navigator for `drift/`**
+
+`src/core/domains/maintenance/drift/CLAUDE.md` — local editing facts only, each
+stated once, linking to `index-drift.md` for the boundary:
+
+```markdown
+# domains/maintenance/drift — stamps compared, never written
+
+## Mechanics
+
+- **Every monitor is a pure read.** Inputs are the stats cache
+  (`payloadFieldKeys`), the registry entry (`languageVersions`, `env`,
+  `RegistryGitState`) and the current build's declarations; the writers live in
+  `ingest/pipeline/base.ts` (registry record),
+  `api/internal/ops/ indexing-ops.ts` (`stampLanguageVersions`) and
+  `infra/stats-cache.ts`. A monitor that needs a value nobody stamps has found a
+  missing stamp, not a place to compute one.
+- **`IndexDriftReporter` owns consumption.** `checkAndConsume` shows a
+  collection once per process; `IndexingOps` calls `reset(collectionName)` after
+  every run's stamps. A monitor never tracks "already shown".
+- **The `Run:` line comes from the fold, not from a monitor.** A finding carries
+  a lattice `remedy`; `foldIndexDriftRemedies` picks the maximum and unions
+  recomputes; `renderIndexDriftRemedy` fills `--project` from
+  `IndexDriftReport.projectAlias` (registry name resolved by the reporter).
+  Rendering a command inside a monitor is a defect.
+- **`EnvDriftMonitor` never reads `process.env`.** Its second constructor
+  argument is the effective-env resolver the composition root builds (outer
+  env > stored registry env > code default, the same replay
+  `ProjectIngestFactory` performs). Comparing against the bare process env
+  reports phantom drift for every project whose registry env differs.
+- **`*` is a language to the version monitor.** `sharedVersions`
+  (`language/kernel/capability.ts`) is compared unconditionally; its findings
+  render with no `--languages`.
+
+## Gotchas
+
+- `checkByCollectionName` is silent when the stats cache has no language
+  distribution — a collection indexed before stats existed reports nothing, not
+  "no drift".
+- A removed payload key folds to `none`; a report can therefore be non-empty and
+  still say "No action required."
+
+## See also
+
+- `.claude/rules/index-drift.md` — boundary, lattice, how to add a monitor.
+- `../CLAUDE.md` — the flag-conditional descriptor gotcha this directory
+  inherits.
+```
+
+Add the row `| \`domains/maintenance/drift/\` | stamps compared never written,
+reporter-owned consumption, lattice-only remedies
+|`to the Domain Navigators table in`.claude/CLAUDE.md`.
+
+- [ ] **Step 3: Website page**
+
+`website/docs/operations/drift-detection.md` (Docusaurus front matter like its
+siblings in `operations/`), sections in this order, each stating the facts
+listed:
+
+1. **What drift is** — a stamp written at index time vs what the current build,
+   environment or working tree would produce; the index keeps working, the
+   report tells you what is stale and the one command that fixes it.
+2. **Where you see it** — the `driftWarning` field on search responses (once per
+   server session per collection, again after every index run), the `## Drift`
+   block in `tea-rags prime`, and `get_index_status`.
+3. **Axes** — a table with one row per monitor: what is compared, what the stamp
+   is, an example line (`python.walker: 1 → 3`). Rows shipped by this task:
+   payload keys, language versions. Later tasks add their rows here (C1 `*`, C2
+   env, C3 commit, C4 canary, D1 heal) — leave a `<!-- axes: extend below -->`
+   marker.
+4. **Reading a report** — `subject: indexed → current (note)`; what a `note`
+   means (an env flip that explains payload-key drift).
+5. **Remedies and their cost** — `none`, incremental (seconds), recompute
+   (`--force-enrichments`, minutes, no re-embedding), force (hours on a large
+   project, re-embeds everything); the report always names the cheapest command
+   that repairs every finding, with `--project` filled in.
+6. **After upgrading tea-rags** — why a report can appear with no change on your
+   side (a walker or shared-kernel bump), and that running the named command
+   once clears it.
+
+In `recovery-reindexing.md`, replace the body of "Schema Drift Recovery" with
+two sentences and a link to the new page.
+
+- [ ] **Step 4: Lint and commit**
 
 Run:
 `npx markdownlint-cli2 .claude/rules/index-drift.md src/core/domains/maintenance/CLAUDE.md .claude/rules/migrations.md`
 
 ```bash
-git add .claude/rules/index-drift.md src/core/domains/maintenance/CLAUDE.md .claude/rules/migrations.md
-git commit -m "docs(drift): rule and navigator for the maintenance/drift subdomain (o7w4u)"
+git add .claude/rules/index-drift.md .claude/CLAUDE.md src/core/domains/maintenance/CLAUDE.md src/core/domains/maintenance/drift/CLAUDE.md .claude/rules/migrations.md website/docs/operations/drift-detection.md website/docs/operations/recovery-reindexing.md
+git commit -m "docs(drift): rule, navigator and user docs for the maintenance/drift subdomain (o7w4u)"
 ```
 
 ---
@@ -1784,13 +1981,36 @@ Add to `language-capability-sync.md`'s bump table:
 \`sharedVersions.<axis>\` — see \`index-format-versions.md\` | as that rule says
 |`.
 
+- [ ] **Step 5a: Navigator**
+
+In `src/core/domains/language/CLAUDE.md`, after the version-pins bullet from A3,
+add:
+
+```markdown
+- **`kernel/capability.ts` is the version of everything shared.**
+  `sharedVersions` stamps the pseudo-language `*`: `walker` covers `kernel/**`,
+  `resolver-chain.ts`, `cone-dispatch.ts` and the codegraph
+  `resolution-runner.ts`; `chunking` covers the shared chunker files and
+  `infra/symbolid/**`. A kernel change that alters resolution output bumps
+  `sharedVersions.walker`, not eight per-language walkers; the pin test covers
+  the `*` sources too. Rule: `.claude/rules/index-format-versions.md`.
+```
+
+- [ ] **Step 5b: Website page**
+
+Add the `*` row to the axes table of
+`website/docs/operations/drift-detection.md` (compared: shared kernel / chunker
+versions; stamp: `languageVersions["*"]`; example `*.walker: 1 → 2`) and, under
+"After upgrading tea-rags", the sentence that this release bumps the shared
+walker so every index reports it once.
+
 - [ ] **Step 6: Run and commit**
 
 Run:
 `npx tsc --noEmit && npx vitest run tests/core/domains/language/capability tests/core/domains/maintenance/drift`
 
 ```bash
-git add src/core/domains/language/kernel/capability.ts src/core/domains/language/capability tests/core/domains/language/capability src/core/domains/maintenance/drift tests/core/domains/maintenance/drift .claude/rules/index-format-versions.md .claude/rules/language-capability-sync.md
+git add src/core/domains/language/kernel/capability.ts src/core/domains/language/CLAUDE.md src/core/domains/language/capability tests/core/domains/language/capability src/core/domains/maintenance/drift tests/core/domains/maintenance/drift .claude/rules/index-format-versions.md .claude/rules/language-capability-sync.md website/docs/operations/drift-detection.md
 git commit -m "feat(drift): version the shared kernel and chunker as the * pseudo-language (y6igo)"
 ```
 
@@ -1801,8 +2021,11 @@ git commit -m "feat(drift): version the shared kernel and chunker as the * pseud
 - Modify: `src/core/domains/maintenance/registry/env-groups.ts`
   (`RegistryEnvGroup.consequence`)
 - Create: `src/core/domains/maintenance/drift/env-drift-monitor.ts`
-- Modify: `src/bootstrap/factory.ts` (register the monitor with the env snapshot
-  the run already builds)
+- Modify: `src/bootstrap/factory.ts` (register the monitor with an effective-env
+  resolver built the way `ProjectIngestFactory#buildIngest` builds an index
+  run's env)
+- Modify: `website/docs/operations/drift-detection.md` (env row + the "phantom
+  schema drift" paragraph)
 - Modify: `src/core/domains/maintenance/drift/index.ts`
 - Test: `tests/core/domains/maintenance/registry/env-groups.test.ts` (every
   group classified),
@@ -1814,7 +2037,10 @@ git commit -m "feat(drift): version the shared kernel and chunker as the * pseud
   `EnvConsequence = "chunk-set" | "enrichment:git" | "enrichment:codegraph" | "runtime"`;
   `RegistryEnvGroup.consequence: EnvConsequence`;
   `class EnvDriftMonitor implements IndexDriftMonitor` with
-  `constructor(registry: Pick<CollectionRegistry, "get">, currentSnapshot: Readonly<Record<string, string>>)`.
+  `constructor(registry: Pick<CollectionRegistry, "get">, effectiveSnapshotFor: (stored: Readonly<Record<string, string>>) => Readonly<Record<string, string>>)`
+  — the second argument builds the env the NEXT index run on that collection
+  would use (outer env > stored registry env > code default, spec decision 6);
+  the monitor never reads `process.env` itself.
 
 - [ ] **Step 1: Failing tests**
 
@@ -1853,10 +2079,10 @@ it("reports a value change whose consequence is not runtime, with the matching r
       TRAJECTORY_GIT_LOG_MAX_AGE_MONTHS: "12",
       INGEST_TUNE_CHUNKER_POOL_SIZE: "8",
     }),
-    {
+    () => ({
       TRAJECTORY_GIT_LOG_MAX_AGE_MONTHS: "6",
       INGEST_TUNE_CHUNKER_POOL_SIZE: "4",
-    },
+    }),
   );
   expect(monitor.check("c")).toEqual([
     {
@@ -1875,7 +2101,7 @@ it("reports a value change whose consequence is not runtime, with the matching r
 it("attributes a flag flip to the payload keys it explains", () => {
   const [finding] = new EnvDriftMonitor(
     registryWith({ CODEGRAPH_ENABLED: "true" }),
-    { CODEGRAPH_ENABLED: "false" },
+    () => ({ CODEGRAPH_ENABLED: "false" }),
   ).check("c");
   expect(finding.note).toBe(
     "explains any codegraph.* payload-key drift — restore the flag instead of rebuilding",
@@ -1888,14 +2114,24 @@ it("attributes a flag flip to the payload keys it explains", () => {
 });
 it("stays silent for keys present on one side only, and for legacy entries without a snapshot", () => {
   expect(
-    new EnvDriftMonitor(registryWith({ INGEST_CHUNK_SIZE: "2000" }), {}).check(
-      "c",
-    ),
+    new EnvDriftMonitor(
+      registryWith({ INGEST_CHUNK_SIZE: "2000" }),
+      () => ({}),
+    ).check("c"),
   ).toEqual([]);
   expect(
-    new EnvDriftMonitor({ get: () => ({}) } as never, {
+    new EnvDriftMonitor({ get: () => ({}) } as never, () => ({
       INGEST_CHUNK_SIZE: "2000",
-    }).check("c"),
+    })).check("c"),
+  ).toEqual([]);
+});
+it("sees no drift when the effective env is the replayed stamp (no outer override)", () => {
+  const stored = {
+    INGEST_CHUNK_SIZE: "2000",
+    CODEGRAPH_AMBIGUOUS_RESOLVE_MODE: "strict",
+  };
+  expect(
+    new EnvDriftMonitor(registryWith(stored), (s) => s).check("c"),
   ).toEqual([]);
 });
 ```
@@ -1968,28 +2204,34 @@ function remedyFor(consequence: EnvConsequence): IndexDriftRemedy {
 }
 
 /**
- * Diffs the env snapshot the index run recorded against the snapshot the
- * current process builds with the same builder (`buildRegistryEnvSnapshot`).
- * Only keys present on BOTH sides can drift: a legacy entry without the key
- * and an unset optional carry no claim.
+ * Diffs the env snapshot the index run recorded against the env the NEXT run
+ * on this collection would use — outer env > stored registry env > code
+ * default, the replay `ProjectIngestFactory` performs. A finding therefore
+ * means the outer env explicitly overrides a stamped value; a changed code
+ * default is not drift, because replay keeps the stamped value (spec
+ * decision 6). Only keys present on BOTH sides can drift: a legacy entry
+ * without the key and an unset optional carry no claim.
  */
 export class EnvDriftMonitor implements IndexDriftMonitor {
   readonly axis = "env" as const;
 
   constructor(
     private readonly registry: Pick<CollectionRegistry, "get">,
-    private readonly currentSnapshot: Readonly<Record<string, string>>,
+    private readonly effectiveSnapshotFor: (
+      stored: Readonly<Record<string, string>>,
+    ) => Readonly<Record<string, string>>,
   ) {}
 
   check(collectionName: string): IndexDriftFinding[] {
     const entry = this.registry.get(collectionName);
     const stored = entry?.env ?? entry?.tuning;
     if (!stored) return [];
+    const effective = this.effectiveSnapshotFor(stored);
     const findings: IndexDriftFinding[] = [];
     for (const group of REGISTRY_ENV_GROUPS) {
       if (group.consequence === "runtime") continue;
       const indexed = stored[group.canonical];
-      const current = this.currentSnapshot[group.canonical];
+      const current = effective[group.canonical];
       if (indexed === undefined || current === undefined || indexed === current)
         continue;
       const note = FLAG_NOTES[group.canonical];
@@ -2007,11 +2249,28 @@ export class EnvDriftMonitor implements IndexDriftMonitor {
 }
 ```
 
-- [ ] **Step 4: Factory** — find where `envSnapshot` (from
-      `buildRegistryEnvSnapshot(zodConfig)`) is built for the ingest slice and
-      pass the same object:
-      `new EnvDriftMonitor(collectionRegistry, envSnapshot)`, added to the
-      reporter's monitor list.
+- [ ] **Step 4: Factory** — the effective-env resolver lives in the composition
+      root because `core/` must not import `bootstrap/`. Mirror
+      `ProjectIngestFactory#buildIngest` (replay onto a COPY of the process env,
+      never onto `process.env` itself):
+
+```ts
+const envDriftMonitor = new EnvDriftMonitor(collectionRegistry, (stored) => {
+  const env: NodeJS.ProcessEnv = { ...process.env };
+  replayRegistryEnv(stored, env);
+  return buildRegistryEnvSnapshot(parseAppConfigZod(env));
+});
+```
+
+      Add it to the reporter's monitor list.
+
+- [ ] **Step 4b: Website page** — add the env row to the axes table (compared:
+      the 41 canonical indexing keys by consequence class; stamp: the registry
+      `env` snapshot; example
+      `CODEGRAPH_AMBIGUOUS_RESOLVE_MODE: strict → first`) and a "Phantom schema
+      drift" paragraph: a flipped `CODEGRAPH_ENABLED` / `TRAJECTORY_GIT_ENABLED`
+      shows up as removed payload keys, the env row names the flag, restore the
+      flag instead of rebuilding.
 
 - [ ] **Step 5: Run and commit**
 
@@ -2019,17 +2278,18 @@ Run:
 `npx tsc --noEmit && npx vitest run tests/core/domains/maintenance tests/bootstrap`
 
 ```bash
-git add src/core/domains/maintenance/registry/env-groups.ts src/core/domains/maintenance/drift src/bootstrap/factory.ts tests/core/domains/maintenance
+git add src/core/domains/maintenance/registry/env-groups.ts src/core/domains/maintenance/drift src/bootstrap/factory.ts tests/core/domains/maintenance website/docs/operations/drift-detection.md
 git commit -m "feat(drift): report indexing-env changes by what they invalidate (lg361)"
 ```
 
-### Task C3: `CommitDriftMonitor` — `indexedCommit`/`indexedDirty` vs HEAD (`tea-rags-mcp-zf3x0`)
+### Task C3: `CommitDriftMonitor` — `indexedCommit` vs HEAD, dirty tree as a note (`tea-rags-mcp-zf3x0`)
 
 **Files:**
 
 - Create: `src/core/domains/maintenance/drift/commit-drift-monitor.ts`
 - Modify: `src/bootstrap/factory.ts`,
   `src/core/domains/maintenance/drift/index.ts`
+- Modify: `website/docs/operations/drift-detection.md` (commit row)
 - Test: `tests/core/domains/maintenance/drift/commit-drift-monitor.test.ts`
 
 **Interfaces:**
@@ -2068,15 +2328,23 @@ it("reports a moved HEAD with the incremental remedy", () => {
     },
   ]);
 });
-it("reports a dirty tree at index time even when HEAD did not move", () => {
+it("annotates a moved HEAD when the tree was dirty at index time", () => {
+  const monitor = new CommitDriftMonitor(
+    { get: () => ({ ...entry, indexedDirty: true }) } as never,
+    () => ({ branch: "main", commit: "0123456789abcdef", transient: false }),
+  );
+  expect(monitor.check("c")[0]).toMatchObject({
+    indexed: "abcdef1 (dirty)",
+    note: "HEAD moved since the last index run; the tree was dirty when it was indexed",
+  });
+});
+it("is silent when HEAD did not move, even if the tree was dirty at index time", () => {
+  // A developer's tree is dirty for the whole session; a dirty-only finding could never clear (spec decision 7).
   const monitor = new CommitDriftMonitor(
     { get: () => ({ ...entry, indexedDirty: true }) } as never,
     () => ({ branch: "main", commit: entry.indexedCommit, transient: false }),
   );
-  expect(monitor.check("c")[0]).toMatchObject({
-    indexed: "abcdef1 (dirty)",
-    note: "working tree was dirty at index time",
-  });
+  expect(monitor.check("c")).toEqual([]);
 });
 it("is silent without a stamp, outside a repo, or when nothing moved", () => {
   expect(
@@ -2128,8 +2396,10 @@ export class CommitDriftMonitor implements IndexDriftMonitor {
     if (!entry?.indexedCommit) return [];
     const state = this.readGitState(entry.path);
     if (!state?.commit) return [];
-    const moved = state.commit !== entry.indexedCommit;
-    if (!moved && !entry.indexedDirty) return [];
+    // Only a moved HEAD is a finding. A dirty tree at index time is a note on
+    // it: a dirty-only finding would never clear during a working session
+    // (spec decision 7); uncommitted content is the merkle diff's business.
+    if (state.commit === entry.indexedCommit) return [];
     return [
       {
         axis: this.axis,
@@ -2137,19 +2407,24 @@ export class CommitDriftMonitor implements IndexDriftMonitor {
         indexed: `${short(entry.indexedCommit)}${entry.indexedDirty ? " (dirty)" : ""}`,
         current: short(state.commit),
         remedy: { kind: "incremental" },
-        note: moved
-          ? "HEAD moved since the last index run"
-          : "working tree was dirty at index time",
+        note: entry.indexedDirty
+          ? "HEAD moved since the last index run; the tree was dirty when it was indexed"
+          : "HEAD moved since the last index run",
       },
     ];
   }
 }
 ```
 
-- [ ] **Step 3: Register in the factory, run, commit**
+- [ ] **Step 3: Register in the factory, add the website row, run, commit**
+
+Website: the commit row in the axes table (compared: HEAD sha vs
+`indexedCommit`; stamp: `RegistryGitState`; example
+`main: abcdef1 (dirty) → 0123456`) and one sentence that the remedy is a plain
+incremental run, which auto-update performs on its own when enabled.
 
 ```bash
-git add src/core/domains/maintenance/drift src/bootstrap/factory.ts tests/core/domains/maintenance/drift
+git add src/core/domains/maintenance/drift src/bootstrap/factory.ts tests/core/domains/maintenance/drift website/docs/operations/drift-detection.md
 git commit -m "feat(drift): report the commit the index was built at against HEAD (zf3x0)"
 ```
 
@@ -2274,10 +2549,15 @@ the canary and logs once, as the marker-read failure does today.
       `EMBEDDING_CANARY_MIN_COSINE` to the measured value minus 0.001 in this
       task and record the measurement in the constant's comment.
 
+- [ ] **Step 3b: Website page** — under "Embedding model", state that the guard
+      now also compares a canary vector, what the 409 message looks like
+      (`same name, different weights: canary cosine 0.9412`), and that the fix
+      is to point `EMBEDDING_MODEL` back or run `--force`.
+
 - [ ] **Step 4: Commit**
 
 ```bash
-git add src/core/adapters/qdrant/embedding-model-guard.ts src/core/contracts/constants.ts src/bootstrap/factory.ts tests/core/adapters/qdrant/embedding-model-guard.test.ts
+git add src/core/adapters/qdrant/embedding-model-guard.ts src/core/contracts/constants.ts src/bootstrap/factory.ts tests/core/adapters/qdrant/embedding-model-guard.test.ts website/docs/operations/drift-detection.md
 git commit -m "feat(adapters): reject an embedding model that kept its name but changed its weights (ie819)"
 ```
 
@@ -2517,11 +2797,30 @@ operations.
       coordinator commented out; there is deliberately no runtime flag to switch
       the heal off. Record both numbers in the bead.
 
+- [ ] **Step 7a: Navigators** — two facts, each in the directory that owns it:
+      `src/core/domains/ingest/pipeline/enrichment/CLAUDE.md` (the payload-key
+      ownership section) gains "`CodegraphPayloadHealer` is the second writer of
+      `codegraph.symbols.{chunk,file}.*`: it rewrites points OUTSIDE the run's
+      `chunkMap` whose derived signals moved, always after `applyFinalizeFile`,
+      never touching `enrichedAt` semantics — a third writer needs the same
+      builders (`payload-signals.ts`) or the two drift apart";
+      `src/core/domains/trajectory/codegraph/CLAUDE.md` gains
+      "`cg_symbol_signals_prev` / `cg_file_signals_prev` (migration 023) are
+      refreshed by the coordinator AFTER a successful heal, not by the finalizer
+      — refreshing them before the heal would hide the diff a failed heal must
+      retry".
+
+- [ ] **Step 7b: Website page** — a "Codegraph payload heal" section: the
+      finalizer now rewrites the codegraph signals of every symbol whose fan-in
+      / fan-out / pageRank moved, file change or not; the first run after
+      upgrading does one full payload sweep (no re-extraction, no embeddings);
+      `isHub` stays as it was until the next `--force-enrichments codegraph`.
+
 - [ ] **Step 8: Commit** (implementation) and close `tea-rags-mcp-a2ddb` with
       the measured numbers.
 
 ```bash
-git add src/core/domains/maintenance/migration/database/migrations src/core/contracts/types/codegraph-storage.ts src/core/adapters/duckdb src/core/domains/trajectory/codegraph/symbols src/core/domains/ingest/pipeline/enrichment tests
+git add src/core/domains/maintenance/migration/database/migrations src/core/contracts/types/codegraph-storage.ts src/core/adapters/duckdb src/core/domains/trajectory/codegraph src/core/domains/ingest/pipeline/enrichment tests website/docs/operations/drift-detection.md
 git commit -m "fix(pipeline): heal codegraph payload for symbols whose metrics moved without a file change (snbvm)"
 ```
 
@@ -2628,11 +2927,11 @@ git commit -m "chore(language): settle the ruby walker version after the kernel 
 
 ## Verification per epic
 
-| Epic | Gate                                                                                                                                                                                                                 |
-| ---- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| A    | `npm run test:coverage` green; A3's test red on a deliberate walker edit, green after re-pin; A4's test red when an index is added on one side only                                                                  |
-| B    | `npm run test:coverage` green; `tea-rags prime` on the self-index shows one `## Drift` block; a `semantic_search` response carries one `driftWarning` with both a payload-key and a language finding when both exist |
-| C    | flipping `CODEGRAPH_AMBIGUOUS_RESOLVE_MODE` in the MCP server env produces an env finding on the self-index without a reindex; a local commit produces a commit finding; C4's canary passes on both ollama endpoints |
-| D    | taxdome numbers recorded on `a2ddb` (stale points 0 after heal) and `sz1y0` (repair set 0 on an unchanged tree); D4's tally delta recorded on the bead                                                               |
+| Epic | Gate                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
+| ---- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| A    | `npm run test:coverage` green; A3's test red on a deliberate walker edit, green after re-pin; A4's test red when an index is added on one side only                                                                                                                                                                                                                                                                                                                     |
+| B    | `npm run test:coverage` green; `tea-rags prime` on the self-index shows one `## Drift` block whose `Run:` line carries `--project tea-rags`; a `semantic_search` response carries one `driftWarning` with findings from two axes (language + the removed-key finding of a server started with `CODEGRAPH_ENABLED=false`); the report shows again after an incremental run; `website/docs/operations/drift-detection.md` exists and `recovery-reindexing.md` links to it |
+| C    | setting `CODEGRAPH_AMBIGUOUS_RESOLVE_MODE` in the MCP server env to a value that differs from the stamp produces an env finding on the self-index without a reindex, and removing the override clears it; a local commit produces a commit finding, a dirty tree alone does not; C4's canary passes on both ollama endpoints; the website axes table has the `*`, env, commit and canary rows                                                                           |
+| D    | taxdome numbers recorded on `a2ddb` (stale points 0 after heal) and `sz1y0` (repair set 0 on an unchanged tree); D4's tally delta recorded on the bead                                                                                                                                                                                                                                                                                                                  |
 
 Every live run is user-gated; ask, state the exact command, wait.
