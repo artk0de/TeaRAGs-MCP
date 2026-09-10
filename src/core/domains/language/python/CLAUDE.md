@@ -247,8 +247,11 @@
   printed). See the pass list in `resolver/python-resolver.ts`; the guards
   (`super`, `selfField`, `selfMember`, `localBinding`) DROP rather than fall
   through, which is what keeps `serializer.is_valid()` off an unrelated class.
-- **`resolveDispatch` composes `[cone, dynamic]`, and the LAST component
-  declines every receiver another layer owns.** The runner asks
+- **`resolveDispatch` composes `[cone]` — `dynamic` is PARKED behind
+  `CODEGRAPH_PY_DYNAMIC_DISPATCH`, default OFF (D10), and the LAST component
+  declines every receiver another layer owns.** The flag is read once at
+  composition, in production and in the oracle's parity stack alike, so a
+  flag-off run is the pre-E4.1.3 cone byte for byte. The runner asks
   `resolveDispatch` BEFORE `resolve` and lets a non-empty fan REPLACE the
   chain's answer, so `resolver/dispatch/python-dispatch-gates.ts` is where the
   component earns its slot: bare / `self` / `cls` / dotted / call-or-index head
@@ -268,8 +271,9 @@
   policy in `resolveNarrowedFanout`; the cascade takes neither language
   injection, because the runtime-member question is asked one gate earlier and a
   literal receiver never survives the shape gates.
-- **The `dynamic` component's measured precision is NOT the plan's estimate, and
-  both E4.1.3 stop rules fired** (bd tea-rags-mcp-w205u; numbers in
+- **The `dynamic` component's measured precision is NOT the plan's estimate,
+  both E4.1.3 stop rules fired, and that is why the flag defaults off** (bd
+  tea-rags-mcp-w205u; numbers in
   `docs/superpowers/plans/2026-09-10-python-e4-1-dispatch-fanout.md`, Task
   E4.1.3). It fires on ~5× the sites E4.0.4 attributed to `untypedNameReceiver`,
   and the extra ones are receivers whose real type is a LIBRARY type: +83 new

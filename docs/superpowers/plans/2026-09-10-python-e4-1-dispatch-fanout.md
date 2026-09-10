@@ -1242,6 +1242,28 @@ Django, `str` and Jinja values with no binding fact of any kind. Closing them is
 a walker/channel seam (a file-level binding view, E4.6b's fold), not a predicate
 this component can write.
 
+**D10 — dynamic `single` falsified; the component is PARKED.** The
+orchestrator's call on the numbers above: a name-only `single` is not
+precision-safe for Python without receiver-type evidence, and the 264/265 in
+decision 1 is selection bias — it was measured over in-project rows only. The
+component, its probe, its gates, its policy and all 37 unit tests stay; what is
+parked is the COMPOSITION, behind `CODEGRAPH_PY_DYNAMIC_DISPATCH` (read once at
+composition, **default OFF**, same branch in production and in the oracle's
+parity stack). Proof of the park, flag absent: the `--oracle merged` dispatch
+dumps are byte-identical to the BEFORE side on httpx / flask / ugnest, and
+differ on netbox 4 rows and polar 3 rows in ORACLE columns ONLY (`origin` /
+`oracleOrigin` / `oracleKind` typeshed↔sitePackages wobble, 2 netbox verdicts
+downstream of it) — no `dispatchOutcome`, `fan`, `chainOutput` or `answeredBy`
+field moves on any of 100,836 rows; chain-tally reads the E4.1.2 record exactly
+(edges 770 / 345 / 491 / 8,642 / 16,538, `single` 0 / 1 / 6 / 0 / 9, `fan` 0 / 1
+/ 0 / 0 / 13, `chainDrift` 0, `dispatchDrift` 0). Flag on, polar:
+`single 492 · fan 120 · ambiguous 317 · match 15,783 · phantom 185 · wrongFile 2 · dispatchDrift 0`.
+A re-attempt needs a file-scope binding view (polar's 31 `log.error` rows are a
+module-level binding the chunk cannot see), E4.6b's return-type fold,
+`except … as e` bindings, and a typeshed/framework MEMBER decline set —
+`PYTHON_CORE_MEMBERS` at 36 names is far too small. `union` (Task E4.1.4, 18
+rows) is deferred below the 30-row bar. Full reasoning: the spec's D10.
+
 **Open decision for the orchestrator** — decision 2 pre-authorised demoting the
 `single` terminal to `discount / 1`, but that does not move these numbers: the
 harness splits by edge COUNT, not confidence, so a demoted single still persists
