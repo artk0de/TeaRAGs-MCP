@@ -17,6 +17,7 @@
  */
 import { readdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { join, relative } from "node:path";
+import { pathToFileURL } from "node:url";
 
 import {
   classifyResidualFamily,
@@ -135,41 +136,60 @@ function bindingsFor(
  * Names an `import` statement binds, including the parenthesised multi-line
  * `from x import (\n a,\n b,\n)` form polar writes everywhere. `import a.b`
  * binds `a`, `import a.b as c` binds `c`.
+ *
+ * An `as` clause binds ONE name — the alias — on both statement forms (bd
+ * tea-rags-mcp-w205u, E4.6a). The `from` branch used to split its tail on
+ * whitespace, which bound the source spelling too:
+ * `from polar.subscription.service import subscription as subscription_service`
+ * added `subscription`, and 8 polar rows whose receiver is an annotated `def`
+ * parameter of that name read as import-bound and landed in
+ * `moduleAliasMember`. Their real shape belongs to E4.1's population.
+ *
+ * A parenthesised statement is accumulated whole rather than scanned line by
+ * line, because a clause and its alias can straddle the line break.
  */
 export function collectImportBindings(source: readonly string[]): Set<string> {
   const bound = new Set<string>();
-  let inParenImport = false;
+  let pending: string | null = null;
   for (const raw of source) {
     const line = raw.trim();
-    if (inParenImport) {
-      for (const name of line.replace(/[(),]/g, " ").split(/\s+/)) {
-        if (/^[A-Za-z_]\w*$/.test(name) && name !== "as") bound.add(name);
-      }
-      if (line.includes(")")) inParenImport = false;
+    if (pending !== null) {
+      pending += ` ${line}`;
+      if (!line.includes(")")) continue;
+      addImportClauses(bound, pending);
+      pending = null;
       continue;
     }
     const from = /^from\s+[.\w]+\s+import\s+(.*)$/.exec(line);
     if (from !== null) {
       const tail = from[1];
-      if (tail.startsWith("(") && !tail.includes(")")) inParenImport = true;
-      for (const part of tail.replace(/[(),]/g, " ").split(/\s+/)) {
-        if (/^[A-Za-z_]\w*$/.test(part) && part !== "as") bound.add(part);
-      }
+      if (tail.startsWith("(") && !tail.includes(")")) pending = tail;
+      else addImportClauses(bound, tail);
       continue;
     }
     const plain = /^import\s+(.*)$/.exec(line);
-    if (plain === null) continue;
-    for (const clause of plain[1].split(",")) {
-      const alias = /\s+as\s+([A-Za-z_]\w*)\s*$/.exec(clause);
-      if (alias !== null) {
-        bound.add(alias[1]);
-        continue;
-      }
-      const head = clause.trim().split(".")[0] ?? "";
-      if (/^[A-Za-z_]\w*$/.test(head)) bound.add(head);
-    }
+    if (plain !== null) addImportClauses(bound, plain[1]);
   }
   return bound;
+}
+
+/** Every comma-separated clause of one import statement's tail; parens are noise. */
+function addImportClauses(bound: Set<string>, tail: string): void {
+  for (const clause of tail.replace(/[()]/g, " ").split(",")) addImportClause(bound, clause);
+}
+
+/**
+ * One clause — `x`, `x.y`, `x as y`. The alias wins when present; otherwise the
+ * name's FIRST segment, which is what `import a.b` puts in scope.
+ */
+function addImportClause(bound: Set<string>, clause: string): void {
+  const alias = /\s+as\s+([A-Za-z_]\w*)\s*$/.exec(clause);
+  if (alias !== null) {
+    bound.add(alias[1]);
+    return;
+  }
+  const head = clause.trim().split(".")[0] ?? "";
+  if (/^[A-Za-z_]\w*$/.test(head)) bound.add(head);
 }
 
 /** Names bound by a `TypeVar(` call — `T = TypeVar("T")`. */
@@ -386,4 +406,7 @@ function formatReport(report: FamilyReport): string {
   return `${lines.join("\n")}\n`;
 }
 
-main();
+// Only when RUN, never when imported — the same entrypoint guard
+// `py-codegraph-jedi-oracle.ts` carries, so the source-view collectors below can
+// be unit-tested without the CLI's argument contract firing.
+if (process.argv[1] !== undefined && import.meta.url === pathToFileURL(process.argv[1]).href) main();
