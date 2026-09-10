@@ -850,6 +850,52 @@ oracle-wrong classes:
 - **polar (73):** 51 CW, 14 OW:EnumClassmethod, 8 OW:ShadowedPackage. The full
   list is `audit-sample-list.txt` under the E4.0.4 dumps.
 
+### D10 — dynamic `single` falsified (measured 2026-09-10, E4.1.3)
+
+A name-only fan is **not precision-safe for Python**. Built, wired and measured
+on all five corpora (`--oracle merged --workers 8`), the `dynamic` component
+books **+83 new 1:1 matches against +85 new fabricated edges** — flask +6/+6,
+netbox +5/+5, polar +72/+72, httpx 0/+2, ugnest 0/0 — with gross `lost` 0 and
+`recall@fan` **0.344 on polar (n=122)** and 0.364 on netbox (n=11) against the
+0.85 bar. Both E4.1.3 stop rules therefore fired, and the component now ships
+**parked behind `CODEGRAPH_PY_DYNAMIC_DISPATCH`, default OFF**: with the flag
+absent `resolveDispatch` composes the cone alone and every column is the
+pre-E4.1.3 one, byte for byte.
+
+**Why the estimate was wrong, and it was not a rounding error.** D8's
+attribution predicted 232 `single` (1 wrong) at fan recall 0.980. It was
+computed over the 373 residual rows E4.0.4 attributed to `untypedNameReceiver` —
+every one of which HAS an in-project oracle target. **The component does not
+fire on that set.** It fires on every bare untyped name the chain declines, ~5×
+as many sites (polar 929 dispatch-answered against 330 attributed), and the
+surplus is receivers whose real type is a LIBRARY type that happens to share a
+member name with exactly one project class. Selection bias, not variance: the
+denominator excluded precisely the population that produces the false positives.
+
+**What a re-attempt needs**, in the order it buys the most:
+
+1. **Receiver-type evidence, not member names.** A file-scope binding view — a
+   module-level `log = structlog.get_logger()` is 31 of polar's 72 phantoms and
+   is invisible because `callResultBindings` reach the resolver per CHUNK, so a
+   method's context cannot see its own module's bindings. Then E4.6b's
+   return-type fold for the in-project call results, and a binding for
+   `except … as e` (8 more polar rows).
+2. **A real decline vocabulary.** `PYTHON_CORE_MEMBERS` is 36 names and is far
+   too small to carry this: `aggregate`, `title`, `natural_key`, `get_source`,
+   `list_templates`, `errors`, `label`, `submit`, `stream` are all Django, `str`
+   or Jinja members with a coincidental project owner. A typeshed/stdlib +
+   framework MEMBER set, used as a decline set, is the shape that scales; four
+   ad-hoc gates (builtin-named receiver, `_SCREAMING_SNAKE` constant,
+   foreign-headed call binding, `self.<member>` no file declares) took ugnest
+   from 4 phantoms to 0 and did nothing for the other four corpora.
+3. Only then re-flip the flag and re-run the same A/B. Demoting `single` to
+   `discount / 1` is NOT the fix: the harness splits by edge COUNT, so a demoted
+   single still persists a 1:1 edge and still reads `phantom`.
+
+**`union` (E4.1.4) is deferred**, below the 30-row bar: 18 rows, all polar, is
+not worth a walker change that lifts the annotation facet's union drop and the
+three declines that change guards. It is recorded here and left unscheduled.
+
 ---
 
 ## Risks
