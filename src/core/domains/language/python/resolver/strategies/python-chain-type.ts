@@ -5,7 +5,13 @@ import { propagateReceiverType, type ReceiverTypePorts } from "../../../kernel/r
 import type { PythonAncestorLinearizerCache } from "../python-ancestor-policy.js";
 import { PythonImportFileMapper } from "../python-import-file-mapper.js";
 import { createPythonReceiverTypePorts } from "../python-receiver-type-ports.js";
-import { lastSegment, resolvePythonMemberOnType, resolveTypeFile, type ResolverConfig } from "./shared.js";
+import {
+  lastSegment,
+  resolvePythonMemberOnType,
+  resolvePythonMemberOnTypeThroughMro,
+  resolveTypeFile,
+  type ResolverConfig,
+} from "./shared.js";
 
 /**
  * Typed-receiver resolution through the shared chain fold (E1 seam 3, bd
@@ -33,7 +39,8 @@ import { lastSegment, resolvePythonMemberOnType, resolveTypeFile, type ResolverC
  *   does today; nothing regresses by absence.
  *
  * - `resolved(target)` — the folded type resolved to one in-project symbol for
- *   the member, directly or up its `classExtends` chain. Terminal.
+ *   the member: on the type itself, up its C3 MRO, or (walker-v2 index, no
+ *   hierarchy channel) up its `classExtends` chain. Terminal.
  *
  * - `DROP` — the folded type is known and is NOT in the project (builtin,
  *   stdlib, third-party), or is in the project but defines the member nowhere
@@ -61,7 +68,7 @@ export class PythonChainTypeSymbolResolutionStrategy implements SymbolResolution
   constructor(
     private readonly cfg: ResolverConfig,
     private readonly mapper: PythonImportFileMapper = new PythonImportFileMapper(),
-    linearizers?: PythonAncestorLinearizerCache,
+    private readonly linearizers?: PythonAncestorLinearizerCache,
   ) {
     // ONE ports object for the life of the resolver — the fold allocates
     // nothing per call site.
@@ -75,10 +82,34 @@ export class PythonChainTypeSymbolResolutionStrategy implements SymbolResolution
     const type = propagateReceiverType(receiver, call.startLine, ctx, this.ports);
     if (!type || (type.form !== "class" && type.form !== "instance")) return CONTINUE;
 
+    // The LAST hop resolves its member through the C3 MRO, exactly as the hops
+    // before it read their field and return types (bd tea-rags-mcp-s2w5g).
+    // `resolvePythonMemberOnType` below falls back to the single-base
+    // `classExtends` chain with an UNFILTERED lookup on each hop, and polar
+    // declares `BuildRequestMixin` twice — once in the SDK, once in the
+    // generator template it is rendered from — so that lookup is ambiguous and
+    // answers `null` on a member jedi pins exactly.
+    const linearizer = this.linearizers?.for(ctx);
+    if (linearizer !== undefined) {
+      const mro = resolvePythonMemberOnTypeThroughMro(
+        type.name,
+        call.member,
+        ctx,
+        this.cfg.mode,
+        this.mapper,
+        linearizer,
+      );
+      if (mro.target) return resolved(mro.target);
+    }
+
     // A folded type whose file is not in the project is external — DROP rather
     // than hand the call to the short-name passes.
     if (resolveTypeFile(lastSegment(type.name), ctx, this.mapper) === null) return DROP;
 
+    // The legacy walk stays below the MRO one, not replaced by it: the pass's
+    // miss verdict is DROP either way, so keeping it costs no precision and
+    // keeps every edge it already answered — including the ones whose type name
+    // the MRO walk cannot address at all.
     const target = resolvePythonMemberOnType(type.name, call.member, ctx, this.cfg.mode, this.mapper);
     return target ? resolved(target) : DROP;
   }

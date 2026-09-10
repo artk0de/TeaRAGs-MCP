@@ -204,6 +204,56 @@ export function resolvePythonInheritedMember(
 }
 
 /**
+ * Where a walk for a member on a NAMED TYPE stopped, when it found nothing.
+ * `unbound` is this module's own state and not one of the kernel's: the type
+ * NAME never named a class the project declares, so no hierarchy was entered
+ * and the ancestor closure has nothing to say about it.
+ */
+export type PythonTypeMemberClosure = AncestorClosure | "unbound";
+
+/** A member found on a named type or one of its ancestors, and how far the walk saw. */
+export interface PythonTypeMemberResolution {
+  readonly target: SymbolResolutionTarget | null;
+  readonly closure: PythonTypeMemberClosure;
+}
+
+const UNBOUND_TYPE_MEMBER: PythonTypeMemberResolution = { target: null, closure: "unbound" };
+
+/**
+ * `<member>` on a receiver whose TYPE NAME is known, resolved through the C3
+ * MRO (bd tea-rags-mcp-s2w5g).
+ *
+ * The two steps between a type name and {@link resolvePythonInheritedMember}:
+ * the name resolves to the FILE that declares it, and the file plus the name
+ * become the dotted-FQ class KEY the ancestor walk is addressed by. Stated once
+ * here because three passes ask the same question of a differently-obtained
+ * type — `localBinding` of the walker's binding, `selfField` of the field's
+ * recorded type, `chainType` of what the fold arrived at — and the verbatim
+ * `<Type>#<member>` lookup two of them used instead is blind to inheritance:
+ * polar's `self.client.build_request()` types `client` to `SyncClientBase` and
+ * `build_request` is declared on `BuildRequestMixin`, a base of it. 752 rows.
+ *
+ * The verdict is the CALLER's. `unbound` and `closed` and `external` are three
+ * different pieces of evidence and the passes act on them differently; this
+ * function never fabricates a target to settle one.
+ */
+export function resolvePythonMemberOnTypeThroughMro(
+  typeName: string,
+  member: string,
+  ctx: CallContext,
+  mode: AmbiguousResolveMode,
+  mapper: PythonImportFileMapper,
+  linearizer: AncestorLinearizer<CallContext>,
+): PythonTypeMemberResolution {
+  const bareType = lastSegment(typeName);
+  const targetFile = resolveTypeFile(bareType, ctx, mapper);
+  if (targetFile === null) return UNBOUND_TYPE_MEMBER;
+  const classKey = pythonBoundClassKey(bareType, targetFile, ctx);
+  if (classKey === null) return UNBOUND_TYPE_MEMBER;
+  return resolvePythonInheritedMember(classKey, member, ctx, mode, linearizer);
+}
+
+/**
  * The MRO key to start a receiver-type walk from, anchored in the CALLER's own
  * file first (bd tea-rags-mcp-yl85b).
  *
