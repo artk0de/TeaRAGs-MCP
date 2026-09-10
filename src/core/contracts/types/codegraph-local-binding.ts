@@ -81,3 +81,51 @@ export function resolveLocalBinding(
   }
   return best;
 }
+
+/**
+ * A local bound to the RESULT of a call, recorded as the callee SPELLING
+ * because its type is not knowable in a per-file pass (bd tea-rags-mcp-z68v9).
+ *
+ * `repository = SubscriptionRepository.from_session(session)` types
+ * `repository` as whatever `from_session` returns — a fact that lives in
+ * ANOTHER file's `structuredReturnTypes` and on a class the caller reaches only
+ * through the MRO. The walker therefore records
+ * `callee: "SubscriptionRepository.from_session"` and the resolver folds it
+ * once, at the one layer where the whole symbol table is in scope.
+ *
+ * Distinct from `localCallBindings` (`Record<string, string>`, bd
+ * tea-rags-mcp-6g9c), which Go and Ruby pair with the bare-name-keyed
+ * `functionReturnTypes` channel. Python DROPS that channel (one
+ * `def get(self) -> Foo` would speak for every `get` in the corpus), so a
+ * Python fold needs the whole callee expression, not a short name — hence a
+ * second channel rather than a widening of the first.
+ */
+export interface CallResultBinding {
+  /** 1-based line of the assignment. */
+  readonly line: number;
+  /** The callee as written, arguments stripped: `Repo.from_session`, `self.factory.build`, `make`. */
+  readonly callee: string;
+}
+
+/**
+ * The most-recent {@link CallResultBinding} for `varName` at or before
+ * `atLine` — the LAST entry whose `line <= atLine`, `undefined` when none.
+ *
+ * The rule is {@link resolveLocalBinding}'s verbatim, and it lives beside it so
+ * the two position lookups cannot drift: a call site reads whichever binding
+ * was established most recently above it, and a later reassignment shadows an
+ * earlier one for every call below it.
+ */
+export function nearestCallResultBinding(
+  bindings: Record<string, CallResultBinding[]> | undefined,
+  varName: string,
+  atLine: number,
+): CallResultBinding | undefined {
+  const list = bindings?.[varName];
+  if (!list || list.length === 0) return undefined;
+  let best: CallResultBinding | undefined;
+  for (const binding of list) {
+    if (binding.line <= atLine && (best === undefined || binding.line > best.line)) best = binding;
+  }
+  return best;
+}

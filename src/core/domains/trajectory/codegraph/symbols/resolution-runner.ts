@@ -368,6 +368,9 @@ export class CallEdgeResolutionRunner {
       associationTypes: extraction.associationTypes,
       localBindings,
       localCallBindings: chunk.localCallBindings,
+      // bd tea-rags-mcp-z68v9 — per-chunk, never merged run-global: a local's
+      // binding is meaningless outside the body that established it.
+      callResultBindings: chunk.callResultBindings,
       functionReturnTypes: inputs.returnTypes,
       // Ruby type-source PRECISE paths (Increment 1, Task 1.5) — these wire
       // the previously-dead `ctx.ivarTypes` / `ctx.structuredReturnTypes`
