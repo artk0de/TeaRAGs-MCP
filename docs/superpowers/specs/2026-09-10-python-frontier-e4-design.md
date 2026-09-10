@@ -1,0 +1,799 @@
+# Python Frontier E4 — Design
+
+**Status:** approved (user, 2026-09-10 — scope fixed, no approval loop in this
+document) **Kind:** epic (one measurement increment + six capability increments)
+**Related:** `tea-rags-mcp-9fgdi` (E2), `tea-rags-mcp-qclv2` (E3),
+`tea-rags-mcp-w205u.1` / `w205u.2` (deferred out of E3), `tea-rags-mcp-f11nz` /
+`6pd5l` / `zhetx` (open from the program), `tea-rags-mcp-f2jsb` / `j0pki`
+(dispatch cap and its aggregates), `tea-rags-mcp-4vg1i` / `8qyax` (the merge
+that landed on main today) **Worktree:** `.claude/worktrees/py-frontier-e4` at
+main `78e6c40b2`
+
+**Name collision, stated once.** The program spec
+(`2026-09-03-python-codegraph-unification-program-design.md`) uses **E4** for
+the SDK freeze (`z6ry9`). This document's E4 is a different thing: the
+**frontier increment 2**, the recall work that follows seams 1–5 and E3
+increment 1. Where the two must be distinguished, this one is **Frontier E4**
+and the program's is **SDK freeze**. The SDK freeze is unchanged and still last
+in the dependency graph; Frontier E4 sits between E3 and it, and every component
+Frontier E4 adds is one more consumer proving a contract the freeze will
+publish.
+
+---
+
+## Goal
+
+Spend the increment on the families that actually carry the residual, in the
+order the residual says — and know that order by measurement rather than by
+shape-counting. Two things block that today and both are instrument defects, not
+capability defects:
+
+1. **A quarter of polar is outside the denominator.** parso 0.8.7 — the parser
+   jedi 0.20.0 pins — rejects Python 3.14 grammar (`match`, PEP 758
+   `except A, B:`, the `type` statement), so 20,424 polar rows and 2,331 netbox
+   rows are `oracleDegraded` and dropped from every rate this program has
+   published. Every claim about polar is a claim about the 75 % jedi could read.
+2. **The dispatch layer is not exercised at all.** Both the oracle
+   (`py-codegraph-jedi-oracle.ts:225`) and the tally
+   (`codegraph-chain-tally.ts:438`) skip a call site whose `CallRef` carries
+   `dispatch`, and neither ever calls `resolver.resolveDispatch`. Production
+   calls it FIRST (`resolution-runner.ts:557`, cone-before-exact), so a fan-out
+   REPLACES the exact chain's single answer. Whatever Python's cone emits today
+   is invisible to every number this program has recorded, and every fan-out
+   family in E4.1 would be unmeasurable on arrival.
+
+So E4.0 is measurement, and it is the first thing that ships. E4.1–E4.6 are
+ordered by what E4.0 attributes, and this document fixes their interfaces so the
+ordering can change without a redesign.
+
+---
+
+## Ceiling map — where the chain stands, 2026-09-10
+
+Overall in-project recall, integration `6d9eee602` (seam 5 + E3 increment 1),
+seeded jedi oracle, five corpora. Denominator is
+`match + missed + wrongFile + phantom`; `oracleDegraded`, `parseFailed` and
+`oracleNonCallable` rows are excluded.
+
+| corpus | recall | phantom + wrongFile / edges | edges  | chain sites |
+| ------ | ------ | --------------------------- | ------ | ----------- |
+| ugnest | 0.970  | 0 / 770 = **0.00 %**        | 770    | 4,731       |
+| netbox | 0.969  | 27 / 8,651 = 0.31 %         | 8,651  | 44,126      |
+| polar  | 0.951  | 186 / 16,623 = 1.12 %       | 16,623 | 56,710      |
+| httpx  | 0.961  | 8 / 491 = 1.63 %            | 491    | 1,549       |
+| flask  | 0.874  | 10 / 355 = **2.82 %**       | 355    | 1,346       |
+
+flask is ABOVE the 2 % precision bar and was already above it before E3 — same
+nine phantoms and one `wrongFile` on the same 355-edge denominator. Inherited,
+recorded, not spent by any increment. A corpus this small puts one phantom at
+0.28 pp, which is why the bar is read per corpus and never as a headline.
+
+Per receiverKind after E3, with the residual bucket each one is
+(`docs/superpowers/plans/2026-09-10-python-django-managers.md` → "Measurement
+record" and "Residual after close"):
+
+| corpus | kind       | n     | recall    | missed | what the residual IS                                        |
+| ------ | ---------- | ----- | --------- | ------ | ----------------------------------------------------------- |
+| netbox | `chain`    | 248   | **0.972** | 7      | 4 of 7 are `<Model>(…).save()` — constructor-result head    |
+| netbox | `localVar` | 212   | 0.764     | 50     | all bare names; head is `layout.Row(…)` — a module alias    |
+| netbox | `dynamic`  | 1,523 | 0.973     | 41     | 22 bare names, 17 `cls` receivers                           |
+| netbox | `bareCall` | 5,049 | 0.997     | 12     | module-level defs called from a sibling migration function  |
+| polar  | `chain`    | 1,610 | 0.953     | 75     | 71 dotted receivers (`item.type`) — untyped field hop       |
+| polar  | `localVar` | 447   | 0.888     | 50     | bare names assigned from an unfolded call result            |
+| polar  | `dynamic`  | 1,791 | 0.814     | 424    | 391 bare names — branch-bound receivers                     |
+| polar  | `bareCall` | 7,972 | 0.947     | 103    | `prompt_setup` decorator-registered CLI commands, same file |
+| ugnest | all        | —     | —         | —      | byte-identical through E3; `chain` 0/4 is the whole hole    |
+| flask  | `chain`    | 29    | —         | 27     | 11 inherited field, 15 other — n too small to rank          |
+| httpx  | `chain`    | 22    | —         | 16     | 10 own field, 3 inherited                                   |
+
+Two readings the rest of this document rests on. First, **the big single-shape
+levers are gone**: R4a (inherited field) and R1b (call-result local) were seam
+5, the Django manager field was E3, and what is left is 762 missed rows spread
+over a dozen shapes with no shape above 424. Second, **the residual is
+concentrated in `dynamic` and in polar** — 424 of 762 — and `dynamic` is exactly
+the kind a fan-out answers and a 1:1 chain cannot.
+
+---
+
+## E4.0 A — the second oracle
+
+### The problem, in numbers
+
+`jedi_oracle.py` runs TWO parses per file on purpose (`answer_file`, line 443):
+`ast.parse` with the oracle interpreter is the ORACLE's own ability to read the
+file, and `parso` — jedi's parser, which never raises and returns error nodes
+instead — is counted through `grammar.iter_errors`. The host turns a non-zero
+count into `oracleDegraded` (`py-codegraph-jedi-oracle.ts:514`), and
+`isDegraded` in `scripts/lib/py-oracle-core.ts:275` drops those rows from every
+rate.
+
+| corpus | degraded rows | of total sites | cause                                       |
+| ------ | ------------- | -------------- | ------------------------------------------- |
+| polar  | 20,424        | ~24.7 %        | 26 + 53 files of PEP 758 / `match` / `type` |
+| netbox | 2,331         | ~5.3 %         | 2 files with parso grammar errors           |
+| others | 0             | 0              | —                                           |
+
+polar runs its `ast.parse` on 3.14 (`oraclePython: "3.14"` in
+`scripts/lib/codegraph-corpora.json`), so those files are NOT `parseFailed` —
+the oracle reads them fine and jedi answers them from a damaged tree. That is
+the worse failure: a degraded row carries an ANSWER, and the only reason it is
+not scored is that nobody could say whether the answer meant anything.
+
+### Contract
+
+The second oracle is a peer of `jedi_oracle.py`, not a replacement, and the
+contract is **schema identity**: it emits the SAME stdout NDJSON record shape,
+so the TS host merges without knowing which engine produced a row.
+
+```text
+in  (stdin, NDJSON)   { kind: "config", corpusRoot, venvPython?, roots[], workers }
+                      { kind: "file",  relPath, sites: [{ startLine, member, receiver, callText, receiverKind }] }
+out (stdout, NDJSON)  { relPath, parseFailed, parsoErrors, answers: [
+                          { startLine, member,
+                            outcome: { kind: "inProject"|"external"|"unknown",
+                                       origin?: PyTargetOrigin,
+                                       targets?: [{ relPath, symbolId, defLine, defKind, pinUncertain }] },
+                            unlocated?: PyUnlocatedShape,
+                            siteFacts?: PySiteFacts } ] }
+```
+
+`parsoErrors` stays in the schema and reads `0` from an engine that does not use
+parso — the field means "jedi's parser was unhappy", and an engine with no jedi
+in it has nothing to report. `PyTargetOrigin`, `PySiteFacts` and
+`PyUnlocatedShape` are the existing types in `scripts/lib/py-oracle-core.ts` and
+do not change. `symbolId` composition must mirror `compose_symbol_id`
+(`jedi_oracle.py:98`) exactly — `Class#method`, `Class.method` for a
+`staticmethod` / `classmethod` decorator, bare name at module level,
+`Outer.Inner` for nesting, `pinUncertain: true` with `defKind: "nonCallable"`
+when the target line starts no `def` or `class`. An engine that cannot read the
+target file back reports `defKind: "unknown"`, also `pinUncertain`.
+
+`classify_origin`'s ORDER is part of the contract and not the obvious one
+(`jedi_oracle.py:64`): bundled-stub markers, then `site-packages` /
+`dist-packages`, then the stdlib DIRECTORY regex, and only THEN the corpus-root
+containment test — because ugnest keeps its virtualenv inside its own checkout,
+and a root-prefix-first order called Django's own source "project" in 26 of 30
+sampled targets. The stdlib NAME test runs LAST and only for a path the corpus
+does not contain. The second oracle reuses this function rather than re-deriving
+it; if it is written in TypeScript, the port is line-for-line and its unit test
+is the same table.
+
+### Candidates
+
+Neither is installed on this machine (`pyright: command not found`,
+`ty: command not found`, and neither is in the `uv` cache), so E4.0.1 installs
+both. What IS verified here:
+`uv run --no-project --python 3.13 --with jedi==0.20.0` resolves **jedi 0.20.0 /
+parso 0.8.7 on CPython 3.13.7**, which is the degradation this whole section
+exists to route around.
+
+- **pyright** (Microsoft, TypeScript, npm `pyright`). Ships a language server;
+  the query is LSP `textDocument/definition` at the callee position, driven from
+  a small stdio client. The project is TypeScript, so the client lives under
+  `scripts/py-oracle/` next to the host and needs no second runtime. Its own
+  parser is maintained against current CPython grammar, which is the whole point
+  of choosing it. Risks: it wants a `pythonVersion` / `venvPath` configuration
+  per corpus (five different venvs, one on 3.14.0rc2); LSP is stateful, so
+  determinism has to be proven rather than assumed; and definition-per-request
+  latency across ~20k sites is the number the spike exists to measure.
+- **ty** (Astral, Rust, `ty server` speaks LSP). Same query shape, much faster
+  in principle, and it reads `pyproject.toml` the way `uv` does. Risks: it is
+  young — coverage of the answer space (does it answer `self.x.m()` at all? does
+  it follow re-exports?) is unknown offline, and an engine that answers
+  `unknown` on the sites we care about buys nothing however fast it is.
+
+The spike decides on evidence, and the decision is recorded in this document's
+decision record rather than in code. A THIRD outcome is admissible and must be
+stated in the spike report if it holds: **neither passes**, in which case the
+denominator stays where it is, the report keeps carrying the degraded counts,
+and E4.1–E4.6 proceed against the 75 % of polar that is measurable.
+
+### Merge rule — per FILE, never per site
+
+The host holds one `Map<relPath, OracleReply>` keyed by file
+(`py-codegraph-jedi-oracle.ts` `askOracle`), and the merge happens at that
+granularity for a reason: jedi's per-process module cache makes one file's
+answer depend on what its worker parsed before it (`jedi_oracle.py:539` — the
+striped partition plus `maxtasksperchild=1` exists precisely because
+`imap(chunksize=4)` moved a flask site between `external` and `unknown` run to
+run). Mixing engines WITHIN a file would put two different module resolutions
+behind one `jedi.Script` cache and make the row-level provenance unreadable.
+
+```text
+--oracle jedi    jedi only. Byte-identical to today. The default.
+--oracle lsp     the second engine only. For the agreement measurement.
+--oracle merged  per file: jedi's reply UNLESS jedi reported parsoErrors > 0
+                 (or parseFailed), in which case the second engine's reply.
+```
+
+The second engine lives at `scripts/py-oracle/lsp_oracle.ts` — both candidates
+speak LSP, so the file is named for the transport rather than for whichever
+engine D7 picks, and switching engines is a launcher record, not a rewrite.
+
+Every row carries `oracleEngine: "jedi" | "lsp"`, and every table the report
+prints is broken out by it. The rule is deliberately asymmetric: jedi is primary
+because five corpora of published numbers rest on it, and the second engine is a
+REPAIR for files jedi could not read, never a tiebreak on files it could. The
+one exception is the audit sample (E4.0 C), where both engines answer the same
+100 rows on purpose.
+
+### What "the denominator grows" breaks, and how the report keeps it honest
+
+Every published Python number — the E0 final measurement record, seam 4, seam 5,
+E3's measurement record — was computed on the OLD denominator, which is
+`total − oracleDegraded − parseFailed − oracleNonCallable`. Adding 22,755 rows
+(polar 20,424 + netbox 2,331) to the scored population changes those rates even
+if not one line of resolver code moves. A number that changes for that reason is
+not a regression and must never be reported as one.
+
+So the rule is: **the report carries BOTH, always, side by side.**
+
+| column                | denominator                                                                 |
+| --------------------- | --------------------------------------------------------------------------- |
+| `recallLegacy`        | jedi-answerable rows only — reproduces every published number byte-for-byte |
+| `recallMerged`        | jedi rows + second-engine rows on files jedi could not read                 |
+| `nLegacy` / `nMerged` | the two denominators, printed, never inferred                               |
+| `oracleEngine`        | per row, so any table can be split by provenance                            |
+
+`recallLegacy` is a REGRESSION GATE, not a legacy artifact: an E4.0 run must
+reproduce E3's closing numbers exactly on it (netbox `chain` 0.972, polar
+`localVar` 0.888, ugnest byte-identical), or the harness change broke something.
+`recallMerged` is the number E4.1–E4.6 are measured against, and the first run
+that produces it establishes a NEW baseline that is quoted with its date and its
+HEAD, exactly as the E0 final record is.
+
+Determinism is a gate, not a hope. jedi needed a fixed file→process assignment
+to be reproducible (`jedi_oracle.py:539`); an LSP-backed engine is stateful in a
+different and worse way, since a server accumulates a workspace as it answers.
+The requirement is two consecutive full runs on one corpus producing
+**byte-identical row dumps** on `(relPath, startLine, callText)` →
+`(outcome.kind, origin, targets[0].relPath, targets[0].symbolId)`. Anything less
+and the engine does not ship, however good its coverage is.
+
+---
+
+## E4.0 B — fan scoring
+
+### What is not measured today
+
+Python's `PythonCallResolver.resolveDispatch` (`python-resolver.ts:123`) is a
+single `ConeDispatchResolver` handed the `PythonConeTypeLocator`. Production
+consults it BEFORE the exact chain in the default channel
+(`resolution-runner.ts:557`) and a non-empty fan-out REPLACES the chain's
+answer; an over-cap `ambiguous` verdict emits NO edges and NO fallback
+(`kernel/dispatch-narrowing.ts` terminal, cap from
+`dispatchFanoutPolicyFor(ctx.symbolTable)` —
+`max(16, ceil(p99 defs-per-member))`). The oracle and the tally both run
+`resolveViaChain` only. Consequence: **the size of today's oracle-vs-production
+gap is unknown and is exactly the number of Python sites where the cone fires.**
+One piece of evidence says it is near zero on ugnest — E3's live validation read
+770 edges from `prime`, "the oracle's AFTER dump exactly" — but ugnest is 770
+edges and the other four corpora have never been reconciled that way.
+
+### Design
+
+Fan scoring is an ADDITIVE second scoring pass over the same walk. The 1:1 bar
+is untouched, and that is enforced mechanically rather than promised:
+`--no-dispatch` reproduces today's columns byte-for-byte, and the E4.0.3 gate is
+a diff of the two dumps.
+
+For each scored site the harness now also calls
+`production.resolveDispatch(call, ctx)` and records the outcome:
+
+| column          | meaning                                                                         |
+| --------------- | ------------------------------------------------------------------------------- |
+| `fanOutcome`    | `none` (empty edges) \| `fan` (m ≥ 1 edges) \| `ambiguous` (over cap)           |
+| `fan`           | `string[]` of `relPath#symbolId`, sorted, deduped — the dumped fan              |
+| `fanSize`       | `fan.length`; 0 for `none`, and for `ambiguous` the `candidateCount`            |
+| `fanConfidence` | the per-edge confidence the component assigned (1.0, or `discount / m`)         |
+| `fanHitsOracle` | oracle's in-project target ∈ `fan` (file+symbol; file only when `pinUncertain`) |
+
+and the report gains four fan metrics, per corpus and per receiverKind:
+
+- **`recallAtFan`** — `fanHitsOracle` over the sites where the oracle has an
+  in-project target and `fanOutcome` is not `none`. Read as "when the fan fires,
+  does the right answer survive the narrowing".
+- **`fanSizeMean` / `fanSizeP50` / `fanSizeP95`** — over `fanOutcome == "fan"`.
+- **`ambiguousShare`** — `ambiguous / (fan + ambiguous)`. This is the cap's
+  bite. A share that climbs when a family lands means the cap, not the family,
+  is now the binding constraint.
+- **`precisionProxy`** — `Σ (1 / fanSize)` over sites where `fanHitsOracle`,
+  divided by the same denominator as `recallAtFan`. A 1-edge fan scores 1.0 and
+  a 10-edge fan scores 0.1, which is the honest reading of an edge a consumer
+  has to pick from ten.
+
+**Why fan and 1:1 are never summed.** They are different products measured
+against different bars. A confidence-1 edge is a claim: it is persisted,
+navigable, and it is what the ≤ 2 % fabricated+wrongFile precision bar governs.
+A fan edge is a HYPOTHESIS SET: it carries `discount / m` confidence, it is
+navigation-hidden as Ruby's are, and its own quality metric is `precisionProxy`,
+not the phantom bar. Adding a `recallAtFan` win to `recall` would let an
+increment "gain recall" by fanning out over every class declaring the member —
+the exact pathology `f2jsb` capped after 1.5 M noise edges on taxdome. So the
+report prints them in separate column groups with separate denominators, and the
+headline recall number for a corpus is and stays the 1:1 one.
+
+**How `ambiguous` and the cap interact, stated so an executor does not misread
+it.** `ambiguous` is not a fan of size > cap; it is the DECISION not to emit a
+fan at all. It carries no edges, and `resolveDispatchViaComponents` treats it as
+decisive — a later component may not re-fan a call an earlier one judged too
+ambiguous. So `ambiguous` rows are excluded from `fanSize*` and from
+`precisionProxy` (there is no fan to size), counted in `ambiguousShare`, and
+counted in `recallAtFan`'s denominator as a MISS when the oracle had an
+in-project target. That last choice is deliberate: an over-cap decision that
+threw away the right answer is a cost of the cap, and hiding it would make the
+cap look free.
+
+---
+
+## E4.0 C — the oracle-disagreement audit
+
+Every rate in this program treats jedi as ground truth. It is not, and two known
+shapes prove it: `applySuperMroBlindSpot` (`scripts/lib/py-oracle-core.ts:224`)
+already excuses a class of `super()` rows where jedi's answer is wrong for a
+cooperative-MI hierarchy, and `oracleNonCallable` (`z796g`) exists because
+jedi's `goto` answers an ASSIGNMENT for `table = None` called as
+`self.table(...)`, where no callable target exists for any chain to find. Both
+were found by opening rows. Nobody has ever measured how much of the `phantom` /
+`wrongFile` population is the same thing.
+
+That matters now specifically because of flask. Its 2.82 % precision-miss rate
+is the only corpus above the bar, it is 10 rows, and if six of them are oracle
+artefacts then the bar was never breached. An increment cannot be asked to fix a
+number that is an instrument reading.
+
+**Protocol.** 100 rows, seeded PRNG (`mulberry32`, the same sampler
+`samplePyRows` uses — never first-N), stratified across corpora proportional to
+each corpus's `phantom + wrongFile` count, with flask over-sampled to its full
+10 rows because n is small and the stakes are the bar. For each row:
+
+1. Open the caller at `corpora/<corpus>/<relPath>:<startLine>` and read the
+   binding site. This is the same manual method seam 5's decision 1 used, and it
+   is the only method that has ever produced a correct attribution here.
+2. Ask the second engine the same site (`--oracle lsp`), recording its answer as
+   a third column.
+3. Classify into exactly one of:
+
+| class                  | meaning                                                                       |
+| ---------------------- | ----------------------------------------------------------------------------- |
+| `chainWrong`           | the chain's target is genuinely wrong; the oracle is right                    |
+| `oracleWrongMro`       | cooperative `super()` / MI — the blind spot, possibly beyond its current gate |
+| `oracleWrongSingleton` | module-level singleton or re-exported instance; jedi points at the assignment |
+| `oracleWrongCache`     | the two engines disagree AND jedi's answer moves between runs — a cache flip  |
+| `bothWrong`            | neither names the runtime target                                              |
+| `undecidable`          | dynamic enough that no static answer exists                                   |
+
+The second engine is the TIEBREAKER, not the judge: a row where the two engines
+agree and the chain differs is `chainWrong` with high confidence; a row where
+they disagree goes to manual reading and the reading wins.
+
+**Output.** A table of the six classes per corpus, and a single derived number
+per corpus: **`precisionMissAdjusted`** =
+`(phantom + wrongFile − oracleWrong*) / edges`, printed BESIDE the unadjusted
+rate and never instead of it. If flask's adjusted rate lands under 2 %, that is
+recorded as a finding about the instrument, and the raw 2.82 % still stands in
+the ceiling map.
+
+---
+
+## E4.0 D — family attribution, and the ordering it produces
+
+The deliverable that orders E4.1–E4.6. Same method as seam 5 decision 1 and E3
+decision 1: bucket every row of the FINAL tree by the mechanism that WOULD have
+answered it, per corpus, in counts, from the row dumps rather than from a grep
+over source. What is new is that the buckets are now families rather than single
+shapes, and that two of them require running the harness twice.
+
+Families, each with the column name the report prints and the increment it
+feeds:
+
+| family                 | detection                                                                         | feeds |
+| ---------------------- | --------------------------------------------------------------------------------- | ----- |
+| `unionBranchReceiver`  | `x = A() if c else B()`, `A \| B` annotation, `Optional[T]` on the binding        | E4.1  |
+| `protocolReceiver`     | the receiver's annotated type is a `Protocol` subclass in-project                 | E4.1  |
+| `transparentWrapper`   | `Mapped[T]`, `Annotated[T, …]`, `ClassVar[T]`, `Final[T]`, `Required/NotRequired` | E4.2  |
+| `sqlalchemyRow`        | `session` / `select(X)` / `.execute` / `stmt` receivers (E3 increment-2 table)    | E4.2  |
+| `pydanticRow`          | `model_validate` / `model_dump` / `model_copy`                                    | E4.2  |
+| `drfViewAttr`          | `self.get_serializer()`, `self.request.user`, `self.get_object()`                 | E4.3  |
+| `celeryEnqueue`        | `.delay(` / `.apply_async(` on a project task                                     | E4.3  |
+| `djangoUrlRoute`       | `path("…", views.X)` / `as_view()` argument positions                             | E4.3  |
+| `pytestFixture`        | a test-function parameter whose name is a project `@pytest.fixture` def           | E4.3  |
+| `typeVarGeneric`       | `def f(x: T) -> T` with a `TypeVar` bound in scope                                | E4.4  |
+| `asyncForm`            | `(await x).m()`, `async for`, `asyncio.gather(...)` results                       | E4.5  |
+| `sameFileBareCall`     | callee `def` in the caller's own file, lost to cross-file ambiguity               | E4.6  |
+| `constructorChainHead` | `Model(...).save()` — the chain head is a constructor result                      | E4.6  |
+| `untypedFieldHop`      | dotted receiver whose field carries no type fact (polar's 71)                     | E4.6  |
+| `runtimeOnly`          | computed `getattr`, `__getattr__` proxy, monkeypatch, metaclass, string dispatch  | OUT   |
+
+Two families cannot be counted from one run:
+
+- **`pytestFixture` needs the tests walked.** Production excludes test paths via
+  `buildCodegraphExclusionFilter`, and the harness reproduces that exclusion
+  exactly. So the family is measured TWICE — once with the standard exclusion
+  and once with `CODEGRAPH_EXCLUDE_TESTS=false` — and the report prints both
+  populations with the delta between them. The delta IS the family's size; the
+  standard run remains the baseline for every other number.
+- **`sqlalchemyRow` / `pydanticRow` have zero recall mass and are counted in
+  EDGES.** E3's increment-2 measurement on polar found 2,550 SQLAlchemy rows and
+  223 pydantic rows with **0 `missed`** — every one is `agreeExternal` or
+  `bothUnresolved`, i.e. outside the recall denominator by construction. Their
+  column is `edgesGained`, never `recall`, and the honest bar for them is the
+  phantom rate on 1,978 `agreeExternal` rows exposed to a flip — nine times
+  increment 1's netbox exposure.
+
+**The ordering rule.** E4.1–E4.6 are re-ordered by measured `missed` count
+descending, with two overrides that are stated now so they are not argued later:
+a family whose rows are all outside the recall denominator never outranks one
+with recall mass, however large its edge count; and a family whose fix is a
+relocation of existing Ruby machinery (E4.1's narrowers) may be pulled forward
+regardless of rank, because its cost is bounded by a parity gate rather than by
+design. The resulting table is written into this document's decision record with
+its counts, and THAT table — not this list's order — is the execution order.
+
+---
+
+## E4.1 — dispatch fan-out
+
+Python has one dispatch component (`ConeDispatchResolver`, passed bare) where
+Ruby has four composed through `resolveDispatchViaComponents`
+(`ruby-resolver.ts:143` — `[table, union, cone, dynamic]`). Two moves, in this
+order.
+
+**The relocation.** Ruby's narrowing cascade already lives in the kernel
+(`kernel/dispatch-narrowing.ts`: `ArityNarrower`, `KwargNarrower`,
+`VisibilityNarrower`, `BlockNarrower`, `LiteralReceiverNarrower`,
+`DuckVocabularyNarrower`, `resolveNarrowedFanout`), but the composition that
+uses them is Ruby-private in
+`ruby/resolver/strategies/ruby-dynamic-dispatch.ts`, alongside
+`classifyRubyLiteralReceiver` and `rubyDynamicFanoutSuppressed`
+(`ruby-dynamic-fanout-gates.ts`). What relocates is the COMPOSITION —
+`buildDispatchCascade(opts) → DispatchCandidateNarrower[]` plus the shared
+terminal — and Ruby keeps its literal map, its duck vocabulary and its
+suppression gates as injected language data behind a thin adapter.
+Byte-identical relocation protocol, the two Ruby risk files untouched, and the
+gate is the standing triple: Ruby suite green with no test edits,
+`codegraph-chain-tally --lang ruby` byte-identical on mastodon AND taxdome,
+`ruby-resolver-parity` mismatches 0.
+
+**The Python side.** `PythonCallResolver.resolveDispatch` stops being
+`this.cone.resolveDispatch` and becomes
+`resolveDispatchViaComponents([union, cone, dynamic], call, ctx)`, matching
+Ruby's precedence for the same reason Ruby has it: a union receiver NAMES its
+possible types, CHA only knows descendants, so stronger evidence goes first.
+Python's `union` component reads PEP 604 `A | B` and `Optional[T]` off the
+annotation facet's `TypeRef` — the `union` form already exists in the neutral
+contract and `python-receiver-type-ports.ts` already declines it on purpose ("a
+`container` or `union` receiver yields nothing"), so this is turning a
+deliberate decline into a fan rather than inventing a channel. Python's
+`dynamic` component is the narrowed short-name fan for an untyped receiver,
+which is what polar's 391 bare-name `dynamic` misses are. **Protocol receivers**
+fan to in-project implementors: structural, so the candidate set is "classes
+declaring every member of the protocol", capped by the same policy.
+
+Confidence, cap and visibility are NOT re-decided here: fan edges carry
+`discount / m` as `resolveNarrowedFanout` already assigns, the cap is
+`dispatchFanoutPolicyFor` (`max(16, ceil(p99))`), over-cap is `ambiguous` with
+no edges and no fallback, and fan edges stay navigation-hidden exactly as Ruby's
+are. The measurement is E4.0 B's fan columns; the 1:1 bar must not move.
+
+## E4.2 — transparent wrappers, SQLAlchemy, pydantic
+
+The two arms E3 deferred, beads `w205u.1` (dependency manifest) and `w205u.2`
+(vocabulary arms), plus the wrapper family. `w205u.1` ships with **nested
+manifests** this time, because root-only reading was measured useless on the one
+corpus that needs it: polar declares its stack in `server/pyproject.toml` and
+`sdk/python/pyproject.toml` and has no root manifest at all. The gate reads the
+nearest manifest at or above a file's directory, memoised per directory, and
+falls back to per-file imports when there is none — the fallback is not a
+degradation to apologise for, it is what E3 already runs on.
+
+`transparentWrapper` is the cheap half and is language-level rather than
+framework-level: `Mapped[T]`, `Annotated[T, …]`, `ClassVar[T]`, `Final[T]`,
+`Required[T]` / `NotRequired[T]` all mean "the value is a T" for the purpose of
+typing a receiver, and the annotation facet currently sees a subscript it does
+not unwrap. One unwrap rule in the type-fact reader, applied before the
+`container` / `union` classification, keyed on a frozen name set. SQLAlchemy's
+`Mapped[T]` falls out of it for free, which is why the wrapper and the
+vocabulary ship together: whatever remains after unwrapping is genuinely
+framework knowledge (`select(X)` returning a `Select` bound to `X`, `session`
+methods returning project entities), and THAT goes in the vocabulary arm behind
+the manifest gate with a remove clause, as E3's Task 3 was written.
+
+The bar for this increment is `edgesGained` and phantom exposure, not recall — 0
+`missed` rows, measured. 1,978 polar `agreeExternal` rows are exposed to a flip,
+so the A/B checks that column explicitly per corpus and any conversion of
+`agreeExternal` into a project edge fails the increment.
+
+## E4.3 — DRF, Celery, pytest fixtures, Django `path()`
+
+Framework vocabularies in the `defineFrameworkVocabulary` shape E3 established,
+ordered among themselves by E4.0 D's counts. DRF's `self.get_serializer()` /
+`self.request.user` are attribute-type facts on a view class the manifest gate
+identifies; Celery's `.delay` / `.apply_async` are the Python analogue of Ruby's
+enqueue verb map — the receiver is the task function and the edge target is its
+body; `path("…", views.X)` is a string-addressed registry, the same seam as
+Ruby's route-to-controller resolution; pytest fixtures are a parameter-name →
+`@pytest.fixture` def binding that only exists when tests are walked, which is
+why E4.0 D measures it twice. Nothing here ships without its own A/B and its own
+remove clause, and `pytestFixture` additionally requires a decision on whether
+production should walk tests at all — that decision belongs to the tests-tier
+bead, not to this epic; E4.3 measures the family and states the cost.
+
+## E4.4 — TypeVar substitution and Protocol structural dispatch
+
+`def f(x: T) -> T` with a `TypeVar` bound: the return type is the ARGUMENT's
+type, so it is a substitution at the call site rather than a fact in the store.
+The seam is `ReceiverTypePorts.returnTypeOf` — it answers from
+`structuredReturnTypes` today, and it grows an arm that, when the recorded
+return is a type variable, resolves it against the call's own argument types.
+`-> Self` is the degenerate and most common case, already exercised by polar's
+`RepositoryBase.from_session`. The Protocol half is E4.1's fan made precise:
+where a structural match is UNIQUE in-project, it is a 1:1 edge rather than a
+fan of one.
+
+## E4.5 — async forms
+
+`(await x).m()`, `async for item in agen`, `asyncio.gather(a(), b())`. The
+walker records the awaited expression rather than the `await` node, so the
+existing call-result and iteration channels can fold it; `gather` is a container
+whose elements are the awaited callees' returns, which is the first place a
+container element type is actually needed. Sized by E4.0 D before it is designed
+further — polar and httpx are the corpora that carry it, and neither has yet had
+its async rows counted separately.
+
+## E4.6 — same-file `Cls#m` and constructor-result chain heads
+
+Three small, measured, independent shapes. `globalShortName` grew a same-file
+arm in seam 5; polar's remaining 103 `bareCall` misses are
+`prompt_setup`-decorated CLI commands in the caller's own file, which says the
+arm's gate is narrower than the shape. `constructorChainHead` is
+`Model(...).save()` — netbox's 4 of 7 remaining `chain` misses — where the chain
+head is a constructor result the fold already knows how to type but is not asked
+to. `untypedFieldHop` is polar's 71 dotted receivers whose field has no type
+fact from any source; it is the residual that will still be there after
+everything else, and it is named so that it is not mistaken for a defect in the
+fold.
+
+---
+
+## Interaction with `4vg1i` / `8qyax` — the merge that landed on main today
+
+`78e6c40b2` merged two changes that touch ground E4 stands on. Neither
+conflicts, and both change what E4 may claim.
+
+### Persisted return-type channels (`8qyax`, commit `83a60aa22`)
+
+`CodegraphPass1FileAggregates` gained `structuredReturnTypes` (keyed
+`"<fqClass>#method"`) and `functionReturnTypes` (keyed by bare function name);
+`buildPass1Aggregates` writes them when non-empty, and `CodegraphRunState`
+hydrates them in `absorb` under the same **batch-wins** guard as the ancestry
+channels — a key the current run walked outranks the persisted one — followed by
+`markContributed`, without which pass 2 falls back per-file and reinstates the
+batch-scoped behaviour being repaired. Measured on taxdome: an incremental run
+lost 168 edges, of which these two recover 131 (`structuredReturnTypes` 111,
+`functionReturnTypes` 20, additive); every other type-inference family recovers
+exactly zero and stays batch-scoped. The failure they fix is a PRECISION one —
+`repo.fetch.render` degraded from a pinned edge to a cone carrying a phantom.
+
+What this means for E4, in three parts:
+
+1. **The oracle is unaffected and must stay that way.** The harness builds ONE
+   in-memory symbol table from a full walk and assembles `structuredReturnTypes`
+   / `functionReturnTypes` itself (`py-codegraph-jedi-oracle.ts:180`), so it has
+   never had the incremental gap. Every E4.0 number is a full-walk number. The
+   correct reading is that the LIVE incremental path has moved TOWARD the
+   oracle, not that the oracle changed.
+2. **Python's chain-type strategy is the direct beneficiary.** `chainType` is
+   the only reader of `structuredReturnTypes` (`python/CLAUDE.md`), and seam 5's
+   R1b fold — a local bound to a cross-file call result — resolves through it.
+   Before `8qyax` that fold was correct on a full run and silently weaker on an
+   incremental one. E4.4's TypeVar arm and E4.6's constructor-chain-head arm
+   both read the same channel, so they inherit the repair rather than needing
+   their own.
+3. **E4.2 grows the persisted slice and must say so.** Every wrapper unwrap and
+   every vocabulary arm that publishes a return fact adds entries to
+   `structuredReturnTypes`, which is now written to the pass-1 slice. The slice
+   is a JSON blob in one column and needs no migration, but the size claim in
+   `8qyax`'s docblock (6,518 entries on taxdome, against 11,099 ancestry keys)
+   is the baseline an E4.2 executor re-measures on netbox and polar before
+   claiming the cost is free.
+
+`callResultBindings` — the chunk-level channel seam 5 added — is NOT persisted
+and is not affected: it is per-chunk walker output, rebuilt whenever the file is
+walked, and the resolver folds it against the run-global return maps at resolve
+time. The two are complementary, and only the second half was ever at risk.
+
+### Entry-narrowing counter gate (`4vg1i`, commit `2c321ba26`)
+
+`landedOnSharedTemplate` now takes `receiverKind` and returns `false` for
+anything but `constant` (`resolution-runner.ts:397`), and the per-kind count
+surfaces on `CodegraphResolveKindRow.callsUnnarrowedTemplate`, rendered by
+`prime` as a `· N unnarrowed` suffix. On taxdome the headline dropped 2,507 →
+1,858; the 649 removed rows were non-constant receivers that never had a target
+to narrow to.
+
+Three consequences for E4:
+
+1. **It is not a fan metric and must not be used as one.** The registries it
+   reads (`selfDispatchTemplates`, `selfInstantiatingClassMethods`) are
+   Ruby-only and empty for Python, and the counter is now additionally gated to
+   `constant`. Python reads 0 in every bucket, before and after E4.1. Fan
+   quality is measured by E4.0 B's `recallAtFan` / `precisionProxy`, full stop.
+2. **It hands E4 a free live-validation assertion.** Every Python bucket's
+   `· N unnarrowed` count must read 0 in `prime` after an E4 live run. A
+   non-zero there would mean the gate broke or that Python started filling a
+   Ruby-only registry — either way a defect, and it costs nothing to check.
+3. **`ambiguousFanout` is the column E4.1 actually moves.** It is already on
+   `CodegraphResolveKindRow` per kind (`f2jsb` / `j0pki`), it counts over-cap
+   dispatch decisions, and it currently reads 0 for Python because the cone
+   never returns `ambiguous` (bounded by design — it collapses to `poly-base`
+   instead). Adding a `dynamic` component makes it live. E4.1's live gate reads
+   it per kind and compares against E4.0 B's `ambiguousShare` from the offline
+   run; a large divergence means the corpus-adaptive cap saw a different p99
+   live than offline, which is a real thing that can happen when the symbol
+   table is hydrated rather than freshly built.
+
+---
+
+## Standing constraints
+
+Verbatim from the program, restated here so an executor needs one document.
+
+- **Precision bar unchanged.** Confidence-1 edges: fabricated + `wrongFile` ≤ 2
+  % of edges, ugnest phantom 0, and at most +0.5 pp of phantom per increment.
+  flask's inherited 2.82 % is recorded, not spent.
+- **Gross `lost` 0 at every step**, per corpus, measured by the row-level diff —
+  not net, not "no regression on the headline".
+- **Perf per increment**: chain-tally wall ≤ +25 %, peak RSS ≤ +20 %, measured
+  interleaved B/A/A/B with the min of each side. **No per-call filesystem
+  probes** — membership questions go to `hasFile` / `hasFilesUnder`.
+- **Ruby risk files** (`ruby/resolver/type-propagation.ts`,
+  `ruby/walker/type-sources/ast-inference.ts`) are touched only by
+  byte-identical relocations, parity 0, no incidental improvements riding along.
+- **Existing tests are never rewritten.** Moved, yes. A pin that now has a
+  better answer is edited only with a bead comment naming the row and the
+  corpus.
+- **Execution.** One fresh Opus executor per task, each in its own agent
+  worktree, ff-merging `worktree-py-frontier-e4` in Step 0. Tool calls ≤ 8 min,
+  writes ≤ 120 lines. Commits `type(scope): subject (bead)`, body ≤ 100 columns,
+  trailers `Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>` and
+  `Claude-Session: https://claude.ai/code/session_01FNCoxgrknsrkLSDjn1p5Mm`.
+  Walker / capability version bumps per
+  `.claude/rules/language-capability-sync.md`. Live validation is user-gated.
+  Never push.
+
+---
+
+## Decision record
+
+### D1 — measurement before capability, and E4.0 is not skippable
+
+Two of the four E4.0 parts (fan scoring, family attribution) are PRECONDITIONS
+for E4.1 rather than reporting niceties: a fan-out family shipped against a
+harness that never calls `resolveDispatch` cannot be gated at all. The other two
+(second oracle, disagreement audit) bound the honesty of every claim E4 makes.
+So E4.0 ships whole, first, and its report is the input to the ordering.
+
+### D2 — the second oracle repairs a denominator, it does not replace jedi
+
+jedi carries five corpora of published numbers and a hand-audited blind-spot
+model (`applySuperMroBlindSpot`, `oracleNonCallable`). Replacing it wholesale
+would invalidate every one of those numbers to fix a 25 %-of-one-corpus problem.
+Per-FILE fallback keeps the published population byte-identical and adds a
+disjoint one. The report carries `recallLegacy` alongside `recallMerged`
+permanently, not as a migration aid.
+
+### D3 — 1:1 and fan are separate products with separate bars
+
+Stated in E4.0 B and repeated here because it is the decision most likely to be
+eroded under pressure to show a bigger number: the headline recall for a corpus
+is the confidence-1 recall. `recallAtFan` is reported beside it, never added to
+it, and `precisionProxy` is the fan's own quality bar. The failure mode this
+prevents has a measured precedent — 1.5 M noise edges on taxdome (`f2jsb`).
+
+### D4 — `ambiguous` counts as a recall miss in the fan denominator
+
+An over-cap decision that discarded the right answer is a cost of the cap. It is
+counted so the cap can be tuned on evidence, and it is excluded from `fanSize*`
+/ `precisionProxy` because there is no fan to size.
+
+### D5 — pytest fixtures are measured with tests walked, and shipped separately
+
+Walking tests changes the corpus, and every other number in the report is on the
+standard exclusion. So the family gets its own paired run and its own delta
+column, and the question of whether production should walk tests stays with the
+tests-tier bead.
+
+### D6 — the spike's deliverable is this decision record, not code
+
+E4.0.1 writes throwaway scripts under `scripts/spikes/` and they are NOT kept.
+What ships out of it is a filled-in decision below, naming the engine, the
+measured numbers behind the choice, and the third outcome if it applies.
+
+### D7 — second-oracle choice: **pending E4.0.1**
+
+To be written here by the E4.0.1 executor, in this shape:
+
+```text
+Chosen: <pyright | ty | neither>. Measured on polar's parso-degraded files
+(<N> files, <N> sites): answerable <n>/<N> (<pct>), determinism <byte-identical |
+diverged on N rows>, wall <s> per 1k sites, agreement with jedi on the 500-site
+both-parse sample <pct> (<n> disagreements, classified). Rejected <other>
+because <one measured reason>. Versions: <tool> <version>, node <v>, python <v>.
+```
+
+### D8 — family attribution table: **pending E4.0.4**
+
+The ordered E4.1–E4.6 table with per-corpus `missed` counts, `edgesGained`
+counts for the zero-recall families, and the resulting execution order, written
+here by the E4.0.4 executor. Until it exists, the order in this document is the
+scope order, NOT the execution order.
+
+---
+
+## Risks
+
+- **The second oracle answers a different question than jedi.** A type checker
+  reasons about types; `goto definition` on a call is a lookup. Where they
+  diverge — a `@property`, a descriptor, an overload set — the merged rows carry
+  a different bias from the legacy ones. Mitigation: the 500-site both-parse
+  agreement sample in E4.0.1 measures this before the engine ships, and
+  `oracleEngine` on every row means any table can be split if it shows up later.
+- **LSP nondeterminism.** A server accumulates workspace state. The two-run
+  byte-identical gate is the mitigation, and it is a hard gate: an engine that
+  fails it does not ship, and the "neither" outcome is admissible.
+- **Fan scoring inflates apparent progress.** Mitigated structurally by D3 and
+  by `--no-dispatch` reproducing today's columns byte-for-byte as an E4.0.3
+  gate.
+- **The cap moves under a bigger fan population.** `dispatchFanoutPolicyFor` is
+  corpus-adaptive (p99 defs-per-member), so adding a `dynamic` component can
+  change the cap on the same corpus, which changes `ambiguousShare` for reasons
+  unrelated to the increment. Mitigation: the report prints `p99DefsPerMember`
+  and the resolved `cap` per corpus in every run, so a moved cap is visible
+  rather than inferred.
+- **E4.2's `agreeExternal` exposure.** 1,978 polar rows, nine times E3's netbox
+  exposure, all of them one vocabulary decision away from becoming project edges
+  that jedi calls phantom. Mitigation: the A/B checks the `agreeExternal` column
+  explicitly per corpus, and the increment carries a remove clause.
+- **Walking tests changes more than the fixture family.** Test files import
+  project code, so the symbol table and every short-name ambiguity computation
+  moves. Mitigation: the tests-walked run is a SEPARATE population reported as a
+  delta; it never becomes the baseline.
+
+---
+
+## What E4 does NOT claim
+
+- It does not close runtime-only dispatch. Computed `getattr`, `__getattr__`
+  proxies, monkeypatching, metaclasses and string dispatch are counted by E4.0 D
+  and declared out of scope: they need traces, and this program is static by
+  constraint (`m99j1` — production stays LSP-free).
+- It does not raise the confidence-1 precision bar or spend it. Every increment
+  is measured against fabricated + `wrongFile` ≤ 2 % with a +0.5 pp
+  per-increment cap, and flask's inherited 2.82 % is a level E4 reports, not a
+  debt E4 pays.
+- It does not claim the merged denominator is comparable to the legacy one.
+  Numbers on the two populations are printed side by side and never subtracted
+  from each other.
+- It does not make fan edges navigable. They stay hidden from navigation exactly
+  as Ruby's are, and their confidence stays `discount / m`.
+- It does not put a type checker in production. Both candidate engines are
+  measurement-only, run offline from `scripts/`, and nothing they produce is
+  read by the indexer.
+- It does not decide whether production should walk test files.
+- It does not re-open E3's deferred design. `w205u.1` / `w205u.2` ship as
+  written, with nested manifests as the one change, because nothing in them was
+  found wrong — only unranked.
+
+---
+
+## Beads and follow-ups
+
+Epic `tea-rags-mcp-w205u` (frontier increment 2) with children: E4.0 measurement
+(four tasks, created by the plan), E4.1 dispatch fan-out, E4.2 folding
+`w205u.1` + `w205u.2`, E4.3, E4.4, E4.5, E4.6. Open from the program and
+unabsorbed here: `f11nz`, `6pd5l`, `zhetx`. The SDK freeze (`z6ry9`) stays last
+and gains Frontier E4's components as additional two-consumer evidence.
+
+Plan: `docs/superpowers/plans/2026-09-10-python-e4-0-measurement.md` (E4.0).
+E4.1–E4.6 plans are written when E4.0's report fills D7 and D8.
