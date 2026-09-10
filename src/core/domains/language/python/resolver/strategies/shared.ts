@@ -260,17 +260,35 @@ export function pythonInheritedMemberType(
     if (fieldType !== undefined) return { form: "instance", name: fieldType };
     return ctx.structuredReturnTypes?.[`${classFq}${separator}${member}`];
   };
+  const byClassKey = (classKey: string): TypeRef | undefined => {
+    const fieldType = ctx.classFieldTypesByClassKey?.[classKey]?.[member];
+    return fieldType === undefined ? undefined : { form: "instance", name: fieldType };
+  };
   // The own-class read is byte-identical to the pre-seam one: `classFieldTypes`
   // is bare-name-keyed and `structuredReturnTypes` FQ-keyed, and a receiver
   // type spells both the same way.
   const own = onClass(bareType, bareType);
   if (own !== undefined) return own;
-  if (linearizer === undefined) return undefined;
+  // Addressing the class costs symbol-table work, so it is deferred until
+  // something can read the answer: a run carrying neither the run-global field
+  // channel nor a linearizer is the pre-seam path, unchanged.
+  if (linearizer === undefined && ctx.classFieldTypesByClassKey === undefined) return undefined;
 
   const classKey = pythonReceiverClassKey(bareType, ctx, mapper);
   if (classKey === null) return undefined;
+  // The own class again, this time run-global (bd tea-rags-mcp-f0xaa) — the
+  // short-name read above only ever sees the CALLER's file, so a receiver typed
+  // to a class declared elsewhere reaches its fields only here.
+  const ownByKey = byClassKey(classKey);
+  if (ownByKey !== undefined) return ownByKey;
+  if (linearizer === undefined) return undefined;
   for (const ancestorKey of linearizer.linearize(classKey).order) {
     if (ancestorKey === classKey) continue;
+    // Class-key first, short name second: the qualified channel names the file
+    // that declares this ancestor, where the bare-name one answers with whatever
+    // the CALLER's file happens to call that name.
+    const byKey = byClassKey(ancestorKey);
+    if (byKey !== undefined) return byKey;
     const parsed = parsePythonClassKey(ancestorKey);
     if (parsed === null) continue;
     const hit = onClass(lastSegment(parsed.classFq), parsed.classFq);

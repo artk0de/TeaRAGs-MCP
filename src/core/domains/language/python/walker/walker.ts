@@ -81,6 +81,11 @@ export function extractFromPythonFile(input: PythonExtractInput): FileExtraction
   // resolver can pin `self.service.process()` cross-method. Mirrors the
   // TS/Java `classFieldTypes` channel.
   const classFieldTypes = collectPythonClassFieldTypes(input.tree.rootNode);
+  // bd tea-rags-mcp-f0xaa — the SAME fields under the run-global class key, so a
+  // subclass in another file can read what its base assigned. The short-name
+  // channel above cannot answer that: it is per-file and its key is ambiguous
+  // run-global.
+  const classFieldTypesByClassKey = collectPythonClassFieldTypesByClassKey(input.tree.rootNode, input.relPath);
   const trackTypes = pythonLocalTypeTrackingEnabled();
   // Innermost-chunk attribution: ONE owning chunk per call site — the smallest
   // containing range, ties broken by deeper scope (bd tea-rags-mcp-invuy;
@@ -127,6 +132,7 @@ export function extractFromPythonFile(input: PythonExtractInput): FileExtraction
   if (Object.keys(classExtends).length > 0) out.classExtends = classExtends;
   if (Object.keys(classAncestors).length > 0) out.classAncestors = classAncestors;
   if (Object.keys(classFieldTypes).length > 0) out.classFieldTypes = classFieldTypes;
+  if (Object.keys(classFieldTypesByClassKey).length > 0) out.classFieldTypesByClassKey = classFieldTypesByClassKey;
   // Unified hierarchy edges (CHA cone-unification Slice 2). Parity with the
   // Ruby/TS walkers' inheritanceEdges: where the legacy `classExtends` Record
   // keeps only the FIRST base for `super()` resolution, this emits EVERY base
@@ -248,47 +254,8 @@ function collectPythonClassFieldTypes(root: AstNode): Record<string, Record<stri
     if (!body) return;
     const fields: Record<string, string> = {};
     walk(body, (inner) => {
-      if (inner.type !== "assignment") return;
-      // LHS must be `self.<field>` — an `attribute` whose object is the
-      // `self` identifier. Anything else (plain local, subscript) skips.
-      const lhs = inner.childForFieldName("left");
-      if (lhs?.type !== "attribute") return;
-      const obj = lhs.childForFieldName("object");
-      const attr = lhs.childForFieldName("attribute");
-      if (obj?.type !== "identifier" || obj.text !== "self") return;
-      if (!attr) return;
-      const fieldName = attr.text;
-
-      // PEP 526 annotation wins — `self.x: ClassName = ...`.
-      const typeField = inner.childForFieldName("type");
-      if (typeField) {
-        const typeName = extractTypeName(typeField);
-        if (typeName) fields[fieldName] = typeName;
-        return;
-      }
-
-      // Constructor-call RHS — `self.x = ClassName(...)` /
-      // `self.x = module.ClassName(...)`. Non-call RHS (literal, list,
-      // lambda) is skipped — no class name to attribute.
-      //
-      // bd tea-rags-mcp-m46z — CapWords gate. The resolver emits a
-      // best-effort EXTERNAL target `<type>#<member>` for `self.x.method()`
-      // when `<type>` isn't in the symbol table (correct for real classes
-      // like `ExitStack`). But a lowercase callee (`make_thing`, `some_func`)
-      // is a FUNCTION, not a constructor — its return type is unknown, and
-      // recording it would fabricate a phantom edge `make_thing#method`. PEP8
-      // says classes are CapWords; only treat the RHS as a field type when the
-      // callee's FINAL identifier starts uppercase. Lowercase → record nothing
-      // so `self.x.method()` falls through to DROP. (Local-var tracking keeps
-      // the generous lowercase behavior — its resolver path DROPS rather than
-      // emitting an external best-effort, so no phantom can arise there.)
-      const right = inner.childForFieldName("right");
-      if (right?.type === "call") {
-        const fnNode = right.childForFieldName("function");
-        if (!fnNode) return;
-        const typeName = extractConstructorTypeName(fnNode);
-        if (typeName && isCapWordsConstructor(typeName)) fields[fieldName] = typeName;
-      }
+      const found = pythonSelfFieldType(inner);
+      if (found !== undefined) fields[found.field] = found.type;
     });
     if (Object.keys(fields).length > 0) {
       // Merge when a class spans multiple definitions / re-walks; later
@@ -297,6 +264,94 @@ function collectPythonClassFieldTypes(root: AstNode): Record<string, Record<stri
     }
   });
   return out;
+}
+
+/**
+ * The same facts as {@link collectPythonClassFieldTypes} under the RUN-GLOBAL
+ * class key `<relPath>::<dotted class FQ>` (bd tea-rags-mcp-f0xaa) — the key
+ * shape {@link collectPythonClassAncestors} writes, so a linearized ancestor key
+ * reads the fields straight off this map.
+ *
+ * Two differences from the short-name collector, both forced by the key. Scope
+ * is tracked through EVERY named container (a class inside a `def` reads
+ * `build.Local`, exactly as the ancestor channel spells it), and a field is
+ * attributed to the INNERMOST enclosing class rather than to every class whose
+ * body contains it — a nested class's `self.x` belongs to the nested class, and
+ * a run-global key has no room for the short-name channel's tolerated overlap.
+ */
+function collectPythonClassFieldTypesByClassKey(
+  root: AstNode,
+  relPath: string,
+): Record<string, Record<string, string>> {
+  const out: Record<string, Record<string, string>> = {};
+  const walkScope = (node: AstNode, scope: readonly string[], classFq: string | undefined): void => {
+    const isContainer = node.type === "class_definition" || node.type === "function_definition";
+    const nameNode = isContainer ? node.childForFieldName("name") : null;
+    if (nameNode) {
+      const childScope = [...scope, nameNode.text];
+      const childClassFq = node.type === "class_definition" ? childScope.join(".") : classFq;
+      const body = node.childForFieldName("body");
+      for (const child of body ? body.children : node.children) walkScope(child, childScope, childClassFq);
+      return;
+    }
+    if (classFq !== undefined) {
+      const found = pythonSelfFieldType(node);
+      if (found !== undefined) {
+        const key = `${relPath}::${classFq}`;
+        out[key] = { ...(out[key] ?? {}), [found.field]: found.type };
+      }
+    }
+    for (const child of node.children) walkScope(child, scope, classFq);
+  };
+  walkScope(root, [], undefined);
+  return out;
+}
+
+/**
+ * `self.<field> = <typed RHS>` read off ONE node, or `undefined` for anything
+ * else. The gate both field collectors share, so the qualified channel can never
+ * disagree with the short-name one about what a field's type is.
+ */
+function pythonSelfFieldType(inner: AstNode): { readonly field: string; readonly type: string } | undefined {
+  if (inner.type !== "assignment") return undefined;
+  // LHS must be `self.<field>` — an `attribute` whose object is the
+  // `self` identifier. Anything else (plain local, subscript) skips.
+  const lhs = inner.childForFieldName("left");
+  if (lhs?.type !== "attribute") return undefined;
+  const obj = lhs.childForFieldName("object");
+  const attr = lhs.childForFieldName("attribute");
+  if (obj?.type !== "identifier" || obj.text !== "self") return undefined;
+  if (!attr) return undefined;
+  const fieldName = attr.text;
+
+  // PEP 526 annotation wins — `self.x: ClassName = ...`.
+  const typeField = inner.childForFieldName("type");
+  if (typeField) {
+    const typeName = extractTypeName(typeField);
+    return typeName ? { field: fieldName, type: typeName } : undefined;
+  }
+
+  // Constructor-call RHS — `self.x = ClassName(...)` /
+  // `self.x = module.ClassName(...)`. Non-call RHS (literal, list,
+  // lambda) is skipped — no class name to attribute.
+  //
+  // bd tea-rags-mcp-m46z — CapWords gate. The resolver emits a
+  // best-effort EXTERNAL target `<type>#<member>` for `self.x.method()`
+  // when `<type>` isn't in the symbol table (correct for real classes
+  // like `ExitStack`). But a lowercase callee (`make_thing`, `some_func`)
+  // is a FUNCTION, not a constructor — its return type is unknown, and
+  // recording it would fabricate a phantom edge `make_thing#method`. PEP8
+  // says classes are CapWords; only treat the RHS as a field type when the
+  // callee's FINAL identifier starts uppercase. Lowercase → record nothing
+  // so `self.x.method()` falls through to DROP. (Local-var tracking keeps
+  // the generous lowercase behavior — its resolver path DROPS rather than
+  // emitting an external best-effort, so no phantom can arise there.)
+  const right = inner.childForFieldName("right");
+  if (right?.type !== "call") return undefined;
+  const fnNode = right.childForFieldName("function");
+  if (!fnNode) return undefined;
+  const typeName = extractConstructorTypeName(fnNode);
+  return typeName && isCapWordsConstructor(typeName) ? { field: fieldName, type: typeName } : undefined;
 }
 
 /**

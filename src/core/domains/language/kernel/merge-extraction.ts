@@ -129,6 +129,7 @@ const FILE_EXTRACTION_MERGE_RULEBOOK: ExtractionMergeRulebook<FileExtraction> = 
   dispatchTables: (base, pass) => unionBaseWins(base, pass),
   // Nested Records: union per outer key, then per inner key; base wins both.
   classFieldTypes: (base, pass) => unionNestedBaseWins(base, pass),
+  classFieldTypesByClassKey: (base, pass) => unionNestedBaseWins(base, pass),
   associationTypes: (base, pass) => unionNestedBaseWins(base, pass),
   ivarTypes: (base, pass) => unionNestedBaseWins(base, pass),
   classFieldParamLinks: (base, pass) => unionNestedBaseWins(base, pass),

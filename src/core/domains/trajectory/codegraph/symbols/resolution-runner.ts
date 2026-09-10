@@ -47,6 +47,7 @@ interface ResolverInputs {
   ivarTypes: Record<string, Record<string, string>> | undefined;
   structuredReturnTypes: CallContext["structuredReturnTypes"];
   classFieldTypes: CallContext["classFieldTypes"];
+  classFieldTypesByClassKey: CallContext["classFieldTypesByClassKey"];
 }
 
 /**
@@ -242,6 +243,11 @@ export class CallEdgeResolutionRunner {
       // Identity-returns when nothing was derived, so a non-Ruby run — or a
       // Ruby run where no parameter could be typed — is byte-identical.
       classFieldTypes: mergeDerivedClassFieldTypes(extraction.classFieldTypes, state.derivedClassFieldTypes),
+      // Run-global, unconditionally: the key names the declaring file, so unlike
+      // the short-name channel beside it there is nothing to fall back to per
+      // file (bd tea-rags-mcp-f0xaa). A run whose walkers never wrote it hands
+      // the resolver an empty map, which every reader treats as absent.
+      classFieldTypesByClassKey: state.classFieldTypesByClassKey,
     };
   }
 

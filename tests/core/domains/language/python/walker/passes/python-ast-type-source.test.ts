@@ -43,7 +43,10 @@ function facts(src: string): TypeFact[] {
 function structuredReturnTypes(src: string): Record<string, unknown> {
   const root = parse(src);
   const all = PYTHON_INLINE_TYPE_SOURCES.flatMap((source) => source.extract({ root, trackLocalTypes: true }));
-  return pythonTypeChannels(TypeFactStore.fromFacts(all, PYTHON_TYPE_SOURCE_ORDER), []).structuredReturnTypes ?? {};
+  return (
+    pythonTypeChannels(TypeFactStore.fromFacts(all, PYTHON_TYPE_SOURCE_ORDER), { chunks: [], relPath: "pkg/svc.py" })
+      .structuredReturnTypes ?? {}
+  );
 }
 
 const instance = (name: string) => ({ form: "instance", name }) as const;

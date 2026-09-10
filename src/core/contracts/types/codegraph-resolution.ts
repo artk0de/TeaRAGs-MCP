@@ -221,6 +221,17 @@ export interface CallContext {
    */
   classFieldTypes?: Record<string, Record<string, string>>;
   /**
+   * `FileExtraction.classFieldTypesByClassKey` unioned RUN-GLOBAL: the same
+   * field types keyed `<relPath>::<dotted class FQ>` (bd tea-rags-mcp-f0xaa).
+   *
+   * Unlike {@link CallContext.classFieldTypes} — a single file's map under
+   * ambiguous short names — this is addressed exactly as `classAncestors` is, so
+   * the MRO fold can read a base class's fields without caring which file
+   * declared it. Absent on a run whose walker never wrote it; every reader falls
+   * back to the short-name channel, which is what the pre-seam behaviour was.
+   */
+  classFieldTypesByClassKey?: Record<string, Record<string, string>>;
+  /**
    * Optional per-class Rails association map (`className → accessor →
    * modelType`) propagated from `FileExtraction.associationTypes`. The walker
    * consumes it directly to type compound-receiver chains into `localBindings`;
