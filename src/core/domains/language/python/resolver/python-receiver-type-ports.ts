@@ -133,12 +133,54 @@ function pythonSeedHead(
   mapper: PythonImportFileMapper,
 ): { type: TypeRef; consumedMembers: 0 | 1 } | undefined {
   if (firstLink === undefined) return undefined;
+  const alias = pythonModuleAliasSeed(head, firstLink, ctx, mapper);
+  return alias ?? pythonClassChainHeadSeed(head, ctx, mapper);
+}
+
+/** `mod.Cls()` / `mod.Cls` — the module-alias arm of {@link pythonSeedHead}. */
+function pythonModuleAliasSeed(
+  head: string,
+  firstLink: string,
+  ctx: CallContext,
+  mapper: PythonImportFileMapper,
+): { type: TypeRef; consumedMembers: 1 } | undefined {
   const member = stripCallArgs(firstLink);
   if (!PYTHON_CLASS_HEAD.test(member)) return undefined;
   const imported = ctx.imports.some((imp) => pythonImportMatchesReceiver(imp.importText, head));
   if (!imported || resolveTypeFile(member, ctx, mapper) === null) return undefined;
   const form = firstLink.endsWith(")") ? "instance" : "class";
   return { type: { form, name: member }, consumedMembers: 1 };
+}
+
+/**
+ * A bare CLASS name as a CHAIN head: `ObjectType.objects.get_for_model(m)` (bd
+ * tea-rags-mcp-xpl83).
+ *
+ * The class-body field facts type `<Model>.objects`, and this is what lets the
+ * fold reach them. It is deliberately the chain-head half of `singleHopType`'s
+ * `classHead` arm and not that arm itself: `seedHead` is reached ONLY from
+ * `propagateChain`, so a single-segment `Cls.member()` receiver never sees it and
+ * keeps going to `importedName` exactly as it does today — which is what the
+ * `classHead` default protects.
+ *
+ * Seeding is inert by construction. `consumedMembers: 0` hands the first link
+ * straight to `memberTypeOf`, and stop-at-unknown-hop unwinds the whole receiver
+ * to untyped unless that link has a real field or return fact. A class with no
+ * `objects` attribute folds to nothing and the call reaches the same strategy it
+ * reaches today.
+ *
+ * A local binding on the same name WINS: `singleHopType` would have typed the
+ * head from it, and a name Python rebound is a value rather than the class.
+ */
+function pythonClassChainHeadSeed(
+  head: string,
+  ctx: CallContext,
+  mapper: PythonImportFileMapper,
+): { type: TypeRef; consumedMembers: 0 } | undefined {
+  if (!PYTHON_CLASS_HEAD.test(head)) return undefined;
+  if (ctx.localBindings?.[head] !== undefined) return undefined;
+  if (resolveTypeFile(head, ctx, mapper) === null) return undefined;
+  return { type: { form: "class", name: head }, consumedMembers: 0 };
 }
 
 /**
