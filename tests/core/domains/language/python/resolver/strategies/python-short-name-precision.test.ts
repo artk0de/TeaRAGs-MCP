@@ -248,3 +248,122 @@ describe("PythonGlobalShortNameSymbolResolutionStrategy — builtins guard (w205
     });
   });
 });
+
+describe("PythonGlobalShortNameSymbolResolutionStrategy — LEGB reaches E before G (w205u)", () => {
+  it("prefers the nested def over the file's own module-level namesake (`_list_tabs#url`)", () => {
+    // The 38-row `fileOnly` half: the module-level arm answered with the file's
+    // own top-level `url`, which is the right FILE and the wrong symbol.
+    const call: CallRef = { callText: "url(tab)", receiver: null, member: "url", startLine: 9 };
+    const file = "netbox/ui/tabs.py";
+    const symbolTable = tableWith([
+      file,
+      [sym("url", "url", file, []), sym("_list_tabs#url", "url", file, ["_list_tabs"])],
+    ]);
+    const at = ctx({ symbolTable, callerFile: file, callerScope: [], callerSymbolId: "_list_tabs" });
+    expect(strat.attempt(call, at)).toEqual({
+      kind: "resolved",
+      target: { targetRelPath: file, targetSymbolId: "_list_tabs#url" },
+    });
+  });
+
+  it("answers even when six other files spell the name — E is not a guess among namesakes", () => {
+    // The 47-row `missed` half: `pickSingleCandidate` ran over the whole project
+    // table first, and `url` / `send` / `total` / `extend` never survive it.
+    const call: CallRef = { callText: "helper()", receiver: null, member: "helper", startLine: 9 };
+    const file = "server/polar/caller.py";
+    const others: [string, NamedSymbol[]][] = [1, 2, 3, 4, 5, 6].map((n) => [
+      `server/polar/m${n}.py`,
+      [sym("helper", "helper", `server/polar/m${n}.py`, [])],
+    ]);
+    const symbolTable = tableWith([file, [sym("outer#helper", "helper", file, ["outer"])]], ...others);
+    const at = ctx({ symbolTable, callerFile: file, callerScope: [], callerSymbolId: "outer" });
+    expect(strat.attempt(call, at)).toEqual({
+      kind: "resolved",
+      target: { targetRelPath: file, targetSymbolId: "outer#helper" },
+    });
+  });
+
+  it("takes the caller's OWN frame — `Cls.method#inner`, not the class's `Cls#inner`", () => {
+    const call: CallRef = { callText: "inner(x)", receiver: null, member: "inner", startLine: 9 };
+    const file = "app.py";
+    const symbolTable = tableWith([
+      file,
+      [sym("Cls#inner", "inner", file, ["Cls"]), sym("Cls.method#inner", "inner", file, ["Cls", "method"])],
+    ]);
+    const at = ctx({ symbolTable, callerFile: file, callerScope: ["Cls"], callerSymbolId: "Cls.method" });
+    expect(strat.attempt(call, at)).toEqual({
+      kind: "resolved",
+      target: { targetRelPath: file, targetSymbolId: "Cls.method#inner" },
+    });
+  });
+
+  it("declines the caller's own CLASS namespace — a method calling a builtin it is named after", () => {
+    // netbox `ASNRange#range`: a `@property` named `range` whose body calls the
+    // BUILTIN `range`. A class is a namespace, not a frame the LEGB walk
+    // enters, so the arm must leave the site to the builtins DROP below it —
+    // an arm keyed on scope PREFIXES answered the property with itself.
+    const call: CallRef = { callText: "range(self.start, self.end + 1)", receiver: null, member: "range", startLine: 73 }; // prettier-ignore
+    const file = "netbox/ipam/models/asns.py";
+    const symbolTable = tableWith([file, [sym("ASNRange#range", "range", file, ["ASNRange"])]]);
+    const at = ctx({ symbolTable, callerFile: file, callerScope: ["ASNRange"], callerSymbolId: "ASNRange#range" });
+    expect(strat.attempt(call, at).kind).toBe("drop");
+  });
+
+  it("declines a SIBLING's nested def — `other#helper` is not in the caller's frame chain", () => {
+    const call: CallRef = { callText: "helper()", receiver: null, member: "helper", startLine: 9 };
+    const file = "app.py";
+    const symbolTable = tableWith([file, [sym("other#helper", "helper", file, ["other"])]]);
+    const at = ctx({ symbolTable, callerFile: file, callerScope: ["Cls"], callerSymbolId: "Cls#method" });
+    expect(strat.attempt(call, at).kind).toBe("continue");
+  });
+
+  it("a nested def SHADOWS a builtin the enclosing frame declares", () => {
+    // The arm runs ahead of the builtins DROP, which is what the interpreter
+    // does: `def outer(): def open(...)` rebinds `open` inside `outer`'s frame.
+    const call: CallRef = { callText: "open(path)", receiver: null, member: "open", startLine: 9 };
+    const file = "app.py";
+    const symbolTable = tableWith([file, [sym("outer#open", "open", file, ["outer"])]]);
+    const at = ctx({ symbolTable, callerFile: file, callerScope: [], callerSymbolId: "outer" });
+    expect(strat.attempt(call, at)).toEqual({
+      kind: "resolved",
+      target: { targetRelPath: file, targetSymbolId: "outer#open" },
+    });
+  });
+
+  it("leaves the caller's own class body to the guess below — E4.0.5's answer is unchanged", () => {
+    // The new arm declines (a class is a namespace, not a frame), so the site
+    // falls through to the cross-file guess exactly as it did before this task:
+    // `Cls#sibling` is the only candidate and `isBareCallable`'s slack admits it.
+    const call: CallRef = { callText: "sibling()", receiver: null, member: "sibling", startLine: 9 };
+    const file = "app.py";
+    const symbolTable = tableWith([file, [sym("Cls#sibling", "sibling", file, ["Cls"])]]);
+    const at = ctx({ symbolTable, callerFile: file, callerScope: ["Cls"], callerSymbolId: "Cls#method" });
+    expect(strat.attempt(call, at)).toEqual({
+      kind: "resolved",
+      target: { targetRelPath: file, targetSymbolId: "Cls#sibling" },
+    });
+  });
+
+  it("needs `callerSymbolId` to name the frame — no witness, no arm", () => {
+    // `callerScope` omits the caller's own container, so `callerSymbolId` is the
+    // only witness for which container that is. The ambiguity pin above
+    // (`Cls#helper` + a cross-file `helper`) is what this protects: with the
+    // witness naming some other container the arm declines and the cardinality
+    // guard still throws the site away, so no new cross-file edge is minted. A
+    // bare call in a CLASS BODY is the one place the class namespace is a frame,
+    // and there the witness names the class itself.
+    const call: CallRef = { callText: "helper()", receiver: null, member: "helper", startLine: 9 };
+    const file = "kit/email.py";
+    const symbolTable = tableWith(
+      [file, [sym("Cls#helper", "helper", file, ["Cls"])]],
+      ["api/schemas.py", [sym("helper", "helper", "api/schemas.py", [])]],
+    );
+    const foreign = ctx({ symbolTable, callerFile: file, callerScope: [], callerSymbolId: "Unrelated" });
+    expect(strat.attempt(call, foreign).kind).toBe("continue");
+    const own = ctx({ symbolTable, callerFile: file, callerScope: [], callerSymbolId: "Cls" });
+    expect(strat.attempt(call, own)).toEqual({
+      kind: "resolved",
+      target: { targetRelPath: file, targetSymbolId: "Cls#helper" },
+    });
+  });
+});

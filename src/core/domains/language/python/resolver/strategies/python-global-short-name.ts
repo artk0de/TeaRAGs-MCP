@@ -60,6 +60,52 @@ const isBareCallable = (def: SymbolDefinition, ctx: CallContext): boolean =>
   isModuleLevel(def) || (def.relPath === ctx.callerFile && isEnclosingScope(def.scope, ctx.callerScope));
 
 /**
+ * The name of the container the caller is written directly inside, which
+ * `callerScope` omits by convention (bd tea-rags-mcp-w205u).
+ *
+ * `callerSymbolId` is the caller CHUNK's own id, so its last segment is that
+ * container: `_list_tabs` for a top-level def, `method` for `Cls#method`,
+ * `pagination_controls` for `OrganizationListView.pagination_controls`. The
+ * three separators are the ones the cross-language `SymbolIdComposer` emits —
+ * `#` instance, `.` class-level and Python's own `scopeSeparator`, and `::` for
+ * the namespace form no Python id carries but the split costs nothing to cover.
+ *
+ * Undefined when the provider set no `callerSymbolId`, which is the honest
+ * answer: without it there is no witness for who the caller's container is.
+ */
+const ownContainerName = (ctx: CallContext): string | undefined =>
+  ctx.callerSymbolId === undefined ? undefined : ctx.callerSymbolId.split(/[#.]|::/).pop();
+
+/**
+ * Is `def` declared in the very frame the caller is written in — LEGB's `E`,
+ * read as narrowly as the evidence allows (bd tea-rags-mcp-w205u)?
+ *
+ * True when `def.scope` IS the caller's own container chain: `callerScope` plus
+ * the container `callerScope` omits, which {@link ownContainerName} names. That
+ * is `_list_tabs#url` from a call in `_list_tabs`' body and
+ * `Blueprint._merge_blueprint_funcs#extend` from a call in
+ * `_merge_blueprint_funcs`'.
+ *
+ * It is deliberately narrower than {@link isEnclosingScope}, which this arm may
+ * NOT use even though the reachability it models is a superset of this one.
+ * That helper admits any prefix of `callerScope`, and a prefix segment can be a
+ * CLASS — a namespace the LEGB walk does not enter. Measured: netbox's
+ * `ASNRange#range` is a `@property` whose body calls the BUILTIN `range`, and
+ * an arm keyed on prefixes answered the property with itself, one new phantom.
+ * A class segment cannot be told from a function segment at the depth where it
+ * matters: the symbol table addresses a top-level `class Foo` and a top-level
+ * `def foo` identically, which is the same blindness `pythonEnclosingClass`
+ * works around with two channels of evidence and still cannot settle at depth
+ * one. So the arm claims only the frame it can prove, and a def in an OUTER
+ * enclosing function stays with the cross-file guess at the bottom of the
+ * method, where the cardinality guard runs first.
+ */
+const isCallerOwnFrame = (defScope: readonly string[], ctx: CallContext): boolean =>
+  defScope.length === ctx.callerScope.length + 1 &&
+  defScope[ctx.callerScope.length] === ownContainerName(ctx) &&
+  ctx.callerScope.every((segment, i) => segment === defScope[i]);
+
+/**
  * Global short-name fallback — the LAST strategy in the chain, and now a guess
  * that is only allowed to speak about calls whose enclosing scope really owns
  * the member (bd tea-rags-mcp-99t5y).
@@ -135,10 +181,35 @@ export class PythonGlobalShortNameSymbolResolutionStrategy implements SymbolReso
     //   - `receiver === null` only. `self.x()` is ATTRIBUTE lookup down the
     //     MRO, a different resolution order entirely, so the `self` arm keeps
     //     the pre-task fallback untouched.
-    //   - MODULE-LEVEL targets only. A same-file `Cls#helper` is callable bare
-    //     only from inside `Cls`, and that is enclosing-scope evidence this
-    //     strategy does not read; those fall through unchanged.
+    //   - MODULE-LEVEL targets only, in THIS arm. A def the caller's own frame
+    //     chain declares is reachable too, and the enclosing arm that opens
+    //     the block below claims it first — LEGB reaches `E` before `G`.
+    //     Anything deeper than either falls through unchanged.
     if (call.receiver === null) {
+      // ── Enclosing scope wins over module scope, because Python says so ─────
+      // A bare name inside `def outer` reaches a `def inner` declared in
+      // `outer`'s frame before it reaches the module's own binding of that
+      // name — LEGB visits `E` before `G`. Every addressable same-file bare
+      // call the E4.6 attribution found names such a nested def
+      // (`_list_tabs#url`, `Blueprint._merge_blueprint_funcs#extend`,
+      // `populate_port_template_mappings#generate_copies`), and 38 of the 85
+      // were answered by the MODULE-level arm below: right file, wrong symbol.
+      //
+      // The candidate set is filtered BEFORE the pick here, unlike the
+      // cardinality guard at the bottom of this method, and the difference is
+      // what makes it sound rather than a narrowing: a def declared in the
+      // caller's own frame is not one namesake among many, it is the binding
+      // the interpreter reaches, so a project-wide tie among unrelated files
+      // cannot make it wrong. Same file only — a nested def is not reachable
+      // from anywhere else, however the scopes line up. `"strict"` rather than
+      // `this.cfg.mode`, matching the module-level arm this precedes: one name
+      // declared twice in one frame is a real ambiguity, and declining is the
+      // answer.
+      const ownFrame = fallback.filter(
+        (def) => def.relPath === ctx.callerFile && def.scope.length > 0 && isCallerOwnFrame(def.scope, ctx),
+      );
+      const nested = pickSingleCandidate(ownFrame, "strict");
+      if (nested) return resolved({ targetRelPath: nested.relPath, targetSymbolId: nested.symbolId });
       const sameFileModuleLevel = fallback.filter((def) => def.relPath === ctx.callerFile && isModuleLevel(def));
       const own = pickSingleCandidate(sameFileModuleLevel, "strict");
       if (own) return resolved({ targetRelPath: own.relPath, targetSymbolId: own.symbolId });
