@@ -107,7 +107,8 @@ conclude absence from a graph the index says is incomplete.
   receivers, module-text receivers and call-result locals folded to their
   callee's return type + kernel return inference over return statements +
   subtype-gated naming-convention receiver typing + class-body manager attribute
-  typing + annotation and docstring type facts
+  typing + annotation and docstring type facts + short-name candidates gated to
+  same-language, bare-callable, non-builtin definitions
 - **Go** — 6-strategy; explicit interfaces (no poly dispatch)
 - **Java** — 6-strategy + java.lang stdlib whitelist + overload disambiguation
 - **Rust** — 6-strategy; trait-based dispatch
