@@ -11,6 +11,7 @@
  */
 
 import type { InheritanceEdgeRow } from "./codegraph-hierarchy.js";
+import type { CodegraphPass1FileAggregates } from "./codegraph-pass1.js";
 import type { RelPath, SymbolId } from "./codegraph-symbols.js";
 
 /**
@@ -143,6 +144,30 @@ export interface ResolveRunStatsRow {
    */
   coreAmbiguous?: number;
   /**
+   * bd tea-rags-mcp-znxg8 — of the RESOLVED calls in this bucket, how many
+   * landed on a shared self-dispatch entry node: a target that is a
+   * `selfDispatchTemplates` key or a `selfInstantiatingClassMethods` member.
+   *
+   * This is the one counter here that does NOT describe a miss. Every call it
+   * counts resolved, and that is the point: an entry call `Const.call` whose
+   * edge stops at `KindOfService.call` instead of `Const#perform` is a WRONG
+   * answer that every rate on this row reads as a right one. The field report
+   * that opened znxg8 found 200 of 200 sampled caller edges of one such node
+   * degraded while `inProjectEdgeRecall` read 1.0 — the number could not fall,
+   * because nothing was missing.
+   *
+   * It therefore enters NO rate denominator. It is an invariant: a healthy run
+   * sits near zero, because a concrete constant receiver narrows the abstract
+   * hook to exactly one target by construction. A jump means the narrowing
+   * stopped happening — the shape the pass-1 registry hole produced on every
+   * incremental run before the aggregates were persisted.
+   *
+   * Counts CALL SITES, not edges: a fan-out that lands on a template once is
+   * one degraded call. Defaults to 0 for rows persisted before the column was
+   * added, and stays 0 for languages with no self-dispatch registry.
+   */
+  unnarrowedTemplate?: number;
+  /**
    * bd tea-rags-mcp-f2jsb / j0pki — of the `attempted − resolved` misses in
    * this bucket, how many the dispatch kernel judged over-cap AMBIGUOUS
    * (survivors > corpus-adaptive fan-out cap) and recorded as an aggregate
@@ -181,6 +206,19 @@ export interface GraphEdges {
     member: string;
     candidateCount: number;
   }[];
+  /**
+   * This file's pass-1 aggregate slice (bd tea-rags-mcp-znxg8), persisted to
+   * `cg_pass1_aggregates` on the same per-file reconciliation as the rows above
+   * so a LATER run that does not re-walk the file can still absorb its ancestry
+   * and self-dispatch facts. Rides on `GraphEdges` rather than on a write seam
+   * of its own precisely to inherit that lifecycle: the row is replaced when the
+   * file is re-walked and deleted when the file is, with no second bookkeeping
+   * path that could drift out of step with the edges.
+   *
+   * Present only when the file HAS such facts, mirroring `inheritance` — a file
+   * declaring no class and no self-dispatching method writes no row.
+   */
+  pass1Aggregates?: CodegraphPass1FileAggregates;
 }
 
 export interface CallerEdge {

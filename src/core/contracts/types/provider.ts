@@ -10,7 +10,7 @@
 import type { Ignore } from "ignore";
 
 import type { ChunkLookupEntry } from "./chunker.js";
-import type { FileExtraction } from "./codegraph.js";
+import type { CodegraphPass1FileAggregates, FileExtraction } from "./codegraph.js";
 import type { CommitDiffMemoPort } from "./commit-diff-memo.js";
 import type { DerivedSignalDescriptor, RerankPreset } from "./reranker.js";
 import type { PayloadSignalDescriptor } from "./trajectory.js";
@@ -253,6 +253,26 @@ export interface FileSignalOptions {
    * `structuredClone` boundary intact.
    */
   crossPass?: boolean;
+  /**
+   * The run's persisted per-file pass-1 aggregate slices, read by the MAIN
+   * thread and injected into the provider's finalize (bd tea-rags-mcp-weno4).
+   *
+   * znxg8 made the pass-1→pass-2 barrier hydrate its run-global registries from
+   * these rows for every file the run did not walk. Reading them inside the
+   * codegraph WORKER cannot be relied on: that thread's `GraphDbClientPool` is
+   * built without a `daemonRestart` hook, so it tolerates a daemon compiled from
+   * other source — one that answers `unknown daemon op: listAllPass1Aggregates`
+   * and silently degrades the repair back to a batch-scoped registry. The main
+   * thread's pool DOES respawn a stale daemon, so it reads the rows (via
+   * {@link EnrichmentProvider.readPersistedPass1Aggregates}) and hands them
+   * across on this option.
+   *
+   * Injected rows WIN over the provider's own read; the read stays as the
+   * fallback for direct/test callers, where there is no daemon. Plain data —
+   * survives the worker-pool `structuredClone` boundary. Providers that keep no
+   * pass-1 store (git) ignore it.
+   */
+  pass1Aggregates?: readonly CodegraphPass1FileAggregates[];
   /** Per-blame-pass instrumentation (bd tea-rags-mcp-v2mlw): invoked once per
    *  populateBlameMap pass with cache hit/miss counters and wall duration;
    *  the file phase binds it to the pipeline debug log ([GitEnrich] BLAME
@@ -449,6 +469,18 @@ export interface EnrichmentProvider {
    * created versioned collection needs.
    */
   readPersistedFileHashes?: (collectionName: string) => Promise<Map<string, string | null>>;
+  /**
+   * Every persisted per-file pass-1 aggregate slice this provider holds for
+   * `collectionName` (bd tea-rags-mcp-weno4). Called on the MAIN-thread provider
+   * instance, whose pool respawns a stale daemon, and the result is threaded to
+   * the worker's finalize as {@link FileSignalOptions.pass1Aggregates} — see
+   * that field for why the worker's own read cannot be trusted to succeed.
+   *
+   * Optional and modelled on {@link readPersistedFileHashes}: a provider with no
+   * pass-1 store omits it and the injection is simply absent, which is what git
+   * does. A collection with no graph yet yields an empty list, not an error.
+   */
+  readPersistedPass1Aggregates?: (collectionName: string) => Promise<CodegraphPass1FileAggregates[]>;
   /**
    * Narrow repo-relative `paths` to the ones this provider's per-file store can
    * ever hold a row for (bd tea-rags-mcp-65bkl). The write-side counterpart of

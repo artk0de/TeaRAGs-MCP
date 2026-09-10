@@ -35,7 +35,7 @@ describe("FileOutlineStrategy", () => {
 
     expect(mockScrollFiltered).toHaveBeenCalledWith(
       "c",
-      { must: [{ key: "relativePath", match: { text: "src/utils.ts" } }] },
+      { must: [{ key: "relativePath", match: { value: "src/utils.ts" } }] },
       200,
     );
   });
@@ -50,9 +50,74 @@ describe("FileOutlineStrategy", () => {
     await strategy.execute({ collectionName: "c", limit: 1 });
 
     expect(mockScrollFiltered.mock.calls[0][1].must).toEqual([
-      { key: "relativePath", match: { text: "src/utils.ts" } },
+      { key: "relativePath", match: { value: "src/utils.ts" } },
       { key: "language", match: { value: "typescript" } },
     ]);
+  });
+
+  /**
+   * bd tea-rags-mcp-znxg8 — the path mode used `match: { text }`, Qdrant's
+   * full-text predicate over the "word"-tokenized `relativePath` index. Full
+   * text matches when the query's tokens are a SUBSET of the field's, so
+   * "app/services/workflow/tasks/update.rb"
+   * {app,services,workflow,tasks,update,rb} matched
+   * "app/services/workflow/async_operations/notify/tasks/batch_update.rb"
+   * {app,services,workflow,async,operations,notify,tasks,batch,update,rb} — the
+   * underscore in `batch_update` is a token boundary. `CodeChunkGrouper.groupFile`
+   * then labels the merged outline with the FIRST chunk's path, so the caller
+   * got another file's outline with no signal it was the wrong file.
+   */
+  describe("exact path addressing (bd tea-rags-mcp-znxg8)", () => {
+    const REQUESTED = "app/services/workflow/tasks/update.rb";
+    const SUPERSET = "app/services/workflow/async_operations/notify/tasks/batch_update.rb";
+
+    const chunk = (id: string, relativePath: string, name: string) => ({
+      id,
+      payload: {
+        symbolId: name,
+        chunkType: "function",
+        relativePath,
+        content: `def ${name}; end`,
+        startLine: 1,
+        endLine: 5,
+        language: "ruby",
+        name,
+      },
+    });
+
+    it("filters on an exact keyword match, so a token-superset path cannot satisfy it", async () => {
+      mockScrollFiltered.mockResolvedValue([]);
+      const strategy = new FileOutlineStrategy(qdrant, reranker, [], [], { relativePath: REQUESTED });
+
+      await strategy.execute({ collectionName: "c", limit: 1 });
+
+      expect(mockScrollFiltered.mock.calls[0][1].must).toEqual([
+        { key: "relativePath", match: { value: REQUESTED } },
+      ]);
+    });
+
+    it("never blends a token-superset path into the requested file's outline", async () => {
+      mockScrollFiltered.mockResolvedValue([
+        chunk("s1", SUPERSET, "batch_perform"),
+        chunk("r1", REQUESTED, "perform"),
+      ]);
+      const strategy = new FileOutlineStrategy(qdrant, reranker, [], [], { relativePath: REQUESTED });
+
+      const result = await strategy.execute({ collectionName: "c", limit: 1 });
+
+      expect(result.every((r) => r.payload?.relativePath === REQUESTED)).toBe(true);
+      expect(JSON.stringify(result)).not.toContain("batch_update.rb");
+      expect(JSON.stringify(result)).not.toContain("batch_perform");
+    });
+
+    it("returns empty instead of a different file when the requested path is absent", async () => {
+      mockScrollFiltered.mockResolvedValue([chunk("s1", SUPERSET, "batch_perform")]);
+      const strategy = new FileOutlineStrategy(qdrant, reranker, [], [], { relativePath: REQUESTED });
+
+      const result = await strategy.execute({ collectionName: "c", limit: 1 });
+
+      expect(result).toEqual([]);
+    });
   });
 
   it("returns empty results when scroll yields no chunks", async () => {

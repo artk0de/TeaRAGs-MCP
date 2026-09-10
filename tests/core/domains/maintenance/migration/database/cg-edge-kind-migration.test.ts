@@ -43,7 +43,9 @@ describe("006 cg edge_kind/confidence + cg_run_stats migration (bd 2jet/j431)", 
     expect(runStatsCols.map((c) => c.column_name).sort()).toEqual(
       // no_in_project_def added by migration 011 (inProjectEdgeRecall);
       // ambiguous_fanout added by migration 013 (f2jsb / j0pki dual recall);
-      // core_ambiguous added by migration 015 (83cl7 core-homonym denominator).
+      // core_ambiguous added by migration 015 (83cl7 core-homonym denominator);
+      // unnarrowed_template added by migration 022 (znxg8) — the one column here
+      // that counts RESOLVED calls rather than misses, and feeds no rate.
       [
         "ambiguous_fanout",
         "attempted",
@@ -53,6 +55,7 @@ describe("006 cg edge_kind/confidence + cg_run_stats migration (bd 2jet/j431)", 
         "no_in_project_def",
         "receiver_kind",
         "resolved",
+        "unnarrowed_template",
         "unresolvable",
       ].sort(),
     );

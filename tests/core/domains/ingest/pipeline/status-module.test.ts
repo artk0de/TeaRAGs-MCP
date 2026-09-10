@@ -156,6 +156,10 @@ describe("StatusModule", () => {
           callsNoInProjectDef: 0,
           callsCoreAmbiguous: 0,
           ambiguousFanout: 0,
+          // bd znxg8 — the unnarrowed-entry invariant. Zero here for the reason
+          // it should be zero everywhere: this fixture has no self-dispatch
+          // registry at all, so no entry call can fail to narrow.
+          callsUnnarrowedTemplate: 0,
           resolveSuccessRate: 60 / 70,
         });
       });

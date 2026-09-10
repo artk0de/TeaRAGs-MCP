@@ -45,6 +45,9 @@ interface ResolveTally {
   noInProjectDef: number;
   coreAmbiguous: number;
   ambiguousFanout: number;
+  // bd tea-rags-mcp-znxg8 — RESOLVED calls that stopped at a shared self-dispatch
+  // entry node. Feeds no rate: it is an invariant, not a miss bucket.
+  unnarrowedTemplate: number;
 }
 
 function emptyTally(): ResolveTally {
@@ -56,6 +59,7 @@ function emptyTally(): ResolveTally {
     noInProjectDef: 0,
     coreAmbiguous: 0,
     ambiguousFanout: 0,
+    unnarrowedTemplate: 0,
   };
 }
 
@@ -165,6 +169,7 @@ function addRow(t: ResolveTally, r: ResolveRunStatsRow): void {
   t.noInProjectDef += r.noInProjectDef ?? 0;
   t.coreAmbiguous += r.coreAmbiguous ?? 0;
   t.ambiguousFanout += r.ambiguousFanout ?? 0;
+  t.unnarrowedTemplate += r.unnarrowedTemplate ?? 0;
 }
 
 /**
@@ -232,6 +237,7 @@ export function summarizeCodegraphResolve(
     callsNoInProjectDef: total.noInProjectDef,
     callsCoreAmbiguous: total.coreAmbiguous,
     ambiguousFanout: total.ambiguousFanout,
+    callsUnnarrowedTemplate: total.unnarrowedTemplate,
     ...(debug ? { resolveSuccessRate: resolveRate(total) } : {}),
   };
   const byLanguage: CodegraphResolveLanguageRow[] = [...byLang.entries()]
@@ -245,6 +251,7 @@ export function summarizeCodegraphResolve(
       callsUnresolvable: t.unresolvable,
       callsNoInProjectDef: t.noInProjectDef,
       callsCoreAmbiguous: t.coreAmbiguous,
+      callsUnnarrowedTemplate: t.unnarrowedTemplate,
       ...(debug ? { resolveSuccessRate: resolveRate(t) } : {}),
       // Absent unless DEBUG built the tally above.
       ...(debug

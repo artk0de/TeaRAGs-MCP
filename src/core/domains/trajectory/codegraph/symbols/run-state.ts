@@ -28,6 +28,7 @@ import type {
   KnownTargetCallArgs,
   ModuleReexport,
   RelPath,
+  CodegraphPass1FileAggregates,
   ResolveRunStatsRow,
   SymbolDefinition,
 } from "../../../../contracts/types/codegraph.js";
@@ -40,7 +41,8 @@ import {
   foldKnownTargetParamTypes,
   type KnownTargetParamTypes,
 } from "./call-arg-param-types.js";
-import { buildHierarchySnapshot } from "./inheritance-edges.js";
+import { buildHierarchySnapshot, normalizeInheritanceEdges } from "./inheritance-edges.js";
+import { selectHydratablePass1Aggregates } from "./pass1-aggregates.js";
 import { RECEIVER_KINDS, type ReceiverKind } from "./receiver-kind.js";
 import { collectSchemaColumnModels, synthesizeSchemaColumnDefs } from "./schema-column-synthesis.js";
 import {
@@ -74,6 +76,12 @@ export interface ReceiverKindTally {
   // this bucket (subset of attempted − resolved). Its own bucket: NOT a genuine
   // miss, NOT external. Persisted to cg_run_stats.ambiguous_fanout.
   ambiguousFanout: number;
+  // bd tea-rags-mcp-znxg8 — RESOLVED calls in this bucket that landed on a
+  // shared self-dispatch entry node instead of the concrete hook the constant
+  // receiver names. The only counter here that is not a miss, and the only one
+  // no rate consumes: an invariant that sits near zero while entry narrowing
+  // works. Persisted to cg_run_stats.unnarrowed_template.
+  unnarrowedTemplate: number;
 }
 
 export interface RunStats {
@@ -139,6 +147,7 @@ export function emptyReceiverKindTally(): Record<ReceiverKind, ReceiverKindTally
       noInProjectDef: 0,
       coreAmbiguous: 0,
       ambiguousFanout: 0,
+      unnarrowedTemplate: 0,
     };
   }
   return out;
@@ -169,6 +178,7 @@ export function aggregateReceiverKinds(stats: RunStats): Record<ReceiverKind, Re
       out[kind].noInProjectDef += kinds[kind].noInProjectDef;
       out[kind].coreAmbiguous += kinds[kind].coreAmbiguous;
       out[kind].ambiguousFanout += kinds[kind].ambiguousFanout;
+      out[kind].unnarrowedTemplate += kinds[kind].unnarrowedTemplate;
     }
   }
   return out;
@@ -307,6 +317,19 @@ export class CodegraphRunState {
    * makes the file re-extract rather than be assumed current.
    */
   contentHashes?: ReadonlyMap<string, string>;
+
+  /**
+   * The persisted pass-1 slices the MAIN thread read and injected for this run
+   * (bd tea-rags-mcp-weno4), threaded in from `FileSignalOptions.pass1Aggregates`.
+   * The barrier prefers these over its own `graphDb` read, which a stale daemon
+   * in the worker can answer with `unknown daemon op: listAllPass1Aggregates`.
+   * Undefined for direct/test callers, which fall back to the read.
+   *
+   * Per-RUN and cleared at both release seams below: rows injected for one
+   * collection would otherwise hydrate the next run's registries with another
+   * corpus's ancestry.
+   */
+  injectedPass1Aggregates?: readonly CodegraphPass1FileAggregates[];
 
   /**
    * Per-run aggregation of `FileExtraction.classAncestors` across every
@@ -728,6 +751,83 @@ export class CodegraphRunState {
   }
 
   /**
+   * Absorb the persisted pass-1 slices of files this run did NOT walk
+   * (bd tea-rags-mcp-znxg8) — the repair that makes an incremental run's
+   * run-global maps describe the PROJECT rather than the batch, matching the
+   * symbol table it is already resolved against.
+   *
+   * Three properties hold it together:
+   *
+   *  - **Walked files are skipped, not merged.** Pass-2 has not written this
+   *    run's rows yet, so a walked file's row on disk still describes its
+   *    previous content; absorbing it would resurrect a class the file just
+   *    renamed away, under a key indistinguishable from the fresh one.
+   *  - **A hydrated key never displaces a walked one.** The fresh extraction is
+   *    authoritative; `absorb` is last-write-wins, so hydration writes only into
+   *    coordinates still empty rather than merging in the same order.
+   *  - **Nothing here counts as an extraction.** `extractedFilesByLanguage` and
+   *    the per-language path lists drive the run statistics and the deferred
+   *    chunk pass; a hydrated file was not walked, was not re-chunked, and must
+   *    not appear in either.
+   *
+   * A failure to read degrades to the pre-znxg8 behaviour — a batch-scoped
+   * registry — rather than aborting the run, and says so on stderr. That mirrors
+   * the symbol-table hydration's own guard in `codegraph/factory.ts`: losing the
+   * repair costs recall on this one run, losing the run costs the index.
+   */
+  private async hydratePersistedPass1Aggregates(
+    load: () => Promise<readonly CodegraphPass1FileAggregates[]>,
+  ): Promise<void> {
+    let persisted: readonly CodegraphPass1FileAggregates[];
+    try {
+      persisted = await load();
+    } catch (err) {
+      process.stderr.write(
+        `[tea-rags] codegraph pass-1 aggregate hydration failed: ${(err as Error).message}\n` +
+          "[tea-rags] resolution continues against this run's batch only — entry calls into unchanged files may degrade\n",
+      );
+      return;
+    }
+    const walked = new Set<string>();
+    for (const relPaths of this.extractedRelPathsByLanguage.values()) for (const p of relPaths) walked.add(p);
+    const hydratable = selectHydratablePass1Aggregates(persisted, walked);
+    if (hydratable.length === 0) return;
+
+    for (const slice of hydratable) {
+      for (const [k, v] of Object.entries(slice.classAncestors ?? {})) {
+        if (k in this.ancestors) continue;
+        this.ancestors[k] = v;
+        this.markContributed("ancestors");
+      }
+      for (const [k, v] of Object.entries(slice.classPrependedAncestors ?? {})) {
+        if (k in this.prependedAncestors) continue;
+        this.prependedAncestors[k] = v;
+        this.markContributed("prependedAncestors");
+      }
+      for (const [k, v] of Object.entries(slice.classExtends ?? {})) {
+        if (k in this.classExtends) continue;
+        this.classExtends[k] = v;
+        this.markContributed("classExtends");
+      }
+      for (const fq of slice.compactDeclaredClasses ?? []) this.compactClasses.add(fq);
+      if (slice.selfDispatchMethods !== undefined) this.selfDispatchMethods.push(...slice.selfDispatchMethods);
+      // Ancestor symbol_ids stay null exactly as they do on the pass-1 path: the
+      // hierarchy view reads by fq NAME, and pass-2's per-file persist owns the
+      // symbol_id binding for the rows it writes.
+      this.inheritanceRows.push(...normalizeInheritanceEdges(slice, () => null));
+    }
+    if (isDebug()) {
+      console.error("[GitEnrich] PHASE: CODEGRAPH_PASS1_HYDRATED", {
+        persistedRows: persisted.length,
+        walkedFiles: walked.size,
+        hydratedFiles: hydratable.length,
+        selfDispatchMethods: this.selfDispatchMethods.length,
+        inheritanceRows: this.inheritanceRows.length,
+      });
+    }
+  }
+
+  /**
    * Pass-1→pass-2 barrier (bd tea-rags-mcp-o17v2 + cai0/2oky5 + DEFECT 2).
    * Pass-1 is complete, so the run-global maps are frozen: build the hierarchy
    * view and the reverse include-by index ONCE here instead of per file, then
@@ -736,8 +836,22 @@ export class CodegraphRunState {
    * `resolveSymbolTable` is LAZY on purpose — the symbol table is only needed
    * for the self-dispatch discovery branch, and resolving it eagerly would add
    * a pool acquire to every run that has no self-dispatch candidates.
+   *
+   * `loadPersistedPass1Aggregates` is the incremental-run repair
+   * (bd tea-rags-mcp-znxg8) and is lazy for the same reason. It MUST be absorbed
+   * FIRST — before the hierarchy view, the include-by index and the self-dispatch
+   * discovery, every one of which is computed from the maps it feeds. Taking the
+   * loader as a parameter rather than expecting the caller to absorb beforehand
+   * is what makes that ordering a property of this method instead of a rule the
+   * next caller has to know.
    */
-  async seal(resolveSymbolTable: () => Promise<GlobalSymbolTable>): Promise<void> {
+  async seal(
+    resolveSymbolTable: () => Promise<GlobalSymbolTable>,
+    loadPersistedPass1Aggregates?: () => Promise<readonly CodegraphPass1FileAggregates[]>,
+  ): Promise<void> {
+    if (loadPersistedPass1Aggregates !== undefined) {
+      await this.hydratePersistedPass1Aggregates(loadPersistedPass1Aggregates);
+    }
     this.hierarchyView = new MapHierarchyView(buildHierarchySnapshot(this.inheritanceRows));
     this.includedBy = buildIncludedBy(this.ancestors, this.prependedAncestors);
     // Persisted-schema column accessors (bd tea-rags-mcp-8l5fo). Composed at
@@ -990,6 +1104,7 @@ export class CodegraphRunState {
           noInProjectDef: t.noInProjectDef,
           coreAmbiguous: t.coreAmbiguous,
           ambiguousFanout: t.ambiguousFanout,
+          unnarrowedTemplate: t.unnarrowedTemplate,
         });
       }
     }
@@ -1021,6 +1136,8 @@ export class CodegraphRunState {
     this.gemfileContent = undefined;
     this.gemfileLoaded = false;
     this.projectRoot = undefined;
+    // bd tea-rags-mcp-weno4 — injected for ONE run against ONE collection.
+    this.injectedPass1Aggregates = undefined;
     this.prependedAncestors = {};
     this.includedBy = {};
     this.classExtends = {};
@@ -1058,6 +1175,8 @@ export class CodegraphRunState {
     this.gemfileContent = undefined;
     this.gemfileLoaded = false;
     this.projectRoot = undefined;
+    // bd tea-rags-mcp-weno4 — injected for ONE run against ONE collection.
+    this.injectedPass1Aggregates = undefined;
     this.prependedAncestors = {};
     this.classExtends = {};
     this.schemaTables = {};

@@ -213,4 +213,23 @@ describe("normalizeInheritanceEdges", () => {
       "Cat|Logging|prepend",
     ]);
   });
+
+  it("dedups on the DELIMITED triple, so adjacent-name pairs do not collide", () => {
+    // The `seen` key joins source, ancestor and kind with a NUL. That delimiter
+    // is load-bearing and invisible, which is exactly how it gets lost: a merge
+    // resolution that "cleans up" the file to plain `${source}${ancestor}${kind}`
+    // still compiles, still passes every other case here, and silently drops one
+    // of any two edges whose names concatenate to the same string.
+    //
+    // `A` + `BC` and `AB` + `C` are that pair. Both are real, distinct edges and
+    // BOTH must survive.
+    const ex = {
+      relPath: "adjacent.rb",
+      inheritanceEdges: [
+        { source: "A", ancestor: "BC", kind: "include" as const, ordinal: 0 },
+        { source: "AB", ancestor: "C", kind: "include" as const, ordinal: 1 },
+      ],
+    } as FileExtraction;
+    expect(triples(normalizeInheritanceEdges(ex, resolve))).toEqual(["A|BC|include", "AB|C|include"]);
+  });
 });

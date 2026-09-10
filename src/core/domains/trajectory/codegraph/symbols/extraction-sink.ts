@@ -35,6 +35,7 @@ import { dirname as pathDirname } from "node:path";
 
 import { spillLiveMarkerPath } from "../../../../adapters/duckdb/spill-files.js";
 import type {
+  CodegraphPass1FileAggregates,
   ExtractionSink,
   FileExtraction,
   GlobalSymbolTable,
@@ -49,6 +50,15 @@ import { extractSelfDispatchMethods } from "./self-dispatch-discovery.js";
 export interface CodegraphSinkDeps {
   /** Resolve the in-memory symbol table for the active collection. */
   resolveSymbolTable: (collectionName?: string) => Promise<GlobalSymbolTable>;
+  /**
+   * Read back every persisted per-file pass-1 aggregate slice for the active
+   * collection (bd tea-rags-mcp-znxg8). Absorbed at the barrier for the files
+   * this run did NOT walk, so an incremental run resolves against a project-wide
+   * ancestry / self-dispatch registry rather than a batch-sized one — the
+   * asymmetry that degraded concrete service entry calls onto the shared
+   * template they inherit.
+   */
+  loadPersistedPass1Aggregates: (collectionName?: string) => Promise<CodegraphPass1FileAggregates[]>;
   runState: CodegraphRunState;
   nodeFlush: SymbolNodeFlushQueue;
   /** Map a `FileExtraction` to the 9-field `SymbolDefinition` shape. */
@@ -227,7 +237,16 @@ export function createCodegraphExtractionSink(
         // `CallContext`. The symbol table is resolved lazily — only the
         // self-dispatch branch needs it, so a run without candidates pays no
         // extra pool acquire.
-        await deps.runState.seal(async () => deps.resolveSymbolTable(collectionName));
+        //
+        // The persisted pass-1 slices (bd tea-rags-mcp-znxg8) are absorbed
+        // INSIDE `seal`, ahead of all three, because all three are computed from
+        // the maps they feed. This run walked a batch; the registry has to
+        // describe the project, or a concrete `Service.call` whose template file
+        // was not in the batch degrades onto that template.
+        await deps.runState.seal(
+          async () => deps.resolveSymbolTable(collectionName),
+          async () => deps.loadPersistedPass1Aggregates(collectionName),
+        );
         if (spillWriteCount > 0) {
           await deps.resolveAndUpsert(spillPath, collectionName);
         }

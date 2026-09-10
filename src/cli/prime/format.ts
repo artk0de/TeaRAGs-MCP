@@ -397,7 +397,8 @@ function formatCodegraphResolveSection(resolve: CodegraphResolve | undefined): s
   if (!resolve) return [];
   const hasTopKinds = (resolve.byReceiverKind?.length ?? 0) > 0;
   const langsWithKinds = (resolve.byLanguage ?? []).filter((l) => (l.byReceiverKind?.length ?? 0) > 0);
-  if (!hasTopKinds && langsWithKinds.length === 0) return [];
+  const unnarrowed = resolve.callsUnnarrowedTemplate ?? 0;
+  if (!hasTopKinds && langsWithKinds.length === 0 && unnarrowed === 0) return [];
 
   const lines = ["## Codegraph resolve"];
   if (hasTopKinds) {
@@ -407,6 +408,17 @@ function formatCodegraphResolveSection(resolve: CodegraphResolve | undefined): s
       lines.push(`${l.language}:`);
       for (const k of l.byReceiverKind ?? []) lines.push(`  ${formatResolveKind(k)}`);
     }
+  }
+  // bd tea-rags-mcp-znxg8 — the unnarrowed-entry invariant. Rendered ONLY when
+  // non-zero: zero is the healthy state and a permanent `0` line would be noise
+  // in a digest read on every session. Non-zero is worth a line, because none of
+  // the rates above can express it — those calls RESOLVED, they just resolved
+  // onto the shared template rather than the concrete hook, so recall reads 1.0
+  // while the callers of every concrete service go missing.
+  if (unnarrowed > 0) {
+    lines.push(
+      `⚠ ${unnarrowed} entry call(s) resolved to a shared self-dispatch template instead of the concrete hook — recall rates cannot see this`,
+    );
   }
   return lines;
 }

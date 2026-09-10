@@ -42,12 +42,28 @@ export class FileOutlineStrategy extends BaseExploreStrategy {
   }
 
   protected async executeExplore(ctx: ExploreContext): Promise<ExploreResult[]> {
-    const must: Record<string, unknown>[] = [{ key: "relativePath", match: { text: this.input.relativePath } }];
+    // Exact keyword match — NOT `match: { text }` (bd tea-rags-mcp-znxg8).
+    // `relativePath` carries both a keyword and a "word"-tokenized text index
+    // (schema-manager v4/v5). Qdrant's full-text predicate matches when the
+    // query's tokens are a SUBSET of the field's, and `/`, `.` and `_` are all
+    // token boundaries — so "app/services/workflow/tasks/update.rb" matched
+    // "app/services/workflow/async_operations/notify/tasks/batch_update.rb".
+    // The path mode addresses ONE file, so the keyword index is both the exact
+    // and the cheap predicate. `globToTextFilter` already draws this same line
+    // for an unglobbed path (adapters/qdrant/filters/glob.ts).
+    const must: Record<string, unknown>[] = [{ key: "relativePath", match: { value: this.input.relativePath } }];
     if (this.input.language) {
       must.push({ key: "language", match: { value: this.input.language } });
     }
 
-    const chunks = await this.qdrant.scrollFiltered(ctx.collectionName, { must }, SCROLL_LIMIT);
+    const scrolled = await this.qdrant.scrollFiltered(ctx.collectionName, { must }, SCROLL_LIMIT);
+
+    // Second gate on the same invariant: `CodeChunkGrouper.groupFile` labels the
+    // merged outline with the FIRST chunk's path, so a single foreign chunk
+    // would silently retitle another file's outline as the requested one. Drop
+    // anything that is not the requested path — exact or empty, never a
+    // substitute the caller cannot detect.
+    const chunks = scrolled.filter((c) => (c.payload.relativePath as string | undefined) === this.input.relativePath);
     if (chunks.length === 0) return [];
 
     const isDoc = chunks.some((c) => c.payload.isDocumentation);

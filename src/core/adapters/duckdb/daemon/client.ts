@@ -8,6 +8,7 @@ import type {
   CalleeEdge,
   CallerEdge,
   ChunkGraphSignals,
+  CodegraphPass1FileAggregates,
   CycleEntry,
   CycleScope,
   EdgeKindCount,
@@ -519,6 +520,10 @@ export class DaemonGraphDbClient implements GraphDbClient {
 
   async listAllSymbols(): Promise<SymbolDefinition[]> {
     return (await this.call("listAllSymbols", {})) as SymbolDefinition[];
+  }
+
+  async listAllPass1Aggregates(): Promise<CodegraphPass1FileAggregates[]> {
+    return (await this.call("listAllPass1Aggregates", {})) as CodegraphPass1FileAggregates[];
   }
 
   async listFileContentHashes(): Promise<{ relPath: RelPath; contentHash: string | null }[]> {

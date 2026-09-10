@@ -487,6 +487,7 @@ describe("CodegraphDaemonServer.handle", () => {
         noInProjectDef: 0,
         coreAmbiguous: 0,
         ambiguousFanout: 0,
+        unnarrowedTemplate: 0,
       },
       {
         language: "typescript",
@@ -498,6 +499,7 @@ describe("CodegraphDaemonServer.handle", () => {
         noInProjectDef: 0,
         coreAmbiguous: 0,
         ambiguousFanout: 0,
+        unnarrowedTemplate: 0,
       },
     ]);
     await pool.closeAll();
