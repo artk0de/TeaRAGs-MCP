@@ -51,6 +51,8 @@ import {
   type CallRef,
   type ChunkExtraction,
   type FileExtraction,
+  type HierarchyView,
+  type InheritanceEdgeRow,
   type ModuleReexport,
   type SymbolResolutionTarget,
 } from "../src/core/contracts/types/codegraph.js";
@@ -68,6 +70,7 @@ import {
   JavaLocalBindingSymbolResolutionStrategy,
   JavaThisMemberSymbolResolutionStrategy,
 } from "../src/core/domains/language/java/resolver/strategies/index.js";
+import { dispatchFanoutPolicyFor } from "../src/core/domains/language/kernel/fanout-policy.js";
 import {
   createPythonSymbolResolutionChain,
   PythonAncestorLinearizerCache,
@@ -75,8 +78,14 @@ import {
 } from "../src/core/domains/language/python/resolver/index.js";
 import { CONE_MAX_DEFAULT } from "../src/core/domains/language/python/resolver/strategies/index.js";
 import { resolveViaChain } from "../src/core/domains/language/resolver-chain.js";
+import { MapHierarchyView } from "../src/core/domains/trajectory/codegraph/hierarchy-view.js";
+import {
+  buildHierarchySnapshot,
+  normalizeInheritanceEdges,
+} from "../src/core/domains/trajectory/codegraph/symbols/inheritance-edges.js";
 import { CODEGRAPH_LANGUAGES } from "../src/core/domains/trajectory/codegraph/symbols/provider.js";
 import { InMemoryGlobalSymbolTable } from "../src/core/domains/trajectory/codegraph/symbols/symbol-table.js";
+import { NO_FAN, scoreFan, type PyFanOutcomeKind } from "./lib/py-oracle-core.js";
 import {
   buildCorpusExclusionFilter,
   buildSymbolDefs,
@@ -192,6 +201,21 @@ export interface CallSiteRow {
    * two cases, and they point opposite ways.
    */
   baselineTargetInProject: boolean;
+  /**
+   * What the dispatch layer emitted here (bd tea-rags-mcp-w205u, E4.0.3).
+   * `none` under `--no-dispatch`, where the layer was never consulted.
+   */
+  dispatchOutcome: PyFanOutcomeKind;
+  /** `fan.length` for `single` / `fan`, `candidateCount` for `ambiguous`, 0 for `none`. */
+  fanSize: number;
+  /**
+   * The answer PRODUCTION books: the dispatch layer's single target when it
+   * pinned one, else the exact chain's, and null where a fan or an over-cap
+   * decision left production with no 1:1 edge. `baseline` deliberately stays
+   * the EXACT chain — the A/B this script exists for is a chain instrument, and
+   * folding a fan into it would make a real drift invisible (Step 7).
+   */
+  runnerAnswer: SymbolResolutionTarget | null;
 }
 
 export interface DiffTally {
@@ -305,6 +329,14 @@ interface RunGlobalTypeChannels {
   classFieldTypesByClassKey: Record<string, Record<string, string>>;
   /** `relPath` → the names its `from` statements bind, for the mapper's re-export hop (xpl83.3). */
   moduleReexports: Record<string, readonly ModuleReexport[]>;
+  /**
+   * Inheritance rows and instantiated types, the two channels the CHA cone
+   * reads (bd tea-rags-mcp-o17v2 / pffv, wired here by w205u/E4.0.3). Without
+   * them `ctx.hierarchy` is undefined and `resolveDispatch` returns `[]` at
+   * every site, so the tally reported a dispatch layer that never ran.
+   */
+  inheritanceRows: InheritanceEdgeRow[];
+  instantiatedTypes: Set<string>;
 }
 
 /** Absorb one file's contribution to every run-global channel. */
@@ -317,6 +349,10 @@ function absorbTypeChannels(channels: RunGlobalTypeChannels, extraction: FileExt
     channels.classFieldTypesByClassKey[classKey] = { ...channels.classFieldTypesByClassKey[classKey], ...fields };
   }
   if (extraction.moduleReexports) channels.moduleReexports[extraction.relPath] = extraction.moduleReexports;
+  // `() => null` mirrors the extraction sink: the cone reads ancestors by
+  // fqName, and pass 1's table cannot bind symbol ids yet anyway.
+  channels.inheritanceRows.push(...normalizeInheritanceEdges(extraction, () => null));
+  for (const instantiated of extraction.instantiatedTypes ?? []) channels.instantiatedTypes.add(instantiated);
 }
 
 function buildCallContext(
@@ -324,8 +360,11 @@ function buildCallContext(
   chunk: ChunkExtraction,
   symbolTable: InMemoryGlobalSymbolTable,
   channels: RunGlobalTypeChannels,
+  hierarchy: HierarchyView,
 ): CallContext {
   return {
+    hierarchy,
+    instantiatedTypes: channels.instantiatedTypes,
     callerFile: extraction.relPath,
     callerScope: chunk.scope,
     callerSymbolId: chunk.symbolId,
@@ -358,6 +397,18 @@ export interface RunResult {
   dispatchSkipped: number;
   /** Rebuilt baseline disagreeing with the production resolver. MUST be 0. */
   chainDrift: number;
+  /** Did this run consult the dispatch layer at all (bd tea-rags-mcp-w205u)? */
+  dispatch: boolean;
+  /** Sites the layer collapsed to ONE target, replacing the chain's answer. */
+  singleSites: number;
+  /** Sites it answered with a hypothesis set of two or more. */
+  fanSites: number;
+  /** Over-cap decisions: no edges, no fallback. */
+  ambiguousSites: number;
+  /** Edges the fan sites would persist — Σ `fanSize` over `fan` rows. */
+  fanEdges: number;
+  /** The corpus-adaptive narrowing cap, read off the function production reads it off. */
+  fanoutPolicy: { cap: number; p99DefsPerMember: number };
 }
 
 export async function run(
@@ -366,6 +417,13 @@ export async function run(
   deferPass: string | null,
   limit: number,
   quiet: boolean,
+  /**
+   * Consult the dispatch layer first, as production's default channel does
+   * (`resolution-runner.ts:557`). ON by default; `--no-dispatch` reproduces the
+   * pre-E4.0.3 walk. It never moves `baseline` / `variant` / `chainDrift` —
+   * those stay the exact chain's, which is what the A/B measures.
+   */
+  dispatch = true,
 ): Promise<RunResult> {
   const spec = CHAINS[lang];
   if (!spec) throw new Error(`no chain spec for language '${lang}' (have: ${Object.keys(CHAINS).join(", ")})`);
@@ -395,6 +453,8 @@ export async function run(
     classAncestors: {},
     classFieldTypesByClassKey: {},
     moduleReexports: {},
+    inheritanceRows: [],
+    instantiatedTypes: new Set<string>(),
   };
   const scored: FileExtraction[] = [];
   const corpusFiles = new Set<string>();
@@ -430,10 +490,18 @@ export async function run(
   const rows: CallSiteRow[] = [];
   let dispatchSkipped = 0;
   let chainDrift = 0;
+  let singleSites = 0;
+  let fanSites = 0;
+  let ambiguousSites = 0;
+  let fanEdges = 0;
+  // Built at the same pass-1→pass-2 barrier production builds it at, over every
+  // file the walk absorbed — the cone reads it by fqName, so it must be whole
+  // before the first call resolves.
+  const hierarchy = new MapHierarchyView(buildHierarchySnapshot(channels.inheritanceRows));
 
   for (const extraction of scored) {
     for (const chunk of extraction.chunks) {
-      const ctx = buildCallContext(extraction, chunk, symbolTable, channels);
+      const ctx = buildCallContext(extraction, chunk, symbolTable, channels, hierarchy);
       for (const call of chunk.calls ?? []) {
         if (call.dispatch !== undefined) {
           dispatchSkipped++;
@@ -441,6 +509,12 @@ export async function run(
         }
         const baseline = resolveViaChain(baselineChain, call, ctx);
         if (!sameTarget(baseline, production.resolve(call, ctx))) chainDrift++;
+        const fan = dispatch ? scoreFan(production, call, ctx) : NO_FAN;
+        if (fan.kind === "single") singleSites++;
+        else if (fan.kind === "fan") {
+          fanSites++;
+          fanEdges += fan.fanSize;
+        } else if (fan.kind === "ambiguous") ambiguousSites++;
         rows.push({
           relPath: extraction.relPath,
           startLine: call.startLine,
@@ -450,6 +524,9 @@ export async function run(
           baseline,
           variant: variantChain ? resolveViaChain(variantChain, call, ctx) : baseline,
           baselineTargetInProject: baseline !== null && corpusFiles.has(baseline.targetRelPath),
+          dispatchOutcome: fan.kind,
+          fanSize: fan.fanSize,
+          runnerAnswer: fan.kind === "single" ? fan.single : fan.kind === "none" ? baseline : null,
         });
       }
     }
@@ -465,6 +542,12 @@ export async function run(
     symbols: symbolTable.size(),
     dispatchSkipped,
     chainDrift,
+    dispatch,
+    singleSites,
+    fanSites,
+    ambiguousSites,
+    fanEdges,
+    fanoutPolicy: dispatchFanoutPolicyFor(symbolTable),
   };
 }
 
@@ -485,12 +568,13 @@ export function parseArgs(argv: readonly string[]) {
     samples: Number(read("--samples") ?? 10),
     json: read("--json") ?? null,
     quiet: argv.includes("--quiet"),
+    dispatch: !argv.includes("--no-dispatch"),
   };
 }
 
 async function main(): Promise<void> {
   const opts = parseArgs(process.argv.slice(2));
-  const result = await run(opts.corpus, opts.lang, opts.defer, opts.limit, opts.quiet);
+  const result = await run(opts.corpus, opts.lang, opts.defer, opts.limit, opts.quiet, opts.dispatch);
   const baseline = tallyChainOutput(result.rows.map((r) => r.baseline));
   const variant = tallyChainOutput(result.rows.map((r) => r.variant));
   const { tally, changed } = diffRows(result.rows);
@@ -507,6 +591,17 @@ async function main(): Promise<void> {
     "CHAIN OUTPUT (what the resolver emitted)",
     `  baseline  edges ${baseline.edges} (of which file-only ${baseline.fileOnly}) · unresolved ${baseline.unresolved}`,
   ];
+  // Printed apart from the chain block and never summed into it (D3): a fan
+  // edge is a hypothesis set at `discount / m`, not a claim the chain made.
+  out.push(
+    result.dispatch
+      ? `  dispatch layer (production consults it FIRST) — cap ${result.fanoutPolicy.cap}` +
+          ` (p99 defs-per-member ${result.fanoutPolicy.p99DefsPerMember})` +
+          `\n    single ${result.singleSites} (replaced the chain's answer) · fan ${result.fanSites}` +
+          ` carrying ${result.fanEdges} edges · ambiguous ${result.ambiguousSites}` +
+          ` · untouched ${result.rows.length - result.singleSites - result.fanSites - result.ambiguousSites}`
+      : "  dispatch layer NOT run (--no-dispatch) — the pre-E4.0.3 columns",
+  );
   const extra = CHAINS[opts.lang]?.report?.();
   if (extra !== undefined) out.push(extra);
   if (opts.defer) {

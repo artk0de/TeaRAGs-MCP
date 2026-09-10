@@ -11,6 +11,7 @@
  * Everything is a pure function over in-memory values. The harness owns the
  * corpus, the subprocess and the clock.
  */
+import type { CallContext, CallRef, DispatchFanoutOutcome } from "../../src/core/contracts/types/codegraph.js";
 import {
   diffResolution,
   tallyBy,
@@ -70,6 +71,82 @@ export interface PySiteFacts {
  */
 export type OracleEngine = "jedi" | "lsp";
 export type OracleSelection = OracleEngine | "merged";
+
+/**
+ * What the dispatch layer emitted at a call site (bd tea-rags-mcp-w205u, E4.0.3).
+ *
+ * Four outcomes, not the three the plan sketched, because the runner's default
+ * channel splits a non-empty fan-out by SIZE and the two halves are different
+ * products. One surviving target is a confidence-1 edge that REPLACES the exact
+ * chain's answer — a 1:1 claim governed by the 1:1 precision bar, so it is
+ * scored in the 1:1 columns. Two or more is a hypothesis set carrying
+ * `discount / m`, scored only in the fan columns (D3). `ambiguous` is the
+ * DECISION not to fan at all: no edges, no fallback, and
+ * `resolveDispatchViaComponents` treats it as decisive.
+ */
+export type PyFanOutcomeKind = "none" | "single" | "fan" | "ambiguous";
+
+/** One dispatch target, structured — what a `single` outcome books as the 1:1 answer. */
+export interface PyFanTarget {
+  targetRelPath: string;
+  targetSymbolId: string | null;
+}
+
+export interface PyFanOutcome {
+  kind: PyFanOutcomeKind;
+  /** `${targetRelPath}#${targetSymbolId ?? ""}`, sorted, deduped. Empty for `none` / `ambiguous`. */
+  fan: string[];
+  /** `fan.length` for `single` / `fan`; `candidateCount` for `ambiguous`; 0 for `none`. */
+  fanSize: number;
+  /** The per-edge confidence the component assigned; null when there are no edges. */
+  fanConfidence: number | null;
+  /** The one target a `single` outcome pins. null for every other kind. */
+  single: PyFanTarget | null;
+}
+
+export const NO_FAN: PyFanOutcome = { kind: "none", fan: [], fanSize: 0, fanConfidence: null, single: null };
+
+/** A row's dispatch outcome plus the oracle comparison the fan columns need. */
+export interface PyFanScore extends PyFanOutcome {
+  /** The oracle's in-project target is in `fan` (file+symbol; file only on `pinUncertain`). */
+  hitsOracle: boolean;
+  /** The oracle had an in-project target at all — the fan denominator's gate. */
+  oracleInProject: boolean;
+}
+
+/**
+ * What `resolveDispatch` would emit at this site (bd tea-rags-mcp-w205u).
+ *
+ * NOT summed with the exact chain, ever: a fan edge is a hypothesis set hidden
+ * from navigation, and its quality bar is `precisionProxy`, not the phantom
+ * rate. Dedup runs BEFORE the size split, so m edges that name one target are
+ * booked `single` — production persists both edges, but a 1:1 comparison has
+ * one answer to compare and calling that a fan would inflate `fanSites`.
+ */
+export function scoreFan(
+  resolver: { resolveDispatch?: (call: CallRef, ctx: CallContext) => DispatchFanoutOutcome },
+  call: CallRef,
+  ctx: CallContext,
+): PyFanOutcome {
+  const outcome = resolver.resolveDispatch?.(call, ctx);
+  if (outcome === undefined) return NO_FAN;
+  if (outcome.kind === "ambiguous") {
+    return { kind: "ambiguous", fan: [], fanSize: outcome.candidateCount, fanConfidence: null, single: null };
+  }
+  if (outcome.edges.length === 0) return NO_FAN;
+  const byKey = new Map<string, PyFanTarget>();
+  for (const edge of outcome.edges) {
+    const key = `${edge.targetRelPath}#${edge.targetSymbolId ?? ""}`;
+    if (!byKey.has(key)) {
+      byKey.set(key, { targetRelPath: edge.targetRelPath, targetSymbolId: edge.targetSymbolId ?? null });
+    }
+  }
+  const fan = [...byKey.keys()].sort();
+  const fanConfidence = outcome.edges[0]?.confidence ?? null;
+  return fan.length === 1
+    ? { kind: "single", fan, fanSize: 1, fanConfidence, single: byKey.get(fan[0]) ?? null }
+    : { kind: "fan", fan, fanSize: fan.length, fanConfidence, single: null };
+}
 
 /** One answer, in the shape BOTH engines emit. Schema identity is the contract. */
 export interface PyOracleAnswer {
@@ -148,6 +225,23 @@ export interface PyOracleRow {
   unlocatedShape?: PyUnlocatedShape;
   /** Which engine answered THIS row's file. Defaults to `jedi`, the primary. */
   oracleEngine: OracleEngine;
+  /**
+   * What the dispatch layer emitted here (bd tea-rags-mcp-w205u, E4.0.3).
+   *
+   * ABSENT under `--no-dispatch` and on every row a pre-E4.0.3 driver built,
+   * which is what keeps the 1:1 columns byte-identical: an absent field is not
+   * a `none` outcome measured, it is a layer never run.
+   */
+  dispatch?: PyFanScore;
+  /**
+   * The verdict the EXACT chain would have earned, present ONLY where the
+   * dispatch layer replaced its answer (a `fan` or `ambiguous` outcome). It is
+   * what makes `exactReplacedByFan` readable off one run instead of a per-site
+   * join between two.
+   */
+  exactVerdict?: PyOracleVerdict;
+  /** The exact chain's own output at a replaced site — `none` says it had no answer. */
+  exactChainOutput?: "pinned" | "fileOnly" | "none";
   /**
    * The row a `--oracle jedi` run would have produced for this same site, set
    * only when the merge answered the file from the second engine. Read it
@@ -417,15 +511,44 @@ function emptyTally(label: string): OracleTally {
 }
 
 /**
- * A row carrying no ground truth: counted in `sites`, withheld from every rate.
+ * A row carrying no 1:1 verdict: counted in `sites`, withheld from every rate.
  *
- * Three populations, one predicate, because the tally treats them identically —
- * a degraded parse, a file with no AST at all, and an in-project answer whose
- * target is not a definition. What they share is that no verdict about the
- * CHAIN can be read off them.
+ * Four populations, one predicate, because the tally treats them identically —
+ * a degraded parse, a file with no AST at all, an in-project answer whose target
+ * is not a definition, and (under `--dispatch`) a site where the fan-out
+ * replaced the exact answer with a hypothesis set or threw it away over the cap.
+ * What they share is that no 1:1 verdict about the CHAIN can be read off them:
+ * production emitted no single edge there, so scoring one would compare against
+ * an answer nothing published. Those rows are scored in the FAN columns instead
+ * (D3), and the field is absent entirely under `--no-dispatch`.
  */
 function isWithheldFromRates(row: PyOracleRow): boolean {
-  return row.oracleDegraded || row.verdict === "parseFailed" || row.verdict === "oracleNonCallable";
+  return (
+    row.dispatch?.kind === "fan" ||
+    row.dispatch?.kind === "ambiguous" ||
+    row.oracleDegraded ||
+    row.verdict === "parseFailed" ||
+    row.verdict === "oracleNonCallable"
+  );
+}
+
+/**
+ * The shared `OracleVerdict` a SCORED row carries.
+ *
+ * `skippedInProject` folds into `missed` — a miss the classifier caused belongs
+ * in the recall numerator, so a vocabulary that over-claims cannot buy a better
+ * rate by moving sites out of `missed`. The other two Python-only verdicts are
+ * withheld before any row reaches here, and the throw states that invariant
+ * outright: it used to ride on TypeScript INFERRING a type predicate from
+ * `isWithheldFromRates`, which the fan clauses quietly cost (the predicate can
+ * narrow one field, not two).
+ */
+function toScoredVerdict(verdict: PyOracleVerdict): OracleVerdict {
+  if (verdict === "skippedInProject") return "missed";
+  if (verdict === "parseFailed" || verdict === "oracleNonCallable") {
+    throw new Error(`a verdict withheld from the rates reached the scored tally: ${verdict}`);
+  }
+  return verdict;
 }
 
 /**
@@ -453,10 +576,7 @@ export function tallyPyRows(
       callText: row.callText,
       receiverKind: row.receiverKind,
       categories: [...row.categories],
-      // `skippedInProject` is a MISS the classifier caused; it belongs in the
-      // recall numerator so a vocabulary that over-claims cannot buy a better
-      // rate by moving sites out of `missed`.
-      verdict: row.verdict === "skippedInProject" ? "missed" : row.verdict,
+      verdict: toScoredVerdict(row.verdict),
       chainOutput: row.chainOutput,
     };
     source.set(mapped, row);
@@ -699,4 +819,241 @@ export function tallyPyRecall(
   // byte-identically on its legacy columns, and a size key reorders the rows
   // the moment the merged denominator grows (bd tea-rags-mcp-w205u).
   return splits.sort((a, b) => a.label.localeCompare(b.label));
+}
+
+/**
+ * The fan columns for one label (bd tea-rags-mcp-w205u, E4.0.3).
+ *
+ * Never summed with the 1:1 tally and never printed in its table (D3). The
+ * denominators differ on purpose and are all published rather than inferred:
+ * `fanScored` gates on the oracle having an in-project target (no ground truth,
+ * no rate), while `fanSites` counts every fan whatever the oracle said, because
+ * `precisionProxy` asks "how thin is the average fan we emit", not "how thin is
+ * the average fan we got right".
+ */
+export interface PyFanTally {
+  label: string;
+  /** Rows the dispatch layer answered with a hypothesis set — `|fan| > 1`. */
+  fanSites: number;
+  /** Over-cap decisions: no edges, no fallback. */
+  ambiguousSites: number;
+  /** Rows where the fan collapsed to ONE target and replaced the chain's 1:1 answer. */
+  singleSites: number;
+  /** Rows that ended 1:1 — the fan-out was empty, or it pinned one target. */
+  oneToOneSites: number;
+  /** `fan` + `ambiguous` rows carrying an in-project oracle target. */
+  fanScored: number;
+  fanHits: number;
+  recallAtFan: number;
+  fanSizeMean: number;
+  fanSizeP50: number;
+  fanSizeP95: number;
+  /** `ambiguous / (fan + ambiguous + 1:1)` — the cap's bite over the whole population. */
+  ambiguousShare: number;
+  /** `ambiguous / (fan + ambiguous)` — the spec's E4.0 B denominator, kept beside it. */
+  ambiguousShareOfFanned: number;
+  /** `Σ 1/|fan|` over HITTING fan rows, over `fanSites`. A 1-edge fan scores 1.0, a 10-edge fan 0.1. */
+  precisionProxy: number;
+  /** Fan rows whose in-project oracle target is NOT in the fan — the narrowing dropped it. */
+  fanPhantom: number;
+  fanPhantomRate: number;
+}
+
+/**
+ * `sorted[min(floor(n * q), n - 1)]` — `contracts/signal-utils.ts`'s convention,
+ * so two percentiles in one repo do not mean two different things. 0 when empty,
+ * where `p95` returns 1 to protect a divisor it feeds; nothing divides by this.
+ */
+function percentileFloor(sorted: readonly number[], quantile: number): number {
+  if (sorted.length === 0) return 0;
+  return sorted[Math.min(Math.floor(sorted.length * quantile), sorted.length - 1)] ?? 0;
+}
+
+function emptyFanTally(label: string): PyFanTally {
+  return {
+    label,
+    fanSites: 0,
+    ambiguousSites: 0,
+    singleSites: 0,
+    oneToOneSites: 0,
+    fanScored: 0,
+    fanHits: 0,
+    recallAtFan: 0,
+    fanSizeMean: 0,
+    fanSizeP50: 0,
+    fanSizeP95: 0,
+    ambiguousShare: 0,
+    ambiguousShareOfFanned: 0,
+    precisionProxy: 0,
+    fanPhantom: 0,
+    fanPhantomRate: 0,
+  };
+}
+
+/**
+ * Fold the fan columns under every label a row carries — the same key function
+ * `tallyPyRows` takes, so there is no second grouping concept.
+ *
+ * `ambiguous` counts as a recall MISS and is excluded from `fanSize*` and
+ * `precisionProxy` (D4): an over-cap decision threw the right answer away and
+ * that is a cost of the cap, but there is no fan to size. A row the walk scored
+ * without the dispatch layer (`row.dispatch` absent) is skipped entirely — a
+ * layer that never ran is not a `none` outcome measured.
+ */
+export function tallyPyFan(
+  rows: readonly PyOracleRow[],
+  labelsOf: (row: PyOracleRow) => readonly string[],
+): PyFanTally[] {
+  const byLabel = new Map<string, PyFanTally>();
+  const sizes = new Map<string, number[]>();
+  const proxySum = new Map<string, number>();
+  for (const row of rows) {
+    const fan = row.dispatch;
+    if (fan === undefined) continue;
+    for (const label of labelsOf(row)) {
+      let tally = byLabel.get(label);
+      if (tally === undefined) {
+        tally = emptyFanTally(label);
+        byLabel.set(label, tally);
+      }
+      if (fan.kind === "ambiguous") tally.ambiguousSites += 1;
+      else if (fan.kind === "fan") {
+        tally.fanSites += 1;
+        const bucket = sizes.get(label) ?? [];
+        bucket.push(fan.fanSize);
+        sizes.set(label, bucket);
+      } else {
+        tally.oneToOneSites += 1;
+        if (fan.kind === "single") tally.singleSites += 1;
+        continue;
+      }
+      if (!fan.oracleInProject) continue;
+      tally.fanScored += 1;
+      if (fan.hitsOracle) {
+        tally.fanHits += 1;
+        proxySum.set(label, (proxySum.get(label) ?? 0) + 1 / fan.fanSize);
+      } else if (fan.kind === "fan") tally.fanPhantom += 1;
+    }
+  }
+  const tallies = [...byLabel.values()];
+  for (const tally of tallies) {
+    const sorted = [...(sizes.get(tally.label) ?? [])].sort((a, b) => a - b);
+    const fanned = tally.fanSites + tally.ambiguousSites;
+    const total = fanned + tally.oneToOneSites;
+    // Only a `fan` row can hit or phantom — an `ambiguous` row carries no fan
+    // to test — so the two sum to the fan rows that had ground truth.
+    const scoredFans = tally.fanHits + tally.fanPhantom;
+    tally.recallAtFan = tally.fanScored === 0 ? 0 : tally.fanHits / tally.fanScored;
+    tally.fanSizeMean = sorted.length === 0 ? 0 : sorted.reduce((sum, size) => sum + size, 0) / sorted.length;
+    tally.fanSizeP50 = percentileFloor(sorted, 0.5);
+    tally.fanSizeP95 = percentileFloor(sorted, 0.95);
+    tally.ambiguousShare = total === 0 ? 0 : tally.ambiguousSites / total;
+    tally.ambiguousShareOfFanned = fanned === 0 ? 0 : tally.ambiguousSites / fanned;
+    tally.precisionProxy = tally.fanSites === 0 ? 0 : (proxySum.get(tally.label) ?? 0) / tally.fanSites;
+    tally.fanPhantomRate = scoredFans === 0 ? 0 : tally.fanPhantom / scoredFans;
+  }
+  return tallies.sort((a, b) => a.label.localeCompare(b.label));
+}
+
+/** One side of a fan transition, as a dumped row spells it. */
+export interface DumpedFanRow {
+  dispatchOutcome?: string;
+  fanSize?: number;
+}
+
+export interface FanTransitionSummary {
+  /** `${before} -> ${after}` → count, biggest group first, ties by key. */
+  transitions: [string, number][];
+  /** `afterSize - beforeSize` → count, over pairs where BOTH sides fanned. */
+  sizeDeltas: [number, number][];
+}
+
+/**
+ * Fan transitions between two row dumps (bd tea-rags-mcp-w205u, Step 8).
+ *
+ * It lives here rather than in the scratch differ because a differ that has to
+ * be re-derived per A/B is a differ nobody trusts: an E4.1 run wants to say
+ * "these 40 sites went `none` → `fan`" without a bespoke script, and the rule
+ * for what counts as a transition should be pinned by a test. The scratch
+ * driver keeps the file IO and the reporting; this owns the grouping.
+ *
+ * A missing `dispatchOutcome` reads `none` — that is what a `--no-dispatch`
+ * dump means, and it is the common BEFORE side of the interesting comparison.
+ */
+export function summarizeFanTransitions(
+  pairs: readonly { before: DumpedFanRow; after: DumpedFanRow }[],
+): FanTransitionSummary {
+  const transitions = new Map<string, number>();
+  const deltas = new Map<number, number>();
+  for (const { before, after } of pairs) {
+    const from = before.dispatchOutcome ?? "none";
+    const to = after.dispatchOutcome ?? "none";
+    const key = `${from} -> ${to}`;
+    transitions.set(key, (transitions.get(key) ?? 0) + 1);
+    if (from !== "fan" || to !== "fan") continue;
+    const delta = (after.fanSize ?? 0) - (before.fanSize ?? 0);
+    deltas.set(delta, (deltas.get(delta) ?? 0) + 1);
+  }
+  return {
+    transitions: [...transitions.entries()].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0])),
+    sizeDeltas: [...deltas.entries()].sort((a, b) => a[0] - b[0]),
+  };
+}
+
+/** The three gap counters E4.0.3 exists to publish (bd tea-rags-mcp-w205u, Step 9). */
+export interface PyDispatchGap {
+  /** Sites where the exact chain would have scored `match` and a fan replaced it. */
+  exactReplacedByFan: number;
+  /** Same, replaced by an over-cap `ambiguous` decision — no edge at all. */
+  exactReplacedByAmbiguous: number;
+  /** Sites the exact chain declined where the fan contains the oracle's target. */
+  fanRescued: number;
+  /**
+   * Sites where the cone collapsed to ONE target and that target lost a match
+   * the chain had. Not in the plan's three, but it is the same loss through the
+   * other door — a `single` outcome replaces the chain's answer just as a fan
+   * does, it simply stays inside the 1:1 columns while doing it.
+   */
+  exactReplacedBySingle: number;
+  /** The mirror: a `single` cone answer that scored `match` where the chain did not. */
+  singleRescued: number;
+  /** Every site the dispatch layer answered with something — the parity gap's size. */
+  dispatchAnswered: number;
+}
+
+/**
+ * How much production's fan-first order costs, and what it buys.
+ *
+ * `exactReplaced*` is the loss: a confidence-1 edge the chain had, traded for a
+ * hypothesis set or for nothing. `fanRescued` is the gain, and the two are NOT
+ * netted — they are different products (D3), so the report prints both.
+ * `skippedInProject` counts as a declined chain exactly as `tallyPyRows` folds
+ * it into `missed`.
+ */
+export function tallyPyDispatchGap(rows: readonly PyOracleRow[]): PyDispatchGap {
+  const gap: PyDispatchGap = {
+    exactReplacedByFan: 0,
+    exactReplacedByAmbiguous: 0,
+    fanRescued: 0,
+    exactReplacedBySingle: 0,
+    singleRescued: 0,
+    dispatchAnswered: 0,
+  };
+  for (const row of rows) {
+    const fan = row.dispatch;
+    if (fan === undefined || fan.kind === "none") continue;
+    gap.dispatchAnswered += 1;
+    if (fan.kind === "single") {
+      if (row.exactVerdict === "match" && row.verdict !== "match") gap.exactReplacedBySingle += 1;
+      if (row.exactVerdict !== "match" && row.verdict === "match") gap.singleRescued += 1;
+      continue;
+    }
+    if (row.exactVerdict === "match") {
+      if (fan.kind === "fan") gap.exactReplacedByFan += 1;
+      else gap.exactReplacedByAmbiguous += 1;
+    }
+    const declined = row.exactVerdict === "missed" || row.exactVerdict === "skippedInProject";
+    if (fan.kind === "fan" && declined && fan.hitsOracle) gap.fanRescued += 1;
+  }
+  return gap;
 }
