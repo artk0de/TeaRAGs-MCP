@@ -309,6 +309,44 @@ the code, this section carries the reasoning that survives the plan.
 - Plan: `docs/superpowers/plans/2026-09-08-python-import-file-mapper.md`
   (pending).
 
+### E3 increment 1 — Django managers, shipped (`xpl83`)
+
+Class-body field facts plus package re-export following. Measured on five
+corpora, gross `lost` 0 at every step, phantom and `wrongFile` unmoved: netbox
+`chain` 0.403 → **0.972 (241/248)**, polar `localVar` 0.846 → **0.888**, flask /
+httpx / ugnest byte-identical. Task 1 (dependency manifest) and Task 3 (the
+fluent / terminal vocabulary arms) were DEFERRED to E4 — beads `w205u.1` and
+`w205u.2` — because the attribution put 141 of 148 netbox `chain` misses on one
+hop-0 shape that needs neither. Plan:
+`docs/superpowers/plans/2026-09-10-python-django-managers.md`.
+
+**E3 increment 2 — SQLAlchemy and Pydantic on polar, measured 2026-09-10 and NOT
+designed.** Same dumps as increment 1 (`final-polar.ndjson`). Every family is
+100 % OUTSIDE the recall denominator — zero `missed` rows — so the increment
+cannot raise recall on this corpus and is edge-density work only.
+
+| family                                                  | missed | agreeExternal | bothUnresolved | total |
+| ------------------------------------------------------- | ------ | ------------- | -------------- | ----- |
+| SQLAlchemy `session` / `self.session` receiver          | 0      | 776           | 185            | 961   |
+| SQLAlchemy `select(X)…` chain receiver                  | 0      | 875           | 51             | 926   |
+| SQLAlchemy `.execute(…)` / `.scalars(…)` chain receiver | 0      | 129           | 68             | 197   |
+| SQLAlchemy `statement` / `stmt` / `query` local         | 0      | 198           | 268            | 466   |
+| **SQLAlchemy total**                                    | **0**  | 1,978         | 572            | 2,550 |
+| Pydantic `model_validate` / `_json`                     | 0      | 116           | 4              | 120   |
+| Pydantic `model_dump` / `_json`                         | 0      | 81            | 17             | 98    |
+| Pydantic `model_copy`                                   | 0      | 5             | 0              | 5     |
+| **Pydantic total**                                      | **0**  | 202           | 21             | 223   |
+
+polar's recall after seam 5 is `chain` 0.946, `localVar` 0.842, `dynamic` 0.814,
+and decision 11 of the recall-frontier plan attributes the residual to
+branch-bound receivers and `getattr` dispatch — not to either framework. Two
+structural notes for whoever picks it up: polar has **no root dependency
+manifest** (its manifests are `server/pyproject.toml` and
+`sdk/python/pyproject.toml`), so the gate falls back to per-file imports and
+increment 2 must either accept that or teach the reader about nested roots; and
+1,978 `agreeExternal` rows are exposed to the phantom bar, which is nine times
+increment 1's netbox exposure.
+
 ## Measurement policy
 
 - **Oracle** (E0): per call site, the production chain's answer vs jedi's ground

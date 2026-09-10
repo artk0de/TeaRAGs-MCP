@@ -12,6 +12,11 @@
  *
  * Order IS precedence — see `python-resolver.ts` for what each pass claims and
  * why the terminal guards must precede `globalShortName`.
+ *
+ * `namingConvention` sits after `chainType` and before `importedName` (bd
+ * tea-rags-mcp-0g8g5): it is the one GUESS in the chain, so every typed channel
+ * answers first, and it must not preempt `importedName`, whose receiver is a
+ * binding the walker actually recorded.
  */
 
 import type { SymbolResolutionStrategy } from "../../../../contracts/types/language.js";
@@ -22,6 +27,7 @@ import {
   PythonGlobalShortNameSymbolResolutionStrategy,
   PythonImportedNameSymbolResolutionStrategy,
   PythonLocalBindingSymbolResolutionStrategy,
+  PythonNamingConventionSymbolResolutionStrategy,
   PythonSelfFieldSymbolResolutionStrategy,
   PythonSelfMemberSymbolResolutionStrategy,
   PythonSuperSymbolResolutionStrategy,
@@ -57,10 +63,11 @@ export function createPythonSymbolResolutionChain(
 ): SymbolResolutionStrategy[] {
   return [
     new PythonSuperSymbolResolutionStrategy(cfg, linearizers),
-    new PythonSelfFieldSymbolResolutionStrategy(cfg, mapper),
+    new PythonSelfFieldSymbolResolutionStrategy(cfg, mapper, linearizers),
     new PythonSelfMemberSymbolResolutionStrategy(cfg, linearizers),
     new PythonLocalBindingSymbolResolutionStrategy(cfg, mapper, linearizers),
-    new PythonChainTypeSymbolResolutionStrategy(cfg, mapper),
+    new PythonChainTypeSymbolResolutionStrategy(cfg, mapper, linearizers),
+    new PythonNamingConventionSymbolResolutionStrategy(cfg, mapper, linearizers),
     new PythonImportedNameSymbolResolutionStrategy(cfg, mapper, linearizers),
     new PythonGlobalShortNameSymbolResolutionStrategy(cfg),
   ];

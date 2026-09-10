@@ -61,8 +61,15 @@ const PYTHON_TRANSPARENT_FIRST: ReadonlySet<string> = new Set([
 ]);
 /** `Coroutine[Send, Yield, Return]` — the LAST argument is the awaited value. */
 const PYTHON_TRANSPARENT_LAST: ReadonlySet<string> = new Set(["Coroutine"]);
-/** Element type is the FIRST argument. */
-const PYTHON_CONTAINER_FIRST: ReadonlySet<string> = new Set([
+/**
+ * Element type is the FIRST argument. Exported for the ITERATION direction,
+ * which must name the container spelling outright: only a base listed HERE
+ * yields its element to a `for`, and only one listed BELOW yields it to
+ * `.values()` — every wrapper form in between (`Optional[...]`,
+ * `Annotated[...]`) collapses to the same `container` ref from either side and
+ * so is declined.
+ */
+export const PYTHON_CONTAINER_FIRST: ReadonlySet<string> = new Set([
   "list",
   "List",
   "set",
@@ -83,8 +90,8 @@ const PYTHON_CONTAINER_FIRST: ReadonlySet<string> = new Set([
   "AsyncGenerator",
   "Collection",
 ]);
-/** Element type is the LAST argument — the mapping VALUE. */
-const PYTHON_CONTAINER_LAST: ReadonlySet<string> = new Set([
+/** Element type is the LAST argument — the mapping VALUE. Exported with its sibling above. */
+export const PYTHON_CONTAINER_LAST: ReadonlySet<string> = new Set([
   "dict",
   "Dict",
   "Mapping",

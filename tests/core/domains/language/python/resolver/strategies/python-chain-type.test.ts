@@ -16,6 +16,7 @@ import { describe, expect, it } from "vitest";
 
 import type { CallContext, CallRef, ImportRef } from "../../../../../../../src/core/contracts/types/codegraph.js";
 import type { TypeRef } from "../../../../../../../src/core/contracts/types/language.js";
+import { PythonAncestorLinearizerCache } from "../../../../../../../src/core/domains/language/python/resolver/python-ancestor-policy.js";
 import { PythonImportFileMapper } from "../../../../../../../src/core/domains/language/python/resolver/python-import-file-mapper.js";
 import { PythonChainTypeSymbolResolutionStrategy } from "../../../../../../../src/core/domains/language/python/resolver/strategies/python-chain-type.js";
 import { InMemoryGlobalSymbolTable } from "../../../../../../../src/core/domains/trajectory/codegraph/symbols/symbol-table.js";
@@ -46,6 +47,16 @@ function strategy(): PythonChainTypeSymbolResolutionStrategy {
   return new PythonChainTypeSymbolResolutionStrategy({ mode: "strict" }, new PythonImportFileMapper());
 }
 
+/** The production wiring: the chain factory always hands the strategy a linearizer cache. */
+function mroStrategy(): PythonChainTypeSymbolResolutionStrategy {
+  const mapper = new PythonImportFileMapper();
+  return new PythonChainTypeSymbolResolutionStrategy(
+    { mode: "strict" },
+    mapper,
+    new PythonAncestorLinearizerCache(mapper, "strict"),
+  );
+}
+
 const call = (receiver: string | null, member: string, startLine = 10): CallRef => ({
   callText: `${receiver ?? ""}.${member}()`,
   receiver,
@@ -54,7 +65,9 @@ const call = (receiver: string | null, member: string, startLine = 10): CallRef 
 });
 
 interface CtxParts {
+  callerFile?: string;
   callerScope?: string[];
+  classAncestors?: Record<string, readonly string[]>;
   imports?: ImportRef[];
   classFieldTypes?: Record<string, Record<string, string>>;
   localBindings?: CallContext["localBindings"];
@@ -64,8 +77,9 @@ interface CtxParts {
 
 function ctxWith(table: InMemoryGlobalSymbolTable, parts: CtxParts = {}): CallContext {
   return {
-    callerFile: "app/caller.py",
+    callerFile: parts.callerFile ?? "app/caller.py",
     callerScope: parts.callerScope ?? [],
+    classAncestors: parts.classAncestors,
     imports: parts.imports ?? [],
     symbolTable: table,
     classFieldTypes: parts.classFieldTypes,
@@ -296,5 +310,256 @@ describe("PythonChainTypeSymbolResolutionStrategy — what it refuses", () => {
   it("CONTINUEs on a free call with no receiver", () => {
     const table = tableWith({ "app/caller.py": [{ symbolId: "caller" }] });
     expect(strategy().attempt(call(null, "helper"), ctxWith(table))).toEqual({ kind: "continue" });
+  });
+});
+
+/**
+ * R4a — a field or a return declared on an ANCESTOR (bd tea-rags-mcp-yl85b).
+ *
+ * `classFieldTypes` is keyed by the SHORT name of the class that ASSIGNED the
+ * field, so polar's `self.client.build_request(...)` — `client` assigned in
+ * `SyncServiceBase.__init__` in another file, called from 60-odd subclasses in
+ * theirs — missed on hop 1 and took 1,528 of that corpus's 1,596 `chain` rows
+ * with it. The fold now consults the whole MRO seam 4 built, own class first.
+ */
+describe("PythonChainTypeSymbolResolutionStrategy — up the MRO", () => {
+  const polarTable = (): InMemoryGlobalSymbolTable =>
+    tableWith({
+      "sdk/base.py": [
+        { symbolId: "SyncServiceBase" },
+        { symbolId: "SyncClientBase" },
+        { symbolId: "BuildRequestMixin" },
+        { symbolId: "BuildRequestMixin#build_request", scope: ["BuildRequestMixin"] },
+      ],
+      "svc/metrics.py": [{ symbolId: "MetricsSync" }],
+    });
+
+  const polarCtx = (parts: CtxParts = {}): CallContext =>
+    ctxWith(polarTable(), {
+      callerFile: "svc/metrics.py",
+      callerScope: ["MetricsSync"],
+      classAncestors: { "svc/metrics.py::MetricsSync": ["sdk.base::SyncServiceBase"] },
+      classExtends: { SyncClientBase: "BuildRequestMixin" },
+      classFieldTypes: { SyncServiceBase: { client: "SyncClientBase" } },
+      ...parts,
+    });
+
+  it("reads a class field declared on an ANCESTOR", () => {
+    expect(mroStrategy().attempt(call("self.client", "build_request"), polarCtx())).toEqual({
+      kind: "resolved",
+      target: { targetRelPath: "sdk/base.py", targetSymbolId: "BuildRequestMixin#build_request" },
+    });
+  });
+
+  it("prefers the receiver's OWN field over an ancestor's", () => {
+    const table = tableWith({
+      "sdk/base.py": [{ symbolId: "SyncServiceBase" }, { symbolId: "SyncClientBase" }],
+      "svc/metrics.py": [{ symbolId: "MetricsSync" }],
+      "sdk/own.py": [{ symbolId: "OwnClient" }, { symbolId: "OwnClient#build_request", scope: ["OwnClient"] }],
+    });
+    const ctx = ctxWith(table, {
+      callerFile: "svc/metrics.py",
+      callerScope: ["MetricsSync"],
+      classAncestors: { "svc/metrics.py::MetricsSync": ["sdk.base::SyncServiceBase"] },
+      classFieldTypes: { MetricsSync: { client: "OwnClient" }, SyncServiceBase: { client: "SyncClientBase" } },
+    });
+    expect(mroStrategy().attempt(call("self.client", "build_request"), ctx)).toEqual({
+      kind: "resolved",
+      target: { targetRelPath: "sdk/own.py", targetSymbolId: "OwnClient#build_request" },
+    });
+  });
+
+  it("walks the C3 order, not a depth-first dive — the diamond's B beats D", () => {
+    const table = tableWith({
+      "app/c.py": [{ symbolId: "C" }],
+      "app/a.py": [{ symbolId: "A" }],
+      "app/b.py": [{ symbolId: "B" }],
+      "app/d.py": [{ symbolId: "D" }],
+      "app/connb.py": [{ symbolId: "ConnB" }, { symbolId: "ConnB#ping", scope: ["ConnB"] }],
+      "app/connd.py": [{ symbolId: "ConnD" }, { symbolId: "ConnD#ping", scope: ["ConnD"] }],
+    });
+    const ctx = ctxWith(table, {
+      callerFile: "app/c.py",
+      callerScope: ["C"],
+      classAncestors: {
+        "app/c.py::C": ["app.a::A", "app.b::B"],
+        "app/a.py::A": ["app.d::D"],
+        "app/b.py::B": ["app.d::D"],
+      },
+      classFieldTypes: { B: { conn: "ConnB" }, D: { conn: "ConnD" } },
+    });
+    expect(mroStrategy().attempt(call("self.conn", "ping"), ctx)).toEqual({
+      kind: "resolved",
+      target: { targetRelPath: "app/connb.py", targetSymbolId: "ConnB#ping" },
+    });
+  });
+
+  it("reads a structured return declared on an ANCESTOR", () => {
+    const table = tableWith({
+      "repo/base.py": [{ symbolId: "RepositoryBase" }, { symbolId: "RepositoryBase#get", scope: ["RepositoryBase"] }],
+      "repo/sub.py": [{ symbolId: "SubscriptionRepository" }],
+    });
+    const ctx = ctxWith(table, {
+      imports: [{ importText: "repo", startLine: 1 }],
+      classAncestors: { "repo/sub.py::SubscriptionRepository": ["repo.base::RepositoryBase"] },
+      // polar's `RepositoryBase.from_session` is a `@classmethod`, so the key
+      // carries the `.` spelling the class-form receiver asks for.
+      structuredReturnTypes: { "RepositoryBase.from_session": instance("RepositoryBase") },
+    });
+    expect(mroStrategy().attempt(call("repo.SubscriptionRepository.from_session()", "get"), ctx)).toEqual({
+      kind: "resolved",
+      target: { targetRelPath: "repo/base.py", targetSymbolId: "RepositoryBase#get" },
+    });
+  });
+
+  it("yields nothing when the hierarchy leaves the project before the field", () => {
+    const ctx = polarCtx({ classAncestors: { "svc/metrics.py::MetricsSync": ["httpx::Client"] } });
+    expect(mroStrategy().attempt(call("self.client", "build_request"), ctx)).toEqual({ kind: "continue" });
+  });
+
+  it("keeps the pre-seam behaviour with no linearizer", () => {
+    expect(strategy().attempt(call("self.client", "build_request"), polarCtx())).toEqual({ kind: "continue" });
+    // A walker-v2 index carries no `classAncestors`; the cache answers
+    // `undefined` there and the read stays own-class-only.
+    expect(
+      mroStrategy().attempt(call("self.client", "build_request"), polarCtx({ classAncestors: undefined })),
+    ).toEqual({ kind: "continue" });
+  });
+
+  it("does not walk for a container or union receiver", () => {
+    const table = tableWith({
+      "app/svc.py": [{ symbolId: "Svc" }],
+      "app/base.py": [{ symbolId: "Base" }],
+      "app/foo.py": [{ symbolId: "Foo" }, { symbolId: "Foo#append", scope: ["Foo"] }],
+    });
+    const ctx = ctxWith(table, {
+      localBindings: { svc: [{ line: 1, type: "Svc" }] },
+      classAncestors: { "app/svc.py::Svc": ["app.base::Base"] },
+      classFieldTypes: { Base: { append: "Foo" } },
+      structuredReturnTypes: { "Svc#build": { form: "container", element: instance("Foo") } },
+    });
+    expect(mroStrategy().attempt(call("svc.build()", "append"), ctx)).toEqual({ kind: "continue" });
+  });
+});
+
+/**
+ * A module receiver a same-named assignment shadows (R4c, bd tea-rags-mcp-jeqyg).
+ *
+ * `layout = layout.SimpleLayout(...)` inside a netbox view class: the walker
+ * records `layout -> SimpleLayout` at that very line, and the fold then reads
+ * the RECEIVER through the binding its own right-hand side produced. Python
+ * evaluates the RHS before rebinding, so on that line `layout` still denotes
+ * what `from netbox.ui import layout` bound — a module, which this pass cannot
+ * type and must not DROP. 165 netbox rows across 11 view files.
+ */
+describe("PythonChainTypeSymbolResolutionStrategy — a binding does not type its own statement", () => {
+  const uiTable = (): InMemoryGlobalSymbolTable =>
+    tableWith({
+      "netbox/account/views.py": [{ symbolId: "UserTokenView" }],
+      "netbox/netbox/ui/layout.py": [
+        { symbolId: "Layout" },
+        { symbolId: "SimpleLayout" },
+        { symbolId: "SimpleLayout#render", scope: ["SimpleLayout"] },
+      ],
+    });
+
+  const uiImport: ImportRef[] = [
+    { importText: "netbox.ui", startLine: 29, importedNames: ["layout"], importedBindings: { layout: "layout" } },
+  ];
+
+  it("CONTINUEs on the shadowing statement so the module arm below can answer", () => {
+    const ctx = ctxWith(uiTable(), {
+      callerFile: "netbox/account/views.py",
+      imports: uiImport,
+      localBindings: { layout: [{ line: 347, type: "SimpleLayout" }] },
+    });
+    expect(mroStrategy().attempt(call("layout", "SimpleLayout", 347), ctx)).toEqual({ kind: "continue" });
+  });
+
+  it("still types the receiver on every LATER line", () => {
+    const ctx = ctxWith(uiTable(), {
+      callerFile: "netbox/account/views.py",
+      imports: uiImport,
+      localBindings: { layout: [{ line: 347, type: "SimpleLayout" }] },
+    });
+    expect(mroStrategy().attempt(call("layout", "render", 348), ctx)).toEqual({
+      kind: "resolved",
+      target: { targetRelPath: "netbox/netbox/ui/layout.py", targetSymbolId: "SimpleLayout#render" },
+    });
+  });
+
+  it("falls back to the PRIOR binding when the name was bound earlier too", () => {
+    const ctx = ctxWith(uiTable(), {
+      callerFile: "netbox/account/views.py",
+      imports: uiImport,
+      localBindings: {
+        layout: [
+          { line: 300, type: "Layout" },
+          { line: 347, type: "SimpleLayout" },
+        ],
+      },
+    });
+    // `Layout` declares no `render`, and its hierarchy is read to the end — the
+    // pass DROPs rather than reaching for a same-named member elsewhere.
+    expect(mroStrategy().attempt(call("layout", "render", 347), ctx)).toEqual({ kind: "drop" });
+  });
+
+  it("keeps the same-line binding when NO import bound that name", () => {
+    const ctx = ctxWith(uiTable(), {
+      callerFile: "netbox/account/views.py",
+      localBindings: { layout: [{ line: 347, type: "SimpleLayout" }] },
+    });
+    // `x = Foo(); x.run()` on one line is not a module shadow; nothing about
+    // the import list says otherwise, so the binding stands.
+    expect(mroStrategy().attempt(call("layout", "render", 347), ctx)).toEqual({
+      kind: "resolved",
+      target: { targetRelPath: "netbox/netbox/ui/layout.py", targetSymbolId: "SimpleLayout#render" },
+    });
+  });
+});
+
+/**
+ * The LAST hop resolves its member through the C3 MRO too (bd
+ * tea-rags-mcp-s2w5g). The fold walks the hierarchy for the receiver's TYPE,
+ * and then handed the member to `resolvePythonMemberOnType`, whose fallback is
+ * the single-base `classExtends` chain with an UNFILTERED symbol-table lookup
+ * on each hop. polar declares `BuildRequestMixin` twice — once in the SDK,
+ * once in the generator template it is rendered from — so that lookup is
+ * ambiguous and the walk answered `null` on a member jedi pins exactly.
+ */
+describe("PythonChainTypeSymbolResolutionStrategy — the member through the MRO", () => {
+  const twoMixinCopies = () =>
+    tableWith({
+      "svc/metrics.py": [{ symbolId: "MetricsSync" }],
+      "sdk/client.py": [{ symbolId: "SyncClientBase" }],
+      "sdk/mixin.py": [
+        { symbolId: "BuildRequestMixin" },
+        { symbolId: "BuildRequestMixin#build_request", scope: ["BuildRequestMixin"] },
+      ],
+      "template/mixin.py": [
+        { symbolId: "BuildRequestMixin" },
+        { symbolId: "BuildRequestMixin#build_request", scope: ["BuildRequestMixin"] },
+      ],
+    });
+
+  const parts = {
+    callerFile: "svc/metrics.py",
+    callerScope: ["MetricsSync"],
+    classFieldTypes: { MetricsSync: { client: "SyncClientBase" } },
+    classExtends: { SyncClientBase: "BuildRequestMixin" },
+    classAncestors: { "sdk/client.py::SyncClientBase": ["sdk.mixin::BuildRequestMixin"] },
+  };
+
+  it("pins the base that DECLARES the member when its short name is not unique", () => {
+    expect(mroStrategy().attempt(call("self.client", "build_request"), ctxWith(twoMixinCopies(), parts))).toEqual({
+      kind: "resolved",
+      target: { targetRelPath: "sdk/mixin.py", targetSymbolId: "BuildRequestMixin#build_request" },
+    });
+  });
+
+  it("still DROPs when no class in the folded type's hierarchy declares the member", () => {
+    expect(mroStrategy().attempt(call("self.client", "absent"), ctxWith(twoMixinCopies(), parts))).toEqual({
+      kind: "drop",
+    });
   });
 });

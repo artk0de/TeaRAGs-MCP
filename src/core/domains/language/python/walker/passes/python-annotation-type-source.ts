@@ -19,6 +19,7 @@ import {
   pythonAnnotationExpression,
   walkPythonScopes,
   type PythonAnnotatedAssignmentSite,
+  type PythonDefSite,
 } from "./python-def-scope-walk.js";
 import { pythonNominalReceiverName, pythonTypeRefFromNode } from "./python-type-annotation.js";
 
@@ -82,6 +83,7 @@ function extractPythonAnnotationFacts(input: PythonTypeSourceInput): TypeFact[] 
           });
         }
       }
+      pushParameterFieldFacts(facts, site);
       const returnType = site.node.childForFieldName("return_type");
       if (returnType === null) return;
       const ref = pythonTypeRefFromNode(pythonAnnotationExpression(returnType), selfClass);
@@ -103,6 +105,83 @@ function extractPythonAnnotationFacts(input: PythonTypeSourceInput): TypeFact[] 
     },
   });
   return facts;
+}
+
+/**
+ * `self.<field> = <annotated parameter>` inside a method → an `ivar` fact
+ * (bd tea-rags-mcp-f0xaa).
+ *
+ * The largest single field shape in the measured corpora and the one the native
+ * walker declines by construction: `collectPythonClassFieldTypes` records a
+ * field only when the RHS is a constructor CALL, and polar's
+ * `SyncServiceBase.__init__` writes `self.client = client` where `client:
+ * SyncClientBase` is a parameter — 1,504 `chain` rows on that corpus alone.
+ *
+ * Deliberately narrow, because a field type feeds a resolver that pins EDGES:
+ *
+ *   - ONE hop. `self.x = param` only; `self.x = param.attr` and
+ *     `self.x = param or Default()` are not this shape and record nothing.
+ *   - ONE nominal arm. A parameter annotated `Conn | None` or `Union[A, B]`
+ *     collapses to no single receiver, and `classFieldTypes` is a bare string
+ *     map with nowhere to carry the arms — so it is dropped, not guessed.
+ *   - Any method, not only `__init__` (the walker already tolerates a field
+ *     bound outside the constructor, bd rjuc).
+ *
+ * NOT gated on `trackLocalTypes`: that flag governs `param` / `local` facts, and
+ * this is a class ATTRIBUTE — the same channel a class-body `x: T` writes.
+ */
+function pushParameterFieldFacts(facts: TypeFact[], site: PythonDefSite): void {
+  if (site.classChain.length === 0) return;
+  const body = site.node.childForFieldName("body");
+  if (body === null) return;
+  const annotated = new Map<string, AstNode>();
+  for (const param of typedParameters(site.node)) annotated.set(param.name, param.annotation);
+  if (annotated.size === 0) return;
+  const selfClass = site.classChain[site.classChain.length - 1];
+  for (const assignment of selfFieldParameterAssignments(body)) {
+    const annotation = annotated.get(assignment.parameter);
+    if (annotation === undefined) continue;
+    const ref = pythonTypeRefFromNode(annotation, selfClass);
+    if (ref === undefined) continue;
+    const nominal = pythonNominalReceiverName(ref);
+    if (nominal === undefined) continue;
+    facts.push({
+      kind: "ivar",
+      source: PYTHON_ANNOTATION_SOURCE,
+      symbolScope: [...site.classChain],
+      name: assignment.field,
+      line: assignment.line,
+      type: { form: "instance", name: nominal },
+    });
+  }
+}
+
+/**
+ * Every `self.<field> = <bare identifier>` in a def's body, NOT descending into
+ * a nested `def` / `class` — a nested def's `self` is its own scope's, and that
+ * def gets its own `onDef` visit with its own parameter list.
+ */
+function selfFieldParameterAssignments(
+  body: AstNode,
+): { readonly field: string; readonly parameter: string; readonly line: number }[] {
+  const out: { field: string; parameter: string; line: number }[] = [];
+  const descend = (node: AstNode): void => {
+    if (node.type === "function_definition" || node.type === "class_definition") return;
+    if (node.type === "assignment" && node.childForFieldName("type") === null) {
+      const lhs = node.childForFieldName("left");
+      const rhs = node.childForFieldName("right");
+      if (lhs?.type === "attribute" && rhs?.type === "identifier") {
+        const object = lhs.childForFieldName("object");
+        const attribute = lhs.childForFieldName("attribute");
+        if (object?.type === "identifier" && object.text === "self" && attribute !== null) {
+          out.push({ field: attribute.text, parameter: rhs.text, line: node.startPosition.row + 1 });
+        }
+      }
+    }
+    for (const child of node.namedChildren) descend(child);
+  };
+  for (const child of body.namedChildren) descend(child);
+  return out;
 }
 
 export const pythonAnnotationTypeSource: InlineTypeSource<PythonTypeSourceInput> = {

@@ -34,6 +34,15 @@ import {
 const SINGLE_HOP_RECEIVER = /^[A-Za-z_][A-Za-z0-9_]*$/;
 
 /**
+ * A receiver that is nothing but MODULE TEXT: two or more lowercase segments,
+ * no call, no capitalized hop. PEP 8 spells modules lowercase and classes
+ * CamelCase, and the capital is what keeps `Event.id` — a SQLAlchemy column on
+ * a class, whose fold `chainType` owns — out of {@link
+ * PythonImportedNameSymbolResolutionStrategy.resolveDottedModuleReceiver}.
+ */
+const DOTTED_MODULE_RECEIVER = /^[a-z_]\w*(\.[a-z_]\w*)+$/;
+
+/**
  * Imported-name resolution — the call's receiver, or a bare call's own name, is
  * a name an `import` statement BOUND (bd tea-rags-mcp-9fgdi).
  *
@@ -98,7 +107,8 @@ export class PythonImportedNameSymbolResolutionStrategy implements SymbolResolut
     // blind. Bare calls (`receiver: null`) are unaffected, including the
     // star-import path below.
     if (call.receiver !== null && !SINGLE_HOP_RECEIVER.test(call.receiver)) {
-      return this.multiHopHeadOutcome(call.receiver, ctx);
+      const asModulePath = this.resolveDottedModuleReceiver(call.receiver, call, ctx);
+      return asModulePath.kind === "resolved" ? asModulePath : this.multiHopHeadOutcome(call.receiver, ctx);
     }
     const localName = call.receiver ?? call.member;
     const binding = findPythonImportBinding(ctx.imports, localName);
@@ -138,6 +148,43 @@ export class PythonImportedNameSymbolResolutionStrategy implements SymbolResolut
       if (target) return resolved({ targetRelPath: target.relPath, targetSymbolId: target.symbolId });
     }
     return CONTINUE;
+  }
+
+  /**
+   * The whole receiver is MODULE TEXT — `utilities.fields.ColorField(...)` and
+   * `core.models.object_types.ObjectTypeManager()` (R4b, bd tea-rags-mcp-jeqyg).
+   *
+   * `import utilities.fields` binds the TOP package, so the receiver spells a
+   * module in two or three hops with no value anywhere in it: the chain fold
+   * declines it by construction (`pythonSingleHopType` answers for `self`, a
+   * constructor call and a local binding, and a module is none of the three)
+   * and {@link multiHopHeadOutcome} only ever refused it. 100 netbox rows, 98
+   * of them generated Django migrations.
+   *
+   * The evidence is a lookup rather than an inference, and all three gates must
+   * hold: the head must be a name THIS FILE's import list bound, the composed
+   * text must map to a PROJECT file, and that file must declare the member as a
+   * unique top level. Compose from {@link receiverModuleText} rather than from
+   * the receiver text, so `import a.b` (head denotes `a`) and `import a.b as c`
+   * (head denotes `a.b`) stay one question rather than two.
+   *
+   * Tried BEFORE the head check and returning only `resolved`, so a head the
+   * mapper calls external still reaches its DROP: a receiver whose module text
+   * lands outside the project cannot resolve here either, and the refusal is
+   * the stronger verdict. The stdlib guard is the one case where the ORDER
+   * matters — `os.path` would land on a project `path.py` through the mapper's
+   * ancestor probe, so this arm declines it and lets the head check DROP.
+   */
+  private resolveDottedModuleReceiver(receiver: string, call: CallRef, ctx: CallContext): SymbolResolutionOutcome {
+    if (!DOTTED_MODULE_RECEIVER.test(receiver)) return CONTINUE;
+    const segments = receiver.split(".");
+    const binding = findPythonImportBinding(ctx.imports, segments[0]);
+    if (binding === null || importsStdlibModule(binding.imp.importText)) return CONTINUE;
+    const moduleText = [receiverModuleText(binding), ...segments.slice(1)].join(".");
+    const mapped = this.mapper.mapImportToFile(moduleText, ctx.callerFile, ctx);
+    if (mapped.kind !== "project") return CONTINUE;
+    const target = this.moduleMemberTarget(call.member, mapped.relPath, ctx);
+    return target ? resolved(target) : CONTINUE;
   }
 
   /**

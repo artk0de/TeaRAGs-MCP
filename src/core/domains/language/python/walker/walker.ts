@@ -29,13 +29,16 @@
 import type { AstNode, MaterializedTree } from "../../../../contracts/types/ast.js";
 import type {
   CallRef,
+  CallResultBinding,
   ChunkExtraction,
   FileExtraction,
   ImportRef,
   InheritanceEdgeDecl,
   LocalBinding,
+  ModuleReexport,
 } from "../../../../contracts/types/codegraph.js";
 import { assignCallsToInnermostChunks } from "../../kernel/assign-calls-to-chunks.js";
+import { collectPythonClassBodyFieldTypes } from "./passes/python-class-body-fields.js";
 
 export interface PythonExtractInput {
   tree: MaterializedTree;
@@ -61,7 +64,7 @@ export function pythonLocalTypeTrackingEnabled(): boolean {
 }
 
 export function extractFromPythonFile(input: PythonExtractInput): FileExtraction {
-  const imports = collectPythonImports(input.tree.rootNode);
+  const { imports, reexports } = collectPythonImports(input.tree.rootNode);
   const calls = collectPythonCalls(input.tree.rootNode);
   // bd tea-rags-mcp-zvsw — Decorator applications are calls. Append the
   // synthetic call edges so `get_callers(decoratorName)` returns every
@@ -80,6 +83,24 @@ export function extractFromPythonFile(input: PythonExtractInput): FileExtraction
   // resolver can pin `self.service.process()` cross-method. Mirrors the
   // TS/Java `classFieldTypes` channel.
   const classFieldTypes = collectPythonClassFieldTypes(input.tree.rootNode);
+  // bd tea-rags-mcp-f0xaa — the SAME fields under the run-global class key, so a
+  // subclass in another file can read what its base assigned. The short-name
+  // channel above cannot answer that: it is per-file and its key is ambiguous
+  // run-global.
+  const classFieldTypesByClassKey = collectPythonClassFieldTypesByClassKey(input.tree.rootNode, input.relPath);
+  // bd tea-rags-mcp-xpl83 — Django binds a model's manager in the CLASS BODY
+  // (`objects = ObjectTypeManager()`), which no `self.<field>` collector can
+  // see. The facts merge UNDERNEATH the two collectors above: a constructor
+  // assignment for the same field is the narrower statement about an instance,
+  // so reversing this spread order would silently retype every field a class
+  // declares twice.
+  const classBodyFields = collectPythonClassBodyFieldTypes(input.tree.rootNode, input.relPath, imports);
+  for (const [key, fields] of Object.entries(classBodyFields.byShortName)) {
+    classFieldTypes[key] = { ...fields, ...(classFieldTypes[key] ?? {}) };
+  }
+  for (const [key, fields] of Object.entries(classBodyFields.byClassKey)) {
+    classFieldTypesByClassKey[key] = { ...fields, ...(classFieldTypesByClassKey[key] ?? {}) };
+  }
   const trackTypes = pythonLocalTypeTrackingEnabled();
   // Innermost-chunk attribution: ONE owning chunk per call site — the smallest
   // containing range, ties broken by deeper scope (bd tea-rags-mcp-invuy;
@@ -94,6 +115,12 @@ export function extractFromPythonFile(input: PythonExtractInput): FileExtraction
   // `selfMember`'s `callerScope.length === 0` guard and let `globalShortName`
   // fabricate 40 phantoms.
   const callOwnership = assignCallsToInnermostChunks(calls, input.chunks);
+  // bd tea-rags-mcp-z68v9 — `NAME = <callee>(…)` sites, collected ONCE per file
+  // and sliced per chunk below, because the scan needs whole-file scope nesting
+  // to tell a function-body local from a module global.
+  const callResultBindings = trackTypes
+    ? collectPythonCallResultBindings(input.tree.rootNode)
+    : ({} as Record<string, CallResultBinding[]>);
   const byChunk: ChunkExtraction[] = input.chunks.map((c, chunkIndex) => {
     const base: ChunkExtraction = {
       symbolId: c.symbolId,
@@ -105,6 +132,8 @@ export function extractFromPythonFile(input: PythonExtractInput): FileExtraction
     if (trackTypes) {
       const bindings = collectLocalBindingsForChunk(input.tree.rootNode, c.startLine, c.endLine);
       if (Object.keys(bindings).length > 0) base.localBindings = bindings;
+      const inRange = pythonCallResultBindingsInRange(callResultBindings, c.startLine, c.endLine);
+      if (inRange !== undefined) base.callResultBindings = inRange;
     }
     return base;
   });
@@ -118,6 +147,11 @@ export function extractFromPythonFile(input: PythonExtractInput): FileExtraction
   if (Object.keys(classExtends).length > 0) out.classExtends = classExtends;
   if (Object.keys(classAncestors).length > 0) out.classAncestors = classAncestors;
   if (Object.keys(classFieldTypes).length > 0) out.classFieldTypes = classFieldTypes;
+  if (Object.keys(classFieldTypesByClassKey).length > 0) out.classFieldTypesByClassKey = classFieldTypesByClassKey;
+  // bd tea-rags-mcp-xpl83.3 — the names this file's `from` statements bind, so
+  // the import mapper can walk past a package that re-exports rather than
+  // declares. Absent when the file has none, like every other optional channel.
+  if (reexports.length > 0) out.moduleReexports = reexports;
   // Unified hierarchy edges (CHA cone-unification Slice 2). Parity with the
   // Ruby/TS walkers' inheritanceEdges: where the legacy `classExtends` Record
   // keeps only the FIRST base for `super()` resolution, this emits EVERY base
@@ -239,47 +273,8 @@ function collectPythonClassFieldTypes(root: AstNode): Record<string, Record<stri
     if (!body) return;
     const fields: Record<string, string> = {};
     walk(body, (inner) => {
-      if (inner.type !== "assignment") return;
-      // LHS must be `self.<field>` — an `attribute` whose object is the
-      // `self` identifier. Anything else (plain local, subscript) skips.
-      const lhs = inner.childForFieldName("left");
-      if (lhs?.type !== "attribute") return;
-      const obj = lhs.childForFieldName("object");
-      const attr = lhs.childForFieldName("attribute");
-      if (obj?.type !== "identifier" || obj.text !== "self") return;
-      if (!attr) return;
-      const fieldName = attr.text;
-
-      // PEP 526 annotation wins — `self.x: ClassName = ...`.
-      const typeField = inner.childForFieldName("type");
-      if (typeField) {
-        const typeName = extractTypeName(typeField);
-        if (typeName) fields[fieldName] = typeName;
-        return;
-      }
-
-      // Constructor-call RHS — `self.x = ClassName(...)` /
-      // `self.x = module.ClassName(...)`. Non-call RHS (literal, list,
-      // lambda) is skipped — no class name to attribute.
-      //
-      // bd tea-rags-mcp-m46z — CapWords gate. The resolver emits a
-      // best-effort EXTERNAL target `<type>#<member>` for `self.x.method()`
-      // when `<type>` isn't in the symbol table (correct for real classes
-      // like `ExitStack`). But a lowercase callee (`make_thing`, `some_func`)
-      // is a FUNCTION, not a constructor — its return type is unknown, and
-      // recording it would fabricate a phantom edge `make_thing#method`. PEP8
-      // says classes are CapWords; only treat the RHS as a field type when the
-      // callee's FINAL identifier starts uppercase. Lowercase → record nothing
-      // so `self.x.method()` falls through to DROP. (Local-var tracking keeps
-      // the generous lowercase behavior — its resolver path DROPS rather than
-      // emitting an external best-effort, so no phantom can arise there.)
-      const right = inner.childForFieldName("right");
-      if (right?.type === "call") {
-        const fnNode = right.childForFieldName("function");
-        if (!fnNode) return;
-        const typeName = extractConstructorTypeName(fnNode);
-        if (typeName && isCapWordsConstructor(typeName)) fields[fieldName] = typeName;
-      }
+      const found = pythonSelfFieldType(inner);
+      if (found !== undefined) fields[found.field] = found.type;
     });
     if (Object.keys(fields).length > 0) {
       // Merge when a class spans multiple definitions / re-walks; later
@@ -288,6 +283,94 @@ function collectPythonClassFieldTypes(root: AstNode): Record<string, Record<stri
     }
   });
   return out;
+}
+
+/**
+ * The same facts as {@link collectPythonClassFieldTypes} under the RUN-GLOBAL
+ * class key `<relPath>::<dotted class FQ>` (bd tea-rags-mcp-f0xaa) — the key
+ * shape {@link collectPythonClassAncestors} writes, so a linearized ancestor key
+ * reads the fields straight off this map.
+ *
+ * Two differences from the short-name collector, both forced by the key. Scope
+ * is tracked through EVERY named container (a class inside a `def` reads
+ * `build.Local`, exactly as the ancestor channel spells it), and a field is
+ * attributed to the INNERMOST enclosing class rather than to every class whose
+ * body contains it — a nested class's `self.x` belongs to the nested class, and
+ * a run-global key has no room for the short-name channel's tolerated overlap.
+ */
+function collectPythonClassFieldTypesByClassKey(
+  root: AstNode,
+  relPath: string,
+): Record<string, Record<string, string>> {
+  const out: Record<string, Record<string, string>> = {};
+  const walkScope = (node: AstNode, scope: readonly string[], classFq: string | undefined): void => {
+    const isContainer = node.type === "class_definition" || node.type === "function_definition";
+    const nameNode = isContainer ? node.childForFieldName("name") : null;
+    if (nameNode) {
+      const childScope = [...scope, nameNode.text];
+      const childClassFq = node.type === "class_definition" ? childScope.join(".") : classFq;
+      const body = node.childForFieldName("body");
+      for (const child of body ? body.children : node.children) walkScope(child, childScope, childClassFq);
+      return;
+    }
+    if (classFq !== undefined) {
+      const found = pythonSelfFieldType(node);
+      if (found !== undefined) {
+        const key = `${relPath}::${classFq}`;
+        out[key] = { ...(out[key] ?? {}), [found.field]: found.type };
+      }
+    }
+    for (const child of node.children) walkScope(child, scope, classFq);
+  };
+  walkScope(root, [], undefined);
+  return out;
+}
+
+/**
+ * `self.<field> = <typed RHS>` read off ONE node, or `undefined` for anything
+ * else. The gate both field collectors share, so the qualified channel can never
+ * disagree with the short-name one about what a field's type is.
+ */
+function pythonSelfFieldType(inner: AstNode): { readonly field: string; readonly type: string } | undefined {
+  if (inner.type !== "assignment") return undefined;
+  // LHS must be `self.<field>` — an `attribute` whose object is the
+  // `self` identifier. Anything else (plain local, subscript) skips.
+  const lhs = inner.childForFieldName("left");
+  if (lhs?.type !== "attribute") return undefined;
+  const obj = lhs.childForFieldName("object");
+  const attr = lhs.childForFieldName("attribute");
+  if (obj?.type !== "identifier" || obj.text !== "self") return undefined;
+  if (!attr) return undefined;
+  const fieldName = attr.text;
+
+  // PEP 526 annotation wins — `self.x: ClassName = ...`.
+  const typeField = inner.childForFieldName("type");
+  if (typeField) {
+    const typeName = extractTypeName(typeField);
+    return typeName ? { field: fieldName, type: typeName } : undefined;
+  }
+
+  // Constructor-call RHS — `self.x = ClassName(...)` /
+  // `self.x = module.ClassName(...)`. Non-call RHS (literal, list,
+  // lambda) is skipped — no class name to attribute.
+  //
+  // bd tea-rags-mcp-m46z — CapWords gate. The resolver emits a
+  // best-effort EXTERNAL target `<type>#<member>` for `self.x.method()`
+  // when `<type>` isn't in the symbol table (correct for real classes
+  // like `ExitStack`). But a lowercase callee (`make_thing`, `some_func`)
+  // is a FUNCTION, not a constructor — its return type is unknown, and
+  // recording it would fabricate a phantom edge `make_thing#method`. PEP8
+  // says classes are CapWords; only treat the RHS as a field type when the
+  // callee's FINAL identifier starts uppercase. Lowercase → record nothing
+  // so `self.x.method()` falls through to DROP. (Local-var tracking keeps
+  // the generous lowercase behavior — its resolver path DROPS rather than
+  // emitting an external best-effort, so no phantom can arise there.)
+  const right = inner.childForFieldName("right");
+  if (right?.type !== "call") return undefined;
+  const fnNode = right.childForFieldName("function");
+  if (!fnNode) return undefined;
+  const typeName = extractConstructorTypeName(fnNode);
+  return typeName && isCapWordsConstructor(typeName) ? { field: fieldName, type: typeName } : undefined;
 }
 
 /**
@@ -645,12 +728,23 @@ function collectLocalBindingsForChunk(
       // `function` is an `identifier` (direct) or `attribute`
       // (qualified). Anything else (function literal, lambda,
       // factory, list comprehension, etc.) is left unbound.
+      //
+      // bd tea-rags-mcp-z68v9 — the CapWords gate `collectPythonClassFieldTypes`
+      // has always applied now applies here too. `repository =
+      // AccountRepository.from_session(session)` was recorded as
+      // `type: "AccountRepository.from_session"`, and a method is not a type:
+      // `resolveOnBoundType` takes its last segment, asks for a class called
+      // `from_session`, finds none and DROPs. That was harmless while nothing
+      // else could answer; it is not harmless now that `callResultBindings`
+      // records the same site as a callee the resolver CAN fold, because a
+      // binding here shadows the fold. So a lowercase callee is left to the
+      // channel that can type it — 470 rows on polar, all one shape.
       const right = node.childForFieldName("right");
       if (right?.type === "call") {
         const fnNode = right.childForFieldName("function");
         if (!fnNode) return;
         const typeName = extractConstructorTypeName(fnNode);
-        if (typeName) (out[varName] ??= []).push({ line, type: typeName });
+        if (typeName && pythonLocalCalleeIsConstructor(typeName)) (out[varName] ??= []).push({ line, type: typeName });
       }
       return;
     }
@@ -742,8 +836,24 @@ function pythonModuleBinding(moduleText: string, alias: string | null): { local:
   return { local: moduleText.split(".")[0], imported: moduleText };
 }
 
-function collectPythonImports(root: AstNode): ImportRef[] {
+/**
+ * The import statements of one file, plus the names its `from` statements
+ * re-export (bd tea-rags-mcp-xpl83.3).
+ *
+ * Both come off ONE walk because both read the same nodes, and because the two
+ * are not separable after the fact: `import a` and `from a import a` produce an
+ * IDENTICAL `ImportRef`, and only the node type tells them apart. A re-export
+ * derived from the `ImportRef` list alone would have to guess, and guessing
+ * wrong invents an export the module does not have.
+ */
+interface PythonImportScan {
+  readonly imports: ImportRef[];
+  readonly reexports: ModuleReexport[];
+}
+
+function collectPythonImports(root: AstNode): PythonImportScan {
   const out: ImportRef[] = [];
+  const reexports: ModuleReexport[] = [];
   walk(root, (node) => {
     if (node.type === "import_statement") {
       // `import a`, `import a.b`, `import a as x`, `import a, b`
@@ -779,12 +889,20 @@ function collectPythonImports(root: AstNode): ImportRef[] {
       // text comparison would drop it.
       const importedNames: string[] = [];
       const importedBindings: Record<string, string> = {};
+      // The module text the re-export entries point back at, spelled exactly as
+      // `importText` below spells it — the mapper resolves both through the same
+      // relative/absolute rules and a divergence here would silently miss.
+      const sourceModule = moduleField ? prefix + (pickModuleText(moduleField) ?? "") : prefix;
+      const reexport = (entry: ModuleReexport): void => {
+        if (sourceModule.length > 0) reexports.push(entry);
+      };
       for (const child of node.namedChildren) {
         if (child === moduleField || child.type === "import_prefix") continue;
         if (child.type === "wildcard_import") {
           // A star binds no single member: it is a name for the resolver's
           // star-import path and nothing for the binding table.
           importedNames.push("*");
+          reexport({ exportedName: "*", sourceModule });
           continue;
         }
         if (child.type === "aliased_import") {
@@ -793,11 +911,13 @@ function collectPythonImports(root: AstNode): ImportRef[] {
           if (!importedName || !localName) continue;
           importedNames.push(localName);
           importedBindings[localName] = importedName;
+          reexport({ exportedName: localName, sourceModule, sourceName: importedName });
           continue;
         }
         if (child.type === "dotted_name" || child.type === "identifier") {
           importedNames.push(child.text);
           importedBindings[child.text] = child.text;
+          reexport({ exportedName: child.text, sourceModule, sourceName: child.text });
         }
       }
       // Emit only non-empty: a channel the statement does not carry is absent,
@@ -806,19 +926,14 @@ function collectPythonImports(root: AstNode): ImportRef[] {
       const names = importedNames.length > 0 ? { importedNames } : {};
       const bindings = Object.keys(importedBindings).length > 0 ? { importedBindings } : {};
       if (moduleField) {
-        out.push({
-          importText: prefix + (pickModuleText(moduleField) ?? ""),
-          startLine,
-          ...names,
-          ...bindings,
-        });
+        out.push({ importText: sourceModule, startLine, ...names, ...bindings });
       } else if (prefix) {
         // `from . import x` — no module name, just the prefix.
         out.push({ importText: prefix, startLine, ...names, ...bindings });
       }
     }
   });
-  return out;
+  return { imports: out, reexports };
 }
 
 function pickModuleText(node: AstNode): string | null {
@@ -895,4 +1010,94 @@ function collectPythonCalls(root: AstNode): CallRef[] {
 function walk(node: AstNode, visit: (n: AstNode) => void): void {
   visit(node);
   for (const child of node.children) walk(child, visit);
+}
+
+/** Scopes whose body is a function body — a local established there is a LOCAL. */
+const PYTHON_NESTED_SCOPES = new Set(["function_definition", "lambda"]);
+
+/** A plain dotted name: `make`, `Repo.from_session`, `self.factory.build`. */
+const PYTHON_CALLEE_SPELLING = /^[A-Za-z_]\w*(\.[A-Za-z_]\w*)*$/;
+
+/**
+ * The callee spelling of a call node, or `null` when it is not a plain dotted
+ * name. A spelling carrying a call, an index or a newline is a CHAIN, not a
+ * name; folding it would mean re-parsing the text and this channel does not do
+ * that (bd tea-rags-mcp-z68v9).
+ */
+function pythonCalleeSpelling(call: AstNode): string | null {
+  const fn = call.childForFieldName("function");
+  if (fn === null) return null;
+  if (fn.type !== "identifier" && fn.type !== "attribute" && fn.type !== "dotted_name") return null;
+  return PYTHON_CALLEE_SPELLING.test(fn.text) ? fn.text : null;
+}
+
+/**
+ * `NAME = <callee>(…)` sites, keyed by the bound name (bd tea-rags-mcp-z68v9).
+ *
+ * The RHS's return TYPE is deliberately not inferred here: for the measured
+ * shape (`repository = SubscriptionRepository.from_session(session)`, polar 470
+ * rows) the callee is cross-file and its return is declared on an ancestor, so
+ * a per-file pass has nothing to read. The spelling is the whole contribution;
+ * `pythonCallBindingType` folds it at resolve time.
+ *
+ * Declined by construction, each because there is no single nominal answer:
+ * tuple unpacking, a chained / subscripted callee, a non-call RHS, an annotated
+ * assignment (the annotation is the better answer and `localBindings` already
+ * carries it), and a MODULE-level assignment — a module global is not a local,
+ * and binding one would type every call site in the file from a single write.
+ * `await <call>` IS unwrapped: awaiting a coroutine yields what it declares.
+ *
+ * Returns a plain object (Record) for NDJSON round-trip — `Map` serialises to
+ * `{}` and loses every entry.
+ */
+function collectPythonCallResultBindings(root: AstNode): Record<string, CallResultBinding[]> {
+  const out: Record<string, CallResultBinding[]> = {};
+  const scan = (node: AstNode, inFunction: boolean): void => {
+    if (node.type === "assignment" && inFunction && node.childForFieldName("type") === null) {
+      const lhs = node.namedChild(0);
+      const rhs = node.childForFieldName("right");
+      const call = rhs?.type === "await" ? (rhs.namedChild(0) ?? rhs) : rhs;
+      if (lhs?.type === "identifier" && call?.type === "call") {
+        const callee = pythonCalleeSpelling(call);
+        if (callee !== null) (out[lhs.text] ??= []).push({ line: node.startPosition.row + 1, callee });
+      }
+    }
+    for (const child of node.namedChildren) scan(child, inFunction || PYTHON_NESTED_SCOPES.has(node.type));
+  };
+  for (const child of root.namedChildren) scan(child, false);
+  for (const list of Object.values(out)) list.sort((a, b) => a.line - b.line);
+  return out;
+}
+
+/** The subset of `bindings` established inside `[startLine, endLine]`, or undefined when none is. */
+function pythonCallResultBindingsInRange(
+  bindings: Record<string, CallResultBinding[]>,
+  startLine: number,
+  endLine: number,
+): Record<string, CallResultBinding[]> | undefined {
+  const out: Record<string, CallResultBinding[]> = {};
+  for (const [name, list] of Object.entries(bindings)) {
+    const kept = list.filter((binding) => binding.line >= startLine && binding.line <= endLine);
+    if (kept.length > 0) out[name] = kept;
+  }
+  return Object.keys(out).length > 0 ? out : undefined;
+}
+
+/**
+ * {@link isCapWordsConstructor}, but a leading underscore run does not disqualify
+ * the name (bd tea-rags-mcp-z68v9).
+ *
+ * PEP8 spells a module-private class `_CapWords`, and polar's
+ * `placer = _BlockPlacer()` (`server/polar/compass/assistant/stream.py:147`) is
+ * exactly that — the ONE row the plain CapWords gate lost when
+ * `collectLocalBindingsForChunk` adopted it. A private class is still a class.
+ *
+ * Separate from `isCapWordsConstructor` rather than a fix to it because that
+ * predicate gates the FIELD channel, whose behaviour is measured under its own
+ * bead (tea-rags-mcp-m46z). Widening both at once would put an unmeasured change
+ * inside a measured one.
+ */
+function pythonLocalCalleeIsConstructor(typeName: string): boolean {
+  const finalSegment = typeName.slice(typeName.lastIndexOf(".") + 1);
+  return /^_*[A-Z]/.test(finalSegment);
 }

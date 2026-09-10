@@ -28,6 +28,7 @@ import {
   DEFAULT_AMBIGUOUS_RESOLVE_MODE,
   type CallContext,
   type CallRef,
+  type ModuleReexport,
 } from "../src/core/contracts/types/codegraph.js";
 import type {
   SymbolResolutionOutcome,
@@ -156,6 +157,12 @@ export async function walkCorpus(corpusRoot: string, limit: number, quiet: boole
   const structuredReturnTypes: Record<string, TypeRef> = {};
   const functionReturnTypes: Record<string, string> = {};
   const classAncestors: Record<string, readonly string[]> = {};
+  // `<relPath>::<class FQ>` → field → type — the run-global field address the
+  // MRO fold reads a base class's fields from (bd tea-rags-mcp-f0xaa).
+  const classFieldTypesByClassKey: Record<string, Record<string, string>> = {};
+  // `relPath` → the names its `from` statements bind — what lets the import
+  // mapper walk past a package that re-exports rather than declares (xpl83.3).
+  const moduleReexports: Record<string, readonly ModuleReexport[]> = {};
   const extractions: {
     relPath: string;
     extraction: NonNullable<ReturnType<typeof extractFile>>;
@@ -174,6 +181,10 @@ export async function walkCorpus(corpusRoot: string, limit: number, quiet: boole
     Object.assign(structuredReturnTypes, extraction.structuredReturnTypes ?? {});
     Object.assign(functionReturnTypes, extraction.functionReturnTypes ?? {});
     Object.assign(classAncestors, extraction.classAncestors ?? {});
+    for (const [classKey, fields] of Object.entries(extraction.classFieldTypesByClassKey ?? {})) {
+      classFieldTypesByClassKey[classKey] = { ...classFieldTypesByClassKey[classKey], ...fields };
+    }
+    if (extraction.moduleReexports) moduleReexports[relPath] = extraction.moduleReexports;
     if (extname(relPath) === SCORED_EXTENSION) extractions.push({ relPath, extraction });
     else symbolTableOnlyFiles++;
   }
@@ -200,10 +211,13 @@ export async function walkCorpus(corpusRoot: string, limit: number, quiet: boole
         symbolTable,
         classFieldTypes: extraction.classFieldTypes,
         localBindings: chunk.localBindings,
+        callResultBindings: chunk.callResultBindings,
         classExtends,
         structuredReturnTypes,
         functionReturnTypes,
         classAncestors,
+        classFieldTypesByClassKey,
+        moduleReexports,
       };
       for (const call of chunk.calls ?? []) {
         if (call.dispatch !== undefined) continue; // the runner skips normal resolution here

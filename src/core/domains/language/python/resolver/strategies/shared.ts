@@ -20,11 +20,13 @@ import {
   type ImportRef,
   type SymbolResolutionTarget,
 } from "../../../../../contracts/types/codegraph.js";
+import type { TypeRef } from "../../../../../contracts/types/language.js";
 import {
   findMemberInAncestorChain,
   type AncestorClosure,
   type AncestorLinearizer,
 } from "../../../kernel/ancestor-walk.js";
+import { propagateReceiverType, type ReceiverTypePorts } from "../../../kernel/receiver-type-propagation.js";
 import { PYTHON_BUILTINS } from "../../vocabulary/builtins.js";
 import type { PythonImportFileMapper } from "../python-import-file-mapper.js";
 import { mapPythonImportToFile } from "../python-path-mapper.js";
@@ -199,6 +201,150 @@ export function resolvePythonInheritedMember(
     options,
   );
   return { target: scan.target, closure: scan.closure };
+}
+
+/**
+ * Where a walk for a member on a NAMED TYPE stopped, when it found nothing.
+ * `unbound` is this module's own state and not one of the kernel's: the type
+ * NAME never named a class the project declares, so no hierarchy was entered
+ * and the ancestor closure has nothing to say about it.
+ */
+export type PythonTypeMemberClosure = AncestorClosure | "unbound";
+
+/** A member found on a named type or one of its ancestors, and how far the walk saw. */
+export interface PythonTypeMemberResolution {
+  readonly target: SymbolResolutionTarget | null;
+  readonly closure: PythonTypeMemberClosure;
+}
+
+const UNBOUND_TYPE_MEMBER: PythonTypeMemberResolution = { target: null, closure: "unbound" };
+
+/**
+ * `<member>` on a receiver whose TYPE NAME is known, resolved through the C3
+ * MRO (bd tea-rags-mcp-s2w5g).
+ *
+ * The two steps between a type name and {@link resolvePythonInheritedMember}:
+ * the name resolves to the FILE that declares it, and the file plus the name
+ * become the dotted-FQ class KEY the ancestor walk is addressed by. Stated once
+ * here because three passes ask the same question of a differently-obtained
+ * type — `localBinding` of the walker's binding, `selfField` of the field's
+ * recorded type, `chainType` of what the fold arrived at — and the verbatim
+ * `<Type>#<member>` lookup two of them used instead is blind to inheritance:
+ * polar's `self.client.build_request()` types `client` to `SyncClientBase` and
+ * `build_request` is declared on `BuildRequestMixin`, a base of it. 752 rows.
+ *
+ * The verdict is the CALLER's. `unbound` and `closed` and `external` are three
+ * different pieces of evidence and the passes act on them differently; this
+ * function never fabricates a target to settle one.
+ */
+export function resolvePythonMemberOnTypeThroughMro(
+  typeName: string,
+  member: string,
+  ctx: CallContext,
+  mode: AmbiguousResolveMode,
+  mapper: PythonImportFileMapper,
+  linearizer: AncestorLinearizer<CallContext>,
+): PythonTypeMemberResolution {
+  const bareType = lastSegment(typeName);
+  const targetFile = resolveTypeFile(bareType, ctx, mapper);
+  if (targetFile === null) return UNBOUND_TYPE_MEMBER;
+  const classKey = pythonBoundClassKey(bareType, targetFile, ctx);
+  if (classKey === null) return UNBOUND_TYPE_MEMBER;
+  return resolvePythonInheritedMember(classKey, member, ctx, mode, linearizer);
+}
+
+/**
+ * The MRO key to start a receiver-type walk from, anchored in the CALLER's own
+ * file first (bd tea-rags-mcp-yl85b).
+ *
+ * `resolveTypeFile` answers for a name a file IMPORTS, and it is the wrong
+ * question for a `self` receiver: polar declares `MembersSync` in four files
+ * and `MetricsSync` in two, so the short-name pass is ambiguous, the
+ * import-narrowing pass filters against a list that never contains the caller's
+ * own file, and the walk that 1,528 rows depend on never starts. A class the
+ * calling file itself declares is the class a bare name in that file binds —
+ * module scope is what Python resolves it against — so that read comes first
+ * and the import-informed one is the fallback.
+ */
+function pythonReceiverClassKey(bareType: string, ctx: CallContext, mapper: PythonImportFileMapper): string | null {
+  const bare = lastSegment(bareType);
+  const own = pythonBoundClassKey(bare, ctx.callerFile, ctx);
+  if (own !== null) return own;
+  const imported = resolveTypeFile(bare, ctx, mapper);
+  return imported === null ? null : pythonBoundClassKey(bare, imported, ctx);
+}
+
+/**
+ * What `member` yields on a receiver of type `bareType`, consulting the whole
+ * MRO rather than just the class the receiver names (bd tea-rags-mcp-yl85b).
+ *
+ * This is the FIELD and RETURN counterpart of {@link resolvePythonInheritedMember},
+ * and it exists because of one measured shape: polar's generated SDK assigns
+ * `self.client` in `SyncServiceBase.__init__` and calls it from 60-odd
+ * subclasses in other files. `classFieldTypes` is keyed by the SHORT name of
+ * the class that ASSIGNED the field, so the subclass has no entry and the fold
+ * stopped on hop 1 — 1,528 rows, 95 % of that corpus's `chain` hole.
+ *
+ * Order per class, own class first: the FIELD channel (narrower — it names the
+ * class that owns the attribute), then the RETURN channel under the spelling
+ * the receiver form dictates. First answer wins; the walk stops there.
+ *
+ * A hierarchy that leaves the project before a definition yields NOTHING. The
+ * absence is not a verdict here — the caller owns what a miss means, and this
+ * function never fabricates a type to fill one.
+ *
+ * A run with no linearizer (a walker-v2 index carrying no `classAncestors`)
+ * reads the own class only, which is exactly the pre-seam behaviour.
+ */
+export function pythonInheritedMemberType(
+  bareType: string,
+  member: string,
+  form: "class" | "instance",
+  ctx: CallContext,
+  mapper: PythonImportFileMapper,
+  linearizer: AncestorLinearizer<CallContext> | undefined,
+): TypeRef | undefined {
+  const separator = form === "class" ? "." : "#";
+  const onClass = (shortName: string, classFq: string): TypeRef | undefined => {
+    const fieldType = ctx.classFieldTypes?.[shortName]?.[member];
+    if (fieldType !== undefined) return { form: "instance", name: fieldType };
+    return ctx.structuredReturnTypes?.[`${classFq}${separator}${member}`];
+  };
+  const byClassKey = (classKey: string): TypeRef | undefined => {
+    const fieldType = ctx.classFieldTypesByClassKey?.[classKey]?.[member];
+    return fieldType === undefined ? undefined : { form: "instance", name: fieldType };
+  };
+  // The own-class read is byte-identical to the pre-seam one: `classFieldTypes`
+  // is bare-name-keyed and `structuredReturnTypes` FQ-keyed, and a receiver
+  // type spells both the same way.
+  const own = onClass(bareType, bareType);
+  if (own !== undefined) return own;
+  // Addressing the class costs symbol-table work, so it is deferred until
+  // something can read the answer: a run carrying neither the run-global field
+  // channel nor a linearizer is the pre-seam path, unchanged.
+  if (linearizer === undefined && ctx.classFieldTypesByClassKey === undefined) return undefined;
+
+  const classKey = pythonReceiverClassKey(bareType, ctx, mapper);
+  if (classKey === null) return undefined;
+  // The own class again, this time run-global (bd tea-rags-mcp-f0xaa) — the
+  // short-name read above only ever sees the CALLER's file, so a receiver typed
+  // to a class declared elsewhere reaches its fields only here.
+  const ownByKey = byClassKey(classKey);
+  if (ownByKey !== undefined) return ownByKey;
+  if (linearizer === undefined) return undefined;
+  for (const ancestorKey of linearizer.linearize(classKey).order) {
+    if (ancestorKey === classKey) continue;
+    // Class-key first, short name second: the qualified channel names the file
+    // that declares this ancestor, where the bare-name one answers with whatever
+    // the CALLER's file happens to call that name.
+    const byKey = byClassKey(ancestorKey);
+    if (byKey !== undefined) return byKey;
+    const parsed = parsePythonClassKey(ancestorKey);
+    if (parsed === null) continue;
+    const hit = onClass(lastSegment(parsed.classFq), parsed.classFq);
+    if (hit !== undefined) return hit;
+  }
+  return undefined;
 }
 
 export interface ResolverConfig {
@@ -420,6 +566,18 @@ export function resolveTypeFile(
     }
     const filtered = tableMatches.filter((def) => importedFiles.has(def.relPath));
     if (filtered.length === 1) return filtered[0].relPath;
+    // A miss here is often a package that RE-EXPORTS the name rather than
+    // declaring it: netbox's `from core.models import ObjectType` maps to a
+    // `__init__.py` that star-imports six siblings, so the filter above kept
+    // nothing and the second `ObjectType` in `netbox/graphql/types.py` made
+    // guessing illegal — 117 rows. Widening runs only AFTER the direct answer
+    // failed, so every row that resolves today resolves to the same file.
+    for (const relPath of [...importedFiles]) {
+      const declaring = mapper.resolveExportedName(relPath, bareType, ctx);
+      if (declaring !== null) importedFiles.add(declaring);
+    }
+    const followed = tableMatches.filter((def) => importedFiles.has(def.relPath));
+    if (followed.length === 1) return followed[0].relPath;
     // Still ambiguous — refuse to guess.
     return null;
   }
@@ -466,4 +624,39 @@ export function resolvePythonMemberOnType(
   // one level up (the type was already checked above).
   const parent = ctx.classExtends?.[bareType];
   return parent ? walkClassExtendsForMethod(parent, member, ctx, mode) : null;
+}
+
+/**
+ * The type of the call a local was bound from — ONE hop (bd tea-rags-mcp-z68v9).
+ *
+ * The callee's receiver is folded by the shared chain engine (so
+ * `self.factory.build` works), then its return type is read off the class the
+ * fold produced, through the MRO — which is the whole point, since
+ * `SubscriptionRepository.from_session` is declared on `RepositoryBase`.
+ *
+ * A BARE callee (`build_client(…)`) reads `structuredReturnTypes` under the
+ * bare name, which is exactly the key a top-level `def` composes
+ * (`pythonStructuredReturnKey`), gated on the symbol table pinning exactly one
+ * project definition of that name. The channel is run-global and
+ * last-write-wins, so without that gate one `def get() -> Foo` would speak for
+ * every same-named `def` in the corpus — the collision that made Python drop
+ * `functionReturnTypes` outright.
+ *
+ * ONE hop by construction: the returned ref is never itself re-folded. A
+ * fixpoint over return types is a different seam and would need a cycle guard
+ * this does not have.
+ */
+export function pythonCallBindingType(
+  callee: string,
+  atLine: number,
+  ctx: CallContext,
+  ports: ReceiverTypePorts,
+): TypeRef | undefined {
+  const cut = callee.lastIndexOf(".");
+  if (cut < 0) {
+    return ctx.symbolTable.lookupByShortName(callee).length === 1 ? ctx.structuredReturnTypes?.[callee] : undefined;
+  }
+  const receiverType = propagateReceiverType(callee.slice(0, cut), atLine, ctx, ports);
+  if (receiverType === undefined) return undefined;
+  return ports.memberTypeOf(receiverType, callee.slice(cut + 1), ctx);
 }

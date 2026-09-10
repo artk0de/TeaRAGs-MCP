@@ -18,19 +18,31 @@ import {
   pythonAnnotationTypeSource,
   type PythonTypeSourceInput,
 } from "./python-annotation-type-source.js";
+import { PYTHON_AST_SOURCE, pythonAstTypeSource } from "./python-ast-type-source.js";
 import { PYTHON_DOCSTRING_SOURCE, pythonDocstringTypeSource } from "./python-docstring-type-source.js";
+import { pythonIterationTypeSource } from "./python-iteration-facts.js";
 import { pythonTypeChannels } from "./python-type-channels.js";
 
 /**
- * Python's source precedence, highest first. `"ast"` is the walker's own
- * constructor inference, which still lives in the monolith — the rank is
- * declared here so the day it becomes a source there is nothing to decide.
+ * Python's source precedence, highest first. `"ast"` is what the walker infers
+ * from the tree itself rather than from anything written down — iteration
+ * variables (R3) and a def's own `return` statements (R1a) — and it ranks below
+ * every written annotation, so a declared type on the same coordinate always
+ * wins. Two sources SHARE that one rank: they are ranked together because they
+ * read the same evidence, and they never contend because `coordinateKey`
+ * separates a `local` at a loop line from a `return` on a def.
  */
-export const PYTHON_TYPE_SOURCE_ORDER: readonly string[] = [PYTHON_ANNOTATION_SOURCE, PYTHON_DOCSTRING_SOURCE, "ast"];
+export const PYTHON_TYPE_SOURCE_ORDER: readonly string[] = [
+  PYTHON_ANNOTATION_SOURCE,
+  PYTHON_DOCSTRING_SOURCE,
+  PYTHON_AST_SOURCE,
+];
 
 export const PYTHON_INLINE_TYPE_SOURCES: readonly InlineTypeSource<PythonTypeSourceInput>[] = [
   pythonAnnotationTypeSource,
   pythonDocstringTypeSource,
+  pythonIterationTypeSource,
+  pythonAstTypeSource,
 ];
 
 export const pythonAnnotationTypeFacetPass: ExtractionFacetPass = {
@@ -40,6 +52,6 @@ export const pythonAnnotationTypeFacetPass: ExtractionFacetPass = {
     const input: PythonTypeSourceInput = { root, trackLocalTypes: pythonLocalTypeTrackingEnabled() };
     const facts = PYTHON_INLINE_TYPE_SOURCES.flatMap((source) => source.extract(input));
     if (facts.length === 0) return {};
-    return pythonTypeChannels(TypeFactStore.fromFacts(facts, PYTHON_TYPE_SOURCE_ORDER), ctx.chunks);
+    return pythonTypeChannels(TypeFactStore.fromFacts(facts, PYTHON_TYPE_SOURCE_ORDER), ctx);
   },
 };

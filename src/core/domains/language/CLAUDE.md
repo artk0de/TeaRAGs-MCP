@@ -106,6 +106,21 @@
   memoizes: the inner recursion is path-dependent under the cycle guard.
   `AncestorClosure` (`closed` / `external` / `unknown`) is how a miss reports
   WHY, and each language decides what verdict that earns.
+- **Two more kernel engines joined those in E2 seam 5, and both are relocations,
+  not new theory.** `kernel/return-inference.ts` folds a def's TERMINAL
+  expressions into one nominal type — Ruby hands it the body's last expression,
+  Python one node per `return`, and its four rules (map every arm, one-hop
+  binding indirection, an unmappable arm kills the inference, two arms naming
+  different types kill it too) are what keep an inferred return single-nominal;
+  `ruby/walker/type-sources/body-last-expr.ts` is now an adapter over it and
+  keeps every export it had. `kernel/naming-convention.ts` owns the two neutral
+  gates behind `payment` → `Payment` (the class must EXIST in the run, and it
+  must have NO subtypes — a polymorphic base named by a variable carries a
+  concrete descendant, which is where every measured convention error came
+  from); it does NOT own the terminal, because refusing to emit when the guessed
+  class declares no such member needs the language's own MRO. Each language
+  supplies ports and keeps its own surface: what counts as a terminal
+  expression, what camelizes, what "has subtypes" is evidence of.
 - **`TSProgramCache` lives on `TSCallResolver`, refreshed by an mtime re-stat
   per `acquire`; `reset()` has NO caller in `src`.** Why: auditing for a
   run-boundary discard finds nothing and invites a spurious `reset()`.
@@ -261,8 +276,9 @@
 
 - **Python publishes type facts on THREE channels, not the kernel's four.**
   `python/walker/passes/annotation-type-facts.ts` is the only entry in
-  `PYTHON_EXTRACTION_PASSES`: two inline sources (`annotations`, then
-  `docstring`, disjoint by construction) → `TypeFactStore` under
+  `PYTHON_EXTRACTION_PASSES`: three inline sources (`annotations`, then
+  `docstring`, then `ast` — a def's return read off its own `return` statements,
+  which speaks only where the first two are silent) → `TypeFactStore` under
   `PYTHON_TYPE_SOURCE_ORDER` → `pythonTypeChannels`, which wraps
   `typeFactChannels` and re-keys its output. `ivarTypes` becomes
   `classFieldTypes` keyed by class SHORT name, because that is what

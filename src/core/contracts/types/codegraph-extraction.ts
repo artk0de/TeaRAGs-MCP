@@ -13,7 +13,7 @@
 
 import type { DispatchRef, DispatchTable } from "./codegraph-dispatch.js";
 import type { InheritanceEdgeDecl } from "./codegraph-hierarchy.js";
-import type { LocalBinding } from "./codegraph-local-binding.js";
+import type { CallResultBinding, LocalBinding } from "./codegraph-local-binding.js";
 import type { AritySignature, KwargSignature, RelPath, SymbolId } from "./codegraph-symbols.js";
 import type { RubyTypeRef } from "./language.js";
 
@@ -40,6 +40,24 @@ export interface FileExtraction {
    * or empty — resolver falls through to short-name lookup.
    */
   classFieldTypes?: Record<string, Record<string, string>>;
+  /**
+   * The same `fieldName → typeName` facts as {@link FileExtraction.classFieldTypes},
+   * addressed by the RUN-GLOBAL class key `<relPath>::<dotted class FQ>` rather
+   * than by the class's short name (bd tea-rags-mcp-f0xaa).
+   *
+   * Two properties `classFieldTypes` cannot have. A short name is ambiguous
+   * run-global — two `Base` classes in two files conflate — so that channel can
+   * only ever be read per-file, and a base class declared elsewhere is therefore
+   * invisible to a subclass. This key is the one `classAncestors` uses, so a
+   * linearized ancestor key looks the fields up directly: polar's
+   * `SyncServiceBase.__init__` assigns `self.client` once and 60-odd subclasses
+   * in other files call it.
+   *
+   * Populated by the Python walker and its annotation facet pass. Languages that
+   * have not pulled on the cross-file read leave it undefined and keep reading
+   * the short-name channel. Plain Record for NDJSON round-trip.
+   */
+  classFieldTypesByClassKey?: Record<string, Record<string, string>>;
   /**
    * Optional per-class Rails association map: `className → accessorName →
    * modelType`. Populated by the Ruby walker from class-body association macros
@@ -262,6 +280,46 @@ export interface FileExtraction {
    * Plain Record (NOT Map) for NDJSON-spill round-trip.
    */
   classFieldParamLinks?: Record<string, Record<string, ClassFieldParamLink>>;
+  /**
+   * Every name this file's `from <module> import <name>` statements bind, and
+   * where each came from (bd tea-rags-mcp-xpl83.3).
+   *
+   * The channel exists for one question the import mapper cannot otherwise
+   * answer: WHICH FILE DECLARES a name an importer asked for. netbox's
+   * `core/models/__init__.py` declares nothing and star-imports six siblings, so
+   * mapping `core.models` to it is right and useless — the `ObjectType` behind
+   * `from core.models import ObjectType` lives one hop further on, and netbox
+   * declares a namesake elsewhere that makes guessing illegal.
+   *
+   * Recorded for EVERY module: a plain module re-exporting is legal Python too,
+   * and the consumer only follows the channel when the file it mapped to
+   * declares nothing under the name. A plain `import a.b` binds a MODULE PATH
+   * rather than an exported name and is deliberately absent.
+   *
+   * Plain array (NOT Map) for NDJSON-spill round-trip. Undefined for a file with
+   * no `from` import, and for languages whose walkers do not collect them.
+   */
+  moduleReexports?: readonly ModuleReexport[];
+}
+
+/**
+ * One name a `from <module> import <name>` statement binds into its own module's
+ * namespace (bd tea-rags-mcp-xpl83.3).
+ */
+export interface ModuleReexport {
+  /**
+   * The LOCAL name the statement binds — what an importer of THIS module sees.
+   * `"*"` for `from <module> import *`, which binds no single name and stands
+   * for whatever the source module exports.
+   */
+  readonly exportedName: string;
+  /** The source module exactly as written: `".object_types"`, `"core.models"`, `".."`. */
+  readonly sourceModule: string;
+  /**
+   * The name the SOURCE module exports it under — the two differ under `as`.
+   * Absent for a star entry, which names nothing in particular.
+   */
+  readonly sourceName?: string;
 }
 
 /**
@@ -387,6 +445,20 @@ export interface ChunkExtraction {
    * Plain Record (NOT Map) for NDJSON-spill round-trip, same as localBindings.
    */
   localCallBindings?: Record<string, string>;
+  /**
+   * Per-chunk `varName → CallResultBinding[]` — the locals assigned from a call
+   * whose RETURN TYPE the walker cannot know, recorded as the callee SPELLING
+   * for the resolver to fold (bd tea-rags-mcp-z68v9). See
+   * {@link CallResultBinding} for why this is a second channel beside
+   * `localCallBindings` rather than a widening of it.
+   *
+   * Populated by the Python walker under `CODEGRAPH_PY_LOCAL_TYPE_TRACKING`,
+   * for single-identifier targets only: tuple unpacking, a chained or
+   * subscripted callee, and a module-level assignment are all omitted.
+   *
+   * Plain Record (NOT Map) for NDJSON-spill round-trip, same as localBindings.
+   */
+  callResultBindings?: Record<string, CallResultBinding[]>;
   /**
    * Positional-arity envelope of the method definition this chunk represents
    * (bd xlnub). Populated by the Ruby walker for `method` / `singleton_method`

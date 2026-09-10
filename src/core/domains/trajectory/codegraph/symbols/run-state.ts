@@ -26,6 +26,7 @@ import type {
   HierarchyView,
   InheritanceEdgeRow,
   KnownTargetCallArgs,
+  ModuleReexport,
   RelPath,
   CodegraphPass1FileAggregates,
   ResolveRunStatsRow,
@@ -433,6 +434,34 @@ export class CodegraphRunState {
    * `returnTypes` — last-write-wins, reset on finish / empty-run.
    */
   structuredReturnTypes: Record<string, RubyTypeRef> = {};
+
+  /**
+   * Per-run aggregation of `FileExtraction.classFieldTypesByClassKey` (bd
+   * tea-rags-mcp-f0xaa). `"<relPath>::<dotted class FQ>" → field → typeName`
+   * merged across pass-1 files so Python's MRO field fold sees a base class's
+   * fields from a subclass declared in ANOTHER file — the shape that carried
+   * polar's `chain` hole.
+   *
+   * Deliberately NOT a {@link RunGlobalMapName}: nothing needs the "did any file
+   * contribute" question, because every reader indexes it by key and an absent
+   * map reads the same as an empty one. Last-write-wins on a duplicate class
+   * key, mirroring `ivarTypes`; reset at the same seams.
+   */
+  classFieldTypesByClassKey: Record<string, Record<string, string>> = {};
+
+  /**
+   * Per-run collection of `FileExtraction.moduleReexports`, keyed by the relPath
+   * of the file that wrote each list (bd tea-rags-mcp-xpl83.3). The import
+   * mapper reads it to answer "which file DECLARES this name" past a package
+   * that only re-exports it.
+   *
+   * Assignment, not union: the list is the whole truth about ONE file's `from`
+   * statements, so re-walking a file must REPLACE what it said rather than
+   * accumulate a statement it has since deleted. Same reason the entry is keyed
+   * by relPath and not folded into a name-addressed map. Reset at the same seams
+   * as `classFieldTypesByClassKey`.
+   */
+  moduleReexports: Record<string, readonly ModuleReexport[]> = {};
 
   /**
    * Per-run aggregation of `FileExtraction.dispatchTables` keyed by table
@@ -953,6 +982,8 @@ export class CodegraphRunState {
       this.returnTypes = {};
       this.instantiatedTypes.clear();
       this.ivarTypes = {};
+      this.classFieldTypesByClassKey = {};
+      this.moduleReexports = {};
       this.structuredReturnTypes = {};
       this.dispatchTables = {};
       this.callbackParams = {};
@@ -1116,6 +1147,8 @@ export class CodegraphRunState {
     this.returnTypes = {};
     this.instantiatedTypes.clear();
     this.ivarTypes = {};
+    this.classFieldTypesByClassKey = {};
+    this.moduleReexports = {};
     this.structuredReturnTypes = {};
     this.dispatchTables = {};
     this.callbackParams = {};
@@ -1152,6 +1185,8 @@ export class CodegraphRunState {
     this.returnTypes = {};
     this.instantiatedTypes.clear();
     this.ivarTypes = {};
+    this.classFieldTypesByClassKey = {};
+    this.moduleReexports = {};
     this.structuredReturnTypes = {};
     this.dispatchTables = {};
     this.callbackParams = {};
@@ -1240,6 +1275,21 @@ export class CodegraphRunState {
         this.structuredReturnTypes[k] = v;
         this.markContributed("structuredReturnTypes");
       }
+    }
+    // The class-key-addressed field channel, run-global (bd tea-rags-mcp-f0xaa).
+    // The key already names the declaring file, so a union across files cannot
+    // conflate two same-named classes and no language gate is needed — a walker
+    // that never writes the channel contributes nothing.
+    if (extraction.classFieldTypesByClassKey) {
+      for (const [classKey, fields] of Object.entries(extraction.classFieldTypesByClassKey)) {
+        this.classFieldTypesByClassKey[classKey] = { ...this.classFieldTypesByClassKey[classKey], ...fields };
+      }
+    }
+    // The file's `from` statements, verbatim under its own path (bd
+    // tea-rags-mcp-xpl83.3). Assignment rather than union: a re-walk must not
+    // resurrect a statement the file no longer has.
+    if (extraction.moduleReexports) {
+      this.moduleReexports[extraction.relPath] = extraction.moduleReexports;
     }
     // Union this file's instantiation set into the run-global RTA set so the
     // cone resolver in pass-2 prunes by program-wide instantiation regardless of

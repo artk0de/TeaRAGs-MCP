@@ -21,6 +21,21 @@
   memo is keyed by symbol-table identity and invalidated on `size()`, so a
   second instance is a second cold cache and a licence for two consumers to
   answer the same import differently.
+- **The mapper answers TWO different questions, and only the second one follows
+  re-exports.** `mapImportToFile` says which file a MODULE names;
+  `resolveExportedName` says which file DECLARES a name, walking the file's own
+  `from` statements out of the walker's `moduleReexports` channel. They diverge
+  wherever a package re-exports — netbox's `core/models/__init__.py` declares
+  nothing and star-imports six siblings. Four rules make the follow safe to add
+  to a shipped path, and all four are load-bearing: it is consulted ONLY after
+  the direct candidate filter fails to leave exactly one candidate, so nothing
+  that resolves today moves; a file that declares the name is returned
+  UNCHANGED; EXPLICIT entries beat stars, because an `as` alias names the source
+  spelling and a star cannot; and stars are unanimous or REFUSED, because two
+  sources declaring the name is the same ambiguity the caller declined to guess
+  at. `MAX_REEXPORT_HOPS` is 3 with a visited set — a deeper tower or a
+  re-export cycle answers the pre-seam refusal rather than a guess, and `null`
+  means "no better answer than the file you came in with", never "absent".
 - **`chainType` is the ONLY reader of `structuredReturnTypes`.**
   `resolver/strategies/python-chain-type.ts` sits between `localBinding` and
   `importedName` and folds the receiver through the kernel walk with
@@ -68,6 +83,91 @@
   question are not the same one. Measured cost of answering CONTINUE there: 95
   phantoms on netbox (`ContentType.objects`, `os.path`), 9 on ugnest, 2 on
   flask.
+- **A bare class name as a CHAIN head is seeded by `pythonClassChainHeadSeed`,
+  and that is deliberately not `singleHopType`'s `classHead` arm.** `seedHead`
+  is reached ONLY from `propagateChain`, so `ObjectType.objects.get_for_model()`
+  gets the seed while a single-hop `Cls.member()` receiver keeps falling to
+  `importedName` exactly as before — which is what the `classHead` default
+  protects, and why the arm was SPLIT rather than switched on. The seed is inert
+  by construction: `consumedMembers: 0` hands the first link straight to
+  `memberTypeOf`, and stop-at-unknown-hop unwinds the receiver to untyped unless
+  that link carries a real field or return fact, so a class with no matching
+  attribute reaches the same strategy it reaches today. A local binding on the
+  same name WINS — a name Python rebound is a value, not the class.
+- **A receiver that is nothing but MODULE TEXT gets a fourth arm, and its
+  hardest case is a module shadowed by its own assignment.**
+  `utilities.fields.ColorField()` spells two or three lowercase hops with no
+  value in them, because `import utilities.fields` binds the TOP package;
+  `importedName` composes the bound module text with the receiver's remaining
+  segments, maps THAT, and reads the member off the file as a unique top-level
+  declaration — tried before the multi-hop head check and returning only
+  `resolved`, so an external or stdlib head keeps its DROP. The capital-letter
+  test in `DOTTED_MODULE_RECEIVER` is load-bearing: PEP 8 spells modules
+  lowercase, and it is what keeps `Event.id` — a column on a class, whose fold
+  `chainType` owns — out of the module arm. The shadow case is
+  `layout = layout.SimpleLayout(...)`: Python evaluates the RHS before it
+  rebinds the name, so ON that line the receiver still denotes what the import
+  bound, and `pythonSingleHopType` skips a binding established on the call's own
+  line WHEN an import bound that same name. Narrow the gate any less and
+  `x = Foo(); x.run()` on one line loses its type.
+- **`callResultBindings` is folded at RESOLVE time, and that is the only layer
+  where it can be.** The walker records the callee SPELLING a local was assigned
+  from (`repository = SubscriptionRepository.from_session(session)` →
+  `SubscriptionRepository.from_session`); `localBinding` folds it through the
+  shared chain engine and reads the return off that class up the MRO. A
+  cross-file return type and the callee's own hierarchy are both in scope only
+  in the resolver, never in the walker. ONE hop — the returned ref is never
+  re-folded — and a real `localBindings` entry always wins, because a walker
+  binding is a type it READ and a fold is an inference. The bare-callee arm is
+  opt-in through `createPythonCallBindingPorts` rather than added to the shared
+  `pythonSingleHopType`: globally on, `Cls.member()` would be answered by
+  `chainType` one pass EARLIER than `importedName` and through the legacy
+  `classExtends` walk instead of the MRO. This is a SECOND channel and not a
+  widening of `localCallBindings` — that one is bare-name-keyed and pairs with
+  `functionReturnTypes`, which Python drops outright (one `def get(self) -> Foo`
+  would speak for every `get` in the corpus).
+- **A class field has TWO addresses, and the qualified one is what crosses a
+  file.** `classFieldTypes` is per-file and keyed by class SHORT name;
+  `classFieldTypesByClassKey` carries the same facts under the file-qualified
+  `` `${relPath}::${dottedFq}` `` key `classAncestors` already uses, unioned
+  run-global and threaded onto `CallContext`. `pythonInheritedMemberType` reads
+  the own-class key first, then each linearized ancestor key, and falls back to
+  the short-name map exactly as before — which is what lets a field declared by
+  an ANCESTOR's `__init__` type a `self.<attr>` receiver at all. Both field
+  collectors share one `self.<field>` reader so the two addresses cannot
+  disagree about a type.
+- **A member is looked up through the field type's MRO, not verbatim.**
+  `resolvePythonMemberOnTypeThroughMro` owns the two steps between a type NAME
+  and the C3 walk (name → file, file + name → class key); `selfField`,
+  `chainType` and `localBinding` all ask it, so `self.client.build_request()`
+  finds `build_request` on a mixin base of `SyncClientBase` instead of missing.
+  A defining class pins ITS spelling, an external boundary before any definition
+  DROPs, an unreadable hierarchy CONTINUEs, and ambiguity stays a CONTINUE —
+  there is no fan-out here.
+- **`namingConvention` is the one GUESS in the chain, and it survives on four
+  gates.** `data_source.sync()` is a `DataSource` because that is the dominant
+  naming discipline of every OO language. The neutral half — the class must
+  EXIST, and it must have NO subtypes — is `kernel/naming-convention.ts`;
+  Python's end is the alphabet it camelizes on, `classExists` demanding EXACTLY
+  ONE project declaration of the short name (Ruby accepts several because
+  Zeitwerk makes the FQ recoverable; Python has no such guarantee),
+  `hasSubtypes` reading `classAncestors` because there is no `ctx.hierarchy`
+  snapshot on this path, and the TERMINAL — the member must pin a symbol on the
+  guessed class or its MRO, or NOTHING is emitted, never a file-only edge. It
+  also declines for a receiver a real type fact already answers and for one
+  bound from a call whose CALLEE HEAD the project does not declare; the second
+  is the whole phantom story, and gating on the head's origin rather than on the
+  binding's mere presence is what keeps `user = User.objects.get(...)` answered
+  while `user = authenticate(...)` is not. It NEVER DROPs — a DROP would claim
+  the receiver's type is known-and-foreign, which a guess cannot establish.
+- **A bare call resolves to a same-file module def BEFORE the ambiguity guard.**
+  Python resolves local → enclosing → MODULE → builtins for a bare name and
+  never consults another file, so `globalShortName`'s same-file arm is the
+  answer the interpreter gives, not a tie-break. Two restrictions carry that:
+  `receiver === null` only (`self.x()` is attribute lookup down the MRO), and
+  module-level targets only (`scope.length === 0` — a same-file `Cls#helper` is
+  enclosing-scope evidence this pass does not read). A file declaring the name
+  twice declines rather than guessing an order.
 - **`importMatch` is GONE — its residual did not earn the slot** (bd
   tea-rags-mcp-rw1qk). The trailing-segment heuristic survived the
   `importedName` demotion holding only the receivers nothing bound, and the
@@ -121,12 +221,14 @@
   how `selfField` reaches a base class at all. The cache answers `undefined` for
   such a run, and each strategy takes its pre-seam path rather than answering
   from an empty map.
-- **Chain order is a correctness argument, not a preference.** Seven passes:
+- **Chain order is a correctness argument, not a preference.** Eight passes:
   `super`, `selfField`, `selfMember`, `localBinding`, `chainType`,
-  `importedName`, `globalShortName`. See the pass list in
-  `resolver/python-resolver.ts`; the guards (`super`, `selfField`, `selfMember`,
-  `localBinding`) DROP rather than fall through, which is what keeps
-  `serializer.is_valid()` off an unrelated class.
+  `namingConvention`, `importedName`, `globalShortName`, composed in ONE place
+  (`resolver/python-chain-factory.ts` — both offline harnesses call it, because
+  the hand-copied duplicates drifted and voided every number the oracle
+  printed). See the pass list in `resolver/python-resolver.ts`; the guards
+  (`super`, `selfField`, `selfMember`, `localBinding`) DROP rather than fall
+  through, which is what keeps `serializer.is_valid()` off an unrelated class.
 - Resolver architecture rules: `.claude/rules/resolver-architecture.md`.
   Cross-language mechanics: `src/core/domains/language/CLAUDE.md`.
 
@@ -145,6 +247,30 @@
   NOT gate `classFieldTypes`, which the walker builds unconditionally and the
   pass extends. Why: flipping the flag to isolate a local-typing regression must
   not silently take the self-field channel with it.
+- **An `@overload` stub yields `Cls#m` to the implementation that follows it,
+  but only when there IS one.** `collectSymbols` dedups by symbolId keeping the
+  first occurrence, so `walker/name-of.ts` returns `null` for a stub whose
+  container declares the same name again without an `@overload` decorator. Why:
+  the stub's body is `...`, so the winning range carried no calls and every call
+  in the implementation fell to the enclosing CLASS chunk — `scope: []`, which
+  `pythonEnclosingClass` reads as "no enclosing class". A stub-only group (a
+  `Protocol` or ABC body) keeps the first stub: there the stubs ARE the
+  declaration, and yielding would delete the symbol rather than relocate it.
+- **Class-body assignments (`objects = <QS>.as_manager()`) feed the SAME two
+  field channels as `self.<field> = …`, and they merge UNDERNEATH:** a
+  constructor assignment for the same field name wins. Reversing the spread
+  order silently retypes every field a class declares twice. Attribution is to
+  the INNERMOST enclosing class and the field name is taken verbatim — no
+  spelling is special-cased.
+- **The class-body reader emits only on project-class EVIDENCE, and is SILENT
+  rather than external otherwise.** A bare `X()` needs `X` declared in THIS
+  file; `X.as_manager()` also accepts an import-bound name, because there
+  Django's own verb rather than the name carries the claim.
+  `objects = models.Manager()` and `name = CharField(…)` emit NOTHING. Why: an
+  external fact makes `chainType` DROP where the call falls through to a later
+  strategy today, so absence — which leaves the receiver untyped and `chainType`
+  on CONTINUE — is what keeps that path byte-identical. There is no manifest
+  gate and no framework registry to consult.
 
 ### Mechanics
 
@@ -154,4 +280,19 @@
   keyed by the callee's full symbolId (`Outer.Inner#method`). The channel
   re-keying that reconciles them with the kernel store's Ruby-shaped output is
   in `passes/python-type-channels.ts`, and the reasoning is in
-  `domains/language/CLAUDE.md` → Mechanics.
+  `domains/language/CLAUDE.md` → Mechanics. The field facts are ALSO written
+  under a third, file-qualified key — what that address is for is a Resolver
+  bullet above, and both writers share one reader so the two cannot disagree.
+- **`moduleReexports` is collected in the SAME walk as `imports`, and it has to
+  be.** One entry per name a file's `import_from_statement`s bind —
+  `{ exportedName, sourceModule, sourceName }`, a star as `exportedName: "*"`
+  with no source name. `import a` and `from a import a` produce an IDENTICAL
+  `ImportRef`, so only the node type separates them and only the walk that sees
+  the node can tell. Reconstructing the channel from `imports` afterwards would
+  be guessing. Who reads it, and under which rules, is a Resolver bullet above.
+- **The annotation pass types a field from an `__init__` PARAMETER, not just
+  from a constructor call.** `collectPythonClassFieldTypes` records a field only
+  when the RHS is a constructor, so `self.client = client` off a
+  `client: SyncClientBase` parameter wrote nothing; the facet pass emits an
+  `ivar` fact for `self.<field> = <annotated parameter>` in ANY method — one
+  hop, one nominal arm, no attribute chain.

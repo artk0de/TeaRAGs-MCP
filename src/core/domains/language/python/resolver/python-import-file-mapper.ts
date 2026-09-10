@@ -22,6 +22,14 @@
  * `unknown` — conservative in the same direction as decision 4 of
  * `docs/superpowers/plans/2026-09-08-python-import-file-mapper.md`: no edge
  * beats a phantom edge.
+ *
+ * `resolveExportedName` answers the OTHER question a caller can have — which
+ * file DECLARES a name, not which file a module names (bd tea-rags-mcp-xpl83.3).
+ * They differ wherever a package re-exports: netbox's `core/models/__init__.py`
+ * declares nothing and star-imports six siblings, and `from core.models import
+ * ObjectType` maps to it correctly and uselessly. Same discipline — symbol-table
+ * membership, no disk — one hop further along the file's own `from` statements,
+ * bounded and unanimity-gated so an ambiguity stays a refusal.
  */
 
 import { posix } from "node:path";
@@ -67,7 +75,23 @@ interface ImportMapperMemo {
   seededCount: number;
   containingRoots: Map<string, string>;
   answers: Map<string, ImportFileTarget>;
+  /** `<file> <name>` -> the file that DECLARES it, or `null` for "cannot tell". */
+  declarers: Map<string, RelPath | null>;
 }
+
+/**
+ * How many re-export hops {@link PythonImportFileMapper.resolveExportedName}
+ * will take.
+ *
+ * Packages re-export packages — netbox's `core/models/__init__.py` star-imports
+ * six siblings, and a name can travel `pkg/__init__.py` -> `sub/__init__.py` ->
+ * `sub/leaf.py` before it is declared. Three covers every shape the five corpora
+ * hold; a deeper tower answers `null`, which is the pre-seam refusal rather than
+ * a guess. The bound is what keeps a re-export CYCLE (legal, and present in the
+ * wild via `from . import x` inside a submodule) from costing a whole run — the
+ * visited set alone makes it terminate, the budget makes it cheap.
+ */
+const MAX_REEXPORT_HOPS = 3;
 
 export class PythonImportFileMapper implements ImportFileMapper {
   private readonly memos = new WeakMap<GlobalSymbolTable, ImportMapperMemo>();
@@ -88,6 +112,93 @@ export class PythonImportFileMapper implements ImportFileMapper {
     return answer;
   }
 
+  /**
+   * Which file DECLARES `name`, starting from the file an import mapped to (bd
+   * tea-rags-mcp-xpl83.3).
+   *
+   * `mapImportToFile` answers which file a MODULE names, and that is a different
+   * question: netbox's `from core.models import ObjectType` maps to
+   * `core/models/__init__.py`, which declares nothing and star-imports six
+   * siblings. The name is real, the file is right, and neither fact names the
+   * class — which matters only because netbox declares a second `ObjectType` in
+   * `netbox/graphql/types.py`, so the caller cannot pick one on no evidence.
+   *
+   * A file that declares the name is returned UNCHANGED, so nothing that
+   * resolves today moves. Otherwise the file's own `from` statements are
+   * consulted, EXPLICIT entries first: an `as` alias names the source spelling,
+   * which a star cannot. Stars are the fallback and are held to unanimity — one
+   * source declaring the name is evidence, two is the same ambiguity the caller
+   * refused to guess at, and refusing is what this returns.
+   *
+   * `null` means "no better answer than the file you came in with", never "the
+   * name is absent": the caller keeps whatever it had.
+   */
+  resolveExportedName(relPath: RelPath, name: string, ctx: CallContext): RelPath | null {
+    if (name.length === 0 || name === "*") return null;
+    const memo = this.memoFor(ctx.symbolTable);
+    const key = `${relPath} ${name}`;
+    const cached = memo.declarers.get(key);
+    if (cached !== undefined) return cached;
+    const answer = this.followReexports(relPath, name, ctx, 0, new Set([relPath]));
+    memo.declarers.set(key, answer);
+    return answer;
+  }
+
+  /** One hop of {@link PythonImportFileMapper.resolveExportedName}; see its contract. */
+  private followReexports(
+    relPath: RelPath,
+    name: string,
+    ctx: CallContext,
+    depth: number,
+    visited: Set<RelPath>,
+  ): RelPath | null {
+    if (declaresName(relPath, name, ctx)) return relPath;
+    if (depth >= MAX_REEXPORT_HOPS) return null;
+    const entries = ctx.moduleReexports?.[relPath];
+    if (entries === undefined) return null;
+    for (const entry of entries) {
+      if (entry.exportedName !== name || entry.sourceName === undefined) continue;
+      const source = this.stepToSource(relPath, entry.sourceModule, ctx, visited);
+      if (source === null) continue;
+      const hit = this.followReexports(source, entry.sourceName, ctx, depth + 1, visited);
+      if (hit !== null) return hit;
+    }
+    // Stars, unanimous or not at all.
+    let only: RelPath | null = null;
+    for (const entry of entries) {
+      if (entry.exportedName !== "*") continue;
+      const source = this.stepToSource(relPath, entry.sourceModule, ctx, visited);
+      if (source === null) continue;
+      const hit = this.followReexports(source, name, ctx, depth + 1, visited);
+      if (hit === null) continue;
+      if (only !== null && only !== hit) return null;
+      only = hit;
+    }
+    return only;
+  }
+
+  /**
+   * The project file one re-export entry points at, or `null` when it leaves the
+   * project or has already been walked.
+   *
+   * The module text is resolved relative to the RE-EXPORTING file, which is what
+   * makes `.object_types` mean `core/models/object_types.py` and not something
+   * under the caller. Marking the target visited BEFORE the recursion is what
+   * terminates a cycle; a branch that returns nothing costs the later branches
+   * nothing, because they would reach the same nothing.
+   */
+  private stepToSource(
+    fromFile: RelPath,
+    sourceModule: string,
+    ctx: CallContext,
+    visited: Set<RelPath>,
+  ): RelPath | null {
+    const target = this.mapImportToFile(sourceModule, fromFile, ctx);
+    if (target.kind !== "project" || visited.has(target.relPath)) return null;
+    visited.add(target.relPath);
+    return target.relPath;
+  }
+
   private memoFor(table: GlobalSymbolTable): ImportMapperMemo {
     const existing = this.memos.get(table);
     const size = table.size();
@@ -101,10 +212,23 @@ export class PythonImportFileMapper implements ImportFileMapper {
       seededCount: roots.length,
       containingRoots: new Map(),
       answers: new Map(),
+      declarers: new Map(),
     };
     this.memos.set(table, fresh);
     return fresh;
   }
+}
+
+/**
+ * Does `relPath` itself declare something short-named `name`?
+ *
+ * The same membership question the rest of this class asks, aimed at a SYMBOL
+ * rather than a file. A `__init__.py` that re-exports answers `false` here —
+ * `collectSymbols` records definitions, not bindings — which is exactly the
+ * trigger for the follow.
+ */
+function declaresName(relPath: RelPath, name: string, ctx: CallContext): boolean {
+  return ctx.symbolTable.lookupByShortName(name).some((def) => def.relPath === relPath);
 }
 
 /**

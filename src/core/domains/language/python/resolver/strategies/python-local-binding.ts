@@ -1,13 +1,20 @@
 import { CONTINUE, DROP, resolved } from "../../../../../contracts/resolution.js";
-import { resolveLocalBindingType, type CallContext, type CallRef } from "../../../../../contracts/types/codegraph.js";
+import {
+  nearestCallResultBinding,
+  resolveLocalBindingType,
+  type CallContext,
+  type CallRef,
+} from "../../../../../contracts/types/codegraph.js";
 import type { SymbolResolutionOutcome, SymbolResolutionStrategy } from "../../../../../contracts/types/language.js";
+import type { ReceiverTypePorts } from "../../../kernel/receiver-type-propagation.js";
 import type { PythonAncestorLinearizerCache } from "../python-ancestor-policy.js";
 import { PythonImportFileMapper } from "../python-import-file-mapper.js";
+import { createPythonCallBindingPorts } from "../python-receiver-type-ports.js";
 import {
   lastSegment,
-  pythonBoundClassKey,
-  resolvePythonInheritedMember,
+  pythonCallBindingType,
   resolvePythonMemberOnType,
+  resolvePythonMemberOnTypeThroughMro,
   resolveTypeFile,
   type ResolverConfig,
 } from "./shared.js";
@@ -60,17 +67,38 @@ export { resolveTypeFile } from "./shared.js";
  */
 export class PythonLocalBindingSymbolResolutionStrategy implements SymbolResolutionStrategy {
   readonly name = "localBinding";
+  /** The fold's ports, built ONCE per resolver exactly as `chainType` builds its own. */
+  private readonly ports: ReceiverTypePorts;
+
   constructor(
     private readonly cfg: ResolverConfig,
     private readonly mapper: PythonImportFileMapper = new PythonImportFileMapper(),
     private readonly linearizers?: PythonAncestorLinearizerCache,
-  ) {}
+  ) {
+    this.ports = createPythonCallBindingPorts(mapper, linearizers);
+  }
 
+  /**
+   * The walker's own binding first, the folded call binding second (bd
+   * tea-rags-mcp-z68v9). A `localBindings` entry is a type the walker READ — an
+   * annotation, a constructor call, a parameter hint — and a fold is an
+   * inference, so the read always wins.
+   *
+   * The fold answers only for a `class` / `instance` ref: a container or a
+   * union has no single nominal receiver, and `pythonInheritedMemberType`
+   * already declines to emit one. From there the verdict is
+   * {@link resolveOnBoundType}'s, unchanged — an external type DROPs, an
+   * unreadable hierarchy CONTINUEs.
+   */
   attempt(call: CallRef, ctx: CallContext): SymbolResolutionOutcome {
     if (!call.receiver) return CONTINUE;
     const localType = resolveLocalBindingType(ctx.localBindings, call.receiver, call.startLine);
-    if (!localType) return CONTINUE;
-    return this.resolveOnBoundType(localType, call.member, ctx);
+    if (localType) return this.resolveOnBoundType(localType, call.member, ctx);
+    const bound = nearestCallResultBinding(ctx.callResultBindings, call.receiver, call.startLine);
+    if (bound === undefined) return CONTINUE;
+    const type = pythonCallBindingType(bound.callee, bound.line, ctx, this.ports);
+    if (type === undefined || (type.form !== "class" && type.form !== "instance")) return CONTINUE;
+    return this.resolveOnBoundType(type.name, call.member, ctx);
   }
 
   /**
@@ -113,12 +141,18 @@ export class PythonLocalBindingSymbolResolutionStrategy implements SymbolResolut
       return legacy ? resolved(legacy) : DROP;
     }
 
-    const targetFile = resolveTypeFile(bareType, ctx, this.mapper);
-    if (targetFile === null) return DROP;
-    const classKey = pythonBoundClassKey(bareType, targetFile, ctx);
-    if (classKey === null) return DROP;
-    const { target, closure } = resolvePythonInheritedMember(classKey, member, ctx, this.cfg.mode, linearizer);
+    const { target, closure } = resolvePythonMemberOnTypeThroughMro(
+      typeName,
+      member,
+      ctx,
+      this.cfg.mode,
+      this.mapper,
+      linearizer,
+    );
     if (target) return resolved(target);
-    return closure === "external" ? DROP : CONTINUE;
+    // `unbound` IS steps 1 and 2 above answering `null`, and it keeps their
+    // terminal DROP (bd tea-rags-mcp-s2w5g moved the two lookups behind the
+    // helper so `selfField` and `chainType` ask them the same way).
+    return closure === "external" || closure === "unbound" ? DROP : CONTINUE;
   }
 }

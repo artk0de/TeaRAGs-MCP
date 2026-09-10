@@ -56,8 +56,21 @@
  * Runtime imports (`constInstanceType`, `catalogueForGemfile`) stay cycle-free:
  * `walker.ts` is TYPE-imported only, mirroring `associations.ts` / `yard.ts` /
  * `ast-inference.ts` so `INLINE_TYPE_SOURCES` never observes an undefined source.
+ *
+ * ── ENGINE RELOCATED TO THE KERNEL (E2 seam 5, bd tea-rags-mcp-9fgdi) ──
+ * The single-assignment cardinality rule and the "one nominal arm or silence"
+ * collapse are language-NEUTRAL, so they now live in
+ * `kernel/return-inference.ts`, generalized from Ruby's ONE terminal expression
+ * to the N terminal arms Python's `return` statements produce. What stayed here
+ * is exactly the Ruby-specific half: which node is the terminal
+ * ({@link lastBodyExpression}), what an expression's type IS
+ * ({@link tailInstanceConst} with `Const.new`, `.freeze`/`.tap` passthrough and
+ * the coercion ternary), which nodes BIND a name ({@link isBindingNode}), the
+ * assignment-event scan ({@link rubyAssignmentEvents}), and the service-entry
+ * convention gate. This module keeps every export it had.
  */
 import type { AstNode } from "../../../../../contracts/types/ast.js";
+import { inferReturnTypeName, type ReturnInferencePorts } from "../../../kernel/return-inference.js";
 import type { RubyDslCatalogue } from "../../dsl/index.js";
 import { catalogueForGemfile } from "../../gemfile.js";
 import { readScopeResolution } from "../ast-utils.js";
@@ -160,23 +173,47 @@ function lastBodyExpression(body: AstNode): AstNode | null {
   return last;
 }
 
+/** Ruby's answers for the kernel's return-inference engine. Built per file (it closes over the catalogue). */
+function rubyReturnInferencePorts(catalogue: RubyDslCatalogue): ReturnInferencePorts<AstNode, null> {
+  return {
+    // Ruby's terminal is the body's LAST expression — exactly one, or none.
+    terminalExpressions: (defNode) => {
+      const body = defNode.childForFieldName("body");
+      if (!body) return [];
+      const last = lastBodyExpression(body);
+      return last === null ? [] : [last];
+    },
+    typeOfExpression: (node) => tailInstanceConst(node, catalogue),
+    isBinding: (node) => isBindingNode(node),
+    bindingName: (node) => node.text,
+    assignmentEvents: (defNode, name) => {
+      const body = defNode.childForFieldName("body");
+      return body === null ? [] : rubyAssignmentEvents(body, name);
+    },
+  };
+}
+
 /**
- * The constant a bare binding tail — a local var (`result`) or an `@ivar`
- * (`@result`) — was assigned, IFF it is assigned EXACTLY ONCE in the method body
- * with a `Const.new`(-passthrough / -coercion) RHS. Any reassignment — a second
- * plain assignment, an operator assignment (`+=`/`||=`), a multiple-assignment
- * target, or a reassignment inside a block (blocks share the method's local
- * scope, and ivars are not block-scoped at all) — yields `null` (silence). Zero
- * assignments (a method-call tail, or an ivar assigned in another method such as
- * `initialize`) also yields `null`.
+ * One entry per assignment EVENT to `bindingName` in this body — the SCAN that
+ * used to live inside `singleAssignmentConst`, byte-identical minus its
+ * cardinality check (now rule 2 in `kernel/return-inference.ts`, which turns
+ * "exactly one PLAIN event" into the tail's type and anything else into
+ * silence).
  *
- * Ivars and locals share this rule because they share the observable property it
- * relies on: within ONE body, a single unconditional binding site determines the
- * value the tail reads. The rule is body-scoped by design — an ivar written by a
- * sibling method is deliberately NOT consulted (that would need flow analysis
- * across the class).
+ * The events this scan reports as `null` are the ones Ruby will not vouch for:
+ * an operator assignment (`+=`/`||=`) and a multiple-assignment target. A
+ * reassignment inside a BLOCK counts as an event like any other — blocks share
+ * the method's local scope, and ivars are not block-scoped at all — while a
+ * nested def/class/module starts a new scope and is not descended.
+ *
+ * Ivars and locals share this treatment because they share the observable
+ * property the rule relies on: within ONE body, a single unconditional binding
+ * site determines the value the tail reads. The scan is body-scoped by design —
+ * an ivar written by a sibling method such as `initialize` is deliberately NOT
+ * consulted (that would need flow analysis across the class), so it reports
+ * zero events and the kernel stays silent.
  */
-function singleAssignmentConst(body: AstNode, bindingName: string, catalogue: RubyDslCatalogue): string | null {
+function rubyAssignmentEvents(body: AstNode, bindingName: string): (AstNode | null)[] {
   // One entry per assignment event to `bindingName`; a plain `bindingName = EXPR`
   // carries its RHS, every non-plain event (operator / multiple assignment) carries null.
   const events: (AstNode | null)[] = [];
@@ -197,10 +234,7 @@ function singleAssignmentConst(body: AstNode, bindingName: string, catalogue: Ru
     for (const child of n.children) scan(child);
   };
   for (const child of body.children) scan(child);
-  if (events.length !== 1) return null; // 0 = method-call tail; >1 = reassigned
-  const rhs = events[0];
-  if (!rhs) return null; // the single event was a non-plain assignment
-  return tailInstanceConst(rhs, catalogue);
+  return events;
 }
 
 /** Emit the return fact for one service-entry def, if its body last expression is a conservative shape. */
@@ -212,13 +246,7 @@ function emitServiceReturnFact(
 ): void {
   const nameNode = defNode.childForFieldName("name");
   if (!nameNode || !SERVICE_ENTRY_METHODS.has(nameNode.text)) return;
-  const body = defNode.childForFieldName("body");
-  if (!body) return;
-  const last = lastBodyExpression(body);
-  if (!last) return;
-  const constName = isBindingNode(last)
-    ? singleAssignmentConst(body, last.text, catalogue)
-    : tailInstanceConst(last, catalogue);
+  const constName = inferReturnTypeName(defNode, null, rubyReturnInferencePorts(catalogue));
   if (constName === null) return;
   out.push({
     kind: "return",
