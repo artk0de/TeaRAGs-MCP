@@ -5,7 +5,10 @@ import type {
   DispatchFanoutOutcome,
   SymbolDefinition,
 } from "../../../contracts/types/codegraph.js";
+import type { NarrowedFanoutOptions } from "../../../contracts/types/language.js";
 import { dispatchFanoutPolicyFor } from "./fanout-policy.js";
+
+export type { NarrowedFanoutOptions };
 
 /** A candidate filter in the untyped-dispatch narrowing cascade (bd xlnub).
  *  Drops a candidate ONLY on PROVEN incompatibility; missing evidence ⇒ keep. */
@@ -98,11 +101,11 @@ export class DuckVocabularyNarrower implements DispatchCandidateNarrower {
   }
 }
 
-const edgeFor = (c: SymbolDefinition, confidence: number): DispatchEdge => ({
+const edgeFor = (c: SymbolDefinition, confidence: number, edgeKind: DispatchEdge["edgeKind"]): DispatchEdge => ({
   sourceSymbolId: null,
   targetRelPath: c.relPath,
   targetSymbolId: c.symbolId,
-  edgeKind: "dynamic",
+  edgeKind,
   confidence,
 });
 
@@ -118,16 +121,21 @@ export function resolveNarrowedFanout(
   ctx: CallContext,
   narrowers: DispatchCandidateNarrower[],
   discount: number,
+  opts: NarrowedFanoutOptions = {},
 ): DispatchFanoutOutcome {
+  const edgeKind = opts.edgeKind ?? "dynamic";
   let survivors = candidates;
   for (const narrower of narrowers) {
     survivors = narrower.narrow(call, survivors, ctx);
     if (survivors.length === 0) return { kind: "edges", edges: [] };
   }
-  if (survivors.length === 1) return { kind: "edges", edges: [edgeFor(survivors[0], 1.0)] };
-  if (survivors.length > dispatchFanoutPolicyFor(ctx.symbolTable).cap) {
+  if (survivors.length === 1) return { kind: "edges", edges: [edgeFor(survivors[0], 1.0, edgeKind)] };
+  // The policy cap is the ceiling; a language may only ask for a TIGHTER one.
+  const policyCap = dispatchFanoutPolicyFor(ctx.symbolTable).cap;
+  const cap = opts.cap === undefined ? policyCap : Math.min(opts.cap, policyCap);
+  if (survivors.length > cap) {
     return { kind: "ambiguous", member: call.member, candidateCount: survivors.length };
   }
   const confidence = discount / survivors.length;
-  return { kind: "edges", edges: survivors.map((c) => edgeFor(c, confidence)) };
+  return { kind: "edges", edges: survivors.map((c) => edgeFor(c, confidence, edgeKind)) };
 }

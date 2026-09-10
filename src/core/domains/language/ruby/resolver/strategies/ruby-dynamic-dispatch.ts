@@ -5,15 +5,8 @@ import {
   type DispatchFanoutOutcome,
 } from "../../../../../contracts/types/codegraph.js";
 import type { DispatchResolverComponent } from "../../../../../contracts/types/language.js";
-import {
-  ArityNarrower,
-  BlockNarrower,
-  DuckVocabularyNarrower,
-  KwargNarrower,
-  LiteralReceiverNarrower,
-  resolveNarrowedFanout,
-  VisibilityNarrower,
-} from "../../../kernel/dispatch-narrowing.js";
+import { buildDispatchCascade } from "../../../kernel/dispatch-cascade.js";
+import { resolveNarrowedFanout } from "../../../kernel/dispatch-narrowing.js";
 import { RUBY_DUCK_VOCAB } from "./ruby-duck-vocabulary.js";
 import { rubyDynamicFanoutSuppressed } from "./ruby-dynamic-fanout-gates.js";
 import { DYNAMIC_RECEIVER_CONFIDENCE_DEFAULT, isRubyPath, type ResolverConfig } from "./shared.js";
@@ -74,14 +67,10 @@ export function classifyRubyLiteralReceiver(receiver: string | null): string | n
  * (bug pl7k: `arr.map` → vendored `d3.js#map`).
  */
 export class RubyDynamicDispatchResolver implements DispatchResolverComponent {
-  private readonly narrowers = [
-    new DuckVocabularyNarrower(RUBY_DUCK_VOCAB),
-    new LiteralReceiverNarrower(classifyRubyLiteralReceiver),
-    new ArityNarrower(),
-    new KwargNarrower(),
-    new VisibilityNarrower(),
-    new BlockNarrower(),
-  ];
+  private readonly narrowers = buildDispatchCascade({
+    duckVocabulary: RUBY_DUCK_VOCAB,
+    classifyLiteralReceiver: classifyRubyLiteralReceiver,
+  });
 
   constructor(private readonly cfg: ResolverConfig) {}
 
