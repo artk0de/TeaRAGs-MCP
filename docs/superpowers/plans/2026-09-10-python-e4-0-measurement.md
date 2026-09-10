@@ -1804,6 +1804,27 @@ it is 1,247 rows over twelve families with `other` at zero, the largest being
 `untypedNameReceiver` at 432 and `moduleAliasMember` at 317. E4's order is
 settled by D8 rather than argued.
 
+**E4.0.5 spent the audit (w205u.8, `08b8d5f12`).** D9's fourth result — the
+chain fabricating edges across languages — and its first — flask's nine
+`open(path, mode)` rows landing on `FlaskClient#open` — were one seam, so one
+commit closed both. Short-name candidates are now gated to same-language,
+bare-callable, non-builtin definitions. Row-level A/B against the merged oracle,
+`--dispatch`, five corpora, `chainDrift` 0 on each:
+
+| corpus | phantom + wrongFile | precision-miss  | match           |
+| ------ | ------------------- | --------------- | --------------- |
+| flask  | 11 → 1              | 3.21 % → 0.30 % | 326 → 326       |
+| polar  | 161 → 86            | 1.00 % → 0.54 % | 15,853 → 15,859 |
+| netbox | 27 → 26             | 0.33 % → 0.32 % | 8,225 → 8,225   |
+| httpx  | 8 → 8               | 1.66 % → 1.66 % | 469 → 469       |
+| ugnest | 0 → 0               | 0.00 % → 0.00 % | 765 → 765       |
+
+Gross lost is **zero** on every corpus — polar gains 6, because the edges the
+guard removes were suppressing three `localBinding` and one `namingConvention`
+answer behind them. 104 chain edges are gone (flask 10, netbox 9, polar 85) and
+none of them was correct. The netbox chain-tally is unchanged at 13.6–15.0 s
+wall, 2.45–2.47 GB peak RSS.
+
 ---
 
 ## What this plan does NOT claim
