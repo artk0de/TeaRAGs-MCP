@@ -417,6 +417,27 @@ export function pythonInheritedMemberType(
   return pythonFieldCallResultType(bareType, member, ctx, mapper, linearizer);
 }
 
+/**
+ * `-> Self` names the class the RECEIVER holds, not the one that declared the
+ * method (bd tea-rags-mcp-w205u E4.6b-1, bd tea-rags-mcp-1v12o.1.6 E5.1b).
+ *
+ * The annotation facet records the marker rather than a class precisely because
+ * only the read side knows the receiver: polar's `CustomerRepository` inherits
+ * `from_session` from `RepositoryBase`, and recording the DECLARING class puts
+ * every following hop on the base. A class receiver substitutes that class, an
+ * instance receiver its own type — ONE rule, because the receiver's NAME is all
+ * either form contributes, and a receiver with no type substitutes nothing.
+ *
+ * Every read of the channel that can see a receiver funnels through here, so
+ * the marker cannot leave this module under any spelling: the MRO walk above,
+ * and the call-result binding in {@link pythonCallBindingType}.
+ */
+export function pythonSubstituteSelfReturn(returned: TypeRef | undefined, receiverName: string): TypeRef | undefined {
+  return returned?.form === "instance" && returned.name === PYTHON_SELF_RETURN
+    ? { form: "instance", name: receiverName }
+    : returned;
+}
+
 /** {@link pythonInheritedMemberType} minus its call-result tier — the pre-E4.6c body. */
 function pythonDeclaredMemberType(
   bareType: string,
@@ -431,13 +452,7 @@ function pythonDeclaredMemberType(
     const fieldType = ctx.classFieldTypes?.[shortName]?.[member];
     if (fieldType !== undefined) return { form: "instance", name: fieldType };
     const returned = ctx.structuredReturnTypes?.[`${classFq}${separator}${member}`];
-    // `-> Self` is the class the RECEIVER names, not the one that declared the
-    // method (bd tea-rags-mcp-w205u, E4.6b-1). The annotation facet records the
-    // marker precisely because only this side knows `bareType`; substituting
-    // here rather than in one port covers `selfField` on the same terms.
-    return returned?.form === "instance" && returned.name === PYTHON_SELF_RETURN
-      ? { form: "instance", name: bareType }
-      : returned;
+    return pythonSubstituteSelfReturn(returned, bareType);
   };
   const byClassKey = (classKey: string): TypeRef | undefined => {
     const fieldType = ctx.classFieldTypesByClassKey?.[classKey]?.[member];
@@ -1014,6 +1029,15 @@ export function resolvePythonMemberOnType(
  * sole-def arm this path has always had stays `"acceptSoleDef"`: one def of the
  * name in the corpus is one answer, whether or not the caller imported it.
  *
+ * The result funnels through {@link pythonSubstituteSelfReturn} (bd
+ * tea-rags-mcp-1v12o.1.6, E5.1b). `x = CustomerRepository.from_session(s)`
+ * binds `x` to a `CustomerRepository`, never to the `RepositoryBase` that
+ * declared the classmethod, and `x = obj.with_org()` binds it to `obj`'s own
+ * type. The MRO walk substitutes on the arm it answers from; doing it HERE too
+ * is what makes the marker unreachable from the binding path whatever a future
+ * arm reads. A `container` / `union` receiver contributes no name and yields
+ * nothing, which is what `memberTypeOf` already answered for one.
+ *
  * ONE hop by construction: the returned ref is never itself re-folded. A
  * fixpoint over return types is a different seam and would need a cycle guard
  * this does not have.
@@ -1029,5 +1053,7 @@ export function pythonCallBindingType(
   if (cut < 0) return pythonModuleReturnType(callee, ctx, mapper, "acceptSoleDef");
   const receiverType = propagateReceiverType(callee.slice(0, cut), atLine, ctx, ports);
   if (receiverType === undefined) return undefined;
-  return ports.memberTypeOf(receiverType, callee.slice(cut + 1), ctx);
+  if (receiverType.form !== "class" && receiverType.form !== "instance") return undefined;
+  const returned = ports.memberTypeOf(receiverType, callee.slice(cut + 1), ctx);
+  return pythonSubstituteSelfReturn(returned, receiverType.name);
 }
