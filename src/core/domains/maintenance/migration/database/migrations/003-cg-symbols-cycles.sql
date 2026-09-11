@@ -1,3 +1,4 @@
+
 CREATE TABLE IF NOT EXISTS cg_symbols_cycles (
   cycle_id    INTEGER NOT NULL,
   scope       VARCHAR NOT NULL,

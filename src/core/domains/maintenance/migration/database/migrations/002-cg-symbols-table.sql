@@ -1,3 +1,4 @@
+
 CREATE TABLE IF NOT EXISTS cg_symbols (
   rel_path    VARCHAR NOT NULL,
   symbol_id   VARCHAR NOT NULL,
