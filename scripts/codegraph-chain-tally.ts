@@ -8,13 +8,20 @@
  * edges for precision inside the blind spots is invisible in them. Python and
  * Java have no oracle at all, so the tally IS the measurement.
  *
- * Two modes:
+ * Three modes:
  *
  *   - default — walk the corpus, run the production chain, report
  *     `edges` / `fileOnly` / `unresolved`.
  *   - `--defer <passName>` — ALSO run a second chain, identical except that the
  *     named pass's file-only commit (`resolved({ targetSymbolId: null })`) is
  *     converted to a `deferred` park, and diff the two per call site.
+ *   - `--time-only` (E6.0a) — skip the rebuilt chain entirely and resolve every
+ *     site through the production resolver, so a language with no `ChainSpec`
+ *     can still be walked and TIMED. This is what makes the E6 comparison
+ *     possible at all: ruby and typescript get their wall and their peak RSS
+ *     from the SAME walk implementation python's come from, which is the only
+ *     way the three numbers are comparable. It buys that by giving up the
+ *     drift check — `chainDrift` is structurally 0 and the report says so.
  *
  * The A/B runs in ONE process over ONE symbol table, so the two sides differ by
  * exactly the swapped slot — no baseline drift, no "revert src/ and re-run"
@@ -39,10 +46,18 @@
  * Usage:
  *   npx tsx scripts/codegraph-chain-tally.ts --corpus <abs path> --lang python \
  *     [--defer globalShortName] [--limit N] [--samples 10] [--json out.json]
+ *
+ *   env -u NODE_OPTIONS npx tsx scripts/codegraph-chain-tally.ts \
+ *     --corpus <abs path> --lang ruby --quiet --time-only [--ts-checker=off]
+ *
+ * `env -u NODE_OPTIONS` is not decoration: this machine carries a fish universal
+ * `--max_old_space_size=8192`, and a process-wide heap ceiling silently
+ * overrides the per-worker one, so three languages measured under it get three
+ * different effective ceilings.
  */
 
-import { writeFileSync } from "node:fs";
-import { extname, resolve as resolvePath, sep } from "node:path";
+import { readFileSync, writeFileSync } from "node:fs";
+import { extname, join, resolve as resolvePath, sep } from "node:path";
 
 import { deferred } from "../src/core/contracts/resolution.js";
 import {
@@ -150,6 +165,88 @@ const CHAINS: Record<string, ChainSpec> = {
     },
   },
 };
+
+/**
+ * Extensions whose call sites this language's resolver owns, inverted out of
+ * the engine's own extension→language map rather than hand-listed. `.tsx` is
+ * why: a hand-list that forgets it silently scores half a TypeScript corpus and
+ * reports the wall as if it walked all of it. The map also settles which leg
+ * `.js`/`.jsx` belong to — `javascript`, not `typescript` — so the TypeScript
+ * leg is `.ts`/`.tsx` and JavaScript gets a leg of its own for free.
+ */
+export function scoredExtensionsFor(lang: string): readonly string[] {
+  const exts = Object.entries(CODEGRAPH_LANGUAGES)
+    .filter(([, cfg]) => cfg.language === lang)
+    .map(([ext]) => ext);
+  if (exts.length === 0) throw new Error(`language '${lang}' has no walkable extension`);
+  return exts;
+}
+
+/** Wall/heap accounting for one tally run. Present only under `--timing`. */
+export interface ChainTallyTiming {
+  /** Walk + extract + symbol table + type channels, ms. */
+  pass1Ms: number;
+  /** Resolve every call site, ms. Excludes the LOC count and the report. */
+  pass2Ms: number;
+  /** `pass1Ms + pass2Ms`. NOT the process wall — `tsx` startup is excluded. */
+  totalMs: number;
+  /** Max `process.memoryUsage().rss` seen by a 250 ms in-process sampler, MB. */
+  peakRssMb: number;
+  /** Lines in the SCORED files, counted after pass 2 so it cannot pollute either. */
+  loc: number;
+}
+
+/**
+ * Peak `rss` over the run, sampled rather than read at the end: V8 releases
+ * pages back before a run finishes, so a single end-of-run reading under-reports
+ * the peak by the whole symbol table on a large corpus. 250 ms is the interval
+ * `scripts/spikes/rss-tree-sampler.sh` uses at the live level, so the two
+ * levels' numbers mean the same thing and carry the same blind spot — a spike
+ * shorter than a quarter second. `unref` so the timer cannot hold the process
+ * open.
+ */
+export function startRssSampler(): { stop: () => number } {
+  let peak = process.memoryUsage().rss;
+  const timer = setInterval(() => {
+    const { rss } = process.memoryUsage();
+    if (rss > peak) peak = rss;
+  }, 250);
+  timer.unref();
+  return {
+    stop: (): number => {
+      clearInterval(timer);
+      return Math.round(Math.max(peak, process.memoryUsage().rss) / 1024 / 1024);
+    },
+  };
+}
+
+/**
+ * The `--timing` block, as its own function because the four normalized columns
+ * ARE the E6 verdict: a per-1k divisor applied to the wrong unit turns a 2×
+ * regression into a pass, and that arithmetic deserves a unit test rather than
+ * an eyeball over a run. Divisors guard against an empty corpus — `0 sites`
+ * must print `n/a`, never `Infinity`, or a leg that walked nothing reads as
+ * infinitely fast.
+ */
+export function formatTimingBlock(
+  timing: ChainTallyTiming,
+  run: { files: number; sites: number; timeOnly: boolean },
+): string[] {
+  const secs = timing.totalMs / 1000;
+  const per = (numerator: number, denominator: number, digits: number): string =>
+    denominator === 0 ? "n/a" : (numerator / denominator).toFixed(digits);
+  const lines = [
+    "",
+    "TIMING (harness-internal; excludes tsx startup)",
+    `  pass1 ${(timing.pass1Ms / 1000).toFixed(2)}s · pass2 ${(timing.pass2Ms / 1000).toFixed(2)}s` +
+      ` · total ${secs.toFixed(2)}s · peak RSS ${timing.peakRssMb} MB`,
+    `  ${run.files} scored files · ${run.sites} sites · ${timing.loc} LOC`,
+    `  normalized: ${per(secs, run.sites / 1000, 3)} s/1k sites · ${per(run.sites, secs, 0)} sites/s` +
+      ` · ${per(secs, timing.loc / 10000, 3)} s/10k LOC · ${per(timing.peakRssMb, run.files / 1000, 0)} MB/1k files`,
+  ];
+  if (run.timeOnly) lines.push("  --time-only: production resolver only, chain-drift check NOT run");
+  return lines;
+}
 
 /**
  * Wrap one pass so its FILE-ONLY commit becomes a park. Every other outcome —
@@ -360,12 +457,78 @@ function absorbTypeChannels(channels: RunGlobalTypeChannels, extraction: FileExt
   for (const instantiated of extraction.instantiatedTypes ?? []) channels.instantiatedTypes.add(instantiated);
 }
 
+/**
+ * The channels only the Ruby fold reads, kept apart from {@link RunGlobalTypeChannels}
+ * rather than folded into it. Two reasons, and both are load-bearing: Ruby's
+ * `classFieldTypes` is RUN-GLOBAL where the Python/Java context passes the
+ * per-file one, so merging the two shapes would silently move a Python answer;
+ * and the byte-identity gate on the existing python/java runs only holds if
+ * their `CallContext` is assembled exactly as before. Copied from
+ * `scripts/spikes/ruby-resolver-parity.ts`, which is the gate these channels
+ * already answer to — a channel absent here is a branch the Ruby leg never
+ * reaches, and its wall would then be a measurement of a shorter chain.
+ */
+interface RubyRunGlobalChannels {
+  classFieldTypes: NonNullable<CallContext["classFieldTypes"]>;
+  classPrependedAncestors: NonNullable<CallContext["classPrependedAncestors"]>;
+  ivarTypes: NonNullable<CallContext["ivarTypes"]>;
+  compactDeclaredClasses: Set<string>;
+  /** The project's `Gemfile`, as the provider reads it once per run; absent ⇒ ungated catalogue. */
+  gemfileContent: string | undefined;
+  /** Zeitwerk's autoload root — the corpus, never the harness's cwd. */
+  projectRoot: string;
+}
+
+function emptyRubyChannels(root: string): RubyRunGlobalChannels {
+  let gemfileContent: string | undefined;
+  try {
+    gemfileContent = readFileSync(join(root, "Gemfile"), "utf8");
+  } catch {
+    gemfileContent = undefined;
+  }
+  return {
+    classFieldTypes: {},
+    classPrependedAncestors: {},
+    ivarTypes: {},
+    compactDeclaredClasses: new Set<string>(),
+    gemfileContent,
+    projectRoot: root,
+  };
+}
+
+function absorbRubyChannels(channels: RubyRunGlobalChannels, extraction: FileExtraction): void {
+  Object.assign(channels.classFieldTypes, extraction.classFieldTypes ?? {});
+  Object.assign(channels.classPrependedAncestors, extraction.classPrependedAncestors ?? {});
+  Object.assign(channels.ivarTypes, extraction.ivarTypes ?? {});
+  for (const fq of extraction.compactDeclaredClasses ?? []) channels.compactDeclaredClasses.add(fq);
+}
+
+/** The Ruby-only half of one call site's context; `{}` for every other language. */
+function rubyCallContext(
+  extraction: FileExtraction,
+  chunk: ChunkExtraction,
+  channels: RubyRunGlobalChannels | null,
+): Partial<CallContext> {
+  if (channels === null) return {};
+  return {
+    classFieldTypes: channels.classFieldTypes,
+    classPrependedAncestors: channels.classPrependedAncestors,
+    ivarTypes: channels.ivarTypes,
+    compactDeclaredClasses: channels.compactDeclaredClasses,
+    associationTypes: extraction.associationTypes,
+    localCallBindings: chunk.localCallBindings,
+    gemfileContent: channels.gemfileContent,
+    projectRoot: channels.projectRoot,
+  };
+}
+
 function buildCallContext(
   extraction: FileExtraction,
   chunk: ChunkExtraction,
   symbolTable: InMemoryGlobalSymbolTable,
   channels: RunGlobalTypeChannels,
   hierarchy: HierarchyView,
+  ruby: RubyRunGlobalChannels | null = null,
 ): CallContext {
   return {
     hierarchy,
@@ -385,6 +548,10 @@ function buildCallContext(
     classFieldTypesByClassKey: channels.classFieldTypesByClassKey,
     classFieldCallResults: channels.classFieldCallResults,
     moduleReexports: channels.moduleReexports,
+    // LAST, so the Ruby leg's run-global `classFieldTypes` wins over the
+    // per-file one above. `{}` for every other language, which is what keeps
+    // the python/java context byte-identical to the pre-E6 one.
+    ...rubyCallContext(extraction, chunk, ruby),
   };
 }
 
@@ -415,6 +582,26 @@ export interface RunResult {
   fanEdges: number;
   /** The corpus-adaptive narrowing cap, read off the function production reads it off. */
   fanoutPolicy: { cap: number; p99DefsPerMember: number };
+  /**
+   * `--time-only`: no rebuilt chain, so `chainDrift` is structurally 0 and must
+   * never be read as "verified". The reporter says so out loud for the same
+   * reason this flag exists on the result at all.
+   */
+  timeOnly: boolean;
+  /** Wall/heap accounting, present only under `--timing` (which `--time-only` implies). */
+  timing?: ChainTallyTiming;
+}
+
+/** Knobs the E6 timing legs add; every one of them is off in a default run. */
+export interface ChainTallyRunOptions {
+  /**
+   * Skip the rebuilt chain and the drift check, resolve through the production
+   * resolver alone. This is what lets a language with no `ChainSpec` — ruby,
+   * typescript — be walked and timed at all.
+   */
+  timeOnly?: boolean;
+  /** Sample RSS, time both passes, count LOC. Implied by `timeOnly`. */
+  timing?: boolean;
 }
 
 export async function run(
@@ -430,24 +617,45 @@ export async function run(
    * those stay the exact chain's, which is what the A/B measures.
    */
   dispatch = true,
+  opts: ChainTallyRunOptions = {},
 ): Promise<RunResult> {
   const spec = CHAINS[lang];
-  if (!spec) throw new Error(`no chain spec for language '${lang}' (have: ${Object.keys(CHAINS).join(", ")})`);
+  const timeOnly = opts.timeOnly === true;
+  const timing = timeOnly || opts.timing === true;
+  // The chain REBUILD is what needs a spec; the production resolver does not.
+  if (!spec && !timeOnly) {
+    throw new Error(
+      `no chain spec for language '${lang}' (have: ${Object.keys(CHAINS).join(", ")}); ` +
+        `--time-only measures any language the engine walks`,
+    );
+  }
+  if (timeOnly && deferPass) throw new Error("--defer needs a rebuilt chain; drop --time-only");
 
   const composer = new DefaultSymbolIdComposer();
-  const factory = new LanguageFactory();
+  // TSCallResolver resolves every candidate path against repoRoot, defaulting to
+  // process.cwd() — which for a harness run is the tea-rags checkout, not the
+  // corpus. Left unset, a TypeScript run finds no files and declines every call
+  // while still LOOKING like a valid walk (the f4wcm class of defect). Neither
+  // the python nor the java provider reads it, so the existing legs are unmoved.
+  const factory = new LanguageFactory({ repoRoot: root });
   const production = factory.create(lang).resolver;
   if (!production) throw new Error(`language '${lang}' has no resolver`);
 
-  const baselineChain = spec.build();
-  const variantChain = deferPass
-    ? spec.build().map((s) => (s.name === deferPass ? new DeferFileOnlyStrategy(s) : s))
-    : null;
-  if (deferPass && !baselineChain.some((s) => s.name === deferPass)) {
+  const buildable = timeOnly ? undefined : spec;
+  const baselineChain = buildable === undefined ? null : buildable.build();
+  const variantChain =
+    deferPass && buildable !== undefined
+      ? buildable.build().map((s) => (s.name === deferPass ? new DeferFileOnlyStrategy(s) : s))
+      : null;
+  if (deferPass && baselineChain !== null && !baselineChain.some((s) => s.name === deferPass)) {
     throw new Error(
       `no pass named '${deferPass}' in the ${lang} chain (have: ${baselineChain.map((s) => s.name).join(", ")})`,
     );
   }
+  const scoredExts = buildable === undefined ? scoredExtensionsFor(lang) : buildable.extensions;
+  const rubyChannels = lang === "ruby" ? emptyRubyChannels(root) : null;
+  const sampler = timing ? startRssSampler() : null;
+  const pass1Start = performance.now();
 
   const symbolTable = new InMemoryGlobalSymbolTable();
   // Run-global, as `CodegraphRunState` is — every walkable language feeds
@@ -483,10 +691,12 @@ export async function run(
     }
     symbolTable.upsertFile(relPath, buildSymbolDefs(extraction));
     absorbTypeChannels(channels, extraction);
+    if (rubyChannels !== null) absorbRubyChannels(rubyChannels, extraction);
     corpusFiles.add(relPath);
-    if (spec.extensions.includes(extname(relPath).toLowerCase())) scored.push(extraction);
+    if (scoredExts.includes(extname(relPath).toLowerCase())) scored.push(extraction);
     else symbolTableOnlyFiles++;
   }
+  const pass1Ms = performance.now() - pass1Start;
   if (!quiet) {
     process.stderr.write(
       `pass 1: ${scored.length} scored files (+${symbolTableOnlyFiles} symbol-table only), ` +
@@ -494,6 +704,7 @@ export async function run(
     );
   }
 
+  const pass2Start = performance.now();
   const rows: CallSiteRow[] = [];
   let dispatchSkipped = 0;
   let chainDrift = 0;
@@ -508,14 +719,18 @@ export async function run(
 
   for (const extraction of scored) {
     for (const chunk of extraction.chunks) {
-      const ctx = buildCallContext(extraction, chunk, symbolTable, channels, hierarchy);
+      const ctx = buildCallContext(extraction, chunk, symbolTable, channels, hierarchy, rubyChannels);
       for (const call of chunk.calls ?? []) {
         if (call.dispatch !== undefined) {
           dispatchSkipped++;
           continue;
         }
-        const baseline = resolveViaChain(baselineChain, call, ctx);
-        if (!sameTarget(baseline, production.resolve(call, ctx))) chainDrift++;
+        // --time-only asks production directly. There is no rebuilt chain to
+        // drift FROM, so `chainDrift` stays 0 and the report says the check did
+        // not run — it must never read as "0 drift, verified".
+        const baseline =
+          baselineChain === null ? production.resolve(call, ctx) : resolveViaChain(baselineChain, call, ctx);
+        if (baselineChain !== null && !sameTarget(baseline, production.resolve(call, ctx))) chainDrift++;
         const fan = dispatch ? scoreFan(production, call, ctx) : NO_FAN;
         if (fan.kind === "single") singleSites++;
         else if (fan.kind === "fan") {
@@ -538,6 +753,19 @@ export async function run(
       }
     }
   }
+  const pass2Ms = performance.now() - pass2Start;
+
+  // AFTER pass 2, so this second read pollutes neither number. Counted over the
+  // SCORED files only: the normalization is "this language's seconds per this
+  // language's lines", and a polyglot corpus's other files are symbol-table
+  // input, not the walked source under test.
+  let loc = 0;
+  if (timing) {
+    for (const extraction of scored) {
+      const text = readFileSync(resolvePath(root, extraction.relPath), "utf8");
+      loc += text.length === 0 ? 0 : text.split("\n").length;
+    }
+  }
 
   return {
     rows,
@@ -555,6 +783,9 @@ export async function run(
     ambiguousSites,
     fanEdges,
     fanoutPolicy: dispatchFanoutPolicyFor(symbolTable),
+    timeOnly,
+    timing:
+      sampler === null ? undefined : { pass1Ms, pass2Ms, totalMs: pass1Ms + pass2Ms, peakRssMb: sampler.stop(), loc },
   };
 }
 
@@ -576,12 +807,27 @@ export function parseArgs(argv: readonly string[]) {
     json: read("--json") ?? null,
     quiet: argv.includes("--quiet"),
     dispatch: !argv.includes("--no-dispatch"),
+    timeOnly: argv.includes("--time-only"),
+    // `--time-only` implies `--timing`: a mode whose only purpose is the numbers
+    // should not need a second flag to print them. `--timing` alone stays legal
+    // so a python `--defer` run can also be timed.
+    timing: argv.includes("--timing") || argv.includes("--time-only"),
+    // `CODEGRAPH_TS_TYPECHECKER=0` is the kill switch the TS resolver actually
+    // exposes (`ts-resolver.ts:284`), read once at resolver construction, so the
+    // flag is applied to `process.env` in `main` BEFORE the first resolve rather
+    // than threaded. ON by default, as production is; the E6 verdict row is the
+    // `off` one, where all three languages are tree-sitter-only.
+    tsChecker: !argv.includes("--ts-checker=off"),
   };
 }
 
 async function main(): Promise<void> {
   const opts = parseArgs(process.argv.slice(2));
-  const result = await run(opts.corpus, opts.lang, opts.defer, opts.limit, opts.quiet, opts.dispatch);
+  if (!opts.tsChecker) process.env.CODEGRAPH_TS_TYPECHECKER = "0";
+  const result = await run(opts.corpus, opts.lang, opts.defer, opts.limit, opts.quiet, opts.dispatch, {
+    timeOnly: opts.timeOnly,
+    timing: opts.timing,
+  });
   const baseline = tallyChainOutput(result.rows.map((r) => r.baseline));
   const variant = tallyChainOutput(result.rows.map((r) => r.variant));
   const { tally, changed } = diffRows(result.rows);
@@ -609,7 +855,10 @@ async function main(): Promise<void> {
           ` · untouched ${result.rows.length - result.singleSites - result.fanSites - result.ambiguousSites}`
       : "  dispatch layer NOT run (--no-dispatch) — the pre-E4.0.3 columns",
   );
-  const extra = CHAINS[opts.lang]?.report?.();
+  // Chain-instrument only: the counter lives on the cache the REBUILT chain
+  // feeds, and `--time-only` never builds one. Printing `0` there would report a
+  // fallback count for a chain that did not run.
+  const extra = result.timeOnly ? undefined : CHAINS[opts.lang]?.report?.();
   if (extra !== undefined) out.push(extra);
   if (opts.defer) {
     out.push(
@@ -630,6 +879,15 @@ async function main(): Promise<void> {
           `\n      deferred ${describe(row.variant)}`,
       );
     }
+  }
+  if (result.timing !== undefined) {
+    out.push(
+      ...formatTimingBlock(result.timing, {
+        files: result.files,
+        sites: result.rows.length,
+        timeOnly: result.timeOnly,
+      }),
+    );
   }
   process.stdout.write(`${out.join("\n")}\n`);
 
