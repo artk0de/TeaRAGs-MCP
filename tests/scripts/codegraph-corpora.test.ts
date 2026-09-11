@@ -158,3 +158,46 @@ describe("loadCodegraphCorpus — recorded E6 offline matrix (2026-09-11)", () =
     }
   });
 });
+
+/**
+ * The same six figures after E6.1's three fixes — local bindings collected once
+ * per file, inert files never materialized, the field map allocated lazily —
+ * taken by E6.0b's protocol on the same two corpora. netbox is where the
+ * inert-file path lands: `extras/data/un_locode.py` alone was 5.33 s and ~800 MB.
+ */
+describe("loadCodegraphCorpus — recorded E6.1 offline matrix (2026-09-12)", () => {
+  it.each([
+    ["polar", 13.5, 2111, 56710, 306460, 1339],
+    ["netbox", 5.01, 1188, 44126, 278182, 1038],
+  ])("%s built in %f s at %i MB peak RSS over %i sites, %i LOC, %i files", (name, wall, rss, sites, loc, files) => {
+    const { e61 } = loadCodegraphCorpus(String(name));
+    expect(e61).toBeDefined();
+    expect(e61?.wallSeconds).toBe(wall);
+    expect(e61?.peakRssMb).toBe(rss);
+    expect(e61?.sites).toBe(sites);
+    expect(e61?.loc).toBe(loc);
+    expect(e61?.files).toBe(files);
+  });
+
+  it("leaves the E6.0b block of both timed corpora untouched", () => {
+    expect(loadCodegraphCorpus("polar").e6?.wallSeconds).toBe(14.89);
+    expect(loadCodegraphCorpus("polar").e6?.peakRssMb).toBe(2247);
+    expect(loadCodegraphCorpus("netbox").e6?.wallSeconds).toBe(10.93);
+    expect(loadCodegraphCorpus("netbox").e6?.peakRssMb).toBe(2208);
+  });
+
+  it("keeps the corpus shape fixed — only wall and RSS moved", () => {
+    for (const name of ["polar", "netbox"]) {
+      const corpus = loadCodegraphCorpus(name);
+      expect(corpus.e61?.sites).toBe(corpus.e6?.sites);
+      expect(corpus.e61?.loc).toBe(corpus.e6?.loc);
+      expect(corpus.e61?.files).toBe(corpus.e6?.files);
+    }
+  });
+
+  it("carries no e61 block for the corpora the matrix did not run", () => {
+    for (const name of ["flask", "httpx", "ugnest"]) {
+      expect(loadCodegraphCorpus(name).e61).toBeUndefined();
+    }
+  });
+});

@@ -930,6 +930,288 @@ doubling of heap.
 
 ---
 
+### E6.1 measured — 2026-09-12, `7c317d00f`
+
+Three fixes, each its own TDD cycle, commit and A/B: `5a50f52f5` (local bindings
+once per file), `13dd6dd74` (skip materializing an inert file), `7c317d00f`
+(lazy field map). All four E6.0b metrics moved, none crossed the ±25 % band
+against BOTH comparators, so the verdict stays **BREACH on all four** — with
+`s/1k sites` now clearing TypeScript and `s/10k LOC` now clearing Ruby.
+
+**Quiet-machine readings.** Before the BEFORE arm, 00:35: load averages 2.13 /
+8.23 / 12.07, no process above 18 % CPU. Before the final four-row arm, 01:03:
+7.60 / 7.19 / 8.37, top process 14.9 % (`claude` itself). The 1-minute figure
+never exceeded 9.1 at the start of any timed arm, against a stop-gate of 12; the
+five- and fifteen-minute figures are the decaying tail of the pre-commit vitest
+fork storms between arms, not live work. Every arm waited for the 1-minute load
+to fall under 8 before its warm-up run. Spotlight (`mds`) indexed the freshly
+installed `node_modules` for roughly two minutes between the FIX A dumps and the
+FIX A timing arm; that window was waited out rather than measured through.
+
+#### The diagnosis — where Python's pass 1 actually goes
+
+The parent session profiled the Python leg on `0e5ccd005` over netbox and polar
+and handed down a finding this task recorded rather than re-derived. Three
+things own the wall and the heap, and the resolver owns none of it:
+
+1. **`materializeTree` is 33 % of pass 1** and the Python walker 44 %, of which
+   `collectLocalBindingsForChunk` alone is 13 %. Kernel extraction passes are 11
+   %, `Parser.parse` 2.4 %. Pass 2 per call site is the fastest of the three
+   languages — E6.0b already said so and the profile agrees, so nothing in this
+   task touches a resolver.
+2. **The heap is ONE file.** Live heap after Mark-Compact (`--trace-gc`, 1024 MB
+   ceiling) reaches 785–895 MB on netbox against 64 MB for Ruby's mastodon and
+   113 MB for TypeScript. Extractions retain nothing — a probe found 43 KB kept
+   per file and zero `AstNode` reachable from any `FileExtraction` — because the
+   live set is the materialized tree of `netbox/extras/data/un_locode.py`:
+   111,557 lines, 6.2 MB of a data table, 0 chunks, 0 calls, **5.33 s of
+   netbox's 11.6 s pass 1 and ~800 MB of heap** for an empty answer.
+   `extras/data/iata.py` (9.8k lines, 0 chunks) is another 0.41 s.
+3. **`collectLocalBindingsForChunk` was O(chunks × nodes)** — a full-tree walk
+   per chunk. Measured in isolation: `netbox/dcim/views.py` 5,045 lines / 475
+   chunks = 0.87 s, `netbox/dcim/tests/test_filtersets.py` 7.7k lines / 620
+   chunks = **14.1 s**, `polar sdk/python/polar/v2026_10/outputs.py` 11k lines /
+   399 chunks = 1.0 s. The TypeScript walker does a comparable 15.9k-line /
+   410-chunk file in 2.3 s total.
+
+A fourth, smaller item: `MaterializedNode` allocated the node, a `children`
+array, a `namedChildren` array, two position objects and an EAGER
+`fields = new Map()` — roughly 350 B a node, of which the empty map is the
+largest avoidable share. On this section's Python fixture 125 of 149 nodes
+carried no field child at all.
+
+Not fixed, noted: the polar row charges Python roughly 1.5 s of TypeScript
+client files (`clients/packages/client/src/v1.ts`, 71k lines, and friends),
+because the tally's symbol-table pass walks every language in the corpus while
+only `.py` call sites are scored. That is harness normalization noise and it
+sits in both arms equally.
+
+#### The A/B protocol
+
+Every timed row is E6.0b Step 2's command line:
+
+```bash
+env -u NODE_OPTIONS NODE_OPTIONS=--max-old-space-size=8192 \
+  npx tsx scripts/codegraph-chain-tally.ts \
+    --corpus <ABS> --lang <lang> --quiet --time-only [--ts-checker=off]
+```
+
+run four times, first discarded, min and median of the remaining three. The
+BEFORE arm is the same harness with `src/` and
+`scripts/ts-codegraph-typechecker-oracle.ts` checked out at `0e5ccd005`; the
+tree was never left flipped across a commit.
+
+Byte-identity of EXTRACTIONS is the primary gate, stronger than the tally's
+counts: `scripts/spikes/py-extraction-dump.ts` (new) walks the tally's own kept
+set and writes one canonical sorted-key JSON line per file, and the two arms'
+files are compared with `cmp`. The tally's `edges` / `fileOnly` / `unresolved`
+and `chain drift 0` are reported beside it on every row.
+
+#### FIX A — `collectLocalBindingsForChunk` once per file (`5a50f52f5`)
+
+`collectPythonLocalBindingSites` records every binding site once in document
+order; `pythonLocalBindingsInRange` slices a chunk's share out of it. Exactly
+the shape `collectPythonCallResultBindings` + `pythonCallResultBindingsInRange`
+already had two lines above, and identical by construction: the old walk visited
+nodes in document order and kept those inside `[startLine, endLine]`, so
+filtering a document-order site list by the same test yields the same keys in
+the same insertion order carrying the same arrays. Every rule inside the
+collector is byte-for-byte what it was — the annotation-wins early return, the
+CapWords constructor gate, the `endLine` span.
+
+The complexity claim is pinned, not asserted: the new test instruments every
+node's `startPosition` with a counting getter and requires that adding eight
+method chunks to a file cost less than one extra traversal. Before the fix that
+delta was 3,056 reads on a 382-node tree — exactly 8 × 382.
+
+| corpus        | wall min s | wall med s | peak MB min | peak MB med |
+| ------------- | ---------- | ---------- | ----------- | ----------- |
+| polar before  | 14.52      | 14.78      | 2,328       | 2,347       |
+| polar after   | **13.25**  | **13.26**  | 2,288       | 2,291       |
+| netbox before | 10.97      | 11.25      | 2,382       | 2,384       |
+| netbox after  | **10.13**  | **10.24**  | 2,352       | 2,370       |
+
+−8.7 % / −7.7 % on the min wall, −10.3 % / −9.0 % on the median. Extraction
+dumps byte-identical on ugnest, flask, httpx, netbox and polar. Tally counts
+unmoved: polar 17,774 edges / 0 file-only / 38,936 unresolved, netbox 8,711 / 0
+/ 35,415, `chain drift 0` on every run.
+
+#### FIX B — never materialize an inert file (`13dd6dd74`)
+
+`LanguageWalker.extractionBearingNodeTypes` (optional; absent means walk
+everything) lets a language name the native node types its extraction is rooted
+in. Python names six: `function_definition`, `class_definition`, `call`,
+`import_statement`, `import_from_statement`, `future_import_statement` — the
+last because tree-sitter-python gives `from __future__ import …` its own node.
+`fileIsInertForExtraction` asks the NATIVE tree via `descendantsOfType`, before
+the materializer allocates a JS node per syntax node. Both consumers take the
+path: the provider's `parseFileExtraction` and the oracle's `extractFile`, which
+is the one the tally measures — patching only production would make the harness
+report a wall production never pays. Ruby and TypeScript declare no list and
+cost one `undefined` check per file.
+
+The gate is `scripts/spikes/py-inert-file-proof.ts` (new): for every file the
+predicate wants to skip, it materializes the tree anyway, runs `collectSymbols`
+and the REAL walker, and requires the result to be the empty shape with no
+optional channel present.
+
+| corpus | files | inert | mismatches |
+| ------ | ----- | ----- | ---------- |
+| flask  | 36    | 0     | 0          |
+| httpx  | 23    | 1     | 0          |
+| ugnest | 262   | 27    | 0          |
+| netbox | 1,094 | 96    | 0          |
+| polar  | 3,095 | 126   | 0          |
+
+| corpus                    | wall min s | wall med s | peak MB min | peak MB med |
+| ------------------------- | ---------- | ---------- | ----------- | ----------- |
+| polar before (= after A)  | 13.25      | 13.26      | 2,288       | 2,291       |
+| polar after               | 13.31      | 13.57      | 2,313       | 2,361       |
+| netbox before (= after A) | 10.13      | 10.24      | 2,352       | 2,370       |
+| netbox after              | **4.98**   | **4.99**   | **1,192**   | **1,192**   |
+
+netbox halves — −50.8 % wall, −49.3 % peak RSS — and polar does not move (+0.5 %
+min, +2.3 % median, inside the run-to-run spread). That asymmetry IS the
+finding: the fix is worth what the corpus's inert files weigh, and netbox's 96
+include a 6.2 MB data table while polar's 126 are small. The `descendantsOfType`
+probe costs a few allocations on the ~96 % of files that are NOT inert, and
+polar is where that cost shows up unrecovered. Extraction dumps byte-identical
+on all five, counts and drift unmoved.
+
+#### FIX C — lazy field map (`7c317d00f`)
+
+`MaterializedNode.fieldsMap` is now private and built on the first field child;
+`childForFieldName` reads `this.fieldsMap?.get(field) ?? null` and the
+first-writer-wins rule moved into `setFieldChild`. Nothing outside
+`src/core/infra/materialize.ts` has ever read `.fields` — `AstNode` exposes only
+`childForFieldName` — so no getter and no contract change was needed (checked
+with `hybrid_search` and an exhaustive ripgrep over `src/`, `scripts/` and
+`tests/`). `startPosition` / `endPosition` / `children` / `namedChildren` are
+untouched.
+
+The test pins both halves: `childForFieldName` answers exactly what the native
+tree answers for every field of every node of a broad Python fixture, and a
+`Map`-construction counter requires one map per node that HAS a field rather
+than one per node. Pre-fix that counter read 149 (every node); post-fix 24.
+
+| row                       | wall min s | wall med s | peak MB min | peak MB med |
+| ------------------------- | ---------- | ---------- | ----------- | ----------- |
+| polar before (= after B)  | 13.31      | 13.57      | 2,313       | 2,361       |
+| polar after               | 13.50      | 13.51      | **2,111**   | **2,116**   |
+| netbox before (= after B) | 4.98       | 4.99       | 1,192       | 1,192       |
+| netbox after              | 5.01       | 5.02       | 1,188       | 1,188       |
+| mastodon before           | 2.75       | 2.76       | 757         | 762         |
+| mastodon after            | 2.76       | 2.78       | 759         | 777         |
+| ts checker-off before     | 3.91       | 3.91       | 933         | 960         |
+| ts checker-off after      | 3.88       | 3.93       | 927         | 927         |
+
+The wall is flat everywhere — the map was never the time cost — and polar's peak
+RSS drops 8.7 % on the min and 10.4 % on the median. netbox barely moves because
+FIX B already removed the tree that dominated its heap. Ruby and TypeScript are
+inside noise in both directions, which is the answer this shared file needed.
+
+Parity, because `materialize.ts` is shared by the chunker and every language:
+extraction dumps byte-identical on all five Python corpora AND on mastodon
+(1,386 Ruby files); on this repo — which is its own corpus, so the changed
+file's own extraction legitimately moves — 1,040 of 1,041 files identical and
+the single difference is `src/core/infra/materialize.ts` itself.
+`ruby-resolver-parity.ts --before-root /Users/artk0re/Dev/Tools/tea-rags-mcp`:
+42,057 sites compared, **mismatches 0, drift 0**.
+`ruby-walker-composition-parity.ts --limit 500`: **mismatches 0**.
+
+#### The final matrix — four rows re-taken on `7c317d00f`
+
+| #   | lang       | corpus                    | pass1 s | pass2 s | total s | peak MB | total s (med) | peak MB (med) | files | sites  | LOC     |
+| --- | ---------- | ------------------------- | ------- | ------- | ------- | ------- | ------------- | ------------- | ----- | ------ | ------- |
+| 1   | python     | polar                     | 12.81   | 0.68    | 13.50   | 2111    | 13.51         | 2116          | 1339  | 56,710 | 306,460 |
+| 2   | python     | netbox                    | 4.70    | 0.31    | 5.01    | 1188    | 5.02          | 1188          | 1038  | 44,126 | 278,182 |
+| 4   | ruby       | mastodon                  | 2.12    | 0.65    | 2.76    | 759     | 2.78          | 777           | 1383  | 42,057 | 76,319  |
+| 5   | typescript | tea-rags, checker **off** | 3.63    | 0.25    | 3.88    | 927     | 3.93          | 927           | 1020  | 26,735 | 161,466 |
+
+Rows 3 and 6 were not re-taken: row 3 priced an empty dispatch layer and E6.0b
+already showed it costs nothing measurable, and row 6 prices `ts.Program`, which
+none of these three fixes touches.
+
+Normalized from the min column:
+
+| #   | lang       | corpus      | s/1k sites | sites/s | s/10k LOC | MB/1k files |
+| --- | ---------- | ----------- | ---------- | ------- | --------- | ----------- |
+| 1   | python     | polar       | 0.238      | 4,201   | 0.441     | 1,577       |
+| 2   | python     | netbox      | 0.114      | 8,807   | 0.180     | 1,145       |
+| 4   | ruby       | mastodon    | 0.066      | 15,238  | 0.362     | 549         |
+| 5   | typescript | checker off | 0.145      | 6,890   | 0.240     | 909         |
+
+**The verdict.** Python is the mean of rows 1 and 2, band |Python − other| /
+other ≤ 0.25 against BOTH comparators.
+
+| metric      | E6.0b python | E6.1 python | ruby  | ts    | E6.0b vs ruby | E6.1 vs ruby | E6.0b vs ts | E6.1 vs ts  | verdict |
+| ----------- | ------------ | ----------- | ----- | ----- | ------------- | ------------ | ----------- | ----------- | ------- |
+| s/1k sites  | 0.255        | 0.176       | 0.066 | 0.145 | +291.6 %      | **+167.9 %** | +75.2 %     | **+21.1 %** | BREACH  |
+| s/10k LOC   | 0.439        | 0.310       | 0.362 | 0.240 | +22.4 %       | **−14.2 %**  | +82.4 %     | **+29.1 %** | BREACH  |
+| MB/1k files | 1,903        | 1,361       | 549   | 909   | +232.7 %      | **+147.9 %** | +104.3 %    | **+49.7 %** | BREACH  |
+| peak MB abs | 2,228        | 1,650       | 759   | 927   | +181.6 %      | **+117.3 %** | +135.2 %    | **+77.9 %** | BREACH  |
+
+Every cell improved and not one metric clears both comparators, so the honest
+answer is that E6.1 narrowed the breach and did not close it. Two metrics now
+clear ONE comparator each — `s/1k sites` is inside the band against TypeScript
+at +21.1 %, `s/10k LOC` is inside it against Ruby at −14.2 % (Python is now
+FASTER than Ruby per line) — and `s/10k LOC` misses TypeScript by 4.1 points.
+The remaining distance is memory: +147.9 % / +49.7 % on MB per 1k files.
+
+Median cross-check, since the min is a GC-thrash risk: s/1k sites python 0.176
+vs ruby 0.066 (+166.3 %) and ts 0.147 (+19.7 %); s/10k LOC 0.311 vs 0.364 (−14.7
+%) and 0.243 (+27.6 %); MB/1k files 1,362 vs 562 (+142.5 %) and 909 (+49.9 %);
+peak MB abs 1,652 vs 777 (+112.6 %) and 927 (+78.2 %). Same verdict on every
+cell, so the choice of estimator decides nothing here either.
+
+**The corpus-shape caveat E6.0b recorded still applies and is now larger, not
+smaller.** Ruby's 551 call sites per 1k LOC against Python's 172 is why the
+per-site gap against Ruby (2.7×) stays wide while the per-LOC one has gone
+NEGATIVE: Ruby amortizes its walk over three times the sites. TypeScript remains
+the comparator that carries the finding — its site density is within 4 % of
+Python's — and against it both axes now agree at +21 % and +29 %, which is a
+different picture from E6.0b's 1.8× and +88 %. The polar row still carries ~1.5
+s of TypeScript client files through the symbol-table pass, so Python's true
+per-site figure is slightly better than the table says.
+
+**What is left, for whoever picks up the remainder.** The wall is now dominated
+by polar, and polar's cost is the walk itself — not one pathological file, not
+the resolver. The memory breach is the materialized tree's per-node footprint:
+after the empty map, what remains per node is two position objects and two child
+arrays, and `namedChildren` duplicates references already in `children`. That is
+the next measurable lever, and it is a bigger change than a performance epic
+should make without its own A/B.
+
+#### Deviations
+
+1. **Step 1 was not re-run.** The parent session had already profiled and
+   root-caused the breach, and its diagnosis was recorded above rather than
+   re-derived. The suspects E6.1 Step 2 lists are all resolver-side and E6.0b
+   had already eliminated the resolver; the profile implicated the walker and
+   the materializer, which is what got fixed.
+2. **`fileIsInertForExtraction` lives in `src/core/infra/`, not
+   `src/core/domains/language/kernel/`.** The plan named the kernel, but
+   `eslint.config.js` forbids `domains/trajectory/** -> domains/language/**` and
+   `.claude/rules/domains-language.md` §2 says never to add an exemption, so the
+   codegraph provider cannot import a kernel helper. The alternative was to
+   inject it through `CodegraphSymbolsProviderDeps` the way `collectSymbols` is
+   injected, which threads a new required field through four interfaces and the
+   composition root — a wider interface change than this task's own rule allows.
+   `infra/` is where `materializeTree` already sits for exactly this reason,
+   stated in its own docblock, and `domains/language` may import `infra/` too.
+   The DATA (`extractionBearingNodeTypes`) stays the language module's.
+3. **The TypeScript corpus is this worktree, and it moved between arms.** Its
+   BEFORE reading was taken before FIX C added a test file, so the AFTER row
+   shows 1,020 files / 161,466 LOC / 26,735 sites against 161,453 / 26,734 — one
+   file of drift, two thousandths of a percent. Same effect makes a self-repo
+   extraction dump differ on exactly the files whose source text the commit
+   changed.
+4. **Rows 3 and 6 of E6.0b were not re-taken**, as recorded above.
+5. **Python walker version NOT bumped** — outputs are byte-identical, which is
+   the whole claim.
+
+---
+
 ## Task E6.0b — the offline matrix
 
 **Files:**
@@ -1194,9 +1476,9 @@ not a performance fix.
 
 **Steps:**
 
-- [ ] **Step 0 — worktree**, ff-merging the branch carrying E6.0b.
+- [x] **Step 0 — worktree**, ff-merging the branch carrying E6.0b.
 
-- [ ] **Step 1 — profile the breaching leg, offline, single process.**
+- [x] **Step 1 — profile the breaching leg, offline, single process.**
 
   ```bash
   # CPU: which frames own the wall
@@ -1219,7 +1501,7 @@ not a performance fix.
   production's `resourceLimits` (16 MB stack, 2 GB old-gen) inside a worker, and
   a TS memory verdict taken outside those limits answers a different question.
 
-- [ ] **Step 2 — check the named suspects before hunting.** For a PYTHON breach
+- [x] **Step 2 — check the named suspects before hunting.** For a PYTHON breach
       these are the candidates, in the order the measurement should test them:
 
   | suspect                                                                                   | where                                  | why it is a candidate                                                                                                                                                 |
@@ -1234,7 +1516,7 @@ not a performance fix.
   Each suspect is CONFIRMED or ELIMINATED by the profile, with its percentage. A
   suspect the profile does not implicate does not get "fixed for safety".
 
-- [ ] **Step 3 — fix, with the A/B as the gate.** Before and after, on the SAME
+- [x] **Step 3 — fix, with the A/B as the gate.** Before and after, on the SAME
       checkout, byte-identical output required:
 
   ```bash
@@ -1251,13 +1533,24 @@ not a performance fix.
   edge is a behaviour change wearing a performance costume, and this program's
   whole value is the recall figures E1–E5 bought.
 
-- [ ] **Step 4 — re-measure the breaching metric** with E6.0b Step 2's exact
+- [x] **Step 4 — re-measure the breaching metric** with E6.0b Step 2's exact
       command, min of 3, and put the new number in the verdict table next to the
       old one. If it is still outside ±25 %, say so and file the remainder
       rather than declaring victory on a direction of travel.
 
-- [ ] **Step 5 — full gate + commit.** `npx tsc --noEmit`,
+- [x] **Step 5 — full gate + commit.** `npx tsc --noEmit`,
       `npm run test:coverage`. Commit `perf(<scope>): … (e6)`.
+
+**Recorded in "E6.1 measured — 2026-09-12, `7c317d00f`" above.** Three fixes
+landed — `5a50f52f5` local bindings once per file, `13dd6dd74` inert-file fast
+path, `7c317d00f` lazy field map. The profile was the parent session's and named
+the walker and the materializer, not a resolver, so the suspect table in Step 2
+is ELIMINATED wholesale: E6.0b had already measured Python's pass 2 as the
+fastest of the three languages per call site. Parity held on all three languages
+— extraction dumps byte-identical on the five Python corpora and mastodon, Ruby
+resolver parity 0 over 42,057 sites, `chain drift 0` everywhere. All four
+metrics improved and all four still BREACH, which the record says rather than
+claiming a direction of travel.
 
 **Task E6.1 is done when** the named suspect is confirmed with a percentage, the
 fix holds parity 0 on all three languages, and the metric is re-measured — not

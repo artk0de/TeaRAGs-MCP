@@ -59,6 +59,13 @@
       "loc": 278182,
       "files": 1038
     },
+    "e61": {
+      "wallSeconds": 5.01,
+      "peakRssMb": 1188,
+      "sites": 44126,
+      "loc": 278182,
+      "files": 1038
+    },
     "notes": "3.4% annotated defs — the untyped-framework end of the trimodal split. Ships JavaScript, so the symbol table is cross-language while only .py call sites are scored. 2 files carry parso grammar errors."
   },
   "polar": {
@@ -81,6 +88,13 @@
     "e6": {
       "wallSeconds": 14.89,
       "peakRssMb": 2247,
+      "sites": 56710,
+      "loc": 306460,
+      "files": 1339
+    },
+    "e61": {
+      "wallSeconds": 13.5,
+      "peakRssMb": 2111,
       "sites": 56710,
       "loc": 306460,
       "files": 1339

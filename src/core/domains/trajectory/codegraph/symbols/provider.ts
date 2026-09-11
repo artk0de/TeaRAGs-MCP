@@ -79,6 +79,7 @@ import type {
   WorkerEnrichmentDescriptor,
 } from "../../../../contracts/types/provider.js";
 import type { DerivedSignalDescriptor, RerankPreset } from "../../../../contracts/types/reranker.js";
+import { fileIsInertForExtraction } from "../../../../infra/extraction-fast-path.js";
 import { materializeTree } from "../../../../infra/materialize.js";
 import { isDebug } from "../../../../infra/runtime.js";
 import {
@@ -1738,6 +1739,15 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
     // AstNode tree. Mirrors the chunker boundary (rdv7d fix for the incremental
     // reindex_changes path).
     const nativeTree = parser.parse(code);
+    // bd tea-rags-mcp-1v12o.2.4 — a file bearing none of the node types this
+    // language's walker reads yields the empty extraction, and materializing it
+    // to learn that is the single most expensive thing pass 1 does on a corpus
+    // carrying generated data tables. Asked on the NATIVE tree, before the
+    // materializer allocates a JS node per syntax node. Same empty shape the
+    // walker-less branch above returns.
+    if (fileIsInertForExtraction(nativeTree.rootNode, walker.extractionBearingNodeTypes)) {
+      return { relPath, language: langConfig.language, imports: [], chunks: [], fileScope: [] };
+    }
     const materializedTree = { rootNode: materializeTree(nativeTree.rootNode, code) };
     const chunks = this.deps.collectSymbols(
       materializedTree,
