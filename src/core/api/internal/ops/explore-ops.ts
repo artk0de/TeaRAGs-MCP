@@ -44,8 +44,8 @@ import {
 } from "../../../domains/explore/strategies/index.js";
 import { NotIndexedError } from "../../../domains/ingest/errors.js";
 import { StatsRecomputeService } from "../../../domains/ingest/infra/stats-recompute.js";
+import type { SchemaDriftMonitor } from "../../../domains/maintenance/drift/schema-drift-monitor.js";
 import type { CollectionRegistry } from "../../../domains/maintenance/registry/index.js";
-import type { SchemaDriftMonitor } from "../../../domains/maintenance/schema-drift-monitor.js";
 import { compileFilterPreset } from "../../../domains/trajectory/filter-presets/compiler.js";
 import type { TrajectoryRegistry } from "../../../domains/trajectory/index.js";
 import { resolveCollectionName, validatePath } from "../../../infra/collection-name.js";

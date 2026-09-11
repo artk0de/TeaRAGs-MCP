@@ -48,20 +48,20 @@
   or nowhere. The ledger keys on the FILENAME string in `schema_migrations`
   (`runner.ts:41-58`), so renaming an already-applied file re-runs it.
 - **Drift compares FEATURE-FLAG-dependent descriptors against index-time keys.**
-  `SchemaDriftMonitor`'s `currentPayloadKeys` (`schema-drift-monitor.ts:19`) is
-  NOT read from Qdrant — it is the payload-signal descriptor set the CURRENT
-  composition declares (`src/bootstrap/factory.ts`:
-  `composition.allPayloadSignalDescriptors` + `"navigation"`), compared against
-  the `payloadFieldKeys` the stats cache recorded at index time. Codegraph
-  descriptors are flag-conditional (`api/internal/composition.ts`, deps supplied
-  only when `CODEGRAPH_ENABLED`), so a process built with different flags
-  reports drift with zero code changed. `CollectionEntry.codegraphEnabled`
-  (`contracts/types/registry.ts:74-84`) is persisted purely so `prime` can
-  re-apply the flag registry-first before building its composition
-  (`src/cli/prime/run-prime.ts`). Why: a drift report is routinely read as "the
-  payload schema changed, reindex" — when the actual fix is env parity in the
-  process that ran the check. The `prime` SessionStart hook runs in a fresh
-  shell and is the standing offender.
+  `SchemaDriftMonitor`'s `currentPayloadKeys`
+  (`drift/schema-drift-monitor.ts:19`) is NOT read from Qdrant — it is the
+  payload-signal descriptor set the CURRENT composition declares
+  (`src/bootstrap/factory.ts`: `composition.allPayloadSignalDescriptors` +
+  `"navigation"`), compared against the `payloadFieldKeys` the stats cache
+  recorded at index time. Codegraph descriptors are flag-conditional
+  (`api/internal/composition.ts`, deps supplied only when `CODEGRAPH_ENABLED`),
+  so a process built with different flags reports drift with zero code changed.
+  `CollectionEntry.codegraphEnabled` (`contracts/types/registry.ts:74-84`) is
+  persisted purely so `prime` can re-apply the flag registry-first before
+  building its composition (`src/cli/prime/run-prime.ts`). Why: a drift report
+  is routinely read as "the payload schema changed, reindex" — when the actual
+  fix is env parity in the process that ran the check. The `prime` SessionStart
+  hook runs in a fresh shell and is the standing offender.
 
 ## See also
 
