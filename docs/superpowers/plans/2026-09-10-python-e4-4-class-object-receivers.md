@@ -961,12 +961,12 @@ flat.
 
 ### Steps — E4.4b
 
-- [ ] **Step 0.** Fresh agent worktree; ff-merge `worktree-py-frontier-e4`
+- [x] **Step 0.** Fresh agent worktree; ff-merge `worktree-py-frontier-e4`
       INCLUDING Task E4.4a's commit — this task depends on
       `spellingOrder: "classFirst"` existing.
       `npx vitest run tests/core/domains/language/python` green. Capture the B
       side of the A/B before editing.
-- [ ] **Step 1 (RED).** In `python-imported-name.test.ts`, next to the existing
+- [x] **Step 1 (RED).** In `python-imported-name.test.ts`, next to the existing
       same-file class-receiver block, add cases where the caller's file declares
       `class Child(Base)` and `Base` — in the SAME file for one case and in
       another file for a second — declares `Base.make`. Assert: 1.
@@ -983,7 +983,7 @@ flat.
       arm's CONTINUE is what lets `resolveStarImport` run, and turning it into a
       DROP would silently remove that path. 8. `linearizers` absent (walker-v2
       shape) → CONTINUE, byte-identical to today.
-- [ ] **Step 2 (GREEN).** In `python-imported-name.ts`, change the last line of
+- [x] **Step 2 (GREEN).** In `python-imported-name.ts`, change the last line of
       `resolveSameFileClassReceiver` from `return CONTINUE;` to
       `return this.resolveSameFileInheritedMember(call, ctx);`, and add the
       method immediately below it:
@@ -1037,20 +1037,20 @@ flat.
       the MRO walk is {@link resolveSameFileInheritedMember}" — the no-short-name
       and no-DROP halves are still true and still load-bearing.
 
-- [ ] **Step 3 (gate).** `npx vitest run tests/core/domains/language/python`,
+- [x] **Step 3 (gate).** `npx vitest run tests/core/domains/language/python`,
       `npx tsc --noEmit`. Then the A side, five corpora × five runs, plus the
       family report. Read it: polar `classObjectReceiver` 36 → 26 (or 52 → 42 if
       this task runs before E4.4a), every other corpus byte-identical on that
       family, `lost` 0, phantom flat, `exactReplacedByFan` /
       `exactReplacedByAmbiguous` 0, no other family grows. Chain tally on all
       five: `drift` 0, `dispatchDrift` 0.
-- [ ] **Step 4 (the one thing to look at twice).** netbox has 437 `wrongFile`
+- [x] **Step 4 (the one thing to look at twice).** netbox has 437 `wrongFile`
       rows historically owned by this file's module arm. Confirm the netbox
       `wrongFile` count is UNCHANGED — the new fallback sits inside the
       same-file arm, which netbox's module receivers never reach, so any
       movement there is an unintended widening and the task stops until it is
       explained.
-- [ ] **Step 5 (commit).**
+- [x] **Step 5 (commit).**
       `feat(language): walk the MRO for a same-file class receiver (w205u)`.
       Body: the 10 rows, the two idioms, the measured deltas, and the Step 4
       control reading. Trailer
@@ -1370,37 +1370,39 @@ measurement that lands after E4.6 has already closed.
 
 ### Steps — E4.4-close
 
-- [ ] **Step 0.** Fresh agent worktree; ff-merge `worktree-py-frontier-e4` with
+- [x] **Step 0.** Fresh agent worktree; ff-merge `worktree-py-frontier-e4` with
       E4.4a, E4.4b and E4.4c on it.
-- [ ] **Step 1 (full unit gate).** `npm run build`, then `npm run test:coverage`
+- [x] **Step 1 (full unit gate).** `npm run build`, then `npm run test:coverage`
       — the release gate, not `npm test`. Then `npx tsc --noEmit`. A worktree
       with no `build/` fails every worker-forking spec, so the build comes
       first. Do NOT `npm link` and do NOT reindex.
-- [ ] **Step 2 (Ruby parity control).**
+- [x] **Step 2 (Ruby parity control).**
       `npx vitest run tests/core/domains/language/ruby tests/scripts/ruby-resolver-parity.test.ts`
       and
       `npx tsx scripts/codegraph-chain-tally.ts --corpus mastodon --lang ruby`.
       Both must be byte-identical to the pre-E4.4 branch. No Ruby file was
       edited, so any drift is a shared-helper leak and stops the close.
-- [ ] **Step 3 (perf).** chain-tally on netbox AND polar, interleaved B/A/A/B,
+- [x] **Step 3 (perf).** chain-tally on netbox AND polar, interleaved B/A/A/B,
       min of each side. Wall ≤ +25 %, peak RSS ≤ +20 %. The new arms add one
       memoised MRO scan per `cls.` / same-file-class receiver, so the expected
       delta is inside the noise; a number outside the bar means an arm is
       building its own linearizer instead of taking
       `this.linearizers?.for(ctx)`.
-- [ ] **Step 4 (the combined A/B).** One final five-corpus × five-run sweep
+- [x] **Step 4 (the combined A/B).** One final five-corpus × five-run sweep
       against the pre-E4.4 baseline, plus the family report on every A dump.
-      Fill in this table with MEASURED numbers, replacing the predictions:
+      MEASURED, replacing the predictions — the family columns are read against
+      the **E4 baseline** `78e6c40b2` so they answer D8's 83 and 23 directly,
+      and the verdict columns against `c0e22b1b4`:
 
-| corpus | `classObjectReceiver` 83 → ? | `superMro` 23 → ? | `missed → match` | `fileOnly → match` | `lost` | phantom Δ |
-| ------ | ---------------------------: | ----------------: | ---------------: | -----------------: | -----: | --------: |
-| ugnest |                4 → 3 (pred.) |                 — |       +1 (pred.) |                  0 |      0 |   0.00 pp |
-| flask  |                1 → 1 (pred.) |                 — |        0 (pred.) |                  0 |      0 |   0.00 pp |
-| httpx  |                        0 → 0 |                 — |                0 |                  0 |      0 |   0.00 pp |
-| netbox |               26 → 9 (pred.) |  control, no move |      +17 (pred.) |                  0 |      0 |   0.00 pp |
-| polar  |              52 → 26 (pred.) |    23 → ? (E4.4c) |      +26 (pred.) |    0 or +3 (E4.4c) |      0 |   0.00 pp |
+| corpus | `classObjectReceiver` 83 → |  `superMro` 23 → | `missed → match` | `fileOnly → match` | `lost` | phantom Δ |
+| ------ | -------------------------: | ---------------: | ---------------: | -----------------: | -----: | --------: |
+| ugnest |                      4 → 3 |                — |       +1 (E4.4a) |                  0 |      0 |   0.00 pp |
+| flask  |                      1 → 1 |                — |                0 |                  0 |      0 |   0.00 pp |
+| httpx  |                      0 → 0 |                — |                0 |                  0 |      0 |   0.00 pp |
+| netbox |                     26 → 9 | control, no move |      +17 (E4.4a) |                  0 |      0 | −0.011 pp |
+| polar  |                    52 → 26 |           23 → 1 |  +26 (E4.4a) +29 |                 +3 |      0 |   0.00 pp |
 
-- [ ] **Step 5 (navigator).** Add exactly two invariants to
+- [x] **Step 5 (navigator).** Add exactly two invariants to
       `src/core/domains/language/python/CLAUDE.md`, both local knowledge a green
       suite misses, both LINKING rather than restating: (1) `cls` is the
       enclosing class and `clsMember` owns it — a pass that widens `selfMember`
@@ -1409,11 +1411,11 @@ measurement that lands after E4.6 has already closed.
       `spellingOrder: "classFirst"`, and the DEFAULT stays instance-first
       because `selfMember` and `super` depend on it. Do not restate decision 3
       or 6 — link this plan.
-- [ ] **Step 6 (capability text).** Update the codegraph tech description in
+- [x] **Step 6 (capability text).** Update the codegraph tech description in
       `capability.ts` to name the class-object receiver. `versions.walker`
       STAYS 5. Run `npm run gen:lang-compat` and commit the regenerated
       artifacts only if the generator's output actually moves.
-- [ ] **Step 7 (the record).** Add **D11** to the spec's decision record: the
+- [x] **Step 7 (the record).** Add **D11** to the spec's decision record: the
       E4.4 sub-shape attribution (both tables from decision 1 verbatim), the 44
       addressable rows, the 32-row `cls(...)` oracle-debt finding with its
       mechanism, the 19+3 rows handed to E4.6a's mapper, and the measured
@@ -1423,11 +1425,99 @@ measurement that lands after E4.6 has already closed.
       increment is worth as much as the gain. Then fill this plan's own tables
       with the measured numbers so the predictions and the outcomes sit side by
       side.
-- [ ] **Step 8 (commit).**
+- [x] **Step 8 (commit).**
       `docs(plans): record the measured E4.4 results (w205u)` and
       `docs(language): note the class-object receiver invariants (w205u)`.
       Trailer `Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>`. Never
       push. Live validation stays user-gated and is NOT part of this gate.
+
+### Measured — E4.4-close, 2026-09-11
+
+**The harness is held constant and the code varies, which is NOT what the three
+task records did.** Each of E4.4a/b/c measured with the harness as it stood that
+hour, and `d69dc589f` (E5.0c, "spell every oracle symbolId hop the walker's
+way") landed between E4.4b and E4.4c. So this sweep runs the CURRENT `scripts/`
+tree against three detached source checkouts — A = branch HEAD, B = `c0e22b1b4`,
+BASE = `78e6c40b2` — and its absolute counts differ from the per-task blocks
+above (httpx `match` reads 481 here against their 477) while every delta is the
+resolver's. Five corpora × five runs per side,
+`--oracle merged --dispatch --workers 8 --samples 500000`, `UV_OFFLINE=1` on
+polar. Every chain column is byte-identical across the five runs of each side.
+
+**One correction to this task's own premise, stated once.** `c0e22b1b4` is the
+E4.6-close merge and it already carries E4.4a (`fdf15e7b5`), so the B side below
+isolates **E4.4b + E4.4c**, not all three. E4.4a's +34 is measured in its own
+block against `f5f27197f` and is inside the E4 summary two sections down. There
+is no commit on this branch that is "all of E4.4 and nothing else" — E4.4a
+landed interleaved with E4.6b-2's `28a8e2dc6`.
+
+| corpus |             match | fileOnly | wrongFile |    missed | phantom |             edges |  recallLegacy → |      recallMerged → | precision-miss → | gross lost |
+| ------ | ----------------: | -------: | --------: | --------: | ------: | ----------------: | --------------: | ------------------: | ---------------: | ---------: |
+| ugnest |         772 → 772 |    0 → 0 |     1 → 1 |   16 → 16 |   0 → 0 |         778 → 778 |          0.9785 |              0.9785 |    0.13 → 0.13 % |          0 |
+| flask  |         336 → 336 |    0 → 0 |     1 → 1 |   36 → 36 |   0 → 0 |         349 → 349 |          0.9008 |              0.9008 |    0.29 → 0.29 % |          0 |
+| httpx  |         481 → 481 |    1 → 1 |     0 → 0 |     6 → 6 |   8 → 8 |         499 → 499 |          0.9857 |              0.9857 |    1.60 → 1.60 % |          0 |
+| netbox |       8303 → 8303 |    0 → 0 |     0 → 0 |   40 → 40 | 26 → 25 |       8712 → 8711 |          0.9949 |              0.9952 |    0.30 → 0.29 % |          0 |
+| polar  | 16398 → **16430** |  44 → 41 |   17 → 17 | 425 → 396 | 93 → 93 | 17595 → **17625** | 0.9788 → 0.9810 | 0.9712 → **0.9731** |    0.63 → 0.62 % |          0 |
+
+**+32 rows bad → good, all polar, split exactly as the two tasks predicted:**
+`missed → match` **+29** and `fileOnly → match` **+3**. Four corpora are
+byte-identical on every scored verdict, which is the close's own identity
+control. Precision-miss is under the 2 % bar on all five and moves DOWN on the
+two corpora that move at all.
+
+**Gross lost is 0 by set difference on all five corpora and all five run pairs**
+— `entered` 0, `changedPool` 0 — so there is no row to classify against D9 and
+**chain regressions are 0**. The residual row sets come from the `--json` sample
+pools, which carry `missed` / `wrongFile` / `phantom` / `skippedInProject` and
+NOT `fileOnly` (E4.4a's standing note); the fileOnly population is covered by
+the aggregate column instead.
+
+**Per-family**, A side against B side, real corpus roots: polar `superMro` **20
+→ 1**, polar `classObjectReceiver` **36 → 26**, netbox `classObjectReceiver` 9
+→ 9. No family grew on any corpus, and the four control corpora are identical
+family for family.
+
+**Per-receiverKind, every kind with n ≥ 100.** Only two rows move: polar
+`constant` n=1,328 match 1,317 → 1,327 (recall 0.9917 → **0.9992**, missed 11 →
+
+1. and polar `super` n=549 match 526 → **548** (recall 0.9581 → **0.9982**,
+   missed 20 → 1). netbox `super` match stays **248** on all ten runs — E4.4c's
+   mandatory control — while its phantom falls 26 → 25. Every other kind on
+   every corpus is byte-identical.
+
+**Chain tally.** `chainDrift` **0** and C3 linearization fallbacks **0** on
+every run; `dispatchDrift` **0** on all 75 oracle runs. Edges per side, one
+distinct value each: ugnest 778, flask 349, httpx 499 unmoved; netbox **8712 →
+8711** (the fabricated edge E4.4c removed); polar **17592 → 17622**, the same
++30 the oracle scores. Runs per side: 5 on the three small corpora, 11 on netbox
+and 7 on polar (the perf legs are tallies and are counted).
+
+**Perf**, interleaved B/A/A/B, `/usr/bin/time -l`,
+`env -u NODE_OPTIONS NODE_OPTIONS=--max-old-space-size=1024` on both sides, six
+reps per side. **The min-of-two statistic breached on netbox RSS (+29.2 %) and
+the median is reported instead, for the reason E4.4b already documented**: the
+minimum comes from a GC-thrashed rep (B rep 6, wall 31.4 s against a 15–16 s
+norm, peak RSS 1,204 MB), where a low peak is the symptom and not the working
+set. netbox wall median **16.02 → 16.61 s (+3.7 %)**, RSS median **2,233 → 2,221
+MB (−0.5 %)**; polar wall median **33.44 → 36.08 s (+7.9 %)**, RSS median
+**2,017 → 1,752 MB (−13.2 %)**. Inside the +25 % wall / +20 % RSS bar on both.
+The machine carried two other executors throughout — load average ranged 8 to
+228 and 5.7 GB of swap was in use — which is why polar's walls spread 21–100 s
+and why interleaving rather than a quiet window is what makes the pair
+comparable.
+
+**Ruby parity**: `ruby-resolver-parity` 42,057 mastodon sites, mismatches **0**,
+drift **0**; `ruby-walker-composition-parity` 500 files, mismatches **0**; both
+with `--before-root` on the detached B checkout.
+`codegraph-chain-tally --lang ruby` still has no Ruby chain spec (E4.4a's
+standing harness finding), so the two spikes carry the control as they did
+there.
+
+**Unit gate**: `npm run build` clean, `npx tsc --noEmit` clean, and
+`npm run test:coverage` **exit 0** — 899 test files, 13,292 passed / 1 skipped,
+statements **96.28 %** (threshold 96.2), branches **88.99 %** (87), functions
+**97.34 %** (97), lines **98.42 %** (97). Re-run after the `capability.ts` edit,
+not before it.
 
 ---
 
