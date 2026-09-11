@@ -1056,6 +1056,103 @@ flat.
       control reading. Trailer
       `Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>`. Never push.
 
+### Measured — E4.4b, 2026-09-11
+
+Shipped as designed: `resolveSameFileClassReceiver`'s last line became
+`return this.resolveSameFileInheritedMember(call, ctx)`, and the new private
+method walks the MRO through `resolvePythonInheritedMember` with
+`spellingOrder: "classFirst"`. The declared-on-the-class path is byte-identical
+— the two-spelling same-file lookup still runs first. Walker stays **5**; no
+Ruby, kernel, dispatch or script file was touched, and the chain composition is
+unchanged (no new strategy, so `python-chain-factory.test.ts` needed no entry).
+
+**Row-level A/B**, five corpora × five runs each side,
+`--oracle merged --dispatch --workers 8 --samples 500000`. B is this worktree
+before the edit; A after.
+
+| corpus |    missed |         match |         edges | phantom | gross lost |
+| ------ | --------: | ------------: | ------------: | ------: | ---------: |
+| ugnest |   16 → 16 |     772 → 772 |     778 → 778 |   0 → 0 |          0 |
+| flask  |   36 → 36 |     330 → 330 |     349 → 349 |   0 → 0 |          0 |
+| httpx  |     6 → 6 |     477 → 477 |     499 → 499 |   8 → 8 |          0 |
+| netbox |   40 → 40 |   8301 → 8301 |   8712 → 8712 | 26 → 26 |          0 |
+| polar  | 425 → 415 | 16388 → 16398 | 17595 → 17606 | 93 → 93 |          0 |
+
+polar **+10**, every other corpus byte-identical on every scored verdict — the
+task's own identity control, and the predicted count exactly. The gain is
+entirely `constant` receiverKind: polar `constant` match 1317 → 1327, missed 11
+→ 1. `fileOnly` and `wrongFile` are flat on all five; `exactReplacedByFan` /
+`exactReplacedByAmbiguous` unchanged; ugnest phantom stays **0**; `chainDrift`
+and `dispatchDrift` **0** on all 50 oracle runs.
+
+**Gross `lost` is 0 by set difference, not by subtraction.** The `--json` pools
+are complete at `--samples 500000` for `missed` / `wrongFile` / `phantom` /
+`skippedInProject`, so the residual row SETS were diffed directly: on all five
+corpora and all five run pairs, **0 rows entered** the residual and **0 changed
+pool**. On polar exactly 10 rows left it, and they are the plan's 10:
+
+```text
+backoffice/customers/endpoints.py:677,700    CreateBalanceTransactionForm.{model_validate_form,render}
+backoffice/customers/endpoints.py:1019,1046  UpdateCustomerEmailForm.{model_validate_form,render}
+backoffice/feedbacks/endpoints.py:415,593    UpdateSupportThreadURLForm.{render,model_validate_form}
+backoffice/feedbacks/endpoints.py:477,552    UpdateFeedbackNoteForm.{render,model_validate_form}
+logging.py:152,154                           Development.configure → Logging.configure
+```
+
+No lost row exists to classify against D9. The `Development` pair is the control
+the plan named: the base is in the SAME file, so what was missing was the hop.
+
+**Family report**, real corpus roots. polar `classObjectReceiver` **36 → 26** —
+the predicted number — `superMro` **20 → 20**, and every other polar family
+identical. netbox is Step 4's control and reads identical on every family,
+`classObjectReceiver` 9 → 9; its residual carries **no `wrongFile` rows at all**
+on this branch (the 437 the module arm once owned are long resolved), so the
+count the step asks about is **0 → 0**. The four control corpora could not move:
+their residual row sets are byte-identical, and the classifier is a pure
+function of those rows.
+
+**Edges reconcile.** polar 17595 → 17606 is **+11** against +10 scored rows, and
+the extra one is accounted for rather than waved at: `bothUnresolved` 9238 →
+9237 and `chainOnly` 1027 → 1028. It is a site jedi itself cannot resolve, so
+the oracle has no opinion to score.
+
+**Chain tally**, five corpora × five runs each side: `chainDrift` **0**
+everywhere, one distinct edge count per side. ugnest 778, flask 349, httpx 499,
+netbox 8712 all unmoved; polar **17592 → 17603**, the same +11.
+
+**Perf**, interleaved chain-tally under `/usr/bin/time -l`,
+`env -u NODE_OPTIONS NODE_OPTIONS=--max-old-space-size=1024` on both sides.
+polar B/A/A/B, min of 2: wall 25.12 s → 25.04 s (**−0.3 %**), RSS 1794 MB → 1814
+MB (**+1.1 %**). netbox is the one reading worth stating twice. The first
+B/A/A/B pass put its RSS min-of-2 at 1681 MB → 2155 MB, **+28.2 %**, over the
++20 % bar — so it was re-measured rather than accepted or explained away: six
+interleaved reps per side. **Min-of-N turns out not to be a usable estimator
+here.** B's minimum (1329 MB) comes from a rep whose wall was 127.9 s against a
+19–25 s norm — a GC-thrashed run, where a low peak RSS is the symptom and not
+the working set. Across the six reps per side the stable statistics agree and
+all sit inside the bar: median 1987 → 2168 MB (**+9.1 %**), mean 1896 → 2100 MB
+(**+10.8 %**), max 2199 → 2382 MB (**+8.3 %**). Wall favours A on every
+statistic — min 19.49 s → 16.33 s, median 24.2 s → 20.1 s. The cost is real and
+small: the arm linearizes classes the run's memo had not held, so the memo
+carries more entries; the MRO answer itself is a map read.
+
+**Ruby parity**: `ruby-resolver-parity` 42,057 mastodon sites, mismatches **0**,
+drift **0**; `ruby-walker-composition-parity` 500 files, mismatches **0**; both
+against `--before-root /Users/artk0re/Dev/Tools/tea-rags-mcp`. Ruby suite 1,835
+tests green.
+
+**Jedi wobble, reported not hidden.** netbox `agreeExternal` moves ±1 across
+runs on BOTH sides, and polar's A side saw the oracle DENOMINATOR itself move
+(16884 / 16876 across runs) with `match` tracking it 1:1 — jedi's own
+nondeterminism outside the chain. The chain side is constant: `edges` reads the
+same value on all five runs of each side, and the row-level diff returns the
+same 10 rows on every pair.
+
+**Navigator sentence for E4.6-close to place** (not written here, to stay out of
+that task's files): the same-file class-receiver arm now falls through to an MRO
+walk under `classFirst`, gated by `pythonBoundClassKey`'s one-declaration rule,
+and still resolves-or-CONTINUEs so `resolveStarImport` keeps its turn.
+
 ---
 
 ## Task E4.4c — The `super()` residual: measure the 19, diagnose the 3, fix only what the diagnosis names (`w205u`)
