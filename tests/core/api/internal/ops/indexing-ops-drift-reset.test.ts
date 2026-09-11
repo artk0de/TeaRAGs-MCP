@@ -164,7 +164,7 @@ describe("IndexingOps — drift consumption reset", () => {
    * had just repaired.
    *
    * What this pins is that the recompute AWAITS the sync leg to COMPLETION, not
-   * merely that it calls it first. The marker is pushed after a microtask tick,
+   * merely that it calls it first. The marker is pushed after a macrotask tick,
    * so it lands only once the returned promise actually settles — the same
    * shape as the `statsCache.save` marker below, which fires inside the awaited
    * refresh. Drop the `await` in front of `this.reindex.reindexChanges` and the

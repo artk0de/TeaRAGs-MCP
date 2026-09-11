@@ -89,9 +89,10 @@ tea-rags auto-update enable  --project <alias>
 
 So: take the before-snapshot, then either disable the watcher for the window or
 wait until `~/.tea-rags/logs/auto-update-<alias>.log` stops growing before
-starting the measured run. A project that never ran `auto-update enable` has no
-trigger and needs neither. Re-enable whatever you disabled when the measurement
-is done — it is a registry field, so it survives the session.
+starting the measured run. A project that never ran `auto-update enable` still
+gets the trigger, but its freshness check answers `disabled` and nothing spawns,
+so it needs neither. Re-enable whatever you disabled when the measurement is
+done — it is a registry field, so it survives the session.
 
 ### `--force-enrichments` is the default validation tool (MANDATORY)
 

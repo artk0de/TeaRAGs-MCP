@@ -325,8 +325,8 @@ function stamp(signals: Record<string, unknown>, enrichedAt?: string): Record<st
 
 /**
  * Did the provider's policy already decline this point at this level? The pass
- * asks for the `codegraph` subtree precisely so this can be answered without a
- * second read.
+ * projects exactly the two `<providerKey>.{file,chunk}.skippedAs` leaves so this
+ * can be answered without a second read.
  */
 function isDeclined(payload: Record<string, unknown>, providerKey: string, level: "file" | "chunk"): boolean {
   // `providerKey` is dotted (`codegraph.symbols`) and the payload nests one

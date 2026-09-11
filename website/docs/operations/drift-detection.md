@@ -106,12 +106,8 @@ reason is the same re-apply that keeps prime honest elsewhere — prime takes
 what stops it reporting phantom removed keys. Read that flag where it matters,
 from the MCP server: `get_index_status`, or the `driftWarning` on a search
 response. `TRAJECTORY_GIT_ENABLED` gets no such re-apply and shows up wherever it
-is flipped, prime included:
-
-```text
-Indexing env:
-  TRAJECTORY_GIT_ENABLED: true → false (explains any git.* payload-key drift — restore the flag instead of rebuilding)
-```
+is flipped, prime included — the note example under
+[Reading a report](#reading-a-report) is exactly that line.
 
 ## Remedies and their cost
 

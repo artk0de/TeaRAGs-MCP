@@ -142,7 +142,7 @@ describe("ReindexingOperations.reindexChanges — registry stamp on quiet runs (
 
   /** Points the fake Qdrant holds for the alias right now — what the stamp must equal. */
   async function livePointCount(collectionName: string): Promise<number> {
-    return (qdrant as any).countPoints(collectionName) as Promise<number>;
+    return qdrant.countPoints(collectionName);
   }
 
   function expectStampedEntry(entry: RecordEntryInput, collectionName: string): void {
