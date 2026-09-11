@@ -40,16 +40,21 @@ export class CommitDriftMonitor implements IndexDriftMonitor {
     // it: a dirty-only finding would never clear during a working session
     // (spec decision 7); uncommitted content is the merkle diff's business.
     if (state.commit === stamp.indexedCommit) return [];
+    // The subject is always the branch the INDEX represents, so a checkout that
+    // left that branch would otherwise render `main: abcdef1 → 0123456` and
+    // read as "main moved" when main may not have moved at all. Name where HEAD
+    // actually went. A detached live HEAD has no name to give, so it keeps the
+    // plain wording rather than inventing one.
+    const movedTo = state.branch !== null && state.branch !== stamp.indexedBranch ? state.branch : null;
+    const dirtySuffix = stamp.indexedDirty ? "; the tree was dirty when it was indexed" : "";
     return [
       {
         axis: this.axis,
         subject: stamp.indexedBranch ?? "HEAD",
         indexed: `${short(stamp.indexedCommit)}${stamp.indexedDirty ? " (dirty)" : ""}`,
-        current: short(state.commit),
+        current: `${short(state.commit)}${movedTo === null ? "" : ` (${movedTo})`}`,
         remedy: { kind: "incremental" },
-        note: stamp.indexedDirty
-          ? "HEAD moved since the last index run; the tree was dirty when it was indexed"
-          : "HEAD moved since the last index run",
+        note: `HEAD moved${movedTo === null ? "" : ` to ${movedTo}`} since the last index run${dirtySuffix}`,
       },
     ];
   }

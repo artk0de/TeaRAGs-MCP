@@ -108,6 +108,47 @@ describe("CommitDriftMonitor", () => {
     expect(monitor.check("c")[0]).toMatchObject({ subject: "HEAD" });
   });
 
+  it("names the live branch when HEAD is on a different one than the stamp", () => {
+    // Without the branch name, `main: abcdef1 → 0123456` reads as "main moved"
+    // when the truth is that the checkout left main entirely. `subject` stays
+    // the branch the index represents; `current` says where HEAD went.
+    const monitor = new CommitDriftMonitor({ get: () => entry } as never, () => ({
+      branch: "feature",
+      commit: "0123456789abcdef",
+      transient: false,
+    }));
+
+    expect(monitor.check("c")).toEqual([
+      {
+        axis: "commit",
+        subject: "main",
+        indexed: "abcdef1",
+        current: "0123456 (feature)",
+        remedy: { kind: "incremental" },
+        note: "HEAD moved to feature since the last index run",
+      },
+    ]);
+  });
+
+  it("keeps the dirty annotation when the live branch also differs", () => {
+    const monitor = new CommitDriftMonitor({ get: () => dirtyEntry } as never, () => ({
+      branch: "feature",
+      commit: "0123456789abcdef",
+      transient: false,
+    }));
+
+    expect(monitor.check("c")).toEqual([
+      {
+        axis: "commit",
+        subject: "main",
+        indexed: "abcdef1 (dirty)",
+        current: "0123456 (feature)",
+        remedy: { kind: "incremental" },
+        note: "HEAD moved to feature since the last index run; the tree was dirty when it was indexed",
+      },
+    ]);
+  });
+
   it("still reports mid-rebase — `transient` gates auto-update, not the report", () => {
     // `RepoGitState.transient` is documented as "a rebase / merge / bisect is in
     // progress — auto-update must NOT fire", and `IndexFreshnessCheck` is the
