@@ -39,7 +39,7 @@ inside Language versions, so its findings render under that heading.
 | Payload keys              | the payload signal descriptors the running build declares vs the keys the collection recorded when it was indexed                                          | stats cache `payloadFieldKeys` | `codegraph.symbols.chunk.fanIn: absent → declared` |
 | Language versions         | per-language `grammar` / `chunking` / `walker` / `codegraphSchema`                                                                                         | registry `languageVersions` | `python.walker: 1 → 3`                             |
 | `*` (shared, not an axis) | shared kernel / resolver chain / chunker versions                                                                                                          | `languageVersions["*"]`    | `*.walker: 1 → 2`                                   |
-| Indexing env              | the canonical indexing keys, grouped by what a change to each invalidates — chunk set, git enrichment, codegraph enrichment; runtime-only keys never drift | the registry `env` snapshot | `CODEGRAPH_AMBIGUOUS_RESOLVE_MODE: strict → first` |
+| Indexing env              | the canonical indexing keys, grouped by what a change to each invalidates — chunk set, git enrichment, codegraph enrichment; runtime-only keys never drift | the registry `env` snapshot plus the dedicated identity fields | `CODEGRAPH_AMBIGUOUS_RESOLVE_MODE: strict → first` |
 | Working tree              | HEAD's sha vs the commit the last run indexed                                                                                                              | `RegistryGitState`         | `main: abcdef1 (dirty) → 0123456`                   |
 
 <!-- axes: extend below -->
@@ -87,11 +87,16 @@ Run: tea-rags index-codebase --project myapp --force-enrichments codegraph
 
 The most common payload-key drift is not a schema change at all. Codegraph and
 git payload descriptors are declared only when their trajectory is enabled, so a
-process started with `CODEGRAPH_ENABLED` or `TRAJECTORY_GIT_ENABLED` flipped off
-declares fewer keys than the index recorded, and every `codegraph.*` key reports
-as removed. The env axis names the flag that explains it. Restore the flag in
-the process that reads the index — a SessionStart hook running in a fresh shell
-is the standing offender — instead of rebuilding anything.
+process without `CODEGRAPH_ENABLED` or `TRAJECTORY_GIT_ENABLED` declares fewer
+keys than the index recorded, and every `codegraph.*` key reports as removed.
+The env axis names the flag that explains it, and reports it whether the reading
+process set the flag to `false` or simply never had it.
+
+The fix is to restore the flag in the process that reads the index — a
+SessionStart hook running in a fresh shell is the standing offender — not to
+rebuild anything. That is why the finding carries no command: on its own it
+renders `No action required.`, which is literally true. Set the flag and the env
+row and the payload-key report clear together.
 
 ## Remedies and their cost
 

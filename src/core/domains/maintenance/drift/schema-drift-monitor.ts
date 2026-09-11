@@ -7,11 +7,9 @@
  */
 
 import type { PayloadKeyOwner } from "../../../contracts/types/trajectory.js";
-import { resolveCollectionName, validatePath } from "../../../infra/collection-name.js";
 import type { StatsCache } from "../../../infra/stats-cache.js";
 import type { IndexDriftFinding, IndexDriftMonitor } from "./monitor.js";
 import { resolvePayloadKeyRemedy } from "./remedy.js";
-import { formatIndexDriftReport, IndexDriftReporter } from "./report.js";
 import { checkSchemaDrift, type SchemaDrift } from "./schema-drift.js";
 
 export class SchemaDriftMonitor implements IndexDriftMonitor {
@@ -55,21 +53,6 @@ export class SchemaDriftMonitor implements IndexDriftMonitor {
         remedy: { kind: "none" } as const,
       })),
     ];
-  }
-
-  /** Check drift for a path. Returns null when nothing moved. */
-  async checkAndConsume(path: string): Promise<string | null> {
-    try {
-      return this.checkByCollectionName(resolveCollectionName(await validatePath(path)));
-    } catch {
-      return null;
-    }
-  }
-
-  /** Check drift synchronously when collection name is already known. */
-  checkByCollectionName(collectionName: string): string | null {
-    const report = new IndexDriftReporter([this]).checkByCollectionName(collectionName);
-    return report && formatIndexDriftReport(report);
   }
 
   /** Expose drift detection for testing. */

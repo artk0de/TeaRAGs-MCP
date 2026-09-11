@@ -301,7 +301,7 @@ git commit -m "test(migration): pin every database migration to its .sql twin (c
   `LanguageCapability.versions: LanguageSupportVersions`
   (`{ chunking, walker, codegraphSchema }`).
 - Produces: `versionAxisSources(language: string): VersionAxisSources[]`;
-  `digestSources(paths: readonly string[], root?: string): string | null`;
+  `digestSources(source: VersionAxisSourceSet, root?: string): string | null`;
   `computeVersionPins(caps, root?): VersionPins`. C1 extends
   `versionAxisSources` for `"*"`.
 
@@ -446,10 +446,10 @@ function sourceFiles(path: string): string[] {
 
 /** sha256 over sorted repo-relative paths + contents; null when nothing exists. */
 export function digestSources(
-  paths: readonly string[],
+  source: VersionAxisSourceSet,
   root: string = process.cwd(),
 ): string | null {
-  const files = paths.flatMap((p) => sourceFiles(join(root, p))).sort();
+  const files = source.paths.flatMap((p) => sourceFiles(join(root, p))).sort();
   if (files.length === 0) return null;
   const hash = createHash("sha256");
   for (const file of files) {
@@ -2106,11 +2106,7 @@ it("attributes a flag flip to the payload keys it explains", () => {
   expect(finding.note).toBe(
     "explains any codegraph.* payload-key drift — restore the flag instead of rebuilding",
   );
-  expect(finding.remedy).toEqual({
-    kind: "recompute",
-    trajectories: new Set(["codegraph"]),
-    languages: null,
-  });
+  expect(finding.remedy).toEqual({ kind: "none" });
 });
 it("stays silent for keys present on one side only, and for legacy entries without a snapshot", () => {
   expect(

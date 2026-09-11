@@ -11,9 +11,7 @@
  */
 
 import { SHARED_LANGUAGE, type LanguageCodeVersions } from "../../../contracts/types/language.js";
-import { resolveCollectionName, validatePath } from "../../../infra/collection-name.js";
 import type { IndexDriftFinding, IndexDriftMonitor } from "./monitor.js";
-import { formatIndexDriftReport, IndexDriftReporter } from "./report.js";
 
 /** One version axis, in the order a drift report lists them. */
 export type LanguageVersionAxis = "grammar" | "chunking" | "walker" | "codegraphSchema";
@@ -107,21 +105,6 @@ export class LanguageVersionDriftMonitor implements IndexDriftMonitor {
               } as const),
         })),
     );
-  }
-
-  /** Check drift for a filesystem path. Returns null when nothing moved. */
-  async checkAndConsume(path: string): Promise<string | null> {
-    try {
-      return this.checkByCollectionName(resolveCollectionName(await validatePath(path)));
-    } catch {
-      return null;
-    }
-  }
-
-  /** Check drift when the collection name is already known. */
-  checkByCollectionName(collectionName: string): string | null {
-    const report = new IndexDriftReporter([this]).checkByCollectionName(collectionName);
-    return report && formatIndexDriftReport(report);
   }
 
   /**
