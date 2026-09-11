@@ -181,6 +181,12 @@ async function resolveInfrastructure(
     daemonPid: config.paths.daemonPid,
   });
 
+  // Filled once the guard below exists. The fallback hook can fire before that
+  // — resolveEmbeddingModelParameters already talks to the provider — so the
+  // handler reaches the guard through a slot instead of closing over a binding
+  // that is still in its temporal dead zone.
+  const modelGuardSlot: { current?: EmbeddingModelGuard } = {};
+
   // Wire Ollama fallback observability into pipeline debug log
   if (embeddings instanceof OllamaEmbeddings) {
     embeddings.onFallbackSwitch = (event) => {
@@ -190,6 +196,11 @@ async function resolveInfrastructure(
         level,
         `${event.direction}: ${event.primaryUrl} → ${event.fallbackUrl} (${event.reason})`,
       );
+      // The canary verdict is measured against whichever endpoint answered.
+      // Keeping it across a switch would 409 every search for the rest of the
+      // process, even once the provider is back on an endpoint that agrees
+      // with the index. Drop it and let the next check re-measure.
+      modelGuardSlot.current?.invalidateAll();
     };
   }
 
@@ -220,7 +231,10 @@ async function resolveInfrastructure(
     }),
   );
 
-  const modelGuard = new EmbeddingModelGuard(qdrant, embeddings.getModel(), embeddings.getDimensions());
+  // The provider is what lets the guard catch a model that kept its name and
+  // changed its weights: it re-embeds the canary stored in the marker.
+  const modelGuard = new EmbeddingModelGuard(qdrant, embeddings.getModel(), embeddings.getDimensions(), embeddings);
+  modelGuardSlot.current = modelGuard;
 
   // Reconcile existing collections to TurboQuant (idempotent, no reindex). A
   // reconcile failure must never crash startup — log and continue. When the

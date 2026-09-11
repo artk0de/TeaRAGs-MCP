@@ -16,6 +16,7 @@
  */
 
 import type { ScoreBackground } from "../contracts/types/trajectory.js";
+import { cosine } from "./vector-math.js";
 
 /**
  * Below this many pairs the mean and stddev describe the sample rather than the
@@ -61,17 +62,4 @@ function dominantArity(vectors: readonly number[][]): number | undefined {
     }
   }
   return best;
-}
-
-function cosine(a: readonly number[], b: readonly number[]): number {
-  let dot = 0;
-  let normA = 0;
-  let normB = 0;
-  for (let i = 0; i < a.length; i++) {
-    dot += a[i] * b[i];
-    normA += a[i] * a[i];
-    normB += b[i] * b[i];
-  }
-  const denominator = Math.sqrt(normA) * Math.sqrt(normB);
-  return denominator === 0 ? 0 : dot / denominator;
 }
