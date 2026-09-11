@@ -25,6 +25,24 @@ export interface CodegraphCorpusBaseline {
   wallSeconds: number;
 }
 
+/**
+ * The E6.0b offline performance figures — min of three `--time-only` runs after
+ * a discarded warm-up. Deliberately a SECOND block rather than a rewrite of
+ * `baseline`: E0 recorded wall and RSS on 2026-09-02 and E6 re-measured them on
+ * 2026-09-11 through five epics of new passes, so both readings have to survive
+ * for the drift between them to stay visible. `wallSeconds` here is the
+ * harness-internal `pass1Ms + pass2Ms`, which excludes `tsx` startup; E0's is a
+ * `/usr/bin/time -l` wall, which does not. They are close but not the same
+ * quantity, and that is the other reason not to merge the two blocks.
+ */
+export interface CodegraphCorpusE6 {
+  wallSeconds: number;
+  peakRssMb: number;
+  sites: number;
+  loc: number;
+  files: number;
+}
+
 export interface CodegraphCorpus {
   name: string;
   path: string;
@@ -62,6 +80,8 @@ export interface CodegraphCorpus {
   roots: string[];
   stack: string[];
   baseline: CodegraphCorpusBaseline;
+  /** Present only on the two corpora the E6.0b matrix timed (polar, netbox). */
+  e6?: CodegraphCorpusE6;
   notes?: string;
 }
 

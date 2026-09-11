@@ -123,3 +123,38 @@ describe("loadCodegraphCorpus — provisioned interpreters", () => {
     expect(ugnest.venvPython.startsWith(`${ugnest.path}/`)).toBe(true);
   });
 });
+
+/**
+ * E6.0b's offline matrix, min of three timed runs after a discarded warm-up,
+ * `codegraph-chain-tally.ts --time-only`. Recorded BESIDE `baseline` and never
+ * over it: E0's figures are the 2026-09-02 anchor, and the RSS moved 959 ->
+ * 2,247 MB on polar between the two, which is exactly the movement a second
+ * block preserves and an overwrite erases.
+ */
+describe("loadCodegraphCorpus — recorded E6 offline matrix (2026-09-11)", () => {
+  it.each([
+    ["polar", 14.89, 2247, 56710, 306460, 1339],
+    ["netbox", 10.93, 2208, 44126, 278182, 1038],
+  ])("%s built in %f s at %i MB peak RSS over %i sites, %i LOC, %i files", (name, wall, rss, sites, loc, files) => {
+    const { e6 } = loadCodegraphCorpus(String(name));
+    expect(e6).toBeDefined();
+    expect(e6?.wallSeconds).toBe(wall);
+    expect(e6?.peakRssMb).toBe(rss);
+    expect(e6?.sites).toBe(sites);
+    expect(e6?.loc).toBe(loc);
+    expect(e6?.files).toBe(files);
+  });
+
+  it("leaves the E0 baseline of both timed corpora untouched", () => {
+    expect(loadCodegraphCorpus("polar").baseline.wallSeconds).toBe(14.5);
+    expect(loadCodegraphCorpus("polar").baseline.peakRssMb).toBe(959);
+    expect(loadCodegraphCorpus("netbox").baseline.wallSeconds).toBe(16.2);
+    expect(loadCodegraphCorpus("netbox").baseline.peakRssMb).toBe(1293);
+  });
+
+  it("carries no e6 block for the corpora the matrix did not run", () => {
+    for (const name of ["flask", "httpx", "ugnest"]) {
+      expect(loadCodegraphCorpus(name).e6).toBeUndefined();
+    }
+  });
+});
