@@ -65,7 +65,11 @@ import { registerAllResources } from "../mcp/resources/index.js";
 import { registerAllTools } from "../mcp/tools/index.js";
 import { buildMcpAutoUpdateTrigger } from "./auto-update/mcp-hint.js";
 import { applyEmbeddedDeleteTuning } from "./config/embedded-tuning.js";
-import { buildEffectiveIndexEnvSnapshot, buildRegistryEnvSnapshot } from "./config/env-snapshot.js";
+import {
+  buildEffectiveIndexEnvSnapshot,
+  buildRegistryEnvSnapshot,
+  buildRunningIndexEnvSnapshot,
+} from "./config/env-snapshot.js";
 import { buildAppConfig, getConfigDump, getZodConfig, parseAppConfigZod, type AppConfig } from "./config/index.js";
 import { checkExternalQdrantVersion } from "./config/qdrant-compat.js";
 import {
@@ -830,8 +834,17 @@ export async function createAppContext(config: AppConfig, hooks?: AppContextHook
   // Third axis: the indexing env. The resolver it takes builds what the NEXT
   // run on that collection would use, the way `ProjectIngestFactory#forPath`
   // builds it for a real run — so a finding means the outer env explicitly
-  // overrides the stamp, not that a code default moved.
-  const envDriftMonitor = new EnvDriftMonitor(collectionRegistry, buildEffectiveIndexEnvSnapshot);
+  // overrides the stamp, not that a code default moved. The third argument is
+  // THIS process's resolved env, built from the very config the composition
+  // above was wired from: the two enable flags are compared against that, since
+  // replay would restore a stamped flag and hide the flip that explains a
+  // payload-key family going missing. It cannot vary per collection, so it is
+  // built once, here.
+  const envDriftMonitor = new EnvDriftMonitor(
+    collectionRegistry,
+    buildEffectiveIndexEnvSnapshot,
+    buildRunningIndexEnvSnapshot(zodConfig),
+  );
   // One reporter over every axis, built HERE — ahead of the ingest slice —
   // because every index run has to re-arm the collection it just rewrote, and
   // the slice is what carries the reporter down to IndexingOps. Process-scoped
