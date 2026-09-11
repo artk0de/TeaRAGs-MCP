@@ -30,22 +30,27 @@ search.
 
 ## Axes
 
-One monitor per axis. A single report can carry findings from several.
+One monitor per axis, and a single report can carry findings from several. The
+`*` row below is the exception: it is not an axis of its own but a subject
+inside Language versions, so its findings render under that heading.
 
-| Axis                     | Compared                                                                                                                                                   | Stamp                      | Example                                             |
-| ------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------ | -------------------------- | --------------------------------------------------- |
-| Payload keys             | the payload signal descriptors the running build declares vs the keys the collection recorded when it was indexed                                          | stats cache `payloadFieldKeys` | `codegraph.symbols.chunk.fanIn: absent → declared` |
-| Language versions        | per-language `grammar` / `chunking` / `walker` / `codegraphSchema`                                                                                         | registry `languageVersions` | `python.walker: 1 → 3`                             |
-| `*` (shared pseudo-lang) | shared kernel / resolver chain / chunker versions                                                                                                          | `languageVersions["*"]`    | `*.walker: 1 → 2`                                   |
-| Indexing env             | the canonical indexing keys, grouped by what a change to each invalidates — chunk set, git enrichment, codegraph enrichment; runtime-only keys never drift | the registry `env` snapshot | `CODEGRAPH_AMBIGUOUS_RESOLVE_MODE: strict → first` |
-| Working tree             | HEAD's sha vs the commit the last run indexed                                                                                                              | `RegistryGitState`         | `main: abcdef1 (dirty) → 0123456`                   |
+| Axis                      | Compared                                                                                                                                                   | Stamp                      | Example                                             |
+| ------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------ | -------------------------- | --------------------------------------------------- |
+| Payload keys              | the payload signal descriptors the running build declares vs the keys the collection recorded when it was indexed                                          | stats cache `payloadFieldKeys` | `codegraph.symbols.chunk.fanIn: absent → declared` |
+| Language versions         | per-language `grammar` / `chunking` / `walker` / `codegraphSchema`                                                                                         | registry `languageVersions` | `python.walker: 1 → 3`                             |
+| `*` (shared, not an axis) | shared kernel / resolver chain / chunker versions                                                                                                          | `languageVersions["*"]`    | `*.walker: 1 → 2`                                   |
+| Indexing env              | the canonical indexing keys, grouped by what a change to each invalidates — chunk set, git enrichment, codegraph enrichment; runtime-only keys never drift | the registry `env` snapshot | `CODEGRAPH_AMBIGUOUS_RESOLVE_MODE: strict → first` |
+| Working tree              | HEAD's sha vs the commit the last run indexed                                                                                                              | `RegistryGitState`         | `main: abcdef1 (dirty) → 0123456`                   |
 
 <!-- axes: extend below -->
 
 A moved HEAD is the cheapest finding there is: the remedy is a plain incremental
 run, which the [auto-update watcher](/operations/auto-update) performs on its own
 when it is enabled, so the finding usually clears without anyone typing
-anything.
+anything. The subject is the branch the index was built on; when HEAD now sits
+on a different branch, `current` carries the new one — `0123456 (feature)`, with
+the note `HEAD moved to feature since the last index run` and the same
+`(dirty)` suffix rule on the indexed side.
 
 ## Reading a report
 
@@ -194,7 +199,7 @@ Two things to expect after upgrading:
 The heal runs in the completion tail and reports itself in the debug log:
 
 ```text
-[GitEnrich] PHASE: CODEGRAPH_PAYLOAD_HEAL | {"collection":"…","pointsRewritten":412,"filesTouched":57}
+[+ 142.317s] [GitEnrich] PHASE: CODEGRAPH_PAYLOAD_HEAL | {"collection":"…","pointsRewritten":412,"filesTouched":57}
 ```
 
 A heal that fails is logged as `CODEGRAPH_PAYLOAD_HEAL_FAILED` and does not fail
@@ -220,8 +225,8 @@ After that run the stamp catches up and the report goes quiet.
 
 ## Related
 
-- [Recovery & Reindexing](/operations/recovery-reindexing) — the three reindex
-  modes and what each costs
+- [Recovery & Reindexing](/operations/recovery-reindexing) — the reindex modes
+  and what each costs
 - [Auto-Update Watcher](/operations/auto-update) — who runs the incremental for
   you
 - [Troubleshooting & Error Codes](/operations/troubleshooting-and-error-codes) —
