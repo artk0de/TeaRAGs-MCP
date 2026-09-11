@@ -11,3 +11,4 @@ export { formatIndexDriftReport, IndexDriftReporter, type IndexDriftReport } fro
 export { SchemaDriftMonitor } from "./schema-drift-monitor.js";
 export { LanguageVersionDriftMonitor } from "./language-version-drift-monitor.js";
 export { CommitDriftMonitor } from "./commit-drift-monitor.js";
+export { EnvDriftMonitor } from "./env-drift-monitor.js";

@@ -44,6 +44,7 @@ import { QuarantineStore } from "../core/domains/ingest/sync/index.js";
 import { ShardedSnapshotManager } from "../core/domains/ingest/sync/snapshot/index.js";
 import { collectSymbols, DefaultSymbolIdComposer } from "../core/domains/language/index.js";
 import { CommitDriftMonitor } from "../core/domains/maintenance/drift/commit-drift-monitor.js";
+import { EnvDriftMonitor } from "../core/domains/maintenance/drift/env-drift-monitor.js";
 import { IndexDriftReporter } from "../core/domains/maintenance/drift/index.js";
 import { LanguageVersionDriftMonitor } from "../core/domains/maintenance/drift/language-version-drift-monitor.js";
 import { SchemaDriftMonitor } from "../core/domains/maintenance/drift/schema-drift-monitor.js";
@@ -65,7 +66,11 @@ import { registerAllResources } from "../mcp/resources/index.js";
 import { registerAllTools } from "../mcp/tools/index.js";
 import { buildMcpAutoUpdateTrigger } from "./auto-update/mcp-hint.js";
 import { applyEmbeddedDeleteTuning } from "./config/embedded-tuning.js";
-import { buildRegistryEnvSnapshot } from "./config/env-snapshot.js";
+import {
+  buildEffectiveIndexEnvSnapshot,
+  buildRegistryEnvSnapshot,
+  buildRunningIndexEnvSnapshot,
+} from "./config/env-snapshot.js";
 import { buildAppConfig, getConfigDump, getZodConfig, parseAppConfigZod, type AppConfig } from "./config/index.js";
 import { checkExternalQdrantVersion } from "./config/qdrant-compat.js";
 import {
@@ -827,7 +832,21 @@ export async function createAppContext(config: AppConfig, hooks?: AppContextHook
     statsCache,
     composition.languageCodeVersions,
   );
-  // One reporter over both axes, built HERE — ahead of the ingest slice —
+  // Third axis: the indexing env. The resolver it takes builds what the NEXT
+  // run on that collection would use, the way `ProjectIngestFactory#forPath`
+  // builds it for a real run — so a finding means the outer env explicitly
+  // overrides the stamp, not that a code default moved. The third argument is
+  // THIS process's resolved env, built from the very config the composition
+  // above was wired from: the two enable flags are compared against that, since
+  // replay would restore a stamped flag and hide the flip that explains a
+  // payload-key family going missing. It cannot vary per collection, so it is
+  // built once, here.
+  const envDriftMonitor = new EnvDriftMonitor(
+    collectionRegistry,
+    buildEffectiveIndexEnvSnapshot,
+    buildRunningIndexEnvSnapshot(zodConfig),
+  );
+  // One reporter over every axis, built HERE — ahead of the ingest slice —
   // because every index run has to re-arm the collection it just rewrote, and
   // the slice is what carries the reporter down to IndexingOps. Process-scoped
   // like the slice's other shared handles: consumption is "has THIS server
@@ -838,7 +857,7 @@ export async function createAppContext(config: AppConfig, hooks?: AppContextHook
   // against live HEAD, read from `.git` files with no git spawn.
   const commitDriftMonitor = new CommitDriftMonitor(collectionRegistry);
   const driftReporter = new IndexDriftReporter(
-    [schemaDriftMonitor, languageVersionDriftMonitor, commitDriftMonitor],
+    [schemaDriftMonitor, languageVersionDriftMonitor, envDriftMonitor, commitDriftMonitor],
     (collectionName) => collectionRegistry.get(collectionName)?.name ?? undefined,
   );
 

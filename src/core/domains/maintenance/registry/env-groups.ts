@@ -26,86 +26,163 @@
  * uniformly (an external OLLAMA_URL beats the registry EMBEDDING_BASE_URL).
  */
 
+/**
+ * What a change to one env group invalidates in an EXISTING index.
+ *
+ * The classes are the drift remedy lattice read backwards: `chunk-set` moves
+ * chunk point ids (nothing short of `--force` is coherent), each
+ * `enrichment:<trajectory>` rewrites that trajectory's payload in place
+ * (`--force-enrichments <trajectory>`), and `runtime` describes only HOW the
+ * run executes — endpoints, pool sizes, batch sizes, timeouts, DuckDB limits.
+ * Changing a `runtime` value produces byte-identical indexed data, so it is
+ * never drift.
+ */
+export type EnvConsequence = "chunk-set" | "enrichment:git" | "enrichment:codegraph" | "runtime";
+
 /** One alias family: the canonical env name plus its deprecated spellings. */
 export interface RegistryEnvGroup {
   canonical: string;
   aliases: readonly string[];
+  /** What a change to this value invalidates in an existing index. */
+  consequence: EnvConsequence;
 }
 
 export const REGISTRY_ENV_GROUPS: readonly RegistryEnvGroup[] = [
-  // vcs (parse.ts `vcs` section)
-  { canonical: "GIT_ADAPTER", aliases: [] },
-  // embedding identity (dedicated CollectionEntry fields — see module doc)
-  { canonical: "EMBEDDING_MODEL", aliases: [] },
-  { canonical: "EMBEDDING_BASE_URL", aliases: ["OLLAMA_URL"] },
-  { canonical: "EMBEDDING_FALLBACK_URL", aliases: ["OLLAMA_FALLBACK_URL"] },
-  { canonical: "QDRANT_URL", aliases: [] },
-  { canonical: "CODEGRAPH_ENABLED", aliases: [] },
+  // vcs (parse.ts `vcs` section). Which adapter walks the history is an
+  // implementation swap — the commits it reports are the same commits.
+  { canonical: "GIT_ADAPTER", aliases: [], consequence: "runtime" },
+  // embedding identity (dedicated CollectionEntry fields — see module doc).
+  // Model / provider / dimensions decide the VECTORS, so they move the chunk
+  // set; the endpoints only decide who computes them.
+  { canonical: "EMBEDDING_MODEL", aliases: [], consequence: "chunk-set" },
+  { canonical: "EMBEDDING_BASE_URL", aliases: ["OLLAMA_URL"], consequence: "runtime" },
+  { canonical: "EMBEDDING_FALLBACK_URL", aliases: ["OLLAMA_FALLBACK_URL"], consequence: "runtime" },
+  { canonical: "QDRANT_URL", aliases: [], consequence: "runtime" },
+  { canonical: "CODEGRAPH_ENABLED", aliases: [], consequence: "enrichment:codegraph" },
   // embedding operating modes (parse.ts `embedding` section, non-secret)
-  { canonical: "EMBEDDING_PROVIDER", aliases: [] },
-  { canonical: "EMBEDDING_DIMENSIONS", aliases: [] },
-  { canonical: "EMBEDDING_DEVICE", aliases: [] },
-  { canonical: "OLLAMA_LEGACY_API", aliases: [] },
-  { canonical: "OLLAMA_NUM_GPU", aliases: [] },
-  // trajectoryGit (parse.ts `trajectoryGit` section)
-  { canonical: "TRAJECTORY_GIT_ENABLED", aliases: ["CODE_ENABLE_GIT_METADATA"] },
-  { canonical: "TRAJECTORY_GIT_LOG_MAX_AGE_MONTHS", aliases: ["GIT_LOG_MAX_AGE_MONTHS"] },
-  { canonical: "TRAJECTORY_GIT_LOG_TIMEOUT_MS", aliases: ["GIT_LOG_TIMEOUT_MS"] },
-  { canonical: "TRAJECTORY_GIT_CHUNK_CONCURRENCY", aliases: ["GIT_CHUNK_CONCURRENCY"] },
-  { canonical: "TRAJECTORY_GIT_BLAME_POOL_SIZE", aliases: [] },
-  { canonical: "TRAJECTORY_GIT_CHUNK_MAX_AGE_MONTHS", aliases: ["GIT_CHUNK_MAX_AGE_MONTHS"] },
-  { canonical: "TRAJECTORY_GIT_CHUNK_TIMEOUT_MS", aliases: ["GIT_CHUNK_TIMEOUT_MS"] },
-  { canonical: "TRAJECTORY_GIT_CHUNK_MAX_FILE_LINES", aliases: ["GIT_CHUNK_MAX_FILE_LINES"] },
-  { canonical: "TRAJECTORY_GIT_SQUASH_AWARE_SESSIONS", aliases: [] },
-  { canonical: "TRAJECTORY_GIT_SESSION_GAP_MINUTES", aliases: [] },
-  // ingest feature modes (parse.ts `ingest` section)
-  { canonical: "INGEST_ENABLE_AST", aliases: ["CODE_ENABLE_AST"] },
-  { canonical: "INGEST_ENABLE_HYBRID", aliases: ["CODE_ENABLE_HYBRID"] },
-  { canonical: "CODE_TEST_PATHS", aliases: [] },
+  { canonical: "EMBEDDING_PROVIDER", aliases: [], consequence: "chunk-set" },
+  { canonical: "EMBEDDING_DIMENSIONS", aliases: [], consequence: "chunk-set" },
+  { canonical: "EMBEDDING_DEVICE", aliases: [], consequence: "runtime" },
+  { canonical: "OLLAMA_LEGACY_API", aliases: [], consequence: "runtime" },
+  { canonical: "OLLAMA_NUM_GPU", aliases: [], consequence: "runtime" },
+  // trajectoryGit (parse.ts `trajectoryGit` section). The windows and the
+  // session model change the COMPUTED signals; the timeouts, pool sizes and
+  // concurrency only change how long computing them takes.
+  { canonical: "TRAJECTORY_GIT_ENABLED", aliases: ["CODE_ENABLE_GIT_METADATA"], consequence: "enrichment:git" },
+  {
+    canonical: "TRAJECTORY_GIT_LOG_MAX_AGE_MONTHS",
+    aliases: ["GIT_LOG_MAX_AGE_MONTHS"],
+    consequence: "enrichment:git",
+  },
+  { canonical: "TRAJECTORY_GIT_LOG_TIMEOUT_MS", aliases: ["GIT_LOG_TIMEOUT_MS"], consequence: "runtime" },
+  { canonical: "TRAJECTORY_GIT_CHUNK_CONCURRENCY", aliases: ["GIT_CHUNK_CONCURRENCY"], consequence: "runtime" },
+  { canonical: "TRAJECTORY_GIT_BLAME_POOL_SIZE", aliases: [], consequence: "runtime" },
+  {
+    canonical: "TRAJECTORY_GIT_CHUNK_MAX_AGE_MONTHS",
+    aliases: ["GIT_CHUNK_MAX_AGE_MONTHS"],
+    consequence: "enrichment:git",
+  },
+  { canonical: "TRAJECTORY_GIT_CHUNK_TIMEOUT_MS", aliases: ["GIT_CHUNK_TIMEOUT_MS"], consequence: "runtime" },
+  {
+    canonical: "TRAJECTORY_GIT_CHUNK_MAX_FILE_LINES",
+    aliases: ["GIT_CHUNK_MAX_FILE_LINES"],
+    consequence: "enrichment:git",
+  },
+  { canonical: "TRAJECTORY_GIT_SQUASH_AWARE_SESSIONS", aliases: [], consequence: "enrichment:git" },
+  { canonical: "TRAJECTORY_GIT_SESSION_GAP_MINUTES", aliases: [], consequence: "enrichment:git" },
+  // ingest feature modes (parse.ts `ingest` section). AST on/off and the test
+  // path set both decide what a chunk IS.
+  { canonical: "INGEST_ENABLE_AST", aliases: ["CODE_ENABLE_AST"], consequence: "chunk-set" },
+  { canonical: "INGEST_ENABLE_HYBRID", aliases: ["CODE_ENABLE_HYBRID"], consequence: "chunk-set" },
+  { canonical: "CODE_TEST_PATHS", aliases: [], consequence: "chunk-set" },
   // ingest.tune (parse.ts `ingestTune` section)
-  { canonical: "INGEST_PIPELINE_CONCURRENCY", aliases: ["EMBEDDING_TUNE_CONCURRENCY", "EMBEDDING_CONCURRENCY"] },
-  { canonical: "INGEST_TUNE_CHUNKER_POOL_SIZE", aliases: ["CHUNKER_POOL_SIZE"] },
-  { canonical: "INGEST_TUNE_FILE_CONCURRENCY", aliases: ["FILE_PROCESSING_CONCURRENCY"] },
-  { canonical: "INGEST_TUNE_IO_CONCURRENCY", aliases: ["MAX_IO_CONCURRENCY"] },
-  { canonical: "INGEST_TUNE_ENRICHMENT_POOL_SIZE", aliases: ["ENRICHMENT_POOL_SIZE"] },
-  // ingest chunking (parse.ts `ingest` section)
-  { canonical: "INGEST_CHUNK_SIZE", aliases: ["CODE_CHUNK_SIZE"] },
-  { canonical: "INGEST_CHUNK_OVERLAP", aliases: ["CODE_CHUNK_OVERLAP"] },
-  // codegraph (parse.ts `codegraph` section; the enabled flag is identity above)
-  { canonical: "CODEGRAPH_DB_PATH", aliases: [] },
-  { canonical: "CODEGRAPH_DB_MEMORY_LIMIT", aliases: [] },
-  { canonical: "CODEGRAPH_DB_MEMORY_LIMIT_MAX", aliases: [] },
-  { canonical: "CODEGRAPH_DB_THREADS", aliases: [] },
-  { canonical: "CODEGRAPH_CUSTOM_EXCLUDE", aliases: [] },
-  { canonical: "CODEGRAPH_AMBIGUOUS_RESOLVE_MODE", aliases: [] },
+  {
+    canonical: "INGEST_PIPELINE_CONCURRENCY",
+    aliases: ["EMBEDDING_TUNE_CONCURRENCY", "EMBEDDING_CONCURRENCY"],
+    consequence: "runtime",
+  },
+  { canonical: "INGEST_TUNE_CHUNKER_POOL_SIZE", aliases: ["CHUNKER_POOL_SIZE"], consequence: "runtime" },
+  { canonical: "INGEST_TUNE_FILE_CONCURRENCY", aliases: ["FILE_PROCESSING_CONCURRENCY"], consequence: "runtime" },
+  { canonical: "INGEST_TUNE_IO_CONCURRENCY", aliases: ["MAX_IO_CONCURRENCY"], consequence: "runtime" },
+  { canonical: "INGEST_TUNE_ENRICHMENT_POOL_SIZE", aliases: ["ENRICHMENT_POOL_SIZE"], consequence: "runtime" },
+  // ingest chunking (parse.ts `ingest` section) — boundaries, hence point ids
+  { canonical: "INGEST_CHUNK_SIZE", aliases: ["CODE_CHUNK_SIZE"], consequence: "chunk-set" },
+  { canonical: "INGEST_CHUNK_OVERLAP", aliases: ["CODE_CHUNK_OVERLAP"], consequence: "chunk-set" },
+  // codegraph (parse.ts `codegraph` section; the enabled flag is identity
+  // above). What the walk SKIPS and how an ambiguous target resolves change
+  // the edges; the DuckDB knobs are storage limits.
+  { canonical: "CODEGRAPH_DB_PATH", aliases: [], consequence: "runtime" },
+  { canonical: "CODEGRAPH_DB_MEMORY_LIMIT", aliases: [], consequence: "runtime" },
+  { canonical: "CODEGRAPH_DB_MEMORY_LIMIT_MAX", aliases: [], consequence: "runtime" },
+  { canonical: "CODEGRAPH_DB_THREADS", aliases: [], consequence: "runtime" },
+  { canonical: "CODEGRAPH_CUSTOM_EXCLUDE", aliases: [], consequence: "enrichment:codegraph" },
+  { canonical: "CODEGRAPH_AMBIGUOUS_RESOLVE_MODE", aliases: [], consequence: "enrichment:codegraph" },
   // embedding.tune (parse.ts `embeddingTune` section). CODE_BATCH_SIZE is a
   // member of TWO groups — parse.ts feeds it into both embedding batchSize
   // and qdrant upsertBatchSize.
-  { canonical: "EMBEDDING_TUNE_BATCH_SIZE", aliases: ["EMBEDDING_BATCH_SIZE", "CODE_BATCH_SIZE"] },
-  { canonical: "EMBEDDING_TUNE_MIN_BATCH_SIZE", aliases: ["MIN_BATCH_SIZE"] },
-  { canonical: "EMBEDDING_TUNE_BATCH_TIMEOUT_MS", aliases: ["BATCH_FORMATION_TIMEOUT_MS"] },
-  { canonical: "EMBEDDING_TUNE_MAX_REQUESTS_PER_MINUTE", aliases: ["EMBEDDING_MAX_REQUESTS_PER_MINUTE"] },
-  { canonical: "EMBEDDING_TUNE_RETRY_ATTEMPTS", aliases: ["EMBEDDING_RETRY_ATTEMPTS"] },
-  { canonical: "EMBEDDING_TUNE_RETRY_DELAY_MS", aliases: ["EMBEDDING_RETRY_DELAY"] },
-  { canonical: "EMBEDDING_TUNE_HEALTH_CHECK_RETRY_ATTEMPTS", aliases: ["EMBEDDING_HEALTH_CHECK_RETRY_ATTEMPTS"] },
-  { canonical: "EMBEDDING_TUNE_HEALTH_CHECK_RETRY_DELAY_MS", aliases: ["EMBEDDING_HEALTH_CHECK_RETRY_DELAY_MS"] },
-  { canonical: "EMBEDDING_TUNE_UNAVAILABLE_RETRY_MAX_WAIT_MS", aliases: ["EMBEDDING_UNAVAILABLE_RETRY_MAX_WAIT_MS"] },
+  {
+    canonical: "EMBEDDING_TUNE_BATCH_SIZE",
+    aliases: ["EMBEDDING_BATCH_SIZE", "CODE_BATCH_SIZE"],
+    consequence: "runtime",
+  },
+  { canonical: "EMBEDDING_TUNE_MIN_BATCH_SIZE", aliases: ["MIN_BATCH_SIZE"], consequence: "runtime" },
+  { canonical: "EMBEDDING_TUNE_BATCH_TIMEOUT_MS", aliases: ["BATCH_FORMATION_TIMEOUT_MS"], consequence: "runtime" },
+  {
+    canonical: "EMBEDDING_TUNE_MAX_REQUESTS_PER_MINUTE",
+    aliases: ["EMBEDDING_MAX_REQUESTS_PER_MINUTE"],
+    consequence: "runtime",
+  },
+  { canonical: "EMBEDDING_TUNE_RETRY_ATTEMPTS", aliases: ["EMBEDDING_RETRY_ATTEMPTS"], consequence: "runtime" },
+  { canonical: "EMBEDDING_TUNE_RETRY_DELAY_MS", aliases: ["EMBEDDING_RETRY_DELAY"], consequence: "runtime" },
+  {
+    canonical: "EMBEDDING_TUNE_HEALTH_CHECK_RETRY_ATTEMPTS",
+    aliases: ["EMBEDDING_HEALTH_CHECK_RETRY_ATTEMPTS"],
+    consequence: "runtime",
+  },
+  {
+    canonical: "EMBEDDING_TUNE_HEALTH_CHECK_RETRY_DELAY_MS",
+    aliases: ["EMBEDDING_HEALTH_CHECK_RETRY_DELAY_MS"],
+    consequence: "runtime",
+  },
+  {
+    canonical: "EMBEDDING_TUNE_UNAVAILABLE_RETRY_MAX_WAIT_MS",
+    aliases: ["EMBEDDING_UNAVAILABLE_RETRY_MAX_WAIT_MS"],
+    consequence: "runtime",
+  },
   {
     canonical: "EMBEDDING_TUNE_UNAVAILABLE_RETRY_BASE_DELAY_MS",
     aliases: ["EMBEDDING_UNAVAILABLE_RETRY_BASE_DELAY_MS"],
+    consequence: "runtime",
   },
-  // qdrantTune (parse.ts `qdrantTune` section)
-  { canonical: "QDRANT_TUNE_UPSERT_BATCH_SIZE", aliases: ["QDRANT_UPSERT_BATCH_SIZE", "CODE_BATCH_SIZE"] },
-  { canonical: "QDRANT_TUNE_UPSERT_FLUSH_INTERVAL_MS", aliases: ["QDRANT_FLUSH_INTERVAL_MS"] },
-  { canonical: "QDRANT_TUNE_UPSERT_ORDERING", aliases: ["QDRANT_BATCH_ORDERING"] },
-  { canonical: "QDRANT_TUNE_DELETE_BATCH_SIZE", aliases: ["QDRANT_DELETE_BATCH_SIZE", "DELETE_BATCH_SIZE"] },
-  { canonical: "QDRANT_TUNE_DELETE_CONCURRENCY", aliases: ["QDRANT_DELETE_CONCURRENCY", "DELETE_CONCURRENCY"] },
-  { canonical: "QDRANT_TUNE_DELETE_FLUSH_TIMEOUT_MS", aliases: ["DELETE_FLUSH_TIMEOUT_MS"] },
-  { canonical: "QDRANT_QUANTIZATION_SCALAR", aliases: [] },
-  { canonical: "QDRANT_TURBO_QUANT", aliases: [] },
-  { canonical: "QDRANT_MAX_RESIDENT_MEMORY_PERCENT", aliases: [] },
-  { canonical: "QDRANT_SEARCH_MAX_BATCHSIZE", aliases: [] },
-  { canonical: "QDRANT_LOW_MEMORY", aliases: [] },
+  // qdrantTune (parse.ts `qdrantTune` section) — write path and storage
+  // settings only; quantization is applied in place on the live collection.
+  {
+    canonical: "QDRANT_TUNE_UPSERT_BATCH_SIZE",
+    aliases: ["QDRANT_UPSERT_BATCH_SIZE", "CODE_BATCH_SIZE"],
+    consequence: "runtime",
+  },
+  {
+    canonical: "QDRANT_TUNE_UPSERT_FLUSH_INTERVAL_MS",
+    aliases: ["QDRANT_FLUSH_INTERVAL_MS"],
+    consequence: "runtime",
+  },
+  { canonical: "QDRANT_TUNE_UPSERT_ORDERING", aliases: ["QDRANT_BATCH_ORDERING"], consequence: "runtime" },
+  {
+    canonical: "QDRANT_TUNE_DELETE_BATCH_SIZE",
+    aliases: ["QDRANT_DELETE_BATCH_SIZE", "DELETE_BATCH_SIZE"],
+    consequence: "runtime",
+  },
+  {
+    canonical: "QDRANT_TUNE_DELETE_CONCURRENCY",
+    aliases: ["QDRANT_DELETE_CONCURRENCY", "DELETE_CONCURRENCY"],
+    consequence: "runtime",
+  },
+  { canonical: "QDRANT_TUNE_DELETE_FLUSH_TIMEOUT_MS", aliases: ["DELETE_FLUSH_TIMEOUT_MS"], consequence: "runtime" },
+  { canonical: "QDRANT_QUANTIZATION_SCALAR", aliases: [], consequence: "runtime" },
+  { canonical: "QDRANT_TURBO_QUANT", aliases: [], consequence: "runtime" },
+  { canonical: "QDRANT_MAX_RESIDENT_MEMORY_PERCENT", aliases: [], consequence: "runtime" },
+  { canonical: "QDRANT_SEARCH_MAX_BATCHSIZE", aliases: [], consequence: "runtime" },
+  { canonical: "QDRANT_LOW_MEMORY", aliases: [], consequence: "runtime" },
 ];
 
 /**

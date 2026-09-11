@@ -24,9 +24,22 @@
  *
  * Injected into the ingest pipeline via DI (like `teaRagsVersion`) and
  * written by `recordRegistryEntry` on every successful index.
+ *
+ * The two functions at the bottom of this file are the READ-side twins: the
+ * same snapshot vocabulary, but for runs that have not happened.
+ * `buildEffectiveIndexEnvSnapshot` is what a stamp resolves to under the
+ * current process env; `buildRunningIndexEnvSnapshot` is what THIS process
+ * resolved on its own, with no replay. The env drift axis diffs the stamp
+ * against the first, and the two enable flags against the second.
  */
 
 import type { EmbeddingConfig, QdrantTuneConfig, TrajectoryGitConfig, VcsConfig } from "../../core/contracts/index.js";
+// Deep import, not the registry barrel: `env-replay.js` depends on nothing but
+// the group table, while the barrel reaches the qdrant-daemon and vcs adapters
+// through `env-resolution.js`.
+import { replayRegistryEnv } from "../../core/domains/maintenance/registry/env-replay.js";
+import { isDebug } from "../../core/infra/runtime.js";
+import { parseAppConfigZod } from "./parse.js";
 import type { CodegraphConfig, IngestConfig } from "./schemas.js";
 
 export interface RegistryEnvSnapshotSource {
@@ -115,4 +128,68 @@ export function buildRegistryEnvSnapshot(config: RegistryEnvSnapshotSource): Rec
   put("QDRANT_LOW_MEMORY", qdrantTune.lowMemory);
 
   return snapshot;
+}
+
+/**
+ * What a parsed config resolves the indexing env to, as a snapshot — the
+ * registry snapshot plus the two identity keys it deliberately omits.
+ *
+ * `buildRegistryEnvSnapshot` skips every DEDICATED_FIELD_ENV_KEY, because those
+ * live in dedicated `CollectionEntry` fields rather than the `env` map. For
+ * PERSISTENCE that is right; for COMPARISON it is not, because it would leave a
+ * flipped `CODEGRAPH_ENABLED` — the drift the env axis exists to attribute —
+ * missing from both sides of the diff. Only the two keys with a non-runtime
+ * consequence are re-attached; the three URL-shaped ones are `runtime` and
+ * would be skipped anyway.
+ *
+ * Called with THIS process's own config (`getZodConfig()`), it is the running
+ * composition's resolved env: what the descriptors the reading process declares
+ * were actually built from, with no registry replay anywhere in it. That is the
+ * side the two enable flags are compared against.
+ */
+export function buildRunningIndexEnvSnapshot(config: RegistryEnvSnapshotSource): Readonly<Record<string, string>> {
+  return {
+    ...buildRegistryEnvSnapshot(config),
+    CODEGRAPH_ENABLED: String(config.codegraph.enabled),
+    ...(config.embedding.model ? { EMBEDDING_MODEL: config.embedding.model } : {}),
+  };
+}
+
+/**
+ * The canonical env snapshot the NEXT index run on `collectionName` would
+ * produce, given the snapshot its last run stamped (`EnvDriftMonitor`, spec
+ * decision 6).
+ *
+ * The same resolution `ProjectIngestFactory#forPath` performs before it builds
+ * an ingest facade — outer env > stored registry env > code default — expressed
+ * as a snapshot so it can be diffed against the stamp key for key. It lives
+ * here rather than in the monitor because `core/` must not import `bootstrap/`,
+ * and because this is where the snapshot vocabulary already lives. Replay
+ * writes onto a COPY of `ambient`; `process.env` is never mutated.
+ *
+ * An unparseable result is no claim, not a throw. A stamp can carry a value the
+ * current build no longer accepts (a retired enum member), and this runs on the
+ * read path behind a search response, where a diagnostic must never fail the
+ * query. It is not silent, though: a swallowed parse disables the whole env
+ * axis for that collection, which is indistinguishable from "nothing drifted",
+ * so the reason goes to the debug log under the collection's own name. The
+ * stamp itself is not tolerated anywhere that matters — the next index run
+ * parses the same env and refuses to start.
+ */
+export function buildEffectiveIndexEnvSnapshot(
+  stored: Readonly<Record<string, string>>,
+  collectionName: string,
+  ambient: NodeJS.ProcessEnv = process.env,
+): Readonly<Record<string, string>> {
+  try {
+    const env: NodeJS.ProcessEnv = { ...ambient };
+    replayRegistryEnv(stored, env);
+    return buildRunningIndexEnvSnapshot(parseAppConfigZod(env));
+  } catch (error) {
+    if (isDebug()) {
+      const reason = error instanceof Error ? error.message : String(error);
+      console.error(`[Drift] env axis skipped for ${collectionName}: its env stamp does not parse here — ${reason}`);
+    }
+    return {};
+  }
 }
