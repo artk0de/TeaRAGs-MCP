@@ -102,6 +102,17 @@ import {
   type PyRecallSplit,
 } from "./lib/py-oracle-core.js";
 import {
+  applyTiebreak,
+  isDisagreementRow,
+  isOracleSelfReference,
+  planTiebreakAsk,
+  tallyPyPrecision,
+  tallyPyTiebroken,
+  type PyPrecisionSplit,
+  type PyTiebreakCounts,
+  type PyTiebrokenSplit,
+} from "./lib/py-oracle-tiebreak.js";
+import {
   buildCorpusExclusionFilter,
   buildSymbolDefs,
   collectSourceFiles,
@@ -870,6 +881,71 @@ function buildRow(
 }
 
 /**
+ * The THIRD VOTE (bd tea-rags-mcp-1v12o.1.4, E5.0d).
+ *
+ * Every row where the chain and jedi disagree goes to pyright, and a fixed rule
+ * re-scores it into `verdictTiebroken`. The stage writes nothing the legacy or
+ * merged columns read, so a run with it on publishes the same two denominators
+ * it always published plus a third.
+ *
+ * It runs AFTER the merge and asks about a population the merge defines, the
+ * same shape `askOracles` uses for the repair: whole files, so the per-line
+ * callee claiming inside `askOracle` stays what a full run would have produced.
+ */
+export async function runTiebreakStage(
+  rows: readonly PyOracleRow[],
+  sites: readonly PyChainSite[],
+  options: {
+    corpusRoot: string;
+    lspArgv: string[];
+    venvPython: string | null;
+    roots: readonly string[];
+    workers: number;
+    pythonVersion?: string;
+    quiet?: boolean;
+  },
+): Promise<{ rows: PyOracleRow[]; counts: PyTiebreakCounts }> {
+  const started = Date.now();
+  const tiebreakSites = sites.map((site) => ({
+    relPath: site.relPath,
+    startLine: site.call.startLine,
+    callerSymbolId: site.ctx.callerSymbolId,
+  }));
+  // A self-reference row is decided off the two answers already in hand, so it
+  // never costs pyright a question.
+  const plan = planTiebreakAsk(
+    rows,
+    tiebreakSites,
+    (row, index) => isDisagreementRow(row) && !isOracleSelfReference(row, tiebreakSites[index]?.callerSymbolId),
+  );
+  if (options.quiet !== true) {
+    process.stderr.write(
+      `tiebreak: ${String(plan.arbitrated.length)} disagreement rows in ${String(plan.files.length)} files` +
+        ` — asking pyright about ${String(plan.sent.length)} sites\n`,
+    );
+  }
+  const asked = plan.sent.flatMap((index) => {
+    const site = sites[index];
+    return site === undefined ? [] : [site];
+  });
+  const replies =
+    asked.length === 0
+      ? new Map<string, PyOracleFileReply>()
+      : await askOracle(asked, {
+          corpusRoot: options.corpusRoot,
+          python: options.lspArgv,
+          venvPython: options.venvPython,
+          roots: options.roots,
+          workers: options.workers,
+          pythonVersion: options.pythonVersion,
+          columns: true,
+        });
+  const applied = applyTiebreak(rows, tiebreakSites, plan, replies);
+  applied.counts.wallMs = Date.now() - started;
+  return applied;
+}
+
+/**
  * jedi's launcher. `uv run --no-project` keeps jedi's environment out of the
  * corpus's, which is what lets one oracle build serve three interpreter
  * versions.
@@ -918,6 +994,14 @@ export interface PyOracleCliOptions {
    * is reported as its own population (spec D5, bd tea-rags-mcp-w205u).
    */
   includeTests: boolean;
+  /**
+   * Run the THIRD VOTE (bd tea-rags-mcp-1v12o.1.4, E5.0d): pyright arbitrates
+   * every chain-vs-jedi disagreement and a fixed rule re-scores the row into a
+   * THIRD denominator. ON by default under `--oracle merged`, where the second
+   * engine is already provisioned; `--no-tiebreak` reproduces the pre-E5.0d
+   * output byte for byte and is what the identity gate diffs against.
+   */
+  tiebreak: boolean;
   limit: number;
   samples: number;
   seed: number;
@@ -1004,6 +1088,7 @@ export function parseArgs(argv: readonly string[]): PyOracleCliOptions {
   const interpreter =
     read("--python") ?? manifest?.oraclePython ?? liftToOracleFloor(manifest?.requiresPython.replace(">=", ""));
   const corpusRoot = manifest ? manifest.path : resolvePath(corpusArg);
+  const oracle = parseOracleSelection(read("--oracle"));
   return {
     corpusRoot,
     corpusName: manifest?.name ?? corpusArg,
@@ -1012,9 +1097,13 @@ export function parseArgs(argv: readonly string[]): PyOracleCliOptions {
     pythonArgv: JEDI_LAUNCHER(interpreter),
     lspArgv: LSP_LAUNCHER(),
     oraclePythonVersion: interpreter,
-    oracle: parseOracleSelection(read("--oracle")),
+    oracle,
     dispatch: !argv.includes("--no-dispatch"),
     includeTests: argv.includes("--include-tests"),
+    // Default ON only where the second engine is already part of the run.
+    // `--no-tiebreak` wins over `--tiebreak`: a gate run must be able to turn
+    // the stage off without knowing what the other flags asked for.
+    tiebreak: argv.includes("--no-tiebreak") ? false : argv.includes("--tiebreak") || oracle === "merged",
     limit: Number(read("--limit") ?? Number.MAX_SAFE_INTEGER),
     samples: Number(read("--samples") ?? 25),
     seed: Number(read("--seed") ?? 20260908),
@@ -1057,6 +1146,118 @@ export function formatRecallSplit(splits: readonly PyRecallSplit[]): string {
     );
   }
   return lines.join("\n");
+}
+
+/**
+ * The same block with the THIRD denominator appended (E5.0d).
+ *
+ * The legacy and merged columns carry the same values `formatRecallSplit`
+ * prints, in the same order and the same widths, so the two blocks diff clean
+ * on everything but the added columns — `--no-tiebreak` prints the two-column
+ * block itself and is the byte-identity gate.
+ *
+ * `withheld` is printed rather than inferred: the tiebroken denominator SHRINKS
+ * where the third vote could not decide, and a recall that rose because rows
+ * left the denominator must never be readable as rows that started matching.
+ */
+export function formatRecallTriple(splits: readonly PyRecallSplit[], tiebroken: readonly PyTiebrokenSplit[]): string {
+  const byLabel = new Map(tiebroken.map((split) => [split.label, split]));
+  const width = Math.max(12, ...splits.map((split) => split.label.length));
+  const columns = ["recallLegacy", "nLegacy", "recallMerged", "nMerged", "+2ndEngine", "recallTieb", "nTiebroken"];
+  const header = [
+    "receiverKind".padEnd(width),
+    ...columns.map((column) => column.padStart(13)),
+    "withheld".padStart(9),
+  ].join(" ");
+  const lines = ["RECALL — THREE DENOMINATORS (match / (match+fileOnly+wrongFile+missed))", "-".repeat(header.length)];
+  lines.push(header, "-".repeat(header.length));
+  if (splits.length === 0) return [...lines, "(no scored call sites)"].join("\n");
+  for (const split of splits) {
+    const third = byLabel.get(split.label);
+    lines.push(
+      [
+        split.label.padEnd(width),
+        split.recallLegacy.toFixed(3).padStart(13),
+        String(split.nLegacy).padStart(13),
+        split.recallMerged.toFixed(3).padStart(13),
+        String(split.nMerged).padStart(13),
+        String(split.nSecondEngine).padStart(13),
+        (third?.recallTiebroken ?? 0).toFixed(3).padStart(13),
+        String(third?.nTiebroken ?? 0).padStart(13),
+        String(third?.withheldTiebroken ?? 0).padStart(9),
+      ].join(" "),
+    );
+  }
+  return lines.join("\n");
+}
+
+/**
+ * Precision miss under all three denominators — the number E5+ is measured on.
+ *
+ * `(phantom + wrongFile) / edges`, which is the ratio D9's audit adjusted by
+ * hand. Only the numerator moves under the tiebroken column: a row the third
+ * vote could not judge still emitted its edge, so taking it out of the
+ * denominator would flatter the rate for the wrong reason.
+ */
+export function formatPrecisionBlock(splits: readonly PyPrecisionSplit[]): string {
+  const width = Math.max(12, ...splits.map((split) => split.label.length));
+  const columns = [
+    "edgesLegacy",
+    "phantomLeg",
+    "wrongFileLeg",
+    "missLegacy%",
+    "edgesMerged",
+    "phantomMrg",
+    "wrongFileMrg",
+    "missMerged%",
+    "phantomTieb",
+    "wrongFileTieb",
+    "missTieb%",
+  ];
+  const header = ["label".padEnd(width), ...columns.map((column) => column.padStart(13))].join(" ");
+  const lines = [
+    "PRECISION MISS — THREE DENOMINATORS ((phantom+wrongFile)/edges)",
+    "-".repeat(header.length),
+    header,
+    "-".repeat(header.length),
+  ];
+  if (splits.length === 0) return [...lines, "(no edges)"].join("\n");
+  const percent = (rate: number): string => `${(rate * 100).toFixed(3)}%`;
+  for (const split of splits) {
+    lines.push(
+      [
+        split.label.padEnd(width),
+        String(split.edgesLegacy).padStart(13),
+        String(split.phantomLegacy).padStart(13),
+        String(split.wrongFileLegacy).padStart(13),
+        percent(split.precisionMissLegacy).padStart(13),
+        String(split.edgesMerged).padStart(13),
+        String(split.phantomMerged).padStart(13),
+        String(split.wrongFileMerged).padStart(13),
+        percent(split.precisionMissMerged).padStart(13),
+        String(split.phantomTiebroken).padStart(13),
+        String(split.wrongFileTiebroken).padStart(13),
+        percent(split.precisionMissTiebroken).padStart(13),
+      ].join(" "),
+    );
+  }
+  return lines.join("\n");
+}
+
+/** What the third vote did, whole. A re-score nobody can count is not a measurement. */
+export function formatTiebreakCounts(counts: PyTiebreakCounts): string {
+  const selfByVerdict = Object.entries(counts.selfReferenceByVerdict)
+    .sort(([left], [right]) => left.localeCompare(right))
+    .map(([verdict, count]) => `${verdict} ${String(count)}`)
+    .join(", ");
+  return [
+    "TIEBREAK (third vote — pyright arbitrates every chain-vs-jedi disagreement)",
+    `  disagreement rows ${String(counts.disagreementSites)} in ${String(counts.filesAsked)} files` +
+      ` · sites asked ${String(counts.sitesAsked)} · wall ${(counts.wallMs / 1000).toFixed(1)}s`,
+    `  agreesWithChain ${String(counts.agreesWithChain)} · agreesWithJedi ${String(counts.agreesWithJedi)}` +
+      ` · third ${String(counts.third)} · noAnswer ${String(counts.noAnswer)}` +
+      ` · selfReference ${String(counts.selfReference)}${selfByVerdict === "" ? "" : ` (${selfByVerdict})`}`,
+  ].join("\n");
 }
 
 /**
@@ -1140,7 +1341,21 @@ async function main(): Promise<void> {
     selection: options.oracle,
     quiet: options.quiet,
   });
-  const rows = buildRows(walk.sites, replies);
+  const merged = buildRows(walk.sites, replies);
+  // The third vote, and the ONLY place it may write: every column below reads
+  // `verdict`, which the stage never touches (bd tea-rags-mcp-1v12o.1.4).
+  const tiebreak = options.tiebreak
+    ? await runTiebreakStage(merged, walk.sites, {
+        corpusRoot: options.corpusRoot,
+        lspArgv: options.lspArgv,
+        venvPython: options.venvPython,
+        roots: options.roots,
+        workers: options.workers,
+        pythonVersion: options.oraclePythonVersion,
+        quiet: options.quiet,
+      })
+    : null;
+  const rows = tiebreak === null ? merged : tiebreak.rows;
 
   // The three published tables stay on the JEDI denominator whatever the
   // selection, so seam-4 / seam-5 / E3's records stay reproducible from them.
@@ -1162,6 +1377,10 @@ async function main(): Promise<void> {
   const byAnsweredByMerged = tallyPyRows(rows, (row) => [row.answeredBy]);
   const byCategoryMerged = tallyPyRows(rows, (row) => row.categories);
   const recallByReceiver = tallyPyRecall(rows, (row) => [row.receiverKind]);
+  const tiebrokenByReceiver: PyTiebrokenSplit[] =
+    tiebreak === null ? [] : tallyPyTiebroken(rows, (row) => [row.receiverKind]);
+  const precisionSplits: PyPrecisionSplit[] =
+    tiebreak === null ? [] : tallyPyPrecision(rows, (row) => ["(corpus)", row.receiverKind]);
   const fanByReceiver = tallyPyFan(rows, (row) => [row.receiverKind]);
   const fanCorpus = tallyPyFan(rows, () => ["(corpus)"]);
   const dispatchGap = tallyPyDispatchGap(rows);
@@ -1209,9 +1428,14 @@ async function main(): Promise<void> {
     "",
     formatOracleTable("BY MISSED-SHAPE CATEGORY — merged denominator", byCategoryMerged),
     "",
-    formatRecallSplit(recallByReceiver),
+    // Two denominators when the stage is off — byte-identical to every run
+    // before E5.0d — and three when it is on.
+    tiebreak === null ? formatRecallSplit(recallByReceiver) : formatRecallTriple(recallByReceiver, tiebrokenByReceiver),
     "",
   ];
+  if (tiebreak !== null) {
+    out.push(formatPrecisionBlock(precisionSplits), "", formatTiebreakCounts(tiebreak.counts), "");
+  }
   if (options.dispatch) {
     out.push(
       formatFanBlock([...fanCorpus, ...fanByReceiver], walk, FAN_LABEL_FLOOR),
@@ -1277,6 +1501,11 @@ async function main(): Promise<void> {
       byAnsweredByMerged,
       byCategoryMerged,
       recallByReceiver,
+      // Absent as a group when the stage did not run, so a `--no-tiebreak`
+      // payload diffs clean against every pre-E5.0d dump.
+      ...(tiebreak === null
+        ? {}
+        : { tiebreak: tiebreak.counts, tiebrokenByReceiver, precisionSplits, tiebreakEnabled: true }),
       samples: Object.fromEntries(
         (["missed", "wrongFile", "phantom", "skippedInProject"] as const).map((verdict) => [
           verdict,

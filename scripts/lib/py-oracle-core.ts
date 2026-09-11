@@ -24,6 +24,34 @@ import {
 
 export type PyOracleVerdict = OracleVerdict | "skippedInProject" | "parseFailed" | "oracleNonCallable";
 
+/**
+ * How the THIRD VOTE landed on a row (bd tea-rags-mcp-1v12o.1.4, E5.0d).
+ *
+ * `notAsked` is every row outside the disagreement set — pyright was never
+ * spoken to about it. `selfReference` is the parameter-declaration shape, which
+ * is decided off the two answers already in hand and costs no third question.
+ * The rule that produces these lives in `py-oracle-tiebreak.ts`; the vocabulary
+ * lives here, beside the verdict it re-scores.
+ */
+export type PyTiebreakClass =
+  | "agreesWithChain"
+  | "agreesWithJedi"
+  | "third"
+  | "noAnswer"
+  | "selfReference"
+  | "notAsked";
+
+/**
+ * The verdict under the TIEBROKEN denominator.
+ *
+ * Three values the 1:1 taxonomy has no room for, all withheld from the rates:
+ * `undecidable` (pyright named a third symbol, or could not answer),
+ * `oracleSelfReference` (an engine resolved the caller's own symbol),
+ * `oracleWrongExternal` (pyright backed the chain's silence on a `missed` row,
+ * so there is no edge to score and the oracle's target was the error).
+ */
+export type PyTiebrokenVerdict = PyOracleVerdict | "undecidable" | "oracleSelfReference" | "oracleWrongExternal";
+
 export type PyTargetOrigin =
   | "project"
   | "generatedInRepo"
@@ -261,6 +289,18 @@ export interface PyOracleRow {
    * call site.
    */
   legacy?: PyOracleRow;
+  /**
+   * The THIRD VOTE's four fields (bd tea-rags-mcp-1v12o.1.4, E5.0d). ABSENT as
+   * a set whenever the tiebreak stage did not run — `--no-tiebreak`, and every
+   * driver older than E5.0d — which is what keeps the legacy and merged columns
+   * and their dumps byte-identical to a run without the stage. Nothing that
+   * computes `recallLegacy` or `recallMerged` may read them.
+   */
+  tiebreak?: PyTiebreakClass;
+  verdictTiebroken?: PyTiebrokenVerdict;
+  /** pyright's own in-project target, `null` where it answered external or not at all. */
+  pyrightTargetRelPath?: string | null;
+  pyrightTargetSymbolId?: string | null;
 }
 
 /**
@@ -533,7 +573,7 @@ function emptyTally(label: string): OracleTally {
  * an answer nothing published. Those rows are scored in the FAN columns instead
  * (D3), and the field is absent entirely under `--no-dispatch`.
  */
-function isWithheldFromRates(row: PyOracleRow): boolean {
+export function isWithheldFromRates(row: PyOracleRow): boolean {
   return (
     row.dispatch?.kind === "fan" ||
     row.dispatch?.kind === "ambiguous" ||
