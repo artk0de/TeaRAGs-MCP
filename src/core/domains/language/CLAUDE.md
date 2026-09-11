@@ -314,13 +314,25 @@
   is the real control, not the guard.
 - **The version pins close the other side.**
   `tests/core/domains/language/capability/version-pins.test.ts` hashes (sha256)
-  every `.ts` under a language's `walker/`, `resolver/`, `dsl/` (axis `walker`)
-  and `chunking/` + its chunker hooks (axis `chunking`) and pins the digest to
-  `versions.<axis>` in `version-pins.json`. Any change under those paths — a
-  comment included — turns the test red until you either bump the axis (output
-  moved) or re-pin (`npm run pin:lang-versions`, byte-identical claim,
-  `Versions: unchanged — <why>` in the commit body). `codegraphSchema` has no
-  digest; it is judged by hand. Sources per axis: `capability/version-axes.ts`.
+  every non-test `.ts` under a language's directory EXCEPT `chunking/**` and
+  `capability.ts` (axis `walker` — so `kernel.ts`, `index.ts`,
+  `python/vocabulary/`, `ruby/schema|type-ref|codegraph-exclusions|gemfile` are
+  all in it), and `chunking/` + its chunker hooks (axis `chunking`), and pins
+  the digest to `versions.<axis>` in `version-pins.json`. Any change under those
+  paths — a comment included — turns the test red until you either bump the axis
+  (output moved) or re-pin (`npm run pin:lang-versions`, byte-identical claim,
+  `Versions: unchanged — <why>` in the commit body). `capability.ts` is excluded
+  because it HOLDS the numbers: digesting it would make every bump invalidate
+  its own pin. `codegraphSchema` has no digest; it is judged by hand. Sources
+  per axis: `capability/version-axes.ts`.
+- **`kernel/capability.ts` is the version of everything shared.**
+  `sharedVersions` stamps the pseudo-language `*`: `walker` covers `kernel/**`
+  (minus this file, which holds the numbers), `resolver-chain.ts`,
+  `cone-dispatch.ts` and the codegraph `resolution-runner.ts`; `chunking` covers
+  the shared chunker files and `infra/symbolid/**`. A kernel change that alters
+  resolution output bumps `sharedVersions.walker`, not eight per-language
+  walkers; the pin test covers the `*` sources too. Rule:
+  `.claude/rules/index-format-versions.md`.
 
 ## Boundaries
 

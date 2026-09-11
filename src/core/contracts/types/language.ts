@@ -716,6 +716,18 @@ export interface AstHookDescriptor {
 }
 
 /**
+ * Pseudo-language whose stamp vouches for every language at once — the key the
+ * shared kernel, resolver chain and chunker sources are stamped under in
+ * `CollectionEntry.languageVersions`.
+ *
+ * Vocabulary rather than policy, which is why it sits in contracts: the
+ * language domain declares what its numbers ARE
+ * (`domains/language/kernel/capability.ts`, which re-exports this) and the
+ * maintenance domain compares them, and those two never import each other.
+ */
+export const SHARED_LANGUAGE = "*";
+
+/**
  * The hand-bumped half of {@link LanguageCodeVersions}: which revision of OUR
  * per-language machinery produced a language's indexed data. Declared on the
  * capability descriptor, bumped by hand — a version, never a measurement
