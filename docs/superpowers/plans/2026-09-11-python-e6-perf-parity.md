@@ -1254,6 +1254,42 @@ snapshot near a worker heap limit), which the reindex permission gate blocked in
 this session. That is the open E6 item; the walker-side verdict stands as E6.1
 recorded it.
 
+#### Attribution runs — 2026-09-12, instrumented ugnest, spike reverted
+
+The permission gate was lifted for ugnest, so four more recomputes ran with
+per-phase `rss / heapUsed / heapTotal / external` appended to every PHASE line
+by an uncommitted spike in `debug-logger.ts`. Under `DEBUG` the worker's stderr
+goes to `~/.tea-rags/logs/worker-debug-*.log`, not to the CLI's stdout — which
+is where the earlier "no phase lines" came from.
+
+| run                | pool | rss at RECOMPUTE_SCROLL | rss at ALL_COMPLETE | thread heap used / total | sampler worker peak | live pass 1 |
+| ------------------ | ---- | ----------------------- | ------------------- | ------------------------ | ------------------- | ----------- |
+| baseline (E6.0c)   | 4    | —                       | —                   | —                        | 903 MB              | 1.10 s      |
+| instrumented       | 4    | 327 MB                  | 647 MB              | 102 → 81 / 205 MB        | 897 MB              | —           |
+| single thread      | 1    | 212 MB                  | 403 MB              | 89 → 73 / 139 → 80 MB    | 672 MB              | —           |
+| single thread + gc | 1    | 297 MB                  | 426 MB              | 82 → 103 / 204 MB        | 633 MB              | 2.18 s      |
+
+Reading: the enrichment thread's OWN heap never exceeds ~100 MB used across the
+codegraph phase, on any run. The process grows 190–320 MB during that phase
+anyway, and three quarters of the pool-4 baseline over pool-1 (327 vs 212 MB)
+plus the completion gap (647 vs 403 MB) is the other three isolates: the pass-1
+fan-out parses in every thread, so every thread carries its own transient trees
+and committed-heap slack. The `gc()`-every-32-files spike (obtained via
+`v8.setFlagsFromString` + `vm.runInNewContext`, because `--expose-gc` is an
+invalid Worker `execArgv` flag — `ERR_WORKER_INVALID_EXEC_ARGV`) bought 62 MB
+per phase for a doubled pass 1 and is rejected. The thread heap ceiling is 6,144
+MB (`ENRICHMENT_WORKER_MEMORY_LIMIT_MB`, sized for taxdome's `ts.Program`),
+which is why V8 collects lazily and native tree-sitter trees wait for
+finalization; lowering it globally is not an option. The one lever with a
+measurable, cost-free effect on small projects is the pool size — filed as
+E6.2a. Python's own share of the live worker peak is small; the walker fixes of
+E6.1 remain the win, and the residual is pipeline machinery, language-blind.
+
+Also seen on every run from the branch build: `codegraph daemon build mismatch`
+— the running DuckDB daemon is `main`'s build, so the worktree client spawns its
+own (the 125–148 MB "child" in the sampler). It clears once `main` is rebuilt
+after the merge.
+
 ---
 
 ## Task E6.0b — the offline matrix
