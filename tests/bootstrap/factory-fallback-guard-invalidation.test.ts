@@ -221,6 +221,9 @@ describe("Ollama failover invalidates the model guard (bd tea-rags-mcp-g5nmi)", 
     vi.stubGlobal("fetch", vi.fn(fakeFetch));
     // Only the interval: the primary probe is the one clock this test drives.
     // Bottleneck schedules the canary embed on setTimeout, which must stay real.
+    // If the limiter ever moves to setInterval, widen `toFake` (and drive the
+    // extra clock) — never delete this test; it is the only cover the failover
+    // → invalidateAll wiring in factory.ts has.
     vi.useFakeTimers({ toFake: ["setInterval", "clearInterval"] });
   });
 

@@ -42,6 +42,8 @@ function failureDetail(error: unknown): string {
  * its commit, so a dirty tree is not the commit it names: the sha then carries a
  * `-dirty` suffix (`git status --porcelain`, untracked files included) and the
  * summary records a revision nobody can reconstruct rather than one that lies.
+ * A status call that fails is treated as dirty too: a false-dirty costs one
+ * suffix, a false-clean is exactly the lie the suffix exists to prevent.
  *
  * Deliberately not the git adapter's `getHead(repoRoot)`
  * (`src/core/adapters/vcs/git/git-cli/client.ts`): that one is async, throws on
@@ -63,5 +65,5 @@ export function resolveCheckoutCommit(
   }
 
   const status = git(root, ["status", "--porcelain"], warn);
-  return status === null || status === "" ? head : `${head}-dirty`;
+  return status === "" ? head : `${head}-dirty`;
 }

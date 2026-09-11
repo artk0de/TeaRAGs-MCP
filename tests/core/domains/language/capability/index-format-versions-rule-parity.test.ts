@@ -45,7 +45,16 @@ function ruleGlobs(): string[] {
   expect(frontmatter, `${RULE_PATH} has no YAML frontmatter — a rule without one is invisible to the loader`).not.toBe(
     null,
   );
-  return [...(frontmatter?.[1] ?? "").matchAll(/^\s*-\s*"([^"]+)"\s*$/gm)].map((m) => m[1]);
+  const body = frontmatter?.[1] ?? "";
+  const globs = [...body.matchAll(/^\s*-\s*"([^"]+)"\s*$/gm)].map((m) => m[1]);
+  // The matcher only understands double-quoted entries. An unquoted glob would
+  // drop out silently and turn the checks below into a false green for the
+  // files it covers, so the parsed count must equal the list's line count.
+  const listLines = body.split("\n").filter((line) => /^\s*-\s/.test(line)).length;
+  expect(globs.length, `${RULE_PATH}: ${listLines} list entries but ${globs.length} parsed — quote every glob`).toBe(
+    listLines,
+  );
+  return globs;
 }
 
 /**
