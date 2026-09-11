@@ -167,6 +167,22 @@
   module scope or an import that maps into the project, and nothing wider.
   `PYTHON_CLASS_HEAD` still refuses a bare lowercase NAME — that is E4.1.3's
   falsified population, and only a CALL with a recorded return qualifies.
+- **A namesake short name is narrowed by the binding for THAT name, through one
+  funnel.** `pythonImportBoundFile` (`strategies/shared.ts`) takes the candidate
+  files a short name is declared in and keeps the one the caller's own import
+  binding maps to — `mapImportToFile`, then one `resolveExportedName` /
+  `resolveExportedModule` hop; no binding and the caller's own file declares the
+  name, that file; anything else refuses. Both halves that used to refuse these
+  rows now ask it: `resolveTypeFile` BEFORE its import-SET filter, which
+  conflates "a file this caller imports something from" with "the file this
+  caller's binding names" and so kept both polar `Subscription` candidates, and
+  `pythonCallBindingType`'s bare-callee arm, which had no narrowing at all. The
+  set-filter stays as the fallback, so a row it answers with no binding in sight
+  still resolves to the same file. The call-result arm needs a SECOND guard the
+  funnel cannot give it: `structuredReturnTypes` keys a top-level `def` by its
+  bare name and absorbs it run-global first-write-wins, so one of polar's six
+  `get_client` annotations speaks for all of them — the class the fact names
+  must be declared in the file the binding narrowed to, or the arm refuses.
 - **A module-alias seed asks the HEAD's own module, not the caller's imports.**
   `pythonModuleAliasSeed` keeps its original arm (the caller imports the module
   AND `resolveTypeFile` pins the class) and falls back to one step wider: map
