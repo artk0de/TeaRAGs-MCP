@@ -139,6 +139,14 @@ export function extractFromPythonFile(input: PythonExtractInput): FileExtraction
   // that is not a def — a class, a module — simply finds nothing, the same
   // absence Ruby leaves on a non-method.
   const defSignatures = collectPythonDefSignatures(input.tree.rootNode);
+  // bd tea-rags-mcp-1v12o.2.4 (E6.1) — the same once-per-file / slice-per-chunk
+  // shape as `callResultBindings` above, for the SAME reason: the collector this
+  // replaces walked the whole file tree once per chunk, so netbox's
+  // `dcim/tests/test_filtersets.py` (7.7k lines, 620 chunks) paid 620 full
+  // traversals and 14.1 s in that one function.
+  const localBindingSites = trackTypes
+    ? collectPythonLocalBindingSites(input.tree.rootNode)
+    : ([] as PythonLocalBindingSite[]);
   const byChunk: ChunkExtraction[] = input.chunks.map((c, chunkIndex) => {
     const base: ChunkExtraction = {
       symbolId: c.symbolId,
@@ -153,7 +161,7 @@ export function extractFromPythonFile(input: PythonExtractInput): FileExtraction
       if (signature.kwargs !== undefined) base.kwargs = signature.kwargs;
     }
     if (trackTypes) {
-      const bindings = collectLocalBindingsForChunk(input.tree.rootNode, c.startLine, c.endLine);
+      const bindings = pythonLocalBindingsInRange(localBindingSites, c.startLine, c.endLine);
       if (Object.keys(bindings).length > 0) base.localBindings = bindings;
       const inRange = pythonCallResultBindingsInRange(callResultBindings, c.startLine, c.endLine);
       if (inRange !== undefined) base.callResultBindings = inRange;
@@ -814,8 +822,14 @@ function collectPythonDecoratorCalls(root: AstNode): CallRef[] {
   return out;
 }
 
+/** One `varName → typeName` binding site, carrying the name the slicer groups by. */
+interface PythonLocalBindingSite {
+  readonly name: string;
+  readonly binding: LocalBinding;
+}
+
 /**
- * Collect `varName → typeName` bindings inside the given line range.
+ * Every `varName → typeName` binding site in the file, in document order.
  * Sources scanned (in walker-emission order — later writes win when a
  * variable is rebound):
  *
@@ -829,18 +843,15 @@ function collectPythonDecoratorCalls(root: AstNode): CallRef[] {
  *   - chained calls (`var = chain().method()`)
  *   - tuple / star unpacking (`a, b = ...`)
  *
- * Returns a plain object (Record) so it round-trips through the NDJSON
- * spill — `Map` would serialize to `{}` and lose every entry.
+ * Called ONCE per file; {@link pythonLocalBindingsInRange} then cuts a chunk's
+ * share out of the result. The per-chunk `Record<string, LocalBinding[]>` it
+ * hands back stays a plain object so it round-trips through the NDJSON spill —
+ * a `Map` would serialize to `{}` and lose every entry.
  */
-function collectLocalBindingsForChunk(
-  root: AstNode,
-  startLine: number,
-  endLine: number,
-): Record<string, LocalBinding[]> {
-  const out: Record<string, LocalBinding[]> = {};
+function collectPythonLocalBindingSites(root: AstNode): PythonLocalBindingSite[] {
+  const out: PythonLocalBindingSite[] = [];
   walk(root, (node) => {
     const line = node.startPosition.row + 1;
-    if (line < startLine || line > endLine) return;
 
     // PEP 526 + constructor assignment.
     //
@@ -863,7 +874,7 @@ function collectLocalBindingsForChunk(
       const typeField = node.childForFieldName("type");
       if (typeField) {
         const typeName = extractTypeName(typeField);
-        if (typeName) (out[varName] ??= []).push({ line, type: typeName, endLine });
+        if (typeName) out.push({ name: varName, binding: { line, type: typeName, endLine } });
         // Annotation wins — do not also infer from RHS.
         return;
       }
@@ -890,7 +901,7 @@ function collectLocalBindingsForChunk(
         if (!fnNode) return;
         const typeName = extractConstructorTypeName(fnNode);
         if (typeName && pythonLocalCalleeIsConstructor(typeName)) {
-          (out[varName] ??= []).push({ line, type: typeName, endLine });
+          out.push({ name: varName, binding: { line, type: typeName, endLine } });
         }
       }
       return;
@@ -917,9 +928,31 @@ function collectLocalBindingsForChunk(
       const typeField = node.childForFieldName("type");
       if (!typeField) return;
       const typeName = extractTypeName(typeField);
-      if (typeName) (out[varName] ??= []).push({ line, type: typeName });
+      if (typeName) out.push({ name: varName, binding: { line, type: typeName } });
     }
   });
+  return out;
+}
+
+/**
+ * The subset of `sites` established inside `[startLine, endLine]`, grouped by
+ * variable name in first-seen order.
+ *
+ * Identical by construction to the per-chunk walk this replaces: that walk
+ * visited nodes in document order and kept the ones passing this same line
+ * test, so filtering a document-order site list by the same test yields the
+ * same keys in the same insertion order carrying the same arrays.
+ */
+function pythonLocalBindingsInRange(
+  sites: readonly PythonLocalBindingSite[],
+  startLine: number,
+  endLine: number,
+): Record<string, LocalBinding[]> {
+  const out: Record<string, LocalBinding[]> = {};
+  for (const site of sites) {
+    if (site.binding.line < startLine || site.binding.line > endLine) continue;
+    (out[site.name] ??= []).push(site.binding);
+  }
   return out;
 }
 
