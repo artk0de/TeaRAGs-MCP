@@ -6,8 +6,23 @@ import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import type { CollectionSignalStats, PayloadKeyOwner } from "../../../../../src/core/contracts/types/trajectory.js";
+import {
+  formatIndexDriftReport,
+  IndexDriftReporter,
+} from "../../../../../src/core/domains/maintenance/drift/report.js";
 import { SchemaDriftMonitor } from "../../../../../src/core/domains/maintenance/drift/schema-drift-monitor.js";
 import { StatsCache } from "../../../../../src/core/infra/stats-cache.js";
+
+/**
+ * What a reader of a search response sees for this one axis: the monitor's
+ * findings rendered by the reporter that owns rendering. The cases below assert
+ * on that text, so they run the monitor through a one-axis reporter rather than
+ * through a per-monitor convenience method.
+ */
+function renderWarning(monitor: SchemaDriftMonitor, collectionName: string): string | null {
+  const report = new IndexDriftReporter([monitor]).checkByCollectionName(collectionName);
+  return report && formatIndexDriftReport(report);
+}
 
 function makeTmpDir(): string {
   const suffix = randomBytes(6).toString("hex");
@@ -47,7 +62,7 @@ describe("SchemaDriftMonitor", () => {
   it("returns null when no cached keys exist", () => {
     cache.save("code_abc123", SAMPLE_STATS); // no keys
     const monitor = new SchemaDriftMonitor(cache, ["git.file.commitCount"]);
-    const warning = monitor.checkByCollectionName("code_abc123");
+    const warning = renderWarning(monitor, "code_abc123");
     expect(warning).toBeNull();
   });
 
@@ -55,7 +70,7 @@ describe("SchemaDriftMonitor", () => {
     const keys = ["git.file.ageDays", "git.file.commitCount"];
     cache.save("code_abc123", SAMPLE_STATS, keys);
     const monitor = new SchemaDriftMonitor(cache, keys);
-    const warning = monitor.checkByCollectionName("code_abc123");
+    const warning = renderWarning(monitor, "code_abc123");
     expect(warning).toBeNull();
   });
 
@@ -64,7 +79,7 @@ describe("SchemaDriftMonitor", () => {
     const currentKeys = ["git.file.commitCount", "git.file.ageDays"];
     cache.save("code_abc123", SAMPLE_STATS, cachedKeys);
     const monitor = new SchemaDriftMonitor(cache, currentKeys);
-    const warning = monitor.checkByCollectionName("code_abc123");
+    const warning = renderWarning(monitor, "code_abc123");
     expect(warning).not.toBeNull();
     expect(warning).toContain("git.file.ageDays");
     expect(warning).toContain("Run: tea-rags index-codebase --force");
@@ -72,7 +87,7 @@ describe("SchemaDriftMonitor", () => {
 
   it("returns null for unknown collection", () => {
     const monitor = new SchemaDriftMonitor(cache, ["git.file.commitCount"]);
-    const warning = monitor.checkByCollectionName("nonexistent");
+    const warning = renderWarning(monitor, "nonexistent");
     expect(warning).toBeNull();
   });
 
@@ -86,7 +101,7 @@ describe("SchemaDriftMonitor", () => {
       "git.chunk.changeDensity",
     ]);
 
-    const warning = monitor.checkByCollectionName("code_abc123");
+    const warning = renderWarning(monitor, "code_abc123");
 
     expect(warning).toContain("git.chunk.taskIds: absent → declared");
     expect(warning).toContain("git.chunk.changeDensity: absent → declared");
@@ -98,7 +113,7 @@ describe("SchemaDriftMonitor", () => {
     cache.save("code_abc123", SAMPLE_STATS, ["git.file.commitCount", "git.file.retiredSignal"]);
     const monitor = new SchemaDriftMonitor(cache, ["git.file.commitCount"]);
 
-    const warning = monitor.checkByCollectionName("code_abc123");
+    const warning = renderWarning(monitor, "code_abc123");
 
     expect(warning).toContain("git.file.retiredSignal: recorded → absent");
     expect(warning).not.toContain("--force");
@@ -109,47 +124,11 @@ describe("SchemaDriftMonitor", () => {
     cache.save("code_abc123", SAMPLE_STATS, ["git.file.retiredSignal"]);
     const monitor = new SchemaDriftMonitor(cache, ["git.file.ageDays"]);
 
-    const warning = monitor.checkByCollectionName("code_abc123");
+    const warning = renderWarning(monitor, "code_abc123");
 
     expect(warning).toContain("git.file.ageDays: absent → declared");
     expect(warning).toContain("git.file.retiredSignal: recorded → absent");
     expect(warning).toContain("Run: tea-rags index-codebase --force");
-  });
-
-  describe("checkAndConsume (async)", () => {
-    it("returns warning on drift via async path", async () => {
-      const cachedKeys = ["git.file.commitCount"];
-      const currentKeys = ["git.file.commitCount", "git.file.ageDays"];
-      // Save under the collection name that resolveCollectionName would produce
-      const { resolveCollectionName, validatePath } = await import("../../../../../src/core/infra/collection-name.js");
-      const absPath = await validatePath("/tmp/test-project");
-      const collName = resolveCollectionName(absPath);
-      cache.save(collName, SAMPLE_STATS, cachedKeys);
-
-      const monitor = new SchemaDriftMonitor(cache, currentKeys);
-      const warning = await monitor.checkAndConsume("/tmp/test-project");
-      expect(warning).not.toBeNull();
-      expect(warning).toContain("git.file.ageDays");
-    });
-
-    it("returns null on invalid path (swallows error)", async () => {
-      const monitor = new SchemaDriftMonitor(cache, ["git.file.commitCount"]);
-      const result = await monitor.checkAndConsume("");
-      expect(result).toBeNull();
-    });
-
-    it("returns null when async drift check finds no drift (keys match)", async () => {
-      const { resolveCollectionName, validatePath } = await import("../../../../../src/core/infra/collection-name.js");
-      const absPath = await validatePath("/tmp/test-project-nodrift");
-      const collName = resolveCollectionName(absPath);
-      const keys = ["git.file.commitCount", "git.file.ageDays"];
-      cache.save(collName, SAMPLE_STATS, keys);
-
-      const monitor = new SchemaDriftMonitor(cache, keys);
-      // Keys match exactly — drift is null, hits line 36
-      const result = await monitor.checkAndConsume("/tmp/test-project-nodrift");
-      expect(result).toBeNull();
-    });
   });
 
   describe("detectDrift (static)", () => {
@@ -174,7 +153,7 @@ describe("SchemaDriftMonitor", () => {
       cache.save("code_abc123", SAMPLE_STATS, ["git.file.commitCount"]);
       const monitor = new SchemaDriftMonitor(cache, ["git.file.commitCount", "git.file.ageDays"], OWNERS);
 
-      const warning = monitor.checkByCollectionName("code_abc123");
+      const warning = renderWarning(monitor, "code_abc123");
 
       expect(warning).toContain("--force-enrichments git");
     });
@@ -183,7 +162,7 @@ describe("SchemaDriftMonitor", () => {
       cache.save("code_abc123", SAMPLE_STATS, ["git.file.commitCount"]);
       const monitor = new SchemaDriftMonitor(cache, ["git.file.commitCount", "navigation"], OWNERS);
 
-      const warning = monitor.checkByCollectionName("code_abc123");
+      const warning = renderWarning(monitor, "code_abc123");
 
       expect(warning).toContain("--force");
       expect(warning).not.toContain("--force-enrichments");

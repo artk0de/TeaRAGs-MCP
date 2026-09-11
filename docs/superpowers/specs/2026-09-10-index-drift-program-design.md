@@ -151,7 +151,13 @@ version-bump enforcement in the repository is `check-plugin-version.sh` for
    report permanent phantom drift for every project whose registry env differs
    from the server's env. A flip of `CODEGRAPH_ENABLED` /
    `TRAJECTORY_GIT_ENABLED` is reported as env drift that explains the
-   payload-key delta, so the reader fixes the env instead of rebuilding.
+   payload-key delta, so the reader fixes the env instead of rebuilding. Those
+   two keys are the one exception to the compare above: they are diffed against
+   the RUNNING composition's resolved flag rather than the effective env —
+   replay restores a stamped flag whenever the outer env merely lacks it, which
+   is precisely the phantom-drift case the axis exists to explain — and their
+   finding carries the attribution note with remedy `none`; every other key
+   keeps the effective-env compare.
 7. **Commit drift is informational, and the stamp already exists.** Every index
    run records `RegistryGitState` (`indexedBranch`, `indexedCommit`,
    `indexedDirty`; not sticky — each run rewrites it) through

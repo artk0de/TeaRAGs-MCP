@@ -13,6 +13,21 @@ import { describe, expect, it } from "vitest";
 
 import { SHARED_LANGUAGE, type LanguageCodeVersions } from "../../../../../src/core/contracts/types/language.js";
 import { LanguageVersionDriftMonitor } from "../../../../../src/core/domains/maintenance/drift/language-version-drift-monitor.js";
+import {
+  formatIndexDriftReport,
+  IndexDriftReporter,
+} from "../../../../../src/core/domains/maintenance/drift/report.js";
+
+/**
+ * What a reader of a search response sees for this one axis: the monitor's
+ * findings rendered by the reporter that owns rendering. The cases below assert
+ * on that text, so they run the monitor through a one-axis reporter rather than
+ * through a per-monitor convenience method.
+ */
+function renderWarning(monitor: LanguageVersionDriftMonitor, collectionName: string): string | null {
+  const report = new IndexDriftReporter([monitor]).checkByCollectionName(collectionName);
+  return report && formatIndexDriftReport(report);
+}
 
 const current = new Map<string, LanguageCodeVersions>([
   ["typescript", { grammar: "0.23.2", chunking: 1, walker: 2, codegraphSchema: 1 }],
@@ -99,7 +114,7 @@ describe("LanguageVersionDriftMonitor.detectDrift — what it refuses to claim",
   });
 });
 
-describe("LanguageVersionDriftMonitor.checkByCollectionName", () => {
+describe("LanguageVersionDriftMonitor — the remedy each moved axis renders", () => {
   function makeMonitor(input: {
     languageVersions?: Record<string, Partial<LanguageCodeVersions>>;
     languages?: Record<string, number>;
@@ -128,7 +143,7 @@ describe("LanguageVersionDriftMonitor.checkByCollectionName", () => {
       languageVersions: { typescript: { grammar: "0.23.2", chunking: 1, walker: 1, codegraphSchema: 1 } },
     });
 
-    const warning = monitor.checkByCollectionName("code_x");
+    const warning = renderWarning(monitor, "code_x");
 
     expect(warning).toContain("typescript.walker: 1 → 2");
     expect(warning).toContain("--force-enrichments codegraph --languages typescript");
@@ -142,7 +157,7 @@ describe("LanguageVersionDriftMonitor.checkByCollectionName", () => {
       languageVersions: { typescript: { grammar: "0.22.0", chunking: 1, walker: 2, codegraphSchema: 1 } },
     });
 
-    const warning = monitor.checkByCollectionName("code_x");
+    const warning = renderWarning(monitor, "code_x");
 
     expect(warning).toContain("typescript.grammar: 0.22.0 → 0.23.2");
     expect(warning).toContain("Run: tea-rags index-codebase --force");
@@ -157,7 +172,7 @@ describe("LanguageVersionDriftMonitor.checkByCollectionName", () => {
       languageVersions: { typescript: { grammar: "0.23.2", chunking: 0, walker: 2, codegraphSchema: 1 } },
     });
 
-    const warning = monitor.checkByCollectionName("code_x");
+    const warning = renderWarning(monitor, "code_x");
 
     expect(warning).toContain("typescript.chunking: 0 → 1");
     expect(warning).toContain("Run: tea-rags index-codebase --force");
@@ -170,7 +185,7 @@ describe("LanguageVersionDriftMonitor.checkByCollectionName", () => {
       languages: { ruby: 10 },
     });
 
-    const warning = monitor.checkByCollectionName("code_x");
+    const warning = renderWarning(monitor, "code_x");
 
     expect(warning).toContain("ruby.codegraphSchema: 0 → 1");
     expect(warning).toContain("Run: tea-rags index-codebase --force-enrichments codegraph --languages ruby");
@@ -181,7 +196,7 @@ describe("LanguageVersionDriftMonitor.checkByCollectionName", () => {
       languageVersions: { typescript: { grammar: "0.22.0", chunking: 1, walker: 1, codegraphSchema: 1 } },
     });
 
-    const warning = monitor.checkByCollectionName("code_x");
+    const warning = renderWarning(monitor, "code_x");
 
     expect(warning).toContain("typescript.grammar: 0.22.0 → 0.23.2");
     expect(warning).toContain("typescript.walker: 1 → 2");
@@ -193,19 +208,19 @@ describe("LanguageVersionDriftMonitor.checkByCollectionName", () => {
   it("returns null when no axis moved", () => {
     const monitor = makeMonitor({ languageVersions: indexedAtCurrent });
 
-    expect(monitor.checkByCollectionName("code_x")).toBeNull();
+    expect(renderWarning(monitor, "code_x")).toBeNull();
   });
 
   it("returns null when the collection has no registry entry", () => {
     const monitor = makeMonitor({ entry: null });
 
-    expect(monitor.checkByCollectionName("code_x")).toBeNull();
+    expect(renderWarning(monitor, "code_x")).toBeNull();
   });
 
   it("returns null when the collection has no stats cache — the present-language set is unknown", () => {
     const monitor = makeMonitor({ stats: null });
 
-    expect(monitor.checkByCollectionName("code_x")).toBeNull();
+    expect(renderWarning(monitor, "code_x")).toBeNull();
   });
 
   it("stays silent about a language the index does not contain", () => {
@@ -214,7 +229,7 @@ describe("LanguageVersionDriftMonitor.checkByCollectionName", () => {
       languages: { ruby: 10 },
     });
 
-    expect(monitor.checkByCollectionName("code_x")).toBeNull();
+    expect(renderWarning(monitor, "code_x")).toBeNull();
   });
 });
 
@@ -305,7 +320,7 @@ describe("LanguageVersionDriftMonitor — the shared * pseudo-language", () => {
       },
     });
 
-    const warning = monitor.checkByCollectionName("code_abc123");
+    const warning = renderWarning(monitor, "code_abc123");
 
     expect(warning).toContain("*.walker: 1 → 2");
     expect(warning).toContain("Run: tea-rags index-codebase --force-enrichments codegraph");
