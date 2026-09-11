@@ -706,6 +706,10 @@ next to `"outcome": {"kind": "unknown"}`. `origin` is `project` |
 `generatedInRepo` | `sitePackages` | `stdlib` | `builtin` | `typeshedStub` |
 `outsideRepo`.
 
+`symbolId` spells EVERY hop with the walker's own separator, not just the last
+one — a def nested in a method is `Cls#method#inner`, in a module-level def
+`outer#inner`, a nested class `Outer.Inner` (E5.0c, `w205u`).
+
 **Steps**
 
 - [x] Prepare the worktree: `npm ci`, then a bare `npm run build`.
