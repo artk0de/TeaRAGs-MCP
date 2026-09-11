@@ -43,6 +43,7 @@ import { buildPipelineConfig } from "../core/domains/ingest/pipeline/types.js";
 import { QuarantineStore } from "../core/domains/ingest/sync/index.js";
 import { ShardedSnapshotManager } from "../core/domains/ingest/sync/snapshot/index.js";
 import { collectSymbols, DefaultSymbolIdComposer } from "../core/domains/language/index.js";
+import { CommitDriftMonitor } from "../core/domains/maintenance/drift/commit-drift-monitor.js";
 import { IndexDriftReporter } from "../core/domains/maintenance/drift/index.js";
 import { LanguageVersionDriftMonitor } from "../core/domains/maintenance/drift/language-version-drift-monitor.js";
 import { SchemaDriftMonitor } from "../core/domains/maintenance/drift/schema-drift-monitor.js";
@@ -832,8 +833,12 @@ export async function createAppContext(config: AppConfig, hooks?: AppContextHook
   // like the slice's other shared handles: consumption is "has THIS server
   // already said it", so a per-project instance would warn once per project
   // facade instead of once per collection.
+  // The corpus axis: the other two ask whether the BUILD moved, this one asks
+  // whether the repository did — `CollectionEntry.git` (stamped at finalize)
+  // against live HEAD, read from `.git` files with no git spawn.
+  const commitDriftMonitor = new CommitDriftMonitor(collectionRegistry);
   const driftReporter = new IndexDriftReporter(
-    [schemaDriftMonitor, languageVersionDriftMonitor],
+    [schemaDriftMonitor, languageVersionDriftMonitor, commitDriftMonitor],
     (collectionName) => collectionRegistry.get(collectionName)?.name ?? undefined,
   );
 
