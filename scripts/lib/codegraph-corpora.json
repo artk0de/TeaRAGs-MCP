@@ -52,6 +52,13 @@
       "peakRssMb": 1293,
       "wallSeconds": 16.2
     },
+    "e6": {
+      "wallSeconds": 10.93,
+      "peakRssMb": 2208,
+      "sites": 44126,
+      "loc": 278182,
+      "files": 1038
+    },
     "notes": "3.4% annotated defs — the untyped-framework end of the trimodal split. Ships JavaScript, so the symbol table is cross-language while only .py call sites are scored. 2 files carry parso grammar errors."
   },
   "polar": {
@@ -70,6 +77,13 @@
       "unresolved": 61218,
       "peakRssMb": 959,
       "wallSeconds": 14.5
+    },
+    "e6": {
+      "wallSeconds": 14.89,
+      "peakRssMb": 2247,
+      "sites": 56710,
+      "loc": 306460,
+      "files": 1339
     },
     "notes": "99.4% annotated and resolves worst — the chain reads no annotations. 26 + 53 files (~7.6%) carry PEP 758 / match / type-alias syntax parso 0.8.7 rejects; their rows are oracleDegraded. 82,554 call sites, 15-40 min unbounded. Two roots own a package called `polar` and the venv installs a third from polar_sdk, so the oracle searches whichever root contains the file first (vua9f)."
   },
