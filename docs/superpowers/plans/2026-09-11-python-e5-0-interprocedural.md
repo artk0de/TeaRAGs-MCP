@@ -1810,6 +1810,163 @@ contract line.
 
 ---
 
+## Task E5.0d — the third vote, in the harness — **DONE 2026-09-11**
+
+E5.0b's design was a re-scoring pass over DUMPS with three hand-written
+predicates. It shipped instead as a STAGE in the host, because the predicates
+were re-derivations of an audit pyright had already settled: D9's classes were
+found by asking pyright per site and reading the answers, and three regexes over
+a dump can only approximate what that audit actually did. So the harness asks
+pyright itself, on every disagreement, every run.
+
+**Files.** NEW `scripts/lib/py-oracle-tiebreak.ts` and
+`tests/scripts/py-oracle-tiebreak.test.ts`; EDIT `scripts/lib/py-oracle-core.ts`
+(the two type aliases, the four optional row fields, `isWithheldFromRates`
+exported) and `scripts/py-codegraph-jedi-oracle.ts` (the `--tiebreak` flag, the
+stage, three blocks, the JSON group).
+
+### The rule, as shipped
+
+The disagreement set is `phantom | wrongFile | missed | fileOnly` on a row not
+already withheld from the rates. Everything else — `match`, `agreeExternal`,
+`bothUnresolved`, `chainOnly`, and every degraded or fan-replaced row — keeps
+its verdict and is never sent.
+
+| verdict     | `agreesWithChain`     | `agreesWithJedi` | `third`       | `noAnswer`    |
+| ----------- | --------------------- | ---------------- | ------------- | ------------- |
+| `phantom`   | `match`               | `phantom`        | `undecidable` | `undecidable` |
+| `wrongFile` | `match`               | `wrongFile`      | `undecidable` | `undecidable` |
+| `fileOnly`  | `match`               | `fileOnly`       | `undecidable` | `undecidable` |
+| `missed`    | `oracleWrongExternal` | `missed`         | `undecidable` | `undecidable` |
+
+`agreesWithChain` needs pyright's FILE AND SYMBOL to equal the chain's, or — on
+a row where the chain stayed silent — pyright answering external. An external
+answer where jedi also named nothing in-project backs JEDI (that is the
+`phantom` shape), and an external answer where both engines named a target backs
+neither. A `missed` row cannot become a match: the chain emitted no edge there,
+so it leaves the denominator as `oracleWrongExternal` instead of buying recall
+the resolver never earned. `undecidable`, `oracleWrongExternal` and
+`oracleSelfReference` are all withheld, and all counted.
+
+### Two things the design got wrong and the measurement corrected
+
+**`oracleSelfReference` is scoped to the disagreement set, not corpus-wide.**
+`foo()` inside `foo` also resolves to the caller's own symbol, and there nobody
+is wrong. Applied corpus-wide the first ugnest run withheld **4 correct `match`
+rows** as self-reference. The parameter-declaration shape (`cls(session)` inside
+`from_session`) is debt only where the two engines disagree.
+
+**The ask is the LINE cohort, not the whole file.** `askOracle` claims
+successive occurrences of a callee as it walks a file's batch, and that claim is
+keyed by `startLine` — so a site on any other line cannot reach it, while a
+same-line sibling can. Sending the arbitrated sites plus their line-mates is
+therefore byte-exact on the columns AND asks about 83 netbox sites rather than
+the ~1,500 the E4.0.4 audit driver's whole-file shape would have sent.
+
+### Measured, five corpora, `--oracle merged --workers 8 --samples 500000`
+
+| corpus | disagree | files | asked | chain | jedi | third | noAnswer | self | wall  |
+| ------ | -------- | ----- | ----- | ----- | ---- | ----- | -------- | ---- | ----- |
+| ugnest | 8        | 8     | 9     | 3     | 4    | 0     | 1        | 1    | 4.6s  |
+| flask  | 33       | 13    | 44    | 0     | 26   | 0     | 7        | 2    | 2.3s  |
+| httpx  | 13       | 6     | 14    | 8     | 5    | 0     | 0        | 0    | 2.2s  |
+| netbox | 53       | 30    | 83    | 26    | 7    | 0     | 20       | 9    | 12.3s |
+| polar  | 518      | 152   | 686   | 81    | 414  | 8     | 15       | 37   | 7.2s  |
+
+`third` is **0 on four corpora and 8 on polar**: where pyright answers at all it
+almost always names one of the two targets already on the table. The stage costs
+**7.2 s on polar** against a 60 s bar — 686 sites, not the ~14,000 a whole-file
+ask would have sent.
+
+**The `cls(...)` census is exact.** Self-reference rows whose member is `cls`:
+ugnest 0, flask 1, httpx 0, netbox 6, polar 25 — **32**, cell for cell the table
+in the E4.4 plan's decision 3. The other 17 self-reference rows are the same
+shape reached through another spelling; the rule books an oracle target equal to
+the caller's symbol, not a `cls` regex.
+
+Precision miss, `(phantom + wrongFile) / edges`:
+
+| corpus | legacy  | merged  | tiebroken   | D9's hand-adjusted figure  |
+| ------ | ------- | ------- | ----------- | -------------------------- |
+| ugnest | 0.129 % | 0.129 % | **0.000 %** | —                          |
+| flask  | 0.287 % | 0.287 % | **0.287 %** | flask stands (D9 result 1) |
+| httpx  | 1.603 % | 1.603 % | **0.000 %** | 1.63 % → 0.00 %            |
+| netbox | 0.298 % | 0.298 % | **0.011 %** | 0.31 % → 0.03 %            |
+| polar  | 0.596 % | 0.625 % | **0.165 %** | 0.97 % → 0.68 %            |
+
+polar lands well below D9's hand-adjusted 0.68 %, and the reason is that D9's
+number was extrapolated from a 73-row sample taken BEFORE E4.0.5. That commit
+removed 75 of polar's phantoms — the cross-language and `globalShortName`
+fabrications, which were the whole of the `chainWrong` half — so the residual it
+left is dominated by oracle error, and a full census reads 81 of the 110
+remaining rows that way rather than the sample's 30 %.
+
+Recall, corpus-wide:
+
+| corpus | legacy           | merged           | tiebroken        | withheld |
+| ------ | ---------------- | ---------------- | ---------------- | -------- |
+| ugnest | 0.9785 (n 789)   | 0.9785 (n 789)   | 0.9847 (n 785)   | 4        |
+| flask  | 0.9008 (n 373)   | 0.9008 (n 373)   | 0.9231 (n 364)   | 9        |
+| httpx  | 0.9857 (n 488)   | 0.9857 (n 488)   | 0.9859 (n 496)   | 0        |
+| netbox | 0.9949 (n 7894)  | 0.9952 (n 8343)  | 0.9988 (n 8338)  | 30       |
+| polar  | 0.9796 (n 12201) | 0.9718 (n 16884) | 0.9763 (n 16889) | 60       |
+
+The tiebroken denominator moves in BOTH directions and that is not an artefact:
+a `phantom` re-scored to `match` ENTERS it (httpx `dynamic` n 31 → 39, all eight
+of its phantoms), while an undecidable or self-reference row leaves it. Both are
+printed as their own column so neither can be read as the other.
+
+### Gate (b) — the D9 classes, row for row
+
+Joined against E4.0.4's own `audit-joined.ndjson`, re-classified by the audit's
+own predicate, and looked up in this run's dumps by `corpus|relPath:startLine`:
+
+| E4.0.4 class                 | n   | under the tiebreak                                                                                           |
+| ---------------------------- | --- | ------------------------------------------------------------------------------------------------------------ |
+| `oracleWrongEnumClassmethod` | 18  | **18 `match`**                                                                                               |
+| `oracleWrongMro`             | 11  | **11 `match`**                                                                                               |
+| `oracleWrongShadowedPackage` | 8   | **8 `match`**                                                                                                |
+| `chainWrong`                 | 63  | **0 `match`** — 39 gone (E4.0.5 fixed that family), 14 `phantom`, 3 `missed`, 2 `wrongFile`, 5 `undecidable` |
+
+Not one `chainWrong` row flipped, which is the half of the gate that matters:
+pyright backed jedi there in the audit and it backs jedi here. The 5 that read
+`undecidable` are withheld rather than re-scored — pyright could not answer or
+named a third symbol — so the rule declines rather than guessing.
+
+The two classes found after D9 reproduce as well. All **14 `OW:Self` rows** D9
+lists by `relPath:line` re-score to `match`, and 15 of polar's 17 `wrongFile`
+rows do (the 15th is `merchant_migration/importer.py:389`, the `OW:Mapped`
+shape); one is self-reference and one stands. E4.4a's `oracleEnumClsMember`
+reads **17 rows in `models/subscription.py`, every one `agreesWithChain` →
+`match`** — a superset of the 5 that task recorded, because polar's phantom pool
+grew from 88 to 93 between E4.4a and E4.6.
+
+### Gate (a) — `--no-tiebreak` against a pre-edit run
+
+Five corpora, stdout and `--json` both compared. **ugnest, flask and polar are
+byte-identical** on both. httpx and netbox differ by ONE site each, in the `ext`
+column only — `agreeExternal` 886 → 887 on httpx, one row on netbox — and the
+whole `RECALL` block onward is byte-identical on all five. That drift is jedi's,
+not the stage's: three runs of the SAME build with `--no-tiebreak` read 1398 /
+1399 / 1399 ground truth on httpx. The stage executes no code under
+`--no-tiebreak`, and the JSON group it adds is absent rather than zeroed.
+
+### Gate (c) — determinism
+
+Two polar runs with the stage on: stdout identical once the two wall-clock lines
+are normalised, and the 532 dumped rows identical byte for byte on `tiebreak`,
+`verdictTiebroken` and both `pyrightTarget*` fields. pyright was already
+byte-identical over two runs in D7; asking it about a deterministic site set
+keeps it that way.
+
+### Gate (e) — wall
+
+ugnest 4.6 s, flask 2.3 s, httpx 2.2 s, netbox 12.3 s, polar **7.2 s** — against
+a 60 s bar on polar. netbox costs more than polar because its 30 disagreement
+files are large Django modules; the cost is per FILE opened, not per site asked.
+
+---
+
 ## Task E5.1 — Python producer for the barrier fold — **GATED SHUT**
 
 > **Gate.** This task executes only when Task E5.0a's `unlockedExact`, summed

@@ -916,6 +916,27 @@ of that task's gross-lost column. They are an instrument reading, not a
 regression: E4.6-close subtracts them exactly as D9's other `OW:*` classes are
 subtracted from `precisionMissAdjusted`.
 
+**The oracle debt this decision records is RETIRED, by a tiebreak stage rather
+than by another audit (2026-09-11, E5.0d, bd tea-rags-mcp-1v12o.1.4).** Every
+row where the chain and jedi disagree now goes to pyright on every run, and a
+fixed rule re-scores it into a THIRD denominator beside `legacy` and `merged`.
+`OW:Mro`, `OW:EnumClassmethod`, `OW:ShadowedPackage`, `OW:Self`, `OW:Mapped` and
+E4.4a's `oracleEnumClsMember` stop being paragraphs a later increment has to
+remember to subtract: the harness measures them. The `cls(...)` rows are
+withheld as `oracleSelfReference`, and a row pyright cannot decide is withheld
+as `undecidable` rather than scored either way.
+
+The classes reproduce. Precision miss falls **1.603 % → 0.000 %** on httpx
+(against D9 result 2's hand-adjusted 1.63 % → 0.00 %) and **0.298 % → 0.011 %**
+on netbox (against 0.31 % → 0.03 %), where 25 of 26 phantoms are the `super`/MRO
+rows this decision lists. **flask does not move — 0.287 % under all three
+denominators — which is result 1 holding under an automatic rule**: its rows are
+real fabrication, pyright backs jedi on every one of them (`agreesWithChain` 0
+of 33), and the same is true of the 63 `chainWrong` rows E4.0.4 attributed
+across the corpora. `third` is 0 everywhere: where pyright answers, it names one
+of the two targets already on the table. Counts, per-corpus tables and the
+byte-identity gate are in the E5.0 plan's Task E5.0d block.
+
 ### D10 — dynamic `single` falsified (measured 2026-09-10, E4.1.3)
 
 A name-only fan is **not precision-safe for Python**. Built, wired and measured
