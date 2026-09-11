@@ -5,6 +5,7 @@ import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { WorkerMessage } from "../../../src/cli/index-progress/ipc-protocol.js";
+import { JsonProgressRenderer } from "../../../src/cli/index-progress/renderer.js";
 import {
   deriveEnrichmentOutcome,
   resolveCodegraphSizeBytes,
@@ -250,6 +251,92 @@ describe("runIndexWorker", () => {
     await runIndexWorker(app as never, "/repo", {}, () => {});
 
     expect(order).toEqual(["index", "enrich"]);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Phase attribution on the enrichment-recompute path (bd tea-rags-mcp-ghcof)
+// ---------------------------------------------------------------------------
+
+describe("runIndexWorker — phase attribution on the --force-enrichments recompute", () => {
+  /** Replay the worker's IPC frames through the JSON renderer the `--json` run uses. */
+  function phasesOf(sent: WorkerMessage[]): Record<string, number> {
+    const renderer = new JsonProgressRenderer();
+    for (const message of sent) renderer.handle(message);
+    return renderer.phases;
+  }
+
+  function recomputeApp(stats: Record<string, unknown>) {
+    return {
+      indexCodebase: vi.fn(async () => ({ status: "completed", ...stats })),
+      getIndexStatus: vi.fn().mockResolvedValue(healthy),
+      whenEnrichmentComplete: vi.fn().mockResolvedValue(undefined),
+    };
+  }
+
+  it("books the recompute's wall time as enrichment, never as embedding", async () => {
+    const app = recomputeApp({ enrichmentStatus: "completed", enrichmentDurationMs: 1_211_574 });
+    const sent: WorkerMessage[] = [];
+    let t = 0;
+
+    await runIndexWorker(
+      app as never,
+      "/repo",
+      { forceEnrichments: ["codegraph"] },
+      (m) => sent.push(m),
+      () => {
+        t += 100;
+        return t;
+      },
+    );
+
+    const phases = phasesOf(sent);
+    // Nothing on this path embeds, so the span must not be booked as embedding.
+    expect(phases["embedding"] ?? 0).toBe(0);
+    expect(phases["enrichment"]).toBe(1_211_574);
+  });
+
+  it("falls back to the measured index span when the recompute reports no duration", async () => {
+    const app = recomputeApp({});
+    const sent: WorkerMessage[] = [];
+    let t = 0;
+
+    await runIndexWorker(
+      app as never,
+      "/repo",
+      { forceEnrichments: ["git"] },
+      (m) => sent.push(m),
+      () => {
+        t += 100;
+        return t;
+      },
+    );
+
+    const phases = phasesOf(sent);
+    expect(phases["embedding"] ?? 0).toBe(0);
+    expect(phases["enrichment"]).toBeGreaterThan(0);
+  });
+
+  it("leaves the ordinary run's embedding attribution alone", async () => {
+    const app = recomputeApp({ enrichmentStatus: "completed", enrichmentDurationMs: 4_000 });
+    const sent: WorkerMessage[] = [];
+    let t = 0;
+
+    await runIndexWorker(
+      app as never,
+      "/repo",
+      {},
+      (m) => sent.push(m),
+      () => {
+        t += 100;
+        return t;
+      },
+    );
+
+    const phases = phasesOf(sent);
+    expect(phases["embedding"]).toBeGreaterThan(0);
+    // The ordinary path's enrichment phase is the background wait, not the DTO field.
+    expect(phases["enrichment"]).not.toBe(4_000);
   });
 });
 
