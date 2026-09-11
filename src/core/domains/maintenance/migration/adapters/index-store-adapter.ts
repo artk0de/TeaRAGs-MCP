@@ -98,9 +98,10 @@ export class IndexStoreAdapter implements IndexStore {
   /**
    * The stored metadata point, or null when the collection has none yet.
    *
-   * Read-before-write for {@link storeSchemaVersion}; the version *lookup* keeps
-   * its own read because it falls back to index probing when the point is absent,
-   * and must not treat an unreachable Qdrant as an absent point.
+   * Read-before-write for {@link storeSchemaVersion}. {@link getSchemaVersion}
+   * keeps its own read because it answers a different question: it falls back to
+   * probing for the `relativePath` index and reporting version 6 when the point
+   * is missing, so it never has the payload this write has to merge onto.
    */
   private async getSchemaMetadata(collection: string): Promise<SchemaMetadata | null> {
     try {

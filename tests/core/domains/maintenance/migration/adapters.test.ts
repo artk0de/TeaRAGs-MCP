@@ -3,6 +3,9 @@
  *
  * These adapters bridge infra/migration types to filesystem and Qdrant implementations.
  * Tests verify correct delegation and format detection, not Qdrant or filesystem behavior.
+ * The last describe is the deliberate exception: three adapters write one shared
+ * metadata point, so its fake reproduces Qdrant's replace-on-upsert — the semantics
+ * they have to cope with, and invisible to a delegation-only test.
  */
 
 import { promises as fs } from "node:fs";
