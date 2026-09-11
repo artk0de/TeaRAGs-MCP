@@ -25,8 +25,11 @@ import { InMemoryGlobalSymbolTable } from "../../../../../../src/core/domains/tr
  * with the checker off and the specifier mapping straight to a FILE, the chain
  * already resolved the tag correctly, namesakes and all — `importedCallee`
  * answers from `ImportRef.importedBindings` long before any short-name pass.
- * Those cases passed against unmodified `main` and are kept as guards, because
- * the repair and recompute legs run checker-off by design.
+ * Those cases passed against unmodified `main` and are kept as checker-off
+ * CHARACTERIZATION guards — the real checker-off path is a heap-admission
+ * refusal or `CODEGRAPH_TS_TYPECHECKER=0`, NOT the repair leg, which is not
+ * checker-off by design: the 205ms above was the dispatch of 482 unwalkable
+ * files, not a TS extraction (bd tea-rags-mcp-sz1y0, spike gl96z).
  *
  * The gap was one hop further in: a BARREL specifier. `from 'ui-kit'` maps to
  * `ui-kit/index.ts`, which declares nothing itself, so the answer depends on

@@ -371,6 +371,27 @@ export class EnrichmentCoordinator {
    * `IndexingOps#recomputeEnrichments` call site carries the measurement.
    * `CODEGRAPH_FORCE_RESOLVE` still widens the check from outside, for
    * profiling a resolve that an already-current graph would otherwise skip.
+   *
+   * The compare is sound, and the leg is not a lesser resolve (bd
+   * tea-rags-mcp-sz1y0, spike gl96z). Both legs carry ONE hash — the
+   * synchronizer's sha256 over utf-8-decoded content
+   * (`ParallelFileSynchronizer#hashFile`): the scan hands it in as `scanned`,
+   * the write leg stamps `runState.contentHashes.get(relPath)` off that same
+   * map, so a row can only ever carry the string the scan produced and a
+   * mismatch means a changed file or no row at all, never two spellings of the
+   * same bytes. The honest repair set on a converged store is therefore 0
+   * (taxdome 482 → 0 once eligibility stopped asking for files no walker
+   * covers, bd tea-rags-mcp-65bkl, 2026-08-17; harness 0 after a first index
+   * and after `--force`), the one surviving forever-repair class being files
+   * past `MAX_EDGES_PER_FILE`, which never get a row to compare (bd
+   * tea-rags-mcp-ihq7y). Pass-2 then runs inside THIS run's finalize with the
+   * project root bound, so TypeScript Program admission is decided by the same
+   * count-based rule as a live run (`CallEdgeResolutionRunner#prepareResolvePass`
+   * → `TSProgramCache#primeForExpectedEntries`): a repair of at least
+   * `TS_PROGRAM_WHOLE_MIN_ENTRIES_DEFAULT` (200) files builds the whole Program,
+   * a smaller one per-entry Programs on demand — slower per file, not less
+   * precise. The leg is not checker-off; only `CODEGRAPH_TS_TYPECHECKER=0` or a
+   * heap-admission refusal is.
    */
   async runRepairPass(collectionName: string, root: string, scanned: ReadonlyMap<string, string>): Promise<number> {
     let repaired = 0;
