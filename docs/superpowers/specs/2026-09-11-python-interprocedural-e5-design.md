@@ -617,3 +617,38 @@ enabled, so the kill switch has to gate the WALKER emit, not just the fold.
   `assignCallProject` (D4). It belongs to E4.6b's owner and wants its own
   attribution pass before it is scoped. **That pass has run** — see D9, which
   reorders it behind namesake narrowing and sizes it at 42 rows.
+
+---
+
+## Measured — whole E5 (2026-09-12, `63bbfe152`)
+
+**The premise this document was written on is falsified.** E5 was specified as
+inter-procedural PARAMETER typing, and the measurement it opened with priced
+that mechanism at **5 rows against a bar of 100** (D3) with LUB buying zero — no
+`def` in five corpora produced a `lub` verdict, because the determinable-site
+counts are 1–2 and one witness cannot disagree with itself. Both capability
+tasks were gated shut and no line of E5.1 or E5.2 was written. What the epic
+delivered instead is the oracle debt retired in the harness (E5.0d's pyright
+tiebreak, whose `tiebroken` column is now the canonical precision number) and
+three narrowing fixes the attribution found once the premise was dead.
+
+A/B at the branch head against `854aaca76`, the pre-E5.1a base, same harness on
+both sides, one run per arm per corpus,
+`--oracle merged --dispatch --workers 8 --samples 500000`:
+
+| corpus | recall legacy       | recall merged       | recall tiebroken    | phantom | wrongFile | precision-miss tieb | edges               |
+| ------ | ------------------- | ------------------- | ------------------- | ------- | --------- | ------------------- | ------------------- |
+| flask  | 0.9008              | 0.9008              | 0.9231              | 0       | 1         | 0.287 %             | 349                 |
+| httpx  | 0.9857              | 0.9857              | 0.9859              | 8       | 0         | 0.000 %             | 499                 |
+| ugnest | 0.9785              | 0.9785              | 0.9847              | 0       | 1         | 0.000 %             | 778                 |
+| netbox | 0.9949              | 0.9952              | 0.9988              | 25      | 0         | 0.000 %             | 8,711               |
+| polar  | 0.9810 → **0.9835** | 0.9731 → **0.9809** | 0.9776 → **0.9854** | 88 → 88 | 17 → 17   | 0.165 → **0.163 %** | 17,625 → **17,777** |
+
+Four corpora do not move a row. polar gains **131 rows**, all `missed` in the
+base, with **gross lost 0**, **0 arrived phantoms** and the phantom key set
+identical in both arms — 104 `untypedNameReceiver`, 17 `callResultChainHead`, 9
+`untypedFieldHop`, 1 `unionBranchReceiver`. `chain drift 0` on all five corpora
+at the head. The per-increment attribution (E5.1a +114, E5.1c +17, E5.1b 0) sums
+to the whole, so nothing unmeasured fired. Full record, including the
+reconciliation against D-table figures taken before the E4.4 merge, in the E5
+plan's "Measurement record — whole E5".

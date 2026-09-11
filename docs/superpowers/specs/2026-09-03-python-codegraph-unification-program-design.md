@@ -396,3 +396,60 @@ in this program).
   this document).
 - E1 / E2 / E3 / E4 specs are written when E0's baseline confirms the pull
   order; each gets its own brainstorm → spec → plan cycle.
+
+---
+
+## Program-to-date measurement (2026-09-12)
+
+Every column is QUOTED from the record that produced it; no earlier commit was
+re-run for this table. Only the E5 column is fresh (`63bbfe152`, A/B against
+`854aaca76`, `--oracle merged --dispatch --workers 8`).
+
+| column | commit      | source                                                                                      |
+| ------ | ----------- | ------------------------------------------------------------------------------------------- |
+| E0     | `30a1d1891` | E0 measurement spec, `## Final measurement record (2026-09-09, integration HEAD 30a1d1891)` |
+| E3     | `78e6c40b2` | E4 spec, `## E4 — the whole increment measured` (its BEFORE column is measured at E3's end) |
+| E4     | `6482050bc` | same table, AFTER column; per-increment detail in D12                                       |
+| E5     | `63bbfe152` | E5 plan, `### Measurement record — whole E5`                                                |
+
+Recall. E0's figure is that record's own `in-project recall`, computed before
+the three-denominator scheme existed; `legacy` is comparable from E3 on, and
+`tiebroken` exists only from E5.0d's pyright stage, hence **n/a** to its left.
+
+| corpus | E0 recall / phantom | E3 legacy (merged) / phantom | E4 legacy (merged) / phantom | E5 legacy (merged / tiebroken) / phantom |
+| ------ | ------------------- | ---------------------------- | ---------------------------- | ---------------------------------------- |
+| flask  | 0.83 / 9            | 0.8901 / 9                   | 0.9008 / **0**               | 0.9008 (0.9008 / **0.9231**) / 0         |
+| httpx  | 0.87 / 8            | 0.9693 / 8                   | 0.9857 / 8                   | 0.9857 (0.9857 / **0.9859**) / 8         |
+| ugnest | 0.94 / **0**        | 0.9696 / 0                   | 0.9785 / 0                   | 0.9785 (0.9785 / **0.9847**) / 0         |
+| netbox | 0.94 / 26           | 0.9877 (0.9861) / 26         | 0.9949 (0.9952) / 25         | 0.9949 (0.9952 / **0.9988**) / 25        |
+| polar  | 0.79 / 115          | 0.9550 (0.9394) / 155        | 0.9810 (0.9731) / 93         | **0.9835** (0.9809 / **0.9854**) / 88    |
+
+E5 moved polar and nothing else: the four other corpora are byte-identical to
+their E4 close, which is why their E4 and E5 cells agree column for column.
+polar's phantom cell needs one note — **93 is the dumped ROW count and 88 is the
+count inside the legacy precision denominator** (five rows are withheld as
+degraded). The E4 record's polar cell quotes the first and its four other cells
+the second; both arms of the E5 A/B read 93 rows and 88 denominator entries, so
+the series is flat, not falling by five.
+
+What the four epics bought, read down the columns: polar 0.79 → 0.9835 and its
+phantoms 115 → 88 on a denominator that grew from 13,886 to 17,777 edges;
+flask's precision breach closed (9 phantoms → 0); netbox 0.94 → 0.9988 on the
+tiebroken denominator. The remaining mass is one family — `untypedNameReceiver`,
+131 polar rows after E5 — which is E4.1's parked name-only `dynamic` dispatch
+and blocked on a typeshed/framework member decline vocabulary, not on a new
+epic.
+
+**Performance, E6.1** (plan `2026-09-11-python-e6-perf-parity.md`,
+`### E6.1 measured — 2026-09-12, 7c317d00f`; min of 3 after a discarded warm-up,
+harness wall = pass 1 + pass 2, so `tsx` startup is excluded):
+
+| corpus | wall before → after   | peak RSS before → after |
+| ------ | --------------------- | ----------------------- |
+| netbox | 10.97 s → **5.01 s**  | 2,382 MB → **1,188 MB** |
+| polar  | 14.52 s → **13.50 s** | 2,328 MB → **2,111 MB** |
+
+netbox halves on both axes because one 111,557-line data file was 5.33 s and
+~800 MB of it; polar barely moves on wall because its cost is spread over 1,339
+real files. Extraction dumps are byte-identical on all five corpora across the
+three fixes, so none of the recall columns above is affected by them.
