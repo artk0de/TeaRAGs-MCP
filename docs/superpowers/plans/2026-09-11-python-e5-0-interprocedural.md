@@ -1421,6 +1421,116 @@ disjoint (`a6`'s receiver classes are unique names).
 Everything below those is under the 30-row bar on these five corpora and is not
 scheduled.
 
+### Delivered — E5.1a, namesake narrowing, both halves (2026-09-11, `w205u`)
+
+Items 1 and 2 of the list above, shipped as ONE funnel and measured together.
+
+**WHY the rows refused, established per half before anything was written.** The
+two halves fail for two unrelated reasons, and only one of them is the rule the
+plan guessed at.
+
+- **Type-name half.** `resolveTypeFile`'s narrowing is not wrong, it asks the
+  wrong question: it filters candidates against the caller's import SET — every
+  file ANY import maps to. polar's `customer_portal/service/subscription.py`
+  writes `from polar.models import (Subscription, …)` AND
+  `from polar.subscription.schemas import SubscriptionChargePreview`, so the set
+  holds `models/__init__.py` (which the re-export hop widens to
+  `models/subscription.py`) and `subscription/schemas.py` — both `Subscription`
+  candidates — two survive, and the pass refuses. `mapImportToFile` was never
+  the failing input: the probe answers `{project, models/__init__.py}` and
+  `resolveExportedName` answers `models/subscription.py`, exactly as the plan's
+  reading assumed. It is the FILTER that is per-file rather than per-name.
+- **Call-result half.** `pythonCallBindingType`'s bare-callee arm has no
+  narrowing at all — it reads `structuredReturnTypes[callee]` only when the
+  symbol table pins ONE project def. And narrowing alone would not have been
+  enough: the channel keys a top-level `def` by its BARE NAME and absorbs it
+  run-global first-write-wins, so polar's six `get_client` defs share one entry
+  (`PolarSelfClient`, against `IPGeolocationClient` at
+  `checkout/ip_geolocation.py:48` and `GitHub[TokenAuthStrategy]` at
+  `integrations/github/client.py:64`). Lifting the gate on the funnel alone
+  would hand `PolarSelfClient` to every caller of the other five.
+
+**Shipped.** `pythonImportBoundFile` in `strategies/shared.ts` — the binding for
+THIS name via `findPythonImportBinding`, `mapImportToFile`, then one
+`resolveExportedName` / `resolveExportedModule` hop, kept only when it lands on
+a candidate; no binding and the caller's own file declares the name, that file;
+anything else refuses. `resolveTypeFile` asks it BEFORE the set-filter, which
+stays as the fallback so a row the set answers today with no binding in sight
+resolves to the same file. The call-result arm asks it too, then adds the
+provenance guard the channel cannot supply: the class the run-global fact names
+must be declared in the file the binding narrowed to.
+
+**Measured**, `--oracle merged --dispatch --workers 8 --samples 500000`, base
+`854aaca76` in a detached tree against this branch, one run per arm per corpus.
+
+| corpus | edges               | match               | missed        | fileOnly | wrongFile | phantom |
+| ------ | ------------------- | ------------------- | ------------- | -------- | --------- | ------- |
+| ugnest | 778 → 778           | 772 → 772           | 16 → 16       | 0 → 0    | 1 → 1     | 0 → 0   |
+| flask  | 349 → 349           | 336 → 336           | 36 → 36       | 0 → 0    | 1 → 1     | 0 → 0   |
+| httpx  | 499 → 499           | 481 → 481           | 6 → 6         | 1 → 1    | 0 → 0     | 8 → 8   |
+| netbox | 8,711 → 8,711       | 8,303 → 8,303       | 40 → 40       | 0 → 0    | 0 → 0     | 25 → 25 |
+| polar  | 17,625 → **17,760** | 16,430 → **16,544** | 396 → **282** | 41 → 41  | 17 → 17   | 93 → 93 |
+
+**Gross lost 0**, row-level: 114 rows LEFT the residual on polar, 0 arrived, 0
+reclassified, and every one of the 114 was `missed` in the base. Precision is
+flat on BOTH denominators — polar phantom legacy 88 → 88 / tiebroken 28 → 28,
+`wrongFile` legacy 17 → 17 / tiebroken 1 → 1 — so the 135 new edges cost
+nothing. `chainDrift 0` and `dispatchDrift 0` on all ten runs. polar recall
+`localVar` merged 0.887 → **0.968**, `dynamic` 0.915 → **0.941**, `chain` 0.969
+→ 0.974.
+
+**The 79 predicted rows, per half.** Reason report, polar residual 420 → 306:
+
+| sub-bucket                  | B → A       | half                                  |
+| --------------------------- | ----------- | ------------------------------------- |
+| `a7NamesakeCallee`          | 48 → **2**  | call-result (predicted 43)            |
+| `b7Namesake`                | 31 → **0**  | type-name (predicted 36)              |
+| `a6ClsSelfFactory`          | 42 → **16** | downstream — item 3, unlocked with it |
+| `a9TypedNominal`            | 10 → 8      | downstream                            |
+| binding `assignCallProject` | 135 → 61    |                                       |
+| binding `paramAnnotated`    | 50 → 19     |                                       |
+
+`namesake.ambiguous` 89 → 12, `importNarrows` 43 → **0**, `reexportNarrows` 78 →
+**1**: 77 of the 79 the block predicted are gone. E4.6c's residual
+`untypedFieldHop` 43 → **34**, `untypedNameReceiver` 235 → **131**,
+`unionBranchReceiver` 14 → 13 — −114 exactly. **Item 3 is 26 rows lighter than
+its own estimate before it starts:** those `-> Self` classmethod factories were
+blocked by the namesake refusal on the RECEIVER class, not by the `Self`
+substitution, so a third of item 3's population was this bead's.
+
+The four non-polar corpora move **zero rows** — byte-identical residual sets.
+flask's single ambiguous row is a `current_app` LocalProxy global
+(`c5ImportedName`), which no import binding can narrow; the block's
+`importNarrows` count for it is the text predicate's reading, not a row the
+production path can reach.
+
+**Perf**, chain-tally, interleaved B/A/A/B/B/A, `/usr/bin/time -l`,
+`env -u NODE_OPTIONS` then one explicit `--max-old-space-size=1024` on both
+sides, under a parallel executor:
+
+| corpus | min wall B → A  | Δ      | median wall     | Δ       | max RSS B → A       | Δ      |
+| ------ | --------------- | ------ | --------------- | ------- | ------------------- | ------ |
+| netbox | 14.51s → 14.08s | −3.0 % | 14.87s → 15.15s | +1.9 %  | 2,382 MB → 2,371 MB | −0.5 % |
+| polar  | 19.17s → 18.20s | −5.1 % | 22.98s → 18.95s | −17.5 % | 2,189 MB → 2,192 MB | +0.2 % |
+
+Inside the +25 % wall / +20 % RSS budget on both, and the funnel is cheap by
+construction — it runs only where a short name has ≥ 2 candidates and the
+existing passes were about to refuse.
+
+**Ruby parity 0**, both spikes against `--before-root …/tea-rags-mcp`: resolver
+**42,057 sites / 0 mismatches / 0 drift**, walker **500 files / 0 mismatches**.
+No Ruby file was touched.
+
+**Unit gate:** `tests/core/domains/language/{python,kernel}` + `tests/scripts`
+93 files / 1,816 tests green, `tsc --noEmit` clean, eslint `--max-warnings 0`
+clean on `src/core/domains/language` + `tests/core/domains/language`. No
+existing test was edited (`git diff --stat -- tests/` is additions-only).
+
+**What item 3 still owns.** `a6ClsSelfFactory` 16 rows, not 42, and `a7`'s
+residual 2 — both below the 30-row bar on their own. Whoever picks up item 3
+must re-measure before scoping it; the pre-E5.1a numbers no longer describe the
+population.
+
 ---
 
 ## Task E5.0b — oracle-debt re-scoring
