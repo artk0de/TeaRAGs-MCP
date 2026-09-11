@@ -194,6 +194,7 @@ import { CODEGRAPH_LANGUAGES } from "../src/core/domains/trajectory/codegraph/sy
 import { classifyReceiverKind } from "../src/core/domains/trajectory/codegraph/symbols/receiver-kind.js";
 import { lastSegment } from "../src/core/domains/trajectory/codegraph/symbols/symbol-name.js";
 import { InMemoryGlobalSymbolTable } from "../src/core/domains/trajectory/codegraph/symbols/symbol-table.js";
+import { fileIsInertForExtraction } from "../src/core/infra/extraction-fast-path.js";
 import { materializeTree } from "../src/core/infra/materialize.js";
 
 // ---------------------------------------------------------------------------
@@ -1673,20 +1674,62 @@ interface CorpusExclusionFilter {
  * Config-supplied `ignorePatterns` / `customIgnorePatterns` are the one part
  * not reproduced: they come from a bootstrap this harness does not build, and
  * a project that sets them is excluding MORE than modelled here, never less.
+ *
+ * `includeTests` lifts the codegraph layer's test + generated exclusions FOR
+ * THE WALK ONLY (bd tea-rags-mcp-w205u, E4.0.4 / spec D5). Production excludes
+ * them unconditionally and `buildCodegraphExclusionFilter` has no opt-out by
+ * design, so the harness composes the remaining layer itself out of the same
+ * exported pattern lists instead of asking production to become configurable.
+ * A run with this on is a SEPARATE population — the symbol table grows, so
+ * every short-name ambiguity moves — and never the baseline for any other
+ * number.
+ *
+ * `skipIgnoreFiles` drops named entries of {@link PROJECT_IGNORE_FILES} from the
+ * ingest layer, and is likewise a SEPARATE population. It exists for the one
+ * question a Ruby-only corpus cannot answer: the mastodon bench corpus ships a
+ * `.contextignore` excluding `/app/javascript/` and every `*.ts`, so its symbol
+ * table holds three non-Ruby files and a cross-language namesake never appears
+ * (bd tea-rags-mcp-kumq2). Skipping that one file — and only it, so `.gitignore`
+ * still keeps `node_modules/` out — reproduces the polyglot table a Rails +
+ * React repo actually builds.
  */
 export async function buildCorpusExclusionFilter(
   repoRoot: string,
   factory: LanguageFactory,
+  options: { includeTests?: boolean; skipIgnoreFiles?: readonly string[] } = {},
 ): Promise<CorpusExclusionFilter> {
   const ingest = ignore().add(BUILTIN_IGNORE_PATTERNS);
+  const skipped = new Set(options.skipIgnoreFiles ?? []);
   for (const ignoreFile of PROJECT_IGNORE_FILES) {
+    if (skipped.has(ignoreFile)) continue;
     try {
       ingest.add(readFileSync(join(repoRoot, ignoreFile), "utf8"));
     } catch {
       // Absent or unreadable ignore file — production skips it silently too.
     }
   }
-  return { ingest, codegraph: buildCodegraphExclusionFilter({ customPatterns: [] }, factory) };
+  return {
+    ingest,
+    codegraph:
+      options.includeTests === true
+        ? buildLanguageOnlyExclusionFilter(factory)
+        : buildCodegraphExclusionFilter({ customPatterns: [] }, factory),
+  };
+}
+
+/**
+ * The codegraph layer minus its test + generated patterns: every registered
+ * language's own non-application globs and nothing else. Mirrors
+ * `buildCodegraphExclusionFilter`'s language aggregation exactly, so the only
+ * difference between the two populations is the two pattern lists.
+ */
+function buildLanguageOnlyExclusionFilter(factory: LanguageFactory): Ignore {
+  const ig = ignore();
+  for (const lang of factory.supported()) {
+    const globs = factory.create(lang).codegraphExclusionGlobs;
+    if (globs && globs.length > 0) ig.add(globs as string[]);
+  }
+  return ig;
 }
 
 /** The lowercased extension of a path, `""` when it has none. */
@@ -1781,7 +1824,14 @@ export function extractFile(
     const code = readFileSync(join(repoRoot, relPath), "utf8");
     const parser = new Parser();
     parser.setLanguage(config.loadParser());
-    const tree = { rootNode: materializeTree(parser.parse(code).rootNode, code) };
+    const nativeRoot = parser.parse(code).rootNode;
+    // The production fast path (bd tea-rags-mcp-1v12o.2.4), mirrored here because
+    // the tally measures THIS function: a harness that materialized what
+    // production skips would report a wall production never pays.
+    if (fileIsInertForExtraction(nativeRoot, walker.extractionBearingNodeTypes)) {
+      return { relPath, language: config.language, imports: [], chunks: [], fileScope: [] };
+    }
+    const tree = { rootNode: materializeTree(nativeRoot, code) };
     const chunks = collectSymbols(
       tree,
       (node) => walker.nameOf(node),

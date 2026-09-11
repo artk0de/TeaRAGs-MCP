@@ -11,7 +11,11 @@
 import { describe, expect, it } from "vitest";
 
 import { NoopGlobalSymbolTable } from "../../../../../../src/core/adapters/duckdb/daemon/noop-symbol-table.js";
-import type { CallContext, GlobalSymbolTable } from "../../../../../../src/core/contracts/types/codegraph.js";
+import type {
+  CallContext,
+  GlobalSymbolTable,
+  ModuleReexport,
+} from "../../../../../../src/core/contracts/types/codegraph.js";
 import { PythonImportFileMapper } from "../../../../../../src/core/domains/language/python/resolver/python-import-file-mapper.js";
 import { InMemoryGlobalSymbolTable } from "../../../../../../src/core/domains/trajectory/codegraph/symbols/symbol-table.js";
 
@@ -563,5 +567,129 @@ describe("PythonImportFileMapper — the caller's own root leads (bd tea-rags-mc
   it("containment stops at a separator: `server` does not contain `server-tools/x.py`", () => {
     // A bare prefix test would hoist `server` here and answer server's polar.
     expect(mapPolar("server-tools/x.py")).toEqual({ kind: "project", relPath: TEMPLATE_BASE });
+  });
+});
+
+/**
+ * `resolveExportedModule` — which FILE a package binds a name to as a MODULE
+ * (bd tea-rags-mcp-w205u, E4.6a).
+ *
+ * polar's `server/polar/backoffice/components/__init__.py` opens with
+ * `from . import _datatable as datatable`, and 259 call sites write
+ * `from ..components import datatable` then `datatable.DatatableAttrColumn(…)`.
+ * `resolveExportedName` cannot answer there: the package declares no SYMBOL
+ * named `datatable`, so `declaresName` is false at every hop and the follow
+ * returns `null`. The name denotes a sibling MODULE, and the answer is that
+ * module's file.
+ */
+describe("PythonImportFileMapper — a package alias that names a MODULE", () => {
+  const POLAR_ALIAS_FILES: Record<string, string[]> = {
+    "server/polar/__init__.py": ["__all__"],
+    "server/polar/backoffice/__init__.py": ["__all__"],
+    "server/polar/backoffice/components/__init__.py": [],
+    "server/polar/backoffice/components/_datatable.py": ["Datatable", "DatatableAttrColumn"],
+    "server/polar/backoffice/components/_button.py": ["button"],
+    "server/polar/backoffice/benefits/endpoints.py": ["list_benefits"],
+  };
+
+  const ALIAS_REEXPORTS: Record<string, ModuleReexport[]> = {
+    "server/polar/backoffice/components/__init__.py": [
+      { exportedName: "datatable", sourceModule: ".", sourceName: "_datatable" },
+      { exportedName: "button", sourceModule: "._button", sourceName: "button" },
+    ],
+  };
+
+  const PKG = "server/polar/backoffice/components/__init__.py";
+
+  const aliasCtx = (
+    reexports: Record<string, ModuleReexport[]> = ALIAS_REEXPORTS,
+    files: Record<string, string[]> = POLAR_ALIAS_FILES,
+  ): CallContext => ({
+    callerFile: "server/polar/backoffice/benefits/endpoints.py",
+    callerScope: [],
+    imports: [],
+    symbolTable: corpusTable(files),
+    moduleReexports: reexports,
+  });
+
+  it("answers the sibling module file for `from . import _datatable as datatable`", () => {
+    expect(new PythonImportFileMapper().resolveExportedModule(PKG, "datatable", aliasCtx())).toBe(
+      "server/polar/backoffice/components/_datatable.py",
+    );
+  });
+
+  it("leaves `resolveExportedName` unchanged — no SYMBOL is named `datatable`", () => {
+    expect(new PythonImportFileMapper().resolveExportedName(PKG, "datatable", aliasCtx())).toBeNull();
+  });
+
+  it("declines a name the package re-exports as a DECLARATION rather than a module", () => {
+    // `from ._button import button` names a function inside `_button.py`, and
+    // `._button.button` maps to no file. That question belongs to
+    // `resolveExportedName`, which answers it.
+    const ctx = aliasCtx();
+    expect(new PythonImportFileMapper().resolveExportedModule(PKG, "button", ctx)).toBeNull();
+    expect(new PythonImportFileMapper().resolveExportedName(PKG, "button", ctx)).toBe(
+      "server/polar/backoffice/components/_button.py",
+    );
+  });
+
+  it("follows a two-hop alias: pkg/__init__ -> sub/__init__ -> sub/_impl.py", () => {
+    const ctx = aliasCtx(
+      {
+        "pkg/__init__.py": [{ exportedName: "impl", sourceModule: ".sub", sourceName: "impl" }],
+        "pkg/sub/__init__.py": [{ exportedName: "impl", sourceModule: ".", sourceName: "_impl" }],
+      },
+      {
+        "pkg/__init__.py": [],
+        "pkg/sub/__init__.py": [],
+        "pkg/sub/_impl.py": ["Widget"],
+        "app/caller.py": ["main"],
+      },
+    );
+    expect(new PythonImportFileMapper().resolveExportedModule("pkg/__init__.py", "impl", ctx)).toBe("pkg/sub/_impl.py");
+  });
+
+  it("gives up at MAX_REEXPORT_HOPS rather than walking a tower", () => {
+    const ctx = aliasCtx(
+      {
+        "pkg/__init__.py": [{ exportedName: "impl", sourceModule: ".a", sourceName: "impl" }],
+        "pkg/a/__init__.py": [{ exportedName: "impl", sourceModule: ".b", sourceName: "impl" }],
+        "pkg/a/b/__init__.py": [{ exportedName: "impl", sourceModule: ".c", sourceName: "impl" }],
+        "pkg/a/b/c/__init__.py": [{ exportedName: "impl", sourceModule: ".", sourceName: "_impl" }],
+      },
+      {
+        "pkg/__init__.py": [],
+        "pkg/a/__init__.py": [],
+        "pkg/a/b/__init__.py": [],
+        "pkg/a/b/c/__init__.py": [],
+        "pkg/a/b/c/_impl.py": ["Widget"],
+        "app/caller.py": ["main"],
+      },
+    );
+    expect(new PythonImportFileMapper().resolveExportedModule("pkg/__init__.py", "impl", ctx)).toBeNull();
+  });
+
+  it("terminates on a re-export CYCLE instead of recursing", () => {
+    const ctx = aliasCtx(
+      {
+        "a/__init__.py": [{ exportedName: "thing", sourceModule: "..b", sourceName: "thing" }],
+        "b/__init__.py": [{ exportedName: "thing", sourceModule: "..a", sourceName: "thing" }],
+      },
+      { "a/__init__.py": [], "b/__init__.py": [], "app/caller.py": ["main"] },
+    );
+    expect(new PythonImportFileMapper().resolveExportedModule("a/__init__.py", "thing", ctx)).toBeNull();
+  });
+
+  it("skips a star entry rather than dereferencing a `sourceName` it does not have", () => {
+    const ctx = aliasCtx({
+      "server/polar/backoffice/components/__init__.py": [{ exportedName: "*", sourceModule: "._datatable" }],
+    });
+    expect(new PythonImportFileMapper().resolveExportedModule(PKG, "datatable", ctx)).toBeNull();
+  });
+
+  it("refuses an empty name and a star", () => {
+    const mapper = new PythonImportFileMapper();
+    expect(mapper.resolveExportedModule(PKG, "", aliasCtx())).toBeNull();
+    expect(mapper.resolveExportedModule(PKG, "*", aliasCtx())).toBeNull();
   });
 });

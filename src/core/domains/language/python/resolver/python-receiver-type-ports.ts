@@ -23,6 +23,8 @@ import { resolveLocalBinding, type CallContext, type LocalBinding } from "../../
 import type { TypeRef } from "../../../../contracts/types/language.js";
 import {
   CHAIN_MAX_HOPS_DEFAULT,
+  splitAtBracketDepthZero,
+  splitReceiverHops,
   stripCallArgs,
   type ReceiverTypePorts,
 } from "../../kernel/receiver-type-propagation.js";
@@ -30,8 +32,10 @@ import type { PythonAncestorLinearizerCache } from "./python-ancestor-policy.js"
 import type { PythonImportFileMapper } from "./python-import-file-mapper.js";
 import {
   findPythonImportBinding,
+  pythonBareCallReturnType,
   pythonImportMatchesReceiver,
   pythonInheritedMemberType,
+  receiverModuleText,
   resolveTypeFile,
 } from "./strategies/shared.js";
 
@@ -39,6 +43,111 @@ export const PYTHON_CHAIN_MAX_HOPS_ENV = "CODEGRAPH_PY_CHAIN_MAX_HOPS";
 
 /** A single capitalized identifier — Python's class-name convention, no `::`. */
 const PYTHON_CLASS_HEAD = /^[A-Z]\w*$/;
+
+/** The two modules that export `Self` and `cast`. */
+const PYTHON_TYPING_MODULES: ReadonlySet<string> = new Set(["typing", "typing_extensions"]);
+
+/**
+ * `Datatable[Benefit, S]` → `Datatable`; `Datatable` → `Datatable`.
+ *
+ * Python generics ONLY, and deliberately not folded into the shared
+ * `stripCallArgs`: in Ruby `xs[0].foo` is an index and `xs[0]` is what the fold
+ * expects to see.
+ */
+function stripPythonSubscript(name: string): string {
+  const bracket = name.indexOf("[");
+  return bracket === -1 ? name : name.slice(0, bracket);
+}
+
+/**
+ * The FILE a module-alias head names — the composed module text first, then the
+ * package alias when that text maps nowhere (bd tea-rags-mcp-w205u, E4.6b-1).
+ *
+ * The same two questions `importedName`'s module arm asks, asked here of a
+ * chain HEAD. polar's `from ..components import datatable` composes
+ * `..components.datatable`, which names no file; the package's
+ * `from . import _datatable as datatable` is what says which module the head
+ * denotes, and `resolveExportedModule` is deterministic on it.
+ */
+function pythonHeadModuleFile(head: string, ctx: CallContext, mapper: PythonImportFileMapper): string | null {
+  const binding = findPythonImportBinding(ctx.imports, head);
+  if (binding === null) return null;
+  const composed = mapper.mapImportToFile(receiverModuleText(binding), ctx.callerFile, ctx);
+  if (composed.kind === "project") return composed.relPath;
+  const pkg = mapper.mapImportToFile(binding.imp.importText, ctx.callerFile, ctx);
+  if (pkg.kind !== "project") return null;
+  return mapper.resolveExportedModule(pkg.relPath, binding.importedName, ctx);
+}
+
+/**
+ * Does the file a module-alias head names DECLARE `member` at top level, once?
+ *
+ * Exact-symbolId `lookup`, which only a top-level `def` / `class` carries as
+ * its whole id — the same gate `moduleMemberTarget` uses, and never a
+ * short-name search across the project.
+ */
+function pythonHeadModuleDeclares(
+  head: string,
+  member: string,
+  ctx: CallContext,
+  mapper: PythonImportFileMapper,
+): boolean {
+  const moduleFile = pythonHeadModuleFile(head, ctx, mapper);
+  if (moduleFile === null) return false;
+  return ctx.symbolTable.lookup(member).filter((def) => def.relPath === moduleFile).length === 1;
+}
+
+/**
+ * `get_client()` as a chain HEAD: the callee's own recorded return type.
+ *
+ * `polar/integrations/polar/client.py` reads `def get_client() -> PolarSelfClient`
+ * and 18 sites open `get_client().portal_get_customer()`; the return fact exists
+ * and nothing asked for it, because the constructor arm refuses a lowercase head.
+ *
+ * The single-candidate gate is not a cardinality guess. `structuredReturnTypes`
+ * keys a top-level `def` by its BARE name, so a second same-named def anywhere
+ * in the corpus would let one file's answer speak for the other. Reachability is
+ * the two arms a bare call has and nothing wider: the caller's own module scope,
+ * or an import that maps into the project.
+ */
+function pythonCallHeadReturnType(
+  receiver: string,
+  ctx: CallContext,
+  mapper: PythonImportFileMapper,
+): TypeRef | undefined {
+  // The lookup and its reachability gate moved to `strategies/shared.ts` when
+  // E4.6c gave the same question a second asker at a FIELD assignment (bd
+  // tea-rags-mcp-w205u). The lowercase gate lives there too, so a receiver
+  // ending in `)` reduces to the callee and asks once.
+  return pythonBareCallReturnType(stripCallArgs(receiver), ctx, mapper);
+}
+
+/**
+ * `cast(T, x)` — the type IS argument one, so there is nothing to infer.
+ *
+ * `callText` arrives whole, parens included. The argument split reuses the
+ * kernel's depth scanner rather than adding a second one, because a cast's
+ * second argument routinely carries commas of its own.
+ */
+function pythonCastArgumentType(
+  callText: string,
+  ctx: CallContext,
+  mapper: PythonImportFileMapper,
+): TypeRef | undefined {
+  const open = callText.indexOf("(");
+  if (open === -1 || !callText.endsWith(")")) return undefined;
+  const first = splitAtBracketDepthZero(callText.slice(open + 1, -1), ",")[0]?.trim();
+  if (first === undefined) return undefined;
+  const bare = stripPythonSubscript(first.slice(first.lastIndexOf(".") + 1));
+  if (!PYTHON_CLASS_HEAD.test(bare) || resolveTypeFile(bare, ctx, mapper) === null) return undefined;
+  return { form: "instance", name: bare };
+}
+
+/** Was `cast` bound from `typing` / `typing_extensions` in this file? */
+function pythonCastIsTyping(localName: string, ctx: CallContext): boolean {
+  const bound = findPythonImportBinding(ctx.imports, localName);
+  return bound !== null && bound.importedName === "cast" && PYTHON_TYPING_MODULES.has(bound.imp.importText);
+}
 
 /** Read the cap per call so a test env override needs no module reload. */
 function pythonMaxHops(): number {
@@ -70,9 +179,16 @@ function pythonSingleHopType(
     return enclosing === undefined ? undefined : { form: "instance", name: enclosing };
   }
   if (receiver.endsWith(")")) {
-    const bare = stripCallArgs(receiver);
-    if (!PYTHON_CLASS_HEAD.test(bare) || resolveTypeFile(bare, ctx, mapper) === null) return undefined;
-    return { form: "instance", name: bare };
+    // The subscript strip is what turns `Datatable[Benefit, S](…)` from a
+    // failed class test into a head; the two arms after it are a call whose
+    // return is recorded and a `cast` that states its type outright. Order is
+    // load-bearing: a capitalized head keeps today's path exactly.
+    const bare = stripPythonSubscript(stripCallArgs(receiver));
+    if (PYTHON_CLASS_HEAD.test(bare)) {
+      return resolveTypeFile(bare, ctx, mapper) === null ? undefined : { form: "instance", name: bare };
+    }
+    if (pythonCastIsTyping(bare, ctx)) return pythonCastArgumentType(receiver, ctx, mapper);
+    return pythonCallHeadReturnType(receiver, ctx, mapper);
   }
   const bound = pythonBindingInForceAt(receiver, atLine, ctx);
   if (bound !== undefined) return { form: "instance", name: bound.type };
@@ -106,12 +222,23 @@ function pythonSingleHopType(
  * `x = Foo(); x.run()` on one line, which no evidence asks for. `line <= atLine`
  * in the shared lookup stays exactly as it is — the retry simply asks it for the
  * line before, so a name bound EARLIER in the body keeps that earlier type.
+ *
+ * The window is the STATEMENT, not its first line (bd tea-rags-mcp-w205u,
+ * E4.6a). netbox's `layout = layout.Layout(\n    layout.Row(…))` puts the inner
+ * receivers on lines 205, 206, 212 against a binding at 204, and a same-line
+ * test sees none of them — 50 more rows of the identical shape. `endLine` is
+ * the extent the walker records; ABSENT it degenerates to the same-line test it
+ * replaces, so an index written by an earlier walker behaves exactly as before.
+ *
+ * The retry asks for `bound.line - 1` rather than `atLine - 1`: at line 210
+ * against a binding at 204, the line before the CALL still finds the very
+ * binding being demoted.
  */
 function pythonBindingInForceAt(receiver: string, atLine: number, ctx: CallContext): LocalBinding | undefined {
   const bound = resolveLocalBinding(ctx.localBindings, receiver, atLine);
-  if (bound?.line !== atLine) return bound;
+  if (bound === undefined || atLine > (bound.endLine ?? bound.line)) return bound;
   if (findPythonImportBinding(ctx.imports, receiver) === null) return bound;
-  return resolveLocalBinding(ctx.localBindings, receiver, atLine - 1);
+  return resolveLocalBinding(ctx.localBindings, receiver, bound.line - 1);
 }
 
 /**
@@ -133,8 +260,27 @@ function pythonSeedHead(
   mapper: PythonImportFileMapper,
 ): { type: TypeRef; consumedMembers: 0 | 1 } | undefined {
   if (firstLink === undefined) return undefined;
+  const cast = pythonTypingCastSeed(head, firstLink, ctx, mapper);
+  if (cast !== undefined) return cast;
   const alias = pythonModuleAliasSeed(head, firstLink, ctx, mapper);
   return alias ?? pythonClassChainHeadSeed(head, ctx, mapper);
+}
+
+/**
+ * `typing.cast(T, x).m()` — the dotted spelling of the bare `cast` arm in
+ * {@link pythonSingleHopType}. Three polar rows; it shares the argument reader
+ * rather than growing a second one.
+ */
+function pythonTypingCastSeed(
+  head: string,
+  firstLink: string,
+  ctx: CallContext,
+  mapper: PythonImportFileMapper,
+): { type: TypeRef; consumedMembers: 1 } | undefined {
+  if (!PYTHON_TYPING_MODULES.has(head) || !firstLink.startsWith("cast(")) return undefined;
+  if (!ctx.imports.some((imp) => pythonImportMatchesReceiver(imp.importText, head))) return undefined;
+  const type = pythonCastArgumentType(firstLink, ctx, mapper);
+  return type === undefined ? undefined : { type, consumedMembers: 1 };
 }
 
 /** `mod.Cls()` / `mod.Cls` — the module-alias arm of {@link pythonSeedHead}. */
@@ -144,10 +290,17 @@ function pythonModuleAliasSeed(
   ctx: CallContext,
   mapper: PythonImportFileMapper,
 ): { type: TypeRef; consumedMembers: 1 } | undefined {
-  const member = stripCallArgs(firstLink);
+  const member = stripPythonSubscript(stripCallArgs(firstLink));
   if (!PYTHON_CLASS_HEAD.test(member)) return undefined;
-  const imported = ctx.imports.some((imp) => pythonImportMatchesReceiver(imp.importText, head));
-  if (!imported || resolveTypeFile(member, ctx, mapper) === null) return undefined;
+  // Arm one, unchanged: the head reads as an imported module and the CALLER's
+  // own imports pin the class. Arm two, one step wider (bd tea-rags-mcp-w205u):
+  // ask the head's OWN module file whether it declares the class — the caller
+  // never imports `Datatable`, only the module that holds it. Order keeps every
+  // site that resolves today resolving to the same target.
+  const viaCaller =
+    ctx.imports.some((imp) => pythonImportMatchesReceiver(imp.importText, head)) &&
+    resolveTypeFile(member, ctx, mapper) !== null;
+  if (!viaCaller && !pythonHeadModuleDeclares(head, member, ctx, mapper)) return undefined;
   const form = firstLink.endsWith(")") ? "instance" : "class";
   return { type: { form, name: member }, consumedMembers: 1 };
 }
@@ -256,6 +409,9 @@ export function createPythonReceiverTypePorts(
     memberTypeOf: (recv: TypeRef, member: string, ctx: CallContext): TypeRef | undefined =>
       pythonMemberTypeOf(recv, member, ctx, mapper, linearizers),
     maxHops: pythonMaxHops,
+    // Python opts INTO the bracket-aware hop split; Ruby keeps `split(".")`.
+    // See the port's docblock for the 34 mastodon sites that decided it.
+    splitReceiverHops,
   });
 }
 

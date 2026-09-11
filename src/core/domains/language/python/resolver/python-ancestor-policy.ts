@@ -60,6 +60,7 @@ import { PYTHON_UNRESOLVABLE_BASE } from "../walker/walker.js";
 import { linearizeC3 } from "./mro.js";
 import type { PythonImportFileMapper } from "./python-import-file-mapper.js";
 import {
+  lookupPythonSymbolsByShortName,
   parsePythonClassKey,
   pythonClassKey,
   pythonClassKeyIsDeclared,
@@ -230,11 +231,61 @@ function resolveOneBaseSpelling(
   if (moduleText.length === 0 || className.length === 0) return UNKNOWN_BASE;
   const mapped = mapper.mapImportToFile(moduleText, definingFile, ctx);
   if (mapped.kind === "external") return EXTERNAL_BASE;
-  if (mapped.kind !== "project") return UNKNOWN_BASE;
-  const direct = classKeyIn(className, mapped.relPath, ctx);
+  const moduleFile =
+    mapped.kind === "project" ? mapped.relPath : aliasedModuleFile(moduleText, definingFile, ctx, mapper);
+  if (moduleFile === null) return UNKNOWN_BASE;
+  const direct = classKeyIn(className, moduleFile, ctx);
   if (direct.kind === "project") return direct;
-  const origin = reexportOriginFile(className, mapped.relPath, ctx, mode);
+  const origin = reexportOriginFile(className, moduleFile, ctx, mode);
   return origin === null ? UNKNOWN_BASE : classKeyIn(className, origin, ctx);
+}
+
+/**
+ * The file a module text names when its LAST segment is a package's alias for a
+ * sibling module rather than a file of its own (bd tea-rags-mcp-w205u, E4.4c).
+ *
+ * polar's `components/__init__.py` opens `from . import _datatable as datatable`
+ * and nineteen `super().__init__()` sites inherit from
+ * `datatable.DatatableAttrColumn[…]`. The walker's half is already right — the
+ * generic subscript is stripped and the base is qualified
+ * `..components.datatable::DatatableAttrColumn` — but `..components.datatable`
+ * names no file, so the base read `unknown` and the MRO closed nothing.
+ *
+ * The SAME question `importedName`'s module arm asks of a receiver head (E4.6a),
+ * asked here of a base spelling. Reached ONLY after the whole module text has
+ * failed to map, so every base that resolves today resolves to the same file.
+ * Deterministic: an explicit alias names exactly one module.
+ */
+function aliasedModuleFile(
+  moduleText: string,
+  definingFile: RelPath,
+  ctx: CallContext,
+  mapper: PythonImportFileMapper,
+): RelPath | null {
+  const split = splitModuleAlias(moduleText);
+  if (split === null) return null;
+  const pkg = mapper.mapImportToFile(split[0], definingFile, ctx);
+  if (pkg.kind !== "project") return null;
+  return mapper.resolveExportedModule(pkg.relPath, split[1], ctx);
+}
+
+/**
+ * A module text into its package half and the name that package binds —
+ * `joinModulePath` in `../walker/walker.ts` run backwards, so a leading dot run
+ * stays with the package: `..components.datatable` is `..components` +
+ * `datatable`, and `..datatable` is `..` + `datatable`, never `.` + anything.
+ *
+ * `null` when there is no package half to ask — a bare single-segment absolute
+ * text names a top-level module, and nothing re-exports it.
+ */
+function splitModuleAlias(moduleText: string): readonly [string, string] | null {
+  let dots = 0;
+  while (dots < moduleText.length && moduleText[dots] === ".") dots++;
+  const rest = moduleText.slice(dots);
+  if (rest.length === 0) return null;
+  const at = rest.lastIndexOf(".");
+  if (at === -1) return dots === 0 ? null : [moduleText.slice(0, dots), rest];
+  return [moduleText.slice(0, dots + at), rest.slice(at + 1)];
 }
 
 /**
@@ -243,7 +294,7 @@ function resolveOneBaseSpelling(
  * one file are `unknown`, not a coin flip.
  */
 function classKeyIn(className: string, file: RelPath, ctx: CallContext): BaseKeyVerdict {
-  const declared = ctx.symbolTable.lookupByShortName(className).filter((def) => def.relPath === file);
+  const declared = lookupPythonSymbolsByShortName(ctx, className).filter((def) => def.relPath === file);
   if (declared.length !== 1) return UNKNOWN_BASE;
   const def = declared[0];
   return { kind: "project", classKey: pythonClassKey(def.relPath, pythonDeclaredClassFq(def)) };

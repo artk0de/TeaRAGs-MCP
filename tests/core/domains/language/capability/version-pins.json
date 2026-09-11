@@ -2,11 +2,11 @@
   "*": {
     "chunking": {
       "version": 1,
-      "digest": "sha256:bb683a71fbf980f596d03f0fa0e0f3b16fbfb89eea9a1fd71d29f97f51129e85"
+      "digest": "sha256:56f9e1de4039c687a6f0f6dce035c15960be49002a101219c4535bfaf05c445a"
     },
     "walker": {
       "version": 2,
-      "digest": "sha256:7cac29c2fdb3fbc151435435387982ac6c9e85cedafe0e92b5323548342e1357"
+      "digest": "sha256:f5abe8edccf6a96b75c6108217b7e88c6b7c6f089e2c5302228d5a4699b2095e"
     }
   },
   "bash": {
@@ -49,8 +49,8 @@
   },
   "python": {
     "walker": {
-      "version": 4,
-      "digest": "sha256:fe034e709c5cb1a3d8eedc05b8f4c3c4eaff2916ada0f1fc12eca56bc0358348"
+      "version": 5,
+      "digest": "sha256:5cf906bf4769cc868f908d9bffd148662fe0ed7ee6e384e91324da3b84c885cb"
     }
   },
   "ruby": {
@@ -59,8 +59,8 @@
       "digest": "sha256:cb67c386aaebfa16bea36f9588254101ff2e473e4f666661d793fbb5804d3104"
     },
     "walker": {
-      "version": 1,
-      "digest": "sha256:8a0a6df975d77d804bb9fb089cff14a10117d157a0f66830962e552b0cb99877"
+      "version": 2,
+      "digest": "sha256:b434f0138843cc3d692a3c7d9b7668081b3ad3c15906c9c705674c6367a5ffba"
     }
   },
   "rust": {

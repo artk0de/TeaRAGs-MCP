@@ -13,14 +13,25 @@
  *   npx tsx scripts/py-codegraph-jedi-oracle.ts --corpus <abs path> \
  *     [--python <interpreter running jedi>] [--environment <corpus venv>] \
  *     [--roots src,server] [--limit N] [--samples N] [--seed N]
- *     [--json out.json] [--quiet]
+ *     [--oracle jedi|lsp|merged] [--no-dispatch] [--json out.json] [--quiet]
+ *
+ * `--oracle jedi` is the default and is byte-identical to every published
+ * number. `merged` repairs the files parso 0.8.7 cannot read with a second
+ * engine, per file (bd tea-rags-mcp-w205u); the report then carries BOTH
+ * denominators and never one alone.
+ *
+ * The dispatch layer runs by DEFAULT (E4.0.3), because production consults it
+ * before the exact chain and lets a fan-out replace the chain's answer. Its
+ * columns are printed apart and never summed with the 1:1 ones (D3).
+ * `--no-dispatch` is the pre-E4.0.3 walk, kept because the identity gate is a
+ * diff of the two.
  *
  * `--corpus` may also be a manifest NAME (`netbox`), in which case the root, the
  * venv interpreter and the source roots come from
  * `scripts/lib/codegraph-corpora.json`.
  */
 import { spawn } from "node:child_process";
-import { writeFileSync } from "node:fs";
+import { readFileSync, writeFileSync } from "node:fs";
 import { extname, join, resolve as resolvePath } from "node:path";
 import { createInterface } from "node:readline";
 
@@ -28,18 +39,39 @@ import {
   DEFAULT_AMBIGUOUS_RESOLVE_MODE,
   type CallContext,
   type CallRef,
+  type InheritanceEdgeRow,
   type ModuleReexport,
 } from "../src/core/contracts/types/codegraph.js";
 import type {
+  DispatchResolverComponent,
   SymbolResolutionOutcome,
   SymbolResolutionStrategy,
   TypeRef,
 } from "../src/core/contracts/types/language.js";
-import { DefaultSymbolIdComposer, LanguageFactory } from "../src/core/domains/language/index.js";
-import { createPythonSymbolResolutionChain } from "../src/core/domains/language/python/resolver/index.js";
-import { CONE_MAX_DEFAULT } from "../src/core/domains/language/python/resolver/strategies/index.js";
+import { ExternalCallClassifier } from "../src/core/domains/language/external-classifier.js";
+import { ConeDispatchResolver, DefaultSymbolIdComposer, LanguageFactory } from "../src/core/domains/language/index.js";
+import { dispatchFanoutPolicyFor } from "../src/core/domains/language/kernel/fanout-policy.js";
+import {
+  PythonChainAnswerProbe,
+  pythonDynamicDispatchEnabled,
+  PythonDynamicDispatchResolver,
+} from "../src/core/domains/language/python/resolver/dispatch/index.js";
+import {
+  createPythonSymbolResolutionChain,
+  PythonImportFileMapper,
+} from "../src/core/domains/language/python/resolver/index.js";
+import { PythonExternalVocabulary } from "../src/core/domains/language/python/resolver/python-external-vocabulary.js";
+import {
+  CONE_MAX_DEFAULT,
+  PythonConeTypeLocator,
+} from "../src/core/domains/language/python/resolver/strategies/index.js";
 import { pythonEnclosingClass } from "../src/core/domains/language/python/resolver/strategies/shared.js";
-import { resolveViaChain } from "../src/core/domains/language/resolver-chain.js";
+import { resolveDispatchViaComponents, resolveViaChain } from "../src/core/domains/language/resolver-chain.js";
+import { MapHierarchyView } from "../src/core/domains/trajectory/codegraph/hierarchy-view.js";
+import {
+  buildHierarchySnapshot,
+  normalizeInheritanceEdges,
+} from "../src/core/domains/trajectory/codegraph/symbols/inheritance-edges.js";
 import { CODEGRAPH_LANGUAGES } from "../src/core/domains/trajectory/codegraph/symbols/provider.js";
 import { classifyReceiverKind } from "../src/core/domains/trajectory/codegraph/symbols/receiver-kind.js";
 import { InMemoryGlobalSymbolTable } from "../src/core/domains/trajectory/codegraph/symbols/symbol-table.js";
@@ -49,20 +81,44 @@ import {
   categorizePySite,
   classifyPyVerdict,
   isSuperCallSite,
+  legacyViewOf,
+  locateCalleeColumn,
+  mergeOracleReplies,
+  oracleEntryOf,
   samplePyRows,
+  scoreFan,
   tallyPyCoverage,
+  tallyPyDispatchGap,
+  tallyPyFan,
+  tallyPyRecall,
   tallyPyRows,
+  type MergedOracleFileReply,
+  type OracleEngine,
+  type OracleSelection,
+  type PyFanOutcome,
+  type PyFanTally,
+  type PyOracleFileReply,
   type PyOracleRow,
-  type PySiteFacts,
-  type PyTargetOrigin,
-  type PyUnlocatedShape,
+  type PyRecallSplit,
 } from "./lib/py-oracle-core.js";
+import {
+  applyTiebreak,
+  isDisagreementRow,
+  isOracleSelfReference,
+  planTiebreakAsk,
+  tallyPyPrecision,
+  tallyPyTiebroken,
+  type PyPrecisionSplit,
+  type PyTiebreakCounts,
+  type PyTiebrokenSplit,
+} from "./lib/py-oracle-tiebreak.js";
 import {
   buildCorpusExclusionFilter,
   buildSymbolDefs,
   collectSourceFiles,
   extractFile,
   formatOracleTable,
+  type OracleOutcome,
 } from "./ts-codegraph-typechecker-oracle.js";
 
 /**
@@ -110,6 +166,26 @@ export interface PyChainSite {
   ctx: CallContext;
   receiverKind: string;
   chain: { targetRelPath: string; targetSymbolId: string | null } | null;
+  /**
+   * What `CallEdgeResolutionRunner.dispatchCall`'s default channel books here
+   * (bd tea-rags-mcp-w205u, E4.0.3): the dispatch layer's single target when the
+   * cone pinned one, else the exact chain's. IDENTICAL to `chain` under
+   * `--no-dispatch`, which is what makes the identity gate a diff rather than a
+   * promise.
+   *
+   * `null` and ABSENT are different answers and `??` must never be used to read
+   * it. `null` says the dispatch layer ran and took the 1:1 answer away (a fan,
+   * or an over-cap decision); absent says nothing ran the layer at all — a
+   * hand-built fixture, or a driver older than E4.0.3 — and there the chain's
+   * answer is what production books.
+   */
+  runnerAnswer?: { targetRelPath: string; targetSymbolId: string | null } | null;
+  /**
+   * What `resolveDispatch` emitted here. ABSENT under `--no-dispatch` — a layer
+   * that never ran is not a `none` outcome measured, and the row field it feeds
+   * has to disappear rather than read zero for the identity gate to hold.
+   */
+  fan?: PyFanOutcome;
   answeredBy: string;
   /**
    * The runner's OWN verdict on a declined call, reproduced in the runner's
@@ -119,6 +195,13 @@ export interface PyChainSite {
    * `noInProjectDef` sites to the vocabulary that did not claim them.
    */
   missBucket: "resolved" | "dynamicSend" | "external" | "noInProjectDef" | "coreAmbiguous" | "miss";
+  /**
+   * The same bucket read against the EXACT chain rather than the runner's
+   * answer. They differ only where the dispatch layer replaced the answer, and
+   * `exactVerdict` needs the chain's own: a site the chain resolved is not a
+   * site the classifier waved off, whatever the fan later did to it.
+   */
+  exactMissBucket?: PyChainSite["missBucket"];
 }
 
 export interface PyCorpusWalk {
@@ -129,6 +212,24 @@ export interface PyCorpusWalk {
   ingestIgnored: number;
   codegraphExcluded: number;
   chainDrift: number;
+  /** Did the walk run the dispatch layer at all — the header prints it, so a fan block of zeros is never ambiguous. */
+  dispatch: boolean;
+  /**
+   * Sites carrying an explicit `call.dispatch` table. The runner routes those
+   * through its FIRST channel, a different question from the cone, so they stay
+   * out of the walk — but they are now counted rather than silently dropped.
+   */
+  dispatchTableSites: number;
+  /**
+   * Sites where the harness's reconstruction of the runner's fan-out disagrees
+   * with `PythonCallResolver.resolveDispatch`. MUST be 0 — `chainDrift`'s twin
+   * for the dispatch channel.
+   */
+  dispatchDrift: number;
+  /** The corpus-adaptive narrowing cap, computed from the harness's own symbol table. */
+  fanoutPolicy: { cap: number; p99DefsPerMember: number };
+  /** Python's own cone bound, above which the cone collapses to one `poly-base` edge. */
+  coneMax: number;
 }
 
 /**
@@ -138,10 +239,24 @@ export interface PyCorpusWalk {
  * every call into it look like a resolver miss (the TS harness's `.js` blind
  * spot, same shape, other language).
  */
-export async function walkCorpus(corpusRoot: string, limit: number, quiet: boolean): Promise<PyCorpusWalk> {
+export async function walkCorpus(
+  corpusRoot: string,
+  limit: number,
+  quiet: boolean,
+  options: { dispatch?: boolean; includeTests?: boolean } = {},
+): Promise<PyCorpusWalk> {
+  // Default ON, because production's default channel consults the dispatch
+  // layer FIRST and lets a fan-out replace the chain's answer
+  // (`resolution-runner.ts:557`). `--no-dispatch` is the harness's historical
+  // behaviour and is kept only so the identity gate has something to diff.
+  const withDispatch = options.dispatch !== false;
   const factory = new LanguageFactory();
   const composer = new DefaultSymbolIdComposer();
-  const exclude = await buildCorpusExclusionFilter(corpusRoot, factory);
+  // `--include-tests` walks the files production excludes unconditionally, so
+  // `pytestFixture` can be counted at all (spec D5). It is a SEPARATE
+  // population, never the baseline: the extra files enter the symbol table and
+  // move every short-name ambiguity, not just the fixture rows.
+  const exclude = await buildCorpusExclusionFilter(corpusRoot, factory, { includeTests: options.includeTests });
   // Every codegraph extension, not just `.py`: netbox ships JavaScript, and a
   // symbol table missing it turns every call into that code into a phantom
   // resolver miss.
@@ -160,9 +275,21 @@ export async function walkCorpus(corpusRoot: string, limit: number, quiet: boole
   // `<relPath>::<class FQ>` → field → type — the run-global field address the
   // MRO fold reads a base class's fields from (bd tea-rags-mcp-f0xaa).
   const classFieldTypesByClassKey: Record<string, Record<string, string>> = {};
+  // The same address for a field assigned from a CALL, carrying the callee
+  // SPELLING the resolver folds one level (bd tea-rags-mcp-w205u, E4.6c).
+  const classFieldCallResults: Record<string, Record<string, string>> = {};
   // `relPath` → the names its `from` statements bind — what lets the import
   // mapper walk past a package that re-exports rather than declares (xpl83.3).
   const moduleReexports: Record<string, readonly ModuleReexport[]> = {};
+  // The two channels the CHA cone reads, accumulated exactly as
+  // `CodegraphRunState` accumulates them and sealed at the same pass-1→pass-2
+  // barrier (bd tea-rags-mcp-o17v2 / pffv). Without them `ctx.hierarchy` is
+  // undefined and `resolveDispatch` returns `[]` at EVERY site, which is why
+  // the harness has never seen the layer fire. No Python chain strategy reads
+  // either channel, so threading them cannot move the exact chain — the
+  // identity gate is what proves it rather than this comment.
+  const inheritanceRows: InheritanceEdgeRow[] = [];
+  const instantiatedTypes = new Set<string>();
   const extractions: {
     relPath: string;
     extraction: NonNullable<ReturnType<typeof extractFile>>;
@@ -184,7 +311,14 @@ export async function walkCorpus(corpusRoot: string, limit: number, quiet: boole
     for (const [classKey, fields] of Object.entries(extraction.classFieldTypesByClassKey ?? {})) {
       classFieldTypesByClassKey[classKey] = { ...classFieldTypesByClassKey[classKey], ...fields };
     }
+    for (const [classKey, fields] of Object.entries(extraction.classFieldCallResults ?? {})) {
+      classFieldCallResults[classKey] = { ...classFieldCallResults[classKey], ...fields };
+    }
     if (extraction.moduleReexports) moduleReexports[relPath] = extraction.moduleReexports;
+    // `() => null` mirrors the sink: the cone reads ancestors by fqName, and
+    // the partial table cannot bind symbol ids at pass 1 anyway.
+    inheritanceRows.push(...normalizeInheritanceEdges(extraction, () => null));
+    for (const instantiated of extraction.instantiatedTypes ?? []) instantiatedTypes.add(instantiated);
     if (extname(relPath) === SCORED_EXTENSION) extractions.push({ relPath, extraction });
     else symbolTableOnlyFiles++;
   }
@@ -192,8 +326,39 @@ export async function walkCorpus(corpusRoot: string, limit: number, quiet: boole
 
   const production = factory.create("python").resolver;
   if (production === undefined) throw new Error("the python language provider has no resolver");
+  const hierarchy = new MapHierarchyView(buildHierarchySnapshot(inheritanceRows));
+  // `dispatchDrift`'s independent side. `CallEdgeResolutionRunner` cannot be
+  // driven one site at a time outside the pipeline — it wants a run state, a
+  // spill file and a DB — so the parity check is built the way the orchestrator
+  // specified: a SECOND dispatch stack, composed here from the same kernel
+  // pieces `PythonCallResolver`'s constructor composes, in the same order, run
+  // through `resolveDispatchViaComponents` exactly as production runs it. It
+  // shares no chain, probe, mapper or memo with production, so a disagreement is
+  // a real one and not a cache artefact. It is built ONCE, not per call site:
+  // the dynamic component's chain probe memoises per `CallRef`, and a fresh
+  // component per site would throw that away and re-read its env cap. The
+  // `CODEGRAPH_PY_DYNAMIC_DISPATCH` branch is production's own (D10): read once,
+  // here as there, so a flag-off run composes the cone alone on BOTH sides and
+  // `dispatchDrift` keeps measuring the composition rather than the flag.
+  const parityMapper = new PythonImportFileMapper();
+  const parityExternal = new ExternalCallClassifier(new PythonExternalVocabulary(parityMapper));
+  const parityComponents: DispatchResolverComponent[] = [
+    new ConeDispatchResolver(new PythonConeTypeLocator({ mode: DEFAULT_AMBIGUOUS_RESOLVE_MODE }), CONE_MAX_DEFAULT),
+  ];
+  if (pythonDynamicDispatchEnabled(process.env.CODEGRAPH_PY_DYNAMIC_DISPATCH)) {
+    parityComponents.push(
+      new PythonDynamicDispatchResolver(new PythonChainAnswerProbe(buildPythonChain()), (call, ctx) =>
+        parityExternal.targetsCoreAmbiguousMember(call, ctx),
+      ),
+    );
+  }
+  const parityDispatch = {
+    resolveDispatch: (call: CallRef, ctx: CallContext) => resolveDispatchViaComponents(parityComponents, call, ctx),
+  };
   const sites: PyChainSite[] = [];
   let chainDrift = 0;
+  let dispatchTableSites = 0;
+  let dispatchDrift = 0;
   // ONE chain for the whole walk, wrapping ONE record the loop resets — the
   // chain now owns a `PythonImportFileMapper` whose memo is per-instance, and
   // rebuilding it per call site would both throw that cache away every site and
@@ -217,10 +382,18 @@ export async function walkCorpus(corpusRoot: string, limit: number, quiet: boole
         functionReturnTypes,
         classAncestors,
         classFieldTypesByClassKey,
+        classFieldCallResults,
         moduleReexports,
+        hierarchy,
+        instantiatedTypes,
       };
       for (const call of chunk.calls ?? []) {
-        if (call.dispatch !== undefined) continue; // the runner skips normal resolution here
+        if (call.dispatch !== undefined) {
+          // The runner's FIRST channel — an explicit dispatch table, not the
+          // cone. Reported rather than silently dropped (E4.0.3 Step 2).
+          dispatchTableSites++;
+          continue;
+        }
         probe.answeredBy = "none";
         const chain = resolveViaChain(probedChain, call, ctx);
         const truth = production.resolve(call, ctx);
@@ -231,31 +404,46 @@ export async function walkCorpus(corpusRoot: string, limit: number, quiet: boole
             chain.targetRelPath === truth.targetRelPath &&
             chain.targetSymbolId === truth.targetSymbolId);
         if (!same) chainDrift++;
+        // The fan pass. Production consults `resolveDispatch` BEFORE the exact
+        // chain, so this is what production would have emitted at this site.
+        const fan = withDispatch ? scoreFan(production, call, ctx) : undefined;
+        if (fan !== undefined) {
+          const parity = scoreFan(parityDispatch, call, ctx);
+          if (parity.kind !== fan.kind || parity.fan.join("|") !== fan.fan.join("|")) dispatchDrift++;
+        }
+        const exact =
+          chain === null ? null : { targetRelPath: chain.targetRelPath, targetSymbolId: chain.targetSymbolId };
+        // A `single` fan-out REPLACES the chain's answer; a `fan` or
+        // `ambiguous` one leaves production with no 1:1 edge at all.
+        const runnerAnswer =
+          fan === undefined || fan.kind === "none" ? exact : fan.kind === "single" ? fan.single : null;
+        // The runner's own verdict on a DECLINED call, computed at most once
+        // per site and shared by both answers: it describes the call, not which
+        // layer answered it, and the classifier calls behind it are the walk's
+        // second-most expensive operation.
+        let declined: PyChainSite["missBucket"] | undefined;
+        const declineBucket = (): PyChainSite["missBucket"] =>
+          (declined ??=
+            call.dynamicSend === true
+              ? "dynamicSend"
+              : (production.targetsExternalImport?.(call, ctx) ?? false)
+                ? "external"
+                : symbolTable.lookupByShortName(call.member).length === 0
+                  ? "noInProjectDef"
+                  : (production.targetsCoreAmbiguousMember?.(call, ctx) ?? false)
+                    ? "coreAmbiguous"
+                    : "miss");
         sites.push({
           relPath,
           call,
           ctx,
           receiverKind: classifyReceiverKind(call, chunk.localBindings),
-          chain:
-            chain === null
-              ? null
-              : {
-                  targetRelPath: chain.targetRelPath,
-                  targetSymbolId: chain.targetSymbolId,
-                },
-          answeredBy: probe.answeredBy,
-          missBucket:
-            chain !== null
-              ? "resolved"
-              : call.dynamicSend === true
-                ? "dynamicSend"
-                : (production.targetsExternalImport?.(call, ctx) ?? false)
-                  ? "external"
-                  : symbolTable.lookupByShortName(call.member).length === 0
-                    ? "noInProjectDef"
-                    : (production.targetsCoreAmbiguousMember?.(call, ctx) ?? false)
-                      ? "coreAmbiguous"
-                      : "miss",
+          chain: exact,
+          runnerAnswer,
+          fan,
+          answeredBy: fan?.kind === "single" ? "coneDispatch" : probe.answeredBy,
+          missBucket: runnerAnswer !== null ? "resolved" : declineBucket(),
+          exactMissBucket: exact !== null ? "resolved" : declineBucket(),
         });
       }
     }
@@ -269,38 +457,23 @@ export async function walkCorpus(corpusRoot: string, limit: number, quiet: boole
     ingestIgnored: selection.ingestIgnored,
     codegraphExcluded: selection.codegraphExcluded,
     chainDrift,
+    dispatch: withDispatch,
+    dispatchTableSites,
+    dispatchDrift,
+    // Read off the SAME function production reads it off, on the symbol table
+    // this walk built. A live run hydrates its table rather than building it,
+    // so the p99 can differ there — which is why the number is printed.
+    fanoutPolicy: dispatchFanoutPolicyFor(symbolTable),
+    coneMax: CONE_MAX_DEFAULT,
   };
 }
 
-export interface PyOracleAnswer {
-  startLine: number;
-  member: string;
-  outcome: {
-    kind: "inProject" | "external" | "unknown" | "parseFailed";
-    origin?: PyTargetOrigin;
-    targets?: {
-      relPath: string;
-      symbolId: string | null;
-      /**
-       * What the COMPOSER found at the target line, unmasked by jedi's own
-       * `name.type`. `nonCallable` says the line holds an assignment rather
-       * than a `def`/`class`, which is the whole of the `oracleNonCallable`
-       * bucket; `unknown` says the target file could not be parsed at all.
-       */
-      defNodeKind?: string;
-      pinUncertain: boolean;
-    }[];
-  };
-  siteFacts?: PySiteFacts;
-  unlocated?: PyUnlocatedShape;
-}
-
-export interface PyOracleFileReply {
-  relPath: string;
-  parseFailed: boolean;
-  parsoErrors: number;
-  answers: PyOracleAnswer[];
-}
+/**
+ * The reply schema moved to the pure core in E4.0.2: it is the CONTRACT two
+ * engines speak, not something the jedi host owns. Re-exported here so every
+ * existing importer — the scratch row drivers included — keeps its path.
+ */
+export type { PyOracleAnswer, PyOracleFileReply } from "./lib/py-oracle-core.js";
 
 /**
  * The hash seed every oracle child runs under (bd tea-rags-mcp-vua9f).
@@ -342,6 +515,19 @@ export async function askOracle(
      */
     roots: readonly string[];
     workers: number;
+    /**
+     * The corpus's `oraclePython`, for an engine that configures its grammar
+     * per workspace (pyright's `python.analysis.pythonVersion`). OMITTED from
+     * the config line when absent, so jedi's record stays byte-identical.
+     */
+    pythonVersion?: string;
+    /**
+     * Attach a 0-based `column` for the callee to every site record. Off for
+     * jedi, which locates the node in its own AST; ON for an engine queried by
+     * POSITION, because `CallRef` carries no column and letting the engine
+     * re-derive one biases it toward the leftmost same-named callee (D7).
+     */
+    columns?: boolean;
   },
 ): Promise<Map<string, PyOracleFileReply>> {
   const byFile = new Map<string, PyChainSite[]>();
@@ -407,21 +593,110 @@ export async function askOracle(
       venvPython: options.venvPython,
       roots: [...options.roots],
       workers: options.workers,
+      // `undefined` drops the key, which is why jedi's config line is unchanged.
+      pythonVersion: options.pythonVersion,
     })}\n`,
   );
   for (const relPath of [...byFile.keys()].sort()) {
     if (dead !== null) break;
-    const batch = (byFile.get(relPath) ?? []).map((site) => ({
-      startLine: site.call.startLine,
-      callText: site.call.callText,
-      receiver: site.call.receiver,
-      member: site.call.member,
-    }));
+    const lines = options.columns === true ? readSourceLines(options.corpusRoot, relPath) : null;
+    // Successive sites on ONE line claim successive occurrences of the callee,
+    // so `f(x), f(y)` does not pin both records to the leftmost `f`.
+    const claimed = new Map<number, number>();
+    const batch = (byFile.get(relPath) ?? []).map((site) => {
+      const record = {
+        startLine: site.call.startLine,
+        callText: site.call.callText,
+        receiver: site.call.receiver,
+        member: site.call.member,
+      };
+      if (lines === null) return record;
+      const from = claimed.get(record.startLine) ?? 0;
+      const column = locateCalleeColumn(lines[record.startLine - 1] ?? "", record, from);
+      if (column >= 0) claimed.set(record.startLine, column + record.member.length);
+      return { ...record, column };
+    });
     child.stdin.write(`${JSON.stringify({ kind: "file", relPath, sites: batch })}\n`);
   }
   if (dead === null) child.stdin.end();
   await done;
   return replies;
+}
+
+/** A source file's lines, or none when it cannot be read. */
+function readSourceLines(corpusRoot: string, relPath: string): string[] {
+  try {
+    return readFileSync(join(corpusRoot, relPath), "utf8").split("\n");
+  } catch {
+    return [];
+  }
+}
+
+export interface PyOracleEnginesOptions {
+  corpusRoot: string;
+  /** jedi's launcher — the primary, and the default engine. */
+  jediArgv: string[];
+  /** The second engine's launcher, spoken to only when the selection asks. */
+  lspArgv: string[];
+  venvPython: string | null;
+  roots: readonly string[];
+  workers: number;
+  pythonVersion?: string;
+  selection: OracleSelection;
+  quiet?: boolean;
+}
+
+/**
+ * Ask the engines the selection requires and merge them PER FILE.
+ *
+ * `merged` runs jedi FIRST and then asks the second engine only about the files
+ * jedi reported damaged. That is not an optimisation of a symmetric design: the
+ * second engine is a repair, so the population it answers is defined by jedi's
+ * own report, and asking it about the whole corpus would spend ~4x the wall to
+ * produce replies the merge would throw away.
+ */
+export async function askOracles(
+  sites: readonly PyChainSite[],
+  options: PyOracleEnginesOptions,
+): Promise<Map<string, MergedOracleFileReply>> {
+  const shared = {
+    corpusRoot: options.corpusRoot,
+    venvPython: options.venvPython,
+    roots: options.roots,
+    workers: options.workers,
+  };
+  if (options.selection === "lsp") {
+    const only = await askOracle(sites, {
+      ...shared,
+      python: options.lspArgv,
+      pythonVersion: options.pythonVersion,
+      columns: true,
+    });
+    return new Map([...only].map(([relPath, reply]) => [relPath, { reply, engine: "lsp" as const }]));
+  }
+
+  const jedi = await askOracle(sites, { ...shared, python: options.jediArgv });
+  if (options.selection === "jedi") {
+    return new Map([...jedi].map(([relPath, reply]) => [relPath, { reply, engine: "jedi" as const }]));
+  }
+
+  const damaged = new Set(
+    [...new Set(sites.map((site) => site.relPath))].filter((relPath) => {
+      const reply = jedi.get(relPath);
+      return reply === undefined || reply.parseFailed || reply.parsoErrors > 0;
+    }),
+  );
+  if (options.quiet !== true) {
+    process.stderr.write(`second oracle: ${String(damaged.size)} files jedi could not read cleanly\n`);
+  }
+  if (damaged.size === 0) {
+    return new Map([...jedi].map(([relPath, reply]) => [relPath, { reply, engine: "jedi" as const }]));
+  }
+  const lsp = await askOracle(
+    sites.filter((site) => damaged.has(site.relPath)),
+    { ...shared, python: options.lspArgv, pythonVersion: options.pythonVersion, columns: true },
+  );
+  return mergeOracleReplies(jedi, lsp);
 }
 
 /**
@@ -446,77 +721,253 @@ export function countEnclosingBases(ctx: CallContext): number | undefined {
   return ctx.classAncestors[enclosing.key]?.length ?? 0;
 }
 
-/** Join the two answers into scored rows. Pure given its inputs. */
-export function buildRows(sites: readonly PyChainSite[], replies: Map<string, PyOracleFileReply>): PyOracleRow[] {
+/**
+ * Join the two answers into scored rows. Pure given its inputs.
+ *
+ * The reply map arrives in either shape: a plain `relPath -> reply` (what the
+ * scratch row drivers hand it, and what `--oracle jedi` reduces to) or the
+ * merged `relPath -> {reply, engine, legacy}`. `oracleEntryOf` discriminates
+ * and defaults the provenance to `jedi`, the primary.
+ *
+ * A row whose file the second engine answered also carries `legacy`: the row
+ * jedi's OWN reply produces for the same site, built by the same code off the
+ * same per-file cursor. That is what makes the legacy tables reproduce a
+ * jedi-only run — the shape categories, the origin and the degraded flag all
+ * come from the answering engine, so substituting only the verdict would still
+ * move the published columns (bd tea-rags-mcp-w205u).
+ */
+export function buildRows(
+  sites: readonly PyChainSite[],
+  replies: ReadonlyMap<string, PyOracleFileReply | MergedOracleFileReply>,
+): PyOracleRow[] {
   const rows: PyOracleRow[] = [];
   const cursor = new Map<string, number>();
   for (const site of sites) {
-    const reply = replies.get(site.relPath);
+    const { reply, engine, legacy } = oracleEntryOf(replies.get(site.relPath));
     const index = cursor.get(site.relPath) ?? 0;
     cursor.set(site.relPath, index + 1);
-    const answer = reply?.answers[index];
-    const targets = answer?.outcome.targets ?? [];
-    const reported =
-      answer === undefined || answer.outcome.kind === "unknown" || answer.outcome.kind === "parseFailed"
-        ? ({ kind: "unknown" } as const)
-        : answer.outcome.kind === "external"
-          ? ({ kind: "external" } as const)
-          : ({
-              kind: "inProject",
-              answer: {
-                targetRelPath: targets[0]?.relPath ?? "",
-                // A `pinUncertain` target compares at FILE granularity only —
-                // matching a null symbol id here degrades the verdict to
-                // `fileOnly` rather than manufacturing a `wrongFile`.
-                targetSymbolId:
-                  targets[0]?.pinUncertain === true
-                    ? (site.chain?.targetSymbolId ?? null)
-                    : (targets[0]?.symbolId ?? null),
-              },
-            } as const);
-    // jedi walks `super()` through the first base only, so an external answer
-    // on a MULTI-base `super()` site is not ground truth. The core withdraws it.
-    const { oracle, categories } = applySuperMroBlindSpot({
-      isSuperCall: isSuperCallSite({
-        receiverKind: site.receiverKind,
-        receiver: site.call.receiver,
-        facts: answer?.siteFacts,
-      }),
-      origin: answer?.outcome.origin,
-      oracle: reported,
-      enclosingBaseCount: countEnclosingBases(site.ctx),
-      categories: categorizePySite(answer?.siteFacts, {
-        receiver: site.call.receiver,
-        member: site.call.member,
-      }),
-    });
-    rows.push({
-      relPath: site.relPath,
-      startLine: site.call.startLine,
-      callText: site.call.callText,
-      receiver: site.call.receiver,
-      member: site.call.member,
-      receiverKind: site.receiverKind,
-      categories,
-      verdict: classifyPyVerdict({
-        chain: site.chain,
-        oracle,
-        parseFailed: reply?.parseFailed === true,
-        classifiedExternal: site.missBucket === "external" || site.missBucket === "coreAmbiguous",
-        // Read off the RAW answer, not the withdrawn one: the blind spot only
-        // ever rewrites EXTERNAL origins, so the two cannot both fire.
-        oracleTargetNonCallable: targets[0]?.defNodeKind === "nonCallable",
-      }),
-      answeredBy: site.answeredBy,
-      chainOutput: site.chain === null ? "none" : site.chain.targetSymbolId === null ? "fileOnly" : "pinned",
-      chain: site.chain ?? undefined,
-      origin: answer?.outcome.origin,
-      oracleDegraded: (reply?.parsoErrors ?? 0) > 0,
-      unlocatedShape: answer?.unlocated,
-    });
+    const row = buildRow(site, reply, engine, index);
+    rows.push(
+      engine === "jedi" || legacy === undefined ? row : { ...row, legacy: buildRow(site, legacy, "jedi", index) },
+    );
   }
   return rows;
 }
+
+/** One site's row against ONE engine's reply, at the per-file cursor position. */
+function buildRow(
+  site: PyChainSite,
+  reply: PyOracleFileReply | undefined,
+  engine: OracleEngine,
+  index: number,
+): PyOracleRow {
+  const answer = reply?.answers[index];
+  const targets = answer?.outcome.targets ?? [];
+  /**
+   * The oracle's answer as this row compares it, given the 1:1 answer whose
+   * symbol id a `pinUncertain` target borrows. Taking the pin as a PARAMETER is
+   * what lets the same code build the booked verdict (against the runner's
+   * answer) and `exactVerdict` (against the chain's) without two spellings.
+   */
+  const reportedAgainst = (pinned: string | null): OracleOutcome =>
+    answer === undefined || answer.outcome.kind === "unknown" || answer.outcome.kind === "parseFailed"
+      ? ({ kind: "unknown" } as const)
+      : answer.outcome.kind === "external"
+        ? ({ kind: "external" } as const)
+        : ({
+            kind: "inProject",
+            answer: {
+              targetRelPath: targets[0]?.relPath ?? "",
+              // A `pinUncertain` target compares at FILE granularity only —
+              // matching a null symbol id here degrades the verdict to
+              // `fileOnly` rather than manufacturing a `wrongFile`.
+              targetSymbolId: targets[0]?.pinUncertain === true ? pinned : (targets[0]?.symbolId ?? null),
+            },
+          } as const);
+  const superMroInput = {
+    isSuperCall: isSuperCallSite({
+      receiverKind: site.receiverKind,
+      receiver: site.call.receiver,
+      facts: answer?.siteFacts,
+    }),
+    origin: answer?.outcome.origin,
+    enclosingBaseCount: countEnclosingBases(site.ctx),
+    categories: categorizePySite(answer?.siteFacts, {
+      receiver: site.call.receiver,
+      member: site.call.member,
+    }),
+  };
+  // jedi walks `super()` through the first base only, so an external answer
+  // on a MULTI-base `super()` site is not ground truth. The core withdraws it.
+  // `undefined` and `null` say different things (see `PyChainSite#runnerAnswer`),
+  // so the fallback is an explicit `=== undefined` and never a `??`.
+  const booked = site.runnerAnswer === undefined ? site.chain : site.runnerAnswer;
+  const { oracle, categories } = applySuperMroBlindSpot({
+    ...superMroInput,
+    oracle: reportedAgainst(booked?.targetSymbolId ?? null),
+  });
+  // The fan is scored against the WITHDRAWN oracle, exactly as the 1:1 verdict
+  // is: a `super()` answer jedi is known to be wrong about must not earn a fan
+  // a hit the exact path would have refused.
+  const target = targets[0];
+  const fan = site.fan?.fan ?? [];
+  const oracleInProject = oracle.kind === "inProject" && target !== undefined;
+  const hitsOracle =
+    !oracleInProject || target === undefined
+      ? false
+      : target.pinUncertain === true
+        ? fan.some((entry) => entry.split("#")[0] === target.relPath)
+        : fan.includes(`${target.relPath}#${target.symbolId ?? ""}`);
+  // Every outcome that took the answer away from the exact chain, `single`
+  // included: a cone that pins ONE target replaces the chain's answer just as a
+  // fan does, and `exactVerdict` is how that replacement stays countable.
+  const replaced = site.fan !== undefined && site.fan.kind !== "none";
+  const exactBucket = site.exactMissBucket ?? site.missBucket;
+  const exactVerdict = replaced
+    ? classifyPyVerdict({
+        chain: site.chain,
+        oracle: applySuperMroBlindSpot({
+          ...superMroInput,
+          oracle: reportedAgainst(site.chain?.targetSymbolId ?? null),
+        }).oracle,
+        parseFailed: reply?.parseFailed === true,
+        classifiedExternal: exactBucket === "external" || exactBucket === "coreAmbiguous",
+        oracleTargetNonCallable: targets[0]?.defNodeKind === "nonCallable",
+      })
+    : undefined;
+  return {
+    relPath: site.relPath,
+    startLine: site.call.startLine,
+    callText: site.call.callText,
+    receiver: site.call.receiver,
+    member: site.call.member,
+    receiverKind: site.receiverKind,
+    categories,
+    verdict: classifyPyVerdict({
+      chain: booked,
+      oracle,
+      parseFailed: reply?.parseFailed === true,
+      classifiedExternal: site.missBucket === "external" || site.missBucket === "coreAmbiguous",
+      // Read off the RAW answer, not the withdrawn one: the blind spot only
+      // ever rewrites EXTERNAL origins, so the two cannot both fire.
+      oracleTargetNonCallable: targets[0]?.defNodeKind === "nonCallable",
+    }),
+    answeredBy: site.answeredBy,
+    chainOutput: booked === null ? "none" : booked.targetSymbolId === null ? "fileOnly" : "pinned",
+    chain: booked ?? undefined,
+    // The oracle's answer as the VERDICT above read it — the withdrawn one, not
+    // the raw reply — so a row can never say it was scored against a target the
+    // blind spot had already taken away. No second oracle call: `oracle` is the
+    // value `classifyPyVerdict` was just handed.
+    oracleTargetRelPath: oracle.kind === "inProject" ? oracle.answer.targetRelPath : null,
+    oracleTargetSymbolId: oracle.kind === "inProject" ? oracle.answer.targetSymbolId : null,
+    origin: answer?.outcome.origin,
+    oracleDegraded: (reply?.parsoErrors ?? 0) > 0,
+    unlocatedShape: answer?.unlocated,
+    oracleEngine: engine,
+    // Absent, not `NO_FAN`, when the walk ran without the layer: `tallyPyFan`
+    // skips a row that carries no dispatch outcome, and the identity gate needs
+    // the field to disappear rather than to read zero.
+    dispatch: site.fan === undefined ? undefined : { ...site.fan, hitsOracle, oracleInProject },
+    exactVerdict,
+    exactChainOutput: replaced
+      ? site.chain === null
+        ? "none"
+        : site.chain.targetSymbolId === null
+          ? "fileOnly"
+          : "pinned"
+      : undefined,
+  };
+}
+
+/**
+ * The THIRD VOTE (bd tea-rags-mcp-1v12o.1.4, E5.0d).
+ *
+ * Every row where the chain and jedi disagree goes to pyright, and a fixed rule
+ * re-scores it into `verdictTiebroken`. The stage writes nothing the legacy or
+ * merged columns read, so a run with it on publishes the same two denominators
+ * it always published plus a third.
+ *
+ * It runs AFTER the merge and asks about a population the merge defines, the
+ * same shape `askOracles` uses for the repair: whole files, so the per-line
+ * callee claiming inside `askOracle` stays what a full run would have produced.
+ */
+export async function runTiebreakStage(
+  rows: readonly PyOracleRow[],
+  sites: readonly PyChainSite[],
+  options: {
+    corpusRoot: string;
+    lspArgv: string[];
+    venvPython: string | null;
+    roots: readonly string[];
+    workers: number;
+    pythonVersion?: string;
+    quiet?: boolean;
+  },
+): Promise<{ rows: PyOracleRow[]; counts: PyTiebreakCounts }> {
+  const started = Date.now();
+  const tiebreakSites = sites.map((site) => ({
+    relPath: site.relPath,
+    startLine: site.call.startLine,
+    callerSymbolId: site.ctx.callerSymbolId,
+  }));
+  // A self-reference row is decided off the two answers already in hand, so it
+  // never costs pyright a question.
+  const plan = planTiebreakAsk(
+    rows,
+    tiebreakSites,
+    (row, index) => isDisagreementRow(row) && !isOracleSelfReference(row, tiebreakSites[index]?.callerSymbolId),
+  );
+  if (options.quiet !== true) {
+    process.stderr.write(
+      `tiebreak: ${String(plan.arbitrated.length)} disagreement rows in ${String(plan.files.length)} files` +
+        ` — asking pyright about ${String(plan.sent.length)} sites\n`,
+    );
+  }
+  const asked = plan.sent.flatMap((index) => {
+    const site = sites[index];
+    return site === undefined ? [] : [site];
+  });
+  const replies =
+    asked.length === 0
+      ? new Map<string, PyOracleFileReply>()
+      : await askOracle(asked, {
+          corpusRoot: options.corpusRoot,
+          python: options.lspArgv,
+          venvPython: options.venvPython,
+          roots: options.roots,
+          workers: options.workers,
+          pythonVersion: options.pythonVersion,
+          columns: true,
+        });
+  const applied = applyTiebreak(rows, tiebreakSites, plan, replies);
+  applied.counts.wallMs = Date.now() - started;
+  return applied;
+}
+
+/**
+ * jedi's launcher. `uv run --no-project` keeps jedi's environment out of the
+ * corpus's, which is what lets one oracle build serve three interpreter
+ * versions.
+ */
+export const JEDI_LAUNCHER = (interpreter: string): string[] => [
+  "uv",
+  "run",
+  "--no-project",
+  "--python",
+  interpreter,
+  "--with",
+  "jedi==0.20.0",
+  "python",
+  join(import.meta.dirname, "py-oracle", "jedi_oracle.py"),
+];
+
+/**
+ * The second oracle's launcher (bd tea-rags-mcp-w205u). The engine itself —
+ * pyright, pinned and cache-local per D7 — is spawned by `lsp_oracle.ts`, so
+ * swapping engines never reaches this record.
+ */
+export const LSP_LAUNCHER = (): string[] => ["npx", "tsx", join(import.meta.dirname, "py-oracle", "lsp_oracle.ts")];
 
 export interface PyOracleCliOptions {
   corpusRoot: string;
@@ -525,6 +976,32 @@ export interface PyOracleCliOptions {
   /** Absolute, manifest order — see `resolveCorpusRoots`. Never empty. */
   roots: string[];
   pythonArgv: string[];
+  /** The second engine's launcher — spawned only when `oracle` asks for it. */
+  lspArgv: string[];
+  /** The manifest's `oraclePython`, handed to an engine that configures a grammar. */
+  oraclePythonVersion: string;
+  /** `jedi` (default, byte-identical to every published number), `lsp`, `merged`. */
+  oracle: OracleSelection;
+  /**
+   * Run the dispatch layer, as production's default channel does. ON by
+   * default; `--no-dispatch` is the harness's pre-E4.0.3 behaviour, kept so the
+   * identity gate has a run to diff against.
+   */
+  dispatch: boolean;
+  /**
+   * Walk the test + generated files production excludes unconditionally. OFF
+   * by default; the paired run it enables is what sizes `pytestFixture` and it
+   * is reported as its own population (spec D5, bd tea-rags-mcp-w205u).
+   */
+  includeTests: boolean;
+  /**
+   * Run the THIRD VOTE (bd tea-rags-mcp-1v12o.1.4, E5.0d): pyright arbitrates
+   * every chain-vs-jedi disagreement and a fixed rule re-scores the row into a
+   * THIRD denominator. ON by default under `--oracle merged`, where the second
+   * engine is already provisioned; `--no-tiebreak` reproduces the pre-E5.0d
+   * output byte for byte and is what the identity gate diffs against.
+   */
+  tiebreak: boolean;
   limit: number;
   samples: number;
   seed: number;
@@ -584,6 +1061,19 @@ export function resolveCorpusRoots(
   return entries.map((entry) => resolvePath(corpusRoot, entry));
 }
 
+/**
+ * `--oracle jedi|lsp|merged`, defaulting to `jedi`.
+ *
+ * An unknown value THROWS rather than falling back: a typo that silently ran
+ * the default would publish a jedi-denominator number under a merged label,
+ * and the whole task exists to stop denominators moving unannounced.
+ */
+export function parseOracleSelection(value: string | undefined): OracleSelection {
+  if (value === undefined) return "jedi";
+  if (value === "jedi" || value === "lsp" || value === "merged") return value;
+  throw new Error(`--oracle must be one of jedi|lsp|merged, got ${value}`);
+}
+
 export function parseArgs(argv: readonly string[]): PyOracleCliOptions {
   const read = (flag: string): string | undefined => {
     const index = argv.indexOf(flag);
@@ -598,24 +1088,22 @@ export function parseArgs(argv: readonly string[]): PyOracleCliOptions {
   const interpreter =
     read("--python") ?? manifest?.oraclePython ?? liftToOracleFloor(manifest?.requiresPython.replace(">=", ""));
   const corpusRoot = manifest ? manifest.path : resolvePath(corpusArg);
+  const oracle = parseOracleSelection(read("--oracle"));
   return {
     corpusRoot,
     corpusName: manifest?.name ?? corpusArg,
     venvPython: read("--environment") ?? manifest?.venvPython ?? null,
     roots: resolveCorpusRoots(read("--roots"), manifest?.roots, corpusRoot),
-    // `uv run --no-project` keeps jedi's environment out of the corpus's, which
-    // is what lets one oracle build serve three interpreter versions.
-    pythonArgv: [
-      "uv",
-      "run",
-      "--no-project",
-      "--python",
-      interpreter,
-      "--with",
-      "jedi==0.20.0",
-      "python",
-      join(import.meta.dirname, "py-oracle", "jedi_oracle.py"),
-    ],
+    pythonArgv: JEDI_LAUNCHER(interpreter),
+    lspArgv: LSP_LAUNCHER(),
+    oraclePythonVersion: interpreter,
+    oracle,
+    dispatch: !argv.includes("--no-dispatch"),
+    includeTests: argv.includes("--include-tests"),
+    // Default ON only where the second engine is already part of the run.
+    // `--no-tiebreak` wins over `--tiebreak`: a gate run must be able to turn
+    // the stage off without knowing what the other flags asked for.
+    tiebreak: argv.includes("--no-tiebreak") ? false : argv.includes("--tiebreak") || oracle === "merged",
     limit: Number(read("--limit") ?? Number.MAX_SAFE_INTEGER),
     samples: Number(read("--samples") ?? 25),
     seed: Number(read("--seed") ?? 20260908),
@@ -625,22 +1113,279 @@ export function parseArgs(argv: readonly string[]): PyOracleCliOptions {
   };
 }
 
+/**
+ * The two recall denominators side by side, never one alone.
+ *
+ * `recallLegacy` counts the rows jedi answered with the degraded ones withheld
+ * from the rates, exactly as a jedi-only run withholds them — so it reproduces
+ * every published Python number and is the regression gate. `recallMerged` is
+ * what E4.1–E4.6 are measured against. Both `n` columns are printed rather than
+ * inferred, so a reader can see which rows moved.
+ *
+ * Rows come out ordered by LABEL. A size key would print the same numbers in a
+ * different order under `--oracle merged`, and the block has to diff clean
+ * against a jedi-only run of the same corpus (bd tea-rags-mcp-w205u).
+ */
+export function formatRecallSplit(splits: readonly PyRecallSplit[]): string {
+  const width = Math.max(12, ...splits.map((split) => split.label.length));
+  const columns = ["recallLegacy", "nLegacy", "recallMerged", "nMerged", "+2ndEngine"];
+  const header = ["receiverKind".padEnd(width), ...columns.map((column) => column.padStart(13))].join(" ");
+  const lines = ["RECALL — BOTH DENOMINATORS (match / (match+fileOnly+wrongFile+missed))", "-".repeat(header.length)];
+  lines.push(header, "-".repeat(header.length));
+  if (splits.length === 0) return [...lines, "(no scored call sites)"].join("\n");
+  for (const split of splits) {
+    lines.push(
+      [
+        split.label.padEnd(width),
+        split.recallLegacy.toFixed(3).padStart(13),
+        String(split.nLegacy).padStart(13),
+        split.recallMerged.toFixed(3).padStart(13),
+        String(split.nMerged).padStart(13),
+        String(split.nSecondEngine).padStart(13),
+      ].join(" "),
+    );
+  }
+  return lines.join("\n");
+}
+
+/**
+ * The same block with the THIRD denominator appended (E5.0d).
+ *
+ * The legacy and merged columns carry the same values `formatRecallSplit`
+ * prints, in the same order and the same widths, so the two blocks diff clean
+ * on everything but the added columns — `--no-tiebreak` prints the two-column
+ * block itself and is the byte-identity gate.
+ *
+ * `withheld` is printed rather than inferred: the tiebroken denominator SHRINKS
+ * where the third vote could not decide, and a recall that rose because rows
+ * left the denominator must never be readable as rows that started matching.
+ */
+export function formatRecallTriple(splits: readonly PyRecallSplit[], tiebroken: readonly PyTiebrokenSplit[]): string {
+  const byLabel = new Map(tiebroken.map((split) => [split.label, split]));
+  const width = Math.max(12, ...splits.map((split) => split.label.length));
+  const columns = ["recallLegacy", "nLegacy", "recallMerged", "nMerged", "+2ndEngine", "recallTieb", "nTiebroken"];
+  const header = [
+    "receiverKind".padEnd(width),
+    ...columns.map((column) => column.padStart(13)),
+    "withheld".padStart(9),
+  ].join(" ");
+  const lines = ["RECALL — THREE DENOMINATORS (match / (match+fileOnly+wrongFile+missed))", "-".repeat(header.length)];
+  lines.push(header, "-".repeat(header.length));
+  if (splits.length === 0) return [...lines, "(no scored call sites)"].join("\n");
+  for (const split of splits) {
+    const third = byLabel.get(split.label);
+    lines.push(
+      [
+        split.label.padEnd(width),
+        split.recallLegacy.toFixed(3).padStart(13),
+        String(split.nLegacy).padStart(13),
+        split.recallMerged.toFixed(3).padStart(13),
+        String(split.nMerged).padStart(13),
+        String(split.nSecondEngine).padStart(13),
+        (third?.recallTiebroken ?? 0).toFixed(3).padStart(13),
+        String(third?.nTiebroken ?? 0).padStart(13),
+        String(third?.withheldTiebroken ?? 0).padStart(9),
+      ].join(" "),
+    );
+  }
+  return lines.join("\n");
+}
+
+/**
+ * Precision miss under all three denominators — the number E5+ is measured on.
+ *
+ * `(phantom + wrongFile) / edges`, which is the ratio D9's audit adjusted by
+ * hand. Only the numerator moves under the tiebroken column: a row the third
+ * vote could not judge still emitted its edge, so taking it out of the
+ * denominator would flatter the rate for the wrong reason.
+ */
+export function formatPrecisionBlock(splits: readonly PyPrecisionSplit[]): string {
+  const width = Math.max(12, ...splits.map((split) => split.label.length));
+  const columns = [
+    "edgesLegacy",
+    "phantomLeg",
+    "wrongFileLeg",
+    "missLegacy%",
+    "edgesMerged",
+    "phantomMrg",
+    "wrongFileMrg",
+    "missMerged%",
+    "phantomTieb",
+    "wrongFileTieb",
+    "missTieb%",
+  ];
+  const header = ["label".padEnd(width), ...columns.map((column) => column.padStart(13))].join(" ");
+  const lines = [
+    "PRECISION MISS — THREE DENOMINATORS ((phantom+wrongFile)/edges)",
+    "-".repeat(header.length),
+    header,
+    "-".repeat(header.length),
+  ];
+  if (splits.length === 0) return [...lines, "(no edges)"].join("\n");
+  const percent = (rate: number): string => `${(rate * 100).toFixed(3)}%`;
+  for (const split of splits) {
+    lines.push(
+      [
+        split.label.padEnd(width),
+        String(split.edgesLegacy).padStart(13),
+        String(split.phantomLegacy).padStart(13),
+        String(split.wrongFileLegacy).padStart(13),
+        percent(split.precisionMissLegacy).padStart(13),
+        String(split.edgesMerged).padStart(13),
+        String(split.phantomMerged).padStart(13),
+        String(split.wrongFileMerged).padStart(13),
+        percent(split.precisionMissMerged).padStart(13),
+        String(split.phantomTiebroken).padStart(13),
+        String(split.wrongFileTiebroken).padStart(13),
+        percent(split.precisionMissTiebroken).padStart(13),
+      ].join(" "),
+    );
+  }
+  return lines.join("\n");
+}
+
+/** What the third vote did, whole. A re-score nobody can count is not a measurement. */
+export function formatTiebreakCounts(counts: PyTiebreakCounts): string {
+  const selfByVerdict = Object.entries(counts.selfReferenceByVerdict)
+    .sort(([left], [right]) => left.localeCompare(right))
+    .map(([verdict, count]) => `${verdict} ${String(count)}`)
+    .join(", ");
+  return [
+    "TIEBREAK (third vote — pyright arbitrates every chain-vs-jedi disagreement)",
+    `  disagreement rows ${String(counts.disagreementSites)} in ${String(counts.filesAsked)} files` +
+      ` · sites asked ${String(counts.sitesAsked)} · wall ${(counts.wallMs / 1000).toFixed(1)}s`,
+    `  agreesWithChain ${String(counts.agreesWithChain)} · agreesWithJedi ${String(counts.agreesWithJedi)}` +
+      ` · third ${String(counts.third)} · noAnswer ${String(counts.noAnswer)}` +
+      ` · selfReference ${String(counts.selfReference)}${selfByVerdict === "" ? "" : ` (${selfByVerdict})`}`,
+  ].join("\n");
+}
+
+/**
+ * The fan columns, in their OWN block and never in the 1:1 table (D3).
+ *
+ * `cap` / `p99DefsPerMember` are printed because the narrowing cap is
+ * corpus-adaptive: a moved cap changes `ambiguousShare` for reasons that have
+ * nothing to do with the increment being measured. `coneMax` is printed beside
+ * them because Python's `resolveDispatch` is ONE `ConeDispatchResolver`, and the
+ * cone is bounded by `coneMax` — it collapses to a single `poly-base` edge
+ * rather than ever returning `ambiguous`, so the cap does not bind it today.
+ *
+ * Labels are held to `minSites` because a fan rate over a dozen sites is noise
+ * wearing three decimal places.
+ */
+export function formatFanBlock(
+  tallies: readonly PyFanTally[],
+  walk: Pick<PyCorpusWalk, "fanoutPolicy" | "coneMax" | "dispatchDrift" | "dispatchTableSites">,
+  minSites: number,
+): string {
+  const shown = tallies.filter((tally) => tally.fanSites + tally.ambiguousSites + tally.oneToOneSites >= minSites);
+  const width = Math.max(12, ...shown.map((tally) => tally.label.length));
+  const columns = ["fanSites", "ambiguous", "single", "recall@fan", "n@fan", "sizeP50", "sizeP95", "sizeMean"];
+  const second = ["ambigShare", "precProxy", "fanPhantom", "phantomRate"];
+  const header = [
+    "receiverKind".padEnd(width),
+    ...columns.map((column) => column.padStart(11)),
+    ...second.map((column) => column.padStart(11)),
+  ].join(" ");
+  const lines = [
+    "FAN (dispatch layer) — NOT summed with the 1:1 columns above",
+    `  cap ${walk.fanoutPolicy.cap} (p99 defs-per-member ${walk.fanoutPolicy.p99DefsPerMember})` +
+      ` · coneMax ${walk.coneMax} · dispatchDrift ${walk.dispatchDrift}` +
+      `${walk.dispatchDrift === 0 ? "" : "  <- HARNESS DISPATCH DIVERGES FROM PRODUCTION, fan numbers void"}` +
+      ` · call.dispatch table sites ${walk.dispatchTableSites}`,
+    "-".repeat(header.length),
+    header,
+    "-".repeat(header.length),
+  ];
+  if (shown.length === 0) return [...lines, `(no label reached ${minSites} sites)`].join("\n");
+  for (const tally of shown) {
+    lines.push(
+      [
+        tally.label.padEnd(width),
+        String(tally.fanSites).padStart(11),
+        String(tally.ambiguousSites).padStart(11),
+        String(tally.singleSites).padStart(11),
+        tally.recallAtFan.toFixed(3).padStart(11),
+        String(tally.fanScored).padStart(11),
+        String(tally.fanSizeP50).padStart(11),
+        String(tally.fanSizeP95).padStart(11),
+        tally.fanSizeMean.toFixed(2).padStart(11),
+        tally.ambiguousShare.toFixed(4).padStart(11),
+        tally.precisionProxy.toFixed(3).padStart(11),
+        String(tally.fanPhantom).padStart(11),
+        tally.fanPhantomRate.toFixed(3).padStart(11),
+      ].join(" "),
+    );
+  }
+  return lines.join("\n");
+}
+
+/** A label needs this many sites before its fan rates are printed. */
+const FAN_LABEL_FLOOR = 100;
+
 async function main(): Promise<void> {
   const options = parseArgs(process.argv.slice(2));
   const started = Date.now();
-  const walk = await walkCorpus(options.corpusRoot, options.limit, options.quiet);
-  const replies = await askOracle(walk.sites, {
+  const walk = await walkCorpus(options.corpusRoot, options.limit, options.quiet, {
+    dispatch: options.dispatch,
+    includeTests: options.includeTests,
+  });
+  const replies = await askOracles(walk.sites, {
     corpusRoot: options.corpusRoot,
-    python: options.pythonArgv,
+    jediArgv: options.pythonArgv,
+    lspArgv: options.lspArgv,
     venvPython: options.venvPython,
     roots: options.roots,
     workers: options.workers,
+    pythonVersion: options.oraclePythonVersion,
+    selection: options.oracle,
+    quiet: options.quiet,
   });
-  const rows = buildRows(walk.sites, replies);
+  const merged = buildRows(walk.sites, replies);
+  // The third vote, and the ONLY place it may write: every column below reads
+  // `verdict`, which the stage never touches (bd tea-rags-mcp-1v12o.1.4).
+  const tiebreak = options.tiebreak
+    ? await runTiebreakStage(merged, walk.sites, {
+        corpusRoot: options.corpusRoot,
+        lspArgv: options.lspArgv,
+        venvPython: options.venvPython,
+        roots: options.roots,
+        workers: options.workers,
+        pythonVersion: options.oraclePythonVersion,
+        quiet: options.quiet,
+      })
+    : null;
+  const rows = tiebreak === null ? merged : tiebreak.rows;
 
-  const byReceiver = tallyPyRows(rows, (row) => [row.receiverKind]);
-  const byAnsweredBy = tallyPyRows(rows, (row) => [row.answeredBy]);
-  const byCategory = tallyPyRows(rows, (row) => row.categories);
+  // The three published tables stay on the JEDI denominator whatever the
+  // selection, so seam-4 / seam-5 / E3's records stay reproducible from them.
+  // Every site jedi was asked about is here, including the ones the second
+  // engine repaired: `legacyViewOf` hands back the row JEDI produced, degraded
+  // and withheld from the rates but still counted in `sites`, which is what a
+  // `--oracle jedi` run counts. Filtering by engine dropped those sites and
+  // shrank the published `sites` column (bd tea-rags-mcp-w205u).
+  // The merged block below repeats the same columns over every scored row.
+  const legacyRows = rows.flatMap((row) => {
+    const view = legacyViewOf(row);
+    return view === undefined ? [] : [view];
+  });
+  const jediAnsweredRows = rows.filter((row) => row.oracleEngine === "jedi").length;
+  const byReceiver = tallyPyRows(legacyRows, (row) => [row.receiverKind]);
+  const byAnsweredBy = tallyPyRows(legacyRows, (row) => [row.answeredBy]);
+  const byCategory = tallyPyRows(legacyRows, (row) => row.categories);
+  const byReceiverMerged = tallyPyRows(rows, (row) => [row.receiverKind]);
+  const byAnsweredByMerged = tallyPyRows(rows, (row) => [row.answeredBy]);
+  const byCategoryMerged = tallyPyRows(rows, (row) => row.categories);
+  const recallByReceiver = tallyPyRecall(rows, (row) => [row.receiverKind]);
+  const tiebrokenByReceiver: PyTiebrokenSplit[] =
+    tiebreak === null ? [] : tallyPyTiebroken(rows, (row) => [row.receiverKind]);
+  const precisionSplits: PyPrecisionSplit[] =
+    tiebreak === null ? [] : tallyPyPrecision(rows, (row) => ["(corpus)", row.receiverKind]);
+  const fanByReceiver = tallyPyFan(rows, (row) => [row.receiverKind]);
+  const fanCorpus = tallyPyFan(rows, () => ["(corpus)"]);
+  const dispatchGap = tallyPyDispatchGap(rows);
+  const secondEngineRows = rows.length - jediAnsweredRows;
+  const secondEngineFiles = new Set(rows.filter((row) => row.oracleEngine !== "jedi").map((row) => row.relPath)).size;
   const coverage = tallyPyCoverage(rows);
   const degraded = rows.filter((row) => row.oracleDegraded).length;
   const unknown = rows.filter((row) => row.verdict === "chainOnly" || row.verdict === "bothUnresolved").length;
@@ -664,6 +1409,9 @@ async function main(): Promise<void> {
     )
       .map(([shape, count]) => `${shape} ${String(count)}`)
       .join(", ")})`,
+    options.oracle === "lsp"
+      ? `oracle lsp · every row answered by the second engine (${secondEngineRows} rows on ${secondEngineFiles} files) — recallLegacy reads 0/0 by construction`
+      : `oracle ${options.oracle} · jedi answered ${jediAnsweredRows} rows · second engine ${secondEngineRows} rows on ${secondEngineFiles} files jedi could not read`,
     `elapsed ${((Date.now() - started) / 1000).toFixed(1)}s`,
     "",
     formatOracleTable("BY RECEIVER KIND (partition — each call site counted once)", byReceiver),
@@ -672,13 +1420,46 @@ async function main(): Promise<void> {
     "",
     formatOracleTable("BY MISSED-SHAPE CATEGORY (rows overlap — a site can carry several)", byCategory),
     "",
+    "=== MERGED DENOMINATOR (every scored row, whichever engine answered it) ===",
+    "",
+    formatOracleTable("BY RECEIVER KIND — merged denominator", byReceiverMerged),
+    "",
+    formatOracleTable("BY ANSWERING PASS — merged denominator", byAnsweredByMerged),
+    "",
+    formatOracleTable("BY MISSED-SHAPE CATEGORY — merged denominator", byCategoryMerged),
+    "",
+    // Two denominators when the stage is off — byte-identical to every run
+    // before E5.0d — and three when it is on.
+    tiebreak === null ? formatRecallSplit(recallByReceiver) : formatRecallTriple(recallByReceiver, tiebrokenByReceiver),
+    "",
   ];
+  if (tiebreak !== null) {
+    out.push(formatPrecisionBlock(precisionSplits), "", formatTiebreakCounts(tiebreak.counts), "");
+  }
+  if (options.dispatch) {
+    out.push(
+      formatFanBlock([...fanCorpus, ...fanByReceiver], walk, FAN_LABEL_FLOOR),
+      "",
+      "PRODUCTION-VS-ORACLE GAP (what the fan-first order costs and buys)",
+      `  dispatch answered ${dispatchGap.dispatchAnswered} sites` +
+        ` · exactReplacedByFan ${dispatchGap.exactReplacedByFan}` +
+        ` · exactReplacedByAmbiguous ${dispatchGap.exactReplacedByAmbiguous}` +
+        ` · fanRescued ${dispatchGap.fanRescued}` +
+        `\n  single-target replacements — exactReplacedBySingle ${dispatchGap.exactReplacedBySingle}` +
+        ` · singleRescued ${dispatchGap.singleRescued}`,
+      "",
+    );
+  } else {
+    out.push("(dispatch layer NOT run — --no-dispatch reproduces the pre-E4.0.3 columns)", "");
+  }
   process.stdout.write(out.join("\n"));
 
   if (options.json !== null) {
     const payload = {
       corpus: options.corpusName,
       corpusRoot: options.corpusRoot,
+      oracle: options.oracle,
+      dispatch: options.dispatch,
       seed: options.seed,
       // The sampling seed above reproduces the SAMPLE; this one reproduces the
       // ANSWERS, and a report carrying only the first would be reproducible in
@@ -700,10 +1481,31 @@ async function main(): Promise<void> {
         unlocated: coverage.unlocated,
         unlocatedByShape: coverage.unlocatedByShape,
         chainOutput,
+        jediRows: jediAnsweredRows,
+        secondEngineRows,
+        secondEngineFiles,
+        dispatchTableSites: walk.dispatchTableSites,
+        dispatchDrift: walk.dispatchDrift,
+        fanoutPolicy: walk.fanoutPolicy,
+        coneMax: walk.coneMax,
       },
+      fanByReceiver,
+      fanCorpus,
+      dispatchGap,
       byReceiver,
       byAnsweredBy,
       byCategory,
+      // Both denominators, always. A merged-denominator table published without
+      // its legacy twin is unreadable against every earlier record.
+      byReceiverMerged,
+      byAnsweredByMerged,
+      byCategoryMerged,
+      recallByReceiver,
+      // Absent as a group when the stage did not run, so a `--no-tiebreak`
+      // payload diffs clean against every pre-E5.0d dump.
+      ...(tiebreak === null
+        ? {}
+        : { tiebreak: tiebreak.counts, tiebrokenByReceiver, precisionSplits, tiebreakEnabled: true }),
       samples: Object.fromEntries(
         (["missed", "wrongFile", "phantom", "skippedInProject"] as const).map((verdict) => [
           verdict,

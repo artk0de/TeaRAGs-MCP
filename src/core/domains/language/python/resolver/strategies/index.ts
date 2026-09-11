@@ -1,4 +1,5 @@
 export { PythonSuperSymbolResolutionStrategy } from "./python-super.js";
+export { PythonClsMemberSymbolResolutionStrategy } from "./python-cls-member.js";
 export { PythonSelfFieldSymbolResolutionStrategy } from "./python-self-field.js";
 export { PythonSelfMemberSymbolResolutionStrategy } from "./python-self-member.js";
 export { PythonLocalBindingSymbolResolutionStrategy, resolveTypeFile } from "./python-local-binding.js";
@@ -10,6 +11,7 @@ export { PythonConeTypeLocator } from "./python-cone-type-locator.js";
 export {
   CONE_MAX_DEFAULT,
   lastSegment,
+  lookupPythonSymbolsByShortName,
   pythonBoundClassKey,
   pythonClassKeyIsDeclared,
   pythonDeclaredClassFq,

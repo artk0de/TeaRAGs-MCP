@@ -5,7 +5,7 @@ import {
   type SymbolResolutionTarget,
 } from "../../../../../contracts/types/codegraph.js";
 import type { ConeTypeLocator } from "../../../../../contracts/types/language.js";
-import { lastConstantSegment, resolveConstant, type ResolverConfig } from "./shared.js";
+import { lastConstantSegment, lookupRubySymbolsByShortName, resolveConstant, type ResolverConfig } from "./shared.js";
 
 /**
  * Ruby specifics for the generic `ConeDispatchResolver` (bd tea-rags-mcp-f10y).
@@ -36,7 +36,7 @@ export class RubyConeTypeLocator implements ConeTypeLocator {
     const file = resolveConstant(typeName, ctx);
     if (!file) return null;
     const bareType = lastConstantSegment(typeName);
-    const candidates = ctx.symbolTable.lookupByShortName(member).filter((def) => {
+    const candidates = lookupRubySymbolsByShortName(ctx, member).filter((def) => {
       if (def.relPath !== file) return false;
       const tail = def.scope[def.scope.length - 1];
       return tail === typeName || tail === bareType;

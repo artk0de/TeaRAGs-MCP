@@ -1,4 +1,4 @@
-import { CONTINUE, resolved } from "../../../../../contracts/resolution.js";
+import { CONTINUE, DROP, resolved } from "../../../../../contracts/resolution.js";
 import {
   pickSingleCandidate,
   type CallContext,
@@ -6,7 +6,8 @@ import {
   type SymbolDefinition,
 } from "../../../../../contracts/types/codegraph.js";
 import type { SymbolResolutionOutcome, SymbolResolutionStrategy } from "../../../../../contracts/types/language.js";
-import type { ResolverConfig } from "./shared.js";
+import { PYTHON_BUILTINS } from "../../vocabulary/builtins.js";
+import { lookupPythonSymbolsByShortName, type ResolverConfig } from "./shared.js";
 
 /**
  * A declaration at MODULE scope — the only kind a bare name may reach in the
@@ -20,6 +21,89 @@ import type { ResolverConfig } from "./shared.js";
  * name from module scope. Lives here rather than in `shared.ts` — one caller.
  */
 const isModuleLevel = (def: SymbolDefinition): boolean => def.scope.length === 0;
+
+/**
+ * Is `defScope` a container the caller is written INSIDE (bd tea-rags-mcp-w205u)?
+ *
+ * The `E` of Python's LEGB walk. `def outer(): def inner(): ...; inner()` binds
+ * `inner` in `outer`'s frame, so a bare `inner()` anywhere inside `outer`
+ * reaches it even though `inner` is not module-level.
+ *
+ * ONE segment of slack, because `callerScope` omits the caller's OWN container
+ * by convention (`CallContext.callerScope`): a call in `get_catalog_plugins`'
+ * body carries `[]`, while the nested `get_catalog_plugins#make_plugin_dict`
+ * carries `["get_catalog_plugins"]`. Without the slack the arm recovers 9 of
+ * the 82 rows the module-level-only guard cost; with it, all 82.
+ *
+ * Measured: those 82 rows (flask 2, netbox 18, polar 62) are every same-file
+ * nested `def` plus polar's classes declared inside a `def`
+ * (`Authenticator._AuthenticatorSignature`). The slack does admit a class-body
+ * member of the caller's own class, which the LEGB walk does not reach — a
+ * known over-admission, bounded by the file check and by the builtins guard
+ * above it, and carrying no measured cost: across all five corpora ZERO
+ * `globalShortName` bare-call phantom names a target in the caller's own file.
+ */
+const isEnclosingScope = (defScope: readonly string[], callerScope: readonly string[]): boolean =>
+  defScope.length <= callerScope.length + 1 &&
+  defScope.slice(0, callerScope.length).every((segment, i) => segment === callerScope[i]);
+
+/**
+ * Can a BARE name written at this call site reach this definition at all?
+ *
+ * Two arms, and the file boundary is what separates them. ACROSS files only a
+ * module-level `def` / `class` is reachable — an import binds a module's
+ * top-level names and nothing deeper, which is why `open(...)` in
+ * `src/flask/cli.py` cannot name `src/flask/testing.py#FlaskClient#open`.
+ * WITHIN the caller's own file the enclosing-function chain is reachable too.
+ */
+const isBareCallable = (def: SymbolDefinition, ctx: CallContext): boolean =>
+  isModuleLevel(def) || (def.relPath === ctx.callerFile && isEnclosingScope(def.scope, ctx.callerScope));
+
+/**
+ * The name of the container the caller is written directly inside, which
+ * `callerScope` omits by convention (bd tea-rags-mcp-w205u).
+ *
+ * `callerSymbolId` is the caller CHUNK's own id, so its last segment is that
+ * container: `_list_tabs` for a top-level def, `method` for `Cls#method`,
+ * `pagination_controls` for `OrganizationListView.pagination_controls`. The
+ * three separators are the ones the cross-language `SymbolIdComposer` emits —
+ * `#` instance, `.` class-level and Python's own `scopeSeparator`, and `::` for
+ * the namespace form no Python id carries but the split costs nothing to cover.
+ *
+ * Undefined when the provider set no `callerSymbolId`, which is the honest
+ * answer: without it there is no witness for who the caller's container is.
+ */
+const ownContainerName = (ctx: CallContext): string | undefined =>
+  ctx.callerSymbolId === undefined ? undefined : ctx.callerSymbolId.split(/[#.]|::/).pop();
+
+/**
+ * Is `def` declared in the very frame the caller is written in — LEGB's `E`,
+ * read as narrowly as the evidence allows (bd tea-rags-mcp-w205u)?
+ *
+ * True when `def.scope` IS the caller's own container chain: `callerScope` plus
+ * the container `callerScope` omits, which {@link ownContainerName} names. That
+ * is `_list_tabs#url` from a call in `_list_tabs`' body and
+ * `Blueprint._merge_blueprint_funcs#extend` from a call in
+ * `_merge_blueprint_funcs`'.
+ *
+ * It is deliberately narrower than {@link isEnclosingScope}, which this arm may
+ * NOT use even though the reachability it models is a superset of this one.
+ * That helper admits any prefix of `callerScope`, and a prefix segment can be a
+ * CLASS — a namespace the LEGB walk does not enter. Measured: netbox's
+ * `ASNRange#range` is a `@property` whose body calls the BUILTIN `range`, and
+ * an arm keyed on prefixes answered the property with itself, one new phantom.
+ * A class segment cannot be told from a function segment at the depth where it
+ * matters: the symbol table addresses a top-level `class Foo` and a top-level
+ * `def foo` identically, which is the same blindness `pythonEnclosingClass`
+ * works around with two channels of evidence and still cannot settle at depth
+ * one. So the arm claims only the frame it can prove, and a def in an OUTER
+ * enclosing function stays with the cross-file guess at the bottom of the
+ * method, where the cardinality guard runs first.
+ */
+const isCallerOwnFrame = (defScope: readonly string[], ctx: CallContext): boolean =>
+  defScope.length === ctx.callerScope.length + 1 &&
+  defScope[ctx.callerScope.length] === ownContainerName(ctx) &&
+  ctx.callerScope.every((segment, i) => segment === defScope[i]);
 
 /**
  * Global short-name fallback — the LAST strategy in the chain, and now a guess
@@ -57,6 +141,22 @@ const isModuleLevel = (def: SymbolDefinition): boolean => def.scope.length === 0
  * `constant` left the guess list rather than the chain: `Cls.method()` on a
  * class the calling file declares is now resolved from the symbol table by
  * `importedName`'s same-file class arm, on the receiver's own evidence.
+ *
+ * The `bareCall` arm carries three further guards, all of them stating what a
+ * bare name in Python CAN reach (bd tea-rags-mcp-w205u):
+ *
+ *   - same LANGUAGE — {@link lookupPythonSymbolsByShortName} rather than the
+ *     raw table, because the table spans every indexed extension. polar's
+ *     `range(...)` was landing on `Paginator.tsx#range`.
+ *   - a BUILTIN the caller's file does not shadow is the interpreter's, so the
+ *     arm claims it as external instead of picking a namesake.
+ *   - BARE-CALLABLE candidates only — see {@link isBareCallable}. A bare name
+ *     reaches local → enclosing → module → builtins, so `open(...)` in another
+ *     file cannot name `FlaskClient#open` and `field_class()` cannot name
+ *     `JSONSchemaProperty#field_class`.
+ *
+ * The `self` arm keeps the full candidate set: `self.open()` IS attribute
+ * lookup down the MRO, which is where those methods live.
  */
 export class PythonGlobalShortNameSymbolResolutionStrategy implements SymbolResolutionStrategy {
   readonly name = "globalShortName";
@@ -64,7 +164,7 @@ export class PythonGlobalShortNameSymbolResolutionStrategy implements SymbolReso
 
   attempt(call: CallRef, ctx: CallContext): SymbolResolutionOutcome {
     if (call.receiver !== null && call.receiver !== "self") return CONTINUE;
-    const fallback = ctx.symbolTable.lookupByShortName(call.member);
+    const fallback = lookupPythonSymbolsByShortName(ctx, call.member);
     // ── Module scope wins, because Python says so (bd tea-rags-mcp-c9tw2) ──
     // A BARE call names the module's own binding before it names anything a
     // sibling package happens to spell the same way: the interpreter resolves
@@ -81,13 +181,65 @@ export class PythonGlobalShortNameSymbolResolutionStrategy implements SymbolReso
     //   - `receiver === null` only. `self.x()` is ATTRIBUTE lookup down the
     //     MRO, a different resolution order entirely, so the `self` arm keeps
     //     the pre-task fallback untouched.
-    //   - MODULE-LEVEL targets only. A same-file `Cls#helper` is callable bare
-    //     only from inside `Cls`, and that is enclosing-scope evidence this
-    //     strategy does not read; those fall through unchanged.
+    //   - MODULE-LEVEL targets only, in THIS arm. A def the caller's own frame
+    //     chain declares is reachable too, and the enclosing arm that opens
+    //     the block below claims it first — LEGB reaches `E` before `G`.
+    //     Anything deeper than either falls through unchanged.
     if (call.receiver === null) {
+      // ── Enclosing scope wins over module scope, because Python says so ─────
+      // A bare name inside `def outer` reaches a `def inner` declared in
+      // `outer`'s frame before it reaches the module's own binding of that
+      // name — LEGB visits `E` before `G`. Every addressable same-file bare
+      // call the E4.6 attribution found names such a nested def
+      // (`_list_tabs#url`, `Blueprint._merge_blueprint_funcs#extend`,
+      // `populate_port_template_mappings#generate_copies`), and 38 of the 85
+      // were answered by the MODULE-level arm below: right file, wrong symbol.
+      //
+      // The candidate set is filtered BEFORE the pick here, unlike the
+      // cardinality guard at the bottom of this method, and the difference is
+      // what makes it sound rather than a narrowing: a def declared in the
+      // caller's own frame is not one namesake among many, it is the binding
+      // the interpreter reaches, so a project-wide tie among unrelated files
+      // cannot make it wrong. Same file only — a nested def is not reachable
+      // from anywhere else, however the scopes line up. `"strict"` rather than
+      // `this.cfg.mode`, matching the module-level arm this precedes: one name
+      // declared twice in one frame is a real ambiguity, and declining is the
+      // answer.
+      const ownFrame = fallback.filter(
+        (def) => def.relPath === ctx.callerFile && def.scope.length > 0 && isCallerOwnFrame(def.scope, ctx),
+      );
+      const nested = pickSingleCandidate(ownFrame, "strict");
+      if (nested) return resolved({ targetRelPath: nested.relPath, targetSymbolId: nested.symbolId });
       const sameFileModuleLevel = fallback.filter((def) => def.relPath === ctx.callerFile && isModuleLevel(def));
       const own = pickSingleCandidate(sameFileModuleLevel, "strict");
       if (own) return resolved({ targetRelPath: own.relPath, targetSymbolId: own.symbolId });
+      // ── Past the caller's own module, a bare name reaches builtins ─────────
+      // The LEGB walk ends at the interpreter, so a bare `open` / `type` /
+      // `range` the caller's file does not shadow IS the builtin, and any
+      // cross-file candidate spelling it is a fabricated edge by construction.
+      // DROP rather than CONTINUE: this is the last strategy, so the two agree
+      // on the emitted edge, but a DROP records that the call was CLAIMED as
+      // external instead of leaving it in the unresolved bucket. `importedName`
+      // sits one slot earlier and answers first when an import bound the name,
+      // so a project symbol that legitimately shadows a builtin never reaches
+      // this line (`python-chain-factory.ts` slots 7 and 8).
+      if (PYTHON_BUILTINS.has(call.member)) return DROP;
+      // A bare name reaches MODULE scope, never a class body or another
+      // function's locals: `open(...)` cannot name `FlaskClient#open`, which is
+      // 9 of flask's 11 phantoms, and `field_class()` cannot name
+      // `JSONSchemaProperty#field_class`.
+      //
+      // The pick runs over the WHOLE candidate set and the verdict is REJECTED
+      // when it lands off module scope — the filter is not applied before the
+      // pick. Filtering first would let an unreachable candidate stop counting
+      // toward ambiguity and turn a site the cardinality guard used to throw
+      // away into a NEW cross-file edge, which is recall this task did not
+      // measure and cannot vouch for. Precision-only: every site this changes
+      // loses an edge, none gains one.
+      const reachable = pickSingleCandidate(fallback, this.cfg.mode);
+      return reachable && isBareCallable(reachable, ctx)
+        ? resolved({ targetRelPath: reachable.relPath, targetSymbolId: reachable.symbolId })
+        : CONTINUE;
     }
     const hit = pickSingleCandidate(fallback, this.cfg.mode);
     if (hit) return resolved({ targetRelPath: hit.relPath, targetSymbolId: hit.symbolId });

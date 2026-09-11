@@ -12,7 +12,10 @@ import type { PythonAncestorLinearizerCache } from "../python-ancestor-policy.js
 import type { PythonImportFileMapper } from "../python-import-file-mapper.js";
 import {
   findPythonImportBinding,
+  lookupPythonSymbolsByShortName,
+  pythonBoundClassKey,
   pythonClassKey,
+  receiverModuleText,
   resolvePythonInheritedMember,
   type PythonImportBinding,
   type ResolverConfig,
@@ -137,8 +140,9 @@ export class PythonImportedNameSymbolResolutionStrategy implements SymbolResolut
    * `ctx.callerFile`. Python symbolIds carry no module path, so the file filter
    * is what makes it the caller's own class; and no top-level `def` can spell a
    * dotted id, so the lookup cannot reach anything but a member of that class.
-   * No short-name search, no MRO walk, no DROP — a miss CONTINUEs, and the only
-   * pass below no longer answers it either.
+   * No short-name search and no DROP; the MRO walk is {@link
+   * resolveSameFileInheritedMember} — a miss CONTINUEs, and the only pass below
+   * no longer answers it either.
    */
   private resolveSameFileClassReceiver(call: CallRef, ctx: CallContext): SymbolResolutionOutcome {
     if (!call.receiver) return CONTINUE; // a bare call names no class
@@ -147,7 +151,45 @@ export class PythonImportedNameSymbolResolutionStrategy implements SymbolResolut
       const target = pickSingleCandidate(candidates, this.cfg.mode);
       if (target) return resolved({ targetRelPath: target.relPath, targetSymbolId: target.symbolId });
     }
-    return CONTINUE;
+    return this.resolveSameFileInheritedMember(call, ctx);
+  }
+
+  /**
+   * The same-file class-receiver arm's ancestor fallback — the hop {@link
+   * resolveDeclaredName} has had since bd tea-rags-mcp-9fgdi and this arm has
+   * not (bd tea-rags-mcp-w205u, E4.4b). polar declares a form class in the
+   * endpoint file that calls it and inherits `render` / `model_validate_form`
+   * from a `BaseForm` a module away; the two-spelling lookup above is filtered
+   * to the caller's file, so it can never see the ancestor's declaration.
+   *
+   * `pythonBoundClassKey` IS the precision gate: it returns `null` unless the
+   * caller's file declares exactly ONE symbol of that name, so a shadowed or
+   * duplicated receiver declines rather than picking. A receiver that names a
+   * top-level `def` rather than a class passes that gate and is still harmless
+   * — a non-class has no `classAncestors` entry, the order is the key alone,
+   * and the probe then repeats the two lookups the loop above already made and
+   * finds nothing. The fallback can only ever answer from an ANCESTOR.
+   *
+   * `spellingOrder: "classFirst"` for the same reason `clsMember` uses it: the
+   * receiver is a CLASS OBJECT, and all 10 measured rows resolve to a
+   * `@classmethod` / `@staticmethod` filed `Cls.m`. The instance spelling stays
+   * accepted underneath it.
+   *
+   * Resolve-or-CONTINUE, never DROP. This arm's CONTINUE is what lets
+   * `resolveStarImport` run below it, and the imported-class arm's DROP is
+   * earned by evidence this one does not have — an import statement naming the
+   * declaring file.
+   */
+  private resolveSameFileInheritedMember(call: CallRef, ctx: CallContext): SymbolResolutionOutcome {
+    if (!call.receiver) return CONTINUE;
+    const linearizer = this.linearizers?.for(ctx);
+    if (linearizer === undefined) return CONTINUE;
+    const classKey = pythonBoundClassKey(call.receiver, ctx.callerFile, ctx);
+    if (classKey === null) return CONTINUE;
+    const { target } = resolvePythonInheritedMember(classKey, call.member, ctx, this.cfg.mode, linearizer, {
+      spellingOrder: "classFirst",
+    });
+    return target ? resolved(target) : CONTINUE;
   }
 
   /**
@@ -350,6 +392,21 @@ export class PythonImportedNameSymbolResolutionStrategy implements SymbolResolut
    * declared in two files under `ui/` declines the barrel hop, falls through
    * here, and composes the non-module text `ui.Button`. DROPping that would
    * reverse the ex28m rule that an ambiguous barrel beats a coin flip.
+   *
+   * The SECOND arm is the package that re-exports a SUBMODULE under the bound
+   * name rather than owning a file spelled that way (bd tea-rags-mcp-w205u,
+   * E4.6a). polar's `components/__init__.py` opens
+   * `from . import _datatable as datatable`, so the composed
+   * `..components.datatable` names no file and 259 sites reading
+   * `datatable.DatatableAttrColumn(…)` exhaust the whole chain. The binding's
+   * own module IS the package; what the receiver denotes is the file that
+   * package aliased. `declaringFile` cannot answer it — the package declares no
+   * symbol at all — so `resolveExportedModule` is asked instead, and it is
+   * deterministic: an explicit alias names exactly ONE module.
+   *
+   * Reached ONLY after the composed text has failed to pin a member, so every
+   * site that resolves today resolves to the same target. A `pkg` that is not a
+   * project file, or a name the package does not alias, keeps the CONTINUE.
    */
   private resolveModuleReceiver(
     binding: PythonImportBinding,
@@ -358,9 +415,19 @@ export class PythonImportedNameSymbolResolutionStrategy implements SymbolResolut
   ): SymbolResolutionOutcome {
     if (!call.receiver) return CONTINUE; // a bare call names no module
     const mapped = this.mapper.mapImportToFile(receiverModuleText(binding), ctx.callerFile, ctx);
-    if (mapped.kind !== "project") return CONTINUE;
-    const target = this.moduleMemberTarget(call.member, mapped.relPath, ctx);
-    return target ? resolved(target) : CONTINUE;
+    if (mapped.kind === "project") {
+      const target = this.moduleMemberTarget(call.member, mapped.relPath, ctx);
+      if (target) return resolved(target);
+    }
+    const pkg = this.mapper.mapImportToFile(binding.imp.importText, ctx.callerFile, ctx);
+    if (pkg.kind !== "project") return CONTINUE;
+    const aliased = this.mapper.resolveExportedModule(pkg.relPath, binding.importedName, ctx);
+    if (aliased === null) return CONTINUE;
+    // DECLARATION only, no re-export hop — see `moduleDeclarationTarget`. The
+    // alias names one file, and a shim that merely re-exports a LIBRARY name
+    // must not borrow whatever project symbol happens to spell it.
+    const viaAlias = this.moduleDeclarationTarget(call.member, aliased, ctx);
+    return viaAlias ? resolved(viaAlias) : CONTINUE;
   }
 
   /**
@@ -388,7 +455,7 @@ export class PythonImportedNameSymbolResolutionStrategy implements SymbolResolut
    */
   private resolveModuleValueReceiver(moduleFile: string, call: CallRef, ctx: CallContext): SymbolResolutionOutcome {
     if (!call.receiver) return CONTINUE; // a bare call names no value to read a member off
-    const candidates = ctx.symbolTable.lookupByShortName(call.member).filter((def) => def.relPath === moduleFile);
+    const candidates = lookupPythonSymbolsByShortName(ctx, call.member).filter((def) => def.relPath === moduleFile);
     const target = pickSingleCandidate(candidates, this.cfg.mode);
     return target ? resolved({ targetRelPath: target.relPath, targetSymbolId: target.symbolId }) : CONTINUE;
   }
@@ -402,11 +469,8 @@ export class PythonImportedNameSymbolResolutionStrategy implements SymbolResolut
    * a module declaring the name twice yields two candidates and declines.
    */
   private moduleMemberTarget(member: string, moduleFile: string, ctx: CallContext): SymbolResolutionTarget | null {
-    const direct = pickSingleCandidate(
-      ctx.symbolTable.lookup(member).filter((def) => def.relPath === moduleFile),
-      this.cfg.mode,
-    );
-    if (direct) return { targetRelPath: direct.relPath, targetSymbolId: direct.symbolId };
+    const direct = this.moduleDeclarationTarget(member, moduleFile, ctx);
+    if (direct) return direct;
     // The module re-exports rather than declares — a package `__init__.py`
     // pulling `ColorColumn` out of its own `columns.py`. ONE hop, through the
     // same engine `declaringFile` uses two methods down, so the two questions
@@ -426,13 +490,36 @@ export class PythonImportedNameSymbolResolutionStrategy implements SymbolResolut
   }
 
   /**
+   * `member` as a top-level declaration of `moduleFile` and NOTHING else — the
+   * direct half of {@link moduleMemberTarget}, without the re-export hop (bd
+   * tea-rags-mcp-w205u, E4.6a).
+   *
+   * The hop asks "which file in the PROJECT declares this bare name", and that
+   * is the wrong question for a module a package ALIASED. polar's
+   * `from .db.postgres import sql` reaches
+   * `kit/extensions/sqlalchemy/sql.py`, which declares nothing and re-exports
+   * sqlalchemy's `select`; the project happens to declare exactly one `select`,
+   * a backoffice form helper, and the hop pinned it on every `sql.select(Model)`
+   * in the codebase — 10 phantoms, measured on the A/B. An alias names ONE file.
+   * A member that file does not declare is not an answer this arm has, and the
+   * chain keeps its CONTINUE.
+   */
+  private moduleDeclarationTarget(member: string, moduleFile: string, ctx: CallContext): SymbolResolutionTarget | null {
+    const direct = pickSingleCandidate(
+      ctx.symbolTable.lookup(member).filter((def) => def.relPath === moduleFile),
+      this.cfg.mode,
+    );
+    return direct ? { targetRelPath: direct.relPath, targetSymbolId: direct.symbolId } : null;
+  }
+
+  /**
    * Which file DECLARES `importedName`: the mapped file when it declares it
    * itself, otherwise the file it re-exports it from. `reexportOriginFile`
    * declines on an ambiguous or absent declaration, and so do we — an
    * ambiguous barrel beats a coin flip (bd tea-rags-mcp-ex28m).
    */
   private declaringFile(importedName: string, mappedFile: string, ctx: CallContext): string | null {
-    const declaredHere = ctx.symbolTable.lookupByShortName(importedName).some((def) => def.relPath === mappedFile);
+    const declaredHere = lookupPythonSymbolsByShortName(ctx, importedName).some((def) => def.relPath === mappedFile);
     if (declaredHere) return mappedFile;
     return reexportOriginFile(importedName, mappedFile, ctx, this.cfg.mode);
   }
@@ -456,9 +543,9 @@ export class PythonImportedNameSymbolResolutionStrategy implements SymbolResolut
       const mapped = this.mapper.mapImportToFile(imp.importText, ctx.callerFile, ctx);
       if (mapped.kind !== "project") continue;
       const scope = packageScopeOf(mapped.relPath);
-      const candidates = ctx.symbolTable
-        .lookupByShortName(call.member)
-        .filter((def) => def.relPath === mapped.relPath || (scope !== null && def.relPath.startsWith(scope)));
+      const candidates = lookupPythonSymbolsByShortName(ctx, call.member).filter(
+        (def) => def.relPath === mapped.relPath || (scope !== null && def.relPath.startsWith(scope)),
+      );
       const target = pickSingleCandidate(candidates, this.cfg.mode);
       if (target) return resolved({ targetRelPath: target.relPath, targetSymbolId: target.symbolId });
     }
@@ -486,23 +573,6 @@ function importsStdlibModule(importText: string): boolean {
   return PYTHON_STDLIB_MODULES.has(importText.split(".")[0]);
 }
 
-/**
- * The module text a single-identifier receiver denotes, from the two shapes
- * `collectPythonImports` records (`walker/walker.ts:499`).
- *
- * `importedBindings[local] === importText` IS the `import_statement` form —
- * there the recorded value is the MODULE PATH. An unaliased `import a.b` binds
- * the top package, so its head denotes `a`, not `a.b`; an aliased one denotes
- * the whole path. Everything else is `from M import name`, where the value is
- * an exported NAME and the receiver denotes the SUBMODULE `M.name` — joined
- * without a separator when `M` already ends in a dot, or `from . import c`
- * would compose `..c` and climb a package.
- */
-function receiverModuleText(binding: PythonImportBinding): string {
-  const { importText } = binding.imp;
-  if (binding.importedName === importText) {
-    const firstSegment = binding.importedName.split(".")[0];
-    return binding.localName === firstSegment ? firstSegment : binding.importedName;
-  }
-  return importText.endsWith(".") ? `${importText}${binding.importedName}` : `${importText}.${binding.importedName}`;
-}
+// `receiverModuleText` MOVED to `./shared.js` (bd tea-rags-mcp-w205u, E4.6b-1).
+// The chain ports ask the same question of a module-alias head, and
+// `PythonImportBinding` already lives there; body byte-identical.

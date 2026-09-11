@@ -10,9 +10,10 @@
  *     class SHORT name off `callerScope` (`python-self-field.ts:34`), and no
  *     Python strategy reads `ivarTypes` at all — Python has no `@ivar` receiver.
  *   - `structuredReturnTypes` keys move from Ruby's `::` join to Python's
- *     symbolId spelling, so a key IS the callee's id as `pyNameOf` and
- *     `DefaultSymbolIdComposer` compose it (`python/kernel.ts:41` sets
- *     `scopeSeparator: "."`).
+ *     symbolId spelling, so a CLASS member's key IS the callee's id as
+ *     `pyNameOf` and `DefaultSymbolIdComposer` compose it (`python/kernel.ts:41`
+ *     sets `scopeSeparator: "."`). A MODULE-LEVEL def has no owner to
+ *     disambiguate it, so the FILE does — see {@link pythonModuleReturnKey}.
  *   - `functionReturnTypes` is DROPPED. It is keyed by bare method name and
  *     absorbed run-global with last-write-wins
  *     (`trajectory/codegraph/symbols/run-state.ts:1068`); at Python's annotation
@@ -29,12 +30,31 @@ import { typeFactChannels } from "../../../kernel/type-fact-channels.js";
 import type { TypeFactStore } from "../../../kernel/type-fact-store.js";
 
 /**
- * `#run` → `run`; `Svc#run` → `Svc#run`; `Outer::Inner#run` → `Outer.Inner#run`.
- * An empty scope leaves the member separator leading, and a top-level def's id is
- * its bare name (`compose` returns `localName` for an empty prefix).
+ * The run-global address of a MODULE-LEVEL return fact — `<relPath>::<name>`
+ * (bd tea-rags-mcp-1v12o.1.7, E5.1c).
+ *
+ * The same shape, for the same reason, as the class address `pythonClassKey`
+ * composes: the channel is folded run-global, so a bare name cannot be the key.
+ * polar declares `get_client` in six files with three different return
+ * annotations, and one bare `get_client` entry made whichever file was walked
+ * first speak for all of them. A CLASS member keeps its class-key form
+ * (`Cls#m` / `Cls.m`) — the owner already disambiguates it.
  */
-export function pythonStructuredReturnKey(kernelKey: string): string {
-  if (kernelKey.startsWith("#") || kernelKey.startsWith(".")) return kernelKey.slice(1);
+export function pythonModuleReturnKey(relPath: string, name: string): string {
+  return `${relPath}::${name}`;
+}
+
+/**
+ * `#run` → `pkg/svc.py::run`; `Svc#run` → `Svc#run`; `Outer::Inner#run` →
+ * `Outer.Inner#run`.
+ *
+ * An empty scope leaves the member separator leading, and that IS the
+ * module-level case — the file qualifies it (see {@link pythonModuleReturnKey}).
+ */
+export function pythonStructuredReturnKey(kernelKey: string, relPath: string): string {
+  if (kernelKey.startsWith("#") || kernelKey.startsWith(".")) {
+    return pythonModuleReturnKey(relPath, kernelKey.slice(1));
+  }
   return kernelKey.split("::").join(".");
 }
 
@@ -49,7 +69,7 @@ export function pythonTypeChannels(
   if (kernel.structuredReturnTypes !== undefined) {
     const rekeyed: Record<string, TypeRef> = {};
     for (const [key, ref] of Object.entries(kernel.structuredReturnTypes)) {
-      rekeyed[pythonStructuredReturnKey(key)] = ref;
+      rekeyed[pythonStructuredReturnKey(key, ctx.relPath)] = ref;
     }
     out.structuredReturnTypes = rekeyed;
   }

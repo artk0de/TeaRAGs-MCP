@@ -7,7 +7,73 @@ import {
 } from "../../../../../contracts/types/codegraph.js";
 import type { SymbolResolutionOutcome, SymbolResolutionStrategy } from "../../../../../contracts/types/language.js";
 import type { PythonAncestorLinearizerCache } from "../python-ancestor-policy.js";
-import { pythonEnclosingClass, resolvePythonInheritedMember, type ResolverConfig } from "./shared.js";
+import {
+  lookupPythonSymbolsByShortName,
+  pythonEnclosingClass,
+  resolvePythonInheritedMember,
+  type ResolverConfig,
+} from "./shared.js";
+
+/** The walker's separator for a base spelled as star-import ALTERNATIVES; see `python-ancestor-policy.ts`. */
+const BASE_ALTERNATIVE_SEPARATOR = "|";
+
+/**
+ * The class NAME a base spelling carries: `a.b::Base` → `Base`, `db.Model` →
+ * `Model`, `Base` → `Base`. Module texts and attribute paths both end in it.
+ */
+function baseClassName(spelling: string): string {
+  const at = spelling.indexOf("::");
+  const named = at === -1 ? spelling : spelling.slice(at + 2);
+  return named.split(".").pop() ?? named;
+}
+
+/**
+ * Is the base `ctx.classExtends` gives for this SHORT NAME a base some OTHER
+ * class of that name has (bd tea-rags-mcp-w205u, E4.4c)?
+ *
+ * `classExtends` is run-global and keyed by the class short name, so polar's
+ * eight `class *DoesNotExist` declarations share three entries and the last file
+ * walked wins. `classAncestors` does not have the defect — it is keyed by the
+ * FILE-QUALIFIED class key — so where the caller's own key records bases, they
+ * are the authority on which hierarchy the legacy walk may start from.
+ *
+ * Three polar rows: `CheckoutDoesNotExist(CheckoutError)` walked
+ * `checkout/tasks.py`'s namesake up to `PolarTaskError#__init__`, a class not on
+ * the caller's MRO at all. Refusing the walk there hands the answer back to the
+ * MRO, which recorded the right base in the first place.
+ *
+ * Deliberately narrow, on three axes. It fires only where the short name is
+ * declared in MORE THAN ONE FILE, which is the only way the map can hold
+ * another class's base at all — a class with one declaration keeps its walk
+ * byte-identically, including the netbox star-import shape where the channels
+ * name different bases because one of them could not read the star. It compares
+ * the FIRST hop only, the one hop whose file-qualified key is in hand. And it
+ * compares against EVERY recorded base rather than the first, because
+ * `collectPythonClassExtends` skips a subscripted base while
+ * `collectPythonClassAncestors` keeps it, so the two channels can disagree on
+ * which base comes first while naming the same set.
+ *
+ * A class that records no bases, and an index that records no `classAncestors`
+ * at all, carry no evidence and keep the walk they have always had.
+ */
+function namesOtherClass(extendsBase: string, enclosing: { key: string; name: string }, ctx: CallContext): boolean {
+  const recorded = ctx.classAncestors?.[enclosing.key];
+  if (recorded === undefined || recorded.length === 0) return false;
+  const named = baseClassName(extendsBase);
+  for (const spelling of recorded) {
+    for (const alternative of spelling.split(BASE_ALTERNATIVE_SEPARATOR)) {
+      if (baseClassName(alternative) === named) return false;
+    }
+  }
+  return declaringFiles(enclosing.name, ctx) > 1;
+}
+
+/** How many files declare a class under this short name — `> 1` is what makes the run-global map a coin flip. */
+function declaringFiles(shortName: string, ctx: CallContext): number {
+  const files = new Set<string>();
+  for (const def of lookupPythonSymbolsByShortName(ctx, shortName)) files.add(def.relPath);
+  return files.size;
+}
 
 /**
  * The explicit two-argument form, `super(Cls, self).m()`. The walker leaves its
@@ -129,10 +195,12 @@ export class PythonSuperSymbolResolutionStrategy implements SymbolResolutionStra
    */
   private resolveSuperViaClassExtends(member: string, ctx: CallContext): SymbolResolutionTarget | null {
     if (!ctx.classExtends) return null;
-    const enclosing = pythonEnclosingClass(ctx)?.name;
+    const enclosingClass = pythonEnclosingClass(ctx);
+    const enclosing = enclosingClass?.name;
     if (enclosing === undefined) return null;
     let current: string | undefined = ctx.classExtends[enclosing];
     if (!current) return null;
+    if (enclosingClass !== null && namesOtherClass(current, enclosingClass, ctx)) return null;
     const visited = new Set<string>([enclosing]);
     while (current && !visited.has(current)) {
       visited.add(current);

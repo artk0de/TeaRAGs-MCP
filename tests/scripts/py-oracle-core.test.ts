@@ -14,11 +14,17 @@ import {
   isSuperCallSite,
   mulberry32,
   samplePyRows,
+  scoreFan,
+  summarizeFanTransitions,
   tallyPyCoverage,
+  tallyPyDispatchGap,
+  tallyPyFan,
   tallyPyRows,
+  type PyFanScore,
   type PyOracleRow,
   type PySiteFacts,
 } from "../../scripts/lib/py-oracle-core.js";
+import type { CallContext, CallRef, DispatchFanoutOutcome } from "../../src/core/contracts/types/codegraph.js";
 
 const inProject = (relPath: string, symbolId: string | null) =>
   ({
@@ -51,6 +57,7 @@ const row = (overrides: Partial<PyOracleRow> = {}): PyOracleRow => ({
   answeredBy: "localBinding",
   chainOutput: "pinned",
   oracleDegraded: false,
+  oracleEngine: "jedi",
   ...overrides,
 });
 
@@ -551,5 +558,286 @@ describe("tallyPyCoverage", () => {
       unlocated: 0,
       unlocatedByShape: {},
     });
+  });
+});
+
+/**
+ * The dispatch layer's own scoring (bd tea-rags-mcp-w205u, E4.0.3). Production
+ * consults `resolveDispatch` BEFORE the exact chain and lets its answer replace
+ * the chain's, so these four outcomes decide which of the two bars a site is
+ * measured against — and getting the split wrong would move recall without any
+ * resolver changing.
+ */
+const dispatcher = (outcome: DispatchFanoutOutcome) => ({
+  resolveDispatch: (_call: CallRef, _ctx: CallContext): DispatchFanoutOutcome => outcome,
+});
+const call = { member: "f", receiver: "x", callText: "x.f()", startLine: 1 } as unknown as CallRef;
+const ctx = {} as unknown as CallContext;
+const edge = (relPath: string, symbolId: string | null, confidence: number) => ({
+  sourceSymbolId: null,
+  targetRelPath: relPath,
+  targetSymbolId: symbolId,
+  edgeKind: "cone" as const,
+  confidence,
+});
+
+describe("scoreFan", () => {
+  it("reads an empty fan-out as `none`, the outcome that lets the exact chain answer", () => {
+    expect(scoreFan(dispatcher({ kind: "edges", edges: [] }), call, ctx)).toEqual({
+      kind: "none",
+      fan: [],
+      fanSize: 0,
+      fanConfidence: null,
+      single: null,
+    });
+  });
+
+  it("reads a resolver with no dispatch channel at all as `none`", () => {
+    expect(scoreFan({}, call, ctx).kind).toBe("none");
+  });
+
+  it("splits ONE surviving target off as `single` — a confidence-1 edge is a 1:1 claim", () => {
+    const outcome = scoreFan(dispatcher({ kind: "edges", edges: [edge("pkg/b.py", "B#f", 1)] }), call, ctx);
+    expect(outcome.kind).toBe("single");
+    expect(outcome.single).toEqual({ targetRelPath: "pkg/b.py", targetSymbolId: "B#f" });
+    expect(outcome.fanConfidence).toBe(1);
+  });
+
+  it("books m>1 edges as `fan`, sorted and deduped, carrying the per-edge confidence", () => {
+    const outcome = scoreFan(
+      dispatcher({
+        kind: "edges",
+        edges: [edge("pkg/c.py", "C#f", 0.5), edge("pkg/b.py", "B#f", 0.5), edge("pkg/c.py", "C#f", 0.5)],
+      }),
+      call,
+      ctx,
+    );
+    expect(outcome.kind).toBe("fan");
+    expect(outcome.fan).toEqual(["pkg/b.py#B#f", "pkg/c.py#C#f"]);
+    expect(outcome.fanSize).toBe(2);
+    expect(outcome.fanConfidence).toBe(0.5);
+    expect(outcome.single).toBeNull();
+  });
+
+  it("books m edges that name ONE target as `single` — a 1:1 comparison has one answer", () => {
+    const outcome = scoreFan(
+      dispatcher({ kind: "edges", edges: [edge("pkg/b.py", "B#f", 0.5), edge("pkg/b.py", "B#f", 0.5)] }),
+      call,
+      ctx,
+    );
+    expect(outcome.kind).toBe("single");
+    expect(outcome.fanSize).toBe(1);
+  });
+
+  it("carries the candidate count as the SIZE of an over-cap decision, and no fan", () => {
+    // `ambiguous` is the decision not to fan at all: no edges, no fallback.
+    const outcome = scoreFan(dispatcher({ kind: "ambiguous", member: "f", candidateCount: 240 }), call, ctx);
+    expect(outcome).toEqual({ kind: "ambiguous", fan: [], fanSize: 240, fanConfidence: null, single: null });
+  });
+});
+
+const fanScore = (overrides: Partial<PyFanScore> = {}): PyFanScore => ({
+  kind: "fan",
+  fan: ["pkg/b.py#B#f", "pkg/c.py#C#f"],
+  fanSize: 2,
+  fanConfidence: 0.5,
+  single: null,
+  hitsOracle: true,
+  oracleInProject: true,
+  ...overrides,
+});
+
+describe("tallyPyFan", () => {
+  it("skips a row the walk scored without the layer — an absent outcome is not a `none`", () => {
+    expect(tallyPyFan([row({}), row({})], (r) => [r.receiverKind])).toEqual([]);
+  });
+
+  it("counts `ambiguous` as a recall MISS in the fan denominator (D4)", () => {
+    const [tally] = tallyPyFan(
+      [
+        row({ dispatch: fanScore() }),
+        row({ dispatch: fanScore({ kind: "ambiguous", fan: [], fanSize: 240, hitsOracle: false }) }),
+      ],
+      (r) => [r.receiverKind],
+    );
+    expect(tally.fanScored).toBe(2);
+    expect(tally.fanHits).toBe(1);
+    expect(tally.recallAtFan).toBeCloseTo(0.5, 10);
+  });
+
+  it("keeps `ambiguous` OUT of fanSize* and precisionProxy — there is no fan to size", () => {
+    const [tally] = tallyPyFan(
+      [
+        row({ dispatch: fanScore({ fanSize: 4, fan: ["a#a", "b#b", "c#c", "d#d"] }) }),
+        row({ dispatch: fanScore({ kind: "ambiguous", fan: [], fanSize: 240, hitsOracle: false }) }),
+      ],
+      (r) => [r.receiverKind],
+    );
+    expect(tally.fanSizeMean).toBe(4);
+    expect(tally.fanSizeP50).toBe(4);
+    expect(tally.precisionProxy).toBeCloseTo(0.25, 10);
+  });
+
+  it("uses the floor-index percentile convention `signal-utils` uses", () => {
+    // Sizes 1..10: floor(10 * 0.5) = 5 → the 6th, and floor(10 * 0.95) = 9 → the 10th.
+    const rows = Array.from({ length: 10 }, (_, index) =>
+      row({ dispatch: fanScore({ fanSize: index + 1, hitsOracle: false }) }),
+    );
+    const [tally] = tallyPyFan(rows, (r) => [r.receiverKind]);
+    expect(tally.fanSizeP50).toBe(6);
+    expect(tally.fanSizeP95).toBe(10);
+  });
+
+  it("divides precisionProxy by the fan sites, so a ten-edge hit scores 0.1", () => {
+    const [tally] = tallyPyFan([row({ dispatch: fanScore({ fanSize: 10 }) })], (r) => [r.receiverKind]);
+    expect(tally.precisionProxy).toBeCloseTo(0.1, 10);
+  });
+
+  it("keeps a fan row with no in-project oracle target out of the recall denominator", () => {
+    const [tally] = tallyPyFan([row({ dispatch: fanScore({ oracleInProject: false, hitsOracle: false }) })], (r) => [
+      r.receiverKind,
+    ]);
+    expect(tally.fanSites).toBe(1);
+    expect(tally.fanScored).toBe(0);
+    expect(tally.recallAtFan).toBe(0);
+  });
+
+  it("counts a fan that MISSED an in-project target as a fan phantom", () => {
+    const [tally] = tallyPyFan(
+      [row({ dispatch: fanScore({ hitsOracle: false }) }), row({ dispatch: fanScore() })],
+      (r) => [r.receiverKind],
+    );
+    expect(tally.fanPhantom).toBe(1);
+    expect(tally.fanPhantomRate).toBeCloseTo(0.5, 10);
+  });
+
+  it("prints both ambiguous denominators — the whole population and the fanned one", () => {
+    const [tally] = tallyPyFan(
+      [
+        row({ dispatch: fanScore({ kind: "ambiguous", fan: [], fanSize: 20, hitsOracle: false }) }),
+        row({ dispatch: fanScore() }),
+        row({ dispatch: fanScore({ kind: "none", fan: [], fanSize: 0, hitsOracle: false }) }),
+        row({ dispatch: fanScore({ kind: "single", fan: ["pkg/b.py#B#f"], fanSize: 1 }) }),
+      ],
+      (r) => [r.receiverKind],
+    );
+    expect(tally.oneToOneSites).toBe(2);
+    expect(tally.singleSites).toBe(1);
+    expect(tally.ambiguousShare).toBeCloseTo(0.25, 10);
+    expect(tally.ambiguousShareOfFanned).toBeCloseTo(0.5, 10);
+  });
+});
+
+describe("tallyPyDispatchGap", () => {
+  it("counts an exact MATCH the fan-out replaced, apart from one the cap threw away", () => {
+    const gap = tallyPyDispatchGap([
+      row({ verdict: "bothUnresolved", exactVerdict: "match", dispatch: fanScore() }),
+      row({
+        verdict: "bothUnresolved",
+        exactVerdict: "match",
+        dispatch: fanScore({ kind: "ambiguous", fan: [], fanSize: 99, hitsOracle: false }),
+      }),
+      row({ verdict: "match", exactVerdict: "match", dispatch: fanScore({ kind: "single", fanSize: 1 }) }),
+    ]);
+    expect(gap).toEqual({
+      exactReplacedByFan: 1,
+      exactReplacedByAmbiguous: 1,
+      fanRescued: 0,
+      exactReplacedBySingle: 0,
+      singleRescued: 0,
+      dispatchAnswered: 3,
+    });
+  });
+
+  it("counts a single-target cone answer that LOST a match the chain had", () => {
+    // The same loss as a fan replacement, through the other door: a `single`
+    // outcome replaces the chain's answer while staying in the 1:1 columns.
+    const gap = tallyPyDispatchGap([
+      row({ verdict: "wrongFile", exactVerdict: "match", dispatch: fanScore({ kind: "single", fanSize: 1 }) }),
+      row({ verdict: "match", exactVerdict: "wrongFile", dispatch: fanScore({ kind: "single", fanSize: 1 }) }),
+    ]);
+    expect(gap.exactReplacedBySingle).toBe(1);
+    expect(gap.singleRescued).toBe(1);
+  });
+
+  it("counts a site the chain declined and the fan carried as rescued, `skippedInProject` included", () => {
+    const gap = tallyPyDispatchGap([
+      row({ verdict: "bothUnresolved", exactVerdict: "missed", dispatch: fanScore() }),
+      row({ verdict: "bothUnresolved", exactVerdict: "skippedInProject", dispatch: fanScore() }),
+      // Declined, but the fan does not carry the oracle's target either.
+      row({ verdict: "bothUnresolved", exactVerdict: "missed", dispatch: fanScore({ hitsOracle: false }) }),
+    ]);
+    expect(gap.fanRescued).toBe(2);
+  });
+
+  it("ignores a row the layer never touched", () => {
+    expect(tallyPyDispatchGap([row({}), row({ dispatch: fanScore({ kind: "none", fan: [], fanSize: 0 }) })])).toEqual({
+      exactReplacedByFan: 0,
+      exactReplacedByAmbiguous: 0,
+      fanRescued: 0,
+      exactReplacedBySingle: 0,
+      singleRescued: 0,
+      dispatchAnswered: 0,
+    });
+  });
+});
+
+describe("summarizeFanTransitions", () => {
+  it("groups by `before -> after`, reading an absent outcome as `none`", () => {
+    const summary = summarizeFanTransitions([
+      { before: {}, after: { dispatchOutcome: "fan", fanSize: 3 } },
+      { before: {}, after: { dispatchOutcome: "fan", fanSize: 2 } },
+      { before: { dispatchOutcome: "fan", fanSize: 2 }, after: { dispatchOutcome: "single", fanSize: 1 } },
+      { before: { dispatchOutcome: "ambiguous", fanSize: 99 }, after: { dispatchOutcome: "fan", fanSize: 4 } },
+    ]);
+    expect(summary.transitions).toEqual([
+      ["none -> fan", 2],
+      ["ambiguous -> fan", 1],
+      ["fan -> single", 1],
+    ]);
+  });
+
+  it("histograms the size delta only where BOTH sides fanned", () => {
+    const summary = summarizeFanTransitions([
+      { before: { dispatchOutcome: "fan", fanSize: 2 }, after: { dispatchOutcome: "fan", fanSize: 5 } },
+      { before: { dispatchOutcome: "fan", fanSize: 4 }, after: { dispatchOutcome: "fan", fanSize: 1 } },
+      { before: { dispatchOutcome: "fan", fanSize: 3 }, after: { dispatchOutcome: "fan", fanSize: 3 } },
+      { before: {}, after: { dispatchOutcome: "fan", fanSize: 9 } },
+    ]);
+    expect(summary.sizeDeltas).toEqual([
+      [-3, 1],
+      [0, 1],
+      [3, 1],
+    ]);
+  });
+});
+
+describe("tallyPyRows with the dispatch layer on", () => {
+  it("withholds a fan and an over-cap row from the 1:1 rates but keeps them in sites", () => {
+    // A fan edge is a hypothesis set at `discount / m` and an `ambiguous` row is
+    // no edge at all, so neither carries a 1:1 verdict to score (D3).
+    const tallies = tallyPyRows(
+      [
+        row({ verdict: "match" }),
+        row({ verdict: "missed" }),
+        row({ verdict: "bothUnresolved", dispatch: fanScore() }),
+        row({
+          verdict: "bothUnresolved",
+          dispatch: fanScore({ kind: "ambiguous", fan: [], fanSize: 40, hitsOracle: false }),
+        }),
+      ],
+      (r) => [r.receiverKind],
+    );
+    const localVar = tallies.find((t) => t.label === "localVar");
+    expect(localVar?.sites).toBe(4);
+    expect(localVar?.oracle).toBe(2);
+  });
+
+  it("scores a `single` row in the 1:1 columns — it IS the answer production books", () => {
+    const tallies = tallyPyRows(
+      [row({ verdict: "match", dispatch: fanScore({ kind: "single", fan: ["pkg/b.py#B#f"], fanSize: 1 }) })],
+      (r) => [r.receiverKind],
+    );
+    expect(tallies.find((t) => t.label === "localVar")?.oracle).toBe(1);
   });
 });

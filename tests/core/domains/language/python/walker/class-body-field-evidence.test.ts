@@ -65,3 +65,38 @@ describe("the class-body field pass emits only on project-class evidence", () =>
     expect(out.classFieldTypesByClassKey).toBeUndefined();
   });
 });
+
+/**
+ * The bare-construction form takes `declared ∪ importBound` (bd
+ * tea-rags-mcp-w205u, E4.6c). polar writes `_client = SlackClient()` in a class
+ * body under `from polar.integrations.slack.client import SlackClient` — 8 rows
+ * the declared-only gate refused. The emitted NAME is not an edge: the
+ * resolve-time consumer still has to place it in the project.
+ */
+describe("the class-body field pass accepts an IMPORT-BOUND project class", () => {
+  it("records a bare construction whose class name an import bound", () => {
+    const out = native([
+      "from polar.integrations.slack.client import SlackClient",
+      "",
+      "class SlackService:",
+      "    _client = SlackClient()",
+    ]);
+
+    expect(out.classFieldTypes).toEqual({ SlackService: { _client: "SlackClient" } });
+    expect(out.classFieldTypesByClassKey).toEqual({ "app/models.py::SlackService": { _client: "SlackClient" } });
+  });
+
+  it("stays silent on a DOTTED construction — `models.Manager()` names no bound local", () => {
+    const out = native(["from django.db import models", "", "class Site(Model):", "    objects = models.Manager()"]);
+
+    expect(out.classFieldTypes).toBeUndefined();
+    expect(out.classFieldTypesByClassKey).toBeUndefined();
+  });
+
+  it("stays silent on a bare construction no import bound and no class in the file declares", () => {
+    const out = native(["class Site(Model):", "    name = CharField(max_length=100)"]);
+
+    expect(out.classFieldTypes).toBeUndefined();
+    expect(out.classFieldTypesByClassKey).toBeUndefined();
+  });
+});

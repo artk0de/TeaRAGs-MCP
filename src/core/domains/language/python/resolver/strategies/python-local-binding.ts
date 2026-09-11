@@ -96,7 +96,7 @@ export class PythonLocalBindingSymbolResolutionStrategy implements SymbolResolut
     if (localType) return this.resolveOnBoundType(localType, call.member, ctx);
     const bound = nearestCallResultBinding(ctx.callResultBindings, call.receiver, call.startLine);
     if (bound === undefined) return CONTINUE;
-    const type = pythonCallBindingType(bound.callee, bound.line, ctx, this.ports);
+    const type = pythonCallBindingType(bound.callee, bound.line, ctx, this.ports, this.mapper);
     if (type === undefined || (type.form !== "class" && type.form !== "instance")) return CONTINUE;
     return this.resolveOnBoundType(type.name, call.member, ctx);
   }

@@ -49,25 +49,27 @@ function channelsOf(facts: TypeFact[]) {
 }
 
 describe("pythonStructuredReturnKey", () => {
-  it("strips the leading member separator for a module-level def", () => {
-    expect(pythonStructuredReturnKey("#run")).toBe("run");
-    expect(pythonStructuredReturnKey(".run")).toBe("run");
+  // The bare-name spelling this pinned until E5.1c widened to `<relPath>::<name>`
+  // — one bare `get_client` entry spoke for polar's six (bd tea-rags-mcp-1v12o.1.7).
+  it("qualifies a module-level def with the file that declares it", () => {
+    expect(pythonStructuredReturnKey("#run", RELPATH)).toBe("pkg/svc.py::run");
+    expect(pythonStructuredReturnKey(".run", RELPATH)).toBe("pkg/svc.py::run");
   });
 
   it("keeps a single-class instance key as it stands", () => {
-    expect(pythonStructuredReturnKey("Svc#run")).toBe("Svc#run");
+    expect(pythonStructuredReturnKey("Svc#run", RELPATH)).toBe("Svc#run");
   });
 
   it("rewrites the kernel's `::` scope join to Python's `.` scope separator", () => {
-    expect(pythonStructuredReturnKey("Outer::Inner#run")).toBe("Outer.Inner#run");
-    expect(pythonStructuredReturnKey("Outer::Inner.run")).toBe("Outer.Inner.run");
+    expect(pythonStructuredReturnKey("Outer::Inner#run", RELPATH)).toBe("Outer.Inner#run");
+    expect(pythonStructuredReturnKey("Outer::Inner.run", RELPATH)).toBe("Outer.Inner.run");
   });
 });
 
 describe("pythonTypeChannels — structuredReturnTypes", () => {
-  it("keys a module-level def by its bare name", () => {
+  it("keys a module-level def by the file that declares it", () => {
     expect(channelsOf([returnFact([], "run")]).structuredReturnTypes).toEqual({
-      run: { form: "instance", name: "Session" },
+      "pkg/svc.py::run": { form: "instance", name: "Session" },
     });
   });
 

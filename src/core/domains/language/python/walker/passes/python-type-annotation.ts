@@ -22,8 +22,10 @@
  *     type up (`python-local-binding.ts:78`).
  *   - An unknown generic base keeps the BASE as the receiver — `QuerySet[Foo]`
  *     is a `QuerySet`, and that is the honest reading of the annotation.
- *     Unwrapping a framework wrapper (SQLAlchemy `Mapped[Foo]`) is E3's job,
- *     driven by manifest-gated data rather than by a guess here.
+ *     `Mapped[Foo]` is NOT such a case and sits in the transparent set instead:
+ *     it is a declarative column wrapper, the value IS the `Foo`, and E4.2
+ *     measured all 45 of its rows as class-body annotations whose inner type is
+ *     a project class. No manifest gates it — the annotation says it outright.
  */
 import type { AstNode } from "../../../../../contracts/types/ast.js";
 import type { TypeRef } from "../../../../../contracts/types/language.js";
@@ -48,6 +50,7 @@ export const PYTHON_DECLINED_TYPE_NAMES: ReadonlySet<string> = new Set([
   "Annotated",
   "ClassVar",
   "Final",
+  "Mapped",
 ]);
 /** Subscripted forms whose argument IS the answer — the wrapper is transparent. */
 const PYTHON_TRANSPARENT_FIRST: ReadonlySet<string> = new Set([
@@ -58,6 +61,13 @@ const PYTHON_TRANSPARENT_FIRST: ReadonlySet<string> = new Set([
   "Required",
   "NotRequired",
   "InitVar",
+  // SQLAlchemy 2.0's declarative column type. LANGUAGE-level here rather than
+  // framework-level: `Mapped[T]` states "this attribute holds a T" the way
+  // `ClassVar[T]` does, no manifest gate decides whether that is true, and every
+  // one of polar's 45 measured rows is a class-body `x: Mapped[T] =
+  // mapped_column(…)` whose inner type is a project class (bd
+  // tea-rags-mcp-w205u, E4.2a).
+  "Mapped",
 ]);
 /** `Coroutine[Send, Yield, Return]` — the LAST argument is the awaited value. */
 const PYTHON_TRANSPARENT_LAST: ReadonlySet<string> = new Set(["Coroutine"]);
@@ -103,6 +113,19 @@ export const PYTHON_CONTAINER_LAST: ReadonlySet<string> = new Set([
 ]);
 /** Subscripted forms that name no receiver at all. */
 const PYTHON_OPAQUE_GENERICS: ReadonlySet<string> = new Set(["Callable", "Literal"]);
+
+/**
+ * The name a `-> Self` RETURN fact is recorded under, for the resolver to
+ * substitute (bd tea-rags-mcp-w205u, E4.6b-1).
+ *
+ * `Self` on a return is the class the RECEIVER names, and the walker cannot
+ * know it: polar's `AccountRepository.from_session(s)` inherits `from_session`
+ * from `RepositoryBase`, so recording the DECLARING class puts every following
+ * hop on the wrong class. Everywhere else — a parameter, an ivar — `Self` names
+ * a value the caller already holds and the enclosing class is the answer.
+ * `pythonInheritedMemberType` is the one reader that substitutes.
+ */
+export const PYTHON_SELF_RETURN = "Self";
 
 function isTypeRef(ref: TypeRef | undefined): ref is TypeRef {
   return ref !== undefined;

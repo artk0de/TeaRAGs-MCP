@@ -24,6 +24,7 @@ export {
   collectKnownPaths,
   lastConstantSegment,
   isRubyPath,
+  lookupRubySymbolsByShortName,
   receiverIsIndexAccess,
   receiverChainTailIsExternal,
   symbolIdIsClassMethod,

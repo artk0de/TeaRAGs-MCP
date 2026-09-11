@@ -16,6 +16,7 @@ import type { ChunkingHook, LanguageChunkClassifier } from "./chunker.js";
 import type {
   CallContext,
   CallRef,
+  DispatchEdge,
   DispatchFanoutOutcome,
   FileExtraction,
   GraphEdges,
@@ -98,6 +99,37 @@ export interface SymbolResolutionStrategy {
  */
 export interface DispatchResolverComponent {
   resolveDispatch: (call: CallRef, ctx: CallContext) => DispatchFanoutOutcome;
+}
+
+/**
+ * The two language-DATA injections the neutral untyped-dispatch narrowing
+ * cascade (`buildDispatchCascade`, `domains/language/kernel/dispatch-cascade.ts`)
+ * accepts (bd tea-rags-mcp-w205u). The cascade owns the ORDER — the neutral part
+ * — and a language contributes only the two facts no engine can know: which
+ * members are pure duck/runtime vocabulary, and how a literal receiver's source
+ * text maps to a core type. A language that supplies neither gets the signature
+ * half of the cascade, which is inert rather than wrong when its walker records
+ * no `visibility` / `acceptsBlock`.
+ */
+export interface DispatchCascadeOptions {
+  /** Members that are never short-name resolvable to an in-project target. */
+  readonly duckVocabulary?: ReadonlySet<string>;
+  /** Literal receiver source text → its core type name, or `null`. */
+  readonly classifyLiteralReceiver?: (receiver: string | null) => string | null;
+}
+
+/**
+ * The per-language knobs on the narrowing terminal (`resolveNarrowedFanout`).
+ * Both are optional and both only ever TIGHTEN the neutral default: `cap` is
+ * intersected with the corpus-adaptive `DispatchFanoutPolicy` cap (a language may
+ * ask for a smaller fan, never a larger one) and `edgeKind` labels the emitted
+ * edges for the component that produced them.
+ */
+export interface NarrowedFanoutOptions {
+  /** Cap override; the EFFECTIVE cap is `min(this, policy cap)`. */
+  readonly cap?: number;
+  /** Edge kind carried by every emitted edge. Default `"dynamic"`. */
+  readonly edgeKind?: DispatchEdge["edgeKind"];
 }
 
 /**
@@ -440,6 +472,20 @@ export interface LanguageWalker {
    * (bd tea-rags-mcp-o5kwh).
    */
   nameOf: (node: AstNode, gemfileContent?: string) => NamedSymbol | NamedSymbol[] | null;
+  /**
+   * Native node types of which a file must contain at least one for `walk` to
+   * yield anything beyond the empty extraction. Absent → every file is walked.
+   *
+   * Owned by the language module, because only it knows what its walker reads.
+   * A consumer holding the NATIVE tree can ask `fileIsInertForExtraction`
+   * (`domains/language/kernel/extraction-fast-path.ts`) before materializing,
+   * and skip a file that cannot produce output — netbox's
+   * `extras/data/un_locode.py` is 111,557 lines of a data table with no def, no
+   * class, no call and no import, and materializing it cost 5.33 s of that
+   * corpus's 11.6 s pass 1 plus ~800 MB of live heap for an empty answer
+   * (bd tea-rags-mcp-1v12o.2.4).
+   */
+  readonly extractionBearingNodeTypes?: readonly string[];
 }
 
 /**
