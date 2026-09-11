@@ -38,12 +38,20 @@
  */
 
 import type { CodegraphSignalDrift } from "../../../../contracts/types/codegraph.js";
-import type { BatchPayloadOp } from "./batch-write.js";
+import { pipelineLog } from "../infra/debug-logger.js";
+import { batchSetPayloadWithRetry, type BatchPayloadOp } from "./batch-write.js";
 
 /**
  * One file's points per scroll. A file with more chunks than this is a chunker
  * defect, not a heal concern — the cap exists so a pathological payload cannot
  * turn one file into an unbounded pagination loop inside the serial tail.
+ *
+ * Reaching it exactly is treated as an ERROR, not as a full read. `scrollFiltered`
+ * stops at `limit` with no signal that more matched, so a silent truncation would
+ * heal part of the file, let the run advance the baseline, and erase that file's
+ * drift permanently — the next run compares against a baseline that already says
+ * "healed". Throwing skips the refresh (the runner only refreshes after `heal`
+ * resolves) and leaves the diff standing for the next run to retry.
  */
 const HEAL_SCROLL_CAP = 10_000;
 
@@ -174,6 +182,21 @@ export class CodegraphPayloadHealer {
       HEAL_PAYLOAD_INCLUDE,
     );
     if (points.length === 0) return 0;
+    if (points.length >= HEAL_SCROLL_CAP) {
+      // Its own phase name, because the enclosing `CODEGRAPH_PAYLOAD_HEAL_FAILED`
+      // says only that the heal stopped — this one names the file to look at and
+      // is the only place the number appears.
+      pipelineLog.enrichmentPhase("CODEGRAPH_PAYLOAD_HEAL_SCROLL_CAPPED", {
+        collection: collectionName,
+        relPath,
+        cap: HEAL_SCROLL_CAP,
+      });
+      throw new Error(
+        `codegraph payload heal: "${relPath}" returned ${points.length} points, the scroll cap — ` +
+          "the rest of the file cannot be read, so healing it partially would advance the baseline " +
+          "over drift that was never written. Nothing was healed for this run; the diff stands.",
+      );
+    }
 
     const touched = new Set<string | number>();
     const operations: BatchPayloadOp[] = [];
@@ -213,7 +236,18 @@ export class CodegraphPayloadHealer {
     }
 
     if (operations.length === 0) return 0;
-    await this.deps.qdrant.batchSetPayload(collectionName, operations);
+    // Retried, for the reason `batch-write.ts` was written: a single transient
+    // Qdrant blip mid-run used to drop a whole batch of signals silently. A
+    // budget that is genuinely exhausted is a different thing and must NOT be
+    // swallowed — the baseline advances only if `heal` resolves, so returning
+    // quietly here would record "healed" over points that were never written.
+    const ok = await batchSetPayloadWithRetry(this.deps.qdrant, collectionName, operations);
+    if (!ok) {
+      throw new Error(
+        `codegraph payload heal: payload write for "${relPath}" failed after every retry. ` +
+          "Nothing is recorded as healed; the diff stands for the next run.",
+      );
+    }
     return touched.size;
   }
 }

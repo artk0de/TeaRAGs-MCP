@@ -20,6 +20,8 @@ interface StoredPoint {
 class FileScopedQdrantStub {
   readonly batchSetPayloadCalls: { collectionName: string; operations: BatchPayloadOp[] }[] = [];
   readonly scrolledPaths: string[] = [];
+  /** Rejections to serve before the first successful write — one shift per call. */
+  readonly writeFailures: Error[] = [];
 
   constructor(private readonly points: StoredPoint[]) {}
 
@@ -36,8 +38,39 @@ class FileScopedQdrantStub {
     return this.points.filter((p) => p.payload.relativePath === wanted).map((p) => ({ id: p.id, payload: p.payload }));
   }
 
+  /**
+   * APPLIES the write, with the nested-key merge real Qdrant performs and
+   * `MockQdrantManager` models: with `key`, the payload is merged into the object
+   * AT that dotted path and sibling sub-trees are left alone; without it, merged
+   * at the root. Recording the operations alone cannot tell the two apart, which
+   * is exactly the mistake the healer must not make.
+   */
   async batchSetPayload(collectionName: string, operations: BatchPayloadOp[]): Promise<void> {
+    const failure = this.writeFailures.shift();
+    if (failure) throw failure;
     this.batchSetPayloadCalls.push({ collectionName, operations });
+    for (const op of operations) {
+      for (const id of op.points) {
+        const point = this.points.find((p) => p.id === id);
+        if (!point) continue;
+        if (op.key) {
+          let node: Record<string, unknown> = point.payload;
+          for (const segment of op.key.split(".")) {
+            node[segment] = { ...(node[segment] as Record<string, unknown> | undefined) };
+            node = node[segment] as Record<string, unknown>;
+          }
+          Object.assign(node, op.payload);
+        } else {
+          point.payload = { ...point.payload, ...op.payload };
+        }
+      }
+    }
+  }
+
+  payloadOf(id: string): Record<string, unknown> {
+    const found = this.points.find((p) => p.id === id);
+    if (!found) throw new Error(`no such point: ${id}`);
+    return found.payload;
   }
 
   /** Every operation from every call, flattened — assertion convenience. */
@@ -230,5 +263,74 @@ describe("CodegraphPayloadHealer", () => {
       new Set(),
     );
     expect(result).toEqual({ pointsRewritten: 2, filesTouched: 1 });
+  });
+
+  // The level-scoped `key` claim, checked on the STORED payload rather than on
+  // the operation's shape: a root write would take both sibling blocks with it
+  // and still satisfy an assertion about `op.key`.
+  it("leaves the sibling file block and another provider's subtree byte-for-byte intact", async () => {
+    const priorFile = { fanIn: 9, fanOut: 2, isHub: true, enrichedAt: "2026-01-01T00:00:00.000Z" };
+    const priorGit = { commitCount: 12, ageDays: 40 };
+    stub = new FileScopedQdrantStub([
+      {
+        id: "p1",
+        payload: {
+          relativePath: "src/hub.ts",
+          symbolId: "Hub#serve",
+          codegraph: { symbols: { file: { ...priorFile }, chunk: { fanIn: 0, fanOut: 0, pageRank: 0 } } },
+          git: { file: { ...priorGit } },
+        },
+      },
+    ]);
+
+    await makeHealer(stub).heal(
+      "coll",
+      { symbols: [{ relPath: "src/hub.ts", symbolId: "Hub#serve" }], files: [] },
+      new Set(),
+    );
+
+    const payload = stub.payloadOf("p1");
+    const codegraph = payload.codegraph as { symbols: { file: unknown; chunk: unknown } };
+    expect(codegraph.symbols.file).toEqual(priorFile);
+    expect(payload.git).toEqual({ file: priorGit });
+    expect(codegraph.symbols.chunk).toEqual(CHUNK_SIGNALS);
+  });
+
+  // `batch-write.ts` exists because one transient blip used to drop a whole
+  // batch of signals silently. The heal is the same kind of write.
+  it("absorbs a transient write failure and still heals", async () => {
+    stub.writeFailures.push(new Error("qdrant timeout"));
+
+    const result = await makeHealer(stub).heal("coll", { symbols: [], files: [{ relPath: "src/hub.ts" }] }, new Set());
+
+    expect(result).toEqual({ pointsRewritten: 2, filesTouched: 1 });
+    expect(stub.batchSetPayloadCalls).toHaveLength(1);
+    expect((stub.payloadOf("p1").codegraph as { symbols: { file: unknown } }).symbols.file).toEqual(FILE_SIGNALS);
+  });
+
+  // A scroll that comes back exactly at the cap may have more behind it, and
+  // `scrollFiltered` gives no way to tell. Healing the visible part would let the
+  // run advance the baseline over drift that was never written — erasing it.
+  it("refuses a file whose scroll came back at the cap instead of healing it partially", async () => {
+    const capped = {
+      scrollFiltered: async () =>
+        Array.from({ length: 10_000 }, (_, i) => ({
+          id: `p${i}`,
+          payload: { relativePath: "src/huge.ts", symbolId: `fn${i}` },
+        })),
+      batchSetPayload: async () => {
+        throw new Error("must not write a partially-read file");
+      },
+    };
+    const healer = new CodegraphPayloadHealer({
+      qdrant: capped,
+      providerKey: PROVIDER_KEY,
+      buildFileSignals: async () => FILE_SIGNALS,
+      buildChunkSignals: async () => CHUNK_SIGNALS,
+    });
+
+    await expect(healer.heal("coll", { symbols: [], files: [{ relPath: "src/huge.ts" }] }, new Set())).rejects.toThrow(
+      /scroll cap/,
+    );
   });
 });
