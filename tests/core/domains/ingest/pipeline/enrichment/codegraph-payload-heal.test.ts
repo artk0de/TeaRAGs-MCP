@@ -308,6 +308,29 @@ describe("CodegraphPayloadHealer", () => {
     expect((stub.payloadOf("p1").codegraph as { symbols: { file: unknown } }).symbols.file).toEqual(FILE_SIGNALS);
   });
 
+  // The other half of the retry change, and the half that protects the baseline:
+  // `batchSetPayloadWithRetry` reports an exhausted budget by RETURNING false, so
+  // a caller that ignores the result resolves normally, the runner advances
+  // `cg_*_signals_prev`, and points that were never written are recorded as
+  // healed — drift erased, silently, with the run reporting success.
+  //
+  // Three rejections is the wrapper's whole attempt budget, so this costs its
+  // 100ms + 200ms backoff. The healer takes the wrapper's defaults deliberately
+  // (production wants the backoff), so the wait is paid here rather than
+  // injected away.
+  it("refuses to report a heal when the write budget is exhausted", async () => {
+    stub.writeFailures.push(new Error("qdrant down"), new Error("qdrant down"), new Error("qdrant down"));
+
+    await expect(
+      makeHealer(stub).heal("coll", { symbols: [], files: [{ relPath: "src/hub.ts" }] }, new Set()),
+    ).rejects.toThrow(/failed after every retry/);
+
+    // Nothing recorded as written, and the stored payload never gained the
+    // signals — so the next run's diff still names this file.
+    expect(stub.batchSetPayloadCalls).toEqual([]);
+    expect(stub.payloadOf("p1").codegraph).toBeUndefined();
+  });
+
   // A scroll that comes back exactly at the cap may have more behind it, and
   // `scrollFiltered` gives no way to tell. Healing the visible part would let the
   // run advance the baseline over drift that was never written — erasing it.
