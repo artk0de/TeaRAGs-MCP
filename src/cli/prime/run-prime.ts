@@ -169,7 +169,12 @@ export async function runPrime(input: {
     const [status, metricsResult, drift, update] = await Promise.allSettled([
       ctx.app.getIndexStatus(path),
       ctx.app.getIndexMetrics(path),
-      ctx.app.checkIndexDrift({ path }),
+      // Inspection, like get_index_status — the digest must read the same way
+      // every time it is rendered, and the once-per-session warning belongs to
+      // the search path. (This process is short-lived, so consuming would cost
+      // nothing here in practice; it is stated anyway so the call site and the
+      // contract agree.)
+      ctx.app.checkIndexDrift({ path, consume: false }),
       updateService.checkForUpdate({
         allowNetwork: true,
         timeoutMs: 1500,

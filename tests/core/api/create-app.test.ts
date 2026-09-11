@@ -381,11 +381,12 @@ describe("createApp", () => {
   // =========================================================================
 
   describe("checkIndexDrift", () => {
-    it("delegates to checkAndConsume when the request has a path", async () => {
+    it("routes a path to the consuming check when consume is true", async () => {
       const app = createApp(deps);
-      await app.checkIndexDrift({ path: "/foo" });
+      await app.checkIndexDrift({ path: "/foo", consume: true });
 
       expect(deps.driftReporter.checkAndConsume).toHaveBeenCalledWith("/foo");
+      expect(deps.driftReporter.checkByPath).not.toHaveBeenCalled();
     });
 
     it("routes a path to the non-consuming check when consume is false", async () => {
@@ -401,16 +402,24 @@ describe("createApp", () => {
 
     it("delegates to checkByCollectionName when the request has a collection", async () => {
       const app = createApp(deps);
-      await app.checkIndexDrift({ collection: "col1" });
+      await app.checkIndexDrift({ collection: "col1", consume: false });
 
       expect(deps.driftReporter.checkByCollectionName).toHaveBeenCalledWith("col1");
+    });
+
+    it("never consumes for a collection, even when asked to", async () => {
+      const app = createApp(deps);
+      await app.checkIndexDrift({ collection: "col1", consume: true });
+
+      expect(deps.driftReporter.checkByCollectionName).toHaveBeenCalledWith("col1");
+      expect(deps.driftReporter.checkAndConsume).not.toHaveBeenCalled();
     });
 
     it("renders the report from a path-based check", async () => {
       (deps.driftReporter.checkAndConsume as ReturnType<typeof vi.fn>).mockResolvedValue(payloadKeyReport);
 
       const app = createApp(deps);
-      const result = await app.checkIndexDrift({ path: "/foo" });
+      const result = await app.checkIndexDrift({ path: "/foo", consume: true });
 
       expect(result).toBe(payloadKeyReportText);
     });
@@ -419,7 +428,7 @@ describe("createApp", () => {
       (deps.driftReporter.checkByCollectionName as ReturnType<typeof vi.fn>).mockReturnValue(payloadKeyReport);
 
       const app = createApp(deps);
-      const result = await app.checkIndexDrift({ collection: "col1" });
+      const result = await app.checkIndexDrift({ collection: "col1", consume: false });
 
       expect(result).toBe(payloadKeyReportText);
     });
@@ -427,7 +436,7 @@ describe("createApp", () => {
     it("returns null when the request names neither a path nor a collection", async () => {
       const app = createApp(deps);
 
-      await expect(app.checkIndexDrift({})).resolves.toBeNull();
+      await expect(app.checkIndexDrift({ consume: false })).resolves.toBeNull();
       expect(deps.driftReporter.checkAndConsume).not.toHaveBeenCalled();
       expect(deps.driftReporter.checkByCollectionName).not.toHaveBeenCalled();
     });
