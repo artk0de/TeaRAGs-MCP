@@ -11,8 +11,8 @@
 import { existsSync } from "node:fs";
 import { resolve } from "node:path";
 
-import { resolveCollectionName } from "../../infra/collection-name.js";
 import type { CollectionRegistry } from "../../domains/maintenance/registry/collection-registry.js";
+import { resolveCollectionName, validatePath } from "../../infra/collection-name.js";
 import { CollectionNotProvidedError, ProjectNotRegisteredError, StaleProjectAliasError } from "../errors.js";
 
 /**
@@ -81,4 +81,27 @@ export function resolveCollection(
     };
   }
   throw new CollectionNotProvidedError();
+}
+
+/** What a collaborator is handed instead of the registry itself. */
+export type PathCollectionResolver = (path: string) => Promise<string>;
+
+/**
+ * The path → collection rule of {@link resolveCollection}, packaged for
+ * collaborators that hold a path and no request: the drift reporter, and the
+ * stamp / reset sites of an index run (bd tea-rags-mcp-waj6k).
+ *
+ * They must not carry a second rule. Deriving the hash themselves sends a
+ * relocated project's report, its consumption reset and its language-version
+ * stamp to a collection no search ever resolves — the drift is reported against
+ * a name nobody queries, and re-armed on a key nothing consumed.
+ *
+ * The lookup uses the VALIDATED path because that is the spelling entries are
+ * recorded under (`CollectionRegistry#record` and `#updatePath` are both fed
+ * `validatePath` output), so a caller handing over a relative or symlinked path
+ * still finds the entry it belongs to.
+ */
+export function createPathCollectionResolver(registry: CollectionRegistry): PathCollectionResolver {
+  return async (path: string): Promise<string> =>
+    resolveCollection(registry, { path: await validatePath(path) }).collectionName;
 }

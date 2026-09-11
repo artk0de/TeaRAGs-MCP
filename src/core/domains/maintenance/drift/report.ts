@@ -36,6 +36,15 @@ export class IndexDriftReporter {
   constructor(
     private readonly monitors: readonly IndexDriftMonitor[],
     private readonly resolveAlias: (collectionName: string) => string | undefined = () => undefined,
+    /**
+     * The path → collection rule a SEARCH resolves by, injected because it
+     * consults the project registry and this domain may not reach the api layer
+     * (`createPathCollectionResolver`, bd tea-rags-mcp-waj6k). The default is
+     * that rule's own fallback — the path hash — which is what an unregistered
+     * path resolves to either way.
+     */
+    private readonly resolveCollectionForPath: (path: string) => Promise<string> = async (path) =>
+      resolveCollectionName(await validatePath(path)),
   ) {}
 
   checkByCollectionName(collectionName: string): IndexDriftReport | null {
@@ -106,13 +115,14 @@ export class IndexDriftReporter {
 
   /**
    * The one place a path becomes a collection name, so the consuming and
-   * non-consuming checks cannot drift apart on which key they mean. Null when
-   * the path cannot be resolved at all — an unreadable path is not a drift
-   * report.
+   * non-consuming checks cannot drift apart on which key they mean — and, with
+   * the injected resolver, cannot drift apart from the collection the search
+   * that carries the report actually queried. Null when the path cannot be
+   * resolved at all — an unreadable path is not a drift report.
    */
   private async resolvePath(path: string): Promise<string | null> {
     try {
-      return resolveCollectionName(await validatePath(path));
+      return await this.resolveCollectionForPath(path);
     } catch {
       return null;
     }
