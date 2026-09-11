@@ -18,6 +18,7 @@
 import { createRequire } from "node:module";
 
 import type { LanguageCapability, LanguageCodeVersions } from "../../../contracts/types/language.js";
+import { SHARED_LANGUAGE, sharedVersions } from "../kernel/capability.js";
 
 /** Reads an installed package's declared version. Injected so tests never touch `node_modules`. */
 export type GrammarVersionReader = (packageName: string) => string | undefined;
@@ -40,9 +41,11 @@ export const readInstalledGrammarVersion: GrammarVersionReader = (packageName) =
 };
 
 /**
- * Resolve the full version stamp for every language the factory declares.
+ * Resolve the full version stamp for every language the factory declares, plus
+ * the `*` pseudo-language standing for the sources they all run through.
  * `grammar` is omitted — not defaulted — when the language has no grammar
- * package or the package cannot be resolved.
+ * package or the package cannot be resolved; `*` parses nothing of its own, so
+ * it never has one.
  */
 export function resolveLanguageCodeVersions(
   capabilities: ReadonlyMap<string, LanguageCapability>,
@@ -57,5 +60,8 @@ export function resolveLanguageCodeVersions(
       ...(grammar !== undefined ? { grammar } : {}),
     });
   }
+  // Copied, not shared: the map is handed to the composition root and a caller
+  // mutating one stamp must not rewrite the module-level constant behind it.
+  resolved.set(SHARED_LANGUAGE, { ...sharedVersions });
   return resolved;
 }

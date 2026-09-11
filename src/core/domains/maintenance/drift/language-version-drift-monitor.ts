@@ -10,7 +10,7 @@
  * (`CollectionEntry.languageVersions`) against what the current build declares.
  */
 
-import type { LanguageCodeVersions } from "../../../contracts/types/language.js";
+import { SHARED_LANGUAGE, type LanguageCodeVersions } from "../../../contracts/types/language.js";
 import { resolveCollectionName, validatePath } from "../../../infra/collection-name.js";
 import type { IndexDriftFinding, IndexDriftMonitor } from "./monitor.js";
 import { formatIndexDriftReport, IndexDriftReporter } from "./report.js";
@@ -34,6 +34,11 @@ const CHUNK_SET_AXES: ReadonlySet<LanguageVersionAxis> = new Set<LanguageVersion
  * at when they were written — so the first bump after this shipped fires on
  * them, which is the point. `grammar` has no such seed: guessing which grammar
  * an old index parsed with would recommend a full reindex on a coin flip.
+ *
+ * `*` leans on the same read rather than special-casing an absent stamp: every
+ * index predates the pseudo-language, so all of them are seeded at 1, and
+ * `sharedVersions.walker` starts at 2 precisely so each reports `*.walker`
+ * once.
  */
 const SEEDED_VERSION = 1;
 
@@ -74,17 +79,17 @@ export class LanguageVersionDriftMonitor implements IndexDriftMonitor {
    * One finding per moved axis, each carrying what THAT axis costs: a chunk-set
    * axis relocates every point id, so it can only be repaired by a full
    * reindex; the rest are edges, repairable by a recompute narrowed to the one
-   * language that moved.
+   * language that moved — except `*`, whose sources ran under every language,
+   * so its recompute cannot be narrowed at all.
    */
   check(collectionName: string): IndexDriftFinding[] {
     const entry = this.registry.get(collectionName);
     if (!entry) return [];
-    // No stats cache means the language distribution is unknown, and a drift
-    // report scoped to "every language we support" would name languages the
-    // index has never held. Stay silent rather than guess.
+    // An empty or missing stats cache means the language distribution is
+    // unknown, so no per-language claim can be made — but `*` is in no
+    // distribution to begin with and is compared regardless.
     const stats = this.statsCache.load(collectionName);
     const present = Object.keys(stats?.distributions?.language ?? {});
-    if (present.length === 0) return [];
 
     return LanguageVersionDriftMonitor.detectDrift(entry.languageVersions, this.currentVersions, present).flatMap(
       (drift) =>
@@ -98,7 +103,7 @@ export class LanguageVersionDriftMonitor implements IndexDriftMonitor {
             : ({
                 kind: "recompute",
                 trajectories: new Set(["codegraph"]),
-                languages: new Set([drift.language]),
+                languages: drift.language === SHARED_LANGUAGE ? null : new Set([drift.language]),
               } as const),
         })),
     );
@@ -121,8 +126,10 @@ export class LanguageVersionDriftMonitor implements IndexDriftMonitor {
 
   /**
    * Compare the stamp against the current build, restricted to the languages
-   * the index actually contains. Sorted by the caller's language order so the
-   * report is stable.
+   * the index actually contains — plus `*`, which no distribution ever names
+   * because it is not a language: it stands for the kernel, resolver chain and
+   * chunker sources every language runs through, so it is compared whatever the
+   * index holds. Sorted by the caller's language order so the report is stable.
    */
   static detectDrift(
     indexed: Record<string, Partial<LanguageCodeVersions>> | undefined,
@@ -130,7 +137,7 @@ export class LanguageVersionDriftMonitor implements IndexDriftMonitor {
     presentLanguages: readonly string[],
   ): LanguageVersionDrift[] {
     const drifts: LanguageVersionDrift[] = [];
-    for (const language of presentLanguages) {
+    for (const language of new Set([...presentLanguages, SHARED_LANGUAGE])) {
       const currentVersions = current.get(language);
       // A stamped language the build no longer declares carries no claim we can
       // check — a removed vertical is not drift.

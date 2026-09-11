@@ -11,7 +11,7 @@
 
 import { describe, expect, it } from "vitest";
 
-import type { LanguageCodeVersions } from "../../../../../src/core/contracts/types/language.js";
+import { SHARED_LANGUAGE, type LanguageCodeVersions } from "../../../../../src/core/contracts/types/language.js";
 import { LanguageVersionDriftMonitor } from "../../../../../src/core/domains/maintenance/drift/language-version-drift-monitor.js";
 
 const current = new Map<string, LanguageCodeVersions>([
@@ -215,5 +215,123 @@ describe("LanguageVersionDriftMonitor.checkByCollectionName", () => {
     });
 
     expect(monitor.checkByCollectionName("code_x")).toBeNull();
+  });
+});
+
+/**
+ * The `*` pseudo-language (bd tea-rags-mcp-y6igo).
+ *
+ * The shared kernel, resolver chain and chunker sources run under EVERY
+ * language, so a change there moves every language's output at once and no
+ * `<lang>/capability.ts` number can say so. `*` carries that stamp — and it is
+ * never in an index's language distribution, so the present-language gate that
+ * keeps a TS-only project from being told to rebuild Ruby must not reach it.
+ */
+describe("LanguageVersionDriftMonitor — the shared * pseudo-language", () => {
+  const currentWithShared = new Map<string, LanguageCodeVersions>([
+    ...current,
+    [SHARED_LANGUAGE, { chunking: 1, walker: 2, codegraphSchema: 1 }],
+  ]);
+
+  function makeSharedMonitor(input: {
+    languageVersions?: Record<string, Partial<LanguageCodeVersions>>;
+    languages?: Record<string, number>;
+    stats?: unknown;
+  }) {
+    const registry = { get: () => ({ languageVersions: input.languageVersions }) as never };
+    const statsCache = {
+      load: () =>
+        (input.stats === undefined
+          ? { distributions: { language: input.languages ?? { ruby: 10 } } }
+          : input.stats) as never,
+    };
+    return new LanguageVersionDriftMonitor(registry, statsCache, currentWithShared);
+  }
+
+  it("compares * regardless of which languages the index holds", () => {
+    const drifts = LanguageVersionDriftMonitor.detectDrift({ "*": { walker: 1 } }, currentWithShared, ["ruby"]);
+
+    expect(drifts).toEqual([{ language: "*", axes: [{ axis: "walker", indexed: 1, current: 2 }] }]);
+  });
+
+  it("compares * exactly once when the caller already listed it", () => {
+    const drifts = LanguageVersionDriftMonitor.detectDrift({ "*": { walker: 1 } }, currentWithShared, ["*", "ruby"]);
+
+    expect(drifts).toEqual([{ language: "*", axes: [{ axis: "walker", indexed: 1, current: 2 }] }]);
+  });
+
+  // An index written before `*` existed carries no stamp for it, and that is
+  // exactly why sharedVersions.walker starts at 2: the seeded read makes such
+  // an index report `*.walker: 1 → 2` once, on the upgrade that introduced it.
+  it("reads a missing * stamp as the seeded version, so a pre-* index reports the shared walker once", () => {
+    const drifts = LanguageVersionDriftMonitor.detectDrift({ ruby: { walker: 1 } }, currentWithShared, ["ruby"]);
+
+    expect(drifts).toEqual([{ language: "*", axes: [{ axis: "walker", indexed: 1, current: 2 }] }]);
+  });
+
+  it("stays silent about * once the stamp caught up", () => {
+    const drifts = LanguageVersionDriftMonitor.detectDrift(
+      { "*": { chunking: 1, walker: 2, codegraphSchema: 1 } },
+      currentWithShared,
+      ["ruby"],
+    );
+
+    expect(drifts).toEqual([]);
+  });
+
+  it("a * finding recomputes codegraph for the whole collection", () => {
+    const monitor = makeSharedMonitor({
+      languageVersions: {
+        "*": { chunking: 1, walker: 1, codegraphSchema: 1 },
+        ruby: { grammar: "0.23.1", chunking: 1, walker: 1, codegraphSchema: 1 },
+      },
+    });
+
+    const finding = monitor.check("code_abc123")[0];
+
+    expect(finding?.subject).toBe("*.walker");
+    expect(finding?.remedy).toEqual({
+      kind: "recompute",
+      trajectories: new Set(["codegraph"]),
+      languages: null,
+    });
+  });
+
+  it("renders the shared recompute without a --languages narrowing", () => {
+    const monitor = makeSharedMonitor({
+      languageVersions: {
+        "*": { chunking: 1, walker: 1, codegraphSchema: 1 },
+        ruby: { grammar: "0.23.1", chunking: 1, walker: 1, codegraphSchema: 1 },
+      },
+    });
+
+    const warning = monitor.checkByCollectionName("code_abc123");
+
+    expect(warning).toContain("*.walker: 1 → 2");
+    expect(warning).toContain("Run: tea-rags index-codebase --force-enrichments codegraph");
+    expect(warning).not.toContain("--languages");
+  });
+
+  // The present-language gate is there so a TS-only project is never told to
+  // rebuild Ruby. `*` is in no distribution, so that gate must not silence it —
+  // not even when the stats cache is missing entirely.
+  it("still compares * when the stats cache is missing", () => {
+    const monitor = makeSharedMonitor({
+      languageVersions: { "*": { chunking: 1, walker: 1, codegraphSchema: 1 } },
+      stats: null,
+    });
+
+    expect(monitor.check("code_abc123").map((finding) => finding.subject)).toEqual(["*.walker"]);
+  });
+
+  it("routes a shared chunking bump to the full reindex, like any chunk-set axis", () => {
+    const monitor = makeSharedMonitor({
+      languageVersions: { "*": { chunking: 0, walker: 2, codegraphSchema: 1 } },
+    });
+
+    const finding = monitor.check("code_abc123")[0];
+
+    expect(finding?.subject).toBe("*.chunking");
+    expect(finding?.remedy).toEqual({ kind: "force" });
   });
 });

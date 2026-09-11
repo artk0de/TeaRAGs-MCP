@@ -11,6 +11,7 @@ import { describe, expect, it } from "vitest";
 
 import { resolveLanguageCodeVersions } from "../../../../../src/core/domains/language/capability/versions.js";
 import { LanguageFactory } from "../../../../../src/core/domains/language/factory.js";
+import { SHARED_LANGUAGE } from "../../../../../src/core/domains/language/kernel/capability.js";
 
 const factory = new LanguageFactory();
 
@@ -63,6 +64,22 @@ describe("resolveLanguageCodeVersions", () => {
 
     expect(versions.get("ruby")?.grammar).toMatch(/^\d+\.\d+\.\d+/);
   });
+
+  it("declares the shared * pseudo-language without a grammar axis", () => {
+    const resolved = resolveLanguageCodeVersions(factory.capabilities(), () => "1.0.0");
+
+    expect(resolved.get(SHARED_LANGUAGE)).toEqual({ chunking: 1, walker: 2, codegraphSchema: 1 });
+    // `*` parses nothing of its own, so there is no grammar package to read —
+    // and borrowing one language's would make the axis a lie for every other.
+    expect(resolved.get(SHARED_LANGUAGE)?.grammar).toBeUndefined();
+  });
+
+  it("hands out a copy of the shared stamp, so a mutating caller cannot poison the next resolve", () => {
+    const stamp = resolveLanguageCodeVersions(factory.capabilities(), () => undefined).get(SHARED_LANGUAGE);
+    if (stamp) stamp.walker = 99;
+
+    expect(resolveLanguageCodeVersions(factory.capabilities(), () => undefined).get(SHARED_LANGUAGE)?.walker).toBe(2);
+  });
 });
 
 describe("seeded support versions", () => {
@@ -77,6 +94,10 @@ describe("seeded support versions", () => {
     const NO_CALL_GRAPH = new Set(["markdown"]);
 
     for (const [language, v] of versions) {
+      // `*` is not a language vertical. Its axes stand for sources that run
+      // under every language at once, are pinned by their own test above, and
+      // none of the per-language expectations below apply to them.
+      if (language === SHARED_LANGUAGE) continue;
       // typescript walker 3: the wave-2 resolver additions (2a7e774e4), on top
       // of walker 2's oracle wave. python walker 2: bd tea-rags-mcp-9fgdi gave
       // `ImportRef` importedNames / importedBindings; python walker 3: bd
