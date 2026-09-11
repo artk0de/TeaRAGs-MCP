@@ -98,6 +98,21 @@ rebuild anything. That is why the finding carries no command: on its own it
 renders `No action required.`, which is literally true. Set the flag and the env
 row and the payload-key report clear together.
 
+Because the row describes the reading process, each surface answers for itself,
+and `prime` is a special case: it re-applies `CODEGRAPH_ENABLED` from the
+registry before it builds its composition, which is what stops prime from
+reporting phantom removed keys in the first place. So the `CODEGRAPH_ENABLED` row
+never appears in prime's `## Drift` — its absence there tells you nothing about
+the server. Read that flag where it matters, from the MCP server:
+`get_index_status`, or the `driftWarning` on a search response.
+`TRAJECTORY_GIT_ENABLED` gets no re-apply and shows up wherever it is flipped,
+prime included:
+
+```text
+Indexing env:
+  TRAJECTORY_GIT_ENABLED: true → false (explains any git.* payload-key drift — restore the flag instead of rebuilding)
+```
+
 ## Remedies and their cost
 
 | Remedy        | Command                                                                              | Cost                                      | What it rebuilds                                                                                                     |
@@ -193,8 +208,9 @@ Two things to expect after upgrading:
 
 - **The first run heals every point once.** The baseline starts empty, so the
   first run treats everything as moved and does one full payload sweep. It costs a
-  scroll and a write per file, no embeddings. Runs after it are bounded by what
-  actually changed, which on a normal incremental is a handful of files.
+  scroll and a write per file, no embeddings. On the tea-rags self-index that
+  first sweep named 7,465 points across 1,032 files. Runs after it are bounded by
+  what actually changed, which on a normal incremental is a handful of files.
 - **`isHub` and `transitiveImpact` are not themselves triggers.** Both are
   whole-collection quantities — `isHub` compares against a p95 that moves for
   every file at once, `transitiveImpact` is a depth-capped reverse BFS — so they
@@ -206,6 +222,12 @@ The heal runs in the completion tail and reports itself in the debug log:
 ```text
 [+ 142.317s] [GitEnrich] PHASE: CODEGRAPH_PAYLOAD_HEAL | {"collection":"…","pointsRewritten":412,"filesTouched":57}
 ```
+
+In the steady state that line stays, with zeros: a run whose graph diff is empty
+logs `pointsRewritten: 0, filesTouched: 0` and costs 98 ms on the self-index. An
+incremental that found nothing to index at all is the one case with no line to
+look for — it runs no enrichment, so there is no graph to diff and nothing to
+heal. Absent line and zero line mean the same thing here.
 
 A heal that fails is logged as `CODEGRAPH_PAYLOAD_HEAL_FAILED` and does not fail
 the run — the baseline is only advanced once the rewrite lands, so the next run

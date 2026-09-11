@@ -25,6 +25,12 @@
   env > stored registry env > code default, the same replay
   `ProjectIngestFactory` performs). Comparing against the bare process env
   reports phantom drift for every project whose registry env differs.
+- **`EnvDriftMonitor`'s `CODEGRAPH_ENABLED` finding is unreachable from prime.**
+  `cli/prime/run-prime.ts` sets `process.env.CODEGRAPH_ENABLED` from the
+  registry entry's identity field before `parseAppConfig`, so a prime run's
+  composition always resolves the flag true — exercise that finding against the
+  MCP server process instead. Which surface answers for which flag:
+  `.claude/rules/index-drift.md`.
 - **`*` is a language to the version monitor.** `sharedVersions`
   (`language/kernel/capability.ts`) is compared unconditionally; its findings
   render with no `--languages`.
