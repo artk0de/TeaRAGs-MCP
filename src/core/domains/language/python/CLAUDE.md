@@ -117,6 +117,18 @@
   question are not the same one. Measured cost of answering CONTINUE there: 95
   phantoms on netbox (`ContentType.objects`, `os.path`), 9 on ugnest, 2 on
   flask.
+- **The SAME-FILE class-receiver arm walks the MRO too, and its precision gate
+  is a uniqueness rule rather than a filter.** `resolveSameFileClassReceiver`
+  tries both `Cls.m` and `Cls#m` filtered to the caller's own file first — that
+  path is untouched — and only then hops to `resolvePythonInheritedMember` under
+  `spellingOrder: "classFirst"`, keyed by
+  `pythonBoundClassKey(receiver, ctx.callerFile, ctx)`, which answers `null`
+  unless the caller's file declares exactly ONE class of that name. It resolves
+  or CONTINUEs, never DROPs, so `resolveStarImport` still gets its turn.
+  `classFirst` is what the two class-receiver arms share and the reason the
+  option exists at all; the DEFAULT stays `instanceFirst` because `selfMember`
+  and `super` ask the same helper about a receiver that is an INSTANCE (10 polar
+  rows, bd tea-rags-mcp-w205u, E4.4b).
 - **A bare class name as a CHAIN head is seeded by `pythonClassChainHeadSeed`,
   and that is deliberately not `singleHopType`'s `classHead` arm.** `seedHead`
   is reached ONLY from `propagateChain`, so `ObjectType.objects.get_for_model()`
@@ -332,6 +344,17 @@
   once per run behind `PythonAncestorLinearizerCache`.
   `createPythonAncestorPolicy` resolves the spellings and `mro.ts` merges them;
   the driver is the kernel's.
+- **The ancestor policy asks `resolveExportedModule` for a base spelling that
+  mapped NOWHERE, and only on the `unknown` branch.** `..components.datatable`
+  is a package module ALIAS — `from . import _datatable as datatable` in the
+  package's `__init__.py` — so `mapImportToFile` reads `unknown` and the MRO
+  stops at a base it cannot name. The policy splits the text the way
+  `joinModulePath` composed it, keeping a leading dot RUN with the package, and
+  retries through E4.6a's sibling-module hop. The `unknown` gate is the guard,
+  not a nicety: `mapAbsolute` answers `external` for an absolute text no root
+  maps, and asking there would let a project package that happens to bind the
+  last segment capture `django.db.models` (19 polar `super()` rows, bd
+  tea-rags-mcp-w205u, E4.4c).
 - **A base bound by `from m import *` arrives as a DISJUNCTION the walker
   wrote,** `bare|m1::Base|m2::Base` in declaration order, because only the
   walker still holds that file's star modules — the read path has the CALLER's
@@ -355,7 +378,16 @@
   corroboration channel and the tail of `resolvePythonMemberOnType`, which is
   how `selfField` reaches a base class at all. The cache answers `undefined` for
   such a run, and each strategy takes its pre-seam path rather than answering
-  from an empty map.
+  from an empty map. **It is also keyed by the class SHORT name and unioned
+  run-global, so a namesake in another file OVERWRITES it** — polar declares
+  `CheckoutDoesNotExist` twice and the legacy `super()` walk left the MRO on the
+  loser. `resolveSuperViaClassExtends` declines its FIRST hop when the enclosing
+  class's own `classAncestors` name no such base AND the short name is declared
+  in more than one file; both clauses are load-bearing, because netbox's
+  star-import truncation makes the two channels disagree on a class declared
+  once and must stay byte-identical. Every DEEPER hop of that walk, and every
+  other reader of the map, still trusts a run-global short-name index (bd
+  tea-rags-mcp-w205u, E4.4c — a channel defect, not a `super()` one).
 - **Chain order is a correctness argument, not a preference.** Nine passes:
   `super`, `clsMember`, `selfField`, `selfMember`, `localBinding`, `chainType`,
   `namingConvention`, `importedName`, `globalShortName`, composed in ONE place
