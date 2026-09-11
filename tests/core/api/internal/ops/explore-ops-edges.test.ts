@@ -12,8 +12,9 @@
  *
  *   2. `checkDrift` collection-only branch — when a request only has a
  *      `collection` (no path) the drift monitor must be queried by
- *      collection name. The path branch is exercised by every existing
- *      test; the collection-name branch is the symmetric case.
+ *      collection name, CONSUMING: a collection-addressed request is still
+ *      a search. The path branch is exercised by every existing test; the
+ *      collection-name branch is the symmetric case.
  *
  *   3. `resolveDocRerank` documentation-auto-preset — when no explicit
  *      rerank is given but the caller signals a docs query
@@ -91,13 +92,24 @@ function makeMockRegistry() {
   } as any;
 }
 
-function makeMockDriftMonitor(overrides: Record<string, any> = {}) {
+function makeMockDriftReporter(overrides: Record<string, any> = {}) {
   return {
     checkAndConsume: vi.fn().mockResolvedValue(null),
+    checkAndConsumeByCollectionName: vi.fn().mockReturnValue(null),
     checkByCollectionName: vi.fn().mockReturnValue(null),
+    reset: vi.fn(),
     ...overrides,
   } as any;
 }
+
+/** One drifted payload key, and the text `formatIndexDriftReport` renders it as. */
+const driftReport = {
+  findings: [
+    { axis: "payloadKeys", subject: "navigation", indexed: "absent", current: "declared", remedy: { kind: "force" } },
+  ],
+  remedy: { kind: "force" },
+};
+const driftReportText = "Payload keys:\n  navigation: absent → declared\nRun: tea-rags index-codebase --force";
 
 // ---------------------------------------------------------------------------
 // 1. getIndexMetrics without statsCache → NotIndexedError
@@ -118,7 +130,7 @@ describe("ExploreOps.getIndexMetrics", () => {
       reranker: makeMockReranker(),
       registry: makeMockRegistry(),
       // statsCache intentionally omitted
-      schemaDriftMonitor: makeMockDriftMonitor(),
+      driftReporter: makeMockDriftReporter(),
       payloadSignals: [],
       essentialKeys: [],
     });
@@ -136,19 +148,21 @@ describe("ExploreOps drift warning — collection-only path", () => {
     vi.clearAllMocks();
   });
 
-  it("uses checkByCollectionName when the request resolves a collection but has no path", async () => {
+  it("uses the CONSUMING collection-name check when the request has a collection but no path", async () => {
     // When the caller passes `collection` directly (not `path`), the drift
     // monitor's collection-name branch must run — the path branch can't
     // because there is no path to check against the schema-version registry.
-    const driftMonitor = makeMockDriftMonitor({
-      checkByCollectionName: vi.fn().mockReturnValue("Schema version drift detected for code_xyz"),
+    // It consumes: a collection-addressed search is a search, and a warning it
+    // renders is one the reader has now been shown.
+    const driftReporter = makeMockDriftReporter({
+      checkAndConsumeByCollectionName: vi.fn().mockReturnValue(driftReport),
     });
     const facade = new ExploreFacade({
       qdrant: makeMockQdrant(),
       embeddings: makeMockEmbeddings(),
       reranker: makeMockReranker(),
       registry: makeMockRegistry(),
-      schemaDriftMonitor: driftMonitor,
+      driftReporter,
       payloadSignals: [],
       essentialKeys: [],
     });
@@ -158,9 +172,10 @@ describe("ExploreOps drift warning — collection-only path", () => {
       query: "anything",
     });
 
-    expect(driftMonitor.checkAndConsume).not.toHaveBeenCalled();
-    expect(driftMonitor.checkByCollectionName).toHaveBeenCalledWith("code_explicit_no_path");
-    expect(result.driftWarning).toBe("Schema version drift detected for code_xyz");
+    expect(driftReporter.checkAndConsume).not.toHaveBeenCalled();
+    expect(driftReporter.checkByCollectionName).not.toHaveBeenCalled();
+    expect(driftReporter.checkAndConsumeByCollectionName).toHaveBeenCalledWith("code_explicit_no_path");
+    expect(result.driftWarning).toBe(driftReportText);
   });
 });
 
@@ -186,7 +201,7 @@ describe("ExploreOps documentation auto-rerank", () => {
       embeddings: makeMockEmbeddings(),
       reranker,
       registry: makeMockRegistry(),
-      schemaDriftMonitor: makeMockDriftMonitor(),
+      driftReporter: makeMockDriftReporter(),
       payloadSignals: [],
       essentialKeys: [],
     });
@@ -210,7 +225,7 @@ describe("ExploreOps documentation auto-rerank", () => {
       embeddings: makeMockEmbeddings(),
       reranker,
       registry: makeMockRegistry(),
-      schemaDriftMonitor: makeMockDriftMonitor(),
+      driftReporter: makeMockDriftReporter(),
       payloadSignals: [],
       essentialKeys: [],
     });
@@ -234,7 +249,7 @@ describe("ExploreOps documentation auto-rerank", () => {
       embeddings: makeMockEmbeddings(),
       reranker,
       registry: makeMockRegistry(),
-      schemaDriftMonitor: makeMockDriftMonitor(),
+      driftReporter: makeMockDriftReporter(),
       payloadSignals: [],
       essentialKeys: [],
     });
@@ -310,7 +325,7 @@ describe("ExploreOps stats-before-filter ordering", () => {
       reranker,
       registry,
       statsCache,
-      schemaDriftMonitor: makeMockDriftMonitor(),
+      driftReporter: makeMockDriftReporter(),
       payloadSignals: [],
       essentialKeys: [],
     });

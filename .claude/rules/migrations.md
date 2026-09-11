@@ -13,6 +13,10 @@ paths:
   - "src/core/domains/trajectory/*/payload-signals.ts"
   - "src/core/infra/stats-cache.ts"
   - "src/core/adapters/qdrant/types.ts"
+  - "src/core/adapters/qdrant/schema-manager.ts"
+  - "src/core/adapters/qdrant/sparse.ts"
+  - "src/core/domains/ingest/infra/collection-stats.ts"
+  - "src/core/domains/trajectory/*/stats/**/*.ts"
   - "tests/core/domains/maintenance/migration/**/*.ts"
 ---
 
@@ -46,28 +50,32 @@ similarity scale from vectors already stored, so demanding a full reindex for it
 would have been the wrong price.
 
 **Drift detection is not a substitute either, and often cannot even see the
-change.** `SchemaDriftMonitor` compares Qdrant _payload_ keys. A field that
-lives anywhere else — the stats cache, the snapshot, the DuckDB file — is
-invisible to it, so "the user will be warned" is false by construction outside
-the payload.
+change.** The monitors in `src/core/domains/maintenance/drift/` compare stamps —
+payload keys, language versions, the indexing env, the indexed commit. A field
+that lives in the stats cache, the snapshot, or the DuckDB file has no stamp, so
+"the user will be warned" is false by construction outside those axes
+(`.claude/rules/index-drift.md`).
 
 ## When to Add a Migration
 
 Add migration when change affects **persisted state** existing
 collections/snapshots/caches already contain:
 
-| Change type                             | Pipeline   | Example                             |
-| --------------------------------------- | ---------- | ----------------------------------- |
-| New Qdrant payload index                | `schema`   | Add keyword index on `symbolId`     |
-| Change index type (keyword → text)      | `schema`   | Enable full-text on `relativePath`  |
-| Enable/configure sparse vectors         | `schema`   | Activate BM25 for hybrid search     |
-| Backfill payload fields                 | `schema`   | Set `enrichedAt` on old points      |
-| Qdrant collection config change         | `schema`   | Modify vector params                |
-| Sparse vector rebuild after BM25 change | `sparse`   | Regenerate BM25 vectors             |
-| Snapshot format change                  | `snapshot` | Add new fields to snapshot entries  |
-| Snapshot store gains/renames a field    | `snapshot` | mtime+size added alongside the hash |
-| Stats-cache gains a computed field      | `stats`    | Backfill `scoreBackground` (v6)     |
-| Codegraph table/column change           | `database` | New `cg_symbols` column or index    |
+| Change type                                           | Pipeline   | Example                                                    |
+| ----------------------------------------------------- | ---------- | ---------------------------------------------------------- |
+| New Qdrant payload index                              | `schema`   | Add keyword index on `symbolId`                            |
+| Change index type (keyword → text)                    | `schema`   | Enable full-text on `relativePath`                         |
+| Enable/configure sparse vectors                       | `schema`   | Activate BM25 for hybrid search                            |
+| Backfill payload fields                               | `schema`   | Set `enrichedAt` on old points                             |
+| Qdrant collection config change                       | `schema`   | Modify vector params                                       |
+| Index added to `initializeSchema` for NEW collections | `schema`   | The parity test fails until the same index has a migration |
+| Sparse vector rebuild after BM25 change               | `sparse`   | Regenerate BM25 vectors                                    |
+| BM25 tokenizer / vocabulary change in `sparse.ts`     | `sparse`   | Bump `sparseVersion`; rebuild sparse vectors               |
+| Snapshot format change                                | `snapshot` | Add new fields to snapshot entries                         |
+| Snapshot store gains/renames a field                  | `snapshot` | mtime+size added alongside the hash                        |
+| Stats-cache gains a computed field                    | `stats`    | Backfill `scoreBackground` (v6)                            |
+| Percentile / stats formula change                     | `stats`    | Derived-version check must see the new field               |
+| Codegraph table/column change                         | `database` | New `cg_symbols` column or index                           |
 
 **Do NOT add a migration when:**
 

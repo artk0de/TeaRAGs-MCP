@@ -18,9 +18,9 @@ import {
   InvalidQueryError,
 } from "../../../domains/explore/errors.js";
 import type { Reranker } from "../../../domains/explore/reranker.js";
-import type { TrajectoryRegistry } from "../../../domains/trajectory/index.js";
+import type { IndexDriftReporter } from "../../../domains/maintenance/drift/index.js";
 import type { CollectionRegistry } from "../../../domains/maintenance/registry/index.js";
-import type { SchemaDriftMonitor } from "../../../domains/maintenance/schema-drift-monitor.js";
+import type { TrajectoryRegistry } from "../../../domains/trajectory/index.js";
 import type { StatsCache } from "../../../infra/stats-cache.js";
 import { InvalidParameterError } from "../../errors.js";
 import type {
@@ -42,7 +42,7 @@ export interface ExploreFacadeDeps {
   registry: TrajectoryRegistry;
   collectionRegistry: CollectionRegistry;
   statsCache?: StatsCache;
-  schemaDriftMonitor?: SchemaDriftMonitor;
+  driftReporter?: IndexDriftReporter;
   payloadSignals?: PayloadSignalDescriptor[];
   essentialKeys?: string[];
   modelGuard?: EmbeddingModelGuard;
@@ -62,7 +62,7 @@ export class ExploreFacade {
       registry: deps.registry,
       collectionRegistry: deps.collectionRegistry,
       statsCache: deps.statsCache,
-      schemaDriftMonitor: deps.schemaDriftMonitor,
+      driftReporter: deps.driftReporter,
       payloadSignals: deps.payloadSignals ?? [],
       essentialKeys: deps.essentialKeys ?? [],
       modelGuard: deps.modelGuard,

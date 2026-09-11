@@ -166,11 +166,15 @@ export async function runPrime(input: {
   const updateService = (ctx as { updateService?: UpdateCheckService }).updateService ?? buildUpdateService();
 
   try {
-    const [status, metricsResult, drift, languageVersionDrift, update] = await Promise.allSettled([
+    const [status, metricsResult, drift, update] = await Promise.allSettled([
       ctx.app.getIndexStatus(path),
       ctx.app.getIndexMetrics(path),
-      ctx.app.checkSchemaDrift({ path }),
-      ctx.app.checkLanguageVersionDrift({ path }),
+      // Inspection, like get_index_status — the digest must read the same way
+      // every time it is rendered, and the once-per-session warning belongs to
+      // the search path. (This process is short-lived, so consuming would cost
+      // nothing here in practice; it is stated anyway so the call site and the
+      // contract agree.)
+      ctx.app.checkIndexDrift({ path, consume: false }),
       updateService.checkForUpdate({
         allowNetwork: true,
         timeoutMs: 1500,
@@ -198,7 +202,6 @@ export async function runPrime(input: {
       status: status.value,
       metrics: metricsResult.status === "fulfilled" ? metricsResult.value : null,
       drift: drift.status === "fulfilled" ? drift.value : null,
-      languageVersionDrift: languageVersionDrift.status === "fulfilled" ? languageVersionDrift.value : null,
       update: update.status === "fulfilled" ? update.value : null,
       autoUpdateOutcome,
       ...(registryEntry

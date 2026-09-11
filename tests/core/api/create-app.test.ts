@@ -5,7 +5,7 @@ import type { QdrantManager } from "../../../src/core/adapters/qdrant/client.js"
 import { createApp, type AppDeps, type ExploreFacade, type IngestFacade } from "../../../src/core/api/index.js";
 import type { ProjectRegistryOps } from "../../../src/core/api/internal/ops/project-registry-ops.js";
 import type { Reranker } from "../../../src/core/domains/explore/reranker.js";
-import type { SchemaDriftMonitor } from "../../../src/core/domains/maintenance/schema-drift-monitor.js";
+import type { IndexDriftReport, IndexDriftReporter } from "../../../src/core/domains/maintenance/drift/index.js";
 
 // ---------------------------------------------------------------------------
 // Mock factories
@@ -85,12 +85,24 @@ function createMockReranker(): Reranker {
   } as unknown as Reranker;
 }
 
-function createMockDriftMonitor(): SchemaDriftMonitor {
+function createMockDriftReporter(): IndexDriftReporter {
   return {
     checkAndConsume: vi.fn().mockResolvedValue(null),
+    checkAndConsumeByCollectionName: vi.fn().mockReturnValue(null),
+    checkByPath: vi.fn().mockResolvedValue(null),
     checkByCollectionName: vi.fn().mockReturnValue(null),
-  } as unknown as SchemaDriftMonitor;
+    reset: vi.fn(),
+  } as unknown as IndexDriftReporter;
 }
+
+/** One payload-key finding whose remedy is the full reindex. */
+const payloadKeyReport: IndexDriftReport = {
+  findings: [
+    { axis: "payloadKeys", subject: "navigation", indexed: "absent", current: "declared", remedy: { kind: "force" } },
+  ],
+  remedy: { kind: "force" },
+};
+const payloadKeyReportText = "Payload keys:\n  navigation: absent → declared\nRun: tea-rags index-codebase --force";
 
 function createMockProjectRegistryOps(): ProjectRegistryOps {
   return {
@@ -107,7 +119,7 @@ function createMockDeps(): AppDeps {
     explore: createMockExploreFacade(),
     ingest: createMockIngestFacade(),
     reranker: createMockReranker(),
-    schemaDriftMonitor: createMockDriftMonitor(),
+    driftReporter: createMockDriftReporter(),
     projectRegistryOps: createMockProjectRegistryOps(),
     quantizationScalar: true,
     turboQuant: true,
@@ -153,7 +165,7 @@ describe("createApp", () => {
     expect(app.getSchemaDescriptors).toBeDefined();
 
     // Drift
-    expect(app.checkSchemaDrift).toBeDefined();
+    expect(app.checkIndexDrift).toBeDefined();
   });
 
   // =========================================================================
@@ -369,39 +381,71 @@ describe("createApp", () => {
   // Drift monitoring
   // =========================================================================
 
-  describe("checkSchemaDrift", () => {
-    it("delegates to checkAndConsume when ref has path", async () => {
+  describe("checkIndexDrift", () => {
+    it("routes a path to the consuming check when consume is true", async () => {
       const app = createApp(deps);
-      await app.checkSchemaDrift({ path: "/foo" });
+      await app.checkIndexDrift({ path: "/foo", consume: true });
 
-      expect(deps.schemaDriftMonitor.checkAndConsume).toHaveBeenCalledWith("/foo");
+      expect(deps.driftReporter.checkAndConsume).toHaveBeenCalledWith("/foo");
+      expect(deps.driftReporter.checkByPath).not.toHaveBeenCalled();
     });
 
-    it("delegates to checkByCollectionName when ref has collection", async () => {
-      const app = createApp(deps);
-      await app.checkSchemaDrift({ collection: "col1" });
+    it("routes a path to the non-consuming check when consume is false", async () => {
+      (deps.driftReporter.checkByPath as ReturnType<typeof vi.fn>).mockResolvedValue(payloadKeyReport);
 
-      expect(deps.schemaDriftMonitor.checkByCollectionName).toHaveBeenCalledWith("col1");
+      const app = createApp(deps);
+      const result = await app.checkIndexDrift({ path: "/foo", consume: false });
+
+      expect(deps.driftReporter.checkByPath).toHaveBeenCalledWith("/foo");
+      expect(deps.driftReporter.checkAndConsume).not.toHaveBeenCalled();
+      expect(result).toBe(payloadKeyReportText);
     });
 
-    it("returns drift warning from path-based check", async () => {
-      (deps.schemaDriftMonitor.checkAndConsume as ReturnType<typeof vi.fn>).mockResolvedValue("Schema drift detected");
-
+    it("delegates to checkByCollectionName when the request has a collection", async () => {
       const app = createApp(deps);
-      const result = await app.checkSchemaDrift({ path: "/foo" });
+      await app.checkIndexDrift({ collection: "col1", consume: false });
 
-      expect(result).toBe("Schema drift detected");
+      expect(deps.driftReporter.checkByCollectionName).toHaveBeenCalledWith("col1");
     });
 
-    it("returns drift warning from collection-based check", async () => {
-      (deps.schemaDriftMonitor.checkByCollectionName as ReturnType<typeof vi.fn>).mockReturnValue(
-        "Schema drift detected",
-      );
+    // Invariant CHANGED by the whole-branch review: a collection used to be
+    // unconditionally non-consuming, which made `consume: true` a lie on that
+    // branch — the search path addresses its collection directly, so its
+    // warning was rendered and never marked as shown. `consume` now decides it
+    // on both branches.
+    it("consumes for a collection when asked to", async () => {
+      const app = createApp(deps);
+      await app.checkIndexDrift({ collection: "col1", consume: true });
+
+      expect(deps.driftReporter.checkAndConsumeByCollectionName).toHaveBeenCalledWith("col1");
+      expect(deps.driftReporter.checkByCollectionName).not.toHaveBeenCalled();
+      expect(deps.driftReporter.checkAndConsume).not.toHaveBeenCalled();
+    });
+
+    it("renders the report from a path-based check", async () => {
+      (deps.driftReporter.checkAndConsume as ReturnType<typeof vi.fn>).mockResolvedValue(payloadKeyReport);
 
       const app = createApp(deps);
-      const result = await app.checkSchemaDrift({ collection: "col1" });
+      const result = await app.checkIndexDrift({ path: "/foo", consume: true });
 
-      expect(result).toBe("Schema drift detected");
+      expect(result).toBe(payloadKeyReportText);
+    });
+
+    it("renders the report from a collection-based check", async () => {
+      (deps.driftReporter.checkByCollectionName as ReturnType<typeof vi.fn>).mockReturnValue(payloadKeyReport);
+
+      const app = createApp(deps);
+      const result = await app.checkIndexDrift({ collection: "col1", consume: false });
+
+      expect(result).toBe(payloadKeyReportText);
+    });
+
+    it("returns null when the request names neither a path nor a collection", async () => {
+      const app = createApp(deps);
+
+      await expect(app.checkIndexDrift({ consume: false })).resolves.toBeNull();
+      expect(deps.driftReporter.checkAndConsume).not.toHaveBeenCalled();
+      expect(deps.driftReporter.checkByCollectionName).not.toHaveBeenCalled();
     });
   });
 

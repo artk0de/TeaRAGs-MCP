@@ -59,7 +59,7 @@ a skip is silent, never an error.
 | Merge into `main`                                      | `index_codebase` incremental      | `main`                        | the merge act IS the gate    |
 | Branch finished (post-merge)                           | `tea-rags worktree remove <name>` | clone footprint dropped       | skill-only (not a git event) |
 | Edited-but-uncommitted before a search                 | manual `index_codebase`           | current collection            | commit boundary is primary   |
-| Schema drift                                           | `force_reindex`                   | —                             | explicit consent (unchanged) |
+| Drift (prime / status `## Drift` not `none`)            | the ONE `Run:` line the report ends with | —                      | explicit consent (unchanged) |
 
 ## Worktree-aware resolution
 
@@ -93,11 +93,14 @@ The hook runs `index_codebase` **without** `--force` and **without**
 - **Incremental** re-embeds only the committed diff — seconds, not a full
   rebuild. Embeddings block ~1–3s so the next search sees the new code; git and
   codegraph enrichment detach and finish in the background.
-- A **full rebuild** (`force_reindex`) is reserved for **schema drift** — when the
-  running code declares payload fields the existing index never populated.
-  Incremental cannot fix that (unchanged files keep their old payload), so a full
-  rebuild is the only repair — and because it is expensive, it is **never**
-  automatic. See [`/tea-rags:force-reindex`](/usage/skills) and
+- **Drift** is a stamp the index carries — payload keys, language versions, the
+  indexing env, the indexed commit — no longer matching what the running build
+  would produce. Incremental cannot fix most of it (unchanged files keep their
+  old payload), so the repair is the ONE `Run:` line the drift report ends with:
+  `--force-enrichments <scope>` for enrichment-owned drift, a **full rebuild**
+  (`force_reindex`) only when the chunk set moved. Both rewrite shared state, so
+  neither is ever automatic. See [Drift Detection](/operations/drift-detection),
+  [`/tea-rags:force-reindex`](/usage/skills) and
   [Recovery & Reindexing](/operations/recovery-reindexing).
 
 ## No configuration required

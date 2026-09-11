@@ -213,8 +213,8 @@ a non-graph substitute — never read an absent/empty graph tool as positive fac
 
 Before searching, reindex when index lags working tree: prime banner
 `⚠ Index is stale` or files edited this session → `index_codebase` (incremental,
-no consent); prime `## Schema drift` ≠ `none` → `force_reindex` (full,
-**explicit consent**). Full triggers + rationale in `index-freshness.md`.
+no consent); prime `## Drift` ≠ `none` → the `Run:` command that section names
+(**explicit consent**). Full triggers + rationale in `index-freshness.md`.
 
 ## Decision Tree
 

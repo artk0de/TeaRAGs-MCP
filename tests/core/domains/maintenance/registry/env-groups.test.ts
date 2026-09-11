@@ -169,3 +169,42 @@ describe("ADAPTIVE_DEFAULT_ENV_KEYS", () => {
     }
   });
 });
+
+describe("RegistryEnvGroup.consequence", () => {
+  it("classifies every group by what a change to it invalidates", () => {
+    const byCanonical = new Map(REGISTRY_ENV_GROUPS.map((g) => [g.canonical, g.consequence]));
+    for (const g of REGISTRY_ENV_GROUPS) expect(g.consequence, g.canonical).toBeDefined();
+    expect(byCanonical.get("INGEST_CHUNK_SIZE")).toBe("chunk-set");
+    expect(byCanonical.get("CODE_TEST_PATHS")).toBe("chunk-set");
+    expect(byCanonical.get("EMBEDDING_MODEL")).toBe("chunk-set");
+    expect(byCanonical.get("TRAJECTORY_GIT_LOG_MAX_AGE_MONTHS")).toBe("enrichment:git");
+    expect(byCanonical.get("CODEGRAPH_AMBIGUOUS_RESOLVE_MODE")).toBe("enrichment:codegraph");
+    expect(byCanonical.get("INGEST_TUNE_CHUNKER_POOL_SIZE")).toBe("runtime");
+    expect(byCanonical.get("QDRANT_TURBO_QUANT")).toBe("runtime");
+  });
+
+  it("keeps the non-runtime classes to exactly the keys that change what lands in the index", () => {
+    const classified = REGISTRY_ENV_GROUPS.filter((g) => g.consequence !== "runtime")
+      .map((g) => `${g.consequence} ${g.canonical}`)
+      .sort();
+    expect(classified).toEqual([
+      "chunk-set CODE_TEST_PATHS",
+      "chunk-set EMBEDDING_DIMENSIONS",
+      "chunk-set EMBEDDING_MODEL",
+      "chunk-set EMBEDDING_PROVIDER",
+      "chunk-set INGEST_CHUNK_OVERLAP",
+      "chunk-set INGEST_CHUNK_SIZE",
+      "chunk-set INGEST_ENABLE_AST",
+      "chunk-set INGEST_ENABLE_HYBRID",
+      "enrichment:codegraph CODEGRAPH_AMBIGUOUS_RESOLVE_MODE",
+      "enrichment:codegraph CODEGRAPH_CUSTOM_EXCLUDE",
+      "enrichment:codegraph CODEGRAPH_ENABLED",
+      "enrichment:git TRAJECTORY_GIT_CHUNK_MAX_AGE_MONTHS",
+      "enrichment:git TRAJECTORY_GIT_CHUNK_MAX_FILE_LINES",
+      "enrichment:git TRAJECTORY_GIT_ENABLED",
+      "enrichment:git TRAJECTORY_GIT_LOG_MAX_AGE_MONTHS",
+      "enrichment:git TRAJECTORY_GIT_SESSION_GAP_MINUTES",
+      "enrichment:git TRAJECTORY_GIT_SQUASH_AWARE_SESSIONS",
+    ]);
+  });
+});

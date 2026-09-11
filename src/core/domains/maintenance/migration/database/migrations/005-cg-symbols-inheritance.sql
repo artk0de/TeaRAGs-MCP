@@ -1,3 +1,4 @@
+
 CREATE TABLE IF NOT EXISTS cg_symbols_inheritance (
   source_fq_name     VARCHAR NOT NULL,
   source_rel_path    VARCHAR NOT NULL,

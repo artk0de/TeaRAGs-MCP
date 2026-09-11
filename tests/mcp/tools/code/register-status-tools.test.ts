@@ -1,10 +1,11 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
-import type { IndexStatus } from "../../../../src/core/api/public/index.js";
+import type { App, IndexStatus } from "../../../../src/core/api/public/index.js";
 import {
   formatBytes,
   formatCollectionDetails,
   formatInfraHealth,
+  registerStatusTools,
 } from "../../../../src/mcp/tools/code/register-status-tools.js";
 
 type InfraHealth = NonNullable<IndexStatus["infraHealth"]>;
@@ -118,5 +119,60 @@ describe("formatCollectionDetails — quantization", () => {
     expect(formatCollectionDetails({ indexSizeBytes: 1_288_490_188, quantization: "turbo" })).toBe(
       "Index size: 1.2 GB\nQuantization: turbo (8x)",
     );
+  });
+});
+
+// ---------------------------------------------------------------------------
+// get_index_status — the Drift block (bd tea-rags-mcp-p0phi)
+// ---------------------------------------------------------------------------
+
+type ToolHandler = (
+  args: Record<string, unknown>,
+  extra: unknown,
+) => Promise<{ content: { type: "text"; text: string }[] }>;
+
+function makeStatusHarness(checkIndexDrift: App["checkIndexDrift"]) {
+  const captured = new Map<string, ToolHandler>();
+  const register = vi.fn((_server: unknown, name: string, _config: unknown, handler: ToolHandler) => {
+    captured.set(name, handler);
+  });
+  const app = {
+    getIndexStatus: vi.fn().mockResolvedValue({
+      isIndexed: true,
+      status: "indexed",
+      collectionName: "code_abc",
+      chunksCount: 100,
+    }),
+    checkIndexDrift,
+  } as unknown as App;
+
+  const server = {} as Parameters<typeof registerStatusTools>[0];
+  registerStatusTools(server, { app, register: register as never });
+  return { handler: captured.get("get_index_status")!, app };
+}
+
+describe("get_index_status — drift block", () => {
+  it("asks for a NON-consuming check, so a second call still shows the block", async () => {
+    // Status is an inspection, not a search. Consuming here would make the
+    // second get_index_status read "clean" and steal the warning from the next
+    // search in the same process.
+    const checkIndexDrift = vi.fn().mockResolvedValue("Payload keys:\n  navigation: absent → declared");
+    const { handler } = makeStatusHarness(checkIndexDrift as unknown as App["checkIndexDrift"]);
+
+    const first = await handler({ path: "/repo" }, {});
+    const second = await handler({ path: "/repo" }, {});
+
+    expect(checkIndexDrift).toHaveBeenNthCalledWith(1, { path: "/repo", consume: false });
+    expect(checkIndexDrift).toHaveBeenNthCalledWith(2, { path: "/repo", consume: false });
+    expect(first.content[0].text).toContain("## Drift\nPayload keys:");
+    expect(second.content[0].text).toContain("## Drift\nPayload keys:");
+  });
+
+  it("appends nothing when nothing moved", async () => {
+    const { handler } = makeStatusHarness(vi.fn().mockResolvedValue(null) as unknown as App["checkIndexDrift"]);
+
+    const result = await handler({ path: "/repo" }, {});
+
+    expect(result.content[0].text).not.toContain("## Drift");
   });
 });

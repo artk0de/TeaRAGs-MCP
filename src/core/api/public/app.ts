@@ -19,9 +19,8 @@ import type { EmbeddingProvider } from "../../adapters/embeddings/base.js";
 import type { QdrantManager } from "../../adapters/qdrant/client.js";
 import type { EmbeddingModelGuard } from "../../adapters/qdrant/embedding-model-guard.js";
 import type { Reranker } from "../../domains/explore/reranker.js";
-import type { LanguageVersionDriftMonitor } from "../../domains/maintenance/language-version-drift-monitor.js";
+import { formatIndexDriftReport, type IndexDriftReporter } from "../../domains/maintenance/drift/index.js";
 import type { ProjectInfo } from "../../domains/maintenance/registry/index.js";
-import type { SchemaDriftMonitor } from "../../domains/maintenance/schema-drift-monitor.js";
 import type { ExploreFacade } from "../internal/facades/explore-facade.js";
 import type { GraphFacade } from "../internal/facades/graph-facade.js";
 import type { IngestFacade } from "../internal/facades/ingest-facade.js";
@@ -104,16 +103,27 @@ export interface App {
   // -- Schema descriptors (→ Reranker via deps) --
   getSchemaDescriptors: () => PresetDescriptors;
 
-  // -- Drift monitoring (→ SchemaDriftMonitor via deps) --
-  checkSchemaDrift: (ref: { path: string } | { collection: string }) => Promise<string | null>;
-
   /**
-   * Per-language code-version drift (→ LanguageVersionDriftMonitor via deps).
-   * Separate from `checkSchemaDrift` on purpose: payload KEYS do not move when
-   * a grammar or resolver does, so the two report disjoint conditions and each
-   * names its own command. Null when nothing moved or the monitor is unwired.
+   * Every drift axis the build can see, folded into ONE rendered report with
+   * ONE `Run:` line (→ `IndexDriftReporter` via deps). Payload keys and
+   * per-language code versions are disjoint conditions but share a remedy
+   * lattice, so a reader who acts on the report repairs both in a single run
+   * rather than reindexing twice. Null when nothing moved.
+   *
+   * `consume` has no default, on purpose: forgetting it would silently spend a
+   * warning that belongs to someone else, so every caller states which it is.
+   *
+   * Nothing reaching this method consumes today. The once-per-report warning
+   * belongs to the SEARCH path, which takes it from the reporter directly
+   * (`ExploreOps#checkDrift`) so each distinct report rides exactly one
+   * response per server session until an index run resets it. Both callers
+   * here are inspections a reader runs on purpose — `get_index_status` and the
+   * prime digest — and both pass `consume: false`: asking twice must report
+   * twice, and neither may spend the search path's warning. `consume` decides
+   * it on BOTH branches: a collection-addressed request is no more an
+   * inspection than a path-addressed one.
    */
-  checkLanguageVersionDrift: (ref: { path: string } | { collection: string }) => Promise<string | null>;
+  checkIndexDrift: (req: { path?: string; collection?: string; consume: boolean }) => Promise<string | null>;
 
   // -- Project registry (→ internal/ops/project-registry-ops.ts) --
   registerProject: (input: {
@@ -158,9 +168,7 @@ export interface AppDeps {
   ingestForPath?: (path: string) => IngestFacade;
   explore: ExploreFacade;
   reranker: Reranker;
-  schemaDriftMonitor: SchemaDriftMonitor;
-  /** Optional — omitted by direct constructions that wire no registry. */
-  languageVersionDriftMonitor?: LanguageVersionDriftMonitor;
+  driftReporter: IndexDriftReporter;
   projectRegistryOps: ProjectRegistryOps;
   quantizationScalar: boolean;
   turboQuant: boolean;
@@ -291,16 +299,17 @@ export function createApp(deps: AppDeps): App {
     },
 
     // -- Drift monitoring --
-    checkSchemaDrift: async (ref) => {
-      if ("path" in ref) return deps.schemaDriftMonitor.checkAndConsume(ref.path);
-      return deps.schemaDriftMonitor.checkByCollectionName(ref.collection);
-    },
-
-    checkLanguageVersionDrift: async (ref) => {
-      const monitor = deps.languageVersionDriftMonitor;
-      if (!monitor) return null;
-      if ("path" in ref) return monitor.checkAndConsume(ref.path);
-      return monitor.checkByCollectionName(ref.collection);
+    checkIndexDrift: async ({ path, collection, consume }) => {
+      const report = path
+        ? consume
+          ? await deps.driftReporter.checkAndConsume(path)
+          : await deps.driftReporter.checkByPath(path)
+        : collection
+          ? consume
+            ? deps.driftReporter.checkAndConsumeByCollectionName(collection)
+            : deps.driftReporter.checkByCollectionName(collection)
+          : null;
+      return report && formatIndexDriftReport(report);
     },
 
     // -- Project registry — delegate to ProjectRegistryOps --

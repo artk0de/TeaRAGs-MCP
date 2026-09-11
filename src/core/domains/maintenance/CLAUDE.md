@@ -40,25 +40,33 @@
   (`migration/database/runner.ts:37-47`) also accepts a directory, a path only
   tests take; `tsc` does not copy `.sql` into `build/` (`runner.ts:12-15`). Why:
   adding a migration is THREE edits (both files plus the array). A `.sql` that
-  drifts from its `.ts` changes nothing at runtime and fails no build, so the
-  drift is invisible until someone runs the disk path. The ledger keys on the
-  FILENAME string in `schema_migrations` (`runner.ts:41-58`), so renaming an
-  already-applied file re-runs it.
+  drifts from its `.ts` changes nothing at runtime and fails no build, which is
+  why `tests/core/domains/maintenance/migration/database/sql-twins.test.ts` is
+  the only thing that catches it — byte-for-byte, failing on the first
+  divergence. The `.ts` template literal is the single source of truth and the
+  `.sql` carries exactly its bytes, so a comment belongs inside the `.ts` string
+  or nowhere. The ledger keys on the FILENAME string in `schema_migrations`
+  (`runner.ts:41-58`), so renaming an already-applied file re-runs it.
 - **Drift compares FEATURE-FLAG-dependent descriptors against index-time keys.**
-  `SchemaDriftMonitor`'s `currentPayloadKeys` (`schema-drift-monitor.ts:17`) is
-  NOT read from Qdrant — it is the payload-signal descriptor set the CURRENT
-  composition declares (`src/bootstrap/factory.ts`:
-  `composition.allPayloadSignalDescriptors` + `"navigation"`), compared against
-  the `payloadFieldKeys` the stats cache recorded at index time. Codegraph
-  descriptors are flag-conditional (`api/internal/composition.ts`, deps supplied
-  only when `CODEGRAPH_ENABLED`), so a process built with different flags
-  reports drift with zero code changed. `CollectionEntry.codegraphEnabled`
-  (`contracts/types/registry.ts:74-84`) is persisted purely so `prime` can
-  re-apply the flag registry-first before building its composition
-  (`src/cli/prime/run-prime.ts`). Why: a drift report is routinely read as "the
-  payload schema changed, reindex" — when the actual fix is env parity in the
-  process that ran the check. The `prime` SessionStart hook runs in a fresh
-  shell and is the standing offender.
+  `SchemaDriftMonitor`'s `currentPayloadKeys`
+  (`drift/schema-drift-monitor.ts:19`) is NOT read from Qdrant — it is the
+  payload-signal descriptor set the CURRENT composition declares
+  (`src/bootstrap/factory.ts`: `composition.allPayloadSignalDescriptors` +
+  `"navigation"`), compared against the `payloadFieldKeys` the stats cache
+  recorded at index time. Codegraph descriptors are flag-conditional
+  (`api/internal/composition.ts`, deps supplied only when `CODEGRAPH_ENABLED`),
+  so a process built with different flags reports drift with zero code changed.
+  `CollectionEntry.codegraphEnabled` (`contracts/types/registry.ts:74-84`) is
+  persisted purely so `prime` can re-apply the flag registry-first before
+  building its composition (`src/cli/prime/run-prime.ts`). Why: a drift report
+  is routinely read as "the payload schema changed, reindex" — when the actual
+  fix is env parity in the process that ran the check. The `prime` SessionStart
+  hook runs in a fresh shell and is the standing offender. Since the drift
+  program, `SchemaDriftMonitor` is one of several `IndexDriftMonitor`s folded by
+  `drift/report.ts`; the env-parity case it describes is reported as an `env`
+  finding with an attribution note (`drift/env-drift-monitor.ts`), so read the
+  `## Drift` block as a whole before reindexing. Boundary and how to add a
+  monitor: `.claude/rules/index-drift.md`.
 
 ## See also
 
@@ -66,5 +74,5 @@
   registered, and the live end-to-end verification protocol.
 - `.claude/rules/domain-boundaries.md` — why the registry and migration
   framework live here rather than in `core/infra/`.
-- `registry/CLAUDE.md`, `footprint/CLAUDE.md`, `worktree/CLAUDE.md` — sibling
-  navigators.
+- `drift/CLAUDE.md`, `registry/CLAUDE.md`, `footprint/CLAUDE.md`,
+  `worktree/CLAUDE.md` — sibling navigators.

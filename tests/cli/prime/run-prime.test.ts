@@ -70,8 +70,7 @@ describe("runPrime — happy path", () => {
       app: {
         getIndexStatus: getStatusMock,
         getIndexMetrics: getMetricsMock,
-        checkSchemaDrift: checkDriftMock,
-        checkLanguageVersionDrift: vi.fn().mockResolvedValue(null),
+        checkIndexDrift: checkDriftMock,
       },
       cleanup: cleanupMock,
       updateService: stubUpdateService(),
@@ -81,7 +80,9 @@ describe("runPrime — happy path", () => {
 
     expect(getStatusMock).toHaveBeenCalledWith("/some/project");
     expect(getMetricsMock).toHaveBeenCalledWith("/some/project");
-    expect(checkDriftMock).toHaveBeenCalledWith({ path: "/some/project" });
+    // Non-consuming: the digest is an inspection, and the once-per-session
+    // warning belongs to the search path (bd tea-rags-mcp-p0phi).
+    expect(checkDriftMock).toHaveBeenCalledWith({ path: "/some/project", consume: false });
     expect(writeMock).toHaveBeenCalledTimes(1);
     expect(writeMock.mock.calls[0][0]).toContain("# tea-rags prime — /some/project");
     expect(cleanupMock).toHaveBeenCalled();
@@ -109,8 +110,7 @@ describe("runPrime — happy path", () => {
           distributions: { language: { typescript: 100 } },
           signals: {},
         }),
-        checkSchemaDrift: vi.fn().mockResolvedValue(null),
-        checkLanguageVersionDrift: vi.fn().mockResolvedValue(null),
+        checkIndexDrift: vi.fn().mockResolvedValue(null),
       },
       cleanup: cleanupMock,
       updateService: stubUpdateService(),
@@ -160,8 +160,7 @@ describe("runPrime — failure paths", () => {
       app: {
         getIndexStatus: getStatusMock,
         getIndexMetrics: getMetricsMock,
-        checkSchemaDrift: checkDriftMock,
-        checkLanguageVersionDrift: vi.fn().mockResolvedValue(null),
+        checkIndexDrift: checkDriftMock,
       },
       cleanup: cleanupMock,
       updateService: stubUpdateService(),
@@ -197,8 +196,7 @@ describe("runPrime — cwd fallback", () => {
           distributions: { language: { typescript: 100 } },
           signals: {},
         }),
-        checkSchemaDrift: vi.fn().mockResolvedValue(null),
-        checkLanguageVersionDrift: vi.fn().mockResolvedValue(null),
+        checkIndexDrift: vi.fn().mockResolvedValue(null),
       },
       cleanup: vi.fn(),
       updateService: stubUpdateService(),
@@ -227,8 +225,7 @@ describe("runPrime — update-check integration", () => {
           distributions: { language: { typescript: 100 } },
           signals: {},
         }),
-        checkSchemaDrift: vi.fn().mockResolvedValue(null),
-        checkLanguageVersionDrift: vi.fn().mockResolvedValue(null),
+        checkIndexDrift: vi.fn().mockResolvedValue(null),
       },
       cleanup: vi.fn(),
       updateService: { checkForUpdate } as unknown as UpdateCheckService,
@@ -319,8 +316,7 @@ describe("runPrime — buildUpdateService fallback (yl9tv)", () => {
           distributions: { language: { typescript: 10 } },
           signals: {},
         }),
-        checkSchemaDrift: vi.fn().mockResolvedValue(null),
-        checkLanguageVersionDrift: vi.fn().mockResolvedValue(null),
+        checkIndexDrift: vi.fn().mockResolvedValue(null),
       },
       cleanup: vi.fn(),
       // No updateService — forces buildUpdateService() to be called.

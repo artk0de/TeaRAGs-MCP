@@ -78,13 +78,24 @@ function makeMockReranker(overrides: Record<string, any> = {}) {
   } as any;
 }
 
-function makeMockDriftMonitor(overrides: Record<string, any> = {}) {
+function makeMockDriftReporter(overrides: Record<string, any> = {}) {
   return {
     checkAndConsume: vi.fn().mockResolvedValue(null),
+    checkAndConsumeByCollectionName: vi.fn().mockReturnValue(null),
     checkByCollectionName: vi.fn().mockReturnValue(null),
+    reset: vi.fn(),
     ...overrides,
   } as any;
 }
+
+/** One drifted payload key, and the text `formatIndexDriftReport` renders it as. */
+const driftReport = {
+  findings: [
+    { axis: "payloadKeys", subject: "navigation", indexed: "absent", current: "declared", remedy: { kind: "force" } },
+  ],
+  remedy: { kind: "force" },
+};
+const driftReportText = "Payload keys:\n  navigation: absent → declared\nRun: tea-rags index-codebase --force";
 
 function makeMockRegistry() {
   return {
@@ -102,7 +113,7 @@ function makeFacade(
     qdrant?: any;
     embeddings?: any;
     reranker?: any;
-    driftMonitor?: any;
+    driftReporter?: any;
     statsCache?: any;
     registry?: any;
     essentialTrajectoryFields?: string[];
@@ -111,7 +122,7 @@ function makeFacade(
   const qdrant = overrides.qdrant ?? makeMockQdrant();
   const embeddings = overrides.embeddings ?? makeMockEmbeddings();
   const reranker = overrides.reranker ?? makeMockReranker();
-  const driftMonitor = overrides.driftMonitor ?? makeMockDriftMonitor();
+  const driftReporter = overrides.driftReporter ?? makeMockDriftReporter();
   const statsCache = overrides.statsCache ?? undefined;
   const registry = overrides.registry ?? makeMockRegistry();
   const essentialFields = overrides.essentialTrajectoryFields ?? ["git.file.ageDays"];
@@ -123,14 +134,14 @@ function makeFacade(
       reranker,
       registry,
       statsCache,
-      schemaDriftMonitor: driftMonitor,
+      driftReporter,
       payloadSignals: [],
       essentialKeys: essentialFields,
     }),
     qdrant,
     embeddings,
     reranker,
-    driftMonitor,
+    driftReporter,
   };
 }
 
@@ -205,31 +216,32 @@ describe("ExploreFacade — expanded methods", () => {
     });
 
     it("returns drift warning from path-based check", async () => {
-      const driftMonitor = makeMockDriftMonitor({
-        checkAndConsume: vi.fn().mockResolvedValue("Schema drift detected!"),
+      const driftReporter = makeMockDriftReporter({
+        checkAndConsume: vi.fn().mockResolvedValue(driftReport),
       });
-      const { facade } = makeFacade({ driftMonitor });
+      const { facade } = makeFacade({ driftReporter });
 
       const result = await facade.semanticSearch({
         path: "/tmp/test-project",
         query: "test",
       });
 
-      expect(result.driftWarning).toBe("Schema drift detected!");
+      expect(result.driftWarning).toBe(driftReportText);
     });
 
     it("returns drift warning from collection-based check", async () => {
-      const driftMonitor = makeMockDriftMonitor({
-        checkByCollectionName: vi.fn().mockReturnValue("Schema changed!"),
+      // Consuming: a collection-addressed search is still a search.
+      const driftReporter = makeMockDriftReporter({
+        checkAndConsumeByCollectionName: vi.fn().mockReturnValue(driftReport),
       });
-      const { facade } = makeFacade({ driftMonitor });
+      const { facade } = makeFacade({ driftReporter });
 
       const result = await facade.semanticSearch({
         collection: "test_col",
         query: "test",
       });
 
-      expect(result.driftWarning).toBe("Schema changed!");
+      expect(result.driftWarning).toBe(driftReportText);
     });
 
     it("passes filter to qdrant search", async () => {
@@ -541,17 +553,17 @@ describe("ExploreFacade — expanded methods", () => {
     });
 
     it("returns drift warning when present", async () => {
-      const driftMonitor = makeMockDriftMonitor({
-        checkAndConsume: vi.fn().mockResolvedValue("Drift warning!"),
+      const driftReporter = makeMockDriftReporter({
+        checkAndConsume: vi.fn().mockResolvedValue(driftReport),
       });
-      const { facade } = makeFacade({ driftMonitor });
+      const { facade } = makeFacade({ driftReporter });
 
       const result = await facade.searchCode({
         path: "/tmp/test-project",
         query: "test",
       });
 
-      expect(result.driftWarning).toBe("Drift warning!");
+      expect(result.driftWarning).toBe(driftReportText);
     });
   });
 });

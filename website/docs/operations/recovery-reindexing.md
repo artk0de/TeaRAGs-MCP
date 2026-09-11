@@ -7,12 +7,13 @@ sidebar_position: 3
 
 Procedures for recovering from bad state and choosing the right reindex strategy. The guiding principle: **zero-downtime whenever possible, destructive only when necessary**.
 
-## Three Reindex Modes
+## Reindex Modes
 
 | Mode | Tool call | Downtime | When to use |
 |------|-----------|----------|-------------|
 | **Incremental** | `index_codebase` (no flags) | None | Default after code changes. `index_codebase` auto-detects an existing collection and processes only added/modified/deleted files via snapshot diff — no separate tool needed. |
-| **Force (zero-downtime)** | `index_codebase` with `forceReindex: true` | None | Model change, schema drift, suspected index corruption. New collection built alongside the old one; alias swaps on success. |
+| **Recompute enrichment** | `tea-rags index-codebase --force-enrichments <scope>` | None | Additive drift in enrichment-owned payload (`git.*`, `codegraph.*`). Rewrites payload in place — no re-embedding, chunk ids unchanged, minutes rather than hours. |
+| **Force (zero-downtime)** | `index_codebase` with `forceReindex: true` | None | Model change, chunk-set drift (grammar, chunking, chunk size), suspected index corruption. New collection built alongside the old one; alias swaps on success. |
 | **Destructive** | `clear_index` then `index_codebase` | **Yes** — search unavailable during rebuild | Only when force reindex isn't enough (e.g. embedding provider unreachable and you want to start clean). **Requires explicit user confirmation**. |
 
 For the plugin-first workflow, the equivalents are:
@@ -26,9 +27,11 @@ For the plugin-first workflow, the equivalents are:
 Symptom: stale results / missing new files
   → index_codebase  (incremental by default — diffs the snapshot)
 
-Symptom: wrong embedding model / schema drift detected
-  → index_codebase forceReindex=true
-  (zero-downtime; old alias stays live during rebuild)
+Symptom: drift report names a command
+  → run the command the report names (it is already the cheapest one)
+    additive, enrichment-owned keys → --force-enrichments <scope>
+    chunk-set drift / wrong embedding model → index_codebase forceReindex=true
+  (force is zero-downtime; old alias stays live during rebuild)
 
 Symptom: indexing itself is stuck / corrupted marker
   → check get_index_status — is indexingInProgress=true?
@@ -72,12 +75,9 @@ The same mechanism handles "I accidentally cancelled" scenarios — the CLI retu
 
 ## Schema Drift Recovery
 
-Schema drift happens when a new TeaRAGs version introduces payload fields that didn't exist when the collection was indexed. Two flavours:
+Payload-key drift is one axis of a broader check that also watches language versions, the indexing environment and the commit the index was built from, and the report it produces already names the single cheapest command that repairs every finding — run that rather than reaching for `forceReindex: true`. What each axis compares, how to read a report and what each remedy costs: [Drift Detection](/operations/drift-detection).
 
-- **Additive drift** (new fields, no new indexes) — detected by `SchemaDriftMonitor`. The agent is notified: "New fields X, Y — run `index_codebase` with `forceReindex=true` to populate them." Existing search still works; only the new features need reindexing.
-- **Breaking drift** (new Qdrant indexes required) — detected by `SchemaManager` on startup. Migration runs automatically during the next indexing call; no data loss.
-
-Neither triggers an immediate reindex — you pick when to pay the cost.
+Drift never triggers a reindex on its own, so you pick when to pay the cost. Breaking drift is the exception that needs nothing from you: when a new version requires new Qdrant indexes, `SchemaManager` detects it on startup and the migration runs during the next indexing call, with no data loss.
 
 ## Snapshot Hygiene
 
