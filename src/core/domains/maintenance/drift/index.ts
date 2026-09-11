@@ -10,3 +10,4 @@ export {
 export { formatIndexDriftReport, IndexDriftReporter, type IndexDriftReport } from "./report.js";
 export { SchemaDriftMonitor } from "./schema-drift-monitor.js";
 export { LanguageVersionDriftMonitor } from "./language-version-drift-monitor.js";
+export { CommitDriftMonitor } from "./commit-drift-monitor.js";
