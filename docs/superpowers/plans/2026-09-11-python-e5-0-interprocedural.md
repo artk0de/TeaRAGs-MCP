@@ -2307,22 +2307,144 @@ FileExtraction.classFieldParamLinks?: Record<string, Record<string, ClassFieldPa
 
 ## Task E5-close
 
-- [ ] **0. Worktree.** As Task E5.0a step 0.
-- [ ] **1.** Append a "Measurement record" section to this file carrying, per
-      corpus: the binding table as produced by Task E5.0a, the three agreement
-      tables, `unlockedExact` / `unlockedLub`, and the reproduction-gate delta
-      against decision 1.
-- [ ] **2.** Append an "Oracle debt record" section carrying Task E5.0b's
-      `booked / expected` reconciliation and the corrected denominators.
-- [ ] **3.** State the two gate outcomes in one line each: E5.1 did not execute
-      (`unlockedExact` = N, bar 100); E5.2 did not execute (bucket D resolvable
-      = M, bar 30).
-- [ ] **4.** Record the follow-up that is NOT an E5 bead: the cross-chunk
-      call-result fold on the 143 `assignCallProject` rows (decision 7). It
-      belongs to E4.6b's owner and wants its own attribution pass before it is
-      scoped. Do not open a bead for it here.
-- [ ] **5. Commit.**
-      `docs(plans): record the E5.0 measurement and gate outcomes ((e5))`,
+E5 closes as a re-scoped epic. It opened as inter-procedural parameter typing
+and decision 2 killed that premise with 5 rows against a bar of 100; what
+actually shipped is one retired oracle debt and three narrowing fixes, and this
+section is the account of the whole of it rather than of the task list it was
+written as.
+
+- [x] **0. Worktree.** As Task E5.0a step 0.
+- [x] **1.** Measurement record — "Measurement record — whole E5" below. It
+      carries the A/B for the WHOLE increment rather than E5.0a's tables alone;
+      the binding table, the three agreement tables and `unlockedExact` /
+      `unlockedLub` stay where they were produced, under "Measured — E5.0a".
+- [x] **2.** Oracle debt — E5.0b shipped as a STAGE in the harness, not a
+      re-scoring pass over dumps, and its reconciliation is Task E5.0d's "Gate
+      (b) — the D9 classes, row for row". The corrected denominator is the
+      `tiebroken` column, which every table below carries beside `legacy`.
+- [x] **3.** Gate outcomes — "The two gates" below.
+- [x] **4.** Follow-ups that are not E5 beads — "Follow-ups that are NOT E5
+      beads" below. No bead was opened for any of them.
+- [x] **5. Commit.**
+      `docs(plans): record the whole-E5 measurement and gate outcomes (1v12o.1)`,
       trailer `Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>`.
 
 **Do NOT:** merge to main, push, run `bd`, reindex, or move the global npm link.
+
+### Measurement record — whole E5 (2026-09-12, A `63bbfe152` vs B `854aaca76`)
+
+A arm is the branch head. B arm is the E5.0d merge — the last commit before
+E5.1a and the base every increment A/B already used — produced in place with
+`git checkout 854aaca76 -- src/ scripts/ts-codegraph-typechecker-oracle.ts` and
+restored the same way. The harness is the SAME on both sides: everything the two
+commits differ by outside `src/` is three new spikes, the corpora manifest's E6
+block and ten lines of the TS oracle, so no column here can be a harness change.
+One run per arm per corpus,
+`--oracle merged --dispatch --workers 8 --samples 500000`, `UV_OFFLINE=1` on
+polar, `chainDrift` 0 on all ten runs.
+
+| corpus | arm   | recall legacy (n) | recall merged (n) | recall tiebroken (n / withheld) | phantom leg → tieb | wrongFile leg → tieb | precision-miss tieb | edges      |
+| ------ | ----- | ----------------- | ----------------- | ------------------------------- | ------------------ | -------------------- | ------------------- | ---------- |
+| flask  | B = A | 0.9008 (373)      | 0.9008 (373)      | 0.9231 (364 / 9)                | 0 → 0              | 1 → 1                | 0.287 %             | 349        |
+| httpx  | B = A | 0.9857 (488)      | 0.9857 (488)      | 0.9859 (496 / 0)                | 8 → 0              | 0 → 0                | 0.000 %             | 499        |
+| ugnest | B = A | 0.9785 (789)      | 0.9785 (789)      | 0.9847 (785 / 4)                | 0 → 0              | 1 → 0                | 0.000 %             | 778        |
+| netbox | B = A | 0.9949 (7,894)    | 0.9952 (8,343)    | 0.9988 (8,338 / 30)             | 25 → 0             | 0 → 0                | 0.000 %             | 8,711      |
+| polar  | B     | 0.9810 (12,201)   | 0.9731 (16,884)   | 0.9776 (16,889 / 60)            | 88 → 28            | 17 → 1               | 0.165 %             | 17,625     |
+| polar  | A     | **0.9835**        | **0.9809**        | **0.9854**                      | 88 → 28            | 17 → 1               | **0.163 %**         | **17,777** |
+
+Four corpora are byte-identical between the arms on every column, so they carry
+one row each. polar's three denominators all move and its `n` columns do not:
+the same 12,201 / 16,884 / 16,889 rows are scored, 131 of them differently.
+
+**Row diff, keyed `(relPath, startLine, callText)`.** **GROSS LOST 0 on every
+corpus.** polar: residual 420 → 289, **131 rows gained**, 0 lost, 0 reclassified
+inside the residual, and every gained row was `missed` in B — 86 `dynamic`, 36
+`localVar`, 9 `chain`. The other four move zero rows in either direction.
+Phantoms are the same key set in both arms on all five (polar 93, netbox 25,
+httpx 8, flask 0, ugnest 0), so **arrived phantoms are 0 everywhere** and
+ugnest's gate is met with nothing spent. polar buys 131 recall rows for +152
+edges.
+
+**Family split of the delta** (`scripts/py-e4-family-report.ts` over the gained
+rows and over each arm's residual, `scripts/lib/py-residual-families.ts` doing
+the attribution):
+
+| family                | polar B → A | of the 131 delta |
+| --------------------- | ----------- | ---------------- |
+| `untypedNameReceiver` | 235 → 131   | 104 (79.4 %)     |
+| `callResultChainHead` | 19 → 2      | 17 (13.0 %)      |
+| `untypedFieldHop`     | 43 → 34     | 9 (6.9 %)        |
+| `unionBranchReceiver` | 14 → 13     | 1 (0.8 %)        |
+
+Every other family is flat across the arms: `sameFileBareCall` 53,
+`crossFileBareCall` 23, `classObjectReceiver` 26, `transparentWrapper` 3,
+`containerElementHop` 2, `moduleAliasMember` 1, `superMro` 1. The delta is one
+shape — a bare NAME whose type the chain could not pick — and not a spread.
+
+**Chain tally at A**, full mode (not `--time-only`), five corpora: flask 349
+edges / 0 file-only / 997 unresolved, httpx 499 / 0 / 1,050, ugnest 778 / 0 /
+3,953, netbox 8,711 / 0 / 35,415, polar 17,774 / 0 / 38,936 — **`chain drift 0`
+on every corpus**. The tally and the oracle scope files differently, which is
+why polar reads 17,774 here and 17,777 above; the delta is the same.
+
+**One reconciliation, and it is not a contradiction.** Task E5.0d's own polar
+row (legacy 0.9796, merged 0.9718, tiebroken 0.9763) was measured on the E5.0d
+task branch BEFORE it merged with E4.4b/E4.4c, and `854aaca76` IS that merge.
+Re- run at the merge commit the same harness reads 0.9810 / 0.9731 / 0.9776 —
+E4.4's polar rows arriving, not harness drift. The four other corpora reproduce
+E5.0d byte for byte, and B's polar `match` 16,430 is the E4 whole-increment
+record's own closing figure.
+
+### The two gates
+
+- **E5.1 did not execute.** `unlockedExact` summed over the five corpora is
+  **5** against a bar of **100** (decision 2: bucket A 2, bucket D 3, bucket E
+  0). Step 0 stopped the task; no code was written and no worktree was made.
+- **E5.2 did not execute.** Bucket D `resolvable` at exact agreement is **3**
+  against the program's standing bar of **30**, all polar, all one shape. Step 0
+  stopped it the same way.
+
+Both gates firing is the epic's result, not its failure. The mass E5 was
+commissioned to chase is not in these corpora, and the 131 rows that did move
+came from mechanisms the attribution found once the premise was dead.
+
+### What shipped instead
+
+| increment | commit      | polar rows | what it is                                                         |
+| --------- | ----------- | ---------- | ------------------------------------------------------------------ |
+| E5.1a     | `c460508f6` | **+114**   | namesake narrowing by the CALLER's own import binding, both halves |
+| E5.1c     | `73b8c8d50` | **+17**    | a module-level return fact keyed `<relPath>::<name>`               |
+| E5.1b     | `02a5bc4af` | **0**      | `-> Self` substituted terminally on the call-result binding        |
+
+114 + 17 + 0 = 131, which is the whole-E5 delta above, so nothing unattributed
+fired between the increments. E5.1b's zero IS its finding: the call-result path
+already reached the substitution through `memberTypeOf`'s MRO walk, and the 16
+rows it was scoped for are 14 rows of oracle debt (D9's `OW:Self`, `wrongFile`
+on the legacy denominator and `match` on the tiebroken one) plus 2 rows an
+import-alias seam owns. The guard it shipped is still worth having — it keeps a
+literal `Self` off any arm a later seam adds — but it bought no recall and the
+record should not imply it did.
+
+### Follow-ups that are NOT E5 beads
+
+None of these had a bead opened for it here.
+
+- **Iterated call-result fold** (`a8CalleeReceiverUntyped`) — **35 rows**,
+  polar 31. Above the 30-row bar and deterministic, GATED on decision 4's ban on
+  a fixpoint at the barrier: the head is itself an untyped call result, so
+  folding it needs a second pass. Whoever re-opens it owns that design decision
+  first.
+- **The import-alias class head** — **2 rows**, polar `organization/service.py`,
+  `from … import OrganizationReviewRepository as AgentReviewRepository`.
+  `pythonReceiverClassKey` and `pythonCalleeSpellingType` already follow an
+  alias through `pythonAliasedClassKey` (E4.6c); the class-head seed asks
+  `resolveTypeFile`, which finds no class of that name, so the fold never
+  starts. The mechanism is one call away and the population is 2 — record, do
+  not build.
+- **E4.1' typeshed / framework MEMBER decline vocabulary** — the parked
+  name-only `dynamic` dispatch cannot be re-attempted without it;
+  `PYTHON_CORE_MEMBERS` at 36 names is far too small, and it is one of four
+  preconditions the E4.1 plan lists beside a file-scope binding view, E4.6b's
+  return fold and `except … as e` bindings. This is E4.1's follow-up, inherited
+  here only because E5's residual is now dominated by `untypedNameReceiver`, the
+  family that layer would answer.
