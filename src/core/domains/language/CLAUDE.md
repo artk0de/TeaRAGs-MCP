@@ -312,6 +312,15 @@
   reads no resolver, walker or hook. Why: a stale tier or `tech` string in
   `<lang>/capability.ts` passes CI, so step 1 of `language-capability-sync.md`
   is the real control, not the guard.
+- **The version pins close the other side.**
+  `tests/core/domains/language/capability/version-pins.test.ts` hashes (sha256)
+  every `.ts` under a language's `walker/`, `resolver/`, `dsl/` (axis `walker`)
+  and `chunking/` + its chunker hooks (axis `chunking`) and pins the digest to
+  `versions.<axis>` in `version-pins.json`. Any change under those paths — a
+  comment included — turns the test red until you either bump the axis (output
+  moved) or re-pin (`npm run pin:lang-versions`, byte-identical claim,
+  `Versions: unchanged — <why>` in the commit body). `codegraphSchema` has no
+  digest; it is judged by hand. Sources per axis: `capability/version-axes.ts`.
 
 ## Boundaries
 

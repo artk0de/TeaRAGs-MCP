@@ -1,0 +1,66 @@
+{
+  "bash": {
+    "walker": {
+      "version": 1,
+      "digest": "sha256:d1bf14827c1d09160a783aa7a2febbbb3d19aea4bbafa5400a73d201a081e8a2"
+    }
+  },
+  "go": {
+    "chunking": {
+      "version": 1,
+      "digest": "sha256:b27a367c9390c6a73806fe5a23e8cd45552c0de52ffe9755ed71bd5ec86965b9"
+    },
+    "walker": {
+      "version": 1,
+      "digest": "sha256:722aa986141685e0ad0b7f67492a915609be0e4687ffcdbbb8a63f94eba007a4"
+    }
+  },
+  "java": {
+    "walker": {
+      "version": 1,
+      "digest": "sha256:51759d7aebf4c6fbadd5b750c1350ba490237edb29ddd534bcda0b07f698ad97"
+    }
+  },
+  "javascript": {
+    "chunking": {
+      "version": 1,
+      "digest": "sha256:a298f46eff45b5d389c066d8046ae9461ef32c0f93e08ae709262ac0d3bf5380"
+    },
+    "walker": {
+      "version": 1,
+      "digest": "sha256:e8e4b556bf65d605524ba8a213504c645d4e040f478fe2cc9dbaa6bd85a4cd91"
+    }
+  },
+  "python": {
+    "walker": {
+      "version": 4,
+      "digest": "sha256:aa48511f327963df2c13bd1c9e0880d3f4b988699694f18993084e08cdfc2591"
+    }
+  },
+  "ruby": {
+    "chunking": {
+      "version": 1,
+      "digest": "sha256:cb67c386aaebfa16bea36f9588254101ff2e473e4f666661d793fbb5804d3104"
+    },
+    "walker": {
+      "version": 1,
+      "digest": "sha256:ed15b0626722892caee6041c8cccb6a48cb8cfa24109eeac8f3f1ee16699c21d"
+    }
+  },
+  "rust": {
+    "walker": {
+      "version": 1,
+      "digest": "sha256:abc66cb87134f7db86ef8b25c06a56f957529a7a57c6a6cef0322949101fa220"
+    }
+  },
+  "typescript": {
+    "chunking": {
+      "version": 1,
+      "digest": "sha256:57d21b8afefe46d8216e1343bacb65f1055e2d7bf37987cc24ff3f2df1718718"
+    },
+    "walker": {
+      "version": 4,
+      "digest": "sha256:36ea2f89a6aab422d2d8634fec8e3e4888fc834454f30507947024bf6c86acb8"
+    }
+  }
+}
