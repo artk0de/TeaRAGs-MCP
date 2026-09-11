@@ -59,7 +59,7 @@ fi
 # Unknown scope detected — warn
 jq -n --arg scope "$SCOPE_ROOT" --arg msg "$LAST_MSG" '{
   "hookSpecificOutput": {
-    "message": ("Unknown release scope \"" + $scope + "\" in commit: " + $msg + "\n\nThis scope is not configured in .releaserc.json and will use DEFAULT rules (feat=minor, fix=patch).\n\nYou MUST add this scope to the correct layer in .releaserc.json:\n- Non-release: test, beads, scripts, ci, website, deps\n- Infrastructure (feat→patch): onnx, embedding, embedded, adapters, qdrant, git, config, factory, bootstrap, debug, logs\n- Public/Functional (feat→minor): api, mcp, contracts, types, drift, search, rerank, hybrid, trajectory, signals, presets, filters, ingest, pipeline, chunker\n\nAlso update CONTRIBUTING.md scope tables.")
+    "message": ("Unknown release scope \"" + $scope + "\" in commit: " + $msg + "\n\nThis scope is not configured in .releaserc.json and will use DEFAULT rules (feat=minor, fix=patch).\n\nYou MUST add this scope to the correct layer in .releaserc.json:\n- Non-release: test, beads, scripts, ci, website, deps\n- Infrastructure (feat→patch): onnx, embedding, embedded, adapters, qdrant, git, config, factory, bootstrap, debug, logs\n- Public/Functional (feat→minor): api, mcp, contracts, types, drift, search, rerank, hybrid, trajectory, signals, presets, filters, ingest, pipeline, chunker, migration\n\nAlso update CONTRIBUTING.md scope tables.")
   }
 }'
 exit 0

@@ -29,7 +29,7 @@ Scope determines bump. **Always use scope.**
 
 **Public + Functional** (feat -> minor): `api`, `mcp`, `contracts`, `types`,
 `drift`, `explore`, `rerank`, `hybrid`, `trajectory`, `signals`, `presets`,
-`filters`, `ingest`, `pipeline`, `chunker`
+`filters`, `ingest`, `pipeline`, `chunker`, `migration`
 
 **Infrastructure** (feat -> patch): `onnx`, `embedding`, `embedded`, `adapters`,
 `qdrant`, `git`, `config`, `factory`, `bootstrap`, `debug`, `logs`

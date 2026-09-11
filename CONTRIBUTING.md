@@ -118,6 +118,7 @@ Internal modules that affect search/indexing behavior.
 | `ingest`    | Indexing pipeline                  |
 | `pipeline`  | Pipeline internals                 |
 | `chunker`   | AST-aware code chunking           |
+| `migration` | Schema and database migrations    |
 
 #### Infrastructure layer (feat → patch)
 
