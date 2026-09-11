@@ -108,11 +108,13 @@ not error:
   with ONE `Run:` line, already the cheapest command repairing all of them
   (`--force-enrichments <scope>` for enrichment-owned drift, `--force` only when
   the chunk set moved, plain incremental when only HEAD moved)
-- Do NOT run that command automatically — user's decision (large codebases =
-  long reindex). See `tea-rags:force-reindex` skill when the line says `--force`
+- Do NOT run `--force-enrichments` / `--force` automatically — user's decision
+  (large codebases = long reindex). See `tea-rags:force-reindex` skill when the
+  line says `--force`. A plain incremental `Run:` line (only HEAD moved) runs
+  without asking, like the stale banner
 - Same report, without consuming it: prime's `## Drift` section and
-  `get_index_status`. `driftWarning` is spent once per collection per server
-  session and re-armed after each index run
+  `get_index_status`. `driftWarning` is spent once per collection per DISTINCT
+  REPORT per server session, and re-armed after each index run
 - tea-rags self-test only: full reset via `force_reindex` is documented path
   (see project CLAUDE.md MCP testing section)
 

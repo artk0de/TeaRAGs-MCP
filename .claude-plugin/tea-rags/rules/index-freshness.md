@@ -4,11 +4,12 @@ tea-rags search reads payloads written at index time. Index lags working tree �
 results silently stale. Before first tea-rags search/explore of turn, check
 conditions below (signals from **prime** digest layer); reindex when one fires.
 
-| Trigger (signal in prime / session)                                                        | Action                                                                                 | User confirmation          |
-| ------------------------------------------------------------------------------------------ | -------------------------------------------------------------------------------------- | -------------------------- |
-| Prime banner `⚠ Index is stale (last updated Nd ago)`                                      | `index_codebase` (incremental)                                                         | no — reindex silently      |
-| Files created/modified this session (`Write`/`Edit`, incl. by a subagent), not yet indexed | `index_codebase` (incremental)                                                         | no — reindex silently      |
-| Prime `## Drift` section is **not** `none`                                                 | the `Run:` command the section names (`--force-enrichments <trajectory>` or `--force`) | **YES — explicit consent** |
+| Trigger (signal in prime / session)                                                        | Action                                                          | User confirmation          |
+| ------------------------------------------------------------------------------------------ | --------------------------------------------------------------- | -------------------------- |
+| Prime banner `⚠ Index is stale (last updated Nd ago)`                                      | `index_codebase` (incremental)                                  | no — reindex silently      |
+| Files created/modified this session (`Write`/`Edit`, incl. by a subagent), not yet indexed | `index_codebase` (incremental)                                  | no — reindex silently      |
+| Prime `## Drift` whose `Run:` line is the plain incremental (no flag)                      | `tea-rags index-codebase --project <alias>` — exactly that line | no — reindex silently      |
+| Prime `## Drift` whose `Run:` line carries `--force-enrichments` or `--force`              | the `Run:` command the section names                            | **YES — explicit consent** |
 
 ## Worktree-clone lifecycle (explicit, plan execution)
 
@@ -23,7 +24,7 @@ backstop dropping its footprint.
 | **CREATE**   | start of a multi-task plan in a worktree | `tea-rags worktree create <name> --from <src-alias> --path <abs-worktree> --no-git`              | new clone `<src>-worktree-<name>`   |
 | **REINDEX**  | after EACH task's commit                 | `tea-rags index_codebase --project <src>-worktree-<name>` (incremental)                          | the clone — next task reads fresh   |
 | **TEARDOWN** | branch finished (merge OR delete)        | `tea-rags worktree remove <name>` (always) + on merge `tea-rags index_codebase --project <main>` | clone footprint dropped; main fresh |
-| Drift        | prime / status `## Drift` is not `none`  | the ONE `Run:` line that report ends with                                                        | — (explicit consent, unchanged)     |
+| Drift        | prime / status `## Drift` is not `none`  | the ONE `Run:` line that report ends with                                                        | — (consent per the table above)     |
 
 - **Run each phase explicitly — agent and user SEE it.** No background hook
   reindexes after commit; skip per-task REINDEX → next task reads stale
@@ -45,11 +46,14 @@ backstop dropping its footprint.
 - **Stale / new code → `index_codebase` incremental.** Only changed (+ new)
   files re-embedded — seconds, not full rebuild. Default no-confirmation path:
   stale index → wrong rankings, fix cheap, so just run it.
-- **Drift → the command the report names, with consent.** Drift = a stamp the
-  index carries (payload keys, language versions, indexing env, indexed commit)
-  no longer matches what the running build would produce. An incremental run
-  neither refuses nor fixes most of it: unchanged files keep their old payload,
-  so the report persists until the ONE `Run:` line it ends with has run —
+- **Drift → the command the report names; consent depends on which one.** Drift
+  = a stamp the index carries (payload keys, language versions, indexing env,
+  indexed commit) no longer matches what the running build would produce. When
+  the ONLY thing that moved is the working tree, the `Run:` line is the plain
+  incremental — the same command and the same cost as the stale banner, so it
+  runs without asking. Otherwise an incremental run neither refuses nor fixes
+  it: unchanged files keep their old payload, so the report persists until the
+  ONE `Run:` line it ends with has run —
   `tea-rags index-codebase --force-enrichments <trajectory>` when every new key
   is enrichment-owned (`git.*`, `codegraph.*`), `--force` when a chunker-owned
   key moved. Both rewrite shared state and `--force` is minutes to hours on a
