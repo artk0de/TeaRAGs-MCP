@@ -96,14 +96,19 @@ conclude absence from a graph the index says is incomplete.
   like a method) + edges restricted to project sources +
   tsx/tsconfig-paths-aware import mapping
 - **JavaScript** — 6-strategy; CommonJS/ESM require resolution (dynamic gaps)
-- **Python** — 8-strategy chain (super, selfField, selfMember, localBinding,
-  chainType, namingConvention, importedName, globalShortName) + ConeDispatch CHA
+- **Python** — 9-strategy chain (super, clsMember, selfField, selfMember,
+  localBinding, chainType, namingConvention, importedName, globalShortName) +
+  class-object receivers resolved on the enclosing class's MRO, preferring the
+  class-level symbolId spelling a `@classmethod` carries + ConeDispatch CHA
   fan-out consulted before the chain, RTA-pruned by the run-global instantiation
   set (name-only `dynamic` dispatch built, measured and PARKED behind
   `CODEGRAPH_PY_DYNAMIC_DISPATCH`, default off) + C3 linearization over
   file-qualified class keys, memoized once per run, with `super()` dispatching
   on that MRO from the entry after the enclosing class and every member lookup
-  reading up it + import→file mapper resolving through symbol-table membership
+  reading up it, a base spelled as a package module alias resolved through the
+  sibling-module hop, and the legacy single-base walk declining a first hop the
+  class's own ancestors do not name while the short name is declared in more
+  than one file + import→file mapper resolving through symbol-table membership
   (seeded source roots plus a caller-ancestor scan, re-export hops, hop-bounded
   package re-export following to the file that declares a name, a module-shaped
   sibling hop that terminates on the FILE a package aliases as a submodule,
