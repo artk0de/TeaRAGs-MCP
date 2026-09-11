@@ -798,6 +798,138 @@ env -u NODE_OPTIONS NODE_OPTIONS=--max-old-space-size=8192 npx tsx \
 
 ---
 
+### E6.0b measured — 2026-09-11, `809c50314`
+
+Six rows, each four runs of `--time-only` — one warm-up discarded, three kept —
+taken sequentially on an otherwise idle 12-core Apple Silicon host with 18 GB.
+Every command carried
+`env -u NODE_OPTIONS NODE_OPTIONS=--max-old-space-size=8192`.
+
+**Quiet-machine readings.** Before row 1, 23:46:28: load averages 3.66 / 5.59 /
+23.34, top process `spotlightknowledged` 97.9 % CPU. After row 6, 23:54:38: load
+averages 3.49 / 3.54 / 14.47, top process `spotlightknowledged` 98.1 % CPU. The
+1-minute load never went above 3.7 against a stop-gate of 12, and the 15-minute
+figure is the decaying tail of the pre-dispatch storm, not live work. Spotlight
+held one core of twelve for the whole window at a level that did not move
+between the first reading and the last, so it is a constant applied equally to
+all six rows rather than a per-row perturbation.
+
+**Deviations from the steps as written.**
+
+1. **The `--no-dispatch` row ran on netbox, not polar.** Step 3's table says
+   netbox and the E6.0a command block says polar; the table won. This matters
+   more than it looks: netbox fires the dispatch layer zero times (single 0, fan
+   0), where polar fires it 22 (single 9, fan 13). Row 3 therefore bounds what
+   it costs to CONSULT an empty dispatch layer, and says nothing about what a
+   populated one costs.
+2. **The TypeScript corpus is the whole worktree root, 1,017 scored files.**
+   Step 3's table labels it "tea-rags `src/`"; the E6.0a command block passes
+   `$PWD`, and `$PWD` is what ran.
+3. **The checker A/B does not reproduce E6.0a's numbers.** E6.0a records pass 2
+   going 0.23 s → 9.57 s and peak RSS 658 → 1,111 MB "on this repo's 181 files".
+   On the full root it goes 0.25 s → 6.38 s and 947 → 1,558 MB. Different file
+   set, so the two are not comparable; the rows below are the full-root ones.
+4. **Min and median peak RSS agree.** The widest gap on any row is 6.6 %
+   (netbox, 2,208 min vs 2,365 median), under the 15 % threshold that would have
+   forced the memory verdict onto the median. The verdict is taken on the min
+   per the plan, and the median cross-check below returns the same verdict.
+
+**Step 4 — the raw table.** Min of the three kept runs, with the median of the
+same three beside it for total wall and peak RSS.
+
+| #   | lang       | corpus                    | pass1 s | pass2 s | total s | peak MB | total s (med) | peak MB (med) | files | sites  | LOC     |
+| --- | ---------- | ------------------------- | ------- | ------- | ------- | ------- | ------------- | ------------- | ----- | ------ | ------- |
+| 1   | python     | polar                     | 14.24   | 0.65    | 14.89   | 2247    | 14.90         | 2376          | 1339  | 56,710 | 306,460 |
+| 2   | python     | netbox                    | 10.62   | 0.30    | 10.93   | 2208    | 11.46         | 2365          | 1038  | 44,126 | 278,182 |
+| 3   | python     | netbox `--no-dispatch`    | 10.55   | 0.30    | 10.84   | 2365    | 11.26         | 2367          | 1038  | 44,126 | 278,182 |
+| 4   | ruby       | mastodon                  | 2.09    | 0.64    | 2.74    | 791     | 2.78          | 791           | 1383  | 42,057 | 76,319  |
+| 5   | typescript | tea-rags, checker **off** | 3.63    | 0.25    | 3.88    | 947     | 3.97          | 949           | 1017  | 26,643 | 161,045 |
+| 6   | typescript | tea-rags, checker on      | 3.64    | 6.38    | 10.08   | 1558    | 10.22         | 1632          | 1017  | 26,643 | 161,045 |
+
+No row was capped: the longest single run was polar at 14.9 s, three orders
+below the `--limit` rule's 10-minute trigger. `chain drift 0` on every row, and
+mastodon walked whole (2,669 of its files are excluded by `.gitignore` and
+friends before scoring, leaving 1,383).
+
+**Step 5 — the normalized table.** Computed from the min column.
+
+| #   | lang       | corpus                    | s/1k sites | sites/s | s/10k LOC | MB/1k files |
+| --- | ---------- | ------------------------- | ---------- | ------- | --------- | ----------- |
+| 1   | python     | polar                     | 0.263      | 3,809   | 0.486     | 1,678       |
+| 2   | python     | netbox                    | 0.248      | 4,037   | 0.393     | 2,127       |
+| 3   | python     | netbox `--no-dispatch`    | 0.246      | 4,071   | 0.390     | 2,278       |
+| 4   | ruby       | mastodon                  | 0.065      | 15,349  | 0.359     | 572         |
+| 5   | typescript | tea-rags, checker **off** | 0.146      | 6,867   | 0.241     | 931         |
+| 6   | typescript | tea-rags, checker on      | 0.378      | 2,643   | 0.626     | 1,532       |
+
+**The verdict.** Python is the mean of rows 1 and 2; the comparators are row 4
+and row 5. The band is |Python − other| / other ≤ 0.25 against BOTH.
+
+| metric      | python | ruby  | ts (checker off) | vs ruby  | vs ts    | verdict |
+| ----------- | ------ | ----- | ---------------- | -------- | -------- | ------- |
+| s/1k sites  | 0.255  | 0.065 | 0.146            | +291.6 % | +75.2 %  | BREACH  |
+| s/10k LOC   | 0.439  | 0.359 | 0.241            | +22.4 %  | +82.4 %  | BREACH  |
+| MB/1k files | 1,903  | 572   | 931              | +232.7 % | +104.3 % | BREACH  |
+| peak MB abs | 2,228  | 791   | 947              | +181.6 % | +135.2 % | BREACH  |
+
+All four breach. `s/10k LOC` is the only metric that clears one comparator —
++22.4 % against Ruby, inside the band — and it fails on TypeScript at +82.4 %.
+
+**Median cross-check on memory**, since the min is a known GC-thrash risk: MB/1k
+files becomes python 2,026 vs ruby 572 (+254 %) and ts 933 (+117 %); peak MB abs
+becomes python 2,370 vs ruby 791 (+200 %) and ts 949 (+150 %). Same verdict,
+slightly worse, so the choice of estimator does not decide this cell.
+
+**Attribution: this is a WALKER finding, on both time axes.** Pass 1 is 12.43 s
+of Python's 12.91 s mean — **96.3 %** of the wall — and the split settles what
+the two-axis rule cannot when both axes breach:
+
+| per-pass figure  | python | ruby   | ts (off) | python vs ruby | python vs ts |
+| ---------------- | ------ | ------ | -------- | -------------- | ------------ |
+| pass1 s/1k sites | 0.2459 | 0.0497 | 0.1362   | 4.9×           | 1.8×         |
+| pass1 s/10k LOC  | 0.423  | 0.274  | 0.225    | +54 %          | +88 %        |
+| pass2 s/1k sites | 0.0091 | 0.0152 | 0.0094   | **−40 %**      | **−3 %**     |
+
+Python's RESOLVER is the fastest of the three per call site — 40 % below Ruby's
+and level with TypeScript's. There is no resolver finding here to chase. The
+entire breach lives in pass 1: walk, extract, symbol-table upsert, type-channel
+absorption.
+
+**Corpus shape is part of the per-site gap and none of the per-LOC one.** Sites
+per 1k LOC: python 172, ruby 551, ts 165. LOC per file: python 248, ruby 55,
+ts 158. Ruby's call-site density is 3.2× Python's, which is exactly why the
+per-site gap against Ruby (4.9×) is so much wider than the per-LOC one (+54 %) —
+Ruby amortizes the same walk over three times the sites. Against TypeScript,
+whose site density is within 4 % of Python's, both axes agree and neither is a
+shape artefact: 1.8× per site, +88 % per 10k LOC. **TypeScript is the comparator
+that carries the finding**, and it is the one E6.1 should profile against.
+
+**Row 3 − row 2 — the E4.0.3 dispatch layer costs nothing measurable.** Total
+−0.09 s on the min and −0.20 s on the median (turning it off is nominally
+_slower_ on the median), against a row-2 spread of 10.93–11.70 s. Peak RSS +157
+MB on the min and +2 MB on the median — noise, and the median is the honest read
+here. But see deviation 1: netbox hit the dispatch layer zero times, so this row
+prices consulting an empty layer. Pricing a populated one needs polar.
+
+**Rows 6 vs 5 — what `ts.Program` costs.** Total 3.88 → 10.08 s, of which pass 2
+alone goes 0.25 → 6.38 s (**25.5×**), and peak RSS 947 → 1,558 MB (+611 MB).
+Context for the memory verdict, not part of it: the verdict row is checker-off,
+where all three languages are tree-sitter-only. Even against the checker-ON row,
+Python's 2,228 MB is +43 % on memory and +23 % on wall over 1.7× the LOC — the
+`ts.Program` build is the single most expensive thing TypeScript does and Python
+still costs more without an equivalent.
+
+**Drift against E0's frozen figures.** polar 14.5 s / 959 MB → 14.89 s / 2,247
+MB: wall flat, RSS 2.3×. netbox 16.2 s / 1,293 MB → 10.93 s / 2,208 MB: wall
+down a third, RSS 1.7×. The walls are not the same quantity — E0's is a
+`/usr/bin/time -l` process wall including `tsx` startup, E6's is the
+harness-internal `pass1Ms + pass2Ms` — which is the second reason the `e6` block
+sits beside `baseline` rather than replacing it. The RSS figures ARE the same
+quantity, and they say five epics of new passes have cost Python roughly a
+doubling of heap.
+
+---
+
 ## Task E6.0b — the offline matrix
 
 **Files:**
@@ -810,15 +942,15 @@ env -u NODE_OPTIONS NODE_OPTIONS=--max-old-space-size=8192 npx tsx \
 
 **Steps:**
 
-- [ ] **Step 0 — worktree**, as E6.0a Step 0, ff-merging the branch that carries
+- [x] **Step 0 — worktree**, as E6.0a Step 0, ff-merging the branch that carries
       E6.0a.
 
-- [ ] **Step 1 — declare the machine quiet.** `ps aux | sort -nrk 3 | head -5`
+- [x] **Step 1 — declare the machine quiet.** `ps aux | sort -nrk 3 | head -5`
       and confirm nothing above a few percent CPU. No parallel agent build, no
       reindex, no test suite. Record the check in the commit body — a run whose
       transcript cannot show it was quiet is not evidence.
 
-- [ ] **Step 2 — the run function.** Every row is produced by exactly this, four
+- [x] **Step 2 — the run function.** Every row is produced by exactly this, four
       times (one discarded warm-up, then three), min reported:
 
   ```bash
@@ -834,7 +966,7 @@ env -u NODE_OPTIONS NODE_OPTIONS=--max-old-space-size=8192 npx tsx \
   languages then share. Setting it without unsetting first leaves fish's value
   in some shells and yours in others.
 
-- [ ] **Step 3 — the six rows.** Python twice (the two large corpora), Ruby
+- [x] **Step 3 — the six rows.** Python twice (the two large corpora), Ruby
       once, TypeScript twice (checker off = the verdict row, checker on = the
       production row), plus the Python `--no-dispatch` attribution row.
 
@@ -856,29 +988,28 @@ env -u NODE_OPTIONS NODE_OPTIONS=--max-old-space-size=8192 npx tsx \
   row is compared per-site against a same-capped run of the others, never
   against an uncapped one.
 
-- [ ] **Step 4 — fill the raw table.** Every cell from the `--timing` block:
+- [x] **Step 4 — fill the raw table.** Every cell from the `--timing` block:
 
-  | #   | lang | corpus | pass1 s | pass2 s | total s | peak MB | files | sites | LOC |
-  | --- | ---- | ------ | ------- | ------- | ------- | ------- | ----- | ----- | --- |
-  |     |      |        |         |         |         |         |       |       |     |
+  Filled in **"E6.0b measured — 2026-09-11, `809c50314`"** above, with a median
+  column beside the min for total wall and peak RSS.
 
-- [ ] **Step 5 — fill the normalized table and take the verdict.**
+- [x] **Step 5 — fill the normalized table and take the verdict.**
 
-  | #   | lang | corpus | s/1k sites | sites/s | s/10k LOC | MB/1k files |
-  | --- | ---- | ------ | ---------- | ------- | --------- | ----------- |
-  |     |      |        |            |         |           |             |
+  Filled in the same section. Verdict: **BREACH on all four metrics**,
+  attributed to pass 1 — Python's resolver is the fastest of the three per call
+  site.
 
   Then, per metric, Python's figure against the Ruby and the TypeScript one.
   Python's row is the MEAN of rows 1 and 2 (polar and netbox), because a
   single-corpus Python figure would be compared against a single-corpus Ruby
   figure and neither would carry its own spread:
 
-  | metric      | python | ruby | ts (checker off) | vs ruby | vs ts | verdict       |
-  | ----------- | ------ | ---- | ---------------- | ------- | ----- | ------------- |
-  | s/1k sites  |        |      |                  | ±x %    | ±x %  | PASS / BREACH |
-  | s/10k LOC   |        |      |                  |         |       |               |
-  | MB/1k files |        |      |                  |         |       |               |
-  | peak MB abs |        |      |                  |         |       |               |
+  | metric      | python | ruby  | ts (checker off) | vs ruby  | vs ts    | verdict |
+  | ----------- | ------ | ----- | ---------------- | -------- | -------- | ------- |
+  | s/1k sites  | 0.255  | 0.065 | 0.146            | +291.6 % | +75.2 %  | BREACH  |
+  | s/10k LOC   | 0.439  | 0.359 | 0.241            | +22.4 %  | +82.4 %  | BREACH  |
+  | MB/1k files | 1,903  | 572   | 931              | +232.7 % | +104.3 % | BREACH  |
+  | peak MB abs | 2,228  | 791   | 947              | +181.6 % | +135.2 % | BREACH  |
 
   A metric is a **PASS** at |Python − other| / other ≤ 0.25 against BOTH. A
   per-site PASS with a per-LOC BREACH is recorded as a **WALKER finding** and
@@ -887,7 +1018,7 @@ env -u NODE_OPTIONS NODE_OPTIONS=--max-old-space-size=8192 npx tsx \
   layer. Rows 5 vs 6 quantify what the `ts.Program` costs, which is context for
   the memory verdict, not part of it.
 
-- [ ] **Step 6 — freeze the Python numbers.** Add an `e6` block beside each
+- [x] **Step 6 — freeze the Python numbers.** Add an `e6` block beside each
       Python corpus's existing `baseline` in
       `scripts/lib/codegraph-corpora.json` —
       `{ "wallSeconds": …, "peakRssMb": …, "sites": …, "loc": …, "files": … }` —
@@ -898,7 +1029,7 @@ env -u NODE_OPTIONS NODE_OPTIONS=--max-old-space-size=8192 npx tsx \
       anchor, and flask's 275 MB → 320 MB drift between E0 and today is exactly
       the kind of movement a second block preserves and an overwrite erases.
 
-- [ ] **Step 7 — commit.**
+- [x] **Step 7 — commit.**
 
   ```text
   docs(plans): record the E6 offline performance matrix (e6)
