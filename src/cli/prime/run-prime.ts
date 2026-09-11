@@ -166,11 +166,10 @@ export async function runPrime(input: {
   const updateService = (ctx as { updateService?: UpdateCheckService }).updateService ?? buildUpdateService();
 
   try {
-    const [status, metricsResult, drift, languageVersionDrift, update] = await Promise.allSettled([
+    const [status, metricsResult, drift, update] = await Promise.allSettled([
       ctx.app.getIndexStatus(path),
       ctx.app.getIndexMetrics(path),
-      ctx.app.checkSchemaDrift({ path }),
-      ctx.app.checkLanguageVersionDrift({ path }),
+      ctx.app.checkIndexDrift({ path }),
       updateService.checkForUpdate({
         allowNetwork: true,
         timeoutMs: 1500,
@@ -198,7 +197,6 @@ export async function runPrime(input: {
       status: status.value,
       metrics: metricsResult.status === "fulfilled" ? metricsResult.value : null,
       drift: drift.status === "fulfilled" ? drift.value : null,
-      languageVersionDrift: languageVersionDrift.status === "fulfilled" ? languageVersionDrift.value : null,
       update: update.status === "fulfilled" ? update.value : null,
       autoUpdateOutcome,
       ...(registryEntry

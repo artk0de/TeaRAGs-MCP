@@ -49,7 +49,7 @@ import type {
 import { InvalidParameterError } from "../../errors.js";
 import { createCodegraphPayloadHealRunner } from "../infra/codegraph-payload-heal-runner.js";
 import { createIngestDependencies } from "../ingest-dependencies.js";
-import { IndexingOps } from "../ops/indexing-ops.js";
+import { IndexingOps, type IndexDriftConsumptionResetter } from "../ops/indexing-ops.js";
 
 type ModelInfo = { model: string; contextLength: number; dimensions: number };
 
@@ -75,6 +75,11 @@ export interface IngestFacadeDeps {
    * actually rebuild a language layer; omitted → nothing is stamped.
    */
   languageCodeVersions?: ReadonlyMap<string, LanguageCodeVersions>;
+  /**
+   * Drift report re-armed after every run (bd tea-rags-mcp-p0phi). Forwarded
+   * to IndexingOps, which owns the reset points. Omitted → nothing is re-armed.
+   */
+  driftReporter?: IndexDriftConsumptionResetter;
   /**
    * Full effective env set of this run (canonical keys, code defaults
    * materialized) built by bootstrap via `buildRegistryEnvSnapshot`; persisted
@@ -162,6 +167,7 @@ export class IngestFacade {
       healthCheckRetryDelayMs: deps.healthCheckRetryDelayMs,
       collectionRegistry: deps.collectionRegistry,
       languageCodeVersions: deps.languageCodeVersions,
+      driftReporter: deps.driftReporter,
     });
 
     // Stats refresh when chunk enrichment finishes. Awaited so the

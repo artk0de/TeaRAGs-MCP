@@ -488,7 +488,7 @@ describe("App interface", () => {
       deleteDocuments: true,
       getIndexMetrics: true,
       getSchemaDescriptors: true,
-      checkSchemaDrift: true,
+      checkIndexDrift: true,
       registerProject: true,
       listProjects: true,
       unregisterProject: true,
@@ -514,7 +514,7 @@ describe("App interface", () => {
       deleteCollection: AssertPromise<ReturnType<App["deleteCollection"]>>;
       addDocuments: AssertPromise<ReturnType<App["addDocuments"]>>;
       deleteDocuments: AssertPromise<ReturnType<App["deleteDocuments"]>>;
-      checkSchemaDrift: AssertPromise<ReturnType<App["checkSchemaDrift"]>>;
+      checkIndexDrift: AssertPromise<ReturnType<App["checkIndexDrift"]>>;
     } = {
       semanticSearch: true,
       hybridSearch: true,
@@ -529,7 +529,7 @@ describe("App interface", () => {
       deleteCollection: true,
       addDocuments: true,
       deleteDocuments: true,
-      checkSchemaDrift: true,
+      checkIndexDrift: true,
     };
     expect(Object.values(_assertions).every((v) => v === true)).toBe(true);
   });

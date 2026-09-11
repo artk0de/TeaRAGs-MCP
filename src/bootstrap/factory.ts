@@ -43,6 +43,7 @@ import { buildPipelineConfig } from "../core/domains/ingest/pipeline/types.js";
 import { QuarantineStore } from "../core/domains/ingest/sync/index.js";
 import { ShardedSnapshotManager } from "../core/domains/ingest/sync/snapshot/index.js";
 import { collectSymbols, DefaultSymbolIdComposer } from "../core/domains/language/index.js";
+import { IndexDriftReporter } from "../core/domains/maintenance/drift/index.js";
 import { LanguageVersionDriftMonitor } from "../core/domains/maintenance/drift/language-version-drift-monitor.js";
 import { SchemaDriftMonitor } from "../core/domains/maintenance/drift/schema-drift-monitor.js";
 import { CollectionFootprintFactory } from "../core/domains/maintenance/footprint/index.js";
@@ -678,6 +679,8 @@ interface IngestSliceDeps {
   payloadSignals: CompositionContext["allPayloadSignalDescriptors"];
   statsAccumulators: CompositionContext["allStatsAccumulators"];
   reranker: CompositionContext["reranker"];
+  /** Re-armed after every index run, so a later drift is reported again. */
+  driftReporter: IndexDriftReporter;
 }
 
 /**
@@ -741,6 +744,7 @@ function createIngestFacade(
     snapshotDir: shared.snapshotDir,
     modelGuard: shared.modelGuard,
     collectionRegistry: shared.collectionRegistry,
+    driftReporter: shared.driftReporter,
     teaRagsVersion: pkg.version,
     // Per-language code versions of THIS build, stamped onto the registry entry
     // by the runs that actually rebuild a language layer (bd tea-rags-mcp-frwka).
@@ -800,6 +804,39 @@ export async function createAppContext(config: AppConfig, hooks?: AppContextHook
 
   const registryWatchStop = collectionRegistry.startWatching();
 
+  const essentialTrajectoryFields = composition.registry.getEssentialPayloadKeys();
+  // Attribution first, key list derived from it — the two must describe the
+  // same set, or the drift hint would recommend a recompute for a key that
+  // recompute never populates. `navigation` is written by the chunker, so it
+  // has no trajectory and is not recomputable.
+  const payloadKeyOwners: PayloadKeyOwner[] = [
+    ...composition.registry.getPayloadKeyOwners(),
+    { key: "navigation", recomputable: false },
+  ];
+  const schemaDriftMonitor = new SchemaDriftMonitor(
+    statsCache,
+    payloadKeyOwners.map((o) => o.key),
+    payloadKeyOwners,
+  );
+  // Complements the payload-key monitor above, never merges into it: a grammar
+  // or resolver bump leaves every payload key identical while relocating chunk
+  // boundaries or retargeting edges (bd tea-rags-mcp-frwka).
+  const languageVersionDriftMonitor = new LanguageVersionDriftMonitor(
+    collectionRegistry,
+    statsCache,
+    composition.languageCodeVersions,
+  );
+  // One reporter over both axes, built HERE — ahead of the ingest slice —
+  // because every index run has to re-arm the collection it just rewrote, and
+  // the slice is what carries the reporter down to IndexingOps. Process-scoped
+  // like the slice's other shared handles: consumption is "has THIS server
+  // already said it", so a per-project instance would warn once per project
+  // facade instead of once per collection.
+  const driftReporter = new IndexDriftReporter(
+    [schemaDriftMonitor, languageVersionDriftMonitor],
+    (collectionName) => collectionRegistry.get(collectionName)?.name ?? undefined,
+  );
+
   // Phase 2 of unified-enrichment-worker-pool plan. Production runs through
   // the worker-pool executor unconditionally so heavy trajectory work (git
   // blame, codegraph extraction) doesn't starve the embedding event loop.
@@ -833,6 +870,7 @@ export async function createAppContext(config: AppConfig, hooks?: AppContextHook
     payloadSignals: composition.allPayloadSignalDescriptors,
     statsAccumulators: composition.allStatsAccumulators,
     reranker: composition.reranker,
+    driftReporter,
   };
   const ingest = createIngestFacade(zodConfig, config, ingestSlice);
 
@@ -849,28 +887,6 @@ export async function createAppContext(config: AppConfig, hooks?: AppContextHook
       return createIngestFacade(projectZodConfig, buildAppConfig(projectZodConfig), ingestSlice);
     },
   });
-  const essentialTrajectoryFields = composition.registry.getEssentialPayloadKeys();
-  // Attribution first, key list derived from it — the two must describe the
-  // same set, or the drift hint would recommend a recompute for a key that
-  // recompute never populates. `navigation` is written by the chunker, so it
-  // has no trajectory and is not recomputable.
-  const payloadKeyOwners: PayloadKeyOwner[] = [
-    ...composition.registry.getPayloadKeyOwners(),
-    { key: "navigation", recomputable: false },
-  ];
-  const schemaDriftMonitor = new SchemaDriftMonitor(
-    statsCache,
-    payloadKeyOwners.map((o) => o.key),
-    payloadKeyOwners,
-  );
-  // Complements the payload-key monitor above, never merges into it: a grammar
-  // or resolver bump leaves every payload key identical while relocating chunk
-  // boundaries or retargeting edges (bd tea-rags-mcp-frwka).
-  const languageVersionDriftMonitor = new LanguageVersionDriftMonitor(
-    collectionRegistry,
-    statsCache,
-    composition.languageCodeVersions,
-  );
   const projectRegistryOps = new ProjectRegistryOps({
     registry: collectionRegistry,
     qdrant: infra.qdrant,
@@ -911,7 +927,7 @@ export async function createAppContext(config: AppConfig, hooks?: AppContextHook
     registry: composition.registry,
     collectionRegistry,
     statsCache,
-    schemaDriftMonitor,
+    driftReporter,
     payloadSignals: composition.allPayloadSignalDescriptors,
     essentialKeys: essentialTrajectoryFields,
     modelGuard: infra.modelGuard,
@@ -925,8 +941,7 @@ export async function createAppContext(config: AppConfig, hooks?: AppContextHook
     ingestForPath: (path) => projectIngestFactory.forPath(path),
     explore,
     reranker: composition.reranker,
-    schemaDriftMonitor,
-    languageVersionDriftMonitor,
+    driftReporter,
     projectRegistryOps,
     quantizationScalar: zodConfig.qdrantTune.quantizationScalar,
     turboQuant: zodConfig.qdrantTune.turboQuant,

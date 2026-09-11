@@ -46,16 +46,26 @@ export class IndexDriftReporter {
   }
 
   /**
+   * Every time, for callers whose job is to INSPECT rather than to ride along
+   * with an answer — `get_index_status`, and anything else a reader invokes on
+   * purpose to ask "what is the state of this index".
+   *
+   * Consuming there would be doubly wrong: the second `get_index_status` would
+   * read clean, and the spent warning would be the one the next search was
+   * owed.
+   */
+  async checkByPath(path: string): Promise<IndexDriftReport | null> {
+    const collectionName = await this.resolvePath(path);
+    return collectionName === null ? null : this.checkByCollectionName(collectionName);
+  }
+
+  /**
    * Once per collection per process, until `reset` — a search response carries
    * the warning one time per server session, and again after each index run.
    */
   async checkAndConsume(path: string): Promise<IndexDriftReport | null> {
-    let collectionName: string;
-    try {
-      collectionName = resolveCollectionName(await validatePath(path));
-    } catch {
-      return null;
-    }
+    const collectionName = await this.resolvePath(path);
+    if (collectionName === null) return null;
     if (this.consumed.has(collectionName)) return null;
     this.consumed.add(collectionName);
     return this.checkByCollectionName(collectionName);
@@ -64,6 +74,20 @@ export class IndexDriftReporter {
   /** Called by `IndexingOps` after the stamps of a run are written (spec decision 13). */
   reset(collectionName: string): void {
     this.consumed.delete(collectionName);
+  }
+
+  /**
+   * The one place a path becomes a collection name, so the consuming and
+   * non-consuming checks cannot drift apart on which key they mean. Null when
+   * the path cannot be resolved at all — an unreadable path is not a drift
+   * report.
+   */
+  private async resolvePath(path: string): Promise<string | null> {
+    try {
+      return resolveCollectionName(await validatePath(path));
+    } catch {
+      return null;
+    }
   }
 }
 

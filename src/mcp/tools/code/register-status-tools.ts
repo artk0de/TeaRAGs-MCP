@@ -5,7 +5,7 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 
 import type { App, IndexStatus } from "../../../core/api/public/index.js";
-import { appendDriftWarning, formatMcpText } from "../../format.js";
+import { formatMcpText } from "../../format.js";
 import type { RegisterToolFn } from "../../middleware/error-handler.js";
 import * as schemas from "../schemas.js";
 import { resolvePathFromProject } from "./shared.js";
@@ -79,16 +79,16 @@ export function registerStatusTools(server: McpServer, deps: { app: App; registe
 
       if (infraHealth) text += `\n\n${formatInfraHealth(infraHealth)}`;
 
-      // Two disjoint drift reports, each appended on its own: payload-KEY drift
-      // and per-language code-version drift (bd tea-rags-mcp-frwka). One cannot
-      // stand in for the other — a resolver bump moves no payload key, and a
-      // new payload field moves no language version.
-      const [driftWarning, languageVersionWarning] = await Promise.all([
-        app.checkSchemaDrift({ path }),
-        app.checkLanguageVersionDrift({ path }),
-      ]);
-      const withDrift = appendDriftWarning(formatMcpText(text), driftWarning);
-      return appendDriftWarning(withDrift, languageVersionWarning);
+      // One report over every axis the build can see, under one heading
+      // (bd tea-rags-mcp-p0phi). Appended only when something moved, so the
+      // clean-index output is byte-for-byte what it always was.
+      //
+      // NON-consuming: status is an inspection a reader runs on purpose, so it
+      // must answer the same way every time — and the once-per-session warning
+      // belongs to the next SEARCH, which would otherwise find it already spent.
+      const drift = await app.checkIndexDrift({ path, consume: false });
+      if (drift) text += `\n\n## Drift\n${drift}`;
+      return formatMcpText(text);
     },
   );
 
