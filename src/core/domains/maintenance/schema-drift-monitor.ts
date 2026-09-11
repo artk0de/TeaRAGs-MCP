@@ -7,7 +7,8 @@
 
 import type { PayloadKeyOwner } from "../../contracts/types/trajectory.js";
 import { resolveCollectionName, validatePath } from "../../infra/collection-name.js";
-import { StatsCache, type SchemaDrift } from "../../infra/stats-cache.js";
+import type { StatsCache } from "../../infra/stats-cache.js";
+import { checkSchemaDrift, formatSchemaDriftWarning, type SchemaDrift } from "./drift/schema-drift.js";
 
 export class SchemaDriftMonitor {
   private _warned = false;
@@ -40,11 +41,11 @@ export class SchemaDriftMonitor {
       const loaded = this.statsCache.load(collectionName);
       if (!loaded) return null;
 
-      const drift = StatsCache.checkSchemaDrift(loaded.payloadFieldKeys, this.currentPayloadKeys);
+      const drift = checkSchemaDrift(loaded.payloadFieldKeys, this.currentPayloadKeys);
       if (!drift) return null;
 
       this._warned = true;
-      return StatsCache.formatSchemaDriftWarning(drift, this.payloadKeyOwners);
+      return formatSchemaDriftWarning(drift, this.payloadKeyOwners);
     } catch {
       return null;
     }
@@ -59,15 +60,15 @@ export class SchemaDriftMonitor {
     const loaded = this.statsCache.load(collectionName);
     if (!loaded) return null;
 
-    const drift = StatsCache.checkSchemaDrift(loaded.payloadFieldKeys, this.currentPayloadKeys);
+    const drift = checkSchemaDrift(loaded.payloadFieldKeys, this.currentPayloadKeys);
     if (!drift) return null;
 
     this._warned = true;
-    return StatsCache.formatSchemaDriftWarning(drift, this.payloadKeyOwners);
+    return formatSchemaDriftWarning(drift, this.payloadKeyOwners);
   }
 
   /** Expose drift detection for testing. */
   static detectDrift(cachedKeys: string[] | undefined, currentKeys: string[]): SchemaDrift | null {
-    return StatsCache.checkSchemaDrift(cachedKeys, currentKeys);
+    return checkSchemaDrift(cachedKeys, currentKeys);
   }
 }

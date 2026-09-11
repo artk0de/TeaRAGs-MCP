@@ -173,7 +173,7 @@ describe("SchemaDriftMonitor", () => {
   });
 
   describe("detectDrift (static)", () => {
-    it("delegates to StatsCache.checkSchemaDrift", () => {
+    it("delegates to checkSchemaDrift", () => {
       const drift = SchemaDriftMonitor.detectDrift(["a"], ["a", "b"]);
       expect(drift).toEqual({ added: ["b"], removed: [] });
     });
