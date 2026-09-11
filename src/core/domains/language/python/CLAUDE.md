@@ -470,6 +470,19 @@
   holds them. The two paths coexist deliberately — do not collapse one into the
   other. Why: `mergeExtraction` is append-only, so a facet added inside the
   monolith silently outranks every pass instead of being ordered against them.
+- **`PYTHON_EXTRACTION_BEARING_NODE_TYPES` (`index.ts`) is a PRE-filter, so it
+  must stay a SUPERSET of every node type any pass roots extraction in.** The
+  gate runs on the native tree before materialization (the mechanism is a
+  `domains/language/CLAUDE.md` bullet): a file bearing none of the six listed
+  types is answered with the empty extraction and never walked. Add a pass that
+  reads a type absent from the list and every file carrying only that type goes
+  silently empty — no error, no chunk, no call, and a green suite stays green
+  because every unit fixture contains a `def` or a `call`.
+  `scripts/spikes/py-inert-file-proof.ts` is the check that does catch it: it
+  runs the REAL walker over every file the list calls inert, on all five
+  corpora, and asserts the answer was empty anyway. `future_import_statement` is
+  listed beside the two ordinary import forms because tree-sitter-python gives
+  `from __future__ import …` a grammar node of its own.
 - **`CODEGRAPH_PY_LOCAL_TYPE_TRACKING` gates local bindings ONLY.**
   `pythonLocalTypeTrackingEnabled` (exported from `walker/walker.ts`) suppresses
   the walker's `localBindings` and the pass's `param` / `local` facts. It does
