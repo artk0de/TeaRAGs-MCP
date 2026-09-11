@@ -207,6 +207,10 @@ calls `sameFileBareCall` 0 / `crossFileBareCall` 110, where D8 recorded 140 / 31
 across the corpora — the same-file test compares `row.oracleTargetRelPath`
 against `undefined` on every row. E5.0b step 1 emits the two fields.
 
+**Cleared 2026-09-11** (step 1, `w205u`). Post-fix dumps read polar 87 / 23 and
+flask 5 / 0; D8's split stands and its polar `crossFileBareCall` column
+reproduces exactly. See step 1's measurement block.
+
 ### 7 — What the mass actually is, and who owns it
 
 Read as an ordering over the same 336 rows: `assignCallProject` **143** (E4.6b's
@@ -1282,6 +1286,39 @@ export function classifyOracleDebt(
       - No verdict logic changes. Re-run one corpus dump and diff the row count
         and every verdict tally against the pre-change dump: they must be
         identical, and only the two new keys may appear.
+
+      **DONE 2026-09-11** — `fix(scripts)` + `test(scripts)`, dumps under
+      `~/.claude/jobs/dffe3647/tmp/e50b/`. Both keys sit on `PyOracleRow` flat
+      and always present, under the names `PyResidualRow` already declares,
+      rather than a nested `oracleTarget` each dump driver would re-project;
+      the value is the WITHDRAWN oracle `classifyPyVerdict` was handed, so no
+      row can claim it was scored against a target the super-MRO blind spot had
+      taken away.
+
+      Corrected bare-call split, from dumps regenerated with the fixed host
+      (`--oracle merged --dispatch --workers 8 --samples 500000`):
+
+      | corpus | `sameFileBareCall` | `crossFileBareCall` | total | D8 (pre-E4.6) |
+      | ------ | ------------------ | ------------------- | ----- | ------------- |
+      | flask  | 0 → **5**          | 5 → **0**           | 5     | 11 / 0        |
+      | polar  | 0 → **87**         | 110 → **23**        | 110   | 115 / 23      |
+
+      netbox was NOT regenerated: its run was killed (SIGTERM, no output) under
+      contention with two parallel executors, and re-running it buys nothing the
+      gate needs — polar is D8's anchor and the only corpus carrying a non-zero
+      `crossFileBareCall`. D8 has netbox at 9 / 0; a post-fix dump would confirm
+      it, not correct it.
+
+      `crossFileBareCall` reproduces D8's polar column (4 + 4 + 15) exactly,
+      which is the check that the field carries the right value and not merely
+      a value. The two families' TOTAL is invariant across the fix — only the
+      partition moves — and every other family is unchanged: flask 7 of 9
+      untouched, polar 9 of 11.
+
+      Identity gate, stronger than the row/verdict diff the step asks for:
+      stripping the two keys back off the post-fix dumps — the nested `legacy`
+      twin included — reproduces the e46b1 dumps **byte-identically** on both
+      corpora, 632 polar rows and all. Nothing else in any row moved.
 
 - [ ] **2. RED — the three predicates.** Write
       `tests/scripts/py-e5-oracle-debt.test.ts` with one case per class plus one

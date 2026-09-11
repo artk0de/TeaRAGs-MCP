@@ -844,6 +844,12 @@ function buildRow(
     answeredBy: site.answeredBy,
     chainOutput: booked === null ? "none" : booked.targetSymbolId === null ? "fileOnly" : "pinned",
     chain: booked ?? undefined,
+    // The oracle's answer as the VERDICT above read it — the withdrawn one, not
+    // the raw reply — so a row can never say it was scored against a target the
+    // blind spot had already taken away. No second oracle call: `oracle` is the
+    // value `classifyPyVerdict` was just handed.
+    oracleTargetRelPath: oracle.kind === "inProject" ? oracle.answer.targetRelPath : null,
+    oracleTargetSymbolId: oracle.kind === "inProject" ? oracle.answer.targetSymbolId : null,
     origin: answer?.outcome.origin,
     oracleDegraded: (reply?.parsoErrors ?? 0) > 0,
     unlocatedShape: answer?.unlocated,
