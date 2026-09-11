@@ -43,14 +43,14 @@ import { buildPipelineConfig } from "../core/domains/ingest/pipeline/types.js";
 import { QuarantineStore } from "../core/domains/ingest/sync/index.js";
 import { ShardedSnapshotManager } from "../core/domains/ingest/sync/snapshot/index.js";
 import { collectSymbols, DefaultSymbolIdComposer } from "../core/domains/language/index.js";
+import { LanguageVersionDriftMonitor } from "../core/domains/maintenance/drift/language-version-drift-monitor.js";
+import { SchemaDriftMonitor } from "../core/domains/maintenance/drift/schema-drift-monitor.js";
 import { CollectionFootprintFactory } from "../core/domains/maintenance/footprint/index.js";
-import { LanguageVersionDriftMonitor } from "../core/domains/maintenance/language-version-drift-monitor.js";
 import {
   createDatabaseMigrationApplier,
   DATABASE_MIGRATIONS_MODULE_URL,
 } from "../core/domains/maintenance/migration/database/index.js";
 import { CollectionRegistry } from "../core/domains/maintenance/registry/index.js";
-import { SchemaDriftMonitor } from "../core/domains/maintenance/schema-drift-monitor.js";
 import { WorktreeProvisioner } from "../core/domains/maintenance/worktree/index.js";
 import type { CodegraphDeps, CodegraphWorkerConfig } from "../core/domains/trajectory/codegraph/index.js";
 import { InMemoryGlobalSymbolTable } from "../core/domains/trajectory/codegraph/symbols/symbol-table.js";

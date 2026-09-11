@@ -11,8 +11,8 @@
 
 import { describe, expect, it } from "vitest";
 
-import type { LanguageCodeVersions } from "../../../../src/core/contracts/types/language.js";
-import { LanguageVersionDriftMonitor } from "../../../../src/core/domains/maintenance/language-version-drift-monitor.js";
+import type { LanguageCodeVersions } from "../../../../../src/core/contracts/types/language.js";
+import { LanguageVersionDriftMonitor } from "../../../../../src/core/domains/maintenance/drift/language-version-drift-monitor.js";
 
 const current = new Map<string, LanguageCodeVersions>([
   ["typescript", { grammar: "0.23.2", chunking: 1, walker: 2, codegraphSchema: 1 }],

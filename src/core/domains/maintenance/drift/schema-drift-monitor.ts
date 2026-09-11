@@ -5,10 +5,10 @@
  * Lazy: drift check triggers on first tool call that provides a collection path.
  */
 
-import type { PayloadKeyOwner } from "../../contracts/types/trajectory.js";
-import { resolveCollectionName, validatePath } from "../../infra/collection-name.js";
-import type { StatsCache } from "../../infra/stats-cache.js";
-import { checkSchemaDrift, formatSchemaDriftWarning, type SchemaDrift } from "./drift/schema-drift.js";
+import type { PayloadKeyOwner } from "../../../contracts/types/trajectory.js";
+import { resolveCollectionName, validatePath } from "../../../infra/collection-name.js";
+import type { StatsCache } from "../../../infra/stats-cache.js";
+import { checkSchemaDrift, formatSchemaDriftWarning, type SchemaDrift } from "./schema-drift.js";
 
 export class SchemaDriftMonitor {
   private _warned = false;

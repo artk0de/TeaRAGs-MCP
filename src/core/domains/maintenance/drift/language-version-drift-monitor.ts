@@ -10,8 +10,8 @@
  * (`CollectionEntry.languageVersions`) against what the current build declares.
  */
 
-import type { LanguageCodeVersions } from "../../contracts/types/language.js";
-import { resolveCollectionName, validatePath } from "../../infra/collection-name.js";
+import type { LanguageCodeVersions } from "../../../contracts/types/language.js";
+import { resolveCollectionName, validatePath } from "../../../infra/collection-name.js";
 
 /** One version axis, in the order a drift report lists them. */
 export type LanguageVersionAxis = "grammar" | "chunking" | "walker" | "codegraphSchema";

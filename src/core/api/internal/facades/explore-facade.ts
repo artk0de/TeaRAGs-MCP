@@ -18,9 +18,9 @@ import {
   InvalidQueryError,
 } from "../../../domains/explore/errors.js";
 import type { Reranker } from "../../../domains/explore/reranker.js";
-import type { TrajectoryRegistry } from "../../../domains/trajectory/index.js";
+import type { SchemaDriftMonitor } from "../../../domains/maintenance/drift/schema-drift-monitor.js";
 import type { CollectionRegistry } from "../../../domains/maintenance/registry/index.js";
-import type { SchemaDriftMonitor } from "../../../domains/maintenance/schema-drift-monitor.js";
+import type { TrajectoryRegistry } from "../../../domains/trajectory/index.js";
 import type { StatsCache } from "../../../infra/stats-cache.js";
 import { InvalidParameterError } from "../../errors.js";
 import type {
