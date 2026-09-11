@@ -42,8 +42,13 @@ type IndexSchema = "keyword" | "integer" | "float" | "bool" | "datetime";
  * tea-rags-mcp-k6xu). The adapter layer cannot import the domain descriptors
  * (domain-boundaries rule), so the list is mirrored here; keep both in lockstep
  * when adding a signal OR changing the inner-key shape.
+ *
+ * `schema-v15-codegraph-filter-indexes` applies the identical list to
+ * collections that already exist — this loop only reaches collections created
+ * after it was added, and every index has to exist on both paths (pinned by
+ * `tests/core/adapters/qdrant/schema-manager-migrations-parity.test.ts`).
  */
-const CODEGRAPH_FILTER_INDEXES: readonly { readonly path: string; readonly schema: IndexSchema }[] = [
+export const CODEGRAPH_FILTER_INDEXES: readonly { readonly path: string; readonly schema: IndexSchema }[] = [
   { path: "codegraph.symbols.file.fanIn", schema: "integer" },
   { path: "codegraph.symbols.file.fanOut", schema: "integer" },
   { path: "codegraph.symbols.file.connectionCount", schema: "integer" },
@@ -184,6 +189,11 @@ export class SchemaManager {
 
     // Create text index on symbolId for partial match filtering
     await this.qdrant.createPayloadIndex(collectionName, "symbolId", "text");
+
+    // Same for parentSymbolId. It is created by schema-v11 on collections that
+    // predate the rename, and a fresh collection never runs that migration, so
+    // without this line the index exists only on upgraded collections.
+    await this.qdrant.createPayloadIndex(collectionName, "parentSymbolId", "text");
 
     // Create indexes on codegraph filterable paths so typed filter params
     // (minFanIn/isHub/...) match at query time. The nested paths mirror the
