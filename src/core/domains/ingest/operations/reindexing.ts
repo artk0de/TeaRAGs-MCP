@@ -184,6 +184,14 @@ export class ReindexPipeline extends BaseIndexingPipeline {
         await this.finalizeRepairedRun(ctx, stats, repaired);
         await storeIndexingMarker(this.qdrant, this.embeddings, ctx.targetCollection, true);
         await ctx.synchronizer.deleteCheckpoint();
+        // Same stamp the changes path writes in `finalizeReindex`, for the same
+        // reason: the entry says which commit, when, and how many points the
+        // index represents, and `CommitDriftMonitor` reads that git block back
+        // (bd tea-rags-mcp-zf3x0). Skipping it here left the commit axis
+        // pinned to whichever run last had a file to chunk — so a repository
+        // that went quiet reported drift forever, and the reindex that would
+        // clear it was precisely the run taking this return.
+        await this.recordRegistryEntry(ctx.collectionName, ctx.absolutePath);
         stats.durationMs = Date.now() - startTime;
         return stats;
       }
@@ -199,6 +207,10 @@ export class ReindexPipeline extends BaseIndexingPipeline {
         await storeIndexingMarker(this.qdrant, this.embeddings, ctx.targetCollection, true);
         await ctx.synchronizer.updateSnapshot(ctx.currentFiles);
         await ctx.synchronizer.deleteCheckpoint();
+        // Deleting files moves the point count and the commit the index sits
+        // on just as much as adding them does, and this return never reached
+        // the stamp either (bd tea-rags-mcp-zf3x0).
+        await this.recordRegistryEntry(ctx.collectionName, ctx.absolutePath);
         stats.durationMs = Date.now() - startTime;
         return stats;
       }

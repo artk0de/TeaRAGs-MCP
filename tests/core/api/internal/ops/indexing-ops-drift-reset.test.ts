@@ -155,6 +155,39 @@ describe("IndexingOps — drift consumption reset", () => {
   });
 
   /**
+   * The commit axis reads the registry's git stamp, and the run that refreshes
+   * that stamp is the sync leg — `ReindexingOperations#reindexChanges` records
+   * the entry on every successful return, quiet ones included (bd
+   * tea-rags-mcp-zf3x0). Re-arming the reader before the sync leg finishes
+   * would hand the next search a re-check against the stamp the recompute was
+   * about to replace, and it would be told, with a fresh warning, about drift
+   * the run had just repaired.
+   *
+   * The sync leg is a fake here — the record itself is proven against the real
+   * pipeline in `domains/ingest/operations/reindex-registry-stamp.test.ts`.
+   * What this pins is the ORDER the recompute must keep for that record to be
+   * visible to the reset.
+   */
+  it("finishes the sync leg, which refreshes the registry stamp, BEFORE re-arming the reader on a recompute", async () => {
+    const calls: string[] = [];
+    const ops = new IndexingOps(
+      makeDeps({
+        driftReporter: { reset: (name: string) => calls.push(`reset:${name}`) },
+        reindex: {
+          reindexChanges: vi.fn().mockImplementation(async () => {
+            calls.push("sync:record");
+            return changeStats;
+          }),
+        } as never,
+      }),
+    );
+
+    await ops.run(process.cwd(), { forceEnrichments: ["codegraph"] });
+
+    expect(calls).toEqual(["sync:record", `reset:${collection}`]);
+  });
+
+  /**
    * The stats refresh is what rewrites `payloadFieldKeys`, which the payload-key
    * axis compares against. Re-arming the reader before that write lands leaves a
    * window in which a search re-checks the OLD keys and is told, with a fresh
