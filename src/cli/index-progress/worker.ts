@@ -14,7 +14,7 @@ import { readdirSync, statSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 
-import type { App, IndexOptions, IndexStatus } from "../../core/api/public/index.js";
+import { isEnrichmentRecompute, type App, type IndexOptions, type IndexStatus } from "../../core/api/public/index.js";
 import type { EnrichmentOutcome, WorkerMessage } from "./ipc-protocol.js";
 
 /** Structural subset of App the worker needs — keeps test fakes minimal. */
@@ -98,19 +98,6 @@ export function deriveEnrichmentOutcome(status: IndexStatus): EnrichmentOutcome 
 }
 
 /**
- * Whether this run is an enrichment recompute rather than an indexing pass.
- *
- * Mirrors the dispatch in `IndexingOps#indexCodebase`: a non-empty
- * `forceEnrichments` selects `recomputeEnrichments`, which syncs the working
- * tree and then rebuilds the payload layer without re-embedding. The phase
- * attribution below depends on that branch, so it is read off the same option
- * the core branches on rather than inferred from the stats that come back.
- */
-export function isEnrichmentRecompute(options: IndexOptions): boolean {
-  return (options.forceEnrichments?.length ?? 0) > 0;
-}
-
-/**
  * Index, stream progress, await background enrichment, emit the final outcome.
  * `send` delivers a message to the supervisor (a no-op once the parent detaches).
  * `now` is an injectable clock (ms); defaults to Date.now for the real entry point.
@@ -151,22 +138,23 @@ export async function runIndexWorker(
   const indexElapsedMs = now() - embeddingStart;
 
   // `forceEnrichments` routes the run through `IndexingOps#recomputeEnrichments`,
-  // which rebuilds the payload layer in place and embeds nothing — that is the
-  // whole point of the flag. Booking this span as `embedding` therefore charged
-  // the recompute's wall time to a phase that never ran: a codegraph recompute
+  // which is TWO legs inside one call: an incremental sync (the indexing leg —
+  // it chunks, stores and embeds whatever the working tree changed) followed by
+  // the payload recompute, which embeds nothing. Booking the whole span as
+  // `embedding` charged the recompute to the indexing leg: a codegraph recompute
   // reported `phases.embedding = 1,211,574 ms` against zero embed calls
   // (bd tea-rags-mcp-ghcof). The recompute measures itself and hands the number
-  // back as `enrichmentDurationMs`, so that — not the clock around the whole
-  // call — is what the enrichment phase reports below. `elapsedMs: 0` here
-  // rather than a dropped frame: every renderer keys its terminal bar / line off
-  // this phase, and a run with no embedding is worth stating as zero.
+  // back as `enrichmentDurationMs`, so subtracting it leaves exactly the sync —
+  // ≈0 on the clean tree the flag is usually run against, and the real figure
+  // when the tree was dirty. That remainder is what the embedding phase means
+  // here: the bar it drives carries every pipeline phase, not embedding alone.
   const recomputeDurationMs = isEnrichmentRecompute(options)
     ? (indexStats.enrichmentDurationMs ?? indexElapsedMs)
     : undefined;
   send({
     type: "phase-done",
     phase: "embedding",
-    elapsedMs: recomputeDurationMs === undefined ? indexElapsedMs : 0,
+    elapsedMs: recomputeDurationMs === undefined ? indexElapsedMs : Math.max(0, indexElapsedMs - recomputeDurationMs),
   });
 
   // Index is searchable now (alias switched) — report status before blocking on

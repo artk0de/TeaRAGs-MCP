@@ -15,6 +15,9 @@ export { createApp } from "./app.js";
 export type { App, AppDeps } from "./app.js";
 
 // ── DTOs ─────────────────────────────────────────────────────────────
+// The one runtime symbol among them: the recompute-path predicate both
+// `IndexingOps#run` and the CLI index worker branch on.
+export { isEnrichmentRecompute } from "./dto/index.js";
 export type {
   // Explore DTOs
   CollectionRef,

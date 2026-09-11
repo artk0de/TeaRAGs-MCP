@@ -266,7 +266,8 @@ describe("runIndexWorker — phase attribution on the --force-enrichments recomp
     return renderer.phases;
   }
 
-  function recomputeApp(stats: Record<string, unknown>) {
+  /** An app whose indexCodebase resolves with these extra IndexStats fields. */
+  function appReportingStats(stats: Record<string, unknown>) {
     return {
       indexCodebase: vi.fn(async () => ({ status: "completed", ...stats })),
       getIndexStatus: vi.fn().mockResolvedValue(healthy),
@@ -274,69 +275,80 @@ describe("runIndexWorker — phase attribution on the --force-enrichments recomp
     };
   }
 
-  it("books the recompute's wall time as enrichment, never as embedding", async () => {
-    const app = recomputeApp({ enrichmentStatus: "completed", enrichmentDurationMs: 1_211_574 });
-    const sent: WorkerMessage[] = [];
+  /** A clock that hands out these readings in order, then repeats the last one. */
+  function scriptedClock(readings: number[]): () => number {
+    let call = 0;
+    return () => readings[Math.min(call++, readings.length - 1)];
+  }
+
+  /** The worker's default clock steps 100ms per reading — one span per phase. */
+  function steppingClock(): () => number {
     let t = 0;
+    return () => (t += 100);
+  }
+
+  it("leaves the sync leg's own time on embedding and the recompute's on enrichment", async () => {
+    // The observed run: 1,211,574 ms inside indexCodebase, of which the recompute
+    // measured 1,190,574 — the other 21,000 is the incremental sync that embedded
+    // whatever the working tree had changed, and that is what `embedding` means.
+    const app = appReportingStats({ enrichmentStatus: "completed", enrichmentDurationMs: 1_190_574 });
+    const sent: WorkerMessage[] = [];
 
     await runIndexWorker(
       app as never,
       "/repo",
       { forceEnrichments: ["codegraph"] },
       (m) => sent.push(m),
-      () => {
-        t += 100;
-        return t;
-      },
+      scriptedClock([0, 1_211_574, 1_211_574, 1_211_600]),
     );
 
     const phases = phasesOf(sent);
-    // Nothing on this path embeds, so the span must not be booked as embedding.
-    expect(phases["embedding"] ?? 0).toBe(0);
-    expect(phases["enrichment"]).toBe(1_211_574);
+    expect(phases["embedding"]).toBe(21_000);
+    expect(phases["enrichment"]).toBe(1_190_574);
+  });
+
+  it("books no embedding time when the recompute accounts for the whole span", async () => {
+    // Clean tree: the sync finds nothing to embed, so the recompute IS the run —
+    // and a measurement that overruns the span (clock granularity) clamps at 0
+    // rather than going negative.
+    const app = appReportingStats({ enrichmentStatus: "completed", enrichmentDurationMs: 1_211_600 });
+    const sent: WorkerMessage[] = [];
+
+    await runIndexWorker(
+      app as never,
+      "/repo",
+      { forceEnrichments: ["codegraph"] },
+      (m) => sent.push(m),
+      scriptedClock([0, 1_211_574, 1_211_574, 1_211_600]),
+    );
+
+    const phases = phasesOf(sent);
+    expect(phases["embedding"]).toBe(0);
+    expect(phases["enrichment"]).toBe(1_211_600);
   });
 
   it("falls back to the measured index span when the recompute reports no duration", async () => {
-    const app = recomputeApp({});
+    const app = appReportingStats({});
     const sent: WorkerMessage[] = [];
-    let t = 0;
 
-    await runIndexWorker(
-      app as never,
-      "/repo",
-      { forceEnrichments: ["git"] },
-      (m) => sent.push(m),
-      () => {
-        t += 100;
-        return t;
-      },
-    );
+    await runIndexWorker(app as never, "/repo", { forceEnrichments: ["git"] }, (m) => sent.push(m), steppingClock());
 
     const phases = phasesOf(sent);
-    expect(phases["embedding"] ?? 0).toBe(0);
-    expect(phases["enrichment"]).toBeGreaterThan(0);
+    expect(phases["embedding"]).toBe(0);
+    expect(phases["enrichment"]).toBe(100);
   });
 
-  it("leaves the ordinary run's embedding attribution alone", async () => {
-    const app = recomputeApp({ enrichmentStatus: "completed", enrichmentDurationMs: 4_000 });
+  it("leaves the ordinary run's attribution alone: index span embedding, wait enrichment", async () => {
+    const app = appReportingStats({ enrichmentStatus: "completed", enrichmentDurationMs: 4_000 });
     const sent: WorkerMessage[] = [];
-    let t = 0;
 
-    await runIndexWorker(
-      app as never,
-      "/repo",
-      {},
-      (m) => sent.push(m),
-      () => {
-        t += 100;
-        return t;
-      },
-    );
+    await runIndexWorker(app as never, "/repo", {}, (m) => sent.push(m), steppingClock());
 
     const phases = phasesOf(sent);
-    expect(phases["embedding"]).toBeGreaterThan(0);
-    // The ordinary path's enrichment phase is the background wait, not the DTO field.
-    expect(phases["enrichment"]).not.toBe(4_000);
+    expect(phases["embedding"]).toBe(100);
+    // The ordinary path's enrichment phase is the measured background wait, not
+    // the DTO field — the recompute's number must not leak onto it.
+    expect(phases["enrichment"]).toBe(100);
   });
 });
 

@@ -56,6 +56,24 @@ export interface IndexOptions {
   languages?: string[];
 }
 
+/**
+ * Whether these options select the enrichment RECOMPUTE path instead of an
+ * indexing pass.
+ *
+ * One source of truth for a branch two layers care about: `IndexingOps#run`
+ * dispatches on it, and the CLI's index worker reads it to attribute the run's
+ * phase timings — a recompute's wall time belongs to enrichment, not to
+ * embedding. The worker used to hand-mirror the condition, which is how the two
+ * drifted into disagreeing about what the run had just done
+ * (bd tea-rags-mcp-ghcof). It lives next to {@link IndexOptions} because it is a
+ * statement about the shape of those options, not about either caller.
+ */
+export function isEnrichmentRecompute(
+  options: IndexOptions | undefined,
+): options is IndexOptions & { forceEnrichments: string[] } {
+  return (options?.forceEnrichments?.length ?? 0) > 0;
+}
+
 // ---------------------------------------------------------------------------
 // Indexing inputs
 // ---------------------------------------------------------------------------
