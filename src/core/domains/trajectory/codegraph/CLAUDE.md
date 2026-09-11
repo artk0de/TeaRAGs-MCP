@@ -70,6 +70,21 @@
   `callsUnnarrowedTemplate` is the only number that says so, because every rate
   on `cg_run_stats` counts these calls as successes.
 
+- **Every `ResolverInputs` channel reaches BOTH `CallContext`s the runner
+  builds, and one function is what makes that structural.**
+  `resolution-runner.ts` constructs a context twice — once for file edges, once
+  per call site — and for two months each literal named the channels by hand.
+  `classFieldTypesByClassKey` was added to `ResolverInputs`, populated from run
+  state, and copied into NEITHER, so production resolved without an arm both
+  offline harnesses built and no test could see it: a present-but-unread channel
+  reads exactly like an absent one at every call site.
+  `resolverInputChannels(inputs)` is now the run-global slice and both sites
+  spread it; `tests/…/resolution-runner-callcontext-channels.test.ts` derives
+  its list from `keyof ResolverInputs`, so a NEW channel fails the type check
+  until it is mapped and the assertion until it is threaded. A channel a harness
+  builds and production does not is not a measurement gap — it invalidates every
+  number measured after it appeared.
+
 - **`callsUnnarrowedTemplate` counts CONSTANT receivers only, and its per-kind
   split is how you check that.** Entry narrowing is receiver-anchored, so an
   idiom naming no concrete type — a bare call to an INHERITED hook most of all —
