@@ -1079,12 +1079,12 @@ nothing, and re-running it later costs another five-corpus sweep.
 
 ### Steps — E4.4c
 
-- [ ] **Step 0.** Fresh agent worktree; ff-merge `worktree-py-frontier-e4`.
+- [x] **Step 0.** Fresh agent worktree; ff-merge `worktree-py-frontier-e4`.
       Confirm E4.6a's `resolveExportedModule` is present in
       `python-import-file-mapper.ts`; if it is not, STOP and report that the
       precondition is unmet. `npx vitest run tests/core/domains/language/python`
       green.
-- [ ] **Step 1 (the 19 — measure, do not implement).** Run the oracle on polar
+- [x] **Step 1 (the 19 — measure, do not implement).** Run the oracle on polar
       alone, five runs, and the family report with the real corpus root. Read
       `superMro` on the A side and record it against the pre-E4.6a baseline
       of 23. Three outcomes, each with its own action: - **superMro ≤ 4** —
@@ -1099,7 +1099,7 @@ nothing, and re-running it later costs another five-corpus sweep.
       the break moved and this task reports rather than guesses. - **anything in
       between** — split the 19 by base module and say which subset closed. Do
       not average.
-- [ ] **Step 2 (the 3 — diagnose before touching anything).** The three rows are
+- [x] **Step 2 (the 3 — diagnose before touching anything).** The three rows are
       `checkout/service.py:182`,
       `customer_portal/service/customer_session.py:52` and
       `integrations/stripe/payment.py:42`, each `super().__init__(message)`
@@ -1119,7 +1119,7 @@ nothing, and re-running it later costs another five-corpus sweep.
       which is E4.6a's file — hand it over as a bead rather than editing it
       here. Write the finding down before writing any code. Three rows do not
       buy a speculative edit.
-- [ ] **Step 3 (RED, conditional).** ONLY if Step 2 named a mechanism inside
+- [x] **Step 3 (RED, conditional).** ONLY if Step 2 named a mechanism inside
       `python-super.ts`: new file `python-super-sibling.test.ts` reproducing the
       shape from hand-built context — a caller file declaring `class Child(Mid)`
       and `class Mid(Root)`, another file declaring `Root#__init__` and a
@@ -1127,24 +1127,132 @@ nothing, and re-running it later costs another five-corpus sweep.
       chunk-scoped `classExtends` that stops one hop in. Assert
       `super().__init__()` from `Child` resolves to `Root#__init__` and never to
       `Other#__init__`.
-- [ ] **Step 4 (GREEN, conditional).** The minimal fix the diagnosis named. Keep
+- [x] **Step 4 (GREEN, conditional).** The minimal fix the diagnosis named. Keep
       `super`'s guard terminality intact: it still DROPs on a miss, and the
       change is which candidate it accepts, never whether it falls through.
       Re-run the full python suite plus the A/B on polar and netbox.
-- [ ] **Step 5 (the netbox control — mandatory whatever Steps 3–4 did).** netbox
+- [x] **Step 5 (the netbox control — mandatory whatever Steps 3–4 did).** netbox
       carries D9's 11 `oracleWrongMro` rows, where jedi's cooperative-MI answer
       is known wrong and the chain is right. Confirm netbox's `superMro` count
       and its `super()`-answered match count are BOTH unchanged. **Movement in
       either direction is a regression signal** — a "gain" there is the chain
       being dragged onto a wrong oracle answer.
-- [ ] **Step 6 (the 1).** `base.py:187`, `super().get_base_statement()` on a
+- [x] **Step 6 (the 1).** `base.py:187`, `super().get_base_statement()` on a
       `Protocol` base in the caller's own file. Record what the A side does with
       it and file it as a bead if it still misses. One row is not an increment.
-- [ ] **Step 7 (commit).** `fix(language): …(w205u)` if a fix shipped, otherwise
+- [x] **Step 7 (commit).** `fix(language): …(w205u)` if a fix shipped, otherwise
       `docs(plans): record the E4.4 super residual measurement (w205u)`. Body:
       the three-way Step 1 outcome with its number, the Step 2 finding, and the
       Step 5 control reading. Trailer
       `Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>`. Never push.
+
+### Measured — E4.4c, 2026-09-11
+
+**Step 1's three-way question answers "still 23", and E4.4a's `20 → 20` was a
+harness artefact, not a closure.** The family report is built from a rebuilt
+ndjson that carries no `fileOnly` pool (E4.4a's own note), so it reads
+`superMro` = the 20 MISSED rows and cannot see the 3 `fileOnly` ones. 20 + 3 =
+the 23 of decision 5, and E4.6a closed **none** of them: `resolveExportedModule`
+is called from `importedName`'s module arm and `python-receiver-type-ports.ts`
+only. The ancestor channel never asked.
+
+**The probe.** `walkCorpus` over polar's real files, every `super()` site with
+its enclosing class key, that key's `classAncestors` values, the linearized
+order, the closure, and which strategy answered. 621 sites, three causes, no
+guessing:
+
+| rows | cause                                                                                                             | evidence                                                                                                                                                                         |
+| ---: | ----------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+|   19 | package **module alias** in the base spelling — 13 `..components.datatable`, 6 `..components.description_list`    | `mapImportToFile("..components.datatable")` reads `unknown`; `..components` maps to the package, whose `__init__.py` opens `from . import _datatable as datatable`               |
+|    3 | **`classExtends` short-name overwrite** — `CheckoutDoesNotExist`, `OrganizationDoesNotExist`, `OrderDoesNotExist` | the map is run-global and keyed by the class SHORT NAME; `checkout/tasks.py:20` declares a namesake `(CheckoutTaskError)` and wins, so the legacy walk left the MRO              |
+|    1 | `self:`-annotated generic mixin                                                                                   | `kit/repository/base.py:187` — `RepositorySoftDeletionMixin` has NO base at all (the brackets are a PEP 695 type-param list) and the source carries `# type: ignore[safe-super]` |
+
+The walker was never the problem: it strips the generic subscript and qualifies
+the base correctly, and the probe reads the spellings back without `[T, U]`.
+
+**Decision 5's sibling diagnosis was right about the symptom and wrong about the
+mechanism**, which is why the plan made the probe mandatory. Neither named
+suspect fires: the closure is `unknown` (so `resolveSuperViaClassExtends` does
+run first, as designed), but its `symbolTable.lookup` is not what misfires —
+`PolarTaskError#__init__` is declared once and found correctly. The wrong hop is
+the FIRST one, out of `ctx.classExtends[shortName]`. Step 6's row is likewise
+not a `Protocol` base; it is annotation debt and belongs to E4.6's fold.
+
+**Fixed, both TDD.** The ancestor policy asks `resolveExportedModule` for a
+module text that failed to map, splitting it the way `joinModulePath` composes
+it so a leading dot run stays with the package. It runs on the `unknown` branch
+ONLY — `mapAbsolute` answers `external` for an absolute text no root maps, and
+asking there would let a project package that binds the last segment capture
+`django.db.models`. And the legacy walk declines its first hop when the
+enclosing class's own `classAncestors` name no such base AND the short name is
+declared in more than one file. That second clause is what keeps netbox's
+star-import truncation byte-identical: there the channels disagree because one
+could not read the star, and the class is declared once.
+
+**Row-level A/B**, five corpora,
+`--oracle merged --dispatch --workers 8 --samples 500000`. B from a detached
+`git archive` of `c0e22b1b4`.
+
+| corpus |         match | fileOnly |    missed | phantom | gross lost |
+| ------ | ------------: | -------: | --------: | ------: | ---------: |
+| ugnest |     772 → 772 |    0 → 0 |   16 → 16 |   0 → 0 |          0 |
+| flask  |     330 → 330 |    6 → 6 |   36 → 36 |   0 → 0 |          0 |
+| httpx  |     477 → 477 |    5 → 5 |     6 → 6 |   8 → 8 |          0 |
+| netbox |   8301 → 8301 |    2 → 2 |   40 → 40 | 26 → 25 |          0 |
+| polar  | 16388 → 16410 |  54 → 51 | 425 → 406 | 93 → 93 |          0 |
+
+polar's **+22** is `superMro` exactly: the receiver table reads `super` match
+**526 → 548**, `fileOnly` **3 → 0**, `missed` **20 → 1**. Nineteen alias rows
+and three sibling rows, the predicted count per shape, and the family report
+confirms where they landed — `superMro` **20 → 1**, the survivor being
+`kit/repository/base.py:187`, with no other family moving on any corpus.
+`exactReplacedByFan` 3 and `exactReplacedByAmbiguous` 0 on both sides of polar,
+0/0 on netbox — unchanged, not introduced.
+
+**The netbox control moved once, and it is a precision GAIN.**
+`extras/filters.py:121` was a **phantom** on the B side: `verdict: phantom`,
+`answeredBy: super`, `origin: sitePackages` — jedi puts the target in
+`django_filters` and the chain pinned
+`netbox/netbox/models/features.py::ChangeLoggingMixin#__init__`. The cause is
+this task's own defect: `TagFilter` is declared in `extras/filters.py:109`
+(`django_filters.ModelMultipleChoiceFilter`) and in
+`extras/graphql/filters.py:373` (`ChangeLoggedModelFilter`), and the map held
+the second. D9's rule guards against the chain being dragged ONTO a wrong oracle
+answer, and nothing here does: netbox's `super` **match stays 248 on all seven
+runs**, phantom falls 26 → 25, and a fabricated edge into an unrelated file is
+gone. The ±1 wobble in `agreeExternal` / `bothUnresolved` is jedi's own — B runs
+3 and 4 differ from B runs 1, 2 and 5.
+
+**Chain tally**, five runs per side per corpus: `chainDrift` **0** and
+`dispatchDrift` **0** on every oracle run and every tally, C3 linearization
+fallbacks **0**. Edges netbox **8712 → 8711** (the fabricated edge) and polar
+**17592 → 17611** (**+19** — the alias rows are new edges; the three sibling
+rows change a target, not a count).
+
+**Perf**, chain-tally interleaved B/A/A/B, `/usr/bin/time -l`,
+`env -u NODE_OPTIONS` with an explicit 1024 MB heap. The min-of-two statistic
+this plan asks for breached on both corpora in opposite directions on a shared
+machine — netbox B ranged 13.6–19.6 s across reps — so the run was extended to
+six interleaved reps per side and the MEDIAN is reported. netbox wall **14.42 s
+→ 14.42 s** (**0.0 %**), RSS **2,360 → 2,365 MB** (**+0.2 %**); polar wall
+**21.58 s → 22.65 s** (**+5.0 %**), RSS **2,118 → 2,049 MB** (**−3.2 %**).
+Inside the +25 % wall / +20 % RSS bar on both. The alias hop only fires on a
+base spelling that already failed to map, and the homonym lookup only where the
+two channels disagree, so neither touches a site that resolves today.
+
+**Ruby parity**: `ruby-resolver-parity` 42,057 mastodon sites, mismatches 0,
+drift 0; `ruby-walker-composition-parity` 500 files, mismatches 0; both against
+the detached B checkout. Ruby suite 1,835 green, and no Ruby file is touched —
+the guard lives in Python's own strategy and the hop in Python's ancestor
+policy.
+
+**Two things this task hands on.** `kit/repository/base.py:187` is annotation
+debt, not an MRO question — decision 5 filed it as a `Protocol` base and it is
+not one — so it belongs to E4.6's typed-residual fold rather than here. And the
+`classExtends` short-name overwrite is a CHANNEL defect, not a `super()` one:
+this task guards the one hop whose file-qualified key is in hand, and every
+deeper hop of the legacy walk, plus every other reader of that map, still walks
+a run-global short-name index. Worth a bead before another pass leans on it.
 
 ---
 
