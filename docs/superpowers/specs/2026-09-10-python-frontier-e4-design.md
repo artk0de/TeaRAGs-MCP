@@ -815,6 +815,14 @@ folded rather than scheduled: E4.5 (4 rows), E4.3 (4 rows), and E4.4's
 `typeVarGeneric` arm (0 rows). That removes two whole executors from the program
 and moves their mass into E4.6b and E4.2.
 
+**Row 5 is DELIVERED too, measured in D12 (2026-09-11).** `classObjectReceiver`
+closed **83 → 39** and `superMro` **23 → 1**, against the 44 addressable rows
+the E4.4 plan claimed and the 106 this table published. The gap is not a
+shortfall: 32 of the 83 are `cls(...)` constructor calls that D12 records as
+oracle debt, 8 are folded with counts, and the rest landed. Nothing in row 5 was
+left for a later increment except the one `superMro` survivor, which is
+annotation debt rather than an MRO question.
+
 **Rows 2–4 are DELIVERED, measured in D11 (2026-09-11).** `moduleAliasMember`
 reads 309 addressable against the 317 this table published — the real count is
 325 and 16 of them are classifier false positives — and it closed **309 → 1**.
@@ -915,6 +923,20 @@ These 14 moved `match → wrongFile` when E4.6b-1 landed, and they are the WHOLE
 of that task's gross-lost column. They are an instrument reading, not a
 regression: E4.6-close subtracts them exactly as D9's other `OW:*` classes are
 subtracted from `precisionMissAdjusted`.
+
+**A FOURTH class, found by E4.4a (2026-09-11, bd tea-rags-mcp-w205u):
+`oracleEnumClsMember`, abbreviated `OW:EnumCls`.** It is result 3's enum blind
+spot reached through a different receiver, and it is worth its own name because
+the two fail for different reasons: `OW:EnumClassmethod` is jedi answering
+nothing for `codes.is_redirect()` on the CLASS, while this one is jedi typing
+`cls` on an enum subclass through `enum.pyi` and never reaching the project at
+all — every row carries `origin: typeshedStub`. Five polar rows, all
+`cls.<x>_statuses()` inside `class SubscriptionStatus(StrEnum)` in
+`server/polar/models/subscription.py`, all answered by the chain with the
+`SubscriptionStatus.<x>_statuses` declared twenty lines above the call. They
+moved `agreeExternal → phantom` when `clsMember` landed, which is why polar's
+phantom count rises while its precision does not: +0.03 pp against a +0.5 pp
+cap.
 
 ### D10 — dynamic `single` falsified (measured 2026-09-10, E4.1.3)
 
@@ -1029,6 +1051,107 @@ row rather than reporting a split the B side cannot produce. Separately, the
 oracle's `--json` payload samples `missed` / `wrongFile` / `phantom` /
 `skippedInProject` and not `fileOnly`, so residual counts derived from a dump
 run below the plan's, which counted `fileOnly` too.
+
+### D12 — E4.4 measured (2026-09-11, `w205u`, three tasks against `f5f27197f` and `c0e22b1b4`)
+
+**The sub-shape attribution the plan was built on, re-tagged from E4.0.4's five
+`--oracle merged --dispatch` dumps under the CORRECTED corpus roots.** Both E4.4
+families are byte-identical to D8 under the correction: `classObjectReceiver`
+83, `superMro` 23.
+
+| sub-shape                                                   | `receiverKind` | flask | httpx | netbox |  polar | ugnest |   rows | owner            |
+| ----------------------------------------------------------- | -------------- | ----: | ----: | -----: | -----: | -----: | -----: | ---------------- |
+| **a** `cls.m()` inside a classmethod                        | `dynamic`      |     0 |     0 | **17** | **16** |  **1** | **34** | E4.4a            |
+| **b** `cls(...)` constructor call                           | `bareCall`     |     1 |     0 |      6 |     25 |      0 | **32** | oracle debt (D3) |
+| **c1** `Cls.m()`, class SAME FILE, member inherited         | `constant`     |     0 |     0 |      0 | **10** |      0 | **10** | E4.4b            |
+| **c2** `Cls.m()` declined as a core member (`values`)       | `constant`     |     0 |     0 |      3 |      0 |      0 |      3 | folded           |
+| **c3** `Cls.m()` imported, mapper reads `unknown` (PEP 420) | `constant`     |     0 |     0 |      0 |      0 |      3 |      3 | E4.6a mapper     |
+| **c4** SCREAMING_SNAKE module constant holding an INSTANCE  | `constant`     |     0 |     0 |      0 |      1 |      0 |      1 | folded           |
+| **e** `type(self).m()` / `self.__class__.m()`               | —              |     0 |     0 |      0 |      0 |      0 |  **0** | —                |
+| **total**                                                   |                | **1** | **0** | **26** | **52** |  **4** | **83** |                  |
+
+`superMro`'s 23 split 19 / 3 / 1: nineteen `super().__init__` rows whose base is
+spelled through a package module alias, three whose base short name is declared
+in two files, and one `self:`-annotated generic mixin with no base at all.
+
+**44 rows were claimed and 44 landed.** E4.4a **+34** (netbox +17, polar +16,
+ugnest +1 — the predicted count per corpus exactly), E4.4b **+10** on polar,
+E4.4c **+22** on polar (19 alias rows and 3 sibling rows, the predicted count
+per shape). `classObjectReceiver` closed **83 → 39** and `superMro` **23 → 1**
+across the increment, gross lost **0** on every corpus of every A/B, and
+netbox's `super` match held at **248** on every run — D9's `oracleWrongMro` rows
+were not chased and did not move.
+
+**32 rows are oracle debt, and the mechanism is worth recording because it will
+recur.** Every `cls(...)` constructor row in the set resolves, in BOTH engines,
+to the enclosing classmethod: `cls` is a parameter, its definition line is the
+`def` line, and the harness attributes that line to the method that owns it.
+Until the harness learns to withdraw a non-callable oracle answer — D9's
+`oracleNonCallable` class — those rows are unscoreable by construction, and
+emitting a constructor edge for them SPENDS precision without buying recall.
+Twenty-two more rows went to E4.6a's mapper (19 `super()` alias rows and 3 PEP
+420 namespace rows), and 8 were folded with counts.
+
+**Four branches measured ZERO on five corpora, and that is a result.**
+`type(self).m()` and `self.__class__.m()` return zero matches across every
+residual row on all five corpora, although `CLASS_OBJECT_RECEIVERS` lists them
+beside `cls`; two-argument `super()` is likewise absent; and `typeVarGeneric` —
+the half of the spec's E4.4 sketch that would have needed TypeVar substitution —
+is 0. Four branches removed from every later increment on evidence, which is
+worth as much as the rows gained.
+
+**The one survivor and the one channel defect.** `kit/repository/base.py:187` is
+`RepositorySoftDeletionMixin`, which has NO base at all — the brackets are a PEP
+695 type-param list and the source itself carries `# type: ignore[safe-super]` —
+so it is annotation debt for E4.6's fold, not an MRO question, and decision 5's
+"Protocol base" filing was wrong. Separately, `classExtends` is keyed by class
+SHORT name and unioned run-global, so a namesake in another file overwrites it;
+E4.4c guards the ONE hop whose file-qualified key is in hand, and every deeper
+hop of the legacy walk, plus every other reader of that map, still trusts a
+run-global short-name index.
+
+---
+
+## E4 — the whole increment measured
+
+Five corpora × five runs per side against the **E4 baseline `78e6c40b2`** (=
+main when E4 started), both sides driven by the SAME harness — the current
+`scripts/` tree against detached source checkouts — so a harness change inside
+E4 cannot be read as a capability change. The baseline carries `walker` 4 and no
+`resolver/dispatch/` directory at all; the measurement supplies that module as a
+no-op shim, which is exactly what the baseline behaves like, and composes
+`[cone]` on both sides because `CODEGRAPH_PY_DYNAMIC_DISPATCH` is unset (D10).
+Every chain column is byte-identical across the five runs of each side.
+
+| corpus |               match |      phantom |               edges |        recallLegacy |        recallMerged |    precision-miss |
+| ------ | ------------------: | -----------: | ------------------: | ------------------: | ------------------: | ----------------: |
+| ugnest |       765 → **772** |        0 → 0 |       770 → **778** | 0.9696 → **0.9785** | 0.9696 → **0.9785** |     0.00 → 0.13 % |
+| flask  |       332 → **336** |    9 → **0** |           355 → 349 | 0.8901 → **0.9008** | 0.8901 → **0.9008** | 3.10 → **0.29 %** |
+| httpx  |       473 → **481** |        8 → 8 |       491 → **499** | 0.9693 → **0.9857** | 0.9693 → **0.9857** |     1.63 → 1.60 % |
+| netbox |   8,227 → **8,303** |  26 → **25** |   8,651 → **8,711** | 0.9877 → **0.9949** | 0.9861 → **0.9952** |     0.31 → 0.29 % |
+| polar  | 15,861 → **16,430** | 155 → **93** | 16,626 → **17,625** | 0.9550 → **0.9810** | 0.9394 → **0.9731** | 0.97 → **0.62 %** |
+
+**664 rows bad → good** — ugnest +7, flask +4, httpx +8, netbox +76, polar +569
+— and the residual across the three verdicts a dump samples falls **1,200 →
+521**. **Precision improved on four corpora and held on the fifth.** flask's
+3.10 % was the bar breach D9 recorded and it is now **0.29 %**, its nine
+`open(path, mode)` phantoms gone; polar 0.97 → 0.62 %, netbox 0.31 → 0.29 %,
+httpx 1.63 → 1.60 %. ugnest's 0.00 → 0.13 % is a single `wrongFile` row on a
+778-edge denominator. Nothing anywhere approaches the 2 % bar.
+
+**Gross lost is 14 rows, all on polar, all one class already in this record.**
+They are D9's `OW:Self` list, row for row — the 14 sites where jedi resolves a
+`-> Self` classmethod's result to the DECLARING class and pyright confirms the
+chain's answer. Zero rows entered the residual on the other four corpora, and no
+lost row belongs to any other class, so **chain regressions across the whole of
+E4 are 0** and `precisionMissAdjusted` for polar is below its own baseline.
+
+**Families, baseline → now.** `moduleAliasMember` 309 → 1,
+`constructorChainHead` 44 → 0, `untypedFieldHop` 110 → 54, `classObjectReceiver`
+83 → 39, `superMro` 23 → 1, bare calls 133 → 93. **No family grew on any
+corpus.** What is left is concentrated where D8 said it would be:
+`untypedNameReceiver` 280 rows, which is E4.1's parked fan-out, and it is now
+more than half of polar's residual.
 
 ---
 
