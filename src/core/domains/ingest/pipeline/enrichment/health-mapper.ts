@@ -7,19 +7,34 @@
  *   enrichment.<provider-as-nested-path>.{file,chunk} = terminal marker w/ runId
  *     (e.g. enrichment.git.file, enrichment.codegraph.symbols.chunk)
  *
- * Read logic:
- *   - A per-kind marker whose `runId` matches the active `_run.runId` renders
- *     its TERMINAL status (completed→healthy, degraded, failed).
- *   - A marker that is ABSENT or carries a STALE runId (a previous run, while a
- *     new run is active) is derived from `_run` timestamps:
- *       crashed (no progress > 1h) → failed, past the stall deadline (default
- *       15min, ENRICHMENT_STALL_DEADLINE_MS) → failed, stalled (> 2min) →
- *       in_progress warning, fresh → in_progress.
- *     It is NEVER rendered healthy — that was the old `pending → healthy` bug.
+ * The FRAME — which providers get a row — is the RUNNING composition's provider
+ * list, passed in by the caller, NOT `_run.providers` (bd tea-rags-mcp-x2u65).
+ * `--force-enrichments codegraph` writes a run marker naming `codegraph.symbols`
+ * alone, and framing on it dropped the git row from prime's `## Enrichment` and
+ * from `get_index_status` while git signals sat on every point.
+ *
+ * Read logic, per ACTIVE provider:
+ *   - Covered by the last run (`_run.providers`) — the run's timestamps describe
+ *     it, so today's model applies:
+ *       - a per-kind marker whose `runId` matches `_run.runId` renders its
+ *         TERMINAL status (completed→healthy, degraded, failed);
+ *       - a marker that is ABSENT or carries a STALE runId is derived from
+ *         `_run` timestamps: crashed (no progress > 1h) → failed, past the stall
+ *         deadline (default 15min, ENRICHMENT_STALL_DEADLINE_MS) → failed,
+ *         stalled (> 2min) → in_progress warning, fresh → in_progress. It is
+ *         NEVER rendered healthy — that was the old `pending → healthy` bug.
+ *   - NOT covered by the last run — the run's timestamps say nothing about it:
+ *       - a terminal marker at a level renders from that marker, whichever run
+ *         wrote it (the latest terminal marker is the truth about that level);
+ *       - a non-terminal or absent level means the provider's own last run never
+ *         finished → failed, recovered by the next full reindex;
+ *       - no marker at all on either level → the provider is omitted entirely.
+ *   - Providers with markers that are NOT active (git switched off by flag) are
+ *     omitted; the indexing-env drift axis is what explains that case.
  *   - Legacy markers (no `_run`, old literal-property shape) fall back to a
- *     compatibility branch: terminal statuses render as-is, legacy `pending`
- *     maps to in_progress (never healthy), legacy `in_progress` keeps the
- *     time-based crash check.
+ *     compatibility branch that frames on the marker map itself: terminal
+ *     statuses render as-is, legacy `pending` maps to in_progress (never
+ *     healthy), legacy `in_progress` keeps the time-based crash check.
  */
 
 import type { EnrichmentHealthMap, EnrichmentLevelHealth, EnrichmentMarkerMap, RunMarker } from "./types.js";
@@ -56,26 +71,70 @@ function stallDeadlineMessage(elapsedMs: number, deadlineMs: number): string {
 
 type LevelRecord = Record<string, unknown>;
 
-export function mapMarkerToHealth(markerMap: EnrichmentMarkerMap): EnrichmentHealthMap | undefined {
+/** Statuses a level marker can carry that describe a FINISHED attempt. */
+const TERMINAL_STATUSES: ReadonlySet<unknown> = new Set(["completed", "degraded", "failed"]);
+
+/**
+ * @param activeProviders provider keys of the RUNNING composition — the frame.
+ *   The caller owns it because only the composition root knows which providers
+ *   this process enriches with (git drops out when `enableGitMetadata` is off).
+ *   Empty → nothing to report under the run-pointer model.
+ */
+export function mapMarkerToHealth(
+  markerMap: EnrichmentMarkerMap,
+  activeProviders: readonly string[],
+): EnrichmentHealthMap | undefined {
   const run = markerMap._run;
-  return run ? mapWithRunPointer(markerMap, run) : mapLegacy(markerMap);
+  return run ? mapWithRunPointer(markerMap, run, activeProviders) : mapLegacy(markerMap);
 }
 
-/** Terminal-only path: navigate nested per-provider markers listed in `_run.providers`. */
-function mapWithRunPointer(markerMap: EnrichmentMarkerMap, run: RunMarker): EnrichmentHealthMap | undefined {
+/** Terminal-only path: navigate the nested marker of every ACTIVE provider. */
+function mapWithRunPointer(
+  markerMap: EnrichmentMarkerMap,
+  run: RunMarker,
+  activeProviders: readonly string[],
+): EnrichmentHealthMap | undefined {
   const health: EnrichmentHealthMap = {};
+  const coveredByRun = new Set(run.providers ?? []);
   let hasAny = false;
-  for (const providerKey of run.providers ?? []) {
+  for (const providerKey of activeProviders) {
     const entry = getNested(markerMap as LevelRecord, providerKey) as
       | { file?: LevelRecord; chunk?: LevelRecord }
       | undefined;
+    if (coveredByRun.has(providerKey)) {
+      hasAny = true;
+      health[providerKey] = {
+        file: mapLevelWithRun(entry?.file, "file", run),
+        chunk: mapLevelWithRun(entry?.chunk, "chunk", run),
+      };
+      continue;
+    }
+    // Outside the last run: no marker at all means the provider has never run
+    // against this collection — a row saying "failed" would invent a failure.
+    if (!entry?.file && !entry?.chunk) continue;
     hasAny = true;
     health[providerKey] = {
-      file: mapLevelWithRun(entry?.file, "file", run),
-      chunk: mapLevelWithRun(entry?.chunk, "chunk", run),
+      file: mapLevelOutsideRun(entry.file, "file"),
+      chunk: mapLevelOutsideRun(entry.chunk, "chunk"),
     };
   }
   return hasAny ? health : undefined;
+}
+
+/**
+ * Render a level of a provider the last run did not touch. The run's heartbeat
+ * describes some other provider's work, so it is not evidence here: a terminal
+ * marker stands on its own, and anything else means that provider's own last
+ * run never reached a terminal state.
+ */
+function mapLevelOutsideRun(level: LevelRecord | undefined, levelName: "file" | "chunk"): EnrichmentLevelHealth {
+  if (level && TERMINAL_STATUSES.has(level.status)) return renderTerminal(level, levelName);
+  const prefix = levelName === "file" ? "File-level enrichment" : "Chunk enrichment";
+  return {
+    ...(level ? pickMeta(level) : {}),
+    status: "failed",
+    message: `${prefix} never finished on this provider's last run. Will recover on next full reindex.`,
+  };
 }
 
 /** Render a single level under the run-pointer model. */

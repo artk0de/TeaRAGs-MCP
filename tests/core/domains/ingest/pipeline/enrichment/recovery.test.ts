@@ -675,7 +675,7 @@ describe("EnrichmentRecovery.recoverAll dangling _run self-heal", () => {
 
     // End-to-end: the health mapper now renders the recovered terminal status
     // instead of the dangling-_run "crashed" derivation.
-    const health = mapMarkerToHealth(enrichment)!;
+    const health = mapMarkerToHealth(enrichment, ["git"])!;
     expect(health.git.file.status).toBe("healthy");
     expect(health.git.chunk.status).toBe("healthy");
   });

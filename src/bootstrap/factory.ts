@@ -690,6 +690,26 @@ interface IngestSliceDeps {
 }
 
 /**
+ * The enrichment providers this configuration actually runs: the registry's
+ * full list minus what a user-visible toggle switches off. Git is constructed
+ * inside GitTrajectory at composition time with proper config, so the registry
+ * returns a ready-to-use provider list; bootstrap applies `enableGitMetadata`
+ * here rather than inside a facade, which keeps IngestFacade free of provider
+ * construction and config-aware filtering.
+ *
+ * Two consumers, one list: the ingest slice enriches with exactly these, and
+ * the enrichment health report (status + metrics) is FRAMED on exactly these
+ * (bd tea-rags-mcp-x2u65). Filtering in one of the two places only would let a
+ * disabled provider keep a health row, or an enabled one lose it.
+ */
+function activeEnrichmentProviders(
+  registry: CompositionContext["registry"],
+  trajectoryIngest: AppConfig["trajectoryIngest"],
+) {
+  return registry.getAllEnrichmentProviders().filter((p) => p.key !== "git" || trajectoryIngest.enableGitMetadata);
+}
+
+/**
  * Build the ingest slice for ONE configuration.
  *
  * Called once per distinct env: at startup for the server's own config, and
@@ -704,16 +724,8 @@ function createIngestFacade(
   config: AppConfig,
   shared: IngestSliceDeps,
 ): IngestFacade {
-  // Registry is the single source of truth for enrichment providers. Git
-  // is constructed inside GitTrajectory at composition time with proper
-  // config, so the registry returns a ready-to-use provider list. Bootstrap
-  // applies the user-visible toggle (`enableGitMetadata`) here rather than
-  // inside the facade — keeps IngestFacade free of provider construction or
-  // config-aware filtering.
   const facadeComposition = wireComposition(zodConfig, config.trajectoryIngest, shared.codegraphDeps);
-  const enrichmentProviders = facadeComposition.registry
-    .getAllEnrichmentProviders()
-    .filter((p) => p.key !== "git" || config.trajectoryIngest.enableGitMetadata);
+  const enrichmentProviders = activeEnrichmentProviders(facadeComposition.registry, config.trajectoryIngest);
 
   const pipelineTuning = {
     pipelineConfig: buildPipelineConfig(
@@ -957,6 +969,11 @@ export async function createAppContext(config: AppConfig, hooks?: AppContextHook
     modelGuard: infra.modelGuard,
     chunkResolver: createSymbolChunkResolver(codegraphContext?.graphFacade),
     signalFloors: composition.signalFloors,
+    // Same frame the status path uses — `get_index_metrics` must report the
+    // composition's providers, not the last run's (bd tea-rags-mcp-x2u65).
+    activeEnrichmentProviders: activeEnrichmentProviders(composition.registry, config.trajectoryIngest).map(
+      (p) => p.key,
+    ),
   });
   const app = createApp({
     qdrant: infra.qdrant,

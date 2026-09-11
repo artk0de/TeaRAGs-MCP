@@ -9,9 +9,9 @@
 
 import type { QdrantManager } from "../../../adapters/qdrant/client.js";
 import type { IndexMetrics, SignalMetrics } from "../../../api/public/dto/index.js";
+import { INDEXING_METADATA_ID } from "../../../contracts/constants.js";
 import type { PayloadSignalDescriptor, SignalFloors, SignalStats } from "../../../contracts/types/trajectory.js";
 import type { StatsCache } from "../../../infra/stats-cache.js";
-import { INDEXING_METADATA_ID } from "../../../contracts/constants.js";
 import { NotIndexedError } from "../../ingest/errors.js";
 import { mapMarkerToHealth } from "../../ingest/pipeline/enrichment/health-mapper.js";
 import type { EnrichmentMarkerMap } from "../../ingest/pipeline/enrichment/types.js";
@@ -28,6 +28,12 @@ export class IndexMetricsQuery {
      * → labelMaps stay purely percentile-derived.
      */
     private readonly signalFloors?: ReadonlyMap<string, SignalFloors>,
+    /**
+     * Provider keys of the running composition — the frame of the enrichment
+     * health report (bd tea-rags-mcp-x2u65). Same list the status path uses;
+     * without it the report would shrink to whatever the last run touched.
+     */
+    private readonly activeEnrichmentProviders: readonly string[] = [],
   ) {}
 
   async run(collectionName: string, sourcePath: string): Promise<IndexMetrics> {
@@ -153,6 +159,6 @@ export class IndexMetricsQuery {
   private async loadEnrichmentHealth(collectionName: string): Promise<IndexMetrics["enrichment"]> {
     const markerPoint = await this.qdrant.getPoint(collectionName, INDEXING_METADATA_ID).catch(() => null);
     const rawEnrichment = markerPoint?.payload?.enrichment as EnrichmentMarkerMap | undefined;
-    return rawEnrichment ? mapMarkerToHealth(rawEnrichment) : undefined;
+    return rawEnrichment ? mapMarkerToHealth(rawEnrichment, this.activeEnrichmentProviders) : undefined;
   }
 }

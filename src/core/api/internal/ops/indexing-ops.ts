@@ -156,7 +156,11 @@ export class IndexingOps {
     this.codegraphPool = deps.codegraphPool;
     this.healthCheckRetryAttempts = deps.healthCheckRetryAttempts ?? DEFAULT_HEALTH_CHECK_RETRY_ATTEMPTS;
     this.healthCheckRetryDelayMs = deps.healthCheckRetryDelayMs ?? DEFAULT_HEALTH_CHECK_RETRY_DELAY_MS;
-    this.status = new StatusModule(deps.qdrant, deps.snapshotDir, deps.codegraphPool);
+    // The coordinator's provider list IS the running composition's — bootstrap
+    // has already applied `enableGitMetadata`. It frames the enrichment health
+    // report, which must not shrink to whatever the last run happened to touch
+    // (bd tea-rags-mcp-x2u65).
+    this.status = new StatusModule(deps.qdrant, deps.snapshotDir, deps.codegraphPool, deps.enrichment.providerKeys);
     this.collectionRegistry = deps.collectionRegistry;
     this.languageCodeVersions = deps.languageCodeVersions;
     this.driftReporter = deps.driftReporter;
