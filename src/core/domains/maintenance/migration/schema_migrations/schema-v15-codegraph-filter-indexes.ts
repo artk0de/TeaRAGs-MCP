@@ -15,6 +15,14 @@ import type { IndexStore, Migration, StepResult } from "../types.js";
  * The list is mirrored in the adapter layer for the reason documented on
  * {@link CODEGRAPH_FILTER_INDEXES} — the paths must stay byte-identical to the
  * keys `codegraphFilters` emits.
+ *
+ * It also ensures `parentSymbolId`, which has the same hole from the other
+ * side: `schema-v11` creates that text index, and a collection created after
+ * v11 landed is stamped past it, so v11 never re-runs and the index is missing
+ * on exactly the collections v11 cannot reach. `domains/explore/strategies/
+ * symbol.ts` filters on the field, so unindexed it is another silent full scan.
+ * The class keeps its codegraph name because renaming it would ripple through
+ * the barrel, the migrator and the test file for no behavioural gain.
  */
 export class SchemaV15CodegraphFilterIndexes implements Migration {
   readonly name = "schema-v15-codegraph-filter-indexes";
@@ -31,6 +39,13 @@ export class SchemaV15CodegraphFilterIndexes implements Migration {
       await this.store.ensureIndex(this.collection, path, schema);
       applied.push(`${path}:${schema}`);
     }
+
+    // Idempotent by construction: the adapter's ensurePayloadIndex checks
+    // hasPayloadIndex first, so a collection that already ran v11 pays a lookup
+    // and nothing else.
+    await this.store.ensureIndex(this.collection, "parentSymbolId", "text");
+    applied.push("parentSymbolId:text");
+
     return { applied };
   }
 }

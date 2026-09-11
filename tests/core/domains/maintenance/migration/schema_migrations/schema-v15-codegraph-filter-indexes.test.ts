@@ -46,7 +46,16 @@ describe("SchemaV15CodegraphFilterIndexes", () => {
     expect(store.ensureIndex).toHaveBeenCalledWith(COLLECTION, "codegraph.symbols.chunk.fanIn", "integer");
     expect(store.ensureIndex).toHaveBeenCalledWith(COLLECTION, "codegraph.symbols.chunk.fanOut", "integer");
     expect(store.ensureIndex).toHaveBeenCalledWith(COLLECTION, "codegraph.symbols.chunk.pageRank", "float");
-    expect(store.ensureIndex).toHaveBeenCalledTimes(CODEGRAPH_FILTER_INDEXES.length);
+    expect(store.ensureIndex).toHaveBeenCalledTimes(CODEGRAPH_FILTER_INDEXES.length + 1);
+  });
+
+  it("also ensures parentSymbolId, which schema-v11 cannot reach on a newer collection", async () => {
+    const store = createMockStore();
+    const migration = new SchemaV15CodegraphFilterIndexes(COLLECTION, store);
+
+    await migration.apply();
+
+    expect(store.ensureIndex).toHaveBeenCalledWith(COLLECTION, "parentSymbolId", "text");
   });
 
   it("reports every path it ensured, so the schema-metadata audit lists them", async () => {
@@ -55,7 +64,10 @@ describe("SchemaV15CodegraphFilterIndexes", () => {
 
     const result = await migration.apply();
 
-    expect(result.applied).toEqual(CODEGRAPH_FILTER_INDEXES.map(({ path, schema }) => `${path}:${schema}`));
+    expect(result.applied).toEqual([
+      ...CODEGRAPH_FILTER_INDEXES.map(({ path, schema }) => `${path}:${schema}`),
+      "parentSymbolId:text",
+    ]);
   });
 
   it("is idempotent when the indexes already exist (ensureIndex returns false)", async () => {
@@ -65,7 +77,7 @@ describe("SchemaV15CodegraphFilterIndexes", () => {
 
     const result = await migration.apply();
 
-    expect(store.ensureIndex).toHaveBeenCalledTimes(CODEGRAPH_FILTER_INDEXES.length);
-    expect(result.applied).toHaveLength(CODEGRAPH_FILTER_INDEXES.length);
+    expect(store.ensureIndex).toHaveBeenCalledTimes(CODEGRAPH_FILTER_INDEXES.length + 1);
+    expect(result.applied).toHaveLength(CODEGRAPH_FILTER_INDEXES.length + 1);
   });
 });

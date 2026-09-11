@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import { SchemaManager } from "../../../../src/core/adapters/qdrant/schema-manager.js";
 import { SchemaMigrator } from "../../../../src/core/domains/maintenance/migration/schema-migrator.js";
-import type { IndexStore } from "../../../../src/core/domains/maintenance/migration/types.js";
+import type { EnrichmentStore, IndexStore } from "../../../../src/core/domains/maintenance/migration/types.js";
 
 type IndexKey = `${string}:${string}`;
 
@@ -24,6 +24,33 @@ function recordingIndexStore(seen: Set<IndexKey>): IndexStore {
   };
 }
 
+function stubEnrichmentStore(): EnrichmentStore {
+  return {
+    isMigrated: async () => false,
+    scrollAllChunks: async () => [],
+    batchSetPayload: async () => undefined,
+    markMigrated: async () => undefined,
+  };
+}
+
+/**
+ * Run one migrator end to end and report every index it ensured. Passing an
+ * enrichment store changes WHICH migrations exist: the runner drops the
+ * enrichment-gated ones (SchemaV9 today) when it has no store and no provider
+ * key, so a single construction never sees the whole set.
+ */
+async function indexesFromMigrations(enrichmentStore?: EnrichmentStore): Promise<Set<IndexKey>> {
+  const seen = new Set<IndexKey>();
+  const migrator = new SchemaMigrator(
+    "c",
+    recordingIndexStore(seen),
+    { enableHybrid: true, ...(enrichmentStore && { providerKey: "git" }) },
+    enrichmentStore,
+  );
+  for (const migration of migrator.getMigrations()) await migration.apply();
+  return seen;
+}
+
 /**
  * A fresh collection is stamped at LATEST_SCHEMA_VERSION, so every schema
  * migration is filtered out as already applied. Any index `initializeSchema`
@@ -42,11 +69,12 @@ describe("initializeSchema ⟺ schema migrations parity", () => {
       addPoints: async () => undefined,
       addPointsWithSparse: async () => undefined,
     };
-    await new SchemaManager(fakeQdrant as never).initializeSchema("c");
+    await new SchemaManager(fakeQdrant as never, 0).initializeSchema("c");
 
-    const fromMigrations = new Set<IndexKey>();
-    const migrator = new SchemaMigrator("c", recordingIndexStore(fromMigrations), { enableHybrid: true });
-    for (const migration of migrator.getMigrations()) await migration.apply();
+    const fromMigrations = new Set<IndexKey>([
+      ...(await indexesFromMigrations()),
+      ...(await indexesFromMigrations(stubEnrichmentStore())),
+    ]);
 
     expect([...fromInit].sort()).toEqual([...fromMigrations].sort());
   });
