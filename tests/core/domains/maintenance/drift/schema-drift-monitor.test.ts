@@ -67,26 +67,7 @@ describe("SchemaDriftMonitor", () => {
     const warning = monitor.checkByCollectionName("code_abc123");
     expect(warning).not.toBeNull();
     expect(warning).toContain("git.file.ageDays");
-    expect(warning).toContain("reindex");
-  });
-
-  it("returns warning only once (once per session)", () => {
-    const cachedKeys = ["git.file.commitCount"];
-    const currentKeys = ["git.file.commitCount", "git.file.ageDays"];
-    cache.save("code_abc123", SAMPLE_STATS, cachedKeys);
-    const monitor = new SchemaDriftMonitor(cache, currentKeys);
-
-    const first = monitor.checkByCollectionName("code_abc123");
-    expect(first).not.toBeNull();
-
-    // Second call returns null
-    const second = monitor.checkByCollectionName("code_abc123");
-    expect(second).toBeNull();
-
-    // Even for a different collection
-    cache.save("code_def456", SAMPLE_STATS, cachedKeys);
-    const third = monitor.checkByCollectionName("code_def456");
-    expect(third).toBeNull();
+    expect(warning).toContain("Run: tea-rags index-codebase --force");
   });
 
   it("returns null for unknown collection", () => {
@@ -95,30 +76,47 @@ describe("SchemaDriftMonitor", () => {
     expect(warning).toBeNull();
   });
 
-  it("returns null for already-checked collection (sync)", () => {
-    cache.save("code_abc123", SAMPLE_STATS);
+  // Re-pointed from the retired formatSchemaDriftWarning: added and removed
+  // keys are rendered by the report now, and each side keeps its own cost.
+  it("names every added key and asks for the full reindex when nothing attributes them", () => {
+    cache.save("code_abc123", SAMPLE_STATS, ["git.file.commitCount"]);
+    const monitor = new SchemaDriftMonitor(cache, [
+      "git.file.commitCount",
+      "git.chunk.taskIds",
+      "git.chunk.changeDensity",
+    ]);
+
+    const warning = monitor.checkByCollectionName("code_abc123");
+
+    expect(warning).toContain("git.chunk.taskIds: absent → declared");
+    expect(warning).toContain("git.chunk.changeDensity: absent → declared");
+    expect(warning).not.toContain("→ absent");
+    expect(warning).toContain("Run: tea-rags index-codebase --force");
+  });
+
+  it("names a removed key and asks for no action — nothing reads it any more", () => {
+    cache.save("code_abc123", SAMPLE_STATS, ["git.file.commitCount", "git.file.retiredSignal"]);
     const monitor = new SchemaDriftMonitor(cache, ["git.file.commitCount"]);
-    // First check — no drift (no cached keys)
-    monitor.checkByCollectionName("code_abc123");
-    // Second check — same collection, should return null immediately
-    const second = monitor.checkByCollectionName("code_abc123");
-    expect(second).toBeNull();
+
+    const warning = monitor.checkByCollectionName("code_abc123");
+
+    expect(warning).toContain("git.file.retiredSignal: recorded → absent");
+    expect(warning).not.toContain("--force");
+    expect(warning).toMatch(/no action|no reindex/i);
+  });
+
+  it("names added and removed keys in one report", () => {
+    cache.save("code_abc123", SAMPLE_STATS, ["git.file.retiredSignal"]);
+    const monitor = new SchemaDriftMonitor(cache, ["git.file.ageDays"]);
+
+    const warning = monitor.checkByCollectionName("code_abc123");
+
+    expect(warning).toContain("git.file.ageDays: absent → declared");
+    expect(warning).toContain("git.file.retiredSignal: recorded → absent");
+    expect(warning).toContain("Run: tea-rags index-codebase --force");
   });
 
   describe("checkAndConsume (async)", () => {
-    it("returns null when already warned", async () => {
-      const cachedKeys = ["git.file.commitCount"];
-      const currentKeys = ["git.file.commitCount", "git.file.ageDays"];
-      cache.save("code_abc123", SAMPLE_STATS, cachedKeys);
-      const monitor = new SchemaDriftMonitor(cache, currentKeys);
-
-      // Trigger warning via sync method first
-      monitor.checkByCollectionName("code_abc123");
-      // Async method should return null (already warned)
-      const result = await monitor.checkAndConsume("/tmp/test-project");
-      expect(result).toBeNull();
-    });
-
     it("returns warning on drift via async path", async () => {
       const cachedKeys = ["git.file.commitCount"];
       const currentKeys = ["git.file.commitCount", "git.file.ageDays"];
@@ -138,24 +136,6 @@ describe("SchemaDriftMonitor", () => {
       const monitor = new SchemaDriftMonitor(cache, ["git.file.commitCount"]);
       const result = await monitor.checkAndConsume("");
       expect(result).toBeNull();
-    });
-
-    it("returns null for already-checked collection via async path", async () => {
-      const { resolveCollectionName, validatePath } = await import("../../../../../src/core/infra/collection-name.js");
-      const absPath = await validatePath("/tmp/test-project");
-      const collName = resolveCollectionName(absPath);
-      const keys = ["git.file.commitCount"];
-      cache.save(collName, SAMPLE_STATS, keys);
-
-      const monitor = new SchemaDriftMonitor(cache, keys);
-
-      // First call — resolves to collectionName, no drift (keys match)
-      const first = await monitor.checkAndConsume("/tmp/test-project");
-      expect(first).toBeNull(); // no drift
-
-      // Second call — same collection, already checked, returns null immediately (line 29)
-      const second = await monitor.checkAndConsume("/tmp/test-project");
-      expect(second).toBeNull();
     });
 
     it("returns null when async drift check finds no drift (keys match)", async () => {
