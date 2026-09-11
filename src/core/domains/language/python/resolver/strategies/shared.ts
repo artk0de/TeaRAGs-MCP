@@ -733,6 +733,56 @@ export function findPythonImportBinding(imports: readonly ImportRef[], localName
 }
 
 /**
+ * Which of `candidates` the CALLER's own import binding for `name` points at,
+ * or `null` (bd tea-rags-mcp-1v12o.1.5, E5.1a). The single funnel both namesake
+ * halves narrow through.
+ *
+ * A short name declared in two or more project files is only ambiguous to a
+ * reader who ignores what the calling file wrote down. polar declares
+ * `Subscription` at `models/subscription.py` and `subscription/schemas.py` and
+ * `get_client` in six files, and every residual row of that shape carries an
+ * import naming exactly one of them. Nothing here guesses: the answer is the
+ * caller's statement resolved through {@link PythonImportFileMapper}, or
+ * nothing.
+ *
+ * Why it is not {@link resolveTypeFile}'s existing narrowing. That pass filters
+ * candidates against the caller's import SET — every file ANY import maps to —
+ * and polar's `customer_portal/service/subscription.py` imports `Subscription`
+ * from `polar.models` AND `SubscriptionChargePreview` from
+ * `polar.subscription.schemas`. Both candidate files land in the set, two
+ * survive, and the pass refuses. The binding for THIS name names one.
+ *
+ * Three reads, first hit wins, all deterministic: the module the import maps
+ * to, the file that DECLARES the imported name one re-export hop on
+ * (`from polar.models import Subscription` → `models/__init__.py` →
+ * `models/subscription.py`), and the MODULE a package aliases under that name
+ * (`from . import _datatable as datatable`). An import that maps outside the
+ * project, or onto a file no candidate occupies, is a refusal — not a fallback.
+ *
+ * With NO binding for the name, the caller's OWN file answers when it declares
+ * the name: module scope is what a bare name resolves against, and a file that
+ * declares it needs no import. Everything else refuses.
+ */
+export function pythonImportBoundFile(
+  name: string,
+  candidates: readonly string[],
+  ctx: CallContext,
+  mapper: PythonImportFileMapper,
+): string | null {
+  const binding = findPythonImportBinding(ctx.imports, name);
+  if (binding === null) return candidates.includes(ctx.callerFile) ? ctx.callerFile : null;
+  const mapped = mapper.mapImportToFile(binding.imp.importText, ctx.callerFile, ctx);
+  if (mapped.kind !== "project") return null;
+  const hops = [
+    mapped.relPath,
+    mapper.resolveExportedName(mapped.relPath, binding.importedName, ctx),
+    mapper.resolveExportedModule(mapped.relPath, binding.importedName, ctx),
+  ];
+  for (const hop of hops) if (hop !== null && candidates.includes(hop)) return hop;
+  return null;
+}
+
+/**
  * The module text a single-identifier receiver denotes, from the two shapes
  * `collectPythonImports` records (`walker/walker.ts:499`).
  *
@@ -805,6 +855,21 @@ export function resolveTypeFile(
   // `project` verdict names a file the table can hold, so it is the only one
   // that can narrow the candidates.
   if (tableMatches.length > 1) {
+    // FIRST, the binding for THIS name (bd tea-rags-mcp-1v12o.1.5, E5.1a). The
+    // set-filter below reads every file any import maps to, which conflates
+    // "a file this caller imports something from" with "the file this caller's
+    // binding for this name names" — polar's
+    // `customer_portal/service/subscription.py` imports `Subscription` from
+    // `polar.models` and `SubscriptionChargePreview` from
+    // `polar.subscription.schemas`, and the set holds both `Subscription`
+    // candidates. See {@link pythonImportBoundFile}.
+    const bound = pythonImportBoundFile(
+      bareType,
+      tableMatches.map((def) => def.relPath),
+      ctx,
+      mapper,
+    );
+    if (bound !== null) return bound;
     const importedFiles = new Set<string>();
     for (const imp of ctx.imports) {
       const mapped = mapper.mapImportToFile(imp.importText, ctx.callerFile, ctx);
@@ -873,6 +938,49 @@ export function resolvePythonMemberOnType(
 }
 
 /**
+ * The return type of a NAMESAKE bare callee — narrowed to the def the caller
+ * imported, then checked against the fact it would read (bd
+ * tea-rags-mcp-1v12o.1.5, E5.1a).
+ *
+ * Two things are wrong at a namesake callee and the funnel fixes only one.
+ * {@link pythonImportBoundFile} says WHICH of the six `get_client` defs polar's
+ * caller meant. But `structuredReturnTypes` keys a top-level `def` by its BARE
+ * NAME and absorbs it run-global first-write-wins
+ * (`walker/passes/python-type-channels.ts`), so the map holds ONE of the six
+ * annotations for all of them — polar's is `PolarSelfClient`, against
+ * `IPGeolocationClient` and `GitHub[…]` on two of the others. Lifting the
+ * single-def gate on the narrowing alone would hand the wrong class to every
+ * caller of the other five.
+ *
+ * The fact carries no provenance, so the check is the one the run CAN make: the
+ * class it names must be declared in the file the binding narrowed to. That is
+ * true for `PolarSelfClient` in `integrations/polar/client.py` — the 43 rows
+ * this unlocks — and false for the same fact read from any other candidate's
+ * caller. A def returning a type imported from elsewhere refuses, which is what
+ * this path already did for every namesake.
+ */
+function pythonNamesakeReturnType(
+  callee: string,
+  defs: readonly SymbolDefinition[],
+  ctx: CallContext,
+  mapper: PythonImportFileMapper,
+): TypeRef | undefined {
+  const returned = ctx.structuredReturnTypes?.[callee];
+  if (returned === undefined || (returned.form !== "instance" && returned.form !== "class")) return undefined;
+  const narrowed = pythonImportBoundFile(
+    callee,
+    defs.map((def) => def.relPath),
+    ctx,
+    mapper,
+  );
+  if (narrowed === null) return undefined;
+  const declaresReturn = lookupPythonSymbolsByShortName(ctx, lastSegment(returned.name)).some(
+    (def) => def.relPath === narrowed,
+  );
+  return declaresReturn ? returned : undefined;
+}
+
+/**
  * The type of the call a local was bound from — ONE hop (bd tea-rags-mcp-z68v9).
  *
  * The callee's receiver is folded by the shared chain engine (so
@@ -897,10 +1005,13 @@ export function pythonCallBindingType(
   atLine: number,
   ctx: CallContext,
   ports: ReceiverTypePorts,
+  mapper: PythonImportFileMapper,
 ): TypeRef | undefined {
   const cut = callee.lastIndexOf(".");
   if (cut < 0) {
-    return lookupPythonSymbolsByShortName(ctx, callee).length === 1 ? ctx.structuredReturnTypes?.[callee] : undefined;
+    const defs = lookupPythonSymbolsByShortName(ctx, callee);
+    if (defs.length === 1) return ctx.structuredReturnTypes?.[callee];
+    return defs.length === 0 ? undefined : pythonNamesakeReturnType(callee, defs, ctx, mapper);
   }
   const receiverType = propagateReceiverType(callee.slice(0, cut), atLine, ctx, ports);
   if (receiverType === undefined) return undefined;
