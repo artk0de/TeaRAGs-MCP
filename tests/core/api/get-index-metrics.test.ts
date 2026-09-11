@@ -3,7 +3,7 @@ import { describe, expect, it, vi } from "vitest";
 import { ExploreFacade } from "../../../src/core/api/internal/facades/explore-facade.js";
 
 describe("getIndexMetrics", () => {
-  function makeExploreFacade() {
+  function makeExploreFacade(extraDeps: { activeEnrichmentProviders?: readonly string[] } = {}) {
     const qdrant = {
       collectionExists: vi.fn().mockResolvedValue(true),
       getCollectionInfo: vi.fn().mockResolvedValue({ pointsCount: 100 }),
@@ -105,6 +105,7 @@ describe("getIndexMetrics", () => {
       registry,
       statsCache,
       payloadSignals,
+      ...extraDeps,
     });
 
     return { facade, qdrant, statsCache };
@@ -344,5 +345,45 @@ describe("getIndexMetrics", () => {
     // The rest of the response remains intact.
     expect(result.totalChunks).toBe(100);
     expect(result.collection).toContain("code_");
+  });
+
+  // bd tea-rags-mcp-x2u65 — the health frame reaches IndexMetricsQuery through
+  // ExploreFacade → ExploreOps. Every hop defaults to `[]`, so without a test
+  // the whole chain could be cut and the suite would stay green while
+  // get_index_metrics silently lost its enrichment block.
+  describe("active-provider health frame passthrough", () => {
+    const NOW = new Date().toISOString();
+    const forcedCodegraphRun = {
+      _run: { runId: "run-2", startedAt: NOW, lastProgressAt: NOW, providers: ["codegraph.symbols"] },
+      git: {
+        file: { runId: "run-1", status: "completed", unenrichedChunks: 0 },
+        chunk: { runId: "run-1", status: "completed", unenrichedChunks: 0 },
+      },
+      codegraph: {
+        symbols: {
+          file: { runId: "run-2", status: "completed", unenrichedChunks: 0 },
+          chunk: { runId: "run-2", status: "completed", unenrichedChunks: 0 },
+        },
+      },
+    };
+
+    it("carries deps.activeEnrichmentProviders down to the enrichment health map", async () => {
+      const { facade, qdrant } = makeExploreFacade({ activeEnrichmentProviders: ["git", "codegraph.symbols"] });
+      qdrant.getPoint.mockResolvedValue({ payload: { enrichment: forcedCodegraphRun } });
+
+      const result = await facade.getIndexMetrics("/project");
+
+      expect(Object.keys(result.enrichment!).sort()).toEqual(["codegraph.symbols", "git"]);
+      expect(result.enrichment!.git.file.status).toBe("healthy");
+    });
+
+    it("reports nothing for a run-pointer marker when the dep is omitted", async () => {
+      const { facade, qdrant } = makeExploreFacade();
+      qdrant.getPoint.mockResolvedValue({ payload: { enrichment: forcedCodegraphRun } });
+
+      const result = await facade.getIndexMetrics("/project");
+
+      expect(result.enrichment).toBeUndefined();
+    });
   });
 });

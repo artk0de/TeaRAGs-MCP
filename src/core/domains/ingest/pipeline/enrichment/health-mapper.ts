@@ -27,7 +27,7 @@
  *       - a terminal marker at a level renders from that marker, whichever run
  *         wrote it (the latest terminal marker is the truth about that level);
  *       - a non-terminal or absent level means the provider's own last run never
- *         finished → failed, recovered by the next full reindex;
+ *         finished → failed, recovered by the next run that covers it;
  *       - no marker at all on either level → the provider is omitted entirely.
  *   - Providers with markers that are NOT active (git switched off by flag) are
  *     omitted; the indexing-env drift axis is what explains that case.
@@ -75,29 +75,31 @@ type LevelRecord = Record<string, unknown>;
 const TERMINAL_STATUSES: ReadonlySet<unknown> = new Set(["completed", "degraded", "failed"]);
 
 /**
- * @param activeProviders provider keys of the RUNNING composition — the frame.
- *   The caller owns it because only the composition root knows which providers
- *   this process enriches with (git drops out when `enableGitMetadata` is off).
- *   Empty → nothing to report under the run-pointer model.
+ * @param activeEnrichmentProviders provider keys of the RUNNING composition —
+ *   the frame. The caller owns it because only the composition root knows which
+ *   providers this process enriches with (git drops out when
+ *   `enableGitMetadata` is off). Same spelling all the way down the wiring
+ *   chain (bootstrap → facade → ops → query / StatusModule) so one grep finds
+ *   every hop. Empty → nothing to report under the run-pointer model.
  */
 export function mapMarkerToHealth(
   markerMap: EnrichmentMarkerMap,
-  activeProviders: readonly string[],
+  activeEnrichmentProviders: readonly string[],
 ): EnrichmentHealthMap | undefined {
   const run = markerMap._run;
-  return run ? mapWithRunPointer(markerMap, run, activeProviders) : mapLegacy(markerMap);
+  return run ? mapWithRunPointer(markerMap, run, activeEnrichmentProviders) : mapLegacy(markerMap);
 }
 
 /** Terminal-only path: navigate the nested marker of every ACTIVE provider. */
 function mapWithRunPointer(
   markerMap: EnrichmentMarkerMap,
   run: RunMarker,
-  activeProviders: readonly string[],
+  activeEnrichmentProviders: readonly string[],
 ): EnrichmentHealthMap | undefined {
   const health: EnrichmentHealthMap = {};
   const coveredByRun = new Set(run.providers ?? []);
   let hasAny = false;
-  for (const providerKey of activeProviders) {
+  for (const providerKey of activeEnrichmentProviders) {
     const entry = getNested(markerMap as LevelRecord, providerKey) as
       | { file?: LevelRecord; chunk?: LevelRecord }
       | undefined;
@@ -133,7 +135,7 @@ function mapLevelOutsideRun(level: LevelRecord | undefined, levelName: "file" | 
   return {
     ...(level ? pickMeta(level) : {}),
     status: "failed",
-    message: `${prefix} never finished on this provider's last run. Will recover on next full reindex.`,
+    message: `${prefix} never finished on this provider's last run. Will recover on next reindex.`,
   };
 }
 

@@ -969,8 +969,16 @@ export async function createAppContext(config: AppConfig, hooks?: AppContextHook
     modelGuard: infra.modelGuard,
     chunkResolver: createSymbolChunkResolver(codegraphContext?.graphFacade),
     signalFloors: composition.signalFloors,
-    // Same frame the status path uses — `get_index_metrics` must report the
-    // composition's providers, not the last run's (bd tea-rags-mcp-x2u65).
+    // The frame of `get_index_metrics`' enrichment health: providers the SERVER
+    // composition runs, not the providers the last run happened to touch
+    // (bd tea-rags-mcp-x2u65). Scope differs from the status path on purpose —
+    // ExploreFacade is built once, here, while `createIngestFacade` re-runs
+    // `wireComposition` per registry env and ProjectIngestFactory rebuilds the
+    // ingest slice per project, so StatusModule frames on the PROJECT's active
+    // list. A project whose registry env disables git therefore still shows a
+    // git row in `get_index_metrics` while `get_index_status` omits it — bead
+    // "get_index_metrics frames health on the server composition, not the
+    // project's".
     activeEnrichmentProviders: activeEnrichmentProviders(composition.registry, config.trajectoryIngest).map(
       (p) => p.key,
     ),

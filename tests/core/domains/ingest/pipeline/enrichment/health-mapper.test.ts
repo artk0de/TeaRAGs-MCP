@@ -371,7 +371,9 @@ describe("mapMarkerToHealth (active-provider frame)", () => {
 
     expect(r.git.file.status).toBe("failed");
     expect(r.git.file.message).toMatch(/never finished/i);
-    expect(r.git.file.message).toMatch(/full reindex/i);
+    expect(r.git.file.message).toMatch(/recover on next reindex/i);
+    // Not "full reindex" — an ordinary incremental covering git recovers it.
+    expect(r.git.file.message).not.toMatch(/full reindex/i);
     // Chunk level absent entirely, and the current run does not cover git.
     expect(r.git.chunk.status).toBe("failed");
     expect(r.git.chunk.message).toMatch(/never finished/i);
