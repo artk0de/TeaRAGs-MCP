@@ -7,6 +7,8 @@
  *  5. aggregate metrics
  *  6. drain chunkWork (git streaming)
  *  7. deferred-chunk pass: chunkPhase.runDeferredChunk (codegraph)
+ *  7b. codegraph payload heal: rewrite points OUTSIDE this run's chunk map
+ *      whose derived signals moved (bd tea-rags-mcp-a2ddb)
  *  8. markChunkFinal per ctx
  *  9. re-fire stats callback if backfill wrote overlays
  */
@@ -18,6 +20,7 @@ import { pipelineLog } from "../infra/debug-logger.js";
 import type { EnrichmentApplier } from "./applier.js";
 import type { EnrichmentBackfiller } from "./backfiller.js";
 import type { ChunkPhase, ChunkPhaseMetrics } from "./chunk-phase.js";
+import type { CodegraphPayloadHealRunner } from "./codegraph-payload-heal.js";
 import type { FilePhase } from "./file-phase.js";
 import type { EnrichmentMarkerStore } from "./marker-store.js";
 import type { ChunkFinalInput, EnrichmentProvider, ProviderContext } from "./types.js";
@@ -29,6 +32,12 @@ export interface CompletionRunnerDeps {
   applier: EnrichmentApplier;
   markerStore: EnrichmentMarkerStore;
   executor: EnrichmentExecutor;
+  /**
+   * Rewrites `codegraph.symbols.*` for points this run never reached but whose
+   * derived signals moved anyway (bd tea-rags-mcp-a2ddb). Undefined when
+   * codegraph is disabled — the step is then skipped entirely, not stubbed.
+   */
+  codegraphHeal?: CodegraphPayloadHealRunner;
 }
 
 /**
@@ -139,7 +148,20 @@ export class CompletionRunner {
     // here. The previously-tracked limitation (tea-rags-mcp-xlhu) about the
     // codegraph.chunk phase potentially reporting "stalled" during a long
     // PageRank/resolve pass is resolved: the applier-site hook covers it.
+    // The skip set is captured BEFORE the deferred pass, which clears the
+    // accumulated chunk map on its way out. Read after, it is empty, and the
+    // heal would rewrite every file this run already wrote.
+    const healSkipPaths = this.collectDeferredPaths(contexts);
     await this.timedStep("deferredChunk", async () => this.runDeferredChunkPass(coll, contexts));
+
+    // 7b. codegraph payload heal — the run's chunk map covers the files that
+    //     CHANGED; these are the ones that did not, and whose fanIn / fanOut /
+    //     pageRank moved because the graph around them did. Runs BEFORE the
+    //     terminal chunk marker so that marker's `wait: true` write is the
+    //     barrier draining the heal's `wait: false` payload writes.
+    if (healSkipPaths) {
+      await this.timedStep("codegraphHeal", async () => this.runCodegraphHeal(coll, healSkipPaths, runStartedAt));
+    }
 
     const finalChunkMetrics = chunkPhase.getMetrics();
     metrics.chunkChurnDurationMs = finalChunkMetrics.totalChunkEnrichmentDurationMs;
@@ -218,6 +240,52 @@ export class CompletionRunner {
       }
     }
     await filePhase.drain();
+  }
+
+  /**
+   * The relPaths this run's deferred chunk pass is about to rewrite, or
+   * `undefined` when no provider in the run defers chunk enrichment at all.
+   *
+   * `undefined` is not the same as an empty set, and the distinction is the
+   * gate: a run carrying no codegraph provider (a provider-scoped recompute of
+   * some other trajectory) has no business healing codegraph payload, while a
+   * codegraph run that happened to change no file still has a whole-graph diff
+   * worth applying — that is the entire defect.
+   */
+  private collectDeferredPaths(contexts: ReadonlyMap<string, ProviderContext>): Set<string> | undefined {
+    if (!this.deps.codegraphHeal) return undefined;
+    let paths: Set<string> | undefined;
+    for (const ctx of contexts.values()) {
+      if (!ctx.provider.defersChunkEnrichment) continue;
+      paths ??= new Set<string>();
+      for (const relPath of this.deps.chunkPhase.getDeferredChunkMap(ctx.key).keys()) paths.add(relPath);
+    }
+    return paths;
+  }
+
+  /**
+   * Step 7b — diff the derived codegraph signals against the previous run's
+   * baseline, rewrite the points that moved, record the new baseline.
+   *
+   * Best-effort, like the out-of-window backfill and the pass-1 aggregate read:
+   * a payload repair that fails is a run that healed nothing, not a run that
+   * failed. The baseline is refreshed only on success (inside the runner), so an
+   * unhealed diff still stands for the next run to retry.
+   */
+  private async runCodegraphHeal(coll: string, skipRelPaths: ReadonlySet<string>, runStartedAt: string): Promise<void> {
+    const healer = this.deps.codegraphHeal;
+    if (!healer) return;
+    try {
+      const { pointsRewritten, filesTouched } = await healer.run(coll, skipRelPaths, runStartedAt || undefined);
+      if (pointsRewritten > 0 || filesTouched > 0) {
+        pipelineLog.enrichmentPhase("CODEGRAPH_PAYLOAD_HEAL", { collection: coll, pointsRewritten, filesTouched });
+      }
+    } catch (err) {
+      pipelineLog.enrichmentPhase("CODEGRAPH_PAYLOAD_HEAL_FAILED", {
+        collection: coll,
+        error: err instanceof Error ? err.message : String(err),
+      });
+    }
   }
 
   /**

@@ -37,6 +37,7 @@ import type {
   CallerEdge,
   ChunkGraphSignals,
   CodegraphPass1FileAggregates,
+  CodegraphSignalDrift,
   CycleEntry,
   CycleScope,
   EdgeKindCount,
@@ -62,6 +63,7 @@ import { DuckDbGraphSession, type DuckDbGraphSessionOptions } from "./graph-sess
 import { DuckDbHierarchyReader } from "./hierarchy-reader.js";
 import { DuckDbMethodEdgeReader } from "./method-edge-reader.js";
 import { DuckDbRunStatsStore } from "./run-stats-store.js";
+import { DuckDbSignalDriftStore } from "./signal-drift-store.js";
 import { DuckDbSymbolStore } from "./symbol-store.js";
 
 // Graph algorithms (Tarjan SCC, PageRank) intentionally NOT imported
@@ -89,6 +91,7 @@ export class DuckDbGraphClient implements GraphDbClient {
   private readonly hierarchy: DuckDbHierarchyReader;
   private readonly analytics: DuckDbGraphAnalyticsStore;
   private readonly runStats: DuckDbRunStatsStore;
+  private readonly signalDrift: DuckDbSignalDriftStore;
 
   constructor(options: DuckDbGraphClientOptions) {
     this.session = new DuckDbGraphSession(options);
@@ -99,6 +102,7 @@ export class DuckDbGraphClient implements GraphDbClient {
     this.hierarchy = new DuckDbHierarchyReader(this.session);
     this.analytics = new DuckDbGraphAnalyticsStore(this.session);
     this.runStats = new DuckDbRunStatsStore(this.session);
+    this.signalDrift = new DuckDbSignalDriftStore(this.session);
   }
 
   // ── Lifecycle + durability ──
@@ -328,6 +332,16 @@ export class DuckDbGraphClient implements GraphDbClient {
 
   async getPageRank(symbolId: SymbolId): Promise<number> {
     return this.analytics.getPageRank(symbolId);
+  }
+
+  // ── Derived-signal drift (bd tea-rags-mcp-a2ddb) ──
+
+  async diffSymbolSignals(): Promise<CodegraphSignalDrift> {
+    return this.signalDrift.diffSymbolSignals();
+  }
+
+  async refreshSymbolSignalsPrev(): Promise<void> {
+    return this.signalDrift.refreshSymbolSignalsPrev();
   }
 
   // ── Resolve-run stats (bd tea-rags-mcp-j431) ──

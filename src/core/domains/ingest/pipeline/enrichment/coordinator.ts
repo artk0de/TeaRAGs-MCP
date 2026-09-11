@@ -30,6 +30,7 @@ import type { ChunkItem } from "../types.js";
 import { EnrichmentApplier, type EnrichmentApplyEvent } from "./applier.js";
 import { EnrichmentBackfiller } from "./backfiller.js";
 import { ChunkPhase, type BlobReaderFactory } from "./chunk-phase.js";
+import type { CodegraphPayloadHealRunner } from "./codegraph-payload-heal.js";
 import { CompletionRunner } from "./completion-runner.js";
 import { InlineEnrichmentExecutor } from "./executor/index.js";
 import { computeExtractionRepair } from "./extraction-repair.js";
@@ -316,6 +317,14 @@ export class EnrichmentCoordinator {
     executor?: EnrichmentExecutor,
     daemonGuard?: IndexRunDaemonGuard,
     private readonly blobReaderFactory?: BlobReaderFactory,
+    /**
+     * Rewrites `codegraph.symbols.*` on points this run never reaches but whose
+     * derived signals moved anyway (bd tea-rags-mcp-a2ddb). Built by the
+     * composition root, where the graph client and Qdrant are both in scope;
+     * undefined when codegraph is off, and the completion tail then skips the
+     * step rather than running a stub.
+     */
+    private readonly codegraphHeal?: CodegraphPayloadHealRunner,
   ) {
     this.markerStore = new EnrichmentMarkerStore(qdrant);
     this.providers = Array.isArray(providers) ? providers : [providers];
@@ -1063,6 +1072,7 @@ export class EnrichmentCoordinator {
       applier,
       markerStore: this.markerStore,
       executor: this.executor,
+      codegraphHeal: this.codegraphHeal,
     });
 
     let resolveDone!: (m: EnrichmentMetrics) => void;

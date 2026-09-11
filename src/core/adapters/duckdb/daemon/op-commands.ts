@@ -134,6 +134,9 @@ export const DAEMON_OP_COMMANDS: Readonly<Record<DaemonOp, DaemonOpCommand>> = {
   rebuildEdgeFileTargetIndex: write(async (graphDb) => graphDb.rebuildEdgeFileTargetIndex()),
   recordRunStats: write(async (graphDb, p) => graphDb.recordRunStats(p.rows as ResolveRunStatsRow[])),
   computeAndPersistCyclesAndSignals: write(async (graphDb) => computeAndPersistCyclesAndSignals(graphDb)),
+  // bd tea-rags-mcp-a2ddb — the baseline the next run's drift diff reads. A
+  // write, so it goes through the governed handle like every other one.
+  refreshSymbolSignalsPrev: write(async (graphDb) => graphDb.refreshSymbolSignalsPrev()),
 
   // ── full-proxy reads (the daemon owns the sole DuckDB connection, so
   //    every read routes through its own RW connection) ──
@@ -188,4 +191,9 @@ export const DAEMON_OP_COMMANDS: Readonly<Record<DaemonOp, DaemonOpCommand>> = {
   getTransitiveSubtypes: read(async (graphDb, p) => graphDb.getTransitiveSubtypes(p.fqName as string)),
   // HierarchySnapshot is plain Records — JSON-serialisable, no entries() dance.
   loadHierarchySnapshot: read(async (graphDb) => graphDb.loadHierarchySnapshot()),
+
+  // ── derived-signal drift (bd tea-rags-mcp-a2ddb) ──
+  // Plain arrays both ways — the result is JSON-shaped already, unlike the
+  // Map-returning reads above.
+  diffSymbolSignals: read(async (graphDb) => graphDb.diffSymbolSignals()),
 };

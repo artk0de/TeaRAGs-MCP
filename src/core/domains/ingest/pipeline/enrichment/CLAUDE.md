@@ -15,6 +15,21 @@
   `<provider>.file` onto every chunk id of a file, `#applyChunkSignals` writes
   `<provider>.chunk` onto those same ids. A root write erases the sibling level,
   the run still reports success, and the loss surfaces at query time.
+- **`CodegraphPayloadHealer` is the SECOND writer of
+  `codegraph.symbols.{chunk,file}.*`** (`codegraph-payload-heal.ts`). It
+  rewrites points OUTSIDE the run's `chunkMap` whose derived signals moved
+  because the graph around them did, always after `applyFinalizeFile` and the
+  deferred chunk pass, as `CompletionRunner` step 7b. It obeys the same two
+  rules as the applier — level-scoped `op.key` with bare inner keys, and no
+  write over a level already carrying `skippedAs` — and it stamps the run's
+  `enrichedAt` like any other write of those keys. It does NOT own the signal
+  arithmetic: both builders are injected closures over the codegraph
+  trajectory's `buildCodegraphFileSignals` / `buildCodegraphChunkSignals`,
+  composed in `api/internal/infra/codegraph-payload-heal-runner.ts` because this
+  domain may not import `domains/trajectory`. Why: a third writer that computes
+  the payload itself instead of calling those builders drifts from the applier
+  with nothing failing — the two write the same keys on the same points, and
+  only a live query shows which one was last.
 - **A point a provider declined MUST get `<provider>.<level>.skippedAs`** — one
   of `"generated" | "test" | "documentation" | "policy"` (policy.ts:35).
   `"policy"` is the mandatory catch-all when no classification flag explains the

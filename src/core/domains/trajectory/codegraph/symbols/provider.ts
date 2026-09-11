@@ -89,7 +89,12 @@ import {
 import { createCodegraphExtractionSink, type CodegraphSinkDeps } from "./extraction-sink.js";
 import { GraphBuildFinalizer } from "./graph-finalizer.js";
 import { SymbolNodeFlushQueue } from "./node-flush.js";
-import { CODEGRAPH_SYMBOLS_CHUNK_SIGNALS, CODEGRAPH_SYMBOLS_FILE_SIGNALS } from "./payload-signals.js";
+import {
+  buildCodegraphChunkSignals,
+  buildCodegraphFileSignals,
+  CODEGRAPH_SYMBOLS_CHUNK_SIGNALS,
+  CODEGRAPH_SYMBOLS_FILE_SIGNALS,
+} from "./payload-signals.js";
 import { CodegraphPhaseTimings } from "./phase-timings.js";
 import { CallEdgeResolutionRunner } from "./resolution-runner.js";
 import { CodegraphRunState } from "./run-state.js";
@@ -1046,17 +1051,10 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
       const batch = overlayPaths.slice(start, start + OVERLAY_READ_BATCH);
       const metrics = await graphDb.getFileMetricsBulk(batch);
       for (const relPath of batch) {
-        const { fanIn, fanOut, transitiveImpact } = metrics.get(relPath) ?? ZERO_FILE_METRICS;
-        const denom = fanIn + fanOut;
-        out.set(relPath, {
-          fanIn,
-          fanOut,
-          instability: denom === 0 ? 0 : fanOut / denom,
-          connectionCount: denom,
-          isHub: fanIn > fanInP95,
-          isLeaf: fanOut === 0 && fanIn > 0,
-          transitiveImpact,
-        });
+        // Shared with `CodegraphPayloadHealer` (bd tea-rags-mcp-a2ddb) — the
+        // heal writes the same keys for files this pass never names, so the
+        // arithmetic has exactly one home.
+        out.set(relPath, buildCodegraphFileSignals(metrics.get(relPath) ?? ZERO_FILE_METRICS, fanInP95));
       }
     }
   }
@@ -1805,12 +1803,7 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
         // yet). Read from the bulk map; a missing symbol ⇒ {0,0,0}, identical to
         // the point getters. Bare inner keys (tea-rags-mcp-k6xu) under
         // providerKey `codegraph.symbols.chunk` → `…chunk.fanIn`.
-        const sig = chunkSignals.get(symbolId);
-        perChunk.set(entry.chunkId, {
-          fanIn: sig?.fanIn ?? 0,
-          fanOut: sig?.fanOut ?? 0,
-          pageRank: sig?.pageRank ?? 0,
-        });
+        perChunk.set(entry.chunkId, buildCodegraphChunkSignals(chunkSignals.get(symbolId)));
       }
       // 0rskm — store-time symbol→covering-chunk join. The walker's per-file
       // line map (relPath → startLine → symbolId) holds EVERY extracted symbol,

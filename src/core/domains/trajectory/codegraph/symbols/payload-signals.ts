@@ -20,6 +20,8 @@
  * chunks — block/doc/class chunks would skew the distribution.
  */
 
+import type { ChunkGraphSignals, FileGraphMetrics } from "../../../../contracts/types/codegraph.js";
+import type { ChunkSignalOverlay, FileSignalOverlay } from "../../../../contracts/types/provider.js";
 import type { PayloadSignalDescriptor } from "../../../../contracts/types/trajectory.js";
 
 export const CODEGRAPH_SYMBOLS_FILE_SIGNALS: PayloadSignalDescriptor[] = [
@@ -145,3 +147,50 @@ export const CODEGRAPH_SYMBOLS_CHUNK_SIGNALS: PayloadSignalDescriptor[] = [
     },
   },
 ];
+
+/**
+ * Turn one file's raw graph metrics into the payload written under
+ * `codegraph.symbols.file` — bare inner keys, the level prefix comes from the
+ * applier's `op.key`.
+ *
+ * `fanInP95` is the collection-wide p95 over the FULL file universe, not the
+ * batch: read it once per pass (`getFanInP95`) and hand the same value to every
+ * file, or an incremental subset misclassifies its own biggest file as a hub.
+ *
+ * This lives here, next to the descriptors it fills in, because it has TWO
+ * callers that must agree byte for byte: `CodegraphEnrichmentProvider`'s
+ * finalize read-back, and `CodegraphPayloadHealer`, which rewrites the same
+ * keys for files the run's chunk map never touched (bd tea-rags-mcp-a2ddb).
+ * A second copy of this arithmetic would let the two drift with nothing failing.
+ */
+export function buildCodegraphFileSignals(metrics: FileGraphMetrics, fanInP95: number): FileSignalOverlay {
+  const { fanIn, fanOut, transitiveImpact } = metrics;
+  const connectionCount = fanIn + fanOut;
+  return {
+    fanIn,
+    fanOut,
+    // Martin instability, with the zero-edge case pinned to 0 rather than NaN —
+    // a NaN here reaches Qdrant and every range filter over it stops matching.
+    instability: connectionCount === 0 ? 0 : fanOut / connectionCount,
+    connectionCount,
+    isHub: fanIn > fanInP95,
+    isLeaf: fanOut === 0 && fanIn > 0,
+    transitiveImpact,
+  };
+}
+
+/**
+ * Turn one symbol's graph signals into the payload written under
+ * `codegraph.symbols.chunk`. A symbol the graph knows nothing about reads as
+ * all-zero — identical to what the per-symbol point getters return on no rows,
+ * so a chunk whose symbol was never resolved is not distinguishable from one
+ * with genuinely no calls. Same two callers, same reason, as
+ * {@link buildCodegraphFileSignals}.
+ */
+export function buildCodegraphChunkSignals(signals: ChunkGraphSignals | undefined): ChunkSignalOverlay {
+  return {
+    fanIn: signals?.fanIn ?? 0,
+    fanOut: signals?.fanOut ?? 0,
+    pageRank: signals?.pageRank ?? 0,
+  };
+}

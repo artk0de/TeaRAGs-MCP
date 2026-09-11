@@ -47,6 +47,26 @@
   written comes off that graph, and `find_cycles` keeps reporting cycles the
   source dropped weeks ago.
 
+- **`cg_symbol_signals_prev` / `cg_file_signals_prev` (migration 023) are
+  refreshed AFTER a successful payload heal, not by the finalizer.** The pair is
+  driven from `api/internal/infra/codegraph-payload-heal-runner.ts`:
+  `diffSymbolSignals` names what moved, the healer rewrites those Qdrant points,
+  and only then does `refreshSymbolSignalsPrev` record the new baseline.
+  Refreshing before the heal would erase the very diff a failed heal has to
+  retry, and the drift would then stay invisible until each affected file
+  happened to change again — which is the defect the tables exist to fix. Two
+  further things an edit must keep: the diff compares the expressions the
+  PAYLOAD is built from (confidence-weighted symbol fan, per-path edge counts),
+  not raw edge counts, so a dispatch-confidence change that moves fanIn from 1
+  to 0.25 is still caught; and `transitiveImpact` / `isHub` are deliberately
+  outside the comparison — the first needs a whole-corpus reverse BFS to diff,
+  the second moves for every file at once when the collection p95 does, so both
+  are healed only for the files the diff already names and otherwise wait for
+  the next `--force-enrichments codegraph`. Why: the tables are empty after the
+  migration, so the FIRST run heals every point once and every later run is
+  bounded by what actually changed — an ordering bug here does not fail, it
+  silently restores the original staleness.
+
 - **Pass-2 resolves against a PROJECT-wide symbol table, so its run-global maps
   must be project-wide too — and only `cg_pass1_aggregates` makes them so.** The
   symbol table hydrates from `cg_symbols` when the collection opens

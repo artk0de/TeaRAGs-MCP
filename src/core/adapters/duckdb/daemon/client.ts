@@ -9,6 +9,7 @@ import type {
   CallerEdge,
   ChunkGraphSignals,
   CodegraphPass1FileAggregates,
+  CodegraphSignalDrift,
   CycleEntry,
   CycleScope,
   EdgeKindCount,
@@ -433,6 +434,48 @@ export class DaemonGraphDbClient implements GraphDbClient {
    */
   async computeAndPersistCyclesAndSignals(): Promise<void> {
     await this.call("computeAndPersistCyclesAndSignals", {});
+  }
+
+  /**
+   * Record the current signals as the baseline for the next run's drift diff
+   * (bd tea-rags-mcp-a2ddb). Silently degrades on a daemon that predates the op:
+   * that daemon has not run migration 023 either, so there is no baseline to
+   * refresh and the heal this pairs with has already degraded to a no-op.
+   */
+  async refreshSymbolSignalsPrev(): Promise<void> {
+    try {
+      await this.call("refreshSymbolSignalsPrev", {});
+    } catch (err) {
+      if (!isUnknownDaemonOp(err)) throw err;
+      this.warnDriftUnsupported("refreshSymbolSignalsPrev");
+    }
+  }
+
+  /**
+   * Symbols and files whose derived signals moved since the baseline
+   * (bd tea-rags-mcp-a2ddb).
+   *
+   * A daemon from a build that predates the op degrades to "nothing moved" —
+   * the behaviour before this mechanism existed — rather than failing the run.
+   * Claiming everything moved would be the other option and is worse: a stale
+   * daemon has no `cg_symbol_signals_prev` to read, so the heal would rewrite
+   * the whole corpus on every run and never converge.
+   */
+  async diffSymbolSignals(): Promise<CodegraphSignalDrift> {
+    try {
+      return (await this.call("diffSymbolSignals", {})) as CodegraphSignalDrift;
+    } catch (err) {
+      if (!isUnknownDaemonOp(err)) throw err;
+      this.warnDriftUnsupported("diffSymbolSignals");
+      return { symbols: [], files: [] };
+    }
+  }
+
+  /** One stderr line per degraded drift op, on debug only — same shape as `fileMetricsPerFile`. */
+  private warnDriftUnsupported(op: string): void {
+    if (isDebug()) {
+      process.stderr.write(`[tea-rags] codegraph daemon predates ${op} — payload heal skipped this run\n`);
+    }
   }
 
   // ── reads (proxied over the socket) ──

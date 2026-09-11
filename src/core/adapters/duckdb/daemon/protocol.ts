@@ -42,6 +42,9 @@ export type DaemonOp =
   | "rebuildEdgeFileTargetIndex"
   | "recordRunStats"
   | "computeAndPersistCyclesAndSignals"
+  // Baseline refresh for the derived-signal drift diff (bd tea-rags-mcp-a2ddb).
+  // A WRITE: it replaces both `cg_*_signals_prev` tables in one transaction.
+  | "refreshSymbolSignalsPrev"
   // ── reads (the daemon owns the sole DuckDB connection, so all reads route
   //    through its own RW connection instead of a conflicting cross-process
   //    READ_ONLY attach) ──
@@ -69,6 +72,9 @@ export type DaemonOp =
   | "listAdjacency"
   | "getPageRank"
   | "findSymbolChunk"
+  // Read half of the drift pair (bd tea-rags-mcp-a2ddb). Plain arrays on the
+  // wire — no Map, so no entries() dance on either side.
+  | "diffSymbolSignals"
   // ── class hierarchy (bd tea-rags-mcp-f10y) ──
   | "getSupertypes"
   | "getSubtypes"
@@ -79,7 +85,7 @@ export interface DaemonRequest {
   id: number;
   op: DaemonOp;
   params:
-    | { collection: string } // checkpoint | rebuildEdgeFileTargetIndex | computeAndPersistCyclesAndSignals | hasData | getRunStats | listAllSymbols | listFileContentHashes | getChunkSignalsBulk | shutdown
+    | { collection: string } // checkpoint | rebuildEdgeFileTargetIndex | computeAndPersistCyclesAndSignals | hasData | getRunStats | listAllSymbols | listFileContentHashes | getChunkSignalsBulk | diffSymbolSignals | refreshSymbolSignalsPrev | shutdown
     | { collection: string; buildFingerprint?: string } // handshake (fingerprint absent on legacy peers)
     | { collection: string; node: GraphFileNode; edges: GraphEdges } // upsertFile
     | { collection: string; relPath: RelPath } // removeFile | removeSymbolsForFile | getFanIn | getFanOut
