@@ -53,7 +53,7 @@ SCOPE_ROOT=$(echo "$SCOPE" | cut -d'/' -f1)
 # it. Adding inert rows there would encode "special-cased to minor", which is
 # false. The list lives here instead — one variable, used for both the check and
 # the warning below — and mirrors the CONTRIBUTING.md scope tables.
-PUBLIC_SCOPES="api mcp contracts types drift search rerank hybrid trajectory signals presets filters ingest pipeline chunker migration"
+PUBLIC_SCOPES="api mcp contracts types drift explore search rerank hybrid trajectory signals presets filters ingest pipeline chunker migration"
 
 # Known scopes: the explicit rows in .releaserc.json (non-release and
 # infrastructure layers, which need an explicit release value) plus the

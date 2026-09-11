@@ -109,6 +109,7 @@ Internal modules that affect search/indexing behavior.
 | Scope        | Area                               |
 | ------------ | ---------------------------------- |
 | `search`     | Search orchestration               |
+| `explore`    | Read path: strategies, rerank, overlay |
 | `rerank`     | Reranking engine                   |
 | `hybrid`     | Hybrid search (BM25+dense)        |
 | `trajectory` | Trajectory implementations         |
