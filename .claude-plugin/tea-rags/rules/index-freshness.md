@@ -4,11 +4,11 @@ tea-rags search reads payloads written at index time. Index lags working tree �
 results silently stale. Before first tea-rags search/explore of turn, check
 conditions below (signals from **prime** digest layer); reindex when one fires.
 
-| Trigger (signal in prime / session)                                                        | Action                         | User confirmation          |
-| ------------------------------------------------------------------------------------------ | ------------------------------ | -------------------------- |
-| Prime banner `⚠ Index is stale (last updated Nd ago)`                                      | `index_codebase` (incremental) | no — reindex silently      |
-| Files created/modified this session (`Write`/`Edit`, incl. by a subagent), not yet indexed | `index_codebase` (incremental) | no — reindex silently      |
-| Prime `## Schema drift` section is **not** `none` (lists new payload fields)               | `force_reindex` (full rebuild) | **YES — explicit consent** |
+| Trigger (signal in prime / session)                                                        | Action                                                                                 | User confirmation          |
+| ------------------------------------------------------------------------------------------ | -------------------------------------------------------------------------------------- | -------------------------- |
+| Prime banner `⚠ Index is stale (last updated Nd ago)`                                      | `index_codebase` (incremental)                                                         | no — reindex silently      |
+| Files created/modified this session (`Write`/`Edit`, incl. by a subagent), not yet indexed | `index_codebase` (incremental)                                                         | no — reindex silently      |
+| Prime `## Schema drift` section is **not** `none` (lists new payload fields)               | the `Run:` command the section names (`--force-enrichments <trajectory>` or `--force`) | **YES — explicit consent** |
 
 ## Worktree-clone lifecycle (explicit, plan execution)
 
@@ -45,11 +45,14 @@ backstop dropping its footprint.
 - **Stale / new code → `index_codebase` incremental.** Only changed (+ new)
   files re-embedded — seconds, not full rebuild. Default no-confirmation path:
   stale index → wrong rankings, fix cheap, so just run it.
-- **Schema drift → `force_reindex`, with consent.** Drift = running code
-  declares payload fields existing index never populated. Incremental **cannot**
-  fix — unchanged files keep old payload, schema-drift guard rejects incremental
-  run. Only full rebuild repopulates every chunk. Full rebuild expensive
-  (minutes to hours on large projects), so **never** automatic — ask first. See
+- **Schema drift → the command the warning names, with consent.** Drift =
+  running code declares payload fields the existing index never populated. An
+  incremental run neither refuses nor fixes it: unchanged files keep their old
+  payload, so the warning persists until the named remedy has run —
+  `tea-rags index-codebase --force-enrichments <trajectory>` when every new key
+  is enrichment-owned (`git.*`, `codegraph.*`), `--force` when a chunker-owned
+  key moved. Both rewrite shared state and `--force` is minutes to hours on a
+  large project, so **never** run either automatically — ask first. See
   `/tea-rags:force-reindex`.
 
 ## Detecting "files edited but not indexed"
