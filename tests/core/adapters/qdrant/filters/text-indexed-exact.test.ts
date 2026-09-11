@@ -17,7 +17,10 @@ import {
 
 describe("TEXT_INDEXED_KEYS", () => {
   it("names the payload keys whose Qdrant index is text", () => {
-    expect([...TEXT_INDEXED_KEYS]).toEqual(["relativePath", "symbolId"]);
+    // Membership follows the INDEX TYPE, not today's callers: nothing matches
+    // `parentSymbolId` exactly yet, and it belongs on the list anyway so the
+    // guard test sees the first one that does.
+    expect([...TEXT_INDEXED_KEYS]).toEqual(["relativePath", "symbolId", "parentSymbolId"]);
   });
 });
 

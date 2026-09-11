@@ -176,13 +176,18 @@ export class SchemaManager {
   async initializeSchema(collectionName: string): Promise<void> {
     const indexes: string[] = [];
 
-    // `relativePath` (glob pre-filter) and `symbolId` (partial match) are
-    // TEXT-indexed. Qdrant keeps ONE index per key, so the keyword index this
-    // loop used to create on `relativePath` first was replaced by the text
-    // index a line later — dead, while leaving the belief that `match.value`
-    // was served. It is not: exact matching on either key rides the text index
-    // as a text+value PAIR through `exactMatchOnTextIndexed`, which is why the
-    // key list lives beside that matcher rather than here (tea-rags-mcp-ivp12).
+    // `relativePath` (glob pre-filter), `symbolId` and `parentSymbolId`
+    // (partial match) are TEXT-indexed. Qdrant keeps ONE index per key, so the
+    // keyword index this loop used to create on `relativePath` first was
+    // replaced by the text index a line later — dead, while leaving the belief
+    // that `match.value` was served. It is not: exact matching on any of these
+    // keys rides the text index as a text+value PAIR through
+    // `exactMatchOnTextIndexed`, which is why the key list lives beside that
+    // matcher rather than here (tea-rags-mcp-ivp12).
+    //
+    // `parentSymbolId` is also created by schema-v11 on collections that predate
+    // the rename; a fresh collection never runs that migration, so this loop is
+    // the only path that gives it to one.
     for (const key of TEXT_INDEXED_KEYS) {
       await this.qdrant.createPayloadIndex(collectionName, key, "text");
       indexes.push(key);
@@ -193,11 +198,6 @@ export class SchemaManager {
       await this.qdrant.createPayloadIndex(collectionName, field, "keyword");
       indexes.push(field);
     }
-
-    // Same for parentSymbolId. It is created by schema-v11 on collections that
-    // predate the rename, and a fresh collection never runs that migration, so
-    // without this line the index exists only on upgraded collections.
-    await this.qdrant.createPayloadIndex(collectionName, "parentSymbolId", "text");
 
     // Create indexes on codegraph filterable paths so typed filter params
     // (minFanIn/isHub/...) match at query time. The nested paths mirror the

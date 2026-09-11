@@ -33,11 +33,13 @@
  * matcher that depends on the fact, and CONSUMED by `schema-manager.ts` — the
  * list and the indexes it creates cannot drift apart while there is one list.
  *
- * `parentSymbolId` is text-indexed too, but nothing matches it exactly (the
- * symbol strategy asks it for a token), so it is deliberately out of the exact
- * matcher's vocabulary rather than silently included.
+ * `parentSymbolId` is on the list even though nothing matches it exactly today
+ * (the symbol strategy asks it for a token). Membership is decided by the INDEX
+ * TYPE, not by who currently queries it: leaving it off would mean the guard
+ * test never sees the first `match.value` someone writes against it, which is
+ * exactly how the other two keys went six schema versions unnoticed.
  */
-export const TEXT_INDEXED_KEYS = ["relativePath", "symbolId"] as const;
+export const TEXT_INDEXED_KEYS = ["relativePath", "symbolId", "parentSymbolId"] as const;
 
 /** One of the payload keys indexed as `text`. */
 export type TextIndexedKey = (typeof TEXT_INDEXED_KEYS)[number];
