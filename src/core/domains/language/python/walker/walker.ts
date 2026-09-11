@@ -1275,8 +1275,9 @@ function pythonCallResultBindingsInRange(
  *
  * PEP8 spells a module-private class `_CapWords`, and polar's
  * `placer = _BlockPlacer()` (`server/polar/compass/assistant/stream.py:147`) is
- * exactly that — the ONE row the plain CapWords gate lost when
- * `collectLocalBindingsForChunk` adopted it. A private class is still a class.
+ * exactly that — the ONE row the plain CapWords gate lost when the local-binding
+ * collector ({@link collectPythonLocalBindingSites}) adopted it. A private class
+ * is still a class.
  *
  * Separate from `isCapWordsConstructor` rather than a fix to it because that
  * predicate gates the FIELD channel, whose behaviour is measured under its own
