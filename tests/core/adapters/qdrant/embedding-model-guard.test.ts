@@ -369,6 +369,76 @@ describe("EmbeddingModelGuard canary", () => {
     expect(embed).toHaveBeenCalledTimes(2);
   });
 
+  it("embeds once for concurrent first checks of the same collection", async () => {
+    const qdrant = fakeQdrantWithMarker({
+      embeddingModel: "m",
+      canary: { text: EMBEDDING_CANARY_TEXT, vector: V },
+    });
+    const embed = vi.fn(async () => ({ embedding: V }));
+    const guard = new EmbeddingModelGuard(qdrant, "m", 4, { embed } as never);
+
+    await Promise.all([guard.ensureMatch("c"), guard.ensureMatch("c"), guard.ensureMatch("c")]);
+
+    expect(embed).toHaveBeenCalledTimes(1);
+    expect(qdrant.getPoint).toHaveBeenCalledTimes(1);
+  });
+
+  it("discards a verdict measured before an invalidation landed", async () => {
+    // The failover hook can fire while a check is in flight. That check
+    // measured the endpoint we just left, so its verdict must not be installed
+    // behind the invalidation that was meant to clear exactly this.
+    const qdrant = fakeQdrantWithMarker({
+      embeddingModel: "m",
+      canary: { text: EMBEDDING_CANARY_TEXT, vector: V },
+    });
+    let release: ((result: { embedding: number[] }) => void) | undefined;
+    const embed = vi.fn(
+      async () =>
+        new Promise<{ embedding: number[] }>((resolve) => {
+          release = resolve;
+        }),
+    );
+    const guard = new EmbeddingModelGuard(qdrant, "m", 4, { embed } as never);
+
+    const inFlight = guard.ensureMatch("c");
+    await vi.waitFor(() => {
+      expect(embed).toHaveBeenCalledTimes(1);
+    });
+    guard.invalidateAll();
+    release?.({ embedding: ORTHOGONAL });
+    await expect(inFlight).resolves.toBeUndefined();
+
+    const second = guard.ensureMatch("c");
+    await vi.waitFor(() => {
+      expect(embed).toHaveBeenCalledTimes(2);
+    });
+    release?.({ embedding: V });
+    await expect(second).resolves.toBeUndefined();
+  });
+
+  it("retries the canary when the create path could not embed it", async () => {
+    // A marker created while the provider was down has no canary. Caching a
+    // clean verdict there would leave the collection unguarded for the whole
+    // process; the next check has to try again.
+    const consoleError = vi.spyOn(console, "error").mockImplementation(() => {});
+    const qdrant = fakeQdrantWithMarker(null);
+    const embed = vi
+      .fn<() => Promise<{ embedding: number[] }>>()
+      .mockRejectedValueOnce(new Error("ollama down"))
+      .mockResolvedValue({ embedding: V });
+    const guard = new EmbeddingModelGuard(qdrant, "m", 4, { embed } as never);
+
+    await guard.ensureMatch("c");
+    const [, created] = qdrant.addPoints.mock.calls[0];
+    expect(created[0].payload.canary).toBeUndefined();
+
+    await guard.ensureMatch("c");
+
+    expect(embed).toHaveBeenCalledTimes(2);
+    expect(qdrant.marker("c").canary).toEqual({ text: EMBEDDING_CANARY_TEXT, vector: V });
+    consoleError.mockRestore();
+  });
+
   it("invalidateAll drops every collection, not just the last one", async () => {
     const qdrant = fakeQdrantWithMarker({
       embeddingModel: "m",

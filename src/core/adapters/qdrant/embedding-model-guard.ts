@@ -51,6 +51,17 @@ interface EmbeddingModelVerdict {
   canaryMismatch: string | null;
 }
 
+/** One completed check: what it decided, and whether that is worth remembering. */
+interface EmbeddingModelCheckOutcome {
+  verdict: EmbeddingModelVerdict;
+  /**
+   * False when the collection still owes a canary — a marker created while the
+   * provider could not embed. Caching a clean verdict there would leave that
+   * collection unguarded for the rest of the process; the next check retries.
+   */
+  cacheable: boolean;
+}
+
 /**
  * What to do about a model that kept its name and changed its weights. The
  * default mismatch hint cannot help here: its first option is to point
@@ -73,6 +84,9 @@ function parseCanary(raw: unknown): EmbeddingCanaryRecord | undefined {
 export class EmbeddingModelGuard {
   private readonly cache = new Map<string, EmbeddingModelVerdict>();
 
+  /** Checks currently running, one per collection. See `startCheck`. */
+  private readonly pending = new Map<string, Promise<EmbeddingModelVerdict | undefined>>();
+
   constructor(
     private readonly qdrant: QdrantManager,
     private readonly currentModel: string,
@@ -92,31 +106,80 @@ export class EmbeddingModelGuard {
    * the model name and the canary when missing (legacy collections).
    */
   async ensureMatch(collectionName: string): Promise<void> {
-    // 1. Cache hit
     const cached = this.cache.get(collectionName);
     if (cached) {
       this.assertVerdict(cached);
       return;
     }
 
-    // 2. Cache miss — read marker from Qdrant
-    const marker = await this.readOrCreateMarker(collectionName);
-    if (marker === undefined) return; // Qdrant read failed — guard disabled itself
+    // Cold: one check per collection, however many callers arrive. A cold start
+    // fans several searches at the same collection, and each would otherwise
+    // read the marker and embed the canary for itself.
+    const verdict = await (this.pending.get(collectionName) ?? this.startCheck(collectionName));
+    // undefined = the check was invalidated while in flight; it measured an
+    // endpoint or an index state that no longer applies, so nothing to assert.
+    if (verdict) this.assertVerdict(verdict);
+  }
 
-    // 3. Name first: a wrong name is decided without a provider round-trip.
+  /**
+   * Run one check and register it as the in-flight one for this collection.
+   *
+   * The result is installed only while this check is still the registered one.
+   * `invalidate` / `invalidateAll` drop the registration, so a check that began
+   * before an endpoint failover cannot write its verdict behind the
+   * invalidation that was meant to clear exactly that measurement.
+   */
+  private async startCheck(collectionName: string): Promise<EmbeddingModelVerdict | undefined> {
+    const checked = this.decideVerdict(collectionName);
+    const settled: Promise<EmbeddingModelVerdict | undefined> = checked.then(
+      (outcome) => {
+        if (this.pending.get(collectionName) !== settled) return undefined;
+        this.pending.delete(collectionName);
+        if (outcome.cacheable) this.cache.set(collectionName, outcome.verdict);
+        return outcome.verdict;
+      },
+      (error: unknown) => {
+        // Clear the registration before rethrowing, or every later call would
+        // await this same rejected promise instead of retrying.
+        if (this.pending.get(collectionName) === settled) this.pending.delete(collectionName);
+        throw error;
+      },
+    );
+    // Registered before the first await, so callers arriving in the same tick
+    // find this check instead of starting their own.
+    this.pending.set(collectionName, settled);
+    return settled;
+  }
+
+  /** Decide the verdict for one collection. Reads the marker, then the canary. */
+  private async decideVerdict(collectionName: string): Promise<EmbeddingModelCheckOutcome> {
+    const marker = await this.readOrCreateMarker(collectionName);
+    // Marker unreachable — the guard disabled itself for this collection. A
+    // null model asserts nothing, and it is cached so the failure is reported
+    // once rather than on every search.
+    if (marker === undefined) return { verdict: { model: null, canaryMismatch: null }, cacheable: true };
+
+    // Name first: a wrong name is decided without a provider round-trip.
     if (marker.model && marker.model !== this.currentModel) {
-      this.cache.set(collectionName, { model: marker.model, canaryMismatch: null });
-      throw new EmbeddingModelMismatchError(marker.model, this.currentModel);
+      return { verdict: { model: marker.model, canaryMismatch: null }, cacheable: true };
     }
 
-    // 4. Same name — compare (or write) the canary, then cache and decide. A
-    // marker this call just created already carries the current model's canary.
-    const verdict: EmbeddingModelVerdict = {
-      model: marker.model,
-      canaryMismatch: marker.createdNow ? null : await this.compareCanary(collectionName, marker.canary),
+    // A marker this call just created already carries the current model's
+    // canary — unless the embed failed, and then the collection still owes one.
+    if (marker.createdNow) {
+      return {
+        verdict: { model: marker.model, canaryMismatch: null },
+        cacheable: marker.canary !== undefined || this.embeddings === undefined,
+      };
+    }
+
+    return {
+      verdict: {
+        model: marker.model,
+        canaryMismatch: await this.compareCanary(collectionName, marker.canary),
+      },
+      cacheable: true,
     };
-    this.cache.set(collectionName, verdict);
-    this.assertVerdict(verdict);
   }
 
   /** Re-derive the throw from a cached verdict, so a mismatch stays sticky. */
@@ -264,7 +327,8 @@ export class EmbeddingModelGuard {
       // vectors from any model, and a debug-gated line would leave that
       // invisible on the default path.
       console.error(`[ModelGuard] Model-mixing guard disabled for ${collectionName}:`, error);
-      this.cache.set(collectionName, { model: null, canaryMismatch: null });
+      // The caller caches the null-model verdict — a single writer, so an
+      // invalidation that lands mid-check cannot be overwritten from here.
       return undefined;
     }
   }
@@ -277,22 +341,32 @@ export class EmbeddingModelGuard {
    * marker writer. The first run that sees the collection cold backfills it.
    */
   recordModel(collectionName: string): void {
+    // Drop any in-flight check too: this is first-hand knowledge, and a check
+    // that started earlier must not land on top of it.
+    this.pending.delete(collectionName);
     this.cache.set(collectionName, { model: this.currentModel, canaryMismatch: null });
   }
 
-  /** Invalidate cache entry (force reindex, clear index). */
+  /**
+   * Invalidate cache entry (force reindex, clear index). Drops the in-flight
+   * check with it, so one that started against the old state cannot install its
+   * verdict afterwards.
+   */
   invalidate(collectionName: string): void {
     this.cache.delete(collectionName);
+    this.pending.delete(collectionName);
   }
 
   /**
-   * Drop every cached verdict. Wired to the provider's endpoint failover: the
-   * canary verdict is sticky, so a mismatch measured against one endpoint would
-   * otherwise 409 every search for the rest of the process even after the
-   * provider moved to an endpoint that agrees with the index. The next
-   * `ensureMatch` re-embeds against whichever endpoint is now in use.
+   * Drop every cached verdict, and every check still running. Wired to the
+   * provider's endpoint failover: the canary verdict is sticky, so a mismatch
+   * measured against one endpoint would otherwise 409 every search for the rest
+   * of the process even after the provider moved to an endpoint that agrees
+   * with the index. The next `ensureMatch` re-embeds against whichever endpoint
+   * is now in use.
    */
   invalidateAll(): void {
     this.cache.clear();
+    this.pending.clear();
   }
 }
