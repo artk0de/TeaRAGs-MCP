@@ -170,7 +170,8 @@ describe("`self.f = factory()` — a bare project function with a recorded retur
       "app/svc.py": [{ symbolId: "Svc" }, { symbolId: "get_geo_provider" }],
       "geo/provider.py": [{ symbolId: "GeoProvider" }, { symbolId: "GeoProvider#locate", scope: ["GeoProvider"] }],
     }),
-    structuredReturnTypes: { get_geo_provider: instance("GeoProvider") },
+    // Keyed by the declaring FILE since E5.1c (bd tea-rags-mcp-1v12o.1.7).
+    structuredReturnTypes: { "app/svc.py::get_geo_provider": instance("GeoProvider") },
     classFieldCallResults: { "app/svc.py::Svc": { provider: "get_geo_provider" } },
   });
 
@@ -181,10 +182,26 @@ describe("`self.f = factory()` — a bare project function with a recorded retur
     });
   });
 
-  it("declines when a SECOND def of that name makes the run-global key ambiguous", () => {
+  it("still answers with a SECOND def elsewhere — the caller's own file declares this one", () => {
+    // SUPERSEDED by E5.1c (bd tea-rags-mcp-1v12o.1.7). The bare key made any
+    // second def of the name ambiguous and the arm declined; the key names the
+    // file now, and a bare call resolves against the caller's own module scope.
     const spec = ugnest();
     const table = tableWith({
       "app/svc.py": [{ symbolId: "Svc" }, { symbolId: "get_geo_provider" }],
+      "other/thing.py": [{ symbolId: "get_geo_provider" }],
+      "geo/provider.py": [{ symbolId: "GeoProvider" }, { symbolId: "GeoProvider#locate", scope: ["GeoProvider"] }],
+    });
+    expect(selfField().attempt(callSend, ctxWith({ ...spec, table }))).toEqual({
+      kind: "resolved",
+      target: { targetRelPath: "geo/provider.py", targetSymbolId: "GeoProvider#locate" },
+    });
+  });
+
+  it("declines when the fact belongs to a file neither the caller nor an import names", () => {
+    const spec = ugnest();
+    const table = tableWith({
+      "app/svc.py": [{ symbolId: "Svc" }],
       "other/thing.py": [{ symbolId: "get_geo_provider" }],
       "geo/provider.py": [{ symbolId: "GeoProvider" }, { symbolId: "GeoProvider#locate", scope: ["GeoProvider"] }],
     });

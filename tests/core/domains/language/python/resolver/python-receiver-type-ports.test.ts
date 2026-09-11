@@ -209,10 +209,14 @@ describe("pythonCallHeadReturnType — a lowercase CALL as the chain head", () =
     importedBindings: { get_client: "get_client" },
   };
 
+  // E5.1c keys a module-level return fact `<relPath>::<name>` (bd
+  // tea-rags-mcp-1v12o.1.7); these fixtures pinned the bare name before it.
+  const CLIENT_FILE = "server/polar/integrations/client.py";
+
   it("seeds the head from the callee's own recorded return type", () => {
     const ctx = polarCtx({
       imports: [clientImport],
-      structuredReturnTypes: { get_client: { form: "instance", name: "PolarSelfClient" } },
+      structuredReturnTypes: { [`${CLIENT_FILE}::get_client`]: { form: "instance", name: "PolarSelfClient" } },
     });
     expect(ports().singleHopType("get_client()", 30, ctx)).toEqual({ form: "instance", name: "PolarSelfClient" });
   });
@@ -221,26 +225,47 @@ describe("pythonCallHeadReturnType — a lowercase CALL as the chain head", () =
     expect(ports().singleHopType("get_client()", 30, polarCtx({ imports: [clientImport] }))).toBeUndefined();
   });
 
-  it("declines when the project spells that name in more than one file", () => {
-    // The run-global key is the BARE name, so a second definition would let one
-    // file's `get_client` speak for every other.
+  it("answers a namesake callee once the caller's binding names the file", () => {
+    // SUPERSEDED by E5.1c (bd tea-rags-mcp-1v12o.1.7). The run-global key WAS
+    // the bare name, so a second definition let one file's `get_client` speak
+    // for every other and the arm had to decline outright. The key names the
+    // file now, and the caller's import names the same one, so the second
+    // definition is no longer in the question at all.
     const ctx = polarCtx({
       imports: [clientImport],
       symbolTable: polarTable({ "server/polar/oauth/client.py": ["get_client"] }),
-      structuredReturnTypes: { get_client: { form: "instance", name: "PolarSelfClient" } },
+      structuredReturnTypes: { [`${CLIENT_FILE}::get_client`]: { form: "instance", name: "PolarSelfClient" } },
+    });
+    expect(ports().singleHopType("get_client()", 30, ctx)).toEqual({ form: "instance", name: "PolarSelfClient" });
+  });
+
+  it("declines the OTHER namesake's caller, whose file records no such fact", () => {
+    const ctx = polarCtx({
+      imports: [
+        {
+          importText: "polar.oauth.client",
+          startLine: 2,
+          importedNames: ["get_client"],
+          importedBindings: { get_client: "get_client" },
+        },
+      ],
+      symbolTable: polarTable({ "server/polar/oauth/client.py": ["get_client"] }),
+      structuredReturnTypes: { [`${CLIENT_FILE}::get_client`]: { form: "instance", name: "PolarSelfClient" } },
     });
     expect(ports().singleHopType("get_client()", 30, ctx)).toBeUndefined();
   });
 
   it("declines a callee no import binds and the caller's own file does not declare", () => {
-    const ctx = polarCtx({ structuredReturnTypes: { get_client: { form: "instance", name: "PolarSelfClient" } } });
+    const ctx = polarCtx({
+      structuredReturnTypes: { [`${CLIENT_FILE}::get_client`]: { form: "instance", name: "PolarSelfClient" } },
+    });
     expect(ports().singleHopType("get_client()", 30, ctx)).toBeUndefined();
   });
 
   it("answers for the caller's OWN module-level def without an import", () => {
     const ctx = polarCtx({
       symbolTable: polarTable({ [CALLER]: ["list_benefits", "build_client"] }),
-      structuredReturnTypes: { build_client: { form: "instance", name: "PolarSelfClient" } },
+      structuredReturnTypes: { [`${CALLER}::build_client`]: { form: "instance", name: "PolarSelfClient" } },
     });
     expect(ports().singleHopType("build_client()", 30, ctx)).toEqual({
       form: "instance",
