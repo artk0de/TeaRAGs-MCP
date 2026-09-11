@@ -27,13 +27,15 @@
 - **A BARE call reaches module scope, an enclosing function, an import, or a
   builtin — never a class body.** `globalShortName`'s `receiver === null` arm
   rejects a pick that is none of those: `open(path, mode)` in one file cannot
-  name `FlaskClient#open` in another, and a builtin the caller's file does not
-  shadow DROPs rather than picking a namesake (`importedName` sits one slot
-  earlier and answers first when an import bound the name). The rejection runs
-  AFTER `pickSingleCandidate`, not as a filter before it — filtering first would
-  let an unreachable candidate stop counting toward ambiguity and mint a new
-  cross-file edge. The `self` arm keeps the full candidate set, because
-  `self.open()` IS attribute lookup down the MRO.
+  name `FlaskClient#open` in another, and a builtin no frame of the caller's own
+  file shadows DROPs rather than picking a namesake (`importedName` sits one
+  slot earlier and answers first when an import bound the name). In the
+  CROSS-FILE guess that closes the arm the rejection runs AFTER
+  `pickSingleCandidate`, never as a filter before it — filtering first would let
+  an unreachable candidate stop counting toward ambiguity and mint a new
+  cross-file edge. The same-file arms above it are the opposite case and are a
+  bullet of their own below. The `self` arm keeps the full candidate set,
+  because `self.open()` IS attribute lookup down the MRO.
 - **`PythonCallResolver` owns exactly ONE `PythonImportFileMapper`** and hands
   it to the chain factory, the cone locator and the external vocabulary. The
   memo is keyed by symbol-table identity and invalidated on `size()`, so a
@@ -192,14 +194,31 @@
   binding's mere presence is what keeps `user = User.objects.get(...)` answered
   while `user = authenticate(...)` is not. It NEVER DROPs — a DROP would claim
   the receiver's type is known-and-foreign, which a guess cannot establish.
-- **A bare call resolves to a same-file module def BEFORE the ambiguity guard.**
-  Python resolves local → enclosing → MODULE → builtins for a bare name and
-  never consults another file, so `globalShortName`'s same-file arm is the
-  answer the interpreter gives, not a tie-break. Two restrictions carry that:
-  `receiver === null` only (`self.x()` is attribute lookup down the MRO), and
-  module-level targets only (`scope.length === 0` — a same-file `Cls#helper` is
-  enclosing-scope evidence this pass does not read). A file declaring the name
-  twice declines rather than guessing an order.
+- **A bare call resolves against the caller's own file BEFORE the ambiguity
+  guard, and the arms inside that run in LEGB order — `E`, then `G`, then
+  builtins.** Python resolves local → enclosing → MODULE → builtins for a bare
+  name and never consults another file, so `globalShortName`'s same-file arms
+  are the answer the interpreter gives, not a tie-break. The enclosing arm goes
+  first: a def in the caller's own frame chain (deepest frame wins,
+  `Cls.method#inner` before `Cls#inner`) beats the file's top-level namesake,
+  which is what `_list_tabs#url` and `Blueprint._merge_blueprint_funcs#extend`
+  need. Both same-file arms filter BEFORE the pick, which the final cross-file
+  guess must never do — a frame in the caller's own chain is the binding the
+  interpreter reaches, not one namesake among many, so a project-wide tie cannot
+  make it wrong. `receiver === null` only, in every arm (`self.x()` is attribute
+  lookup down the MRO), and a name declared twice in one frame declines rather
+  than guessing an order.
+- **`callerScope` omits the caller's own container, and `callerSymbolId` is the
+  only witness for it.** `isEnclosingScope` therefore admits one trailing
+  segment of slack — that is how a call in `_list_tabs`' body
+  (`callerScope: []`) reaches `_list_tabs#url` at all. The slack is blind on its
+  own: it admits any container the file declares at that depth, a class body the
+  LEGB walk never enters included. The enclosing arm runs ahead of the
+  module-level one, so it spends the slack only when the extra segment equals
+  the last segment of `callerSymbolId`. Frames at or below `callerScope`'s own
+  depth need no witness. The trailing cross-file guess keeps the blind form — it
+  sits behind the cardinality guard, where E4.0.5 measured the over-admission at
+  zero cost.
 - **`importMatch` is GONE — its residual did not earn the slot** (bd
   tea-rags-mcp-rw1qk). The trailing-segment heuristic survived the
   `importedName` demotion holding only the receivers nothing bound, and the
