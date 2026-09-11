@@ -40,12 +40,13 @@
   (`migration/database/runner.ts:37-47`) also accepts a directory, a path only
   tests take; `tsc` does not copy `.sql` into `build/` (`runner.ts:12-15`). Why:
   adding a migration is THREE edits (both files plus the array). A `.sql` that
-  drifts from its `.ts` changes nothing at runtime and fails no build, so
-  `tests/core/domains/maintenance/migration/database/sql-twins.test.ts` pins
-  every registered migration to its `.sql` twin byte-for-byte and fails on the
-  first divergence. The ledger keys on the FILENAME string in
-  `schema_migrations` (`runner.ts:41-58`), so renaming an already-applied file
-  re-runs it.
+  drifts from its `.ts` changes nothing at runtime and fails no build, which is
+  why `tests/core/domains/maintenance/migration/database/sql-twins.test.ts` is
+  the only thing that catches it — byte-for-byte, failing on the first
+  divergence. The `.ts` template literal is the single source of truth and the
+  `.sql` carries exactly its bytes, so a comment belongs inside the `.ts` string
+  or nowhere. The ledger keys on the FILENAME string in `schema_migrations`
+  (`runner.ts:41-58`), so renaming an already-applied file re-runs it.
 - **Drift compares FEATURE-FLAG-dependent descriptors against index-time keys.**
   `SchemaDriftMonitor`'s `currentPayloadKeys` (`schema-drift-monitor.ts:17`) is
   NOT read from Qdrant — it is the payload-signal descriptor set the CURRENT
