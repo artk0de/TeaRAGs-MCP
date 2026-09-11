@@ -135,14 +135,14 @@ describe("createApp", () => {
   it("checkIndexDrift routes a path to checkAndConsume", async () => {
     const deps = makeDeps();
     const app = createApp(deps as never);
-    await app.checkIndexDrift({ path: "/repo" });
+    await app.checkIndexDrift({ path: "/repo", consume: true });
     expect(deps.driftReporter.checkAndConsume).toHaveBeenCalledWith("/repo");
   });
 
   it("checkIndexDrift routes a collection to checkByCollectionName", async () => {
     const deps = makeDeps();
     const app = createApp(deps as never);
-    await app.checkIndexDrift({ collection: "code_abc" });
+    await app.checkIndexDrift({ collection: "code_abc", consume: false });
     expect(deps.driftReporter.checkByCollectionName).toHaveBeenCalledWith("code_abc");
   });
 

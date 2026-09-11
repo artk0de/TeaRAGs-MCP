@@ -80,7 +80,9 @@ describe("runPrime — happy path", () => {
 
     expect(getStatusMock).toHaveBeenCalledWith("/some/project");
     expect(getMetricsMock).toHaveBeenCalledWith("/some/project");
-    expect(checkDriftMock).toHaveBeenCalledWith({ path: "/some/project" });
+    // Non-consuming: the digest is an inspection, and the once-per-session
+    // warning belongs to the search path (bd tea-rags-mcp-p0phi).
+    expect(checkDriftMock).toHaveBeenCalledWith({ path: "/some/project", consume: false });
     expect(writeMock).toHaveBeenCalledTimes(1);
     expect(writeMock.mock.calls[0][0]).toContain("# tea-rags prime — /some/project");
     expect(cleanupMock).toHaveBeenCalled();

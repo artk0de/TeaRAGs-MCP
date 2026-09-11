@@ -110,13 +110,19 @@ export interface App {
    * lattice, so a reader who acts on the report repairs both in a single run
    * rather than reindexing twice. Null when nothing moved.
    *
-   * A `path` consumes by default — the warning rides ONE search response per
-   * collection per server session, until an index run resets it. Callers whose
-   * job is to inspect rather than to answer (`get_index_status`) pass
-   * `consume: false`, so asking twice reports twice and the warning the next
-   * search is owed stays unspent. A `collection` never consumes.
+   * `consume` has no default, on purpose: forgetting it would silently spend a
+   * warning that belongs to someone else, so every caller states which it is.
+   *
+   * Nothing reaching this method consumes today. The once-per-collection
+   * warning belongs to the SEARCH path, which takes it from the reporter
+   * directly (`ExploreOps#checkDrift` → `checkAndConsume`) so it rides exactly
+   * one response per server session until an index run resets it. Both callers
+   * here are inspections a reader runs on purpose — `get_index_status` and the
+   * prime digest — and both pass `consume: false`: asking twice must report
+   * twice, and neither may spend the search path's warning. A `collection`
+   * never consumes regardless.
    */
-  checkIndexDrift: (req: { path?: string; collection?: string; consume?: boolean }) => Promise<string | null>;
+  checkIndexDrift: (req: { path?: string; collection?: string; consume: boolean }) => Promise<string | null>;
 
   // -- Project registry (→ internal/ops/project-registry-ops.ts) --
   registerProject: (input: {
@@ -292,7 +298,7 @@ export function createApp(deps: AppDeps): App {
     },
 
     // -- Drift monitoring --
-    checkIndexDrift: async ({ path, collection, consume = true }) => {
+    checkIndexDrift: async ({ path, collection, consume }) => {
       const report = path
         ? consume
           ? await deps.driftReporter.checkAndConsume(path)
