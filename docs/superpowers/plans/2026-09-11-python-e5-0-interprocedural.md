@@ -1489,6 +1489,107 @@ denominators per corpus; the pyright site count if any; and the commit SHAs.
 
 ---
 
+## Task E5.0c — nested-def symbolId spelling in the jedi oracle — **DONE**
+
+**Files**
+
+- EDIT `scripts/py-oracle/jedi_oracle.py` (`compose_symbol_id`)
+- NEW `scripts/py-oracle/test_compose_symbol_id.py`
+- NEW `tests/scripts/py-compose-symbol-id.test.ts`
+- EDIT `docs/superpowers/plans/2026-09-08-python-codegraph-e0-measurement.md`
+  (one line in the Task 2 oracle contract)
+
+**The defect.** `compose_symbol_id` joined the WHOLE enclosing scope with `"."`
+and chose a separator only for the LAST hop, so a def nested in a method read
+`Blueprint._merge_blueprint_funcs#extend` where the walker composes
+`Blueprint#_merge_blueprint_funcs#extend`. Same file, same line, different
+string — and the host compares symbolIds as strings, so the row was booked
+`fileOnly`. Nothing about the oracle's TARGET was ever wrong. A per-file check
+cannot see a separator, which is how this survived the fixture corpus, where
+every def is one hop deep.
+
+**The rule as shipped.** Each hop reads its separator off the node IT names,
+which is what `name-of.ts` + `kernel/collect-symbols.ts` +
+`DefaultSymbolIdComposer` do. The docstring names the walker as the source of
+truth rather than restating the rule as if it were independent:
+
+| hop                                       | separator                     | example                                     |
+| ----------------------------------------- | ----------------------------- | ------------------------------------------- |
+| no enclosing def or class                 | —                             | `promote`                                   |
+| `class`                                   | `.` (Python `scopeSeparator`) | `Outer.Inner`                               |
+| `def` with `staticmethod` / `classmethod` | `.`                           | `User.normalise`                            |
+| any other `def`                           | `#`                           | `User#rename`, `outer#inner`, `Cls#m#inner` |
+
+`defNodeKind` and `pinUncertain` are untouched, and `compose_symbol_id` is
+called only inside the oracle's `inProject` branch, so no verdict logic moves: a
+row can flip only where the spelling differed.
+
+**Tests.** Seventeen shapes in `scripts/py-oracle/test_compose_symbol_id.py`
+(plain `unittest`, no pytest), expectations MEASURED off the walker on the same
+source rather than reasoned about. `tests/scripts/py-compose-symbol-id.test.ts`
+spawns it through the same `uv` launcher `JEDI_LAUNCHER` uses and skips when
+`uv` is absent, as `jedi-oracle-spawn.test.ts` does — a Python test nothing
+spawns is a test nobody runs, which is the reason this defect lived. The frozen
+`expected-oracle.json` is unchanged, the 20 pre-existing Python unit tests pass,
+and `npx vitest run tests/scripts/` is 466/466.
+
+**Gate, measured.**
+`npx tsx scripts/py-codegraph-jedi-oracle.ts --corpus <c> --oracle merged --dispatch --workers 8 --json <out>`,
+the unfixed oracle against the fixed one at the SAME tree, so only the oracle
+differs.
+
+| corpus | respelled defs | `fileOnly` | `match`        | every other verdict |
+| ------ | -------------- | ---------- | -------------- | ------------------- |
+| flask  | 18             | 6 -> 0     | 330 -> 336     | identical           |
+| httpx  | 4              | 5 -> 1     | 477 -> 481     | identical           |
+| netbox | 273            | 2 -> 0     | 7852 -> 7854   | identical           |
+| ugnest | 0              | 0 -> 0     | 772, no move   | identical           |
+| polar  | 128            | 34 -> 24   | 11942 -> 11952 | identical           |
+
+22 rows in all, `chainDrift 0` and `dispatchDrift 0` on every run, and outside
+the tally tables the two payloads are byte-identical. `respelled defs` counts
+DEFINITIONS the fix spells differently (pure AST, both builds imported side by
+side) and bounds what can move — most of netbox's 273 sit in test files the
+harness does not score.
+
+The 38 predicted off the E4.0.4 dumps is stale, not missed: those dumps predate
+E4.4b, and the rows moved under it. What is left is a DIFFERENT family. polar's
+remaining 24 are `dynamic` 18 / `chain` 3 / `super` 3 and httpx's remaining 1 is
+`chain` — no `bareCall` among them, and `bareCall` is the receiver kind every
+row this fix repaired carried.
+
+Row level, not just tallies: a per-row dump under both builds differs on flask
+in exactly 6 lines and on httpx in exactly 4, all `fileOnly -> match`, all in
+the families the diagnosis named — `Blueprint#_merge_blueprint_funcs#extend`
+(`src/flask/sansio/blueprints.py:402-410`) and
+`DigestAuth#_build_auth_header#digest` (`httpx/_auth.py:268-291`).
+
+**Determinism.** Two fixed-build polar runs agree on every column, `fileOnly` 24
+and `match` 11952 both times.
+
+**One row wobbles independently of this change.** httpx and netbox each carry a
+site whose oracle answer alternates between `external` and `unknown` run to run
+— the jedi per-process module-cache effect `jedi_oracle.py`'s striping comment
+already records. Three runs of the UNFIXED oracle on httpx read `agreeExternal`
+887 / 886 / 886, so it is visible on the baseline alone. The rows above are read
+against the baseline run that drew the same way; against the other draw one row
+moves between `agreeExternal` and `bothUnresolved` and `groundTruth` shifts by
+one.
+
+**A contaminated pair, and the rule it earns.** The oracle's Python process is
+spawned by `askOracles` AFTER `walkCorpus` returns, not at launch. Swapping
+`jedi_oracle.py` while a background run is still walking therefore decides which
+build that run measures, and polar's walk is minutes long. The first polar pair
+was swapped under exactly that way and reported identical tallies down to the
+byte — which, on a corpus with 128 respelled defs, is the signature of one build
+measured twice. Both were discarded and re-run with no tree writes in flight.
+**Never write to a script a background harness run will later spawn.**
+
+**Commits.** `d69dc589f` fix, `db71bb7ed` tests, plus this record and the E0
+contract line.
+
+---
+
 ## Task E5.1 — Python producer for the barrier fold — **GATED SHUT**
 
 > **Gate.** This task executes only when Task E5.0a's `unlockedExact`, summed
