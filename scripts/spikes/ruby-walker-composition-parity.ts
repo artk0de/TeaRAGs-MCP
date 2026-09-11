@@ -38,7 +38,7 @@ import { collectSymbols, DefaultSymbolIdComposer, LanguageFactory } from "../../
 import { extractFromRubyFile } from "../../src/core/domains/language/ruby/index.js";
 import { CODEGRAPH_LANGUAGES } from "../../src/core/domains/trajectory/codegraph/symbols/provider.js";
 import { materializeTree } from "../../src/core/infra/materialize.js";
-import { resolveCheckoutCommit } from "../lib/checkout-revision.js";
+import { resolveCheckoutCommit } from "../lib/checkout-commit.js";
 
 const SKIP_DIRECTORIES = new Set(["node_modules", "vendor", "build", "dist", "tmp", "log", "coverage"]);
 

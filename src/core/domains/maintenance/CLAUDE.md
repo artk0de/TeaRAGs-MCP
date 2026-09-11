@@ -44,12 +44,11 @@
   why `tests/core/domains/maintenance/migration/database/sql-twins.test.ts` is
   the only thing that catches it — byte-for-byte, failing on the first
   divergence. The `.ts` template literal is the single source of truth and the
-  `.sql` carries exactly its bytes — `npm run gen:migration-sql` rewrites every
-  twin from its `.ts`, so a divergence is repaired by running it rather than by
-  hand-editing the `.sql` — and a comment therefore belongs inside the `.ts`
-  string or nowhere. The ledger keys on the FILENAME string in
-  `schema_migrations` (`runner.ts:41-58`), so renaming an already-applied file
-  re-runs it.
+  `.sql` carries exactly its bytes, so a comment belongs inside the `.ts` string
+  or nowhere. `npm run gen:migration-sql` rewrites every twin from its `.ts`, so
+  repair a divergence by running it rather than by hand-editing the `.sql`. The
+  ledger keys on the FILENAME string in `schema_migrations` (`runner.ts:41-58`),
+  so renaming an already-applied file re-runs it.
 - **Drift compares FEATURE-FLAG-dependent descriptors against index-time keys.**
   `SchemaDriftMonitor`'s `currentPayloadKeys`
   (`drift/schema-drift-monitor.ts:19`) is NOT read from Qdrant — it is the

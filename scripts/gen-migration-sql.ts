@@ -8,7 +8,10 @@
  * template literal, run this, and the twin follows.
  *
  * `tests/core/domains/maintenance/migration/database/sql-twins.test.ts` stays
- * the check: this script is how you fix a divergence, not how you detect one.
+ * the check: this script is how you fix a divergence, not how you detect one —
+ * and it only ever writes registered migrations, never pruning an orphan `.sql`
+ * left behind by a rename, which that same guard catches on its second
+ * assertion.
  *
  * Usage:
  *   npm run gen:migration-sql

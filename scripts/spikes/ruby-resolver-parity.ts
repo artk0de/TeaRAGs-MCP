@@ -42,7 +42,7 @@ import { RubyCallResolver } from "../../src/core/domains/language/ruby/resolver/
 import { CODEGRAPH_LANGUAGES } from "../../src/core/domains/trajectory/codegraph/symbols/provider.js";
 import { InMemoryGlobalSymbolTable } from "../../src/core/domains/trajectory/codegraph/symbols/symbol-table.js";
 import { sameTarget } from "../codegraph-chain-tally.js";
-import { resolveCheckoutCommit } from "../lib/checkout-revision.js";
+import { resolveCheckoutCommit } from "../lib/checkout-commit.js";
 import {
   buildCorpusExclusionFilter,
   buildSymbolDefs,
@@ -101,6 +101,8 @@ export function formatParitySummary(
   root: string,
   beforeRoot: string | undefined,
   result: ResolverParityResult,
+  // Defaulted, not required: the three summary tests that predate it keep their
+  // three-argument calls, which the business-logic-tests rule asks for.
   beforeCommit: string | null = null,
 ): string[] {
   return [
