@@ -21,6 +21,8 @@ export type {
   PresetDescriptors,
 } from "./explore.js";
 
+export { isEnrichmentRecompute } from "./ingest.js";
+
 export type {
   // Ingest
   IndexOptions,

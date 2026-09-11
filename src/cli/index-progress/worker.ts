@@ -14,7 +14,7 @@ import { readdirSync, statSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 
-import type { App, IndexOptions, IndexStatus } from "../../core/api/public/index.js";
+import { isEnrichmentRecompute, type App, type IndexOptions, type IndexStatus } from "../../core/api/public/index.js";
 import type { EnrichmentOutcome, WorkerMessage } from "./ipc-protocol.js";
 
 /** Structural subset of App the worker needs — keeps test fakes minimal. */
@@ -135,7 +135,27 @@ export async function runIndexWorker(
       });
     },
   );
-  send({ type: "phase-done", phase: "embedding", elapsedMs: now() - embeddingStart });
+  const indexElapsedMs = now() - embeddingStart;
+
+  // `forceEnrichments` routes the run through `IndexingOps#recomputeEnrichments`,
+  // which is TWO legs inside one call: an incremental sync (the indexing leg —
+  // it chunks, stores and embeds whatever the working tree changed) followed by
+  // the payload recompute, which embeds nothing. Booking the whole span as
+  // `embedding` charged the recompute to the indexing leg: a codegraph recompute
+  // reported `phases.embedding = 1,211,574 ms` against zero embed calls
+  // (bd tea-rags-mcp-ghcof). The recompute measures itself and hands the number
+  // back as `enrichmentDurationMs`, so subtracting it leaves exactly the sync —
+  // ≈0 on the clean tree the flag is usually run against, and the real figure
+  // when the tree was dirty. That remainder is what the embedding phase means
+  // here: the bar it drives carries every pipeline phase, not embedding alone.
+  const recomputeDurationMs = isEnrichmentRecompute(options)
+    ? (indexStats.enrichmentDurationMs ?? indexElapsedMs)
+    : undefined;
+  send({
+    type: "phase-done",
+    phase: "embedding",
+    elapsedMs: recomputeDurationMs === undefined ? indexElapsedMs : Math.max(0, indexElapsedMs - recomputeDurationMs),
+  });
 
   // Index is searchable now (alias switched) — report status before blocking on
   // enrichment, so the supervisor's default mode can print it and detach.
@@ -153,7 +173,14 @@ export async function runIndexWorker(
   // Keep this (possibly detached) process alive until enrichment finishes.
   const enrichmentStart = now();
   await app.whenEnrichmentComplete();
-  send({ type: "phase-done", phase: "enrichment", elapsedMs: now() - enrichmentStart });
+  // On the recompute path enrichment already finished INSIDE indexCodebase, so
+  // the wait above is a no-op and its near-zero elapsed would understate the run
+  // as badly as `embedding` overstated it. Report the recompute's own duration.
+  send({
+    type: "phase-done",
+    phase: "enrichment",
+    elapsedMs: recomputeDurationMs ?? now() - enrichmentStart,
+  });
 
   const finalStatus = await app.getIndexStatus(path);
   const finalCodegraphSizeBytes = resolveCodegraphSizeBytes(finalStatus.collectionName);

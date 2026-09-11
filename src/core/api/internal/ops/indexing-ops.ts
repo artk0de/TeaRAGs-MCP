@@ -40,6 +40,7 @@ import type {
   IngestCodeConfig,
   ProgressCallback,
 } from "../../../types.js";
+import { isEnrichmentRecompute } from "../../public/dto/ingest.js";
 import type { PathCollectionResolver } from "../collection-resolver.js";
 
 type ModelInfo = { model: string; contextLength: number; dimensions: number };
@@ -201,7 +202,7 @@ export class IndexingOps {
     // wiped their measurements.
     pipelineLog.resetProfiler();
     this.enrichment.setEnrichmentProgress(enrichmentProgress);
-    if (options?.forceEnrichments && options.forceEnrichments.length > 0) {
+    if (isEnrichmentRecompute(options)) {
       return this.recomputeEnrichments(path, options.forceEnrichments, options.languages, progressCallback);
     }
     if (!options?.forceReindex) {

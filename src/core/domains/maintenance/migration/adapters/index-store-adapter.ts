@@ -55,7 +55,16 @@ export class IndexStoreAdapter implements IndexStore {
       const info = await this.qdrant.getCollectionInfo(collection);
       const zeroVector = new Array<number>(info.vectorSize).fill(0);
 
+      // Merge onto what is stored — a Qdrant upsert REPLACES the point's payload,
+      // and this point is shared with two other writers: `SchemaManager` stamps
+      // `sparseVersion` onto it when the collection is created, `SparseStoreAdapter`
+      // updates that field afterwards. Writing only the schema fields dropped the
+      // sibling stamp, so the next sync read `sparseVersion: 0` and paid for a full
+      // BM25 rebuild over an index whose sparse vectors were already correct
+      // (bd tea-rags-mcp-vy26b).
+      const existing = await this.getSchemaMetadata(collection);
       const payload: SchemaMetadata = {
+        ...existing,
         _type: "schema_metadata",
         schemaVersion: version,
         migratedAt: new Date().toISOString(),
@@ -83,6 +92,26 @@ export class IndexStoreAdapter implements IndexStore {
     } catch (error) {
       // Non-fatal: schema metadata write failure should not abort migration
       console.error("Failed to store schema metadata:", error);
+    }
+  }
+
+  /**
+   * The stored metadata point, or null when the collection has none yet.
+   *
+   * Read-before-write for {@link storeSchemaVersion}. {@link getSchemaVersion}
+   * keeps its own read because it answers a different question: it falls back to
+   * probing for the `relativePath` index and reporting version 6 when the point
+   * is missing, so it never has the payload this write has to merge onto.
+   */
+  private async getSchemaMetadata(collection: string): Promise<SchemaMetadata | null> {
+    try {
+      const point = await this.qdrant.getPoint(collection, SCHEMA_METADATA_ID);
+      if (point?.payload?._type === "schema_metadata") {
+        return point.payload as unknown as SchemaMetadata;
+      }
+      return null;
+    } catch {
+      return null;
     }
   }
 

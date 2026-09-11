@@ -5,6 +5,7 @@ import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { WorkerMessage } from "../../../src/cli/index-progress/ipc-protocol.js";
+import { JsonProgressRenderer } from "../../../src/cli/index-progress/renderer.js";
 import {
   deriveEnrichmentOutcome,
   resolveCodegraphSizeBytes,
@@ -250,6 +251,104 @@ describe("runIndexWorker", () => {
     await runIndexWorker(app as never, "/repo", {}, () => {});
 
     expect(order).toEqual(["index", "enrich"]);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Phase attribution on the enrichment-recompute path (bd tea-rags-mcp-ghcof)
+// ---------------------------------------------------------------------------
+
+describe("runIndexWorker — phase attribution on the --force-enrichments recompute", () => {
+  /** Replay the worker's IPC frames through the JSON renderer the `--json` run uses. */
+  function phasesOf(sent: WorkerMessage[]): Record<string, number> {
+    const renderer = new JsonProgressRenderer();
+    for (const message of sent) renderer.handle(message);
+    return renderer.phases;
+  }
+
+  /** An app whose indexCodebase resolves with these extra IndexStats fields. */
+  function appReportingStats(stats: Record<string, unknown>) {
+    return {
+      indexCodebase: vi.fn(async () => ({ status: "completed", ...stats })),
+      getIndexStatus: vi.fn().mockResolvedValue(healthy),
+      whenEnrichmentComplete: vi.fn().mockResolvedValue(undefined),
+    };
+  }
+
+  /** A clock that hands out these readings in order, then repeats the last one. */
+  function scriptedClock(readings: number[]): () => number {
+    let call = 0;
+    return () => readings[Math.min(call++, readings.length - 1)];
+  }
+
+  /** The worker's default clock steps 100ms per reading — one span per phase. */
+  function steppingClock(): () => number {
+    let t = 0;
+    return () => (t += 100);
+  }
+
+  it("leaves the sync leg's own time on embedding and the recompute's on enrichment", async () => {
+    // The observed run: 1,211,574 ms inside indexCodebase, of which the recompute
+    // measured 1,190,574 — the other 21,000 is the incremental sync that embedded
+    // whatever the working tree had changed, and that is what `embedding` means.
+    const app = appReportingStats({ enrichmentStatus: "completed", enrichmentDurationMs: 1_190_574 });
+    const sent: WorkerMessage[] = [];
+
+    await runIndexWorker(
+      app as never,
+      "/repo",
+      { forceEnrichments: ["codegraph"] },
+      (m) => sent.push(m),
+      scriptedClock([0, 1_211_574, 1_211_574, 1_211_600]),
+    );
+
+    const phases = phasesOf(sent);
+    expect(phases["embedding"]).toBe(21_000);
+    expect(phases["enrichment"]).toBe(1_190_574);
+  });
+
+  it("books no embedding time when the recompute accounts for the whole span", async () => {
+    // Clean tree: the sync finds nothing to embed, so the recompute IS the run —
+    // and a measurement that overruns the span (clock granularity) clamps at 0
+    // rather than going negative.
+    const app = appReportingStats({ enrichmentStatus: "completed", enrichmentDurationMs: 1_211_600 });
+    const sent: WorkerMessage[] = [];
+
+    await runIndexWorker(
+      app as never,
+      "/repo",
+      { forceEnrichments: ["codegraph"] },
+      (m) => sent.push(m),
+      scriptedClock([0, 1_211_574, 1_211_574, 1_211_600]),
+    );
+
+    const phases = phasesOf(sent);
+    expect(phases["embedding"]).toBe(0);
+    expect(phases["enrichment"]).toBe(1_211_600);
+  });
+
+  it("falls back to the measured index span when the recompute reports no duration", async () => {
+    const app = appReportingStats({});
+    const sent: WorkerMessage[] = [];
+
+    await runIndexWorker(app as never, "/repo", { forceEnrichments: ["git"] }, (m) => sent.push(m), steppingClock());
+
+    const phases = phasesOf(sent);
+    expect(phases["embedding"]).toBe(0);
+    expect(phases["enrichment"]).toBe(100);
+  });
+
+  it("leaves the ordinary run's attribution alone: index span embedding, wait enrichment", async () => {
+    const app = appReportingStats({ enrichmentStatus: "completed", enrichmentDurationMs: 4_000 });
+    const sent: WorkerMessage[] = [];
+
+    await runIndexWorker(app as never, "/repo", {}, (m) => sent.push(m), steppingClock());
+
+    const phases = phasesOf(sent);
+    expect(phases["embedding"]).toBe(100);
+    // The ordinary path's enrichment phase is the measured background wait, not
+    // the DTO field — the recompute's number must not leak onto it.
+    expect(phases["enrichment"]).toBe(100);
   });
 });
 
