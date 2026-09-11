@@ -38,6 +38,7 @@ import { collectSymbols, DefaultSymbolIdComposer, LanguageFactory } from "../../
 import { extractFromRubyFile } from "../../src/core/domains/language/ruby/index.js";
 import { CODEGRAPH_LANGUAGES } from "../../src/core/domains/trajectory/codegraph/symbols/provider.js";
 import { materializeTree } from "../../src/core/infra/materialize.js";
+import { resolveCheckoutCommit } from "../lib/checkout-revision.js";
 
 const SKIP_DIRECTORIES = new Set(["node_modules", "vendor", "build", "dist", "tmp", "log", "coverage"]);
 
@@ -83,6 +84,9 @@ async function main(): Promise<void> {
   const root = resolvePath(read("--corpus") ?? process.cwd());
   const limit = Number(read("--limit") ?? 500);
   const beforeRoot = read("--before-root");
+  // The other checkout's revision, read before the walk: "native from <path>"
+  // stops meaning anything the moment that checkout moves on.
+  const beforeCommit = resolveCheckoutCommit(beforeRoot);
   const extractNative = await nativeExtractor(beforeRoot);
   const config = CODEGRAPH_LANGUAGES[".rb"];
   const { walker } = new LanguageFactory().create(config.language);
@@ -106,7 +110,9 @@ async function main(): Promise<void> {
     compared++;
     if (JSON.stringify(extractNative(input)) !== JSON.stringify(walker.walk(input))) mismatches.push(relPath);
   }
-  console.log(`ruby walker parity · corpus ${root}${beforeRoot === undefined ? "" : ` · native from ${beforeRoot}`}`);
+  const nativeLabel =
+    beforeRoot === undefined ? "" : ` · native from ${beforeRoot}@${beforeCommit ?? "unknown revision"}`;
+  console.log(`ruby walker parity · corpus ${root}${nativeLabel}`);
   console.log(`  compared ${compared} files · mismatches ${mismatches.length}`);
   for (const relPath of mismatches.slice(0, 5)) console.log(`  MISMATCH ${relPath}`);
   process.exit(mismatches.length === 0 ? 0 : 1);
