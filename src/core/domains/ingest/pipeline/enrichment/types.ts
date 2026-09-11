@@ -60,10 +60,11 @@ export interface RunMarker {
 /**
  * PERSISTED per-level status is terminal-only. `in_progress` / `pending` /
  * `stalled` are NEVER written — they are DERIVED at read time by the health
- * mapper: from the `_run` pointer for a provider the run covers (absent or
- * stale-runId marker), and from the absence of a terminal marker for an active
- * provider the run does not cover. See `EnrichmentLevelHealth` for the
- * API-facing (derived) status union.
+ * mapper from the `_run` pointer, for a provider the run covers (absent or
+ * stale-runId marker). An active provider the run does NOT cover is never
+ * derived as in progress: its own terminal marker renders as is, and a missing
+ * or non-terminal one renders as a derived `failed`. See
+ * `EnrichmentLevelHealth` for the API-facing (derived) status union.
  */
 export type EnrichmentLevelStatus = "completed" | "degraded" | "failed";
 
