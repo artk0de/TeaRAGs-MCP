@@ -1,5 +1,4 @@
 import type { PayloadKeyOwner } from "../../../contracts/types/trajectory.js";
-import type { SchemaDrift } from "./schema-drift.js";
 
 /**
  * The single command a drift report should recommend, as a lattice:
@@ -88,17 +87,4 @@ export function resolvePayloadKeyRemedy(
   const owner = ownerByKey.get(key);
   if (!owner?.recomputable || owner.trajectory === undefined) return { kind: "force" };
   return { kind: "recompute", trajectories: new Set([owner.trajectory]), languages: null };
-}
-
-/**
- * Pick ONE remedy for a whole payload-key drift.
- *
- * Per-key costs folded over the lattice: a drift that mixes enrichment-owned
- * keys with chunker-owned ones escalates to the reindex, which rebuilds the
- * enrichment layer anyway, and drops the per-trajectory list. Removals fold to
- * `none` — nothing reads a key the current build no longer declares.
- */
-export function resolveSchemaDriftRemedy(drift: SchemaDrift, owners: readonly PayloadKeyOwner[]): IndexDriftRemedy {
-  const ownerByKey = new Map(owners.map((o) => [o.key, o]));
-  return foldIndexDriftRemedies(drift.added.map((key) => resolvePayloadKeyRemedy(key, ownerByKey)));
 }

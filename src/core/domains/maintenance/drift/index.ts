@@ -4,7 +4,6 @@ export {
   foldIndexDriftRemedies,
   renderIndexDriftRemedy,
   resolvePayloadKeyRemedy,
-  resolveSchemaDriftRemedy,
   type IndexDriftRemedy,
 } from "./remedy.js";
 export { formatIndexDriftReport, IndexDriftReporter, type IndexDriftReport } from "./report.js";

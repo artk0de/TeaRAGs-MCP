@@ -217,7 +217,11 @@ version-bump enforcement in the repository is `check-plugin-version.sh` for
     per collection at the end of every index run on it (incremental, recompute,
     force) — `IndexingOps` calls `IndexDriftReporter#reset` after the stamps are
     written — so a long-lived server shows the report again, recomputed against
-    the new stamps, if drift remains. No TTL.
+    the new stamps, if drift remains. No TTL. Amended by the whole-branch
+    review: consumption is keyed by (collection, report signature) rather than
+    by collection alone, so a clean check consumes nothing, the same report
+    warns once, a different report for the same collection warns again, and
+    `reset` clears every signature that collection recorded.
 14. **The hint is one exact, executable, cheapest-sufficient command.** The
     `Run:` line names the single command that repairs every finding in the
     report and nothing more: `--project <alias>` is filled in from the registry

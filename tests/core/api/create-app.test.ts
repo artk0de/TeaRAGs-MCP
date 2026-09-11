@@ -88,6 +88,7 @@ function createMockReranker(): Reranker {
 function createMockDriftReporter(): IndexDriftReporter {
   return {
     checkAndConsume: vi.fn().mockResolvedValue(null),
+    checkAndConsumeByCollectionName: vi.fn().mockReturnValue(null),
     checkByPath: vi.fn().mockResolvedValue(null),
     checkByCollectionName: vi.fn().mockReturnValue(null),
     reset: vi.fn(),
@@ -407,11 +408,17 @@ describe("createApp", () => {
       expect(deps.driftReporter.checkByCollectionName).toHaveBeenCalledWith("col1");
     });
 
-    it("never consumes for a collection, even when asked to", async () => {
+    // Invariant CHANGED by the whole-branch review: a collection used to be
+    // unconditionally non-consuming, which made `consume: true` a lie on that
+    // branch — the search path addresses its collection directly, so its
+    // warning was rendered and never marked as shown. `consume` now decides it
+    // on both branches.
+    it("consumes for a collection when asked to", async () => {
       const app = createApp(deps);
       await app.checkIndexDrift({ collection: "col1", consume: true });
 
-      expect(deps.driftReporter.checkByCollectionName).toHaveBeenCalledWith("col1");
+      expect(deps.driftReporter.checkAndConsumeByCollectionName).toHaveBeenCalledWith("col1");
+      expect(deps.driftReporter.checkByCollectionName).not.toHaveBeenCalled();
       expect(deps.driftReporter.checkAndConsume).not.toHaveBeenCalled();
     });
 

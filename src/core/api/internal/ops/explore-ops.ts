@@ -398,12 +398,18 @@ export class ExploreOps {
     }
   }
 
+  /**
+   * BOTH branches consume: a request that names its collection outright is
+   * still a search riding a warning along with an answer, not an inspection.
+   * The non-consuming check belongs to `get_index_status` and `prime`, which
+   * reach the reporter through `App#checkIndexDrift` instead.
+   */
   private async checkDrift(path?: string, collectionName?: string): Promise<string | null> {
     if (!this.driftReporter) return null;
     const report = path
       ? await this.driftReporter.checkAndConsume(path)
       : collectionName
-        ? this.driftReporter.checkByCollectionName(collectionName)
+        ? this.driftReporter.checkAndConsumeByCollectionName(collectionName)
         : null;
     return report && formatIndexDriftReport(report);
   }

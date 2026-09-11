@@ -12,8 +12,9 @@
  *
  *   2. `checkDrift` collection-only branch — when a request only has a
  *      `collection` (no path) the drift monitor must be queried by
- *      collection name. The path branch is exercised by every existing
- *      test; the collection-name branch is the symmetric case.
+ *      collection name, CONSUMING: a collection-addressed request is still
+ *      a search. The path branch is exercised by every existing test; the
+ *      collection-name branch is the symmetric case.
  *
  *   3. `resolveDocRerank` documentation-auto-preset — when no explicit
  *      rerank is given but the caller signals a docs query
@@ -94,6 +95,7 @@ function makeMockRegistry() {
 function makeMockDriftReporter(overrides: Record<string, any> = {}) {
   return {
     checkAndConsume: vi.fn().mockResolvedValue(null),
+    checkAndConsumeByCollectionName: vi.fn().mockReturnValue(null),
     checkByCollectionName: vi.fn().mockReturnValue(null),
     reset: vi.fn(),
     ...overrides,
@@ -146,12 +148,14 @@ describe("ExploreOps drift warning — collection-only path", () => {
     vi.clearAllMocks();
   });
 
-  it("uses checkByCollectionName when the request resolves a collection but has no path", async () => {
+  it("uses the CONSUMING collection-name check when the request has a collection but no path", async () => {
     // When the caller passes `collection` directly (not `path`), the drift
     // monitor's collection-name branch must run — the path branch can't
     // because there is no path to check against the schema-version registry.
+    // It consumes: a collection-addressed search is a search, and a warning it
+    // renders is one the reader has now been shown.
     const driftReporter = makeMockDriftReporter({
-      checkByCollectionName: vi.fn().mockReturnValue(driftReport),
+      checkAndConsumeByCollectionName: vi.fn().mockReturnValue(driftReport),
     });
     const facade = new ExploreFacade({
       qdrant: makeMockQdrant(),
@@ -169,7 +173,8 @@ describe("ExploreOps drift warning — collection-only path", () => {
     });
 
     expect(driftReporter.checkAndConsume).not.toHaveBeenCalled();
-    expect(driftReporter.checkByCollectionName).toHaveBeenCalledWith("code_explicit_no_path");
+    expect(driftReporter.checkByCollectionName).not.toHaveBeenCalled();
+    expect(driftReporter.checkAndConsumeByCollectionName).toHaveBeenCalledWith("code_explicit_no_path");
     expect(result.driftWarning).toBe(driftReportText);
   });
 });

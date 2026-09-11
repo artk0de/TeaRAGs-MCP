@@ -455,7 +455,11 @@ export class IndexingOps {
 
     const changeStats = await this.reindex.reindexChanges(path, progressCallback, overrides);
 
-    void this.refreshStats(path);
+    // Awaited, like the other two run paths: the refresh is what rewrites
+    // `payloadFieldKeys`, and re-arming the reader before that write lands
+    // leaves a window in which a search re-checks the OLD keys and is warned
+    // about drift this run just repaired.
+    await this.refreshStats(path);
     // Nothing corpus-wide was rebuilt, so the stamp stays put — but the payload
     // of every CHANGED file was rewritten by the current build, so the reader
     // deserves a fresh verdict rather than the one this session already spent.
