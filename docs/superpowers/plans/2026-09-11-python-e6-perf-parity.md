@@ -729,6 +729,73 @@ export function scoredExtensionsFor(lang: string): readonly string[];
 sampler passes its 600 MB self-check, and `git diff --stat` shows changes in
 `scripts/` and `tests/` only — zero lines under `src/`.
 
+### E6.0a as built — 2026-09-11, `922138c05` + `6809e044c`
+
+Three deviations from the steps above, each because the step as written would
+have produced a wrong number.
+
+1. **The `--ts-checker=off` switch is an env write, not a parameter.** The kill
+   switch `TSCallResolver` exposes is `CODEGRAPH_TS_TYPECHECKER`, read once at
+   resolver construction (`ts-resolver.ts:284`), so `main()` sets
+   `process.env.CODEGRAPH_TS_TYPECHECKER = "0"` before the first resolve. The
+   flip is worth a row of its own on this repo's 181 files: pass 2 goes 0.23 s →
+   9.57 s, peak RSS 658 → 1,111 MB, edges 3,076 → 4,723.
+2. **The C3-fallback line is suppressed under `--time-only`.** That counter
+   lives on the cache the REBUILT chain feeds, and `--time-only` builds no
+   chain; printing `0` would report a fallback count for a chain that did not
+   run. So the byte-identity gate holds on every line except that one, which is
+   structurally absent rather than changed.
+3. **The sampler self-check needed a different fixture.** A
+   `Buffer.alloc(600MB, 1)` written once peaks for well under one 250 ms tick
+   and macOS reclaims the untouched pages within a second — the process reads
+   ~40 MB three seconds later while `/usr/bin/time -l` still reports 643 MB. A
+   correctly-wired sampler reports 254 MB against that target and looks broken.
+   `scripts/spikes/rss-tree-sampler-selfcheck.js` re-touches every page every
+   100 ms instead, holding a plateau; sampler 646 MB vs `time -l` 650 MB, 0.6 %
+   apart. `RSS_SELFCHECK_CHILD=1` adds the tree half — 1,294 MB across parent
+   and child, where `time -l` on the parent still says ~650 MB.
+
+Also worth carrying into E6.0b: **the tally never calls `prepareResolvePass`**,
+so the TypeScript leg's Program cache fills lazily per file rather than from the
+whole-project prime production does (`typescript/index.ts:156`). Read the
+`checker=1` row as a lower bound on TypeScript's Program cost, and take the
+verdict on the `--ts-checker=off` row, which is the structural-parity
+configuration Python and Ruby actually are.
+
+**The exact command lines E6.0b runs.** `env -u NODE_OPTIONS` on every one, per
+the Global Constraints, then the explicit ceiling. Discard the first run, report
+the min of the next three.
+
+```bash
+# Python — the two matrix corpora, plus the --no-dispatch attribution row.
+env -u NODE_OPTIONS NODE_OPTIONS=--max-old-space-size=8192 npx tsx \
+  scripts/codegraph-chain-tally.ts --corpus ~/Dev/Tools/tea-rags-bench/corpora/polar \
+  --lang python --quiet --time-only
+env -u NODE_OPTIONS NODE_OPTIONS=--max-old-space-size=8192 npx tsx \
+  scripts/codegraph-chain-tally.ts --corpus ~/Dev/Tools/tea-rags-bench/corpora/netbox \
+  --lang python --quiet --time-only
+env -u NODE_OPTIONS NODE_OPTIONS=--max-old-space-size=8192 npx tsx \
+  scripts/codegraph-chain-tally.ts --corpus ~/Dev/Tools/tea-rags-bench/corpora/polar \
+  --lang python --quiet --time-only --no-dispatch
+
+# Ruby — mastodon whole, no --limit.
+env -u NODE_OPTIONS NODE_OPTIONS=--max-old-space-size=8192 npx tsx \
+  scripts/codegraph-chain-tally.ts --corpus ~/Dev/Tools/tea-rags-bench/corpora/mastodon \
+  --lang ruby --quiet --time-only
+
+# TypeScript — this repo. The VERDICT row is checker off; checker on is the
+# second row, labelled, never averaged with it.
+env -u NODE_OPTIONS NODE_OPTIONS=--max-old-space-size=8192 npx tsx \
+  scripts/codegraph-chain-tally.ts --corpus "$PWD" --lang typescript --quiet \
+  --time-only --ts-checker=off
+env -u NODE_OPTIONS NODE_OPTIONS=--max-old-space-size=8192 npx tsx \
+  scripts/codegraph-chain-tally.ts --corpus "$PWD" --lang typescript --quiet --time-only
+
+# Machine-readable, when a run's numbers go into codegraph-corpora.json:
+#   add `--json /tmp/e6-<corpus>-<lang>.json` — `timing` and `timeOnly` ride
+#   along in the payload already.
+```
+
 ---
 
 ## Task E6.0b — the offline matrix
