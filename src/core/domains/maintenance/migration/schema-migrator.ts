@@ -10,6 +10,7 @@ import {
   SchemaV12EnrichmentPayloadIndexes,
   SchemaV13RenameOwnershipPayload,
   SchemaV14EnrichmentScanIndexes,
+  SchemaV15CodegraphFilterIndexes,
 } from "./schema_migrations/index.js";
 import type { EnrichmentStore, IndexStore, Migration, MigrationRunner, SnapshotStore } from "./types.js";
 
@@ -54,6 +55,7 @@ export class SchemaMigrator implements MigrationRunner {
           Required<Pick<IndexStore, "scrollAllPayload" | "batchSetPayload" | "deletePayloadKeys">>,
       ),
       new SchemaV14EnrichmentScanIndexes(collection, indexStore),
+      new SchemaV15CodegraphFilterIndexes(collection, indexStore),
     ];
     this.latestVersion = Math.max(...this.migrations.map((m) => m.version));
   }

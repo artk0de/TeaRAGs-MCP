@@ -239,8 +239,8 @@ describe("SchemaManager", () => {
   });
 
   describe("LATEST_SCHEMA_VERSION", () => {
-    it("should be 14 with v14 enrichment scan-index migration", () => {
-      expect(LATEST_SCHEMA_VERSION).toBe(14);
+    it("should be 15 with v15 codegraph filter-index migration", () => {
+      expect(LATEST_SCHEMA_VERSION).toBe(15);
     });
   });
 });

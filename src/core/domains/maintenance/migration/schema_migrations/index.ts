@@ -9,3 +9,4 @@ export { SchemaV11RenameParentSymbolId } from "./schema-v11-rename-parent-symbol
 export { SchemaV12EnrichmentPayloadIndexes } from "./schema-v12-enrichment-payload-indexes.js";
 export { SchemaV13RenameOwnershipPayload } from "./schema-v13-rename-ownership-payload.js";
 export { SchemaV14EnrichmentScanIndexes } from "./schema-v14-enrichment-scan-indexes.js";
+export { SchemaV15CodegraphFilterIndexes } from "./schema-v15-codegraph-filter-indexes.js";
