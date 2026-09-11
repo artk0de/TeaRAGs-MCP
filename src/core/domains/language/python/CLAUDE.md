@@ -337,14 +337,30 @@
   how `selfField` reaches a base class at all. The cache answers `undefined` for
   such a run, and each strategy takes its pre-seam path rather than answering
   from an empty map.
-- **Chain order is a correctness argument, not a preference.** Eight passes:
-  `super`, `selfField`, `selfMember`, `localBinding`, `chainType`,
+- **Chain order is a correctness argument, not a preference.** Nine passes:
+  `super`, `clsMember`, `selfField`, `selfMember`, `localBinding`, `chainType`,
   `namingConvention`, `importedName`, `globalShortName`, composed in ONE place
   (`resolver/python-chain-factory.ts` — both offline harnesses call it, because
   the hand-copied duplicates drifted and voided every number the oracle
   printed). See the pass list in `resolver/python-resolver.ts`; the guards
   (`super`, `selfField`, `selfMember`, `localBinding`) DROP rather than fall
   through, which is what keeps `serializer.is_valid()` off an unrelated class.
+- **`cls` is the enclosing class, and `clsMember` is the only pass that says
+  so.** It sits directly after `super` and asks `selfMember`'s question with
+  `spellingOrder: "classFirst"`, because `classifyMethod` files a `@classmethod`
+  as `Cls.m` while an undecorated `def` is `Cls#m` — the option reorders the two
+  spellings and never excludes either, so `cls.instance_method()` still
+  resolves. Three facts gate it, and a decorator check is NOT among them:
+  `CallContext` carries no decorator channel, so the evidence is an enclosing
+  class, a `cls` the walker did not BIND here, and an MRO that owns the member.
+  The binding test is PRESENCE in `localBindings` / `callResultBindings` rather
+  than the binding nearest the call, matching `classifyReceiverKind` exactly, so
+  a chunk that writes `for cls in classes:` declines on both sides of the
+  rebinding. Unlike the other receiver-idiom passes it CONTINUEs on a miss
+  rather than DROPping: a DROP variant measured against all five corpora moved 0
+  rows and 0 edges, so the guard is free — and free is not load-bearing, so it
+  stays unclaimed rather than shipped on an argument (bd tea-rags-mcp-w205u,
+  E4.4a).
 - **`resolveDispatch` composes `[cone]` — `dynamic` is PARKED behind
   `CODEGRAPH_PY_DYNAMIC_DISPATCH`, default OFF (D10), and the LAST component
   declines every receiver another layer owns.** The flag is read once at

@@ -23,12 +23,17 @@ import type {
   ImportRef,
   LocalBinding,
 } from "../../../../../../../src/core/contracts/types/codegraph.js";
+import type { AncestorLinearizer } from "../../../../../../../src/core/domains/language/kernel/ancestor-walk.js";
 import { PythonAncestorLinearizerCache } from "../../../../../../../src/core/domains/language/python/resolver/python-ancestor-policy.js";
 import { PythonImportFileMapper } from "../../../../../../../src/core/domains/language/python/resolver/python-import-file-mapper.js";
 import { PythonImportedNameSymbolResolutionStrategy } from "../../../../../../../src/core/domains/language/python/resolver/strategies/python-imported-name.js";
 import { PythonLocalBindingSymbolResolutionStrategy } from "../../../../../../../src/core/domains/language/python/resolver/strategies/python-local-binding.js";
 import { PythonSelfMemberSymbolResolutionStrategy } from "../../../../../../../src/core/domains/language/python/resolver/strategies/python-self-member.js";
 import { PythonSuperSymbolResolutionStrategy } from "../../../../../../../src/core/domains/language/python/resolver/strategies/python-super.js";
+import {
+  resolvePythonInheritedMember,
+  type PythonInheritedMemberResult,
+} from "../../../../../../../src/core/domains/language/python/resolver/strategies/shared.js";
 import { PYTHON_UNRESOLVABLE_BASE } from "../../../../../../../src/core/domains/language/python/walker/walker.js";
 import { InMemoryGlobalSymbolTable } from "../../../../../../../src/core/domains/trajectory/codegraph/symbols/symbol-table.js";
 
@@ -878,5 +883,86 @@ describe("PythonLocalBindingSymbolResolutionStrategy — the member on the bound
     // `globalShortName` answer `is_valid` with `app/forms.py::Form#is_valid`,
     // which is the very false positive the terminal guard exists for.
     expect(localBinding().attempt(boundCall("s", "is_valid"), ctx)).toEqual({ kind: "drop" });
+  });
+});
+
+/**
+ * `spellingOrder` — which of the two symbolId spellings the MRO scan tries
+ * FIRST at each class in the order (bd tea-rags-mcp-w205u, E4.4a).
+ *
+ * `classifyMethod` files an undecorated `def` as `Cls#m` and a `@classmethod` /
+ * `@staticmethod` one as `Cls.m`, and a class can declare BOTH — a
+ * `@classmethod` shadowing an inherited instance method is ordinary Python. A
+ * `self` receiver wants the instance spelling and a `cls` receiver wants the
+ * class one, so the order is a parameter with today's behaviour as its default.
+ *
+ * The option REORDERS, it never excludes: `cls.instance_method()` is legal and
+ * declining it would buy 0 measured rows.
+ */
+describe("resolvePythonInheritedMember — the spelling order is a parameter", () => {
+  const linearizerFor = (ctx: CallContext): AncestorLinearizer<CallContext> => {
+    const linearizer = new PythonAncestorLinearizerCache(new PythonImportFileMapper(), "strict").for(ctx);
+    if (linearizer === undefined) throw new Error("fixture carries no classAncestors");
+    return linearizer;
+  };
+
+  /** `Widget` declares BOTH spellings of `make`; `Base` declares only the instance one. */
+  function bothSpellings(): CallContext {
+    return ctxWith({
+      callerFile: "app/widget.py",
+      callerScope: ["Widget"],
+      table: tableWith({
+        "app/base.py": ["Base", "Base#make"],
+        "app/widget.py": ["Widget", "Widget#make", "Widget.make"],
+      }),
+      classAncestors: { "app/widget.py::Widget": ["app.base::Base"] },
+    });
+  }
+
+  const scan = (
+    ctx: CallContext,
+    options?: Parameters<typeof resolvePythonInheritedMember>[5],
+  ): PythonInheritedMemberResult =>
+    resolvePythonInheritedMember("app/widget.py::Widget", "make", ctx, "strict", linearizerFor(ctx), options);
+
+  it("defaults to the instance spelling — byte-identical to every caller that omits the option", () => {
+    expect(scan(bothSpellings()).target).toEqual({
+      targetRelPath: "app/widget.py",
+      targetSymbolId: "Widget#make",
+    });
+  });
+
+  it("takes the instance spelling when asked for it explicitly", () => {
+    expect(scan(bothSpellings(), { spellingOrder: "instanceFirst" }).target).toEqual({
+      targetRelPath: "app/widget.py",
+      targetSymbolId: "Widget#make",
+    });
+  });
+
+  it("takes the CLASS spelling under classFirst — the one a @classmethod can carry", () => {
+    expect(scan(bothSpellings(), { spellingOrder: "classFirst" }).target).toEqual({
+      targetRelPath: "app/widget.py",
+      targetSymbolId: "Widget.make",
+    });
+  });
+
+  it("still finds a class that declares ONLY the instance spelling — classFirst reorders, never excludes", () => {
+    const ctx = ctxWith({
+      callerFile: "app/widget.py",
+      callerScope: ["Widget"],
+      table: tableWith({ "app/base.py": ["Base", "Base#make"], "app/widget.py": ["Widget"] }),
+      classAncestors: { "app/widget.py::Widget": ["app.base::Base"] },
+    });
+    expect(scan(ctx, { spellingOrder: "classFirst" }).target).toEqual({
+      targetRelPath: "app/base.py",
+      targetSymbolId: "Base#make",
+    });
+  });
+
+  it("composes with startAfter — the scan still begins after the enclosing class itself", () => {
+    expect(scan(bothSpellings(), { spellingOrder: "classFirst", startAfter: true }).target).toEqual({
+      targetRelPath: "app/base.py",
+      targetSymbolId: "Base#make",
+    });
   });
 });

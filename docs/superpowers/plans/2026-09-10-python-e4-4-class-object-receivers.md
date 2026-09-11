@@ -650,13 +650,13 @@ export function resolvePythonInheritedMember(
 
 ### Steps — E4.4a
 
-- [ ] **Step 0.** Fresh agent worktree; ff-merge `worktree-py-frontier-e4`.
+- [x] **Step 0.** Fresh agent worktree; ff-merge `worktree-py-frontier-e4`.
       `npx vitest run tests/core/domains/language/python` green before starting.
       Read `src/core/domains/language/python/capability.ts` and CONFIRM
       `versions.walker` is 5; if it is anything else, stop and report. Capture
       the B side of the A/B now, per the gate commands — five corpora × five
       runs — before a single line is edited.
-- [ ] **Step 1 (RED — the spelling order).** In
+- [x] **Step 1 (RED — the spelling order).** In
       `python-inherited-member.test.ts`, add a block for a class declaring BOTH
       `Cls#m` and `Cls.m` in the same file (the shape a `@classmethod` shadowing
       an inherited instance method produces). Assert: - default /
@@ -666,7 +666,7 @@ export function resolvePythonInheritedMember(
       declaring ONLY `Cls#m` still finds it — the option reorders, it never
       excludes; - `classFirst` composed with `startAfter: true` still starts
       after the class itself.
-- [ ] **Step 2 (GREEN — the spelling order).** In `shared.ts`, inside the probe
+- [x] **Step 2 (GREEN — the spelling order).** In `shared.ts`, inside the probe
       `resolvePythonInheritedMember` hands to `findMemberInAncestorChain`:
 
 ```ts
@@ -691,7 +691,7 @@ return null;
       Update the function's docblock: the two-spelling order is now a parameter,
       and the default is the instance-first one every existing caller relies on.
 
-- [ ] **Step 3 (RED — the strategy).** New file `python-cls-member.test.ts`,
+- [x] **Step 3 (RED — the strategy).** New file `python-cls-member.test.ts`,
       modelled on the `selfMember` cases. Build a `CallContext` whose
       `callerScope` is `["Widget"]`, whose `classAncestors` linearizes
       `Widget → Base`, and whose symbol table declares `Base.make` in `base.py`.
@@ -709,7 +709,7 @@ return null;
       untouched, so `selfMember` still owns it. 9. `linearizers` absent
       (walker-v2 shape) → the `classExtends` walk answers, and its miss is also
       CONTINUE.
-- [ ] **Step 4 (GREEN — the strategy).** New file
+- [x] **Step 4 (GREEN — the strategy).** New file
       `src/core/domains/language/python/resolver/strategies/python-cls-member.ts`:
 
 ```ts
@@ -806,7 +806,7 @@ function clsIsBoundHere(ctx: CallContext): boolean {
 }
 ```
 
-- [ ] **Step 5 (wire).** In `strategies/index.ts`, add
+- [x] **Step 5 (wire).** In `strategies/index.ts`, add
       `export { PythonClsMemberSymbolResolutionStrategy } from "./python-cls-member.js";`
       immediately after the `super` export, so the barrel reads in chain order.
       In `python-chain-factory.ts`, add
@@ -816,14 +816,14 @@ function clsIsBoundHere(ctx: CallContext): boolean {
       with one sentence naming the guard block. Add the new name to the order
       assertion in `python-chain-factory.test.ts` — an addition to a list, not a
       rewrite.
-- [ ] **Step 6 (gate).** `npx vitest run tests/core/domains/language/python`,
+- [x] **Step 6 (gate).** `npx vitest run tests/core/domains/language/python`,
       `npx tsc --noEmit`. Then the A side of the A/B, five corpora × five runs,
       and the family report on each A dump with the REAL corpus roots. Read it
       per decision 7: netbox `classObjectReceiver` 26 → 9, polar 52 → 36, ugnest
       4 → 3, flask 1 and httpx 0 unchanged; `lost` 0 everywhere; phantom flat;
       `exactReplacedByFan` / `exactReplacedByAmbiguous` 0; no other family
       grows. Chain tally on all five: `drift` 0 and `dispatchDrift` 0.
-- [ ] **Step 7 (the DROP, measured — do not skip and do not assume).** With the
+- [x] **Step 7 (the DROP, measured — do not skip and do not assume).** With the
       A side in hand, count how many `cls.` receiver rows the A run answers via
       `globalShortName` (`answeredBy` on the matched rows, not the residual).
       **If that count is 0 on all five corpora**, change the two CONTINUE
@@ -832,11 +832,99 @@ function clsIsBoundHere(ctx: CallContext): boolean {
       keep the CONTINUE, record the count in the commit body, and say so — a
       guard adopted against evidence is E4.1.3 in a smaller frame. Either way
       the strategy's docblock ends up describing what shipped.
-- [ ] **Step 8 (commit).**
+- [x] **Step 8 (commit).**
       `feat(language): resolve cls receivers on the enclosing class MRO (w205u)`.
       Body: the 34 rows by corpus, the measured A/B deltas, the Step 7 verdict
       and its count. Trailer
       `Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>`. Never push.
+
+### Measured — E4.4a, 2026-09-11
+
+Shipped `PythonClsMemberSymbolResolutionStrategy` at chain index 1, gate as
+designed: receiver text exactly `cls`, an enclosing class, `cls` not bound here,
+and the MRO owns the member under `spellingOrder: "classFirst"`. Resolve or
+CONTINUE. Walker stays **5**.
+
+The binding check is PRESENCE in `localBindings` / `callResultBindings`, not the
+binding nearest the call. That is `classifyReceiverKind`'s own test
+(`receiver-kind.ts:71`), so the rows the pass admits are exactly the `dynamic`
+population the residual dumps measured, and it declines a strict superset of the
+at-the-line shadows.
+
+**Row-level A/B**, five corpora × five runs each side,
+`--oracle merged --dispatch --workers 8 --samples 500000`. B ran from a detached
+archive of `f5f27197f`; A from the worktree.
+
+| corpus |    missed |         match |         edges | phantom | gross lost |
+| ------ | --------: | ------------: | ------------: | ------: | ---------: |
+| ugnest |   17 → 16 |     771 → 772 |     777 → 778 |   0 → 0 |          0 |
+| flask  |   36 → 36 |     330 → 330 |     349 → 349 |   0 → 0 |          0 |
+| httpx  |     6 → 6 |     477 → 477 |     499 → 499 |   8 → 8 |          0 |
+| netbox |   61 → 44 |   8280 → 8297 |   8691 → 8708 | 26 → 26 |          0 |
+| polar  | 475 → 459 | 16341 → 16357 | 17540 → 17561 | 88 → 93 |          0 |
+
+`missed → match`: ugnest **+1**, netbox **+17**, polar **+16** — **34 rows, the
+predicted count per corpus exactly**. flask and httpx are byte-identical on
+every scored verdict, which is the task's own identity control. Every
+receiver-kind row is byte-identical except `dynamic`, the only kind a `cls`
+receiver can carry: netbox `dynamic` match 1483 → 1500, polar 2401 → 2417.
+`super` is unmoved on both (netbox 248 match / 26 phantom, polar 526 / 20 / 3 /
+0 / 10). `exactReplacedByFan` and `exactReplacedByAmbiguous` unchanged on all
+five; `chainDrift` and `dispatchDrift` **0** on all 50 oracle runs.
+
+**Family report**, real corpus roots, A side against B side:
+`classObjectReceiver` netbox **26 → 9**, polar **52 → 36**, ugnest **4 → 3** —
+each the predicted number. What remains in the family is `bareCall` (the
+`cls(...)` oracle debt) plus `constant` (the core-member declines); the
+`dynamic` sub-shape reads **0** on all three. `superMro` polar **20 → 20**. No
+other family moved on any corpus.
+
+**The 5 polar phantoms are a NEW oracle-error class, not a fabrication.**
+`agreeExternal` 29084 → 29079 and `phantom` 88 → 93 — the same five rows, all in
+`server/polar/models/subscription.py`, all `cls.<x>_statuses()` inside
+`class SubscriptionStatus(StrEnum)`. Every one carries `origin: typeshedStub`:
+jedi types `cls` on an enum subclass through `enum.pyi` and never reaches the
+project, while the chain answers `SubscriptionStatus.<x>_statuses` declared
+twenty lines up in the same file. The chain is right and the oracle is wrong.
+Polar's phantom rate moves 0.52 % → 0.55 %, **+0.03 pp** against a +0.5 pp bar;
+ugnest phantom stays **0**. Recorded as `oracleEnumClsMember` debt beside D9's
+other classes, and NOT chased.
+
+**Step 7, the DROP, measured rather than argued.** A DROP variant of the two
+miss returns was built in a separate checkout and run against all five corpora:
+**0 rows and 0 edges moved anywhere** — match, fileOnly, wrongFile, missed and
+phantom identical on every corpus. So the count Step 7 asks for is **0 on all
+five**: no `cls.` receiver this pass misses is answered by any later pass today,
+and the guard is free. **CONTINUE still ships.** Free is not load-bearing, and
+the orchestrator's decision 1 is explicit — measure the DROP, report it, do not
+take it. The measurement is what will say when that changes.
+
+**Chain tally**, five corpora × five runs each side: `chainDrift` **0**
+everywhere, one distinct run signature per side. Edges ugnest 777 → 778, flask
+349 → 349, httpx 499 → 499, netbox 8691 → 8708, polar 17537 → 17558. Polar's
+**+21** against the oracle's +16 reconciles exactly: 16 scored rows plus the 5
+`agreeExternal → phantom` rows above, which are edges the oracle does not score
+as gains.
+
+**Perf**, chain-tally interleaved B/A/A/B, `/usr/bin/time -l`, min of two per
+side: netbox wall 15.8 s → 14.6 s (**−7.9 %**), RSS 2358 MB → 2360 MB (**+0.1
+%**); polar wall 21.7 s → 20.9 s (**−3.5 %**), RSS 2302 MB → 2360 MB (**+2.5
+%**). Both well inside the +25 % wall / +20 % RSS bar. The MRO answer comes from
+the run's memoised linearizer, so the arm adds a map read to `cls.` sites and
+nothing else.
+
+**Ruby parity**: `ruby-resolver-parity` 42,057 mastodon sites, mismatches 0,
+drift 0; `ruby-walker-composition-parity` 500 files, mismatches 0; both against
+the main checkout as `--before-root`. Ruby suite 1835 tests green.
+
+**Two harness facts this task hit, reported rather than patched.**
+`codegraph-chain-tally.ts` has no Ruby chain spec (`--lang ruby` errors with
+"have: python, java"), so the plan's Ruby tally gate cannot run as written and
+the two parity spikes carry the control instead. And the oracle harness has no
+row-dump flag on this branch: `--json` carries whole per-verdict pools for
+`missed` / `wrongFile` / `phantom` / `skippedInProject` at `--samples 500000`
+but NOT for `fileOnly`, so a rebuilt ndjson omits the fileOnly population
+(netbox 2, polar 51) and those rows are covered by the aggregate columns only.
 
 ---
 

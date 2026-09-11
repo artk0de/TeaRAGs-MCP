@@ -33,6 +33,7 @@ const cfg = { mode: DEFAULT_AMBIGUOUS_RESOLVE_MODE, coneMax: CONE_MAX_DEFAULT };
 
 const PRODUCTION_ORDER = [
   "super",
+  "clsMember",
   "selfField",
   "selfMember",
   "localBinding",
@@ -51,6 +52,21 @@ describe("createPythonSymbolResolutionChain", () => {
 
   it("keeps the production order, importedName the last import-consulting pass", () => {
     expect(new PythonCallResolver().strategies.map((pass) => pass.name)).toEqual(PRODUCTION_ORDER);
+  });
+
+  /**
+   * bd tea-rags-mcp-w205u (E4.4a) — `clsMember` joins the guard block rather
+   * than sitting anywhere above `globalShortName`: a `cls.` receiver is a
+   * receiver IDIOM, and keeping the idiom passes contiguous is what makes the
+   * precedence readable. Position relative to `namingConvention` and
+   * `globalShortName` is the part that carries behaviour — both would otherwise
+   * guess at it.
+   */
+  it("places clsMember directly after super — the guard block leads the chain", () => {
+    const names = createPythonSymbolResolutionChain(cfg).map((pass) => pass.name);
+    expect(names.indexOf("clsMember")).toBe(names.indexOf("super") + 1);
+    expect(names.indexOf("clsMember")).toBeLessThan(names.indexOf("selfField"));
+    expect(names.indexOf("clsMember")).toBeLessThan(names.indexOf("globalShortName"));
   });
 
   it("places chainType directly after localBinding — the seam-3 insertion point", () => {

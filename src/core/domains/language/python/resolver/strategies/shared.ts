@@ -218,11 +218,18 @@ export interface PythonInheritedMemberResult {
 
 /**
  * `<member>` on `classKey` or the first ancestor in its MRO that owns it (bd
- * tea-rags-mcp-9fgdi). Instance spelling (`Cls#m`) first, class spelling
- * (`Cls.m`) second — `classifyMethod` files an undecorated `def` as instance
- * and a `@classmethod` / `@staticmethod` one as class-level, and the corpora
- * carry both (`GetRelatedModelsMixin#get_related_models`,
- * `RepositoryBase.from_session`).
+ * tea-rags-mcp-9fgdi). `classifyMethod` files an undecorated `def` as the
+ * instance spelling (`Cls#m`) and a `@classmethod` / `@staticmethod` one as the
+ * class spelling (`Cls.m`), and the corpora carry both
+ * (`GetRelatedModelsMixin#get_related_models`, `RepositoryBase.from_session`),
+ * so the scan tries both at every class in the order.
+ *
+ * WHICH ONE IT TRIES FIRST is `options.spellingOrder`, and it matters only for
+ * a class that declares BOTH — a `@classmethod` shadowing an inherited instance
+ * method. `instanceFirst` is the default and is what an instance receiver
+ * wants; `classFirst` is what a receiver that IS the class object wants (bd
+ * tea-rags-mcp-w205u, E4.4a). The option REORDERS and never excludes, so a
+ * `cls.instance_method()` still resolves.
  *
  * Every lookup is FILTERED BY THE CANDIDATE'S OWN FILE. The class key is
  * file-qualified precisely so two `Base` classes in two files stay apart, and
@@ -239,7 +246,10 @@ export function resolvePythonInheritedMember(
   ctx: CallContext,
   mode: AmbiguousResolveMode,
   linearizer: AncestorLinearizer<CallContext>,
-  options: { readonly startAfter?: boolean } = {},
+  options: {
+    readonly startAfter?: boolean;
+    readonly spellingOrder?: "instanceFirst" | "classFirst";
+  } = {},
 ): PythonInheritedMemberResult {
   const scan = findMemberInAncestorChain(
     classKey,
@@ -247,14 +257,18 @@ export function resolvePythonInheritedMember(
     (candidateKey) => {
       const parsed = parsePythonClassKey(candidateKey);
       if (parsed === null) return null;
-      for (const spelling of [`${parsed.classFq}#${member}`, `${parsed.classFq}.${member}`]) {
+      const instance = `${parsed.classFq}#${member}`;
+      const klass = `${parsed.classFq}.${member}`;
+      for (const spelling of options.spellingOrder === "classFirst" ? [klass, instance] : [instance, klass]) {
         const inFile = ctx.symbolTable.lookup(spelling).filter((def) => def.relPath === parsed.relPath);
         const picked = pickSingleCandidate(inFile, mode);
         if (picked) return { targetRelPath: picked.relPath, targetSymbolId: picked.symbolId };
       }
       return null;
     },
-    options,
+    // Forward only what the kernel walk declares, so a Python-only option
+    // cannot leak into a signature that has no field for it.
+    { startAfter: options.startAfter },
   );
   return { target: scan.target, closure: scan.closure };
 }

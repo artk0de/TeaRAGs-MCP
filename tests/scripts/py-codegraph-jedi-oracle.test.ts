@@ -67,6 +67,10 @@ describe("buildPythonChain", () => {
   it("takes PythonCallResolver's chain from the shared factory", () => {
     expect(buildPythonChain().map((pass) => pass.name)).toEqual([
       "super",
+      // bd tea-rags-mcp-w205u (E4.4a) — `clsMember` joined the guard block.
+      // This list widens with the chain because it pins the WIRING; the
+      // precedence argument lives in the chain-factory test named above.
+      "clsMember",
       "selfField",
       "selfMember",
       "localBinding",

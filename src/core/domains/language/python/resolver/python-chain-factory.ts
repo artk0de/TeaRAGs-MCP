@@ -17,6 +17,14 @@
  * tea-rags-mcp-0g8g5): it is the one GUESS in the chain, so every typed channel
  * answers first, and it must not preempt `importedName`, whose receiver is a
  * binding the walker actually recorded.
+ *
+ * The chain OPENS with the receiver-idiom block — `super`, `clsMember`,
+ * `selfField`, `selfMember` — because each of those receivers names the
+ * enclosing class and nothing else can, so no later pass has evidence to add
+ * (bd tea-rags-mcp-w205u, E4.4a). What the block's position buys is precedence
+ * over `namingConvention` and `globalShortName`, the two passes that would
+ * otherwise GUESS at a `cls.` receiver; keeping the idioms contiguous is what
+ * makes that argument readable in one place.
  */
 
 import type { SymbolResolutionStrategy } from "../../../../contracts/types/language.js";
@@ -24,6 +32,7 @@ import { PythonAncestorLinearizerCache } from "./python-ancestor-policy.js";
 import { PythonImportFileMapper } from "./python-import-file-mapper.js";
 import {
   PythonChainTypeSymbolResolutionStrategy,
+  PythonClsMemberSymbolResolutionStrategy,
   PythonGlobalShortNameSymbolResolutionStrategy,
   PythonImportedNameSymbolResolutionStrategy,
   PythonLocalBindingSymbolResolutionStrategy,
@@ -63,6 +72,7 @@ export function createPythonSymbolResolutionChain(
 ): SymbolResolutionStrategy[] {
   return [
     new PythonSuperSymbolResolutionStrategy(cfg, linearizers),
+    new PythonClsMemberSymbolResolutionStrategy(cfg, linearizers),
     new PythonSelfFieldSymbolResolutionStrategy(cfg, mapper, linearizers),
     new PythonSelfMemberSymbolResolutionStrategy(cfg, linearizers),
     new PythonLocalBindingSymbolResolutionStrategy(cfg, mapper, linearizers),
