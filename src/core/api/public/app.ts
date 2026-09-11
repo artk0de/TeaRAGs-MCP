@@ -19,8 +19,7 @@ import type { EmbeddingProvider } from "../../adapters/embeddings/base.js";
 import type { QdrantManager } from "../../adapters/qdrant/client.js";
 import type { EmbeddingModelGuard } from "../../adapters/qdrant/embedding-model-guard.js";
 import type { Reranker } from "../../domains/explore/reranker.js";
-import type { LanguageVersionDriftMonitor } from "../../domains/maintenance/drift/language-version-drift-monitor.js";
-import type { SchemaDriftMonitor } from "../../domains/maintenance/drift/schema-drift-monitor.js";
+import { formatIndexDriftReport, type IndexDriftReporter } from "../../domains/maintenance/drift/index.js";
 import type { ProjectInfo } from "../../domains/maintenance/registry/index.js";
 import type { ExploreFacade } from "../internal/facades/explore-facade.js";
 import type { GraphFacade } from "../internal/facades/graph-facade.js";
@@ -104,16 +103,17 @@ export interface App {
   // -- Schema descriptors (→ Reranker via deps) --
   getSchemaDescriptors: () => PresetDescriptors;
 
-  // -- Drift monitoring (→ SchemaDriftMonitor via deps) --
-  checkSchemaDrift: (ref: { path: string } | { collection: string }) => Promise<string | null>;
-
   /**
-   * Per-language code-version drift (→ LanguageVersionDriftMonitor via deps).
-   * Separate from `checkSchemaDrift` on purpose: payload KEYS do not move when
-   * a grammar or resolver does, so the two report disjoint conditions and each
-   * names its own command. Null when nothing moved or the monitor is unwired.
+   * Every drift axis the build can see, folded into ONE rendered report with
+   * ONE `Run:` line (→ `IndexDriftReporter` via deps). Payload keys and
+   * per-language code versions are disjoint conditions but share a remedy
+   * lattice, so a reader who acts on the report repairs both in a single run
+   * rather than reindexing twice. Null when nothing moved.
+   *
+   * `path` consumes — the warning rides one search response per collection per
+   * server session, until an index run resets it. `collection` does not.
    */
-  checkLanguageVersionDrift: (ref: { path: string } | { collection: string }) => Promise<string | null>;
+  checkIndexDrift: (req: { path?: string; collection?: string }) => Promise<string | null>;
 
   // -- Project registry (→ internal/ops/project-registry-ops.ts) --
   registerProject: (input: {
@@ -158,9 +158,7 @@ export interface AppDeps {
   ingestForPath?: (path: string) => IngestFacade;
   explore: ExploreFacade;
   reranker: Reranker;
-  schemaDriftMonitor: SchemaDriftMonitor;
-  /** Optional — omitted by direct constructions that wire no registry. */
-  languageVersionDriftMonitor?: LanguageVersionDriftMonitor;
+  driftReporter: IndexDriftReporter;
   projectRegistryOps: ProjectRegistryOps;
   quantizationScalar: boolean;
   turboQuant: boolean;
@@ -291,16 +289,13 @@ export function createApp(deps: AppDeps): App {
     },
 
     // -- Drift monitoring --
-    checkSchemaDrift: async (ref) => {
-      if ("path" in ref) return deps.schemaDriftMonitor.checkAndConsume(ref.path);
-      return deps.schemaDriftMonitor.checkByCollectionName(ref.collection);
-    },
-
-    checkLanguageVersionDrift: async (ref) => {
-      const monitor = deps.languageVersionDriftMonitor;
-      if (!monitor) return null;
-      if ("path" in ref) return monitor.checkAndConsume(ref.path);
-      return monitor.checkByCollectionName(ref.collection);
+    checkIndexDrift: async ({ path, collection }) => {
+      const report = path
+        ? await deps.driftReporter.checkAndConsume(path)
+        : collection
+          ? deps.driftReporter.checkByCollectionName(collection)
+          : null;
+      return report && formatIndexDriftReport(report);
     },
 
     // -- Project registry — delegate to ProjectRegistryOps --

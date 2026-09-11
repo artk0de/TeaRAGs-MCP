@@ -261,51 +261,56 @@ describe("formatPrime — polyglot + thresholds", () => {
   });
 });
 
-describe("formatPrime — schema drift", () => {
+describe("formatPrime — drift", () => {
+  const NOW = new Date("2026-05-11T12:00:00Z");
+
+  const baseData = {
+    path: "/p",
+    status: statusFixture({
+      isIndexed: true,
+      status: "indexed",
+      collectionName: "c",
+      chunksCount: 100,
+    }),
+    metrics: null,
+    drift: null,
+    update: null,
+  };
+
   it("emits 'none' when drift is null", () => {
-    const out = formatPrime({
-      path: "/p",
-      status: statusFixture({
-        isIndexed: true,
-        status: "indexed",
-        collectionName: "c",
-        chunksCount: 100,
-      }),
-      metrics: null,
-      drift: null,
-      update: null,
-    });
-    expect(out).toContain("## Schema drift");
+    const out = formatPrime(baseData);
+    expect(out).toContain("## Drift");
     expect(out).toContain("none");
   });
 
   it("includes drift warning text when drift is non-null", () => {
     const out = formatPrime({
-      path: "/p",
-      status: statusFixture({
-        isIndexed: true,
-        status: "indexed",
-        collectionName: "c",
-        chunksCount: 100,
-      }),
-      metrics: null,
+      ...baseData,
       drift: "New fields: navigation. Run index_codebase with forceReindex=true.",
-      update: null,
     });
-    expect(out).toContain("## Schema drift");
+    expect(out).toContain("## Drift");
     expect(out).toContain("New fields: navigation");
     expect(out).toContain("Run index_codebase with forceReindex=true");
   });
 
   it("omits drift section when status is not 'indexed'", () => {
-    const out = formatPrime({
-      path: "/p",
-      status: statusFixture({ status: "not_indexed" }),
-      metrics: null,
-      drift: null,
-      update: null,
-    });
-    expect(out).not.toContain("## Schema drift");
+    const out = formatPrime({ ...baseData, status: statusFixture({ status: "not_indexed" }) });
+    expect(out).not.toContain("## Drift");
+  });
+
+  it("renders one ## Drift section with the report, or none", () => {
+    const withDrift = formatPrime(
+      {
+        ...baseData,
+        drift:
+          "Language versions:\n  python.walker: 1 → 3\nRun: tea-rags index-codebase --force-enrichments codegraph --languages python",
+      },
+      NOW,
+    );
+    expect(withDrift).toContain("## Drift\nLanguage versions:");
+    expect(withDrift).not.toContain("## Schema drift");
+    expect(withDrift).not.toContain("## Language versions");
+    expect(formatPrime({ ...baseData, drift: null }, NOW)).toContain("## Drift\nnone");
   });
 });
 
@@ -369,7 +374,7 @@ describe("formatPrime — staleness (lastUpdated)", () => {
     expect(out).toContain("Run `index_codebase` before the next tea-rags search/explore");
   });
 
-  it("places stale warning AFTER Status block and BEFORE Schema drift", () => {
+  it("places stale warning AFTER Status block and BEFORE Drift", () => {
     const lastUpdated = new Date(NOW.getTime() - 2 * 24 * 60 * 60 * 1000);
     const out = formatPrime(
       { path: "/p", status: indexedFixture(lastUpdated), metrics: null, drift: null, update: null },
@@ -377,7 +382,7 @@ describe("formatPrime — staleness (lastUpdated)", () => {
     );
     const statusIdx = out.indexOf("## Status");
     const warnIdx = out.indexOf("⚠ Index is stale");
-    const driftIdx = out.indexOf("## Schema drift");
+    const driftIdx = out.indexOf("## Drift");
     expect(statusIdx).toBeGreaterThanOrEqual(0);
     expect(warnIdx).toBeGreaterThan(statusIdx);
     expect(driftIdx).toBeGreaterThan(warnIdx);
@@ -537,7 +542,7 @@ describe("formatPrime — infra-health and enrichment", () => {
     expect(out).toContain("git: file healthy, chunk in_progress (in progress)");
   });
 
-  it("places ## Infra and ## Enrichment AFTER Schema drift, BEFORE Polyglot", () => {
+  it("places ## Infra and ## Enrichment AFTER Drift, BEFORE Polyglot", () => {
     const out = formatPrime({
       path: "/p",
       status: indexedStatus({
@@ -553,7 +558,7 @@ describe("formatPrime — infra-health and enrichment", () => {
       drift: null,
       update: null,
     });
-    const driftIdx = out.indexOf("## Schema drift");
+    const driftIdx = out.indexOf("## Drift");
     const infraIdx = out.indexOf("## Infra");
     const enrichIdx = out.indexOf("## Enrichment");
     const langIdx = out.indexOf("## Language");

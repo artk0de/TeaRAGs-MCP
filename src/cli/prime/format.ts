@@ -83,17 +83,8 @@ function formatDigest(data: PrimeData, now: Date): string {
   }
 
   lines.push("");
-  lines.push("## Schema drift");
+  lines.push("## Drift");
   lines.push(data.drift ?? "none");
-
-  // Only on drift, unlike the always-on section above: this one is silent for
-  // the whole life of a build, so a permanent "current" line would spend hook
-  // budget saying nothing.
-  if (data.languageVersionDrift) {
-    lines.push("");
-    lines.push("## Language versions");
-    lines.push(data.languageVersionDrift);
-  }
 
   if (data.status.infraHealth) {
     lines.push("");

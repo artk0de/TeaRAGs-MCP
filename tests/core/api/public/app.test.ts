@@ -77,9 +77,10 @@ describe("createApp", () => {
       getPayloadSignals: vi.fn().mockReturnValue([]),
     };
 
-    const schemaDriftMonitor = {
+    const driftReporter = {
       checkAndConsume: vi.fn().mockResolvedValue(null),
-      checkByCollectionName: vi.fn().mockResolvedValue(null),
+      checkByCollectionName: vi.fn().mockReturnValue(null),
+      reset: vi.fn(),
     };
 
     const projectRegistryOps = {
@@ -88,7 +89,7 @@ describe("createApp", () => {
       unregister: vi.fn().mockResolvedValue({ removed: true }),
     };
 
-    return { explore, ingest, qdrant, embeddings, reranker, schemaDriftMonitor, projectRegistryOps };
+    return { explore, ingest, qdrant, embeddings, reranker, driftReporter, projectRegistryOps };
   }
 
   it("delegates semanticSearch to explore facade", async () => {
@@ -131,18 +132,18 @@ describe("createApp", () => {
     await expect(app.findCycles({ scope: "file" } as never)).resolves.toEqual({ cycles: [] });
   });
 
-  it("checkSchemaDrift routes path ref to checkAndConsume", async () => {
+  it("checkIndexDrift routes a path to checkAndConsume", async () => {
     const deps = makeDeps();
     const app = createApp(deps as never);
-    await app.checkSchemaDrift({ path: "/repo" });
-    expect(deps.schemaDriftMonitor.checkAndConsume).toHaveBeenCalledWith("/repo");
+    await app.checkIndexDrift({ path: "/repo" });
+    expect(deps.driftReporter.checkAndConsume).toHaveBeenCalledWith("/repo");
   });
 
-  it("checkSchemaDrift routes collection ref to checkByCollectionName", async () => {
+  it("checkIndexDrift routes a collection to checkByCollectionName", async () => {
     const deps = makeDeps();
     const app = createApp(deps as never);
-    await app.checkSchemaDrift({ collection: "code_abc" });
-    expect(deps.schemaDriftMonitor.checkByCollectionName).toHaveBeenCalledWith("code_abc");
+    await app.checkIndexDrift({ collection: "code_abc" });
+    expect(deps.driftReporter.checkByCollectionName).toHaveBeenCalledWith("code_abc");
   });
 
   it("hasProvider returns false when registeredProviderKeys is absent", () => {

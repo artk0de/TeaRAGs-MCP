@@ -44,7 +44,7 @@ import {
 } from "../../../domains/explore/strategies/index.js";
 import { NotIndexedError } from "../../../domains/ingest/errors.js";
 import { StatsRecomputeService } from "../../../domains/ingest/infra/stats-recompute.js";
-import type { SchemaDriftMonitor } from "../../../domains/maintenance/drift/schema-drift-monitor.js";
+import { formatIndexDriftReport, type IndexDriftReporter } from "../../../domains/maintenance/drift/index.js";
 import type { CollectionRegistry } from "../../../domains/maintenance/registry/index.js";
 import { compileFilterPreset } from "../../../domains/trajectory/filter-presets/compiler.js";
 import type { TrajectoryRegistry } from "../../../domains/trajectory/index.js";
@@ -70,7 +70,7 @@ export interface ExploreOpsDeps {
   registry: TrajectoryRegistry;
   collectionRegistry: CollectionRegistry;
   statsCache?: StatsCache;
-  schemaDriftMonitor?: SchemaDriftMonitor;
+  driftReporter?: IndexDriftReporter;
   payloadSignals: PayloadSignalDescriptor[];
   essentialKeys: string[];
   modelGuard?: EmbeddingModelGuard;
@@ -91,7 +91,7 @@ export class ExploreOps {
   private readonly registry: TrajectoryRegistry;
   private readonly collectionRegistry: CollectionRegistry;
   private readonly statsCache?: StatsCache;
-  private readonly schemaDriftMonitor?: SchemaDriftMonitor;
+  private readonly driftReporter?: IndexDriftReporter;
   private readonly payloadSignals: PayloadSignalDescriptor[];
   private readonly essentialKeys: string[];
   private readonly modelGuard?: EmbeddingModelGuard;
@@ -109,7 +109,7 @@ export class ExploreOps {
     this.registry = deps.registry;
     this.collectionRegistry = deps.collectionRegistry;
     this.statsCache = deps.statsCache;
-    this.schemaDriftMonitor = deps.schemaDriftMonitor;
+    this.driftReporter = deps.driftReporter;
     this.payloadSignals = deps.payloadSignals;
     this.essentialKeys = deps.essentialKeys;
     this.modelGuard = deps.modelGuard;
@@ -399,10 +399,13 @@ export class ExploreOps {
   }
 
   private async checkDrift(path?: string, collectionName?: string): Promise<string | null> {
-    if (!this.schemaDriftMonitor) return null;
-    if (path) return this.schemaDriftMonitor.checkAndConsume(path);
-    if (collectionName) return this.schemaDriftMonitor.checkByCollectionName(collectionName);
-    return null;
+    if (!this.driftReporter) return null;
+    const report = path
+      ? await this.driftReporter.checkAndConsume(path)
+      : collectionName
+        ? this.driftReporter.checkByCollectionName(collectionName)
+        : null;
+    return report && formatIndexDriftReport(report);
   }
 }
 

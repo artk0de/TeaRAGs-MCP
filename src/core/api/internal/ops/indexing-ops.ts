@@ -98,11 +98,23 @@ export interface IndexingOpsDeps {
   collectionRegistry?: LanguageVersionStamper;
   /** Per-language code versions of this build, from the composition root. */
   languageCodeVersions?: ReadonlyMap<string, LanguageCodeVersions>;
+  /**
+   * Drift report whose per-collection consumption this run clears
+   * (bd tea-rags-mcp-p0phi). The reporter tells a reader once per server
+   * session; the run that repairs the drift is what re-arms it, so a second
+   * drift appearing later is still reported. Omitted → nothing is re-armed.
+   */
+  driftReporter?: IndexDriftConsumptionResetter;
 }
 
 /** The one registry mutation this ops layer performs. */
 export interface LanguageVersionStamper {
   stampLanguageVersions: (collectionName: string, stamp: Record<string, Partial<LanguageCodeVersions>>) => void;
+}
+
+/** The one drift-report mutation this ops layer performs. */
+export interface IndexDriftConsumptionResetter {
+  reset: (collectionName: string) => void;
 }
 
 export class IndexingOps {
@@ -125,6 +137,7 @@ export class IndexingOps {
   private readonly status: StatusModule;
   private readonly collectionRegistry?: LanguageVersionStamper;
   private readonly languageCodeVersions?: ReadonlyMap<string, LanguageCodeVersions>;
+  private readonly driftReporter?: IndexDriftConsumptionResetter;
 
   constructor(deps: IndexingOpsDeps) {
     this.qdrant = deps.qdrant;
@@ -146,6 +159,7 @@ export class IndexingOps {
     this.status = new StatusModule(deps.qdrant, deps.snapshotDir, deps.codegraphPool);
     this.collectionRegistry = deps.collectionRegistry;
     this.languageCodeVersions = deps.languageCodeVersions;
+    this.driftReporter = deps.driftReporter;
   }
 
   /**
@@ -442,6 +456,10 @@ export class IndexingOps {
     const changeStats = await this.reindex.reindexChanges(path, progressCallback, overrides);
 
     void this.refreshStats(path);
+    // Nothing corpus-wide was rebuilt, so the stamp stays put — but the payload
+    // of every CHANGED file was rewritten by the current build, so the reader
+    // deserves a fresh verdict rather than the one this session already spent.
+    this.driftReporter?.reset(collectionName);
     return toIndexStats(changeStats);
   }
 
@@ -523,6 +541,11 @@ export class IndexingOps {
     if (selectors.some(isCodegraphSelector)) {
       this.stampLanguageVersions(aliasName, languages, "codegraph");
     }
+    // Keyed by the ALIAS, not the physical target resolved above: the reporter's
+    // consumption set, the registry entry and the stats cache are all addressed
+    // by the logical name a search request resolves to, so re-arming the
+    // physical name would clear an entry nobody ever recorded.
+    this.driftReporter?.reset(aliasName);
 
     // Report the RECOMPUTE's own numbers, not the sync's. The sync leg is a
     // near-no-op here, so inheriting its (empty) enrichment fields would state
@@ -551,7 +574,9 @@ export class IndexingOps {
     // A first index or a force rebuilds the chunk set AND the enrichment layer
     // from scratch, so every axis is genuinely current afterwards. This is the
     // only path that may advance `grammar` / `chunking`.
-    this.stampLanguageVersions(resolveCollectionName(await validatePath(path)), options?.languages, "all");
+    const collectionName = resolveCollectionName(await validatePath(path));
+    this.stampLanguageVersions(collectionName, options?.languages, "all");
+    this.driftReporter?.reset(collectionName);
     return result;
   }
 

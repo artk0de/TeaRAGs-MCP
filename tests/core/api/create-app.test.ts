@@ -5,7 +5,7 @@ import type { QdrantManager } from "../../../src/core/adapters/qdrant/client.js"
 import { createApp, type AppDeps, type ExploreFacade, type IngestFacade } from "../../../src/core/api/index.js";
 import type { ProjectRegistryOps } from "../../../src/core/api/internal/ops/project-registry-ops.js";
 import type { Reranker } from "../../../src/core/domains/explore/reranker.js";
-import type { SchemaDriftMonitor } from "../../../src/core/domains/maintenance/drift/schema-drift-monitor.js";
+import type { IndexDriftReport, IndexDriftReporter } from "../../../src/core/domains/maintenance/drift/index.js";
 
 // ---------------------------------------------------------------------------
 // Mock factories
@@ -85,12 +85,22 @@ function createMockReranker(): Reranker {
   } as unknown as Reranker;
 }
 
-function createMockDriftMonitor(): SchemaDriftMonitor {
+function createMockDriftReporter(): IndexDriftReporter {
   return {
     checkAndConsume: vi.fn().mockResolvedValue(null),
     checkByCollectionName: vi.fn().mockReturnValue(null),
-  } as unknown as SchemaDriftMonitor;
+    reset: vi.fn(),
+  } as unknown as IndexDriftReporter;
 }
+
+/** One payload-key finding whose remedy is the full reindex. */
+const payloadKeyReport: IndexDriftReport = {
+  findings: [
+    { axis: "payloadKeys", subject: "navigation", indexed: "absent", current: "declared", remedy: { kind: "force" } },
+  ],
+  remedy: { kind: "force" },
+};
+const payloadKeyReportText = "Payload keys:\n  navigation: absent → declared\nRun: tea-rags index-codebase --force";
 
 function createMockProjectRegistryOps(): ProjectRegistryOps {
   return {
@@ -107,7 +117,7 @@ function createMockDeps(): AppDeps {
     explore: createMockExploreFacade(),
     ingest: createMockIngestFacade(),
     reranker: createMockReranker(),
-    schemaDriftMonitor: createMockDriftMonitor(),
+    driftReporter: createMockDriftReporter(),
     projectRegistryOps: createMockProjectRegistryOps(),
     quantizationScalar: true,
     turboQuant: true,
@@ -153,7 +163,7 @@ describe("createApp", () => {
     expect(app.getSchemaDescriptors).toBeDefined();
 
     // Drift
-    expect(app.checkSchemaDrift).toBeDefined();
+    expect(app.checkIndexDrift).toBeDefined();
   });
 
   // =========================================================================
@@ -369,39 +379,45 @@ describe("createApp", () => {
   // Drift monitoring
   // =========================================================================
 
-  describe("checkSchemaDrift", () => {
-    it("delegates to checkAndConsume when ref has path", async () => {
+  describe("checkIndexDrift", () => {
+    it("delegates to checkAndConsume when the request has a path", async () => {
       const app = createApp(deps);
-      await app.checkSchemaDrift({ path: "/foo" });
+      await app.checkIndexDrift({ path: "/foo" });
 
-      expect(deps.schemaDriftMonitor.checkAndConsume).toHaveBeenCalledWith("/foo");
+      expect(deps.driftReporter.checkAndConsume).toHaveBeenCalledWith("/foo");
     });
 
-    it("delegates to checkByCollectionName when ref has collection", async () => {
+    it("delegates to checkByCollectionName when the request has a collection", async () => {
       const app = createApp(deps);
-      await app.checkSchemaDrift({ collection: "col1" });
+      await app.checkIndexDrift({ collection: "col1" });
 
-      expect(deps.schemaDriftMonitor.checkByCollectionName).toHaveBeenCalledWith("col1");
+      expect(deps.driftReporter.checkByCollectionName).toHaveBeenCalledWith("col1");
     });
 
-    it("returns drift warning from path-based check", async () => {
-      (deps.schemaDriftMonitor.checkAndConsume as ReturnType<typeof vi.fn>).mockResolvedValue("Schema drift detected");
+    it("renders the report from a path-based check", async () => {
+      (deps.driftReporter.checkAndConsume as ReturnType<typeof vi.fn>).mockResolvedValue(payloadKeyReport);
 
       const app = createApp(deps);
-      const result = await app.checkSchemaDrift({ path: "/foo" });
+      const result = await app.checkIndexDrift({ path: "/foo" });
 
-      expect(result).toBe("Schema drift detected");
+      expect(result).toBe(payloadKeyReportText);
     });
 
-    it("returns drift warning from collection-based check", async () => {
-      (deps.schemaDriftMonitor.checkByCollectionName as ReturnType<typeof vi.fn>).mockReturnValue(
-        "Schema drift detected",
-      );
+    it("renders the report from a collection-based check", async () => {
+      (deps.driftReporter.checkByCollectionName as ReturnType<typeof vi.fn>).mockReturnValue(payloadKeyReport);
 
       const app = createApp(deps);
-      const result = await app.checkSchemaDrift({ collection: "col1" });
+      const result = await app.checkIndexDrift({ collection: "col1" });
 
-      expect(result).toBe("Schema drift detected");
+      expect(result).toBe(payloadKeyReportText);
+    });
+
+    it("returns null when the request names neither a path nor a collection", async () => {
+      const app = createApp(deps);
+
+      await expect(app.checkIndexDrift({})).resolves.toBeNull();
+      expect(deps.driftReporter.checkAndConsume).not.toHaveBeenCalled();
+      expect(deps.driftReporter.checkByCollectionName).not.toHaveBeenCalled();
     });
   });
 

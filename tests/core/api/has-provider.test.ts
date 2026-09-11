@@ -15,7 +15,7 @@ import type { QdrantManager } from "../../../src/core/adapters/qdrant/client.js"
 import { createApp, type AppDeps, type ExploreFacade, type IngestFacade } from "../../../src/core/api/index.js";
 import type { ProjectRegistryOps } from "../../../src/core/api/internal/ops/project-registry-ops.js";
 import type { Reranker } from "../../../src/core/domains/explore/reranker.js";
-import type { SchemaDriftMonitor } from "../../../src/core/domains/maintenance/drift/schema-drift-monitor.js";
+import type { IndexDriftReporter } from "../../../src/core/domains/maintenance/drift/index.js";
 
 function makeDeps(registeredKeys: Iterable<string> = []): AppDeps {
   return {
@@ -29,7 +29,7 @@ function makeDeps(registeredKeys: Iterable<string> = []): AppDeps {
       getPresetDetails: vi.fn().mockReturnValue([]),
       getPayloadSignals: vi.fn().mockReturnValue([]),
     } as unknown as Reranker,
-    schemaDriftMonitor: {} as SchemaDriftMonitor,
+    driftReporter: {} as IndexDriftReporter,
     projectRegistryOps: {} as ProjectRegistryOps,
     quantizationScalar: true,
     turboQuant: true,

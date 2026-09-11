@@ -91,13 +91,23 @@ function makeMockRegistry() {
   } as any;
 }
 
-function makeMockDriftMonitor(overrides: Record<string, any> = {}) {
+function makeMockDriftReporter(overrides: Record<string, any> = {}) {
   return {
     checkAndConsume: vi.fn().mockResolvedValue(null),
     checkByCollectionName: vi.fn().mockReturnValue(null),
+    reset: vi.fn(),
     ...overrides,
   } as any;
 }
+
+/** One drifted payload key, and the text `formatIndexDriftReport` renders it as. */
+const driftReport = {
+  findings: [
+    { axis: "payloadKeys", subject: "navigation", indexed: "absent", current: "declared", remedy: { kind: "force" } },
+  ],
+  remedy: { kind: "force" },
+};
+const driftReportText = "Payload keys:\n  navigation: absent → declared\nRun: tea-rags index-codebase --force";
 
 // ---------------------------------------------------------------------------
 // 1. getIndexMetrics without statsCache → NotIndexedError
@@ -118,7 +128,7 @@ describe("ExploreOps.getIndexMetrics", () => {
       reranker: makeMockReranker(),
       registry: makeMockRegistry(),
       // statsCache intentionally omitted
-      schemaDriftMonitor: makeMockDriftMonitor(),
+      driftReporter: makeMockDriftReporter(),
       payloadSignals: [],
       essentialKeys: [],
     });
@@ -140,15 +150,15 @@ describe("ExploreOps drift warning — collection-only path", () => {
     // When the caller passes `collection` directly (not `path`), the drift
     // monitor's collection-name branch must run — the path branch can't
     // because there is no path to check against the schema-version registry.
-    const driftMonitor = makeMockDriftMonitor({
-      checkByCollectionName: vi.fn().mockReturnValue("Schema version drift detected for code_xyz"),
+    const driftReporter = makeMockDriftReporter({
+      checkByCollectionName: vi.fn().mockReturnValue(driftReport),
     });
     const facade = new ExploreFacade({
       qdrant: makeMockQdrant(),
       embeddings: makeMockEmbeddings(),
       reranker: makeMockReranker(),
       registry: makeMockRegistry(),
-      schemaDriftMonitor: driftMonitor,
+      driftReporter,
       payloadSignals: [],
       essentialKeys: [],
     });
@@ -158,9 +168,9 @@ describe("ExploreOps drift warning — collection-only path", () => {
       query: "anything",
     });
 
-    expect(driftMonitor.checkAndConsume).not.toHaveBeenCalled();
-    expect(driftMonitor.checkByCollectionName).toHaveBeenCalledWith("code_explicit_no_path");
-    expect(result.driftWarning).toBe("Schema version drift detected for code_xyz");
+    expect(driftReporter.checkAndConsume).not.toHaveBeenCalled();
+    expect(driftReporter.checkByCollectionName).toHaveBeenCalledWith("code_explicit_no_path");
+    expect(result.driftWarning).toBe(driftReportText);
   });
 });
 
@@ -186,7 +196,7 @@ describe("ExploreOps documentation auto-rerank", () => {
       embeddings: makeMockEmbeddings(),
       reranker,
       registry: makeMockRegistry(),
-      schemaDriftMonitor: makeMockDriftMonitor(),
+      driftReporter: makeMockDriftReporter(),
       payloadSignals: [],
       essentialKeys: [],
     });
@@ -210,7 +220,7 @@ describe("ExploreOps documentation auto-rerank", () => {
       embeddings: makeMockEmbeddings(),
       reranker,
       registry: makeMockRegistry(),
-      schemaDriftMonitor: makeMockDriftMonitor(),
+      driftReporter: makeMockDriftReporter(),
       payloadSignals: [],
       essentialKeys: [],
     });
@@ -234,7 +244,7 @@ describe("ExploreOps documentation auto-rerank", () => {
       embeddings: makeMockEmbeddings(),
       reranker,
       registry: makeMockRegistry(),
-      schemaDriftMonitor: makeMockDriftMonitor(),
+      driftReporter: makeMockDriftReporter(),
       payloadSignals: [],
       essentialKeys: [],
     });
@@ -310,7 +320,7 @@ describe("ExploreOps stats-before-filter ordering", () => {
       reranker,
       registry,
       statsCache,
-      schemaDriftMonitor: makeMockDriftMonitor(),
+      driftReporter: makeMockDriftReporter(),
       payloadSignals: [],
       essentialKeys: [],
     });

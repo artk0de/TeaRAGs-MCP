@@ -29,9 +29,10 @@ export function buildOverview(): string {
 - get_index_status returns an \`infraHealth\` block: qdrant url/status/optimizer,
   embedding url/reachable, per-trajectory enrichment health. First debug-point
   when search fails or returns unexpected results.
-- Every search response can include \`driftWarning\` when live schema added
-  payload fields the current index has not reindexed for. Surface it to the
-  user; do NOT auto-trigger force_reindex.
+- Every search response can include \`driftWarning\` when the running build has
+  moved past what the index was built with — new payload fields, or a newer
+  grammar / walker for a language it holds. It names the one command that
+  repairs it. Surface it to the user; do NOT auto-trigger a reindex.
 - Every reranked result carries \`rankingOverlay.derived\` + \`rankingOverlay.raw.{file,chunk}\`
   explaining the score (normalized derived signals + raw values with labels).
   Read tea-rags://schema/signal-labels for the label resolution algorithm.

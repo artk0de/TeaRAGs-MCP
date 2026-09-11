@@ -8,7 +8,7 @@ conditions below (signals from **prime** digest layer); reindex when one fires.
 | ------------------------------------------------------------------------------------------ | -------------------------------------------------------------------------------------- | -------------------------- |
 | Prime banner `⚠ Index is stale (last updated Nd ago)`                                      | `index_codebase` (incremental)                                                         | no — reindex silently      |
 | Files created/modified this session (`Write`/`Edit`, incl. by a subagent), not yet indexed | `index_codebase` (incremental)                                                         | no — reindex silently      |
-| Prime `## Schema drift` section is **not** `none` (lists new payload fields)               | the `Run:` command the section names (`--force-enrichments <trajectory>` or `--force`) | **YES — explicit consent** |
+| Prime `## Drift` section is **not** `none`                                                 | the `Run:` command the section names (`--force-enrichments <trajectory>` or `--force`) | **YES — explicit consent** |
 
 ## Worktree-clone lifecycle (explicit, plan execution)
 
