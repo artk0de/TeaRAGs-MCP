@@ -49,11 +49,21 @@ import { pipelineLog } from "../infra/debug-logger.js";
 import { batchSetPayloadWithRetry, type BatchPayloadOp } from "./batch-write.js";
 
 /**
- * Payload keys the pass needs: the file identity it filters on, the symbol
- * identity, and the existing decline stamps. Anything else — `content` above
- * all — would turn a cheap traversal into hundreds of MB of transfer.
+ * Payload keys the pass reads, and nothing else: the file identity it filters
+ * on, the symbol identity, and the two decline stamps. `content` above all must
+ * stay out — materializing it for every point of the collection is hundreds of
+ * MB for a read that wants four scalars.
+ *
+ * The stamps are addressed as NESTED paths rather than by pulling the whole
+ * `codegraph` subtree: `with_payload.include` takes dotted key paths, and the
+ * subtree also carries the file and chunk signal blocks, which this pass
+ * OVERWRITES without ever reading. Built from the injected `providerKey`, so
+ * the keys the pass reads can never name a different subtree than the keys it
+ * writes.
  */
-const HEAL_PAYLOAD_INCLUDE = ["relativePath", "symbolId", "codegraph"];
+function healPayloadInclude(providerKey: string): string[] {
+  return ["relativePath", "symbolId", `${providerKey}.file.skippedAs`, `${providerKey}.chunk.skippedAs`];
+}
 
 /**
  * Pages between progress lines. The pass is one long traversal with no
@@ -115,7 +125,12 @@ interface HealPageGroups {
 }
 
 export class CodegraphPayloadHealer {
-  constructor(private readonly deps: CodegraphPayloadHealerDeps) {}
+  /** The pass's payload projection, built once off `providerKey`. */
+  private readonly payloadInclude: string[];
+
+  constructor(private readonly deps: CodegraphPayloadHealerDeps) {
+    this.payloadInclude = healPayloadInclude(deps.providerKey);
+  }
 
   async heal(
     collectionName: string,
@@ -150,7 +165,7 @@ export class CodegraphPayloadHealer {
     let pointsScanned = 0;
     let pointsMatched = 0;
 
-    for await (const page of this.deps.qdrant.scrollPayloadPages(collectionName, HEAL_PAYLOAD_INCLUDE)) {
+    for await (const page of this.deps.qdrant.scrollPayloadPages(collectionName, this.payloadInclude)) {
       pagesScanned++;
       pointsScanned += page.length;
 
@@ -159,7 +174,7 @@ export class CodegraphPayloadHealer {
       // Per page, not per pass: the groups are dropped once written, so what
       // survives the loop is the id set alone — memory scales with the TARGET
       // set, never with the collection.
-      await this.flush(collectionName, groups, touched, enrichedAt);
+      await this.flush(collectionName, groups, touched, pagesScanned, enrichedAt);
 
       if (pagesScanned % HEAL_PROGRESS_EVERY_PAGES === 0) {
         pipelineLog.enrichmentPhase("CODEGRAPH_PAYLOAD_HEAL_PROGRESS", {
@@ -196,7 +211,7 @@ export class CodegraphPayloadHealer {
       // per page — the same coalescing `applyFinalizeFile` does, for the same
       // reason. A file whose points span pages simply yields one op per page.
       if (wantsFile && !isDeclined(payload, this.deps.providerKey, "file")) {
-        push(groups.file, relPath, id);
+        appendTo(groups.file, relPath, id);
       }
 
       // CHUNK level: grouped by symbol, because a symbol's payload is the same
@@ -211,7 +226,7 @@ export class CodegraphPayloadHealer {
         bySymbol = new Map<string, (string | number)[]>();
         groups.chunk.set(relPath, bySymbol);
       }
-      push(bySymbol, symbolId, id);
+      appendTo(bySymbol, symbolId, id);
     }
 
     return groups;
@@ -222,6 +237,7 @@ export class CodegraphPayloadHealer {
     collectionName: string,
     groups: HealPageGroups,
     touched: Set<string | number>,
+    pagesScanned: number,
     enrichedAt?: string,
   ): Promise<void> {
     const operations: BatchPayloadOp[] = [];
@@ -254,18 +270,36 @@ export class CodegraphPayloadHealer {
     const ok = await batchSetPayloadWithRetry(this.deps.qdrant, collectionName, operations);
     if (!ok) {
       throw new Error(
-        "codegraph payload heal: a payload write failed after every retry. " +
-          "Nothing is recorded as healed; the diff stands for the next run.",
+        `codegraph payload heal: the payload write for page ${pagesScanned} failed after every retry, ` +
+          `covering ${describeGroups(groups)}. Writes from earlier pages DID land — they are idempotent ` +
+          "and re-running them costs nothing — but the baseline is not advanced, so the whole diff " +
+          "stands for the next run.",
       );
     }
   }
 }
 
 /** Append `value` to the list at `key`, creating it on first use. */
-function push<K, V>(map: Map<K, V[]>, key: K, value: V): void {
+function appendTo<K, V>(map: Map<K, V[]>, key: K, value: V): void {
   const existing = map.get(key);
   if (existing) existing.push(value);
   else map.set(key, [value]);
+}
+
+/** Files named in a failed page's error before the list is elided. */
+const FILES_NAMED_IN_ERROR = 5;
+
+/**
+ * The files a failed page was writing. Bounded on purpose: one page can group
+ * hundreds of files, and an exception message is not the place to print them
+ * all — the point is to give the reader somewhere to start looking.
+ */
+function describeGroups(groups: HealPageGroups): string {
+  const paths = [...new Set([...groups.file.keys(), ...groups.chunk.keys()])];
+  if (paths.length === 0) return "no files";
+  const shown = paths.slice(0, FILES_NAMED_IN_ERROR);
+  const rest = paths.length - shown.length;
+  return rest > 0 ? `${shown.join(", ")} and ${rest} more` : shown.join(", ");
 }
 
 /** Points a page contributed at either level, counted once per level's group. */

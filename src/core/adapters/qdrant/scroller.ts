@@ -7,7 +7,7 @@
  * They are one concern because they share the pagination contract every Qdrant
  * scroll has and no other call does: drive `next_page_offset` in a loop until
  * the server stops handing one back, and decide per call how much of the payload
- * to materialize. That second decision is the reason these are five methods and
+ * to materialize. That second decision is the reason these are six methods and
  * not one — a recovery traversal reading three scalar keys across tens of
  * thousands of chunks and a migration traversal that needs the vectors have
  * opposite cost profiles, and collapsing them behind one signature would force

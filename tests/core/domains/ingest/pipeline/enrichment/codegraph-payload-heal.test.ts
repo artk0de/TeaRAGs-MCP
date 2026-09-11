@@ -220,9 +220,18 @@ describe("CodegraphPayloadHealer", () => {
     expect(stub.payloadOf("p3").codegraph).toBeUndefined();
   });
 
-  it("reads only the payload keys it needs", async () => {
+  // The projection is the pass's whole transfer cost, multiplied by every point
+  // in the collection. Pulling the `codegraph` subtree instead of the two stamp
+  // paths would drag the file and chunk signal blocks along — blocks this pass
+  // overwrites and never reads.
+  it("reads only the payload keys it needs, the decline stamps as nested paths", async () => {
     await makeHealer(stub).heal("coll", { symbols: [], files: [{ relPath: "src/hub.ts" }] }, new Set());
-    expect(stub.payloadInclude).toEqual(["relativePath", "symbolId", "codegraph"]);
+    expect(stub.payloadInclude).toEqual([
+      "relativePath",
+      "symbolId",
+      `${PROVIDER_KEY}.file.skippedAs`,
+      `${PROVIDER_KEY}.chunk.skippedAs`,
+    ]);
   });
 
   it("stamps the run's enrichedAt alongside the signals", async () => {
@@ -261,6 +270,34 @@ describe("CodegraphPayloadHealer", () => {
     expect(stub.opsForKey(`${PROVIDER_KEY}.file`)[0]?.points).toEqual(["p2"]);
     const chunkOps = stub.opsForKey(`${PROVIDER_KEY}.chunk`);
     expect(chunkOps.flatMap((o) => o.points)).toEqual(["p2"]);
+  });
+
+  // The decline is per LEVEL, not per point: the two are separate terminal
+  // states on the same physical point, so a file-level decline says nothing
+  // about the chunk level. Declining both at once — the case above — cannot
+  // tell a per-level guard from a per-point one.
+  it("writes the level that was not declined on a point declined at the other", async () => {
+    stub = new PagedQdrantStub([
+      point("p1", "src/half.ts", "halfFn", { symbols: { file: { skippedAs: "generated" } } }),
+      point("p2", "src/half.ts", "otherFn", { symbols: { chunk: { skippedAs: "generated" } } }),
+    ]);
+
+    await makeHealer(stub).heal(
+      "coll",
+      {
+        symbols: [
+          { relPath: "src/half.ts", symbolId: "halfFn" },
+          { relPath: "src/half.ts", symbolId: "otherFn" },
+        ],
+        files: [{ relPath: "src/half.ts" }],
+      },
+      new Set(),
+    );
+
+    // p1 declined at file level only -> takes the chunk write, not the file one.
+    // p2 declined at chunk level only -> the mirror.
+    expect(stub.opsForKey(`${PROVIDER_KEY}.file`).flatMap((o) => o.points)).toEqual(["p2"]);
+    expect(stub.opsForKey(`${PROVIDER_KEY}.chunk`).flatMap((o) => o.points)).toEqual(["p1"]);
   });
 
   it("writes nothing for a file the graph can no longer describe", async () => {
@@ -438,7 +475,9 @@ describe("CodegraphPayloadHealer", () => {
         { symbols: [], files: [{ relPath: "src/a.ts" }, { relPath: "src/b.ts" }] },
         new Set(),
       ),
-    ).rejects.toThrow(/failed after every retry/);
+      // The page and the files it was writing, so the reader of a failed run
+      // has somewhere to start rather than "a write failed, somewhere".
+    ).rejects.toThrow(/page 1 failed after every retry, covering src\/a\.ts/);
 
     expect(stub.pagesServed).toBe(1);
     expect(stub.payloadOf("p2").codegraph).toBeUndefined();
