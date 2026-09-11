@@ -28,16 +28,27 @@ const CHUNKER_ROOT = "src/core/domains/ingest/pipeline/chunker";
  */
 const SHARED_SOURCES: VersionAxisSources[] = [
   {
+    // Every non-test `.ts` directly under the chunker, named one by one rather
+    // than by directory: recursing would swallow `hooks/<lang>/`, which each
+    // language's own `chunking` axis already owns. The list is kept in lockstep
+    // with the rule's `chunker/*.ts` glob — a file matching the rule but
+    // digested by nothing is a version number vouching for code it never saw.
     axis: "chunking",
     paths: [
       `${CHUNKER_ROOT}/base.ts`,
       `${CHUNKER_ROOT}/tree-sitter.ts`,
       `${CHUNKER_ROOT}/markdown-chunker.ts`,
       `${CHUNKER_ROOT}/character.ts`,
+      `${CHUNKER_ROOT}/config.ts`,
+      `${CHUNKER_ROOT}/materialize.ts`,
+      `${CHUNKER_ROOT}/symbol-mass.ts`,
       `${CHUNKER_ROOT}/symbol-id-disambiguator.ts`,
       `${CHUNKER_ROOT}/chunk-navigation.ts`,
       `${CHUNKER_ROOT}/utils/chunk-id.ts`,
       "src/core/infra/symbolid",
+      // `chunker/materialize.ts` is a seven-line re-export; the AST every
+      // chunker and the codegraph provider actually walk is built here.
+      "src/core/infra/materialize.ts",
     ],
   },
   {
@@ -46,6 +57,15 @@ const SHARED_SOURCES: VersionAxisSources[] = [
       `${LANGUAGE_ROOT}/kernel`,
       `${LANGUAGE_ROOT}/resolver-chain.ts`,
       `${LANGUAGE_ROOT}/cone-dispatch.ts`,
+      // Shared resolution the verticals lean on: which file an import names,
+      // whether a symbol is external, and the ECMAScript global vocabulary.
+      `${LANGUAGE_ROOT}/import-file-edges.ts`,
+      `${LANGUAGE_ROOT}/external-classifier.ts`,
+      `${LANGUAGE_ROOT}/shared`,
+      // The factory decides WHICH walker and resolver each language gets and
+      // with which mode — a change here retargets edges without touching a
+      // single per-language file.
+      `${LANGUAGE_ROOT}/factory.ts`,
       "src/core/domains/trajectory/codegraph/symbols/resolution-runner.ts",
     ],
     // Same exclusion as a language's own `capability.ts`, for the same reason:

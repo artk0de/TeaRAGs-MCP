@@ -2,11 +2,11 @@
   "*": {
     "chunking": {
       "version": 1,
-      "digest": "sha256:056c2d456dbe74e3a2af7bd5c5e8ab3925d748829d9ee269fbcaae7f598f7a8f"
+      "digest": "sha256:bb683a71fbf980f596d03f0fa0e0f3b16fbfb89eea9a1fd71d29f97f51129e85"
     },
     "walker": {
       "version": 2,
-      "digest": "sha256:567c883b39dce726ad9b90f23f3c485107275989744500d7452a2caab863e892"
+      "digest": "sha256:7cac29c2fdb3fbc151435435387982ac6c9e85cedafe0e92b5323548342e1357"
     }
   },
   "bash": {
