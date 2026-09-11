@@ -82,6 +82,13 @@ export interface CodegraphCorpus {
   baseline: CodegraphCorpusBaseline;
   /** Present only on the two corpora the E6.0b matrix timed (polar, netbox). */
   e6?: CodegraphCorpusE6;
+  /**
+   * The same six figures re-taken after E6.1's three fixes, on the same corpora
+   * and by the same protocol. A THIRD block for the reason `e6` is a second one:
+   * `e6` is what the BREACH verdict was taken on, and a fix that rewrote it
+   * would erase the thing the fix is measured against.
+   */
+  e61?: CodegraphCorpusE6;
   notes?: string;
 }
 
