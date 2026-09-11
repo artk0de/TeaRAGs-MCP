@@ -417,8 +417,10 @@ export class IndexingOps {
     const exists = await this.qdrant.collectionExists(collectionName);
     if (!exists) return undefined;
 
-    // Model guard before health check — guard reads Qdrant (no embed),
-    // health check calls embed() which fails with wrong model name.
+    // Model guard before health check — the guard compares the stored model
+    // NAME first, with no embed, so a wrong name is reported here rather than
+    // as the health check's confusing embed() failure. It may embed the canary
+    // afterwards, but only once the name already matched.
     await this.modelGuard?.ensureMatch(collectionName);
     await this.checkEmbeddingHealth();
 

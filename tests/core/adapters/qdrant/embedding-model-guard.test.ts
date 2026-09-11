@@ -202,11 +202,13 @@ describe("EmbeddingModelGuard", () => {
  * `getPoint` / `setPayload` / `addPoints` / `addPointsWithSparse` — over one
  * in-memory payload per collection, exposed through `marker(collection)`.
  */
-function fakeQdrantWithMarker(markerPayload: Record<string, unknown>) {
+function fakeQdrantWithMarker(markerPayload: Record<string, unknown> | null) {
   const markers = new Map<string, Record<string, unknown>>();
-  const markerFor = (collection: string): Record<string, unknown> => {
+  // `null` = the collection has no marker point yet, so the guard takes its
+  // create path; anything else seeds one on first read.
+  const markerFor = (collection: string): Record<string, unknown> | undefined => {
     let payload = markers.get(collection);
-    if (!payload) {
+    if (!payload && markerPayload !== null) {
       payload = { _type: "indexing_metadata", indexingComplete: true, ...markerPayload };
       markers.set(collection, payload);
     }
@@ -214,13 +216,14 @@ function fakeQdrantWithMarker(markerPayload: Record<string, unknown>) {
   };
 
   return {
-    marker: markerFor,
-    getPoint: vi.fn(async (collection: string) => ({
-      id: INDEXING_METADATA_ID,
-      payload: markerFor(collection),
-    })),
+    marker: (collection: string) => markerFor(collection) ?? {},
+    getPoint: vi.fn(async (collection: string) => {
+      const payload = markerFor(collection);
+      return payload ? { id: INDEXING_METADATA_ID, payload } : null;
+    }),
     setPayload: vi.fn(async (collection: string, fields: Record<string, unknown>) => {
-      Object.assign(markerFor(collection), fields);
+      const payload = markerFor(collection);
+      if (payload) Object.assign(payload, fields);
     }),
     addPoints: vi.fn(async (collection: string, points: { payload: Record<string, unknown> }[]) => {
       markers.set(collection, { ...points[0].payload });
@@ -322,5 +325,65 @@ describe("EmbeddingModelGuard canary", () => {
     expect(qdrant.marker("c").canary).toBeUndefined();
     expect(consoleError).toHaveBeenCalledWith(expect.stringContaining("Canary check skipped"), expect.anything());
     consoleError.mockRestore();
+  });
+
+  it("folds the canary into a marker it creates, without a second write", async () => {
+    const qdrant = fakeQdrantWithMarker(null);
+    await new EmbeddingModelGuard(qdrant, "m", 4, providerReturning(V)).ensureMatch("c");
+
+    const [, points] = qdrant.addPoints.mock.calls[0];
+    expect(points[0].payload.canary).toEqual({ text: EMBEDDING_CANARY_TEXT, vector: V });
+    expect(qdrant.setPayload).not.toHaveBeenCalled();
+  });
+
+  it("tells the canary case to rebuild the index, not to edit EMBEDDING_MODEL", async () => {
+    // The generic hint's first option is "point EMBEDDING_MODEL at <expected>",
+    // and for canary drift expected IS what the config already says — following
+    // it changes nothing.
+    const qdrant = fakeQdrantWithMarker({
+      embeddingModel: "m",
+      canary: { text: EMBEDDING_CANARY_TEXT, vector: V },
+    });
+    const guard = new EmbeddingModelGuard(qdrant, "m", 4, providerReturning(ORTHOGONAL));
+
+    const error = await guard.ensureMatch("c").catch((e: unknown) => e);
+
+    expect(error).toBeInstanceOf(EmbeddingModelMismatchError);
+    const { hint } = error as EmbeddingModelMismatchError;
+    expect(hint).not.toContain("EMBEDDING_MODEL in config");
+    expect(hint).toContain("--force");
+  });
+
+  it("re-checks a cached mismatch after invalidateAll (endpoint failover)", async () => {
+    const qdrant = fakeQdrantWithMarker({
+      embeddingModel: "m",
+      canary: { text: EMBEDDING_CANARY_TEXT, vector: V },
+    });
+    const embed = vi.fn(async () => ({ embedding: ORTHOGONAL }));
+    const guard = new EmbeddingModelGuard(qdrant, "m", 4, { embed } as never);
+
+    await expect(guard.ensureMatch("c")).rejects.toThrow(EmbeddingModelMismatchError);
+    guard.invalidateAll();
+    await expect(guard.ensureMatch("c")).rejects.toThrow(EmbeddingModelMismatchError);
+
+    expect(embed).toHaveBeenCalledTimes(2);
+  });
+
+  it("invalidateAll drops every collection, not just the last one", async () => {
+    const qdrant = fakeQdrantWithMarker({
+      embeddingModel: "m",
+      canary: { text: EMBEDDING_CANARY_TEXT, vector: V },
+    });
+    const embed = vi.fn(async () => ({ embedding: V }));
+    const guard = new EmbeddingModelGuard(qdrant, "m", 4, { embed } as never);
+
+    await guard.ensureMatch("c1");
+    await guard.ensureMatch("c2");
+    expect(embed).toHaveBeenCalledTimes(2);
+
+    guard.invalidateAll();
+    await guard.ensureMatch("c1");
+    await guard.ensureMatch("c2");
+    expect(embed).toHaveBeenCalledTimes(4);
   });
 });
