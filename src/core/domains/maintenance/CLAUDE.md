@@ -45,7 +45,7 @@
   FILENAME string in `schema_migrations` (`runner.ts:41-58`), so renaming an
   already-applied file re-runs it.
 - **Drift compares FEATURE-FLAG-dependent descriptors against index-time keys.**
-  `SchemaDriftMonitor`'s `currentPayloadKeys` (`schema-drift-monitor.ts:17`) is
+  `SchemaDriftMonitor`'s `currentPayloadKeys` (`schema-drift-monitor.ts:19`) is
   NOT read from Qdrant — it is the payload-signal descriptor set the CURRENT
   composition declares (`src/bootstrap/factory.ts`:
   `composition.allPayloadSignalDescriptors` + `"navigation"`), compared against

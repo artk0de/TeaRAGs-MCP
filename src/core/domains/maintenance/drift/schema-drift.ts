@@ -18,9 +18,14 @@ export function checkSchemaDrift(cachedKeys: string[] | undefined, currentKeys: 
 }
 
 /**
- * Human-readable warning. With `owners`, the hint names the narrowest command
- * that repopulates the drifted keys; without them the legacy full-reindex hint
- * is kept for callers that have no attribution to give.
+ * Format a human-readable warning for schema drift.
+ *
+ * With `owners` supplied, the hint names the narrowest command that actually
+ * repopulates the drifted keys: an enrichment recompute when every new key
+ * belongs to a trajectory that has an enrichment provider, a full reindex
+ * otherwise, and nothing at all when the drift is removals only. Without
+ * `owners` the legacy full-reindex hint is kept, so callers that have no
+ * attribution to give are unaffected.
  */
 export function formatSchemaDriftWarning(drift: SchemaDrift, owners?: readonly PayloadKeyOwner[]): string {
   const remedy: IndexDriftRemedy | null = owners ? resolveSchemaDriftRemedy(drift, owners) : null;
