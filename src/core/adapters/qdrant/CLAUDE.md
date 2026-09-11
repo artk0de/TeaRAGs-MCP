@@ -2,63 +2,19 @@
 
 ## Invariants
 
-- **Name first, canary second — a wrong `EMBEDDING_MODEL` costs no provider
-  round-trip.** `decideVerdict` returns on the name mismatch
-  (embedding-model-guard.ts:162-165) before `compareCanary` can be reached. The
-  ordering is not a micro-optimisation: `ensureMatch` sits on every read and
-  write path (`api/internal/ops/explore-ops.ts:183,375`, `document-ops.ts:29`,
-  `indexing-ops.ts:438`), and the canary leg is a live provider embed
-  (:236-245). Putting the embed ahead of the string compare charges a
-  misconfigured model a round-trip per collection to learn what its name already
-  said.
-
-- **A canary mismatch is sticky because it cannot be re-derived.**
-  `assertVerdict` (:186-197) rebuilds the NAME throw from `verdict.model`, but
-  the canary verdict survives only as the prose reason string on
-  `EmbeddingModelVerdict.canaryMismatch` (:48-52) — re-deriving it would mean
-  re-embedding on every call. What an edit must hold: anything that drops a
-  cache entry drops the only record of weight drift, and the next `ensureMatch`
-  pays a fresh embed to rediscover it.
-
-- **The in-flight check is registered before the first await and installed only
-  under an identity compare.** `startCheck` (:132-152) builds `settled`, then
-  publishes it into `pending` (:150), so callers arriving in the same tick join
-  it instead of starting their own; both settle paths then compare
-  `this.pending.get(collectionName) === settled` (:136, :144) and decline to
-  write when it no longer matches. `invalidate` / `invalidateAll` (:357-373)
-  delete the registration, which is precisely what makes that compare fail, and
-  `ensureMatch` reads the resulting `undefined` as "this measurement no longer
-  applies" and asserts nothing (:118-121). Why it matters: without the identity
-  compare, a check that began before an endpoint failover installs its verdict
-  behind the invalidation meant to clear exactly that measurement — and since a
-  canary verdict is sticky, that verdict then 409s every search for the rest of
-  the process.
-
-- **The create path withholds a clean verdict when the canary embed failed; the
-  read path does not.** `cacheable` is false in exactly one case — this call
-  created the marker, a provider exists, and no canary came back (:169-174). On
-  the read path `compareCanary` returns `null` for a failed embed (:208-209) and
-  the outcome is still cached (:176-182), as are the two outcomes that assert
-  nothing: an unreachable marker caches `model: null` (:160) and a name mismatch
-  caches its verdict (:164). The asymmetry is the point — a collection whose
-  marker was just created still owes a canary, so the next check has to retry
-  and backfill it, whereas an existing collection is already reported once and
-  re-embedding it per search would be the round-trip the cache exists to avoid.
-
-- **The canary is folded into the marker payload being created, never a
-  `setPayload` behind it.** `readOrCreateMarker` merges
-  `...(canary && { canary })` into the one upsert (:294-300). `setPayload`
-  appears only on the backfill paths, which target a marker that already exists
-  (`writeCanary` :248-259, the `embeddingModel` backfill :271-276). Splitting
-  the create into two writes leaves a window in which the marker names a model
-  and claims no canary, which is indistinguishable from a legacy collection.
-
-- **The created marker's zero vector is sized from the collection, not from
-  `this.dimensions`.** `collectionInfo.vectorSize || this.dimensions` (:288-289)
-  — the constructor value is the model registry's guess frozen at bootstrap, and
-  a wrong guess makes this very upsert fail, which routes into the catch and
-  disables the guard for that collection (:325-335). `this.dimensions` is the
-  fallback for a collection that reports no width, not the authority.
+- **`readOrCreateMarker`'s catch DISABLES the guard, and `:326` is the only way
+  out of it.** Every error raised inside that try block is converted into "guard
+  disabled for this collection": the catch returns `undefined`, `decideVerdict`
+  caches `model: null` (:160), and the collection asserts nothing from then on.
+  The sole exemption is the uncommented first line of the catch,
+  `if (error instanceof EmbeddingModelMismatchError) throw error;` (:326), and
+  nothing exercises it — every mismatch case in
+  `tests/core/adapters/qdrant/embedding-model-guard.test.ts` is decided in
+  `decideVerdict`, after the marker read has already returned. Why: a throw that
+  a later edit adds anywhere inside that try — a stricter marker parse, a new
+  consistency check — is swallowed by the same catch, and the collection drops
+  out of the guard with the suite still green. A new failure that must reach the
+  caller needs its own arm on `:326`, or it belongs outside the try.
 
 - **`invalidateAll()` reaches the guard through a slot in the composition root,
   and the slot is not incidental.** `bootstrap/factory.ts:195` declares
@@ -71,76 +27,86 @@
   edit must keep the handler reading `modelGuardSlot.current` at fire time and
   never capture the guard.
 
-- **`recordModel` writes the cache only; the marker point is written by someone
-  else.** `api/internal/ops/collection-ops.ts:39` calls it immediately after
-  `createCollection`, while the marker itself is written later by
-  `storeIndexingMarker` (`domains/ingest/pipeline/indexing-marker.ts:23`, called
-  from `domains/ingest/operations/indexing.ts:194` and
-  `domains/ingest/operations/reindexing.ts:185,207,617`). It also drops any
-  in-flight check (:348): this is first-hand knowledge of the model that created
-  the collection, and a check started earlier must not land on top of it.
+- **`recordModel` writes the cache; the marker point is created by the indexing
+  lease.** `api/internal/ops/collection-ops.ts:39` calls `recordModel`
+  immediately after `createCollection`, and the marker is first written by
+  `storeIndexingMarker(…, complete=false, …)` at
+  `domains/ingest/operations/indexing.ts:352`, which publishes the lease as soon
+  as the collection exists. `indexing.ts:194` and
+  `domains/ingest/operations/reindexing.ts:185,207,617` all pass `complete=true`
+  — they UPDATE that marker, they never create it. The window `recordModel`
+  covers is therefore between `createCollection` and the lease write; reading it
+  off the completing calls puts the window in the wrong place entirely.
+
+- **A cache reset is the only thing that can forget weight drift.** The name
+  verdict is re-derived on every assert; the canary verdict survives only as the
+  stored reason string, so `invalidate` / `invalidateAll` discard the sole
+  record of it and the next `ensureMatch` pays a fresh embed to find it again.
+  The reasoning is `embedding-model-guard.ts:42-47`.
+
+- **One check per collection, and a verdict never lands behind the invalidation
+  meant to clear it.** `startCheck` (:132-152) carries both halves —
+  registration before the first await, identity compare on each settle path.
+  Read the docblock at `:124-131` before touching either.
+
+- **The create path withholds a clean verdict when the canary embed failed; the
+  read path caches through it.** `cacheable` (:169-174, :176-182) is what
+  expresses the asymmetry; the reasoning is `:227-235`.
+
+- **Two marker-shape rules to know before editing `readOrCreateMarker`:** the
+  canary is folded into the payload of the create upsert rather than written by
+  a `setPayload` behind it (:294-300, reasoning at :291-293), and the created
+  marker's zero vector is sized from the collection rather than from
+  `this.dimensions` (:288-289, reasoning at :284-287).
 
 ## Mechanics
 
-- **Constants.** `EMBEDDING_CANARY_TEXT` and
-  `EMBEDDING_CANARY_MIN_COSINE = 0.999` are `contracts/constants.ts:24,36`; the
-  marker point id `INDEXING_METADATA_ID` is `:11`. The comparison is
-  `similarity < EMBEDDING_CANARY_MIN_COSINE` (:221) — strictly below fails — so
-  0.999 is a same-build threshold, not a same-meaning one.
+- **`EMBEDDING_CANARY_MIN_COSINE = 0.999` is PROVISIONAL, not a design
+  decision.** `contracts/constants.ts:26-35` states that the cross-endpoint
+  agreement it assumes has not been measured, that the measurement is the
+  user-gated C4 step (bd `tea-rags-mcp-ie819`), and that a lower measured value
+  is to be recorded there with the constant lowered to it minus 0.001. Do not
+  treat 0.999 as design until ie819 measures it, and do not derive a second
+  threshold from it meanwhile. The comparison itself is
+  `similarity < EMBEDDING_CANARY_MIN_COSINE` (`embedding-model-guard.ts:221`) —
+  strictly below.
 
-- **`cosine` is shared, and the length question is deliberately left outside
-  it.** `infra/vector-math.ts:19-30` loops over `a` and reads `b` at the same
-  indices, so ragged input is NaN by construction. Its two callers answer the
-  length question differently and both answers are load-bearing:
-  `infra/score-background.ts:39` filters its sample down to one arity, while the
-  guard scores a width difference as `0` before calling at all (:220).
-  Generalising `cosine` to tolerate ragged input takes that decision away from
-  both callers at once. `.claude/rules/domain-boundaries.md` carries the
-  two-consumer criterion that keeps this helper in `infra/` and the guard here.
+- **`EMBEDDING_CANARY_TEXT` is frozen, and `contracts/constants.ts:19-22` says
+  why.** The marker point id is `INDEXING_METADATA_ID` (`constants.ts:11`).
 
-- **Entry points and what each costs.** `ensureMatch` — the four call sites
-  above, cache-served after the first. `invalidate(collectionName)` — one
-  caller, `indexing-ops.ts:312` (clear index). `invalidateAll()` — the failover
-  hook only. Everything else is served from `this.cache`, so the steady-state
-  cost is one Qdrant read plus one canary embed per collection per process.
+- **The guard's answer to a width difference is `0`, not NaN.**
+  `embedding-model-guard.ts:220` compares the two lengths before calling
+  `cosine` and scores a mismatch as zero, which then fails the threshold. That
+  `cosine` leaves the length question to its callers at all is
+  `infra/vector-math.ts:13-17` — the contract lives there, and the guard is one
+  of the two callers it names.
 
-- **Exact matching on the `text`-indexed payload keys is not this directory's
-  root concern.** `relativePath` and `symbolId` both carry a `text` index
-  (schema-manager.ts:182,191; `relativePath` additionally carries a `keyword`
-  one, :178). The rule that follows from that lives with
-  `filters/text-indexed-exact.ts` — go there, and do not re-derive it at a call
-  site.
+- **Entry points and what each costs.** `ensureMatch` — four call sites:
+  `api/internal/ops/explore-ops.ts:183,375`, `document-ops.ts:29`,
+  `indexing-ops.ts:438`, cache-served after the first.
+  `invalidate(collectionName)` — one caller, `indexing-ops.ts:312` (clear
+  index). `invalidateAll()` — the failover hook only. Everything else is served
+  from `this.cache`, so the steady-state cost is one Qdrant read plus one canary
+  embed per collection per process.
+
+- **Exact matching on the `text`-indexed payload keys goes through
+  `filters/text-indexed-exact.ts`** (lands in D1). `relativePath`, `symbolId`
+  and `parentSymbolId` each carry a `text` index (`schema-manager.ts:182`,
+  `:191`, `:196`); `relativePath` carries a `keyword` index as well (`:178`).
 
 ## Gotchas
 
-- **`NaN < 0.999` is false, so an unguarded width mismatch would PASS.** The
-  `stored.vector.length === fresh.vector.length` test at :220 is the check, not
-  defensive tidiness around it. Delete it and a changed vector width — a model
-  change by itself — scores NaN, compares false against the threshold, and
-  yields a clean verdict that then gets cached.
-
-- **Editing `EMBEDDING_CANARY_TEXT` silently re-baselines every collection.**
-  `compareCanary` treats `stored?.text !== EMBEDDING_CANARY_TEXT` as "this
-  vector says nothing about the current canary" and overwrites it (:213-216) —
-  the same branch that backfills legacy markers. So a text edit raises nothing,
-  fails nothing, and discards every stored baseline; drift that existed before
-  the edit becomes unobservable. Treat the text as frozen.
-
-- **The canary throw reuses the error's `actual` slot to carry a description.**
+- **The canary throw puts a description where the error expects a model name.**
   `assertVerdict` passes `verdict.canaryMismatch` —
-  `"<model> (same name, different weights: canary cosine 0.9412)"` — where the
-  name path passes `this.currentModel` (:190-196 against
-  `adapters/embeddings/errors.ts:24-27`). It must also pass
-  `CANARY_MISMATCH_HINT` (:70-73): the default hint's first suggestion is to
-  point `EMBEDDING_MODEL` back at the stored name, which on this path is already
-  the configured one.
+  `"<model> (same name, different weights: canary cosine 0.9412)"` — as the
+  `actual` argument, where the name path passes `this.currentModel` (:190-196).
+  It also passes `CANARY_MISMATCH_HINT` (:70-73); why the default hint cannot
+  serve this path is `adapters/embeddings/errors.ts:17-21`.
 
-- **Marker failures log unconditionally while the successes are debug-gated, and
-  that inversion is deliberate.** The catch in `readOrCreateMarker` logs at
-  `console.error` with no `isDebug()` guard (:331); the backfill and create
-  notices are all behind `isDebug()` (:251-253, :278-280, :321-323). From the
-  moment that line prints, the collection accepts vectors from any model — a
-  debug-gated line would leave that invisible on the default path.
+- **The disable log is deliberately ungated while the backfill and create
+  notices are `isDebug()`-gated** (`:331` vs `:251-253`, `:278-280`,
+  `:321-323`); the reasoning is `:327-330`. Quieting that line hides the moment
+  a collection stopped being guarded.
 
 ## See also
 
@@ -153,5 +119,7 @@
 - `.claude/rules/qdrant-required-version.md` — `required-version.ts` and
   `embedded/`.
 - `.claude/rules/migrations.md` — `schema-manager.ts`, `sparse.ts`, `types.ts`.
-- `.claude/rules/domain-boundaries.md` — why the guard lives in this adapter
-  rather than in `infra/`, and where tests for this directory go.
+- `.claude/rules/domain-boundaries.md` — records this guard's move OUT of
+  `infra/`, under its rule that a module whose reason to change is a PRODUCT
+  decision does not belong in the foundation; also where tests for this
+  directory go.

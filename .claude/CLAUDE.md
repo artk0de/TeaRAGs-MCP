@@ -77,29 +77,31 @@ another domain owns stays a pointer. (`.claude/rules/plugin-guidance-layers.md`
 governs the four PLUGIN-facing layers — prime, tool schema, MCP resources,
 search cascade — not these.)
 
-| Navigator (under `src/core/`)         | What it briefs you on                                                            |
-| ------------------------------------- | -------------------------------------------------------------------------------- |
-| `domains/trajectory/`                 | derived-signal namespace, stats scoping, filter-preset compilation               |
-| `domains/trajectory/git/`             | commit vs blame ownership families, walk windows, squash-aware sessions          |
-| `domains/trajectory/codegraph/`       | deferred chunk pass, physical-vs-alias DuckDB naming, logical keys               |
-| `domains/ingest/`                     | quarantine store placement, what is quarantinable and what is not                |
-| `domains/ingest/pipeline/`            | poison-pill isolation, process-vs-thread transports, ignore patterns             |
-| `domains/ingest/pipeline/enrichment/` | payload-key scoping, terminal markers, run state, worker affinity                |
-| `domains/ingest/operations/`          | incremental work set, alias-vs-target addressing, finalize order                 |
-| `domains/explore/`                    | read path: strategy → rerank → overlay/confidence                                |
-| `domains/explore/strategies/`         | per-strategy post-processing contracts                                           |
-| `domains/language/`                   | resolver-chain ordering, local bindings, deferral economics                      |
-| `domains/language/ruby/`              | Ruby walker/resolver/DSL specifics                                               |
-| `domains/maintenance/`                | schema drift, migrations, freshness                                              |
-| `domains/maintenance/drift/`          | stamps compared never written, reporter-owned consumption, lattice-only remedies |
-| `domains/maintenance/registry/`       | sticky registry fields, CAS flush, env replay                                    |
-| `domains/maintenance/footprint/`      | the five per-collection artifacts, clone/remove saga                             |
-| `domains/maintenance/worktree/`       | clone provisioning, saga commit point, teardown guard                            |
-| `adapters/qdrant/`                    | model-mixing guard, weight canary, shared-cosine length contract                 |
+| Navigator (under `src/core/`)         | What it briefs you on                                                                |
+| ------------------------------------- | ------------------------------------------------------------------------------------ |
+| `domains/trajectory/`                 | derived-signal namespace, stats scoping, filter-preset compilation                   |
+| `domains/trajectory/git/`             | commit vs blame ownership families, walk windows, squash-aware sessions              |
+| `domains/trajectory/codegraph/`       | deferred chunk pass, physical-vs-alias DuckDB naming, logical keys                   |
+| `domains/ingest/`                     | quarantine store placement, what is quarantinable and what is not                    |
+| `domains/ingest/pipeline/`            | poison-pill isolation, process-vs-thread transports, ignore patterns                 |
+| `domains/ingest/pipeline/enrichment/` | payload-key scoping, terminal markers, run state, worker affinity                    |
+| `domains/ingest/operations/`          | incremental work set, alias-vs-target addressing, finalize order                     |
+| `domains/explore/`                    | read path: strategy → rerank → overlay/confidence                                    |
+| `domains/explore/strategies/`         | per-strategy post-processing contracts                                               |
+| `domains/language/`                   | resolver-chain ordering, local bindings, deferral economics                          |
+| `domains/language/python/`            | persisted importText shape, single-hop receiver arms, MRO member lookup, chain order |
+| `domains/language/ruby/`              | Ruby walker/resolver/DSL specifics                                                   |
+| `domains/maintenance/`                | schema drift, migrations, freshness                                                  |
+| `domains/maintenance/drift/`          | stamps compared never written, reporter-owned consumption, lattice-only remedies     |
+| `domains/maintenance/registry/`       | sticky registry fields, CAS flush, env replay                                        |
+| `domains/maintenance/footprint/`      | the five per-collection artifacts, clone/remove saga                                 |
+| `domains/maintenance/worktree/`       | clone provisioning, saga commit point, teardown guard                                |
+| `adapters/qdrant/`                    | model-mixing guard, weight canary, the marker-catch rethrow                          |
 
-`adapters/qdrant/` is the one navigator outside `src/core/domains/` — the
-embedding-model guard belongs to the adapter that owns the marker point, not to
-a domain (`.claude/rules/domain-boundaries.md`).
+`adapters/qdrant/` is the one navigator outside `src/core/domains/`.
+`.claude/rules/domain-boundaries.md` records the embedding-model guard's move
+out of `infra/`, under its rule that a module whose reason to change is a
+PRODUCT decision does not belong in the foundation.
 
 ## Terminology (MANDATORY)
 
