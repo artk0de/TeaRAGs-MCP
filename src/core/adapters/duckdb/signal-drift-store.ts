@@ -18,6 +18,9 @@
  * the payload is built from produces a diff that is right about edges and wrong
  * about signals — an edge COUNT, for instance, misses a dispatch-confidence
  * change that moves fanIn from 1 to 0.25.
+ *
+ * Who drives the refresh, and why `transitiveImpact` / `isHub` sit outside the
+ * comparison: `src/core/domains/trajectory/codegraph/CLAUDE.md`.
  */
 
 import type { CodegraphSignalDrift, RelPath, SymbolId } from "../../contracts/types/codegraph.js";

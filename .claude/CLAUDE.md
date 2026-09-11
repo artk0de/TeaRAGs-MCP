@@ -95,6 +95,11 @@ search cascade — not these.)
 | `domains/maintenance/registry/`       | sticky registry fields, CAS flush, env replay                                    |
 | `domains/maintenance/footprint/`      | the five per-collection artifacts, clone/remove saga                             |
 | `domains/maintenance/worktree/`       | clone provisioning, saga commit point, teardown guard                            |
+| `adapters/qdrant/`                    | model-mixing guard, weight canary, shared-cosine length contract                 |
+
+`adapters/qdrant/` is the one navigator outside `src/core/domains/` — the
+embedding-model guard belongs to the adapter that owns the marker point, not to
+a domain (`.claude/rules/domain-boundaries.md`).
 
 ## Terminology (MANDATORY)
 
