@@ -97,19 +97,24 @@ Returned shape (abbreviated):
 }
 ```
 
-## driftWarning — Schema Drift Detection
+## driftWarning — Index Drift Detection
 
-Every search response can include top-level `driftWarning` field when live code
-defines payload signals NOT yet present in indexed payloads (or vice versa).
-Treat as hint, not error:
+Every search response can include top-level `driftWarning` field when a stamp
+the index carries no longer matches what the running build would produce —
+payload keys, language versions, indexing env, indexed commit. Treat as hint,
+not error:
 
-- Surface warning to user when it appears — new analytics fields missing from
-  results until reindex
-- Do NOT auto-trigger `force_reindex` — user's decision (large codebases = long
-  reindex). See `tea-rags:force-reindex` skill
+- Surface report to user when it appears — it lists the axes that moved and ends
+  with ONE `Run:` line, already the cheapest command repairing all of them
+  (`--force-enrichments <scope>` for enrichment-owned drift, `--force` only when
+  the chunk set moved, plain incremental when only HEAD moved)
+- Do NOT run that command automatically — user's decision (large codebases =
+  long reindex). See `tea-rags:force-reindex` skill when the line says `--force`
+- Same report, without consuming it: prime's `## Drift` section and
+  `get_index_status`. `driftWarning` is spent once per collection per server
+  session and re-armed after each index run
 - tea-rags self-test only: full reset via `force_reindex` is documented path
   (see project CLAUDE.md MCP testing section)
-- Regular projects: incremental `index_codebase` handles most drift scenarios
 
 ## rankingOverlay — Why This Result Was Ranked Here
 

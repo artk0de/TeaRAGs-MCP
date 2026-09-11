@@ -50,10 +50,11 @@ similarity scale from vectors already stored, so demanding a full reindex for it
 would have been the wrong price.
 
 **Drift detection is not a substitute either, and often cannot even see the
-change.** `SchemaDriftMonitor` compares Qdrant _payload_ keys. A field that
-lives anywhere else — the stats cache, the snapshot, the DuckDB file — is
-invisible to it, so "the user will be warned" is false by construction outside
-the payload.
+change.** The monitors in `src/core/domains/maintenance/drift/` compare stamps —
+payload keys, language versions, the indexing env, the indexed commit. A field
+that lives in the stats cache, the snapshot, or the DuckDB file has no stamp, so
+"the user will be warned" is false by construction outside those axes
+(`.claude/rules/index-drift.md`).
 
 ## When to Add a Migration
 
