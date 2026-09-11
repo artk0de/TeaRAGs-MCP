@@ -210,6 +210,71 @@ describe("IndexingOps — drift consumption reset", () => {
    * does — the other four cases wire no stats cache, so the refresh early-exits
    * there and their expectations are untouched.
    */
+  /**
+   * A relocated project (bd tea-rags-mcp-waj6k): the registry still holds the
+   * ORIGINAL collection for the new path, and that is the one a search — and
+   * therefore the drift reader — resolves. The stamp goes into that same
+   * registry entry, so both must address it rather than the path hash.
+   *
+   * Only the runs that operate on an EXISTING collection resolve this way; the
+   * full-index path below keeps the hash, because that run is what registers a
+   * collection for the path in the first place.
+   */
+  describe("relocated project", () => {
+    const RELOCATED = "code_relocated";
+    const resolveCollectionForPath = async (): Promise<string> => RELOCATED;
+
+    it("stamps and re-arms the registry's collection on a recompute", async () => {
+      const run = makeRun();
+      const ops = new IndexingOps(
+        makeDeps({
+          driftReporter: run.driftReporter,
+          collectionRegistry: run.collectionRegistry as never,
+          languageCodeVersions,
+          resolveCollectionForPath,
+        }),
+      );
+
+      await ops.run(process.cwd(), { forceEnrichments: ["codegraph"] });
+
+      expect(run.calls).toEqual([`stamp:${RELOCATED}`, `reset:${RELOCATED}`]);
+    });
+
+    it("re-arms the registry's collection on an incremental", async () => {
+      const run = makeRun();
+      const ops = new IndexingOps(
+        makeDeps({
+          driftReporter: run.driftReporter,
+          collectionRegistry: run.collectionRegistry as never,
+          languageCodeVersions,
+          resolveCollectionForPath,
+        }),
+      );
+
+      await ops.run(process.cwd());
+
+      expect(resetsOf(run.calls)).toEqual([RELOCATED]);
+    });
+
+    it("keeps the path hash on a full index, which is what registers the collection", async () => {
+      const run = makeRun();
+      const deps = makeDeps({
+        driftReporter: run.driftReporter,
+        collectionRegistry: run.collectionRegistry as never,
+        languageCodeVersions,
+        resolveCollectionForPath,
+        qdrant: {
+          collectionExists: vi.fn().mockResolvedValue(false),
+          aliases: { listAliases: vi.fn().mockResolvedValue([]) },
+        } as never,
+      });
+
+      await new IndexingOps(deps).run(process.cwd());
+
+      expect(run.calls).toEqual([`stamp:${collection}`, `reset:${collection}`]);
+    });
+  });
+
   it("finishes the stats refresh BEFORE re-arming the reader on an incremental", async () => {
     const calls: string[] = [];
     const page = { points: [{ payload: { language: "typescript" } }], next_page_offset: null };

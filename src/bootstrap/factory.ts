@@ -29,6 +29,7 @@ import {
   SchemaBuilder,
   type App,
 } from "../core/api/index.js";
+import { createPathCollectionResolver } from "../core/api/internal/collection-resolver.js";
 import { GraphFacade } from "../core/api/internal/facades/graph-facade.js";
 import { ProjectRegistryOps } from "../core/api/internal/ops/project-registry-ops.js";
 import { TracePathOps } from "../core/api/internal/ops/trace-path-ops.js";
@@ -856,9 +857,14 @@ export async function createAppContext(config: AppConfig, hooks?: AppContextHook
   // whether the repository did — `CollectionEntry.git` (stamped at finalize)
   // against live HEAD, read from `.git` files with no git spawn.
   const commitDriftMonitor = new CommitDriftMonitor(collectionRegistry);
+  // The third argument is the path rule a SEARCH resolves by — registry entry
+  // first, path hash only for a path nothing claims (waj6k). The reporter is a
+  // domain module and may not reach the api layer for it, and deriving the hash
+  // itself sent a relocated project's report to a collection nobody queries.
   const driftReporter = new IndexDriftReporter(
     [schemaDriftMonitor, languageVersionDriftMonitor, envDriftMonitor, commitDriftMonitor],
     (collectionName) => collectionRegistry.get(collectionName)?.name ?? undefined,
+    createPathCollectionResolver(collectionRegistry),
   );
 
   // Phase 2 of unified-enrichment-worker-pool plan. Production runs through

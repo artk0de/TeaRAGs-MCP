@@ -9,9 +9,12 @@ import {
   ProjectNotRegisteredError,
   StaleProjectAliasError,
 } from "../../../../src/core/api/errors.js";
-import { resolveCollection } from "../../../../src/core/api/internal/collection-resolver.js";
-import { resolveCollectionName } from "../../../../src/core/infra/collection-name.js";
+import {
+  createPathCollectionResolver,
+  resolveCollection,
+} from "../../../../src/core/api/internal/collection-resolver.js";
 import { CollectionRegistry } from "../../../../src/core/domains/maintenance/registry/index.js";
+import { resolveCollectionName, validatePath } from "../../../../src/core/infra/collection-name.js";
 
 describe("collection-resolver", () => {
   describe("resolveCollection (new signature)", () => {
@@ -163,6 +166,68 @@ describe("collection-resolver", () => {
       expect(first.collectionName).toBe("code_b6f31e23");
       expect(first.collectionName).toBe(resolveCollectionName(freshPath));
       expect(second.collectionName).toBe(first.collectionName);
+    });
+  });
+
+  /**
+   * The same path rule, packaged for collaborators that are handed a path and
+   * no request — the drift reporter and the stamp/reset sites of an index run
+   * (bd tea-rags-mcp-waj6k). What it must not do is derive a second rule: a
+   * relocated project has to land on the collection a SEARCH resolves.
+   */
+  describe("createPathCollectionResolver", () => {
+    let dir: string;
+    let registry: CollectionRegistry;
+
+    beforeEach(() => {
+      dir = mkdtempSync(join(tmpdir(), "rc-path-"));
+      registry = new CollectionRegistry(dir);
+    });
+
+    afterEach(() => {
+      rmSync(dir, { recursive: true, force: true });
+    });
+
+    it("resolves a relocated project to the registry's collection, not a fresh hash", async () => {
+      const movedPath = join(dir, "moved-here");
+      registry.record({
+        collectionName: "code_old12345",
+        path: movedPath,
+        embeddingModel: "m",
+        embeddingDimensions: 1,
+        qdrantUrl: "u",
+        indexedAt: "t",
+        teaRagsVersion: "v",
+        chunksCount: 0,
+      });
+
+      const resolved = await createPathCollectionResolver(registry)(movedPath);
+
+      expect(resolved).toBe("code_old12345");
+      expect(resolved).not.toBe(resolveCollectionName(movedPath));
+    });
+
+    it("falls back to the path hash when nothing is registered for the path", async () => {
+      expect(await createPathCollectionResolver(registry)("/unregistered/fresh/project")).toBe("code_b6f31e23");
+    });
+
+    it("matches a registry entry recorded under the path's realpath", async () => {
+      // Entries store what `validatePath` returned at record time, so a caller
+      // handing over the pre-realpath spelling (`/tmp/...` on macOS) must still
+      // find the entry — otherwise the relocation defect returns by another name.
+      const realDir = await validatePath(dir);
+      registry.record({
+        collectionName: "code_real1234",
+        path: realDir,
+        embeddingModel: "m",
+        embeddingDimensions: 1,
+        qdrantUrl: "u",
+        indexedAt: "t",
+        teaRagsVersion: "v",
+        chunksCount: 0,
+      });
+
+      expect(await createPathCollectionResolver(registry)(dir)).toBe("code_real1234");
     });
   });
 });

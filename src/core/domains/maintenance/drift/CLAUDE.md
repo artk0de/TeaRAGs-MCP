@@ -15,6 +15,14 @@
   `IndexingOps` calls `reset(collectionName)` after every run's stamps, which
   clears every signature recorded for it. A monitor never tracks "already
   shown".
+- **The path-addressed checks resolve the way a SEARCH does.** `checkByPath` and
+  `checkAndConsume` turn a path into a collection through the
+  `resolveCollectionForPath` callback the composition root passes the reporter
+  (`api/internal/collection-resolver.ts`, `createPathCollectionResolver`:
+  registry entry first, path hash only for a path no entry claims), so a
+  relocated project is reported and consumed under the collection its searches
+  query instead of under what its new path happens to hash to. Re-deriving the
+  hash here is the defect, not a shortcut.
 - **`--project` comes from the reporter.** `renderIndexDriftRemedy` fills it
   from `IndexDriftReport.projectAlias`, which the reporter resolves through the
   `resolveAlias` callback the composition root passes it
