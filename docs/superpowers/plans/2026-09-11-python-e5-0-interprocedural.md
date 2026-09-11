@@ -1201,6 +1201,226 @@ output from steps 1 and 4; the five commands from step 10 with their
 delta against decision 1 (or "reproduces exactly"); the five hand-read rows from
 step 11; and the two commit SHAs.
 
+### Measured — E5.0a, WHY the residual stays untyped (2026-09-11, `w205u`)
+
+Decision 2 settled whether inter-procedural PARAMETER typing is worth building:
+5 rows against 100, NO-GO. This block answers the question those numbers pointed
+at instead — **why the bare-name residual stays untyped after E4.6c and E4.4b**
+— and it is what names E5.1.
+
+**Dumps.** Newest per corpus, `~/.claude/jobs/dffe3647/tmp/e44b/A-*.ndjson`
+(2026-09-11 17:46), the FIX arm of E4.4b's A/B ablation — the arm that shipped
+(`9c44f629b`, "polar +10 rows"; B reads 449 polar residual rows against A's
+439). They already carry `oracleTargetRelPath` / `oracleTargetSymbolId`, so
+E5.0b's blocking precondition is cleared on them. **No fresh oracle run was made
+and none was needed.** They are residual-only dumps: `missed` / `wrongFile` /
+`skippedInProject`, 540 rows over the five corpora, 302 of them a bare-name
+receiver.
+
+**Instrument.** `scripts/lib/py-receiver-binding.ts` (the vocabulary of steps
+2–4 above), `scripts/lib/py-binding-reasons.ts` (NEW — one sub-bucket per
+binding family), `scripts/py-e5-residual-reason-report.ts` (NEW — the driver).
+The reason layer does NOT reimplement annotation policy: it imports
+`pythonTypeRefFromText` / `pythonNominalReceiverName` / `PYTHON_CONTAINER_FIRST`
+/ `PYTHON_DECLINED_TYPE_NAMES` from `walker/passes/python-type-annotation.ts`,
+so "which annotation forms the facet drops" is answered BY the facet. Command,
+once per corpus:
+
+```bash
+npx tsx scripts/py-e5-residual-reason-report.ts --corpus <name> \
+  --rows ~/.claude/jobs/dffe3647/tmp/e44b/A-<name>.ndjson \
+  --corpus-root <real root from scripts/lib/codegraph-corpora.json> \
+  --json /tmp/e50a/out/<name>.json
+```
+
+**Two deviations from the literal code in steps 2–4, both found by the plan's
+own fixtures failing.** (1) `classifyRhs` read only the LAST segment of a dotted
+callee, so `Repo.from_session(s)` tested `from_session` — a method name no
+corpus declares at top level — and every classmethod factory read as
+`assignCallExternal`. It now tests both ends. (2) The binding scan started one
+line ABOVE the call, so `for a in xs: a.m()` and `if (a := g()): a.m()` read as
+`unbound`; the call's own line is now scanned for the compound binders, with the
+assignment branches still excluded there so `obj = obj.refresh()` is read from
+the binding above it.
+
+**Reproduction against decision 1.** Nine of eleven bindings reproduce to the
+row: `paramUnannotated` 5, `paramAnnotated` 50, `loopTarget` 30, `assignAlias`
+24, `tupleUnpack` 6, `walrus` 4, `assignOther` 4, `exceptAs` 1, and
+`assignCallProject` / `assignCallExternal` at 144 / 12 against 143 / 13.
+`unbound` reads **22 against 56**, and that −34 is not classifier drift: it is
+netbox 18 → 1, polar 26 → 10, ugnest 1 → 0, flask 11 → 11 — exactly the `cls`
+receiver family decision 1 attributed to E4.4, closed by E4.4/E4.4b between the
+e46b1 dumps and these. Bare-name total 302 against 336.
+
+| binding              | ugnest | flask  | httpx | netbox | polar   | total   |
+| -------------------- | ------ | ------ | ----- | ------ | ------- | ------- |
+| `assignCallProject`  | 1      | 1      | 0     | 7      | **135** | **144** |
+| `paramAnnotated`     | 0      | 0      | 0     | 0      | **50**  | **50**  |
+| `loopTarget`         | 0      | 1      | 5     | 5      | 19      | 30      |
+| `assignAlias`        | 0      | 4      | 0     | 0      | 20      | 24      |
+| `unbound`            | 0      | 11     | 0     | 1      | 10      | 22      |
+| `assignCallExternal` | 1      | 3      | 0     | 1      | 7       | 12      |
+| `tupleUnpack`        | 0      | 1      | 0     | 1      | 4       | 6       |
+| `paramUnannotated`   | 0      | 1      | 0     | 4      | 0       | 5       |
+| `walrus` / `other`   | 0      | 0      | 0     | 4      | 5       | 9       |
+| **bare-name total**  | **2**  | **22** | **5** | **23** | **250** | **302** |
+
+#### (A) `assignCallProject` + `assignCallExternal` — 156 rows, by the CALLEE's return situation
+
+| sub-bucket                | what the chain was missing                              | ugnest | flask | httpx | netbox | polar  | total  |
+| ------------------------- | ------------------------------------------------------- | ------ | ----- | ----- | ------ | ------ | ------ |
+| `a6ClsSelfFactory`        | `-> Self` on a classmethod, receiver class substituted  | 0      | 0     | 0     | 0      | **42** | **42** |
+| `a7NamesakeCallee`        | callee short name declared in ≥ 2 files                 | 0      | 0     | 0     | 1      | **48** | **49** |
+| `a8CalleeReceiverUntyped` | `obj.m()` callee whose OWN receiver is untyped          | 0      | 1     | 0     | 3      | **31** | **35** |
+| `a8CalleeUnresolved`      | no def of that name in the corpus                       | 2      | 3     | 0     | 1      | 8      | 14     |
+| `a9TypedNominal`          | a nominal IS derivable — the failure is downstream      | 0      | 0     | 0     | 0      | 10     | 10     |
+| `a9NoReturn`              | the callee returns nothing                              | 0      | 0     | 0     | 1      | 2      | 3      |
+| `a2TransitiveDeeper`      | callee returns a call whose own type is unknown         | 0      | 0     | 0     | 2      | 0      | 2      |
+| `a1` / `a3` / `a4` / `a5` | dropped annotation, conditional, attr return, generator | 0      | 0     | 0     | 0      | 0      | **0**  |
+| `c2ModuleScopeCall`       | bound at MODULE scope, invisible per chunk              | 0      | 0     | 0     | 0      | 1      | 1      |
+
+`a2TransitiveDepth1` is **0**: not one residual row's callee returns a call to a
+def the fold could type at depth 1. The transitive return fold has nothing to
+unlock here. `a1`/`a3`/`a4`/`a5` are 0 for the same reason — an RF.2 extension
+for conditional or attribute returns would move zero rows, and neither would a
+new annotation form.
+
+#### (B) `paramAnnotated` — 50 rows, all polar, by the annotation FORM
+
+| sub-bucket           | form                                                    | polar  |
+| -------------------- | ------------------------------------------------------- | ------ |
+| `b7Namesake`         | nominal resolves, declared in ≥ 2 files                 | **31** |
+| `b9External`         | nominal names no project class                          | 11     |
+| `b10Resolvable`      | nominal resolves uniquely — failure is downstream       | 4      |
+| `b2UnionMulti`       | `X \| Y` with two reachable arms                        | 3      |
+| `b1StringForwardRef` | `"Thing"` naming a class in another module              | 1      |
+| `b3` … `b8`          | Protocol, container generic, `Callable`, TypeVar, alias | **0**  |
+
+The narrowing-failure reading in decision 7 does not survive the measurement:
+union and generic heads are 3 rows, not 50. **31 of the 50 are the same
+model-vs-schema namesake collision E4.6c measured on `untypedFieldHop`** —
+`Subscription` is declared at `models/subscription.py:117` and
+`subscription/schemas.py:233`, `Organization` at `models/organization.py:516`
+and `organization/schemas.py:501`.
+
+#### (C) `unbound` — 22 rows, by what would have bound the name
+
+| sub-bucket           | ugnest | flask | httpx | netbox | polar | total |
+| -------------------- | ------ | ----- | ----- | ------ | ----- | ----- |
+| `c5ImportedName`     | 0      | 8     | 0     | 1      | 2     | 11    |
+| `c4Closure`          | 0      | 2     | 0     | 0      | 4     | 6     |
+| `c1ImplicitReceiver` | 0      | 1     | 0     | 0      | 4     | 5     |
+| `c3` / `c6` / `c7`   | 0      | 0     | 0     | 0      | 0     | **0** |
+
+flask's 8 are `current_app` and `g` — werkzeug `LocalProxy` globals whose type
+exists only at runtime. Module-scope `log = get_logger()` is **1 row
+corpus-wide** (`c2ModuleScopeCall`, counted in table A because its binding IS a
+call): making module-scope bindings run-global is a 1-row mechanism, not a
+56-row one.
+
+#### (D) `loopTarget` 30 + `assignAlias` 24 + `tupleUnpack` 6 + `walrus` 4
+
+| sub-bucket                     | the fact that would type it               | ugnest | flask | httpx | netbox | polar | total |
+| ------------------------------ | ----------------------------------------- | ------ | ----- | ----- | ------ | ----- | ----- |
+| `d3IterableUnknown`            | the iterable's own type                   | 0      | 1     | 5     | 4      | 16    | 26    |
+| `d10AliasUnknown`              | the aliased expression's type             | 0      | 4     | 0     | 0      | 20    | 24    |
+| `d5UnpackOther`                | the unpacked tuple's element types        | 0      | 1     | 0     | 1      | 4     | 6     |
+| `d6WalrusCallProject`          | the walrus RHS call's return type         | 0      | 0     | 0     | 4      | 0     | 4     |
+| `d1IterableContainerAnnotated` | already there — `list[T]` on a self-field | 0      | 0     | 0     | 0      | 3     | 3     |
+| `d2IterableCallResult`         | the iterable call's return type           | 0      | 0     | 0     | 1      | 0     | 1     |
+
+`d1` is the only sub-bucket where the fact is already written down, and it is 3
+rows. Every other row in table D needs the SAME fact table A needs: a call
+result's or an attribute's type. `d10`'s 24 rows are almost all
+`x = <param>.<field>` or `x = self.<field>.<field>` — an attribute hop, not an
+alias hop.
+
+#### (E) Namesake disambiguation — across ALL 540 residual rows, not just bare names
+
+A row counts as ambiguous when the type name it would be keyed by is declared —
+as a class or as a top-level `def` — in two or more corpus files.
+`importNarrows` is the caller's own import statements naming exactly one
+candidate; `reexportNarrows` allows ONE re-export hop through a package
+`__init__.py`, the hop `resolveTypeFile` already performs via
+`resolveExportedName`.
+
+| corpus | ambiguous | importNarrows | reexportNarrows | unique | type name not derivable |
+| ------ | --------- | ------------- | --------------- | ------ | ----------------------- |
+| ugnest | 0         | 0             | 0               | 0      | 17                      |
+| flask  | 1         | 1             | 1               | 0      | 37                      |
+| httpx  | 0         | 0             | 0               | 0      | 6                       |
+| netbox | 4         | 0             | 0               | 0      | 36                      |
+| polar  | **89**    | **43**        | **78**          | 90     | 260                     |
+| total  | **94**    | **44**        | **79**          | 90     | 356                     |
+
+Top names: polar `get_client` 43, `Subscription` 22, `Organization` 11,
+`get_oauth_account` 6; netbox `get` 3. **79 of the 94 are deterministic from
+what the caller wrote down** — no name-only guess. The 43 `get_client` rows sit
+in three files (`integrations/polar/service.py` 25,
+`integrations/polar/tasks.py` 8, `startup_program/service.py` 10), two importing
+`from .client import get_client` and one
+`from polar.integrations.polar.client import get_client`. The 36 remaining need
+the re-export hop because polar writes `from polar.models import (…)`.
+
+**Which path refuses them is not the same for both halves**, and E5.1's first
+step is to establish it per half rather than assume: the 43 `get_client` rows
+are a CALL-RESULT return-type lookup keyed by short name, which has no import
+narrowing at all; the 36 type-name rows go through `resolveTypeFile`, which
+already narrows by imports AND follows one re-export hop, so a row still dying
+there means the narrowing input — `mapper.mapImportToFile` returning `project`
+for `polar.models` — is what fails, not the narrowing rule.
+
+#### Five rows read by hand, one per major sub-bucket
+
+| sub-bucket                | row                                                  | what the source says                                                                                                                       |
+| ------------------------- | ---------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------ |
+| `a6ClsSelfFactory`        | `polar backoffice/organizations_v2/endpoints.py:871` | `review_repo = OrganizationReviewRepository.from_session(session)`; `from_session` is `-> Self` at `kit/repository/base.py:165`, inherited |
+| `a7NamesakeCallee`        | `polar integrations/polar/service.py:338`            | `client = get_client()`; five `get_client` defs in the corpus; the caller writes `from .client import get_client` (line 53)                |
+| `b7Namesake`              | `polar customer_portal/service/subscription.py:333`  | `def resume(self, session, subscription: Subscription)`; two project `Subscription` classes; imported `from polar.models import (…)`       |
+| `a8CalleeReceiverUntyped` | `polar checkout/service.py:498`                      | `seat_price = price_set.get_seat_price()` at :490 — `price_set` is itself an untyped local, so the callee cannot be picked                 |
+| `d10AliasUnknown`         | `polar checkout/service.py:602`                      | `customer_billing_address = checkout_create.customer_billing_address` — an ATTRIBUTE hop off a parameter, not an alias                     |
+
+A sixth, `d3IterableUnknown` at `polar checkout_link/service.py:497`:
+`unit_prices = self._get_unit_prices(product)` then
+`for unit_price in unit_prices` — the iterable is a call result, so the
+container hop is blocked by table A's fact, not by E4.5's rule.
+
+#### Go / no-go per mechanism — a mechanism ships only at ≥ 30 rows AND deterministic
+
+| mechanism                                                      | rows unlocked              | deterministic                | verdict                                                  |
+| -------------------------------------------------------------- | -------------------------- | ---------------------------- | -------------------------------------------------------- |
+| Namesake narrowing by the caller's imports + one re-export hop | **79** (polar 78, flask 1) | yes — the caller wrote it    | **SHIP**                                                 |
+| `-> Self` on a cross-chunk call-result binding                 | **42** (polar)             | yes — the annotation says it | **SHIP**                                                 |
+| Iterated call-result fold (`a8CalleeReceiverUntyped`)          | 35 (polar 31)              | yes, but needs a 2nd pass    | **GATED** — decision 4 forbids a fixpoint at the barrier |
+| Container element type from iteration (`d1` + `d2`)            | 4                          | yes                          | no — below bar                                           |
+| Module-scope bindings run-global                               | 1                          | yes                          | no — below bar                                           |
+| Transitive return fold, depth ≤ 2                              | **0** at depth 1, 2 deeper | n/a                          | no — nothing to fold                                     |
+| New annotation forms (union / Protocol / generic / TypeVar)    | 4                          | yes                          | no — below bar                                           |
+| RF.2 extension for conditional / attribute returns             | **0**                      | n/a                          | no — empty                                               |
+| Inter-procedural parameter typing (E5.1 / E5.2 as specified)   | 5                          | yes                          | no — decision 2                                          |
+
+`a6`'s 42 rows carry oracle debt: D9's `OW:Self` is 14 polar rows where jedi
+itself answers wrong, so the recall-true figure is ~28 once E5.0b's
+`recallDebtAdjusted` lands. Still above the bar, and the two SHIP mechanisms are
+disjoint (`a6`'s receiver classes are unique names).
+
+#### The ordered E5.1 list
+
+1. **Namesake narrowing, call-result half** — 43 rows. Narrow an ambiguous
+   short-name callee by the caller's import bindings before reading its return
+   type. The lookup has no narrowing today.
+2. **Namesake narrowing, type-name half** — 36 rows. Establish why
+   `resolveTypeFile`'s existing import narrowing plus `resolveExportedName` does
+   not already answer `Subscription` / `Organization`, then fix the input.
+3. **`-> Self` on a cross-chunk call-result binding** — 42 rows (~28 net of
+   `OW:Self`). `PYTHON_SELF_RETURN` is already substituted on the
+   inherited-member path; the call-result path does not reach it.
+4. **Iterated call-result fold** — 35 rows, GATED on a design decision about a
+   second pass, which decision 4 currently forbids.
+
+Everything below those is under the 30-row bar on these five corpora and is not
+scheduled.
+
 ---
 
 ## Task E5.0b — oracle-debt re-scoring

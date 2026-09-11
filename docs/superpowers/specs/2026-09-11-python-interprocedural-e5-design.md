@@ -528,6 +528,42 @@ which is why `noDeterminable` is a reported verdict rather than a discarded one.
 Since the whole population is 12 rows, a residual miss in that half cannot move
 the go/no-go: the bar is 100.
 
+### D9 — what E5.1 actually is, measured
+
+D4 read the 336 rows as an ordering and named the cross-chunk call-result fold
+as the next lever. The follow-up attribution it asked for has now been run
+(plan, "Measured — E5.0a", dumps `e44b/A-*`, 540 residual rows post-E4.6c and
+post-E4.4b) and it moves E5.1 off that guess. Three findings change the plan:
+
+1. **The largest deterministic lever is NAMESAKE narrowing, not a fold.** 94
+   residual rows across the corpora are keyed by a type name declared in two or
+   more project files, and **79 of them are disambiguated by what the caller
+   already wrote** — its own import bindings, allowing one re-export hop through
+   a package `__init__.py`. That is the same collision E4.6c measured on
+   `untypedFieldHop` and declined to fix there, and it is not confined to field
+   hops: 31 of `paramAnnotated`'s 50 rows and 49 of the call-result rows are the
+   same failure.
+2. **The transitive return fold has nothing to fold.** Not one residual row's
+   callee returns a call to a def the fold could type at depth 1 (`a1`, `a3`,
+   `a4`, `a5` all read 0 as well). An RF.2 extension for conditional or
+   attribute returns, and any new annotation form, would each move under 5 rows.
+3. **`paramAnnotated` is not a narrowing failure.** D4 called its 50 rows union
+   and generic heads; measured, those are 3 rows. The mass is the namesake
+   collision in finding 1.
+
+The ordered list, each item gated at ≥ 30 rows across corpora and deterministic
+(no name-only guess):
+
+| #   | mechanism                                                    | rows | note                                                               |
+| --- | ------------------------------------------------------------ | ---- | ------------------------------------------------------------------ |
+| 1   | Namesake narrowing, CALL-RESULT half                         | 43   | short-name callee return lookup has no import narrowing at all     |
+| 2   | Namesake narrowing, TYPE-NAME half                           | 36   | `resolveTypeFile` already narrows — find why its input fails       |
+| 3   | `-> Self` on a cross-chunk call-result binding               | 42   | ~28 net of D9's `OW:Self` oracle debt                              |
+| 4   | Iterated call-result fold (`obj.m()` on an untyped receiver) | 35   | **GATED** — needs a second pass, which E5.1 §"no fixpoint" forbids |
+
+E5.1 as specified in this document — a Python producer for
+`call-arg-param-types` — stays blocked at 5 rows (D3). It is not item 1.
+
 ---
 
 ## Risks
@@ -579,4 +615,5 @@ enabled, so the kill switch has to gate the WALKER emit, not just the fold.
   30 rows at exact agreement** (the program's standing mass bar); 3 today.
 - Follow-up, NOT an E5 bead: the cross-chunk call-result fold on
   `assignCallProject` (D4). It belongs to E4.6b's owner and wants its own
-  attribution pass before it is scoped.
+  attribution pass before it is scoped. **That pass has run** — see D9, which
+  reorders it behind namesake narrowing and sizes it at 42 rows.
