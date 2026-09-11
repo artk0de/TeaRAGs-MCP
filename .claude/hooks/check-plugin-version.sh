@@ -2,7 +2,9 @@
 # PreToolUse hook: Warn if plugin .md files staged without version bump
 #
 # Triggered by: Bash|mcp__git-global__git_commit
-# Checks STAGED files for plugin/ .md changes before commit happens
+# Checks STAGED files for .claude-plugin/<plugin>/ .md changes before commit happens.
+# Each plugin carries its own manifest, so the bump is checked per plugin — see
+# .claude/rules/plugin-versioning.md for the three that live here.
 
 INPUT=$(cat)
 TOOL_NAME=$(echo "$INPUT" | jq -r '.tool_name // empty')
@@ -20,31 +22,38 @@ if ! is_commit; then
   exit 0
 fi
 
-# Check staged .md files in plugin/ directory
-PLUGIN_MD_STAGED=$(git diff --cached --name-only 2>/dev/null | grep -c '^plugin/.*\.md$')
+STAGED=$(git diff --cached --name-only 2>/dev/null)
+ADDED=$(git diff --cached --diff-filter=A --name-only 2>/dev/null)
 
-if [ "$PLUGIN_MD_STAGED" -gt 0 ]; then
-  # Check if plugin.json is also staged (version bump)
-  PLUGIN_JSON_STAGED=$(git diff --cached --name-only 2>/dev/null | grep -c '^plugin/.claude-plugin/plugin.json$')
+# Plugins with a staged .md, by directory name: .claude-plugin/<plugin>/…/*.md
+PLUGINS=$(printf '%s\n' "$STAGED" | grep -E '^\.claude-plugin/[^/]+/.*\.md$' | cut -d/ -f2 | sort -u)
 
-  if [ "$PLUGIN_JSON_STAGED" -eq 0 ]; then
-    # Check if new skills or rules are being added
-    NEW_FILES=$(git diff --cached --diff-filter=A --name-only 2>/dev/null | grep -cE '^plugin/(skills/.*SKILL\.md|rules/.*\.md)$')
+PENDING=""
+for plugin in $PLUGINS; do
+  MANIFEST=".claude-plugin/$plugin/.claude-plugin/plugin.json"
 
-    if [ "$NEW_FILES" -gt 0 ]; then
-      BUMP_TYPE="MINOR (new skill or rule)"
-    else
-      BUMP_TYPE="PATCH (text changes)"
-    fi
-
-    jq -n --arg bump "$BUMP_TYPE" '{
-      "hookSpecificOutput": {
-        "hookEventName": "PreToolUse",
-        "permissionDecision": "deny",
-        "permissionDecisionReason": ("Plugin .md files staged but version not bumped. Bump " + $bump + " in plugin/.claude-plugin/plugin.json before committing.")
-      }
-    }'
+  # Manifest staged alongside → the version moved with the text.
+  if printf '%s\n' "$STAGED" | grep -Fqx "$MANIFEST"; then
+    continue
   fi
+
+  if printf '%s\n' "$ADDED" | grep -qE "^\.claude-plugin/$plugin/(skills/.*SKILL\.md|rules/.*\.md)$"; then
+    BUMP_TYPE="MINOR (new skill or rule)"
+  else
+    BUMP_TYPE="PATCH (text changes)"
+  fi
+
+  PENDING="${PENDING}  - bump ${BUMP_TYPE} in ${MANIFEST}"$'\n'
+done
+
+if [ -n "$PENDING" ]; then
+  jq -n --arg pending "$PENDING" '{
+    "hookSpecificOutput": {
+      "hookEventName": "PreToolUse",
+      "permissionDecision": "deny",
+      "permissionDecisionReason": ("Plugin .md files staged but the plugin version was not bumped:\n" + $pending + "See .claude/rules/plugin-versioning.md.")
+    }
+  }'
 fi
 
 exit 0
