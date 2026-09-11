@@ -180,6 +180,15 @@ module-level arm answered with the file's OWN top-level def of that name, which
 is the right file and the wrong symbol. **STRATEGY gap**, and the fix is
 Python's LEGB order — `E` before `G`.
 
+> **Corrected by E4.6b-2's measurement, 2026-09-11.** The `missed` half is a
+> strategy gap and was answered. The 38 `fileOnly` rows are NOT — the chain
+> already pinned the right nested def on both sides, and the verdict comes from
+> `jedi_oracle.py:141` spelling a two-deep nesting
+> `Blueprint._merge_blueprint_funcs#extend` where the walker spells it
+> `Blueprint#_merge_blueprint_funcs#extend`. 38 of 38 separator-only.
+> Addressable mass for this family is **47, not 85**, and the harness carries
+> the rest.
+
 `crossFileBareCall` is **folded, not planned**: 4 addressable rows. 12 rows are
 `skippedInProject`, which is `classifiedExternal && oracle inProject`
 (`scripts/lib/py-oracle-core.ts:364`) — ugnest's 8 name
@@ -1276,12 +1285,12 @@ MOD
 
 ### Steps — E4.6b-2
 
-- [ ] **Step 0.** Fresh agent worktree; ff-merge `worktree-py-frontier-e4`.
+- [x] **Step 0.** Fresh agent worktree; ff-merge `worktree-py-frontier-e4`.
       Green suite. Confirm `isEnclosingScope` and `isBareCallable` are present
       in the strategy file with the one-segment slack docblock — E4.0.5 shipped
       them and this task consumes them. If they are absent, STOP: the branch is
       not the one this plan was written against.
-- [ ] **Step 1 (RED).** In `python-global-short-name.test.ts`, four cases, each
+- [x] **Step 1 (RED).** In `python-global-short-name.test.ts`, four cases, each
       with `call.receiver === null` and `ctx.callerFile` set: 1. **E beats G.**
       The caller's file declares BOTH a module-level `def url` and
       `_list_tabs#url` nested inside `_list_tabs`; the call site is inside
@@ -1301,7 +1310,7 @@ MOD
       bare call to a module-level def in the caller's file still resolves
       through the existing arm, and a bare builtin the file does not shadow
       still DROPs.
-- [ ] **Step 2 (GREEN).** One arm, inserted BEFORE the existing same-file
+- [x] **Step 2 (GREEN).** One arm, inserted BEFORE the existing same-file
       module-level arm, because the interpreter resolves local → enclosing →
       module and this arm IS the `E`:
 
@@ -1351,7 +1360,7 @@ if (call.receiver === null) {
       arm it precedes — two nested defs of the same name in the same enclosing
       chain is a real ambiguity and declining is correct.
 
-- [ ] **Step 3 (RED + GREEN — the slack, stated as a test).** `isEnclosingScope`
+- [x] **Step 3 (RED + GREEN — the slack, stated as a test).** `isEnclosingScope`
       admits one extra segment, which lets a class-body member of the CALLER's
       own class through — a known over-admission E4.0.5 measured at zero cost
       for the module-level arm. This arm runs EARLIER, so pin it: a call inside
@@ -1362,26 +1371,117 @@ if (call.receiver === null) {
       `def.scope.length <= ctx.callerScope.length` (dropping the slack) and
       re-measure — the plan expects this NOT to be needed, and says so here so
       the executor has the fallback rather than inventing one.
-- [ ] **Step 4 (GATE — unit).**
+- [x] **Step 4 (GATE — unit).**
       `npx vitest run tests/core/domains/language/python` green;
       `npx tsc --noEmit`. No walker change, so no capability bump and no
       `gen:lang-compat` run.
-- [ ] **Step 5 (GATE — rows).** A/B, five corpora × five runs. Required and
+- [x] **Step 5 (GATE — rows).** A/B, five corpora × five runs. Required and
       reported as TWO columns: `missed → match` **polar +43, netbox +4**;
       `fileOnly → match` **polar +26, flask +6, httpx +4, netbox +2**. Gross
       `lost` **0** — a `fileOnly` row becoming a `match` is not a loss, and any
       row that was a `match` and is no longer voids the task. Phantom delta ≤
       +0.5 pp, ugnest exactly 0, flask at or under 2 %.
-- [ ] **Step 6 (GATE — family + tally).** Family report on the A side:
+- [x] **Step 6 (GATE — family + tally).** Family report on the A side:
       `sameFileBareCall` down from 140 to **55** (the NAME_DIFF remainder),
       `crossFileBareCall` **unchanged at 31**, no other family grows.
       chain-tally `drift` 0 / `dispatchDrift` 0, five corpora × five runs. Perf
       pair on netbox and polar — the arm adds one filter over an
       already-computed candidate list, so this should be flat; report it anyway.
-- [ ] **Step 7.** Commit
+- [x] **Step 7.** Commit
       `feat(language): resolve python bare calls to enclosing-scope defs (w205u)`,
       then append a **Measured — E4.6b-2** block with the two-column A/B table,
       the family before/after, and whether Step 3's fallback was needed.
+
+### Measured — E4.6b-2 (2026-09-11, dumps under `~/.claude/jobs/dffe3647/tmp/e46b2/`)
+
+**The `missed` half landed. The `fileOnly` half was never a resolver gap — it is
+a harness defect, and this task records it rather than patching it.** Row-level
+A/B, five FULL row dumps per corpus per side plus one aggregate run,
+`--oracle merged --dispatch --workers 8`, B from the task's base `5807f1385`.
+
+| corpus | match         | missed    | fileOnly | wrongFile | phantom | gross lost |
+| ------ | ------------- | --------- | -------- | --------- | ------- | ---------- |
+| ugnest | 765 → 765     | 13 → 13   | 0 → 0    | 0 → 0     | 0 → 0   | 0          |
+| flask  | 326 → 326     | 39 → 39   | 6 → 6    | 1 → 1     | 0 → 0   | 0          |
+| httpx  | 469 → 469     | 10 → 10   | 5 → 5    | 0 → 0     | 8 → 8   | 0          |
+| netbox | 8275 → 8279   | 62 → 58   | 2 → 2    | 0 → 0     | 26 → 26 | 0          |
+| polar  | 16117 → 16148 | 717 → 683 | 34 → 37  | 2 → 2     | 84 → 84 | 0          |
+
+`missed → match` **netbox +4** (predicted 4) and **polar +31**;
+`missed → fileOnly` polar +3, which are three MORE correct answers the oracle
+spells differently (below). `fileOnly → match` is **0 on every corpus**, and the
+prediction of 38 was wrong about the mechanism, not about the rows. Phantom is
+flat everywhere — ugnest 0, flask 0, httpx 0.52 %, netbox 0.06 %, polar 0.15 %,
+every one byte-identical. `exactReplacedByFan` (flask 1, polar 3) and
+`exactReplacedByAmbiguous` (0) are unchanged on both sides. Unstable rows: httpx
+1 on both sides, netbox 1 on B, everything else 0.
+
+**The 38 `fileOnly` rows are a jedi-composer defect, not a chain defect.**
+`scripts/py-oracle/jedi_oracle.py:141` joins the WHOLE enclosing scope with
+`"."` and picks a separator only for the LAST hop, while
+`DefaultSymbolIdComposer` picks one PER HOP. So a def nested two containers deep
+under an instance method comes back as `Blueprint._merge_blueprint_funcs#extend`
+from the oracle and `Blueprint#_merge_blueprint_funcs#extend` from the walker.
+Normalising `[#.]` over the E4.0.4 dumps: **38 of 38 separator-only, 0 real**
+(flask 6, httpx 4, netbox 2, polar 26). The chain already pinned the right
+nested def on BOTH sides of this task, which is why flask, httpx and netbox are
+byte-identical here and why polar's three new `fileOnly` rows are gains wearing
+a loss's label. Fixing it is a one-line composer change in the harness; the
+Global Constraints say a task that finds a harness bug reports it, so `w205u`
+carries it forward.
+
+**Family report, both sides, real corpus roots:** `sameFileBareCall` **138 →
+103** (netbox 9 → 5, polar 113 → 82), `crossFileBareCall` **31 → 31**, and every
+other family on every corpus byte-identical. Residual netbox 68 → 64, polar 774
+→ 743.
+
+**Step 3's fallback was needed, and it was not the one the plan named.**
+Shipping `isEnclosingScope` as written cost one netbox phantom: `ASNRange#range`
+is a `@property` whose body calls the BUILTIN `range`, and an arm keyed on scope
+PREFIXES answered the property with itself. The plan's fallback
+(`def.scope.length <= ctx.callerScope.length`) does not fix that — it admits the
+same row and drops every depth-one gain. The arm ships keyed on the caller's OWN
+frame instead: `def.scope` must equal `callerScope` plus the container
+`callerScope` omits, read off `callerSymbolId`. A class segment cannot be told
+from a function segment at the depth where it matters — the symbol table
+addresses a top-level `class Foo` and a top-level `def foo` identically, which
+is the same blindness `pythonEnclosingClass` needs two channels of evidence for
+and still cannot settle at depth one.
+
+**What that narrowing costs: 7 polar rows, named.** A def in an OUTER enclosing
+function — `_expand_metrics_with_dependencies#resolve` calling itself at
+`server/polar/metrics/service.py:93`, `PythonEmitter._collect_all_errors#…` at
+`sdk/generator/python/emitter.py:297` — is real `E` the arm declines, because
+`def.scope === callerScope` is exactly the shape `ASNRange#range` has. Four of
+the seven (`SecurityHeadersMiddleware#send`, `PathRewriteMiddleware#send`) are
+not `E` at all: `send` is a PARAMETER jedi follows to a method, the
+parameter-bound population decision 1b already ruled out. Below the 10-row bar,
+and an outer-frame arm placed AFTER the builtins DROP would answer the other
+three without re-opening the property shape — its own task, with its own
+measurement.
+
+**Chain tally**, five corpora × five runs per side: `chain drift` **0** on all
+50 runs, `dispatchDrift` **0** on all 50 oracle runs. Edges netbox 8692 → 8696
+(+4), polar 16796 → 16830 (+34), ugnest / flask / httpx flat. (`--lang ruby` is
+not a chain-tally language on this branch — it answers
+`no chain spec for language 'ruby'` on both sides; Ruby is gated by the two
+spikes instead.)
+
+**Perf**, interleaved B/A/A/B, min per side, `/usr/bin/time -l`:
+
+| corpus | wall B → A      | Δ      | peak RSS B → A    | Δ      |
+| ------ | --------------- | ------ | ----------------- | ------ |
+| netbox | 23.75s → 23.69s | −0.3 % | 954 MB → 978 MB   | +2.5 % |
+| polar  | 30.96s → 28.14s | −9.1 % | 1175 MB → 1247 MB | +6.1 % |
+
+A first, NON-interleaved pass measured polar at +57 % wall under a load average
+of 62–116 from parallel executors; interleaving is what makes the pair readable,
+and the plan's protocol is right to require it.
+
+**Ruby parity**: resolver 42,057 sites, 0 mismatches, 0 drift; walker 500 files,
+0 mismatches — both against `/Users/artk0re/Dev/Tools/tea-rags-mcp`. No shared
+file changed, as expected. **Walker version stays 5**; no walker delta, so no
+`gen:lang-compat` run.
 
 ---
 
