@@ -20,12 +20,12 @@ moved and names the one command that repairs all of them.
 
 | Surface                              | Behaviour                                                                                                                    |
 | ------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------- |
-| `driftWarning` on a search response  | Once per collection per server session, and again after every index run. It rides along with an answer, so it does not nag. |
+| `driftWarning` on a search response  | Once per collection per distinct report per server session, and again after every index run. A clean check spends nothing, and a report that gains a finding warns again. It rides along with an answer, so it does not nag. |
 | `## Drift` in `tea-rags prime`       | Every time. Prints `none` when the stamps match.                                                                             |
 | `get_index_status`                   | Every time, appended as a `## Drift` block when something moved.                                                              |
 
 `prime` and `get_index_status` inspect without consuming: a status call has to
-answer the same way twice, and the once-per-session warning belongs to the next
+answer the same way twice, and the once-per-report warning belongs to the next
 search.
 
 ## Axes
@@ -102,7 +102,7 @@ row and the payload-key report clear together.
 
 | Remedy        | Command                                                                              | Cost                                      | What it rebuilds                                                                                                     |
 | ------------- | ------------------------------------------------------------------------------------ | ----------------------------------------- | -------------------------------------------------------------------------------------------------------------------- |
-| `none`        | `No action required.`                                                                | —                                         | Nothing. Every finding is something the current build stopped declaring, and nothing reads a key that is not declared. |
+| `none`        | `No action required.`                                                                | —                                         | Nothing — and for two reasons. Either the finding is something the current build stopped declaring, and nothing reads a key that is not declared; or it is an enable-flag flip, whose fix is restoring the flag in the process that reads the index, which no rebuild performs. |
 | `incremental` | `tea-rags index-codebase --project <alias>`                                          | seconds                                   | The files that changed since the stamped commit.                                                                      |
 | `recompute`   | `tea-rags index-codebase --project <alias> --force-enrichments <scope> [--languages <lang>]` | minutes                                   | The enrichment payload, in place. No re-embedding, chunk ids unchanged.                                                |
 | `force`       | `tea-rags index-codebase --project <alias> --force`                                  | minutes to hours on a large project       | Everything: new chunk ids, every vector re-embedded. Zero downtime — built into a new collection, alias swaps at the end. |

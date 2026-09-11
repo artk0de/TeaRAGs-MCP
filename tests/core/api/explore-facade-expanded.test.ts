@@ -81,6 +81,7 @@ function makeMockReranker(overrides: Record<string, any> = {}) {
 function makeMockDriftReporter(overrides: Record<string, any> = {}) {
   return {
     checkAndConsume: vi.fn().mockResolvedValue(null),
+    checkAndConsumeByCollectionName: vi.fn().mockReturnValue(null),
     checkByCollectionName: vi.fn().mockReturnValue(null),
     reset: vi.fn(),
     ...overrides,
@@ -229,8 +230,9 @@ describe("ExploreFacade — expanded methods", () => {
     });
 
     it("returns drift warning from collection-based check", async () => {
+      // Consuming: a collection-addressed search is still a search.
       const driftReporter = makeMockDriftReporter({
-        checkByCollectionName: vi.fn().mockReturnValue(driftReport),
+        checkAndConsumeByCollectionName: vi.fn().mockReturnValue(driftReport),
       });
       const { facade } = makeFacade({ driftReporter });
 

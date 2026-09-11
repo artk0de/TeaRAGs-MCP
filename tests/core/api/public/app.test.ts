@@ -79,6 +79,7 @@ describe("createApp", () => {
 
     const driftReporter = {
       checkAndConsume: vi.fn().mockResolvedValue(null),
+      checkAndConsumeByCollectionName: vi.fn().mockReturnValue(null),
       checkByCollectionName: vi.fn().mockReturnValue(null),
       reset: vi.fn(),
     };
@@ -144,6 +145,18 @@ describe("createApp", () => {
     const app = createApp(deps as never);
     await app.checkIndexDrift({ collection: "code_abc", consume: false });
     expect(deps.driftReporter.checkByCollectionName).toHaveBeenCalledWith("code_abc");
+  });
+
+  it("checkIndexDrift routes a CONSUMING collection to the consuming collection check", async () => {
+    // `consume` is the caller's declaration of what it is, and a collection is
+    // no more an inspection than a path is: the search path addresses its
+    // collection directly, so `consume: true` has to reach the consuming
+    // variant or the warning it renders is never marked as shown.
+    const deps = makeDeps();
+    const app = createApp(deps as never);
+    await app.checkIndexDrift({ collection: "code_abc", consume: true });
+    expect(deps.driftReporter.checkAndConsumeByCollectionName).toHaveBeenCalledWith("code_abc");
+    expect(deps.driftReporter.checkByCollectionName).not.toHaveBeenCalled();
   });
 
   it("hasProvider returns false when registeredProviderKeys is absent", () => {

@@ -8,9 +8,13 @@
   (`api/internal/ops/indexing-ops.ts`); `payloadFieldKeys` by
   `infra/stats-cache.ts`. A monitor that needs a value none of them writes has
   found a missing stamp, not a place to compute one.
-- **`IndexDriftReporter` owns consumption.** `checkAndConsume` shows a
-  collection once per process; `IndexingOps` calls `reset(collectionName)` after
-  every run's stamps. A monitor never tracks "already shown".
+- **`IndexDriftReporter` owns consumption.** The two consuming checks —
+  `checkAndConsume` (by path) and `checkAndConsumeByCollectionName`, both of
+  them search — show a collection once per REPORT SIGNATURE per process, so a
+  clean check spends nothing and a report that grew a finding warns again;
+  `IndexingOps` calls `reset(collectionName)` after every run's stamps, which
+  clears every signature recorded for it. A monitor never tracks "already
+  shown".
 - **`--project` comes from the reporter.** `renderIndexDriftRemedy` fills it
   from `IndexDriftReport.projectAlias`, which the reporter resolves through the
   `resolveAlias` callback the composition root passes it

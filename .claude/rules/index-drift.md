@@ -26,7 +26,9 @@ Every monitor implements `IndexDriftMonitor#check(collectionName)`.
 `none < incremental < recompute(trajectories, languages?) < force` (`remedy.ts`)
 and `formatIndexDriftReport` renders ONE `Run:` line. A consumer that prints two
 commands for one collection is a defect — add the monitor to the reporter in
-`src/bootstrap/factory.ts`, do not render it separately.
+`src/bootstrap/factory.ts`, do not render it separately. The search path shows
+each report once per collection per REPORT SIGNATURE per process, so a clean
+check consumes nothing and a changed report warns again.
 
 ## Adding a monitor
 

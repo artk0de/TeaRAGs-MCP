@@ -4,9 +4,20 @@ import type { PayloadKeyOwner } from "../../../../../src/core/contracts/types/tr
 import {
   foldIndexDriftRemedies,
   renderIndexDriftRemedy,
-  resolveSchemaDriftRemedy,
+  resolvePayloadKeyRemedy,
   type IndexDriftRemedy,
 } from "../../../../../src/core/domains/maintenance/drift/remedy.js";
+
+/**
+ * What a whole payload-key drift costs: the per-key remedies, folded. This is
+ * the composition `SchemaDriftMonitor` performs — it emits one finding per key
+ * and the reporter folds them — expressed here so the attribution cases below
+ * assert against the production path rather than a helper only tests call.
+ */
+const payloadDriftRemedy = (added: readonly string[], owners: readonly PayloadKeyOwner[]): IndexDriftRemedy => {
+  const ownerByKey = new Map(owners.map((o) => [o.key, o]));
+  return foldIndexDriftRemedies(added.map((key) => resolvePayloadKeyRemedy(key, ownerByKey)));
+};
 
 describe("Schema drift hint — trajectory attribution", () => {
   const OWNERS: PayloadKeyOwner[] = [
@@ -19,7 +30,7 @@ describe("Schema drift hint — trajectory attribution", () => {
   ];
 
   const commandFor = (drift: { added: string[]; removed: string[] }, owners: PayloadKeyOwner[] = OWNERS): string =>
-    renderIndexDriftRemedy(resolveSchemaDriftRemedy(drift, owners));
+    renderIndexDriftRemedy(payloadDriftRemedy(drift.added, owners));
 
   it("names the owning trajectory for a single enrichment-owned key", () => {
     const command = commandFor({ added: ["git.file.newSignal"], removed: [] });
@@ -125,6 +136,27 @@ describe("foldIndexDriftRemedies", () => {
     expect(folded).toEqual(recompute(["codegraph", "git"], ["python", "ruby"]));
   });
 
+  // Moved from the `resolveSchemaDriftRemedy` describe when that function was
+  // deleted: it had no production caller, and the fold of per-key remedies IS
+  // what `SchemaDriftMonitor` + `IndexDriftReporter` perform. Same inputs, same
+  // expectations — only the entry point moved.
+  const PAYLOAD_KEY_OWNERS: PayloadKeyOwner[] = [
+    { key: "git.file.newSignal", trajectory: "git", recomputable: true },
+    { key: "codegraph.file.newMetric", trajectory: "codegraph.symbols", recomputable: true },
+  ];
+
+  it("unions the owning trajectory of every added key", () => {
+    expect(payloadDriftRemedy(["git.file.newSignal", "codegraph.file.newMetric"], PAYLOAD_KEY_OWNERS)).toEqual(
+      recompute(["codegraph.symbols", "git"], null),
+    );
+  });
+
+  it("never narrows a payload-key recompute by language — the keys are language-agnostic", () => {
+    const remedy = payloadDriftRemedy(["git.file.newSignal"], PAYLOAD_KEY_OWNERS);
+
+    expect(remedy).toEqual({ kind: "recompute", trajectories: new Set(["git"]), languages: null });
+  });
+
   it("renders one command", () => {
     expect(renderIndexDriftRemedy(recompute(["git", "codegraph"], ["ruby"]))).toBe(
       "Run: tea-rags index-codebase --force-enrichments codegraph,git --languages ruby",
@@ -176,26 +208,5 @@ describe("the one command a language-version drift carries", () => {
     expect(command.match(/Run: /g)).toHaveLength(1);
     expect(command).toContain("Run: tea-rags index-codebase --force");
     expect(command).not.toContain("--force-enrichments");
-  });
-});
-
-// The rendered command is asserted by the attribution describe above; these two
-// pin the lattice VALUE the fold consumes, which a rendered string only implies.
-describe("resolveSchemaDriftRemedy — the value behind the command", () => {
-  const OWNERS: PayloadKeyOwner[] = [
-    { key: "git.file.newSignal", trajectory: "git", recomputable: true },
-    { key: "codegraph.file.newMetric", trajectory: "codegraph.symbols", recomputable: true },
-  ];
-
-  it("unions the owning trajectory of every added key", () => {
-    expect(
-      resolveSchemaDriftRemedy({ added: ["git.file.newSignal", "codegraph.file.newMetric"], removed: [] }, OWNERS),
-    ).toEqual(recompute(["codegraph.symbols", "git"], null));
-  });
-
-  it("never narrows a payload-key recompute by language — the keys are language-agnostic", () => {
-    const remedy = resolveSchemaDriftRemedy({ added: ["git.file.newSignal"], removed: [] }, OWNERS);
-
-    expect(remedy).toEqual({ kind: "recompute", trajectories: new Set(["git"]), languages: null });
   });
 });

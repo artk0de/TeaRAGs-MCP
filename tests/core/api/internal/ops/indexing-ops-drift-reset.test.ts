@@ -2,10 +2,10 @@
  * IndexingOps — clearing the drift report's consumption after a run
  * (bd tea-rags-mcp-p0phi).
  *
- * `IndexDriftReporter` hands a search response the warning once per collection
- * per server session. The run that repairs the drift is therefore the only
- * thing that may re-arm it: without the reset, a long-lived MCP server would
- * stay silent about a SECOND drift appearing after the first was fixed.
+ * `IndexDriftReporter` hands a search response each distinct report once per
+ * collection per server session. The run that repairs the drift is therefore
+ * the only thing that may re-arm a report it already showed: without the reset,
+ * a long-lived MCP server would stay silent about drift that survived the run.
  *
  * Every run path resets, including a plain incremental that stamps nothing —
  * re-checking is cheap and the monitors decide for themselves whether anything
@@ -152,5 +152,38 @@ describe("IndexingOps — drift consumption reset", () => {
     const ops = new IndexingOps(makeDeps());
 
     await expect(ops.run(process.cwd(), { forceReindex: true })).resolves.toBeDefined();
+  });
+
+  /**
+   * The stats refresh is what rewrites `payloadFieldKeys`, which the payload-key
+   * axis compares against. Re-arming the reader before that write lands leaves a
+   * window in which a search re-checks the OLD keys and is told, with a fresh
+   * warning, about drift the run just repaired. The full-reindex and recompute
+   * paths already await it; the incremental one did not.
+   *
+   * Recorded through `statsCache.save`, which is the last thing the refresh
+   * does — the other four cases wire no stats cache, so the refresh early-exits
+   * there and their expectations are untouched.
+   */
+  it("finishes the stats refresh BEFORE re-arming the reader on an incremental", async () => {
+    const calls: string[] = [];
+    const page = { points: [{ payload: { language: "typescript" } }], next_page_offset: null };
+    const ops = new IndexingOps(
+      makeDeps({
+        driftReporter: { reset: (name: string) => calls.push(`reset:${name}`) },
+        qdrant: {
+          collectionExists: vi.fn().mockResolvedValue(true),
+          aliases: { listAliases: vi.fn().mockResolvedValue([]) },
+          client: { scroll: vi.fn().mockResolvedValue(page) },
+        } as never,
+        statsCache: { save: () => calls.push("stats"), load: vi.fn().mockReturnValue(null) } as never,
+        allPayloadSignals: [{ key: "language", type: "string", description: "lang" }] as never,
+        statsAccumulators: [],
+      }),
+    );
+
+    await ops.run(process.cwd());
+
+    expect(calls).toEqual(["stats", `reset:${collection}`]);
   });
 });

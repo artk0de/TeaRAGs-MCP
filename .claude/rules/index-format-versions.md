@@ -33,9 +33,16 @@ Byte-identical change → no bump, but re-pin (`npm run pin:lang-versions`) and 
 (`language-capability-sync.md`). The pin test is the gate.
 
 The `paths:` above and `SHARED_SOURCES` in
-`src/core/domains/language/capability/version-axes.ts` must name the same files.
-A path listed here but digested by nothing turns `sharedVersions` into a number
-vouching for code it never saw — the rule fires, the pin stays green, and the
-bump gets skipped. Two sources are deliberately outside both:
-`language/index.ts` is a re-export barrel and `language/errors.ts` is error
-classes, and neither can move a chunk id or an edge.
+`src/core/domains/language/capability/version-axes.ts` must name the same files,
+with one documented exception below. A path listed here but digested by nothing
+turns `sharedVersions` into a number vouching for code it never saw — the rule
+fires, the pin stays green, and the bump gets skipped. Two sources are
+deliberately outside both: `language/index.ts` is a re-export barrel and
+`language/errors.ts` is error classes, and neither can move a chunk id or an
+edge.
+
+The exception is `src/core/contracts/types/codegraph-*.ts`. It is in `paths:`
+above so the rule surfaces when you touch it, but `SHARED_SOURCES` digests only
+the `chunking` and `walker` axes — the `codegraphSchema` axis has no digest at
+all, so those files are rule-only and their bump is a judgement call the table
+above states rather than something the pin test can check for you.

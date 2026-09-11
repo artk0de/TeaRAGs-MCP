@@ -3,9 +3,9 @@
  * folds what they find into ONE report carrying ONE command.
  *
  * The monitors stay stateless about who has been told: consumption ("this
- * process has already warned about this collection") lives here, so a search
- * response carries the warning once per server session and again after each
- * index run resets it (spec decision 13).
+ * process has already shown THIS report for this collection") lives here, so a
+ * search response carries each distinct warning once per server session and
+ * again after each index run resets it (spec decision 13).
  */
 
 import { resolveCollectionName, validatePath } from "../../../infra/collection-name.js";
@@ -26,7 +26,11 @@ const AXIS_TITLE: Record<IndexDriftAxis, string> = {
   commit: "Working tree",
 };
 
+/** Separates the collection name from the report signature; neither can contain it. */
+const SIGNATURE_SEPARATOR = "\u0000";
+
 export class IndexDriftReporter {
+  /** `<collection>\u0000<rendered report>` for every report already shown. */
   private readonly consumed = new Set<string>();
 
   constructor(
@@ -60,20 +64,44 @@ export class IndexDriftReporter {
   }
 
   /**
-   * Once per collection per process, until `reset` — a search response carries
-   * the warning one time per server session, and again after each index run.
+   * Once per collection per REPORT, until `reset` — the path-addressed search.
+   *
+   * Keying by collection alone spent the warning on whatever the first check
+   * happened to find: a clean check silenced the next search that actually had
+   * something to say, and a report that grew a finding after the first warning
+   * never reached anyone until an index run reset it. Keying by what the reader
+   * would SEE fixes both — a clean check consumes nothing, and a changed report
+   * is a report nobody has been shown.
    */
   async checkAndConsume(path: string): Promise<IndexDriftReport | null> {
     const collectionName = await this.resolvePath(path);
-    if (collectionName === null) return null;
-    if (this.consumed.has(collectionName)) return null;
-    this.consumed.add(collectionName);
-    return this.checkByCollectionName(collectionName);
+    return collectionName === null ? null : this.checkAndConsumeByCollectionName(collectionName);
   }
 
-  /** Called by `IndexingOps` after the stamps of a run are written (spec decision 13). */
+  /**
+   * The collection-addressed search, which consumes for the same reason the
+   * path-addressed one does: a request that names its collection outright is
+   * still a search riding a warning along with an answer, not an inspection.
+   */
+  checkAndConsumeByCollectionName(collectionName: string): IndexDriftReport | null {
+    const report = this.checkByCollectionName(collectionName);
+    if (report === null) return null;
+    const signature = `${collectionName}${SIGNATURE_SEPARATOR}${formatIndexDriftReport(report)}`;
+    if (this.consumed.has(signature)) return null;
+    this.consumed.add(signature);
+    return report;
+  }
+
+  /**
+   * Called by `IndexingOps` after the stamps of a run are written (spec decision
+   * 13). Every signature recorded for the collection goes, not just the most
+   * recent one: the run rewrote the stamps all of them were computed against.
+   */
   reset(collectionName: string): void {
-    this.consumed.delete(collectionName);
+    const prefix = `${collectionName}${SIGNATURE_SEPARATOR}`;
+    for (const signature of this.consumed) {
+      if (signature.startsWith(prefix)) this.consumed.delete(signature);
+    }
   }
 
   /**
