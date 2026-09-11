@@ -8,7 +8,15 @@ class MaterializedNode implements AstNode {
   readonly namedChildren: AstNode[] = [];
   parent: AstNode | null = null;
   previousNamedSibling: AstNode | null = null;
-  readonly fields = new Map<string, AstNode>();
+  /**
+   * Field children, allocated on the first one (bd tea-rags-mcp-1v12o.2.4).
+   * Most nodes in a tree-sitter parse have no field child at all — identifiers,
+   * operators, punctuation, every literal — so an eager `new Map()` per node was
+   * the largest avoidable share of the ~350 B a materialized node costs, on
+   * trees that run to millions of nodes. Private: nothing outside this file has
+   * ever read it, and `AstNode` exposes only `childForFieldName`.
+   */
+  private fieldsMap: Map<string, AstNode> | undefined;
   isNamed = false;
   constructor(
     readonly type: string,
@@ -34,7 +42,12 @@ class MaterializedNode implements AstNode {
     return this.namedChildren[i] ?? null;
   }
   childForFieldName(field: string): AstNode | null {
-    return this.fields.get(field) ?? null;
+    return this.fieldsMap?.get(field) ?? null;
+  }
+  /** First writer for a field name wins, exactly as the eager `has` guard did. */
+  setFieldChild(field: string, child: AstNode): void {
+    const map = (this.fieldsMap ??= new Map<string, AstNode>());
+    if (!map.has(field)) map.set(field, child);
   }
 }
 
@@ -77,7 +90,7 @@ export function materializeTree(nativeRoot: Parser.SyntaxNode, code: string): As
         node.namedChildren.push(child);
         prevNamed = child;
       }
-      if (field && !node.fields.has(field)) node.fields.set(field, child);
+      if (field) node.setFieldChild(field, child);
     }
     return node;
   };
