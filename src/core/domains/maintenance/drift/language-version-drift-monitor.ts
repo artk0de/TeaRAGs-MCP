@@ -12,6 +12,8 @@
 
 import type { LanguageCodeVersions } from "../../../contracts/types/language.js";
 import { resolveCollectionName, validatePath } from "../../../infra/collection-name.js";
+import type { IndexDriftFinding, IndexDriftMonitor } from "./monitor.js";
+import { formatIndexDriftReport, IndexDriftReporter } from "./report.js";
 
 /** One version axis, in the order a drift report lists them. */
 export type LanguageVersionAxis = "grammar" | "chunking" | "walker" | "codegraphSchema";
@@ -59,12 +61,48 @@ export interface IndexedLanguageReader {
   load: (collectionName: string) => { distributions?: { language?: Record<string, number> } } | null;
 }
 
-export class LanguageVersionDriftMonitor {
+export class LanguageVersionDriftMonitor implements IndexDriftMonitor {
+  readonly axis = "languageVersions" as const;
+
   constructor(
     private readonly registry: LanguageVersionStampReader,
     private readonly statsCache: IndexedLanguageReader,
     private readonly currentVersions: ReadonlyMap<string, LanguageCodeVersions>,
   ) {}
+
+  /**
+   * One finding per moved axis, each carrying what THAT axis costs: a chunk-set
+   * axis relocates every point id, so it can only be repaired by a full
+   * reindex; the rest are edges, repairable by a recompute narrowed to the one
+   * language that moved.
+   */
+  check(collectionName: string): IndexDriftFinding[] {
+    const entry = this.registry.get(collectionName);
+    if (!entry) return [];
+    // No stats cache means the language distribution is unknown, and a drift
+    // report scoped to "every language we support" would name languages the
+    // index has never held. Stay silent rather than guess.
+    const stats = this.statsCache.load(collectionName);
+    const present = Object.keys(stats?.distributions?.language ?? {});
+    if (present.length === 0) return [];
+
+    return LanguageVersionDriftMonitor.detectDrift(entry.languageVersions, this.currentVersions, present).flatMap(
+      (drift) =>
+        drift.axes.map((axis) => ({
+          axis: this.axis,
+          subject: `${drift.language}.${axis.axis}`,
+          indexed: String(axis.indexed),
+          current: String(axis.current),
+          remedy: CHUNK_SET_AXES.has(axis.axis)
+            ? ({ kind: "force" } as const)
+            : ({
+                kind: "recompute",
+                trajectories: new Set(["codegraph"]),
+                languages: new Set([drift.language]),
+              } as const),
+        })),
+    );
+  }
 
   /** Check drift for a filesystem path. Returns null when nothing moved. */
   async checkAndConsume(path: string): Promise<string | null> {
@@ -77,17 +115,8 @@ export class LanguageVersionDriftMonitor {
 
   /** Check drift when the collection name is already known. */
   checkByCollectionName(collectionName: string): string | null {
-    const entry = this.registry.get(collectionName);
-    if (!entry) return null;
-    // No stats cache means the language distribution is unknown, and a drift
-    // report scoped to "every language we support" would name languages the
-    // index has never held. Stay silent rather than guess.
-    const stats = this.statsCache.load(collectionName);
-    const present = Object.keys(stats?.distributions?.language ?? {});
-    if (present.length === 0) return null;
-
-    const drifts = LanguageVersionDriftMonitor.detectDrift(entry.languageVersions, this.currentVersions, present);
-    return drifts.length === 0 ? null : LanguageVersionDriftMonitor.formatWarning(drifts);
+    const report = new IndexDriftReporter([this]).checkByCollectionName(collectionName);
+    return report && formatIndexDriftReport(report);
   }
 
   /**
@@ -112,23 +141,6 @@ export class LanguageVersionDriftMonitor {
     }
     return drifts;
   }
-
-  /**
-   * Render ONE command for the whole report.
-   *
-   * A full reindex rebuilds the enrichment layer too, so a report mixing
-   * chunk-set axes with edge-only ones escalates to the reindex and drops the
-   * recompute — emitting two competing commands would leave the reader to work
-   * out which subsumes the other. Same doctrine as the payload-key drift hint.
-   */
-  static formatWarning(drifts: readonly LanguageVersionDrift[]): string {
-    const lines = ["Language tooling moved since last indexing."];
-    for (const drift of drifts) {
-      lines.push(`${drift.language}: ${drift.axes.map(formatAxis).join(", ")}`);
-    }
-    lines.push(`Run: ${resolveVersionDriftCommand(drifts)}`);
-    return lines.join("\n");
-  }
 }
 
 function driftOnAxis(
@@ -147,24 +159,4 @@ function driftOnAxis(
   const indexed = stamp[axis] ?? SEEDED_VERSION;
   const currentVersion = current[axis];
   return indexed === currentVersion ? [] : [{ axis, indexed, current: currentVersion }];
-}
-
-function formatAxis(axis: LanguageVersionAxisDrift): string {
-  return `${axis.axis} ${axis.indexed}→${axis.current}`;
-}
-
-/**
- * Pick the single command that repopulates every drifted language.
- *
- * The recompute IS narrowed by language — `epic-completion-gate.md` makes that
- * mandatory, and it is what keeps the measure-fix-measure loop short. The full
- * reindex is deliberately NOT: it builds a new collection and flips the alias,
- * so `--force --languages ruby` would leave an index containing only Ruby.
- * Recommending that on a polyglot project is a data-loss-shaped mistake.
- */
-function resolveVersionDriftCommand(drifts: readonly LanguageVersionDrift[]): string {
-  const movesChunkSet = drifts.some((d) => d.axes.some((a) => CHUNK_SET_AXES.has(a.axis)));
-  if (movesChunkSet) return "tea-rags index-codebase --force";
-  const languages = drifts.map((d) => d.language).join(",");
-  return `tea-rags index-codebase --force-enrichments codegraph --languages ${languages}`;
 }
