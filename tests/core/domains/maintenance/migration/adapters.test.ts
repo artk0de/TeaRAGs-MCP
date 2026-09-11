@@ -11,10 +11,13 @@ import { join } from "node:path";
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+import { SchemaManager } from "../../../../../src/core/adapters/qdrant/schema-manager.js";
 import { createShardedSnapshotAccess } from "../../../../../src/core/domains/ingest/sync/snapshot/sharded-snapshot-access.js";
 import { IndexStoreAdapter } from "../../../../../src/core/domains/maintenance/migration/adapters/index-store-adapter.js";
 import { SnapshotStoreAdapter } from "../../../../../src/core/domains/maintenance/migration/adapters/snapshot-store-adapter.js";
 import { SparseStoreAdapter } from "../../../../../src/core/domains/maintenance/migration/adapters/sparse-store-adapter.js";
+import { Migrator } from "../../../../../src/core/domains/maintenance/migration/migrator.js";
+import { SparseMigrator } from "../../../../../src/core/domains/maintenance/migration/sparse-migrator.js";
 
 // ── SnapshotStoreAdapter ──────────────────────────────────────────────────────
 
@@ -637,5 +640,93 @@ describe("IndexStoreAdapter bulk payload operations", () => {
     );
 
     await expect(adapter.batchSetPayload("col", [{ payload: {}, points: [1] }])).rejects.toThrow("qdrant down");
+  });
+});
+
+// ── Sparse version stamp across the schema stamp (bd tea-rags-mcp-vy26b) ──────
+//
+// `__schema_metadata__` is written by three collaborators — SchemaManager at
+// creation, IndexStoreAdapter when a schema migration lands, SparseStoreAdapter
+// when a sparse one does — and a Qdrant upsert REPLACES the payload of the id it
+// writes. The fake below models that, because a partial writer losing a sibling
+// field is exactly the defect under test: a lost `sparseVersion` reads back as 0
+// and costs the next sync a full BM25 rebuild of an index that already has one.
+
+describe("sparse version stamp on the schema metadata point", () => {
+  /** In-memory Qdrant whose upsert replaces the stored payload, like the real one. */
+  function makeMetadataQdrant(hybridEnabled: boolean) {
+    const stored = new Map<string | number, Record<string, unknown>>();
+    const upsert = async (_collection: string, points: { id: string | number; payload: Record<string, unknown> }[]) => {
+      for (const point of points) stored.set(point.id, { ...point.payload });
+      return Promise.resolve();
+    };
+    return {
+      stored,
+      createPayloadIndex: vi.fn().mockResolvedValue(undefined),
+      getCollectionInfo: vi.fn().mockResolvedValue({ vectorSize: 4, hybridEnabled }),
+      getPoint: vi.fn(async (_collection: string, id: string | number) =>
+        Promise.resolve(stored.has(id) ? { id, payload: stored.get(id) } : null),
+      ),
+      addPoints: vi.fn(upsert),
+      addPointsWithSparse: vi.fn(upsert),
+      // An empty scroll: the assertions are about whether the rebuild runs at all.
+      scrollWithVectors: vi.fn(() => ({
+        [Symbol.asyncIterator]: () => ({
+          next: async () => Promise.resolve({ done: true as const, value: undefined }),
+        }),
+      })),
+    };
+  }
+
+  /** A runner that never has anything to do — fills the pipelines Migrator requires. */
+  const idleRunner = {
+    getMigrations: () => [],
+    getVersion: async () => Promise.resolve(0),
+    setVersion: async () => Promise.resolve(),
+  };
+
+  function sparseMigratorFor(qdrant: ReturnType<typeof makeMetadataQdrant>): SparseMigrator {
+    return new SparseMigrator("col", new SparseStoreAdapter(qdrant as never), true);
+  }
+
+  function migratorFor(sparse: SparseMigrator): Migrator {
+    return new Migrator({ snapshot: idleRunner, schema: idleRunner, sparse, stats: idleRunner });
+  }
+
+  it("stamps the latest sparse version at creation, so the first sync rebuilds nothing", async () => {
+    const qdrant = makeMetadataQdrant(true);
+    const sparse = sparseMigratorFor(qdrant);
+    await new SchemaManager(qdrant as never, 42, sparse.latestVersion).initializeSchema("col");
+
+    const summary = await migratorFor(sparse).run("sparse");
+
+    expect(summary.fromVersion).toBe(sparse.latestVersion);
+    expect(summary.steps).toEqual([]);
+    expect(qdrant.scrollWithVectors).not.toHaveBeenCalled();
+  });
+
+  it("keeps the sparse stamp when a schema migration restamps the same point", async () => {
+    const qdrant = makeMetadataQdrant(true);
+    const sparse = sparseMigratorFor(qdrant);
+    await new SchemaManager(qdrant as never, 42, sparse.latestVersion).initializeSchema("col");
+
+    // A later build ships a schema migration; the schema pipeline stores its new
+    // version onto the very point that carries the sparse one.
+    await new IndexStoreAdapter(qdrant as never).storeSchemaVersion("col", 43, ["relativePath"]);
+
+    expect(await new SparseStoreAdapter(qdrant as never).getSparseVersion("col")).toBe(sparse.latestVersion);
+    const summary = await migratorFor(sparse).run("sparse");
+    expect(summary.steps).toEqual([]);
+    expect(qdrant.scrollWithVectors).not.toHaveBeenCalled();
+  });
+
+  it("still records the new schema version and index list it was called for", async () => {
+    const qdrant = makeMetadataQdrant(false);
+    await new SchemaManager(qdrant as never, 42, 1).initializeSchema("col");
+
+    await new IndexStoreAdapter(qdrant as never).storeSchemaVersion("col", 43, ["relativePath", "language"]);
+
+    expect(await new IndexStoreAdapter(qdrant as never).getSchemaVersion("col")).toBe(43);
+    expect(qdrant.stored.get("__schema_metadata__")?.indexes).toEqual(["relativePath", "language"]);
   });
 });
