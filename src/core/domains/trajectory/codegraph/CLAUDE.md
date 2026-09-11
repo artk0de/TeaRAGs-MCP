@@ -130,10 +130,11 @@
 
 - **A flat `## Codegraph resolve` block in prime is the one-language case, not a
   lost breakdown.** `summarizeCodegraphResolve`
-  (`../../ingest/pipeline/status-module.ts:176-193`) drops any language under
+  (`../../ingest/pipeline/status-module.ts:245-268`) drops any language under
   `MIN_LANGUAGE_SHARE` of the call sites, omits `byLanguage` entirely when ≤1
-  survives, and hangs that language's kinds off the top-level `byReceiverKind`,
-  which `src/cli/prime/format.ts` then renders without language headers. Why: a
+  survives, and hangs that language's kinds off the top-level `byReceiverKind`
+  (DEBUG builds; without it no kind tally exists to place), which
+  `src/cli/prime/format.ts` then renders without language headers. Why: a
   whole-corpus `--force-enrichments codegraph` on a corpus one language
   dominates makes the per-language headers vanish from a digest that had them,
   which reads as a regression in the tally and is the display rule working (bd

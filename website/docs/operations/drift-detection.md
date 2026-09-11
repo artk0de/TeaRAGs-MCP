@@ -68,7 +68,7 @@ means, rather than restating it:
 
 ```text
 Indexing env:
-  CODEGRAPH_ENABLED: true → false (explains any codegraph.* payload-key drift — restore the flag instead of rebuilding)
+  TRAJECTORY_GIT_ENABLED: true → false (explains any git.* payload-key drift — restore the flag instead of rebuilding)
 ```
 
 The command is folded over every finding, so a report with several lines still
@@ -99,14 +99,14 @@ renders `No action required.`, which is literally true. Set the flag and the env
 row and the payload-key report clear together.
 
 Because the row describes the reading process, each surface answers for itself,
-and `prime` is a special case: it re-applies `CODEGRAPH_ENABLED` from the
-registry before it builds its composition, which is what stops prime from
-reporting phantom removed keys in the first place. So the `CODEGRAPH_ENABLED` row
-never appears in prime's `## Drift` — its absence there tells you nothing about
-the server. Read that flag where it matters, from the MCP server:
-`get_index_status`, or the `driftWarning` on a search response.
-`TRAJECTORY_GIT_ENABLED` gets no re-apply and shows up wherever it is flipped,
-prime included:
+and `prime` is a special case: the `CODEGRAPH_ENABLED` row never appears in
+prime's `## Drift`, so its absence there tells you nothing about the server. The
+reason is the same re-apply that keeps prime honest elsewhere — prime takes
+`CODEGRAPH_ENABLED` from the registry before it builds its composition, which is
+what stops it reporting phantom removed keys. Read that flag where it matters,
+from the MCP server: `get_index_status`, or the `driftWarning` on a search
+response. `TRAJECTORY_GIT_ENABLED` gets no such re-apply and shows up wherever it
+is flipped, prime included:
 
 ```text
 Indexing env:
