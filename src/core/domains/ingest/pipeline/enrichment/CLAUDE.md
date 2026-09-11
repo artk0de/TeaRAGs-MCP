@@ -22,14 +22,19 @@
   deferred chunk pass, as `CompletionRunner` step 7b. It obeys the same two
   rules as the applier — level-scoped `op.key` with bare inner keys, and no
   write over a level already carrying `skippedAs` — and it stamps the run's
-  `enrichedAt` like any other write of those keys. It does NOT own the signal
-  arithmetic: both builders are injected closures over the codegraph
-  trajectory's `buildCodegraphFileSignals` / `buildCodegraphChunkSignals`,
-  composed in `api/internal/infra/codegraph-payload-heal-runner.ts` because this
-  domain may not import `domains/trajectory`. Why: a third writer that computes
-  the payload itself instead of calling those builders drifts from the applier
-  with nothing failing — the two write the same keys on the same points, and
-  only a live query shows which one was last.
+  `enrichedAt` like any other write of those keys. It finds those points with
+  ONE unfiltered streaming pass over the collection, flushing per page, rather
+  than a filtered scroll per file: the payload index on `relativePath` is
+  `text`, which does not serve `match.value`, so each per-file scroll was a full
+  scan (677–1002 ms each, 19 m 16 s for 1,032 files) where the whole pass costs
+  ~400 ms. It does NOT own the signal arithmetic: both builders are injected
+  closures over the codegraph trajectory's `buildCodegraphFileSignals` /
+  `buildCodegraphChunkSignals`, composed in
+  `api/internal/infra/codegraph-payload-heal-runner.ts` because this domain may
+  not import `domains/trajectory`. Why: a third writer that computes the payload
+  itself instead of calling those builders drifts from the applier with nothing
+  failing — the two write the same keys on the same points, and only a live
+  query shows which one was last.
 - **A point a provider declined MUST get `<provider>.<level>.skippedAs`** — one
   of `"generated" | "test" | "documentation" | "policy"` (policy.ts:35).
   `"policy"` is the mandatory catch-all when no classification flag explains the
