@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { EmbeddingModelMismatchError } from "../../../../src/core/adapters/embeddings/errors.js";
 import { EmbeddingModelGuard } from "../../../../src/core/adapters/qdrant/embedding-model-guard.js";
-import { INDEXING_METADATA_ID } from "../../../../src/core/contracts/constants.js";
+import { EMBEDDING_CANARY_TEXT, INDEXING_METADATA_ID } from "../../../../src/core/contracts/constants.js";
 
 function createMockQdrant(markerPayload?: Record<string, unknown> | null) {
   return {
@@ -192,5 +192,135 @@ describe("EmbeddingModelGuard", () => {
       expect(consoleError).toHaveBeenCalledWith(expect.stringContaining("col"), expect.anything());
       consoleError.mockRestore();
     });
+  });
+});
+
+/**
+ * Stateful marker fake: `createMockQdrant` above answers reads but forgets
+ * writes, and the canary path is defined by what the marker holds AFTER the
+ * guard wrote to it. Mirrors the calls `readOrCreateMarker` actually makes —
+ * `getPoint` / `setPayload` / `addPoints` / `addPointsWithSparse` — over one
+ * in-memory payload per collection, exposed through `marker(collection)`.
+ */
+function fakeQdrantWithMarker(markerPayload: Record<string, unknown>) {
+  const markers = new Map<string, Record<string, unknown>>();
+  const markerFor = (collection: string): Record<string, unknown> => {
+    let payload = markers.get(collection);
+    if (!payload) {
+      payload = { _type: "indexing_metadata", indexingComplete: true, ...markerPayload };
+      markers.set(collection, payload);
+    }
+    return payload;
+  };
+
+  return {
+    marker: markerFor,
+    getPoint: vi.fn(async (collection: string) => ({
+      id: INDEXING_METADATA_ID,
+      payload: markerFor(collection),
+    })),
+    setPayload: vi.fn(async (collection: string, fields: Record<string, unknown>) => {
+      Object.assign(markerFor(collection), fields);
+    }),
+    addPoints: vi.fn(async (collection: string, points: { payload: Record<string, unknown> }[]) => {
+      markers.set(collection, { ...points[0].payload });
+    }),
+    addPointsWithSparse: vi.fn(async (collection: string, points: { payload: Record<string, unknown> }[]) => {
+      markers.set(collection, { ...points[0].payload });
+    }),
+    getCollectionInfo: vi.fn().mockResolvedValue({ hybridEnabled: false, vectorSize: 4 }),
+    collectionExists: vi.fn().mockResolvedValue(true),
+  } as any;
+}
+
+function providerReturning(vector: number[]) {
+  return { embed: async () => ({ embedding: vector }) } as never;
+}
+const V = [1, 0, 0, 0];
+const ORTHOGONAL = [0, 1, 0, 0];
+
+describe("EmbeddingModelGuard canary", () => {
+  it("writes the canary into a marker that has none", async () => {
+    const qdrant = fakeQdrantWithMarker({ embeddingModel: "m" });
+    await new EmbeddingModelGuard(qdrant, "m", 4, providerReturning(V)).ensureMatch("c");
+    expect(qdrant.marker("c").canary).toEqual({ text: EMBEDDING_CANARY_TEXT, vector: V });
+  });
+
+  it("passes when the same name embeds the canary to the same vector", async () => {
+    const qdrant = fakeQdrantWithMarker({
+      embeddingModel: "m",
+      canary: { text: EMBEDDING_CANARY_TEXT, vector: V },
+    });
+    await expect(
+      new EmbeddingModelGuard(qdrant, "m", 4, providerReturning(V)).ensureMatch("c"),
+    ).resolves.toBeUndefined();
+  });
+
+  it("rejects the same name when the weights changed", async () => {
+    const qdrant = fakeQdrantWithMarker({
+      embeddingModel: "m",
+      canary: { text: EMBEDDING_CANARY_TEXT, vector: V },
+    });
+    await expect(
+      new EmbeddingModelGuard(qdrant, "m", 4, providerReturning(ORTHOGONAL)).ensureMatch("c"),
+    ).rejects.toThrow(/same name, different weights: canary cosine 0\.0000/);
+  });
+
+  it("without a provider behaves as before", async () => {
+    const qdrant = fakeQdrantWithMarker({ embeddingModel: "m" });
+    await new EmbeddingModelGuard(qdrant, "m", 4).ensureMatch("c");
+    expect(qdrant.marker("c").canary).toBeUndefined();
+  });
+
+  it("rejects a canary stored at a different width", async () => {
+    // A width change is a model change, and cosine over ragged vectors is NaN —
+    // which compares false against the threshold and would pass silently.
+    const qdrant = fakeQdrantWithMarker({
+      embeddingModel: "m",
+      canary: { text: EMBEDDING_CANARY_TEXT, vector: [1, 0, 0] },
+    });
+    await expect(new EmbeddingModelGuard(qdrant, "m", 4, providerReturning(V)).ensureMatch("c")).rejects.toThrow(
+      /canary cosine 0\.0000/,
+    );
+  });
+
+  it("replaces a canary written for a different text instead of reporting drift", async () => {
+    const qdrant = fakeQdrantWithMarker({
+      embeddingModel: "m",
+      canary: { text: "a canary from an older release", vector: ORTHOGONAL },
+    });
+    await new EmbeddingModelGuard(qdrant, "m", 4, providerReturning(V)).ensureMatch("c");
+    expect(qdrant.marker("c").canary).toEqual({ text: EMBEDDING_CANARY_TEXT, vector: V });
+  });
+
+  it("keeps rejecting from cache without re-embedding the canary", async () => {
+    const qdrant = fakeQdrantWithMarker({
+      embeddingModel: "m",
+      canary: { text: EMBEDDING_CANARY_TEXT, vector: V },
+    });
+    const embed = vi.fn(async () => ({ embedding: ORTHOGONAL }));
+    const guard = new EmbeddingModelGuard(qdrant, "m", 4, { embed } as never);
+
+    await expect(guard.ensureMatch("c")).rejects.toThrow(EmbeddingModelMismatchError);
+    await expect(guard.ensureMatch("c")).rejects.toThrow(EmbeddingModelMismatchError);
+    expect(embed).toHaveBeenCalledTimes(1);
+  });
+
+  it("skips the canary when the provider cannot embed", async () => {
+    // Provider down must not block indexing — the guard degrades to the name
+    // comparison and says so once, exactly as a failed marker read does.
+    const consoleError = vi.spyOn(console, "error").mockImplementation(() => {});
+    const qdrant = fakeQdrantWithMarker({ embeddingModel: "m" });
+    const provider = {
+      embed: async () => {
+        throw new Error("ollama down");
+      },
+    } as never;
+
+    await expect(new EmbeddingModelGuard(qdrant, "m", 4, provider).ensureMatch("c")).resolves.toBeUndefined();
+
+    expect(qdrant.marker("c").canary).toBeUndefined();
+    expect(consoleError).toHaveBeenCalledWith(expect.stringContaining("Canary check skipped"), expect.anything());
+    consoleError.mockRestore();
   });
 });

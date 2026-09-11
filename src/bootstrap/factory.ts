@@ -220,7 +220,9 @@ async function resolveInfrastructure(
     }),
   );
 
-  const modelGuard = new EmbeddingModelGuard(qdrant, embeddings.getModel(), embeddings.getDimensions());
+  // The provider is what lets the guard catch a model that kept its name and
+  // changed its weights: it re-embeds the canary stored in the marker.
+  const modelGuard = new EmbeddingModelGuard(qdrant, embeddings.getModel(), embeddings.getDimensions(), embeddings);
 
   // Reconcile existing collections to TurboQuant (idempotent, no reindex). A
   // reconcile failure must never crash startup — log and continue. When the
