@@ -51,6 +51,13 @@ function structuredReturnTypes(src: string): Record<string, unknown> {
 
 const instance = (name: string) => ({ form: "instance", name }) as const;
 
+/**
+ * A module-level def's channel key. It was the bare name until E5.1c qualified
+ * it with the declaring file (bd tea-rags-mcp-1v12o.1.7); a class member keeps
+ * its `Cls#m` / `Cls.m` form and is spelled literally below.
+ */
+const moduleKey = (name: string): string => `pkg/svc.py::${name}`;
+
 describe("pythonAstTypeSource — what it infers", () => {
   it("infers a constructor return", () => {
     const emitted = facts(["class Factory:", "    def build(self):", "        return Widget()", ""].join("\n"));
@@ -89,17 +96,20 @@ describe("pythonAstTypeSource — what it infers", () => {
 
   it("infers a same-file annotated callee one hop", () => {
     const src = ["def make() -> Widget:", "    ...", "", "def build():", "    return make()", ""].join("\n");
-    expect(structuredReturnTypes(src)).toEqual({ make: instance("Widget"), build: instance("Widget") });
+    expect(structuredReturnTypes(src)).toEqual({
+      [moduleKey("make")]: instance("Widget"),
+      [moduleKey("build")]: instance("Widget"),
+    });
   });
 
   it("follows a local bound exactly once inside the body", () => {
     const src = ["def build():", "    w = Widget()", "    return w", ""].join("\n");
-    expect(structuredReturnTypes(src)).toEqual({ build: instance("Widget") });
+    expect(structuredReturnTypes(src)).toEqual({ [moduleKey("build")]: instance("Widget") });
   });
 
   it("agrees across two returns naming the same class", () => {
     const src = ["def build(flag):", "    if flag:", "        return Widget()", "    return Widget()", ""].join("\n");
-    expect(structuredReturnTypes(src)).toEqual({ build: instance("Widget") });
+    expect(structuredReturnTypes(src)).toEqual({ [moduleKey("build")]: instance("Widget") });
   });
 });
 

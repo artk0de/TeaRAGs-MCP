@@ -106,9 +106,12 @@ function clientCtx(callerFile: string, imports: readonly ImportRef[]): CallConte
     callerScope: [],
     imports: [...imports],
     symbolTable: clientTable(),
-    // Run-global, bare-name keyed, first-write-wins: ONE of the three defs
-    // speaks for all of them (`python-type-channels.ts`).
-    structuredReturnTypes: { get_client: { form: "instance", name: "PolarSelfClient" } },
+    // Run-global and keyed PER FILE since E5.1c (bd tea-rags-mcp-1v12o.1.7), so
+    // only `integrations/polar/client.py`'s `get_client` carries this fact. The
+    // bare key this pinned before let one of the three speak for all of them.
+    structuredReturnTypes: {
+      "server/polar/integrations/polar/client.py::get_client": { form: "instance", name: "PolarSelfClient" },
+    },
   };
 }
 
@@ -192,10 +195,13 @@ describe("pythonCallBindingType — the call-result half", () => {
     expect(callBindingType("get_client", ctx)).toEqual({ form: "instance", name: "PolarSelfClient" });
   });
 
-  it("REFUSES the run-global fact when it names no class the narrowed file declares", () => {
+  it("REFUSES a fact the narrowed file does not own", () => {
     // `checkout/ip_geolocation.py` declares its own `get_client() ->
-    // IPGeolocationClient`; the bare-name channel carries `PolarSelfClient`,
-    // which that file does not declare. Attributing it would be a phantom.
+    // IPGeolocationClient` and records no fact here; `PolarSelfClient` belongs
+    // to `integrations/polar/client.py`. E5.1a checked that by asking whether
+    // the narrowed file DECLARED the returned class; the per-file key makes the
+    // question unnecessary — the caller simply looks under its own file and
+    // finds nothing (bd tea-rags-mcp-1v12o.1.7).
     const ctx = clientCtx("server/polar/checkout/service.py", [
       importOf("polar.checkout.ip_geolocation", "get_client"),
     ]);
@@ -216,7 +222,9 @@ describe("pythonCallBindingType — the call-result half", () => {
         "server/polar/integrations/polar/client.py": [{ symbolId: "build_client" }],
         "server/polar/integrations/polar/service.py": [{ symbolId: "PolarService" }],
       }),
-      structuredReturnTypes: { build_client: { form: "instance", name: "PolarSelfClient" } },
+      structuredReturnTypes: {
+        "server/polar/integrations/polar/client.py::build_client": { form: "instance", name: "PolarSelfClient" },
+      },
     };
     expect(callBindingType("build_client", ctx)).toEqual({ form: "instance", name: "PolarSelfClient" });
   });
