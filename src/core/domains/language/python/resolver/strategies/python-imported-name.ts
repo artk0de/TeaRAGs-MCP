@@ -13,6 +13,7 @@ import type { PythonImportFileMapper } from "../python-import-file-mapper.js";
 import {
   findPythonImportBinding,
   lookupPythonSymbolsByShortName,
+  pythonBoundClassKey,
   pythonClassKey,
   receiverModuleText,
   resolvePythonInheritedMember,
@@ -139,8 +140,9 @@ export class PythonImportedNameSymbolResolutionStrategy implements SymbolResolut
    * `ctx.callerFile`. Python symbolIds carry no module path, so the file filter
    * is what makes it the caller's own class; and no top-level `def` can spell a
    * dotted id, so the lookup cannot reach anything but a member of that class.
-   * No short-name search, no MRO walk, no DROP — a miss CONTINUEs, and the only
-   * pass below no longer answers it either.
+   * No short-name search and no DROP; the MRO walk is {@link
+   * resolveSameFileInheritedMember} — a miss CONTINUEs, and the only pass below
+   * no longer answers it either.
    */
   private resolveSameFileClassReceiver(call: CallRef, ctx: CallContext): SymbolResolutionOutcome {
     if (!call.receiver) return CONTINUE; // a bare call names no class
@@ -149,7 +151,45 @@ export class PythonImportedNameSymbolResolutionStrategy implements SymbolResolut
       const target = pickSingleCandidate(candidates, this.cfg.mode);
       if (target) return resolved({ targetRelPath: target.relPath, targetSymbolId: target.symbolId });
     }
-    return CONTINUE;
+    return this.resolveSameFileInheritedMember(call, ctx);
+  }
+
+  /**
+   * The same-file class-receiver arm's ancestor fallback — the hop {@link
+   * resolveDeclaredName} has had since bd tea-rags-mcp-9fgdi and this arm has
+   * not (bd tea-rags-mcp-w205u, E4.4b). polar declares a form class in the
+   * endpoint file that calls it and inherits `render` / `model_validate_form`
+   * from a `BaseForm` a module away; the two-spelling lookup above is filtered
+   * to the caller's file, so it can never see the ancestor's declaration.
+   *
+   * `pythonBoundClassKey` IS the precision gate: it returns `null` unless the
+   * caller's file declares exactly ONE symbol of that name, so a shadowed or
+   * duplicated receiver declines rather than picking. A receiver that names a
+   * top-level `def` rather than a class passes that gate and is still harmless
+   * — a non-class has no `classAncestors` entry, the order is the key alone,
+   * and the probe then repeats the two lookups the loop above already made and
+   * finds nothing. The fallback can only ever answer from an ANCESTOR.
+   *
+   * `spellingOrder: "classFirst"` for the same reason `clsMember` uses it: the
+   * receiver is a CLASS OBJECT, and all 10 measured rows resolve to a
+   * `@classmethod` / `@staticmethod` filed `Cls.m`. The instance spelling stays
+   * accepted underneath it.
+   *
+   * Resolve-or-CONTINUE, never DROP. This arm's CONTINUE is what lets
+   * `resolveStarImport` run below it, and the imported-class arm's DROP is
+   * earned by evidence this one does not have — an import statement naming the
+   * declaring file.
+   */
+  private resolveSameFileInheritedMember(call: CallRef, ctx: CallContext): SymbolResolutionOutcome {
+    if (!call.receiver) return CONTINUE;
+    const linearizer = this.linearizers?.for(ctx);
+    if (linearizer === undefined) return CONTINUE;
+    const classKey = pythonBoundClassKey(call.receiver, ctx.callerFile, ctx);
+    if (classKey === null) return CONTINUE;
+    const { target } = resolvePythonInheritedMember(classKey, call.member, ctx, this.cfg.mode, linearizer, {
+      spellingOrder: "classFirst",
+    });
+    return target ? resolved(target) : CONTINUE;
   }
 
   /**

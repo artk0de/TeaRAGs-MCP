@@ -26,6 +26,7 @@ import type {
 import { PythonAncestorLinearizerCache } from "../../../../../../../src/core/domains/language/python/resolver/python-ancestor-policy.js";
 import { PythonImportFileMapper } from "../../../../../../../src/core/domains/language/python/resolver/python-import-file-mapper.js";
 import { PythonImportedNameSymbolResolutionStrategy } from "../../../../../../../src/core/domains/language/python/resolver/strategies/python-imported-name.js";
+import { PYTHON_UNRESOLVABLE_BASE } from "../../../../../../../src/core/domains/language/python/walker/walker.js";
 import { InMemoryGlobalSymbolTable } from "../../../../../../../src/core/domains/trajectory/codegraph/symbols/symbol-table.js";
 
 function tableWith(files: Record<string, string[]>): InMemoryGlobalSymbolTable {
@@ -930,6 +931,142 @@ describe("PythonImportedNameSymbolResolutionStrategy — same-file class receive
   it("continues when the class is declared in ANOTHER file and no import bound it", () => {
     const table = tableWith({ "svc/caller.py": ["run"], "svc/other.py": ["Helper", "Helper.build"] });
     expect(strategy().attempt(call("Helper", "build"), ctxWith("svc/caller.py", [], table)).kind).toBe("continue");
+  });
+});
+
+/**
+ * The same-file class receiver's ANCESTOR HOP (bd tea-rags-mcp-w205u, E4.4b).
+ *
+ * The arm above answers `Cls.m` / `Cls#m` declared IN the caller's file, and
+ * stopped there. `resolveDeclaredName` has had the MRO fallback since bd
+ * tea-rags-mcp-9fgdi; this one had none. 10 measured polar rows are exactly
+ * that gap: a form class declared in the endpoint file that calls it, whose
+ * `render` / `model_validate_form` live on a `BaseForm` a module away — plus
+ * `Development(Logging[…])` in `logging.py`, the control proving the base need
+ * not be in another file for the hop to be missing.
+ *
+ * `spellingOrder: "classFirst"` for the same reason `clsMember` uses it: the
+ * receiver IS the class object, and all 10 oracle targets carry the class-level
+ * separator. The instance spelling stays accepted underneath it.
+ */
+describe("PythonImportedNameSymbolResolutionStrategy — same-file class receiver, MRO hop (w205u)", () => {
+  function inheritingStrategy(): PythonImportedNameSymbolResolutionStrategy {
+    const mapper = new PythonImportFileMapper();
+    return new PythonImportedNameSymbolResolutionStrategy(
+      { mode: "strict" },
+      mapper,
+      new PythonAncestorLinearizerCache(mapper, "strict"),
+    );
+  }
+
+  /** polar: `UpdateForm` declared in the endpoint file, `BaseForm` a module away. */
+  function endpointCtx(files: Record<string, string[]>, ancestors: Record<string, readonly string[]>): CallContext {
+    return { ...ctxWith("app/endpoints.py", [], tableWith(files)), classAncestors: ancestors };
+  }
+
+  it("pins an inherited CLASSMETHOD on a base in another file", () => {
+    const ctx = endpointCtx(
+      { "app/endpoints.py": ["UpdateForm"], "app/forms.py": ["BaseForm", "BaseForm.model_validate_form"] },
+      { "app/endpoints.py::UpdateForm": ["app.forms::BaseForm"] },
+    );
+    expect(inheritingStrategy().attempt(call("UpdateForm", "model_validate_form"), ctx)).toEqual({
+      kind: "resolved",
+      target: { targetRelPath: "app/forms.py", targetSymbolId: "BaseForm.model_validate_form" },
+    });
+  });
+
+  it("pins an inherited member when the base is in the SAME file — the Development control", () => {
+    // polar `logging.py:152,154`: `class Development(Logging[…])` and `Logging`
+    // both live in the calling file, so the miss is the HOP and not the
+    // cross-file lookup.
+    const ctx = {
+      ...ctxWith(
+        "app/logging.py",
+        [],
+        tableWith({ "app/logging.py": ["Development", "Logging", "Logging.configure"] }),
+      ),
+      classAncestors: { "app/logging.py::Development": ["Logging"] },
+    };
+    expect(inheritingStrategy().attempt(call("Development", "configure"), ctx)).toEqual({
+      kind: "resolved",
+      target: { targetRelPath: "app/logging.py", targetSymbolId: "Logging.configure" },
+    });
+  });
+
+  it("ACCEPTS the instance spelling on the ancestor — classFirst reorders, it does not exclude", () => {
+    const ctx = endpointCtx(
+      { "app/endpoints.py": ["UpdateForm"], "app/forms.py": ["BaseForm", "BaseForm#render"] },
+      { "app/endpoints.py::UpdateForm": ["app.forms::BaseForm"] },
+    );
+    expect(inheritingStrategy().attempt(call("UpdateForm", "render"), ctx)).toEqual({
+      kind: "resolved",
+      target: { targetRelPath: "app/forms.py", targetSymbolId: "BaseForm#render" },
+    });
+  });
+
+  it("leaves a member the class DECLARES ITSELF to the two-spelling lookup above", () => {
+    // The fallback is never reached: the same-file lookup runs first, so the
+    // class's own override wins over the ancestor's.
+    const ctx = endpointCtx(
+      { "app/endpoints.py": ["UpdateForm", "UpdateForm.render"], "app/forms.py": ["BaseForm", "BaseForm.render"] },
+      { "app/endpoints.py::UpdateForm": ["app.forms::BaseForm"] },
+    );
+    expect(inheritingStrategy().attempt(call("UpdateForm", "render"), ctx)).toEqual({
+      kind: "resolved",
+      target: { targetRelPath: "app/endpoints.py", targetSymbolId: "UpdateForm.render" },
+    });
+  });
+
+  it("CONTINUES — never DROPs — when no class on the MRO owns the member", () => {
+    // This arm's CONTINUE is what lets `resolveStarImport` run below it. The
+    // imported-class arm's DROP is earned by an import statement naming the
+    // declaring file; this one has no such evidence.
+    const ctx = endpointCtx(
+      { "app/endpoints.py": ["UpdateForm"], "app/forms.py": ["BaseForm", "BaseForm.render"] },
+      { "app/endpoints.py::UpdateForm": ["app.forms::BaseForm"] },
+    );
+    expect(inheritingStrategy().attempt(call("UpdateForm", "missing"), ctx)).toEqual({ kind: "continue" });
+  });
+
+  it("CONTINUES on an UNRESOLVABLE base — a branch nobody could read is not evidence", () => {
+    const ctx = endpointCtx(
+      { "app/endpoints.py": ["UpdateForm"], "app/forms.py": ["BaseForm", "BaseForm.render"] },
+      { "app/endpoints.py::UpdateForm": [PYTHON_UNRESOLVABLE_BASE] },
+    );
+    expect(inheritingStrategy().attempt(call("UpdateForm", "render"), ctx)).toEqual({ kind: "continue" });
+  });
+
+  it("CONTINUES when the caller's file declares the receiver TWICE — the uniqueness gate", () => {
+    // `pythonBoundClassKey` IS the precision gate: two symbols of that short
+    // name in one file and it returns null rather than picking.
+    const ctx = endpointCtx(
+      {
+        "app/endpoints.py": ["UpdateForm", "Outer.UpdateForm"],
+        "app/forms.py": ["BaseForm", "BaseForm.render"],
+      },
+      { "app/endpoints.py::UpdateForm": ["app.forms::BaseForm"] },
+    );
+    expect(inheritingStrategy().attempt(call("UpdateForm", "render"), ctx)).toEqual({ kind: "continue" });
+  });
+
+  it("leaves a BARE call to the star-import arm below — the hop needs a receiver", () => {
+    const table = tableWith({ "app/main.py": ["main"], "app/models.py": ["Device", "helper"] });
+    const ctx: CallContext = {
+      ...ctxWith("app/main.py", [{ importText: ".models", startLine: 1, importedNames: ["*"] }], table),
+      classAncestors: {},
+    };
+    expect(inheritingStrategy().attempt(call(null, "helper"), ctx)).toEqual({
+      kind: "resolved",
+      target: { targetRelPath: "app/models.py", targetSymbolId: "helper" },
+    });
+  });
+
+  it("CONTINUES with NO linearizer cache — a walker-v2 index keeps today's behaviour", () => {
+    const ctx = endpointCtx(
+      { "app/endpoints.py": ["UpdateForm"], "app/forms.py": ["BaseForm", "BaseForm.render"] },
+      { "app/endpoints.py::UpdateForm": ["app.forms::BaseForm"] },
+    );
+    expect(strategy().attempt(call("UpdateForm", "render"), ctx)).toEqual({ kind: "continue" });
   });
 });
 
