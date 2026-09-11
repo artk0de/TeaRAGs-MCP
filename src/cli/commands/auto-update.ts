@@ -140,6 +140,10 @@ function resolveDataDir(): string {
  * top-level catch prints it to the stdio the spawner pointed at this project's
  * updater log. Running on a half-applied env would index against the wrong
  * backend instead.
+ *
+ * Test seam — exported only because `defaultDeps().executeUpdater` is
+ * module-private and cannot be reached through `AutoUpdateCliDeps`; the one
+ * production caller is that closure.
  */
 export function applyRegistryEnvForUpdater(entry: CollectionEntry | null, env: NodeJS.ProcessEnv): void {
   Object.assign(env, resolveRegistryEnv(entry, env));
