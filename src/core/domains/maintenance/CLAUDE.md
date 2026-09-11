@@ -61,7 +61,12 @@
   building its composition (`src/cli/prime/run-prime.ts`). Why: a drift report
   is routinely read as "the payload schema changed, reindex" — when the actual
   fix is env parity in the process that ran the check. The `prime` SessionStart
-  hook runs in a fresh shell and is the standing offender.
+  hook runs in a fresh shell and is the standing offender. Since the drift
+  program, `SchemaDriftMonitor` is one of several `IndexDriftMonitor`s folded by
+  `drift/report.ts`; the env-parity case it describes is reported as an `env`
+  finding with an attribution note (`drift/env-drift-monitor.ts`), so read the
+  `## Drift` block as a whole before reindexing. Boundary and how to add a
+  monitor: `.claude/rules/index-drift.md`.
 
 ## See also
 
@@ -69,5 +74,5 @@
   registered, and the live end-to-end verification protocol.
 - `.claude/rules/domain-boundaries.md` — why the registry and migration
   framework live here rather than in `core/infra/`.
-- `registry/CLAUDE.md`, `footprint/CLAUDE.md`, `worktree/CLAUDE.md` — sibling
-  navigators.
+- `drift/CLAUDE.md`, `registry/CLAUDE.md`, `footprint/CLAUDE.md`,
+  `worktree/CLAUDE.md` — sibling navigators.
