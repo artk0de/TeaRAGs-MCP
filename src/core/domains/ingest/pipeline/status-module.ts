@@ -276,6 +276,14 @@ export class StatusModule {
     private readonly qdrant: QdrantManager,
     private readonly snapshotDir?: string,
     private readonly codegraphPool?: GraphDbClientPool,
+    /**
+     * Provider keys of the running composition — the frame of the enrichment
+     * health report (bd tea-rags-mcp-x2u65). Supplied by IndexingOps from the
+     * EnrichmentCoordinator, which holds the post-toggle provider list. Left
+     * empty only when no coordinator is wired, and then a run-pointer marker
+     * has no frame to report against.
+     */
+    private readonly activeEnrichmentProviders: readonly string[] = [],
   ) {}
 
   /**
@@ -493,7 +501,9 @@ export class StatusModule {
     const marker = rawPoint ? parseMarkerPayload(rawPoint.payload as Record<string, unknown>) : undefined;
 
     const actualChunksCount = marker ? Math.max(0, info.pointsCount - 1) : info.pointsCount;
-    const enrichment = marker?.enrichment ? mapMarkerToHealth(marker.enrichment) : undefined;
+    const enrichment = marker?.enrichment
+      ? mapMarkerToHealth(marker.enrichment, this.activeEnrichmentProviders)
+      : undefined;
 
     const schemaMetadata = await this.qdrant.getPoint(sourceCollection, "__schema_metadata__").catch(() => null);
     const sparseVersion =

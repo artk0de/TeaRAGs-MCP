@@ -1187,4 +1187,58 @@ describe("StatusModule", () => {
       expect(status.isIndexed).toBe(true);
     });
   });
+
+  // bd tea-rags-mcp-x2u65 — the enrichment frame comes from the RUNNING
+  // composition's provider list, which only the composition knows; the last
+  // run's `_run.providers` is a subset of it after `--force-enrichments`.
+  describe("enrichment health frame (active providers from the composition)", () => {
+    it("reports every active provider, not only the ones the last run touched", async () => {
+      const { resolveCollectionName, validatePath } = await import("../../../../../src/core/infra/collection-name.js");
+      const { INDEXING_METADATA_ID } = await import("../../../../../src/core/contracts/constants.js");
+      const absolutePath = await validatePath(codebaseDir);
+      const collectionName = resolveCollectionName(absolutePath);
+
+      // Composition runs git + codegraph; the last run recomputed codegraph only.
+      const composed = new IngestFacade({
+        qdrant: qdrant as any,
+        embeddings,
+        config,
+        trajectoryConfig: defaultTrajectoryConfig(),
+        enrichmentProviders: [{ key: "git" }, { key: "codegraph.symbols" }] as any,
+      } as any);
+
+      const now = new Date().toISOString();
+      await qdrant.createCollection(collectionName, 384, "Cosine", false);
+      await qdrant.addPoints(collectionName, [
+        {
+          id: INDEXING_METADATA_ID,
+          vector: new Array(384).fill(0),
+          payload: {
+            indexingComplete: true,
+            completedAt: now,
+            enrichment: {
+              _run: { runId: "run-2", startedAt: now, lastProgressAt: now, providers: ["codegraph.symbols"] },
+              git: {
+                file: { runId: "run-1", status: "completed", unenrichedChunks: 0 },
+                chunk: { runId: "run-1", status: "completed", unenrichedChunks: 0 },
+              },
+              codegraph: {
+                symbols: {
+                  file: { runId: "run-2", status: "completed", unenrichedChunks: 0 },
+                  chunk: { runId: "run-2", status: "completed", unenrichedChunks: 0 },
+                },
+              },
+            },
+          },
+        },
+        { id: "chunk-1", vector: new Array(384).fill(0.1), payload: { relativePath: "a.ts" } },
+      ]);
+
+      const status = await composed.getIndexStatus(codebaseDir);
+
+      expect(Object.keys(status.enrichment!).sort()).toEqual(["codegraph.symbols", "git"]);
+      expect(status.enrichment!.git.file.status).toBe("healthy");
+      expect(status.enrichment!["codegraph.symbols"].file.status).toBe("healthy");
+    });
+  });
 });
