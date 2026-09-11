@@ -25,11 +25,21 @@ class PagedQdrantStub {
   readonly writeFailures: Error[] = [];
   pagesServed = 0;
   payloadInclude: string[] | undefined;
+  /** Points the collection reports for the mode decision; defaults to what it holds. */
+  collectionPoints: number | undefined;
+  countPointsCalls = 0;
+  /** One entry per per-file scroll, in call order. */
+  readonly scrollFilteredCalls: { filter: Record<string, unknown>; payloadInclude?: string[] }[] = [];
 
   constructor(
     private readonly points: StoredPoint[],
     private readonly pageSize = 1000,
   ) {}
+
+  async countPoints(_collectionName: string): Promise<number> {
+    this.countPointsCalls++;
+    return this.collectionPoints ?? this.points.length;
+  }
 
   async *scrollPayloadPages(
     _collectionName: string,
@@ -41,6 +51,24 @@ class PagedQdrantStub {
       this.pagesServed++;
       yield this.points.slice(start, start + this.pageSize).map((p) => ({ id: p.id, payload: p.payload }));
     }
+  }
+
+  /**
+   * Serves ONE file's points, resolving the path out of the exact text+value
+   * pair the healer builds (bd tea-rags-mcp-ivp12) — reading the `value` half
+   * is what makes the fake honest about which filter the healer actually sent.
+   */
+  async scrollFiltered(
+    _collectionName: string,
+    filter: Record<string, unknown>,
+    _limit: number,
+    _pageSize?: number,
+    payloadInclude?: string[],
+  ): Promise<{ id: string | number; payload: Record<string, unknown> }[]> {
+    this.scrollFilteredCalls.push({ filter, payloadInclude });
+    const must = filter.must as { key?: string; match?: { value?: unknown } }[] | undefined;
+    const path = must?.find((c) => c.match?.value !== undefined)?.match?.value;
+    return this.points.filter((p) => p.payload.relativePath === path).map((p) => ({ id: p.id, payload: p.payload }));
   }
 
   /**
@@ -481,5 +509,179 @@ describe("CodegraphPayloadHealer", () => {
 
     expect(stub.pagesServed).toBe(1);
     expect(stub.payloadOf("p2").codegraph).toBeUndefined();
+  });
+});
+
+/**
+ * bd tea-rags-mcp-ivp12 — which read shape the heal uses is a COST decision, and
+ * the cost of each was measured on the live self-index:
+ *
+ *   - a full pass costs ~0.018 ms per point of the collection (407 ms / 22,415)
+ *   - one per-file exact scroll costs ~2 ms, whatever the collection holds
+ *
+ * So the full pass wins once the diff names enough files, and a per-file scroll
+ * wins on the steady-state diff of a handful. The per-file scroll only became
+ * affordable at all when exact matching started riding the text index — before
+ * that each one was a full scan of its own, which is how the first live heal
+ * took 19 m 16 s for 1,032 files.
+ */
+describe("CodegraphPayloadHealer read-shape decision", () => {
+  const threeFiles = (): StoredPoint[] => [
+    point("p1", "src/a.ts", "aFn"),
+    point("p2", "src/b.ts", "bFn"),
+    point("p3", "src/c.ts", "cFn"),
+  ];
+  const threeFileDrift: CodegraphSignalDrift = {
+    symbols: [
+      { relPath: "src/a.ts", symbolId: "aFn" },
+      { relPath: "src/b.ts", symbolId: "bFn" },
+      { relPath: "src/c.ts", symbolId: "cFn" },
+    ],
+    files: [{ relPath: "src/a.ts" }, { relPath: "src/b.ts" }, { relPath: "src/c.ts" }],
+  };
+
+  /** Comparable, order-free view of everything a run wrote. */
+  const writtenOps = (stub: PagedQdrantStub): string[] =>
+    stub.operations
+      .map((op) => JSON.stringify({ key: op.key, points: [...op.points].sort(), payload: op.payload }))
+      .sort();
+
+  it("scrolls per file when the diff is small against the collection", async () => {
+    const stub = new PagedQdrantStub(threeFiles());
+    stub.collectionPoints = 1000; // 3 files × 2 ms < 1000 points × 0.018 ms
+
+    const result = await makeHealer(stub).heal("coll", threeFileDrift, new Set());
+
+    expect(stub.pagesServed).toBe(0);
+    expect(stub.scrollFilteredCalls).toHaveLength(3);
+    expect(stub.scrollFilteredCalls[0].filter).toEqual({
+      must: [
+        { key: "relativePath", match: { text: "src/a.ts" } },
+        { key: "relativePath", match: { value: "src/a.ts" } },
+      ],
+    });
+    expect(result).toEqual({ pointsRewritten: 3, filesTouched: 3 });
+  });
+
+  it("reads the whole collection once when the diff is large against it", async () => {
+    const stub = new PagedQdrantStub(threeFiles());
+    stub.collectionPoints = 100; // 3 files × 2 ms > 100 points × 0.018 ms
+
+    await makeHealer(stub).heal("coll", threeFileDrift, new Set());
+
+    expect(stub.scrollFilteredCalls).toEqual([]);
+    expect(stub.pagesServed).toBeGreaterThan(0);
+  });
+
+  // The boundary itself, from both sides: at 1,000 points the full pass costs
+  // 18 ms, so it wins from the ninth file on.
+  it("switches shape exactly where the two costs cross", async () => {
+    const files = Array.from({ length: 9 }, (_, i) => `src/f${i}.ts`);
+    const build = (count: number): { stub: PagedQdrantStub; drift: CodegraphSignalDrift } => {
+      const stub = new PagedQdrantStub(files.slice(0, count).map((f, i) => point(`p${i}`, f, `fn${i}`)));
+      stub.collectionPoints = 1000;
+      return { stub, drift: { symbols: [], files: files.slice(0, count).map((relPath) => ({ relPath })) } };
+    };
+
+    const eight = build(8);
+    await makeHealer(eight.stub).heal("coll", eight.drift, new Set());
+    expect(eight.stub.scrollFilteredCalls).toHaveLength(8);
+    expect(eight.stub.pagesServed).toBe(0);
+
+    const nine = build(9);
+    await makeHealer(nine.stub).heal("coll", nine.drift, new Set());
+    expect(nine.stub.scrollFilteredCalls).toEqual([]);
+    expect(nine.stub.pagesServed).toBeGreaterThan(0);
+  });
+
+  // One read for the whole heal: the decision is taken once, and asking again
+  // per file would put a count on the shared daemon for every file in the diff.
+  it("reads the collection size once per heal", async () => {
+    const stub = new PagedQdrantStub(threeFiles());
+    stub.collectionPoints = 1000;
+
+    await makeHealer(stub).heal("coll", threeFileDrift, new Set());
+
+    expect(stub.countPointsCalls).toBe(1);
+  });
+
+  // Nothing an empty diff can decide is worth a round-trip: the pass is the
+  // expensive part, and so is the count that chooses between two of them.
+  it("does not even size the collection when the diff is empty", async () => {
+    const stub = new PagedQdrantStub(threeFiles());
+    await makeHealer(stub).heal("coll", NOTHING, new Set());
+    expect(stub.countPointsCalls).toBe(0);
+  });
+
+  // The whole claim of the split: the two shapes are a cost choice, not a
+  // behaviour choice. Same fixture, same diff, byte-identical writes.
+  it("writes exactly what the full pass would, for the same fixture", async () => {
+    const perFile = new PagedQdrantStub(threeFiles());
+    perFile.collectionPoints = 1000;
+    const perFileResult = await makeHealer(perFile).heal("coll", threeFileDrift, new Set());
+
+    const fullPass = new PagedQdrantStub(threeFiles());
+    fullPass.collectionPoints = 100;
+    const fullPassResult = await makeHealer(fullPass).heal("coll", threeFileDrift, new Set());
+
+    expect(writtenOps(perFile)).toEqual(writtenOps(fullPass));
+    expect(perFileResult).toEqual(fullPassResult);
+  });
+
+  it("skips the files this run's chunk map already rewrote in per-file mode too", async () => {
+    const stub = new PagedQdrantStub(threeFiles());
+    stub.collectionPoints = 1000;
+
+    const result = await makeHealer(stub).heal("coll", threeFileDrift, new Set(["src/a.ts", "src/b.ts"]));
+
+    expect(stub.scrollFilteredCalls).toHaveLength(1);
+    expect(stub.writtenIds).toEqual(["p3"]);
+    expect(result).toEqual({ pointsRewritten: 1, filesTouched: 1 });
+  });
+
+  // The projection is the same in both shapes: `content` above all must stay
+  // out, and the decline stamps come as nested paths.
+  it("projects the same payload keys as the full pass", async () => {
+    const stub = new PagedQdrantStub(threeFiles());
+    stub.collectionPoints = 1000;
+
+    await makeHealer(stub).heal("coll", threeFileDrift, new Set());
+
+    expect(stub.scrollFilteredCalls[0].payloadInclude).toEqual([
+      "relativePath",
+      "symbolId",
+      `${PROVIDER_KEY}.file.skippedAs`,
+      `${PROVIDER_KEY}.chunk.skippedAs`,
+    ]);
+  });
+
+  // Same reason the full pass throws: the runner advances the baseline once
+  // `heal` resolves, so a write that never landed must not resolve. And it
+  // abandons the whole heal, not just this file.
+  it("abandons the heal when a per-file write budget is exhausted", async () => {
+    const stub = new PagedQdrantStub(threeFiles());
+    stub.collectionPoints = 1000;
+    stub.writeFailures.push(new Error("qdrant down"), new Error("qdrant down"), new Error("qdrant down"));
+
+    await expect(makeHealer(stub).heal("coll", threeFileDrift, new Set())).rejects.toThrow(/failed after every retry/);
+
+    expect(stub.scrollFilteredCalls).toHaveLength(1);
+    expect(stub.batchSetPayloadCalls).toEqual([]);
+    expect(stub.payloadOf("p2").codegraph).toBeUndefined();
+  });
+
+  // The progress line exists because a full pass on a large index runs for
+  // minutes with no per-file boundary to log at. Per-file mode is the opposite
+  // shape and the small case, so it stays quiet.
+  it("logs no progress line in per-file mode", async () => {
+    const spy = vi.spyOn(pipelineLog, "enrichmentPhase");
+    const files = Array.from({ length: 20 }, (_, i) => `src/f${i}.ts`);
+    const stub = new PagedQdrantStub(files.map((f, i) => point(`p${i}`, f, `fn${i}`)));
+    stub.collectionPoints = 100_000; // 20 files × 2 ms ≪ 100,000 × 0.018 ms
+
+    await makeHealer(stub).heal("coll", { symbols: [], files: files.map((relPath) => ({ relPath })) }, new Set());
+
+    expect(spy.mock.calls.filter(([phase]) => phase === "CODEGRAPH_PAYLOAD_HEAL_PROGRESS")).toEqual([]);
+    spy.mockRestore();
   });
 });

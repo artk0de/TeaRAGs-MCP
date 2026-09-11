@@ -64,11 +64,13 @@ export class QdrantScroller {
    * pages, carrying only the named payload keys and no vectors at all.
    *
    * It exists because a read that wants a few scalar keys off EVERY point has
-   * no cheaper shape. Asking per file instead costs one full collection scan
-   * per file — the payload index on `relativePath` is `text`, which does not
-   * serve `match.value` — where one unfiltered pass over 22k points costs
-   * ~400 ms total. The caller filters in memory; the server does nothing but
-   * hand over pages.
+   * no cheaper shape: one unfiltered pass over 22k points costs ~400 ms total,
+   * about 0.018 ms per point, and the caller filters in memory. Asking per file
+   * instead is now ~2 ms per file (`filters/text-indexed-exact.ts`), so the
+   * cheaper shape depends on how many files the caller wants — the codegraph
+   * payload heal picks between the two per run. Before ivp12 the per-file form
+   * was a full scan EACH, and this generator was the only affordable shape at
+   * any size.
    *
    * The generator is the API, not a convenience: the caller consumes a page,
    * acts on it, and drops it, so peak memory is one page plus whatever the

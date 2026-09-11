@@ -15,12 +15,23 @@
  * rewrote, and re-writes exactly the rest — payload only. No extraction, no
  * embeddings, no chunk-set change.
  *
- * **It reads the WHOLE collection once and filters in memory, rather than
- * scrolling per file.** A per-file `match.value` on `relativePath` measured
- * 677–1002 ms EACH against the live self-index, because the payload index on
- * that key is `text` and a text index does not serve `match.value` — so every
- * file was a full collection scan, and the first heal took 19 m 16 s for 1,032
- * files. One unfiltered pass over the same 22,415 points costs ~400 ms total.
+ * **How it FINDS those points is a cost decision, taken per heal** (bd
+ * tea-rags-mcp-ivp12). Two shapes, both measured on the live self-index:
+ *
+ * - one unfiltered streaming pass over the whole collection, ~0.018 ms per
+ *   point (407 ms for 22,415), independent of how many files moved;
+ * - one exact scroll per target file, ~2 ms each, independent of collection
+ *   size — but only since exact matching started riding the text index. A bare
+ *   `match.value` on `relativePath` was 677–1002 ms, because that key's only
+ *   index is `text` and a text index does not serve `match.value`; every file
+ *   was a full scan of its own and the first live heal took 19 m 16 s for 1,032
+ *   files.
+ *
+ * So the pass wins on a big diff and the scrolls win on a small one, and
+ * {@link CodegraphPayloadHealer.usesPerFileScrolls} says where they cross. The
+ * two shapes differ ONLY in how points arrive: grouping, flushing, the
+ * touched-id set and the throw are shared, with a per-file scroll's result fed
+ * through as one "page".
  *
  * Two invariants it shares with the applier, both load-bearing:
  *
@@ -44,6 +55,7 @@
  * `domains/ingest` may not import `domains/trajectory`.
  */
 
+import { exactMatchOnTextIndexed } from "../../../../adapters/qdrant/filters/text-indexed-exact.js";
 import type { CodegraphSignalDrift } from "../../../../contracts/types/codegraph.js";
 import { pipelineLog } from "../infra/debug-logger.js";
 import { batchSetPayloadWithRetry, type BatchPayloadOp } from "./batch-write.js";
@@ -74,6 +86,28 @@ function healPayloadInclude(providerKey: string): string[] {
  */
 const HEAL_PROGRESS_EVERY_PAGES = 10;
 
+/**
+ * Milliseconds the full streaming pass costs per point of the COLLECTION,
+ * whatever the diff names: 407 ms over 22,415 points on the live self-index.
+ */
+const FULL_PASS_MS_PER_POINT = 0.018;
+
+/**
+ * Milliseconds one exact per-file scroll costs, whatever the collection holds:
+ * 1.7–2.0 ms measured for the text+value pair on a text-indexed `relativePath`
+ * (`exactMatchOnTextIndexed`). Rounded UP, so the comparison errs towards the
+ * shape whose cost is already known to be bounded.
+ */
+const PER_FILE_SCROLL_MS = 2;
+
+/**
+ * Hard cap on the points one per-file scroll returns, since `scrollFiltered`
+ * needs one. Far above any real file's chunk count — a 10,000-chunk file does
+ * not exist — so it never truncates in practice; it is here so a pathological
+ * payload cannot page forever.
+ */
+const HEAL_PER_FILE_SCROLL_LIMIT = 10_000;
+
 export interface CodegraphPayloadHealerDeps {
   qdrant: {
     scrollPayloadPages: (
@@ -81,6 +115,16 @@ export interface CodegraphPayloadHealerDeps {
       payloadInclude: string[],
       pageSize?: number,
     ) => AsyncGenerator<{ id: string | number; payload: Record<string, unknown> }[]>;
+    /** One file's points, for the per-file shape. Same projection as the pass. */
+    scrollFiltered: (
+      collectionName: string,
+      filter: Record<string, unknown>,
+      limit: number,
+      pageSize?: number,
+      payloadInclude?: string[],
+    ) => Promise<{ id: string | number; payload: Record<string, unknown> }[]>;
+    /** The collection's size, read ONCE per heal to choose the read shape. */
+    countPoints: (collectionName: string, filter?: Record<string, unknown>) => Promise<number>;
     batchSetPayload: (collectionName: string, operations: BatchPayloadOp[]) => Promise<void>;
   };
   /**
@@ -155,12 +199,78 @@ export class CodegraphPayloadHealer {
       if (!skipRelPaths.has(relPath)) fileTargets.add(relPath);
     }
 
-    const filesTouched = new Set([...chunkTargets.keys(), ...fileTargets]).size;
-    // The pass is the expensive part of the heal, and on a large collection the
-    // only expensive part. Nothing to write means nothing to read.
+    const targetFiles = new Set([...chunkTargets.keys(), ...fileTargets]);
+    const filesTouched = targetFiles.size;
+    // The read is the expensive part of the heal, and on a large collection the
+    // only expensive part. Nothing to write means nothing to read — and nothing
+    // to decide, so not even the count is paid for.
     if (filesTouched === 0) return { pointsRewritten: 0, filesTouched: 0 };
 
     const touched = new Set<string | number>();
+    const collectionPoints = await this.deps.qdrant.countPoints(collectionName);
+
+    if (CodegraphPayloadHealer.usesPerFileScrolls(filesTouched, collectionPoints)) {
+      await this.healByFile(collectionName, targetFiles, chunkTargets, fileTargets, touched, enrichedAt);
+    } else {
+      await this.healByFullPass(collectionName, chunkTargets, fileTargets, touched, enrichedAt);
+    }
+
+    return { pointsRewritten: touched.size, filesTouched };
+  }
+
+  /**
+   * Which read shape is cheaper for this heal: `targetFiles × PER_FILE_SCROLL_MS`
+   * against `collectionPoints × FULL_PASS_MS_PER_POINT`. Works out to roughly
+   * one file per 111 points — the self-index's 22,415 points put the crossover
+   * near 200 files, so the first sweep (1,032 files) takes the pass and a
+   * steady-state diff of a handful takes the scrolls.
+   *
+   * Static and named so the decision can be read without reading the loop.
+   */
+  private static usesPerFileScrolls(targetFiles: number, collectionPoints: number): boolean {
+    return targetFiles * PER_FILE_SCROLL_MS < collectionPoints * FULL_PASS_MS_PER_POINT;
+  }
+
+  /** One exact scroll per target file; each file's points are one "page". */
+  private async healByFile(
+    collectionName: string,
+    targetFiles: ReadonlySet<string>,
+    chunkTargets: ReadonlyMap<string, Set<string>>,
+    fileTargets: ReadonlySet<string>,
+    touched: Set<string | number>,
+    enrichedAt?: string,
+  ): Promise<void> {
+    let filesScanned = 0;
+    for (const relPath of targetFiles) {
+      filesScanned++;
+      const points = await this.deps.qdrant.scrollFiltered(
+        collectionName,
+        { must: exactMatchOnTextIndexed("relativePath", relPath) },
+        HEAL_PER_FILE_SCROLL_LIMIT,
+        undefined,
+        this.payloadInclude,
+      );
+      // Same grouping and the same flush: a file the filter already narrowed to
+      // still goes through `groupPage`, because that is where the decline guard
+      // and the symbol-level split live.
+      await this.flush(
+        collectionName,
+        this.groupPage(points, chunkTargets, fileTargets),
+        touched,
+        filesScanned,
+        enrichedAt,
+      );
+    }
+  }
+
+  /** One streaming pass over the whole collection, filtering in memory. */
+  private async healByFullPass(
+    collectionName: string,
+    chunkTargets: ReadonlyMap<string, Set<string>>,
+    fileTargets: ReadonlySet<string>,
+    touched: Set<string | number>,
+    enrichedAt?: string,
+  ): Promise<void> {
     let pagesScanned = 0;
     let pointsScanned = 0;
     let pointsMatched = 0;
@@ -177,6 +287,9 @@ export class CodegraphPayloadHealer {
       await this.flush(collectionName, groups, touched, pagesScanned, enrichedAt);
 
       if (pagesScanned % HEAL_PROGRESS_EVERY_PAGES === 0) {
+        // Only this shape needs it: the pass has no per-file boundary and runs
+        // for minutes on a large index, where per-file mode is by construction
+        // the small case.
         pipelineLog.enrichmentPhase("CODEGRAPH_PAYLOAD_HEAL_PROGRESS", {
           collection: collectionName,
           pagesScanned,
@@ -186,8 +299,6 @@ export class CodegraphPayloadHealer {
         });
       }
     }
-
-    return { pointsRewritten: touched.size, filesTouched };
   }
 
   /** One page: keep the points the target set names, grouped by the payload they will take. */
