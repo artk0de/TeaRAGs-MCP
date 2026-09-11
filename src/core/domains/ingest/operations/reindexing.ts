@@ -182,16 +182,9 @@ export class ReindexPipeline extends BaseIndexingPipeline {
 
       if (this.hasNoChanges(stats) && retryPaths.length === 0) {
         await this.finalizeRepairedRun(ctx, stats, repaired);
-        await storeIndexingMarker(this.qdrant, this.embeddings, ctx.targetCollection, true);
-        await ctx.synchronizer.deleteCheckpoint();
-        // Same stamp the changes path writes in `finalizeReindex`, for the same
-        // reason: the entry says which commit, when, and how many points the
-        // index represents, and `CommitDriftMonitor` reads that git block back
-        // (bd tea-rags-mcp-zf3x0). Skipping it here left the commit axis
-        // pinned to whichever run last had a file to chunk — so a repository
-        // that went quiet reported drift forever, and the reindex that would
-        // clear it was precisely the run taking this return.
-        await this.recordRegistryEntry(ctx.collectionName, ctx.absolutePath);
+        // No snapshot: nothing changed, so the stored file list already matches
+        // what is on disk.
+        await this.closeRun(ctx, { snapshot: false });
         stats.durationMs = Date.now() - startTime;
         return stats;
       }
@@ -204,13 +197,7 @@ export class ReindexPipeline extends BaseIndexingPipeline {
         // "skipped" exactly when it had something to finalize.
         stats.enrichmentStatus = "skipped";
         await this.finalizeRepairedRun(ctx, stats, repaired);
-        await storeIndexingMarker(this.qdrant, this.embeddings, ctx.targetCollection, true);
-        await ctx.synchronizer.updateSnapshot(ctx.currentFiles);
-        await ctx.synchronizer.deleteCheckpoint();
-        // Deleting files moves the point count and the commit the index sits
-        // on just as much as adding them does, and this return never reached
-        // the stamp either (bd tea-rags-mcp-zf3x0).
-        await this.recordRegistryEntry(ctx.collectionName, ctx.absolutePath);
+        await this.closeRun(ctx, { snapshot: true });
         stats.durationMs = Date.now() - startTime;
         return stats;
       }
@@ -614,11 +601,7 @@ export class ReindexPipeline extends BaseIndexingPipeline {
       ctx.absolutePath,
     );
 
-    await storeIndexingMarker(this.qdrant, this.embeddings, ctx.targetCollection, true);
-    await ctx.synchronizer.updateSnapshot(ctx.currentFiles);
-    await ctx.synchronizer.deleteCheckpoint();
-    // Alias: the registry addresses the stable name, matching the force path.
-    await this.recordRegistryEntry(ctx.collectionName, ctx.absolutePath);
+    await this.closeRun(ctx, { snapshot: true });
 
     const enrichmentResult = getEnrichmentStatus();
     stats.enrichmentStatus = enrichmentResult.status;
@@ -635,6 +618,34 @@ export class ReindexPipeline extends BaseIndexingPipeline {
           }. Created ${stats.chunksAdded} chunks in ${(stats.durationMs / 1000).toFixed(1)}s`,
       );
     }
+  }
+
+  /**
+   * The tail every reindex return runs, whatever work it did: mark the
+   * collection complete, optionally re-stamp the snapshot, drop the checkpoint,
+   * record the registry entry.
+   *
+   * The registry entry is part of closing a run, not of the changes path
+   * (bd tea-rags-mcp-zf3x0). It says which commit, when, and how many points
+   * the index represents, and `CommitDriftMonitor` reads that git block back.
+   * While only the changes path wrote it, the commit axis stayed pinned to
+   * whichever run last had a file to chunk: a repository that went quiet — or
+   * one whose run only deleted files, which moves the point count and the
+   * commit just as much as adding does — reported drift forever, and the
+   * reindex that would have cleared it was precisely the run taking an early
+   * return. Address it by the ALIAS (`collectionName`), matching the force
+   * path; the marker addresses the versioned target.
+   *
+   * `snapshot: false` belongs to the zero-change return alone — there the
+   * stored file list already matches disk, so rewriting it is pure cost.
+   */
+  private async closeRun(ctx: ReindexContext, { snapshot }: { snapshot: boolean }): Promise<void> {
+    await storeIndexingMarker(this.qdrant, this.embeddings, ctx.targetCollection, true);
+    if (snapshot) {
+      await ctx.synchronizer.updateSnapshot(ctx.currentFiles);
+    }
+    await ctx.synchronizer.deleteCheckpoint();
+    await this.recordRegistryEntry(ctx.collectionName, ctx.absolutePath);
   }
 
   /**
