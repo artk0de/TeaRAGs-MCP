@@ -565,6 +565,29 @@ fact from any source; it is the residual that will still be there after
 everything else, and it is named so that it is not mistaken for a defect in the
 fold.
 
+**Superseded by the plan, which measured the sub-shapes this sketch guessed
+at:** `docs/superpowers/plans/2026-09-10-python-e4-6-typed-residuals.md`. Four
+tasks shipped — E4.6a (module aliases), E4.6b-1 (chain heads that are calls,
+constructors and casts), E4.6b-2 (bare calls in LEGB order), E4.6c (untyped
+field hops) — and what each one actually landed is D11 below. Two corrections
+this section's numbers depend on:
+
+- **`moduleAliasMember` is 325 rows, not the 317 D8 published.** The E4.0.4
+  report run passed `--corpus-root …/tea-rags-bench/corpora/<c>` for all five
+  corpora, but flask lives at `~/Dev/OpenSource/codegraph-test/flask` and ugnest
+  at `~/Dev/Collaborate/ugnest` (`scripts/lib/codegraph-corpora.json`). For
+  those two every tier-2 source read missed. Re-tagged against the real roots,
+  flask re-splits `moduleAliasMember` 0 → **8**, `untypedNameReceiver` 22 → 13,
+  `pytestFixture` 0 → 1; ugnest is unchanged. Every other E4.6 family count
+  reproduces exactly. A wrong root does not fail — it silently turns every
+  tier-2 read into a miss, which is how D8 shipped flask's numbers wrong.
+- **The shapes are not the ones named here.** `constructorChainHead` is not
+  `Model(...).save()` needing a fold it already has; it is `propagateChain`
+  splitting a receiver on every `.`, including the ones inside an argument list.
+  `untypedFieldHop` is not one residual — 36 of its 111 rows are SQLAlchemy
+  `Mapped[T]` and belong to E4.2, 48 to E4.6c, 27 to nothing. The plan's
+  decision 1 carries the full sub-shape attribution.
+
 ---
 
 ## Interaction with `4vg1i` / `8qyax` — the merge that landed on main today
@@ -792,6 +815,19 @@ folded rather than scheduled: E4.5 (4 rows), E4.3 (4 rows), and E4.4's
 `typeVarGeneric` arm (0 rows). That removes two whole executors from the program
 and moves their mass into E4.6b and E4.2.
 
+**Rows 2–4 are DELIVERED, measured in D11 (2026-09-11).** `moduleAliasMember`
+reads 309 addressable against the 317 this table published — the real count is
+325 and 16 of them are classifier false positives — and it closed **309 → 1**.
+Row 3 split into E4.6b-1 (chain heads: `constructorChainHead` 44 → **0**,
+`callResultChainHead` 35 → 23) and E4.6b-2 (bare calls 131 → 93);
+`crossFileBareCall` was folded rather than planned, at 4 addressable rows. Row 4
+closed `untypedFieldHop` 110 → **54**, having first routed 36 of its 111 rows to
+E4.2 as `Mapped[T]` unwraps and declined 27. Whole-increment delivery is **624
+rows bad → good** against the plan's 519, with gross lost adjusted 0 on every
+corpus. Rows 1 (E4.1), 5 (E4.4) and 7 (E4.2) still stand as written; E4.1's
+`untypedNameReceiver` mass fell 432 → 280 as a side effect of E4.6b-1's `Self`
+substitution, so re-measure before scheduling it.
+
 **What the table changes about the spec's own order.** E4.6, written as the
 "three small, measured, independent shapes" increment, carries 678 rows — more
 than half the residual and more than E4.1. It splits into three scheduled
@@ -925,6 +961,74 @@ denominator excluded precisely the population that produces the false positives.
 **`union` (E4.1.4) is deferred**, below the 30-row bar: 18 rows, all polar, is
 not worth a walker change that lifts the annotation facet's union drop and the
 three declines that change guards. It is recorded here and left unscheduled.
+
+### D11 — E4.6 measured (2026-09-11, `w205u`, whole increment against `3a3283e1d`)
+
+Four tasks shipped and were measured end to end, five corpora × five runs each
+side, `--oracle merged --dispatch --workers 8 --samples 500000`, B from a
+detached checkout of the E4.6 base. **Zero unstable rows on any corpus on either
+side**, so the transition matrix is exact. Full tables, the per-family report
+and the perf pair are in the plan's "Measured — E4.6 (whole increment)" block.
+
+| corpus | match           | missed    | fileOnly | wrongFile | phantom | edges           | recallMerged        | gross lost |
+| ------ | --------------- | --------- | -------- | --------- | ------- | --------------- | ------------------- | ---------- |
+| ugnest | 765 → 771       | 24 → 17   | 0 → 0    | 0 → 1     | 0 → 0   | 770 → 777       | 0.9696 → **0.9772** | 0          |
+| flask  | 326 → 330       | 40 → 36   | 6 → 6    | 1 → 1     | 0 → 0   | 345 → 349       | 0.8740 → **0.8847** | 0          |
+| httpx  | 469 → 477       | 14 → 6    | 5 → 5    | 0 → 0     | 8 → 8   | 491 → 499       | 0.9611 → **0.9775** | 0          |
+| netbox | 8,225 → 8,284   | 116 → 57  | 2 → 2    | 0 → 0     | 26 → 26 | 8,642 → 8,695   | 0.9859 → **0.9929** | 0          |
+| polar  | 15,859 → 16,372 | 989 → 441 | 34 → 54  | 2 → 17    | 84 → 88 | 16,541 → 17,574 | 0.9393 → **0.9697** | 0 (+18 OW) |
+
+**624 rows moved bad → good** — ugnest +6, flask +4, httpx +8, netbox +59, polar
++547 — against the plan's predicted 519. The mix is not the predicted one: the
+38 `fileOnly → match` rows E4.6b-2 expected were a jedi-composer spelling defect
+rather than a resolver gap and never moved, while polar's `missed` half
+over-delivered (+547 against +429) and 11 `skippedInProject` rows across three
+corpora turned out to be answerable.
+
+**Precision held on every corpus.** Phantom rate moved at most −0.026 pp
+anywhere — ugnest stays exactly 0, flask stays at 0.000 %, httpx 1.629 → 1.603
+%, netbox 0.301 → 0.299 %, polar 0.508 → 0.501 % — so nothing approaches the
++0.5 pp cap and nothing approaches flask's 2 % bar. `exactReplacedByFan`,
+`exactReplacedByAmbiguous` and `exactReplacedBySingle` are identical on both
+sides of every corpus. `chainDrift` and `dispatchDrift` are 0 on all 50 oracle
+runs and all 50 chain-tally runs.
+
+**polar's 18 lost rows are the two `OW:*` classes this decision record already
+carries, and they reproduce row for row**: the 14 `OW:Self` rows D9 lists by
+`relPath:line`, and 4 `OW:Mapped` rows behind a SQLAlchemy `declared_attr`
+returning `Mapped[T]`. pyright answered the chain's target on all 18.
+**`precisionMissAdjusted` for polar is 0.489 %, below its own B side, and gross
+lost adjusted is 0 on every corpus.** Chain regressions: 0.
+
+**Families closed.** `moduleAliasMember` 309 → 1 (netbox 50 → 0, polar 259 → 1),
+`constructorChainHead` 44 → 0 on all three corpora that carried it.
+`callResultChainHead` 35 → 23, `untypedFieldHop` 110 → 54, bare calls 131 → 93.
+NO family grew on any corpus. Residual across the five corpora, on the three
+verdicts the oracle dump samples, 1,194 → 584.
+
+**A production defect the increment fixed, and a second one closing it found.**
+`ResolverInputs.classFieldTypesByClassKey` had reached NEITHER `CallContext` the
+resolution runner builds since f0xaa — production resolved without an arm both
+offline harnesses built, so every oracle number published between f0xaa and
+E4.6c was measured against an instrument production did not match. E4.6c
+threaded it. E4.6-close then checked the whole channel set and found two more in
+the same state on the FILE-EDGE context only, `functionReturnTypes` and
+`instantiatedTypes`, inherited from the provider the runner was extracted from.
+All twelve channels now flow through one function both sites spread, and a
+contract test derives its list from `keyof ResolverInputs` so a new channel
+fails the type check until it is mapped and the assertion until it is threaded.
+Neither newly-threaded channel has a Python reader, so the A/B above measures
+the four tasks and not the threading.
+
+**One instrument limitation this measurement had to work around, recorded
+because the next cross-`3a3283e1d` A/B will hit it too.** `oracleTargetRelPath`
+landed in E5.0b, after the E4.6 base, so a B-side dump carries no oracle target
+and `py-residual-families.ts` classifies every bare call as `crossFileBareCall`
+there. The family table folds `sameFileBareCall` + `crossFileBareCall` into one
+row rather than reporting a split the B side cannot produce. Separately, the
+oracle's `--json` payload samples `missed` / `wrongFile` / `phantom` /
+`skippedInProject` and not `fileOnly`, so residual counts derived from a dump
+run below the plan's, which counted `fileOnly` too.
 
 ---
 
