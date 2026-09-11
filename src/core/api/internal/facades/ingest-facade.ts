@@ -47,6 +47,7 @@ import type {
   TrajectoryIngestConfig,
 } from "../../../types.js";
 import { InvalidParameterError } from "../../errors.js";
+import { createCodegraphPayloadHealRunner } from "../infra/codegraph-payload-heal-runner.js";
 import { createIngestDependencies } from "../ingest-dependencies.js";
 import { IndexingOps } from "../ops/indexing-ops.js";
 
@@ -252,6 +253,25 @@ export class IngestFacade {
       providers.length > 0
         ? new EnrichmentRecovery(qdrant, new EnrichmentApplier(qdrant), { executor: enrichmentExecutor })
         : undefined;
+    const { codegraphPool } = deps;
+    // bd tea-rags-mcp-a2ddb — rewrites `codegraph.symbols.*` for points a run
+    // never reaches but whose derived signals moved because the graph around
+    // them did. Needs the graph client AND Qdrant AND the provider's own key,
+    // which is why it is composed here rather than inside the coordinator.
+    // Undefined without a codegraph pool or a deferring provider: the
+    // completion tail then skips the step instead of running a stub.
+    const deferringProvider = providers.find((p) => p.defersChunkEnrichment);
+    const codegraphHeal =
+      codegraphPool && deferringProvider
+        ? createCodegraphPayloadHealRunner({
+            qdrant,
+            providerKey: deferringProvider.key,
+            // The PHYSICAL collection name the run already resolved — the pool
+            // resolves whatever string it is handed literally, so re-resolving
+            // (or passing an alias) opens a second, empty shadow database.
+            acquireGraphDb: async (collectionName) => (await codegraphPool.acquireWrite(collectionName)).graphDb,
+          })
+        : undefined;
     const enrichment = new EnrichmentCoordinator(
       qdrant,
       providers,
@@ -264,11 +284,11 @@ export class IngestFacade {
       // providers ignore the injected reader. Lazy: nothing opens until the
       // first git blob read. Built by the composition root from GIT_ADAPTER.
       deps.blobReaderFactory,
+      codegraphHeal,
     );
     // Codegraph DuckDB cleanup for orphan collections during alias cleanup.
     // Wired from the pool's removeCollection (closes any cached handle, then
     // unlinks `<collection>.duckdb` + `.wal`); undefined when codegraph is off.
-    const { codegraphPool } = deps;
     const codegraphRemover: PipelineRegistryDeps["codegraphRemover"] = codegraphPool
       ? async (orphan) => {
           await codegraphPool.removeCollection(orphan);

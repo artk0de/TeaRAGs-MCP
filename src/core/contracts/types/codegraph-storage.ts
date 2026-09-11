@@ -87,6 +87,34 @@ export interface SymbolChunkResolver {
 }
 
 /**
+ * One symbol whose derived codegraph signals moved since the previous run's
+ * baseline (bd tea-rags-mcp-a2ddb). Carries the FILE as well as the symbol
+ * because the payload is addressed per file's Qdrant points — a bare
+ * `symbolId` is unique per file, not per repository, so it cannot name the
+ * points to rewrite on its own.
+ */
+export interface ChangedSymbolSignal {
+  relPath: RelPath;
+  symbolId: SymbolId;
+}
+
+/** One file whose derived file-level codegraph signals moved since the baseline. */
+export interface ChangedFileSignal {
+  relPath: RelPath;
+}
+
+/**
+ * What {@link GraphDbClient.diffSymbolSignals} found: the symbols and the files
+ * whose derived signals differ from the baseline the last successful payload
+ * heal recorded. Both halves are plain arrays rather than Maps or Sets so the
+ * shape survives the daemon's JSON round trip.
+ */
+export interface CodegraphSignalDrift {
+  symbols: ChangedSymbolSignal[];
+  files: ChangedFileSignal[];
+}
+
+/**
  * Driver-agnostic graph DB client.
  *
  * Slice 1 ships `DuckDbGraphClient`; slice 4 ships `PostgresGraphClient`.
@@ -432,6 +460,36 @@ export interface GraphDbClient {
    * cases are treated as "rank-irrelevant".
    */
   getPageRank: (symbolId: SymbolId) => Promise<number>;
+
+  /**
+   * Symbols and files whose derived signals (`fanIn` / `fanOut` / `pageRank`,
+   * and per-file `fanIn` / `fanOut`) differ from the baseline recorded by the
+   * last successful payload heal — bd tea-rags-mcp-a2ddb.
+   *
+   * Read AFTER the metrics recompute and BEFORE {@link refreshSymbolSignalsPrev},
+   * which is the only ordering in which it means anything. A row absent from the
+   * baseline counts as moved, so the first run after migration 023 names every
+   * symbol and every file exactly once.
+   *
+   * The signals it compares are the ones the payload is actually built from —
+   * the confidence-weighted symbol fan of {@link getChunkSignalsBulk} and the
+   * per-path edge counts of {@link getFileMetricsBulk} — NOT raw edge counts.
+   * `transitiveImpact` and `isHub` are outside the comparison: the first would
+   * need a whole-corpus reverse BFS to diff, the second moves for every file at
+   * once whenever the collection p95 does.
+   */
+  diffSymbolSignals: () => Promise<CodegraphSignalDrift>;
+
+  /**
+   * Replace the previous-run signal baseline with the current graph, both
+   * tables in one transaction.
+   *
+   * Called by the coordinator AFTER the heal succeeded, never by the finalizer.
+   * Refreshing it before the payload is rewritten would erase the very diff a
+   * failed heal must retry, and the drift would then stay invisible until the
+   * file changed again — which is the defect this whole mechanism exists to fix.
+   */
+  refreshSymbolSignalsPrev: () => Promise<void>;
 
   /**
    * Run Tarjan SCC over both scopes + PageRank over the method graph and
