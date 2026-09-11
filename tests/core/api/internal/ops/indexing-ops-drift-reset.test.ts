@@ -155,6 +155,51 @@ describe("IndexingOps — drift consumption reset", () => {
   });
 
   /**
+   * The commit axis reads the registry's git stamp, and the run that refreshes
+   * that stamp is the sync leg — `ReindexingOperations#reindexChanges` records
+   * the entry on every successful return, quiet ones included (bd
+   * tea-rags-mcp-zf3x0). Re-arming the reader before that stamp lands would
+   * hand the next search a re-check against the stamp the recompute was about
+   * to replace, and it would be told, with a fresh warning, about drift the run
+   * had just repaired.
+   *
+   * What this pins is that the recompute AWAITS the sync leg to COMPLETION, not
+   * merely that it calls it first. The marker is pushed after a microtask tick,
+   * so it lands only once the returned promise actually settles — the same
+   * shape as the `statsCache.save` marker below, which fires inside the awaited
+   * refresh. Drop the `await` in front of `this.reindex.reindexChanges` and the
+   * reset runs while the sync leg is still pending, so the recorded order
+   * inverts and this test fails.
+   *
+   * The sync leg is a fake here; that it records at all is proven against the
+   * real pipeline in `domains/ingest/operations/reindex-registry-stamp.test.ts`.
+   */
+  it("awaits the sync leg to completion, stamp and all, BEFORE re-arming the reader on a recompute", async () => {
+    const calls: string[] = [];
+    const ops = new IndexingOps(
+      makeDeps({
+        driftReporter: { reset: (name: string) => calls.push(`reset:${name}`) },
+        reindex: {
+          reindexChanges: vi.fn().mockImplementation(async () => {
+            // Yield a full macrotask first. A marker pushed synchronously would
+            // land at CALL time and stay ordered even with the await removed;
+            // a microtask would still beat the recompute's own awaits, which
+            // are microtasks too. Only a macrotask lets the rest of the
+            // recompute — the reset included — overtake an unawaited sync leg.
+            await new Promise<void>((resolve) => setImmediate(resolve));
+            calls.push("sync:record");
+            return changeStats;
+          }),
+        } as never,
+      }),
+    );
+
+    await ops.run(process.cwd(), { forceEnrichments: ["codegraph"] });
+
+    expect(calls).toEqual(["sync:record", `reset:${collection}`]);
+  });
+
+  /**
    * The stats refresh is what rewrites `payloadFieldKeys`, which the payload-key
    * axis compares against. Re-arming the reader before that write lands leaves a
    * window in which a search re-checks the OLD keys and is told, with a fresh
