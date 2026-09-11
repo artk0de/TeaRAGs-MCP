@@ -228,8 +228,10 @@ export class EmbeddingModelGuard {
    * Embed the canary with the configured provider. Returns undefined when there
    * is no provider, or when the embed failed — a provider that cannot embed
    * cannot prove drift either, and must not block indexing. The failure is
-   * reported once per collection (the verdict is cached either way), exactly as
-   * a failed marker read reports disabling the guard.
+   * reported once per collection, exactly as a failed marker read reports
+   * disabling the guard. The clean verdict is cached on the READ path; the
+   * create path withholds it so the next check retries the embed and backfills
+   * the canary.
    */
   private async embedCanary(collectionName: string): Promise<EmbeddingCanaryRecord | undefined> {
     if (!this.embeddings) return undefined;
