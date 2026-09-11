@@ -472,6 +472,20 @@ export interface LanguageWalker {
    * (bd tea-rags-mcp-o5kwh).
    */
   nameOf: (node: AstNode, gemfileContent?: string) => NamedSymbol | NamedSymbol[] | null;
+  /**
+   * Native node types of which a file must contain at least one for `walk` to
+   * yield anything beyond the empty extraction. Absent → every file is walked.
+   *
+   * Owned by the language module, because only it knows what its walker reads.
+   * A consumer holding the NATIVE tree can ask `fileIsInertForExtraction`
+   * (`domains/language/kernel/extraction-fast-path.ts`) before materializing,
+   * and skip a file that cannot produce output — netbox's
+   * `extras/data/un_locode.py` is 111,557 lines of a data table with no def, no
+   * class, no call and no import, and materializing it cost 5.33 s of that
+   * corpus's 11.6 s pass 1 plus ~800 MB of live heap for an empty answer
+   * (bd tea-rags-mcp-1v12o.2.4).
+   */
+  readonly extractionBearingNodeTypes?: readonly string[];
 }
 
 /**

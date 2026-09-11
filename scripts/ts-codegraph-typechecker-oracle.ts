@@ -194,6 +194,7 @@ import { CODEGRAPH_LANGUAGES } from "../src/core/domains/trajectory/codegraph/sy
 import { classifyReceiverKind } from "../src/core/domains/trajectory/codegraph/symbols/receiver-kind.js";
 import { lastSegment } from "../src/core/domains/trajectory/codegraph/symbols/symbol-name.js";
 import { InMemoryGlobalSymbolTable } from "../src/core/domains/trajectory/codegraph/symbols/symbol-table.js";
+import { fileIsInertForExtraction } from "../src/core/infra/extraction-fast-path.js";
 import { materializeTree } from "../src/core/infra/materialize.js";
 
 // ---------------------------------------------------------------------------
@@ -1823,7 +1824,14 @@ export function extractFile(
     const code = readFileSync(join(repoRoot, relPath), "utf8");
     const parser = new Parser();
     parser.setLanguage(config.loadParser());
-    const tree = { rootNode: materializeTree(parser.parse(code).rootNode, code) };
+    const nativeRoot = parser.parse(code).rootNode;
+    // The production fast path (bd tea-rags-mcp-1v12o.2.4), mirrored here because
+    // the tally measures THIS function: a harness that materialized what
+    // production skips would report a wall production never pays.
+    if (fileIsInertForExtraction(nativeRoot, walker.extractionBearingNodeTypes)) {
+      return { relPath, language: config.language, imports: [], chunks: [], fileScope: [] };
+    }
+    const tree = { rootNode: materializeTree(nativeRoot, code) };
     const chunks = collectSymbols(
       tree,
       (node) => walker.nameOf(node),

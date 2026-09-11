@@ -67,6 +67,21 @@ import { extractFromPythonFile, type PythonExtractInput } from "./walker/walker.
  * type lists covers `@classmethod`/`@staticmethod` methods; the engine unwraps
  * them for name + static detection (bd tea-rags-mcp-t6sr).
  */
+/**
+ * The node types Python extraction is rooted in — `LanguageWalker.
+ * extractionBearingNodeTypes`. `future_import_statement` is listed beside the
+ * other two import forms because tree-sitter-python gives `from __future__
+ * import …` its own grammar node.
+ */
+const PYTHON_EXTRACTION_BEARING_NODE_TYPES: readonly string[] = [
+  "function_definition",
+  "class_definition",
+  "call",
+  "import_statement",
+  "import_from_statement",
+  "future_import_statement",
+];
+
 const pythonChunkerHooks: LanguageChunkerHooks = {
   chunkableTypes: ["function_definition", "class_definition", "decorated_definition"],
   childChunkTypes: ["function_definition", "decorated_definition"],
@@ -87,6 +102,15 @@ export class PythonLanguage implements LanguageProvider {
     nameOf: (node) => pyNameOf(node),
     // Empty today — see ./walker/passes.ts.
     passes: PYTHON_EXTRACTION_PASSES,
+    // Every channel the Python walker emits is rooted in one of these: chunks and
+    // the type channels in a def or a class, `calls` (decorators included) in a
+    // `call`, `imports` / `moduleReexports` in one of the three import forms.
+    // A file with none of them yields the empty extraction, so a consumer holding
+    // the native tree may skip materializing it — netbox's `extras/data/`
+    // tables are 120k lines of exactly that (bd tea-rags-mcp-1v12o.2.4).
+    // `scripts/spikes/py-inert-file-proof.ts` runs the real walker over every
+    // file this list calls inert, on all five corpora.
+    extractionBearingNodeTypes: PYTHON_EXTRACTION_BEARING_NODE_TYPES,
   });
   readonly resolver: LanguageSymbolResolver;
 
