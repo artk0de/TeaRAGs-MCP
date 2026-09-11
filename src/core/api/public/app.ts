@@ -110,10 +110,13 @@ export interface App {
    * lattice, so a reader who acts on the report repairs both in a single run
    * rather than reindexing twice. Null when nothing moved.
    *
-   * `path` consumes — the warning rides one search response per collection per
-   * server session, until an index run resets it. `collection` does not.
+   * A `path` consumes by default — the warning rides ONE search response per
+   * collection per server session, until an index run resets it. Callers whose
+   * job is to inspect rather than to answer (`get_index_status`) pass
+   * `consume: false`, so asking twice reports twice and the warning the next
+   * search is owed stays unspent. A `collection` never consumes.
    */
-  checkIndexDrift: (req: { path?: string; collection?: string }) => Promise<string | null>;
+  checkIndexDrift: (req: { path?: string; collection?: string; consume?: boolean }) => Promise<string | null>;
 
   // -- Project registry (→ internal/ops/project-registry-ops.ts) --
   registerProject: (input: {
@@ -289,9 +292,11 @@ export function createApp(deps: AppDeps): App {
     },
 
     // -- Drift monitoring --
-    checkIndexDrift: async ({ path, collection }) => {
+    checkIndexDrift: async ({ path, collection, consume = true }) => {
       const report = path
-        ? await deps.driftReporter.checkAndConsume(path)
+        ? consume
+          ? await deps.driftReporter.checkAndConsume(path)
+          : await deps.driftReporter.checkByPath(path)
         : collection
           ? deps.driftReporter.checkByCollectionName(collection)
           : null;

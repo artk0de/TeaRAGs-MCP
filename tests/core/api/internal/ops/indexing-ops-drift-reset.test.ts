@@ -15,6 +15,7 @@
 import { describe, expect, it, vi } from "vitest";
 
 import { IndexingOps, type IndexingOpsDeps } from "../../../../../src/core/api/internal/ops/indexing-ops.js";
+import type { LanguageCodeVersions } from "../../../../../src/core/contracts/types/language.js";
 import { resolveCollectionName } from "../../../../../src/core/infra/collection-name.js";
 import type { ChangeStats } from "../../../../../src/core/types.js";
 
@@ -55,28 +56,56 @@ function makeDeps(overrides: Partial<IndexingOpsDeps> = {}): IndexingOpsDeps {
   };
 }
 
-/** Records the collection names the run asked the reporter to re-arm. */
-function makeDriftReporter() {
-  const resetFor: string[] = [];
-  return { resetFor, reset: (collectionName: string) => resetFor.push(collectionName) };
+const languageCodeVersions = new Map<string, LanguageCodeVersions>([
+  ["typescript", { grammar: "0.23.2", chunking: 1, walker: 2, codegraphSchema: 1 }],
+]);
+
+/**
+ * One recorder for BOTH mutations, so the assertion pins their ORDER and not
+ * just their presence.
+ *
+ * The reset must come AFTER the stamp: it re-arms the reader, and a reader
+ * re-armed before the stamp lands can re-check against the OLD stamp and be
+ * told the drift is still there. Two separate spies cannot see that inversion.
+ */
+function makeRun() {
+  const calls: string[] = [];
+  return {
+    calls,
+    collectionRegistry: { stampLanguageVersions: (name: string) => calls.push(`stamp:${name}`) },
+    driftReporter: { reset: (name: string) => calls.push(`reset:${name}`) },
+  };
+}
+
+/** Reset names only — for the paths that stamp nothing. */
+function resetsOf(calls: readonly string[]): string[] {
+  return calls.filter((c) => c.startsWith("reset:")).map((c) => c.slice("reset:".length));
 }
 
 const collection = resolveCollectionName(process.cwd());
 
 describe("IndexingOps — drift consumption reset", () => {
-  it("re-arms the collection after a full reindex", async () => {
-    const driftReporter = makeDriftReporter();
-    const ops = new IndexingOps(makeDeps({ driftReporter }));
+  it("re-arms the collection AFTER the stamp on a full reindex", async () => {
+    const run = makeRun();
+    const ops = new IndexingOps(
+      makeDeps({
+        driftReporter: run.driftReporter,
+        collectionRegistry: run.collectionRegistry as never,
+        languageCodeVersions,
+      }),
+    );
 
     await ops.run(process.cwd(), { forceReindex: true });
 
-    expect(driftReporter.resetFor).toEqual([collection]);
+    expect(run.calls).toEqual([`stamp:${collection}`, `reset:${collection}`]);
   });
 
-  it("re-arms the collection after a first index", async () => {
-    const driftReporter = makeDriftReporter();
+  it("re-arms the collection AFTER the stamp on a first index", async () => {
+    const run = makeRun();
     const deps = makeDeps({
-      driftReporter,
+      driftReporter: run.driftReporter,
+      collectionRegistry: run.collectionRegistry as never,
+      languageCodeVersions,
       qdrant: {
         collectionExists: vi.fn().mockResolvedValue(false),
         aliases: { listAliases: vi.fn().mockResolvedValue([]) },
@@ -85,25 +114,38 @@ describe("IndexingOps — drift consumption reset", () => {
 
     await new IndexingOps(deps).run(process.cwd());
 
-    expect(driftReporter.resetFor).toEqual([collection]);
+    expect(run.calls).toEqual([`stamp:${collection}`, `reset:${collection}`]);
   });
 
-  it("re-arms the collection after a plain incremental", async () => {
-    const driftReporter = makeDriftReporter();
-    const ops = new IndexingOps(makeDeps({ driftReporter }));
-
-    await ops.run(process.cwd());
-
-    expect(driftReporter.resetFor).toEqual([collection]);
-  });
-
-  it("re-arms the collection after an enrichment recompute", async () => {
-    const driftReporter = makeDriftReporter();
-    const ops = new IndexingOps(makeDeps({ driftReporter }));
+  it("re-arms the collection AFTER the stamp on an enrichment recompute", async () => {
+    const run = makeRun();
+    const ops = new IndexingOps(
+      makeDeps({
+        driftReporter: run.driftReporter,
+        collectionRegistry: run.collectionRegistry as never,
+        languageCodeVersions,
+      }),
+    );
 
     await ops.run(process.cwd(), { forceEnrichments: ["codegraph"] });
 
-    expect(driftReporter.resetFor).toEqual([collection]);
+    expect(run.calls).toEqual([`stamp:${collection}`, `reset:${collection}`]);
+  });
+
+  it("re-arms the collection on a plain incremental, which stamps nothing", async () => {
+    const run = makeRun();
+    const ops = new IndexingOps(
+      makeDeps({
+        driftReporter: run.driftReporter,
+        collectionRegistry: run.collectionRegistry as never,
+        languageCodeVersions,
+      }),
+    );
+
+    await ops.run(process.cwd());
+
+    expect(run.calls).toEqual([`reset:${collection}`]);
+    expect(resetsOf(run.calls)).toEqual([collection]);
   });
 
   it("runs without a reporter wired", async () => {

@@ -89,6 +89,20 @@ describe("IndexDriftReporter", () => {
     expect(await reporter.checkAndConsume("/tmp/test-project")).toBeNull();
   });
 
+  it("checkByPath reports without consuming — a later checkAndConsume still fires", async () => {
+    const reporter = new IndexDriftReporter([fixed([keyFinding])]);
+
+    expect(await reporter.checkByPath("/tmp/test-project")).not.toBeNull();
+    expect(await reporter.checkByPath("/tmp/test-project")).not.toBeNull();
+    expect(await reporter.checkAndConsume("/tmp/test-project")).not.toBeNull();
+  });
+
+  it("checkByPath swallows an invalid path", async () => {
+    const invalidPath = null as unknown as string;
+
+    expect(await new IndexDriftReporter([fixed([keyFinding])]).checkByPath(invalidPath)).toBeNull();
+  });
+
   it("checkAndConsume swallows an invalid path", async () => {
     // `validatePath` never throws on a string — a non-existent path falls back
     // to its absolute form — so the only input that reaches the catch is one

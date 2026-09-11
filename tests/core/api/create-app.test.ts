@@ -88,6 +88,7 @@ function createMockReranker(): Reranker {
 function createMockDriftReporter(): IndexDriftReporter {
   return {
     checkAndConsume: vi.fn().mockResolvedValue(null),
+    checkByPath: vi.fn().mockResolvedValue(null),
     checkByCollectionName: vi.fn().mockReturnValue(null),
     reset: vi.fn(),
   } as unknown as IndexDriftReporter;
@@ -385,6 +386,17 @@ describe("createApp", () => {
       await app.checkIndexDrift({ path: "/foo" });
 
       expect(deps.driftReporter.checkAndConsume).toHaveBeenCalledWith("/foo");
+    });
+
+    it("routes a path to the non-consuming check when consume is false", async () => {
+      (deps.driftReporter.checkByPath as ReturnType<typeof vi.fn>).mockResolvedValue(payloadKeyReport);
+
+      const app = createApp(deps);
+      const result = await app.checkIndexDrift({ path: "/foo", consume: false });
+
+      expect(deps.driftReporter.checkByPath).toHaveBeenCalledWith("/foo");
+      expect(deps.driftReporter.checkAndConsume).not.toHaveBeenCalled();
+      expect(result).toBe(payloadKeyReportText);
     });
 
     it("delegates to checkByCollectionName when the request has a collection", async () => {

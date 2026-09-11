@@ -82,7 +82,11 @@ export function registerStatusTools(server: McpServer, deps: { app: App; registe
       // One report over every axis the build can see, under one heading
       // (bd tea-rags-mcp-p0phi). Appended only when something moved, so the
       // clean-index output is byte-for-byte what it always was.
-      const drift = await app.checkIndexDrift({ path });
+      //
+      // NON-consuming: status is an inspection a reader runs on purpose, so it
+      // must answer the same way every time — and the once-per-session warning
+      // belongs to the next SEARCH, which would otherwise find it already spent.
+      const drift = await app.checkIndexDrift({ path, consume: false });
       if (drift) text += `\n\n## Drift\n${drift}`;
       return formatMcpText(text);
     },

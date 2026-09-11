@@ -308,6 +308,7 @@ describe("formatPrime — drift", () => {
       NOW,
     );
     expect(withDrift).toContain("## Drift\nLanguage versions:");
+    expect(withDrift).toContain("Run: tea-rags index-codebase");
     expect(withDrift).not.toContain("## Schema drift");
     expect(withDrift).not.toContain("## Language versions");
     expect(formatPrime({ ...baseData, drift: null }, NOW)).toContain("## Drift\nnone");
