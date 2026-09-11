@@ -160,13 +160,15 @@
   `pythonSingleHopType`'s `endsWith(")")` branch strips the generic subscript
   before the class test (`Datatable[Benefit, S](…)` → `Datatable`), then tries
   `typing.cast(T, x)` — where the type IS argument one — then a lowercase call
-  whose callee has a recorded return. That last arm is gated on the symbol table
-  pinning EXACTLY ONE project definition of the name, because
-  `structuredReturnTypes` keys a top-level `def` by its bare name and a second
-  same-named def would speak for the first; reachability is the caller's own
-  module scope or an import that maps into the project, and nothing wider.
-  `PYTHON_CLASS_HEAD` still refuses a bare lowercase NAME — that is E4.1.3's
-  falsified population, and only a CALL with a recorded return qualifies.
+  whose callee has a recorded return. That last arm USED to be gated on the
+  symbol table pinning exactly one project definition of the name, because a
+  bare key let a second same-named def speak for the first; the per-file key
+  retired the gate and unlocked polar's 17 `get_client().member` heads (bd
+  tea-rags-mcp-1v12o.1.7). Reachability still bounds it when no binding narrows:
+  the caller's own module scope or an import that maps into the project, and
+  nothing wider. `PYTHON_CLASS_HEAD` still refuses a bare lowercase NAME — that
+  is E4.1.3's falsified population, and only a CALL with a recorded return
+  qualifies.
 - **A namesake short name is narrowed by the binding for THAT name, through one
   funnel.** `pythonImportBoundFile` (`strategies/shared.ts`) takes the candidate
   files a short name is declared in and keeps the one the caller's own import
@@ -178,11 +180,10 @@
   caller's binding names" and so kept both polar `Subscription` candidates, and
   `pythonCallBindingType`'s bare-callee arm, which had no narrowing at all. The
   set-filter stays as the fallback, so a row it answers with no binding in sight
-  still resolves to the same file. The call-result arm needs a SECOND guard the
-  funnel cannot give it: `structuredReturnTypes` keys a top-level `def` by its
-  bare name and absorbs it run-global first-write-wins, so one of polar's six
-  `get_client` annotations speaks for all of them — the class the fact names
-  must be declared in the file the binding narrowed to, or the arm refuses.
+  still resolves to the same file. E5.1a's call-result arm needed a SECOND guard
+  — the class the run-global fact named had to be declared in the narrowed file
+  — because the bare key carried no provenance; E5.1c's per-file key states the
+  provenance outright and the guard is gone (Mechanics below).
 - **A module-alias seed asks the HEAD's own module, not the caller's imports.**
   `pythonModuleAliasSeed` keeps its original arm (the caller imports the module
   AND `resolveTypeFile` pins the class) and falls back to one step wider: map
@@ -192,14 +193,20 @@
   the same gate `moduleMemberTarget` uses. The caller never imports `Datatable`,
   only the module that holds it. `receiverModuleText` moved to
   `strategies/shared.ts` so both readers ask it the same way.
-- **`-> Self` is recorded as a MARKER and substituted by the reader.** The
-  annotation facet resolves `Self` against the enclosing class everywhere except
-  a RETURN, where it emits the literal name `Self` (`PYTHON_SELF_RETURN`).
-  `pythonInheritedMemberType` substitutes the class the RECEIVER names, so
-  `AccountRepository.from_session(s)` types as `AccountRepository` and not as
-  the `RepositoryBase` that declared the classmethod — which is what the
-  following hop needs. Substituting there rather than in one port is what makes
-  `selfField` read it on the same terms.
+- **`-> Self` is recorded as a MARKER and substituted by the reader, through one
+  helper.** The annotation facet resolves `Self` against the enclosing class
+  everywhere except a RETURN, where it emits the literal name `Self`
+  (`PYTHON_SELF_RETURN`). `pythonSubstituteSelfReturn` puts the class the
+  RECEIVER names in its place, so `AccountRepository.from_session(s)` types as
+  `AccountRepository` and not as the `RepositoryBase` that declared the
+  classmethod — which is what the following hop needs. Two readers apply it and
+  there is no third: `pythonInheritedMemberType` on the arm it answers from
+  (which is what lets `selfField` read it on the same terms), and
+  `pythonCallBindingType` terminally, so the marker cannot reach
+  `resolveOnBoundType` — where the literal `Self` names no file and DROPs — down
+  any arm a later seam adds (bd tea-rags-mcp-1v12o.1.6). A class receiver
+  substitutes that class, an instance receiver its own type, an untyped receiver
+  nothing.
 - **`callResultBindings` is folded at RESOLVE time, and that is the only layer
   where it can be.** The walker records the callee SPELLING a local was assigned
   from (`repository = SubscriptionRepository.from_session(session)` →
@@ -215,7 +222,11 @@
   `classExtends` walk instead of the MRO. This is a SECOND channel and not a
   widening of `localCallBindings` — that one is bare-name-keyed and pairs with
   `functionReturnTypes`, which Python drops outright (one `def get(self) -> Foo`
-  would speak for every `get` in the corpus).
+  would speak for every `get` in the corpus). Its bare-callee arm admits a SOLE
+  module-level def with no reachability test (`"acceptSoleDef"`), where the
+  chain head and the field arm require the caller to reach it
+  (`"requireReach"`); both are pre-E5.1c rules kept apart because each was
+  measured on its own path, and neither can pick between two candidates.
 - **A class field has TWO addresses, and the qualified one is what crosses a
   file.** `classFieldTypes` is per-file and keyed by class SHORT name;
   `classFieldTypesByClassKey` carries the same facts under the file-qualified
@@ -513,12 +524,29 @@
 - **Two coordinate conventions live side by side.** `classFieldTypes` is keyed
   by class SHORT name with a bare member name (`walker/walker.ts:201` and the
   pass's `pythonTypeChannels` both write that shape); `structuredReturnTypes` is
-  keyed by the callee's full symbolId (`Outer.Inner#method`). The channel
-  re-keying that reconciles them with the kernel store's Ruby-shaped output is
-  in `passes/python-type-channels.ts`, and the reasoning is in
+  keyed by the callee's full symbolId for a CLASS member (`Outer.Inner#method`)
+  and by `` `${relPath}::${name}` `` for a MODULE-LEVEL def
+  (`pythonModuleReturnKey`, bd tea-rags-mcp-1v12o.1.7). The channel re-keying
+  that reconciles them with the kernel store's Ruby-shaped output is in
+  `passes/python-type-channels.ts`, and the reasoning is in
   `domains/language/CLAUDE.md` → Mechanics. The field facts are ALSO written
   under a third, file-qualified key — what that address is for is a Resolver
   bullet above, and both writers share one reader so the two cannot disagree.
+- **A module-level return fact names the FILE that declares it, and a stale
+  bare-keyed row is silence.** A class member's owner disambiguates it; a
+  top-level `def` has no owner, and the channel is folded run-global, so a bare
+  `get_client` key made whichever of polar's six defs was walked first speak for
+  all of them — `PolarSelfClient` against `IPGeolocationClient` and
+  `GitHub[TokenAuthStrategy]`. Every reader asks `pythonImportBoundFile` which
+  file the CALLER's own binding names and then reads that file's fact
+  (`pythonModuleReturnType`); the caller's own file answers a same-file callee;
+  no binding and no sole candidate is no fact. Pass-1 slices persist the channel
+  (bd tea-rags-mcp-8qyax), and a slice written before this key change carries
+  bare keys: the two shapes are disjoint, nothing asks for the bare one, and the
+  run-global fold is key-agnostic — so an old row costs a fact, never a wrong
+  one, until its file is re-walked. This is what retired E5.1a's provenance
+  guard, which inferred the same thing from whether the narrowed file declared
+  the returned class.
 - **`moduleReexports` is collected in the SAME walk as `imports`, and it has to
   be.** One entry per name a file's `import_from_statement`s bind —
   `{ exportedName, sourceModule, sourceName }`, a star as `exportedName: "*"`

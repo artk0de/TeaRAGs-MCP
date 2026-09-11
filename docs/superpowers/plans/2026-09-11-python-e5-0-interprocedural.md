@@ -1531,6 +1531,113 @@ residual 2 — both below the 30-row bar on their own. Whoever picks up item 3
 must re-measure before scoping it; the pre-E5.1a numbers no longer describe the
 population.
 
+### Delivered — E5.1c, the module-level return key (2026-09-11, `w205u`)
+
+E5.1a stopped one step short. It narrowed a namesake callee to the file the
+caller's binding names, then had to ask a second question — does that file
+declare the class the run-global fact names? — because the fact carried no
+provenance to check. The channel keyed a top-level `def` by its BARE name and
+the run folded it first-write-wins, so polar's six `get_client` defs shared one
+entry and the guard was the only thing standing between a caller of
+`checkout/ip_geolocation.py` and `PolarSelfClient`.
+
+**Shipped.** `pythonModuleReturnKey(relPath, name)` —
+`` `${relPath}::${name}` ``, the shape `pythonClassKey` already gives a class,
+applied in `pythonStructuredReturnKey` to exactly the module-level case (a class
+member's owner already disambiguates it, so `Cls#m` / `Cls.m` is untouched).
+`pythonModuleReturnType` is the single read: `pythonImportBoundFile` for the
+file, then that file's fact. The provenance guard is GONE, and its test survives
+on the new mechanism — the caller narrowed to `ip_geolocation.py` now looks
+under its own file and finds nothing, which is the same refusal for a reason the
+run can state rather than infer.
+
+The two pre-E5.1c reachability rules are kept apart behind one parameter, not
+unified: the chain head and the field arm require the caller to REACH a sole
+candidate (E4.6b-1's measured gate), while the call-result binding admits a sole
+def outright, as it has since z68v9. Unifying them would have moved rows on a
+path neither rule was measured on.
+
+**Persisted slices (8qyax).** The channel is persisted per file. A slice written
+before this carries bare keys; the two shapes are disjoint, nothing asks for the
+bare one, and the run-global fold is key-agnostic, so a stale row costs a fact
+and never a wrong one until its file is re-walked. The walker stays **5** — the
+key change lands inside the same unreleased walker-4→5 window as the rest of the
+frontier work.
+
+**Measured**, `--oracle merged --dispatch --workers 8 --samples 500000`, base
+`d63f4734d`, one run per arm per corpus.
+
+| corpus | edges               | missed        | wrongFile (legacy / tiebroken) | phantom (legacy / tiebroken) |
+| ------ | ------------------- | ------------- | ------------------------------ | ---------------------------- |
+| ugnest | 778 → 778           | 8 → 8         | 1 → 1 / 0 → 0                  | 0 → 0 / 0 → 0                |
+| flask  | 349 → 349           | 35 → 35       | 1 → 1 / 1 → 1                  | 0 → 0 / 0 → 0                |
+| httpx  | 499 → 499           | 4 → 4         | 0 → 0 / 0 → 0                  | 8 → 8 / 0 → 0                |
+| netbox | 8,711 → 8,711       | 36 → 36       | 0 → 0 / 0 → 0                  | 25 → 25 / 0 → 0              |
+| polar  | 17,760 → **17,777** | 275 → **258** | 17 → 17 / 1 → 1                | 93 → 93 / 28 → 28            |
+
+**Gross lost 0**, row-level: 17 rows LEFT polar's residual, 0 arrived, 0
+reclassified, and every one was `missed` in the base. The four other corpora are
+byte-identical. `chainDrift 0` and `dispatchDrift 0` on all ten oracle runs and
+all ten chain tallies (tally polar 17,757 → 17,774, unresolved −17; the tally
+and the oracle scope files differently, so the absolute edge counts differ while
+the delta does not).
+
+**All 17 are one family** — the `get_client()` chain heads E5.0a's block named,
+12 in `integrations/polar/service.py`, 4 in `integrations/polar/tasks.py`, 1 in
+`startup_program/service.py`, every one `get_client().<member>` against
+`PolarSelfClient#<member>`. They are `receiverKind dynamic` with a bare-CALL
+receiver, so the residual reason report never classified them: `a6` 16 → 16,
+`a7` 2 → 2, and the movement shows as `namesake.notDerivable` 232 → 215 with
+`residualRows` 306 → 289.
+
+**Perf**, chain tally, interleaved B/A/A/B blocks, `/usr/bin/time -l`,
+`env -u NODE_OPTIONS` then one explicit `--max-old-space-size=1024` on both
+sides. The first rep of each arm ran against a parallel executor (netbox 35.1 /
+45.4 s, polar 57.8 / 92.7 s) and is excluded as contended; 5 B and 6 A reps
+remain per corpus.
+
+| corpus | min wall B → A  | Δ      | median wall     | Δ      | max RSS B → A       | Δ      |
+| ------ | --------------- | ------ | --------------- | ------ | ------------------- | ------ |
+| netbox | 13.77s → 13.41s | −2.6 % | 14.82s → 14.27s | −3.7 % | 2,374 MB → 2,373 MB | −0.0 % |
+| polar  | 18.25s → 17.94s | −1.7 % | 18.66s → 19.02s | +1.9 % | 2,187 MB → 2,181 MB | −0.3 % |
+
+**Ruby parity 0**, both spikes against `--before-root …/tea-rags-mcp` on
+mastodon: resolver **42,057 sites / 0 mismatches / 0 drift**, walker **500 files
+/ 0 mismatches**. No Ruby file was touched.
+
+### Delivered — E5.1b, `-> Self` on the call-result binding (2026-09-11, `w205u`)
+
+Item 3 of the ordered list, and its population does not exist.
+
+**Shipped.** `pythonSubstituteSelfReturn` names E4.6b-1's inline rule once, and
+`pythonCallBindingType` applies it terminally so the marker cannot reach
+`resolveOnBoundType` — where the literal `Self` resolves to no file and DROPs —
+down any arm a later seam adds. A class receiver substitutes that class, an
+instance receiver its own type, an untyped receiver nothing.
+
+**Zero rows move, and that IS the finding.** The plan read item 3 as "the
+call-result path does not reach the substitution". It does, through
+`memberTypeOf`'s MRO walk, and the 16 rows E5.1a left are two other things:
+
+- **14 are oracle debt.** `CustomerRepository.from_session(session)` then
+  `repository.update(…)` — production answers `CustomerRepository#update`
+  (`answeredBy localBinding`), pyright agrees, jedi says
+  `RepositoryBase#update`. They are `wrongFile` on the legacy denominator and
+  `verdictTiebroken match` on the tiebroken one. The Self substitution is
+  already correct on every one of them; the row is D9's `OW:Self`.
+- **2 are an import ALIAS.** `organization/service.py` writes
+  `from …repository import OrganizationReviewRepository as AgentReviewRepository`
+  and calls `AgentReviewRepository.from_session(session)`. The class-head seed
+  asks `resolveTypeFile`, which finds no class of that name, so the fold never
+  starts — the substitution is not what refuses. `pythonReceiverClassKey` and
+  `pythonCalleeSpellingType` DO follow an alias (`pythonAliasedClassKey`,
+  E4.6c); the class-head seed does not. That is an alias seam, not a Self one,
+  and 2 rows is far below the bar.
+
+The item-3 estimate therefore reads 42 → 16 → **0 rows of Self work**, plus 2
+rows an alias seam owns. Whoever scopes the alias arm should note that the
+mechanism already exists one call away.
+
 ---
 
 ## Task E5.0b — oracle-debt re-scoring
