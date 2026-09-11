@@ -22,7 +22,7 @@
  * reach the write, so only a composed run can show it.
  */
 
-import { promises as fs, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { promises as fs, mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -68,6 +68,23 @@ vi.mock("tree-sitter-rust", () => ({ default: {} }));
 vi.mock("tree-sitter-typescript", () => ({
   default: { typescript: {}, tsx: {} },
 }));
+
+/** A module body substantial enough to survive chunking as its own point. */
+function longModule(name: string): string {
+  return [
+    `export const ${name}Config = {`,
+    "  port: 3000,",
+    "  host: 'localhost',",
+    "  debug: true,",
+    "  apiUrl: 'https://api.example.com',",
+    "  timeout: 5000,",
+    "};",
+    `export function ${name}Describe(): string {`,
+    `  return JSON.stringify(${name}Config);`,
+    "}",
+    `console.log('${name} loaded', ${name}Describe());`,
+  ].join("\n");
+}
 
 describe("ReindexingOperations.reindexChanges — registry stamp on quiet runs (zf3x0)", () => {
   let ingest: IngestFacade;
@@ -123,17 +140,23 @@ describe("ReindexingOperations.reindexChanges — registry stamp on quiet runs (
     return status.collectionName!;
   }
 
+  /** Points the fake Qdrant holds for the alias right now — what the stamp must equal. */
+  async function livePointCount(collectionName: string): Promise<number> {
+    return (qdrant as any).countPoints(collectionName) as Promise<number>;
+  }
+
   function expectStampedEntry(entry: RecordEntryInput, collectionName: string): void {
     expect(entry.collectionName).toBe(collectionName);
-    // validatePath canonicalises (macOS resolves /var -> /private/var).
-    expect(entry.path.endsWith(codebaseDir) || codebaseDir.endsWith(entry.path)).toBe(true);
+    // `validatePath` canonicalises (macOS resolves /var -> /private/var), so
+    // both sides go through realpath rather than a suffix test, which would
+    // accept any path ending in the same directory name.
+    expect(realpathSync(entry.path)).toBe(realpathSync(codebaseDir));
     expect(entry.git).toEqual({
       indexedBranch: "main",
       indexedCommit: "feedface",
       indexedDirty: false,
     });
     expect(entry.indexedAt).toMatch(/^\d{4}-\d{2}-\d{2}T/);
-    expect(entry.chunksCount).toBeGreaterThanOrEqual(0);
   }
 
   it("records the registry entry on a zero-change run", async () => {
@@ -144,19 +167,28 @@ describe("ReindexingOperations.reindexChanges — registry stamp on quiet runs (
 
     const stats = await ingest.reindexChanges(codebaseDir);
 
+    // All four terms of `hasNoChanges` plus the retry count, so the case is
+    // provably on the zero-change return and not on the deletion-only one —
+    // both record now, and `filesNewlyIgnored` alone would divert it.
     expect(stats.filesAdded).toBe(0);
     expect(stats.filesModified).toBe(0);
     expect(stats.filesDeleted).toBe(0);
+    expect(stats.filesNewlyIgnored).toBe(0);
     expect(stats.filesRetried).toBe(0);
     expect(recorded).toHaveLength(1);
     expectStampedEntry(recorded[0], collectionName);
+    expect(recorded[0].chunksCount).toBe(await livePointCount(collectionName));
   });
 
   it("records the registry entry on a deletion-only run", async () => {
-    await createTestFile(codebaseDir, "gone.ts", "export const v1 = 1;\nconsole.log('gone');");
-    await createTestFile(codebaseDir, "kept.ts", "export const v2 = 2;\nconsole.log('kept');");
+    // Long enough that each file certainly produces a chunk of its own — the
+    // deletion has to actually remove points for the count assertion below to
+    // mean anything.
+    await createTestFile(codebaseDir, "gone.ts", longModule("gone"));
+    await createTestFile(codebaseDir, "kept.ts", longModule("kept"));
     await ingest.indexCodebase(codebaseDir);
     const collectionName = await indexedCollection();
+    const countBeforeDeletion = await livePointCount(collectionName);
     recorded.length = 0;
 
     await fs.unlink(join(codebaseDir, "gone.ts"));
@@ -167,6 +199,11 @@ describe("ReindexingOperations.reindexChanges — registry stamp on quiet runs (
     expect(stats.filesModified).toBe(0);
     expect(recorded).toHaveLength(1);
     expectStampedEntry(recorded[0], collectionName);
+    // The stamp has to MOVE with the deletion, not merely be present: the
+    // count it carries is what a staleness check compares the index against.
+    const countAfterDeletion = await livePointCount(collectionName);
+    expect(countAfterDeletion).toBeLessThan(countBeforeDeletion);
+    expect(recorded[0].chunksCount).toBe(countAfterDeletion);
   });
 
   it("records the registry entry exactly once on a run that has files to chunk", async () => {
@@ -183,5 +220,6 @@ describe("ReindexingOperations.reindexChanges — registry stamp on quiet runs (
     expect(stats.filesAdded).toBe(1);
     expect(recorded).toHaveLength(1);
     expectStampedEntry(recorded[0], collectionName);
+    expect(recorded[0].chunksCount).toBe(await livePointCount(collectionName));
   });
 });
