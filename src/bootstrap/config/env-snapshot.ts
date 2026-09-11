@@ -24,9 +24,19 @@
  *
  * Injected into the ingest pipeline via DI (like `teaRagsVersion`) and
  * written by `recordRegistryEntry` on every successful index.
+ *
+ * `buildEffectiveIndexEnvSnapshot` at the bottom of this file is the READ-side
+ * twin: the same snapshot vocabulary, but for the run that has not happened yet
+ * — what a stamp resolves to under the current process env. The env drift axis
+ * diffs the two.
  */
 
 import type { EmbeddingConfig, QdrantTuneConfig, TrajectoryGitConfig, VcsConfig } from "../../core/contracts/index.js";
+// Deep import, not the registry barrel: `env-replay.js` depends on nothing but
+// the group table, while the barrel reaches the qdrant-daemon and vcs adapters
+// through `env-resolution.js`.
+import { replayRegistryEnv } from "../../core/domains/maintenance/registry/env-replay.js";
+import { parseAppConfigZod } from "./parse.js";
 import type { CodegraphConfig, IngestConfig } from "./schemas.js";
 
 export interface RegistryEnvSnapshotSource {
@@ -115,4 +125,45 @@ export function buildRegistryEnvSnapshot(config: RegistryEnvSnapshotSource): Rec
   put("QDRANT_LOW_MEMORY", qdrantTune.lowMemory);
 
   return snapshot;
+}
+
+/**
+ * The canonical env snapshot the NEXT index run on a collection would produce,
+ * given the snapshot its last run stamped (`EnvDriftMonitor`, spec decision 6).
+ *
+ * The same resolution `ProjectIngestFactory#forPath` performs before it builds
+ * an ingest facade — outer env > stored registry env > code default — expressed
+ * as a snapshot so it can be diffed against the stamp key for key. It lives
+ * here rather than in the monitor because `core/` must not import `bootstrap/`,
+ * and because this is where the snapshot vocabulary already lives. Replay
+ * writes onto a COPY of `ambient`; `process.env` is never mutated.
+ *
+ * The two identity keys carrying a non-runtime consequence are re-attached by
+ * hand: `buildRegistryEnvSnapshot` omits every DEDICATED_FIELD_ENV_KEY (they
+ * live in dedicated `CollectionEntry` fields), so without this a flipped
+ * `CODEGRAPH_ENABLED` — the very drift the monitor exists to attribute — would
+ * be missing from BOTH sides of the diff and could never be reported.
+ *
+ * An unparseable result is no claim, not a throw. A stamp can carry a value the
+ * current build no longer accepts (a retired enum member), and this runs on the
+ * read path behind a search response, where a diagnostic must never fail the
+ * query. That stamp is not silently tolerated — the next index run parses the
+ * same env and refuses to start.
+ */
+export function buildEffectiveIndexEnvSnapshot(
+  stored: Readonly<Record<string, string>>,
+  ambient: NodeJS.ProcessEnv = process.env,
+): Readonly<Record<string, string>> {
+  try {
+    const env: NodeJS.ProcessEnv = { ...ambient };
+    replayRegistryEnv(stored, env);
+    const runConfig = parseAppConfigZod(env);
+    return {
+      ...buildRegistryEnvSnapshot(runConfig),
+      CODEGRAPH_ENABLED: String(runConfig.codegraph.enabled),
+      ...(runConfig.embedding.model ? { EMBEDDING_MODEL: runConfig.embedding.model } : {}),
+    };
+  } catch {
+    return {};
+  }
 }

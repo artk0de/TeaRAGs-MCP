@@ -43,6 +43,7 @@ import { buildPipelineConfig } from "../core/domains/ingest/pipeline/types.js";
 import { QuarantineStore } from "../core/domains/ingest/sync/index.js";
 import { ShardedSnapshotManager } from "../core/domains/ingest/sync/snapshot/index.js";
 import { collectSymbols, DefaultSymbolIdComposer } from "../core/domains/language/index.js";
+import { EnvDriftMonitor } from "../core/domains/maintenance/drift/env-drift-monitor.js";
 import { IndexDriftReporter } from "../core/domains/maintenance/drift/index.js";
 import { LanguageVersionDriftMonitor } from "../core/domains/maintenance/drift/language-version-drift-monitor.js";
 import { SchemaDriftMonitor } from "../core/domains/maintenance/drift/schema-drift-monitor.js";
@@ -64,7 +65,7 @@ import { registerAllResources } from "../mcp/resources/index.js";
 import { registerAllTools } from "../mcp/tools/index.js";
 import { buildMcpAutoUpdateTrigger } from "./auto-update/mcp-hint.js";
 import { applyEmbeddedDeleteTuning } from "./config/embedded-tuning.js";
-import { buildRegistryEnvSnapshot } from "./config/env-snapshot.js";
+import { buildEffectiveIndexEnvSnapshot, buildRegistryEnvSnapshot } from "./config/env-snapshot.js";
 import { buildAppConfig, getConfigDump, getZodConfig, parseAppConfigZod, type AppConfig } from "./config/index.js";
 import { checkExternalQdrantVersion } from "./config/qdrant-compat.js";
 import {
@@ -826,14 +827,19 @@ export async function createAppContext(config: AppConfig, hooks?: AppContextHook
     statsCache,
     composition.languageCodeVersions,
   );
-  // One reporter over both axes, built HERE — ahead of the ingest slice —
+  // Third axis: the indexing env. The resolver it takes builds what the NEXT
+  // run on that collection would use, the way `ProjectIngestFactory#forPath`
+  // builds it for a real run — so a finding means the outer env explicitly
+  // overrides the stamp, not that a code default moved.
+  const envDriftMonitor = new EnvDriftMonitor(collectionRegistry, buildEffectiveIndexEnvSnapshot);
+  // One reporter over every axis, built HERE — ahead of the ingest slice —
   // because every index run has to re-arm the collection it just rewrote, and
   // the slice is what carries the reporter down to IndexingOps. Process-scoped
   // like the slice's other shared handles: consumption is "has THIS server
   // already said it", so a per-project instance would warn once per project
   // facade instead of once per collection.
   const driftReporter = new IndexDriftReporter(
-    [schemaDriftMonitor, languageVersionDriftMonitor],
+    [schemaDriftMonitor, languageVersionDriftMonitor, envDriftMonitor],
     (collectionName) => collectionRegistry.get(collectionName)?.name ?? undefined,
   );
 
