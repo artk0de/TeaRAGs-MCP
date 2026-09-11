@@ -25,6 +25,9 @@
   env > stored registry env > code default, the same replay
   `ProjectIngestFactory` performs). Comparing against the bare process env
   reports phantom drift for every project whose registry env differs.
+- **`EnvDriftMonitor`'s `CODEGRAPH_ENABLED` finding is unreachable from prime**
+  — the registry re-apply is `../CLAUDE.md`, the ruling
+  `.claude/rules/index-drift.md`.
 - **`*` is a language to the version monitor.** `sharedVersions`
   (`language/kernel/capability.ts`) is compared unconditionally; its findings
   render with no `--languages`.
