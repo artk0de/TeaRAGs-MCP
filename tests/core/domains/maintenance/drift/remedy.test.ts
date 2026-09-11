@@ -7,7 +7,6 @@ import {
   resolveSchemaDriftRemedy,
   type IndexDriftRemedy,
 } from "../../../../../src/core/domains/maintenance/drift/remedy.js";
-import { formatSchemaDriftWarning } from "../../../../../src/core/domains/maintenance/drift/schema-drift.js";
 
 describe("Schema drift hint — trajectory attribution", () => {
   const OWNERS: PayloadKeyOwner[] = [
@@ -19,73 +18,61 @@ describe("Schema drift hint — trajectory attribution", () => {
     { key: "navigation", recomputable: false },
   ];
 
+  const commandFor = (drift: { added: string[]; removed: string[] }, owners: PayloadKeyOwner[] = OWNERS): string =>
+    renderIndexDriftRemedy(resolveSchemaDriftRemedy(drift, owners));
+
   it("names the owning trajectory for a single enrichment-owned key", () => {
-    const drift = { added: ["git.file.newSignal"], removed: [] };
+    const command = commandFor({ added: ["git.file.newSignal"], removed: [] });
 
-    const warning = formatSchemaDriftWarning(drift, OWNERS);
-
-    expect(warning).toContain("--force-enrichments git");
-    expect(warning).not.toContain("--force ");
+    expect(command).toContain("--force-enrichments git");
+    expect(command).not.toContain("--force ");
   });
 
   it("lists every affected trajectory when several enrichment providers drift", () => {
-    const drift = { added: ["git.file.newSignal", "codegraph.file.newMetric"], removed: [] };
+    const command = commandFor({ added: ["git.file.newSignal", "codegraph.file.newMetric"], removed: [] });
 
-    const warning = formatSchemaDriftWarning(drift, OWNERS);
-
-    expect(warning).toContain("--force-enrichments");
-    expect(warning).toContain("git");
-    expect(warning).toContain("codegraph.symbols");
+    expect(command).toContain("--force-enrichments");
+    expect(command).toContain("git");
+    expect(command).toContain("codegraph.symbols");
   });
 
   it("escalates to a full reindex when any drifted key is not enrichment-owned", () => {
-    const drift = { added: ["git.file.newSignal", "navigation"], removed: [] };
-
-    const warning = formatSchemaDriftWarning(drift, OWNERS);
+    const command = commandFor({ added: ["git.file.newSignal", "navigation"], removed: [] });
 
     // A full reindex repopulates the enrichment layer too, so the hint must
     // carry ONE command — never two competing ones.
-    expect(warning).toContain("--force");
-    expect(warning).not.toContain("--force-enrichments");
+    expect(command).toContain("--force");
+    expect(command).not.toContain("--force-enrichments");
   });
 
   it("escalates for a chunker-written key that belongs to a non-enriching trajectory", () => {
-    const drift = { added: ["chunkSize"], removed: [] };
+    const command = commandFor({ added: ["chunkSize"], removed: [] });
 
-    const warning = formatSchemaDriftWarning(drift, OWNERS);
-
-    expect(warning).toContain("--force");
-    expect(warning).not.toContain("--force-enrichments");
+    expect(command).toContain("--force");
+    expect(command).not.toContain("--force-enrichments");
   });
 
   it("escalates for an unknown key with no declared owner", () => {
-    const drift = { added: ["mystery.field"], removed: [] };
+    const command = commandFor({ added: ["mystery.field"], removed: [] });
 
-    const warning = formatSchemaDriftWarning(drift, OWNERS);
-
-    expect(warning).toContain("--force");
-    expect(warning).not.toContain("--force-enrichments");
+    expect(command).toContain("--force");
+    expect(command).not.toContain("--force-enrichments");
   });
 
   it("asks for no action when the drift is removals only", () => {
     // Removed keys have no descriptor, so nothing reads them any more.
     // Demanding a full reindex here costs hours and repopulates nothing.
-    const drift = { added: [], removed: ["git.file.retiredSignal"] };
+    const command = commandFor({ added: [], removed: ["git.file.retiredSignal"] });
 
-    const warning = formatSchemaDriftWarning(drift, OWNERS);
-
-    expect(warning).toContain("git.file.retiredSignal");
-    expect(warning).not.toContain("--force");
-    expect(warning).toMatch(/no action|no reindex/i);
+    expect(command).not.toContain("--force");
+    expect(command).toMatch(/no action|no reindex/i);
   });
 
   it("escalates to the full reindex when no owners are supplied — nothing attributes the key", () => {
-    const drift = { added: ["git.file.newSignal"], removed: [] };
+    const command = commandFor({ added: ["git.file.newSignal"], removed: [] }, []);
 
-    const warning = formatSchemaDriftWarning(drift);
-
-    expect(warning).toContain("reindex");
-    expect(warning).toContain("Run: tea-rags index-codebase --force");
+    expect(command).toContain("Run: tea-rags index-codebase --force");
+    expect(command).not.toContain("--force-enrichments");
   });
 });
 
@@ -121,6 +108,21 @@ describe("foldIndexDriftRemedies", () => {
     expect(foldIndexDriftRemedies([{ kind: "incremental" }, recompute(["git"], null)])).toEqual(
       recompute(["git"], null),
     );
+  });
+
+  it("does not depend on the order the findings arrive in", () => {
+    // Monitors run in registration order and each contributes its own remedy,
+    // so the fold must be commutative or the command would depend on wiring.
+    const remedies: IndexDriftRemedy[] = [
+      { kind: "incremental" },
+      recompute(["git"], ["ruby"]),
+      recompute(["codegraph"], ["python"]),
+    ];
+
+    const folded = foldIndexDriftRemedies(remedies);
+
+    expect(folded).toEqual(foldIndexDriftRemedies([...remedies].reverse()));
+    expect(folded).toEqual(recompute(["codegraph", "git"], ["python", "ruby"]));
   });
 
   it("renders one command", () => {
@@ -164,22 +166,10 @@ describe("the one command a language-version drift carries", () => {
     expect(command.match(/Run: /g)).toHaveLength(1);
   });
 
-  it("routes a grammar bump to a full reindex — the chunk set moves", () => {
-    expect(renderIndexDriftRemedy(foldIndexDriftRemedies([movesChunkSet]))).toBe(
-      "Run: tea-rags index-codebase --force",
-    );
-  });
-
-  it("routes a chunking bump to a full reindex", () => {
-    expect(renderIndexDriftRemedy(foldIndexDriftRemedies([movesChunkSet]))).toBe(
-      "Run: tea-rags index-codebase --force",
-    );
-  });
-
-  it("never narrows the full reindex by language — that would drop every other language from the index", () => {
-    expect(renderIndexDriftRemedy(foldIndexDriftRemedies([movesChunkSet]))).not.toContain("--languages");
-  });
-
+  // Which AXIS produces `movesChunkSet` is pinned at the monitor, in
+  // language-version-drift-monitor.test.ts — a remedy literal here cannot see
+  // CHUNK_SET_AXES, so the three per-axis cases that used to live here would
+  // have stayed green with the routing deleted.
   it("escalates a mixed drift to the single command that subsumes the other", () => {
     const command = renderIndexDriftRemedy(foldIndexDriftRemedies([movesChunkSet, edgesOnly("typescript")]));
 
@@ -189,21 +179,15 @@ describe("the one command a language-version drift carries", () => {
   });
 });
 
-describe("resolveSchemaDriftRemedy", () => {
+// The rendered command is asserted by the attribution describe above; these two
+// pin the lattice VALUE the fold consumes, which a rendered string only implies.
+describe("resolveSchemaDriftRemedy — the value behind the command", () => {
   const OWNERS: PayloadKeyOwner[] = [
     { key: "git.file.newSignal", trajectory: "git", recomputable: true },
     { key: "codegraph.file.newMetric", trajectory: "codegraph.symbols", recomputable: true },
-    { key: "chunkSize", trajectory: "static", recomputable: false },
-    { key: "navigation", recomputable: false },
   ];
 
-  it("is none when the drift is removals only", () => {
-    expect(resolveSchemaDriftRemedy({ added: [], removed: ["git.file.retiredSignal"] }, OWNERS)).toEqual({
-      kind: "none",
-    });
-  });
-
-  it("recomputes the owning trajectory of every added key", () => {
+  it("unions the owning trajectory of every added key", () => {
     expect(
       resolveSchemaDriftRemedy({ added: ["git.file.newSignal", "codegraph.file.newMetric"], removed: [] }, OWNERS),
     ).toEqual(recompute(["codegraph.symbols", "git"], null));
@@ -213,17 +197,5 @@ describe("resolveSchemaDriftRemedy", () => {
     const remedy = resolveSchemaDriftRemedy({ added: ["git.file.newSignal"], removed: [] }, OWNERS);
 
     expect(remedy).toEqual({ kind: "recompute", trajectories: new Set(["git"]), languages: null });
-  });
-
-  it("escalates to force when an added key is owned by a non-enriching trajectory", () => {
-    expect(resolveSchemaDriftRemedy({ added: ["chunkSize"], removed: [] }, OWNERS)).toEqual({ kind: "force" });
-  });
-
-  it("escalates to force when an added key has no declared owner", () => {
-    expect(resolveSchemaDriftRemedy({ added: ["mystery.field"], removed: [] }, OWNERS)).toEqual({ kind: "force" });
-  });
-
-  it("escalates to force when an owner declares no trajectory", () => {
-    expect(resolveSchemaDriftRemedy({ added: ["navigation"], removed: [] }, OWNERS)).toEqual({ kind: "force" });
   });
 });

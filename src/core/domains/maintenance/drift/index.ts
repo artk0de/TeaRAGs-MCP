@@ -1,8 +1,9 @@
-export { checkSchemaDrift, formatSchemaDriftWarning, type SchemaDrift } from "./schema-drift.js";
+export { checkSchemaDrift, type SchemaDrift } from "./schema-drift.js";
 export type { IndexDriftAxis, IndexDriftFinding, IndexDriftMonitor } from "./monitor.js";
 export {
   foldIndexDriftRemedies,
   renderIndexDriftRemedy,
+  resolvePayloadKeyRemedy,
   resolveSchemaDriftRemedy,
   type IndexDriftRemedy,
 } from "./remedy.js";

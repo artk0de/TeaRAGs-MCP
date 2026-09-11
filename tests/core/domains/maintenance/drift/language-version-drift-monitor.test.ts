@@ -134,6 +134,62 @@ describe("LanguageVersionDriftMonitor.checkByCollectionName", () => {
     expect(warning).toContain("--force-enrichments codegraph --languages typescript");
   });
 
+  // Which axis is chunk-set-moving and which is edges-only is a property of the
+  // MONITOR (CHUNK_SET_AXES), not of a remedy literal — these cases are what
+  // fails if the routing is deleted.
+  it("routes a grammar bump to a full reindex — the chunk set moves", () => {
+    const monitor = makeMonitor({
+      languageVersions: { typescript: { grammar: "0.22.0", chunking: 1, walker: 2, codegraphSchema: 1 } },
+    });
+
+    const warning = monitor.checkByCollectionName("code_x");
+
+    expect(warning).toContain("typescript.grammar: 0.22.0 → 0.23.2");
+    expect(warning).toContain("Run: tea-rags index-codebase --force");
+    expect(warning).not.toContain("--force-enrichments");
+    // Narrowing a full reindex by language would drop every other language
+    // from the rebuilt collection.
+    expect(warning).not.toContain("--languages");
+  });
+
+  it("routes a chunking bump to a full reindex", () => {
+    const monitor = makeMonitor({
+      languageVersions: { typescript: { grammar: "0.23.2", chunking: 0, walker: 2, codegraphSchema: 1 } },
+    });
+
+    const warning = monitor.checkByCollectionName("code_x");
+
+    expect(warning).toContain("typescript.chunking: 0 → 1");
+    expect(warning).toContain("Run: tea-rags index-codebase --force");
+    expect(warning).not.toContain("--force-enrichments");
+  });
+
+  it("routes a codegraph-schema bump to the narrowed enrichment recompute", () => {
+    const monitor = makeMonitor({
+      languageVersions: { ruby: { grammar: "0.23.1", chunking: 1, walker: 1, codegraphSchema: 0 } },
+      languages: { ruby: 10 },
+    });
+
+    const warning = monitor.checkByCollectionName("code_x");
+
+    expect(warning).toContain("ruby.codegraphSchema: 0 → 1");
+    expect(warning).toContain("Run: tea-rags index-codebase --force-enrichments codegraph --languages ruby");
+  });
+
+  it("escalates a mixed walker + grammar drift to the single command that subsumes the other", () => {
+    const monitor = makeMonitor({
+      languageVersions: { typescript: { grammar: "0.22.0", chunking: 1, walker: 1, codegraphSchema: 1 } },
+    });
+
+    const warning = monitor.checkByCollectionName("code_x");
+
+    expect(warning).toContain("typescript.grammar: 0.22.0 → 0.23.2");
+    expect(warning).toContain("typescript.walker: 1 → 2");
+    expect(warning?.match(/Run: /g)).toHaveLength(1);
+    expect(warning).toContain("Run: tea-rags index-codebase --force");
+    expect(warning).not.toContain("--force-enrichments");
+  });
+
   it("returns null when no axis moved", () => {
     const monitor = makeMonitor({ languageVersions: indexedAtCurrent });
 

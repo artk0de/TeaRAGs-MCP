@@ -76,6 +76,46 @@ describe("SchemaDriftMonitor", () => {
     expect(warning).toBeNull();
   });
 
+  // Re-pointed from the retired formatSchemaDriftWarning: added and removed
+  // keys are rendered by the report now, and each side keeps its own cost.
+  it("names every added key and asks for the full reindex when nothing attributes them", () => {
+    cache.save("code_abc123", SAMPLE_STATS, ["git.file.commitCount"]);
+    const monitor = new SchemaDriftMonitor(cache, [
+      "git.file.commitCount",
+      "git.chunk.taskIds",
+      "git.chunk.changeDensity",
+    ]);
+
+    const warning = monitor.checkByCollectionName("code_abc123");
+
+    expect(warning).toContain("git.chunk.taskIds: absent → declared");
+    expect(warning).toContain("git.chunk.changeDensity: absent → declared");
+    expect(warning).not.toContain("→ absent");
+    expect(warning).toContain("Run: tea-rags index-codebase --force");
+  });
+
+  it("names a removed key and asks for no action — nothing reads it any more", () => {
+    cache.save("code_abc123", SAMPLE_STATS, ["git.file.commitCount", "git.file.retiredSignal"]);
+    const monitor = new SchemaDriftMonitor(cache, ["git.file.commitCount"]);
+
+    const warning = monitor.checkByCollectionName("code_abc123");
+
+    expect(warning).toContain("git.file.retiredSignal: recorded → absent");
+    expect(warning).not.toContain("--force");
+    expect(warning).toMatch(/no action|no reindex/i);
+  });
+
+  it("names added and removed keys in one report", () => {
+    cache.save("code_abc123", SAMPLE_STATS, ["git.file.retiredSignal"]);
+    const monitor = new SchemaDriftMonitor(cache, ["git.file.ageDays"]);
+
+    const warning = monitor.checkByCollectionName("code_abc123");
+
+    expect(warning).toContain("git.file.ageDays: absent → declared");
+    expect(warning).toContain("git.file.retiredSignal: recorded → absent");
+    expect(warning).toContain("Run: tea-rags index-codebase --force");
+  });
+
   describe("checkAndConsume (async)", () => {
     it("returns warning on drift via async path", async () => {
       const cachedKeys = ["git.file.commitCount"];

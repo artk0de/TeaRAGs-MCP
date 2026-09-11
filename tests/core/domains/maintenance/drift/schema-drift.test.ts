@@ -6,10 +6,7 @@ import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import type { CollectionSignalStats } from "../../../../../src/core/contracts/types/trajectory.js";
-import {
-  checkSchemaDrift,
-  formatSchemaDriftWarning,
-} from "../../../../../src/core/domains/maintenance/drift/schema-drift.js";
+import { checkSchemaDrift } from "../../../../../src/core/domains/maintenance/drift/schema-drift.js";
 import { StatsCache } from "../../../../../src/core/infra/stats-cache.js";
 
 function makeTmpDir(): string {
@@ -56,27 +53,6 @@ describe("checkSchemaDrift", () => {
   it("detects both added and removed", () => {
     const drift = checkSchemaDrift(["a", "b"], ["b", "c"]);
     expect(drift).toEqual({ added: ["c"], removed: ["a"] });
-  });
-});
-
-describe("formatSchemaDriftWarning", () => {
-  it("formats added fields", () => {
-    const msg = formatSchemaDriftWarning({ added: ["x"], removed: [] });
-    expect(msg).toContain("New fields: x");
-    expect(msg).not.toContain("Removed fields");
-  });
-
-  it("formats removed fields", () => {
-    const msg = formatSchemaDriftWarning({ added: [], removed: ["y"] });
-    expect(msg).toContain("Removed fields: y");
-    expect(msg).not.toContain("New fields");
-  });
-
-  it("formats both added and removed", () => {
-    const msg = formatSchemaDriftWarning({ added: ["x"], removed: ["y"] });
-    expect(msg).toContain("New fields: x");
-    expect(msg).toContain("Removed fields: y");
-    expect(msg).toContain("Run: tea-rags index-codebase --force");
   });
 });
 
@@ -135,14 +111,6 @@ describe("Schema drift detection", () => {
     expect(drift!.removed).toEqual(["git.file.ageDays"]);
   });
 
-  it("formatSchemaDriftWarning produces readable warning", () => {
-    const drift = { added: ["git.chunk.taskIds", "git.chunk.changeDensity"], removed: [] };
-    const warning = formatSchemaDriftWarning(drift);
-    expect(warning).toContain("git.chunk.taskIds");
-    expect(warning).toContain("git.chunk.changeDensity");
-    expect(warning).toContain("reindex");
-  });
-
   it("detects drift when navigation key is missing from cached index", () => {
     const cachedKeys = ["git.file.ageDays", "git.file.commitCount"];
     const currentKeys = ["git.file.ageDays", "git.file.commitCount", "navigation"];
@@ -151,14 +119,5 @@ describe("Schema drift detection", () => {
 
     expect(drift).not.toBeNull();
     expect(drift!.added).toContain("navigation");
-  });
-
-  it("formats drift warning mentioning navigation requires reindex", () => {
-    const drift = { added: ["navigation"], removed: [] };
-
-    const warning = formatSchemaDriftWarning(drift);
-
-    expect(warning).toContain("navigation");
-    expect(warning).toContain("reindex");
   });
 });

@@ -10,7 +10,7 @@ import type { PayloadKeyOwner } from "../../../contracts/types/trajectory.js";
 import { resolveCollectionName, validatePath } from "../../../infra/collection-name.js";
 import type { StatsCache } from "../../../infra/stats-cache.js";
 import type { IndexDriftFinding, IndexDriftMonitor } from "./monitor.js";
-import type { IndexDriftRemedy } from "./remedy.js";
+import { resolvePayloadKeyRemedy } from "./remedy.js";
 import { formatIndexDriftReport, IndexDriftReporter } from "./report.js";
 import { checkSchemaDrift, type SchemaDrift } from "./schema-drift.js";
 
@@ -39,20 +39,13 @@ export class SchemaDriftMonitor implements IndexDriftMonitor {
     const drift = checkSchemaDrift(stats?.payloadFieldKeys, this.currentPayloadKeys);
     if (!drift) return [];
     const ownerByKey = new Map((this.payloadKeyOwners ?? []).map((o) => [o.key, o]));
-    const remedyFor = (key: string): IndexDriftRemedy => {
-      const owner = ownerByKey.get(key);
-      // An unattributed key is treated as chunker-owned: assuming it is cheap
-      // to recompute would hand back a command that populates nothing.
-      if (!owner?.recomputable || owner.trajectory === undefined) return { kind: "force" };
-      return { kind: "recompute", trajectories: new Set([owner.trajectory]), languages: null };
-    };
     return [
       ...drift.added.map((key) => ({
         axis: this.axis,
         subject: key,
         indexed: "absent",
         current: "declared",
-        remedy: remedyFor(key),
+        remedy: resolvePayloadKeyRemedy(key, ownerByKey),
       })),
       ...drift.removed.map((key) => ({
         axis: this.axis,

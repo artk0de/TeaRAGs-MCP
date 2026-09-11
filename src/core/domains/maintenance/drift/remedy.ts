@@ -74,23 +74,31 @@ export function renderIndexDriftRemedy(remedy: IndexDriftRemedy, projectAlias?: 
 }
 
 /**
- * Pick ONE remedy for a payload-key drift.
+ * What ONE newly declared payload key costs to repopulate — the single place
+ * the attribution rule lives.
  *
- * A full reindex rebuilds the enrichment layer as well, so a drift that mixes
- * enrichment-owned keys with chunker-owned ones escalates to the reindex and
- * drops the per-trajectory list. Removals need no command at all: nothing reads
- * a key the current build no longer declares.
+ * An unattributed key is treated as chunker-owned: assuming it is cheap to
+ * recompute would hand back a command that silently populates nothing. Payload
+ * keys are language-agnostic, so the recompute is never narrowed by language.
+ */
+export function resolvePayloadKeyRemedy(
+  key: string,
+  ownerByKey: ReadonlyMap<string, PayloadKeyOwner>,
+): IndexDriftRemedy {
+  const owner = ownerByKey.get(key);
+  if (!owner?.recomputable || owner.trajectory === undefined) return { kind: "force" };
+  return { kind: "recompute", trajectories: new Set([owner.trajectory]), languages: null };
+}
+
+/**
+ * Pick ONE remedy for a whole payload-key drift.
+ *
+ * Per-key costs folded over the lattice: a drift that mixes enrichment-owned
+ * keys with chunker-owned ones escalates to the reindex, which rebuilds the
+ * enrichment layer anyway, and drops the per-trajectory list. Removals fold to
+ * `none` — nothing reads a key the current build no longer declares.
  */
 export function resolveSchemaDriftRemedy(drift: SchemaDrift, owners: readonly PayloadKeyOwner[]): IndexDriftRemedy {
-  if (drift.added.length === 0) return { kind: "none" };
   const ownerByKey = new Map(owners.map((o) => [o.key, o]));
-  const trajectories = new Set<string>();
-  for (const key of drift.added) {
-    const owner = ownerByKey.get(key);
-    // An unattributed key is treated as chunker-owned: assuming it is cheap to
-    // recompute would hand back a command that silently populates nothing.
-    if (!owner?.recomputable || owner.trajectory === undefined) return { kind: "force" };
-    trajectories.add(owner.trajectory);
-  }
-  return { kind: "recompute", trajectories, languages: null };
+  return foldIndexDriftRemedies(drift.added.map((key) => resolvePayloadKeyRemedy(key, ownerByKey)));
 }
