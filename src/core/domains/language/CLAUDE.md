@@ -67,6 +67,16 @@
   metrics (`resolveSuccessRate` via `DEBUG=1 tea-rags prime`). Why:
   `epic-completion-gate.md` routes this at a user-gated reindex, costing days
   for a 90-second in-process delta.
+- **The Python oracle publishes THREE denominators, and `tiebroken` is the
+  canonical precision number for E5+.** `scripts/py-codegraph-jedi-oracle.ts`
+  prints `legacy` (jedi alone, the regression gate for every pre-E4 record),
+  `merged` (whatever engine answered the file), and `tiebroken` — pyright asked
+  about every chain-vs-jedi disagreement and the row re-scored by the fixed rule
+  in `scripts/lib/py-oracle-tiebreak.ts`, with the undecidable ones withheld and
+  counted. `--no-tiebreak` reproduces the two-column output byte for byte. Why:
+  D9's oracle-wrong classes were hand-audited once and then carried as a
+  paragraph, so every later increment measured its precision against a number
+  that included known instrument error.
 - **Dispatch narrowing terminates FOUR ways** (`kernel/dispatch-narrowing.ts`):
   0 survivors → no edges; 1 → one `dynamic` edge at `confidence: 1.0`
   (evidence-unique, NOT type-proven); over the corpus-adaptive cap from
