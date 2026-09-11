@@ -1,4 +1,4 @@
-# adapters/qdrant — the model-mixing guard, its weight canary, and the shared cosine
+# adapters/qdrant — the model-mixing guard, its weight canary, and the marker-catch rethrow
 
 ## Invariants
 
@@ -34,9 +34,13 @@
   `domains/ingest/operations/indexing.ts:352`, which publishes the lease as soon
   as the collection exists. `indexing.ts:194` and
   `domains/ingest/operations/reindexing.ts:185,207,617` all pass `complete=true`
-  — they UPDATE that marker, they never create it. The window `recordModel`
-  covers is therefore between `createCollection` and the lease write; reading it
-  off the completing calls puts the window in the wrong place entirely.
+  — they UPDATE that marker, they never create it. The two creation paths are
+  DISJOINT: `create_collection` (`api/public/app.ts:271` →
+  `CollectionOps.create`) is `recordModel`'s only caller, while an index run
+  creates its collection and the lease directly (`indexing.ts:340-352`) and
+  never touches the guard — that collection's verdict is first cached on its
+  first `ensureMatch`, not at creation. Reading either path off the completing
+  calls puts the creation in the wrong place entirely.
 
 - **A cache reset is the only thing that can forget weight drift.** The name
   verdict is re-derived on every assert; the canary verdict survives only as the
