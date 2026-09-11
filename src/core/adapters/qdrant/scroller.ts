@@ -19,6 +19,8 @@
 
 import type { QdrantConnection } from "./connection.js";
 import { QdrantOperationError, QdrantUnavailableError } from "./errors.js";
+import { symbolIdTextToken } from "./filters/symbolid-text-token.js";
+import { anyOfOnTextIndexed } from "./filters/text-indexed-exact.js";
 
 export class QdrantScroller {
   constructor(private readonly connection: QdrantConnection) {}
@@ -224,6 +226,13 @@ export class QdrantScroller {
    * hydrate each path step with its relativePath / line range / git+codegraph
    * signals. Empty input short-circuits to [] (no query). Result order is not
    * guaranteed — callers index by `payload.symbolId`.
+   *
+   * Each branch is a text+value PAIR (tea-rags-mcp-ivp12): `symbolId` is
+   * TEXT-indexed, so a bare `match.value` is a full collection scan per id
+   * (764 ms on the live self-index) while the pair is 1.2 ms. The text half is
+   * the id's last name segment — the one token the `word` tokenizer is
+   * guaranteed to have stored for that row — and the value half keeps the
+   * answer exact, so a token shared with a namesake costs candidates only.
    */
   async scrollBySymbolIds(
     collectionName: string,
@@ -231,9 +240,6 @@ export class QdrantScroller {
     limit = 1024,
   ): Promise<{ id: string | number; payload: Record<string, unknown> }[]> {
     if (symbolIds.length === 0) return [];
-    const filter = {
-      should: symbolIds.map((id) => ({ key: "symbolId", match: { value: id } })),
-    };
-    return this.scrollFiltered(collectionName, filter, limit);
+    return this.scrollFiltered(collectionName, anyOfOnTextIndexed("symbolId", symbolIds, symbolIdTextToken), limit);
   }
 }

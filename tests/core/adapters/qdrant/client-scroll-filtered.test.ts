@@ -131,14 +131,20 @@ describe("QdrantManager.scrollBySymbolIds", () => {
     expect(ids).toEqual(["A", "C"]);
 
     expect(mockScroll).toHaveBeenCalledTimes(1);
+    // bd tea-rags-mcp-ivp12 — the OR over the id set is unchanged; each branch
+    // now leads with the indexed text token (the id's last name segment, the
+    // one token the `word` tokenizer reliably stores) so the exact `value`
+    // condition is checked on candidates instead of on the whole collection.
     expect(mockScroll).toHaveBeenCalledWith(
       "test_collection",
       expect.objectContaining({
         filter: {
-          should: [
-            { key: "symbolId", match: { value: "A" } },
-            { key: "symbolId", match: { value: "C" } },
-          ],
+          should: ["A", "C"].map((id) => ({
+            must: [
+              { key: "symbolId", match: { text: id } },
+              { key: "symbolId", match: { value: id } },
+            ],
+          })),
         },
         with_payload: true,
         with_vector: false,

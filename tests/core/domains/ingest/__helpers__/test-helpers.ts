@@ -219,7 +219,10 @@ export class MockQdrantManager implements Partial<QdrantManager> {
   async deletePointsByFilter(collectionName: string, filter: Record<string, any>): Promise<void> {
     const resolved = this.resolve(collectionName);
     const points = this.points.get(resolved) || [];
-    const pathToDelete = filter?.must?.[0]?.match?.value;
+    // The exact path is the `value` half of the text+value pair the caller
+    // builds for a text-indexed key (bd tea-rags-mcp-ivp12) — read it by role,
+    // not by position, so the fake stays right whatever else rides the `must`.
+    const pathToDelete = filter?.must?.find((c: any) => c?.match?.value !== undefined)?.match?.value;
     if (pathToDelete) {
       this.points.set(
         resolved,

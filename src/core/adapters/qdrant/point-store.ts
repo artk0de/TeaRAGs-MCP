@@ -32,6 +32,7 @@ import {
   QdrantUnavailableError,
   QdrantVectorDimensionMismatchError,
 } from "./errors.js";
+import { anyOfOnTextIndexed } from "./filters/text-indexed-exact.js";
 import type { SparseVector } from "./types.js";
 
 export class QdrantPointStore {
@@ -329,6 +330,11 @@ export class QdrantPointStore {
    *
    * Before: N files → N HTTP requests (even with Promise.all)
    * After: N files → 1 HTTP request with combined filter
+   *
+   * Each branch of the OR is an exact PAIR, not a bare `match.value`: the
+   * `relativePath` index is `text`, so a lone value condition is a full
+   * collection scan and this filter was N of them inside one request — 33,597 ms
+   * for fifty paths on the live self-index (tea-rags-mcp-ivp12).
    */
   async deletePointsByPaths(collectionName: string, relativePaths: string[]): Promise<void> {
     if (relativePaths.length === 0) return;
@@ -337,12 +343,7 @@ export class QdrantPointStore {
     await this.connection.call(async () =>
       this.connection.client.delete(collectionName, {
         wait: true,
-        filter: {
-          should: relativePaths.map((path) => ({
-            key: "relativePath",
-            match: { value: path },
-          })),
-        },
+        filter: anyOfOnTextIndexed("relativePath", relativePaths),
       }),
     );
   }
@@ -439,32 +440,50 @@ export class QdrantPointStore {
     };
   }
 
+  /**
+   * Set membership as an OR of exact PAIRS, in groups of this many paths.
+   *
+   * The shape here used to be one MatchAny over the whole set — one condition
+   * against the key's index, which reads as O(1) per point and is, on a keyword
+   * index. `relativePath` carries a TEXT index, which serves neither `any` nor
+   * `value`, so that single condition was a single FULL COLLECTION SCAN: 706 ms
+   * for 50 paths on the live self-index, where the same 50 as text+value pairs
+   * cost ~1.35 ms each (tea-rags-mcp-ivp12). Every incremental reindex with a
+   * deletion paid it.
+   *
+   * Grouping is what keeps the other half of the history true: an unbounded
+   * `should` is what returned 500s from embedded Qdrant under concurrent load
+   * at ~1000 branches. 200 branches (400 conditions) stays well inside that, and
+   * a delete set large enough to need several groups is rare — a full-scan
+   * MatchAny only wins again past ~500 paths on a 22k-point collection.
+   */
+  private static readonly SCROLL_PATHS_PER_FILTER = 200;
+
   private async collectPointIdsForPaths(collectionName: string, paths: string[]): Promise<(string | number)[]> {
     const ids: (string | number)[] = [];
-    // MatchAny (Qdrant 1.9+) — single set-membership condition instead of an
-    // N-way OR. Keeps filter-engine cost O(1) per point regardless of batch
-    // size (a 1000-item `should` triggers 500 Internal Server Error on
-    // embedded under concurrent load).
-    const filter = {
-      must: [{ key: "relativePath", match: { any: paths } }],
-    };
-    let offset: string | number | undefined = undefined;
-    do {
-      const result = await this.connection.call(async () =>
-        this.connection.client.scroll(collectionName, {
-          limit: QdrantPointStore.SCROLL_PAGE_SIZE,
-          with_payload: false,
-          with_vector: false,
-          filter,
-          ...(offset !== undefined ? { offset } : {}),
-        }),
+    for (let start = 0; start < paths.length; start += QdrantPointStore.SCROLL_PATHS_PER_FILTER) {
+      const filter = anyOfOnTextIndexed(
+        "relativePath",
+        paths.slice(start, start + QdrantPointStore.SCROLL_PATHS_PER_FILTER),
       );
-      for (const point of result.points) {
-        ids.push(point.id);
-      }
-      const next = result.next_page_offset;
-      offset = typeof next === "string" || typeof next === "number" ? next : undefined;
-    } while (offset !== undefined);
+      let offset: string | number | undefined = undefined;
+      do {
+        const result = await this.connection.call(async () =>
+          this.connection.client.scroll(collectionName, {
+            limit: QdrantPointStore.SCROLL_PAGE_SIZE,
+            with_payload: false,
+            with_vector: false,
+            filter,
+            ...(offset !== undefined ? { offset } : {}),
+          }),
+        );
+        for (const point of result.points) {
+          ids.push(point.id);
+        }
+        const next = result.next_page_offset;
+        offset = typeof next === "string" || typeof next === "number" ? next : undefined;
+      } while (offset !== undefined);
+    }
     return ids;
   }
 

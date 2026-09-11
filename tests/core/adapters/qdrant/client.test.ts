@@ -1838,6 +1838,12 @@ describe("QdrantManager", () => {
     });
   });
 
+  // bd tea-rags-mcp-ivp12 — these asserted a `should` of BARE `match.value`
+  // conditions. `relativePath` is text-indexed, so each of those was a full
+  // collection scan (677–1002 ms apiece on the live self-index, 33,597 ms for
+  // fifty). The invariant is unchanged — one delete request, OR over the paths,
+  // exact per path — and each branch of the OR now carries the indexed text
+  // condition that makes it index-served.
   describe("deletePointsByPaths", () => {
     it("should delete points with OR filter for multiple paths", async () => {
       mockClient.delete.mockResolvedValue({});
@@ -1848,11 +1854,12 @@ describe("QdrantManager", () => {
       expect(mockClient.delete).toHaveBeenCalledWith("test-collection", {
         wait: true,
         filter: {
-          should: [
-            { key: "relativePath", match: { value: "src/file1.ts" } },
-            { key: "relativePath", match: { value: "src/file2.ts" } },
-            { key: "relativePath", match: { value: "src/file3.ts" } },
-          ],
+          should: paths.map((path) => ({
+            must: [
+              { key: "relativePath", match: { text: path } },
+              { key: "relativePath", match: { value: path } },
+            ],
+          })),
         },
       });
     });
@@ -1870,7 +1877,14 @@ describe("QdrantManager", () => {
       expect(mockClient.delete).toHaveBeenCalledWith("test-collection", {
         wait: true,
         filter: {
-          should: [{ key: "relativePath", match: { value: "single.ts" } }],
+          should: [
+            {
+              must: [
+                { key: "relativePath", match: { text: "single.ts" } },
+                { key: "relativePath", match: { value: "single.ts" } },
+              ],
+            },
+          ],
         },
       });
     });
@@ -1924,9 +1938,17 @@ describe("QdrantManager", () => {
       const scrollArgs = mockClient.scroll.mock.calls[0][1];
       expect(scrollArgs.with_payload).toBe(false);
       expect(scrollArgs.with_vector).toBe(false);
-      // MatchAny: single set-membership condition, not a `should` OR-array.
+      // Set membership over a TEXT-indexed key: one exact pair per path under a
+      // `should`, not a MatchAny. MatchAny reads the key's index, and
+      // `relativePath` has a text index that does not serve it — the single
+      // condition was one full collection scan (bd tea-rags-mcp-ivp12).
       expect(scrollArgs.filter).toEqual({
-        must: [{ key: "relativePath", match: { any: ["src/a.ts", "src/b.ts", "src/c.ts"] } }],
+        should: ["src/a.ts", "src/b.ts", "src/c.ts"].map((path) => ({
+          must: [
+            { key: "relativePath", match: { text: path } },
+            { key: "relativePath", match: { value: path } },
+          ],
+        })),
       });
 
       // delete called with {points: ids}, NOT with filter
@@ -2009,9 +2031,15 @@ describe("QdrantManager", () => {
       });
 
       expect(mockClient.scroll).toHaveBeenCalledTimes(1);
-      // Filter carries every path in a single MatchAny set.
+      // Filter carries every path, in ONE scroll — the shape of the membership
+      // condition changed (bd tea-rags-mcp-ivp12), the single-read claim did not.
       expect(mockClient.scroll.mock.calls[0][1].filter).toEqual({
-        must: [{ key: "relativePath", match: { any: paths } }],
+        should: paths.map((path) => ({
+          must: [
+            { key: "relativePath", match: { text: path } },
+            { key: "relativePath", match: { value: path } },
+          ],
+        })),
       });
     });
 

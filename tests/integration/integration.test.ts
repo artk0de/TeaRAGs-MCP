@@ -178,7 +178,9 @@ class MockQdrantManager implements Partial<QdrantManager> {
 
   async deletePointsByFilter(collectionName: string, filter: Record<string, any>): Promise<void> {
     const points = this.points.get(collectionName) || [];
-    const pathToDelete = filter?.must?.[0]?.match?.value;
+    // The `value` half of the text+value pair (bd tea-rags-mcp-ivp12), found by
+    // role rather than by position.
+    const pathToDelete = filter?.must?.find((c: any) => c?.match?.value !== undefined)?.match?.value;
     if (pathToDelete) {
       const filtered = points.filter((p) => p.payload?.relativePath !== pathToDelete);
       this.points.set(collectionName, filtered);

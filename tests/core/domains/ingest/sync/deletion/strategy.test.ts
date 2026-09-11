@@ -138,7 +138,8 @@ describe("performDeletion", () => {
       vi.spyOn(qdrant, "deletePointsByPaths").mockRejectedValueOnce(new Error("L1 timeout"));
 
       const filterSpy = vi.spyOn(qdrant, "deletePointsByFilter").mockImplementation(async (_col, filter: any) => {
-        const path = filter?.must?.[0]?.match?.value;
+        // The `value` half of the text+value pair (bd tea-rags-mcp-ivp12).
+        const path = filter?.must?.find((c: any) => c?.match?.value !== undefined)?.match?.value;
         if (path === "b.ts") {
           throw new Error("yellow state");
         }
