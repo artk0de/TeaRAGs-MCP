@@ -1210,6 +1210,50 @@ should make without its own A/B.
 5. **Python walker version NOT bumped** — outputs are byte-identical, which is
    the whole claim.
 
+### E6.0c measured — 2026-09-12, live from the branch build @ `4e341797a`
+
+Three
+`index-codebase --project <alias> --force-enrichments codegraph --languages <lang> --json`
+runs from this worktree's `build/`, sequential, each under a 250 ms per-process
+sampler over the whole process tree (the CLI parent, its `--__worker` child that
+runs the pipeline, the DuckDB daemon it spawns, and any pre-existing daemon).
+`NODE_OPTIONS` unset. Every run ended with `outcome.failed []` and
+`outcome.degraded []`.
+
+| lang       | project        | files | codegraph enrichment | index worker peak | daemon peak | tree peak |
+| ---------- | -------------- | ----- | -------------------- | ----------------- | ----------- | --------- |
+| python     | ugnest         | 234   | 2.4 s                | 903 MB            | 148 MB      | 1,275 MB  |
+| typescript | tea-rags       | 1,021 | 22.9 s               | 1,392 MB          | 113 MB      | 1,660 MB  |
+| ruby       | bench-mastodon | 1,385 | 4.6 s                | 1,355 MB          | 474 MB      | 1,967 MB  |
+
+Wall of the whole command is dominated by the incremental sync's embedding of
+files changed since the last index (ugnest 8.9 s, tea-rags 31.4 s, mastodon 46.3
+s) and is not a codegraph number; the enrichment column is
+`enrichmentMetrics.totalDurationMs`.
+
+**Live/harness parity holds.** ugnest live edges 778 = the offline chain tally's
+778 = the oracle-validated chain (recall tiebroken 0.9847, phantom 0). `prime`
+per receiver kind after the run: bareCall 1.00 (367/1717), constant 0.98,
+selfMember 0.93, dynamic 0.32 (27/1631), chain 0.08 (7/813), localVar 0.07,
+super 0/14. The headline `resolveSuccessRate 0.76` is a denominator artefact,
+not a resolver gap: 57 dynamic, 79 chain, 75 localVar and 14 `super` calls have
+EXTERNAL targets the oracle books as `agreeExt`, while the live classifier
+leaves them in the attempted-minus-external denominator. Filed as a follow-up.
+
+**The memory verdict moves off the walker.** The index worker's peak is 0.9–1.4
+GB for all three languages and does not track project size (234 files → 903 MB,
+1,385 files → 1,355 MB), while the Python walker alone on ugnest peaks at 274 MB
+offline. On ugnest the worker sat at 81–109 MB after the sync and climbed 109 →
+903 MB inside the 2.4 s enrichment phase. One enrichment worker thread's module
+graph is 49 MB resident (measured by importing `enrichment/infra/worker.js` in a
+bare process), so the climb is not module loading. What allocates it — the
+enrichment thread pool (`INGEST_TUNE_ENRICHMENT_POOL_SIZE`, default 4, each
+thread its own isolate), the DuckDB client side, or the payload pass — needs an
+instrumented ugnest run (DEBUG phase lines aligned to the sampler, then a heap
+snapshot near a worker heap limit), which the reindex permission gate blocked in
+this session. That is the open E6 item; the walker-side verdict stands as E6.1
+recorded it.
+
 ---
 
 ## Task E6.0b — the offline matrix
