@@ -1816,3 +1816,195 @@ Everything else is a straight line.
 - **It does not claim a live number.** Every figure here is the offline oracle
   at `--oracle merged --dispatch --workers 8`. Reindex-and-`prime` validation is
   user-gated and is not part of any task's gate.
+
+---
+
+### Measured — E4.6 (whole increment, 2026-09-11, dumps under `~/.claude/jobs/dffe3647/tmp/e46close/`)
+
+Five corpora × five runs each side,
+`--oracle merged --dispatch --workers 8 --samples 500000`, B taken from a
+detached checkout of the E4.6 base (`3a3283e1d`), A from HEAD carrying all four
+tasks. **Every corpus was byte-identical across its five runs on BOTH sides —
+zero unstable rows anywhere, so the transition matrix below is exact rather than
+a stable subset.**
+
+| corpus | match           | fileOnly | wrongFile | missed    | phantom | agreeExternal   | edges           | gross lost |
+| ------ | --------------- | -------- | --------- | --------- | ------- | --------------- | --------------- | ---------- |
+| ugnest | 765 → 771       | 0 → 0    | 0 → 1     | 24 → 17   | 0 → 0   | 3,679 → 3,679   | 770 → 777       | 0          |
+| flask  | 326 → 330       | 6 → 6    | 1 → 1     | 40 → 36   | 0 → 0   | 808 → 808       | 345 → 349       | 0          |
+| httpx  | 469 → 477       | 5 → 5    | 0 → 0     | 14 → 6    | 8 → 8   | 887 → 886       | 491 → 499       | 0          |
+| netbox | 8,225 → 8,284   | 2 → 2    | 0 → 0     | 116 → 57  | 26 → 26 | 29,777 → 29,775 | 8,642 → 8,695   | 0          |
+| polar  | 15,859 → 16,372 | 34 → 54  | 2 → 17    | 989 → 441 | 84 → 88 | 29,088 → 29,084 | 16,541 → 17,574 | 0 (+18 OW) |
+
+Rows that moved bad → good, counted gross and never netted: ugnest **+6** (3
+`missed`, 3 `skippedInProject`), flask **+4**, httpx **+8** (6 + 2), netbox
+**+59**, polar **+547** (541 + 6) — **624 rows**. Two moves are bad → bad and
+are neither gain nor loss: one ugnest `missed → wrongFile` and one polar
+`skippedInProject → wrongFile`.
+
+**The total beats the plan's 519 and the mix does not match it, for one reason
+E4.6b-2 already recorded.** The predicted 38 `fileOnly → match` never happened —
+those rows were a jedi-composer spelling defect, not a resolver gap — while the
+`missed` half over-delivered on polar (+547 against +429).
+`skippedInProject → ok` is the second unpredicted channel: 11 rows across three
+corpora that the external-vocabulary classifier had been declining.
+
+**Recall, both denominators**
+(`match / (match + fileOnly + wrongFile + missed)`):
+
+| corpus | recallLegacy        | n      | recallMerged        | n      |
+| ------ | ------------------- | ------ | ------------------- | ------ |
+| ugnest | 0.9696 → **0.9772** | 789    | 0.9696 → **0.9772** | 789    |
+| flask  | 0.8740 → **0.8847** | 373    | 0.8740 → **0.8847** | 373    |
+| httpx  | 0.9611 → **0.9775** | 488    | 0.9611 → **0.9775** | 488    |
+| netbox | 0.9875 → **0.9925** | 7,894  | 0.9859 → **0.9929** | 8,343  |
+| polar  | 0.9545 → **0.9771** | 12,201 | 0.9393 → **0.9697** | 16,884 |
+
+**Precision-miss against the 2 % bar**, `(phantom + wrongFile) / edges`: ugnest
+0.000 → 0.129 %, flask 0.290 → 0.287 %, httpx 1.629 → 1.603 %, netbox 0.301 →
+0.299 %, polar 0.520 → 0.597 %. Every corpus is inside the bar and four of five
+FELL. polar's rise is the oracle-debt column and nothing else: subtract D9's
+`OW:Self` 14 and `OW:Mapped` 4 and polar reads **0.489 %**, below its own B
+side. **Phantom rate moved at most −0.026 pp anywhere** — ugnest 0.000 → 0.000,
+flask 0.000 → 0.000, httpx 1.629 → 1.603, netbox 0.301 → 0.299, polar 0.508 →
+0.501 — so ugnest holds exactly 0, flask is far under 2 %, and no corpus moves
++0.5 pp. `exactReplacedByFan` (flask 1, polar 3), `exactReplacedByAmbiguous` (0
+everywhere) and `exactReplacedBySingle` (polar 1) are **identical on both
+sides**.
+
+**Gross lost, every row classified.** Four corpora lose nothing at all. polar's
+18 are the two oracle-wrong classes the tasks that produced them already booked,
+and they reproduce row for row:
+
+- **14 `OW:Self`**, `match → wrongFile`, every one a `repository.update(…)` /
+  `.create(…)` on a `-> Self` classmethod result —
+  `backoffice/customers/endpoints.py:910`, `checkout/service.py:3042`,
+  `customer/service.py:399,614,656,744`, `customer_email_update/service.py:157`,
+  `customer_portal/endpoints/oauth_accounts.py:292`,
+  `customer_portal/service/customer.py:205,288,430,459`,
+  `customer_portal/service/customer_session.py:265`,
+  `customer_seat/service.py:852`. Byte-identical to D9's list; pyright answered
+  the chain's new target on 14 of 14.
+- **4 `OW:Mapped`**, `match → phantom`, all behind a SQLAlchemy `declared_attr`
+  returning `Mapped[T]` — `checkout/service.py:1287` and
+  `models/order.py:428,429` (`organization.statement_descriptor`),
+  `checkout/service.py:2198` (`discount.is_applicable`). pyright answered
+  `inProject` on 4 of 4.
+
+**Gross lost adjusted is 0 on every corpus, and chain regressions are 0** — no
+row moved from one in-project answer to a different in-project file except those
+14, where the chain is right and jedi is wrong.
+
+**Per-receiverKind recall, n ≥ 100, merged denominator:**
+
+| corpus | kind       | before → after    | n     |
+| ------ | ---------- | ----------------- | ----- |
+| ugnest | bareCall   | 0.976 → 0.976     | 375   |
+| ugnest | constant   | 0.990 → 0.990     | 296   |
+| flask  | bareCall   | 0.929 → 0.929     | 170   |
+| flask  | selfMember | 0.992 → 0.992     | 122   |
+| httpx  | bareCall   | 0.985 → 0.985     | 262   |
+| httpx  | selfMember | 1.000 → 1.000     | 112   |
+| netbox | bareCall   | 0.997 → 0.998     | 5,052 |
+| netbox | chain      | 0.971 → **0.988** | 245   |
+| netbox | dynamic    | 0.972 → 0.973     | 1,524 |
+| netbox | localVar   | 0.764 → **1.000** | 212   |
+| netbox | selfMember | 1.000 → 1.000     | 1,032 |
+| netbox | super      | 1.000 → 1.000     | 248   |
+| polar  | bareCall   | 0.980 → 0.984     | 8,196 |
+| polar  | chain      | 0.934 → **0.969** | 1,645 |
+| polar  | constant   | 0.992 → 0.992     | 1,328 |
+| polar  | dynamic    | 0.763 → **0.909** | 2,642 |
+| polar  | localVar   | 0.887 → 0.887     | 444   |
+| polar  | selfMember | 0.998 → 0.998     | 2,039 |
+| polar  | super      | 0.958 → 0.958     | 549   |
+
+netbox `localVar` 0.764 → 1.000 is E4.6a's shadow span; polar `dynamic` 0.763 →
+0.909 and `chain` 0.934 → 0.969 are E4.6b-1's `Self` substitution and
+bracket-aware split reaching the two largest kinds on that corpus.
+
+**Family report, both sides, against the REAL corpus roots. NO family grew on
+any corpus:**
+
+| corpus | residual  | `moduleAliasMember` | `constructorChainHead` | `callResultChainHead` | bare calls   | `untypedFieldHop` | `untypedNameReceiver` |
+| ------ | --------- | ------------------- | ---------------------- | --------------------- | ------------ | ----------------- | --------------------- |
+| ugnest | 24 → 18   | —                   | —                      | —                     | 9 → 9        | 7 → **1**         | 4 → 4                 |
+| flask  | 42 → 38   | —                   | —                      | 2 → 2                 | 5 → 5        | 11 → **7**        | 13 → 13               |
+| httpx  | 14 → 6    | —                   | 1 → **0**              | —                     | —            | 8 → **1**         | 5 → 5                 |
+| netbox | 116 → 57  | 50 → **0**          | 4 → **0**              | 3 → 2                 | 7 → **3**    | 2 → 2             | 23 → 23               |
+| polar  | 998 → 465 | 259 → **1**         | 39 → **0**             | 30 → **19**           | 110 → **76** | 82 → **43**       | 377 → **235**         |
+
+`transparentWrapper` polar 9 → 3 (E4.2a, which shipped inside E4.6c's worktree),
+`unionBranchReceiver` polar 18 → 14, and `classObjectReceiver` / `superMro` /
+`containerElementHop` / `pytestFixture` byte-identical everywhere. polar's
+`untypedNameReceiver` 377 → 235 is the `Self` substitution reaching E4.1's
+population from outside it.
+
+**Two things the family table cannot say, and both are the instrument rather
+than the result.** The oracle's `--json` payload samples four verdicts
+(`missed`, `wrongFile`, `phantom`, `skippedInProject`) and not `fileOnly`, so
+these residual counts cover the first three and run below the plan's 1,247,
+which included `fileOnly`. And the bare-call column is FOLDED:
+`oracleTargetRelPath` landed in E5.0b, after `3a3283e1d`, so the B-side dumps
+carry no oracle target and every bare call classifies as `crossFileBareCall`
+there. `sameFileBareCall` + `crossFileBareCall` as one row is the only honest
+reading of a B/A pair that straddles that commit — decision 1b's own warning,
+met in practice.
+
+**Chain tally, five corpora × five runs per side:**
+`chain drift vs production resolver` **0** on all 50 tally runs, `dispatchDrift`
+**0** on all 50 oracle runs. Tally edges B → A: ugnest 770 → 777, flask 345 →
+349, httpx 491 → 499, netbox 8,642 → 8,695, polar 16,538 → 17,571. The dispatch
+layer is identical on both sides of every corpus (polar single 9 / fan 13
+carrying 26 edges, flask single 1 / fan 1 carrying 8, httpx single 6, netbox and
+ugnest 0 / 0), and each side's five runs agree byte for byte.
+
+**Perf**, chain-tally, interleaved B/A/A/B, min wall and max peak RSS per side,
+`/usr/bin/time -l`, `env -u NODE_OPTIONS` then one explicit
+`--max-old-space-size=1024` on BOTH sides — the login shell exports 8192, and a
+pair measured under two different heaps is not a pair:
+
+| corpus | wall B → A      | Δ       | peak RSS B → A      | Δ       |
+| ------ | --------------- | ------- | ------------------- | ------- |
+| netbox | 19.73s → 22.17s | +12.4 % | 2,170 MB → 1,885 MB | −13.2 % |
+| polar  | 25.15s → 27.14s | +7.9 %  | 2,170 MB → 2,064 MB | −4.9 %  |
+
+Inside the +25 % wall / +20 % RSS budget on both. The samples spread wide under
+a parallel executor (netbox B 19.7–21.4 against A 22.2–25.6; polar B 25.2–27.9
+against A 27.1–29.8), which is why the protocol takes the min of an interleaved
+pair rather than a single reading.
+
+**Ruby parity 0**, both spikes against `--before-root …/tea-rags-mcp`: resolver
+**42,057 sites / 0 mismatches / 0 drift**, walker **500 files / 0 mismatches**.
+Ruby suite 91 files / 1,846 tests green with no test edited.
+`codegraph-chain-tally.ts --lang ruby` still does not exist — the harness note
+E4.6b-1 and E4.6c both recorded.
+
+**Unit gate:** `npm run test:coverage` exit **0** — 894 files, 13,244 passed, 1
+skipped; statements **96.29 %**, branches **89 %**, functions **97.34 %**, lines
+**98.42 %**. No threshold was touched.
+
+**What remains.** Residual 1,194 → 584 across the five corpora on the three
+sampled verdicts. The composition is now `untypedNameReceiver` 280 (E4.1, 235 of
+them polar), bare calls 93, `classObjectReceiver` 83 (E4.4), `untypedFieldHop`
+54 — of which polar's 43 are the `Checkout` / `Meter` model-vs-schema short-name
+collision `resolveTypeFile` refuses to pick between, which is E4.1's problem and
+not a second field mechanism — `callResultChainHead` 23, `superMro` 20,
+`unionBranchReceiver` 14, `transparentWrapper` 11, `containerElementHop` 4,
+`pytestFixture` 1. `moduleAliasMember` and `constructorChainHead` are CLOSED:
+one row between them, on polar.
+
+**One production defect this increment fixed and one it found.** E4.6c threaded
+`classFieldTypesByClassKey` into the runner's `CallContext`, which had reached
+neither construction site since f0xaa — production had been resolving without an
+arm both harnesses built. E4.6-close then asked whether any OTHER channel was in
+the same state, and two were: `functionReturnTypes` and `instantiatedTypes`
+never reached the FILE-EDGE context, an asymmetry inherited from the provider
+the runner was extracted from in `4991d61af`. Both are now threaded through one
+`resolverInputChannels(inputs)` that both sites spread, and
+`tests/core/domains/trajectory/codegraph/symbols/resolution-runner-callcontext-channels.test.ts`
+derives its channel list from `keyof ResolverInputs` so the next one cannot
+hide. Neither newly-threaded channel has a Python reader — `functionReturnTypes`
+is read only by Go and Ruby, and `instantiatedTypes` prunes a CHA cone the
+file-edge context carries no `hierarchy` to build — which is why the A/B above
+is unaffected by the fix: it measures the four tasks, not the threading.

@@ -39,7 +39,7 @@ type AmbiguousFanouts = NonNullable<GraphEdges["ambiguousFanouts"]>;
  * resolved ONCE per file and reused for the file-edge context and every call
  * site's context.
  */
-interface ResolverInputs {
+export interface ResolverInputs {
   ancestors: Record<string, readonly string[]> | undefined;
   prependedAncestors: Record<string, readonly string[]> | undefined;
   includedBy: Record<string, string[]>;
@@ -52,6 +52,49 @@ interface ResolverInputs {
   classFieldTypesByClassKey: CallContext["classFieldTypesByClassKey"];
   classFieldCallResults: CallContext["classFieldCallResults"];
   moduleReexports: CallContext["moduleReexports"];
+}
+
+/**
+ * The run-global slice of a `CallContext`, built ONCE from {@link ResolverInputs}
+ * and spread into BOTH constructions — the file-edge context and every call
+ * site's — so a channel added to `ResolverInputs` reaches both or neither.
+ *
+ * Hand-copying the channels into two literals is what let
+ * `classFieldTypesByClassKey` reach NEITHER between bd tea-rags-mcp-f0xaa and
+ * bd tea-rags-mcp-w205u: the field was added, populated from run state, and
+ * read by nothing in production while both measurement harnesses built it. The
+ * file-edge literal carried a second, older asymmetry for the same reason —
+ * `functionReturnTypes` and `instantiatedTypes` had never been copied into it,
+ * inherited from the pre-`CallEdgeResolutionRunner` provider. One function is
+ * the structural answer to both, and
+ * `tests/.../resolution-runner-callcontext-channels.test.ts` pins it.
+ */
+export function resolverInputChannels(inputs: ResolverInputs): Partial<CallContext> {
+  return {
+    classFieldTypes: inputs.classFieldTypes,
+    classAncestors: inputs.ancestors,
+    classPrependedAncestors: inputs.prependedAncestors,
+    includedBy: inputs.includedBy,
+    classExtends: inputs.classExtends,
+    functionReturnTypes: inputs.returnTypes,
+    // bd tea-rags-mcp-pffv — the instantiation set drives RTA pruning of the CHA
+    // cone. Empty ⇒ the cone keeps its full fan-out (the gate); the file-edge
+    // context also carries no `hierarchy`, so there is no cone there to prune.
+    instantiatedTypes: inputs.instantiatedTypes,
+    // Ruby type-source PRECISE paths (Increment 1, Task 1.5) — these wire the
+    // `ctx.ivarTypes` / `ctx.structuredReturnTypes` reads in `type-propagation.ts`.
+    ivarTypes: inputs.ivarTypes,
+    structuredReturnTypes: inputs.structuredReturnTypes,
+    // bd tea-rags-mcp-f0xaa / w205u E4.6c — the two class-key field channels,
+    // by TYPE and by assigning CALL. Absent ⇒ `pythonInheritedMemberType` stops
+    // exactly where it did before either channel existed.
+    classFieldTypesByClassKey: inputs.classFieldTypesByClassKey,
+    classFieldCallResults: inputs.classFieldCallResults,
+    // bd tea-rags-mcp-xpl83.3 — run-global re-export lists let the import mapper
+    // walk past a package `__init__.py` that re-exports a name or a SUBMODULE
+    // instead of declaring it. Empty ⇒ the mapper stops exactly where it did.
+    moduleReexports: inputs.moduleReexports,
+  };
 }
 
 /**
@@ -306,23 +349,12 @@ export class CallEdgeResolutionRunner {
     inputs: ResolverInputs,
   ): GraphEdges["fileEdges"] {
     const fileEdgeCtx: CallContext = {
+      ...resolverInputChannels(inputs),
       callerFile: extraction.relPath,
       callerScope: extraction.fileScope,
       imports: extraction.imports,
       symbolTable,
-      classFieldTypes: inputs.classFieldTypes,
       associationTypes: extraction.associationTypes,
-      classAncestors: inputs.ancestors,
-      classPrependedAncestors: inputs.prependedAncestors,
-      includedBy: inputs.includedBy,
-      classExtends: inputs.classExtends,
-      ivarTypes: inputs.ivarTypes,
-      structuredReturnTypes: inputs.structuredReturnTypes,
-      moduleReexports: inputs.moduleReexports,
-      // bd tea-rags-mcp-w205u, E4.6c — a field assigned from a CALL, keyed by the
-      // declaring class. Absent ⇒ pythonInheritedMemberType stops where it did.
-      classFieldCallResults: inputs.classFieldCallResults,
-      classFieldTypesByClassKey: inputs.classFieldTypesByClassKey,
       gemfileContent: this.runState.gemfileContent,
       projectRoot: this.runState.projectRoot,
     };
@@ -446,44 +478,23 @@ export class CallEdgeResolutionRunner {
     localBindings: ChunkExtraction["localBindings"],
   ): CallContext {
     return {
+      // Every run-global channel, threaded by construction rather than by hand
+      // (bd tea-rags-mcp-w205u) — see {@link resolverInputChannels}.
+      ...resolverInputChannels(inputs),
       callerFile: extraction.relPath,
       callerScope: chunk.scope,
       callerSymbolId: chunk.symbolId,
       imports: extraction.imports,
       symbolTable,
-      classFieldTypes: inputs.classFieldTypes,
       associationTypes: extraction.associationTypes,
       localBindings,
       localCallBindings: chunk.localCallBindings,
       // bd tea-rags-mcp-z68v9 — per-chunk, never merged run-global: a local's
       // binding is meaningless outside the body that established it.
       callResultBindings: chunk.callResultBindings,
-      functionReturnTypes: inputs.returnTypes,
-      // Ruby type-source PRECISE paths (Increment 1, Task 1.5) — these wire
-      // the previously-dead `ctx.ivarTypes` / `ctx.structuredReturnTypes`
-      // reads in `type-propagation.ts`.
-      ivarTypes: inputs.ivarTypes,
-      structuredReturnTypes: inputs.structuredReturnTypes,
-      // bd tea-rags-mcp-xpl83.3 — run-global re-export lists let the import
-      // mapper walk past a package `__init__.py` that re-exports the name
-      // instead of declaring it. Empty ⇒ the mapper stops exactly where it did.
-      moduleReexports: inputs.moduleReexports,
-      // bd tea-rags-mcp-w205u, E4.6c — a field assigned from a CALL, keyed by the
-      // declaring class. Absent ⇒ pythonInheritedMemberType stops where it did.
-      classFieldCallResults: inputs.classFieldCallResults,
-      // bd tea-rags-mcp-f0xaa — the field TYPE channel under the same address.
-      // `ResolverInputs` has carried it since f0xaa and no `CallContext` literal
-      // copied it in, so production read it as absent while both measurement
-      // harnesses built it: every oracle number since f0xaa was measured with
-      // this arm live. Threading it makes production agree with the instrument.
-      classFieldTypesByClassKey: inputs.classFieldTypesByClassKey,
-      classAncestors: inputs.ancestors,
       compactDeclaredClasses: this.runState.compactClasses,
       gemfileContent: this.runState.gemfileContent,
       projectRoot: this.runState.projectRoot,
-      classPrependedAncestors: inputs.prependedAncestors,
-      includedBy: inputs.includedBy,
-      classExtends: inputs.classExtends,
       // bd tea-rags-mcp-n0zj — run-global dispatch tables + callback
       // params drive the resolver's fan-out / inter-proc join.
       dispatchTables: this.runState.dispatchTables,
@@ -492,9 +503,6 @@ export class CallEdgeResolutionRunner {
       // devirtualization of a polymorphic typed receiver. Built at the
       // pass-1→pass-2 barrier; undefined ⇒ cone resolver no-ops.
       hierarchy: this.runState.hierarchyView,
-      // bd tea-rags-mcp-pffv — run-global instantiation set drives RTA
-      // pruning of the CHA cone. Empty ⇒ cone keeps full fan-out (gate).
-      instantiatedTypes: inputs.instantiatedTypes,
       // bd DEFECT 2 — run-global self-dispatch template map narrows an entry
       // `Const.member` to the concrete `Const#hook`. Empty ⇒ the Ruby entry
       // strategy CONTINUEs (no-op).

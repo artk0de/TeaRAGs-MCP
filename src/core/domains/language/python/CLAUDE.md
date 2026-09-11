@@ -209,11 +209,13 @@
   the short-name map exactly as before — which is what lets a field declared by
   an ANCESTOR's `__init__` type a `self.<attr>` receiver at all. Both field
   collectors share one `self.<field>` reader so the two addresses cannot
-  disagree about a type. **`ResolverInputs` carries `classFieldTypesByClassKey`
-  but no `CallContext` literal in `resolution-runner.ts` copies it in**, so
-  `ctx` reads it as absent and the qualified arm is dead in production — the MRO
-  walk currently answers through the SHORT-name map only. Found while wiring
-  E4.6c; unfixed here because activating it moves an unmeasured mechanism.
+  disagree about a type. The qualified arm was DEAD in production from f0xaa
+  until E4.6c — `ResolverInputs` carried the channel and neither `CallContext`
+  literal copied it in, so the MRO walk answered through the SHORT-name map
+  while both offline harnesses built the qualified one and every oracle number
+  in between was measured with an arm production did not have. Threading it is
+  what makes the two agree; the guard that keeps them agreeing lives in
+  `trajectory/codegraph/CLAUDE.md`.
 - **A field assigned from a CALL is a spelling, not a type.**
   `classFieldCallResults` (`<relPath>::<dottedFq> → field → callee spelling`) is
   what the walker writes when it cannot name a class —
@@ -278,12 +280,13 @@
   segment of slack — that is how a call in `_list_tabs`' body
   (`callerScope: []`) reaches `_list_tabs#url` at all. The slack is blind on its
   own: it admits any container the file declares at that depth, a class body the
-  LEGB walk never enters included. The enclosing arm runs ahead of the
-  module-level one, so it spends the slack only when the extra segment equals
-  the last segment of `callerSymbolId`. Frames at or below `callerScope`'s own
-  depth need no witness. The trailing cross-file guess keeps the blind form — it
-  sits behind the cardinality guard, where E4.0.5 measured the over-admission at
-  zero cost.
+  LEGB walk never enters included. The enclosing arm therefore spends the slack
+  only when the extra segment equals the last segment of `callerSymbolId`, and a
+  `@property` whose body calls the builtin of its own name — netbox's
+  `ASNRange#range` — is what a prefix-only test costs. Frames at or below
+  `callerScope`'s own depth need no witness. The trailing cross-file guess keeps
+  the blind form — it sits behind the cardinality guard, where E4.0.5 measured
+  the over-admission at zero cost.
 - **`importMatch` is GONE — its residual did not earn the slot** (bd
   tea-rags-mcp-rw1qk). The trailing-segment heuristic survived the
   `importedName` demotion holding only the receivers nothing bound, and the
