@@ -15,6 +15,13 @@
  * rewrote, and re-writes exactly the rest — payload only. No extraction, no
  * embeddings, no chunk-set change.
  *
+ * **It reads the WHOLE collection once and filters in memory, rather than
+ * scrolling per file.** A per-file `match.value` on `relativePath` measured
+ * 677–1002 ms EACH against the live self-index, because the payload index on
+ * that key is `text` and a text index does not serve `match.value` — so every
+ * file was a full collection scan, and the first heal took 19 m 16 s for 1,032
+ * files. One unfiltered pass over the same 22,415 points costs ~400 ms total.
+ *
  * Two invariants it shares with the applier, both load-bearing:
  *
  * - **Writes are scoped by `op.key`, with BARE inner keys.** `set_payload` with
@@ -42,42 +49,38 @@ import { pipelineLog } from "../infra/debug-logger.js";
 import { batchSetPayloadWithRetry, type BatchPayloadOp } from "./batch-write.js";
 
 /**
- * One file's points per scroll. A file with more chunks than this is a chunker
- * defect, not a heal concern — the cap exists so a pathological payload cannot
- * turn one file into an unbounded pagination loop inside the serial tail.
+ * Payload keys the pass reads, and nothing else: the file identity it filters
+ * on, the symbol identity, and the two decline stamps. `content` above all must
+ * stay out — materializing it for every point of the collection is hundreds of
+ * MB for a read that wants four scalars.
  *
- * Reaching it exactly is treated as an ERROR, not as a full read. `scrollFiltered`
- * stops at `limit` with no signal that more matched, so a silent truncation would
- * heal part of the file, let the run advance the baseline, and erase that file's
- * drift permanently — the next run compares against a baseline that already says
- * "healed". Throwing skips the refresh (the runner only refreshes after `heal`
- * resolves) and leaves the diff standing for the next run to retry.
+ * The stamps are addressed as NESTED paths rather than by pulling the whole
+ * `codegraph` subtree: `with_payload.include` takes dotted key paths, and the
+ * subtree also carries the file and chunk signal blocks, which this pass
+ * OVERWRITES without ever reading. Built from the injected `providerKey`, so
+ * the keys the pass reads can never name a different subtree than the keys it
+ * writes.
  */
-const HEAL_SCROLL_CAP = 10_000;
+function healPayloadInclude(providerKey: string): string[] {
+  return ["relativePath", "symbolId", `${providerKey}.file.skippedAs`, `${providerKey}.chunk.skippedAs`];
+}
 
 /**
- * Files healed concurrently. The heal is per-file (one scroll + one write each)
- * and runs in the completion tail, where cost is wall-clock one-for-one; the
- * first run after migration 023 names EVERY file, so a strictly serial loop
- * would add one round-trip's latency per file of the corpus. Same bounded
- * cursor-over-workers shape as the applier's finalize writes, and bounded for
- * the same reason: this shares a Qdrant with the rest of the tail, and an
- * unbounded fan-out only moves the queue.
+ * Pages between progress lines. The pass is one long traversal with no
+ * per-file boundary to log at, and the first live heal printed NOTHING for 19
+ * minutes — indistinguishable from a hang. Ten pages is ~10k points, often
+ * enough to see movement on a small index and rare enough to stay quiet on a
+ * large one.
  */
-const HEAL_FILE_CONCURRENCY = 8;
-
-/** Payload keys the scroll needs: the symbol identity and the existing decline stamps. */
-const HEAL_PAYLOAD_INCLUDE = ["symbolId", "codegraph"];
+const HEAL_PROGRESS_EVERY_PAGES = 10;
 
 export interface CodegraphPayloadHealerDeps {
   qdrant: {
-    scrollFiltered: (
+    scrollPayloadPages: (
       collectionName: string,
-      filter: Record<string, unknown>,
-      limit: number,
+      payloadInclude: string[],
       pageSize?: number,
-      payloadInclude?: string[],
-    ) => Promise<{ id: string | number; payload: Record<string, unknown> }[]>;
+    ) => AsyncGenerator<{ id: string | number; payload: Record<string, unknown> }[]>;
     batchSetPayload: (collectionName: string, operations: BatchPayloadOp[]) => Promise<void>;
   };
   /**
@@ -95,7 +98,7 @@ export interface CodegraphPayloadHealerDeps {
 export interface CodegraphPayloadHealOutcome {
   /** DISTINCT points that took at least one level's write. */
   pointsRewritten: number;
-  /** Files the heal scrolled (the diff's files, minus the ones this run rewrote). */
+  /** Files the heal targeted (the diff's files, minus the ones this run rewrote). */
   filesTouched: number;
 }
 
@@ -113,8 +116,21 @@ export interface CodegraphPayloadHealRunner {
   ) => Promise<CodegraphPayloadHealOutcome>;
 }
 
+/** Points of one page grouped by what they are about to be written with. */
+interface HealPageGroups {
+  /** relPath -> ids taking the file level. */
+  file: Map<string, (string | number)[]>;
+  /** relPath -> symbolId -> ids taking the chunk level. */
+  chunk: Map<string, Map<string, (string | number)[]>>;
+}
+
 export class CodegraphPayloadHealer {
-  constructor(private readonly deps: CodegraphPayloadHealerDeps) {}
+  /** The pass's payload projection, built once off `providerKey`. */
+  private readonly payloadInclude: string[];
+
+  constructor(private readonly deps: CodegraphPayloadHealerDeps) {
+    this.payloadInclude = healPayloadInclude(deps.providerKey);
+  }
 
   async heal(
     collectionName: string,
@@ -139,94 +155,103 @@ export class CodegraphPayloadHealer {
       if (!skipRelPaths.has(relPath)) fileTargets.add(relPath);
     }
 
-    const relPaths = [...new Set([...chunkTargets.keys(), ...fileTargets])];
-    if (relPaths.length === 0) return { pointsRewritten: 0, filesTouched: 0 };
-
-    let pointsRewritten = 0;
-    let cursor = 0;
-    await Promise.all(
-      Array.from({ length: Math.min(HEAL_FILE_CONCURRENCY, relPaths.length) }, async () => {
-        for (let i = cursor++; i < relPaths.length; i = cursor++) {
-          const relPath = relPaths[i];
-          const healed = await this.healFile(
-            collectionName,
-            relPath,
-            chunkTargets.get(relPath),
-            fileTargets.has(relPath),
-            enrichedAt,
-          );
-          // Accumulate AFTER the await, never as `x += await f()`: that form
-          // reads `x` before suspending, so with several workers in flight each
-          // one adds to the value it saw on entry and the others' counts vanish.
-          pointsRewritten += healed;
-        }
-      }),
-    );
-
-    return { pointsRewritten, filesTouched: relPaths.length };
-  }
-
-  /** One file: scroll its points, assemble the level ops, write them. Returns distinct points touched. */
-  private async healFile(
-    collectionName: string,
-    relPath: string,
-    changedSymbols: ReadonlySet<string> | undefined,
-    healFileLevel: boolean,
-    enrichedAt?: string,
-  ): Promise<number> {
-    const points = await this.deps.qdrant.scrollFiltered(
-      collectionName,
-      { must: [{ key: "relativePath", match: { value: relPath } }] },
-      HEAL_SCROLL_CAP,
-      undefined,
-      HEAL_PAYLOAD_INCLUDE,
-    );
-    if (points.length === 0) return 0;
-    if (points.length >= HEAL_SCROLL_CAP) {
-      // Its own phase name, because the enclosing `CODEGRAPH_PAYLOAD_HEAL_FAILED`
-      // says only that the heal stopped — this one names the file to look at and
-      // is the only place the number appears.
-      pipelineLog.enrichmentPhase("CODEGRAPH_PAYLOAD_HEAL_SCROLL_CAPPED", {
-        collection: collectionName,
-        relPath,
-        cap: HEAL_SCROLL_CAP,
-      });
-      throw new Error(
-        `codegraph payload heal: "${relPath}" returned ${points.length} points, the scroll cap — ` +
-          "the rest of the file cannot be read, so healing it partially would advance the baseline " +
-          "over drift that was never written. Nothing was healed for this run; the diff stands.",
-      );
-    }
+    const filesTouched = new Set([...chunkTargets.keys(), ...fileTargets]).size;
+    // The pass is the expensive part of the heal, and on a large collection the
+    // only expensive part. Nothing to write means nothing to read.
+    if (filesTouched === 0) return { pointsRewritten: 0, filesTouched: 0 };
 
     const touched = new Set<string | number>();
-    const operations: BatchPayloadOp[] = [];
+    let pagesScanned = 0;
+    let pointsScanned = 0;
+    let pointsMatched = 0;
 
-    // FILE level: one payload for every point of the file, so one operation —
-    // the same coalescing `applyFinalizeFile` does, for the same reason.
-    if (healFileLevel) {
-      const file = await this.deps.buildFileSignals(relPath);
-      if (file) {
-        const targets = points.filter((p) => !isDeclined(p.payload, this.deps.providerKey, "file")).map((p) => p.id);
-        if (targets.length > 0) {
-          operations.push({ payload: stamp(file, enrichedAt), points: targets, key: `${this.deps.providerKey}.file` });
-          for (const id of targets) touched.add(id);
-        }
+    for await (const page of this.deps.qdrant.scrollPayloadPages(collectionName, this.payloadInclude)) {
+      pagesScanned++;
+      pointsScanned += page.length;
+
+      const groups = this.groupPage(page, chunkTargets, fileTargets);
+      pointsMatched += countGrouped(groups);
+      // Per page, not per pass: the groups are dropped once written, so what
+      // survives the loop is the id set alone — memory scales with the TARGET
+      // set, never with the collection.
+      await this.flush(collectionName, groups, touched, pagesScanned, enrichedAt);
+
+      if (pagesScanned % HEAL_PROGRESS_EVERY_PAGES === 0) {
+        pipelineLog.enrichmentPhase("CODEGRAPH_PAYLOAD_HEAL_PROGRESS", {
+          collection: collectionName,
+          pagesScanned,
+          pointsScanned,
+          pointsMatched,
+          pointsWritten: touched.size,
+        });
       }
     }
 
-    // CHUNK level: grouped by symbol, because a symbol's payload is the same for
-    // every chunk it covers (an oversized method split into `#partN` chunks, a
-    // class chunk merged from several) but differs between symbols.
-    if (changedSymbols && changedSymbols.size > 0) {
-      const bySymbol = new Map<string, (string | number)[]>();
-      for (const p of points) {
-        const symbolId = typeof p.payload.symbolId === "string" ? p.payload.symbolId : null;
-        if (!symbolId || !changedSymbols.has(symbolId)) continue;
-        if (isDeclined(p.payload, this.deps.providerKey, "chunk")) continue;
-        const ids = bySymbol.get(symbolId) ?? [];
-        ids.push(p.id);
-        bySymbol.set(symbolId, ids);
+    return { pointsRewritten: touched.size, filesTouched };
+  }
+
+  /** One page: keep the points the target set names, grouped by the payload they will take. */
+  private groupPage(
+    page: { id: string | number; payload: Record<string, unknown> }[],
+    chunkTargets: ReadonlyMap<string, Set<string>>,
+    fileTargets: ReadonlySet<string>,
+  ): HealPageGroups {
+    const groups: HealPageGroups = { file: new Map(), chunk: new Map() };
+
+    for (const { id, payload } of page) {
+      const relPath = typeof payload.relativePath === "string" ? payload.relativePath : null;
+      if (relPath === null) continue;
+      const changedSymbols = chunkTargets.get(relPath);
+      const wantsFile = fileTargets.has(relPath);
+      // The overwhelming majority of a full pass: points of files nothing in
+      // the graph moved. Rejected before either decline walk.
+      if (!wantsFile && changedSymbols === undefined) continue;
+
+      // FILE level: one payload for every point of the file, so one operation
+      // per page — the same coalescing `applyFinalizeFile` does, for the same
+      // reason. A file whose points span pages simply yields one op per page.
+      if (wantsFile && !isDeclined(payload, this.deps.providerKey, "file")) {
+        appendTo(groups.file, relPath, id);
       }
+
+      // CHUNK level: grouped by symbol, because a symbol's payload is the same
+      // for every chunk it covers (an oversized method split into `#partN`
+      // chunks, a class chunk merged from several) but differs between symbols.
+      if (changedSymbols === undefined) continue;
+      const symbolId = typeof payload.symbolId === "string" ? payload.symbolId : null;
+      if (symbolId === null || !changedSymbols.has(symbolId)) continue;
+      if (isDeclined(payload, this.deps.providerKey, "chunk")) continue;
+      let bySymbol = groups.chunk.get(relPath);
+      if (!bySymbol) {
+        bySymbol = new Map<string, (string | number)[]>();
+        groups.chunk.set(relPath, bySymbol);
+      }
+      appendTo(bySymbol, symbolId, id);
+    }
+
+    return groups;
+  }
+
+  /** Turn one page's groups into level-scoped operations and write them. */
+  private async flush(
+    collectionName: string,
+    groups: HealPageGroups,
+    touched: Set<string | number>,
+    pagesScanned: number,
+    enrichedAt?: string,
+  ): Promise<void> {
+    const operations: BatchPayloadOp[] = [];
+
+    for (const [relPath, ids] of groups.file) {
+      // Both builders are memoised bulk reads, so a file seen on several pages
+      // costs a map lookup per page, not a graph round-trip.
+      const file = await this.deps.buildFileSignals(relPath);
+      if (!file) continue;
+      operations.push({ payload: stamp(file, enrichedAt), points: ids, key: `${this.deps.providerKey}.file` });
+      for (const id of ids) touched.add(id);
+    }
+
+    for (const [relPath, bySymbol] of groups.chunk) {
       for (const [symbolId, ids] of bySymbol) {
         const chunk = await this.deps.buildChunkSignals(relPath, symbolId);
         if (!chunk) continue;
@@ -235,21 +260,56 @@ export class CodegraphPayloadHealer {
       }
     }
 
-    if (operations.length === 0) return 0;
+    if (operations.length === 0) return;
     // Retried, for the reason `batch-write.ts` was written: a single transient
     // Qdrant blip mid-run used to drop a whole batch of signals silently. A
     // budget that is genuinely exhausted is a different thing and must NOT be
     // swallowed — the baseline advances only if `heal` resolves, so returning
     // quietly here would record "healed" over points that were never written.
+    // Throwing abandons the PASS, not just the page, for the same reason.
     const ok = await batchSetPayloadWithRetry(this.deps.qdrant, collectionName, operations);
     if (!ok) {
       throw new Error(
-        `codegraph payload heal: payload write for "${relPath}" failed after every retry. ` +
-          "Nothing is recorded as healed; the diff stands for the next run.",
+        `codegraph payload heal: the payload write for page ${pagesScanned} failed after every retry, ` +
+          `covering ${describeGroups(groups)}. Writes from earlier pages DID land — they are idempotent ` +
+          "and re-running them costs nothing — but the baseline is not advanced, so the whole diff " +
+          "stands for the next run.",
       );
     }
-    return touched.size;
   }
+}
+
+/** Append `value` to the list at `key`, creating it on first use. */
+function appendTo<K, V>(map: Map<K, V[]>, key: K, value: V): void {
+  const existing = map.get(key);
+  if (existing) existing.push(value);
+  else map.set(key, [value]);
+}
+
+/** Files named in a failed page's error before the list is elided. */
+const FILES_NAMED_IN_ERROR = 5;
+
+/**
+ * The files a failed page was writing. Bounded on purpose: one page can group
+ * hundreds of files, and an exception message is not the place to print them
+ * all — the point is to give the reader somewhere to start looking.
+ */
+function describeGroups(groups: HealPageGroups): string {
+  const paths = [...new Set([...groups.file.keys(), ...groups.chunk.keys()])];
+  if (paths.length === 0) return "no files";
+  const shown = paths.slice(0, FILES_NAMED_IN_ERROR);
+  const rest = paths.length - shown.length;
+  return rest > 0 ? `${shown.join(", ")} and ${rest} more` : shown.join(", ");
+}
+
+/** Points a page contributed at either level, counted once per level's group. */
+function countGrouped(groups: HealPageGroups): number {
+  const ids = new Set<string | number>();
+  for (const list of groups.file.values()) for (const id of list) ids.add(id);
+  for (const bySymbol of groups.chunk.values()) {
+    for (const list of bySymbol.values()) for (const id of list) ids.add(id);
+  }
+  return ids.size;
 }
 
 /**
@@ -264,7 +324,7 @@ function stamp(signals: Record<string, unknown>, enrichedAt?: string): Record<st
 }
 
 /**
- * Did the provider's policy already decline this point at this level? The scroll
+ * Did the provider's policy already decline this point at this level? The pass
  * asks for the `codegraph` subtree precisely so this can be answered without a
  * second read.
  */

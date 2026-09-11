@@ -35,13 +35,11 @@ const ZERO_FILE_METRICS = { fanIn: 0, fanOut: 0, transitiveImpact: 0 };
 
 export interface CodegraphPayloadHealRunnerDeps {
   qdrant: {
-    scrollFiltered: (
+    scrollPayloadPages: (
       collectionName: string,
-      filter: Record<string, unknown>,
-      limit: number,
+      payloadInclude: string[],
       pageSize?: number,
-      payloadInclude?: string[],
-    ) => Promise<{ id: string | number; payload: Record<string, unknown> }[]>;
+    ) => AsyncGenerator<{ id: string | number; payload: Record<string, unknown> }[]>;
     batchSetPayload: (
       collectionName: string,
       operations: { payload: Record<string, unknown>; points: (string | number)[]; key?: string }[],
