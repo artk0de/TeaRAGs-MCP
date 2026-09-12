@@ -4,6 +4,7 @@ import { join } from "node:path";
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+import type { CollectionEntry, RegistryFileV1 } from "../../../../../src/core/contracts/types/registry.js";
 import {
   RegistryConcurrencyError,
   RegistryFileCorruptedError,
@@ -16,7 +17,6 @@ import {
   mergeRegistryEntries,
   saveRegistryFile,
 } from "../../../../../src/core/domains/maintenance/registry/registry-file.js";
-import type { CollectionEntry, RegistryFileV1 } from "../../../../../src/core/contracts/types/registry.js";
 
 describe("registry-file", () => {
   let dir: string;
@@ -220,5 +220,112 @@ describe("flushWithCAS retry loop (audit #1)", () => {
     } finally {
       spy.mockRestore();
     }
+  });
+});
+
+describe("mergeRegistryDelta — three-way merge against the base snapshot", () => {
+  const lastRun = { at: "2026-09-12T12:00:49.000Z", outcome: "ok" as const, durationMs: 900, filesChanged: 3 };
+  const gitState = { indexedBranch: "main", indexedCommit: "deadbeef", indexedDirty: false };
+
+  it("applies only the field changed since load and keeps the rest from disk", () => {
+    // The auto-update case: the CLI instance loaded at T1, the pipeline stamped
+    // a fresh indexedAt / git / chunksCount through its own instance, and the
+    // updater then writes lastRun off its stale cache.
+    const base = entry({ collectionName: "code_a", indexedAt: "T1", chunksCount: 10 });
+    const disk: RegistryFileV1 = {
+      version: 1,
+      collections: {
+        code_a: entry({ collectionName: "code_a", indexedAt: "T2", chunksCount: 42, git: gitState }),
+      },
+    };
+    const delta = new Map([["code_a", { ...base, autoUpdate: { enabled: true, targetBranch: "main", lastRun } }]]);
+
+    const merged = mergeRegistryDelta(disk, delta, undefined, new Map([["code_a", base]]));
+
+    expect(merged.collections.code_a.indexedAt).toBe("T2");
+    expect(merged.collections.code_a.chunksCount).toBe(42);
+    expect(merged.collections.code_a.git).toEqual(gitState);
+    expect(merged.collections.code_a.autoUpdate?.lastRun).toEqual(lastRun);
+  });
+
+  it("lets a multi-field change win while an untouched field still comes from disk", () => {
+    // The mirror case: a pipeline record() carries the fresh stamp, and the
+    // autoUpdate block another process set since load survives it.
+    const base = entry({ collectionName: "code_a", indexedAt: "T1", chunksCount: 10 });
+    const disk: RegistryFileV1 = {
+      version: 1,
+      collections: {
+        code_a: entry({
+          collectionName: "code_a",
+          indexedAt: "T1",
+          chunksCount: 10,
+          autoUpdate: { enabled: true, targetBranch: "main" },
+        }),
+      },
+    };
+    const delta = new Map([
+      ["code_a", entry({ collectionName: "code_a", indexedAt: "T2", chunksCount: 42, git: gitState })],
+    ]);
+
+    const merged = mergeRegistryDelta(disk, delta, undefined, new Map([["code_a", base]]));
+
+    expect(merged.collections.code_a.indexedAt).toBe("T2");
+    expect(merged.collections.code_a.chunksCount).toBe(42);
+    expect(merged.collections.code_a.git).toEqual(gitState);
+    expect(merged.collections.code_a.autoUpdate).toEqual({ enabled: true, targetBranch: "main" });
+  });
+
+  it("deletes a field present in base and dropped in memory", () => {
+    const base = entry({ collectionName: "code_a", autoUpdate: { enabled: true, targetBranch: "main" } });
+    const disk: RegistryFileV1 = { version: 1, collections: { code_a: { ...base } } };
+    const { autoUpdate: _dropped, ...withoutAutoUpdate } = base;
+    const delta = new Map([["code_a", withoutAutoUpdate as CollectionEntry]]);
+
+    const merged = mergeRegistryDelta(disk, delta, undefined, new Map([["code_a", base]]));
+
+    expect("autoUpdate" in merged.collections.code_a).toBe(false);
+  });
+
+  it("does not resurrect an entry unchanged since load that another process removed", () => {
+    const base = entry({ collectionName: "code_a" });
+    const disk: RegistryFileV1 = { version: 1, collections: {} };
+    const delta = new Map([["code_a", entry({ collectionName: "code_a" })]]);
+
+    const merged = mergeRegistryDelta(disk, delta, undefined, new Map([["code_a", base]]));
+
+    expect(merged.collections.code_a).toBeUndefined();
+  });
+
+  it("re-writes an entry another process removed when this process changed it", () => {
+    const base = entry({ collectionName: "code_a", chunksCount: 10 });
+    const disk: RegistryFileV1 = { version: 1, collections: {} };
+    const delta = new Map([["code_a", entry({ collectionName: "code_a", chunksCount: 99 })]]);
+
+    const merged = mergeRegistryDelta(disk, delta, undefined, new Map([["code_a", base]]));
+
+    expect(merged.collections.code_a.chunksCount).toBe(99);
+  });
+
+  it("inserts an entry with no base whole, keeping the sticky name rule", () => {
+    const disk: RegistryFileV1 = {
+      version: 1,
+      collections: { code_a: entry({ collectionName: "code_a", name: "disk-name", chunksCount: 5 }) },
+    };
+    const delta = new Map([["code_a", entry({ collectionName: "code_a", name: null, chunksCount: 99 })]]);
+
+    const merged = mergeRegistryDelta(disk, delta, undefined, new Map<string, CollectionEntry>());
+
+    expect(merged.collections.code_a.chunksCount).toBe(99);
+    expect(merged.collections.code_a.name).toBe("disk-name");
+  });
+
+  it("still drops tombstoned keys when a base snapshot is supplied", () => {
+    const base = entry({ collectionName: "code_a" });
+    const disk: RegistryFileV1 = { version: 1, collections: { code_a: { ...base } } };
+    const delta = new Map<string, CollectionEntry>();
+
+    const merged = mergeRegistryDelta(disk, delta, new Set(["code_a"]), new Map([["code_a", base]]));
+
+    expect(merged.collections.code_a).toBeUndefined();
   });
 });

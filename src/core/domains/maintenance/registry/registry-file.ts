@@ -1,12 +1,9 @@
 import fs, { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
+import { isDeepStrictEqual } from "node:util";
 
-import {
-  RegistryConcurrencyError,
-  RegistryFileCorruptedError,
-  RegistryWriteError,
-} from "./errors.js";
 import type { CollectionEntry, RegistryFileV1 } from "../../../contracts/types/registry.js";
+import { RegistryConcurrencyError, RegistryFileCorruptedError, RegistryWriteError } from "./errors.js";
 
 const FILE_NAME = "registry.json";
 const CURRENT_VERSION = 1 as const;
@@ -102,9 +99,45 @@ export function mergeRegistryEntries(disk: CollectionEntry, mem: CollectionEntry
 }
 
 /**
+ * Three-way merge of one entry at top-level-field granularity: start from the
+ * DISK entry and take only the fields whose in-memory value differs from the
+ * entry as this process loaded it. A field present at load and dropped in
+ * memory is dropped from the result.
+ *
+ * Every other field keeps whatever is on disk, so a value another process wrote
+ * since we loaded survives our flush instead of being rolled back by our stale
+ * cache.
+ */
+function mergeChangedFields(
+  disk: CollectionEntry,
+  mem: CollectionEntry,
+  loadedEntry: CollectionEntry,
+): CollectionEntry {
+  const out: Record<string, unknown> = { ...disk };
+  const memFields = mem as unknown as Record<string, unknown>;
+  const loadedFields = loadedEntry as unknown as Record<string, unknown>;
+  for (const key of new Set([...Object.keys(memFields), ...Object.keys(loadedFields)])) {
+    if (isDeepStrictEqual(memFields[key], loadedFields[key])) continue;
+    if (Object.hasOwn(memFields, key)) {
+      out[key] = memFields[key];
+    } else {
+      delete out[key];
+    }
+  }
+  return out as unknown as CollectionEntry;
+}
+
+/**
  * Merge an in-memory delta (Map<collectionName, CollectionEntry>) into the
  * on-disk RegistryFileV1. Disk-only entries are preserved; delta-only
- * entries are inserted; overlapping entries go through mergeRegistryEntries.
+ * entries are inserted.
+ *
+ * Optional `loadedSnapshot` is the entries as they were when this process
+ * loaded the file. With it, an overlapping entry is merged field by field
+ * (`mergeChangedFields`) — only what changed since load wins — and an entry
+ * unchanged since load that another process deleted is NOT resurrected.
+ * Without a snapshot entry the process either created the entry or wrote it
+ * whole, so in-memory wins outright through mergeRegistryEntries.
  *
  * Optional `tombstones` carry intentional removes: any collection name in
  * the set is dropped from the merged result even if it is still on disk.
@@ -113,14 +146,22 @@ export function mergeRegistryDelta(
   disk: RegistryFileV1 | null,
   delta: Map<string, CollectionEntry>,
   tombstones?: ReadonlySet<string>,
+  loadedSnapshot?: ReadonlyMap<string, CollectionEntry>,
 ): RegistryFileV1 {
   const out: Record<string, CollectionEntry> = {};
   if (disk) {
     for (const [k, v] of Object.entries(disk.collections)) out[k] = v;
   }
-  for (const [k, v] of delta.entries()) {
+  for (const [k, mem] of delta.entries()) {
+    const loadedEntry = loadedSnapshot?.get(k);
     const onDisk = out[k];
-    out[k] = onDisk ? mergeRegistryEntries(onDisk, v) : v;
+    if (loadedEntry === undefined) {
+      out[k] = onDisk ? mergeRegistryEntries(onDisk, mem) : mem;
+    } else if (onDisk !== undefined) {
+      out[k] = mergeChangedFields(onDisk, mem, loadedEntry);
+    } else if (!isDeepStrictEqual(mem, loadedEntry)) {
+      out[k] = mem;
+    }
   }
   if (tombstones) {
     for (const k of tombstones) delete out[k];
@@ -157,6 +198,10 @@ function statOrNull(path: string): { ino: number; mtimeMs: number } | null {
  * Optional `tombstones` carry intentional remove() requests so the merge
  * can drop those keys instead of resurrecting them from disk.
  *
+ * Optional `loadedSnapshot` is the caller's copy of the entries at load time;
+ * it turns the per-entry merge into a three-way one (see mergeRegistryDelta).
+ * Returns the file that was written, so the caller can refresh that snapshot.
+ *
  * @throws RegistryConcurrencyError when the retry budget is exhausted
  *   because the on-disk file keeps changing between our stat-before and
  *   stat-after.
@@ -165,19 +210,20 @@ export function flushWithCAS(
   dataDir: string,
   delta: Map<string, CollectionEntry>,
   tombstones?: ReadonlySet<string>,
-): void {
+  loadedSnapshot?: ReadonlyMap<string, CollectionEntry>,
+): RegistryFileV1 {
   const path = filePath(dataDir);
   for (let attempt = 0; attempt < CAS_MAX_ATTEMPTS; attempt++) {
     const before = statOrNull(path);
     const disk = loadRegistryFile(dataDir);
-    const merged = mergeRegistryDelta(disk, delta, tombstones);
+    const merged = mergeRegistryDelta(disk, delta, tombstones, loadedSnapshot);
     const after = statOrNull(path);
     const stable =
       (before === null && after === null) ||
       (before !== null && after !== null && before.ino === after.ino && before.mtimeMs === after.mtimeMs);
     if (stable) {
       saveRegistryFile(dataDir, merged);
-      return;
+      return merged;
     }
     if (attempt < CAS_MAX_ATTEMPTS - 1) {
       sleepSync(CAS_BACKOFF_MS_BASE * 2 ** attempt);
