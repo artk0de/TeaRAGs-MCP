@@ -318,6 +318,13 @@ export class IngestFacade {
       codegraphRemover,
       codegraphLister,
       envSnapshot: deps.envSnapshot,
+      // The same rule IndexingOps resolves by, handed down so the collection a
+      // run WRITES is the one every reader resolves for that path. Built here
+      // because this is where the full registry is in scope; without one the
+      // pipeline falls back to the path hash (bd tea-rags-mcp-dxa9w).
+      ...(deps.collectionRegistry
+        ? { resolveCollectionForPath: createPathCollectionResolver(deps.collectionRegistry) }
+        : {}),
     };
     const indexing = new IndexPipeline(
       qdrant,

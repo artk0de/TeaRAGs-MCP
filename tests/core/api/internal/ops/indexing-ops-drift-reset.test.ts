@@ -216,9 +216,10 @@ describe("IndexingOps — drift consumption reset", () => {
    * therefore the drift reader — resolves. The stamp goes into that same
    * registry entry, so both must address it rather than the path hash.
    *
-   * Only the runs that operate on an EXISTING collection resolve this way; the
-   * full-index path below keeps the hash, because that run is what registers a
-   * collection for the path in the first place.
+   * EVERY run path resolves this way, the full index included
+   * (bd tea-rags-mcp-dxa9w): the pipeline resolves the path the same way, so
+   * the collection a full run creates and registers IS the resolved one, and
+   * stamping the hash would claim an entry the run never wrote.
    */
   describe("relocated project", () => {
     const RELOCATED = "code_relocated";
@@ -256,7 +257,11 @@ describe("IndexingOps — drift consumption reset", () => {
       expect(resetsOf(run.calls)).toEqual([RELOCATED]);
     });
 
-    it("keeps the path hash on a full index, which is what registers the collection", async () => {
+    it("stamps and re-arms the registry's collection on a full index too", async () => {
+      // The path hash here would name a collection this run never touched: the
+      // pipeline writes into whatever the SAME resolver returns, so on a
+      // relocated project the full index rebuilds the registered collection and
+      // the stamp has to follow it (bd tea-rags-mcp-dxa9w).
       const run = makeRun();
       const deps = makeDeps({
         driftReporter: run.driftReporter,
@@ -271,7 +276,7 @@ describe("IndexingOps — drift consumption reset", () => {
 
       await new IndexingOps(deps).run(process.cwd());
 
-      expect(run.calls).toEqual([`stamp:${collection}`, `reset:${collection}`]);
+      expect(run.calls).toEqual([`stamp:${RELOCATED}`, `reset:${RELOCATED}`]);
     });
   });
 

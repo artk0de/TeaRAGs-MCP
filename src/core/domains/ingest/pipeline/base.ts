@@ -15,7 +15,7 @@ import type { EmbeddingProvider } from "../../../adapters/embeddings/base.js";
 import type { QdrantManager } from "../../../adapters/qdrant/client.js";
 import { EMBEDDED_MARKER } from "../../../adapters/qdrant/embedded/daemon.js";
 import type { CollectionRegistryPort, RegistryGitState } from "../../../contracts/types/registry.js";
-import { resolveCollectionName, validatePath } from "../../../infra/collection-name.js";
+import { hashCollectionForPath, validatePath } from "../../../infra/collection-name.js";
 import { TeaRagsError } from "../../../infra/errors.js";
 import { readRepoGitState, readWorkingTreeDirty } from "../../../infra/repo-git-state.js";
 import type { ChunkLookupEntry, EnrichmentMetrics, IngestCodeConfig } from "../../../types.js";
@@ -89,6 +89,20 @@ export interface PipelineRegistryDeps {
    * (non-bootstrap) constructions — then no env snapshot is recorded.
    */
   envSnapshot?: Record<string, string>;
+  /**
+   * How a path becomes the collection this run writes into — the project
+   * registry's entry when one claims the path, the path hash otherwise
+   * (`createPathCollectionResolver`, bd tea-rags-mcp-dxa9w). Injected as a
+   * function because the rule consults the registry and this domain may not
+   * reach the api layer.
+   *
+   * Deriving the hash here is what made an alias-addressed run on a RELOCATED
+   * project mint a brand-new `code_<hash(newPath)>` beside the registered
+   * collection and register an orphan entry for it, while every reader kept
+   * resolving the old name. Defaults to the hash, which is what an
+   * unregistered path resolves to either way.
+   */
+  resolveCollectionForPath?: (path: string) => Promise<string>;
 }
 
 export abstract class BaseIndexingPipeline {
@@ -98,6 +112,7 @@ export abstract class BaseIndexingPipeline {
   protected readonly codegraphRemover: CodegraphDbRemover | undefined;
   protected readonly codegraphLister: CodegraphDbLister | undefined;
   protected readonly envSnapshot: Record<string, string> | undefined;
+  protected readonly resolveCollectionForPath: (path: string) => Promise<string>;
   private heartbeatTimer: ReturnType<typeof setInterval> | undefined;
 
   constructor(
@@ -115,6 +130,7 @@ export abstract class BaseIndexingPipeline {
     this.codegraphRemover = registryDeps?.codegraphRemover;
     this.codegraphLister = registryDeps?.codegraphLister;
     this.envSnapshot = registryDeps?.envSnapshot;
+    this.resolveCollectionForPath = registryDeps?.resolveCollectionForPath ?? hashCollectionForPath;
   }
 
   /**
@@ -156,12 +172,18 @@ export abstract class BaseIndexingPipeline {
     return this.deps.snapshotDir;
   }
 
+  /**
+   * The run's two coordinates: where the files are, and which collection they
+   * belong to. The second one is NOT derivable from the first — a project that
+   * moved keeps the collection its registry entry recorded — so it comes from
+   * the injected rule, never from the path hash (bd tea-rags-mcp-dxa9w).
+   */
   protected async resolveContext(path: string): Promise<{
     absolutePath: string;
     collectionName: string;
   }> {
     const absolutePath = await validatePath(path);
-    const collectionName = resolveCollectionName(absolutePath);
+    const collectionName = await this.resolveCollectionForPath(absolutePath);
     return { absolutePath, collectionName };
   }
 

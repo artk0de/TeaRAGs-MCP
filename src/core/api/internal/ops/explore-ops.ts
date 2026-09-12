@@ -48,7 +48,7 @@ import { formatIndexDriftReport, type IndexDriftReporter } from "../../../domain
 import type { CollectionRegistry } from "../../../domains/maintenance/registry/index.js";
 import { compileFilterPreset } from "../../../domains/trajectory/filter-presets/compiler.js";
 import type { TrajectoryRegistry } from "../../../domains/trajectory/index.js";
-import { resolveCollectionName, validatePath } from "../../../infra/collection-name.js";
+import { validatePath } from "../../../infra/collection-name.js";
 import type { StatsCache } from "../../../infra/stats-cache.js";
 import {
   stripInternalFields,
@@ -229,8 +229,12 @@ export class ExploreOps {
 
   async getIndexMetrics(path: string): Promise<IndexMetrics> {
     if (!this.indexMetricsQuery) throw new NotIndexedError(path);
+    // Same rule the search legs above resolve by: a project that moved keeps
+    // the collection its registry entry recorded, so the metrics a reader asks
+    // for by path are the metrics of the index they are searching
+    // (bd tea-rags-mcp-dxa9w).
     const absolutePath = await validatePath(path);
-    const collectionName = resolveCollectionName(absolutePath);
+    const { collectionName } = resolveCollection(this.collectionRegistry, { path: absolutePath });
     await this.ensureStats(collectionName);
     return this.indexMetricsQuery.run(collectionName, path);
   }

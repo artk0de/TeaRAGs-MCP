@@ -30,3 +30,19 @@ export function resolveCollectionName(path: string): string {
   const hash = createHash("md5").update(absolutePath).digest("hex");
   return `code_${hash.substring(0, 8)}`;
 }
+
+/**
+ * The registry-free half of the path → collection rule: canonicalize, then
+ * hash. It is what a path NOTHING has registered resolves to, and therefore
+ * the injected default wherever a collaborator is handed the rule as a
+ * function but no registry is in reach (bd tea-rags-mcp-dxa9w).
+ *
+ * Not a second rule, and not a shortcut around the first: a caller that can
+ * reach the project registry takes `createPathCollectionResolver(registry)`
+ * from `api/internal/collection-resolver.ts` instead, which consults the
+ * registry and falls back to exactly this. Hashing a path the registry has
+ * re-pointed elsewhere addresses a collection nobody ever wrote.
+ */
+export async function hashCollectionForPath(path: string): Promise<string> {
+  return resolveCollectionName(await validatePath(path));
+}

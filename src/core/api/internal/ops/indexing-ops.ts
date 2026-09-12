@@ -28,7 +28,7 @@ import type { EnrichmentCoordinator } from "../../../domains/ingest/pipeline/enr
 import { parseMarkerPayload } from "../../../domains/ingest/pipeline/indexing-marker-codec.js";
 import { pipelineLog } from "../../../domains/ingest/pipeline/infra/debug-logger.js";
 import { StatusModule } from "../../../domains/ingest/pipeline/status-module.js";
-import { resolveCollectionName, validatePath } from "../../../infra/collection-name.js";
+import { hashCollectionForPath, validatePath } from "../../../infra/collection-name.js";
 import { computeScoreBackground } from "../../../infra/score-background.js";
 import type { StatsCache } from "../../../infra/stats-cache.js";
 import type {
@@ -108,12 +108,14 @@ export interface IndexingOpsDeps {
    */
   driftReporter?: IndexDriftConsumptionResetter;
   /**
-   * How a path becomes the collection a READER resolves — the registry's entry
-   * when one claims the path, the path hash otherwise
-   * (`createPathCollectionResolver`, bd tea-rags-mcp-waj6k). Used only where
-   * this class addresses the registry or the drift report of an EXISTING
-   * collection; everything that addresses Qdrant or DuckDB keeps the hash,
-   * which is what the pipeline writes under. Defaults to the hash.
+   * How a path becomes its collection — the registry's entry when one claims
+   * the path, the path hash otherwise (`createPathCollectionResolver`,
+   * bd tea-rags-mcp-waj6k). EVERY derivation in this class goes through it,
+   * Qdrant and DuckDB included: a project that moved keeps the collection its
+   * entry recorded, and the pipeline resolves the same way, so splitting the
+   * rule by addressee is what let a relocated project's run write one
+   * collection while its status and stamps addressed another
+   * (bd tea-rags-mcp-dxa9w). Defaults to the hash.
    */
   resolveCollectionForPath?: PathCollectionResolver;
 }
@@ -172,12 +174,19 @@ export class IndexingOps {
     // has already applied `enableGitMetadata`. It frames the enrichment health
     // report, which must not shrink to whatever the last run happened to touch
     // (bd tea-rags-mcp-x2u65).
-    this.status = new StatusModule(deps.qdrant, deps.snapshotDir, deps.codegraphPool, deps.enrichment.providerKeys);
+    this.resolveCollectionForPath = deps.resolveCollectionForPath ?? hashCollectionForPath;
+    this.status = new StatusModule(
+      deps.qdrant,
+      deps.snapshotDir,
+      deps.codegraphPool,
+      deps.enrichment.providerKeys,
+      // Status answers about the SAME collection the run writes, which for a
+      // relocated project is its registry entry's, not its path's hash.
+      this.resolveCollectionForPath,
+    );
     this.collectionRegistry = deps.collectionRegistry;
     this.languageCodeVersions = deps.languageCodeVersions;
     this.driftReporter = deps.driftReporter;
-    this.resolveCollectionForPath =
-      deps.resolveCollectionForPath ?? (async (p: string) => resolveCollectionName(await validatePath(p)));
   }
 
   /**
@@ -215,9 +224,7 @@ export class IndexingOps {
     // explicit purge the new index would inherit stale symbol rows from
     // the previous generation. Non-fatal when codegraph is disabled.
     if (options?.forceReindex && this.codegraphPool) {
-      const absolutePath = await validatePath(path);
-      const collectionName = resolveCollectionName(absolutePath);
-      await this.codegraphPool.removeCollection(collectionName);
+      await this.codegraphPool.removeCollection(await this.resolveCollectionForPath(path));
     }
     return this.fullIndex(path, options, progressCallback);
   }
@@ -255,8 +262,7 @@ export class IndexingOps {
    * that just want a boolean can still use `qdrant.checkHealth()` directly.
    */
   async getStatus(path: string): Promise<IndexStatus> {
-    const absolutePath = await validatePath(path);
-    const collectionName = resolveCollectionName(absolutePath);
+    const collectionName = await this.resolveCollectionForPath(path);
 
     // Real Qdrant call — serves as the health probe.
     // Throws a typed error (QdrantStartingError / QdrantRecoveringError /
@@ -325,8 +331,7 @@ export class IndexingOps {
 
   /** Drop all indexed data for a codebase and invalidate the model-guard cache. */
   async clear(path: string): Promise<void> {
-    const absolutePath = await validatePath(path);
-    const collectionName = resolveCollectionName(absolutePath);
+    const collectionName = await this.resolveCollectionForPath(path);
     this.modelGuard?.invalidate(collectionName);
     await this.status.clearIndex(path);
     // Drop the per-collection codegraph DuckDB file once Qdrant has
@@ -343,9 +348,7 @@ export class IndexingOps {
   async refreshStats(path: string): Promise<void> {
     if (!this.statsCache || !this.allPayloadSignals) return;
     try {
-      const absolutePath = await validatePath(path);
-      const collectionName = resolveCollectionName(absolutePath);
-      await this.refreshStatsByCollection(collectionName);
+      await this.refreshStatsByCollection(await this.resolveCollectionForPath(path));
     } catch (error) {
       console.error("[StatsCache] Failed to refresh collection stats:", error);
     }
@@ -445,7 +448,7 @@ export class IndexingOps {
     progressCallback?: ProgressCallback,
   ): Promise<IndexStats | undefined> {
     const absolutePath = await validatePath(path);
-    const collectionName = resolveCollectionName(absolutePath);
+    const collectionName = await this.resolveCollectionForPath(absolutePath);
     const exists = await this.qdrant.collectionExists(collectionName);
     if (!exists) return undefined;
 
@@ -482,11 +485,11 @@ export class IndexingOps {
     // of every CHANGED file was rewritten by the current build, so the reader
     // deserves a fresh verdict rather than the one this session already spent.
     //
-    // Addressed the way a SEARCH addresses this path, which for a relocated
-    // project is the registry's entry rather than the hash above (waj6k): the
-    // consumption set being re-armed is keyed by what the reader resolved, so
-    // re-arming the hash leaves the name it actually consumed still spent.
-    this.driftReporter?.reset(await this.resolveCollectionForPath(path));
+    // The same name the run addressed — which for a relocated project is the
+    // registry's entry, not the path hash (waj6k): the consumption set being
+    // re-armed is keyed by what the reader resolved, so re-arming any other
+    // name leaves the one it actually consumed still spent.
+    this.driftReporter?.reset(collectionName);
     return toIndexStats(changeStats);
   }
 
@@ -515,7 +518,7 @@ export class IndexingOps {
     progressCallback?: ProgressCallback,
   ): Promise<IndexStats> {
     const absolutePath = await validatePath(path);
-    const aliasName = resolveCollectionName(absolutePath);
+    const aliasName = await this.resolveCollectionForPath(absolutePath);
     if (!(await this.qdrant.collectionExists(aliasName))) {
       throw new NotIndexedError(path);
     }
@@ -527,12 +530,6 @@ export class IndexingOps {
     // prime does not read and the resolve breakdown looks like it vanished
     // (bd tea-rags-mcp-snbzk; same mechanism as 6goqa).
     const collectionName = resolveAliasTargetCollection(aliasName, await this.qdrant.aliases.listAliases());
-    // The registry entry and the drift report of a relocated project are held
-    // under the collection the entry recorded, not under what its new path
-    // hashes to (waj6k). Only those two are addressed this way — the Qdrant
-    // guard above and the physical target below stay on the hash, because that
-    // is the name the pipeline's own path resolution writes under.
-    const registryName = await this.resolveCollectionForPath(path);
 
     // The sync leg is deliberately NOT forced: the recompute below owns the
     // forced re-extraction on this path, and forcing both meant paying for it
@@ -572,13 +569,13 @@ export class IndexingOps {
     // advance. Claiming `grammar` / `chunking` here would silence a hint that
     // is still true. A git-only recompute touches no language layer at all.
     if (selectors.some(isCodegraphSelector)) {
-      this.stampLanguageVersions(registryName, languages, "codegraph");
+      this.stampLanguageVersions(aliasName, languages, "codegraph");
     }
     // Keyed by the LOGICAL name a search request resolves to, never the
     // physical target resolved above: the reporter's consumption set and the
     // registry entry are both addressed that way, so re-arming or stamping the
     // physical name would clear and claim entries nobody ever recorded.
-    this.driftReporter?.reset(registryName);
+    this.driftReporter?.reset(aliasName);
 
     // Report the RECOMPUTE's own numbers, not the sync's. The sync leg is a
     // near-no-op here, so inheriting its (empty) enrichment fields would state
@@ -608,11 +605,11 @@ export class IndexingOps {
     // from scratch, so every axis is genuinely current afterwards. This is the
     // only path that may advance `grammar` / `chunking`.
     //
-    // The one stamp/reset site that stays on the hash (waj6k): this run CREATES
-    // the collection for the path, and the hash is the name it creates and
-    // registers it under. Resolving through the registry here would stamp an
-    // entry the run did not write.
-    const collectionName = resolveCollectionName(await validatePath(path));
+    // Resolved, not hashed, even though this run CREATES the collection: the
+    // pipeline resolves the same way, so for a path nothing has registered the
+    // two agree on the hash, and for a relocated project both land on the entry
+    // the run actually rewrote (bd tea-rags-mcp-dxa9w).
+    const collectionName = await this.resolveCollectionForPath(path);
     this.stampLanguageVersions(collectionName, options?.languages, "all");
     this.driftReporter?.reset(collectionName);
     return result;
