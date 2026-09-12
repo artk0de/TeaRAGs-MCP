@@ -367,6 +367,12 @@
   once per run behind `PythonAncestorLinearizerCache`.
   `createPythonAncestorPolicy` resolves the spellings and `mro.ts` merges them;
   the driver is the kernel's.
+- **"Once per run" is keyed by the IDENTITY of `classAncestors`, never by the
+  symbol table** (bd tea-rags-mcp-z99hp). The cache and the pooled table both
+  outlive a run, and the kernel linearizer memoises against the ctx it captured,
+  so a table key handed run N+1 every one of run N's MROs. The table and its
+  `size()` still STAMP the entry: base spellings resolve through membership, so
+  a cold pass-1 refusal must not outlive the growth that turns it into a pin.
 - **The ancestor policy asks `resolveExportedModule` for a base spelling that
   mapped NOWHERE, and only on the `unknown` branch.** `..components.datatable`
   is a package module ALIAS — `from . import _datatable as datatable` in the

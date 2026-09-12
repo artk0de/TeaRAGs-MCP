@@ -113,7 +113,11 @@ describe("seeded support versions", () => {
       // cross-file fields and package re-exports; python walker 7: bd
       // tea-rags-mcp-11qqk scoped the import mapper's re-export memo to the RUN
       // rather than to the pooled symbol table, so rows written by walker 6 can
-      // carry edges resolved through a re-export target that had already moved.
+      // carry edges resolved through a re-export target that had already moved;
+      // python walker 8: bd tea-rags-mcp-z99hp scoped the ancestor linearizer
+      // the same way — by the identity of `classAncestors` rather than by the
+      // pooled table — so rows written by walker 7 can carry edges resolved on
+      // an MRO merged from a previous run's base lists.
       // ruby walker 2: bd
       // tea-rags-mcp-kumq2 routed every Ruby short-name lookup through the same
       // same-language filter, so an index built by walker 1 holds the
@@ -126,7 +130,7 @@ describe("seeded support versions", () => {
       // Every other language is still at its seed.
       const WALKER_BUMPED = new Map([
         ["typescript", 4],
-        ["python", 7],
+        ["python", 8],
         ["ruby", 2],
         ["java", 2],
         ["rust", 2],
