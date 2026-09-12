@@ -1,7 +1,11 @@
-import { describe, expect, it, vi } from "vitest";
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { AUTO_UPDATE_EXIT, runUpdater, type RunUpdaterDeps } from "../../../src/cli/auto-update/run-updater.js";
-import type { CollectionEntry } from "../../../src/core/api/public/index.js";
+import { CollectionRegistry, type CollectionEntry } from "../../../src/core/api/public/index.js";
 
 const NOW = 1_700_000_000_000;
 
@@ -158,5 +162,82 @@ describe("runUpdater", () => {
     expect(rec.outcome).toBe("failed");
     expect(rec.error).toBeDefined();
     expect(rec.error!.length).toBeLessThanOrEqual(500);
+  });
+});
+
+describe("runUpdater against a real CollectionRegistry", () => {
+  // The updater holds the registry instance the CLI built BEFORE the pipeline
+  // ran, so its cached entry is stale by the time lastRun is written. Writing
+  // that cache back wholesale rolled the pipeline's fresh stamp away.
+  let dir: string;
+  beforeEach(() => {
+    dir = mkdtempSync(join(tmpdir(), "au-reg-"));
+  });
+  afterEach(() => {
+    rmSync(dir, { recursive: true, force: true });
+  });
+
+  const seed = {
+    collectionName: "code_abc",
+    path: "/repo/a",
+    embeddingModel: "m",
+    embeddingDimensions: 384,
+    qdrantUrl: "http://localhost:6333",
+    teaRagsVersion: "1.0.0",
+  };
+
+  const indexStats = {
+    filesScanned: 3,
+    filesIndexed: 3,
+    chunksCreated: 9,
+    durationMs: 50,
+    status: "completed" as const,
+    changeDetails: {
+      filesAdded: 1,
+      filesModified: 2,
+      filesDeleted: 0,
+      filesNewlyIgnored: 0,
+      filesNewlyUnignored: 0,
+      chunksAdded: 9,
+      chunksDeleted: 0,
+    },
+  };
+
+  it("records lastRun without rolling back the stamp the indexing run wrote", async () => {
+    const cliRegistry = new CollectionRegistry(dir);
+    cliRegistry.record({ ...seed, indexedAt: "2026-09-12T11:00:00.000Z", chunksCount: 10 });
+    cliRegistry.setAutoUpdate("code_abc", { enabled: true, targetBranch: "master" });
+    const loaded = cliRegistry.get("code_abc")!;
+
+    const d: RunUpdaterDeps = {
+      registry: cliRegistry,
+      app: {
+        getIndexStatus: async () => ({ isIndexed: true, status: "indexed" as const }),
+        indexCodebase: async () => {
+          // The pipeline stamps through its OWN registry instance.
+          const pipelineRegistry = new CollectionRegistry(dir);
+          pipelineRegistry.record({
+            ...seed,
+            indexedAt: "2026-09-12T11:57:57.000Z",
+            chunksCount: 42,
+            git: { indexedBranch: "master", indexedCommit: "abc123", indexedDirty: false },
+          });
+          return indexStats;
+        },
+        whenEnrichmentComplete: async () => {},
+      } as RunUpdaterDeps["app"],
+      freshness: { check: () => ({ kind: "eligible", entry: loaded }) },
+      clock: () => NOW,
+      log: () => {},
+    };
+
+    expect(await runUpdater("code_abc", d)).toBe(AUTO_UPDATE_EXIT.ok);
+
+    const onDisk = new CollectionRegistry(dir).get("code_abc");
+    expect(onDisk?.indexedAt).toBe("2026-09-12T11:57:57.000Z");
+    expect(onDisk?.chunksCount).toBe(42);
+    expect(onDisk?.git).toEqual({ indexedBranch: "master", indexedCommit: "abc123", indexedDirty: false });
+    expect(onDisk?.autoUpdate?.lastRun).toMatchObject({ outcome: "ok", filesChanged: 3 });
+    expect(onDisk?.autoUpdate?.lastRun?.at).toBe(new Date(NOW).toISOString());
   });
 });

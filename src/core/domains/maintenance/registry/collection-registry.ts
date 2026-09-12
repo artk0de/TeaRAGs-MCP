@@ -11,8 +11,21 @@ import { PROJECT_NAME_RE } from "./constants.js";
 import { RegistryNameConflictError } from "./errors.js";
 import { flushWithCAS, loadRegistryFile } from "./registry-file.js";
 
+function snapshotEntries(map: ReadonlyMap<string, CollectionEntry>): Map<string, CollectionEntry> {
+  const snapshot = new Map<string, CollectionEntry>();
+  for (const [k, v] of map) snapshot.set(k, structuredClone(v));
+  return snapshot;
+}
+
 export class CollectionRegistry {
   private cache: Map<string, CollectionEntry> | null = null;
+  /**
+   * The entries exactly as this instance last synced them with disk — at load
+   * and after every successful flush. The flush diffs `cache` against it so it
+   * writes back only the fields THIS instance changed, leaving everything
+   * another process wrote in the meantime alone. Null whenever `cache` is.
+   */
+  private base: Map<string, CollectionEntry> | null = null;
   private readonly tombstones = new Set<string>();
   private watcher: FSWatcher | null = null;
   private stopHandle: (() => void) | null = null;
@@ -28,17 +41,28 @@ export class CollectionRegistry {
         for (const [k, v] of Object.entries(file.collections)) map.set(k, v);
       }
       this.cache = map;
+      this.base = snapshotEntries(map);
       return map;
     } catch (err) {
       process.stderr.write(`[tea-rags] registry corrupt, starting empty: ${(err as Error).message}\n`);
       this.cache = new Map();
+      this.base = new Map();
       return this.cache;
     }
   }
 
   private flush(): void {
     const map = this.ensureLoaded();
-    flushWithCAS(this.dataDir, map, this.tombstones);
+    const written = flushWithCAS(this.dataDir, map, this.tombstones, this.base ?? undefined);
+    // Adopt what actually landed for the entries we hold: fields disk won stay
+    // won, so the NEXT flush does not re-report them as our local change.
+    const base = new Map<string, CollectionEntry>();
+    for (const [k, entry] of map) {
+      const merged = written.collections[k];
+      if (merged !== undefined) map.set(k, merged);
+      base.set(k, structuredClone(merged ?? entry));
+    }
+    this.base = base;
   }
 
   record(entry: RecordEntryInput): void {
@@ -257,6 +281,7 @@ export class CollectionRegistry {
       this.watcher = watch(this.dataDir, { persistent: false }, (_eventType, filename) => {
         if (filename === "registry.json" || filename === null) {
           this.cache = null;
+          this.base = null;
         }
       });
     } catch {

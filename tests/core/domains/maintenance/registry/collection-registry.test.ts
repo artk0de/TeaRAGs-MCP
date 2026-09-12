@@ -587,4 +587,73 @@ describe("CollectionRegistry", () => {
       });
     });
   });
+
+  describe("two instances on one dataDir — a flush writes only what it changed", () => {
+    // Every CLI command builds its own CollectionRegistry and the pipeline
+    // builds another; each caches registry.json once. A flush must therefore
+    // carry only the fields THIS instance changed since it loaded, or it rolls
+    // back whatever the other instance wrote in the meantime.
+
+    it("an updater writing lastRun keeps the stamp the pipeline wrote after it loaded", () => {
+      const cli = new CollectionRegistry(dir);
+      cli.record(makeEntry({ indexedAt: "2026-09-12T11:00:00.000Z", chunksCount: 10 }));
+      cli.setAutoUpdate("code_abc", { enabled: true, targetBranch: "main" });
+      expect(cli.get("code_abc")?.indexedAt).toBe("2026-09-12T11:00:00.000Z");
+
+      const pipeline = new CollectionRegistry(dir);
+      pipeline.record(
+        makeEntry({
+          indexedAt: "2026-09-12T11:57:57.000Z",
+          chunksCount: 42,
+          git: { indexedBranch: "main", indexedCommit: "abc123", indexedDirty: false },
+        }),
+      );
+
+      cli.recordAutoUpdateRun("code_abc", {
+        at: "2026-09-12T12:00:49.000Z",
+        outcome: "ok",
+        durationMs: 900,
+        filesChanged: 3,
+      });
+
+      const onDisk = new CollectionRegistry(dir).get("code_abc");
+      expect(onDisk?.indexedAt).toBe("2026-09-12T11:57:57.000Z");
+      expect(onDisk?.chunksCount).toBe(42);
+      expect(onDisk?.git).toEqual({ indexedBranch: "main", indexedCommit: "abc123", indexedDirty: false });
+      expect(onDisk?.autoUpdate?.lastRun?.at).toBe("2026-09-12T12:00:49.000Z");
+    });
+
+    it("a pipeline record() keeps the autoUpdate policy the CLI set after the pipeline loaded", () => {
+      const seed = new CollectionRegistry(dir);
+      seed.record(makeEntry({ indexedAt: "2026-09-12T11:00:00.000Z", chunksCount: 10 }));
+
+      const pipeline = new CollectionRegistry(dir);
+      expect(pipeline.get("code_abc")?.autoUpdate).toBeUndefined();
+
+      const cli = new CollectionRegistry(dir);
+      cli.setAutoUpdate("code_abc", { enabled: true, targetBranch: "main" });
+
+      pipeline.record(makeEntry({ indexedAt: "2026-09-12T11:57:57.000Z", chunksCount: 42 }));
+
+      const onDisk = new CollectionRegistry(dir).get("code_abc");
+      expect(onDisk?.autoUpdate).toEqual({ enabled: true, targetBranch: "main" });
+      expect(onDisk?.indexedAt).toBe("2026-09-12T11:57:57.000Z");
+      expect(onDisk?.chunksCount).toBe(42);
+    });
+
+    it("an untouched entry is not rolled back by a flush that changed a different entry", () => {
+      const cli = new CollectionRegistry(dir);
+      cli.record(makeEntry({ collectionName: "code_a", path: "/repo/a" }));
+      cli.record(makeEntry({ collectionName: "code_b", path: "/repo/b", chunksCount: 1 }));
+
+      const other = new CollectionRegistry(dir);
+      other.record(makeEntry({ collectionName: "code_a", path: "/repo/a", chunksCount: 777 }));
+
+      cli.record(makeEntry({ collectionName: "code_b", path: "/repo/b", chunksCount: 2 }));
+
+      const onDisk = new CollectionRegistry(dir);
+      expect(onDisk.get("code_a")?.chunksCount).toBe(777);
+      expect(onDisk.get("code_b")?.chunksCount).toBe(2);
+    });
+  });
 });

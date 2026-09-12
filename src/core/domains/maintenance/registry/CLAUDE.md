@@ -28,27 +28,40 @@
 ## Mechanics
 
 - **Every mutator does a synchronous whole-file round trip, and the CAS backoff
-  busy-waits.** `record` (`:64`), `updatePath` (`:114`), `setName` (`:138`),
-  `setAutoUpdate` (`:158`), `recordAutoUpdateRun` (`:172`), `remove` (`:180`)
-  and `setWorktreeProvenance` (`:202`) each call `flush()` immediately, and
-  `flush()` is `flushWithCAS` (`:38-41`): read all of `registry.json`, merge,
-  write temp, rename (`registry-file.ts:164-187`). On a CAS miss the retry path
+  busy-waits.** `record` (`:68`), `updatePath` (`:140`), `setName` (`:153`),
+  `setAutoUpdate` (`:178`), `recordAutoUpdateRun` (`:199`), `remove` (`:207`)
+  and `setWorktreeProvenance` (`:253`) each call `flush()` immediately, and
+  `flush()` is `flushWithCAS` (`:54-66`): read all of `registry.json`, merge,
+  write temp, rename (`registry-file.ts:205-229`). On a CAS miss the retry path
   is `sleepSync` — a `while (Date.now() < end)` spin, NOT a timer
-  (`registry-file.ts:131-139`) — 10+20+40+80 ms over four backoffs before
+  (`registry-file.ts:168-176`) — 10+20+40+80 ms over four backoffs before
   `RegistryConcurrencyError`. Why: the API looks like cheap in-memory setters,
   so it invites being called per file or per chunk; in the MCP server that
   blocks the event loop for ~150 ms per contended mutation and stalls every
   concurrent request. Batch first, write once.
+- **A flush writes back only the fields THIS instance changed since it loaded.**
+  `CollectionRegistry` keeps a `base` snapshot of every entry taken at load and
+  refreshed after each successful flush (`:22-28`, `:54-66`), and
+  `mergeRegistryDelta` (`registry-file.ts:141-166`) merges three-way per entry:
+  result = the DISK entry with only the top-level fields whose in-memory value
+  differs from base (`mergeChangedFields`, `registry-file.ts:111-124`), a field
+  dropped from memory since base dropped, and an entry unchanged since base that
+  another process deleted NOT resurrected. An entry with no base at all (this
+  process created it, or the file did not exist at load) is written whole
+  through `mergeRegistryEntries`. Why: each process caches `registry.json` once
+  and never re-reads it, so writing the whole cache back rolls every field
+  another process wrote since load — the `indexedAt` / `git` / `chunksCount` a
+  pipeline instance stamped, on the entry being mutated AND on every other
+  cached one.
 - **Deletes need a tombstone because the flush merges disk back in.**
-  `mergeRegistryDelta` (`registry-file.ts:112-129`) seeds the result from the
-  on-disk file and only then applies the in-memory delta — merge-on-write, so a
-  concurrent writer's entries are never clobbered. `CollectionRegistry#remove`
-  (`:175-183`) therefore adds the name to `this.tombstones` before flushing,
-  `mergeRegistryDelta` deletes tombstoned keys from the merged result
-  (`registry-file.ts:125-127`), and `record` clears the tombstone on
-  re-registration (`:63`). Why: a plain `map.delete()` is resurrected from disk
-  on the very next flush. Any future removal-shaped operation that forgets the
-  tombstone silently no-ops.
+  `mergeRegistryDelta` seeds the result from the on-disk file and only then
+  applies the in-memory delta — merge-on-write, so a concurrent writer's entries
+  are never clobbered. `CollectionRegistry#remove` (`:207-215`) therefore adds
+  the name to `this.tombstones` before flushing, `mergeRegistryDelta` deletes
+  tombstoned keys from the merged result (`registry-file.ts:162-164`), and
+  `record` clears the tombstone on re-registration (`:95`). Why: a plain
+  `map.delete()` is resurrected from disk on the very next flush. Any future
+  removal-shaped operation that forgets the tombstone silently no-ops.
 
 ## Boundaries
 
