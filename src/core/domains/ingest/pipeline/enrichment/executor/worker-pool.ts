@@ -51,6 +51,7 @@ import type {
 import { isDebug } from "../../../../../infra/runtime.js";
 import type { ChunkLookupEntry } from "../../../../../types.js";
 import {
+  defaultEnrichmentFilesPerThread,
   defaultEnrichmentWorkerCpuProfileDir,
   defaultEnrichmentWorkerHeapSnapshotDir,
   defaultEnrichmentWorkerMemoryLimitMb,
@@ -128,7 +129,16 @@ export class WorkerPoolEnrichmentExecutor implements EnrichmentExecutor {
    */
   private readonly extractionFanout: ExtractionFanoutDispatcher | null;
 
-  constructor(poolSize: number, workerPath: string) {
+  constructor(
+    poolSize: number,
+    workerPath: string,
+    /**
+     * Files the run must have per extraction thread before the fan-out spins
+     * one up (`INGEST_TUNE_ENRICHMENT_FILES_PER_THREAD`). `poolSize` stays the
+     * ceiling; this only says how much work has to exist to reach it.
+     */
+    private readonly filesPerThread: number = defaultEnrichmentFilesPerThread(),
+  ) {
     this.pool = new WorkerDispatchPool<EnrichmentWorkerRequest, EnrichmentWorkerResponse>(
       poolSize,
       // Heap ceiling per worker. This pool disables the liveness timeout below,
@@ -159,6 +169,11 @@ export class WorkerPoolEnrichmentExecutor implements EnrichmentExecutor {
       // The per-dispatch hang-guard targets the CHUNKER's tree-sitter NAPI crash
       // (yl9tv), not enrichment, so the enrichment pool opts out explicitly.
       0,
+      // Workers ON DEMAND. A collection-affinity provider pins every dispatch to
+      // one thread and only the pass-1 fan-out ever leaves it, so on a run too
+      // small to fan out the other slots would boot an isolate each and sit
+      // there: measured 115-245 MB on ugnest (bd tea-rags-mcp-1v12o.2).
+      true,
     );
 
     const fanoutWorkers = defaultExtractionFanoutWorkers(poolSize);
@@ -167,6 +182,7 @@ export class WorkerPoolEnrichmentExecutor implements EnrichmentExecutor {
         ? new ExtractionFanoutDispatcher(async (request, routingKey) => this.pool.dispatch(request, routingKey), {
             workerCount: fanoutWorkers,
             shardSize: defaultExtractionFanoutShardSize(),
+            filesPerThread: this.filesPerThread,
             maxInFlightBatches: MAX_IN_FLIGHT_EXTRACTION_BATCHES,
             minPathsToFanOut: MIN_PATHS_TO_FAN_OUT,
           })
@@ -179,8 +195,8 @@ export class WorkerPoolEnrichmentExecutor implements EnrichmentExecutor {
    * extraction worker. Clearing it HERE rather than at release means an aborted
    * run cannot leave a set behind that would make the next run skip files.
    */
-  beginRun(collectionName?: string): void {
-    this.extractionFanout?.beginRun(collectionName);
+  beginRun(collectionName?: string, fileCount?: number): void {
+    this.extractionFanout?.beginRun(collectionName, fileCount);
   }
 
   async runFileBatch(

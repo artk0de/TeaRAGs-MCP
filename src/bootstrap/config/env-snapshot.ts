@@ -94,6 +94,7 @@ export function buildRegistryEnvSnapshot(config: RegistryEnvSnapshotSource): Rec
   put("INGEST_TUNE_FILE_CONCURRENCY", ingest.tune.fileConcurrency);
   put("INGEST_TUNE_IO_CONCURRENCY", ingest.tune.ioConcurrency);
   put("INGEST_TUNE_ENRICHMENT_POOL_SIZE", ingest.tune.enrichmentPoolSize);
+  put("INGEST_TUNE_ENRICHMENT_FILES_PER_THREAD", ingest.tune.enrichmentFilesPerThread);
   if (flags.userSetChunkSize) put("INGEST_CHUNK_SIZE", ingest.chunkSize);
   put("INGEST_CHUNK_OVERLAP", ingest.chunkOverlap);
 

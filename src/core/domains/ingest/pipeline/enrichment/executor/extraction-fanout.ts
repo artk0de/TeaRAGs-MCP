@@ -54,10 +54,18 @@ export type ExtractionFanoutDispatch = (
 
 export interface ExtractionFanoutOptions {
   /**
-   * Workers a single batch may be spread over. Zero (or less) disables the
-   * fan-out entirely — every batch goes to the affinity worker as before.
+   * CEILING on the workers a single batch may be spread over. Zero (or less)
+   * disables the fan-out entirely — every batch goes to the affinity worker as
+   * before. The width a given run actually uses is this ceiling bounded by that
+   * run's own file count (see `filesPerThread`).
    */
   workerCount: number;
+  /**
+   * Files the run must have per extraction thread before that thread is worth
+   * spinning up. Omitted (or non-positive) leaves the width at `workerCount`
+   * for every run — the pre-bound behaviour.
+   */
+  filesPerThread?: number;
   /** Upper bound on paths per extract message, so one frame stays bounded. */
   shardSize: number;
   /** Batches whose records may be resident at once. */
@@ -82,6 +90,30 @@ export function splitExtractionShards(paths: string[], workerCount: number, shar
     shards.push(paths.slice(start, start + perShard));
   }
   return shards;
+}
+
+/**
+ * Extraction threads a run of `fileCount` files earns, beyond the affinity
+ * worker it already has.
+ *
+ * `clamp(ceil(fileCount / filesPerThread), 1, maxWorkerCount + 1)` threads in
+ * total, minus the pinned one. So a run below a single thread's share keeps its
+ * parse where the absorb already is, and a run large enough reaches the
+ * configured ceiling exactly as before. An UNKNOWN size (0/undefined — callers
+ * that never counted, e.g. `runFinalizeOnly`) is not evidence of a small run,
+ * so it keeps the full configured width rather than silently narrowing.
+ */
+export function extractionFanoutWorkerCount(
+  fileCount: number | undefined,
+  filesPerThread: number,
+  maxWorkerCount: number,
+): number {
+  const ceiling = Math.max(0, maxWorkerCount);
+  if (ceiling === 0) return 0;
+  if (filesPerThread <= 0) return ceiling;
+  if (fileCount === undefined || fileCount <= 0) return ceiling;
+  const threads = Math.min(Math.max(1, Math.ceil(fileCount / filesPerThread)), ceiling + 1);
+  return threads - 1;
 }
 
 /**
@@ -111,12 +143,19 @@ export class ExtractionFanoutDispatcher {
   /** Tail of the per-collection absorb chain — reserved at call time, not at completion. */
   private readonly absorbChains = new Map<string, Promise<void>>();
   private readonly slots: Semaphore;
+  /**
+   * Extraction workers the CURRENT run may use — the configured ceiling bounded
+   * by the run's file count at `beginRun`. Starts at the ceiling so a caller
+   * that never begins a run behaves as it did before the bound existed.
+   */
+  private runWorkerCount: number;
 
   constructor(
     private readonly dispatch: ExtractionFanoutDispatch,
     private readonly options: ExtractionFanoutOptions,
   ) {
     this.slots = new Semaphore(Math.max(1, options.maxInFlightBatches));
+    this.runWorkerCount = Math.max(0, options.workerCount);
   }
 
   /**
@@ -126,9 +165,18 @@ export class ExtractionFanoutDispatcher {
    * collection must parse everything again. Resetting here (the coordinator's
    * `beginRun`) rather than at release means an aborted run cannot leave a
    * stale set behind that would silently skip files on the next one.
+   *
+   * The run's file count sizes the fan-out with it: width is a property of the
+   * RUN, not of the process, so a small recompute does not inherit the width a
+   * whole-repo index earned.
    */
-  beginRun(collectionName?: string): void {
+  beginRun(collectionName?: string, fileCount?: number): void {
     this.dispatchedPaths.delete(keyOf(collectionName));
+    this.runWorkerCount = extractionFanoutWorkerCount(
+      fileCount,
+      this.options.filesPerThread ?? 0,
+      this.options.workerCount,
+    );
   }
 
   /** Drop a finished collection's bookkeeping. */
@@ -152,7 +200,7 @@ export class ExtractionFanoutDispatcher {
     // Every path in this batch was already handed out — nothing to parse, and
     // the pinned worker has nothing to do with an empty list.
     if (fresh.length === 0) return {};
-    if (this.options.workerCount < 1 || fresh.length < this.options.minPathsToFanOut) {
+    if (this.runWorkerCount < 1 || fresh.length < this.options.minPathsToFanOut) {
       return this.dispatch({ ...request, paths: fresh }, routingKey);
     }
 
@@ -188,7 +236,7 @@ export class ExtractionFanoutDispatcher {
       // o317j stopped attaching it to cross-pass batch calls). Extraction reads
       // nothing from it; `collectionName` it does need is a top-level field.
       const { options: _absorbOnly, ...extractBase } = request;
-      const shards = splitExtractionShards(fresh, this.options.workerCount, this.options.shardSize);
+      const shards = splitExtractionShards(fresh, this.runWorkerCount, this.options.shardSize);
       const responses = await Promise.all(
         shards.map(async (shard) =>
           // No routingKey: this is the whole point — the pool hands it to a

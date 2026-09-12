@@ -814,8 +814,10 @@ export class EnrichmentCoordinator {
     // The executor's own run-start seam — the dispatch layer's mirror of the
     // provider reset above. The worker-pool executor drops the pass-1 fan-out's
     // per-run set of already-extracted paths here, so a previous run that ended
-    // without releasing cannot make this one skip files.
-    this.executor.beginRun?.(collectionName);
+    // without releasing cannot make this one skip files. `fileCount` travels
+    // with it because the fan-out's WIDTH is a property of the run, not of the
+    // process: a small recompute must not inherit a whole-repo index's threads.
+    this.executor.beginRun?.(collectionName, fileCount);
 
     runState.filePhase.init(
       runState.contexts,
