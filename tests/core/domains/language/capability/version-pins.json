@@ -27,8 +27,8 @@
   },
   "java": {
     "walker": {
-      "version": 1,
-      "digest": "sha256:f36449fcbca841f2b2230d8b205346aefa43b4aaa19f8faa8eb19ca00dff4393"
+      "version": 2,
+      "digest": "sha256:83fd32f9a6ee6d1d6c5daeee7960fa9730169d044a4a5ff863833c800a16dcb3"
     }
   },
   "javascript": {
