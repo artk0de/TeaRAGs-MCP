@@ -1075,6 +1075,94 @@ denominator excluded precisely the population that produces the false positives.
 not worth a walker change that lifts the annotation facet's union drop and the
 three declines that change guards. It is recorded here and left unscheduled.
 
+### D10′ — the typeshed decline set measured; the fan stays PARKED (2026-09-12, `w205u.14`)
+
+D10's item 2 asked for "a real decline vocabulary". It exists now:
+`scripts/py-oracle/gen-typeshed-members.py` walks typeshed's `.pyi` class bodies
+(pyright 1.1.414, typeshed `289e5d35`) and emits `PYTHON_TYPESHED_MEMBERS`, a
+frozen 2,363-name set — stdlib plus the one third-party stub pyright bundles for
+a library the corpora import (`requests`; sqlalchemy, jinja2, structlog and
+django ship their types elsewhere). Raw the walk yields 6,940 names, past the
+6,000 budget, so the generator keeps a name only when two or more classes
+declare it or its module is one of the fifteen core ones. The gate consults it
+after `coreAmbiguous` and before the chain probe, and DECLINES outright — no
+fan, no single.
+
+Three references, five corpora, `--oracle merged --workers 8 --samples 500000`,
+`UV_OFFLINE=1` on polar, one run per arm. **off** is the E5-close record's arm A
+(the shipped default, flag absent). **before** and **after** both run with
+`CODEGRAPH_PY_DYNAMIC_DISPATCH=1`, `before` from
+`git checkout 97277b953 -- src/`. `chainDrift` 0 and `dispatchDrift` 0 on all
+ten runs.
+
+| corpus | arm    | recall legacy (n) | recall merged (n) | recall tiebroken (n / withheld) | phantom leg → tieb | wrongFile leg → tieb | precision-miss tieb | edges  |
+| ------ | ------ | ----------------- | ----------------- | ------------------------------- | ------------------ | -------------------- | ------------------- | ------ |
+| flask  | off    | 0.9008 (373)      | 0.9008 (373)      | 0.9231 (364 / 9)                | 0 → 0              | 1 → 1                | 0.287 %             | 349    |
+| flask  | before | 0.9218 (371)      | 0.9218 (371)      | 0.9370 (365 / 6)                | 6 → 6              | 1 → 1                | 1.934 %             | 362    |
+| flask  | after  | 0.9194 (372)      | 0.9194 (372)      | 0.9370 (365 / 7)                | **3 → 3**          | 1 → 1                | 1.114 %             | 359    |
+| httpx  | off    | 0.9857 (488)      | 0.9857 (488)      | 0.9859 (496 / 0)                | 8 → 0              | 0 → 0                | 0.000 %             | 499    |
+| httpx  | before | 0.9918 (485)      | 0.9918 (485)      | 0.9919 (493 / 0)                | 10 → 2             | 0 → 0                | 0.398 %             | 503    |
+| httpx  | after  | 0.9897 (486)      | 0.9897 (486)      | 0.9899 (494 / 0)                | **8 → 0**          | 0 → 0                | 0.000 %             | 499    |
+| ugnest | off    | 0.9785 (789)      | 0.9785 (789)      | 0.9847 (785 / 4)                | 0 → 0              | 1 → 0                | 0.000 %             | 778    |
+| ugnest | before | 0.9797 (788)      | 0.9797 (788)      | 0.9847 (785 / 3)                | 0 → 0              | 1 → 0                | 0.000 %             | 779    |
+| ugnest | after  | 0.9785 (789)      | 0.9785 (789)      | 0.9860 (784 / 5)                | **0 → 0**          | 1 → 0                | 0.000 %             | 779    |
+| netbox | off    | 0.9949 (7,894)    | 0.9952 (8,343)    | 0.9988 (8,338 / 30)             | 25 → 0             | 0 → 0                | 0.000 %             | 8,711  |
+| netbox | before | 0.9970 (7,883)    | 0.9971 (8,332)    | 0.9990 (8,341 / 18)             | 30 → 3             | 0 → 0                | 0.034 %             | 8,829  |
+| netbox | after  | 0.9958 (7,897)    | 0.9960 (8,346)    | 0.9989 (8,347 / 26)             | **29 → 2**         | 0 → 0                | 0.023 %             | 8,823  |
+| polar  | off    | 0.9835 (12,201)   | 0.9809 (16,884)   | 0.9854 (16,889 / 60)            | 88 → 28            | 17 → 1               | 0.163 %             | 17,777 |
+| polar  | before | 0.9872 (12,182)   | 0.9851 (16,859)   | 0.9896 (16,865 / 60)            | 136 → 95           | 17 → 1               | 0.535 %             | 17,952 |
+| polar  | after  | 0.9863 (12,190)   | 0.9843 (16,868)   | 0.9889 (16,874 / 60)            | **98 → 42**        | 17 → 1               | 0.241 %             | 17,871 |
+
+**The fan's own columns** (`fanCorpus`, the `(corpus)` label):
+
+| corpus | arm    | fan | ambiguous | single | scored | hits | recall@fan | fanPhantom | fan p95 |
+| ------ | ------ | --- | --------- | ------ | ------ | ---- | ---------- | ---------- | ------- |
+| flask  | before | 5   | 0         | 14     | 3      | 2    | 0.667      | 1          | 8       |
+| flask  | after  | 4   | 0         | 11     | 2      | 1    | 0.500      | 1          | 8       |
+| httpx  | before | 5   | 2         | 10     | 3      | 2    | 0.667      | 0          | 3       |
+| httpx  | after  | 2   | 0         | 6      | 2      | 2    | 1.000      | 0          | 2       |
+| ugnest | before | 33  | 0         | 1      | 1      | 1    | 1.000      | 0          | 2       |
+| ugnest | after  | 0   | 0         | 1      | 0      | 0    | —          | 0          | 0       |
+| netbox | before | 52  | 117       | 118    | 11     | 4    | 0.364      | 0          | 4       |
+| netbox | after  | 47  | 59        | 112    | 3      | 2    | 0.667      | 0          | 4       |
+| polar  | before | 48  | 36        | 184    | 32     | 17   | 0.531      | 3          | 4       |
+| polar  | after  | 34  | 19        | 103    | 23     | 11   | 0.478      | 3          | 2       |
+
+Summed over the five corpora, `recall@fan` is 26/50 = **0.520** before and 16/30
+= **0.533** after. The decline set moved it by a rounding error because it does
+not make the fan pick better — it stops the fan from firing at all on the member
+names that were producing the wrong picks.
+
+**Both stop rules fire again.**
+
+1. _Phantom flat against the flag-off baseline on every corpus._ It holds on
+   httpx (8 → 8, tiebroken 0 → 0) and on ugnest (0 → 0, the named gate), and
+   fails on flask (0 → 3), netbox (25 → 29) and polar (88 → 98).
+2. _`recall@fan` ≥ 0.85._ 0.478 on polar, 0.500 on flask, 0.667 on netbox. Only
+   httpx clears it, at n = 2.
+
+So the component **stays parked** behind `CODEGRAPH_PY_DYNAMIC_DISPATCH`,
+default OFF, and the flag-off identity gate is re-proved: the chain tally reads
+flask 349 / 997, httpx 499 / 1,050, ugnest 778 / 3,953, netbox 8,711 / 35,415,
+polar 17,774 / 38,936 with `chainDrift` 0 — the E5-close counts, byte for byte.
+
+**The vocabulary and the decline rule ship anyway, because they are correct
+regardless of the flag.** Measured flag-on, the decline set cuts arrived
+phantoms roughly in half on every corpus that had any — legacy 182 → 138 summed,
+tiebroken 106 → 47 — and takes 94 edges off the five-corpus total, for 0.1–0.2
+pp of recall. polar alone drops 38 legacy and 53 tiebroken phantoms. That is the
+single largest precision move any gate in this component has produced, and it is
+still not enough: what remains is Django and framework members typeshed has no
+stub for (`is_valid`, `natural_key`, `aggregate`, `list_templates`, `submit`),
+which is E3's framework vocabulary, not typeshed's.
+
+**What a third attempt needs**, unchanged in kind from D10 but narrower: a
+FRAMEWORK member set beside the typeshed one (django, DRF, jinja2, sqlalchemy —
+none of them in pyright's bundled stubs, so the source has to be the installed
+packages of each corpus venv or a generated stub set), plus the receiver-type
+channel D10 item 1 asked for. Member vocabulary alone has now been measured to
+its ceiling.
+
 ### D11 — E4.6 measured (2026-09-11, `w205u`, whole increment against `3a3283e1d`)
 
 Four tasks shipped and were measured end to end, five corpora × five runs each

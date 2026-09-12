@@ -12,6 +12,7 @@ import {
   PythonChainAnswerProbe,
   pythonDynamicFanoutSuppressed,
 } from "../../../../../../../src/core/domains/language/python/resolver/dispatch/index.js";
+import { PYTHON_TYPESHED_MEMBERS } from "../../../../../../../src/core/domains/language/python/vocabulary/typeshed-members.js";
 import { InMemoryGlobalSymbolTable } from "../../../../../../../src/core/domains/trajectory/codegraph/symbols/symbol-table.js";
 
 const sym = (symbolId: string, shortName: string, relPath: string, scope: string[]): SymbolDefinition => ({
@@ -34,12 +35,12 @@ const ctxOf = (over: Partial<CallContext> = {}): CallContext => ({
   imports: [],
   symbolTable: tableWith([
     "app/service.py",
-    [sym("Service", "Service", "app/service.py", []), sym("Service#execute", "execute", "app/service.py", ["Service"])],
+    [sym("Service", "Service", "app/service.py", []), sym("Service#perform", "perform", "app/service.py", ["Service"])],
   ]),
   ...over,
 });
 
-const callOf = (receiver: string | null, member = "execute", startLine = 10): CallRef => ({
+const callOf = (receiver: string | null, member = "perform", startLine = 10): CallRef => ({
   callText: `${receiver ?? ""}.${member}()`,
   receiver,
   member,
@@ -64,7 +65,7 @@ class AnsweringPass implements SymbolResolutionStrategy {
     this.calls += 1;
     return {
       kind: "resolved",
-      target: { targetRelPath: "app/other.py", targetSymbolId: "app/other.py::Other#execute" },
+      target: { targetRelPath: "app/other.py", targetSymbolId: "app/other.py::Other#perform" },
     };
   }
 }
@@ -90,7 +91,7 @@ describe("PythonChainAnswerProbe (w205u — one chain run per call site)", () =>
     const ctx = ctxOf();
 
     expect(probe.answers(call, ctx)).toBe(true);
-    expect(probe.resolve(call, ctx)?.targetSymbolId).toBe("app/other.py::Other#execute");
+    expect(probe.resolve(call, ctx)?.targetSymbolId).toBe("app/other.py::Other#perform");
     expect(pass.calls).toBe(1);
   });
 
@@ -158,13 +159,13 @@ describe("pythonDynamicFanoutSuppressed (w205u — every shape another layer own
     // `int.__new__(cls, value)` fanned onto `codes#__new__`. Both were phantoms.
     expect(suppressed(callOf("super", "add_unredirected_header"))).toBe(true);
     expect(suppressed(callOf("int", "__new__"))).toBe(true);
-    expect(suppressed(callOf("type", "execute"))).toBe(true);
+    expect(suppressed(callOf("type", "perform"))).toBe(true);
   });
 
   it("declines a SCREAMING_SNAKE constant receiver, leading underscore included", () => {
     // ugnest: `_TELEGRAM_RE.match(value)` fanned onto `DistrictMatcher#match`.
     expect(suppressed(callOf("_TELEGRAM_RE", "match"))).toBe(true);
-    expect(suppressed(callOf("TIMEOUT", "execute"))).toBe(true);
+    expect(suppressed(callOf("TIMEOUT", "perform"))).toBe(true);
   });
 
   it("declines a receiver bound to a `self.<member>` no project file declares", () => {
@@ -175,8 +176,8 @@ describe("pythonDynamicFanoutSuppressed (w205u — every shape another layer own
   });
 
   it("still fans a receiver bound to a `self.<member>` the project DOES declare", () => {
-    const ctx = ctxOf({ callResultBindings: { service: [{ line: 4, callee: "self.execute" }] } });
-    expect(suppressed(callOf("service", "execute"), ctx)).toBe(false);
+    const ctx = ctxOf({ callResultBindings: { service: [{ line: 4, callee: "self.perform" }] } });
+    expect(suppressed(callOf("service", "perform"), ctx)).toBe(false);
   });
 
   it("declines a receiver bound to a FOREIGN call result", () => {
@@ -190,17 +191,17 @@ describe("pythonDynamicFanoutSuppressed (w205u — every shape another layer own
     // 70 % of the target family: a local assigned from a project call the walker
     // could not type. The head IS declared, so the binding is not foreign.
     const ctx = ctxOf({ callResultBindings: { service: [{ line: 4, callee: "Service.build" }] } });
-    expect(suppressed(callOf("service", "execute"), ctx)).toBe(false);
+    expect(suppressed(callOf("service", "perform"), ctx)).toBe(false);
   });
 
   it("declines a receiver with a local binding in force at the call line", () => {
     const ctx = ctxOf({ localBindings: { service: [{ line: 3, type: "Service" }] } });
-    expect(suppressed(callOf("service", "execute", 10), ctx)).toBe(true);
+    expect(suppressed(callOf("service", "perform", 10), ctx)).toBe(true);
   });
 
   it("fans a receiver whose only binding is established AFTER the call line", () => {
     const ctx = ctxOf({ localBindings: { service: [{ line: 30, type: "Service" }] } });
-    expect(suppressed(callOf("service", "execute", 10), ctx)).toBe(false);
+    expect(suppressed(callOf("service", "perform", 10), ctx)).toBe(false);
   });
 
   it("declines a receiver bound by an import (a module alias)", () => {
@@ -233,6 +234,24 @@ describe("pythonDynamicFanoutSuppressed (w205u — every shape another layer own
     const pass = new SilentPass();
     const probe = new PythonChainAnswerProbe([pass]);
     expect(suppressed(callOf("self.repo"), ctxOf(), probe)).toBe(true);
+    expect(pass.calls).toBe(0);
+  });
+
+  it("declines a member typeshed declares on a class — the decline set (w205u.14)", () => {
+    for (const member of ["get", "append", "filter", "save", "execute", "json"]) {
+      expect(suppressed(callOf("service", member))).toBe(true);
+    }
+  });
+
+  it("leaves a member typeshed does not declare to the fan", () => {
+    expect(PYTHON_TYPESHED_MEMBERS.has("perform")).toBe(false);
+    expect(suppressed(callOf("service", "perform"))).toBe(false);
+  });
+
+  it("asks the decline set before the probe — it is a hash lookup, the chain is a walk", () => {
+    const pass = new SilentPass();
+    const probe = new PythonChainAnswerProbe([pass]);
+    expect(suppressed(callOf("service", "append"), ctxOf(), probe)).toBe(true);
     expect(pass.calls).toBe(0);
   });
 });

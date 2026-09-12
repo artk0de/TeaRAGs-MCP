@@ -36,13 +36,13 @@ const sym = (
   ...(signature?.kwargs !== undefined ? { kwargs: signature.kwargs } : {}),
 });
 
-/** An instance member `Owner#execute` in its own file, optionally with a signature. */
+/** An instance member `Owner#perform` in its own file, optionally with a signature. */
 const owner = (
   n: number,
   signature?: { arity?: AritySignature; kwargs?: KwargSignature },
 ): [string, SymbolDefinition[]] => {
   const relPath = `app/owner${String(n)}.py`;
-  return [relPath, [sym(`Owner${String(n)}#execute`, "execute", relPath, [`Owner${String(n)}`], signature)]];
+  return [relPath, [sym(`Owner${String(n)}#perform`, "perform", relPath, [`Owner${String(n)}`], signature)]];
 };
 
 const tableWith = (...files: [string, SymbolDefinition[]][]): InMemoryGlobalSymbolTable => {
@@ -60,9 +60,9 @@ const ctxOf = (symbolTable: InMemoryGlobalSymbolTable, over: Partial<CallContext
 });
 
 const call = (over: Partial<CallRef> = {}): CallRef => ({
-  callText: "service.execute()",
+  callText: "service.perform()",
   receiver: "service",
-  member: "execute",
+  member: "perform",
   startLine: 10,
   ...over,
 });
@@ -134,7 +134,7 @@ describe("PythonDynamicDispatchResolver (w205u — untyped bare-name fan-out)", 
     expect(edges).toHaveLength(1);
     expect(edges[0]).toMatchObject({
       targetRelPath: "app/owner1.py",
-      targetSymbolId: "Owner1#execute",
+      targetSymbolId: "Owner1#perform",
       edgeKind: "dynamic",
       confidence: 1,
     });
@@ -149,14 +149,14 @@ describe("PythonDynamicDispatchResolver (w205u — untyped bare-name fan-out)", 
       expect(edge.edgeKind).toBe("dynamic");
       expect(edge.confidence).toBeCloseTo(0.5 / 3, 10);
     }
-    expect(edges.map((e) => e.targetSymbolId)).toEqual(["Owner1#execute", "Owner2#execute", "Owner3#execute"]);
+    expect(edges.map((e) => e.targetSymbolId)).toEqual(["Owner1#perform", "Owner2#perform", "Owner3#perform"]);
   });
 
   it("declines to fan over the cap — `ambiguous`, no edges", () => {
     const symbolTable = tableWith(owner(1), owner(2), owner(3), owner(4), owner(5));
     const outcome = build().resolveDispatch(call(), ctxOf(symbolTable));
 
-    expect(outcome).toEqual({ kind: "ambiguous", member: "execute", candidateCount: 5 });
+    expect(outcome).toEqual({ kind: "ambiguous", member: "perform", candidateCount: 5 });
   });
 
   it("reads the env cap ONCE at composition — a wider cap fans what the default would refuse", () => {
@@ -192,7 +192,7 @@ describe("PythonDynamicDispatchResolver (w205u — untyped bare-name fan-out)", 
 
     const edges = edgesOf(build().resolveDispatch(withArity, ctxOf(symbolTable)));
     expect(edges).toHaveLength(1);
-    expect(edges[0].targetSymbolId).toBe("Owner3#execute");
+    expect(edges[0].targetSymbolId).toBe("Owner3#perform");
     expect(edges[0].confidence).toBe(1);
 
     // Without the walker's `argCount` the same site keeps all three — this is
@@ -208,13 +208,13 @@ describe("PythonDynamicDispatchResolver (w205u — untyped bare-name fan-out)", 
     const edges = edgesOf(build().resolveDispatch(call({ kwargKeys: ["dry_run"] }), ctxOf(symbolTable)));
 
     expect(edges).toHaveLength(1);
-    expect(edges[0].targetSymbolId).toBe("Owner2#execute");
+    expect(edges[0].targetSymbolId).toBe("Owner2#perform");
   });
 
   it("never fans onto a same-named member in another language's file", () => {
     const symbolTable = tableWith(owner(1), [
       "web/Widget.tsx",
-      [sym("Widget#execute", "execute", "web/Widget.tsx", ["Widget"])],
+      [sym("Widget#perform", "perform", "web/Widget.tsx", ["Widget"])],
     ]);
     const edges = edgesOf(build().resolveDispatch(call(), ctxOf(symbolTable)));
 
@@ -224,16 +224,30 @@ describe("PythonDynamicDispatchResolver (w205u — untyped bare-name fan-out)", 
   it("never fans onto a module function or a `Cls.static` — a value receiver dispatches an instance member", () => {
     const symbolTable = tableWith(owner(1), [
       "app/helpers.py",
-      [sym("execute", "execute", "app/helpers.py", []), sym("Helper.execute", "execute", "app/helpers.py", ["Helper"])],
+      [sym("perform", "perform", "app/helpers.py", []), sym("Helper.perform", "perform", "app/helpers.py", ["Helper"])],
     ]);
     const edges = edgesOf(build().resolveDispatch(call(), ctxOf(symbolTable)));
 
-    expect(edges.map((e) => e.targetSymbolId)).toEqual(["Owner1#execute"]);
+    expect(edges.map((e) => e.targetSymbolId)).toEqual(["Owner1#perform"]);
   });
 
   it("returns no edges when a suppressed shape reaches it", () => {
     const symbolTable = tableWith(owner(1));
     expect(edgesOf(build().resolveDispatch(call({ receiver: "self.repo" }), ctxOf(symbolTable)))).toEqual([]);
+  });
+
+  it("declines a member typeshed declares, however many project owners want it (w205u.14)", () => {
+    // `row.get(key)` on an untyped receiver is a dict, not the one project class
+    // that also spells a `get` — the selection bias E4.1.3 measured blind.
+    const symbolTable = tableWith([
+      "app/cache.py",
+      [sym("Cache#get", "get", "app/cache.py", ["Cache"]), sym("Cache#perform", "perform", "app/cache.py", ["Cache"])],
+    ]);
+    const ctx = ctxOf(symbolTable);
+
+    expect(edgesOf(build().resolveDispatch(call({ member: "get", callText: "row.get(key)" }), ctx))).toEqual([]);
+    // The same receiver shape with a member typeshed does NOT declare still fans.
+    expect(edgesOf(build().resolveDispatch(call({ member: "perform" }), ctx))).toHaveLength(1);
   });
 
   it("returns no edges when no in-project Python class declares the member", () => {
