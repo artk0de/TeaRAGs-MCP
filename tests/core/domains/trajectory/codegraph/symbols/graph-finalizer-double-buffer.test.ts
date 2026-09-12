@@ -35,7 +35,10 @@ import {
   GraphBuildFinalizer,
   type GraphStoreResolver,
 } from "../../../../../../src/core/domains/trajectory/codegraph/symbols/graph-finalizer.js";
-import { CodegraphPhaseTimings } from "../../../../../../src/core/domains/trajectory/codegraph/symbols/phase-timings.js";
+import {
+  CodegraphPhaseTimings,
+  type CodegraphPhaseTotal,
+} from "../../../../../../src/core/domains/trajectory/codegraph/symbols/phase-timings.js";
 import type { CallEdgeResolutionRunner } from "../../../../../../src/core/domains/trajectory/codegraph/symbols/resolution-runner.js";
 import { CodegraphRunState } from "../../../../../../src/core/domains/trajectory/codegraph/symbols/run-state.js";
 
@@ -64,16 +67,6 @@ function makeFinalizer(
 ): GraphBuildFinalizer {
   const resolveStore: GraphStoreResolver = async () => ({ graphDb, symbolTable: {} as GlobalSymbolTable });
   return new GraphBuildFinalizer(resolveStore, resolutionRunner, new CodegraphRunState(), timings);
-}
-
-/** Block the thread for `ms` — the loop's resolve step is synchronous, so this
- * is the only way to simulate CPU-bound resolve work overlapping an async
- * flush without letting a timer fire mid-way. */
-function busyWait(ms: number): void {
-  const until = Date.now() + ms;
-  while (Date.now() < until) {
-    /* spin */
-  }
 }
 
 describe("GraphBuildFinalizer pass-2 double-buffered flush (bd tea-rags-mcp-6aytq)", () => {
@@ -217,33 +210,80 @@ describe("GraphBuildFinalizer pass-2 double-buffered flush (bd tea-rags-mcp-6ayt
   });
 
   it("records only the AWAITED portion of a flush in the phase telemetry", async () => {
+    // Rule-2 rewrite (`.claude/rules/test-invariants.md`, bd tea-rags-mcp-lffhl).
+    // This test used to drive a real `setTimeout(40)` write against a 40ms
+    // busy-wait resolve and assert `flush.ms < WRITE_MS * 2` — a RATIO of two
+    // measured wall clocks, i.e. implementation timing rather than the
+    // invariant. Under load (ten worktrees running suites at once) the timer
+    // fired late relative to the busy-wait, the loop awaited a still-pending
+    // write, and it failed with 94 < 80; green on re-run.
+    //
+    // The invariant is arithmetic, so it is asserted as arithmetic. A bulk
+    // write takes `writeMs` of wall clock from the moment it is handed to the
+    // session; resolving one file burns `resolveMs`. The loop dispatches the
+    // write and keeps resolving, so the only thing it may charge to `flush` is
+    // what is LEFT of that write when it finally parks on it —
+    // `max(0, writeMs - resolveMs)` — never the portion that ran off-thread.
+    // No real timers, no busy-wait: a manual clock and a write this test
+    // settles by hand.
     const WRITE_MS = 40;
-    const graphDb = {
-      upsertFilesBulk: async () => {
-        await new Promise((r) => setTimeout(r, WRITE_MS));
-      },
-      checkpoint: async () => undefined,
-    } as unknown as GraphDbClient;
 
-    const timings = new CodegraphPhaseTimings();
-    // Each resolve burns WRITE_MS of CPU, so by the time the loop needs the
-    // in-flight write it has already completed off-thread: awaited ≈ 0. Under
-    // the old inline await every one of these cost the full WRITE_MS.
-    const finalizer = makeFinalizer(
-      graphDb,
-      recordingRunner([], () => {
-        busyWait(WRITE_MS);
-      }),
-      timings,
-    );
-    await finalizer.resolveAndUpsert(writeSpill(["a.ts", "b.ts", "c.ts"]));
+    async function runPass(relPaths: string[], resolveMs: number, writeMs: number): Promise<CodegraphPhaseTotal> {
+      let t = 0;
+      const timings = new CodegraphPhaseTimings(() => t);
+      const lastRelPath = relPaths[relPaths.length - 1];
+      // At most one write is ever open (the in-flight invariant pinned by the
+      // tests above), so this is a one-slot mailbox, not a queue.
+      const inFlight: { settlesAtMs: number; release: () => void }[] = [];
+      const graphDb = {
+        upsertFilesBulk: async (entries: readonly BulkFileUpsertEntry[]): Promise<void> => {
+          // The drain's final write has no resolve work left to hide it, so it
+          // is handed over already landed. Left pending it would legitimately
+          // cost the loop the whole `writeMs`, and the totals below would be
+          // measuring the drain instead of the overlap.
+          if (entries[0]?.node.relPath === lastRelPath) return Promise.resolve();
+          return new Promise<void>((release) => {
+            inFlight.push({ settlesAtMs: t + writeMs, release });
+          });
+        },
+        checkpoint: async () => undefined,
+      } as unknown as GraphDbClient;
 
-    const { flush } = timings.snapshot().phases;
+      const runner = recordingRunner([], () => {
+        t += resolveMs;
+        // `settleFlush` is reached SYNCHRONOUSLY from here (resolve -> buffer
+        // -> dispatchFlush -> settleFlush -> `await open`), so a microtask
+        // queued here runs exactly once the loop is parked on the in-flight
+        // write, and never before it. That ordering is the only thing this
+        // test depends on, and it holds without any real time passing.
+        queueMicrotask(() => {
+          const open = inFlight.shift();
+          if (!open) return;
+          // The write's wall clock ran while the resolver worked; whatever is
+          // left of it at the park is the stall the loop actually pays.
+          t = Math.max(t, open.settlesAtMs);
+          open.release();
+        });
+      });
+
+      await makeFinalizer(graphDb, runner, timings).resolveAndUpsert(writeSpill(relPaths));
+      return timings.snapshot().phases.flush;
+    }
+
+    // Resolve fully covers the write: by the time the loop parks, the write's
+    // clock has already run out, so the awaited portion is exactly ZERO.
+    const covered = await runPass(["a.ts", "b.ts", "c.ts"], WRITE_MS, WRITE_MS);
     // One record per dispatched batch — the count contract is unchanged.
-    expect(flush.count).toBe(3);
-    // 3 writes × 40ms = 120ms of write time; the loop should have paid a small
-    // fraction of it. Inline-await would report ≥ 120ms here.
-    expect(flush.ms).toBeLessThan(WRITE_MS * 2);
+    expect(covered.count).toBe(3);
+    expect(covered.ms).toBe(0);
+
+    // Resolve covers only part of it: the loop pays the REMAINDER, exactly.
+    // Inline-await telemetry — or timing the write where it is dispatched
+    // instead of where it is awaited — reports the full WRITE_MS here.
+    const PARTIAL_RESOLVE_MS = 15;
+    const partlyCovered = await runPass(["a.ts", "b.ts"], PARTIAL_RESOLVE_MS, WRITE_MS);
+    expect(partlyCovered.count).toBe(2);
+    expect(partlyCovered.ms).toBe(25); // 40 - 15, and never the full 40
   });
 });
 
