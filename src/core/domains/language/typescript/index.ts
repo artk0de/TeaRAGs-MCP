@@ -43,10 +43,12 @@ import type {
   LanguageSymbolResolver,
   LanguageWalker,
 } from "../../../contracts/types/language.js";
+import { composeExtractionWalker } from "../kernel/extraction-passes.js";
 import { typescriptChunkClassifier, typescriptHooks } from "./chunking/index.js";
 import { typescriptKernel } from "./kernel.js";
 import { loadTsConfig, TSCallResolver } from "./resolver/index.js";
 import { tsNameOf } from "./walker/name-of.js";
+import { TYPESCRIPT_EXTRACTION_PASSES } from "./walker/passes.js";
 import { extractFromTypescriptFile, type ExtractInput } from "./walker/walker.js";
 
 /**
@@ -103,10 +105,12 @@ const typescriptChunkerHooks: LanguageChunkerHooks = {
 export class TypeScriptLanguage implements LanguageProvider {
   readonly kernel = typescriptKernel;
   readonly chunkerHooks: LanguageChunkerHooks = typescriptChunkerHooks;
-  readonly walker: LanguageWalker = {
+  readonly walker: LanguageWalker = composeExtractionWalker({
     walk: (input) => extractFromTypescriptFile(input),
     nameOf: (node) => tsNameOf(node),
-  };
+    // Empty today — see ./walker/passes.ts for why that is the design, not a gap.
+    passes: TYPESCRIPT_EXTRACTION_PASSES,
+  });
   readonly resolver: LanguageSymbolResolver;
 
   /**
