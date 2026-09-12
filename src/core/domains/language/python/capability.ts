@@ -27,5 +27,9 @@ export const capability: LanguageCapability = {
   // set. Short-name resolution now admits same-language, bare-callable,
   // non-builtin candidates only, so an index built by walker 4 carries
   // cross-language and class-body edges this one never emits.
-  versions: { chunking: 1, walker: 5, codegraphSchema: 2 },
+  // walker 6: bd tea-rags-mcp-4yvms — the pass-1 slice now persists
+  // `classFieldTypesByClassKey` + `moduleReexports`; rows written by walker 5
+  // carry neither, so an incremental run on them still mis-resolves cross-file
+  // fields and package re-exports until the Python rows are rewritten.
+  versions: { chunking: 1, walker: 6, codegraphSchema: 2 },
 };

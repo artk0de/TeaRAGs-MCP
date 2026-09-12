@@ -46,7 +46,8 @@ type Pass1AggregateSource = Pick<
   FileExtraction,
   "relPath" | "language" | "classAncestors" | "classPrependedAncestors" | "classExtends" | "compactDeclaredClasses"
 > &
-  Pick<FileExtraction, "inheritanceEdges" | "structuredReturnTypes" | "functionReturnTypes">;
+  Pick<FileExtraction, "inheritanceEdges" | "structuredReturnTypes" | "functionReturnTypes"> &
+  Pick<FileExtraction, "classFieldTypesByClassKey" | "moduleReexports">;
 
 /**
  * Build one file's persisted slice, or `undefined` when the file declares
@@ -78,6 +79,14 @@ export function buildPass1Aggregates(
   if (selfDispatchMethods.length > 0) slice.selfDispatchMethods = selfDispatchMethods;
   if (hasKeys(extraction.structuredReturnTypes)) slice.structuredReturnTypes = extraction.structuredReturnTypes;
   if (hasKeys(extraction.functionReturnTypes)) slice.functionReturnTypes = extraction.functionReturnTypes;
+  // The Python pair (bd tea-rags-mcp-4yvms). `moduleReexports` is a LIST rather
+  // than a map, so emptiness is a length — and the list is common enough (any
+  // file with a `from` import has one) that emitting `[]` would add a key to
+  // most rows in a Python project for nothing.
+  if (hasKeys(extraction.classFieldTypesByClassKey)) {
+    slice.classFieldTypesByClassKey = extraction.classFieldTypesByClassKey;
+  }
+  if ((extraction.moduleReexports?.length ?? 0) > 0) slice.moduleReexports = extraction.moduleReexports;
   return carriesFacts(slice) ? slice : undefined;
 }
 
@@ -112,6 +121,8 @@ function carriesFacts(slice: CodegraphPass1FileAggregates): boolean {
     slice.inheritanceEdges !== undefined ||
     slice.selfDispatchMethods !== undefined ||
     slice.structuredReturnTypes !== undefined ||
-    slice.functionReturnTypes !== undefined
+    slice.functionReturnTypes !== undefined ||
+    slice.classFieldTypesByClassKey !== undefined ||
+    slice.moduleReexports !== undefined
   );
 }

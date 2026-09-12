@@ -106,7 +106,11 @@ describe("seeded support versions", () => {
       // `callResultBindings` and the file-level `classFieldTypesByClassKey`;
       // python walker 5: bd tea-rags-mcp-w205u narrowed short-name resolution
       // to same-language, bare-callable, non-builtin candidates, so an index
-      // built by walker 4 holds edges this one never emits. ruby walker 2: bd
+      // built by walker 4 holds edges this one never emits; python walker 6: bd
+      // tea-rags-mcp-4yvms persists `classFieldTypesByClassKey` +
+      // `moduleReexports` in the pass-1 slice, so rows written by walker 5
+      // carry neither and an incremental run on them still mis-resolves
+      // cross-file fields and package re-exports. ruby walker 2: bd
       // tea-rags-mcp-kumq2 routed every Ruby short-name lookup through the same
       // same-language filter, so an index built by walker 1 holds the
       // cross-language picks this one never emits. java walker 2: bd
@@ -118,7 +122,7 @@ describe("seeded support versions", () => {
       // Every other language is still at its seed.
       const WALKER_BUMPED = new Map([
         ["typescript", 4],
-        ["python", 5],
+        ["python", 6],
         ["ruby", 2],
         ["java", 2],
         ["rust", 2],

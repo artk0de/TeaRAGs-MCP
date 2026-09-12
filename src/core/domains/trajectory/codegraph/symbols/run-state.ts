@@ -885,6 +885,31 @@ export class CodegraphRunState {
         this.returnTypes[k] = v;
         this.markContributed("returnTypes");
       }
+      // The Python pair (bd tea-rags-mcp-4yvms). No `markContributed` for either:
+      // both are {@link RunGlobalMapName}-free by design, because
+      // `buildResolverInputs` hands them to pass-2 UNCONDITIONALLY — every
+      // reader indexes them by key, so an absent map reads the same as an empty
+      // one and there is no per-file fallback for a contribution flag to switch
+      // away from. Adding a flag nothing reads would be an index that can
+      // disagree with the map it describes, which is the cost {@link
+      // contributedRunGlobals} exists to justify, not to incur.
+      //
+      // Batch-wins at the CLASS KEY, never merged field-by-field: the walked
+      // extraction is the whole truth about that class, so a persisted row that
+      // still lists a field the class has since dropped must not top it up.
+      for (const [classKey, fields] of Object.entries(slice.classFieldTypesByClassKey ?? {})) {
+        if (classKey in this.classFieldTypesByClassKey) continue;
+        this.classFieldTypesByClassKey[classKey] = fields;
+      }
+      // Batch-wins on the DECLARING relPath rather than on an exported name,
+      // matching the grain `absorb` replaces this channel at. Unreachable while
+      // `selectHydratablePass1Aggregates` drops walked files — a row's relPath IS
+      // its key here — and kept because that makes "the walked list is the whole
+      // truth about one file's `from` statements" a property of this merge rather
+      // than a consequence of the filter upstream of it.
+      if (slice.moduleReexports !== undefined && !(slice.relPath in this.moduleReexports)) {
+        this.moduleReexports[slice.relPath] = slice.moduleReexports;
+      }
       // Ancestor symbol_ids stay null exactly as they do on the pass-1 path: the
       // hierarchy view reads by fq NAME, and pass-2's per-file persist owns the
       // symbol_id binding for the rows it writes.

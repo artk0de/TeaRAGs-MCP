@@ -172,7 +172,7 @@ type-inference family listed above.
 ### 5 — Persistence: batch-scoped, and that is measured, not assumed
 
 `contracts/types/codegraph-pass1.ts:117` records the ablation from
-`scripts/spikes/ruby-incremental-runglobal-delta.ts` on taxdome (9,945 attempted
+`scripts/spikes/incremental-runglobal-delta.ts` on taxdome (9,945 attempted
 calls, 250 files): an incremental run loses 168 edges; persisting
 `structuredReturnTypes` + `functionReturnTypes` recovers 131; **the whole param
 family — `paramNames`, `paramTypes`, `classFieldParamLinks`,

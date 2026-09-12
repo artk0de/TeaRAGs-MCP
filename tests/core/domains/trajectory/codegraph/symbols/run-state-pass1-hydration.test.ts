@@ -147,6 +147,106 @@ describe("CodegraphRunState.seal hydrates the pass-1 aggregates of files this ru
   });
 });
 
+/**
+ * The two Python channels bd tea-rags-mcp-4yvms added to the slice, measured on
+ * netbox (`classFieldTypesByClassKey`, 9 edges) and polar (`moduleReexports`,
+ * 118 edges) with `scripts/spikes/incremental-runglobal-delta.ts`.
+ *
+ * They need their own assertions because their merge grains differ from the
+ * ancestry channels' and from each other's: one is a two-level map skipped at
+ * the CLASS KEY, the other a list REPLACED at the declaring relPath.
+ */
+describe("CodegraphRunState.seal hydrates the Python run-global channels", () => {
+  it("absorbs an unwalked file's class-key field types so a subclass sees a base's fields", async () => {
+    const runState = new CodegraphRunState();
+    runState.absorb(walkedFile("app/services.py"), []);
+
+    await runState.seal(noopTable, async () => [
+      persistedSlice("app/models.py", {
+        classFieldTypesByClassKey: { "app/models.py::SyncServiceBase": { client: "HttpClient" } },
+      }),
+    ]);
+
+    expect(runState.classFieldTypesByClassKey).toEqual({
+      "app/models.py::SyncServiceBase": { client: "HttpClient" },
+    });
+  });
+
+  it("never lets a hydrated class key displace a walked one, and never merges into it", async () => {
+    const runState = new CodegraphRunState();
+    // The fresh walk retyped `client` and dropped `legacy` entirely.
+    runState.absorb(
+      walkedFile("app/models.py", {
+        classFieldTypesByClassKey: { "app/models.py::SyncServiceBase": { client: "AsyncClient" } },
+      } as Partial<FileExtraction>),
+      [],
+    );
+
+    // A DIFFERENT file's row carries the SAME class key with stale content. The
+    // key prefix makes this unreachable in production — a key names its own
+    // declaring file, and that file's row is skipped when walked — so the guard
+    // is pinned here rather than left to the SKIP filter to imply.
+    await runState.seal(noopTable, async () => [
+      persistedSlice("app/legacy.py", {
+        classFieldTypesByClassKey: {
+          "app/models.py::SyncServiceBase": { client: "HttpClient", legacy: "LegacyClient" },
+        },
+      }),
+    ]);
+
+    expect(runState.classFieldTypesByClassKey).toEqual({
+      "app/models.py::SyncServiceBase": { client: "AsyncClient" },
+    });
+  });
+
+  it("skips the row of a re-walked file, so a field the class no longer has stays gone", async () => {
+    const runState = new CodegraphRunState();
+    runState.absorb(walkedFile("app/models.py"), []);
+
+    await runState.seal(noopTable, async () => [
+      persistedSlice("app/models.py", {
+        classFieldTypesByClassKey: { "app/models.py::SyncServiceBase": { client: "HttpClient" } },
+        moduleReexports: [{ exportedName: "Site", sourceModule: ".site", sourceName: "Site" }],
+      }),
+    ]);
+
+    expect(runState.classFieldTypesByClassKey).toEqual({});
+    expect(runState.moduleReexports).toEqual({});
+  });
+
+  it("absorbs an unwalked package's re-export list, keyed by the file that declared it", async () => {
+    const runState = new CodegraphRunState();
+    runState.absorb(walkedFile("dcim/views.py"), []);
+    const reexports = [{ exportedName: "ObjectType", sourceModule: ".object_types", sourceName: "ObjectType" }];
+
+    await runState.seal(noopTable, async () => [
+      persistedSlice("core/models/__init__.py", { moduleReexports: reexports }),
+    ]);
+
+    expect(runState.moduleReexports).toEqual({ "core/models/__init__.py": reexports });
+  });
+
+  it("guards the re-export merge on the declaring relPath, not on an exported name", async () => {
+    const runState = new CodegraphRunState();
+    const walked = [{ exportedName: "Site", sourceModule: ".site", sourceName: "Site" }];
+    runState.absorb(walkedFile("core/models/__init__.py", { moduleReexports: walked } as Partial<FileExtraction>), []);
+
+    // Same relPath, stale content. The SKIP filter already drops a walked file's
+    // own row; the guard is what makes "the walked list is the whole truth"
+    // independent of that filter rather than a consequence of it.
+    await runState.seal(noopTable, async () => [
+      persistedSlice("core/models/__init__.py", {
+        moduleReexports: [
+          { exportedName: "Site", sourceModule: ".site", sourceName: "Site" },
+          { exportedName: "Removed", sourceModule: ".removed", sourceName: "Removed" },
+        ],
+      }),
+    ]);
+
+    expect(runState.moduleReexports).toEqual({ "core/models/__init__.py": walked });
+  });
+});
+
 describe("CodegraphRunState.absorb collects the Python run-global channels", () => {
   it("unions class-key-addressed field types across files without conflating same-named classes", () => {
     const runState = new CodegraphRunState();
