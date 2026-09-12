@@ -49,8 +49,8 @@
   },
   "python": {
     "walker": {
-      "version": 6,
-      "digest": "sha256:6e4b9aa1ad2b22eaa4a4cf3e838189ce8d228c9061ebc1207c5c7efb2a5be7f6"
+      "version": 7,
+      "digest": "sha256:47f608f687796d789b8e7401f47056b02de3cad8f1a3c02ab5e0ee5ac36ab67e"
     }
   },
   "ruby": {

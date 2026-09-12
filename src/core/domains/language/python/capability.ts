@@ -31,5 +31,10 @@ export const capability: LanguageCapability = {
   // `classFieldTypesByClassKey` + `moduleReexports`; rows written by walker 5
   // carry neither, so an incremental run on them still mis-resolves cross-file
   // fields and package re-exports until the Python rows are rewritten.
-  versions: { chunking: 1, walker: 6, codegraphSchema: 2 },
+  // walker 7: bd tea-rags-mcp-11qqk — the import mapper's re-export answers are
+  // memoised per RUN rather than per symbol table, so a second run against one
+  // pooled table no longer reads the first run's declarers. An index whose rows
+  // were written by walker 6 can carry edges resolved through a re-export target
+  // that had already moved, and nothing short of re-resolving them is coherent.
+  versions: { chunking: 1, walker: 7, codegraphSchema: 2 },
 };
