@@ -153,9 +153,10 @@ describe("pick sites — a `.ts`/`.tsx` namesake is never chosen as the target",
       call,
       ctx({ symbolTable: crossLanguageTable() }),
     );
-    // The residual file-only edge comes from `resolveConstant`, which is a
-    // separate hole (`symbolTable.lookup(fq)` is language-blind too); the
-    // METHOD-level cross-language pick is what this bead removes.
+    // The METHOD-level cross-language pick is what this bead removes. The
+    // residual file-only edge it left came from `resolveConstant`
+    // (`symbolTable.lookup(fq)` was language-blind too) and is closed by bd
+    // tea-rags-mcp-zn4uf — see `ruby-constant-file-language-filter.test.ts`.
     expect(outcome.kind === "resolved" ? outcome.target.targetSymbolId : null).toBeNull();
   });
 
