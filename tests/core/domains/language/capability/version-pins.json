@@ -12,7 +12,7 @@
   "bash": {
     "walker": {
       "version": 1,
-      "digest": "sha256:5be3f12964d987fc02f46f8da510463056e5390378f913f4a8446613f380d982"
+      "digest": "sha256:9bdaf9fbb5e77465f204a444e611c22420a200b453e7370e9175c1b02d75ce59"
     }
   },
   "go": {
