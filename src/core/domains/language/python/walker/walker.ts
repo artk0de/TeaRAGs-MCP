@@ -38,6 +38,7 @@ import type {
   ModuleReexport,
 } from "../../../../contracts/types/codegraph.js";
 import { assignCallsToInnermostChunks } from "../../kernel/assign-calls-to-chunks.js";
+import { pythonVocabularyFor } from "../vocabulary/frameworks/index.js";
 import { collectPythonClassBodyFieldTypes } from "./passes/python-class-body-fields.js";
 import { collectPythonDefSignatures, pythonCallShape } from "./passes/python-def-signatures.js";
 
@@ -48,6 +49,13 @@ export interface PythonExtractInput {
   language: string;
   /** Caller-provided chunk-range index, sorted by startLine ascending. */
   chunks: { symbolId: string; startLine: number; endLine: number; scope: string[] }[];
+  /**
+   * The project's declared dependencies for this run, mirroring
+   * `WalkInput.declaredDependencies`. Gates framework vocabularies via
+   * `pythonVocabularyFor`; `undefined` (no manifest anywhere) → the FULL
+   * catalogue, byte-identical to pre-gating (bd tea-rags-mcp-w205u.1).
+   */
+  declaredDependencies?: ReadonlySet<string>;
 }
 
 /**
@@ -65,53 +73,90 @@ export function pythonLocalTypeTrackingEnabled(): boolean {
 }
 
 export function extractFromPythonFile(input: PythonExtractInput): FileExtraction {
-  const { imports, reexports } = collectPythonImports(input.tree.rootNode);
-  const calls = collectPythonCalls(input.tree.rootNode);
+  const root = input.tree.rootNode;
+  const trackTypes = pythonLocalTypeTrackingEnabled();
+  // bd tea-rags-mcp-1v12o.2.7 (E6.2) — every FLAT collector below reads the same
+  // pre-order over the same materialized tree, so they ride ONE descent instead
+  // of six. Each keeps its own body and its own accumulator; the driver only
+  // decides who is called, in list order, per node.
+  const scan: PythonImportScan = { imports: [], reexports: [] };
+  const { imports, reexports } = scan;
+  const calls: CallRef[] = [];
   // bd tea-rags-mcp-zvsw — Decorator applications are calls. Append the
   // synthetic call edges so `get_callers(decoratorName)` returns every
   // decorated method/function.
-  const decoratorCalls = collectPythonDecoratorCalls(input.tree.rootNode);
-  for (const dc of decoratorCalls) calls.push(dc);
+  const decoratorCalls: CallRef[] = [];
   // bd tea-rags-mcp-pic4 — Python class single-base map for super()
   // resolution. Single inheritance only (first listed base).
-  const classExtends = collectPythonClassExtends(input.tree.rootNode);
-  // bd tea-rags-mcp-y4hro — the MULTI-base, file-qualified hierarchy channel the
-  // ancestor walk linearizes. `classExtends` stays exactly as it is beside it:
-  // `python-self-field.ts` and `pythonTypeOwnsMembers` both read it.
-  const classAncestors = collectPythonClassAncestors(input.tree.rootNode, input.relPath, imports);
+  const classExtends: Record<string, string> = {};
   // bd tea-rags-mcp-rjuc — instance-field types declared in `__init__`
   // (`self.service = SomeService()`) recorded as CLASS-LEVEL state so the
   // resolver can pin `self.service.process()` cross-method. Mirrors the
   // TS/Java `classFieldTypes` channel.
-  const classFieldTypes = collectPythonClassFieldTypes(input.tree.rootNode);
+  const classFieldTypes: Record<string, Record<string, string>> = {};
+  // bd tea-rags-mcp-1v12o.2.4 (E6.1) — collected ONCE per file and sliced per
+  // chunk below, because the collector this replaces walked the whole file tree
+  // once per chunk: netbox's `dcim/tests/test_filtersets.py` (7.7k lines, 620
+  // chunks) paid 620 full traversals and 14.1 s in that one function.
+  const localBindingSites: PythonLocalBindingSite[] = [];
+  const flatVisitors: PythonNodeVisitor[] = [
+    collectPythonImports(scan),
+    collectPythonCalls(calls),
+    collectPythonDecoratorCalls(decoratorCalls),
+    collectPythonClassExtends(classExtends),
+    collectPythonClassFieldTypes(classFieldTypes),
+  ];
+  if (trackTypes) flatVisitors.push(collectPythonLocalBindingSites(localBindingSites));
+  walkOnce(root, flatVisitors);
+  for (const dc of decoratorCalls) calls.push(dc);
+  // The three SCOPED collectors keep the same relationship to each other on one
+  // scope-tracking descent — `collectPythonInheritanceEdges` stays on its own
+  // because its scope advances through classes only (see `walkPythonClassScopes`).
+  //
+  // bd tea-rags-mcp-y4hro — the MULTI-base, file-qualified hierarchy channel the
+  // ancestor walk linearizes. `classExtends` stays exactly as it is beside it:
+  // `python-self-field.ts` and `pythonTypeOwnsMembers` both read it.
+  const classAncestors: Record<string, readonly string[]> = {};
   // bd tea-rags-mcp-f0xaa — the SAME fields under the run-global class key, so a
   // subclass in another file can read what its base assigned. The short-name
   // channel above cannot answer that: it is per-file and its key is ambiguous
   // run-global.
-  const classFieldTypesByClassKey = collectPythonClassFieldTypesByClassKey(input.tree.rootNode, input.relPath);
+  const classFieldTypesByClassKey: Record<string, Record<string, string>> = {};
+  // bd tea-rags-mcp-w205u, E4.6c — the fields whose RHS is a CALL, recorded as
+  // the callee SPELLING because the walker cannot know what it returns. Scanned
+  // here, FILTERED after the class-body merge below, so a field any of the three
+  // type collectors answered for is excluded on this file's final type map.
+  const fieldCallResultScan: Record<string, Record<string, string | null>> = {};
+  walkPythonClassScopes(root, [
+    collectPythonClassAncestors(classAncestors, input.relPath, imports),
+    collectPythonClassFieldTypesByClassKey(classFieldTypesByClassKey, input.relPath),
+    collectPythonClassFieldCallResults(fieldCallResultScan, input.relPath),
+  ]);
   // bd tea-rags-mcp-xpl83 — Django binds a model's manager in the CLASS BODY
   // (`objects = ObjectTypeManager()`), which no `self.<field>` collector can
   // see. The facts merge UNDERNEATH the two collectors above: a constructor
   // assignment for the same field is the narrower statement about an instance,
   // so reversing this spread order would silently retype every field a class
   // declares twice.
-  const classBodyFields = collectPythonClassBodyFieldTypes(input.tree.rootNode, input.relPath, imports);
+  // bd tea-rags-mcp-w205u.1 — the pass's `as_manager` arm is Django's own verb
+  // and runs only where the project declares Django; the bare-construction arm
+  // rests on project-class evidence alone and stays on everywhere. With no
+  // manifest anywhere the catalogue is FULL and both arms run as they did.
+  const classBodyFields = collectPythonClassBodyFieldTypes(
+    root,
+    input.relPath,
+    imports,
+    pythonVocabularyFor(input.declaredDependencies).hasFacet("classBodyManagerFactory"),
+  );
   for (const [key, fields] of Object.entries(classBodyFields.byShortName)) {
     classFieldTypes[key] = { ...fields, ...(classFieldTypes[key] ?? {}) };
   }
   for (const [key, fields] of Object.entries(classBodyFields.byClassKey)) {
     classFieldTypesByClassKey[key] = { ...fields, ...(classFieldTypesByClassKey[key] ?? {}) };
   }
-  // bd tea-rags-mcp-w205u, E4.6c — the fields whose RHS is a CALL, recorded as
-  // the callee SPELLING because the walker cannot know what it returns. Built
-  // AFTER the class-body merge above, so a field any of the three type
-  // collectors answered for is excluded on this file's final type map.
-  const classFieldCallResults = collectPythonClassFieldCallResults(
-    input.tree.rootNode,
-    input.relPath,
-    classFieldTypesByClassKey,
-  );
-  const trackTypes = pythonLocalTypeTrackingEnabled();
+  // The filter runs AFTER the class-body merge above, so a field any of the
+  // three type collectors answered for is excluded on this file's final map.
+  const classFieldCallResults = finalizePythonClassFieldCallResults(fieldCallResultScan, classFieldTypesByClassKey);
   // Innermost-chunk attribution: ONE owning chunk per call site — the smallest
   // containing range, ties broken by deeper scope (bd tea-rags-mcp-invuy;
   // mirrors typescript tea-rags-mcp-otjs and ruby tea-rags-mcp-8fnu). A class
@@ -129,7 +174,7 @@ export function extractFromPythonFile(input: PythonExtractInput): FileExtraction
   // and sliced per chunk below, because the scan needs whole-file scope nesting
   // to tell a function-body local from a module global.
   const callResultBindings = trackTypes
-    ? collectPythonCallResultBindings(input.tree.rootNode)
+    ? collectPythonCallResultBindings(root)
     : ({} as Record<string, CallResultBinding[]>);
   // bd tea-rags-mcp-w205u — the two neutral signature channels the kernel's
   // `ArityNarrower` / `KwargNarrower` read. Collected ONCE per file and joined
@@ -138,15 +183,7 @@ export function extractFromPythonFile(input: PythonExtractInput): FileExtraction
   // the `function_definition`, never its `decorated_definition` wrapper. A chunk
   // that is not a def — a class, a module — simply finds nothing, the same
   // absence Ruby leaves on a non-method.
-  const defSignatures = collectPythonDefSignatures(input.tree.rootNode);
-  // bd tea-rags-mcp-1v12o.2.4 (E6.1) — the same once-per-file / slice-per-chunk
-  // shape as `callResultBindings` above, for the SAME reason: the collector this
-  // replaces walked the whole file tree once per chunk, so netbox's
-  // `dcim/tests/test_filtersets.py` (7.7k lines, 620 chunks) paid 620 full
-  // traversals and 14.1 s in that one function.
-  const localBindingSites = trackTypes
-    ? collectPythonLocalBindingSites(input.tree.rootNode)
-    : ([] as PythonLocalBindingSite[]);
+  const defSignatures = collectPythonDefSignatures(root);
   const byChunk: ChunkExtraction[] = input.chunks.map((c, chunkIndex) => {
     const base: ChunkExtraction = {
       symbolId: c.symbolId,
@@ -191,7 +228,7 @@ export function extractFromPythonFile(input: PythonExtractInput): FileExtraction
   // All bases are kind `super` — Python's C3 MRO has no include/extend/prepend
   // distinction and the cone only needs the descendant set, not MRO order. The
   // legacy `classExtends` stays (resolver-forward path).
-  const inheritanceEdges = collectPythonInheritanceEdges(input.tree.rootNode);
+  const inheritanceEdges = collectPythonInheritanceEdges(root);
   if (inheritanceEdges.length > 0) out.inheritanceEdges = inheritanceEdges;
   return out;
 }
@@ -294,9 +331,8 @@ function collectPythonInheritanceEdges(root: AstNode): InheritanceEdgeDecl[] {
  * Returns a plain object (Record) for NDJSON round-trip — Map would
  * serialise to `{}`.
  */
-function collectPythonClassFieldTypes(root: AstNode): Record<string, Record<string, string>> {
-  const out: Record<string, Record<string, string>> = {};
-  walk(root, (node) => {
+function collectPythonClassFieldTypes(out: Record<string, Record<string, string>>): PythonNodeVisitor {
+  return (node) => {
     if (node.type !== "class_definition") return;
     const nameNode = node.childForFieldName("name");
     if (!nameNode) return;
@@ -313,8 +349,7 @@ function collectPythonClassFieldTypes(root: AstNode): Record<string, Record<stri
       // writes win, mirroring localBindings' last-write-wins discipline.
       out[className] = { ...(out[className] ?? {}), ...fields };
     }
-  });
-  return out;
+  };
 }
 
 /**
@@ -331,20 +366,11 @@ function collectPythonClassFieldTypes(root: AstNode): Record<string, Record<stri
  * a run-global key has no room for the short-name channel's tolerated overlap.
  */
 function collectPythonClassFieldTypesByClassKey(
-  root: AstNode,
+  out: Record<string, Record<string, string>>,
   relPath: string,
-): Record<string, Record<string, string>> {
-  const out: Record<string, Record<string, string>> = {};
-  const walkScope = (node: AstNode, scope: readonly string[], classFq: string | undefined): void => {
-    const isContainer = node.type === "class_definition" || node.type === "function_definition";
-    const nameNode = isContainer ? node.childForFieldName("name") : null;
-    if (nameNode) {
-      const childScope = [...scope, nameNode.text];
-      const childClassFq = node.type === "class_definition" ? childScope.join(".") : classFq;
-      const body = node.childForFieldName("body");
-      for (const child of body ? body.children : node.children) walkScope(child, childScope, childClassFq);
-      return;
-    }
+): PythonScopedNodeVisitor {
+  return (node, _scope, classFq, containerScope) => {
+    if (containerScope !== undefined) return;
     if (classFq !== undefined) {
       const found = pythonSelfFieldType(node);
       if (found !== undefined) {
@@ -352,10 +378,7 @@ function collectPythonClassFieldTypesByClassKey(
         out[key] = { ...(out[key] ?? {}), [found.field]: found.type };
       }
     }
-    for (const child of node.children) walkScope(child, scope, classFq);
   };
-  walkScope(root, [], undefined);
-  return out;
 }
 
 /**
@@ -480,21 +503,11 @@ function pythonSelfFieldCallee(inner: AstNode): { readonly field: string; readon
  * a field that holds either is not evidence for a receiver.
  */
 function collectPythonClassFieldCallResults(
-  root: AstNode,
+  seen: Record<string, Record<string, string | null>>,
   relPath: string,
-  typed: Record<string, Record<string, string>>,
-): Record<string, Record<string, string>> {
-  const seen: Record<string, Record<string, string | null>> = {};
-  const walkScope = (node: AstNode, scope: readonly string[], classFq: string | undefined): void => {
-    const isContainer = node.type === "class_definition" || node.type === "function_definition";
-    const nameNode = isContainer ? node.childForFieldName("name") : null;
-    if (nameNode) {
-      const childScope = [...scope, nameNode.text];
-      const childClassFq = node.type === "class_definition" ? childScope.join(".") : classFq;
-      const body = node.childForFieldName("body");
-      for (const child of body ? body.children : node.children) walkScope(child, childScope, childClassFq);
-      return;
-    }
+): PythonScopedNodeVisitor {
+  return (node, _scope, classFq, containerScope) => {
+    if (containerScope !== undefined) return;
     if (classFq !== undefined) {
       const found = pythonSelfFieldCallee(node);
       if (found !== undefined) {
@@ -504,10 +517,19 @@ function collectPythonClassFieldCallResults(
         fields[found.field] = found.field in fields && fields[found.field] !== found.callee ? null : found.callee;
       }
     }
-    for (const child of node.children) walkScope(child, scope, classFq);
   };
-  walkScope(root, [], undefined);
+}
 
+/**
+ * The conflict + already-typed filter that turns the raw scan above into the
+ * emitted channel. Split from the visitor because it runs LATER than the walk:
+ * `typed` is the class-key map only after `collectPythonClassBodyFieldTypes`
+ * has merged into it, and a field any type collector answered is excluded here.
+ */
+function finalizePythonClassFieldCallResults(
+  seen: Record<string, Record<string, string | null>>,
+  typed: Record<string, Record<string, string>>,
+): Record<string, Record<string, string>> {
   const out: Record<string, Record<string, string>> = {};
   for (const [key, fields] of Object.entries(seen)) {
     const typedFields = typed[key] ?? {};
@@ -531,9 +553,8 @@ function collectPythonClassFieldCallResults(
  * Returns a plain object (Record) for NDJSON round-trip — Map would
  * serialise to `{}`.
  */
-function collectPythonClassExtends(root: AstNode): Record<string, string> {
-  const out: Record<string, string> = {};
-  walk(root, (node) => {
+function collectPythonClassExtends(out: Record<string, string>): PythonNodeVisitor {
+  return (node) => {
     if (node.type !== "class_definition") return;
     const nameNode = node.childForFieldName("name");
     if (!nameNode) return;
@@ -550,8 +571,7 @@ function collectPythonClassExtends(root: AstNode): Record<string, string> {
     if (parentText.length > 0 && parentText !== "object") {
       out[className] = parentText;
     }
-  });
-  return out;
+  };
 }
 
 /** Join two module-path halves, honouring the leading dots of a relative import. */
@@ -717,26 +737,13 @@ export const PYTHON_UNRESOLVABLE_BASE = "<unresolvable>";
  * to `{}`.
  */
 function collectPythonClassAncestors(
-  root: AstNode,
+  out: Record<string, readonly string[]>,
   relPath: string,
   imports: readonly ImportRef[],
-): Record<string, readonly string[]> {
-  const out: Record<string, readonly string[]> = {};
-  const walkScope = (node: AstNode, scope: string[]): void => {
-    const isContainer = node.type === "class_definition" || node.type === "function_definition";
-    const nameNode = isContainer ? node.childForFieldName("name") : null;
-    if (!nameNode) {
-      for (const child of node.children) walkScope(child, scope);
-      return;
-    }
-    const localName = nameNode.text;
-    const childScope = [...scope, localName];
-    if (node.type !== "class_definition") {
-      const fnBody = node.childForFieldName("body");
-      for (const child of fnBody ? fnBody.children : node.children) walkScope(child, childScope);
-      return;
-    }
-    const fq = childScope.join(".");
+): PythonScopedNodeVisitor {
+  return (node, _scope, _classFq, containerScope) => {
+    if (containerScope === undefined || node.type !== "class_definition") return;
+    const fq = containerScope.join(".");
     const supers = node.childForFieldName("superclasses");
     const bases: string[] = [];
     if (supers) {
@@ -763,11 +770,7 @@ function collectPythonClassAncestors(
       }
     }
     if (bases.length > 0) out[`${relPath}::${fq}`] = bases;
-    const body = node.childForFieldName("body");
-    for (const child of body ? body.children : node.children) walkScope(child, childScope);
   };
-  walkScope(root, []);
-  return out;
 }
 
 /**
@@ -784,9 +787,8 @@ function collectPythonClassAncestors(
  * `attribute`. For the call shape we extract the function position; for
  * the bare shape we treat the decorator text as the member name.
  */
-function collectPythonDecoratorCalls(root: AstNode): CallRef[] {
-  const out: CallRef[] = [];
-  walk(root, (node) => {
+function collectPythonDecoratorCalls(out: CallRef[]): PythonNodeVisitor {
+  return (node) => {
     if (node.type !== "decorator") return;
     // `decorator` has a single named child which is the callee expression.
     const expr = node.namedChildren[0];
@@ -818,8 +820,7 @@ function collectPythonDecoratorCalls(root: AstNode): CallRef[] {
       if (!obj || !attr) return;
       out.push({ callText: node.text, receiver: obj.text, member: attr.text, startLine });
     }
-  });
-  return out;
+  };
 }
 
 /** One `varName → typeName` binding site, carrying the name the slicer groups by. */
@@ -848,9 +849,8 @@ interface PythonLocalBindingSite {
  * hands back stays a plain object so it round-trips through the NDJSON spill —
  * a `Map` would serialize to `{}` and lose every entry.
  */
-function collectPythonLocalBindingSites(root: AstNode): PythonLocalBindingSite[] {
-  const out: PythonLocalBindingSite[] = [];
-  walk(root, (node) => {
+function collectPythonLocalBindingSites(out: PythonLocalBindingSite[]): PythonNodeVisitor {
+  return (node) => {
     const line = node.startPosition.row + 1;
 
     // PEP 526 + constructor assignment.
@@ -930,8 +930,7 @@ function collectPythonLocalBindingSites(root: AstNode): PythonLocalBindingSite[]
       const typeName = extractTypeName(typeField);
       if (typeName) out.push({ name: varName, binding: { line, type: typeName } });
     }
-  });
-  return out;
+  };
 }
 
 /**
@@ -1031,10 +1030,10 @@ interface PythonImportScan {
   readonly reexports: ModuleReexport[];
 }
 
-function collectPythonImports(root: AstNode): PythonImportScan {
-  const out: ImportRef[] = [];
-  const reexports: ModuleReexport[] = [];
-  walk(root, (node) => {
+function collectPythonImports(scan: PythonImportScan): PythonNodeVisitor {
+  const out = scan.imports;
+  const { reexports } = scan;
+  return (node) => {
     if (node.type === "import_statement") {
       // `import a`, `import a.b`, `import a as x`, `import a, b`
       // Tree-sitter-python wraps each dotted_name (or aliased_import)
@@ -1112,8 +1111,7 @@ function collectPythonImports(root: AstNode): PythonImportScan {
         out.push({ importText: prefix, startLine, ...names, ...bindings });
       }
     }
-  });
-  return { imports: out, reexports };
+  };
 }
 
 function pickModuleText(node: AstNode): string | null {
@@ -1162,9 +1160,8 @@ function normalizePythonReceiverText(node: AstNode): string {
   return args === null || args.namedChildren.length === 0 ? "super" : node.text;
 }
 
-function collectPythonCalls(root: AstNode): CallRef[] {
-  const out: CallRef[] = [];
-  walk(root, (node) => {
+function collectPythonCalls(out: CallRef[]): PythonNodeVisitor {
+  return (node) => {
     if (node.type !== "call") return;
     const fn = node.childForFieldName("function");
     if (!fn) return;
@@ -1189,13 +1186,79 @@ function collectPythonCalls(root: AstNode): CallRef[] {
       // Bare call like `foo(...)`.
       out.push({ callText: node.text, receiver: null, member: fn.text, startLine, ...pythonCallShape(node) });
     }
-  });
-  return out;
+  };
 }
 
 function walk(node: AstNode, visit: (n: AstNode) => void): void {
   visit(node);
   for (const child of node.children) walk(child, visit);
+}
+
+/** One node of the flat pre-order descent, as each file-level collector sees it. */
+export type PythonNodeVisitor = (node: AstNode) => void;
+
+/**
+ * The flat pre-order descent every file-level collector used to run for itself
+ * (bd tea-rags-mcp-1v12o.2.7, E6.2). Six of them walked the same materialized
+ * tree with the same `walk`, so the file's whole node set was descended six
+ * times to fill six independent accumulators. This descends once and hands each
+ * node to every visitor in list order.
+ *
+ * Output-preserving by construction: a visitor sees exactly the sequence its own
+ * `walk` produced, because the pre-order is the same and nothing here reads or
+ * writes a collector's state. The visitor array is built once per file, so the
+ * per-node cost is the calls themselves.
+ */
+export function walkOnce(node: AstNode, visitors: readonly PythonNodeVisitor[]): void {
+  for (const visit of visitors) visit(node);
+  for (const child of node.children) walkOnce(child, visitors);
+}
+
+/**
+ * One node of the SCOPED descent the class-keyed collectors share.
+ *
+ * `scope` is the named-container chain the node sits INSIDE (the node's own name
+ * is not in it); `classFq` is the dotted FQ of the innermost enclosing class, or
+ * `undefined` outside one; `containerScope` is `[...scope, <own name>]` when the
+ * node is a named `class_definition` / `function_definition` and `undefined`
+ * otherwise — the signal each collector branched on to tell "this node opens a
+ * scope" from "this node is a statement in one".
+ */
+export type PythonScopedNodeVisitor = (
+  node: AstNode,
+  scope: readonly string[],
+  classFq: string | undefined,
+  containerScope: readonly string[] | undefined,
+) => void;
+
+/**
+ * The scope-tracking descent shared by `collectPythonClassAncestors`,
+ * `collectPythonClassFieldTypesByClassKey` and
+ * `collectPythonClassFieldCallResults` (bd tea-rags-mcp-1v12o.2.7, E6.2).
+ *
+ * The three ran byte-identical bookkeeping — scope extended through EVERY named
+ * container, descent into the container's `body` when it has one and into its
+ * children when it does not, everything else descended with the scope unchanged
+ * — and differed only in which nodes they read. That is why they fuse and
+ * `collectPythonInheritanceEdges` does not: its scope advances on classes ONLY,
+ * so a class declared inside a `def` keys `Outer.Inner` there and `build.Local`
+ * here, and it descends a function's non-body children that this one prunes.
+ */
+export function walkPythonClassScopes(root: AstNode, visitors: readonly PythonScopedNodeVisitor[]): void {
+  const descend = (node: AstNode, scope: readonly string[], classFq: string | undefined): void => {
+    const isContainer = node.type === "class_definition" || node.type === "function_definition";
+    const nameNode = isContainer ? node.childForFieldName("name") : null;
+    const containerScope = nameNode ? [...scope, nameNode.text] : undefined;
+    for (const visit of visitors) visit(node, scope, classFq, containerScope);
+    if (containerScope !== undefined) {
+      const childClassFq = node.type === "class_definition" ? containerScope.join(".") : classFq;
+      const body = node.childForFieldName("body");
+      for (const child of body ? body.children : node.children) descend(child, containerScope, childClassFq);
+      return;
+    }
+    for (const child of node.children) descend(child, scope, classFq);
+  };
+  descend(root, [], undefined);
 }
 
 /** Scopes whose body is a function body — a local established there is a LOCAL. */
@@ -1205,16 +1268,65 @@ const PYTHON_NESTED_SCOPES = new Set(["function_definition", "lambda"]);
 const PYTHON_CALLEE_SPELLING = /^[A-Za-z_]\w*(\.[A-Za-z_]\w*)*$/;
 
 /**
- * The callee spelling of a call node, or `null` when it is not a plain dotted
- * name. A spelling carrying a call, an index or a newline is a CHAIN, not a
- * name; folding it would mean re-parsing the text and this channel does not do
- * that (bd tea-rags-mcp-z68v9).
+ * The longest spine this records, in `.`-separated hops. One more than the
+ * fold's own `CHAIN_MAX_HOPS_DEFAULT` links, because the final member is a hop
+ * here and a member there: a spine the fold would refuse to walk is payload
+ * nobody reads.
+ */
+const PYTHON_CALLEE_SPINE_MAX_HOPS = 5;
+
+/**
+ * The callee spelling of a call node, or `null` when it is not one this channel
+ * can hand the fold.
+ *
+ * A plain dotted name passes through verbatim (`make`, `Repo.from_session`,
+ * `self.factory.build`). A spine carrying intermediate CALLS is rendered with
+ * its ARGUMENTS ELIDED — `Ticket.objects.select_for_update().get` — which is
+ * exactly the receiver spelling `splitAtBracketDepthZero` + `stripCallArgs`
+ * already fold, so nothing downstream re-parses anything (bd
+ * tea-rags-mcp-1v12o.4). Eliding is not cosmetic: ugnest's shape is
+ * `Reaction.objects.filter(\n    user_id=…,\n).first`, and the raw text carries
+ * newlines, commas and `=` into a field the fold splits on `.`.
+ *
+ * The spine must be ROOTED AT A NAME. `make().build()` stays declined — its
+ * head is a call the fold cannot seed, so the whole spine folds to nothing and
+ * recording it would buy payload and no answers (bd tea-rags-mcp-z68v9's
+ * decision, kept). So does a subscript, a lambda, or anything else that is not
+ * an identifier or an attribute access.
  */
 function pythonCalleeSpelling(call: AstNode): string | null {
   const fn = call.childForFieldName("function");
   if (fn === null) return null;
   if (fn.type !== "identifier" && fn.type !== "attribute" && fn.type !== "dotted_name") return null;
-  return PYTHON_CALLEE_SPELLING.test(fn.text) ? fn.text : null;
+  if (PYTHON_CALLEE_SPELLING.test(fn.text)) return fn.text;
+  const spine = pythonCalleeSpine(fn);
+  return spine !== null && spine.hops <= PYTHON_CALLEE_SPINE_MAX_HOPS ? spine.text : null;
+}
+
+/**
+ * One node of a callee spine, rendered structurally. `hops` counts the
+ * `.`-separated segments so the cap above is applied to the whole spine rather
+ * than to each recursion.
+ */
+function pythonCalleeSpine(node: AstNode): { text: string; hops: number } | null {
+  if (node.type === "identifier" || node.type === "dotted_name") {
+    return PYTHON_CALLEE_SPELLING.test(node.text) ? { text: node.text, hops: node.text.split(".").length } : null;
+  }
+  if (node.type !== "attribute") return null;
+  const object = node.childForFieldName("object");
+  const attribute = node.childForFieldName("attribute");
+  if (object === null || attribute?.type !== "identifier") return null;
+  // An intermediate call contributes its own callee spine plus the empty
+  // argument list the fold strips back off. Only a METHOD call qualifies: a
+  // call on a bare identifier is the ROOT of the spine (`make().build`), and a
+  // root the fold cannot seed makes the whole spine fold to nothing.
+  const inner = object.type === "call" ? object.childForFieldName("function") : object;
+  if (inner === null) return null;
+  if (object.type === "call" && inner.type !== "attribute") return null;
+  const head = pythonCalleeSpine(inner);
+  if (head === null) return null;
+  const rendered = object.type === "call" ? `${head.text}()` : head.text;
+  return { text: `${rendered}.${attribute.text}`, hops: head.hops + 1 };
 }
 
 /**
@@ -1227,11 +1339,14 @@ function pythonCalleeSpelling(call: AstNode): string | null {
  * `pythonCallBindingType` folds it at resolve time.
  *
  * Declined by construction, each because there is no single nominal answer:
- * tuple unpacking, a chained / subscripted callee, a non-call RHS, an annotated
- * assignment (the annotation is the better answer and `localBindings` already
- * carries it), and a MODULE-level assignment — a module global is not a local,
- * and binding one would type every call site in the file from a single write.
- * `await <call>` IS unwrapped: awaiting a coroutine yields what it declares.
+ * tuple unpacking, a subscripted callee, a callee spine ROOTED at a call
+ * (`make().build()`), a non-call RHS, an annotated assignment (the annotation
+ * is the better answer and `localBindings` already carries it), and a
+ * MODULE-level assignment — a module global is not a local, and binding one
+ * would type every call site in the file from a single write. `await <call>` IS
+ * unwrapped: awaiting a coroutine yields what it declares, and a spine rooted
+ * at a NAME is recorded with its arguments elided — see
+ * {@link pythonCalleeSpelling}.
  *
  * Returns a plain object (Record) for NDJSON round-trip — `Map` serialises to
  * `{}` and loses every entry.

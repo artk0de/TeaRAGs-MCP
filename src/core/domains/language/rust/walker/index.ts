@@ -8,3 +8,4 @@
 
 export { extractFromRustFile, type RustExtractInput } from "./walker.js";
 export { rustNameOf } from "./name-of.js";
+export { RUST_EXTRACTION_PASSES } from "./passes.js";

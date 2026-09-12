@@ -15,11 +15,18 @@
  * consulted once per unresolved call on corpora with 80k of them.
  */
 import { resolveLocalBindingType } from "../../../../contracts/types/codegraph-local-binding.js";
-import type { CallContext } from "../../../../contracts/types/codegraph.js";
+import {
+  DEFAULT_AMBIGUOUS_RESOLVE_MODE,
+  type AmbiguousResolveMode,
+  type CallContext,
+  type CallRef,
+} from "../../../../contracts/types/codegraph.js";
 import type { ExternalVocabulary } from "../../../../contracts/types/language.js";
 import { PYTHON_BUILTINS } from "../vocabulary/builtins.js";
 import { PYTHON_CORE_MEMBERS } from "../vocabulary/core-members.js";
 import { PYTHON_STDLIB_MODULES } from "../vocabulary/stdlib-modules.js";
+import type { PythonAncestorLinearizerCache } from "./python-ancestor-policy.js";
+import { PythonExternalDefinitionProbe } from "./python-external-definition-probe.js";
 import { PythonImportFileMapper } from "./python-import-file-mapper.js";
 import { mapPythonImportToFile } from "./python-path-mapper.js";
 
@@ -30,7 +37,36 @@ export class PythonExternalVocabulary implements ExternalVocabulary {
    * instance would be a second memo and a licence to disagree. A caller with no
    * chain to share with omits it and gets a private one.
    */
-  constructor(private readonly mapper: PythonImportFileMapper = new PythonImportFileMapper()) {}
+  /**
+   * The type-and-hierarchy half of the same decision (bd tea-rags-mcp-1v12o.3).
+   * Built only when the caller has an ancestor-linearizer cache to lend: every
+   * arm of it is an MRO question, and a vocabulary with no linearizer answers
+   * exactly what it answered before the probe existed.
+   */
+  private readonly definitionProbe: PythonExternalDefinitionProbe | undefined;
+
+  constructor(
+    private readonly mapper: PythonImportFileMapper = new PythonImportFileMapper(),
+    linearizers?: PythonAncestorLinearizerCache,
+    mode: AmbiguousResolveMode = DEFAULT_AMBIGUOUS_RESOLVE_MODE,
+  ) {
+    this.definitionProbe =
+      linearizers === undefined
+        ? undefined
+        : new PythonExternalDefinitionProbe(mapper, linearizers, mode, {
+            isBareCallExternal: (member, ctx) => this.isBareCallExternal(member, ctx),
+            isRootExternalImport: (root, ctx, atLine) => this.rootIsExternalImport(root, ctx, atLine),
+          });
+  }
+
+  /**
+   * bd tea-rags-mcp-1v12o.3 — the receiver's TYPE, not its text, puts the
+   * definition outside the project. Delegated whole to
+   * {@link PythonExternalDefinitionProbe}; absent a linearizer it is inert.
+   */
+  isReceiverDefinitionExternal(call: CallRef, ctx: CallContext): boolean {
+    return this.definitionProbe?.targetsExternalDefinition(call, ctx) ?? false;
+  }
 
   /**
    * A bare call naming a builtin — bound by the interpreter, never a project
@@ -74,7 +110,16 @@ export class PythonExternalVocabulary implements ExternalVocabulary {
    */
   isQualifiedReceiverExternal(receiver: string, ctx: CallContext, atLine?: number): boolean {
     if (!receiver.includes(".")) return false;
-    const root = receiver.slice(0, receiver.indexOf("."));
+    return this.rootIsExternalImport(receiver.slice(0, receiver.indexOf(".")), ctx, atLine);
+  }
+
+  /**
+   * The import question {@link isQualifiedReceiverExternal} is made of, asked
+   * of a receiver ROOT. Split out so the definition probe can ask it of a
+   * SINGLE-SEGMENT receiver (`httpx.post(...)`) — the same fact, one dot short
+   * — without the dotted guard above moving.
+   */
+  private rootIsExternalImport(root: string, ctx: CallContext, atLine?: number): boolean {
     // A receiver with a local type at this line is a VALUE, not a module —
     // whatever the imports say about the name.
     if (atLine !== undefined && resolveLocalBindingType(ctx.localBindings, root, atLine) !== undefined) {

@@ -339,6 +339,19 @@ export interface CallContext {
    */
   gemfileContent?: string;
   /**
+   * Every dependency the project DECLARES, read once per run from its manifests
+   * and normalized per language — the language-neutral form of the same fact
+   * {@link gemfileContent} carries for Ruby, and the value a framework
+   * vocabulary activates against. `undefined` means no manifest exists anywhere,
+   * which leaves every vocabulary active; an empty set is a manifest declaring
+   * nothing, which gates every conditional one off.
+   *
+   * Threaded to the resolver beside the walk input so a resolver-side vocabulary
+   * can gate on the same fact the extraction did — the Python walker is the only
+   * consumer today (bd tea-rags-mcp-w205u.1).
+   */
+  declaredDependencies?: ReadonlySet<string>;
+  /**
    * Absolute root of the project THIS run is indexing, threaded per run by the
    * codegraph provider exactly like {@link gemfileContent}. A resolver whose
    * answers depend on project-rooted state reads it here rather than capturing

@@ -93,7 +93,7 @@
   finalize, deferred chunk work and release are untouched — the single-writer
   invariant holds because only absorb touches the store or run state. Three
   things gate it: the batch is not `crossPass` (there the chunker already
-  parsed), the pool has a spare worker (`poolSize - 1`), and
+  parsed), the run earns a spare worker (next bullet), and
   `CODEGRAPH_PASS1_FANOUT` is not `0`. The dispatcher — not the provider — owns
   the per-run "already extracted" set, reset from `coordinator.beginRun` via
   `executor.beginRun`. Why: the file phase batches CHUNKS and a recompute reads
@@ -101,6 +101,19 @@
   batches; the provider's own `extracted` guard used to absorb that redundancy
   AFTER the parse, and once the parse moved off-thread, dedup had to move BEFORE
   dispatch or the same file is parsed once per batch it appears in.
+- **`INGEST_TUNE_ENRICHMENT_POOL_SIZE` is a CEILING, not an allocation.** A
+  slot's worker is spawned by its FIRST dispatch (this pool is the only one that
+  passes `WorkerDispatchPool`'s `spawnOnDemand`; the chunker stays eager), and a
+  run takes
+  `clamp(ceil(files / INGEST_TUNE_ENRICHMENT_FILES_PER_THREAD), 1, poolSize)`
+  extraction threads from the `fileCount` that reached `executor.beginRun` — an
+  UNCOUNTED run (0/undefined) keeps the full width, since "not counted" is not
+  evidence of "small". Why: on ugnest (234 Python files, pass 1 = 1.10 s) a pool
+  of 4 carried 115 MB more than a pool of 1 at RECOMPUTE_SCROLL and 245 MB more
+  at ALL_COMPLETE, for three threads that corpus cannot keep busy; an isolate
+  plus its module load costs ~200 ms and only earns it at ~400 files. Large
+  corpora are untouched — taxdome's ~19,000 hit the ceiling on the first
+  comparison.
 - **With the liveness timeout off, a per-thread HEAP CEILING is the only bound
   on a runaway provider** — `ENRICHMENT_WORKER_MEMORY_LIMIT_MB`, default 6144
   (raised from 2048 once the whole-project `ts.Program` strategy put the

@@ -81,6 +81,33 @@ describe("extractFromPythonFile — callResultBindings", () => {
     expect(bindingsOf(src)).toBeUndefined();
   });
 
+  // bd tea-rags-mcp-1v12o.4 — ugnest's dominant residual shape. The spine is
+  // rendered from the AST with ARGUMENTS ELIDED, so it stays a foldable
+  // receiver spelling rather than a slab of source text.
+  it("records a chain ROOTED AT A NAME, with call arguments elided", () => {
+    const src = ["def run(ticket_id):", "    ticket = Ticket.objects.select_for_update().get(id=ticket_id)", ""].join(
+      "\n",
+    );
+    expect(bindingsOf(src)).toEqual({ ticket: [{ line: 2, callee: "Ticket.objects.select_for_update().get" }] });
+  });
+
+  it("elides a MULTI-LINE argument list rather than recording its text", () => {
+    const src = [
+      "def run(user_id):",
+      "    existing = Reaction.objects.filter(",
+      "        user_id=user_id,",
+      "        target_type='post',",
+      "    ).first()",
+      "",
+    ].join("\n");
+    expect(bindingsOf(src)).toEqual({ existing: [{ line: 2, callee: "Reaction.objects.filter().first" }] });
+  });
+
+  it("declines a chain longer than the fold's hop cap", () => {
+    const src = ["def run():", "    x = A.b().c().d().e().f()", ""].join("\n");
+    expect(bindingsOf(src)).toBeUndefined();
+  });
+
   it("declines a subscripted callee", () => {
     const src = ["def run(registry):", "    x = registry['a'].build()", ""].join("\n");
     expect(bindingsOf(src)).toBeUndefined();

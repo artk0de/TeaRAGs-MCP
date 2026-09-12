@@ -53,11 +53,13 @@ import type {
   LanguageSymbolResolver,
   LanguageWalker,
 } from "../../../contracts/types/language.js";
+import { composeExtractionWalker } from "../kernel/extraction-passes.js";
 import { DefaultSymbolIdComposer } from "../kernel/symbol-id.js";
 import { GoChunkClassifier } from "./chunking/index.js";
 import { goKernel } from "./kernel.js";
 import { GoCallResolver } from "./resolver/index.js";
 import { goNameOf } from "./walker/name-of.js";
+import { GO_EXTRACTION_PASSES } from "./walker/passes.js";
 import { extractFromGoFile, type GoExtractInput } from "./walker/walker.js";
 
 /**
@@ -84,10 +86,12 @@ const goChunkerHooks: LanguageChunkerHooks = {
 export class GoLanguage implements LanguageProvider {
   readonly kernel = goKernel;
   readonly chunkerHooks: LanguageChunkerHooks = goChunkerHooks;
-  readonly walker: LanguageWalker = {
+  readonly walker: LanguageWalker = composeExtractionWalker({
     walk: (input) => extractFromGoFile(input),
     nameOf: (node) => goNameOf(node),
-  };
+    // Empty today — see ./walker/passes.ts for why that is the design, not a gap.
+    passes: GO_EXTRACTION_PASSES,
+  });
   readonly resolver: LanguageSymbolResolver;
 
   constructor(mode: AmbiguousResolveMode = DEFAULT_AMBIGUOUS_RESOLVE_MODE) {

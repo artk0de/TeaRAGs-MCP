@@ -38,6 +38,10 @@ import type {
   LanguageFactoryDescriptor,
   SymbolIdComposer,
 } from "../../../../../contracts/types/language.js";
+import {
+  collectDependencyManifestSources,
+  readDeclaredDependencies,
+} from "../../../../../infra/dependency-manifests.js";
 import type { ChunkerConfig } from "../../../../../types.js";
 import { createWorkerRuntime } from "../../infra/worker-runtime.js";
 import { TreeSitterChunker } from "../tree-sitter.js";
@@ -71,6 +75,10 @@ interface ChunkerEngine {
   /** Raw Gemfile for the run (adx5p.1b) — passed to the walker so cross-pass
    *  extraction gates DSL grammar to this project's gems. */
   gemfileContent?: string;
+  /** The project's declared dependencies (bd tea-rags-mcp-w205u.1), walked ONCE
+   *  per worker at engine build. Same purpose as `gemfileContent`, the other
+   *  direction of the same gate; undefined ⇒ every vocabulary active. */
+  declaredDependencies?: ReadonlySet<string>;
 }
 
 /**
@@ -96,6 +104,14 @@ async function buildChunker(config: ChunkerConfig): Promise<ChunkerEngine> {
     composer,
     collectSymbols: lang.collectSymbols,
     gemfileContent: config.gemfileContent,
+    // Walked ONCE per worker, here rather than per request: the manifests do not
+    // move during a run, and this is the first point that has both the project
+    // root and a factory able to say which files are manifests. No root (tests,
+    // the main-thread chunker) ⇒ undefined ⇒ every vocabulary active.
+    declaredDependencies:
+      config.projectRoot === undefined
+        ? undefined
+        : readDeclaredDependencies(config.projectRoot, collectDependencyManifestSources(languageFactory)),
   };
 }
 
@@ -140,6 +156,8 @@ runtime.onRequest((request) => {
             chunks: symbolRanges,
             // Gem-gated DSL grammar at cross-pass extraction (adx5p.1b).
             gemfileContent: engine.gemfileContent,
+            // Dependency-gated framework vocabularies (bd tea-rags-mcp-w205u.1).
+            declaredDependencies: engine.declaredDependencies,
           });
         }
       }

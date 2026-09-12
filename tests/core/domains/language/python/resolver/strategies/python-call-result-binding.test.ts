@@ -264,4 +264,79 @@ describe("PythonLocalBindingSymbolResolutionStrategy — a local bound to a call
     const ctx = ctxWith({ callerFile: "svc/use.py", table: POLAR_TABLE, callResultBindings: {} });
     expect(localBinding().attempt(callOn("repository", "update", 12), ctx)).toEqual({ kind: "continue" });
   });
+
+  // ugnest's selector shape (bd tea-rags-mcp-1v12o.4): `-> Comment | None` is
+  // the ordinary Python spelling for "may be absent", and a call on the value
+  // dispatches exactly where a non-nilable one does.
+  it("folds a NILABLE return fact to its one reachable arm", () => {
+    const table = tableWith({
+      "sel/comment.py": ["CommentSelector", "CommentSelector.get_by_id"],
+      "models/comment.py": ["Comment", "Comment#save"],
+      "svc/approve.py": ["run"],
+    });
+    const ctx = ctxWith({
+      callerFile: "svc/approve.py",
+      table,
+      structuredReturnTypes: {
+        "CommentSelector.get_by_id": {
+          form: "union",
+          members: [{ form: "instance", name: "Comment" }, { form: "nil" }],
+        },
+      },
+      callResultBindings: { comment: [{ line: 10, callee: "CommentSelector.get_by_id" }] },
+    });
+    expect(localBinding().attempt(callOn("comment", "save", 12), ctx)).toEqual({
+      kind: "resolved",
+      target: { targetRelPath: "models/comment.py", targetSymbolId: "Comment#save" },
+    });
+  });
+
+  it("folds a nilable MODULE-LEVEL return fact the same way", () => {
+    const table = tableWith({
+      "sel/lookup.py": ["find_comment"],
+      "models/comment.py": ["Comment", "Comment#save"],
+      "svc/approve.py": ["run"],
+    });
+    const ctx = ctxWith({
+      callerFile: "svc/approve.py",
+      table,
+      structuredReturnTypes: {
+        "sel/lookup.py::find_comment": {
+          form: "union",
+          members: [{ form: "nil" }, { form: "instance", name: "Comment" }],
+        },
+      },
+      callResultBindings: { comment: [{ line: 10, callee: "find_comment" }] },
+    });
+    expect(localBinding().attempt(callOn("comment", "save", 12), ctx)).toEqual({
+      kind: "resolved",
+      target: { targetRelPath: "models/comment.py", targetSymbolId: "Comment#save" },
+    });
+  });
+
+  // Two real arms are two real targets; collapsing one of them away would pick a
+  // winner the annotation never named.
+  it("leaves a TWO-armed union unfolded", () => {
+    const table = tableWith({
+      "sel/comment.py": ["CommentSelector", "CommentSelector.get_by_id"],
+      "models/comment.py": ["Comment", "Comment#save"],
+      "models/draft.py": ["Draft", "Draft#save"],
+      "svc/approve.py": ["run"],
+    });
+    const ctx = ctxWith({
+      callerFile: "svc/approve.py",
+      table,
+      structuredReturnTypes: {
+        "CommentSelector.get_by_id": {
+          form: "union",
+          members: [
+            { form: "instance", name: "Comment" },
+            { form: "instance", name: "Draft" },
+          ],
+        },
+      },
+      callResultBindings: { comment: [{ line: 10, callee: "CommentSelector.get_by_id" }] },
+    });
+    expect(localBinding().attempt(callOn("comment", "save", 12), ctx)).toEqual({ kind: "continue" });
+  });
 });

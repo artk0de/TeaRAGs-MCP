@@ -8,3 +8,4 @@
 
 export { extractFromBashFile, type BashExtractInput } from "./walker.js";
 export { bashNameOf } from "./name-of.js";
+export { BASH_EXTRACTION_PASSES } from "./passes.js";

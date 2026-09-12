@@ -46,10 +46,12 @@ import type {
   LanguageSymbolResolver,
   LanguageWalker,
 } from "../../../contracts/types/language.js";
+import { composeExtractionWalker } from "../kernel/extraction-passes.js";
 import { javascriptHooks, JsChunkClassifier, jsExportNameExtractor } from "./chunking/index.js";
 import { javascriptKernel } from "./kernel.js";
 import { JavascriptCallResolver } from "./resolver/index.js";
 import { jsNameOf } from "./walker/name-of.js";
+import { JAVASCRIPT_EXTRACTION_PASSES } from "./walker/passes.js";
 import { extractFromJavascriptFile, type JsExtractInput } from "./walker/walker.js";
 
 /**
@@ -125,10 +127,12 @@ const javascriptChunkerHooks: LanguageChunkerHooks = {
 export class JavaScriptLanguage implements LanguageProvider {
   readonly kernel = javascriptKernel;
   readonly chunkerHooks: LanguageChunkerHooks = javascriptChunkerHooks;
-  readonly walker: LanguageWalker = {
+  readonly walker: LanguageWalker = composeExtractionWalker({
     walk: (input) => extractFromJavascriptFile(input),
     nameOf: (node) => jsNameOf(node),
-  };
+    // Empty today — see ./walker/passes.ts for why that is the design, not a gap.
+    passes: JAVASCRIPT_EXTRACTION_PASSES,
+  });
   readonly resolver: LanguageSymbolResolver;
 
   constructor(mode: AmbiguousResolveMode = DEFAULT_AMBIGUOUS_RESOLVE_MODE) {

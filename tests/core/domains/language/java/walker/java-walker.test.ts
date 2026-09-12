@@ -208,3 +208,63 @@ describe("extractFromJavaFile — call shapes coexisting", () => {
     expect(method?.receiver).toBe("obj");
   });
 });
+
+// bd tea-rags-mcp-f11nz — ONE owning chunk per call site. The pure line-range
+// containment filter this replaces handed every call to EVERY chunk whose range
+// spanned it, and `javaNameOf` marks `class_declaration` `descendsInto: true`,
+// so every call inside a method was emitted TWICE: once from the method chunk
+// under the method's scope, once from the class chunk under the class's.
+describe("extractFromJavaFile — innermost-chunk call attribution", () => {
+  it("emits a call inside a method exactly once, from the method chunk", () => {
+    const src = [
+      "package com.example;",
+      "",
+      "public class Service {",
+      "  public int go() {",
+      "    return helper();",
+      "  }",
+      "  public int helper() { return 2; }",
+      "}",
+      "",
+    ].join("\n");
+    const r = extractFromJavaFile({
+      tree: parse(src),
+      code: src,
+      relPath: "Service.java",
+      language: "java",
+      chunks: [
+        { symbolId: "Service.java::Service", scope: [], startLine: 3, endLine: 8 },
+        { symbolId: "Service.java::Service#go", scope: ["Service"], startLine: 4, endLine: 6 },
+        { symbolId: "Service.java::Service#helper", scope: ["Service"], startLine: 7, endLine: 7 },
+      ],
+    });
+    const emitted = r.chunks.flatMap((c) => (c.calls ?? []).map((call) => `${c.symbolId}:${call.member}`));
+    expect(emitted).toEqual(["Service.java::Service#go:helper"]);
+  });
+
+  it("leaves a class-level call outside every method on the class chunk", () => {
+    const src = [
+      "package com.example;",
+      "",
+      "public class Service {",
+      "  private final int seed = boot();",
+      "  public int go() {",
+      "    return helper();",
+      "  }",
+      "}",
+      "",
+    ].join("\n");
+    const r = extractFromJavaFile({
+      tree: parse(src),
+      code: src,
+      relPath: "Service.java",
+      language: "java",
+      chunks: [
+        { symbolId: "Service.java::Service", scope: [], startLine: 3, endLine: 8 },
+        { symbolId: "Service.java::Service#go", scope: ["Service"], startLine: 5, endLine: 7 },
+      ],
+    });
+    expect(r.chunks[0].calls.map((c) => c.member)).toEqual(["boot"]);
+    expect(r.chunks[1].calls.map((c) => c.member)).toEqual(["helper"]);
+  });
+});

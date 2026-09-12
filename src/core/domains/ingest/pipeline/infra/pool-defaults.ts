@@ -140,6 +140,30 @@ export function defaultExtractionFanoutWorkers(poolSize: number): number {
 }
 
 /**
+ * Files a run must have for each extraction thread it spreads pass-1 over.
+ *
+ * The fan-out's width used to be fixed at `poolSize - 1` regardless of how much
+ * work the run had. On a small corpus that is a loss, not a win: each extra
+ * thread is a V8 isolate plus a module load — roughly 200 ms and tens of MB —
+ * against a pass-1 that may be over in a second. Measured on ugnest (234 Python
+ * files, pass 1 = 1.10 s): a pool of 4 carried 115 MB more than a pool of 1 at
+ * RECOMPUTE_SCROLL and 245 MB more at ALL_COMPLETE, for three threads that
+ * corpus cannot keep busy.
+ *
+ * 400 is where a thread starts paying for itself: at real per-file parse rates
+ * that is 0.4-2 s of work, comfortably above the isolate it costs. Large
+ * corpora are unaffected — taxdome's ~19,000 files reach the ceiling on the
+ * first comparison, which is the fan-out bd tea-rags-mcp-6aytq measured.
+ *
+ * The value is the ZOD schema's default (`INGEST_TUNE_ENRICHMENT_FILES_PER_THREAD`
+ * overrides it), the same way `defaultChunkerPoolSize` backs
+ * `INGEST_TUNE_CHUNKER_POOL_SIZE` — so the knob is read in ONE place, not here.
+ */
+export function defaultEnrichmentFilesPerThread(): number {
+  return 400;
+}
+
+/**
  * Files per extract message. Bounds the structured-clone frame each shard
  * carries back: a shard is `min(shardSize, ceil(batch / workers))` files, so
  * this only binds on batches large enough that per-worker shards would exceed

@@ -888,14 +888,18 @@ export async function createAppContext(config: AppConfig, hooks?: AppContextHook
   // compiled bootstrap module so both the npm-linked global install and the
   // local dev path work.
   //
-  // PROCESS-SCOPED on purpose: the pool spawns its threads eagerly, so it is
-  // shared by every project's ingest slice rather than rebuilt per project.
-  // Provider instances and their serializable config travel per dispatch, so
-  // per-project provider settings still reach the worker — only the thread
-  // COUNT is fixed at the server's own INGEST_TUNE_ENRICHMENT_POOL_SIZE.
+  // PROCESS-SCOPED on purpose: one pool is shared by every project's ingest
+  // slice rather than rebuilt per project. Provider instances and their
+  // serializable config travel per dispatch, so per-project provider settings
+  // still reach the worker — only the thread COUNT is fixed at the server's own
+  // INGEST_TUNE_ENRICHMENT_POOL_SIZE. That count is a CEILING, not an
+  // allocation: threads are spawned on first dispatch and the pass-1 fan-out
+  // takes only as many as the run's file count earns at
+  // INGEST_TUNE_ENRICHMENT_FILES_PER_THREAD.
   const enrichmentExecutor = new WorkerPoolEnrichmentExecutor(
     zodConfig.ingest.tune.enrichmentPoolSize,
     join(dirname(fileURLToPath(import.meta.url)), "../core/domains/ingest/pipeline/enrichment/infra/worker.js"),
+    zodConfig.ingest.tune.enrichmentFilesPerThread,
   );
 
   const ingestSlice: IngestSliceDeps = {

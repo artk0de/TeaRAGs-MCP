@@ -118,6 +118,7 @@ import {
   collectSourceFiles,
   extractFile,
   formatOracleTable,
+  readCorpusDeclaredDependencies,
   type OracleOutcome,
 } from "./ts-codegraph-typechecker-oracle.js";
 
@@ -297,8 +298,12 @@ export async function walkCorpus(
   let parseFailures = 0;
   let symbolTableOnlyFiles = 0;
 
+  // The corpus's declared dependencies, read where production reads them, so the
+  // walk and every call context below carry production's gate (w205u.1).
+  const declaredDependencies = readCorpusDeclaredDependencies(corpusRoot, factory);
+
   for (const relPath of selection.kept.slice(0, limit)) {
-    const extraction = extractFile(corpusRoot, relPath, composer, factory);
+    const extraction = extractFile(corpusRoot, relPath, composer, factory, declaredDependencies);
     if (extraction === null) {
       parseFailures++;
       continue;
@@ -369,6 +374,7 @@ export async function walkCorpus(
   for (const { relPath, extraction } of extractions) {
     for (const chunk of extraction.chunks) {
       const ctx: CallContext = {
+        declaredDependencies,
         callerFile: relPath,
         callerScope: chunk.scope,
         callerSymbolId: chunk.symbolId,

@@ -28,6 +28,7 @@ import type {
   ImportRef,
   LocalBinding,
 } from "../../../../contracts/types/codegraph.js";
+import { assignCallsToInnermostChunks } from "../../kernel/assign-calls-to-chunks.js";
 
 export interface GoExtractInput {
   tree: MaterializedTree;
@@ -41,13 +42,22 @@ export function extractFromGoFile(input: GoExtractInput): FileExtraction {
   const imports = collectGoImports(input.tree.rootNode);
   const calls = collectGoCalls(input.tree.rootNode);
   const functionReturnTypes = collectGoFunctionReturnTypes(input.tree.rootNode);
-  const byChunk: ChunkExtraction[] = input.chunks.map((c) => {
+  // bd tea-rags-mcp-f11nz — ONE owning chunk per call site: the smallest
+  // containing range, ties broken by deeper scope. The pure-containment filter
+  // this replaces gave a call to EVERY chunk spanning its line, so any enclosing
+  // chunk produced a second copy under the container's scope (the defect python
+  // fixed in bd tea-rags-mcp-invuy). `goNameOf` marks every Go symbol
+  // `descendsInto: false`, so today's chunk set never nests and the emitted call
+  // set is unmoved — the kernel call makes that a property of the walker rather
+  // than of the current nameOf.
+  const callOwnership = assignCallsToInnermostChunks(calls, input.chunks);
+  const byChunk: ChunkExtraction[] = input.chunks.map((c, chunkIndex) => {
     const base: ChunkExtraction = {
       symbolId: c.symbolId,
       scope: c.scope,
       startLine: c.startLine,
       endLine: c.endLine,
-      calls: calls.filter((cr) => cr.startLine >= c.startLine && cr.startLine <= c.endLine),
+      calls: callOwnership.get(chunkIndex) ?? [],
     };
     // bd tea-rags-mcp-e6xx / 6g9c — per-chunk bindings. `localBindings`
     // (varName → TYPE) covers receivers, params, `var x Foo`, `x := Foo{}`.
