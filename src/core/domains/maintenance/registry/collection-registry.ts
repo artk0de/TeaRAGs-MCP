@@ -25,7 +25,7 @@ export class CollectionRegistry {
    * writes back only the fields THIS instance changed, leaving everything
    * another process wrote in the meantime alone. Null whenever `cache` is.
    */
-  private base: Map<string, CollectionEntry> | null = null;
+  private loadedSnapshot: Map<string, CollectionEntry> | null = null;
   private readonly tombstones = new Set<string>();
   private watcher: FSWatcher | null = null;
   private stopHandle: (() => void) | null = null;
@@ -41,28 +41,31 @@ export class CollectionRegistry {
         for (const [k, v] of Object.entries(file.collections)) map.set(k, v);
       }
       this.cache = map;
-      this.base = snapshotEntries(map);
+      this.loadedSnapshot = snapshotEntries(map);
       return map;
     } catch (err) {
       process.stderr.write(`[tea-rags] registry corrupt, starting empty: ${(err as Error).message}\n`);
       this.cache = new Map();
-      this.base = new Map();
+      this.loadedSnapshot = new Map();
       return this.cache;
     }
   }
 
   private flush(): void {
     const map = this.ensureLoaded();
-    const written = flushWithCAS(this.dataDir, map, this.tombstones, this.base ?? undefined);
+    const written = flushWithCAS(this.dataDir, map, this.tombstones, this.loadedSnapshot ?? undefined);
     // Adopt what actually landed for the entries we hold: fields disk won stay
-    // won, so the NEXT flush does not re-report them as our local change.
-    const base = new Map<string, CollectionEntry>();
-    for (const [k, entry] of map) {
-      const merged = written.collections[k];
-      if (merged !== undefined) map.set(k, merged);
-      base.set(k, structuredClone(merged ?? entry));
+    // won, so the NEXT flush does not re-report them as our local change. The
+    // adopted entries are collected first and applied after the iteration ends,
+    // so nothing is written to `map` while it is being walked.
+    const adopted = new Map<string, CollectionEntry>();
+    for (const [k, entry] of map) adopted.set(k, written.collections[k] ?? entry);
+    const snapshot = new Map<string, CollectionEntry>();
+    for (const [k, entry] of adopted) {
+      map.set(k, entry);
+      snapshot.set(k, structuredClone(entry));
     }
-    this.base = base;
+    this.loadedSnapshot = snapshot;
   }
 
   record(entry: RecordEntryInput): void {
@@ -281,7 +284,7 @@ export class CollectionRegistry {
       this.watcher = watch(this.dataDir, { persistent: false }, (_eventType, filename) => {
         if (filename === "registry.json" || filename === null) {
           this.cache = null;
-          this.base = null;
+          this.loadedSnapshot = null;
         }
       });
     } catch {

@@ -17,9 +17,9 @@
   `Omit<CollectionEntry, "name" | "autoUpdate">`), but
   `BaseIndexingPipeline#recordRegistryEntry` (`domains/ingest/pipeline/base.ts`)
   never passes them, and nothing re-sets provenance after an index run — the
-  only writer is `CollectionRegistry#setWorktreeProvenance` (`:197-203`), called
+  only writer is `CollectionRegistry#setWorktreeProvenance` (`:256-262`), called
   once at clone time. Why: reindexing a worktree clone wipes its provenance;
-  `findWorktree` (`:189-195`) then misses it, `tea-rags worktree remove <name>`
+  `findWorktree` (`:224-230`) then misses it, `tea-rags worktree remove <name>`
   throws `WorktreeNotFoundError`, and the plugin cleanup hook's
   registry-vs-filesystem sweep skips the entry — silently, with no error
   anywhere. Any new field set outside the pipeline must be added to the sticky
@@ -28,38 +28,41 @@
 ## Mechanics
 
 - **Every mutator does a synchronous whole-file round trip, and the CAS backoff
-  busy-waits.** `record` (`:68`), `updatePath` (`:140`), `setName` (`:153`),
-  `setAutoUpdate` (`:178`), `recordAutoUpdateRun` (`:199`), `remove` (`:207`)
-  and `setWorktreeProvenance` (`:253`) each call `flush()` immediately, and
-  `flush()` is `flushWithCAS` (`:54-66`): read all of `registry.json`, merge,
-  write temp, rename (`registry-file.ts:205-229`). On a CAS miss the retry path
+  busy-waits.** `record` (`:71`), `updatePath` (`:143`), `setName` (`:156`),
+  `setAutoUpdate` (`:181`), `recordAutoUpdateRun` (`:202`), `remove` (`:210`)
+  and `setWorktreeProvenance` (`:256`) each call `flush()` immediately, and
+  `flush()` is `flushWithCAS` (`:54-69`): read all of `registry.json`, merge,
+  write temp, rename (`registry-file.ts:209-233`). On a CAS miss the retry path
   is `sleepSync` — a `while (Date.now() < end)` spin, NOT a timer
-  (`registry-file.ts:168-176`) — 10+20+40+80 ms over four backoffs before
+  (`registry-file.ts:172-180`) — 10+20+40+80 ms over four backoffs before
   `RegistryConcurrencyError`. Why: the API looks like cheap in-memory setters,
   so it invites being called per file or per chunk; in the MCP server that
   blocks the event loop for ~150 ms per contended mutation and stalls every
   concurrent request. Batch first, write once.
 - **A flush writes back only the fields THIS instance changed since it loaded.**
-  `CollectionRegistry` keeps a `base` snapshot of every entry taken at load and
-  refreshed after each successful flush (`:22-28`, `:54-66`), and
-  `mergeRegistryDelta` (`registry-file.ts:141-166`) merges three-way per entry:
+  `CollectionRegistry` keeps a `loadedSnapshot` of every entry taken at load and
+  refreshed after each successful flush (`:22-28`, `:54-69`), and
+  `mergeRegistryDelta` (`registry-file.ts:145-170`) merges three-way per entry:
   result = the DISK entry with only the top-level fields whose in-memory value
-  differs from base (`mergeChangedFields`, `registry-file.ts:111-124`), a field
-  dropped from memory since base dropped, and an entry unchanged since base that
-  another process deleted NOT resurrected. An entry with no base at all (this
-  process created it, or the file did not exist at load) is written whole
-  through `mergeRegistryEntries`. Why: each process caches `registry.json` once
-  and never re-reads it, so writing the whole cache back rolls every field
-  another process wrote since load — the `indexedAt` / `git` / `chunksCount` a
-  pipeline instance stamped, on the entry being mutated AND on every other
-  cached one.
+  differs from the snapshot (`mergeChangedFields`, `registry-file.ts:111-128`),
+  a field dropped from memory since load dropped, and an entry unchanged since
+  load that another process deleted NOT resurrected. An entry absent from the
+  snapshot (this process created it, or the file did not exist at load) is
+  written whole through `mergeRegistryEntries`. The invariant the scheme rests
+  on: after every flush the cache ADOPTS the merged entries that were written,
+  so `loadedSnapshot === cache` for every held key and the next flush diffs only
+  what this instance changes afterwards. Why: each process caches
+  `registry.json` once and never re-reads it, so writing the whole cache back
+  rolls every field another process wrote since load — the `indexedAt` / `git` /
+  `chunksCount` a pipeline instance stamped, on the entry being mutated AND on
+  every other cached one.
 - **Deletes need a tombstone because the flush merges disk back in.**
   `mergeRegistryDelta` seeds the result from the on-disk file and only then
   applies the in-memory delta — merge-on-write, so a concurrent writer's entries
-  are never clobbered. `CollectionRegistry#remove` (`:207-215`) therefore adds
+  are never clobbered. `CollectionRegistry#remove` (`:210-218`) therefore adds
   the name to `this.tombstones` before flushing, `mergeRegistryDelta` deletes
-  tombstoned keys from the merged result (`registry-file.ts:162-164`), and
-  `record` clears the tombstone on re-registration (`:95`). Why: a plain
+  tombstoned keys from the merged result (`registry-file.ts:166-168`), and
+  `record` clears the tombstone on re-registration (`:98`). Why: a plain
   `map.delete()` is resurrected from disk on the very next flush. Any future
   removal-shaped operation that forgets the tombstone silently no-ops.
 

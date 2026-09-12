@@ -655,5 +655,38 @@ describe("CollectionRegistry", () => {
       expect(onDisk.get("code_a")?.chunksCount).toBe(777);
       expect(onDisk.get("code_b")?.chunksCount).toBe(2);
     });
+
+    it("keeps the other instance's stamp across TWO consecutive flushes of its own", () => {
+      // The instance flushes twice after the stamp landed. Its second flush
+      // must still leave the stamp alone, which only holds while the cache
+      // adopts what each flush actually wrote: a cache left stale would differ
+      // from the refreshed snapshot on exactly the field disk won, and the
+      // second flush would report it as this instance's change.
+      const cli = new CollectionRegistry(dir);
+      cli.record(makeEntry({ indexedAt: "2026-09-12T11:00:00.000Z", chunksCount: 10 }));
+      cli.setAutoUpdate("code_abc", { enabled: true, targetBranch: "main" });
+
+      const pipeline = new CollectionRegistry(dir);
+      pipeline.record(makeEntry({ indexedAt: "2026-09-12T11:57:57.000Z", chunksCount: 42 }));
+
+      cli.recordAutoUpdateRun("code_abc", {
+        at: "2026-09-12T12:00:49.000Z",
+        outcome: "ok",
+        durationMs: 900,
+        filesChanged: 3,
+      });
+      cli.recordAutoUpdateRun("code_abc", {
+        at: "2026-09-12T12:02:31.000Z",
+        outcome: "no-op",
+        durationMs: 120,
+        filesChanged: 0,
+      });
+
+      const onDisk = new CollectionRegistry(dir).get("code_abc");
+      expect(onDisk?.indexedAt).toBe("2026-09-12T11:57:57.000Z");
+      expect(onDisk?.chunksCount).toBe(42);
+      expect(onDisk?.autoUpdate?.lastRun?.at).toBe("2026-09-12T12:02:31.000Z");
+      expect(onDisk?.autoUpdate?.lastRun?.outcome).toBe("no-op");
+    });
   });
 });
