@@ -6,15 +6,16 @@
  * collection regardless of tool-call rate.
  *
  * Request → collection resolution is registry-backed and cheap: `collection`
- * verbatim, `project` via alias lookup, `path` via the deterministic
- * path-hash. Unresolvable / unregistered requests return null (no hint,
- * no spawn) — the serving query is never affected.
+ * verbatim, `project` via alias lookup, `path` through the shared resolver
+ * (registry entry first, path hash for a path nothing claims). Unresolvable /
+ * unregistered requests return null (no hint, no spawn) — the serving query is
+ * never affected.
  */
 
 import { homedir } from "node:os";
 import { join } from "node:path";
 
-import { CollectionRegistry, IndexFreshnessCheck, resolveCollectionName } from "../../core/api/public/index.js";
+import { CollectionRegistry, IndexFreshnessCheck, resolveCollection } from "../../core/api/public/index.js";
 import type { McpAutoUpdateTrigger } from "../../mcp/tools/explore.js";
 import { spawnDetachedUpdater } from "./spawner.js";
 import { AutoUpdateTrigger } from "./trigger.js";
@@ -30,7 +31,10 @@ function resolveRequestCollection(
   }
   if (request.path !== undefined && request.path.length > 0) {
     try {
-      return resolveCollectionName(request.path);
+      // Through the owner, not the path hash: a project that moved keeps the
+      // collection its registry entry recorded, and the hint has to name the
+      // collection the SEARCH just queried (bd tea-rags-mcp-dxa9w).
+      return resolveCollection(registry, { path: request.path }).collectionName;
     } catch {
       return null;
     }

@@ -11,8 +11,9 @@
 import { existsSync } from "node:fs";
 import { resolve } from "node:path";
 
+import type { PathCollectionResolver } from "../../contracts/types/registry.js";
 import type { CollectionRegistry } from "../../domains/maintenance/registry/collection-registry.js";
-import { resolveCollectionName, validatePath } from "../../infra/collection-name.js";
+import { resolveCollectionName, validatePathSync } from "../../infra/collection-name.js";
 import { CollectionNotProvidedError, ProjectNotRegisteredError, StaleProjectAliasError } from "../errors.js";
 
 /**
@@ -71,20 +72,47 @@ export function resolveCollection(
     // the old `collectionName`. Fallback to the deterministic hash only
     // when the path is not yet registered.
     //
+    // CANONICALIZE ON A MISS (bd tea-rags-mcp-dxa9w). Entries are recorded
+    // realpath'd and `findByPath` is an exact string compare, so a trailing
+    // slash, a `..` segment or a symlinked ancestor would miss the entry and
+    // fall through to the hash — this function's own defect, at its own door.
+    // Callers hand over raw request paths (the MCP auto-update hint passes the
+    // tool argument verbatim), so the rule belongs here rather than in each
+    // caller's discipline. It also pins the HASH to the canonical spelling, so
+    // an unregistered path resolves to the same name a later index writes it
+    // under.
+    //
+    // The plain `resolve` is tried FIRST, and it is not only about sparing this
+    // function — which sits on the serving query path — a blocking realpath per
+    // request. `resolve` already normalizes a trailing slash and a `..`, and an
+    // entry written by a pre-canonicalization writer (the old worktree
+    // provisioner recorded a bare `resolve`) is findable ONLY by this spelling.
+    // A hit is canonical by construction: it equals the entry's own path.
+    //
     // The optional-chain guards against test stubs that predate
     // findByPath — those stubs imply no rename ever happened, so the
     // hash fallback is correct for their fixture.
-    const entry = registry?.findByPath?.(input.path);
+    const resolvedPath = resolve(input.path);
+    const direct = registry?.findByPath?.(resolvedPath);
+    if (direct) return { collectionName: direct.collectionName, path: resolvedPath };
+
+    const canonicalPath = validatePathSync(input.path);
+    const entry = canonicalPath === resolvedPath ? undefined : registry?.findByPath?.(canonicalPath);
     return {
-      collectionName: entry?.collectionName ?? resolveCollectionName(input.path),
-      path: input.path,
+      collectionName: entry?.collectionName ?? resolveCollectionName(canonicalPath),
+      path: canonicalPath,
     };
   }
   throw new CollectionNotProvidedError();
 }
 
-/** What a collaborator is handed instead of the registry itself. */
-export type PathCollectionResolver = (path: string) => Promise<string>;
+/**
+ * What a collaborator is handed instead of the registry itself. Declared in
+ * `contracts/types/registry.ts` so the domain modules that receive it can name
+ * the same type instead of redeclaring its shape; re-exported here because this
+ * file is where the rule it stands for lives.
+ */
+export type { PathCollectionResolver };
 
 /**
  * The path → collection rule of {@link resolveCollection}, packaged for
@@ -96,12 +124,12 @@ export type PathCollectionResolver = (path: string) => Promise<string>;
  * stamp to a collection no search ever resolves — the drift is reported against
  * a name nobody queries, and re-armed on a key nothing consumed.
  *
- * The lookup uses the VALIDATED path because that is the spelling entries are
- * recorded under (`CollectionRegistry#record` and `#updatePath` are both fed
- * `validatePath` output), so a caller handing over a relative or symlinked path
- * still finds the entry it belongs to.
+ * The spelling is canonicalized by {@link resolveCollection} itself, which is
+ * the spelling entries are recorded under (`CollectionRegistry#record` and
+ * `#updatePath` are both fed `validatePath` output), so a caller handing over a
+ * relative, symlinked or trailing-slash path still finds the entry it belongs
+ * to. Async only because its collaborators hold it as one.
  */
 export function createPathCollectionResolver(registry: CollectionRegistry): PathCollectionResolver {
-  return async (path: string): Promise<string> =>
-    resolveCollection(registry, { path: await validatePath(path) }).collectionName;
+  return async (path: string): Promise<string> => resolveCollection(registry, { path }).collectionName;
 }

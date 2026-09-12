@@ -47,7 +47,7 @@ import type {
   TrajectoryIngestConfig,
 } from "../../../types.js";
 import { InvalidParameterError } from "../../errors.js";
-import { createPathCollectionResolver } from "../collection-resolver.js";
+import { createPathCollectionResolver, type PathCollectionResolver } from "../collection-resolver.js";
 import { createCodegraphPayloadHealRunner } from "../infra/codegraph-payload-heal-runner.js";
 import { createIngestDependencies } from "../ingest-dependencies.js";
 import { IndexingOps, type IndexDriftConsumptionResetter } from "../ops/indexing-ops.js";
@@ -148,7 +148,21 @@ export class IngestFacade {
     const snapshotDir =
       deps.snapshotDir ?? join(process.env.TEA_RAGS_DATA_DIR ?? join(homedir(), ".tea-rags"), "snapshots");
 
-    const { enrichment, indexing, reindex, gitTimePeriods } = this.buildIngestPipeline(deps, snapshotDir);
+    // ONE resolver for the whole slice. The ops layer and the pipeline must
+    // agree on which collection a path means — the run writes what the pipeline
+    // resolves and stamps what the ops layer resolves, so two independently
+    // built rules would be two chances to disagree (bd tea-rags-mcp-dxa9w).
+    // Built here because this is where the full registry is in scope; without a
+    // registry both sides fall back to the path hash.
+    const resolveCollectionForPath = deps.collectionRegistry
+      ? createPathCollectionResolver(deps.collectionRegistry)
+      : undefined;
+
+    const { enrichment, indexing, reindex, gitTimePeriods } = this.buildIngestPipeline(
+      deps,
+      snapshotDir,
+      resolveCollectionForPath,
+    );
     this.indexingOps = new IndexingOps({
       qdrant: deps.qdrant,
       embeddings: deps.embeddings,
@@ -169,12 +183,7 @@ export class IngestFacade {
       collectionRegistry: deps.collectionRegistry,
       languageCodeVersions: deps.languageCodeVersions,
       driftReporter: deps.driftReporter,
-      // The registry-first path rule a search resolves by (waj6k). Built here
-      // because this is where the full registry is in scope — IndexingOps
-      // receives it as a function, and without one falls back to the path hash.
-      ...(deps.collectionRegistry
-        ? { resolveCollectionForPath: createPathCollectionResolver(deps.collectionRegistry) }
-        : {}),
+      ...(resolveCollectionForPath ? { resolveCollectionForPath } : {}),
     });
 
     // Stats refresh when chunk enrichment finishes. Awaited so the
@@ -227,6 +236,7 @@ export class IngestFacade {
   private buildIngestPipeline(
     deps: IngestFacadeDeps,
     snapshotDir: string,
+    resolveCollectionForPath: PathCollectionResolver | undefined,
   ): {
     enrichment: EnrichmentCoordinator;
     indexing: IndexPipeline;
@@ -318,6 +328,7 @@ export class IngestFacade {
       codegraphRemover,
       codegraphLister,
       envSnapshot: deps.envSnapshot,
+      ...(resolveCollectionForPath ? { resolveCollectionForPath } : {}),
     };
     const indexing = new IndexPipeline(
       qdrant,

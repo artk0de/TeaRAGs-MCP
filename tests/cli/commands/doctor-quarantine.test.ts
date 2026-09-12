@@ -4,7 +4,8 @@ import { join } from "node:path";
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { resolveCollectionName, validatePath } from "../../../src/core/api/public/index.js";
+import { validatePath } from "../../../src/core/api/public/index.js";
+import { resolveCollectionName } from "../../../src/core/infra/collection-name.js";
 
 describe("runQuarantineDoctor", () => {
   let dataDir: string;

@@ -9,9 +9,11 @@ import {
   PathDoesNotExistError,
   ProjectNameInvalidError,
   ProjectNameNotUniqueError,
+  ProjectPathAlreadyRegisteredError,
 } from "../../../../../src/core/api/errors.js";
 import { ProjectRegistryOps } from "../../../../../src/core/api/internal/ops/project-registry-ops.js";
 import { CollectionRegistry } from "../../../../../src/core/domains/maintenance/registry/collection-registry.js";
+import { resolveCollectionName, validatePath } from "../../../../../src/core/infra/collection-name.js";
 
 describe("ProjectRegistryOps", () => {
   let dir: string;
@@ -48,6 +50,152 @@ describe("ProjectRegistryOps", () => {
     mkdirSync(repo2);
     await ops.register({ path: realPath, name: "shared" });
     await expect(ops.register({ path: repo2, name: "shared" })).rejects.toThrow(ProjectNameNotUniqueError);
+  });
+
+  /**
+   * bd tea-rags-mcp-dxa9w — one path, one entry.
+   *
+   * A relocation leaves the registry holding a collection the path no longer
+   * hashes to (`register` re-points the entry, the data stays put). Asking the
+   * HASH what lives at this directory therefore answers "nothing", and the
+   * registration used to create a SECOND entry for the same directory —
+   * splitting every path-addressed reader between the two with nothing to say
+   * which is right. The claim on a path belongs to whoever already holds it.
+   */
+  describe("a directory another entry already claims", () => {
+    const CLAIMED = "code_moved";
+
+    async function seedClaim(name: string | null, chunksCount = 7): Promise<CollectionRegistry> {
+      const registry = new CollectionRegistry(dir);
+      const canonicalPath = await validatePath(realPath);
+      // The premise: the entry's collection is NOT what its path hashes to.
+      expect(resolveCollectionName(canonicalPath)).not.toBe(CLAIMED);
+      registry.record({
+        collectionName: CLAIMED,
+        path: canonicalPath,
+        embeddingModel: "m",
+        embeddingDimensions: 384,
+        qdrantUrl: "http://localhost:6333",
+        indexedAt: "2026-09-01T00:00:00.000Z",
+        teaRagsVersion: "1.0.0",
+        chunksCount,
+      });
+      if (name !== null) registry.setName(CLAIMED, name);
+      return registry;
+    }
+
+    it("adopts an unnamed entry instead of minting a second one", async () => {
+      const registry = await seedClaim(null);
+
+      const out = await new ProjectRegistryOps({ registry }).register({ path: realPath, name: "adopted" });
+
+      expect(out).toEqual({ collectionName: CLAIMED, alreadyIndexed: true });
+      expect(registry.findByName("adopted")?.collectionName).toBe(CLAIMED);
+      expect(registry.list()).toHaveLength(1);
+    });
+
+    it("renames the claimant rather than minting a second entry beside it", async () => {
+      // An entry holds ONE name, so re-registering a claimed directory under a
+      // new alias renames it — the long-standing `register` behaviour, and it
+      // leaves one entry on the directory either way. What used to break the
+      // invariant was deriving the collection from the HASH, which recorded a
+      // second entry instead of touching this one.
+      const registry = await seedClaim("owner");
+
+      const out = await new ProjectRegistryOps({ registry }).register({ path: realPath, name: "renamed" });
+
+      expect(out).toEqual({ collectionName: CLAIMED, alreadyIndexed: true });
+      expect(registry.list()).toHaveLength(1);
+      expect(registry.findByName("renamed")?.collectionName).toBe(CLAIMED);
+      expect(registry.findByName("owner")).toBeNull();
+    });
+
+    it("refuses to re-point a stale alias onto a directory another entry holds", async () => {
+      // The one route left to TWO entries on one path: the stale-alias
+      // re-point (a moved worktree re-registering its name) aimed at a
+      // directory that is not free. Its ordinary case — a directory nothing
+      // claims — is untouched and covered below.
+      const registry = await seedClaim("live");
+      registry.record({
+        collectionName: "code_ghost",
+        path: join(dir, "vanished"),
+        embeddingModel: "m",
+        embeddingDimensions: 384,
+        qdrantUrl: "http://localhost:6333",
+        indexedAt: "2026-09-01T00:00:00.000Z",
+        teaRagsVersion: "1.0.0",
+        chunksCount: 3,
+      });
+      registry.setName("code_ghost", "ghost");
+
+      await expect(new ProjectRegistryOps({ registry }).register({ path: realPath, name: "ghost" })).rejects.toThrow(
+        ProjectPathAlreadyRegisteredError,
+      );
+      expect(registry.get("code_ghost")?.path).toBe(join(dir, "vanished"));
+      expect(registry.list().filter((e) => e.path === registry.get(CLAIMED)?.path)).toHaveLength(1);
+    });
+
+    it("names the collection, not a phantom alias, when the claimed directory has no name", async () => {
+      // The claimant's collectionName is NOT an alias. Reporting it as one told
+      // the operator to "use the existing alias 'code_moved'", which resolves
+      // nowhere (bd tea-rags-mcp-dxa9w re-review NEW-3).
+      const registry = await seedClaim(null);
+      registry.record({
+        collectionName: "code_ghost",
+        path: join(dir, "vanished"),
+        embeddingModel: "m",
+        embeddingDimensions: 384,
+        qdrantUrl: "http://localhost:6333",
+        indexedAt: "2026-09-01T00:00:00.000Z",
+        teaRagsVersion: "1.0.0",
+        chunksCount: 3,
+      });
+      registry.setName("code_ghost", "ghost");
+
+      const failure = await new ProjectRegistryOps({ registry })
+        .register({ path: realPath, name: "ghost" })
+        .then(() => null)
+        .catch((e: unknown) => e);
+
+      expect(failure).toBeInstanceOf(ProjectPathAlreadyRegisteredError);
+      // Rendered, not just `message`: the hint is a separate field that only
+      // `toUserMessage` composes, and it is the half that legitimately says
+      // "another alias" — so the claim under test ("this collection name is
+      // not an alias") has to be pinned across both.
+      const rendered = (failure as ProjectPathAlreadyRegisteredError).toUserMessage();
+      expect(rendered).toMatch(/collection 'code_moved' \(no alias\)/);
+      expect(rendered).not.toMatch(/alias 'code_moved'/);
+      expect(rendered).not.toMatch(/as 'code_moved'/);
+    });
+
+    it("still re-points a stale alias onto a directory nothing claims", async () => {
+      const registry = new CollectionRegistry(dir);
+      registry.record({
+        collectionName: "code_ghost",
+        path: join(dir, "vanished"),
+        embeddingModel: "m",
+        embeddingDimensions: 384,
+        qdrantUrl: "http://localhost:6333",
+        indexedAt: "2026-09-01T00:00:00.000Z",
+        teaRagsVersion: "1.0.0",
+        chunksCount: 3,
+      });
+      registry.setName("code_ghost", "ghost");
+
+      const out = await new ProjectRegistryOps({ registry }).register({ path: realPath, name: "ghost" });
+
+      expect(out).toEqual({ collectionName: "code_ghost", alreadyIndexed: true });
+      expect(registry.get("code_ghost")?.path).toBe(await validatePath(realPath));
+    });
+
+    it("is idempotent when the same alias re-registers its own relocated path", async () => {
+      const registry = await seedClaim("moved");
+
+      const out = await new ProjectRegistryOps({ registry }).register({ path: realPath, name: "moved" });
+
+      expect(out).toEqual({ collectionName: CLAIMED, alreadyIndexed: true });
+      expect(registry.list()).toHaveLength(1);
+    });
   });
 
   it("list() returns all entries", async () => {

@@ -55,6 +55,7 @@ export {
   ProjectNotRegisteredError,
   ProjectNameNotUniqueError,
   ProjectNameInvalidError,
+  ProjectPathAlreadyRegisteredError,
   PathDoesNotExistError,
   ProjectPathMissingError,
   StaleProjectAliasError,
@@ -106,7 +107,18 @@ export type { IndexFreshnessVerdict } from "../../domains/maintenance/freshness/
 export { detectDefaultBranch } from "../../infra/repo-git-state.js";
 
 // ── Collection-name helpers (infra/collection-name.ts) ────────────────
-export { resolveCollectionName, validatePath } from "../../infra/collection-name.js";
+// `resolveCollectionName` is deliberately NOT here: a consumer that hashes a
+// path bypasses the registry and addresses a collection a relocated project no
+// longer uses (bd tea-rags-mcp-dxa9w). Consumers take the resolver below.
+export { validatePath } from "../../infra/collection-name.js";
+
+// ── Path → collection, the one owner (api/internal/collection-resolver.ts) ──
+// Concrete implementation lives in api/internal; re-exported through this
+// barrel because `bootstrap` and `cli` must resolve a request the way a SEARCH
+// does — registry entry first, path hash only for a path nothing claims — and
+// may not reach api/internal directly (bd tea-rags-mcp-dxa9w).
+export { createPathCollectionResolver, resolveCollection } from "../internal/collection-resolver.js";
+export type { PathCollectionResolver, ResolveInput } from "../internal/collection-resolver.js";
 
 // ── Poison-pill quarantine — read surface for `doctor --quarantine` ───
 export { QuarantineStore } from "../../domains/ingest/sync/index.js";

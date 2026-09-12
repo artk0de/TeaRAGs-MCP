@@ -1,8 +1,8 @@
-import { resolve } from "node:path";
+import { basename, dirname, join, resolve } from "node:path";
 
 import type { QdrantManager } from "../../../adapters/qdrant/client.js";
 import type { WorktreeCreateInput, WorktreeCreateResult, WorktreeRemoveInput } from "../../../contracts/index.js";
-import { resolveCollectionName } from "../../../infra/collection-name.js";
+import { resolveCollectionName, validatePathSync } from "../../../infra/collection-name.js";
 import { WorktreeCollectionExistsError, WorktreeNotFoundError, WorktreeSourceNotFoundError } from "../errors.js";
 import type { CollectionArtifact, CollectionFootprintFactory, ResolvedCollection } from "../footprint/index.js";
 import type { CollectionRegistry } from "../registry/index.js";
@@ -44,9 +44,33 @@ export class WorktreeProvisioner {
     const sourceEntry = input.from ? registry.findByName(input.from) : registry.findByPath(process.cwd());
     if (!sourceEntry) throw new WorktreeSourceNotFoundError(input.from ?? "cwd");
 
-    const worktreePath = resolve(input.path ?? input.name);
+    // The clone's path is written into the registry and read back BY PATH by
+    // every collection resolver, and `findByPath` is an exact compare against
+    // realpath'd entries — so the spelling recorded here has to be canonical
+    // (bd tea-rags-mcp-dxa9w). The worktree directory does not exist yet, so
+    // canonicalize as far as the filesystem can answer: through the PARENT,
+    // which does. That is what catches a symlinked ancestor (macOS `/var` →
+    // `/private/var`), the case a bare `resolve` leaves as a spelling no reader
+    // ever resolves to.
+    const requestedPath = resolve(input.path ?? input.name);
+    const worktreePath = join(validatePathSync(dirname(requestedPath)), basename(requestedPath));
+
+    // "Already provisioned" is asked TWICE, because the two questions are
+    // different and each catches what the other cannot.
+    //
+    // By PATH: a relocated entry's collection is not what its path hashes to,
+    // so `get(hash)` alone would clone a second index on top of a live one.
+    const occupant = registry.findByPath(worktreePath);
+    if (occupant) throw new WorktreeCollectionExistsError(occupant.collectionName);
+
     const targetLogical = resolveCollectionName(worktreePath);
 
+    // By NAME: the mirror case — an entry whose collectionName IS this hash but
+    // whose path has moved away reads as a FREE directory, yet the clone would
+    // land on its collection. The saga's tail is what makes that unrecoverable:
+    // `record` overwrites the live project's entry, `setName` takes its alias,
+    // and `setWorktreeProvenance` stamps it a clone — and `worktreeOf` is the
+    // only thing standing between `worktree remove` and a real project.
     if (registry.get(targetLogical)) throw new WorktreeCollectionExistsError(targetLogical);
 
     const srcPhysical = await qdrant.aliases.resolveActive(sourceEntry.collectionName);

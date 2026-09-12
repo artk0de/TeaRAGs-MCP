@@ -15,7 +15,8 @@ import type { GraphDbClientPool } from "../../../adapters/duckdb/pool.js";
 import type { QdrantManager } from "../../../adapters/qdrant/client.js";
 import { INDEXING_METADATA_ID } from "../../../contracts/constants.js";
 import type { EdgeKindCount, MethodEdgeKind, ResolveRunStatsRow } from "../../../contracts/types/codegraph.js";
-import { resolveCollectionName, validatePath } from "../../../infra/collection-name.js";
+import type { PathCollectionResolver } from "../../../contracts/types/registry.js";
+import { hashCollectionForPath, validatePath } from "../../../infra/collection-name.js";
 import { isDebug } from "../../../infra/runtime.js";
 import { StatsCache } from "../../../infra/stats-cache.js";
 import type {
@@ -284,6 +285,18 @@ export class StatusModule {
      * has no frame to report against.
      */
     private readonly activeEnrichmentProviders: readonly string[] = [],
+    /**
+     * How a path becomes the collection to report on — the project registry's
+     * entry when one claims the path, the path hash otherwise
+     * (`createPathCollectionResolver`, bd tea-rags-mcp-dxa9w). Supplied by
+     * IndexingOps, which holds the rule the rest of the run resolves by.
+     *
+     * Hashing here is what made `get_index_status` answer "not indexed" for a
+     * relocated project whose data was sitting under the collection its
+     * registry entry recorded. Defaults to the hash — what an unregistered
+     * path resolves to either way.
+     */
+    private readonly resolveCollectionForPath: PathCollectionResolver = hashCollectionForPath,
   ) {}
 
   /**
@@ -340,7 +353,7 @@ export class StatusModule {
    */
   async getIndexStatus(path: string): Promise<IndexStatus> {
     const absolutePath = await validatePath(path);
-    const collectionName = resolveCollectionName(absolutePath);
+    const collectionName = await this.resolveCollectionForPath(absolutePath);
 
     // Find the latest versioned collection (highest _vN)
     const latestVersioned = await this.findLatestVersionedCollection(collectionName);
@@ -386,7 +399,7 @@ export class StatusModule {
    */
   async clearIndex(path: string): Promise<void> {
     const absolutePath = await validatePath(path);
-    const collectionName = resolveCollectionName(absolutePath);
+    const collectionName = await this.resolveCollectionForPath(absolutePath);
     const exists = await this.qdrant.collectionExists(collectionName);
 
     if (exists) {

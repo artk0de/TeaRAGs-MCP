@@ -1,4 +1,8 @@
-import { describe, expect, it, vi } from "vitest";
+import { mkdtempSync, realpathSync, rmSync, symlinkSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 import {
   WorktreeCollectionExistsError,
@@ -6,6 +10,7 @@ import {
   WorktreeSourceNotFoundError,
 } from "../../../../src/core/domains/maintenance/errors.js";
 import { WorktreeProvisioner } from "../../../../src/core/domains/maintenance/worktree/worktree-provisioner.js";
+import { resolveCollectionName } from "../../../../src/core/infra/collection-name.js";
 
 function fakeArtifact(id: string, calls: string[], failOn?: string) {
   return {
@@ -48,7 +53,9 @@ function makeDeps(over: Partial<Record<string, unknown>> = {}, calls: string[] =
     deps: {
       registry: {
         findByName: vi.fn(() => sourceEntry),
-        findByPath: vi.fn(() => sourceEntry),
+        // Path-aware on purpose: `create` asks findByPath twice — once for the
+        // source (cwd, when no `from`), once to check the TARGET path is free.
+        findByPath: vi.fn((p: string) => (p === process.cwd() ? sourceEntry : null)),
         get: vi.fn(() => null),
         record: vi.fn((e: Record<string, unknown>) => recorded.push(e)),
         setName: vi.fn(),
@@ -131,7 +138,7 @@ describe("WorktreeProvisioner.create saga", () => {
     const { deps, recorded, sourceEntry } = makeDeps();
     const { embeddingBaseUrl: _b, embeddingFallbackUrl: _f, ...legacy } = sourceEntry;
     deps.registry.findByName = vi.fn(() => legacy);
-    deps.registry.findByPath = vi.fn(() => legacy);
+    deps.registry.findByPath = vi.fn((p: string) => (p === process.cwd() ? legacy : null));
     const ops = new WorktreeProvisioner(deps);
     await ops.create({ name: "x", createGit: false });
     expect("embeddingBaseUrl" in recorded[0]).toBe(false);
@@ -142,7 +149,7 @@ describe("WorktreeProvisioner.create saga", () => {
     const { deps, recorded, sourceEntry } = makeDeps();
     const { tuning: _tuning, env: _env, ...legacy } = sourceEntry;
     deps.registry.findByName = vi.fn(() => legacy);
-    deps.registry.findByPath = vi.fn(() => legacy);
+    deps.registry.findByPath = vi.fn((p: string) => (p === process.cwd() ? legacy : null));
     const ops = new WorktreeProvisioner(deps);
     await ops.create({ name: "x", createGit: false });
     expect("env" in recorded[0]).toBe(false);
@@ -165,15 +172,41 @@ describe("WorktreeProvisioner.create saga", () => {
     expect(recorded).toHaveLength(0);
   });
 
-  it("throws WorktreeCollectionExistsError if the target collection already exists, before any clone", async () => {
-    // I1: typed error for target-exists guard
+  it("throws WorktreeCollectionExistsError if the target path is already provisioned, before any clone", async () => {
+    // I1: typed error for target-exists guard. Asked BY PATH (bd tea-rags-mcp-dxa9w):
+    // the entry that claims a directory is the one that says it is taken, and a
+    // relocated entry's collection is not what its path hashes to.
     const calls: string[] = [];
-    const { deps } = makeDeps({}, calls);
-    deps.registry.get = vi.fn(() => ({ collectionName: "code_dst" }));
+    const { deps, sourceEntry } = makeDeps({}, calls);
+    deps.registry.findByPath = vi.fn((p: string) =>
+      p === process.cwd() ? sourceEntry : { ...sourceEntry, collectionName: "code_dst" },
+    );
     const ops = new WorktreeProvisioner(deps);
     await expect(ops.create({ name: "x", createGit: false })).rejects.toThrow(WorktreeCollectionExistsError);
     await expect(ops.create({ name: "x", createGit: false })).rejects.toThrow(/already exists/);
     expect(calls).toEqual([]);
+  });
+
+  it("throws WorktreeCollectionExistsError when the target NAME belongs to a relocated project", async () => {
+    // The case `findByPath` cannot see (bd tea-rags-mcp-dxa9w): an entry whose
+    // collectionName IS what this directory hashes to, but whose path has since
+    // moved away — exactly what `register` leaves behind when a project
+    // relocates. The directory reads as free, and without the second guard the
+    // saga would clone into that live project's collection, overwrite its
+    // registry entry, take its alias, and stamp it `worktreeOf` — after which
+    // `worktree remove` deletes a real project.
+    const calls: string[] = [];
+    const { deps, sourceEntry } = makeDeps({}, calls);
+    const targetLogical = resolveCollectionName(join(process.cwd(), "x"));
+    deps.registry.findByPath = vi.fn((p: string) => (p === process.cwd() ? sourceEntry : null));
+    deps.registry.get = vi.fn((name: string) =>
+      name === targetLogical ? { ...sourceEntry, collectionName: targetLogical, path: "/moved/elsewhere" } : null,
+    );
+    const ops = new WorktreeProvisioner(deps);
+
+    await expect(ops.create({ name: "x", createGit: false })).rejects.toThrow(WorktreeCollectionExistsError);
+    expect(calls).toEqual([]);
+    expect(deps.registry.record).not.toHaveBeenCalled();
   });
 
   it("throws WorktreeSourceNotFoundError when source project is not found", async () => {
@@ -507,5 +540,55 @@ describe("WorktreeProvisioner teardown resilience", () => {
     expect(res).toEqual({ removed: true });
     expect(removed).toEqual(["stats", "qdrant"]);
     expect(deps.registry.remove).toHaveBeenCalledWith("code_dst");
+  });
+});
+
+/**
+ * bd tea-rags-mcp-dxa9w — a worktree entry is read back BY PATH, so the path it
+ * is written under has to be the canonical one.
+ *
+ * Registry entries are stored realpath'd and `findByPath` is an exact compare.
+ * The worktree directory does not exist yet when `create` runs, so the spelling
+ * is canonicalized as far as it can be — through the parent that does exist —
+ * and a symlinked ancestor (macOS `/var` → `/private/var`) stops producing an
+ * entry no reader ever resolves to.
+ */
+describe("WorktreeProvisioner.create path canonicalization", () => {
+  const created: string[] = [];
+
+  function tmpDirFor(prefix: string): string {
+    const dir = mkdtempSync(join(tmpdir(), prefix));
+    created.push(dir);
+    return dir;
+  }
+
+  afterEach(() => {
+    for (const dir of created.splice(0)) rmSync(dir, { recursive: true, force: true });
+  });
+
+  it("records the canonical worktree path, so findByPath finds it again", async () => {
+    const parent = tmpDirFor("dxa9w-wt-parent-");
+    const viaSymlink = join(tmpDirFor("dxa9w-wt-link-"), "as-symlink");
+    symlinkSync(parent, viaSymlink);
+    const { deps, recorded } = makeDeps();
+    const registryByPath = new Map<string, unknown>();
+    deps.registry.findByPath = vi.fn((p: string) => registryByPath.get(p) ?? null);
+    deps.registry.record = vi.fn((e: Record<string, unknown>) => {
+      recorded.push(e);
+      registryByPath.set(e.path as string, e);
+    });
+
+    const res = await new WorktreeProvisioner(deps).create({
+      name: "wt",
+      path: join(viaSymlink, "wt"),
+      from: "proj",
+      createGit: false,
+    });
+
+    const canonical = join(realpathSync(parent), "wt");
+    expect(res.worktreePath).toBe(canonical);
+    expect(recorded[0].path).toBe(canonical);
+    // The assertion that matters: a later reader, which canonicalizes, finds it.
+    expect(deps.registry.findByPath(canonical)).not.toBeNull();
   });
 });

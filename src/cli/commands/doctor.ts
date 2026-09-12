@@ -8,7 +8,7 @@ import {
   ProjectRegistryOps,
   QdrantManager,
   QuarantineStore,
-  resolveCollectionName,
+  resolveCollection,
   validatePath,
   type EmbeddingProvider,
 } from "../../core/api/public/index.js";
@@ -148,7 +148,10 @@ export async function runDoctor(args: DoctorArgs, deps?: DoctorDeps): Promise<vo
  */
 export async function runQuarantineDoctor(args: { path: string; json?: boolean }): Promise<void> {
   const project = await validatePath(args.path);
-  const collectionName = resolveCollectionName(project);
+  // The quarantine file is named after the collection, so it has to be the
+  // collection the index actually lives in — the registry's entry when one
+  // claims this path, the hash only otherwise (bd tea-rags-mcp-dxa9w).
+  const { collectionName } = resolveCollection(new CollectionRegistry(resolveDataDir()), { path: project });
   const snapshotDir = join(resolveDataDir(), "snapshots");
   const entries = await new QuarantineStore(snapshotDir, collectionName).load();
   const files = [...entries.entries()].map(([path, entry]) => ({ path, ...entry }));

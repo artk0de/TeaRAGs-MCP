@@ -9,9 +9,9 @@ import { parseAppConfig } from "../../bootstrap/config/index.js";
 import { createAppContext } from "../../bootstrap/factory.js";
 import {
   CollectionRegistry,
+  createPathCollectionResolver,
   IndexFreshnessCheck,
   replayRegistryEnv,
-  resolveCollectionName,
   type CollectionEntry,
 } from "../../core/api/public/index.js";
 import { FileCacheStore } from "../update-check/cache-store.js";
@@ -36,13 +36,17 @@ function resolveDataDir(): string {
  * wins when both are provided. Returns null when the registry has no matching
  * entry — caller falls back to heuristic discovery.
  */
-function lookupRegistryEntry(input: { path?: string; project?: string }): CollectionEntry | null {
+async function lookupRegistryEntry(input: { path?: string; project?: string }): Promise<CollectionEntry | null> {
   const registry = new CollectionRegistry(resolveDataDir());
   if (input.project) {
     return registry.findByName(input.project);
   }
   if (input.path) {
-    return registry.get(resolveCollectionName(input.path));
+    // Through the shared resolver: the entry that CLAIMS the path wins, and the
+    // path hash is only its fallback. Hashing here printed "not indexed" for a
+    // project whose directory had moved, while its index sat under the
+    // collection the entry recorded (bd tea-rags-mcp-dxa9w).
+    return registry.get(await createPathCollectionResolver(registry)(input.path));
   }
   return null;
 }
@@ -91,7 +95,7 @@ export async function runPrime(input: {
   const hasExplicitPath = typeof input.path === "string" && input.path.length > 0;
   const requestedPath = hasExplicitPath ? input.path : input.project ? undefined : process.cwd();
 
-  const registryEntry = lookupRegistryEntry({ path: requestedPath, project: input.project });
+  const registryEntry = await lookupRegistryEntry({ path: requestedPath, project: input.project });
   const path = registryEntry?.path ?? requestedPath;
 
   if (!path) {

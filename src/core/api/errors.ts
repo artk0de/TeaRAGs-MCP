@@ -14,6 +14,7 @@ export type InputErrorCode =
   | "INPUT_INVALID_PARAMETER"
   | "INPUT_PROJECT_NOT_REGISTERED"
   | "INPUT_PROJECT_NAME_NOT_UNIQUE"
+  | "INPUT_PROJECT_PATH_ALREADY_REGISTERED"
   | "INPUT_PROJECT_NAME_INVALID"
   | "INPUT_PROJECT_PATH_MISSING"
   | "INPUT_PROJECT_ALIAS_STALE"
@@ -94,6 +95,38 @@ export class ProjectNameNotUniqueError extends InputValidationError {
       code: "INPUT_PROJECT_NAME_NOT_UNIQUE",
       message: `Project name '${name}' is not unique — already used by '${existingCollectionName}'`,
       hint: "Choose a different name or remove the existing project.",
+    });
+  }
+}
+
+/**
+ * Thrown when a second alias is registered for a directory that another alias
+ * already claims (bd tea-rags-mcp-dxa9w).
+ *
+ * One path, one entry: the registry is addressed by path everywhere a reader
+ * resolves a collection, so two entries on one directory would split the
+ * project's readers between them with nothing to say which is right.
+ */
+export class ProjectPathAlreadyRegisteredError extends InputValidationError {
+  /**
+   * `existing.name` is null for an entry nobody has aliased yet (a first index
+   * before `register_project`, or a `recoverFromQdrant` stub). Its collection
+   * name is NOT a usable alias, so the two states get different wording —
+   * telling an operator to "use the existing alias 'code_9baaea35'" sends them
+   * after a name that resolves nowhere.
+   */
+  constructor(path: string, existing: { name: string | null; collectionName: string }) {
+    super({
+      code: "INPUT_PROJECT_PATH_ALREADY_REGISTERED",
+      message:
+        existing.name !== null
+          ? `Path '${path}' is already registered as '${existing.name}'`
+          : `Path '${path}' is already registered under collection '${existing.collectionName}' (no alias)`,
+      hint:
+        existing.name !== null
+          ? `Use the existing alias '${existing.name}', or unregister it first if you want a different name for this path.`
+          : `Register collection '${existing.collectionName}' under a name, or unregister it, before pointing another alias at this directory.`,
+      httpStatus: 409,
     });
   }
 }
