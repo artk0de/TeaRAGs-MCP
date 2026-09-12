@@ -47,8 +47,13 @@ export interface EnrichmentExecutor {
    * already-extracted paths. That reset belongs at run START, not at release: a
    * run that dies before releasing would otherwise leave a set behind, and the
    * next run would silently skip every file the dead one had claimed.
+   *
+   * `fileCount` is the run's scanned file count — the same denominator the
+   * coordinator's progress events use. The worker-pool executor sizes the
+   * fan-out with it, so a run too small to keep extra threads busy never spins
+   * them up. Zero/undefined means "not counted", which is NOT the same as small.
    */
-  beginRun?: (collectionName?: string) => void;
+  beginRun?: (collectionName?: string, fileCount?: number) => void;
 
   /**
    * Per-batch file enrichment for the streaming file phase.

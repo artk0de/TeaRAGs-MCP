@@ -105,6 +105,7 @@ export const REGISTRY_ENV_GROUPS: readonly RegistryEnvGroup[] = [
   { canonical: "INGEST_TUNE_FILE_CONCURRENCY", aliases: ["FILE_PROCESSING_CONCURRENCY"], consequence: "runtime" },
   { canonical: "INGEST_TUNE_IO_CONCURRENCY", aliases: ["MAX_IO_CONCURRENCY"], consequence: "runtime" },
   { canonical: "INGEST_TUNE_ENRICHMENT_POOL_SIZE", aliases: ["ENRICHMENT_POOL_SIZE"], consequence: "runtime" },
+  { canonical: "INGEST_TUNE_ENRICHMENT_FILES_PER_THREAD", aliases: [], consequence: "runtime" },
   // ingest chunking (parse.ts `ingest` section) — boundaries, hence point ids
   { canonical: "INGEST_CHUNK_SIZE", aliases: ["CODE_CHUNK_SIZE"], consequence: "chunk-set" },
   { canonical: "INGEST_CHUNK_OVERLAP", aliases: ["CODE_CHUNK_OVERLAP"], consequence: "chunk-set" },
