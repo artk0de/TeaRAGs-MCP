@@ -24,7 +24,7 @@ describe("mapMarkerToHealth (terminal-only + runId staleness)", () => {
         chunk: { runId: RUN, status: "completed", unenrichedChunks: 0 },
       },
     } as unknown as EnrichmentMarkerMap;
-    const r = mapMarkerToHealth(map)!;
+    const r = mapMarkerToHealth(map, ["git"])!;
     expect(r.git.file.status).toBe("healthy");
     expect(r.git.chunk.status).toBe("healthy");
     expect(r.git.file.unenrichedChunks).toBeUndefined();
@@ -35,7 +35,7 @@ describe("mapMarkerToHealth (terminal-only + runId staleness)", () => {
       _run: run(),
       git: { file: { runId: RUN, status: "completed", unenrichedChunks: 0 } },
     } as unknown as EnrichmentMarkerMap;
-    const r = mapMarkerToHealth(map)!;
+    const r = mapMarkerToHealth(map, ["git"])!;
     expect(r.git.file.status).toBe("healthy");
     expect(r.git.chunk.status).toBe("in_progress"); // <-- was the pending→healthy bug
   });
@@ -48,7 +48,7 @@ describe("mapMarkerToHealth (terminal-only + runId staleness)", () => {
         chunk: { runId: "run-1", status: "completed", unenrichedChunks: 0 },
       },
     } as unknown as EnrichmentMarkerMap;
-    const r = mapMarkerToHealth(map)!;
+    const r = mapMarkerToHealth(map, ["git"])!;
     expect(r.git.file.status).toBe("in_progress");
     expect(r.git.chunk.status).toBe("in_progress");
   });
@@ -63,7 +63,7 @@ describe("mapMarkerToHealth (terminal-only + runId staleness)", () => {
         },
       },
     } as unknown as EnrichmentMarkerMap;
-    const r = mapMarkerToHealth(map)!;
+    const r = mapMarkerToHealth(map, ["codegraph.symbols"])!;
     expect(r["codegraph.symbols"].file.status).toBe("healthy");
     expect(r["codegraph.symbols"].chunk).toMatchObject({ status: "degraded", unenrichedChunks: 12 });
   });
@@ -78,7 +78,7 @@ describe("mapMarkerToHealth (terminal-only + runId staleness)", () => {
       // chunk marker absent (non-terminal) → derived from _run timestamps
       git: { file: { runId: "other-run", status: "completed", unenrichedChunks: 0 } },
     } as unknown as EnrichmentMarkerMap;
-    const r = mapMarkerToHealth(map)!;
+    const r = mapMarkerToHealth(map, ["git"])!;
     expect(r.git.chunk.status).toBe("in_progress");
     expect(r.git.chunk.message).toBe("Enrichment in progress...");
     expect(r.git.chunk.message).not.toMatch(/stalled/i);
@@ -94,7 +94,7 @@ describe("mapMarkerToHealth (terminal-only + runId staleness)", () => {
       _run: run({ lastProgressAt: stale }),
       git: { file: { runId: RUN, status: "completed", unenrichedChunks: 0 } },
     } as unknown as EnrichmentMarkerMap;
-    const r = mapMarkerToHealth(map)!;
+    const r = mapMarkerToHealth(map, ["git"])!;
     expect(r.git.chunk.status).toBe("in_progress");
     expect(r.git.chunk.message).toMatch(/stalled/i);
   });
@@ -108,7 +108,7 @@ describe("mapMarkerToHealth (terminal-only + runId staleness)", () => {
         _run: run({ lastProgressAt: twentyMinAgo }),
         git: {},
       } as unknown as EnrichmentMarkerMap;
-      const r = mapMarkerToHealth(map)!;
+      const r = mapMarkerToHealth(map, ["git"])!;
       expect(r.git.file.status).toBe("failed");
       expect(r.git.chunk.status).toBe("failed");
       expect(r.git.file.message).toMatch(/no progress in 20 minutes/i);
@@ -122,7 +122,7 @@ describe("mapMarkerToHealth (terminal-only + runId staleness)", () => {
         _run: run({ lastProgressAt: tenMinAgo }),
         git: {},
       } as unknown as EnrichmentMarkerMap;
-      const r = mapMarkerToHealth(map)!;
+      const r = mapMarkerToHealth(map, ["git"])!;
       expect(r.git.chunk.status).toBe("in_progress");
       expect(r.git.chunk.message).toBe("Enrichment appears stalled — no progress in 2 minutes. May need reindex.");
     });
@@ -134,7 +134,7 @@ describe("mapMarkerToHealth (terminal-only + runId staleness)", () => {
         _run: run({ lastProgressAt: ninetySecAgo }),
         git: {},
       } as unknown as EnrichmentMarkerMap;
-      const r = mapMarkerToHealth(map)!;
+      const r = mapMarkerToHealth(map, ["git"])!;
       expect(r.git.file.status).toBe("failed");
       expect(r.git.file.message).toMatch(/stall deadline/i);
     });
@@ -146,7 +146,7 @@ describe("mapMarkerToHealth (terminal-only + runId staleness)", () => {
         _run: run({ lastProgressAt: twentyMinAgo }),
         git: {},
       } as unknown as EnrichmentMarkerMap;
-      const r = mapMarkerToHealth(map)!;
+      const r = mapMarkerToHealth(map, ["git"])!;
       expect(r.git.file.status).toBe("in_progress");
       expect(r.git.file.message).toMatch(/stalled/i);
     });
@@ -158,7 +158,7 @@ describe("mapMarkerToHealth (terminal-only + runId staleness)", () => {
         _run: run({ lastProgressAt: twentyMinAgo }),
         git: {},
       } as unknown as EnrichmentMarkerMap;
-      const r = mapMarkerToHealth(map)!;
+      const r = mapMarkerToHealth(map, ["git"])!;
       expect(r.git.file.status).toBe("failed");
     });
 
@@ -170,7 +170,7 @@ describe("mapMarkerToHealth (terminal-only + runId staleness)", () => {
           chunk: { status: "pending", unenrichedChunks: 0 },
         },
       } as unknown as EnrichmentMarkerMap;
-      const r = mapMarkerToHealth(map)!;
+      const r = mapMarkerToHealth(map, ["git"])!;
       expect(r.git.file.status).toBe("failed");
       expect(r.git.file.message).toMatch(/stall deadline/i);
       expect(r.git.file.message).toMatch(/recover on next reindex/i);
@@ -184,7 +184,7 @@ describe("mapMarkerToHealth (terminal-only + runId staleness)", () => {
           chunk: { status: "pending", unenrichedChunks: 0 },
         },
       } as unknown as EnrichmentMarkerMap;
-      const r = mapMarkerToHealth(map)!;
+      const r = mapMarkerToHealth(map, ["git"])!;
       expect(r.git.file.status).toBe("in_progress");
       expect(r.git.file.message).toMatch(/stalled/i);
     });
@@ -196,7 +196,7 @@ describe("mapMarkerToHealth (terminal-only + runId staleness)", () => {
       _run: run({ startedAt: old, lastProgressAt: old }),
       git: { file: { runId: RUN, status: "completed", unenrichedChunks: 0 } },
     } as unknown as EnrichmentMarkerMap;
-    const r = mapMarkerToHealth(map)!;
+    const r = mapMarkerToHealth(map, ["git"])!;
     expect(r.git.chunk.status).toBe("failed");
     expect(r.git.chunk.message).toMatch(/crashed|recovered/i);
   });
@@ -211,7 +211,7 @@ describe("mapMarkerToHealth (terminal-only + runId staleness)", () => {
         },
       },
     } as unknown as EnrichmentMarkerMap;
-    const r = mapMarkerToHealth(map)!;
+    const r = mapMarkerToHealth(map, ["codegraph.symbols"])!;
     expect(r["codegraph.symbols"].file.status).toBe("failed");
     expect(r["codegraph.symbols"].file.message).toContain("spill failed");
   });
@@ -224,14 +224,14 @@ describe("mapMarkerToHealth (terminal-only + runId staleness)", () => {
         chunk: { runId: RUN, status: "completed", unenrichedChunks: 0 },
       },
     } as unknown as EnrichmentMarkerMap;
-    const r = mapMarkerToHealth(map)!;
+    const r = mapMarkerToHealth(map, ["git"])!;
     expect(r.git.file.matchedFiles).toBe(42);
     expect(r.git.file.missedFiles).toBe(3);
     expect(r.git.file.durationMs).toBe(0);
   });
 
   it("returns undefined for empty map", () => {
-    expect(mapMarkerToHealth({})).toBeUndefined();
+    expect(mapMarkerToHealth({}, ["git"])).toBeUndefined();
   });
 
   describe("back-compat (no _run pointer — legacy literal-property shape)", () => {
@@ -242,7 +242,7 @@ describe("mapMarkerToHealth (terminal-only + runId staleness)", () => {
           chunk: { status: "pending", unenrichedChunks: 0 },
         },
       } as unknown as EnrichmentMarkerMap;
-      const r = mapMarkerToHealth(map)!;
+      const r = mapMarkerToHealth(map, ["git"])!;
       expect(r.git.file.status).toBe("healthy");
       expect(r.git.chunk.status).toBe("in_progress");
     });
@@ -255,7 +255,7 @@ describe("mapMarkerToHealth (terminal-only + runId staleness)", () => {
           chunk: { status: "pending", unenrichedChunks: 0 },
         },
       } as unknown as EnrichmentMarkerMap;
-      const r = mapMarkerToHealth(map)!;
+      const r = mapMarkerToHealth(map, ["git"])!;
       expect(r.git.file.status).toBe("failed");
       expect(r.git.file.message).toMatch(/crashed|recovered/i);
     });
@@ -267,8 +267,151 @@ describe("mapMarkerToHealth (terminal-only + runId staleness)", () => {
           chunk: { status: "degraded", unenrichedChunks: 8 },
         },
       } as unknown as EnrichmentMarkerMap;
-      const r = mapMarkerToHealth(map)!;
+      const r = mapMarkerToHealth(map, ["git"])!;
       expect(r.git.chunk).toMatchObject({ status: "degraded", unenrichedChunks: 8 });
     });
+  });
+});
+
+// bd tea-rags-mcp-x2u65 — the health frame is the RUNNING composition's provider
+// list, not `_run.providers`. After `--force-enrichments codegraph` the run
+// marker names only `codegraph.symbols`, and the git row vanished from prime's
+// `## Enrichment` and from `get_index_status` even though git signals sat on
+// every point. For each active provider the latest TERMINAL marker wins,
+// whichever run wrote it.
+describe("mapMarkerToHealth (active-provider frame)", () => {
+  const CURRENT = "run-2";
+  const OLDER = "run-1";
+
+  function codegraphOnlyRun(): RunMarker {
+    const now = new Date().toISOString();
+    return { runId: CURRENT, startedAt: now, lastProgressAt: now, providers: ["codegraph.symbols"] };
+  }
+
+  const codegraphTerminal = {
+    file: { runId: CURRENT, status: "completed", unenrichedChunks: 0 },
+    chunk: { runId: CURRENT, status: "completed", unenrichedChunks: 0 },
+  };
+
+  it("renders an active provider missing from the last run from its OWN terminal marker", () => {
+    const map = {
+      _run: codegraphOnlyRun(),
+      git: {
+        file: { runId: OLDER, status: "completed", unenrichedChunks: 0, matchedFiles: 12 },
+        chunk: { runId: OLDER, status: "degraded", unenrichedChunks: 7 },
+      },
+      codegraph: { symbols: codegraphTerminal },
+    } as unknown as EnrichmentMarkerMap;
+
+    const r = mapMarkerToHealth(map, ["git", "codegraph.symbols"])!;
+
+    expect(Object.keys(r).sort()).toEqual(["codegraph.symbols", "git"]);
+    expect(r.git.file).toMatchObject({ status: "healthy", matchedFiles: 12 });
+    expect(r.git.chunk).toMatchObject({ status: "degraded", unenrichedChunks: 7 });
+    expect(r["codegraph.symbols"].file.status).toBe("healthy");
+  });
+
+  it("does NOT derive an out-of-run provider from the current run's timestamps", () => {
+    // The current run stalled 20 minutes ago. That says nothing about git,
+    // whose own run finished cleanly — deriving git from these timestamps would
+    // report a stall-deadline breach against a provider that is fine.
+    const stalled = new Date(Date.now() - 20 * 60 * 1000).toISOString();
+    const map = {
+      _run: { ...codegraphOnlyRun(), startedAt: stalled, lastProgressAt: stalled },
+      git: {
+        file: { runId: OLDER, status: "completed", unenrichedChunks: 0 },
+        chunk: { runId: OLDER, status: "completed", unenrichedChunks: 0 },
+      },
+      codegraph: { symbols: codegraphTerminal },
+    } as unknown as EnrichmentMarkerMap;
+
+    const r = mapMarkerToHealth(map, ["git", "codegraph.symbols"])!;
+
+    expect(r.git.file.status).toBe("healthy");
+    expect(r.git.chunk.status).toBe("healthy");
+    expect(r.git.file.message).toBeUndefined();
+  });
+
+  it("omits an active provider that carries no marker at all", () => {
+    const map = {
+      _run: codegraphOnlyRun(),
+      codegraph: { symbols: codegraphTerminal },
+    } as unknown as EnrichmentMarkerMap;
+
+    const r = mapMarkerToHealth(map, ["git", "codegraph.symbols"])!;
+
+    expect(r.git).toBeUndefined();
+    expect(r["codegraph.symbols"].file.status).toBe("healthy");
+  });
+
+  it("omits a provider that HAS markers but is not active (git disabled by flag)", () => {
+    const map = {
+      _run: codegraphOnlyRun(),
+      git: {
+        file: { runId: OLDER, status: "completed", unenrichedChunks: 0 },
+        chunk: { runId: OLDER, status: "completed", unenrichedChunks: 0 },
+      },
+      codegraph: { symbols: codegraphTerminal },
+    } as unknown as EnrichmentMarkerMap;
+
+    const r = mapMarkerToHealth(map, ["codegraph.symbols"])!;
+
+    expect(Object.keys(r)).toEqual(["codegraph.symbols"]);
+    expect(r.git).toBeUndefined();
+  });
+
+  it("renders failed + a recovery message when an out-of-run provider's last run never finished", () => {
+    const map = {
+      _run: codegraphOnlyRun(),
+      git: { file: { runId: OLDER, status: "in_progress", startedAt: new Date().toISOString() } },
+      codegraph: { symbols: codegraphTerminal },
+    } as unknown as EnrichmentMarkerMap;
+
+    const r = mapMarkerToHealth(map, ["git", "codegraph.symbols"])!;
+
+    expect(r.git.file.status).toBe("failed");
+    expect(r.git.file.message).toMatch(/never finished/i);
+    expect(r.git.file.message).toMatch(/recover on next reindex/i);
+    // Not "full reindex" — an ordinary incremental covering git recovers it.
+    expect(r.git.file.message).not.toMatch(/full reindex/i);
+    // Chunk level absent entirely, and the current run does not cover git.
+    expect(r.git.chunk.status).toBe("failed");
+    expect(r.git.chunk.message).toMatch(/never finished/i);
+  });
+
+  it("keeps the run-pointer derivation for providers the current run DOES cover", () => {
+    const now = new Date().toISOString();
+    const map = {
+      _run: { runId: CURRENT, startedAt: now, lastProgressAt: now, providers: ["git", "codegraph.symbols"] },
+      git: { file: { runId: CURRENT, status: "completed", unenrichedChunks: 0 } },
+      codegraph: { symbols: codegraphTerminal },
+    } as unknown as EnrichmentMarkerMap;
+
+    const r = mapMarkerToHealth(map, ["git", "codegraph.symbols"])!;
+
+    expect(r.git.file.status).toBe("healthy");
+    expect(r.git.chunk.status).toBe("in_progress"); // absent, current run still live
+  });
+
+  it("returns undefined when no active provider has anything to report", () => {
+    const map = {
+      _run: codegraphOnlyRun(),
+      codegraph: { symbols: codegraphTerminal },
+    } as unknown as EnrichmentMarkerMap;
+
+    expect(mapMarkerToHealth(map, [])).toBeUndefined();
+  });
+
+  it("ignores the active list on legacy maps (no _run pointer)", () => {
+    const map = {
+      git: {
+        file: { status: "completed", unenrichedChunks: 0 },
+        chunk: { status: "completed", unenrichedChunks: 0 },
+      },
+    } as unknown as EnrichmentMarkerMap;
+
+    const r = mapMarkerToHealth(map, ["codegraph.symbols"])!;
+
+    expect(r.git.file.status).toBe("healthy");
   });
 });

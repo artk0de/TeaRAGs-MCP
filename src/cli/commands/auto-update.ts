@@ -22,7 +22,7 @@ import {
   detectDefaultBranch,
   IndexFreshnessCheck as FreshnessCheckImpl,
   CollectionRegistry as RegistryImpl,
-  replayRegistryEnv,
+  resolveRegistryEnv,
   type CollectionEntry,
   type CollectionRegistry,
   type IndexFreshnessCheck,
@@ -120,6 +120,35 @@ function resolveDataDir(): string {
   return process.env.TEA_RAGS_DATA_DIR ?? join(homedir(), ".tea-rags");
 }
 
+/**
+ * Seed the updater's env from its registry entry through the SAME seam
+ * `index-codebase` uses (`resolveRegistryEnv`) — identity fields plus the
+ * general env snapshot, under the one rule `outer env > registry env > code
+ * default` (the resolver takes `env` as ambient, so an explicit export wins).
+ *
+ * A bare snapshot replay is not enough: the identity flags live in dedicated
+ * `CollectionEntry` fields, not in `entry.env`, and `CODEGRAPH_ENABLED` defaults
+ * to off. A `run` launched by anything other than `prime` — cron, a plain
+ * terminal, any other scheduler — would therefore build a composition WITHOUT
+ * codegraph, and the registry record every successful sync writes would flip
+ * `codegraphEnabled` to false. `prime` then stops forcing the flag and the
+ * codegraph tools disappear: the phantom-drift class, self-inflicted by the
+ * watcher.
+ *
+ * A backend the entry cannot resolve throws out of here on purpose, the way a
+ * `parseAppConfig` / `createAppContext` failure already does — the CLI's
+ * top-level catch prints it to the stdio the spawner pointed at this project's
+ * updater log. Running on a half-applied env would index against the wrong
+ * backend instead.
+ *
+ * Test seam — exported only because `defaultDeps().executeUpdater` is
+ * module-private and cannot be reached through `AutoUpdateCliDeps`; the one
+ * production caller is that closure.
+ */
+export function applyRegistryEnvForUpdater(entry: CollectionEntry | null, env: NodeJS.ProcessEnv): void {
+  Object.assign(env, resolveRegistryEnv(entry, env));
+}
+
 function defaultDeps(): AutoUpdateCliDeps {
   const dataDir = resolveDataDir();
   const registry = new RegistryImpl(dataDir);
@@ -130,10 +159,10 @@ function defaultDeps(): AutoUpdateCliDeps {
     logPathFor: (label) => autoUpdateLogPath(dataDir, label),
     executeUpdater: async (collectionName) => {
       // Registry-first env replay (mirrors prime/tune): the detached process
-      // runs in whatever shell env spawned it — the entry's env snapshot must
-      // seed unset embedding/qdrant knobs BEFORE the config is parsed.
-      const entry = registry.get(collectionName);
-      replayRegistryEnv(entry?.env ?? entry?.tuning, process.env);
+      // runs in whatever shell env spawned it — the entry's identity fields and
+      // env snapshot must seed unset embedding/qdrant/codegraph knobs BEFORE the
+      // config is parsed.
+      applyRegistryEnvForUpdater(registry.get(collectionName), process.env);
       const { parseAppConfig } = await import("../../bootstrap/config/index.js");
       const { createAppContext } = await import("../../bootstrap/factory.js");
       const { migrateHomeDir } = await import("../../bootstrap/migrate.js");

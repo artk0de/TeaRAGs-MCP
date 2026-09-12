@@ -47,6 +47,7 @@ import type {
   TrajectoryIngestConfig,
 } from "../../../types.js";
 import { InvalidParameterError } from "../../errors.js";
+import { createPathCollectionResolver } from "../collection-resolver.js";
 import { createCodegraphPayloadHealRunner } from "../infra/codegraph-payload-heal-runner.js";
 import { createIngestDependencies } from "../ingest-dependencies.js";
 import { IndexingOps, type IndexDriftConsumptionResetter } from "../ops/indexing-ops.js";
@@ -168,6 +169,12 @@ export class IngestFacade {
       collectionRegistry: deps.collectionRegistry,
       languageCodeVersions: deps.languageCodeVersions,
       driftReporter: deps.driftReporter,
+      // The registry-first path rule a search resolves by (waj6k). Built here
+      // because this is where the full registry is in scope — IndexingOps
+      // receives it as a function, and without one falls back to the path hash.
+      ...(deps.collectionRegistry
+        ? { resolveCollectionForPath: createPathCollectionResolver(deps.collectionRegistry) }
+        : {}),
     });
 
     // Stats refresh when chunk enrichment finishes. Awaited so the

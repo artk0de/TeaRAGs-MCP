@@ -112,6 +112,12 @@ not error:
   (large codebases = long reindex). See `tea-rags:force-reindex` skill when the
   line says `--force`. A plain incremental `Run:` line (only HEAD moved) runs
   without asking, like the stale banner
+- Enable-flag rows (`CODEGRAPH_ENABLED` / `TRAJECTORY_GIT_ENABLED`) describe the
+  process READING the index, so each surface answers for its own process.
+  `prime` re-applies `CODEGRAPH_ENABLED` from the registry before building its
+  composition — that row can never appear in prime, and its absence there says
+  nothing about the server. Read the codegraph flag from `get_index_status` /
+  `driftWarning`, which the MCP server answers for itself
 - Same report, without consuming it: prime's `## Drift` section and
   `get_index_status`. `driftWarning` is spent once per collection per DISTINCT
   REPORT per server session, and re-armed after each index run

@@ -48,6 +48,7 @@ import { RubyCallResolver } from "../../src/core/domains/language/ruby/resolver/
 import { CODEGRAPH_LANGUAGES } from "../../src/core/domains/trajectory/codegraph/symbols/provider.js";
 import { InMemoryGlobalSymbolTable } from "../../src/core/domains/trajectory/codegraph/symbols/symbol-table.js";
 import { sameTarget } from "../codegraph-chain-tally.js";
+import { resolveCheckoutCommit } from "../lib/checkout-commit.js";
 import {
   buildCorpusExclusionFilter,
   buildSymbolDefs,
@@ -96,13 +97,22 @@ export function mismatchingRows(rows: readonly ResolverParityRow[]): ResolverPar
   return rows.filter((row) => !sameTarget(row.before, row.after));
 }
 
+/** `--before-root` as printed: the path, plus the revision it was sitting at. */
+function beforeLabel(beforeRoot: string | undefined, beforeCommit: string | null): string {
+  if (beforeRoot === undefined) return "";
+  return ` · before from ${beforeRoot}@${beforeCommit ?? "unknown revision"}`;
+}
+
 export function formatParitySummary(
   root: string,
   beforeRoot: string | undefined,
   result: ResolverParityResult,
+  // Defaulted, not required: the three summary tests that predate it keep their
+  // three-argument calls, which the business-logic-tests rule asks for.
+  beforeCommit: string | null = null,
 ): string[] {
   return [
-    `ruby resolver parity · corpus ${root}${beforeRoot === undefined ? "" : ` · before from ${beforeRoot}`}` +
+    `ruby resolver parity · corpus ${root}${beforeLabel(beforeRoot, beforeCommit)}` +
       `${result.beforeSameModule ? "  ← SAME MODULE both sides, identity check only" : ""}`,
     `  ${result.files} scored files (+${result.symbolTableOnlyFiles} symbol-table only), ${result.symbols} symbols` +
       ` (parse failures ${result.parseFailures}, dispatch skipped ${result.dispatchSkipped})`,
@@ -338,14 +348,17 @@ export function parseArgs(argv: readonly string[]) {
 
 async function main(): Promise<void> {
   const opts = parseArgs(process.argv.slice(2));
+  // Read before the walk: a long run gives the other checkout time to move, and
+  // the revision the BEFORE resolver was loaded from is the one worth recording.
+  const beforeCommit = resolveCheckoutCommit(opts.beforeRoot);
   const started = Date.now();
   const result = await run(opts.corpus, opts.beforeRoot, opts.limit, opts.quiet, opts.polyglot);
-  const out = formatParitySummary(opts.corpus, opts.beforeRoot, result);
+  const out = formatParitySummary(opts.corpus, opts.beforeRoot, result, beforeCommit);
   out.push(`  wall ${((Date.now() - started) / 1000).toFixed(1)}s`);
   for (const row of result.mismatches.slice(0, 20)) out.push(`    MISMATCH ${JSON.stringify(row)}`);
   process.stdout.write(`${out.join("\n")}\n`);
   if (opts.json) {
-    writeFileSync(opts.json, `${JSON.stringify({ opts, result }, null, 2)}\n`);
+    writeFileSync(opts.json, `${JSON.stringify({ opts: { ...opts, beforeCommit }, result }, null, 2)}\n`);
   }
   if (result.mismatches.length > 0 || result.drift > 0) process.exitCode = 1;
 }

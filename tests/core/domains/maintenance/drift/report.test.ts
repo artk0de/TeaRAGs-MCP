@@ -208,6 +208,66 @@ describe("IndexDriftReporter — consumption keyed by (collection, report signat
 });
 
 /**
+ * A relocated project — `register_project` re-pointed the existing entry at the
+ * new path, so the indexed data still lives under the ORIGINAL collection name
+ * while the path now hashes to something else (bd tea-rags-mcp-waj6k).
+ *
+ * Both path-addressed checks must land where a SEARCH lands, which is the
+ * registry's collection. Addressed by the hash instead, the report describes a
+ * collection nobody queries and the consumption is spent on a key no index run
+ * ever resets.
+ */
+describe("IndexDriftReporter — path resolution", () => {
+  const RELOCATED = "code_relocated";
+  const PROJECT_PATH = "/tmp/test-project";
+
+  /** Records which collection each monitor was asked about. */
+  const recording = (seen: string[]): IndexDriftMonitor => ({
+    axis: "payloadKeys",
+    check: (collectionName) => {
+      seen.push(collectionName);
+      return [keyFinding];
+    },
+  });
+
+  const relocated = (monitors: IndexDriftMonitor[]): IndexDriftReporter =>
+    new IndexDriftReporter(
+      monitors,
+      () => undefined,
+      async () => RELOCATED,
+    );
+
+  it("checkByPath asks the injected resolver's collection, not the path hash", async () => {
+    const seen: string[] = [];
+
+    await relocated([recording(seen)]).checkByPath(PROJECT_PATH);
+
+    expect(seen).toEqual([RELOCATED]);
+    expect(seen).not.toContain(resolveCollectionName(await validatePath(PROJECT_PATH)));
+  });
+
+  it("checkAndConsume consumes under the injected resolver's collection", async () => {
+    const reporter = relocated([fixed([keyFinding])]);
+
+    expect(await reporter.checkAndConsume(PROJECT_PATH)).not.toBeNull();
+
+    // Consumption landed on the registry's collection: the collection-addressed
+    // search sees it spent, and the index run's reset of that same name re-arms it.
+    expect(reporter.checkAndConsumeByCollectionName(RELOCATED)).toBeNull();
+    reporter.reset(RELOCATED);
+    expect(await reporter.checkAndConsume(PROJECT_PATH)).not.toBeNull();
+  });
+
+  it("keeps resolving by path hash when no resolver is injected", async () => {
+    const seen: string[] = [];
+
+    await new IndexDriftReporter([recording(seen)]).checkByPath(PROJECT_PATH);
+
+    expect(seen).toEqual([resolveCollectionName(await validatePath(PROJECT_PATH))]);
+  });
+});
+
+/**
  * All four monitors, one collection, one report — the composition `factory.ts`
  * wires, driven end to end (whole-branch review item 5).
  *

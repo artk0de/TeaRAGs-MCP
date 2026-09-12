@@ -291,12 +291,19 @@ describe("ExploreFacade.findSymbol", () => {
     expect(result.results).toHaveLength(1);
     expect(result.results[0].payload?.relativePath).toBe("src/utils.ts");
     expect(result.results[0].payload?.chunkCount).toBe(2);
-    // Verify it scrolled by relativePath, not symbolId — and by exact keyword
-    // match, not the tokenized text predicate that let a path superset through
-    // (bd tea-rags-mcp-znxg8).
+    // Verify it scrolled by relativePath, not symbolId — and by an EXACT
+    // match, not the tokenized text predicate alone that let a path superset
+    // through (bd tea-rags-mcp-znxg8). The exact form is the text+value pair
+    // that rides the text index `relativePath` actually has
+    // (bd tea-rags-mcp-ivp12); the `value` condition is what decides.
     expect(mockScrollFiltered).toHaveBeenCalledWith(
       "test_collection",
-      { must: [{ key: "relativePath", match: { value: "src/utils.ts" } }] },
+      {
+        must: [
+          { key: "relativePath", match: { text: "src/utils.ts" } },
+          { key: "relativePath", match: { value: "src/utils.ts" } },
+        ],
+      },
       200,
     );
   });

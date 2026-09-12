@@ -155,6 +155,51 @@ describe("IndexingOps — drift consumption reset", () => {
   });
 
   /**
+   * The commit axis reads the registry's git stamp, and the run that refreshes
+   * that stamp is the sync leg — `ReindexingOperations#reindexChanges` records
+   * the entry on every successful return, quiet ones included (bd
+   * tea-rags-mcp-zf3x0). Re-arming the reader before that stamp lands would
+   * hand the next search a re-check against the stamp the recompute was about
+   * to replace, and it would be told, with a fresh warning, about drift the run
+   * had just repaired.
+   *
+   * What this pins is that the recompute AWAITS the sync leg to COMPLETION, not
+   * merely that it calls it first. The marker is pushed after a macrotask tick,
+   * so it lands only once the returned promise actually settles — the same
+   * shape as the `statsCache.save` marker below, which fires inside the awaited
+   * refresh. Drop the `await` in front of `this.reindex.reindexChanges` and the
+   * reset runs while the sync leg is still pending, so the recorded order
+   * inverts and this test fails.
+   *
+   * The sync leg is a fake here; that it records at all is proven against the
+   * real pipeline in `domains/ingest/operations/reindex-registry-stamp.test.ts`.
+   */
+  it("awaits the sync leg to completion, stamp and all, BEFORE re-arming the reader on a recompute", async () => {
+    const calls: string[] = [];
+    const ops = new IndexingOps(
+      makeDeps({
+        driftReporter: { reset: (name: string) => calls.push(`reset:${name}`) },
+        reindex: {
+          reindexChanges: vi.fn().mockImplementation(async () => {
+            // Yield a full macrotask first. A marker pushed synchronously would
+            // land at CALL time and stay ordered even with the await removed;
+            // a microtask would still beat the recompute's own awaits, which
+            // are microtasks too. Only a macrotask lets the rest of the
+            // recompute — the reset included — overtake an unawaited sync leg.
+            await new Promise<void>((resolve) => setImmediate(resolve));
+            calls.push("sync:record");
+            return changeStats;
+          }),
+        } as never,
+      }),
+    );
+
+    await ops.run(process.cwd(), { forceEnrichments: ["codegraph"] });
+
+    expect(calls).toEqual(["sync:record", `reset:${collection}`]);
+  });
+
+  /**
    * The stats refresh is what rewrites `payloadFieldKeys`, which the payload-key
    * axis compares against. Re-arming the reader before that write lands leaves a
    * window in which a search re-checks the OLD keys and is told, with a fresh
@@ -165,6 +210,71 @@ describe("IndexingOps — drift consumption reset", () => {
    * does — the other four cases wire no stats cache, so the refresh early-exits
    * there and their expectations are untouched.
    */
+  /**
+   * A relocated project (bd tea-rags-mcp-waj6k): the registry still holds the
+   * ORIGINAL collection for the new path, and that is the one a search — and
+   * therefore the drift reader — resolves. The stamp goes into that same
+   * registry entry, so both must address it rather than the path hash.
+   *
+   * Only the runs that operate on an EXISTING collection resolve this way; the
+   * full-index path below keeps the hash, because that run is what registers a
+   * collection for the path in the first place.
+   */
+  describe("relocated project", () => {
+    const RELOCATED = "code_relocated";
+    const resolveCollectionForPath = async (): Promise<string> => RELOCATED;
+
+    it("stamps and re-arms the registry's collection on a recompute", async () => {
+      const run = makeRun();
+      const ops = new IndexingOps(
+        makeDeps({
+          driftReporter: run.driftReporter,
+          collectionRegistry: run.collectionRegistry as never,
+          languageCodeVersions,
+          resolveCollectionForPath,
+        }),
+      );
+
+      await ops.run(process.cwd(), { forceEnrichments: ["codegraph"] });
+
+      expect(run.calls).toEqual([`stamp:${RELOCATED}`, `reset:${RELOCATED}`]);
+    });
+
+    it("re-arms the registry's collection on an incremental", async () => {
+      const run = makeRun();
+      const ops = new IndexingOps(
+        makeDeps({
+          driftReporter: run.driftReporter,
+          collectionRegistry: run.collectionRegistry as never,
+          languageCodeVersions,
+          resolveCollectionForPath,
+        }),
+      );
+
+      await ops.run(process.cwd());
+
+      expect(resetsOf(run.calls)).toEqual([RELOCATED]);
+    });
+
+    it("keeps the path hash on a full index, which is what registers the collection", async () => {
+      const run = makeRun();
+      const deps = makeDeps({
+        driftReporter: run.driftReporter,
+        collectionRegistry: run.collectionRegistry as never,
+        languageCodeVersions,
+        resolveCollectionForPath,
+        qdrant: {
+          collectionExists: vi.fn().mockResolvedValue(false),
+          aliases: { listAliases: vi.fn().mockResolvedValue([]) },
+        } as never,
+      });
+
+      await new IndexingOps(deps).run(process.cwd());
+
+      expect(run.calls).toEqual([`stamp:${collection}`, `reset:${collection}`]);
+    });
+  });
+
   it("finishes the stats refresh BEFORE re-arming the reader on an incremental", async () => {
     const calls: string[] = [];
     const page = { points: [{ payload: { language: "typescript" } }], next_page_offset: null };

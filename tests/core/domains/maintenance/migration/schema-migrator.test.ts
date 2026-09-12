@@ -102,12 +102,18 @@ describe("SchemaMigrator", () => {
 });
 
 describe("individual schema migrations", () => {
-  it("v4 creates keyword index on relativePath", async () => {
+  // bd tea-rags-mcp-ivp12 — v4's keyword index was replaced by v5's text index
+  // one step later in the same run, on every collection, always: Qdrant keeps
+  // ONE index per key. The invariant is that `relativePath` ends up TEXT-indexed
+  // and no collection pays to build an index that cannot survive, so v4 now
+  // creates nothing and v5 (below) is the step that gives the key its index.
+  it("v4 creates no index — v5's text index on the same key replaces it", async () => {
     const store = createMockIndexStore();
     const migrator = new SchemaMigrator(COLLECTION, store, { enableHybrid: false });
     const v4 = migrator.getMigrations().find((m) => m.version === 4)!;
-    await v4.apply();
-    expect(store.ensureIndex).toHaveBeenCalledWith(COLLECTION, "relativePath", "keyword");
+    const result = await v4.apply();
+    expect(store.ensureIndex).not.toHaveBeenCalled();
+    expect(result.applied).toEqual([]);
   });
 
   it("v5 creates text index on relativePath", async () => {

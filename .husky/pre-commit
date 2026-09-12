@@ -38,9 +38,14 @@ GIT_DIR_FOR_MERGE_CHECK=$(git rev-parse --git-dir)
 if [ -f "$GIT_DIR_FOR_MERGE_CHECK/MERGE_HEAD" ]; then
   echo "⏭️  Merge commit — skipping plugin version check (bump must be in the merged branch)"
 else
-  for plugin_dir in .claude-plugin/tea-rags .claude-plugin/tea-rags-setup; do
+  # Every plugin, derived from the manifests on disk rather than a hard-coded
+  # list: a directory under .claude-plugin/ is a plugin iff it carries one, which
+  # both picks up dinopowers (a hard-coded pair left it unenforced) and keeps
+  # .claude-plugin/.benchmarks/ out of it. Same rule as .claude/hooks/check-plugin-version.sh.
+  for plugin_json in .claude-plugin/*/.claude-plugin/plugin.json; do
+    [ -f "$plugin_json" ] || continue
+    plugin_dir=$(dirname "$(dirname "$plugin_json")")
     plugin_name=$(basename "$plugin_dir")
-    plugin_json="$plugin_dir/.claude-plugin/plugin.json"
     # Check if any files in this plugin are staged (excluding plugin.json itself)
     plugin_files=$(echo "$STAGED_FILES" | grep "^${plugin_dir}/" | grep -v ".claude-plugin/plugin.json" || true)
     if [ -n "$plugin_files" ]; then

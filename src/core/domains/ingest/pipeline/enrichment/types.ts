@@ -25,9 +25,15 @@ export interface ProviderContext {
 /**
  * Run-pointer — the ONLY pre-completion marker write. Lives at
  * `payload.enrichment._run`. Written once at run start (`markRunStart`) and
- * refreshed by a throttled heartbeat. `get_index_status` compares each per-kind
- * marker's `runId` against this to detect stale/in-flight runs (a marker whose
- * runId != the active `_run.runId` is rendered in_progress, never healthy).
+ * refreshed by a throttled heartbeat.
+ *
+ * It is evidence about the providers it COVERS (`providers`) and about nobody
+ * else. For a covered provider the health mapper compares each per-kind
+ * marker's `runId` against `runId` here to detect stale/in-flight work (a
+ * marker whose runId differs is derived from these timestamps — in_progress or
+ * failed, never healthy). For an ACTIVE provider this run did not cover, these
+ * timestamps describe someone else's work and are not consulted at all: its own
+ * latest terminal marker stands. See `health-mapper.ts` for the full frame.
  */
 export interface RunMarker {
   runId: string;
@@ -35,11 +41,18 @@ export interface RunMarker {
   /** Throttled heartbeat; advanced on real apply progress. */
   lastProgressAt: string;
   /**
-   * Provider keys active in this run. Markers are stored NESTED
-   * (`enrichment.codegraph.symbols.file`, matching the applier's codegraph
-   * convention), so the marker tree is not self-describing — a dotted key like
-   * `codegraph.symbols` is indistinguishable from nesting. This list tells the
-   * health mapper which nested paths to navigate to find per-provider markers.
+   * Provider keys THIS RUN covered — a coverage set, not the frame of the
+   * health report. `--force-enrichments codegraph` writes a run naming
+   * `codegraph.symbols` alone while git markers from an earlier run stay valid
+   * on the same points, so the health mapper navigates from the RUNNING
+   * COMPOSITION's provider list (passed in by the caller) and consults this
+   * list only to decide whether the run's timestamps describe a given provider.
+   *
+   * Markers are stored NESTED (`enrichment.codegraph.symbols.file`, matching
+   * the applier's codegraph convention), so the marker tree is not
+   * self-describing — a dotted key like `codegraph.symbols` is
+   * indistinguishable from nesting. Both lists are dotted keys read the same
+   * way, which is why either can drive the navigation.
    */
   providers: string[];
 }
@@ -47,7 +60,10 @@ export interface RunMarker {
 /**
  * PERSISTED per-level status is terminal-only. `in_progress` / `pending` /
  * `stalled` are NEVER written — they are DERIVED at read time by the health
- * mapper from the `_run` pointer (absent or stale-runId marker). See
+ * mapper from the `_run` pointer, for a provider the run covers (absent or
+ * stale-runId marker). An active provider the run does NOT cover is never
+ * derived as in progress: its own terminal marker renders as is, and a missing
+ * or non-terminal one renders as a derived `failed`. See
  * `EnrichmentLevelHealth` for the API-facing (derived) status union.
  */
 export type EnrichmentLevelStatus = "completed" | "degraded" | "failed";

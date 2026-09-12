@@ -41,12 +41,18 @@ describe("SchemaManager", () => {
   });
 
   describe("initializeSchema", () => {
-    it("should create relativePath index for new collection", async () => {
+    // bd tea-rags-mcp-ivp12 — this used to assert the KEYWORD index, which
+    // Qdrant immediately replaced with the text index created on the same key
+    // a line later. The invariant is that `relativePath` ends up text-indexed
+    // and carries no dead keyword index; see `text-indexed-keys-guard.test.ts`
+    // for the same claim over every text-indexed key.
+    it("should index relativePath as text only for a new collection", async () => {
       mockQdrant.createPayloadIndex.mockResolvedValue(undefined);
 
       await schemaManager.initializeSchema("new-collection");
 
-      expect(mockQdrant.createPayloadIndex).toHaveBeenCalledWith("new-collection", "relativePath", "keyword");
+      expect(mockQdrant.createPayloadIndex).toHaveBeenCalledWith("new-collection", "relativePath", "text");
+      expect(mockQdrant.createPayloadIndex).not.toHaveBeenCalledWith("new-collection", "relativePath", "keyword");
     });
 
     it("should store schema metadata after initialization", async () => {

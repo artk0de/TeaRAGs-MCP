@@ -22,14 +22,25 @@
   deferred chunk pass, as `CompletionRunner` step 7b. It obeys the same two
   rules as the applier — level-scoped `op.key` with bare inner keys, and no
   write over a level already carrying `skippedAs` — and it stamps the run's
-  `enrichedAt` like any other write of those keys. It does NOT own the signal
-  arithmetic: both builders are injected closures over the codegraph
-  trajectory's `buildCodegraphFileSignals` / `buildCodegraphChunkSignals`,
-  composed in `api/internal/infra/codegraph-payload-heal-runner.ts` because this
-  domain may not import `domains/trajectory`. Why: a third writer that computes
-  the payload itself instead of calling those builders drifts from the applier
-  with nothing failing — the two write the same keys on the same points, and
-  only a live query shows which one was last.
+  `enrichedAt` like any other write of those keys. HOW it finds those points is
+  a cost decision taken once per heal off `countPoints`: per-file exact scrolls
+  when `targetFiles * 2 < collectionPoints * 0.018`, one unfiltered streaming
+  pass otherwise (~1 file per 111 points; ~200 files on the 22k-point
+  self-index). Both shapes share the grouping, flush, throw and touched-id
+  semantics, and only the pass logs progress. Why the constants: a pass costs
+  0.018 ms per point of the COLLECTION, a per-file scroll ~2 ms whatever the
+  collection holds — and the scroll is only affordable because exact matching on
+  `relativePath` now rides the text index as a text+value pair
+  (`adapters/qdrant/filters/text-indexed-exact.ts`, bd tea-rags-mcp-ivp12).
+  Before that each one was a full scan, 677–1002 ms apiece, 19 m 16 s for the
+  first heal's 1,032 files. It does NOT own the signal arithmetic: both builders
+  are injected closures over the codegraph trajectory's
+  `buildCodegraphFileSignals` / `buildCodegraphChunkSignals`, composed in
+  `api/internal/infra/codegraph-payload-heal-runner.ts` because this domain may
+  not import `domains/trajectory`. Why: a third writer that computes the payload
+  itself instead of calling those builders drifts from the applier with nothing
+  failing — the two write the same keys on the same points, and only a live
+  query shows which one was last.
 - **A point a provider declined MUST get `<provider>.<level>.skippedAs`** — one
   of `"generated" | "test" | "documentation" | "policy"` (policy.ts:35).
   `"policy"` is the mandatory catch-all when no classification flag explains the

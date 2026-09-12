@@ -1,12 +1,13 @@
 /**
- * Enumeration rather than ranking: the five ways tea-rags walks points it has
- * not scored — full traversal with vectors, one payload field's distinct values,
- * an ordered window, a filtered page-through, and an exact symbolId set.
+ * Enumeration rather than ranking: the six ways tea-rags walks points it has
+ * not scored — full traversal with vectors, full traversal of a few payload
+ * keys, one payload field's distinct values, an ordered window, a filtered
+ * page-through, and an exact symbolId set.
  *
  * They are one concern because they share the pagination contract every Qdrant
  * scroll has and no other call does: drive `next_page_offset` in a loop until
  * the server stops handing one back, and decide per call how much of the payload
- * to materialize. That second decision is the reason these are five methods and
+ * to materialize. That second decision is the reason these are six methods and
  * not one — a recovery traversal reading three scalar keys across tens of
  * thousands of chunks and a migration traversal that needs the vectors have
  * opposite cost profiles, and collapsing them behind one signature would force
@@ -18,6 +19,8 @@
 
 import type { QdrantConnection } from "./connection.js";
 import { QdrantOperationError, QdrantUnavailableError } from "./errors.js";
+import { symbolIdTextToken } from "./filters/symbolid-text-token.js";
+import { anyOfOnTextIndexed } from "./filters/text-indexed-exact.js";
 
 export class QdrantScroller {
   constructor(private readonly connection: QdrantConnection) {}
@@ -49,6 +52,50 @@ export class QdrantScroller {
           payload: p.payload as Record<string, unknown>,
           vector: p.vector,
         }));
+
+      if (batch.length > 0) yield batch;
+      const next = result.next_page_offset;
+      offset = typeof next === "string" || typeof next === "number" ? next : null;
+    } while (offset !== null);
+  }
+
+  /**
+   * `scrollWithVectors`'s cheap sibling: every point of the collection, in
+   * pages, carrying only the named payload keys and no vectors at all.
+   *
+   * It exists because a read that wants a few scalar keys off EVERY point has
+   * no cheaper shape: one unfiltered pass over 22k points costs ~400 ms total,
+   * about 0.018 ms per point, and the caller filters in memory. Asking per file
+   * instead is now ~2 ms per file (`filters/text-indexed-exact.ts`), so the
+   * cheaper shape depends on how many files the caller wants — the codegraph
+   * payload heal picks between the two per run. Before ivp12 the per-file form
+   * was a full scan EACH, and this generator was the only affordable shape at
+   * any size.
+   *
+   * The generator is the API, not a convenience: the caller consumes a page,
+   * acts on it, and drops it, so peak memory is one page plus whatever the
+   * caller chose to keep.
+   */
+  async *scrollPayloadPages(
+    collectionName: string,
+    payloadInclude: string[],
+    batchSize = 1000,
+  ): AsyncGenerator<{ id: string | number; payload: Record<string, unknown> }[]> {
+    let offset: string | number | null = null;
+
+    do {
+      const result = await this.connection.call(async () =>
+        this.connection.client.scroll(collectionName, {
+          limit: batchSize,
+          offset: offset ?? undefined,
+          with_payload: { include: payloadInclude },
+          with_vector: false,
+        }),
+      );
+
+      const batch = result.points
+        .filter((p) => p.payload !== null && p.payload !== undefined)
+        .map((p) => ({ id: p.id, payload: p.payload as Record<string, unknown> }));
 
       if (batch.length > 0) yield batch;
       const next = result.next_page_offset;
@@ -181,6 +228,13 @@ export class QdrantScroller {
    * hydrate each path step with its relativePath / line range / git+codegraph
    * signals. Empty input short-circuits to [] (no query). Result order is not
    * guaranteed — callers index by `payload.symbolId`.
+   *
+   * Each branch is a text+value PAIR (tea-rags-mcp-ivp12): `symbolId` is
+   * TEXT-indexed, so a bare `match.value` is a full collection scan per id
+   * (764 ms on the live self-index) while the pair is 1.2 ms. The text half is
+   * the id's last name segment — the one token the `word` tokenizer is
+   * guaranteed to have stored for that row — and the value half keeps the
+   * answer exact, so a token shared with a namesake costs candidates only.
    */
   async scrollBySymbolIds(
     collectionName: string,
@@ -188,9 +242,6 @@ export class QdrantScroller {
     limit = 1024,
   ): Promise<{ id: string | number; payload: Record<string, unknown> }[]> {
     if (symbolIds.length === 0) return [];
-    const filter = {
-      should: symbolIds.map((id) => ({ key: "symbolId", match: { value: id } })),
-    };
-    return this.scrollFiltered(collectionName, filter, limit);
+    return this.scrollFiltered(collectionName, anyOfOnTextIndexed("symbolId", symbolIds, symbolIdTextToken), limit);
   }
 }

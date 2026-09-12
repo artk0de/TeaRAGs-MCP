@@ -15,6 +15,14 @@
   `IndexingOps` calls `reset(collectionName)` after every run's stamps, which
   clears every signature recorded for it. A monitor never tracks "already
   shown".
+- **The path-addressed checks resolve the way a SEARCH does.** `checkByPath` and
+  `checkAndConsume` turn a path into a collection through the
+  `resolveCollectionForPath` callback the composition root passes the reporter
+  (`api/internal/collection-resolver.ts`, `createPathCollectionResolver`:
+  registry entry first, path hash only for a path no entry claims), so a
+  relocated project is reported and consumed under the collection its searches
+  query instead of under what its new path happens to hash to. Re-deriving the
+  hash here is the defect, not a shortcut.
 - **`--project` comes from the reporter.** `renderIndexDriftRemedy` fills it
   from `IndexDriftReport.projectAlias`, which the reporter resolves through the
   `resolveAlias` callback the composition root passes it
@@ -25,6 +33,9 @@
   env > stored registry env > code default, the same replay
   `ProjectIngestFactory` performs). Comparing against the bare process env
   reports phantom drift for every project whose registry env differs.
+- **`EnvDriftMonitor`'s `CODEGRAPH_ENABLED` finding is unreachable from prime**
+  — the registry re-apply is `../CLAUDE.md`, the ruling
+  `.claude/rules/index-drift.md`.
 - **`*` is a language to the version monitor.** `sharedVersions`
   (`language/kernel/capability.ts`) is compared unconditionally; its findings
   render with no `--languages`.

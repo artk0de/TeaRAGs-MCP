@@ -7,6 +7,7 @@
  * Schema versions:
  * - v1-v3: No payload indexes (implicit)
  * - v4: Added keyword index on `relativePath` for faster filter-based deletes
+ *   (replaced by the v5 text index on the same key — see TEXT_INDEXED_KEYS)
  * - v5: Added text index on `relativePath` for glob pre-filter
  * - v6: Added keyword indexes on `language`, `fileExtension`, `chunkType`
  * - v7: Enable sparse vectors on non-hybrid collections (when enableHybrid=true)
@@ -14,6 +15,7 @@
  */
 
 import type { QdrantManager } from "../qdrant/client.js";
+import { TEXT_INDEXED_KEYS } from "./filters/text-indexed-exact.js";
 
 /** Reserved ID for storing schema metadata in the collection */
 const SCHEMA_METADATA_ID = "__schema_metadata__";
@@ -174,26 +176,28 @@ export class SchemaManager {
   async initializeSchema(collectionName: string): Promise<void> {
     const indexes: string[] = [];
 
-    // Create relativePath keyword index for fast filter-based operations
-    await this.qdrant.createPayloadIndex(collectionName, "relativePath", "keyword");
-    indexes.push("relativePath");
-
-    // Create relativePath text index for glob pre-filter (was missing for new collections)
-    await this.qdrant.createPayloadIndex(collectionName, "relativePath", "text");
+    // `relativePath` (glob pre-filter), `symbolId` and `parentSymbolId`
+    // (partial match) are TEXT-indexed. Qdrant keeps ONE index per key, so the
+    // keyword index this loop used to create on `relativePath` first was
+    // replaced by the text index a line later — dead, while leaving the belief
+    // that `match.value` was served. It is not: exact matching on any of these
+    // keys rides the text index as a text+value PAIR through
+    // `exactMatchOnTextIndexed`, which is why the key list lives beside that
+    // matcher rather than here (tea-rags-mcp-ivp12).
+    //
+    // `parentSymbolId` is also created by schema-v11 on collections that predate
+    // the rename; a fresh collection never runs that migration, so this loop is
+    // the only path that gives it to one.
+    for (const key of TEXT_INDEXED_KEYS) {
+      await this.qdrant.createPayloadIndex(collectionName, key, "text");
+      indexes.push(key);
+    }
 
     // Create keyword indexes on frequently filtered fields
     for (const field of ["language", "fileExtension", "chunkType"] as const) {
       await this.qdrant.createPayloadIndex(collectionName, field, "keyword");
       indexes.push(field);
     }
-
-    // Create text index on symbolId for partial match filtering
-    await this.qdrant.createPayloadIndex(collectionName, "symbolId", "text");
-
-    // Same for parentSymbolId. It is created by schema-v11 on collections that
-    // predate the rename, and a fresh collection never runs that migration, so
-    // without this line the index exists only on upgraded collections.
-    await this.qdrant.createPayloadIndex(collectionName, "parentSymbolId", "text");
 
     // Create indexes on codegraph filterable paths so typed filter params
     // (minFanIn/isHub/...) match at query time. The nested paths mirror the

@@ -113,6 +113,30 @@ describe("ruby-resolver-parity summary", () => {
     };
     expect(formatParitySummary("/corpus", "/before", result).join("\n")).toContain("identity check only");
   });
+
+  // A BEFORE path alone dates nothing: the same checkout answers differently
+  // after its next pull, so the summary has to carry the revision it ran at.
+  it("prints the baseline revision next to the checkout it came from", () => {
+    const result: ResolverParityResult = {
+      mismatches: [],
+      compared: 41,
+      drift: 0,
+      beforeSameModule: false,
+      files: 3,
+      symbolTableOnlyFiles: 0,
+      ingestIgnored: 0,
+      codegraphExcluded: 0,
+      parseFailures: 0,
+      symbols: 9,
+      dispatchSkipped: 0,
+    };
+    const sha = "0123456789abcdef0123456789abcdef01234567";
+
+    expect(formatParitySummary("/corpus", "/before", result, sha).join("\n")).toContain(`before from /before@${sha}`);
+    expect(formatParitySummary("/corpus", "/before", result, null).join("\n")).toContain(
+      "before from /before@unknown revision",
+    );
+  });
 });
 
 describe("ruby-resolver-parity same-tree run", () => {

@@ -413,6 +413,15 @@ export class QdrantManager {
     return this.scroller.scrollWithVectors(collectionName, batchSize);
   }
 
+  /** Scroll every point with the named payload keys only, no vectors, yielding pages. */
+  scrollPayloadPages(
+    collectionName: string,
+    payloadInclude: string[],
+    batchSize = 1000,
+  ): AsyncGenerator<{ id: string | number; payload: Record<string, unknown> }[]> {
+    return this.scroller.scrollPayloadPages(collectionName, payloadInclude, batchSize);
+  }
+
   /** Distinct values of one payload field across the collection. */
   async scrollFieldValues(collectionName: string, fieldName: string): Promise<string[]> {
     return this.scroller.scrollFieldValues(collectionName, fieldName);

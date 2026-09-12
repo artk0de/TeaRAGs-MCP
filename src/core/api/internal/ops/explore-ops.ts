@@ -82,6 +82,12 @@ export interface ExploreOpsDeps {
    * floored thresholds the reranker's overlay resolves against.
    */
   signalFloors?: ReadonlyMap<string, SignalFloors>;
+  /**
+   * Provider keys of the running composition, threaded to `IndexMetricsQuery`
+   * so `get_index_metrics` frames enrichment health on the composition rather
+   * than on the last run's provider list (bd tea-rags-mcp-x2u65).
+   */
+  activeEnrichmentProviders?: readonly string[];
 }
 
 export class ExploreOps {
@@ -141,6 +147,7 @@ export class ExploreOps {
         deps.statsCache,
         this.payloadSignals,
         deps.signalFloors,
+        deps.activeEnrichmentProviders ?? [],
       );
       this.recomputeService = new StatsRecomputeService(deps.qdrant, deps.statsCache);
     }

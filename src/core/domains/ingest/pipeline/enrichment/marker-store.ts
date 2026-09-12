@@ -29,8 +29,10 @@ export class EnrichmentMarkerStore {
 
   /**
    * Run-pointer — the only pre-completion write. Lives at enrichment._run and
-   * carries the active provider keys so the health mapper knows which nested
-   * marker paths to navigate (markers are stored nested, not self-describing).
+   * carries the provider keys THIS RUN covers, so the health mapper knows which
+   * providers the run's timestamps are evidence about. It is not the frame of
+   * the health report: that comes from the running composition, and a provider
+   * outside this list keeps its own latest terminal marker.
    */
   async markRunStart(coll: string, providerKeys: Iterable<string>, runId: string, startedAt: string): Promise<void> {
     await this.writeKeys(coll, [

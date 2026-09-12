@@ -5,6 +5,7 @@ import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import {
+  applyRegistryEnvForUpdater,
   autoUpdateCommand,
   runAutoUpdateCliCommand,
   type AutoUpdateCliDeps,
@@ -222,5 +223,58 @@ describe("autoUpdateCommand (yargs registration)", () => {
       // supplying --branch does not change the resolution path or throw.
       expect(exit).toHaveBeenCalledWith(1);
     });
+  });
+});
+
+// ── registry identity replay for the detached updater ─────────────────────────
+//
+// `auto-update run` is launched by whatever scheduled it — prime's spawner, cron,
+// or a bare terminal. Only prime pre-forces the identity flags onto its child's
+// env, so the updater has to re-apply them itself, through the same seam
+// `index-codebase` uses. Getting this wrong is silent: the tick builds a
+// composition without codegraph and then WRITES that back onto the registry
+// entry, after which prime stops forcing the flag at all.
+
+describe("applyRegistryEnvForUpdater", () => {
+  const identityEntry: CollectionEntry = {
+    ...entry,
+    embeddingModel: "nomic-embed-text",
+    embeddingBaseUrl: "http://localhost:11434",
+    embeddingFallbackUrl: "http://fallback:11434",
+    qdrantUrl: "http://localhost:6333",
+    codegraphEnabled: true,
+  };
+
+  it("re-applies codegraphEnabled from the entry's dedicated field, not the env snapshot", () => {
+    const env: NodeJS.ProcessEnv = {};
+    applyRegistryEnvForUpdater(identityEntry, env);
+    expect(env.CODEGRAPH_ENABLED).toBe("true");
+  });
+
+  it("lets an explicit ambient CODEGRAPH_ENABLED beat the registry entry", () => {
+    const env: NodeJS.ProcessEnv = { CODEGRAPH_ENABLED: "false" };
+    applyRegistryEnvForUpdater(identityEntry, env);
+    expect(env.CODEGRAPH_ENABLED).toBe("false");
+  });
+
+  it("seeds the embedding identity and the resolved qdrant backend like index-codebase does", () => {
+    const env: NodeJS.ProcessEnv = {};
+    applyRegistryEnvForUpdater(identityEntry, env);
+    expect(env.EMBEDDING_MODEL).toBe("nomic-embed-text");
+    expect(env.EMBEDDING_BASE_URL).toBe("http://localhost:11434");
+    expect(env.EMBEDDING_FALLBACK_URL).toBe("http://fallback:11434");
+    expect(env.QDRANT_URL).toBe("http://localhost:6333");
+  });
+
+  it("still replays the general env snapshot, legacy `tuning` spelling included", () => {
+    const env: NodeJS.ProcessEnv = {};
+    applyRegistryEnvForUpdater({ ...entry, tuning: { INGEST_PIPELINE_CONCURRENCY: "7" } }, env);
+    expect(env.INGEST_PIPELINE_CONCURRENCY).toBe("7");
+  });
+
+  it("applies nothing for an unregistered collection", () => {
+    const env: NodeJS.ProcessEnv = { PATH: "/usr/bin" };
+    applyRegistryEnvForUpdater(null, env);
+    expect(env).toEqual({ PATH: "/usr/bin" });
   });
 });

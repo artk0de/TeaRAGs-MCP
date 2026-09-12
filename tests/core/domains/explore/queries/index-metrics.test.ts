@@ -218,6 +218,54 @@ describe("IndexMetricsQuery", () => {
     expect(result.enrichment).toBeUndefined();
   });
 
+  // bd tea-rags-mcp-x2u65 — get_index_metrics carries the same health frame as
+  // get_index_status: the running composition's providers, not the ones the
+  // last run happened to touch. `--force-enrichments codegraph` leaves a run
+  // marker naming `codegraph.symbols` alone while git markers from an earlier
+  // run stay valid on the same points.
+  describe("enrichment health frame (active providers)", () => {
+    const NOW = new Date().toISOString();
+    const forcedCodegraphRun = {
+      _run: { runId: "run-2", startedAt: NOW, lastProgressAt: NOW, providers: ["codegraph.symbols"] },
+      git: {
+        file: { runId: "run-1", status: "completed", unenrichedChunks: 0 },
+        chunk: { runId: "run-1", status: "completed", unenrichedChunks: 0 },
+      },
+      codegraph: {
+        symbols: {
+          file: { runId: "run-2", status: "completed", unenrichedChunks: 0 },
+          chunk: { runId: "run-2", status: "completed", unenrichedChunks: 0 },
+        },
+      },
+    };
+
+    it("renders every active provider, git from its own older terminal marker", async () => {
+      const { qdrant, statsCache, payloadSignals } = makeDeps();
+      qdrant.getPoint.mockResolvedValue({ payload: { enrichment: forcedCodegraphRun } });
+      const query = new IndexMetricsQuery(qdrant, statsCache, payloadSignals, undefined, ["git", "codegraph.symbols"]);
+
+      const result = await query.run("col", "/project");
+
+      expect(Object.keys(result.enrichment!).sort()).toEqual(["codegraph.symbols", "git"]);
+      expect(result.enrichment!.git.file.status).toBe("healthy");
+      expect(result.enrichment!.git.chunk.status).toBe("healthy");
+      expect(result.enrichment!["codegraph.symbols"].file.status).toBe("healthy");
+    });
+
+    // The frame comes from the injected list and from nothing else: unwired,
+    // a run-pointer marker has nothing to report against. Pins that the
+    // constructor argument is load-bearing rather than decorative.
+    it("reports nothing for a run-pointer marker when no active providers are wired", async () => {
+      const { qdrant, statsCache, payloadSignals } = makeDeps();
+      qdrant.getPoint.mockResolvedValue({ payload: { enrichment: forcedCodegraphRun } });
+      const query = new IndexMetricsQuery(qdrant, statsCache, payloadSignals);
+
+      const result = await query.run("col", "/project");
+
+      expect(result.enrichment).toBeUndefined();
+    });
+  });
+
   // btl8: codegraph signals with stats.labels must surface in labelMap just
   // like git signals. Before this commit, the 7 codegraph numeric descriptors
   // lacked stats.labels so IndexMetricsQuery skipped them (line 57 early

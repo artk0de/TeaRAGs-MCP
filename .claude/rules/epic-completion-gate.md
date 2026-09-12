@@ -61,6 +61,39 @@ Pick the validation that matches what the epic changed:
 
 Always `DEBUG=1` on the index CLI, for per-phase timing.
 
+### Keep the auto-update watcher out of the measurement window (MANDATORY)
+
+`tea-rags prime` is not the read-only digest it looks like. It fires
+`AutoUpdateTrigger` for any registered project, and the trigger's freshness
+check — which is where `autoUpdate.enabled` is read — can answer `eligible`, at
+which point prime spawns a DETACHED `tea-rags auto-update run --project <alias>`
+and exits while that child keeps indexing (`bootstrap/auto-update/spawner.ts`).
+It does not wait for a stale index to ask for it: the necessary conditions are
+the flag on, HEAD on the stamped `targetBranch`, and no run in the last two
+minutes — the change detection happens inside the run, not before it. They are
+not sufficient: a failed run backs off for five minutes and the trigger keeps
+its own in-process TTL, so a prime that spawns nothing proves nothing. A prime
+taken as a "before" snapshot therefore races the measured run that follows: V1
+of the index-drift program read `REPAIR_PASS repaired: 54` against a baseline
+that predicted 0.
+
+The switch is the sticky registry field `autoUpdate.enabled`, and the CLI is the
+only thing that flips it — no env var, no prime flag:
+
+```bash
+tea-rags auto-update status  --project <alias>   # config, freshness verdict, log path
+tea-rags auto-update disable --project <alias>   # target branch is kept
+#   ... snapshot, run, measure ...
+tea-rags auto-update enable  --project <alias>
+```
+
+So: take the before-snapshot, then either disable the watcher for the window or
+wait until `~/.tea-rags/logs/auto-update-<alias>.log` stops growing before
+starting the measured run. A project that never ran `auto-update enable` still
+gets the trigger, but its freshness check answers `disabled` and nothing spawns,
+so it needs neither. Re-enable whatever you disabled when the measurement is
+done — it is a registry field, so it survives the session.
+
 ### `--force-enrichments` is the default validation tool (MANDATORY)
 
 Validating a new enrichment mechanism, a new payload field, or a new codegraph
