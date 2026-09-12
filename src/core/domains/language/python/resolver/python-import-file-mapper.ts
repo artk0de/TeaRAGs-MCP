@@ -52,9 +52,15 @@ const NAMESPACE: ImportPathProbe = { kind: "namespace" };
 const MISS: ImportPathProbe = { kind: "miss" };
 
 /**
- * Per-symbol-table memo. Keyed by table IDENTITY (a run holds one) and
- * invalidated when `size()` moves, which is the same shape the TS path mapper
- * uses for its `existsSync` memo — pass 1 grows the table, pass 2 does not.
+ * The TABLE-scoped half of the memo: every answer derived from symbol-table
+ * MEMBERSHIP alone. Keyed by table IDENTITY and invalidated when `size()`
+ * moves, which is the same shape the TS path mapper uses for its `existsSync`
+ * memo — pass 1 grows the table, pass 2 does not.
+ *
+ * `answers` belongs here rather than in the run half (bd tea-rags-mcp-11qqk):
+ * `mapImportToFile` reads `ctx` for the symbol table and for nothing else, so
+ * the same import text from the same directory against the same table names the
+ * same file whatever a run happens to re-export.
  *
  * `roots` is the ordered set of roots that fit: SEEDED from the table's file
  * set when it can list one (bd tea-rags-mcp-60nss), then extended lazily by
@@ -70,12 +76,39 @@ const MISS: ImportPathProbe = { kind: "miss" };
  * differently from two directories — every relative import, and any absolute
  * one whose root inference depends on the caller's ancestors.
  */
-interface ImportMapperMemo {
+interface ImportMapperTableMemo {
   size: number;
   roots: string[];
   seededCount: number;
   containingRoots: Map<string, string>;
   answers: Map<string, ImportFileTarget>;
+}
+
+/**
+ * The RUN-scoped half (bd tea-rags-mcp-11qqk): the two answers computed FROM
+ * `ctx.moduleReexports`, which is a RUN-global channel and not a property of
+ * the table.
+ *
+ * Keyed by the IDENTITY of that channel, because that identity IS the run:
+ * `CodegraphRunState` reassigns `moduleReexports = {}` at every reset and
+ * `CallEdgeResolutionRunner#buildResolverInputs` hands the one object to every
+ * call of a run. Keying these two by the TABLE instead was the defect: the
+ * provider outlives a run (`LanguageFactory` caches it) and so does the table
+ * (`GraphDbClientPool` keeps one per collection), so an `__init__.py` whose
+ * re-export target moved without adding or removing a symbol kept resolving
+ * through the previous run's declarer. The same shape
+ * `PythonNamingConventionSymbolResolutionStrategy#descendantsOf` already uses
+ * for `classAncestors`.
+ *
+ * `table` and `size` stamp the generation these answers were computed against.
+ * Not a link to {@link ImportMapperTableMemo} — a validity stamp of its own,
+ * and a necessary one: both answers ALSO read membership (`declaresName`, and
+ * `mapImportToFile` for every hop), so a cold pass-1 refusal must not outlive
+ * the growth that turns it into a hit.
+ */
+interface ImportMapperRunMemo {
+  table: GlobalSymbolTable;
+  size: number;
   /** `<file> <name>` -> the file that DECLARES it, or `null` for "cannot tell". */
   declarers: Map<string, RelPath | null>;
   /** `<file> <name>` -> the file the package ALIASES it to as a module, or `null`. */
@@ -97,14 +130,23 @@ interface ImportMapperMemo {
 const MAX_REEXPORT_HOPS = 3;
 
 export class PythonImportFileMapper implements ImportFileMapper {
-  private readonly memos = new WeakMap<GlobalSymbolTable, ImportMapperMemo>();
+  private readonly tableMemos = new WeakMap<GlobalSymbolTable, ImportMapperTableMemo>();
+  private readonly runMemos = new WeakMap<object, ImportMapperRunMemo>();
+  /**
+   * The run key for a context carrying NO re-export channel — a non-Python run
+   * reaching a shared strategy, and most unit tests. Per-mapper rather than
+   * global, and memoising rather than skipping: with no channel to read there is
+   * nothing run-dependent to leak, and the generation stamp still invalidates it
+   * when the table moves.
+   */
+  private readonly channellessRunKey: object = {};
 
   mapImportToFile(importText: string, fromFile: RelPath, ctx: CallContext): ImportFileTarget {
     const head = importText.split(/\s+as\s+/)[0].trim();
     if (head.length === 0) return UNKNOWN;
 
     const table = ctx.symbolTable;
-    const memo = this.memoFor(table);
+    const memo = this.tableMemoFor(table);
     const fromDir = posix.dirname(fromFile);
     const key = `${fromDir} ${head}`;
     const cached = memo.answers.get(key);
@@ -138,7 +180,7 @@ export class PythonImportFileMapper implements ImportFileMapper {
    */
   resolveExportedName(relPath: RelPath, name: string, ctx: CallContext): RelPath | null {
     if (name.length === 0 || name === "*") return null;
-    const memo = this.memoFor(ctx.symbolTable);
+    const memo = this.runMemoFor(ctx);
     const key = `${relPath} ${name}`;
     const cached = memo.declarers.get(key);
     if (cached !== undefined) return cached;
@@ -200,7 +242,7 @@ export class PythonImportFileMapper implements ImportFileMapper {
    */
   resolveExportedModule(relPath: RelPath, name: string, ctx: CallContext): RelPath | null {
     if (name.length === 0 || name === "*") return null;
-    const memo = this.memoFor(ctx.symbolTable);
+    const memo = this.runMemoFor(ctx);
     const key = `${relPath} ${name}`;
     const cached = memo.moduleAliases.get(key);
     if (cached !== undefined) return cached;
@@ -261,23 +303,36 @@ export class PythonImportFileMapper implements ImportFileMapper {
     return target.relPath;
   }
 
-  private memoFor(table: GlobalSymbolTable): ImportMapperMemo {
-    const existing = this.memos.get(table);
+  private tableMemoFor(table: GlobalSymbolTable): ImportMapperTableMemo {
+    const existing = this.tableMemos.get(table);
     const size = table.size();
     // A grown table can turn `external` into `project`; a stale memo would
     // freeze the cold-pass answer for the whole run.
     if (existing?.size === size) return existing;
     const roots = seedRoots(table);
-    const fresh: ImportMapperMemo = {
+    const fresh: ImportMapperTableMemo = {
       size,
       roots,
       seededCount: roots.length,
       containingRoots: new Map(),
       answers: new Map(),
-      declarers: new Map(),
-      moduleAliases: new Map(),
     };
-    this.memos.set(table, fresh);
+    this.tableMemos.set(table, fresh);
+    return fresh;
+  }
+
+  /**
+   * The memo for the RUN this context belongs to; see
+   * {@link ImportMapperRunMemo} for why the channel's identity is the run.
+   */
+  private runMemoFor(ctx: CallContext): ImportMapperRunMemo {
+    const table = ctx.symbolTable;
+    const size = table.size();
+    const key = ctx.moduleReexports ?? this.channellessRunKey;
+    const existing = this.runMemos.get(key);
+    if (existing?.table === table && existing.size === size) return existing;
+    const fresh: ImportMapperRunMemo = { table, size, declarers: new Map(), moduleAliases: new Map() };
+    this.runMemos.set(key, fresh);
     return fresh;
   }
 }
@@ -399,7 +454,7 @@ function mapAbsolute(
   head: string,
   fromDir: string,
   table: GlobalSymbolTable,
-  memo: ImportMapperMemo,
+  memo: ImportMapperTableMemo,
 ): ImportFileTarget {
   const segments = head.split(".").filter((s) => s.length > 0);
   if (segments.length === 0) return UNKNOWN;
@@ -433,7 +488,7 @@ function mapAbsolute(
  * not swallow `server-tools/x.py`, and a file sitting directly in the root
  * counts as contained.
  */
-function containingSeededRoot(fromDir: string, memo: ImportMapperMemo): string {
+function containingSeededRoot(fromDir: string, memo: ImportMapperTableMemo): string {
   const cached = memo.containingRoots.get(fromDir);
   if (cached !== undefined) return cached;
   let containing = "";

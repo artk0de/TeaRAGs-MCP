@@ -110,7 +110,11 @@ describe("seeded support versions", () => {
       // tea-rags-mcp-4yvms persists `classFieldTypesByClassKey` +
       // `moduleReexports` in the pass-1 slice, so rows written by walker 5
       // carry neither and an incremental run on them still mis-resolves
-      // cross-file fields and package re-exports. ruby walker 2: bd
+      // cross-file fields and package re-exports; python walker 7: bd
+      // tea-rags-mcp-11qqk scoped the import mapper's re-export memo to the RUN
+      // rather than to the pooled symbol table, so rows written by walker 6 can
+      // carry edges resolved through a re-export target that had already moved.
+      // ruby walker 2: bd
       // tea-rags-mcp-kumq2 routed every Ruby short-name lookup through the same
       // same-language filter, so an index built by walker 1 holds the
       // cross-language picks this one never emits. java walker 2: bd
@@ -122,7 +126,7 @@ describe("seeded support versions", () => {
       // Every other language is still at its seed.
       const WALKER_BUMPED = new Map([
         ["typescript", 4],
-        ["python", 6],
+        ["python", 7],
         ["ruby", 2],
         ["java", 2],
         ["rust", 2],

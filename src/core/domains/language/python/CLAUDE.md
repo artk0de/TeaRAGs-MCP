@@ -37,10 +37,22 @@
   bullet of their own below. The `self` arm keeps the full candidate set,
   because `self.open()` IS attribute lookup down the MRO.
 - **`PythonCallResolver` owns exactly ONE `PythonImportFileMapper`** and hands
-  it to the chain factory, the cone locator and the external vocabulary. The
-  memo is keyed by symbol-table identity and invalidated on `size()`, so a
+  it to the chain factory, the cone locator and the external vocabulary, so a
   second instance is a second cold cache and a licence for two consumers to
   answer the same import differently.
+- **That mapper's memo is TWO memos, because the answers have two lifetimes.**
+  Source roots and the import→file answers derived from them are keyed by
+  symbol-table identity and invalidated on `size()`; the re-export halves
+  (`resolveExportedName` / `resolveExportedModule`) are keyed by the IDENTITY of
+  `ctx.moduleReexports`, which is what a run is — the state reassigns the object
+  at every reset and hands the one object to every call of a run. Both provider
+  and table outlive a run, so keying the re-export answers by the table let run
+  N+1 read run N's declarers whenever `size()` had not moved: an `__init__.py`
+  whose re-export target changed without adding or removing a symbol resolved
+  through the old file forever (bd tea-rags-mcp-11qqk). The run half carries the
+  table and its size as a generation stamp, because those answers ALSO read
+  membership and a cold pass-1 refusal must not outlive the growth that turns it
+  into a hit.
 - **The mapper answers TWO different questions, and only the second one follows
   re-exports.** `mapImportToFile` says which file a MODULE names;
   `resolveExportedName` says which file DECLARES a name, walking the file's own
