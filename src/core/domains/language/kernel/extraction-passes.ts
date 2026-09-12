@@ -73,6 +73,9 @@ export function toWalkContext(input: WalkInput): WalkContext {
   if (input.gemfileContent !== undefined) {
     ctx.gemfileContent = input.gemfileContent;
   }
+  if (input.declaredDependencies !== undefined) {
+    ctx.declaredDependencies = input.declaredDependencies;
+  }
   return ctx;
 }
 

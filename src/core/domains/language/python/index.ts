@@ -46,6 +46,7 @@ import {
   type SymbolResolutionTarget,
 } from "../../../contracts/types/codegraph.js";
 import type {
+  DependencyManifestSource,
   LanguageChunkerHooks,
   LanguageProvider,
   LanguageSymbolResolver,
@@ -53,6 +54,7 @@ import type {
 } from "../../../contracts/types/language.js";
 import { composeExtractionWalker } from "../kernel/extraction-passes.js";
 import { pythonKernel } from "./kernel.js";
+import { PYTHON_DEPENDENCY_MANIFEST } from "./manifest.js";
 import { PythonCallResolver } from "./resolver/index.js";
 import { pyNameOf } from "./walker/name-of.js";
 import { PYTHON_EXTRACTION_PASSES } from "./walker/passes.js";
@@ -97,7 +99,17 @@ const pythonChunkerHooks: LanguageChunkerHooks = {
 export class PythonLanguage implements LanguageProvider {
   readonly kernel = pythonKernel;
   readonly chunkerHooks: LanguageChunkerHooks = pythonChunkerHooks;
+  /**
+   * `pyproject.toml` + `requirements*.txt`, the two ways Python declares a
+   * dependency. The run-start walk unions every one it finds under the root into
+   * `declaredDependencies`, which gates the framework vocabularies
+   * (bd tea-rags-mcp-w205u.1).
+   */
+  readonly dependencyManifest: DependencyManifestSource = PYTHON_DEPENDENCY_MANIFEST;
   readonly walker: LanguageWalker = composeExtractionWalker({
+    // `WalkInput.declaredDependencies` rides through structurally, so the Django
+    // class-body facet composes against THIS project's manifests; undefined →
+    // the FULL catalogue (bd tea-rags-mcp-w205u.1).
     walk: (input) => extractFromPythonFile(input),
     nameOf: (node) => pyNameOf(node),
     // Empty today — see ./walker/passes.ts.
@@ -131,6 +143,7 @@ export class PythonLanguage implements LanguageProvider {
 }
 
 export { pythonKernel } from "./kernel.js";
+export { PYTHON_DEPENDENCY_MANIFEST, normalizePythonPackageName, parsePythonManifest } from "./manifest.js";
 export { extractFromPythonFile, pyNameOf } from "./walker/index.js";
 export { PythonCallResolver, mapPythonImportToFile } from "./resolver/index.js";
 export type { FileExtraction, PythonExtractInput };

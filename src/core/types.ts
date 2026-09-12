@@ -67,6 +67,19 @@ export interface ChunkerConfig {
    * Undefined → the FULL catalogue (gating off). bd tea-rags-mcp-adx5p.1b.
    */
   gemfileContent?: string;
+  /**
+   * Absolute root of the project being indexed, threaded to the chunker worker
+   * so it can walk the project's dependency manifests once per worker and gate
+   * framework vocabularies on what the project declares — the cross-pass
+   * extraction the worker produces must answer to the same gate the codegraph
+   * provider's own pass does, or a fresh index and a recompute disagree.
+   *
+   * The ROOT rather than the parsed set: the walk needs a `LanguageFactory` to
+   * know which files are manifests, and the worker is the composition root that
+   * has one (a `Set` would not survive the `workerData` JSON transport either).
+   * Undefined → no walk → every vocabulary active. bd tea-rags-mcp-w205u.1.
+   */
+  projectRoot?: string;
 }
 
 export interface IndexOptions {

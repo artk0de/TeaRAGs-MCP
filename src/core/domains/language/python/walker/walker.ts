@@ -38,6 +38,7 @@ import type {
   ModuleReexport,
 } from "../../../../contracts/types/codegraph.js";
 import { assignCallsToInnermostChunks } from "../../kernel/assign-calls-to-chunks.js";
+import { pythonVocabularyFor } from "../vocabulary/frameworks/index.js";
 import { collectPythonClassBodyFieldTypes } from "./passes/python-class-body-fields.js";
 import { collectPythonDefSignatures, pythonCallShape } from "./passes/python-def-signatures.js";
 
@@ -48,6 +49,13 @@ export interface PythonExtractInput {
   language: string;
   /** Caller-provided chunk-range index, sorted by startLine ascending. */
   chunks: { symbolId: string; startLine: number; endLine: number; scope: string[] }[];
+  /**
+   * The project's declared dependencies for this run, mirroring
+   * `WalkInput.declaredDependencies`. Gates framework vocabularies via
+   * `pythonVocabularyFor`; `undefined` (no manifest anywhere) → the FULL
+   * catalogue, byte-identical to pre-gating (bd tea-rags-mcp-w205u.1).
+   */
+  declaredDependencies?: ReadonlySet<string>;
 }
 
 /**
@@ -95,7 +103,16 @@ export function extractFromPythonFile(input: PythonExtractInput): FileExtraction
   // assignment for the same field is the narrower statement about an instance,
   // so reversing this spread order would silently retype every field a class
   // declares twice.
-  const classBodyFields = collectPythonClassBodyFieldTypes(input.tree.rootNode, input.relPath, imports);
+  // bd tea-rags-mcp-w205u.1 — the pass's `as_manager` arm is Django's own verb
+  // and runs only where the project declares Django; the bare-construction arm
+  // rests on project-class evidence alone and stays on everywhere. With no
+  // manifest anywhere the catalogue is FULL and both arms run as they did.
+  const classBodyFields = collectPythonClassBodyFieldTypes(
+    input.tree.rootNode,
+    input.relPath,
+    imports,
+    pythonVocabularyFor(input.declaredDependencies).hasFacet("classBodyManagerFactory"),
+  );
   for (const [key, fields] of Object.entries(classBodyFields.byShortName)) {
     classFieldTypes[key] = { ...fields, ...(classFieldTypes[key] ?? {}) };
   }
