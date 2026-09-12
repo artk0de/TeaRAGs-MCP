@@ -50,6 +50,12 @@ export type {
 export type { IndexMetrics, SignalMetrics } from "./metrics.js";
 
 export type {
+  // Registry
+  StaleProjectEntry,
+  StaleProjectPruneReport,
+} from "./registry.js";
+
+export type {
   // Codegraph
   AmbiguousCallerResult,
   CalleeResult,

@@ -428,7 +428,7 @@ The summary lines are:
 | ------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `Qdrant`      | URL the same bootstrap path as the MCP server resolves to (embedded daemon socket or `QDRANT_URL`). `[OK]` / `[FAIL]` reflects the `checkHealth` probe.                |
 | `Embeddings`  | Provider name (`ollama`, `onnx`, `openai`, ...), base URL where applicable, and reachability via the provider's own `checkHealth`.                                     |
-| `Registry`    | Count of registered projects. A second `[WARN]` line appears when Qdrant has collections without a registry entry — see "orphan collection" definition below.          |
+| `Registry`    | Count of registered projects. A `[WARN]` line follows per finding: entries whose directory is gone ([`projects prune`](#tea-rags-projects-prune)), and orphan collections (defined below). |
 
 Add `--json` for a machine-readable dump:
 
@@ -436,7 +436,7 @@ Add `--json` for a machine-readable dump:
 {
   "qdrant":     { "url": "http://127.0.0.1:6333", "reachable": true },
   "embeddings": { "provider": "ollama", "url": "http://127.0.0.1:11434", "reachable": true },
-  "registry":   { "projectCount": 3, "orphanCount": 2 }
+  "registry":   { "projectCount": 3, "orphanCount": 2, "staleCount": 1 }
 }
 ```
 
@@ -497,6 +497,89 @@ collections (e.g. `code_8b243ffe_v2`) that are pointed to by an alias
 `listCollections()` so a live backing collection never appears as orphan
 data the user might be tempted to delete. The same filter is applied to
 the `orphanCount` reported by `tea-rags doctor` — the two views agree.
+
+### `tea-rags projects prune`
+
+The inverse of `orphans`: registry entries whose project directory is gone
+from disk. They accumulate on their own — a removed worktree, a deleted test
+fixture, a checkout moved to another machine — and each one may still own a
+Qdrant collection and a codegraph database.
+
+By default the command is a **dry run**. It prints one line per stale entry
+(`<collectionName>\t<alias>\t<path>\t<chunks>\t<what happens to it>`) and
+changes nothing:
+
+```bash
+tea-rags projects prune
+# code_a1b2c3d4    (no alias)    /tmp/fixture-42          1234    would remove
+# code_55667788    moved         /old/worktree              57    kept — re-register the alias at its new path, or run 'tea-rags projects unregister --name moved --purge'
+# Dry run — nothing removed. Re-run 'tea-rags projects prune --purge' to remove 1 prunable entry and the Qdrant/codegraph footprint behind it.
+```
+
+**A NAMED stale entry is never removed.** `register` re-points an alias at its
+new path the moment the alias is registered there, and the index behind it
+survives the move — so removing it would be the destructive answer to a
+recoverable situation. Only entries that never got an alias are swept: nothing
+addresses them again. Each kept entry prints the route back:
+
+| Kept entry        | Hint                                                                |
+| ----------------- | ------------------------------------------------------------------- |
+| Plain alias       | re-register it at the new path, or `projects unregister --purge` it |
+| Worktree clone    | `tea-rags worktree remove <worktreeName> --force`                   |
+
+The worktree clone gets its own route because `worktree remove` also drops the
+git worktree admin entry in the source repo, which `unregister --purge` would
+leave dangling.
+
+`--purge` acts. For each prunable entry it tears down the **whole footprint
+first** — every Qdrant generation, every codegraph DuckDB generation, the
+snapshot, the stats cache, the quarantine file — and removes the registry entry
+only when that came back clean:
+
+```bash
+tea-rags projects prune --purge
+# code_a1b2c3d4    (no alias)    /tmp/fixture-42     1234    removed
+# code_99887766    (no alias)    /tmp/fixture-43       88    kept — purge failed: qdrant code_99887766 — ECONNREFUSED
+# code_55667788    moved         /old/worktree         57    kept — re-register the alias at its new path, or run 'tea-rags projects unregister --name moved --purge'
+# Removed 1 · kept 2 (1 purge failed)
+```
+
+A failed purge leaves the registry entry in place, because the entry is what
+names the collection for the retry. One entry's failure never aborts the rest
+of the sweep, and the command exits 0 either way — a stale entry is a finding,
+not an error. When every attempted purge failed, the summary says so, which is
+the usual shape of "Qdrant is not running".
+
+`--json` works in both modes and emits `{ stale, removed, kept }`. Every entry
+carries `prunable`, the verdict on whether the sweep may take it, so a script
+never has to re-derive the rule:
+
+```json
+{
+  "stale": [
+    {
+      "collectionName": "code_a1b2c3d4",
+      "name": null,
+      "path": "/tmp/fixture-42",
+      "chunksCount": 1234,
+      "indexedAt": "2026-09-01T00:00:00.000Z",
+      "prunable": true
+    }
+  ],
+  "removed": [],
+  "kept": []
+}
+```
+
+A dry run decides nothing, so it reports nothing as removed or kept — the
+`prunable` flag is the preview. Under `--purge`, `removed` holds what went and
+`kept` holds what stayed (named entries plus anything whose purge failed).
+
+`tea-rags doctor` counts stale entries and points here:
+
+```text
+[WARN] Registry: 2 stale (missing directory) → tea-rags projects prune
+```
 
 ### `tea-rags projects unregister --purge`
 

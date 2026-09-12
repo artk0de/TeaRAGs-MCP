@@ -111,6 +111,87 @@ describe("CLI 'doctor' command", () => {
     }
   });
 
+  /**
+   * Registry entries whose project directory is gone (removed worktrees,
+   * deleted fixtures) accumulate silently — `doctor` is where the user finds
+   * out, and `projects prune` is the sweep (bd tea-rags-mcp-qwhmy).
+   */
+  describe("stale registry entries", () => {
+    function record(collectionName: string, path: string): void {
+      const reg = new CollectionRegistry(dir);
+      reg.record({
+        collectionName,
+        path,
+        embeddingModel: "m",
+        embeddingDimensions: 1,
+        qdrantUrl: "http://q",
+        indexedAt: "",
+        teaRagsVersion: "",
+        chunksCount: 3,
+      });
+    }
+
+    function healthyDeps(): { qdrant: never; embeddings: never } {
+      return {
+        qdrant: {
+          url: "http://localhost:6333",
+          checkHealth: vi.fn().mockResolvedValue(true),
+          listCollections: vi.fn().mockResolvedValue([]),
+        } as never,
+        embeddings: {
+          checkHealth: vi.fn().mockResolvedValue(true),
+          getProviderName: () => "ollama",
+        } as never,
+      };
+    }
+
+    it("counts them and points at 'projects prune'", async () => {
+      const stdout = vi.spyOn(process.stdout, "write").mockImplementation(() => true);
+      try {
+        record("code_live", repo);
+        record("code_ghost", join(dir, "vanished"));
+        const { runDoctor } = await import("../../../src/cli/commands/doctor.js");
+        await runDoctor({ json: false, recoverRegistry: false }, healthyDeps());
+        const out = stdout.mock.calls.map((c) => String(c[0])).join("");
+        expect(out).toMatch(/\[WARN\].*1 stale \(missing directory\)/);
+        expect(out).toContain("tea-rags projects prune");
+        // The existing project-count line stays put.
+        expect(out).toMatch(/\[OK\].*Registry: 2 project\(s\)/);
+      } finally {
+        stdout.mockRestore();
+      }
+    });
+
+    it("stays quiet when every project directory is on disk", async () => {
+      const stdout = vi.spyOn(process.stdout, "write").mockImplementation(() => true);
+      try {
+        record("code_live", repo);
+        const { runDoctor } = await import("../../../src/cli/commands/doctor.js");
+        await runDoctor({ json: false, recoverRegistry: false }, healthyDeps());
+        const out = stdout.mock.calls.map((c) => String(c[0])).join("");
+        expect(out).not.toContain("stale");
+        expect(out).not.toContain("projects prune");
+      } finally {
+        stdout.mockRestore();
+      }
+    });
+
+    it("--json carries the stale count", async () => {
+      const stdout = vi.spyOn(process.stdout, "write").mockImplementation(() => true);
+      try {
+        record("code_ghost", join(dir, "vanished"));
+        const { runDoctor } = await import("../../../src/cli/commands/doctor.js");
+        await runDoctor({ json: true, recoverRegistry: false }, healthyDeps());
+        const parsed = JSON.parse(stdout.mock.calls.map((c) => String(c[0])).join("")) as {
+          registry: { projectCount: number; staleCount: number };
+        };
+        expect(parsed.registry).toMatchObject({ projectCount: 1, staleCount: 1 });
+      } finally {
+        stdout.mockRestore();
+      }
+    });
+  });
+
   it("treats throwing checkHealth as [FAIL] (safe-wrapper catches)", async () => {
     const stdout = vi.spyOn(process.stdout, "write").mockImplementation(() => true);
     try {

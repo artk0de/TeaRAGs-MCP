@@ -102,6 +102,11 @@ export async function runDoctor(args: DoctorArgs, deps?: DoctorDeps): Promise<vo
   }
 
   const projectCount = registry.list().length;
+  // The inverse of an orphan: an entry whose project directory is gone
+  // (removed worktree, deleted fixture). Nothing re-points a NAMELESS one, so
+  // it sits in the registry forever with its collection behind it — `projects
+  // prune` is the sweep (bd tea-rags-mcp-qwhmy).
+  const staleCount = new ProjectRegistryOps({ registry }).listStale().length;
   const remainingOrphanCount = args.recoverRegistry ? 0 : orphanCount;
 
   if (args.json) {
@@ -114,7 +119,7 @@ export async function runDoctor(args: DoctorArgs, deps?: DoctorDeps): Promise<vo
             url: embeddingUrl,
             reachable: embeddingsOk,
           },
-          registry: { projectCount, orphanCount: remainingOrphanCount },
+          registry: { projectCount, orphanCount: remainingOrphanCount, staleCount },
           ...(recovery ? { recovery } : {}),
         },
         null,
@@ -129,6 +134,11 @@ export async function runDoctor(args: DoctorArgs, deps?: DoctorDeps): Promise<vo
     `${statusPrefix(embeddingsOk)} Embeddings (${embeddings.getProviderName()})${embeddingUrl ? `: ${embeddingUrl}` : ""}\n`,
   );
   process.stdout.write(`${statusPrefix(true)} Registry: ${projectCount} project(s)\n`);
+  if (staleCount > 0) {
+    process.stdout.write(
+      `${statusPrefix(true, true)} Registry: ${staleCount} stale (missing directory) → tea-rags projects prune\n`,
+    );
+  }
   if (recovery) {
     process.stdout.write(
       `${statusPrefix(true)} Recovered ${recovery.recovered} entry/entries from Qdrant; paths are empty — re-register them with 'tea-rags projects register --path <dir> --name <alias>' to enable alias resolution.\n`,
