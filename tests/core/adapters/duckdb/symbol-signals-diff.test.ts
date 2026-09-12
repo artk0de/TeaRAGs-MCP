@@ -28,12 +28,30 @@ describe("DuckDbGraphClient symbol/file signal drift diff", () => {
     rmSync(dir, { recursive: true, force: true });
   });
 
-  async function seedSymbol(relPath: string, symbolId: string): Promise<void> {
+  // `chunk_id` is the diff universe (bd tea-rags-mcp-85xha): only a symbol the
+  // deferred chunk pass mapped to a Qdrant point has a point to heal, so the
+  // default fixture is a MAPPED symbol and the unmapped case is opted into by
+  // passing `null`.
+  async function seedSymbol(relPath: string, symbolId: string, chunkId: string | null = `chunk-${symbolId}`) {
     await db.run("INSERT INTO cg_symbols_files (rel_path, language) VALUES (?, 'typescript')", [relPath]);
+    await addSymbolToFile(relPath, symbolId, chunkId);
+  }
+
+  /** A second (or third) symbol of a file already seeded. */
+  async function addSymbolToFile(relPath: string, symbolId: string, chunkId: string | null): Promise<void> {
     await db.run(
-      "INSERT INTO cg_symbols (rel_path, symbol_id, fq_name, short_name, scope_json) VALUES (?, ?, ?, ?, '{}')",
-      [relPath, symbolId, symbolId, symbolId],
+      "INSERT INTO cg_symbols (rel_path, symbol_id, fq_name, short_name, scope_json, chunk_id) VALUES (?, ?, ?, ?, '{}', ?)",
+      [relPath, symbolId, symbolId, symbolId, chunkId],
     );
+  }
+
+  /** What the deferred chunk pass does when a file finally reaches a point. */
+  async function mapSymbolToChunk(relPath: string, symbolId: string, chunkId: string): Promise<void> {
+    await db.run("UPDATE cg_symbols SET chunk_id = ? WHERE rel_path = ? AND symbol_id = ?", [
+      chunkId,
+      relPath,
+      symbolId,
+    ]);
   }
 
   async function addMethodEdge(source: string, sourcePath: string, target: string, targetPath: string): Promise<void> {
@@ -132,5 +150,67 @@ describe("DuckDbGraphClient symbol/file signal drift diff", () => {
     const files = await db.queryAll<{ n: number }>("SELECT COUNT(*) AS n FROM cg_file_signals_prev");
     expect(Number(symbols[0]?.n ?? -1)).toBe(0);
     expect(Number(files[0]?.n ?? -1)).toBe(0);
+  });
+
+  // bd tea-rags-mcp-85xha — a graph-known symbol the chunk pass never matched
+  // to a point has nothing to heal. Naming it costs the healer a bulk graph
+  // read and an exact scroll that comes back empty, forever, because its fan
+  // keeps moving with the graph around it.
+  it("keeps a symbol with no Qdrant point out of the diff until it gains one", async () => {
+    await seedSymbol("a.ts", "A");
+    await seedSymbol("dark.ts", "Dark", null);
+    await addMethodEdge("A", "a.ts", "Dark", "dark.ts");
+    await db.refreshSymbolSignalsPrev();
+    expect((await db.diffSymbolSignals()).symbols).toEqual([]);
+
+    // The baseline stays WHOLESALE — the filter is the diff's alone.
+    const baselined = await db.queryAll<{ n: number }>(
+      "SELECT COUNT(*) AS n FROM cg_symbol_signals_prev WHERE symbol_id = 'Dark'",
+    );
+    expect(Number(baselined[0]?.n ?? -1)).toBe(1);
+
+    // One dispatch-confidence change moves BOTH symbols' fan; only the mapped
+    // one has a point to rewrite.
+    await db.run("UPDATE cg_symbols_edges_method SET confidence = 0.25 WHERE target_symbol_id = 'Dark'");
+    expect((await db.diffSymbolSignals()).symbols.map((s) => s.symbolId)).toEqual(["A"]);
+
+    // The deferred chunk pass gives it a point ⇒ the same drift is healable now.
+    await mapSymbolToChunk("dark.ts", "Dark", "chunk-Dark");
+    const mapped = await db.diffSymbolSignals();
+    expect(mapped.symbols.map((s) => s.symbolId).sort()).toEqual(["A", "Dark"]);
+    expect(mapped.symbols.find((s) => s.symbolId === "Dark")?.relPath).toBe("dark.ts");
+  });
+
+  it("names a file only once one of its symbols has reached a point", async () => {
+    await seedSymbol("mapped.ts", "Mapped");
+    await seedSymbol("dark.ts", "Dark", null);
+    await addSymbolToFile("dark.ts", "AlsoDark", null);
+    await db.run("INSERT INTO cg_symbols_edges_file (source_rel_path, target_rel_path, import_text) VALUES (?, ?, ?)", [
+      "dark.ts",
+      "mapped.ts",
+      "./mapped",
+    ]);
+
+    // Empty baseline: every file is "absent from prev", and still only the
+    // materialized one is named.
+    expect((await db.diffSymbolSignals()).files.map((f) => f.relPath)).toEqual(["mapped.ts"]);
+
+    // ONE mapped symbol is enough — the heal rewrites the whole file's points.
+    await mapSymbolToChunk("dark.ts", "AlsoDark", "chunk-AlsoDark");
+    expect((await db.diffSymbolSignals()).files.map((f) => f.relPath).sort()).toEqual(["dark.ts", "mapped.ts"]);
+  });
+
+  it("still heals every MAPPED symbol exactly once on the first diff", async () => {
+    await seedSymbol("a.ts", "A");
+    await seedSymbol("b.ts", "B");
+    await seedSymbol("dark.ts", "Dark", null);
+    await addMethodEdge("A", "a.ts", "B", "b.ts");
+
+    const first = await db.diffSymbolSignals();
+    expect(first.symbols.map((s) => s.symbolId).sort()).toEqual(["A", "B"]);
+    expect(first.files.map((f) => f.relPath).sort()).toEqual(["a.ts", "b.ts"]);
+
+    await db.refreshSymbolSignalsPrev();
+    expect(await db.diffSymbolSignals()).toEqual({ symbols: [], files: [] });
   });
 });
