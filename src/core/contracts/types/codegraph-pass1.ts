@@ -34,12 +34,14 @@
  * call site, and they are small: a Ruby file declares one or two classes.
  *
  * The type-inference family that `RunState#absorb` also merges run-globally —
- * `functionReturnTypes`, `ivarTypes`, `structuredReturnTypes`,
- * `instantiatedTypes`, `dispatchTables`, `callbackParams`,
- * `knownTargetCallArgs`, `paramNames`, `classField*` — has the SAME batch-scoped
- * lifetime and therefore the same class of incremental divergence, but it is
- * materially heavier (per-method, not per-class) and is not what this defect
- * reports. It is left unpersisted on purpose rather than by oversight.
+ * `ivarTypes`, `instantiatedTypes`, `dispatchTables`, `callbackParams`,
+ * `knownTargetCallArgs`, `paramNames` — has the SAME batch-scoped lifetime and
+ * therefore the same class of incremental divergence, but every one of them was
+ * measured at exactly ZERO recovered edges (bd tea-rags-mcp-8qyax on a Ruby
+ * corpus, bd tea-rags-mcp-4yvms on three Python ones). They are left unpersisted
+ * on the strength of those numbers, not on the per-method size argument that
+ * first deferred them — see `structuredReturnTypes` below for how that argument
+ * fared.
  *
  * ── Why the fields are stored verbatim rather than derived back ──
  * `cg_symbols_inheritance` already persists every ancestry fact, so inverting
@@ -57,6 +59,7 @@
  * Re-exported verbatim by the `codegraph.ts` barrel.
  */
 
+import type { ModuleReexport } from "./codegraph-extraction.js";
 import type { InheritanceEdgeDecl } from "./codegraph-hierarchy.js";
 import type { RelPath, SymbolId } from "./codegraph-symbols.js";
 import type { RubyTypeRef } from "./language.js";
@@ -109,7 +112,7 @@ export interface CodegraphPass1FileAggregates {
    * member, so a pinned edge becomes a cone carrying phantom targets.
    *
    * Measured offline on taxdome with
-   * `scripts/spikes/ruby-incremental-runglobal-delta.ts` (9945 attempted calls,
+   * `scripts/spikes/incremental-runglobal-delta.ts` (9945 attempted calls,
    * 250 files): an incremental run loses 168 edges, and handing it these two
    * recovers 131 — `structuredReturnTypes` 111, `functionReturnTypes` 20,
    * additive. Every OTHER type-inference family recovers exactly ZERO:
@@ -130,4 +133,55 @@ export interface CodegraphPass1FileAggregates {
    */
   structuredReturnTypes?: Record<string, RubyTypeRef>;
   functionReturnTypes?: Record<string, string>;
+  /**
+   * The two PYTHON run-global channels, added by bd tea-rags-mcp-4yvms.
+   *
+   * `classFieldTypesByClassKey` keys `"<relPath>::<dotted class FQ>"` and feeds
+   * Python's MRO field fold, so a subclass sees a base class's fields from
+   * ANOTHER file (bd f0xaa) — cross-file by construction, therefore invisible to
+   * a batch that walked only the subclass. `moduleReexports` is the file's `from`
+   * statements verbatim, and the import mapper walks it to answer "which file
+   * DECLARES this name" past a package `__init__.py` that only re-exports it (bd
+   * xpl83.3) — a question asked about a package the CALLER does not own, so the
+   * file holding the answer is one an incremental run has no reason to have
+   * walked.
+   *
+   * Measured offline on three Python corpora with
+   * `scripts/spikes/incremental-runglobal-delta.ts`, 4 batches x 40 files,
+   * comparing CALL-EDGE SETS rather than counts:
+   *
+   *   netbox  1038 files, 7255 attempted, 1224 edges — 12 lost unablated;
+   *           `--ablate cft` 9, `--ablate reexp` 0, both 12
+   *   polar   1339 files, 9310 attempted, 2518 edges — 121 lost, 2 phantom,
+   *           1 retargeted; `--ablate reexp` 118, `--ablate cft` 0, both 121
+   *   ugnest   258 files, 2842 attempted,  435 edges — 0 either way
+   *
+   * They are persisted TOGETHER because neither alone recovers what the pair
+   * does, and the reason is a real dependency rather than a measurement
+   * artefact: the field fold addresses a class through
+   * `pythonReceiverClassKey`, which resolves the receiver THROUGH the import
+   * mapper, so a field lookup can only land once the re-export walk has named
+   * the declaring file. Hence netbox 9 + 0 < 12 and polar 0 + 118 < 121 — the
+   * remaining 3 on each corpus need both maps in scope at once. Every OTHER
+   * family still measures exactly zero on all three corpora, ablated one at a
+   * time (`ivar`, `rta`, `dispatch`, `params`, and — now that they are persisted
+   * — `sret` / `fret` / `types`).
+   *
+   * Cost, against the per-class ancestry keys the slice already carries:
+   * `classFieldTypesByClassKey` 1263 keys / 3384 fields on netbox (4218
+   * ancestry keys), 2867 / 13294 on polar (3034), 35 / 98 on ugnest (258);
+   * `moduleReexports` 933 files / 7589 entries on netbox, 1191 / 18400 on
+   * polar, 226 / 1281 on ugnest. polar is where this is expensive — its
+   * re-export entries outnumber its ancestry keys six to one — and 121 of 2518
+   * edges (4.8%) is what buys it.
+   *
+   * `moduleReexports` merges at a different grain from every other channel here,
+   * and deliberately: it is keyed by the DECLARING relPath and REPLACED on a
+   * re-walk, because the list is the whole truth about one file's `from`
+   * statements and accumulating would resurrect a statement the file has since
+   * deleted. So hydration skips walked files (as every channel does) and its
+   * batch-wins guard keys on relPath rather than on an exported name.
+   */
+  classFieldTypesByClassKey?: Record<string, Record<string, string>>;
+  moduleReexports?: readonly ModuleReexport[];
 }
