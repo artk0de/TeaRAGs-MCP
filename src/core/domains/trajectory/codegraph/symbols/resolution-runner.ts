@@ -622,9 +622,8 @@ export class CallEdgeResolutionRunner {
   }
 
   /**
-   * Bucket an unresolved call. Order matters: `dynamicSend` is checked BEFORE
-   * `targetsExternalImport` because `send` ∈ RUBY_KERNEL_BUILTINS, so the
-   * external classifier would otherwise mis-bucket it as externalSkipped.
+   * Bucket an unresolved call, then tally the verdict {@link classifyResolveMiss}
+   * reached into BOTH the aggregate scalars and this kind's row.
    */
   private classifyMiss(
     call: CallRef,
@@ -635,45 +634,63 @@ export class CallEdgeResolutionRunner {
     receiverKind: ReceiverKind,
   ): void {
     const { stats } = this.runState;
-    if (call.dynamicSend === true) {
-      // bd cai0 — a dynamic `send(var)` / `public_send(expr)` whose target
-      // is statically undeterminable. NOT a resolver miss and NOT external —
-      // count it as `unresolvable` (excluded from the denominator).
-      stats.callsUnresolvable += 1;
-      kindTally[receiverKind].unresolvable += 1;
-      return;
-    }
-    if (resolver.targetsExternalImport?.(call, ctx) ?? false) {
-      // tea-rags-mcp-ykj7 — the resolver could not pin this call AND
-      // classified it as an external-library / runtime import. Count it
-      // separately (aggregate + per-(language, receiver-kind)) so
-      // getRunMetrics excludes it from the denominator and cg_run_stats
-      // persists the breakdown.
-      stats.callsExternalSkipped += 1;
-      kindTally[receiverKind].externalSkipped += 1;
-      return;
-    }
-    if (symbolTable.lookupByShortName(call.member).length === 0) {
-      // Genuine miss whose member has NO in-project definition — it can
-      // never produce an in-project edge (gem/core/runtime-generated/
-      // dynamic), so it is excluded from the inProjectEdgeRecall
-      // denominator. The complement (miss WITH an in-project def) is the
-      // true recall hole, derived in getRunMetrics.
-      stats.callsNoInProjectDef += 1;
-      kindTally[receiverKind].noInProjectDef += 1;
-      return;
-    }
-    if (resolver.targetsCoreAmbiguousMember?.(call, ctx) ?? false) {
-      // tea-rags-mcp-83cl7 — CORE HOMONYM. The member IS defined somewhere
-      // in the project (the branch above did not fire), but it is a core /
-      // runtime name on an UNTYPED receiver (`row.cells.each`), so the real
-      // callee is Enumerable#each and the project def is a same-name
-      // coincidence. Counted here rather than as a recall hole it can never
-      // be — the mirror of the ykj7 external skip, one branch later. Placed
-      // AFTER the two gates above so externalSkipped / noInProjectDef stay
-      // byte-identical; only the residual missWithInProjectDef is carved.
-      stats.callsCoreAmbiguous += 1;
-      kindTally[receiverKind].coreAmbiguous += 1;
-    }
+    const bucket = classifyResolveMiss(call, ctx, resolver, symbolTable);
+    if (bucket === "missWithInProjectDef") return;
+    if (bucket === "unresolvable") stats.callsUnresolvable += 1;
+    else if (bucket === "externalSkipped") stats.callsExternalSkipped += 1;
+    else if (bucket === "noInProjectDef") stats.callsNoInProjectDef += 1;
+    else stats.callsCoreAmbiguous += 1;
+    kindTally[receiverKind][bucket] += 1;
   }
+}
+
+/**
+ * Which denominator bucket an UNRESOLVED call belongs to — the decision half of
+ * `CallEdgeResolutionRunner#classifyMiss`, exported so the offline harnesses
+ * score misses through production's own ordering instead of a copy of it (the
+ * `createPythonSymbolResolutionChain` precedent, bd tea-rags-mcp-3yxmy).
+ *
+ * `missWithInProjectDef` is the residual — the only bucket the rate charges as
+ * a failure, and the only one with no counter of its own: `getRunMetrics`
+ * derives it by subtraction.
+ */
+export type ResolveMissBucket =
+  | "unresolvable"
+  | "externalSkipped"
+  | "noInProjectDef"
+  | "coreAmbiguous"
+  | "missWithInProjectDef";
+
+/**
+ * Order matters: `dynamicSend` is checked BEFORE `targetsExternalImport`
+ * because `send` ∈ RUBY_KERNEL_BUILTINS, so the external classifier would
+ * otherwise mis-bucket it as externalSkipped.
+ */
+export function classifyResolveMiss(
+  call: CallRef,
+  ctx: CallContext,
+  resolver: LanguageSymbolResolver,
+  symbolTable: GlobalSymbolTable,
+): ResolveMissBucket {
+  // bd cai0 — a dynamic `send(var)` / `public_send(expr)` whose target is
+  // statically undeterminable. NOT a resolver miss and NOT external — count it
+  // as `unresolvable` (excluded from the denominator).
+  if (call.dynamicSend === true) return "unresolvable";
+  // tea-rags-mcp-ykj7 — the resolver could not pin this call AND classified it
+  // as an external-library / runtime import. Counted separately (aggregate +
+  // per-(language, receiver-kind)) so getRunMetrics excludes it from the
+  // denominator and cg_run_stats persists the breakdown.
+  if (resolver.targetsExternalImport?.(call, ctx) ?? false) return "externalSkipped";
+  // Genuine miss whose member has NO in-project definition — it can never
+  // produce an in-project edge (gem/core/runtime-generated/dynamic), so it is
+  // excluded from the inProjectEdgeRecall denominator.
+  if (symbolTable.lookupByShortName(call.member).length === 0) return "noInProjectDef";
+  // tea-rags-mcp-83cl7 — CORE HOMONYM. The member IS defined somewhere in the
+  // project (the branch above did not fire), but it is a core / runtime name on
+  // an UNTYPED receiver (`row.cells.each`), so the real callee is
+  // Enumerable#each and the project def is a same-name coincidence. Placed
+  // AFTER the two gates above so externalSkipped / noInProjectDef stay
+  // byte-identical; only the residual missWithInProjectDef is carved.
+  if (resolver.targetsCoreAmbiguousMember?.(call, ctx) ?? false) return "coreAmbiguous";
+  return "missWithInProjectDef";
 }
