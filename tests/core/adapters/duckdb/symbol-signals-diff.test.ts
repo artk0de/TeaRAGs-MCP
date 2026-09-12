@@ -32,7 +32,11 @@ describe("DuckDbGraphClient symbol/file signal drift diff", () => {
   // deferred chunk pass mapped to a Qdrant point has a point to heal, so the
   // default fixture is a MAPPED symbol and the unmapped case is opted into by
   // passing `null`.
-  async function seedSymbol(relPath: string, symbolId: string, chunkId: string | null = `chunk-${symbolId}`) {
+  async function seedSymbol(
+    relPath: string,
+    symbolId: string,
+    chunkId: string | null = `chunk-${symbolId}`,
+  ): Promise<void> {
     await db.run("INSERT INTO cg_symbols_files (rel_path, language) VALUES (?, 'typescript')", [relPath]);
     await addSymbolToFile(relPath, symbolId, chunkId);
   }
@@ -128,11 +132,7 @@ describe("DuckDbGraphClient symbol/file signal drift diff", () => {
   it("reports file-level fan drift against cg_file_signals_prev", async () => {
     await seedSymbol("hub.ts", "Hub");
     await seedSymbol("leaf.ts", "Leaf");
-    await db.run("INSERT INTO cg_symbols_edges_file (source_rel_path, target_rel_path, import_text) VALUES (?, ?, ?)", [
-      "leaf.ts",
-      "hub.ts",
-      "./hub",
-    ]);
+    await addFileEdge("leaf.ts", "hub.ts");
 
     const first = await db.diffSymbolSignals();
     expect(first.files.map((f) => f.relPath).sort()).toEqual(["hub.ts", "leaf.ts"]);
@@ -141,11 +141,7 @@ describe("DuckDbGraphClient symbol/file signal drift diff", () => {
     expect((await db.diffSymbolSignals()).files).toEqual([]);
 
     await seedSymbol("other.ts", "Other");
-    await db.run("INSERT INTO cg_symbols_edges_file (source_rel_path, target_rel_path, import_text) VALUES (?, ?, ?)", [
-      "other.ts",
-      "hub.ts",
-      "./hub",
-    ]);
+    await addFileEdge("other.ts", "hub.ts");
 
     const second = await db.diffSymbolSignals();
     // hub.ts gained fanIn, other.ts is new; leaf.ts is untouched.
@@ -198,11 +194,7 @@ describe("DuckDbGraphClient symbol/file signal drift diff", () => {
     await seedSymbol("mapped.ts", "Mapped");
     await seedSymbol("dark.ts", "Dark", null);
     await addSymbolToFile("dark.ts", "AlsoDark", null);
-    await db.run("INSERT INTO cg_symbols_edges_file (source_rel_path, target_rel_path, import_text) VALUES (?, ?, ?)", [
-      "dark.ts",
-      "mapped.ts",
-      "./mapped",
-    ]);
+    await addFileEdge("dark.ts", "mapped.ts");
 
     // Empty baseline: every file is "absent from prev", and still only the
     // materialized one is named.

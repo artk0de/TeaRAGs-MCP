@@ -60,17 +60,22 @@
   symbol OR no symbol rows at all — a barrel has points and file fan but nothing
   to map — while `refreshSymbolSignalsPrev` stays wholesale (bd
   tea-rags-mcp-85xha — 218 graph-known files with no points cost 218 empty
-  scrolls and 9.8 s on taxdome). Two further things an edit must keep: the diff
-  compares the expressions the PAYLOAD is built from (confidence-weighted symbol
-  fan, per-path edge counts), not raw edge counts, so a dispatch-confidence
-  change that moves fanIn from 1 to 0.25 is still caught; and `transitiveImpact`
-  / `isHub` are deliberately outside the comparison — the first needs a
-  whole-corpus reverse BFS to diff, the second moves for every file at once when
-  the collection p95 does, so both are healed only for the files the diff
-  already names and otherwise wait for the next `--force-enrichments codegraph`.
-  Why: the tables are empty after the migration, so the FIRST run heals every
-  point once and every later run is bounded by what actually changed — an
-  ordering bug here does not fail, it silently restores the original staleness.
+  scrolls and 9.8 s on taxdome). The known residual of that narrowing: a file
+  that HAS points but whose `cg_symbols` rows all carry a NULL `chunk_id` — rows
+  predating migration 007's backfill, or a containment join that came back empty
+  — sits outside the diff until the deferred chunk pass maps it again, and a
+  full `--force-enrichments codegraph` clears the class. Two further things an
+  edit must keep: the diff compares the expressions the PAYLOAD is built from
+  (confidence-weighted symbol fan, per-path edge counts), not raw edge counts,
+  so a dispatch-confidence change that moves fanIn from 1 to 0.25 is still
+  caught; and `transitiveImpact` / `isHub` are deliberately outside the
+  comparison — the first needs a whole-corpus reverse BFS to diff, the second
+  moves for every file at once when the collection p95 does, so both are healed
+  only for the files the diff already names and otherwise wait for the next
+  `--force-enrichments codegraph`. Why: the tables are empty after the
+  migration, so the FIRST run heals every point once and every later run is
+  bounded by what actually changed — an ordering bug here does not fail, it
+  silently restores the original staleness.
 
 - **Pass-2 resolves against a PROJECT-wide symbol table, so its run-global maps
   must be project-wide too — and only `cg_pass1_aggregates` makes them so.** The
