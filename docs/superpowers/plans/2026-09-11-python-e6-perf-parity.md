@@ -1399,6 +1399,32 @@ per-node iterator setup, plus N−1 pointer-chasing passes over the tree. On a
 corpus where the bodies dominate, the ceiling on this fix is the traversal
 overhead alone, not the 32 % the profile attributes to `walker.ts` as a whole.
 
+#### Parent re-measure — 2026-09-12, integration tree `d323c26be`
+
+Taken by the parent session once every executor had finished. The machine was
+not quiet by the plan's rule — load 21–43, all of it one runaway `coreaudiod`
+holding ~6 of 12 cores steady — but a single-threaded tally gets a free core
+under that shape, and the two arms ran back to back under the same load. Arm B
+flips ONLY `src/core/domains/language/python/walker/` back to `97277b953`
+(pre-fusion traversals; resolver, kernel and every other tail identical), arm A
+is the integration tree. One warm-up discarded, three kept, min and median:
+
+| corpus | arm | pass 1 min | pass 1 median | peak RSS median |
+| ------ | --- | ---------- | ------------- | --------------- |
+| polar  | B   | 13.22 s    | 13.25 s       | 2,228 MB        |
+| polar  | A   | 12.80 s    | 12.87 s       | 2,226 MB        |
+| netbox | B   | 4.83 s     | 4.86 s        | 1,177 MB        |
+| netbox | A   | 4.71 s     | 4.75 s        | 1,166 MB        |
+
+**−3.2 % / −2.5 % of pass 1 (min), −2.9 % / −2.3 % (median), memory flat.** Edge
+and unresolved counts identical in both arms (polar 17,791 / 38,919 — the
+post-1v12o.4 figures — netbox 8,711 / 35,415). That is the traversal overhead
+the section above bounded the fix by, and no more: the visitor bodies still run
+once per collector per node. The fusion stays because it is byte-identical and
+structurally simpler, not because it moved the verdict. Python's per-LOC wall
+(pass 1 + pass 2, polar and netbox averaged) goes 0.310 → ~0.303 s/10k LOC
+against TypeScript's 0.241 — +26 %, still outside the ±25 % band by a point.
+
 ---
 
 ## Task E6.0b — the offline matrix

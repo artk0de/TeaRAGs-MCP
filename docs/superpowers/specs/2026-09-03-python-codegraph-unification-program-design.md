@@ -453,3 +453,60 @@ netbox halves on both axes because one 111,557-line data file was 5.33 s and
 ~800 MB of it; polar barely moves on wall because its cost is spread over 1,339
 real files. Extraction dumps are byte-identical on all five corpora across the
 three fixes, so none of the recall columns above is affected by them.
+
+## E6 — performance verdict (2026-09-12)
+
+E6 asked whether Python's codegraph build is comparable to Ruby's and
+TypeScript's in wall and memory, with the plan's rule being ±25 % against BOTH
+comparators on four normalized metrics. The record lives in
+`docs/superpowers/plans/2026-09-11-python-e6-perf-parity.md`; this is the
+verdict.
+
+**Offline (chain tally `--time-only`, quiet machine, min of 3).** Python = mean
+of polar and netbox after E6.1; Ruby = mastodon; TypeScript = this repo with the
+checker off, the structural-parity configuration.
+
+| metric        | python | ruby  | ts    | vs ruby | vs ts | ±25 % rule |
+| ------------- | ------ | ----- | ----- | ------- | ----- | ---------- |
+| s / 1k sites  | 0.176  | 0.065 | 0.146 | +168 %  | +21 % | fails ruby |
+| s / 10k LOC   | 0.310  | 0.359 | 0.241 | −14 %   | +29 % | fails ts   |
+| MB / 1k files | 1,361  | 572   | 931   | +148 %  | +50 % | fails both |
+| peak MB       | 1,650  | 791   | 947   | +117 %  | +78 % | fails both |
+
+Formally every metric fails the both-comparators rule. Three of the four
+failures are corpus shape, not mechanism, and the record says where: Ruby has
+551 call sites per 1k LOC against Python's 172, so a per-site figure charges
+Python for Ruby's density; the per-file and absolute memory rows charge Python
+for file length (248 LOC per file against 55) and corpus size (polar is four
+times mastodon in LOC). Normalized by the quantity that drives memory, Python
+sits between the two: **56 MB per 10k LOC against Ruby's 100 and
+TypeScript's 57.** The one mechanism gap that survives normalization is wall per
+LOC against TypeScript: +29 % after E6.1, ~+26 % after E6.2's traversal fusion
+(−3 % of pass 1, measured by the parent on the integration tree). Pass 2 — the
+resolver — is the fastest of the three per call site throughout.
+
+**What E6 landed.** E6.0a the cross-language harness (`--time-only`, the
+process-tree RSS sampler, `--kind-stats`); E6.1 three walker fixes — local
+bindings once per file instead of once per chunk, the inert-file fast path
+before materialization (`extractionBearingNodeTypes`), a lazy field map in the
+shared materializer — netbox pass 1 10.97 → 5.01 s and peak 2,382 → 1,188 MB,
+extraction byte-identical on five corpora; E6.2 the eleven-to-three traversal
+fusion; E6.2a enrichment threads spawned on demand with the pass-1 fan-out width
+following the run size (ugnest index-worker peak 897 → 665 MB live, at the
+recorded cost of ~3 s of pass 1 on a 49 s run).
+
+**Live corroboration (E6.0c).** Three `--force-enrichments codegraph` recomputes
+from the branch build: python ugnest 2.4 s / worker 903 MB, typescript tea-rags
+22.9 s / 1,392 MB, ruby bench-mastodon 4.6 s / 1,355 MB. The index worker's peak
+is language-independent pipeline machinery — the enrichment thread's own heap
+never exceeds ~100 MB during the codegraph phase; the rest is the other
+isolates, native tree-sitter trees waiting for finalization under a 6 GB thread
+ceiling, and the DuckDB client — which is why the memory verdict moved off the
+walker and the one lever with a measured effect was the pool sizing. ugnest live
+edges equal the offline tally and the oracle-validated chain.
+
+**Capability text.** E6 changed no capability tier and no capability `tech` text
+of its own; the one E6 mention in `python/capability.ts` (the inert-file fast
+path) was written by E5-close as part of describing the walker, and the parity
+gate — byte-identical extraction on every fix — is what makes that correct
+rather than a smell.
