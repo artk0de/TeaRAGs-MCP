@@ -515,6 +515,76 @@ The bar for this increment is `edgesGained` and phantom exposure, not recall —
 so the A/B checks that column explicitly per corpus and any conversion of
 `agreeExternal` into a project edge fails the increment.
 
+## E4.2a re-measured (2026-09-12)
+
+`w205u.2`'s four deferred arms, re-cut on the E5-close residual. The dumps were
+taken at `63bbfe152`; its `src/core/domains/language` diff against this base
+(`97277b953`) is the `capability.ts` `tech` prose plus the version-axes / pins
+plumbing, so the chain that produced these rows is the one on main and no re-run
+was needed. Classifier: `scripts/spikes/py-framework-arm-attribution.ts` — one
+arm per row, most-specific-first, over the same `residual-A-<corpus>.ndjson` the
+family report reads.
+
+| corpus | residual | getObjectOr404 | instanceTerminal | fluentMember | taggedOwner | none |
+| ------ | -------: | -------------: | ---------------: | -----------: | ----------: | ---: |
+| ugnest |       17 |              0 |                0 |            0 |           0 |   17 |
+| netbox |       40 |              0 |                4 |            0 |           0 |   36 |
+| polar  |      289 |              0 |                0 |            0 |           7 |  282 |
+
+Every residual row's oracle target is in-project by construction, so an arm's
+column IS its unlockable count. Exposure runs the other way, and only
+`fluentMember` has a column the oracle already tallies:
+
+| arm              | `agreeExternal` exposed (ugnest / netbox / polar)         |
+| ---------------- | --------------------------------------------------------- |
+| fluentMember     | 366 / 2,382 / 4 — the whole `managerQuerySet` category    |
+| taggedOwner      | 0 / 0 / 0 — every `decoratorProperty` site is in-project  |
+| instanceTerminal | not tallied; bounded by `plain` at 1,746 / 24,245 / 1,540 |
+| getObjectOr404   | 0 — the form appears in no residual row and no category   |
+
+**Decision: closed below bar.** The standing bar is 30 unlockable rows on one
+corpus; the largest shape measures 7. Two of the four arms are structurally
+empty rather than merely small. `fluentMember` covers 3,467 manager/queryset
+sites across the three corpora at an oracle recall of **0** on every one of them
+— jedi types the chain as django-stubs external, so there is no project target
+to hit, and typing them would move 2,752 `agreeExternal` rows into phantom
+exposure for no recall at all. `getObjectOr404` does not occur.
+
+The two non-empty arms are real but thin, and a cheaper increment already owns
+both:
+
+- netbox's 4 `instanceTerminal` rows are one shape —
+  `if vm := VirtualMachine.objects.filter(**f).first():` in a signal handler,
+  plus the `for cablepath in CablePath.objects.filter(…)` loop form. The sibling
+  `device.snapshot()` / `device.save()` on the adjacent lines of
+  `ipam/signals.py` are NOT residual, so the queryset vocabulary is not what
+  fails: `device`/`Device` matches by name and `virtualmachine`/`VirtualMachine`
+  does not. That is the subtype-gated naming-convention receiver, E4.6's
+  territory.
+- polar's 7 `taggedOwner` rows are cross-file field hops on `Mapped[…]` columns,
+  and the count is an UPPER BOUND — the classifier matches a receiver tail
+  against decorated def names corpus-wide, which over-counts. Spot-checked,
+  `self.discount` (`models/checkout.py:317`) and `subscription.discount` really
+  do reach a `@declared_attr def discount(cls) -> Mapped[Discount | None]`,
+  while `payout.status` is a plain `Mapped[PayoutStatus]` column that matched
+  only because an unrelated `@property def status` exists in
+  `models/payout_account.py`. Both sub-shapes need the same two things: the
+  field's declared type read across files (E4.6 `untypedFieldHop`, already 34
+  polar rows) and `Mapped[T]` unwrapped (E4.2's `transparentWrapper` half).
+  Neither needs a member → return-type vocabulary.
+
+So the deferred vocabulary does not survive as its own arm. D8 row 7 stands as
+written for `transparentWrapper`; the SQLAlchemy / Django / pydantic member half
+of `w205u.2` closes with no implementation, and its 11 rows are re-attributed to
+E4.6 (7) and E4.6's naming-convention gate (4).
+
+Blind spot, reported rather than hidden: `classifyReceiverBinding` returns
+`unbound` for 15 / 18 / 153 rows. That is mostly structural — a bare call and a
+dotted receiver have no name to bind — and the arms read the receiver text for
+those rows instead. An arm hiding entirely inside the unbound set would have to
+be invisible in the receiver text and in the family report at once, which none
+of the four is.
+
 ## E4.3 — DRF, Celery, pytest fixtures, Django `path()`
 
 Framework vocabularies in the `defineFrameworkVocabulary` shape E3 established,
