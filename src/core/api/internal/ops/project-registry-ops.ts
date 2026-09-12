@@ -3,14 +3,19 @@ import { resolve } from "node:path";
 
 import type { EmbeddingProvider } from "../../../adapters/embeddings/base.js";
 import type { QdrantManager } from "../../../adapters/qdrant/client.js";
-import { resolveCollectionName, validatePath } from "../../../infra/collection-name.js";
 import {
   PROJECT_NAME_RE,
   type CollectionEntry,
   type CollectionRegistry,
   type ProjectInfo,
 } from "../../../domains/maintenance/registry/index.js";
-import { PathDoesNotExistError, ProjectNameInvalidError, ProjectNameNotUniqueError } from "../../errors.js";
+import { resolveCollectionName, validatePath } from "../../../infra/collection-name.js";
+import {
+  PathDoesNotExistError,
+  ProjectNameInvalidError,
+  ProjectNameNotUniqueError,
+  ProjectPathAlreadyRegisteredError,
+} from "../../errors.js";
 
 export interface ProjectRegistryOpsDeps {
   registry: CollectionRegistry;
@@ -36,7 +41,22 @@ export class ProjectRegistryOps {
       throw new PathDoesNotExistError(input.path);
     }
     const realPath = await validatePath(input.path);
-    const collectionName = resolveCollectionName(realPath);
+
+    // One path, one entry (bd tea-rags-mcp-dxa9w). Ask who CLAIMS this
+    // directory before asking what it hashes to: a relocation leaves the
+    // registry holding a collection the path no longer hashes to, so deriving
+    // the name first would record a SECOND entry for the same directory and
+    // split every path-addressed reader between the two, with nothing to say
+    // which is right.
+    //
+    // The claimant decides the collection, and every outcome then falls out of
+    // the code below unchanged: an UNNAMED entry is adopted by the `setName`
+    // further down; the SAME name is the idempotent re-register; a DIFFERENT
+    // name is the alias RENAME this method has always supported — an entry
+    // holds one name, so renaming it cannot leave a path carrying two aliases.
+    // All three end with exactly one entry on the directory.
+    const claimant = this.deps.registry.findByPath(realPath);
+    const collectionName = claimant?.collectionName ?? resolveCollectionName(realPath);
 
     // Alias-rename semantics: when the name is already held by a STALE
     // entry (its path no longer exists on disk), keep the existing
@@ -55,6 +75,15 @@ export class ProjectRegistryOps {
     const conflicting = this.deps.registry.findByName(input.name);
     if (conflicting && conflicting.collectionName !== collectionName) {
       if (conflicting.path && !existsSync(resolve(conflicting.path))) {
+        // ONE path, ONE entry (bd tea-rags-mcp-dxa9w). This is the only route
+        // left by which a directory ends up carrying two entries: the stale
+        // alias is re-pointed at a path some OTHER entry already holds, and
+        // from then on `findByPath` answers with whichever the map yields
+        // first. The re-point itself is untouched for the case it exists for —
+        // a worktree that moved to a directory nothing claims.
+        if (claimant) {
+          throw new ProjectPathAlreadyRegisteredError(realPath, claimant.name ?? claimant.collectionName);
+        }
         this.deps.registry.updatePath(conflicting.collectionName, realPath);
         return { collectionName: conflicting.collectionName, alreadyIndexed: conflicting.chunksCount > 0 };
       }

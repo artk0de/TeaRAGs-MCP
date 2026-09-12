@@ -8,6 +8,7 @@
  * again after each index run resets it (spec decision 13).
  */
 
+import type { PathCollectionResolver } from "../../../contracts/types/registry.js";
 import { hashCollectionForPath } from "../../../infra/collection-name.js";
 import type { IndexDriftAxis, IndexDriftFinding, IndexDriftMonitor } from "./monitor.js";
 import { foldIndexDriftRemedies, renderIndexDriftRemedy, type IndexDriftRemedy } from "./remedy.js";
@@ -43,7 +44,7 @@ export class IndexDriftReporter {
      * that rule's own fallback — the path hash — which is what an unregistered
      * path resolves to either way.
      */
-    private readonly resolveCollectionForPath: (path: string) => Promise<string> = hashCollectionForPath,
+    private readonly resolveCollectionForPath: PathCollectionResolver = hashCollectionForPath,
   ) {}
 
   checkByCollectionName(collectionName: string): IndexDriftReport | null {

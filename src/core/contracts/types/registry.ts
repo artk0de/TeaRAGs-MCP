@@ -157,3 +157,17 @@ export type ProjectInfo = CollectionEntry;
 export interface CollectionRegistryPort {
   record: (entry: RecordEntryInput) => void;
 }
+
+/**
+ * How a path becomes the collection it belongs to: the registry's entry when
+ * one claims the path, the deterministic path hash otherwise
+ * (bd tea-rags-mcp-dxa9w).
+ *
+ * The rule itself is `api/internal/collection-resolver.ts`
+ * (`createPathCollectionResolver`), which consults the registry and throws
+ * api-layer errors. Its TYPE lives here so the collaborators that receive it by
+ * DI — the ingest pipeline, the status module, the drift reporter — can name
+ * the contract they are handed instead of each redeclaring its shape, without
+ * any of them reaching into the api layer.
+ */
+export type PathCollectionResolver = (path: string) => Promise<string>;

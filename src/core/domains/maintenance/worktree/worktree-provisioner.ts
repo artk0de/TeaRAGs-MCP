@@ -1,8 +1,8 @@
-import { resolve } from "node:path";
+import { basename, dirname, join, resolve } from "node:path";
 
 import type { QdrantManager } from "../../../adapters/qdrant/client.js";
 import type { WorktreeCreateInput, WorktreeCreateResult, WorktreeRemoveInput } from "../../../contracts/index.js";
-import { resolveCollectionName } from "../../../infra/collection-name.js";
+import { resolveCollectionName, validatePathSync } from "../../../infra/collection-name.js";
 import { WorktreeCollectionExistsError, WorktreeNotFoundError, WorktreeSourceNotFoundError } from "../errors.js";
 import type { CollectionArtifact, CollectionFootprintFactory, ResolvedCollection } from "../footprint/index.js";
 import type { CollectionRegistry } from "../registry/index.js";
@@ -44,10 +44,24 @@ export class WorktreeProvisioner {
     const sourceEntry = input.from ? registry.findByName(input.from) : registry.findByPath(process.cwd());
     if (!sourceEntry) throw new WorktreeSourceNotFoundError(input.from ?? "cwd");
 
-    const worktreePath = resolve(input.path ?? input.name);
-    const targetLogical = resolveCollectionName(worktreePath);
+    // The clone's path is written into the registry and read back BY PATH by
+    // every collection resolver, and `findByPath` is an exact compare against
+    // realpath'd entries — so the spelling recorded here has to be canonical
+    // (bd tea-rags-mcp-dxa9w). The worktree directory does not exist yet, so
+    // canonicalize as far as the filesystem can answer: through the PARENT,
+    // which does. That is what catches a symlinked ancestor (macOS `/var` →
+    // `/private/var`), the case a bare `resolve` leaves as a spelling no reader
+    // ever resolves to.
+    const requestedPath = resolve(input.path ?? input.name);
+    const worktreePath = join(validatePathSync(dirname(requestedPath)), basename(requestedPath));
 
-    if (registry.get(targetLogical)) throw new WorktreeCollectionExistsError(targetLogical);
+    // "Already provisioned" is a question about the PATH, not about a hash: a
+    // relocated entry's collection is not what its path hashes to, so asking
+    // `get(hash)` would clone a second index on top of a live one.
+    const occupant = registry.findByPath(worktreePath);
+    if (occupant) throw new WorktreeCollectionExistsError(occupant.collectionName);
+
+    const targetLogical = resolveCollectionName(worktreePath);
 
     const srcPhysical = await qdrant.aliases.resolveActive(sourceEntry.collectionName);
 

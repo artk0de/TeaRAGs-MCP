@@ -31,11 +31,13 @@ const SRC_DIR = join(dirname(fileURLToPath(import.meta.url)), "../../../../src")
 const ALLOWED = [
   // Defines the hash, and packages the registry-free fallback every layer shares.
   "core/infra/collection-name.ts",
-  // The owner: registry entry first, the hash only as its fallback.
+  // The owner: canonicalize, registry entry first, the hash only as its fallback.
   "core/api/internal/collection-resolver.ts",
-  // `register` CREATES the identity for a path the registry does not claim yet.
+  // `register` CREATES the identity, and only after `findByPath` says no entry
+  // claims the directory — the hash names what does not exist yet.
   "core/api/internal/ops/project-registry-ops.ts",
-  // `create` CREATES the identity of a brand-new worktree clone's collection.
+  // `create` CREATES the identity of a worktree clone, likewise only after
+  // `findByPath` says the target directory is free.
   "core/domains/maintenance/worktree/worktree-provisioner.ts",
 ];
 

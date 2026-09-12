@@ -7,7 +7,7 @@
  */
 
 import { createHash } from "node:crypto";
-import { promises as fs } from "node:fs";
+import { promises as fs, realpathSync } from "node:fs";
 import { resolve } from "node:path";
 
 /**
@@ -17,6 +17,26 @@ export async function validatePath(path: string): Promise<string> {
   const absolutePath = resolve(path);
   try {
     return await fs.realpath(absolutePath);
+  } catch {
+    return absolutePath;
+  }
+}
+
+/**
+ * {@link validatePath}'s synchronous twin — same rule, same fallback. Kept as a
+ * separate function rather than having the async one delegate, so the hot async
+ * callers keep a non-blocking realpath.
+ *
+ * Exists for `resolveCollection`, which is synchronous because it sits on the
+ * serving query path and must canonicalize before it compares a spelling
+ * against the registry (bd tea-rags-mcp-dxa9w). The two MUST stay identical:
+ * a difference here is a path that resolves to one collection when written and
+ * another when read.
+ */
+export function validatePathSync(path: string): string {
+  const absolutePath = resolve(path);
+  try {
+    return realpathSync(absolutePath);
   } catch {
     return absolutePath;
   }

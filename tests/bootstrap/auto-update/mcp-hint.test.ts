@@ -1,4 +1,4 @@
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -7,7 +7,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { buildMcpAutoUpdateTrigger } from "../../../src/bootstrap/auto-update/mcp-hint.js";
 import { spawnDetachedUpdater } from "../../../src/bootstrap/auto-update/spawner.js";
 import { closeAutoUpdateLog, openAutoUpdateLog } from "../../../src/bootstrap/auto-update/updater-log.js";
-import { CollectionRegistry, resolveCollectionName } from "../../../src/core/api/public/index.js";
+import { CollectionRegistry } from "../../../src/core/api/public/index.js";
+import { resolveCollectionName } from "../../../src/core/infra/collection-name.js";
 
 // The default spawn path (no injected impl) really forks a detached CLI and
 // opens a log fd. Both are stubbed so the wiring can be asserted without a
@@ -119,8 +120,8 @@ function register(
  * The hint is attached to a serving search response, so the resolution rules
  * matter twice over: an unresolvable request must cost nothing (no spawn, no
  * hint), and a resolvable one must reach the same collection the search itself
- * queried — verbatim `collection`, `project` via the alias, `path` via the
- * deterministic path-hash.
+ * queried — verbatim `collection`, `project` via the alias, `path` through the
+ * shared resolver (registry entry first, path hash for a path nothing claims).
  */
 describe("buildMcpAutoUpdateTrigger request resolution", () => {
   beforeEach(() => {
@@ -146,10 +147,13 @@ describe("buildMcpAutoUpdateTrigger request resolution", () => {
     expect(vi.mocked(closeAutoUpdateLog)).toHaveBeenCalledTimes(1);
   });
 
-  it("resolves a path request through the path-hash and reports why auto-update is paused", () => {
+  it("resolves a path request through the shared resolver and reports why auto-update is paused", () => {
     const dataDir = tmpDir("mcp-hint-data-");
     // HEAD is on master, but the index was configured to follow main.
-    const repo = writeRepoOnMaster();
+    // Registered under the CANONICAL spelling, as every production writer does
+    // (`record` is fed `validatePath` output) — the resolver canonicalizes the
+    // raw request path before comparing (bd tea-rags-mcp-dxa9w).
+    const repo = realpathSync(writeRepoOnMaster());
     register(dataDir, resolveCollectionName(repo), "paused", repo, { enabled: true, targetBranch: "main" });
 
     const trigger = buildMcpAutoUpdateTrigger(dataDir);

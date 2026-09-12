@@ -16,9 +16,9 @@
  * choice point.
  */
 
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { basename, join } from "node:path";
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -239,6 +239,50 @@ describe("prime at a relocated project's path", () => {
     // the lookup resolved, and the argument is the proof it resolved right.
     expect(maybeSpawn).toHaveBeenCalledWith(RELOCATED_COLLECTION);
     expect(writeMock.mock.calls.map((c) => String(c[0])).join("")).toContain(PROJECT_ALIAS);
+  });
+});
+
+/**
+ * bd tea-rags-mcp-dxa9w — the owner canonicalizes before it asks.
+ *
+ * `CollectionRegistry#record` stores realpath'd paths and `findByPath` is an
+ * exact string compare, so every spelling of the same directory that is not the
+ * canonical one misses the entry and falls through to the hash — the bead's own
+ * defect, reproduced at the door of the thing that fixes it. Callers hand over
+ * raw request paths (`mcp-hint.ts`), so the canonicalization belongs inside the
+ * owner rather than in each caller's discipline.
+ */
+describe("resolveCollection canonicalizes the spelling it is given", () => {
+  let registry: CollectionRegistry;
+  let canonicalPath: string;
+
+  beforeEach(async () => {
+    const dataDir = tmpDirFor("dxa9w-canon-data-");
+    const projectDir = tmpDirFor("dxa9w-canon-project-");
+    canonicalPath = await seedRelocatedProject({ dataDir, projectDir });
+    registry = new CollectionRegistry(dataDir);
+  });
+
+  it("finds the entry through a symlink to the registered directory", () => {
+    const link = join(tmpDirFor("dxa9w-canon-link-"), "as-symlink");
+    symlinkSync(canonicalPath, link);
+
+    const resolved = resolveCollection(registry, { path: link });
+
+    expect(resolved.collectionName).toBe(RELOCATED_COLLECTION);
+    expect(resolved.path).toBe(canonicalPath);
+  });
+
+  it("finds the entry through a trailing-slash spelling", () => {
+    expect(resolveCollection(registry, { path: `${canonicalPath}/` }).collectionName).toBe(RELOCATED_COLLECTION);
+  });
+
+  it("finds the entry through a '..' spelling", () => {
+    // Built by concatenation, not `join` — `join` collapses the `..` itself,
+    // which would make the case pass without the owner doing anything.
+    const roundTrip = `${canonicalPath}/../${basename(canonicalPath)}`;
+
+    expect(resolveCollection(registry, { path: roundTrip }).collectionName).toBe(RELOCATED_COLLECTION);
   });
 });
 

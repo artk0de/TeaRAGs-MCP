@@ -15,6 +15,7 @@ import type { GraphDbClientPool } from "../../../adapters/duckdb/pool.js";
 import type { QdrantManager } from "../../../adapters/qdrant/client.js";
 import { INDEXING_METADATA_ID } from "../../../contracts/constants.js";
 import type { EdgeKindCount, MethodEdgeKind, ResolveRunStatsRow } from "../../../contracts/types/codegraph.js";
+import type { PathCollectionResolver } from "../../../contracts/types/registry.js";
 import { hashCollectionForPath, validatePath } from "../../../infra/collection-name.js";
 import { isDebug } from "../../../infra/runtime.js";
 import { StatsCache } from "../../../infra/stats-cache.js";
@@ -295,7 +296,7 @@ export class StatusModule {
      * registry entry recorded. Defaults to the hash — what an unregistered
      * path resolves to either way.
      */
-    private readonly resolveCollectionForPath: (path: string) => Promise<string> = hashCollectionForPath,
+    private readonly resolveCollectionForPath: PathCollectionResolver = hashCollectionForPath,
   ) {}
 
   /**

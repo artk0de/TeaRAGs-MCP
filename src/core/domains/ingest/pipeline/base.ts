@@ -14,7 +14,11 @@ import type { Ignore } from "ignore";
 import type { EmbeddingProvider } from "../../../adapters/embeddings/base.js";
 import type { QdrantManager } from "../../../adapters/qdrant/client.js";
 import { EMBEDDED_MARKER } from "../../../adapters/qdrant/embedded/daemon.js";
-import type { CollectionRegistryPort, RegistryGitState } from "../../../contracts/types/registry.js";
+import type {
+  CollectionRegistryPort,
+  PathCollectionResolver,
+  RegistryGitState,
+} from "../../../contracts/types/registry.js";
 import { hashCollectionForPath, validatePath } from "../../../infra/collection-name.js";
 import { TeaRagsError } from "../../../infra/errors.js";
 import { readRepoGitState, readWorkingTreeDirty } from "../../../infra/repo-git-state.js";
@@ -102,7 +106,7 @@ export interface PipelineRegistryDeps {
    * resolving the old name. Defaults to the hash, which is what an
    * unregistered path resolves to either way.
    */
-  resolveCollectionForPath?: (path: string) => Promise<string>;
+  resolveCollectionForPath?: PathCollectionResolver;
 }
 
 export abstract class BaseIndexingPipeline {
@@ -112,7 +116,7 @@ export abstract class BaseIndexingPipeline {
   protected readonly codegraphRemover: CodegraphDbRemover | undefined;
   protected readonly codegraphLister: CodegraphDbLister | undefined;
   protected readonly envSnapshot: Record<string, string> | undefined;
-  protected readonly resolveCollectionForPath: (path: string) => Promise<string>;
+  protected readonly resolveCollectionForPath: PathCollectionResolver;
   private heartbeatTimer: ReturnType<typeof setInterval> | undefined;
 
   constructor(
