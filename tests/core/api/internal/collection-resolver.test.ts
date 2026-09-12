@@ -1,4 +1,4 @@
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -152,6 +152,37 @@ describe("collection-resolver", () => {
       expect(out.collectionName).toBe("code_old12345");
       expect(out.collectionName).not.toBe(resolveCollectionName(movedPath));
       expect(out.path).toBe(movedPath);
+    });
+
+    it("priority 3 legacy spelling: an entry recorded non-canonically is still found", () => {
+      // Two things at once (bd tea-rags-mcp-dxa9w re-review NEW-4). The lookup
+      // tries the plain resolved spelling BEFORE canonicalizing, so the serving
+      // query path pays no realpath syscall for a registered project — and
+      // entries a pre-canonicalization writer recorded under a bare `resolve`
+      // (the old worktree provisioner did exactly that) stay findable instead
+      // of falling through to a hash of their realpath.
+      const legacyDir = mkdtempSync(join(tmpdir(), "rc-legacy-"));
+      const nonCanonical = join(legacyDir, "clone");
+      mkdirSync(nonCanonical, { recursive: true });
+      // Only meaningful where the temp root is symlinked (macOS /var); on a
+      // platform where it is not, the two spellings coincide and the case
+      // degenerates to the ordinary registered-path lookup.
+      registry.record({
+        collectionName: "code_legacy01",
+        path: nonCanonical,
+        embeddingModel: "m",
+        embeddingDimensions: 1,
+        qdrantUrl: "u",
+        indexedAt: "t",
+        teaRagsVersion: "v",
+        chunksCount: 0,
+      });
+
+      const out = resolveCollection(registry, { path: nonCanonical });
+
+      expect(out.collectionName).toBe("code_legacy01");
+      expect(out.path).toBe(nonCanonical);
+      rmSync(legacyDir, { recursive: true, force: true });
     });
 
     it("priority 3 fresh path: unregistered path falls back to md5-derived hash, deterministically", () => {

@@ -10,6 +10,7 @@ import {
   WorktreeSourceNotFoundError,
 } from "../../../../src/core/domains/maintenance/errors.js";
 import { WorktreeProvisioner } from "../../../../src/core/domains/maintenance/worktree/worktree-provisioner.js";
+import { resolveCollectionName } from "../../../../src/core/infra/collection-name.js";
 
 function fakeArtifact(id: string, calls: string[], failOn?: string) {
   return {
@@ -184,6 +185,28 @@ describe("WorktreeProvisioner.create saga", () => {
     await expect(ops.create({ name: "x", createGit: false })).rejects.toThrow(WorktreeCollectionExistsError);
     await expect(ops.create({ name: "x", createGit: false })).rejects.toThrow(/already exists/);
     expect(calls).toEqual([]);
+  });
+
+  it("throws WorktreeCollectionExistsError when the target NAME belongs to a relocated project", async () => {
+    // The case `findByPath` cannot see (bd tea-rags-mcp-dxa9w): an entry whose
+    // collectionName IS what this directory hashes to, but whose path has since
+    // moved away — exactly what `register` leaves behind when a project
+    // relocates. The directory reads as free, and without the second guard the
+    // saga would clone into that live project's collection, overwrite its
+    // registry entry, take its alias, and stamp it `worktreeOf` — after which
+    // `worktree remove` deletes a real project.
+    const calls: string[] = [];
+    const { deps, sourceEntry } = makeDeps({}, calls);
+    const targetLogical = resolveCollectionName(join(process.cwd(), "x"));
+    deps.registry.findByPath = vi.fn((p: string) => (p === process.cwd() ? sourceEntry : null));
+    deps.registry.get = vi.fn((name: string) =>
+      name === targetLogical ? { ...sourceEntry, collectionName: targetLogical, path: "/moved/elsewhere" } : null,
+    );
+    const ops = new WorktreeProvisioner(deps);
+
+    await expect(ops.create({ name: "x", createGit: false })).rejects.toThrow(WorktreeCollectionExistsError);
+    expect(calls).toEqual([]);
+    expect(deps.registry.record).not.toHaveBeenCalled();
   });
 
   it("throws WorktreeSourceNotFoundError when source project is not found", async () => {

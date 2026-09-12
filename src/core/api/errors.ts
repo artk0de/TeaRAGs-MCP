@@ -108,11 +108,24 @@ export class ProjectNameNotUniqueError extends InputValidationError {
  * project's readers between them with nothing to say which is right.
  */
 export class ProjectPathAlreadyRegisteredError extends InputValidationError {
-  constructor(path: string, existingName: string) {
+  /**
+   * `existing.name` is null for an entry nobody has aliased yet (a first index
+   * before `register_project`, or a `recoverFromQdrant` stub). Its collection
+   * name is NOT a usable alias, so the two states get different wording —
+   * telling an operator to "use the existing alias 'code_9baaea35'" sends them
+   * after a name that resolves nowhere.
+   */
+  constructor(path: string, existing: { name: string | null; collectionName: string }) {
     super({
       code: "INPUT_PROJECT_PATH_ALREADY_REGISTERED",
-      message: `Path '${path}' is already registered as '${existingName}'`,
-      hint: `Use the existing alias '${existingName}', or unregister it first if you want a different name for this path.`,
+      message:
+        existing.name !== null
+          ? `Path '${path}' is already registered as '${existing.name}'`
+          : `Path '${path}' is already registered under collection '${existing.collectionName}' (no alias)`,
+      hint:
+        existing.name !== null
+          ? `Use the existing alias '${existing.name}', or unregister it first if you want a different name for this path.`
+          : `Register collection '${existing.collectionName}' under a name, or unregister it, before pointing another alias at this directory.`,
       httpStatus: 409,
     });
   }

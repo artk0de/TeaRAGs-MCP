@@ -135,6 +135,30 @@ describe("ProjectRegistryOps", () => {
       expect(registry.list().filter((e) => e.path === registry.get(CLAIMED)?.path)).toHaveLength(1);
     });
 
+    it("names the collection, not a phantom alias, when the claimed directory has no name", async () => {
+      // The claimant's collectionName is NOT an alias. Reporting it as one told
+      // the operator to "use the existing alias 'code_moved'", which resolves
+      // nowhere (bd tea-rags-mcp-dxa9w re-review NEW-3).
+      const registry = await seedClaim(null);
+      registry.record({
+        collectionName: "code_ghost",
+        path: join(dir, "vanished"),
+        embeddingModel: "m",
+        embeddingDimensions: 384,
+        qdrantUrl: "http://localhost:6333",
+        indexedAt: "2026-09-01T00:00:00.000Z",
+        teaRagsVersion: "1.0.0",
+        chunksCount: 3,
+      });
+      registry.setName("code_ghost", "ghost");
+
+      const failure = new ProjectRegistryOps({ registry }).register({ path: realPath, name: "ghost" });
+
+      await expect(failure).rejects.toThrow(ProjectPathAlreadyRegisteredError);
+      await expect(failure).rejects.toThrow(/collection 'code_moved' \(no alias\)/);
+      await expect(failure).rejects.not.toThrow(/as 'code_moved'/);
+    });
+
     it("still re-points a stale alias onto a directory nothing claims", async () => {
       const registry = new CollectionRegistry(dir);
       registry.record({

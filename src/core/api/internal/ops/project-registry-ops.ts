@@ -82,7 +82,7 @@ export class ProjectRegistryOps {
         // first. The re-point itself is untouched for the case it exists for —
         // a worktree that moved to a directory nothing claims.
         if (claimant) {
-          throw new ProjectPathAlreadyRegisteredError(realPath, claimant.name ?? claimant.collectionName);
+          throw new ProjectPathAlreadyRegisteredError(realPath, claimant);
         }
         this.deps.registry.updatePath(conflicting.collectionName, realPath);
         return { collectionName: conflicting.collectionName, alreadyIndexed: conflicting.chunksCount > 0 };

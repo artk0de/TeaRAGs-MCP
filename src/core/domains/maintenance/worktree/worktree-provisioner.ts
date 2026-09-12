@@ -55,13 +55,23 @@ export class WorktreeProvisioner {
     const requestedPath = resolve(input.path ?? input.name);
     const worktreePath = join(validatePathSync(dirname(requestedPath)), basename(requestedPath));
 
-    // "Already provisioned" is a question about the PATH, not about a hash: a
-    // relocated entry's collection is not what its path hashes to, so asking
-    // `get(hash)` would clone a second index on top of a live one.
+    // "Already provisioned" is asked TWICE, because the two questions are
+    // different and each catches what the other cannot.
+    //
+    // By PATH: a relocated entry's collection is not what its path hashes to,
+    // so `get(hash)` alone would clone a second index on top of a live one.
     const occupant = registry.findByPath(worktreePath);
     if (occupant) throw new WorktreeCollectionExistsError(occupant.collectionName);
 
     const targetLogical = resolveCollectionName(worktreePath);
+
+    // By NAME: the mirror case — an entry whose collectionName IS this hash but
+    // whose path has moved away reads as a FREE directory, yet the clone would
+    // land on its collection. The saga's tail is what makes that unrecoverable:
+    // `record` overwrites the live project's entry, `setName` takes its alias,
+    // and `setWorktreeProvenance` stamps it a clone — and `worktreeOf` is the
+    // only thing standing between `worktree remove` and a real project.
+    if (registry.get(targetLogical)) throw new WorktreeCollectionExistsError(targetLogical);
 
     const srcPhysical = await qdrant.aliases.resolveActive(sourceEntry.collectionName);
 

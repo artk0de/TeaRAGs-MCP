@@ -72,7 +72,7 @@ export function resolveCollection(
     // the old `collectionName`. Fallback to the deterministic hash only
     // when the path is not yet registered.
     //
-    // CANONICALIZE FIRST (bd tea-rags-mcp-dxa9w). Entries are recorded
+    // CANONICALIZE ON A MISS (bd tea-rags-mcp-dxa9w). Entries are recorded
     // realpath'd and `findByPath` is an exact string compare, so a trailing
     // slash, a `..` segment or a symlinked ancestor would miss the entry and
     // fall through to the hash — this function's own defect, at its own door.
@@ -82,11 +82,22 @@ export function resolveCollection(
     // an unregistered path resolves to the same name a later index writes it
     // under.
     //
+    // The plain `resolve` is tried FIRST, and it is not only about sparing this
+    // function — which sits on the serving query path — a blocking realpath per
+    // request. `resolve` already normalizes a trailing slash and a `..`, and an
+    // entry written by a pre-canonicalization writer (the old worktree
+    // provisioner recorded a bare `resolve`) is findable ONLY by this spelling.
+    // A hit is canonical by construction: it equals the entry's own path.
+    //
     // The optional-chain guards against test stubs that predate
     // findByPath — those stubs imply no rename ever happened, so the
     // hash fallback is correct for their fixture.
+    const resolvedPath = resolve(input.path);
+    const direct = registry?.findByPath?.(resolvedPath);
+    if (direct) return { collectionName: direct.collectionName, path: resolvedPath };
+
     const canonicalPath = validatePathSync(input.path);
-    const entry = registry?.findByPath?.(canonicalPath);
+    const entry = canonicalPath === resolvedPath ? undefined : registry?.findByPath?.(canonicalPath);
     return {
       collectionName: entry?.collectionName ?? resolveCollectionName(canonicalPath),
       path: canonicalPath,
