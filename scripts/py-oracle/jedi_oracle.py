@@ -98,9 +98,27 @@ def classify_origin(module_path: Path | None, corpus_root: Path) -> str:
 def compose_symbol_id(target_path: Path, def_line: int) -> tuple[str | None, str, bool]:
     """`(symbolId, defNodeKind, pinUncertain)` for a definition at `def_line`.
 
-    Mirrors `DefaultSymbolIdComposer`: `Class#method` for an instance method,
-    `Class.method` when the def carries `staticmethod` / `classmethod`, a bare
-    name at module level, `Outer.Inner` for nesting.
+    Mirrors the walker, which is the SOURCE OF TRUTH for this spelling:
+    `src/core/domains/language/python/walker/name-of.ts` naming each node,
+    `domains/language/kernel/collect-symbols.ts` walking them, and
+    `DefaultSymbolIdComposer` joining one hop at a time. Every hop picks its own
+    separator from the node IT names — none of them inherits the last hop's:
+
+      * no enclosing def or class      -> the bare name (`promote`)
+      * a `class` hop                  -> `.`, Python's `scopeSeparator`
+                                          (`Outer.Inner`)
+      * a `def` carrying `staticmethod` / `classmethod`
+                                       -> `.` (`User.normalise`)
+      * any other `def` hop            -> `#` (`User#rename`, and so
+                                          `outer#inner` for a def nested in a
+                                          module-level def, `Cls#m#inner` for
+                                          one nested in a method)
+
+    Joining the WHOLE scope with `"."` and choosing a separator only for the
+    last hop is what this used to do, and it cost 38 rows across flask, httpx,
+    netbox and polar: same file, same line, `Cls.method#inner` against the
+    walker's `Cls#method#inner`, booked `fileOnly` because the host compares
+    symbolIds as strings (E5.0c, `w205u`).
 
     The two ways that fails are DIFFERENT facts and no longer share a kind.
     `unknown` is the file itself being unreadable — an instrument gap, and the
@@ -116,30 +134,34 @@ def compose_symbol_id(target_path: Path, def_line: int) -> tuple[str | None, str
     if tree is None:
         return None, "unknown", True
 
-    stack: list[tuple[ast.AST, list[str]]] = [(tree, [])]
+    stack: list[tuple[ast.AST, str]] = [(tree, "")]
     while stack:
-        node, scope = stack.pop()
+        node, composed = stack.pop()
         for child in ast.iter_child_nodes(node):
             if not isinstance(child, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
                 continue
+            child_id = _join_hop(composed, child)
             if child.lineno == def_line:
-                return _compose_for(child, scope)
-            inner = scope + [child.name]
-            stack.append((child, inner))
+                kind = "class" if isinstance(child, ast.ClassDef) else "function"
+                return (child_id, kind, False)
+            stack.append((child, child_id))
     return None, "nonCallable", True
 
 
-def _compose_for(node: ast.AST, scope: list[str]) -> tuple[str, str, bool]:
+def _join_hop(prefix: str, node: ast.AST) -> str:
+    """One hop of `DefaultSymbolIdComposer.compose`, separator read off `node`."""
+    name = getattr(node, "name", "")
+    return name if not prefix else f"{prefix}{_hop_separator(node)}{name}"
+
+
+def _hop_separator(node: ast.AST) -> str:
+    """`.` for a class hop and for a class-level def, `#` for every other def."""
     if isinstance(node, ast.ClassDef):
-        return (".".join(scope + [node.name]), "class", False)
+        return "."
     decorators = {
         d.id for d in getattr(node, "decorator_list", []) if isinstance(d, ast.Name)
     }
-    name = getattr(node, "name", "")
-    if not scope:
-        return (name, "function", False)
-    separator = "." if decorators & {"staticmethod", "classmethod"} else "#"
-    return (f"{'.'.join(scope)}{separator}{name}", "function", False)
+    return "." if decorators & {"staticmethod", "classmethod"} else "#"
 
 
 _TREE_CACHE: dict[str, ast.Module | None] = {}

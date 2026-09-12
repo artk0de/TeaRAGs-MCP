@@ -17,10 +17,16 @@
  */
 import { describe, expect, it } from "vitest";
 
-import type { CallContext, CallRef, ImportRef } from "../../../../../../../src/core/contracts/types/codegraph.js";
+import type {
+  CallContext,
+  CallRef,
+  ImportRef,
+  ModuleReexport,
+} from "../../../../../../../src/core/contracts/types/codegraph.js";
 import { PythonAncestorLinearizerCache } from "../../../../../../../src/core/domains/language/python/resolver/python-ancestor-policy.js";
 import { PythonImportFileMapper } from "../../../../../../../src/core/domains/language/python/resolver/python-import-file-mapper.js";
 import { PythonImportedNameSymbolResolutionStrategy } from "../../../../../../../src/core/domains/language/python/resolver/strategies/python-imported-name.js";
+import { PYTHON_UNRESOLVABLE_BASE } from "../../../../../../../src/core/domains/language/python/walker/walker.js";
 import { InMemoryGlobalSymbolTable } from "../../../../../../../src/core/domains/trajectory/codegraph/symbols/symbol-table.js";
 
 function tableWith(files: Record<string, string[]>): InMemoryGlobalSymbolTable {
@@ -929,6 +935,142 @@ describe("PythonImportedNameSymbolResolutionStrategy — same-file class receive
 });
 
 /**
+ * The same-file class receiver's ANCESTOR HOP (bd tea-rags-mcp-w205u, E4.4b).
+ *
+ * The arm above answers `Cls.m` / `Cls#m` declared IN the caller's file, and
+ * stopped there. `resolveDeclaredName` has had the MRO fallback since bd
+ * tea-rags-mcp-9fgdi; this one had none. 10 measured polar rows are exactly
+ * that gap: a form class declared in the endpoint file that calls it, whose
+ * `render` / `model_validate_form` live on a `BaseForm` a module away — plus
+ * `Development(Logging[…])` in `logging.py`, the control proving the base need
+ * not be in another file for the hop to be missing.
+ *
+ * `spellingOrder: "classFirst"` for the same reason `clsMember` uses it: the
+ * receiver IS the class object, and all 10 oracle targets carry the class-level
+ * separator. The instance spelling stays accepted underneath it.
+ */
+describe("PythonImportedNameSymbolResolutionStrategy — same-file class receiver, MRO hop (w205u)", () => {
+  function inheritingStrategy(): PythonImportedNameSymbolResolutionStrategy {
+    const mapper = new PythonImportFileMapper();
+    return new PythonImportedNameSymbolResolutionStrategy(
+      { mode: "strict" },
+      mapper,
+      new PythonAncestorLinearizerCache(mapper, "strict"),
+    );
+  }
+
+  /** polar: `UpdateForm` declared in the endpoint file, `BaseForm` a module away. */
+  function endpointCtx(files: Record<string, string[]>, ancestors: Record<string, readonly string[]>): CallContext {
+    return { ...ctxWith("app/endpoints.py", [], tableWith(files)), classAncestors: ancestors };
+  }
+
+  it("pins an inherited CLASSMETHOD on a base in another file", () => {
+    const ctx = endpointCtx(
+      { "app/endpoints.py": ["UpdateForm"], "app/forms.py": ["BaseForm", "BaseForm.model_validate_form"] },
+      { "app/endpoints.py::UpdateForm": ["app.forms::BaseForm"] },
+    );
+    expect(inheritingStrategy().attempt(call("UpdateForm", "model_validate_form"), ctx)).toEqual({
+      kind: "resolved",
+      target: { targetRelPath: "app/forms.py", targetSymbolId: "BaseForm.model_validate_form" },
+    });
+  });
+
+  it("pins an inherited member when the base is in the SAME file — the Development control", () => {
+    // polar `logging.py:152,154`: `class Development(Logging[…])` and `Logging`
+    // both live in the calling file, so the miss is the HOP and not the
+    // cross-file lookup.
+    const ctx = {
+      ...ctxWith(
+        "app/logging.py",
+        [],
+        tableWith({ "app/logging.py": ["Development", "Logging", "Logging.configure"] }),
+      ),
+      classAncestors: { "app/logging.py::Development": ["Logging"] },
+    };
+    expect(inheritingStrategy().attempt(call("Development", "configure"), ctx)).toEqual({
+      kind: "resolved",
+      target: { targetRelPath: "app/logging.py", targetSymbolId: "Logging.configure" },
+    });
+  });
+
+  it("ACCEPTS the instance spelling on the ancestor — classFirst reorders, it does not exclude", () => {
+    const ctx = endpointCtx(
+      { "app/endpoints.py": ["UpdateForm"], "app/forms.py": ["BaseForm", "BaseForm#render"] },
+      { "app/endpoints.py::UpdateForm": ["app.forms::BaseForm"] },
+    );
+    expect(inheritingStrategy().attempt(call("UpdateForm", "render"), ctx)).toEqual({
+      kind: "resolved",
+      target: { targetRelPath: "app/forms.py", targetSymbolId: "BaseForm#render" },
+    });
+  });
+
+  it("leaves a member the class DECLARES ITSELF to the two-spelling lookup above", () => {
+    // The fallback is never reached: the same-file lookup runs first, so the
+    // class's own override wins over the ancestor's.
+    const ctx = endpointCtx(
+      { "app/endpoints.py": ["UpdateForm", "UpdateForm.render"], "app/forms.py": ["BaseForm", "BaseForm.render"] },
+      { "app/endpoints.py::UpdateForm": ["app.forms::BaseForm"] },
+    );
+    expect(inheritingStrategy().attempt(call("UpdateForm", "render"), ctx)).toEqual({
+      kind: "resolved",
+      target: { targetRelPath: "app/endpoints.py", targetSymbolId: "UpdateForm.render" },
+    });
+  });
+
+  it("CONTINUES — never DROPs — when no class on the MRO owns the member", () => {
+    // This arm's CONTINUE is what lets `resolveStarImport` run below it. The
+    // imported-class arm's DROP is earned by an import statement naming the
+    // declaring file; this one has no such evidence.
+    const ctx = endpointCtx(
+      { "app/endpoints.py": ["UpdateForm"], "app/forms.py": ["BaseForm", "BaseForm.render"] },
+      { "app/endpoints.py::UpdateForm": ["app.forms::BaseForm"] },
+    );
+    expect(inheritingStrategy().attempt(call("UpdateForm", "missing"), ctx)).toEqual({ kind: "continue" });
+  });
+
+  it("CONTINUES on an UNRESOLVABLE base — a branch nobody could read is not evidence", () => {
+    const ctx = endpointCtx(
+      { "app/endpoints.py": ["UpdateForm"], "app/forms.py": ["BaseForm", "BaseForm.render"] },
+      { "app/endpoints.py::UpdateForm": [PYTHON_UNRESOLVABLE_BASE] },
+    );
+    expect(inheritingStrategy().attempt(call("UpdateForm", "render"), ctx)).toEqual({ kind: "continue" });
+  });
+
+  it("CONTINUES when the caller's file declares the receiver TWICE — the uniqueness gate", () => {
+    // `pythonBoundClassKey` IS the precision gate: two symbols of that short
+    // name in one file and it returns null rather than picking.
+    const ctx = endpointCtx(
+      {
+        "app/endpoints.py": ["UpdateForm", "Outer.UpdateForm"],
+        "app/forms.py": ["BaseForm", "BaseForm.render"],
+      },
+      { "app/endpoints.py::UpdateForm": ["app.forms::BaseForm"] },
+    );
+    expect(inheritingStrategy().attempt(call("UpdateForm", "render"), ctx)).toEqual({ kind: "continue" });
+  });
+
+  it("leaves a BARE call to the star-import arm below — the hop needs a receiver", () => {
+    const table = tableWith({ "app/main.py": ["main"], "app/models.py": ["Device", "helper"] });
+    const ctx: CallContext = {
+      ...ctxWith("app/main.py", [{ importText: ".models", startLine: 1, importedNames: ["*"] }], table),
+      classAncestors: {},
+    };
+    expect(inheritingStrategy().attempt(call(null, "helper"), ctx)).toEqual({
+      kind: "resolved",
+      target: { targetRelPath: "app/models.py", targetSymbolId: "helper" },
+    });
+  });
+
+  it("CONTINUES with NO linearizer cache — a walker-v2 index keeps today's behaviour", () => {
+    const ctx = endpointCtx(
+      { "app/endpoints.py": ["UpdateForm"], "app/forms.py": ["BaseForm", "BaseForm.render"] },
+      { "app/endpoints.py::UpdateForm": ["app.forms::BaseForm"] },
+    );
+    expect(strategy().attempt(call("UpdateForm", "render"), ctx)).toEqual({ kind: "continue" });
+  });
+});
+
+/**
  * A DOTTED module path in receiver position (R4b, bd tea-rags-mcp-jeqyg).
  *
  * `import utilities.fields` binds the TOP package, so `utilities.fields` is two
@@ -1007,5 +1149,146 @@ describe("PythonImportedNameSymbolResolutionStrategy — dotted module receiver"
     // `Event.id.label(...)` is SQLAlchemy's — a capitalized head is never module
     // text, and folding it is `chainType`'s question.
     expect(strategy().attempt(call("Event.id", "label"), ctx)).toEqual({ kind: "continue" });
+  });
+});
+
+/**
+ * The package re-exports a SUBMODULE under the bound name (bd
+ * tea-rags-mcp-w205u, E4.6a) — polar's 259 rows.
+ *
+ * `from ..components import datatable` maps to
+ * `components/__init__.py`, which declares no `datatable` symbol; the composed
+ * `..components.datatable` names no file either, because the module on disk is
+ * `_datatable.py`. Only the package's own `from . import _datatable as
+ * datatable` says which file the name denotes, and the mapper's
+ * `resolveExportedModule` is what reads it.
+ */
+describe("PythonImportedNameSymbolResolutionStrategy — the package aliases a submodule", () => {
+  const POLAR_FILES: Record<string, string[]> = {
+    "server/polar/__init__.py": ["__all__"],
+    "server/polar/backoffice/__init__.py": ["__all__"],
+    "server/polar/backoffice/components/__init__.py": [],
+    "server/polar/backoffice/components/_datatable.py": ["Datatable", "DatatableAttrColumn"],
+    "server/polar/backoffice/benefits/endpoints.py": ["list_benefits"],
+  };
+
+  const ALIAS_IMPORT: ImportRef = {
+    importText: "..components",
+    startLine: 4,
+    importedNames: ["datatable"],
+    importedBindings: { datatable: "datatable" },
+  };
+
+  const aliasCtx = (
+    reexports: Record<string, ModuleReexport[]>,
+    files: Record<string, string[]> = POLAR_FILES,
+    imports: ImportRef[] = [ALIAS_IMPORT],
+  ): CallContext => ({
+    ...ctxWith("server/polar/backoffice/benefits/endpoints.py", imports, tableWith(files)),
+    moduleReexports: reexports,
+  });
+
+  const POLAR_REEXPORTS: Record<string, ModuleReexport[]> = {
+    "server/polar/backoffice/components/__init__.py": [
+      { exportedName: "datatable", sourceModule: ".", sourceName: "_datatable" },
+    ],
+  };
+
+  it("pins the member in the file the package's module alias names", () => {
+    expect(strategy().attempt(call("datatable", "DatatableAttrColumn"), aliasCtx(POLAR_REEXPORTS))).toEqual({
+      kind: "resolved",
+      target: {
+        targetRelPath: "server/polar/backoffice/components/_datatable.py",
+        targetSymbolId: "DatatableAttrColumn",
+      },
+    });
+  });
+
+  it("CONTINUEs when the alias leaves the project", () => {
+    // Never DROP: the DROP contract belongs to a binding that names a library,
+    // and `resolveBinding` has already returned that verdict by the time this
+    // arm is asked.
+    expect(
+      strategy().attempt(
+        call("datatable", "DatatableAttrColumn"),
+        aliasCtx({
+          "server/polar/backoffice/components/__init__.py": [
+            { exportedName: "datatable", sourceModule: "vendor.tables", sourceName: "_datatable" },
+          ],
+        }),
+      ),
+    ).toEqual({ kind: "continue" });
+  });
+
+  it("CONTINUEs when the aliased module does not declare the member", () => {
+    expect(strategy().attempt(call("datatable", "Missing"), aliasCtx(POLAR_REEXPORTS))).toEqual({ kind: "continue" });
+  });
+
+  it("CONTINUEs rather than pinning a project-wide namesake the aliased module only re-exports", () => {
+    // polar's `from .db.postgres import sql` reaches
+    // `kit/extensions/sqlalchemy/sql.py`, which re-exports sqlalchemy's
+    // `select` and declares nothing. The project happens to declare exactly one
+    // `select` — a backoffice form helper — and the barrel hop would pin it on
+    // every `sql.select(Model)` in the codebase. 10 phantoms, measured. The
+    // alias names ONE file; a member that file does not DECLARE is not an
+    // answer this arm has.
+    const files: Record<string, string[]> = {
+      "app/__init__.py": ["__all__"],
+      "app/db/__init__.py": [],
+      "app/db/shim.py": [],
+      "app/forms/widgets.py": ["select"],
+      "app/service.py": ["run"],
+    };
+    const ctx: CallContext = {
+      ...ctxWith(
+        "app/service.py",
+        [{ importText: ".db", startLine: 1, importedNames: ["sql"], importedBindings: { sql: "sql" } }],
+        tableWith(files),
+      ),
+      moduleReexports: { "app/db/__init__.py": [{ exportedName: "sql", sourceModule: ".", sourceName: "shim" }] },
+    };
+    expect(strategy().attempt(call("sql", "select"), ctx)).toEqual({ kind: "continue" });
+  });
+
+  it("CONTINUEs when the aliased module declares the member twice", () => {
+    const files = {
+      ...POLAR_FILES,
+      "server/polar/backoffice/components/_datatable.py": ["Datatable", "Datatable"],
+    };
+    expect(strategy().attempt(call("datatable", "Datatable"), aliasCtx(POLAR_REEXPORTS, files))).toEqual({
+      kind: "continue",
+    });
+  });
+
+  it("leaves a binding whose composed module text DOES map a file untouched", () => {
+    // `from netbox.tables import columns` still answers through the composed
+    // text; the alias arm is reached only when that mapping finds nothing.
+    const files = {
+      "netbox/circuits/tables/circuits.py": ["CircuitTable"],
+      "netbox/netbox/__init__.py": ["VERSION"],
+      "netbox/netbox/tables/__init__.py": ["BaseTable"],
+      "netbox/netbox/tables/columns.py": ["ColorColumn"],
+    };
+    const ctx: CallContext = {
+      ...ctxWith(
+        "netbox/circuits/tables/circuits.py",
+        [
+          {
+            importText: "netbox.tables",
+            startLine: 3,
+            importedNames: ["columns"],
+            importedBindings: { columns: "columns" },
+          },
+        ],
+        tableWith(files),
+      ),
+      moduleReexports: {
+        "netbox/netbox/tables/__init__.py": [{ exportedName: "columns", sourceModule: ".", sourceName: "_columns" }],
+      },
+    };
+    expect(strategy().attempt(call("columns", "ColorColumn"), ctx)).toEqual({
+      kind: "resolved",
+      target: { targetRelPath: "netbox/netbox/tables/columns.py", targetSymbolId: "ColorColumn" },
+    });
   });
 });

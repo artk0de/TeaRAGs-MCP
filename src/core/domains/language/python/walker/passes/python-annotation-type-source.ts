@@ -21,7 +21,7 @@ import {
   type PythonAnnotatedAssignmentSite,
   type PythonDefSite,
 } from "./python-def-scope-walk.js";
-import { pythonNominalReceiverName, pythonTypeRefFromNode } from "./python-type-annotation.js";
+import { PYTHON_SELF_RETURN, pythonNominalReceiverName, pythonTypeRefFromNode } from "./python-type-annotation.js";
 
 export const PYTHON_ANNOTATION_SOURCE = "annotations";
 
@@ -86,7 +86,13 @@ function extractPythonAnnotationFacts(input: PythonTypeSourceInput): TypeFact[] 
       pushParameterFieldFacts(facts, site);
       const returnType = site.node.childForFieldName("return_type");
       if (returnType === null) return;
-      const ref = pythonTypeRefFromNode(pythonAnnotationExpression(returnType), selfClass);
+      // `Self` resolves to the MARKER here, not to `selfClass`: on a return it
+      // means the class the RECEIVER names, which only the resolver knows.
+      // See {@link PYTHON_SELF_RETURN}.
+      const ref = pythonTypeRefFromNode(
+        pythonAnnotationExpression(returnType),
+        selfClass === undefined ? undefined : PYTHON_SELF_RETURN,
+      );
       // A nil-only ref states "no receiver" and no consumer reads that yet;
       // emitting it would put a `-> None` entry on every annotated def.
       if (ref === undefined || ref.form === "nil") return;

@@ -262,4 +262,28 @@ describe("resolveNarrowedFanout terminal", () => {
     expect(outcome.edges).toHaveLength(16);
     expect(outcome.edges[0].confidence).toBeCloseTo(0.02);
   });
+  it("a tighter opts.cap makes a fan the policy would allow ambiguous", () => {
+    const candidates = Array.from({ length: 6 }, (_, i) => def(`C${i}#m`));
+    const outcome = resolveNarrowedFanout(call("m"), candidates, fanCtx, [], 0.4, { cap: 4 });
+    expect(outcome).toEqual({ kind: "ambiguous", member: "m", candidateCount: 6 });
+  });
+  it("a looser opts.cap cannot raise the policy ceiling", () => {
+    const candidates = Array.from({ length: 17 }, (_, i) => def(`C${i}#m`)); // 17 > policy cap 16
+    const outcome = resolveNarrowedFanout(call("m"), candidates, fanCtx, [], 0.4, { cap: 64 });
+    expect(outcome).toEqual({ kind: "ambiguous", member: "m", candidateCount: 17 });
+  });
+  it("opts.edgeKind labels every emitted edge, single and fan alike", () => {
+    const one = resolveNarrowedFanout(call("m"), [def("A#m")], fanCtx, [], 0.4, { edgeKind: "cone" });
+    if (one.kind !== "edges") throw new Error("expected edges");
+    expect(one.edges.map((e) => e.edgeKind)).toEqual(["cone"]);
+    const many = resolveNarrowedFanout(call("m"), [def("A#m"), def("B#m")], fanCtx, [], 0.4, {
+      edgeKind: "cone",
+    });
+    if (many.kind !== "edges") throw new Error("expected edges");
+    expect(many.edges.every((e) => e.edgeKind === "cone")).toBe(true);
+  });
+  it("an empty options bag is today's behaviour — dynamic edges, policy cap", () => {
+    const outcome = resolveNarrowedFanout(call("m"), [def("A#m"), def("B#m")], fanCtx, [], 0.3, {});
+    expect(outcome).toEqual(resolveNarrowedFanout(call("m"), [def("A#m"), def("B#m")], fanCtx, [], 0.3));
+  });
 });

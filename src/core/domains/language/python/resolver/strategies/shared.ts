@@ -14,10 +14,13 @@
  */
 
 import {
+  nearestCallResultBinding,
   pickSingleCandidate,
   type AmbiguousResolveMode,
   type CallContext,
   type ImportRef,
+  type SymbolDefinition,
+  type SymbolLookupOptions,
   type SymbolResolutionTarget,
 } from "../../../../../contracts/types/codegraph.js";
 import type { TypeRef } from "../../../../../contracts/types/language.js";
@@ -28,8 +31,62 @@ import {
 } from "../../../kernel/ancestor-walk.js";
 import { propagateReceiverType, type ReceiverTypePorts } from "../../../kernel/receiver-type-propagation.js";
 import { PYTHON_BUILTINS } from "../../vocabulary/builtins.js";
+import { isPythonSourcePath } from "../../vocabulary/source-extensions.js";
+import { PYTHON_SELF_RETURN } from "../../walker/passes/python-type-annotation.js";
+import { pythonModuleReturnKey } from "../../walker/passes/python-type-channels.js";
 import type { PythonImportFileMapper } from "../python-import-file-mapper.js";
 import { mapPythonImportToFile } from "../python-path-mapper.js";
+
+/**
+ * Short-name lookup restricted to PYTHON candidates — the ONLY short-name entry
+ * point the Python resolver may use (bd tea-rags-mcp-w205u).
+ *
+ * The symbol table is built once per run over every `CODEGRAPH_LANGUAGES`
+ * extension and carries no `language` field, so `lookupByShortName` alone
+ * answers with any file that spells the name. It is not a hypothetical: polar's
+ * `range(...)` landed on `Paginator.tsx#range` and `GitHub()` on
+ * `Icons.tsx#GitHub`, 46 phantoms across two strategies. Wrapping the call
+ * rather than filtering per site is what keeps the guard from being forgotten
+ * at the next one; see {@link isPythonSourcePath} for why the extension, and
+ * not a `language` field, is the axis.
+ */
+export function lookupPythonSymbolsByShortName(
+  ctx: CallContext,
+  name: string,
+  options?: SymbolLookupOptions,
+): SymbolDefinition[] {
+  return ctx.symbolTable.lookupByShortName(name, options).filter((def) => isPythonSourcePath(def.relPath));
+}
+
+/**
+ * Was `receiver` assigned, at or above `atLine`, from a call whose CALLEE the
+ * project does not declare?
+ *
+ * The head is what carries the answer, and only the head: `User.objects.get`
+ * starts on a project class and its result is overwhelmingly an instance of it,
+ * while `authenticate(...)`, `get_object_or_404(...)`, `RQ_Job.fetch` and
+ * `logging.getLogger(...)` start outside and their results are library values
+ * that happen to be spelled like a project name. Measured on seam 5's A/B:
+ * gating on the mere PRESENCE of a call binding removed 7 phantoms (netbox 5,
+ * ugnest 2) but cost 12 correct answers, eleven of them ugnest rows bound by
+ * `User.objects.get`. Gating on the head's origin removes the same 7 and costs
+ * one row, because that is the axis the two populations actually differ on.
+ *
+ * `self` / `cls` heads are the caller's own object and never foreign. The lookup
+ * is a symbol-table short-name probe, so a caller that was already going to weigh
+ * the site adds no new scan.
+ *
+ * Two readers, one definition: `namingConvention` guesses a class from the
+ * receiver's SPELLING, the untyped-name dispatch component fans over the
+ * member's owners — and both are wrong on exactly this shape.
+ */
+export function pythonBoundToForeignCall(receiver: string, atLine: number, ctx: CallContext): boolean {
+  const binding = nearestCallResultBinding(ctx.callResultBindings, receiver, atLine);
+  if (binding === undefined) return false;
+  const head = binding.callee.split(".")[0] ?? "";
+  if (head === "self" || head === "cls" || head.length === 0) return false;
+  return lookupPythonSymbolsByShortName(ctx, head).length === 0;
+}
 
 /**
  * The run-global address of a Python class: `<relPath>::<dotted class FQ>` (bd
@@ -149,7 +206,7 @@ export function pythonClassKeyIsDeclared(classKey: string, ctx: CallContext): bo
  * project declares.
  */
 export function pythonBoundClassKey(bareName: string, relPath: string, ctx: CallContext): string | null {
-  const declared = ctx.symbolTable.lookupByShortName(bareName).filter((def) => def.relPath === relPath);
+  const declared = lookupPythonSymbolsByShortName(ctx, bareName).filter((def) => def.relPath === relPath);
   if (declared.length !== 1) return null;
   return pythonClassKey(relPath, pythonDeclaredClassFq(declared[0]));
 }
@@ -162,11 +219,18 @@ export interface PythonInheritedMemberResult {
 
 /**
  * `<member>` on `classKey` or the first ancestor in its MRO that owns it (bd
- * tea-rags-mcp-9fgdi). Instance spelling (`Cls#m`) first, class spelling
- * (`Cls.m`) second — `classifyMethod` files an undecorated `def` as instance
- * and a `@classmethod` / `@staticmethod` one as class-level, and the corpora
- * carry both (`GetRelatedModelsMixin#get_related_models`,
- * `RepositoryBase.from_session`).
+ * tea-rags-mcp-9fgdi). `classifyMethod` files an undecorated `def` as the
+ * instance spelling (`Cls#m`) and a `@classmethod` / `@staticmethod` one as the
+ * class spelling (`Cls.m`), and the corpora carry both
+ * (`GetRelatedModelsMixin#get_related_models`, `RepositoryBase.from_session`),
+ * so the scan tries both at every class in the order.
+ *
+ * WHICH ONE IT TRIES FIRST is `options.spellingOrder`, and it matters only for
+ * a class that declares BOTH — a `@classmethod` shadowing an inherited instance
+ * method. `instanceFirst` is the default and is what an instance receiver
+ * wants; `classFirst` is what a receiver that IS the class object wants (bd
+ * tea-rags-mcp-w205u, E4.4a). The option REORDERS and never excludes, so a
+ * `cls.instance_method()` still resolves.
  *
  * Every lookup is FILTERED BY THE CANDIDATE'S OWN FILE. The class key is
  * file-qualified precisely so two `Base` classes in two files stay apart, and
@@ -183,7 +247,10 @@ export function resolvePythonInheritedMember(
   ctx: CallContext,
   mode: AmbiguousResolveMode,
   linearizer: AncestorLinearizer<CallContext>,
-  options: { readonly startAfter?: boolean } = {},
+  options: {
+    readonly startAfter?: boolean;
+    readonly spellingOrder?: "instanceFirst" | "classFirst";
+  } = {},
 ): PythonInheritedMemberResult {
   const scan = findMemberInAncestorChain(
     classKey,
@@ -191,14 +258,18 @@ export function resolvePythonInheritedMember(
     (candidateKey) => {
       const parsed = parsePythonClassKey(candidateKey);
       if (parsed === null) return null;
-      for (const spelling of [`${parsed.classFq}#${member}`, `${parsed.classFq}.${member}`]) {
+      const instance = `${parsed.classFq}#${member}`;
+      const klass = `${parsed.classFq}.${member}`;
+      for (const spelling of options.spellingOrder === "classFirst" ? [klass, instance] : [instance, klass]) {
         const inFile = ctx.symbolTable.lookup(spelling).filter((def) => def.relPath === parsed.relPath);
         const picked = pickSingleCandidate(inFile, mode);
         if (picked) return { targetRelPath: picked.relPath, targetSymbolId: picked.symbolId };
       }
       return null;
     },
-    options,
+    // Forward only what the kernel walk declares, so a Python-only option
+    // cannot leak into a signature that has no field for it.
+    { startAfter: options.startAfter },
   );
   return { target: scan.target, closure: scan.closure };
 }
@@ -247,10 +318,42 @@ export function resolvePythonMemberOnTypeThroughMro(
 ): PythonTypeMemberResolution {
   const bareType = lastSegment(typeName);
   const targetFile = resolveTypeFile(bareType, ctx, mapper);
-  if (targetFile === null) return UNBOUND_TYPE_MEMBER;
-  const classKey = pythonBoundClassKey(bareType, targetFile, ctx);
+  const direct = targetFile === null ? null : pythonBoundClassKey(bareType, targetFile, ctx);
+  // Only on a MISS: an import that RENAMED the class carries the source name,
+  // and the annotation recorded the local one (bd tea-rags-mcp-w205u, E4.6c).
+  const classKey = direct ?? pythonAliasedClassKey(bareType, ctx, mapper);
   if (classKey === null) return UNBOUND_TYPE_MEMBER;
   return resolvePythonInheritedMember(classKey, member, ctx, mode, linearizer);
+}
+
+/**
+ * The MRO key a name that an import ALIASED denotes — `OrderSchema` under
+ * `from polar.order.schemas import Order as OrderSchema` is `Order`'s key (bd
+ * tea-rags-mcp-w205u, E4.6c).
+ *
+ * `null` for everything else, and deliberately so: an UNALIASED binding is
+ * already what every other read spells, and an import that maps outside the
+ * project names no class this run holds. The alias is evidence the local name
+ * alone cannot be — `lookupPythonSymbolsByShortName("OrderSchema")` is empty
+ * and `resolveTypeFile`'s import pass matches the module text's last segment,
+ * never the alias.
+ *
+ * The re-export hop is the same one `resolveTypeFile` takes: a package that
+ * only re-exports the source name declares nothing, so ask which file does.
+ */
+export function pythonAliasedClassKey(
+  localName: string,
+  ctx: CallContext,
+  mapper: PythonImportFileMapper,
+): string | null {
+  const binding = findPythonImportBinding(ctx.imports, localName);
+  if (binding === null || binding.importedName === binding.localName) return null;
+  const mapped = mapper.mapImportToFile(binding.imp.importText, ctx.callerFile, ctx);
+  if (mapped.kind !== "project") return null;
+  const direct = pythonBoundClassKey(binding.importedName, mapped.relPath, ctx);
+  if (direct !== null) return direct;
+  const declaring = mapper.resolveExportedName(mapped.relPath, binding.importedName, ctx);
+  return declaring === null ? null : pythonBoundClassKey(binding.importedName, declaring, ctx);
 }
 
 /**
@@ -271,7 +374,10 @@ function pythonReceiverClassKey(bareType: string, ctx: CallContext, mapper: Pyth
   const own = pythonBoundClassKey(bare, ctx.callerFile, ctx);
   if (own !== null) return own;
   const imported = resolveTypeFile(bare, ctx, mapper);
-  return imported === null ? null : pythonBoundClassKey(bare, imported, ctx);
+  const direct = imported === null ? null : pythonBoundClassKey(bare, imported, ctx);
+  // Last, and only on a miss: the name an import RENAMED (bd
+  // tea-rags-mcp-w205u, E4.6c). See {@link pythonAliasedClassKey}.
+  return direct ?? pythonAliasedClassKey(bare, ctx, mapper);
 }
 
 /**
@@ -304,11 +410,49 @@ export function pythonInheritedMemberType(
   mapper: PythonImportFileMapper,
   linearizer: AncestorLinearizer<CallContext> | undefined,
 ): TypeRef | undefined {
+  const declared = pythonDeclaredMemberType(bareType, member, form, ctx, mapper, linearizer);
+  if (declared !== undefined) return declared;
+  // LAST, and only when the run carries the channel: a field assigned from a
+  // CALL, folded ONE level (bd tea-rags-mcp-w205u, E4.6c).
+  return pythonFieldCallResultType(bareType, member, ctx, mapper, linearizer);
+}
+
+/**
+ * `-> Self` names the class the RECEIVER holds, not the one that declared the
+ * method (bd tea-rags-mcp-w205u E4.6b-1, bd tea-rags-mcp-1v12o.1.6 E5.1b).
+ *
+ * The annotation facet records the marker rather than a class precisely because
+ * only the read side knows the receiver: polar's `CustomerRepository` inherits
+ * `from_session` from `RepositoryBase`, and recording the DECLARING class puts
+ * every following hop on the base. A class receiver substitutes that class, an
+ * instance receiver its own type — ONE rule, because the receiver's NAME is all
+ * either form contributes, and a receiver with no type substitutes nothing.
+ *
+ * Every read of the channel that can see a receiver funnels through here, so
+ * the marker cannot leave this module under any spelling: the MRO walk above,
+ * and the call-result binding in {@link pythonCallBindingType}.
+ */
+export function pythonSubstituteSelfReturn(returned: TypeRef | undefined, receiverName: string): TypeRef | undefined {
+  return returned?.form === "instance" && returned.name === PYTHON_SELF_RETURN
+    ? { form: "instance", name: receiverName }
+    : returned;
+}
+
+/** {@link pythonInheritedMemberType} minus its call-result tier — the pre-E4.6c body. */
+function pythonDeclaredMemberType(
+  bareType: string,
+  member: string,
+  form: "class" | "instance",
+  ctx: CallContext,
+  mapper: PythonImportFileMapper,
+  linearizer: AncestorLinearizer<CallContext> | undefined,
+): TypeRef | undefined {
   const separator = form === "class" ? "." : "#";
   const onClass = (shortName: string, classFq: string): TypeRef | undefined => {
     const fieldType = ctx.classFieldTypes?.[shortName]?.[member];
     if (fieldType !== undefined) return { form: "instance", name: fieldType };
-    return ctx.structuredReturnTypes?.[`${classFq}${separator}${member}`];
+    const returned = ctx.structuredReturnTypes?.[`${classFq}${separator}${member}`];
+    return pythonSubstituteSelfReturn(returned, bareType);
   };
   const byClassKey = (classKey: string): TypeRef | undefined => {
     const fieldType = ctx.classFieldTypesByClassKey?.[classKey]?.[member];
@@ -345,6 +489,162 @@ export function pythonInheritedMemberType(
     if (hit !== undefined) return hit;
   }
   return undefined;
+}
+
+/** A single capitalized identifier — Python's class-name convention. */
+const PYTHON_CLASS_NAME = /^[A-Z]\w*$/;
+/** A single lowercase identifier — a function, never a class. */
+const PYTHON_FUNCTION_NAME = /^[a-z_]\w*$/;
+
+/**
+ * What answers when NO import binding names a file — the two pre-E5.1c
+ * reachability rules, kept apart because each was measured on its own path.
+ *
+ *   - `"requireReach"` — the caller's own module scope, or an import that maps
+ *     into the project. E4.6b-1's gate for a chain head and E4.6c's for a
+ *     field; a name the caller cannot reach is not the name it called.
+ *   - `"acceptSoleDef"` — the corpus declares exactly ONE module-level def of
+ *     that name, so there is nothing to pick between. `pythonCallBindingType`
+ *     has admitted those since z68v9 with no reachability test at all.
+ */
+type PythonUnboundCalleeRule = "requireReach" | "acceptSoleDef";
+
+/**
+ * WHICH file's module-level `callee` this caller meant (bd
+ * tea-rags-mcp-1v12o.1.7, E5.1c).
+ *
+ * The binding for THAT name first, through {@link pythonImportBoundFile} — the
+ * one funnel that narrows a namesake anywhere in this resolver. It also answers
+ * the caller's OWN file when nothing imported the name, which is what a bare
+ * call resolves against. Only when the funnel is silent does
+ * {@link PythonUnboundCalleeRule} decide, and only ever on a SOLE candidate:
+ * two defs and no binding is a refusal on both rules, which is the collision
+ * the per-file key exists to prevent.
+ */
+function pythonModuleDefFile(
+  callee: string,
+  defs: readonly SymbolDefinition[],
+  ctx: CallContext,
+  mapper: PythonImportFileMapper,
+  unbound: PythonUnboundCalleeRule,
+): string | null {
+  if (defs.length === 0) return null;
+  const narrowed = pythonImportBoundFile(
+    callee,
+    defs.map((def) => def.relPath),
+    ctx,
+    mapper,
+  );
+  if (narrowed !== null) return narrowed;
+  if (defs.length !== 1) return null;
+  const only = defs[0].relPath;
+  if (unbound === "acceptSoleDef" || only === ctx.callerFile) return only;
+  const bound = findPythonImportBinding(ctx.imports, callee);
+  return bound !== null && mapper.mapImportToFile(bound.imp.importText, ctx.callerFile, ctx).kind === "project"
+    ? only
+    : null;
+}
+
+/**
+ * What a MODULE-LEVEL `callee` records as its return, read under the file the
+ * caller's own binding names (bd tea-rags-mcp-1v12o.1.7, E5.1c).
+ *
+ * Only `scope.length === 0` defs are candidates, because only they are keyed
+ * `<relPath>::<name>`; a class member is addressed by its owner and is reached
+ * through {@link pythonInheritedMemberType} instead. A key shape an older
+ * persisted pass-1 slice wrote (the bare name, bd tea-rags-mcp-8qyax) is never
+ * asked for, so it is silence rather than a wrong answer.
+ */
+export function pythonModuleReturnType(
+  callee: string,
+  ctx: CallContext,
+  mapper: PythonImportFileMapper,
+  unbound: PythonUnboundCalleeRule,
+): TypeRef | undefined {
+  const defs = lookupPythonSymbolsByShortName(ctx, callee).filter((def) => def.scope.length === 0);
+  const file = pythonModuleDefFile(callee, defs, ctx, mapper, unbound);
+  return file === null ? undefined : ctx.structuredReturnTypes?.[pythonModuleReturnKey(file, callee)];
+}
+
+/**
+ * A bare `factory()` call's own recorded return type (bd tea-rags-mcp-w205u,
+ * E4.6b-1 as a chain head, E4.6c at a field).
+ *
+ * The lowercase gate is this arm's alone: a chain head spelled `Datatable(…)`
+ * is a CONSTRUCTOR and belongs to the class-head seed, which runs before this.
+ */
+export function pythonBareCallReturnType(
+  callee: string,
+  ctx: CallContext,
+  mapper: PythonImportFileMapper,
+): TypeRef | undefined {
+  return PYTHON_FUNCTION_NAME.test(callee) ? pythonModuleReturnType(callee, ctx, mapper, "requireReach") : undefined;
+}
+
+/**
+ * What the CALLEE recorded in `classFieldCallResults` returns, read ONE level
+ * (bd tea-rags-mcp-w205u, E4.6c).
+ *
+ * Three spellings and no fourth, because those are the three the corpora
+ * measured:
+ *
+ *   `get_geo_provider`             a bare project function — its own return
+ *   `PaymentRepository.from_session`  a class-form call, `-> Self` naming the
+ *                                    RECEIVER class rather than the declaring one
+ *   `self._init_transport`         a method of the class being walked
+ *
+ * Every arm reads {@link pythonDeclaredMemberType}, never the exported entry
+ * point: one level means a callee whose own return is itself only knowable
+ * through this channel is silence, not a worklist (decision 3 of the plan).
+ */
+function pythonFieldCallResultType(
+  bareType: string,
+  member: string,
+  ctx: CallContext,
+  mapper: PythonImportFileMapper,
+  linearizer: AncestorLinearizer<CallContext> | undefined,
+): TypeRef | undefined {
+  const channel = ctx.classFieldCallResults;
+  // The pre-channel path, and the perf gate: a run without it never addresses
+  // the class, which costs symbol-table work.
+  if (channel === undefined) return undefined;
+  const classKey = pythonReceiverClassKey(bareType, ctx, mapper);
+  if (classKey === null) return undefined;
+  const keys = [classKey, ...(linearizer === undefined ? [] : linearizer.linearize(classKey).order)];
+  for (const key of keys) {
+    const callee = channel[key]?.[member];
+    if (callee === undefined) continue;
+    const type = pythonCalleeSpellingType(callee, bareType, ctx, mapper, linearizer);
+    // First fact wins, answer or not — a second class further up the MRO
+    // assigning the same field is shadowed, exactly as the type channels are.
+    return type;
+  }
+  return undefined;
+}
+
+/** One callee SPELLING → the type it yields. See {@link pythonFieldCallResultType}. */
+function pythonCalleeSpellingType(
+  callee: string,
+  ownerType: string,
+  ctx: CallContext,
+  mapper: PythonImportFileMapper,
+  linearizer: AncestorLinearizer<CallContext> | undefined,
+): TypeRef | undefined {
+  const dot = callee.lastIndexOf(".");
+  if (dot === -1) return pythonBareCallReturnType(callee, ctx, mapper);
+  const head = callee.slice(0, dot);
+  const method = callee.slice(dot + 1);
+  // `self.<method>()` — the receiving class IS the one whose field this is.
+  if (head === "self") return pythonDeclaredMemberType(ownerType, method, "instance", ctx, mapper, linearizer);
+  const bareHead = lastSegment(head);
+  if (!PYTHON_CLASS_NAME.test(bareHead)) return undefined;
+  // Gated on the class resolving into the project, exactly as the chain's own
+  // class-head seed is: a capitalised name an import took from a library is a
+  // coincidence of spelling, not evidence.
+  if (resolveTypeFile(bareHead, ctx, mapper) === null && pythonAliasedClassKey(bareHead, ctx, mapper) === null) {
+    return undefined;
+  }
+  return pythonDeclaredMemberType(bareHead, method, "class", ctx, mapper, linearizer);
 }
 
 export interface ResolverConfig {
@@ -508,6 +808,77 @@ export function findPythonImportBinding(imports: readonly ImportRef[], localName
 }
 
 /**
+ * Which of `candidates` the CALLER's own import binding for `name` points at,
+ * or `null` (bd tea-rags-mcp-1v12o.1.5, E5.1a). The single funnel both namesake
+ * halves narrow through.
+ *
+ * A short name declared in two or more project files is only ambiguous to a
+ * reader who ignores what the calling file wrote down. polar declares
+ * `Subscription` at `models/subscription.py` and `subscription/schemas.py` and
+ * `get_client` in six files, and every residual row of that shape carries an
+ * import naming exactly one of them. Nothing here guesses: the answer is the
+ * caller's statement resolved through {@link PythonImportFileMapper}, or
+ * nothing.
+ *
+ * Why it is not {@link resolveTypeFile}'s existing narrowing. That pass filters
+ * candidates against the caller's import SET — every file ANY import maps to —
+ * and polar's `customer_portal/service/subscription.py` imports `Subscription`
+ * from `polar.models` AND `SubscriptionChargePreview` from
+ * `polar.subscription.schemas`. Both candidate files land in the set, two
+ * survive, and the pass refuses. The binding for THIS name names one.
+ *
+ * Three reads, first hit wins, all deterministic: the module the import maps
+ * to, the file that DECLARES the imported name one re-export hop on
+ * (`from polar.models import Subscription` → `models/__init__.py` →
+ * `models/subscription.py`), and the MODULE a package aliases under that name
+ * (`from . import _datatable as datatable`). An import that maps outside the
+ * project, or onto a file no candidate occupies, is a refusal — not a fallback.
+ *
+ * With NO binding for the name, the caller's OWN file answers when it declares
+ * the name: module scope is what a bare name resolves against, and a file that
+ * declares it needs no import. Everything else refuses.
+ */
+export function pythonImportBoundFile(
+  name: string,
+  candidates: readonly string[],
+  ctx: CallContext,
+  mapper: PythonImportFileMapper,
+): string | null {
+  const binding = findPythonImportBinding(ctx.imports, name);
+  if (binding === null) return candidates.includes(ctx.callerFile) ? ctx.callerFile : null;
+  const mapped = mapper.mapImportToFile(binding.imp.importText, ctx.callerFile, ctx);
+  if (mapped.kind !== "project") return null;
+  const hops = [
+    mapped.relPath,
+    mapper.resolveExportedName(mapped.relPath, binding.importedName, ctx),
+    mapper.resolveExportedModule(mapped.relPath, binding.importedName, ctx),
+  ];
+  for (const hop of hops) if (hop !== null && candidates.includes(hop)) return hop;
+  return null;
+}
+
+/**
+ * The module text a single-identifier receiver denotes, from the two shapes
+ * `collectPythonImports` records (`walker/walker.ts:499`).
+ *
+ * `importedBindings[local] === importText` IS the `import_statement` form —
+ * there the recorded value is the MODULE PATH. An unaliased `import a.b` binds
+ * the top package, so its head denotes `a`, not `a.b`; an aliased one denotes
+ * the whole path. Everything else is `from M import name`, where the value is
+ * an exported NAME and the receiver denotes the SUBMODULE `M.name` — joined
+ * without a separator when `M` already ends in a dot, or `from . import c`
+ * would compose `..c` and climb a package.
+ */
+export function receiverModuleText(binding: PythonImportBinding): string {
+  const { importText } = binding.imp;
+  if (binding.importedName === importText) {
+    const firstSegment = binding.importedName.split(".")[0];
+    return binding.localName === firstSegment ? firstSegment : binding.importedName;
+  }
+  return importText.endsWith(".") ? `${importText}${binding.importedName}` : `${importText}.${binding.importedName}`;
+}
+
+/**
  * Find the file path of a bare class name by walking the import list.
  * Two shapes match:
  *   - `from <module> import <Bare>` — importText is `<module>`; the
@@ -549,7 +920,7 @@ export function resolveTypeFile(
   // First pass: scan symbol table for ANY definition matching the
   // bare type name. If it's unique we have the file directly — provided the
   // match can OWN a member at all, which a top-level `def` cannot.
-  const tableMatches = ctx.symbolTable.lookupByShortName(bareType);
+  const tableMatches = lookupPythonSymbolsByShortName(ctx, bareType);
   if (tableMatches.length === 1) {
     return pythonTypeOwnsMembers(bareType, member, ctx) ? tableMatches[0].relPath : null;
   }
@@ -559,6 +930,21 @@ export function resolveTypeFile(
   // `project` verdict names a file the table can hold, so it is the only one
   // that can narrow the candidates.
   if (tableMatches.length > 1) {
+    // FIRST, the binding for THIS name (bd tea-rags-mcp-1v12o.1.5, E5.1a). The
+    // set-filter below reads every file any import maps to, which conflates
+    // "a file this caller imports something from" with "the file this caller's
+    // binding for this name names" — polar's
+    // `customer_portal/service/subscription.py` imports `Subscription` from
+    // `polar.models` and `SubscriptionChargePreview` from
+    // `polar.subscription.schemas`, and the set holds both `Subscription`
+    // candidates. See {@link pythonImportBoundFile}.
+    const bound = pythonImportBoundFile(
+      bareType,
+      tableMatches.map((def) => def.relPath),
+      ctx,
+      mapper,
+    );
+    if (bound !== null) return bound;
     const importedFiles = new Set<string>();
     for (const imp of ctx.imports) {
       const mapped = mapper.mapImportToFile(imp.importText, ctx.callerFile, ctx);
@@ -613,9 +999,9 @@ export function resolvePythonMemberOnType(
   const bareType = lastSegment(typeName);
   const targetFile = resolveTypeFile(bareType, ctx, mapper, member);
   if (!targetFile) return null;
-  const candidates = ctx.symbolTable
-    .lookupByShortName(member)
-    .filter((def) => def.relPath === targetFile && def.scope[def.scope.length - 1] === bareType);
+  const candidates = lookupPythonSymbolsByShortName(ctx, member).filter(
+    (def) => def.relPath === targetFile && def.scope[def.scope.length - 1] === bareType,
+  );
   const target = pickSingleCandidate(candidates, mode);
   if (target) return { targetRelPath: target.relPath, targetSymbolId: target.symbolId };
   // bd tea-rags-mcp-yrs0 — `member` is not defined on the type itself. Walk its
@@ -634,13 +1020,23 @@ export function resolvePythonMemberOnType(
  * fold produced, through the MRO — which is the whole point, since
  * `SubscriptionRepository.from_session` is declared on `RepositoryBase`.
  *
- * A BARE callee (`build_client(…)`) reads `structuredReturnTypes` under the
- * bare name, which is exactly the key a top-level `def` composes
- * (`pythonStructuredReturnKey`), gated on the symbol table pinning exactly one
- * project definition of that name. The channel is run-global and
- * last-write-wins, so without that gate one `def get() -> Foo` would speak for
- * every same-named `def` in the corpus — the collision that made Python drop
- * `functionReturnTypes` outright.
+ * A BARE callee (`build_client(…)`) reads {@link pythonModuleReturnType}, which
+ * addresses the fact by the FILE the caller's own binding names (bd
+ * tea-rags-mcp-1v12o.1.7, E5.1c). E5.1a narrowed the same shape and then had to
+ * check the fact's provenance, because the bare key held ONE of polar's six
+ * `get_client` annotations for all of them; a per-file key states the
+ * provenance instead of leaving it to be inferred, so the guard is gone. The
+ * sole-def arm this path has always had stays `"acceptSoleDef"`: one def of the
+ * name in the corpus is one answer, whether or not the caller imported it.
+ *
+ * The result funnels through {@link pythonSubstituteSelfReturn} (bd
+ * tea-rags-mcp-1v12o.1.6, E5.1b). `x = CustomerRepository.from_session(s)`
+ * binds `x` to a `CustomerRepository`, never to the `RepositoryBase` that
+ * declared the classmethod, and `x = obj.with_org()` binds it to `obj`'s own
+ * type. The MRO walk substitutes on the arm it answers from; doing it HERE too
+ * is what makes the marker unreachable from the binding path whatever a future
+ * arm reads. A `container` / `union` receiver contributes no name and yields
+ * nothing, which is what `memberTypeOf` already answered for one.
  *
  * ONE hop by construction: the returned ref is never itself re-folded. A
  * fixpoint over return types is a different seam and would need a cycle guard
@@ -651,12 +1047,13 @@ export function pythonCallBindingType(
   atLine: number,
   ctx: CallContext,
   ports: ReceiverTypePorts,
+  mapper: PythonImportFileMapper,
 ): TypeRef | undefined {
   const cut = callee.lastIndexOf(".");
-  if (cut < 0) {
-    return ctx.symbolTable.lookupByShortName(callee).length === 1 ? ctx.structuredReturnTypes?.[callee] : undefined;
-  }
+  if (cut < 0) return pythonModuleReturnType(callee, ctx, mapper, "acceptSoleDef");
   const receiverType = propagateReceiverType(callee.slice(0, cut), atLine, ctx, ports);
   if (receiverType === undefined) return undefined;
-  return ports.memberTypeOf(receiverType, callee.slice(cut + 1), ctx);
+  if (receiverType.form !== "class" && receiverType.form !== "instance") return undefined;
+  const returned = ports.memberTypeOf(receiverType, callee.slice(cut + 1), ctx);
+  return pythonSubstituteSelfReturn(returned, receiverType.name);
 }

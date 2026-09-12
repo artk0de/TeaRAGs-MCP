@@ -232,6 +232,21 @@ export interface CallContext {
    */
   classFieldTypesByClassKey?: Record<string, Record<string, string>>;
   /**
+   * `FileExtraction.classFieldCallResults` unioned RUN-GLOBAL: a field's callee
+   * SPELLING under `<relPath>::<dotted class FQ>` (bd tea-rags-mcp-w205u,
+   * E4.6c).
+   *
+   * The read is `pythonInheritedMemberType`'s LAST, after both type channels
+   * miss on the class and on every ancestor. It folds the spelling ONE level
+   * against {@link CallContext.structuredReturnTypes} — never transitively, and
+   * never through this channel again, so a field assigned from a call whose
+   * callee is itself a field call is silence.
+   *
+   * Absent on a run whose walker never wrote it, and the read is skipped
+   * outright then: the pre-channel behaviour is byte-identical.
+   */
+  classFieldCallResults?: Record<string, Record<string, string>>;
+  /**
    * `FileExtraction.moduleReexports` collected RUN-GLOBAL, keyed by the relPath
    * of the file that wrote each list (bd tea-rags-mcp-xpl83.3).
    *

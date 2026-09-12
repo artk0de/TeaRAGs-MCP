@@ -59,6 +59,31 @@ export interface FileExtraction {
    */
   classFieldTypesByClassKey?: Record<string, Record<string, string>>;
   /**
+   * A field assigned from a CALL, as `<relPath>::<dotted class FQ> → field →
+   * callee SPELLING` (bd tea-rags-mcp-w205u, E4.6c).
+   *
+   * The sibling of {@link FileExtraction.classFieldTypesByClassKey} for the
+   * shape a walker cannot type at all. `self.payment_repo =
+   * PaymentRepository.from_session(session)` names no class: what the field
+   * holds is whatever that callee RETURNS, and only the resolver — which has
+   * every file's `structuredReturnTypes` — can say. So the walker records the
+   * spelling verbatim (`PaymentRepository.from_session`, `get_geo_provider`,
+   * `self._init_transport`, arguments stripped) and the resolver folds it ONE
+   * level. `callResultBindings` already does exactly this for a
+   * single-IDENTIFIER target; a `self.<field>` target had no channel.
+   *
+   * Class-key addressed and NOT also short-name addressed: the own-class read
+   * goes through the same key (the caller's own class is declared in the
+   * caller's file), and the MRO walk needs the qualified form anyway.
+   *
+   * A field this file also TYPES is absent here — the type is the better answer
+   * — and a field two methods assign from DIFFERENT callees is dropped rather
+   * than resolved last-write-wins, because a conflict is not a fact.
+   *
+   * Plain Record for NDJSON round-trip; absent when the file has none.
+   */
+  classFieldCallResults?: Record<string, Record<string, string>>;
+  /**
    * Optional per-class Rails association map: `className → accessorName →
    * modelType`. Populated by the Ruby walker from class-body association macros
    * (`belongs_to`/`has_one`/`has_many`/`has_and_belongs_to_many`); the accessor

@@ -130,10 +130,32 @@ describe("pythonAnnotationTypeSource — returns", () => {
     ]);
   });
 
-  it("resolves `-> Self` against the enclosing class", () => {
+  // Was `instance("Svc")` — the DECLARING class — until bd tea-rags-mcp-w205u
+  // (E4.6b-1). `Self` on a return is the class the RECEIVER names, which the
+  // walker cannot know: polar's `AccountRepository.from_session(s)` inherits
+  // `from_session` from `RepositoryBase`, and typing its result as
+  // `RepositoryBase` puts every following hop on the wrong class — 12 rows.
+  // The fact records the MARKER; `pythonInheritedMemberType` substitutes.
+  it("records `-> Self` as a marker for the reader to substitute", () => {
     const out = facts("class Svc:\n    def chain(self) -> Self:\n        pass\n");
     expect(out).toEqual([
-      { kind: "return", source: "annotations", symbolScope: ["Svc"], methodName: "chain", type: instance("Svc") },
+      { kind: "return", source: "annotations", symbolScope: ["Svc"], methodName: "chain", type: instance("Self") },
+    ]);
+  });
+
+  it("records the marker for every spelling of Self a return can carry", () => {
+    for (const spelling of ["typing.Self", "typing_extensions.Self", '"Self"']) {
+      expect(facts(`class Svc:\n    def chain(self) -> ${spelling}:\n        pass\n`)).toEqual([
+        { kind: "return", source: "annotations", symbolScope: ["Svc"], methodName: "chain", type: instance("Self") },
+      ]);
+    }
+  });
+
+  it("still resolves `Self` against the enclosing class OUTSIDE a return", () => {
+    // An ivar names a value the object already holds; only the return is
+    // polymorphic in the receiver, so only the return records the marker.
+    expect(facts("class Svc:\n    twin: Optional[Self]\n")).toEqual([
+      { kind: "ivar", source: "annotations", symbolScope: ["Svc"], name: "twin", line: 2, type: instance("Svc") },
     ]);
   });
 
@@ -156,6 +178,21 @@ describe("pythonAnnotationTypeSource — class attributes", () => {
     const out = facts("class C:\n    def __init__(self):\n        self.svc: Optional[Svc] = None\n");
     expect(out).toEqual([
       { kind: "ivar", source: "annotations", symbolScope: ["C"], name: "svc", line: 3, type: instance("Svc") },
+    ]);
+  });
+
+  it("unwraps a SQLAlchemy `Mapped[T]` column down to the T the value actually is", () => {
+    // The end-to-end proof that the transparent-set entry reaches the channel a
+    // resolver reads, not just the ref algebra (bd tea-rags-mcp-w205u, E4.2a).
+    expect(facts("class Benefit:\n    tiers: Mapped[Tiers] = mapped_column(JSONB)\n")).toEqual([
+      {
+        kind: "ivar",
+        source: "annotations",
+        symbolScope: ["Benefit"],
+        name: "tiers",
+        line: 2,
+        type: instance("Tiers"),
+      },
     ]);
   });
 

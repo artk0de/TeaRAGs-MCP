@@ -1,7 +1,7 @@
 import { CONTINUE, resolved } from "../../../../../contracts/resolution.js";
 import type { CallContext, CallRef } from "../../../../../contracts/types/codegraph.js";
 import type { SymbolResolutionOutcome, SymbolResolutionStrategy } from "../../../../../contracts/types/language.js";
-import { collectResolvedAncestorChain, lastConstantSegment } from "./shared.js";
+import { collectResolvedAncestorChain, lastConstantSegment, lookupRubySymbolsByShortName } from "./shared.js";
 
 /**
  * Receiverless read of the enclosing model's OWN persisted column
@@ -26,9 +26,9 @@ export class RubySchemaColumnSymbolResolutionStrategy implements SymbolResolutio
 
   attempt(call: CallRef, ctx: CallContext): SymbolResolutionOutcome {
     if (call.receiver !== null) return CONTINUE;
-    const columns = ctx.symbolTable
-      .lookupByShortName(call.member, { includeSchemaColumns: true })
-      .filter((def) => def.isSchemaColumn === true);
+    const columns = lookupRubySymbolsByShortName(ctx, call.member, { includeSchemaColumns: true }).filter(
+      (def) => def.isSchemaColumn === true,
+    );
     if (columns.length === 0) return CONTINUE;
 
     // Anchor on the enclosing class the same way `bareCall` does: a class-body

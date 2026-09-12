@@ -46,6 +46,12 @@ framework module (`RubyFrameworkVocabulary`: `entries` + `runtimeBuiltins` +
 `hasExternalMember`, built by `defineFrameworkVocabulary`). Add framework = one
 module file + one line in `FRAMEWORKS` array → zero resolver/predicate edits.
 
+Every per-language short-name lookup must go through that language's filtered
+helper (`lookupPythonSymbolsByShortName`, `lookupRubySymbolsByShortName`), never
+`symbolTable.lookupByShortName` directly — the table is one polyglot index with
+no `language` field, so a bare lookup lets a foreign namesake be picked or trip
+a cardinality gate.
+
 ## 3. Registry is a typed array, not self-registration
 
 ESM class declaration registers nothing; self-registration needs instantiation

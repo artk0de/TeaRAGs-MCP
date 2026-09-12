@@ -67,6 +67,50 @@
   metrics (`resolveSuccessRate` via `DEBUG=1 tea-rags prime`). Why:
   `epic-completion-gate.md` routes this at a user-gated reindex, costing days
   for a 90-second in-process delta.
+- **The Python oracle publishes THREE denominators, and `tiebroken` is the
+  canonical precision number for E5+.** `scripts/py-codegraph-jedi-oracle.ts`
+  prints `legacy` (jedi alone, the regression gate for every pre-E4 record),
+  `merged` (whatever engine answered the file), and `tiebroken` — pyright asked
+  about every chain-vs-jedi disagreement and the row re-scored by the fixed rule
+  in `scripts/lib/py-oracle-tiebreak.ts`, with the undecidable ones withheld and
+  counted. `--no-tiebreak` reproduces the two-column output byte for byte. Why:
+  D9's oracle-wrong classes were hand-audited once and then carried as a
+  paragraph, so every later increment measured its precision against a number
+  that included known instrument error.
+- **`--time-only` is the chain tally's third mode, and it is the only reason
+  three languages are comparable at all.** It skips the rebuilt chain and
+  resolves every site through the production resolver, so a language with no
+  `ChainSpec` (ruby, typescript) is walked and TIMED by the same implementation
+  python's numbers come from. The price is the drift check: `chainDrift` is
+  structurally 0 and the report says so, so a `--time-only` run is never
+  evidence about resolution. Pair it with `env -u NODE_OPTIONS` — this machine
+  carries a fish universal `--max_old_space_size=8192`, and a process-wide
+  ceiling silently overrides the per-worker one, handing three languages three
+  different effective heaps. Why: a cross-language wall/RSS comparison is void
+  under either a per-language harness or a per-language heap ceiling.
+- **A min-of-N peak RSS is GC slack, not the live set.** Min-of-3 after a
+  discarded warm-up is the right estimator for WALL — the minimum is the run
+  least polluted by background work — and it flatters MEMORY, because a run that
+  happened to collect less shows a lower peak. Publish the median beside it (it
+  moved E6's memory cells by up to 6.6 % and never the verdict) and read the
+  live heap with `--trace-gc` after a Mark-Compact rather than off either. Why:
+  the netbox finding — ~800 MB retained by ONE 111,557-line data file — is
+  invisible in peak RSS and unmissable in the post-compaction heap. Related
+  trap: `/usr/bin/time -l` prints `peak memory footprint` beside
+  `maximum resident set size`, and every python record uses the second.
+- **Extraction has a pre-materialization gate and it reads the NATIVE tree.**
+  `fileIsInertForExtraction` (`infra/extraction-fast-path.ts`) asks
+  `descendantsOfType` whether a file bears any of its walker's
+  `LanguageWalker.extractionBearingNodeTypes`; bearing none, the file is never
+  materialized. It sits in `infra/` because its two consumers cannot reach each
+  other — the codegraph provider
+  (`domains/trajectory/codegraph/symbols/provider.ts`) and the oracle harness
+  (`scripts/ts-codegraph-typechecker-oracle.ts`, whose walk the python oracle
+  imports) — and those two must stay in step, or a measured number is taken over
+  a different file set than production's. A language that declares no list is
+  walked as before, so the check costs nothing to opt out of. Why: netbox's
+  `extras/data/un_locode.py` is 111,557 lines and 0 chunks, and materializing it
+  to learn that cost 5.33 s of an 11.6 s pass 1 and roughly 800 MB of heap.
 - **Dispatch narrowing terminates FOUR ways** (`kernel/dispatch-narrowing.ts`):
   0 survivors → no edges; 1 → one `dynamic` edge at `confidence: 1.0`
   (evidence-unique, NOT type-proven); over the corpus-adaptive cap from
@@ -82,10 +126,14 @@
   (`typeRefReceiverForm` in `propagateReceiverType`, never per hop: collapsing a
   NILABLE intermediate mid-walk changes what the next hop dispatches on). A
   language supplies four ports — `singleHopType`, `seedHead`, `memberTypeOf`,
-  `maxHops` — and gets multi-hop typing. It supplies them as ONE FROZEN object
-  built once and reused, because the fold runs per call site and `ctx` is
-  threaded as an argument precisely so nothing is allocated there: Ruby's is a
-  module singleton (`RUBY_RECEIVER_TYPE_PORTS`), Python's is
+  `maxHops` — and gets multi-hop typing. A fifth, `splitReceiverHops`, is
+  OPTIONAL and defaults to that plain `split(".")`: only Python supplies the
+  bracket-aware scan (`splitAtBracketDepthZero`, the one depth-and-quote scanner
+  in the engine), because the same split newly types 34 unmeasured mastodon
+  receivers and Ruby's gate is parity, not inspection. It supplies them as ONE
+  FROZEN object built once and reused, because the fold runs per call site and
+  `ctx` is threaded as an argument precisely so nothing is allocated there:
+  Ruby's is a module singleton (`RUBY_RECEIVER_TYPE_PORTS`), Python's is
   `createPythonReceiverTypePorts`, a factory the resolver calls once so the
   ports close over its ONE `PythonImportFileMapper` instead of a private memo.
   What an `@ivar` is, what a capitalized head means, which env caps the hops —

@@ -42,6 +42,18 @@ export interface ReceiverTypePorts {
   memberTypeOf: (recv: TypeRef, member: string, ctx: CallContext) => TypeRef | undefined;
   /** Hop cap; a chain longer than this is untyped rather than half-walked. */
   maxHops: () => number;
+  /**
+   * How a receiver becomes HOPS. Defaults to a plain `split(".")`; a language
+   * whose receivers carry bracketed groups supplies {@link splitReceiverHops}
+   * instead (bd tea-rags-mcp-w205u, E4.6b-1).
+   *
+   * It is a PORT and not the fold's own rule because Ruby measured a real
+   * difference: `StatusFilter.new(quote.quoted_status, account).filter_state`
+   * is 34 mastodon sites the bracket-aware split newly types, and none of them
+   * is measured. Python opts in on 44 measured rows; Ruby keeps the split it
+   * shipped until a Ruby increment measures the change.
+   */
+  splitReceiverHops?: (receiver: string) => string[];
 }
 
 /** Default maximum chain hops when a language's env override is unset. */
@@ -51,6 +63,56 @@ export const CHAIN_MAX_HOPS_DEFAULT = 4;
 export function stripCallArgs(segment: string): string {
   const paren = segment.indexOf("(");
   return paren === -1 ? segment : segment.slice(0, paren);
+}
+
+/**
+ * Split `text` on `separator` at BRACKET DEPTH ZERO, outside quotes.
+ *
+ * The one scanner every depth-aware split in this engine shares: hops on `.`
+ * here, and a language's argument list on `,` through its own port. Unbalanced
+ * input — which a truncated call text produces — yields the whole string as one
+ * element rather than throwing or half-splitting, because a partial parse of a
+ * receiver is exactly the garbage this replaces.
+ */
+export function splitAtBracketDepthZero(text: string, separator: string): string[] {
+  const parts: string[] = [];
+  let depth = 0;
+  let quote: string | null = null;
+  let start = 0;
+  for (let i = 0; i < text.length; i++) {
+    const ch = text[i];
+    if (quote !== null) {
+      if (ch === "\\") i++;
+      else if (ch === quote) quote = null;
+      continue;
+    }
+    if (ch === "'" || ch === '"') quote = ch;
+    else if (ch === "(" || ch === "[" || ch === "{") depth++;
+    else if (ch === ")" || ch === "]" || ch === "}") depth--;
+    else if (ch === separator && depth === 0) {
+      parts.push(text.slice(start, i));
+      start = i + 1;
+    }
+  }
+  if (depth !== 0 || quote !== null) return [text];
+  parts.push(text.slice(start));
+  return parts;
+}
+
+/**
+ * Split a receiver into HOPS on `.` at bracket depth 0.
+ *
+ * `Notification(user=self.user)` is ONE hop, not three: the dots inside a
+ * call's arguments, a subscript or a literal belong to the argument, not to the
+ * chain (bd tea-rags-mcp-w205u, E4.6b-1). A bare `receiver.split(".")` shredded
+ * `datatable.Datatable[Benefit, S](…)` and `Cls(kw=self.x, …)` into segments
+ * that typed to nothing — 44 measured rows across polar, netbox and httpx.
+ *
+ * A receiver carrying no bracketed group splits exactly as `split(".")` does,
+ * which is what makes this safe for every language sharing the fold.
+ */
+export function splitReceiverHops(receiver: string): string[] {
+  return splitAtBracketDepthZero(receiver, ".");
 }
 
 /**
@@ -77,14 +139,21 @@ function receiverTypeRefOf(
   ctx: CallContext,
   ports: ReceiverTypePorts,
 ): TypeRef | undefined {
-  if (receiver.includes(".")) return propagateChain(receiver, atLine, ctx, ports);
+  const hops = (ports.splitReceiverHops ?? defaultReceiverHops)(receiver);
+  if (hops.length > 1) return propagateChain(hops, atLine, ctx, ports);
   return ports.singleHopType(receiver, atLine, ctx);
+}
+
+/** The hop split every language shipped before the port existed. */
+function defaultReceiverHops(receiver: string): string[] {
+  return receiver.split(".");
 }
 
 /**
  * Thread a dotted chain receiver through the fold.
  *
- * 1. Split into `[head, link1, link2, …]`.
+ * 1. `segments` arrives ALREADY split as `[head, link1, link2, …]` — the caller
+ *    owns the {@link splitReceiverHops} scan so it happens once per receiver.
  * 2. Seed: `seedHead` first (a head the language can type together with its
  *    first link), else recurse into the single-hop path for `head` alone.
  * 3. For each remaining link: `t = memberTypeOf(t, link)`. First `undefined`
@@ -92,12 +161,11 @@ function receiverTypeRefOf(
  * 4. A chain longer than `maxHops()` links is untyped.
  */
 function propagateChain(
-  receiver: string,
+  segments: readonly string[],
   atLine: number,
   ctx: CallContext,
   ports: ReceiverTypePorts,
 ): TypeRef | undefined {
-  const segments = receiver.split(".");
   const head = segments[0];
   if (!head) return undefined;
 

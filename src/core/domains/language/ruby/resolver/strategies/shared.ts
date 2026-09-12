@@ -20,6 +20,7 @@ import {
 } from "../../../../../contracts/types/codegraph.js";
 import { ZEITWERK_PREFIX } from "../../walker/walker.js";
 import { linearizeAncestors } from "../ancestor-linearization.js";
+import { lookupRubySymbolsByShortName } from "../short-name-lookup.js";
 import { resolveZeitwerkConstant } from "../zeitwerk.js";
 
 export interface ResolverConfig {
@@ -56,16 +57,13 @@ export const CONE_MAX_DEFAULT = 8;
 export const DYNAMIC_RECEIVER_CONFIDENCE_DEFAULT = 0.5;
 
 /**
- * Whether a symbol-table relPath is a Ruby file the resolver may attribute a
- * call edge to. The symbol table is language-agnostic (no `language` field on
- * `SymbolDefinition`), so a Ruby resolver gates on the file extension to avoid
- * attributing an edge to a vendored JS / Java / etc. definition (bug pl7k:
- * `agents.map(&:id)` → `d3.js#map`). Shared by the bare-call fallback and the
- * dynamic-receiver fan-out (both do cross-language short-name lookups).
+ * The language-filtered short-name lookup, re-exported so `strategies/shared.js`
+ * stays the one import path the strategies use. It is DEFINED one level up, in
+ * the leaf `../short-name-lookup.js`, because this file reaches
+ * `walker/walker.js` and the walker's inline type sources reach back into
+ * `resolver/type-propagation.ts` — see there for the cycle.
  */
-export function isRubyPath(relPath: string): boolean {
-  return relPath.endsWith(".rb") || relPath.endsWith(".rake") || relPath.endsWith(".gemspec");
-}
+export { isRubyPath, lookupRubySymbolsByShortName } from "../short-name-lookup.js";
 
 /**
  * True when a call receiver's OUTERMOST operation is an element reference
@@ -402,9 +400,9 @@ export function resolveInstanceMethodInClassChain(
 
   if (klassFile !== null) {
     const candidates = preferDeclaredOverSchemaColumn(
-      ctx.symbolTable
-        .lookupByShortName(member, { includeSchemaColumns: true })
-        .filter((def) => def.relPath === klassFile && def.symbolId !== excludeSymbolId),
+      lookupRubySymbolsByShortName(ctx, member, { includeSchemaColumns: true }).filter(
+        (def) => def.relPath === klassFile && def.symbolId !== excludeSymbolId,
+      ),
     );
     const target = pickSingleCandidate(candidates, mode);
     if (target) return { targetRelPath: target.relPath, targetSymbolId: target.symbolId };
@@ -470,7 +468,7 @@ export function resolveViaSuperclassChain(
     visited.add(klass);
     const file = resolveConstant(klass, ctx);
     if (file !== null) {
-      const candidates = ctx.symbolTable.lookupByShortName(member).filter((def) => def.relPath === file);
+      const candidates = lookupRubySymbolsByShortName(ctx, member).filter((def) => def.relPath === file);
       const target = pickSingleCandidate(candidates, mode);
       if (target) return { targetRelPath: target.relPath, targetSymbolId: target.symbolId };
     }
@@ -682,12 +680,10 @@ export function resolveSelfDispatchHookTarget(
 
 /** Whether a resolved hook target points at a walker-marked abstract stub. */
 function targetIsAbstractStub(target: SymbolResolutionTarget, hook: string, ctx: CallContext): boolean {
-  return ctx.symbolTable
-    .lookupByShortName(hook)
-    .some(
-      (def) =>
-        def.symbolId === target.targetSymbolId && def.relPath === target.targetRelPath && def.isAbstractStub === true,
-    );
+  return lookupRubySymbolsByShortName(ctx, hook).some(
+    (def) =>
+      def.symbolId === target.targetSymbolId && def.relPath === target.targetRelPath && def.isAbstractStub === true,
+  );
 }
 
 function resolveTypeMethodInternal(
@@ -723,7 +719,7 @@ function resolveTypeMethodInternal(
     // already narrowed to one class's file and scope, so a synthesized `name`
     // cannot widen anything (bd tea-rags-mcp-8l5fo).
     const candidates = preferDeclaredOverSchemaColumn(
-      ctx.symbolTable.lookupByShortName(member, { includeSchemaColumns: true }).filter((def) => {
+      lookupRubySymbolsByShortName(ctx, member, { includeSchemaColumns: true }).filter((def) => {
         if (def.relPath !== targetFile) return false;
         const tail = def.scope[def.scope.length - 1];
         if (tail !== typeName && tail !== bareType) return false;

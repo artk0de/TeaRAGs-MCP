@@ -84,6 +84,12 @@ export interface ExtractionWalkerParts {
   nameOf: LanguageWalker["nameOf"];
   /** Ordered extra facets. Empty for a language that has not pulled on one yet. */
   passes: readonly ExtractionFacetPass[];
+  /**
+   * `LanguageWalker.extractionBearingNodeTypes`, carried through to the composed
+   * walker. Absent for a language that makes no claim about which node types its
+   * extraction needs, which is how every consumer keeps walking its files.
+   */
+  extractionBearingNodeTypes?: readonly string[];
 }
 
 /**
@@ -92,7 +98,7 @@ export interface ExtractionWalkerParts {
  * `WalkContext` is even allocated — the zero-pass path costs nothing per file.
  */
 export function composeExtractionWalker(parts: ExtractionWalkerParts): LanguageWalker {
-  return {
+  const walker: LanguageWalker = {
     walk: (input) => {
       const native = parts.walk(input);
       if (parts.passes.length === 0) return native;
@@ -100,4 +106,11 @@ export function composeExtractionWalker(parts: ExtractionWalkerParts): LanguageW
     },
     nameOf: parts.nameOf,
   };
+  // Assigned only when the language declared one: an absent key and an explicit
+  // `undefined` read the same to `fileIsInertForExtraction`, but only the absent
+  // key leaves the walker the exact shape a language without a list had.
+  if (parts.extractionBearingNodeTypes !== undefined) {
+    return { ...walker, extractionBearingNodeTypes: parts.extractionBearingNodeTypes };
+  }
+  return walker;
 }

@@ -79,9 +79,11 @@ describe("pythonAnnotationTypeFacetPass — merged into the composed walker", ()
     // the monolith binds it again at the reassignment. `resolveLocalBindingType`
     // reads the greatest line <= the call, so the reassignment supersedes the
     // parameter annotation below line 10 — Python's actual semantics.
+    // The monolith's entry carries the statement span it establishes (bd
+    // tea-rags-mcp-w205u); the pass's parameter-annotation entry carries none.
     expect(chunkOf(extract(), "Service#run")?.localBindings?.["target"]).toEqual([
       { line: 9, type: "Repo" },
-      { line: 10, type: "Repo" },
+      { line: 10, type: "Repo", endLine: 10 },
     ]);
   });
 

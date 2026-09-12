@@ -41,6 +41,22 @@ export interface LocalBinding {
    * Absent for plain class/instance bindings (the string `type` is sufficient).
    */
   typeRef?: RubyTypeRef;
+  /**
+   * 1-based last line of the STATEMENT that establishes this binding — `line`
+   * for a single-line one, the closing line of a multi-line right-hand side
+   * otherwise (bd tea-rags-mcp-w205u, E4.6a).
+   *
+   * Python evaluates a right-hand side BEFORE it rebinds the name, so inside
+   * `line..endLine` the variable still denotes whatever it denoted above the
+   * statement. netbox's `layout = layout.Layout(\n    layout.Row(…))` is that
+   * shape: the inner receivers name the imported MODULE, not the class being
+   * constructed. Only a consumer that knows the extent can say so.
+   *
+   * ABSENT means "unknown, treat as `line`" — every index written before this
+   * field existed, and every binding that is not an establishing statement
+   * (a `def` parameter hint records none).
+   */
+  endLine?: number;
 }
 
 /**

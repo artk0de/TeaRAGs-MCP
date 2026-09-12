@@ -41,19 +41,21 @@
  * are left standing rather than tuned against.
  */
 import { CONTINUE, resolved } from "../../../../../contracts/resolution.js";
-import {
-  nearestCallResultBinding,
-  resolveLocalBindingType,
-  type CallContext,
-  type CallRef,
-} from "../../../../../contracts/types/codegraph.js";
+import { resolveLocalBindingType, type CallContext, type CallRef } from "../../../../../contracts/types/codegraph.js";
 import type { SymbolResolutionOutcome, SymbolResolutionStrategy } from "../../../../../contracts/types/language.js";
 import { conventionClassNameFor, type NamingConventionPorts } from "../../../kernel/naming-convention.js";
 import { PYTHON_STDLIB_MODULES } from "../../vocabulary/stdlib-modules.js";
 import type { PythonAncestorLinearizerCache } from "../python-ancestor-policy.js";
 import { PythonExternalVocabulary } from "../python-external-vocabulary.js";
 import { PythonImportFileMapper } from "../python-import-file-mapper.js";
-import { pythonBoundClassKey, resolvePythonInheritedMember, resolveTypeFile, type ResolverConfig } from "./shared.js";
+import {
+  lookupPythonSymbolsByShortName,
+  pythonBoundClassKey,
+  pythonBoundToForeignCall,
+  resolvePythonInheritedMember,
+  resolveTypeFile,
+  type ResolverConfig,
+} from "./shared.js";
 
 export class PythonNamingConventionSymbolResolutionStrategy implements SymbolResolutionStrategy {
   readonly name = "namingConvention";
@@ -82,7 +84,7 @@ export class PythonNamingConventionSymbolResolutionStrategy implements SymbolRes
     // back with nothing; when the callee's own head is a name the project does
     // not declare, that silence says the receiver's type is decided somewhere
     // the project cannot read — not that it is undecided.
-    if (this.boundToForeignCall(receiver, call.startLine, ctx)) return CONTINUE;
+    if (pythonBoundToForeignCall(receiver, call.startLine, ctx)) return CONTINUE;
 
     const className = conventionClassNameFor(receiver, ctx, this.ports());
     if (className === undefined) return CONTINUE;
@@ -99,32 +101,6 @@ export class PythonNamingConventionSymbolResolutionStrategy implements SymbolRes
   }
 
   /**
-   * Was `receiver` assigned, at or above this line, from a call whose CALLEE
-   * the project does not declare?
-   *
-   * The head is what carries the answer, and only the head: `User.objects.get`
-   * starts on a project class and its result is overwhelmingly an instance of
-   * it, while `authenticate(...)`, `get_object_or_404(...)` and `RQ_Job.fetch`
-   * start outside and their results are library values that happen to be spelled
-   * like a project model. Measured on the seam's own A/B: gating on the mere
-   * PRESENCE of a call binding removed 7 phantoms (netbox 5, ugnest 2) but cost
-   * 12 correct answers, eleven of them ugnest rows bound by `User.objects.get`.
-   * Gating on the head's origin removes the same 7 and costs one row, because
-   * that is the axis the two populations actually differ on.
-   *
-   * `self` / `cls` heads are the caller's own object and never foreign. The
-   * lookup is a symbol-table short-name probe, the same one the existence gate
-   * runs, so the pass adds no new scan to a site it was already going to weigh.
-   */
-  private boundToForeignCall(receiver: string, atLine: number, ctx: CallContext): boolean {
-    const binding = nearestCallResultBinding(ctx.callResultBindings, receiver, atLine);
-    if (binding === undefined) return false;
-    const head = binding.callee.split(".")[0] ?? "";
-    if (head === "self" || head === "cls" || head.length === 0) return false;
-    return ctx.symbolTable.lookupByShortName(head).length === 0;
-  }
-
-  /**
    * Python's port answers, bound to this strategy's descendant memo.
    *
    * `hasSubtypes` would otherwise scan a run-global record once per candidate —
@@ -136,7 +112,7 @@ export class PythonNamingConventionSymbolResolutionStrategy implements SymbolRes
   private ports(): NamingConventionPorts<CallContext> {
     return {
       camelize: pythonCamelize,
-      classExists: (className, ctx) => ctx.symbolTable.lookupByShortName(className).length === 1,
+      classExists: (className, ctx) => lookupPythonSymbolsByShortName(ctx, className).length === 1,
       hasSubtypes: (className, ctx) => this.declaredBases(ctx).has(className),
     };
   }

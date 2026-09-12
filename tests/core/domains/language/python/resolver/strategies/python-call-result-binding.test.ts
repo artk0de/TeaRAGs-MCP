@@ -233,7 +233,9 @@ describe("PythonLocalBindingSymbolResolutionStrategy — a local bound to a call
     const ctx = ctxWith({
       callerFile: "svc/use.py",
       table,
-      structuredReturnTypes: { build_client: { form: "instance", name: "Client" } },
+      // Keyed by the declaring FILE since E5.1c (bd tea-rags-mcp-1v12o.1.7);
+      // this pinned the bare `build_client` before.
+      structuredReturnTypes: { "app/make.py::build_client": { form: "instance", name: "Client" } },
       callResultBindings: { client: [{ line: 10, callee: "build_client" }] },
     });
     expect(localBinding().attempt(callOn("client", "send", 12), ctx)).toEqual({
@@ -252,7 +254,7 @@ describe("PythonLocalBindingSymbolResolutionStrategy — a local bound to a call
     const ctx = ctxWith({
       callerFile: "svc/use.py",
       table,
-      structuredReturnTypes: { build_client: { form: "instance", name: "Client" } },
+      structuredReturnTypes: { "app/one.py::build_client": { form: "instance", name: "Client" } },
       callResultBindings: { client: [{ line: 10, callee: "build_client" }] },
     });
     expect(localBinding().attempt(callOn("client", "send", 12), ctx)).toEqual({ kind: "continue" });

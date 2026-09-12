@@ -289,6 +289,37 @@ describe("pythonInheritedMemberType stays at the pre-seam reach when the run can
     ).toEqual({ form: "instance", name: "RestrictedQuerySet" });
   });
 
+  it("reads an ancestor's `-> Self` as the class the RECEIVER names (bd tea-rags-mcp-w205u)", () => {
+    // polar: `AccountRepository.from_session(s)` where `from_session` is a
+    // `@classmethod` on `RepositoryBase` annotated `-> Self`. The declaring
+    // class is the wrong answer — every member the chain then asks for lives on
+    // the subclass. 12 rows.
+    const repos = tableWith({
+      "app/account.py": [{ symbolId: "AccountRepository" }],
+      "app/base.py": [{ symbolId: "RepositoryBase" }],
+    });
+    const ctx = ctxWith({
+      callerFile: "app/account.py",
+      table: repos,
+      structuredReturnTypes: { "RepositoryBase.from_session": { form: "instance", name: "Self" } },
+      classFieldTypesByClassKey: {},
+    });
+
+    expect(
+      pythonInheritedMemberType(
+        "AccountRepository",
+        "from_session",
+        "class",
+        ctx,
+        new PythonImportFileMapper(),
+        fixedLinearizer(ctx, [
+          pythonClassKey("app/account.py", "AccountRepository"),
+          pythonClassKey("app/base.py", "RepositoryBase"),
+        ]),
+      ),
+    ).toEqual({ form: "instance", name: "AccountRepository" });
+  });
+
   it("steps over an ancestor entry that is not a class key and keeps walking", () => {
     const ctx = ctxWith({
       callerFile: "app/models.py",
