@@ -356,6 +356,7 @@ export class CallEdgeResolutionRunner {
       symbolTable,
       associationTypes: extraction.associationTypes,
       gemfileContent: this.runState.gemfileContent,
+      declaredDependencies: this.runState.declaredDependencies,
       projectRoot: this.runState.projectRoot,
     };
     const candidates = resolver.resolveFileEdges
@@ -494,6 +495,7 @@ export class CallEdgeResolutionRunner {
       callResultBindings: chunk.callResultBindings,
       compactDeclaredClasses: this.runState.compactClasses,
       gemfileContent: this.runState.gemfileContent,
+      declaredDependencies: this.runState.declaredDependencies,
       projectRoot: this.runState.projectRoot,
       // bd tea-rags-mcp-n0zj — run-global dispatch tables + callback
       // params drive the resolver's fan-out / inter-proc join.

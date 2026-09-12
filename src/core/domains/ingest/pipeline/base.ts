@@ -204,7 +204,7 @@ export abstract class BaseIndexingPipeline {
      */
     contentHashes?: ReadonlyMap<string, string>,
   ): ProcessingContext {
-    const chunkerPool = this.createChunkerPool(chunkSizeOverride, this.readGemfile(absolutePath));
+    const chunkerPool = this.createChunkerPool(chunkSizeOverride, this.readGemfile(absolutePath), absolutePath);
     const chunkPipeline = this.createChunkPipeline(collectionName);
     // "codegraph-init" stage (csyve) = enrichment beginRun: per-provider context
     // build + (cross-pass) codegraph beginExtractionRun spill reset + phase init.
@@ -334,7 +334,7 @@ export abstract class BaseIndexingPipeline {
 
   // ── Processing components (private) ────────────────────
 
-  private createChunkerPool(chunkSizeOverride?: number, gemfileContent?: string): ChunkerPool {
+  private createChunkerPool(chunkSizeOverride?: number, gemfileContent?: string, projectRoot?: string): ChunkerPool {
     const chunkSize = chunkSizeOverride ?? this.config.chunkSize;
     return new ChunkerPool(this.tuning.chunkerPoolSize, {
       chunkSize,
@@ -347,6 +347,10 @@ export abstract class BaseIndexingPipeline {
       // the walker running on the worker parse composes the catalogue for this
       // project's Gemfile. undefined → FULL catalogue.
       gemfileContent,
+      // The same question for the vocabularies gated on DECLARED DEPENDENCIES
+      // (bd tea-rags-mcp-w205u.1). The ROOT travels, not the parsed set: the walk
+      // needs the worker's own LanguageFactory to recognise a manifest.
+      projectRoot,
     });
   }
 

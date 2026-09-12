@@ -194,6 +194,7 @@ import { CODEGRAPH_LANGUAGES } from "../src/core/domains/trajectory/codegraph/sy
 import { classifyReceiverKind } from "../src/core/domains/trajectory/codegraph/symbols/receiver-kind.js";
 import { lastSegment } from "../src/core/domains/trajectory/codegraph/symbols/symbol-name.js";
 import { InMemoryGlobalSymbolTable } from "../src/core/domains/trajectory/codegraph/symbols/symbol-table.js";
+import { collectDependencyManifestSources, readDeclaredDependencies } from "../src/core/infra/dependency-manifests.js";
 import { fileIsInertForExtraction } from "../src/core/infra/extraction-fast-path.js";
 import { materializeTree } from "../src/core/infra/materialize.js";
 
@@ -1808,12 +1809,28 @@ export async function collectSourceFiles(
   return selection;
 }
 
+/**
+ * The corpus's declared dependencies, exactly as production reads them at run
+ * start (`CodegraphRunState.loadDeclaredDependencies`). Call it ONCE per corpus
+ * and hand the result to every {@link extractFile}: a harness that skipped it
+ * would walk with the FULL vocabulary while production walked with a gated one,
+ * and the number it reported would then be of a gate nothing ships.
+ * bd tea-rags-mcp-w205u.1.
+ */
+export function readCorpusDeclaredDependencies(
+  repoRoot: string,
+  factory: LanguageFactory,
+): ReadonlySet<string> | undefined {
+  return readDeclaredDependencies(repoRoot, collectDependencyManifestSources(factory));
+}
+
 /** Walker output for one file, or `null` when the file could not be parsed. */
 export function extractFile(
   repoRoot: string,
   relPath: RelPath,
   composer: DefaultSymbolIdComposer,
   factory: LanguageFactory,
+  declaredDependencies?: ReadonlySet<string>,
 ): FileExtraction | null {
   const config = CODEGRAPH_LANGUAGES[extensionOf(relPath)];
   if (!config) return null;
@@ -1839,7 +1856,7 @@ export function extractFile(
       config.disambiguateOverloads ?? false,
       composer,
     );
-    return walker.walk({ tree, code, relPath, language: config.language, chunks });
+    return walker.walk({ tree, code, relPath, language: config.language, chunks, declaredDependencies });
   } catch {
     return null;
   }
@@ -1939,8 +1956,10 @@ async function runOracle(repoRoot: string, targetDir: string, limit: number, qui
   const scored: FileExtraction[] = [];
   const classExtends: Record<string, string> = {};
 
+  const declaredDependencies = readCorpusDeclaredDependencies(repoRoot, factory);
+
   for (const relPath of selection.kept.slice(0, limit)) {
-    const extraction = extractFile(repoRoot, relPath, composer, factory);
+    const extraction = extractFile(repoRoot, relPath, composer, factory, declaredDependencies);
     if (extraction === null) {
       counters.parseFailures++;
       continue;

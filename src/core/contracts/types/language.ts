@@ -258,6 +258,8 @@ export interface WalkContext {
    * today (bd tea-rags-mcp-adx5p.1b); every other language ignores it.
    */
   gemfileContent?: string;
+  /** Mirrors {@link WalkInput.declaredDependencies}, copied by `toWalkContext`. */
+  declaredDependencies?: ReadonlySet<string>;
   dispatchTableNames?: ReadonlySet<string>;
 }
 
@@ -464,6 +466,20 @@ export interface WalkInput {
    * today (bd tea-rags-mcp-adx5p.1b).
    */
   gemfileContent?: string;
+  /**
+   * Every dependency the project DECLARES, normalized per language and unioned
+   * across every manifest found under the root, read once per run. A language
+   * gates a framework vocabulary on membership here, so grammar that only means
+   * something under a framework never loads for a project without it.
+   *
+   * `undefined` carries a different fact from an empty set and the two must not
+   * be conflated: undefined is "no manifest exists anywhere", where absence of
+   * evidence leaves every vocabulary ACTIVE (byte-identical to pre-gating, which
+   * is what keeps fixtures and un-packaged sources typed); an empty set is a
+   * manifest that declares nothing, which gates every conditional vocabulary off.
+   * Only the Python walker reads it today (bd tea-rags-mcp-w205u.1).
+   */
+  declaredDependencies?: ReadonlySet<string>;
 }
 
 /**
@@ -640,6 +656,31 @@ export interface LanguageProvider {
    * Absent → no pre-pass for this language. bd tea-rags-mcp-8l5fo.
    */
   schemaColumnAccessors?: SchemaColumnAccessorSource;
+  /**
+   * Optional dependency-manifest reader — which files declare this language's
+   * dependencies and how to read the names out of one. The run-start walk
+   * (`infra/dependency-manifests.ts`) finds the files and unions the answers into
+   * the run's `declaredDependencies`; the language never touches the filesystem,
+   * exactly as `schemaColumnAccessors` parses a snapshot the provider read.
+   * Absent → this language contributes nothing to the declared set.
+   * bd tea-rags-mcp-w205u.1.
+   */
+  dependencyManifest?: DependencyManifestSource;
+}
+
+/**
+ * How one language declares its dependencies. `matchesManifestFile` is asked per
+ * file BASENAME during the walk, so a language whose manifests are a suffixed
+ * family (`requirements*.txt`) answers for all of them; `parseDeclaredDependencies`
+ * turns one such file into the distribution names it declares, in the language's
+ * own canonical form (Python: PEP 503 normalized).
+ *
+ * Both halves must be total and silent: an unreadable or malformed manifest
+ * declares nothing rather than failing a run.
+ */
+export interface DependencyManifestSource {
+  readonly matchesManifestFile: (fileName: string) => boolean;
+  readonly parseDeclaredDependencies: (fileName: string, content: string) => readonly string[];
 }
 
 /**

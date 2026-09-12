@@ -465,6 +465,32 @@
 
 ### Invariants
 
+- **A framework-shaped facet is gated on the project's DECLARED dependencies,
+  and the gate is data on the vocabulary module.** `vocabulary/frameworks/`
+  holds one module per framework carrying `activatedBy` (PEP 503-normalized
+  distribution names, matched EXACTLY — `django-filter` is not `django`) and the
+  facets it switches on; `pythonVocabularyFor(input.declaredDependencies)`
+  composes the active set and the walker asks `hasFacet`. Today's only gated
+  facet is `classBodyManagerFactory` — the `objects = SomeQuerySet.as_manager()`
+  arm, where the name is evidence only because Django's own classmethod says so.
+  The BARE arm of the same pass (`objects = SomeManager()`, name declared or
+  import-bound) is NOT gated: it rests on project-class evidence with no
+  framework in it, and gating it was measured to cost polar — which declares no
+  Django and spells no `as_manager` — 8 real edges. Gate what the framework
+  OWNS, not the pass that happens to serve it. Absent manifest (`undefined`) is
+  NOT an empty set: no manifest anywhere leaves every vocabulary ACTIVE (Ruby's
+  "no Gemfile → full catalogue" rule), while a manifest declaring nothing gates
+  every conditional one off — conflating the two would silently untype every
+  fixture, spike and un-packaged corpus. The set is built once per run by
+  `infra/dependency-manifests.ts`, which walks every `pyproject.toml` /
+  `requirements*.txt` under the root outside the vendored dirs and unions what
+  `manifest.ts` parses out of them; `domains/language` contributes the
+  recognizing and the parsing and touches no filesystem. Both production seams
+  thread it — `CodegraphRunState.loadDeclaredDependencies` for the codegraph
+  pass, the chunker worker's `buildChunker` for the cross-pass one — and so must
+  every harness: `extractFile` takes it as its fifth argument and
+  `readCorpusDeclaredDependencies` is what fills it, because a tally walked
+  ungated is a measurement of a gate nothing ships.
 - **A new Python extraction facet is a new pass, never an edit to
   `extractFromPythonFile`.** `walker/passes.ts` lists them; `walker/passes/`
   holds them. The two paths coexist deliberately — do not collapse one into the
