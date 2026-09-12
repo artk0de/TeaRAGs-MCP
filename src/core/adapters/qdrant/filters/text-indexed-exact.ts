@@ -50,15 +50,33 @@ type TextIndexedTokenCondition = { key: TextIndexedKey; match: { text: string } 
 /** The exact half: unserved on its own, checked on the text half's candidates. */
 type TextIndexedValueCondition = { key: TextIndexedKey; match: { value: string } };
 
-/** The pair, in planner order — text first, so the scan never happens. */
-export type TextIndexedExactMatch = [TextIndexedTokenCondition, TextIndexedValueCondition];
+/**
+ * The conditions that match one value exactly: the pair in planner order — text
+ * first, so the scan never happens — or the `value` condition ALONE when the
+ * token would store nothing (see {@link exactMatchOnTextIndexed}).
+ */
+export type TextIndexedExactMatch =
+  | [TextIndexedTokenCondition, TextIndexedValueCondition]
+  | [TextIndexedValueCondition];
 
-/** Set membership as an OR of exact pairs; `must` clauses are the branches. */
+/** Set membership as an OR of exact matches; `must` clauses are the branches. */
 export type TextIndexedAnyOf = { should: { must: TextIndexedExactMatch }[] };
 
 /**
- * The two conditions that match `key` EXACTLY against `value`, to be spread
- * into a `must`.
+ * Does this token survive the `word` tokenizer?
+ *
+ * The tokenizer keeps runs of alphanumerics and drops everything else, so a
+ * query made only of punctuation produces ZERO tokens — and a zero-token
+ * `match: { text }` matches no point at all. Unicode-aware, because the
+ * tokenizer is: a Cyrillic or CJK identifier tokenizes like any other.
+ */
+function hasStorableToken(token: string): boolean {
+  return /[\p{L}\p{N}]/u.test(token);
+}
+
+/**
+ * The conditions that match `key` EXACTLY against `value`, to be spread into a
+ * `must`.
  *
  * `textToken` defaults to the value, which is right for a `relativePath`: the
  * `word` tokenizer splits a path on `/`, `.` and `-`, so the whole path as a
@@ -69,15 +87,26 @@ export type TextIndexedAnyOf = { should: { must: TextIndexedExactMatch }[] };
  * tokens joined by AND, and under some live index states that join returns
  * nothing at all for a row that is present — which is why the symbol strategy
  * reduces the query to the LAST name segment (see
- * `domains/explore/strategies/symbol.ts` and `infra/symbolid/text-token.ts`).
+ * `domains/explore/strategies/symbol.ts` and `./symbolid-text-token.ts`).
  * Pass that token here; the `value` condition still decides exactness, so a
  * loose token costs candidates, never correctness.
+ *
+ * **A token with nothing storable in it drops the text half entirely.** An
+ * OPERATOR-named symbol is the real case: `Foo#==` and `Foo#!` reduce to the
+ * empty string (`symbolIdTextToken` strips the `=`/`?`/`!` suffixes Ruby
+ * setters carry), and `<=>`, `[]`, `<<`, `-@` are pure punctuation. Pairing a
+ * zero-token text condition would turn "exact" into "nothing": on a Ruby corpus
+ * `trace_path` would silently drop every operator-named step it asked to
+ * hydrate. The lone `value` condition costs a scan, which is the price of a
+ * symbol the index cannot describe — and correctness is not negotiable against
+ * it.
  */
 export function exactMatchOnTextIndexed(
   key: TextIndexedKey,
   value: string,
   textToken: string = value,
 ): TextIndexedExactMatch {
+  if (!hasStorableToken(textToken)) return [{ key, match: { value } }];
   return [
     { key, match: { text: textToken } },
     { key, match: { value } },
@@ -93,12 +122,26 @@ export function exactMatchOnTextIndexed(
  * Twenty pairs measured 27 ms against 706 ms for the equivalent MatchAny.
  *
  * `tokenOf` derives each branch's text token; omit it where the value is its
- * own token (paths).
+ * own token (paths). The shape is decided per VALUE, so one operator-named
+ * symbol in a set does not cost the other branches their text condition.
+ *
+ * An EMPTY value set throws. `{ should: [] }` does not mean "match nothing" to
+ * Qdrant — it means "no condition", i.e. match everything, and this filter is
+ * handed to delete-by-filter. Every caller already returns early on an empty
+ * set, so the throw only ever reports a caller bug; plain `Error` for that
+ * reason (`.claude/rules/typed-errors.md` rule 5).
  */
 export function anyOfOnTextIndexed(
   key: TextIndexedKey,
   values: readonly string[],
   tokenOf?: (value: string) => string,
 ): TextIndexedAnyOf {
+  if (values.length === 0) {
+    throw new Error(
+      `anyOfOnTextIndexed("${key}", []): an empty value set compiles to a filter with no condition, ` +
+        "which Qdrant matches against every point. Return early instead of asking for a membership filter " +
+        "over nothing.",
+    );
+  }
   return { should: values.map((value) => ({ must: exactMatchOnTextIndexed(key, value, tokenOf?.(value)) })) };
 }

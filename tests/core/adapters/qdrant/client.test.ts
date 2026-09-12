@@ -1888,6 +1888,37 @@ describe("QdrantManager", () => {
         },
       });
     });
+
+    /**
+     * The same bound the scroll path carries, for the same reason: one branch
+     * per path means an unbounded `should`, and ~1000 branches is what returned
+     * 500s from embedded Qdrant under concurrent load (bd tea-rags-mcp-ivp12).
+     * This is the L1 fallback, reached exactly when the collection is already
+     * unhappy, so it is the worst place to send the request that tips it over.
+     *
+     * One delete per group, and the groups must partition the path set — a path
+     * missing from every group is a file whose chunks survive the delete.
+     */
+    it("partitions a path set larger than one group across deletes", async () => {
+      mockClient.delete.mockResolvedValue({});
+
+      const paths = Array.from({ length: 450 }, (_, i) => `file${i}.ts`);
+      await manager.deletePointsByPaths("test-collection", paths);
+
+      expect(mockClient.delete).toHaveBeenCalledTimes(3); // ceil(450 / 200)
+
+      const groups = mockClient.delete.mock.calls.map((call: unknown[]) =>
+        (call[1] as { filter: { should: { must: { match: { value?: string } }[] }[] } }).filter.should.map(
+          (branch) => branch.must.find((c) => c.match.value !== undefined)?.match.value,
+        ),
+      );
+
+      expect(groups.map((g) => g.length)).toEqual([200, 200, 50]);
+      expect(groups.flat()).toEqual(paths);
+      // Every group is its own barrier: the delete is the operation, not a
+      // phase of one, so none of them may return before Qdrant applied it.
+      for (const call of mockClient.delete.mock.calls) expect((call[1] as { wait: boolean }).wait).toBe(true);
+    });
   });
 
   describe("deletePointsByPathsBatched", () => {
@@ -1933,7 +1964,8 @@ describe("QdrantManager", () => {
         concurrency: 1,
       });
 
-      // scroll called exactly once with filter + metadata-only projection
+      // one scroll per group of ≤200 paths, with filter + metadata-only
+      // projection — three paths is one group
       expect(mockClient.scroll).toHaveBeenCalledTimes(1);
       const scrollArgs = mockClient.scroll.mock.calls[0][1];
       expect(scrollArgs.with_payload).toBe(false);
@@ -2017,8 +2049,8 @@ describe("QdrantManager", () => {
       expect(result.batchCount).toBe(0);
     });
 
-    it("scrolls once for all paths regardless of count", async () => {
-      // Phase 1 is a single serial scroll pass over MatchAny(all paths) — no
+    it("scrolls once per group of up to 200 paths, never per path", async () => {
+      // Phase 1 is a serial scroll pass, one per group of ≤200 paths — no
       // per-path-batch chunking. Reads are cheap; interleaving them with
       // writes is what saturated embedded Qdrant.
       mockScrollReturning(["id-a", "id-b"]);
@@ -2031,8 +2063,9 @@ describe("QdrantManager", () => {
       });
 
       expect(mockClient.scroll).toHaveBeenCalledTimes(1);
-      // Filter carries every path, in ONE scroll — the shape of the membership
-      // condition changed (bd tea-rags-mcp-ivp12), the single-read claim did not.
+      // 25 paths is one group, so the filter still carries every path in one
+      // scroll — the shape of the membership condition changed
+      // (bd tea-rags-mcp-ivp12), the one-read-per-group claim did not.
       expect(mockClient.scroll.mock.calls[0][1].filter).toEqual({
         should: paths.map((path) => ({
           must: [
@@ -2041,6 +2074,40 @@ describe("QdrantManager", () => {
           ],
         })),
       });
+    });
+
+    /**
+     * The grouping exists because the membership condition is now an OR with one
+     * branch per path, where MatchAny was one condition for the whole set: an
+     * unbounded `should` is what returned 500 Internal Server Error from
+     * embedded Qdrant under concurrent load at ~1000 branches
+     * (bd tea-rags-mcp-ivp12). 200 branches is 400 conditions, well inside that.
+     *
+     * What must hold is a partition: every path asked for appears in exactly one
+     * group, and no group is oversized — a path silently dropped here is a file
+     * whose chunks are never deleted, which surfaces later as duplicate search
+     * hits rather than as an error.
+     */
+    it("partitions a path set larger than one group across scrolls", async () => {
+      mockScrollReturning(["id-a"]);
+      mockClient.delete.mockResolvedValue({});
+
+      const paths = Array.from({ length: 450 }, (_, i) => `file${i}.ts`);
+      await manager.deletePointsByPathsBatched("test-collection", paths, {
+        batchSize: 500,
+        concurrency: 1,
+      });
+
+      expect(mockClient.scroll).toHaveBeenCalledTimes(3); // ceil(450 / 200)
+
+      const groups = mockClient.scroll.mock.calls.map((call: unknown[]) =>
+        ((call[1] as { filter: { should: { must: { match: { value?: string } }[] }[] } }).filter.should ?? []).map(
+          (branch) => branch.must.find((c) => c.match.value !== undefined)?.match.value,
+        ),
+      );
+
+      expect(groups.map((g) => g.length)).toEqual([200, 200, 50]);
+      expect(groups.flat()).toEqual(paths); // every path, once, in order
     });
 
     it("parallelizes delete-by-IDs calls under concurrency limit", async () => {

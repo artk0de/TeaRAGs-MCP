@@ -157,4 +157,33 @@ describe("QdrantManager.scrollBySymbolIds", () => {
     expect(chunks).toEqual([]);
     expect(mockScroll).not.toHaveBeenCalled();
   });
+
+  /**
+   * An operator-named method has no text token: `symbolIdTextToken` reduces
+   * `Comparable#==` to the empty string (the `=` suffixes are stripped) and
+   * `Vec#<=>` to pure punctuation, and the `word` tokenizer stores neither. A
+   * zero-token `match: { text }` matches nothing, so pairing it would make
+   * trace_path silently drop those steps on a Ruby corpus — every hydration of
+   * an operator method would come back empty and the path would render without
+   * it. The branch therefore carries the exact `value` condition alone: a scan,
+   * but the right answer.
+   */
+  it("carries the value condition alone for an operator-named symbol", async () => {
+    mockScroll.mockResolvedValue({ points: [], next_page_offset: null });
+
+    await manager.scrollBySymbolIds("test_collection", ["Comparable#==", "Vec#<=>", "Money#cents"]);
+
+    expect(mockScroll.mock.calls[0][1].filter).toEqual({
+      should: [
+        { must: [{ key: "symbolId", match: { value: "Comparable#==" } }] },
+        { must: [{ key: "symbolId", match: { value: "Vec#<=>" } }] },
+        {
+          must: [
+            { key: "symbolId", match: { text: "cents" } },
+            { key: "symbolId", match: { value: "Money#cents" } },
+          ],
+        },
+      ],
+    });
+  });
 });

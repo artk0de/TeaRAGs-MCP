@@ -108,6 +108,17 @@ const PER_FILE_SCROLL_MS = 2;
  */
 const HEAL_PER_FILE_SCROLL_LIMIT = 10_000;
 
+/**
+ * Points per page inside one per-file scroll.
+ *
+ * `scrollFiltered` defaults to `min(limit, 200)`, which would turn a
+ * 1,000-chunk file into five round trips and blow the ~2 ms-per-file cost model
+ * the mode decision is built on. One file's points are wanted whole and thrown
+ * away immediately after, so there is nothing to stream: page at the cap and
+ * take one round trip.
+ */
+const HEAL_PER_FILE_PAGE_SIZE = HEAL_PER_FILE_SCROLL_LIMIT;
+
 export interface CodegraphPayloadHealerDeps {
   qdrant: {
     scrollPayloadPages: (
@@ -247,7 +258,7 @@ export class CodegraphPayloadHealer {
         collectionName,
         { must: exactMatchOnTextIndexed("relativePath", relPath) },
         HEAL_PER_FILE_SCROLL_LIMIT,
-        undefined,
+        HEAL_PER_FILE_PAGE_SIZE,
         this.payloadInclude,
       );
       // Same grouping and the same flush: a file the filter already narrowed to

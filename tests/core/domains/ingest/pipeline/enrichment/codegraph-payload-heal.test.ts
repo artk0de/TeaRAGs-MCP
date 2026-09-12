@@ -29,7 +29,12 @@ class PagedQdrantStub {
   collectionPoints: number | undefined;
   countPointsCalls = 0;
   /** One entry per per-file scroll, in call order. */
-  readonly scrollFilteredCalls: { filter: Record<string, unknown>; payloadInclude?: string[] }[] = [];
+  readonly scrollFilteredCalls: {
+    filter: Record<string, unknown>;
+    limit: number;
+    pageSize?: number;
+    payloadInclude?: string[];
+  }[] = [];
 
   constructor(
     private readonly points: StoredPoint[],
@@ -61,11 +66,11 @@ class PagedQdrantStub {
   async scrollFiltered(
     _collectionName: string,
     filter: Record<string, unknown>,
-    _limit: number,
-    _pageSize?: number,
+    limit: number,
+    pageSize?: number,
     payloadInclude?: string[],
   ): Promise<{ id: string | number; payload: Record<string, unknown> }[]> {
-    this.scrollFilteredCalls.push({ filter, payloadInclude });
+    this.scrollFilteredCalls.push({ filter, limit, pageSize, payloadInclude });
     const must = filter.must as { key?: string; match?: { value?: unknown } }[] | undefined;
     const path = must?.find((c) => c.match?.value !== undefined)?.match?.value;
     return this.points.filter((p) => p.payload.relativePath === path).map((p) => ({ id: p.id, payload: p.payload }));
@@ -653,6 +658,22 @@ describe("CodegraphPayloadHealer read-shape decision", () => {
       `${PROVIDER_KEY}.file.skippedAs`,
       `${PROVIDER_KEY}.chunk.skippedAs`,
     ]);
+  });
+
+  // The cost model says ~2 ms per FILE, not per page of a file. `scrollFiltered`
+  // defaults its page size to min(limit, 200), which would make a 1,000-chunk
+  // file five round trips and quietly invalidate the comparison the mode
+  // decision is built on. One file's points are wanted whole and dropped right
+  // after, so there is nothing to stream.
+  it("asks for one file in one round trip, not in pages of 200", async () => {
+    const stub = new PagedQdrantStub(threeFiles());
+    stub.collectionPoints = 1000;
+
+    await makeHealer(stub).heal("coll", threeFileDrift, new Set());
+
+    for (const call of stub.scrollFilteredCalls) {
+      expect(call.pageSize).toBe(call.limit);
+    }
   });
 
   // Same reason the full pass throws: the runner advances the baseline once
