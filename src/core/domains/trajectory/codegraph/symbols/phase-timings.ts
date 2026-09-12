@@ -122,6 +122,20 @@ export class CodegraphPhaseTimings {
     langTotal.count += count;
   }
 
+  /**
+   * The clock this accumulator attributes time with.
+   *
+   * Exposed so a collaborator that measures a duration it will RECORD here
+   * reads the same clock the accumulator's own `elapsedMs` reads — one run's
+   * phase totals and its elapsed wall clock cannot come from two different
+   * clocks. It is also the seam that makes such a measurement testable
+   * without faking timers: inject a manual clock and the recorded ms become
+   * arithmetic instead of a wall-clock sample (bd tea-rags-mcp-lffhl).
+   */
+  nowMs(): number {
+    return this.now();
+  }
+
   /** Units recorded for `phase` — what the periodic progress lines cadence on. */
   count(phase: CodegraphPhase): number {
     return this.totals.get(phase)?.count ?? 0;

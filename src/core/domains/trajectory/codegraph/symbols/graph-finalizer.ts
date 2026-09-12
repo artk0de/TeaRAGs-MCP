@@ -193,16 +193,21 @@ export class GraphBuildFinalizer {
      * waited on. `flush` telemetry used to span the whole write; now the
      * overlapped portion is invisible to it by design — the gap between the
      * ms recorded here and the write's real duration IS the saving.
+     *
+     * Measured on the accumulator's own clock rather than `Date.now`, so the
+     * duration and the `elapsedMs` it is compared against always come from one
+     * clock — and so a test can inject a manual one and assert the awaited
+     * portion exactly instead of sampling wall clock (bd tea-rags-mcp-lffhl).
      */
     const settleFlush = async (): Promise<void> => {
       const open = inFlightFlush;
       if (!open) return;
       inFlightFlush = null;
-      const startedAtMs = Date.now();
+      const startedAtMs = this.timings.nowMs();
       try {
         await open;
       } finally {
-        this.timings.record("flush", Date.now() - startedAtMs);
+        this.timings.record("flush", this.timings.nowMs() - startedAtMs);
       }
     };
     const dispatchFlush = async (): Promise<void> => {
