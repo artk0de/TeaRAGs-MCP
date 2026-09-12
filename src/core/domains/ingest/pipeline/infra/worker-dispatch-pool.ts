@@ -26,7 +26,8 @@ interface Pending<Res> {
 }
 
 interface PoolThread<Req, Res> {
-  handle: WorkerHandle<Req, Res>;
+  /** `null` until the slot's first dispatch under `spawnOnDemand`. */
+  handle: WorkerHandle<Req, Res> | null;
   busy: boolean;
   pending: Pending<Res> | null;
   index: number;
@@ -73,6 +74,15 @@ export class WorkerDispatchPool<Req, Res> {
    *                   (codegraph streaming SCC + PageRank) can legitimately run for
    *                   minutes. Defaults to the generous finite bound in
    *                   `defaultWorkerDispatchTimeoutMs` (env `CHUNKER_WORKER_TIMEOUT_MS`).
+   * @param spawnOnDemand When true a slot's worker is created by its FIRST
+   *                   dispatch instead of at construction, so a run that never
+   *                   reaches a slot never pays for its isolate. Off by default:
+   *                   the chunker dispatches to every slot within the first
+   *                   handful of files, and warming those during pipeline setup
+   *                   overlaps the fork with the scan. The enrichment pool opts
+   *                   in — on a small corpus its extra threads stay idle for the
+   *                   whole run and cost 115-245 MB (ugnest, bd
+   *                   tea-rags-mcp-1v12o.2).
    */
   constructor(
     private readonly poolSize: number,
@@ -80,35 +90,42 @@ export class WorkerDispatchPool<Req, Res> {
     private readonly init: unknown,
     private readonly name = "WorkerDispatchPool",
     private readonly dispatchTimeoutMs = defaultWorkerDispatchTimeoutMs(),
+    private readonly spawnOnDemand = false,
   ) {
     this.initThreads();
   }
 
   private initThreads(): void {
     for (let i = 0; i < this.poolSize; i++) {
-      const pt: PoolThread<Req, Res> = {
-        handle: this.transport.spawn(this.init),
-        busy: false,
-        pending: null,
-        index: i,
-        timer: null,
-      };
-      this.bindHandle(pt);
+      const pt: PoolThread<Req, Res> = { handle: null, busy: false, pending: null, index: i, timer: null };
+      if (!this.spawnOnDemand) this.spawnInto(pt);
       this.threads.push(pt);
     }
     if (isDebug()) {
-      console.error(`[WorkerDispatchPool:${this.name}] Initialized ${this.poolSize} workers`);
+      const how = this.spawnOnDemand ? "slots (workers on demand)" : "workers";
+      console.error(`[WorkerDispatchPool:${this.name}] Initialized ${this.poolSize} ${how}`);
     }
   }
 
   /**
-   * Wire the message/error listeners for a thread's CURRENT handle. Factored out
-   * of `initThreads` so `recycleWorker` can re-bind a freshly spawned replacement
-   * handle onto the same pool slot after a liveness-timeout kill — keeping the
-   * worker lifecycle in ONE place rather than a parallel re-spawn path.
+   * Spawn a worker onto `pt` and bind its listeners. The ONE place a handle
+   * comes into existence — construction, first dispatch and recycle all go
+   * through it, so the worker lifecycle never forks into parallel paths.
    */
-  private bindHandle(pt: PoolThread<Req, Res>): void {
-    pt.handle.onMessage((message) => {
+  private spawnInto(pt: PoolThread<Req, Res>): WorkerHandle<Req, Res> {
+    const handle = this.transport.spawn(this.init);
+    pt.handle = handle;
+    this.bindHandle(pt, handle);
+    return handle;
+  }
+
+  /**
+   * Wire the message/error listeners for the handle just spawned onto `pt`. The
+   * handle is passed rather than read back off the slot so a replacement bound
+   * after a liveness-timeout kill cannot race with the slot's own field.
+   */
+  private bindHandle(pt: PoolThread<Req, Res>, handle: WorkerHandle<Req, Res>): void {
+    handle.onMessage((message) => {
       const { pending } = pt;
       pt.busy = false;
       pt.pending = null;
@@ -123,7 +140,7 @@ export class WorkerDispatchPool<Req, Res> {
       this.processQueue();
     });
 
-    pt.handle.onError((error) => {
+    handle.onError((error) => {
       const { pending } = pt;
       this.clearTimer(pt); // error completion — no leaked timer
       // A transport `error` is TERMINAL for that worker: a worker_thread that
@@ -236,12 +253,18 @@ export class WorkerDispatchPool<Req, Res> {
             // Cancel any in-flight liveness timer first — otherwise it could fire
             // after shutdown and recycle a worker into an already-torn-down pool.
             this.clearTimer(pt);
-            const timer = setTimeout(() => void pt.handle.terminate().then(resolve), 2000);
-            pt.handle.onExit(() => {
+            const { handle } = pt;
+            // A slot whose worker was never spawned has nothing to wind down.
+            if (!handle) {
+              resolve();
+              return;
+            }
+            const timer = setTimeout(() => void handle.terminate().then(resolve), 2000);
+            handle.onExit(() => {
               clearTimeout(timer);
               resolve();
             });
-            pt.handle.shutdown();
+            handle.shutdown();
           }),
       ),
     );
@@ -273,7 +296,10 @@ export class WorkerDispatchPool<Req, Res> {
     // worker, never enqueue-to-worker (a long queue wait is back-pressure, not a
     // hang).
     this.armTimer(pt, request);
-    pt.handle.post(request);
+    // Under `spawnOnDemand` this is where the slot's isolate is born. A spawn
+    // failure therefore surfaces as this dispatch's rejection rather than a
+    // construction-time throw.
+    (pt.handle ?? this.spawnInto(pt)).post(request);
   }
 
   /**
@@ -316,9 +342,10 @@ export class WorkerDispatchPool<Req, Res> {
     const dead = pt.handle;
     pt.busy = false;
     pt.pending = null;
-    void Promise.resolve(dead.terminate()).catch(() => undefined);
-    pt.handle = this.transport.spawn(this.init);
-    this.bindHandle(pt);
+    if (dead) void Promise.resolve(dead.terminate()).catch(() => undefined);
+    // Replaced eagerly even under `spawnOnDemand`: a recycled slot is one that
+    // was already carrying work, so its capacity is wanted back now.
+    this.spawnInto(pt);
   }
 
   /**
