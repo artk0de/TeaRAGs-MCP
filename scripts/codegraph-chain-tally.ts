@@ -106,6 +106,7 @@ import {
   buildSymbolDefs,
   collectSourceFiles,
   extractFile,
+  readCorpusDeclaredDependencies,
 } from "./ts-codegraph-typechecker-oracle.js";
 
 // ---------------------------------------------------------------------------
@@ -529,9 +530,11 @@ function buildCallContext(
   channels: RunGlobalTypeChannels,
   hierarchy: HierarchyView,
   ruby: RubyRunGlobalChannels | null = null,
+  declaredDependencies: ReadonlySet<string> | undefined = undefined,
 ): CallContext {
   return {
     hierarchy,
+    declaredDependencies,
     instantiatedTypes: channels.instantiatedTypes,
     callerFile: extraction.relPath,
     callerScope: chunk.scope,
@@ -683,8 +686,13 @@ export async function run(
     SYMBOL_TABLE_EXTENSIONS,
   );
 
+  // Read ONCE per corpus, exactly where production reads it (run start), and
+  // threaded into every walk AND every call context below — the tally must be
+  // taken with production's gate, not with an ungated walker (w205u.1).
+  const declaredDependencies = readCorpusDeclaredDependencies(root, factory);
+
   for (const relPath of selection.kept.slice(0, limit)) {
-    const extraction = extractFile(root, relPath, composer, factory);
+    const extraction = extractFile(root, relPath, composer, factory, declaredDependencies);
     if (extraction === null) {
       parseFailures++;
       continue;
@@ -719,7 +727,15 @@ export async function run(
 
   for (const extraction of scored) {
     for (const chunk of extraction.chunks) {
-      const ctx = buildCallContext(extraction, chunk, symbolTable, channels, hierarchy, rubyChannels);
+      const ctx = buildCallContext(
+        extraction,
+        chunk,
+        symbolTable,
+        channels,
+        hierarchy,
+        rubyChannels,
+        declaredDependencies,
+      );
       for (const call of chunk.calls ?? []) {
         if (call.dispatch !== undefined) {
           dispatchSkipped++;
