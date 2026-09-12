@@ -341,3 +341,127 @@ describe("pythonMemberTypeOf — `-> Self` is the RECEIVER's class", () => {
     ).toEqual({ form: "instance", name: "RepositoryBase" });
   });
 });
+
+/**
+ * The `self` seed, read from the enclosing CLASS rather than from the last
+ * segment of `callerScope` (bd tea-rags-mcp-6pd5l).
+ *
+ * `callerScope` is not a list of class containers — `collectSymbols` pushes
+ * every `nameOf`-named node onto it and `pyNameOf` names a
+ * `function_definition` too, which is the defect `pythonEnclosingClass` was
+ * built for (bd tea-rags-mcp-graiw). Every other consumer of the scope routes
+ * through it; this port read the trailing segment raw and so mis-seeded three
+ * shapes:
+ *
+ *   - flask, a call inside `App#template_filter#decorator` — the scope ends on
+ *     the METHOD, and `self` is the `App` the closure captured.
+ *   - polar `server/polar/auth/dependencies.py` — `_AuthenticatorSignature` is
+ *     declared inside `def Authenticator()`, so the class the run keys is
+ *     `Authenticator._AuthenticatorSignature`, and the trailing name alone
+ *     addresses nothing in `structuredReturnTypes`.
+ *   - a class nested in a class — the same spelling rule, and a namesake at
+ *     module level makes the short name actively wrong rather than narrow.
+ */
+
+/** A symbol table def whose `scope` + `shortName` spell `symbolId`, as the walk does. */
+const scoped = (symbolId: string, scope: string[]) => ({
+  symbolId,
+  fqName: symbolId,
+  shortName: symbolId.split(/[#.]/).pop() ?? symbolId,
+  scope,
+});
+
+function scopedTable(files: Record<string, ReturnType<typeof scoped>[]>): InMemoryGlobalSymbolTable {
+  const built = new InMemoryGlobalSymbolTable();
+  for (const [relPath, defs] of Object.entries(files)) {
+    built.upsertFile(
+      relPath,
+      defs.map((def) => ({ ...def, relPath })),
+    );
+  }
+  return built;
+}
+
+function scopedCtx(over: Partial<CallContext> & Pick<CallContext, "symbolTable" | "callerScope">): CallContext {
+  return { callerFile: "app.py", imports: [], ...over };
+}
+
+describe("pythonSingleHopType — `self` is the enclosing CLASS, not the trailing scope segment", () => {
+  it("keeps the ordinary top-level class exactly as it was", () => {
+    const symbolTable = scopedTable({ "app.py": [scoped("Svc", []), scoped("Svc#run", ["Svc"])] });
+    expect(ports().singleHopType("self", 12, scopedCtx({ symbolTable, callerScope: ["Svc"] }))).toEqual({
+      form: "instance",
+      name: "Svc",
+    });
+  });
+
+  it("seeds the enclosing class when the call sits in a NESTED def (flask)", () => {
+    const symbolTable = scopedTable({ "app.py": [scoped("App", []), scoped("App#template_filter", ["App"])] });
+    const ctx = scopedCtx({
+      symbolTable,
+      callerScope: ["App", "template_filter"],
+      classFieldTypes: { App: { service: "SomeService" } },
+    });
+    const seed = ports().singleHopType("self", 12, ctx);
+    expect(seed).toEqual({ form: "instance", name: "App" });
+    // The consequence, not a restatement: `template_filter` types no field, so
+    // the fold died on hop one and `self.service.process()` reached the
+    // short-name passes untyped.
+    expect(seed === undefined ? undefined : ports().memberTypeOf(seed, "service", ctx)).toEqual({
+      form: "instance",
+      name: "SomeService",
+    });
+  });
+
+  it("keeps the enclosing def in the FQ for a class declared inside one (polar)", () => {
+    const symbolTable = scopedTable({
+      "deps.py": [
+        scoped("Authenticator", []),
+        scoped("Authenticator._AuthenticatorSignature", ["Authenticator"]),
+        scoped("Authenticator._AuthenticatorSignature#__call__", ["Authenticator", "_AuthenticatorSignature"]),
+      ],
+    });
+    const ctx = scopedCtx({
+      symbolTable,
+      callerFile: "deps.py",
+      callerScope: ["Authenticator", "_AuthenticatorSignature"],
+    });
+    expect(ports().singleHopType("self", 207, ctx)).toEqual({
+      form: "instance",
+      name: "Authenticator._AuthenticatorSignature",
+    });
+  });
+
+  it("seeds a nested class by the SYMBOL-TABLE spelling, which is what keys its returns", () => {
+    const symbolTable = scopedTable({ "app.py": [scoped("Outer", []), scoped("Outer.Inner", ["Outer"])] });
+    const ctx = scopedCtx({
+      symbolTable,
+      callerScope: ["Outer", "Inner"],
+      structuredReturnTypes: { "Outer.Inner#build": { form: "instance", name: "Widget" } },
+    });
+    const seed = ports().singleHopType("self", 12, ctx);
+    expect(seed).toEqual({ form: "instance", name: "Outer.Inner" });
+    expect(seed === undefined ? undefined : ports().memberTypeOf(seed, "build", ctx)).toEqual({
+      form: "instance",
+      name: "Widget",
+    });
+  });
+
+  it("does not lend a module-level namesake's fields to a nested class", () => {
+    // `classFieldTypes` is keyed by the class's SHORT name and merges every
+    // body that spells it, so a bare `Meta` reads the union of both classes.
+    const symbolTable = scopedTable({
+      "m.py": [scoped("Meta", []), scoped("Model", []), scoped("Model.Meta", ["Model"])],
+    });
+    const ctx = scopedCtx({
+      symbolTable,
+      callerFile: "m.py",
+      callerScope: ["Model", "Meta"],
+      classFieldTypes: { Meta: { x: "Alpha" } },
+      classFieldTypesByClassKey: { "m.py::Meta": { x: "Alpha" } },
+    });
+    const seed = ports().singleHopType("self", 12, ctx);
+    expect(seed).toEqual({ form: "instance", name: "Model.Meta" });
+    expect(seed === undefined ? undefined : ports().memberTypeOf(seed, "x", ctx)).toBeUndefined();
+  });
+});
