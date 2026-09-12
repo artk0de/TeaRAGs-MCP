@@ -65,8 +65,8 @@
   },
   "rust": {
     "walker": {
-      "version": 1,
-      "digest": "sha256:24d25f8dd3dfacba0a926ce5e401c2cbb13eeb7927b5f7220d940d92ab16b3a7"
+      "version": 2,
+      "digest": "sha256:f058039ba52f3e355c35ca81ad5884895e4f3a0bda852c9ecc79b63306f90de2"
     }
   },
   "typescript": {

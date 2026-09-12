@@ -112,13 +112,16 @@ describe("seeded support versions", () => {
       // cross-language picks this one never emits. java walker 2: bd
       // tea-rags-mcp-f11nz gave the java walker the kernel's innermost-chunk
       // call attribution, so an index built by walker 1 holds a second copy of
-      // every in-method call, emitted from the enclosing class chunk.
+      // every in-method call, emitted from the enclosing class chunk. rust
+      // walker 2: the same bd tea-rags-mcp-f11nz change, where the duplicate
+      // came from each enclosing impl / mod / trait chunk.
       // Every other language is still at its seed.
       const WALKER_BUMPED = new Map([
         ["typescript", 4],
         ["python", 5],
         ["ruby", 2],
         ["java", 2],
+        ["rust", 2],
       ]);
       const expectedWalker = WALKER_BUMPED.get(language) ?? 1;
       const expectedCodegraph = NO_CALL_GRAPH.has(language) ? 1 : 2;
