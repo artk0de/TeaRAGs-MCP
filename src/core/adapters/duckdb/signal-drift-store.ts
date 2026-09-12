@@ -113,11 +113,24 @@ const CURRENT_FILE_SIGNALS = `
  * taxdome right after a `--force-enrichments codegraph` recompute: 218 such
  * files, 218 exact scrolls, 0 points rewritten, 9.8 s — plus the bulk graph
  * reads `createSignalBuilders` paid for those paths.
+ *
+ * The disjunct is what keeps the predicate from over-narrowing. `chunk_id` can
+ * only speak for files that HAVE symbols; a barrel of `export *`, or a script
+ * that is all top-level statements, walks into `cg_symbols_files` with edges and
+ * Qdrant points and no symbol row to carry the marker. Excluding those would let
+ * their `codegraph.symbols.file.*` block go stale for good — the very defect
+ * migration 023 exists to close — so they stay in. What that readmits is the
+ * subset of them that have no points either, and there is no marker in the graph
+ * that separates the two; they are a bounded residual, not the 218-file case,
+ * which is symbol-BEARING files whose symbols are all unmapped.
  */
-const FILE_HAS_MATERIALIZED_SYMBOL = `EXISTS (
+const FILE_MAY_HAVE_POINTS = `(EXISTS (
          SELECT 1 FROM cg_symbols s
          WHERE s.rel_path = cur.rel_path AND s.chunk_id IS NOT NULL
-       )`;
+       )
+       -- Kept: a file with no symbol rows (barrel, top-level-only script) has points
+       -- and file fan but nothing to map; the point-less ones are a bounded residual.
+       OR NOT EXISTS (SELECT 1 FROM cg_symbols s WHERE s.rel_path = cur.rel_path))`;
 
 /**
  * PageRank is a normalised DOUBLE whose realistic values sit at 1e-4..1e-1, so
@@ -132,7 +145,7 @@ export class DuckDbSignalDriftStore {
   /**
    * Symbols and files whose derived signals differ from the baseline the last
    * successful heal recorded, RESTRICTED to the ones that have a Qdrant point to
-   * rewrite (see `FILE_HAS_MATERIALIZED_SYMBOL`). A row absent from the baseline
+   * rewrite (see `FILE_MAY_HAVE_POINTS`). A row absent from the baseline
    * counts as moved — which is what makes the first run after migration 023 heal
    * every materialized point once, with no extraction and no embeddings.
    *
@@ -157,7 +170,7 @@ export class DuckDbSignalDriftStore {
        SELECT cur.rel_path
        FROM cur
        LEFT JOIN cg_file_signals_prev p ON p.rel_path = cur.rel_path
-       WHERE ${FILE_HAS_MATERIALIZED_SYMBOL}
+       WHERE ${FILE_MAY_HAVE_POINTS}
          AND (p.rel_path IS NULL
            OR cur.fan_in <> p.fan_in
            OR cur.fan_out <> p.fan_out)`,

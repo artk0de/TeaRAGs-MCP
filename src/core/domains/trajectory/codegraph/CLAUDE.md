@@ -56,8 +56,9 @@
   retry, and the drift would then stay invisible until each affected file
   happened to change again — which is the defect the tables exist to fix. The
   diff's universe is what is MATERIALIZED in Qdrant, not the whole graph: a
-  symbol row needs its own `chunk_id IS NOT NULL` and a file needs at least one
-  such symbol, while `refreshSymbolSignalsPrev` stays wholesale (bd
+  symbol row needs its own `chunk_id IS NOT NULL`, and a file needs one such
+  symbol OR no symbol rows at all — a barrel has points and file fan but nothing
+  to map — while `refreshSymbolSignalsPrev` stays wholesale (bd
   tea-rags-mcp-85xha — 218 graph-known files with no points cost 218 empty
   scrolls and 9.8 s on taxdome). Two further things an edit must keep: the diff
   compares the expressions the PAYLOAD is built from (confidence-weighted symbol

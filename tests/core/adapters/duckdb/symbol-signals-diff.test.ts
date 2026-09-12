@@ -54,6 +54,19 @@ describe("DuckDbGraphClient symbol/file signal drift diff", () => {
     ]);
   }
 
+  /** A walked file with NO symbol rows at all — a barrel, or a script of top-level statements. */
+  async function seedFileWithoutSymbols(relPath: string): Promise<void> {
+    await db.run("INSERT INTO cg_symbols_files (rel_path, language) VALUES (?, 'typescript')", [relPath]);
+  }
+
+  async function addFileEdge(sourcePath: string, targetPath: string): Promise<void> {
+    await db.run("INSERT INTO cg_symbols_edges_file (source_rel_path, target_rel_path, import_text) VALUES (?, ?, ?)", [
+      sourcePath,
+      targetPath,
+      `./${targetPath.replace(/\.ts$/, "")}`,
+    ]);
+  }
+
   async function addMethodEdge(source: string, sourcePath: string, target: string, targetPath: string): Promise<void> {
     await db.run(
       `INSERT INTO cg_symbols_edges_method
@@ -198,6 +211,24 @@ describe("DuckDbGraphClient symbol/file signal drift diff", () => {
     // ONE mapped symbol is enough — the heal rewrites the whole file's points.
     await mapSymbolToChunk("dark.ts", "AlsoDark", "chunk-AlsoDark");
     expect((await db.diffSymbolSignals()).files.map((f) => f.relPath).sort()).toEqual(["dark.ts", "mapped.ts"]);
+  });
+
+  // The other side of the same coin: a file with NO symbols has nothing to map,
+  // but it does have points and file-level fan — a barrel re-exporting its
+  // neighbours, or a script that is all top-level statements.
+  it("names a file that has no symbol rows at all — nothing to map is not nothing to heal", async () => {
+    await seedSymbol("mapped.ts", "Mapped");
+    await seedFileWithoutSymbols("barrel.ts");
+    await addFileEdge("barrel.ts", "mapped.ts");
+
+    expect((await db.diffSymbolSignals()).files.map((f) => f.relPath).sort()).toEqual(["barrel.ts", "mapped.ts"]);
+
+    await db.refreshSymbolSignalsPrev();
+    expect((await db.diffSymbolSignals()).files).toEqual([]);
+
+    // Its fan moves because a neighbour changed; the file itself never will.
+    await addFileEdge("barrel.ts", "other.ts");
+    expect((await db.diffSymbolSignals()).files.map((f) => f.relPath)).toEqual(["barrel.ts"]);
   });
 
   it("still heals every MAPPED symbol exactly once on the first diff", async () => {
