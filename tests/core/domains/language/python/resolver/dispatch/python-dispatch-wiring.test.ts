@@ -66,12 +66,12 @@ const resolverWith = (value: string | undefined): PythonCallResolver => {
 describe("PythonCallResolver.resolveDispatch (w205u — [cone] by default, [cone, dynamic] under the flag)", () => {
   it("composes the CONE ALONE by default — the untyped-name fan is parked (D10)", () => {
     const table = tableWith({
-      "app/models/mirror.py": ["Mirror", "Mirror#sync"],
-      "app/models/replica.py": ["Replica", "Replica#sync"],
+      "app/models/mirror.py": ["Mirror", "Mirror#perform"],
+      "app/models/replica.py": ["Replica", "Replica#perform"],
       "app/handlers.py": ["Handler", "Handler#run"],
     });
     const ctx = ctxOf(table);
-    const site = call("thing", "sync");
+    const site = call("thing", "perform");
 
     expect(resolverWith(undefined).resolveDispatch(site, ctx)).toEqual({ kind: "edges", edges: [] });
     expect(resolverWith("0").resolveDispatch(site, ctx)).toEqual({ kind: "edges", edges: [] });
@@ -79,36 +79,52 @@ describe("PythonCallResolver.resolveDispatch (w205u — [cone] by default, [cone
 
   it("never replaces an exact chain answer with a fan", () => {
     const table = tableWith({
-      "app/models/data_source.py": ["DataSource", "DataSource#sync"],
-      "app/models/mirror.py": ["Mirror", "Mirror#sync"],
-      "app/models/replica.py": ["Replica", "Replica#sync"],
+      "app/models/data_source.py": ["DataSource", "DataSource#perform"],
+      "app/models/mirror.py": ["Mirror", "Mirror#perform"],
+      "app/models/replica.py": ["Replica", "Replica#perform"],
       "app/handlers.py": ["Handler", "Handler#run"],
     });
     const resolver = resolverWith("1");
     const ctx = ctxOf(table);
-    const site = call("data_source", "sync");
+    const site = call("data_source", "perform");
 
     expect(resolver.resolve(site, ctx)).toEqual({
       targetRelPath: "app/models/data_source.py",
-      targetSymbolId: "DataSource#sync",
+      targetSymbolId: "DataSource#perform",
     });
     expect(resolver.resolveDispatch(site, ctx)).toEqual({ kind: "edges", edges: [] });
   });
 
-  it("fans an untyped name the chain does not answer over the member's owners, under the flag", () => {
+  it("declines a typeshed member under the flag, and leaves the chain's typed answer alone (w205u.14)", () => {
     const table = tableWith({
+      "app/models/data_source.py": ["DataSource", "DataSource#sync"],
       "app/models/mirror.py": ["Mirror", "Mirror#sync"],
       "app/models/replica.py": ["Replica", "Replica#sync"],
+    });
+    const resolver = resolverWith("1");
+    const ctx = ctxOf(table);
+
+    expect(resolver.resolveDispatch(call("thing", "sync"), ctx)).toEqual({ kind: "edges", edges: [] });
+    expect(resolver.resolve(call("data_source", "sync"), ctx)).toEqual({
+      targetRelPath: "app/models/data_source.py",
+      targetSymbolId: "DataSource#sync",
+    });
+  });
+
+  it("fans an untyped name the chain does not answer over the member's owners, under the flag", () => {
+    const table = tableWith({
+      "app/models/mirror.py": ["Mirror", "Mirror#perform"],
+      "app/models/replica.py": ["Replica", "Replica#perform"],
       "app/handlers.py": ["Handler", "Handler#run"],
     });
     const resolver = resolverWith("1");
     const ctx = ctxOf(table);
-    const site = call("thing", "sync");
+    const site = call("thing", "perform");
 
     expect(resolver.resolve(site, ctx)).toBeNull();
     const outcome = resolver.resolveDispatch(site, ctx);
     if (outcome.kind !== "edges") throw new Error(`expected edges, got ${outcome.kind}`);
-    expect(outcome.edges.map((e) => e.targetSymbolId)).toEqual(["Mirror#sync", "Replica#sync"]);
+    expect(outcome.edges.map((e) => e.targetSymbolId)).toEqual(["Mirror#perform", "Replica#perform"]);
     expect(outcome.edges.every((e) => e.edgeKind === "dynamic")).toBe(true);
   });
 });

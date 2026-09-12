@@ -5,6 +5,7 @@ import {
   type CallRef,
 } from "../../../../../contracts/types/codegraph.js";
 import { PYTHON_BUILTINS } from "../../vocabulary/builtins.js";
+import { PYTHON_TYPESHED_MEMBERS } from "../../vocabulary/typeshed-members.js";
 import {
   findPythonImportBinding,
   lookupPythonSymbolsByShortName,
@@ -83,6 +84,15 @@ function pythonBoundToUntypeableCall(receiver: string, atLine: number, ctx: Call
  *    declares (`serializer = self.get_serializer(…)`);
  *  - a `dict`/`list`/`str` runtime member on an untyped receiver, and a member
  *    the interpreter itself owns — nothing in project, by construction;
+ *  - a member TYPESHED declares on a class (bd tea-rags-mcp-w205u.14). Every
+ *    gate above reads the receiver; this one reads the MEMBER, and it is the
+ *    one E4.1.3 lacked. `.get`, `.append`, `.filter`, `.save` on a receiver
+ *    nothing typed are a dict, a list, a queryset and a model — the project
+ *    class that also spells the name is a coincidence, and fanning onto it was
+ *    most of the 85 fabricated edges. The set is deliberately a stdlib
+ *    vocabulary and not a project one: it cannot know the corpus, so it can
+ *    only be wrong in the direction of declining a real project member, which
+ *    costs recall on a fan that was never the default answer anyway;
  *  - anything the chain answers — the chain.
  */
 export function pythonDynamicFanoutSuppressed(
@@ -103,5 +113,6 @@ export function pythonDynamicFanoutSuppressed(
   if (pythonBoundToUntypeableCall(receiver, call.startLine, ctx)) return true;
   if (coreAmbiguous(call, ctx)) return true;
   if (PYTHON_BUILTINS.has(call.member)) return true;
+  if (PYTHON_TYPESHED_MEMBERS.has(call.member)) return true;
   return probe.answers(call, ctx);
 }
