@@ -36,6 +36,11 @@ import type { DuckDbGraphSession } from "./graph-session.js";
  * and SUM accumulates in DOUBLE, so three 1/3-confidence edges land on
  * 1.0000000298… Without the rounding every run would diff against float noise
  * and heal the whole corpus forever.
+ *
+ * `chunk_id` rides along because the DIFF needs it and the baseline does not:
+ * `cur` is already reading `cg_symbols`, so projecting one more column is free,
+ * while a second join to test it would not be. The baseline INSERT names its
+ * columns explicitly and simply ignores it.
  */
 const CURRENT_SYMBOL_SIGNALS = `
   WITH fi AS (
@@ -50,6 +55,7 @@ const CURRENT_SYMBOL_SIGNALS = `
   ), cur AS (
     SELECT s.rel_path,
            s.symbol_id,
+           s.chunk_id,
            COALESCE(fi.fan_in, 0)   AS fan_in,
            COALESCE(fo.fan_out, 0)  AS fan_out,
            COALESCE(m.page_rank, 0) AS page_rank
@@ -90,6 +96,43 @@ const CURRENT_FILE_SIGNALS = `
   )`;
 
 /**
+ * The diff universe is what is MATERIALIZED in Qdrant, not what is in the graph
+ * (bd tea-rags-mcp-85xha), and `cg_symbols.chunk_id` is the graph's own record
+ * of which symbols reached a point: the deferred chunk pass is its only writer,
+ * it REPLACES the column per file it names, and it runs BEFORE the heal in the
+ * same completion tail — so at diff time the column is as fresh as the run's
+ * chunk map. This clause is the FILE half; the symbol half is `chunk_id` on the
+ * row itself, projected by `CURRENT_SYMBOL_SIGNALS`.
+ *
+ * A file is named when ANY one of its symbols is mapped, because the heal writes
+ * the file level onto EVERY point of the file rather than per symbol.
+ *
+ * Without the predicate the diff is over the whole graph, and the graph is wider
+ * than the index: a file the extractor walked but the chunk pass never matched
+ * to a point re-enters the diff on every fan change, forever. Measured on
+ * taxdome right after a `--force-enrichments codegraph` recompute: 218 such
+ * files, 218 exact scrolls, 0 points rewritten, 9.8 s — plus the bulk graph
+ * reads `createSignalBuilders` paid for those paths.
+ *
+ * The disjunct is what keeps the predicate from over-narrowing. `chunk_id` can
+ * only speak for files that HAVE symbols; a barrel of `export *`, or a script
+ * that is all top-level statements, walks into `cg_symbols_files` with edges and
+ * Qdrant points and no symbol row to carry the marker. Excluding those would let
+ * their `codegraph.symbols.file.*` block go stale for good — the very defect
+ * migration 023 exists to close — so they stay in. What that readmits is the
+ * subset of them that have no points either, and there is no marker in the graph
+ * that separates the two; they are a bounded residual, not the 218-file case,
+ * which is symbol-BEARING files whose symbols are all unmapped.
+ */
+const FILE_MAY_HAVE_POINTS = `(EXISTS (
+         SELECT 1 FROM cg_symbols s
+         WHERE s.rel_path = cur.rel_path AND s.chunk_id IS NOT NULL
+       )
+       -- Kept: a file with no symbol rows (barrel, top-level-only script) has points
+       -- and file fan but nothing to map; the point-less ones are a bounded residual.
+       OR NOT EXISTS (SELECT 1 FROM cg_symbols s WHERE s.rel_path = cur.rel_path))`;
+
+/**
  * PageRank is a normalised DOUBLE whose realistic values sit at 1e-4..1e-1, so
  * the comparison needs an epsilon well below the smallest meaningful move and
  * well above DOUBLE round-trip noise. 1e-12 is both.
@@ -101,9 +144,10 @@ export class DuckDbSignalDriftStore {
 
   /**
    * Symbols and files whose derived signals differ from the baseline the last
-   * successful heal recorded. A row absent from the baseline counts as moved —
-   * which is what makes the first run after migration 023 heal every point
-   * once, with no extraction and no embeddings.
+   * successful heal recorded, RESTRICTED to the ones that have a Qdrant point to
+   * rewrite (see `FILE_MAY_HAVE_POINTS`). A row absent from the baseline
+   * counts as moved — which is what makes the first run after migration 023 heal
+   * every materialized point once, with no extraction and no embeddings.
    *
    * Rows that vanished from the graph are NOT reported: their Qdrant points went
    * with the file, and `refreshSymbolSignalsPrev` replaces the baseline wholesale
@@ -115,19 +159,21 @@ export class DuckDbSignalDriftStore {
        SELECT cur.rel_path, cur.symbol_id
        FROM cur
        LEFT JOIN cg_symbol_signals_prev p ON p.rel_path = cur.rel_path AND p.symbol_id = cur.symbol_id
-       WHERE p.symbol_id IS NULL
-          OR cur.fan_in <> p.fan_in
-          OR cur.fan_out <> p.fan_out
-          OR abs(cur.page_rank - p.page_rank) > ${PAGE_RANK_EPSILON}`,
+       WHERE cur.chunk_id IS NOT NULL
+         AND (p.symbol_id IS NULL
+           OR cur.fan_in <> p.fan_in
+           OR cur.fan_out <> p.fan_out
+           OR abs(cur.page_rank - p.page_rank) > ${PAGE_RANK_EPSILON})`,
     );
     const files = await this.session.queryAll<{ rel_path: RelPath }>(
       `${CURRENT_FILE_SIGNALS}
        SELECT cur.rel_path
        FROM cur
        LEFT JOIN cg_file_signals_prev p ON p.rel_path = cur.rel_path
-       WHERE p.rel_path IS NULL
-          OR cur.fan_in <> p.fan_in
-          OR cur.fan_out <> p.fan_out`,
+       WHERE ${FILE_MAY_HAVE_POINTS}
+         AND (p.rel_path IS NULL
+           OR cur.fan_in <> p.fan_in
+           OR cur.fan_out <> p.fan_out)`,
     );
     return {
       symbols: symbols.map((r) => ({ relPath: r.rel_path, symbolId: r.symbol_id })),
@@ -144,6 +190,15 @@ export class DuckDbSignalDriftStore {
    * Both tables are replaced inside ONE transaction. A half-refreshed baseline
    * is worse than a stale one — the symbol half would read "healed" while the
    * file half still asks to be.
+   *
+   * WHOLESALE on purpose, while `diffSymbolSignals` is filtered to what has a
+   * point: the baseline records the unmapped rows too, so a file that LATER
+   * gains points is compared against real values rather than re-entering as
+   * "absent from baseline". Nothing is lost by that — the run that gives a file
+   * its points is the run that CHUNKED it, so the applier has already rewritten
+   * its payload and the heal receives it in `skipRelPaths`; every move AFTER
+   * that is diffed normally. Filtering here instead would make the baseline
+   * forget those rows and heal them once for nothing.
    */
   async refreshSymbolSignalsPrev(): Promise<void> {
     return this.session.transaction(async () => {
