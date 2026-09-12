@@ -6,7 +6,7 @@
  * slice and hydrating it at the barrier for files the run did not walk. The
  * type-inference maps were left batch-scoped on the grounds that they are
  * per-METHOD and would blow up the slice. Measured on taxdome
- * (`scripts/spikes/ruby-incremental-runglobal-delta.ts`, 9945 attempted calls):
+ * (`scripts/spikes/incremental-runglobal-delta.ts`, 9945 attempted calls):
  * an incremental run loses 168 edges, and handing it `structuredReturnTypes` +
  * `returnTypes` recovers 131 of them, while every other family recovers ZERO.
  * The size premise did not hold either — 6518 + 2597 entries against the 11099

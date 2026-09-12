@@ -366,7 +366,7 @@ collapses to silence rather than to a winner.
 ### Persistence — decided, and measured, before E5 asked
 
 `contracts/types/codegraph-pass1.ts:117` records the ablation:
-`scripts/spikes/ruby-incremental-runglobal-delta.ts` on taxdome (9,945 attempted
+`scripts/spikes/incremental-runglobal-delta.ts` on taxdome (9,945 attempted
 calls, 250 files) found an incremental run loses 168 edges; persisting
 `structuredReturnTypes` + `functionReturnTypes` recovers 131, and **the whole
 param family — `paramNames`, `paramTypes`, `classFieldParamLinks`,
