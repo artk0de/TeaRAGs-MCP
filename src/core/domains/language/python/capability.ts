@@ -36,5 +36,11 @@ export const capability: LanguageCapability = {
   // pooled table no longer reads the first run's declarers. An index whose rows
   // were written by walker 6 can carry edges resolved through a re-export target
   // that had already moved, and nothing short of re-resolving them is coherent.
-  versions: { chunking: 1, walker: 7, codegraphSchema: 2 },
+  // walker 8: bd tea-rags-mcp-z99hp — the ancestor linearizer is cached per RUN
+  // (the identity of `classAncestors`) rather than per symbol table, so a second
+  // run against one pooled table linearizes its own hierarchy instead of the
+  // first run's. Rows written by walker 7 can carry member, `super()`,
+  // cls-member and cone edges resolved on an MRO merged from a previous run's
+  // base lists, and only re-resolving them is coherent.
+  versions: { chunking: 1, walker: 8, codegraphSchema: 2 },
 };

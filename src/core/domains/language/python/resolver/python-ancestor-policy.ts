@@ -47,7 +47,12 @@
  * (decision 7: netbox has ~3,600 classes and ~30,000 `self.` call sites).
  */
 
-import type { AmbiguousResolveMode, CallContext, RelPath } from "../../../../contracts/types/codegraph.js";
+import type {
+  AmbiguousResolveMode,
+  CallContext,
+  GlobalSymbolTable,
+  RelPath,
+} from "../../../../contracts/types/codegraph.js";
 import {
   createAncestorLinearizer,
   type AncestorClosure,
@@ -301,24 +306,76 @@ function classKeyIn(className: string, file: RelPath, ctx: CallContext): BaseKey
 }
 
 /**
- * The ONE ancestor linearizer a Python run uses, rebuilt only when the run's
- * symbol table changes identity.
+ * One run's linearizer, with the generation of the symbol table it answered
+ * membership questions against.
+ *
+ * The stamp is not redundant beside the run key (bd tea-rags-mcp-z99hp).
+ * Resolving a base SPELLING goes through membership at three points —
+ * `lookupPythonSymbolsByShortName`, `pythonClassKeyIsDeclared`, and the import
+ * mapper for every module hop — and a refusal is memoised inside both the
+ * policy and the kernel linearizer. Pass 1 walks a table that is still growing,
+ * so a cold `unknown` must not outlive the growth that turns it into a pin.
+ */
+interface AncestorLinearizerRunEntry {
+  readonly table: GlobalSymbolTable;
+  readonly size: number;
+  readonly policy: PythonAncestorPolicy;
+  readonly linearizer: AncestorLinearizer<CallContext>;
+}
+
+/**
+ * The ONE ancestor linearizer a Python RUN uses, keyed by the identity of that
+ * run's `classAncestors` (bd tea-rags-mcp-z99hp).
  *
  * `PythonCallResolver` composes its strategy chain in its CONSTRUCTOR, long
  * before any `CallContext` exists, but a linearizer is bound to a context — so
  * the chain is handed this cache instead of a linearizer, and asks it once per
  * call. The answer is the same object for the whole run, which is the property
- * decision 7 actually needs; keying on symbol-table identity is the same
- * mechanism `PythonImportFileMapper` uses for its own memo, so pass 2's grown
- * table gets a fresh linearizer rather than pass 1's truncated hierarchy.
+ * decision 7 actually needs.
+ *
+ * Keying that on the symbol TABLE was the defect, and it is the same shape bd
+ * tea-rags-mcp-11qqk found one layer down. Two lifetimes are longer than a run:
+ * `LanguageFactory.create` caches the provider, so this cache lives as long as
+ * the factory, and `GraphDbClientPool` keeps ONE symbol table per collection
+ * for the pool's lifetime. Meanwhile the kernel linearizer memoises every
+ * top-level linearization and is BOUND to the context it was built with, and
+ * the policy reads its hierarchy out of that captured `ctx.classAncestors`. So
+ * run N+1 against a pooled table was handed run N's linearizer: every MRO was
+ * merged from run N's hierarchy, and a class whose base list had changed kept
+ * its old order for member lookup, `super()`, the cls-member arm and the cone
+ * fold, for as long as the process lived.
+ *
+ * `ctx.classAncestors` IS the run on this axis. It is `state.ancestors`
+ * (`CallEdgeResolutionRunner#buildResolverInputs`), `CodegraphRunState`
+ * reassigns the object at every reset and seal site, and the one object reaches
+ * every call of the run — the identity key
+ * `PythonNamingConventionSymbolResolutionStrategy#descendantsOf` already uses
+ * for this very channel. It is also the FINEST run key available here: the
+ * narrow `drainMetrics` branch reassigns `ancestors` while deliberately leaving
+ * `moduleReexports` standing, so the mapper's own run channel can outlive a
+ * hierarchy while the reverse never happens.
+ *
+ * Nothing else the policy reads is run-scoped. Everything except
+ * `classAncestors` reaches it through `ctx.symbolTable` (stamped above) or
+ * through the mapper, which memoises its re-export answers per run itself;
+ * nothing reads the CALLER at all, which is what the module docblock means by a
+ * caller-independent linearization. A single-file run keys by its
+ * `extraction.classAncestors` instead, and gets a fresh entry per file — that
+ * object is that file's whole hierarchy, so a linearizer built from it would be
+ * wrong for the next file anyway.
+ *
+ * The map is by run rather than one slot, so two interleaved runs — the offline
+ * delta harness resolves the same batch twice, once per side — keep their own
+ * answers instead of evicting each other.
  *
  * `undefined` when the run carries no `classAncestors` at all — an index
  * written by walker v2. A caller that gets it keeps its pre-seam behaviour
  * rather than answering from an empty map.
  */
 export class PythonAncestorLinearizerCache {
-  private current: AncestorLinearizer<CallContext> | undefined;
-  private policy: PythonAncestorPolicy | undefined;
+  private readonly runs = new WeakMap<object, AncestorLinearizerRunEntry>();
+  /** The entry last handed out — what {@link linearizationFallbacks} reports on. */
+  private current: AncestorLinearizerRunEntry | undefined;
 
   constructor(
     private readonly mapper: PythonImportFileMapper,
@@ -326,16 +383,43 @@ export class PythonAncestorLinearizerCache {
   ) {}
 
   for(ctx: CallContext): AncestorLinearizer<CallContext> | undefined {
-    if (ctx.classAncestors === undefined) return undefined;
-    if (this.current?.ctx.symbolTable !== ctx.symbolTable) {
-      this.policy = createPythonAncestorPolicy(this.mapper, this.mode);
-      this.current = createAncestorLinearizer(ctx, this.policy);
-    }
-    return this.current;
+    const ancestors = ctx.classAncestors;
+    if (ancestors === undefined) return undefined;
+    const table = ctx.symbolTable;
+    const size = table.size();
+    const existing = this.runs.get(ancestors);
+    const entry =
+      existing?.table === table && existing.size === size ? existing : this.build(ctx, ancestors, table, size);
+    this.current = entry;
+    return entry.linearizer;
   }
 
-  /** Fallback count of the linearizer currently held, for a gate to print. */
+  /**
+   * Fallback count of the run LAST HANDED OUT, for a gate to print.
+   *
+   * The only reader is `scripts/codegraph-chain-tally.ts`, which prints it once
+   * the walk is over — so "the run in flight, or the last one there was" is the
+   * answer it wants. Reporting a number carried over from a run that had
+   * already ended is what a single policy slot did.
+   */
   get linearizationFallbacks(): number {
-    return this.policy?.linearizationFallbacks ?? 0;
+    return this.current?.policy.linearizationFallbacks ?? 0;
+  }
+
+  private build(
+    ctx: CallContext,
+    ancestors: object,
+    table: GlobalSymbolTable,
+    size: number,
+  ): AncestorLinearizerRunEntry {
+    const policy = createPythonAncestorPolicy(this.mapper, this.mode);
+    const fresh: AncestorLinearizerRunEntry = {
+      table,
+      size,
+      policy,
+      linearizer: createAncestorLinearizer(ctx, policy),
+    };
+    this.runs.set(ancestors, fresh);
+    return fresh;
   }
 }
