@@ -7,9 +7,14 @@
  * scroll returns empty results.
  */
 
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { ExploreOps } from "../../../../../src/core/api/internal/ops/explore-ops.js";
+import { CollectionRegistry } from "../../../../../src/core/domains/maintenance/registry/collection-registry.js";
 
 // ---------------------------------------------------------------------------
 // Module mocks — mirror explore-ops-edges.test.ts exactly.
@@ -120,5 +125,71 @@ describe("ExploreOps.findSymbol", () => {
     // Assert: the resolver was consulted with the collection name and the
     // exact symbol string the caller passed in.
     expect(chunkResolver.resolveSymbolChunk).toHaveBeenCalledWith(expect.any(String), "Foo#bar");
+  });
+});
+
+/**
+ * bd tea-rags-mcp-dxa9w re-review LOW-1 — every path-shaped surface hands the
+ * owner the SAME spelling.
+ *
+ * `resolveCollection` tries the plain resolved spelling before canonicalizing,
+ * which is what keeps an entry recorded by a pre-canonicalization writer (the
+ * old worktree provisioner stored a bare `resolve`) findable. A caller that
+ * canonicalizes first defeats that: the fast lookup misses, the slow one is
+ * skipped because canonicalization changed nothing, and the call lands on a
+ * hash — so the same legacy project answers with one collection through
+ * `semantic_search` and another through `get_index_metrics`.
+ */
+describe("ExploreOps.getIndexMetrics", () => {
+  let legacyRoot: string;
+
+  afterEach(() => {
+    if (legacyRoot) rmSync(legacyRoot, { recursive: true, force: true });
+  });
+
+  it("resolves a legacy non-canonical entry the same way the search legs do", async () => {
+    // Symlink built explicitly so the case discriminates on Linux CI too, not
+    // only where `tmpdir()` happens to be symlinked.
+    legacyRoot = mkdtempSync(join(tmpdir(), "eo-legacy-"));
+    const realParent = join(legacyRoot, "real");
+    const linkedParent = join(legacyRoot, "linked");
+    mkdirSync(join(realParent, "clone"), { recursive: true });
+    symlinkSync(realParent, linkedParent);
+    const nonCanonical = join(linkedParent, "clone");
+    expect(realpathSync(nonCanonical)).not.toBe(nonCanonical);
+
+    const collectionRegistry = new CollectionRegistry(legacyRoot);
+    collectionRegistry.record({
+      collectionName: "code_legacy01",
+      path: nonCanonical,
+      embeddingModel: "m",
+      embeddingDimensions: 1,
+      qdrantUrl: "u",
+      indexedAt: "t",
+      teaRagsVersion: "v",
+      chunksCount: 0,
+    });
+    // `statsCache` is what makes ExploreOps build its IndexMetricsQuery at all,
+    // and `ensureStats` hands it the resolved collection — so the cache load is
+    // the resolution, observed through constructor-time DI rather than by
+    // swapping a private field.
+    const statsCache = { load: vi.fn().mockReturnValue(null), save: vi.fn() };
+
+    const ops = new ExploreOps({
+      qdrant: makeMockQdrant(),
+      embeddings: makeMockEmbeddings(),
+      reranker: makeMockReranker(),
+      registry: makeMockRegistry(),
+      collectionRegistry,
+      statsCache,
+      payloadSignals: [],
+      essentialKeys: [],
+    } as never);
+
+    // The metrics query itself runs against a mock Qdrant; whatever it returns
+    // or throws is beside the point, which is the collection it was pointed at.
+    await ops.getIndexMetrics(nonCanonical).catch(() => undefined);
+
+    expect(statsCache.load).toHaveBeenCalledWith("code_legacy01");
   });
 });

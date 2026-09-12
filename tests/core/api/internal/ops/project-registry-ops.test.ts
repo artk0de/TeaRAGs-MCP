@@ -152,11 +152,20 @@ describe("ProjectRegistryOps", () => {
       });
       registry.setName("code_ghost", "ghost");
 
-      const failure = new ProjectRegistryOps({ registry }).register({ path: realPath, name: "ghost" });
+      const failure = await new ProjectRegistryOps({ registry })
+        .register({ path: realPath, name: "ghost" })
+        .then(() => null)
+        .catch((e: unknown) => e);
 
-      await expect(failure).rejects.toThrow(ProjectPathAlreadyRegisteredError);
-      await expect(failure).rejects.toThrow(/collection 'code_moved' \(no alias\)/);
-      await expect(failure).rejects.not.toThrow(/as 'code_moved'/);
+      expect(failure).toBeInstanceOf(ProjectPathAlreadyRegisteredError);
+      // Rendered, not just `message`: the hint is a separate field that only
+      // `toUserMessage` composes, and it is the half that legitimately says
+      // "another alias" — so the claim under test ("this collection name is
+      // not an alias") has to be pinned across both.
+      const rendered = (failure as ProjectPathAlreadyRegisteredError).toUserMessage();
+      expect(rendered).toMatch(/collection 'code_moved' \(no alias\)/);
+      expect(rendered).not.toMatch(/alias 'code_moved'/);
+      expect(rendered).not.toMatch(/as 'code_moved'/);
     });
 
     it("still re-points a stale alias onto a directory nothing claims", async () => {

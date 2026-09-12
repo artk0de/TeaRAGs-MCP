@@ -48,7 +48,6 @@ import { formatIndexDriftReport, type IndexDriftReporter } from "../../../domain
 import type { CollectionRegistry } from "../../../domains/maintenance/registry/index.js";
 import { compileFilterPreset } from "../../../domains/trajectory/filter-presets/compiler.js";
 import type { TrajectoryRegistry } from "../../../domains/trajectory/index.js";
-import { validatePath } from "../../../infra/collection-name.js";
 import type { StatsCache } from "../../../infra/stats-cache.js";
 import {
   stripInternalFields,
@@ -229,12 +228,18 @@ export class ExploreOps {
 
   async getIndexMetrics(path: string): Promise<IndexMetrics> {
     if (!this.indexMetricsQuery) throw new NotIndexedError(path);
-    // Same rule the search legs above resolve by: a project that moved keeps
-    // the collection its registry entry recorded, so the metrics a reader asks
-    // for by path are the metrics of the index they are searching
-    // (bd tea-rags-mcp-dxa9w).
-    const absolutePath = await validatePath(path);
-    const { collectionName } = resolveCollection(this.collectionRegistry, { path: absolutePath });
+    // Same rule the search legs above resolve by, handed the SAME spelling:
+    // a project that moved keeps the collection its registry entry recorded, so
+    // the metrics a reader asks for by path are the metrics of the index they
+    // are searching (bd tea-rags-mcp-dxa9w).
+    //
+    // The raw path goes over verbatim — canonicalizing here would defeat the
+    // owner's own fast lookup, which tries the resolved spelling first exactly
+    // so an entry a pre-canonicalization writer recorded stays findable. A
+    // caller that pre-canonicalizes turns that miss into a hash, and the same
+    // project then answers with one collection through a search and another
+    // through this call.
+    const { collectionName } = resolveCollection(this.collectionRegistry, { path });
     await this.ensureStats(collectionName);
     return this.indexMetricsQuery.run(collectionName, path);
   }

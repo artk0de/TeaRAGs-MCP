@@ -4,7 +4,7 @@
 
 - **`create` is clone + register only — the reindex was deliberately removed and
   must not come back.** `WorktreeProvisioner#create`
-  (`worktree-provisioner.ts:41-141`) is artifact clone + `registry.record` +
+  (`worktree-provisioner.ts:41-165`) is artifact clone + `registry.record` +
   `setName` + `setWorktreeProvenance`, nothing else. The removed call was never
   in the saga: it was `await ctx.app.indexCodebase(res.worktreePath, {})` in the
   CLI handler, deleted in `ccdf57d8` after live validation. The rationale is an
@@ -19,14 +19,20 @@
   removed.
 - **`registry.record` is the saga commit point; `worktreeOf` is the only guard
   protecting real projects.** The try/catch wraps ONLY the artifact clone loop
-  (`:78-95`), so rollback covers everything before `registry.record` at
-  `:99-131`; `setName` (`:132`) and `setWorktreeProvenance` (`:133`) run after
-  it unguarded. On teardown the SOLE safety check is
-  `registry.findWorktree(input.name)` (`:146-147`), which matches only entries
+  (`:102-119`), so rollback covers everything before `registry.record` at
+  `:123-155`; `setName` (`:156`) and `setWorktreeProvenance` (`:157`) run after
+  it unguarded. Which is why `create` asks TWICE whether the target is taken,
+  both before any side effect: by path (`:63-64`) and by the name that path
+  hashes to (`:74`). They catch opposite halves of the same relocation — an
+  entry that moved AWAY from this directory is invisible to `findByPath`, and
+  its collection is exactly what the directory still hashes to, so a single
+  guard let the saga run against a live project and stamp it a clone (bd
+  tea-rags-mcp-dxa9w). On teardown the SOLE safety check is
+  `registry.findWorktree(input.name)` (`:170-171`), which matches only entries
   with `worktreeOf` set and otherwise throws `WorktreeNotFoundError`
   (`../errors.ts:56-65`, "is not a worktree clone (refusing to remove)").
   `remove` resolves the target's physical collection through the live alias with
-  a `_v1` fallback (`:167-169`), never assuming `_v1`. Why: a crash in the
+  a `_v1` fallback (`:191-193`), never assuming `_v1`. Why: a crash in the
   post-commit window leaves a registered collection that `worktree list` does
   not show and `worktree remove` refuses to touch. That one provenance field —
   not the CLI, which holds no check — is what makes destroying a real project
@@ -45,7 +51,7 @@
   `api/internal/ops/worktree-ops.ts`), which carries NO `path`. Every row hits
   `[ -n "$p" ] || continue` and nothing is removed; the hook always `exit 0`s.
   The dinopowers skills address the clone by the alias template
-  `<src-alias>-worktree-<name>` composed at `worktree-provisioner.ts:97`; that
+  `<src-alias>-worktree-<name>` composed at `worktree-provisioner.ts:121`; that
   leg still holds. Why: the guaranteed teardown does not currently run, so
   orphaned clones accumulate silently. Restoring it means adding `path` to
   `WorktreeInfo` (or teaching the hook to read the registry). Renaming

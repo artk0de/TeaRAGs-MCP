@@ -1,4 +1,4 @@
-import { mkdirSync, mkdtempSync, rmSync } from "node:fs";
+import { mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -15,6 +15,30 @@ import {
 } from "../../../../src/core/api/internal/collection-resolver.js";
 import { CollectionRegistry } from "../../../../src/core/domains/maintenance/registry/index.js";
 import { resolveCollectionName, validatePath } from "../../../../src/core/infra/collection-name.js";
+
+/**
+ * A directory addressed through a SYMLINKED ancestor — the spelling a
+ * pre-canonicalization writer stored verbatim. The symlink is built here rather
+ * than borrowed from `tmpdir()`: on macOS the temp root happens to be one
+ * (`/var` → `/private/var`), on a Linux CI box it is not, and a case that only
+ * discriminates on one platform is not a case (bd tea-rags-mcp-dxa9w
+ * re-review NIT-4).
+ *
+ * `resolve` does not follow symlinks, so `nonCanonical` survives it unchanged
+ * while `realpathSync` rewrites it — which is exactly the fast-path / slow-path
+ * split under test.
+ */
+function seedLegacySpelling(prefix: string): { legacyRoot: string; nonCanonical: string } {
+  const legacyRoot = mkdtempSync(join(tmpdir(), prefix));
+  const realParent = join(legacyRoot, "real");
+  const linkedParent = join(legacyRoot, "linked");
+  mkdirSync(join(realParent, "clone"), { recursive: true });
+  symlinkSync(realParent, linkedParent);
+  const nonCanonical = join(linkedParent, "clone");
+  // The premise, asserted rather than assumed.
+  expect(realpathSync(nonCanonical)).not.toBe(nonCanonical);
+  return { legacyRoot, nonCanonical };
+}
 
 describe("collection-resolver", () => {
   describe("resolveCollection (new signature)", () => {
@@ -161,12 +185,7 @@ describe("collection-resolver", () => {
       // entries a pre-canonicalization writer recorded under a bare `resolve`
       // (the old worktree provisioner did exactly that) stay findable instead
       // of falling through to a hash of their realpath.
-      const legacyDir = mkdtempSync(join(tmpdir(), "rc-legacy-"));
-      const nonCanonical = join(legacyDir, "clone");
-      mkdirSync(nonCanonical, { recursive: true });
-      // Only meaningful where the temp root is symlinked (macOS /var); on a
-      // platform where it is not, the two spellings coincide and the case
-      // degenerates to the ordinary registered-path lookup.
+      const { legacyRoot, nonCanonical } = seedLegacySpelling("rc-legacy-");
       registry.record({
         collectionName: "code_legacy01",
         path: nonCanonical,
@@ -182,7 +201,7 @@ describe("collection-resolver", () => {
 
       expect(out.collectionName).toBe("code_legacy01");
       expect(out.path).toBe(nonCanonical);
-      rmSync(legacyDir, { recursive: true, force: true });
+      rmSync(legacyRoot, { recursive: true, force: true });
     });
 
     it("priority 3 fresh path: unregistered path falls back to md5-derived hash, deterministically", () => {
