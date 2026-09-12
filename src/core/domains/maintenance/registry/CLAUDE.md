@@ -13,7 +13,7 @@
   layer that knows the run mode). Every run calls `record()`, incremental ones
   included — carrying the stamp there would have auto-update silently clearing
   the reindex hint it exists to raise. `worktreeOf` / `worktreeName` ARE part of
-  `RecordEntryInput` (`contracts/types/registry.ts:119`, an
+  `RecordEntryInput` (`contracts/types/registry.ts:139`, an
   `Omit<CollectionEntry, "name" | "autoUpdate">`), but
   `BaseIndexingPipeline#recordRegistryEntry` (`domains/ingest/pipeline/base.ts`)
   never passes them, and nothing re-sets provenance after an index run — the
@@ -50,8 +50,9 @@
   snapshot (this process created it, or the file did not exist at load) is
   written whole through `mergeRegistryEntries`. The invariant the scheme rests
   on: after every flush the cache ADOPTS the merged entries that were written,
-  so `loadedSnapshot === cache` for every held key and the next flush diffs only
-  what this instance changes afterwards. Why: each process caches
+  so the snapshot equals the cache field-for-field for every held key (it holds
+  `structuredClone` copies, never the same objects) and the next flush diffs
+  only what this instance changes afterwards. Why: each process caches
   `registry.json` once and never re-reads it, so writing the whole cache back
   rolls every field another process wrote since load — the `indexedAt` / `git` /
   `chunksCount` a pipeline instance stamped, on the entry being mutated AND on
