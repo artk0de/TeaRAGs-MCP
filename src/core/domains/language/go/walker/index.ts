@@ -8,3 +8,4 @@
 
 export { extractFromGoFile, type GoExtractInput } from "./walker.js";
 export { goNameOf } from "./name-of.js";
+export { GO_EXTRACTION_PASSES } from "./passes.js";

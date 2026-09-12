@@ -58,9 +58,11 @@ import type {
   LanguageSymbolResolver,
   LanguageWalker,
 } from "../../../contracts/types/language.js";
+import { composeExtractionWalker } from "../kernel/extraction-passes.js";
 import { rustKernel } from "./kernel.js";
 import { RustCallResolver } from "./resolver/index.js";
 import { rustNameOf } from "./walker/name-of.js";
+import { RUST_EXTRACTION_PASSES } from "./walker/passes.js";
 import { extractFromRustFile, type RustExtractInput } from "./walker/walker.js";
 
 /**
@@ -114,10 +116,12 @@ const rustChunkerHooks: LanguageChunkerHooks = {
 export class RustLanguage implements LanguageProvider {
   readonly kernel = rustKernel;
   readonly chunkerHooks: LanguageChunkerHooks = rustChunkerHooks;
-  readonly walker: LanguageWalker = {
+  readonly walker: LanguageWalker = composeExtractionWalker({
     walk: (input) => extractFromRustFile(input),
     nameOf: (node) => rustNameOf(node),
-  };
+    // Empty today — see ./walker/passes.ts for why that is the design, not a gap.
+    passes: RUST_EXTRACTION_PASSES,
+  });
   readonly resolver: LanguageSymbolResolver;
 
   constructor(mode: AmbiguousResolveMode = DEFAULT_AMBIGUOUS_RESOLVE_MODE) {

@@ -10,3 +10,4 @@
 
 export { extractFromJavascriptFile, type JsExtractInput } from "./walker.js";
 export { jsNameOf } from "./name-of.js";
+export { JAVASCRIPT_EXTRACTION_PASSES } from "./passes.js";
