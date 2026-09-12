@@ -80,6 +80,14 @@ describe("exactMatchOnTextIndexed", () => {
     expect(exactMatchOnTextIndexed("symbolId", "Foo#[]=x1", "[]=x1")).toHaveLength(2);
   });
 
+  it("counts letters of any script as storable, not only ASCII", () => {
+    // The rule is `\p{L}` / `\p{N}`, not `[a-z0-9]`: a Cyrillic or CJK
+    // identifier is a real token to the `word` tokenizer and must keep its pair.
+    expect(exactMatchOnTextIndexed("symbolId", "Класс#метод", "метод")).toHaveLength(2);
+    expect(exactMatchOnTextIndexed("symbolId", "类#方法", "方法")).toHaveLength(2);
+    expect(exactMatchOnTextIndexed("relativePath", "src/données.ts")).toHaveLength(2);
+  });
+
   it("drops the text half for a path that is pure punctuation too", () => {
     // The rule is about the TOKEN, not about which key it belongs to.
     expect(exactMatchOnTextIndexed("relativePath", "---", "---")).toEqual([

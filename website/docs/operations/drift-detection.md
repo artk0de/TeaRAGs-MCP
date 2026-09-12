@@ -208,7 +208,9 @@ Two things to expect after upgrading:
   per page — so it costs that one pass plus the writes for the points whose
   signals moved, and no embeddings. On the tea-rags self-index that first sweep
   named 7,465 points across 1,032 files. Runs after it are bounded by what
-  actually changed, which on a normal incremental is a handful of files.
+  actually changed, which on a normal incremental is a handful of files — and a
+  small diff skips the pass altogether, reading just those files with one exact
+  scroll each (a couple of milliseconds apiece).
 - **`isHub` and `transitiveImpact` are not themselves triggers.** Both are
   whole-collection quantities — `isHub` compares against a p95 that moves for
   every file at once, `transitiveImpact` is a depth-capped reverse BFS — so they
