@@ -1268,16 +1268,65 @@ const PYTHON_NESTED_SCOPES = new Set(["function_definition", "lambda"]);
 const PYTHON_CALLEE_SPELLING = /^[A-Za-z_]\w*(\.[A-Za-z_]\w*)*$/;
 
 /**
- * The callee spelling of a call node, or `null` when it is not a plain dotted
- * name. A spelling carrying a call, an index or a newline is a CHAIN, not a
- * name; folding it would mean re-parsing the text and this channel does not do
- * that (bd tea-rags-mcp-z68v9).
+ * The longest spine this records, in `.`-separated hops. One more than the
+ * fold's own `CHAIN_MAX_HOPS_DEFAULT` links, because the final member is a hop
+ * here and a member there: a spine the fold would refuse to walk is payload
+ * nobody reads.
+ */
+const PYTHON_CALLEE_SPINE_MAX_HOPS = 5;
+
+/**
+ * The callee spelling of a call node, or `null` when it is not one this channel
+ * can hand the fold.
+ *
+ * A plain dotted name passes through verbatim (`make`, `Repo.from_session`,
+ * `self.factory.build`). A spine carrying intermediate CALLS is rendered with
+ * its ARGUMENTS ELIDED — `Ticket.objects.select_for_update().get` — which is
+ * exactly the receiver spelling `splitAtBracketDepthZero` + `stripCallArgs`
+ * already fold, so nothing downstream re-parses anything (bd
+ * tea-rags-mcp-1v12o.4). Eliding is not cosmetic: ugnest's shape is
+ * `Reaction.objects.filter(\n    user_id=…,\n).first`, and the raw text carries
+ * newlines, commas and `=` into a field the fold splits on `.`.
+ *
+ * The spine must be ROOTED AT A NAME. `make().build()` stays declined — its
+ * head is a call the fold cannot seed, so the whole spine folds to nothing and
+ * recording it would buy payload and no answers (bd tea-rags-mcp-z68v9's
+ * decision, kept). So does a subscript, a lambda, or anything else that is not
+ * an identifier or an attribute access.
  */
 function pythonCalleeSpelling(call: AstNode): string | null {
   const fn = call.childForFieldName("function");
   if (fn === null) return null;
   if (fn.type !== "identifier" && fn.type !== "attribute" && fn.type !== "dotted_name") return null;
-  return PYTHON_CALLEE_SPELLING.test(fn.text) ? fn.text : null;
+  if (PYTHON_CALLEE_SPELLING.test(fn.text)) return fn.text;
+  const spine = pythonCalleeSpine(fn);
+  return spine !== null && spine.hops <= PYTHON_CALLEE_SPINE_MAX_HOPS ? spine.text : null;
+}
+
+/**
+ * One node of a callee spine, rendered structurally. `hops` counts the
+ * `.`-separated segments so the cap above is applied to the whole spine rather
+ * than to each recursion.
+ */
+function pythonCalleeSpine(node: AstNode): { text: string; hops: number } | null {
+  if (node.type === "identifier" || node.type === "dotted_name") {
+    return PYTHON_CALLEE_SPELLING.test(node.text) ? { text: node.text, hops: node.text.split(".").length } : null;
+  }
+  if (node.type !== "attribute") return null;
+  const object = node.childForFieldName("object");
+  const attribute = node.childForFieldName("attribute");
+  if (object === null || attribute?.type !== "identifier") return null;
+  // An intermediate call contributes its own callee spine plus the empty
+  // argument list the fold strips back off. Only a METHOD call qualifies: a
+  // call on a bare identifier is the ROOT of the spine (`make().build`), and a
+  // root the fold cannot seed makes the whole spine fold to nothing.
+  const inner = object.type === "call" ? object.childForFieldName("function") : object;
+  if (inner === null) return null;
+  if (object.type === "call" && inner.type !== "attribute") return null;
+  const head = pythonCalleeSpine(inner);
+  if (head === null) return null;
+  const rendered = object.type === "call" ? `${head.text}()` : head.text;
+  return { text: `${rendered}.${attribute.text}`, hops: head.hops + 1 };
 }
 
 /**
@@ -1290,11 +1339,14 @@ function pythonCalleeSpelling(call: AstNode): string | null {
  * `pythonCallBindingType` folds it at resolve time.
  *
  * Declined by construction, each because there is no single nominal answer:
- * tuple unpacking, a chained / subscripted callee, a non-call RHS, an annotated
- * assignment (the annotation is the better answer and `localBindings` already
- * carries it), and a MODULE-level assignment — a module global is not a local,
- * and binding one would type every call site in the file from a single write.
- * `await <call>` IS unwrapped: awaiting a coroutine yields what it declares.
+ * tuple unpacking, a subscripted callee, a callee spine ROOTED at a call
+ * (`make().build()`), a non-call RHS, an annotated assignment (the annotation
+ * is the better answer and `localBindings` already carries it), and a
+ * MODULE-level assignment — a module global is not a local, and binding one
+ * would type every call site in the file from a single write. `await <call>` IS
+ * unwrapped: awaiting a coroutine yields what it declares, and a spine rooted
+ * at a NAME is recorded with its arguments elided — see
+ * {@link pythonCalleeSpelling}.
  *
  * Returns a plain object (Record) for NDJSON round-trip — `Map` serialises to
  * `{}` and loses every entry.
