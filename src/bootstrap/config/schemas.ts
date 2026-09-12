@@ -3,7 +3,10 @@ import { fileURLToPath } from "node:url";
 
 import { z } from "zod";
 
-import { defaultChunkerPoolSize } from "../../core/domains/ingest/pipeline/infra/pool-defaults.js";
+import {
+  defaultChunkerPoolSize,
+  defaultEnrichmentFilesPerThread,
+} from "../../core/domains/ingest/pipeline/infra/pool-defaults.js";
 import { defaultBlamePoolSize } from "../../core/domains/trajectory/git/infra/churn-walk/blame-pool-defaults.js";
 import {
   booleanFromEnv,
@@ -95,6 +98,15 @@ export const ingestTuneSchema = z.object({
    * `INGEST_TUNE_ENRICHMENT_POOL_SIZE` or `ENRICHMENT_POOL_SIZE`.
    */
   enrichmentPoolSize: intWithDefault(4),
+  /**
+   * Files a run must have per extraction thread before the pass-1 fan-out
+   * spins that thread up. `enrichmentPoolSize` stays the CEILING; this says how
+   * much work has to exist to reach it, so a small project stops paying for
+   * isolates it cannot keep busy. Override via
+   * `INGEST_TUNE_ENRICHMENT_FILES_PER_THREAD`; see
+   * `defaultEnrichmentFilesPerThread` for the measurement behind the default.
+   */
+  enrichmentFilesPerThread: intWithDefault(defaultEnrichmentFilesPerThread()),
 });
 
 const commaSeparatedList = z

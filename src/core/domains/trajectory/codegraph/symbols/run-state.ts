@@ -32,8 +32,13 @@ import type {
   ResolveRunStatsRow,
   SymbolDefinition,
 } from "../../../../contracts/types/codegraph.js";
-import type { RubyTypeRef, SchemaColumnAccessorSource } from "../../../../contracts/types/language.js";
+import type {
+  DependencyManifestSource,
+  RubyTypeRef,
+  SchemaColumnAccessorSource,
+} from "../../../../contracts/types/language.js";
 import type { ProviderRunMetrics } from "../../../../contracts/types/provider.js";
+import { readDeclaredDependencies } from "../../../../infra/dependency-manifests.js";
 import { isDebug } from "../../../../infra/runtime.js";
 import { MapHierarchyView } from "../hierarchy-view.js";
 import {
@@ -265,7 +270,16 @@ export class CodegraphRunState {
    * (default — no factory / no language declares one) ⇒ the schema pre-pass
    * never runs.
    */
-  constructor(private readonly schemaColumnSources: readonly SchemaColumnAccessorSource[] = []) {}
+  constructor(
+    private readonly schemaColumnSources: readonly SchemaColumnAccessorSource[] = [],
+    /**
+     * Dependency-manifest readers contributed by the registered languages
+     * (bd tea-rags-mcp-w205u.1). Collected through the same `languageFactory`
+     * seam and for the same reason as {@link schemaColumnSources}. Empty ⇒ the
+     * manifest walk never runs and every framework vocabulary stays active.
+     */
+    private readonly dependencyManifestSources: readonly DependencyManifestSource[] = [],
+  ) {}
 
   /**
    * Per-run counters surfaced via `getRunMetrics()`. Read-and-cleared by
@@ -608,6 +622,21 @@ export class CodegraphRunState {
   private gemfileLoaded = false;
 
   /**
+   * Every dependency this run's project DECLARES, unioned across every manifest
+   * under the root and normalized per language, read ONCE by
+   * {@link loadDeclaredDependencies} and attached to every resolver
+   * `CallContext` and walk input. The Python walker gates its framework
+   * vocabularies on it (`pythonVocabularyFor`).
+   *
+   * `undefined` means no manifest exists anywhere, which leaves every vocabulary
+   * ACTIVE — absence of evidence, not a denial. An empty set is a manifest that
+   * declares nothing and gates every conditional vocabulary off. Same lifecycle
+   * as `gemfileContent`: reset wherever that is. bd tea-rags-mcp-w205u.1.
+   */
+  declaredDependencies: ReadonlySet<string> | undefined = undefined;
+  private declaredDependenciesLoaded = false;
+
+  /**
    * Absolute root of the project being indexed by the CURRENT run, recorded by
    * {@link bindProjectRoot} at the same seams that read the Gemfile and the
    * schema snapshots, and attached to every resolver `CallContext`. Resolvers
@@ -697,6 +726,21 @@ export class CodegraphRunState {
     } catch {
       this.gemfileContent = undefined;
     }
+  }
+
+  /**
+   * Walk the project's dependency manifests ONCE per run (guarded by
+   * `declaredDependenciesLoaded`), so a framework vocabulary is composed against
+   * what the project declares. Same seam and same guard as {@link loadGemfile};
+   * the walk itself lives in infra because the chunker worker needs it too, and
+   * the per-language recognizing and parsing stay in `domains/language`.
+   * No manifest anywhere ⇒ `undefined` ⇒ every vocabulary active.
+   * bd tea-rags-mcp-w205u.1.
+   */
+  loadDeclaredDependencies(root: string): void {
+    if (this.declaredDependenciesLoaded) return;
+    this.declaredDependenciesLoaded = true;
+    this.declaredDependencies = readDeclaredDependencies(root, this.dependencyManifestSources);
   }
 
   /**
@@ -1003,6 +1047,8 @@ export class CodegraphRunState {
       this.compactClasses = new Set();
       this.gemfileContent = undefined;
       this.gemfileLoaded = false;
+      this.declaredDependencies = undefined;
+      this.declaredDependenciesLoaded = false;
       this.projectRoot = undefined;
       this.prependedAncestors = {};
       this.classExtends = {};
@@ -1088,6 +1134,8 @@ export class CodegraphRunState {
     this.compactClasses = new Set();
     this.gemfileContent = undefined;
     this.gemfileLoaded = false;
+    this.declaredDependencies = undefined;
+    this.declaredDependenciesLoaded = false;
     this.projectRoot = undefined;
     this.schemaSnapshots = {};
     this.schemaSnapshotsLoaded = false;
@@ -1166,6 +1214,8 @@ export class CodegraphRunState {
     this.compactClasses = new Set();
     this.gemfileContent = undefined;
     this.gemfileLoaded = false;
+    this.declaredDependencies = undefined;
+    this.declaredDependenciesLoaded = false;
     this.projectRoot = undefined;
     // bd tea-rags-mcp-weno4 — injected for ONE run against ONE collection.
     this.injectedPass1Aggregates = undefined;
@@ -1206,6 +1256,8 @@ export class CodegraphRunState {
     this.compactClasses = new Set();
     this.gemfileContent = undefined;
     this.gemfileLoaded = false;
+    this.declaredDependencies = undefined;
+    this.declaredDependenciesLoaded = false;
     this.projectRoot = undefined;
     // bd tea-rags-mcp-weno4 — injected for ONE run against ONE collection.
     this.injectedPass1Aggregates = undefined;

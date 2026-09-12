@@ -129,18 +129,21 @@ conclude absence from a graph the index says is incomplete.
   RECEIVER names, applied terminally on the call-result binding as well so the
   literal marker can never reach file resolution + kernel return inference over
   return statements + subtype-gated naming-convention receiver typing +
-  class-body attribute typing from declared-or-import-bound constructors + class
-  fields addressed both per-file by short name and run-global by file-qualified
-  class key, with a field assigned from a CALL folded one level against the
-  callee's return + annotation and docstring type facts, `Mapped[T]` read as
-  transparent + an import shadow that spans the whole establishing statement +
-  bare-call resolution in Python's LEGB order (enclosing frames, filtered before
-  the pick, ahead of the caller's own module level, then builtins) with
-  short-name candidates gated to same-language, bare-callable, non-builtin
-  definitions + an inert-file fast path that skips materializing a file whose
-  native tree bears none of the node types the walker can extract from. Measured
-  against jedi merged per file with a pyright LSP second engine, every
-  chain-vs-oracle disagreement arbitrated by a third pyright vote: the
+  class-body attribute typing from declared-or-import-bound constructors, its
+  Django `as_manager` arm active only where the project's own manifests declare
+  django (every pyproject.toml / requirements\*.txt under the root, PEP 503
+  normalized, exact match; no manifest anywhere leaves every vocabulary on) +
+  class fields addressed both per-file by short name and run-global by
+  file-qualified class key, with a field assigned from a CALL folded one level
+  against the callee's return + annotation and docstring type facts, `Mapped[T]`
+  read as transparent + an import shadow that spans the whole establishing
+  statement + bare-call resolution in Python's LEGB order (enclosing frames,
+  filtered before the pick, ahead of the caller's own module level, then
+  builtins) with short-name candidates gated to same-language, bare-callable,
+  non-builtin definitions + an inert-file fast path that skips materializing a
+  file whose native tree bears none of the node types the walker can extract
+  from. Measured against jedi merged per file with a pyright LSP second engine,
+  every chain-vs-oracle disagreement arbitrated by a third pyright vote: the
   `tiebroken` column that stage publishes is the precision figure to quote, and
   `legacy` stays beside it as the regression gate
 - **Go** — 6-strategy; explicit interfaces (no poly dispatch)

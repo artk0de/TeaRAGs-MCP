@@ -33,6 +33,7 @@ import type { PythonImportFileMapper } from "./python-import-file-mapper.js";
 import {
   findPythonImportBinding,
   pythonBareCallReturnType,
+  pythonEnclosingClass,
   pythonImportMatchesReceiver,
   pythonInheritedMemberType,
   receiverModuleText,
@@ -175,8 +176,15 @@ function pythonSingleHopType(
   classHead: boolean,
 ): TypeRef | undefined {
   if (receiver === "self") {
-    const enclosing = ctx.callerScope[ctx.callerScope.length - 1];
-    return enclosing === undefined ? undefined : { form: "instance", name: enclosing };
+    // The enclosing CLASS, addressed the way the run keys classes — not the
+    // trailing segment of `callerScope`, which is the enclosing `def` for a
+    // call made from a nested one and drops the outer container for a class
+    // declared inside one (bd tea-rags-mcp-6pd5l, the read side of graiw).
+    // `classFq` and not `name`: the member channels this seed feeds are keyed
+    // by the SYMBOL-TABLE spelling, so `Outer.Inner` addresses its own returns
+    // where `Inner` addresses a module-level namesake's.
+    const enclosing = pythonEnclosingClass(ctx);
+    return enclosing === null ? undefined : { form: "instance", name: enclosing.classFq };
   }
   if (receiver.endsWith(")")) {
     // The subscript strip is what turns `Datatable[Benefit, S](…)` from a

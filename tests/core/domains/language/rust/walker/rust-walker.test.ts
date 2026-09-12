@@ -419,3 +419,51 @@ describe("extractFromRustFile — classFieldTypes", () => {
     expect(r.classFieldTypes).toBeUndefined();
   });
 });
+
+// bd tea-rags-mcp-f11nz — ONE owning chunk per call site. The pure line-range
+// containment filter this replaces handed every call to EVERY chunk whose range
+// spanned it, and `rustNameOf` marks `impl_item` / `mod_item` / `struct_item` /
+// `trait_item` `descendsInto: true`, so every call inside an impl method was
+// emitted TWICE: once from the method chunk under the method's scope, once from
+// the impl chunk under the type's.
+describe("extractFromRustFile — innermost-chunk call attribution", () => {
+  it("emits a call inside an impl method exactly once, from the method chunk", () => {
+    const src = ["impl Worker {", "    fn run(&self) -> u32 {", "        helper()", "    }", "}", ""].join("\n");
+    const r = extractFromRustFile({
+      tree: parse(src),
+      code: src,
+      relPath: "worker.rs",
+      language: "rust",
+      chunks: [
+        { symbolId: "worker.rs::Worker", scope: [], startLine: 1, endLine: 5 },
+        { symbolId: "worker.rs::Worker::run", scope: ["Worker"], startLine: 2, endLine: 4 },
+      ],
+    });
+    const emitted = r.chunks.flatMap((c) => (c.calls ?? []).map((call) => `${c.symbolId}:${call.member}`));
+    expect(emitted).toEqual(["worker.rs::Worker::run:helper"]);
+  });
+
+  it("leaves a module-level call outside every fn on the module chunk", () => {
+    const src = [
+      "mod m {",
+      "    static SEED: u32 = boot();",
+      "    fn run() -> u32 {",
+      "        helper()",
+      "    }",
+      "}",
+      "",
+    ].join("\n");
+    const r = extractFromRustFile({
+      tree: parse(src),
+      code: src,
+      relPath: "m.rs",
+      language: "rust",
+      chunks: [
+        { symbolId: "m.rs::m", scope: [], startLine: 1, endLine: 6 },
+        { symbolId: "m.rs::m::run", scope: ["m"], startLine: 3, endLine: 5 },
+      ],
+    });
+    expect(r.chunks[0].calls.map((c) => c.member)).toEqual(["boot"]);
+    expect(r.chunks[1].calls.map((c) => c.member)).toEqual(["helper"]);
+  });
+});

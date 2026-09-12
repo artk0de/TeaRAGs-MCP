@@ -79,6 +79,7 @@ import type {
   WorkerEnrichmentDescriptor,
 } from "../../../../contracts/types/provider.js";
 import type { DerivedSignalDescriptor, RerankPreset } from "../../../../contracts/types/reranker.js";
+import { collectDependencyManifestSources } from "../../../../infra/dependency-manifests.js";
 import { fileIsInertForExtraction } from "../../../../infra/extraction-fast-path.js";
 import { materializeTree } from "../../../../infra/materialize.js";
 import { isDebug } from "../../../../infra/runtime.js";
@@ -539,7 +540,10 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
     this.derivedSignals = deps.derivedSignals ?? [];
     this.presets = deps.presets ?? [];
     this.workerDescriptor = workerDescriptor;
-    this.runState = new CodegraphRunState(collectSchemaColumnSources(deps.languageFactory));
+    this.runState = new CodegraphRunState(
+      collectSchemaColumnSources(deps.languageFactory),
+      collectDependencyManifestSources(deps.languageFactory),
+    );
     this.resolutionRunner = new CallEdgeResolutionRunner(deps.languageFactory, this.runState);
     this.graphFinalizer = new GraphBuildFinalizer(
       async (collectionName) => this.getStore(collectionName),
@@ -968,6 +972,7 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
     // Read the run's Gemfile for gem-gated DSL grammar (adx5p.1) before pass-2
     // resolve reads it off each CallContext. One read per run (guarded).
     this.runState.loadGemfile(root);
+    this.runState.loadDeclaredDependencies(root);
     // Read the run's persisted-schema snapshot(s) for the barrier schema-column
     // pre-pass (bd tea-rags-mcp-8l5fo). One read per run (guarded), same shape.
     this.runState.loadSchemaSnapshots(root);
@@ -1156,6 +1161,7 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
   private bindRunState(root: string, options?: FileSignalOptions): void {
     this.runState.bindProjectRoot(root);
     this.runState.loadGemfile(root);
+    this.runState.loadDeclaredDependencies(root);
     this.runState.loadSchemaSnapshots(root);
     if (options?.contentHashes) this.runState.contentHashes = options.contentHashes;
   }
@@ -1189,6 +1195,7 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
   extractFileBatch = async (root: string, paths: string[]): Promise<FileExtractionFanoutBatch> => {
     this.runState.bindProjectRoot(root);
     this.runState.loadGemfile(root);
+    this.runState.loadDeclaredDependencies(root);
     const extractions: FileExtraction[] = [];
     const pass1ByLanguage: Record<string, FileExtractionPass1Telemetry> = {};
     for (const relPath of paths) {
@@ -1766,6 +1773,10 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
       // Gem-gated DSL grammar at extraction time (adx5p.1b): the run's Gemfile,
       // read once in loadGemfile. undefined → FULL catalogue.
       gemfileContent: this.runState.gemfileContent,
+      // Vocabulary gating at extraction time (bd tea-rags-mcp-w205u.1): the run's
+      // declared dependencies, walked once in loadDeclaredDependencies.
+      // undefined → no manifest anywhere → FULL catalogue.
+      declaredDependencies: this.runState.declaredDependencies,
     });
   }
 

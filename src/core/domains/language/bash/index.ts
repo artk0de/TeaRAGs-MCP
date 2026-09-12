@@ -59,9 +59,11 @@ import type {
   LanguageSymbolResolver,
   LanguageWalker,
 } from "../../../contracts/types/language.js";
+import { composeExtractionWalker } from "../kernel/extraction-passes.js";
 import { bashKernel } from "./kernel.js";
 import { BashCallResolver } from "./resolver/index.js";
 import { bashNameOf } from "./walker/name-of.js";
+import { BASH_EXTRACTION_PASSES } from "./walker/passes.js";
 import { extractFromBashFile, type BashExtractInput } from "./walker/walker.js";
 
 /**
@@ -87,10 +89,12 @@ const bashChunkerHooks: LanguageChunkerHooks = {
 export class BashLanguage implements LanguageProvider {
   readonly kernel = bashKernel;
   readonly chunkerHooks: LanguageChunkerHooks = bashChunkerHooks;
-  readonly walker: LanguageWalker = {
+  readonly walker: LanguageWalker = composeExtractionWalker({
     walk: (input) => extractFromBashFile(input),
     nameOf: (node) => bashNameOf(node),
-  };
+    // Empty today — see ./walker/passes.ts for why that is the design, not a gap.
+    passes: BASH_EXTRACTION_PASSES,
+  });
   readonly resolver: LanguageSymbolResolver;
 
   constructor(mode: AmbiguousResolveMode = DEFAULT_AMBIGUOUS_RESOLVE_MODE) {

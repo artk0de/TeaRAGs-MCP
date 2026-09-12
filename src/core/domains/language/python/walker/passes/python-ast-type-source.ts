@@ -91,9 +91,23 @@ function pythonReturnPorts(scope: PythonReturnScope): ReturnInferencePorts<AstNo
   };
 }
 
-/** Per-class `<field> → <class>` from annotated class-body and `self.x: T` assignments. */
-function collectPythonFieldTypes(root: AstNode): Map<string, Map<string, string>> {
+/** The two lookup tables the return inference reads before it starts. */
+interface PythonAstScopeTables {
+  /** Per-class `<field> → <class>` from annotated class-body and `self.x: T` assignments. */
+  readonly fieldTypes: Map<string, Map<string, string>>;
+  /** `<top-level def name> → <declared return class>` — the one-hop table. */
+  readonly fileReturnTypes: Map<string, string>;
+}
+
+/**
+ * Both tables off ONE scoped descent (bd tea-rags-mcp-1v12o.2.7, E6.2). They
+ * read disjoint node kinds — an annotated assignment and a `def` — and write
+ * disjoint maps, so `walkPythonScopes`' own two-callback visitor is all the
+ * fusion needs; neither body changes.
+ */
+function collectPythonAstScopeTables(root: AstNode): PythonAstScopeTables {
   const byClass = new Map<string, Map<string, string>>();
+  const returns = new Map<string, string>();
   walkPythonScopes(root, {
     onAnnotatedAssignment: (site) => {
       const owner = site.classChain[site.classChain.length - 1];
@@ -118,31 +132,22 @@ function collectPythonFieldTypes(root: AstNode): Map<string, Map<string, string>
       }
       fields.set(name, nominal);
     },
-  });
-  return byClass;
-}
-
-/** `<top-level def name> → <declared return class>` — the one-hop table. */
-function collectPythonFileReturnTypes(root: AstNode): Map<string, string> {
-  const out = new Map<string, string>();
-  walkPythonScopes(root, {
     onDef: (site) => {
       if (site.classChain.length > 0) return;
       const returnType = site.node.childForFieldName("return_type");
       if (returnType === null) return;
       const ref = pythonTypeRefFromNode(pythonAnnotationExpression(returnType), undefined);
       const nominal = ref === undefined ? undefined : pythonNominalReceiverName(ref);
-      if (nominal !== undefined) out.set(site.name, nominal);
+      if (nominal !== undefined) returns.set(site.name, nominal);
     },
   });
-  return out;
+  return { fieldTypes: byClass, fileReturnTypes: returns };
 }
 
 const NO_FIELDS: ReadonlyMap<string, string> = new Map<string, string>();
 
 function extractPythonAstFacts(input: PythonTypeSourceInput): TypeFact[] {
-  const fieldTypes = collectPythonFieldTypes(input.root);
-  const fileReturnTypes = collectPythonFileReturnTypes(input.root);
+  const { fieldTypes, fileReturnTypes } = collectPythonAstScopeTables(input.root);
   const facts: TypeFact[] = [];
   walkPythonScopes(input.root, {
     onDef: (site) => {

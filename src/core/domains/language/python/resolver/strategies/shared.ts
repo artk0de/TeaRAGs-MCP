@@ -30,6 +30,7 @@ import {
   type AncestorLinearizer,
 } from "../../../kernel/ancestor-walk.js";
 import { propagateReceiverType, type ReceiverTypePorts } from "../../../kernel/receiver-type-propagation.js";
+import { typeRefReceiverForm } from "../../../kernel/type-ref.js";
 import { PYTHON_BUILTINS } from "../../vocabulary/builtins.js";
 import { isPythonSourcePath } from "../../vocabulary/source-extensions.js";
 import { PYTHON_SELF_RETURN } from "../../walker/passes/python-type-annotation.js";
@@ -451,7 +452,7 @@ function pythonDeclaredMemberType(
   const onClass = (shortName: string, classFq: string): TypeRef | undefined => {
     const fieldType = ctx.classFieldTypes?.[shortName]?.[member];
     if (fieldType !== undefined) return { form: "instance", name: fieldType };
-    const returned = ctx.structuredReturnTypes?.[`${classFq}${separator}${member}`];
+    const returned = pythonReturnFactAsReceiver(ctx.structuredReturnTypes?.[`${classFq}${separator}${member}`]);
     return pythonSubstituteSelfReturn(returned, bareType);
   };
   const byClassKey = (classKey: string): TypeRef | undefined => {
@@ -563,7 +564,32 @@ export function pythonModuleReturnType(
 ): TypeRef | undefined {
   const defs = lookupPythonSymbolsByShortName(ctx, callee).filter((def) => def.scope.length === 0);
   const file = pythonModuleDefFile(callee, defs, ctx, mapper, unbound);
-  return file === null ? undefined : ctx.structuredReturnTypes?.[pythonModuleReturnKey(file, callee)];
+  return file === null
+    ? undefined
+    : pythonReturnFactAsReceiver(ctx.structuredReturnTypes?.[pythonModuleReturnKey(file, callee)]);
+}
+
+/**
+ * A recorded return fact, read in RECEIVER position (bd tea-rags-mcp-1v12o.4).
+ *
+ * `-> Comment | None` is how Python spells "may be absent", and it is the
+ * ordinary annotation on every selector / lookup / `.get`-alike in a Django
+ * codebase. Left as a union it reaches `pythonCallBindingType`'s consumer and
+ * the external-definition probe as a form neither can name a class from, so a
+ * receiver the annotation typed outright stays untyped: 8 of ugnest's 43
+ * residual misses, every one of them a `-> Model | None` selector.
+ *
+ * The collapse is {@link typeRefReceiverForm}'s own rule and nothing more — a
+ * call on `None` reaches no definition, so a `Comment|None` receiver dispatches
+ * exactly where a `Comment` receiver does. A union with TWO reachable arms is
+ * untouched, because that call really can go two places.
+ *
+ * Applied at the two places a return fact leaves `structuredReturnTypes`, and
+ * BEFORE {@link pythonSubstituteSelfReturn} on the path that has one: `Self |
+ * None` must reach the substitution as the marker it is, or the marker leaks.
+ */
+function pythonReturnFactAsReceiver(returned: TypeRef | undefined): TypeRef | undefined {
+  return typeRefReceiverForm(returned);
 }
 
 /**

@@ -8,3 +8,4 @@
 
 export { extractFromJavaFile, type JavaExtractInput } from "./walker.js";
 export { javaNameOf } from "./name-of.js";
+export { JAVA_EXTRACTION_PASSES } from "./passes.js";

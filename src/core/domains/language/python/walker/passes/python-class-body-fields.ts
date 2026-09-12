@@ -10,10 +10,18 @@
  * netbox's 148 `chain` misses, every one of them resolving on the manager
  * class's OWN method once the receiver is typed.
  *
- * This is a LANGUAGE-level mechanism, not a framework one. There is no manifest
- * gate and no framework registry: the emit rule is project-class EVIDENCE, and a
- * project that binds no class-body attribute to one of its own classes walks
- * byte-identically whatever it depends on.
+ * The BARE form is a LANGUAGE-level mechanism, not a framework one: the emit rule
+ * is project-class EVIDENCE, and a project that binds no class-body attribute to
+ * one of its own classes walks byte-identically whatever it depends on. Gating
+ * that form on Django was measured and rejected — it cost polar, which declares
+ * no Django and spells no `as_manager`, 8 real edges.
+ *
+ * The `as_manager` form IS a framework one and is gated on the declared
+ * dependencies (bd tea-rags-mcp-w205u.1): the name in front of the verb is
+ * evidence only because Django says that classmethod exposes the queryset's
+ * members, so a project whose manifests name no `django` must not have the fact
+ * emitted at all. `managerFactoryActive` carries the answer in — the vocabulary
+ * composes it (`python/vocabulary/frameworks/`) and the walker asks.
  *
  * Attribution is to the INNERMOST enclosing class, and the field name is taken
  * verbatim — netbox uses `objects` on 37 models and `_objects_raw` on one, and
@@ -99,6 +107,7 @@ function collectImportBoundNames(imports: readonly ImportRef[]): Set<string> {
 function pythonClassBodyFieldType(
   node: AstNode,
   evidence: PythonClassNameEvidence,
+  managerFactoryActive: boolean,
 ): { readonly field: string; readonly type: string } | undefined {
   if (node.type !== "assignment") return undefined;
   if (node.childForFieldName("type")) return undefined;
@@ -110,6 +119,8 @@ function pythonClassBodyFieldType(
   if (!callee) return undefined;
 
   if (callee.type === "attribute") {
+    // Django's verb, and only where Django is declared (bd tea-rags-mcp-w205u.1).
+    if (!managerFactoryActive) return undefined;
     const verb = callee.childForFieldName("attribute");
     const object = callee.childForFieldName("object");
     if (verb?.text !== MANAGER_FACTORY_VERB || object?.type !== "identifier") return undefined;
@@ -137,6 +148,7 @@ export function collectPythonClassBodyFieldTypes(
   root: AstNode,
   relPath: string,
   imports: readonly ImportRef[],
+  managerFactoryActive: boolean,
 ): PythonClassBodyFieldTypes {
   const evidence: PythonClassNameEvidence = {
     declared: collectDeclaredClassNames(root),
@@ -161,7 +173,7 @@ export function collectPythonClassBodyFieldTypes(
       for (const stmt of body.children) {
         if (stmt.type !== "expression_statement") continue;
         for (const child of stmt.children) {
-          const found = pythonClassBodyFieldType(child, evidence);
+          const found = pythonClassBodyFieldType(child, evidence, managerFactoryActive);
           if (found === undefined) continue;
           const short = nameNode.text;
           byShortName[short] = { ...(byShortName[short] ?? {}), [found.field]: found.type };

@@ -370,3 +370,48 @@ describe("extractFromGoFile — localCallBindings (per-chunk var := Call())", ()
     expect(r.chunks[0].localBindings?.b).toBeUndefined();
   });
 });
+
+// bd tea-rags-mcp-f11nz — ONE owning chunk per call site. The pure line-range
+// containment filter this replaces handed every call to EVERY chunk whose range
+// spanned it, so a call inside a method was emitted twice once any enclosing
+// chunk existed: once under the method's scope, once under the container's.
+// `goNameOf` marks every Go symbol `descendsInto: false` today, so production
+// input carries no nested ranges — the invariant is pinned at the walker's own
+// contract boundary, which is where a future container symbol would break it.
+describe("extractFromGoFile — innermost-chunk call attribution", () => {
+  it("emits a call inside a nested chunk exactly once, from the innermost chunk", () => {
+    const src = ["package main", "", "func (s *Service) Go() int {", "  return helper()", "}", ""].join("\n");
+    const r = extractFromGoFile({
+      tree: parse(src),
+      code: src,
+      relPath: "svc.go",
+      language: "go",
+      chunks: [
+        { symbolId: "svc.go::Service", scope: [], startLine: 1, endLine: 5 },
+        { symbolId: "svc.go::Service#Go", scope: ["Service"], startLine: 3, endLine: 5 },
+      ],
+    });
+    const owners = r.chunks.flatMap((c, i) => (c.calls ?? []).map(() => i));
+    expect(owners).toEqual([1]);
+    expect(r.chunks[1].calls.map((c) => c.member)).toEqual(["helper"]);
+    expect(r.chunks[0].calls).toEqual([]);
+  });
+
+  it("leaves a call outside every nested chunk on the enclosing chunk", () => {
+    const src = ["package main", "", "var seed = boot()", "", "func run() int {", "  return helper()", "}", ""].join(
+      "\n",
+    );
+    const r = extractFromGoFile({
+      tree: parse(src),
+      code: src,
+      relPath: "svc.go",
+      language: "go",
+      chunks: [
+        { symbolId: "svc.go::file", scope: [], startLine: 1, endLine: 7 },
+        { symbolId: "svc.go::run", scope: [], startLine: 5, endLine: 7 },
+      ],
+    });
+    expect(r.chunks[0].calls.map((c) => c.member)).toEqual(["boot"]);
+    expect(r.chunks[1].calls.map((c) => c.member)).toEqual(["helper"]);
+  });
+});

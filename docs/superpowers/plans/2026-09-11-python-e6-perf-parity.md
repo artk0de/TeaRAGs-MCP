@@ -1290,6 +1290,141 @@ Also seen on every run from the branch build: `codegraph daemon build mismatch`
 own (the 125–148 MB "child" in the sampler). It clears once `main` is rebuilt
 after the merge.
 
+### E6.2 measured — 2026-09-12, `49823d6ab`
+
+E6.1 left the walker's own traversals as the largest remaining pass-1 cost:
+`walker.ts` self time ~32 % of samples, `python-def-scope-walk.ts` ~10 %. The
+cause was that `extractFromPythonFile` walked the SAME materialized tree about
+fourteen times per file, once per collector.
+
+Eleven of those descents are now three, through two drivers that pre-order the
+tree once and hand each node to every visitor in list order. Every collector
+keeps its own body, its own accumulator, and its own pre-order.
+
+| driver                            | collectors folded in                                                                      | descents |
+| --------------------------------- | ----------------------------------------------------------------------------------------- | -------- |
+| `walkOnce`                        | imports, calls, decorator calls, classExtends, classFieldTypes, localBindingSites (gated) | 6 → 1    |
+| `walkPythonClassScopes`           | classAncestors, classFieldTypesByClassKey, classFieldCallResults                          | 3 → 1    |
+| `walkPythonScopes` (ast type src) | the per-class field table and the file return-type table                                  | 2 → 1    |
+
+Three traversals were deliberately left alone, each for a reason that would have
+changed output:
+
+- `collectPythonInheritanceEdges` — its scope advances through CLASSES only, so
+  a class declared inside a `def` keys `Outer.Inner` there and `build.Local` on
+  the shared scoped descent, and it walks a function's non-body children that
+  the shared descent prunes.
+- `collectPythonCallResultBindings` — it descends `namedChildren`, a different
+  node set from `children`, and carries an `inFunction` flag the flat driver has
+  no notion of.
+- the other three inline type sources (`annotations`, `docstring`, `iteration`)
+  — `PYTHON_INLINE_TYPE_SOURCES` is consumed with `flatMap`, so facts are
+  concatenated per source; `iteration` and `ast` share the `PYTHON_AST_SOURCE`
+  rank, and interleaving their emission could move a same-rank tie in
+  `TypeFactStore.fromFacts`.
+
+`collectPythonClassFieldTypes` keeps its inner per-class-body walk, and the
+per-chunk slicing of `localBindingSites` / `callResultBindings` is untouched.
+
+#### Byte-identity and tally — both clean
+
+`scripts/spikes/py-extraction-dump.ts` on five corpora, BEFORE at `97277b953`
+and AFTER at `49823d6ab`, compared with `cmp`: **zero diff on all five** (flask
+36 files, httpx 23, ugnest 262, netbox 1094, polar 3095; parse failures 0
+everywhere). The dumps were re-taken against the committed source after
+lint-staged reformatted mid-run, so the compared bytes are the ones that landed.
+
+Chain tally reproduced its counts exactly on every corpus and on BOTH arms of
+every timed run — 28 tally runs in total, all with `chain drift 0`:
+
+| corpus | edges | unresolved | file-only |
+| ------ | ----- | ---------- | --------- |
+| flask  | 349   | 997        | 0         |
+| httpx  | 499   | 1050       | 0         |
+| ugnest | 778   | 3953       | 0         |
+| netbox | 8711  | 35415      | 0         |
+| polar  | 17774 | 38936      | 0         |
+
+#### The A/B did not get a quiet machine, and the numbers say so
+
+The protocol wanted a 1-minute load under 8. Across the 90-minute window the
+machine never went below 110: ten sibling worktrees were running their own
+suites, and the load oscillated between 110 and 390 with 37 concurrent `vitest`
+processes at the peak. The fallback was taken — interleaved A/B pairs with the
+load recorded beside each run — and a second instrument, whole-process user CPU,
+was added because wall clock at this contention measures the other executors.
+
+Wall clock, `pass1` seconds, warm-up `#0` discarded:
+
+| corpus | arm    | #1 (load)   | #2 (load)   | #3 (load)   | min   | median |
+| ------ | ------ | ----------- | ----------- | ----------- | ----- | ------ |
+| polar  | before | 64.41 (125) | 58.20 (278) | 84.19 (193) | 58.20 | 64.41  |
+| polar  | after  | 70.52 (121) | 28.84 (271) | 23.03 (161) | 23.03 | 28.84  |
+| netbox | before | 15.06 (111) | 7.78 (296)  | 16.38 (170) | 7.78  | 15.06  |
+| netbox | after  | 58.79 (211) | 27.76 (206) | 86.51 (170) | 27.76 | 58.79  |
+
+These are not a measurement. The intra-arm spread is 1.4× on polar-before and
+3.1× on netbox-after, every single run is 2–18× slower than E6.1's quiet
+baselines (polar 12.81 s, netbox 4.70 s), and the two corpora disagree in
+DIRECTION at matched load. `load1` is a one-minute average sampled before a run
+that then spans one to two minutes, so it does not even describe the contention
+the run actually met.
+
+Whole-process user CPU is far less contention-sensitive — in the polar `#0` pair
+the wall moved 38.22 s → 116.68 s while user CPU moved 23.04 s → 24.52 s — so it
+is the instrument that can still say something here:
+
+| corpus | arm    | user CPU #0 / #1 / #2 | min   | median |
+| ------ | ------ | --------------------- | ----- | ------ |
+| polar  | before | 23.04 / 23.63 / 21.57 | 21.57 | 23.04  |
+| polar  | after  | 24.52 / 22.23 / 23.06 | 22.23 | 23.06  |
+| netbox | before | 9.71 / 9.82 / 8.84    | 8.84  | 9.71   |
+| netbox | after  | 9.00 / 8.96 / 9.68    | 8.96  | 9.00   |
+
+Flat. polar median +0.1 %, netbox median −7.3 %, and both sit inside the
+intra-arm spread (±5 % polar, ±10 % netbox). No effect is resolvable in either
+direction.
+
+**The verdict: the perf gate is INCONCLUSIVE, and the per-LOC comparison against
+TypeScript's 0.241 s/10k LOC cannot be computed from these runs.** What is
+established is that the change is output-neutral on five corpora and that it
+removes eight full tree descents per Python file. What is not established is
+that this is worth measurable time. Whoever re-runs it needs an actually idle
+machine; nothing else about the change needs redoing.
+
+There is also a reason to expect the effect to be modest even when it is
+measured. Fusing N walks into one does not reduce how often the visitor BODIES
+run — that stays N per node. What it removes is N−1 recursive descents and their
+per-node iterator setup, plus N−1 pointer-chasing passes over the tree. On a
+corpus where the bodies dominate, the ceiling on this fix is the traversal
+overhead alone, not the 32 % the profile attributes to `walker.ts` as a whole.
+
+#### Parent re-measure — 2026-09-12, integration tree `d323c26be`
+
+Taken by the parent session once every executor had finished. The machine was
+not quiet by the plan's rule — load 21–43, all of it one runaway `coreaudiod`
+holding ~6 of 12 cores steady — but a single-threaded tally gets a free core
+under that shape, and the two arms ran back to back under the same load. Arm B
+flips ONLY `src/core/domains/language/python/walker/` back to `97277b953`
+(pre-fusion traversals; resolver, kernel and every other tail identical), arm A
+is the integration tree. One warm-up discarded, three kept, min and median:
+
+| corpus | arm | pass 1 min | pass 1 median | peak RSS median |
+| ------ | --- | ---------- | ------------- | --------------- |
+| polar  | B   | 13.22 s    | 13.25 s       | 2,228 MB        |
+| polar  | A   | 12.80 s    | 12.87 s       | 2,226 MB        |
+| netbox | B   | 4.83 s     | 4.86 s        | 1,177 MB        |
+| netbox | A   | 4.71 s     | 4.75 s        | 1,166 MB        |
+
+**−3.2 % / −2.5 % of pass 1 (min), −2.9 % / −2.3 % (median), memory flat.** Edge
+and unresolved counts identical in both arms (polar 17,791 / 38,919 — the
+post-1v12o.4 figures — netbox 8,711 / 35,415). That is the traversal overhead
+the section above bounded the fix by, and no more: the visitor bodies still run
+once per collector per node. The fusion stays because it is byte-identical and
+structurally simpler, not because it moved the verdict. Python's per-LOC wall
+(pass 1 + pass 2, polar and netbox averaged) goes 0.310 → ~0.303 s/10k LOC
+against TypeScript's 0.241 — +26 %, still outside the ±25 % band by a point.
+
 ---
 
 ## Task E6.0b — the offline matrix

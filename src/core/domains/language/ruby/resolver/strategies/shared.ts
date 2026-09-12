@@ -20,7 +20,7 @@ import {
 } from "../../../../../contracts/types/codegraph.js";
 import { ZEITWERK_PREFIX } from "../../walker/walker.js";
 import { linearizeAncestors } from "../ancestor-linearization.js";
-import { lookupRubySymbolsByShortName } from "../short-name-lookup.js";
+import { isRubyPath, lookupRubySymbolsByShortName } from "../short-name-lookup.js";
 import { resolveZeitwerkConstant } from "../zeitwerk.js";
 
 export interface ResolverConfig {
@@ -134,20 +134,42 @@ export function lastConstantSegment(qualified: string): string {
  *     receiver itself is unqualified.
  *   - Pass 3: Zeitwerk convention against known file paths.
  *
+ * Every symbol-table probe is RUBY-ONLY (bd tea-rags-mcp-zn4uf) — pass 3 is
+ * inherently so (`constantToFilePath` emits a `.rb` suffix), passes 1 and 2 are
+ * made so by {@link lookupRubySymbolsByQualifiedName}.
+ *
  * Shared by the local-type, Zeitwerk-constant and super passes.
  */
 export function resolveConstant(qualified: string, ctx: CallContext): string | null {
-  const direct = ctx.symbolTable.lookup(qualified);
+  const direct = lookupRubySymbolsByQualifiedName(ctx, qualified);
   if (direct.length === 1) return direct[0].relPath;
   if (!qualified.includes("::") && ctx.callerScope.length > 0) {
     for (let i = ctx.callerScope.length; i > 0; i--) {
       const prefix = ctx.callerScope.slice(0, i).join("::");
-      const candidate = `${prefix}::${qualified}`;
-      const matches = ctx.symbolTable.lookup(candidate);
+      const matches = lookupRubySymbolsByQualifiedName(ctx, `${prefix}::${qualified}`);
       if (matches.length === 1) return matches[0].relPath;
     }
   }
   return resolveZeitwerkConstant(qualified, collectKnownPaths(ctx));
+}
+
+/**
+ * The fully-qualified counterpart of `lookupRubySymbolsByShortName`, on the
+ * same `isRubyPath` axis (bd tea-rags-mcp-zn4uf). `symbolTable.lookup` is
+ * language-blind for the identical reason `lookupByShortName` is — one table
+ * per run over every `CODEGRAPH_LANGUAGES` extension, no `language` field on
+ * `SymbolDefinition` — so on a polyglot repo a `.tsx` class that merely spells
+ * the constant goes wrong both ways: it ANSWERS the probe outright, and the
+ * constant strategy then commits a file-only edge into the `.tsx`; or it sits
+ * beside a real Ruby declaration, inflates the `=== 1` cardinality gate, and
+ * suppresses the Ruby answer.
+ *
+ * Deliberately NOT applied to the `canonicalizeAncestorFq` / `canonicalizeMixinAlias`
+ * probes: those resolve a constant NAME against the ancestor graph rather than
+ * picking a file, and narrowing them moves mixin edges — a separate measurement.
+ */
+function lookupRubySymbolsByQualifiedName(ctx: CallContext, qualified: string): SymbolDefinition[] {
+  return ctx.symbolTable.lookup(qualified).filter((def) => isRubyPath(def.relPath));
 }
 
 /**

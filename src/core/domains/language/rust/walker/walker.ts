@@ -30,6 +30,7 @@ import type {
   ImportRef,
   LocalBinding,
 } from "../../../../contracts/types/codegraph.js";
+import { assignCallsToInnermostChunks } from "../../kernel/assign-calls-to-chunks.js";
 
 export interface RustExtractInput {
   tree: MaterializedTree;
@@ -46,13 +47,20 @@ export function extractFromRustFile(input: RustExtractInput): FileExtraction {
   // `self.field.method()` resolver path. Keyed by struct name (which
   // equals the impl type name carried in a method chunk's `scope`).
   const classFieldTypes = collectRustStructFieldTypes(input.tree.rootNode);
-  const byChunk: ChunkExtraction[] = input.chunks.map((c) => {
+  // bd tea-rags-mcp-f11nz — ONE owning chunk per call site: the smallest
+  // containing range, ties broken by deeper scope (python bd tea-rags-mcp-invuy).
+  // `rustNameOf` marks `impl_item` / `mod_item` / `struct_item` / `trait_item`
+  // `descendsInto: true`, so the pure-containment filter this replaces emitted
+  // every in-method call once per ENCLOSING chunk as well — an `impl` inside a
+  // `mod` gave three copies, each resolving against a different caller scope.
+  const callOwnership = assignCallsToInnermostChunks(calls, input.chunks);
+  const byChunk: ChunkExtraction[] = input.chunks.map((c, chunkIndex) => {
     const base: ChunkExtraction = {
       symbolId: c.symbolId,
       scope: c.scope,
       startLine: c.startLine,
       endLine: c.endLine,
-      calls: calls.filter((cr) => cr.startLine >= c.startLine && cr.startLine <= c.endLine),
+      calls: callOwnership.get(chunkIndex) ?? [],
     };
     // bd tea-rags-mcp-q1pl — per-chunk `varName → typeName` bindings so
     // the resolver's `localBindings[receiver]` branch fires for real.

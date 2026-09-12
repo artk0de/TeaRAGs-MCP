@@ -22,6 +22,7 @@
 
 import type { AstNode, MaterializedTree } from "../../../../contracts/types/ast.js";
 import type { CallRef, ChunkExtraction, FileExtraction, ImportRef } from "../../../../contracts/types/codegraph.js";
+import { assignCallsToInnermostChunks } from "../../kernel/assign-calls-to-chunks.js";
 
 export interface BashExtractInput {
   tree: MaterializedTree;
@@ -34,12 +35,20 @@ export interface BashExtractInput {
 export function extractFromBashFile(input: BashExtractInput): FileExtraction {
   const imports = collectBashImports(input.tree.rootNode);
   const calls = collectBashFunctionCalls(input.tree.rootNode);
-  const byChunk: ChunkExtraction[] = input.chunks.map((c) => ({
+  // bd tea-rags-mcp-f11nz — ONE owning chunk per call site: the smallest
+  // containing range, ties broken by deeper scope (python bd tea-rags-mcp-invuy).
+  // The pure-containment filter this replaces gave a call to EVERY chunk spanning
+  // its line, so any enclosing chunk produced a second copy. `bashNameOf` marks
+  // every function `descendsInto: false`, so today's chunk set never nests and
+  // the emitted call set is unmoved — the kernel call makes that a property of
+  // the walker rather than of the current nameOf.
+  const callOwnership = assignCallsToInnermostChunks(calls, input.chunks);
+  const byChunk: ChunkExtraction[] = input.chunks.map((c, chunkIndex) => ({
     symbolId: c.symbolId,
     scope: c.scope,
     startLine: c.startLine,
     endLine: c.endLine,
-    calls: calls.filter((cr) => cr.startLine >= c.startLine && cr.startLine <= c.endLine),
+    calls: callOwnership.get(chunkIndex) ?? [],
   }));
   return {
     relPath: input.relPath,

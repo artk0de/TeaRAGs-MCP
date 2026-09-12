@@ -23,7 +23,12 @@ import { join, resolve } from "node:path";
 
 import { DefaultSymbolIdComposer, LanguageFactory } from "../../src/core/domains/language/index.js";
 import { CODEGRAPH_LANGUAGES } from "../../src/core/domains/trajectory/codegraph/symbols/provider.js";
-import { buildCorpusExclusionFilter, collectSourceFiles, extractFile } from "../ts-codegraph-typechecker-oracle.js";
+import {
+  buildCorpusExclusionFilter,
+  collectSourceFiles,
+  extractFile,
+  readCorpusDeclaredDependencies,
+} from "../ts-codegraph-typechecker-oracle.js";
 
 /** Every extension the engine walks — the tally's symbol-table set, verbatim. */
 const WALKED_EXTENSIONS: readonly string[] = Object.keys(CODEGRAPH_LANGUAGES);
@@ -58,8 +63,9 @@ async function dumpCorpus(root: string, outPath: string | undefined, label: stri
   const sink = outPath === undefined ? process.stdout : createWriteStream(outPath);
   let dumped = 0;
   let parseFailures = 0;
+  const declaredDependencies = readCorpusDeclaredDependencies(root, factory);
   for (const relPath of selection.kept) {
-    const extraction = extractFile(root, relPath, composer, factory);
+    const extraction = extractFile(root, relPath, composer, factory, declaredDependencies);
     if (extraction === null) {
       parseFailures++;
       continue;

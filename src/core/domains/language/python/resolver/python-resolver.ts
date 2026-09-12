@@ -121,8 +121,13 @@ export class PythonCallResolver implements CallResolver {
       new PythonConeTypeLocator(cfg, this.importFileMapper),
       cfg.coneMax ?? CONE_MAX_DEFAULT,
     );
-    // The classifier is built BEFORE the component that closes over it.
-    this.external = new ExternalCallClassifier(new PythonExternalVocabulary(this.importFileMapper));
+    // The classifier is built BEFORE the component that closes over it. The
+    // vocabulary gets the run's ONE linearizer cache (bd tea-rags-mcp-1v12o.3):
+    // its definition probe asks MRO questions, and a private cache would both
+    // re-linearize the hierarchy and be free to disagree with the chain's.
+    this.external = new ExternalCallClassifier(
+      new PythonExternalVocabulary(this.importFileMapper, this.ancestorLinearizers, mode),
+    );
     this.probe = new PythonChainAnswerProbe(this.chain);
     this.dispatchComponents = pythonDynamicDispatchEnabled(process.env.CODEGRAPH_PY_DYNAMIC_DISPATCH)
       ? [
