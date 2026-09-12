@@ -513,7 +513,7 @@ changes nothing:
 tea-rags projects prune
 # code_a1b2c3d4    (no alias)    /tmp/fixture-42          1234    would remove
 # code_55667788    moved         /old/worktree              57    kept — re-register the alias at its new path, or run 'tea-rags projects unregister --name moved --purge'
-# Dry run — nothing removed. Re-run 'tea-rags projects prune --purge' to remove 1 nameless entry and the Qdrant/codegraph footprint behind it.
+# Dry run — nothing removed. Re-run 'tea-rags projects prune --purge' to remove 1 prunable entry and the Qdrant/codegraph footprint behind it.
 ```
 
 **A NAMED stale entry is never removed.** `register` re-points an alias at its

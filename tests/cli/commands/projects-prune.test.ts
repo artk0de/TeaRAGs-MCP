@@ -131,6 +131,38 @@ describe("CLI 'projects prune'", () => {
       expect(out).toContain("--purge");
     });
 
+    it("counts the footer by the op's verdict, not by the alias", async () => {
+      record("code_moved", { name: "moved" });
+      const listStale = vi.spyOn(ProjectRegistryOps.prototype, "listStale").mockReturnValue([
+        {
+          collectionName: "code_moved",
+          name: "moved",
+          path: "/gone/worktree",
+          chunksCount: 9,
+          indexedAt: "",
+          prunable: true,
+        },
+      ] as never);
+      try {
+        const out = await capture(async () => runPrune({}));
+
+        expect(out).toContain("to remove 1 prunable entry and");
+        expect(out).not.toContain("nameless");
+      } finally {
+        listStale.mockRestore();
+      }
+    });
+
+    it("pluralizes the footer with the count", async () => {
+      record("code_ghost");
+      record("code_other");
+
+      const out = await capture(async () => runPrune({}));
+
+      expect(out).toContain("to remove 2 prunable entries");
+      expect(out).toContain("behind them");
+    });
+
     it("--json emits the stale list with nothing removed and nothing kept", async () => {
       record("code_ghost", { chunksCount: 7 });
       record("code_moved", { name: "moved" });

@@ -348,7 +348,7 @@ export async function runPrune(args: PruneArgs, qdrant?: PurgeQdrantClient): Pro
       const noun = prunable === 1 ? "entry" : "entries";
       const pronoun = prunable === 1 ? "it" : "them";
       process.stdout.write(
-        `Dry run — nothing removed. Re-run 'tea-rags projects prune --purge' to remove ${prunable} nameless ${noun} and the Qdrant/codegraph footprint behind ${pronoun}.\n`,
+        `Dry run — nothing removed. Re-run 'tea-rags projects prune --purge' to remove ${prunable} prunable ${noun} and the Qdrant/codegraph footprint behind ${pronoun}.\n`,
       );
     }
     return;
