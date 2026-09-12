@@ -289,12 +289,22 @@ function staleLine(entry: StaleProjectEntry, status: string): string {
 }
 
 /**
- * A NAMED stale entry is recoverable, so the sweep never removes it:
- * `register` re-points the alias the moment it is registered at the new path,
- * and the index behind it survives the move.
+ * How to deal with a stale entry the sweep will not remove.
+ *
+ * A worktree clone gets its own route: `worktree remove` additionally drops the
+ * git worktree admin entry in the source repo, which `unregister --purge` would
+ * leave dangling, and it is the teardown the worktree domain sanctions. The
+ * directory is already gone, hence `--force`. Everything else is a plain alias,
+ * which `register` re-points the moment it is registered at its new path — the
+ * index behind it survives the move, so removing it would be the destructive
+ * answer to a recoverable situation.
  */
-function keptAliasHint(name: string): string {
-  return `kept — re-register the alias at its new path or 'projects unregister --name ${name} --purge'`;
+function keptEntryHint(entry: StaleProjectEntry): string {
+  const alias = entry.name ?? entry.collectionName;
+  if (entry.worktreeOf !== undefined) {
+    return `kept — worktree clone; run 'tea-rags worktree remove ${entry.worktreeName ?? alias} --force'`;
+  }
+  return `kept — re-register the alias at its new path, or run 'tea-rags projects unregister --name ${alias} --purge'`;
 }
 
 /**
@@ -303,10 +313,14 @@ function keptAliasHint(name: string): string {
  * `projects orphans`, which lists collections without an entry.
  *
  * DRY RUN by default: it prints what it would do and changes nothing. With
- * `--purge` it tears down the Qdrant/codegraph footprint of each NAMELESS
+ * `--purge` it tears down the Qdrant/codegraph footprint of each PRUNABLE
  * stale entry FIRST and removes the registry entry only when that succeeded,
  * so a failed purge leaves the entry pointing at what is left and the sweep
  * can be retried. One entry's failure never aborts the others.
+ *
+ * WHICH entries may go is never decided here — `listStale` stamps `prunable`
+ * on each entry and this reads it, so the purge and the removal can never
+ * disagree about what the sweep is taking.
  *
  * `qdrant` is an injection point, as in `runOrphans`.
  */
@@ -317,8 +331,8 @@ export async function runPrune(args: PruneArgs, qdrant?: PurgeQdrantClient): Pro
   if (!args.purge) {
     if (args.json) {
       // A dry run decides nothing, so it claims nothing: `removed` and `kept`
-      // stay empty, and each stale entry's `name` says which ones --purge
-      // would take (null = removed, an alias = kept).
+      // stay empty, and each stale entry carries `prunable` — the verdict on
+      // what --purge would take.
       process.stdout.write(`${JSON.stringify({ stale, removed: [], kept: [] }, null, 2)}\n`);
       return;
     }
@@ -327,9 +341,9 @@ export async function runPrune(args: PruneArgs, qdrant?: PurgeQdrantClient): Pro
       return;
     }
     for (const entry of stale) {
-      process.stdout.write(staleLine(entry, entry.name === null ? "would remove" : keptAliasHint(entry.name)));
+      process.stdout.write(staleLine(entry, entry.prunable ? "would remove" : keptEntryHint(entry)));
     }
-    const prunable = stale.filter((entry) => entry.name === null).length;
+    const prunable = stale.filter((entry) => entry.prunable).length;
     if (prunable > 0) {
       const noun = prunable === 1 ? "entry" : "entries";
       const pronoun = prunable === 1 ? "it" : "them";
@@ -340,45 +354,80 @@ export async function runPrune(args: PruneArgs, qdrant?: PurgeQdrantClient): Pro
     return;
   }
 
-  const blocked = new Set<string>();
-  const blockedReason = new Map<string, string>();
+  if (stale.length === 0) {
+    process.stdout.write(
+      args.json ? `${JSON.stringify({ stale, removed: [], kept: [] }, null, 2)}\n` : "(no stale registry entries)\n",
+    );
+    return;
+  }
+
+  const removed: StaleProjectEntry[] = [];
+  const kept: StaleProjectEntry[] = [];
+  let attempted = 0;
+  let failed = 0;
   let client = qdrant;
   for (const entry of stale) {
-    if (entry.name !== null) continue;
-    // Resolved lazily: a sweep with nothing to purge must not spin up Qdrant.
-    client ??= await defaultQdrant();
+    let reason: string | undefined;
+    if (entry.prunable) {
+      // Resolved lazily: a sweep with nothing to purge must not spin up Qdrant.
+      client ??= await defaultQdrant();
+      attempted += 1;
+      reason = await purgeOneFootprint(entry, registry, client);
+      if (reason !== undefined) failed += 1;
+    }
+    // One entry at a time, so the decision — and its line — lands while the
+    // sweep is still running rather than after the last purge.
+    const step = ops.pruneStale({
+      stale: [entry],
+      ...(reason !== undefined ? { blocked: new Set([entry.collectionName]) } : {}),
+    });
+    removed.push(...step.removed);
+    kept.push(...step.kept);
+    if (args.json) continue;
+    const status =
+      step.removed.length > 0
+        ? "removed"
+        : reason !== undefined
+          ? `kept — purge failed: ${reason}`
+          : keptEntryHint(entry);
+    process.stdout.write(staleLine(entry, status));
+  }
+
+  if (args.json) {
+    process.stdout.write(`${JSON.stringify({ stale, removed, kept }, null, 2)}\n`);
+    return;
+  }
+  const failures = failed > 0 ? ` (${failed} purge failed)` : "";
+  // Every attempt failing is the Qdrant-is-down shape: without this the command
+  // exits 0 having removed nothing, and the per-entry reasons are easy to read
+  // as N unrelated problems.
+  const allFailed = attempted > 0 && failed === attempted ? " — every purge failed; is Qdrant reachable?" : "";
+  process.stdout.write(`Removed ${removed.length} · kept ${kept.length}${failures}${allFailed}\n`);
+}
+
+/**
+ * Tear down one entry's footprint. Returns the reason it must be kept, or
+ * `undefined` when the teardown is complete enough to drop the registry entry.
+ *
+ * The purger collects its own failures, but a THROW — one unguarded line inside
+ * it, or a composition that cannot be built at all — would otherwise abort the
+ * whole sweep with entries already purged but still registered and nothing
+ * printed. Either way the entry stays as the handle for a retry.
+ */
+async function purgeOneFootprint(
+  entry: StaleProjectEntry,
+  registry: CollectionRegistry,
+  client: PurgeQdrantClient,
+): Promise<string | undefined> {
+  try {
     const report = await purgeCollectionFootprint(
       { collectionName: entry.collectionName, registry, ...(entry.path ? { path: entry.path } : {}) },
       client,
     );
     const [failure] = report.failures;
-    if (failure) {
-      blocked.add(entry.collectionName);
-      blockedReason.set(entry.collectionName, `${failure.artifact} ${failure.target} — ${failure.reason}`);
-    }
-  }
-  const outcome = ops.pruneStale({ blocked });
-
-  if (args.json) {
-    process.stdout.write(`${JSON.stringify({ stale, ...outcome }, null, 2)}\n`);
-    return;
-  }
-  if (stale.length === 0) {
-    process.stdout.write("(no stale registry entries)\n");
-    return;
-  }
-  const removed = new Set(outcome.removed.map((entry) => entry.collectionName));
-  for (const entry of stale) {
-    const reason = blockedReason.get(entry.collectionName);
-    const status =
-      entry.name !== null
-        ? keptAliasHint(entry.name)
-        : reason !== undefined
-          ? `kept — purge failed: ${reason}`
-          : removed.has(entry.collectionName)
-            ? "removed"
-            : "kept";
-    process.stdout.write(staleLine(entry, status));
+    return failure ? `${failure.artifact} ${failure.target} — ${failure.reason}` : undefined;
+  } catch (err) {
+    return err instanceof Error ? err.message : String(err);
   }
 }
 

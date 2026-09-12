@@ -35,6 +35,7 @@ describe("ProjectRegistryOps stale-entry sweep", () => {
     name?: string;
     chunksCount?: number;
     worktreeOf?: string;
+    worktreeName?: string;
   }): void {
     registry.record({
       collectionName: input.collectionName,
@@ -46,6 +47,7 @@ describe("ProjectRegistryOps stale-entry sweep", () => {
       teaRagsVersion: "1.0.0",
       chunksCount: input.chunksCount ?? 42,
       ...(input.worktreeOf !== undefined ? { worktreeOf: input.worktreeOf } : {}),
+      ...(input.worktreeName !== undefined ? { worktreeName: input.worktreeName } : {}),
     });
     if (input.name !== undefined) registry.setName(input.collectionName, input.name);
   }
@@ -83,6 +85,7 @@ describe("ProjectRegistryOps stale-entry sweep", () => {
           path: "/gone/fixture",
           chunksCount: 7,
           indexedAt: "2026-09-01T00:00:00.000Z",
+          prunable: true,
         },
         {
           collectionName: "code_moved",
@@ -90,14 +93,53 @@ describe("ProjectRegistryOps stale-entry sweep", () => {
           path: "/gone/worktree",
           chunksCount: 9,
           indexedAt: "2026-09-01T00:00:00.000Z",
+          prunable: false,
         },
       ]);
     });
 
-    it("carries worktreeOf so a stale clone is recognizable as one", () => {
-      seed({ collectionName: "code_clone", path: "/gone/wt", worktreeOf: "code_source" });
+    it("carries worktreeOf and worktreeName so a stale clone is recognizable as one", () => {
+      seed({
+        collectionName: "code_clone",
+        path: "/gone/wt",
+        name: "proj-worktree-feature",
+        worktreeOf: "code_source",
+        worktreeName: "feature",
+      });
 
-      expect(opsWith([]).listStale()[0]?.worktreeOf).toBe("code_source");
+      const [clone] = opsWith([]).listStale();
+
+      expect(clone?.worktreeOf).toBe("code_source");
+      expect(clone?.worktreeName).toBe("feature");
+    });
+
+    /**
+     * `loadRegistryFile` casts the file and never validates per entry, so a
+     * hand-edited or pre-`path` registry can carry an entry without one.
+     * `doctor` calls listStale on every run — the diagnostic must not be the
+     * thing that dies on the registry it diagnoses.
+     */
+    it("survives a legacy entry with no path at all", () => {
+      writeFileSync(
+        join(dir, "registry.json"),
+        JSON.stringify({
+          version: 1,
+          collections: {
+            code_legacy: { collectionName: "code_legacy", name: null, chunksCount: 0 },
+            code_ghost: {
+              collectionName: "code_ghost",
+              path: "/gone/fixture",
+              name: null,
+              chunksCount: 1,
+              indexedAt: "",
+            },
+          },
+        }),
+      );
+
+      const stale = new ProjectRegistryOps({ registry: new CollectionRegistry(dir), pathExists: () => false });
+
+      expect(stale.listStale().map((e) => e.collectionName)).toEqual(["code_ghost"]);
     });
 
     it("asks the real filesystem when no seam is injected", () => {
@@ -154,6 +196,47 @@ describe("ProjectRegistryOps stale-entry sweep", () => {
       expect(report.kept.map((e) => e.collectionName)).toEqual(["code_blocked"]);
       expect(registry.get("code_blocked")).not.toBeNull();
       expect(registry.get("code_ok")).toBeNull();
+    });
+
+    /**
+     * The verdict travels ON the entry, so every consumer obeys one rule
+     * instead of re-deriving "nameless only" — pruneStale included.
+     */
+    it("obeys the entry's own prunable verdict, not its name", () => {
+      seed({ collectionName: "code_named", path: "/gone/a", name: "keepme" });
+      seed({ collectionName: "code_nameless", path: "/gone/b" });
+      const ops = opsWith([]);
+      const snapshot = ops.listStale().map((entry) => ({ ...entry, prunable: entry.name !== null }));
+
+      const report = ops.pruneStale({ stale: snapshot });
+
+      expect(report.removed.map((e) => e.collectionName)).toEqual(["code_named"]);
+      expect(report.kept.map((e) => e.collectionName)).toEqual(["code_nameless"]);
+    });
+
+    it("prunes the snapshot it is handed instead of re-reading the registry", () => {
+      const live = join(dir, "repo");
+      mkdirSync(live);
+      seed({ collectionName: "code_live", path: live });
+      const ops = new ProjectRegistryOps({ registry, pathExists: () => true });
+      // The op's own scan finds nothing stale; the caller's snapshot decides.
+      expect(ops.listStale()).toEqual([]);
+
+      const report = ops.pruneStale({
+        stale: [
+          {
+            collectionName: "code_live",
+            name: null,
+            path: live,
+            chunksCount: 1,
+            indexedAt: "",
+            prunable: true,
+          },
+        ],
+      });
+
+      expect(report.removed.map((e) => e.collectionName)).toEqual(["code_live"]);
+      expect(registry.get("code_live")).toBeNull();
     });
 
     it("reports an entry as kept when the registry refuses the removal", () => {

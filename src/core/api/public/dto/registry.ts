@@ -16,8 +16,17 @@ export interface StaleProjectEntry {
   path: string;
   chunksCount: number;
   indexedAt: string;
+  /**
+   * Whether the sweep may remove this entry. The verdict is the op's, and it
+   * travels here so no consumer re-derives it — a CLI that decided for itself
+   * could purge a collection the op keeps, or remove an entry whose footprint
+   * it never purged.
+   */
+  prunable: boolean;
   /** Source collection when the entry is a worktree clone. */
   worktreeOf?: string;
+  /** Worktree name — what `tea-rags worktree remove` takes. */
+  worktreeName?: string;
 }
 
 /** What a stale-entry sweep removed and what it deliberately left behind. */

@@ -1,10 +1,11 @@
-import { mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { runPrune } from "../../../src/cli/commands/projects.js";
+import { ProjectRegistryOps } from "../../../src/core/api/internal/ops/project-registry-ops.js";
 import { CollectionRegistry } from "../../../src/core/domains/maintenance/registry/collection-registry.js";
 
 /**
@@ -26,7 +27,16 @@ describe("CLI 'projects prune'", () => {
   });
 
   /** Seed one registry entry; `path` defaults to a directory that does not exist. */
-  function record(collectionName: string, options: { name?: string; path?: string; chunksCount?: number } = {}): void {
+  function record(
+    collectionName: string,
+    options: {
+      name?: string;
+      path?: string;
+      chunksCount?: number;
+      worktreeOf?: string;
+      worktreeName?: string;
+    } = {},
+  ): void {
     const reg = new CollectionRegistry(dir);
     reg.record({
       collectionName,
@@ -37,6 +47,8 @@ describe("CLI 'projects prune'", () => {
       indexedAt: "",
       teaRagsVersion: "",
       chunksCount: options.chunksCount ?? 99,
+      ...(options.worktreeOf !== undefined ? { worktreeOf: options.worktreeOf } : {}),
+      ...(options.worktreeName !== undefined ? { worktreeName: options.worktreeName } : {}),
     });
     if (options.name !== undefined) reg.setName(collectionName, options.name);
   }
@@ -214,6 +226,53 @@ describe("CLI 'projects prune'", () => {
       expect(out).toMatch(/code_ok.*removed/);
     });
 
+    it("prints each entry's line as it is decided, not after the whole sweep", async () => {
+      record("code_first");
+      record("code_second");
+      const fakeQdrant = purgeQdrant(["code_first", "code_second"]);
+      const stdout = vi.spyOn(process.stdout, "write").mockImplementation(() => true);
+      try {
+        let bufferAtSecondPurge = "";
+        fakeQdrant.deleteCollection.mockImplementation(async (name: string) => {
+          if (name === "code_second") {
+            bufferAtSecondPurge = stdout.mock.calls.map((c) => String(c[0])).join("");
+          }
+          fakeQdrant.live.delete(name);
+        });
+
+        await runPrune({ purge: true }, fakeQdrant as never);
+
+        expect(bufferAtSecondPurge).toMatch(/code_first.*removed/);
+        expect(bufferAtSecondPurge).not.toContain("code_second");
+      } finally {
+        stdout.mockRestore();
+      }
+    });
+
+    it("closes with a summary of what went and what stayed", async () => {
+      record("code_ghost");
+      record("code_moved", { name: "moved" });
+      const fakeQdrant = purgeQdrant(["code_ghost"]);
+
+      const out = await capture(async () => runPrune({ purge: true }, fakeQdrant as never));
+
+      expect(out).toContain("Removed 1 · kept 1");
+    });
+
+    it("says so in the summary when every purge failed", async () => {
+      record("code_a");
+      record("code_b");
+      const fakeQdrant = purgeQdrant(["code_a", "code_b"]);
+      fakeQdrant.listCollections.mockRejectedValue(new Error("ECONNREFUSED"));
+      fakeQdrant.deleteCollection.mockRejectedValue(new Error("ECONNREFUSED"));
+
+      const out = await capture(async () => runPrune({ purge: true }, fakeQdrant as never));
+
+      expect(out).toContain("Removed 0 · kept 2 (2 purge failed)");
+      expect(out).toMatch(/every purge failed.*Qdrant/i);
+      expect(registered()).toEqual(["code_a", "code_b"]);
+    });
+
     it("--json reports what went and what stayed", async () => {
       record("code_ghost", { chunksCount: 5 });
       record("code_moved", { name: "moved" });
@@ -231,5 +290,179 @@ describe("CLI 'projects prune'", () => {
       expect(parsed.kept).toEqual([expect.objectContaining({ collectionName: "code_moved", name: "moved" })]);
       expect(registered()).toEqual(["code_moved"]);
     });
+  });
+
+  /**
+   * Which entries the sweep may take is the op's rule. The CLI reads the
+   * verdict off the entry — it never re-derives "nameless only", or the two
+   * drift apart in the worst direction: purging a collection the op keeps, or
+   * removing an entry whose footprint was never purged.
+   */
+  describe("the prunable verdict comes from the op", () => {
+    function stubListStale(entries: Record<string, unknown>[]): { mockRestore: () => void } {
+      return vi.spyOn(ProjectRegistryOps.prototype, "listStale").mockReturnValue(entries as never);
+    }
+
+    it("never purges a nameless entry the op marked non-prunable", async () => {
+      record("code_ghost");
+      const fakeQdrant = purgeQdrant(["code_ghost"]);
+      const listStale = stubListStale([
+        {
+          collectionName: "code_ghost",
+          name: null,
+          path: "/gone/fixture",
+          chunksCount: 99,
+          indexedAt: "",
+          prunable: false,
+        },
+      ]);
+      try {
+        await capture(async () => runPrune({ purge: true }, fakeQdrant as never));
+
+        expect(fakeQdrant.deleteCollection).not.toHaveBeenCalled();
+        expect(registered()).toEqual(["code_ghost"]);
+      } finally {
+        listStale.mockRestore();
+      }
+    });
+
+    it("purges a named entry the op marked prunable", async () => {
+      record("code_moved", { name: "moved" });
+      const fakeQdrant = purgeQdrant(["code_moved"]);
+      const listStale = stubListStale([
+        {
+          collectionName: "code_moved",
+          name: "moved",
+          path: "/gone/worktree",
+          chunksCount: 99,
+          indexedAt: "",
+          prunable: true,
+        },
+      ]);
+      try {
+        await capture(async () => runPrune({ purge: true }, fakeQdrant as never));
+
+        expect(fakeQdrant.deleteCollection).toHaveBeenCalledWith("code_moved");
+        expect(registered()).toEqual([]);
+      } finally {
+        listStale.mockRestore();
+      }
+    });
+
+    it("dry-run --json carries the verdict so no consumer re-derives it", async () => {
+      record("code_ghost");
+      record("code_moved", { name: "moved" });
+
+      const out = await capture(async () => runPrune({ json: true }));
+      const parsed = JSON.parse(out) as { stale: { collectionName: string; prunable: boolean }[] };
+
+      expect(parsed.stale).toEqual([
+        expect.objectContaining({ collectionName: "code_ghost", prunable: true }),
+        expect.objectContaining({ collectionName: "code_moved", prunable: false }),
+      ]);
+    });
+  });
+
+  /**
+   * The footprint purger collects its failures today, but that is an implicit
+   * contract on a class in another domain. One unguarded line there — or a
+   * composition that fails outright — must not turn entry 2 of 3 into a stack
+   * trace with nothing printed and entries 1–2 purged but still registered.
+   */
+  describe("a purge that throws", () => {
+    it("keeps that entry, reports it, and finishes the sweep", async () => {
+      record("code_a");
+      record("code_b");
+      record("code_c");
+      vi.doMock("../../../src/bootstrap/footprint-purge.js", () => ({
+        createCollectionFootprintPurger: () => ({
+          purge: async ({ logicalName }: { logicalName: string }) => {
+            if (logicalName === "code_b") throw new Error("purger exploded");
+            return {
+              collectionName: logicalName,
+              qdrantAlias: null,
+              qdrantCollections: [logicalName],
+              codegraphDatabases: [],
+              clearedStores: [],
+              kept: [],
+              failures: [],
+            };
+          },
+        }),
+      }));
+      const stdout = vi.spyOn(process.stdout, "write").mockImplementation(() => true);
+      try {
+        vi.resetModules();
+        const { runPrune: freshRunPrune } = await import("../../../src/cli/commands/projects.js");
+
+        await freshRunPrune({ purge: true }, purgeQdrant([]) as never);
+
+        const out = stdout.mock.calls.map((c) => String(c[0])).join("");
+        expect(out).toMatch(/code_a.*removed/);
+        expect(out).toMatch(/code_b.*purge failed: purger exploded/);
+        expect(out).toMatch(/code_c.*removed/);
+        expect(registered()).toEqual(["code_b"]);
+      } finally {
+        stdout.mockRestore();
+        vi.doUnmock("../../../src/bootstrap/footprint-purge.js");
+        vi.resetModules();
+      }
+    });
+  });
+
+  /**
+   * Every `worktree create` clone is a NAMED entry, so a removed worktree is
+   * the most likely named-stale case in a real registry — and `worktree
+   * remove` is its only sanctioned teardown (it also drops the git worktree
+   * admin entry that `unregister --purge` would leave dangling).
+   */
+  describe("the kept hint", () => {
+    it("sends a stale worktree clone to 'worktree remove'", async () => {
+      record("code_clone", {
+        name: "proj-worktree-feature",
+        worktreeOf: "code_source",
+        worktreeName: "feature",
+      });
+
+      const out = await capture(async () => runPrune({}));
+
+      expect(out).toContain("worktree clone");
+      expect(out).toContain("tea-rags worktree remove feature --force");
+      expect(out).not.toContain("re-register");
+    });
+
+    it("sends a plain named entry to re-register / unregister, not to worktree remove", async () => {
+      record("code_moved", { name: "moved" });
+
+      const out = await capture(async () => runPrune({}));
+
+      expect(out).toContain("re-register");
+      expect(out).toContain("projects unregister --name moved --purge");
+      expect(out).not.toContain("worktree remove");
+    });
+  });
+
+  it("survives a legacy registry entry that has no path at all", async () => {
+    writeFileSync(
+      join(dir, "registry.json"),
+      JSON.stringify({
+        version: 1,
+        collections: {
+          code_legacy: { collectionName: "code_legacy", name: null, chunksCount: 0 },
+          code_ghost: {
+            collectionName: "code_ghost",
+            path: join(dir, "gone", "code_ghost"),
+            name: null,
+            chunksCount: 4,
+            indexedAt: "",
+          },
+        },
+      }),
+    );
+
+    const out = await capture(async () => runPrune({}));
+
+    expect(out).toContain("code_ghost");
+    expect(out).not.toContain("code_legacy");
   });
 });
