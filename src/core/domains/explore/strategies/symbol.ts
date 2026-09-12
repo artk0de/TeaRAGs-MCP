@@ -11,11 +11,15 @@
  * ## symbolId tokenization (bd tea-rags-mcp-yx10)
  *
  * The Qdrant `symbolId` payload field is indexed as `text` with the default
- * `word` tokenizer (see `src/core/adapters/qdrant/schema-manager.ts:104`).
- * The word tokenizer splits on every non-alphanumeric character, so the
- * stored value `Foo::Bar#baz=` tokenizes to `[foo, bar, baz]` (the `=`,
+ * `word` tokenizer (`TEXT_INDEXED_KEYS` in
+ * `adapters/qdrant/filters/text-indexed-exact.ts`, applied by the schema
+ * manager). The word tokenizer splits on every non-alphanumeric character, so
+ * the stored value `Foo::Bar#baz=` tokenizes to `[foo, bar, baz]` (the `=`,
  * `?`, `!`, `#`, `::`, `.` are token separators and the `=`/`?`/`!`
- * suffixes are stripped at token boundary).
+ * suffixes are stripped at token boundary). The reduction to that one token is
+ * `symbolIdTextToken`, which lives beside the index knowledge it depends on
+ * (`adapters/qdrant/filters/symbolid-text-token.ts`) because
+ * `scrollBySymbolIds` needs the same answer.
  *
  * Passing the full fully-qualified name to `match: { text }` joins those
  * tokens with AND. Under some live index states the join misses target
@@ -46,6 +50,11 @@
  */
 
 import type { QdrantManager } from "../../../adapters/qdrant/client.js";
+import {
+  SYMBOL_SEPARATORS,
+  symbolIdLastSegment,
+  symbolIdTextToken,
+} from "../../../adapters/qdrant/filters/symbolid-text-token.js";
 import type { SymbolChunkResolver } from "../../../contracts/types/codegraph.js";
 import type { PayloadSignalDescriptor, TrajectoryFilterBuilder } from "../../../contracts/types/trajectory.js";
 import { applyEssentialSignalsToOverlay } from "../post-process.js";
@@ -179,7 +188,7 @@ export class SymbolSearchStrategy extends BaseExploreStrategy {
     // miss target rows on some live indices. The last name segment is
     // always present in the indexed tokens of the target row.
     // See class doc-comment for the tokenization rationale.
-    const textQuery = symbolTextToken(this.input.symbol);
+    const textQuery = symbolIdTextToken(this.input.symbol);
     const must: Record<string, unknown>[] = [{ key, match: { text: textQuery } }];
     if (this.input.language) {
       must.push({ key: "language", match: { value: this.input.language } });
@@ -205,44 +214,9 @@ export class SymbolSearchStrategy extends BaseExploreStrategy {
   }
 }
 
-/**
- * Structural separators between class and member name in a symbolId.
- * `#` = instance method, `.` = static method, `::` = namespace.
- * See `.claude/rules/symbolid-convention.md`.
- */
-const SYMBOL_SEPARATORS = /[#.]|::/;
-
-/**
- * Suffix characters that mark Ruby setter / predicate / bang methods and
- * are always token separators under Qdrant's `word` tokenizer.
- */
-const METHOD_NAME_SUFFIX = /[=?!]+$/;
-
 /** Does the symbol contain a structural separator (FQN, not a bare name)? */
 function isFullyQualified(symbol: string): boolean {
   return SYMBOL_SEPARATORS.test(symbol);
-}
-
-/**
- * Reduce a symbolId query to the single text token most likely to be
- * present in the Qdrant `symbolId` text-index for the target row.
- *
- *   `Foo::Bar#baz`       → `baz`
- *   `Foo.bar`            → `bar`
- *   `Foo#updated=`       → `updated`  (the `=` is stripped at token boundary)
- *   `Foo#valid?`         → `valid`
- *   `Foo#save!`          → `save`
- *   `createNote` (bare)  → `createNote`
- *
- * Bare names — no separator and no method-name suffix — are returned
- * unchanged so the existing short-name behaviour stays intact.
- */
-function symbolTextToken(symbol: string): string {
-  // Last name segment after any structural separator.
-  const tail = symbol.split(SYMBOL_SEPARATORS).pop() ?? symbol;
-  // Strip Ruby method-name suffixes (`=`, `?`, `!`) — token separators in
-  // Qdrant's word tokenizer.
-  return tail.replace(METHOD_NAME_SUFFIX, "");
 }
 
 /**
@@ -272,24 +246,6 @@ function filterByExactSymbolId(
 }
 
 /**
- * Last segment of a symbolId, preserving Ruby method-name suffixes
- * (`?`, `!`, `=`) that distinguish predicate / bang / setter methods.
- *
- *   `Foo::Bar#baz`   → `baz`
- *   `Foo#updated=`   → `updated=`
- *   `Foo#valid?`     → `valid?`
- *   `app.set`        → `set`
- *   `set` (bare)     → `set`
- *
- * Used by the short-name post-filter — the query and the stored
- * symbolId's tail must agree character-for-character (including
- * suffixes) for the chunk to survive.
- */
-function lastSegment(symbol: string): string {
-  return symbol.split(SYMBOL_SEPARATORS).pop() ?? symbol;
-}
-
-/**
  * Keep only chunks whose last segment equals the query. Accepts both
  * the chunk's own `symbolId` (top-level / member symbol whose tail
  * matches) and its `parentSymbolId` (chunk is a member of a container
@@ -304,12 +260,12 @@ function filterByLastSegment(
   chunks: readonly { id: string | number; payload: Record<string, unknown> }[],
   query: string,
 ): { id: string | number; payload: Record<string, unknown> }[] {
-  const target = lastSegment(query);
+  const target = symbolIdLastSegment(query);
   return chunks.filter((c) => {
     const symbolId = c.payload.symbolId as string | undefined;
-    if (symbolId !== undefined && lastSegment(symbolId) === target) return true;
+    if (symbolId !== undefined && symbolIdLastSegment(symbolId) === target) return true;
     const parentSymbolId = c.payload.parentSymbolId as string | undefined;
-    if (parentSymbolId !== undefined && lastSegment(parentSymbolId) === target) return true;
+    if (parentSymbolId !== undefined && symbolIdLastSegment(parentSymbolId) === target) return true;
     return false;
   });
 }

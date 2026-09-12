@@ -10,6 +10,7 @@
  */
 
 import type { QdrantManager } from "../../../adapters/qdrant/client.js";
+import { exactMatchOnTextIndexed } from "../../../adapters/qdrant/filters/text-indexed-exact.js";
 import type { PayloadSignalDescriptor } from "../../../contracts/types/trajectory.js";
 import { CodeChunkGrouper, DocChunkGrouper } from "../chunk-grouping/index.js";
 import type { Reranker, RerankMode } from "../reranker.js";
@@ -42,16 +43,20 @@ export class FileOutlineStrategy extends BaseExploreStrategy {
   }
 
   protected async executeExplore(ctx: ExploreContext): Promise<ExploreResult[]> {
-    // Exact keyword match — NOT `match: { text }` (bd tea-rags-mcp-znxg8).
-    // `relativePath` carries both a keyword and a "word"-tokenized text index
-    // (schema-manager v4/v5). Qdrant's full-text predicate matches when the
-    // query's tokens are a SUBSET of the field's, and `/`, `.` and `_` are all
-    // token boundaries — so "app/services/workflow/tasks/update.rb" matched
+    // Exact match — NOT `match: { text }` alone (bd tea-rags-mcp-znxg8).
+    // Qdrant's full-text predicate matches when the query's tokens are a SUBSET
+    // of the field's, and `/`, `.` and `_` are all token boundaries — so
+    // "app/services/workflow/tasks/update.rb" matched
     // "app/services/workflow/async_operations/notify/tasks/batch_update.rb".
-    // The path mode addresses ONE file, so the keyword index is both the exact
-    // and the cheap predicate. `globToTextFilter` already draws this same line
-    // for an unglobbed path (adapters/qdrant/filters/glob.ts).
-    const must: Record<string, unknown>[] = [{ key: "relativePath", match: { value: this.input.relativePath } }];
+    // The path mode addresses ONE file, so the `value` condition decides.
+    //
+    // It cannot be the whole filter either (bd tea-rags-mcp-ivp12): `relativePath`
+    // has ONE index and it is `text`, which does not serve `match.value`, so a
+    // lone value condition scanned the collection — 677–1002 ms per outline
+    // request. Paired, the text half supplies candidates and the value half
+    // makes the answer exact, at 1.7–2.0 ms. `globToTextFilter` draws the same
+    // line for an unglobbed path (adapters/qdrant/filters/glob.ts).
+    const must: Record<string, unknown>[] = [...exactMatchOnTextIndexed("relativePath", this.input.relativePath)];
     if (this.input.language) {
       must.push({ key: "language", match: { value: this.input.language } });
     }

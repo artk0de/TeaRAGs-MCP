@@ -19,6 +19,8 @@
 
 import type { QdrantConnection } from "./connection.js";
 import { QdrantOperationError, QdrantUnavailableError } from "./errors.js";
+import { symbolIdTextToken } from "./filters/symbolid-text-token.js";
+import { anyOfOnTextIndexed } from "./filters/text-indexed-exact.js";
 
 export class QdrantScroller {
   constructor(private readonly connection: QdrantConnection) {}
@@ -62,11 +64,13 @@ export class QdrantScroller {
    * pages, carrying only the named payload keys and no vectors at all.
    *
    * It exists because a read that wants a few scalar keys off EVERY point has
-   * no cheaper shape. Asking per file instead costs one full collection scan
-   * per file — the payload index on `relativePath` is `text`, which does not
-   * serve `match.value` — where one unfiltered pass over 22k points costs
-   * ~400 ms total. The caller filters in memory; the server does nothing but
-   * hand over pages.
+   * no cheaper shape: one unfiltered pass over 22k points costs ~400 ms total,
+   * about 0.018 ms per point, and the caller filters in memory. Asking per file
+   * instead is now ~2 ms per file (`filters/text-indexed-exact.ts`), so the
+   * cheaper shape depends on how many files the caller wants — the codegraph
+   * payload heal picks between the two per run. Before ivp12 the per-file form
+   * was a full scan EACH, and this generator was the only affordable shape at
+   * any size.
    *
    * The generator is the API, not a convenience: the caller consumes a page,
    * acts on it, and drops it, so peak memory is one page plus whatever the
@@ -224,6 +228,13 @@ export class QdrantScroller {
    * hydrate each path step with its relativePath / line range / git+codegraph
    * signals. Empty input short-circuits to [] (no query). Result order is not
    * guaranteed — callers index by `payload.symbolId`.
+   *
+   * Each branch is a text+value PAIR (tea-rags-mcp-ivp12): `symbolId` is
+   * TEXT-indexed, so a bare `match.value` is a full collection scan per id
+   * (764 ms on the live self-index) while the pair is 1.2 ms. The text half is
+   * the id's last name segment — the one token the `word` tokenizer is
+   * guaranteed to have stored for that row — and the value half keeps the
+   * answer exact, so a token shared with a namesake costs candidates only.
    */
   async scrollBySymbolIds(
     collectionName: string,
@@ -231,9 +242,6 @@ export class QdrantScroller {
     limit = 1024,
   ): Promise<{ id: string | number; payload: Record<string, unknown> }[]> {
     if (symbolIds.length === 0) return [];
-    const filter = {
-      should: symbolIds.map((id) => ({ key: "symbolId", match: { value: id } })),
-    };
-    return this.scrollFiltered(collectionName, filter, limit);
+    return this.scrollFiltered(collectionName, anyOfOnTextIndexed("symbolId", symbolIds, symbolIdTextToken), limit);
   }
 }

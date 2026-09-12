@@ -121,11 +121,24 @@ describe("globToTextFilter", () => {
     expect(result.must).toEqual([{ key: "relativePath", match: { text: ".ts" } }]);
   });
 
+  /**
+   * bd tea-rags-mcp-ivp12 — the exact-path branch asserted a lone
+   * `match: { value }`. `relativePath` is text-indexed, so that condition was
+   * unserved and every pathPattern naming one file scanned the collection. The
+   * invariant these pin is unchanged — an exact file path matches exactly one
+   * path, a glob matches by token — and the exact form is now the indexed text
+   * condition paired with the value one.
+   */
+  const exactPath = (path: string) => ({
+    must: [
+      { key: "relativePath", match: { text: path } },
+      { key: "relativePath", match: { value: path } },
+    ],
+  });
+
   it("uses exact match for single exact file path", () => {
     const result = globToTextFilter("src/core/adapters/qdrant/embedded/daemon.ts");
-    expect(result.must).toEqual([
-      { key: "relativePath", match: { value: "src/core/adapters/qdrant/embedded/daemon.ts" } },
-    ]);
+    expect(result.must).toEqual([exactPath("src/core/adapters/qdrant/embedded/daemon.ts")]);
   });
 
   it("uses exact match for brace-expanded exact file paths", () => {
@@ -137,17 +150,14 @@ describe("globToTextFilter", () => {
     const shouldClause = (result.must as unknown[])[0] as { should: unknown[] };
     expect(shouldClause.should).toHaveLength(2);
     expect(shouldClause.should).toEqual([
-      { key: "relativePath", match: { value: "src/core/adapters/qdrant/embedded/daemon.ts" } },
-      {
-        key: "relativePath",
-        match: { value: "src/core/domains/ingest/pipeline/status-module.ts" },
-      },
+      exactPath("src/core/adapters/qdrant/embedded/daemon.ts"),
+      exactPath("src/core/domains/ingest/pipeline/status-module.ts"),
     ]);
   });
 
   it("uses exact match for single brace-expanded exact file path", () => {
     const result = globToTextFilter("{src/core/domains/ingest/indexing.ts}");
-    expect(result.must).toEqual([{ key: "relativePath", match: { value: "src/core/domains/ingest/indexing.ts" } }]);
+    expect(result.must).toEqual([exactPath("src/core/domains/ingest/indexing.ts")]);
   });
 
   it("mixes exact file paths and glob patterns in braces", () => {
@@ -156,10 +166,7 @@ describe("globToTextFilter", () => {
     expect(result.must).toHaveLength(1);
     const shouldClause = (result.must as unknown[])[0] as { should: unknown[] };
     expect(shouldClause.should).toHaveLength(2);
-    expect(shouldClause.should).toContainEqual({
-      key: "relativePath",
-      match: { value: "src/core/domains/ingest/indexing.ts" },
-    });
+    expect(shouldClause.should).toContainEqual(exactPath("src/core/domains/ingest/indexing.ts"));
     expect(shouldClause.should).toContainEqual({
       key: "relativePath",
       match: { text: "src/core/domains/explore/" },
@@ -168,6 +175,6 @@ describe("globToTextFilter", () => {
 
   it("handles exact file path without directory prefix", () => {
     const result = globToTextFilter("config.ts");
-    expect(result.must).toEqual([{ key: "relativePath", match: { value: "config.ts" } }]);
+    expect(result.must).toEqual([exactPath("config.ts")]);
   });
 });

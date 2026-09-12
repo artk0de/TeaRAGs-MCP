@@ -140,7 +140,10 @@ describe("ReindexPipeline.executeParallelPipelines partial-outcome contract", ()
 
     // Per-path L2: only "two.ts" fails; the other two succeed.
     vi.spyOn(qdrant, "deletePointsByFilter").mockImplementation(async (_collection, filter) => {
-      const path = (filter as { must?: { match?: { value?: string } }[] }).must?.[0]?.match?.value;
+      // The `value` half of the text+value pair (bd tea-rags-mcp-ivp12).
+      const path = (filter as { must?: { match?: { value?: string } }[] }).must?.find(
+        (c) => c.match?.value !== undefined,
+      )?.match?.value;
       if (path === "two.ts") throw new Error("L2 delete failed for two.ts");
     });
 

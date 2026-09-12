@@ -32,6 +32,7 @@ import {
   QdrantUnavailableError,
   QdrantVectorDimensionMismatchError,
 } from "./errors.js";
+import { anyOfOnTextIndexed } from "./filters/text-indexed-exact.js";
 import type { SparseVector } from "./types.js";
 
 export class QdrantPointStore {
@@ -324,27 +325,33 @@ export class QdrantPointStore {
   }
 
   /**
-   * OPTIMIZED: Batch delete points for multiple file paths in a single request.
-   * Uses OR (should) filter to match any of the specified paths.
+   * OPTIMIZED: Batch delete points for many file paths in few requests.
+   * Uses OR (should) filter to match any of the paths in a group.
    *
    * Before: N files → N HTTP requests (even with Promise.all)
-   * After: N files → 1 HTTP request with combined filter
+   * After: N files → ceil(N / {@link QdrantPointStore.PATHS_PER_FILTER}) requests
+   *
+   * Each branch of the OR is an exact PAIR, not a bare `match.value`: the
+   * `relativePath` index is `text`, so a lone value condition is a full
+   * collection scan and this filter was N of them inside one request — 33,597 ms
+   * for fifty paths on the live self-index (tea-rags-mcp-ivp12).
+   *
+   * Grouped for the same reason the scroll below is: one branch per path makes
+   * the `should` as wide as the delete set, and ~1000 branches is what returned
+   * 500s from embedded Qdrant under concurrent load. This is the L1 fallback —
+   * reached exactly when the collection is already struggling — so it is the
+   * worst place to send the request that tips it over. Every group waits, since
+   * here the delete IS the operation rather than a phase of one.
    */
   async deletePointsByPaths(collectionName: string, relativePaths: string[]): Promise<void> {
-    if (relativePaths.length === 0) return;
-
-    // Single request with OR filter (should = any match)
-    await this.connection.call(async () =>
-      this.connection.client.delete(collectionName, {
-        wait: true,
-        filter: {
-          should: relativePaths.map((path) => ({
-            key: "relativePath",
-            match: { value: path },
-          })),
-        },
-      }),
-    );
+    for (const group of QdrantPointStore.groupPaths(relativePaths)) {
+      await this.connection.call(async () =>
+        this.connection.client.delete(collectionName, {
+          wait: true,
+          filter: anyOfOnTextIndexed("relativePath", group),
+        }),
+      );
+    }
   }
 
   /**
@@ -439,32 +446,63 @@ export class QdrantPointStore {
     };
   }
 
+  /**
+   * Paths per membership filter, for every request that addresses a SET of
+   * them — the scroll below and `deletePointsByPaths` alike.
+   *
+   * The shape used to be one MatchAny over the whole set — one condition
+   * against the key's index, which reads as O(1) per point and is, on a keyword
+   * index. `relativePath` carries a TEXT index, which serves neither `any` nor
+   * `value`, so that single condition was a single FULL COLLECTION SCAN: 706 ms
+   * for 50 paths on the live self-index, where the same 50 as text+value pairs
+   * cost ~1.35 ms each (tea-rags-mcp-ivp12). Every incremental reindex with a
+   * deletion paid it.
+   *
+   * Grouping is what keeps the other half of the history true: an OR with one
+   * branch per path makes the `should` as wide as the path set, and an
+   * unbounded `should` is what returned 500s from embedded Qdrant under
+   * concurrent load at ~1000 branches. 200 branches (400 conditions) stays well
+   * inside that, and a set large enough to need several groups is rare — a
+   * full-scan MatchAny only wins again past ~500 paths on a 22k-point
+   * collection.
+   */
+  private static readonly PATHS_PER_FILTER = 200;
+
+  /**
+   * The path set as filter-sized groups: a partition, in order, with no empty
+   * group — so an empty input yields no request rather than a filter with no
+   * condition (which Qdrant matches against every point).
+   */
+  private static groupPaths(paths: readonly string[]): string[][] {
+    const groups: string[][] = [];
+    for (let start = 0; start < paths.length; start += QdrantPointStore.PATHS_PER_FILTER) {
+      groups.push(paths.slice(start, start + QdrantPointStore.PATHS_PER_FILTER));
+    }
+    return groups;
+  }
+
   private async collectPointIdsForPaths(collectionName: string, paths: string[]): Promise<(string | number)[]> {
     const ids: (string | number)[] = [];
-    // MatchAny (Qdrant 1.9+) — single set-membership condition instead of an
-    // N-way OR. Keeps filter-engine cost O(1) per point regardless of batch
-    // size (a 1000-item `should` triggers 500 Internal Server Error on
-    // embedded under concurrent load).
-    const filter = {
-      must: [{ key: "relativePath", match: { any: paths } }],
-    };
-    let offset: string | number | undefined = undefined;
-    do {
-      const result = await this.connection.call(async () =>
-        this.connection.client.scroll(collectionName, {
-          limit: QdrantPointStore.SCROLL_PAGE_SIZE,
-          with_payload: false,
-          with_vector: false,
-          filter,
-          ...(offset !== undefined ? { offset } : {}),
-        }),
-      );
-      for (const point of result.points) {
-        ids.push(point.id);
-      }
-      const next = result.next_page_offset;
-      offset = typeof next === "string" || typeof next === "number" ? next : undefined;
-    } while (offset !== undefined);
+    for (const group of QdrantPointStore.groupPaths(paths)) {
+      const filter = anyOfOnTextIndexed("relativePath", group);
+      let offset: string | number | undefined = undefined;
+      do {
+        const result = await this.connection.call(async () =>
+          this.connection.client.scroll(collectionName, {
+            limit: QdrantPointStore.SCROLL_PAGE_SIZE,
+            with_payload: false,
+            with_vector: false,
+            filter,
+            ...(offset !== undefined ? { offset } : {}),
+          }),
+        );
+        for (const point of result.points) {
+          ids.push(point.id);
+        }
+        const next = result.next_page_offset;
+        offset = typeof next === "string" || typeof next === "number" ? next : undefined;
+      } while (offset !== undefined);
+    }
     return ids;
   }
 

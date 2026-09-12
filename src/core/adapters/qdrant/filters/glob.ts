@@ -7,6 +7,7 @@
  */
 
 import type { FilterConditionResult } from "../../../contracts/types/provider.js";
+import { exactMatchOnTextIndexed } from "./text-indexed-exact.js";
 
 /**
  * Convert a glob pattern to Qdrant full-text filter conditions on `relativePath`.
@@ -26,7 +27,7 @@ export function globToTextFilter(pattern: string): FilterConditionResult {
   // Expand braces (top-level or inline) into alternatives
   const expanded = expandBraces(pattern);
   if (expanded.length > 1) {
-    const positive: { key: string; match: { text: string } | { value: string } }[] = [];
+    const positive: Record<string, unknown>[] = [];
     const negative: { key: string; match: { text: string } }[] = [];
 
     for (const alt of expanded) {
@@ -74,15 +75,18 @@ function isExactFilePath(pattern: string): boolean {
 
 /**
  * Build a Qdrant match condition for a single pattern.
- * Exact file paths use `match: { value }` for precise matching.
- * Glob patterns use `match: { text }` for tokenized matching.
+ *
+ * Exact file paths match exactly; glob patterns match by token. The exact form
+ * is the text+value PAIR, nested under its own `must` so it stays ONE condition
+ * to the caller and can sit inside a `should` branch unchanged — a lone
+ * `match: { value }` on the text-indexed `relativePath` was a full collection
+ * scan for every pathPattern naming a single file (tea-rags-mcp-ivp12).
  */
-function buildMatchCondition(pattern: string): { key: string; match: { text: string } | { value: string } } | null {
+function buildMatchCondition(pattern: string): Record<string, unknown> | null {
   if (isExactFilePath(pattern)) {
-    // Exact file path — use value match for precise filtering
     const cleaned = pattern.replace(/^\//, "");
     if (cleaned.length === 0) return null;
-    return { key: "relativePath", match: { value: cleaned } };
+    return { must: exactMatchOnTextIndexed("relativePath", cleaned) };
   }
   const textQuery = extractTextQuery(pattern);
   if (textQuery.length === 0) return null;

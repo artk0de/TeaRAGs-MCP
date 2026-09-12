@@ -40,6 +40,16 @@ export interface CodegraphPayloadHealRunnerDeps {
       payloadInclude: string[],
       pageSize?: number,
     ) => AsyncGenerator<{ id: string | number; payload: Record<string, unknown> }[]>;
+    /** The per-file read shape of the heal (bd tea-rags-mcp-ivp12). */
+    scrollFiltered: (
+      collectionName: string,
+      filter: Record<string, unknown>,
+      limit: number,
+      pageSize?: number,
+      payloadInclude?: string[],
+    ) => Promise<{ id: string | number; payload: Record<string, unknown> }[]>;
+    /** Collection size, the input to choosing between the two read shapes. */
+    countPoints: (collectionName: string, filter?: Record<string, unknown>) => Promise<number>;
     batchSetPayload: (
       collectionName: string,
       operations: { payload: Record<string, unknown>; points: (string | number)[]; key?: string }[],

@@ -8,6 +8,17 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { FileOutlineStrategy } from "../../../../../src/core/domains/explore/strategies/file-outline.js";
 
+/**
+ * bd tea-rags-mcp-ivp12 — the path condition was a lone `match: { value }` on a
+ * TEXT-indexed key, so every outline request scanned the collection (677–1002 ms
+ * on the live self-index). Exactness is unchanged; the indexed text condition in
+ * front of it is what the planner can actually use.
+ */
+const exactPath = (path: string) => [
+  { key: "relativePath", match: { text: path } },
+  { key: "relativePath", match: { value: path } },
+];
+
 describe("FileOutlineStrategy", () => {
   const mockScrollFiltered = vi.fn();
   const mockRerank = vi.fn((r: any[]) => r);
@@ -33,11 +44,7 @@ describe("FileOutlineStrategy", () => {
 
     await strategy.execute({ collectionName: "c", limit: 1 });
 
-    expect(mockScrollFiltered).toHaveBeenCalledWith(
-      "c",
-      { must: [{ key: "relativePath", match: { value: "src/utils.ts" } }] },
-      200,
-    );
+    expect(mockScrollFiltered).toHaveBeenCalledWith("c", { must: exactPath("src/utils.ts") }, 200);
   });
 
   it("adds language condition when provided", async () => {
@@ -50,7 +57,7 @@ describe("FileOutlineStrategy", () => {
     await strategy.execute({ collectionName: "c", limit: 1 });
 
     expect(mockScrollFiltered.mock.calls[0][1].must).toEqual([
-      { key: "relativePath", match: { value: "src/utils.ts" } },
+      ...exactPath("src/utils.ts"),
       { key: "language", match: { value: "typescript" } },
     ]);
   });
@@ -85,22 +92,17 @@ describe("FileOutlineStrategy", () => {
       },
     });
 
-    it("filters on an exact keyword match, so a token-superset path cannot satisfy it", async () => {
+    it("filters on an exact value match, so a token-superset path cannot satisfy it", async () => {
       mockScrollFiltered.mockResolvedValue([]);
       const strategy = new FileOutlineStrategy(qdrant, reranker, [], [], { relativePath: REQUESTED });
 
       await strategy.execute({ collectionName: "c", limit: 1 });
 
-      expect(mockScrollFiltered.mock.calls[0][1].must).toEqual([
-        { key: "relativePath", match: { value: REQUESTED } },
-      ]);
+      expect(mockScrollFiltered.mock.calls[0][1].must).toEqual(exactPath(REQUESTED));
     });
 
     it("never blends a token-superset path into the requested file's outline", async () => {
-      mockScrollFiltered.mockResolvedValue([
-        chunk("s1", SUPERSET, "batch_perform"),
-        chunk("r1", REQUESTED, "perform"),
-      ]);
+      mockScrollFiltered.mockResolvedValue([chunk("s1", SUPERSET, "batch_perform"), chunk("r1", REQUESTED, "perform")]);
       const strategy = new FileOutlineStrategy(qdrant, reranker, [], [], { relativePath: REQUESTED });
 
       const result = await strategy.execute({ collectionName: "c", limit: 1 });

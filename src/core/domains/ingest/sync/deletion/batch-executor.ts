@@ -13,6 +13,7 @@
  */
 
 import type { QdrantManager } from "../../../../adapters/qdrant/client.js";
+import { exactMatchOnTextIndexed } from "../../../../adapters/qdrant/filters/text-indexed-exact.js";
 
 export class BatchDeleteExecutor {
   constructor(
@@ -27,9 +28,11 @@ export class BatchDeleteExecutor {
    */
   async deleteBatch(relativePaths: string[]): Promise<void> {
     for (const relativePath of relativePaths) {
-      const filter = {
-        must: [{ key: "relativePath", match: { value: relativePath } }],
-      };
+      // The exact PAIR, not a bare `match.value`: `relativePath` is
+      // TEXT-indexed, so the value condition alone is a full collection scan —
+      // and this is the LAST-RESORT path, walked one file at a time after the
+      // bulk deletes already failed (tea-rags-mcp-ivp12).
+      const filter = { must: exactMatchOnTextIndexed("relativePath", relativePath) };
       await this.qdrant.deletePointsByFilter(this.collection, filter);
     }
   }

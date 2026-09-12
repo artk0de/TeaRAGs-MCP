@@ -131,14 +131,20 @@ describe("QdrantManager.scrollBySymbolIds", () => {
     expect(ids).toEqual(["A", "C"]);
 
     expect(mockScroll).toHaveBeenCalledTimes(1);
+    // bd tea-rags-mcp-ivp12 — the OR over the id set is unchanged; each branch
+    // now leads with the indexed text token (the id's last name segment, the
+    // one token the `word` tokenizer reliably stores) so the exact `value`
+    // condition is checked on candidates instead of on the whole collection.
     expect(mockScroll).toHaveBeenCalledWith(
       "test_collection",
       expect.objectContaining({
         filter: {
-          should: [
-            { key: "symbolId", match: { value: "A" } },
-            { key: "symbolId", match: { value: "C" } },
-          ],
+          should: ["A", "C"].map((id) => ({
+            must: [
+              { key: "symbolId", match: { text: id } },
+              { key: "symbolId", match: { value: id } },
+            ],
+          })),
         },
         with_payload: true,
         with_vector: false,
@@ -150,5 +156,34 @@ describe("QdrantManager.scrollBySymbolIds", () => {
     const chunks = await manager.scrollBySymbolIds("test_collection", []);
     expect(chunks).toEqual([]);
     expect(mockScroll).not.toHaveBeenCalled();
+  });
+
+  /**
+   * An operator-named method has no text token: `symbolIdTextToken` reduces
+   * `Comparable#==` to the empty string (the `=` suffixes are stripped) and
+   * `Vec#<=>` to pure punctuation, and the `word` tokenizer stores neither. A
+   * zero-token `match: { text }` matches nothing, so pairing it would make
+   * trace_path silently drop those steps on a Ruby corpus — every hydration of
+   * an operator method would come back empty and the path would render without
+   * it. The branch therefore carries the exact `value` condition alone: a scan,
+   * but the right answer.
+   */
+  it("carries the value condition alone for an operator-named symbol", async () => {
+    mockScroll.mockResolvedValue({ points: [], next_page_offset: null });
+
+    await manager.scrollBySymbolIds("test_collection", ["Comparable#==", "Vec#<=>", "Money#cents"]);
+
+    expect(mockScroll.mock.calls[0][1].filter).toEqual({
+      should: [
+        { must: [{ key: "symbolId", match: { value: "Comparable#==" } }] },
+        { must: [{ key: "symbolId", match: { value: "Vec#<=>" } }] },
+        {
+          must: [
+            { key: "symbolId", match: { text: "cents" } },
+            { key: "symbolId", match: { value: "Money#cents" } },
+          ],
+        },
+      ],
+    });
   });
 });
