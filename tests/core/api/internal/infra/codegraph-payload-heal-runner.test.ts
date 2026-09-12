@@ -42,9 +42,12 @@ interface StoredPoint {
  * of a file — the only way to falsify "the builders are memoised", since a file
  * spanning two pages is what makes `flush` ask for its signals twice.
  *
- * Deliberately a plain class with no `implements`: the healer's qdrant dep may
- * grow a member (a `countPoints` for progress, say) and an extra method on the
- * real port must not turn this file red.
+ * Deliberately a plain class with no `implements`: an extra method on the real
+ * port must not turn this file red. The two the healer needs to CHOOSE a read
+ * shape are answered so that it always takes the streaming pass — the shape
+ * this spec exercises: the collection is a handful of points, and per-file
+ * scrolls win only when `targetFiles * 2 < points * 0.018`, which a handful can
+ * never satisfy.
  */
 class PagedQdrantStub {
   scrollCalls = 0;
@@ -58,6 +61,16 @@ class PagedQdrantStub {
     private readonly points: readonly StoredPoint[],
     private readonly pageSize = 1000,
   ) {}
+
+  /** The collection's size, as the mode decision reads it. */
+  async countPoints(_collectionName: string): Promise<number> {
+    return this.points.length;
+  }
+
+  /** The per-file shape is not what this spec exercises; reaching it is a defect. */
+  async scrollFiltered(): Promise<never> {
+    throw new Error("PagedQdrantStub: per-file scroll requested; this spec expects the streaming pass");
+  }
 
   async *scrollPayloadPages(
     _collectionName: string,
