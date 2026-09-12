@@ -43,9 +43,15 @@
  *   - `lost` / `gained` — an edge disappeared or appeared. Invariant 3 says
  *     `lost` must be 0.
  *
+ * `--kind-stats` is orthogonal to the three: it recomputes the per-receiver-kind
+ * counters `cg_run_stats` persists — through `classifyResolveMiss`, the decision
+ * the production runner tallies — so a DENOMINATOR change is measurable without
+ * a reindex, next to the edge counts that must not move (bd tea-rags-mcp-1v12o.3).
+ *
  * Usage:
  *   npx tsx scripts/codegraph-chain-tally.ts --corpus <abs path> --lang python \
- *     [--defer globalShortName] [--limit N] [--samples 10] [--json out.json]
+ *     [--defer globalShortName] [--limit N] [--samples 10] [--json out.json] \
+ *     [--kind-stats]
  *
  *   env -u NODE_OPTIONS npx tsx scripts/codegraph-chain-tally.ts \
  *     --corpus <abs path> --lang ruby --quiet --time-only [--ts-checker=off]
@@ -99,6 +105,16 @@ import {
   normalizeInheritanceEdges,
 } from "../src/core/domains/trajectory/codegraph/symbols/inheritance-edges.js";
 import { CODEGRAPH_LANGUAGES } from "../src/core/domains/trajectory/codegraph/symbols/provider.js";
+import {
+  classifyReceiverKind,
+  RECEIVER_KINDS,
+  type ReceiverKind,
+} from "../src/core/domains/trajectory/codegraph/symbols/receiver-kind.js";
+import { classifyResolveMiss } from "../src/core/domains/trajectory/codegraph/symbols/resolution-runner.js";
+import {
+  emptyReceiverKindTally,
+  type ReceiverKindTally,
+} from "../src/core/domains/trajectory/codegraph/symbols/run-state.js";
 import { InMemoryGlobalSymbolTable } from "../src/core/domains/trajectory/codegraph/symbols/symbol-table.js";
 import { NO_FAN, scoreFan, type PyFanOutcomeKind } from "./lib/py-oracle-core.js";
 import {
@@ -590,6 +606,27 @@ export interface RunResult {
   timeOnly: boolean;
   /** Wall/heap accounting, present only under `--timing` (which `--time-only` implies). */
   timing?: ChainTallyTiming;
+  /**
+   * `--kind-stats`: the per-receiver-kind counters `cg_run_stats` persists,
+   * recomputed OFFLINE (bd tea-rags-mcp-1v12o.3). The buckets come from
+   * `classifyResolveMiss` — production's own decision, not a copy — so a
+   * denominator change is measurable without a reindex.
+   */
+  kindStats?: Record<ReceiverKind, ReceiverKindTally>;
+  /** Under `--kind-stats`: a few `missWithInProjectDef` sites per kind, for diagnosis. */
+  kindSamples?: Record<ReceiverKind, string[]>;
+}
+
+/**
+ * Misses the rate charges as failures — `status-module.ts#missWithInProjectDef`
+ * for one kind's row. `ambiguousFanout` is deliberately NOT subtracted: the
+ * strict rate keeps an over-cap fan in the denominator.
+ */
+export function kindMissWithInProjectDef(t: ReceiverKindTally): number {
+  return Math.max(
+    0,
+    t.attempted - t.resolved - t.externalSkipped - t.unresolvable - t.noInProjectDef - t.coreAmbiguous,
+  );
 }
 
 /** Knobs the E6 timing legs add; every one of them is off in a default run. */
@@ -602,6 +639,61 @@ export interface ChainTallyRunOptions {
   timeOnly?: boolean;
   /** Sample RSS, time both passes, count LOC. Implied by `timeOnly`. */
   timing?: boolean;
+  /** Recompute the per-receiver-kind run stats offline (bd tea-rags-mcp-1v12o.3). */
+  kindStats?: boolean;
+}
+
+/** Residual-miss examples printed per kind. Enough to name the shape, not a dump. */
+const KIND_SAMPLE_CAP = 6;
+
+function emptyKindSamples(): Record<ReceiverKind, string[]> {
+  const out = {} as Record<ReceiverKind, string[]>;
+  for (const kind of RECEIVER_KINDS) out[kind] = [];
+  return out;
+}
+
+/**
+ * One call site's contribution to the offline per-kind run stats. Mirrors
+ * `CallEdgeResolutionRunner#resolveMethodEdges`'s tally block — the SAME
+ * `classifyResolveMiss` production calls, so the buckets cannot drift.
+ */
+function tallyKindStats(
+  stats: Record<ReceiverKind, ReceiverKindTally>,
+  samples: Record<ReceiverKind, string[]>,
+  site: {
+    call: CallRef;
+    ctx: CallContext;
+    chunk: ChunkExtraction;
+    resolver: Parameters<typeof classifyResolveMiss>[2];
+    symbolTable: InMemoryGlobalSymbolTable;
+    relPath: string;
+    resolved: boolean;
+    ambiguous: boolean;
+  },
+): void {
+  const kind = classifyReceiverKind(site.call, site.chunk.localBindings);
+  const row = stats[kind];
+  row.attempted += 1;
+  if (site.ambiguous) {
+    row.ambiguousFanout += 1;
+    return;
+  }
+  if (site.resolved) {
+    row.resolved += 1;
+    return;
+  }
+  const bucket = classifyResolveMiss(site.call, site.ctx, site.resolver, site.symbolTable);
+  if (bucket === "missWithInProjectDef") {
+    if (samples[kind].length < KIND_SAMPLE_CAP) {
+      // The RECEIVER and the member, never `callText` — a multi-line call would
+      // break one sample across as many lines and make the block ungreppable.
+      samples[kind].push(
+        `${site.relPath}:${site.call.startLine} ${String(site.call.receiver)}.${site.call.member}`.replace(/\s+/g, " "),
+      );
+    }
+    return;
+  }
+  row[bucket] += 1;
 }
 
 export async function run(
@@ -706,6 +798,8 @@ export async function run(
 
   const pass2Start = performance.now();
   const rows: CallSiteRow[] = [];
+  const kindStats = opts.kindStats === true ? emptyReceiverKindTally() : null;
+  const kindSamples = opts.kindStats === true ? emptyKindSamples() : null;
   let dispatchSkipped = 0;
   let chainDrift = 0;
   let singleSites = 0;
@@ -750,6 +844,20 @@ export async function run(
           fanSize: fan.fanSize,
           runnerAnswer: fan.kind === "single" ? fan.single : fan.kind === "none" ? baseline : null,
         });
+        if (kindStats !== null && kindSamples !== null) {
+          tallyKindStats(kindStats, kindSamples, {
+            call,
+            ctx,
+            chunk,
+            resolver: production,
+            symbolTable,
+            relPath: extraction.relPath,
+            // The runner books a fan or a single as RESOLVED (it pushed edges);
+            // only `ambiguous` and a declining chain reach miss classification.
+            resolved: fan.kind === "single" || fan.kind === "fan" || (fan.kind === "none" && baseline !== null),
+            ambiguous: fan.kind === "ambiguous",
+          });
+        }
       }
     }
   }
@@ -783,6 +891,8 @@ export async function run(
     ambiguousSites,
     fanEdges,
     fanoutPolicy: dispatchFanoutPolicyFor(symbolTable),
+    kindStats: kindStats ?? undefined,
+    kindSamples: kindSamples ?? undefined,
     timeOnly,
     timing:
       sampler === null ? undefined : { pass1Ms, pass2Ms, totalMs: pass1Ms + pass2Ms, peakRssMb: sampler.stop(), loc },
@@ -808,6 +918,7 @@ export function parseArgs(argv: readonly string[]) {
     quiet: argv.includes("--quiet"),
     dispatch: !argv.includes("--no-dispatch"),
     timeOnly: argv.includes("--time-only"),
+    kindStats: argv.includes("--kind-stats"),
     // `--time-only` implies `--timing`: a mode whose only purpose is the numbers
     // should not need a second flag to print them. `--timing` alone stays legal
     // so a python `--defer` run can also be timed.
@@ -827,6 +938,7 @@ async function main(): Promise<void> {
   const result = await run(opts.corpus, opts.lang, opts.defer, opts.limit, opts.quiet, opts.dispatch, {
     timeOnly: opts.timeOnly,
     timing: opts.timing,
+    kindStats: opts.kindStats,
   });
   const baseline = tallyChainOutput(result.rows.map((r) => r.baseline));
   const variant = tallyChainOutput(result.rows.map((r) => r.variant));
@@ -880,6 +992,7 @@ async function main(): Promise<void> {
       );
     }
   }
+  if (result.kindStats !== undefined) out.push(...formatKindStatsBlock(result.kindStats, result.kindSamples));
   if (result.timing !== undefined) {
     out.push(
       ...formatTimingBlock(result.timing, {
@@ -897,6 +1010,40 @@ async function main(): Promise<void> {
       `${JSON.stringify({ opts, result: { ...result, rows: undefined }, baseline, variant, tally, changed }, null, 2)}\n`,
     );
   }
+}
+
+/**
+ * The `## Codegraph resolve` per-kind section, recomputed offline. `rate` is
+ * `resolved / (resolved + miss)` — the exact `resolveSuccessRate` formula, with
+ * `miss` the residual the rate charges as a failure.
+ */
+export function formatKindStatsBlock(
+  stats: Record<ReceiverKind, ReceiverKindTally>,
+  samples: Record<ReceiverKind, string[]> | undefined,
+): string[] {
+  const lines = ["", "PER-RECEIVER-KIND RUN STATS (offline recompute of cg_run_stats)"];
+  const totals = { resolved: 0, miss: 0 };
+  for (const kind of RECEIVER_KINDS) {
+    const t = stats[kind];
+    if (t.attempted === 0) continue;
+    const miss = kindMissWithInProjectDef(t);
+    totals.resolved += t.resolved;
+    totals.miss += miss;
+    const rate = t.resolved + miss === 0 ? 1 : t.resolved / (t.resolved + miss);
+    lines.push(
+      `  ${kind.padEnd(11)} ${rate.toFixed(3)} ${t.resolved}/${t.resolved + miss}` +
+        ` · attempted ${t.attempted} · external ${t.externalSkipped} · noInProjectDef ${t.noInProjectDef}` +
+        ` · coreAmbiguous ${t.coreAmbiguous} · unresolvable ${t.unresolvable}` +
+        ` · ambiguousFanout ${t.ambiguousFanout} · MISS ${miss}`,
+    );
+    for (const sample of samples?.[kind] ?? []) lines.push(`      miss: ${sample}`);
+  }
+  const denominator = totals.resolved + totals.miss;
+  lines.push(
+    `  TOTAL       ${(denominator === 0 ? 1 : totals.resolved / denominator).toFixed(3)}` +
+      ` ${totals.resolved}/${denominator} · residual miss ${totals.miss}`,
+  );
+  return lines;
 }
 
 function describe(target: SymbolResolutionTarget | null): string {
