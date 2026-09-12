@@ -107,6 +107,14 @@ describe("projectsCommand yargs builder/handler wiring", () => {
     expect(out).toMatch(/no projects registered/);
   });
 
+  it("prune subcommand closure invokes runPrune, dry run by default", async () => {
+    // No --purge: the sweep must not reach for Qdrant at all, so the closure
+    // runs against the real (empty) registry without any stubbing.
+    await makeCli().parseAsync(["projects", "prune"]);
+    const out = stdoutSpy.mock.calls.map((c) => String(c[0])).join("");
+    expect(out).toMatch(/no stale registry entries/);
+  });
+
   it("orphans subcommand closure invokes runOrphans via real defaultQdrant path", async () => {
     // Mock the modules dynamically imported inside defaultQdrant so the
     // yargs handler closure exercises the production wiring (parseAppConfig

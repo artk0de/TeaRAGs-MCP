@@ -16,12 +16,18 @@ import {
   ProjectNameNotUniqueError,
   ProjectPathAlreadyRegisteredError,
 } from "../../errors.js";
+import type { StaleProjectEntry, StaleProjectPruneReport } from "../../public/dto/registry.js";
 
 export interface ProjectRegistryOpsDeps {
   registry: CollectionRegistry;
   qdrant?: QdrantManager;
   embeddings?: EmbeddingProvider;
   snapshotDir?: string;
+  /**
+   * Does this project directory exist? Seam for the stale sweep so its spec
+   * needs no filesystem. Production leaves it out and gets `existsSync`.
+   */
+  pathExists?: (path: string) => boolean;
 }
 
 export class ProjectRegistryOps {
@@ -231,6 +237,57 @@ export class ProjectRegistryOps {
 
   async list(): Promise<{ projects: ProjectInfo[] }> {
     return { projects: this.deps.registry.list() };
+  }
+
+  /**
+   * Registry entries whose project directory is gone from disk.
+   *
+   * An entry with an EMPTY path is not stale — `recoverFromQdrant` writes
+   * those stubs precisely because no directory is known for them, so there is
+   * no directory to miss. Named and nameless stale entries are both reported;
+   * only `pruneStale` draws the line between them.
+   */
+  listStale(): StaleProjectEntry[] {
+    const exists = this.deps.pathExists ?? ((path: string): boolean => existsSync(resolve(path)));
+    return this.deps.registry
+      .list()
+      .filter((entry) => entry.path.length > 0 && !exists(entry.path))
+      .map((entry) => ({
+        collectionName: entry.collectionName,
+        name: entry.name,
+        path: entry.path,
+        chunksCount: entry.chunksCount,
+        indexedAt: entry.indexedAt,
+        ...(entry.worktreeOf !== undefined ? { worktreeOf: entry.worktreeOf } : {}),
+      }));
+  }
+
+  /**
+   * Remove the stale entries nothing can recover.
+   *
+   * A NAMED stale entry is left alone: `register` re-points it the moment its
+   * alias is registered at the new path, and that recovery is the whole reason
+   * the re-point exists (a moved worktree keeps its index). A NAMELESS one has
+   * no such route — nothing ever addresses it again — so it is the only kind
+   * this removes.
+   *
+   * `blocked` names entries the caller wants left behind regardless: the CLI's
+   * `--purge` puts an entry there when tearing down its footprint failed, so
+   * the registry still points at what is left and the sweep can be retried.
+   */
+  pruneStale(options?: { blocked?: ReadonlySet<string> }): StaleProjectPruneReport {
+    const blocked = options?.blocked;
+    const removed: StaleProjectEntry[] = [];
+    const kept: StaleProjectEntry[] = [];
+    for (const entry of this.listStale()) {
+      if (entry.name !== null || blocked?.has(entry.collectionName) === true) {
+        kept.push(entry);
+        continue;
+      }
+      if (this.deps.registry.remove(entry.collectionName)) removed.push(entry);
+      else kept.push(entry);
+    }
+    return { removed, kept };
   }
 
   async unregister(input: { name: string }): Promise<{ removed: boolean }> {

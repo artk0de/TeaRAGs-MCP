@@ -44,6 +44,9 @@ export type {
   // Document DTOs
   AddDocumentsRequest,
   DeleteDocumentsRequest,
+  // Registry DTOs
+  StaleProjectEntry,
+  StaleProjectPruneReport,
 } from "./dto/index.js";
 
 // ── Error classes — input validation hierarchy (api/errors.ts) ────────

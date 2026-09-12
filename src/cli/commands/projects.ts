@@ -10,6 +10,7 @@ import {
   ProjectRegistryOps,
   QdrantManager,
   type CollectionEntry,
+  type StaleProjectEntry,
 } from "../../core/api/public/index.js";
 import { createColorizer } from "../infra/color.js";
 import { formatProjectsTable } from "./projects-format.js";
@@ -31,6 +32,10 @@ interface InfoArgs {
 }
 interface OrphansArgs {
   json?: boolean;
+}
+interface PruneArgs {
+  json?: boolean;
+  purge?: boolean;
 }
 
 /** Narrow surface of QdrantManager that runOrphans needs (allows test injection). */
@@ -111,19 +116,10 @@ async function purgeFootprint(
   target: { name: string; collectionName: string; registry: CollectionRegistry; path?: string },
   qdrant?: PurgeQdrantClient,
 ): Promise<void> {
-  const { name, collectionName, registry } = target;
+  const { name, collectionName } = target;
   const client = qdrant ?? (await defaultQdrant());
   const chunkCount = await safeCount(client, collectionName);
-  const { createCollectionFootprintPurger } = await import("../../bootstrap/footprint-purge.js");
-  const purger = createCollectionFootprintPurger({
-    qdrant: client as QdrantManager,
-    registry,
-    appDataDir: resolveDataDir(),
-  });
-  const report = await purger.purge({
-    logicalName: collectionName,
-    ...(target.path ? { path: target.path } : {}),
-  });
+  const report = await purgeCollectionFootprint(target, client);
 
   const qdrantFailure = report.failures.find((f) => f.artifact === "qdrant");
   process.stdout.write(
@@ -140,6 +136,40 @@ async function purgeFootprint(
   if (report.clearedStores.length > 0) detail("cleared:", [...report.clearedStores].sort().join(", "));
   for (const note of report.kept) detail("kept:", note);
   for (const failure of report.failures) detail("failed:", `${failure.artifact} ${failure.target} — ${failure.reason}`);
+}
+
+/**
+ * The part of the footprint purge report both callers render. Declared here
+ * rather than imported so the CLI stays off `domains/maintenance` — the real
+ * `CollectionPurgeReport` is structurally wider and assigns straight into it.
+ */
+interface FootprintPurgeOutcome {
+  qdrantCollections: string[];
+  codegraphDatabases: string[];
+  clearedStores: string[];
+  kept: string[];
+  failures: { artifact: string; target: string; reason: string }[];
+}
+
+/**
+ * Run the footprint teardown for one collection and hand back what happened.
+ * Prints nothing: `unregister --purge` narrates one project, `prune --purge`
+ * narrates a sweep, and the purge itself is the same saga either way.
+ */
+async function purgeCollectionFootprint(
+  target: { collectionName: string; registry: CollectionRegistry; path?: string },
+  client: PurgeQdrantClient,
+): Promise<FootprintPurgeOutcome> {
+  const { createCollectionFootprintPurger } = await import("../../bootstrap/footprint-purge.js");
+  const purger = createCollectionFootprintPurger({
+    qdrant: client as QdrantManager,
+    registry: target.registry,
+    appDataDir: resolveDataDir(),
+  });
+  return purger.purge({
+    logicalName: target.collectionName,
+    ...(target.path ? { path: target.path } : {}),
+  });
 }
 
 export function runList(args: ListArgs): void {
@@ -253,6 +283,105 @@ export async function runOrphans(args: OrphansArgs, qdrant?: QdrantSurface): Pro
   }
 }
 
+/** One stale entry as a line: collection, alias, path, chunks, what happens to it. */
+function staleLine(entry: StaleProjectEntry, status: string): string {
+  return `${entry.collectionName}\t${entry.name ?? "(no alias)"}\t${entry.path}\t${entry.chunksCount}\t${status}\n`;
+}
+
+/**
+ * A NAMED stale entry is recoverable, so the sweep never removes it:
+ * `register` re-points the alias the moment it is registered at the new path,
+ * and the index behind it survives the move.
+ */
+function keptAliasHint(name: string): string {
+  return `kept — re-register the alias at its new path or 'projects unregister --name ${name} --purge'`;
+}
+
+/**
+ * `tea-rags projects prune` — sweep the registry entries whose project
+ * directory is gone (removed worktrees, deleted fixtures). The inverse of
+ * `projects orphans`, which lists collections without an entry.
+ *
+ * DRY RUN by default: it prints what it would do and changes nothing. With
+ * `--purge` it tears down the Qdrant/codegraph footprint of each NAMELESS
+ * stale entry FIRST and removes the registry entry only when that succeeded,
+ * so a failed purge leaves the entry pointing at what is left and the sweep
+ * can be retried. One entry's failure never aborts the others.
+ *
+ * `qdrant` is an injection point, as in `runOrphans`.
+ */
+export async function runPrune(args: PruneArgs, qdrant?: PurgeQdrantClient): Promise<void> {
+  const { registry, ops } = newOps();
+  const stale = ops.listStale();
+
+  if (!args.purge) {
+    if (args.json) {
+      // A dry run decides nothing, so it claims nothing: `removed` and `kept`
+      // stay empty, and each stale entry's `name` says which ones --purge
+      // would take (null = removed, an alias = kept).
+      process.stdout.write(`${JSON.stringify({ stale, removed: [], kept: [] }, null, 2)}\n`);
+      return;
+    }
+    if (stale.length === 0) {
+      process.stdout.write("(no stale registry entries)\n");
+      return;
+    }
+    for (const entry of stale) {
+      process.stdout.write(staleLine(entry, entry.name === null ? "would remove" : keptAliasHint(entry.name)));
+    }
+    const prunable = stale.filter((entry) => entry.name === null).length;
+    if (prunable > 0) {
+      const noun = prunable === 1 ? "entry" : "entries";
+      const pronoun = prunable === 1 ? "it" : "them";
+      process.stdout.write(
+        `Dry run — nothing removed. Re-run 'tea-rags projects prune --purge' to remove ${prunable} nameless ${noun} and the Qdrant/codegraph footprint behind ${pronoun}.\n`,
+      );
+    }
+    return;
+  }
+
+  const blocked = new Set<string>();
+  const blockedReason = new Map<string, string>();
+  let client = qdrant;
+  for (const entry of stale) {
+    if (entry.name !== null) continue;
+    // Resolved lazily: a sweep with nothing to purge must not spin up Qdrant.
+    client ??= await defaultQdrant();
+    const report = await purgeCollectionFootprint(
+      { collectionName: entry.collectionName, registry, ...(entry.path ? { path: entry.path } : {}) },
+      client,
+    );
+    const [failure] = report.failures;
+    if (failure) {
+      blocked.add(entry.collectionName);
+      blockedReason.set(entry.collectionName, `${failure.artifact} ${failure.target} — ${failure.reason}`);
+    }
+  }
+  const outcome = ops.pruneStale({ blocked });
+
+  if (args.json) {
+    process.stdout.write(`${JSON.stringify({ stale, ...outcome }, null, 2)}\n`);
+    return;
+  }
+  if (stale.length === 0) {
+    process.stdout.write("(no stale registry entries)\n");
+    return;
+  }
+  const removed = new Set(outcome.removed.map((entry) => entry.collectionName));
+  for (const entry of stale) {
+    const reason = blockedReason.get(entry.collectionName);
+    const status =
+      entry.name !== null
+        ? keptAliasHint(entry.name)
+        : reason !== undefined
+          ? `kept — purge failed: ${reason}`
+          : removed.has(entry.collectionName)
+            ? "removed"
+            : "kept";
+    process.stdout.write(staleLine(entry, status));
+  }
+}
+
 async function safeCount(client: Pick<QdrantManager, "countPoints">, collectionName: string): Promise<number> {
   try {
     return await client.countPoints(collectionName);
@@ -274,13 +403,13 @@ async function defaultQdrant(): Promise<QdrantManager> {
 }
 
 /**
- * `tea-rags projects [register|list|unregister|info|orphans]` — grouped subcommands
- * for project registry management. `list` is the default when no subcommand
- * is given.
+ * `tea-rags projects [register|list|unregister|info|orphans|prune]` — grouped
+ * subcommands for project registry management. `list` is the default when no
+ * subcommand is given.
  */
 export const projectsCommand: CommandModule = {
   command: "projects",
-  describe: "Manage registered projects (register | list | unregister | info | orphans). Defaults to list.",
+  describe: "Manage registered projects (register | list | unregister | info | orphans | prune). Defaults to list.",
   builder: (yargs: Argv) =>
     yargs
       .command<RegisterArgs>(
@@ -317,6 +446,21 @@ export const projectsCommand: CommandModule = {
         (y) => y.option("json", { type: "boolean", default: false, describe: "Output as JSON" }),
         async (argv) => {
           await runOrphans({ json: argv.json });
+        },
+      )
+      .command<PruneArgs>(
+        "prune",
+        "Sweep registry entries whose project directory is gone (dry run unless --purge)",
+        (y) =>
+          y
+            .option("purge", {
+              type: "boolean",
+              default: false,
+              describe: "Remove the entries and delete the Qdrant/codegraph footprint behind them",
+            })
+            .option("json", { type: "boolean", default: false, describe: "Output as JSON" }),
+        async (argv) => {
+          await runPrune({ json: argv.json, purge: argv.purge });
         },
       )
       .command<ListArgs>(
