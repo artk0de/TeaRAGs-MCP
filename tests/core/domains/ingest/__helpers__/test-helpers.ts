@@ -43,6 +43,25 @@ class MockAliasManager {
   }
 }
 
+/**
+ * The exact value a `must` of conditions matches on — the `value` half of the
+ * text+value pair callers build for a TEXT-indexed key (bd tea-rags-mcp-ivp12),
+ * found by role rather than by position so a fake reading it never depends on
+ * which condition the builder happened to put first.
+ */
+function valueOfExactMatch(must: any): string | undefined {
+  if (!Array.isArray(must)) return undefined;
+  return must.find((c: any) => c?.match?.value !== undefined)?.match?.value;
+}
+
+/**
+ * The path one branch of a membership `should` selects — either the nested
+ * `{ must: [text, value] }` pair, or a bare value condition from an older shape.
+ */
+function pathOfExactBranch(branch: any): string | undefined {
+  return valueOfExactMatch(branch?.must) ?? branch?.match?.value;
+}
+
 /** Mock QdrantManager — mirrors all public methods with alias resolution */
 export class MockQdrantManager implements Partial<QdrantManager> {
   private collections = new Map<string, any>();
@@ -210,7 +229,11 @@ export class MockQdrantManager implements Partial<QdrantManager> {
     if (!filter) return points.length;
     const shouldConditions = (filter as any)?.should;
     if (shouldConditions) {
-      const paths = new Set(shouldConditions.map((c: any) => c.match?.value));
+      // Each branch of a path-membership filter is now an exact text+value pair
+      // under its own `must` (bd tea-rags-mcp-ivp12). Read the path by ROLE —
+      // the condition carrying `match.value`, wherever it sits — so the fake
+      // survives both that shape and a plain value condition.
+      const paths = new Set(shouldConditions.map((c: any) => pathOfExactBranch(c)));
       return points.filter((p) => paths.has(p.payload?.relativePath)).length;
     }
     return points.length;
@@ -222,7 +245,7 @@ export class MockQdrantManager implements Partial<QdrantManager> {
     // The exact path is the `value` half of the text+value pair the caller
     // builds for a text-indexed key (bd tea-rags-mcp-ivp12) — read it by role,
     // not by position, so the fake stays right whatever else rides the `must`.
-    const pathToDelete = filter?.must?.find((c: any) => c?.match?.value !== undefined)?.match?.value;
+    const pathToDelete = valueOfExactMatch(filter?.must);
     if (pathToDelete) {
       this.points.set(
         resolved,

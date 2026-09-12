@@ -28,13 +28,23 @@ const SRC_DIR = join(dirname(fileURLToPath(import.meta.url)), "../../../../src")
 /** The one file allowed to name a text-indexed key beside `match: { value }`. */
 const HELPER_SOURCE = join(SRC_DIR, "core/adapters/qdrant/filters/text-indexed-exact.ts");
 
+const KEY_ALTERNATION = TEXT_INDEXED_KEYS.join("|");
+
 /**
- * `key: "<text-indexed key>"` immediately followed by the degraded predicate,
- * with every run of whitespace collapsed first so the two-line shape
- * (`key:` on one line, `match:` on the next) is caught alongside the one-line
- * one.
+ * The degraded condition, in both property orders. Every run of whitespace is
+ * collapsed before matching, so the two-line shape (`key:` on one line,
+ * `match:` on the next) is caught alongside the one-line one, and the spaces
+ * inside the braces are optional because the source is not always
+ * prettier-formatted when the scan runs.
+ *
+ * Deliberately NOT one clever regex: a scan that quietly stops matching is the
+ * same failure as no scan at all, so each shape is its own readable pattern and
+ * {@link findDegradedIn} is exercised against synthetic offenders below.
  */
-const DEGRADED_MATCH = new RegExp(`key: "(${TEXT_INDEXED_KEYS.join("|")})", match: \\{ (value|any)\\b`, "g");
+const DEGRADED_MATCHERS = [
+  new RegExp(`key: ?"(?:${KEY_ALTERNATION})", ?match: ?\\{ ?(?:value|any)\\b`, "g"),
+  new RegExp(`match: ?\\{ ?(?:value|any)\\b[^{}]*\\}, ?key: ?"(?:${KEY_ALTERNATION})"`, "g"),
+];
 
 function listSourceFiles(dir: string): string[] {
   const found: string[] = [];
@@ -46,13 +56,18 @@ function listSourceFiles(dir: string): string[] {
   return found;
 }
 
+/** Every degraded condition in one file's text, whitespace-normalized. */
+function findDegradedIn(source: string): string[] {
+  const normalized = source.replace(/\s+/g, " ");
+  return DEGRADED_MATCHERS.flatMap((matcher) => [...normalized.matchAll(matcher)].map((hit) => hit[0]));
+}
+
 function findDegradedMatches(): string[] {
   const offenders: string[] = [];
   for (const file of listSourceFiles(SRC_DIR)) {
     if (file === HELPER_SOURCE) continue;
-    const normalized = readFileSync(file, "utf8").replace(/\s+/g, " ");
-    for (const hit of normalized.matchAll(DEGRADED_MATCH)) {
-      offenders.push(`${relative(SRC_DIR, file)}: ${hit[0]}`);
+    for (const hit of findDegradedIn(readFileSync(file, "utf8"))) {
+      offenders.push(`${relative(SRC_DIR, file)}: ${hit}`);
     }
   }
   return offenders;
@@ -63,6 +78,34 @@ describe("exact matching on a text-indexed key goes through the helper", () => {
     // The message is the point: a failure names the file and the condition, so
     // the fix (route it through `exactMatchOnTextIndexed`) needs no archaeology.
     expect(findDegradedMatches()).toEqual([]);
+  });
+
+  // A guard nobody has seen fail is a guard nobody knows works. These are the
+  // spellings the same condition takes in real source.
+  it("recognizes the degraded condition in every spelling it is written in", () => {
+    const offenders = [
+      `{ key: "relativePath", match: { value: path } }`,
+      `{ key: "relativePath", match: {value: path} }`,
+      `{\n  key: "symbolId",\n  match: { value: id },\n}`,
+      `{ key: "relativePath", match: { any: paths } }`,
+      `{ match: { value: path }, key: "relativePath" }`,
+      `{ match: {any: paths}, key: "parentSymbolId" }`,
+    ];
+    for (const source of offenders) {
+      expect(findDegradedIn(source), source).not.toEqual([]);
+    }
+  });
+
+  it("passes the shapes that are not the degraded condition", () => {
+    const allowed = [
+      `{ key: "relativePath", match: { text: query } }`,
+      `{ key: "language", match: { value: "ruby" } }`,
+      `{ key: "fileExtension", match: { any: exts } }`,
+      `{ is_empty: { key: "relativePath" } }`,
+    ];
+    for (const source of allowed) {
+      expect(findDegradedIn(source), source).toEqual([]);
+    }
   });
 });
 
@@ -95,5 +138,19 @@ describe("SchemaManager.initializeSchema index types for text-indexed keys", () 
     for (const key of TEXT_INDEXED_KEYS) {
       expect(qdrant.createPayloadIndex).not.toHaveBeenCalledWith("fresh", key, "keyword");
     }
+  });
+
+  // The direction that actually catches drift. Checking only that every listed
+  // key gets a text index says nothing about a key given one WITHOUT being
+  // listed — and that is exactly what happened to `symbolId` (v8) and
+  // `parentSymbolId` (v11/v15): both quietly acquired a text index, neither was
+  // named anywhere a caller would look, and every exact match on them scanned
+  // the collection for six schema versions with nothing failing.
+  it("gives a text index to no key outside TEXT_INDEXED_KEYS", () => {
+    const textIndexed = qdrant.createPayloadIndex.mock.calls
+      .filter(([, , schema]: [string, string, string]) => schema === "text")
+      .map(([, key]: [string, string]) => key);
+
+    expect([...new Set(textIndexed)].sort()).toEqual([...TEXT_INDEXED_KEYS].sort());
   });
 });
