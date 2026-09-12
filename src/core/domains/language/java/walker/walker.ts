@@ -38,6 +38,7 @@ import type {
   ImportRef,
   LocalBinding,
 } from "../../../../contracts/types/codegraph.js";
+import { assignCallsToInnermostChunks } from "../../kernel/assign-calls-to-chunks.js";
 
 export interface JavaExtractInput {
   tree: MaterializedTree;
@@ -59,13 +60,21 @@ export function extractFromJavaFile(input: JavaExtractInput): FileExtraction {
   // the declaration line.
   const localBindings = collectLocalBindings(input.tree.rootNode);
   const bindingOwnership = assignBindingsToInnermostChunks(localBindings, input.chunks);
+  // bd tea-rags-mcp-f11nz — the SAME innermost-chunk discipline for CALL sites,
+  // via the kernel helper (python bd tea-rags-mcp-invuy). `javaNameOf` marks
+  // `class_declaration` / `interface_declaration` / `enum_declaration`
+  // `descendsInto: true`, so the pure-containment filter this replaces emitted
+  // every in-method call TWICE: once from the method chunk under the method's
+  // scope, once from the class chunk under the class's (or, for a top-level
+  // class, an EMPTY) scope — the second copy resolving against the wrong caller.
+  const callOwnership = assignCallsToInnermostChunks(calls, input.chunks);
   const byChunk: ChunkExtraction[] = input.chunks.map((c, chunkIndex) => {
     const chunk: ChunkExtraction = {
       symbolId: c.symbolId,
       scope: c.scope,
       startLine: c.startLine,
       endLine: c.endLine,
-      calls: calls.filter((cr) => cr.startLine >= c.startLine && cr.startLine <= c.endLine),
+      calls: callOwnership.get(chunkIndex) ?? [],
     };
     const bindings = bindingOwnership.get(chunkIndex);
     if (bindings && Object.keys(bindings).length > 0) chunk.localBindings = bindings;

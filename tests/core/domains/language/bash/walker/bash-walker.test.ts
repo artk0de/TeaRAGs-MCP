@@ -139,3 +139,46 @@ describe("extractFromBashFile — defined-set call filtering", () => {
     expect(r2.imports.map((i) => i.importText)).toEqual(["./single.sh"]);
   });
 });
+
+// bd tea-rags-mcp-f11nz — ONE owning chunk per call site. The pure line-range
+// containment filter this replaces handed every call to EVERY chunk whose range
+// spanned it, so a call nested inside another chunk was emitted once per
+// enclosing chunk. `bashNameOf` marks every function `descendsInto: false`, so
+// today's chunk set never nests and the emitted call set is unmoved — the
+// invariant is pinned at the walker's own contract boundary, which is where a
+// future container symbol would break it.
+describe("extractFromBashFile — innermost-chunk call attribution", () => {
+  it("emits a call inside a nested chunk exactly once, from the innermost chunk", () => {
+    const src = ["target() {", "  :", "}", "outer() {", "  inner() {", "    target", "  }", "}", ""].join("\n");
+    const r = extractFromBashFile({
+      tree: parse(src),
+      code: src,
+      relPath: "lib.sh",
+      language: "bash",
+      chunks: [
+        { symbolId: "lib.sh::outer", scope: [], startLine: 4, endLine: 8 },
+        { symbolId: "lib.sh::inner", scope: ["outer"], startLine: 5, endLine: 7 },
+      ],
+    });
+    const emitted = r.chunks.flatMap((c) => (c.calls ?? []).map((call) => `${c.symbolId}:${call.member}`));
+    expect(emitted).toEqual(["lib.sh::inner:target"]);
+  });
+
+  it("leaves a call outside every nested chunk on the enclosing chunk", () => {
+    const src = ["target() {", "  :", "}", "outer() {", "  target", "  inner() {", "    target", "  }", "}", ""].join(
+      "\n",
+    );
+    const r = extractFromBashFile({
+      tree: parse(src),
+      code: src,
+      relPath: "lib.sh",
+      language: "bash",
+      chunks: [
+        { symbolId: "lib.sh::outer", scope: [], startLine: 4, endLine: 9 },
+        { symbolId: "lib.sh::inner", scope: ["outer"], startLine: 6, endLine: 8 },
+      ],
+    });
+    expect(r.chunks[0].calls.map((c) => c.startLine)).toEqual([5]);
+    expect(r.chunks[1].calls.map((c) => c.startLine)).toEqual([7]);
+  });
+});
