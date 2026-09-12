@@ -22,7 +22,12 @@ export class ExternalCallClassifier {
     if (call.receiver === null) return this.vocab.isBareCallExternal(call.member, ctx);
     return (
       this.vocab.isQualifiedReceiverExternal(call.receiver, ctx, call.startLine, call.member) ||
-      (this.vocab.isQualifiedMemberExternal?.(call.member) ?? false)
+      (this.vocab.isQualifiedMemberExternal?.(call.member) ?? false) ||
+      // bd tea-rags-mcp-1v12o.3 — LAST, and only for what the two text arms
+      // declined: the receiver's TYPE and that type's hierarchy. Ordering is
+      // what keeps the arms above byte-identical; a vocabulary that omits the
+      // predicate reaches exactly the answer it reached before it existed.
+      (this.vocab.isReceiverDefinitionExternal?.(call, ctx) ?? false)
     );
   }
 

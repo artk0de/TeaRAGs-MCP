@@ -40,10 +40,21 @@ describe("PythonCallResolver.targetsExternalImport", () => {
     expect(resolver.targetsExternalImport(call, ctx)).toBe(false);
   });
 
-  it("does NOT flag a single-segment receiver (handled by import-match as a file edge)", () => {
+  /**
+   * INVARIANT CHANGED, bd tea-rags-mcp-1v12o.3. The guard this used to pin
+   * ("single-segment receivers are never claimed") was documented as a
+   * denominator change nothing had measured — `importMatch`, which once emitted
+   * a file edge for `os.getcwd()` so it never arrived here, was removed by
+   * tea-rags-mcp-rw1qk and the guard outlived its reason. Measured on ugnest:
+   * `httpx.post`, `re.match`, `random.seed` sat in `missWithInProjectDef`
+   * purely because the receiver is one dot short of the arm above. A module
+   * receiver bound by an import that maps OUTSIDE the project is external at
+   * either spelling; the first-party arm below is what keeps it honest.
+   */
+  it("flags a single-segment receiver bound by an external import (os.getcwd)", () => {
     const call: CallRef = { callText: "os.getcwd()", receiver: "os", member: "getcwd", startLine: 3 };
     const ctx = makeCtx("pkg/main.py", [{ importText: "os", startLine: 1 }], new InMemoryGlobalSymbolTable());
-    expect(resolver.targetsExternalImport(call, ctx)).toBe(false);
+    expect(resolver.targetsExternalImport(call, ctx)).toBe(true);
   });
 
   it("does NOT flag a bare call (cannot distinguish builtin from project — conservative)", () => {

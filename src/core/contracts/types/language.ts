@@ -223,6 +223,18 @@ export interface ExternalVocabulary {
    * conservative direction (never hides a miss).
    */
   isReceiverTyped?: (receiver: string, ctx: CallContext, atLine?: number) => boolean;
+  /**
+   * bd tea-rags-mcp-1v12o.3 — does this call need a definition that lives
+   * OUTSIDE the project, judged from the receiver's TYPE and that type's
+   * hierarchy rather than from the receiver's text?
+   *
+   * The text arms above only see calls a library is NAMED in. A receiver typed
+   * to a class no project file declares, or to a project class whose ancestor
+   * closure is `external`, names no library anywhere and is still a call the
+   * project can never own. Optional: a vocabulary that omits it contributes
+   * nothing (every such miss stays in the denominator, as before).
+   */
+  isReceiverDefinitionExternal?: (call: CallRef, ctx: CallContext) => boolean;
 }
 
 /**
