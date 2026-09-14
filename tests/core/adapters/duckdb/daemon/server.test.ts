@@ -505,6 +505,53 @@ describe("CodegraphDaemonServer.handle", () => {
     await pool.closeAll();
   });
 
+  // bd tea-rags-mcp-xpmwg — the per-file resolve write is a daemon op of its own.
+  // A covered language must read back as the SUM of its files' tallies.
+  it("recordFileResolveStats then getRunStats aggregates a covered language's per-file tallies", async () => {
+    const { server, pool } = makeServer();
+    const c = "code_file_resolve_stats_v1";
+    await server.handle({ id: 1, op: "handshake", params: { collection: c } });
+    const tally = (attempted: number, resolved: number) => ({
+      receiverKind: "constant",
+      attempted,
+      resolved,
+      externalSkipped: 0,
+      unresolvable: 0,
+    });
+    const rec = await server.handle({
+      id: 2,
+      op: "recordFileResolveStats",
+      params: {
+        collection: c,
+        write: {
+          files: [
+            { relPath: "src/a.ts", language: "typescript", rows: [tally(4, 3)] },
+            { relPath: "src/b.ts", language: "typescript", rows: [tally(6, 6)] },
+          ],
+          completeLanguages: ["typescript"],
+        },
+      },
+    });
+    expect(rec.ok).toBe(true);
+    const got = await server.handle({ id: 3, op: "getRunStats", params: { collection: c } });
+    expect(got.ok).toBe(true);
+    expect((got as { result: unknown }).result).toEqual([
+      {
+        language: "typescript",
+        receiverKind: "constant",
+        attempted: 10,
+        resolved: 9,
+        externalSkipped: 0,
+        unresolvable: 0,
+        noInProjectDef: 0,
+        coreAmbiguous: 0,
+        ambiguousFanout: 0,
+        unnarrowedTemplate: 0,
+      },
+    ]);
+    await pool.closeAll();
+  });
+
   it("dispatches getCalleeEdges and serialises the Map as entries", async () => {
     const { server, pool } = makeServer();
     const c = "code_callee_edges_v1";

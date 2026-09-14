@@ -20,6 +20,7 @@ import type {
   CycleScope,
   EdgeKindCount,
   FileGraphMetrics,
+  FileResolveStatsWrite,
   GraphEdges,
   GraphFileNode,
   ResolveRunStatsRow,
@@ -251,15 +252,29 @@ export interface GraphDbClient {
 
   // ── Resolve-stats surface (bd tea-rags-mcp-j431) ──
   /**
-   * Replace the whole `cg_run_stats` table with the supplied per-receiver-kind
-   * breakdown. Overwrite (not merge): a run records every kind it observed, so
-   * stale rows from a prior run must not survive. Empty input clears the table.
+   * Replace the legacy `cg_run_stats` rows of every language the supplied
+   * breakdown names. Overwrite (not merge) per language: stale kinds from a
+   * prior run must not survive, and a language absent from `rows` is untouched.
+   * A whole-corpus measurement — the codegraph provider calls it only for runs
+   * that resolved a language's whole corpus (bd tea-rags-mcp-xpmwg); it is read
+   * only for languages {@link recordFileResolveStats} has not yet covered.
    */
   recordRunStats: (rows: ResolveRunStatsRow[]) => Promise<void>;
   /**
-   * Read the persisted per-receiver-kind resolve breakdown, ordered by
-   * `receiverKind`. Empty array before any run is recorded. Routed through the
-   * daemon proxy so MCP clients can read it without holding the DuckDB lock.
+   * Persist one run's per-file resolve tallies (bd tea-rags-mcp-xpmwg) in ONE
+   * transaction: each named file's `cg_file_resolve_stats` rows become exactly
+   * the rows its entry carries (an empty entry clears them), every other file's
+   * rows are untouched, and `completeLanguages` is recorded as covered. Deleting
+   * a file (`removeFile`) drops its rows. A write naming no file and no language
+   * is a no-op.
+   */
+  recordFileResolveStats: (write: FileResolveStatsWrite) => Promise<void>;
+  /**
+   * Read the persisted per-(language, receiver-kind) resolve breakdown, ordered
+   * by language then receiver kind. A language a whole-corpus run has covered is
+   * the SUM of its per-file tallies; every other language reads its legacy
+   * `cg_run_stats` rows. Empty array before any run is recorded. Routed through
+   * the daemon proxy so MCP clients can read it without holding the DuckDB lock.
    */
   getRunStats: () => Promise<ResolveRunStatsRow[]>;
   /**

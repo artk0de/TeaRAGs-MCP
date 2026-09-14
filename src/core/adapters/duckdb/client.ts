@@ -42,6 +42,7 @@ import type {
   CycleScope,
   EdgeKindCount,
   FileGraphMetrics,
+  FileResolveStatsWrite,
   FileScopedSymbolId,
   FileScopedSymbolRef,
   GraphDbClient,
@@ -348,6 +349,10 @@ export class DuckDbGraphClient implements GraphDbClient {
 
   async recordRunStats(rows: ResolveRunStatsRow[]): Promise<void> {
     return this.runStats.recordRunStats(rows);
+  }
+
+  async recordFileResolveStats(write: FileResolveStatsWrite): Promise<void> {
+    return this.runStats.recordFileResolveStats(write);
   }
 
   async getRunStats(): Promise<ResolveRunStatsRow[]> {

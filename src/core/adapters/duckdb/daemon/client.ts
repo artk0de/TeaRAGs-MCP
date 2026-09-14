@@ -14,6 +14,7 @@ import type {
   CycleScope,
   EdgeKindCount,
   FileGraphMetrics,
+  FileResolveStatsWrite,
   FileScopedSymbolId,
   FileScopedSymbolRef,
   GraphDbClient,
@@ -416,6 +417,10 @@ export class DaemonGraphDbClient implements GraphDbClient {
 
   async recordRunStats(rows: ResolveRunStatsRow[]): Promise<void> {
     await this.call("recordRunStats", { rows });
+  }
+
+  async recordFileResolveStats(write: FileResolveStatsWrite): Promise<void> {
+    await this.call("recordFileResolveStats", { write });
   }
 
   /**
