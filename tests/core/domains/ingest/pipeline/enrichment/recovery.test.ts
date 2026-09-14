@@ -539,6 +539,95 @@ describe("EnrichmentRecovery", () => {
   });
 });
 
+/**
+ * bd tea-rags-mcp-fxio5 — a deferring provider (codegraph) maps a chunk to its
+ * symbol only through the walker's line map, which exists after a walk and not
+ * before. Recovery runs before any walk, so computing chunk signals there stamps
+ * `enrichedAt` over an empty overlay. Its owed chunks are handed back instead,
+ * for the reindex run's repair walk and deferred chunk pass to settle.
+ */
+describe("EnrichmentRecovery deferred-chunk handoff (bd tea-rags-mcp-fxio5)", () => {
+  const owedPoints = [
+    { id: "c-1", payload: { relativePath: "src/app.ts", startLine: 1, endLine: 20 } },
+    { id: "c-2", payload: { relativePath: "src/app.ts", startLine: 21, endLine: 40 } },
+    { id: "c-3", payload: { relativePath: "src/util.ts", startLine: 1, endLine: 9 } },
+  ];
+
+  function harness(provider: { key: string }) {
+    const qdrant = {
+      scrollFiltered: vi.fn().mockResolvedValue(owedPoints),
+      setPayload: vi.fn().mockResolvedValue(undefined),
+      batchSetPayload: vi.fn().mockResolvedValue(undefined),
+      countPoints: vi.fn().mockResolvedValue(0),
+    };
+    const applier = {
+      applyFileSignals: vi.fn().mockResolvedValue(undefined),
+      applyChunkSignals: vi.fn().mockResolvedValue(3),
+      applySkipStamps: vi.fn().mockResolvedValue(0),
+    };
+    const executor = {
+      runFileSignalsRecovery: vi.fn().mockResolvedValue(new Map()),
+      runChunkBatch: vi.fn().mockResolvedValue(new Map()),
+    };
+    const markerStore = {
+      getRunId: vi.fn().mockResolvedValue("R1"),
+      getActiveRunId: vi.fn().mockResolvedValue("R1"),
+      markRecoveryResult: vi.fn().mockResolvedValue(undefined),
+    };
+    const recovery = new EnrichmentRecovery(qdrant as any, applier as any, { executor: executor as any });
+    const contexts = new Map([
+      [provider.key, { key: provider.key, provider, effectiveRoot: "/repo", ignoreFilter: null }],
+    ]);
+    return { applier, executor, markerStore, recovery, contexts };
+  }
+
+  function provider(key: string, defersChunkEnrichment: boolean) {
+    return {
+      key,
+      defersChunkEnrichment,
+      resolveRoot: vi.fn((p: string) => p),
+      buildFileSignals: vi.fn().mockResolvedValue(new Map()),
+      buildChunkSignals: vi.fn().mockResolvedValue(new Map()),
+      fileSignalTransform: undefined,
+    };
+  }
+
+  it("hands a deferring provider's owed chunks back instead of computing them pre-walk", async () => {
+    const { applier, executor, markerStore, recovery, contexts } = harness(provider("codegraph.symbols", true));
+
+    const handoff = await recovery.recoverAll("coll", "/repo", contexts as any, markerStore as any);
+
+    expect(executor.runChunkBatch).not.toHaveBeenCalled();
+    expect(applier.applyChunkSignals).not.toHaveBeenCalled();
+    expect(handoff.get("codegraph.symbols")).toEqual(
+      new Map([
+        [
+          "src/app.ts",
+          [
+            { chunkId: "c-1", startLine: 1, endLine: 20 },
+            { chunkId: "c-2", startLine: 21, endLine: 40 },
+          ],
+        ],
+        ["src/util.ts", [{ chunkId: "c-3", startLine: 1, endLine: 9 }]],
+      ]),
+    );
+    // Handed off is not healed: the run's own terminal chunk marker settles them.
+    const [, , recoveryMarker] = markerStore.markRecoveryResult.mock.calls[0] as [string, string, any];
+    expect(recoveryMarker.chunkStatus).not.toBe("completed");
+    expect(recoveryMarker.chunkUnenriched).toBe(3);
+  });
+
+  it("keeps healing a streaming provider's chunks in place, with nothing handed off", async () => {
+    const { applier, executor, markerStore, recovery, contexts } = harness(provider("git", false));
+
+    const handoff = await recovery.recoverAll("coll", "/repo", contexts as any, markerStore as any);
+
+    expect(executor.runChunkBatch).toHaveBeenCalledTimes(1);
+    expect(applier.applyChunkSignals).toHaveBeenCalledTimes(1);
+    expect(handoff.has("git")).toBe(false);
+  });
+});
+
 describe("EnrichmentRecovery.recoverAll race guard", () => {
   it("skips marker write when runId changed between snapshot and finalize", async () => {
     const qdrant = new MockQdrantManager();

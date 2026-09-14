@@ -60,6 +60,13 @@ interface ChunkPhaseState {
   chunkLastEndAt: number;
   chunkEnrichmentFailed: boolean;
   chunkEnrichmentInvoked: boolean;
+  /**
+   * Paths whose deferredChunkMap entries were seeded from a recovery handoff
+   * (bd tea-rags-mcp-fxio5) rather than accumulated from this run's own
+   * batches. A seeded path carries only the chunks recovery found owed, not
+   * the file's whole chunk set.
+   */
+  readonly seededDeferredPaths: Set<string>;
 }
 
 function createState(): ChunkPhaseState {
@@ -67,6 +74,7 @@ function createState(): ChunkPhaseState {
     streamingEnrichedFiles: new Set(),
     chunkWork: [],
     deferredChunkMap: new Map(),
+    seededDeferredPaths: new Set(),
     prefetchFailed: false,
     chunkFirstStartAt: 0,
     chunkLastEndAt: 0,
@@ -251,11 +259,7 @@ export class ChunkPhase {
       // buildChunkSignals here, and do NOT mark these files streaming-enriched.
       const accumulate = (): void => {
         if (state.prefetchFailed) return;
-        for (const [rel, entries] of map) {
-          const existing = state.deferredChunkMap.get(rel) ?? [];
-          existing.push(...entries);
-          state.deferredChunkMap.set(rel, existing);
-        }
+        this.appendToDeferredChunkMap(state, map);
       };
       if (fileWorkGate) void fileWorkGate.then(accumulate);
       else accumulate();
@@ -358,6 +362,43 @@ export class ChunkPhase {
   /** Accumulated deferred chunkMap for a provider (empty map if none / streaming). */
   getDeferredChunkMap(providerKey: string): Map<string, ChunkLookupEntry[]> {
     return this.states.get(providerKey)?.deferredChunkMap ?? new Map<string, ChunkLookupEntry[]>();
+  }
+
+  /**
+   * Seed a fully-deferred provider's deferredChunkMap with chunks this run did
+   * not chunk itself: the entries pre-reindex recovery handed off (bd
+   * tea-rags-mcp-fxio5). Appends, never replaces — batches the pipeline
+   * accumulates for the same provider keep their entries. runDeferredChunk
+   * applies the chunk-level policy to seeded entries exactly as to accumulated
+   * ones. A streaming or unknown provider is a no-op: nothing reads its map.
+   */
+  appendDeferredChunks(providerKey: string, entriesByPath: ReadonlyMap<string, readonly ChunkLookupEntry[]>): void {
+    const ctx = this.contexts.get(providerKey);
+    const state = this.states.get(providerKey);
+    if (!ctx?.provider.defersChunkEnrichment || !state) return;
+    this.appendToDeferredChunkMap(state, entriesByPath);
+    for (const rel of entriesByPath.keys()) state.seededDeferredPaths.add(rel);
+  }
+
+  /**
+   * Paths `appendDeferredChunks` seeded this run (empty for none / streaming).
+   * CompletionRunner keeps them out of the codegraph heal's skip set: the
+   * deferred pass rewrites only their owed chunks, not the whole file.
+   */
+  getSeededDeferredPaths(providerKey: string): ReadonlySet<string> {
+    return this.states.get(providerKey)?.seededDeferredPaths ?? new Set<string>();
+  }
+
+  /** Append entries to a provider's deferredChunkMap, per relPath. */
+  private appendToDeferredChunkMap(
+    state: ChunkPhaseState,
+    entriesByPath: ReadonlyMap<string, readonly ChunkLookupEntry[]>,
+  ): void {
+    for (const [rel, entries] of entriesByPath) {
+      const existing = state.deferredChunkMap.get(rel) ?? [];
+      existing.push(...entries);
+      state.deferredChunkMap.set(rel, existing);
+    }
   }
 
   /**

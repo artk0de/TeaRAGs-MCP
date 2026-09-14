@@ -25,6 +25,7 @@ import type { IndexPipeline } from "../../../domains/ingest/operations/indexing.
 import type { ReindexPipeline } from "../../../domains/ingest/operations/reindexing.js";
 import { extensionsForLanguages } from "../../../domains/ingest/pipeline/chunker/config.js";
 import type { EnrichmentCoordinator } from "../../../domains/ingest/pipeline/enrichment/coordinator.js";
+import type { DeferredChunkRecoveryHandoff } from "../../../domains/ingest/pipeline/enrichment/recovery.js";
 import { parseMarkerPayload } from "../../../domains/ingest/pipeline/indexing-marker-codec.js";
 import { pipelineLog } from "../../../domains/ingest/pipeline/infra/debug-logger.js";
 import { StatusModule } from "../../../domains/ingest/pipeline/status-module.js";
@@ -480,9 +481,15 @@ export class IndexingOps {
     // 6goqa). Qdrant resolves aliases server-side, so recovery's Qdrant writes
     // land on the same points; everything else here stays alias-keyed.
     const recoveryCollection = resolveAliasTargetCollection(collectionName, await this.qdrant.aliases.listAliases());
-    await this.dispatchRecovery(recoveryCollection, absolutePath);
+    // A deferring provider's owed chunks come back instead of being healed
+    // before any walk (bd tea-rags-mcp-fxio5); the reindex below walks their
+    // files and settles them in its own deferred chunk pass.
+    const deferredChunkHandoff = await this.dispatchRecovery(recoveryCollection, absolutePath);
 
-    const changeStats = await this.reindex.reindexChanges(path, progressCallback, overrides);
+    const changeStats = await this.reindex.reindexChanges(path, progressCallback, {
+      ...overrides,
+      ...(deferredChunkHandoff.size > 0 ? { deferredChunkHandoff } : {}),
+    });
 
     // Awaited, like the other two run paths: the refresh is what rewrites
     // `payloadFieldKeys`, and re-arming the reader before that write lands
@@ -729,7 +736,7 @@ export class IndexingOps {
     }
   }
 
-  private async dispatchRecovery(collectionName: string, absolutePath: string): Promise<void> {
+  private async dispatchRecovery(collectionName: string, absolutePath: string): Promise<DeferredChunkRecoveryHandoff> {
     // Awaited, best-effort. runRecovery is cheap when there's no work:
     // recoverFileLevel/recoverChunkLevel short-circuit on empty scroll, so the
     // healthy path pays only a couple of lightweight count/scroll calls. When
@@ -739,10 +746,16 @@ export class IndexingOps {
     // incremental reindex with 0 changes still triggers recovery for state left
     // by prior runs. Recovery failure is logged but never blocks the reindex —
     // it is best-effort, and the reindex's own enrichment still runs.
+    //
+    // The result is the chunks recovery handed to the reindex instead of
+    // healing them (bd tea-rags-mcp-fxio5): a deferring provider's chunk signals
+    // need the walker's line map, which only the run's own repair walk writes.
+    // No recovery configured, or a failed one, hands nothing off.
     try {
-      await this.enrichment.runRecovery(collectionName, absolutePath);
+      return (await this.enrichment.runRecovery(collectionName, absolutePath)) ?? new Map();
     } catch (error) {
       console.error("[IndexingOps] pre-reindex enrichment recovery failed (continuing with reindex):", error);
+      return new Map();
     }
   }
 }

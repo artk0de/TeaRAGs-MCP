@@ -258,7 +258,13 @@ export class CompletionRunner {
     for (const ctx of contexts.values()) {
       if (!ctx.provider.defersChunkEnrichment) continue;
       paths ??= new Set<string>();
-      for (const relPath of this.deps.chunkPhase.getDeferredChunkMap(ctx.key).keys()) paths.add(relPath);
+      // A path seeded from a recovery handoff carries only the chunks recovery
+      // found owed, so the deferred pass does not rewrite the rest of that file
+      // and the heal still has to (bd tea-rags-mcp-fxio5).
+      const seeded = this.deps.chunkPhase.getSeededDeferredPaths(ctx.key);
+      for (const relPath of this.deps.chunkPhase.getDeferredChunkMap(ctx.key).keys()) {
+        if (!seeded.has(relPath)) paths.add(relPath);
+      }
     }
     return paths;
   }

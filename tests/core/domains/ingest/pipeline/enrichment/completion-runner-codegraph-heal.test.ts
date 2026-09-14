@@ -28,6 +28,7 @@ interface Harness {
   runner: CompletionRunner;
   contexts: Map<string, unknown>;
   heal: ReturnType<typeof vi.fn>;
+  chunkPhase: ChunkPhase;
 }
 
 async function buildHarness(options: { defers: boolean; heal?: CodegraphPayloadHealRunner["run"] }): Promise<Harness> {
@@ -76,8 +77,27 @@ async function buildHarness(options: { defers: boolean; heal?: CodegraphPayloadH
     chunkItem("/repo", "src/changed.ts", "c1"),
   ] as never);
 
-  return { runner, contexts: contexts as Map<string, unknown>, heal };
+  return { runner, contexts: contexts as Map<string, unknown>, heal, chunkPhase };
 }
+
+// bd tea-rags-mcp-fxio5 — a path seeded from a recovery handoff carries only the
+// chunks recovery found owed, not the file's whole chunk set. The deferred pass
+// rewrites just those, so the heal must still reach the rest of the file.
+describe("CompletionRunner codegraph payload heal — seeded deferred chunks", () => {
+  it("keeps paths seeded from a recovery handoff out of the skip set", async () => {
+    const { runner, contexts, heal, chunkPhase } = await buildHarness({ defers: true });
+    chunkPhase.appendDeferredChunks(
+      "codegraph.symbols",
+      new Map([["src/owed.ts", [{ chunkId: "o1", startLine: 1, endLine: 5 }]]]),
+    );
+
+    await runner.run("coll", contexts as never, Date.now() - 1000, undefined, "ts", "run-1");
+
+    expect(heal).toHaveBeenCalledTimes(1);
+    const [, skip] = heal.mock.calls[0];
+    expect([...(skip as Set<string>)]).toEqual(["src/changed.ts"]);
+  });
+});
 
 // bd tea-rags-mcp-a2ddb — the heal runs inside the completion tail, after the
 // deferred chunk pass (which is what rewrites this run's own chunk map) and

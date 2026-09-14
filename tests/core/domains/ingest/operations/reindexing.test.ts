@@ -836,6 +836,94 @@ console.log('This file has secrets');`,
     });
   });
 
+  // bd tea-rags-mcp-fxio5 — pre-reindex recovery hands a deferring provider's
+  // owed chunks to this run instead of computing them before any walk. On a
+  // repository where nothing changed, the run still has to walk those files and
+  // put their chunks through its deferred chunk pass, or they stay unenriched.
+  describe("recovery handoff of deferred chunks (fxio5)", () => {
+    it("walks and chunk-enriches handed-off files on a run with nothing to chunk", async () => {
+      const persisted = new Map<string, string>();
+      const runFileBatch = vi.fn(
+        async (
+          _provider: unknown,
+          _root: string,
+          paths: string[],
+          options?: { contentHashes?: ReadonlyMap<string, string> },
+        ) => {
+          for (const path of paths) {
+            const hash = options?.contentHashes?.get(path);
+            if (hash) persisted.set(path, hash);
+          }
+          return new Map();
+        },
+      );
+      const dispatched: Map<string, unknown>[] = [];
+      const runChunkBatch = vi.fn(async (_provider: unknown, _root: string, chunkMap: Map<string, unknown>) => {
+        // Snapshot at call time: the deferred pass clears its map once the batch settles.
+        dispatched.push(new Map(chunkMap));
+        return new Map();
+      });
+      const runFinalize = vi.fn().mockResolvedValue(new Map());
+      const provider = {
+        key: "codegraph.symbols",
+        signals: [],
+        derivedSignals: [],
+        filters: [],
+        presets: [],
+        defersChunkEnrichment: true,
+        resolveRoot: (p: string) => p,
+        buildFileSignals: vi.fn().mockResolvedValue(new Map()),
+        buildChunkSignals: vi.fn().mockResolvedValue(new Map()),
+        streamFileBatch: vi.fn().mockResolvedValue(new Map()),
+        readPersistedFileHashes: vi.fn(async () => new Map<string, string | null>(persisted)),
+        handleDeletedPaths: vi.fn().mockResolvedValue(undefined),
+      };
+      const executor = {
+        runFileBatch,
+        runFileSignalsRecovery: vi.fn().mockResolvedValue(new Map()),
+        runChunkBatch,
+        runFinalize,
+        releaseCollection: vi.fn().mockResolvedValue(undefined),
+        shutdown: vi.fn().mockResolvedValue(undefined),
+      };
+      const graphIngest = new IngestFacade({
+        qdrant: qdrant as any,
+        embeddings,
+        config: { ...config, supportedExtensions: [".ts"] },
+        trajectoryConfig: defaultTrajectoryConfig(),
+        enrichmentProviders: [provider],
+        enrichmentExecutor: executor,
+      } as any);
+      await createTestFile(
+        codebaseDir,
+        "app.ts",
+        Array.from({ length: 60 }, (_, i) => `export const appValue${i} = ${i};`).join("\n"),
+      );
+      await graphIngest.indexCodebase(codebaseDir);
+      // A plain incremental so the store is current: the handed-off file's
+      // persisted hash matches, and only the handoff can put it back in repair.
+      await graphIngest.indexCodebase(codebaseDir);
+      runFileBatch.mockClear();
+      runChunkBatch.mockClear();
+      runFinalize.mockClear();
+      dispatched.length = 0;
+
+      const entries = [{ chunkId: "c-1", startLine: 1, endLine: 20 }];
+      const { reindex } = (graphIngest as any).indexingOps;
+      const stats = await reindex.reindexChanges(codebaseDir, undefined, {
+        deferredChunkHandoff: new Map([["codegraph.symbols", new Map([["app.ts", entries]])]]),
+      });
+
+      expect(stats.filesAdded + stats.filesModified + stats.filesDeleted).toBe(0);
+      expect(runFileBatch.mock.calls.flatMap((call) => call[2])).toContain("app.ts");
+      expect(runFinalize).toHaveBeenCalledTimes(1);
+      const deferredBatch = dispatched.find((chunkMap) => chunkMap.has("app.ts"));
+      expect(deferredBatch?.get("app.ts")).toEqual(entries);
+      const lastChunkBatchOrder = runChunkBatch.mock.invocationCallOrder.at(-1) ?? 0;
+      expect(runFileBatch.mock.invocationCallOrder[0]).toBeLessThan(lastChunkBatchOrder);
+    });
+  });
+
   describe("enrichment scope during reindex", () => {
     it("should pass changed file paths to enrichment prefetch", async () => {
       await createTestFile(codebaseDir, "existing.ts", "export const v1 = 1;\nconsole.log('Existing');");
