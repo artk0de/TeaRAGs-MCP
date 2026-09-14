@@ -472,7 +472,15 @@ export class IndexingOps {
     // runId, so markRecoveryResult was structurally always skipped — leaving
     // degraded stuck across reindexes (tea-rags-mcp-8tp8). Sequencing recovery
     // first also makes the guard pass (no concurrent run during recovery).
-    await this.dispatchRecovery(collectionName, absolutePath);
+    //
+    // Recovery gets the PHYSICAL collection, never the alias: its codegraph
+    // read opens the DuckDB file by the literal name, so the alias opens an
+    // empty shadow `<alias>.duckdb`, reads zero symbols, and the applier still
+    // stamps the chunks enriched — with no signals (bd tea-rags-mcp-snbzk /
+    // 6goqa). Qdrant resolves aliases server-side, so recovery's Qdrant writes
+    // land on the same points; everything else here stays alias-keyed.
+    const recoveryCollection = resolveAliasTargetCollection(collectionName, await this.qdrant.aliases.listAliases());
+    await this.dispatchRecovery(recoveryCollection, absolutePath);
 
     const changeStats = await this.reindex.reindexChanges(path, progressCallback, overrides);
 
