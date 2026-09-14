@@ -212,7 +212,9 @@ export async function runPrime(input: {
         ? { autoUpdateLogPath: autoUpdateLogPath(resolveDataDir(), registryEntry.name ?? registryEntry.collectionName) }
         : {}),
     };
-    process.stdout.write(formatPrime(data));
+    // DEBUG decides how much of the codegraph resolve tally the digest shows —
+    // taken from the parsed config, the same flag the runtime debug state uses.
+    process.stdout.write(formatPrime(data, new Date(), { debug: config.debug }));
   } finally {
     // Best-effort teardown (synchronous, fire-and-forget by design — see
     // factory.ts). The guaranteed reap is process.exit(0) in the prime command

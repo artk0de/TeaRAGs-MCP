@@ -851,31 +851,40 @@ describe("formatPrime — codegraph resolve (7m5xz)", () => {
     return statusFixture({ isIndexed: true, status: "indexed", collectionName: "c", chunksCount: 1, ...overrides });
   }
 
+  // The receiver-kind breakdown and the technical unnarrowed warning are a
+  // developer measurement surface (`DEBUG=1 tea-rags prime`); these tests pin
+  // that output under debug mode.
+  const DEBUG = { debug: true };
+
   it("renders top-level byReceiverKind compactly, sorted by attempted desc", () => {
-    const out = formatPrime({
-      path: "/p",
-      status: indexed({
-        codegraphResolve: {
-          resolveSuccessRate: 0.8,
-          callsAttempted: 230,
-          callsResolved: 185,
-          callsExternalSkipped: 0,
-          byReceiverKind: [
-            {
-              receiverKind: "selfMember",
-              attempted: 130,
-              resolved: 125,
-              externalSkipped: 0,
-              resolveSuccessRate: 125 / 130,
-            },
-            { receiverKind: "constant", attempted: 100, resolved: 60, externalSkipped: 0, resolveSuccessRate: 0.6 },
-          ],
-        },
-      }),
-      metrics: monolingualMetricsFixture(),
-      drift: null,
-      update: null,
-    });
+    const out = formatPrime(
+      {
+        path: "/p",
+        status: indexed({
+          codegraphResolve: {
+            resolveSuccessRate: 0.8,
+            callsAttempted: 230,
+            callsResolved: 185,
+            callsExternalSkipped: 0,
+            byReceiverKind: [
+              {
+                receiverKind: "selfMember",
+                attempted: 130,
+                resolved: 125,
+                externalSkipped: 0,
+                resolveSuccessRate: 125 / 130,
+              },
+              { receiverKind: "constant", attempted: 100, resolved: 60, externalSkipped: 0, resolveSuccessRate: 0.6 },
+            ],
+          },
+        }),
+        metrics: monolingualMetricsFixture(),
+        drift: null,
+        update: null,
+      },
+      undefined,
+      DEBUG,
+    );
     expect(out).toContain("## Codegraph resolve");
     expect(out).toContain("selfMember 0.96 125/130");
     expect(out).toContain("constant 0.6 60/100");
@@ -887,39 +896,43 @@ describe("formatPrime — codegraph resolve (7m5xz)", () => {
   // carries them, which is what makes the number actionable (and what proves
   // the constant-receiver gate is holding, since every other kind must read 0).
   it("suffixes a receiver-kind row with its unnarrowed-entry count, and only when non-zero", () => {
-    const out = formatPrime({
-      path: "/p",
-      status: indexed({
-        codegraphResolve: {
-          resolveSuccessRate: 0.7,
-          callsAttempted: 200,
-          callsResolved: 140,
-          callsExternalSkipped: 0,
-          callsUnnarrowedTemplate: 30,
-          byReceiverKind: [
-            {
-              receiverKind: "constant",
-              attempted: 120,
-              resolved: 100,
-              externalSkipped: 0,
-              resolveSuccessRate: 100 / 120,
-              callsUnnarrowedTemplate: 30,
-            },
-            {
-              receiverKind: "bareCall",
-              attempted: 80,
-              resolved: 40,
-              externalSkipped: 0,
-              resolveSuccessRate: 0.5,
-              callsUnnarrowedTemplate: 0,
-            },
-          ],
-        },
-      }),
-      metrics: monolingualMetricsFixture(),
-      drift: null,
-      update: null,
-    });
+    const out = formatPrime(
+      {
+        path: "/p",
+        status: indexed({
+          codegraphResolve: {
+            resolveSuccessRate: 0.7,
+            callsAttempted: 200,
+            callsResolved: 140,
+            callsExternalSkipped: 0,
+            callsUnnarrowedTemplate: 30,
+            byReceiverKind: [
+              {
+                receiverKind: "constant",
+                attempted: 120,
+                resolved: 100,
+                externalSkipped: 0,
+                resolveSuccessRate: 100 / 120,
+                callsUnnarrowedTemplate: 30,
+              },
+              {
+                receiverKind: "bareCall",
+                attempted: 80,
+                resolved: 40,
+                externalSkipped: 0,
+                resolveSuccessRate: 0.5,
+                callsUnnarrowedTemplate: 0,
+              },
+            ],
+          },
+        }),
+        metrics: monolingualMetricsFixture(),
+        drift: null,
+        update: null,
+      },
+      undefined,
+      DEBUG,
+    );
     expect(out).toContain("constant 0.83 100/120 · 30 unnarrowed");
     expect(out).toContain("bareCall 0.5 40/80");
     expect(out).not.toContain("bareCall 0.5 40/80 · 0 unnarrowed");
@@ -927,48 +940,58 @@ describe("formatPrime — codegraph resolve (7m5xz)", () => {
   });
 
   it("renders byReceiverKind nested under each language in the multi-language case", () => {
-    const out = formatPrime({
-      path: "/p",
-      status: indexed({
-        codegraphResolve: {
-          resolveSuccessRate: 0.7,
-          callsAttempted: 310,
-          callsResolved: 245,
-          callsExternalSkipped: 0,
-          byLanguage: [
-            {
-              language: "typescript",
-              resolveSuccessRate: 0.82,
-              callsAttempted: 230,
-              callsResolved: 185,
-              callsExternalSkipped: 0,
-              byReceiverKind: [
-                {
-                  receiverKind: "selfMember",
-                  attempted: 130,
-                  resolved: 125,
-                  externalSkipped: 0,
-                  resolveSuccessRate: 125 / 130,
-                },
-              ],
-            },
-            {
-              language: "ruby",
-              resolveSuccessRate: 0.75,
-              callsAttempted: 80,
-              callsResolved: 60,
-              callsExternalSkipped: 0,
-              byReceiverKind: [
-                { receiverKind: "constant", attempted: 80, resolved: 60, externalSkipped: 0, resolveSuccessRate: 0.75 },
-              ],
-            },
-          ],
-        },
-      }),
-      metrics: metricsFixture(),
-      drift: null,
-      update: null,
-    });
+    const out = formatPrime(
+      {
+        path: "/p",
+        status: indexed({
+          codegraphResolve: {
+            resolveSuccessRate: 0.7,
+            callsAttempted: 310,
+            callsResolved: 245,
+            callsExternalSkipped: 0,
+            byLanguage: [
+              {
+                language: "typescript",
+                resolveSuccessRate: 0.82,
+                callsAttempted: 230,
+                callsResolved: 185,
+                callsExternalSkipped: 0,
+                byReceiverKind: [
+                  {
+                    receiverKind: "selfMember",
+                    attempted: 130,
+                    resolved: 125,
+                    externalSkipped: 0,
+                    resolveSuccessRate: 125 / 130,
+                  },
+                ],
+              },
+              {
+                language: "ruby",
+                resolveSuccessRate: 0.75,
+                callsAttempted: 80,
+                callsResolved: 60,
+                callsExternalSkipped: 0,
+                byReceiverKind: [
+                  {
+                    receiverKind: "constant",
+                    attempted: 80,
+                    resolved: 60,
+                    externalSkipped: 0,
+                    resolveSuccessRate: 0.75,
+                  },
+                ],
+              },
+            ],
+          },
+        }),
+        metrics: metricsFixture(),
+        drift: null,
+        update: null,
+      },
+      undefined,
+      DEBUG,
+    );
     expect(out).toContain("## Codegraph resolve");
     expect(out).toContain("typescript");
     expect(out).toContain("selfMember 0.96 125/130");
@@ -985,5 +1008,141 @@ describe("formatPrime — codegraph resolve (7m5xz)", () => {
       update: null,
     });
     expect(out).not.toContain("## Codegraph resolve");
+  });
+
+  // Default-mode fixtures mirror what summarizeCodegraphResolve emits WITHOUT
+  // DEBUG: inProjectEdgeRecall is always present, while resolveSuccessRate and
+  // every byReceiverKind breakdown are DEBUG-only and therefore absent.
+  describe("default mode (no DEBUG) — plain rates and plain warnings", () => {
+    type ResolveSummary = NonNullable<IndexStatus["codegraphResolve"]>;
+    type ResolveLanguageRow = NonNullable<ResolveSummary["byLanguage"]>[number];
+
+    const RUBY_WARNING =
+      "⚠ ruby: 299 calls like `Service.call(...)` are linked to a shared base method, not the service itself — " +
+      "get_callers on those services misses callers. Find usages with hybrid_search; persists after reindex → /tea-rags:report-issue";
+
+    function summary(overrides: Partial<ResolveSummary>): ResolveSummary {
+      return {
+        inProjectEdgeRecall: 0.9,
+        coveredRecall: 0.9,
+        callsAttempted: 200,
+        callsResolved: 180,
+        callsExternalSkipped: 0,
+        callsUnresolvable: 0,
+        callsNoInProjectDef: 0,
+        callsCoreAmbiguous: 0,
+        ambiguousFanout: 0,
+        callsUnnarrowedTemplate: 0,
+        ...overrides,
+      };
+    }
+
+    function languageRow(language: string, recall: number, unnarrowed: number): ResolveLanguageRow {
+      return {
+        language,
+        inProjectEdgeRecall: recall,
+        callsAttempted: 100,
+        callsResolved: Math.round(recall * 100),
+        callsExternalSkipped: 0,
+        callsUnresolvable: 0,
+        callsNoInProjectDef: 0,
+        callsCoreAmbiguous: 0,
+        callsUnnarrowedTemplate: unnarrowed,
+      };
+    }
+
+    function multiLanguage(tsUnnarrowed: number, rubyUnnarrowed: number): ResolveSummary {
+      return summary({
+        inProjectEdgeRecall: 0.94,
+        callsUnnarrowedTemplate: tsUnnarrowed + rubyUnnarrowed,
+        byLanguage: [languageRow("typescript", 0.991, tsUnnarrowed), languageRow("ruby", 0.886, rubyUnnarrowed)],
+      });
+    }
+
+    function render(codegraphResolve: ResolveSummary): string {
+      return formatPrime({
+        path: "/p",
+        status: indexed({ codegraphResolve }),
+        metrics: metricsFixture(),
+        drift: null,
+        update: null,
+      });
+    }
+
+    // No receiver-kind breakdown and no unnarrowed calls — exactly the healthy
+    // non-DEBUG DTO. The debug-mode gate would omit the section here.
+    it("renders one resolve-rate line, languages in byLanguage order, rounded", () => {
+      const out = render(multiLanguage(0, 0));
+      expect(out).toContain("## Codegraph resolve\nresolve rate: typescript 0.99 · ruby 0.89\n\n");
+    });
+
+    it("renders the top-level rate when there is no per-language breakdown", () => {
+      const out = render(summary({ inProjectEdgeRecall: 0.957 }));
+      expect(out).toContain("## Codegraph resolve\nresolve rate: 0.96\n\n");
+    });
+
+    // resolveSuccessRate is DEBUG-only on the producer side, so the default
+    // line must read the always-present recall.
+    it("reads inProjectEdgeRecall, not the DEBUG-only resolveSuccessRate", () => {
+      const out = render(summary({ inProjectEdgeRecall: 0.957, resolveSuccessRate: 0.5 }));
+      expect(out).toContain("resolve rate: 0.96");
+      expect(out).not.toContain("resolve rate: 0.5");
+    });
+
+    it("renders no receiver-kind rows and no resolved/attempted counts, even when a breakdown is present", () => {
+      const tally = multiLanguage(0, 299);
+      const ruby = tally.byLanguage?.[1];
+      if (ruby) {
+        ruby.byReceiverKind = [
+          {
+            receiverKind: "constant",
+            inProjectEdgeRecall: 0.89,
+            coveredRecall: 0.89,
+            attempted: 100,
+            resolved: 89,
+            externalSkipped: 0,
+            unresolvable: 0,
+            callsNoInProjectDef: 0,
+            callsCoreAmbiguous: 0,
+            ambiguousFanout: 0,
+            callsUnnarrowedTemplate: 299,
+            resolveSuccessRate: 0.89,
+          },
+        ];
+      }
+      const out = render(tally);
+      expect(out).not.toContain("constant 0.");
+      expect(out).not.toContain("89/100");
+      expect(out).not.toContain("unnarrowed");
+      expect(out).not.toContain("constant-receiver entry call(s)");
+    });
+
+    it("adds one plain warning line per language that carries unnarrowed entry calls", () => {
+      const out = render(multiLanguage(0, 299));
+      expect(out).toContain(`resolve rate: typescript 0.99 · ruby 0.89\n${RUBY_WARNING}\n`);
+      expect(out).not.toContain("⚠ typescript");
+      expect(out.split("\n").filter((line) => line.startsWith("⚠ "))).toHaveLength(1);
+    });
+
+    it("warns for every carrying language, in byLanguage order", () => {
+      const out = render(multiLanguage(12, 299));
+      const warnings = out.split("\n").filter((line) => line.startsWith("⚠ "));
+      expect(warnings).toHaveLength(2);
+      expect(warnings[0]).toMatch(/^⚠ typescript: 12 calls like `Service\.call\(\.\.\.\)`/);
+      expect(warnings[1]).toBe(RUBY_WARNING);
+    });
+
+    it("falls back to the top-level count, without a language prefix, when there is no per-language breakdown", () => {
+      const out = render(summary({ inProjectEdgeRecall: 0.9, callsUnnarrowedTemplate: 299 }));
+      expect(out).toContain(
+        "resolve rate: 0.9\n⚠ 299 calls like `Service.call(...)` are linked to a shared base method, not the service itself — " +
+          "get_callers on those services misses callers. Find usages with hybrid_search; persists after reindex → /tea-rags:report-issue\n",
+      );
+    });
+
+    it("renders no warning when every unnarrowed count is zero", () => {
+      const out = render(multiLanguage(0, 0));
+      expect(out).not.toContain("⚠");
+    });
   });
 });

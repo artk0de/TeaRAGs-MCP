@@ -19,6 +19,8 @@ export interface ResolvedPaths {
 }
 
 export interface AppConfig {
+  /** `DEBUG` — the same core.debug value createAppContext hands to setDebug. */
+  debug: boolean;
   qdrantUrl?: string;
   qdrantApiKey?: string;
   embeddingProvider: string;
@@ -67,6 +69,7 @@ export function buildAppConfig(zodConfig: ReturnType<typeof parseAppConfigZod>):
 
   // Bridge Zod slices to typed AppConfig for consumers
   return {
+    debug: zodConfig.core.debug,
     qdrantUrl: zodConfig.core.qdrantUrl,
     qdrantApiKey: zodConfig.core.qdrantApiKey,
     embeddingProvider: zodConfig.embedding.provider,
