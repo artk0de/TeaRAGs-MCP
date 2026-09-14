@@ -1,3 +1,4 @@
+import { EventEmitter } from "node:events";
 import { mkdirSync, mkdtempSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -7,6 +8,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { WorkerMessage } from "../../../src/cli/index-progress/ipc-protocol.js";
 import { JsonProgressRenderer } from "../../../src/cli/index-progress/renderer.js";
 import {
+  createSupervisorSend,
   deriveEnrichmentOutcome,
   resolveCodegraphSizeBytes,
   runIndexWorker,
@@ -472,6 +474,71 @@ describe("main — bootstrap happy path", () => {
     } finally {
       onSpy.mockRestore();
     }
+  });
+});
+
+describe("createSupervisorSend — a detached supervisor must not kill the worker", () => {
+  // Node's IPC contract, measured on v24: a callback-less send() on a closed
+  // channel does NOT throw — it emits 'error' on the next tick, and an 'error'
+  // with no listener throws. In the worker that became an uncaughtException the
+  // crash guard turned into exit 1, so the first enrichment progress message
+  // after the supervisor detached ended enrichment and left every marker
+  // in_progress (taxdome, 2026-09-14).
+  function nodeLikeChannel(writeError?: NodeJS.ErrnoException) {
+    const channel = new EventEmitter() as EventEmitter & {
+      connected: boolean;
+      send: (message: unknown) => boolean;
+    };
+    const delivered: unknown[] = [];
+    const unhandled: Error[] = [];
+    const failAsync = (error: Error): void => {
+      process.nextTick(() => {
+        if (channel.listenerCount("error") === 0) unhandled.push(error);
+        else channel.emit("error", error);
+      });
+    };
+    channel.connected = true;
+    channel.send = (message) => {
+      if (!channel.connected) {
+        failAsync(Object.assign(new Error("Channel closed"), { code: "ERR_IPC_CHANNEL_CLOSED" }));
+        return false;
+      }
+      if (writeError) {
+        failAsync(writeError);
+        return false;
+      }
+      delivered.push(message);
+      return true;
+    };
+    return { channel, delivered, unhandled };
+  }
+
+  async function tick(): Promise<void> {
+    await new Promise<void>((resolve) => setImmediate(resolve));
+  }
+
+  it("delivers while the supervisor is attached and drops messages without an unhandled error once it detaches", async () => {
+    const { channel, delivered, unhandled } = nodeLikeChannel();
+    const send = createSupervisorSend(channel);
+
+    send({ type: "phase-done", phase: "embedding", elapsedMs: 1 });
+    channel.connected = false;
+    send({ type: "enrichment", providerKey: "git", level: "chunk", applied: 1, total: 2 });
+    await tick();
+
+    expect(delivered).toEqual([{ type: "phase-done", phase: "embedding", elapsedMs: 1 }]);
+    expect(unhandled).toEqual([]);
+  });
+
+  it("survives the supervisor's end closing between the connected check and the write", async () => {
+    const epipe = Object.assign(new Error("write EPIPE"), { code: "EPIPE" });
+    const { channel, unhandled } = nodeLikeChannel(epipe);
+    const send = createSupervisorSend(channel);
+
+    send({ type: "enrichment", providerKey: "git", level: "file", applied: 1, total: 2 });
+    await tick();
+
+    expect(unhandled).toEqual([]);
   });
 });
 
