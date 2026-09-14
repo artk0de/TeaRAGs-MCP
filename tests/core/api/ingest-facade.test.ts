@@ -419,6 +419,7 @@ describe("IngestFacade", () => {
       qdrant: {
         collectionExists: vi.fn().mockResolvedValue(true),
         checkHealth: vi.fn().mockResolvedValue(true),
+        aliases: { listAliases: vi.fn().mockResolvedValue([]) },
         url: "http://localhost:6333",
       } as any,
       embeddings: {
@@ -451,6 +452,7 @@ describe("IngestFacade", () => {
       qdrant: {
         collectionExists: vi.fn().mockResolvedValue(true),
         checkHealth: vi.fn().mockResolvedValue(true),
+        aliases: { listAliases: vi.fn().mockResolvedValue([]) },
         url: "http://localhost:6333",
       } as any,
       embeddings: {
@@ -572,6 +574,7 @@ describe("IngestFacade", () => {
           checkHealth: vi.fn().mockResolvedValue(true),
           getPoint,
           setPayload,
+          aliases: { listAliases: vi.fn().mockResolvedValue([]) },
           url: "http://localhost:6333",
         } as any,
         embeddings: {
@@ -696,6 +699,7 @@ describe("IngestFacade", () => {
         qdrant: {
           collectionExists: vi.fn().mockResolvedValue(true),
           checkHealth: vi.fn().mockResolvedValue(true),
+          aliases: { listAliases: vi.fn().mockResolvedValue([]) },
           url: "http://localhost:6333",
         } as any,
         embeddings: {
@@ -731,6 +735,7 @@ describe("IngestFacade", () => {
         qdrant: {
           collectionExists: vi.fn().mockResolvedValue(true),
           checkHealth: vi.fn().mockResolvedValue(true),
+          aliases: { listAliases: vi.fn().mockResolvedValue([]) },
           url: "http://localhost:6333",
         } as any,
         embeddings: {
@@ -773,6 +778,7 @@ describe("IngestFacade", () => {
         qdrant: {
           collectionExists: vi.fn().mockResolvedValue(true),
           checkHealth: vi.fn().mockResolvedValue(true),
+          aliases: { listAliases: vi.fn().mockResolvedValue([]) },
           url: "http://localhost:6333",
         } as any,
         embeddings: {
