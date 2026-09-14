@@ -3,43 +3,126 @@ title: Changelog
 sidebar_position: 99
 ---
 
+## [1.41.0](https://github.com/artk0de/TeaRAGs-MCP/compare/v1.40.0...v1.41.0) (2026-09-13)
+
+📝 [Why this blog exists](https://artk0de.github.io/TeaRAGs-MCP/blog/why-this-blog-exists) — The changelog tells you what shipped. It does not tell you why a ranking signal was added, which three hypotheses died before the fourth one held, or what the numbers looked like before and after…
+
+### 🧠 Code intelligence
+
+* TypeScript/JSX call-graph navigation (find-callers, trace_path, find-similar) no longer merges unrelated symbols that share a name across different files, correctly follows re-exports and components wrapped with memo/forwardRef, and keeps working through codegraph service restarts
+
+### ⚡ Indexing & performance
+
+* Search results, prime, and get_index_status now surface one unified freshness report instead of several disconnected checks — flagging when the index falls behind the current commit, when environment variables or language-parser versions changed since the index was built, and what to run to fix it
+* tea-rags now detects when an embedding model's weights changed even though its name stayed the same, and refuses to mix the incompatible vectors into the index instead of silently corrupting search results
+* The background index-repair pass is more reliable: it retries failed writes without losing progress, correctly re-repairs symbols whose metrics changed, and no longer skips files that have no symbols or that a provider can't store
+* Fixed index migrations that could leave call-graph parent-symbol links missing on some indexes, or clear one freshness marker while writing another
+
+### 🗣 Language support
+
+* Call-graph navigation for Python now follows multiple base classes in Python's real method-resolution order — including through super(), class-level receivers, and dynamically computed base classes — instead of guessing or giving up
+* Python symbol resolution now follows bare calls, package re-exports, module and class aliases, and module-level receivers to their real definitions across files, instead of leaving them unresolved or matching the wrong one
+* Python call-graph accuracy improved for typed and dynamically-dispatched code: fields, return values, and receivers are now typed from constructors, type annotations, Google/Sphinx-style docstrings, naming conventions, and framework-specific patterns like Django model managers and SQLAlchemy models
+
+### 🛠 CLI & workflow
+
+* tea-rags projects prune now sweeps registry entries whose project directory no longer exists, and its --dry-run footer correctly names what it would do
+
+### 🩹 Fixes
+
+* Project path resolution is now consistent across every tool surface — the same directory, including worktrees, always maps to the same registered project
+* Fixed a race where saving the project registry could overwrite recent changes made by another process instead of merging them
+* Ruby call-graph resolution no longer matches constants or short names defined in a different language's files within the same project
+* Index status now shows the health of every enrichment provider currently active, not just the most recently run one
+* Fixed reindex phase timing (--wait-enrichments) misattributing the sync step's time to the embedding phase
+* tea-rags projects unregister --purge and project teardown now remove every generation of a project's artifacts, not a partial set
+* Background auto-update runs now keep the project's registry identity, and the registry's last-synced timestamp updates even when a sync only deletes files
+* Fixed a cleanup pass that could delete live call-graph data for a project while only meaning to remove stale, unrelated files
+* Fixed incremental call-graph updates that could resolve symbols against a stale registry instead of the shared, up-to-date one
+* find_symbol no longer matches a file whose path merely starts with the requested path — only exact matches now
+* Fixed indexing sometimes reporting completion before file counts had fully settled
+
 ## [1.40.0](https://github.com/artk0de/TeaRAGs-MCP/compare/v1.39.0...v1.40.0) (2026-08-15)
 
 ### ⚡ Indexing & performance
 
-* Indexing gained --force-enrichments, which rebuilds enrichment data (git and codegraph signals) without re-running embeddings — turning a full reindex's hours into a minutes-long recompute when only enrichment logic changed.
-* Both --force and --force-enrichments now accept --languages, so a rebuild can target a single language's payload instead of the whole project.
-* Indexing supports an opt-in --cpu-prof flag on enrichment worker threads, for profiling slow indexing runs.
-* Schema-drift warnings now name the exact rebuild command needed — enrichment recompute vs. a full reindex — instead of always demanding a full reindex.
+- Indexing gained --force-enrichments, which rebuilds enrichment data (git and
+  codegraph signals) without re-running embeddings — turning a full reindex's
+  hours into a minutes-long recompute when only enrichment logic changed.
+- Both --force and --force-enrichments now accept --languages, so a rebuild can
+  target a single language's payload instead of the whole project.
+- Indexing supports an opt-in --cpu-prof flag on enrichment worker threads, for
+  profiling slow indexing runs.
+- Schema-drift warnings now name the exact rebuild command needed — enrichment
+  recompute vs. a full reindex — instead of always demanding a full reindex.
 
 ### 🗣 Language support
 
-* TypeScript call-graph resolution now understands types, not just syntax: union and narrowed receivers, structural/duck-typed and merged-interface receivers, generics and overloads, inferred return types, and JSX component tags all resolve to their real targets — closing gaps where call-graph tools (find_callers, trace_path, blast_radius) silently dropped or misattributed these calls.
-* TypeScript call-graph extraction now also picks up CommonJS require() imports, barrel re-exports, computed-property calls (obj['foo']()), .call/.apply/.bind indirection, and methods passed as callback values — patterns it silently missed before.
-* Call-graph resolution can now defer a weak match to a later, more precise pass instead of committing early, recovering call edges that used to be dropped outright.
-* Large TypeScript codebases' codegraph resolution now exposes its parse-cache size and memory budgets as environment variables, letting hosts tune resource usage to their repository size.
+- TypeScript call-graph resolution now understands types, not just syntax: union
+  and narrowed receivers, structural/duck-typed and merged-interface receivers,
+  generics and overloads, inferred return types, and JSX component tags all
+  resolve to their real targets — closing gaps where call-graph tools
+  (find_callers, trace_path, blast_radius) silently dropped or misattributed
+  these calls.
+- TypeScript call-graph extraction now also picks up CommonJS require() imports,
+  barrel re-exports, computed-property calls (obj['foo']()), .call/.apply/.bind
+  indirection, and methods passed as callback values — patterns it silently
+  missed before.
+- Call-graph resolution can now defer a weak match to a later, more precise pass
+  instead of committing early, recovering call edges that used to be dropped
+  outright.
+- Large TypeScript codebases' codegraph resolution now exposes its parse-cache
+  size and memory budgets as environment variables, letting hosts tune resource
+  usage to their repository size.
 
 ### 🩹 Fixes
 
-* Dozens of TypeScript call-graph correctness fixes — bare/global calls, destructured and untyped receivers, node_modules noise, tsconfig path mapping, barrel/index re-exports, and resolving imports against the right project root all used to fabricate, misattribute, or drop call edges.
-* Fixed TypeScript codegraph resolution memory/stability issues so long-running or repeated indexing doesn't grow caches unbounded, and a failed parse degrades gracefully instead of crashing the run.
-* Fixed several bugs in --force-enrichments and --force where forced rebuilds silently skipped work, ran extraction twice, refused to combine with --languages, or left a half-built collection behind after a failed rebuild.
-* Fixed multiple codegraph-storage reliability bugs that could crash a rebuild, silently drop or duplicate call-graph data, leave a stuck lock behind after a killed process, or discard the daemon's own crash diagnostics — including a case where find_cycles reported no cycles for a project that had them.
-* Fixed several code-chunking and symbol-naming bugs for JS/TS — nested class members, const-object namespaces, and certain exports now chunk and name correctly instead of producing duplicate, missing, or misnamed search results.
-* Fixed Ruby call-graph type inference wrongly attributing ActiveRecord association types (has_many, belongs_to, etc.) to methods where those macros don't actually apply — they're class-body-only declarations.
-* Server startup no longer logs a spurious "failed to obtain server version" warning against Qdrant.
-* Fixed file-level search rankings occasionally being skewed by one arbitrary method's call-graph centrality score instead of being scored neutrally.
+- Dozens of TypeScript call-graph correctness fixes — bare/global calls,
+  destructured and untyped receivers, node_modules noise, tsconfig path mapping,
+  barrel/index re-exports, and resolving imports against the right project root
+  all used to fabricate, misattribute, or drop call edges.
+- Fixed TypeScript codegraph resolution memory/stability issues so long-running
+  or repeated indexing doesn't grow caches unbounded, and a failed parse
+  degrades gracefully instead of crashing the run.
+- Fixed several bugs in --force-enrichments and --force where forced rebuilds
+  silently skipped work, ran extraction twice, refused to combine with
+  --languages, or left a half-built collection behind after a failed rebuild.
+- Fixed multiple codegraph-storage reliability bugs that could crash a rebuild,
+  silently drop or duplicate call-graph data, leave a stuck lock behind after a
+  killed process, or discard the daemon's own crash diagnostics — including a
+  case where find_cycles reported no cycles for a project that had them.
+- Fixed several code-chunking and symbol-naming bugs for JS/TS — nested class
+  members, const-object namespaces, and certain exports now chunk and name
+  correctly instead of producing duplicate, missing, or misnamed search results.
+- Fixed Ruby call-graph type inference wrongly attributing ActiveRecord
+  association types (has_many, belongs_to, etc.) to methods where those macros
+  don't actually apply — they're class-body-only declarations.
+- Server startup no longer logs a spurious "failed to obtain server version"
+  warning against Qdrant.
+- Fixed file-level search rankings occasionally being skewed by one arbitrary
+  method's call-graph centrality score instead of being scored neutrally.
 
 ### 🔧 Environment Variables
 
-* `CODEGRAPH_TS_PROGRAM_CACHE_MAX` · Max number of cached TypeScript codegraph programs retained across resolution runs · default: `8` (new)
-* `CODEGRAPH_TS_PROGRAM_PARSED_FILES_MAX` · Max project source files parsed into a single TypeScript codegraph resolution program · default: `20000` (new)
-* `CODEGRAPH_TS_PROGRAM_PARSED_DEPENDENCY_FILES_MAX` · Max dependency (.d.ts) files parsed into a TypeScript codegraph resolution program · default: `8000` (new)
-* `CODEGRAPH_TS_PROGRAM_RETAINED_TEXT_MB` · Max source text retained in memory by the TypeScript codegraph resolution cache · default: `256` (new)
-* `CODEGRAPH_TS_PROGRAM_STRATEGY` · How TypeScript codegraph resolution builds its type-checking program: whole-project, per-entry-file coverage, or auto-selected · default: `auto` (new)
-* `CODEGRAPH_TS_PROGRAM_WHOLE_ROOT_MAX` · Max tsconfig root file count before falling back to per-entry-file resolution instead of a whole-project program · default: `20000` (new)
-* `CODEGRAPH_TS_PROGRAM_WHOLE_MIN_ENTRIES` · Min distinct files a run must touch before building a whole-project TypeScript program · default: `200` (new)
-* `ENRICHMENT_WORKER_MEMORY_LIMIT_MB` · Per-worker memory ceiling for enrichment worker threads · default: `6144` (changed)
+- `CODEGRAPH_TS_PROGRAM_CACHE_MAX` · Max number of cached TypeScript codegraph
+  programs retained across resolution runs · default: `8` (new)
+- `CODEGRAPH_TS_PROGRAM_PARSED_FILES_MAX` · Max project source files parsed into
+  a single TypeScript codegraph resolution program · default: `20000` (new)
+- `CODEGRAPH_TS_PROGRAM_PARSED_DEPENDENCY_FILES_MAX` · Max dependency (.d.ts)
+  files parsed into a TypeScript codegraph resolution program · default: `8000`
+  (new)
+- `CODEGRAPH_TS_PROGRAM_RETAINED_TEXT_MB` · Max source text retained in memory
+  by the TypeScript codegraph resolution cache · default: `256` (new)
+- `CODEGRAPH_TS_PROGRAM_STRATEGY` · How TypeScript codegraph resolution builds
+  its type-checking program: whole-project, per-entry-file coverage, or
+  auto-selected · default: `auto` (new)
+- `CODEGRAPH_TS_PROGRAM_WHOLE_ROOT_MAX` · Max tsconfig root file count before
+  falling back to per-entry-file resolution instead of a whole-project program ·
+  default: `20000` (new)
+- `CODEGRAPH_TS_PROGRAM_WHOLE_MIN_ENTRIES` · Min distinct files a run must touch
+  before building a whole-project TypeScript program · default: `200` (new)
+- `ENRICHMENT_WORKER_MEMORY_LIMIT_MB` · Per-worker memory ceiling for enrichment
+  worker threads · default: `6144` (changed)
 
 ## [1.39.0](https://github.com/artk0de/TeaRAGs-MCP/compare/v1.38.1...v1.39.0) (2026-08-09)
 
