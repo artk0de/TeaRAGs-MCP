@@ -768,7 +768,7 @@ export class EnrichmentCoordinator {
       },
       RECOMPUTE_SCROLL_HARD_CAP,
       undefined,
-      ["relativePath", "startLine", "endLine"],
+      ["relativePath", "startLine", "endLine", "symbolId"],
     );
 
     const items: ChunkItem[] = [];
@@ -779,15 +779,18 @@ export class EnrichmentCoordinator {
       const startLine = typeof point.payload?.startLine === "number" ? point.payload.startLine : 0;
       const endLine = typeof point.payload?.endLine === "number" ? point.payload.endLine : 0;
       const chunkId = String(point.id);
+      // The chunker's symbolId is the codegraph chunk-owner rule's anchor (bd
+      // tea-rags-mcp-9i2ow); a block chunk has none.
+      const symbolIdField = typeof point.payload?.symbolId === "string" ? { symbolId: point.payload.symbolId } : {};
 
       items.push({
         type: "upsert",
         chunkId,
-        chunk: { content: "", startLine, endLine, metadata: { filePath: `${root}/${relativePath}` } },
+        chunk: { content: "", startLine, endLine, metadata: { filePath: `${root}/${relativePath}`, ...symbolIdField } },
       } as unknown as ChunkItem);
 
       const entries = chunkMap.get(relativePath) ?? [];
-      entries.push({ chunkId, startLine, endLine } as unknown as ChunkLookupEntry);
+      entries.push({ chunkId, startLine, endLine, ...symbolIdField });
       chunkMap.set(relativePath, entries);
     }
 

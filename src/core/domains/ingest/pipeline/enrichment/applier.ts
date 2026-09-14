@@ -112,6 +112,21 @@ type FilePayloadOp = { payload: Record<string, unknown>; points: (string | numbe
 type FileOpResidual = { relativePath: string; chunk: MissedFileChunk } | null;
 
 /**
+ * The backfill's reference to one chunk. Carries the chunker's symbolId so the
+ * backfill's chunk lookup entries keep the codegraph chunk-owner rule's anchor
+ * (bd tea-rags-mcp-9i2ow); a block chunk has none.
+ */
+function missedChunkOf(item: ChunkItem): MissedFileChunk {
+  const { symbolId } = item.chunk.metadata;
+  return {
+    chunkId: item.chunkId,
+    startLine: item.chunk.startLine,
+    endLine: item.chunk.endLine,
+    ...(typeof symbolId === "string" ? { symbolId } : {}),
+  };
+}
+
+/**
  * An op bound to its residual.
  *
  * These used to be two arrays kept parallel by hand, with the residual read
@@ -356,7 +371,7 @@ export class EnrichmentApplier {
       op: { payload, points: [item.chunkId], key: `${providerKey}.file` },
       residual: {
         relativePath,
-        chunk: { chunkId: item.chunkId, startLine: item.chunk.startLine, endLine: item.chunk.endLine },
+        chunk: missedChunkOf(item),
       },
     }));
   }
@@ -387,11 +402,7 @@ export class EnrichmentApplier {
 
     this.missedTracker.track(
       relativePath,
-      fileItems.map((item) => ({
-        chunkId: item.chunkId,
-        startLine: item.chunk.startLine,
-        endLine: item.chunk.endLine,
-      })),
+      fileItems.map((item) => missedChunkOf(item)),
     );
 
     if (!enrichedAt) return [];
@@ -474,7 +485,7 @@ export class EnrichmentApplier {
     collectionName: string,
     providerKey: string,
     fileOverlays: Map<string, FileSignalOverlay>,
-    chunkMap: ReadonlyMap<string, readonly { chunkId: string; startLine: number; endLine: number }[]>,
+    chunkMap: ReadonlyMap<string, readonly MissedFileChunk[]>,
     transform?: FileSignalTransform,
     enrichedAt?: string,
     /**
@@ -522,7 +533,12 @@ export class EnrichmentApplier {
         // recovery doesn't count it unenriched forever.
         this.missedTracker.track(
           relPath,
-          entries.map((e) => ({ chunkId: e.chunkId, startLine: e.startLine, endLine: e.endLine })),
+          entries.map((e) => ({
+            chunkId: e.chunkId,
+            startLine: e.startLine,
+            endLine: e.endLine,
+            ...(e.symbolId !== undefined ? { symbolId: e.symbolId } : {}),
+          })),
         );
         if (enrichedAt) {
           coalescer.add(

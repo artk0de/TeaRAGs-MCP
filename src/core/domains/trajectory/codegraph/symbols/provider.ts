@@ -56,6 +56,7 @@ import type {
   SymbolChunkIdJoinEntry,
   SymbolDefinition,
   SymbolId,
+  SymbolLineRange,
 } from "../../../../contracts/types/codegraph.js";
 import type { FileClassification } from "../../../../contracts/types/file-classification.js";
 import type {
@@ -88,6 +89,7 @@ import {
   collectSchemaColumnSources,
   type CodegraphExclusionOptions,
 } from "../exclusion.js";
+import { resolveChunkOwnerSymbol } from "./chunk-owner-symbol.js";
 import { createCodegraphExtractionSink, type CodegraphSinkDeps } from "./extraction-sink.js";
 import { GraphBuildFinalizer } from "./graph-finalizer.js";
 import { SymbolNodeFlushQueue } from "./node-flush.js";
@@ -425,10 +427,11 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
    * let paths from project A bleed into project B's `buildChunkSignals`
    * lookups when a path string happens to repeat across roots.
    *
-   * ChunkLookupEntry only carries `{chunkId, startLine, endLine}` —
-   * symbolId is not part of the public contract.
+   * Holds each walked symbol's full line range, the input of the chunk-owner
+   * rule (bd tea-rags-mcp-9i2ow). A `ChunkLookupEntry` carries its span and,
+   * optionally, the chunker's symbolId; neither alone names the owner.
    */
-  private readonly chunkSymbolByLine = new Map<string, Map<string, Map<number, string>>>();
+  private readonly chunkSymbolByLine = new Map<string, Map<string, SymbolLineRange[]>>();
   /**
    * Active streaming extraction sink per collection key. Created lazily by the
    * first `streamFileBatch`, finished + consumed + deleted by `finalizeSignals`.
@@ -773,6 +776,9 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
       // Abstract-stub marker (bd tea-rags-mcp-bcdfe) — set only when true, so the
       // self-dispatch probe can tell a declaration from a concrete definition.
       ...(c.isAbstractStub === true ? { isAbstractStub: true } : {}),
+      // The symbol's AST range, persisted so the payload healer maps chunks to
+      // owners by the same rule the deferred pass uses (bd tea-rags-mcp-9i2ow).
+      ...(c.startLine !== undefined && c.endLine !== undefined ? { startLine: c.startLine, endLine: c.endLine } : {}),
     }));
   }
 
@@ -907,55 +913,29 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
   }
 
   private indexChunkSymbolsByLine(collectionName: string | undefined, extraction: FileExtraction): void {
-    // The walker emits each chunk with line ranges driven by the AST
-    // node it came from — but the ingest chunker may split that range
-    // across multiple Qdrant chunks for oversize methods. We index the
-    // span [startLine..endLine] -> symbolId so lookup by any line
-    // inside the chunk resolves to the right symbol.
+    // Records each walked symbol's AST range (1-based, inclusive) per file —
+    // every symbol, nested ones included, since a chunk the ingest chunker cut
+    // may belong to any of them. The deferred chunk pass resolves a chunk's
+    // owner from these ranges through `resolveChunkOwnerSymbol` (bd
+    // tea-rags-mcp-9i2ow); a chunk with no line info on the walker side is not
+    // indexed, because half a range places nothing.
     //
     // Keyed by collection so two projects with overlapping rel_paths
-    // (e.g. both repos hold `src/index.ts`) never share line maps.
+    // (e.g. both repos hold `src/index.ts`) never share line maps. A re-walk
+    // replaces the file's ranges wholesale.
     const key = this.collectionKey(collectionName);
     let perColl = this.chunkSymbolByLine.get(key);
     if (!perColl) {
       perColl = new Map();
       this.chunkSymbolByLine.set(key, perColl);
     }
-    let lineMap = perColl.get(extraction.relPath);
-    if (!lineMap) {
-      lineMap = new Map();
-      perColl.set(extraction.relPath, lineMap);
-    } else {
-      lineMap.clear();
-    }
+    const ranges: SymbolLineRange[] = [];
     for (const c of extraction.chunks) {
-      if (c.startLine !== undefined) lineMap.set(c.startLine, c.symbolId);
-    }
-  }
-
-  private resolveChunkSymbolId(
-    collectionName: string | undefined,
-    relPath: string,
-    startLine: number,
-    endLine: number,
-  ): string | undefined {
-    const perColl = this.chunkSymbolByLine.get(this.collectionKey(collectionName));
-    if (!perColl) return undefined;
-    const lineMap = perColl.get(relPath);
-    if (!lineMap) return undefined;
-    // Exact match by startLine wins. If the chunker split an oversized
-    // method, intermediate chunks won't have a direct startLine match
-    // — fall back to the largest indexed startLine that's <= this
-    // chunk's startLine AND inside its end (best-effort containment).
-    const exact = lineMap.get(startLine);
-    if (exact) return exact;
-    let best: { start: number; sym: string } | undefined;
-    for (const [line, sym] of lineMap) {
-      if (line <= startLine && line <= endLine) {
-        if (!best || line > best.start) best = { start: line, sym };
+      if (c.startLine !== undefined && c.endLine !== undefined) {
+        ranges.push({ symbolId: c.symbolId, startLine: c.startLine, endLine: c.endLine });
       }
     }
-    return best?.sym;
+    perColl.set(extraction.relPath, ranges);
   }
 
   async buildFileSignals(root: string, options?: FileSignalOptions): Promise<Map<string, FileSignalOverlay>> {
@@ -1808,15 +1788,22 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
     // 0.21s bulk read of the same graph. Nothing in the loop reads it back, so
     // deferring the write changes only its shape.
     const chunkIdJoins: SymbolChunkIdJoinEntry[] = [];
+    const rangesByFile = this.chunkSymbolByLine.get(this.collectionKey(options?.collectionName));
     for (const [relPath, entries] of chunkMap) {
       const perChunk = new Map<string, ChunkSignalOverlay>();
+      // The walker's ranges for this file, present only when this provider
+      // walked it. A file it never walked (a non-codegraph language, or chunks
+      // predating codegraph wiring) maps nothing.
+      const ranges = rangesByFile?.get(relPath);
       for (const entry of entries) {
-        // ChunkLookupEntry only carries chunkId + startLine/endLine;
-        // resolveChunkSymbolId pulls symbolId from the walker-indexed
-        // line map (populated when the same provider walked the file
-        // in buildFileSignals). If file isn't in the map (e.g. older
-        // chunks from before codegraph wiring, or non-TS files), skip.
-        const symbolId = this.resolveChunkSymbolId(options?.collectionName, relPath, entry.startLine, entry.endLine);
+        if (ranges === undefined) break;
+        // The one chunk→symbol rule the payload healer uses too (bd
+        // tea-rags-mcp-9i2ow): the chunker's symbolId anchors it, the walker's
+        // ranges narrow it to a nested symbol that contains the chunk's start.
+        const symbolId = resolveChunkOwnerSymbol(
+          { startLine: entry.startLine, endLine: entry.endLine, anchorSymbolId: entry.symbolId },
+          ranges,
+        );
         if (!symbolId) continue;
         // Confidence-weighted fanIn/fanOut (bd tea-rags-mcp-s5ato — fractional
         // under dynamic/cone fan-out, integer for exact edges) + per-symbol
@@ -1827,16 +1814,12 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
         perChunk.set(entry.chunkId, buildCodegraphChunkSignals(chunkSignals.get(symbolId)));
       }
       // 0rskm — store-time symbol→covering-chunk join. The walker's per-file
-      // line map (relPath → startLine → symbolId) holds EVERY extracted symbol,
-      // including methods of a collapsed class that got no own Qdrant chunk.
-      // Invert it to symbol→startLine, run the containment join against this
-      // file's chunk entries, and backfill cg_symbols.chunk_id.
-      const lineMap = this.chunkSymbolByLine.get(this.collectionKey(options?.collectionName))?.get(relPath);
-      if (lineMap && lineMap.size > 0) {
-        const symbolStartLines = new Map<SymbolId, number>();
-        for (const [startLine, symbolId] of lineMap) {
-          symbolStartLines.set(symbolId, startLine);
-        }
+      // ranges hold EVERY extracted symbol, including methods of a collapsed
+      // class that got no own Qdrant chunk. Project them to symbol→startLine,
+      // run the containment join against this file's chunk entries, and
+      // backfill cg_symbols.chunk_id.
+      if (ranges && ranges.length > 0) {
+        const symbolStartLines = symbolStartLinesOf(ranges);
         // Named even when the join came back EMPTY (bd tea-rags-mcp-tslvq). The
         // write is REPLACE-per-named-file now, and naming a file is the ONLY
         // way its symbols' stale chunk_id gets retired: `upsertSymbolsBulk` is a
@@ -1902,6 +1885,21 @@ function nodeFlushFilesFromEnv(): number {
  * weights (file scope, legacy rows) default to 1. Mirrors the daemon
  * copy in `adapters/duckdb/daemon/server.ts`.
  */
+/**
+ * The symbol→startLine input of {@link computeSymbolChunkIds}, projected from
+ * the walker's per-file ranges exactly as the pre-9i2ow startLine-keyed line map
+ * produced it: one symbol per start line, the LAST walked chunk at a line
+ * winning, in first-seen line order. Kept that way on purpose — the join's
+ * semantics are not part of the chunk-owner change (bd tea-rags-mcp-9i2ow).
+ */
+function symbolStartLinesOf(ranges: readonly SymbolLineRange[]): Map<SymbolId, number> {
+  const symbolByStartLine = new Map<number, SymbolId>();
+  for (const range of ranges) symbolByStartLine.set(range.startLine, range.symbolId);
+  const out = new Map<SymbolId, number>();
+  for (const [startLine, symbolId] of symbolByStartLine) out.set(symbolId, startLine);
+  return out;
+}
+
 /**
  * Symbol→covering-chunk containment join (0rskm). For each symbol start line,
  * pick the tightest chunk whose range (or any of its non-contiguous

@@ -129,6 +129,7 @@ export class EnrichmentBackfiller {
           chunkId: c.chunkId,
           startLine: c.startLine,
           endLine: c.endLine,
+          ...(c.symbolId !== undefined ? { symbolId: c.symbolId } : {}),
         })),
       );
     }

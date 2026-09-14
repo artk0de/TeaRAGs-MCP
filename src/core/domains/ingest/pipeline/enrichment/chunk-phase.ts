@@ -714,10 +714,13 @@ export class ChunkPhase {
       const fp = item.chunk.metadata.filePath;
       const rel = fp.startsWith(pathBase) ? fp.slice(pathBase.length + 1) : fp;
       const arr = map.get(rel) ?? [];
+      const { symbolId } = item.chunk.metadata;
       arr.push({
         chunkId: item.chunkId,
         startLine: item.chunk.startLine,
         endLine: item.chunk.endLine,
+        // The codegraph chunk-owner rule anchors on it (bd tea-rags-mcp-9i2ow).
+        ...(typeof symbolId === "string" ? { symbolId } : {}),
       });
       map.set(rel, arr);
     }
