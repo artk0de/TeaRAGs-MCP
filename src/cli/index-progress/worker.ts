@@ -201,6 +201,38 @@ interface WorkerParams {
   options: IndexOptions;
 }
 
+/** Structural subset of the worker's IPC end (`process`) — test-fakeable. */
+export interface SupervisorChannel {
+  readonly connected?: boolean;
+  send?: (message: WorkerMessage) => boolean;
+  on: (event: "error", listener: (error: NodeJS.ErrnoException) => void) => unknown;
+}
+
+/** Error codes a send raises once the supervisor's end of the channel is gone. */
+const CLOSED_CHANNEL_CODES: ReadonlySet<string> = new Set(["ERR_IPC_CHANNEL_CLOSED", "EPIPE", "ECONNRESET"]);
+
+/**
+ * Send to the supervisor, tolerating its detach.
+ *
+ * In default mode the supervisor disconnects as soon as the index is
+ * searchable, while the worker keeps enriching and keeps reporting progress.
+ * A `send()` on the closed channel does NOT throw: Node emits `'error'` on the
+ * next tick, and an unlistened `'error'` throws — the crash guard then exits 1,
+ * killing enrichment mid-run and leaving every marker `in_progress`. So skip
+ * sends once `connected` is false, and swallow the closed-channel errors of a
+ * send that raced the disconnect.
+ */
+export function createSupervisorSend(channel: SupervisorChannel): (message: WorkerMessage) => void {
+  channel.on("error", (error) => {
+    if (error.code !== undefined && CLOSED_CHANNEL_CODES.has(error.code)) return;
+    console.error("[tea-rags] worker IPC error:", error.stack ?? error.message);
+  });
+  return (message) => {
+    if (channel.connected === false) return;
+    channel.send?.(message);
+  };
+}
+
 /** Structural subset of `process` the crash guard needs — test-fakeable. */
 export interface WorkerCrashGuardProcess {
   on: (event: "uncaughtException" | "unhandledRejection", listener: (reason: unknown) => void) => unknown;
@@ -261,13 +293,7 @@ export async function main(): Promise<void> {
     process.exit(1);
   });
 
-  const send = (message: WorkerMessage): void => {
-    try {
-      process.send?.(message);
-    } catch {
-      // Parent detached (default mode) — IPC channel closed; keep working silently.
-    }
-  };
+  const send = createSupervisorSend(process);
 
   // A crash anywhere past this point must surface over IPC + stderr instead of
   // a bare silent exit 1 (tea-rags-mcp-0ej8v).

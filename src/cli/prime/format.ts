@@ -96,21 +96,24 @@ function formatDigest(data: PrimeData, now: Date): string {
     lines.push(...formatEnrichmentSection(data.status.enrichment));
   }
 
-  // Primary language is derived from IndexMetrics.distributions.language
-  // (Record<string, number>, sorted by chunk count desc). IndexStatus.languages
-  // is declared but never populated by any producer — do not use it.
+  // Languages are ordered by IndexMetrics.distributions.language chunk count.
+  // IndexStatus.languages is declared but never populated by any producer — do
+  // not use it. A language is PRIMARY when the metrics carry its per-language
+  // signal bucket: the stats layer admits a code language only at
+  // >= MIN_LANGUAGE_SHARE of the chunks, so the digest reuses that one policy
+  // instead of re-cutting shares here — a Rails + TS monolith gets both.
   const languages = sortedLanguages(data.metrics);
+  const signals = data.metrics?.signals ?? {};
+  const thresholdLanguages = languages.filter((language) => signals[language]);
+  const primaries = thresholdLanguages.length > 0 ? thresholdLanguages : languages.slice(0, 1);
   if (languages.length > 0) {
     lines.push("");
-    lines.push(...formatLanguageSection(languages));
+    lines.push(...formatLanguageSection(languages, primaries));
   }
 
-  if (data.metrics && languages.length > 0) {
-    const primary = languages[0];
-    if (primary && data.metrics.signals[primary]) {
-      lines.push("");
-      lines.push(...formatThresholdsSection(primary, data.metrics.signals[primary]));
-    }
+  for (const language of thresholdLanguages) {
+    lines.push("");
+    lines.push(...formatThresholdsSection(language, signals[language]));
   }
 
   const resolveLines = formatCodegraphResolveSection(data.status.codegraphResolve);
@@ -187,14 +190,17 @@ function sortedLanguages(metrics: IndexMetrics | null): string[] {
     .map(([lang]) => lang);
 }
 
-function formatLanguageSection(languages: string[]): string[] {
+function formatLanguageSection(languages: string[], primaries: string[]): string[] {
   if (languages.length === 1) {
     return ["## Language", languages[0]];
   }
-  const [primary, ...rest] = languages;
+  const rest = languages.filter((language) => !primaries.includes(language));
+  if (rest.length === 0) {
+    return ["## Polyglot", `primary: ${primaries.join(", ")}`];
+  }
   return [
     "## Polyglot",
-    `primary: ${primary} · also: ${rest.join(", ")}`,
+    `primary: ${primaries.join(", ")} · also: ${rest.join(", ")}`,
     "→ for non-primary languages, call `get_index_metrics` for their labelMap",
   ];
 }

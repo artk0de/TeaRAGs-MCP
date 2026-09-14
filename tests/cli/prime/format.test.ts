@@ -173,6 +173,37 @@ describe("formatPrime — polyglot + thresholds", () => {
     expect(out).not.toContain("  - test:");
   });
 
+  it("renders thresholds for every language carrying per-language signals, each listed as primary", () => {
+    // Per-language signal buckets exist only for code languages holding
+    // >= MIN_LANGUAGE_SHARE of the chunks — a Rails + TS monolith qualifies both.
+    const metrics = metricsFixture();
+    metrics.distributions = { language: { ruby: 8200, typescript: 5000, markdown: 700, javascript: 40 } };
+    metrics.signals["ruby"] = {
+      "git.file.commitCount": {
+        source: { min: 1, max: 30, count: 400, labelMap: { low: 1, normal: 2, high: 7, extreme: 7 } },
+      },
+    };
+    metrics.signals["global"] = {
+      "git.file.commitCount": { source: { min: 1, max: 41, count: 650, labelMap: { low: 1 } } },
+    };
+    const out = formatPrime({
+      path: "/p",
+      status: statusFixture({ isIndexed: true, status: "indexed", collectionName: "c", chunksCount: 13940 }),
+      metrics,
+      drift: null,
+      update: null,
+    });
+
+    expect(out).toContain("primary: ruby, typescript · also: markdown, javascript");
+    const rubyAt = out.indexOf("## Signal thresholds — ruby");
+    const typescriptAt = out.indexOf("## Signal thresholds — typescript");
+    expect(rubyAt).toBeGreaterThan(-1);
+    expect(typescriptAt).toBeGreaterThan(rubyAt);
+    expect(out).toContain("- **git.file.commitCount** — source: low ≤1 / normal ≤2 / high ≤7 / extreme >7 · test: —");
+    expect(out).not.toContain("## Signal thresholds — global");
+    expect(out).not.toContain("## Signal thresholds — javascript");
+  });
+
   it("collapses test bands to '=src' when test labelMap is identical to source (lossless)", () => {
     const out = formatPrime({
       path: "/p",
