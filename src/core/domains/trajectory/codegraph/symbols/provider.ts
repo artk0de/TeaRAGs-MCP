@@ -69,6 +69,7 @@ import type {
   ChunkSignalOverlay,
   DeletedPathOptions,
   EnrichmentProvider,
+  EnrichmentRunCoverage,
   EnrichmentScope,
   FileExtractionFanoutBatch,
   FileExtractionPass1Telemetry,
@@ -1513,7 +1514,7 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
       // cai0 slice's per-bucket delta. Overwrite semantics live in the client;
       // the provider only maps the in-memory tally to rows. Runs after
       // sink.finish() so every resolved call is already counted.
-      await this.recordRunStats(graphDb);
+      await this.recordRunStats(graphDb, options?.runCoverage);
     } finally {
       this.runSinks.delete(key);
       this.runExtractedPaths.delete(key);
@@ -1525,35 +1526,51 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
   };
 
   /**
-   * Map the in-memory per-receiver-kind tally (`runStats.byReceiverKind`, j431)
-   * to `ResolveRunStatsRow[]` and persist it via `graphDb.recordRunStats`
-   * (bd tea-rags-mcp-2jet-D). One row per `RECEIVER_KIND` the provider observed;
-   * the client overwrites the whole table so stale prior-run buckets never leak.
-   * The tally is NOT reset here — `getRunMetrics` owns read-and-clear; this only
-   * mirrors the current snapshot to disk at finalize.
+   * Persist the run's resolve tally (bd tea-rags-mcp-2jet-D, per-file since bd
+   * tea-rags-mcp-xpmwg). The tally is NOT reset here — `getRunMetrics` owns
+   * read-and-clear; this only mirrors the current snapshot to disk at finalize.
+   *
+   * `runCoverage` absent means a direct caller outside the ingest pipeline
+   * (tests, offline harnesses): it hands over the corpus it means to measure, so
+   * the run is treated as covering it. Every pipeline finalize passes it
+   * explicitly (`CompletionRunner#applyFileFinalize`).
    */
-  private async recordRunStats(graphDb: GraphDbClient): Promise<void> {
-    // bd tea-rags-mcp-cnqrg — one row per (observed language, receiver kind).
-    // The client overwrites the whole table so stale prior-run cells never leak;
-    // a language absent from this run simply has no rows.
-    const rows = this.runState.toResolveRunStatsRows();
-    // A run that observed NO call site has no breakdown to publish, and
-    // `recordRunStats` is DELETE+INSERT — persisting such a run does not report
-    // "nothing resolved", it ERASES the last real measurement: prime and
-    // get_index_status then drop the `## Codegraph resolve` section entirely and
-    // the number behind an epic's claim is gone. Keep the previous run's rows —
-    // slightly stale beats absent, and the next run that observes anything
-    // overwrites them wholesale.
+  private async recordRunStats(
+    graphDb: GraphDbClient,
+    runCoverage: EnrichmentRunCoverage = "wholeCorpus",
+  ): Promise<void> {
+    const files = this.runState.toFileResolveStatsEntries();
+    // Nothing resolved: no file's rows to replace, no language to cover.
+    if (files.length === 0) return;
+    const wholeCorpus = runCoverage === "wholeCorpus";
+
+    // The legacy per-language measurement — written by whole-corpus runs ONLY.
+    // `recordRunStats` replaces a language's rows wholesale, so an incremental
+    // run writing here replaced the corpus breakdown with its batch: taxdome's
+    // typescript bareCall 122777/175773 became a handful of calls after a
+    // one-file incremental, and prime dropped typescript.
     //
-    // The test is "did any call site get attempted", NOT "is the array empty".
-    // `languageKindTally` (resolution-runner.ts) registers a language once per
-    // WALKED FILE, before the per-call loop, so a run over files that contain no
-    // calls at all yields a full set of ALL-ZERO rows — non-empty, yet carrying
-    // no measurement. An emptiness check passes those straight through to the
-    // DELETE. Observed live on 2026-08-11 (bd tea-rags-mcp-snbzk): consecutive
-    // runs alternated between a full breakdown and no section at all.
-    if (!rows.some((r) => r.attempted > 0)) return;
-    await graphDb.recordRunStats(rows);
+    // The "no call site attempted → keep the previous rows" guard stays, and
+    // only here. It protects exactly this wholesale write: a run over call-free
+    // files yields ALL-ZERO rows (a language registers per walked file), and
+    // persisting them erased the last real measurement (bd tea-rags-mcp-snbzk).
+    // It must NOT gate the per-file write below — a file whose calls were all
+    // removed has to replace its persisted rows with none, or the aggregate
+    // keeps counting calls that no longer exist.
+    if (wholeCorpus) {
+      const rows = this.runState.toResolveRunStatsRows();
+      if (rows.some((r) => r.attempted > 0)) await graphDb.recordRunStats(rows);
+    }
+
+    // Every resolved file's rows, and — for a whole-corpus run — the languages
+    // those files cover, in one transaction. Coverage is what switches a
+    // language's read from `cg_run_stats` to the per-file aggregate, so an
+    // incremental run must never record it: on an index migrated from the
+    // per-run table, the per-file rows describe only what incrementals touched.
+    await graphDb.recordFileResolveStats({
+      files,
+      completeLanguages: wholeCorpus ? [...new Set(files.map((f) => f.language))] : [],
+    });
   }
 
   /**
