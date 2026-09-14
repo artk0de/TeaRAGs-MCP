@@ -29,6 +29,21 @@
   prevent. Why: the failure is silent and read-side — `find_symbol` answers with
   a chunk that no longer contains the symbol, and nothing in the write path
   errors.
+- **One rule decides which symbol owns a stored chunk, and BOTH writers of
+  `codegraph.symbols.chunk.*` resolve through it** — `resolveChunkOwnerSymbol`
+  (symbols/chunk-owner-symbol.ts): anchor on the chunk's payload symbolId with
+  `#partN` stripped, narrow to the tightest symbol nested under it whose range
+  contains the chunk's start line, else keep the anchor; with no anchor, the
+  innermost containing symbol. The deferred chunk pass feeds it the walker's
+  ranges; the payload heal
+  (`api/internal/infra/codegraph-payload-heal-runner.ts`) feeds it
+  `cg_symbols.start_line/end_line` (migration 024) and groups points by the
+  resolved owner, which is how a moved nested symbol reaches its points. A file
+  whose rows carry NULL ranges keeps the anchor — the heal's pre-024 output.
+  Why: the two used to pick differently (greatest symbol start vs payload
+  symbolId), each wrong on its own class of chunk, so a stored value depended on
+  which writer ran last (bd tea-rags-mcp-9i2ow). A third writer of those keys
+  that does not call the rule reintroduces exactly that.
 - **The graph DB is addressed by the PHYSICAL versioned collection name, and
   heals only per re-extracted file.** `GraphDbClientPool#pathFor`
   (adapters/duckdb/pool.ts:222) resolves whatever string it is handed,
