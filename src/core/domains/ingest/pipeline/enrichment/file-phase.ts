@@ -12,7 +12,7 @@
 import { relative } from "node:path";
 
 import type { EnrichmentExecutor } from "../../../../contracts/types/enrichment-executor.js";
-import type { FileSignalOverlay } from "../../../../contracts/types/provider.js";
+import type { EnrichmentRunCoverage, FileSignalOverlay } from "../../../../contracts/types/provider.js";
 import { pipelineLog } from "../infra/debug-logger.js";
 import type { ChunkItem } from "../types.js";
 import type { EnrichmentApplier } from "./applier.js";
@@ -89,6 +89,8 @@ export class FilePhase {
   private crossPass = false;
   /** Per-file SHA256 for the run — stamped onto provider rows (bd tea-rags-mcp-6goqa). */
   private contentHashes?: ReadonlyMap<string, string>;
+  /** What part of the corpus the run resolves (bd tea-rags-mcp-xpmwg). */
+  private coverage: EnrichmentRunCoverage = "subset";
   private chunkPhase: ChunkPhase | null = null;
 
   constructor(
@@ -113,6 +115,7 @@ export class FilePhase {
     runStartedAt: string,
     crossPass = false,
     contentHashes?: ReadonlyMap<string, string>,
+    runCoverage: EnrichmentRunCoverage = "subset",
   ): void {
     this.contexts = new Map(contexts);
     this.coll = coll;
@@ -120,6 +123,7 @@ export class FilePhase {
     this.runStartedAt = runStartedAt;
     this.crossPass = crossPass;
     this.contentHashes = contentHashes;
+    this.coverage = runCoverage;
     this.states.clear();
     for (const key of contexts.keys()) this.states.set(key, createState());
   }
@@ -131,6 +135,16 @@ export class FilePhase {
    */
   get crossPassEnabled(): boolean {
     return this.crossPass;
+  }
+
+  /**
+   * Whether the run resolves the whole corpus of the languages it walks (bd
+   * tea-rags-mcp-xpmwg). `CompletionRunner` threads it into the finalize
+   * `FileSignalOptions`, the dispatch where codegraph persists its resolve
+   * breakdown — the same route `crossPassEnabled` takes.
+   */
+  get runCoverage(): EnrichmentRunCoverage {
+    return this.coverage;
   }
 
   /**

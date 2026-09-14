@@ -23,6 +23,7 @@ import type {
   CodegraphPass1FileAggregates,
   DispatchTableDef,
   FileExtraction,
+  FileResolveStatsEntry,
   GlobalSymbolTable,
   HierarchyView,
   InheritanceEdgeRow,
@@ -139,22 +140,36 @@ export interface RunStats {
   // this run. Test files never reach here — the codegraph exclusion filter
   // drops them upstream at extraction, unconditionally.
   byLanguageKind: Map<string, Record<ReceiverKind, ReceiverKindTally>>;
+  // bd tea-rags-mcp-xpmwg — the same counts per CALLER FILE, for
+  // `cg_file_resolve_stats`. One entry per file the run resolved, zero-call
+  // files included: a file whose calls all went away must still replace its
+  // persisted rows with none. Only kinds the file tallied a call under are kept.
+  // Summing it per (language, kind) gives exactly `byLanguageKind`.
+  byFile: Map<RelPath, FileResolveTally>;
+}
+
+/** One caller file's resolve tally (bd tea-rags-mcp-xpmwg). */
+export interface FileResolveTally {
+  language: string;
+  kinds: Map<ReceiverKind, ReceiverKindTally>;
+}
+
+function zeroReceiverKindTally(): ReceiverKindTally {
+  return {
+    attempted: 0,
+    resolved: 0,
+    externalSkipped: 0,
+    unresolvable: 0,
+    noInProjectDef: 0,
+    coreAmbiguous: 0,
+    ambiguousFanout: 0,
+    unnarrowedTemplate: 0,
+  };
 }
 
 export function emptyReceiverKindTally(): Record<ReceiverKind, ReceiverKindTally> {
   const out = {} as Record<ReceiverKind, ReceiverKindTally>;
-  for (const kind of RECEIVER_KINDS) {
-    out[kind] = {
-      attempted: 0,
-      resolved: 0,
-      externalSkipped: 0,
-      unresolvable: 0,
-      noInProjectDef: 0,
-      coreAmbiguous: 0,
-      ambiguousFanout: 0,
-      unnarrowedTemplate: 0,
-    };
-  }
+  for (const kind of RECEIVER_KINDS) out[kind] = zeroReceiverKindTally();
   return out;
 }
 
@@ -168,6 +183,50 @@ export function languageKindTally(stats: RunStats, language: string): Record<Rec
   return kinds;
 }
 
+/** Add every counter of `source` onto `target`. */
+function addReceiverKindTally(target: ReceiverKindTally, source: ReceiverKindTally): void {
+  target.attempted += source.attempted;
+  target.resolved += source.resolved;
+  target.externalSkipped += source.externalSkipped;
+  target.unresolvable += source.unresolvable;
+  target.noInProjectDef += source.noInProjectDef;
+  target.coreAmbiguous += source.coreAmbiguous;
+  target.ambiguousFanout += source.ambiguousFanout;
+  target.unnarrowedTemplate += source.unnarrowedTemplate;
+}
+
+/**
+ * Fold one resolved file's per-kind tally into BOTH run views (bd
+ * tea-rags-mcp-xpmwg): the per-(language, kind) totals the run has always
+ * reported, and the per-file entry `cg_file_resolve_stats` persists. Registers
+ * the language and the file even when every counter is zero — a walked file with
+ * no call site is still a resolved file.
+ */
+export function foldFileKindTally(
+  stats: RunStats,
+  relPath: RelPath,
+  language: string,
+  fileKinds: Record<ReceiverKind, ReceiverKindTally>,
+): void {
+  const languageKinds = languageKindTally(stats, language);
+  let file = stats.byFile.get(relPath);
+  if (!file) {
+    file = { language, kinds: new Map() };
+    stats.byFile.set(relPath, file);
+  }
+  for (const kind of RECEIVER_KINDS) {
+    const tally = fileKinds[kind];
+    addReceiverKindTally(languageKinds[kind], tally);
+    if (tally.attempted === 0) continue;
+    let persisted = file.kinds.get(kind);
+    if (!persisted) {
+      persisted = zeroReceiverKindTally();
+      file.kinds.set(kind, persisted);
+    }
+    addReceiverKindTally(persisted, tally);
+  }
+}
+
 /**
  * Project the per-(language, kind) tally onto the per-receiver-kind axis by
  * summing across languages — the j431 view consumed by getRunMetrics.
@@ -175,16 +234,7 @@ export function languageKindTally(stats: RunStats, language: string): Record<Rec
 export function aggregateReceiverKinds(stats: RunStats): Record<ReceiverKind, ReceiverKindTally> {
   const out = emptyReceiverKindTally();
   for (const kinds of stats.byLanguageKind.values()) {
-    for (const kind of RECEIVER_KINDS) {
-      out[kind].attempted += kinds[kind].attempted;
-      out[kind].resolved += kinds[kind].resolved;
-      out[kind].externalSkipped += kinds[kind].externalSkipped;
-      out[kind].unresolvable += kinds[kind].unresolvable;
-      out[kind].noInProjectDef += kinds[kind].noInProjectDef;
-      out[kind].coreAmbiguous += kinds[kind].coreAmbiguous;
-      out[kind].ambiguousFanout += kinds[kind].ambiguousFanout;
-      out[kind].unnarrowedTemplate += kinds[kind].unnarrowedTemplate;
-    }
+    for (const kind of RECEIVER_KINDS) addReceiverKindTally(out[kind], kinds[kind]);
   }
   return out;
 }
@@ -202,6 +252,7 @@ export function createEmptyRunStats(): RunStats {
     callsCoreAmbiguous: 0,
     callsAmbiguousFanout: 0,
     byLanguageKind: new Map(),
+    byFile: new Map(),
   };
 }
 
@@ -1188,10 +1239,10 @@ export class CodegraphRunState {
 
   /**
    * Map the in-memory per-(language, receiver-kind) tally (bd
-   * tea-rags-mcp-cnqrg, extends j431) to persistable rows. The client
-   * overwrites the whole table so stale prior-run cells never leak; a language
-   * absent from this run simply has no rows. The tally is NOT reset here —
-   * `drainMetrics` owns read-and-clear.
+   * tea-rags-mcp-cnqrg, extends j431) to persistable rows. The client replaces
+   * each named language's `cg_run_stats` rows so stale prior-run cells never
+   * leak; a language absent from this run simply has no rows. The tally is NOT
+   * reset here — `drainMetrics` owns read-and-clear.
    */
   toResolveRunStatsRows(): ResolveRunStatsRow[] {
     const rows: ResolveRunStatsRow[] = [];
@@ -1213,6 +1264,30 @@ export class CodegraphRunState {
       }
     }
     return rows;
+  }
+
+  /**
+   * The per-file tally as `cg_file_resolve_stats` entries (bd
+   * tea-rags-mcp-xpmwg): one per file this run resolved, with a row per receiver
+   * kind the file tallied a call under — none for a file without call sites.
+   * Like {@link toResolveRunStatsRows}, reads without resetting.
+   */
+  toFileResolveStatsEntries(): FileResolveStatsEntry[] {
+    return [...this.stats.byFile].map(([relPath, file]) => ({
+      relPath,
+      language: file.language,
+      rows: [...file.kinds].map(([receiverKind, t]) => ({
+        receiverKind,
+        attempted: t.attempted,
+        resolved: t.resolved,
+        externalSkipped: t.externalSkipped,
+        unresolvable: t.unresolvable,
+        noInProjectDef: t.noInProjectDef,
+        coreAmbiguous: t.coreAmbiguous,
+        ambiguousFanout: t.ambiguousFanout,
+        unnarrowedTemplate: t.unnarrowedTemplate,
+      })),
+    }));
   }
 
   /**

@@ -208,6 +208,21 @@ export interface ChunkSignalOptions {
 }
 
 /**
+ * What part of the project an enrichment run resolved (bd tea-rags-mcp-xpmwg).
+ *
+ * - `wholeCorpus` — every file of the languages the run walked: a full index
+ *   (`IndexPipeline`) or an enrichment recompute (`--force-enrichments`, with or
+ *   without `--languages`).
+ * - `subset` — only the files the run was handed: an incremental reindex, a
+ *   repair-only finalize.
+ *
+ * A provider that persists run-level measurements must not let a `subset` run
+ * speak for the corpus — codegraph's resolve breakdown did, and a one-file
+ * incremental replaced a language's whole measurement with that file's calls.
+ */
+export type EnrichmentRunCoverage = "wholeCorpus" | "subset";
+
+/**
  * Options for buildFileSignals — symmetric to ChunkSignalOptions but the
  * shape is simpler (no concurrency / cache concerns at file level today).
  * Carries the active collection name so collection-scoped providers
@@ -253,6 +268,15 @@ export interface FileSignalOptions {
    * `structuredClone` boundary intact.
    */
   crossPass?: boolean;
+  /**
+   * How much of the project this run resolved (bd tea-rags-mcp-xpmwg) — see
+   * {@link EnrichmentRunCoverage}. Set by the enrichment coordinator on every
+   * finalize it dispatches; absent only for direct callers outside the ingest
+   * pipeline (tests, offline harnesses), which hand the provider the corpus they
+   * mean to measure. Primitive string — survives the worker-pool
+   * `structuredClone` boundary.
+   */
+  runCoverage?: EnrichmentRunCoverage;
   /**
    * The run's persisted per-file pass-1 aggregate slices, read by the MAIN
    * thread and injected into the provider's finalize (bd tea-rags-mcp-weno4).

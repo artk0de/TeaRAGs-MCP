@@ -10,6 +10,7 @@
  * - Migration: converts real collection to alias scheme
  */
 
+import type { EnrichmentRunCoverage } from "../../../contracts/types/provider.js";
 import { isDebug } from "../../../infra/runtime.js";
 import type { IndexOptions, IndexStats, ProgressCallback } from "../../../types.js";
 import { IndexingFailedError } from "../errors.js";
@@ -426,6 +427,16 @@ export class IndexPipeline extends BaseIndexingPipeline {
    */
   protected override crossPassExtractionEnabled(): boolean {
     return this.enrichment.acceptsExtractions();
+  }
+
+  /**
+   * A full index scans and resolves every file of the project, so its run
+   * covers the whole corpus of every language it walks (bd tea-rags-mcp-xpmwg).
+   * A `--languages`-restricted `--force` still qualifies: the rebuilt
+   * collection and its codegraph database hold only those languages.
+   */
+  protected override enrichmentRunCoverage(): EnrichmentRunCoverage {
+    return "wholeCorpus";
   }
 
   private async processAndTrack(

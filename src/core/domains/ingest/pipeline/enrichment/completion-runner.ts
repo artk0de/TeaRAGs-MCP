@@ -226,6 +226,9 @@ export class CompletionRunner {
       const fileOverlays = await executor.runFinalize(ctx.provider, root, {
         collectionName: coll || undefined,
         crossPass: filePhase.crossPassEnabled,
+        // bd tea-rags-mcp-xpmwg — always explicit on this path, so a pipeline
+        // run can never fall back to the provider's direct-caller default.
+        runCoverage: filePhase.runCoverage,
         // The run's per-file hashes, stamped onto the rows pass-2 writes (bd
         // tea-rags-mcp-o317j). Finalize is the one dispatch every ingest path
         // makes, and pass-2 — the only writer of those rows — runs inside it, so
