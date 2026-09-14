@@ -871,7 +871,17 @@ export interface LanguageCapability {
     grammarPackage?: string;
   };
   tests: { tier: "high" | "medium" | "low" | "na"; detection: string; tech: string };
-  codegraph: { tier: CodegraphTier | TypingTieredCodegraph; tech: string };
+  codegraph: {
+    tier: CodegraphTier | TypingTieredCodegraph;
+    tech: string;
+    /**
+     * One-line description of `tech` for the README table cell — at most 160
+     * characters. Omit when `tech` is already that short: the README falls back
+     * to `tech`, while the agent rule's "For humans" section always renders the
+     * full `tech`.
+     */
+    summary?: string;
+  };
   /** Hand-bumped code versions for this language — see {@link LanguageSupportVersions}. */
   versions: LanguageSupportVersions;
   /** README prose extras (humans only). */

@@ -93,4 +93,35 @@ describe("renderReadme", () => {
     expect(out).toContain("sql");
     expect(out).toContain("CharacterChunker");
   });
+
+  it("renders a descriptor's codegraph summary in place of its full tech", () => {
+    const caps = new LanguageFactory().capabilities();
+    const python = caps.get("python")!;
+    caps.set("python", {
+      ...python,
+      codegraph: { tier: python.codegraph.tier, tech: "FULL-TECH-MARKER", summary: "SUMMARY-MARKER" },
+    });
+
+    const pythonRow = renderReadme(caps)
+      .split("\n")
+      .find((l) => l.includes("***Python***"));
+
+    expect(pythonRow).toBeDefined();
+    expect(pythonRow!).toContain("SUMMARY-MARKER");
+    expect(pythonRow!).not.toContain("FULL-TECH-MARKER");
+  });
+
+  it("keeps every codegraph description short enough to scan in a table cell", () => {
+    const descriptions = out
+      .split("\n")
+      .filter((l) => l.startsWith("| ***"))
+      .map((l) => l.split(" | ").at(-1)!)
+      .filter((cell) => cell.includes(" — "))
+      .map((cell) => cell.slice(cell.indexOf(" — ") + 3).replace(/ \|$/, ""));
+
+    expect(descriptions.length).toBeGreaterThan(0);
+    for (const description of descriptions) {
+      expect(description.length, description.slice(0, 80)).toBeLessThanOrEqual(160);
+    }
+  });
 });

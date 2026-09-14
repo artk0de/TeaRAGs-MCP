@@ -77,7 +77,7 @@ function codegraphCell(cap: LanguageCapability): string {
   const tierStr = isTypingTiered(tier)
     ? `untyped ${tierBadge(tier.untyped)} · YARD ${tierBadge(tier.yard)} · RBS/Sorbet ${tierBadge(tier["rbs/sorbet"])}`
     : tierBadge(tier);
-  return `${tierStr} — ${cap.codegraph.tech}`;
+  return `${tierStr} — ${cap.codegraph.summary ?? cap.codegraph.tech}`;
 }
 
 function row(cap: LanguageCapability, name: string): string {

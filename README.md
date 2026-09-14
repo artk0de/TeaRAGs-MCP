@@ -7,172 +7,344 @@
 <h1 align="center">TeaRAGs 🦖🍵</h1>
 
 <p align="center">
-  <strong>Trajectory Enrichment-Aware RAG for Coding Agents</strong>
+  <strong>Codebase Intelligence layer for AI coding agents</strong><br>
+  <sub>Trajectory Enrichment-Aware RAG · served over MCP · 100% local</sub>
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/MCP-compatible-%234f46e5" alt="MCP compatible">
-  <a href="https://artk0de.github.io/TeaRAGs-MCP/quickstart/installation"><img src="https://img.shields.io/badge/quickstart-%3C%2015%20min-f59e0b" alt="15-minute quickstart"></a>
-  <img src="https://img.shields.io/badge/deployment-local--first-15803d" alt="local-first">
-  <img src="https://img.shields.io/badge/provider-agnostic-0891b2" alt="provider agnostic">
-  <br>
+  <a href="https://www.npmjs.com/package/tea-rags"><img src="https://img.shields.io/npm/v/tea-rags?logo=npm&color=d4af37" alt="npm version"></a>
   <a href="https://github.com/artk0de/TeaRAGs-MCP/actions/workflows/ci.yml"><img src="https://github.com/artk0de/TeaRAGs-MCP/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
   <a href="https://codecov.io/gh/artk0de/TeaRAGs-MCP"><img src="https://codecov.io/gh/artk0de/TeaRAGs-MCP/graph/badge.svg?token=BU255N03YF" alt="codecov"></a>
-  <a href="https://github.com/JuliusBrussee/caveman"><img src="https://img.shields.io/badge/built%20with-caveman%20%F0%9F%AA%A8-8B4513" alt="Built with Caveman"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-d4af37" alt="MIT license"></a>
 </p>
 
 ---
 
 **Your coding agent copies the first code it finds — not the right one.**
 
-TeaRAGs is an MCP server for code search that enriches every retrieved chunk
-with git history: authorship, churn, bug-fix rate, ownership. Your agent stops
-learning from hotspots and starts learning from **stable, owned, battle-tested
-code**.
+TeaRAGs is a **Codebase Intelligence layer** your agent queries over MCP. It
+indexes the repository on your machine and returns every piece of code with
+three views of it:
 
-📖 **[Full documentation](https://artk0de.github.io/TeaRAGs-MCP/)** · 🏁
+- 🔍 **What it does** — semantic and hybrid search over AST-aware chunks
+- 🕸️ **How it is connected** — callers, callees, fan-in, transitive impact
+- 🧬 **How it has lived** — churn, bug-fix rate, ownership, age
+
+…and ships agent skills that know which view a task needs. The agent stops
+guessing which code is safe to copy, what is critical, and what a change will
+break — it reads the dossier instead.
+
+📖 **[Documentation](https://artk0de.github.io/TeaRAGs-MCP/)** · 🏁
 **[15-minute quickstart](https://artk0de.github.io/TeaRAGs-MCP/quickstart/installation)**
 · 🧠
 **[Core concepts](https://artk0de.github.io/TeaRAGs-MCP/introduction/core-concepts)**
 
-## The Problem
+## 👀 See It
 
-### 1. Understanding a monorepo is expensive — for humans AND agents
+Three questions an agent asks before touching code, answered by TeaRAGs on its
+own repository. Every number below is a real response, trimmed.
 
-Every new developer pays in hours. Every fresh agent session pays in tokens.
-Naming conventions, domain logic, local idioms — all of it has to be rebuilt
-from scratch, every time.
+### 1. "Find retry logic I can reuse"
 
-### 2. Bad code hygiene is a tax on your agent
+`semantic_search { query: "retry a failed request with exponential backoff", rerank: "hotspots" }`
 
-Confusing names mean the agent reads more files. More files mean more tokens,
-slower responses, and a higher chance of picking the wrong example. Your
-codebase's technical debt is now your AI bill.
+Similarity alone puts `OllamaEmbeddings#retryWithBackoff` first. The dossiers of
+the top two candidates tell different stories:
 
-### 3. Agents can't tell stable code from a hotspot
+|                           | 🥇 `OllamaEmbeddings#retryWithBackoff` | 🥈 `DeletionRetryHelper#execute` |
+| ------------------------- | -------------------------------------- | -------------------------------- |
+| Similarity rank           | #1                                     | #2 (`retry-helper.ts`)           |
+| Commits to the file       | 28                                     | 1                                |
+| Share that were bug fixes | 54% · 🔴 _concerning_                  | 0% · 🟢 _healthy_                |
+| Last changed              | 2 days ago · _recent_                  | 86 days ago · _old_              |
+| Callers                   | 2                                      | 1                                |
 
-Standard code search ranks by embedding similarity alone. It doesn't know which
-function gets bug-fixed every sprint, which module hasn't been touched in two
-years, or whose name is on the commits. So the agent copies whatever looks
-similar — including the broken examples.
+The closest match keeps getting fixed. The agent copies the quiet helper's shape
+— or learns why the first one keeps breaking before it repeats the mistake.
 
-## The Solution
+<details>
+<summary>Raw response for the first hit (trimmed)</summary>
 
-TeaRAGs gives your agent two things it can't get from vanilla code search.
-
-### 1. Every chunk carries its own history
-
-Retrieved code comes with signals about **who wrote it, how stable it is, how
-often it gets bug-fixed**, and **how impactful a change would be**. Semantic
-similarity stops being the whole answer — it becomes the floor.
-
-### 2. Pre-built skills, not just raw tools
-
-TeaRAGs ships agent **skills** — ready-made playbooks that tell your agent when
-and how to use the signals. No prompt engineering required:
-
-- `explore` — orient in an unfamiliar codebase
-- `data-driven-generation` — write code backed by stable, owned templates
-- `risk-assessment` — know what you'd break before you break it
-- `refactoring-scan` · `bug-hunt` · `pattern-search` — and more
-
-Install the plugin, your agent learns the workflow.
-[See all skills →](https://artk0de.github.io/TeaRAGs-MCP/usage/skills/)
-
-**Bonus: `dinopowers`** — a companion plugin with 10 wrappers over
-[`superpowers:*`](https://github.com/obra/superpowers) skills (Jesse Vincent's
-skills library for Claude Code) that inject tea-rags signals into brainstorming,
-planning, debugging, TDD, review, and completion flows. Mean eval delta +71pp
-across 136 cases.
-[Learn more →](https://artk0de.github.io/TeaRAGs-MCP/usage/skills/#dinopowers--wrappers-over-superpowers)
-
-## Use Cases
-
-### 🛡️ Safe code generation
-
-Your agent writes new code backed by **stable, canonical templates** — modules
-with a low bug-fix rate, long stability, and a clear owner. No more copying from
-last sprint's hotspot. _Skill: `data-driven-generation` ·
-[Why stable code is safer →](https://artk0de.github.io/TeaRAGs-MCP/knowledge-base/code-churn-research)_
-
-### 🔧 Refactoring planning & problem-pattern discovery
-
-Find the 5% of code responsible for 80% of incidents. **High churn + high
-bug-fix rate + concentrated ownership = your next production issue** — and your
-next refactoring candidate. _Skills: `refactoring-scan`, `bug-hunt`_
-
-### 🎯 Risk assessment before changes
-
-Before modifying a function, the agent checks **who depends on it, how often it
-breaks, and what its ticket history says**. Know the blast radius before you
-blast. _Skill: `risk-assessment` ·
-[Coupling & blast radius theory →](https://artk0de.github.io/TeaRAGs-MCP/knowledge-base/code-quality-metrics)_
-
-### 🗺️ Learning an unfamiliar codebase
-
-Ask questions instead of reading directory trees. _"How does auth work?"_
-returns the **stable, canonical implementation** with its history attached — not
-a random similar-looking snippet. _Skill: `explore`_
-
-## How It Works
-
-```mermaid
-flowchart LR
-    User([👤 You])
-
-    subgraph mcp["TeaRAGs MCP Server"]
-        Agent[🤖 Agent<br/>runs skills]
-        TeaRAGs[🍵 TeaRAGs<br/>search · enrich · rerank]
-        Agent <--> TeaRAGs
-    end
-
-    Qdrant[(🗄️ Qdrant<br/>vector DB)]
-    Embeddings[✨ Embeddings<br/>Ollama/OpenAI]
-    Codebase[📁 Your Codebase<br/>+ Git History]
-
-    User <--> Agent
-    TeaRAGs <--> Qdrant
-    TeaRAGs <--> Embeddings
-    TeaRAGs <--> Codebase
+```json
+{
+  "symbolId": "OllamaEmbeddings#retryWithBackoff",
+  "relativePath": "src/core/adapters/embeddings/ollama.ts",
+  "startLine": 290,
+  "endLine": 378,
+  "preset": "hotspots",
+  "git": {
+    "file": {
+      "commitCount": 28,
+      "ageDays": { "value": 2, "label": "recent" },
+      "bugFixRate": { "value": 54, "label": "concerning" },
+      "relativeChurn": { "value": 2.55, "label": "normal" }
+    },
+    "chunk": {
+      "commitCount": { "value": 11, "label": "extreme" },
+      "relativeChurn": { "value": 9.09, "label": "high" }
+    }
+  },
+  "codegraph": { "symbols": { "chunk": { "fanIn": 2, "fanOut": 6 } } }
+}
 ```
 
-You talk to your agent. The agent runs a TeaRAGs skill. TeaRAGs searches your
-code, enriches each result with git history, and ranks by what the skill needs —
-stability, ownership, risk, or pure relevance.
+Labels are computed from **this repository's own percentiles**, so _extreme_
+means extreme for this codebase, not for some global average.
 
-## What You Get
+</details>
 
-- 🧬 **Trajectory-aware retrieval** — the only open-source code RAG that scores
-  results by git history, not just embedding similarity
-- 📚 **Ships with agent skills** — 6 ready-made playbooks for exploration,
-  generation, risk assessment, and index management (plus 2 internal strategies)
-- 🔒 **Local-first, privacy-first** — works fully offline with Ollama; your code
-  never leaves your machine (cloud providers optional)
-- 🚀 **Built for monorepos** — AST-aware chunking across 10+ languages,
-  incremental reindexing, parallel pipelines, millions of LOC tested
+### 2. "What is risky to touch around vector writes?"
 
-## 🕸️ Codegraph Enrichments (beta)
+`semantic_search { query: "write points to the vector database in batches", rerank: "dangerous" }`
 
-> ⚠️ **Beta.** Structural graph signals are still being calibrated across
-> languages and may change between releases.
+Similarity alone ranks `PointsAccumulator#flushBatch`,
+`QdrantPointStore#addPointsOptimized` and `QdrantPointStore#addPoints` first.
+The `dangerous` preset reorders by risk and says why:
 
-Beyond git history, tea-rags can enrich chunks with **structural graph signals**
-— call graph and import graph (fan-in, fan-out, instability, PageRank,
-transitive impact) — and expose graph-query MCP tools (`get_callers`,
-`get_callees`, `find_cycles`, `trace_path`). This powers blast-radius and
-architectural-hub ranking.
+| #   | Ranked by risk                               | Why it moved up                                                             |
+| --- | -------------------------------------------- | --------------------------------------------------------------------------- |
+| 1   | `ChunkPipeline#createBatchHandler`           | 16 outgoing calls, 77 lines, 5 commits · _high_                             |
+| 2   | `QdrantManager#addPointsWithSparseOptimized` | file with 45 commits, relative churn 8.09 · 🔴 _high_, 4 authors            |
+| 3   | `PointsAccumulator#flushBatch`               | one author owns 100% of the live lines · 🟠 _deep-silo_, 158 days untouched |
 
-Codegraph is **disabled by default** (beta). Opt in with the `CODEGRAPH_ENABLED`
-environment variable, then re-index:
+### 3. "Who calls it before I change it?"
+
+`get_callers { symbolId: "QdrantManager#addPointsWithSparse" }`
+
+Ten exact call sites across eight files — method fan-in 10 · _central_, file
+transitive impact 47 · _regional_:
+
+```text
+ChunkPipeline#createBatchHandler          ingest/pipeline/chunk-pipeline.ts
+createQdrantPipeline                      ingest/pipeline/pipeline-manager.ts
+storeIndexingMarker (2 sites)             ingest/pipeline/indexing-marker.ts
+DocumentOps#add                           api/internal/ops/document-ops.ts
+SchemaManager#storeSchemaMetadata         adapters/qdrant/schema-manager.ts
+EmbeddingModelGuard#readOrCreateMarker    adapters/qdrant/embedding-model-guard.ts
+IndexStoreAdapter#storeSchemaVersion      maintenance/migration/adapters/index-store-adapter.ts
+SparseStoreAdapter#rebuildSparseVectors   maintenance/migration/adapters/sparse-store-adapter.ts
+SparseStoreAdapter#storeSparseVersion     maintenance/migration/adapters/sparse-store-adapter.ts
+```
+
+Need the whole chain from an entry point to this call? `trace_path` enumerates
+every A→B path and, with a rerank preset, sorts them by how dangerous each step
+is.
+
+## ❓ What It Answers
+
+Ask in plain language. **The plugin picks the skill, tools and rerank presets
+for every question automatically** — it ships a decision table that maps intent
+to the right call, so nobody has to know a preset name. Other MCP clients get
+the same routing guide as an MCP resource (`tea-rags://schema/search-guide`).
+The right column shows what runs under the hood.
+
+### 🗺️ Understand
+
+| Ask your agent                                                           | What runs                                                                    |
+| ------------------------------------------------------------------------ | ---------------------------------------------------------------------------- |
+| _"Where do we charge a bill with a saved card, and what will it touch?"_ | `hybrid_search` with `blastRadius` — the service, its neighbours, its reach  |
+| _"Onboard me into billing — where are the entry points?"_                | `/tea-rags:explore` · `onboarding`, `entryPoint`, outlines via `find_symbol` |
+| _"Which modules is this whole app built around?"_                        | `architecturalHub` · `hotMethod` · `hubs` filter                             |
+| _"What was done under ticket #4521?"_                                    | `taskId` filter                                                              |
+
+### ♻️ Reuse and generate
+
+| Ask your agent                                                          | What runs                                                                            |
+| ----------------------------------------------------------------------- | ------------------------------------------------------------------------------------ |
+| _"Add partial payments to bill payment — in our style, no duplicates."_ | `/tea-rags:data-driven-generation` — proven template, reuse gate, placement, callers |
+| _"We have four payment-gateway retries. Which one should I copy?"_      | `proven` — long-lived, stable, low-bug, multi-author · `battleTested` filter         |
+| _"Is there already a helper that rounds money amounts?"_                | `/tea-rags:pattern-search` · `find_similar`                                          |
+
+### 🎯 Change safely
+
+| Ask your agent                                                                                      | What runs                                                                                                                               |
+| --------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------- |
+| _"What should I not touch in this task, and where is it safer to build a parallel implementation?"_ | `criticalPath` · `blastRadius` · `godModule`; `/tea-rags:data-driven-generation` proposes a separate home when the target is overloaded |
+| _"Who calls bill payment, and how does a request get from the API to the card charge?"_             | `get_callers` · `trace_path` with `dangerous` — the riskiest step first                                                                 |
+| _"Which code here should never change without a second reviewer?"_                                  | `criticalPath` · `criticalMethod` · `panicZone`, `unstableCore`, `hubs` filters                                                         |
+| _"Which tests cover the behaviour I'm about to change?"_                                            | `/tea-rags:tests-as-context`                                                                                                            |
+
+### 🐛 Find problems
+
+| Ask your agent                                                                     | What runs                                                                                                                  |
+| ---------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------- |
+| _"Where are the most dangerous modules in the payments domain?"_                   | `/tea-rags:risk-assessment` — `bugHunt`, `hotspots`, `techDebt`, `dangerous`, `criticalPath` in one pass, plus god modules |
+| _"After a retry, a bill gets marked as paid twice. What is most likely to blame?"_ | `/tea-rags:bug-hunt` — the ticket text as the query, `bugHunt`, then `get_callers` / `trace_path`                          |
+| _"Map the tech debt in invoicing."_                                                | `techDebt` · `refactoring` · `decomposition` · `godModule` · `godMethod`                                                   |
+| _"Which files in this domain changed most this month?"_                            | `rank_chunks` with `hotspots` and a `modifiedAfter` filter                                                                 |
+| _"What here is dead or abandoned?"_                                                | `deadCandidates` · `abandonedHotspots` filters                                                                             |
+
+### 👥 Review, ownership and audit
+
+| Ask your agent                                                | What runs                                                                   |
+| ------------------------------------------------------------- | --------------------------------------------------------------------------- |
+| _"What in this merge request should I look at first?"_        | `/tea-rags:mr-review` — risk signals over the diff, callers of every change |
+| _"Whose code is this, and where is the bus factor one?"_      | `ownership` · `fragileSilo` filter                                          |
+| _"Which old security-critical code is overdue for an audit?"_ | `securityAudit` · `securityPaths` filter                                    |
+
+## ✨ Features
+
+- 📈 **Git- and codegraph-aware ranking** — 23 rerank presets blend churn,
+  bug-fix rate, ownership and age with fan-in, PageRank and transitive impact
+  (`proven`, `hotspots`, `techDebt`, `blastRadius`, `criticalPath`, …), plus 12
+  filter presets
+- 🕸️ **Call graph** — callers, callees, cycles and A→B paths (`get_callers`,
+  `get_callees`, `find_cycles`, `trace_path`) for TypeScript, JavaScript, Python
+  and Ruby at a high tier
+- 🧠 **Agent skills** — the plugin routes every question to the right tools and
+  presets on its own; 14 ready-made workflows (`explore`, `bug-hunt`,
+  `risk-assessment`, `data-driven-generation`, `mr-review`, …) plus
+  [`dinopowers`](https://artk0de.github.io/TeaRAGs-MCP/usage/skills/#dinopowers--wrappers-over-superpowers),
+  10 wrappers that feed index signals into
+  [`superpowers`](https://github.com/obra/superpowers)
+- 🔒 **100% local** — embedded Qdrant and DuckDB, no Docker; embeddings through
+  Ollama, with OpenAI, Cohere and Voyage optional
+- 🔄 **Always fresh** — incremental reindex, auto-update on a target branch,
+  per-worktree index clones, and a drift report that names the exact command to
+  run
+- 🏢 **Built for enterprise monorepos** — AST chunking for 9 languages, parallel
+  pipelines, validated on a 3.5M-line production monolith
+
+## 📦 Installation
+
+Requires **Node.js 24+**, **git** and **[Ollama](https://ollama.com)** with the
+code-embedding model:
 
 ```bash
-CODEGRAPH_ENABLED=true   # enable graph signals + tools
-CODEGRAPH_ENABLED=false  # default — graph extraction off
+ollama pull unclemusclez/jina-embeddings-v2-base-code:latest
 ```
 
-See the
-[Codegraph Enrichments docs](https://artk0de.github.io/TeaRAGs-MCP/usage/advanced/codegraph-enrichments)
-for signals, presets, supported languages, and configuration.
+**Claude Code** — plugins plus a setup wizard that detects your hardware and
+tunes the pipeline:
+
+```text
+/plugin marketplace add artk0de/TeaRAGs-MCP
+/plugin install tea-rags-setup@tea-rags
+/tea-rags-setup:install
+/plugin install tea-rags@tea-rags
+```
+
+**Any MCP client** (Cursor, Roo Code, Continue, …):
+
+```bash
+npm install -g tea-rags
+```
+
+```json
+{
+  "mcpServers": {
+    "tea-rags": {
+      "command": "tea-rags",
+      "args": ["server"],
+      "env": { "CODEGRAPH_ENABLED": "true" }
+    }
+  }
+}
+```
+
+Qdrant downloads and starts on first use. Cloud embeddings (OpenAI, Cohere,
+Voyage), an external Qdrant, and the built-in ONNX provider (beta) are covered
+in the
+[installation guide](https://artk0de.github.io/TeaRAGs-MCP/quickstart/installation).
+
+### 🕸️ Enable the call graph
+
+The call graph is **off by default** while it is in beta. Turn it on with
+`CODEGRAPH_ENABLED=true` in the MCP server's environment — the JSON above
+already does — or, in Claude Code:
+
+```bash
+claude mcp add tea-rags -s user -e CODEGRAPH_ENABLED=true -- tea-rags server
+```
+
+Then reindex. The flag is recorded per project, so later runs from the CLI or
+auto-update keep the graph on. Details:
+[Codegraph Enrichments](https://artk0de.github.io/TeaRAGs-MCP/usage/advanced/codegraph-enrichments).
+
+## 🚀 Quick Start
+
+```bash
+tea-rags index-codebase /path/to/repo --name myrepo   # first index: register + index
+tea-rags prime /path/to/repo                          # index state, drift, signal thresholds
+```
+
+In Claude Code, `/tea-rags:index` does the same. Then ask your agent:
+
+- _"How does auth work in this project?"_
+- _"Find stable examples of retry logic I can copy."_
+- _"What breaks if I change the payment module?"_
+
+## 🤔 Why TeaRAGs?
+
+|                              | `grep` / `ripgrep` | Embedding search | **TeaRAGs**                                           |
+| ---------------------------- | ------------------ | ---------------- | ----------------------------------------------------- |
+| **Finds**                    | Exact text         | Similar code     | Similar code, ranked by evidence                      |
+| **Knows history**            | —                  | —                | Churn, bug fixes, owners, age                         |
+| **Knows callers**            | —                  | —                | Fan-in, transitive impact, call paths                 |
+| **Ranks for the task**       | —                  | Similarity only  | 23 presets — see [What It Answers](#-what-it-answers) |
+| **Cost on a large monorepo** | Many agent turns   | One query        | One query                                             |
+
+## ⚙️ How It Works
+
+```mermaid
+%%{init: {"theme": "base", "themeVariables": {"primaryColor": "#fdf8e7", "primaryTextColor": "#2d2d2d", "primaryBorderColor": "#d4af37", "lineColor": "#c4941f", "secondaryColor": "#f5f5dc", "tertiaryColor": "#fafafa", "mainBkg": "#fdf8e7", "secondBkg": "#f5f5dc", "nodeBorder": "#d4af37", "clusterBkg": "#fffdf6", "clusterBorder": "#d4af37", "titleColor": "#2d2d2d", "edgeLabelBackground": "#ffffff", "fontSize": "15px"}}}%%
+flowchart LR
+    User([👤 You])
+    Agent[🤖 Coding agent<br/>+ TeaRAGs skills]
+
+    subgraph pkg["🍵 tea-rags"]
+        MCP[🔌 MCP server<br/>23 tools]
+        CLI[⌨️ CLI<br/>index · prime · projects · auto-update]
+        Core[⚙️ Core<br/>chunk · enrich · search · rerank]
+        MCP --> Core
+        CLI --> Core
+    end
+
+    subgraph storage["💻 Local storage"]
+        Qdrant[(🗄️ Qdrant<br/>embedded · vectors + signals)]
+        DuckDB[(🦆 DuckDB<br/>embedded · call graph)]
+    end
+
+    Embeddings[✨ Embeddings<br/>Ollama · OpenAI · Cohere · Voyage]
+    Repo[📁 Your repo<br/>code + git history]
+
+    User <--> Agent
+    Agent <--> MCP
+    User --> CLI
+    Core <--> Qdrant
+    Core <--> DuckDB
+    Core --> Embeddings
+    Core --> Repo
+```
+
+Your agent calls TeaRAGs over MCP; you run the CLI to index and maintain. Both
+drive one core: it chunks code on AST boundaries, embeds each chunk, attaches
+git and call-graph signals, and ranks results by the preset the task asks for.
+Qdrant and DuckDB run embedded under `~/.tea-rags` — no Docker, no servers to
+manage.
+
+## 📏 Measured
+
+Call-graph quality is checked against independent oracles, not eyeballed.
+
+| What                                                        | Result                                 | Corpus                             |
+| ----------------------------------------------------------- | -------------------------------------- | ---------------------------------- |
+| 🐍 Python call graph vs. jedi + pyright (pyright tie-break) | recall 0.92–1.00 · wrong edges ≤ 0.29% | flask, httpx, netbox, polar        |
+| 💎 Ruby call graph, YARD-annotated                          | in-project recall 1.00 · 0 fabricated  | octokit.rb                         |
+| 💎 Ruby call graph, un-annotated Rails                      | bare-call recall 0.93                  | mastodon                           |
+| 💎 Ruby call graph, production Rails                        | in-project recall 87.7%                | 3.5M-line production monolith      |
+| 🟦 TypeScript call graph vs. the TypeScript type checker    | phantom edges 0.32% · agreement 72.8%¹ | 17k-file production React frontend |
+| 🟦 TypeScript call graph on TeaRAGs' own source             | fabricated edges 93 → 0                | tea-rags `src/`                    |
+| 🧠 `dinopowers` wrappers vs. plain `superpowers` skills     | +71 pp mean pass rate                  | 136 eval cases, 10 wrappers        |
+| 🩹 Healing a drifted index instead of recomputing it        | 113 ms                                 | 134k-point production index        |
+
+¹ About two thirds of the TypeScript gap is callbacks passed through props and
+dependency injection — the type checker names a function type there, not an
+implementation, so no static resolver can pin those edges.
+
+The Python oracle harness ships in the repo
+(`scripts/py-codegraph-jedi-oracle.ts`), so those numbers can be reproduced on
+your own corpus.
 
 <!-- BEGIN lang-compat -->
 
@@ -191,160 +363,55 @@ structure is preserved; `Codegraph` is the call-graph resolution ceiling (the
 realized per-project number lives in the `tea-rags prime` digest, not here).
 Rows are ordered by overall capability, richest support first.
 
-| Language         | AST chunking                                                                                                      | Test chunking                                             | Codegraph                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               |
-| ---------------- | ----------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **_TypeScript_** | 🌔 **full** · tree-sitter (comment attachment, method-body splitting, describe/it scopes)                         | 🌖 **high** · testScopeChunker (describe/it scopes)       | 🌖 **high** — 14-strategy chain (10 tree-sitter + 4 ts.Program/typeChecker: JSX component resolution, cross-call return-type inference, generics/overload getResolvedSignature, structural typing + interface declaration merging) + ConeDispatch + typeChecker-backed union-receiver fan-out + out-of-project-receiver precision guards (pre-resolution short-name match, checker-backed declaration-site test covering builtins, default-lib and dependency types, and imported-constant container members on the import-mapping fallback) + local-callee guard (bare calls whose callee is a destructured prop / hook binding) + named function-valued declarators addressable at any scope depth (module-level and nested closures alike, composed under their declaring symbol) + class-property arrows addressable as class members (`request = async () => {}` composing `#` instance / `.` static like a method) + edges restricted to project sources + tsx/tsconfig-paths-aware import mapping                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
-| **_JavaScript_** | 🌔 **full** · tree-sitter (assignment chunking, module/class split)                                               | 🌖 **high** · testScopeChunker (describe/it scopes)       | 🌖 **high** — 6-strategy; CommonJS/ESM require resolution (dynamic gaps)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
-| **_Ruby_**       | 🌔 **full** · tree-sitter (RSpec block grouping, comment attachment, spec scope splitting, method-body splitting) | 🌖 **high** · RSpec scope chunker (parent setup injected) | untyped 🌖 **high** · YARD 🌕 **maximum** · RBS/Sorbet 🌑 **TBD** — 15-strategy chain + 4 dispatch components (table/union/cone/dynamic) + 20-grammar DSL catalogue + arity/kwarg-narrowed fan-out (corpus-adaptive p99 cap) + YARD type-source + db/schema.rb column accessors + naming-convention receiver typing for bare and @ivar receivers (subtype-gated)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
-| **_Python_**     | 🌔 **full** · tree-sitter                                                                                         | 🌓 **medium** · generic AST                               | 🌖 **high** — 9-strategy chain (super, clsMember, selfField, selfMember, localBinding, chainType, namingConvention, importedName, globalShortName) + class-object receivers resolved on the enclosing class's MRO, preferring the class-level symbolId spelling a `@classmethod` carries + ConeDispatch CHA fan-out consulted before the chain, RTA-pruned by the run-global instantiation set and narrowed by call-site arity and keyword keys (a positional parameter may be passed by name, so `arity` counts slots and `kwargs.optional` every nameable param; a `*args` call site omits its count rather than guessing) (name-only `dynamic` dispatch built, measured and PARKED behind `CODEGRAPH_PY_DYNAMIC_DISPATCH`, default off) + C3 linearization over file-qualified class keys, memoized once per run, with `super()` dispatching on that MRO from the entry after the enclosing class and every member lookup reading up it, a base spelled as a package module alias resolved through the sibling-module hop, and the legacy single-base walk declining a first hop the class's own ancestors do not name while the short name is declared in more than one file + import→file mapper resolving through symbol-table membership (seeded source roots plus a caller-ancestor scan, re-export hops, hop-bounded package re-export following to the file that declares a name, a module-shaped sibling hop that terminates on the FILE a package aliases as a submodule, stdlib guard) + kernel receiver-chain propagation for dotted receivers, module-text receivers and call-result locals folded to their callee's return type, split into hops at bracket depth zero so dots inside an argument list or a generic subscript stay in the argument + chain heads that are calls (generic subscript stripped, `typing.cast(T, x)` typed from argument one, a lowercase callee's recorded return read from a per-FILE `<relPath>::<name>` key rather than a run-global bare name, so six namesake `get_client` defs no longer share one fact) + namesake narrowing ahead of the import-SET filter: an ambiguous short name resolves to the file the CALLER's own import binding names, through one re-export hop, and refuses rather than guesses when no binding is in sight + `-> Self` recorded as a marker and substituted with the class the RECEIVER names, applied terminally on the call-result binding as well so the literal marker can never reach file resolution + kernel return inference over return statements + subtype-gated naming-convention receiver typing + class-body attribute typing from declared-or-import-bound constructors, its Django `as_manager` arm active only where the project's own manifests declare django (every pyproject.toml / requirements\*.txt under the root, PEP 503 normalized, exact match; no manifest anywhere leaves every vocabulary on) + class fields addressed both per-file by short name and run-global by file-qualified class key, with a field assigned from a CALL folded one level against the callee's return + annotation and docstring type facts, `Mapped[T]` read as transparent + an import shadow that spans the whole establishing statement + bare-call resolution in Python's LEGB order (enclosing frames, filtered before the pick, ahead of the caller's own module level, then builtins) with short-name candidates gated to same-language, bare-callable, non-builtin definitions + an inert-file fast path that skips materializing a file whose native tree bears none of the node types the walker can extract from. Measured against jedi merged per file with a pyright LSP second engine, every chain-vs-oracle disagreement arbitrated by a third pyright vote: the `tiebroken` column that stage publishes is the precision figure to quote, and `legacy` stays beside it as the regression gate |
-| **_Go_**         | 🌔 **full** · tree-sitter (func/type split)                                                                       | 🌓 **medium** · generic AST                               | 🌗 **moderate** — 6-strategy; explicit interfaces (no poly dispatch)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
-| **_Java_**       | 🌔 **full** · tree-sitter                                                                                         | 🌓 **medium** · generic AST                               | 🌗 **moderate** — 6-strategy + java.lang stdlib whitelist + overload disambiguation                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     |
-| **_Rust_**       | 🌔 **full** · tree-sitter (named-item extraction)                                                                 | 🌓 **medium** · generic AST (#[test] attrs not preserved) | 🌗 **moderate** — 6-strategy; trait-based dispatch                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
-| **_Bash_**       | 🌔 **full** · tree-sitter                                                                                         | 🌒 **low** · generic AST (bats/shunit not recognized)     | 🌘 **minimal** — function-call extraction only, no dispatch                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
-| **_Markdown_**   | 🌔 **full** · MarkdownChunker (ToC + smart chunking)                                                              | 🌑 **N/A** · doc-only                                     | 🌑 **none** — no call graph                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
-| **_sql_**        | 🌑 **none** · CharacterChunker                                                                                    | 🌑 **N/A**                                                | 🌑 **none**                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
-| **_jsonc_**      | 🌑 **none** · CharacterChunker                                                                                    | 🌑 **N/A**                                                | 🌑 **none**                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
-| **_json_**       | 🌑 **none** · CharacterChunker                                                                                    | 🌑 **N/A**                                                | 🌑 **none**                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
+| Language         | AST chunking                                                                                                      | Test chunking                                             | Codegraph                                                                                                                                                                                   |
+| ---------------- | ----------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **_TypeScript_** | 🌔 **full** · tree-sitter (comment attachment, method-body splitting, describe/it scopes)                         | 🌖 **high** · testScopeChunker (describe/it scopes)       | 🌖 **high** — 14-strategy chain (10 tree-sitter + 4 ts.Program/typeChecker) + cone dispatch + typeChecker-backed union-receiver fan-out                                                     |
+| **_JavaScript_** | 🌔 **full** · tree-sitter (assignment chunking, module/class split)                                               | 🌖 **high** · testScopeChunker (describe/it scopes)       | 🌖 **high** — 6-strategy; CommonJS/ESM require resolution (dynamic gaps)                                                                                                                    |
+| **_Ruby_**       | 🌔 **full** · tree-sitter (RSpec block grouping, comment attachment, spec scope splitting, method-body splitting) | 🌖 **high** · RSpec scope chunker (parent setup injected) | untyped 🌖 **high** · YARD 🌕 **maximum** · RBS/Sorbet 🌑 **TBD** — 15-strategy chain + 4 dispatch components + 20-grammar DSL catalogue + YARD type-source + db/schema.rb column accessors |
+| **_Python_**     | 🌔 **full** · tree-sitter                                                                                         | 🌓 **medium** · generic AST                               | 🌖 **high** — 9-strategy chain + C3 MRO + CHA cone dispatch + re-export-aware import mapping + annotation, docstring and return-type facts                                                  |
+| **_Go_**         | 🌔 **full** · tree-sitter (func/type split)                                                                       | 🌓 **medium** · generic AST                               | 🌗 **moderate** — 6-strategy; explicit interfaces (no poly dispatch)                                                                                                                        |
+| **_Java_**       | 🌔 **full** · tree-sitter                                                                                         | 🌓 **medium** · generic AST                               | 🌗 **moderate** — 6-strategy + java.lang stdlib whitelist + overload disambiguation                                                                                                         |
+| **_Rust_**       | 🌔 **full** · tree-sitter (named-item extraction)                                                                 | 🌓 **medium** · generic AST (#[test] attrs not preserved) | 🌗 **moderate** — 6-strategy; trait-based dispatch                                                                                                                                          |
+| **_Bash_**       | 🌔 **full** · tree-sitter                                                                                         | 🌒 **low** · generic AST (bats/shunit not recognized)     | 🌘 **minimal** — function-call extraction only, no dispatch                                                                                                                                 |
+| **_Markdown_**   | 🌔 **full** · MarkdownChunker (ToC + smart chunking)                                                              | 🌑 **N/A** · doc-only                                     | 🌑 **none** — no call graph                                                                                                                                                                 |
+| **_sql_**        | 🌑 **none** · CharacterChunker                                                                                    | 🌑 **N/A**                                                | 🌑 **none**                                                                                                                                                                                 |
+| **_jsonc_**      | 🌑 **none** · CharacterChunker                                                                                    | 🌑 **N/A**                                                | 🌑 **none**                                                                                                                                                                                 |
+| **_json_**       | 🌑 **none** · CharacterChunker                                                                                    | 🌑 **N/A**                                                | 🌑 **none**                                                                                                                                                                                 |
 
 </details>
 <!-- markdownlint-enable MD033 -->
 <!-- END lang-compat -->
 
-## Who It's For
+## ⌨️ CLI
 
-- **Developers in large monorepos** — where "find similar code" returns a dozen
-  near-duplicates and you need the _canonical_ one
-- **Solo devs doing agentic development** — agent-driven workflows produce
-  bursts of micro-commits that wreck churn metrics. TeaRAGs ships a
-  [**GIT SESSIONS**](https://artk0de.github.io/TeaRAGs-MCP/architecture/git-enrichment-pipeline#git-sessions)
-  mode (`TRAJECTORY_GIT_SQUASH_AWARE_SESSIONS=true`) that groups commits by
-  `(author, time gap)` so a 20-commit refactor session counts as **one**. Churn,
-  bug-fix rate, and ownership stay meaningful even with a single human + an
-  agent as the only contributors.
-- **Tech leads worried about AI code quality** — who want their team's agents to
-  learn from stable modules, not from last sprint's hotspot
-- **Privacy-sensitive teams** — finance, healthcare, defense, or anyone who
-  can't send source code to a cloud API
-
-**Not for:** repos without git history (no signal to enrich) or teams that only
-need autocomplete (use Copilot).
-
-## 🚀 Quick Start
-
-Inside **Claude Code**, install the TeaRAGs plugins and run the setup wizard:
-
-```
-/plugin marketplace add artk0de/TeaRAGs-MCP
-/plugin install tea-rags-setup@tea-rags
-/tea-rags-setup:install
-```
-
-Then install the skills plugin (Claude-only, final step):
-
-```
-/plugin install tea-rags@tea-rags
-```
-
-Optionally install `dinopowers` for wrappers over `superpowers:*` skills:
-
-```
-/plugin install dinopowers@tea-rags
-```
-
-Index your codebase:
-
-```
-/tea-rags:index
-```
-
-Ask your agent anything: _"How does auth work in this project?"_, _"Find stable
-examples of retry logic"_, _"What should I know before touching the payment
-module?"_.
-
-For other MCP clients, CI, or air-gapped setups, see the
-[manual install](https://artk0de.github.io/TeaRAGs-MCP/quickstart/installation#option-b--manual-install)
-(Node + `npm install -g tea-rags` + Ollama/ONNX/OpenAI/Cohere/Voyage).
-
-## 🗂️ Project Registry
-
-TeaRAGs maintains a per-machine registry at `~/.tea-rags/registry.json` (or
-`$TEA_RAGS_DATA_DIR/registry.json`) that records collection metadata and lets
-you address indexed projects by a short name instead of an absolute path or
-opaque collection id.
-
-**CLI:**
-
-```bash
-tea-rags register-project --path ./my-repo --name myrepo
-tea-rags list-projects
-tea-rags list-projects --json
-tea-rags tune --project myrepo
-tea-rags unregister-project --name myrepo
-```
-
-**MCP tools:** `register_project`, `list_projects`, `unregister_project`.
-
-Every project-aware tool and command also accepts an optional `project`
-parameter alongside `path` and `collection`. Resolution priority is
-`collection > project > path`. The registry is auto-populated at the end of each
-indexing / reindexing run with the embedding model, embedding dimensions, Qdrant
-URL, `indexedAt` timestamp, tea-rags version, and chunk count — no manual
-`register-project` call is required for collections you index through tea-rags.
-
-## 🔄 Auto-Update Watcher
-
-Opt-in freshness: pin a project to a target branch and tea-rags keeps its index
-current there — no manual `index_codebase` runs, no daemon, no thrashing on
-branch switches.
-
-```bash
-tea-rags auto-update enable --project myrepo                # target = autodetected default branch
-tea-rags auto-update enable --project myrepo --branch dev   # pin any branch instead
-tea-rags auto-update status --project myrepo                # config + verdict + last run + log path
-tea-rags auto-update disable --project myrepo               # keeps the target for re-enable
-```
-
-Auto-update fires only when `HEAD` is on the target branch: session start
-(`prime`) and MCP search calls run a ~1 ms check and, when the index lags, spawn
-a detached incremental reindex that survives session close. Branch switches,
-rebases, and merges never trigger it — the paused state is surfaced in the prime
-digest and search-tool hints instead. Details:
-[Auto-Update Watcher](https://artk0de.github.io/TeaRAGs-MCP/operations/auto-update).
-
-**Worktree mode (parallel branches).** Branch work in git worktrees gets its own
-index clone, so branch searches see branch code while the main index stays
-pinned to the target branch:
-
-```bash
-tea-rags worktree create my-feature --from myrepo --path /path/to/worktree --no-git
-tea-rags index-codebase --project myrepo-worktree-my-feature   # incremental diff of the branch
-```
-
-This is built into the agent plugin: the shipped agent skills create the clone
-when work starts in a worktree, reindex it incrementally after each task, and
-tear it down when the branch is finished — no manual clone management. For a
-huge monorepo where an index clone is too expensive (millions of LOC), skip
-worktree mode: the agent then simply reindexes whatever branch is active, and
-auto-update pauses while `HEAD` is off the target branch.
+| Command                   | What it does                                                        |
+| ------------------------- | ------------------------------------------------------------------- |
+| `tea-rags index-codebase` | Index or incrementally update a codebase, with live progress        |
+| `tea-rags prime`          | Markdown digest of index state, drift and signal thresholds         |
+| `tea-rags projects`       | Manage the project registry: `register`, `list`, `info`, `prune`, … |
+| `tea-rags auto-update`    | Keep a project's index fresh on its target branch                   |
+| `tea-rags worktree`       | Per-worktree index clones for parallel branches                     |
+| `tea-rags doctor`         | Infrastructure and registry health                                  |
+| `tea-rags tune`           | Auto-tune performance parameters for your hardware                  |
+| `tea-rags update`         | Check for and install a newer version                               |
+| `tea-rags server`         | Start the MCP server                                                |
 
 ## 📚 Documentation
 
-**[artk0de.github.io/TeaRAGs-MCP](https://artk0de.github.io/TeaRAGs-MCP/)**
+| I want to…                   | Start here                                                                                                                                                        |
+| ---------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Get it running**           | [Quickstart](https://artk0de.github.io/TeaRAGs-MCP/quickstart/installation) — install, index, first query                                                         |
+| **Understand the concept**   | [Core Concepts](https://artk0de.github.io/TeaRAGs-MCP/introduction/core-concepts) — vectorization, trajectory enrichment, reranking                               |
+| **See what my agent can do** | [Skills](https://artk0de.github.io/TeaRAGs-MCP/usage/skills/) — the agent workflows and when each one fires                                                       |
+| **Keep the index fresh**     | [Auto-Update](https://artk0de.github.io/TeaRAGs-MCP/operations/auto-update) · [Drift Detection](https://artk0de.github.io/TeaRAGs-MCP/operations/drift-detection) |
+| **Look under the hood**      | [Architecture](https://artk0de.github.io/TeaRAGs-MCP/architecture/overview) — pipelines, data model, reranker internals                                           |
+| **Learn the theory**         | [Knowledge Base](https://artk0de.github.io/TeaRAGs-MCP/knowledge-base/rag-fundamentals) — RAG, code search, software evolution                                    |
 
-| I want to…                   | Start here                                                                                                                          |
-| ---------------------------- | ----------------------------------------------------------------------------------------------------------------------------------- |
-| **Get it running**           | [Quickstart (15 min)](https://artk0de.github.io/TeaRAGs-MCP/quickstart/installation) — install, index, first query                  |
-| **Understand the concept**   | [Core Concepts](https://artk0de.github.io/TeaRAGs-MCP/introduction/core-concepts) — vectorization, trajectory enrichment, reranking |
-| **See what my agent can do** | [Skills](https://artk0de.github.io/TeaRAGs-MCP/usage/skills/) — 6 ready-made agent playbooks for exploration, generation, risk      |
-| **Look under the hood**      | [Architecture](https://artk0de.github.io/TeaRAGs-MCP/architecture/overview) — pipelines, data model, reranker internals             |
-| **Learn the theory**         | [Knowledge Base](https://artk0de.github.io/TeaRAGs-MCP/knowledge-base/rag-fundamentals) — RAG, code search, software evolution      |
+## 📝 From the Blog
 
-## 📝 From the blog
-
-Engineering notes behind the releases — ranking, codegraph, indexing throughput,
-each with the corpus it was measured on.
-[All posts](https://artk0de.github.io/TeaRAGs-MCP/blog) ·
-[RSS](https://artk0de.github.io/TeaRAGs-MCP/blog/rss.xml)
+Engineering notes behind the releases, each with the corpus it was measured on —
+[all posts](https://artk0de.github.io/TeaRAGs-MCP/blog) ·
+[RSS](https://artk0de.github.io/TeaRAGs-MCP/blog/rss.xml).
 
 <!-- BLOG:START -->
 
@@ -358,9 +425,9 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for workflow and conventions.
 
 ## 🙏 Acknowledgments
 
-Built on a fork of
+Started as a fork of
 **[mhalder/qdrant-mcp-server](https://github.com/mhalder/qdrant-mcp-server)** —
-clean architecture, solid tests, open-source spirit. And its ancestor
+clean architecture, solid tests, open-source spirit — and its ancestor
 **[qdrant/mcp-server-qdrant](https://github.com/qdrant/mcp-server-qdrant)**.
 Code vectorization inspired by
 **[claude-context](https://github.com/zilliztech/claude-context)** (Zilliz).

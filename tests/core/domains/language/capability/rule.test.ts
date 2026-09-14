@@ -40,4 +40,18 @@ describe("renderRule", () => {
   it("marks the file as generated", () => {
     expect(out).toContain("GENERATED");
   });
+
+  it("keeps the full resolution tech for humans even when a descriptor declares a summary", () => {
+    const caps = new LanguageFactory().capabilities();
+    const python = caps.get("python")!;
+    caps.set("python", {
+      ...python,
+      codegraph: { tier: python.codegraph.tier, tech: "FULL-TECH-MARKER", summary: "SUMMARY-MARKER" },
+    });
+
+    const rule = renderRule(caps);
+
+    expect(rule).toContain("- **Python** — FULL-TECH-MARKER");
+    expect(rule).not.toContain("SUMMARY-MARKER");
+  });
 });

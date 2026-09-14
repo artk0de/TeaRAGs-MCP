@@ -16,6 +16,8 @@ export const capability: LanguageCapability = {
   tests: { tier: "high", detection: "*_test.rb / *_spec.rb", tech: "RSpec scope chunker (parent setup injected)" },
   codegraph: {
     tier: { untyped: "high", yard: "maximum", "rbs/sorbet": "tbd" },
+    summary:
+      "15-strategy chain + 4 dispatch components + 20-grammar DSL catalogue + YARD type-source + db/schema.rb column accessors",
     tech: "15-strategy chain + 4 dispatch components (table/union/cone/dynamic) + 20-grammar DSL catalogue + arity/kwarg-narrowed fan-out (corpus-adaptive p99 cap) + YARD type-source + db/schema.rb column accessors + naming-convention receiver typing for bare and @ivar receivers (subtype-gated)",
   },
   // codegraphSchema 2: bd tea-rags-mcp-ex28m — see typescript/capability.ts.
