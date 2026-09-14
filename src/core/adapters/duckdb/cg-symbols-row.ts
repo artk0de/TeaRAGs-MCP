@@ -25,6 +25,11 @@ export const CG_SYMBOLS_KEY_COLUMNS = ["rel_path", "symbol_id"] as const;
  * deferred chunk pass, which owns it end to end (`updateSymbolChunkIdsBulk`).
  * Excluding it from the comparison is what lets an unchanged symbol keep the
  * join already on disk instead of having it reset by every re-walk.
+ *
+ * `start_line` / `end_line` ARE compared (bd tea-rags-mcp-9i2ow): lines inserted
+ * above a method leave every other column identical, and a diff blind to the
+ * range would keep the old one on disk — which is what the payload healer maps
+ * chunks to symbols with.
  */
 export const CG_SYMBOLS_VALUE_COLUMNS = [
   "fq_name",
@@ -35,6 +40,8 @@ export const CG_SYMBOLS_VALUE_COLUMNS = [
   "kwargs_json",
   "accepts_block",
   "is_abstract_stub",
+  "start_line",
+  "end_line",
 ] as const;
 
 /**
@@ -64,6 +71,9 @@ export interface CgSymbolsRow {
   accepts_block: boolean | null;
   /** NULL on a row written before migration 016 — read as "not a stub". */
   is_abstract_stub: boolean | null;
+  /** NULL on a row written before migration 024, or by a walker that tracks no lines. */
+  start_line: number | null;
+  end_line: number | null;
 }
 
 /**
@@ -84,6 +94,8 @@ export function toCgSymbolsRow(def: SymbolDefinition): unknown[] {
     def.kwargs ? JSON.stringify(def.kwargs) : null,
     def.acceptsBlock ?? null,
     def.isAbstractStub === true,
+    def.startLine ?? null,
+    def.endLine ?? null,
   ];
 }
 
@@ -107,6 +119,10 @@ export function fromCgSymbolsRow(row: CgSymbolsRow): SymbolDefinition {
     // Only-ever-true, like the walker's mark: an explicit TRUE marks a stub,
     // and FALSE / NULL (pre-016 row) both mean "not a stub".
     ...(row.is_abstract_stub === true ? { isAbstractStub: true } : {}),
+    // Both-or-neither, like the walker's own range: half a range places nothing.
+    ...(row.start_line !== null && row.start_line !== undefined && row.end_line !== null && row.end_line !== undefined
+      ? { startLine: Number(row.start_line), endLine: Number(row.end_line) }
+      : {}),
   };
 }
 

@@ -309,6 +309,17 @@ export interface SymbolDefinition {
    */
   isAbstractStub?: boolean;
   /**
+   * The walker's 1-based, inclusive line range of this definition's AST node
+   * (bd tea-rags-mcp-9i2ow). Both-or-neither. PERSISTED in `cg_symbols`
+   * (`start_line` / `end_line`, migration 024) so the payload healer — which
+   * runs outside any walk — maps a stored chunk to the symbol that owns it by
+   * the same rule the deferred chunk pass uses. Absent on a row written before
+   * that migration and on a walker that tracks no lines; the owner rule then
+   * keeps the chunk's own payload symbolId.
+   */
+  startLine?: number;
+  endLine?: number;
+  /**
    * This definition was SYNTHESIZED by the project-scope schema pre-pass from a
    * persisted schema snapshot (`db/schema.rb`) rather than extracted from a
    * `def` — an ActiveRecord column accessor (`name` / `name=` / `name?`) that

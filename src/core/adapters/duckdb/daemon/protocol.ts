@@ -72,6 +72,10 @@ export type DaemonOp =
   | "listAdjacency"
   | "getPageRank"
   | "findSymbolChunk"
+  // Per-file symbol line ranges for the payload healer's chunk-owner rule
+  // (bd tea-rags-mcp-9i2ow). Its own op, so a daemon from an older build answers
+  // "unknown daemon op" and the client degrades to "no ranges".
+  | "getSymbolLineRangesBulk"
   // Read half of the drift pair (bd tea-rags-mcp-a2ddb). Plain arrays on the
   // wire — no Map, so no entries() dance on either side.
   | "diffSymbolSignals"
@@ -95,7 +99,7 @@ export interface DaemonRequest {
     | { collection: string; relPath: RelPath; chunkIds: [string, string][] } // updateSymbolChunkIds
     | { collection: string; entries: { relPath: RelPath; chunkIds: [string, string][] }[] } // updateSymbolChunkIdsBulk
     | { collection: string; relPath: RelPath; maxDepth?: number } // getTransitiveImpact
-    | { collection: string; relPaths: RelPath[]; maxDepth?: number } // getFileMetricsBulk
+    | { collection: string; relPaths: RelPath[]; maxDepth?: number } // getFileMetricsBulk | getSymbolLineRangesBulk (no maxDepth)
     | { collection: string; oldVersion: string; newVersion: string } // finalizeReindex
     | { collection: string; symbolId: SymbolId } // getCallers | getCallees | getCalledByCount | getCallSiteCount | getPageRank
     | { collection: string; member: string; limit?: number } // getAmbiguousCallersByMember

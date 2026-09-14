@@ -26,6 +26,7 @@ import { SQL_020_CG_METHOD_EDGES_SOURCE_PATH_PK } from "./020-cg-method-edges-so
 import { SQL_021_CG_PASS1_AGGREGATES } from "./021-cg-pass1-aggregates.js";
 import { SQL_022_CG_RUN_STATS_UNNARROWED_TEMPLATE } from "./022-cg-run-stats-unnarrowed-template.js";
 import { SQL_023_CG_SIGNALS_PREV } from "./023-cg-signals-prev.js";
+import { SQL_024_CG_SYMBOLS_LINE_RANGE } from "./024-cg-symbols-line-range.js";
 
 export interface DatabaseMigration {
   filename: string;
@@ -56,4 +57,5 @@ export const DATABASE_MIGRATIONS: DatabaseMigration[] = [
   { filename: "021-cg-pass1-aggregates.sql", sql: SQL_021_CG_PASS1_AGGREGATES },
   { filename: "022-cg-run-stats-unnarrowed-template.sql", sql: SQL_022_CG_RUN_STATS_UNNARROWED_TEMPLATE },
   { filename: "023-cg-signals-prev.sql", sql: SQL_023_CG_SIGNALS_PREV },
+  { filename: "024-cg-symbols-line-range.sql", sql: SQL_024_CG_SYMBOLS_LINE_RANGE },
 ];
