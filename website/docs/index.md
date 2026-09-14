@@ -99,39 +99,50 @@ a random similar-looking snippet. _Skill: `explore`_
 {`
 flowchart LR
     User[👤 You]
+    Agent[🤖 Coding agent<br/><small>+ TeaRAGs skills</small>]
 
-    subgraph mcp["TeaRAGs MCP Server"]
-        Agent[🤖 Agent<br/><small>runs skills</small>]
-        TeaRAGs[🍵 TeaRAGs<br/><small>search · enrich · rerank</small>]
-        Agent <--> TeaRAGs
+    subgraph pkg["🍵 tea-rags"]
+        MCP[🔌 MCP server<br/><small>23 tools</small>]
+        CLI[⌨️ CLI<br/><small>index · prime · projects · auto-update</small>]
+        Core[⚙️ Core<br/><small>chunk · enrich · search · rerank</small>]
+        MCP --> Core
+        CLI --> Core
     end
 
-    Qdrant[(🗄️ Qdrant<br/><small>vector DB</small>)]
-    Embeddings[✨ Embeddings<br/><small>Ollama/OpenAI</small>]
-    Codebase[📁 Your Codebase<br/><small>+ Git History</small>]
+    subgraph storage["💻 Local storage"]
+        Qdrant[(🗄️ Qdrant<br/><small>embedded · vectors + signals</small>)]
+        DuckDB[(🦆 DuckDB<br/><small>embedded · call graph</small>)]
+    end
+
+    Embeddings[✨ Embeddings<br/><small>Ollama · OpenAI · Cohere · Voyage</small>]
+    Codebase[📁 Your repo<br/><small>code + git history</small>]
 
     User <--> Agent
-    TeaRAGs <--> Qdrant
-    TeaRAGs <--> Embeddings
-    TeaRAGs <--> Codebase
+    Agent <--> MCP
+    User --> CLI
+    Core <--> Qdrant
+    Core <--> DuckDB
+    Core --> Embeddings
+    Core --> Codebase
 
 `} </MermaidTeaRAGs>
 
 <div style={{textAlign: 'center', marginTop: '10px', color: '#666', fontSize: '14px'}}>
-You talk to your agent. The agent runs a TeaRAGs skill. TeaRAGs searches your
-code, enriches each result with git history, and ranks by what the skill needs —
-stability, ownership, risk, or pure relevance.
+Your agent calls TeaRAGs over MCP; you run the CLI to index and maintain.
+Both drive one core: it chunks code on AST boundaries, embeds each chunk,
+attaches git and call-graph signals, and ranks results by what the task needs.
+Qdrant and DuckDB run embedded — no Docker, no servers to manage.
 </div>
 
 ## What You Get
 
-- 🧬 **Trajectory-aware retrieval** — the only open-source code RAG that scores
-  results by git history, not just embedding similarity
-- 📚 **Ships with agent skills** — 6 ready-made playbooks for exploration,
-  generation, risk assessment, and index management (plus 2 internal strategies)
-- 🔒 **Local-first, privacy-first** — works fully offline with Ollama; your code
-  never leaves your machine (cloud providers optional)
-- 🚀 **Built for monorepos** — AST-aware chunking across 10+ languages,
+- 🧬 **Trajectory-aware retrieval** — scores results by git history and the call
+  graph, not just embedding similarity
+- 📚 **Ships with agent skills** — 14 skills for exploration, bug hunting, risk
+  assessment, code generation, review, and index management
+- 🔒 **Local-first, privacy-first** — embedded Qdrant and DuckDB, embeddings
+  through Ollama; your code never leaves your machine (cloud providers optional)
+- 🚀 **Built for enterprise monorepos** — AST-aware chunking across 9 languages,
   incremental reindexing, parallel pipelines, millions of LOC tested
 
 ## Who It's For
@@ -159,7 +170,7 @@ only need autocomplete (use Copilot).
 | ---------------------------- | -------------------------------------------------------------------------------------------------- |
 | **Get it running**           | [Quickstart (15 min)](/quickstart/installation) — install, index, first query                      |
 | **Understand the concept**   | [Core Concepts](/introduction/core-concepts) — vectorization, trajectory enrichment, reranking     |
-| **See what my agent can do** | [Skills](/usage/skills/) — 6 ready-made agent playbooks for exploration, generation, risk          |
+| **See what my agent can do** | [Skills](/usage/skills/) — 14 agent skills for exploration, generation, risk, review               |
 | **Look under the hood**      | [Architecture](/architecture/overview) — pipelines, data model, reranker internals                 |
 | **Learn the theory**         | [Knowledge Base](/knowledge-base/rag-fundamentals) — RAG, code search, software evolution research |
 
