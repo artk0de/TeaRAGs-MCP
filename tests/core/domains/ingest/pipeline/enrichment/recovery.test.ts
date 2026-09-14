@@ -628,6 +628,97 @@ describe("EnrichmentRecovery deferred-chunk handoff (bd tea-rags-mcp-fxio5)", ()
   });
 });
 
+/**
+ * bd tea-rags-mcp-fxio5 — only a file the provider can WALK gains a line-map
+ * entry, so only its chunks are worth handing to the reindex run. A deferring
+ * provider still owes chunk payload on files it has no parser for (codegraph:
+ * json, markdown, toml, …); no walk will ever add a symbol to them, the normal
+ * deferred pass stamps them bare, and recovery must stamp them the same way in
+ * place. Handing them off drops them at the run's repair narrowing and leaves
+ * the chunk marker degraded on every run.
+ */
+describe("EnrichmentRecovery deferred-chunk handoff — non-extractable files (bd tea-rags-mcp-fxio5)", () => {
+  function harness(points: { id: string; payload: Record<string, unknown> }[]) {
+    const qdrant = {
+      scrollFiltered: vi.fn().mockResolvedValue(points),
+      setPayload: vi.fn().mockResolvedValue(undefined),
+      batchSetPayload: vi.fn().mockResolvedValue(undefined),
+      // The live count lags; the handed-off floor is what remaining reports.
+      countPoints: vi.fn().mockResolvedValue(0),
+    };
+    const applier = {
+      applyFileSignals: vi.fn().mockResolvedValue(undefined),
+      applyChunkSignals: vi.fn(async (_c: string, _k: string, _s: unknown, _e: string, ids: Set<string>) => ids.size),
+      applySkipStamps: vi.fn().mockResolvedValue(0),
+    };
+    const executor = {
+      runFileSignalsRecovery: vi.fn().mockResolvedValue(new Map()),
+      runChunkBatch: vi.fn().mockResolvedValue(new Map()),
+    };
+    const recovery = new EnrichmentRecovery(qdrant as any, applier as any, { executor: executor as any });
+    return { applier, executor, recovery };
+  }
+
+  function tsOnlyGraphProvider() {
+    return {
+      key: "codegraph.symbols",
+      defersChunkEnrichment: true,
+      resolveRoot: vi.fn((p: string) => p),
+      buildFileSignals: vi.fn().mockResolvedValue(new Map()),
+      buildChunkSignals: vi.fn().mockResolvedValue(new Map()),
+      fileSignalTransform: undefined,
+      filterExtractablePaths: (paths: readonly string[]) => paths.filter((p) => p.endsWith(".ts")),
+    };
+  }
+
+  it("hands off only extractable files and heals the rest in place", async () => {
+    const { applier, executor, recovery } = harness([
+      { id: "ts-1", payload: { relativePath: "src/a.ts", startLine: 1, endLine: 20 } },
+      { id: "md-1", payload: { relativePath: "README.md", startLine: 1, endLine: 10 } },
+      { id: "json-1", payload: { relativePath: "tsconfig.json", startLine: 1, endLine: 30 } },
+    ]);
+
+    const result = await recovery.recoverChunkLevel(
+      "coll",
+      "/repo",
+      tsOnlyGraphProvider() as any,
+      "2026-01-01T00:00:00Z",
+    );
+
+    expect(result.deferredChunks).toEqual(new Map([["src/a.ts", [{ chunkId: "ts-1", startLine: 1, endLine: 20 }]]]));
+    expect(executor.runChunkBatch).toHaveBeenCalledTimes(1);
+    const [, , chunkMap] = executor.runChunkBatch.mock.calls[0] as [unknown, string, Map<string, unknown>];
+    expect([...chunkMap.keys()].sort()).toEqual(["README.md", "tsconfig.json"]);
+    expect(applier.applyChunkSignals).toHaveBeenCalledTimes(1);
+    const requestedIds = applier.applyChunkSignals.mock.calls[0][4];
+    expect([...requestedIds].sort()).toEqual(["json-1", "md-1"]);
+    expect(result.recoveredChunks).toBe(2);
+    // Only the handed-off chunk stays owed; the two healed ones do not.
+    expect(result.remainingUnenriched).toBe(1);
+  });
+
+  it("hands nothing off when every owed chunk sits in a non-extractable file", async () => {
+    const { applier, executor, recovery } = harness([
+      { id: "md-1", payload: { relativePath: "README.md", startLine: 1, endLine: 10 } },
+      { id: "json-1", payload: { relativePath: "tsconfig.json", startLine: 1, endLine: 30 } },
+    ]);
+
+    const result = await recovery.recoverChunkLevel(
+      "coll",
+      "/repo",
+      tsOnlyGraphProvider() as any,
+      "2026-01-01T00:00:00Z",
+    );
+
+    expect(result.deferredChunks).toBeUndefined();
+    expect(executor.runChunkBatch).toHaveBeenCalledTimes(1);
+    const requestedIds = applier.applyChunkSignals.mock.calls[0][4];
+    expect([...requestedIds].sort()).toEqual(["json-1", "md-1"]);
+    expect(result.recoveredChunks).toBe(2);
+    expect(result.remainingUnenriched).toBe(0);
+  });
+});
+
 describe("EnrichmentRecovery.recoverAll race guard", () => {
   it("skips marker write when runId changed between snapshot and finalize", async () => {
     const qdrant = new MockQdrantManager();

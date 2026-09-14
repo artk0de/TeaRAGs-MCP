@@ -69,8 +69,9 @@
   mutable field to a phase class, or reintroduce reset-in-place, and two
   overlapping runs corrupt each other's counts.
 - **Recovery does not compute chunk signals for a provider with
-  `defersChunkEnrichment`; it hands its owed chunks to the reindex run.**
-  `EnrichmentRecovery#recoverAll` returns them as a
+  `defersChunkEnrichment`; it hands its owed chunks in extractable files to the
+  reindex run, and heals the non-extractable ones in place — no walk can add a
+  symbol to them.** `EnrichmentRecovery#recoverAll` returns them as a
   `DeferredChunkRecoveryHandoff`. `ReindexPipeline#reindexChanges` drops the
   files it re-chunks, narrows the rest through
   `EnrichmentCoordinator#narrowDeferredChunkHandoff`, forces those files into

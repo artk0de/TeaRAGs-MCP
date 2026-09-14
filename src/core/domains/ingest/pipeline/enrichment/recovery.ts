@@ -209,10 +209,12 @@ export class EnrichmentRecovery {
    * A provider that defers chunk enrichment (codegraph) is NOT healed here. Its
    * chunk signals resolve each chunk to a symbol through the line map a walk
    * writes, and recovery runs before any walk, so computing them now would stamp
-   * `enrichedAt` over an empty overlay. Its owed entries come back as
-   * `deferredChunks` instead, for the reindex run's repair walk and deferred
-   * chunk pass, and they count as remaining rather than recovered — the run's
-   * own terminal chunk marker settles them (bd tea-rags-mcp-fxio5).
+   * `enrichedAt` over an empty overlay. Its owed entries in files it can
+   * extract come back as `deferredChunks` instead, for the reindex run's repair
+   * walk and deferred chunk pass, and they count as remaining rather than
+   * recovered — the run's own terminal chunk marker settles them. Entries in
+   * files it cannot extract are healed in place: no walk can add a symbol to
+   * them (bd tea-rags-mcp-fxio5).
    */
   async recoverChunkLevel(
     collectionName: string,
@@ -242,9 +244,20 @@ export class EnrichmentRecovery {
           );
         }
 
+        // A deferring provider hands off only files its walk can extract: those
+        // are the only ones a walk gives a line-map entry. The rest (codegraph:
+        // json, markdown, toml, …) never gain a symbol, so the in-place pass
+        // below stamps them exactly as the run's deferred pass would.
+        let handedOff = 0;
         if (provider.defersChunkEnrichment) {
-          for (const [relPath, entries] of chunkMap) deferredChunks.set(relPath, entries);
-          return { files: 0, chunks: 0, handedOff: batch.points.length };
+          const paths = [...chunkMap.keys()];
+          for (const relPath of provider.filterExtractablePaths?.(paths) ?? paths) {
+            const entries = chunkMap.get(relPath) ?? [];
+            deferredChunks.set(relPath, entries);
+            handedOff += entries.length;
+            chunkMap.delete(relPath);
+          }
+          if (chunkMap.size === 0) return { files: 0, chunks: 0, handedOff };
         }
 
         const batchChunkIds = new Set<string>();
@@ -260,7 +273,7 @@ export class EnrichmentRecovery {
           batchChunkIds,
         );
 
-        return { files: chunkMap.size, chunks: applied };
+        return { files: chunkMap.size, chunks: applied, handedOff };
       },
     );
     return deferredChunks.size > 0 ? { ...result, deferredChunks } : result;
