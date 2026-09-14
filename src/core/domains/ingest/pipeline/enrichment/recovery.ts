@@ -42,6 +42,8 @@ interface UnenrichedPoint {
   relativePath: string;
   startLine?: number;
   endLine?: number;
+  /** Chunker-written payload symbolId — the only symbol key available before any walk. */
+  symbolId?: string;
 }
 
 /** A point the policy declined, carrying the reason to stamp onto it. */
@@ -87,12 +89,12 @@ interface RecoveredCounts {
  * saturated with policy-ignored points, and repeated recovery passes healed
  * nothing beyond page one while reporting a capped remaining count (405).
  * Recovery must see the WHOLE unenriched set; the payload include-selector
- * below keeps the traversal cheap (three scalar keys, no content).
+ * below keeps the traversal cheap (four scalar keys, no content).
  */
 const RECOVERY_SCROLL_HARD_CAP = 1_000_000;
 
 /** Payload keys recovery actually reads — everything else stays server-side. */
-const RECOVERY_PAYLOAD_KEYS = ["relativePath", "startLine", "endLine"];
+const RECOVERY_PAYLOAD_KEYS = ["relativePath", "startLine", "endLine", "symbolId"];
 
 /**
  * Max unique file paths per provider dispatch. Bounds worker-side memory and
@@ -189,24 +191,24 @@ export class EnrichmentRecovery {
   ): Promise<RecoveryResult> {
     return this.recoverLevel(collectionName, absolutePath, provider, "chunk", scope, async (batch, root) => {
       // Build chunkMap for this batch: Map<relativePath, ChunkLookupEntry[]>
-      const chunkMap = new Map<string, { chunkId: string; startLine: number; endLine: number }[]>();
+      const chunkMap = new Map<string, ChunkLookupEntry[]>();
       const batchChunkIds = new Set<string>();
       for (const relPath of batch.paths) {
-        const entries = (batch.pointsByPath.get(relPath) ?? []).map((point) => ({
-          chunkId: String(point.id),
-          startLine: point.startLine ?? 0,
-          endLine: point.endLine ?? 0,
-        }));
+        // symbolId rides along so a provider that maps chunks through an
+        // in-process walk (codegraph) can still resolve them here, pre-walk.
+        const entries = (batch.pointsByPath.get(relPath) ?? []).map(
+          (point): ChunkLookupEntry => ({
+            chunkId: String(point.id),
+            startLine: point.startLine ?? 0,
+            endLine: point.endLine ?? 0,
+            ...(point.symbolId !== undefined ? { symbolId: point.symbolId } : {}),
+          }),
+        );
         chunkMap.set(relPath, entries);
         for (const entry of entries) batchChunkIds.add(entry.chunkId);
       }
 
-      const chunkSignals = await this.executor.runChunkBatch(
-        provider,
-        root,
-        chunkMap as unknown as Map<string, ChunkLookupEntry[]>,
-        { collectionName },
-      );
+      const chunkSignals = await this.executor.runChunkBatch(provider, root, chunkMap, { collectionName });
       const applied = await this.applier.applyChunkSignals(
         collectionName,
         provider.key,
@@ -465,6 +467,7 @@ export class EnrichmentRecovery {
         relativePath,
         startLine: typeof point.payload?.startLine === "number" ? point.payload.startLine : undefined,
         endLine: typeof point.payload?.endLine === "number" ? point.payload.endLine : undefined,
+        symbolId: typeof point.payload?.symbolId === "string" ? point.payload.symbolId : undefined,
       });
     }
     return { owed, declined };

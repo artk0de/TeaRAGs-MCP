@@ -88,6 +88,7 @@ import {
   collectSchemaColumnSources,
   type CodegraphExclusionOptions,
 } from "../exclusion.js";
+import { stripChunkPartSuffix } from "./chunk-part-symbol.js";
 import { createCodegraphExtractionSink, type CodegraphSinkDeps } from "./extraction-sink.js";
 import { GraphBuildFinalizer } from "./graph-finalizer.js";
 import { SymbolNodeFlushQueue } from "./node-flush.js";
@@ -1811,12 +1812,16 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
     for (const [relPath, entries] of chunkMap) {
       const perChunk = new Map<string, ChunkSignalOverlay>();
       for (const entry of entries) {
-        // ChunkLookupEntry only carries chunkId + startLine/endLine;
-        // resolveChunkSymbolId pulls symbolId from the walker-indexed
-        // line map (populated when the same provider walked the file
-        // in buildFileSignals). If file isn't in the map (e.g. older
-        // chunks from before codegraph wiring, or non-TS files), skip.
-        const symbolId = this.resolveChunkSymbolId(options?.collectionName, relPath, entry.startLine, entry.endLine);
+        // resolveChunkSymbolId pulls symbolId from the walker-indexed line map
+        // (populated when the same provider walked the file in
+        // buildFileSignals) — first, so the deferred pass is unchanged.
+        // Pre-reindex recovery runs before any walk, so the map is empty there;
+        // the entry's own payload symbolId (chunker-written, equal to
+        // cg_symbols.symbol_id per the symbolId convention) is the fallback
+        // (bd tea-rags-mcp-fxio5). Neither available ⇒ skip.
+        const symbolId =
+          this.resolveChunkSymbolId(options?.collectionName, relPath, entry.startLine, entry.endLine) ??
+          (entry.symbolId ? stripChunkPartSuffix(entry.symbolId) : undefined);
         if (!symbolId) continue;
         // Confidence-weighted fanIn/fanOut (bd tea-rags-mcp-s5ato — fractional
         // under dynamic/cone fan-out, integer for exact edges) + per-symbol

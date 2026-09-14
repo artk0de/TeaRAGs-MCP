@@ -181,6 +181,47 @@ describe("WorkerPoolEnrichmentExecutor", () => {
     await exec.shutdown();
   });
 
+  it("runChunkBatch carries each entry's payload symbolId across the thread boundary", async () => {
+    // bd tea-rags-mcp-fxio5 — recovery hands the codegraph provider the chunk's
+    // payload symbolId; the worker must receive it unstripped.
+    const echoPath = join(tmp, "symbolid-echo-provider.mjs");
+    writeFileSync(
+      echoPath,
+      `export async function createTaggedProvider(_config) {
+  return {
+    key: "symbolid-echo",
+    signals: [], derivedSignals: [], filters: [], presets: [],
+    resolveRoot: (p) => p,
+    buildFileSignals: async () => new Map(),
+    buildChunkSignals: async (_root, chunkMap) => {
+      const out = new Map();
+      for (const [file, entries] of chunkMap) {
+        const inner = new Map();
+        for (const e of entries) inner.set(e.chunkId, { symbolId: e.symbolId ?? null });
+        out.set(file, inner);
+      }
+      return out;
+    },
+  };
+}`,
+    );
+    const exec = new WorkerPoolEnrichmentExecutor(1, WORKER_PATH);
+    const provider = workerProvider(echoPath, "collection-affinity");
+    const chunkMap = new Map([
+      [
+        "a.ts",
+        [
+          { chunkId: "c1", startLine: 1, endLine: 5, symbolId: "A#run#part1" },
+          { chunkId: "c2", startLine: 6, endLine: 9 },
+        ],
+      ],
+    ]);
+    const out = await exec.runChunkBatch(provider, "/repo", chunkMap, { collectionName: "symbolid-echo" });
+    expect(out.get("a.ts")?.get("c1")).toEqual({ symbolId: "A#run#part1" });
+    expect(out.get("a.ts")?.get("c2")).toEqual({ symbolId: null });
+    await exec.shutdown();
+  });
+
   it("dispatches runFinalize through pool", async () => {
     const exec = new WorkerPoolEnrichmentExecutor(1, WORKER_PATH);
     const provider = workerProvider(fixturePath, "collection-affinity");
