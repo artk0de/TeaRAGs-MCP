@@ -287,6 +287,29 @@ describe("EnrichmentRecovery", () => {
       expect(chunks?.[0].startLine).toBe(0);
       expect(chunks?.[0].endLine).toBe(0);
     });
+
+    it("forwards the scanned payload symbolId into the chunk entries handed to the executor", async () => {
+      // bd tea-rags-mcp-fxio5 — recovery runs before any walk, so the chunk's
+      // own payload symbolId is the only key a deferring provider can map it by.
+      mockQdrant.scrollFiltered.mockResolvedValue([
+        { id: "chunk-1", payload: { relativePath: "src/foo.ts", startLine: 1, endLine: 10, symbolId: "Foo#bar" } },
+        { id: "chunk-2", payload: { relativePath: "src/foo.ts", startLine: 11, endLine: 20 } },
+        { id: "chunk-3", payload: { relativePath: "src/foo.ts", startLine: 21, endLine: 30, symbolId: 42 } },
+      ]);
+      mockApplier.applyChunkSignals.mockResolvedValue(3);
+
+      await recovery.recoverChunkLevel("test-collection", "/repo", mockProvider as any, "2026-01-01T00:00:00Z");
+
+      const payloadKeys: string[] = mockQdrant.scrollFiltered.mock.calls[0][4];
+      expect(payloadKeys).toContain("symbolId");
+
+      const chunkMapArg: Map<string, { chunkId: string; symbolId?: string }[]> =
+        mockProvider.buildChunkSignals.mock.calls[0][1];
+      const entries = chunkMapArg.get("src/foo.ts");
+      expect(entries?.[0].symbolId).toBe("Foo#bar");
+      expect(entries?.[1].symbolId).toBeUndefined();
+      expect(entries?.[2].symbolId).toBeUndefined();
+    });
   });
 
   describe("countUnenriched", () => {
@@ -534,7 +557,7 @@ describe("EnrichmentRecovery", () => {
       await recovery.recoverFileLevel("test-collection", "/repo", mockProvider as any, "2026-01-01T00:00:00Z");
 
       const call = mockQdrant.scrollFiltered.mock.calls[0];
-      expect(call[4]).toEqual(["relativePath", "startLine", "endLine"]);
+      expect(call[4]).toEqual(["relativePath", "startLine", "endLine", "symbolId"]);
     });
   });
 });

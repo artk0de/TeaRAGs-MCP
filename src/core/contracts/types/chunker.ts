@@ -23,6 +23,12 @@ export interface ChunkLookupEntry {
   endLine: number;
   /** Non-contiguous line ranges for precise overlap detection (e.g. Ruby body groups). */
   lineRanges?: { start: number; end: number }[];
+  /**
+   * The chunk's payload symbolId as the chunker wrote it (may carry a `#partN`
+   * suffix). Set by pre-reindex recovery, where no walk has run in-process.
+   * Plain string: it crosses the enrichment worker boundary.
+   */
+  symbolId?: string;
 }
 
 export interface BodyChunkResult {
