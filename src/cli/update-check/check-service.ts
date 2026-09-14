@@ -26,7 +26,8 @@ export class UpdateCheckService {
     if (opts.preferCache) {
       const cached = this.cache.read();
       if (cached !== null && now - cached.fetchedAt < cached.ttlMs) {
-        return cached.status;
+        const reconciled = this.reconcileWithInstalledVersion(cached);
+        if (reconciled !== null) return reconciled;
       }
     }
 
@@ -43,6 +44,32 @@ export class UpdateCheckService {
     const status = this.deriveStatus(current, latest);
     this.persist(status, now);
     return status;
+  }
+
+  /**
+   * A TTL-valid entry was written by whichever tea-rags was installed at fetch
+   * time; an upgrade or relink inside the TTL makes its `current` stale.
+   * Returns the status to serve, or null when the entry cannot answer for the
+   * installed version and must be treated as a cache miss.
+   *
+   * - `unavailable` carries no version — served as-is.
+   * - `current` matches the install — served as-is.
+   * - `available` for another install — re-derived offline from the cached
+   *   `latest`, persisted under the ORIGINAL fetchedAt/ttlMs so a re-derivation
+   *   never extends the registry answer's lifetime.
+   * - `up-to-date` for another install — holds no `latest` to re-derive from.
+   */
+  private reconcileWithInstalledVersion(cached: CacheEntry): UpdateStatus | null {
+    const { status } = cached;
+    if (status.kind === "unavailable") return status;
+
+    const installed = this.versionSource.getCurrent();
+    if (status.current === installed) return status;
+    if (status.kind === "up-to-date") return null;
+
+    const rederived = this.deriveStatus(installed, status.latest);
+    this.cache.write({ status: rederived, fetchedAt: cached.fetchedAt, ttlMs: cached.ttlMs });
+    return rederived;
   }
 
   private deriveStatus(current: string, latest: string | null): UpdateStatus {
