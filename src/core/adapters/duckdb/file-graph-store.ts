@@ -272,6 +272,9 @@ export class DuckDbFileGraphStore {
       await this.session.run("DELETE FROM cg_ambiguous_fanout WHERE source_rel_path = ?", [relPath]);
       await this.session.run("DELETE FROM cg_symbols WHERE rel_path = ?", [relPath]);
       await this.session.run("DELETE FROM cg_pass1_aggregates WHERE rel_path = ?", [relPath]);
+      // The file's resolve tallies (bd tea-rags-mcp-xpmwg): `getRunStats` sums
+      // them per language, so a deleted file's calls must stop counting.
+      await this.session.run("DELETE FROM cg_file_resolve_stats WHERE rel_path = ?", [relPath]);
       await this.session.run("DELETE FROM cg_symbols_files WHERE rel_path = ?", [relPath]);
     });
   }

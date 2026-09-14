@@ -25,7 +25,13 @@ import { mergeDerivedClassFieldTypes, seedParamLocalBindings } from "./call-arg-
 import { normalizeInheritanceEdges } from "./inheritance-edges.js";
 import { buildPass1Aggregates } from "./pass1-aggregates.js";
 import { classifyReceiverKind, type ReceiverKind } from "./receiver-kind.js";
-import { buildIncludedBy, languageKindTally, type CodegraphRunState, type ReceiverKindTally } from "./run-state.js";
+import {
+  buildIncludedBy,
+  emptyReceiverKindTally,
+  foldFileKindTally,
+  type CodegraphRunState,
+  type ReceiverKindTally,
+} from "./run-state.js";
 import { extractSelfDispatchMethods } from "./self-dispatch-discovery.js";
 import { lastSegment } from "./symbol-name.js";
 
@@ -374,6 +380,11 @@ export class CallEdgeResolutionRunner {
    * file (`extraction.language` is constant across this file's chunks). Test
    * files never reach here (excluded upstream at extraction), so every call
    * counted is production code.
+   *
+   * bd tea-rags-mcp-xpmwg — calls are counted into a tally of THIS file, which
+   * the `finally` folds into both the per-language totals and the per-file
+   * entry `cg_file_resolve_stats` persists. The fold runs even if resolution
+   * throws part-way, so the language totals keep every call they counted before.
    */
   private resolveMethodEdges(
     extraction: FileExtraction,
@@ -384,7 +395,25 @@ export class CallEdgeResolutionRunner {
     ambiguousFanouts: AmbiguousFanouts,
   ): void {
     const { stats } = this.runState;
-    const kindTally = languageKindTally(stats, extraction.language);
+    const kindTally = emptyReceiverKindTally();
+    try {
+      this.resolveCallSites(extraction, symbolTable, resolver, inputs, methodEdges, ambiguousFanouts, kindTally);
+    } finally {
+      foldFileKindTally(stats, extraction.relPath, extraction.language, kindTally);
+    }
+  }
+
+  /** The per-call-site loop of {@link resolveMethodEdges}, counting into `kindTally`. */
+  private resolveCallSites(
+    extraction: FileExtraction,
+    symbolTable: GlobalSymbolTable,
+    resolver: LanguageSymbolResolver,
+    inputs: ResolverInputs,
+    methodEdges: MethodEdges,
+    ambiguousFanouts: AmbiguousFanouts,
+    kindTally: Record<ReceiverKind, ReceiverKindTally>,
+  ): void {
+    const { stats } = this.runState;
     for (const chunk of extraction.chunks) {
       // Barrier-derived parameter types enter the chunk's own binding map at the
       // def line — the coordinate a YARD `@param` occupies — so every reader

@@ -2,6 +2,7 @@ import type {
   BulkFileUpsertEntry,
   BulkSymbolUpsertEntry,
   CycleScope,
+  FileResolveStatsWrite,
   FileScopedSymbolRef,
   GraphEdges,
   GraphFileNode,
@@ -41,6 +42,10 @@ export type DaemonOp =
   | "checkpoint"
   | "rebuildEdgeFileTargetIndex"
   | "recordRunStats"
+  // Per-file resolve tallies + language coverage (bd tea-rags-mcp-xpmwg). Its
+  // own op rather than a wider `recordRunStats` payload, so a daemon from an
+  // older build never receives a params shape it predates.
+  | "recordFileResolveStats"
   | "computeAndPersistCyclesAndSignals"
   // Baseline refresh for the derived-signal drift diff (bd tea-rags-mcp-a2ddb).
   // A WRITE: it replaces both `cg_*_signals_prev` tables in one transaction.
@@ -109,6 +114,7 @@ export interface DaemonRequest {
     | { collection: string; scope: CycleScope; sccs: readonly (readonly string[])[] } // replaceCycles
     | { collection: string; ranks: [string, number][] } // replacePageRanks
     | { collection: string; rows: ResolveRunStatsRow[] } // recordRunStats
+    | { collection: string; write: FileResolveStatsWrite } // recordFileResolveStats
     | { collection: string; fqName: string }; // getSupertypes | getSubtypes | getTransitiveSubtypes
 }
 

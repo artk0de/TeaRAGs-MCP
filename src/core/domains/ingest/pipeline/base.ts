@@ -14,6 +14,7 @@ import type { Ignore } from "ignore";
 import type { EmbeddingProvider } from "../../../adapters/embeddings/base.js";
 import type { QdrantManager } from "../../../adapters/qdrant/client.js";
 import { EMBEDDED_MARKER } from "../../../adapters/qdrant/embedded/daemon.js";
+import type { EnrichmentRunCoverage } from "../../../contracts/types/provider.js";
 import type {
   CollectionRegistryPort,
   PathCollectionResolver,
@@ -414,6 +415,16 @@ export abstract class BaseIndexingPipeline {
     return false;
   }
 
+  /**
+   * What part of the corpus this pipeline's enrichment run resolves (bd
+   * tea-rags-mcp-xpmwg). The base answer is `subset`: an incremental reindex
+   * walks only what changed, and must never let codegraph report that batch as
+   * the corpus. The full-index `IndexPipeline` overrides it.
+   */
+  protected enrichmentRunCoverage(): EnrichmentRunCoverage {
+    return "subset";
+  }
+
   private setupEnrichmentHooks(
     chunkPipeline: ChunkPipeline,
     absolutePath: string,
@@ -432,6 +443,8 @@ export abstract class BaseIndexingPipeline {
       fileCount,
       undefined,
       contentHashes,
+      undefined,
+      this.enrichmentRunCoverage(),
     );
     chunkPipeline.setOnBatchUpserted((items) => {
       this.enrichment.onChunksStored(collectionName, absolutePath, items);

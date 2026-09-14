@@ -178,6 +178,41 @@ export interface ResolveRunStatsRow {
   ambiguousFanout?: number;
 }
 
+/**
+ * One receiver kind's tally for ONE caller file (bd tea-rags-mcp-xpmwg) — the
+ * `ResolveRunStatsRow` counters without the language, which the owning
+ * {@link FileResolveStatsEntry} carries once for the whole file.
+ */
+export type FileResolveStatsRow = Omit<ResolveRunStatsRow, "language">;
+
+/**
+ * Everything one run resolved in one file, persisted to
+ * `cg_file_resolve_stats`. `rows` holds only the kinds the file tallied a call
+ * site under, so a file with no call site at all carries an EMPTY list — and
+ * writing it still clears whatever that file persisted before.
+ */
+export interface FileResolveStatsEntry {
+  relPath: RelPath;
+  language: string;
+  rows: FileResolveStatsRow[];
+}
+
+/**
+ * One run's per-file resolve write. `files` names every file the run resolved,
+ * one entry each; each entry's rows replace that file's persisted rows and no
+ * other file's.
+ *
+ * `completeLanguages` lists the languages whose WHOLE extractable corpus this
+ * run resolved (a full index, a `--force-enrichments codegraph` recompute).
+ * Recording them is what switches their read from the legacy `cg_run_stats`
+ * measurement to the per-file aggregate — so an incremental run must leave it
+ * empty.
+ */
+export interface FileResolveStatsWrite {
+  files: FileResolveStatsEntry[];
+  completeLanguages: string[];
+}
+
 export interface GraphEdges {
   fileEdges: { targetRelPath: RelPath; importText: string | null }[];
   methodEdges: {

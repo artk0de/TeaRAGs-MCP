@@ -2,6 +2,7 @@ import type {
   BulkFileUpsertEntry,
   BulkSymbolUpsertEntry,
   CycleScope,
+  FileResolveStatsWrite,
   FileScopedSymbolRef,
   GraphDbClient,
   GraphEdges,
@@ -133,6 +134,7 @@ export const DAEMON_OP_COMMANDS: Readonly<Record<DaemonOp, DaemonOpCommand>> = {
   checkpoint: write(async (graphDb) => graphDb.checkpoint()),
   rebuildEdgeFileTargetIndex: write(async (graphDb) => graphDb.rebuildEdgeFileTargetIndex()),
   recordRunStats: write(async (graphDb, p) => graphDb.recordRunStats(p.rows as ResolveRunStatsRow[])),
+  recordFileResolveStats: write(async (graphDb, p) => graphDb.recordFileResolveStats(p.write as FileResolveStatsWrite)),
   computeAndPersistCyclesAndSignals: write(async (graphDb) => computeAndPersistCyclesAndSignals(graphDb)),
   // bd tea-rags-mcp-a2ddb — the baseline the next run's drift diff reads. A
   // write, so it goes through the governed handle like every other one.

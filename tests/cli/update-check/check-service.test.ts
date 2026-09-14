@@ -129,3 +129,124 @@ describe("UpdateCheckService.checkForUpdate", () => {
     expect(registry.fetchLatestVersion).toHaveBeenCalledWith("tea-rags", { timeoutMs: 1500 });
   });
 });
+
+describe("UpdateCheckService.checkForUpdate — fresh cache vs installed version", () => {
+  const CACHED_AT = NOW - 60_000;
+  // Deliberately not the 24h default: a re-derivation that rebuilt the entry
+  // through the network path's TTL policy would be caught by this value.
+  const CACHED_TTL = 3_600_000;
+
+  it("returns a fresh unavailable status as-is (it carries no current version)", async () => {
+    const entry: CacheEntry = {
+      status: { kind: "unavailable", reason: "network" },
+      fetchedAt: CACHED_AT,
+      ttlMs: CACHED_TTL,
+    };
+    const registry = mockRegistry("1.41.0");
+    const cache = mockCache(entry);
+    const svc = new UpdateCheckService(mockSource("1.41.0"), registry, cache, () => NOW);
+    const status = await svc.checkForUpdate({ allowNetwork: true, preferCache: true });
+    expect(status).toEqual<UpdateStatus>({ kind: "unavailable", reason: "network" });
+    expect(registry.fetchLatestVersion).not.toHaveBeenCalled();
+    expect(cache.writes).toHaveLength(0);
+  });
+
+  it("returns the cached status untouched when its current matches the installed version", async () => {
+    const entry: CacheEntry = {
+      status: { kind: "up-to-date", current: "1.41.0" },
+      fetchedAt: CACHED_AT,
+      ttlMs: CACHED_TTL,
+    };
+    const registry = mockRegistry("1.42.0");
+    const cache = mockCache(entry);
+    const svc = new UpdateCheckService(mockSource("1.41.0"), registry, cache, () => NOW);
+    const status = await svc.checkForUpdate({ allowNetwork: true, preferCache: true });
+    expect(status).toEqual(entry.status);
+    expect(registry.fetchLatestVersion).not.toHaveBeenCalled();
+    expect(cache.writes).toHaveLength(0);
+  });
+
+  it("re-derives up-to-date without network when the install caught up with the cached latest", async () => {
+    const entry: CacheEntry = {
+      status: {
+        kind: "available",
+        current: "1.40.0",
+        latest: "1.41.0",
+        changelogUrl: "https://github.com/artk0de/TeaRAGs-MCP/releases/tag/v1.41.0",
+      },
+      fetchedAt: CACHED_AT,
+      ttlMs: CACHED_TTL,
+    };
+    const registry = mockRegistry("9.9.9");
+    const cache = mockCache(entry);
+    const svc = new UpdateCheckService(mockSource("1.41.0"), registry, cache, () => NOW);
+    const status = await svc.checkForUpdate({ allowNetwork: true, preferCache: true });
+    expect(status).toEqual<UpdateStatus>({ kind: "up-to-date", current: "1.41.0" });
+    expect(registry.fetchLatestVersion).not.toHaveBeenCalled();
+    expect(cache.writes).toEqual<CacheEntry[]>([
+      { status: { kind: "up-to-date", current: "1.41.0" }, fetchedAt: CACHED_AT, ttlMs: CACHED_TTL },
+    ]);
+  });
+
+  it("re-derives available against the installed version, keeping the cached latest, even offline", async () => {
+    const entry: CacheEntry = {
+      status: {
+        kind: "available",
+        current: "1.40.0",
+        latest: "1.41.0",
+        changelogUrl: "https://github.com/artk0de/TeaRAGs-MCP/releases/tag/v1.41.0",
+      },
+      fetchedAt: CACHED_AT,
+      ttlMs: CACHED_TTL,
+    };
+    const registry = mockRegistry("9.9.9");
+    const cache = mockCache(entry);
+    const svc = new UpdateCheckService(mockSource("1.40.5"), registry, cache, () => NOW);
+    const status = await svc.checkForUpdate({ allowNetwork: false, preferCache: true });
+    const rederived: UpdateStatus = {
+      kind: "available",
+      current: "1.40.5",
+      latest: "1.41.0",
+      changelogUrl: "https://github.com/artk0de/TeaRAGs-MCP/releases/tag/v1.41.0",
+    };
+    expect(status).toEqual(rederived);
+    expect(registry.fetchLatestVersion).not.toHaveBeenCalled();
+    expect(cache.writes).toEqual<CacheEntry[]>([{ status: rederived, fetchedAt: CACHED_AT, ttlMs: CACHED_TTL }]);
+  });
+
+  it("treats a fresh up-to-date entry for another version as a cache miss when offline", async () => {
+    const entry: CacheEntry = {
+      status: { kind: "up-to-date", current: "1.40.0" },
+      fetchedAt: CACHED_AT,
+      ttlMs: CACHED_TTL,
+    };
+    const registry = mockRegistry("1.42.0");
+    const cache = mockCache(entry);
+    const svc = new UpdateCheckService(mockSource("1.41.0"), registry, cache, () => NOW);
+    const status = await svc.checkForUpdate({ allowNetwork: false, preferCache: true });
+    expect(status).toEqual<UpdateStatus>({ kind: "unavailable", reason: "cache-miss" });
+    expect(registry.fetchLatestVersion).not.toHaveBeenCalled();
+    expect(cache.writes).toHaveLength(0);
+  });
+
+  it("treats a fresh up-to-date entry for another version as a cache miss and fetches when online", async () => {
+    const entry: CacheEntry = {
+      status: { kind: "up-to-date", current: "1.40.0" },
+      fetchedAt: CACHED_AT,
+      ttlMs: CACHED_TTL,
+    };
+    const registry = mockRegistry("1.42.0");
+    const cache = mockCache(entry);
+    const svc = new UpdateCheckService(mockSource("1.41.0"), registry, cache, () => NOW);
+    const status = await svc.checkForUpdate({ allowNetwork: true, preferCache: true });
+    const fetched: UpdateStatus = {
+      kind: "available",
+      current: "1.41.0",
+      latest: "1.42.0",
+      changelogUrl: "https://github.com/artk0de/TeaRAGs-MCP/releases/tag/v1.42.0",
+    };
+    expect(status).toEqual(fetched);
+    expect(registry.fetchLatestVersion).toHaveBeenCalled();
+    expect(cache.writes).toEqual<CacheEntry[]>([{ status: fetched, fetchedAt: NOW, ttlMs: 86_400_000 }]);
+  });
+});

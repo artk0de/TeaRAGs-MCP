@@ -24,6 +24,7 @@ import type {
   IndexRunDaemonGuard,
   IndexRunDaemonRelease,
 } from "../../../../contracts/types/enrichment-executor.js";
+import type { EnrichmentRunCoverage } from "../../../../contracts/types/provider.js";
 import type { ChunkLookupEntry, EnrichmentMetrics, EnrichmentProgressCallback } from "../../../../types.js";
 import { pipelineLog } from "../infra/debug-logger.js";
 import type { ChunkItem } from "../types.js";
@@ -148,6 +149,13 @@ interface RunState {
    * the count this run is judged by.
    */
   languages: readonly string[];
+  /**
+   * Whether this run resolves the whole corpus of the languages it walks (bd
+   * tea-rags-mcp-xpmwg). Threaded into every finalize through `FilePhase`, where
+   * codegraph decides what its persisted resolve breakdown may claim. `subset`
+   * unless the caller that opened the run declared otherwise.
+   */
+  runCoverage: EnrichmentRunCoverage;
 }
 
 export class EnrichmentCoordinator {
@@ -717,6 +725,9 @@ export class EnrichmentCoordinator {
       matched,
       undefined,
       languages,
+      // Every stored point of the selected languages is fed below, so the run
+      // resolves their whole corpus (bd tea-rags-mcp-xpmwg).
+      "wholeCorpus",
     );
     // File phase, in the same bounded batches the live pipeline uses, so a
     // whole-repo recompute cannot hand a provider one enormous dispatch.
@@ -837,6 +848,16 @@ export class EnrichmentCoordinator {
      * judged on the SAME set (bd tea-rags-mcp-9dg6s).
      */
     languages?: readonly string[],
+    /**
+     * What part of the corpus this run resolves (bd tea-rags-mcp-xpmwg). Only a
+     * caller that feeds EVERY file of the languages it walks may pass
+     * `wholeCorpus` — the full-index pipeline and `recomputeEnrichments`.
+     * Defaulting to `subset` is deliberate: a run wrongly claiming the corpus
+     * lets a batch-sized resolve tally replace a language's measurement, while
+     * one wrongly claiming a subset only delays that language's switch to the
+     * per-file aggregate until the next whole-corpus run.
+     */
+    runCoverage: EnrichmentRunCoverage = "subset",
   ): void {
     if (contentHashes) this.runContentHashes = contentHashes;
 
@@ -845,6 +866,7 @@ export class EnrichmentCoordinator {
     const runState = this.createRunState();
     runState.crossPass = crossPass;
     runState.languages = languages ?? [];
+    runState.runCoverage = runCoverage;
     this.currentRun = runState;
 
     // Reset per-run progress state. grandFileCount is the denominator for
@@ -920,6 +942,7 @@ export class EnrichmentCoordinator {
       runState.startedAt,
       crossPass,
       this.runContentHashes,
+      runCoverage,
     );
     runState.chunkPhase.init(runState.contexts, collectionName ?? "", runState.startedAt);
 
@@ -1217,6 +1240,7 @@ export class EnrichmentCoordinator {
       daemonReleasePromise: Promise.resolve(NOOP_RELEASE),
       crossPass: false,
       languages: [],
+      runCoverage: "subset",
     };
   }
 

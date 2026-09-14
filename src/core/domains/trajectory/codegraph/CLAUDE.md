@@ -166,6 +166,21 @@
   first `PASS2_PROGRESS` on a taxdome Ruby recompute, which is what turned the
   pass-1 fan-out's 18.8s → 9.1s into a 51.9s → 59.9s window REGRESSION.
 
+- **Resolve stats are per caller FILE and aggregated at read; `cg_run_stats` is
+  only the legacy fallback.** Finalize writes each resolved file's tally to
+  `cg_file_resolve_stats` (migration 025) — replaced per file, dropped by
+  `removeFile` — and `getRunStats` sums it per (language, kind) for every
+  language in `cg_file_resolve_stats_coverage`, reading `cg_run_stats` for the
+  rest. Only a run whose `FileSignalOptions.runCoverage` is `wholeCorpus` (full
+  index, `--force-enrichments codegraph`, with or without `--languages`) records
+  coverage or writes `cg_run_stats`; an incremental run writes per-file rows
+  alone. Why: `cg_run_stats` was replaced per language by whatever the last run
+  resolved, so a one-file `.tsx` incremental on taxdome turned typescript
+  bareCall 122777/175773 into a handful of calls, `MIN_LANGUAGE_SHARE` dropped
+  typescript and prime showed ruby alone — and on an index migrated from that
+  table, per-file rows cover only what incrementals touched, so reading them
+  before a whole-corpus run reproduces the same bug (bd tea-rags-mcp-xpmwg).
+
 ## Gotchas
 
 - **A flat `## Codegraph resolve` block in prime is the one-language case, not a
