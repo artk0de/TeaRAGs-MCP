@@ -146,6 +146,10 @@ function makeHealer(stub: PagedQdrantStub, overrides: Partial<{ file: unknown; c
     providerKey: PROVIDER_KEY,
     buildFileSignals: async () => ("file" in overrides ? overrides.file : FILE_SIGNALS) as never,
     buildChunkSignals: async () => ("chunk" in overrides ? overrides.chunk : CHUNK_SIGNALS) as never,
+    // These fixtures carry no line spans: each point is owned by its own
+    // payload symbolId. Owner resolution itself is pinned in
+    // codegraph-payload-heal-owner.test.ts (bd tea-rags-mcp-9i2ow).
+    resolveChunkOwner: async (_relPath, chunk) => chunk.symbolId,
   });
 }
 
@@ -259,9 +263,13 @@ describe("CodegraphPayloadHealer", () => {
   // overwrites and never reads.
   it("reads only the payload keys it needs, the decline stamps as nested paths", async () => {
     await makeHealer(stub).heal("coll", { symbols: [], files: [{ relPath: "src/hub.ts" }] }, new Set());
+    // `startLine` / `endLine` joined with bd tea-rags-mcp-9i2ow: the chunk-owner
+    // rule places a point by its span. Still four scalars plus the two stamps.
     expect(stub.payloadInclude).toEqual([
       "relativePath",
       "symbolId",
+      "startLine",
+      "endLine",
       `${PROVIDER_KEY}.file.skippedAs`,
       `${PROVIDER_KEY}.chunk.skippedAs`,
     ]);
@@ -655,6 +663,8 @@ describe("CodegraphPayloadHealer read-shape decision", () => {
     expect(stub.scrollFilteredCalls[0].payloadInclude).toEqual([
       "relativePath",
       "symbolId",
+      "startLine",
+      "endLine",
       `${PROVIDER_KEY}.file.skippedAs`,
       `${PROVIDER_KEY}.chunk.skippedAs`,
     ]);
