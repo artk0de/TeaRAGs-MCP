@@ -28,6 +28,7 @@ import type {
   SymbolChunkLocation,
   SymbolDefinition,
   SymbolId,
+  SymbolLineRange,
 } from "../../../contracts/types/codegraph.js";
 import { isDebug } from "../../../infra/runtime.js";
 import { DaemonFrameDecoder } from "./frame-decoder.js";
@@ -552,6 +553,24 @@ export class DaemonGraphDbClient implements GraphDbClient {
     // (same pattern as getCalleeEdges / listAdjacency).
     const entries = (await this.call("getChunkSignalsBulk", {})) as [SymbolId, ChunkGraphSignals][];
     return new Map(entries);
+  }
+
+  async getSymbolLineRangesBulk(relPaths: readonly RelPath[]): Promise<Map<RelPath, SymbolLineRange[]>> {
+    try {
+      // Server serialises the Map as `[key, value][]` entries — rebuild here.
+      const entries = (await this.call("getSymbolLineRangesBulk", { relPaths })) as [RelPath, SymbolLineRange[]][];
+      return new Map(entries);
+    } catch (err) {
+      if (!isUnknownDaemonOp(err)) throw err;
+      // A daemon from an older build (the pool tolerates one, see
+      // `fileMetricsPerFile`) has no ranges to give. Answering "none" is the
+      // same as a pre-024 row: the chunk-owner rule keeps each chunk's own
+      // payload symbolId, i.e. the heal behaves as it did before the ranges.
+      if (isDebug()) {
+        process.stderr.write("[tea-rags] codegraph daemon predates getSymbolLineRangesBulk — no symbol ranges\n");
+      }
+      return new Map();
+    }
   }
 
   async hasData(): Promise<boolean> {

@@ -150,6 +150,10 @@ export const DAEMON_OP_COMMANDS: Readonly<Record<DaemonOp, DaemonOpCommand>> = {
     graphDb.getAmbiguousCallersByMember(p.member as string, p.limit as number | undefined),
   ),
   findSymbolChunk: read(async (graphDb, p) => graphDb.findSymbolChunk(p.symbolId as SymbolId)),
+  // Map cannot JSON-serialise — emit entries; the client rebuilds the Map.
+  getSymbolLineRangesBulk: read(async (graphDb, p) => [
+    ...(await graphDb.getSymbolLineRangesBulk(p.relPaths as RelPath[])).entries(),
+  ]),
   getCallees: read(async (graphDb, p) => graphDb.getCallees(p.symbolId as SymbolId)),
   // Map cannot JSON-serialise — emit entries; the client rebuilds the Map.
   getCalleeEdges: read(async (graphDb, p) => [...(await graphDb.getCalleeEdges(p.symbolIds as SymbolId[])).entries()]),

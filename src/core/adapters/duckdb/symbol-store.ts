@@ -18,6 +18,7 @@ import type {
   SymbolChunkLocation,
   SymbolDefinition,
   SymbolId,
+  SymbolLineRange,
 } from "../../contracts/types/codegraph.js";
 import {
   CG_SYMBOLS_DEF_COLUMNS,
@@ -30,6 +31,14 @@ import {
 import type { DuckDbGraphSession } from "./graph-session.js";
 import { escapeLikeLiteral } from "./sql-binding.js";
 import { lastNameSegment } from "./symbol-id-text.js";
+
+/**
+ * Paths per `IN (…)` list of {@link DuckDbSymbolStore.getSymbolLineRangesBulk}.
+ * The same bound the session's batched writers use: DuckDB plans a long literal
+ * list as one wide filter, and the caller's own batch (2 000 on the heal path)
+ * would otherwise become a single 2 000-parameter statement.
+ */
+const SYMBOL_LINE_RANGE_READ_CHUNK = 200;
 
 export class DuckDbSymbolStore {
   constructor(private readonly session: DuckDbGraphSession) {}
@@ -177,6 +186,39 @@ export class DuckDbSymbolStore {
       await this.session.clearColumnByScopeValuesBatched("cg_symbols", "chunk_id", "rel_path", [...lastByFile.keys()]);
       await this.session.updateFromRows("cg_symbols", ["rel_path", "symbol_id"], ["chunk_id"], rows);
     });
+  }
+
+  /**
+   * Every RANGED symbol of each requested file (bd tea-rags-mcp-9i2ow). A row
+   * whose range is NULL — written before migration 024 — is left out, which the
+   * chunk-owner rule reads as "no range row": the chunk keeps its own payload
+   * symbolId. A path with no ranged row is absent from the map.
+   */
+  async getSymbolLineRangesBulk(relPaths: readonly RelPath[]): Promise<Map<RelPath, SymbolLineRange[]>> {
+    const out = new Map<RelPath, SymbolLineRange[]>();
+    for (let i = 0; i < relPaths.length; i += SYMBOL_LINE_RANGE_READ_CHUNK) {
+      const chunk = relPaths.slice(i, i + SYMBOL_LINE_RANGE_READ_CHUNK);
+      const rows = await this.session.queryAll<{
+        rel_path: string;
+        symbol_id: string;
+        start_line: number;
+        end_line: number;
+      }>(
+        `SELECT rel_path, symbol_id, start_line, end_line FROM cg_symbols
+           WHERE rel_path IN (${chunk.map(() => "?").join(", ")})
+             AND start_line IS NOT NULL AND end_line IS NOT NULL`,
+        [...chunk],
+      );
+      for (const row of rows) {
+        let ranges = out.get(row.rel_path);
+        if (ranges === undefined) {
+          ranges = [];
+          out.set(row.rel_path, ranges);
+        }
+        ranges.push({ symbolId: row.symbol_id, startLine: Number(row.start_line), endLine: Number(row.end_line) });
+      }
+    }
+    return out;
   }
 
   async findSymbolChunk(symbolId: SymbolId): Promise<SymbolChunkLocation | null> {

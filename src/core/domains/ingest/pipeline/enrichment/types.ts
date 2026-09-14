@@ -157,4 +157,6 @@ export interface MissedFileChunk {
   chunkId: string;
   startLine: number;
   endLine: number;
+  /** The chunker's symbolId, carried into the backfill's chunk lookup entries (bd tea-rags-mcp-9i2ow). */
+  symbolId?: string;
 }

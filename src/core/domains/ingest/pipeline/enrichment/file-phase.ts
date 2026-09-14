@@ -327,7 +327,10 @@ export class FilePhase {
     coll: string,
     ctx: ProviderContext,
     fileOverlays: Map<string, FileSignalOverlay>,
-    chunkMap: ReadonlyMap<string, readonly { chunkId: string; startLine: number; endLine: number }[]>,
+    chunkMap: ReadonlyMap<
+      string,
+      readonly { chunkId: string; startLine: number; endLine: number; symbolId?: string }[]
+    >,
   ): Promise<void> {
     const state = this.states.get(ctx.key);
     if (!state) return;

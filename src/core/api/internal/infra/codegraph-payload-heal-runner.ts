@@ -17,12 +17,17 @@
  * provider's finalize pass does) and every later call is a map lookup.
  */
 
-import type { GraphDbClient } from "../../../contracts/types/codegraph.js";
+import type { GraphDbClient, SymbolLineRange } from "../../../contracts/types/codegraph.js";
 import {
   CodegraphPayloadHealer,
+  type CodegraphPayloadHealChunkRef,
   type CodegraphPayloadHealOutcome,
   type CodegraphPayloadHealRunner,
 } from "../../../domains/ingest/pipeline/enrichment/codegraph-payload-heal.js";
+import {
+  chunkOwnerAnchor,
+  resolveChunkOwnerSymbol,
+} from "../../../domains/trajectory/codegraph/symbols/chunk-owner-symbol.js";
 import {
   buildCodegraphChunkSignals,
   buildCodegraphFileSignals,
@@ -93,6 +98,7 @@ export function createCodegraphPayloadHealRunner(deps: CodegraphPayloadHealRunne
         ...createSignalBuilders(
           graphDb,
           changed.files.map((f) => f.relPath),
+          [...new Set(changed.symbols.map((s) => s.relPath))],
         ),
       });
       const outcome = await healer.heal(collectionName, changed, skipRelPaths, enrichedAt);
@@ -107,22 +113,35 @@ export function createCodegraphPayloadHealRunner(deps: CodegraphPayloadHealRunne
 }
 
 /**
- * The two injected builders, each backed by ONE bulk read taken lazily on first
- * use. `heal` skips the files this run already rewrote, so the file read is
- * scoped to the diff's own paths while the symbol read is whole-graph — which
+ * The injected builders and the chunk-owner resolver, each backed by ONE bulk
+ * read taken lazily on first use. `heal` skips the files this run already
+ * rewrote, so the file read is scoped to the diff's own paths and the range read
+ * to the files whose symbols moved, while the symbol read is whole-graph — which
  * is what `getChunkSignalsBulk` is, there being no setwise per-symbol form.
  */
 function createSignalBuilders(
   graphDb: GraphDbClient,
   changedFilePaths: readonly string[],
+  changedSymbolFilePaths: readonly string[],
 ): {
   buildFileSignals: (relPath: string) => Promise<Record<string, unknown> | null>;
   buildChunkSignals: (relPath: string, symbolId: string) => Promise<Record<string, unknown> | null>;
+  resolveChunkOwner: (relPath: string, chunk: CodegraphPayloadHealChunkRef) => Promise<string | undefined>;
 } {
   let filePass:
     | Promise<{ metrics: Map<string, { fanIn: number; fanOut: number; transitiveImpact: number }>; fanInP95: number }>
     | undefined;
   let chunkPass: Promise<Map<string, { fanIn: number; fanOut: number; pageRank: number }>> | undefined;
+  let rangePass: Promise<Map<string, SymbolLineRange[]>> | undefined;
+
+  const loadSymbolRanges = async (): Promise<Map<string, SymbolLineRange[]>> => {
+    const ranges = new Map<string, SymbolLineRange[]>();
+    for (let start = 0; start < changedSymbolFilePaths.length; start += HEAL_METRICS_READ_BATCH) {
+      const batch = changedSymbolFilePaths.slice(start, start + HEAL_METRICS_READ_BATCH);
+      for (const [relPath, fileRanges] of await graphDb.getSymbolLineRangesBulk(batch)) ranges.set(relPath, fileRanges);
+    }
+    return ranges;
+  };
 
   const loadFileSignals = async (): Promise<{
     metrics: Map<string, { fanIn: number; fanOut: number; transitiveImpact: number }>;
@@ -149,6 +168,21 @@ function createSignalBuilders(
     buildChunkSignals: async (_relPath, symbolId) => {
       chunkPass ??= graphDb.getChunkSignalsBulk();
       return buildCodegraphChunkSignals((await chunkPass).get(symbolId));
+    },
+    // The same rule the deferred chunk pass maps through (bd tea-rags-mcp-9i2ow),
+    // fed the ranges `cg_symbols` persisted instead of the walk's. A file whose
+    // rows predate migration 024 has no ranges, so each chunk keeps its own
+    // payload symbolId — the heal's pre-ranges output, minus the `#partN` suffix
+    // that used to keep split chunks out of it.
+    resolveChunkOwner: async (relPath, chunk) => {
+      if (chunk.startLine === undefined || chunk.endLine === undefined) {
+        return chunk.symbolId === undefined ? undefined : chunkOwnerAnchor(chunk.symbolId);
+      }
+      rangePass ??= loadSymbolRanges();
+      return resolveChunkOwnerSymbol(
+        { startLine: chunk.startLine, endLine: chunk.endLine, anchorSymbolId: chunk.symbolId },
+        (await rangePass).get(relPath) ?? [],
+      );
     },
   };
 }

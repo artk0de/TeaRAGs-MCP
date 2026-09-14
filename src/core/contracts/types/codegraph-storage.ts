@@ -78,6 +78,18 @@ export interface SymbolChunkLocation {
 }
 
 /**
+ * A symbol's walker range (1-based, inclusive) — the input of the chunk-owner
+ * rule both writers of `codegraph.symbols.chunk.*` resolve through (bd
+ * tea-rags-mcp-9i2ow). Persisted as `cg_symbols.start_line` / `end_line`
+ * (migration 024) and read back by {@link GraphDbClient.getSymbolLineRangesBulk}.
+ */
+export interface SymbolLineRange {
+  symbolId: SymbolId;
+  startLine: number;
+  endLine: number;
+}
+
+/**
  * Narrow read seam for the find_symbol codegraph fallback (0rskm). Lives in
  * contracts so domains/explore can depend on it without importing api/internal
  * or adapters. Implemented by GraphFacade (adapted to a bare collectionName in
@@ -371,6 +383,18 @@ export interface GraphDbClient {
    * find_symbol codegraph fallback (0rskm) and promotable to primary (q383b).
    */
   findSymbolChunk: (symbolId: SymbolId) => Promise<SymbolChunkLocation | null>;
+
+  /**
+   * Line ranges of every RANGED symbol of each requested file (bd
+   * tea-rags-mcp-9i2ow) — the input the payload healer gives the chunk-owner
+   * rule, which the deferred chunk pass feeds from the walk instead. Rows with a
+   * NULL range (written before migration 024) are left out, and a path with no
+   * ranged row is absent from the map; both read as "no range row", so the
+   * chunk keeps its own payload symbolId. Empty input is a no-op.
+   *
+   * Callers bound the set themselves — one call is one IPC frame on the daemon.
+   */
+  getSymbolLineRangesBulk: (relPaths: readonly RelPath[]) => Promise<Map<RelPath, SymbolLineRange[]>>;
 
   // ── Tier 2 graph metrics (Slice 2 / B1) ──
 

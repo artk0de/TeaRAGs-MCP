@@ -62,9 +62,10 @@ import { batchSetPayloadWithRetry, type BatchPayloadOp } from "./batch-write.js"
 
 /**
  * Payload keys the pass reads, and nothing else: the file identity it filters
- * on, the symbol identity, and the two decline stamps. `content` above all must
+ * on, the chunk's symbolId and line span (the chunk-owner rule's inputs, bd
+ * tea-rags-mcp-9i2ow), and the two decline stamps. `content` above all must
  * stay out — materializing it for every point of the collection is hundreds of
- * MB for a read that wants four scalars.
+ * MB for a read that wants six scalars.
  *
  * The stamps are addressed as NESTED paths rather than by pulling the whole
  * `codegraph` subtree: `with_payload.include` takes dotted key paths, and the
@@ -74,7 +75,14 @@ import { batchSetPayloadWithRetry, type BatchPayloadOp } from "./batch-write.js"
  * writes.
  */
 function healPayloadInclude(providerKey: string): string[] {
-  return ["relativePath", "symbolId", `${providerKey}.file.skippedAs`, `${providerKey}.chunk.skippedAs`];
+  return [
+    "relativePath",
+    "symbolId",
+    "startLine",
+    "endLine",
+    `${providerKey}.file.skippedAs`,
+    `${providerKey}.chunk.skippedAs`,
+  ];
 }
 
 /**
@@ -148,6 +156,22 @@ export interface CodegraphPayloadHealerDeps {
   buildChunkSignals: (relPath: string, symbolId: string) => Promise<Record<string, unknown> | null>;
   /** Fresh file-level signals for one file, or null when the graph has nothing to say. */
   buildFileSignals: (relPath: string) => Promise<Record<string, unknown> | null>;
+  /**
+   * The symbol that OWNS one stored chunk, or undefined when none does — the
+   * codegraph chunk-owner rule the deferred chunk pass also resolves through,
+   * composed at the api layer over the ranges `cg_symbols` persists (bd
+   * tea-rags-mcp-9i2ow). A point is written with a changed symbol's signals
+   * only when that symbol owns it, which is how a moved NESTED symbol — one
+   * that has no points of its own — reaches the chunks inside its range.
+   */
+  resolveChunkOwner: (relPath: string, chunk: CodegraphPayloadHealChunkRef) => Promise<string | undefined>;
+}
+
+/** A stored chunk as the heal reads it: its span and chunker symbolId, each absent when the payload lacks it. */
+export interface CodegraphPayloadHealChunkRef {
+  startLine?: number;
+  endLine?: number;
+  symbolId?: string;
 }
 
 export interface CodegraphPayloadHealOutcome {
@@ -266,7 +290,7 @@ export class CodegraphPayloadHealer {
       // and the symbol-level split live.
       await this.flush(
         collectionName,
-        this.groupPage(points, chunkTargets, fileTargets),
+        await this.groupPage(points, chunkTargets, fileTargets),
         touched,
         filesScanned,
         enrichedAt,
@@ -290,7 +314,7 @@ export class CodegraphPayloadHealer {
       pagesScanned++;
       pointsScanned += page.length;
 
-      const groups = this.groupPage(page, chunkTargets, fileTargets);
+      const groups = await this.groupPage(page, chunkTargets, fileTargets);
       pointsMatched += countGrouped(groups);
       // Per page, not per pass: the groups are dropped once written, so what
       // survives the loop is the id set alone — memory scales with the TARGET
@@ -313,11 +337,11 @@ export class CodegraphPayloadHealer {
   }
 
   /** One page: keep the points the target set names, grouped by the payload they will take. */
-  private groupPage(
+  private async groupPage(
     page: { id: string | number; payload: Record<string, unknown> }[],
     chunkTargets: ReadonlyMap<string, Set<string>>,
     fileTargets: ReadonlySet<string>,
-  ): HealPageGroups {
+  ): Promise<HealPageGroups> {
     const groups: HealPageGroups = { file: new Map(), chunk: new Map() };
 
     for (const { id, payload } of page) {
@@ -336,19 +360,22 @@ export class CodegraphPayloadHealer {
         appendTo(groups.file, relPath, id);
       }
 
-      // CHUNK level: grouped by symbol, because a symbol's payload is the same
-      // for every chunk it covers (an oversized method split into `#partN`
-      // chunks, a class chunk merged from several) but differs between symbols.
+      // CHUNK level: grouped by the OWNING symbol, because a symbol's payload is
+      // the same for every chunk it owns (an oversized method split into
+      // `#partN` chunks, a class chunk merged from several) but differs between
+      // symbols. The owner is resolved by the shared chunk-owner rule, not read
+      // off the payload symbolId: a nested symbol owns the chunks inside its
+      // range and has no points of its own (bd tea-rags-mcp-9i2ow).
       if (changedSymbols === undefined) continue;
-      const symbolId = typeof payload.symbolId === "string" ? payload.symbolId : null;
-      if (symbolId === null || !changedSymbols.has(symbolId)) continue;
       if (isDeclined(payload, this.deps.providerKey, "chunk")) continue;
+      const owner = await this.deps.resolveChunkOwner(relPath, chunkRefOf(payload));
+      if (owner === undefined || !changedSymbols.has(owner)) continue;
       let bySymbol = groups.chunk.get(relPath);
       if (!bySymbol) {
         bySymbol = new Map<string, (string | number)[]>();
         groups.chunk.set(relPath, bySymbol);
       }
-      appendTo(bySymbol, symbolId, id);
+      appendTo(bySymbol, owner, id);
     }
 
     return groups;
@@ -443,6 +470,15 @@ function countGrouped(groups: HealPageGroups): number {
  */
 function stamp(signals: Record<string, unknown>, enrichedAt?: string): Record<string, unknown> {
   return enrichedAt ? { ...signals, enrichedAt } : { ...signals };
+}
+
+/** The chunk-owner rule's inputs off one projected payload; a key the payload lacks stays absent. */
+function chunkRefOf(payload: Record<string, unknown>): CodegraphPayloadHealChunkRef {
+  return {
+    ...(typeof payload.startLine === "number" ? { startLine: payload.startLine } : {}),
+    ...(typeof payload.endLine === "number" ? { endLine: payload.endLine } : {}),
+    ...(typeof payload.symbolId === "string" ? { symbolId: payload.symbolId } : {}),
+  };
 }
 
 /**

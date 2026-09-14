@@ -23,6 +23,13 @@ export interface ChunkLookupEntry {
   endLine: number;
   /** Non-contiguous line ranges for precise overlap detection (e.g. Ruby body groups). */
   lineRanges?: { start: number; end: number }[];
+  /**
+   * The chunker's payload symbolId, as stored — `#partN` suffix included; absent
+   * for block chunks. The codegraph chunk-owner rule anchors on it (bd
+   * tea-rags-mcp-9i2ow), so every producer of an entry carries it when the
+   * chunk has one.
+   */
+  symbolId?: string;
 }
 
 export interface BodyChunkResult {

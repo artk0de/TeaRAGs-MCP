@@ -534,7 +534,9 @@ describe("EnrichmentRecovery", () => {
       await recovery.recoverFileLevel("test-collection", "/repo", mockProvider as any, "2026-01-01T00:00:00Z");
 
       const call = mockQdrant.scrollFiltered.mock.calls[0];
-      expect(call[4]).toEqual(["relativePath", "startLine", "endLine"]);
+      // `symbolId` joined the projection with bd tea-rags-mcp-9i2ow: the codegraph
+      // chunk-owner rule anchors on it, and recovery hands entries to that rule.
+      expect(call[4]).toEqual(["relativePath", "startLine", "endLine", "symbolId"]);
     });
   });
 });

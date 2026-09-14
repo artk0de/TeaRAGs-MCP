@@ -66,6 +66,8 @@ interface UnenrichedPoint {
   relativePath: string;
   startLine?: number;
   endLine?: number;
+  /** The chunker's symbolId — the codegraph chunk-owner rule's anchor (bd tea-rags-mcp-9i2ow). */
+  symbolId?: string;
 }
 
 /** A point the policy declined, carrying the reason to stamp onto it. */
@@ -118,7 +120,7 @@ interface RecoveredCounts {
 const RECOVERY_SCROLL_HARD_CAP = 1_000_000;
 
 /** Payload keys recovery actually reads — everything else stays server-side. */
-const RECOVERY_PAYLOAD_KEYS = ["relativePath", "startLine", "endLine"];
+const RECOVERY_PAYLOAD_KEYS = ["relativePath", "startLine", "endLine", "symbolId"];
 
 /**
  * Max unique file paths per provider dispatch. Bounds worker-side memory and
@@ -178,6 +180,7 @@ export class EnrichmentRecovery {
         chunk: {
           metadata: {
             filePath: root.endsWith("/") ? `${root}${point.relativePath}` : `${root}/${point.relativePath}`,
+            ...(point.symbolId !== undefined ? { symbolId: point.symbolId } : {}),
           },
           startLine: point.startLine ?? 0,
           endLine: point.endLine ?? 0,
@@ -240,6 +243,7 @@ export class EnrichmentRecovery {
               chunkId: String(point.id),
               startLine: point.startLine ?? 0,
               endLine: point.endLine ?? 0,
+              ...(point.symbolId !== undefined ? { symbolId: point.symbolId } : {}),
             })),
           );
         }
@@ -538,6 +542,7 @@ export class EnrichmentRecovery {
         relativePath,
         startLine: typeof point.payload?.startLine === "number" ? point.payload.startLine : undefined,
         endLine: typeof point.payload?.endLine === "number" ? point.payload.endLine : undefined,
+        ...(typeof point.payload?.symbolId === "string" ? { symbolId: point.payload.symbolId } : {}),
       });
     }
     return { owed, declined };

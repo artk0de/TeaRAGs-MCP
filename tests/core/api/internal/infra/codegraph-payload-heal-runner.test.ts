@@ -109,6 +109,9 @@ function graphDbStub(drift: CodegraphSignalDrift, timeline: string[]) {
       Promise.resolve(new Map(relPaths.map((relPath) => [relPath, { fanIn: 3, fanOut: 1, transitiveImpact: 7 }]))),
     ),
     getChunkSignalsBulk: vi.fn().mockResolvedValue(new Map([["a.ts::alpha", { fanIn: 2, fanOut: 0, pageRank: 0.25 }]])),
+    // No persisted ranges: every point keeps its own payload symbolId as owner
+    // (bd tea-rags-mcp-9i2ow), which is what these fixtures are written against.
+    getSymbolLineRangesBulk: vi.fn().mockResolvedValue(new Map()),
   };
 }
 

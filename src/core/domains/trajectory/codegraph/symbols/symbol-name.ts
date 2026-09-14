@@ -12,7 +12,7 @@
  * mistaken for two `.`-less segments. `/` is NOT here — it is a path separator
  * and wins outright (see below).
  */
-const NAME_SEPARATORS = ["::", "#", "."] as const;
+export const NAME_SEPARATORS = ["::", "#", "."] as const;
 
 export function lastSegment(name: string): string {
   // Callers with different separator conventions:
