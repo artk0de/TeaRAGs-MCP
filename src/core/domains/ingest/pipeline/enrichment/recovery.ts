@@ -21,6 +21,30 @@ export interface RecoveryResult {
   remainingUnenriched: number;
 }
 
+/** Chunk-level recovery result, carrying what a deferring provider hands to the reindex run. */
+export interface ChunkLevelRecoveryResult extends RecoveryResult {
+  /**
+   * Owed entries grouped by relativePath, handed to the reindex run instead of
+   * healed. Set only for a provider with `defersChunkEnrichment`, and only when
+   * it owed any (bd tea-rags-mcp-fxio5).
+   */
+  deferredChunks?: ReadonlyMap<string, ChunkLookupEntry[]>;
+}
+
+/**
+ * The chunks pre-reindex recovery did not heal, per deferring provider key and
+ * then per relativePath — the shape a run's deferred chunk map holds
+ * (bd tea-rags-mcp-fxio5).
+ *
+ * A deferring provider (codegraph) maps a chunk to its symbol only through the
+ * line map its walker writes, and recovery runs before any walk. Healing those
+ * chunks here stamped `enrichedAt` over empty overlays; mapping them by payload
+ * symbolId instead picked the OUTER symbol for `#part` chunks where the deferred
+ * pass picks the nested one. So they go to the reindex run: its repair walk
+ * re-extracts their files and its deferred chunk pass computes them.
+ */
+export type DeferredChunkRecoveryHandoff = ReadonlyMap<string, ReadonlyMap<string, ChunkLookupEntry[]>>;
+
 /**
  * Which points a pass considers candidates.
  *
@@ -42,8 +66,6 @@ interface UnenrichedPoint {
   relativePath: string;
   startLine?: number;
   endLine?: number;
-  /** Chunker-written payload symbolId — the only symbol key available before any walk. */
-  symbolId?: string;
 }
 
 /** A point the policy declined, carrying the reason to stamp onto it. */
@@ -80,6 +102,8 @@ interface RecoveryBatch {
 interface RecoveredCounts {
   readonly files: number;
   readonly chunks: number;
+  /** Points handed to the reindex run instead of healed — they count as remaining (bd tea-rags-mcp-fxio5). */
+  readonly handedOff?: number;
 }
 
 /**
@@ -89,12 +113,12 @@ interface RecoveredCounts {
  * saturated with policy-ignored points, and repeated recovery passes healed
  * nothing beyond page one while reporting a capped remaining count (405).
  * Recovery must see the WHOLE unenriched set; the payload include-selector
- * below keeps the traversal cheap (four scalar keys, no content).
+ * below keeps the traversal cheap (three scalar keys, no content).
  */
 const RECOVERY_SCROLL_HARD_CAP = 1_000_000;
 
 /** Payload keys recovery actually reads — everything else stays server-side. */
-const RECOVERY_PAYLOAD_KEYS = ["relativePath", "startLine", "endLine", "symbolId"];
+const RECOVERY_PAYLOAD_KEYS = ["relativePath", "startLine", "endLine"];
 
 /**
  * Max unique file paths per provider dispatch. Bounds worker-side memory and
@@ -181,6 +205,16 @@ export class EnrichmentRecovery {
    * The scan keeps only "full"-scope points (generated + documentation chunks
    * are unenriched by design), so recovery never resurrects skipped chunk
    * signals — it stamps them instead.
+   *
+   * A provider that defers chunk enrichment (codegraph) is NOT healed here. Its
+   * chunk signals resolve each chunk to a symbol through the line map a walk
+   * writes, and recovery runs before any walk, so computing them now would stamp
+   * `enrichedAt` over an empty overlay. Its owed entries in files it can
+   * extract come back as `deferredChunks` instead, for the reindex run's repair
+   * walk and deferred chunk pass, and they count as remaining rather than
+   * recovered — the run's own terminal chunk marker settles them. Entries in
+   * files it cannot extract are healed in place: no walk can add a symbol to
+   * them (bd tea-rags-mcp-fxio5).
    */
   async recoverChunkLevel(
     collectionName: string,
@@ -188,37 +222,61 @@ export class EnrichmentRecovery {
     provider: EnrichmentProvider,
     enrichedAt: string,
     scope: RecoveryScope = "unenriched",
-  ): Promise<RecoveryResult> {
-    return this.recoverLevel(collectionName, absolutePath, provider, "chunk", scope, async (batch, root) => {
-      // Build chunkMap for this batch: Map<relativePath, ChunkLookupEntry[]>
-      const chunkMap = new Map<string, ChunkLookupEntry[]>();
-      const batchChunkIds = new Set<string>();
-      for (const relPath of batch.paths) {
-        // symbolId rides along so a provider that maps chunks through an
-        // in-process walk (codegraph) can still resolve them here, pre-walk.
-        const entries = (batch.pointsByPath.get(relPath) ?? []).map(
-          (point): ChunkLookupEntry => ({
-            chunkId: String(point.id),
-            startLine: point.startLine ?? 0,
-            endLine: point.endLine ?? 0,
-            ...(point.symbolId !== undefined ? { symbolId: point.symbolId } : {}),
-          }),
+  ): Promise<ChunkLevelRecoveryResult> {
+    const deferredChunks = new Map<string, ChunkLookupEntry[]>();
+    const result = await this.recoverLevel(
+      collectionName,
+      absolutePath,
+      provider,
+      "chunk",
+      scope,
+      async (batch, root) => {
+        // Build chunkMap for this batch: Map<relativePath, ChunkLookupEntry[]>
+        const chunkMap = new Map<string, ChunkLookupEntry[]>();
+        for (const relPath of batch.paths) {
+          chunkMap.set(
+            relPath,
+            (batch.pointsByPath.get(relPath) ?? []).map((point) => ({
+              chunkId: String(point.id),
+              startLine: point.startLine ?? 0,
+              endLine: point.endLine ?? 0,
+            })),
+          );
+        }
+
+        // A deferring provider hands off only files its walk can extract: those
+        // are the only ones a walk gives a line-map entry. The rest (codegraph:
+        // json, markdown, toml, …) never gain a symbol, so the in-place pass
+        // below stamps them exactly as the run's deferred pass would.
+        let handedOff = 0;
+        if (provider.defersChunkEnrichment) {
+          const paths = [...chunkMap.keys()];
+          for (const relPath of provider.filterExtractablePaths?.(paths) ?? paths) {
+            const entries = chunkMap.get(relPath) ?? [];
+            deferredChunks.set(relPath, entries);
+            handedOff += entries.length;
+            chunkMap.delete(relPath);
+          }
+          if (chunkMap.size === 0) return { files: 0, chunks: 0, handedOff };
+        }
+
+        const batchChunkIds = new Set<string>();
+        for (const entries of chunkMap.values()) {
+          for (const entry of entries) batchChunkIds.add(entry.chunkId);
+        }
+        const chunkSignals = await this.executor.runChunkBatch(provider, root, chunkMap, { collectionName });
+        const applied = await this.applier.applyChunkSignals(
+          collectionName,
+          provider.key,
+          chunkSignals,
+          enrichedAt,
+          batchChunkIds,
         );
-        chunkMap.set(relPath, entries);
-        for (const entry of entries) batchChunkIds.add(entry.chunkId);
-      }
 
-      const chunkSignals = await this.executor.runChunkBatch(provider, root, chunkMap, { collectionName });
-      const applied = await this.applier.applyChunkSignals(
-        collectionName,
-        provider.key,
-        chunkSignals,
-        enrichedAt,
-        batchChunkIds,
-      );
-
-      return { files: chunkMap.size, chunks: applied };
-    });
+        return { files: chunkMap.size, chunks: applied, handedOff };
+      },
+    );
+    return deferredChunks.size > 0 ? { ...result, deferredChunks } : result;
   }
 
   /**
@@ -259,6 +317,7 @@ export class EnrichmentRecovery {
     let recoveredFiles = 0;
     let recoveredChunks = 0;
     let failedPoints = 0;
+    let handedOffPoints = 0;
 
     for (let i = 0; i < uniquePaths.length; i += RECOVERY_FILE_BATCH_SIZE) {
       const batch = sliceRecoveryBatch(uniquePaths, i, pointsByPath);
@@ -266,6 +325,7 @@ export class EnrichmentRecovery {
         const healed = await healBatch(batch, root);
         recoveredFiles += healed.files;
         recoveredChunks += healed.chunks;
+        handedOffPoints += healed.handedOff ?? 0;
       } catch (error) {
         failedPoints += batch.points.length;
         // Unconditional: a debug-gated log already cost a full debugging
@@ -279,7 +339,9 @@ export class EnrichmentRecovery {
       }
     }
 
-    const remaining = await this.countRemaining(collectionName, provider, level, failedPoints);
+    // Handed-off points are known un-healed too: the reindex run settles them,
+    // so recovery must not report them as done (bd tea-rags-mcp-fxio5).
+    const remaining = await this.countRemaining(collectionName, provider, level, failedPoints + handedOffPoints);
 
     return { recoveredFiles, recoveredChunks, remainingUnenriched: remaining };
   }
@@ -338,6 +400,9 @@ export class EnrichmentRecovery {
    * High-level recovery entry. Snapshots runId, runs both levels, re-checks
    * runId; only writes the recovery marker when no concurrent run has
    * stamped a fresher runId.
+   *
+   * Returns the chunks it handed off rather than healed, keyed by provider —
+   * see `recoverChunkLevel` and `DeferredChunkRecoveryHandoff`.
    */
   async recoverAll(
     coll: string,
@@ -345,13 +410,18 @@ export class EnrichmentRecovery {
     contexts: ReadonlyMap<string, ProviderContext>,
     markerStore: EnrichmentMarkerStore,
     scope: RecoveryScope = "unenriched",
-  ): Promise<void> {
+  ): Promise<DeferredChunkRecoveryHandoff> {
     const enrichedAt = new Date().toISOString();
+    const handoff = new Map<string, ReadonlyMap<string, ChunkLookupEntry[]>>();
     for (const ctx of contexts.values()) {
       const baselineRunId = await markerStore.getRunId(coll, ctx.key);
 
       const fileResult = await this.recoverFileLevel(coll, absolutePath, ctx.provider, enrichedAt, scope);
       const chunkResult = await this.recoverChunkLevel(coll, absolutePath, ctx.provider, enrichedAt, scope);
+      // Collected BEFORE the runId guard: the guard protects the marker from a
+      // concurrent run's fresher counts, and the handed-off chunks stay owed
+      // whichever run wrote the marker last.
+      if (chunkResult.deferredChunks) handoff.set(ctx.key, chunkResult.deferredChunks);
 
       const currentRunId = await markerStore.getRunId(coll, ctx.key);
       if (baselineRunId !== currentRunId) {
@@ -376,6 +446,7 @@ export class EnrichmentRecovery {
         chunkUnenriched: chunkResult.remainingUnenriched,
       });
     }
+    return handoff;
   }
 
   /**
@@ -467,7 +538,6 @@ export class EnrichmentRecovery {
         relativePath,
         startLine: typeof point.payload?.startLine === "number" ? point.payload.startLine : undefined,
         endLine: typeof point.payload?.endLine === "number" ? point.payload.endLine : undefined,
-        symbolId: typeof point.payload?.symbolId === "string" ? point.payload.symbolId : undefined,
       });
     }
     return { owed, declined };

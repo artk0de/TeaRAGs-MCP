@@ -68,6 +68,24 @@
   proxies. Why: isolation is allocation-based and nothing else. Add a long-lived
   mutable field to a phase class, or reintroduce reset-in-place, and two
   overlapping runs corrupt each other's counts.
+- **Recovery does not compute chunk signals for a provider with
+  `defersChunkEnrichment`; it hands its owed chunks in extractable files to the
+  reindex run, and heals the non-extractable ones in place — no walk can add a
+  symbol to them.** `EnrichmentRecovery#recoverAll` returns them as a
+  `DeferredChunkRecoveryHandoff`. `ReindexPipeline#reindexChanges` drops the
+  files it re-chunks, narrows the rest through
+  `EnrichmentCoordinator#narrowDeferredChunkHandoff`, forces those files into
+  `runRepairPass` even when their hash matches, and seeds them with
+  `seedDeferredChunks` right after `beginRun` on both closers — the
+  finalize-only run and the chunk pipeline's. Seeded paths stay out of the
+  codegraph heal's skip set, since they carry only the owed chunks, not the
+  whole file. Why: codegraph maps a chunk to its symbol only through
+  `chunkSymbolByLine`, which only a walk writes. Recovery runs before any walk,
+  so healing there stamped `enrichedAt` over empty overlays, and a
+  payload-`symbolId` fallback resolved `#part` chunks to the outer symbol where
+  the deferred pass picks the nested one (bd tea-rags-mcp-fxio5). A seeded chunk
+  whose file the run never walks gets the same empty stamp, which is why the
+  narrowing and the forced walk promise the same set.
 - **Codegraph is pinned to one worker thread by `routingKey = collectionName`**
   — the ONLY provider declaring a `workerDescriptor`
   (`dispatch: "collection-affinity"`, `src/bootstrap/factory.ts:564`).

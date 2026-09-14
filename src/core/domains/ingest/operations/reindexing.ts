@@ -16,6 +16,7 @@ import {
   type PipelineTuning,
   type ProcessingContext,
 } from "../pipeline/base.js";
+import type { DeferredChunkRecoveryHandoff } from "../pipeline/enrichment/recovery.js";
 import { processRelativeFiles } from "../pipeline/file-processor.js";
 import { storeIndexingMarker } from "../pipeline/indexing-marker.js";
 import { pipelineLog } from "../pipeline/infra/debug-logger.js";
@@ -105,7 +106,17 @@ export class ReindexPipeline extends BaseIndexingPipeline {
   async reindexChanges(
     path: string,
     progressCallback?: ProgressCallback,
-    overrides?: { chunkSize?: number; modelInfo?: { model: string; contextLength: number; dimensions: number } },
+    overrides?: {
+      chunkSize?: number;
+      modelInfo?: { model: string; contextLength: number; dimensions: number };
+      /**
+       * Chunks pre-reindex recovery handed to this run instead of healing them
+       * (bd tea-rags-mcp-fxio5). Their files join the repair walk and their
+       * entries seed the run's deferred chunk map, so they settle with this
+       * run's deferred-pass semantics rather than a pre-walk approximation.
+       */
+      deferredChunkHandoff?: DeferredChunkRecoveryHandoff;
+    },
   ): Promise<ChangeStats> {
     const startTime = Date.now();
     const { absolutePath, collectionName } = await this.resolveContext(path);
@@ -174,14 +185,29 @@ export class ReindexPipeline extends BaseIndexingPipeline {
       // stores already matched. Silent either way: the cost shows up as time,
       // not as a message. Hashes come from the scan detectChanges just did, so
       // nothing is re-read.
+      //
+      // Chunks pre-reindex recovery handed to this run (bd tea-rags-mcp-fxio5)
+      // are narrowed to what the repair will walk, then walked by it and seeded
+      // into whichever run closes it — the finalize below or the chunk pipeline.
+      // A file this run re-chunks is dropped first: its stored points are
+      // replaced, so the handed-off ids are stale, and its fresh chunks reach the
+      // deferred pass through the pipeline anyway. A seeded chunk whose file is
+      // never walked would be stamped `enrichedAt` over an empty overlay.
+      const scannedHashes = ctx.synchronizer.getCurrentFileHashes();
+      const deferredChunkHandoff = this.narrowDeferredChunkHandoff(overrides?.deferredChunkHandoff, scannedHashes, [
+        ...changes.added,
+        ...changes.modified,
+        ...retryPaths,
+      ]);
       const repaired = await this.enrichment.runRepairPass(
         ctx.targetCollection,
         ctx.absolutePath,
-        ctx.synchronizer.getCurrentFileHashes(),
+        scannedHashes,
+        deferredChunkHandoffPaths(deferredChunkHandoff),
       );
 
       if (this.hasNoChanges(stats) && retryPaths.length === 0) {
-        await this.finalizeRepairedRun(ctx, stats, repaired);
+        await this.finalizeRepairedRun(ctx, stats, repaired, deferredChunkHandoff);
         // No snapshot: nothing changed, so the stored file list already matches
         // what is on disk.
         await this.closeRun(ctx, { snapshot: false });
@@ -196,7 +222,7 @@ export class ReindexPipeline extends BaseIndexingPipeline {
         // but a repair on THIS run does, so the finalize below overwrites
         // "skipped" exactly when it had something to finalize.
         stats.enrichmentStatus = "skipped";
-        await this.finalizeRepairedRun(ctx, stats, repaired);
+        await this.finalizeRepairedRun(ctx, stats, repaired, deferredChunkHandoff);
         await this.closeRun(ctx, { snapshot: true });
         stats.durationMs = Date.now() - startTime;
         return stats;
@@ -209,6 +235,7 @@ export class ReindexPipeline extends BaseIndexingPipeline {
           changes,
           quarantineStore,
           retryPaths,
+          deferredChunkHandoff,
           progressCallback,
           overrides?.chunkSize,
         );
@@ -347,6 +374,7 @@ export class ReindexPipeline extends BaseIndexingPipeline {
     changes: FileChanges,
     quarantineStore: QuarantineStore,
     retryPaths: string[],
+    deferredChunkHandoff: DeferredChunkRecoveryHandoff,
     progressCallback?: ProgressCallback,
     chunkSizeOverride?: number,
   ): Promise<{
@@ -358,7 +386,14 @@ export class ReindexPipeline extends BaseIndexingPipeline {
     /** Count of modified files whose upsert was skipped due to delete failure (Phase 3.2). */
     filesSkippedDueToDeleteFailure?: number;
   }> {
-    const plan = this.prepareParallelExecution(ctx, changes, quarantineStore, retryPaths, chunkSizeOverride);
+    const plan = this.prepareParallelExecution(
+      ctx,
+      changes,
+      quarantineStore,
+      retryPaths,
+      deferredChunkHandoff,
+      chunkSizeOverride,
+    );
 
     // Pause HNSW indexing + segment vacuum for the whole reindex window.
     // Without this, a large delete (>20% tombstones) triggers optimizer repack
@@ -402,6 +437,7 @@ export class ReindexPipeline extends BaseIndexingPipeline {
     changes: FileChanges,
     quarantineStore: QuarantineStore,
     retryPaths: string[],
+    deferredChunkHandoff: DeferredChunkRecoveryHandoff,
     chunkSizeOverride?: number,
   ): ParallelExecutionPlan {
     const quarantinedRetry = new Set(retryPaths);
@@ -418,6 +454,10 @@ export class ReindexPipeline extends BaseIndexingPipeline {
       // "2458/25531 (10%)" with a whole-repo ETA (tea-rags-mcp-d0aqv).
       changedPaths.length,
     );
+    // `initProcessing` just ran `beginRun`. Seed the recovery handoff into that
+    // run before any batch or its completion reads the deferred chunk map; the
+    // repair pass has already walked these files (bd tea-rags-mcp-fxio5).
+    this.enrichment.seedDeferredChunks(deferredChunkHandoff);
     // Embed-phase poison-pill isolation (shares the read/parse quarantine store).
     pCtx.chunkPipeline.setQuarantineStore(quarantineStore);
     const chunkMap = new Map<string, ChunkLookupEntry[]>();
@@ -665,11 +705,21 @@ export class ReindexPipeline extends BaseIndexingPipeline {
    * terminal markers and the log, not by failing a reindex that otherwise
    * succeeded (mirrors `startEnrichment`'s background catch).
    */
-  private async finalizeRepairedRun(ctx: ReindexContext, stats: ChangeStats, repaired: number): Promise<void> {
+  private async finalizeRepairedRun(
+    ctx: ReindexContext,
+    stats: ChangeStats,
+    repaired: number,
+    /** The narrowed recovery handoff whose files this repair walked (bd tea-rags-mcp-fxio5). */
+    deferredChunkHandoff: DeferredChunkRecoveryHandoff,
+  ): Promise<void> {
     if (repaired === 0) return;
     pipelineLog.reindexPhase("REPAIR_FINALIZE_START", { repaired, collection: ctx.targetCollection });
     try {
-      stats.enrichmentMetrics = await this.enrichment.runFinalizeOnly(ctx.absolutePath, ctx.targetCollection);
+      stats.enrichmentMetrics = await this.enrichment.runFinalizeOnly(
+        ctx.absolutePath,
+        ctx.targetCollection,
+        deferredChunkHandoff,
+      );
       stats.enrichmentStatus = "completed";
     } catch (error) {
       console.error("[Reindex] Repair finalize failed:", error);
@@ -789,4 +839,37 @@ export class ReindexPipeline extends BaseIndexingPipeline {
       );
     }
   }
+
+  /**
+   * The part of a recovery handoff this run can settle (bd tea-rags-mcp-fxio5).
+   *
+   * Files this run re-chunks go first: their stored points are replaced, so the
+   * handed-off chunk ids no longer exist, and mixing their stale line ranges
+   * into the file's fresh entries would let the deferred pass join a symbol to
+   * a deleted chunk. The coordinator then keeps only what its repair walks.
+   */
+  private narrowDeferredChunkHandoff(
+    handoff: DeferredChunkRecoveryHandoff | undefined,
+    scanned: ReadonlyMap<string, string>,
+    rechunkedPaths: readonly string[],
+  ): DeferredChunkRecoveryHandoff {
+    if (!handoff || handoff.size === 0) return new Map();
+    const rechunked = new Set(rechunkedPaths);
+    const untouched = new Map<string, ReadonlyMap<string, ChunkLookupEntry[]>>();
+    for (const [providerKey, entriesByPath] of handoff) {
+      const kept = new Map([...entriesByPath].filter(([relPath]) => !rechunked.has(relPath)));
+      if (kept.size > 0) untouched.set(providerKey, kept);
+    }
+    return this.enrichment.narrowDeferredChunkHandoff(untouched, scanned);
+  }
+}
+
+/** A handoff's relPaths per provider — the forced paths `runRepairPass` walks. */
+function deferredChunkHandoffPaths(handoff: DeferredChunkRecoveryHandoff): Map<string, ReadonlySet<string>> {
+  return new Map(
+    [...handoff].map(([providerKey, entriesByPath]): [string, ReadonlySet<string>] => [
+      providerKey,
+      new Set(entriesByPath.keys()),
+    ]),
+  );
 }

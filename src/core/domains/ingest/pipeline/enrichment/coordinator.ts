@@ -33,11 +33,11 @@ import { ChunkPhase, type BlobReaderFactory } from "./chunk-phase.js";
 import type { CodegraphPayloadHealRunner } from "./codegraph-payload-heal.js";
 import { CompletionRunner } from "./completion-runner.js";
 import { InlineEnrichmentExecutor } from "./executor/index.js";
-import { computeExtractionRepair } from "./extraction-repair.js";
+import { computeExtractionRepair, type ExtractionRepair } from "./extraction-repair.js";
 import { FilePhase } from "./file-phase.js";
 import { EnrichmentMarkerStore } from "./marker-store.js";
 import { filterFileEnrichPaths } from "./policy.js";
-import type { EnrichmentRecovery } from "./recovery.js";
+import type { DeferredChunkRecoveryHandoff, EnrichmentRecovery } from "./recovery.js";
 import type { EnrichmentProvider, ProviderContext } from "./types.js";
 
 const EMPTY_METRICS: EnrichmentMetrics = {
@@ -402,14 +402,31 @@ export class EnrichmentCoordinator {
    * precise. The leg is not checker-off; only `CODEGRAPH_TS_TYPECHECKER=0` or a
    * heap-admission refusal is.
    */
-  async runRepairPass(collectionName: string, root: string, scanned: ReadonlyMap<string, string>): Promise<number> {
+  async runRepairPass(
+    collectionName: string,
+    root: string,
+    scanned: ReadonlyMap<string, string>,
+    /**
+     * Per-provider paths to re-extract even when their persisted hash matches:
+     * the files whose chunks pre-reindex recovery handed to this run (bd
+     * tea-rags-mcp-fxio5). The deferred chunk pass resolves a chunk's symbol
+     * only through the line map a walk writes, so a handed-off chunk whose file
+     * the run never walks is stamped `enrichedAt` over an empty overlay. Narrowed
+     * by the same eligibility as the drift set, and walked even when the store
+     * cannot be read, which is the set `narrowDeferredChunkHandoff` promises.
+     */
+    forcedPaths?: ReadonlyMap<string, ReadonlySet<string>>,
+  ): Promise<number> {
     let repaired = 0;
     this.runContentHashes = scanned;
     for (const provider of this.providers) {
       const readPersisted = provider.readPersistedFileHashes;
       if (!readPersisted) continue;
 
-      let persisted: Map<string, string | null>;
+      const providerEligible = this.repairEligibleFiles(provider, scanned);
+      const forced = [...(forcedPaths?.get(provider.key) ?? [])].filter((path) => providerEligible.has(path));
+
+      let persisted: Map<string, string | null> | undefined;
       try {
         persisted = await readPersisted.call(provider, collectionName);
       } catch (err) {
@@ -421,30 +438,17 @@ export class EnrichmentCoordinator {
           collection: collectionName,
           error: err instanceof Error ? err.message : String(err),
         });
-        continue;
+        // The drift check needs the store; the forced walk does not, and the
+        // run has already been promised those files' chunks.
+        if (forced.length === 0) continue;
       }
 
-      // Eligibility is per provider, so it is narrowed HERE rather than by the
-      // caller: codegraph declines tests and generated files, git takes them.
-      // Handing one pre-filtered set to every provider would make each
-      // provider's orphan list wrong for the others.
-      //
-      // Two narrowings, and they answer different questions. `shouldEnrich` says
-      // whether a POINT is owed a payload block; `filterExtractablePaths` says
-      // whether the provider's STORE can ever hold a row for the file. Codegraph
-      // answers "full" for a `tsconfig.json` (it gets an all-zero codegraph
-      // block) while its walk has no parser for one — so a diff run over the
-      // payload set alone re-lists every JSON/Markdown/YAML file the index
-      // carries on every run, at `repaired=482` in perpetuity on taxdome, with
-      // no run able to settle it (bd tea-rags-mcp-65bkl). A provider that
-      // persists whatever it is asked for omits the hook and keeps the wider set.
-      const providerEligible = new Map<string, string>();
-      const enrichable = filterFileEnrichPaths(provider, [...scanned.keys()]);
-      for (const path of provider.filterExtractablePaths?.(enrichable) ?? enrichable) {
-        providerEligible.set(path, scanned.get(path) as string);
-      }
-
-      const { repair, orphans } = computeExtractionRepair(providerEligible, persisted, this.forceResolveAll);
+      const { repair, orphans }: ExtractionRepair = persisted
+        ? computeExtractionRepair(providerEligible, persisted, this.forceResolveAll)
+        : { repair: [], orphans: [] };
+      const drifted = new Set(repair);
+      const handedOff = forced.filter((path) => !drifted.has(path));
+      repair.push(...handedOff);
       if (orphans.length > 0) {
         await provider.handleDeletedPaths?.(orphans, { collectionName });
       }
@@ -458,6 +462,9 @@ export class EnrichmentCoordinator {
           // rather than to a coincidentally large changeset. Omitted when off,
           // keeping the ordinary run's log line byte-identical.
           ...(this.forceResolveAll ? { forcedResolve: true } : {}),
+          // Files walked only because recovery handed their chunks to this run
+          // (bd tea-rags-mcp-fxio5). Omitted when none, for the same reason.
+          ...(handedOff.length > 0 ? { handedOff: handedOff.length } : {}),
         });
         // `runFileBatch` (NOT `runFileSignalsRecovery`): repair runs INSIDE the live
         // run this coordinator is orchestrating, same as file-phase's own
@@ -493,14 +500,94 @@ export class EnrichmentCoordinator {
    * `CompletionRunner` sequence the chunk path ends with, let it settle. Every
    * step keyed off stored chunks — the backfill, the deferred chunk pass —
    * reads an empty chunk map and no-ops by itself, so nothing needs a
-   * "were there chunks?" flag.
+   * "were there chunks?" flag. The one exception is a recovery handoff: its
+   * chunks are seeded into that map, and the deferred chunk pass computes them.
    *
    * Callers gate this on the repair having found work. An untouched repository
    * must not pay for a completion pass it has no use for.
    */
-  async runFinalizeOnly(absolutePath: string, collectionName: string): Promise<EnrichmentMetrics> {
+  async runFinalizeOnly(
+    absolutePath: string,
+    collectionName: string,
+    /**
+     * Chunks pre-reindex recovery handed to this run, already narrowed by
+     * `narrowDeferredChunkHandoff`, so their files are ones the repair walked
+     * (bd tea-rags-mcp-fxio5). Seeded right after `beginRun`, before completion
+     * reads the deferred chunk map.
+     */
+    deferredChunkHandoff?: DeferredChunkRecoveryHandoff,
+  ): Promise<EnrichmentMetrics> {
     this.beginRun(absolutePath, collectionName);
+    if (deferredChunkHandoff) this.seedDeferredChunks(deferredChunkHandoff);
     return this.awaitCompletion(collectionName);
+  }
+
+  /**
+   * The part of a recovery handoff this coordinator's repair pass walks (bd
+   * tea-rags-mcp-fxio5): providers that defer chunk enrichment and keep a
+   * per-file store, restricted to paths eligible for that store's repair.
+   *
+   * Hand its paths to `runRepairPass` as forced paths and seed exactly this
+   * handoff. A seeded chunk whose file the run never walks has no line-map
+   * entry, so the deferred pass finds no symbol and the applier stamps
+   * `enrichedAt` over an empty overlay — the defect the handoff removes.
+   */
+  narrowDeferredChunkHandoff(
+    handoff: DeferredChunkRecoveryHandoff,
+    scanned: ReadonlyMap<string, string>,
+  ): DeferredChunkRecoveryHandoff {
+    const narrowed = new Map<string, ReadonlyMap<string, ChunkLookupEntry[]>>();
+    for (const provider of this.providers) {
+      const entriesByPath = handoff.get(provider.key);
+      if (!entriesByPath || !provider.defersChunkEnrichment || !provider.readPersistedFileHashes) continue;
+      const eligible = this.repairEligibleFiles(provider, scanned);
+      const kept = new Map([...entriesByPath].filter(([relPath]) => eligible.has(relPath)));
+      if (kept.size > 0) narrowed.set(provider.key, kept);
+    }
+    return narrowed;
+  }
+
+  /**
+   * Append a recovery handoff to the CURRENT run's deferred chunk maps (bd
+   * tea-rags-mcp-fxio5). Call right after `beginRun` and before completion:
+   * completion step 2 applies file overlays through that map and step 7
+   * computes chunk signals from it. Appends — chunks the pipeline accumulates
+   * for the same provider keep their entries. Pass a handoff narrowed by
+   * `narrowDeferredChunkHandoff`.
+   */
+  seedDeferredChunks(handoff: DeferredChunkRecoveryHandoff): void {
+    const run = this.currentRun;
+    if (!run) return;
+    for (const [providerKey, entriesByPath] of handoff) {
+      run.chunkPhase.appendDeferredChunks(providerKey, entriesByPath);
+    }
+  }
+
+  /**
+   * The files a provider's repair may re-extract, keyed to their run hash.
+   *
+   * Eligibility is per provider, so it is narrowed HERE rather than by the
+   * caller: codegraph declines tests and generated files, git takes them.
+   * Handing one pre-filtered set to every provider would make each provider's
+   * orphan list wrong for the others.
+   *
+   * Two narrowings, and they answer different questions. `shouldEnrich` says
+   * whether a POINT is owed a payload block; `filterExtractablePaths` says
+   * whether the provider's STORE can ever hold a row for the file. Codegraph
+   * answers "full" for a `tsconfig.json` (it gets an all-zero codegraph block)
+   * while its walk has no parser for one — so a diff run over the payload set
+   * alone re-lists every JSON/Markdown/YAML file the index carries on every run,
+   * at `repaired=482` in perpetuity on taxdome, with no run able to settle it
+   * (bd tea-rags-mcp-65bkl). A provider that persists whatever it is asked for
+   * omits the hook and keeps the wider set.
+   */
+  private repairEligibleFiles(provider: EnrichmentProvider, scanned: ReadonlyMap<string, string>): Map<string, string> {
+    const eligible = new Map<string, string>();
+    const enrichable = filterFileEnrichPaths(provider, [...scanned.keys()]);
+    for (const path of provider.filterExtractablePaths?.(enrichable) ?? enrichable) {
+      eligible.set(path, scanned.get(path) as string);
+    }
+    return eligible;
   }
 
   async notifyDeletions(paths: string[], collectionName?: string): Promise<void> {
@@ -530,10 +617,14 @@ export class EnrichmentCoordinator {
   /**
    * Run recovery + migration before the main enrichment pipeline.
    * Migration is one-time and idempotent. Recovery re-enriches chunks missing enrichedAt.
-   * No-op when recovery was not provided at construction time.
+   *
+   * Returns the chunks recovery handed to the reindex run instead of healing
+   * them: a deferring provider's, whose signals need the run's own walk (bd
+   * tea-rags-mcp-fxio5). Undefined when recovery was not provided at
+   * construction time.
    */
-  async runRecovery(collectionName: string, absolutePath: string): Promise<void> {
-    if (!this.recovery) return;
+  async runRecovery(collectionName: string, absolutePath: string): Promise<DeferredChunkRecoveryHandoff | undefined> {
+    if (!this.recovery) return undefined;
     // Recovery needs its OWN keep-alive: it runs before `beginRun`, so the
     // run-scoped window has not opened yet, and its batches reach the codegraph
     // daemon through a worker — which is connect-only and cannot spawn a daemon
@@ -550,7 +641,7 @@ export class EnrichmentCoordinator {
       const contexts = new Map<string, ProviderContext>(
         this.providers.map((p) => [p.key, { key: p.key, provider: p, effectiveRoot: null, ignoreFilter: null }]),
       );
-      await this.recovery.recoverAll(collectionName, absolutePath, contexts, this.markerStore);
+      return await this.recovery.recoverAll(collectionName, absolutePath, contexts, this.markerStore);
     } finally {
       // Never let a failing release mask the recovery outcome.
       await release().catch(() => undefined);

@@ -191,3 +191,108 @@ describe("EnrichmentCoordinator.runFinalizeOnly", () => {
     await expect(coordinator.whenComplete()).resolves.toBeUndefined();
   });
 });
+
+/**
+ * bd tea-rags-mcp-fxio5 — pre-reindex recovery hands a deferring provider's
+ * owed chunks to the reindex run. Their files must be walked by that run's
+ * repair even when the persisted hash already matches, because the walk is the
+ * only writer of the line map the deferred chunk pass resolves symbols through.
+ */
+describe("EnrichmentCoordinator.runRepairPass forced paths (bd tea-rags-mcp-fxio5)", () => {
+  it("walks forced paths whose persisted hash matches, deduped against the drift set", async () => {
+    const runFileBatch = vi.fn().mockResolvedValue(new Map());
+    const provider = makeProvider({
+      defersChunkEnrichment: true,
+      readPersistedFileHashes: vi.fn().mockResolvedValue(
+        new Map<string, string | null>([
+          ["src/current.ts", "h1"],
+          ["src/drifted.ts", "old"],
+        ]),
+      ),
+    });
+    const coordinator = new EnrichmentCoordinator(qdrant, provider, undefined, makeExecutor(runFileBatch));
+
+    const repaired = await coordinator.runRepairPass(
+      "code_x_v1",
+      "/repo",
+      new Map([
+        ["src/current.ts", "h1"],
+        ["src/drifted.ts", "new"],
+      ]),
+      new Map([["codegraph.symbols", new Set(["src/current.ts", "src/drifted.ts"])]]),
+    );
+
+    // The count includes the forced walk, so a zero-change reindex still finalizes.
+    expect(repaired).toBe(2);
+    expect(runFileBatch).toHaveBeenCalledTimes(1);
+    const [, , paths] = runFileBatch.mock.calls[0] as [unknown, string, string[]];
+    expect([...paths].sort()).toEqual(["src/current.ts", "src/drifted.ts"]);
+  });
+
+  it("drops forced paths the provider cannot extract or that are no longer on disk", async () => {
+    const runFileBatch = vi.fn().mockResolvedValue(new Map());
+    const provider = makeProvider({
+      defersChunkEnrichment: true,
+      readPersistedFileHashes: vi.fn().mockResolvedValue(new Map<string, string | null>([["src/current.ts", "h1"]])),
+      filterExtractablePaths: (paths: readonly string[]) => paths.filter((p) => p.endsWith(".ts")),
+    });
+    const coordinator = new EnrichmentCoordinator(qdrant, provider, undefined, makeExecutor(runFileBatch));
+
+    const repaired = await coordinator.runRepairPass(
+      "code_x_v1",
+      "/repo",
+      new Map([
+        ["src/current.ts", "h1"],
+        ["tsconfig.json", "h2"],
+      ]),
+      new Map([["codegraph.symbols", new Set(["src/current.ts", "tsconfig.json", "src/deleted.ts"])]]),
+    );
+
+    expect(repaired).toBe(1);
+    const [, , paths] = runFileBatch.mock.calls[0] as [unknown, string, string[]];
+    expect(paths).toEqual(["src/current.ts"]);
+  });
+});
+
+describe("EnrichmentCoordinator.runFinalizeOnly seeded deferred chunks (bd tea-rags-mcp-fxio5)", () => {
+  it("feeds handed-off chunks to the deferred chunk pass of the run that walked their files", async () => {
+    const runFileBatch = vi.fn().mockResolvedValue(new Map());
+    const dispatched: Map<string, unknown[]>[] = [];
+    const runChunkBatch = vi.fn(async (_provider: unknown, _root: string, chunkMap: Map<string, unknown[]>) => {
+      // Snapshot at call time: the deferred pass clears its map once the batch settles.
+      dispatched.push(new Map(chunkMap));
+      return new Map();
+    });
+    const provider = makeProvider({
+      defersChunkEnrichment: true,
+      finalizeSignals: vi.fn().mockResolvedValue(new Map()),
+      readPersistedFileHashes: vi.fn().mockResolvedValue(new Map<string, string | null>([["src/app.ts", "h1"]])),
+    });
+    const coordinator = new EnrichmentCoordinator(
+      makeMarkerQdrant(),
+      provider,
+      undefined,
+      makeExecutor(runFileBatch, { runChunkBatch }),
+    );
+    const entries = [
+      { chunkId: "c-1", startLine: 1, endLine: 20 },
+      { chunkId: "c-2", startLine: 21, endLine: 40 },
+    ];
+    const handoff = new Map([["codegraph.symbols", new Map([["src/app.ts", entries]])]]);
+
+    await coordinator.runRepairPass(
+      "code_x_v1",
+      "/repo",
+      new Map([["src/app.ts", "h1"]]),
+      new Map([["codegraph.symbols", new Set(["src/app.ts"])]]),
+    );
+    await coordinator.runFinalizeOnly("/repo", "code_x_v1", handoff);
+
+    expect(runChunkBatch).toHaveBeenCalledTimes(1);
+    const [, root] = runChunkBatch.mock.calls[0] as [unknown, string, Map<string, unknown[]>];
+    expect(root).toBe("/repo");
+    expect(dispatched[0]?.get("src/app.ts")).toEqual(entries);
+    // The walk fills the line map the deferred pass reads, so it must come first.
+    expect(runFileBatch.mock.invocationCallOrder[0]).toBeLessThan(runChunkBatch.mock.invocationCallOrder[0]);
+  });
+});

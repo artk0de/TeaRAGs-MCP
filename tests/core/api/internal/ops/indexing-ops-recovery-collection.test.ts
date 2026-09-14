@@ -83,3 +83,22 @@ describe("IndexingOps — pre-reindex recovery collection addressing", () => {
     expect(deps.enrichment.runRecovery).toHaveBeenCalledWith(alias, resolve(REPO));
   });
 });
+
+describe("IndexingOps — deferred-chunk handoff threading (bd tea-rags-mcp-fxio5)", () => {
+  it("passes the recovery handoff into the reindex it precedes", async () => {
+    const deps = makeDeps([]);
+    const handoff = new Map([
+      ["codegraph.symbols", new Map([["src/app.ts", [{ chunkId: "c-1", startLine: 1, endLine: 20 }]]])],
+    ]);
+    (deps.enrichment.runRecovery as unknown as ReturnType<typeof vi.fn>).mockResolvedValue(handoff);
+    const ops = new IndexingOps(deps);
+
+    await ops.run(REPO);
+
+    expect(deps.reindex.reindexChanges).toHaveBeenCalledWith(
+      REPO,
+      undefined,
+      expect.objectContaining({ deferredChunkHandoff: handoff }),
+    );
+  });
+});
