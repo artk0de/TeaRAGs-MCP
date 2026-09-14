@@ -10,11 +10,24 @@ type CodegraphResolveKindRow = NonNullable<CodegraphResolve["byReceiverKind"]>[n
 
 const STALE_THRESHOLD_MS = 24 * 60 * 60 * 1000;
 
-export function formatPrime(input: PrimeData | PrimeFailureReason, now: Date = new Date()): string {
+/**
+ * How to render, decided by the caller — kept off `PrimeData`, which carries
+ * what the index holds.
+ */
+export interface PrimeFormatOptions {
+  /** DEBUG — include developer measurement detail (codegraph receiver-kind breakdown). */
+  debug?: boolean;
+}
+
+export function formatPrime(
+  input: PrimeData | PrimeFailureReason,
+  now: Date = new Date(),
+  options: PrimeFormatOptions = {},
+): string {
   if ("kind" in input) {
     return formatFailure(input);
   }
-  return formatDigest(input, now);
+  return formatDigest(input, now, options.debug === true);
 }
 
 function formatFailure(reason: PrimeFailureReason): string {
@@ -29,7 +42,7 @@ function formatFailure(reason: PrimeFailureReason): string {
   }
 }
 
-function formatDigest(data: PrimeData, now: Date): string {
+function formatDigest(data: PrimeData, now: Date, debug: boolean): string {
   const lines: string[] = [];
   lines.push(`# tea-rags prime — ${data.path}`);
   lines.push("");
@@ -116,7 +129,7 @@ function formatDigest(data: PrimeData, now: Date): string {
     lines.push(...formatThresholdsSection(language, signals[language]));
   }
 
-  const resolveLines = formatCodegraphResolveSection(data.status.codegraphResolve);
+  const resolveLines = formatCodegraphResolveSection(data.status.codegraphResolve, debug);
   if (resolveLines.length > 0) {
     lines.push("");
     lines.push(...resolveLines);
@@ -383,15 +396,67 @@ function formatEnrichmentSection(enrichment: EnrichmentMap): string[] {
 }
 
 /**
- * tea-rags-mcp-7m5xz — render the codegraph resolve tally with its
+ * `## Codegraph resolve` — two audiences, two forms, one flag. The SessionStart
+ * digest is read by agents and users who cannot act on receiver-kind buckets or
+ * resolved/attempted counts, so by default it shows only per-language recall and
+ * a plain warning naming what breaks. Developers measuring resolver work run
+ * `DEBUG=1 tea-rags prime` for the full breakdown — the same flag the producer
+ * uses to decide whether it builds that breakdown at all.
+ */
+function formatCodegraphResolveSection(resolve: CodegraphResolve | undefined, debug: boolean): string[] {
+  if (!resolve) return [];
+  return debug ? formatResolveBreakdown(resolve) : formatResolvePlain(resolve);
+}
+
+/**
+ * Default form: `resolve rate: typescript 0.99 · ruby 0.89` plus one plain
+ * warning per language carrying unnarrowed entry calls.
+ *
+ * Reads `inProjectEdgeRecall`, not `resolveSuccessRate`: outside DEBUG
+ * `summarizeCodegraphResolve` omits `resolveSuccessRate` and every
+ * `byReceiverKind`, while recall is always present (and equals
+ * `resolveSuccessRate` since cai0.2). A summary exists only when run stats
+ * exist, so there is always a rate line to render.
+ */
+function formatResolvePlain(resolve: CodegraphResolve): string[] {
+  const languages = resolve.byLanguage ?? [];
+  const rate =
+    languages.length > 0
+      ? languages.map((l) => `${l.language} ${roundTwo(l.inProjectEdgeRecall)}`).join(" · ")
+      : `${roundTwo(resolve.inProjectEdgeRecall)}`;
+  const lines = ["## Codegraph resolve", `resolve rate: ${rate}`];
+  // Plain counterpart of the DEBUG ⚠ line (bd tea-rags-mcp-znxg8). The reader
+  // needs the consequence — get_callers misses callers of those services — and
+  // the workaround, not the receiver-kind mechanics behind the count.
+  if (languages.length > 0) {
+    for (const l of languages) {
+      const unnarrowed = l.callsUnnarrowedTemplate ?? 0;
+      if (unnarrowed > 0) lines.push(formatUnnarrowedWarning(`${l.language}: `, unnarrowed));
+    }
+  } else {
+    const unnarrowed = resolve.callsUnnarrowedTemplate ?? 0;
+    if (unnarrowed > 0) lines.push(formatUnnarrowedWarning("", unnarrowed));
+  }
+  return lines;
+}
+
+function formatUnnarrowedWarning(languagePrefix: string, unnarrowed: number): string {
+  return (
+    `⚠ ${languagePrefix}${unnarrowed} calls like \`Service.call(...)\` are linked to a shared base method, ` +
+    "not the service itself — get_callers on those services misses callers. " +
+    "Find usages with hybrid_search; persists after reindex → /tea-rags:report-issue"
+  );
+}
+
+/**
+ * DEBUG form. tea-rags-mcp-7m5xz — render the codegraph resolve tally with its
  * per-receiver-kind breakdown so cai0 phases can read the largest unresolved
  * bucket straight from the digest. Mirrors the DTO placement: a top-level
  * `byReceiverKind` (single-language case) renders flat; nested `byLanguage` rows
  * render each kind indented under its language. Renders nothing when neither
  * breakdown is present.
  */
-function formatCodegraphResolveSection(resolve: CodegraphResolve | undefined): string[] {
-  if (!resolve) return [];
+function formatResolveBreakdown(resolve: CodegraphResolve): string[] {
   const hasTopKinds = (resolve.byReceiverKind?.length ?? 0) > 0;
   const langsWithKinds = (resolve.byLanguage ?? []).filter((l) => (l.byReceiverKind?.length ?? 0) > 0);
   const unnarrowed = resolve.callsUnnarrowedTemplate ?? 0;
@@ -412,6 +477,11 @@ function formatCodegraphResolveSection(resolve: CodegraphResolve | undefined): s
   // the rates above can express it — those calls RESOLVED, they just resolved
   // onto the shared template rather than the concrete hook, so recall reads 1.0
   // while the callers of every concrete service go missing.
+  //
+  // This technical wording is DEBUG-only. The default digest is read by agents
+  // and users who cannot act on "constant-receiver" or "self-dispatch template";
+  // they get formatResolvePlain's per-language warning instead, which names the
+  // consequence (get_callers misses callers) and the workaround.
   if (unnarrowed > 0) {
     lines.push(
       `⚠ ${unnarrowed} constant-receiver entry call(s) resolved to a shared self-dispatch template instead of the concrete hook — recall rates cannot see this`,

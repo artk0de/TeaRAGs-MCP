@@ -168,4 +168,13 @@ describe("buildAppConfig", () => {
     expect(config.ingestCode.chunkOverlap).toBe(450);
     expect(config.trajectoryIngest.trajectoryGit?.chunkConcurrency).toBe(6);
   });
+
+  // CLI consumers (prime) gate developer-only output on this flag; it must be
+  // the same core.debug value createAppContext hands to setDebug.
+  it("bridges core.debug from DEBUG", async () => {
+    const { buildAppConfig, parseAppConfigZod } = await freshImport();
+
+    expect(buildAppConfig(parseAppConfigZod({ DEBUG: "1" })).debug).toBe(true);
+    expect(buildAppConfig(parseAppConfigZod({})).debug).toBe(false);
+  });
 });
