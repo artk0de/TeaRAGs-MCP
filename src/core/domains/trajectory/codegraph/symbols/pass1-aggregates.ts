@@ -35,19 +35,17 @@
  * keeps hydration exact and language-neutral.
  */
 
-import type {
-  CodegraphPass1FileAggregates,
-  FileExtraction,
-  SelfDispatchMethodDecl,
-} from "../../../../contracts/types/codegraph.js";
+import type { CodegraphPass1FileAggregates, SelfDispatchMethodDecl } from "../../../../contracts/types/codegraph.js";
+import { PASS1_AGGREGATE_SLICE_FIELDS, type Pass1AggregateSlice } from "./run-global-map-registry.js";
 
-/** The extraction fields the persisted slice carries. */
-type Pass1AggregateSource = Pick<
-  FileExtraction,
-  "relPath" | "language" | "classAncestors" | "classPrependedAncestors" | "classExtends" | "compactDeclaredClasses"
-> &
-  Pick<FileExtraction, "inheritanceEdges" | "structuredReturnTypes" | "functionReturnTypes"> &
-  Pick<FileExtraction, "classFieldTypesByClassKey" | "moduleReexports">;
+/**
+ * The extraction fields the persisted slice carries: every slice field except
+ * the self-dispatch list, which is derived from the chunks and handed in beside
+ * the extraction. Derived from the registry's hydrate entries (bd
+ * tea-rags-mcp-39xca.6), so a new hydrate channel is a new source field here
+ * without an edit.
+ */
+type Pass1AggregateSource = Omit<Pass1AggregateSlice, "selfDispatchMethods">;
 
 /**
  * Build one file's persisted slice, or `undefined` when the file declares
@@ -67,27 +65,16 @@ type Pass1AggregateSource = Pick<
 export function buildPass1Aggregates(
   extraction: Pass1AggregateSource,
   selfDispatchMethods: readonly SelfDispatchMethodDecl[],
-): CodegraphPass1FileAggregates | undefined {
-  const slice: CodegraphPass1FileAggregates = { relPath: extraction.relPath, language: extraction.language };
-  if (hasKeys(extraction.classAncestors)) slice.classAncestors = extraction.classAncestors;
-  if (hasKeys(extraction.classPrependedAncestors)) slice.classPrependedAncestors = extraction.classPrependedAncestors;
-  if (hasKeys(extraction.classExtends)) slice.classExtends = extraction.classExtends;
-  if ((extraction.compactDeclaredClasses?.length ?? 0) > 0) {
-    slice.compactDeclaredClasses = extraction.compactDeclaredClasses;
+): Pass1AggregateSlice | undefined {
+  // One view over every slice field, so the loop needs no per-field branch: the
+  // self-dispatch list simply joins the extraction's own fields.
+  const source: Pass1AggregateSlice = { ...extraction, selfDispatchMethods };
+  const slice: Pass1AggregateSlice = { relPath: extraction.relPath, language: extraction.language };
+  // Registry order IS the persisted key order — see RUN_GLOBAL_MAP_PERSISTENCE.
+  for (const field of PASS1_AGGREGATE_SLICE_FIELDS) {
+    if (carriesFacts(source[field])) Object.assign(slice, { [field]: source[field] });
   }
-  if ((extraction.inheritanceEdges?.length ?? 0) > 0) slice.inheritanceEdges = extraction.inheritanceEdges;
-  if (selfDispatchMethods.length > 0) slice.selfDispatchMethods = selfDispatchMethods;
-  if (hasKeys(extraction.structuredReturnTypes)) slice.structuredReturnTypes = extraction.structuredReturnTypes;
-  if (hasKeys(extraction.functionReturnTypes)) slice.functionReturnTypes = extraction.functionReturnTypes;
-  // The Python pair (bd tea-rags-mcp-4yvms). `moduleReexports` is a LIST rather
-  // than a map, so emptiness is a length — and the list is common enough (any
-  // file with a `from` import has one) that emitting `[]` would add a key to
-  // most rows in a Python project for nothing.
-  if (hasKeys(extraction.classFieldTypesByClassKey)) {
-    slice.classFieldTypesByClassKey = extraction.classFieldTypesByClassKey;
-  }
-  if ((extraction.moduleReexports?.length ?? 0) > 0) slice.moduleReexports = extraction.moduleReexports;
-  return carriesFacts(slice) ? slice : undefined;
+  return PASS1_AGGREGATE_SLICE_FIELDS.some((field) => slice[field] !== undefined) ? slice : undefined;
 }
 
 /**
@@ -108,21 +95,14 @@ export function selectHydratablePass1Aggregates(
   return rows.filter((row) => !walkedRelPaths.has(row.relPath));
 }
 
-function hasKeys(record: Record<string, unknown> | undefined): boolean {
-  return record !== undefined && Object.keys(record).length > 0;
-}
-
-function carriesFacts(slice: CodegraphPass1FileAggregates): boolean {
-  return (
-    slice.classAncestors !== undefined ||
-    slice.classPrependedAncestors !== undefined ||
-    slice.classExtends !== undefined ||
-    slice.compactDeclaredClasses !== undefined ||
-    slice.inheritanceEdges !== undefined ||
-    slice.selfDispatchMethods !== undefined ||
-    slice.structuredReturnTypes !== undefined ||
-    slice.functionReturnTypes !== undefined ||
-    slice.classFieldTypesByClassKey !== undefined ||
-    slice.moduleReexports !== undefined
-  );
+/**
+ * Does one slice field carry a fact? Emptiness goes by shape — a list with no
+ * entries and a map with no keys both say nothing — which is what keeps
+ * `moduleReexports` (a LIST any Python file with a `from` import has, bd
+ * tea-rags-mcp-4yvms) from adding an empty key to most rows of a Python project.
+ */
+function carriesFacts(value: unknown): boolean {
+  if (value === undefined || value === null) return false;
+  if (Array.isArray(value)) return value.length > 0;
+  return typeof value === "object" && Object.keys(value).length > 0;
 }

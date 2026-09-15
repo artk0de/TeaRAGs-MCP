@@ -60,6 +60,7 @@ import {
   type AncestorLinearizer,
 } from "../../kernel/ancestor-walk.js";
 import { reexportOriginFile } from "../../kernel/reexport-origin.js";
+import { RunScopedMemo } from "../../kernel/run-scoped-memo.js";
 import { PYTHON_BUILTINS } from "../vocabulary/builtins.js";
 import { PYTHON_UNRESOLVABLE_BASE } from "../walker/walker.js";
 import { linearizeC3 } from "./mro.js";
@@ -345,15 +346,13 @@ interface AncestorLinearizerRunEntry {
  * its old order for member lookup, `super()`, the cls-member arm and the cone
  * fold, for as long as the process lived.
  *
- * `ctx.classAncestors` IS the run on this axis. It is `state.ancestors`
- * (`CallEdgeResolutionRunner#buildResolverInputs`), `CodegraphRunState`
- * reassigns the object at every reset and seal site, and the one object reaches
- * every call of the run — the identity key
- * `PythonNamingConventionSymbolResolutionStrategy#descendantsOf` already uses
- * for this very channel. It is also the FINEST run key available here: the
- * narrow `drainMetrics` branch reassigns `ancestors` while deliberately leaving
- * `moduleReexports` standing, so the mapper's own run channel can outlive a
- * hierarchy while the reverse never happens.
+ * The run is `ctx.runScope` (bd tea-rags-mcp-39xca.6), and `RunScopedMemo`
+ * holds the entries beneath it. The identity of `ctx.classAncestors` alone was
+ * not the run: `CodegraphRunState#absorb` and `#seal` write into
+ * `state.ancestors` IN PLACE, so a later pass that re-parented a class without
+ * moving `size()` was handed the earlier pass's MRO. Beneath the scope the
+ * channel's identity still keys the entry, because the per-file fallback hands
+ * each file its own `extraction.classAncestors` within one run.
  *
  * Nothing else the policy reads is run-scoped. Everything except
  * `classAncestors` reaches it through `ctx.symbolTable` (stamped above) or
@@ -373,7 +372,7 @@ interface AncestorLinearizerRunEntry {
  * rather than answering from an empty map.
  */
 export class PythonAncestorLinearizerCache {
-  private readonly runs = new WeakMap<object, AncestorLinearizerRunEntry>();
+  private readonly runs = new RunScopedMemo<object, AncestorLinearizerRunEntry>();
   /** The entry last handed out — what {@link linearizationFallbacks} reports on. */
   private current: AncestorLinearizerRunEntry | undefined;
 
@@ -387,7 +386,7 @@ export class PythonAncestorLinearizerCache {
     if (ancestors === undefined) return undefined;
     const table = ctx.symbolTable;
     const size = table.size();
-    const existing = this.runs.get(ancestors);
+    const existing = this.runs.get(ctx.runScope, ancestors);
     const entry =
       existing?.table === table && existing.size === size ? existing : this.build(ctx, ancestors, table, size);
     this.current = entry;
@@ -419,7 +418,7 @@ export class PythonAncestorLinearizerCache {
       policy,
       linearizer: createAncestorLinearizer(ctx, policy),
     };
-    this.runs.set(ancestors, fresh);
+    this.runs.set(ctx.runScope, ancestors, fresh);
     return fresh;
   }
 }
