@@ -244,6 +244,13 @@ export async function runDaemon(
     runMigrations: (client: MigrationCapableGraphClient, migrations: unknown[]) => Promise<unknown>;
     DATABASE_MIGRATIONS: unknown[];
   };
+  // Adaptive memory governor (bd tea-rags-mcp-1ruih): raises memory_limit to
+  // the ceiling on the first write of an ingest burst; the idle watcher
+  // restores the base BEFORE releasing the RW lock (see createIdleShutdown).
+  const governor = new DaemonMemoryGovernor({
+    baseLimit: options.resources?.memoryLimit ?? DEFAULT_MEMORY_LIMIT_BASE,
+    maxLimit: options.resources?.memoryLimitMax ?? DEFAULT_MEMORY_LIMIT_MAX,
+  });
   const pool = new GraphDbClientPool({
     rootDir: options.rootDir,
     // The daemon never resolves call edges (resolution happens in the MCP
@@ -255,15 +262,13 @@ export async function runDaemon(
       await runMigrations(client, DATABASE_MIGRATIONS);
     },
     resources: options.resources,
+    // A closed client takes its governor entry with it (bd tea-rags-mcp-amh78),
+    // so a client replacing it for the same collection is raised on its own.
+    onCollectionClientClosed: (collectionName) => {
+      governor.forgetCollection(collectionName);
+    },
     // NO daemonSocketPath — this process IS the daemon; its pool holds the
     // single RW DuckDB connection in-process.
-  });
-  // Adaptive memory governor (bd tea-rags-mcp-1ruih): raises memory_limit to
-  // the ceiling on the first write of an ingest burst; the idle watcher
-  // restores the base BEFORE releasing the RW lock (see createIdleShutdown).
-  const governor = new DaemonMemoryGovernor({
-    baseLimit: options.resources?.memoryLimit ?? DEFAULT_MEMORY_LIMIT_BASE,
-    maxLimit: options.resources?.memoryLimitMax ?? DEFAULT_MEMORY_LIMIT_MAX,
   });
   const handler = new CodegraphDaemonServer(pool, options.buildFingerprint, governor, options.opCommands);
 
