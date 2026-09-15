@@ -1,15 +1,21 @@
 /**
- * CompletionRunner — final sequence:
+ * CompletionRunner — final sequence. Where a later step depends on an earlier
+ * one, the earlier step RETURNS a value the later step REQUIRES, so a reorder
+ * does not compile (bd tea-rags-mcp-39xca.5):
  *  1. drain fileWork (streaming file applies)
  *  2. finalize-file pass: provider.finalizeSignals → applyFinalize (codegraph)
- *  3. backfill per ctx (skips defer-providers)
+ *  3. backfill per ctx (skips defer-providers), overlapping 2
+ *     → `OutOfWindowBackfillOutcome`
  *  4. markFileFinal per ctx (degraded on residual file-unenriched)
+ *     ← `OutOfWindowBackfillOutcome`
  *  5. aggregate metrics
  *  6. drain chunkWork (git streaming)
  *  7. deferred-chunk pass: chunkPhase.runDeferredChunk (codegraph)
+ *     → `DeferredChunkPassOutcome`
  *  7b. codegraph payload heal: rewrite points OUTSIDE this run's chunk map
  *      whose derived signals moved (bd tea-rags-mcp-a2ddb)
- *  8. markChunkFinal per ctx
+ *      ← `DeferredChunkPassOutcome` → `CodegraphHealStepOutcome`
+ *  8. markChunkFinal per ctx ← `CodegraphHealStepOutcome`
  *  9. re-fire stats callback if backfill wrote overlays
  */
 
@@ -48,6 +54,53 @@ export interface CompletionRunnerDeps {
  */
 export type UnenrichedReader = (coll: string, provider: EnrichmentProvider, level: "file" | "chunk") => Promise<number>;
 
+/**
+ * What the out-of-window backfill (step 3) left behind. The terminal FILE
+ * markers require it, because the unenriched counts they persist must reflect
+ * post-backfill state.
+ */
+export interface OutOfWindowBackfillOutcome {
+  /** Whether any missed files existed — drives the post-backfill stats re-fire. */
+  readonly occurred: boolean;
+}
+
+/**
+ * What the deferred chunk pass (step 7) took over this run. The codegraph heal
+ * builds its skip set from this value and from nothing else.
+ *
+ * `noDeferringProvider` is not the same as an empty `wholeFileRelPaths`, and the
+ * distinction is the heal's gate: a run carrying no codegraph provider (a
+ * provider-scoped recompute of some other trajectory) has no business healing
+ * codegraph payload, while a codegraph run that happened to change no file
+ * still has a whole-graph diff worth applying — that is the entire defect.
+ */
+export type DeferredChunkPassOutcome =
+  | { readonly kind: "noDeferringProvider" }
+  | {
+      readonly kind: "deferred";
+      /**
+       * Every relPath in a deferring provider's accumulated chunk map, read
+       * before the pass clears that map — read after, it is empty, and the heal
+       * would rewrite every file this run already wrote. Paths seeded from a
+       * recovery handoff are excluded: they carry only the chunks recovery found
+       * owed, so the pass does not rewrite the rest of that file and the heal
+       * still has to (bd tea-rags-mcp-fxio5).
+       */
+      readonly wholeFileRelPaths: ReadonlySet<string>;
+    };
+
+/**
+ * How the codegraph payload heal (step 7b) settled. The terminal CHUNK markers
+ * require it: their `wait: true` write is the barrier draining the heal's
+ * `wait: false` payload writes, so they must not be written before it.
+ */
+export type CodegraphHealStepOutcome =
+  /** No heal runner is wired (codegraph off), or no provider in the run defers chunk enrichment. */
+  | { readonly kind: "notApplicable" }
+  | { readonly kind: "healed"; readonly pointsRewritten: number; readonly filesTouched: number }
+  /** Best-effort: the baseline was not refreshed, so the diff stands for the next run to retry. */
+  | { readonly kind: "failed"; readonly error: string };
+
 export class CompletionRunner {
   /**
    * Provider keys whose persisted pass-1 aggregate read failed THIS run
@@ -76,11 +129,16 @@ export class CompletionRunner {
    * two taxdome force-reindexes left 121 s and 261 s of silence between the
    * final DEFERRED pass and ALL_COMPLETE, unattributable to any step. Reported
    * on the failure path too — a step that threw still consumed its time.
+   *
+   * A step that REQUIRES an earlier step's outcome calls this from inside its
+   * own body, so `run` hands it that outcome at a direct call site. Passed into
+   * a `stepBody` closure instead, a reordered use still compiles — TypeScript
+   * does not report use-before-declaration inside a nested function.
    */
-  private async timedStep<T>(step: string, run: () => Promise<T>): Promise<T> {
+  private async timedStep<T>(step: string, stepBody: () => Promise<T>): Promise<T> {
     const startedAt = Date.now();
     try {
-      return await run();
+      return await stepBody();
     } finally {
       pipelineLog.enrichmentPhase("COMPLETION_STEP", { step, durationMs: Date.now() - startedAt });
     }
@@ -124,12 +182,11 @@ export class CompletionRunner {
     await this.timedStep("fileFinalize", async () => this.applyFileFinalize(coll, contexts));
 
     // 3. await the backfill kicked off before the finalize pass (see 2‖3 above).
-    //    Must resolve before the terminal file markers below read per-provider
-    //    unenriched counts — they must reflect post-backfill state.
-    const backfillOccurred = await this.timedStep("backfillAwait", async () => backfillPromise);
+    const backfill = await this.timedStep("backfillAwait", async () => backfillPromise);
 
     // 4. markFileFinal per ctx — reconcile to degraded on residual file-unenriched.
-    await this.timedStep("fileMarkers", async () => this.markFileTerminals(coll, contexts, readUnenriched, runId));
+    //    Requires the backfill's outcome, so it cannot read pre-backfill counts.
+    await this.markFileTerminals(coll, contexts, readUnenriched, runId, backfill);
 
     // 5. aggregate metrics
     const metrics = this.buildMetrics(contexts, startTime);
@@ -142,40 +199,32 @@ export class CompletionRunner {
 
     // 7. deferred-chunk pass — codegraph buildChunkSignals against the finished
     //    graph with the full accumulated chunkMap, applied via applyChunkSignals.
+    //    Returns the paths it owned; that value is the heal's only skip-set input.
     //
     // applyChunkSignals fires onApply → maybeHeartbeat when batches land, so
     // lastProgressAt advances during the deferred pass without a separate seam
     // here. The previously-tracked limitation (tea-rags-mcp-xlhu) about the
     // codegraph.chunk phase potentially reporting "stalled" during a long
     // PageRank/resolve pass is resolved: the applier-site hook covers it.
-    // The skip set is captured BEFORE the deferred pass, which clears the
-    // accumulated chunk map on its way out. Read after, it is empty, and the
-    // heal would rewrite every file this run already wrote.
-    const healSkipPaths = this.collectDeferredPaths(contexts);
-    await this.timedStep("deferredChunk", async () => this.runDeferredChunkPass(coll, contexts));
+    const deferredPass = await this.timedStep("deferredChunk", async () => this.runDeferredChunkPass(coll, contexts));
 
     // 7b. codegraph payload heal — the run's chunk map covers the files that
     //     CHANGED; these are the ones that did not, and whose fanIn / fanOut /
-    //     pageRank moved because the graph around them did. Runs BEFORE the
-    //     terminal chunk marker so that marker's `wait: true` write is the
-    //     barrier draining the heal's `wait: false` payload writes.
-    if (healSkipPaths) {
-      await this.timedStep("codegraphHeal", async () => this.runCodegraphHeal(coll, healSkipPaths, runStartedAt));
-    }
+    //     pageRank moved because the graph around them did. Times itself, and
+    //     only when it applies.
+    const codegraphHeal = await this.runCodegraphHeal(coll, deferredPass, runStartedAt);
 
     const finalChunkMetrics = chunkPhase.getMetrics();
     metrics.chunkChurnDurationMs = finalChunkMetrics.totalChunkEnrichmentDurationMs;
 
-    // 8. markChunkFinal per ctx
-    await this.timedStep("chunkMarkers", async () =>
-      this.markChunkTerminals(coll, contexts, readUnenriched, runId, finalChunkMetrics),
-    );
+    // 8. markChunkFinal per ctx — requires the heal's outcome (see 7b).
+    await this.markChunkTerminals(coll, contexts, readUnenriched, runId, finalChunkMetrics, codegraphHeal);
 
     // 9. Re-fire stats callback if backfill wrote post-streaming overlays.
     // First fire (streaming end inside ChunkPhase) preserves the 896f343c
     // contract; this is a strictly-later second fire so listeners (StatsCache)
     // reflect post-backfill state. Listeners must be idempotent.
-    if (backfillOccurred) {
+    if (backfill.occurred) {
       await chunkPhase.fireOnComplete(coll);
     }
 
@@ -246,55 +295,40 @@ export class CompletionRunner {
   }
 
   /**
-   * The relPaths this run's deferred chunk pass is about to rewrite, or
-   * `undefined` when no provider in the run defers chunk enrichment at all.
-   *
-   * `undefined` is not the same as an empty set, and the distinction is the
-   * gate: a run carrying no codegraph provider (a provider-scoped recompute of
-   * some other trajectory) has no business healing codegraph payload, while a
-   * codegraph run that happened to change no file still has a whole-graph diff
-   * worth applying — that is the entire defect.
-   */
-  private collectDeferredPaths(contexts: ReadonlyMap<string, ProviderContext>): Set<string> | undefined {
-    if (!this.deps.codegraphHeal) return undefined;
-    let paths: Set<string> | undefined;
-    for (const ctx of contexts.values()) {
-      if (!ctx.provider.defersChunkEnrichment) continue;
-      paths ??= new Set<string>();
-      // A path seeded from a recovery handoff carries only the chunks recovery
-      // found owed, so the deferred pass does not rewrite the rest of that file
-      // and the heal still has to (bd tea-rags-mcp-fxio5).
-      const seeded = this.deps.chunkPhase.getSeededDeferredPaths(ctx.key);
-      for (const relPath of this.deps.chunkPhase.getDeferredChunkMap(ctx.key).keys()) {
-        if (!seeded.has(relPath)) paths.add(relPath);
-      }
-    }
-    return paths;
-  }
-
-  /**
    * Step 7b — diff the derived codegraph signals against the previous run's
    * baseline, rewrite the points that moved, record the new baseline.
+   *
+   * The skip set is exactly `deferredPass.wholeFileRelPaths`: the files this
+   * run's deferred chunk pass already rewrote with the same builders. Not
+   * applicable — and not timed or logged — when no heal runner is wired or no
+   * provider in the run defers chunk enrichment.
    *
    * Best-effort, like the out-of-window backfill and the pass-1 aggregate read:
    * a payload repair that fails is a run that healed nothing, not a run that
    * failed. The baseline is refreshed only on success (inside the runner), so an
    * unhealed diff still stands for the next run to retry.
    */
-  private async runCodegraphHeal(coll: string, skipRelPaths: ReadonlySet<string>, runStartedAt: string): Promise<void> {
+  async runCodegraphHeal(
+    coll: string,
+    deferredPass: DeferredChunkPassOutcome,
+    runStartedAt: string,
+  ): Promise<CodegraphHealStepOutcome> {
     const healer = this.deps.codegraphHeal;
-    if (!healer) return;
-    try {
-      const { pointsRewritten, filesTouched } = await healer.run(coll, skipRelPaths, runStartedAt || undefined);
-      if (pointsRewritten > 0 || filesTouched > 0) {
-        pipelineLog.enrichmentPhase("CODEGRAPH_PAYLOAD_HEAL", { collection: coll, pointsRewritten, filesTouched });
+    if (!healer || deferredPass.kind === "noDeferringProvider") return { kind: "notApplicable" };
+    const skipRelPaths = deferredPass.wholeFileRelPaths;
+    return this.timedStep("codegraphHeal", async (): Promise<CodegraphHealStepOutcome> => {
+      try {
+        const { pointsRewritten, filesTouched } = await healer.run(coll, skipRelPaths, runStartedAt || undefined);
+        if (pointsRewritten > 0 || filesTouched > 0) {
+          pipelineLog.enrichmentPhase("CODEGRAPH_PAYLOAD_HEAL", { collection: coll, pointsRewritten, filesTouched });
+        }
+        return { kind: "healed", pointsRewritten, filesTouched };
+      } catch (err) {
+        const error = err instanceof Error ? err.message : String(err);
+        pipelineLog.enrichmentPhase("CODEGRAPH_PAYLOAD_HEAL_FAILED", { collection: coll, error });
+        return { kind: "failed", error };
       }
-    } catch (err) {
-      pipelineLog.enrichmentPhase("CODEGRAPH_PAYLOAD_HEAL_FAILED", {
-        collection: coll,
-        error: err instanceof Error ? err.message : String(err),
-      });
-    }
+    });
   }
 
   /**
@@ -346,48 +380,52 @@ export class CompletionRunner {
 
   /**
    * Step 4 — terminal FILE marker per provider. Reads post-backfill unenriched
-   * counts, so it must run after the backfill await.
+   * counts. `_backfill` is not read: requiring it is what keeps this step from
+   * running before the backfill settles. Times itself (see `timedStep`).
    */
   private async markFileTerminals(
     coll: string,
     contexts: ReadonlyMap<string, ProviderContext>,
     readUnenriched: UnenrichedReader,
     runId: string,
+    _backfill: OutOfWindowBackfillOutcome,
   ): Promise<void> {
-    const { filePhase, applier, markerStore } = this.deps;
-    let scanMs = 0;
-    let writeMs = 0;
-    for (const ctx of contexts.values()) {
-      const scanStartedAt = Date.now();
-      const fileUnenriched = await readUnenriched(coll, ctx.provider, "file");
-      scanMs += Date.now() - scanStartedAt;
-      const writeStartedAt = Date.now();
-      // A failed pass-1 aggregate read (bd tea-rags-mcp-weno4) degrades the run
-      // exactly as residual unenriched points do: everything was written, but the
-      // codegraph barrier resolved against a batch-scoped registry, so the entry
-      // edges this run produced are not the ones a healthy run would produce. It
-      // ranks BELOW `failed` — the prefetch failure is still the stronger verdict.
-      const fileStatus = filePhase.hasPrefetchFailed(ctx.key)
-        ? "failed"
-        : fileUnenriched > 0 || this.pass1AggregateReadFailures.has(ctx.key)
-          ? "degraded"
-          : "completed";
-      await markerStore.markFileFinal(coll, ctx.key, {
-        runId,
-        status: fileStatus,
-        durationMs: filePhase.getPrefetchDurationMs(ctx.key),
-        unenrichedChunks: fileUnenriched,
-        matchedFiles: applier.matchedFiles,
-        missedFiles: applier.missedFiles,
-        ignoredFiles: applier.ignoredFiles,
-        // Carry the prefetch failure cause into the TERMINAL marker — this
-        // write used to overwrite markPrefetchFailed's errorMessage, leaving
-        // `failed` with no cause anywhere (worker stderr is detached).
-        ...(fileStatus === "failed" ? { errorMessage: filePhase.getPrefetchError(ctx.key) } : {}),
-      });
-      writeMs += Date.now() - writeStartedAt;
-    }
-    this.reportMarkerSplit("fileMarkers", scanMs, writeMs);
+    await this.timedStep("fileMarkers", async () => {
+      const { filePhase, applier, markerStore } = this.deps;
+      let scanMs = 0;
+      let writeMs = 0;
+      for (const ctx of contexts.values()) {
+        const scanStartedAt = Date.now();
+        const fileUnenriched = await readUnenriched(coll, ctx.provider, "file");
+        scanMs += Date.now() - scanStartedAt;
+        const writeStartedAt = Date.now();
+        // A failed pass-1 aggregate read (bd tea-rags-mcp-weno4) degrades the run
+        // exactly as residual unenriched points do: everything was written, but the
+        // codegraph barrier resolved against a batch-scoped registry, so the entry
+        // edges this run produced are not the ones a healthy run would produce. It
+        // ranks BELOW `failed` — the prefetch failure is still the stronger verdict.
+        const fileStatus = filePhase.hasPrefetchFailed(ctx.key)
+          ? "failed"
+          : fileUnenriched > 0 || this.pass1AggregateReadFailures.has(ctx.key)
+            ? "degraded"
+            : "completed";
+        await markerStore.markFileFinal(coll, ctx.key, {
+          runId,
+          status: fileStatus,
+          durationMs: filePhase.getPrefetchDurationMs(ctx.key),
+          unenrichedChunks: fileUnenriched,
+          matchedFiles: applier.matchedFiles,
+          missedFiles: applier.missedFiles,
+          ignoredFiles: applier.ignoredFiles,
+          // Carry the prefetch failure cause into the TERMINAL marker — this
+          // write used to overwrite markPrefetchFailed's errorMessage, leaving
+          // `failed` with no cause anywhere (worker stderr is detached).
+          ...(fileStatus === "failed" ? { errorMessage: filePhase.getPrefetchError(ctx.key) } : {}),
+        });
+        writeMs += Date.now() - writeStartedAt;
+      }
+      this.reportMarkerSplit("fileMarkers", scanMs, writeMs);
+    });
   }
 
   /**
@@ -426,62 +464,85 @@ export class CompletionRunner {
 
   /**
    * Step 7 — codegraph buildChunkSignals against the finished graph, keyed by
-   * the full accumulated chunkMap.
+   * the full accumulated chunkMap, and the paths that map covered.
+   *
+   * A provider's paths are read in the same iteration, BEFORE its
+   * `runDeferredChunk` clears the map, and a prefetch-failed provider's paths
+   * count even though its pass is skipped. See `DeferredChunkPassOutcome`.
    */
-  private async runDeferredChunkPass(coll: string, contexts: ReadonlyMap<string, ProviderContext>): Promise<void> {
+  async runDeferredChunkPass(
+    coll: string,
+    contexts: ReadonlyMap<string, ProviderContext>,
+  ): Promise<DeferredChunkPassOutcome> {
     const { filePhase, chunkPhase } = this.deps;
+    let wholeFileRelPaths: Set<string> | undefined;
     for (const ctx of contexts.values()) {
-      if (!ctx.provider.defersChunkEnrichment || filePhase.hasPrefetchFailed(ctx.key)) continue;
+      if (!ctx.provider.defersChunkEnrichment) continue;
+      wholeFileRelPaths ??= new Set<string>();
       const cm = chunkPhase.getDeferredChunkMap(ctx.key);
+      const seeded = chunkPhase.getSeededDeferredPaths(ctx.key);
+      for (const relPath of cm.keys()) {
+        if (!seeded.has(relPath)) wholeFileRelPaths.add(relPath);
+      }
+      if (filePhase.hasPrefetchFailed(ctx.key)) continue;
       if (cm.size > 0) {
         await chunkPhase.runDeferredChunk(coll, ctx, ctx.effectiveRoot ?? "", cm);
       }
     }
+    return wholeFileRelPaths ? { kind: "deferred", wholeFileRelPaths } : { kind: "noDeferringProvider" };
   }
 
-  /** Step 8 — terminal CHUNK marker per provider, after the deferred pass. */
+  /**
+   * Step 8 — terminal CHUNK marker per provider. `_codegraphHeal` is not read:
+   * requiring it is what keeps this `wait: true` write — the barrier on the
+   * heal's `wait: false` payload writes — from landing before the heal settles.
+   * Times itself (see `timedStep`).
+   */
   private async markChunkTerminals(
     coll: string,
     contexts: ReadonlyMap<string, ProviderContext>,
     readUnenriched: UnenrichedReader,
     runId: string,
     finalChunkMetrics: ChunkPhaseMetrics,
+    _codegraphHeal: CodegraphHealStepOutcome,
   ): Promise<void> {
-    const { filePhase, chunkPhase, markerStore } = this.deps;
-    let scanMs = 0;
-    let writeMs = 0;
-    for (const ctx of contexts.values()) {
-      const scanStartedAt = Date.now();
-      const chunkUnenriched = await readUnenriched(coll, ctx.provider, "chunk");
-      scanMs += Date.now() - scanStartedAt;
-      const writeStartedAt = Date.now();
-      let chunkStatus: ChunkFinalInput["status"];
-      if (filePhase.hasPrefetchFailed(ctx.key) || chunkPhase.hasChunkEnrichmentFailed(ctx.key)) {
-        chunkStatus = "failed";
-      } else if (chunkUnenriched > 0) {
-        chunkStatus = "degraded";
-      } else {
-        chunkStatus = "completed";
+    await this.timedStep("chunkMarkers", async () => {
+      const { filePhase, chunkPhase, markerStore } = this.deps;
+      let scanMs = 0;
+      let writeMs = 0;
+      for (const ctx of contexts.values()) {
+        const scanStartedAt = Date.now();
+        const chunkUnenriched = await readUnenriched(coll, ctx.provider, "chunk");
+        scanMs += Date.now() - scanStartedAt;
+        const writeStartedAt = Date.now();
+        let chunkStatus: ChunkFinalInput["status"];
+        if (filePhase.hasPrefetchFailed(ctx.key) || chunkPhase.hasChunkEnrichmentFailed(ctx.key)) {
+          chunkStatus = "failed";
+        } else if (chunkUnenriched > 0) {
+          chunkStatus = "degraded";
+        } else {
+          chunkStatus = "completed";
+        }
+        await markerStore.markChunkFinal(coll, ctx.key, {
+          runId,
+          status: chunkStatus,
+          // iqpuu: per-provider wall span — the marker no longer inherits the
+          // cross-provider span (deferred codegraph used to stretch git's).
+          durationMs: finalChunkMetrics.providerDurationsMs[ctx.key] ?? 0,
+          unenrichedChunks: chunkUnenriched,
+          ...(chunkStatus === "failed" ? { errorMessage: filePhase.getPrefetchError(ctx.key) } : {}),
+        });
+        writeMs += Date.now() - writeStartedAt;
       }
-      await markerStore.markChunkFinal(coll, ctx.key, {
-        runId,
-        status: chunkStatus,
-        // iqpuu: per-provider wall span — the marker no longer inherits the
-        // cross-provider span (deferred codegraph used to stretch git's).
-        durationMs: finalChunkMetrics.providerDurationsMs[ctx.key] ?? 0,
-        unenrichedChunks: chunkUnenriched,
-        ...(chunkStatus === "failed" ? { errorMessage: filePhase.getPrefetchError(ctx.key) } : {}),
-      });
-      writeMs += Date.now() - writeStartedAt;
-    }
-    this.reportMarkerSplit("chunkMarkers", scanMs, writeMs);
+      this.reportMarkerSplit("chunkMarkers", scanMs, writeMs);
+    });
   }
 
   /**
    * Backfill file+chunk signals for every non-deferring provider's missed files.
    * Extracted so the completion sequence can OVERLAP it with the codegraph
    * finalize pass (see `run` step 2‖3). Skips defer-providers (codegraph) — they
-   * have no miss-tracking; their overlays come from `applyFinalize`. Returns
+   * have no miss-tracking; their overlays come from `applyFinalize`. Reports
    * whether any missed files existed (drives the post-backfill stats re-fire).
    * `backfiller.runFor` is internally try/caught, so this never rejects.
    */
@@ -489,13 +550,13 @@ export class CompletionRunner {
     coll: string,
     contexts: ReadonlyMap<string, ProviderContext>,
     runStartedAt: string,
-  ): Promise<boolean> {
+  ): Promise<OutOfWindowBackfillOutcome> {
     const { filePhase, backfiller, applier } = this.deps;
-    if (applier.getMissedFileChunks().size === 0) return false;
+    if (applier.getMissedFileChunks().size === 0) return { occurred: false };
     for (const ctx of contexts.values()) {
       if (filePhase.hasPrefetchFailed(ctx.key) || ctx.provider.defersChunkEnrichment) continue;
       await backfiller.runFor(coll, ctx, runStartedAt);
     }
-    return true;
+    return { occurred: true };
   }
 }
