@@ -30,6 +30,7 @@
 
 import type { QdrantClient } from "@qdrant/js-client-rest";
 
+import type { PhysicalCollectionName } from "../../contracts/types/collection-identity.js";
 import type { QdrantAliasManager } from "./aliases.js";
 import { QdrantCollectionAdmin, type CollectionInfo } from "./collection-admin.js";
 import { QdrantConnection, type EmbeddedDaemonProbe } from "./connection.js";
@@ -139,7 +140,7 @@ export class QdrantManager {
     return this.collections.collectionExists(name);
   }
 
-  async listCollections(): Promise<string[]> {
+  async listCollections(): Promise<PhysicalCollectionName[]> {
     return this.collections.listCollections();
   }
 

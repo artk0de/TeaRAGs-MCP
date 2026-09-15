@@ -18,6 +18,8 @@
 import { readdir, stat } from "node:fs/promises";
 import { join } from "node:path";
 
+import type { PhysicalCollectionName } from "../../contracts/types/collection-identity.js";
+import { physicalCollectionNamesListedByStorage } from "../../infra/collection-name.js";
 import type { QdrantConnection } from "./connection.js";
 import { CollectionAlreadyExistsError, QdrantUnavailableError } from "./errors.js";
 
@@ -145,9 +147,10 @@ export class QdrantCollectionAdmin {
     }
   }
 
-  async listCollections(): Promise<string[]> {
+  /** Concrete collections only — Qdrant lists aliases separately, so every name here is physical. */
+  async listCollections(): Promise<PhysicalCollectionName[]> {
     const response = await this.connection.call(async () => this.connection.client.getCollections());
-    return response.collections.map((c) => c.name);
+    return physicalCollectionNamesListedByStorage(response.collections.map((c) => c.name));
   }
 
   async getCollectionInfo(name: string): Promise<CollectionInfo> {

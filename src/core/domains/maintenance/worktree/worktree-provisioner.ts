@@ -2,7 +2,13 @@ import { basename, dirname, join, resolve } from "node:path";
 
 import type { QdrantManager } from "../../../adapters/qdrant/client.js";
 import type { WorktreeCreateInput, WorktreeCreateResult, WorktreeRemoveInput } from "../../../contracts/index.js";
-import { resolveCollectionName, validatePathSync } from "../../../infra/collection-name.js";
+import {
+  collectionAliasOfRegistryEntry,
+  resolveCollectionName,
+  resolvePhysicalCollection,
+  validatePathSync,
+  versionedPhysicalCollectionName,
+} from "../../../infra/collection-name.js";
 import { WorktreeCollectionExistsError, WorktreeNotFoundError, WorktreeSourceNotFoundError } from "../errors.js";
 import type { CollectionArtifact, CollectionFootprintFactory, ResolvedCollection } from "../footprint/index.js";
 import type { CollectionRegistry } from "../registry/index.js";
@@ -88,7 +94,8 @@ export class WorktreeProvisioner {
     const target: ResolvedCollection = {
       ...source,
       logicalName: targetLogical,
-      physicalName: `${targetLogical}_v1`,
+      // A clone is a brand-new collection: its first generation.
+      physicalName: versionedPhysicalCollectionName(targetLogical, 1),
       path: worktreePath,
     };
 
@@ -172,7 +179,7 @@ export class WorktreeProvisioner {
 
     const srcPhysical = await qdrant.aliases
       .resolveActive(entry.worktreeOf as string)
-      .catch(() => entry.worktreeOf as string);
+      .catch(() => resolvePhysicalCollection(entry.worktreeOf as string, []));
 
     // Resolve source repo root for git worktree removal.
     const sourceEntry = registry.get(entry.worktreeOf as string);
@@ -190,7 +197,7 @@ export class WorktreeProvisioner {
 
     const targetPhysical = await qdrant.aliases
       .resolveActive(entry.collectionName)
-      .catch(() => `${entry.collectionName}_v1`);
+      .catch(() => versionedPhysicalCollectionName(collectionAliasOfRegistryEntry(entry), 1));
 
     const target: ResolvedCollection = {
       ...source,

@@ -6,6 +6,7 @@
  * File processing logic is delegated to FileProcessor.
  */
 
+import type { PhysicalCollectionName } from "../../../contracts/types/collection-identity.js";
 import { isDebug } from "../../../infra/runtime.js";
 import type { ChangeStats, ChunkLookupEntry, FileChanges, ProgressCallback } from "../../../types.js";
 import { NotIndexedError, PartialDeletionError, ReindexFailedError, SnapshotMissingError } from "../errors.js";
@@ -27,7 +28,7 @@ import { performDeletion, type DeletionConfig } from "../sync/deletion/strategy.
 import { QuarantineStore } from "../sync/index.js";
 import type { ParallelFileSynchronizer } from "../sync/parallel-synchronizer.js";
 import { SnapshotCleaner } from "../sync/snapshot/snapshot-cleaner.js";
-import { resolveAliasTargetCollection } from "./version-resolver.js";
+import { resolvePhysicalCollection } from "./version-resolver.js";
 
 interface ReindexContext {
   absolutePath: string;
@@ -46,7 +47,7 @@ interface ReindexContext {
    * (bd tea-rags-mcp-6goqa). Mirrors `SetupResult.targetCollection` on the
    * force path.
    */
-  targetCollection: string;
+  targetCollection: PhysicalCollectionName;
   synchronizer: ParallelFileSynchronizer;
   scanner: FileScanner;
   currentFiles: string[];
@@ -281,7 +282,7 @@ export class ReindexPipeline extends BaseIndexingPipeline {
     const scanner = this.createScanner();
     const currentFiles = await this.scanFiles(absolutePath, scanner);
 
-    const targetCollection = resolveAliasTargetCollection(collectionName, await this.qdrant.aliases.listAliases());
+    const targetCollection = resolvePhysicalCollection(collectionName, await this.qdrant.aliases.listAliases());
 
     return { absolutePath, collectionName, targetCollection, synchronizer, scanner, currentFiles };
   }

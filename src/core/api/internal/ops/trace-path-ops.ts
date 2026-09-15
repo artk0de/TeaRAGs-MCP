@@ -37,10 +37,12 @@ import {
   type FileScopedSymbolRef,
   type RelPath,
 } from "../../../contracts/types/codegraph.js";
+import type { PhysicalCollectionName } from "../../../contracts/types/collection-identity.js";
 import type { RankingOverlay } from "../../../contracts/types/reranker.js";
 import type { Reranker } from "../../../domains/explore/reranker.js";
 import type { CollectionRegistry } from "../../../domains/maintenance/registry/index.js";
 import { enumeratePaths } from "../../../domains/trajectory/codegraph/symbols/index.js";
+import { resolvePhysicalCollection } from "../../../infra/collection-name.js";
 import type { PathStep, PathTraceResult, TracedPath, TracePathRequest } from "../../public/dto/graph.js";
 import { resolveCollection } from "../collection-resolver.js";
 
@@ -63,7 +65,7 @@ export interface TracePathOpsDeps {
   qdrant: QdrantManager;
   reranker: Reranker;
   collectionRegistry: CollectionRegistry;
-  resolveActiveCollection?: (collectionName: string) => Promise<string>;
+  resolveActiveCollection?: (collectionName: string) => Promise<PhysicalCollectionName>;
 }
 
 const EMPTY: PathTraceResult = { paths: [], truncated: false };
@@ -88,9 +90,12 @@ export class TracePathOps {
     const preset = req.rerank; // no default — danger overlay is opt-in (tea-rags-mcp-prqsj)
 
     const { collectionName } = resolveCollection(this.deps.collectionRegistry, req);
+    // No resolver, or a failed one: the addressed name, resolved against no aliases.
     const active = this.deps.resolveActiveCollection
-      ? await this.deps.resolveActiveCollection(collectionName).catch(() => collectionName)
-      : collectionName;
+      ? await this.deps
+          .resolveActiveCollection(collectionName)
+          .catch(() => resolvePhysicalCollection(collectionName, []))
+      : resolvePhysicalCollection(collectionName, []);
 
     let handle: CollectionGraphHandle | undefined;
     try {

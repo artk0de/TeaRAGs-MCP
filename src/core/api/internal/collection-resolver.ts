@@ -13,7 +13,11 @@ import { resolve } from "node:path";
 
 import type { PathCollectionResolver } from "../../contracts/types/registry.js";
 import type { CollectionRegistry } from "../../domains/maintenance/registry/collection-registry.js";
-import { resolveCollectionName, validatePathSync } from "../../infra/collection-name.js";
+import {
+  collectionAliasOfRegistryEntry,
+  resolveCollectionName,
+  validatePathSync,
+} from "../../infra/collection-name.js";
 import { CollectionNotProvidedError, ProjectNotRegisteredError, StaleProjectAliasError } from "../errors.js";
 
 /**
@@ -131,5 +135,7 @@ export type { PathCollectionResolver };
  * to. Async only because its collaborators hold it as one.
  */
 export function createPathCollectionResolver(registry: CollectionRegistry): PathCollectionResolver {
-  return async (path: string): Promise<string> => resolveCollection(registry, { path }).collectionName;
+  // A path resolves to the entry that claims it or to the path hash — a project's
+  // LOGICAL name either way, never one of its versioned generations.
+  return async (path) => collectionAliasOfRegistryEntry(resolveCollection(registry, { path }));
 }

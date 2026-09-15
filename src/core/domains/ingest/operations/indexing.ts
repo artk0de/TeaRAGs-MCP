@@ -10,6 +10,7 @@
  * - Migration: converts real collection to alias scheme
  */
 
+import type { CollectionAlias, PhysicalCollectionName } from "../../../contracts/types/collection-identity.js";
 import { isDebug } from "../../../infra/runtime.js";
 import type { IndexOptions, IndexStats, ProgressCallback } from "../../../types.js";
 import { IndexingFailedError } from "../errors.js";
@@ -33,7 +34,7 @@ import { pipelineLog } from "../pipeline/infra/debug-logger.js";
 import type { FileScanner } from "../pipeline/scanner.js";
 import { QuarantineStore, type ParallelFileSynchronizer } from "../sync/index.js";
 import { SnapshotCleaner } from "../sync/snapshot/snapshot-cleaner.js";
-import { computeNewVersion, findAliasTarget } from "./version-resolver.js";
+import { computeNewVersion, findAliasTarget, resolvePhysicalCollection } from "./version-resolver.js";
 
 /**
  * Result of collection setup phase.
@@ -43,9 +44,9 @@ export interface SetupResult {
   /** Whether indexing should proceed */
   ready: boolean;
   /** Versioned collection name to index into (e.g. "code_abc_v2") */
-  targetCollection: string;
+  targetCollection: PhysicalCollectionName;
   /** Previous versioned collection (e.g. "code_abc_v1"), undefined on first index */
-  previousCollection?: string;
+  previousCollection?: PhysicalCollectionName;
   /** New alias version number */
   aliasVersion: number;
   /** True if no previous version exists */
@@ -262,7 +263,7 @@ export class IndexPipeline extends BaseIndexingPipeline {
   }
 
   private async setupCollection(
-    collectionName: string,
+    collectionName: CollectionAlias,
     absolutePath: string,
     options?: IndexOptions,
     dimensionsOverride?: number,
@@ -273,7 +274,8 @@ export class IndexPipeline extends BaseIndexingPipeline {
     if (exists && !options?.forceReindex) {
       return {
         ready: false,
-        targetCollection: collectionName,
+        // Never addressed — a not-ready setup indexes nothing.
+        targetCollection: resolvePhysicalCollection(collectionName, []),
         aliasVersion: 0,
         isFirstIndex: false,
         isMigration: false,
@@ -378,8 +380,9 @@ export class IndexPipeline extends BaseIndexingPipeline {
       // Brief ~100ms downtime (one-time migration cost)
       await this.qdrant.deleteCollection(collectionName);
       await this.qdrant.aliases.createAlias(collectionName, setup.targetCollection);
-      // Drop the migrated-away collection's codegraph DB (best-effort).
-      await this.removeCodegraphDb(collectionName);
+      // Drop the migrated-away collection's codegraph DB (best-effort). Until the
+      // alias above replaced it, the name was a real, unversioned collection.
+      await this.removeCodegraphDb(resolvePhysicalCollection(collectionName, []));
     } else if (setup.previousCollection) {
       // Atomic switch — zero downtime
       await this.qdrant.aliases.switchAlias(collectionName, setup.previousCollection, setup.targetCollection);
@@ -398,7 +401,7 @@ export class IndexPipeline extends BaseIndexingPipeline {
    * swallowed (logged in debug) so codegraph cleanup never aborts finalization.
    * No-op when codegraph is disabled (no remover wired).
    */
-  private async removeCodegraphDb(collectionName: string): Promise<void> {
+  private async removeCodegraphDb(collectionName: PhysicalCollectionName): Promise<void> {
     if (!this.codegraphRemover) return;
     await this.codegraphRemover(collectionName).catch((err) => {
       if (isDebug()) {

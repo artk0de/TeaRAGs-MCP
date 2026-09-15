@@ -29,6 +29,7 @@ import type {
   SymbolDefinition,
   SymbolLineRange,
 } from "../../../../contracts/types/codegraph.js";
+import type { PhysicalCollectionName } from "../../../../contracts/types/collection-identity.js";
 import type { FileClassification } from "../../../../contracts/types/file-classification.js";
 import type {
   CollectSymbolsFn,
@@ -349,7 +350,7 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
    * cross-process READ_ONLY attach would throw). A collection with no graph yet
    * yields an empty map — the fresh-`_vN` case, where every file needs extracting.
    */
-  async readPersistedFileHashes(collectionName: string): Promise<Map<string, string | null>> {
+  async readPersistedFileHashes(collectionName: PhysicalCollectionName): Promise<Map<string, string | null>> {
     const hashes = new Map<string, string | null>();
     if (!this.deps.pool) {
       const rows = await (this.deps.graphDb as GraphDbClient).listFileContentHashes();
@@ -382,7 +383,7 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
    * `CodegraphDaemonBuildSkewError` (`listAllPass1Aggregates` is required).
    * Same store resolution as every other call (`getStore`).
    */
-  async readPersistedPass1Aggregates(collectionName: string): Promise<CodegraphPass1FileAggregates[]> {
+  async readPersistedPass1Aggregates(collectionName: PhysicalCollectionName): Promise<CodegraphPass1FileAggregates[]> {
     return (await this.getStore(collectionName)).graphDb.listAllPass1Aggregates();
   }
 
@@ -392,7 +393,7 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
    * Pool mode without `collectionName` throws — a broken call surface must fail at
    * the wire-up boundary, not write rows to the wrong DB.
    */
-  private async getStore(collectionName?: string): Promise<{
+  private async getStore(collectionName?: PhysicalCollectionName): Promise<{
     graphDb: GraphDbClient;
     symbolTable: GlobalSymbolTable;
   }> {
@@ -467,7 +468,7 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
    * skips the durable `cg_symbols` write already issued by the eager flush
    * (`drainInputSpill` passes true).
    */
-  asExtractionSink(collectionName?: string, skipDurableNodeWrite = false): ExtractionSink {
+  asExtractionSink(collectionName?: PhysicalCollectionName, skipDurableNodeWrite = false): ExtractionSink {
     return createCodegraphExtractionSink(this.sinkDeps, randomUUID(), collectionName, skipDurableNodeWrite);
   }
 
@@ -510,7 +511,7 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
    * each line against the complete symbol table, bulk-upsert, checkpoint on a
    * cadence. O(1) memory in the spill size — one JSON line resident at a time.
    */
-  private async streamingResolveAndUpsert(spillPath: string, collectionName?: string): Promise<void> {
+  private async streamingResolveAndUpsert(spillPath: string, collectionName?: PhysicalCollectionName): Promise<void> {
     await this.graphFinalizer.resolveAndUpsert(spillPath, collectionName);
   }
 
@@ -518,7 +519,7 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
    * Recompute Tarjan SCC for both scopes and PageRank over the method graph once
    * pass-2 settles (`GraphBuildFinalizer#recomputeMetrics`).
    */
-  private async recomputeGraphMetricsStreaming(collectionName?: string): Promise<void> {
+  private async recomputeGraphMetricsStreaming(collectionName?: PhysicalCollectionName): Promise<void> {
     try {
       await this.graphFinalizer.recomputeMetrics(collectionName);
     } finally {
@@ -757,7 +758,7 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
    */
   private ensureRunSink(
     key: string,
-    collectionName?: string,
+    collectionName?: PhysicalCollectionName,
     skipDurableNodeWrite = false,
   ): { sink: ExtractionSink; extracted: Set<string> } {
     let sink = this.runSinks.get(key);
@@ -783,7 +784,7 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
    * per collection. The append is synchronous so the bytes are on disk before
    * finalize opens the file; IO errors are swallowed (debug-logged).
    */
-  acceptExtraction = (extraction: FileExtraction, options?: { collectionName?: string }): void => {
+  acceptExtraction = (extraction: FileExtraction, options?: { collectionName?: PhysicalCollectionName }): void => {
     // G3a (bd tea-rags-mcp-lx8sb): the cross-pass tee receives EVERY chunked file,
     // so it must apply the exclusion filter the batch path and buildFileSignals
     // apply, or excluded (test) files re-enter the graph.
@@ -818,7 +819,7 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
    * `coordinator.beginRun` ONLY on cross-pass (full-index) runs. Idempotent;
    * tolerates a missing dir/file (creates them).
    */
-  beginExtractionRun = (collectionName?: string): void => {
+  beginExtractionRun = (collectionName?: PhysicalCollectionName): void => {
     const key = this.collectionKey(collectionName);
     // bd tea-rags-mcp-svhqp — a run-START seam that bypasses `ensureRunSink`, so it
     // must zero the tally and run-global maps itself: the cached provider would
@@ -845,7 +846,7 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
    * across the instance boundary, and rethrows a latched flush error before pass-2.
    * No-op off cross-pass (the buffer is empty).
    */
-  endExtractionRun = async (collectionName?: string): Promise<void> => {
+  endExtractionRun = async (collectionName?: PhysicalCollectionName): Promise<void> => {
     await this.nodeFlush.flushRemainder(this.collectionKey(collectionName), collectionName);
   };
 
@@ -866,7 +867,7 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
    * run's sink, with the durable node write skipped (hoisted into
    * `acceptExtraction`'s eager flush). See `drainCrossPassInputSpill`.
    */
-  private async drainInputSpill(key: string, collectionName?: string): Promise<void> {
+  private async drainInputSpill(key: string, collectionName?: PhysicalCollectionName): Promise<void> {
     await drainCrossPassInputSpill(
       this.inputSpillPath(collectionName),
       () => this.ensureRunSink(key, collectionName, true),

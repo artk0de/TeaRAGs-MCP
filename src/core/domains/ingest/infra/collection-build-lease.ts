@@ -16,6 +16,8 @@
 import type { QdrantManager } from "../../../adapters/qdrant/client.js";
 import { CollectionAlreadyExistsError } from "../../../adapters/qdrant/errors.js";
 import { INDEXING_METADATA_ID } from "../../../contracts/constants.js";
+import type { CollectionAlias, PhysicalCollectionName } from "../../../contracts/types/collection-identity.js";
+import { versionedPhysicalCollectionName } from "../../../infra/collection-name.js";
 import { isDebug } from "../../../infra/runtime.js";
 import { VersionedCollectionClaimError } from "../errors.js";
 import {
@@ -125,7 +127,7 @@ export const VERSION_CLAIM_ATTEMPT_LIMIT = 16;
 
 /** The versioned collection a run took, and the number it ended up with. */
 export interface ClaimedCollectionVersion {
-  collectionName: string;
+  collectionName: PhysicalCollectionName;
   version: number;
 }
 
@@ -158,14 +160,14 @@ export interface ClaimedCollectionVersion {
  */
 export async function claimVersionedCollection(args: {
   qdrant: QdrantManager;
-  baseCollectionName: string;
+  baseCollectionName: CollectionAlias;
   firstVersion: number;
-  createLeasedCollection: (versionedName: string) => Promise<void>;
+  createLeasedCollection: (versionedName: PhysicalCollectionName) => Promise<void>;
 }): Promise<ClaimedCollectionVersion> {
   const { qdrant, baseCollectionName, firstVersion, createLeasedCollection } = args;
 
   for (let version = firstVersion; version < firstVersion + VERSION_CLAIM_ATTEMPT_LIMIT; version++) {
-    const versionedName = `${baseCollectionName}_v${version}`;
+    const versionedName = versionedPhysicalCollectionName(baseCollectionName, version);
 
     if (await qdrant.collectionExists(versionedName)) {
       if (await isCollectionBuildInFlight(qdrant, versionedName)) {

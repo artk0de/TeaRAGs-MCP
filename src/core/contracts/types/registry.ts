@@ -4,6 +4,7 @@
  * See docs/superpowers/specs/2026-05-12-project-registry-design.md §2.
  */
 
+import type { CollectionAlias } from "./collection-identity.js";
 import type { LanguageCodeVersions } from "./language.js";
 
 /**
@@ -170,4 +171,4 @@ export interface CollectionRegistryPort {
  * the contract they are handed instead of each redeclaring its shape, without
  * any of them reaching into the api layer.
  */
-export type PathCollectionResolver = (path: string) => Promise<string>;
+export type PathCollectionResolver = (path: string) => Promise<CollectionAlias>;

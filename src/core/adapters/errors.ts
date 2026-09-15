@@ -52,7 +52,8 @@ export type InfraErrorCode =
   | "INFRA_REGISTRY_NAME_CONFLICT"
   | "INFRA_REGISTRY_QDRANT_BACKEND_UNRESOLVED"
   // DuckDB (codegraph adapter)
-  | "INFRA_DUCKDB_OPEN_FAILED";
+  | "INFRA_DUCKDB_OPEN_FAILED"
+  | "INFRA_CODEGRAPH_SHADOW_DATABASE_REFUSED";
 
 /**
  * Abstract base class for infrastructure errors (adapters, external services).

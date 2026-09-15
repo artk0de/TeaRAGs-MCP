@@ -27,7 +27,9 @@
 import { splitMethodSymbol } from "../../../adapters/duckdb/client.js";
 import type { CollectionGraphHandle, GraphDbClientPool } from "../../../adapters/duckdb/pool.js";
 import type { SymbolChunkLocation, SymbolId } from "../../../contracts/types/codegraph.js";
+import type { PhysicalCollectionName } from "../../../contracts/types/collection-identity.js";
 import type { CollectionRegistry } from "../../../domains/maintenance/registry/index.js";
+import { resolvePhysicalCollection } from "../../../infra/collection-name.js";
 import type {
   FindCyclesRequest,
   FindCyclesResponse,
@@ -52,7 +54,7 @@ export interface GraphFacadeDeps {
    * `qdrant.aliases.resolveActive` in the composition root. Optional: when
    * absent (unit tests), the name is used verbatim.
    */
-  resolveActiveCollection?: (collectionName: string) => Promise<string>;
+  resolveActiveCollection?: (collectionName: string) => Promise<PhysicalCollectionName>;
 }
 
 const DEFAULT_LIMIT = 50;
@@ -98,11 +100,13 @@ export class GraphFacade {
     const { collectionName } = resolveCollection(this.deps.collectionRegistry, addr);
     // Expand a Qdrant alias to the active versioned collection so the codegraph
     // pool opens the DuckDB file the write path actually populated (see
-    // resolveActiveCollection doc). Resolution failure falls back to the
-    // addressed name rather than aborting the read.
+    // resolveActiveCollection doc). No resolver, or a failed one, falls back to
+    // the addressed name resolved against no aliases, rather than aborting the read.
     const activeCollection = this.deps.resolveActiveCollection
-      ? await this.deps.resolveActiveCollection(collectionName).catch(() => collectionName)
-      : collectionName;
+      ? await this.deps
+          .resolveActiveCollection(collectionName)
+          .catch(() => resolvePhysicalCollection(collectionName, []))
+      : resolvePhysicalCollection(collectionName, []);
     let handle: CollectionGraphHandle | undefined;
     try {
       handle = await this.deps.pool.acquireReader(activeCollection);

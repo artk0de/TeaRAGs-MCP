@@ -14,6 +14,7 @@ import type { QdrantManager } from "../../../adapters/qdrant/client.js";
 import type { EmbeddingModelGuard } from "../../../adapters/qdrant/embedding-model-guard.js";
 import { sampleVectors, scrollAllPoints } from "../../../adapters/qdrant/scroll.js";
 import { INDEXING_METADATA_ID } from "../../../contracts/constants.js";
+import type { PhysicalCollectionName } from "../../../contracts/types/collection-identity.js";
 import type { LanguageCodeVersions } from "../../../contracts/types/language.js";
 import type { StatsAccumulatorDescriptor } from "../../../contracts/types/stats-accumulator.js";
 import type { PayloadSignalDescriptor, ScoreBackground } from "../../../contracts/types/trajectory.js";
@@ -25,7 +26,7 @@ import {
   type CollectionIndexingLock,
   type HeldCollectionIndexingLock,
 } from "../../../domains/ingest/infra/index.js";
-import { resolveAliasTargetCollection } from "../../../domains/ingest/operations/index.js";
+import { resolvePhysicalCollection } from "../../../domains/ingest/operations/index.js";
 import type { IndexPipeline } from "../../../domains/ingest/operations/indexing.js";
 import type { ReindexPipeline } from "../../../domains/ingest/operations/reindexing.js";
 import { extensionsForLanguages } from "../../../domains/ingest/pipeline/chunker/config.js";
@@ -278,13 +279,22 @@ export class IndexingOps {
       const incremental = await this.tryIncrementalIndex(path, progressCallback);
       if (incremental) return incremental;
     }
-    // Force-reindex: drop the per-collection codegraph DB before the
-    // pipeline rebuilds. The DuckDB file is keyed by the public alias
-    // (collection name), not by the versioned target — so without an
-    // explicit purge the new index would inherit stale symbol rows from
-    // the previous generation. Non-fatal when codegraph is disabled.
+    // Force-reindex: drop the codegraph DB named after the LOGICAL collection
+    // before the pipeline rebuilds. A versioned build writes `<name>_v<N>.duckdb`,
+    // so `<name>.duckdb` is either a pre-alias legacy database or a shadow an
+    // alias-addressed write left behind — and the rebuild must not inherit
+    // either. Generations are left to the version sweep and `finalizeReindex`.
+    // Found through the directory listing: the logical name is not a physical
+    // one, so only a file that is actually there is removed (bd tea-rags-mcp-39xca.1).
+    // Non-fatal when codegraph is disabled.
     if (options?.forceReindex && this.codegraphPool) {
-      await this.codegraphPool.removeCollection(await this.resolveCollectionForPath(path));
+      const logicalName = await this.resolveCollectionForPath(path);
+      // Compared as text on purpose: the one database this looks for is the file
+      // that carries the LOGICAL name, which the brands otherwise keep apart.
+      const logicalDb = this.codegraphPool
+        .listCollectionDbNames(logicalName)
+        .find((name: string) => name === logicalName);
+      if (logicalDb) await this.codegraphPool.removeCollection(logicalDb);
     }
     return this.fullIndex(path, options, progressCallback);
   }
@@ -340,9 +350,9 @@ export class IndexingOps {
    */
   private async releaseCollectionWhenEnrichmentSettles(collectionName: string): Promise<void> {
     try {
-      let runCollection = collectionName;
+      let runCollection = resolvePhysicalCollection(collectionName, []);
       try {
-        runCollection = resolveAliasTargetCollection(collectionName, await this.qdrant.aliases.listAliases());
+        runCollection = resolvePhysicalCollection(collectionName, await this.qdrant.aliases.listAliases());
       } catch {
         // No alias listing: the run addressed the collection under this name.
       }
@@ -492,13 +502,20 @@ export class IndexingOps {
     const collectionName = await this.resolveCollectionForPath(path);
     this.modelGuard?.invalidate(collectionName);
     await this.status.clearIndex(path);
-    // Drop the per-collection codegraph DuckDB file once Qdrant has
-    // released its collection. Order matters: Qdrant first — if it
-    // fails, retaining the DuckDB file is safe (still shadows a live
-    // collection); after Qdrant succeeds, the DuckDB file is orphaned
-    // and removed here. Non-fatal when codegraph is disabled.
+    // Drop the codegraph databases once Qdrant has released the collection.
+    // Order matters: Qdrant first — if it fails, keeping the databases is safe
+    // (they still shadow live collections); once it succeeds they are orphans.
+    //
+    // EVERY database on disk for the name, not the one named after it
+    // (bd tea-rags-mcp-39xca.1): `clearIndex` deletes every `<name>_v<N>`
+    // generation, and each generation has its own database. Removing only
+    // `<name>.duckdb` — at most a shadow for a versioned collection — left them
+    // all behind, and an index that later reclaimed a version number reopened
+    // its old graph. Non-fatal when codegraph is disabled.
     if (this.codegraphPool) {
-      await this.codegraphPool.removeCollection(collectionName);
+      for (const generation of this.codegraphPool.listCollectionDbNames(collectionName)) {
+        await this.codegraphPool.removeCollection(generation);
+      }
     }
   }
 
@@ -637,7 +654,7 @@ export class IndexingOps {
     // stamps the chunks enriched — with no signals (bd tea-rags-mcp-snbzk /
     // 6goqa). Qdrant resolves aliases server-side, so recovery's Qdrant writes
     // land on the same points; everything else here stays alias-keyed.
-    const recoveryCollection = resolveAliasTargetCollection(collectionName, await this.qdrant.aliases.listAliases());
+    const recoveryCollection = resolvePhysicalCollection(collectionName, await this.qdrant.aliases.listAliases());
     // A deferring provider's owed chunks come back instead of being healed
     // before any walk (bd tea-rags-mcp-fxio5); the reindex below walks their
     // files and settles them in its own deferred chunk pass.
@@ -701,7 +718,7 @@ export class IndexingOps {
     // recompute's graph writes, `cg_run_stats` included, then land in a file
     // prime does not read and the resolve breakdown looks like it vanished
     // (bd tea-rags-mcp-snbzk; same mechanism as 6goqa).
-    const collectionName = resolveAliasTargetCollection(aliasName, await this.qdrant.aliases.listAliases());
+    const collectionName = resolvePhysicalCollection(aliasName, await this.qdrant.aliases.listAliases());
 
     // The sync leg is deliberately NOT forced: the recompute below owns the
     // forced re-extraction on this path, and forcing both meant paying for it
@@ -893,7 +910,10 @@ export class IndexingOps {
     }
   }
 
-  private async dispatchRecovery(collectionName: string, absolutePath: string): Promise<DeferredChunkRecoveryHandoff> {
+  private async dispatchRecovery(
+    collectionName: PhysicalCollectionName,
+    absolutePath: string,
+  ): Promise<DeferredChunkRecoveryHandoff> {
     // Awaited, best-effort. runRecovery is cheap when there's no work:
     // recoverFileLevel/recoverChunkLevel short-circuit on empty scroll, so the
     // healthy path pays only a couple of lightweight count/scroll calls. When

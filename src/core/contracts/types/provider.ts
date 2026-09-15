@@ -11,6 +11,7 @@ import type { Ignore } from "ignore";
 
 import type { ChunkLookupEntry } from "./chunker.js";
 import type { CodegraphPass1FileAggregates, FileExtraction } from "./codegraph.js";
+import type { PhysicalCollectionName } from "./collection-identity.js";
 import type { CommitDiffMemoPort } from "./commit-diff-memo.js";
 import type { DerivedSignalDescriptor, RerankPreset } from "./reranker.js";
 import type { PayloadSignalDescriptor } from "./trajectory.js";
@@ -111,9 +112,10 @@ export interface ChunkSignalOptions {
    * EnrichmentCoordinator.beginRun so collection-scoped providers
    * (codegraph) can route writes to their per-collection backing store
    * (per-collection DuckDB file). Optional: providers that don't care
-   * about collection scope (git) ignore it.
+   * about collection scope (git) ignore it. Physical, never the alias: the
+   * store is per generation (bd tea-rags-mcp-39xca.1).
    */
-  collectionName?: string;
+  collectionName?: PhysicalCollectionName;
   /**
    * Run-scoped git object reader shared across every per-batch chunk-signal
    * call of one indexing run. Structural shape of `CatFileBatchReader`
@@ -244,7 +246,7 @@ export interface FileSignalOptions {
    */
   contentHashes?: ReadonlyMap<string, string>;
   /** Active Qdrant collection name — see ChunkSignalOptions.collectionName. */
-  collectionName?: string;
+  collectionName?: PhysicalCollectionName;
   /**
    * Shared `Ignore` instance from FileScanner — the same filter that
    * `EnrichmentCoordinator` already holds in `ProviderContext.ignoreFilter`.
@@ -312,7 +314,7 @@ export interface FileSignalOptions {
  * the provider's default routing).
  */
 export interface DeletedPathOptions {
-  collectionName?: string;
+  collectionName?: PhysicalCollectionName;
 }
 
 // --- Worker enrichment descriptor ---
@@ -501,7 +503,7 @@ export interface EnrichmentProvider {
    * a collection with no graph yet repairs everything, which is what a freshly
    * created versioned collection needs.
    */
-  readPersistedFileHashes?: (collectionName: string) => Promise<Map<string, string | null>>;
+  readPersistedFileHashes?: (collectionName: PhysicalCollectionName) => Promise<Map<string, string | null>>;
   /**
    * Every persisted per-file pass-1 aggregate slice this provider holds for
    * `collectionName` (bd tea-rags-mcp-weno4). Called on the MAIN-thread provider
@@ -513,7 +515,7 @@ export interface EnrichmentProvider {
    * pass-1 store omits it and the injection is simply absent, which is what git
    * does. A collection with no graph yet yields an empty list, not an error.
    */
-  readPersistedPass1Aggregates?: (collectionName: string) => Promise<CodegraphPass1FileAggregates[]>;
+  readPersistedPass1Aggregates?: (collectionName: PhysicalCollectionName) => Promise<CodegraphPass1FileAggregates[]>;
   /**
    * Narrow repo-relative `paths` to the ones this provider's per-file store can
    * ever hold a row for (bd tea-rags-mcp-65bkl). The write-side counterpart of
@@ -623,7 +625,7 @@ export interface EnrichmentProvider {
    * finalize reads them, and the call is made directly on the main-thread
    * instance (never dispatched through the worker executor), so it returns void.
    */
-  acceptExtraction?: (extraction: FileExtraction, options?: { collectionName?: string }) => void;
+  acceptExtraction?: (extraction: FileExtraction, options?: { collectionName?: PhysicalCollectionName }) => void;
   /**
    * yl9tv Task 5b — truncate the per-collection input spill + reset the
    * main-side dedup set at run start. Called by `coordinator.beginRun` on the
@@ -631,7 +633,7 @@ export interface EnrichmentProvider {
    * cross-pass (full index). Idempotent. Providers without an input spill (git)
    * omit this.
    */
-  beginExtractionRun?: (collectionName?: string) => void;
+  beginExtractionRun?: (collectionName?: PhysicalCollectionName) => void;
   /**
    * Cross-pass end-of-file-phase seam — mirror of `beginExtractionRun`. Called by
    * `CompletionRunner` on the MAIN-thread provider AFTER the file phase drains
@@ -645,7 +647,7 @@ export interface EnrichmentProvider {
    * the MAIN↔WORKER instance boundary. Providers without an input spill (git) omit
    * this.
    */
-  endExtractionRun?: (collectionName?: string) => Promise<void>;
+  endExtractionRun?: (collectionName?: PhysicalCollectionName) => Promise<void>;
   /**
    * Pass-1 fan-out, extraction half. Parse + walk `paths` and return the
    * records — nothing else. MUST be pure with respect to everything the

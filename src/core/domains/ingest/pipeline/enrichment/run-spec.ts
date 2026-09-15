@@ -11,6 +11,7 @@
 
 import type { Ignore } from "ignore";
 
+import type { PhysicalCollectionName } from "../../../../contracts/types/collection-identity.js";
 import type { EnrichmentRunCoverage } from "../../../../contracts/types/provider.js";
 
 /**
@@ -35,7 +36,7 @@ export interface EnrichmentRunSpec {
   /** Project root; each provider resolves its effective root from it. */
   readonly absolutePath: string;
   /** The collection the run writes: its markers, heartbeat and release key. */
-  readonly collection: string;
+  readonly collection: PhysicalCollectionName;
   readonly scope: EnrichmentRunScope;
   /** yl9tv Task 5b: the chunk pass feeds codegraph its extractions. */
   readonly crossPass: boolean;
@@ -60,7 +61,7 @@ export function runCoverageOf(scope: EnrichmentRunScope): EnrichmentRunCoverage 
 /** What every pipeline run knows before its subclass decides the rest. */
 export interface StreamedEnrichmentRunInput {
   absolutePath: string;
-  collection: string;
+  collection: PhysicalCollectionName;
   fileCount: number;
   ignoreFilter?: Ignore;
   contentHashes?: ReadonlyMap<string, string>;
@@ -79,7 +80,7 @@ export function reindexRunSpec(input: StreamedEnrichmentRunInput): EnrichmentRun
 /** `--force-enrichments`: every stored point of the selected languages is fed back through the run. */
 export function recomputeRunSpec(input: {
   absolutePath: string;
-  collection: string;
+  collection: PhysicalCollectionName;
   fileCount: number;
   onlyProviderKeys: readonly string[];
   languages: readonly string[];
@@ -89,6 +90,9 @@ export function recomputeRunSpec(input: {
 }
 
 /** A reindex whose only work was the repair pass: nothing streams, the run only closes. */
-export function finalizeOnlyRunSpec(input: { absolutePath: string; collection: string }): EnrichmentRunSpec {
+export function finalizeOnlyRunSpec(input: {
+  absolutePath: string;
+  collection: PhysicalCollectionName;
+}): EnrichmentRunSpec {
   return { ...input, crossPass: false, fileCount: 0, scope: { kind: "subset", languages: ALL_LANGUAGES } };
 }

@@ -20,6 +20,10 @@ import { existsSync, mkdirSync, readdirSync } from "node:fs";
 import { copyFile, unlink } from "node:fs/promises";
 import { dirname, join } from "node:path";
 
+import type { PhysicalCollectionName } from "../../contracts/types/collection-identity.js";
+import { physicalCollectionNamesListedByStorage } from "../../infra/collection-name.js";
+import { CodegraphShadowDatabaseRefusedError } from "./errors.js";
+
 /**
  * Sanitise the collection name to a filesystem-safe leaf. The Qdrant
  * collection names tea-rags uses today (`code_<hex>` + ad-hoc CLI names)
@@ -48,12 +52,36 @@ export class CodegraphDbFiles {
   }
 
   /** Resolve the disk path for a given collection name. */
-  pathFor(collectionName: string): string {
+  pathFor(collectionName: PhysicalCollectionName): string {
     return join(this.dir, `${sanitiseCollectionName(collectionName)}.duckdb`);
   }
 
+  /**
+   * The path of a database about to be opened read-write or copied onto —
+   * refusing to CREATE a shadow (bd tea-rags-mcp-39xca.1).
+   *
+   * A file that already exists is returned as is: the orphan sweep reclaims
+   * shadows through the pool, and an existing database is never the defect. A
+   * missing one is refused when `<name>_v<N>.duckdb` generations exist, because
+   * then `<name>` is an alias base and the write belongs to a generation. The
+   * evidence is the codegraph directory itself, so the rule holds identically in
+   * the daemon, a worker thread and the main process — none of which may be
+   * able to ask Qdrant. It cannot see an alias whose generations have no graph
+   * file yet; the `PhysicalCollectionName` brand is what covers that.
+   */
+  writablePathFor(collectionName: PhysicalCollectionName): string {
+    const dbPath = this.pathFor(collectionName);
+    if (existsSync(dbPath)) return dbPath;
+    const base = sanitiseCollectionName(collectionName);
+    const generations = this.listCollectionDbNames(collectionName).filter((name) => name !== base);
+    if (generations.length > 0) {
+      throw new CodegraphShadowDatabaseRefusedError({ collectionName, dbPath, generations });
+    }
+    return dbPath;
+  }
+
   /** Whether a graph database file exists for this collection. */
-  has(collectionName: string): boolean {
+  has(collectionName: PhysicalCollectionName): boolean {
     return existsSync(this.pathFor(collectionName));
   }
 
@@ -70,7 +98,7 @@ export class CodegraphDbFiles {
    * Scoped to `^<base>(_v\d+)?$` so it never touches another project's DBs or
    * WAL/spill sidecars. Empty when the codegraph dir is missing.
    */
-  listCollectionDbNames(baseCollectionName: string): string[] {
+  listCollectionDbNames(baseCollectionName: string): PhysicalCollectionName[] {
     const base = sanitiseCollectionName(baseCollectionName);
     const pattern = new RegExp(`^(${escapeRegExp(base)}(?:_v\\d+)?)\\.duckdb$`);
     let entries: string[];
@@ -85,7 +113,9 @@ export class CodegraphDbFiles {
       const match = entry.match(pattern);
       if (match) names.push(match[1]);
     }
-    return names;
+    // Read back from the directory the databases live in: each stem IS the
+    // name its generation was opened under.
+    return physicalCollectionNamesListedByStorage(names);
   }
 
   /**
@@ -101,10 +131,13 @@ export class CodegraphDbFiles {
    * log over a freshly copied database is worse than the truncation this copy
    * avoids.
    */
-  async cloneDatabase(sourceCollection: string, targetCollection: string): Promise<void> {
+  async cloneDatabase(
+    sourceCollection: PhysicalCollectionName,
+    targetCollection: PhysicalCollectionName,
+  ): Promise<void> {
     const from = this.pathFor(sourceCollection);
     if (!existsSync(from)) return;
-    const to = this.pathFor(targetCollection);
+    const to = this.writablePathFor(targetCollection);
     mkdirSync(dirname(to), { recursive: true });
     await copyFile(from, to);
     if (existsSync(`${from}.wal`)) await copyFile(`${from}.wal`, `${to}.wal`);
@@ -121,7 +154,7 @@ export class CodegraphDbFiles {
    * own cache eviction; callers without a pool are responsible for making sure
    * nothing in THIS process still holds the file.
    */
-  async removeFiles(collectionName: string): Promise<void> {
+  async removeFiles(collectionName: PhysicalCollectionName): Promise<void> {
     const dbPath = this.pathFor(collectionName);
     await unlink(dbPath).catch(() => undefined);
     await unlink(`${dbPath}.wal`).catch(() => undefined);
@@ -131,7 +164,7 @@ export class CodegraphDbFiles {
    * `CodegraphFootprintStore` shape: there is no client cache to evict, so the
    * "was a cached entry evicted" answer is always false.
    */
-  async removeCollection(collectionName: string): Promise<boolean> {
+  async removeCollection(collectionName: PhysicalCollectionName): Promise<boolean> {
     await this.removeFiles(collectionName);
     return false;
   }

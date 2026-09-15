@@ -4,8 +4,9 @@
 
 - **Which artifact keys on the alias and which on the versioned physical name is
   fixed, deliberate, and now DECLARED.** `ResolvedCollection` (`artifact.ts`)
-  carries both `logicalName` and `physicalName` and gives no hint which to use,
-  so every artifact states its side in `readonly addressing`
+  carries both `logicalName` and `physicalName`; the physical half is a
+  `PhysicalCollectionName`, so a per-generation store cannot be handed the
+  alias, and every artifact states its side in `readonly addressing`
   (`ArtifactAddressing`, `artifact.ts`). Qdrant points and the codegraph DuckDB
   file are `"physical"` (the versioned `_vN`, so one exists PER GENERATION); the
   file-hash snapshot, the stats cache, the quarantine store and the indexing

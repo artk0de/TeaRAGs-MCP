@@ -25,6 +25,7 @@ import type {
   GraphDbClient,
   GraphEdges,
 } from "../../../../contracts/types/codegraph.js";
+import type { PhysicalCollectionName } from "../../../../contracts/types/collection-identity.js";
 import { pageRank } from "../../../../infra/graph/page-rank.js";
 import { tarjanScc } from "../../../../infra/graph/tarjan-scc.js";
 import { isDebug } from "../../../../infra/runtime.js";
@@ -83,7 +84,7 @@ function snippet(line: string): string {
 
 /** Resolve the (graphDb, symbolTable) pair for the active collection. */
 export type GraphStoreResolver = (
-  collectionName?: string,
+  collectionName?: PhysicalCollectionName,
 ) => Promise<{ graphDb: GraphDbClient; symbolTable: GlobalSymbolTable }>;
 
 async function collectAdjacency(
@@ -147,7 +148,7 @@ export class GraphBuildFinalizer {
    * piece can do it here — before the first file, where it is a fixed cost —
    * rather than inferring the same fact from the first few hundred call sites.
    */
-  async resolveAndUpsert(spillPath: string, collectionName?: string): Promise<void> {
+  async resolveAndUpsert(spillPath: string, collectionName?: PhysicalCollectionName): Promise<void> {
     const { graphDb, symbolTable } = await this.resolveStore(collectionName);
     const preparedAtMs = Date.now();
     this.resolutionRunner.prepareResolvePass();
@@ -479,7 +480,7 @@ export class GraphBuildFinalizer {
    * the failing stage in its message — a debug log alone is not enough when the
    * failure happens silently mid-run.
    */
-  async recomputeMetrics(collectionName?: string): Promise<void> {
+  async recomputeMetrics(collectionName?: PhysicalCollectionName): Promise<void> {
     const startedAtMs = Date.now();
     try {
       await this.runMetricsRecompute(collectionName);
@@ -492,7 +493,7 @@ export class GraphBuildFinalizer {
   }
 
   /** The recompute itself; `recomputeMetrics` owns only its timing. */
-  private async runMetricsRecompute(collectionName?: string): Promise<void> {
+  private async runMetricsRecompute(collectionName?: PhysicalCollectionName): Promise<void> {
     const { graphDb } = await this.resolveStore(collectionName);
     // Daemon-routed write path: the daemon owns the RW connection and runs
     // the (potentially 30 GB) SCC + PageRank build itself, so the MCP client

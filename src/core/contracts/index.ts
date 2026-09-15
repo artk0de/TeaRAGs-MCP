@@ -13,6 +13,7 @@ export type * from "./types/enrichment.js";
 export type * from "./types/ingest-config.js";
 export type * from "./types/worktree.js";
 export type * from "./types/footprint.js";
+export type * from "./types/collection-identity.js";
 export type {
   FilterSpec,
   FilterPresetDef,

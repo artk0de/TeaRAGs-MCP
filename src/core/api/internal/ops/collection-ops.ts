@@ -6,6 +6,7 @@ import type { GraphDbClientPool } from "../../../adapters/duckdb/pool.js";
 import type { EmbeddingProvider } from "../../../adapters/embeddings/base.js";
 import type { QdrantManager } from "../../../adapters/qdrant/client.js";
 import type { EmbeddingModelGuard } from "../../../adapters/qdrant/embedding-model-guard.js";
+import { resolvePhysicalCollection } from "../../../infra/collection-name.js";
 import type { CollectionInfo, CreateCollectionRequest } from "../../public/dto/index.js";
 
 export class CollectionOps {
@@ -69,7 +70,10 @@ export class CollectionOps {
   async delete(name: string): Promise<void> {
     await this.qdrant.deleteCollection(name);
     if (this.codegraphPool) {
-      await this.codegraphPool.removeCollection(name);
+      // Qdrant deletes a concrete collection by name and never through an alias,
+      // so a name that got past that delete names a collection, not an alias —
+      // resolved against no aliases (bd tea-rags-mcp-39xca.1).
+      await this.codegraphPool.removeCollection(resolvePhysicalCollection(name, []));
     }
   }
 }

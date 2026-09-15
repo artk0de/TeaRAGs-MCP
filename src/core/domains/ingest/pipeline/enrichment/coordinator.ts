@@ -19,6 +19,7 @@ import type { QdrantManager } from "../../../../adapters/qdrant/client.js";
 import { servicePointExclusions } from "../../../../adapters/qdrant/service-points.js";
 import { selectProviderKeys } from "../../../../contracts/provider-selector.js";
 import type { FileExtraction } from "../../../../contracts/types/codegraph.js";
+import type { PhysicalCollectionName } from "../../../../contracts/types/collection-identity.js";
 import type {
   EnrichmentExecutor,
   EnrichmentRunHandle,
@@ -327,7 +328,7 @@ export class EnrichmentCoordinator {
    * when small, never less precise.
    */
   async runRepairPass(
-    collectionName: string,
+    collectionName: PhysicalCollectionName,
     root: string,
     scanned: ReadonlyMap<string, string>,
     /**
@@ -415,7 +416,7 @@ export class EnrichmentCoordinator {
    */
   async runFinalizeOnly(
     absolutePath: string,
-    collectionName: string,
+    collectionName: PhysicalCollectionName,
     /**
      * Chunks pre-reindex recovery handed to this run, already narrowed by
      * `narrowDeferredChunkHandoff`, so their files are ones the repair walked
@@ -497,7 +498,7 @@ export class EnrichmentCoordinator {
    * Called by the sync layer BEFORE `qdrant.deletePoints`: orphan graph edges are
    * silent corruption, orphan Qdrant points only clutter.
    */
-  async notifyDeletions(paths: string[], collectionName?: string): Promise<void> {
+  async notifyDeletions(paths: string[], collectionName?: PhysicalCollectionName): Promise<void> {
     if (paths.length === 0) return;
     await Promise.all(
       this.providers.map(async (provider) => {
@@ -527,7 +528,10 @@ export class EnrichmentCoordinator {
    * tea-rags-mcp-fxio5). Undefined when recovery was not provided at
    * construction time.
    */
-  async runRecovery(collectionName: string, absolutePath: string): Promise<DeferredChunkRecoveryHandoff | undefined> {
+  async runRecovery(
+    collectionName: PhysicalCollectionName,
+    absolutePath: string,
+  ): Promise<DeferredChunkRecoveryHandoff | undefined> {
     if (!this.recovery) return undefined;
     // Recovery needs its OWN keep-alive: it runs before `beginRun`, and its
     // batches reach the codegraph daemon through a connect-only worker that
@@ -564,7 +568,7 @@ export class EnrichmentCoordinator {
    * the last line.
    */
   async recomputeEnrichments(
-    collectionName: string,
+    collectionName: PhysicalCollectionName,
     absolutePath: string,
     selectors: readonly string[],
     /**
@@ -1015,7 +1019,7 @@ export class EnrichmentCoordinator {
    * (bd tea-rags-mcp-62pgi). An index operation holds its collection until this
    * settles for the collection it wrote.
    */
-  async whenCompletionsSettled(collectionName: string): Promise<void> {
+  async whenCompletionsSettled(collectionName: PhysicalCollectionName): Promise<void> {
     const inFlight = this.inFlightCompletionsByCollection.get(collectionName);
     if (inFlight) await Promise.all([...inFlight]);
   }
@@ -1033,7 +1037,7 @@ export class EnrichmentCoordinator {
   }
 
   /** The completion sequence proper for `run`, ending with the executor and daemon releases. */
-  private async completeRun(run: RunState, collectionName: string): Promise<EnrichmentMetrics> {
+  private async completeRun(run: RunState, collectionName: PhysicalCollectionName): Promise<EnrichmentMetrics> {
     // Block until the run's `_run` pointer has persisted, so the terminal
     // writes (which carry this run's runId) land against a present run-pointer
     // and the health mapper's runId comparison is meaningful.

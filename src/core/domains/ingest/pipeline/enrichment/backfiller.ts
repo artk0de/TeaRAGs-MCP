@@ -14,6 +14,7 @@
  */
 
 import type { QdrantManager } from "../../../../adapters/qdrant/client.js";
+import type { PhysicalCollectionName } from "../../../../contracts/types/collection-identity.js";
 import type { EnrichmentExecutor } from "../../../../contracts/types/enrichment-executor.js";
 import type { ChunkSignalOverlay, FileSignalOverlay } from "../../../../contracts/types/provider.js";
 import type { ChunkLookupEntry } from "../../../../types.js";
@@ -32,7 +33,7 @@ export class EnrichmentBackfiller {
     private readonly executor: EnrichmentExecutor,
   ) {}
 
-  async runFor(coll: string, ctx: ProviderContext, runStartedAt: string): Promise<void> {
+  async runFor(coll: PhysicalCollectionName, ctx: ProviderContext, runStartedAt: string): Promise<void> {
     const missed = this.applier.getMissedFileChunks();
     if (missed.size === 0) return;
     if (!ctx.effectiveRoot) return;
@@ -112,7 +113,7 @@ export class EnrichmentBackfiller {
   }
 
   private async backfillChunkSignals(
-    coll: string,
+    coll: PhysicalCollectionName,
     ctx: ProviderContext,
     backfillData: Map<string, FileSignalOverlay>,
     runStartedAt: string,
