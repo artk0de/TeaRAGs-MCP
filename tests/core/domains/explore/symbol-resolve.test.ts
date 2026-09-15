@@ -644,6 +644,210 @@ describe("resolveSymbols", () => {
     });
   });
 
+  describe("doc section stitched by text-level overlap at window seams", () => {
+    // Real payloads from the tea-rags self-index (search-cascade.md at
+    // 7064ff6bb): every window of find_symbol(symbol: "doc:447d443a09c8"),
+    // chunkIndex 4..10. The character fallback overlaps windows by whole lines
+    // and trims each window, so window 10 opens with "methods on them still use
+    // …" while the text before it carries that line with its two-space
+    // list-continuation indent — a whole-line comparison finds no overlap there.
+    const sectionId = "doc:447d443a09c8";
+    const docPath = ".claude-plugin/tea-rags/rules/search-cascade.md";
+    const sectionName = "After-Search Navigation (READ BEFORE FINISHING ANY SEARCH)";
+    const breadcrumb = "# Search Cascade";
+    const liveWindow = (
+      id: string,
+      chunkIndex: number,
+      startLine: number,
+      endLine: number,
+      name: string,
+      content: string,
+    ) => ({
+      id,
+      payload: {
+        symbolId: sectionId,
+        parentSymbolId: docPath,
+        relativePath: docPath,
+        chunkType: "block",
+        isDocumentation: true,
+        language: "markdown",
+        fileExtension: ".md",
+        headingPath: [
+          { depth: 1, text: "Search Cascade" },
+          { depth: 2, text: sectionName },
+        ],
+        name,
+        chunkIndex,
+        startLine,
+        endLine,
+        content,
+      },
+    });
+    const liveWindows = [
+      liveWindow(
+        "1c498713-9732-93cc-2125-8a55c6ee1af1",
+        4,
+        92,
+        107,
+        `${sectionName} (part 1/2)`,
+        "# Search Cascade\n# Search Cascade\n## After-Search Navigation (READ BEFORE FINISHING ANY SEARCH)\n\n**First search rarely returns a complete answer.** A chunk shows where the\nsymbol lives — not the whole picture. Before synthesizing from a single chunk,\nask: _need full body / file structure / a neighbor / doc sections?_ If yes —\nnext call is `find_symbol`, NOT another search, NOT `Read`. `find_symbol` is\ninstant (no embedding), returns merged definitions, file outlines, or doc TOCs\nfrom the same index.\n\n| After search returns…                       | If you need…                            | Next call                                                                                                                                 |\n| ------------------------------------------- | --------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------- |\n| Chunk with method body truncated            | Full method body                        | `find_symbol(symbol: result.symbolId)`                                                                                                    |\n| Chunk whose `symbolId` ends in `#partN`     | The whole oversized symbol, reassembled | `find_symbol(symbol: result.parentSymbolId)` — collapses every `#partN` + base window into one (do NOT treat one part as the full symbol) |\n| Chunk from one file                         | File structure / other methods in file  | `find_symbol(relativePath: result.relativePath)` → synthetic outline                                                                      |\n| Chunk with `navigation.{prev,next}SymbolId` | The neighbor method                     | `find_symbol(symbol: navigation.prevSymbolId or nextSymbolId)`                                                                            |",
+      ),
+      liveWindow(
+        "6f86bf3c-6b16-d1f7-d8e6-3862698a8f3c",
+        5,
+        107,
+        108,
+        `${sectionName} (part 2/2)`,
+        '| Chunk that calls a helper / class           | The helper / class definition           | `find_symbol(symbol: "HelperClass#method")` — symbol is in chunk text                                                                     |',
+      ),
+      liveWindow(
+        "11597208-1af0-b7b8-4b06-6b91141ba881",
+        6,
+        106,
+        114,
+        `${sectionName} (part 1/2)`,
+        '# Search Cascade\n| Chunk from one file                         | File structure / other methods in file  | `find_symbol(relativePath: result.relativePath)` → synthetic outline                                                                      |\n| Chunk with `navigation.{prev,next}SymbolId` | The neighbor method                     | `find_symbol(symbol: navigation.prevSymbolId or nextSymbolId)`                                                                            |\n| Chunk that calls a helper / class           | The helper / class definition           | `find_symbol(symbol: "HelperClass#method")` — symbol is in chunk text                                                                     |\n| Chunk from a `.md` doc                      | All sections of that doc (TOC)          | `find_symbol(relativePath: result.relativePath)` — heading TOC; doc `parentSymbolId` = doc path, NOT a hash                               |\n| Just a doc path (no search yet)             | Table of contents of that doc           | `find_symbol(relativePath: "docs/file.md")` — heading TOC with hashes                                                                     |\n| Class chunk (constructor or one method)     | All methods / public API of the class   | `find_symbol(symbol: "ClassName")` → OUTLINE: member ids, NO bodies, tests excluded → drill member                                        |\n| Outline / TOC in hand (class, file, doc)    | One member / section                    | `find_symbol(symbol: <id from that line, verbatim>)` — every outline line = address. NOT `Read`, NOT grep                                 |\n| Result saved to file (too large)            | Anything inside it                      | NEVER grep / `Read` the dump — ids from preview → `find_symbol(symbol: <id>)`; no id → `find_symbol(relativePath:)` outline first         |',
+      ),
+      liveWindow(
+        "fb3fa931-4cee-8ca6-24c5-146b8217f0f9",
+        7,
+        114,
+        115,
+        `${sectionName} (part 2/2)`,
+        '| Class name, need its tests                  | Specs / test scopes of that class       | `hybrid_search(query: "ClassName", testFile: "only")` — class outline carries no tests                                                    |',
+      ),
+      liveWindow(
+        "a282d1af-9898-d8a9-6073-7d682f6c08d7",
+        8,
+        113,
+        136,
+        `${sectionName} (part 1/2)`,
+        '# Search Cascade\n| Result saved to file (too large)            | Anything inside it                      | NEVER grep / `Read` the dump — ids from preview → `find_symbol(symbol: <id>)`; no id → `find_symbol(relativePath:)` outline first         |\n| Class name, need its tests                  | Specs / test scopes of that class       | `hybrid_search(query: "ClassName", testFile: "only")` — class outline carries no tests                                                    |\n| Chunk from production src + diff context    | Tests describing affected scenarios     | `Skill(tea-rags:tests-as-context)` recipe `tests-at-risk`                                                                                 |\n| Describe-it scope name from a stacktrace    | Leaf scope chunk with inherited setup   | `find_symbol(symbol: "<Top>.<scope>")` — leaf scope chunk (split scope parts share that id, merged)                                       |\n\n`find_symbol` accepts a `rerank` preset for single-call diagnostic (definition +\nrankingOverlay in one call). `offset` pagination works on every search tool;\nwhen a page is exhausted, retry with `offset: N` instead of inflating `limit`.\n\n**symbolId conventions (LANGUAGE-AGNOSTIC — same `#`/`.` rule for every\nlanguage; input contract for `find_symbol(symbol:)`):**\n\n- Code instance methods: `Class#method` (e.g., `Reranker#rerank`) — bound to\n  `this`/`self`. Constructors are instance-bound too (`Class#constructor`).\n- Code static / class / classmethod / associated methods: `Class.method` (e.g.,\n  `Reranker.create`)\n- Top-level functions: `functionName` (no class prefix)\n- Namespace separators are NOT a method hint: Ruby/Rust `::` (`Acme::User`) and\n  TS/JS/Python nested-class `.` (`Outer.Nested`) only scope the container —\n  methods on them still use `#`/`.` (`Acme::User#save`).\n- Doc chunks: opaque hash `doc:a3f8b2c1e4d7` — do NOT guess, take from results\n\nThe `#`/`.` separator is **load-bearing for `find_symbol` EXACT lookup only**:',
+      ),
+      liveWindow(
+        "09c39345-0efe-0f8e-1004-26b36b2ad89e",
+        9,
+        136,
+        137,
+        `${sectionName} (part 2/2)`,
+        '`find_symbol(symbol: "Class.method")` for an instance method returns EMPTY (may',
+      ),
+      liveWindow(
+        "1dc89a5e-374b-12c5-840a-b533e2ebfa44",
+        10,
+        132,
+        144,
+        sectionName,
+        '# Search Cascade\nmethods on them still use `#`/`.` (`Acme::User#save`).\n- Doc chunks: opaque hash `doc:a3f8b2c1e4d7` — do NOT guess, take from results\n\nThe `#`/`.` separator is **load-bearing for `find_symbol` EXACT lookup only**:\n`find_symbol(symbol: "Class.method")` for an instance method returns EMPTY (may\nsurface spurious drift warning) — empty result = WRONG-SEPARATOR signal, not a\nstale index. Irrelevant for `hybrid_search`\'s `symbolId` (partial substring\nmatch — pass a bare name). When unsure instance vs static, pass a **partial\nmatch** to `find_symbol` (`Class` alone, or bare `method`) and read the real\nseparator off `result.symbolId`; never downgrade an empty `find_symbol` to\nripgrep. Producer-side source of truth (how separator chosen per language at\nindex time): `.claude/rules/symbolid-convention.md` (`INSTANCE_METHOD_SEPARATOR`\nin `infra/symbolid/classify.ts`).',
+      ),
+    ];
+    // Ground truth: search-cascade.md lines 92-143 at 7064ff6bb, from the
+    // section heading through its last line. The range has no fenced code block
+    // and no trailing whitespace, so it is compared byte for byte.
+    const sourceSection =
+      '## After-Search Navigation (READ BEFORE FINISHING ANY SEARCH)\n\n**First search rarely returns a complete answer.** A chunk shows where the\nsymbol lives — not the whole picture. Before synthesizing from a single chunk,\nask: _need full body / file structure / a neighbor / doc sections?_ If yes —\nnext call is `find_symbol`, NOT another search, NOT `Read`. `find_symbol` is\ninstant (no embedding), returns merged definitions, file outlines, or doc TOCs\nfrom the same index.\n\n| After search returns…                       | If you need…                            | Next call                                                                                                                                 |\n| ------------------------------------------- | --------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------- |\n| Chunk with method body truncated            | Full method body                        | `find_symbol(symbol: result.symbolId)`                                                                                                    |\n| Chunk whose `symbolId` ends in `#partN`     | The whole oversized symbol, reassembled | `find_symbol(symbol: result.parentSymbolId)` — collapses every `#partN` + base window into one (do NOT treat one part as the full symbol) |\n| Chunk from one file                         | File structure / other methods in file  | `find_symbol(relativePath: result.relativePath)` → synthetic outline                                                                      |\n| Chunk with `navigation.{prev,next}SymbolId` | The neighbor method                     | `find_symbol(symbol: navigation.prevSymbolId or nextSymbolId)`                                                                            |\n| Chunk that calls a helper / class           | The helper / class definition           | `find_symbol(symbol: "HelperClass#method")` — symbol is in chunk text                                                                     |\n| Chunk from a `.md` doc                      | All sections of that doc (TOC)          | `find_symbol(relativePath: result.relativePath)` — heading TOC; doc `parentSymbolId` = doc path, NOT a hash                               |\n| Just a doc path (no search yet)             | Table of contents of that doc           | `find_symbol(relativePath: "docs/file.md")` — heading TOC with hashes                                                                     |\n| Class chunk (constructor or one method)     | All methods / public API of the class   | `find_symbol(symbol: "ClassName")` → OUTLINE: member ids, NO bodies, tests excluded → drill member                                        |\n| Outline / TOC in hand (class, file, doc)    | One member / section                    | `find_symbol(symbol: <id from that line, verbatim>)` — every outline line = address. NOT `Read`, NOT grep                                 |\n| Result saved to file (too large)            | Anything inside it                      | NEVER grep / `Read` the dump — ids from preview → `find_symbol(symbol: <id>)`; no id → `find_symbol(relativePath:)` outline first         |\n| Class name, need its tests                  | Specs / test scopes of that class       | `hybrid_search(query: "ClassName", testFile: "only")` — class outline carries no tests                                                    |\n| Chunk from production src + diff context    | Tests describing affected scenarios     | `Skill(tea-rags:tests-as-context)` recipe `tests-at-risk`                                                                                 |\n| Describe-it scope name from a stacktrace    | Leaf scope chunk with inherited setup   | `find_symbol(symbol: "<Top>.<scope>")` — leaf scope chunk (split scope parts share that id, merged)                                       |\n\n`find_symbol` accepts a `rerank` preset for single-call diagnostic (definition +\nrankingOverlay in one call). `offset` pagination works on every search tool;\nwhen a page is exhausted, retry with `offset: N` instead of inflating `limit`.\n\n**symbolId conventions (LANGUAGE-AGNOSTIC — same `#`/`.` rule for every\nlanguage; input contract for `find_symbol(symbol:)`):**\n\n- Code instance methods: `Class#method` (e.g., `Reranker#rerank`) — bound to\n  `this`/`self`. Constructors are instance-bound too (`Class#constructor`).\n- Code static / class / classmethod / associated methods: `Class.method` (e.g.,\n  `Reranker.create`)\n- Top-level functions: `functionName` (no class prefix)\n- Namespace separators are NOT a method hint: Ruby/Rust `::` (`Acme::User`) and\n  TS/JS/Python nested-class `.` (`Outer.Nested`) only scope the container —\n  methods on them still use `#`/`.` (`Acme::User#save`).\n- Doc chunks: opaque hash `doc:a3f8b2c1e4d7` — do NOT guess, take from results\n\nThe `#`/`.` separator is **load-bearing for `find_symbol` EXACT lookup only**:\n`find_symbol(symbol: "Class.method")` for an instance method returns EMPTY (may\nsurface spurious drift warning) — empty result = WRONG-SEPARATOR signal, not a\nstale index. Irrelevant for `hybrid_search`\'s `symbolId` (partial substring\nmatch — pass a bare name). When unsure instance vs static, pass a **partial\nmatch** to `find_symbol` (`Class` alone, or bare `method`) and read the real\nseparator off `result.symbolId`; never downgrade an empty `find_symbol` to\nripgrep. Producer-side source of truth (how separator chosen per language at\nindex time): `.claude/rules/symbolid-convention.md` (`INSTANCE_METHOD_SEPARATOR`\nin `infra/symbolid/classify.ts`).';
+
+    const mergedContent = (windows: ReturnType<typeof liveWindow>[], symbol: string) => {
+      const results = resolveSymbols(windows, symbol);
+      expect(results).toHaveLength(1);
+      return results[0].payload?.content as string;
+    };
+
+    it("reassembles the live section exactly as the source file holds it, breadcrumb once on top", () => {
+      expect(mergedContent(liveWindows, sectionId)).toBe(`${breadcrumb}\n${sourceSection}`);
+    });
+
+    it("emits each line at the trimmed-continuation seam exactly once", () => {
+      const content = mergedContent(liveWindows, sectionId);
+      const seam = [
+        "  methods on them still use `#`/`.` (`Acme::User#save`).",
+        "- Doc chunks: opaque hash `doc:a3f8b2c1e4d7` — do NOT guess, take from results",
+        "",
+        "The `#`/`.` separator is **load-bearing for `find_symbol` EXACT lookup only**:",
+      ].join("\n");
+
+      expect(content.split(seam)).toHaveLength(2);
+      expect(
+        content.split("\n").filter((line) => line.trim() === "methods on them still use `#`/`.` (`Acme::User#save`)."),
+      ).toHaveLength(1);
+    });
+
+    // Synthetic windows of one section: breadcrumb "# Guide", heading "## Setup".
+    const guideId = "doc:0123456789ab";
+    const guideWindow = (id: string, startLine: number, content: string) => ({
+      id,
+      payload: {
+        symbolId: guideId,
+        parentSymbolId: "docs/guide.md",
+        relativePath: "docs/guide.md",
+        chunkType: "block",
+        isDocumentation: true,
+        language: "markdown",
+        headingPath: [
+          { depth: 1, text: "Guide" },
+          { depth: 2, text: "Setup" },
+        ],
+        name: "Setup",
+        chunkIndex: startLine,
+        startLine,
+        endLine: startLine + 2,
+        content,
+      },
+    });
+
+    it("joins a window cut at a character offset on its overlap, without repeating or dropping text", () => {
+      const windows = [
+        guideWindow(
+          "g1",
+          1,
+          "# Guide\n## Setup\nInstall the daemon first, then point the client at the socket path it prints",
+        ),
+        guideWindow(
+          "g2",
+          2,
+          "# Guide\noint the client at the socket path it prints on startup.\nRestart the client after every upgrade.",
+        ),
+      ];
+
+      expect(mergedContent(windows, guideId)).toBe(
+        "# Guide\n## Setup\nInstall the daemon first, then point the client at the socket path it prints on startup.\nRestart the client after every upgrade.",
+      );
+    });
+
+    it("joins a whole-line overlap shorter than the mid-line minimum, such as a trailing heading", () => {
+      const windows = [
+        guideWindow("g1", 1, "# Guide\n## Setup\nConfigure the socket path before the first run.\n### Notes"),
+        guideWindow("g2", 2, "# Guide\n### Notes\nLogs rotate daily."),
+      ];
+
+      expect(mergedContent(windows, guideId)).toBe(
+        "# Guide\n## Setup\nConfigure the socket path before the first run.\n### Notes\nLogs rotate daily.",
+      );
+    });
+
+    it("does not take a short coincidental match between adjacent windows for an overlap", () => {
+      const windows = [
+        guideWindow("g1", 1, "# Guide\n## Setup\n| key | value |\n| --- | ----- |\n| retries | 3 |"),
+        guideWindow("g2", 2, "| timeout | 30 |"),
+      ];
+
+      expect(mergedContent(windows, guideId)).toBe(
+        "# Guide\n## Setup\n| key | value |\n| --- | ----- |\n| retries | 3 |\n| timeout | 30 |",
+      );
+    });
+
+    it("keeps a short window whose text appears earlier only inside a longer line", () => {
+      const windows = [
+        guideWindow("g1", 1, "# Guide\n## Setup\nIf unsure, keep the defaults.\nProxies need a custom port."),
+        guideWindow("g2", 2, "keep the defaults."),
+      ];
+
+      expect(mergedContent(windows, guideId)).toBe(
+        "# Guide\n## Setup\nIf unsure, keep the defaults.\nProxies need a custom port.\nkeep the defaults.",
+      );
+    });
+  });
+
   describe("doc TOC only for a document-path query (I2)", () => {
     const sections = [
       {
