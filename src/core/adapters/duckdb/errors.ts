@@ -78,6 +78,58 @@ export class CodegraphDaemonStaleBuildError extends InfraError {
 }
 
 /**
+ * The codegraph daemon cannot serve an op this client may need, and nothing
+ * here can replace it (bd tea-rags-mcp-39xca.4).
+ *
+ * Thrown in two places. At connect, by a pool WITHOUT a respawn hook (worker
+ * threads rebuild their pool from serializable config and cannot cold-spawn a
+ * daemon): it used to proceed against a daemon from another build, and every
+ * op that daemon lacked came back as an empty answer — wrong data, not a
+ * failure (the weno4 hydration no-op). The main-thread pool wires the hook and
+ * replaces such a daemon instead. At call time, by the client, for an op
+ * outside `LEGACY_TOLERATED_OPS` that the daemon still answers as unknown.
+ *
+ * `missingOps` is empty when the daemon predates capability advertisement and
+ * reports a different build: there is nothing to name, and no evidence it is
+ * safe to proceed.
+ */
+export class CodegraphDaemonBuildSkewError extends InfraError {
+  readonly missingOps: readonly string[];
+
+  constructor(
+    skew: {
+      socketPath: string;
+      missingOps: readonly string[];
+      clientFingerprint?: string;
+      daemonFingerprint?: string;
+    },
+    cause?: Error,
+  ) {
+    const builds =
+      skew.daemonFingerprint === undefined && skew.clientFingerprint === undefined
+        ? ""
+        : ` (daemon=${skew.daemonFingerprint ?? "unknown"}, client=${skew.clientFingerprint ?? "unknown"})`;
+    super({
+      code: "INFRA_CODEGRAPH_DAEMON_BUILD_SKEW",
+      message:
+        skew.missingOps.length > 0
+          ? `Codegraph daemon at ${skew.socketPath} runs an older build without ` +
+            `op${skew.missingOps.length === 1 ? "" : "s"} ${skew.missingOps.join(", ")}${builds}`
+          : `Codegraph daemon at ${skew.socketPath} runs another build that predates ` +
+            `capability advertisement${builds}`,
+      hint:
+        "Proceeding would turn every op the daemon lacks into missing graph data. Restart the " +
+        "codegraph daemon from the current build: reconnect the tea-rags MCP server or re-run " +
+        "the index from the CLI — the main process drains and respawns a stale daemon — or stop " +
+        "it via the pid file next to the socket. Then retry.",
+      httpStatus: 503,
+      cause,
+    });
+    this.missingOps = skew.missingOps;
+  }
+}
+
+/**
  * The stale codegraph daemon acknowledged the graceful `shutdown` request but
  * did not exit within the wait window — its lifecycle files never cleared and
  * its pid stayed alive (bd tea-rags-mcp-ji56r). The daemon's own teardown is

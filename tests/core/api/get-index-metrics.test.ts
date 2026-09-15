@@ -3,7 +3,7 @@ import { describe, expect, it, vi } from "vitest";
 import { ExploreFacade } from "../../../src/core/api/internal/facades/explore-facade.js";
 
 describe("getIndexMetrics", () => {
-  function makeExploreFacade(extraDeps: { activeEnrichmentProviders?: readonly string[] } = {}) {
+  function makeExploreFacade(extraDeps: { enrichmentHealthFrameForPath?: (path: string) => readonly string[] } = {}) {
     const qdrant = {
       collectionExists: vi.fn().mockResolvedValue(true),
       getCollectionInfo: vi.fn().mockResolvedValue({ pointsCount: 100 }),
@@ -367,8 +367,10 @@ describe("getIndexMetrics", () => {
       },
     };
 
-    it("carries deps.activeEnrichmentProviders down to the enrichment health map", async () => {
-      const { facade, qdrant } = makeExploreFacade({ activeEnrichmentProviders: ["git", "codegraph.symbols"] });
+    it("carries deps.enrichmentHealthFrameForPath down to the enrichment health map", async () => {
+      const { facade, qdrant } = makeExploreFacade({
+        enrichmentHealthFrameForPath: () => ["git", "codegraph.symbols"],
+      });
       qdrant.getPoint.mockResolvedValue({ payload: { enrichment: forcedCodegraphRun } });
 
       const result = await facade.getIndexMetrics("/project");

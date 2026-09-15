@@ -13,6 +13,7 @@ import { join } from "node:path";
 
 import type { GraphDbClientPool } from "../../../adapters/duckdb/pool.js";
 import type { QdrantManager } from "../../../adapters/qdrant/client.js";
+import { SchemaMetadataPointStore } from "../../../adapters/qdrant/schema-metadata-point.js";
 import { INDEXING_METADATA_ID } from "../../../contracts/constants.js";
 import type { EdgeKindCount, MethodEdgeKind, ResolveRunStatsRow } from "../../../contracts/types/codegraph.js";
 import type { PathCollectionResolver } from "../../../contracts/types/registry.js";
@@ -518,9 +519,8 @@ export class StatusModule {
       ? mapMarkerToHealth(marker.enrichment, this.activeEnrichmentProviders)
       : undefined;
 
-    const schemaMetadata = await this.qdrant.getPoint(sourceCollection, "__schema_metadata__").catch(() => null);
-    const sparseVersion =
-      typeof schemaMetadata?.payload?.sparseVersion === "number" ? schemaMetadata.payload.sparseVersion : undefined;
+    const schemaMetadata = await new SchemaMetadataPointStore(this.qdrant).read(sourceCollection).catch(() => null);
+    const sparseVersion = typeof schemaMetadata?.sparseVersion === "number" ? schemaMetadata.sparseVersion : undefined;
 
     if (marker && !marker.indexingComplete) {
       // Detect stale indexing: prefer lastHeartbeat (updated periodically by live pipeline),

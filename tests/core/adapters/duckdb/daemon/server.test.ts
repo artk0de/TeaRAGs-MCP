@@ -5,6 +5,7 @@ import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 
 import { getBuildFingerprint } from "../../../../../src/core/adapters/duckdb/daemon/build-fingerprint.js";
+import { DAEMON_OP_COMMANDS } from "../../../../../src/core/adapters/duckdb/daemon/op-commands.js";
 import { CodegraphDaemonServer } from "../../../../../src/core/adapters/duckdb/daemon/server.js";
 import { GraphDbClientPool } from "../../../../../src/core/adapters/duckdb/pool.js";
 import { createDatabaseMigrationApplier } from "../../../../../src/core/domains/maintenance/migration/database/index.js";
@@ -31,7 +32,10 @@ describe("CodegraphDaemonServer.handle — handshake build fingerprint (bd tea-r
     const c = "code_fp_match_v1";
     const res = await server.handle({ id: 1, op: "handshake", params: { collection: c, buildFingerprint: "fp-same" } });
     expect(res.ok).toBe(true);
-    expect((res as { result: unknown }).result).toEqual({ buildFingerprint: "fp-same" });
+    expect((res as { result: unknown }).result).toEqual({
+      buildFingerprint: "fp-same",
+      supportedOps: Object.keys(DAEMON_OP_COMMANDS),
+    });
     // Matching fingerprints → the daemon opened + migrated the collection DB.
     expect(existsSync(pool.pathFor(c))).toBe(true);
     await pool.closeAll();
@@ -42,7 +46,10 @@ describe("CodegraphDaemonServer.handle — handshake build fingerprint (bd tea-r
     const c = "code_fp_legacy_v1";
     const res = await server.handle({ id: 1, op: "handshake", params: { collection: c } });
     expect(res.ok).toBe(true);
-    expect((res as { result: unknown }).result).toEqual({ buildFingerprint: "fp-own" });
+    expect((res as { result: unknown }).result).toEqual({
+      buildFingerprint: "fp-own",
+      supportedOps: Object.keys(DAEMON_OP_COMMANDS),
+    });
     expect(existsSync(pool.pathFor(c))).toBe(true);
     await pool.closeAll();
   });
@@ -53,7 +60,10 @@ describe("CodegraphDaemonServer.handle — handshake build fingerprint (bd tea-r
     const res = await server.handle({ id: 1, op: "handshake", params: { collection: c, buildFingerprint: "fp-new" } });
     // Still ok — the daemon reports its fingerprint so the CLIENT decides to restart it.
     expect(res.ok).toBe(true);
-    expect((res as { result: unknown }).result).toEqual({ buildFingerprint: "fp-old" });
+    expect((res as { result: unknown }).result).toEqual({
+      buildFingerprint: "fp-old",
+      supportedOps: Object.keys(DAEMON_OP_COMMANDS),
+    });
     // The stale daemon must NOT have opened/migrated the DB for this collection.
     expect(existsSync(pool.pathFor(c))).toBe(false);
     await pool.closeAll();

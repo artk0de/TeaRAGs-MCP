@@ -48,6 +48,7 @@ const CHANNEL_DESTINATION = {
   classFieldTypesByClassKey: "classFieldTypesByClassKey",
   classFieldCallResults: "classFieldCallResults",
   moduleReexports: "moduleReexports",
+  runScope: "runScope",
 } as const satisfies Record<keyof ResolverInputs, keyof CallContext>;
 
 const CLASS_KEY = "src/pkg/svc.py::Svc";
@@ -134,7 +135,7 @@ describe("CallEdgeResolutionRunner run-global channel threading", () => {
   const channels = Object.entries(CHANNEL_DESTINATION) as [keyof ResolverInputs, keyof CallContext][];
 
   it("enumerates every ResolverInputs channel, so a new one cannot be skipped", () => {
-    expect(channels).toHaveLength(12);
+    expect(channels).toHaveLength(13);
   });
 
   it.each(channels)("threads %s into the call-site CallContext as %s", (_input, destination) => {

@@ -30,6 +30,7 @@ import type {
   KnownTargetCallArgs,
   ModuleReexport,
   RelPath,
+  ResolveRunScope,
   ResolveRunStatsRow,
   SymbolDefinition,
 } from "../../../../contracts/types/codegraph.js";
@@ -50,6 +51,11 @@ import {
 import { buildHierarchySnapshot, normalizeInheritanceEdges } from "./inheritance-edges.js";
 import { selectHydratablePass1Aggregates } from "./pass1-aggregates.js";
 import { RECEIVER_KINDS, type ReceiverKind } from "./receiver-kind.js";
+import {
+  HYDRATED_RUN_GLOBAL_MAPS,
+  type HydratedRunGlobalMapField,
+  type Pass1AggregateSlice,
+} from "./run-global-map-registry.js";
 import { collectSchemaColumnModels, synthesizeSchemaColumnDefs } from "./schema-column-synthesis.js";
 import {
   buildSelfDispatchProbe,
@@ -311,6 +317,14 @@ const RUN_GLOBAL_MAP_NAMES: readonly RunGlobalMapName[] = [
   "ivarTypes",
   "structuredReturnTypes",
 ];
+
+let lastResolveRunSeq = 0;
+
+/** A fresh {@link ResolveRunScope}; see `CodegraphRunState#runScope`. */
+function mintResolveRunScope(): ResolveRunScope {
+  lastResolveRunSeq += 1;
+  return Object.freeze({ runSeq: lastResolveRunSeq });
+}
 
 export class CodegraphRunState {
   /**
@@ -723,6 +737,118 @@ export class CodegraphRunState {
     structuredReturnTypes: false,
   };
 
+  private currentRunScope: ResolveRunScope = mintResolveRunScope();
+
+  /**
+   * The identity of the resolve run in progress (bd tea-rags-mcp-39xca.6),
+   * handed to every `CallContext` through `ResolverInputs`. Minted afresh at the
+   * pass-1→pass-2 barrier and at every reset seam, so a resolver memo keyed on
+   * it cannot serve an earlier pass's answer — whatever the pooled symbol table,
+   * or a channel written into in place, still looks like.
+   */
+  get runScope(): ResolveRunScope {
+    return this.currentRunScope;
+  }
+
+  private beginRunScope(): void {
+    this.currentRunScope = mintResolveRunScope();
+  }
+
+  /**
+   * How one persisted pass-1 slice folds into each HYDRATED map (bd
+   * tea-rags-mcp-39xca.6). Keyed by `HydratedRunGlobalMapField`, derived from
+   * `RUN_GLOBAL_MAP_PERSISTENCE`: declaring a map `hydrate` fails the type check
+   * until it has an entry here, and flipping one to `batchOnly` fails it until
+   * the entry goes. Every entry reads its map through `this` at call time,
+   * because the reset seams REASSIGN the maps.
+   *
+   * Every entry is batch-wins — a coordinate this run already walked is a FRESH
+   * fact and outranks the persisted one, which still describes the file's
+   * previous content.
+   */
+  private readonly pass1Hydrators: {
+    readonly [M in HydratedRunGlobalMapField]: (slice: Pass1AggregateSlice) => void;
+  } = {
+    ancestors: (slice) => {
+      for (const [k, v] of Object.entries(slice.classAncestors ?? {})) {
+        if (k in this.ancestors) continue;
+        this.ancestors[k] = v;
+        this.markContributed("ancestors");
+      }
+    },
+    prependedAncestors: (slice) => {
+      for (const [k, v] of Object.entries(slice.classPrependedAncestors ?? {})) {
+        if (k in this.prependedAncestors) continue;
+        this.prependedAncestors[k] = v;
+        this.markContributed("prependedAncestors");
+      }
+    },
+    classExtends: (slice) => {
+      for (const [k, v] of Object.entries(slice.classExtends ?? {})) {
+        if (k in this.classExtends) continue;
+        this.classExtends[k] = v;
+        this.markContributed("classExtends");
+      }
+    },
+    compactClasses: (slice) => {
+      for (const fq of slice.compactDeclaredClasses ?? []) this.compactClasses.add(fq);
+    },
+    // Ancestor symbol_ids stay null exactly as they do on the pass-1 path: the
+    // hierarchy view reads by fq NAME, and pass-2's per-file persist owns the
+    // symbol_id binding for the rows it writes. Runs for EVERY slice, not only
+    // one carrying `inheritanceEdges`: the legacy class* records feed it too.
+    inheritanceRows: (slice) => {
+      this.inheritanceRows.push(...normalizeInheritanceEdges(slice, () => null));
+    },
+    selfDispatchMethods: (slice) => {
+      if (slice.selfDispatchMethods !== undefined) this.selfDispatchMethods.push(...slice.selfDispatchMethods);
+    },
+    // Return types (bd tea-rags-mcp-8qyax). `markContributed` matters here —
+    // without it the run reports the map as un-contributed and pass-2 falls back
+    // to each file's own maps, which is exactly the batch-scoped behaviour being
+    // repaired.
+    structuredReturnTypes: (slice) => {
+      for (const [k, v] of Object.entries(slice.structuredReturnTypes ?? {})) {
+        if (k in this.structuredReturnTypes) continue;
+        this.structuredReturnTypes[k] = v;
+        this.markContributed("structuredReturnTypes");
+      }
+    },
+    returnTypes: (slice) => {
+      for (const [k, v] of Object.entries(slice.functionReturnTypes ?? {})) {
+        if (k in this.returnTypes) continue;
+        this.returnTypes[k] = v;
+        this.markContributed("returnTypes");
+      }
+    },
+    // The Python pair (bd tea-rags-mcp-4yvms). No `markContributed` for either:
+    // both are {@link RunGlobalMapName}-free by design, because
+    // `buildResolverInputs` hands them to pass-2 UNCONDITIONALLY — every reader
+    // indexes them by key, so an absent map reads the same as an empty one and
+    // there is no per-file fallback for a contribution flag to switch away from.
+    //
+    // Batch-wins at the CLASS KEY, never merged field-by-field: the walked
+    // extraction is the whole truth about that class, so a persisted row that
+    // still lists a field the class has since dropped must not top it up.
+    classFieldTypesByClassKey: (slice) => {
+      for (const [classKey, fields] of Object.entries(slice.classFieldTypesByClassKey ?? {})) {
+        if (classKey in this.classFieldTypesByClassKey) continue;
+        this.classFieldTypesByClassKey[classKey] = fields;
+      }
+    },
+    // Batch-wins on the DECLARING relPath rather than on an exported name,
+    // matching the grain `absorb` replaces this channel at. Unreachable while
+    // `selectHydratablePass1Aggregates` drops walked files — a row's relPath IS
+    // its key here — and kept because that makes "the walked list is the whole
+    // truth about one file's `from` statements" a property of this merge rather
+    // than a consequence of the filter upstream of it.
+    moduleReexports: (slice) => {
+      if (slice.moduleReexports !== undefined && !(slice.relPath in this.moduleReexports)) {
+        this.moduleReexports[slice.relPath] = slice.moduleReexports;
+      }
+    },
+  };
+
   /**
    * Did any file — or any barrier fold — contribute to this run-global map?
    *
@@ -902,69 +1028,11 @@ export class CodegraphRunState {
     const hydratable = selectHydratablePass1Aggregates(persisted, walked);
     if (hydratable.length === 0) return;
 
+    // Which maps absorb a slice is `RUN_GLOBAL_MAP_PERSISTENCE`'s call, not this
+    // loop's (bd tea-rags-mcp-39xca.6); each map writes only its own field, so
+    // the registry order moves nothing but the iteration.
     for (const slice of hydratable) {
-      for (const [k, v] of Object.entries(slice.classAncestors ?? {})) {
-        if (k in this.ancestors) continue;
-        this.ancestors[k] = v;
-        this.markContributed("ancestors");
-      }
-      for (const [k, v] of Object.entries(slice.classPrependedAncestors ?? {})) {
-        if (k in this.prependedAncestors) continue;
-        this.prependedAncestors[k] = v;
-        this.markContributed("prependedAncestors");
-      }
-      for (const [k, v] of Object.entries(slice.classExtends ?? {})) {
-        if (k in this.classExtends) continue;
-        this.classExtends[k] = v;
-        this.markContributed("classExtends");
-      }
-      for (const fq of slice.compactDeclaredClasses ?? []) this.compactClasses.add(fq);
-      if (slice.selfDispatchMethods !== undefined) this.selfDispatchMethods.push(...slice.selfDispatchMethods);
-      // Return types (bd tea-rags-mcp-8qyax). Same batch-wins guard as the
-      // ancestry channels above: a key this run already walked is a FRESH fact
-      // and outranks the persisted one, which still describes the file's
-      // previous content. `markContributed` matters here — without it the run
-      // reports the map as un-contributed and pass-2 falls back to each file's
-      // own maps, which is exactly the batch-scoped behaviour being repaired.
-      for (const [k, v] of Object.entries(slice.structuredReturnTypes ?? {})) {
-        if (k in this.structuredReturnTypes) continue;
-        this.structuredReturnTypes[k] = v;
-        this.markContributed("structuredReturnTypes");
-      }
-      for (const [k, v] of Object.entries(slice.functionReturnTypes ?? {})) {
-        if (k in this.returnTypes) continue;
-        this.returnTypes[k] = v;
-        this.markContributed("returnTypes");
-      }
-      // The Python pair (bd tea-rags-mcp-4yvms). No `markContributed` for either:
-      // both are {@link RunGlobalMapName}-free by design, because
-      // `buildResolverInputs` hands them to pass-2 UNCONDITIONALLY — every
-      // reader indexes them by key, so an absent map reads the same as an empty
-      // one and there is no per-file fallback for a contribution flag to switch
-      // away from. Adding a flag nothing reads would be an index that can
-      // disagree with the map it describes, which is the cost {@link
-      // contributedRunGlobals} exists to justify, not to incur.
-      //
-      // Batch-wins at the CLASS KEY, never merged field-by-field: the walked
-      // extraction is the whole truth about that class, so a persisted row that
-      // still lists a field the class has since dropped must not top it up.
-      for (const [classKey, fields] of Object.entries(slice.classFieldTypesByClassKey ?? {})) {
-        if (classKey in this.classFieldTypesByClassKey) continue;
-        this.classFieldTypesByClassKey[classKey] = fields;
-      }
-      // Batch-wins on the DECLARING relPath rather than on an exported name,
-      // matching the grain `absorb` replaces this channel at. Unreachable while
-      // `selectHydratablePass1Aggregates` drops walked files — a row's relPath IS
-      // its key here — and kept because that makes "the walked list is the whole
-      // truth about one file's `from` statements" a property of this merge rather
-      // than a consequence of the filter upstream of it.
-      if (slice.moduleReexports !== undefined && !(slice.relPath in this.moduleReexports)) {
-        this.moduleReexports[slice.relPath] = slice.moduleReexports;
-      }
-      // Ancestor symbol_ids stay null exactly as they do on the pass-1 path: the
-      // hierarchy view reads by fq NAME, and pass-2's per-file persist owns the
-      // symbol_id binding for the rows it writes.
-      this.inheritanceRows.push(...normalizeInheritanceEdges(slice, () => null));
+      for (const field of HYDRATED_RUN_GLOBAL_MAPS) this.pass1Hydrators[field](slice);
     }
     if (isDebug()) {
       console.error("[GitEnrich] PHASE: CODEGRAPH_PASS1_HYDRATED", {
@@ -999,6 +1067,8 @@ export class CodegraphRunState {
     resolveSymbolTable: () => Promise<GlobalSymbolTable>,
     loadPersistedPass1Aggregates?: () => Promise<readonly CodegraphPass1FileAggregates[]>,
   ): Promise<void> {
+    // Pass-2 starts here, so a new run scope does too (bd tea-rags-mcp-39xca.6).
+    this.beginRunScope();
     if (loadPersistedPass1Aggregates !== undefined) {
       await this.hydratePersistedPass1Aggregates(loadPersistedPass1Aggregates);
     }
@@ -1148,6 +1218,7 @@ export class CodegraphRunState {
       this.resetInterprocParamState();
       // The wide reset emptied every run-global map, so every flag goes with it.
       this.clearContributed();
+      this.beginRunScope();
       return undefined;
     }
     // tea-rags-mcp-ykj7 + cai0.2 (Option A) — the denominator excludes
@@ -1222,6 +1293,7 @@ export class CodegraphRunState {
     // run-global maps still hold facts. The asymmetry is inherited from the
     // pre-split provider and pinned by provider-run-reset-seams.test.ts.
     this.clearContributed(["ancestors", "prependedAncestors"]);
+    this.beginRunScope();
     return {
       extractedFiles,
       fileEdgeCount,
@@ -1319,6 +1391,7 @@ export class CodegraphRunState {
     this.projectRoot = undefined;
     // bd tea-rags-mcp-weno4 — injected for ONE run against ONE collection.
     this.injectedPass1Aggregates = undefined;
+    this.beginRunScope();
     this.prependedAncestors = {};
     this.includedBy = {};
     this.classExtends = {};
@@ -1361,6 +1434,7 @@ export class CodegraphRunState {
     this.projectRoot = undefined;
     // bd tea-rags-mcp-weno4 — injected for ONE run against ONE collection.
     this.injectedPass1Aggregates = undefined;
+    this.beginRunScope();
     this.prependedAncestors = {};
     this.classExtends = {};
     this.schemaTables = {};
