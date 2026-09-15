@@ -90,12 +90,16 @@ import {
   collectSchemaColumnSources,
   type CodegraphExclusionOptions,
 } from "../exclusion.js";
-import { resolveChunkOwnerSymbol } from "./chunk-owner-symbol.js";
+import {
+  CodegraphChunkSettlementTally,
+  settleCodegraphChunkSignals,
+  toChunkSignalOverlays,
+  type CodegraphChunkRangeSource,
+} from "./chunk-signal-settlement.js";
 import { createCodegraphExtractionSink, type CodegraphSinkDeps } from "./extraction-sink.js";
 import { GraphBuildFinalizer } from "./graph-finalizer.js";
 import { SymbolNodeFlushQueue } from "./node-flush.js";
 import {
-  buildCodegraphChunkSignals,
   buildCodegraphFileSignals,
   CODEGRAPH_SYMBOLS_CHUNK_SIGNALS,
   CODEGRAPH_SYMBOLS_FILE_SIGNALS,
@@ -414,6 +418,14 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
    * runs ONE buildChunkSignals pass after this provider's finalizeSignals.
    */
   readonly defersChunkEnrichment = true;
+
+  /**
+   * Chunks are settled explicitly (bd tea-rags-mcp-39xca.2): `buildChunkSignals`
+   * returns an overlay — empty when there are no signal values — for every chunk
+   * it settles, and leaves out only the chunks it could not, which callers must
+   * therefore not stamp. The settlement itself is `chunk-signal-settlement.ts`.
+   */
+  readonly settlesChunksExplicitly = true;
 
   /**
    * Per-collection (relPath -> startLine -> symbolId), populated by the
@@ -1806,30 +1818,24 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
     // deferring the write changes only its shape.
     const chunkIdJoins: SymbolChunkIdJoinEntry[] = [];
     const rangesByFile = this.chunkSymbolByLine.get(this.collectionKey(options?.collectionName));
+    const settlementTally = new CodegraphChunkSettlementTally();
     for (const [relPath, entries] of chunkMap) {
-      const perChunk = new Map<string, ChunkSignalOverlay>();
       // The walker's ranges for this file, present only when this provider
-      // walked it. A file it never walked (a non-codegraph language, or chunks
-      // predating codegraph wiring) maps nothing.
+      // walked it during this run.
       const ranges = rangesByFile?.get(relPath);
-      for (const entry of entries) {
-        if (ranges === undefined) break;
-        // The one chunk→symbol rule the payload healer uses too (bd
-        // tea-rags-mcp-9i2ow): the chunker's symbolId anchors it, the walker's
-        // ranges narrow it to a nested symbol that contains the chunk's start.
-        const symbolId = resolveChunkOwnerSymbol(
-          { startLine: entry.startLine, endLine: entry.endLine, anchorSymbolId: entry.symbolId },
-          ranges,
-        );
-        if (!symbolId) continue;
-        // Confidence-weighted fanIn/fanOut (bd tea-rags-mcp-s5ato — fractional
-        // under dynamic/cone fan-out, integer for exact edges) + per-symbol
-        // PageRank from cg_symbols_metrics (0 when the symbol isn't in the table
-        // yet). Read from the bulk map; a missing symbol ⇒ {0,0,0}, identical to
-        // the point getters. Bare inner keys (tea-rags-mcp-k6xu) under
-        // providerKey `codegraph.symbols.chunk` → `…chunk.fanIn`.
-        perChunk.set(entry.chunkId, buildCodegraphChunkSignals(chunkSignals.get(symbolId)));
-      }
+      // The one settlement every producer of these keys goes through (bd
+      // tea-rags-mcp-39xca.2): the chunk-owner rule over an explicit range
+      // source. A file the run claims but whose walk left no line index is
+      // UNSETTLED and omitted from the overlays, so no caller stamps it — not an
+      // empty map passed off as a result (bd tea-rags-mcp-fxio5).
+      const settlement = settleCodegraphChunkSignals(this.chunkRangeSourceFor(relPath, ranges), entries, chunkSignals);
+      settlementTally.record(relPath, settlement, entries.length);
+      // Confidence-weighted fanIn/fanOut (bd tea-rags-mcp-s5ato — fractional
+      // under dynamic/cone fan-out, integer for exact edges) + per-symbol
+      // PageRank from cg_symbols_metrics, read from the bulk map; a missing
+      // symbol ⇒ {0,0,0}, identical to the point getters. Bare inner keys
+      // (tea-rags-mcp-k6xu) under providerKey `codegraph.symbols.chunk`.
+      out.set(relPath, toChunkSignalOverlays(settlement, entries));
       // 0rskm — store-time symbol→covering-chunk join. The walker's per-file
       // ranges hold EVERY extracted symbol, including methods of a collapsed
       // class that got no own Qdrant chunk. Project them to symbol→startLine,
@@ -1847,12 +1853,35 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
         // walked, is not named — its join is still valid.
         chunkIdJoins.push({ relPath, chunkIds: computeSymbolChunkIds(symbolStartLines, entries) });
       }
-      out.set(relPath, perChunk);
     }
     if (chunkIdJoins.length > 0) {
       await graphDb.updateSymbolChunkIdsBulk(chunkIdJoins);
     }
+    // Unconditional, once per pass: an unsettled chunk keeps no stamp and no
+    // signals, and without this line the only trace is a degraded marker.
+    const unsettled = settlementTally.describeUnsettled("chunk signal pass");
+    if (unsettled !== undefined) process.stderr.write(`${unsettled}\n`);
     return out;
+  }
+
+  /**
+   * The range source one file's stored chunks settle against in
+   * `buildChunkSignals`. Every file that reaches that pass is one the run
+   * claims — its chunks were stored by this run, or seeded for its forced repair
+   * walk (bd tea-rags-mcp-fxio5) — so an extractable file with no walker ranges
+   * is a walk that left nothing behind: `walk` with no ranges, UNSETTLED. It is
+   * NOT a reason to read `cg_symbols`, whose rows may describe the file's
+   * content before this run. Only a file the graph can never hold settles
+   * without signal values.
+   */
+  private chunkRangeSourceFor(
+    relPath: string,
+    walkRanges: readonly SymbolLineRange[] | undefined,
+  ): CodegraphChunkRangeSource {
+    if (walkRanges !== undefined) return { kind: "walk", ranges: walkRanges };
+    if (!SUPPORTED_EXTS.has(extensionOf(relPath))) return { kind: "none", reason: "non-extractable-language" };
+    if (this.codegraphExclusionFilter.ignores(relPath)) return { kind: "none", reason: "excluded-from-graph" };
+    return { kind: "walk", ranges: undefined };
   }
 }
 

@@ -24,7 +24,7 @@ import { Semaphore } from "../../../../infra/semaphore.js";
 import type { ChunkLookupEntry } from "../../../../types.js";
 import { pipelineLog } from "../infra/debug-logger.js";
 import type { ChunkItem } from "../types.js";
-import type { EnrichmentApplier } from "./applier.js";
+import { bareStampableChunkIds, type EnrichmentApplier } from "./applier.js";
 import { enrichmentScope, enrichmentSkipReason, type EnrichmentSkipReason } from "./policy.js";
 import type { ProviderContext } from "./types.js";
 
@@ -445,10 +445,10 @@ export class ChunkPhase {
       return;
     }
 
-    const allChunkIds = new Set<string>();
-    for (const entries of scoped.values()) {
-      for (const e of entries) allChunkIds.add(e.chunkId);
-    }
+    // Undefined for a provider that settles chunks explicitly: a chunk its
+    // overlay map omits is one it could not settle, and stays owed rather than
+    // stamped over no signals (bd tea-rags-mcp-39xca.2 / fxio5).
+    const allChunkIds = bareStampableChunkIds(ctx.provider, scoped);
 
     if (state.chunkFirstStartAt === 0) state.chunkFirstStartAt = Date.now();
     try {
@@ -582,10 +582,8 @@ export class ChunkPhase {
     }
     if (chunkMap.size === 0) return Promise.resolve(true);
 
-    const allChunkIds = new Set<string>();
-    for (const entries of chunkMap.values()) {
-      for (const e of entries) allChunkIds.add(e.chunkId);
-    }
+    // Same bare-stamp rule as the deferred pass (bd tea-rags-mcp-39xca.2).
+    const allChunkIds = bareStampableChunkIds(ctx.provider, chunkMap);
 
     // Record wall-clock start: set once on the FIRST apply of this run so
     // concurrent batches don't overwrite the origin timestamp.

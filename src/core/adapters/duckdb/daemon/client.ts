@@ -22,13 +22,13 @@ import type {
   GraphFileNode,
   HierarchySnapshot,
   InheritanceEdge,
+  PersistedSymbolLineRanges,
   RelPath,
   ResolveRunStatsRow,
   SymbolChunkIdJoinEntry,
   SymbolChunkLocation,
   SymbolDefinition,
   SymbolId,
-  SymbolLineRange,
 } from "../../../contracts/types/codegraph.js";
 import { isDebug } from "../../../infra/runtime.js";
 import { CodegraphDaemonBuildSkewError } from "../errors.js";
@@ -66,8 +66,9 @@ type LegacyToleratedDaemonOp = (typeof LEGACY_TOLERATED_OP_LIST)[number];
  * An op belongs here only if its fallback is CORRECT, or at worst the behaviour
  * before the op existed:
  * - `getFileMetricsBulk` — the three per-file reads it replaced; slow, same map.
- * - `getSymbolLineRangesBulk` — no ranges, so each chunk keeps its own payload
- *   symbolId: the heal as it was before ranges (bd tea-rags-mcp-9i2ow).
+ * - `getSymbolLineRangesBulk` — no rows known, so every chunk the heal would
+ *   place is left unsettled: no write, never a guessed owner (bd
+ *   tea-rags-mcp-39xca.2).
  * - `diffSymbolSignals` — "nothing moved", the pre-a2ddb behaviour. "Everything
  *   moved" would be worse: such a daemon has no `cg_symbol_signals_prev`, so the
  *   heal would rewrite the corpus on every run and never converge.
@@ -661,16 +662,16 @@ export class DaemonGraphDbClient implements GraphDbClient {
     return new Map(entries);
   }
 
-  async getSymbolLineRangesBulk(relPaths: readonly RelPath[]): Promise<Map<RelPath, SymbolLineRange[]>> {
+  async getSymbolLineRangesBulk(relPaths: readonly RelPath[]): Promise<Map<RelPath, PersistedSymbolLineRanges>> {
     // Server serialises the Map as `[key, value][]` entries — rebuild here. A
-    // tolerated legacy op: a daemon that predates it has no ranges to give, and
-    // "none" is the same as a pre-024 row — the chunk-owner rule keeps each
-    // chunk's own payload symbolId, the heal as it was before ranges.
+    // tolerated legacy op: a daemon that predates it answers "no rows known",
+    // which leaves every chunk the heal would place unsettled — no write, never
+    // a guessed owner (bd tea-rags-mcp-39xca.2).
     return this.callTolerated(
       "getSymbolLineRangesBulk",
       { relPaths },
-      (result) => new Map(result as [RelPath, SymbolLineRange[]][]),
-      () => new Map<RelPath, SymbolLineRange[]>(),
+      (result) => new Map(result as [RelPath, PersistedSymbolLineRanges][]),
+      () => new Map<RelPath, PersistedSymbolLineRanges>(),
     );
   }
 

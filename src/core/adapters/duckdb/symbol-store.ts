@@ -13,12 +13,12 @@
 
 import type {
   BulkSymbolUpsertEntry,
+  PersistedSymbolLineRanges,
   RelPath,
   SymbolChunkIdJoinEntry,
   SymbolChunkLocation,
   SymbolDefinition,
   SymbolId,
-  SymbolLineRange,
 } from "../../contracts/types/codegraph.js";
 import {
   CG_SYMBOLS_DEF_COLUMNS,
@@ -189,33 +189,37 @@ export class DuckDbSymbolStore {
   }
 
   /**
-   * Every RANGED symbol of each requested file (bd tea-rags-mcp-9i2ow). A row
-   * whose range is NULL — written before migration 024 — is left out, which the
-   * chunk-owner rule reads as "no range row": the chunk keeps its own payload
-   * symbolId. A path with no ranged row is absent from the map.
+   * Each requested file's symbol ranges as `cg_symbols` holds them (bd
+   * tea-rags-mcp-9i2ow): every RANGED row, plus the count of rows whose range is
+   * NULL — written before migration 024. Those rows are counted, not dropped:
+   * "rows the chunk-owner rule cannot place" and "no rows" settle differently
+   * (bd tea-rags-mcp-39xca.2). A path with no row at all is absent.
    */
-  async getSymbolLineRangesBulk(relPaths: readonly RelPath[]): Promise<Map<RelPath, SymbolLineRange[]>> {
-    const out = new Map<RelPath, SymbolLineRange[]>();
+  async getSymbolLineRangesBulk(relPaths: readonly RelPath[]): Promise<Map<RelPath, PersistedSymbolLineRanges>> {
+    const out = new Map<RelPath, PersistedSymbolLineRanges>();
     for (let i = 0; i < relPaths.length; i += SYMBOL_LINE_RANGE_READ_CHUNK) {
       const chunk = relPaths.slice(i, i + SYMBOL_LINE_RANGE_READ_CHUNK);
       const rows = await this.session.queryAll<{
         rel_path: string;
         symbol_id: string;
-        start_line: number;
-        end_line: number;
+        start_line: number | null;
+        end_line: number | null;
       }>(
         `SELECT rel_path, symbol_id, start_line, end_line FROM cg_symbols
-           WHERE rel_path IN (${chunk.map(() => "?").join(", ")})
-             AND start_line IS NOT NULL AND end_line IS NOT NULL`,
+           WHERE rel_path IN (${chunk.map(() => "?").join(", ")})`,
         [...chunk],
       );
       for (const row of rows) {
-        let ranges = out.get(row.rel_path);
-        if (ranges === undefined) {
-          ranges = [];
-          out.set(row.rel_path, ranges);
+        let file = out.get(row.rel_path);
+        if (file === undefined) {
+          file = { ranges: [], rowsWithoutRanges: 0 };
+          out.set(row.rel_path, file);
         }
-        ranges.push({ symbolId: row.symbol_id, startLine: Number(row.start_line), endLine: Number(row.end_line) });
+        if (row.start_line === null || row.end_line === null) {
+          file.rowsWithoutRanges++;
+          continue;
+        }
+        file.ranges.push({ symbolId: row.symbol_id, startLine: Number(row.start_line), endLine: Number(row.end_line) });
       }
     }
     return out;

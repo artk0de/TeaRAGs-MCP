@@ -30,21 +30,29 @@
   prevent. Why: the failure is silent and read-side — `find_symbol` answers with
   a chunk that no longer contains the symbol, and nothing in the write path
   errors.
-- **One rule decides which symbol owns a stored chunk, and BOTH writers of
-  `codegraph.symbols.chunk.*` resolve through it** — `resolveChunkOwnerSymbol`
-  (symbols/chunk-owner-symbol.ts): anchor on the chunk's payload symbolId with
-  `#partN` stripped, narrow to the tightest symbol nested under it whose range
-  contains the chunk's start line, else keep the anchor; with no anchor, the
-  innermost containing symbol. The deferred chunk pass feeds it the walker's
-  ranges; the payload heal
-  (`api/internal/infra/codegraph-payload-heal-runner.ts`) feeds it
+- **One rule decides which symbol owns a stored chunk, and ONE settlement is how
+  every producer of `codegraph.symbols.chunk.*` reaches it** —
+  `settleCodegraphChunkSignals` (symbols/chunk-signal-settlement.ts) over
+  `resolveChunkOwnerSymbol` (symbols/chunk-owner-symbol.ts): anchor on the
+  chunk's payload symbolId with `#partN` stripped, narrow to the tightest symbol
+  nested under it whose range contains the chunk's start line, else keep the
+  anchor; with no anchor, the innermost containing symbol, else the chunk is
+  unowned. The range source is a typed argument. The deferred pass, the
+  backfiller and recovery's in-place heal all reach
+  `CodegraphEnrichmentProvider#buildChunkSignals`, which passes the walk's
+  ranges, or `none` for a file the graph can never hold. The payload heal
+  (`api/internal/infra/codegraph-payload-heal-runner.ts`) passes
   `cg_symbols.start_line/end_line` (migration 024) and groups points by the
-  resolved owner, which is how a moved nested symbol reaches its points. A file
-  whose rows carry NULL ranges keeps the anchor — the heal's pre-024 output.
-  Why: the two used to pick differently (greatest symbol start vs payload
-  symbolId), each wrong on its own class of chunk, so a stored value depended on
-  which writer ran last (bd tea-rags-mcp-9i2ow). A third writer of those keys
-  that does not call the rule reintroduces exactly that.
+  resolved owner, which is how a moved nested symbol reaches its points. "No
+  ranges" is never a result. A walked file with no line index, a file with any
+  NULL-range row, and a file with no rows are UNSETTLED: left unwritten and
+  logged once per pass. Only `none` settles a whole file without signal values.
+  The provider declares `settlesChunksExplicitly`, so an empty overlay is its
+  bare stamp and a chunk it omits is never stamped (`bareStampableChunkIds`).
+  Why: the writers used to pick differently, so a stored value depended on which
+  ran last (bd tea-rags-mcp-9i2ow), and "no ranges" degraded silently into bare
+  stamps over 52k taxdome chunks (fxio5) and persisted anchor owners (71n0p). A
+  producer that calls the rule without the settlement reintroduces both.
 - **The graph DB is addressed by the PHYSICAL versioned collection name, and
   heals only per re-extracted file.** `GraphDbClientPool#pathFor`
   (`adapters/duckdb/pool.ts`) resolves whatever string it is handed, literally,

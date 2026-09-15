@@ -50,13 +50,13 @@ import type {
   GraphFileNode,
   HierarchySnapshot,
   InheritanceEdge,
+  PersistedSymbolLineRanges,
   RelPath,
   ResolveRunStatsRow,
   SymbolChunkIdJoinEntry,
   SymbolChunkLocation,
   SymbolDefinition,
   SymbolId,
-  SymbolLineRange,
 } from "../../contracts/types/codegraph.js";
 import { DuckDbFileGraphStore } from "./file-graph-store.js";
 import { DuckDbFileMetricsReader } from "./file-metrics-reader.js";
@@ -249,7 +249,7 @@ export class DuckDbGraphClient implements GraphDbClient {
     return this.symbols.findSymbolChunk(symbolId);
   }
 
-  async getSymbolLineRangesBulk(relPaths: readonly RelPath[]): Promise<Map<RelPath, SymbolLineRange[]>> {
+  async getSymbolLineRangesBulk(relPaths: readonly RelPath[]): Promise<Map<RelPath, PersistedSymbolLineRanges>> {
     return this.symbols.getSymbolLineRangesBulk(relPaths);
   }
 

@@ -2,15 +2,16 @@
  * The chunk-owner rule — which symbol a stored chunk's codegraph signals belong
  * to (bd tea-rags-mcp-9i2ow).
  *
- * Two writers put `codegraph.symbols.chunk.{fanIn,fanOut,pageRank}` on the same
- * points: the deferred chunk pass (`CodegraphEnrichmentProvider#buildChunkSignals`)
- * and the payload healer (`CodegraphPayloadHealer`, composed in
- * `api/internal/infra/codegraph-payload-heal-runner.ts`). They used to pick the
- * symbol differently — greatest symbol start at or before the chunk, and the
- * chunk's payload symbolId — so the stored value depended on which one wrote
- * last, and each was wrong on its own class of chunk. Both now call this
- * function; only where the RANGES come from differs (the walker's line index for
- * a walked file, `cg_symbols.start_line/end_line` for the healer).
+ * Every producer of `codegraph.symbols.chunk.{fanIn,fanOut,pageRank}` — the
+ * deferred chunk pass, the backfiller, recovery's in-place heal and the payload
+ * heal — reaches this function through ONE settlement,
+ * `settleCodegraphChunkSignals` (`chunk-signal-settlement.ts`, bd
+ * tea-rags-mcp-39xca.2), which owns the other half of the question: where the
+ * ranges come from, and what it means when there are none. The deferred pass
+ * and the heal used to pick the symbol differently — greatest symbol start at or
+ * before the chunk, and the chunk's payload symbolId — so the stored value
+ * depended on which one wrote last. Call this rule without the settlement and
+ * the range-source half is lost again.
  *
  * Pure: no I/O, no state, same input → same output.
  */
@@ -45,8 +46,9 @@ export function chunkOwnerAnchor(symbolId: string): SymbolId {
  * contains the chunk's start line. The tightest wins; when none contains the
  * start — a primary chunk whose leading comment begins above the definition, a
  * later part past every nested helper — the anchor stands. An anchor with no
- * range row (a pre-migration NULL, a chunker id codegraph never emitted) stands
- * too: nothing is known to narrow it with.
+ * range row (a chunker id codegraph never emitted) stands too: nothing is known
+ * to narrow it with. A file whose rows predate migration 024 never gets here —
+ * the settlement leaves it unsettled rather than guess.
  *
  * Without an anchor, the innermost symbol containing the start, else undefined.
  * A symbol that merely STARTS earlier owns nothing — that was the deferred
