@@ -6,6 +6,8 @@
 
 import type { QdrantClient } from "@qdrant/js-client-rest";
 
+import type { CollectionAliasEntry, PhysicalCollectionName } from "../../contracts/types/collection-identity.js";
+import { collectionAliasEntryFromQdrant, resolvePhysicalCollection } from "../../infra/collection-name.js";
 import { AliasOperationError } from "./errors.js";
 
 export class QdrantAliasManager {
@@ -83,13 +85,10 @@ export class QdrantAliasManager {
     }
   }
 
-  async listAliases(): Promise<{ aliasName: string; collectionName: string }[]> {
+  async listAliases(): Promise<CollectionAliasEntry[]> {
     try {
       const response = await this.client.getAliases();
-      return response.aliases.map((a) => ({
-        aliasName: a.alias_name,
-        collectionName: a.collection_name,
-      }));
+      return response.aliases.map((a) => collectionAliasEntryFromQdrant(a));
     } catch (error: unknown) {
       throw new AliasOperationError(
         "listAliases",
@@ -105,10 +104,10 @@ export class QdrantAliasManager {
    * already a concrete collection). Lets consumers that address by literal
    * resource (e.g. the codegraph DuckDB pool, which opens a file named after
    * the collection) reach the data the alias points at, since they cannot rely
-   * on Qdrant's server-side alias transparency.
+   * on Qdrant's server-side alias transparency. The rule itself is
+   * `resolvePhysicalCollection` — one resolver for every layer (bd tea-rags-mcp-39xca.1).
    */
-  async resolveActive(name: string): Promise<string> {
-    const aliases = await this.listAliases();
-    return aliases.find((a) => a.aliasName === name)?.collectionName ?? name;
+  async resolveActive(name: string): Promise<PhysicalCollectionName> {
+    return resolvePhysicalCollection(name, await this.listAliases());
   }
 }
