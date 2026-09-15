@@ -19,76 +19,84 @@ import type {
  * read — over the socket. The only exception is `streamAdjacency`: the heavy
  * graph analysis runs daemon-side via `computeAndPersistCyclesAndSignals`, so
  * the adjacency stream stays daemon-internal and is never proxied over IPC.
+ *
+ * `DAEMON_OPS` is the protocol's op list at runtime (bd tea-rags-mcp-39xca.4).
+ * `DaemonOp` is derived from it and the daemon's dispatch table
+ * (`DAEMON_OP_COMMANDS`) is keyed by `DaemonOp`, so an op cannot exist in one
+ * without the other; the client derives its REQUIRED ops from the same list.
  */
-export type DaemonOp =
-  | "handshake"
+export const DAEMON_OPS = [
+  "handshake",
   // Graceful drain+exit requested by a client whose build fingerprint differs
   // from the daemon's (bd tea-rags-mcp-ji56r). Handled by the TRANSPORT layer
   // (daemon/entry.ts) — acked first, then the daemon reuses the idle-watcher
   // drain/exit path — so it never reaches the request dispatcher.
-  | "shutdown"
-  | "finalizeReindex"
+  "shutdown",
+  "finalizeReindex",
   // ── writes ──
-  | "upsertFile"
-  | "removeFile"
-  | "removeSymbolsForFile"
-  | "upsertSymbols"
-  | "upsertSymbolsBulk"
-  | "upsertFilesBulk"
-  | "updateSymbolChunkIds"
-  | "updateSymbolChunkIdsBulk"
-  | "replaceCycles"
-  | "replacePageRanks"
-  | "checkpoint"
-  | "rebuildEdgeFileTargetIndex"
-  | "recordRunStats"
+  "upsertFile",
+  "removeFile",
+  "removeSymbolsForFile",
+  "upsertSymbols",
+  "upsertSymbolsBulk",
+  "upsertFilesBulk",
+  "updateSymbolChunkIds",
+  "updateSymbolChunkIdsBulk",
+  "replaceCycles",
+  "replacePageRanks",
+  "checkpoint",
+  "rebuildEdgeFileTargetIndex",
+  "recordRunStats",
   // Per-file resolve tallies + language coverage (bd tea-rags-mcp-xpmwg). Its
   // own op rather than a wider `recordRunStats` payload, so a daemon from an
   // older build never receives a params shape it predates.
-  | "recordFileResolveStats"
-  | "computeAndPersistCyclesAndSignals"
+  "recordFileResolveStats",
+  "computeAndPersistCyclesAndSignals",
   // Baseline refresh for the derived-signal drift diff (bd tea-rags-mcp-a2ddb).
   // A WRITE: it replaces both `cg_*_signals_prev` tables in one transaction.
-  | "refreshSymbolSignalsPrev"
+  "refreshSymbolSignalsPrev",
   // ── reads (the daemon owns the sole DuckDB connection, so all reads route
   //    through its own RW connection instead of a conflicting cross-process
   //    READ_ONLY attach) ──
-  | "getFanIn"
-  | "getFanInP95"
-  | "getFanOut"
-  | "getCallers"
-  | "getCallees"
-  | "getAmbiguousCallersByMember"
-  | "getCalleeEdges"
-  | "getCalleeEdgesScoped"
-  | "getSymbolRelPaths"
-  | "getCalledByCount"
-  | "getCallSiteCount"
-  | "getChunkSignalsBulk"
-  | "hasData"
-  | "getRunStats"
-  | "getEdgeKindDistribution"
-  | "listAllSymbols"
-  | "listAllPass1Aggregates"
-  | "listFileContentHashes"
-  | "getTransitiveImpact"
-  | "getFileMetricsBulk"
-  | "findCycles"
-  | "listAdjacency"
-  | "getPageRank"
-  | "findSymbolChunk"
+  "getFanIn",
+  "getFanInP95",
+  "getFanOut",
+  "getCallers",
+  "getCallees",
+  "getAmbiguousCallersByMember",
+  "getCalleeEdges",
+  "getCalleeEdgesScoped",
+  "getSymbolRelPaths",
+  "getCalledByCount",
+  "getCallSiteCount",
+  "getChunkSignalsBulk",
+  "hasData",
+  "getRunStats",
+  "getEdgeKindDistribution",
+  "listAllSymbols",
+  "listAllPass1Aggregates",
+  "listFileContentHashes",
+  "getTransitiveImpact",
+  "getFileMetricsBulk",
+  "findCycles",
+  "listAdjacency",
+  "getPageRank",
+  "findSymbolChunk",
   // Per-file symbol line ranges for the payload healer's chunk-owner rule
   // (bd tea-rags-mcp-9i2ow). Its own op, so a daemon from an older build answers
-  // "unknown daemon op" and the client degrades to "no ranges".
-  | "getSymbolLineRangesBulk"
+  // "unknown daemon op" — a tolerated legacy op, see `LEGACY_TOLERATED_OPS`.
+  "getSymbolLineRangesBulk",
   // Read half of the drift pair (bd tea-rags-mcp-a2ddb). Plain arrays on the
   // wire — no Map, so no entries() dance on either side.
-  | "diffSymbolSignals"
+  "diffSymbolSignals",
   // ── class hierarchy (bd tea-rags-mcp-f10y) ──
-  | "getSupertypes"
-  | "getSubtypes"
-  | "getTransitiveSubtypes"
-  | "loadHierarchySnapshot";
+  "getSupertypes",
+  "getSubtypes",
+  "getTransitiveSubtypes",
+  "loadHierarchySnapshot",
+] as const;
+
+export type DaemonOp = (typeof DAEMON_OPS)[number];
 
 export interface DaemonRequest {
   id: number;
@@ -124,6 +132,14 @@ export interface DaemonRequest {
  */
 export interface DaemonHandshakeResult {
   buildFingerprint?: string;
+  /**
+   * Every op the daemon's dispatch table serves (bd tea-rags-mcp-39xca.4) — read
+   * from the table the server actually dispatches on, so a daemon advertises
+   * what it can answer, not what the protocol names. Plain strings: a newer
+   * daemon may serve ops this client has never heard of. Absent on a daemon
+   * that predates capability advertisement.
+   */
+  supportedOps?: readonly string[];
 }
 
 export type DaemonResponse =

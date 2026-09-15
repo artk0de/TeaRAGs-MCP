@@ -427,6 +427,57 @@ function ensureCodegraphDaemon(
   }
 }
 
+/**
+ * Keep-alive guard for one index run. The daemon idle-shuts-down after 30s,
+ * but a force-reindex's chunk-write phase can exceed that with no daemon
+ * socket held — so the daemon dies before worker enrichment connects, and the
+ * worker (connect-only, no spawn) cannot revive it. `begin` ensures the daemon
+ * is alive and holds ONE real socket (refs ≥ 1 suppresses idle shutdown) for
+ * the whole run; the release closes it so normal idle lifecycle resumes.
+ * begin never rejects — a failed keep-alive returns a no-op release and logs,
+ * so it never blocks indexing.
+ *
+ * Ordering (bd tea-rags-mcp-39xca.4). `begin` is the first thing an index run
+ * points at the daemon, so it runs `verifyDaemonBuild` — the respawn-capable
+ * build + capability handshake — BEFORE holding the keep-alive socket.
+ * Worker-thread pools have no respawn hook and refuse a daemon lacking a
+ * required op, so the replacement has to land before the first worker
+ * connects. The keep-alive socket itself skips the handshake: it only holds a
+ * ref.
+ */
+export function createIndexRunDaemonGuard(deps: {
+  /** Spawn the daemon if it is not alive (single-flighted). */
+  ensure: () => void;
+  /** The daemon socket the keep-alive connects to. */
+  socketPath: string;
+  /** Respawn-capable handshake for the run's collection — the main-thread pool's `acquireWrite`. */
+  verifyDaemonBuild: (collectionName: string) => Promise<unknown>;
+}): IndexRunDaemonGuard {
+  return {
+    begin: async (collectionName: string) => {
+      try {
+        deps.ensure();
+        await deps.verifyDaemonBuild(collectionName);
+        const { DaemonGraphDbClient } = await import("../core/adapters/duckdb/daemon/client.js");
+        const client = new DaemonGraphDbClient(deps.socketPath, collectionName);
+        await client.init(); // bounded 5s connect retry absorbs the spawn race
+        return async () => {
+          try {
+            await client.close();
+          } catch {
+            /* close-of-already-closed is a no-op; never mask the run outcome */
+          }
+        };
+      } catch (err) {
+        process.stderr.write(
+          `[tea-rags] codegraph daemon keep-alive failed for ${collectionName}: ${(err as Error).message}\n`,
+        );
+        return async () => {};
+      }
+    },
+  };
+}
+
 export function wireCodegraph(
   config: AppConfig,
   zodConfig: ReturnType<typeof getZodConfig>,
@@ -627,36 +678,15 @@ export function wireCodegraph(
   };
   const graphFacade = new GraphFacade({ pool, collectionRegistry, resolveActiveCollection });
 
-  // Keep-alive guard for the index run. The daemon idle-shuts-down after 30s,
-  // but a force-reindex's chunk-write phase can exceed that with no daemon
-  // socket held — so the daemon dies before worker enrichment connects, and the
-  // worker (connect-only, no spawn) cannot revive it. `begin` ensures the daemon
-  // is alive and holds ONE real socket (refs ≥ 1 suppresses idle shutdown) for
-  // the whole run; the release closes it so normal idle lifecycle resumes.
-  // begin never rejects — a failed keep-alive returns a no-op release and logs,
-  // so it never blocks indexing.
-  const indexRunDaemonGuard: IndexRunDaemonGuard = {
-    begin: async (collectionName: string) => {
-      try {
-        ensure(); // spawn the daemon if not already alive (single-flighted)
-        const { DaemonGraphDbClient } = await import("../core/adapters/duckdb/daemon/client.js");
-        const client = new DaemonGraphDbClient(daemonPaths.socketPath, collectionName);
-        await client.init(); // bounded 5s connect retry absorbs the spawn race
-        return async () => {
-          try {
-            await client.close();
-          } catch {
-            /* close-of-already-closed is a no-op; never mask the run outcome */
-          }
-        };
-      } catch (err) {
-        process.stderr.write(
-          `[tea-rags] codegraph daemon keep-alive failed for ${collectionName}: ${(err as Error).message}\n`,
-        );
-        return async () => {};
-      }
-    },
-  };
+  // Keep-alive guard for the index run — see `createIndexRunDaemonGuard`. The
+  // build handshake goes through THIS pool's `acquireWrite`, the one pool that
+  // wires the respawn hook, so a stale daemon is replaced at run start instead
+  // of being refused by the first worker-thread pool that meets it.
+  const indexRunDaemonGuard = createIndexRunDaemonGuard({
+    ensure,
+    socketPath: daemonPaths.socketPath,
+    verifyDaemonBuild: async (collectionName) => pool.acquireWrite(collectionName),
+  });
 
   return { deps, graphFacade, pool, indexRunDaemonGuard };
 }

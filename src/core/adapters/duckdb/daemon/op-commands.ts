@@ -30,6 +30,13 @@ type DaemonOpParams = Record<string, unknown>;
 export interface DaemonOpContext {
   readonly pool: GraphDbClientPool;
   readonly buildFingerprint: string;
+  /**
+   * The ops the serving daemon's dispatch table holds, advertised in the
+   * handshake (bd tea-rags-mcp-39xca.4). Supplied by the server from the table
+   * it dispatches on — never re-derived here — so a trimmed table advertises a
+   * trimmed list.
+   */
+  readonly supportedOps: readonly DaemonOp[];
 }
 
 /**
@@ -44,6 +51,13 @@ export interface DaemonOpContext {
 export type DaemonOpCommand =
   | { readonly access: "read" | "write"; readonly run: (graphDb: GraphDbClient, p: DaemonOpParams) => Promise<unknown> }
   | { readonly access: "daemon"; readonly run: (ctx: DaemonOpContext, p: DaemonOpParams) => Promise<unknown> };
+
+/**
+ * A dispatch table a `CodegraphDaemonServer` serves. Partial because a daemon
+ * standing in for an older build (tests) serves a subset; production passes the
+ * complete `DAEMON_OP_COMMANDS`.
+ */
+export type DaemonOpCommandTable = Readonly<Partial<Record<DaemonOp, DaemonOpCommand>>>;
 
 /** A write op: governed handle, and the wire result is always a `null` ack. */
 function write(run: (graphDb: GraphDbClient, p: DaemonOpParams) => Promise<void>): DaemonOpCommand {
@@ -78,7 +92,12 @@ export const DAEMON_OP_COMMANDS: Readonly<Record<DaemonOp, DaemonOpCommand>> = {
       if (clientFingerprint === undefined || clientFingerprint === ctx.buildFingerprint) {
         await ctx.pool.acquire(p.collection as string); // opens + migrates + hydrates
       }
-      return { buildFingerprint: ctx.buildFingerprint } satisfies DaemonHandshakeResult;
+      // Capabilities ride every handshake, matched or not: a client from another
+      // build decides from them whether it may proceed (bd tea-rags-mcp-39xca.4).
+      return {
+        buildFingerprint: ctx.buildFingerprint,
+        supportedOps: ctx.supportedOps,
+      } satisfies DaemonHandshakeResult;
     },
   },
   shutdown: {

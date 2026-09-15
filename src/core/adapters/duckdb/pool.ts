@@ -33,9 +33,10 @@ import { isDebug } from "../../infra/runtime.js";
 import { DuckDbGraphClient } from "./client.js";
 import { CodegraphDbFiles, sanitiseCollectionName } from "./codegraph-db-files.js";
 import { getBuildFingerprint } from "./daemon/build-fingerprint.js";
-import type { DaemonGraphDbClient } from "./daemon/client.js";
+import type { DaemonCapabilityVerdict, DaemonGraphDbClient } from "./daemon/client.js";
 import { DEFAULT_EXIT_TIMEOUT_MS, getDaemonPaths, readDaemonPid, waitForDaemonExit } from "./daemon/lifecycle.js";
 import {
+  CodegraphDaemonBuildSkewError,
   CodegraphDaemonExitTimeoutError,
   CodegraphDaemonStaleBuildError,
   DuckDbCloseFailedError,
@@ -53,6 +54,32 @@ const DEFAULT_MAX_RESTART_ATTEMPTS = 3;
 
 /** Base delay between restart attempts; jittered per attempt. */
 const DEFAULT_RESTART_DELAY_MS = 250;
+
+/**
+ * A respawn-capable pool replaces a daemon from another build, or one that does
+ * not advertise every op this client requires (bd tea-rags-mcp-39xca.4).
+ */
+function needsDaemonReplacement(verdict: DaemonCapabilityVerdict): boolean {
+  return verdict.buildMismatch || verdict.missingRequiredOps.length > 0;
+}
+
+/**
+ * A pool that cannot respawn refuses a daemon lacking a required op, or one from
+ * another build too old to say what it supports — proceeding against either
+ * turns missing ops into missing data (bd tea-rags-mcp-39xca.4). A daemon from
+ * another build that advertises every required op is still tolerated.
+ */
+function refusesDaemon(verdict: DaemonCapabilityVerdict): boolean {
+  return verdict.missingRequiredOps.length > 0 || (verdict.predatesCapabilityList && verdict.buildMismatch);
+}
+
+/** Debug-line reason a handshake did not settle. */
+function describeDaemonSkew(verdict: DaemonCapabilityVerdict, clientFingerprint: string): string {
+  const builds = `(daemon=${verdict.daemonFingerprint ?? "unknown"}, client=${clientFingerprint})`;
+  const missing =
+    verdict.missingRequiredOps.length > 0 ? `lacks required ops ${verdict.missingRequiredOps.join(", ")} ` : "";
+  return verdict.buildMismatch ? `build mismatch ${missing}${builds}` : `${missing}${builds}`;
+}
 
 /**
  * Initialiser hook the pool calls once per newly-opened collection
@@ -440,7 +467,7 @@ export class GraphDbClientPool {
    */
   private async connectWithBuildHandshake(socketPath: string, collectionName: string): Promise<DaemonGraphDbClient> {
     // Dynamic so direct/test mode never loads the node:net socket code.
-    const { DaemonGraphDbClient } = await import("./daemon/client.js");
+    const { DaemonGraphDbClient, assessDaemonCapability } = await import("./daemon/client.js");
     const restart = this.options.daemonRestart;
     const localFingerprint = restart?.buildFingerprint ?? getBuildFingerprint();
 
@@ -455,21 +482,34 @@ export class GraphDbClientPool {
     const onConnectionLost = restart?.respawn;
     const first = new DaemonGraphDbClient(socketPath, collectionName, { onConnectionLost });
     await first.init();
-    const daemonFingerprint = (await first.handshake(localFingerprint))?.buildFingerprint;
-    // Legacy daemon (no fingerprint) or same build → proceed as today.
-    if (daemonFingerprint === undefined || daemonFingerprint === localFingerprint) return first;
+    const verdict = assessDaemonCapability(await first.handshake(localFingerprint), localFingerprint);
+    // Same build serving every required op, or a legacy pre-fingerprint peer →
+    // proceed as today.
+    if (!needsDaemonReplacement(verdict)) return first;
 
     // Restart is gated on a wired respawn hook: draining a daemon this pool
     // cannot cold-spawn again (worker-thread pools rebuilt from serializable
-    // config) would strand codegraph for every process on the machine. Such
-    // pools TOLERATE the stale daemon — the main MCP process, whose factory
-    // wires the hook, performs the actual restart.
+    // config) would strand codegraph for every process on the machine. Such a
+    // pool tolerates a daemon from another build ONLY while it advertises every
+    // required op (bd tea-rags-mcp-39xca.4); one lacking a required op — or one
+    // too old to say what it supports — is refused before any run work, because
+    // proceeding turns each missing op into missing data. The main MCP process,
+    // whose factory wires the hook, performs the actual restart.
     const respawn = restart?.respawn;
     if (!respawn) {
+      if (refusesDaemon(verdict)) {
+        await first.close();
+        throw new CodegraphDaemonBuildSkewError({
+          socketPath,
+          missingOps: verdict.missingRequiredOps,
+          clientFingerprint: localFingerprint,
+          daemonFingerprint: verdict.daemonFingerprint,
+        });
+      }
       if (isDebug()) {
         process.stderr.write(
-          `[tea-rags] codegraph daemon build mismatch (daemon=${daemonFingerprint}, ` +
-            `client=${localFingerprint}) — no respawn hook wired, proceeding with the running daemon\n`,
+          `[tea-rags] codegraph daemon ${describeDaemonSkew(verdict, localFingerprint)} — no respawn hook wired, ` +
+            `proceeding with the running daemon (it advertises every required op)\n`,
         );
       }
       return first;
@@ -477,8 +517,8 @@ export class GraphDbClientPool {
 
     if (isDebug()) {
       process.stderr.write(
-        `[tea-rags] codegraph daemon build mismatch (daemon=${daemonFingerprint}, ` +
-          `client=${localFingerprint}) — draining stale daemon and respawning from this build\n`,
+        `[tea-rags] codegraph daemon ${describeDaemonSkew(verdict, localFingerprint)} — draining stale daemon ` +
+          `and respawning from this build\n`,
       );
     }
     const maxAttempts = Math.max(1, restart?.maxRestartAttempts ?? DEFAULT_MAX_RESTART_ATTEMPTS);
@@ -488,7 +528,7 @@ export class GraphDbClientPool {
     // look like a race.
     const observedDaemonFingerprints: string[] = [];
     let stale = first;
-    let lastFingerprint = daemonFingerprint;
+    let lastVerdict = verdict;
 
     for (let attempt = 1; attempt <= maxAttempts; attempt++) {
       // Linear backoff with full jitter, so two sessions retrying in lockstep
@@ -504,18 +544,34 @@ export class GraphDbClientPool {
       respawn();
 
       // Reconnect (init retries the connect while the fresh daemon boots) and
-      // re-verify the fingerprint.
+      // re-verify build and capabilities.
       const next = new DaemonGraphDbClient(socketPath, collectionName, { onConnectionLost });
       await next.init();
-      const fingerprint = (await next.handshake(localFingerprint))?.buildFingerprint;
-      if (fingerprint === undefined || fingerprint === localFingerprint) return next;
-      observedDaemonFingerprints.push(fingerprint);
-      lastFingerprint = fingerprint;
+      const nextVerdict = assessDaemonCapability(await next.handshake(localFingerprint), localFingerprint);
+      if (!needsDaemonReplacement(nextVerdict)) return next;
+      if (nextVerdict.daemonFingerprint !== undefined) observedDaemonFingerprints.push(nextVerdict.daemonFingerprint);
+      lastVerdict = nextVerdict;
       stale = next;
     }
 
     await stale.close();
-    throw new CodegraphDaemonStaleBuildError(socketPath, localFingerprint, lastFingerprint, observedDaemonFingerprints);
+    if (!lastVerdict.buildMismatch) {
+      // Our own build came back every time, still without a required op — the
+      // respawn hook launches a daemon whose op table is short, not a stale one.
+      throw new CodegraphDaemonBuildSkewError({
+        socketPath,
+        missingOps: lastVerdict.missingRequiredOps,
+        clientFingerprint: localFingerprint,
+        daemonFingerprint: lastVerdict.daemonFingerprint,
+      });
+    }
+    throw new CodegraphDaemonStaleBuildError(
+      socketPath,
+      localFingerprint,
+      /* v8 ignore next -- buildMismatch implies the daemon reported a fingerprint */
+      lastVerdict.daemonFingerprint ?? "unknown",
+      observedDaemonFingerprints,
+    );
   }
 
   /**
