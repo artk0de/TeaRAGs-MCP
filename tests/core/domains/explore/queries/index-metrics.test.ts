@@ -242,9 +242,9 @@ describe("IndexMetricsQuery", () => {
     it("renders every active provider, git from its own older terminal marker", async () => {
       const { qdrant, statsCache, payloadSignals } = makeDeps();
       qdrant.getPoint.mockResolvedValue({ payload: { enrichment: forcedCodegraphRun } });
-      const query = new IndexMetricsQuery(qdrant, statsCache, payloadSignals, undefined, ["git", "codegraph.symbols"]);
+      const query = new IndexMetricsQuery(qdrant, statsCache, payloadSignals);
 
-      const result = await query.run("col", "/project");
+      const result = await query.run("col", "/project", ["git", "codegraph.symbols"]);
 
       expect(Object.keys(result.enrichment!).sort()).toEqual(["codegraph.symbols", "git"]);
       expect(result.enrichment!.git.file.status).toBe("healthy");
@@ -252,9 +252,9 @@ describe("IndexMetricsQuery", () => {
       expect(result.enrichment!["codegraph.symbols"].file.status).toBe("healthy");
     });
 
-    // The frame comes from the injected list and from nothing else: unwired,
+    // The frame comes from the passed list and from nothing else: unwired,
     // a run-pointer marker has nothing to report against. Pins that the
-    // constructor argument is load-bearing rather than decorative.
+    // frame argument is load-bearing rather than decorative.
     it("reports nothing for a run-pointer marker when no active providers are wired", async () => {
       const { qdrant, statsCache, payloadSignals } = makeDeps();
       qdrant.getPoint.mockResolvedValue({ payload: { enrichment: forcedCodegraphRun } });
