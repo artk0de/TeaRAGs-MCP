@@ -356,6 +356,52 @@ function isCodegraphDaemonAlive(paths: CodegraphDaemonPaths): boolean {
   }
 }
 
+/** What a spawner hands the codegraph daemon process, resolved from ITS config. */
+export interface CodegraphDaemonSpawnSettings {
+  /** Root directory for per-collection DuckDB files. */
+  rootDir: string;
+  /** Lifecycle storage dir (socket / pid / refs / lock). */
+  storageDir: string;
+  resources: {
+    memoryLimit?: string;
+    /** Adaptive-governor ceiling (bd tea-rags-mcp-1ruih) — daemon-only. */
+    memoryLimitMax?: string;
+    threads?: number;
+  };
+  /**
+   * The spawner's resolved `core.debug` (bd tea-rags-mcp-gnig6). Written for
+   * both values, so a `TEA_RAGS_CODEGRAPH_DAEMON_DEBUG` inherited from the
+   * spawner's own environment never outvotes the config; the daemon does not
+   * read raw `DEBUG`.
+   */
+  debug: boolean;
+}
+
+/**
+ * The env the codegraph daemon is spawned with: the spawner's own environment
+ * plus the `TEA_RAGS_CODEGRAPH_DAEMON_*` settings `daemonRuntimeOptionsFromEnv`
+ * reads back on the daemon side.
+ */
+export function buildCodegraphDaemonSpawnEnv(
+  settings: CodegraphDaemonSpawnSettings,
+  inheritedEnv: NodeJS.ProcessEnv = process.env,
+): NodeJS.ProcessEnv {
+  const { resources } = settings;
+  return {
+    ...inheritedEnv,
+    TEA_RAGS_CODEGRAPH_DAEMON_ROOT: settings.rootDir,
+    TEA_RAGS_CODEGRAPH_DAEMON_DIR: settings.storageDir,
+    // The daemon creates graph DBs in its own process and `adapters` may
+    // not import the maintenance domain, so the DDL module travels as a
+    // URL it imports in-process.
+    TEA_RAGS_CODEGRAPH_DAEMON_MIGRATIONS: DATABASE_MIGRATIONS_MODULE_URL,
+    TEA_RAGS_CODEGRAPH_DAEMON_DEBUG: settings.debug ? "1" : "0",
+    ...(resources.memoryLimit ? { TEA_RAGS_CODEGRAPH_DAEMON_MEMORY: resources.memoryLimit } : {}),
+    ...(resources.memoryLimitMax ? { TEA_RAGS_CODEGRAPH_DAEMON_MEMORY_MAX: resources.memoryLimitMax } : {}),
+    ...(resources.threads !== undefined ? { TEA_RAGS_CODEGRAPH_DAEMON_THREADS: String(resources.threads) } : {}),
+  };
+}
+
 /**
  * Lazily spawn the codegraph daemon process when it is not already alive. The
  * spawn is single-flighted across processes via `DaemonLock` on the lock file —
@@ -380,12 +426,9 @@ function isCodegraphDaemonAlive(paths: CodegraphDaemonPaths): boolean {
 function ensureCodegraphDaemon(
   paths: CodegraphDaemonPaths,
   rootDir: string,
-  resources: {
-    memoryLimit?: string;
-    /** Adaptive-governor ceiling (bd tea-rags-mcp-1ruih) — daemon-only. */
-    memoryLimitMax?: string;
-    threads?: number;
-  },
+  resources: CodegraphDaemonSpawnSettings["resources"],
+  /** This process's resolved `core.debug`, handed to the daemon it spawns. */
+  debug: boolean,
 ): void {
   if (isCodegraphDaemonAlive(paths)) return;
   const lock = codegraphDaemonLock.acquire(paths.lockFile);
@@ -405,18 +448,7 @@ function ensureCodegraphDaemon(
       const child = spawn(process.execPath, [entryPath], {
         detached: true,
         stdio: ["ignore", logFd, logFd],
-        env: {
-          ...process.env,
-          TEA_RAGS_CODEGRAPH_DAEMON_ROOT: rootDir,
-          TEA_RAGS_CODEGRAPH_DAEMON_DIR: paths.storageDir,
-          // The daemon creates graph DBs in its own process and `adapters` may
-          // not import the maintenance domain, so the DDL module travels as a
-          // URL it imports in-process.
-          TEA_RAGS_CODEGRAPH_DAEMON_MIGRATIONS: DATABASE_MIGRATIONS_MODULE_URL,
-          ...(resources.memoryLimit ? { TEA_RAGS_CODEGRAPH_DAEMON_MEMORY: resources.memoryLimit } : {}),
-          ...(resources.memoryLimitMax ? { TEA_RAGS_CODEGRAPH_DAEMON_MEMORY_MAX: resources.memoryLimitMax } : {}),
-          ...(resources.threads !== undefined ? { TEA_RAGS_CODEGRAPH_DAEMON_THREADS: String(resources.threads) } : {}),
-        },
+        env: buildCodegraphDaemonSpawnEnv({ rootDir, storageDir: paths.storageDir, resources, debug }),
       });
       child.unref();
     } finally {
@@ -566,10 +598,15 @@ export function wireCodegraph(
     // single-flight make it safe to call again after the stale exit).
     daemonRestart: {
       respawn: () => {
-        ensureCodegraphDaemon(daemonPaths, rootDir, {
-          memoryLimit: codegraph.dbMemoryLimit,
-          threads: codegraph.dbThreads,
-        });
+        ensureCodegraphDaemon(
+          daemonPaths,
+          rootDir,
+          {
+            memoryLimit: codegraph.dbMemoryLimit,
+            threads: codegraph.dbThreads,
+          },
+          zodConfig.core.debug,
+        );
       },
     },
     // Hydrate the per-collection symbol table from disk on first open.
@@ -613,13 +650,20 @@ export function wireCodegraph(
   const ensure = (): void => {
     if (ensured) return;
     ensured = true;
-    ensureCodegraphDaemon(daemonPaths, rootDir, {
-      memoryLimit: codegraph.dbMemoryLimit,
-      // Governor ceiling rides the spawn env to the daemon; the in-process
-      // pool above intentionally stays at the base limit (daemon-only raise).
-      memoryLimitMax: codegraph.dbMemoryLimitMax,
-      threads: codegraph.dbThreads,
-    });
+    ensureCodegraphDaemon(
+      daemonPaths,
+      rootDir,
+      {
+        memoryLimit: codegraph.dbMemoryLimit,
+        // Governor ceiling rides the spawn env to the daemon; the in-process
+        // pool above intentionally stays at the base limit (daemon-only raise).
+        memoryLimitMax: codegraph.dbMemoryLimitMax,
+        threads: codegraph.dbThreads,
+      },
+      // Read here, at spawn time, not at wire time: the wireCodegraph unit
+      // test wires a config slice without `core` and never spawns.
+      zodConfig.core.debug,
+    );
   };
   const originalAcquireWrite = pool.acquireWrite.bind(pool);
   pool.acquireWrite = async (collectionName: PhysicalCollectionName) => {

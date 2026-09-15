@@ -688,8 +688,11 @@ export class GraphDbClientPool {
    * is silently rolled back — `removeCollection` treats the pair as one artifact
    * too. A target WAL with no source counterpart is REMOVED: collection names get
    * reused, and replaying a previous tenant's log over the copy is worse. `release`
-   * checkpoints only this pool's cached client; a daemon-held database keeps an
-   * unflushed WAL, which is why the sidecar is copied rather than assumed empty.
+   * does not checkpoint: it closes this pool's cached client through
+   * `DuckDbGraphSession#close`, which leaves the WAL in place, and a database the
+   * daemon holds stays open in the daemon. Either way the source WAL can carry
+   * writes the database file lacks, which is why the sidecar is copied rather
+   * than assumed empty.
    */
   async cloneDatabase(
     sourceCollection: PhysicalCollectionName,
