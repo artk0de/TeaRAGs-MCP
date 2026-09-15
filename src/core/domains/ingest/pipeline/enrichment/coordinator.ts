@@ -16,6 +16,7 @@
 import { randomUUID } from "node:crypto";
 
 import type { QdrantManager } from "../../../../adapters/qdrant/client.js";
+import { servicePointExclusions } from "../../../../adapters/qdrant/service-points.js";
 import { selectProviderKeys } from "../../../../contracts/provider-selector.js";
 import type { FileExtraction } from "../../../../contracts/types/codegraph.js";
 import type {
@@ -792,11 +793,7 @@ export class EnrichmentCoordinator {
       collectionName,
       {
         ...languageFilter,
-        must_not: [
-          { key: "_type", match: { value: "indexing_metadata" } },
-          { key: "_type", match: { value: "schema_metadata" } },
-          { is_empty: { key: "relativePath" } },
-        ],
+        must_not: [...servicePointExclusions(), { is_empty: { key: "relativePath" } }],
       },
       RECOMPUTE_SCROLL_HARD_CAP,
       undefined,

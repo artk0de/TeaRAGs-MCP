@@ -6,6 +6,7 @@
  */
 
 import type { QdrantManager } from "../../../../adapters/qdrant/client.js";
+import { chunkPointsFilter } from "../../../../adapters/qdrant/service-points.js";
 import { INDEXING_METADATA_ID } from "../../../../contracts/constants.js";
 import type { EnrichmentStore } from "../types.js";
 
@@ -21,13 +22,7 @@ export class EnrichmentStoreAdapter implements EnrichmentStore {
   }
 
   async scrollAllChunks(collection: string): Promise<{ id: string | number; payload: Record<string, unknown> }[]> {
-    const filter = {
-      must_not: [
-        { key: "_type", match: { value: "indexing_metadata" } },
-        { key: "_type", match: { value: "schema_metadata" } },
-      ],
-    };
-    const points = await this.qdrant.scrollFiltered(collection, filter, SCROLL_LIMIT);
+    const points = await this.qdrant.scrollFiltered(collection, chunkPointsFilter(), SCROLL_LIMIT);
     return points.map((p) => ({
       id: p.id,
       payload: p.payload ?? {},
