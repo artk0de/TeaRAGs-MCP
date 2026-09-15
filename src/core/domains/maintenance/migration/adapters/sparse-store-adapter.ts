@@ -7,6 +7,7 @@
 
 import type { QdrantManager } from "../../../../adapters/qdrant/client.js";
 import { SchemaMetadataPointStore } from "../../../../adapters/qdrant/schema-metadata-point.js";
+import { isServicePointPayload } from "../../../../adapters/qdrant/service-points.js";
 import type { SparseStore } from "../types.js";
 
 export class SparseStoreAdapter implements SparseStore {
@@ -38,7 +39,7 @@ export class SparseStoreAdapter implements SparseStore {
 
       for (const point of batch) {
         const { payload } = point;
-        if (payload._type === "schema_metadata" || payload._type === "indexing_metadata") continue;
+        if (isServicePointPayload(payload)) continue;
 
         const { content } = payload;
         if (typeof content !== "string") continue;

@@ -1,18 +1,15 @@
 /**
  * Per-run state of the codegraph symbols provider (bd tea-rags-mcp-6vfrj / G2).
  *
- * Pass-1 (`sink.write`) merges each file's extraction aggregates into the
- * run-global maps held here; the pass-1→pass-2 barrier seals them (hierarchy
- * view, reverse include-by index, self-dispatch templates); pass-2
+ * Pass-1 (`sink.write` → `absorb`) merges each file's aggregates into the
+ * run-global maps held here; the pass-1→pass-2 barrier (`seal`) builds the
+ * hierarchy view, reverse include-by index and self-dispatch templates; pass-2
  * (`CallEdgeResolutionRunner`) reads them for every `CallContext` and tallies
  * resolve outcomes back into `stats`.
  *
- * Extracted from `CodegraphEnrichmentProvider` so ONE object owns the lifecycle
- * of these fields. The provider previously spread the reset logic across four
- * seams that cleared overlapping but non-identical sets; those seams are
- * preserved verbatim as named methods here (`resetTally` / `clearForNextRun` /
- * `clearAll`) rather than unified — unification is a behavior change and needs
- * its own TDD cycle.
+ * The reset seams (`resetTally` / `clearForNextRun` / `clearAll` / `drainMetrics`)
+ * clear overlapping but NOT identical field sets on purpose: unifying them is a
+ * behaviour change and needs its own TDD cycle.
  */
 
 import { readFileSync } from "node:fs";
@@ -69,30 +66,26 @@ import {
 export interface ReceiverKindTally {
   attempted: number;
   resolved: number;
-  // tea-rags-mcp-ykj7 — unresolved-but-external calls in this bucket (subset of
-  // attempted − resolved). Persisted to cg_run_stats.external_skipped.
+  // tea-rags-mcp-ykj7 — unresolved-but-external calls (subset of attempted −
+  // resolved). Persisted to cg_run_stats.external_skipped.
   externalSkipped: number;
-  // bd cai0 — unresolved-but-statically-undeterminable calls in this bucket
-  // (dynamic send(var)). Persisted to cg_run_stats.unresolvable.
+  // bd cai0 — unresolved-but-statically-undeterminable calls (dynamic send(var)).
+  // Persisted to cg_run_stats.unresolvable.
   unresolvable: number;
-  // Unresolved calls in this bucket whose member has NO in-project definition
-  // (gem/core/runtime-generated/dynamic). Excluded from the inProjectEdgeRecall
-  // denominator. Persisted to cg_run_stats.no_in_project_def.
+  // Unresolved calls whose member has NO in-project definition; excluded from
+  // the inProjectEdgeRecall denominator. Persisted to cg_run_stats.no_in_project_def.
   noInProjectDef: number;
-  // bd tea-rags-mcp-83cl7 — unresolved calls in this bucket whose member is a
-  // CORE/runtime name on an UNTYPED receiver, where a project homonym def
-  // defeats the noInProjectDef gate. Excluded from the inProjectEdgeRecall
-  // denominator. Persisted to cg_run_stats.core_ambiguous.
+  // bd tea-rags-mcp-83cl7 — unresolved CORE/runtime names on an UNTYPED receiver,
+  // where a project homonym defeats the noInProjectDef gate; excluded from the
+  // recall denominator. Persisted to cg_run_stats.core_ambiguous.
   coreAmbiguous: number;
-  // bd f2jsb/j0pki — unresolved-but-over-cap-ambiguous dispatch fan-outs in
-  // this bucket (subset of attempted − resolved). Its own bucket: NOT a genuine
-  // miss, NOT external. Persisted to cg_run_stats.ambiguous_fanout.
+  // bd f2jsb/j0pki — over-cap-ambiguous dispatch fan-outs (subset of attempted −
+  // resolved): neither a genuine miss nor external. Persisted to cg_run_stats.ambiguous_fanout.
   ambiguousFanout: number;
-  // bd tea-rags-mcp-znxg8 — RESOLVED calls in this bucket that landed on a
-  // shared self-dispatch entry node instead of the concrete hook the constant
-  // receiver names. The only counter here that is not a miss, and the only one
-  // no rate consumes: an invariant that sits near zero while entry narrowing
-  // works. Persisted to cg_run_stats.unnarrowed_template.
+  // bd tea-rags-mcp-znxg8 — RESOLVED calls that landed on a shared self-dispatch
+  // entry node instead of the concrete hook the constant receiver names. Not a
+  // miss and read by no rate: an invariant that sits near zero while entry
+  // narrowing works. Persisted to cg_run_stats.unnarrowed_template.
   unnarrowedTemplate: number;
 }
 
@@ -102,49 +95,30 @@ export interface RunStats {
   methodEdgeCount: number;
   callsAttempted: number;
   callsResolved: number;
-  // tea-rags-mcp-ykj7 — unresolved calls the language resolver flagged as
-  // targeting an external library / runtime import (`Math.max`, `fs.readFile`,
-  // `Net::HTTP.get`). Excluded from the resolveSuccessRate denominator so the
-  // rate reflects PROJECT-INTERNAL resolver capability, not unresolvable
-  // external-library noise. Subset of (callsAttempted − callsResolved).
+  // tea-rags-mcp-ykj7 — unresolved calls targeting an external library / runtime
+  // (`Math.max`, `Net::HTTP.get`), excluded from the resolveSuccessRate
+  // denominator. Subset of (callsAttempted − callsResolved).
   callsExternalSkipped: number;
-  // bd cai0 — unresolved calls flagged by the walker as dynamic send(var) with a
-  // non-literal target: statically undeterminable, not a resolver miss. Excluded
+  // bd cai0 — unresolved dynamic send(var) calls with a non-literal target, excluded
   // from the resolveSuccessRate denominator. Subset of (callsAttempted −
   // callsResolved − callsExternalSkipped).
   callsUnresolvable: number;
-  // Genuine-miss calls whose member short-name has NO in-project definition
-  // (symbolTable.lookupByShortName empty) — gem/core/runtime-generated/dynamic
-  // targets that can never produce an in-project edge. Excluded from the
-  // inProjectEdgeRecall denominator so recall measures graph completeness over
-  // calls that COULD resolve to a project symbol. Subset of the genuine-miss
-  // bucket (callsAttempted − callsResolved − callsExternalSkipped −
-  // callsUnresolvable).
+  // Genuine misses whose member short-name has NO in-project definition — they
+  // can never yield an in-project edge, so inProjectEdgeRecall excludes them.
+  // Subset of (callsAttempted − callsResolved − callsExternalSkipped − callsUnresolvable).
   callsNoInProjectDef: number;
-  // bd tea-rags-mcp-83cl7 — genuine-miss calls whose member IS defined in the
-  // project but is a CORE/runtime name (`each`, `to_s`, `first`) reached through
-  // an UNTYPED receiver: the real callee is the runtime and the project def is a
-  // same-name coincidence. On taxdome this phantom was 4391 of 20964 recorded
-  // recall holes. Excluded from the inProjectEdgeRecall / resolveSuccessRate
-  // denominators exactly like callsNoInProjectDef. Subset of the residual
-  // genuine-miss bucket (callsAttempted − callsResolved − callsExternalSkipped −
-  // callsUnresolvable − callsNoInProjectDef).
+  // bd tea-rags-mcp-83cl7 — genuine misses on a CORE/runtime name (`each`, `to_s`)
+  // through an UNTYPED receiver, whose project def is a same-name coincidence.
+  // Excluded from both denominators exactly like callsNoInProjectDef.
   callsCoreAmbiguous: number;
-  // bd f2jsb/j0pki — subset of (callsAttempted − callsResolved) that the
-  // dispatch kernel judged over-cap AMBIGUOUS (survivors > corpus-adaptive
-  // fan-out cap) and recorded as a cg_ambiguous_fanout aggregate instead of m
-  // edges. Its own bucket: NOT a genuine miss, NOT external — strict recall
-  // keeps it in the denominator, coveredRecall counts it as coverage.
+  // bd f2jsb/j0pki — over-cap AMBIGUOUS dispatch fan-outs recorded as a
+  // cg_ambiguous_fanout aggregate instead of m edges. Strict recall keeps them in
+  // the denominator; coveredRecall counts them as coverage.
   callsAmbiguousFanout: number;
-  // Per-(code language, receiver kind) resolve breakdown (bd tea-rags-mcp-cnqrg,
-  // extends j431). Source of truth: the aggregate scalars above, the per-kind
-  // summary (getRunMetrics, j431 view) and the per-language summary
-  // (get_index_status) all derive from this by summing across the other axis.
-  // recordRunStats persists each (language, kind) cell to cg_run_stats so the
-  // daemon-readable proxy can break resolveSuccessRate down per language and
-  // locate the resolver gap. Lazily grows one entry per language observed in
-  // this run. Test files never reach here — the codegraph exclusion filter
-  // drops them upstream at extraction, unconditionally.
+  // Per-(language, receiver kind) tally (bd tea-rags-mcp-cnqrg, extends j431): the
+  // source every aggregate above and every per-kind / per-language summary sums
+  // from; persisted per cell to cg_run_stats. Test files never reach it — the
+  // codegraph exclusion filter drops them at extraction.
   byLanguageKind: Map<string, Record<ReceiverKind, ReceiverKindTally>>;
   // bd tea-rags-mcp-xpmwg — the same counts per CALLER FILE, for
   // `cg_file_resolve_stats`. One entry per file the run resolved, zero-call
@@ -263,15 +237,12 @@ export function createEmptyRunStats(): RunStats {
 }
 
 /**
- * Reverse include-by index (bd cai0/2oky5): invert the run-global ancestor maps
- * so `out[X]` lists every class that has X as a direct ancestor (via superclass,
- * include, or prepend). Language-agnostic — pure data inversion. Consumed by the
- * Ruby `super` module-method fallback to find the classes whose MRO a super call
- * inside module X dispatches through.
+ * Reverse include-by index (bd cai0/2oky5): `out[X]` lists every class that has
+ * X as a direct ancestor (superclass, include or prepend). Consumed by the Ruby
+ * `super` module-method fallback.
  *
  * Lives here rather than in `provider.ts` so `run-state.ts` does not import its
- * own consumer (that edge would reintroduce the kind of module cycle G3 broke).
- * `provider.ts` re-exports it for import stability.
+ * own consumer (a module cycle); `provider.ts` re-exports it for import stability.
  */
 export function buildIncludedBy(
   ancestors: Record<string, readonly string[]>,
@@ -293,13 +264,8 @@ export function buildIncludedBy(
 
 /**
  * The run-global maps whose NON-EMPTINESS pass-2 tests per file, to decide
- * between the run-global fact and the calling file's own (bd
- * tea-rags-mcp-8zwl9).
- *
- * `instantiatedTypes` is deliberately absent: it is a `Set`, so `.size` already
- * answers in constant time. These six are plain objects, where the same
- * question cost a full `Object.keys` array of a map that grows across the whole
- * run.
+ * between the run-global fact and the calling file's own (bd tea-rags-mcp-8zwl9).
+ * `instantiatedTypes` is absent: a `Set` already answers `.size` in O(1).
  */
 export type RunGlobalMapName =
   | "ancestors"
@@ -328,63 +294,41 @@ function mintResolveRunScope(): ResolveRunScope {
 
 export class CodegraphRunState {
   /**
-   * Persisted-schema column vocabularies contributed by the registered
-   * languages (bd tea-rags-mcp-8l5fo). Collected ONCE by the provider's
-   * constructor (through the same `languageFactory` seam as the exclusion
-   * filter, because `factory.create` is expensive) and injected here. Empty
-   * (default — no factory / no language declares one) ⇒ the schema pre-pass
-   * never runs.
+   * Persisted-schema column vocabularies of the registered languages (bd
+   * tea-rags-mcp-8l5fo), collected ONCE by the provider's constructor because
+   * `factory.create` is expensive. Empty ⇒ the schema pre-pass never runs.
    */
   constructor(
     private readonly schemaColumnSources: readonly SchemaColumnAccessorSource[] = [],
     /**
-     * Dependency-manifest readers contributed by the registered languages
-     * (bd tea-rags-mcp-w205u.1). Collected through the same `languageFactory`
-     * seam and for the same reason as {@link schemaColumnSources}. Empty ⇒ the
-     * manifest walk never runs and every framework vocabulary stays active.
+     * Dependency-manifest readers of the registered languages (bd
+     * tea-rags-mcp-w205u.1), collected the same way. Empty ⇒ the manifest walk
+     * never runs and every framework vocabulary stays active.
      */
     private readonly dependencyManifestSources: readonly DependencyManifestSource[] = [],
   ) {}
 
   /**
-   * Per-run counters surfaced via `getRunMetrics()`. Read-and-cleared by
-   * `CompletionRunner` at end of each enrichment cycle. Tracked here
-   * (not in the sink) so they survive across multiple sink.write/finish
-   * pairs within a single run (e.g. backfill paths).
+   * Per-run counters surfaced via `getRunMetrics()`, read-and-cleared by
+   * `CompletionRunner` once per cycle. Held here, not in the sink, so they
+   * survive several sink.write/finish pairs within one run (backfill paths).
    */
   stats: RunStats = createEmptyRunStats();
 
   /**
-   * Files pass-1 absorbed, per language — the volume pass-2 is about to
-   * resolve, known BEFORE it starts (bd tea-rags-mcp-6aytq).
-   *
-   * Every file that reaches `absorb` is spilled in the same breath, so this
-   * count IS the pass-2 file count, and it is a fact rather than a projection:
-   * a force-resolve re-extracts the whole project, an incremental run carries
-   * the handful of files that changed, and the number says which happened
-   * without anything having to consult the repair set. `prepareResolvePass`
-   * hands each language its own figure so a resolver can prime run-scoped
-   * caches whose cost only a bulk pass repays.
-   *
-   * Per LANGUAGE, not a single total: a run of 10,000 Ruby files and 40
-   * TypeScript ones is not a bulk pass for TypeScript.
+   * Files pass-1 absorbed, per language — the pass-2 file count, known before
+   * pass-2 starts (bd tea-rags-mcp-6aytq). `prepareResolvePass` hands each
+   * language its own figure so a resolver primes run-scoped caches only for a
+   * bulk pass. Per LANGUAGE: 10,000 Ruby files and 40 TypeScript ones is not a
+   * bulk pass for TypeScript.
    */
   readonly extractedFilesByLanguage = new Map<string, number>();
 
   /**
-   * The same files, listed rather than counted (bd tea-rags-mcp-6aytq).
-   *
-   * Kept beside the counter rather than replacing it because they are read by
-   * different decisions: `prepareResolvePass` measures the COUNT against a
-   * bulk-pass threshold, while a resolver that primes builds its cache over the
-   * LIST. TypeScript is the consumer — its whole-project `ts.Program` is rooted
-   * at the tsconfig's include/exclude expansion, which on taxdome misses 936 of
-   * the 10,912 files the run resolves, and each miss costs a per-entry
-   * `ts.createProgram`.
-   *
-   * The retained cost is a path string per extracted file — ~1 MB for a
-   * 10,000-file TypeScript corpus, released with the rest of the run state at
-   * both clear seams.
+   * The same files, listed rather than counted (bd tea-rags-mcp-6aytq): the count
+   * gates a bulk pass, the list is what a priming resolver builds over —
+   * TypeScript roots its whole-project `ts.Program` on it, because the tsconfig
+   * include set misses files the run resolves. Released at both clear seams.
    */
   readonly extractedRelPathsByLanguage = new Map<string, RelPath[]>();
 
@@ -399,23 +343,17 @@ export class CodegraphRunState {
 
   /**
    * The persisted pass-1 slices the MAIN thread read and injected for this run
-   * (bd tea-rags-mcp-weno4), threaded in from `FileSignalOptions.pass1Aggregates`.
-   * The barrier prefers these over its own `graphDb` read, which a stale daemon
-   * in the worker can answer with `unknown daemon op: listAllPass1Aggregates`.
-   * Undefined for direct/test callers, which fall back to the read.
-   *
-   * Per-RUN and cleared at both release seams below: rows injected for one
-   * collection would otherwise hydrate the next run's registries with another
-   * corpus's ancestry.
+   * (bd tea-rags-mcp-weno4, via `FileSignalOptions.pass1Aggregates`). The barrier
+   * prefers them over its own `graphDb` read; undefined for direct/test callers,
+   * which keep the read. Per-RUN and cleared at both release seams below: rows of
+   * one collection must never hydrate the next run's registries.
    */
   injectedPass1Aggregates?: readonly CodegraphPass1FileAggregates[];
 
   /**
-   * Per-run aggregation of `FileExtraction.classAncestors` across every
-   * file walked in pass-1. The resolver needs ancestors keyed by
-   * `targetType` (the class a variable is bound to) — that target type's
-   * declaration usually lives in a DIFFERENT file than the caller, so
-   * per-file ancestor maps are insufficient. Reset on finish().
+   * Per-run aggregation of `FileExtraction.classAncestors` across every file
+   * walked in pass-1, keyed by class: a variable's bound type is usually declared
+   * in a DIFFERENT file than the caller, so per-file ancestor maps are insufficient.
    */
   ancestors: Record<string, readonly string[]> = {};
 
@@ -423,146 +361,109 @@ export class CodegraphRunState {
    * Per-run set of FQs declared COMPACT (`class A::B::C`), aggregated from
    * `FileExtraction.compactDeclaredClasses`. Passed to the resolver ctx so
    * `canonicalizeAncestorFq` skips the nesting prefix-walk for them (bd
-   * lawlq.3.7). Reset on finish() alongside ancestors.
+   * lawlq.3.7). Reset alongside ancestors.
    */
   compactClasses = new Set<string>();
 
   /**
-   * Per-run aggregation of `FileExtraction.classPrependedAncestors`
-   * (bd tea-rags-mcp-3jvn). Same lifecycle as `ancestors` — merged
-   * across pass-1 files, consumed by pass-2 resolver. Walked BEFORE the
-   * bound class itself by `RubyCallResolver.resolveByLocalTypeInternal`
-   * so prepended modules' methods shadow the class's own.
+   * Per-run aggregation of `FileExtraction.classPrependedAncestors` (bd
+   * tea-rags-mcp-3jvn). Same lifecycle as `ancestors`; walked BEFORE the bound
+   * class itself so prepended modules' methods shadow the class's own.
    */
   prependedAncestors: Record<string, readonly string[]> = {};
 
   /**
-   * Reverse include-by index (`buildIncludedBy`) computed ONCE from the frozen
-   * run-global ancestor + prepended maps at the pass-1→pass-2 barrier, instead of
-   * rebuilding the same inversion per file inside `resolveExtraction`
-   * (24583× on taxdome — pure waste, `buildIncludedBy` has an inner O(n²) scan).
-   * Pass-2 reads it only when BOTH resolver ancestor inputs ARE the run-global
-   * maps; the per-file fallback (single-file / test mode) still computes fresh.
+   * Reverse include-by index built ONCE from the frozen ancestor + prepended maps
+   * at the barrier, not per file — `buildIncludedBy` has an inner O(n²) scan. Pass-2
+   * reads it only when BOTH resolver ancestor inputs ARE the run-global maps; the
+   * per-file fallback (single-file / test mode) still computes fresh.
    */
   includedBy: Record<string, string[]> = {};
 
   /**
-   * Per-run aggregation of `FileExtraction.classExtends`
-   * (bd tea-rags-mcp-d29r). Single-inheritance parent map merged across
-   * pass-1 files so the resolver's `super()` branch can route to the
-   * parent class regardless of which file declares it.
+   * Per-run aggregation of `FileExtraction.classExtends` (bd tea-rags-mcp-d29r):
+   * single-inheritance parent map merged across files, so `super()` routes to the
+   * parent regardless of which file declares it.
    */
   classExtends: Record<string, string> = {};
 
   /**
-   * Per-run aggregation of `FileExtraction.classSchemaTables`
-   * (bd tea-rags-mcp-8l5fo): `class FQ → explicit ORM table override`. Read ONCE
-   * at the pass-1→pass-2 barrier by the schema-column pre-pass, where it decides
-   * which model owns each `db/schema.rb` table. Same lifecycle as `classExtends`.
+   * Per-run aggregation of `FileExtraction.classSchemaTables` (bd
+   * tea-rags-mcp-8l5fo): `class FQ → explicit ORM table override`, read ONCE at
+   * the barrier to decide which model owns each schema table. Lifecycle as `classExtends`.
    */
   schemaTables: Record<string, string> = {};
 
   /**
-   * Raw contents of the project's persisted-schema snapshot for the CURRENT run,
-   * keyed by the declaring language's `schemaRelPath`. Read ONCE per run from the
-   * project root by {@link loadSchemaSnapshots} — the same one-manifest-read
-   * shape as `gemfileContent` — because the barrier (`seal`) has no `root` of
-   * its own. bd tea-rags-mcp-8l5fo.
+   * Raw persisted-schema snapshot contents for the CURRENT run, keyed by the
+   * declaring language's `schemaRelPath` and read ONCE by {@link loadSchemaSnapshots}
+   * — the barrier (`seal`) has no `root` of its own. bd tea-rags-mcp-8l5fo.
    */
   schemaSnapshots: Record<string, string> = {};
   private schemaSnapshotsLoaded = false;
 
   /**
-   * Per-run aggregation of `FileExtraction.functionReturnTypes`
-   * (bd tea-rags-mcp-6g9c). `functionName → declaredReturnTypeName` merged
-   * across pass-1 files so the Go resolver can bind `x := New(); x.method()`
-   * to `<New's return type>#method` even when `New` is declared in a
-   * different file. Same lifecycle as `classExtends` — reset on finish().
+   * Per-run aggregation of `FileExtraction.functionReturnTypes` (bd
+   * tea-rags-mcp-6g9c): `functionName → declaredReturnTypeName`, so `x := New();
+   * x.method()` binds even when `New` lives in another file. Lifecycle as `classExtends`.
    */
   returnTypes: Record<string, string> = {};
 
   /**
-   * Per-run aggregation of `FileExtraction.instantiatedTypes` (bd
-   * tea-rags-mcp-pffv). The union of every instantiated fq const across pass-1
-   * files, so `ConeDispatchResolver` can RTA-prune a CHA cone regardless of
-   * which file does the `Klass.new`. Same lifecycle as `returnTypes` — reset
-   * on finish / empty-run / release.
+   * Per-run union of `FileExtraction.instantiatedTypes` (bd tea-rags-mcp-pffv),
+   * so `ConeDispatchResolver` can RTA-prune a CHA cone regardless of which file
+   * does the `Klass.new`. Lifecycle as `returnTypes`.
    */
   readonly instantiatedTypes = new Set<string>();
 
   /**
-   * Per-run aggregation of `FileExtraction.ivarTypes` (Ruby type-source engine,
-   * Increment 1, Task 1.5). `fqClassName → "@ivar" → typeName` merged across
-   * pass-1 files so the resolver's PRECISE `@ivar.method()` path
-   * (`ctx.ivarTypes`) sees a class's annotated ivars regardless of which file
-   * declared the class. Same lifecycle as `returnTypes` — last-write-wins on
-   * duplicate class keys, reset on finish / empty-run.
-   *
-   * Stays empty while no type source emits `kind:"ivar"` facts (bd
-   * tea-rags-mcp-wr7ku) — an empty map here is expected, not a wiring defect.
+   * Per-run aggregation of `FileExtraction.ivarTypes` (`fqClassName → "@ivar" →
+   * typeName`) for the precise `@ivar.method()` path. Last-write-wins on a
+   * duplicate class key. Stays empty while no type source emits `kind:"ivar"`
+   * facts (bd tea-rags-mcp-wr7ku) — expected, not a wiring defect.
    */
   ivarTypes: Record<string, Record<string, string>> = {};
 
   /**
-   * Per-run aggregation of `FileExtraction.structuredReturnTypes` (Ruby
-   * type-source engine, Increment 1, Task 1.5). `"<fqClass>#method" →
-   * RubyTypeRef` merged across pass-1 files so the resolver's PRECISE
-   * structured-return path (`ctx.structuredReturnTypes`) threads
-   * `recv.method().member` chains to the richer ref (union / container
-   * preserved) regardless of which file declared the method. Same lifecycle as
-   * `returnTypes` — last-write-wins, reset on finish / empty-run.
+   * Per-run aggregation of `FileExtraction.structuredReturnTypes`
+   * (`"<fqClass>#method" → RubyTypeRef`) for the precise structured-return path,
+   * which keeps union / container refs across files. Last-write-wins.
    */
   structuredReturnTypes: Record<string, RubyTypeRef> = {};
 
   /**
    * Per-run aggregation of `FileExtraction.classFieldTypesByClassKey` (bd
-   * tea-rags-mcp-f0xaa). `"<relPath>::<dotted class FQ>" → field → typeName`
-   * merged across pass-1 files so Python's MRO field fold sees a base class's
-   * fields from a subclass declared in ANOTHER file — the shape that carried
-   * polar's `chain` hole.
+   * tea-rags-mcp-f0xaa): `"<relPath>::<dotted class FQ>" → field → typeName`, so
+   * Python's MRO field fold sees a base class's fields from a subclass in another file.
    *
-   * Deliberately NOT a {@link RunGlobalMapName}: nothing needs the "did any file
-   * contribute" question, because every reader indexes it by key and an absent
-   * map reads the same as an empty one. Last-write-wins on a duplicate class
-   * key, mirroring `ivarTypes`; reset at the same seams.
+   * Deliberately NOT a {@link RunGlobalMapName}: every reader indexes it by key,
+   * so an absent map reads the same as an empty one. Last-write-wins on a
+   * duplicate class key, mirroring `ivarTypes`; reset at the same seams.
    */
   classFieldTypesByClassKey: Record<string, Record<string, string>> = {};
 
   /**
    * Per-run aggregation of `FileExtraction.classFieldCallResults` (bd
-   * tea-rags-mcp-w205u, E4.6c). `"<relPath>::<dotted class FQ>" → field →
-   * callee SPELLING` for the fields a walker cannot type, folded ONE level
-   * against `structuredReturnTypes` at resolve time.
-   *
-   * Same lifecycle and same key shape as `classFieldTypesByClassKey`, and for
-   * the same reason: the key already names the declaring file, so a union
-   * across files cannot conflate two same-named classes. NOT persisted — it
-   * rides walker 5's unreleased delta, and an index without it resolves exactly
-   * as it did before.
+   * tea-rags-mcp-w205u, E4.6c): `"<relPath>::<dotted class FQ>" → field → callee
+   * SPELLING` for fields a walker cannot type, folded ONE level against
+   * `structuredReturnTypes` at resolve time. Same key shape and lifecycle as
+   * `classFieldTypesByClassKey`. NOT persisted.
    */
   classFieldCallResults: Record<string, Record<string, string>> = {};
 
   /**
-   * Per-run collection of `FileExtraction.moduleReexports`, keyed by the relPath
-   * of the file that wrote each list (bd tea-rags-mcp-xpl83.3). The import
-   * mapper reads it to answer "which file DECLARES this name" past a package
-   * that only re-exports it.
-   *
-   * Assignment, not union: the list is the whole truth about ONE file's `from`
-   * statements, so re-walking a file must REPLACE what it said rather than
-   * accumulate a statement it has since deleted. Same reason the entry is keyed
-   * by relPath and not folded into a name-addressed map. Reset at the same seams
-   * as `classFieldTypesByClassKey`.
+   * Per-run `FileExtraction.moduleReexports`, keyed by the relPath that wrote each
+   * list (bd tea-rags-mcp-xpl83.3), so the import mapper can see past a package
+   * that only re-exports a name. Assignment, not union: a re-walk must REPLACE
+   * what the file said, never keep a statement it has since deleted.
    */
   moduleReexports: Record<string, readonly ModuleReexport[]> = {};
 
   /**
-   * Per-run aggregation of `FileExtraction.dispatchTables` keyed by table
-   * NAME (bd tea-rags-mcp-n0zj). The value is a `DispatchTableDef[]` because
-   * the same name may be declared in several files; the resolver
-   * disambiguates by the caller's import map. Re-walking a file replaces its
-   * own entry (dedup by relPath). Same lifecycle as `classExtends` —
-   * reset on the empty-run path of `getRunMetrics`.
+   * Per-run aggregation of `FileExtraction.dispatchTables` keyed by table NAME
+   * (bd tea-rags-mcp-n0zj); several files may declare one name, and the resolver
+   * disambiguates by the caller's import map. Re-walking a file replaces its own
+   * entry (dedup by relPath).
    */
   dispatchTables: Record<string, DispatchTableDef[]> = {};
 
@@ -575,70 +476,54 @@ export class CodegraphRunState {
   callbackParams: Record<string, number[]> = {};
 
   /**
-   * Per-run aggregation of normalized inheritance rows (bd tea-rags-mcp-o17v2).
-   * Accumulated across pass-1 `sink.write` so the pass-1→pass-2 barrier can build
-   * a complete `MapHierarchyView` BEFORE any file resolves. Inheritance edges are
-   * persisted per-file DURING pass-2, so the DB is not yet complete when the
-   * first file's CHA cone needs `getDescendants` — the in-memory snapshot closes
-   * that gap. Same lifecycle as `classExtends` — reset on finish / empty-run.
+   * Per-run normalized inheritance rows (bd tea-rags-mcp-o17v2), accumulated so
+   * the barrier builds a complete `MapHierarchyView` BEFORE any file resolves:
+   * edges are persisted per file DURING pass-2, so the DB is incomplete when the
+   * first CHA cone needs `getDescendants`.
    */
   inheritanceRows: InheritanceEdgeRow[] = [];
 
   /**
    * Bidirectional class-hierarchy view built from `inheritanceRows` at the
-   * pass-1→pass-2 barrier (bd tea-rags-mcp-o17v2). Threaded into every resolve
-   * `CallContext.hierarchy` so the CHA cone resolver can devirtualize a
-   * polymorphic typed receiver to its overriding subtypes. `undefined` until the
-   * barrier runs (and on reset) — the cone resolver treats absent as "no cone".
+   * barrier (bd tea-rags-mcp-o17v2) and threaded into every `CallContext.hierarchy`.
+   * `undefined` until the barrier runs (and on reset) — the cone resolver treats
+   * absent as "no cone".
    */
   hierarchyView: HierarchyView | undefined;
 
   /**
-   * Per-run accumulation of self-dispatch method candidates (DEFECT 2 —
-   * self-receiver abstract-hook dispatch). One LIGHT record per method that
-   * self-calls (`symbolId` + enclosing type + bare hook names), NOT the chunks,
-   * so the NDJSON-spill heap optimisation holds. Fed to
-   * `discoverSelfDispatchTemplates` at the pass-1→pass-2 barrier. Populated for
-   * Ruby files only (the entry strategy that consumes the map is Ruby). Reset
-   * alongside `inheritanceRows`.
+   * Per-run self-dispatch method candidates (DEFECT 2): one LIGHT record per
+   * self-calling method (symbolId + enclosing type + bare hook names), never the
+   * chunks, so the NDJSON-spill heap bound holds. Ruby files only.
    */
   selfDispatchMethods: SelfDispatchMethod[] = [];
 
   /**
    * Run-global `templateMethodSymbolId → abstractHookMember` map (DEFECT 2) built
-   * from `selfDispatchMethods` at the barrier and threaded into every resolve
-   * `CallContext.selfDispatchTemplates`. Empty until the barrier runs (and on
-   * reset) — the Ruby entry strategy CONTINUEs when it is absent/empty. Reset
-   * alongside `hierarchyView`.
+   * at the barrier for every `CallContext.selfDispatchTemplates`. Empty until the
+   * barrier runs — the Ruby entry strategy CONTINUEs when it is empty.
    */
   selfDispatchTemplates: Record<string, string> = {};
 
   /**
-   * Run-global list of self-instantiating CLASS-method symbolIds (DEFECT 2 v2)
-   * built from `selfDispatchMethods` at the barrier and threaded into every
-   * resolve `CallContext.selfInstantiatingClassMethods`. The Ruby entry strategy's
-   * v2 branch reads it to bridge a class entry to the same-named instance template
-   * (`self.call → new.call` service idiom). Empty until the barrier runs (and on
-   * reset). Reset alongside `selfDispatchTemplates`.
+   * Run-global self-instantiating CLASS-method symbolIds (DEFECT 2 v2), built at
+   * the barrier: the Ruby entry strategy bridges a class entry to the same-named
+   * instance template (`self.call → new.call`). Empty until the barrier runs.
    */
   selfInstantiatingClassMethods: string[] = [];
 
   /**
-   * Per-run accumulation of known-target call-site argument types (bd
-   * tea-rags-mcp-bvalc), DEDUPED by (targets, argTypes): a fold over agreement
-   * is idempotent, so a thousand identical `Foo.new(bar)` sites contribute one
-   * record while two DISAGREEING sites stay two and still conflict. Keeps the
-   * pass-1 heap proportional to distinct call shapes rather than call sites.
-   * Populated for Ruby files only; reset alongside `selfDispatchMethods`.
+   * Per-run known-target call-site argument types (bd tea-rags-mcp-bvalc), DEDUPED
+   * by (targets, argTypes): the fold over agreement is idempotent, so identical
+   * sites contribute one record while disagreeing sites still conflict. Ruby only.
    */
   readonly knownTargetCallArgs = new Map<string, KnownTargetCallArgs>();
 
   /**
    * Per-run method-definition index `symbolId → positional param names` (bd
-   * tea-rags-mcp-bvalc), from `ChunkExtraction.paramNames`. Maps an argument
-   * POSITION to a parameter NAME at the barrier and, because it holds only real
-   * definitions, gates which of a call site's constant-lookup candidates is the
-   * actual callee.
+   * tea-rags-mcp-bvalc). Maps an argument POSITION to a parameter NAME at the
+   * barrier and, holding only real definitions, gates which constant-lookup
+   * candidate is the actual callee.
    */
   paramNames: Record<string, readonly string[]> = {};
 
@@ -675,58 +560,39 @@ export class CodegraphRunState {
   derivedClassFieldTypes: Record<string, Record<string, string>> = {};
 
   /**
-   * Raw `Gemfile` contents for the CURRENT run, read ONCE from the project root
-   * by {@link loadGemfile} and attached to every resolver `CallContext` so the
-   * Ruby resolver gates DSL grammar to this project's gems (`catalogueForGemfile`).
-   * Single-valued (not per-collection), same as `ancestors` — the provider
-   * processes one collection per instance at a time. `undefined` ⇒ no Gemfile ⇒
-   * FULL catalogue. `gemfileLoaded` guards the one-per-run read. Both reset
+   * Raw `Gemfile` contents for the CURRENT run, read ONCE by {@link loadGemfile}
+   * and attached to every resolver `CallContext` so Ruby DSL grammar is gated to
+   * this project's gems. `undefined` ⇒ no Gemfile ⇒ FULL catalogue. Reset
    * alongside `compactClasses` (bd tea-rags-mcp-adx5p.1).
    */
   gemfileContent: string | undefined = undefined;
   private gemfileLoaded = false;
 
   /**
-   * Every dependency this run's project DECLARES, unioned across every manifest
-   * under the root and normalized per language, read ONCE by
-   * {@link loadDeclaredDependencies} and attached to every resolver
-   * `CallContext` and walk input. The Python walker gates its framework
-   * vocabularies on it (`pythonVocabularyFor`).
-   *
-   * `undefined` means no manifest exists anywhere, which leaves every vocabulary
-   * ACTIVE — absence of evidence, not a denial. An empty set is a manifest that
-   * declares nothing and gates every conditional vocabulary off. Same lifecycle
-   * as `gemfileContent`: reset wherever that is. bd tea-rags-mcp-w205u.1.
+   * Every dependency this run's project DECLARES, unioned across manifests and
+   * normalized per language, read ONCE by {@link loadDeclaredDependencies}. The
+   * Python walker gates its framework vocabularies on it. `undefined` = no
+   * manifest anywhere ⇒ every vocabulary ACTIVE; an empty set gates every
+   * conditional vocabulary off. Lifecycle as `gemfileContent` (bd tea-rags-mcp-w205u.1).
    */
   declaredDependencies: ReadonlySet<string> | undefined = undefined;
   private declaredDependenciesLoaded = false;
 
   /**
-   * Absolute root of the project being indexed by the CURRENT run, recorded by
-   * {@link bindProjectRoot} at the same seams that read the Gemfile and the
-   * schema snapshots, and attached to every resolver `CallContext`. Resolvers
-   * whose answers depend on project-rooted state (TypeScript: `tsconfig.json`,
-   * the file probe, the `ts.Program`) bind to it lazily on first use, because
-   * the provider itself is constructed before any collection — and therefore
-   * any project directory — is known. Same lifecycle as `gemfileContent`:
-   * reset wherever that is reset.
+   * Absolute root of the project the CURRENT run indexes, recorded by
+   * {@link bindProjectRoot} and attached to every resolver `CallContext`.
+   * Resolvers with project-rooted state (TypeScript tsconfig / file probe /
+   * `ts.Program`) bind to it lazily, because the provider is constructed before
+   * any project is known. Lifecycle as `gemfileContent`.
    */
   projectRoot: string | undefined = undefined;
 
   /**
-   * Has anything been written into each run-global map yet?
-   *
-   * Pass-2 asks this once per map per FILE, and the maps grow across the whole
-   * run, so deriving it cost `Object.keys(map).length` — a full key array
-   * allocated to answer a boolean, `files x maps x map-size` of pure waste. The
-   * same shape was already found and fixed once in this mechanism for
-   * `includedBy` (24583x on taxdome — see {@link includedBy}); these six are
-   * that bug's remaining instances (bd tea-rags-mcp-8zwl9).
-   *
-   * Written ONLY by {@link markContributed} and {@link clearContributed}, and
-   * read only by {@link hasRunGlobalEntries}, because an index's whole cost is
-   * that it CAN disagree with the map it describes — the same reasoning that
-   * keeps `rememberParse` / `forgetParse` paired in `TSProgramCache`.
+   * Has anything been written into each run-global map yet? Pass-2 asks once per
+   * map per FILE; deriving it from `Object.keys` cost files × maps × map-size (bd
+   * tea-rags-mcp-8zwl9). Written ONLY by {@link markContributed} /
+   * {@link clearContributed} and read only by {@link hasRunGlobalEntries} — an
+   * index can disagree with the map it describes, so its writers stay paired.
    */
   private readonly contributedRunGlobals: Record<RunGlobalMapName, boolean> = {
     ancestors: false,
@@ -804,9 +670,8 @@ export class CodegraphRunState {
       if (slice.selfDispatchMethods !== undefined) this.selfDispatchMethods.push(...slice.selfDispatchMethods);
     },
     // Return types (bd tea-rags-mcp-8qyax). `markContributed` matters here —
-    // without it the run reports the map as un-contributed and pass-2 falls back
-    // to each file's own maps, which is exactly the batch-scoped behaviour being
-    // repaired.
+    // without it pass-2 falls back to each file's own maps, the batch-scoped
+    // behaviour being repaired.
     structuredReturnTypes: (slice) => {
       for (const [k, v] of Object.entries(slice.structuredReturnTypes ?? {})) {
         if (k in this.structuredReturnTypes) continue;
@@ -821,11 +686,9 @@ export class CodegraphRunState {
         this.markContributed("returnTypes");
       }
     },
-    // The Python pair (bd tea-rags-mcp-4yvms). No `markContributed` for either:
-    // both are {@link RunGlobalMapName}-free by design, because
-    // `buildResolverInputs` hands them to pass-2 UNCONDITIONALLY — every reader
-    // indexes them by key, so an absent map reads the same as an empty one and
-    // there is no per-file fallback for a contribution flag to switch away from.
+    // The Python pair (bd tea-rags-mcp-4yvms). No `markContributed`: neither is a
+    // {@link RunGlobalMapName} — `buildResolverInputs` hands both to pass-2
+    // unconditionally, so there is no per-file fallback for a flag to switch to.
     //
     // Batch-wins at the CLASS KEY, never merged field-by-field: the walked
     // extraction is the whole truth about that class, so a persisted row that
@@ -836,12 +699,10 @@ export class CodegraphRunState {
         this.classFieldTypesByClassKey[classKey] = fields;
       }
     },
-    // Batch-wins on the DECLARING relPath rather than on an exported name,
-    // matching the grain `absorb` replaces this channel at. Unreachable while
-    // `selectHydratablePass1Aggregates` drops walked files — a row's relPath IS
-    // its key here — and kept because that makes "the walked list is the whole
-    // truth about one file's `from` statements" a property of this merge rather
-    // than a consequence of the filter upstream of it.
+    // Batch-wins on the DECLARING relPath, the grain `absorb` replaces this
+    // channel at. Unreachable while `selectHydratablePass1Aggregates` drops walked
+    // files, and kept so "the walked list is the whole truth about one file" is a
+    // property of this merge, not of the filter upstream of it.
     moduleReexports: (slice) => {
       if (slice.moduleReexports !== undefined && !(slice.relPath in this.moduleReexports)) {
         this.moduleReexports[slice.relPath] = slice.moduleReexports;
@@ -865,11 +726,8 @@ export class CodegraphRunState {
 
   /**
    * Did any file — or any barrier fold — contribute to this run-global map?
-   *
-   * Equivalent to `Object.keys(this[name]).length > 0` and maintained to stay
-   * so: {@link markContributed} fires per ENTRY WRITTEN, never on the mere
-   * presence of an extraction field, so a file declaring `classAncestors: {}`
-   * leaves the map unpopulated and this answer `false`.
+   * Equivalent to `Object.keys(this[name]).length > 0`: {@link markContributed}
+   * fires per ENTRY WRITTEN, so a file declaring `classAncestors: {}` leaves it `false`.
    */
   hasRunGlobalEntries(name: RunGlobalMapName): boolean {
     return this.contributedRunGlobals[name];
@@ -881,11 +739,10 @@ export class CodegraphRunState {
   }
 
   /**
-   * Forget contributions for the maps a reset seam just emptied. Defaults to
-   * all six; callers pass a subset because the seams clear overlapping but NOT
-   * identical field sets — `drainMetrics`'s real-run branch keeps four of these
-   * maps alive, and a flag cleared there would send pass-2 to the per-file
-   * fallback while the run-global map still held facts.
+   * Forget contributions for the maps a reset seam just emptied. Defaults to all
+   * six; the seams clear DIFFERENT field sets — `drainMetrics`'s real-run branch
+   * keeps four maps alive, and a flag cleared there would send pass-2 to the
+   * per-file fallback while the run-global map still held facts.
    */
   private clearContributed(names: readonly RunGlobalMapName[] = RUN_GLOBAL_MAP_NAMES): void {
     for (const name of names) this.contributedRunGlobals[name] = false;
@@ -902,12 +759,10 @@ export class CodegraphRunState {
   }
 
   /**
-   * Read the project's `Gemfile` ONCE per run (guarded by `gemfileLoaded`) so
-   * the Ruby resolver can gate DSL grammar to the declared gems. The provider is
-   * already a file-walking provider (see `extractOneFile`), so reading one root
-   * manifest is in-domain; it forwards the RAW string to every `CallContext` and
-   * the parse lives in the resolver (`catalogueForGemfile`). Absent / unreadable
-   * Gemfile ⇒ `undefined` ⇒ FULL catalogue (gating off). bd tea-rags-mcp-adx5p.1.
+   * Read the project's `Gemfile` ONCE per run (guarded) and forward the RAW
+   * string to every `CallContext`; the parse lives in the resolver
+   * (`catalogueForGemfile`). Absent / unreadable ⇒ `undefined` ⇒ FULL catalogue.
+   * bd tea-rags-mcp-adx5p.1.
    */
   loadGemfile(root: string): void {
     if (this.gemfileLoaded) return;
@@ -920,12 +775,10 @@ export class CodegraphRunState {
   }
 
   /**
-   * Walk the project's dependency manifests ONCE per run (guarded by
-   * `declaredDependenciesLoaded`), so a framework vocabulary is composed against
-   * what the project declares. Same seam and same guard as {@link loadGemfile};
-   * the walk itself lives in infra because the chunker worker needs it too, and
-   * the per-language recognizing and parsing stay in `domains/language`.
-   * No manifest anywhere ⇒ `undefined` ⇒ every vocabulary active.
+   * Walk the project's dependency manifests ONCE per run (guarded), so a framework
+   * vocabulary is composed against what the project declares. The walk lives in
+   * infra (the chunker worker needs it too); recognizing and parsing stay in
+   * `domains/language`. No manifest ⇒ `undefined` ⇒ every vocabulary active.
    * bd tea-rags-mcp-w205u.1.
    */
   loadDeclaredDependencies(root: string): void {
@@ -936,11 +789,8 @@ export class CodegraphRunState {
 
   /**
    * Read every registered language's persisted-schema snapshot ONCE per run
-   * (bd tea-rags-mcp-8l5fo). Same shape and rationale as `loadGemfile`: a
-   * root-relative manifest read is in-domain for a file-walking provider, and
-   * the barrier (`seal`) — where the pre-pass runs — never sees `root`. An
-   * absent or unreadable snapshot is a clean no-op (the project simply has no
-   * schema).
+   * (bd tea-rags-mcp-8l5fo), because the barrier (`seal`) where the pre-pass runs
+   * never sees `root`. An absent or unreadable snapshot is a clean no-op.
    */
   loadSchemaSnapshots(root: string): void {
     if (this.schemaSnapshotsLoaded) return;
@@ -955,15 +805,11 @@ export class CodegraphRunState {
   }
 
   /**
-   * Synthesize the persisted-schema column accessors onto their owning models
-   * and publish them into the run's symbol table (bd tea-rags-mcp-8l5fo). Runs
-   * at the pass-1→pass-2 barrier (`seal`), where BOTH inputs are complete for
-   * the first time: the ancestry map (which classes are models) and the
-   * explicit table overrides.
-   *
-   * The definitions are deliberately NOT persisted to `cg_symbols` — they are
-   * derived from a file that is not part of the call graph, and the pre-pass
-   * rebuilds them on every run (same lifecycle as `hierarchyView`).
+   * Synthesize the persisted-schema column accessors onto their owning models and
+   * publish them into the run's symbol table (bd tea-rags-mcp-8l5fo). Runs at the
+   * barrier, where the ancestry map and the table overrides are first complete.
+   * NOT persisted to `cg_symbols`: derived from a file outside the call graph and
+   * rebuilt every run (lifecycle as `hierarchyView`).
    */
   private applySchemaColumns(symbolTable: GlobalSymbolTable): Record<string, RubyTypeRef> {
     if (symbolTable.setSchemaColumns === undefined) return {};
@@ -1000,29 +846,20 @@ export class CodegraphRunState {
   }
 
   /**
-   * Absorb the persisted pass-1 slices of files this run did NOT walk
-   * (bd tea-rags-mcp-znxg8) — the repair that makes an incremental run's
-   * run-global maps describe the PROJECT rather than the batch, matching the
-   * symbol table it is already resolved against.
+   * Absorb the persisted pass-1 slices of files this run did NOT walk (bd
+   * tea-rags-mcp-znxg8), so an incremental run's run-global maps describe the
+   * PROJECT, matching the symbol table it resolves against.
    *
-   * Three properties hold it together:
+   *  - **Walked files are skipped, not merged.** Their row on disk still describes
+   *    the previous content; absorbing it resurrects renamed-away classes.
+   *  - **A hydrated key never displaces a walked one.** Hydration writes only into
+   *    coordinates still empty.
+   *  - **Nothing here counts as an extraction.** `extractedFilesByLanguage` and the
+   *    path lists drive run stats and the deferred chunk pass.
    *
-   *  - **Walked files are skipped, not merged.** Pass-2 has not written this
-   *    run's rows yet, so a walked file's row on disk still describes its
-   *    previous content; absorbing it would resurrect a class the file just
-   *    renamed away, under a key indistinguishable from the fresh one.
-   *  - **A hydrated key never displaces a walked one.** The fresh extraction is
-   *    authoritative; `absorb` is last-write-wins, so hydration writes only into
-   *    coordinates still empty rather than merging in the same order.
-   *  - **Nothing here counts as an extraction.** `extractedFilesByLanguage` and
-   *    the per-language path lists drive the run statistics and the deferred
-   *    chunk pass; a hydrated file was not walked, was not re-chunked, and must
-   *    not appear in either.
-   *
-   * A failure to read degrades to the pre-znxg8 behaviour — a batch-scoped
-   * registry — rather than aborting the run, and says so on stderr. That mirrors
-   * the symbol-table hydration's own guard in `codegraph/factory.ts`: losing the
-   * repair costs recall on this one run, losing the run costs the index.
+   * A read failure degrades to a batch-scoped registry with a stderr line rather
+   * than aborting the run — losing the repair costs recall, losing the run costs
+   * the index (same guard as the symbol-table hydration in `codegraph/factory.ts`).
    */
   private async hydratePersistedPass1Aggregates(
     load: () => Promise<readonly CodegraphPass1FileAggregates[]>,
@@ -1060,22 +897,14 @@ export class CodegraphRunState {
   }
 
   /**
-   * Pass-1→pass-2 barrier (bd tea-rags-mcp-o17v2 + cai0/2oky5 + DEFECT 2).
-   * Pass-1 is complete, so the run-global maps are frozen: build the hierarchy
-   * view and the reverse include-by index ONCE here instead of per file, then
-   * discover the self-dispatch templates.
+   * Pass-1→pass-2 barrier (bd tea-rags-mcp-o17v2 + cai0/2oky5 + DEFECT 2): the
+   * run-global maps are frozen, so build the hierarchy view and include-by index
+   * ONCE, then discover the self-dispatch templates.
    *
-   * `resolveSymbolTable` is LAZY on purpose — the symbol table is only needed
-   * for the self-dispatch discovery branch, and resolving it eagerly would add
-   * a pool acquire to every run that has no self-dispatch candidates.
-   *
-   * `loadPersistedPass1Aggregates` is the incremental-run repair
-   * (bd tea-rags-mcp-znxg8) and is lazy for the same reason. It MUST be absorbed
-   * FIRST — before the hierarchy view, the include-by index and the self-dispatch
-   * discovery, every one of which is computed from the maps it feeds. Taking the
-   * loader as a parameter rather than expecting the caller to absorb beforehand
-   * is what makes that ordering a property of this method instead of a rule the
-   * next caller has to know.
+   * Both loaders are lazy: `resolveSymbolTable` only for the branches that need
+   * it, `loadPersistedPass1Aggregates` (bd tea-rags-mcp-znxg8) because it MUST be
+   * absorbed FIRST — every product below is computed from the maps it feeds, and
+   * taking it as a parameter makes that ordering this method's property.
    */
   async seal(
     resolveSymbolTable: () => Promise<GlobalSymbolTable>,
@@ -1088,12 +917,9 @@ export class CodegraphRunState {
     }
     this.hierarchyView = new MapHierarchyView(buildHierarchySnapshot(this.inheritanceRows));
     this.includedBy = buildIncludedBy(this.ancestors, this.prependedAncestors);
-    // Persisted-schema column accessors (bd tea-rags-mcp-8l5fo). Composed at
-    // this same barrier and for the same reason as the discovery below: only
-    // here are the run-global ancestry map (which classes are models) and the
-    // explicit `self.table_name` overrides both complete. Pass-2's typed and
-    // MRO lookups then find a column exactly like any other member. The column
-    // VALUE types are held back and merged LAST (below).
+    // Persisted-schema column accessors (bd tea-rags-mcp-8l5fo): only here are the
+    // ancestry map (which classes are models) and the `self.table_name` overrides
+    // both complete. The column VALUE types are held back and merged LAST (below).
     let schemaColumnReturnTypes: Record<string, RubyTypeRef> = {};
     if (this.schemaColumnSources.length > 0) {
       schemaColumnReturnTypes = this.applySchemaColumns(await resolveSymbolTable());
@@ -1105,21 +931,15 @@ export class CodegraphRunState {
         discoverSelfDispatchTemplates(this.selfDispatchMethods, selfDispatchProbe),
       );
       this.selfInstantiatingClassMethods = collectSelfInstantiatingClassMethods(this.selfDispatchMethods);
-      // Service-entry RETURN threading (bd tea-rags-mcp-j9xpf). The walker
-      // types the SHARED template's return (`KindOfService#call` →
-      // `KindOfService::Result`); call sites name a CONCRETE entry constant.
-      // Both entry channels just discovered enumerate that relation, so the
-      // join belongs HERE — the only point where the walker's run-global
-      // return facts and the wiring hierarchy are both complete. Merged
-      // DERIVED-last into the same map it read: the helper skips coordinates
-      // already carrying a declared fact, so YARD / associations /
-      // body-last-expr keep precedence by construction.
+      // Service-entry RETURN threading (bd tea-rags-mcp-j9xpf): the walker types
+      // the SHARED template's return, call sites name a CONCRETE entry constant,
+      // and only here are both the return facts and the wiring hierarchy complete.
+      // Merged DERIVED-last: the helper skips coordinates already carrying a
+      // declared fact, so YARD / associations / body-last-expr keep precedence.
       //
-      // The existence oracle (bd tea-rags-mcp-yt3im) is what makes "declared
-      // wins" checkable: a fact naming a type this run declares nowhere — no
-      // symbol-table entry, no ancestry — is an annotation fiction and does not
-      // outrank a derivation. Both inputs are complete exactly here, which is
-      // why the predicate is built at this barrier rather than passed in.
+      // The existence oracle (bd tea-rags-mcp-yt3im) makes "declared wins"
+      // checkable: a fact naming a type this run declares nowhere is an annotation
+      // fiction and does not outrank a derivation.
       const entryReturnTypes = deriveServiceEntryReturnTypes(
         [...this.selfInstantiatingClassMethods, ...Object.keys(this.selfDispatchTemplates)],
         this.structuredReturnTypes,
@@ -1131,27 +951,20 @@ export class CodegraphRunState {
         this.markContributed("structuredReturnTypes");
       }
     }
-    // Persisted-schema column VALUE types (bd tea-rags-mcp-2a5oo), merged
-    // LAST and only where the coordinate is still empty. A column accessor
-    // has no `def` in source, so ANY other fact at `Model#col` — a YARD
-    // `@return`, an association, a body-inferred return, a service-entry
-    // derivation — describes a real declaration that shadows the column and
-    // must win. The schema is the fallback of last resort, exactly as the
-    // `schemaColumn` resolution strategy is the chain's last pass.
+    // Persisted-schema column VALUE types (bd tea-rags-mcp-2a5oo), merged LAST and
+    // only where the coordinate is still empty: a column accessor has no `def`, so
+    // ANY other fact at `Model#col` describes a real declaration that must win.
     for (const [key, ref] of Object.entries(schemaColumnReturnTypes)) {
       if (key in this.structuredReturnTypes) continue;
-      // Barrier-derived, but a contribution all the same: a run where no FILE
-      // typed a structured return yet the schema pre-pass did must still read
-      // as populated, or pass-2 falls back to per-file maps that lack these.
+      // Barrier-derived but still a contribution: without the flag pass-2 falls
+      // back to per-file maps that lack these.
       this.structuredReturnTypes[key] = ref;
       this.markContributed("structuredReturnTypes");
     }
-    // Interprocedural PARAMETER typing, Increment 1 (bd tea-rags-mcp-bvalc).
-    // Composed at this barrier for the same reason as the folds above: only
-    // here is the run's method-definition index complete, so a call site's
-    // constant-lookup candidates can be gated against real defs. The fold
-    // consumes NO resolution result — that is what lets it run before pass-2
-    // rather than needing a fixpoint with it.
+    // Interprocedural PARAMETER typing, Increment 1 (bd tea-rags-mcp-bvalc): only
+    // here is the method-definition index complete, so call-site candidates can be
+    // gated against real defs. The fold consumes NO resolution result, which is
+    // what lets it run before pass-2 instead of needing a fixpoint with it.
     if (this.knownTargetCallArgs.size > 0) {
       this.paramTypes = foldKnownTargetParamTypes(this.knownTargetCallArgs.values(), this.paramNames);
       this.derivedClassFieldTypes = deriveClassFieldTypesFromParams(
@@ -1163,11 +976,9 @@ export class CodegraphRunState {
   }
 
   /**
-   * Clear the interprocedural parameter-typing run state (bd tea-rags-mcp-bvalc)
-   * — the pass-1 accumulators AND the barrier products. One method rather than
-   * six inline assignments repeated at each of the run-reset seams: a future
-   * field added to this mechanism cannot be forgotten at one of them and leak
-   * facts from a previous run into the next.
+   * Clear the interprocedural parameter-typing run state (bd tea-rags-mcp-bvalc) —
+   * accumulators AND barrier products — in one place, so a field added later
+   * cannot be forgotten at one reset seam and leak into the next run.
    */
   private resetInterprocParamState(): void {
     this.knownTargetCallArgs.clear();
@@ -1235,25 +1046,18 @@ export class CodegraphRunState {
       this.beginRunScope();
       return undefined;
     }
-    // tea-rags-mcp-ykj7 + cai0.2 (Option A) — the denominator excludes
-    // external-library calls (ykj7), dynamic-undeterminable calls, AND calls
-    // whose member has no in-project def (`callsNoInProjectDef`): a member with
-    // zero in-project definitions can never resolve to an in-project symbol, so
-    // it is not a resolver failure (the same exclusion inProjectEdgeRecall
-    // applies). With the four terms excluded the rate equals inProjectEdgeRecall
-    // by construction. `max(1, …)` guards a divide-by-zero when every attempted
-    // call was external / no-in-project-def.
+    // tea-rags-mcp-ykj7 + cai0.2 (Option A) — the denominator excludes external,
+    // dynamic-undeterminable, no-in-project-def and core-ambiguous calls: none can
+    // resolve to an in-project symbol, so the rate equals inProjectEdgeRecall by
+    // construction. `max(1, …)` guards a divide-by-zero when all were excluded.
     const internalAttempted = Math.max(
       1,
       callsAttempted - callsExternalSkipped - callsUnresolvable - callsNoInProjectDef - callsCoreAmbiguous,
     );
     const resolveSuccessRate = callsAttempted === 0 ? 0 : callsResolved / internalAttempted;
-    // inProjectEdgeRecall — graph completeness. A genuine miss whose member has
-    // no in-project definition (callsNoInProjectDef) can never yield an edge, so
-    // it is excluded; likewise a core homonym reached through an untyped receiver
-    // (callsCoreAmbiguous, bd 83cl7) — its in-project def is a same-name
-    // coincidence, the real callee is the runtime. Only the residual misses WITH
-    // an in-project def are true recall holes.
+    // inProjectEdgeRecall — graph completeness: only residual misses WITH an
+    // in-project def are true recall holes (no-in-project-def and core homonyms
+    // through an untyped receiver, bd 83cl7, are excluded).
     const missWithInProjectDef = Math.max(
       0,
       callsAttempted -
@@ -1275,10 +1079,8 @@ export class CodegraphRunState {
         ];
       }),
     );
-    // One-line per-idiom diagnostic (bd tea-rags-mcp-j431): surfaces the
-    // resolve breakdown to mcp-logs once per enrichment cycle so each cai0
-    // slice's delta is readable without a DTO change. Mirrors the unconditional
-    // `[codegraph]` diagnostics elsewhere in this provider.
+    // One-line per-idiom diagnostic (bd tea-rags-mcp-j431), once per enrichment
+    // cycle, unconditional like the other `[codegraph]` diagnostics.
     if (callsAttempted > 0) {
       const summary = RECEIVER_KINDS.map((kind) => {
         const t = byReceiverKind[kind];
@@ -1377,11 +1179,9 @@ export class CodegraphRunState {
   }
 
   /**
-   * Zero the per-run resolve tally at a run-START seam. On the long-lived daemon
-   * the provider instance is cached and reused, so unless every run-start path
-   * zeroes the tally, a prior run whose `drainMetrics` never fired leaks its
-   * counts into this run and jitters `resolveSuccessRate` run-to-run
-   * (bd tea-rags-mcp-svhqp).
+   * Zero the per-run resolve tally at a run-START seam. The provider instance is
+   * cached and reused, so every run-start path must zero it, or a prior run whose
+   * `drainMetrics` never fired leaks into this one (bd tea-rags-mcp-svhqp).
    */
   resetTally(): void {
     this.stats = createEmptyRunStats();
@@ -1479,9 +1279,8 @@ export class CodegraphRunState {
    * they happen the later definition is what the runtime would see too.
    */
   absorb(extraction: FileExtraction, selfDispatchMethods: SelfDispatchMethod[]): void {
-    // Counted here rather than beside `stats.extractedFiles` in the sink
-    // because this is a run-global aggregate the pass-2 barrier reads, and
-    // `absorb` is where those are assembled. The defensive empty extraction
+    // Counted here, not beside `stats.extractedFiles` in the sink, because this is
+    // a run-global aggregate the barrier reads. The defensive empty extraction
     // carries `language: ""` and is not a file any resolver will be handed.
     if (extraction.language !== "") {
       this.extractedFilesByLanguage.set(
@@ -1513,30 +1312,25 @@ export class CodegraphRunState {
         this.markContributed("classExtends");
       }
     }
-    // Explicit ORM table overrides (`self.table_name`), merged run-global so
-    // the schema-column pre-pass at the barrier sees every declaration in the
-    // project regardless of which file carries it (bd tea-rags-mcp-8l5fo).
+    // Explicit ORM table overrides (`self.table_name`), run-global so the barrier's
+    // schema-column pre-pass sees every declaration (bd tea-rags-mcp-8l5fo).
     if (extraction.classSchemaTables) {
       for (const [k, v] of Object.entries(extraction.classSchemaTables)) {
         this.schemaTables[k] = v;
       }
     }
-    // Merge file-local function return types into the run-global map so the
-    // resolver in pass-2 can resolve `x := New()` return-type bindings keyed by
-    // function name regardless of which file declares the function. bd
-    // tea-rags-mcp-6g9c. Last write wins on duplicate names; the resolver's
-    // symbol-table existence gate suppresses any wrong type that survives the
-    // collision.
+    // Function return types run-global, keyed by function name (bd
+    // tea-rags-mcp-6g9c). Last write wins; the resolver's symbol-table existence
+    // gate suppresses a wrong type that survives a name collision.
     if (extraction.functionReturnTypes) {
       for (const [k, v] of Object.entries(extraction.functionReturnTypes)) {
         this.returnTypes[k] = v;
         this.markContributed("returnTypes");
       }
     }
-    // Merge the Ruby type-source PRECISE maps run-global so the resolver's
-    // precise `@ivar.method()` / structured-return paths see annotated types
-    // keyed by class regardless of which file declared the class/method
-    // (Increment 1, Task 1.5). Last-write-wins, mirroring functionReturnTypes.
+    // The Ruby type-source PRECISE maps, run-global and keyed by class, so the
+    // precise `@ivar.method()` / structured-return paths see types regardless of
+    // the declaring file. Last-write-wins, mirroring functionReturnTypes.
     if (extraction.ivarTypes) {
       for (const [k, v] of Object.entries(extraction.ivarTypes)) {
         this.ivarTypes[k] = v;
@@ -1571,19 +1365,16 @@ export class CodegraphRunState {
     if (extraction.moduleReexports) {
       this.moduleReexports[extraction.relPath] = extraction.moduleReexports;
     }
-    // Union this file's instantiation set into the run-global RTA set so the
-    // cone resolver in pass-2 prunes by program-wide instantiation regardless of
-    // which file instantiates the type. bd tea-rags-mcp-pffv.
+    // Program-wide instantiation set for the cone resolver's RTA pruning (bd
+    // tea-rags-mcp-pffv), regardless of which file instantiates the type.
     if (extraction.instantiatedTypes) {
       for (const t of extraction.instantiatedTypes) {
         this.instantiatedTypes.add(t);
       }
     }
-    // Merge dispatch tables run-global keyed by table name + defining relpath so
-    // the resolver can fan a `TABLE[key].field()` call out to every candidate
-    // regardless of which file declared the table (bd tea-rags-mcp-n0zj).
-    // Re-walking a file replaces its own def for that name (dedup by relPath) —
-    // incremental reindex stays idempotent.
+    // Dispatch tables run-global by table name + defining relPath (bd
+    // tea-rags-mcp-n0zj). Re-walking a file replaces its own def for that name, so
+    // an incremental reindex stays idempotent.
     if (extraction.dispatchTables) {
       for (const [name, table] of Object.entries(extraction.dispatchTables)) {
         const defs = (this.dispatchTables[name] ??= []);
@@ -1601,12 +1392,10 @@ export class CodegraphRunState {
       }
     }
     if (selfDispatchMethods.length > 0) this.selfDispatchMethods.push(...selfDispatchMethods);
-    // Interprocedural param typing, Increment 1 (bd tea-rags-mcp-bvalc).
-    // LIGHT records again: the deduped call-arg shapes, the positional
-    // param-name index off the chunks, the `@ivar = <param>` links, and
-    // the coordinates the walker already typed (the derivation's gate).
-    // Ruby-only, like the self-dispatch candidates — the consuming fold
-    // and resolver paths are Ruby.
+    // Interprocedural param typing, Increment 1 (bd tea-rags-mcp-bvalc): LIGHT
+    // records only — deduped call-arg shapes, the positional param-name index,
+    // `@ivar = <param>` links and the coordinates the walker already typed (the
+    // derivation's gate). Ruby-only, like the consuming fold and resolver paths.
     if (extraction.language === "ruby") {
       for (const record of extraction.knownTargetCallArgs ?? []) {
         this.knownTargetCallArgs.set(`${record.targets.join("|")} ${JSON.stringify(record.argTypes)}`, record);

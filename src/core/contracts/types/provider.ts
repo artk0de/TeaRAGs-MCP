@@ -278,18 +278,18 @@ export interface FileSignalOptions {
    */
   runCoverage?: EnrichmentRunCoverage;
   /**
-   * The run's persisted per-file pass-1 aggregate slices, read by the MAIN
-   * thread and injected into the provider's finalize (bd tea-rags-mcp-weno4).
+   * The run's persisted per-file pass-1 aggregate slices, read on the MAIN
+   * thread (via {@link EnrichmentProvider.readPersistedPass1Aggregates}) and
+   * injected into the provider's finalize (bd tea-rags-mcp-weno4). The
+   * pass-1→pass-2 barrier hydrates its run-global registries from them for every
+   * file the run did not walk (znxg8).
    *
-   * znxg8 made the pass-1→pass-2 barrier hydrate its run-global registries from
-   * these rows for every file the run did not walk. Reading them inside the
-   * codegraph WORKER cannot be relied on: that thread's `GraphDbClientPool` is
-   * built without a `daemonRestart` hook, so it tolerates a daemon compiled from
-   * other source — one that answers `unknown daemon op: listAllPass1Aggregates`
-   * and silently degrades the repair back to a batch-scoped registry. The main
-   * thread's pool DOES respawn a stale daemon, so it reads the rows (via
-   * {@link EnrichmentProvider.readPersistedPass1Aggregates}) and hands them
-   * across on this option.
+   * Read on the main thread because its pool REPLACES a daemon from another build
+   * or one lacking a required op; the worker's pool has no respawn hook and can
+   * only refuse such a daemon. Since bd tea-rags-mcp-39xca.4 that refusal is loud:
+   * `listAllPass1Aggregates` is a required op, so a daemon that cannot serve it
+   * is rejected at connect or fails the call with `CodegraphDaemonBuildSkewError`,
+   * never answered with an empty read.
    *
    * Injected rows WIN over the provider's own read; the read stays as the
    * fallback for direct/test callers, where there is no daemon. Plain data —
@@ -505,9 +505,9 @@ export interface EnrichmentProvider {
   /**
    * Every persisted per-file pass-1 aggregate slice this provider holds for
    * `collectionName` (bd tea-rags-mcp-weno4). Called on the MAIN-thread provider
-   * instance, whose pool respawns a stale daemon, and the result is threaded to
-   * the worker's finalize as {@link FileSignalOptions.pass1Aggregates} — see
-   * that field for why the worker's own read cannot be trusted to succeed.
+   * instance, whose pool replaces a skewed daemon, and threaded to the worker's
+   * finalize as {@link FileSignalOptions.pass1Aggregates} — see that field for
+   * why the read happens on this side.
    *
    * Optional and modelled on {@link readPersistedFileHashes}: a provider with no
    * pass-1 store omits it and the injection is simply absent, which is what git

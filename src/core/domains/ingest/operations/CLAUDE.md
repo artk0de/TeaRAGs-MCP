@@ -3,7 +3,7 @@
 ## Invariants
 
 - **The incremental work set is `added ∪ modified ∪ quarantined`.**
-  `ReindexingOps` unions the scanner's sets with every path currently in
+  `ReindexPipeline` unions the scanner's sets with every path currently in
   `quarantine.json`, regardless of whether content changed
   (`ReindexPipeline#prepareParallelExecution`:
   `[...changes.added, ...changes.modified, ...retryPaths]`, and `addedFiles`).
@@ -17,7 +17,7 @@
   file. Trimming the work set to "what actually changed" strands every
   quarantined file forever, since their content is precisely what never changes.
 - **Finalize the alias BEFORE storing the completion marker, and signal failure
-  by THROWING.** The order in `IndexingOps` is fixed: `#finalizeAlias` →
+  by THROWING.** The order in `IndexPipeline` is fixed: `#finalizeAlias` →
   `storeIndexingMarker(…, true, …)` → `#saveSnapshot` → `#recordRegistryEntry`
   (`IndexPipeline#indexCodebase`). Raw failures are wrapped by
   `BaseIndexingPipeline#wrapUnexpectedError` into `IndexingFailedError`

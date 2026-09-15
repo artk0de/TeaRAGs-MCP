@@ -242,6 +242,7 @@ export class CodegraphPayloadHealer {
     if (filesTouched === 0) return { pointsRewritten: 0, filesTouched: 0 };
 
     const touched = new Set<string | number>();
+    // Intentionally counts ALL points, service points included: a read-cost estimate, not a chunk count.
     const collectionPoints = await this.deps.qdrant.countPoints(collectionName);
 
     if (CodegraphPayloadHealer.usesPerFileScrolls(filesTouched, collectionPoints)) {

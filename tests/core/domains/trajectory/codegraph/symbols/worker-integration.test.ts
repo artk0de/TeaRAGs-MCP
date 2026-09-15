@@ -8,7 +8,8 @@
  *     transport invariant)
  *   - CodegraphEnrichmentProvider exposes the workerDescriptor when the
  *     composition root supplies one
- *   - onRelease is callable (worker calls it on releaseCollection signal)
+ *   - onRelease is callable (the worker calls it on a run-scoped release,
+ *     `WorkerPoolEnrichmentExecutor#releaseRun`)
  */
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
