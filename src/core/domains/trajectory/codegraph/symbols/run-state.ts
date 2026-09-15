@@ -847,6 +847,20 @@ export class CodegraphRunState {
         this.moduleReexports[slice.relPath] = slice.moduleReexports;
       }
     },
+    // Ruby `self.table_name` overrides (bd tea-rags-mcp-39xca.9). The schema-column
+    // pre-pass reads this map at the barrier, and `seal` runs this hydration before
+    // that read. An override missing from the map does more than silence its own
+    // model. The model falls into the inflection bucket of its short name, which
+    // makes the namesake's table ambiguous (taxdome: `Juno::Client` cost `Client`
+    // 562 column edges). Batch-wins per class: a walked model's fresh override
+    // outranks a stale row naming the same class. No `markContributed`, because the
+    // pre-pass reads the map unconditionally.
+    schemaTables: (slice) => {
+      for (const [fqClass, table] of Object.entries(slice.classSchemaTables ?? {})) {
+        if (fqClass in this.schemaTables) continue;
+        this.schemaTables[fqClass] = table;
+      }
+    },
   };
 
   /**

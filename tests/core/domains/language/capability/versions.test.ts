@@ -123,7 +123,11 @@ describe("seeded support versions", () => {
       // ruby walker 2: bd
       // tea-rags-mcp-kumq2 routed every Ruby short-name lookup through the same
       // same-language filter, so an index built by walker 1 holds the
-      // cross-language picks this one never emits. java walker 2: bd
+      // cross-language picks this one never emits; ruby walker 3: bd
+      // tea-rags-mcp-39xca.9 persists `self.table_name` overrides in the pass-1
+      // slice, so rows written by walker 2 carry none and an incremental run on
+      // them still drops the column accessors of every model they disambiguate.
+      // java walker 2: bd
       // tea-rags-mcp-f11nz gave the java walker the kernel's innermost-chunk
       // call attribution, so an index built by walker 1 holds a second copy of
       // every in-method call, emitted from the enclosing class chunk. rust
@@ -133,7 +137,7 @@ describe("seeded support versions", () => {
       const WALKER_BUMPED = new Map([
         ["typescript", 4],
         ["python", 8],
-        ["ruby", 2],
+        ["ruby", 3],
         ["java", 2],
         ["rust", 2],
       ]);
