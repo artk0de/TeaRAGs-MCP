@@ -6,29 +6,19 @@
  */
 
 import type { QdrantManager } from "../../../../adapters/qdrant/client.js";
+import { SchemaMetadataPointStore } from "../../../../adapters/qdrant/schema-metadata-point.js";
 import type { SparseStore } from "../types.js";
 
-/** Reserved point ID for schema metadata storage (shared with IndexStoreAdapter). */
-const SCHEMA_METADATA_ID = "__schema_metadata__";
-
-interface SchemaMetadata {
-  _type: "schema_metadata";
-  schemaVersion: number;
-  migratedAt: string;
-  indexes: string[];
-  sparseVersion?: number;
-}
-
 export class SparseStoreAdapter implements SparseStore {
-  constructor(private readonly qdrant: QdrantManager) {}
+  private readonly metadataPoint: SchemaMetadataPointStore;
+
+  constructor(private readonly qdrant: QdrantManager) {
+    this.metadataPoint = new SchemaMetadataPointStore(qdrant);
+  }
 
   async getSparseVersion(collection: string): Promise<number> {
     try {
-      const point = await this.qdrant.getPoint(collection, SCHEMA_METADATA_ID);
-      if (point?.payload?._type === "schema_metadata") {
-        return (point.payload as unknown as SchemaMetadata).sparseVersion ?? 0;
-      }
-      return 0;
+      return (await this.metadataPoint.read(collection))?.sparseVersion ?? 0;
     } catch {
       return 0;
     }
@@ -77,51 +67,9 @@ export class SparseStoreAdapter implements SparseStore {
 
   async storeSparseVersion(collection: string, version: number): Promise<void> {
     try {
-      const existing = await this.getSchemaMetadata(collection);
-      const metadata: SchemaMetadata = existing ?? {
-        _type: "schema_metadata",
-        schemaVersion: 0,
-        migratedAt: new Date().toISOString(),
-        indexes: [],
-      };
-      metadata.sparseVersion = version;
-      metadata.migratedAt = new Date().toISOString();
-
-      const info = await this.qdrant.getCollectionInfo(collection);
-      const zeroVector = new Array<number>(info.vectorSize).fill(0);
-
-      if (info.hybridEnabled) {
-        await this.qdrant.addPointsWithSparse(collection, [
-          {
-            id: SCHEMA_METADATA_ID,
-            vector: zeroVector,
-            sparseVector: { indices: [], values: [] },
-            payload: metadata as unknown as Record<string, unknown>,
-          },
-        ]);
-      } else {
-        await this.qdrant.addPoints(collection, [
-          {
-            id: SCHEMA_METADATA_ID,
-            vector: zeroVector,
-            payload: metadata as unknown as Record<string, unknown>,
-          },
-        ]);
-      }
+      await this.metadataPoint.setSparseVersion(collection, version);
     } catch (error) {
       console.error("Failed to store sparse version:", error);
-    }
-  }
-
-  private async getSchemaMetadata(collection: string): Promise<SchemaMetadata | null> {
-    try {
-      const point = await this.qdrant.getPoint(collection, SCHEMA_METADATA_ID);
-      if (point?.payload?._type === "schema_metadata") {
-        return point.payload as unknown as SchemaMetadata;
-      }
-      return null;
-    } catch {
-      return null;
     }
   }
 
