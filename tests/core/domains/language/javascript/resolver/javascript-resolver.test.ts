@@ -188,14 +188,15 @@ describe("JavascriptCallResolver", () => {
       t.upsertFile("src/other.js", [
         { symbolId: "Foo#bar", fqName: "Foo#bar", shortName: "bar", relPath: "src/other.js", scope: ["Foo"] },
       ]);
-      // Empty callerScope skips the this/super block entirely — the
-      // receiver path falls through to global short-name lookup.
+      // Empty callerScope skips the this/super block entirely. `this` outside a
+      // class names no type, so the `Foo#bar` in another file that the global
+      // short-name lookup used to return was a naming coincidence — a
+      // receiver-bearing call no longer falls through to it (bd tea-rags-mcp-hwwtw).
       const target = r.resolve(
         { callText: "this.bar()", receiver: "this", member: "bar", startLine: 1 },
         { callerFile: "src/caller.js", callerScope: [], imports: [], symbolTable: t },
       );
-      expect(target?.targetRelPath).toBe("src/other.js");
-      expect(target?.targetSymbolId).toBe("Foo#bar");
+      expect(target).toBeNull();
     });
   });
 
