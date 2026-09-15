@@ -54,10 +54,18 @@
  * with. Default `ruby`, so every invocation documented before the generalisation
  * still means what it said.
  *
+ * ── Schema columns (bd tea-rags-mcp-39xca.9) ──
+ * `schemaTables` is folded into the schema-column pre-pass AT `seal`, so it is
+ * measured on its own axis: `--batch-mode exclude-schema-overrides` walks every
+ * file except the ones declaring `self.table_name`, `--batch-mode random` walks a
+ * seeded sample, `--ablate schema` hands the FULL overrides over BEFORE the seal,
+ * and the report adds a column-accessor edge diff grouped by model.
+ *
  * Usage:
  *   npx tsx scripts/spikes/incremental-runglobal-delta.ts \
  *     --corpus /abs/path/to/repo [--language ruby|python] \
- *     [--batches 4] [--batch-size 40] [--limit N] [--ablate none] [--json out.json]
+ *     [--batch-mode windows|exclude-schema-overrides|random] [--sample-pct 5] [--seed 1] \
+ *     [--batches 4] [--batch-size 40] [--limit N] [--ablate none] [--examples 10] [--json out.json]
  */
 import { writeFileSync } from "node:fs";
 import { resolve as resolvePath } from "node:path";
@@ -68,6 +76,7 @@ import type {
   GlobalSymbolTable,
   GraphEdges,
   RelPath,
+  SymbolDefinition,
 } from "../../src/core/contracts/types/codegraph.js";
 import { DefaultSymbolIdComposer, LanguageFactory } from "../../src/core/domains/language/index.js";
 import { collectSchemaColumnSources } from "../../src/core/domains/trajectory/codegraph/exclusion.js";
@@ -159,9 +168,25 @@ function selfDispatchFor(extraction: FileExtraction): ReturnType<typeof extractS
  * construction this way, and only the memo key changes. The optional members
  * are forwarded conditionally, because consumers capability-detect them
  * (`table.listFiles !== undefined` decides Python's source-root inference).
+ *
+ * The schema-column index is the one member that is NOT forwarded (bd
+ * tea-rags-mcp-39xca.9). `seal` rebuilds it wholesale per run from that run's
+ * `schemaTables`, so it is run-scoped state, not symbol data — and forwarding it
+ * to the shared delegate let every INC seal overwrite the columns the FULL side
+ * resolves against, so every FULL batch after the first read the previous
+ * batch's incremental columns. Each view therefore owns its columns, answering
+ * `includeSchemaColumns` exactly as `InMemoryGlobalSymbolTable` does: declared
+ * definitions first, synthesized columns after.
  */
-function symbolTableView(delegate: GlobalSymbolTable): GlobalSymbolTable {
-  const view: GlobalSymbolTable = {
+interface SymbolTableView extends GlobalSymbolTable {
+  /** The symbolIds this view's last `setSchemaColumns` synthesized. */
+  schemaColumnIds: () => ReadonlySet<string>;
+}
+
+function symbolTableView(delegate: GlobalSymbolTable): SymbolTableView {
+  let columnsByShort = new Map<string, SymbolDefinition[]>();
+  let columnIds = new Set<string>();
+  const view: SymbolTableView = {
     upsertFile: (relPath, definitions) => {
       delegate.upsertFile(relPath, definitions);
     },
@@ -169,7 +194,13 @@ function symbolTableView(delegate: GlobalSymbolTable): GlobalSymbolTable {
       delegate.removeFile(relPath);
     },
     lookup: (fqName) => delegate.lookup(fqName),
-    lookupByShortName: (name, options) => delegate.lookupByShortName(name, options),
+    lookupByShortName: (name, options) => {
+      const declared = delegate.lookupByShortName(name);
+      if (options?.includeSchemaColumns !== true) return declared;
+      const columns = columnsByShort.get(name);
+      return columns === undefined ? declared : [...declared, ...columns];
+    },
+    schemaColumnIds: () => columnIds,
     hasFile: (relPath) => delegate.hasFile(relPath),
     hasFilesUnder: (dirRelPath) => delegate.hasFilesUnder(dirRelPath),
     size: () => delegate.size(),
@@ -179,7 +210,16 @@ function symbolTableView(delegate: GlobalSymbolTable): GlobalSymbolTable {
     shortNameDefCounts: () => delegate.shortNameDefCounts(),
   };
   if (delegate.setSchemaColumns !== undefined) {
-    view.setSchemaColumns = (definitions) => delegate.setSchemaColumns?.(definitions);
+    view.setSchemaColumns = (definitions) => {
+      const next = new Map<string, SymbolDefinition[]>();
+      for (const def of definitions) {
+        const bucket = next.get(def.shortName);
+        if (bucket === undefined) next.set(def.shortName, [def]);
+        else bucket.push(def);
+      }
+      columnsByShort = next;
+      columnIds = new Set(definitions.map((def) => def.symbolId));
+    };
   }
   if (delegate.hydrateFiles !== undefined) {
     view.hydrateFiles = (relPaths) => delegate.hydrateFiles?.(relPaths);
@@ -394,6 +434,80 @@ function addEdgeDiff(target: CallEdgeDiff, delta: CallEdgeDiff): void {
   }
 }
 
+// ---------------------------------------------------------------------------
+// Schema-column edge diff (bd tea-rags-mcp-39xca.9).
+// ---------------------------------------------------------------------------
+
+/** One schema-column edge the FULL run emitted and the INC run did not. */
+interface MissingColumnEdge {
+  site: string;
+  target: string;
+  /** What INC answered at the same site instead (empty: site unanswered or answer is a subset). */
+  incAnswers: string[];
+}
+
+/**
+ * The column-accessor slice of the call-edge diff. A column edge is one whose
+ * target is a synthesized accessor of THAT side's schema pre-pass and not a
+ * declared definition — the pre-pass is the only place the two sides differ in
+ * what `schemaTables` they fed it, so this is the slice `schemaTables` can move.
+ */
+interface ColumnEdgeDiff {
+  fullColumnEdges: number;
+  incColumnEdges: number;
+  missing: MissingColumnEdge[];
+  /** INC column edges FULL did not emit — a table inflected onto the wrong model. */
+  phantom: { site: string; target: string; fullAnswers: string[] }[];
+}
+
+function diffSchemaColumnEdges(
+  full: CallSiteAnswers,
+  inc: CallSiteAnswers,
+  fullColumns: ReadonlySet<string>,
+  incColumns: ReadonlySet<string>,
+  declared: (id: string) => boolean,
+): ColumnEdgeDiff {
+  const out: ColumnEdgeDiff = { fullColumnEdges: 0, incColumnEdges: 0, missing: [], phantom: [] };
+  for (const [site, answers] of full) {
+    const incAnswers = inc.get(site);
+    for (const target of answers.keys()) {
+      if (!fullColumns.has(target) || declared(target)) continue;
+      out.fullColumnEdges += 1;
+      if (incAnswers?.has(target) === true) continue;
+      out.missing.push({
+        site,
+        target,
+        incAnswers: incAnswers === undefined ? [] : [...incAnswers.keys()].filter((t) => !answers.has(t)),
+      });
+    }
+  }
+  for (const [site, answers] of inc) {
+    const fullAnswers = full.get(site);
+    for (const target of answers.keys()) {
+      if (!incColumns.has(target) || declared(target)) continue;
+      out.incColumnEdges += 1;
+      if (fullAnswers?.has(target) === true) continue;
+      out.phantom.push({ site, target, fullAnswers: fullAnswers === undefined ? [] : [...fullAnswers.keys()] });
+    }
+  }
+  return out;
+}
+
+/** `Firm#name` → `Firm`. Synthesized column ids are always `<fqModel>#<accessor>`. */
+const modelOfColumn = (id: string): string => id.slice(0, id.lastIndexOf("#"));
+
+/** Seeded, dependency-free PRNG (mulberry32) so a sampled batch is reproducible. */
+function mulberry32(seed: number): () => number {
+  let a = seed >>> 0;
+  return () => {
+    a = (a + 0x6d2b79f5) >>> 0;
+    let t = a;
+    t = Math.imul(t ^ (t >>> 15), t | 1);
+    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
 /**
  * Which family of run-global maps to hand the incremental side, on top of what
  * hydration already carries. This is the ABLATION: hydration cannot supply these
@@ -423,9 +537,35 @@ const ABLATIONS = [
   "params",
   "cft",
   "reexp",
+  "schema",
   "all",
 ] as const;
 type Ablation = (typeof ABLATIONS)[number];
+
+/**
+ * The pre-seal half of the ablation. `schemaTables` is not read by pass-2 at
+ * all: `seal` folds it into the schema-column pre-pass, so handing it over after
+ * `seal` (where {@link ablate} runs) would change nothing. It has to be in place
+ * before the barrier, like the batch's own declarations are (bd 39xca.9).
+ */
+function ablateBeforeSeal(inc: CodegraphRunState, full: CodegraphRunState, which: Ablation): void {
+  if (which === "all" || which === "schema") {
+    Object.assign(inc.schemaTables, full.schemaTables);
+  }
+}
+
+/**
+ * How the incremental batches are chosen.
+ *
+ *  - `windows` — contiguous windows at evenly spaced offsets (the original sweep).
+ *  - `exclude-schema-overrides` — ONE batch: every file except those declaring a
+ *    `self.table_name` override. The worst case for `schemaTables`: every caller
+ *    is walked and no override is (bd 39xca.9).
+ *  - `random` — ONE batch: a seeded `--sample-pct` sample of the corpus, the
+ *    realistic incremental shape.
+ */
+const BATCH_MODES = ["windows", "exclude-schema-overrides", "random"] as const;
+type BatchMode = (typeof BATCH_MODES)[number];
 
 /**
  * Overlay `full`'s maps onto `inc` for the chosen family. Run AFTER `seal`,
@@ -504,6 +644,14 @@ async function main(): Promise<void> {
     process.stderr.write(`--ablate must be one of ${ABLATIONS.join(", ")}\n`);
     process.exit(1);
   }
+  const batchMode = (flag("--batch-mode", "windows") ?? "windows") as BatchMode;
+  if (!BATCH_MODES.includes(batchMode)) {
+    process.stderr.write(`--batch-mode must be one of ${BATCH_MODES.join(", ")}\n`);
+    process.exit(1);
+  }
+  const samplePct = Number(flag("--sample-pct", "5"));
+  const seed = Number(flag("--seed", "1"));
+  const examplesOut = Number(flag("--examples", "10"));
 
   const factory = new LanguageFactory();
   const composer = new DefaultSymbolIdComposer();
@@ -531,6 +679,8 @@ async function main(): Promise<void> {
   const fullState = newRunState(factory);
   bindRunStart(fullState, root);
   const slices: CodegraphPass1FileAggregates[] = [];
+  /** Files whose walk declared a `self.table_name` override — `--batch-mode exclude-schema-overrides`. */
+  const schemaOverrideFiles = new Set<RelPath>();
   let walked = 0;
   let parseFailures = 0;
   for (const relPath of files) {
@@ -538,6 +688,9 @@ async function main(): Promise<void> {
     if (extraction === null) {
       parseFailures += 1;
       continue;
+    }
+    if (extraction.classSchemaTables !== undefined && Object.keys(extraction.classSchemaTables).length > 0) {
+      schemaOverrideFiles.add(relPath);
     }
     symbolTable.upsertFile(relPath, buildSymbolDefs(extraction));
     const selfDispatch = selfDispatchFor(extraction);
@@ -568,50 +721,97 @@ async function main(): Promise<void> {
       `ancestors ${Object.keys(fullState.ancestors).length} (per class, already persisted)\n`,
   );
 
-  // ── Phase 2: batches — contiguous windows at evenly spaced offsets.
-  const stride = Math.max(1, Math.floor(files.length / batches));
+  const overrideModels = new Set(Object.keys(fullState.schemaTables));
+  const fullColumnIds = fullTable.schemaColumnIds();
+  const fullColumnModels = new Set([...fullColumnIds].map(modelOfColumn));
+  process.stdout.write(
+    `schema overrides — ${overrideModels.size} classes declare self.table_name in ${schemaOverrideFiles.size} files · ` +
+      `FULL pre-pass synthesized ${fullColumnIds.size} column accessors on ${fullColumnModels.size} models, ` +
+      `${[...fullColumnModels].filter((m) => overrideModels.has(m)).length} of them override-declaring\n`,
+  );
+
+  // ── Phase 2: batches.
   const windows: RelPath[][] = [];
-  for (let b = 0; b < batches; b++) {
-    const start = Math.min(b * stride, Math.max(0, files.length - batchSize));
-    windows.push(files.slice(start, start + batchSize));
+  if (batchMode === "exclude-schema-overrides") {
+    windows.push(files.filter((relPath) => !schemaOverrideFiles.has(relPath)));
+  } else if (batchMode === "random") {
+    const pool = files.slice();
+    const rand = mulberry32(seed);
+    const take = Math.max(1, Math.round((pool.length * samplePct) / 100));
+    for (let i = 0; i < take; i++) {
+      const j = i + Math.floor(rand() * (pool.length - i));
+      [pool[i], pool[j]] = [pool[j], pool[i]];
+    }
+    windows.push(pool.slice(0, take));
+  } else {
+    // Contiguous windows at evenly spaced offsets.
+    const stride = Math.max(1, Math.floor(files.length / batches));
+    for (let b = 0; b < batches; b++) {
+      const start = Math.min(b * stride, Math.max(0, files.length - batchSize));
+      windows.push(files.slice(start, start + batchSize));
+    }
   }
 
   const fullTotals = emptyKinds();
   const incTotals = emptyKinds();
   const edgeTotals = emptyEdgeDiff();
+  const columnTotals: ColumnEdgeDiff = { fullColumnEdges: 0, incColumnEdges: 0, missing: [], phantom: [] };
+  const incColumnModelSets: Set<string>[] = [];
   const fullRunner = new CallEdgeResolutionRunner(factory, fullState);
+  const declared = (id: string): boolean => symbolTable.lookup(id).length > 0;
 
   for (const [i, window] of windows.entries()) {
-    const extractions: FileExtraction[] = [];
-    for (const relPath of window) {
-      const e = extractFile(root, relPath, composer, factory, declaredDependencies);
-      if (e !== null) extractions.push(e);
-    }
+    // Extractions are re-walked per pass rather than held, so a corpus-sized
+    // batch costs one extraction at a time, not every extraction at once.
+    const extractWindow = function* (): Generator<FileExtraction> {
+      for (const relPath of window) {
+        const e = extractFile(root, relPath, composer, factory, declaredDependencies);
+        if (e !== null) yield e;
+      }
+    };
 
-    // FULL side — resolve against the state that absorbed every file.
-    const before = snapshotKinds(fullState, language);
-    const fullAnswers: CallSiteAnswers = new Map();
-    for (const e of extractions) indexCallEdges(e.relPath, fullRunner.resolve(e, fullTable), fullAnswers);
-    addInto(fullTotals, subtractKinds(snapshotKinds(fullState, language), before));
-
-    // INC side — a fresh run that walked ONLY this window, with the rest
-    // hydrated from the persisted slices exactly as production does.
+    // INC side, pass 1 — a fresh run that walked ONLY this window, with the
+    // rest hydrated from the persisted slices exactly as production does.
     const incTable = symbolTableView(symbolTable);
     const incState = newRunState(factory);
     bindRunStart(incState, root);
-    for (const e of extractions) incState.absorb(e, selfDispatchFor(e));
+    let extracted = 0;
+    for (const e of extractWindow()) {
+      incState.absorb(e, selfDispatchFor(e));
+      extracted += 1;
+    }
+    ablateBeforeSeal(incState, fullState, ablation);
     await incState.seal(
       async () => incTable,
       async () => slices,
     );
     ablate(incState, fullState, ablation);
     const incRunner = new CallEdgeResolutionRunner(factory, incState);
+    incColumnModelSets.push(new Set([...incTable.schemaColumnIds()].map(modelOfColumn)));
+
+    // Pass 2 — FULL (the state that absorbed every file) and INC resolve the
+    // same extraction. Their tallies live on separate states, and the views
+    // hold separate schema columns, so interleaving them per file is sound.
+    const before = snapshotKinds(fullState, language);
+    const fullAnswers: CallSiteAnswers = new Map();
     const incAnswers: CallSiteAnswers = new Map();
-    for (const e of extractions) indexCallEdges(e.relPath, incRunner.resolve(e, incTable), incAnswers);
+    for (const e of extractWindow()) {
+      indexCallEdges(e.relPath, fullRunner.resolve(e, fullTable), fullAnswers);
+      indexCallEdges(e.relPath, incRunner.resolve(e, incTable), incAnswers);
+    }
+    addInto(fullTotals, subtractKinds(snapshotKinds(fullState, language), before));
     addInto(incTotals, snapshotKinds(incState, language));
     addEdgeDiff(edgeTotals, diffCallEdges(fullAnswers, incAnswers));
+    const columns = diffSchemaColumnEdges(fullAnswers, incAnswers, fullColumnIds, incTable.schemaColumnIds(), declared);
+    columnTotals.fullColumnEdges += columns.fullColumnEdges;
+    columnTotals.incColumnEdges += columns.incColumnEdges;
+    columnTotals.missing.push(...columns.missing);
+    columnTotals.phantom.push(...columns.phantom);
 
-    process.stdout.write(`  batch ${i + 1}/${windows.length}: ${extractions.length} files\n`);
+    process.stdout.write(
+      `  batch ${i + 1}/${windows.length}: ${extracted} files · INC pre-pass ${incTable.schemaColumnIds().size} ` +
+        `column accessors on ${incColumnModelSets[i].size} models\n`,
+    );
   }
 
   // ── Report.
@@ -656,6 +856,42 @@ async function main(): Promise<void> {
       `  extra   by edgeKind: ${kindBreakdown(edgeTotals.extraByKind)}\n`,
   );
 
+  // Schema-column slice, grouped by the model whose accessor went missing.
+  const missingByModel = new Map<string, MissingColumnEdge[]>();
+  for (const m of columnTotals.missing) {
+    const model = modelOfColumn(m.target);
+    const bucket = missingByModel.get(model);
+    if (bucket === undefined) missingByModel.set(model, [m]);
+    else bucket.push(m);
+  }
+  const retargetedColumns = columnTotals.missing.filter((m) => m.incAnswers.length > 0).length;
+  const modelRows = [...missingByModel.entries()]
+    .sort(([, a], [, b]) => b.length - a.length)
+    .map(
+      ([model, edges]) =>
+        `    ${model.padEnd(48)} ${String(edges.length).padStart(5)}${overrideModels.has(model) ? "  (declares self.table_name)" : ""}`,
+    );
+  const exampleRows = columnTotals.missing
+    .slice(0, examplesOut)
+    .map(
+      (m) =>
+        `    ${m.site}\n      missing → ${m.target}${m.incAnswers.length > 0 ? `  · INC answered ${m.incAnswers.join(", ")}` : ""}`,
+    );
+  const phantomRows = columnTotals.phantom
+    .slice(0, examplesOut)
+    .map(
+      (p) => `    ${p.site}\n      INC-only → ${p.target}  · FULL answered ${p.fullAnswers.join(", ") || "nothing"}`,
+    );
+  process.stdout.write(
+    `\nschema-column edge diff (batch mode ${batchMode}${batchMode === "random" ? ` ${samplePct}% seed ${seed}` : ""})\n` +
+      `  FULL column edges ${columnTotals.fullColumnEdges} · INC column edges ${columnTotals.incColumnEdges}\n` +
+      `  missing in INC ${columnTotals.missing.length} (${retargetedColumns} of them answered elsewhere by INC) · ` +
+      `INC-only ${columnTotals.phantom.length}\n` +
+      `  missing by model (${missingByModel.size} models):\n${modelRows.join("\n") || "    —"}\n` +
+      `  examples (missing):\n${exampleRows.join("\n") || "    —"}\n` +
+      `  examples (INC-only):\n${phantomRows.join("\n") || "    —"}\n`,
+  );
+
   if (jsonOut !== undefined) {
     writeFileSync(
       jsonOut,
@@ -681,6 +917,17 @@ async function main(): Promise<void> {
           fullTotals,
           incTotals,
           edgeDiff: edgeTotals,
+          batchMode,
+          samplePct: batchMode === "random" ? samplePct : undefined,
+          seed: batchMode === "random" ? seed : undefined,
+          schema: {
+            overrideClasses: overrideModels.size,
+            overrideFiles: schemaOverrideFiles.size,
+            fullColumnAccessors: fullColumnIds.size,
+            fullColumnModels: fullColumnModels.size,
+            incColumnModels: incColumnModelSets.map((s) => s.size),
+            columnEdges: columnTotals,
+          },
         },
         null,
         2,
