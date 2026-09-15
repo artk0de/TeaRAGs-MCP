@@ -44,6 +44,7 @@ import { CONTINUE, resolved } from "../../../../../contracts/resolution.js";
 import { resolveLocalBindingType, type CallContext, type CallRef } from "../../../../../contracts/types/codegraph.js";
 import type { SymbolResolutionOutcome, SymbolResolutionStrategy } from "../../../../../contracts/types/language.js";
 import { conventionClassNameFor, type NamingConventionPorts } from "../../../kernel/naming-convention.js";
+import { RunScopedMemo } from "../../../kernel/run-scoped-memo.js";
 import { PYTHON_STDLIB_MODULES } from "../../vocabulary/stdlib-modules.js";
 import type { PythonAncestorLinearizerCache } from "../python-ancestor-policy.js";
 import { PythonExternalVocabulary } from "../python-external-vocabulary.js";
@@ -60,8 +61,8 @@ import {
 export class PythonNamingConventionSymbolResolutionStrategy implements SymbolResolutionStrategy {
   readonly name = "namingConvention";
 
-  /** `classAncestors` identity → the bare short name of every base anything declares. */
-  private readonly descendantsOf = new WeakMap<object, ReadonlySet<string>>();
+  /** Per run scope, `classAncestors` identity → the bare short name of every base anything declares. */
+  private readonly descendantsOf = new RunScopedMemo<object, ReadonlySet<string>>();
 
   constructor(
     private readonly cfg: ResolverConfig,
@@ -105,9 +106,9 @@ export class PythonNamingConventionSymbolResolutionStrategy implements SymbolRes
    *
    * `hasSubtypes` would otherwise scan a run-global record once per candidate —
    * netbox declares 6.6k classes and this pass is consulted on every site that
-   * reached slot 7. The set is built ONCE per `classAncestors` identity and
-   * keyed by the record itself, so a run that rebuilds the channel gets a fresh
-   * one and a run that does not pays for the scan a single time.
+   * reached slot 7. The set is built ONCE per run scope and `classAncestors`
+   * identity (bd tea-rags-mcp-39xca.6), so the next run — or a channel written
+   * into in place — gets a fresh one, and a run pays for the scan a single time.
    */
   private ports(): NamingConventionPorts<CallContext> {
     return {
@@ -120,7 +121,7 @@ export class PythonNamingConventionSymbolResolutionStrategy implements SymbolRes
   private declaredBases(ctx: CallContext): ReadonlySet<string> {
     const ancestors = ctx.classAncestors;
     if (ancestors === undefined) return EMPTY_BASES;
-    const memo = this.descendantsOf.get(ancestors);
+    const memo = this.descendantsOf.get(ctx.runScope, ancestors);
     if (memo !== undefined) return memo;
     const bases = new Set<string>();
     for (const spellings of Object.values(ancestors)) {
@@ -129,7 +130,7 @@ export class PythonNamingConventionSymbolResolutionStrategy implements SymbolRes
         if (bare !== undefined && bare.length > 0) bases.add(bare);
       }
     }
-    this.descendantsOf.set(ancestors, bases);
+    this.descendantsOf.set(ctx.runScope, ancestors, bases);
     return bases;
   }
 }

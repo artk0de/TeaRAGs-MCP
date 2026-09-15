@@ -82,11 +82,14 @@ export interface ExploreOpsDeps {
    */
   signalFloors?: ReadonlyMap<string, SignalFloors>;
   /**
-   * Provider keys of the running composition, threaded to `IndexMetricsQuery`
-   * so `get_index_metrics` frames enrichment health on the composition rather
-   * than on the last run's provider list (bd tea-rags-mcp-x2u65).
+   * Provider keys of the ingest slice serving a path, handed to
+   * `IndexMetricsQuery` per request. `get_index_metrics` therefore frames
+   * enrichment health on the composition, not on the last run's provider list
+   * (bd tea-rags-mcp-x2u65), and on the PROJECT's composition, the one its
+   * `get_index_status` frames on, not the server's (bd tea-rags-mcp-uebug).
+   * Omitted → no frame, and a run-pointer marker reports no providers.
    */
-  activeEnrichmentProviders?: readonly string[];
+  enrichmentHealthFrameForPath?: (path: string) => readonly string[];
 }
 
 export class ExploreOps {
@@ -106,6 +109,7 @@ export class ExploreOps {
   private readonly indexMetricsQuery?: IndexMetricsQuery;
   private readonly recomputeService?: StatsRecomputeService;
   private readonly chunkResolver?: SymbolChunkResolver;
+  private readonly enrichmentHealthFrameForPath?: (path: string) => readonly string[];
 
   constructor(deps: ExploreOpsDeps) {
     this.qdrant = deps.qdrant;
@@ -119,6 +123,7 @@ export class ExploreOps {
     this.essentialKeys = deps.essentialKeys;
     this.modelGuard = deps.modelGuard;
     this.chunkResolver = deps.chunkResolver;
+    this.enrichmentHealthFrameForPath = deps.enrichmentHealthFrameForPath;
     this.vectorStrategy = createExploreStrategy(
       "vector",
       deps.qdrant,
@@ -146,7 +151,6 @@ export class ExploreOps {
         deps.statsCache,
         this.payloadSignals,
         deps.signalFloors,
-        deps.activeEnrichmentProviders ?? [],
       );
       this.recomputeService = new StatsRecomputeService(deps.qdrant, deps.statsCache);
     }
@@ -241,7 +245,7 @@ export class ExploreOps {
     // through this call.
     const { collectionName } = resolveCollection(this.collectionRegistry, { path });
     await this.ensureStats(collectionName);
-    return this.indexMetricsQuery.run(collectionName, path);
+    return this.indexMetricsQuery.run(collectionName, path, this.enrichmentHealthFrameForPath?.(path) ?? []);
   }
 
   /** Factory for the per-request findSimilar strategy. Exposed so facade can construct without reaching into ops internals. */

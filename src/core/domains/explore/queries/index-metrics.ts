@@ -28,15 +28,21 @@ export class IndexMetricsQuery {
      * → labelMaps stay purely percentile-derived.
      */
     private readonly signalFloors?: ReadonlyMap<string, SignalFloors>,
-    /**
-     * Provider keys of the running composition — the frame of the enrichment
-     * health report (bd tea-rags-mcp-x2u65). Same list the status path uses;
-     * without it the report would shrink to whatever the last run touched.
-     */
-    private readonly activeEnrichmentProviders: readonly string[] = [],
   ) {}
 
-  async run(collectionName: string, sourcePath: string): Promise<IndexMetrics> {
+  /**
+   * @param activeEnrichmentProviders provider keys of the composition serving
+   *   this project — the frame of the enrichment health report
+   *   (bd tea-rags-mcp-x2u65). A per-call argument, not a constructor field,
+   *   because the composition is per project: the status path frames on that
+   *   project's list, and so must this one (bd tea-rags-mcp-uebug). Without
+   *   it the report would shrink to whatever the last run touched.
+   */
+  async run(
+    collectionName: string,
+    sourcePath: string,
+    activeEnrichmentProviders: readonly string[] = [],
+  ): Promise<IndexMetrics> {
     if (!(await this.qdrant.collectionExists(collectionName))) {
       throw new CollectionNotFoundError(collectionName);
     }
@@ -50,7 +56,7 @@ export class IndexMetricsQuery {
     const signals = this.buildLanguageSignals(stats.perLanguage);
     this.appendGlobalSignalsIfPolyglot(signals, stats.perLanguage, stats.perSignal);
 
-    const enrichment = await this.loadEnrichmentHealth(collectionName);
+    const enrichment = await this.loadEnrichmentHealth(collectionName, activeEnrichmentProviders);
 
     return {
       collection: collectionName,
@@ -156,9 +162,12 @@ export class IndexMetricsQuery {
     signals["global"] = globalScoped;
   }
 
-  private async loadEnrichmentHealth(collectionName: string): Promise<IndexMetrics["enrichment"]> {
+  private async loadEnrichmentHealth(
+    collectionName: string,
+    activeEnrichmentProviders: readonly string[],
+  ): Promise<IndexMetrics["enrichment"]> {
     const markerPoint = await this.qdrant.getPoint(collectionName, INDEXING_METADATA_ID).catch(() => null);
     const rawEnrichment = markerPoint?.payload?.enrichment as EnrichmentMarkerMap | undefined;
-    return rawEnrichment ? mapMarkerToHealth(rawEnrichment, this.activeEnrichmentProviders) : undefined;
+    return rawEnrichment ? mapMarkerToHealth(rawEnrichment, activeEnrichmentProviders) : undefined;
   }
 }

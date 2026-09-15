@@ -110,11 +110,18 @@
   (their row on disk still describes the previous content, so absorbing it
   resurrects renamed-away classes), and hydration never counts as an extraction
   (`extractedFilesByLanguage` drives run stats and the deferred chunk pass).
-  Why: the fix only takes effect once the table is populated, so an index
-  predating migration 021 keeps the old behaviour until a
-  `--force-enrichments codegraph` run writes the rows — and until then
-  `callsUnnarrowedTemplate` is the only number that says so, because every rate
-  on `cg_run_stats` counts these calls as successes.
+  WHICH maps hydrate is declared once, in `RUN_GLOBAL_MAP_PERSISTENCE`
+  (symbols/run-global-map-registry.ts): the slice type, `buildPass1Aggregates`
+  and the seal's hydrators all derive from its `hydrate` entries, a `batchOnly`
+  entry states why it is not persisted, and a public run-state field left
+  unregistered fails the type check (bd tea-rags-mcp-39xca.6). The same seams
+  mint `runScope` — at `seal` and at every reset — and resolver memos key on it
+  through `language/kernel/run-scoped-memo.ts`, never on the pooled table's
+  identity or on a channel object `absorb` writes into in place. Why: the fix
+  only takes effect once the table is populated, so an index predating migration
+  021 keeps the old behaviour until a `--force-enrichments codegraph` run writes
+  the rows — and until then `callsUnnarrowedTemplate` is the only number that
+  says so, because every rate on `cg_run_stats` counts these calls as successes.
 
 - **Every `ResolverInputs` channel reaches BOTH `CallContext`s the runner
   builds, and one function is what makes that structural.**

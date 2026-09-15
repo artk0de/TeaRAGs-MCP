@@ -194,8 +194,30 @@ export function pickSingleCandidate<T>(candidates: readonly T[], mode: Ambiguous
   return candidates.length === 1 ? candidates[0] : null;
 }
 
+/**
+ * The identity of ONE codegraph resolve run (bd tea-rags-mcp-39xca.6).
+ *
+ * Minted by `CodegraphRunState` at the pass-1→pass-2 barrier and at every
+ * run-reset seam, and handed to every `CallContext` built in between. Resolver
+ * memos key on it rather than on the `GlobalSymbolTable` or on a run-global
+ * channel's object identity: the table lives as long as the pool, and the
+ * channels are mutated in place by `absorb` and `seal`, so neither identity is
+ * the run (bd tea-rags-mcp-11qqk, bd tea-rags-mcp-z99hp).
+ */
+export interface ResolveRunScope {
+  /** Monotonic per process, for diagnosis only — the identity is the OBJECT, never the number. */
+  readonly runSeq: number;
+}
+
 export interface CallContext {
   callerFile: RelPath;
+  /**
+   * The resolve run this context belongs to — see {@link ResolveRunScope}.
+   * Absent on a context built outside a codegraph run (unit tests, offline
+   * harnesses); every such context shares one detached scope, so its memos
+   * keep the object-keyed lifetime they had before the token existed.
+   */
+  runScope?: ResolveRunScope;
   callerScope: string[];
   /**
    * The caller chunk's own symbolId. For a CLASS/MODULE-body chunk this is the
