@@ -4,8 +4,10 @@
  * Scatter-gather: resolve order_by fields from preset weights → parallel scroll → merge → rerank.
  */
 
+import { toPhysicalPayloadKey } from "../../contracts/signal-utils.js";
 import type { DerivedSignalDescriptor, RerankableResult } from "../../contracts/types/reranker.js";
-import type { Reranker } from "./reranker.js";
+import type { PayloadSignalDescriptor } from "../../contracts/types/trajectory.js";
+import { buildSignalKeyMap, type Reranker } from "./reranker.js";
 
 interface OrderByField {
   key: string;
@@ -36,15 +38,26 @@ const OVERFETCH_FACTOR = 3;
 
 export class RankModule {
   private readonly descriptorMap: Map<string, DerivedSignalDescriptor>;
+  /** Source name (`chunk.pageRank`, `methodLines`) → declared LOGICAL payload key. */
+  private readonly payloadKeyMap: Map<string, string>;
+  private readonly payloadSignalTypes: Map<string, PayloadSignalDescriptor["type"]>;
 
   constructor(
     private readonly reranker: Reranker,
     private readonly descriptors: DerivedSignalDescriptor[],
+    /**
+     * The payload signal descriptors the reranker reads — the only record of which
+     * trajectory stores a source and where. Without them every level-qualified
+     * source falls back to the `git.` convention.
+     */
+    payloadSignals: PayloadSignalDescriptor[] = [],
   ) {
     this.descriptorMap = new Map();
     for (const d of descriptors) {
       this.descriptorMap.set(d.name, d);
     }
+    this.payloadKeyMap = buildSignalKeyMap(payloadSignals);
+    this.payloadSignalTypes = new Map(payloadSignals.map((ps) => [ps.key, ps.type]));
   }
 
   /**
@@ -115,16 +128,29 @@ export class RankModule {
 
   // -- Private --
 
+  /**
+   * The STORED payload path a scroll orders by for one derived signal.
+   *
+   * Candidate order: the source at the requested level, then a dotless source, then
+   * the first source. A candidate a payload descriptor declares resolves to that
+   * descriptor's logical key mapped to its physical path (`codegraph.chunk.pageRank`
+   * → `codegraph.symbols.chunk.pageRank`); a non-numeric one (`isHub`) orders
+   * nothing, since Qdrant `order_by` needs a numeric range index — the signal still
+   * scores the pooled candidates in the rerank. Only when no descriptor declares any
+   * candidate does the `git.` convention apply.
+   */
   private resolvePayloadField(sources: string[], level: "chunk" | "file"): string | undefined {
-    // 1. Try level-prefixed source (e.g. "chunk.commitCount" → "git.chunk.commitCount")
     const levelSource = sources.find((s) => s.startsWith(`${level}.`));
-    if (levelSource) return `git.${levelSource}`;
-
-    // 2. Try unprefixed source (e.g. "methodLines")
     const unprefixed = sources.find((s) => !s.includes("."));
-    if (unprefixed) return unprefixed;
 
-    // 3. Fallback: first source with git prefix
+    for (const source of [levelSource, unprefixed, sources[0]]) {
+      const logicalKey = source === undefined ? undefined : this.payloadKeyMap.get(source);
+      if (logicalKey === undefined) continue;
+      return this.payloadSignalTypes.get(logicalKey) === "number" ? toPhysicalPayloadKey(logicalKey) : undefined;
+    }
+
+    if (levelSource) return `git.${levelSource}`;
+    if (unprefixed) return unprefixed;
     return sources[0] ? `git.${sources[0]}` : undefined;
   }
 

@@ -48,7 +48,7 @@ tea-rags search, this skill applies — translate the SCOPE into typed sugar:
 | "docs about X" / "what's documented"               | `documentation: "only"`                          |
 | "code, not docs"                                   | `documentation: "exclude"`                       |
 | "AuthService class" (specific class)               | `symbolId: "AuthService"` OR `hybrid_search`     |
-| "in /full/abs/path/" (subagent context)            | `pathPattern: "/full/abs/path/**"`               |
+| "in /full/abs/path/" (subagent context)            | `pathPattern: "<path from project root>/**"`     |
 | "exclude vendor / generated / migrations"          | `pathPattern: "!**/vendor/**"` (no typed sugar)  |
 
 **Rule of thumb:** user almost never says "filter". They name a SCOPE — domain,
@@ -159,12 +159,16 @@ Concrete payload examples:
 Compose with typed filters (e.g. `language: "ruby"` +
 `pathPattern: "**/services/**"`).
 
-- GOOD: `**/enrichment/**` (directory prefix)
-- GOOD: `{file1.rb,file2.rb}` (flat file names, no slashes)
+Matched exactly (picomatch) against project-relative `relativePath`.
+
+- GOOD: `**/enrichment/**` (directory at any depth)
+- GOOD: `{app/services/foo.rb,app/models/bar.rb}` (exact relativePaths from
+  results)
+- GOOD: `**/{file1.rb,file2.rb}` (bare file names, any directory)
 - GOOD: `!**/test/**` (picomatch negation — exclude a directory subtree)
 - GOOD: `!**/vendor/**` (exclude non-test dirs that have no typed sugar)
-- BAD: `{app/services/foo.rb,app/models/bar.rb}` (slashes inside braces — breaks
-  picomatch)
+- BAD: `{file1.rb,file2.rb}`, `services/**` (no `**/` → project root only)
+- BAD: `/full/abs/path/**` (absolute path — never matches; strip project root)
 
 **When to prefer negation over typed sugar.** Use `testFile: "exclude"` for test
 exclusion — intent-clear, survives test-directory renames. Use `!**/dir/**` only

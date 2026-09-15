@@ -150,7 +150,9 @@ export function collectSchemaColumnModels(input: SchemaColumnModelInput): Schema
  *
  *   1. An explicit in-source declaration (`self.table_name`) CLAIMS its table.
  *      A claimed table is then invisible to inflection, so a `companies` table
- *      declared by `Firm` can never also land on a `Company` model.
+ *      declared by `Firm` can never also land on a `Company` model. A table
+ *      that two models declare is claimed but owned by NEITHER. The answer
+ *      must not depend on the order the models arrive in.
  *   2. Inflection maps a remaining table to the model whose own name equals
  *      `modelNameForTable(table)` — but only when EXACTLY ONE model matches and
  *      it has not claimed a different table. Two namesakes in different
@@ -181,14 +183,28 @@ export function synthesizeSchemaColumnDefs(
   const owners = new Map<string, SchemaColumnModel>();
   const claimedTables = new Set<string>();
 
+  /** table → every model whose body declares it. */
+  const declarers = new Map<string, SchemaColumnModel[]>();
   for (const model of models) {
     if (model.declaredTable === undefined) continue;
     claimedTables.add(model.declaredTable);
-    // First declaration wins; a second model naming the same table is a genuine
-    // collision (STI-style sharing), and guessing between them is not our call.
-    if (tablesByName.has(model.declaredTable) && !owners.has(model.declaredTable)) {
-      owners.set(model.declaredTable, model);
+    const bucket = declarers.get(model.declaredTable);
+    if (bucket) bucket.push(model);
+    else declarers.set(model.declaredTable, [model]);
+  }
+  for (const [tableName, bucket] of declarers) {
+    if (!tablesByName.has(tableName)) continue;
+    const only = bucket[0];
+    if (bucket.length === 1 && only !== undefined) {
+      owners.set(tableName, only);
       stats.mappedExplicit += 1;
+    } else {
+      // Two models naming the same table are a real collision (STI-style
+      // sharing). Picking the first would make the owner depend on model ORDER,
+      // and that order differs between a full run and an incremental one that
+      // hydrates the unwalked overrides after the walked ones (bd 39xca.9).
+      // The table is still claimed, so inflection cannot take it either.
+      stats.ambiguous += 1;
     }
   }
 

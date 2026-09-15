@@ -20,7 +20,7 @@ export abstract class BaseExploreStrategy implements ExploreStrategy {
   constructor(
     protected readonly qdrant: QdrantManager,
     protected readonly reranker: Reranker,
-    private readonly payloadSignals: PayloadSignalDescriptor[],
+    protected readonly payloadSignals: PayloadSignalDescriptor[],
     protected readonly essentialKeys: string[],
   ) {}
 

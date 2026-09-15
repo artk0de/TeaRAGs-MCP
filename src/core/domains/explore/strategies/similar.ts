@@ -9,10 +9,12 @@ import type { EmbeddingProvider } from "../../../adapters/embeddings/base.js";
 import type { QdrantManager } from "../../../adapters/qdrant/client.js";
 import { QdrantPointNotFoundError } from "../../../adapters/qdrant/errors.js";
 import type { PayloadSignalDescriptor } from "../../../contracts/types/trajectory.js";
+import { compilePathPatternMatcher } from "../../../infra/path-pattern.js";
 import { FileLevelGrouper } from "../chunk-grouping/index.js";
 import { ChunkNotFoundError } from "../errors.js";
 import type { Reranker } from "../reranker.js";
 import { BaseExploreStrategy } from "./base.js";
+import { fetchPathPatternMatches } from "./path-pattern-fill.js";
 import type { ExploreContext, ExploreResult } from "./types.js";
 
 export interface SimilarSearchInput {
@@ -62,24 +64,32 @@ export class SimilarSearchStrategy extends BaseExploreStrategy {
     // 5. Build filter (merge user filter + fileExtensions)
     const filter = this.buildFilter(ctx.filter, this.input.fileExtensions);
 
-    // 6. Call Qdrant query (overfetch for file-level dedup)
+    // 6. Call Qdrant query (overfetch for file-level dedup). An exact pathPattern
+    //    narrows the page client-side, so a server offset would skip SUPERSET
+    //    points the exact filter never saw — the base slices it off exact matches.
     const fetchLimit = ctx.level === "file" ? ctx.limit * 3 : ctx.limit;
-    let results;
-    try {
-      results = await this.qdrant.query(ctx.collectionName, {
-        positive,
-        negative: negative.length > 0 ? negative : undefined,
-        strategy: this.input.strategy ?? "best_score",
-        limit: fetchLimit,
-        offset: ctx.offset,
-        filter,
-      });
-    } catch (error) {
-      if (error instanceof QdrantPointNotFoundError) {
-        throw new ChunkNotFoundError(error);
-      }
-      throw error;
-    }
+    const offset = compilePathPatternMatcher(ctx.pathPattern) ? undefined : ctx.offset;
+    const results = await fetchPathPatternMatches(
+      ctx.pathPattern,
+      { fetchLimit, fetchUnit: "chunk", target: ctx.limit, targetUnit: ctx.level === "file" ? "file" : "chunk" },
+      async (limit) => {
+        try {
+          return await this.qdrant.query(ctx.collectionName, {
+            positive,
+            negative: negative.length > 0 ? negative : undefined,
+            strategy: this.input.strategy ?? "best_score",
+            limit,
+            offset,
+            filter,
+          });
+        } catch (error) {
+          if (error instanceof QdrantPointNotFoundError) {
+            throw new ChunkNotFoundError(error);
+          }
+          throw error;
+        }
+      },
+    );
 
     // Client-side grouping for file level
     if (ctx.level === "file") {

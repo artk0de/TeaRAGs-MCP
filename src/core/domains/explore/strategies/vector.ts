@@ -8,6 +8,7 @@
 import { FileLevelGrouper } from "../chunk-grouping/index.js";
 import { InvalidQueryError } from "../errors.js";
 import { BaseExploreStrategy } from "./base.js";
+import { fetchPathPatternMatches } from "./path-pattern-fill.js";
 import type { ExploreContext, ExploreResult } from "./types.js";
 
 /**
@@ -21,18 +22,29 @@ export class VectorSearchStrategy extends BaseExploreStrategy {
   readonly type = "vector" as const;
 
   protected async executeExplore(ctx: ExploreContext): Promise<ExploreResult[]> {
-    if (!ctx.embedding) {
+    const { embedding } = ctx;
+    if (!embedding) {
       throw new InvalidQueryError("VectorSearchStrategy requires an embedding in the context");
     }
     if (ctx.level === "file") {
-      const grouped = await this.qdrant.queryGroups(ctx.collectionName, ctx.embedding, {
-        groupBy: "relativePath",
-        groupSize: FILE_GROUP_SIZE,
-        limit: ctx.limit,
-        filter: ctx.filter,
-      });
+      // Groups are keyed on relativePath, so the server's limit counts FILES.
+      const grouped = await fetchPathPatternMatches(
+        ctx.pathPattern,
+        { fetchLimit: ctx.limit, fetchUnit: "file", target: ctx.limit, targetUnit: "file" },
+        async (limit) =>
+          this.qdrant.queryGroups(ctx.collectionName, embedding, {
+            groupBy: "relativePath",
+            groupSize: FILE_GROUP_SIZE,
+            limit,
+            filter: ctx.filter,
+          }),
+      );
       return FileLevelGrouper.group(grouped, ctx.limit);
     }
-    return this.qdrant.search(ctx.collectionName, ctx.embedding, ctx.limit, ctx.filter);
+    return fetchPathPatternMatches(
+      ctx.pathPattern,
+      { fetchLimit: ctx.limit, fetchUnit: "chunk", target: ctx.limit, targetUnit: "chunk" },
+      async (limit) => this.qdrant.search(ctx.collectionName, embedding, limit, ctx.filter),
+    );
   }
 }

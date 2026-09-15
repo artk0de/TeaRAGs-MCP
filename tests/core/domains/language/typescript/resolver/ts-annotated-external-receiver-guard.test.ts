@@ -285,7 +285,14 @@ describe("TSGlobalShortNameSymbolResolutionStrategy — annotated out-of-project
     });
   });
 
-  it("STILL resolves when the annotation names a project type the symbol table does NOT carry", () => {
+  /**
+   * An annotation naming a PROJECT interface the symbol table carries no symbol
+   * for is still an internal receiver — the 3somv half, asserted on the external
+   * classifier. What it no longer does is hand the member to the project's only
+   * `put`: `Store` is unrelated to `Putter`, so that edge was decided by the
+   * short name being unique, which is the defect bd tea-rags-mcp-hwwtw removed.
+   */
+  it("keeps an annotation naming a project interface internal without matching its member by short-name uniqueness", () => {
     writeSource(
       repoRoot,
       "src/shapes.ts",
@@ -303,15 +310,15 @@ describe("TSGlobalShortNameSymbolResolutionStrategy — annotated out-of-project
         ``,
       ].join("\n"),
     );
-    expect(
-      strategy().attempt(
-        { ...ANNOTATED_PROJECT_PUT, startLine: 4 },
-        ctx("src/putter-caller.ts", {
-          imports: [{ importText: "./shapes.js", startLine: 1, importedNames: ["Putter"] }],
-          localBindings: { store: [{ line: 3, type: "Putter" }] },
-        }),
-      ),
-    ).toEqual({ kind: "resolved", target: { targetRelPath: "src/store.ts", targetSymbolId: "Store#put" } });
+    const call: CallRef = { ...ANNOTATED_PROJECT_PUT, startLine: 4 };
+    const putterCtx = (): CallContext =>
+      ctx("src/putter-caller.ts", {
+        imports: [{ importText: "./shapes.js", startLine: 1, importedNames: ["Putter"] }],
+        localBindings: { store: [{ line: 3, type: "Putter" }] },
+      });
+    const resolver = new TSCallResolver(tsOptions, DEFAULT_AMBIGUOUS_RESOLVE_MODE, repoRoot);
+    expect(resolver.targetsExternalImport(call, putterCtx())).toBe(false);
+    expect(strategy().attempt(call, putterCtx()).kind).toBe("continue");
   });
 
   /**

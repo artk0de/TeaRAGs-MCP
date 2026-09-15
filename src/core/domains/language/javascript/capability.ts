@@ -14,5 +14,7 @@ export const capability: LanguageCapability = {
   tests: { tier: "high", detection: "*.test.js / *.spec.jsx", tech: "testScopeChunker (describe/it scopes)" },
   codegraph: { tier: "high", tech: "6-strategy; CommonJS/ESM require resolution (dynamic gaps)" },
   // codegraphSchema 2: bd tea-rags-mcp-ex28m — see typescript/capability.ts.
-  versions: { chunking: 1, walker: 1, codegraphSchema: 2 },
+  // walker 2: bd tea-rags-mcp-hwwtw — receiver-bearing calls no longer fall
+  // through to the global short-name lookup.
+  versions: { chunking: 1, walker: 2, codegraphSchema: 2 },
 };

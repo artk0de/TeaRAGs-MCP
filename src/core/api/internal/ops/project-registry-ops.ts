@@ -3,6 +3,7 @@ import { resolve } from "node:path";
 
 import type { EmbeddingProvider } from "../../../adapters/embeddings/base.js";
 import type { QdrantManager } from "../../../adapters/qdrant/client.js";
+import { chunkPointsFilter } from "../../../adapters/qdrant/service-points.js";
 import {
   PROJECT_NAME_RE,
   type CollectionEntry,
@@ -173,7 +174,9 @@ export class ProjectRegistryOps {
     }
     let { chunksCount } = fallback;
     try {
-      chunksCount = await qdrant.countPoints(collectionName);
+      // Chunks only — the indexing marker and schema metadata point are not
+      // chunks, and status/metrics leave them out too (bd tea-rags-mcp-39xca.12).
+      chunksCount = await qdrant.countPoints(collectionName, chunkPointsFilter());
     } catch {
       // keep fallback
     }
@@ -369,7 +372,8 @@ export class ProjectRegistryOps {
       }
       let chunksCount = 0;
       try {
-        chunksCount = await qdrant.countPoints(collectionName);
+        // Chunks only, same definition as the register path above (bd tea-rags-mcp-39xca.12).
+        chunksCount = await qdrant.countPoints(collectionName, chunkPointsFilter());
       } catch {
         // ignore — keep 0
       }

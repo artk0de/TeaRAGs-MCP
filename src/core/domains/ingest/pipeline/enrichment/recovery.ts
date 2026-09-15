@@ -6,6 +6,7 @@
  */
 
 import type { QdrantManager } from "../../../../adapters/qdrant/client.js";
+import { servicePointExclusions } from "../../../../adapters/qdrant/service-points.js";
 import type { EnrichmentExecutor } from "../../../../contracts/types/enrichment-executor.js";
 import type { ChunkLookupEntry } from "../../../../types.js";
 import type { ChunkItem } from "../types.js";
@@ -484,8 +485,7 @@ export class EnrichmentRecovery {
       // every run — see the skip-stamp design spec.
       must: [...settled, ...languageCondition],
       must_not: [
-        { key: "_type", match: { value: "indexing_metadata" } },
-        { key: "_type", match: { value: "schema_metadata" } },
+        ...servicePointExclusions(),
         // Points without a relativePath cannot be re-enriched (scrollUnenriched
         // skips them). Exclude them from the count too, so countUnenriched and
         // the recovery scroll see the same set — otherwise a no-relativePath

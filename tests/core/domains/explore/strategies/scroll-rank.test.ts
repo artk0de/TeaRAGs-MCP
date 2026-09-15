@@ -291,6 +291,40 @@ describe("ScrollRankStrategy", () => {
     }
   });
 
+  it("scrolls a codegraph signal by the stored payload path its descriptor declares", async () => {
+    const pageRankDesc: DerivedSignalDescriptor = {
+      name: "pageRank",
+      description: "method centrality",
+      sources: ["chunk.pageRank"],
+      defaultBound: 1,
+      extract: () => 0,
+    };
+    const reranker = createMockReranker();
+    vi.mocked(reranker.getDescriptors).mockReturnValue([pageRankDesc]);
+    const qdrant = createMockQdrant();
+    const strategy = new ScrollRankStrategy(
+      qdrant,
+      reranker,
+      [{ key: "codegraph.chunk.pageRank", type: "number", description: "method pageRank" }],
+      [],
+    );
+
+    await strategy.execute({
+      collectionName: "test_col",
+      weights: { pageRank: 1 },
+      level: "chunk",
+      limit: 5,
+      metaOnly: false,
+    });
+
+    expect(qdrant.scrollOrdered).toHaveBeenCalledWith(
+      "test_col",
+      { key: "codegraph.symbols.chunk.pageRank", direction: "desc" },
+      expect.any(Number),
+      undefined,
+    );
+  });
+
   it("stops re-fetching when data is exhausted (fewer unique files than limit)", async () => {
     // Only 2 files exist, but limit=5. Should return 2, not loop forever.
     const chunks = [

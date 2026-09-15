@@ -12,7 +12,8 @@ inlined in SKILL.md near the top for skim safety; the rest live here.
 - **Reporting 1/N overlap as risk.** Single-preset hits are noise. Minimum 2/N
   for Medium.
 - **find_similar from Medium candidates.** Only Critical warrants expansion.
-- **Braces with slashes in pathPattern.** Extract directory prefixes instead.
+- **Brace of full file paths as scan scope.** Matches only those files — rest of
+  domain never scanned. Extract directory prefixes instead.
 - **Single unfiltered scan for broad scope.** Dominant-churn domain takes 100%
   of slots. Always run stratified second scan with `!**/dominant/**`.
 - **Scanning tests and documentation as risk surface.** Dimension presets

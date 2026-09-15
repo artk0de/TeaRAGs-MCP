@@ -6,6 +6,7 @@
  * Qdrant scrolling is handled at the API layer — this function is pure.
  */
 
+import { isServicePointPayload } from "../../../adapters/qdrant/service-points.js";
 import { resolvePayloadValue } from "../../../contracts/signal-utils.js";
 import type { FilterPresetDef } from "../../../contracts/types/filter-preset.js";
 import {
@@ -552,12 +553,16 @@ export function computeCollectionStats(
   trajectoryAccumulators: readonly StatsAccumulatorDescriptor[],
   gitTimePeriods?: { fileMonths: number; chunkMonths: number },
 ): CollectionSignalStats {
+  // The stats scroll reads every point of the collection. The indexing marker
+  // and the schema metadata point are not chunks: counted, they pad the `code`
+  // distribution and the language-share denominator (bd tea-rags-mcp-39xca.12).
+  const chunkPoints = points.filter((point) => !isServicePointPayload(point.payload));
   const statsSignals = signals.filter((s) => s.stats !== undefined);
-  const extracted = extractSignalValues(points, statsSignals, trajectoryAccumulators);
+  const extracted = extractSignalValues(chunkPoints, statsSignals, trajectoryAccumulators);
   const perSignal = computePerSignalStats(extracted.valueArrays, statsSignals);
   const distributions = buildDistributions(extracted, gitTimePeriods);
 
-  const totalChunks = points.length;
+  const totalChunks = chunkPoints.length;
   const perLanguage = new Map<string, Map<string, ScopedSignalStats>>();
 
   for (const [lang, langValueArrays] of extracted.perLanguageValues) {

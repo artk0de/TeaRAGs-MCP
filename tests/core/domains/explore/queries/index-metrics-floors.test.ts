@@ -12,15 +12,13 @@ import { describe, expect, it, vi } from "vitest";
 import type { SignalFloors } from "../../../../../src/core/contracts/types/trajectory.js";
 import { IndexMetricsQuery } from "../../../../../src/core/domains/explore/queries/index-metrics.js";
 
-const FLOORS = new Map<string, SignalFloors>([
-  ["typescript", { moduleLines: { large: 300, "god-module": 600 } }],
-]);
+const FLOORS = new Map<string, SignalFloors>([["typescript", { moduleLines: { large: 300, "god-module": 600 } }]]);
 
 /** Source percentiles sit far below the floors; test percentiles are separate. */
 function makeDeps() {
   const qdrant = {
     collectionExists: vi.fn().mockResolvedValue(true),
-    getCollectionInfo: vi.fn().mockResolvedValue({ pointsCount: 100 }),
+    countPoints: vi.fn().mockResolvedValue(100),
     getPoint: vi.fn().mockResolvedValue(null),
   } as never;
 
@@ -72,7 +70,7 @@ describe("IndexMetricsQuery — industry floors", () => {
 
     const result = await query.run("col", "/project");
 
-    const source = result.signals["typescript"]["moduleLines"]["source"];
+    const { source } = result.signals["typescript"]["moduleLines"];
     expect(source.labelMap).toEqual({ small: 26, large: 300, "god-module": 600 });
   });
 
@@ -82,7 +80,7 @@ describe("IndexMetricsQuery — industry floors", () => {
 
     const result = await query.run("col", "/project");
 
-    const test = result.signals["typescript"]["moduleLines"]["test"];
+    const { test } = result.signals["typescript"]["moduleLines"];
     expect(test.labelMap).toEqual({ small: 90, large: 180, "god-module": 260 });
   });
 
@@ -114,7 +112,7 @@ describe("IndexMetricsQuery — industry floors", () => {
 
     const result = await query.run("col", "/project");
 
-    const source = result.signals["typescript"]["moduleLines"]["source"];
+    const { source } = result.signals["typescript"]["moduleLines"];
     expect(source.min).toBe(8);
     expect(source.max).toBe(120);
     expect(source.count).toBe(40);

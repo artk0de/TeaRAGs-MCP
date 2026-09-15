@@ -106,6 +106,7 @@ import {
   TSSuperSymbolResolutionStrategy,
   TSThisMemberSymbolResolutionStrategy,
   TSTypeCheckerFallbackSymbolResolutionStrategy,
+  TSTypeCheckerInterfaceReceiverDispatchResolver,
   TSTypeCheckerJsxComponentSymbolResolutionStrategy,
   TSTypeCheckerReturnTypeInferenceSymbolResolutionStrategy,
   TSTypeCheckerUnionReceiverDispatchResolver,
@@ -308,6 +309,13 @@ export class TSCallResolver implements CallResolver {
   private readonly unionReceiver: TSTypeCheckerUnionReceiverDispatchResolver | null;
 
   /**
+   * Interface-typed receivers the walker bound no type to, handed to the CHA
+   * cone with the checker's declared interface as the base type (bd
+   * tea-rags-mcp-hwwtw). `null` whenever the type checker is disabled.
+   */
+  private readonly interfaceReceiver: TSTypeCheckerInterfaceReceiverDispatchResolver | null;
+
+  /**
    * Project-tree oracle the path mapper consults to pick a specifier's real
    * extension (bd tea-rags-mcp-f3zcy). One memoized instance per resolver,
    * shared with every strategy and with the Program cache, so a resolve pass
@@ -352,6 +360,9 @@ export class TSCallResolver implements CallResolver {
       : null;
     this.unionReceiver = this.programCache
       ? new TSTypeCheckerUnionReceiverDispatchResolver(cfg, this.programCache)
+      : null;
+    this.interfaceReceiver = this.programCache
+      ? new TSTypeCheckerInterfaceReceiverDispatchResolver(cfg, this.programCache, this.cone)
       : null;
     this.strategies = [
       new TSSuperSymbolResolutionStrategy(cfg),
@@ -581,8 +592,13 @@ export class TSCallResolver implements CallResolver {
     const union = this.unionReceiver?.resolveDispatch(call, ctx);
     if (union?.kind === "edges" && union.edges.length > 0) return union;
     // Neither table nor union matched — the cone outcome (bounded by design,
-    // always kind "edges") is the answer either way.
-    return this.cone.resolveDispatch(call, ctx);
+    // always kind "edges") is the answer, unless the cone had no base type to
+    // expand: a receiver the walker left untyped but the checker types as a
+    // project interface gets the cone re-asked with that interface (bd
+    // tea-rags-mcp-hwwtw). Empty either way when neither has anything to add.
+    const cone = this.cone.resolveDispatch(call, ctx);
+    if (cone.kind !== "edges" || cone.edges.length > 0) return cone;
+    return this.interfaceReceiver?.resolveDispatch(call, ctx) ?? cone;
   }
 
   /**

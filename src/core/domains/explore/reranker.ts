@@ -882,7 +882,7 @@ function readPayloadPath(payload: Record<string, unknown>, path: string): unknow
  * That case is the whole reason the loop starts at the full segment count —
  * see the comment on the loop.
  */
-function buildSignalKeyMap(payloadSignals: PayloadSignalDescriptor[]): Map<string, string> {
+export function buildSignalKeyMap(payloadSignals: PayloadSignalDescriptor[]): Map<string, string> {
   const map = new Map<string, string>();
 
   for (const ps of payloadSignals) {

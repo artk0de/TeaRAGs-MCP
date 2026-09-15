@@ -33,7 +33,7 @@ Documentation search? (language: "markdown" OR documentation: "only")
 │     → heading-weighted ranking is automatic
 │     Optimal flow for navigating docs:
 │       1. find_symbol(relativePath: "docs/file.md") — TOC of one doc, OR
-│          hybrid_search/semantic_search with pathPattern: "docs/**" — to
+│          hybrid_search/semantic_search with pathPattern: "**/docs/**" — to
 │          discover which doc covers a topic
 │       2. find_symbol(symbol: "doc:<hash>") — full content of ONE section;
 │          hash from a TOC line or a doc result's symbolId (parentSymbolId is

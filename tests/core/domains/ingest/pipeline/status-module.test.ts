@@ -555,7 +555,7 @@ describe("StatusModule", () => {
           {
             id: INDEXING_METADATA_ID,
             vector: new Array(384).fill(0),
-            payload: { indexingComplete: false, embeddingModel: "test-model" },
+            payload: { _type: "indexing_metadata", indexingComplete: false, embeddingModel: "test-model" },
           },
           {
             id: "chunk-1",
@@ -588,7 +588,12 @@ describe("StatusModule", () => {
           {
             id: INDEXING_METADATA_ID,
             vector: new Array(384).fill(0),
-            payload: { indexingComplete: false, startedAt: staleTime, embeddingModel: "test-model" },
+            payload: {
+              _type: "indexing_metadata",
+              indexingComplete: false,
+              startedAt: staleTime,
+              embeddingModel: "test-model",
+            },
           },
         ]);
 
@@ -616,6 +621,7 @@ describe("StatusModule", () => {
             id: INDEXING_METADATA_ID,
             vector: new Array(384).fill(0),
             payload: {
+              _type: "indexing_metadata",
               indexingComplete: false,
               startedAt: oldStart,
               lastHeartbeat: recentHeartbeat,
@@ -648,6 +654,7 @@ describe("StatusModule", () => {
             id: INDEXING_METADATA_ID,
             vector: new Array(384).fill(0),
             payload: {
+              _type: "indexing_metadata",
               indexingComplete: false,
               startedAt: staleTime,
               lastHeartbeat: staleHeartbeat,
@@ -677,7 +684,7 @@ describe("StatusModule", () => {
           {
             id: INDEXING_METADATA_ID,
             vector: new Array(384).fill(0),
-            payload: { indexingComplete: true, completedAt: new Date().toISOString() },
+            payload: { _type: "indexing_metadata", indexingComplete: true, completedAt: new Date().toISOString() },
           },
           {
             id: "chunk-1",
@@ -707,7 +714,7 @@ describe("StatusModule", () => {
           {
             id: INDEXING_METADATA_ID,
             vector: new Array(384).fill(0),
-            payload: { indexingComplete: true, completedAt: new Date().toISOString() },
+            payload: { _type: "indexing_metadata", indexingComplete: true, completedAt: new Date().toISOString() },
           },
           { id: "chunk-old", vector: new Array(384).fill(0.1), payload: { relativePath: "old.ts" } },
         ]);
@@ -719,7 +726,7 @@ describe("StatusModule", () => {
           {
             id: INDEXING_METADATA_ID,
             vector: new Array(384).fill(0),
-            payload: { indexingComplete: false, embeddingModel: "new-model" },
+            payload: { _type: "indexing_metadata", indexingComplete: false, embeddingModel: "new-model" },
           },
           { id: "chunk-new-1", vector: new Array(384).fill(0.1), payload: { relativePath: "new.ts" } },
           { id: "chunk-new-2", vector: new Array(384).fill(0.2), payload: { relativePath: "new2.ts" } },
@@ -752,7 +759,7 @@ describe("StatusModule", () => {
           {
             id: INDEXING_METADATA_ID,
             vector: new Array(384).fill(0),
-            payload: { indexingComplete: false, startedAt: staleTime },
+            payload: { _type: "indexing_metadata", indexingComplete: false, startedAt: staleTime },
           },
         ]);
 
@@ -782,6 +789,7 @@ describe("StatusModule", () => {
             id: INDEXING_METADATA_ID,
             vector: new Array(384).fill(0),
             payload: {
+              _type: "indexing_metadata",
               indexingComplete: true,
               completedAt: new Date().toISOString(),
               embeddingModel: "fresh-model",
@@ -799,6 +807,7 @@ describe("StatusModule", () => {
             id: INDEXING_METADATA_ID,
             vector: new Array(384).fill(0),
             payload: {
+              _type: "indexing_metadata",
               indexingComplete: true,
               completedAt: new Date(Date.now() - 60 * 1000).toISOString(),
               embeddingModel: "stale-model",
@@ -830,7 +839,7 @@ describe("StatusModule", () => {
           {
             id: INDEXING_METADATA_ID,
             vector: new Array(384).fill(0),
-            payload: { indexingComplete: true, completedAt: new Date().toISOString() },
+            payload: { _type: "indexing_metadata", indexingComplete: true, completedAt: new Date().toISOString() },
           },
           { id: "chunk-1", vector: new Array(384).fill(0.1), payload: { relativePath: "test.ts" } },
         ]);
@@ -843,7 +852,7 @@ describe("StatusModule", () => {
           {
             id: INDEXING_METADATA_ID,
             vector: new Array(384).fill(0),
-            payload: { indexingComplete: false, startedAt: staleTime },
+            payload: { _type: "indexing_metadata", indexingComplete: false, startedAt: staleTime },
           },
           { id: "partial-chunk", vector: new Array(384).fill(0.1), payload: { relativePath: "partial.ts" } },
         ]);
@@ -871,7 +880,7 @@ describe("StatusModule", () => {
           {
             id: INDEXING_METADATA_ID,
             vector: new Array(384).fill(0),
-            payload: { indexingComplete: true, completedAt: new Date().toISOString() },
+            payload: { _type: "indexing_metadata", indexingComplete: true, completedAt: new Date().toISOString() },
           },
           { id: "chunk-1", vector: new Array(384).fill(0.1), payload: { relativePath: "test.ts" } },
         ]);
@@ -883,7 +892,7 @@ describe("StatusModule", () => {
           {
             id: INDEXING_METADATA_ID,
             vector: new Array(384).fill(0),
-            payload: { indexingComplete: false, startedAt: staleTime },
+            payload: { _type: "indexing_metadata", indexingComplete: false, startedAt: staleTime },
           },
           { id: "partial", vector: new Array(384).fill(0.1), payload: { relativePath: "partial.ts" } },
         ]);
@@ -913,7 +922,7 @@ describe("StatusModule", () => {
           {
             id: INDEXING_METADATA_ID,
             vector: new Array(384).fill(0),
-            payload: { indexingComplete: false, startedAt: staleTime },
+            payload: { _type: "indexing_metadata", indexingComplete: false, startedAt: staleTime },
           },
           { id: "chunk-1", vector: new Array(384).fill(0.1), payload: { relativePath: "partial.ts" } },
         ]);
@@ -940,7 +949,7 @@ describe("StatusModule", () => {
           {
             id: INDEXING_METADATA_ID,
             vector: new Array(384).fill(0),
-            payload: { indexingComplete: false, startedAt: staleTime },
+            payload: { _type: "indexing_metadata", indexingComplete: false, startedAt: staleTime },
           },
         ]);
 
@@ -1154,7 +1163,7 @@ describe("StatusModule", () => {
         {
           id: INDEXING_METADATA_ID,
           vector: new Array(384).fill(0),
-          payload: { indexingComplete: true, embeddingModel: "test-model" },
+          payload: { _type: "indexing_metadata", indexingComplete: true, embeddingModel: "test-model" },
         },
         {
           id: "chunk-v1",

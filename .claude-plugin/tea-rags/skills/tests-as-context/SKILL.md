@@ -258,8 +258,9 @@ getting rewritten".
 
 **Caller inputs:**
 
-- `modulePath`: relative path or pathPattern of test file / dir being documented
-  (e.g. `tests/core/domains/explore/reranker.test.ts` or
+- `modulePath`: test file relativePath, or test dir as `<dir>/**` (bare dir path
+  matches nothing) being documented (e.g.
+  `tests/core/domains/explore/reranker.test.ts` or
   `tests/core/domains/explore/**`)
 - `intent` (optional): high-level theme to bias query; omit for full-module
   enumeration

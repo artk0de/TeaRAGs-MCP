@@ -14,6 +14,7 @@ import { join } from "node:path";
 import type { GraphDbClientPool } from "../../../adapters/duckdb/pool.js";
 import type { QdrantManager } from "../../../adapters/qdrant/client.js";
 import { SchemaMetadataPointStore } from "../../../adapters/qdrant/schema-metadata-point.js";
+import { chunkPointsFilter } from "../../../adapters/qdrant/service-points.js";
 import { INDEXING_METADATA_ID } from "../../../contracts/constants.js";
 import type { EdgeKindCount, MethodEdgeKind, ResolveRunStatsRow } from "../../../contracts/types/codegraph.js";
 import type { PathCollectionResolver } from "../../../contracts/types/registry.js";
@@ -511,10 +512,12 @@ export class StatusModule {
    */
   private async getStatusFromCollection(sourceCollection: string, reportedName: string): Promise<IndexStatus> {
     const rawPoint = await this.qdrant.getPoint(sourceCollection, INDEXING_METADATA_ID);
-    const info = await this.qdrant.getCollectionInfo(sourceCollection);
     const marker = rawPoint ? parseMarkerPayload(rawPoint.payload as Record<string, unknown>) : undefined;
 
-    const actualChunksCount = marker ? Math.max(0, info.pointsCount - 1) : info.pointsCount;
+    // Chunks only, counted server-side under the one service-point definition
+    // that metrics, stats and the recompute also use (bd tea-rags-mcp-39xca.12).
+    // Subtracting the marker from `pointsCount` missed the schema metadata point.
+    const actualChunksCount = await this.qdrant.countPoints(sourceCollection, chunkPointsFilter());
     const enrichment = marker?.enrichment
       ? mapMarkerToHealth(marker.enrichment, this.activeEnrichmentProviders)
       : undefined;

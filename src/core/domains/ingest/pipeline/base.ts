@@ -14,6 +14,7 @@ import type { Ignore } from "ignore";
 import type { EmbeddingProvider } from "../../../adapters/embeddings/base.js";
 import type { QdrantManager } from "../../../adapters/qdrant/client.js";
 import { EMBEDDED_MARKER } from "../../../adapters/qdrant/embedded/daemon.js";
+import { chunkPointsFilter } from "../../../adapters/qdrant/service-points.js";
 import type { EnrichmentRunHandle } from "../../../contracts/types/enrichment-executor.js";
 import type {
   CollectionRegistryPort,
@@ -283,7 +284,9 @@ export abstract class BaseIndexingPipeline {
   protected async recordRegistryEntry(collectionName: string, absolutePath: string): Promise<void> {
     if (!this.registry) return;
     try {
-      const chunksCount = await this.qdrant.countPoints(collectionName);
+      // Chunks only — the indexing marker and schema metadata point are not
+      // chunks, and status/metrics leave them out too (bd tea-rags-mcp-39xca.12).
+      const chunksCount = await this.qdrant.countPoints(collectionName, chunkPointsFilter());
       // Vector width comes from the collection, not from the provider. The
       // provider reports the static model-registry guess, which is wrong for any
       // model outside that table; register_project already stores the true width

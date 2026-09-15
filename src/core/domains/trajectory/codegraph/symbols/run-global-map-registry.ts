@@ -87,6 +87,7 @@ export const RUN_GLOBAL_MAP_PERSISTENCE = {
   returnTypes: { policy: "hydrate", sliceField: "functionReturnTypes" },
   classFieldTypesByClassKey: { policy: "hydrate", sliceField: "classFieldTypesByClassKey" },
   moduleReexports: { policy: "hydrate", sliceField: "moduleReexports" },
+  schemaTables: { policy: "hydrate", sliceField: "classSchemaTables" },
 
   extractedFilesByLanguage: {
     policy: "batchOnly",
@@ -102,10 +103,6 @@ export const RUN_GLOBAL_MAP_PERSISTENCE = {
   selfInstantiatingClassMethods: {
     policy: "batchOnly",
     reason: "derived at seal from the hydrated self-dispatch methods",
-  },
-  schemaTables: {
-    policy: "batchOnly",
-    reason: "unmeasured: an override declared only in an unwalked file is not seen by the schema pre-pass",
   },
   instantiatedTypes: { policy: "batchOnly", reason: "RTA set; measured zero recovered edges (bd 8qyax, bd 4yvms)" },
   ivarTypes: { policy: "batchOnly", reason: "no type source emits ivar facts yet (bd wr7ku), so unmeasurable" },
