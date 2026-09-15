@@ -217,12 +217,23 @@ export class QdrantSearchExecutor {
   /**
    * Performs hybrid search combining dense and sparse retrieval using Qdrant's
    * server-side RRF (Reciprocal Rank Fusion) via the Query API. Issues a single
-   * request with two prefetches.
+   * request with two prefetches — three when `identityPrefetchFilter` is given.
    *
    * @param semanticWeight Optional weight for the dense sub-query in weighted RRF.
    *                       If omitted, plain RRF (equal weights, Qdrant default k)
    *                       is used. If provided, must be in [0, 1]; the sparse
-   *                       weight is implicitly (1 - semanticWeight).
+   *                       weight is implicitly (1 - semanticWeight). The identity
+   *                       prefetch, when present, takes the DENSE weight: it is
+   *                       the dense ordering restricted to a subset, so it shares
+   *                       the dense leg's say — and a caller asking for lexical
+   *                       only (`0`) gets no identity boost either.
+   * @param identityPrefetchFilter Optional restriction for a THIRD prefetch: the
+   *                       same dense query, narrowed to the request filter AND
+   *                       this filter. It only boosts through RRF — the fused
+   *                       query keeps the request filter alone. The caller
+   *                       decides when it exists (explore's identity leg,
+   *                       bd tea-rags-mcp-2fefq); without it the request is the
+   *                       plain two-prefetch one, byte for byte.
    */
   async hybridSearch(
     collectionName: string,
@@ -231,6 +242,7 @@ export class QdrantSearchExecutor {
     fetchLimit: number,
     filter?: Record<string, unknown>,
     semanticWeight?: number,
+    identityPrefetchFilter?: Record<string, unknown>,
   ): Promise<SearchResult[]> {
     if (semanticWeight !== undefined) {
       if (!Number.isFinite(semanticWeight) || semanticWeight < 0 || semanticWeight > 1) {
@@ -252,24 +264,44 @@ export class QdrantSearchExecutor {
       }
     }
 
+    const prefetch: Record<string, unknown>[] = [
+      {
+        query: denseVector,
+        using: "dense",
+        limit: fetchLimit,
+        filter: qdrantFilter,
+        params: QUANTIZATION_SEARCH_PARAMS,
+      },
+      { query: sparseVector, using: "text", limit: fetchLimit, filter: qdrantFilter },
+    ];
+    if (identityPrefetchFilter) {
+      // The request filter is nested WHOLE as one condition: it keeps any
+      // `should` it carries, which a flat must-merge would drop.
+      prefetch.push({
+        query: denseVector,
+        using: "dense",
+        limit: fetchLimit,
+        filter: qdrantFilter ? { must: [qdrantFilter, identityPrefetchFilter] } : identityPrefetchFilter,
+        params: QUANTIZATION_SEARCH_PARAMS,
+      });
+    }
+
+    // One weight per prefetch, in prefetch order; the identity leg takes the dense weight.
     const fusionQuery =
       semanticWeight === undefined
         ? { fusion: "rrf" as const }
-        : { rrf: { weights: [semanticWeight, 1 - semanticWeight] } };
+        : {
+            rrf: {
+              weights: identityPrefetchFilter
+                ? [semanticWeight, 1 - semanticWeight, semanticWeight]
+                : [semanticWeight, 1 - semanticWeight],
+            },
+          };
 
     try {
       const response = await this.connection.call(async () =>
         this.connection.client.query(collectionName, {
-          prefetch: [
-            {
-              query: denseVector,
-              using: "dense",
-              limit: fetchLimit,
-              filter: qdrantFilter,
-              params: QUANTIZATION_SEARCH_PARAMS,
-            },
-            { query: sparseVector, using: "text", limit: fetchLimit, filter: qdrantFilter },
-          ],
+          prefetch,
           query: fusionQuery,
           limit: fetchLimit,
           filter: qdrantFilter,
