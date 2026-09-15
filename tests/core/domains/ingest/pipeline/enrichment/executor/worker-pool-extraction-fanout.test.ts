@@ -178,7 +178,7 @@ describe("WorkerPoolEnrichmentExecutor — pass-1 extraction fan-out", () => {
     const first = await report(exec, provider, "code_dedup");
     expect(first.absorbed.map((a) => a.relPath)).toEqual(paths(20));
 
-    exec.beginRun("code_dedup");
+    exec.beginRun({ runId: "run-2", collection: "code_dedup", absolutePath: "/repo" });
     await exec.runFileBatch(provider, "/repo", paths(20), { collectionName: "code_dedup" });
     const second = await report(exec, provider, "code_dedup");
     expect(second.absorbed.map((a) => a.relPath)).toEqual([...paths(20), ...paths(20)]);

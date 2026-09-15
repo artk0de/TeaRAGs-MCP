@@ -3,6 +3,7 @@ import type {
   ChunkSignalOverlay,
   EnrichmentExecutor,
   EnrichmentProvider,
+  EnrichmentRunHandle,
   FileSignalOptions,
   FileSignalOverlay,
 } from "../../../../../contracts/index.js";
@@ -61,7 +62,7 @@ export class InlineEnrichmentExecutor implements EnrichmentExecutor {
     return provider.finalizeSignals(root, options);
   }
 
-  async releaseCollection(_providers: EnrichmentProvider[], _collection: string): Promise<void> {
+  async releaseRun(_providers: EnrichmentProvider[], _run: EnrichmentRunHandle): Promise<void> {
     // No-op: inline shares ONE long-lived provider instance across all
     // collections. Calling provider.onRelease?.() here would wipe state for
     // every concurrent in-flight run on the same provider — codegraph's

@@ -137,7 +137,7 @@ function recordingExecutor(): EnrichmentExecutor {
       runContentHashes = undefined;
       return new Map();
     }),
-    releaseCollection: vi.fn().mockResolvedValue(undefined),
+    releaseRun: vi.fn().mockResolvedValue(undefined),
     shutdown: vi.fn().mockResolvedValue(undefined),
   } as unknown as EnrichmentExecutor;
 }

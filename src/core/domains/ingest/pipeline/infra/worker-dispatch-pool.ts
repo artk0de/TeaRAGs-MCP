@@ -211,7 +211,7 @@ export class WorkerDispatchPool<Req, Res> {
   /**
    * Drop a routingKey's affinity pinning. The next dispatch with this key
    * picks a fresh thread (least-loaded by current pin count). Used by the
-   * enrichment executor's releaseCollection path so a finished collection
+   * enrichment executor's releaseRun path so a finished collection
    * frees its thread for the next workload.
    *
    * Idempotent: dropping an unknown key is a benign no-op.

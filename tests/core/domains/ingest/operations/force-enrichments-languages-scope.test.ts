@@ -117,7 +117,7 @@ function recordingExecutor(): EnrichmentExecutor {
     runFileSignalsRecovery: vi.fn().mockResolvedValue(new Map()),
     runChunkBatch: vi.fn().mockResolvedValue(new Map()),
     runFinalize: vi.fn().mockResolvedValue(new Map()),
-    releaseCollection: vi.fn().mockResolvedValue(undefined),
+    releaseRun: vi.fn().mockResolvedValue(undefined),
     shutdown: vi.fn().mockResolvedValue(undefined),
   } as unknown as EnrichmentExecutor;
 }

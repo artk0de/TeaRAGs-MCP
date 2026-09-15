@@ -88,7 +88,7 @@ describe("repair pass — files the walker can never produce a row for", () => {
       runFileSignalsStreaming: vi.fn().mockResolvedValue(new Map()),
       runChunkSignals: vi.fn().mockResolvedValue(new Map()),
       runFinalize: vi.fn().mockResolvedValue(new Map()),
-      releaseCollection: vi.fn().mockResolvedValue(undefined),
+      releaseRun: vi.fn().mockResolvedValue(undefined),
     } as never);
   });
 

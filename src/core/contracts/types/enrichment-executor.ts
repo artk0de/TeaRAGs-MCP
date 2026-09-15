@@ -38,6 +38,19 @@ import type {
   FileSignalOverlay,
 } from "./provider.js";
 
+/**
+ * The identity of one enrichment run, handed out by `EnrichmentCoordinator#beginRun`
+ * (bd tea-rags-mcp-39xca.3). Every per-run entry takes it, so a call reaches the
+ * run that issued it and no other — two runs on one collection can overlap.
+ */
+export interface EnrichmentRunHandle {
+  readonly runId: string;
+  /** The collection the run writes, exactly as its caller addressed it. */
+  readonly collection: string;
+  /** The project root the run resolves provider roots against. */
+  readonly absolutePath: string;
+}
+
 export interface EnrichmentExecutor {
   /**
    * Run-start seam, called by `EnrichmentCoordinator.beginRun` before any
@@ -52,8 +65,12 @@ export interface EnrichmentExecutor {
    * coordinator's progress events use. The worker-pool executor sizes the
    * fan-out with it, so a run too small to keep extra threads busy never spins
    * them up. Zero/undefined means "not counted", which is NOT the same as small.
+   *
+   * The run's handle travels with it so the executor knows which run on a
+   * collection is the latest — the only one whose `releaseRun` may evict that
+   * collection's worker-side state (bd tea-rags-mcp-39xca.3).
    */
-  beginRun?: (collectionName?: string, fileCount?: number) => void;
+  beginRun?: (run: EnrichmentRunHandle, fileCount?: number) => void;
 
   /**
    * Per-batch file enrichment for the streaming file phase.
@@ -102,14 +119,17 @@ export interface EnrichmentExecutor {
 
   /**
    * Release per-collection in-memory state held on cached worker provider
-   * instances. Emitted by `EnrichmentCoordinator.awaitCompletion(collection)`
-   * after all markers reach healthy.
+   * instances, at the end of `run`. Emitted by `EnrichmentCoordinator` once the
+   * run's completion sequence has written its terminal markers.
    *
-   * Worker-pool executor: dispatches `{ type: "release", collectionName }`
-   * to the pinned worker for each provider that declared a workerDescriptor.
-   * The worker calls `provider.onRelease?.()` on the cached instance and
-   * evicts it from `Map<collectionName, providerInstance>`. The pool drops
-   * the routingKey → workerIndex affinity binding.
+   * Worker-pool executor: a NO-OP when a newer run on the same collection has
+   * begun since — that run still reads the same pinned provider state, and its
+   * own completion releases it (bd tea-rags-mcp-39xca.3). Otherwise it
+   * dispatches `{ type: "release", collectionName }` to the pinned worker for
+   * each provider that declared a workerDescriptor. The worker calls
+   * `provider.onRelease?.()` on the cached instance and evicts it from
+   * `Map<collectionName, providerInstance>`. The pool drops the routingKey →
+   * workerIndex affinity binding.
    *
    * Inline executor: NO-OP. The inline path shares one long-lived provider
    * instance across all collections (no per-collection cache). Calling
@@ -118,7 +138,7 @@ export interface EnrichmentExecutor {
    * sole place bounded-memory semantics are enforced; inline relies on
    * process lifetime for cleanup.
    */
-  releaseCollection: (providers: EnrichmentProvider[], collection: string) => Promise<void>;
+  releaseRun: (providers: EnrichmentProvider[], run: EnrichmentRunHandle) => Promise<void>;
 
   /** Release executor resources (worker pool shutdown); no-op for inline. */
   shutdown: () => Promise<void>;

@@ -1,7 +1,11 @@
 import { describe, expect, it, vi } from "vitest";
 
 import { EnrichmentCoordinator } from "../../../../../../src/core/domains/ingest/pipeline/enrichment/coordinator.js";
+import { reindexRunSpec } from "../../../../../../src/core/domains/ingest/pipeline/enrichment/run-spec.js";
 import type { EnrichmentProvider } from "../../../../../../src/core/domains/ingest/pipeline/enrichment/types.js";
+
+const specFor = (absolutePath: string, collection: string) =>
+  reindexRunSpec({ absolutePath, collection, fileCount: 0 });
 
 /**
  * bd tea-rags-mcp-62pgi — `whenCompletionsSettled(collection)` is how an index
@@ -64,8 +68,8 @@ describe("EnrichmentCoordinator.whenCompletionsSettled", () => {
     const held = gate();
     const coordinator = new EnrichmentCoordinator(qdrantDouble() as never, [heldProvider(held.opened)]);
 
-    coordinator.beginRun("/repo", "coll_v2");
-    const completion = coordinator.awaitCompletion("coll_v2");
+    const run = coordinator.beginRun(specFor("/repo", "coll_v2"));
+    const completion = coordinator.awaitCompletion(run);
     const settled = coordinator.whenCompletionsSettled("coll_v2");
 
     expect(await isPending(settled)).toBe(true);
@@ -77,7 +81,7 @@ describe("EnrichmentCoordinator.whenCompletionsSettled", () => {
   it("resolves at once for a run whose completion never started", async () => {
     const coordinator = new EnrichmentCoordinator(qdrantDouble() as never, [heldProvider(new Promise(() => {}))]);
 
-    coordinator.beginRun("/repo", "coll_v2");
+    coordinator.beginRun(specFor("/repo", "coll_v2"));
 
     expect(await isPending(coordinator.whenCompletionsSettled("coll_v2"))).toBe(false);
   });
@@ -86,8 +90,8 @@ describe("EnrichmentCoordinator.whenCompletionsSettled", () => {
     const held = gate();
     const coordinator = new EnrichmentCoordinator(qdrantDouble() as never, [heldProvider(held.opened)]);
 
-    coordinator.beginRun("/other", "other_v1");
-    const completion = coordinator.awaitCompletion("other_v1");
+    const run = coordinator.beginRun(specFor("/other", "other_v1"));
+    const completion = coordinator.awaitCompletion(run);
 
     expect(await isPending(coordinator.whenCompletionsSettled("coll_v2"))).toBe(false);
     held.open();

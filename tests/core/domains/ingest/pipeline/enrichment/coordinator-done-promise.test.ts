@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { EnrichmentCoordinator } from "../../../../../../src/core/domains/ingest/pipeline/enrichment/coordinator.js";
+import { reindexRunSpec } from "../../../../../../src/core/domains/ingest/pipeline/enrichment/run-spec.js";
 import type { EnrichmentProvider } from "../../../../../../src/core/domains/ingest/pipeline/enrichment/types.js";
 
 /**
@@ -78,10 +79,14 @@ describe("EnrichmentCoordinator — a superseded run's failed completion", () =>
     const held = gate();
     const coordinator = new EnrichmentCoordinator(qdrantDouble() as never, [failingOnceProvider(held.opened)]);
 
-    coordinator.beginRun("/repo", "coll");
-    const superseded = coordinator.awaitCompletion("coll").catch((error: unknown) => error);
-    coordinator.beginRun("/repo", "coll");
-    const current = coordinator.awaitCompletion("coll");
+    const supersededRun = coordinator.beginRun(
+      reindexRunSpec({ absolutePath: "/repo", collection: "coll", fileCount: 0 }),
+    );
+    const superseded = coordinator.awaitCompletion(supersededRun).catch((error: unknown) => error);
+    const currentRun = coordinator.beginRun(
+      reindexRunSpec({ absolutePath: "/repo", collection: "coll", fileCount: 0 }),
+    );
+    const current = coordinator.awaitCompletion(currentRun);
 
     held.open();
     expect(await superseded).toBeInstanceOf(Error);
