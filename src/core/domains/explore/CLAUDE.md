@@ -19,11 +19,12 @@
   `limit`/`filter`, or before vs after `ensureStats`, moves absolute scores and
   can reorder; compare within one response only.
 - **Outline payloads are rebuilt from an explicit allowlist.**
-  `CodeChunkGrouper.group`/`.groupFile` and `DocChunkGrouper.group` hand-list
-  every field; `fileGit()`/`fileCodegraph()` exist because `codegraph` was lost
-  this way (tea-rags-mcp-0am0), and `DocChunkGrouper` still copies `git` only.
-  Why: a new payload namespace vanishes from find_symbol and every
-  `level: "file"` result, with no type error to catch it.
+  `CodeChunkGrouper.group`/`.groupMembers`/`.groupFile` and
+  `DocChunkGrouper.group` hand-list every field (`DocChunkGrouper.mergeSection`
+  spreads its head window instead); `fileGit()`/`fileCodegraph()` exist because
+  `codegraph` was lost this way (tea-rags-mcp-0am0), and `DocChunkGrouper` still
+  copies `git` only. Why: a new payload namespace vanishes from find_symbol and
+  every `level: "file"` result, with no type error to catch it.
 - **Confidence is omitted, never substituted, when the score scale is unknown.**
   `confidence.ts#isUsable` demands `ScoreBackground` with `stddev > 0` and
   `sampleCount >= MIN_BACKGROUND_PAIRS` (50); only stats-cache `version: 6` has
