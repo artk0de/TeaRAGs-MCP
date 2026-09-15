@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 
+import { SEARCH_CASCADE_TOC, searchCascadeChunks } from "../__fixtures__/doc-toc-chunks.js";
 import { CodeChunkGrouper } from "../../../../../src/core/domains/explore/chunk-grouping/code.js";
 import { DocChunkGrouper } from "../../../../../src/core/domains/explore/chunk-grouping/doc.js";
 import { FileLevelGrouper } from "../../../../../src/core/domains/explore/chunk-grouping/file-level.js";
@@ -210,6 +211,36 @@ describe("FileLevelGrouper", () => {
 
       expect(grouped).toHaveLength(1);
       expect(grouped[0].payload).toBeUndefined();
+    });
+
+    // tea-rags-mcp-mypsl: level:"file" members are a doc TOC too, so the same
+    // own-heading rule holds — an ancestor heading does not borrow an id.
+    it("renders doc members whose ancestor-only heading carries no section id", () => {
+      const chunks = searchCascadeChunks();
+
+      const [file] = FileLevelGrouper.group(
+        asResults(
+          chunks,
+          chunks.map((_, i) => 0.9 - i * 0.1),
+        ),
+        10,
+      );
+
+      expect(file.payload?.members).toBe(SEARCH_CASCADE_TOC);
+    });
+
+    it("lists the ancestors of a lone matched subsection without borrowing its id", () => {
+      const subsection = searchCascadeChunks().filter((c) => c.payload.symbolId === "doc:cc3d89fa37bb");
+
+      const [file] = FileLevelGrouper.group(asResults(subsection, [0.9]), 10);
+
+      expect(file.payload?.members).toBe(
+        [
+          "# Search Cascade",
+          "  ## After-Search Navigation (READ BEFORE FINISHING ANY SEARCH)",
+          "    ### find_symbol — the navigation workhorse (two addressing modes)  doc:cc3d89fa37bb",
+        ].join("\n"),
+      );
     });
   });
 });

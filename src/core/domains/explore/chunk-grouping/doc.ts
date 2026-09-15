@@ -93,7 +93,15 @@ function overlapLength(text: string, next: string): number {
 export const DocChunkGrouper = {
   /**
    * Group documentation chunks into a TOC outline result.
-   * Replaces the inline `outlineDoc` in symbol-resolve.ts.
+   *
+   * Every heading of every chunk's headingPath is listed once, in startLine
+   * order, but a line carries a section id only for a heading some chunk OWNS —
+   * the last entry of that chunk's headingPath — and takes it from the first
+   * such chunk; the windows of a split section share both the id and the
+   * heading. A heading present only as an ancestor (an H1 directly followed by
+   * an H2 has no chunk of its own) is listed without an id: lending it its
+   * first descendant's id put one section on two TOC lines, and drilling the
+   * ancestor returned the descendant (tea-rags-mcp-mypsl).
    */
   group(chunks: ScrollChunk[]): SearchResult {
     const sorted = [...chunks].sort((a, b) => (Number(a.payload.startLine) || 0) - (Number(b.payload.startLine) || 0));
@@ -103,21 +111,29 @@ export const DocChunkGrouper = {
     const seen = new Set<string>();
     const mergedHeadingPath: { depth: number; text: string }[] = [];
 
-    // Track which chunk introduces each heading (for TOC symbolId annotation)
-    const headingIntroducer = new Map<string, string>(); // depth:text -> symbolId
+    // depth:text -> symbolId of the first chunk whose OWN heading it is. An id
+    // names one TOC line at most, so an id already claimed is never reused.
+    const ownSectionIds = new Map<string, string>();
+    const claimedSectionIds = new Set<string>();
 
     for (const c of sorted) {
       const hp = c.payload.headingPath as { depth: number; text: string }[] | undefined;
       if (!hp) continue;
-      const symbolId = (c.payload.symbolId as string | undefined) ?? "";
       for (const entry of hp) {
         const key = `${entry.depth}:${entry.text}`;
         if (!seen.has(key)) {
           seen.add(key);
           mergedHeadingPath.push(entry);
-          headingIntroducer.set(key, symbolId);
         }
       }
+
+      const ownHeading = hp[hp.length - 1] as { depth: number; text: string } | undefined;
+      const symbolId = c.payload.symbolId as string | undefined;
+      if (!ownHeading || !symbolId || claimedSectionIds.has(symbolId)) continue;
+      const ownKey = `${ownHeading.depth}:${ownHeading.text}`;
+      if (ownSectionIds.has(ownKey)) continue;
+      ownSectionIds.set(ownKey, symbolId);
+      claimedSectionIds.add(symbolId);
     }
 
     // Build TOC content
@@ -126,8 +142,8 @@ export const DocChunkGrouper = {
       const indent = "  ".repeat(Math.max(0, entry.depth - 1));
       const hashes = "#".repeat(entry.depth);
       const key = `${entry.depth}:${entry.text}`;
-      const introducer = headingIntroducer.get(key);
-      const suffix = introducer ? `  ${introducer}` : "";
+      const sectionId = ownSectionIds.get(key);
+      const suffix = sectionId ? `  ${sectionId}` : "";
       tocLines.push(`${indent}${hashes} ${entry.text}${suffix}`);
     }
 

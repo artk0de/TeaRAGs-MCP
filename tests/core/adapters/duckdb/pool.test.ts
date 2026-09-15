@@ -569,6 +569,23 @@ describe("GraphDbClientPool — mode-aware acquireRead/acquireWrite", () => {
   });
 });
 
+describe("GraphDbClientPool — acquireRead open failure is typed (a43tr)", () => {
+  it("a graph database that cannot be opened read-only rejects with DuckDbOpenFailedError", async () => {
+    const root = mkdtempSync(join(tmpdir(), "pool-read-open-failed-"));
+    const pool = new GraphDbClientPool({
+      rootDir: root,
+      symbolTableFactory: () => new InMemoryGlobalSymbolTable(),
+      applyMigrations: createDatabaseMigrationApplier(),
+    });
+    writeFileSync(pool.pathFor("code_bad_v1"), "not a duckdb database file");
+
+    await expect(pool.acquireReader("code_bad_v1")).rejects.toBeInstanceOf(DuckDbOpenFailedError);
+
+    await pool.closeAll();
+    rmSync(root, { recursive: true, force: true });
+  });
+});
+
 describe("GraphDbClientPool — acquireReader (mode-aware facade read path)", () => {
   let srv: Server | undefined;
 

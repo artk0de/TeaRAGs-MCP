@@ -6,6 +6,14 @@
 
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
+import {
+  INDEX_FRESHNESS_PATH,
+  INDEX_FRESHNESS_TOC,
+  indexFreshnessChunks,
+  SEARCH_CASCADE_PATH,
+  SEARCH_CASCADE_TOC,
+  searchCascadeChunks,
+} from "../__fixtures__/doc-toc-chunks.js";
 import { FileOutlineStrategy } from "../../../../../src/core/domains/explore/strategies/file-outline.js";
 
 /**
@@ -215,6 +223,27 @@ describe("FileOutlineStrategy", () => {
 
     expect(result).toHaveLength(1);
     expect(result[0].payload?.relativePath).toBe("docs/guide.md");
+  });
+
+  // tea-rags-mcp-mypsl — live: `# Search Cascade  doc:1e20e341ac6b` and
+  // `## Principles  doc:1e20e341ac6b` on two lines of one TOC.
+  it("renders a doc TOC whose ancestor-only heading carries no section id", async () => {
+    mockScrollFiltered.mockResolvedValue(searchCascadeChunks());
+    const strategy = new FileOutlineStrategy(qdrant, reranker, [], [], { relativePath: SEARCH_CASCADE_PATH });
+
+    const result = await strategy.execute({ collectionName: "c", limit: 1 });
+
+    expect(result).toHaveLength(1);
+    expect(result[0].payload?.content).toBe(SEARCH_CASCADE_TOC);
+  });
+
+  it("keeps the section id of a doc H1 that owns intro text", async () => {
+    mockScrollFiltered.mockResolvedValue(indexFreshnessChunks());
+    const strategy = new FileOutlineStrategy(qdrant, reranker, [], [], { relativePath: INDEX_FRESHNESS_PATH });
+
+    const result = await strategy.execute({ collectionName: "c", limit: 1 });
+
+    expect(result[0].payload?.content).toBe(INDEX_FRESHNESS_TOC);
   });
 
   it("strips payload.content when metaOnly is true", async () => {

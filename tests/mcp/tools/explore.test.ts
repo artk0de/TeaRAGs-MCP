@@ -140,3 +140,36 @@ describe("registerSearchTools", () => {
     expect(result.content).toEqual([]);
   });
 });
+
+// bd tea-rags-mcp-a43tr — find_symbol's optional codegraph hop was skipped
+// (codegraph unavailable from this process). The notice rides the response
+// next to driftWarning so the agent learns why a collapsed symbol is missing
+// and how to repair it, instead of the whole call failing.
+describe("registerSearchTools — codegraphWarning", () => {
+  const warning =
+    "find_symbol: codegraph fallback for collapsed symbols skipped [INFRA_CODEGRAPH_DAEMON_STALE_BUILD] — /mcp reconnect";
+
+  it("find_symbol passes codegraphWarning through to structuredContent", async () => {
+    const { captured } = makeHarness({
+      findSymbol: vi.fn().mockResolvedValue({ results: [], codegraphWarning: warning } as ExploreResponse),
+    });
+    const tool = captured.find((t) => t.name === "find_symbol");
+
+    const result = (await tool!.handler({ path: "/x", symbol: "Foo#bar" }, {})) as {
+      structuredContent: { codegraphWarning?: string };
+    };
+
+    expect(result.structuredContent.codegraphWarning).toBe(warning);
+  });
+
+  it("omits codegraphWarning from structuredContent when the operation does not report it", async () => {
+    const { captured } = makeHarness();
+    const tool = captured.find((t) => t.name === "find_symbol");
+
+    const result = (await tool!.handler({ path: "/x", symbol: "Foo#bar" }, {})) as {
+      structuredContent: Record<string, unknown>;
+    };
+
+    expect("codegraphWarning" in result.structuredContent).toBe(false);
+  });
+});

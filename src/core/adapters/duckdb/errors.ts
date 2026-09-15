@@ -56,21 +56,30 @@ export class CodegraphDaemonStaleBuildError extends InfraError {
     const distinct = [...new Set(observedDaemonFingerprints)];
     super({
       code: "INFRA_CODEGRAPH_DAEMON_STALE_BUILD",
+      // The remedy rides the message itself (bd tea-rags-mcp-a43tr): consumers
+      // that degrade on this error (find_symbol's optional codegraph hop) quote
+      // the message, and the common cause is THIS server process holding the old
+      // build while the respawn hook launches the rebuilt daemon — no restart
+      // attempt can converge on that; only restarting the MCP server does.
       message:
         `Codegraph daemon at ${socketPath} still runs a different build after ` +
         `${attempts} restart attempt${attempts === 1 ? "" : "s"} ` +
-        `(daemon=${daemonFingerprint}, client=${clientFingerprint})`,
+        `(daemon=${daemonFingerprint}, client=${clientFingerprint}) — restart the tea-rags MCP server ` +
+        "(e.g. `/mcp reconnect`) so it and the daemon load one build",
       hint:
         distinct.length > 1
           ? "A parallel tea-rags session kept cold-spawning the daemon from another build — a " +
             `different one answered after each restart (${distinct.join(", ")}), which is the ` +
             "signature of a transient multi-process race, not a wedged daemon. Retry once the " +
             "other session finishes, or re-run `npm run build && npm link` so every session " +
-            "shares one build."
+            "shares one build, then restart the MCP server (`/mcp reconnect`)."
           : `The same build came back after every restart (${distinct.join(", ")}), so no other ` +
-            "session is racing us — the respawn hook itself is launching a stale binary (a " +
-            "`build/` that was never rebuilt, or an `npm link` pointing at another checkout). " +
-            "Re-run `npm run build && npm link` in the checkout you intend to use.",
+            "session is racing us. Either this MCP server process predates the last build — the " +
+            "respawn hook launches the rebuilt daemon while this process keeps the old fingerprint, " +
+            "so retrying can never converge: restart the MCP server (`/mcp reconnect`) — or the " +
+            "respawn hook launches a stale binary (a `build/` that was never rebuilt, or an " +
+            "`npm link` pointing at another checkout): re-run `npm run build && npm link` in the " +
+            "checkout you intend to use, then reconnect.",
       httpStatus: 503,
       cause,
     });
@@ -148,6 +157,58 @@ export class CodegraphDaemonExitTimeoutError extends InfraError {
       cause,
     });
   }
+}
+
+/**
+ * The codegraph daemon never accepted a connection within the connect window —
+ * not running, crashed on start, or its socket is gone (bd tea-rags-mcp-a43tr).
+ * Typed so optional codegraph consumers can tell "daemon unreachable" from a
+ * programming error by class; the daemon log path is named because a bare
+ * ENOENT says nothing about why the daemon is absent.
+ */
+export class CodegraphDaemonUnreachableError extends InfraError {
+  constructor(
+    target: { socketPath: string; connectTimeoutMs: number; detail: string; logPath: string },
+    cause?: Error,
+  ) {
+    super({
+      code: "INFRA_CODEGRAPH_DAEMON_UNREACHABLE",
+      message:
+        `DaemonGraphDbClient failed to connect to ${target.socketPath} within ` +
+        `${target.connectTimeoutMs}ms: ${target.detail} — the daemon is not listening; ` +
+        `its output is in ${target.logPath}`,
+      hint:
+        "The codegraph daemon is not running or crashed on start — its log (path above) says why. " +
+        "Reconnecting the tea-rags MCP server (`/mcp reconnect`) or re-running the index spawns a fresh daemon.",
+      httpStatus: 503,
+      cause,
+    });
+  }
+}
+
+/**
+ * The codegraph store cannot be reached from this process right now: the daemon
+ * runs another build (stale / skewed), is wedged or unreachable, or the DuckDB
+ * file will not open (lock held, unreadable). One family, so a consumer whose
+ * codegraph read is OPTIONAL (find_symbol's collapsed-symbol fallback) degrades
+ * exactly on it and lets every other failure propagate (bd tea-rags-mcp-a43tr).
+ * A new acquire-failure class belongs in this union and the predicate below.
+ */
+export type CodegraphUnavailableError =
+  | CodegraphDaemonStaleBuildError
+  | CodegraphDaemonBuildSkewError
+  | CodegraphDaemonExitTimeoutError
+  | CodegraphDaemonUnreachableError
+  | DuckDbOpenFailedError;
+
+export function isCodegraphUnavailableError(err: unknown): err is CodegraphUnavailableError {
+  return (
+    err instanceof CodegraphDaemonStaleBuildError ||
+    err instanceof CodegraphDaemonBuildSkewError ||
+    err instanceof CodegraphDaemonExitTimeoutError ||
+    err instanceof CodegraphDaemonUnreachableError ||
+    err instanceof DuckDbOpenFailedError
+  );
 }
 
 /**

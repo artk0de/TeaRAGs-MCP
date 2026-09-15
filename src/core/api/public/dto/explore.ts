@@ -177,6 +177,14 @@ export interface ExploreResponse {
    * Advisory — never filters results.
    */
   confidence?: SearchConfidence;
+  /**
+   * Present only when an OPTIONAL codegraph lookup was skipped because the
+   * codegraph store cannot be reached from this process (daemon from another
+   * build, build skew, daemon unreachable, lock held). Names the error code and
+   * the remedy. The answer stays valid for what Qdrant holds but may miss what
+   * the lookup would have added. Today: find_symbol's collapsed-symbol fallback.
+   */
+  codegraphWarning?: string;
 }
 
 // ---------------------------------------------------------------------------
