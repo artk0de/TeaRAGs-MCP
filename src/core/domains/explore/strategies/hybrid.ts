@@ -10,6 +10,7 @@ import { generateSparseVector } from "../../../adapters/qdrant/sparse.js";
 import { FileLevelGrouper } from "../chunk-grouping/index.js";
 import { InvalidQueryError } from "../errors.js";
 import { BaseExploreStrategy } from "./base.js";
+import { fetchPathPatternMatches } from "./path-pattern-fill.js";
 import { buildSymbolIdentityFilter, isSymbolIdentifierQuery } from "./symbol-identity-leg.js";
 import { HybridNotEnabledError, type ExploreContext, type ExploreResult } from "./types.js";
 
@@ -17,7 +18,8 @@ export class HybridSearchStrategy extends BaseExploreStrategy {
   readonly type = "hybrid" as const;
 
   protected async executeExplore(ctx: ExploreContext): Promise<ExploreResult[]> {
-    if (!ctx.embedding) {
+    const { embedding } = ctx;
+    if (!embedding) {
       throw new InvalidQueryError("HybridSearchStrategy requires an embedding in the context");
     }
 
@@ -31,17 +33,23 @@ export class HybridSearchStrategy extends BaseExploreStrategy {
 
     // One identifier → add the identity leg (see ./symbol-identity-leg.ts);
     // any other query sends exactly the two-prefetch request it always did.
-    const results = isSymbolIdentifierQuery(ctx.query)
-      ? await this.qdrant.hybridSearch(
-          ctx.collectionName,
-          ctx.embedding,
-          sparseVector,
-          fetchLimit,
-          ctx.filter,
-          undefined,
-          buildSymbolIdentityFilter(ctx.query),
-        )
-      : await this.qdrant.hybridSearch(ctx.collectionName, ctx.embedding, sparseVector, fetchLimit, ctx.filter);
+    const identityFilter = isSymbolIdentifierQuery(ctx.query) ? buildSymbolIdentityFilter(ctx.query) : undefined;
+    const results = await fetchPathPatternMatches(
+      ctx.pathPattern,
+      { fetchLimit, fetchUnit: "chunk", target: ctx.limit, targetUnit: ctx.level === "file" ? "file" : "chunk" },
+      async (limit) =>
+        identityFilter
+          ? this.qdrant.hybridSearch(
+              ctx.collectionName,
+              embedding,
+              sparseVector,
+              limit,
+              ctx.filter,
+              undefined,
+              identityFilter,
+            )
+          : this.qdrant.hybridSearch(ctx.collectionName, embedding, sparseVector, limit, ctx.filter),
+    );
 
     // queryGroups has no fusion=rrf option; fetch limit*3 above and group client-side.
     if (ctx.level === "file") {

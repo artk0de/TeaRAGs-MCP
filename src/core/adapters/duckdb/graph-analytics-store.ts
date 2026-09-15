@@ -13,9 +13,8 @@
  * means resolving each symbol back to its file through the edge table.
  */
 
-import picomatch from "picomatch";
-
 import type { CycleEntry, CycleScope, SymbolId } from "../../contracts/types/codegraph.js";
+import { compilePathPatternMatcher } from "../../infra/path-pattern.js";
 import type { DuckDbGraphSession } from "./graph-session.js";
 
 export class DuckDbGraphAnalyticsStore {
@@ -55,7 +54,9 @@ export class DuckDbGraphAnalyticsStore {
     scope: CycleScope,
     pathPattern: string,
   ): Promise<CycleEntry[]> {
-    const isMatch = picomatch(pathPattern);
+    // The same matcher the explore tools enforce pathPattern with.
+    const isMatch = compilePathPatternMatcher(pathPattern);
+    if (!isMatch) return entries;
     if (scope === "file") {
       return entries.filter((e) => e.members.some((member) => isMatch(member)));
     }
