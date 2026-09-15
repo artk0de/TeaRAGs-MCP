@@ -1,22 +1,14 @@
 /**
- * Codegraph symbols `EnrichmentProvider`.
+ * Codegraph symbols `EnrichmentProvider`: bridges walker output
+ * (`FileExtraction`) and the graph DB (`GraphDbClient`).
  *
- * Bridges the chunker walker output (`FileExtraction`) and the graph DB
- * (`GraphDbClient`):
- *
- *   - `asExtractionSink()` returns the `ExtractionSink` the chunker
- *     writes to. Each `write` upserts file symbol definitions into the
- *     global symbol table and buffers the extraction; `finish` flushes
- *     resolved edges into the graph DB.
- *   - `buildFileSignals` reads `cg_symbols_edges_file` to produce
- *     fanIn / fanOut / instability / isHub / isLeaf for each file.
- *   - `buildChunkSignals` reads `cg_symbols_edges_method` to produce
- *     calledByCount / callSiteCount per chunk (head chunks of methods).
- *
- * `isHub` is left `false` in `buildFileSignals` — the proper
- * cohort-p95 decision is made by the `IsHubSignal` derived signal at
- * rerank time, which reads `bounds["file.fanIn"]` from collection
- * stats. The payload field stays present and stable.
+ *   - Pass-1 entry points (`streamFileBatch`, the fan-out's
+ *     `absorbExtractedFiles`, cross-pass `acceptExtraction`) feed the run's
+ *     extraction sink; its `finish` resolves pass-2 edges into the graph DB.
+ *   - `finalizeSignals` / `buildFileSignals` read file overlays (fanIn / fanOut /
+ *     instability / isHub / isLeaf / transitiveImpact) off the finished graph.
+ *   - `buildChunkSignals`, the deferred chunk pass, settles each stored chunk's
+ *     fanIn / fanOut / pageRank through `settleCodegraphChunkSignals`.
  */
 
 import { randomUUID } from "node:crypto";
@@ -110,73 +102,21 @@ import { CodegraphRunState } from "./run-state.js";
 import { lastSegment } from "./symbol-name.js";
 
 /**
- * Layered ignore for `discoverSupportedFiles` (tea-rags-mcp-tf1o, hh4m):
- *
- *   Layer 1 — FileScanner `ignoreFilter` passed via `FileSignalOptions`.
- *             Carries BUILTIN_IGNORE_PATTERNS (node_modules, build, dist,
- *             .next, _nuxt, *.min.js, …) plus the user's `.gitignore` /
- *             `.contextignore` rules. Same source of truth as the main
- *             Qdrant ingest path — codegraph stays aligned with whatever
- *             files actually ended up in the index.
- *
- *   Layer 2 — `codegraphExclusionFilter` (this provider's instance field).
- *             Codegraph-specific patterns that DON'T apply to Qdrant
- *             ingest, principally test files. Test sources are valuable
- *             to index for semantic search ("show me tests for X") but
- *             pollute the dependency fan-graph (fanIn=0, fanOut=many
- *             dilutes hub/PageRank signals), so the exclusion is
- *             unconditional.
- *
- * Two layers, not a union: the layers carry different semantics. Layer 1
- * is "what the user excluded from indexing entirely" — must be honoured
- * because the corresponding chunks don't exist in Qdrant either. Layer 2
- * is "what codegraph specifically excludes from graph extraction while
- * Qdrant still indexes". Merging them would either over-exclude
- * (codegraph-only patterns leak into Qdrant) or under-exclude (test
- * files re-enter the graph).
- */
-
-/**
- * Strip the `_vN` versioning suffix from a Qdrant collection name to
- * recover the public alias. The codegraph DB is alias-keyed by design
- * (per `IndexingOps.run`'s `removeCollection(alias)` contract) — but
- * the ingest pipeline writes Qdrant chunks to the versioned target
- * (`<alias>_v<N>`) because the alias doesn't exist yet during the
- * first index pass. Without this strip, `pool.acquire("code_xxx_v6")`
- * would open a per-version DuckDB file that the GraphFacade reader
- * (which always resolves the alias from the path) never finds.
- *
- * Convention: `setupCollection` produces names of the form
- * `${alias}_v${N}` where N is a positive integer. Anything that does
- * not match this exact shape is returned unchanged — test fixtures
- * pass arbitrary strings ("project-alpha") that must NOT be rewritten.
- *
- * Examples:
- *   stripVersionSuffix("code_035da920_v6") → "code_035da920"
- *   stripVersionSuffix("code_035da920")    → "code_035da920"
- *   stripVersionSuffix("project-alpha")    → "project-alpha"
- *   stripVersionSuffix("foo_v")            → "foo_v"  (no digit)
- *   stripVersionSuffix("foo_v1_v2")        → "foo_v1" (only one strip)
+ * Strip one `_v<digits>` versioning suffix from a collection name
+ * (`code_x_v6` → `code_x`); any other shape is returned unchanged. No production
+ * caller: the graph DB is addressed by the PHYSICAL versioned name (see
+ * `getStore`), and the helper stays exported for `provider-pool-routing.test.ts`.
  */
 export function stripVersionSuffix(collectionName: string): string {
   return collectionName.replace(/_v\d+$/, "");
 }
 
 /**
- * Per-language extraction dispatch table. Codegraph walks any file
- * whose extension appears here. The actual walk + `nameOf` come from the
- * injected `LanguageFactoryDescriptor` (`factory.create(lang).walker`); this map carries
- * only the parser-load + namespace config the engine still needs per extension.
- *
- * Adding a language: add a tree-sitter parser to deps, create a native
- * `domains/language/<lang>` provider with its walker, drop a row here for the
- * parser/separator config.
- *
- * All languages migrated to native `domains/language/<lang>` providers
- * (tea-rags-mcp-cen6); the dead `walker`/`nameOf` fields this config once
- * carried for the legacy adapter were removed by tea-rags-mcp-jh40. The map is
- * retained for `loadParser` / `scopeSeparator` / `disambiguateOverloads` and the
- * `SUPPORTED_EXTS` set.
+ * Per-extension parser config. Codegraph walks any file whose extension has a
+ * {@link CODEGRAPH_LANGUAGES} row; the walk and `nameOf` come from the injected
+ * `LanguageFactoryDescriptor` (`factory.create(lang).walker`), keyed by language
+ * name. Adding a language: a tree-sitter grammar dependency, a native
+ * `domains/language/<lang>` provider, and a row here.
  */
 export interface CodegraphLanguageConfig {
   language: string;
@@ -191,29 +131,19 @@ export interface CodegraphLanguageConfig {
    */
   scopeSeparator: string;
   /**
-   * When true, duplicate composed symbolIds inside one file are
-   * disambiguated with `~N` (1-based; first occurrence unchanged,
-   * second → `~2`, third → `~3`, …) instead of being deduped to a
-   * single entry. Mirrors the chunker convention so cg_symbols + Qdrant
-   * payload agree on a per-physical-AST-node identifier.
-   *
-   * Enable for languages where overloads carry semantically-distinct
-   * bodies (Java method overloads — bd tea-rags-mcp-a466). Leave false
-   * for languages where same-name top-level declarations are typically
-   * stub/impl pairs (Python `@functools.singledispatch` — bd d4ab) or
-   * accessor pairs (TS getter/setter on same property) where the first
-   * occurrence should win.
+   * When true, duplicate composed symbolIds inside one file are disambiguated
+   * with `~N` (first occurrence unchanged, second → `~2`, …) instead of deduped,
+   * mirroring the chunker so cg_symbols and the Qdrant payload agree per AST node.
+   * Enable where overloads carry distinct bodies (Java, bd tea-rags-mcp-a466);
+   * leave false where same-name declarations are stub/impl or accessor pairs and
+   * the first should win (Python singledispatch, bd d4ab; TS getter/setter).
    */
   disambiguateOverloads?: boolean;
 }
 
 export const CODEGRAPH_LANGUAGES: Record<string, CodegraphLanguageConfig> = {
-  // All languages are native domains/language/<lang> providers; the engine reads
-  // each walker (`walk`/`nameOf`) from `factory.create(lang).walker`. These
-  // entries are retained only for `loadParser` (per-extension grammar choice) /
-  // `scopeSeparator` / `disambiguateOverloads`. The per-extension grammar choice
-  // for `.ts` vs `.tsx` lives here; the native provider's single walker handles
-  // both grammars' node types.
+  // `.ts` and `.tsx` load different grammars; the native TypeScript walker
+  // handles both grammars' node types.
   ".ts": {
     language: "typescript",
     loadParser: () => (TsLang as { typescript: Parser.Language; tsx: Parser.Language }).typescript,
@@ -265,12 +195,8 @@ export const CODEGRAPH_LANGUAGES: Record<string, CodegraphLanguageConfig> = {
     language: "java",
     loadParser: () => JavaLang as Parser.Language,
     scopeSeparator: ".",
-    // bd tea-rags-mcp-a466 — Java methods can be overloaded; each
-    // overload needs its own symbolId so `get_callers`/`get_callees`
-    // can pin to the right body. Without disambiguation the codegraph
-    // collapses every `StringUtils.upperCase` into one row and the
-    // 19 `HashCodeBuilder#append` overloads merge into a single chunk
-    // that no resolver call site can disambiguate.
+    // bd tea-rags-mcp-a466 — each Java overload needs its own symbolId so
+    // `get_callers` / `get_callees` can pin the right body.
     disambiguateOverloads: true,
   },
   ".rs": {
@@ -294,34 +220,19 @@ export const CODEGRAPH_LANGUAGES: Record<string, CodegraphLanguageConfig> = {
 const SUPPORTED_EXTS = new Set(Object.keys(CODEGRAPH_LANGUAGES));
 
 /**
- * Files between pass-1 progress lines. Coarser than pass-2's 100 because
- * extraction is the cheaper per-file stage and its line carries the same
- * (larger) phase-split payload — 500 keeps a 20k-file run at ~40 lines while
- * still bounding what a kill at the 5-minute budget can lose.
+ * Files between pass-1 progress lines. Coarser than pass-2's 100 because the
+ * line carries the larger phase-split payload; 500 keeps a 20k-file run at ~40
+ * lines while bounding what a kill at the 5-minute budget can lose.
  */
 const PASS1_PROGRESS_EVERY = 500;
 
 /**
- * Files per `getFileMetricsBulk` request during the finalize read-back
- * (bd tea-rags-mcp-6aytq).
- *
- * The read-back was never latency-bound — it was DAEMON-CPU-bound. Three
- * queries per file (one of them a depth-5 recursive CTE) is 31,428 statements
- * for taxdome's 10,476 files, and no amount of client-side concurrency beats a
- * single-process daemon executing them one after another; worse, those reads
- * interleave with the pass-2 bulk flush running concurrently, so the flush
- * queues behind them. The setwise op collapses a batch to THREE statements, so
- * the whole tail costs ~3 × ceil(files / batch).
- *
- * Two costs grow with the batch: the request frame (2000 taxdome paths ≈ 161
- * KiB of JSON — an order under what `listAllSymbols` already ships in one
- * frame) and the recursive CTE's live intermediate, which holds every root's
- * reverse-reachable set at once instead of one root's at a time. Measured
- * in-process against a real 19,484-file taxdome graph, the whole 10,621-file TS
- * universe costs 1.31 s in 18 statements at batch 2000, against 30.8 s in
- * 31,863 statements per-file — and the curve is flat from 500 to 10,621
- * (1.19–1.56 s), so this sits in the middle of the plateau rather than on the
- * edge of either cost.
+ * Files per `getFileMetricsBulk` request in the finalize read-back (bd
+ * tea-rags-mcp-6aytq). The read-back is DAEMON-CPU-bound, not latency-bound: the
+ * setwise op costs three statements per batch where per-file reads cost three per
+ * file and queue the concurrent pass-2 flush behind them. A larger batch grows the
+ * request frame and the recursive CTE's live intermediate; 2000 sits mid-plateau
+ * of the measured cost curve.
  */
 const OVERLAY_READ_BATCH = 2000;
 
@@ -329,23 +240,15 @@ const OVERLAY_READ_BATCH = 2000;
 const ZERO_FILE_METRICS: FileGraphMetrics = { fanIn: 0, fanOut: 0, transitiveImpact: 0 };
 
 /**
- * Codegraph provider dependencies. Two routing modes are supported and
- * exactly one MUST be supplied at construction time:
+ * Codegraph provider dependencies. Exactly one routing mode MUST be supplied:
  *
  *   - **Pool mode (production).** `pool` is the per-collection
- *     `GraphDbClientPool`. The provider resolves the active collection
- *     via `options.collectionName` on every ingest/query call and
- *     acquires the corresponding `<dataDir>/codegraph/<collection>.duckdb`.
- *     This is the path bootstrap wires; see `wireCodegraph` in
- *     `src/bootstrap/factory.ts`.
+ *     `GraphDbClientPool`; every call resolves its store from
+ *     `options.collectionName` (`wireCodegraph` in `src/bootstrap/factory.ts`).
+ *   - **Direct mode (tests).** `graphDb` + `symbolTable` are one pre-opened pair
+ *     used for every call; `collectionName` is ignored.
  *
- *   - **Direct mode (tests).** `graphDb` + `symbolTable` are a single
- *     pre-opened pair. The provider ignores `collectionName` and uses
- *     this pair for every call. Useful for unit tests that don't want
- *     to instantiate a pool just to exercise a single in-memory DB.
- *
- * Mixing the two is a programming error — when `pool` is set, the
- * direct fields are ignored.
+ * Supplying both, or neither, throws at construction.
  */
 export interface CodegraphProviderDeps {
   /** Pool mode — per-collection DuckDB files routed via collectionName. */
@@ -355,34 +258,25 @@ export interface CodegraphProviderDeps {
   /** Direct mode — pre-built symbol table. Mutually exclusive with `pool`. */
   symbolTable?: GlobalSymbolTable;
   /**
-   * Per-language capability source (walker + resolver), injected via DI from
-   * the composition layer (`api/internal/composition.ts` / `bootstrap/factory.ts`).
-   * The provider reads `factory.create(lang).walker` (`walk`/`nameOf`) for the
-   * symbol-collection pass and `.resolver` (`resolve`/`resolveDispatch`) for
-   * pass-2 edge resolution. Typed as the contracts `LanguageFactoryDescriptor` interface;
-   * the concrete factory is never imported here (leaf-domain guard forbids
-   * `trajectory/** -> domains/language/**`). Parser-load / scopeSeparator /
-   * disambiguateOverloads are still sourced from `CODEGRAPH_LANGUAGES`.
-   * bd tea-rags-mcp-cat4.
+   * Per-language walker + resolver source, injected from the composition layer.
+   * The provider reads `factory.create(lang).walker` for pass-1 and `.resolver`
+   * for pass-2; the concrete factory is never imported here (leaf-domain guard:
+   * `trajectory/** -> domains/language/**` is forbidden). bd tea-rags-mcp-cat4.
    */
   languageFactory: LanguageFactoryDescriptor;
   /**
-   * Cross-language symbolId mapper passed to the injected `collectSymbols` to
-   * compose fully-qualified ids per `.claude/rules/symbolid-convention.md`. Injected as
-   * the contracts `SymbolIdComposer` interface (DI from bootstrap/api) — the
-   * concrete `DefaultSymbolIdComposer` is never imported here (leaf-domain
-   * guard forbids `trajectory/** -> domains/language/**`).
+   * Cross-language symbolId mapper passed to `collectSymbols` to compose ids per
+   * `.claude/rules/symbolid-convention.md`; injected as the contracts interface for
+   * the same leaf-domain reason.
    */
   composer: SymbolIdComposer;
   /**
-   * Symbol-range collector (yl9tv) — pure `domains/language/kernel` function
-   * injected via DI for the same leaf-domain reason as `composer` (trajectory
-   * may not import `domains/language`). The chunker worker imports the SAME
-   * function via its dynamic `languageModulePath` so one parse can feed both
-   * the chunks and the codegraph `FileExtraction`.
+   * Symbol-range collector (yl9tv), a `domains/language/kernel` function injected
+   * for the same reason. The chunker worker loads the SAME function through its
+   * `languageModulePath`, so one parse can feed both the chunks and the extraction.
    */
   collectSymbols: CollectSymbolsFn;
-  /** Derived signals + presets are wired by `createSymbolsTrajectory` in T9. */
+  /** Derived signals + presets, wired by `createSymbolsTrajectory`. */
   derivedSignals?: DerivedSignalDescriptor[];
   presets?: RerankPreset[];
   /**
@@ -397,9 +291,9 @@ export interface CodegraphProviderDeps {
 
 /**
  * Reverse include-by index — re-exported for import stability (bd cai0/2oky5).
- * The implementation moved to `run-state.ts` alongside the ancestor maps it
- * inverts; re-exporting here keeps every existing importer working without a
- * module cycle (`run-state.ts` must not import its own consumer).
+ * The implementation lives in `run-state.ts` beside the ancestor maps it
+ * inverts; importing it from there here would make `run-state.ts` import its
+ * own consumer.
  */
 export { buildIncludedBy } from "./run-state.js";
 
@@ -411,11 +305,10 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
   readonly presets: RerankPreset[];
 
   /**
-   * codegraph CHUNK signals (fanIn/fanOut/pageRank) read the DuckDB graph,
-   * which is only populated once the run sink's finish() resolves
-   * (streamingResolveAndUpsert + recomputePageRank). Per-batch reads would
-   * see an empty graph, so the coordinator skips per-batch chunk dispatch and
-   * runs ONE buildChunkSignals pass after this provider's finalizeSignals.
+   * Chunk signals (fanIn / fanOut / pageRank) read the DuckDB graph, which exists
+   * only once the run sink's `finish` resolves — per-batch reads would see an
+   * empty graph. The coordinator therefore runs ONE `buildChunkSignals` pass after
+   * this provider's `finalizeSignals`.
    */
   readonly defersChunkEnrichment = true;
 
@@ -428,29 +321,17 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
   readonly settlesChunksExplicitly = true;
 
   /**
-   * Per-collection (relPath -> startLine -> symbolId), populated by the
-   * walker pass in `buildFileSignals` so `buildChunkSignals` can resolve
-   * symbolId for each `ChunkLookupEntry` by line number.
-   *
-   * Keyed by collection name (`__direct__` sentinel in direct/test mode)
-   * to keep state strictly isolated between collections — a single
-   * `CodegraphEnrichmentProvider` instance is reused across the whole
-   * process lifetime, so multiple `index_codebase` calls run sequentially
-   * against the SAME provider. Sharing a flat `Map<relPath, ...>` would
-   * let paths from project A bleed into project B's `buildChunkSignals`
-   * lookups when a path string happens to repeat across roots.
-   *
-   * Holds each walked symbol's full line range, the input of the chunk-owner
-   * rule (bd tea-rags-mcp-9i2ow). A `ChunkLookupEntry` carries its span and,
-   * optionally, the chunker's symbolId; neither alone names the owner.
+   * Per-collection `relPath → walked symbol line ranges`, written by every pass-1
+   * walk and read by the deferred `buildChunkSignals` pass — the input of the
+   * chunk-owner rule (bd tea-rags-mcp-9i2ow). Keyed by collection (`__direct__`
+   * in direct mode) because one provider instance serves every collection of the
+   * process, and two repos can share a relPath.
    */
   private readonly chunkSymbolByLine = new Map<string, Map<string, SymbolLineRange[]>>();
   /**
    * Active streaming extraction sink per collection key. Created lazily by the
-   * first `streamFileBatch`, finished + consumed + deleted by `finalizeSignals`.
-   * Held as run state so file batches accumulate into one graph build that the
-   * single finalize pass resolves — mirrors what the legacy whole-repo
-   * `buildFileSignals` sink did, but spread across streamed batches.
+   * first pass-1 writer, finished + consumed + deleted by `finalizeSignals`, so
+   * streamed batches accumulate into one graph build.
    */
   private readonly runSinks = new Map<string, ExtractionSink>();
   /**
@@ -460,32 +341,25 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
    */
   private readonly runExtractedPaths = new Map<string, Set<string>>();
   /**
-   * Per-collection serialization tail for `streamFileBatch` (bd
-   * tea-rags-mcp-svhqp layer 3). `file-phase.onBatch` pushes extract work
-   * WITHOUT awaiting, so multiple `streamFileBatch` calls run concurrently on
-   * this one cached provider and would otherwise race on the shared spill stream
-   * + `extracted` set (a check-then-add dedup is TOCTOU under concurrency). Each
-   * call chains off the prior so extract + spill + dedup run atomically and in a
-   * deterministic order. Settled-tolerant: a rejected batch does not poison the
-   * chain. Cleared per key in `finalizeSignals` / `onRelease`.
+   * Per-collection serialization tail for `streamFileBatch` (bd tea-rags-mcp-svhqp
+   * layer 3): the file phase fires batches without awaiting, and the shared spill
+   * stream + `extracted` dedup are check-then-add (TOCTOU) under concurrency.
+   * Settled-tolerant: a rejected batch does not poison the chain. Cleared per key
+   * in `finalizeSignals` / `onRelease`.
    */
   private readonly runBatchChains = new Map<string, Promise<unknown>>();
   /**
    * yl9tv Task 5b — MAIN-thread per-collection dedup set for cross-pass input
-   * spill writes. `acceptExtraction` (main instance) appends each file's
-   * `FileExtraction` to the deterministic input spill exactly once; a file whose
-   * chunks span several processing units would otherwise be forwarded more than
-   * once. Reset per collection in `beginExtractionRun` (run start). NOT the
-   * worker-side parse gate — that is `options.crossPass`, sourced from the
-   * pipeline and threaded through `FileSignalOptions` (survives the worker
-   * structured-clone boundary; an in-process Set would not).
+   * spill writes, so a file whose chunks span several processing units is spilled
+   * once. Reset per collection in `beginExtractionRun`. NOT the worker-side parse
+   * gate — that is `options.crossPass`, which survives the structured-clone
+   * boundary an in-process Set would not.
    */
   private readonly xpassWritten = new Map<string, Set<string>>();
   /**
-   * Eager batched node upsert during embedding (cross-pass). Owns the durable
-   * `cg_symbols` write chain shared by both entry points — `acceptExtraction`
-   * (main-thread tee) and the extraction sink's `write` — so the write is hoisted
-   * out of the post-embedding finalize tail. Reset alongside the run-global maps
+   * Eager batched `cg_symbols` upsert during embedding, shared by both node-write
+   * entry points (`acceptExtraction` and the extraction sink's `write`) so the
+   * write leaves the post-embedding finalize tail. Reset with the run-global maps
    * at each run-reset seam.
    */
   private readonly nodeFlush = new SymbolNodeFlushQueue(
@@ -493,11 +367,10 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
     nodeFlushFilesFromEnv(),
   );
   /**
-   * Pass-2 per-file call resolution (bd tea-rags-mcp-6vfrj / G2). Reads the
-   * run-global maps this provider's pass-1 sink filled and emits one file's
-   * `GraphEdges`; the resolve tally lands back in `runState.stats`. Assigned in
-   * the constructor — a field initializer cannot read the `deps` parameter
-   * property.
+   * Pass-2 per-file call resolution (bd tea-rags-mcp-6vfrj / G2): reads the
+   * run-global maps pass-1 filled and emits one file's `GraphEdges`, tallying into
+   * `runState.stats`. Assigned in the constructor — a field initializer cannot read
+   * the `deps` parameter property.
    */
   private readonly resolutionRunner: CallEdgeResolutionRunner;
   /**
@@ -507,30 +380,24 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
    */
   private readonly graphFinalizer: GraphBuildFinalizer;
   /**
-   * Per-run aggregates + resolve tally (bd tea-rags-mcp-6vfrj / G2). One object
-   * owns every run-global map the pass-1 sink merges into and pass-2 resolution
-   * reads back, plus the run-metrics drain and the reset seams. The provider
-   * keeps only the per-collection sink lifecycle maps below. Constructed with
-   * the languages' persisted-schema column vocabularies (bd tea-rags-mcp-8l5fo)
-   * — collected ONCE in the constructor, through the same `deps.languageFactory`
-   * seam as the exclusion filter, because `factory.create` is expensive.
+   * Per-run aggregates + resolve tally (bd tea-rags-mcp-6vfrj / G2): every
+   * run-global map pass-1 merges into and pass-2 reads, plus the metrics drain and
+   * reset seams. Built with the languages' schema-column and dependency-manifest
+   * sources, collected ONCE here because `factory.create` is expensive.
    */
   private readonly runState: CodegraphRunState;
   /**
-   * Codegraph-layer ignore filter (Layer 2 in `discoverSupportedFiles`).
-   * Built once at construction from `deps.exclusion` PLUS each registered
-   * language's own non-app-code globs (`deps.languageFactory`, bd
-   * tea-rags-mcp-biwbq — e.g. Ruby's `db/migrate/**`). Never empty: the
-   * generated + test patterns are unconditional, so the layer always has
-   * something to say.
+   * Codegraph-layer ignore filter (Layer 2 of `discoverSupportedFiles`), built once
+   * from `deps.exclusion` plus each language's own non-app-code globs (bd
+   * tea-rags-mcp-biwbq — e.g. Ruby's `db/migrate/**`). Never empty: the generated
+   * + test patterns are unconditional.
    */
   private readonly codegraphExclusionFilter: Ignore;
   /**
-   * Wall-clock attribution across pass-1 and pass-2 (bd tea-rags-mcp-6aytq).
-   * Owned here rather than by the finalizer because pass-1 extraction happens
-   * on this side of the barrier and the two halves have to land in ONE summary.
-   * Lifetime is this provider instance — in the enrichment pool that is one
-   * (collection, run) pair, so no reset seam is needed.
+   * Wall-clock attribution across pass-1 and pass-2 (bd tea-rags-mcp-6aytq). Owned
+   * here, not by the finalizer, because pass-1 runs on this side and both halves
+   * land in ONE summary. Lifetime is one (collection, run) pair in the pool, so no
+   * reset seam is needed.
    */
   private readonly phaseTimings = new CodegraphPhaseTimings();
 
@@ -542,10 +409,9 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
   private nextPass1ProgressAt = PASS1_PROGRESS_EVERY;
 
   /**
-   * Worker-pool descriptor — surfaced when the composition root wires this
-   * provider for off-main-thread dispatch via `WorkerPoolEnrichmentExecutor`.
-   * Inline-only callers (tests, the default inline executor) leave it
-   * undefined; executor falls back to in-thread provider calls.
+   * Worker-pool descriptor, set when the composition root wires this provider for
+   * `WorkerPoolEnrichmentExecutor`. Undefined for inline callers (tests, the
+   * inline executor), which call the provider in-thread.
    */
   readonly workerDescriptor?: WorkerEnrichmentDescriptor;
 
@@ -591,30 +457,18 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
 
   /**
    * Codegraph policy — ONE source of truth for "is this path in scope", shared
-   * with the graph walk (bd tea-rags-mcp-5ikhf).
+   * with the graph walk (bd tea-rags-mcp-5ikhf): `codegraphExclusionFilter` is the
+   * same instance every pass-1 entry point consults.
    *
-   * The authority is `codegraphExclusionFilter`, the same instance
-   * `discoverSupportedFiles`, `streamFileBatchInner`, `buildFileSignals` and
-   * `acceptExtraction` consult. It carries the unconditional generated + test
-   * patterns, each language's own non-app-code globs (Ruby's `db/migrate/**`)
-   * and the user's `CODEGRAPH_CUSTOM_EXCLUDE`.
+   * The two must agree. A path the walk drops never receives
+   * `codegraph.symbols.<level>.enrichedAt` (no overlay, and a deferring provider
+   * is skipped by backfill), so reporting it "full" strands it in recovery with a
+   * `degraded` marker on every run; declining lets it be stamped `skippedAs` once.
    *
-   * The two must agree or the point is stranded. A path the walk drops can
-   * never receive a `codegraph.symbols.<level>.enrichedAt` — no overlay is read
-   * back for it, and codegraph is skipped by the backfill pass
-   * (`defersChunkEnrichment`). Reporting it as "full" therefore leaves it owed
-   * enrichment forever: `EnrichmentRecovery` re-selects it every run, dispatches
-   * the provider, gets nothing back, and `markRecoveryResult` writes `degraded`
-   * on every single run with nothing it can act on. Declining is what lets the
-   * point be stamped `skippedAs` once and settled server-side.
-   *
-   * `isGenerated` stays as a separate check because the classifier sees things
-   * a path glob cannot: `TEA_RAGS_GENERATED_PATTERNS` and the in-file
-   * `@generated` content markers. `isTest` needs no check — the filter's test
-   * patterns and the classifier's are the same constant.
-   *
-   * Docs are irrelevant to the graph and enrich fully (no chunk graph is
-   * emitted for them anyway).
+   * `isGenerated` stays a separate check: the classifier also sees
+   * `TEA_RAGS_GENERATED_PATTERNS` and in-file `@generated` markers a glob cannot.
+   * `isTest` needs none — filter and classifier share the constant. Docs enrich
+   * fully (no chunk graph is emitted for them anyway).
    */
   shouldEnrich(file: { relPath: string; classification: FileClassification }): EnrichmentScope {
     if (file.classification.isGenerated) return "none";
@@ -624,15 +478,10 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
 
   /**
    * Whether the walk can produce rows for this path at all — the predicate every
-   * pass-1 entry point applies before it parses anything, hoisted to ONE place
-   * (bd tea-rags-mcp-65bkl).
-   *
-   * Two conditions, and `shouldEnrich` above only covers the second. A path
-   * whose extension has no {@link CODEGRAPH_LANGUAGES} entry has no walker, so
-   * nothing reaches the spill and pass-2 writes no `cg_symbols_files` row for
-   * it. That is a legitimate outcome — a `tsconfig.json` still gets its all-zero
-   * codegraph payload block — but it means the file is permanently outside this
-   * provider's store, which the repair diff has to know.
+   * pass-1 entry point applies before parsing (bd tea-rags-mcp-65bkl). Beyond
+   * `shouldEnrich`, it requires a {@link CODEGRAPH_LANGUAGES} row: a `tsconfig.json`
+   * still gets its all-zero payload block but never a `cg_symbols_files` row, and
+   * the repair diff has to know that.
    */
   private isExtractablePath(relPath: string): boolean {
     return SUPPORTED_EXTS.has(extensionOf(relPath)) && !this.codegraphExclusionFilter.ignores(relPath);
@@ -649,26 +498,11 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
   }
 
   /**
-   * Resolve the (graphDb, symbolTable) pair for the active call. In pool
-   * mode this acquires the per-collection handle; in direct mode it
-   * returns the constructor-provided pair regardless of `collectionName`.
-   *
-   * Programming error (rather than typed): if pool mode is set but no
-   * `collectionName` was threaded through, the call surface is broken.
-   * Caller should always pass `options.collectionName` from the
-   * coordinator. We surface this loudly so bugs surface at the wire-up
-   * boundary instead of writing rows to the wrong DB.
-   */
-  /**
    * What this graph currently believes about each file: `relPath -> content
-   * hash`, `null` where the row predates the hash column
-   * (bd tea-rags-mcp-6goqa).
-   *
-   * Read through the pool's READ handle, which is daemon-backed in production —
-   * the daemon owns the RW lock, so a cross-process READ_ONLY attach would
-   * throw while it holds the file. A collection with no graph yet yields an
-   * empty map rather than an error: that is the fresh-`_vN` case, where every
-   * eligible file legitimately needs extracting.
+   * hash`, `null` where the row predates the hash column (bd tea-rags-mcp-6goqa).
+   * Read through the pool's READ handle (daemon-backed in production, where a
+   * cross-process READ_ONLY attach would throw). A collection with no graph yet
+   * yields an empty map — the fresh-`_vN` case, where every file needs extracting.
    */
   async readPersistedFileHashes(collectionName: string): Promise<Map<string, string | null>> {
     const hashes = new Map<string, string | null>();
@@ -695,29 +529,24 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
   }
 
   /**
-   * Every persisted per-file pass-1 aggregate slice for `collectionName`
-   * (bd tea-rags-mcp-weno4) — the MAIN-thread half of the znxg8 repair.
-   *
-   * The barrier that absorbs these rows runs in the codegraph WORKER, whose
-   * `GraphDbClientPool` is built without a `daemonRestart` hook
-   * (`codegraph/factory.ts`), so `connectWithBuildHandshake` tolerates a daemon
-   * compiled from other source — one that may not know the
-   * `listAllPass1Aggregates` op at all. Its read then fails with
-   * `unknown daemon op: listAllPass1Aggregates`, the barrier's guard swallows it,
-   * and the repair silently degrades to a batch-scoped registry (observed live on
-   * taxdome). The main thread's pool DOES wire the respawn hook
-   * (`bootstrap/factory.ts`), so the same read there drains and respawns the
-   * stale daemon and succeeds — which is why the rows are read HERE and injected
-   * into the worker through `FileSignalOptions.pass1Aggregates`.
-   *
-   * Same store resolution as every other provider call: `getStore` picks the
-   * per-collection pool handle in production and the constructor-provided pair in
-   * direct/test mode, where `collectionName` is inert.
+   * Every persisted per-file pass-1 aggregate slice for `collectionName` (bd
+   * tea-rags-mcp-weno4), read on the MAIN thread and injected into the worker's
+   * finalize as `FileSignalOptions.pass1Aggregates`. The main pool replaces a
+   * daemon from another build or lacking a required op; the worker pool has no
+   * respawn hook and, since bd tea-rags-mcp-39xca.4, refuses such a daemon with
+   * `CodegraphDaemonBuildSkewError` (`listAllPass1Aggregates` is required).
+   * Same store resolution as every other call (`getStore`).
    */
   async readPersistedPass1Aggregates(collectionName: string): Promise<CodegraphPass1FileAggregates[]> {
     return (await this.getStore(collectionName)).graphDb.listAllPass1Aggregates();
   }
 
+  /**
+   * Resolve the (graphDb, symbolTable) pair for the active call: the
+   * per-collection pool handle in pool mode, the constructor pair in direct mode.
+   * Pool mode without `collectionName` throws — a broken call surface must fail at
+   * the wire-up boundary, not write rows to the wrong DB.
+   */
   private async getStore(collectionName?: string): Promise<{
     graphDb: GraphDbClient;
     symbolTable: GlobalSymbolTable;
@@ -728,11 +557,8 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
           "CodegraphEnrichmentProvider: pool mode requires options.collectionName — caller did not thread it through",
         );
       }
-      // Acquire the FULL versioned collection name (no strip): the write
-      // path routes through `acquireWrite`, which hands back a daemon-backed
-      // handle when a socket is configured, else the in-process RW handle.
-      // The per-version DuckDB file matches what the RO reader opens via
-      // `acquireRead`, both keyed on the same unstripped name.
+      // The FULL versioned name (no strip): writes and reads must open the same
+      // per-version DuckDB file (`acquireWrite` is daemon-backed when configured).
       return this.deps.pool.acquireWrite(collectionName);
     }
     // Direct mode — both fields validated in the constructor.
@@ -743,23 +569,18 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
   }
 
   /**
-   * Drop codegraph state for files that no longer exist on disk. Called
-   * by `EnrichmentCoordinator.notifyDeletions` before sync prunes the
-   * corresponding Qdrant points — keeps `cg_symbols_edges_*` consistent
-   * with the file set. Idempotent: removing a path the provider never
-   * saw is a no-op (graphDb.removeFile + symbolTable.removeFile both
-   * tolerate unknown paths).
+   * Drop codegraph state for files that no longer exist on disk. Called by
+   * `EnrichmentCoordinator#notifyDeletions` before sync prunes the Qdrant points,
+   * keeping `cg_symbols_edges_*` consistent with the file set. Idempotent: every
+   * store below tolerates an unknown path.
    */
   async handleDeletedPaths(paths: string[], options?: DeletedPathOptions): Promise<void> {
     if (paths.length === 0) return;
     const { graphDb, symbolTable } = await this.getStore(options?.collectionName);
     const perColl = this.chunkSymbolByLine.get(this.collectionKey(options?.collectionName));
     for (const relPath of paths) {
-      // `graphDb.removeFile` clears edges AND cg_symbols rows; the
-      // separate `removeSymbolsForFile` is intentionally idempotent so
-      // call sites that only want symbol-table cleanup (no edge
-      // pruning) can use it independently. Calling both here is safe —
-      // the second DELETE finds an empty set.
+      // `removeFile` clears edges AND cg_symbols rows; `removeSymbolsForFile` is
+      // idempotent for symbol-only callers, so calling both is safe.
       await graphDb.removeFile(relPath);
       await graphDb.removeSymbolsForFile(relPath);
       symbolTable.removeFile(relPath);
@@ -769,9 +590,8 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
 
   /**
    * Map a file's `FileExtraction` chunks to `SymbolDefinition[]` — the SINGLE
-   * source of the 9-field def shape. Used by BOTH the streaming sink's `write`
-   * (durable per-file / in-memory table build) AND `acceptExtraction`'s eager
-   * batched buffer (Task 2), so the two node-write paths can never drift.
+   * source of the def shape, used by both the sink's `write` and
+   * `acceptExtraction`'s eager buffer so the two node-write paths cannot drift.
    */
   private buildSymbolDefs(extraction: FileExtraction): SymbolDefinition[] {
     return extraction.chunks.map((c) => ({
@@ -796,18 +616,11 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
   }
 
   /**
-   * Build an `ExtractionSink` bound to the active collection. The sink
-   * captures the per-collection (graphDb, symbolTable) pair so all
-   * downstream `write`/`finish` calls land in the right DuckDB file.
-   *
-   * `collectionName` is optional in direct mode (test fixtures), but
-   * MUST be supplied in pool mode (production bootstrap). The provider
-   * fails loud at the first store-resolution otherwise.
-   *
-   * `skipDurableNodeWrite` (Task 2) — when true, `write` still builds the
-   * in-memory symbol table + line map + Half-B run-globals but SKIPS the durable
-   * `graphDb.upsertSymbols` because it was already issued by the eager batched
-   * flush. `drainInputSpill` passes true; the incremental path leaves it false.
+   * Build an `ExtractionSink` bound to the active collection (optional in direct
+   * mode, required in pool mode — store resolution fails loud otherwise).
+   * `skipDurableNodeWrite` keeps the in-memory table, line map and run-globals but
+   * skips the durable `cg_symbols` write already issued by the eager flush
+   * (`drainInputSpill` passes true).
    */
   asExtractionSink(collectionName?: string, skipDurableNodeWrite = false): ExtractionSink {
     return createCodegraphExtractionSink(this.sinkDeps, randomUUID(), collectionName, skipDurableNodeWrite);
@@ -821,15 +634,9 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
   private get sinkDeps(): CodegraphSinkDeps {
     return {
       resolveSymbolTable: async (collectionName) => (await this.getStore(collectionName)).symbolTable,
-      // Injected rows WIN (bd tea-rags-mcp-weno4). In production the barrier runs
-      // in the codegraph worker, whose pool tolerates a daemon that predates the
-      // `listAllPass1Aggregates` op — the read below then throws
-      // `unknown daemon op: listAllPass1Aggregates`, the barrier's guard swallows
-      // it, and the znxg8 repair degrades to a batch-scoped registry with nothing
-      // but a stderr line to say so. `finalizeSignals` stashes what the MAIN
-      // thread already read, so that path never needs the op. The read remains
-      // the fallback for direct/test mode, where there is no daemon at all and
-      // the store is the constructor-provided client.
+      // Injected rows WIN (bd tea-rags-mcp-weno4): `finalizeSignals` stashes what
+      // the MAIN thread read, so a pipeline finalize never needs the barrier's own
+      // read. The read is the fallback for direct/test callers.
       loadPersistedPass1Aggregates: async (collectionName) =>
         this.runState.injectedPass1Aggregates
           ? [...this.runState.injectedPass1Aggregates]
@@ -854,51 +661,27 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
   }
 
   /**
-   * Slice 2 streaming pass-2. Reads the NDJSON spill line-by-line,
-   * resolves calls against the now-complete `symbolTable`, issues one
-   * `upsertFile` per row, and CHECKPOINTs every `CHECKPOINT_EVERY`
-   * files so the DuckDB WAL stays bounded.
-   *
-   * Memory footprint: O(1) in the spill size — one JSON line resident
-   * at any time. The resolver's working set is the file's own chunks
-   * and the global symbol table (already loaded in-memory).
+   * Pass-2 over the NDJSON spill (`GraphBuildFinalizer#resolveAndUpsert`): resolve
+   * each line against the complete symbol table, bulk-upsert, checkpoint on a
+   * cadence. O(1) memory in the spill size — one JSON line resident at a time.
    */
   private async streamingResolveAndUpsert(spillPath: string, collectionName?: string): Promise<void> {
     await this.graphFinalizer.resolveAndUpsert(spillPath, collectionName);
   }
 
   /**
-   * Slice 2 / B2 + B3 — recompute Tarjan SCC for both scopes and
-   * PageRank over the method graph after the streaming pass-2 settles.
-   *
-   * Streaming variant: builds the adjacency one row at a time via
-   * `graphDb.streamAdjacency` rather than `listAdjacency` so the
-   * adapter does not pre-allocate a `Map<string, string[]>` of all
-   * edges (the prior code paid this cost twice — once on the DuckDB
-   * side, once in the consumer). The algorithms themselves still need
-   * full adjacency for the recursive DFS and rank vector iteration,
-   * but skipping the intermediate copy is the pragmatic minimum that
-   * still gives a meaningful win at slice-2 scale (25k method edges).
-   * A spill-to-disk Tarjan is a future optimisation if real graphs
-   * grow past JS-heap-friendly sizes.
-   *
-   * Errors are wrapped in `CodegraphMetricsError` so the prefetch
-   * marker carries the failing stage in its message — debug log
-   * alone is not enough when the failure happens silently mid-run.
+   * Recompute Tarjan SCC for both scopes and PageRank over the method graph once
+   * pass-2 settles (`GraphBuildFinalizer#recomputeMetrics`).
    */
   private async recomputeGraphMetricsStreaming(collectionName?: string): Promise<void> {
     try {
       await this.graphFinalizer.recomputeMetrics(collectionName);
     } finally {
       // The recompute is the last pass-2 stage, so this is the run's closing
-      // wall-clock statement (bd tea-rags-mcp-6aytq). Emitted from `finally`
-      // because a metrics failure is swallowed by the sink as best-effort —
-      // losing the summary over it would forfeit the whole run's attribution.
+      // wall-clock statement (bd tea-rags-mcp-6aytq) — from `finally`, because the
+      // sink treats a metrics failure as best-effort. The resolver block is the
+      // run's one record of which Program strategy it took.
       if (isDebug()) {
-        // The resolver block rides the closing summary as well as the periodic
-        // progress line (bd tea-rags-mcp-6aytq): a run that finishes leaves
-        // this as its ONE record of which Program strategy it actually took,
-        // and a run killed mid-pass still has the progress lines.
         console.error(
           "[GitEnrich] PHASE: CODEGRAPH_PHASE_TIMINGS",
           JSON.stringify({ ...this.phaseTimings.toSummary(), resolvers: this.resolutionRunner.resolverDiagnostics() }),
@@ -926,16 +709,10 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
   }
 
   private indexChunkSymbolsByLine(collectionName: string | undefined, extraction: FileExtraction): void {
-    // Records each walked symbol's AST range (1-based, inclusive) per file —
-    // every symbol, nested ones included, since a chunk the ingest chunker cut
-    // may belong to any of them. The deferred chunk pass resolves a chunk's
-    // owner from these ranges through `resolveChunkOwnerSymbol` (bd
-    // tea-rags-mcp-9i2ow); a chunk with no line info on the walker side is not
-    // indexed, because half a range places nothing.
-    //
-    // Keyed by collection so two projects with overlapping rel_paths
-    // (e.g. both repos hold `src/index.ts`) never share line maps. A re-walk
-    // replaces the file's ranges wholesale.
+    // Every walked symbol's AST range (1-based, inclusive), nested ones included —
+    // a stored chunk may belong to any of them (bd tea-rags-mcp-9i2ow). A chunk
+    // without both walker lines is not indexed: half a range places nothing. A
+    // re-walk replaces the file's ranges wholesale.
     const key = this.collectionKey(collectionName);
     let perColl = this.chunkSymbolByLine.get(key);
     if (!perColl) {
@@ -952,64 +729,34 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
   }
 
   async buildFileSignals(root: string, options?: FileSignalOptions): Promise<Map<string, FileSignalOverlay>> {
-    // Per-file hashes for this run (bd tea-rags-mcp-6goqa) — the finalizer
-    // stamps each written row with one so the next run's repair check can tell
-    // a current row from a stale one. Assigned before any walk so both the
-    // caller-supplied-paths branch and the standalone walk see it.
+    // Per-file hashes for this run (bd tea-rags-mcp-6goqa), assigned before any
+    // walk so both branches below stamp them.
     if (options?.contentHashes) this.runState.contentHashes = options.contentHashes;
-    // Record the indexed project's root for resolvers that bind project-rooted
-    // state lazily (TypeScript's tsconfig / file probe / ts.Program). Same seam
-    // and same reason as the two manifest reads below: `root` is per-run data,
-    // and provider construction happens before any project is known.
+    // Per-run inputs every resolver reads (project root, Gemfile, declared
+    // dependencies, schema snapshots): provider construction precedes any project.
     this.runState.bindProjectRoot(root);
-    // Read the run's Gemfile for gem-gated DSL grammar (adx5p.1) before pass-2
-    // resolve reads it off each CallContext. One read per run (guarded).
     this.runState.loadGemfile(root);
     this.runState.loadDeclaredDependencies(root);
-    // Read the run's persisted-schema snapshot(s) for the barrier schema-column
-    // pre-pass (bd tea-rags-mcp-8l5fo). One read per run (guarded), same shape.
     this.runState.loadSchemaSnapshots(root);
-    // Discover the file set to walk. Caller-supplied paths win
-    // (incremental reindex); otherwise scan the repo for any
-    // supported language extension. `ignoreFilter` is threaded from the
-    // EnrichmentCoordinator's ProviderContext (FileScanner's filter +
-    // BUILTIN_IGNORE_PATTERNS); when absent (direct/test mode) only the
-    // codegraph-layer filter applies.
-    //
-    // Codegraph-layer exclusion (CODEGRAPH_TEST_PATTERNS +
-    // CODEGRAPH_CUSTOM_EXCLUDE) MUST be applied in BOTH branches: the
-    // production ingest path threads its full file list as
-    // `options.paths` (so `discoverSupportedFiles` is bypassed), and
-    // without filtering here test files would land in the dependency
-    // graph despite the exclusion. The standalone-walk branch
-    // delegates to `discoverSupportedFiles`, which applies the filter
-    // internally — the explicit `.filter` here covers the
-    // caller-supplied branch with the same `codegraphExclusionFilter`
-    // instance to keep semantics identical.
+    // Caller-supplied paths (incremental reindex, and the production ingest path)
+    // bypass `discoverSupportedFiles`, so they go through the same extractability
+    // filter here — otherwise excluded test files would enter the graph.
     const targetRelPaths =
       options?.paths && options.paths.length > 0
         ? this.filterExtractablePaths(options.paths)
         : this.discoverSupportedFiles(root, options?.ignoreFilter);
 
-    // Resolve the per-collection store ONCE for the whole pass — the
-    // overlay loop below uses the same handle. Pool mode threads
-    // collectionName from the coordinator; direct mode (tests) ignores
-    // it and returns the constructor-provided pair.
+    // Resolve the per-collection store ONCE for the whole pass.
     const { graphDb } = await this.getStore(options?.collectionName);
 
-    // Populate the graph DB by walking each file's AST and feeding the
-    // resulting FileExtraction through this provider's own sink. This
-    // pass owns the codegraph ingest side — chunker pool integration
-    // is deferred to a future slice once worker IPC supports passing
-    // FileExtraction back across the boundary.
+    // Walk each file through this provider's own sink; `finish` resolves pass-2.
     const sink = this.asExtractionSink(options?.collectionName);
     for (const relPath of targetRelPaths) {
       try {
         await sink.write(this.extractOneFile(root, relPath));
       } catch (err) {
-        // One bad file shouldn't take down the whole codegraph build —
-        // log the path on debug and keep going. The graph stays consistent
-        // because asExtractionSink buffers per file and resolves on finish.
+        // One bad file must not take down the build; the sink buffers per file
+        // and resolves on finish, so the graph stays consistent.
         if (process.env.DEBUG === "true") {
           process.stderr.write(`[codegraph] skip ${relPath}: ${(err as Error).message}\n`);
         }
@@ -1017,10 +764,8 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
     }
     await sink.finish();
 
-    // Second pass: emit metric overlays per file (delegated to
-    // readFileOverlays, shared with finalizeSignals). We emit a row for every
-    // relPath the caller listed (or every file we walked), so the enrichment
-    // coordinator sees a consistent overlay map shape.
+    // Emit an overlay for every relPath the caller listed (or every walked file),
+    // so the coordinator sees a consistent overlay map shape.
     const overlayPaths = options?.paths && options.paths.length > 0 ? options.paths : targetRelPaths;
     const result = new Map<string, FileSignalOverlay>();
     await this.readFileOverlays(graphDb, overlayPaths, result);
@@ -1028,13 +773,11 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
   }
 
   /**
-   * Read file-level codegraph overlays for `overlayPaths` from the finished
-   * graph into `out`. Shared by `buildFileSignals` (whole-repo / backfill) and
-   * `finalizeSignals` (streamed run). `fanInP95` is read ONCE from the FULL
-   * graph in DuckDB (not the overlay subset) so `isHub` is not misclassified on
-   * an incremental subset. Bare inner keys (tea-rags-mcp-k6xu) — written under
-   * providerKey `codegraph.symbols.file`, so the addressable path is
-   * `codegraph.symbols.file.fanIn`.
+   * Read file-level overlays for `overlayPaths` from the finished graph into
+   * `out`, shared by `buildFileSignals` and `finalizeSignals`. `fanInP95` comes
+   * from the FULL graph, not the subset, so `isHub` is not misclassified on an
+   * incremental run. Bare inner keys under providerKey `codegraph.symbols.file`
+   * (tea-rags-mcp-k6xu).
    */
   private async readFileOverlays(
     graphDb: GraphDbClient,
@@ -1059,25 +802,19 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
   }
 
   /**
-   * Per-batch streaming extraction: extract the batch's supported files into
-   * the lazily-created per-collection run sink, return ∅ (file overlays are
-   * deferred to `finalizeSignals` — they need the finished whole graph). Arrow
-   * property so `this` survives being passed as a coordinator callback.
+   * Per-batch streaming extraction into the lazily-created per-collection run
+   * sink. Returns ∅ — file overlays need the finished graph (`finalizeSignals`).
+   * Arrow property so `this` survives being passed as a coordinator callback.
    */
   streamFileBatch = async (
     root: string,
     batchPaths: string[],
     options?: FileSignalOptions,
   ): Promise<Map<string, FileSignalOverlay>> => {
-    // bd tea-rags-mcp-svhqp (layer 3) — serialize concurrent batches per
-    // collection. file-phase fires streamFileBatch without awaiting, so chain
-    // each call off the prior: extract + spill + dedup then run atomically and
-    // in deterministic order on the shared spill stream + extracted set, instead
-    // of racing (a check-then-add dedup is TOCTOU under concurrency). A batch
-    // only rejects on catastrophic spill IO (per-file extraction errors are
-    // swallowed inside the inner loop) — at which point the whole run is already
-    // doomed, so letting that reject propagate down the chain is acceptable and
-    // keeps the wrapper branch-free.
+    // bd tea-rags-mcp-svhqp (layer 3) — serialize batches per collection so
+    // extract + spill + dedup run atomically and in order. Only catastrophic
+    // spill IO rejects (per-file errors are swallowed), and then the run is
+    // doomed anyway, so the rejection may propagate down the chain.
     const key = this.collectionKey(options?.collectionName);
     const prior = this.runBatchChains.get(key) ?? Promise.resolve();
     const result = prior.then(async () => this.streamFileBatchInner(root, batchPaths, options));
@@ -1092,24 +829,18 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
   ): Promise<Map<string, FileSignalOverlay>> {
     const key = this.collectionKey(options?.collectionName);
     this.bindRunState(root, options);
-    // yl9tv Task 5b — cross-pass: the full-index chunk pass has fed this run's
-    // extractions into the input spill (drained in finalizeSignals), so the
-    // worker/main re-parse here is redundant AND would race the chunker pool's
-    // parse on the process-global tree-sitter. Skip it entirely. The flag comes
-    // from the pipeline via FileSignalOptions (NOT provider state) so it survives
-    // the worker-pool structured-clone boundary. `reindex_changes` never sets it
-    // → the incremental path keeps its extractOneFile re-parse.
+    // yl9tv Task 5b — cross-pass: the chunk pass already fed this run's
+    // extractions into the input spill (drained in finalizeSignals), and a
+    // re-parse here would race the chunker pool on the process-global
+    // tree-sitter. The flag rides FileSignalOptions so it survives the worker
+    // boundary; `reindex_changes` never sets it.
     if (options?.crossPass) return new Map();
     const { sink, extracted } = this.ensureRunSink(key, options?.collectionName);
     const targets = this.filterExtractablePaths(batchPaths);
     for (const relPath of targets) {
-      // bd tea-rags-mcp-svhqp (residual) — extract each file ONCE per run.
-      // `file-phase` dedups relPaths within a batch but not across batches, so a
-      // file whose chunks span several streamed batches reaches here more than
-      // once. Without this guard it is re-extracted + re-spilled and its calls
-      // are tallied per spill, making callsAttempted (and resolveSuccessRate)
-      // jitter run-to-run with batch composition. `extracted` is the run's
-      // already-spilled set (also reused by finalize for overlay read-back).
+      // bd tea-rags-mcp-svhqp (residual) — extract each file ONCE per run: a file
+      // whose chunks span several batches would otherwise be re-spilled and its
+      // calls tallied per spill, jittering resolveSuccessRate with batch composition.
       if (extracted.has(relPath)) continue;
       try {
         await sink.write(this.extractOneFile(root, relPath));
@@ -1120,33 +851,21 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
         }
       }
     }
-    // Fire-and-chain flush of THIS batch's buffered node defs so each streamed
-    // batch's `cg_symbols` land durably DURING embedding overlap. The cadence
-    // threshold alone would defer a sub-threshold changeset (the common
-    // incremental case) to the finalize remainder, losing the overlap the former
-    // per-file `upsertSymbols` had. Not awaited — overlaps the next embedding
-    // batch; `finalizeSignals` awaits the chain via `flushRemainder`.
+    // Fire-and-chain flush of THIS batch's buffered node defs, so `cg_symbols`
+    // lands during embedding even for a sub-threshold incremental changeset. Not
+    // awaited; `finalizeSignals` awaits the chain via `flushRemainder`.
     this.nodeFlush.flushPending(key, options?.collectionName);
     return new Map(); // signals deferred to finalizeSignals
   }
 
   /**
-   * Bind the per-RUN state every pass-1 entry point needs before it writes
-   * anything. Shared by `streamFileBatch` and the fan-out's
-   * `absorbExtractedFiles`, which are two doors into the same run:
-   *
-   *  - the indexed project's root, for resolvers that bind project-rooted state
-   *    lazily (TypeScript's tsconfig / file probe / ts.Program) — `finalizeSignals`
-   *    runs pass-2 off this state and receives no usable root of its own;
-   *  - the run's Gemfile (adx5p.1), so gem-gated DSL grammar is decided against
-   *    THIS project's gems. Read once per run (guarded);
-   *  - the persisted-schema snapshot(s) for the barrier schema-column pre-pass
-   *    (bd tea-rags-mcp-8l5fo). One read per run (guarded), same shape;
-   *  - the run's per-file content hashes, stamped onto each row at write time
-   *    (graph-finalizer's `contentHash: this.runState.contentHashes?.get(...)`)
-   *    so the next run's drift check reads the CURRENT hash instead of a
-   *    stale/missing one and repairs the same file forever (6goqa/ymjxj). The
-   *    repair pass (runRepairPass → executor.runFileBatch) reaches this seam too.
+   * Bind the per-RUN state every pass-1 entry point needs before it writes, shared
+   * by `streamFileBatch` and `absorbExtractedFiles` (two doors into one run): the
+   * project root (TypeScript resolvers bind to it lazily; `finalizeSignals` gets
+   * no usable root), the Gemfile (adx5p.1), declared dependencies, the schema
+   * snapshots (bd tea-rags-mcp-8l5fo), and the run's content hashes — stamped onto
+   * each row so the next drift check reads the CURRENT hash (6goqa/ymjxj). The
+   * repair pass reaches this seam too.
    *
    * Called before the cross-pass early return on purpose: a cross-pass run still
    * finalizes off this state even though it parses nothing here.
@@ -1160,30 +879,17 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
   }
 
   /**
-   * Pass-1 fan-out, extraction half — parse + walk only, and deliberately
-   * stateless with respect to the run (bd pass1-fanout).
+   * Pass-1 fan-out, extraction half — parse + walk only, stateless with respect
+   * to the run (bd pass1-fanout). A `FileExtraction` is a pure function of its
+   * file, so the executor dispatches this with NO routing key onto whichever
+   * worker affinity left idle.
    *
-   * This is the ONE stage of a codegraph run that does not need the
-   * collection-pinned worker: a `FileExtraction` is a pure function of the file
-   * it was parsed from, and it already crosses process boundaries in the normal
-   * streaming path (the chunker workers produce exactly this shape). So the
-   * executor dispatches this method with NO routing key and it lands on
-   * whichever worker the affinity binding left idle — three of four on the
-   * measured taxdome recompute, which sat at 99.96% idle while one worker parsed
-   * 8,811 Ruby files (18.8s) and 10,476 TypeScript files (29.4s) serially.
-   *
-   * What it must NOT do: touch the graph store, upsert symbols, merge run-global
-   * state or append to the spill. All of that is `absorbExtractedFiles`, on the
-   * pinned worker. The only run state bound here is the project root and the
-   * Gemfile, because the WALK itself reads gem-gated grammar off it; the schema
-   * snapshots are a pass-2 input and are left to the pinned side.
-   *
-   * Filtering (supported extension + codegraph exclusion) happens here rather
-   * than in the executor: the rule belongs to this provider, and the executor is
-   * provider-agnostic by design.
-   *
-   * A file that fails to parse is SKIPPED, exactly as `streamFileBatchInner`
-   * skips it — one bad file must not fail the shard and take the batch with it.
+   * It must NOT touch the graph store, upsert symbols, merge run-global state or
+   * append to the spill — that is `absorbExtractedFiles`, on the pinned worker. It
+   * binds only what the WALK reads (root, Gemfile, declared dependencies); schema
+   * snapshots are a pass-2 input. Filtering happens here because the rule belongs
+   * to this provider and the executor is provider-agnostic. A file that fails to
+   * parse is SKIPPED, as in `streamFileBatchInner`.
    */
   extractFileBatch = async (root: string, paths: string[]): Promise<FileExtractionFanoutBatch> => {
     this.runState.bindProjectRoot(root);
@@ -1212,19 +918,13 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
 
   /**
    * Pass-1 fan-out, absorb half — everything `streamFileBatchInner` does around
-   * its parse, for records parsed somewhere else (bd pass1-fanout).
+   * its parse, for records parsed elsewhere (bd pass1-fanout). Runs ONLY on the
+   * collection-pinned worker, keeping the single-writer invariant: symbol table,
+   * node-def buffer, run-global merges and output spill are touched by one thread.
    *
-   * Runs on the collection-pinned worker and nowhere else, which is what keeps
-   * the single-writer invariant intact: the symbol table, the durable node-def
-   * buffer, the run-global merges and the output spill are all still touched by
-   * exactly one thread, in one order.
-   *
-   * Order-independence: the per-file writes are keyed by `relPath` (symbol table
-   * upsert, `upsertSymbolsBulk` last-wins, the line map), so the SET this
-   * produces does not depend on arrival order. The run-global aggregates the
-   * sink merges are last-write-wins across files, so the executor still feeds
-   * batches in admission order to keep a run byte-reproducible — the same reason
-   * the cross-pass drain sorts its spill by `relPath`.
+   * Per-file writes are keyed by `relPath`, so their SET is order-independent; the
+   * run-global aggregates are last-write-wins, so the executor still feeds batches
+   * in admission order to keep a run byte-reproducible.
    */
   absorbExtractedFiles = async (
     root: string,
@@ -1253,15 +953,11 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
 
   /**
    * Resolve (or lazily start) the run sink + extracted-path set for a collection
-   * key. The run-start side effects fire exactly once per run regardless of
-   * whether the first writer is `streamFileBatchInner` (direct / non-cross-pass)
-   * or `acceptExtraction` (yl9tv cross-pass): reset the prior run's
-   * per-collection `chunkSymbolByLine` line map (leak fix — done at run START,
-   * NOT finalize, because the deferred chunk pass consumes it AFTER
-   * finalizeSignals) and reset the per-run resolve tally `runStats`
-   * (bd tea-rags-mcp-svhqp — otherwise a prior run's tally leaks into the next
-   * run's `recordRunStats` on the long-lived daemon and jitters
-   * `resolveSuccessRate`), then open the spill sink.
+   * key. The run-start side effects fire once per run, whichever writer comes
+   * first: reset the prior run's line map — at run START, not finalize, because
+   * the deferred chunk pass reads it AFTER `finalizeSignals` — and reset the
+   * resolve tally, or a prior run's counts leak into this run's `recordRunStats`
+   * on the long-lived worker (bd tea-rags-mcp-svhqp).
    */
   private ensureRunSink(
     key: string,
@@ -1284,28 +980,17 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
   }
 
   /**
-   * yl9tv Task 5b cross-pass entry — MAIN thread. The full-index chunk pass
-   * forwards each file's codegraph `FileExtraction` (built from the chunker
-   * worker's SINGLE parse) here; we SYNC-APPEND it as one NDJSON line to the
-   * deterministic per-collection INPUT spill. No run sink, no symbol upsert, no
-   * finalize on the main thread — the off-thread worker's `finalizeSignals`
-   * (crossPass) drains this exact file later (both pools share `rootDir` →
-   * identical path), so the disk file IS the main→worker bridge. `relPath` is
-   * already root-relative (the file-processor sets it before forwarding). Deduped
-   * per collection so a file whose chunks span several processing units spills
-   * once. Append is SYNCHRONOUS (not a stream) so the bytes are flushed to disk
-   * before the worker's finalize opens the file — finalize is dispatched only
-   * after the whole file phase drains. Best-effort: IO errors are swallowed
-   * (debug-logged) so a spill hiccup never aborts indexing.
+   * yl9tv Task 5b cross-pass entry — MAIN thread. SYNC-appends each file's
+   * `FileExtraction` (from the chunker worker's single parse) as one NDJSON line
+   * to the deterministic per-collection INPUT spill, which the worker's
+   * `finalizeSignals` drains: the disk file is the main→worker bridge. Deduped
+   * per collection. The append is synchronous so the bytes are on disk before
+   * finalize opens the file; IO errors are swallowed (debug-logged).
    */
   acceptExtraction = (extraction: FileExtraction, options?: { collectionName?: string }): void => {
-    // G3a (bd tea-rags-mcp-lx8sb): the cross-pass tee receives EVERY chunked
-    // file from the file-processor — unlike the batch path (streamFileBatchInner)
-    // and buildFileSignals, which filter. Without this guard a test-classified
-    // file (spec/support/gem_extensions/capybara.rb reopening `module Capybara`)
-    // enters the graph despite the test exclusion, defeats the DEFECT-1
-    // external-root gate, and re-records the dnd_helpers aggregates on every
-    // --force reindex.
+    // G3a (bd tea-rags-mcp-lx8sb): the cross-pass tee receives EVERY chunked file,
+    // so it must apply the exclusion filter the batch path and buildFileSignals
+    // apply, or excluded (test) files re-enter the graph.
     if (this.codegraphExclusionFilter.ignores(extraction.relPath)) return;
     const key = this.collectionKey(options?.collectionName);
     let written = this.xpassWritten.get(key);
@@ -1324,13 +1009,10 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
         process.stderr.write(`[codegraph] xpass spill append failed ${spillPath}: ${(err as Error).message}\n`);
       }
     }
-    // Task 2 — also buffer this file's durable symbol defs (built via the SAME
-    // helper as `asExtractionSink`) and flush in bulk once the per-collection
-    // buffer reaches the cadence. This HOISTS the former drain-time per-file
-    // `graphDb.upsertSymbols` forward into embedding; the sorted drain later
-    // skips it (`skipDurableNodeWrite`). Order-independent: `upsertSymbolsBulk`
-    // is last-wins per relPath, so accept-order flushing == sorted-drain rows.
-    // Runs after the dedup guard above, so a file is buffered exactly once.
+    // Buffer this file's durable symbol defs (same helper as the sink) and flush
+    // in bulk on the cadence, hoisting the node write into embedding; the sorted
+    // drain then skips it (`skipDurableNodeWrite`). Order-independent:
+    // `upsertSymbolsBulk` is last-wins per relPath. After the dedup guard, so once.
     this.nodeFlush.buffer(extraction.relPath, this.buildSymbolDefs(extraction), key, options?.collectionName);
   };
 
@@ -1342,15 +1024,9 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
    */
   beginExtractionRun = (collectionName?: string): void => {
     const key = this.collectionKey(collectionName);
-    // bd tea-rags-mcp-svhqp — this is a run-START seam that bypasses
-    // `ensureRunSink` (the cross-pass main thread feeds the input spill, the
-    // sink is created later by the worker's `drainInputSpill`). On the
-    // long-lived daemon the provider instance is cached and reused, so unless
-    // EVERY run-start path zeroes the per-run resolve tally + run-global maps,
-    // a prior run whose `getRunMetrics` (read-and-clear) never fired leaks its
-    // counts into this run's `recordRunStats` → `resolveSuccessRate` jitters
-    // run-to-run. Make this the authoritative zero-seam for the cross-pass
-    // entry, mirroring `ensureRunSink` for the streaming entry.
+    // bd tea-rags-mcp-svhqp — a run-START seam that bypasses `ensureRunSink`, so it
+    // must zero the tally and run-global maps itself: the cached provider would
+    // otherwise leak a prior run's counts into this run's `recordRunStats`.
     this.runState.resetTally();
     this.clearRunState(key);
     this.xpassWritten.set(key, new Set());
@@ -1366,19 +1042,12 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
   };
 
   /**
-   * Cross-pass end-of-file-phase seam — mirror of `beginExtractionRun`, awaited.
-   * The cross-pass file phase feeds `acceptExtraction` on THIS (main-thread)
-   * instance, which buffers each file's durable symbol defs and flushes only
-   * COMPLETE `nodeFlushFiles` batches during embedding overlap. The trailing
-   * `N mod nodeFlushFiles` files sit unflushed in `nodeDefBuffer`. finalize runs
-   * on a SEPARATE worker instance whose own buffer is empty, so its
-   * `flushNodeRemainder` never reaches this remainder. Flush it here — before the
-   * coordinator dispatches the worker's `finalizeSignals` (pass-2 edge resolve) —
-   * so `cg_symbols` is fully durable before any edge references it
-   * (nodes-before-edges across the main↔worker instance boundary). Also awaits the
-   * whole eager-flush chain and rethrows a latched flush error, aborting the run
-   * before pass-2. No-op for non-cross-pass runs (buffer empty — the incremental
-   * finalize on this same instance already owns the flush via `sink.finish`).
+   * Cross-pass end-of-file-phase seam, awaited. The MAIN instance buffered node
+   * defs in `acceptExtraction` and flushed only complete cadence batches; the
+   * `N mod nodeFlushFiles` remainder is invisible to the worker instance's
+   * finalize. Flushing it here, before the worker's pass-2, keeps nodes-before-edges
+   * across the instance boundary, and rethrows a latched flush error before pass-2.
+   * No-op off cross-pass (the buffer is empty).
    */
   endExtractionRun = async (collectionName?: string): Promise<void> => {
     await this.nodeFlush.flushRemainder(this.collectionKey(collectionName), collectionName);
@@ -1397,42 +1066,31 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
   }
 
   /**
-   * yl9tv Task 5b — WORKER-side drain of the cross-pass input spill. Streams the
-   * main-written NDJSON line-by-line (O(1) memory, mirrors
-   * `streamingResolveAndUpsert`) through a fresh run sink — each `write` performs
-   * pass-1 (symbol upsert + run-global merges + output-spill append + line map)
-   * exactly as `streamFileBatchInner` would for a re-parsed file. Removes the
-   * input spill after draining. The sink it creates is finished by the caller
-   * (`finalizeSignals`) for pass-2 resolve. A missing input spill (codegraph on
-   * but no walkable files fed) is a no-op.
+   * yl9tv Task 5b — WORKER-side drain of the cross-pass input spill: each line
+   * goes through a fresh run sink exactly as a re-parsed file would (symbol table,
+   * run-global merges, output spill, line map), then the spill is removed. The
+   * caller (`finalizeSignals`) finishes the sink. A missing spill is a no-op.
    */
   private async drainInputSpill(key: string, collectionName?: string): Promise<void> {
     const spillPath = this.inputSpillPath(collectionName);
-    // No input spill on disk — nothing was fed this run. Leave the run sink
-    // uncreated so finalize reads back zero overlays (graceful empty run).
-    // (createReadStream surfaces ENOENT asynchronously on the stream, so guard
-    // up front rather than catching it inside the `for await`.)
+    // Nothing fed this run: leave the sink uncreated so finalize reads back zero
+    // overlays. Guarded up front because `createReadStream` surfaces ENOENT
+    // asynchronously on the stream.
     if (!existsSync(spillPath)) return;
-    // Task 2 — the durable node write was hoisted into `acceptExtraction`'s eager
-    // batched flush, so this drain's sink SKIPS the per-file `graphDb.upsertSymbols`
-    // (it still builds the in-memory symbol table + line map + Half-B run-globals).
+    // The durable node write was hoisted into `acceptExtraction`'s eager flush, so
+    // this drain's sink skips it.
     const { sink, extracted } = this.ensureRunSink(key, collectionName, true);
     // Flush the buffered node remainder + await the chain + rethrow BEFORE the
-    // sorted drain, so `cg_symbols` is fully durable before pass-2 (see
-    // `flushNodeRemainder`).
+    // drain, so `cg_symbols` is fully durable before pass-2.
     await this.nodeFlush.flushRemainder(key, collectionName);
     const reader = createInterface({
       input: createReadStream(spillPath, { encoding: "utf8" }),
       crlfDelay: Number.POSITIVE_INFINITY,
     });
-    // bd tea-rags-mcp-yl9tv — the input spill is appended in file-COMPLETION
-    // order under `fileConcurrency`, which is non-deterministic run-to-run.
-    // Buffer every line, then SORT by relPath before resolving so the drain
-    // order — and therefore every order-dependent run-global merge
-    // (runAncestors / runReturnTypes / runDispatchTables, all last-write-wins)
-    // plus the resolve tally — is reproducible regardless of the order the
-    // chunk pass happened to spill files in. The spill is one line per file
-    // (deduped at acceptExtraction), so the buffer is bounded by file count.
+    // bd tea-rags-mcp-yl9tv — the spill is appended in non-deterministic
+    // file-COMPLETION order, so buffer and SORT by relPath before resolving: every
+    // last-write-wins run-global merge and the resolve tally must be reproducible.
+    // One line per file (deduped at accept), so the buffer is bounded by file count.
     const extractions: FileExtraction[] = [];
     try {
       for await (const line of reader) {
@@ -1465,35 +1123,21 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
    */
   finalizeSignals = async (_root: string, options?: FileSignalOptions): Promise<Map<string, FileSignalOverlay>> => {
     const key = this.collectionKey(options?.collectionName);
-    // Gem-gated DSL grammar (adx5p.1): the run's Gemfile was read in the preceding
-    // streamFileBatch pass (loadGemfile, guarded), so the pass-2 resolve below
-    // (sink.finish) sees `runGemfileContent` on each CallContext already.
     const file = new Map<string, FileSignalOverlay>();
-    // Seed the hash the finalizer stamps onto every row pass-2 writes
-    // (graph-finalizer's `contentHash: this.runState.contentHashes?.get(...)`),
-    // BEFORE the drain and the `sink.finish()` below — those are the writes.
-    // Every ingest path reaches this seam, which is why it is here and not only
-    // on `streamFileBatch`: a cross-pass run (first index, `--force`) no-ops
-    // that call on a DIFFERENT provider instance, so its run state never learned
-    // the hashes and every row it wrote persisted NULL. The next run then read
-    // NULL as "unknown, re-extract" and repaired the whole corpus, ~128s on
-    // taxdome (bd tea-rags-mcp-o317j).
+    // Seed the hash stamped onto every row pass-2 writes, BEFORE the drain and
+    // `sink.finish()` (the writes). Every ingest path reaches this seam — a
+    // cross-pass run's `streamFileBatch` no-ops on a DIFFERENT instance — so
+    // without it the first index persists NULL and the next run repairs the whole
+    // corpus (bd tea-rags-mcp-o317j).
     if (options?.contentHashes) this.runState.contentHashes = options.contentHashes;
-    // The pass-1 slices the MAIN thread read for us (bd tea-rags-mcp-weno4).
-    // Stashed BEFORE the `sink.finish()` below, because that is what runs the
-    // pass-1→pass-2 barrier and the barrier is the only reader. Injected here
-    // rather than read at the barrier because this provider instance may be the
-    // WORKER's, talking to a daemon with no `listAllPass1Aggregates` op — see
-    // `sinkDeps.loadPersistedPass1Aggregates`. Absent for direct/test callers,
-    // which keep the graphDb read.
+    // The pass-1 slices the MAIN thread read (bd tea-rags-mcp-weno4), stashed
+    // BEFORE `sink.finish()`, which runs the barrier — their only reader. Absent
+    // for direct/test callers, which keep the graphDb read.
     if (options?.pass1Aggregates) this.runState.injectedPass1Aggregates = options.pass1Aggregates;
     try {
-      // yl9tv Task 5b — cross-pass: streamFileBatch no-opped (no parse), so
-      // pass-1 is deferred to here. Drain the main-written input spill through a
-      // fresh run sink (symbol upsert + output-spill append + line map), then the
-      // sink.finish() below resolves pass-2. Non-crossPass runs (reindex_changes,
-      // direct mode) already populated the sink via streamFileBatch's
-      // extractOneFile path, so this is skipped and the existing sink is used.
+      // yl9tv Task 5b — cross-pass: pass-1 is deferred to here, so drain the
+      // main-written input spill before `sink.finish()` resolves pass-2.
+      // Non-cross-pass runs already populated the sink via streamFileBatch.
       if (options?.crossPass) await this.drainInputSpill(key, options?.collectionName);
       const sink = this.runSinks.get(key);
       if (sink) await sink.finish();
@@ -1501,11 +1145,8 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
       const paths =
         options?.paths && options.paths.length > 0 ? options.paths : [...(this.runExtractedPaths.get(key) ?? [])];
       await this.readFileOverlays(graphDb, paths, file);
-      // bd tea-rags-mcp-2jet-D — flush the per-receiver-kind resolve breakdown
-      // (j431) to `cg_run_stats` so the daemon-readable proxy surfaces each
-      // cai0 slice's per-bucket delta. Overwrite semantics live in the client;
-      // the provider only maps the in-memory tally to rows. Runs after
-      // sink.finish() so every resolved call is already counted.
+      // Persist the resolve breakdown (bd tea-rags-mcp-2jet-D) after
+      // `sink.finish()`, so every resolved call is already counted.
       await this.recordRunStats(graphDb, options?.runCoverage);
     } finally {
       this.runSinks.delete(key);
@@ -1536,29 +1177,24 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
     if (files.length === 0) return;
     const wholeCorpus = runCoverage === "wholeCorpus";
 
-    // The legacy per-language measurement — written by whole-corpus runs ONLY.
-    // `recordRunStats` replaces a language's rows wholesale, so an incremental
-    // run writing here replaced the corpus breakdown with its batch: taxdome's
-    // typescript bareCall 122777/175773 became a handful of calls after a
-    // one-file incremental, and prime dropped typescript.
+    // The legacy per-language measurement, written by whole-corpus runs ONLY: it
+    // replaces a language's rows wholesale, so an incremental run would replace the
+    // corpus breakdown with its batch (bd tea-rags-mcp-xpmwg).
     //
-    // The "no call site attempted → keep the previous rows" guard stays, and
-    // only here. It protects exactly this wholesale write: a run over call-free
-    // files yields ALL-ZERO rows (a language registers per walked file), and
-    // persisting them erased the last real measurement (bd tea-rags-mcp-snbzk).
-    // It must NOT gate the per-file write below — a file whose calls were all
-    // removed has to replace its persisted rows with none, or the aggregate
-    // keeps counting calls that no longer exist.
+    // The "no call site attempted → keep the previous rows" guard protects only
+    // this wholesale write: call-free files yield ALL-ZERO rows that would erase
+    // the last real measurement (bd tea-rags-mcp-snbzk). It must NOT gate the
+    // per-file write below — a file whose calls were all removed must replace its
+    // rows with none, or the aggregate keeps counting calls that no longer exist.
     if (wholeCorpus) {
       const rows = this.runState.toResolveRunStatsRows();
       if (rows.some((r) => r.attempted > 0)) await graphDb.recordRunStats(rows);
     }
 
-    // Every resolved file's rows, and — for a whole-corpus run — the languages
-    // those files cover, in one transaction. Coverage is what switches a
-    // language's read from `cg_run_stats` to the per-file aggregate, so an
-    // incremental run must never record it: on an index migrated from the
-    // per-run table, the per-file rows describe only what incrementals touched.
+    // Every resolved file's rows, plus — for a whole-corpus run only — the
+    // languages they cover, in one transaction. Coverage switches a language's
+    // read from `cg_run_stats` to the per-file aggregate, which describes only what
+    // incrementals touched until a whole-corpus run writes it.
     await graphDb.recordFileResolveStats({
       files,
       completeLanguages: wholeCorpus ? [...new Set(files.map((f) => f.language))] : [],
@@ -1588,24 +1224,12 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
   }
 
   /**
-   * Worker-pool collection release hook. Phase 2 of the unified-enrichment-
-   * worker-pool plan: `EnrichmentCoordinator.awaitCompletion(collection)`
-   * fires `executor.releaseCollection(collection)` after all markers reach
-   * healthy. The worker pool forwards the release envelope to the pinned
-   * worker thread, which calls this hook on the cached provider and then
-   * evicts the cache entry.
-   *
-   * Scope: this provider instance owns state for a single (collection,
-   * worker) pair on the worker pool's affinity binding (see
-   * `WorkerPool.dispatch(req, routingKey)`). Releasing all per-run maps
-   * + the per-collection `chunkSymbolByLine` entry is correct because the
-   * worker will not be asked to serve that collection again on this
-   * cached instance — the next index pass rebuilds a fresh provider.
-   *
-   * Failure mode: a throw here is swallowed by the worker (bounded memory
-   * wins over perfect cleanup). The daemon DuckDB connection is
-   * multi-client by design so a stale handle is harmless; on next index
-   * pass the rebuilt provider opens a fresh socket connection.
+   * Worker-pool release hook. The pinned worker calls it on the cached provider
+   * when `WorkerPoolEnrichmentExecutor#releaseRun` releases the latest run begun
+   * on the collection (bd tea-rags-mcp-39xca.3), then evicts the cache entry, so
+   * dropping every per-run map and the line-range index is safe. A throw is
+   * swallowed by the worker (bounded memory wins over perfect cleanup); the daemon
+   * connection is multi-client, so a stale handle is harmless.
    */
   onRelease = async (): Promise<void> => {
     this.chunkSymbolByLine.clear();
@@ -1618,27 +1242,20 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
   };
 
   /**
-   * Recursively enumerate supported-language files under `root`. Two
-   * ignore layers applied per entry:
+   * Recursively enumerate supported-language files under `root`, applying two
+   * ignore layers per entry (tea-rags-mcp-tf1o, hh4m):
    *
-   *   Layer 1 — `scannerIgnoreFilter` (optional, from FileScanner via
-   *             `FileSignalOptions.ignoreFilter`). Same filter the main
-   *             ingest path uses: BUILTIN_IGNORE_PATTERNS + user
-   *             `.gitignore` / `.contextignore`. Catches `node_modules/`,
-   *             `_nuxt/`, `vendor/bundle/`, glob patterns like
-   *             `*.min.js`, AND project-specific user rules.
-   *   Layer 2 — `this.codegraphExclusionFilter` (always present). Carries
-   *             CODEGRAPH_GENERATED_PATTERNS + CODEGRAPH_TEST_PATTERNS
-   *             unconditionally, each language's own non-app-code globs, plus
-   *             any `CODEGRAPH_CUSTOM_EXCLUDE` patterns.
+   *   Layer 1 — `scannerIgnoreFilter` (FileScanner's filter via
+   *             `FileSignalOptions.ignoreFilter`): BUILTIN_IGNORE_PATTERNS + the
+   *             user's `.gitignore` / `.contextignore` — the chunks do not exist
+   *             in Qdrant either, so it must be honoured.
+   *   Layer 2 — `this.codegraphExclusionFilter`: generated + test patterns,
+   *             language globs and `CODEGRAPH_CUSTOM_EXCLUDE` — excluded from
+   *             the graph while Qdrant still indexes them.
    *
-   * Directory-level early skip on both layers is a performance
-   * optimisation — `ignore` resolves trailing-slash patterns
-   * (`node_modules/`) against the dir path so we can skip recursion
-   * entirely instead of walking thousands of children just to filter
-   * them out file-by-file.
-   *
-   * Returns repo-relative POSIX paths.
+   * Two layers, not a union: merging them either leaks codegraph-only patterns
+   * into Qdrant or lets test files back into the graph. Directories are skipped
+   * early on both layers (trailing-slash probe). Returns repo-relative POSIX paths.
    */
   private discoverSupportedFiles(root: string, scannerIgnoreFilter?: Ignore): string[] {
     const out: string[] = [];
@@ -1650,11 +1267,8 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
         return;
       }
       for (const entry of entries) {
-        // Hidden dotfiles still get pruned at the codegraph layer — the
-        // FileScanner filter doesn't carry a blanket dotfile rule
-        // (BUILTIN_IGNORE_PATTERNS only lists specific dotted entries
-        // like `.git/`, `.DS_Store`). Preserve `.claude-plugin/` as the
-        // one allowed exception because it ships shipped plugin source.
+        // Dotfiles are pruned at this layer (the scanner filter has no blanket
+        // dotfile rule); `.claude-plugin/` is the one exception — shipped source.
         if (entry.name.startsWith(".") && entry.name !== ".claude-plugin") continue;
         const full = join(dir, entry.name);
         const relPath = relative(root, full).replace(/\\/g, "/");
@@ -1678,15 +1292,7 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
     return out;
   }
 
-  /**
-   * Parse a single file from disk and produce a `FileExtraction`
-   * matching the chunker's symbol shape. Dispatches by file extension
-   * to the appropriate language config (parser + walker + symbol
-   * collector). The chunker proper applies richer hooks (class-body,
-   * test-DSL, oversized split) — codegraph needs only the top-level
-   * symbol identifiers, so a simple per-language walker over
-   * function/method/class declarations is sufficient.
-   */
+  /** Parse + walk one file from disk, recording its pass-1 time. */
   private extractOneFile(root: string, relPath: string): FileExtraction {
     const startedAtMs = Date.now();
     const extraction = this.parseFileExtraction(root, relPath);
@@ -1733,11 +1339,8 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
       // is a defensive guard for callers that pass paths directly.
       return { relPath, language: "", imports: [], chunks: [], fileScope: [] };
     }
-    // Walker capability (walk + nameOf) comes from the injected LanguageFactoryDescriptor
-    // — keyed by language NAME (not extension). Parser-load + scopeSeparator +
-    // disambiguateOverloads stay sourced from CODEGRAPH_LANGUAGES (kept in place
-    // for this slice). The factory's walker is the legacy adapter's faithful
-    // wrap of the SAME CODEGRAPH_LANGUAGES walk/nameOf, so output is unchanged.
+    // The walker (walk + nameOf) comes from the injected factory, keyed by language
+    // NAME; parser, scopeSeparator and disambiguateOverloads from CODEGRAPH_LANGUAGES.
     const { walker } = this.deps.languageFactory.create(langConfig.language);
     if (!walker) {
       // Defensive: a code language always has a walker (markdown — the only
@@ -1748,17 +1351,13 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
     const code = readFileSync(join(root, relPath), "utf8");
     const parser = new Parser();
     parser.setLanguage(langConfig.loadParser());
-    // Materialize the native tree immediately after parse so all downstream
-    // consumers (collectSymbols + walker.walk) see the deterministic plain-JS
-    // AstNode tree. Mirrors the chunker boundary (rdv7d fix for the incremental
-    // reindex_changes path).
+    // Materialize the native tree right after parse so collectSymbols and the walk
+    // both see the deterministic plain-JS AstNode tree, as at the chunker boundary
+    // (rdv7d).
     const nativeTree = parser.parse(code);
-    // bd tea-rags-mcp-1v12o.2.4 — a file bearing none of the node types this
-    // language's walker reads yields the empty extraction, and materializing it
-    // to learn that is the single most expensive thing pass 1 does on a corpus
-    // carrying generated data tables. Asked on the NATIVE tree, before the
-    // materializer allocates a JS node per syntax node. Same empty shape the
-    // walker-less branch above returns.
+    // bd tea-rags-mcp-1v12o.2.4 — a file bearing none of the node types the walker
+    // reads yields the empty extraction; ask the NATIVE tree before materializing
+    // it, the most expensive thing pass-1 does on generated data tables.
     if (fileIsInertForExtraction(nativeTree.rootNode, walker.extractionBearingNodeTypes)) {
       return { relPath, language: langConfig.language, imports: [], chunks: [], fileScope: [] };
     }
@@ -1795,11 +1394,8 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
     options?: ChunkSignalOptions,
   ): Promise<Map<string, Map<string, ChunkSignalOverlay>>> {
     const { graphDb } = await this.getStore(options?.collectionName);
-    // Batched read-back (replaces the former per-chunk getCalledByCount +
-    // getCallSiteCount + getPageRank N+1 — 3 serial IPC+SQL round-trips per
-    // chunk over the daemon socket): one set-based fetch of every symbol's
-    // {fanIn, fanOut, pageRank}, then an in-memory lookup per chunk. Values are
-    // identical to the point getters (a symbol absent from the map is {0,0,0}).
+    // One set-based fetch of every symbol's {fanIn, fanOut, pageRank}, then an
+    // in-memory lookup per chunk; values equal the point getters (absent ⇒ {0,0,0}).
     const bulkStartMs = isDebug() ? Date.now() : 0;
     const chunkSignals = await graphDb.getChunkSignalsBulk();
     if (isDebug()) {
@@ -1809,13 +1405,9 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
       });
     }
     const out = new Map<string, Map<string, ChunkSignalOverlay>>();
-    // 6aytq — the symbol→chunk join is collected across the WHOLE pass and
-    // written once at the end. Per-file it was one transaction (and, behind the
-    // daemon, one socket round-trip) per file carrying one single-row UPDATE per
-    // symbol: 10,478 round-trips for 44,087 rows on taxdome, which WAS the
-    // measured 14.0s `deferredChunk` step of the completion tail — against a
-    // 0.21s bulk read of the same graph. Nothing in the loop reads it back, so
-    // deferring the write changes only its shape.
+    // 6aytq — the symbol→chunk join is collected across the WHOLE pass and written
+    // once at the end: per file it was one daemon round-trip of single-row UPDATEs.
+    // Nothing in the loop reads it back, so deferring the write changes only its shape.
     const chunkIdJoins: SymbolChunkIdJoinEntry[] = [];
     const rangesByFile = this.chunkSymbolByLine.get(this.collectionKey(options?.collectionName));
     const settlementTally = new CodegraphChunkSettlementTally();
@@ -1830,27 +1422,20 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
       // empty map passed off as a result (bd tea-rags-mcp-fxio5).
       const settlement = settleCodegraphChunkSignals(this.chunkRangeSourceFor(relPath, ranges), entries, chunkSignals);
       settlementTally.record(relPath, settlement, entries.length);
-      // Confidence-weighted fanIn/fanOut (bd tea-rags-mcp-s5ato — fractional
-      // under dynamic/cone fan-out, integer for exact edges) + per-symbol
-      // PageRank from cg_symbols_metrics, read from the bulk map; a missing
-      // symbol ⇒ {0,0,0}, identical to the point getters. Bare inner keys
-      // (tea-rags-mcp-k6xu) under providerKey `codegraph.symbols.chunk`.
+      // Confidence-weighted fanIn/fanOut (bd tea-rags-mcp-s5ato) + PageRank from
+      // the bulk map; bare inner keys (tea-rags-mcp-k6xu) under providerKey
+      // `codegraph.symbols.chunk`.
       out.set(relPath, toChunkSignalOverlays(settlement, entries));
-      // 0rskm — store-time symbol→covering-chunk join. The walker's per-file
-      // ranges hold EVERY extracted symbol, including methods of a collapsed
-      // class that got no own Qdrant chunk. Project them to symbol→startLine,
-      // run the containment join against this file's chunk entries, and
-      // backfill cg_symbols.chunk_id.
+      // 0rskm — store-time symbol→covering-chunk join. The walker's ranges hold
+      // EVERY extracted symbol, including methods of a collapsed class with no own
+      // Qdrant chunk; project them to symbol→startLine and backfill
+      // cg_symbols.chunk_id.
       if (ranges && ranges.length > 0) {
         const symbolStartLines = symbolStartLinesOf(ranges);
-        // Named even when the join came back EMPTY (bd tea-rags-mcp-tslvq). The
-        // write is REPLACE-per-named-file now, and naming a file is the ONLY
-        // way its symbols' stale chunk_id gets retired: `upsertSymbolsBulk` is a
-        // row diff, so a re-walked symbol whose definition did not change keeps
-        // the join already on disk. A file whose symbols all fell out of every
-        // chunk's line range is exactly the case that must still reach the
-        // writer. A file absent from this pass's chunkMap, or one this run never
-        // walked, is not named — its join is still valid.
+        // Named even when the join came back EMPTY (bd tea-rags-mcp-tslvq): the
+        // write REPLACES per named file, and naming a file is the only way its
+        // symbols' stale chunk_id is retired (`upsertSymbolsBulk` is a row diff).
+        // A file absent from this pass, or never walked this run, is not named.
         chunkIdJoins.push({ relPath, chunkIds: computeSymbolChunkIds(symbolStartLines, entries) });
       }
     }
@@ -1904,33 +1489,6 @@ function nodeFlushFilesFromEnv(): number {
   return 256;
 }
 
-/**
- * Per-language `nameOf` functions: NONE remain here. ALL source languages —
- * TypeScript (`tsNameOf`), JavaScript (`jsNameOf` + its CommonJS helper web),
- * Ruby (`rbNameOf`), Python (`pyNameOf`), Go (`goNameOf` + its
- * `extractGoReceiverType` helper), Java (`javaNameOf`), Rust (`rustNameOf` + its
- * `stripRustGenerics` helper) and Bash (`bashNameOf`, the LAST one) — migrated
- * to native `domains/language/<lang>` providers (tea-rags-mcp-cen6); the engine
- * reads each one's `nameOf` from `factory.create(lang).walker.nameOf`. Markdown
- * stays doc-only via the legacy adapter (chunker-only, no walker / nameOf — it
- * has no `CODEGRAPH_LANGUAGES` entry). `methodKindFromClassify` is GONE too — the
- * native walkers reuse the kernel copy at
- * `domains/language/kernel/method-kind.ts`. The `classifyMethod` import is
- * likewise gone: bash's `nameOf` (its last in-file user) never needed it (bash
- * has no method concept), and the rust step already removed the helper.
- */
-
-/**
- * Slice 2 helper — drain `graphDb.streamAdjacency(scope)` into the
- * compact `Map<string, string[]>` shape that `tarjanScc` and
- * `pageRank` consume. Differs from the legacy `listAdjacency` only in
- * that the adapter no longer pre-bucketed the rows; we build the Map
- * exactly once here. The per-edge confidence (third stream element,
- * method scope only — bd tea-rags-mcp-s5ato) is bucketed into an
- * index-aligned weight map for the weighted PageRank pass; absent
- * weights (file scope, legacy rows) default to 1. Mirrors the daemon
- * copy in `adapters/duckdb/daemon/server.ts`.
- */
 /**
  * The symbol→startLine input of {@link computeSymbolChunkIds}, projected from
  * the walker's per-file ranges exactly as the pre-9i2ow startLine-keyed line map

@@ -140,18 +140,11 @@ function unwrittenTerminalLevels(progress: CompletionTerminalMarkerProgress): re
 export class CompletionRunner {
   /**
    * Provider keys whose persisted pass-1 aggregate read failed THIS run
-   * (bd tea-rags-mcp-weno4).
-   *
-   * The read is best-effort — a store we cannot read is not a reason to abort a
-   * run — but it is not free either: without the injected rows the codegraph
-   * barrier falls back to a read that a stale daemon answers with
-   * `unknown daemon op: listAllPass1Aggregates`, and the znxg8 repair silently
-   * becomes a no-op. Such a run resolves entry calls against a batch-scoped
-   * registry, so it is degraded and the terminal FILE marker has to say so;
-   * stderr alone left it looking clean in every artifact anyone reads.
-   *
-   * Per RUN, not per instance: the coordinator holds one runner across runs, so
-   * `run` clears this before anything can add to it.
+   * (bd tea-rags-mcp-weno4). The read is best-effort, but without the injected
+   * rows the codegraph barrier either reads the store itself or, when that read
+   * fails too, resolves against a batch-scoped registry — a degraded run whose
+   * terminal FILE marker must say so, not stderr alone. Per RUN: the coordinator
+   * holds one runner across runs, so `run` clears this before anything adds to it.
    */
   private readonly pass1AggregateReadFailures = new Set<string>();
 
@@ -383,16 +376,13 @@ export class CompletionRunner {
       // (incremental finalize runs on this same instance and owns its own flush)
       // and for providers without the seam (git omits it).
       if (filePhase.crossPassEnabled) await ctx.provider.endExtractionRun?.(coll || undefined);
-      // bd tea-rags-mcp-weno4 — read the provider's persisted pass-1 aggregate
-      // slices HERE, on the MAIN instance, and inject them into the finalize
-      // below. `runFinalize` dispatches to a worker whose `GraphDbClientPool` has
-      // no `daemonRestart` hook, so it tolerates a daemon compiled from other
-      // source and its own read of these rows can come back
-      // `unknown daemon op: listAllPass1Aggregates` — which the codegraph barrier
-      // guards by degrading to a batch-scoped registry, undoing the whole znxg8
-      // repair with nothing but a stderr line (observed on taxdome). This
-      // instance's pool DOES wire the hook, so it respawns the stale daemon and
-      // the read succeeds. Providers with no pass-1 store (git) omit the method.
+      // bd tea-rags-mcp-weno4 — read the persisted pass-1 aggregate slices HERE,
+      // on the MAIN instance, and inject them into the finalize below. This
+      // instance's pool replaces a daemon from another build or one lacking a
+      // required op; the worker `runFinalize` dispatches to cannot respawn and,
+      // since 39xca.4, refuses such a daemon with `CodegraphDaemonBuildSkewError`
+      // rather than silently degrading the znxg8 repair. Providers with no
+      // pass-1 store (git) omit the method.
       const pass1Aggregates = await this.readPass1Aggregates(coll, ctx);
       // yl9tv Task 5b — thread crossPass so the codegraph worker's finalize
       // drains the main-written input spill (pass-1) before resolving (pass-2),

@@ -1,27 +1,12 @@
 /**
- * Per-collection DuckDB pool for codegraph isolation.
+ * Per-collection DuckDB pool for codegraph isolation: one
+ * `<dataDir>/codegraph/<collectionName>.duckdb` per collection, opened lazily,
+ * migrated once, cached.
  *
- * Each indexed project (Qdrant collection) owns its own
- * `<dataDir>/codegraph/<collectionName>.duckdb` file. The pool lazily
- * opens / initialises a `DuckDbGraphClient` on the first request for a
- * given collection, runs the schema migrations once, and caches the
- * client for subsequent calls.
- *
- * Why per-file:
- * 1. DuckDB is single-writer per file. A shared DB blocks new MCP
- *    processes when an older one holds the lock — silently disabling
- *    codegraph for every project. Per-collection files isolate that
- *    lock to within a single project.
- * 2. The slice 1 schema has no `collection_id` column on the
- *    `cg_symbols_*` tables. Indexing two projects against one DB would
- *    collide on PKs (e.g. both repos with a `README.md` -> duplicate
- *    `cg_symbols_files.rel_path` row). Separate files mean no collision.
- *
- * The pool intentionally has no cap on open instances — tea-rags
- * registers a small number of projects in practice (single digits),
- * and each open DB costs ~one file handle + a small in-memory symbol
- * table. The `release(collectionName)` helper exists for tests that
- * need to reset state.
+ * Per-file because DuckDB is single-writer per file (a shared DB lets one
+ * process's lock disable codegraph for every project) and the `cg_symbols_*`
+ * tables carry no collection column (two projects would collide on PKs). No cap
+ * on open instances; `release(collectionName)` exists for tests.
  */
 
 import { mkdirSync } from "node:fs";
@@ -45,10 +30,9 @@ import {
 import { purgeStaleSpills } from "./spill-files.js";
 
 /**
- * Drain-respawn attempts before `CodegraphDaemonStaleBuildError`. Three covers
- * losing a spawn race to another MCP process (the winner stops racing once it
- * owns the daemon) while still failing fast on a respawn hook that keeps
- * launching a stale binary — see `connectWithBuildHandshake`.
+ * Drain-respawn attempts before `CodegraphDaemonStaleBuildError`: enough to lose
+ * a spawn race to another MCP process, few enough that a respawn hook launching a
+ * stale binary fails fast (bd tea-rags-mcp-ryoqn) — see `connectWithBuildHandshake`.
  */
 const DEFAULT_MAX_RESTART_ATTEMPTS = 3;
 
@@ -82,10 +66,9 @@ function describeDaemonSkew(verdict: DaemonCapabilityVerdict, clientFingerprint:
 }
 
 /**
- * Initialiser hook the pool calls once per newly-opened collection
- * client. Receives the per-collection symbol table so the caller can
- * hydrate it from disk. The pool itself does not import the in-memory
- * symbol-table implementation — that lives in the codegraph domain.
+ * Initialiser hook the pool calls once per newly-opened collection client, so
+ * the codegraph domain can hydrate the symbol table — the pool does not import
+ * the in-memory symbol-table implementation.
  */
 export type CollectionInitHook = (args: {
   collectionName: string;
@@ -100,18 +83,12 @@ export interface GraphDbClientPoolOptions {
   rootDir: string;
   /** Factory for the per-collection in-memory symbol table. */
   symbolTableFactory: SymbolTableFactory;
-  /**
-   * Hook called once per collection after migrations apply. Used by the
-   * codegraph trajectory to hydrate the symbol table from the freshly
-   * opened DB.
-   */
+  /** Called once per collection after migrations apply; hydrates the symbol table. */
   initHook?: CollectionInitHook;
   /**
-   * Slice 2 — per-DuckDB resource ceiling applied at init time on
-   * every opened collection. See `DuckDbGraphClientOptions.resources`.
-   * `tempDirectory` is auto-derived from `rootDir` when omitted so all
-   * pool-managed collections share one spill directory; callers can
-   * override for tests.
+   * Per-DuckDB resource ceiling applied at init on every opened collection (see
+   * `DuckDbGraphClientOptions.resources`). `tempDirectory` defaults under
+   * `rootDir`, so all pool-managed collections share one spill directory.
    */
   resources?: {
     memoryLimit?: string;
@@ -126,21 +103,19 @@ export interface GraphDbClientPoolOptions {
    */
   applyMigrations: DatabaseMigrationApplier;
   /**
-   * Unix socket of the running codegraph daemon. When set, `acquireWrite`
-   * routes mutations through a `DaemonGraphDbClient` over this socket — the
-   * single daemon process holds the RW DuckDB lock so concurrent MCP
-   * processes never contend on it. When absent (direct/test mode),
-   * `acquireWrite` falls back to the in-process RW handle (`acquire`).
-   * Reads (`acquireRead`) always go in-process READ_ONLY and ignore this.
+   * Unix socket of the running codegraph daemon. When set, `acquireWrite` and
+   * `acquireReader` route through a `DaemonGraphDbClient` — the daemon holds the
+   * RW DuckDB lock, so concurrent MCP processes never contend on it. Absent
+   * (direct/test mode): in-process handles.
    */
   daemonSocketPath?: string;
   /**
-   * Build-version handshake restart wiring (bd tea-rags-mcp-ji56r), daemon
-   * mode only. When the daemon's handshake fingerprint differs from ours, the
-   * pool drains it (graceful `shutdown` op), waits for its lifecycle files to
-   * clear, invokes `respawn` to cold-spawn a daemon from THIS build, and
-   * reconnects — repeated up to `maxRestartAttempts` times. Absent fingerprint
-   * on either side (legacy peer) → no restart, proceed as before.
+   * Build + capability handshake restart wiring, daemon mode only (bd
+   * tea-rags-mcp-ji56r, 39xca.4). A daemon from another build, or one missing a
+   * required op, is drained, its exit awaited, `respawn` invoked and the
+   * connection retried up to `maxRestartAttempts`. A pre-fingerprint peer
+   * proceeds unchanged. Without `respawn` the pool never drains — see
+   * `connectWithBuildHandshake`.
    */
   daemonRestart?: {
     /** Cold-spawn hook — wired to `ensureCodegraphDaemon` by the bootstrap factory. */
@@ -176,13 +151,10 @@ interface DaemonClientEntry {
   client: DaemonGraphDbClient;
   wrapped: GraphDbClient;
   /**
-   * ONE in-memory symbol table per collection, shared across every
-   * acquireWrite/acquireReader for that collection (same lifecycle as the
-   * cached daemon client). Codegraph ingest does getStore-per-file-write and
-   * resolves method calls at finish against this table — a fresh table per
-   * acquire (the prior bug) lost every cross-file symbol, collapsing
-   * method-edge resolution. Mirrors the cached `entry.symbolTable` of the
-   * in-process `acquire` path.
+   * ONE in-memory symbol table per collection, shared by every acquire: pass-2
+   * resolves cross-file calls against it, so a table per acquire loses every
+   * other file's symbols and collapses method-edge resolution. Mirrors
+   * `PoolEntry.symbolTable`.
    */
   symbolTable: GlobalSymbolTable;
 }
@@ -207,12 +179,10 @@ export class GraphDbClientPool {
    */
   private readonly inflight = new Map<string, Promise<CollectionGraphHandle>>();
   /**
-   * Daemon mode only: ONE `DaemonGraphDbClient` per collection (a single unix
-   * socket per (collection, process)). `acquireWrite` / `acquireReader` reuse
-   * the cached client instead of opening a fresh socket per call — the client
-   * multiplexes concurrent requests by id, so one socket is enough. Closed in
-   * `closeAll` so the daemon-side per-connection refcount decrements when this
-   * process exits, letting the idle watcher fire and release the RW lock.
+   * Daemon mode only: ONE `DaemonGraphDbClient` (one socket) per (collection,
+   * process); the client multiplexes requests by id. Closed in `closeAll` so the
+   * daemon's per-connection refcount drops and its idle watcher can release the
+   * RW lock.
    */
   private readonly daemonClients = new Map<string, DaemonClientEntry>();
   /** In-flight daemon-client init so concurrent first-callers share one socket. */
@@ -221,16 +191,10 @@ export class GraphDbClientPool {
   constructor(private readonly options: GraphDbClientPoolOptions) {
     this.dbFiles = new CodegraphDbFiles(options.rootDir);
     mkdirSync(this.codegraphDir, { recursive: true });
-    // Slice 2 — reclaim NDJSON spill files left by a process that crashed
-    // before its sink.finish() ran, and recreate the directory so the first
-    // acquire's DuckDB init can SET temp_directory against an existing path.
-    //
-    // Per ENTRY, never the whole directory (bd tea-rags-mcp-v6gxr). Construction
-    // is not once per run: an unpinned enrichment worker rebuilds the provider
-    // (and a pool) for the pass-1 extraction fan-out, the daemon builds one in
-    // its own process on the first write, and a second CLI run builds one at
-    // start-up — each of them mid-flight for somebody. `purgeStaleSpills` keeps
-    // whatever a live pid still owns.
+    // Reclaim crashed runs' spills per ENTRY, never the whole directory (bd
+    // tea-rags-mcp-v6gxr): pools are built mid-flight by unpinned enrichment
+    // workers, the daemon and concurrent CLI runs, and `purgeStaleSpills` keeps
+    // whatever a live pid owns. Also recreates the dir for `SET temp_directory`.
     purgeStaleSpills(this.spillDir);
   }
 
@@ -239,16 +203,9 @@ export class GraphDbClientPool {
   }
 
   /**
-   * Spill directory under the codegraph root, SHARED by every pool over the
-   * same `rootDir` — including ones in other processes. Construction sweeps it
-   * (`purgeStaleSpills`) rather than wiping it, because "constructed a pool"
-   * has never implied "started the only run": the pass-1 extraction fan-out
-   * builds one in an unpinned enrichment worker, the daemon builds one in its
-   * own process on the first write, and a second CLI run builds one at
-   * start-up. The `.xpass` sibling below solved the same hazard by opting out
-   * of the wipe entirely; `.spill` cannot, since reclaiming a crashed run's
-   * NDJSON is the whole point — so it opts out per file, on ownership.
-   * Exposed via the `pathFor*` helpers below for tests.
+   * Spill directory under the codegraph root, shared by every pool over the same
+   * `rootDir`, across processes — hence the per-file ownership sweep at
+   * construction rather than a wipe.
    */
   private get spillDir(): string {
     return this.options.resources?.tempDirectory ?? join(this.codegraphDir, ".spill");
@@ -273,24 +230,11 @@ export class GraphDbClientPool {
   }
 
   /**
-   * Enumerate the versioned codegraph DB collection names on disk for a base
-   * collection — every `<base>_v<N>.duckdb` file in the codegraph dir, returned
-   * as the collection name (suffix stripped). Used by the orphan sweep to find
-   * ancient per-version DuckDB files whose Qdrant collection no longer exists
-   * (the sweep deletes those that are neither the active alias target nor backed
-   * by a live Qdrant collection).
-   *
-   * Includes the UNVERSIONED `<base>.duckdb` too (bd tea-rags-mcp-6goqa). It
-   * used to be excluded, which is exactly why the shadow file the incremental
-   * path wrote while addressing collections by their alias was invisible to the
-   * sweep and could never be reclaimed. Returning it is safe because the sweep
-   * skips any name that is the active alias target or is backed by a live
-   * Qdrant collection — and a genuinely unversioned, non-aliased project is the
-   * latter.
-   *
-   * Still scoped to `^<base>(_v\d+)?$` so it never touches another project's
-   * DBs or WAL/spill sidecars. Returns an empty array when the codegraph dir is
-   * missing (nothing indexed yet).
+   * Every `<base>_v<N>.duckdb` and the unversioned `<base>.duckdb` on disk, as
+   * collection names, for the orphan sweep. The unversioned name is included so
+   * an alias-addressed shadow file stays reclaimable (bd tea-rags-mcp-6goqa); the
+   * sweep itself skips the active alias target and live Qdrant collections.
+   * Scoped to `^<base>(_v\d+)?$`; empty when the codegraph dir is missing.
    */
   listCollectionDbNames(baseCollectionName: string): string[] {
     return this.dbFiles.listCollectionDbNames(baseCollectionName);
@@ -306,17 +250,11 @@ export class GraphDbClientPool {
   }
 
   /**
-   * yl9tv Task 5b — deterministic per-collection cross-pass INPUT spill path.
-   * The full-index chunk pass (main thread) sync-appends each file's
-   * `FileExtraction` here; the off-thread codegraph worker drains it in
-   * `finalizeSignals`. Lives in `.xpass`, a SIBLING of `.spill` that the pool
-   * constructor does NOT `rmSync` — critical, because the worker constructs its
-   * OWN pool mid-run (first dispatch) and would otherwise wipe the in-flight
-   * input spill the main thread is still writing. Deterministic (no runId): both
-   * the main and worker pools share `rootDir`, so both resolve the identical
-   * path. The provider truncates it at run start (`beginExtractionRun`) and
-   * removes it after draining, so a crashed run leaves at most one stale file
-   * that the next run overwrites.
+   * Deterministic cross-pass INPUT spill (yl9tv): the main thread appends each
+   * file's `FileExtraction`, the codegraph worker drains it in `finalizeSignals`.
+   * Lives in `.xpass`, which construction never sweeps — the worker builds its own
+   * pool mid-run. No runId: main and worker pools share `rootDir` and must
+   * resolve the same path.
    */
   inputSpillPathFor(collectionName: string): string {
     return join(this.xpassDir, `${sanitiseCollectionName(collectionName)}.ndjson`);
@@ -357,15 +295,9 @@ export class GraphDbClientPool {
   }
 
   /**
-   * Acquire a WRITE handle for `collectionName`. When `daemonSocketPath`
-   * is configured, returns a `DaemonGraphDbClient` that proxies mutations
-   * to the daemon (which owns the single RW DuckDB connection across all
-   * processes). Otherwise delegates to the in-process RW path (`acquire`)
-   * for direct/test mode.
-   *
-   * The import is dynamic so the daemon client module is only loaded when
-   * daemon mode is actually wired — direct/test mode never touches the
-   * `node:net` socket code.
+   * Acquire a WRITE handle: through the daemon (the single RW connection across
+   * processes) when `daemonSocketPath` is configured, else the in-process RW
+   * handle (`acquire`).
    */
   async acquireWrite(collectionName: string): Promise<CollectionGraphHandle> {
     if (this.options.daemonSocketPath) {
@@ -375,13 +307,9 @@ export class GraphDbClientPool {
   }
 
   /**
-   * Return a handle backed by the ONE cached `DaemonGraphDbClient` for
-   * `collectionName` (lazily created + init'd on first use, reused after).
-   * The handle's `graphDb` is a thin proxy whose `close()` is a NO-OP — the
-   * pool owns the real socket close via `closeAll`. If a per-call `close()`
-   * ended the shared socket, the next acquire would have to reconnect (the
-   * leak this fix removes), and `GraphFacade.withReadHandle`'s `finally`
-   * close would tear down the socket other in-flight callers share.
+   * Handle over the ONE cached `DaemonGraphDbClient` for the collection. Its
+   * `close()` is a no-op: the pool owns the socket (`closeAll`), and a caller's
+   * `finally` close must not tear it down under other in-flight callers.
    */
   private async acquireDaemonHandle(collectionName: string): Promise<CollectionGraphHandle> {
     const entry = await this.acquireDaemonClient(collectionName);
@@ -391,19 +319,15 @@ export class GraphDbClientPool {
   /**
    * Lazily create + init the single cached `DaemonGraphDbClient` for a
    * collection (plus its stable no-op-close wrapper). Concurrent first-callers
-   * share one init pass via `daemonInflight` (no duplicate sockets during a
-   * burst of acquires).
+   * share one init pass via `daemonInflight`.
    */
   private async acquireDaemonClient(collectionName: string): Promise<DaemonClientEntry> {
     const cached = this.daemonClients.get(collectionName);
     if (cached?.client.isConnected()) return cached;
     if (cached) {
-      // The daemon idle-exits after 30s while this cache lives as long as the
-      // process, so a cached client outliving its daemon is routine. Keeping it
-      // would fail every later graph call with "call after close" until the
-      // process restarts. Drop it and cold-spawn: `respawn` is single-flighted
-      // and alive-checked, so calling it when a daemon is in fact running is a
-      // no-op.
+      // A cached client routinely outlives its daemon (30s idle exit). Drop it
+      // and cold-spawn: `respawn` is single-flighted and alive-checked, so it is
+      // a no-op when a daemon is in fact running.
       this.daemonClients.delete(collectionName);
       this.options.daemonRestart?.respawn?.();
     }
@@ -417,11 +341,9 @@ export class GraphDbClientPool {
     const promise = (async (): Promise<DaemonClientEntry> => {
       const client = await this.connectWithBuildHandshake(socketPath, collectionName);
       const wrapped = wrapNoopClose(client);
-      // One shared symbol table per collection (see DaemonClientEntry doc).
-      // Hydrate it from the daemon's DuckDB via the init hook — mirrors
-      // openCollection so cross-file / incremental-reindex resolution sees
-      // symbols from files NOT re-walked this run. Non-fatal on failure:
-      // the table just starts empty and the next ingest pass repopulates.
+      // Hydrate like `openCollection`, so resolution sees symbols from files not
+      // re-walked this run. Non-fatal: the table starts empty and the next ingest
+      // pass repopulates it.
       const symbolTable = this.options.symbolTableFactory();
       if (this.options.initHook) {
         try {
@@ -443,27 +365,17 @@ export class GraphDbClientPool {
   }
 
   /**
-   * Connect to the daemon and exchange build fingerprints (bd
-   * tea-rags-mcp-ji56r). Same build or a legacy peer (no fingerprint in the
-   * response) → return the connected client, exactly as before. A DIFFERENT
-   * fingerprint means the daemon runs stale code (spawned before the last
-   * `npm run build` / `npm link` flip): drain it gracefully, cold-spawn a
-   * fresh daemon from THIS build via the respawn hook, reconnect, and
-   * re-verify — retried up to `maxRestartAttempts` times, then a typed error.
+   * Connect and run the build + capability handshake (bd tea-rags-mcp-ji56r,
+   * 39xca.4). A daemon of this build serving every required op, or a
+   * pre-fingerprint peer, is returned as is. Otherwise a respawn-capable pool
+   * drains, respawns and reconnects up to `maxRestartAttempts`, then throws
+   * `CodegraphDaemonBuildSkewError` (its own build still short of an op) or
+   * `CodegraphDaemonStaleBuildError`.
    *
-   * Why a bound and not a single shot (bd tea-rags-mcp-ryoqn). One shot was
-   * too tight: this machine runs several MCP processes against ONE daemon
-   * socket, and `ensureCodegraphDaemon` is single-flighted by a cross-process
-   * lock, so a session that loses the race saw the WINNER's build come back
-   * and failed outright — no deadlock, just bad luck. The winner stops racing
-   * as soon as it has its daemon, so a second attempt usually settles it.
-   *
-   * Why the bound stays small. Each attempt drains a daemon every other
-   * process on the machine shares, so looping until healthy would thrash them
-   * and could livelock two sessions draining each other forever. Three
-   * attempts absorb the race while keeping a genuinely stale respawn hook
-   * (same build back every time) failing in about a second, and
-   * `CodegraphDaemonExitTimeoutError` from the drain is never retried at all.
+   * The bound is small on purpose (bd tea-rags-mcp-ryoqn): each attempt drains a
+   * daemon every process on the machine shares, so looping until healthy would
+   * thrash them and could livelock two sessions; `CodegraphDaemonExitTimeoutError`
+   * from the drain is never retried.
    */
   private async connectWithBuildHandshake(socketPath: string, collectionName: string): Promise<DaemonGraphDbClient> {
     // Dynamic so direct/test mode never loads the node:net socket code.
@@ -471,30 +383,20 @@ export class GraphDbClientPool {
     const restart = this.options.daemonRestart;
     const localFingerprint = restart?.buildFingerprint ?? getBuildFingerprint();
 
-    // The respawn hook doubles as the crash-recovery hook (bd
-    // tea-rags-mcp-8l8d3). A daemon killed by a native DuckDB FatalException
-    // takes every in-flight request down with it and cannot report the failure
-    // — the abort never becomes a JS throw. Handing the client the same
-    // cold-spawn it uses for a stale build lets it bring a daemon back and
-    // replay what was in flight, instead of failing the whole indexing run.
-    // Pools without the hook (worker-thread pools rebuilt from serializable
-    // config) keep the previous reject-everything behaviour.
+    // The respawn hook doubles as crash recovery (bd tea-rags-mcp-8l8d3): a
+    // daemon killed by a native abort cannot report it, so the client respawns
+    // and replays in-flight requests. Pools without the hook reject them instead.
     const onConnectionLost = restart?.respawn;
     const first = new DaemonGraphDbClient(socketPath, collectionName, { onConnectionLost });
     await first.init();
     const verdict = assessDaemonCapability(await first.handshake(localFingerprint), localFingerprint);
-    // Same build serving every required op, or a legacy pre-fingerprint peer →
-    // proceed as today.
+    // Same build serving every required op, or a legacy pre-fingerprint peer.
     if (!needsDaemonReplacement(verdict)) return first;
 
-    // Restart is gated on a wired respawn hook: draining a daemon this pool
-    // cannot cold-spawn again (worker-thread pools rebuilt from serializable
-    // config) would strand codegraph for every process on the machine. Such a
-    // pool tolerates a daemon from another build ONLY while it advertises every
-    // required op (bd tea-rags-mcp-39xca.4); one lacking a required op — or one
-    // too old to say what it supports — is refused before any run work, because
-    // proceeding turns each missing op into missing data. The main MCP process,
-    // whose factory wires the hook, performs the actual restart.
+    // No respawn hook (worker-thread pools rebuilt from serializable config):
+    // never drain — the daemon is shared machine-wide and this pool could not
+    // bring one back. Proceed only against a daemon advertising every required
+    // op; refuse one lacking an op, or too old to say (bd tea-rags-mcp-39xca.4).
     const respawn = restart?.respawn;
     if (!respawn) {
       if (refusesDaemon(verdict)) {
@@ -598,16 +500,9 @@ export class GraphDbClientPool {
   }
 
   /**
-   * Acquire a READ-ONLY handle for `collectionName`. Always opens the live
-   * versioned DuckDB file in-process with `access_mode=READ_ONLY` — DuckDB
-   * permits unlimited concurrent cross-process readers, so this never
-   * contends with the daemon's RW lock. The full (unstripped) collection
-   * name resolves the same `<collection>.duckdb` file the write path
-   * populated.
-   *
-   * The returned handle is NOT cached in `clients` (each reader opens its
-   * own RO connection); callers MUST `close()` the returned `graphDb` when
-   * done — `closeAll`/`release` only manage the cached RW entries.
+   * Acquire a READ-ONLY handle: the live `<collection>.duckdb` attached
+   * in-process with `access_mode=READ_ONLY` (unlimited concurrent cross-process
+   * readers). Not cached — callers MUST `close()` it.
    *
    * An attach the driver refuses (lock held, unreadable file) rejects with
    * `DuckDbOpenFailedError`, like the RW path — optional read consumers
@@ -626,19 +521,11 @@ export class GraphDbClientPool {
   }
 
   /**
-   * Mode-aware READ handle for the GraphFacade. When `daemonSocketPath` is
-   * configured (production), returns a `DaemonGraphDbClient` that PROXIES the
-   * facade reads (`getCallers` / `getCallees` / `findCycles` / `getCalleeEdges`) through the
-   * daemon's own RW connection — DuckDB's RW lock is process-exclusive, so a
-   * cross-process READ_ONLY attach throws "Conflicting lock is held" while the
-   * daemon holds RW. Routing reads through the daemon (the sole file opener)
-   * eliminates the conflict entirely. In direct/test mode (no socket) falls back
-   * to the in-process READ_ONLY attach (`acquireRead`).
-   *
-   * Either handle's `close()` is safe to call in the facade's `finally`: in
-   * daemon mode it is a NO-OP (the pool owns the ONE cached socket per
-   * collection, closed in `closeAll`); in direct/test mode the in-process RO
-   * handle closes its own file.
+   * Mode-aware READ handle for the GraphFacade. Daemon mode proxies reads through
+   * the daemon's own RW connection — a cross-process READ_ONLY attach throws
+   * "Conflicting lock is held" while the daemon holds RW. Direct/test mode
+   * attaches READ_ONLY in-process (`acquireRead`). Calling `close()` is safe
+   * either way (a no-op in daemon mode).
    */
   async acquireReader(collectionName: string): Promise<CollectionGraphHandle> {
     if (this.options.daemonSocketPath) {
@@ -674,9 +561,8 @@ export class GraphDbClientPool {
       try {
         await this.options.initHook({ collectionName, graphDb, symbolTable });
       } catch (err) {
-        // Init-hook failure (e.g. hydration query) is non-fatal: the
-        // DB is open, the symbol table just starts empty. Next ingest
-        // pass repopulates affected files.
+        // Non-fatal: the DB is open, the symbol table just starts empty and the
+        // next ingest pass repopulates affected files.
         process.stderr.write(
           `[tea-rags] codegraph init-hook failed for ${collectionName}: ${(err as Error).message}\n`,
         );
@@ -689,10 +575,8 @@ export class GraphDbClientPool {
   }
 
   /**
-   * Drop the cached client for a collection (close + forget). Used by
-   * `clearIndex` paths in the future and by tests that need to release
-   * the file lock between scenarios. Returns true when an entry was
-   * actually evicted.
+   * Drop the cached client for a collection (close + forget), e.g. to release the
+   * file lock between test scenarios. Returns true when an entry was evicted.
    */
   async release(collectionName: string): Promise<boolean> {
     const entry = this.clients.get(collectionName);
@@ -703,24 +587,15 @@ export class GraphDbClientPool {
   }
 
   /**
-   * Copy the DuckDB file for sourceCollection to targetCollection, WAL sidecar
-   * included. No-op when the source file does not exist (codegraph disabled /
-   * not built).
+   * Copy sourceCollection's DuckDB file to targetCollection, WAL sidecar
+   * included; no-op without a source file.
    *
-   * The `.wal` travels with the database because the database file alone is
-   * only the state as of its last checkpoint — everything written since lives
-   * in the sidecar, and a clone that drops it is silently rolled back to that
-   * checkpoint. Mirrors `removeCollection`, which has always treated the pair
-   * as one artifact. A target WAL with no source counterpart is REMOVED rather
-   * than left: collection names get reused, and replaying a previous tenant's
-   * write log over a freshly copied database is worse than the truncation this
-   * copy avoids.
-   *
-   * `release` drops this process's cached client, which checkpoints on close —
-   * but ONLY when the client is in this pool's cache. A database held by the
-   * codegraph daemon (or any other process) is not released here and keeps an
-   * unflushed WAL, which is exactly why the sidecar has to be copied instead of
-   * assumed empty.
+   * The `.wal` holds everything since the last checkpoint, so a clone without it
+   * is silently rolled back — `removeCollection` treats the pair as one artifact
+   * too. A target WAL with no source counterpart is REMOVED: collection names get
+   * reused, and replaying a previous tenant's log over the copy is worse. `release`
+   * checkpoints only this pool's cached client; a daemon-held database keeps an
+   * unflushed WAL, which is why the sidecar is copied rather than assumed empty.
    */
   async cloneDatabase(sourceCollection: string, targetCollection: string): Promise<void> {
     await this.release(sourceCollection);
@@ -728,25 +603,18 @@ export class GraphDbClientPool {
   }
 
   /**
-   * Drop the cached client for a collection AND delete its on-disk
-   * DuckDB file (plus WAL sidecar). Used by the clear / delete /
-   * force-reindex paths in IngestFacade and CollectionOps so the
-   * per-collection codegraph DB does not outlive the Qdrant collection
-   * it shadows.
+   * Drop the cached client AND delete the on-disk DuckDB file plus WAL, so the
+   * codegraph DB does not outlive the Qdrant collection it shadows (clear /
+   * delete / force-reindex paths).
    *
    * Contract:
-   * - Closes the cached connection first (if any). Close failure throws
-   *   `DuckDbCloseFailedError` — the disk file is NOT unlinked when the
-   *   driver rejects close, since unlinking a file the driver still
-   *   holds open is undefined behaviour on some platforms.
-   * - Unlink errors are swallowed when the file is already gone (ENOENT
-   *   — makes the method idempotent). Other unlink errors are also
-   *   swallowed because the eviction-from-cache step has already
-   *   succeeded; a stale file on disk is preferable to leaving the pool
-   *   half-mutated, and a subsequent `acquire` will simply overwrite it.
+   * - Close failure throws `DuckDbCloseFailedError` and the file is NOT unlinked:
+   *   unlinking a file the driver still holds is undefined on some platforms.
+   * - Unlink errors are swallowed (ENOENT makes it idempotent; anything else
+   *   leaves a stale file a later `acquire` overwrites, rather than a
+   *   half-mutated pool).
    *
-   * Returns true when a cached entry was evicted; the disk-side cleanup
-   * happens regardless of whether the entry was cached.
+   * Returns true when a cached entry was evicted; disk cleanup runs regardless.
    */
   async removeCollection(collectionName: string): Promise<boolean> {
     const dbPath = this.pathFor(collectionName);
@@ -766,14 +634,9 @@ export class GraphDbClientPool {
   }
 
   /**
-   * Close every cached client — both the in-process RW clients AND the cached
-   * daemon-mode socket clients. Idempotent. Used at shutdown.
-   *
-   * Closing the daemon clients ends their unix sockets, which fires the
-   * daemon-side per-connection `close` handler (`decrementRefs`). When the last
-   * client process closes, the daemon's refcount reaches 0 and its idle watcher
-   * tears it down, releasing the RW DuckDB lock. Without this, the sockets stay
-   * open until the process dies and the daemon never sees refs hit 0.
+   * Close every cached client — in-process RW clients AND daemon-mode sockets.
+   * Idempotent; used at shutdown. Closing the sockets is what lets the daemon's
+   * refcount reach 0 and its idle watcher release the RW lock.
    */
   async closeAll(): Promise<void> {
     const all = [...this.clients.values()];
