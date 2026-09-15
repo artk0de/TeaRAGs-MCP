@@ -76,6 +76,103 @@ describe("HybridSearchStrategy", () => {
     expect(generatedSparse.values.length).toBeGreaterThan(0);
   });
 
+  // tea-rags-mcp-2fefq: for an identifier query both legs missed the symbol's
+  // own chunks (dense ranked tiny look-alikes first, BM25 drowned the tokens in
+  // their domain). The identity leg is the only carrier of "this chunk belongs
+  // to symbol X": the dense vector restricted to exact symbolId/parentSymbolId.
+  describe("identity leg (tea-rags-mcp-2fefq)", () => {
+    const requestFilter = { must: [{ key: "isTest", match: { value: true } }] };
+    const workerIdentity = {
+      should: [
+        {
+          must: [
+            { key: "parentSymbolId", match: { text: "Worker" } },
+            { key: "parentSymbolId", match: { value: "Platform::Async::Operation::Worker" } },
+          ],
+        },
+        {
+          must: [
+            { key: "symbolId", match: { text: "Worker" } },
+            { key: "symbolId", match: { value: "Platform::Async::Operation::Worker" } },
+          ],
+        },
+      ],
+    };
+
+    it("asks for an identity prefetch filter when the query is one identifier, keeping the request filter", async () => {
+      const qdrant = createMockQdrant(true, []);
+      const sparseVector = { indices: [3], values: [1] };
+
+      await createStrategy(qdrant).execute({
+        collectionName: "test_col",
+        embedding: [0.1, 0.2],
+        sparseVector,
+        query: "Platform::Async::Operation::Worker",
+        limit: 5,
+        filter: requestFilter,
+      });
+
+      expect(qdrant.hybridSearch).toHaveBeenCalledWith(
+        "test_col",
+        [0.1, 0.2],
+        sparseVector,
+        expect.any(Number),
+        requestFilter,
+        undefined,
+        workerIdentity,
+      );
+    });
+
+    it("sends exactly today's five-argument request for a natural-language query", async () => {
+      const qdrant = createMockQdrant(true, []);
+      const sparseVector = { indices: [3], values: [1] };
+
+      await createStrategy(qdrant).execute({
+        collectionName: "test_col",
+        embedding: [0.1, 0.2],
+        sparseVector,
+        query: "how does indexing work",
+        limit: 5,
+        filter: requestFilter,
+      });
+
+      const call = (qdrant.hybridSearch as ReturnType<typeof vi.fn>).mock.calls[0];
+      expect(call).toEqual(["test_col", [0.1, 0.2], sparseVector, expect.any(Number), requestFilter]);
+      expect(call).toHaveLength(5);
+    });
+
+    it("keeps the file-level fetch limit and grouping when the identity leg is on", async () => {
+      const mockResults = [
+        { id: "1", score: 0.5, payload: { relativePath: "spec/worker_spec.rb", startLine: 1, endLine: 9 } },
+        { id: "2", score: 0.4, payload: { relativePath: "spec/worker_spec.rb", startLine: 10, endLine: 20 } },
+      ];
+      const qdrant = createMockQdrant(true, mockResults);
+
+      const results = await createStrategy(qdrant).execute({
+        collectionName: "test_col",
+        embedding: [0.1],
+        query: "Platform::Async::Operation::Worker",
+        limit: 4,
+        level: "file",
+      });
+
+      const call = (qdrant.hybridSearch as ReturnType<typeof vi.fn>).mock.calls[0];
+      const chunkCall = await (async () => {
+        const chunkQdrant = createMockQdrant(true, []);
+        await createStrategy(chunkQdrant).execute({
+          collectionName: "test_col",
+          embedding: [0.1],
+          query: "Platform::Async::Operation::Worker",
+          limit: 4,
+        });
+        return (chunkQdrant.hybridSearch as ReturnType<typeof vi.fn>).mock.calls[0];
+      })();
+      expect(call[3]).toBe((chunkCall[3] as number) * 3);
+      expect(call[6]).toEqual(workerIdentity);
+      expect(results).toHaveLength(1);
+    });
+  });
+
   it("throws HybridNotEnabledError when collection has no hybrid support", async () => {
     const qdrant = createMockQdrant(false);
     const strategy = createStrategy(qdrant);

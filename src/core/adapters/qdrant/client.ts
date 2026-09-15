@@ -391,7 +391,11 @@ export class QdrantManager {
     return this.searcher.queryGroups(collectionName, vector, options);
   }
 
-  /** Dense + sparse retrieval fused server-side by RRF, optionally weighted. */
+  /**
+   * Dense + sparse retrieval fused server-side by RRF, optionally weighted, with
+   * an optional third dense prefetch narrowed by `identityPrefetchFilter`
+   * (see `QdrantSearchExecutor#hybridSearch`).
+   */
   async hybridSearch(
     collectionName: string,
     denseVector: number[],
@@ -399,8 +403,17 @@ export class QdrantManager {
     fetchLimit: number,
     filter?: Record<string, unknown>,
     semanticWeight?: number,
+    identityPrefetchFilter?: Record<string, unknown>,
   ): Promise<SearchResult[]> {
-    return this.searcher.hybridSearch(collectionName, denseVector, sparseVector, fetchLimit, filter, semanticWeight);
+    return this.searcher.hybridSearch(
+      collectionName,
+      denseVector,
+      sparseVector,
+      fetchLimit,
+      filter,
+      semanticWeight,
+      identityPrefetchFilter,
+    );
   }
 
   // ── Traversal ──

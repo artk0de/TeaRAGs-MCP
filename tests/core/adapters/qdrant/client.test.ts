@@ -1480,6 +1480,114 @@ describe("QdrantManager", () => {
       });
     });
 
+    // tea-rags-mcp-2fefq: the identity leg. The explore strategy decides whether
+    // it exists; the adapter only sends it as a third dense prefetch.
+    describe("identity prefetch", () => {
+      const quantization = { quantization: { rescore: true, oversampling: 2.0 } };
+      const identityPrefetchFilter = {
+        should: [
+          {
+            must: [
+              { key: "parentSymbolId", match: { text: "Worker" } },
+              { key: "parentSymbolId", match: { value: "A::Worker" } },
+            ],
+          },
+          {
+            must: [
+              { key: "symbolId", match: { text: "Worker" } },
+              { key: "symbolId", match: { value: "A::Worker" } },
+            ],
+          },
+        ],
+      };
+
+      it("sends exactly two prefetches and nothing else when no identity prefetch filter is given", async () => {
+        mockClient.query.mockResolvedValue({ points: [] });
+        const filter = { must: [{ key: "language", match: { value: "ruby" } }] };
+
+        await manager.hybridSearch("test-collection", denseVector, sparseVector, 20, filter);
+
+        expect(mockClient.query.mock.calls[0][1]).toEqual({
+          prefetch: [
+            { query: denseVector, using: "dense", limit: 20, filter, params: quantization },
+            { query: sparseVector, using: "text", limit: 20, filter },
+          ],
+          query: { fusion: "rrf" },
+          limit: 20,
+          filter,
+          with_payload: true,
+        });
+      });
+
+      it("adds a third dense prefetch narrowed to the request filter AND the identity filter", async () => {
+        mockClient.query.mockResolvedValue({ points: [] });
+        const filter = {
+          must: [{ key: "isTest", match: { value: true } }],
+          should: [{ key: "language", match: { value: "ruby" } }],
+        };
+
+        await manager.hybridSearch(
+          "test-collection",
+          denseVector,
+          sparseVector,
+          20,
+          filter,
+          undefined,
+          identityPrefetchFilter,
+        );
+
+        const [, payload] = mockClient.query.mock.calls[0];
+        expect(payload.prefetch).toHaveLength(3);
+        expect(payload.prefetch[2]).toEqual({
+          query: denseVector,
+          using: "dense",
+          limit: 20,
+          filter: { must: [filter, identityPrefetchFilter] },
+          params: quantization,
+        });
+        // Boost only: the fused result set keeps the request filter alone.
+        expect(payload.filter).toEqual(filter);
+        expect(payload.prefetch[0].filter).toEqual(filter);
+        expect(payload.prefetch[1].filter).toEqual(filter);
+        expect(payload.query).toEqual({ fusion: "rrf" });
+        expect(payload.limit).toBe(20);
+      });
+
+      it("narrows the identity prefetch by the identity filter alone when the request has no filter", async () => {
+        mockClient.query.mockResolvedValue({ points: [] });
+
+        await manager.hybridSearch(
+          "test-collection",
+          denseVector,
+          sparseVector,
+          20,
+          undefined,
+          undefined,
+          identityPrefetchFilter,
+        );
+
+        const [, payload] = mockClient.query.mock.calls[0];
+        expect(payload.prefetch[2].filter).toEqual(identityPrefetchFilter);
+        expect(payload.filter).toBeUndefined();
+      });
+
+      it("gives the identity prefetch the dense weight in weighted RRF", async () => {
+        mockClient.query.mockResolvedValue({ points: [] });
+
+        await manager.hybridSearch(
+          "test-collection",
+          denseVector,
+          sparseVector,
+          20,
+          undefined,
+          0.7,
+          identityPrefetchFilter,
+        );
+
+        expect(mockClient.query.mock.calls[0][1].query).toEqual({ rrf: { weights: [0.7, 1 - 0.7, 0.7] } });
+      });
+    });
+
     it("returns SearchResult[] preserving id, score, and payload from response.points", async () => {
       mockClient.query.mockResolvedValue({
         points: [

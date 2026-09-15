@@ -10,6 +10,7 @@ import { generateSparseVector } from "../../../adapters/qdrant/sparse.js";
 import { FileLevelGrouper } from "../chunk-grouping/index.js";
 import { InvalidQueryError } from "../errors.js";
 import { BaseExploreStrategy } from "./base.js";
+import { buildSymbolIdentityFilter, isSymbolIdentifierQuery } from "./symbol-identity-leg.js";
 import { HybridNotEnabledError, type ExploreContext, type ExploreResult } from "./types.js";
 
 export class HybridSearchStrategy extends BaseExploreStrategy {
@@ -26,14 +27,21 @@ export class HybridSearchStrategy extends BaseExploreStrategy {
     }
 
     const sparseVector = ctx.sparseVector ?? generateSparseVector(ctx.query ?? "");
+    const fetchLimit = ctx.level === "file" ? ctx.limit * 3 : ctx.limit;
 
-    const results = await this.qdrant.hybridSearch(
-      ctx.collectionName,
-      ctx.embedding,
-      sparseVector,
-      ctx.level === "file" ? ctx.limit * 3 : ctx.limit,
-      ctx.filter,
-    );
+    // One identifier → add the identity leg (see ./symbol-identity-leg.ts);
+    // any other query sends exactly the two-prefetch request it always did.
+    const results = isSymbolIdentifierQuery(ctx.query)
+      ? await this.qdrant.hybridSearch(
+          ctx.collectionName,
+          ctx.embedding,
+          sparseVector,
+          fetchLimit,
+          ctx.filter,
+          undefined,
+          buildSymbolIdentityFilter(ctx.query),
+        )
+      : await this.qdrant.hybridSearch(ctx.collectionName, ctx.embedding, sparseVector, fetchLimit, ctx.filter);
 
     // queryGroups has no fusion=rrf option; fetch limit*3 above and group client-side.
     if (ctx.level === "file") {

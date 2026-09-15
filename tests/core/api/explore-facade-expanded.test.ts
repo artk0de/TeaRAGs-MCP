@@ -405,13 +405,12 @@ describe("ExploreFacade — expanded methods", () => {
         filter,
       });
 
-      expect(qdrant.hybridSearch).toHaveBeenCalledWith(
-        "test_col",
-        expect.anything(),
-        expect.anything(),
-        expect.any(Number),
-        filter,
-      );
+      // The invariant is "the request filter reaches hybridSearch", not the
+      // argument count: "test" is a single identifier, so the identity leg
+      // (tea-rags-mcp-2fefq) appends its own argument after the filter.
+      const [collectionName, , , , forwardedFilter] = (qdrant.hybridSearch as ReturnType<typeof vi.fn>).mock.calls[0];
+      expect(collectionName).toBe("test_col");
+      expect(forwardedFilter).toEqual(filter);
     });
   });
 
