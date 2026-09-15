@@ -120,6 +120,50 @@ describe("EnrichmentCoordinator.recomputeEnrichments", () => {
     expect(p.buildFileSignals).not.toHaveBeenCalled();
   });
 
+  // bd tea-rags-mcp-39xca.5 — `--force-enrichments` reports the run done when this
+  // promise resolves, so it must not resolve while the terminal chunk marker is
+  // still being written (u3e77 was a marker landing late).
+  it("resolves only after the run's terminal chunk marker is written", async () => {
+    const chunkMarkerKey = "enrichment.codegraph.symbols.chunk";
+    const requested: string[] = [];
+    const written: string[] = [];
+    let openMarkerWrite!: () => void;
+    const markerWriteOpened = new Promise<void>((resolve) => {
+      openMarkerWrite = resolve;
+    });
+    const gated = {
+      ...qdrantWithPoints(POINTS),
+      batchSetPayload: vi.fn(async (_coll: string, ops: { key?: string }[]) => {
+        for (const op of ops) {
+          if (op.key !== chunkMarkerKey) continue;
+          requested.push(op.key);
+          await markerWriteOpened;
+          written.push(op.key);
+        }
+      }),
+    };
+    const p = provider("codegraph.symbols", {
+      finalizeSignals: vi.fn().mockResolvedValue(new Map()),
+      defersChunkEnrichment: true,
+    });
+    const coordinator = new EnrichmentCoordinator(gated as never, [p]);
+
+    let resolved = false;
+    const recompute = coordinator.recomputeEnrichments("coll", "/repo", ["codegraph"]).then(() => {
+      resolved = true;
+    });
+    await new Promise((resolve) => setTimeout(resolve, 25));
+
+    expect(requested).toEqual([chunkMarkerKey]);
+    expect(resolved).toBe(false);
+
+    openMarkerWrite();
+    await recompute;
+
+    expect(written).toEqual([chunkMarkerKey]);
+    expect(resolved).toBe(true);
+  });
+
   it("does nothing when the index holds no points", async () => {
     const p = provider("git");
     const coordinator = new EnrichmentCoordinator(qdrantWithPoints([]) as never, [p]);
