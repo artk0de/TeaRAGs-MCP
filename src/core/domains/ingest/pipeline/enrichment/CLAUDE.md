@@ -61,13 +61,18 @@
   (coordinator.ts:56, `createRunState` at :742 — own applier / filePhase /
   chunkPhase / backfiller / completion). `beginRun` is synchronous, overwrites
   `currentRun` immediately, and does NOT wait on the previous run; orphaned
-  promise closures keep mutating their own now-unreferenced `RunState`. There is
-  no FIFO serialization and no `prefetch()` entry point (streaming replaced
-  whole-repo prefetch). `EnrichmentMarkerStore` and `EnrichmentRecovery` stay
-  constructor-time singletons on purpose — no per-run state, pure Qdrant
-  proxies. Why: isolation is allocation-based and nothing else. Add a long-lived
-  mutable field to a phase class, or reintroduce reset-in-place, and two
-  overlapping runs corrupt each other's counts.
+  promise closures keep mutating their own now-unreferenced `RunState`. The one
+  exception is `recomputeEnrichments`, which awaits the previous run's in-flight
+  completion before it scrolls or opens its run: that completion's
+  `releaseCollection` drops the worker-side provider state the recompute's
+  deferred pass reads, and its terminal marker would land under the recompute's
+  `_run` (bd tea-rags-mcp-71n0p / u3e77). There is no FIFO serialization and no
+  `prefetch()` entry point (streaming replaced whole-repo prefetch).
+  `EnrichmentMarkerStore` and `EnrichmentRecovery` stay constructor-time
+  singletons on purpose — no per-run state, pure Qdrant proxies. Why: isolation
+  is allocation-based and nothing else. Add a long-lived mutable field to a
+  phase class, or reintroduce reset-in-place, and two overlapping runs corrupt
+  each other's counts.
 - **Recovery does not compute chunk signals for a provider with
   `defersChunkEnrichment`; it hands its owed chunks in extractable files to the
   reindex run, and heals the non-extractable ones in place — no walk can add a
