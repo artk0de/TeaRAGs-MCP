@@ -104,10 +104,22 @@ export class DuckDbGraphSession {
    * nested BEGINs even under aggressive Promise.all fan-out.
    */
   private writeQueue: Promise<unknown> = Promise.resolve();
+  /**
+   * Native calls awaiting the driver on `conn` right now. `close` waits for
+   * zero: `closeSync` issued under a running query leaves that query's promise
+   * unsettled forever (@duckdb/node-api 1.5.3, bd tea-rags-mcp-amh78).
+   */
+  private runningNativeCalls = 0;
+  private readonly nativeCallsSettled: (() => void)[] = [];
+  /** Set by `close` once queued transactional writes settled — later calls are refused. */
+  private refusingCalls = false;
+  private closing?: Promise<void>;
 
   constructor(private readonly options: DuckDbGraphSessionOptions) {}
 
   async open(): Promise<void> {
+    this.closing = undefined;
+    this.refusingCalls = false;
     mkdirSync(dirname(this.options.path), { recursive: true });
     // @duckdb/node-api `DuckDBInstance.create(path, options)` takes a
     // string→string config map. `access_mode` controls RW vs RO; only
@@ -192,7 +204,7 @@ export class DuckDbGraphSession {
    */
   private async execSilent(sql: string): Promise<void> {
     try {
-      await this.requireConn().run(sql);
+      await this.exec(sql);
     } catch {
       // Older driver versions reject unrecognised setting names; allow
       // the ingest path to continue without the cap.
@@ -213,14 +225,68 @@ export class DuckDbGraphSession {
     }
   }
 
+  /**
+   * Close the connection and the database instance for real (bd
+   * tea-rags-mcp-amh78). It used to drop its references and leave the instance
+   * to the garbage collector, which closed it — WAL handling and file lock
+   * included — at a moment nobody chose. Now:
+   *
+   * - It WAITS for queued transactional writes and for every native call still
+   *   running, then refuses new ones. Closing under a running query leaves that
+   *   query unsettled forever, so a daemon op racing a close would hang its
+   *   client.
+   * - It does NOT checkpoint. After a checkpoint DuckDB deletes `<path>.wal` BY
+   *   PATH, and a client the pool retires as stale no longer owns that path: a
+   *   different database may keep its WAL there (measured: a clone's WAL, and
+   *   every row in it, gone). Changes since the last explicit `checkpoint()`
+   *   stay in the WAL and replay on the next open — what a dropped reference
+   *   left on disk too.
+   * - It releases the file lock now, not whenever the instance is finalized.
+   *
+   * Idempotent; concurrent callers share one close.
+   */
   async close(): Promise<void> {
-    // The current @duckdb/node-api minor (~1.5.x) does not expose a
-    // sync `disconnect`/`close` on the connection or instance shapes
-    // we depend on — connections are released when their owning
-    // instance is garbage-collected. Drop the references so tests can
-    // re-open the same DB file without contention.
+    this.closing ??= this.closeNative();
+    return this.closing;
+  }
+
+  private async closeNative(): Promise<void> {
+    await this.writeQueue;
+    this.refusingCalls = true;
+    if (this.runningNativeCalls > 0) {
+      await new Promise<void>((resolve) => {
+        this.nativeCallsSettled.push(resolve);
+      });
+    }
+    const { conn, instance } = this;
     this.conn = undefined;
     this.instance = undefined;
+    try {
+      if (conn && this.options.accessMode !== "READ_ONLY") {
+        await conn.run("PRAGMA disable_checkpoint_on_shutdown");
+      }
+    } finally {
+      conn?.closeSync();
+      instance?.closeSync();
+    }
+  }
+
+  /**
+   * Run one native call on the connection, counted so `close` can wait it out.
+   * Counted per driver await, never across a `yield`, so an iterator abandoned
+   * mid-stream cannot hold a close open.
+   */
+  private async onConnection<T>(call: (conn: DuckDBConnection) => Promise<T>): Promise<T> {
+    const conn = this.requireConn();
+    this.runningNativeCalls += 1;
+    try {
+      return await call(conn);
+    } finally {
+      this.runningNativeCalls -= 1;
+      if (this.runningNativeCalls === 0) {
+        for (const resolve of this.nativeCallsSettled.splice(0)) resolve();
+      }
+    }
   }
 
   /**
@@ -272,7 +338,9 @@ export class DuckDbGraphSession {
 
   /** Generic exec — used by the migration runner. Returns no rows. */
   async exec(sql: string): Promise<void> {
-    await this.requireConn().run(sql);
+    await this.onConnection(async (conn) => {
+      await conn.run(sql);
+    });
   }
 
   /**
@@ -286,27 +354,31 @@ export class DuckDbGraphSession {
    * large repo. Always dispose the statement we created.
    */
   async run(sql: string, params: unknown[] = []): Promise<void> {
-    const prep = await this.requireConn().prepare(sql);
-    try {
-      bindParams(prep, asBindable(params));
-      await prep.run();
-    } finally {
-      prep.destroySync();
-    }
+    await this.onConnection(async (conn) => {
+      const prep = await conn.prepare(sql);
+      try {
+        bindParams(prep, asBindable(params));
+        await prep.run();
+      } finally {
+        prep.destroySync();
+      }
+    });
   }
 
   /** Generic query returning all rows as plain JSON objects. Disposes the
    * prepared statement after materialising rows (same native-leak guard as
    * `run` — see its doc comment). */
   async queryAll<T = Record<string, unknown>>(sql: string, params: unknown[] = []): Promise<T[]> {
-    const prep = await this.requireConn().prepare(sql);
-    try {
-      bindParams(prep, asBindable(params));
-      const reader = await prep.runAndReadAll();
-      return reader.getRowObjectsJson() as T[];
-    } finally {
-      prep.destroySync();
-    }
+    return this.onConnection(async (conn) => {
+      const prep = await conn.prepare(sql);
+      try {
+        bindParams(prep, asBindable(params));
+        const reader = await prep.runAndReadAll();
+        return reader.getRowObjectsJson() as T[];
+      } finally {
+        prep.destroySync();
+      }
+    });
   }
 
   /**
@@ -317,14 +389,14 @@ export class DuckDbGraphSession {
    * released before the next fetch.
    */
   async *streamRows(sql: string): AsyncIterableIterator<DuckDBValue[]> {
-    const result = await this.requireConn().stream(sql);
-    let chunk = await result.fetchChunk();
+    const result = await this.onConnection(async (conn) => conn.stream(sql));
+    let chunk = await this.onConnection(async () => result.fetchChunk());
     while (chunk && chunk.rowCount > 0) {
       const rows = chunk.getRows();
       for (const row of rows) {
         yield row;
       }
-      chunk = await result.fetchChunk();
+      chunk = await this.onConnection(async () => result.fetchChunk());
     }
   }
 
@@ -576,6 +648,7 @@ export class DuckDbGraphSession {
   }
 
   private requireConn(): DuckDBConnection {
+    if (this.refusingCalls) throw new Error("DuckDbGraphClient: used after close()");
     if (!this.conn) throw new Error("DuckDbGraphClient: init() must be called before use");
     return this.conn;
   }

@@ -25,6 +25,7 @@ import { createServer, type Server, type Socket } from "node:net";
 import { pathToFileURL } from "node:url";
 
 import type { MigrationCapableGraphClient } from "../../../contracts/types/migration.js";
+import { setDebug } from "../../../infra/runtime.js";
 import { GraphDbClientPool } from "../pool.js";
 import { DaemonFrameDecoder } from "./frame-decoder.js";
 import {
@@ -76,6 +77,18 @@ export interface DaemonRuntimeOptions {
    * TEA_RAGS_CODEGRAPH_BUILD_FINGERPRINT).
    */
   buildFingerprint?: string;
+  /**
+   * The spawner's resolved `core.debug` (bd tea-rags-mcp-gnig6), adopted via
+   * `setDebug` before the daemon builds or serves anything. A detached process
+   * starts with the flag off, so without it every `isDebug()`-gated line of the
+   * pool and server is dead here. Undefined leaves the flag as it is — what an
+   * in-process test daemon wants.
+   *
+   * A running daemon keeps the flag it was spawned with. The build handshake
+   * compares build identity only, so a client started with a different `DEBUG`
+   * reuses that daemon until it idles out or a build change restarts it.
+   */
+  debug?: boolean;
   /**
    * Op table the daemon dispatches on — and advertises in its handshake
    * (bd tea-rags-mcp-39xca.4). Defaults to the full `DAEMON_OP_COMMANDS`; tests
@@ -237,6 +250,8 @@ export function createConnectionHandler(
 export async function runDaemon(
   options: DaemonRuntimeOptions,
 ): Promise<{ server: Server; shutdown: () => Promise<void> }> {
+  // First, so every diagnostic the pool and server emit from here on sees it.
+  if (options.debug !== undefined) setDebug(options.debug);
   // Same reason the symbol table is injected: the DDL steps live in a domain
   // this layer may not import, so they arrive as a module URL and are loaded
   // in-process here.
@@ -244,6 +259,13 @@ export async function runDaemon(
     runMigrations: (client: MigrationCapableGraphClient, migrations: unknown[]) => Promise<unknown>;
     DATABASE_MIGRATIONS: unknown[];
   };
+  // Adaptive memory governor (bd tea-rags-mcp-1ruih): raises memory_limit to
+  // the ceiling on the first write of an ingest burst; the idle watcher
+  // restores the base BEFORE releasing the RW lock (see createIdleShutdown).
+  const governor = new DaemonMemoryGovernor({
+    baseLimit: options.resources?.memoryLimit ?? DEFAULT_MEMORY_LIMIT_BASE,
+    maxLimit: options.resources?.memoryLimitMax ?? DEFAULT_MEMORY_LIMIT_MAX,
+  });
   const pool = new GraphDbClientPool({
     rootDir: options.rootDir,
     // The daemon never resolves call edges (resolution happens in the MCP
@@ -255,15 +277,13 @@ export async function runDaemon(
       await runMigrations(client, DATABASE_MIGRATIONS);
     },
     resources: options.resources,
+    // A closed client takes its governor entry with it (bd tea-rags-mcp-amh78),
+    // so a client replacing it for the same collection is raised on its own.
+    onCollectionClientClosed: (collectionName) => {
+      governor.forgetCollection(collectionName);
+    },
     // NO daemonSocketPath — this process IS the daemon; its pool holds the
     // single RW DuckDB connection in-process.
-  });
-  // Adaptive memory governor (bd tea-rags-mcp-1ruih): raises memory_limit to
-  // the ceiling on the first write of an ingest burst; the idle watcher
-  // restores the base BEFORE releasing the RW lock (see createIdleShutdown).
-  const governor = new DaemonMemoryGovernor({
-    baseLimit: options.resources?.memoryLimit ?? DEFAULT_MEMORY_LIMIT_BASE,
-    maxLimit: options.resources?.memoryLimitMax ?? DEFAULT_MEMORY_LIMIT_MAX,
   });
   const handler = new CodegraphDaemonServer(pool, options.buildFingerprint, governor, options.opCommands);
 
@@ -344,20 +364,19 @@ function cleanupDaemonFiles(paths: CodegraphDaemonPaths): void {
   }
 }
 
-/* v8 ignore start -- process-main bootstrap; exercised only when run as a real daemon process */
 /**
- * Resolve runtime options from the environment the factory's `spawn` set:
- * `TEA_RAGS_CODEGRAPH_DAEMON_ROOT` (per-collection DB root) +
- * `TEA_RAGS_CODEGRAPH_DAEMON_DIR` (lifecycle storage dir, also honoured by
- * `getStorageDir`). Resource ceilings come through the same env the parent uses.
+ * Resolve runtime options from the environment the spawner set
+ * (`buildCodegraphDaemonSpawnEnv` in bootstrap):
+ * `TEA_RAGS_CODEGRAPH_DAEMON_ROOT` (per-collection DB root),
+ * `TEA_RAGS_CODEGRAPH_DAEMON_DIR` (lifecycle storage dir), the migrations
+ * module URL, the resource ceilings, and the spawner's resolved debug flag.
  */
-function optionsFromEnv(): DaemonRuntimeOptions {
-  const rootDir = process.env.TEA_RAGS_CODEGRAPH_DAEMON_ROOT ?? process.cwd();
-  const paths = getDaemonPaths(getStorageDir(rootDir));
-  const memoryLimit = process.env.TEA_RAGS_CODEGRAPH_DAEMON_MEMORY;
-  const memoryLimitMax = process.env.TEA_RAGS_CODEGRAPH_DAEMON_MEMORY_MAX;
-  const threadsRaw = process.env.TEA_RAGS_CODEGRAPH_DAEMON_THREADS;
-  const migrationsModulePath = process.env.TEA_RAGS_CODEGRAPH_DAEMON_MIGRATIONS;
+export function daemonRuntimeOptionsFromEnv(env: NodeJS.ProcessEnv = process.env): DaemonRuntimeOptions {
+  const rootDir = env.TEA_RAGS_CODEGRAPH_DAEMON_ROOT ?? process.cwd();
+  // The spawner always sets the dir; `getStorageDir` is only the fallback.
+  const paths = getDaemonPaths(env.TEA_RAGS_CODEGRAPH_DAEMON_DIR ?? getStorageDir(rootDir));
+  const threadsRaw = env.TEA_RAGS_CODEGRAPH_DAEMON_THREADS;
+  const migrationsModulePath = env.TEA_RAGS_CODEGRAPH_DAEMON_MIGRATIONS;
   if (!migrationsModulePath) {
     // Invariant violation — the spawner always sets it (see bootstrap/factory).
     // Starting without it would open collections with no schema.
@@ -368,16 +387,29 @@ function optionsFromEnv(): DaemonRuntimeOptions {
     paths,
     migrationsModulePath,
     resources: {
-      memoryLimit,
-      memoryLimitMax,
+      memoryLimit: env.TEA_RAGS_CODEGRAPH_DAEMON_MEMORY,
+      memoryLimitMax: env.TEA_RAGS_CODEGRAPH_DAEMON_MEMORY_MAX,
       threads: threadsRaw ? parseInt(threadsRaw, 10) || undefined : undefined,
       preserveInsertionOrder: false,
     },
+    debug: parseDaemonDebugEnv(env.TEA_RAGS_CODEGRAPH_DAEMON_DEBUG),
   };
 }
 
+/**
+ * `"1"` / `"0"`, exactly as the spawner writes them. Anything else is ignored
+ * rather than thrown: a diagnostics-only setting must not stop the daemon from
+ * starting.
+ */
+function parseDaemonDebugEnv(raw: string | undefined): boolean | undefined {
+  if (raw === "1") return true;
+  if (raw === "0") return false;
+  return undefined;
+}
+
+/* v8 ignore start -- process-main bootstrap; exercised only when run as a real daemon process */
 async function main(): Promise<void> {
-  const { shutdown } = await runDaemon(optionsFromEnv());
+  const { shutdown } = await runDaemon(daemonRuntimeOptionsFromEnv());
   for (const sig of ["SIGTERM", "SIGINT"] as const) {
     process.on(sig, () => {
       void shutdown().then(() => process.exit(0));

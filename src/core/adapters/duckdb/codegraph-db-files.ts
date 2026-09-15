@@ -80,6 +80,22 @@ export class CodegraphDbFiles {
     return dbPath;
   }
 
+  /**
+   * Unlink `<db>.wal` when no `<db>` exists beside it (bd tea-rags-mcp-amh78).
+   *
+   * A WAL is the tail of ONE database file, so without that file it can only be
+   * left by a client that kept writing after its database was unlinked — DuckDB
+   * addresses the WAL by path and recreates it there. Opening the path must not
+   * hand the driver a log of a database that no longer exists. DuckDB 1.5.3
+   * happens to drop such a WAL when it creates the file; the pool does not rely
+   * on a driver version for it. No-op when the database exists or no WAL does.
+   */
+  async discardOrphanedWal(collectionName: PhysicalCollectionName): Promise<void> {
+    const dbPath = this.pathFor(collectionName);
+    if (existsSync(dbPath)) return;
+    await unlink(`${dbPath}.wal`).catch(() => undefined);
+  }
+
   /** Whether a graph database file exists for this collection. */
   has(collectionName: PhysicalCollectionName): boolean {
     return existsSync(this.pathFor(collectionName));

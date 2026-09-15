@@ -7,9 +7,12 @@
  * process's lock disable codegraph for every project) and the `cg_symbols_*`
  * tables carry no collection column (two projects would collide on PKs). No cap
  * on open instances; `release(collectionName)` exists for tests.
+ *
+ * A cached client is handed out only while its path still names the database
+ * file it opened — see `acquire` (bd tea-rags-mcp-amh78).
  */
 
-import { mkdirSync } from "node:fs";
+import { mkdirSync, statSync } from "node:fs";
 import { dirname, join } from "node:path";
 
 import type { CallResolver, GlobalSymbolTable, GraphDbClient } from "../../contracts/types/codegraph.js";
@@ -104,6 +107,14 @@ export interface GraphDbClientPoolOptions {
    */
   applyMigrations: DatabaseMigrationApplier;
   /**
+   * Called after the pool closes — or tries to close — the cached read-write
+   * client it held for a collection: a stale client being replaced, `release`,
+   * `removeCollection`, `closeAll`. Whoever keeps per-collection state keyed by
+   * that handle drops it here; the daemon wires its `DaemonMemoryGovernor`
+   * (bd tea-rags-mcp-amh78).
+   */
+  onCollectionClientClosed?: (collectionName: PhysicalCollectionName) => void;
+  /**
    * Unix socket of the running codegraph daemon. When set, `acquireWrite` and
    * `acquireReader` route through a `DaemonGraphDbClient` — the daemon holds the
    * RW DuckDB lock, so concurrent MCP processes never contend on it. Absent
@@ -138,9 +149,21 @@ export interface GraphDbClientPoolOptions {
   };
 }
 
+/**
+ * The database file a cached client opened, as `dev` + `ino` read right after
+ * the open. A path check alone cannot tell the file the client writes into from
+ * a different database put at the same path since (bd tea-rags-mcp-amh78).
+ */
+interface OpenedDatabaseFile {
+  dev: bigint;
+  ino: bigint;
+}
+
 interface PoolEntry {
   graphDb: DuckDbGraphClient;
   symbolTable: GlobalSymbolTable;
+  /** What `holdsOpenedDatabaseFile` compares the path against on every cached return. */
+  databaseFile: OpenedDatabaseFile;
 }
 
 /**
@@ -172,7 +195,7 @@ export class GraphDbClientPool {
    * `CodegraphDbFiles` — resolves identical names.
    */
   private readonly dbFiles: CodegraphDbFiles;
-  private readonly clients = new Map<string, PoolEntry>();
+  private readonly clients = new Map<PhysicalCollectionName, PoolEntry>();
   /**
    * In-flight open promises so concurrent first-callers for the same
    * collection share a single init pass (avoids racing migrations on
@@ -271,9 +294,15 @@ export class GraphDbClientPool {
    * otherwise `undefined`. Used by the GraphFacade read path so a query
    * against a collection that was never written to does NOT open a fresh
    * DB just to return an empty result.
+   *
+   * A cached client whose database file is gone or replaced reports as absent
+   * and is NOT evicted here: replacing it needs its close awaited before the
+   * path is opened again, which a synchronous call cannot do. It stays for the
+   * next `acquire` to replace in that order (bd tea-rags-mcp-amh78).
    */
   peek(collectionName: PhysicalCollectionName): CollectionGraphHandle | undefined {
-    return this.clients.get(collectionName);
+    const cached = this.clients.get(collectionName);
+    return cached && this.holdsOpenedDatabaseFile(collectionName, cached) ? cached : undefined;
   }
 
   /**
@@ -281,18 +310,69 @@ export class GraphDbClientPool {
    * for a name creates the file, runs migrations, invokes the init hook
    * to hydrate the symbol table, then caches the result. Concurrent
    * first-callers share one open pass via the inflight map.
+   *
+   * A cached handle is returned only while its path still names the file it
+   * opened. Once another process unlinked it or put a different database there,
+   * the client is retired (`retireStaleClient`) and the path opened again, in
+   * one in-flight pass concurrent callers share. The daemon reaches every op
+   * through here, so this is the check every holder of a pool shares (bd
+   * tea-rags-mcp-amh78).
    */
   async acquire(collectionName: PhysicalCollectionName): Promise<CollectionGraphHandle> {
     const cached = this.clients.get(collectionName);
-    if (cached) return cached;
+    if (cached && this.holdsOpenedDatabaseFile(collectionName, cached)) return cached;
     const inflight = this.inflight.get(collectionName);
     if (inflight) return inflight;
 
-    const promise = this.openCollection(collectionName).finally(() => {
+    const promise = (async (): Promise<CollectionGraphHandle> => {
+      if (cached) await this.retireStaleClient(collectionName, cached);
+      return this.openCollection(collectionName);
+    })().finally(() => {
       this.inflight.delete(collectionName);
     });
     this.inflight.set(collectionName, promise);
     return promise;
+  }
+
+  /**
+   * Whether `collectionName`'s path still names the database file `entry`
+   * opened. One `statSync` per cached return — no directory scan on the hot path.
+   */
+  private holdsOpenedDatabaseFile(collectionName: PhysicalCollectionName, entry: PoolEntry): boolean {
+    const current = statSync(this.pathFor(collectionName), { bigint: true, throwIfNoEntry: false });
+    return current?.dev === entry.databaseFile.dev && current.ino === entry.databaseFile.ino;
+  }
+
+  /**
+   * Retire a cached client whose database file is gone or replaced, before the
+   * path is opened again (bd tea-rags-mcp-amh78). The order is the point:
+   *
+   * 1. Drop it from the cache synchronously, so a concurrent `acquire` shares
+   *    the replacement instead of receiving it.
+   * 2. Await its close. `DuckDbGraphClient#close` lets running calls finish and
+   *    does not checkpoint, so it cannot delete the WAL a different database now
+   *    keeps at this path. A close that fails on the unlinked file is tolerated:
+   *    the file is not ours any more.
+   * 3. Announce it (`onCollectionClientClosed`).
+   */
+  private async retireStaleClient(collectionName: PhysicalCollectionName, entry: PoolEntry): Promise<void> {
+    this.clients.delete(collectionName);
+    if (isDebug()) {
+      process.stderr.write(
+        `[tea-rags] codegraph pool: database file of ${collectionName} was removed or replaced under its ` +
+          `cached client — closing it and opening ${this.pathFor(collectionName)} again\n`,
+      );
+    }
+    try {
+      await entry.graphDb.close();
+    } catch (err) {
+      if (isDebug()) {
+        process.stderr.write(
+          `[tea-rags] codegraph pool: closing the stale client of ${collectionName} failed: ${(err as Error).message}\n`,
+        );
+      }
+    }
+    this.options.onCollectionClientClosed?.(collectionName);
   }
 
   /**
@@ -542,6 +622,9 @@ export class GraphDbClientPool {
     // The one read-write open in the codebase — the daemon's pool reaches it too —
     // so this is where a shadow `<alias>.duckdb` would be created. Refused there.
     const dbPath = this.dbFiles.writablePathFor(collectionName);
+    // A WAL without its database is what a client writing into an unlinked file
+    // leaves behind; it must never reach the driver as this file's log (amh78).
+    await this.dbFiles.discardOrphanedWal(collectionName);
     const graphDb = new DuckDbGraphClient({
       path: dbPath,
       resources: {
@@ -551,8 +634,12 @@ export class GraphDbClientPool {
         preserveInsertionOrder: this.options.resources?.preserveInsertionOrder,
       },
     });
+    let databaseFile: OpenedDatabaseFile;
     try {
       await graphDb.init();
+      // The file this open created or found — what every cached return checks.
+      const opened = statSync(dbPath, { bigint: true });
+      databaseFile = { dev: opened.dev, ino: opened.ino };
       // The DDL steps live in the maintenance domain, which adapters may not
       // import — the composition root injects the applier (required option, so
       // a missed call site is a type error rather than a schema-less DB).
@@ -575,7 +662,7 @@ export class GraphDbClientPool {
       }
     }
 
-    const entry: PoolEntry = { graphDb, symbolTable };
+    const entry: PoolEntry = { graphDb, symbolTable, databaseFile };
     this.clients.set(collectionName, entry);
     return entry;
   }
@@ -589,6 +676,7 @@ export class GraphDbClientPool {
     if (!entry) return false;
     this.clients.delete(collectionName);
     await entry.graphDb.close().catch(() => undefined);
+    this.options.onCollectionClientClosed?.(collectionName);
     return true;
   }
 
@@ -600,8 +688,11 @@ export class GraphDbClientPool {
    * is silently rolled back — `removeCollection` treats the pair as one artifact
    * too. A target WAL with no source counterpart is REMOVED: collection names get
    * reused, and replaying a previous tenant's log over the copy is worse. `release`
-   * checkpoints only this pool's cached client; a daemon-held database keeps an
-   * unflushed WAL, which is why the sidecar is copied rather than assumed empty.
+   * does not checkpoint: it closes this pool's cached client through
+   * `DuckDbGraphSession#close`, which leaves the WAL in place, and a database the
+   * daemon holds stays open in the daemon. Either way the source WAL can carry
+   * writes the database file lacks, which is why the sidecar is copied rather
+   * than assumed empty.
    */
   async cloneDatabase(
     sourceCollection: PhysicalCollectionName,
@@ -635,6 +726,8 @@ export class GraphDbClientPool {
         await entry.graphDb.close();
       } catch (err) {
         throw new DuckDbCloseFailedError(dbPath, err instanceof Error ? err : undefined);
+      } finally {
+        this.options.onCollectionClientClosed?.(collectionName);
       }
       evicted = true;
     }
@@ -648,12 +741,15 @@ export class GraphDbClientPool {
    * refcount reach 0 and its idle watcher release the RW lock.
    */
   async closeAll(): Promise<void> {
-    const all = [...this.clients.values()];
+    const all = [...this.clients.entries()];
     this.clients.clear();
     const daemons = [...this.daemonClients.values()];
     this.daemonClients.clear();
     await Promise.all([
-      ...all.map(async (e) => e.graphDb.close().catch(() => undefined)),
+      ...all.map(async ([collectionName, e]) => {
+        await e.graphDb.close().catch(() => undefined);
+        this.options.onCollectionClientClosed?.(collectionName);
+      }),
       ...daemons.map(async (e) => e.client.close().catch(() => undefined)),
     ]);
   }

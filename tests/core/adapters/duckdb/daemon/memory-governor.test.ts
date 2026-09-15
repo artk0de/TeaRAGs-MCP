@@ -14,7 +14,9 @@ import { join } from "node:path";
 
 import { afterEach, describe, expect, it, vi } from "vitest";
 
+import { fixturePhysicalCollectionName } from "../../../__helpers__/collection-identity.js";
 import { DuckDbGraphClient } from "../../../../../src/core/adapters/duckdb/client.js";
+import { CodegraphDbFiles } from "../../../../../src/core/adapters/duckdb/codegraph-db-files.js";
 import { DaemonMemoryGovernor } from "../../../../../src/core/adapters/duckdb/daemon/memory-governor.js";
 import { CodegraphDaemonServer } from "../../../../../src/core/adapters/duckdb/daemon/server.js";
 import { GraphDbClientPool } from "../../../../../src/core/adapters/duckdb/pool.js";
@@ -203,5 +205,48 @@ describe("DaemonMemoryGovernor — unit behavior (fake exec targets)", () => {
   it("ignores a graphDb that exposes no exec — never throws on an unexpected handle shape", async () => {
     const governor = new DaemonMemoryGovernor({ baseLimit: "512MB", maxLimit: "1GB" });
     await expect(governor.onWrite("code_a", {})).resolves.toBeUndefined();
+  });
+
+  it("forgetCollection drops a raised collection: idle never lowers the forgotten handle, the next write raises again (amh78)", async () => {
+    const governor = new DaemonMemoryGovernor({ baseLimit: "512MB", maxLimit: "1GB" });
+    const closedHandle = vi.fn().mockResolvedValue(undefined);
+    await governor.onWrite("code_a", { exec: closedHandle });
+
+    governor.forgetCollection("code_a");
+    await governor.onIdle();
+    expect(closedHandle).toHaveBeenCalledTimes(1);
+
+    const freshHandle = vi.fn().mockResolvedValue(undefined);
+    await governor.onWrite("code_a", { exec: freshHandle });
+    expect(freshHandle).toHaveBeenCalledTimes(1);
+    expect(String(freshHandle.mock.calls[0][0])).toContain("'1GB'");
+  });
+});
+
+describe("DaemonMemoryGovernor — a collection whose database file is replaced mid-burst (amh78)", () => {
+  it("raises the replacement client once the pool announces the old one closed", async () => {
+    root = mkdtempSync(join(tmpdir(), "cg-gov-"));
+    const governor = new DaemonMemoryGovernor({ baseLimit: "512MB", maxLimit: "1GB" });
+    const pool = new GraphDbClientPool({
+      rootDir: root,
+      symbolTableFactory: () => new InMemoryGlobalSymbolTable(),
+      applyMigrations: createDatabaseMigrationApplier(),
+      resources: { memoryLimit: "512MB" },
+      onCollectionClientClosed: (collectionName) => {
+        governor.forgetCollection(collectionName);
+      },
+    });
+    const server = new CodegraphDaemonServer(pool, undefined, governor);
+    const c = fixturePhysicalCollectionName("code_gov_replaced_v1");
+    expect((await server.handle(upsertFileReq(c))).ok).toBe(true);
+    const { graphDb: before } = await pool.acquire(c);
+
+    await new CodegraphDbFiles(root).removeFiles(c);
+    expect((await server.handle(upsertFileReq(c))).ok).toBe(true);
+
+    const { graphDb: after } = await pool.acquire(c);
+    expect(after).not.toBe(before);
+    expect(await readLimit(after as DuckDbGraphClient)).toBe(await displayFor("1GB"));
+    await pool.closeAll();
   });
 });

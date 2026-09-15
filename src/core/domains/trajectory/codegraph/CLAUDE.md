@@ -76,6 +76,26 @@
   written comes off that graph, and `find_cycles` keeps reporting cycles the
   source dropped weeks ago.
 
+- **A pooled graph client is valid only while its path still names the file it
+  opened, and closing one never checkpoints.** `GraphDbClientPool#acquire` — the
+  daemon's per-op path through `CodegraphDaemonServer#handle` — and
+  `GraphDbClientPool#peek` compare the path's `dev`/`ino` with what
+  `openCollection` recorded. A missing or replaced file retires the client in
+  order: close awaited, `onCollectionClientClosed` announced (the daemon wires
+  `DaemonMemoryGovernor#forgetCollection`), then
+  `CodegraphDbFiles#discardOrphanedWal` and a fresh open through
+  `writablePathFor`. `peek` reports such a client absent and leaves it to the
+  next `acquire`. `DuckDbGraphSession#close` waits for running native calls and
+  issues `PRAGMA disable_checkpoint_on_shutdown` before `closeSync`. Why: DuckDB
+  writes the WAL by path, so a client whose file another process unlinked
+  (clear, purge, orphan sweep) recreates `<name>.duckdb.wal` beside no database
+  and the rebuilt graph leaves with the process (bd tea-rags-mcp-amh78,
+  reproduced live). A checkpointing close deletes whatever WAL sits at the path,
+  which measured as a clone's WAL and every row in it. And `closeSync` under a
+  running query leaves that query unsettled forever. Not covered: an op already
+  in flight on the old client when the file is replaced can still write into the
+  successor's WAL.
+
 - **`cg_symbol_signals_prev` / `cg_file_signals_prev` (migration 023) are
   refreshed AFTER a successful payload heal, not by the finalizer.** The pair is
   driven from `api/internal/infra/codegraph-payload-heal-runner.ts`:

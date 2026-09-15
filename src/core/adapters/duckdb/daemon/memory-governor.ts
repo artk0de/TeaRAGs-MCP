@@ -132,6 +132,16 @@ export class DaemonMemoryGovernor {
   }
 
   /**
+   * Drop `collectionName`'s raised entry because the pool closed the client it
+   * holds (bd tea-rags-mcp-amh78) — wired to `onCollectionClientClosed`. Left
+   * in place, idle would issue a SET on a closed handle, and a replacement
+   * client for the same collection would be skipped as already raised.
+   */
+  forgetCollection(collectionName: string): void {
+    this.raised.delete(collectionName);
+  }
+
+  /**
    * Restore the base limit on every raised collection. Called by the daemon's
    * idle watcher BEFORE shutdown/lock-release, so the file's effective ceiling
    * never outlives the burst. Re-arms the governor for the next burst.
