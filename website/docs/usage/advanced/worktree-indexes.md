@@ -24,8 +24,9 @@ a brand-new, never-indexed project under an alias instead, use
 
 ## The Footprint
 
-Every TeaRAGs collection has an on-disk **footprint** — five artifacts under
-`$TEA_RAGS_DATA_DIR` (default `~/.tea-rags/`). `worktree create` clones each one:
+Every TeaRAGs collection has an on-disk **footprint** — six artifacts under
+`$TEA_RAGS_DATA_DIR` (default `~/.tea-rags/`). `worktree create` clones each one
+except the indexing lock:
 
 | Artifact          | Location                                              | Clone method                          |
 | ----------------- | ---------------------------------------------------- | ------------------------------------- |
@@ -34,6 +35,11 @@ Every TeaRAGs collection has an on-disk **footprint** — five artifacts under
 | File-hash snapshot| `snapshots/<col>/` (sharded)                         | copy shards + rewrite `codebasePath`  |
 | Stats cache       | `snapshots/<col>.stats.json`                         | file copy                             |
 | Quarantine        | `snapshots/<col>.quarantine.json`                    | file copy                             |
+| Indexing lock     | `snapshots/<col>.indexing.lock`                      | never cloned — exists only while an index operation runs |
+
+The indexing lock is how two processes on one machine avoid indexing the same
+collection at once. Teardown removes it only when the run that wrote it is dead;
+a live run's lock is left in place.
 
 Qdrant uses **snapshot → recover** rather than a cold file copy: the embedded
 Qdrant daemon is shared and refcounted, so copying its mmap'd segments while it
@@ -42,7 +48,7 @@ file-level path that doesn't require restarting the daemon (which would
 interrupt parallel worktree sessions).
 
 The clone is **atomic**: artifacts are cloned in order, and the registry entry
-is written only after all five succeed. If any clone fails, the already-cloned
+is written only after every clone succeeds. If any clone fails, the already-cloned
 artifacts are removed in reverse order and the command aborts — no orphaned
 state, no half-registered collection.
 
@@ -134,9 +140,9 @@ feature-xyz   tea-rags-worktree-feature-xyz   <- code_proj   3832 chunks
 tea-rags worktree remove <name> [--force] [--keep-git] [--json]
 ```
 
-Tears down a worktree collection: removes all five footprint artifacts
-(best-effort, reverse order), drops the registry entry, then removes the git
-worktree directory.
+Tears down a worktree collection: removes the footprint artifacts (best-effort,
+reverse order; a live run's indexing lock is left in place), drops the registry
+entry, then removes the git worktree directory.
 
 | Flag         | Default               | Description                                                   |
 | ------------ | --------------------- | ------------------------------------------------------------ |

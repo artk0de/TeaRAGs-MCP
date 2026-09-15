@@ -97,7 +97,7 @@ silently — `tests/navigator-code-references.test.ts` fails on any
 | `domains/maintenance/`                | schema drift, migrations, freshness                                                  |
 | `domains/maintenance/drift/`          | stamps compared never written, reporter-owned consumption, lattice-only remedies     |
 | `domains/maintenance/registry/`       | sticky registry fields, CAS flush, env replay                                        |
-| `domains/maintenance/footprint/`      | the five per-collection artifacts, clone/remove saga                                 |
+| `domains/maintenance/footprint/`      | the six per-collection artifacts, clone/remove saga                                  |
 | `domains/maintenance/worktree/`       | clone provisioning, saga commit point, teardown guard                                |
 | `adapters/qdrant/`                    | model-mixing guard, weight canary, the marker-catch rethrow                          |
 

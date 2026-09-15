@@ -13,6 +13,7 @@ export type IngestErrorCode =
   | "INGEST_COLLECTION_EXISTS"
   | "INGEST_VERSION_CLAIM_FAILED"
   | "INGEST_INDEXING_IN_PROGRESS"
+  | "INGEST_INDEXING_LOCK_UNAVAILABLE"
   | "INGEST_SNAPSHOT_MISSING"
   | "INGEST_SNAPSHOT_CORRUPTED"
   | "INGEST_MIGRATION_FAILED"
@@ -101,6 +102,23 @@ export class IndexingAlreadyInProgressError extends IngestError {
         "Retry after it finishes; get_index_status shows its progress.",
       hint: "Wait until get_index_status no longer reports indexing or enrichment in progress, then retry.",
       httpStatus: 409,
+    });
+  }
+}
+
+/**
+ * The collection's indexing lock file could not be read or written — the data
+ * directory is missing permissions, or the path is not a directory. Not
+ * contention: a lock held by another run is `IndexingAlreadyInProgressError`.
+ */
+export class IndexingLockUnavailableError extends IngestError {
+  constructor(lockPath: string, cause?: Error) {
+    super({
+      code: "INGEST_INDEXING_LOCK_UNAVAILABLE",
+      message: `Indexing lock "${lockPath}" could not be used${cause ? `: ${cause.message}` : ""}`,
+      hint: "Check that the tea-rags data directory ($TEA_RAGS_DATA_DIR, default ~/.tea-rags) is a writable directory.",
+      httpStatus: 500,
+      cause,
     });
   }
 }

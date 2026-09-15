@@ -1,4 +1,4 @@
-export type ArtifactId = "qdrant" | "codegraph" | "snapshot" | "stats" | "quarantine";
+export type ArtifactId = "qdrant" | "codegraph" | "snapshot" | "stats" | "quarantine" | "indexing-lock";
 
 /**
  * Which half of {@link ResolvedCollection} an artifact keys on — the choice the

@@ -36,6 +36,31 @@ export interface CodegraphFootprintStore {
   listCollectionDbNames: (baseCollectionName: string) => string[];
 }
 
+/** The run holding a live indexing lock — enough for a teardown to say why it left the lock in place. */
+export interface IndexingLockHolder {
+  pid: number;
+  hostname: string;
+  operation: string;
+}
+
+/**
+ * Outcome of tearing down a collection's indexing lock: there was none, a dead
+ * run's lock was removed, or a live run's lock was left in place. `holder` is
+ * absent when the live lock could not be parsed (its claimant is mid-write).
+ */
+export type IndexingLockRemovalOutcome =
+  | { status: "absent" }
+  | { status: "removed-stale" }
+  | { status: "held-live"; holder?: IndexingLockHolder };
+
+/** Per-collection indexing lock the indexing-lock artifact tears down. Never cloned. */
+export interface IndexingLockArtifactStore {
+  removeIfStale: () => Promise<IndexingLockRemovalOutcome>;
+}
+
+/** Builds an {@link IndexingLockArtifactStore} bound to (baseDir, logicalName). */
+export type IndexingLockArtifactStoreFactory = (baseDir: string, logicalName: string) => IndexingLockArtifactStore;
+
 /** Builds a {@link SnapshotArtifactStore} bound to (baseDir, logicalName). */
 export type SnapshotArtifactStoreFactory = (baseDir: string, logicalName: string) => SnapshotArtifactStore;
 

@@ -1,5 +1,10 @@
+import { existsSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { hostname, tmpdir } from "node:os";
+import { join } from "node:path";
+
 import { describe, expect, it, vi } from "vitest";
 
+import { CollectionIndexingLock } from "../../../../src/core/domains/ingest/infra/collection-indexing-lock.js";
 import { CollectionFootprintFactory } from "../../../../src/core/domains/maintenance/footprint/factory.js";
 import { CollectionFootprintPurger } from "../../../../src/core/domains/maintenance/footprint/purger.js";
 
@@ -43,10 +48,18 @@ function fakeStores(over: { statsInvalidateThrows?: string } = {}) {
   const snapshotDeleted: string[] = [];
   const quarantineCleared: string[] = [];
   const statsInvalidated: string[] = [];
+  const lockTornDown: string[] = [];
   return {
     snapshotDeleted,
     quarantineCleared,
     statsInvalidated,
+    lockTornDown,
+    indexingLockStoreFactory: (_base: string, logical: string) => ({
+      removeIfStale: vi.fn(async () => {
+        lockTornDown.push(logical);
+        return { status: "absent" as const };
+      }),
+    }),
     statsCache: {
       clone: vi.fn(),
       invalidate: vi.fn((name: string) => {
@@ -75,6 +88,7 @@ interface PurgerHarnessOverrides {
   registry?: { listWorktrees: () => unknown[] };
   daemon?: { pid: () => number | undefined; refs: () => number };
   statsInvalidateThrows?: string;
+  indexingLockStoreFactory?: (baseDir: string, logicalName: string) => { removeIfStale: () => Promise<unknown> };
 }
 
 function buildPurger(over: PurgerHarnessOverrides = {}) {
@@ -88,6 +102,7 @@ function buildPurger(over: PurgerHarnessOverrides = {}) {
     snapshotBaseDir: "/snap",
     snapshotStoreFactory: stores.snapshotStoreFactory as never,
     quarantineStoreFactory: stores.quarantineStoreFactory as never,
+    indexingLockStoreFactory: (over.indexingLockStoreFactory ?? stores.indexingLockStoreFactory) as never,
   });
   const purger = new CollectionFootprintPurger({
     qdrant: qdrant as never,
@@ -161,7 +176,7 @@ describe("CollectionFootprintPurger", () => {
   });
 
   describe("alias-keyed stores", () => {
-    it("clears the snapshot, stats and quarantine exactly once, keyed on the LOGICAL name", async () => {
+    it("clears the snapshot, stats, quarantine and indexing lock exactly once, keyed on the LOGICAL name", async () => {
       const qdrant = fakeQdrant(["code_a_v1", "code_a_v2"], [{ aliasName: "code_a", collectionName: "code_a_v2" }]);
       const { purger, stores } = buildPurger({ qdrant });
 
@@ -170,7 +185,8 @@ describe("CollectionFootprintPurger", () => {
       expect(stores.snapshotDeleted).toEqual(["code_a"]);
       expect(stores.quarantineCleared).toEqual(["code_a"]);
       expect(stores.statsInvalidated).toEqual(["code_a"]);
-      expect(report.clearedStores.sort()).toEqual(["quarantine", "snapshot", "stats"]);
+      expect(stores.lockTornDown).toEqual(["code_a"]);
+      expect(report.clearedStores.sort()).toEqual(["indexing-lock", "quarantine", "snapshot", "stats"]);
     });
 
     it("clears the alias-keyed stores even when the collection has no Qdrant generation left", async () => {
@@ -222,7 +238,7 @@ describe("CollectionFootprintPurger", () => {
 
       expect(report.failures.map((f) => f.artifact)).toContain("stats");
       expect(report.failures.find((f) => f.artifact === "stats")?.reason).toContain("stats file busy");
-      expect(report.clearedStores.sort()).toEqual(["quarantine", "snapshot"]);
+      expect(report.clearedStores.sort()).toEqual(["indexing-lock", "quarantine", "snapshot"]);
       expect(stores.snapshotDeleted).toEqual(["code_a"]);
       expect(stores.quarantineCleared).toEqual(["code_a"]);
     });
@@ -238,6 +254,69 @@ describe("CollectionFootprintPurger", () => {
       expect(report.qdrantCollections).toEqual([]);
       expect(report.failures).toHaveLength(1);
       expect(report.failures[0]?.target).toBe("code_a_v1");
+    });
+  });
+
+  describe("indexing lock", () => {
+    const DEAD_PID = 4242;
+    const LIVE_PID = 5151;
+
+    /** A real `code_a.indexing.lock` in a temp dir, and a store that tears it down with the real rules. */
+    function lockOnDisk(pid: number) {
+      const dir = mkdtempSync(join(tmpdir(), "purge-lock-"));
+      const file = join(dir, "code_a.indexing.lock");
+      const now = new Date().toISOString();
+      writeFileSync(
+        file,
+        JSON.stringify({ pid, hostname: hostname(), startedAt: now, heartbeatAt: now, operation: "index-codebase" }),
+      );
+      const indexingLockStoreFactory = (_base: string, logical: string) => ({
+        removeIfStale: async () =>
+          new CollectionIndexingLock({ lockDir: dir, isProcessAlive: (p) => p !== DEAD_PID }).removeIfStale(logical),
+      });
+      return { dir, file, indexingLockStoreFactory };
+    }
+
+    it("removes the indexing lock a dead run left behind", async () => {
+      const lock = lockOnDisk(DEAD_PID);
+      try {
+        const { purger } = buildPurger({
+          qdrant: fakeQdrant(["code_a_v1"]),
+          indexingLockStoreFactory: lock.indexingLockStoreFactory,
+        });
+
+        const report = await purger.purge({ logicalName: "code_a" });
+
+        expect(existsSync(lock.file)).toBe(false);
+        expect(report.clearedStores).toContain("indexing-lock");
+        expect(report.failures).toEqual([]);
+      } finally {
+        rmSync(lock.dir, { recursive: true, force: true });
+      }
+    });
+
+    it("leaves a live run's indexing lock in place, reports who holds it, and clears everything else", async () => {
+      const lock = lockOnDisk(LIVE_PID);
+      try {
+        const qdrant = fakeQdrant(["code_a_v1"]);
+        const { purger, stores } = buildPurger({ qdrant, indexingLockStoreFactory: lock.indexingLockStoreFactory });
+
+        const report = await purger.purge({ logicalName: "code_a" });
+
+        expect(existsSync(lock.file)).toBe(true);
+        expect(report.clearedStores).not.toContain("indexing-lock");
+        expect(report.failures).toEqual([
+          expect.objectContaining({
+            artifact: "indexing-lock",
+            target: "code_a",
+            reason: expect.stringMatching(/pid 5151/) as unknown as string,
+          }),
+        ]);
+        expect(stores.snapshotDeleted).toEqual(["code_a"]);
+        expect([...qdrant.live]).toEqual([]);
+      } finally {
+        rmSync(lock.dir, { recursive: true, force: true });
+      }
     });
   });
 

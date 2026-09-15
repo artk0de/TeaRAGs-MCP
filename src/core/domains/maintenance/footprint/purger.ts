@@ -76,7 +76,8 @@ function describe(err: unknown): string {
 /**
  * Removes the FULL per-collection footprint of one registered project: every
  * Qdrant generation, every codegraph DuckDB generation, the snapshot, the stats
- * cache and the quarantine file.
+ * cache, the quarantine file and a dead run's indexing lock. A live run's lock is
+ * left in place and reported as a failure naming its holder.
  *
  * It exists because `projects unregister --purge` used to delete exactly one
  * thing — the collection named by the registry entry — and that name is the

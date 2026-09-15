@@ -38,6 +38,14 @@ export interface IndexingMarkerPayload {
 export const STALE_INDEXING_THRESHOLD_MS = 10 * 60 * 1000; // 10 minutes
 
 /**
+ * How often a live indexing run proves it is alive: the indexing marker's
+ * `lastHeartbeat` and the collection indexing lock's `heartbeatAt` both refresh
+ * on this cadence. Twenty beats fit in {@link STALE_INDEXING_THRESHOLD_MS}, so a
+ * run is presumed dead only after missing many in a row.
+ */
+export const INDEXING_HEARTBEAT_INTERVAL_MS = 30_000; // 30 seconds
+
+/**
  * Is the run that wrote this marker presumed dead? Cleanup's reading.
  *
  * `lastHeartbeat` is the live signal; `startedAt` is the fallback for markers

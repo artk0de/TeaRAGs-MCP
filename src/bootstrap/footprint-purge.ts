@@ -15,6 +15,7 @@ import { join } from "node:path";
 import { CodegraphDbFiles } from "../core/adapters/duckdb/codegraph-db-files.js";
 import { getDaemonPaths, getStorageDir, readDaemonPid, readRefs } from "../core/adapters/duckdb/daemon/lifecycle.js";
 import type { QdrantManager } from "../core/adapters/qdrant/client.js";
+import { CollectionIndexingLock } from "../core/domains/ingest/infra/index.js";
 import { QuarantineStore } from "../core/domains/ingest/sync/index.js";
 import { ShardedSnapshotManager } from "../core/domains/ingest/sync/snapshot/index.js";
 import {
@@ -57,6 +58,9 @@ export function createCollectionFootprintPurger(deps: FootprintPurgeDeps): Colle
     snapshotBaseDir,
     snapshotStoreFactory: (baseDir, logicalName) => new ShardedSnapshotManager(baseDir, logicalName),
     quarantineStoreFactory: (baseDir, logicalName) => new QuarantineStore(baseDir, logicalName),
+    indexingLockStoreFactory: (baseDir, logicalName) => ({
+      removeIfStale: async () => new CollectionIndexingLock({ lockDir: baseDir }).removeIfStale(logicalName),
+    }),
   });
   return new CollectionFootprintPurger({
     qdrant: deps.qdrant,
