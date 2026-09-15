@@ -156,6 +156,15 @@ interface RunState {
    * unless the caller that opened the run declared otherwise.
    */
   runCoverage: EnrichmentRunCoverage;
+  /**
+   * Settles when this run's completion finishes — executor release and daemon
+   * release included — and never rejects (bd tea-rags-mcp-71n0p / u3e77). Set
+   * synchronously on entry to `awaitCompletion`, cleared when it returns;
+   * undefined for a run whose completion never started, which has nothing
+   * running to overlap with. `recomputeEnrichments` awaits it so its run cannot
+   * overlap the tail of the one before.
+   */
+  inFlightCompletion?: Promise<void>;
 }
 
 export class EnrichmentCoordinator {
@@ -694,6 +703,23 @@ export class EnrichmentCoordinator {
     const { matched } = selectProviderKeys(this.providerKeys, selectors);
     if (matched.length === 0) return EMPTY_METRICS;
 
+    // Neither read the chunk set nor open this run while the previous run is
+    // still completing (bd tea-rags-mcp-71n0p / u3e77). On `--force-enrichments`
+    // that is the sync leg's run, left completing in the background. Its tail
+    // releases the collection, which on the worker pool evicts the provider
+    // state this run's deferred chunk pass reads, and writes a terminal chunk
+    // marker that would otherwise land under this run's `_run` pointer. A run
+    // whose completion never started has nothing to wait for.
+    const previousCompletion = this.currentRun?.inFlightCompletion;
+    if (previousCompletion) {
+      const waitStartedAt = Date.now();
+      await previousCompletion;
+      pipelineLog.enrichmentPhase("RECOMPUTE_AWAIT_PREVIOUS_RUN", {
+        collection: collectionName,
+        durationMs: Date.now() - waitStartedAt,
+      });
+    }
+
     // Re-derive the chunk set from the index itself. The points are already
     // stored — this pass rewrites their payload, so the ids and line ranges
     // come from Qdrant rather than from a fresh chunking pass.
@@ -1156,10 +1182,29 @@ export class EnrichmentCoordinator {
 
   /**
    * Wait for all in-flight enrichment work to complete across all providers.
+   *
+   * The completion is recorded on the run BEFORE the first await, so a caller
+   * that fires this and moves on — the pipeline does — has already made it
+   * visible to `recomputeEnrichments` by the time control returns.
    */
   async awaitCompletion(collectionName: string): Promise<EnrichmentMetrics> {
     const run = this.currentRun;
     if (!run || run.contexts.size === 0) return EMPTY_METRICS;
+    const completion = this.completeRun(run, collectionName);
+    const inFlight = completion.then(
+      () => undefined,
+      () => undefined,
+    );
+    run.inFlightCompletion = inFlight;
+    try {
+      return await completion;
+    } finally {
+      if (run.inFlightCompletion === inFlight) run.inFlightCompletion = undefined;
+    }
+  }
+
+  /** The completion sequence proper for `run`, ending with the executor and daemon releases. */
+  private async completeRun(run: RunState, collectionName: string): Promise<EnrichmentMetrics> {
     // Block until the run's `_run` pointer has persisted, so the terminal
     // writes (which carry this run's runId) land against a present run-pointer
     // and the health mapper's runId comparison is meaningful.
