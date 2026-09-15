@@ -20,7 +20,12 @@
   `codegraph.symbols.{chunk,file}.*`** (`codegraph-payload-heal.ts`). It
   rewrites points OUTSIDE the run's `chunkMap` whose derived signals moved
   because the graph around them did, always after `applyFinalizeFile` and the
-  deferred chunk pass, as `CompletionRunner` step 7b. It obeys the same two
+  deferred chunk pass, as `CompletionRunner` step 7b. That order is carried by
+  signatures, not comments: `CompletionRunner#runDeferredChunkPass` returns the
+  `DeferredChunkPassOutcome` the heal's skip set is built from (read before the
+  pass clears its map, seeded paths excluded), and
+  `CompletionRunner#markChunkTerminals` requires the `CodegraphHealStepOutcome`
+  — keep new dependencies between those steps as values. It obeys the same two
   rules as the applier — level-scoped `op.key` with bare inner keys, and no
   write over a level already carrying `skippedAs` — and it stamps the run's
   `enrichedAt` like any other write of those keys. HOW it finds those points is

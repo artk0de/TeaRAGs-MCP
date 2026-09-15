@@ -29,6 +29,7 @@ interface Harness {
   contexts: Map<string, unknown>;
   heal: ReturnType<typeof vi.fn>;
   chunkPhase: ChunkPhase;
+  marker: EnrichmentMarkerStore;
 }
 
 async function buildHarness(options: { defers: boolean; heal?: CodegraphPayloadHealRunner["run"] }): Promise<Harness> {
@@ -77,8 +78,93 @@ async function buildHarness(options: { defers: boolean; heal?: CodegraphPayloadH
     chunkItem("/repo", "src/changed.ts", "c1"),
   ] as never);
 
-  return { runner, contexts: contexts as Map<string, unknown>, heal, chunkPhase };
+  return { runner, contexts: contexts as Map<string, unknown>, heal, chunkPhase, marker };
 }
+
+// bd tea-rags-mcp-39xca.5 — the completion tail's step dependencies are values, not
+// comments: the deferred chunk pass returns the paths it owned, the heal builds its
+// skip set from that value alone, and the chunk markers take the heal's outcome.
+describe("CompletionRunner typed completion plan", () => {
+  it("the deferred chunk pass names the whole-file paths it owned, seeded paths excluded", async () => {
+    const { runner, contexts, chunkPhase } = await buildHarness({ defers: true });
+    chunkPhase.appendDeferredChunks(
+      "codegraph.symbols",
+      new Map([["src/owed.ts", [{ chunkId: "o1", startLine: 1, endLine: 5 }]]]),
+    );
+
+    const deferredPass = await runner.runDeferredChunkPass("coll", contexts as never);
+
+    expect(deferredPass.kind).toBe("deferred");
+    const owned = deferredPass.kind === "deferred" ? [...deferredPass.wholeFileRelPaths] : [];
+    expect(owned).toEqual(["src/changed.ts"]);
+    // The pass clears its accumulated map on the way out — the outcome is what survives.
+    expect(chunkPhase.getDeferredChunkMap("codegraph.symbols").size).toBe(0);
+  });
+
+  it("the heal receives exactly the paths the deferred pass returned", async () => {
+    const { runner, contexts, heal } = await buildHarness({ defers: true });
+
+    const deferredPass = await runner.runDeferredChunkPass("coll", contexts as never);
+    const healOutcome = await runner.runCodegraphHeal("coll", deferredPass, "2026-09-15T00:00:00.000Z");
+
+    expect(heal).toHaveBeenCalledTimes(1);
+    const [coll, skip, enrichedAt] = heal.mock.calls[0];
+    expect(coll).toBe("coll");
+    expect(deferredPass.kind).toBe("deferred");
+    expect(skip).toEqual(deferredPass.kind === "deferred" ? deferredPass.wholeFileRelPaths : undefined);
+    expect(enrichedAt).toBe("2026-09-15T00:00:00.000Z");
+    expect(healOutcome).toEqual({ kind: "healed", pointsRewritten: 4, filesTouched: 2 });
+  });
+
+  it("a run with no deferring provider yields a not-applicable heal without calling the runner", async () => {
+    const { runner, contexts, heal } = await buildHarness({ defers: false });
+
+    const deferredPass = await runner.runDeferredChunkPass("coll", contexts as never);
+    const healOutcome = await runner.runCodegraphHeal("coll", deferredPass, "ts");
+
+    expect(deferredPass).toEqual({ kind: "noDeferringProvider" });
+    expect(healOutcome).toEqual({ kind: "notApplicable" });
+    expect(heal).not.toHaveBeenCalled();
+  });
+
+  it("a heal that throws settles as a failed outcome instead of rejecting", async () => {
+    const { runner, contexts } = await buildHarness({
+      defers: true,
+      heal: async () => {
+        throw new Error("qdrant unreachable");
+      },
+    });
+
+    const deferredPass = await runner.runDeferredChunkPass("coll", contexts as never);
+
+    expect(await runner.runCodegraphHeal("coll", deferredPass, "ts")).toEqual({
+      kind: "failed",
+      error: "qdrant unreachable",
+    });
+  });
+
+  it("writes the terminal chunk marker only after the heal outcome has settled", async () => {
+    const events: string[] = [];
+    const { runner, contexts, marker } = await buildHarness({
+      defers: true,
+      heal: async () => {
+        events.push("heal:start");
+        await new Promise((resolve) => setTimeout(resolve, 10));
+        events.push("heal:settled");
+        return { pointsRewritten: 1, filesTouched: 1 };
+      },
+    });
+    const markChunkFinal = marker.markChunkFinal.bind(marker);
+    vi.spyOn(marker, "markChunkFinal").mockImplementation(async (...args) => {
+      events.push("chunkMarker");
+      return markChunkFinal(...args);
+    });
+
+    await runner.run("coll", contexts as never, Date.now() - 1000, undefined, "ts", "run-1");
+
+    expect(events).toEqual(["heal:start", "heal:settled", "chunkMarker"]);
+  });
+});
 
 // bd tea-rags-mcp-fxio5 — a path seeded from a recovery handoff carries only the
 // chunks recovery found owed, not the file's whole chunk set. The deferred pass
