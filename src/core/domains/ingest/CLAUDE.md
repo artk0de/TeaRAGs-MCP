@@ -8,17 +8,17 @@ pipeline, operations and enrichment halves each carry their own.
 - **`quarantine.json` is a SIBLING of the collection's snapshot dir and is
   written the instant a file fails.** `QuarantineStore` builds
   ``join(snapshotDir, `${collectionName}.quarantine.json`)``
-  (sync/quarantine-store.ts:51) — deliberately NOT inside `<collection>/`,
-  because `ShardedSnapshotManager` (sync/snapshot/sharded-snapshot.ts:81)
+  (`QuarantineStore#constructor`) — deliberately NOT inside `<collection>/`,
+  because `ShardedSnapshotManager` (`sync/snapshot/sharded-snapshot.ts`)
   atomically swaps that whole directory on every save and would wipe a file
-  written mid-pass. Two more deliberate properties: `#markFailed` (:83-89)
-  persists on EVERY failure via tmp+rename (:149-160), never batched to
-  end-of-pass — which is also why it is not folded into `meta.json`, written
-  only on successful completion; and because it sits outside the snapshot dir,
-  deleting the collection does NOT reap it — `StatusModule`
-  (pipeline/status-module.ts:404-408) drops it explicitly alongside the stats
-  cache. `forceReindex` and schema-drift rebuilds call `clearAll()`
-  (operations/indexing.ts:104). Mutations serialize per `QuarantineStore`
+  written mid-pass. Two more deliberate properties: `QuarantineStore#markFailed`
+  persists on EVERY failure via tmp+rename (`QuarantineStore#persist`), never
+  batched to end-of-pass — which is also why it is not folded into `meta.json`,
+  written only on successful completion; and because it sits outside the
+  snapshot dir, deleting the collection does NOT reap it —
+  `StatusModule#clearIndex` drops it explicitly alongside the stats cache.
+  `forceReindex` and schema-drift rebuilds call `clearAll()`
+  (`IndexPipeline#indexCodebase`). Mutations serialize per `QuarantineStore`
   instance through a write chain with UUID-suffixed tmp files; concurrent
   PROCESSES are last-rename-wins by accepted design. Why: move it inside the
   snapshot dir and a mid-pass failure list vanishes on the next save; drop the
@@ -30,23 +30,24 @@ pipeline, operations and enrichment halves each carry their own.
 
 - **Quarantining is decided by two classifiers with OPPOSITE polarity, and
   Qdrant upserts are not quarantinable at all.** EMBED path
-  (`sync/quarantine-classifier.ts#classifyEmbeddingQuarantinable`, :80-95): only
-  a token-level context overflow (`INFRA_OLLAMA_CONTEXT_OVERFLOW`) or an
-  embedding 400/413/422 quarantines — 429, 401, 5xx, network and everything else
-  return `null` and keep their retry/abort behaviour. READ/PARSE path
-  (`#classifyQuarantinable`, :50-70): a catch-all — anything that is NOT an
+  (`sync/quarantine-classifier.ts#classifyEmbeddingQuarantinable`): only a
+  token-level context overflow (`INFRA_OLLAMA_CONTEXT_OVERFLOW`) or an embedding
+  400/413/422 quarantines — 429, 401, 5xx, network and everything else return
+  `null` and keep their retry/abort behaviour. READ/PARSE path
+  (`classifyQuarantinable`, same file): a catch-all — anything that is NOT an
   `InfraError` (transient infra) or an `IngestError` (pipeline invariant)
   becomes a `FileReadError` (FS codes) or `FileParseError`. UPSERT:
-  `QdrantPayloadTooLargeError` is declared (errors.ts:199) but constructed
-  nowhere in `src/`; `ChunkPipeline` rethrows every upsert error after notifying
-  `AdaptiveBatchSizer` (pipeline/chunk-pipeline.ts:382-402). The intentional
-  `secrets` / `chunk-limit` / `compiled` skips (pipeline/file-ingestor.ts:33,
-  118, 157-158) are not failures and never reach either classifier. Why: the
-  read/parse side quarantines by DEFAULT — its only guard is the `InfraError` /
-  `IngestError` exclusion, so widening that catch (or narrowing the exclusion)
-  starts permanently quarantining files a transient FS or infra hiccup touched.
-  And treating "Qdrant 413 on upsert" as a live quarantine path sends an agent
-  hunting for a classifier that does not exist.
+  `QdrantPayloadTooLargeError` is declared (`domains/ingest/errors.ts`) but
+  constructed nowhere in `src/`; `ChunkPipeline` rethrows every upsert error
+  after notifying `AdaptiveBatchSizer` (`ChunkPipeline#createBatchHandler`). The
+  intentional `secrets` / `chunk-limit` / `compiled` skips
+  (`PreParseSkipReason`, `SourceFileIngestor#ingest`,
+  `SourceFileIngestor#preParseSkipReason`) are not failures and never reach
+  either classifier. Why: the read/parse side quarantines by DEFAULT — its only
+  guard is the `InfraError` / `IngestError` exclusion, so widening that catch
+  (or narrowing the exclusion) starts permanently quarantining files a transient
+  FS or infra hiccup touched. And treating "Qdrant 413 on upsert" as a live
+  quarantine path sends an agent hunting for a classifier that does not exist.
 
 ## See also
 

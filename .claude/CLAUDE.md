@@ -75,7 +75,10 @@ LINKS to a path-scoped rule, never restates it, and states each fact ONCE — a
 fact two directories share belongs to their deepest common ancestor, a fact
 another domain owns stays a pointer. (`.claude/rules/plugin-guidance-layers.md`
 governs the four PLUGIN-facing layers — prime, tool schema, MCP resources,
-search cascade — not these.)
+search cascade — not these.) A navigator cites code by symbol (`Class#method`,
+`functionName`, or a file plus a symbol) and never by line number, which drifts
+silently — `tests/navigator-code-references.test.ts` fails on any
+`file.ts:NNN`-style reference.
 
 | Navigator (under `src/core/`)         | What it briefs you on                                                                |
 | ------------------------------------- | ------------------------------------------------------------------------------------ |

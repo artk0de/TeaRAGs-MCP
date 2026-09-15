@@ -5,16 +5,17 @@
 - **Chunk signals cannot be computed per batch — the graph only exists after the
   run sink finishes.** Chunk `fanIn` / `fanOut` / `pageRank` are read back out
   of DuckDB, so the provider declares `defersChunkEnrichment = true`
-  (symbols/provider.ts:365; git never sets it — git/provider.ts:300-301 says so
-  explicitly). `ChunkPhase#onBatchProvider` then skips per-batch chunk dispatch
-  and only accumulates the batch's chunkMap
-  (ingest/pipeline/enrichment/chunk-phase.ts:246-251), and
-  `CompletionRunner#run` performs ONE `buildChunkSignals` pass as **step 7**,
-  `runDeferredChunkPass` (completion-runner.ts:121) — after the file finalize
-  (step 2) and the git streaming chunk drain (step 6), before `markChunkFinal`
-  (step 8). Why: the step indices moved once already (an out-of-window backfill
-  now overlaps the finalize), so citing "step 6" points at git's drain; and
-  reading the graph any earlier reads an unfinished graph.
+  (`CodegraphEnrichmentProvider`, `symbols/provider.ts`; git never sets it — a
+  docblock in `GitEnrichmentProvider` says so explicitly).
+  `ChunkPhase#onBatchProvider` then skips per-batch chunk dispatch and only
+  accumulates the batch's chunkMap
+  (`ingest/pipeline/enrichment/chunk-phase.ts`), and `CompletionRunner#run`
+  performs ONE `buildChunkSignals` pass as **step 7**,
+  `CompletionRunner#runDeferredChunkPass` — after the file finalize (step 2) and
+  the git streaming chunk drain (step 6), before `markChunkFinal` (step 8). Why:
+  the step indices moved once already (an out-of-window backfill now overlaps
+  the finalize), so citing "step 6" points at git's drain; and reading the graph
+  any earlier reads an unfinished graph.
 - **`cg_symbols.chunk_id` belongs to the deferred chunk pass alone, and that
   pass REPLACES it per file it names.** Every `cg_*` table including
   `cg_symbols` is now written as a row diff (`applyScopedRowDiff`), so a
@@ -46,9 +47,9 @@
   that does not call the rule reintroduces exactly that.
 - **The graph DB is addressed by the PHYSICAL versioned collection name, and
   heals only per re-extracted file.** `GraphDbClientPool#pathFor`
-  (adapters/duckdb/pool.ts:222) resolves whatever string it is handed,
-  literally, so passing the alias opens a second shadow database — which
-  artifact keys on the alias and which on the versioned name is
+  (`adapters/duckdb/pool.ts`) resolves whatever string it is handed, literally,
+  so passing the alias opens a second shadow database — which artifact keys on
+  the alias and which on the versioned name is
   `../../maintenance/footprint/CLAUDE.md`, the caller-side rule and the measured
   incident are `../../ingest/operations/CLAUDE.md`. Edges are reconciled per
   source file — `DuckDbFileGraphStore#writeFileRowsGroup` diffs each file's
@@ -192,7 +193,7 @@
 
 - **A flat `## Codegraph resolve` block in prime is the one-language case, not a
   lost breakdown.** `summarizeCodegraphResolve`
-  (`../../ingest/pipeline/status-module.ts:245-268`) drops any language under
+  (`../../ingest/pipeline/status-module.ts`) drops any language under
   `MIN_LANGUAGE_SHARE` of the call sites, omits `byLanguage` entirely when ≤1
   survives, and hangs that language's kinds off the top-level `byReceiverKind`
   (DEBUG builds; without it no kind tally exists to place), which
@@ -202,31 +203,31 @@
   which reads as a regression in the tally and is the display rule working (bd
   tea-rags-mcp-7m5xz).
 - **Keys are logical (`codegraph.file.X`) but the payload is physical
-  (`codegraph.symbols.file.X`).** Descriptors
-  (symbols/payload-signals.ts:27-140), overlay masks, filter conditions and
-  collection stats all key LOGICALLY; the stored payload nests one level deeper.
-  `toPhysicalPayloadKey` (contracts/signal-utils.ts:95-98) bridges them —
-  percentile lookups use the logical key (filter-presets/compiler.ts:28-31),
-  Qdrant conditions the physical path (:36). git and static keys are already
-  physical, so codegraph is the only asymmetric namespace. The mirror hazard is
-  prefixing an already level-qualified key (`chunk.` +
+  (`codegraph.symbols.file.X`).** Descriptors (`symbols/payload-signals.ts`),
+  overlay masks, filter conditions and collection stats all key LOGICALLY; the
+  stored payload nests one level deeper. `toPhysicalPayloadKey`
+  (`contracts/signal-utils.ts`) bridges them — percentile lookups use the
+  logical key (`resolveThreshold` in `filter-presets/compiler.ts`), Qdrant
+  conditions the physical path (`compileCondition`). git and static keys are
+  already physical, so codegraph is the only asymmetric namespace. The mirror
+  hazard is prefixing an already level-qualified key (`chunk.` +
   `codegraph.chunk.pageRank`), which is what `isLevelQualifiedPayloadKey`
-  (signal-utils.ts:100-117) exists to prevent. Why: a hand-written Qdrant filter
-  or payload read using the logical key matches nothing, and every payload read
-  in this codebase answers `undefined` rather than raising — the signal vanishes
-  without a trace.
+  (`contracts/signal-utils.ts`) exists to prevent. Why: a hand-written Qdrant
+  filter or payload read using the logical key matches nothing, and every
+  payload read in this codebase answers `undefined` rather than raising — the
+  signal vanishes without a trace.
 
 ## Boundaries
 
 - **Tests and generated files are unconditionally out of the graph while staying
   in the index — and say so in the payload.** `buildCodegraphExclusionFilter`
-  (exclusion.ts:74-95) adds `GENERATED_PATTERNS` + `TEST_PATTERNS` after the
+  (`exclusion.ts`) adds `GENERATED_PATTERNS` + `TEST_PATTERNS` after the
   FileScanner ignore filter with no env opt-out (bd tea-rags-mcp-6xxh5), then
   each language's `codegraphExclusionGlobs` and `CODEGRAPH_CUSTOM_EXCLUDE`.
   Qdrant ingest is untouched: those files stay chunked, embedded and searchable.
   The declined file is STAMPED `codegraph.symbols.{file,chunk}.skippedAs`, and
   the value comes from the CLASSIFICATION, not from which list matched
-  (`enrichmentSkipReason`, enrichment/policy.ts:63-78): the two pattern families
+  (`enrichmentSkipReason`, `enrichment/policy.ts`): the two pattern families
   read back as `"generated"` / `"test"`, but a language glob or
   `CODEGRAPH_CUSTOM_EXCLUDE` hit that no classification flag explains — a
   `db/migrate/*.rb`, say — lands as `"policy"`. The stamp contract and why an
