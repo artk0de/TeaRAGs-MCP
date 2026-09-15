@@ -27,6 +27,7 @@ function makeDeps(overrides: Partial<IndexingOpsDeps> = {}): IndexingOpsDeps {
     enrichment: {
       setEnrichmentProgress: vi.fn(),
       whenComplete: vi.fn().mockResolvedValue(undefined),
+      whenCompletionsSettled: vi.fn().mockResolvedValue(undefined),
       runRecovery: vi.fn().mockResolvedValue(undefined),
     } as never,
     snapshotDir: "/tmp/snap",

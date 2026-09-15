@@ -18,8 +18,9 @@ import type { LanguageCodeVersions } from "../../../contracts/types/language.js"
 import type { StatsAccumulatorDescriptor } from "../../../contracts/types/stats-accumulator.js";
 import type { PayloadSignalDescriptor, ScoreBackground } from "../../../contracts/types/trajectory.js";
 import type { Reranker } from "../../../domains/explore/reranker.js";
-import { NotIndexedError } from "../../../domains/ingest/errors.js";
+import { IndexingAlreadyInProgressError, NotIndexedError } from "../../../domains/ingest/errors.js";
 import { computeCollectionStats } from "../../../domains/ingest/infra/collection-stats.js";
+import { isCollectionIndexingInFlight } from "../../../domains/ingest/infra/index.js";
 import { resolveAliasTargetCollection } from "../../../domains/ingest/operations/index.js";
 import type { IndexPipeline } from "../../../domains/ingest/operations/indexing.js";
 import type { ReindexPipeline } from "../../../domains/ingest/operations/reindexing.js";
@@ -153,6 +154,21 @@ export class IndexingOps {
   private readonly languageCodeVersions?: ReadonlyMap<string, LanguageCodeVersions>;
   private readonly driftReporter?: IndexDriftConsumptionResetter;
   private readonly resolveCollectionForPath: PathCollectionResolver;
+  /**
+   * Collections an index operation of THIS process holds — from `run` entry
+   * until the background enrichment it detached has settled
+   * (bd tea-rags-mcp-62pgi). Keyed by the resolved collection name.
+   */
+  private readonly indexingCollections = new Set<string>();
+  /**
+   * When this process's last index operation on a collection let go of it
+   * (epoch ms). Markers stamped at or before it came from that operation, so
+   * they prove nothing about another session — without this, a retry after a
+   * failed run would be refused for as long as the dead run's heartbeat is fresh.
+   */
+  private readonly indexingSettledAt = new Map<string, number>();
+  /** Collection holds still waiting on the enrichment their operation detached. */
+  private readonly pendingCollectionReleases = new Set<Promise<void>>();
 
   constructor(deps: IndexingOpsDeps) {
     this.qdrant = deps.qdrant;
@@ -198,12 +214,40 @@ export class IndexingOps {
    * per-(provider, level) progress through it. The call itself returns once
    * embeddings + alias are done (enrichment continues in the background) —
    * callers that must outlive enrichment await {@link whenEnrichmentComplete}.
+   *
+   * Refuses with `IndexingAlreadyInProgressError` when the collection is already
+   * being indexed, here or in another session (bd tea-rags-mcp-62pgi). This is
+   * the one entry both MCP `index_codebase` and the CLI worker reach, and the
+   * check runs once per call — the `--force-enrichments` sync leg and recompute
+   * run inside it and never meet the check again.
    */
   async run(
     path: string,
     options?: IndexOptions,
     progressCallback?: ProgressCallback,
     enrichmentProgress?: EnrichmentProgressCallback,
+  ): Promise<IndexStats> {
+    // Claimed before anything shared is touched: a refused call must not reset
+    // the profiler or swap the progress sink out from under the running one.
+    const collectionName = await this.claimCollectionForIndexing(path);
+    let heldUntilEnrichmentSettles = false;
+    try {
+      const stats = await this.runClaimed(path, options, progressCallback, enrichmentProgress);
+      heldUntilEnrichmentSettles = true;
+      const release = this.releaseCollectionWhenEnrichmentSettles(collectionName);
+      this.pendingCollectionReleases.add(release);
+      void release.finally(() => this.pendingCollectionReleases.delete(release));
+      return stats;
+    } finally {
+      if (!heldUntilEnrichmentSettles) this.releaseCollectionForIndexing(collectionName);
+    }
+  }
+
+  private async runClaimed(
+    path: string,
+    options: IndexOptions | undefined,
+    progressCallback: ProgressCallback | undefined,
+    enrichmentProgress: EnrichmentProgressCallback | undefined,
   ): Promise<IndexStats> {
     // Reset the stage profiler at the true start of an indexing session (csyve)
     // — before the embedding health probe records "embed-warmup" and before the
@@ -231,6 +275,54 @@ export class IndexingOps {
   }
 
   /**
+   * Take the collection for one index operation, or refuse (bd
+   * tea-rags-mcp-62pgi). The in-process check and the claim are adjacent with no
+   * await between them, so two calls racing here cannot both pass. The persisted
+   * state is read BEFORE this operation writes a marker of its own, so the
+   * operation can never mistake itself for another session.
+   */
+  private async claimCollectionForIndexing(path: string): Promise<string> {
+    const collectionName = await this.resolveCollectionForPath(await validatePath(path));
+    if (this.indexingCollections.has(collectionName)) throw new IndexingAlreadyInProgressError(path);
+    this.indexingCollections.add(collectionName);
+
+    let inFlightElsewhere = false;
+    try {
+      inFlightElsewhere = await isCollectionIndexingInFlight(this.qdrant, collectionName, {
+        ownRunsSettledAt: this.indexingSettledAt.get(collectionName),
+      });
+    } finally {
+      if (inFlightElsewhere) this.indexingCollections.delete(collectionName);
+    }
+    if (inFlightElsewhere) throw new IndexingAlreadyInProgressError(path);
+    return collectionName;
+  }
+
+  /**
+   * Hold the collection until the enrichment the operation detached has settled.
+   * Waits on the collection the run actually wrote — the alias target — because
+   * that is the name its completion is tracked under.
+   */
+  private async releaseCollectionWhenEnrichmentSettles(collectionName: string): Promise<void> {
+    try {
+      let runCollection = collectionName;
+      try {
+        runCollection = resolveAliasTargetCollection(collectionName, await this.qdrant.aliases.listAliases());
+      } catch {
+        // No alias listing: the run addressed the collection under this name.
+      }
+      await this.enrichment.whenCompletionsSettled(runCollection);
+    } finally {
+      this.releaseCollectionForIndexing(collectionName);
+    }
+  }
+
+  private releaseCollectionForIndexing(collectionName: string): void {
+    this.indexingCollections.delete(collectionName);
+    this.indexingSettledAt.set(collectionName, Date.now());
+  }
+
+  /**
    * Resolve once the current run's background enrichment has settled. Lets a
    * short-lived caller (the CLI worker) keep its process alive until every
    * provider finishes, even though `run` returned at embedding completion.
@@ -238,6 +330,10 @@ export class IndexingOps {
    */
   async whenEnrichmentComplete(): Promise<void> {
     await this.enrichment.whenComplete();
+    // ...and until the operation that detached it has let go of its collection,
+    // so a caller that waits here and then indexes again is never refused by its
+    // own finished run (bd tea-rags-mcp-62pgi).
+    await Promise.all([...this.pendingCollectionReleases]);
   }
 
   /**

@@ -14,7 +14,7 @@ import type { Ignore } from "ignore";
 import type { EmbeddingProvider } from "../../../adapters/embeddings/base.js";
 import type { QdrantManager } from "../../../adapters/qdrant/client.js";
 import { EMBEDDED_MARKER } from "../../../adapters/qdrant/embedded/daemon.js";
-import type { EnrichmentRunCoverage } from "../../../contracts/types/provider.js";
+import type { EnrichmentRunHandle } from "../../../contracts/types/enrichment-executor.js";
 import type {
   CollectionRegistryPort,
   PathCollectionResolver,
@@ -28,6 +28,7 @@ import type { IngestDependencies } from "../factory.js";
 import type { CodegraphDbLister, CodegraphDbRemover } from "../infra/alias-cleanup.js";
 import { ChunkerPool } from "./chunker/infra/pool.js";
 import type { EnrichmentCoordinator } from "./enrichment/coordinator.js";
+import { reindexRunSpec, type EnrichmentRunSpec, type StreamedEnrichmentRunInput } from "./enrichment/run-spec.js";
 import { ChunkPipeline } from "./index.js";
 import { updateHeartbeat } from "./indexing-marker.js";
 import { pipelineLog } from "./infra/debug-logger.js";
@@ -38,6 +39,8 @@ import type { PipelineConfig } from "./types.js";
 export interface ProcessingContext {
   chunkerPool: ChunkerPool;
   chunkPipeline: ChunkPipeline;
+  /** The enrichment run this processing feeds; every per-run coordinator call names it. */
+  enrichmentRun: EnrichmentRunHandle;
 }
 
 export interface EnrichmentStatusResult {
@@ -220,7 +223,6 @@ export abstract class BaseIndexingPipeline {
     collectionName: string,
     absolutePath: string,
     scanner: FileScanner,
-    changedPaths?: string[],
     chunkSizeOverride?: number,
     fileCount = 0,
     /**
@@ -238,28 +240,24 @@ export abstract class BaseIndexingPipeline {
     // The DuckDB daemon connect is fire-and-forget inside beginRun and overlaps
     // file processing, so it is intentionally not folded into this measurement.
     const codegraphInitStart = Date.now();
-    this.setupEnrichmentHooks(
-      chunkPipeline,
+    const enrichmentRun = this.setupEnrichmentHooks(chunkPipeline, {
       absolutePath,
-      collectionName,
-      scanner.getIgnoreFilter(),
-      changedPaths,
+      collection: collectionName,
       fileCount,
+      ignoreFilter: scanner.getIgnoreFilter(),
       contentHashes,
-    );
+    });
     pipelineLog.addStageTime("codegraph-init", Date.now() - codegraphInitStart);
     chunkPipeline.start();
-    return { chunkerPool, chunkPipeline };
+    return { chunkerPool, chunkPipeline, enrichmentRun };
   }
 
   protected async finalizeProcessing(
     ctx: ProcessingContext,
     chunkMap: Map<string, ChunkLookupEntry[]>,
-    collectionName: string,
-    absolutePath: string,
   ): Promise<() => EnrichmentStatusResult> {
     await this.flushAndShutdown(ctx.chunkPipeline, ctx.chunkerPool);
-    return this.startEnrichment(chunkMap, collectionName, absolutePath);
+    return this.startEnrichment(chunkMap, ctx.enrichmentRun);
   }
 
   /**
@@ -416,39 +414,24 @@ export abstract class BaseIndexingPipeline {
   }
 
   /**
-   * What part of the corpus this pipeline's enrichment run resolves (bd
-   * tea-rags-mcp-xpmwg). The base answer is `subset`: an incremental reindex
-   * walks only what changed, and must never let codegraph report that batch as
-   * the corpus. The full-index `IndexPipeline` overrides it.
+   * The spec of this pipeline's enrichment run (bd tea-rags-mcp-xpmwg,
+   * 39xca.3). The base answer is an incremental reindex, a `subset`: it walks
+   * only what changed, and must never let codegraph report that batch as the
+   * corpus. The full-index `IndexPipeline` overrides it.
    */
-  protected enrichmentRunCoverage(): EnrichmentRunCoverage {
-    return "subset";
+  protected enrichmentRunSpec(input: StreamedEnrichmentRunInput): EnrichmentRunSpec {
+    return reindexRunSpec(input);
   }
 
   private setupEnrichmentHooks(
     chunkPipeline: ChunkPipeline,
-    absolutePath: string,
-    collectionName: string,
-    ignoreFilter: Ignore,
-    changedPaths?: string[],
-    fileCount = 0,
-    contentHashes?: ReadonlyMap<string, string>,
-  ): void {
-    this.enrichment.beginRun(
-      absolutePath,
-      collectionName,
-      ignoreFilter,
-      changedPaths,
-      this.crossPassExtractionEnabled(),
-      fileCount,
-      undefined,
-      contentHashes,
-      undefined,
-      this.enrichmentRunCoverage(),
-    );
+    input: StreamedEnrichmentRunInput & { ignoreFilter: Ignore },
+  ): EnrichmentRunHandle {
+    const run = this.enrichment.beginRun(this.enrichmentRunSpec(input));
     chunkPipeline.setOnBatchUpserted((items) => {
-      this.enrichment.onChunksStored(collectionName, absolutePath, items);
+      this.enrichment.onChunksStored(run, items);
     });
+    return run;
   }
 
   // ── Teardown ─────────────────────────────────────────────
@@ -464,21 +447,20 @@ export abstract class BaseIndexingPipeline {
    */
   private startEnrichment(
     chunkMap: Map<string, ChunkLookupEntry[]>,
-    collectionName: string,
-    absolutePath: string,
+    run: EnrichmentRunHandle,
   ): () => EnrichmentStatusResult {
     if (chunkMap.size === 0) {
       // Prefetch may have set marker to "in_progress" — drain through awaitCompletion
       // which writes the final file/chunk markers (status=completed when no work).
-      this.enrichment.awaitCompletion(collectionName).catch(() => {});
+      this.enrichment.awaitCompletion(run).catch(() => {});
       return () => ({ status: "skipped" });
     }
 
     let done = false;
     let enrichmentMetrics: EnrichmentMetrics | undefined;
-    this.enrichment.startChunkEnrichment(collectionName, absolutePath, chunkMap);
+    this.enrichment.startChunkEnrichment(run, chunkMap);
     this.enrichment
-      .awaitCompletion(collectionName)
+      .awaitCompletion(run)
       .then((m) => {
         done = true;
         enrichmentMetrics = m;

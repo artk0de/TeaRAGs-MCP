@@ -47,7 +47,7 @@ function makeExecutor(runFileBatch: ReturnType<typeof vi.fn>, overrides: Record<
     runFileSignalsStreaming: vi.fn().mockResolvedValue(new Map()),
     runChunkSignals: vi.fn().mockResolvedValue(new Map()),
     runFinalize: vi.fn().mockResolvedValue(new Map()),
-    releaseCollection: vi.fn().mockResolvedValue(undefined),
+    releaseRun: vi.fn().mockResolvedValue(undefined),
     ...overrides,
   } as never;
 }
@@ -174,19 +174,19 @@ describe("EnrichmentCoordinator.runFinalizeOnly", () => {
 
   it("closes the run it opened, so the next one starts from a clean slate", async () => {
     const provider = makeProvider({ finalizeSignals: vi.fn().mockResolvedValue(new Map()) });
-    const releaseCollection = vi.fn().mockResolvedValue(undefined);
+    const releaseRun = vi.fn().mockResolvedValue(undefined);
     const coordinator = new EnrichmentCoordinator(
       makeMarkerQdrant(),
       provider,
       undefined,
-      makeExecutor(vi.fn().mockResolvedValue(new Map()), { releaseCollection }),
+      makeExecutor(vi.fn().mockResolvedValue(new Map()), { releaseRun }),
     );
 
     await coordinator.runFinalizeOnly("/repo", "code_x_v1");
 
     // The release is the executor-side end-of-run signal — reaching it means the
     // completion sequence ran to the end rather than being short-circuited.
-    expect(releaseCollection).toHaveBeenCalledTimes(1);
+    expect(releaseRun).toHaveBeenCalledTimes(1);
     // whenComplete resolves against the SETTLED run, not a new one.
     await expect(coordinator.whenComplete()).resolves.toBeUndefined();
   });

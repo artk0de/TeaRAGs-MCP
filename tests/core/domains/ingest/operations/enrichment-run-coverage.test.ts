@@ -39,8 +39,8 @@ vi.mock("tree-sitter-typescript", () => ({
   default: { typescript: {}, tsx: {} },
 }));
 
-/** `beginRun`'s trailing positional parameter: what part of the corpus the run resolves. */
-const RUN_COVERAGE_ARG = 9;
+/** What part of the corpus a run resolves, read off the spec `beginRun` was handed. */
+const coverageOfSpec = (call: Parameters<EnrichmentCoordinator["beginRun"]>): string => call[0].scope.kind;
 
 // bd tea-rags-mcp-xpmwg — the pipeline that opens a run is what knows whether it
 // covers the whole corpus. A full index scans every file; an incremental
@@ -72,7 +72,7 @@ describe("Indexing pipelines — enrichment run coverage (xpmwg)", () => {
 
     await ingest.indexCodebase(codebaseDir);
 
-    const coverages = beginRunSpy.mock.calls.map((c) => c[RUN_COVERAGE_ARG]);
+    const coverages = beginRunSpy.mock.calls.map(coverageOfSpec);
     expect(coverages.length).toBeGreaterThan(0);
     expect(coverages.every((c) => c === "wholeCorpus")).toBe(true);
   });
@@ -85,7 +85,7 @@ describe("Indexing pipelines — enrichment run coverage (xpmwg)", () => {
     await createTestFile(codebaseDir, "b.ts", "export const b = 2;");
     await ingest.reindexChanges(codebaseDir);
 
-    const coverages = beginRunSpy.mock.calls.map((c) => c[RUN_COVERAGE_ARG]);
+    const coverages = beginRunSpy.mock.calls.map(coverageOfSpec);
     expect(coverages.length).toBeGreaterThan(0);
     expect(coverages.some((c) => c === "wholeCorpus")).toBe(false);
   });

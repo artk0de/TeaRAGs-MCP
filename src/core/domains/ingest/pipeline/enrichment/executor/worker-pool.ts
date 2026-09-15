@@ -31,10 +31,12 @@
  *
  * Release path:
  *
- *   `releaseCollection(providers, collection)` fans out a `release`
- *   envelope per worker-descriptor provider, then drops the WorkerDispatchPool's
- *   affinity binding so the next collection assigned to that routingKey
- *   can land on any free thread. Inline-fallback providers are no-ops here
+ *   `releaseRun(providers, run)` fans out a `release` envelope per
+ *   worker-descriptor provider, then drops the WorkerDispatchPool's affinity
+ *   binding so the next collection assigned to that routingKey can land on any
+ *   free thread — unless a newer run on the same collection has begun since,
+ *   in which case that run owns the state and releasing is its job
+ *   (bd tea-rags-mcp-39xca.3). Inline-fallback providers are no-ops here
  *   (the inline executor itself does no-op release per spec section 5 —
  *   one shared provider instance across collections, can't safely call
  *   onRelease without wiping state for concurrent runs).
@@ -44,6 +46,7 @@ import type {
   ChunkSignalOverlay,
   EnrichmentExecutor,
   EnrichmentProvider,
+  EnrichmentRunHandle,
   FileSignalOptions,
   FileSignalOverlay,
   WorkerEnrichmentDescriptor,
@@ -128,6 +131,12 @@ export class WorkerPoolEnrichmentExecutor implements EnrichmentExecutor {
    * set, or the pool has no worker to spare beyond the pinned one.
    */
   private readonly extractionFanout: ExtractionFanoutDispatcher | null;
+  /**
+   * The latest run begun on each collection (bd tea-rags-mcp-39xca.3). Worker
+   * provider state is cached per collection, not per run, so it is shared by
+   * every run on that collection; only the latest run's release may evict it.
+   */
+  private readonly latestRunIdByCollection = new Map<string, string>();
 
   constructor(
     poolSize: number,
@@ -195,8 +204,9 @@ export class WorkerPoolEnrichmentExecutor implements EnrichmentExecutor {
    * extraction worker. Clearing it HERE rather than at release means an aborted
    * run cannot leave a set behind that would make the next run skip files.
    */
-  beginRun(collectionName?: string, fileCount?: number): void {
-    this.extractionFanout?.beginRun(collectionName, fileCount);
+  beginRun(run: EnrichmentRunHandle, fileCount?: number): void {
+    this.latestRunIdByCollection.set(run.collection, run.runId);
+    this.extractionFanout?.beginRun(run.collection, fileCount);
   }
 
   async runFileBatch(
@@ -299,7 +309,13 @@ export class WorkerPoolEnrichmentExecutor implements EnrichmentExecutor {
     return response.fileOverlay ?? new Map();
   }
 
-  async releaseCollection(providers: EnrichmentProvider[], collection: string): Promise<void> {
+  async releaseRun(providers: EnrichmentProvider[], run: EnrichmentRunHandle): Promise<void> {
+    const { collection } = run;
+    const latestRunId = this.latestRunIdByCollection.get(collection);
+    // A newer run on this collection is still reading the pinned provider state;
+    // evicting it now would hand that run an empty symbol table mid-flight.
+    if (latestRunId !== undefined && latestRunId !== run.runId) return;
+    this.latestRunIdByCollection.delete(collection);
     await Promise.all(
       providers.map(async (provider) => {
         const descriptor = provider.workerDescriptor;

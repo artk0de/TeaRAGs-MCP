@@ -76,6 +76,11 @@ export {
 } from "../../infra/errors.js";
 export type { ConfigErrorCode } from "../../infra/errors.js";
 
+// ── Error classes — ingest domain (domains/ingest/errors.ts) ─────────
+// The auto-update updater tells "the collection is already indexing" apart
+// from a failed run (bd tea-rags-mcp-62pgi).
+export { IndexingAlreadyInProgressError } from "../../domains/ingest/errors.js";
+
 // ── Project registry — runtime + types (domains/maintenance/registry) ──
 export { CollectionRegistry } from "../../domains/maintenance/registry/index.js";
 export { PROJECT_NAME_RE } from "../../domains/maintenance/registry/index.js";

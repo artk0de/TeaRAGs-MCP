@@ -10,7 +10,6 @@
  * - Migration: converts real collection to alias scheme
  */
 
-import type { EnrichmentRunCoverage } from "../../../contracts/types/provider.js";
 import { isDebug } from "../../../infra/runtime.js";
 import type { IndexOptions, IndexStats, ProgressCallback } from "../../../types.js";
 import { IndexingFailedError } from "../errors.js";
@@ -23,6 +22,11 @@ import { claimVersionedCollection } from "../infra/collection-build-lease.js";
 import { HeartbeatGuard } from "../infra/heartbeat-guard.js";
 import { OptimizerLifecycle } from "../infra/optimizer-lifecycle.js";
 import { BaseIndexingPipeline, type ProcessingContext } from "../pipeline/base.js";
+import {
+  fullIndexRunSpec,
+  type EnrichmentRunSpec,
+  type StreamedEnrichmentRunInput,
+} from "../pipeline/enrichment/run-spec.js";
 import { processFiles } from "../pipeline/file-processor.js";
 import { storeIndexingMarker } from "../pipeline/indexing-marker.js";
 import { pipelineLog } from "../pipeline/infra/debug-logger.js";
@@ -118,7 +122,6 @@ export class IndexPipeline extends BaseIndexingPipeline {
         setup.targetCollection,
         absolutePath,
         scanner,
-        undefined,
         overrides?.chunkSize,
         files.length,
         contentHashes,
@@ -142,14 +145,7 @@ export class IndexPipeline extends BaseIndexingPipeline {
         // pass is 2-3× faster on large codebases. `deleted_threshold` pause is
         // harmless here (no deletes during initial index).
         return new OptimizerLifecycle(this.qdrant).with(setup.targetCollection, async () => {
-          const result = await this.processAndTrack(
-            files,
-            absolutePath,
-            setup.targetCollection,
-            ctx,
-            quarantineStore,
-            progressCallback,
-          );
+          const result = await this.processAndTrack(files, absolutePath, ctx, quarantineStore, progressCallback);
           stats.filesIndexed = result.filesProcessed;
           stats.chunksCreated = result.chunksCreated;
           if (result.errors.length > 0) {
@@ -164,12 +160,7 @@ export class IndexPipeline extends BaseIndexingPipeline {
             message: "Finalizing embeddings and storage...",
           });
 
-          const getEnrichmentStatus = await this.finalizeProcessing(
-            ctx,
-            result.chunkMap,
-            setup.targetCollection,
-            absolutePath,
-          );
+          const getEnrichmentStatus = await this.finalizeProcessing(ctx, result.chunkMap);
           this.logPipelineCompletion(ctx);
 
           // Final embedding flush: pipeline has drained, emit current===total.
@@ -433,16 +424,16 @@ export class IndexPipeline extends BaseIndexingPipeline {
    * A full index scans and resolves every file of the project, so its run
    * covers the whole corpus of every language it walks (bd tea-rags-mcp-xpmwg).
    * A `--languages`-restricted `--force` still qualifies: the rebuilt
-   * collection and its codegraph database hold only those languages.
+   * collection and its codegraph database hold only those languages. It is also
+   * the one pipeline whose run takes the codegraph cross-pass.
    */
-  protected override enrichmentRunCoverage(): EnrichmentRunCoverage {
-    return "wholeCorpus";
+  protected override enrichmentRunSpec(input: StreamedEnrichmentRunInput): EnrichmentRunSpec {
+    return fullIndexRunSpec({ ...input, crossPass: this.crossPassExtractionEnabled() });
   }
 
   private async processAndTrack(
     files: string[],
     absolutePath: string,
-    collectionName: string,
     ctx: ProcessingContext,
     quarantineStore: QuarantineStore,
     progressCallback?: ProgressCallback,
@@ -486,7 +477,7 @@ export class IndexPipeline extends BaseIndexingPipeline {
         // this hook flips the chunker worker's emitExtraction on.
         onFileExtraction: this.crossPassExtractionEnabled()
           ? (extraction) => {
-              this.enrichment.onFileExtraction(collectionName, extraction);
+              this.enrichment.onFileExtraction(ctx.enrichmentRun, extraction);
             }
           : undefined,
       },
@@ -497,7 +488,7 @@ export class IndexPipeline extends BaseIndexingPipeline {
           // Push the growing chunk total so git chunk enrichment divides by the
           // SAME denominator embeddings uses (chunksQueued), not its own lagging
           // stored count — that is what produced the misleading 98% bar.
-          this.enrichment.setChunkTotal(chunksQueued);
+          this.enrichment.setChunkTotal(ctx.enrichmentRun, chunksQueued);
           // Make the embeddings bar determinate from the moment a chunk queue
           // exists (chunksQueued > 0): real embedded count over the queue size.
           // The bar appears at the first chunked file instead of waiting for the
@@ -527,7 +518,7 @@ export class IndexPipeline extends BaseIndexingPipeline {
     );
     // Reliable final push: chunking is done, chunksQueued is final regardless of
     // any files skipped before onFileProcessed could fire for them.
-    this.enrichment.setChunkTotal(chunksQueued);
+    this.enrichment.setChunkTotal(ctx.enrichmentRun, chunksQueued);
     return { ...result, chunksQueued };
   }
 

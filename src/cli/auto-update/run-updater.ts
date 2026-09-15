@@ -18,7 +18,13 @@
  * the spawner never waits.
  */
 
-import type { App, AutoUpdateRunRecord, CollectionRegistry, IndexFreshnessCheck } from "../../core/api/public/index.js";
+import {
+  IndexingAlreadyInProgressError,
+  type App,
+  type AutoUpdateRunRecord,
+  type CollectionRegistry,
+  type IndexFreshnessCheck,
+} from "../../core/api/public/index.js";
 
 export const AUTO_UPDATE_EXIT = { ok: 0, failed: 1, skipped: 2, lockHeld: 3 } as const;
 
@@ -79,6 +85,14 @@ export async function runUpdater(collectionName: string, deps: RunUpdaterDeps): 
     record(outcome, filesChanged);
     return AUTO_UPDATE_EXIT.ok;
   } catch (err) {
+    // The run itself refused because the collection is already indexing — the
+    // probe above cannot see every overlap (an incremental run's background
+    // enrichment leaves no indexing marker). That is the lock doing its job.
+    if (err instanceof IndexingAlreadyInProgressError) {
+      deps.log(`[auto-update] ${collectionName}: indexing already in progress — lock-held`);
+      record("lock-held", 0);
+      return AUTO_UPDATE_EXIT.lockHeld;
+    }
     const message = err instanceof Error ? err.message : String(err);
     deps.log(`[auto-update] ${collectionName}: failed — ${message}`);
     record("failed", 0, message);

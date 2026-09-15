@@ -59,22 +59,30 @@
 
 ## Mechanics
 
-- **Per-run state lives ONLY in the freshly allocated `RunState`** (`RunState`
-  in `coordinator.ts`, built by `EnrichmentCoordinator#createRunState` — own
-  applier / filePhase / chunkPhase / backfiller / completion). `beginRun` is
-  synchronous, overwrites `currentRun` immediately, and does NOT wait on the
-  previous run; orphaned promise closures keep mutating their own
-  now-unreferenced `RunState`. The one exception is `recomputeEnrichments`,
-  which awaits the previous run's in-flight completion before it scrolls or
-  opens its run: that completion's `releaseCollection` drops the worker-side
-  provider state the recompute's deferred pass reads, and its terminal marker
-  would land under the recompute's `_run` (bd tea-rags-mcp-71n0p / u3e77). There
-  is no FIFO serialization and no `prefetch()` entry point (streaming replaced
-  whole-repo prefetch). `EnrichmentMarkerStore` and `EnrichmentRecovery` stay
-  constructor-time singletons on purpose — no per-run state, pure Qdrant
-  proxies. Why: isolation is allocation-based and nothing else. Add a long-lived
-  mutable field to a phase class, or reintroduce reset-in-place, and two
-  overlapping runs corrupt each other's counts.
+- **Per-run state lives ONLY in the freshly allocated `RunState`, and callers
+  reach it only through the run's handle.**
+  `EnrichmentCoordinator#createRunState` gives each run its own applier /
+  filePhase / chunkPhase / backfiller / completion and its own progress
+  counters. `EnrichmentCoordinator#beginRun` takes an `EnrichmentRunSpec` —
+  built by the per-entry-point factories in `run-spec.ts`, which also derive run
+  coverage from the scope — and returns an `EnrichmentRunHandle`.
+  `onChunksStored`, `onFileExtraction`, `setChunkTotal`, `seedDeferredChunks`,
+  `startChunkEnrichment` and `awaitCompletion` take that handle, so a call
+  reaches the run that issued it and never `currentRun`; only `whenComplete`
+  still speaks for the latest run (bd tea-rags-mcp-39xca.3). `beginRun` is
+  synchronous and does NOT wait on the previous run. The one exception is
+  `recomputeEnrichments`, which awaits the previous run's in-flight completion
+  before it scrolls or opens its run, so that run's release and terminal marker
+  cannot land inside the recompute (bd tea-rags-mcp-71n0p / u3e77). Worker-side
+  provider state is cached per collection, not per run:
+  `WorkerPoolEnrichmentExecutor#releaseRun` evicts it only for the latest run
+  begun on the collection. There is no FIFO serialization and no `prefetch()`
+  entry point (streaming replaced whole-repo prefetch). `EnrichmentMarkerStore`
+  and `EnrichmentRecovery` stay constructor-time singletons on purpose — no
+  per-run state, pure Qdrant proxies. Why: isolation is allocation plus
+  addressing, nothing else. Add a long-lived mutable field to a phase class or
+  the coordinator, reintroduce reset-in-place, or route an entry through
+  `currentRun`, and two overlapping runs corrupt each other's counts.
 - **Recovery does not compute chunk signals for a provider with
   `defersChunkEnrichment`; it hands its owed chunks in extractable files to the
   reindex run, and heals the non-extractable ones in place — no walk can add a
@@ -98,7 +106,7 @@
   (`dispatch: "collection-affinity"`, `wireCodegraph` in
   `src/bootstrap/factory.ts`). `executor/worker-pool.ts#routingKeyFor` pins
   `streamFileBatch`, deferred chunk work, finalize AND
-  `WorkerPoolEnrichmentExecutor#releaseCollection` to one thread, keeping the
+  `WorkerPoolEnrichmentExecutor#releaseRun` to one thread, keeping the
   accumulated symbolTable / chunkSymbolByLine coherent. Git declares NO
   descriptor and dispatches INLINE (the `inlineFallback` arms of
   `WorkerPoolEnrichmentExecutor`, `wireComposition` in

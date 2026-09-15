@@ -108,7 +108,7 @@ function recordingExecutor(): EnrichmentExecutor {
     runFileSignalsRecovery: vi.fn().mockResolvedValue(new Map()),
     runChunkBatch: vi.fn().mockResolvedValue(new Map()),
     runFinalize: vi.fn().mockResolvedValue(new Map()),
-    releaseCollection: vi.fn().mockResolvedValue(undefined),
+    releaseRun: vi.fn().mockResolvedValue(undefined),
     shutdown: vi.fn().mockResolvedValue(undefined),
   } as unknown as EnrichmentExecutor;
 }
@@ -153,10 +153,13 @@ describe("--force-enrichments — one extraction cycle per provider (bd tea-rags
     await createTestFile(codebaseDir, "app.ts", sourceOf("app"));
     await createTestFile(codebaseDir, "util.ts", sourceOf("util"));
     await ingest.indexCodebase(codebaseDir);
+    // A run on a collection still enriching is refused (bd tea-rags-mcp-62pgi).
+    await ingest.whenEnrichmentComplete();
     // One plain incremental so the store is populated and current: the repair
     // pass is only meaningful against a graph that already matches the code,
     // which is the state every real `--force-enrichments` run starts from.
     await ingest.indexCodebase(codebaseDir);
+    await ingest.whenEnrichmentComplete();
     extractedPaths.length = 0;
   });
 

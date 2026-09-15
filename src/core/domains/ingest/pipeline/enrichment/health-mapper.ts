@@ -90,6 +90,41 @@ export function mapMarkerToHealth(
   return run ? mapWithRunPointer(markerMap, run, activeEnrichmentProviders) : mapLegacy(markerMap);
 }
 
+/**
+ * Is the enrichment run the `_run` pointer names still running (bd
+ * tea-rags-mcp-62pgi)? Live means: some provider the run covers still owes a
+ * terminal marker carrying the run's `runId` at either level, AND the run's last
+ * progress is within the same stalled threshold `mapLevelWithRun` renders as
+ * "Enrichment in progress..." — past it the run reads as stalled, and a crashed
+ * run must not be mistaken for a live one.
+ *
+ * `progressAfter` (epoch ms) discounts progress stamped at or before it: the
+ * caller's own finished run left that evidence, so it proves nothing about
+ * anyone else.
+ */
+export function isEnrichmentRunLive(
+  markerMap: EnrichmentMarkerMap,
+  options: { now?: number; progressAfter?: number } = {},
+): boolean {
+  const run = markerMap._run;
+  if (!run) return false;
+  const owesTerminal = (run.providers ?? []).some((providerKey) => {
+    const entry = getNested(markerMap as LevelRecord, providerKey) as
+      | { file?: LevelRecord; chunk?: LevelRecord }
+      | undefined;
+    return !isTerminalForRun(entry?.file, run) || !isTerminalForRun(entry?.chunk, run);
+  });
+  if (!owesTerminal) return false;
+  const progressAt = Date.parse(run.lastProgressAt ?? run.startedAt);
+  if (Number.isNaN(progressAt)) return false;
+  if (progressAt <= (options.progressAfter ?? Number.NEGATIVE_INFINITY)) return false;
+  return (options.now ?? Date.now()) - progressAt <= STALE_THRESHOLD_MS;
+}
+
+function isTerminalForRun(level: LevelRecord | undefined, run: RunMarker): boolean {
+  return level?.runId === run.runId && TERMINAL_STATUSES.has(level.status);
+}
+
 /** Terminal-only path: navigate the nested marker of every ACTIVE provider. */
 function mapWithRunPointer(
   markerMap: EnrichmentMarkerMap,

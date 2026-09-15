@@ -14,7 +14,7 @@
  *   2. Providers WITHOUT workerDescriptor → fall through to
  *      InlineEnrichmentExecutor (graceful migration path).
  *
- * releaseCollection issues a `release` envelope per provider with a
+ * releaseRun issues a `release` envelope per provider with a
  * descriptor AND drops the ThreadPool affinity binding so the next
  * collection assigned to that routingKey can land on any free thread.
  */
@@ -189,21 +189,56 @@ describe("WorkerPoolEnrichmentExecutor", () => {
     await exec.shutdown();
   });
 
-  it("releaseCollection dispatches release envelope for worker-descriptor providers", async () => {
+  it("releaseRun dispatches release envelope for worker-descriptor providers", async () => {
     const exec = new WorkerPoolEnrichmentExecutor(1, WORKER_PATH);
     const provider = workerProvider(fixturePath, "collection-affinity");
     // Warm the worker cache.
     await exec.runFileBatch(provider, "/repo", ["a.ts"], { collectionName: "release-test" });
     // Release should complete cleanly.
-    await expect(exec.releaseCollection([provider], "release-test")).resolves.toBeUndefined();
+    await expect(
+      exec.releaseRun([provider], { runId: "run-1", collection: "release-test", absolutePath: "/repo" }),
+    ).resolves.toBeUndefined();
     await exec.shutdown();
   });
 
-  it("releaseCollection is a no-op for providers without workerDescriptor", async () => {
+  it("releaseRun is a no-op for providers without workerDescriptor", async () => {
     const exec = new WorkerPoolEnrichmentExecutor(1, WORKER_PATH);
     const provider = fakeInlineProvider();
     // Should not throw even though we never dispatched on this provider.
-    await expect(exec.releaseCollection([provider], "any")).resolves.toBeUndefined();
+    await expect(
+      exec.releaseRun([provider], { runId: "run-1", collection: "any", absolutePath: "/repo" }),
+    ).resolves.toBeUndefined();
+    await exec.shutdown();
+  });
+
+  it("releaseRun does not evict the collection's worker state while a newer run on it has begun (39xca.3)", async () => {
+    // Two runs on one collection share the pinned worker's provider state. The
+    // older run's completion must not evict what the newer run is still reading;
+    // only the latest run's completion releases it.
+    const exec = new WorkerPoolEnrichmentExecutor(1, WORKER_PATH);
+    const { pool } = exec as unknown as {
+      pool: { dispatch: (...args: unknown[]) => Promise<unknown>; releaseAffinity: (key: string) => void };
+    };
+    const dispatch = vi.spyOn(pool, "dispatch").mockResolvedValue({});
+    const releaseAffinity = vi.spyOn(pool, "releaseAffinity");
+    const provider = workerProvider(fixturePath, "collection-affinity");
+    const older = { runId: "run-a", collection: "coll-shared", absolutePath: "/repo" };
+    const newer = { runId: "run-b", collection: "coll-shared", absolutePath: "/repo" };
+
+    exec.beginRun(older, 1);
+    exec.beginRun(newer, 1);
+    await exec.releaseRun([provider], older);
+
+    expect(dispatch).not.toHaveBeenCalled();
+    expect(releaseAffinity).not.toHaveBeenCalled();
+
+    await exec.releaseRun([provider], newer);
+
+    expect(dispatch).toHaveBeenCalledWith(
+      expect.objectContaining({ type: "release", collectionName: "coll-shared" }),
+      "coll-shared",
+    );
+    expect(releaseAffinity).toHaveBeenCalledWith("coll-shared");
     await exec.shutdown();
   });
 

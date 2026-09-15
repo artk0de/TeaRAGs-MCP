@@ -8,19 +8,19 @@
  *    by CompletionRunner.
  *
  * Per-run state is bounded inside a `RunState` container. Each `beginRun()`
- * builds a fresh RunState; old promise closures from previous runs mutate
- * their own (now-orphaned) RunState and have zero effect on the current run.
+ * builds a fresh RunState and hands back its `EnrichmentRunHandle`; every
+ * per-run entry takes that handle, so a call — or a promise closure — of one
+ * run reaches that run's state and never another's (bd tea-rags-mcp-39xca.3).
  */
 
 import { randomUUID } from "node:crypto";
-
-import type { Ignore } from "ignore";
 
 import type { QdrantManager } from "../../../../adapters/qdrant/client.js";
 import { selectProviderKeys } from "../../../../contracts/provider-selector.js";
 import type { FileExtraction } from "../../../../contracts/types/codegraph.js";
 import type {
   EnrichmentExecutor,
+  EnrichmentRunHandle,
   IndexRunDaemonGuard,
   IndexRunDaemonRelease,
 } from "../../../../contracts/types/enrichment-executor.js";
@@ -39,6 +39,13 @@ import { FilePhase } from "./file-phase.js";
 import { EnrichmentMarkerStore } from "./marker-store.js";
 import { filterFileEnrichPaths } from "./policy.js";
 import type { DeferredChunkRecoveryHandoff, EnrichmentRecovery } from "./recovery.js";
+import {
+  ALL_LANGUAGES,
+  finalizeOnlyRunSpec,
+  recomputeRunSpec,
+  runCoverageOf,
+  type EnrichmentRunSpec,
+} from "./run-spec.js";
 import type { EnrichmentProvider, ProviderContext } from "./types.js";
 
 const EMPTY_METRICS: EnrichmentMetrics = {
@@ -97,6 +104,8 @@ export const SETTLE_POLL_DELAYS_MS: readonly number[] = [250, 500, 1000, 2000];
 
 interface RunState {
   runId: string;
+  /** What callers hold for this run; resolves back to this state through `runStates`. */
+  handle: EnrichmentRunHandle;
   startTime: number;
   startedAt: string;
   applier: EnrichmentApplier;
@@ -152,8 +161,8 @@ interface RunState {
   /**
    * Whether this run resolves the whole corpus of the languages it walks (bd
    * tea-rags-mcp-xpmwg). Threaded into every finalize through `FilePhase`, where
-   * codegraph decides what its persisted resolve breakdown may claim. `subset`
-   * unless the caller that opened the run declared otherwise.
+   * codegraph decides what its persisted resolve breakdown may claim. Derived
+   * from the spec's scope, never set beside it.
    */
   runCoverage: EnrichmentRunCoverage;
   /**
@@ -165,6 +174,30 @@ interface RunState {
    * overlap the tail of the one before.
    */
   inFlightCompletion?: Promise<void>;
+  /**
+   * CLI progress bookkeeping, per run so a late batch or extraction of a
+   * replaced run cannot move the current run's bars (bd tea-rags-mcp-39xca.3).
+   *
+   * `grandFileCount` is the file-level denominator — the spec's `fileCount`,
+   * known up front from the scan. `chunkTotalAccumulated` sums stored chunks
+   * across batches, the chunk-level fallback denominator. `chunkTotal` is the
+   * embedding chunk total (`chunksQueued`) pushed through `setChunkTotal` — the
+   * SAME denominator the embeddings bar uses, so git chunk tracks embeddings
+   * instead of its own lagging stored count (which produced the misleading
+   * 1005/1024 = 98% bar); 0 until the first push. `deferredStartEmitted` guards
+   * the one-time indeterminate start bars for deferred providers, which build
+   * their graph during embedding but apply only after finalize.
+   * `codegraphSymbolsApplied` counts accepted cross-pass `FileExtraction`s —
+   * the numerator of the synthetic `codegraph.symbols:symbols` event (yl9tv
+   * Task 3). `progress` is the last emitted applied value per
+   * `${providerKey}:${level}`; the applier already emits cumulative values.
+   */
+  grandFileCount: number;
+  chunkTotalAccumulated: number;
+  chunkTotal: number;
+  deferredStartEmitted: boolean;
+  codegraphSymbolsApplied: number;
+  progress: Map<string, { applied: number; total: number }>;
 }
 
 export class EnrichmentCoordinator {
@@ -172,6 +205,20 @@ export class EnrichmentCoordinator {
   private static readonly HEARTBEAT_THROTTLE_MS = 30_000;
   private readonly markerStore: EnrichmentMarkerStore;
   private currentRun: RunState | null = null;
+  /**
+   * Every run this coordinator opened, by the handle it handed out (bd
+   * tea-rags-mcp-39xca.3). Per-run entries resolve their state here, never
+   * through `currentRun`; a handle this coordinator did not issue resolves to
+   * nothing, and the call is a no-op.
+   */
+  private readonly runStates = new WeakMap<EnrichmentRunHandle, RunState>();
+  /**
+   * Completions in flight, keyed by the collection each one closes (bd
+   * tea-rags-mcp-62pgi). Unlike `currentRun`, a newer run does not hide an older
+   * run's completion here, and a run whose completion never started is never in
+   * it — so `whenCompletionsSettled` can neither miss work nor wait forever.
+   */
+  private readonly inFlightCompletionsByCollection = new Map<string, Set<Promise<void>>>();
   private readonly providers: EnrichmentProvider[];
   /**
    * Dispatch seam between the enrichment phases and provider execution.
@@ -253,55 +300,6 @@ export class EnrichmentCoordinator {
    * MCP path — no emission, zero overhead. Set per run by `IndexingOps.run`.
    */
   private progressCb?: EnrichmentProgressCallback;
-  /**
-   * Per-key progress state: `${providerKey}:${level}` → last applied value.
-   * The applier now emits CUMULATIVE applied values, so we store them as-is
-   * (no accumulation here). Reset on every `beginRun`.
-   */
-  private readonly progress = new Map<string, { applied: number; total: number }>();
-
-  /**
-   * Grand file count for the current run — the denominator for file-level
-   * progress events. Set in `beginRun` from the scanned file list size.
-   * Zero means the run hasn't started or no files to scan.
-   */
-  private grandFileCount = 0;
-
-  /**
-   * Running sum of stored chunk counts across all `onChunksStored` batches
-   * for the current run. Used as the denominator for chunk-level progress
-   * events. Reset in `beginRun`.
-   */
-  private chunkTotalAccumulated = 0;
-
-  /**
-   * Embedding chunk total for the current run, pushed by the indexing layer via
-   * `setChunkTotal` as `chunksQueued` grows. This is the SAME denominator the
-   * embeddings bar uses — chunk-level progress events divide by it so git chunk
-   * tracks embeddings instead of its own lagging stored count (which produced the
-   * misleading 1005/1024 = 98% bar). 0 until the first push; emitProgress falls
-   * back to `chunkTotalAccumulated` while it is 0. Reset to 0 in `beginRun`.
-   */
-  private chunkTotal = 0;
-
-  /**
-   * Guards the one-time early indeterminate progress emit for deferred providers
-   * (codegraph). They build their graph during embedding but only apply after
-   * finalize, so without this their bars pop up at 100% right before completion.
-   * Reset to false per run in `beginRun`.
-   */
-  private deferredStartEmitted = false;
-
-  /**
-   * yl9tv Task 3 — cumulative count of cross-pass `FileExtraction`s a codegraph
-   * provider has accepted for the current run. Numerator for the synthetic
-   * `codegraph.symbols:symbols` progress event emitted from `onFileExtraction`,
-   * surfacing Task 5b's eager node write (previously a "dark tail": the graph
-   * builds overlapped with embedding but only applies after finalize). Reset to
-   * 0 in `beginRun`. Stays 0 on a non-cross-pass run or when no provider
-   * implements `acceptExtraction` — `onFileExtraction` never increments it then.
-   */
-  private codegraphSymbolsApplied = 0;
 
   private _onChunkEnrichmentComplete?: (collectionName: string) => Promise<void>;
   get onChunkEnrichmentComplete(): ((collectionName: string) => Promise<void>) | undefined {
@@ -534,9 +532,9 @@ export class EnrichmentCoordinator {
      */
     deferredChunkHandoff?: DeferredChunkRecoveryHandoff,
   ): Promise<EnrichmentMetrics> {
-    this.beginRun(absolutePath, collectionName);
-    if (deferredChunkHandoff) this.seedDeferredChunks(deferredChunkHandoff);
-    return this.awaitCompletion(collectionName);
+    const run = this.beginRun(finalizeOnlyRunSpec({ absolutePath, collection: collectionName }));
+    if (deferredChunkHandoff) this.seedDeferredChunks(run, deferredChunkHandoff);
+    return this.awaitCompletion(run);
   }
 
   /**
@@ -565,18 +563,18 @@ export class EnrichmentCoordinator {
   }
 
   /**
-   * Append a recovery handoff to the CURRENT run's deferred chunk maps (bd
+   * Append a recovery handoff to `run`'s deferred chunk maps (bd
    * tea-rags-mcp-fxio5). Call right after `beginRun` and before completion:
    * completion step 2 applies file overlays through that map and step 7
    * computes chunk signals from it. Appends — chunks the pipeline accumulates
    * for the same provider keep their entries. Pass a handoff narrowed by
    * `narrowDeferredChunkHandoff`.
    */
-  seedDeferredChunks(handoff: DeferredChunkRecoveryHandoff): void {
-    const run = this.currentRun;
-    if (!run) return;
+  seedDeferredChunks(run: EnrichmentRunHandle, handoff: DeferredChunkRecoveryHandoff): void {
+    const state = this.runStates.get(run);
+    if (!state) return;
     for (const [providerKey, entriesByPath] of handoff) {
-      run.chunkPhase.appendDeferredChunks(providerKey, entriesByPath);
+      state.chunkPhase.appendDeferredChunks(providerKey, entriesByPath);
     }
   }
 
@@ -740,31 +738,28 @@ export class EnrichmentCoordinator {
     if (stored.items.length === 0) return EMPTY_METRICS;
 
     // `languages` reaches the run itself, not just the scroll: the terminal
-    // marker is judged on the run's own scope (bd tea-rags-mcp-9dg6s).
-    this.beginRun(
-      absolutePath,
-      collectionName,
-      undefined,
-      undefined,
-      false,
-      stored.fileCount,
-      matched,
-      undefined,
-      languages,
-      // Every stored point of the selected languages is fed below, so the run
-      // resolves their whole corpus (bd tea-rags-mcp-xpmwg).
-      "wholeCorpus",
+    // marker is judged on the run's own scope (bd tea-rags-mcp-9dg6s). Every
+    // stored point of those languages is fed below, so the run resolves their
+    // whole corpus (bd tea-rags-mcp-xpmwg).
+    const run = this.beginRun(
+      recomputeRunSpec({
+        absolutePath,
+        collection: collectionName,
+        fileCount: stored.fileCount,
+        onlyProviderKeys: matched,
+        languages: languages ?? ALL_LANGUAGES,
+      }),
     );
     // File phase, in the same bounded batches the live pipeline uses, so a
     // whole-repo recompute cannot hand a provider one enormous dispatch.
     for (let i = 0; i < stored.items.length; i += RECOMPUTE_BATCH_SIZE) {
-      this.onChunksStored(collectionName, absolutePath, stored.items.slice(i, i + RECOMPUTE_BATCH_SIZE));
+      this.onChunksStored(run, stored.items.slice(i, i + RECOMPUTE_BATCH_SIZE));
     }
     // Chunk phase, then the same completion sequence a normal run ends with —
     // which is what makes `finalizeSignals` (and codegraph's `cg_run_stats`
     // write) fire, and what fills the RunState metrics the CLI reports.
-    this.startChunkEnrichment(collectionName, absolutePath, stored.chunkMap);
-    return this.awaitCompletion(collectionName);
+    this.startChunkEnrichment(run, stored.chunkMap);
+    return this.awaitCompletion(run);
   }
 
   /**
@@ -835,78 +830,31 @@ export class EnrichmentCoordinator {
   }
 
   /**
-   * Begin a new enrichment run. Non-blocking. Call before pipeline.start().
+   * Begin a new enrichment run and hand back its handle. Non-blocking. Call
+   * before pipeline.start().
    *
    * There is no whole-repo prefetch anymore — file enrichment streams per batch
    * via onChunksStored. beginRun only builds a fresh RunState, inits the phases,
-   * and writes the initial markStart marker. Per-run RunState isolation
-   * guarantees old promise closures from a previous run mutate their orphaned
-   * RunState, never the current one (FIFO isolation preserved).
+   * and writes the initial markStart marker. The returned handle is the run's
+   * only address: every per-run entry takes it, so a call made for this run
+   * reaches this run even after a newer `beginRun` (bd tea-rags-mcp-39xca.3).
+   * `whenComplete` alone still speaks for "the latest run".
    *
-   * `changedPaths` is accepted for caller compatibility but no longer drives a
-   * scoped prefetch — streaming naturally scopes to the batches actually stored.
+   * What the run is asked to do comes from `spec`; build it with the factory
+   * for the entry point that opens the run (`run-spec.ts`).
    */
-  beginRun(
-    absolutePath: string,
-    collectionName?: string,
-    ignoreFilter?: Ignore,
-    _changedPaths?: string[],
-    crossPass = false,
-    fileCount = 0,
-    /**
-     * Restrict the run to these provider keys. Only `recomputeEnrichments`
-     * passes it — an ordinary index run enriches with everything registered.
-     * Omitted means "every provider", so existing callers are unaffected.
-     */
-    onlyProviderKeys?: readonly string[],
-    /**
-     * The run's per-file SHA256, for callers that computed it themselves rather
-     * than through `runRepairPass` — the streaming path (bd tea-rags-mcp-o317j).
-     * Omitted leaves whatever the repair pass captured in place; it must never
-     * CLEAR it, or the incremental path would lose its own stamp.
-     */
-    contentHashes?: ReadonlyMap<string, string>,
-    /**
-     * Restrict the run to these languages. Only `recomputeEnrichments` passes
-     * it — an ordinary index run spans everything the scan produced. Omitted
-     * (or empty) means the whole collection, so existing callers are
-     * unaffected. Carried on the RunState because the terminal marker has to be
-     * judged on the SAME set (bd tea-rags-mcp-9dg6s).
-     */
-    languages?: readonly string[],
-    /**
-     * What part of the corpus this run resolves (bd tea-rags-mcp-xpmwg). Only a
-     * caller that feeds EVERY file of the languages it walks may pass
-     * `wholeCorpus` — the full-index pipeline and `recomputeEnrichments`.
-     * Defaulting to `subset` is deliberate: a run wrongly claiming the corpus
-     * lets a batch-sized resolve tally replace a language's measurement, while
-     * one wrongly claiming a subset only delays that language's switch to the
-     * per-file aggregate until the next whole-corpus run.
-     */
-    runCoverage: EnrichmentRunCoverage = "subset",
-  ): void {
-    if (contentHashes) this.runContentHashes = contentHashes;
+  beginRun(spec: EnrichmentRunSpec): EnrichmentRunHandle {
+    const { absolutePath, collection: collectionName, crossPass, fileCount, onlyProviderKeys, ignoreFilter } = spec;
+    // Never CLEARS the hashes: omitted keeps what `runRepairPass` captured, or
+    // the incremental path would lose its own stamp (bd tea-rags-mcp-o317j).
+    if (spec.contentHashes) this.runContentHashes = spec.contentHashes;
 
     // Build a fresh RunState. Per-run instances guarantee old promise closures
     // mutate their orphaned RunState, never the current one.
-    const runState = this.createRunState();
-    runState.crossPass = crossPass;
-    runState.languages = languages ?? [];
-    runState.runCoverage = runCoverage;
+    const runState = this.createRunState(spec);
+    const { runCoverage } = runState;
     this.currentRun = runState;
-
-    // Reset per-run progress state. grandFileCount is the denominator for
-    // file-level events (known up front from the scanned file list).
-    // chunkTotalAccumulated grows in onChunksStored as chunks arrive —
-    // the denominator for chunk-level events. The progress map stores the
-    // last emitted applied value per (provider,level) for display; cleared
-    // here so run 2 never sees run 1's stale state.
-    this.grandFileCount = fileCount;
-    this.chunkTotalAccumulated = 0;
-    this.chunkTotal = 0;
-    this.deferredStartEmitted = false;
-    this.codegraphSymbolsApplied = 0;
-    this.progress.clear();
+    this.runStates.set(runState.handle, runState);
 
     // Wire the applier-site chokepoint: every apply batch (file, chunk, finalize,
     // backfill) calls onApply. This covers ALL apply paths — streaming, post-flush
@@ -914,7 +862,7 @@ export class EnrichmentCoordinator {
     // consumers: the throttled `_run` heartbeat and the per-run progress sink.
     runState.applier.onApply = (event) => {
       if (collectionName) this.maybeHeartbeat(collectionName, runState);
-      this.emitProgress(event);
+      this.emitProgress(runState, event);
     };
 
     if (this._onChunkEnrichmentComplete) {
@@ -959,18 +907,18 @@ export class EnrichmentCoordinator {
     // without releasing cannot make this one skip files. `fileCount` travels
     // with it because the fan-out's WIDTH is a property of the run, not of the
     // process: a small recompute must not inherit a whole-repo index's threads.
-    this.executor.beginRun?.(collectionName, fileCount);
+    this.executor.beginRun?.(runState.handle, fileCount);
 
     runState.filePhase.init(
       runState.contexts,
-      collectionName ?? "",
+      collectionName,
       runState.runId,
       runState.startedAt,
       crossPass,
       this.runContentHashes,
       runCoverage,
     );
-    runState.chunkPhase.init(runState.contexts, collectionName ?? "", runState.startedAt);
+    runState.chunkPhase.init(runState.contexts, collectionName, runState.startedAt);
 
     // markRunStart writes ONLY the `_run` pointer ({runId, startedAt,
     // lastProgressAt, providers}) — the single pre-completion write. No
@@ -992,23 +940,26 @@ export class EnrichmentCoordinator {
       collectionName && this.providers.length > 0
         ? this.daemonGuard.begin(collectionName).catch(() => NOOP_RELEASE)
         : Promise.resolve(NOOP_RELEASE);
+    return runState.handle;
   }
 
   /**
-   * Called per-batch by pipeline callback after chunks are stored in Qdrant.
-   * Applies file-level signals and also triggers streaming chunk-level
-   * enrichment so git blame runs overlapped with embedding/upsert of later
-   * batches — instead of waiting for a single post-flush catch-up.
+   * Called per-batch by pipeline callback after chunks are stored in Qdrant,
+   * for the run `handle` names. Applies file-level signals and also triggers
+   * streaming chunk-level enrichment so git blame runs overlapped with
+   * embedding/upsert of later batches — instead of waiting for a single
+   * post-flush catch-up.
    */
-  onChunksStored(collectionName: string, absolutePath: string, items: ChunkItem[]): void {
-    if (!this.currentRun) return;
-    const run = this.currentRun;
+  onChunksStored(handle: EnrichmentRunHandle, items: ChunkItem[]): void {
+    const run = this.runStates.get(handle);
+    if (!run) return;
+    const { collection: collectionName, absolutePath } = handle;
 
     // Accumulate the chunk-level denominator from this batch's chunk count.
-    // File-level denominator is now grandFileCount (set at beginRun from the
-    // scanned file list — known up front). Chunk total keeps growing per batch.
+    // File-level denominator is grandFileCount (the spec's fileCount — known up
+    // front). Chunk total keeps growing per batch.
     if (items.length > 0) {
-      this.chunkTotalAccumulated += items.length;
+      run.chunkTotalAccumulated += items.length;
     }
 
     // One-time per run: create every enrichment bar up front in a STABLE order so
@@ -1023,13 +974,13 @@ export class EnrichmentCoordinator {
     // providers alone there is nothing to order, so we leave their event stream
     // untouched (no synthetic applied=0 start event).
     const hasDeferred = [...run.contexts.values()].some((ctx) => ctx.provider.defersChunkEnrichment);
-    if (!this.deferredStartEmitted && this.progressCb && hasDeferred) {
-      this.deferredStartEmitted = true;
+    if (!run.deferredStartEmitted && this.progressCb && hasDeferred) {
+      run.deferredStartEmitted = true;
       const cb = this.progressCb;
       const emitStartBars = (providerKey: string, deferred: boolean): void => {
         const totalFinal = !deferred;
-        cb({ providerKey, level: "file", applied: 0, total: this.grandFileCount, totalFinal });
-        cb({ providerKey, level: "chunk", applied: 0, total: this.chunkTotal, totalFinal });
+        cb({ providerKey, level: "file", applied: 0, total: run.grandFileCount, totalFinal });
+        cb({ providerKey, level: "chunk", applied: 0, total: run.chunkTotal, totalFinal });
       };
       for (const [providerKey, ctx] of run.contexts) {
         if (!ctx.provider.defersChunkEnrichment) emitStartBars(providerKey, false);
@@ -1079,18 +1030,20 @@ export class EnrichmentCoordinator {
    * `totalFinal: false` (indeterminate): the eager node write has no fixed
    * denominator until the cross-pass finishes.
    */
-  onFileExtraction(collectionName: string, extraction: FileExtraction): void {
-    if (!this.currentRun) return;
-    for (const ctx of this.currentRun.contexts.values()) {
+  onFileExtraction(handle: EnrichmentRunHandle, extraction: FileExtraction): void {
+    const run = this.runStates.get(handle);
+    if (!run) return;
+    const collectionName = handle.collection;
+    for (const ctx of run.contexts.values()) {
       ctx.provider.acceptExtraction?.(extraction, { collectionName });
     }
-    if (this.currentRun.crossPass && this.progressCb && this.acceptsExtractions()) {
-      this.codegraphSymbolsApplied += 1;
+    if (run.crossPass && this.progressCb && this.acceptsExtractions()) {
+      run.codegraphSymbolsApplied += 1;
       this.progressCb({
         providerKey: "codegraph.symbols",
         level: "symbols",
-        applied: this.codegraphSymbolsApplied,
-        total: this.grandFileCount || this.codegraphSymbolsApplied,
+        applied: run.codegraphSymbolsApplied,
+        total: run.grandFileCount || run.codegraphSymbolsApplied,
         totalFinal: false,
       });
     }
@@ -1116,9 +1069,10 @@ export class EnrichmentCoordinator {
    * Start chunk-level enrichment (Phase 2b). Fire-and-forget, tracked internally.
    * Each provider runs independently.
    */
-  startChunkEnrichment(collectionName: string, absolutePath: string, chunkMap: Map<string, ChunkLookupEntry[]>): void {
-    if (!this.currentRun) return;
-    this.currentRun.chunkPhase.enrichRemaining(collectionName, absolutePath, chunkMap);
+  startChunkEnrichment(handle: EnrichmentRunHandle, chunkMap: Map<string, ChunkLookupEntry[]>): void {
+    const run = this.runStates.get(handle);
+    if (!run) return;
+    run.chunkPhase.enrichRemaining(handle.collection, handle.absolutePath, chunkMap);
   }
 
   /**
@@ -1131,14 +1085,15 @@ export class EnrichmentCoordinator {
   }
 
   /**
-   * Push the embedding chunk total (`chunksQueued`) for the current run. The
-   * indexing layer calls this as chunking discovers chunks, so git chunk progress
-   * divides by the SAME total the embeddings bar uses — a real determinate bar
-   * that tracks embeddings, instead of its own lagging stored count. Monotonic in
-   * practice (chunksQueued only grows); reset to 0 per run in `beginRun`.
+   * Push the embedding chunk total (`chunksQueued`) for the run `handle` names.
+   * The indexing layer calls this as chunking discovers chunks, so git chunk
+   * progress divides by the SAME total the embeddings bar uses — a real
+   * determinate bar that tracks embeddings, instead of its own lagging stored
+   * count. Monotonic in practice (chunksQueued only grows); every run starts at 0.
    */
-  setChunkTotal(total: number): void {
-    this.chunkTotal = total;
+  setChunkTotal(handle: EnrichmentRunHandle, total: number): void {
+    const run = this.runStates.get(handle);
+    if (run) run.chunkTotal = total;
   }
 
   /**
@@ -1168,39 +1123,66 @@ export class EnrichmentCoordinator {
    *
    * We SET (not accumulate) applied — the applier already did the accumulation.
    */
-  private emitProgress(event: EnrichmentApplyEvent): void {
+  private emitProgress(run: RunState, event: EnrichmentApplyEvent): void {
     if (!this.progressCb) return;
     const key = `${event.providerKey}:${event.level}`;
     const isFile = event.level === "file";
     // chunkTotal (chunksQueued) leads the stored count; max keeps the denominator
     // honest if a stored batch races ahead of the latest push.
-    const total = isFile ? this.grandFileCount : Math.max(this.chunkTotal, this.chunkTotalAccumulated);
+    const total = isFile ? run.grandFileCount : Math.max(run.chunkTotal, run.chunkTotalAccumulated);
     const totalFinal = isFile ? true : total > 0;
-    this.progress.set(key, { applied: event.applied, total });
+    run.progress.set(key, { applied: event.applied, total });
     this.progressCb({ providerKey: event.providerKey, level: event.level, applied: event.applied, total, totalFinal });
   }
 
   /**
-   * Wait for all in-flight enrichment work to complete across all providers.
+   * Wait for all in-flight enrichment work of the run `handle` names to complete
+   * across all providers, then close that run — even when a newer run has begun.
    *
    * The completion is recorded on the run BEFORE the first await, so a caller
    * that fires this and moves on — the pipeline does — has already made it
    * visible to `recomputeEnrichments` by the time control returns.
    */
-  async awaitCompletion(collectionName: string): Promise<EnrichmentMetrics> {
-    const run = this.currentRun;
+  async awaitCompletion(handle: EnrichmentRunHandle): Promise<EnrichmentMetrics> {
+    const run = this.runStates.get(handle);
     if (!run || run.contexts.size === 0) return EMPTY_METRICS;
+    const collectionName = handle.collection;
     const completion = this.completeRun(run, collectionName);
     const inFlight = completion.then(
       () => undefined,
       () => undefined,
     );
     run.inFlightCompletion = inFlight;
+    this.trackInFlightCompletion(collectionName, inFlight);
     try {
       return await completion;
     } finally {
       if (run.inFlightCompletion === inFlight) run.inFlightCompletion = undefined;
     }
+  }
+
+  /**
+   * Resolve once every completion in flight on `collectionName` has settled —
+   * executor and daemon releases included. Never rejects, and resolves at once
+   * when none is in flight, including for a run whose completion never started
+   * (bd tea-rags-mcp-62pgi). An index operation holds its collection until this
+   * settles for the collection it wrote.
+   */
+  async whenCompletionsSettled(collectionName: string): Promise<void> {
+    const inFlight = this.inFlightCompletionsByCollection.get(collectionName);
+    if (inFlight) await Promise.all([...inFlight]);
+  }
+
+  private trackInFlightCompletion(collectionName: string, inFlight: Promise<void>): void {
+    const completions = this.inFlightCompletionsByCollection.get(collectionName) ?? new Set<Promise<void>>();
+    completions.add(inFlight);
+    this.inFlightCompletionsByCollection.set(collectionName, completions);
+    void inFlight.then(() => {
+      completions.delete(inFlight);
+      if (completions.size === 0 && this.inFlightCompletionsByCollection.get(collectionName) === completions) {
+        this.inFlightCompletionsByCollection.delete(collectionName);
+      }
+    });
   }
 
   /** The completion sequence proper for `run`, ending with the executor and daemon releases. */
@@ -1225,10 +1207,12 @@ export class EnrichmentCoordinator {
       // this is a no-op (shared provider, can't safely call onRelease across
       // concurrent runs). For WorkerPoolEnrichmentExecutor this fans out a
       // `release` envelope per worker-descriptor provider and drops the
-      // ThreadPool affinity binding. Failures are swallowed inside the
-      // executor — release MUST NOT regress an otherwise-successful run.
+      // ThreadPool affinity binding — unless a newer run on the collection has
+      // begun, which still reads that state (bd tea-rags-mcp-39xca.3). Failures
+      // are swallowed inside the executor — release MUST NOT regress an
+      // otherwise-successful run.
       const providers = Array.from(run.contexts.values()).map((ctx) => ctx.provider);
-      await this.executor.releaseCollection(providers, collectionName);
+      await this.executor.releaseRun(providers, run.handle);
       run.resolveDone(metrics);
       return metrics;
     } catch (error) {
@@ -1244,7 +1228,7 @@ export class EnrichmentCoordinator {
     }
   }
 
-  private createRunState(): RunState {
+  private createRunState(spec: EnrichmentRunSpec): RunState {
     const applier = new EnrichmentApplier(this.qdrant);
     const chunkPhase = new ChunkPhase(applier, this.executor, this.blobReaderFactory);
     const filePhase = new FilePhase(applier, this.markerStore, this.executor);
@@ -1266,9 +1250,16 @@ export class EnrichmentCoordinator {
       resolveDone = resolve;
       rejectDone = reject;
     });
+    // Handled at creation (bd tea-rags-mcp-qiu3o). A failed run is reported
+    // through its terminal markers, and `whenComplete` only ever attaches to the
+    // CURRENT run — so a run superseded by a newer `beginRun` rejected with no
+    // listener, which the CLI worker's crash guard turned into exit 1.
+    void donePromise.catch(() => undefined);
 
+    const runId = randomUUID().slice(0, 8);
     return {
-      runId: randomUUID().slice(0, 8),
+      runId,
+      handle: Object.freeze({ runId, collection: spec.collection, absolutePath: spec.absolutePath }),
       startTime: Date.now(),
       startedAt: new Date().toISOString(),
       applier,
@@ -1283,9 +1274,15 @@ export class EnrichmentCoordinator {
       markRunStartPromise: Promise.resolve(),
       lastHeartbeatAt: 0,
       daemonReleasePromise: Promise.resolve(NOOP_RELEASE),
-      crossPass: false,
-      languages: [],
-      runCoverage: "subset",
+      crossPass: spec.crossPass,
+      languages: spec.scope.languages,
+      runCoverage: runCoverageOf(spec.scope),
+      grandFileCount: spec.fileCount,
+      chunkTotalAccumulated: 0,
+      chunkTotal: 0,
+      deferredStartEmitted: false,
+      codegraphSymbolsApplied: 0,
+      progress: new Map(),
     };
   }
 

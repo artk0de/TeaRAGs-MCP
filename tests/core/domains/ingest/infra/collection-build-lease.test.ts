@@ -6,6 +6,7 @@ import { VersionedCollectionClaimError } from "../../../../../src/core/domains/i
 import {
   claimVersionedCollection,
   isCollectionBuildInFlight,
+  isCollectionIndexingInFlight,
   VERSION_CLAIM_ATTEMPT_LIMIT,
 } from "../../../../../src/core/domains/ingest/infra/collection-build-lease.js";
 
@@ -55,6 +56,102 @@ describe("isCollectionBuildInFlight", () => {
     vi.mocked(qdrant.getPoint).mockRejectedValueOnce(new Error("qdrant down"));
 
     expect(await isCollectionBuildInFlight(qdrant, "code_abc_v7")).toBe(false);
+  });
+});
+
+describe("isCollectionIndexingInFlight (bd tea-rags-mcp-62pgi)", () => {
+  const withCollections = (qdrant: QdrantManager, collections: string[]): QdrantManager =>
+    Object.assign(qdrant, { listCollections: vi.fn().mockResolvedValue(collections) });
+
+  const liveRun = (extra: Record<string, unknown> = {}) => ({
+    indexingComplete: true,
+    enrichment: {
+      _run: { runId: "r1", startedAt: minutesAgo(1), lastProgressAt: minutesAgo(0.5), providers: ["git"] },
+      ...extra,
+    },
+  });
+
+  it("answers yes for a live indexing marker and for a live enrichment run", async () => {
+    const building = withCollections(createMockQdrant(["code_abc"], { code_abc: liveMarker() }), ["code_abc"]);
+    const enriching = withCollections(createMockQdrant(["code_abc"], { code_abc: liveRun() }), ["code_abc"]);
+
+    expect(await isCollectionIndexingInFlight(building, "code_abc")).toBe(true);
+    expect(await isCollectionIndexingInFlight(enriching, "code_abc")).toBe(true);
+  });
+
+  it("answers yes for a versioned build in flight next to the served collection", async () => {
+    const qdrant = withCollections(
+      createMockQdrant(["code_abc_v1", "code_abc_v2"], {
+        code_abc: { indexingComplete: true },
+        code_abc_v2: liveMarker(),
+      }),
+      ["code_abc_v1", "code_abc_v2", "code_abcd_v9"],
+    );
+
+    expect(await isCollectionIndexingInFlight(qdrant, "code_abc")).toBe(true);
+  });
+
+  it("ignores a live build of a DIFFERENT base that merely shares the prefix", async () => {
+    const qdrant = withCollections(createMockQdrant(["code_abcd_v9"], { code_abcd_v9: liveMarker() }), [
+      "code_abcd_v9",
+    ]);
+
+    expect(await isCollectionIndexingInFlight(qdrant, "code_abc")).toBe(false);
+  });
+
+  it("answers no once every provider of the run has both terminal markers for its runId", async () => {
+    const qdrant = withCollections(
+      createMockQdrant(["code_abc"], {
+        code_abc: liveRun({
+          git: { file: { runId: "r1", status: "completed" }, chunk: { runId: "r1", status: "failed" } },
+        }),
+      }),
+      ["code_abc"],
+    );
+
+    expect(await isCollectionIndexingInFlight(qdrant, "code_abc")).toBe(false);
+  });
+
+  it("answers no when the terminal markers carry an older runId but progress went stale", async () => {
+    const qdrant = withCollections(
+      createMockQdrant(["code_abc"], {
+        code_abc: {
+          indexingComplete: true,
+          enrichment: {
+            _run: { runId: "r2", startedAt: minutesAgo(9), lastProgressAt: minutesAgo(3), providers: ["git"] },
+            git: { file: { runId: "r1", status: "completed" }, chunk: { runId: "r1", status: "completed" } },
+          },
+        },
+      }),
+      ["code_abc"],
+    );
+
+    expect(await isCollectionIndexingInFlight(qdrant, "code_abc")).toBe(false);
+  });
+
+  it("discounts evidence written at or before this process's own run settled", async () => {
+    const heartbeat = Date.now() - 20_000;
+    const qdrant = withCollections(
+      createMockQdrant(["code_abc"], {
+        code_abc: {
+          indexingComplete: false,
+          startedAt: new Date(heartbeat).toISOString(),
+          lastHeartbeat: new Date(heartbeat).toISOString(),
+        },
+      }),
+      ["code_abc"],
+    );
+
+    expect(await isCollectionIndexingInFlight(qdrant, "code_abc", { ownRunsSettledAt: heartbeat })).toBe(false);
+    expect(await isCollectionIndexingInFlight(qdrant, "code_abc", { ownRunsSettledAt: heartbeat - 1 })).toBe(true);
+  });
+
+  it("answers no when nothing can be read", async () => {
+    const qdrant = createMockQdrant([]);
+    vi.mocked(qdrant.getPoint).mockRejectedValue(new Error("qdrant down"));
+    Object.assign(qdrant, { listCollections: vi.fn().mockRejectedValue(new Error("qdrant down")) });
+
+    expect(await isCollectionIndexingInFlight(qdrant, "code_abc")).toBe(false);
   });
 });
 

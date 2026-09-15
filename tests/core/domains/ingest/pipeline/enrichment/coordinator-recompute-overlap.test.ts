@@ -1,7 +1,9 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
+import type { EnrichmentRunHandle } from "../../../../../../src/core/contracts/types/enrichment-executor.js";
 import { EnrichmentCoordinator } from "../../../../../../src/core/domains/ingest/pipeline/enrichment/coordinator.js";
 import { InlineEnrichmentExecutor } from "../../../../../../src/core/domains/ingest/pipeline/enrichment/executor/index.js";
+import { reindexRunSpec } from "../../../../../../src/core/domains/ingest/pipeline/enrichment/run-spec.js";
 import type { EnrichmentProvider } from "../../../../../../src/core/domains/ingest/pipeline/enrichment/types.js";
 import { pipelineLog } from "../../../../../../src/core/domains/ingest/pipeline/infra/debug-logger.js";
 
@@ -12,7 +14,7 @@ import { pipelineLog } from "../../../../../../src/core/domains/ingest/pipeline/
  * `--force-enrichments` runs the working-tree sync first and then the recompute
  * on the same coordinator. The sync leg's run completes in the background, so
  * without a wait its tail overlaps the recompute:
- *  - its `releaseCollection` drops the worker-side provider state the
+ *  - its `releaseRun` drops the worker-side provider state the
  *    recompute's deferred chunk pass reads (wrong chunk signals, 71n0p);
  *  - its terminal chunk marker lands after the recompute's `_run` write, so the
  *    health mapper's runId comparison renders `in_progress` (u3e77).
@@ -77,9 +79,9 @@ class RecordingEnrichmentExecutor extends InlineEnrichmentExecutor {
     return super.runFinalize(...args);
   }
 
-  override async releaseCollection(providers: EnrichmentProvider[], collection: string): Promise<void> {
+  override async releaseRun(providers: EnrichmentProvider[], run: EnrichmentRunHandle): Promise<void> {
     this.events.push({ kind: "release" });
-    return super.releaseCollection(providers, collection);
+    return super.releaseRun(providers, run);
   }
 }
 
@@ -162,8 +164,8 @@ describe("EnrichmentCoordinator.recomputeEnrichments — previous run still comp
     );
 
     // The sync leg: a run whose completion the pipeline leaves in the background.
-    coordinator.beginRun("/repo", "coll");
-    const syncLeg = coordinator.awaitCompletion("coll");
+    const syncRun = coordinator.beginRun(reindexRunSpec({ absolutePath: "/repo", collection: "coll", fileCount: 0 }));
+    const syncLeg = coordinator.awaitCompletion(syncRun);
     const recompute = coordinator.recomputeEnrichments("coll", "/repo", ["codegraph"]);
     await settle();
 
@@ -213,8 +215,8 @@ describe("EnrichmentCoordinator.recomputeEnrichments — previous run still comp
       new RecordingEnrichmentExecutor(events),
     );
 
-    coordinator.beginRun("/repo", "coll");
-    const syncLeg = coordinator.awaitCompletion("coll");
+    const syncRun = coordinator.beginRun(reindexRunSpec({ absolutePath: "/repo", collection: "coll", fileCount: 0 }));
+    const syncLeg = coordinator.awaitCompletion(syncRun);
     const recompute = coordinator.recomputeEnrichments("coll", "/repo", ["codegraph"]);
     await settle();
     held.open();
@@ -239,7 +241,7 @@ describe("EnrichmentCoordinator.recomputeEnrichments — previous run still comp
       new RecordingEnrichmentExecutor(events),
     );
 
-    coordinator.beginRun("/repo", "coll");
+    coordinator.beginRun(reindexRunSpec({ absolutePath: "/repo", collection: "coll", fileCount: 0 }));
 
     expect(await withinMs(coordinator.recomputeEnrichments("coll", "/repo", ["codegraph"]), 2_000)).toBe("resolved");
     expect(phases).not.toHaveBeenCalledWith("RECOMPUTE_AWAIT_PREVIOUS_RUN", expect.anything());
@@ -255,8 +257,8 @@ describe("EnrichmentCoordinator.recomputeEnrichments — previous run still comp
       new RecordingEnrichmentExecutor(events),
     );
 
-    coordinator.beginRun("/repo", "coll");
-    await coordinator.awaitCompletion("coll");
+    const syncRun = coordinator.beginRun(reindexRunSpec({ absolutePath: "/repo", collection: "coll", fileCount: 0 }));
+    await coordinator.awaitCompletion(syncRun);
     await coordinator.recomputeEnrichments("coll", "/repo", ["codegraph"]);
 
     expect(phases).not.toHaveBeenCalledWith("RECOMPUTE_AWAIT_PREVIOUS_RUN", expect.anything());
@@ -272,11 +274,8 @@ describe("EnrichmentCoordinator.recomputeEnrichments — previous run still comp
       new RecordingEnrichmentExecutor(events),
     );
 
-    coordinator.beginRun("/repo", "coll");
-    const syncLeg = coordinator.awaitCompletion("coll").catch((error: unknown) => error);
-    // The failed completion also rejects run A's done-promise; observe it while
-    // A is still the current run, the way a waiting caller would.
-    void coordinator.whenComplete();
+    const syncRun = coordinator.beginRun(reindexRunSpec({ absolutePath: "/repo", collection: "coll", fileCount: 0 }));
+    const syncLeg = coordinator.awaitCompletion(syncRun).catch((error: unknown) => error);
     const recompute = coordinator.recomputeEnrichments("coll", "/repo", ["codegraph"]);
     await settle();
     held.open();

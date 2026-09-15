@@ -124,7 +124,7 @@ describe("ReindexPipeline", () => {
       await createTestFile(codebaseDir, "cg2.ts", "export const y = 2;");
       await ingest.reindexChanges(codebaseDir);
 
-      const addressed = beginRunSpy.mock.calls.map((c) => c[1]);
+      const addressed = beginRunSpy.mock.calls.map((c) => c[0].collection);
       expect(addressed.length).toBeGreaterThan(0);
       expect(addressed).not.toContain(alias);
       expect(addressed.every((n) => typeof n === "string" && /_v\d+$/.test(n))).toBe(true);
@@ -760,7 +760,7 @@ console.log('This file has secrets');`,
       expect(beginRunSpy).toHaveBeenCalledTimes(1);
       expect(awaitCompletionSpy).toHaveBeenCalledTimes(1);
       // Addressed by the physical target, same as every other enrichment seam.
-      expect(beginRunSpy.mock.calls[0]?.[1]).toMatch(/_v\d+$/);
+      expect(beginRunSpy.mock.calls[0]?.[0].collection).toMatch(/_v\d+$/);
 
       repairSpy.mockRestore();
       beginRunSpy.mockRestore();
@@ -883,7 +883,7 @@ console.log('This file has secrets');`,
         runFileSignalsRecovery: vi.fn().mockResolvedValue(new Map()),
         runChunkBatch,
         runFinalize,
-        releaseCollection: vi.fn().mockResolvedValue(undefined),
+        releaseRun: vi.fn().mockResolvedValue(undefined),
         shutdown: vi.fn().mockResolvedValue(undefined),
       };
       const graphIngest = new IngestFacade({
@@ -900,6 +900,8 @@ console.log('This file has secrets');`,
         Array.from({ length: 60 }, (_, i) => `export const appValue${i} = ${i};`).join("\n"),
       );
       await graphIngest.indexCodebase(codebaseDir);
+      // A run on a collection still enriching is refused (bd tea-rags-mcp-62pgi).
+      await graphIngest.whenEnrichmentComplete();
       // A plain incremental so the store is current: the handed-off file's
       // persisted hash matches, and only the handoff can put it back in repair.
       await graphIngest.indexCodebase(codebaseDir);
@@ -925,7 +927,7 @@ console.log('This file has secrets');`,
   });
 
   describe("enrichment scope during reindex", () => {
-    it("should pass changed file paths to enrichment prefetch", async () => {
+    it("opens the enrichment run over the changed files only", async () => {
       await createTestFile(codebaseDir, "existing.ts", "export const v1 = 1;\nconsole.log('Existing');");
       await ingest.indexCodebase(codebaseDir);
 
@@ -941,16 +943,17 @@ console.log('This file has secrets');`,
       await ingest.reindexChanges(codebaseDir);
 
       expect(prefetchSpy).toHaveBeenCalledTimes(1);
-      // 4th argument should be the changedPaths array containing only the new file
-      const changedPaths = prefetchSpy.mock.calls[0]?.[3];
-      expect(changedPaths).toBeDefined();
-      expect(changedPaths).toContain("newfile.ts");
-      expect(changedPaths).not.toContain("existing.ts");
+      // The run is opened for the delta alone: a subset sized to the one new
+      // file, not to the two files on disk.
+      const spec = prefetchSpy.mock.calls[0]?.[0];
+      expect(spec).toBeDefined();
+      expect(spec?.scope.kind).toBe("subset");
+      expect(spec?.fileCount).toBe(1);
 
       prefetchSpy.mockRestore();
     });
 
-    it("should pass both added and modified files to enrichment prefetch", async () => {
+    it("counts both added and modified files into the enrichment run", async () => {
       await createTestFile(
         codebaseDir,
         "modify-me.ts",
@@ -975,10 +978,11 @@ console.log('This file has secrets');`,
       await ingest.reindexChanges(codebaseDir);
 
       expect(prefetchSpy).toHaveBeenCalledTimes(1);
-      const changedPaths = prefetchSpy.mock.calls[0]?.[3];
-      expect(changedPaths).toBeDefined();
-      expect(changedPaths).toContain("modify-me.ts");
-      expect(changedPaths).toContain("added.ts");
+      // One modified + one added file: both count toward the run, as a subset.
+      const spec = prefetchSpy.mock.calls[0]?.[0];
+      expect(spec).toBeDefined();
+      expect(spec?.scope.kind).toBe("subset");
+      expect(spec?.fileCount).toBe(2);
 
       prefetchSpy.mockRestore();
     });
@@ -1000,7 +1004,7 @@ console.log('This file has secrets');`,
       await ingest.reindexChanges(codebaseDir);
 
       expect(prefetchSpy).toHaveBeenCalledTimes(1);
-      const fileCount = prefetchSpy.mock.calls[0]?.[5];
+      const fileCount = prefetchSpy.mock.calls[0]?.[0].fileCount;
       // 1 modified file out of 3 on disk — the denominator is the delta.
       expect(fileCount).toBe(1);
 

@@ -1,6 +1,10 @@
 import { describe, expect, it, vi } from "vitest";
 
 import { EnrichmentCoordinator } from "../../../../../../src/core/domains/ingest/pipeline/enrichment/coordinator.js";
+import {
+  fullIndexRunSpec,
+  reindexRunSpec,
+} from "../../../../../../src/core/domains/ingest/pipeline/enrichment/run-spec.js";
 import type { EnrichmentProvider } from "../../../../../../src/core/domains/ingest/pipeline/enrichment/types.js";
 
 /**
@@ -67,13 +71,15 @@ describe("EnrichmentCoordinator — finalize run coverage (xpmwg)", () => {
   it("an ordinary run is a subset unless its caller declares the whole corpus", async () => {
     const subsetFinalize = vi.fn().mockResolvedValue(new Map());
     const subset = new EnrichmentCoordinator(qdrantWithPoints([]) as never, [codegraphProvider(subsetFinalize)]);
-    subset.beginRun("/repo", "coll");
-    await subset.awaitCompletion("coll");
+    const subsetRun = subset.beginRun(reindexRunSpec({ absolutePath: "/repo", collection: "coll", fileCount: 0 }));
+    await subset.awaitCompletion(subsetRun);
 
     const wholeFinalize = vi.fn().mockResolvedValue(new Map());
     const whole = new EnrichmentCoordinator(qdrantWithPoints([]) as never, [codegraphProvider(wholeFinalize)]);
-    whole.beginRun("/repo", "coll", undefined, undefined, false, 0, undefined, undefined, undefined, "wholeCorpus");
-    await whole.awaitCompletion("coll");
+    const wholeRun = whole.beginRun(
+      fullIndexRunSpec({ absolutePath: "/repo", collection: "coll", fileCount: 0, crossPass: false }),
+    );
+    await whole.awaitCompletion(wholeRun);
 
     expect(coverageOf(subsetFinalize)).toEqual(["subset"]);
     expect(coverageOf(wholeFinalize)).toEqual(["wholeCorpus"]);

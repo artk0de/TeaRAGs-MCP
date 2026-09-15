@@ -84,7 +84,7 @@ describe("IndexPipeline", () => {
       const beginRunSpy = vi.spyOn(EnrichmentCoordinator.prototype, "beginRun");
       await ingest.indexCodebase(codebaseDir, { forceReindex: true });
 
-      const addressed = beginRunSpy.mock.calls.map((c) => c[1]);
+      const addressed = beginRunSpy.mock.calls.map((c) => c[0].collection);
       expect(addressed.length).toBeGreaterThan(0);
       expect(addressed).not.toContain(alias);
       expect(addressed.every((n) => typeof n === "string" && /_v\d+$/.test(n))).toBe(true);

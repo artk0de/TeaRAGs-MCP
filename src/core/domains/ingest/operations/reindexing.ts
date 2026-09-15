@@ -447,7 +447,6 @@ export class ReindexPipeline extends BaseIndexingPipeline {
       ctx.targetCollection,
       ctx.absolutePath,
       ctx.scanner,
-      changedPaths,
       chunkSizeOverride,
       // File-progress denominator = the DELTA that will actually stream, not
       // the full scan: currentFiles.length rendered a 4.5k-file incremental as
@@ -457,7 +456,7 @@ export class ReindexPipeline extends BaseIndexingPipeline {
     // `initProcessing` just ran `beginRun`. Seed the recovery handoff into that
     // run before any batch or its completion reads the deferred chunk map; the
     // repair pass has already walked these files (bd tea-rags-mcp-fxio5).
-    this.enrichment.seedDeferredChunks(deferredChunkHandoff);
+    this.enrichment.seedDeferredChunks(pCtx.enrichmentRun, deferredChunkHandoff);
     // Embed-phase poison-pill isolation (shares the read/parse quarantine store).
     pCtx.chunkPipeline.setQuarantineStore(quarantineStore);
     const chunkMap = new Map<string, ChunkLookupEntry[]>();
@@ -634,12 +633,7 @@ export class ReindexPipeline extends BaseIndexingPipeline {
     stats: ChangeStats,
     startTime: number,
   ): Promise<void> {
-    const getEnrichmentStatus = await this.finalizeProcessing(
-      processingCtx,
-      chunkMap,
-      ctx.targetCollection,
-      ctx.absolutePath,
-    );
+    const getEnrichmentStatus = await this.finalizeProcessing(processingCtx, chunkMap);
 
     await this.closeRun(ctx, { snapshot: true });
 
