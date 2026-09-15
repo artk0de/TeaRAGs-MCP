@@ -58,10 +58,12 @@ import {
 } from "../../../adapters/qdrant/filters/symbolid-text-token.js";
 import type { SymbolChunkLocation, SymbolChunkResolver } from "../../../contracts/types/codegraph.js";
 import type { PayloadSignalDescriptor, TrajectoryFilterBuilder } from "../../../contracts/types/trajectory.js";
+import { compilePathPatternMatcher } from "../../../infra/path-pattern.js";
 import { applyEssentialSignalsToOverlay } from "../post-process.js";
 import type { Reranker, RerankMode } from "../reranker.js";
 import { resolveSymbols } from "../symbol-resolve.js";
 import { BaseExploreStrategy } from "./base.js";
+import { keepPathPatternMatches } from "./path-pattern-fill.js";
 import type { ExploreContext, ExploreResult } from "./types.js";
 
 /** Qdrant scroll page size for symbol discovery. */
@@ -106,7 +108,11 @@ export class SymbolSearchStrategy extends BaseExploreStrategy {
     ]);
 
     const seen = new Set(symbolChunks.map((c) => c.id));
-    const allChunks = [...symbolChunks, ...memberChunks.filter((c) => !seen.has(c.id))];
+    // Exact pathPattern (bd tea-rags-mcp-xf01b): the scroll filters carry only the
+    // text pre-filter, a directory-token SUPERSET of what the glob names.
+    const pathMatcher = compilePathPatternMatcher(this.input.pathPattern);
+    const scrolled = [...symbolChunks, ...memberChunks.filter((c) => !seen.has(c.id))];
+    const allChunks = pathMatcher ? keepPathPatternMatches(scrolled, pathMatcher) : scrolled;
 
     // Post-filter the scroll superset against the query:
     //   * FQN queries (with `#`, `.`, `::`) → keep chunks whose stored
@@ -126,7 +132,8 @@ export class SymbolSearchStrategy extends BaseExploreStrategy {
     // 0rskm — Qdrant scroll found no chunk for this symbolId. If codegraph is
     // wired, the symbol may be collapsed into a covering class chunk that has a
     // different symbolId. Two-hop: symbol_id → chunk_id → getPoint → result.
-    return this.resolveViaCodegraph(ctx);
+    const covering = await this.resolveViaCodegraph(ctx);
+    return pathMatcher ? keepPathPatternMatches(covering, pathMatcher) : covering;
   }
 
   /**

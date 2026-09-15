@@ -113,8 +113,8 @@ $ARGUMENTS describes...
     → scopeType = "intent"
 ```
 
-**pathPattern rules:** Never brace full file paths with slashes — breaks
-picomatch. Always extract directory-level prefixes.
+**pathPattern rules:** Scope = directory-level prefixes. Brace of full file
+paths matches ONLY those files — scan misses rest of domain.
 
 **One call only.** Scope resolution not exhaustive.
 

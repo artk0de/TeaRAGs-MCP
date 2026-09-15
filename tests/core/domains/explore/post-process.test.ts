@@ -67,14 +67,15 @@ describe("postProcess", () => {
     expect(result).toHaveLength(2);
   });
 
-  it("pathPattern in postProcess is a no-op (pre-filter handles it)", async () => {
+  // bd tea-rags-mcp-xf01b: the Qdrant text pre-filter is a superset, so
+  // pathPattern must still select results exactly (picomatch) here.
+  it("pathPattern keeps only results whose relativePath matches the glob exactly", async () => {
     const result = await postProcess(sampleResults, {
       limit: 10,
       pathPattern: "src/**",
       reranker: mockReranker,
     });
-    // All 3 results pass through — pathPattern is handled as Qdrant pre-filter, not post-filter
-    expect(result).toHaveLength(3);
+    expect(result.map((r) => r.payload?.relativePath)).toEqual(["src/a.ts", "src/b.ts"]);
   });
 
   it("applies reranking for non-relevance preset", async () => {

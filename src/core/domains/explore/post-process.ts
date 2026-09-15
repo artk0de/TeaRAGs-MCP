@@ -12,7 +12,9 @@
 
 import type { RankingOverlay } from "../../contracts/types/reranker.js";
 import type { PayloadSignalDescriptor } from "../../contracts/types/trajectory.js";
+import { compilePathPatternMatcher } from "../../infra/path-pattern.js";
 import type { Reranker, RerankMode } from "./reranker.js";
+import { keepPathPatternMatches } from "./strategies/path-pattern-fill.js";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -67,9 +69,10 @@ export function computeFetchLimit(
  * Apply post-processing pipeline: glob filter → rerank → trim to limit.
  */
 export async function postProcess(results: SearchResult[], options: PostProcessOptions): Promise<SearchResult[]> {
-  // pathPattern is now resolved as a Qdrant pre-filter BEFORE the query.
-  // No client-side glob filtering needed here.
-  let filtered: SearchResult[] = results;
+  // pathPattern reaches Qdrant as a text pre-filter — a directory-token SUPERSET
+  // of what the glob names (bd tea-rags-mcp-xf01b) — so it is enforced exactly here.
+  const matcher = compilePathPatternMatcher(options.pathPattern);
+  let filtered: SearchResult[] = matcher ? keepPathPatternMatches(results, matcher) : results;
 
   if (options.rerank && options.rerank !== "relevance") {
     filtered = await options.reranker.rerank(filtered, options.rerank, "semantic_search", {

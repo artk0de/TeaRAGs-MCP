@@ -7,10 +7,12 @@
 
 import { scrollOrderedBy } from "../../../adapters/qdrant/scroll.js";
 import type { RankingOverlay, RerankableResult } from "../../../contracts/types/reranker.js";
+import { compilePathPatternMatcher } from "../../../infra/path-pattern.js";
 import { FileLevelGrouper } from "../chunk-grouping/index.js";
 import { InvalidQueryError } from "../errors.js";
 import { RankModule, type RankOptions } from "../rank-module.js";
 import { BaseExploreStrategy } from "./base.js";
+import { fetchUntilPathPatternFilled, keepPathPatternMatches, type PathPatternPage } from "./path-pattern-fill.js";
 import type { ExploreContext, ExploreResult } from "./types.js";
 
 /** Initial overfetch multiplier for file-level dedup. */
@@ -24,7 +26,7 @@ export class ScrollRankStrategy extends BaseExploreStrategy {
 
   constructor(...args: ConstructorParameters<typeof BaseExploreStrategy>) {
     super(...args);
-    this.rankModule = new RankModule(this.reranker, this.reranker.getDescriptors());
+    this.rankModule = new RankModule(this.reranker, this.reranker.getDescriptors(), this.payloadSignals);
   }
 
   protected override applyDefaults(ctx: ExploreContext): ExploreContext {
@@ -66,12 +68,25 @@ export class ScrollRankStrategy extends BaseExploreStrategy {
       throw new InvalidQueryError("ScrollRankStrategy requires weights in the context");
     }
 
+    // Exact pathPattern (bd tea-rags-mcp-xf01b): each scroll is narrowed BEFORE
+    // RankModule merges, reranks and trims, so a directory sibling from the text
+    // pre-filter's superset never takes a slot. `scrollWindow` records whether any
+    // scroll came back full — the only way to tell "the source ran out" from "this
+    // window held no exact match".
+    const matcher = compilePathPatternMatcher(ctx.pathPattern);
+    const scrollWindow = { exhausted: true };
+
     const scrollFn = async (
       col: string,
       orderBy: { key: string; direction: "asc" | "desc" },
       lim: number,
       f?: Record<string, unknown>,
-    ) => scrollOrderedBy(this.qdrant, col, orderBy, lim, f);
+    ) => {
+      const points = await scrollOrderedBy(this.qdrant, col, orderBy, lim, f);
+      if (!matcher) return points;
+      if (points.length >= lim) scrollWindow.exhausted = false;
+      return keepPathPatternMatches(points, matcher);
+    };
 
     const ensureIndexFn = async (col: string, fieldName: string) => {
       const isInteger = /count|days|lines/i.test(fieldName);
@@ -87,9 +102,17 @@ export class ScrollRankStrategy extends BaseExploreStrategy {
       presetName: ctx.presetName,
     };
 
-    // Chunk-level: single fetch, no dedup needed
+    const fetchWindow = async (limit: number): Promise<PathPatternPage> => {
+      scrollWindow.exhausted = true;
+      const matches = await this.fetchAndMap(ctx.collectionName, { ...baseOpts, limit });
+      return { matches, exhausted: scrollWindow.exhausted };
+    };
+
+    // Chunk-level: single fetch, no dedup needed — unless an exact pathPattern
+    // thinned the window, then the bounded fill loop scrolls further.
     if (ctx.level !== "file") {
-      return this.fetchAndMap(ctx.collectionName, { ...baseOpts, limit: ctx.limit });
+      if (!matcher) return this.fetchAndMap(ctx.collectionName, { ...baseOpts, limit: ctx.limit });
+      return fetchUntilPathPatternFilled(ctx.limit, fetchWindow, (matches) => matches.length >= ctx.limit);
     }
 
     // File-level: adaptive fetch — increase limit until enough unique files
@@ -98,10 +121,13 @@ export class ScrollRankStrategy extends BaseExploreStrategy {
     let prevChunkCount = 0;
 
     for (let attempt = 0; attempt < FILE_OVERFETCH_MAX_ROUNDS; attempt++) {
-      const results = await this.fetchAndMap(ctx.collectionName, { ...baseOpts, limit: fetchLimit });
+      const { matches: results, exhausted } = await fetchWindow(fetchLimit);
       const uniqueFiles = new Set(results.map((r) => r.payload?.relativePath)).size;
 
-      if (uniqueFiles >= targetFiles || results.length <= prevChunkCount) {
+      // Unfiltered, a window that stopped growing means the source ran out. Under
+      // a pathPattern a window can stop growing while the scroll still has points.
+      const sourceExhausted = matcher ? exhausted : results.length <= prevChunkCount;
+      if (uniqueFiles >= targetFiles || sourceExhausted) {
         return results;
       }
 

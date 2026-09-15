@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 
 import type { DerivedSignalDescriptor } from "../../../../src/core/contracts/types/reranker.js";
+import type { PayloadSignalDescriptor } from "../../../../src/core/contracts/types/trajectory.js";
 import { RankModule } from "../../../../src/core/domains/explore/rank-module.js";
 import type { Reranker } from "../../../../src/core/domains/explore/reranker.js";
 
@@ -294,6 +295,87 @@ describe("RankModule", () => {
 
       const fields = module.resolveOrderByFields({ sourceless: 1.0 }, "chunk");
       expect(fields).toEqual([]);
+    });
+  });
+
+  // Codegraph signals are declared under the LOGICAL key `codegraph.{level}.X` and
+  // stored at `codegraph.symbols.{level}.X`; the order_by key has to be the stored
+  // path. A hard-coded `git.` prefix sorted by a field no point carries, so the
+  // scroll came back empty.
+  describe("order_by keys resolved through the payload signal descriptors", () => {
+    const payloadSignals: PayloadSignalDescriptor[] = [
+      { key: "git.file.commitCount", type: "number", description: "file commits" },
+      { key: "git.chunk.commitCount", type: "number", description: "chunk commits" },
+      { key: "codegraph.file.fanIn", type: "number", description: "file fanIn" },
+      { key: "codegraph.file.isHub", type: "boolean", description: "hub flag" },
+      { key: "codegraph.chunk.pageRank", type: "number", description: "method pageRank" },
+    ];
+    const signal = (name: string, sources: string[]): DerivedSignalDescriptor => ({
+      name,
+      description: name,
+      sources,
+      defaultBound: 1,
+      extract: () => 0,
+    });
+    const pageRankDesc = signal("pageRank", ["chunk.pageRank"]);
+    const fanInDesc = signal("fanIn", ["file.fanIn"]);
+    const isHubDesc = signal("isHub", ["file.isHub"]);
+
+    it("orders a codegraph chunk signal by its stored nested payload path", () => {
+      const module = new RankModule(createMockReranker(), [pageRankDesc], payloadSignals);
+
+      expect(module.resolveOrderByFields({ pageRank: 1 }, "chunk")).toEqual([
+        { key: "codegraph.symbols.chunk.pageRank", direction: "desc" },
+      ]);
+    });
+
+    it("orders a codegraph file signal by its stored path at either level", () => {
+      const module = new RankModule(createMockReranker(), [fanInDesc], payloadSignals);
+
+      expect(module.resolveOrderByFields({ fanIn: 1 }, "file")).toEqual([
+        { key: "codegraph.symbols.file.fanIn", direction: "desc" },
+      ]);
+      expect(module.resolveOrderByFields({ fanIn: 1 }, "chunk")).toEqual([
+        { key: "codegraph.symbols.file.fanIn", direction: "desc" },
+      ]);
+    });
+
+    it("keeps git signals on their git payload path", () => {
+      const module = new RankModule(createMockReranker(), [churnDesc], payloadSignals);
+
+      expect(module.resolveOrderByFields({ churn: 1 }, "chunk")).toEqual([
+        { key: "git.chunk.commitCount", direction: "desc" },
+      ]);
+    });
+
+    it("never orders by a boolean signal — order_by needs a numeric range index", () => {
+      const module = new RankModule(createMockReranker(), [isHubDesc, fanInDesc], payloadSignals);
+
+      expect(module.resolveOrderByFields({ isHub: 0.5, fanIn: 0.5 }, "file")).toEqual([
+        { key: "codegraph.symbols.file.fanIn", direction: "desc" },
+      ]);
+    });
+
+    it("ranks the points the stored codegraph field orders", async () => {
+      const scrollData = new Map([
+        [
+          "codegraph.symbols.chunk.pageRank",
+          [
+            { id: "a", payload: { codegraph: { symbols: { chunk: { pageRank: 0.9 } } } } },
+            { id: "b", payload: { codegraph: { symbols: { chunk: { pageRank: 0.4 } } } } },
+          ],
+        ],
+      ]);
+      const module = new RankModule(createMockReranker(), [pageRankDesc], payloadSignals);
+
+      const results = await module.rankChunks("test-col", {
+        weights: { pageRank: 1 },
+        level: "chunk",
+        limit: 10,
+        scrollFn: createMockScrollFn(scrollData),
+      });
+
+      expect(results.map((r) => r.id)).toEqual(["a", "b"]);
     });
   });
 });

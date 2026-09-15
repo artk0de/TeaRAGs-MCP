@@ -376,13 +376,17 @@ non-search tasks.
 
 ## pathPattern Rules
 
-Universal formatting constraint (picomatch). For pathPattern recipes (negation,
-dominant-domain exclusion) — invoke `/tea-rags:filter-building`.
+Universal formatting constraint (picomatch, exact match on project-relative
+`relativePath`). For pathPattern recipes (negation, dominant-domain exclusion) —
+invoke `/tea-rags:filter-building`.
 
-- GOOD: `**/enrichment/**` (directory prefix)
-- GOOD: `{file1.rb,file2.rb}` (flat file names, no slashes)
+- GOOD: `**/enrichment/**` (directory at any depth)
+- GOOD: `{app/services/foo.rb,app/models/bar.rb}` (exact relativePaths from
+  results)
+- GOOD: `**/{file1.rb,file2.rb}` (bare file names, any directory)
 - GOOD: `!**/test/**` (picomatch negation — exclude a directory subtree)
-- BAD: `{app/services/foo.rb,app/models/bar.rb}` (slashes inside braces)
+- BAD: `{file1.rb,file2.rb}`, `services/**` (no `**/` → project root only)
+- BAD: `/Users/me/project/src/**` (absolute path — never matches)
 
 ## Reference Files
 
