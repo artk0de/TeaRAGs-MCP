@@ -67,4 +67,12 @@ export const SearchResultOutputSchema = {
       "absent on hybrid_search, rank_chunks, find_symbol, and on indexes with no measured scale (reindex fills it).",
   ),
   driftWarning: z.string().nullable().optional().describe("Warning if index may be stale"),
+  codegraphWarning: z
+    .string()
+    .optional()
+    .describe(
+      "Optional codegraph lookup skipped — codegraph unreachable from this server (stale daemon build, " +
+        "build skew, daemon down, lock held). Names error code + remedy; results may miss collapsed symbols. " +
+        "Surface to user.",
+    ),
 };

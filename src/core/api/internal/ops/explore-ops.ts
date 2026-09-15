@@ -223,11 +223,13 @@ export class ExploreOps {
 
   async findSymbol(request: FindSymbolRequest): Promise<ExploreResponse> {
     const { collectionName, path } = await this.resolveAndGuard(request.collection, request.path, request.project);
-    return this.executeExplore(
-      this.buildFindSymbolStrategy(request),
-      buildFindSymbolContext(request, collectionName),
-      path,
-    );
+    const strategy = this.buildFindSymbolStrategy(request);
+    const response = await this.executeExplore(strategy, buildFindSymbolContext(request, collectionName), path);
+    // Finalize: the per-request symbol strategy records a skipped OPTIONAL
+    // codegraph hop (codegraph unavailable from this process) — attach it so the
+    // caller learns why a collapsed symbol is missing (bd tea-rags-mcp-a43tr).
+    const codegraphWarning = strategy instanceof SymbolSearchStrategy ? strategy.codegraphWarning : undefined;
+    return codegraphWarning ? { ...response, codegraphWarning } : response;
   }
 
   async getIndexMetrics(path: string): Promise<IndexMetrics> {

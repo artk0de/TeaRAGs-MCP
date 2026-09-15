@@ -31,7 +31,7 @@ import type {
   SymbolLineRange,
 } from "../../../contracts/types/codegraph.js";
 import { isDebug } from "../../../infra/runtime.js";
-import { CodegraphDaemonBuildSkewError } from "../errors.js";
+import { CodegraphDaemonBuildSkewError, CodegraphDaemonUnreachableError } from "../errors.js";
 import { DaemonFrameDecoder } from "./frame-decoder.js";
 import { getDaemonLogPath } from "./lifecycle.js";
 import { DAEMON_OPS, encodeFrame, type DaemonHandshakeResult, type DaemonOp, type DaemonResponse } from "./protocol.js";
@@ -246,11 +246,14 @@ export class DaemonGraphDbClient implements GraphDbClient {
           // The spawner hands the daemon's stdout + stderr to a log next to the
           // socket. Without naming it here the caller sees a bare ENOENT and has
           // no way to learn that the daemon crashed, let alone why.
-          throw new Error(
-            `DaemonGraphDbClient failed to connect to ${this.socketPath} within ` +
-              `${this.connectTimeoutMs}ms: ${e.code ?? e.message} — the daemon is not listening; ` +
-              `its output is in ${getDaemonLogPath(dirname(this.socketPath))}`,
-            { cause: err },
+          throw new CodegraphDaemonUnreachableError(
+            {
+              socketPath: this.socketPath,
+              connectTimeoutMs: this.connectTimeoutMs,
+              detail: e.code ?? e.message,
+              logPath: getDaemonLogPath(dirname(this.socketPath)),
+            },
+            err instanceof Error ? err : undefined,
           );
         }
         await new Promise<void>((r) => setTimeout(r, this.retryDelayMs));

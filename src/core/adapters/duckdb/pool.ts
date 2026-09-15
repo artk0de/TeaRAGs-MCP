@@ -608,13 +608,20 @@ export class GraphDbClientPool {
    * The returned handle is NOT cached in `clients` (each reader opens its
    * own RO connection); callers MUST `close()` the returned `graphDb` when
    * done — `closeAll`/`release` only manage the cached RW entries.
+   *
+   * An attach the driver refuses (lock held, unreadable file) rejects with
+   * `DuckDbOpenFailedError`, like the RW path — optional read consumers
+   * degrade on that class, not on driver message text (bd tea-rags-mcp-a43tr).
    */
   async acquireRead(collectionName: string): Promise<CollectionGraphHandle> {
-    const graphDb = new DuckDbGraphClient({
-      path: this.pathFor(collectionName),
-      accessMode: "READ_ONLY",
-    });
-    await graphDb.init();
+    const dbPath = this.pathFor(collectionName);
+    const graphDb = new DuckDbGraphClient({ path: dbPath, accessMode: "READ_ONLY" });
+    try {
+      await graphDb.init();
+    } catch (err) {
+      await graphDb.close().catch(() => undefined);
+      throw new DuckDbOpenFailedError(dbPath, err instanceof Error ? err : undefined);
+    }
     return { graphDb, symbolTable: this.options.symbolTableFactory() };
   }
 

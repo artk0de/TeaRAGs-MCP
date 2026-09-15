@@ -38,6 +38,7 @@ function formatStructuredResult(response: ExploreResponse): McpToolResult {
       ...(response.level && { level: response.level }),
       ...(response.confidence && { confidence: response.confidence }),
       ...(response.driftWarning && { driftWarning: response.driftWarning }),
+      ...(response.codegraphWarning && { codegraphWarning: response.codegraphWarning }),
     },
     content: [],
   };

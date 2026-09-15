@@ -94,4 +94,12 @@ describe("SearchResultOutputSchema", () => {
   it("rejects missing results field", () => {
     expect(() => schema.parse({})).toThrow();
   });
+
+  it("validates response with codegraphWarning (a43tr)", () => {
+    const result = schema.parse({
+      results: [],
+      codegraphWarning: "codegraph fallback skipped [INFRA_CODEGRAPH_DAEMON_STALE_BUILD]",
+    });
+    expect(result.codegraphWarning).toBe("codegraph fallback skipped [INFRA_CODEGRAPH_DAEMON_STALE_BUILD]");
+  });
 });

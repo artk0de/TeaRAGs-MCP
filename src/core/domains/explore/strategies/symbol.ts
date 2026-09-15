@@ -49,13 +49,14 @@
  * the comparison so `updated=` and `updated` remain distinct.
  */
 
+import { isCodegraphUnavailableError, type CodegraphUnavailableError } from "../../../adapters/duckdb/errors.js";
 import type { QdrantManager } from "../../../adapters/qdrant/client.js";
 import {
   SYMBOL_SEPARATORS,
   symbolIdLastSegment,
   symbolIdTextToken,
 } from "../../../adapters/qdrant/filters/symbolid-text-token.js";
-import type { SymbolChunkResolver } from "../../../contracts/types/codegraph.js";
+import type { SymbolChunkLocation, SymbolChunkResolver } from "../../../contracts/types/codegraph.js";
 import type { PayloadSignalDescriptor, TrajectoryFilterBuilder } from "../../../contracts/types/trajectory.js";
 import { applyEssentialSignalsToOverlay } from "../post-process.js";
 import type { Reranker, RerankMode } from "../reranker.js";
@@ -128,9 +129,20 @@ export class SymbolSearchStrategy extends BaseExploreStrategy {
     return this.resolveViaCodegraph(ctx);
   }
 
+  /**
+   * Set when this request's collapsed-symbol codegraph fallback was skipped
+   * because codegraph is unavailable from this process. Read after `execute()`
+   * — the strategy is per-request, so the notice belongs to exactly one answer.
+   */
+  get codegraphWarning(): string | undefined {
+    return this.codegraphSkipNotice;
+  }
+
+  private codegraphSkipNotice?: string;
+
   private async resolveViaCodegraph(ctx: ExploreContext): Promise<ExploreResult[]> {
     if (!this.chunkResolver) return [];
-    const location = await this.chunkResolver.resolveSymbolChunk(ctx.collectionName, this.input.symbol);
+    const location = await this.resolveCoveringChunk(this.chunkResolver, ctx.collectionName);
     if (!location) return [];
     const point = await this.qdrant.getPoint(ctx.collectionName, location.chunkId);
     if (!point) return [];
@@ -143,6 +155,28 @@ export class SymbolSearchStrategy extends BaseExploreStrategy {
         payload,
       } as ExploreResult,
     ];
+  }
+
+  /**
+   * The codegraph hop is OPTIONAL (bd tea-rags-mcp-a43tr): codegraph unavailable
+   * from this process skips it with a notice instead of failing find_symbol.
+   * The catch sits here, next to the optional hop, and not in
+   * `GraphFacade#withReadHandle` — for get_callers / get_callees / find_cycles
+   * an empty answer is an assertion about the code, so they must keep throwing.
+   * Only the resolver call is guarded: any other failure, and the Qdrant
+   * `getPoint` that follows, propagate.
+   */
+  private async resolveCoveringChunk(
+    resolver: SymbolChunkResolver,
+    collectionName: string,
+  ): Promise<SymbolChunkLocation | null> {
+    try {
+      return await resolver.resolveSymbolChunk(collectionName, this.input.symbol);
+    } catch (err) {
+      if (!isCodegraphUnavailableError(err)) throw err;
+      this.codegraphSkipNotice = formatCodegraphFallbackSkipped(err);
+      return null;
+    }
   }
 
   /**
@@ -217,6 +251,18 @@ export class SymbolSearchStrategy extends BaseExploreStrategy {
 /** Does the symbol contain a structural separator (FQN, not a bare name)? */
 function isFullyQualified(symbol: string): boolean {
   return SYMBOL_SEPARATORS.test(symbol);
+}
+
+/**
+ * The notice for a skipped codegraph fallback: what was skipped, why (the
+ * error's code + message) and the remedy (the error's own hint — each class
+ * of the codegraph-unavailable family owns its repair text).
+ */
+function formatCodegraphFallbackSkipped(err: CodegraphUnavailableError): string {
+  return (
+    `find_symbol: codegraph fallback for symbols collapsed into a covering chunk skipped [${err.code}] — ` +
+    `${err.message}. Results cover only chunks indexed under their own symbolId. Remedy: ${err.hint}`
+  );
 }
 
 /**
