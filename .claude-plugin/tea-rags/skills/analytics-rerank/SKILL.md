@@ -35,8 +35,9 @@ Documentation search? (language: "markdown" OR documentation: "only")
 │       1. find_symbol(relativePath: "docs/file.md") — TOC of one doc, OR
 │          hybrid_search/semantic_search with pathPattern: "docs/**" — to
 │          discover which doc covers a topic
-│       2. find_symbol(symbol: "doc:<parentHash>") — drill into a specific
-│          section taken from search result's parentSymbolId or from the TOC
+│       2. find_symbol(symbol: "doc:<hash>") — full content of ONE section;
+│          hash from a TOC line or a doc result's symbolId (parentSymbolId is
+│          the doc path → TOC, not a section)
 │       3. Read — only when you need continuous prose spanning many sections
 │
 └─ No → continue to preset selection

@@ -12,13 +12,13 @@ Grep/Glob — never for code discovery.
 
 **Chunk is the source of truth — for languages with full AST chunking.** Results
 carry code, metadata, git signals. Don't re-read files to "verify" or
-"understand"; `find_symbol` returns full method/class definition — no `Read`.
-Holds where `language-compatibility.md` rates **AST = full** (native:
-ts/js/python/go/java/rust/ruby/ bash). For **AST = none** (sql/jsonc/json + any
-non-native on CharacterChunker) a chunk may split a symbol mid-body — there
-`Read` is legit fallback for exact code; markdown is **partial** (section-level,
-fine for docs). `Read` always allowed to MODIFY — never _needed_ to gather code
-for a full-AST language.
+"understand"; `find_symbol` returns full method body / class outline (ids to
+drill) — no `Read`. Holds where `language-compatibility.md` rates **AST = full**
+(native: ts/js/python/go/java/rust/ruby/ bash). For **AST = none**
+(sql/jsonc/json + any non-native on CharacterChunker) a chunk may split a symbol
+mid-body — there `Read` is legit fallback for exact code; markdown is
+**partial** (section-level, fine for docs). `Read` always allowed to MODIFY —
+never _needed_ to gather code for a full-AST language.
 
 **Code is evidence, docs are hypothesis.** Doc chunks (`.md`, `isDocumentation`)
 carry intent + navigation (why / what-for) — NOT behavior truth. Behavioral
@@ -105,11 +105,14 @@ from the same index.
 | Chunk from one file                         | File structure / other methods in file  | `find_symbol(relativePath: result.relativePath)` → synthetic outline                                                                      |
 | Chunk with `navigation.{prev,next}SymbolId` | The neighbor method                     | `find_symbol(symbol: navigation.prevSymbolId or nextSymbolId)`                                                                            |
 | Chunk that calls a helper / class           | The helper / class definition           | `find_symbol(symbol: "HelperClass#method")` — symbol is in chunk text                                                                     |
-| Chunk from a `.md` doc                      | All sections of that doc (TOC)          | `find_symbol(symbol: result.parentSymbolId)` — parent is `doc:<hash>`                                                                     |
+| Chunk from a `.md` doc                      | All sections of that doc (TOC)          | `find_symbol(relativePath: result.relativePath)` — heading TOC; doc `parentSymbolId` = doc path, NOT a hash                               |
 | Just a doc path (no search yet)             | Table of contents of that doc           | `find_symbol(relativePath: "docs/file.md")` — heading TOC with hashes                                                                     |
-| Class chunk (constructor or one method)     | All methods / public API of the class   | `find_symbol(symbol: "ClassName")` → full class outline + bodies                                                                          |
+| Class chunk (constructor or one method)     | All methods / public API of the class   | `find_symbol(symbol: "ClassName")` → OUTLINE: member ids, NO bodies, tests excluded → drill member                                        |
+| Outline / TOC in hand (class, file, doc)    | One member / section                    | `find_symbol(symbol: <id from that line, verbatim>)` — every outline line = address. NOT `Read`, NOT grep                                 |
+| Result saved to file (too large)            | Anything inside it                      | NEVER grep / `Read` the dump — ids from preview → `find_symbol(symbol: <id>)`; no id → `find_symbol(relativePath:)` outline first         |
+| Class name, need its tests                  | Specs / test scopes of that class       | `hybrid_search(query: "ClassName", testFile: "only")` — class outline carries no tests                                                    |
 | Chunk from production src + diff context    | Tests describing affected scenarios     | `Skill(tea-rags:tests-as-context)` recipe `tests-at-risk`                                                                                 |
-| Describe-it scope name from a stacktrace    | Leaf scope chunk with inherited setup   | `find_symbol(symbol: "<Parent>.<scope>")` + filter `chunkType: "test"`                                                                    |
+| Describe-it scope name from a stacktrace    | Leaf scope chunk with inherited setup   | `find_symbol(symbol: "<Top>.<scope>")` — leaf scope chunk (split scope parts share that id, merged)                                       |
 
 `find_symbol` accepts a `rerank` preset for single-call diagnostic (definition +
 rankingOverlay in one call). `offset` pagination works on every search tool;
@@ -146,13 +149,13 @@ follow-ups. Choose mode by what you hold:
 
 **Mode A — `symbol:` (you know the name)**
 
-| You have…                        | Pass                              | You get                                       |
-| -------------------------------- | --------------------------------- | --------------------------------------------- |
-| Instance method                  | `symbol: "Class#method"`          | merged full method body                       |
-| Static method / top-level fn     | `symbol: "Class.method"` / `"fn"` | merged full definition                        |
-| **Class or module name**         | `symbol: "ClassName"`             | full class/module outline + all method bodies |
-| Existence check only             | `symbol: "X", metaOnly: true`     | presence + location, no body (cheapest)       |
-| Doc section (hash from a result) | `symbol: "doc:<hash>"`            | that doc heading's chunk                      |
+| You have…                        | Pass                              | You get                                        |
+| -------------------------------- | --------------------------------- | ---------------------------------------------- |
+| Instance method                  | `symbol: "Class#method"`          | merged full method body                        |
+| Static method / top-level fn     | `symbol: "Class.method"` / `"fn"` | merged full definition                         |
+| **Class or module name**         | `symbol: "ClassName"`             | OUTLINE: member ids, NO bodies, tests excluded |
+| Existence check only             | `symbol: "X", metaOnly: true`     | presence + location, no body (cheapest)        |
+| Doc section (hash from a result) | `symbol: "doc:<hash>"`            | full section content (split parts merged)      |
 
 **Mode B — `relativePath:` (you have a file path) — USE THIS MORE.** With no
 symbol, just a path, find_symbol returns a synthetic outline of the whole file.
@@ -163,6 +166,13 @@ Agents under-use it; it is the correct route, not `Read`, not `semantic_search`:
   touches a `.md` doc and you lack a `doc:<hash>`, start here.
 - **`relativePath: "src/foo.ts"` → file structure**: every class/method/function
   outline in that file. Use instead of `Read` to answer "what's in this file".
+
+**Outline / TOC = map, not content — read chapters by address.** Every line of
+class outline, file outline, doc TOC carries id (`Class#method`, `Class.method`,
+`doc:<hash>`). Content needed → `find_symbol(symbol: <that id verbatim>)`, one
+call per chapter, parallel for several. Never answer from outline as if it held
+bodies. Never `Read` file or grep saved tool-output dump to find a member — ids
+already in hand.
 
 ### Graph navigation — get_callers / get_callees / trace_path
 
@@ -205,7 +215,8 @@ a non-graph substitute — never read an absent/empty graph tool as positive fac
 - After ANY search → next call is `find_symbol`, never another search, never
   `Read`. The chunk already names the symbol/path you need.
 - Doc structure → `find_symbol(relativePath: "docs/x.md")`, never `Read` the md.
-- A class's full API → `find_symbol(symbol: "ClassName")`, one call.
+- Class API → `find_symbol(symbol: "ClassName")` = outline (ids, no bodies);
+  bodies → `find_symbol(symbol: <member id>)` per member.
 - Who-uses-X repo-wide → `hybrid_search` (text recall) when codegraph off;
   `get_callers` (exact, graph) when codegraph on.
 
@@ -234,8 +245,9 @@ Already have search results for this area?
 │   ├─ Need file structure (methods, classes, outline)
 │   │     → find_symbol(relativePath: result.relativePath)
 │   ├─ Need doc TOC
-│   │     → find_symbol(relativePath: "docs/file.md") OR
-│   │       find_symbol(symbol: "doc:<parentHash>") from search result
+│   │     → find_symbol(relativePath: "docs/file.md")
+│   ├─ Hold outline / TOC, need one member / section / test
+│   │     → find_symbol(symbol: <id from that line>) — never Read / grep
 │   └─ Need graph navigation (codegraph must be enabled)
 │         → see "Graph navigation" above: get_callers/get_callees (one hop,
 │           default) → find_cycles → trace_path (full A→B chain, escalate only)
@@ -321,7 +333,10 @@ non-search tasks.
 
 - **Built-in Grep for code discovery** — use tea-rags or ripgrep MCP
 - **Read file to verify search results** — chunk is the source of truth
-- **Read file after find_symbol** — find_symbol returns full definition
+- **Read file after find_symbol** — find_symbol returns full definition (method)
+  or addressable outline (class / doc)
+- **Grep / Read a saved find_symbol dump or an outline** — lines are ids; drill
+  `find_symbol(symbol: <id>)` instead
 - **Multiple semantic_search for same area** — one call, navigate from results
 - **Unfiltered semantic_search for cross-layer** — dominant language takes 100%
   of slots. Always use language filter (see `references/polyglot-rule.md`)

@@ -120,14 +120,15 @@ parameter examples per tool.
 **By symbol name (symbol param):**
 - Instance method → symbol="Reranker#rerank" (# = instance)
 - Static method → symbol="Reranker.create" (. = static)
-- Class outline → symbol="Reranker" (returns synthetic outline of all members)
+- Class outline → symbol="Reranker" (outline: member symbolIds, NO bodies, tests excluded)
+- Drill from outline/TOC → symbol="<id copied from an outline line>" (one member / doc section)
 - Existence check → symbol="myFunc", metaOnly=true (no content)
 - With signals → symbol="Reranker#score", rerank="hotspots" (ranking overlay)
 
 **By file path (relativePath param, mutually exclusive with symbol):**
 - File outline → relativePath="src/reranker.ts" (code structure with hierarchy)
 - Doc TOC → relativePath="docs/api.md" (heading TOC with doc:<hash> references)
-- From search result → find_symbol(symbol: parentSymbolId) for class or doc parent
+- From search result → find_symbol(symbol: parentSymbolId) → class outline or doc TOC (doc parent = doc path)
 
 ## rank_chunks Examples (batch analytics, not online search)
 
@@ -158,7 +159,8 @@ the point where results stop matching the intent — reformulate the query inste
 
 - Class with risk overlay →
   find_symbol(symbol: "PaymentService", rerank: "hotspots")
-  Returns merged outline + bodies PLUS rankingOverlay with churn/ownership/bugFixRate.
+  Returns class outline (member ids, no bodies) PLUS rankingOverlay with churn/ownership/bugFixRate;
+  drill a member with find_symbol(symbol: "PaymentService#charge").
 - Method with risk overlay →
   find_symbol(symbol: "PaymentService#charge", rerank: "hotspots")
 - File-scoped outline → find_symbol(relativePath: "src/payments/service.ts")
