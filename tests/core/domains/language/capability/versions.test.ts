@@ -128,10 +128,15 @@ describe("seeded support versions", () => {
       // call attribution, so an index built by walker 1 holds a second copy of
       // every in-method call, emitted from the enclosing class chunk. rust
       // walker 2: the same bd tea-rags-mcp-f11nz change, where the duplicate
-      // came from each enclosing impl / mod / trait chunk.
+      // came from each enclosing impl / mod / trait chunk. typescript walker 5
+      // and javascript walker 2: bd tea-rags-mcp-hwwtw stopped deciding member
+      // calls by global short-name uniqueness — typescript dispatches a
+      // checker-typed interface receiver through the cone, javascript keeps the
+      // global fallback for bare calls only.
       // Every other language is still at its seed.
       const WALKER_BUMPED = new Map([
-        ["typescript", 4],
+        ["typescript", 5],
+        ["javascript", 2],
         ["python", 8],
         ["ruby", 2],
         ["java", 2],

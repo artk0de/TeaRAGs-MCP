@@ -13,7 +13,7 @@ describe("IndexMetricsQuery", () => {
   const makeDeps = (overrides: Partial<Record<string, unknown>> = {}) => {
     const qdrant = {
       collectionExists: vi.fn().mockResolvedValue(true),
-      getCollectionInfo: vi.fn().mockResolvedValue({ pointsCount: 100 }),
+      countPoints: vi.fn().mockResolvedValue(100),
       getPoint: vi.fn().mockResolvedValue(null),
       ...(overrides.qdrant ?? {}),
     } as any;

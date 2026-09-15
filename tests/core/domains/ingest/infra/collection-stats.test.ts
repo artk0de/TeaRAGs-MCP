@@ -75,6 +75,23 @@ describe("computeCollectionStats distributions", () => {
     expect(result.distributions.documentation).toEqual({ docs: 1, code: 2 });
   });
 
+  // bd tea-rags-mcp-39xca.12 — the stats scroll reads every point of the
+  // collection, service points included. They are not chunks: counted as
+  // `code`, they put docs + code two above the chunk count get_index_metrics
+  // reports next to it.
+  it("leaves the indexing marker and the schema metadata point out of the chunk distributions", () => {
+    const chunks = makePoints([1, 2, 3]);
+    const servicePoints = [
+      { payload: { _type: "indexing_metadata", indexingComplete: true } },
+      { payload: { _type: "schema_metadata", schemaVersion: 14, indexes: [] } },
+    ];
+
+    const result = computeCollectionStats([...servicePoints, ...chunks], testSignals, ALL_ACCS);
+
+    expect(result.distributions.documentation).toEqual({ docs: 1, code: 2 });
+    expect(result.distributions.totalFiles).toBe(3);
+  });
+
   it("should compute distributions.totalFiles from distinct relativePath", () => {
     const points = makePoints([1, 2, 3, 4, 5, 6]);
     const result = computeCollectionStats(points, testSignals, ALL_ACCS);

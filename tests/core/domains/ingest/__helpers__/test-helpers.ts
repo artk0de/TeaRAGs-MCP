@@ -62,6 +62,43 @@ function pathOfExactBranch(branch: any): string | undefined {
   return valueOfExactMatch(branch?.must) ?? branch?.match?.value;
 }
 
+/** Dotted payload path read, the way Qdrant resolves a filter `key`. */
+function payloadAt(payload: Record<string, any> | undefined, key: string): unknown {
+  let node: any = payload;
+  for (const segment of key.split(".")) {
+    if (node === null || typeof node !== "object") return undefined;
+    node = node[segment];
+  }
+  return node;
+}
+
+/** One leaf condition under Qdrant semantics: `match.value`, `match.any`, `is_empty`. */
+function leafMatches(payload: Record<string, any> | undefined, condition: any): boolean {
+  if (condition?.is_empty?.key) {
+    const value = payloadAt(payload, condition.is_empty.key);
+    return value === undefined || value === null || (Array.isArray(value) && value.length === 0);
+  }
+  if (condition?.key && condition.match && "value" in condition.match) {
+    return payloadAt(payload, condition.key) === condition.match.value;
+  }
+  if (condition?.key && Array.isArray(condition.match?.any)) {
+    return condition.match.any.includes(payloadAt(payload, condition.key));
+  }
+  return false;
+}
+
+/**
+ * Whether a point is excluded by the filter's `must_not` — a point matching ANY
+ * of its leaf conditions is dropped, as Qdrant does. Only `must_not` is
+ * honoured; `must` and `should` keep the looser handling each fake method
+ * already had.
+ */
+function excludedByMustNot(point: any, filter: any): boolean {
+  const mustNot = filter?.must_not;
+  if (!Array.isArray(mustNot)) return false;
+  return mustNot.some((condition: any) => leafMatches(point.payload, condition));
+}
+
 /** Mock QdrantManager — mirrors all public methods with alias resolution */
 export class MockQdrantManager implements Partial<QdrantManager> {
   private collections = new Map<string, any>();
@@ -225,7 +262,7 @@ export class MockQdrantManager implements Partial<QdrantManager> {
 
   async countPoints(collectionName: string, filter?: Record<string, unknown>): Promise<number> {
     const resolved = this.resolve(collectionName);
-    const points = this.points.get(resolved) || [];
+    const points = (this.points.get(resolved) || []).filter((p) => !excludedByMustNot(p, filter));
     if (!filter) return points.length;
     const shouldConditions = (filter as any)?.should;
     if (shouldConditions) {
@@ -277,11 +314,11 @@ export class MockQdrantManager implements Partial<QdrantManager> {
 
   async scrollFiltered(
     collectionName: string,
-    _filter: Record<string, unknown>,
+    filter: Record<string, unknown>,
     _limit: number,
   ): Promise<{ id: string | number; payload: Record<string, unknown> }[]> {
     const resolved = this.resolve(collectionName);
-    const points = this.points.get(resolved) || [];
+    const points = (this.points.get(resolved) || []).filter((p) => !excludedByMustNot(p, filter));
     return points.map((p) => ({ id: p.id, payload: p.payload ?? {} }));
   }
 

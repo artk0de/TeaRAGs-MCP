@@ -3,6 +3,7 @@ import { pickSingleCandidate, type CallContext, type CallRef } from "../../../..
 import type { SymbolResolutionOutcome, SymbolResolutionStrategy } from "../../../../../contracts/types/language.js";
 import { targetsExternalImport } from "../ts-external-call.js";
 import { checkerDeclaresCalleeIn, importBoundProjectFile } from "../ts-import-bound-callee.js";
+import { interfaceReceiverExcludesCandidate } from "../ts-interface-receiver.js";
 import { calleeIsLocalValueBinding } from "../ts-local-callee.js";
 import { receiverBoundToProjectType, receiverIsUnpinnableLocalValueBinding } from "../ts-local-receiver.js";
 import type { TSProgramCache } from "../ts-program-cache.js";
@@ -56,6 +57,17 @@ import type { ResolverConfig } from "./shared.js";
  * {@link importBoundProjectFile} for why the import is authoritative and why the
  * check is scoped to calls with no receiver.
  *
+ * A receiver the checker types as a PROJECT INTERFACE is decided by that
+ * interface, never by how many methods share the member's name (bd
+ * tea-rags-mcp-hwwtw). `walkCommits`'s destructured `diffMemo?.set(...)` landed
+ * on `CommitDiffMemo#set` only while `set` was unique, and lost every edge when
+ * `RunScopedMemo#set` appeared. The implementers are reached by
+ * `TSTypeCheckerInterfaceReceiverDispatchResolver`, which runs before the chain,
+ * so here the unique match is kept only when its owner is one of those
+ * interfaces or a class the hierarchy records implementing one. See
+ * {@link interfaceReceiverExcludesCandidate} for the rule and for why a
+ * structural implementer with no `implements` clause is not accepted on name.
+ *
  * The guard reads the resolver's `TSProgramCache` when one exists (bd
  * tea-rags-mcp-335eu), which is what lets it decline a receiver only the checker
  * could type — `const map = readRegistry(); map.set(k, v)`. The cache arrives as
@@ -79,6 +91,8 @@ export class TSGlobalShortNameSymbolResolutionStrategy implements SymbolResoluti
     const fallback = ctx.symbolTable.lookupByShortName(call.member);
     const hit = pickSingleCandidate(fallback, this.cfg.mode);
     if (!hit) return CONTINUE;
+    // After the pick, so the checker is asked only when a match would commit.
+    if (interfaceReceiverExcludesCandidate(call, ctx, this.programCache, hit)) return CONTINUE;
     if (this.importContradictsCandidate(call, ctx, hit.relPath)) return CONTINUE;
     return resolved({ targetRelPath: hit.relPath, targetSymbolId: hit.symbolId });
   }

@@ -105,8 +105,10 @@
 - **Exact matching on the `text`-indexed payload keys goes through
   `filters/text-indexed-exact.ts`** (lands in D1). `relativePath`, `symbolId`
   and `parentSymbolId` each carry a `text` index (`TEXT_INDEXED_KEYS`, looped in
-  `SchemaManager#initializeSchema`); `relativePath` carries a `keyword` index as
-  well (`SchemaManager#initializeSchema`).
+  `SchemaManager#initializeSchema`) and nothing else: Qdrant keeps one index per
+  key, so the `keyword` index schema v4 once put on `relativePath` was replaced
+  by the v5 text index, and new collections never get it
+  (`SchemaManager#initializeSchema`, bd tea-rags-mcp-ivp12).
 
 ## Gotchas
 

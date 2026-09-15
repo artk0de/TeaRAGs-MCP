@@ -411,8 +411,10 @@
   its file-only import edge preempts the global short-name fallback through
   CONTROL FLOW. The chain move is a prerequisite for deferring that edge, and
   its chain tail is itself a global short-name fallback — the shape the
-  Python/Java measurement showed loses precision. Why: converting the last
-  un-migrated resolver for consistency reproduces a measured regression.
+  Python/Java measurement showed loses precision. That tail now answers BARE
+  calls only: every receiver-bearing edge it produced on this repo was
+  fabricated (bd tea-rags-mcp-hwwtw). Why: converting the last un-migrated
+  resolver for consistency reproduces a measured regression.
 
 ## See also
 
