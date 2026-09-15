@@ -6,7 +6,7 @@ describe("getIndexMetrics", () => {
   function makeExploreFacade(extraDeps: { enrichmentHealthFrameForPath?: (path: string) => readonly string[] } = {}) {
     const qdrant = {
       collectionExists: vi.fn().mockResolvedValue(true),
-      getCollectionInfo: vi.fn().mockResolvedValue({ pointsCount: 100 }),
+      countPoints: vi.fn().mockResolvedValue(100),
       getPoint: vi.fn().mockResolvedValue(null),
     } as any;
 
@@ -111,7 +111,7 @@ describe("getIndexMetrics", () => {
     return { facade, qdrant, statsCache };
   }
 
-  it("returns collection name and totalChunks from collectionInfo", async () => {
+  it("returns collection name and totalChunks from the chunk count", async () => {
     const { facade } = makeExploreFacade();
     const result = await facade.getIndexMetrics("/project");
     expect(result.collection).toContain("code_");

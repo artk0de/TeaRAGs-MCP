@@ -8,6 +8,7 @@
  */
 
 import type { QdrantManager } from "../../../adapters/qdrant/client.js";
+import { chunkPointsFilter } from "../../../adapters/qdrant/service-points.js";
 import type { IndexMetrics, SignalMetrics } from "../../../api/public/dto/index.js";
 import { INDEXING_METADATA_ID } from "../../../contracts/constants.js";
 import type { PayloadSignalDescriptor, SignalFloors, SignalStats } from "../../../contracts/types/trajectory.js";
@@ -52,7 +53,9 @@ export class IndexMetricsQuery {
       throw new NotIndexedError(sourcePath);
     }
 
-    const collectionInfo = await this.qdrant.getCollectionInfo(collectionName);
+    // Chunks only — `pointsCount` also counts the indexing marker and the schema
+    // metadata point (bd tea-rags-mcp-39xca.12).
+    const totalChunks = await this.qdrant.countPoints(collectionName, chunkPointsFilter());
     const signals = this.buildLanguageSignals(stats.perLanguage);
     this.appendGlobalSignalsIfPolyglot(signals, stats.perLanguage, stats.perSignal);
 
@@ -60,7 +63,7 @@ export class IndexMetricsQuery {
 
     return {
       collection: collectionName,
-      totalChunks: collectionInfo.pointsCount,
+      totalChunks,
       totalFiles: stats.distributions.totalFiles,
       distributions: stats.distributions,
       signals,
