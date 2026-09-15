@@ -1,53 +1,32 @@
 /**
  * Codegraph symbols `EnrichmentProvider`: bridges walker output
- * (`FileExtraction`) and the graph DB (`GraphDbClient`).
+ * (`FileExtraction`) and the graph DB (`GraphDbClient`), and owns the run
+ * lifecycle that ties the three seams together:
  *
- *   - Pass-1 entry points (`streamFileBatch`, the fan-out's
- *     `absorbExtractedFiles`, cross-pass `acceptExtraction`) feed the run's
- *     extraction sink; its `finish` resolves pass-2 edges into the graph DB.
- *   - `finalizeSignals` / `buildFileSignals` read file overlays (fanIn / fanOut /
- *     instability / isHub / isLeaf / transitiveImpact) off the finished graph.
- *   - `buildChunkSignals`, the deferred chunk pass, settles each stored chunk's
- *     fanIn / fanOut / pageRank through `settleCodegraphChunkSignals`.
+ *   - extraction (`file-extractor.ts`): pass-1 entry points (`streamFileBatch`,
+ *     the fan-out's `absorbExtractedFiles`, cross-pass `acceptExtraction`) feed
+ *     the run's extraction sink; its `finish` resolves pass-2 edges.
+ *   - finalize (`run-finalize.ts`): `finalizeSignals` / `buildFileSignals` read
+ *     file overlays (fanIn / fanOut / instability / isHub / isLeaf /
+ *     transitiveImpact) off the finished graph and persist the resolve tally.
+ *   - chunk signals (`chunk-signal-pass.ts`): `buildChunkSignals`, the deferred
+ *     pass, settles each stored chunk through `settleCodegraphChunkSignals`.
  */
 
 import { randomUUID } from "node:crypto";
-import {
-  appendFileSync,
-  createReadStream,
-  existsSync,
-  mkdirSync,
-  readdirSync,
-  readFileSync,
-  rmSync,
-  writeFileSync,
-  type Dirent,
-} from "node:fs";
-import { join, dirname as pathDirname, relative } from "node:path";
-import { createInterface } from "node:readline";
+import { appendFileSync, mkdirSync, writeFileSync } from "node:fs";
+import { join, dirname as pathDirname } from "node:path";
 
 import type { Ignore } from "ignore";
-import Parser from "tree-sitter";
-import BashLang from "tree-sitter-bash";
-import GoLang from "tree-sitter-go";
-import JavaLang from "tree-sitter-java";
-import JsLang from "tree-sitter-javascript";
-import PyLang from "tree-sitter-python";
-import RbLang from "tree-sitter-ruby";
-import RustLang from "tree-sitter-rust";
-import TsLang from "tree-sitter-typescript";
 
 import type { GraphDbClientPool } from "../../../../adapters/duckdb/pool.js";
 import type {
   CodegraphPass1FileAggregates,
   ExtractionSink,
   FileExtraction,
-  FileGraphMetrics,
   GlobalSymbolTable,
   GraphDbClient,
-  SymbolChunkIdJoinEntry,
   SymbolDefinition,
-  SymbolId,
   SymbolLineRange,
 } from "../../../../contracts/types/codegraph.js";
 import type { FileClassification } from "../../../../contracts/types/file-classification.js";
@@ -74,32 +53,30 @@ import type {
 } from "../../../../contracts/types/provider.js";
 import type { DerivedSignalDescriptor, RerankPreset } from "../../../../contracts/types/reranker.js";
 import { collectDependencyManifestSources } from "../../../../infra/dependency-manifests.js";
-import { fileIsInertForExtraction } from "../../../../infra/extraction-fast-path.js";
-import { materializeTree } from "../../../../infra/materialize.js";
 import { isDebug } from "../../../../infra/runtime.js";
 import {
   buildCodegraphExclusionFilter,
   collectSchemaColumnSources,
   type CodegraphExclusionOptions,
 } from "../exclusion.js";
-import {
-  CodegraphChunkSettlementTally,
-  settleCodegraphChunkSignals,
-  toChunkSignalOverlays,
-  type CodegraphChunkRangeSource,
-} from "./chunk-signal-settlement.js";
+import { CodegraphChunkSignalPass } from "./chunk-signal-pass.js";
 import { createCodegraphExtractionSink, type CodegraphSinkDeps } from "./extraction-sink.js";
+import { CodegraphFileExtractor } from "./file-extractor.js";
 import { GraphBuildFinalizer } from "./graph-finalizer.js";
 import { SymbolNodeFlushQueue } from "./node-flush.js";
-import {
-  buildCodegraphFileSignals,
-  CODEGRAPH_SYMBOLS_CHUNK_SIGNALS,
-  CODEGRAPH_SYMBOLS_FILE_SIGNALS,
-} from "./payload-signals.js";
+import { CODEGRAPH_SYMBOLS_CHUNK_SIGNALS, CODEGRAPH_SYMBOLS_FILE_SIGNALS } from "./payload-signals.js";
 import { CodegraphPhaseTimings } from "./phase-timings.js";
 import { CallEdgeResolutionRunner } from "./resolution-runner.js";
+import { drainCrossPassInputSpill, persistRunResolveStats, readCodegraphFileOverlays } from "./run-finalize.js";
 import { CodegraphRunState } from "./run-state.js";
 import { lastSegment } from "./symbol-name.js";
+
+/**
+ * Relocated collaborators, re-exported for import stability: the symbols barrel,
+ * scripts and tests import these names from `provider.js`.
+ */
+export { CODEGRAPH_LANGUAGES, type CodegraphLanguageConfig } from "./file-extractor.js";
+export { computeSymbolChunkIds } from "./chunk-signal-pass.js";
 
 /**
  * Strip one `_v<digits>` versioning suffix from a collection name
@@ -110,134 +87,6 @@ import { lastSegment } from "./symbol-name.js";
 export function stripVersionSuffix(collectionName: string): string {
   return collectionName.replace(/_v\d+$/, "");
 }
-
-/**
- * Per-extension parser config. Codegraph walks any file whose extension has a
- * {@link CODEGRAPH_LANGUAGES} row; the walk and `nameOf` come from the injected
- * `LanguageFactoryDescriptor` (`factory.create(lang).walker`), keyed by language
- * name. Adding a language: a tree-sitter grammar dependency, a native
- * `domains/language/<lang>` provider, and a row here.
- */
-export interface CodegraphLanguageConfig {
-  language: string;
-  loadParser: () => Parser.Language;
-  /**
-   * Joiner used to build the fully-qualified symbol id from the scope
-   * stack + the local node name. TypeScript / Python use ".", Ruby
-   * uses "::", Go uses ".", Rust uses "::". Wrong separator here
-   * silently misroutes resolver lookups — Ruby `Acme::User` indexed as
-   * `Acme.User` wouldn't match the receiver string the walker emits
-   * for the call site.
-   */
-  scopeSeparator: string;
-  /**
-   * When true, duplicate composed symbolIds inside one file are disambiguated
-   * with `~N` (first occurrence unchanged, second → `~2`, …) instead of deduped,
-   * mirroring the chunker so cg_symbols and the Qdrant payload agree per AST node.
-   * Enable where overloads carry distinct bodies (Java, bd tea-rags-mcp-a466);
-   * leave false where same-name declarations are stub/impl or accessor pairs and
-   * the first should win (Python singledispatch, bd d4ab; TS getter/setter).
-   */
-  disambiguateOverloads?: boolean;
-}
-
-export const CODEGRAPH_LANGUAGES: Record<string, CodegraphLanguageConfig> = {
-  // `.ts` and `.tsx` load different grammars; the native TypeScript walker
-  // handles both grammars' node types.
-  ".ts": {
-    language: "typescript",
-    loadParser: () => (TsLang as { typescript: Parser.Language; tsx: Parser.Language }).typescript,
-    scopeSeparator: ".",
-  },
-  ".tsx": {
-    language: "typescript",
-    loadParser: () => (TsLang as { typescript: Parser.Language; tsx: Parser.Language }).tsx,
-    scopeSeparator: ".",
-  },
-  ".py": {
-    language: "python",
-    loadParser: () => PyLang as Parser.Language,
-    scopeSeparator: ".",
-  },
-  ".rb": {
-    language: "ruby",
-    loadParser: () => RbLang as Parser.Language,
-    scopeSeparator: "::",
-  },
-  // JavaScript variants — the single `tree-sitter-javascript` grammar serves all
-  // four extensions.
-  ".js": {
-    language: "javascript",
-    loadParser: () => JsLang as Parser.Language,
-    scopeSeparator: ".",
-  },
-  ".jsx": {
-    language: "javascript",
-    loadParser: () => JsLang as Parser.Language,
-    scopeSeparator: ".",
-  },
-  ".mjs": {
-    language: "javascript",
-    loadParser: () => JsLang as Parser.Language,
-    scopeSeparator: ".",
-  },
-  ".cjs": {
-    language: "javascript",
-    loadParser: () => JsLang as Parser.Language,
-    scopeSeparator: ".",
-  },
-  ".go": {
-    language: "go",
-    loadParser: () => GoLang as Parser.Language,
-    scopeSeparator: ".",
-  },
-  ".java": {
-    language: "java",
-    loadParser: () => JavaLang as Parser.Language,
-    scopeSeparator: ".",
-    // bd tea-rags-mcp-a466 — each Java overload needs its own symbolId so
-    // `get_callers` / `get_callees` can pin the right body.
-    disambiguateOverloads: true,
-  },
-  ".rs": {
-    language: "rust",
-    loadParser: () => RustLang as Parser.Language,
-    scopeSeparator: "::",
-  },
-  // Bash — two extensions, one grammar (`.sh` and `.bash` share the single
-  // BashLang).
-  ".sh": {
-    language: "bash",
-    loadParser: () => BashLang as Parser.Language,
-    scopeSeparator: ".",
-  },
-  ".bash": {
-    language: "bash",
-    loadParser: () => BashLang as Parser.Language,
-    scopeSeparator: ".",
-  },
-};
-const SUPPORTED_EXTS = new Set(Object.keys(CODEGRAPH_LANGUAGES));
-
-/**
- * Files between pass-1 progress lines. Coarser than pass-2's 100 because the
- * line carries the larger phase-split payload; 500 keeps a 20k-file run at ~40
- * lines while bounding what a kill at the 5-minute budget can lose.
- */
-const PASS1_PROGRESS_EVERY = 500;
-
-/**
- * Files per `getFileMetricsBulk` request in the finalize read-back (bd
- * tea-rags-mcp-6aytq). The read-back is DAEMON-CPU-bound, not latency-bound: the
- * setwise op costs three statements per batch where per-file reads cost three per
- * file and queue the concurrent pass-2 flush behind them. A larger batch grows the
- * request frame and the recursive CTE's live intermediate; 2000 sits mid-plateau
- * of the measured cost curve.
- */
-const OVERLAY_READ_BATCH = 2000;
-
-/** Reading of a root the graph has no edge for, in either direction. */
-const ZERO_FILE_METRICS: FileGraphMetrics = { fanIn: 0, fanOut: 0, transitiveImpact: 0 };
 
 /**
  * Codegraph provider dependencies. Exactly one routing mode MUST be supplied:
@@ -325,7 +174,8 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
    * walk and read by the deferred `buildChunkSignals` pass — the input of the
    * chunk-owner rule (bd tea-rags-mcp-9i2ow). Keyed by collection (`__direct__`
    * in direct mode) because one provider instance serves every collection of the
-   * process, and two repos can share a relPath.
+   * process, and two repos can share a relPath. Shared by reference with
+   * `chunkSignalPass`; the run lifecycle here resets, prunes and clears it.
    */
   private readonly chunkSymbolByLine = new Map<string, Map<string, SymbolLineRange[]>>();
   /**
@@ -387,10 +237,10 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
    */
   private readonly runState: CodegraphRunState;
   /**
-   * Codegraph-layer ignore filter (Layer 2 of `discoverSupportedFiles`), built once
-   * from `deps.exclusion` plus each language's own non-app-code globs (bd
-   * tea-rags-mcp-biwbq — e.g. Ruby's `db/migrate/**`). Never empty: the generated
-   * + test patterns are unconditional.
+   * Codegraph-layer ignore filter, built once from `deps.exclusion` plus each
+   * language's own non-app-code globs (bd tea-rags-mcp-biwbq — e.g. Ruby's
+   * `db/migrate/**`). Never empty: the generated + test patterns are
+   * unconditional. The extractor and the chunk pass hold this same instance.
    */
   private readonly codegraphExclusionFilter: Ignore;
   /**
@@ -400,13 +250,10 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
    * reset seam is needed.
    */
   private readonly phaseTimings = new CodegraphPhaseTimings();
-
-  /**
-   * Next cumulative pass-1 file count that earns a progress line. Held as state
-   * rather than derived with a modulo because a fan-out absorb folds a whole
-   * unit in at once and can jump past an exact multiple (see `recordPass1`).
-   */
-  private nextPass1ProgressAt = PASS1_PROGRESS_EVERY;
+  /** Pass-1 extraction seam: parse + walk, discovery, extractability, pass-1 progress. */
+  private readonly fileExtractor: CodegraphFileExtractor;
+  /** Chunk-signals seam: the deferred chunk pass over `chunkSymbolByLine`. */
+  private readonly chunkSignalPass: CodegraphChunkSignalPass;
 
   /**
    * Worker-pool descriptor, set when the composition root wires this provider for
@@ -437,6 +284,15 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
       deps.exclusion ?? { customPatterns: [] },
       deps.languageFactory,
     );
+    this.fileExtractor = new CodegraphFileExtractor({
+      languageFactory: deps.languageFactory,
+      collectSymbols: deps.collectSymbols,
+      composer: deps.composer,
+      runState: this.runState,
+      phaseTimings: this.phaseTimings,
+      exclusionFilter: this.codegraphExclusionFilter,
+    });
+    this.chunkSignalPass = new CodegraphChunkSignalPass(this.chunkSymbolByLine, this.codegraphExclusionFilter);
     // Configuration invariant: exactly one routing mode must be picked
     // at construction. We accept either `pool` OR (`graphDb`+`symbolTable`),
     // never both, never neither — silent fallback would mask wiring bugs
@@ -477,24 +333,13 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
   }
 
   /**
-   * Whether the walk can produce rows for this path at all — the predicate every
-   * pass-1 entry point applies before parsing (bd tea-rags-mcp-65bkl). Beyond
-   * `shouldEnrich`, it requires a {@link CODEGRAPH_LANGUAGES} row: a `tsconfig.json`
-   * still gets its all-zero payload block but never a `cg_symbols_files` row, and
-   * the repair diff has to know that.
-   */
-  private isExtractablePath(relPath: string): boolean {
-    return SUPPORTED_EXTS.has(extensionOf(relPath)) && !this.codegraphExclusionFilter.ignores(relPath);
-  }
-
-  /**
    * Repair-diff scope: of the run's eligible files, the ones this graph can
    * actually persist a row for. Without it the diff asks for every JSON/Markdown
    * /YAML file the index carries, on every run, forever — they can never acquire
    * the row it looks for (bd tea-rags-mcp-65bkl).
    */
   filterExtractablePaths(paths: readonly string[]): string[] {
-    return paths.filter((p) => this.isExtractablePath(p));
+    return paths.filter((p) => this.fileExtractor.isExtractable(p));
   }
 
   /**
@@ -645,7 +490,7 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
       nodeFlush: this.nodeFlush,
       buildSymbolDefs: (extraction) => this.buildSymbolDefs(extraction),
       indexChunkSymbolsByLine: (collectionName, extraction) => {
-        this.indexChunkSymbolsByLine(collectionName, extraction);
+        this.chunkSignalPass.recordWalkRanges(this.collectionKey(collectionName), extraction);
       },
       collectionKey: (collectionName) => this.collectionKey(collectionName),
       spillPathFor: (collectionName, runId) =>
@@ -708,26 +553,6 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
     return collectionName ?? "__direct__";
   }
 
-  private indexChunkSymbolsByLine(collectionName: string | undefined, extraction: FileExtraction): void {
-    // Every walked symbol's AST range (1-based, inclusive), nested ones included —
-    // a stored chunk may belong to any of them (bd tea-rags-mcp-9i2ow). A chunk
-    // without both walker lines is not indexed: half a range places nothing. A
-    // re-walk replaces the file's ranges wholesale.
-    const key = this.collectionKey(collectionName);
-    let perColl = this.chunkSymbolByLine.get(key);
-    if (!perColl) {
-      perColl = new Map();
-      this.chunkSymbolByLine.set(key, perColl);
-    }
-    const ranges: SymbolLineRange[] = [];
-    for (const c of extraction.chunks) {
-      if (c.startLine !== undefined && c.endLine !== undefined) {
-        ranges.push({ symbolId: c.symbolId, startLine: c.startLine, endLine: c.endLine });
-      }
-    }
-    perColl.set(extraction.relPath, ranges);
-  }
-
   async buildFileSignals(root: string, options?: FileSignalOptions): Promise<Map<string, FileSignalOverlay>> {
     // Per-file hashes for this run (bd tea-rags-mcp-6goqa), assigned before any
     // walk so both branches below stamp them.
@@ -768,37 +593,8 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
     // so the coordinator sees a consistent overlay map shape.
     const overlayPaths = options?.paths && options.paths.length > 0 ? options.paths : targetRelPaths;
     const result = new Map<string, FileSignalOverlay>();
-    await this.readFileOverlays(graphDb, overlayPaths, result);
+    await readCodegraphFileOverlays(graphDb, overlayPaths, result);
     return result;
-  }
-
-  /**
-   * Read file-level overlays for `overlayPaths` from the finished graph into
-   * `out`, shared by `buildFileSignals` and `finalizeSignals`. `fanInP95` comes
-   * from the FULL graph, not the subset, so `isHub` is not misclassified on an
-   * incremental run. Bare inner keys under providerKey `codegraph.symbols.file`
-   * (tea-rags-mcp-k6xu).
-   */
-  private async readFileOverlays(
-    graphDb: GraphDbClient,
-    overlayPaths: string[],
-    out: Map<string, FileSignalOverlay>,
-  ): Promise<void> {
-    const fanInP95 = await graphDb.getFanInP95();
-    // Batches go out in order and each is walked in the caller's order, so the
-    // map this fills keeps `overlayPaths` order exactly. A root the graph knows
-    // nothing about is absent from the bulk map and reads as all-zero — the
-    // same value the per-file getters returned for it.
-    for (let start = 0; start < overlayPaths.length; start += OVERLAY_READ_BATCH) {
-      const batch = overlayPaths.slice(start, start + OVERLAY_READ_BATCH);
-      const metrics = await graphDb.getFileMetricsBulk(batch);
-      for (const relPath of batch) {
-        // Shared with `CodegraphPayloadHealer` (bd tea-rags-mcp-a2ddb) — the
-        // heal writes the same keys for files this pass never names, so the
-        // arithmetic has exactly one home.
-        out.set(relPath, buildCodegraphFileSignals(metrics.get(relPath) ?? ZERO_FILE_METRICS, fanInP95));
-      }
-    }
   }
 
   /**
@@ -898,10 +694,10 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
     const extractions: FileExtraction[] = [];
     const pass1ByLanguage: Record<string, FileExtractionPass1Telemetry> = {};
     for (const relPath of paths) {
-      if (!this.isExtractablePath(relPath)) continue;
+      if (!this.fileExtractor.isExtractable(relPath)) continue;
       const startedAtMs = Date.now();
       try {
-        const extraction = this.parseFileExtraction(root, relPath);
+        const extraction = this.fileExtractor.parse(root, relPath);
         const language = extraction.language || "unknown";
         const total = (pass1ByLanguage[language] ??= { ms: 0, files: 0 });
         total.ms += Date.now() - startedAtMs;
@@ -946,7 +742,7 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
     // pinned worker is the one that reports the run, and the units that did the
     // parsing have no run of their own to report against.
     for (const [language, total] of Object.entries(options?.pass1ByLanguage ?? {})) {
-      this.recordPass1(language, total.ms, total.files);
+      this.fileExtractor.recordPass1(language, total.ms, total.files);
     }
     this.nodeFlush.flushPending(key, options?.collectionName);
   };
@@ -1066,51 +862,16 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
   }
 
   /**
-   * yl9tv Task 5b — WORKER-side drain of the cross-pass input spill: each line
-   * goes through a fresh run sink exactly as a re-parsed file would (symbol table,
-   * run-global merges, output spill, line map), then the spill is removed. The
-   * caller (`finalizeSignals`) finishes the sink. A missing spill is a no-op.
+   * yl9tv Task 5b — WORKER-side drain of the cross-pass input spill through this
+   * run's sink, with the durable node write skipped (hoisted into
+   * `acceptExtraction`'s eager flush). See `drainCrossPassInputSpill`.
    */
   private async drainInputSpill(key: string, collectionName?: string): Promise<void> {
-    const spillPath = this.inputSpillPath(collectionName);
-    // Nothing fed this run: leave the sink uncreated so finalize reads back zero
-    // overlays. Guarded up front because `createReadStream` surfaces ENOENT
-    // asynchronously on the stream.
-    if (!existsSync(spillPath)) return;
-    // The durable node write was hoisted into `acceptExtraction`'s eager flush, so
-    // this drain's sink skips it.
-    const { sink, extracted } = this.ensureRunSink(key, collectionName, true);
-    // Flush the buffered node remainder + await the chain + rethrow BEFORE the
-    // drain, so `cg_symbols` is fully durable before pass-2.
-    await this.nodeFlush.flushRemainder(key, collectionName);
-    const reader = createInterface({
-      input: createReadStream(spillPath, { encoding: "utf8" }),
-      crlfDelay: Number.POSITIVE_INFINITY,
-    });
-    // bd tea-rags-mcp-yl9tv — the spill is appended in non-deterministic
-    // file-COMPLETION order, so buffer and SORT by relPath before resolving: every
-    // last-write-wins run-global merge and the resolve tally must be reproducible.
-    // One line per file (deduped at accept), so the buffer is bounded by file count.
-    const extractions: FileExtraction[] = [];
-    try {
-      for await (const line of reader) {
-        if (!line) continue;
-        try {
-          extractions.push(JSON.parse(line) as FileExtraction);
-        } catch {
-          continue; // skip a corrupt line rather than abort the whole drain
-        }
-      }
-    } finally {
-      reader.close();
-      rmSync(spillPath, { force: true });
-    }
-    extractions.sort((a, b) => (a.relPath < b.relPath ? -1 : a.relPath > b.relPath ? 1 : 0));
-    for (const extraction of extractions) {
-      if (extracted.has(extraction.relPath)) continue;
-      await sink.write(extraction);
-      extracted.add(extraction.relPath);
-    }
+    await drainCrossPassInputSpill(
+      this.inputSpillPath(collectionName),
+      () => this.ensureRunSink(key, collectionName, true),
+      async () => this.nodeFlush.flushRemainder(key, collectionName),
+    );
   }
 
   /**
@@ -1144,7 +905,7 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
       const { graphDb } = await this.getStore(options?.collectionName);
       const paths =
         options?.paths && options.paths.length > 0 ? options.paths : [...(this.runExtractedPaths.get(key) ?? [])];
-      await this.readFileOverlays(graphDb, paths, file);
+      await readCodegraphFileOverlays(graphDb, paths, file);
       // Persist the resolve breakdown (bd tea-rags-mcp-2jet-D) after
       // `sink.finish()`, so every resolved call is already counted.
       await this.recordRunStats(graphDb, options?.runCoverage);
@@ -1159,9 +920,8 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
   };
 
   /**
-   * Persist the run's resolve tally (bd tea-rags-mcp-2jet-D, per-file since bd
-   * tea-rags-mcp-xpmwg). The tally is NOT reset here — `getRunMetrics` owns
-   * read-and-clear; this only mirrors the current snapshot to disk at finalize.
+   * Persist the run's resolve tally (`persistRunResolveStats`). The tally is NOT
+   * reset here — `getRunMetrics` owns read-and-clear.
    *
    * `runCoverage` absent means a direct caller outside the ingest pipeline
    * (tests, offline harnesses): it hands over the corpus it means to measure, so
@@ -1172,33 +932,7 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
     graphDb: GraphDbClient,
     runCoverage: EnrichmentRunCoverage = "wholeCorpus",
   ): Promise<void> {
-    const files = this.runState.toFileResolveStatsEntries();
-    // Nothing resolved: no file's rows to replace, no language to cover.
-    if (files.length === 0) return;
-    const wholeCorpus = runCoverage === "wholeCorpus";
-
-    // The legacy per-language measurement, written by whole-corpus runs ONLY: it
-    // replaces a language's rows wholesale, so an incremental run would replace the
-    // corpus breakdown with its batch (bd tea-rags-mcp-xpmwg).
-    //
-    // The "no call site attempted → keep the previous rows" guard protects only
-    // this wholesale write: call-free files yield ALL-ZERO rows that would erase
-    // the last real measurement (bd tea-rags-mcp-snbzk). It must NOT gate the
-    // per-file write below — a file whose calls were all removed must replace its
-    // rows with none, or the aggregate keeps counting calls that no longer exist.
-    if (wholeCorpus) {
-      const rows = this.runState.toResolveRunStatsRows();
-      if (rows.some((r) => r.attempted > 0)) await graphDb.recordRunStats(rows);
-    }
-
-    // Every resolved file's rows, plus — for a whole-corpus run only — the
-    // languages they cover, in one transaction. Coverage switches a language's
-    // read from `cg_run_stats` to the per-file aggregate, which describes only what
-    // incrementals touched until a whole-corpus run writes it.
-    await graphDb.recordFileResolveStats({
-      files,
-      completeLanguages: wholeCorpus ? [...new Set(files.map((f) => f.language))] : [],
-    });
+    await persistRunResolveStats(this.runState, graphDb, runCoverage);
   }
 
   /**
@@ -1241,151 +975,14 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
     this.resetNodeFlushState();
   };
 
-  /**
-   * Recursively enumerate supported-language files under `root`, applying two
-   * ignore layers per entry (tea-rags-mcp-tf1o, hh4m):
-   *
-   *   Layer 1 — `scannerIgnoreFilter` (FileScanner's filter via
-   *             `FileSignalOptions.ignoreFilter`): BUILTIN_IGNORE_PATTERNS + the
-   *             user's `.gitignore` / `.contextignore` — the chunks do not exist
-   *             in Qdrant either, so it must be honoured.
-   *   Layer 2 — `this.codegraphExclusionFilter`: generated + test patterns,
-   *             language globs and `CODEGRAPH_CUSTOM_EXCLUDE` — excluded from
-   *             the graph while Qdrant still indexes them.
-   *
-   * Two layers, not a union: merging them either leaks codegraph-only patterns
-   * into Qdrant or lets test files back into the graph. Directories are skipped
-   * early on both layers (trailing-slash probe). Returns repo-relative POSIX paths.
-   */
-  private discoverSupportedFiles(root: string, scannerIgnoreFilter?: Ignore): string[] {
-    const out: string[] = [];
-    const walk = (dir: string): void => {
-      let entries: Dirent[];
-      try {
-        entries = readdirSync(dir, { withFileTypes: true });
-      } catch {
-        return;
-      }
-      for (const entry of entries) {
-        // Dotfiles are pruned at this layer (the scanner filter has no blanket
-        // dotfile rule); `.claude-plugin/` is the one exception — shipped source.
-        if (entry.name.startsWith(".") && entry.name !== ".claude-plugin") continue;
-        const full = join(dir, entry.name);
-        const relPath = relative(root, full).replace(/\\/g, "/");
-        if (entry.isDirectory()) {
-          // ignore.ignores() expects a path that semantically denotes
-          // a directory (trailing slash) so `node_modules/` matches.
-          const dirRel = `${relPath}/`;
-          if (scannerIgnoreFilter?.ignores(dirRel)) continue;
-          if (this.codegraphExclusionFilter.ignores(dirRel)) continue;
-          walk(full);
-          continue;
-        }
-        if (!entry.isFile()) continue;
-        if (!SUPPORTED_EXTS.has(extensionOf(entry.name))) continue;
-        if (scannerIgnoreFilter?.ignores(relPath)) continue;
-        if (this.codegraphExclusionFilter.ignores(relPath)) continue;
-        out.push(relPath);
-      }
-    };
-    walk(root);
-    return out;
-  }
-
-  /** Parse + walk one file from disk, recording its pass-1 time. */
+  /** Parse + walk one file from disk, recording its pass-1 time (`CodegraphFileExtractor#extract`). */
   private extractOneFile(root: string, relPath: string): FileExtraction {
-    const startedAtMs = Date.now();
-    const extraction = this.parseFileExtraction(root, relPath);
-    this.recordPass1(extraction.language, Date.now() - startedAtMs);
-    return extraction;
+    return this.fileExtractor.extract(root, relPath);
   }
 
-  /**
-   * Fold extraction cost into the run's pass-1 total and, on the cadence, report
-   * where the run stands. The line is the ONLY pass-1 telemetry a killed run
-   * leaves behind, so it carries the cumulative per-language split and not just
-   * a counter. JSON rather than an inspected object: the split nests past
-   * `console.error`'s two-level default.
-   *
-   * `files` is 1 on the serial path (one call per parsed file) and the unit's
-   * whole count when the fan-out folds an extraction unit's attribution in at
-   * absorb time. The cadence is therefore a THRESHOLD CROSSING, not an exact
-   * multiple: a single fan-out absorb can carry hundreds of files past the mark
-   * at once, and `count % 500 === 0` would silently never fire again.
-   */
-  private recordPass1(language: string, durationMs: number, files = 1): void {
-    this.phaseTimings.record("pass1", durationMs, { language: language || "unknown", count: files });
-    const extracted = this.phaseTimings.count("pass1");
-    if (extracted < this.nextPass1ProgressAt || !isDebug()) return;
-    this.nextPass1ProgressAt = extracted - (extracted % PASS1_PROGRESS_EVERY) + PASS1_PROGRESS_EVERY;
-    const elapsedMs = this.phaseTimings.elapsedMs();
-    console.error(
-      "[GitEnrich] PHASE: CODEGRAPH_PASS1_PROGRESS",
-      JSON.stringify({
-        extracted,
-        elapsedMs,
-        filesPerSec: elapsedMs > 0 ? Math.round((extracted / elapsedMs) * 1000 * 10) / 10 : 0,
-        phases: this.phaseTimings.toSummary(),
-      }),
-    );
-  }
-
-  /** Parse + walk one file. Timing and progress belong to `extractOneFile`. */
-  private parseFileExtraction(root: string, relPath: string): FileExtraction {
-    const ext = extensionOf(relPath);
-    const langConfig = CODEGRAPH_LANGUAGES[ext];
-    if (!langConfig) {
-      // discoverSupportedFiles already filters by SUPPORTED_EXTS; this
-      // is a defensive guard for callers that pass paths directly.
-      return { relPath, language: "", imports: [], chunks: [], fileScope: [] };
-    }
-    // The walker (walk + nameOf) comes from the injected factory, keyed by language
-    // NAME; parser, scopeSeparator and disambiguateOverloads from CODEGRAPH_LANGUAGES.
-    const { walker } = this.deps.languageFactory.create(langConfig.language);
-    if (!walker) {
-      // Defensive: a code language always has a walker (markdown — the only
-      // walker-less provider — has no CODEGRAPH_LANGUAGES entry, so we never
-      // reach here for it). Return an empty extraction rather than throw.
-      return { relPath, language: langConfig.language, imports: [], chunks: [], fileScope: [] };
-    }
-    const code = readFileSync(join(root, relPath), "utf8");
-    const parser = new Parser();
-    parser.setLanguage(langConfig.loadParser());
-    // Materialize the native tree right after parse so collectSymbols and the walk
-    // both see the deterministic plain-JS AstNode tree, as at the chunker boundary
-    // (rdv7d).
-    const nativeTree = parser.parse(code);
-    // bd tea-rags-mcp-1v12o.2.4 — a file bearing none of the node types the walker
-    // reads yields the empty extraction; ask the NATIVE tree before materializing
-    // it, the most expensive thing pass-1 does on generated data tables.
-    if (fileIsInertForExtraction(nativeTree.rootNode, walker.extractionBearingNodeTypes)) {
-      return { relPath, language: langConfig.language, imports: [], chunks: [], fileScope: [] };
-    }
-    const materializedTree = { rootNode: materializeTree(nativeTree.rootNode, code) };
-    const chunks = this.deps.collectSymbols(
-      materializedTree,
-      // Gem-gated declares (bd tea-rags-mcp-o5kwh): bind the run's Gemfile so the
-      // Ruby nameOf gates class-body macro DECLARES to this project's gems.
-      // undefined runGemfileContent -> FULL catalogue (other languages ignore it).
-      (node) => walker.nameOf(node, this.runState.gemfileContent),
-      langConfig.scopeSeparator,
-      langConfig.disambiguateOverloads ?? false,
-      this.deps.composer,
-    );
-    return walker.walk({
-      tree: materializedTree,
-      code,
-      relPath,
-      language: langConfig.language,
-      chunks,
-      // Gem-gated DSL grammar at extraction time (adx5p.1b): the run's Gemfile,
-      // read once in loadGemfile. undefined → FULL catalogue.
-      gemfileContent: this.runState.gemfileContent,
-      // Vocabulary gating at extraction time (bd tea-rags-mcp-w205u.1): the run's
-      // declared dependencies, walked once in loadDeclaredDependencies.
-      // undefined → no manifest anywhere → FULL catalogue.
-      declaredDependencies: this.runState.declaredDependencies,
-    });
+  /** Supported-language files under `root`, both ignore layers applied (`CodegraphFileExtractor#discover`). */
+  private discoverSupportedFiles(root: string, scannerIgnoreFilter?: Ignore): string[] {
+    return this.fileExtractor.discover(root, scannerIgnoreFilter);
   }
 
   async buildChunkSignals(
@@ -1394,85 +991,8 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
     options?: ChunkSignalOptions,
   ): Promise<Map<string, Map<string, ChunkSignalOverlay>>> {
     const { graphDb } = await this.getStore(options?.collectionName);
-    // One set-based fetch of every symbol's {fanIn, fanOut, pageRank}, then an
-    // in-memory lookup per chunk; values equal the point getters (absent ⇒ {0,0,0}).
-    const bulkStartMs = isDebug() ? Date.now() : 0;
-    const chunkSignals = await graphDb.getChunkSignalsBulk();
-    if (isDebug()) {
-      console.error("[GitEnrich] PHASE: CODEGRAPH_CHUNK_SIGNALS_READ", {
-        symbols: chunkSignals.size,
-        durationMs: Date.now() - bulkStartMs,
-      });
-    }
-    const out = new Map<string, Map<string, ChunkSignalOverlay>>();
-    // 6aytq — the symbol→chunk join is collected across the WHOLE pass and written
-    // once at the end: per file it was one daemon round-trip of single-row UPDATEs.
-    // Nothing in the loop reads it back, so deferring the write changes only its shape.
-    const chunkIdJoins: SymbolChunkIdJoinEntry[] = [];
-    const rangesByFile = this.chunkSymbolByLine.get(this.collectionKey(options?.collectionName));
-    const settlementTally = new CodegraphChunkSettlementTally();
-    for (const [relPath, entries] of chunkMap) {
-      // The walker's ranges for this file, present only when this provider
-      // walked it during this run.
-      const ranges = rangesByFile?.get(relPath);
-      // The one settlement every producer of these keys goes through (bd
-      // tea-rags-mcp-39xca.2): the chunk-owner rule over an explicit range
-      // source. A file the run claims but whose walk left no line index is
-      // UNSETTLED and omitted from the overlays, so no caller stamps it — not an
-      // empty map passed off as a result (bd tea-rags-mcp-fxio5).
-      const settlement = settleCodegraphChunkSignals(this.chunkRangeSourceFor(relPath, ranges), entries, chunkSignals);
-      settlementTally.record(relPath, settlement, entries.length);
-      // Confidence-weighted fanIn/fanOut (bd tea-rags-mcp-s5ato) + PageRank from
-      // the bulk map; bare inner keys (tea-rags-mcp-k6xu) under providerKey
-      // `codegraph.symbols.chunk`.
-      out.set(relPath, toChunkSignalOverlays(settlement, entries));
-      // 0rskm — store-time symbol→covering-chunk join. The walker's ranges hold
-      // EVERY extracted symbol, including methods of a collapsed class with no own
-      // Qdrant chunk; project them to symbol→startLine and backfill
-      // cg_symbols.chunk_id.
-      if (ranges && ranges.length > 0) {
-        const symbolStartLines = symbolStartLinesOf(ranges);
-        // Named even when the join came back EMPTY (bd tea-rags-mcp-tslvq): the
-        // write REPLACES per named file, and naming a file is the only way its
-        // symbols' stale chunk_id is retired (`upsertSymbolsBulk` is a row diff).
-        // A file absent from this pass, or never walked this run, is not named.
-        chunkIdJoins.push({ relPath, chunkIds: computeSymbolChunkIds(symbolStartLines, entries) });
-      }
-    }
-    if (chunkIdJoins.length > 0) {
-      await graphDb.updateSymbolChunkIdsBulk(chunkIdJoins);
-    }
-    // Unconditional, once per pass: an unsettled chunk keeps no stamp and no
-    // signals, and without this line the only trace is a degraded marker.
-    const unsettled = settlementTally.describeUnsettled("chunk signal pass");
-    if (unsettled !== undefined) process.stderr.write(`${unsettled}\n`);
-    return out;
+    return this.chunkSignalPass.build(graphDb, chunkMap, this.collectionKey(options?.collectionName));
   }
-
-  /**
-   * The range source one file's stored chunks settle against in
-   * `buildChunkSignals`. Every file that reaches that pass is one the run
-   * claims — its chunks were stored by this run, or seeded for its forced repair
-   * walk (bd tea-rags-mcp-fxio5) — so an extractable file with no walker ranges
-   * is a walk that left nothing behind: `walk` with no ranges, UNSETTLED. It is
-   * NOT a reason to read `cg_symbols`, whose rows may describe the file's
-   * content before this run. Only a file the graph can never hold settles
-   * without signal values.
-   */
-  private chunkRangeSourceFor(
-    relPath: string,
-    walkRanges: readonly SymbolLineRange[] | undefined,
-  ): CodegraphChunkRangeSource {
-    if (walkRanges !== undefined) return { kind: "walk", ranges: walkRanges };
-    if (!SUPPORTED_EXTS.has(extensionOf(relPath))) return { kind: "none", reason: "non-extractable-language" };
-    if (this.codegraphExclusionFilter.ignores(relPath)) return { kind: "none", reason: "excluded-from-graph" };
-    return { kind: "walk", ranges: undefined };
-  }
-}
-
-function extensionOf(path: string): string {
-  const dot = path.lastIndexOf(".");
-  return dot === -1 ? "" : path.slice(dot);
 }
 
 /**
@@ -1487,68 +1007,4 @@ function nodeFlushFilesFromEnv(): number {
     if (Number.isFinite(parsed) && parsed > 0) return parsed;
   }
   return 256;
-}
-
-/**
- * The symbol→startLine input of {@link computeSymbolChunkIds}, projected from
- * the walker's per-file ranges exactly as the pre-9i2ow startLine-keyed line map
- * produced it: one symbol per start line, the LAST walked chunk at a line
- * winning, in first-seen line order. Kept that way on purpose — the join's
- * semantics are not part of the chunk-owner change (bd tea-rags-mcp-9i2ow).
- */
-function symbolStartLinesOf(ranges: readonly SymbolLineRange[]): Map<SymbolId, number> {
-  const symbolByStartLine = new Map<number, SymbolId>();
-  for (const range of ranges) symbolByStartLine.set(range.startLine, range.symbolId);
-  const out = new Map<SymbolId, number>();
-  for (const [startLine, symbolId] of symbolByStartLine) out.set(symbolId, startLine);
-  return out;
-}
-
-/**
- * Symbol→covering-chunk containment join (0rskm). For each symbol start line,
- * pick the tightest chunk whose range (or any of its non-contiguous
- * `lineRanges`) contains that line. "Tightest" = smallest covering span, so a
- * method's own chunk wins over the enclosing class chunk, and a `#partN` part
- * wins over a wide fallback. Symbols with no covering chunk are omitted (their
- * cg_symbols.chunk_id stays NULL → find_symbol fallback is a no-op for them).
- */
-export function computeSymbolChunkIds(
-  symbolStartLines: ReadonlyMap<SymbolId, number>,
-  entries: readonly ChunkLookupEntry[],
-): Map<SymbolId, string> {
-  const out = new Map<SymbolId, string>();
-  for (const [symbolId, line] of symbolStartLines) {
-    let bestId: string | undefined;
-    let bestSpan = Number.POSITIVE_INFINITY;
-    for (const e of entries) {
-      const span = coveringSpan(e, line);
-      if (span !== undefined && span < bestSpan) {
-        bestSpan = span;
-        bestId = e.chunkId;
-      }
-    }
-    if (bestId !== undefined) out.set(symbolId, bestId);
-  }
-  return out;
-}
-
-/**
- * Effective covering span of `entry` for `line`, or undefined if `line` is not
- * covered. When `lineRanges` is present, containment is checked against the
- * sub-range that holds the line and the span is that sub-range's width (Ruby
- * body groups: a tight group beats a wide whole-chunk span).
- */
-function coveringSpan(entry: ChunkLookupEntry, line: number): number | undefined {
-  if (entry.lineRanges && entry.lineRanges.length > 0) {
-    let best: number | undefined;
-    for (const r of entry.lineRanges) {
-      if (line >= r.start && line <= r.end) {
-        const w = r.end - r.start;
-        if (best === undefined || w < best) best = w;
-      }
-    }
-    return best;
-  }
-  if (line >= entry.startLine && line <= entry.endLine) return entry.endLine - entry.startLine;
-  return undefined;
 }

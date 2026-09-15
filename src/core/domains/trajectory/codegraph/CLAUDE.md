@@ -23,13 +23,13 @@
   whatever `chunk_id` it had — the walker no longer resets it.
   `updateSymbolChunkIdsBulk` therefore clears `chunk_id` for every named
   `rel_path` before applying the fresh mapping, both set-based inside one
-  transaction. The consequence for `buildChunkSignals` (symbols/provider.ts): a
-  file it re-derived must be pushed onto `chunkIdJoins` even when the join came
-  back EMPTY — that entry is the only thing that retires the stale ids. Dropping
-  the empty-map entry as an optimisation is the bug this shape exists to
-  prevent. Why: the failure is silent and read-side — `find_symbol` answers with
-  a chunk that no longer contains the symbol, and nothing in the write path
-  errors.
+  transaction. The consequence for `CodegraphChunkSignalPass#build`
+  (symbols/chunk-signal-pass.ts, behind `buildChunkSignals`): a file it
+  re-derived must be pushed onto `chunkIdJoins` even when the join came back
+  EMPTY — that entry is the only thing that retires the stale ids. Dropping the
+  empty-map entry as an optimisation is the bug this shape exists to prevent.
+  Why: the failure is silent and read-side — `find_symbol` answers with a chunk
+  that no longer contains the symbol, and nothing in the write path errors.
 - **One rule decides which symbol owns a stored chunk, and ONE settlement is how
   every producer of `codegraph.symbols.chunk.*` reaches it** —
   `settleCodegraphChunkSignals` (symbols/chunk-signal-settlement.ts) over
