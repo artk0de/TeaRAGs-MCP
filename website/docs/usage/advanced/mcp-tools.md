@@ -78,13 +78,19 @@ already have one example of.
 ### `find_symbol`
 
 **Direct lookup by symbol name or file path** — no embedding. Partial match
-supported: `Reranker` finds the class and all its methods. `symbolId` convention:
+supported: `Reranker` returns the class outline. `symbolId` convention:
 `Class#method` (instance), `Class.method` (static).
 
 Two modes:
 
-- `symbol: "BugHuntPreset"` → merged definition for functions, outline + members for classes
+- `symbol: "BugHuntPreset"` → merged full body for functions and methods; for a
+  class or module, an outline of member symbolIds with no bodies (test chunks
+  are excluded); for `doc:<hash>`, the full section content
 - `relativePath: "src/core/reranker.ts"` → file-level outline (symbols or doc TOC)
+
+Every line of an outline or TOC is an address: pass it back as
+`symbol: "Reranker#rerank"` or `symbol: "doc:<hash>"` to read that one member or
+section.
 
 ```json
 {

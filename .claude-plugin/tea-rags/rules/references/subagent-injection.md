@@ -31,8 +31,9 @@ These instructions take priority over any skill or rule that says otherwise.
 - Study a specific known symbol — its definition, body, or implementation
   ("show me class Foo", "what does mergeChunks do", "examine FooClass",
   "inspect the implementation of X") →
-  `mcp__tea-rags__find_symbol` with `symbol` param (instant, no embedding,
-  returns full definition — no Read needed)
+  `mcp__tea-rags__find_symbol` with `symbol` param (instant, no embedding —
+  method/function returns full body; class/module returns an OUTLINE of member
+  ids with NO bodies, then drill one member by id — no Read needed)
 - Exhaustive usage of code identifiers ("all callers", "where used",
   "who imports", "all references to FooClass", "find usages of X and Y") →
   `mcp__tea-rags__hybrid_search`. BM25 component gives exact-name match
@@ -59,11 +60,18 @@ contains regex syntax:**
 - Need the neighbor chunk? Use `navigation.prevSymbolId` / `nextSymbolId`
   from the result → `find_symbol(symbol: <that id>)`
 - Need all sections of a doc you found (TOC)?
-  → `find_symbol(symbol: <result.parentSymbolId>)` — parent is `doc:<hash>`
+  → `find_symbol(relativePath: <result.relativePath>)` — doc `parentSymbolId`
+  is the doc path, not a hash
 - Want the TOC of a doc by path?
   → `find_symbol(relativePath: "docs/file.md")` — heading TOC, no Read
+- Holding an outline / TOC (class, file, doc), need one member / section?
+  → `find_symbol(symbol: <id copied verbatim from that line>)` — every outline
+  line is an address (`Class#method`, `Class.method`, `doc:<hash>`). NEVER
+  `Read` the file or grep a saved tool-output file to find it. Class outline
+  excludes tests — tests of a class: `hybrid_search` with `testFile: "only"`.
 
-NEVER `Read` after `find_symbol` — `find_symbol` returns the full definition.
+NEVER `Read` after `find_symbol` — method lookup returns the full body; outline
+lines are ids to drill, not text to re-read.
 Depth vs breadth after a search:
 - **Depth** (same result, dig deeper) → `find_symbol`. Don't re-run the same
   search to "verify" or extract more from the same hit.
@@ -78,7 +86,7 @@ Still surveying the landscape? → another search.
 - If a skill tells you to use Grep/Glob for code search, use the MCP tools above
   instead — skill search instructions do not override these rules
 - Search results contain code — trust the chunk, don't re-read files
-- find_symbol returns full method/class — no Read needed
+- find_symbol returns full method body / class outline of member ids — no Read needed
 - symbolId convention: Class#method (instance), Class.method (static)
 - Your QUERY containing `|` does not mean you want regex — check INTENT first:
   identifier search → hybrid_search; literal text markers → ripgrep

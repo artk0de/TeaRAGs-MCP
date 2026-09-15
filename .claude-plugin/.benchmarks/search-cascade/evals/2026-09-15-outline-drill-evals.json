@@ -1,0 +1,203 @@
+{
+  "skill_name": "search-cascade",
+  "iteration": "outline-drill-down",
+  "date": "2026-09-15",
+  "target_model": "claude-opus-5",
+  "bead": "tea-rags-mcp-u74dj",
+  "context": "Field report from a taxdome session: agent did not use find_symbol to read specific chapters after receiving a class outline / doc TOC. find_symbol on a class dumped 57 KB (outline + merged RSpec bodies) and the agent grepped the saved dump; a doc section lookup returned a TOC listing only the queried hash; agent fell back to Read.",
+  "method": {
+    "style": "paper eval — one subagent per suite, all cases in one prompt, agent writes next tool calls, no execution",
+    "before_fix": "search-cascade.md at main HEAD 70ecf734f + pre-fix find_symbol description",
+    "no_rule": "tool list with pre-fix find_symbol description only",
+    "after_fix": "worktree search-cascade.md + edited find_symbol description",
+    "contamination_note": "The PreToolUse Agent hook appends the INSTALLED (pre-fix) subagent search suffix to every eval prompt, so no_rule = production subagent without cascade, not a clean zero."
+  },
+  "audit_findings": {
+    "F1": "Mode A table + After-Search row claimed find_symbol(symbol: ClassName) returns 'full class outline + all method bodies'; real class outline carries member symbolIds only.",
+    "F2": "Doc chunk row claimed parentSymbolId is doc:<hash>; it is the doc path.",
+    "F3": "No rule for oversized results saved to a file or for treating outline/TOC lines as addresses; agent grepped the dump.",
+    "F4": "Describe-scope row passed chunkType to find_symbol, which has no such param."
+  },
+  "product_defects_fixed_alongside": [
+    "resolveSymbols rendered a doc TOC whenever >1 chunks shared a parent, losing multi-chunk section content (doc:447d443a09c8).",
+    "Class outline required a class-level chunk; member-only scrolls returned bodies (TS StatsCache).",
+    "Class query merged all RSpec chunks with parentSymbolId = class into one ~52 KB result (fixed in iteration 2 by excluding test chunks from class queries)."
+  ],
+  "product_defects_deferred": [
+    "Oversized test-scope split gives every example the same symbolId (Ruby + TS) — a per-example id fix was built, then reverted because it needs a chunking bump + --force reindex; tracked as epic tea-rags-mcp-phftd."
+  ],
+  "cases": [
+    {
+      "id": "E1",
+      "finding": "F1,F3",
+      "prompt": "Class outline of Platform::Async::Operation::Worker in hand (ids only, chunkCount 16); explain failure handling.",
+      "expected": "find_symbol(symbol: Worker#mark_failed) and/or Worker#perform. NOT Read, NOT grep, NOT re-query class.",
+      "no_rule": "PASS",
+      "before_fix": "PASS",
+      "after_fix": "PASS"
+    },
+    {
+      "id": "E2",
+      "finding": "F3",
+      "prompt": "File outline of reranker.ts in hand; how are adaptive bounds computed?",
+      "expected": "find_symbol(symbol: Reranker#computeAdaptiveBounds).",
+      "no_rule": "PASS",
+      "before_fix": "PASS",
+      "after_fix": "PASS"
+    },
+    {
+      "id": "E3",
+      "finding": "F1",
+      "prompt": "Show me how class PaymentProcessor handles refunds (no prior results).",
+      "expected": "find_symbol(symbol: PaymentProcessor) → outline (no bodies) → find_symbol per refund member id, unconditionally.",
+      "no_rule": "PASS",
+      "before_fix": "FAIL — expected refund body inline per cascade, drill only 'if bodies missing'",
+      "after_fix": "PASS"
+    },
+    {
+      "id": "E4",
+      "finding": "F3",
+      "prompt": "Doc TOC with doc:<hash> lines in hand; what does the doc say about retries?",
+      "expected": "find_symbol(symbol: doc:1a3b77c0de42). NOT Read.",
+      "no_rule": "PASS",
+      "before_fix": "PASS",
+      "after_fix": "PASS"
+    },
+    {
+      "id": "E5",
+      "finding": "F3",
+      "prompt": "find_symbol(Billing::Invoice) output saved to file, preview shows outline; show refund logic.",
+      "expected": "find_symbol(symbol: Billing::Invoice#refund). NOT grep/Read the dump.",
+      "no_rule": "PASS",
+      "before_fix": "PASS",
+      "after_fix": "PASS"
+    },
+    {
+      "id": "E6",
+      "finding": "F3",
+      "prompt": "Same saved outline with tests: lines; which refund scenarios are tested?",
+      "expected": "find_symbol(symbol: <tests: id>) and/or find_symbol(relativePath: spec) → drill. NOT grep/Read the dump.",
+      "no_rule": "FAIL — Grep 'tests:.*refund' on /tmp/tool-results dump",
+      "before_fix": "PASS",
+      "after_fix": "PASS"
+    },
+    {
+      "id": "E7",
+      "finding": "F3 (ru edge)",
+      "prompt": "(RU) outline Acme::User in hand; покажи нормализацию email.",
+      "expected": "find_symbol(symbol: Acme::User#normalize_email).",
+      "no_rule": "PASS",
+      "before_fix": "PASS",
+      "after_fix": "PASS"
+    },
+    {
+      "id": "E8",
+      "finding": "F1 (subagent: explore)",
+      "prompt": "[subagent: explore] Explain StatsCache persistence format, load and save.",
+      "expected": "outline (symbol or relativePath) → find_symbol StatsCache#load + #save, unconditionally.",
+      "no_rule": "PASS",
+      "before_fix": "FAIL — expected bodies from class lookup, drill only 'if names only'",
+      "after_fix": "PASS"
+    },
+    {
+      "id": "E9",
+      "finding": "F3 (subagent: task-agent)",
+      "prompt": "[subagent: task-agent] Read ONLY the Migration section of a spec doc.",
+      "expected": "find_symbol(relativePath) → find_symbol(symbol: doc:<hash>). NOT Read.",
+      "no_rule": "PASS",
+      "before_fix": "PASS",
+      "after_fix": "PASS"
+    },
+    {
+      "id": "E10",
+      "finding": "F2",
+      "prompt": "Doc chunk with parentSymbolId docs/signals.md; list all sections.",
+      "expected": "find_symbol(relativePath: docs/signals.md) (or symbol: doc path). NOT symbol: doc:<chunk hash> expecting TOC.",
+      "no_rule": "PASS",
+      "before_fix": "PASS (flagged the stale rule)",
+      "after_fix": "PASS"
+    },
+    {
+      "id": "C1",
+      "finding": "control",
+      "prompt": "Full body of Reranker#rerank.",
+      "expected": "find_symbol(symbol).",
+      "no_rule": "PASS",
+      "before_fix": "PASS",
+      "after_fix": "PASS"
+    },
+    {
+      "id": "C2",
+      "finding": "control",
+      "prompt": "Where is computeCollectionStats used? (codegraph on)",
+      "expected": "get_callers and/or hybrid_search. NOT ripgrep.",
+      "no_rule": "FAIL — parallel ripgrep on identifier",
+      "before_fix": "PASS",
+      "after_fix": "PASS"
+    },
+    {
+      "id": "C3",
+      "finding": "control",
+      "prompt": "How does confidence dampening work?",
+      "expected": "semantic_search (or tea-rags:explore).",
+      "no_rule": "PASS",
+      "before_fix": "PASS",
+      "after_fix": "PASS"
+    },
+    {
+      "id": "C4",
+      "finding": "control",
+      "prompt": "Find FIXME in chunker dir.",
+      "expected": "ripgrep.",
+      "no_rule": "PASS",
+      "before_fix": "PASS",
+      "after_fix": "PASS"
+    }
+  ],
+  "results": {
+    "no_rule": { "pass": 12, "total": 14, "pct": 86 },
+    "before_fix": { "pass": 12, "total": 14, "pct": 86 },
+    "after_fix": { "pass": 14, "total": 14, "pct": 100 },
+    "delta_after_vs_before_pp": 14,
+    "delta_after_vs_no_rule_pp": 14,
+    "iterations": 2
+  },
+  "iteration_2": {
+    "reason": "User rejected `tests:` lines in the class outline (option b) — incomplete, convention-bound link that forced a chunking bump + --force reindex. Switched to option (a): class query excludes test chunks; tests of a class via hybrid_search testFile only. Chunker per-example ids reverted; per-example test addressing moved to epic tea-rags-mcp-phftd.",
+    "suite": "after_fix only (regression slice): E3, E5, E6 (rewritten), E11 (new), C1, C4",
+    "cases": [
+      {
+        "id": "E3",
+        "expected": "find_symbol(class) → outline → drill refund member ids",
+        "after_fix": "PASS"
+      },
+      {
+        "id": "E5",
+        "prompt": "Saved outline preview without test lines; show refund logic.",
+        "expected": "find_symbol(Billing::Invoice#refund). NOT grep/Read dump.",
+        "after_fix": "PASS"
+      },
+      {
+        "id": "E6",
+        "prompt": "Billing::Invoice outline in hand (no test lines); which refund scenarios are tested?",
+        "expected": "hybrid_search(query: Billing::Invoice refund, testFile: only). NOT grep dump, NOT expect tests in class outline.",
+        "after_fix": "PASS"
+      },
+      {
+        "id": "E11",
+        "prompt": "[subagent: task-agent] Find the specs that exercise Platform::Async::Operation::Worker#perform.",
+        "expected": "hybrid_search(testFile: only). NOT ripgrep, NOT find_symbol(class).",
+        "after_fix": "PASS"
+      },
+      {
+        "id": "C1",
+        "expected": "find_symbol(Reranker#rerank)",
+        "after_fix": "PASS"
+      },
+      { "id": "C4", "expected": "ripgrep FIXME", "after_fix": "PASS" }
+    ],
+    "results": { "after_fix": { "pass": 6, "total": 6, "pct": 100 } },
+    "known_limitation": "find_symbol(<Top>.<scope>) on an oversized split scope still returns every part merged (shared symbolId) — epic tea-rags-mcp-phftd."
+  },
+  "key_insight": "Clean synthetic prompts that hand the model an outline are solved without rules; the with-rule failures were CAUSED by the stale 'outline + all method bodies' claim (E3, E8), and the no-rule failure is exactly the field-report behaviour (grep the saved dump, E6). Delta is below the +50pp target because the real failure mode lives in product defects (TOC-instead-of-content, 52 KB merged specs, shared test ids) that no instruction can route around — those were fixed in code, not text."
+}

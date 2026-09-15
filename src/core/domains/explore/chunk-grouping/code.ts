@@ -40,6 +40,27 @@ function formatMember(symbolId: string): string {
   return symbolId;
 }
 
+/**
+ * One line per distinct member symbolId, in line order. A member the chunker
+ * cut into several same-id windows (a Ruby class body, an oversized method
+ * without `#partN`) is still ONE member of the outline.
+ */
+function memberLines(sortedMembers: ScrollChunk[]): string[] {
+  const seen = new Set<string>();
+  const lines: string[] = [];
+  for (const chunk of sortedMembers) {
+    const symbolId = (chunk.payload.symbolId as string | undefined) ?? "";
+    if (seen.has(symbolId)) continue;
+    seen.add(symbolId);
+    lines.push(`  ${formatMember(symbolId)}`);
+  }
+  return lines;
+}
+
+function contentSizeOf(chunks: ScrollChunk[]): number {
+  return chunks.reduce((sum, c) => sum + ((c.payload.content as string | undefined) ?? "").length, 0);
+}
+
 export const CodeChunkGrouper = {
   /**
    * Group a class chunk with its member chunks into an outline result.
@@ -49,14 +70,9 @@ export const CodeChunkGrouper = {
     const sorted = sortByLine(memberChunks);
 
     const className = (classChunk.payload.name as string | undefined) ?? "";
-    const lines = [
-      className,
-      ...sorted.map((c) => `  ${formatMember((c.payload.symbolId as string | undefined) ?? "")}`),
-    ];
-    const outlineContent = lines.join("\n");
+    const outlineContent = [className, ...memberLines(sorted)].join("\n");
 
     const allChunks = [classChunk, ...sorted];
-    const contentSize = allChunks.reduce((sum, c) => sum + ((c.payload.content as string | undefined) ?? "").length, 0);
 
     const payload: Record<string, unknown> = {
       symbolId: classChunk.payload.symbolId,
@@ -70,11 +86,42 @@ export const CodeChunkGrouper = {
       endLine: sorted.length > 0 ? sorted[sorted.length - 1].payload.endLine : classChunk.payload.endLine,
       git: fileGit(classChunk),
       codegraph: fileCodegraph(classChunk),
-      chunkCount: 1 + memberChunks.length,
-      contentSize,
+      chunkCount: allChunks.length,
+      contentSize: contentSizeOf(allChunks),
     };
 
     return { id: classChunk.id, score: 1.0, payload };
+  },
+
+  /**
+   * Outline a class/module whose class-level chunk is NOT in the chunk set,
+   * headed by the container id the caller queried. A TypeScript class body
+   * chunker emits only method chunks for a class with members, so without this
+   * a class query returns every method body instead of an outline.
+   *
+   * `memberChunks` must be non-empty and come from one file: path, language,
+   * git and codegraph are taken from the first member by line.
+   */
+  groupMembers(containerSymbolId: string, memberChunks: ScrollChunk[]): SearchResult {
+    const sorted = sortByLine(memberChunks);
+    const anchor = sorted[0];
+
+    const payload: Record<string, unknown> = {
+      symbolId: containerSymbolId,
+      name: containerSymbolId,
+      relativePath: anchor.payload.relativePath,
+      language: anchor.payload.language,
+      fileExtension: anchor.payload.fileExtension,
+      content: [containerSymbolId, ...memberLines(sorted)].join("\n"),
+      startLine: Math.min(...sorted.map((c) => Number(c.payload.startLine) || 0)),
+      endLine: Math.max(...sorted.map((c) => Number(c.payload.endLine) || 0)),
+      git: fileGit(anchor),
+      codegraph: fileCodegraph(anchor),
+      chunkCount: sorted.length,
+      contentSize: contentSizeOf(sorted),
+    };
+
+    return { id: anchor.id, score: 1.0, payload };
   },
 
   /**
@@ -125,14 +172,12 @@ export const CodeChunkGrouper = {
       }
     }
 
-    const contentSize = sorted.reduce((sum, c) => sum + ((c.payload.content as string | undefined) ?? "").length, 0);
-
     const payload: Record<string, unknown> = {
       relativePath,
       language: first.payload.language,
       content: lines.join("\n"),
       chunkCount: sorted.length,
-      contentSize,
+      contentSize: contentSizeOf(sorted),
       git: fileGit(first),
       codegraph: fileCodegraph(first),
     };

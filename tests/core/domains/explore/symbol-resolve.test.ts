@@ -503,4 +503,615 @@ describe("resolveSymbols", () => {
       expect(results).toHaveLength(2);
     });
   });
+
+  describe("doc section reassembly from overlapping windows (D1)", () => {
+    // Real payloads from the tea-rags self-index: find_symbol(symbol:
+    // "doc:447d443a09c8") on search-cascade.md, in scroll order. The markdown
+    // chunker sent one oversized h2 section through the character fallback:
+    // every window got the "# Search Cascade" breadcrumb prepended (the first
+    // one twice), consecutive windows overlap by text, and a later size cap cut
+    // two windows again into "(part N/M)" pieces that keep the SAME symbolId —
+    // no `#partN` suffix. Line ranges overlap and do not map 1:1 to content.
+    const sectionId = "doc:447d443a09c8";
+    const docPath = ".claude-plugin/tea-rags/rules/search-cascade.md";
+    const sectionName = "After-Search Navigation (READ BEFORE FINISHING ANY SEARCH)";
+    const breadcrumb = "# Search Cascade";
+    const sectionWindow = (
+      id: string,
+      chunkIndex: number,
+      startLine: number,
+      endLine: number,
+      name: string,
+      content: string,
+    ) => ({
+      id,
+      payload: {
+        symbolId: sectionId,
+        parentSymbolId: docPath,
+        relativePath: docPath,
+        chunkType: "block",
+        isDocumentation: true,
+        language: "markdown",
+        fileExtension: ".md",
+        headingPath: [
+          { depth: 1, text: "Search Cascade" },
+          { depth: 2, text: sectionName },
+        ],
+        name,
+        chunkIndex,
+        startLine,
+        endLine,
+        content,
+      },
+    });
+    const sectionWindows = [
+      sectionWindow(
+        "1c498713-9732-93cc-2125-8a55c6ee1af1",
+        4,
+        92,
+        107,
+        `${sectionName} (part 1/2)`,
+        "# Search Cascade\n# Search Cascade\n## After-Search Navigation (READ BEFORE FINISHING ANY SEARCH)\n\n**First search rarely returns a complete answer.** A chunk shows where the\nsymbol lives — not the whole picture. Before synthesizing from a single chunk,\nask: _need full body / file structure / a neighbor / doc sections?_ If yes —\nnext call is `find_symbol`, NOT another search, NOT `Read`. `find_symbol` is\ninstant (no embedding), returns merged definitions, file outlines, or doc TOCs\nfrom the same index.\n\n| After search returns…                       | If you need…                            | Next call                                                                                                                                 |\n| ------------------------------------------- | --------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------- |\n| Chunk with method body truncated            | Full method body                        | `find_symbol(symbol: result.symbolId)`                                                                                                    |\n| Chunk whose `symbolId` ends in `#partN`     | The whole oversized symbol, reassembled | `find_symbol(symbol: result.parentSymbolId)` — collapses every `#partN` + base window into one (do NOT treat one part as the full symbol) |\n| Chunk from one file                         | File structure / other methods in file  | `find_symbol(relativePath: result.relativePath)` → synthetic outline                                                                      |\n| Chunk with `navigation.{prev,next}SymbolId` | The neighbor method                     | `find_symbol(symbol: navigation.prevSymbolId or nextSymbolId)`                                                                            |",
+      ),
+      sectionWindow(
+        "dcfaae6a-5bc4-631c-eee3-78f2971f947b",
+        6,
+        106,
+        117,
+        `${sectionName} (part 1/2)`,
+        '# Search Cascade\n| Chunk from one file                         | File structure / other methods in file  | `find_symbol(relativePath: result.relativePath)` → synthetic outline                                                                      |\n| Chunk with `navigation.{prev,next}SymbolId` | The neighbor method                     | `find_symbol(symbol: navigation.prevSymbolId or nextSymbolId)`                                                                            |\n| Chunk that calls a helper / class           | The helper / class definition           | `find_symbol(symbol: "HelperClass#method")` — symbol is in chunk text                                                                     |\n| Chunk from a `.md` doc                      | All sections of that doc (TOC)          | `find_symbol(symbol: result.parentSymbolId)` — parent is `doc:<hash>`                                                                     |\n| Just a doc path (no search yet)             | Table of contents of that doc           | `find_symbol(relativePath: "docs/file.md")` — heading TOC with hashes                                                                     |\n| Class chunk (constructor or one method)     | All methods / public API of the class   | `find_symbol(symbol: "ClassName")` → full class outline + bodies                                                                          |\n| Chunk from production src + diff context    | Tests describing affected scenarios     | `Skill(tea-rags:tests-as-context)` recipe `tests-at-risk`                                                                                 |\n| Describe-it scope name from a stacktrace    | Leaf scope chunk with inherited setup   | `find_symbol(symbol: "<Parent>.<scope>")` + filter `chunkType: "test"`                                                                    |\n\n`find_symbol` accepts a `rerank` preset for single-call diagnostic (definition +',
+      ),
+      sectionWindow(
+        "9c0b9385-67c3-4714-c04d-5a2c29e55d99",
+        8,
+        116,
+        141,
+        sectionName,
+        '# Search Cascade\nrankingOverlay in one call). `offset` pagination works on every search tool;\nwhen a page is exhausted, retry with `offset: N` instead of inflating `limit`.\n\n**symbolId conventions (LANGUAGE-AGNOSTIC — same `#`/`.` rule for every\nlanguage; input contract for `find_symbol(symbol:)`):**\n\n- Code instance methods: `Class#method` (e.g., `Reranker#rerank`) — bound to\n  `this`/`self`. Constructors are instance-bound too (`Class#constructor`).\n- Code static / class / classmethod / associated methods: `Class.method` (e.g.,\n  `Reranker.create`)\n- Top-level functions: `functionName` (no class prefix)\n- Namespace separators are NOT a method hint: Ruby/Rust `::` (`Acme::User`) and\n  TS/JS/Python nested-class `.` (`Outer.Nested`) only scope the container —\n  methods on them still use `#`/`.` (`Acme::User#save`).\n- Doc chunks: opaque hash `doc:a3f8b2c1e4d7` — do NOT guess, take from results\n\nThe `#`/`.` separator is **load-bearing for `find_symbol` EXACT lookup only**:\n`find_symbol(symbol: "Class.method")` for an instance method returns EMPTY (may\nsurface spurious drift warning) — empty result = WRONG-SEPARATOR signal, not a\nstale index. Irrelevant for `hybrid_search`\'s `symbolId` (partial substring\nmatch — pass a bare name). When unsure instance vs static, pass a **partial\nmatch** to `find_symbol` (`Class` alone, or bare `method`) and read the real\nseparator off `result.symbolId`; never downgrade an empty `find_symbol` to\nripgrep. Producer-side source of truth (how separator chosen per language at\nindex time): `.claude/rules/symbolid-convention.md` (`INSTANCE_METHOD_SEPARATOR`\nin `infra/symbolid/classify.ts`).',
+      ),
+      sectionWindow(
+        "6f86bf3c-6b16-d1f7-d8e6-3862698a8f3c",
+        5,
+        107,
+        108,
+        `${sectionName} (part 2/2)`,
+        '| Chunk that calls a helper / class           | The helper / class definition           | `find_symbol(symbol: "HelperClass#method")` — symbol is in chunk text                                                                     |',
+      ),
+      sectionWindow(
+        "475a0c10-61ea-0930-cc8d-232edf32aacb",
+        7,
+        117,
+        118,
+        `${sectionName} (part 2/2)`,
+        "rankingOverlay in one call). `offset` pagination works on every search tool;\nwhen a page is exhausted, retry with `offset: N` instead of inflating `limit`.",
+      ),
+    ];
+
+    const sectionContent = () => resolveSymbols(sectionWindows, sectionId)[0].payload?.content as string;
+
+    it("collapses windows sharing one doc symbolId into a single section result", () => {
+      const results = resolveSymbols(sectionWindows, sectionId);
+
+      expect(results).toHaveLength(1);
+      const payload = results[0].payload!;
+      expect(payload.symbolId).toBe(sectionId);
+      expect(payload.isDocumentation).toBe(true);
+      expect(payload.startLine).toBe(92);
+      expect(payload.endLine).toBe(141);
+      expect(payload.mergedChunkIds).toHaveLength(sectionWindows.length);
+      expect(payload.mergedChunkIds).toEqual(expect.arrayContaining(sectionWindows.map((w) => w.id)));
+    });
+
+    it("emits every section line exactly once, however many windows repeat it", () => {
+      const emitted = sectionContent().split("\n");
+      const sectionLines = new Set(
+        sectionWindows
+          .flatMap((w) => w.payload.content.split("\n"))
+          .filter((line) => line.trim() !== "" && line !== breadcrumb),
+      );
+
+      for (const line of sectionLines) {
+        expect(
+          emitted.filter((l) => l === line),
+          line,
+        ).toHaveLength(1);
+      }
+    });
+
+    it("keeps the section in reading order across windows", () => {
+      const content = sectionContent();
+      const anchors = [
+        "## After-Search Navigation (READ BEFORE FINISHING ANY SEARCH)",
+        "| Chunk from one file ",
+        "| Chunk that calls a helper / class ",
+        "| Describe-it scope name from a stacktrace ",
+        "`find_symbol` accepts a `rerank` preset",
+        "rankingOverlay in one call).",
+        "in `infra/symbolid/classify.ts`).",
+      ];
+
+      const positions = anchors.map((anchor) => content.indexOf(anchor));
+
+      expect(positions.every((p) => p >= 0)).toBe(true);
+      expect([...positions].sort((a, b) => a - b)).toEqual(positions);
+    });
+
+    it("keeps the injected breadcrumb once at the top instead of repeating it inside the body", () => {
+      const content = sectionContent();
+
+      expect(content.startsWith(`${breadcrumb}\n## After-Search Navigation`)).toBe(true);
+      expect(content.split("\n").filter((line) => line === breadcrumb)).toHaveLength(1);
+    });
+  });
+
+  describe("doc TOC only for a document-path query (I2)", () => {
+    const sections = [
+      {
+        id: "doc-setup",
+        payload: {
+          symbolId: "doc:aaa111",
+          chunkType: "block",
+          parentSymbolId: "docs/guide.md",
+          relativePath: "docs/guide.md",
+          isDocumentation: true,
+          name: "Setup",
+          headingPath: [{ depth: 2, text: "Setup" }],
+          content: "## Setup\nSetup instructions",
+          startLine: 1,
+          endLine: 10,
+          language: "markdown",
+        },
+      },
+      {
+        id: "doc-usage",
+        payload: {
+          symbolId: "doc:bbb222",
+          chunkType: "block",
+          parentSymbolId: "docs/guide.md",
+          relativePath: "docs/guide.md",
+          isDocumentation: true,
+          name: "Usage",
+          headingPath: [{ depth: 2, text: "Usage" }],
+          content: "## Usage\nUsage content",
+          startLine: 12,
+          endLine: 20,
+          language: "markdown",
+        },
+      },
+    ];
+
+    it("returns section bodies, not a TOC, when several sections of one document arrive without a document-path query", () => {
+      const results = resolveSymbols(sections);
+
+      expect(results).toHaveLength(2);
+      const contents = results.map((r) => r.payload?.content);
+      expect(contents).toContain("## Setup\nSetup instructions");
+      expect(contents).toContain("## Usage\nUsage content");
+    });
+  });
+
+  describe("class outline without a class-level chunk (D2 / I3)", () => {
+    // Real shapes from the tea-rags self-index: TypeScript `StatsCache` has no
+    // residual class block — find_symbol's scroll holds only method chunks
+    // pointing at the class through parentSymbolId + parentType.
+    const statsCacheMember = (id: string, method: string, startLine: number, endLine: number) => ({
+      id,
+      payload: {
+        symbolId: `StatsCache#${method}`,
+        name: method,
+        chunkType: "function",
+        parentSymbolId: "StatsCache",
+        parentType: "class_declaration",
+        relativePath: "src/core/infra/stats-cache.ts",
+        fileExtension: ".ts",
+        language: "typescript",
+        content: `${method}() { /* ${method} body */ }`,
+        startLine,
+        endLine,
+        git: { file: { commitCount: 7, ageDays: 0 }, chunk: { commitCount: 2, ageDays: 3 } },
+        codegraph: { symbols: { file: { fanIn: 4, fanOut: 0 }, chunk: { fanIn: 3 } } },
+      },
+    });
+    const statsCacheMembers = [
+      statsCacheMember("save-id", "save", 92, 114),
+      statsCacheMember("ctor-id", "constructor", 49, 50),
+      statsCacheMember("load-id", "load", 51, 90),
+    ];
+
+    it("synthesises an outline from member chunks when the scroll holds no class chunk", () => {
+      const results = resolveSymbols(statsCacheMembers, "StatsCache");
+
+      expect(results).toHaveLength(1);
+      expect(results[0].payload?.symbolId).toBe("StatsCache");
+      expect(results[0].payload?.relativePath).toBe("src/core/infra/stats-cache.ts");
+      expect(results[0].payload?.content).toBe(
+        "StatsCache\n  StatsCache#constructor\n  StatsCache#load\n  StatsCache#save",
+      );
+    });
+
+    it("keeps file-level git and codegraph on a synthesised outline", () => {
+      const [outline] = resolveSymbols(statsCacheMembers, "StatsCache");
+
+      expect(outline.payload?.git).toEqual({ file: { commitCount: 7, ageDays: 0 } });
+      expect(outline.payload?.codegraph).toEqual({ symbols: { file: { fanIn: 4, fanOut: 0 } } });
+    });
+
+    it("emits one synthesised outline per relativePath", () => {
+      const member = (id: string, symbolId: string, relativePath: string) => ({
+        id,
+        payload: {
+          symbolId,
+          chunkType: "function",
+          parentSymbolId: "Foo",
+          parentType: "class_declaration",
+          relativePath,
+          language: "typescript",
+          content: `${symbolId} body`,
+          startLine: 1,
+          endLine: 5,
+        },
+      });
+
+      const results = resolveSymbols(
+        [member("a", "Foo#alpha", "src/foo.ts"), member("b", "Foo#beta", "src/foo-extra.ts")],
+        "Foo",
+      );
+
+      expect(results).toHaveLength(2);
+      const byPath = new Map(results.map((r) => [r.payload?.relativePath, r.payload?.content]));
+      expect(byPath.get("src/foo.ts")).toBe("Foo\n  Foo#alpha");
+      expect(byPath.get("src/foo-extra.ts")).toBe("Foo\n  Foo#beta");
+    });
+
+    it("matches members by the class chunk's symbolId as well as its name", () => {
+      const chunks = [
+        {
+          id: "class-bar",
+          payload: {
+            symbolId: "Foo::Bar",
+            name: "Bar",
+            chunkType: "class",
+            relativePath: "lib/foo/bar.rb",
+            language: "ruby",
+            content: "class Bar\nend",
+            startLine: 1,
+            endLine: 30,
+          },
+        },
+        {
+          id: "by-fqn",
+          payload: {
+            symbolId: "Foo::Bar#save",
+            chunkType: "function",
+            parentSymbolId: "Foo::Bar",
+            parentType: "class",
+            relativePath: "lib/foo/bar.rb",
+            language: "ruby",
+            content: "def save\nend",
+            startLine: 5,
+            endLine: 10,
+          },
+        },
+        {
+          id: "by-name",
+          payload: {
+            symbolId: "Foo::Bar#load",
+            chunkType: "function",
+            parentSymbolId: "Bar",
+            parentType: "class",
+            relativePath: "lib/foo/bar.rb",
+            language: "ruby",
+            content: "def load\nend",
+            startLine: 12,
+            endLine: 20,
+          },
+        },
+      ];
+
+      const results = resolveSymbols(chunks, "Foo::Bar");
+
+      expect(results).toHaveLength(1);
+      expect(results[0].payload?.content).toBe("Bar\n  Foo::Bar#save\n  Foo::Bar#load");
+    });
+
+    it("lists a class cut into several class-level blocks once, without its own id as a member", () => {
+      // Ruby `Platform::Async::Operation::Worker` on taxdome: the class body is
+      // several `block` chunks whose symbolId, name AND parentSymbolId are all
+      // the class FQN.
+      const block = (id: string, startLine: number, endLine: number) => ({
+        id,
+        payload: {
+          symbolId: "Platform::Async::Operation::Worker",
+          name: "Platform::Async::Operation::Worker",
+          chunkType: "block",
+          parentSymbolId: "Platform::Async::Operation::Worker",
+          parentType: "class",
+          relativePath: "lib/platform/async/operation/worker.rb",
+          language: "ruby",
+          content: `# class body ${startLine}`,
+          startLine,
+          endLine,
+        },
+      });
+      const chunks = [
+        block("block-34", 34, 35),
+        block("block-126", 126, 126),
+        {
+          id: "perform",
+          payload: {
+            symbolId: "Platform::Async::Operation::Worker#perform",
+            name: "perform",
+            chunkType: "function",
+            parentSymbolId: "Platform::Async::Operation::Worker",
+            parentType: "class",
+            relativePath: "lib/platform/async/operation/worker.rb",
+            language: "ruby",
+            content: "def perform(id)\n  run(id)\nend",
+            startLine: 86,
+            endLine: 116,
+          },
+        },
+      ];
+
+      const results = resolveSymbols(chunks, "Platform::Async::Operation::Worker");
+
+      expect(results).toHaveLength(1);
+      expect(results[0].payload?.content).toBe(
+        "Platform::Async::Operation::Worker\n  Platform::Async::Operation::Worker#perform",
+      );
+    });
+
+    it("does not synthesise an outline when the shared parent is not a class/module container", () => {
+      const nested = (id: string, symbolId: string) => ({
+        id,
+        payload: {
+          symbolId,
+          chunkType: "function",
+          parentSymbolId: "handler",
+          parentType: "function_declaration",
+          relativePath: "src/handler.ts",
+          language: "typescript",
+          content: `function ${symbolId}() {}`,
+          startLine: 1,
+          endLine: 3,
+        },
+      });
+
+      const results = resolveSymbols([nested("n1", "handler.first"), nested("n2", "handler.second")], "handler");
+
+      expect(results.map((r) => r.payload?.content)).toEqual(
+        expect.arrayContaining(["function handler.first() {}", "function handler.second() {}"]),
+      );
+    });
+  });
+
+  describe("test chunks under a class query (A1 / A2)", () => {
+    const workerFqn = "Platform::Async::Operation::Worker";
+    const workerSpec = "spec/lib/platform/async/operation/worker_spec.rb";
+    const describeWorker = `${workerFqn}.RSpec.describe ${workerFqn}`;
+    // Real shapes from taxdome: every chunk of worker_spec.rb carries the
+    // top-level describe id and points at the described class.
+    const specChunk = (id: string, startLine: number, endLine: number) => ({
+      id,
+      payload: {
+        symbolId: describeWorker,
+        name: `RSpec.describe ${workerFqn}`,
+        chunkType: "test",
+        isTest: true,
+        parentSymbolId: workerFqn,
+        parentType: "call",
+        relativePath: workerSpec,
+        language: "ruby",
+        content: `it "works ${startLine}" do\n  expect(worker).to be_ok\nend`,
+        startLine,
+        endLine,
+        git: { file: { commitCount: 4, ageDays: 7 }, chunk: { commitCount: 1, ageDays: 26 } },
+        codegraph: { symbols: { file: { skippedAs: "test" }, chunk: { skippedAs: "test" } } },
+      },
+    });
+    const workerSource = [
+      {
+        id: "worker-block",
+        payload: {
+          symbolId: workerFqn,
+          name: workerFqn,
+          chunkType: "block",
+          parentSymbolId: workerFqn,
+          parentType: "class",
+          relativePath: "lib/platform/async/operation/worker.rb",
+          language: "ruby",
+          content: "class Worker\n  include Sidekiq::Job",
+          startLine: 34,
+          endLine: 35,
+          git: { file: { commitCount: 4, ageDays: 7 }, chunk: { commitCount: 1, ageDays: 26 } },
+        },
+      },
+      {
+        id: "worker-record-class",
+        payload: {
+          symbolId: `${workerFqn}.record_class`,
+          name: "record_class",
+          chunkType: "function",
+          parentSymbolId: workerFqn,
+          parentType: "class",
+          relativePath: "lib/platform/async/operation/worker.rb",
+          language: "ruby",
+          content: "def self.record_class\n  Record\nend",
+          startLine: 54,
+          endLine: 57,
+        },
+      },
+      {
+        id: "worker-perform",
+        payload: {
+          symbolId: `${workerFqn}#perform`,
+          name: "perform",
+          chunkType: "function",
+          parentSymbolId: workerFqn,
+          parentType: "class",
+          relativePath: "lib/platform/async/operation/worker.rb",
+          language: "ruby",
+          content: "def perform(id)\n  run(id)\nend",
+          startLine: 86,
+          endLine: 116,
+        },
+      },
+    ];
+    const workerSpecChunks = [
+      specChunk("spec-99", 99, 105),
+      specChunk("spec-76", 76, 89),
+      specChunk("spec-91", 91, 97),
+    ];
+
+    it("drops the class's spec chunks from a response that outlines the class", () => {
+      const results = resolveSymbols([...workerSpecChunks, ...workerSource], workerFqn);
+
+      expect(results).toHaveLength(1);
+      expect(results[0].payload?.content).toBe(
+        [workerFqn, `  ${workerFqn}.record_class`, `  ${workerFqn}#perform`].join("\n"),
+      );
+      expect(results.map((r) => r.payload?.relativePath)).not.toContain(workerSpec);
+    });
+
+    it("drops test chunks from every file, whether they name the class by symbolId or by name", () => {
+      const testChunk = (
+        id: string,
+        symbolId: string,
+        parentSymbolId: string,
+        relativePath: string,
+        extra: object,
+      ) => ({
+        id,
+        payload: {
+          symbolId,
+          parentSymbolId,
+          parentType: "call",
+          relativePath,
+          language: "ruby",
+          content: `# test body ${id}`,
+          startLine: 1,
+          endLine: 9,
+          ...extra,
+        },
+      });
+      const chunks = [
+        {
+          id: "class-bar",
+          payload: {
+            symbolId: "Foo::Bar",
+            name: "Bar",
+            chunkType: "class",
+            relativePath: "lib/foo/bar.rb",
+            language: "ruby",
+            content: "class Bar\nend",
+            startLine: 1,
+            endLine: 30,
+          },
+        },
+        {
+          id: "bar-save",
+          payload: {
+            symbolId: "Foo::Bar#save",
+            name: "save",
+            chunkType: "function",
+            parentSymbolId: "Foo::Bar",
+            parentType: "class",
+            relativePath: "lib/foo/bar.rb",
+            language: "ruby",
+            content: "def save\nend",
+            startLine: 5,
+            endLine: 10,
+          },
+        },
+        testChunk("by-fqn", "Foo::Bar.RSpec.describe Foo::Bar", "Foo::Bar", "spec/lib/foo/bar_spec.rb", {
+          chunkType: "test",
+          isTest: true,
+        }),
+        testChunk("setup-by-name", "Bar.let(:bar)", "Bar", "spec/legacy/bar_spec.rb", { chunkType: "test_setup" }),
+        testChunk("flagged-block", "Bar.shared_examples 'saves'", "Bar", "spec/support/bar_examples.rb", {
+          chunkType: "block",
+          isTest: true,
+        }),
+      ];
+
+      const results = resolveSymbols(chunks, "Foo::Bar");
+
+      expect(results).toHaveLength(1);
+      expect(results[0].payload?.content).toBe("Bar\n  Foo::Bar#save");
+    });
+
+    it("drops test chunks from a response whose outline is synthesised from member chunks", () => {
+      const member = (id: string, method: string, startLine: number) => ({
+        id,
+        payload: {
+          symbolId: `StatsCache#${method}`,
+          name: method,
+          chunkType: "function",
+          parentSymbolId: "StatsCache",
+          parentType: "class_declaration",
+          relativePath: "src/core/infra/stats-cache.ts",
+          language: "typescript",
+          content: `${method}() {}`,
+          startLine,
+          endLine: startLine + 10,
+        },
+      });
+      const chunks = [
+        member("load-id", "load", 51),
+        member("save-id", "save", 92),
+        {
+          id: "stats-cache-test",
+          payload: {
+            symbolId: 'StatsCache.describe "StatsCache"',
+            chunkType: "test",
+            isTest: true,
+            parentSymbolId: "StatsCache",
+            parentType: "call_expression",
+            relativePath: "tests/core/infra/stats-cache.test.ts",
+            language: "typescript",
+            content: 'describe("StatsCache", () => {})',
+            startLine: 1,
+            endLine: 40,
+          },
+        },
+      ];
+
+      const results = resolveSymbols(chunks, "StatsCache");
+
+      expect(results).toHaveLength(1);
+      expect(results[0].payload?.content).toBe("StatsCache\n  StatsCache#load\n  StatsCache#save");
+    });
+
+    it("merges test chunks by symbolId when the scroll holds no source class or member for the query", () => {
+      const results = resolveSymbols(workerSpecChunks, workerFqn);
+
+      expect(results).toHaveLength(1);
+      expect(results[0].payload?.symbolId).toBe(describeWorker);
+      expect(results[0].payload?.relativePath).toBe(workerSpec);
+      expect(results[0].payload?.mergedChunkIds).toEqual(["spec-76", "spec-91", "spec-99"]);
+      expect(results[0].payload?.content).toBe(
+        [76, 91, 99].map((line) => `it "works ${line}" do\n  expect(worker).to be_ok\nend`).join("\n"),
+      );
+    });
+
+    it("keeps one merged result per test symbolId when only tests are in the scroll", () => {
+      const otherSpec = "spec/lib/platform/async/operation/worker_retry_spec.rb";
+      const retryChunk = {
+        id: "retry-spec",
+        payload: {
+          ...specChunk("retry-spec", 3, 20).payload,
+          symbolId: `${workerFqn}.RSpec.describe ${workerFqn}, "retries"`,
+          relativePath: otherSpec,
+          content: "it retries",
+        },
+      };
+
+      const results = resolveSymbols([...workerSpecChunks, retryChunk], workerFqn);
+
+      expect(results).toHaveLength(2);
+      const byPath = new Map(results.map((r) => [r.payload?.relativePath, r.payload?.symbolId]));
+      expect(byPath.get(workerSpec)).toBe(describeWorker);
+      expect(byPath.get(otherSpec)).toBe(`${workerFqn}.RSpec.describe ${workerFqn}, "retries"`);
+    });
+  });
 });

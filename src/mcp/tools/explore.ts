@@ -116,10 +116,12 @@ const SEARCH_TOOLS: readonly SearchToolDef[] = [
     title: "Find Symbol",
     description:
       "Find symbol by name or file outline by relativePath — direct lookup, no embedding. " +
-      "symbol mode: merged definition for functions, outline + members for classes. " +
+      "symbol mode: function/method → merged full body; class/module → OUTLINE only " +
+      "(member symbolIds, no bodies, tests excluded); doc:<hash> → full section content. " +
       "relativePath mode: file-level outline (code symbols or doc TOC with doc:<hash> ids). " +
-      "Uses Qdrant text match. Partial match supported: " +
-      "'Reranker' finds class and all its methods. " +
+      "Outline/TOC lines are addresses — read one member/section via find_symbol(symbol: '<id from line>'), " +
+      "never Read the file or grep a saved dump. " +
+      "Uses Qdrant text match. Partial match supported: 'Reranker' → class outline. " +
       "symbolId convention: Class#method (instance), Class.method (static). " +
       'Single-call diagnostic: pass `rerank` preset (e.g. "hotspots") to ' +
       "attach rankingOverlay with churn/ownership/bugFixRate labels alongside " +

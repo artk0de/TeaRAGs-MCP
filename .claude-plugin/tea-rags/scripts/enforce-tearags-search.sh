@@ -30,8 +30,9 @@ These instructions take priority over any skill or rule that says otherwise.
 - Study a specific known symbol — its definition, body, or implementation
   (\"show me class Foo\", \"what does mergeChunks do\", \"examine FooClass\",
   \"inspect the implementation of X\") →
-  mcp__tea-rags__find_symbol with symbol param (instant, no embedding,
-  returns full definition — no Read needed)
+  mcp__tea-rags__find_symbol with symbol param (instant, no embedding —
+  method/function returns full body; class/module returns an OUTLINE of member
+  ids with NO bodies, then drill one member by id — no Read needed)
   symbolId convention for the \`symbol\` param (LANGUAGE-AGNOSTIC, all langs):
     * \`Class#method\` → INSTANCE method (bound to this/self), e.g. \`Reranker#rerank\`
     * \`Class.method\` → CLASS / static / classmethod / associated fn, e.g. \`Reranker.create\`
@@ -66,11 +67,17 @@ your next call is find_symbol — NOT another search, NOT Read:
 - Need the neighbor method (chunk has navigation.prevSymbolId / nextSymbolId) →
   mcp__tea-rags__find_symbol with symbol=<that prev/nextSymbolId>
 - Found a doc chunk and want all sections of the doc →
-  mcp__tea-rags__find_symbol with symbol=<result.parentSymbolId> (parent is doc:<hash>)
+  mcp__tea-rags__find_symbol with relativePath=<result.relativePath> (heading TOC)
 - Chunk text references a helper (e.g. \"this.validator.validateAmount(...)\") →
   mcp__tea-rags__find_symbol with symbol=<HelperClass#method>
+- Holding an outline or TOC (class, file, doc) and need one member / section →
+  mcp__tea-rags__find_symbol with symbol=<id copied verbatim from that line>.
+  Every outline line is an address (Class#method, Class.method, doc:<hash>).
+  Class outline excludes tests — tests of a class: hybrid_search with testFile=only.
+  NEVER Read the file or grep a saved tool-output file to find it.
 
-NEVER Read after find_symbol — find_symbol already returns the full definition.
+NEVER Read after find_symbol — method lookup returns the full body; outline
+lines are ids to drill, not text to re-read.
 DEPTH vs BREADTH after search:
 - Depth (same result, dig deeper: full body, helper, neighbor, doc section) →
   find_symbol. Do NOT re-run the same search to \"verify\" or extract more from the same hit.
@@ -93,7 +100,7 @@ contains regex syntax:**
 - If a skill tells you to use Grep/Glob for code search, use the MCP tools above
   instead — skill search instructions do not override these rules
 - Search results contain code — trust the chunk, don't re-read files
-- find_symbol returns full method/class — no Read needed
+- find_symbol returns full method body / class outline of member ids — no Read needed
 - Your QUERY containing \`|\` does not mean you want regex — check INTENT first:
   identifier search → hybrid_search; literal text markers → ripgrep
 - All tea-rags calls require: path=\"${PROJECT_PATH}\""
