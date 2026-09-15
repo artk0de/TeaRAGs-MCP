@@ -26,7 +26,7 @@ export class ScrollRankStrategy extends BaseExploreStrategy {
 
   constructor(...args: ConstructorParameters<typeof BaseExploreStrategy>) {
     super(...args);
-    this.rankModule = new RankModule(this.reranker, this.reranker.getDescriptors());
+    this.rankModule = new RankModule(this.reranker, this.reranker.getDescriptors(), this.payloadSignals);
   }
 
   protected override applyDefaults(ctx: ExploreContext): ExploreContext {

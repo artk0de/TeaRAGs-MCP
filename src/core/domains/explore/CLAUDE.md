@@ -69,13 +69,17 @@
   `queries/index-metrics.ts`) with a clean lint run. Why: the linter is not the
   guard here, and tightening to bare-segment globs (as `domains/language` does)
   is a failing change today.
-- **rank_chunks `order_by` hard-codes a `git.` prefix.**
-  `RankModule#resolvePayloadField` emits `` `git.${source}` `` for
-  level-prefixed sources, so codegraph signals (`chunk.pageRank`, `file.fanIn`)
-  resolve to non-existent paths; only dotless ones (`moduleLines`,
-  `methodDensity`) survive, and nothing resolvable → `rankChunks` returns `[]`.
-  Why: presets mixing codegraph signals with `"rank_chunks"` (`hotMethod`,
-  `architecturalHub`) order by a phantom key, or return empty unexplained.
+- **rank_chunks `order_by` keys come from the payload signal descriptors, and
+  only numeric ones order.** `RankModule#resolvePayloadField` maps a source
+  through `buildSignalKeyMap` to its logical key, then `toPhysicalPayloadKey`
+  (`codegraph.chunk.pageRank` → `codegraph.symbols.chunk.pageRank`); a
+  non-`number` descriptor (`isHub`, `isLeaf`) orders nothing and scores only the
+  candidates the numeric legs pooled; a source no descriptor declares falls back
+  to `` `git.${source}` ``. `ScrollRankStrategy` must hand `RankModule` the
+  strategy's `payloadSignals`. Why: without them every codegraph source became a
+  phantom `git.` key — `hotMethod` / `criticalMethod` / `godMethod` returned
+  `[]`, composites pooled candidates from their git legs only (bd
+  tea-rags-mcp-xf01b).
 
 ## Boundaries
 
