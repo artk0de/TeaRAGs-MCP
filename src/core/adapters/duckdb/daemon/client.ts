@@ -31,9 +31,104 @@ import type {
   SymbolLineRange,
 } from "../../../contracts/types/codegraph.js";
 import { isDebug } from "../../../infra/runtime.js";
+import { CodegraphDaemonBuildSkewError } from "../errors.js";
 import { DaemonFrameDecoder } from "./frame-decoder.js";
 import { getDaemonLogPath } from "./lifecycle.js";
-import { encodeFrame, type DaemonHandshakeResult, type DaemonOp, type DaemonResponse } from "./protocol.js";
+import { DAEMON_OPS, encodeFrame, type DaemonHandshakeResult, type DaemonOp, type DaemonResponse } from "./protocol.js";
+
+/**
+ * Does this rejection mean "the daemon on the other end is from a build that
+ * has no such op"? The daemon's dispatcher answers an op it does not know with
+ * exactly this message (daemon/server.ts) — the deliberate fall-through kept
+ * for protocol evolution — so the match is on that one sentence and nothing
+ * else. Anything wider would swallow real DuckDB failures.
+ */
+function isUnknownDaemonOp(err: unknown): err is Error {
+  return err instanceof Error && err.message.startsWith("unknown daemon op:");
+}
+
+const LEGACY_TOLERATED_OP_LIST = [
+  "getFileMetricsBulk",
+  "getSymbolLineRangesBulk",
+  "diffSymbolSignals",
+  "refreshSymbolSignalsPrev",
+] as const satisfies readonly DaemonOp[];
+
+type LegacyToleratedDaemonOp = (typeof LEGACY_TOLERATED_OP_LIST)[number];
+
+/**
+ * The ops a daemon from an older build may lack WITHOUT this client refusing it
+ * (bd tea-rags-mcp-39xca.4). Every other op in `DAEMON_OPS` is REQUIRED: a pool
+ * refuses — or, with a respawn hook, replaces — a daemon whose handshake does
+ * not advertise it, and a call the daemon still answers as unknown throws
+ * `CodegraphDaemonBuildSkewError`.
+ *
+ * An op belongs here only if its fallback is CORRECT, or at worst the behaviour
+ * before the op existed:
+ * - `getFileMetricsBulk` — the three per-file reads it replaced; slow, same map.
+ * - `getSymbolLineRangesBulk` — no ranges, so each chunk keeps its own payload
+ *   symbolId: the heal as it was before ranges (bd tea-rags-mcp-9i2ow).
+ * - `diffSymbolSignals` — "nothing moved", the pre-a2ddb behaviour. "Everything
+ *   moved" would be worse: such a daemon has no `cg_symbol_signals_prev`, so the
+ *   heal would rewrite the corpus on every run and never converge.
+ * - `refreshSymbolSignalsPrev` — that daemon has no baseline table to refresh.
+ *
+ * An op whose fallback is wrong data stays required — weno4's
+ * `listAllPass1Aggregates` degraded a live repair to a batch-scoped registry.
+ */
+export const LEGACY_TOLERATED_OPS: ReadonlySet<DaemonOp> = new Set<DaemonOp>(LEGACY_TOLERATED_OP_LIST);
+
+/** Every op this client may call that an older daemon is NOT allowed to lack. */
+export const REQUIRED_DAEMON_OPS: readonly DaemonOp[] = DAEMON_OPS.filter((op) => !LEGACY_TOLERATED_OPS.has(op));
+
+/** What one handshake says about working against that daemon (bd tea-rags-mcp-39xca.4). */
+export interface DaemonCapabilityVerdict {
+  /** The daemon's build fingerprint; undefined for a pre-fingerprint daemon. */
+  readonly daemonFingerprint?: string;
+  /** Both peers reported a fingerprint and they differ. */
+  readonly buildMismatch: boolean;
+  /** REQUIRED ops the daemon did not advertise; empty when it advertised nothing. */
+  readonly missingRequiredOps: readonly DaemonOp[];
+  /** The daemon reported a fingerprint but no capability list — built before advertisement. */
+  readonly predatesCapabilityList: boolean;
+}
+
+/**
+ * Judge a handshake result against this client's build. A pre-fingerprint
+ * daemon (null result) yields an all-clear verdict — the long-standing "legacy
+ * peer, proceed" rule — because it reports nothing to compare.
+ */
+export function assessDaemonCapability(
+  handshake: DaemonHandshakeResult | null,
+  clientFingerprint: string,
+): DaemonCapabilityVerdict {
+  const daemonFingerprint = handshake?.buildFingerprint;
+  const supportedOps = handshake?.supportedOps;
+  return {
+    daemonFingerprint,
+    buildMismatch: daemonFingerprint !== undefined && daemonFingerprint !== clientFingerprint,
+    missingRequiredOps:
+      supportedOps === undefined ? [] : REQUIRED_DAEMON_OPS.filter((op) => !supportedOps.includes(op)),
+    predatesCapabilityList: daemonFingerprint !== undefined && supportedOps === undefined,
+  };
+}
+
+/** Tolerated ops already reported missing in this process — the warning is once per op. */
+const warnedLegacyDaemonOps = new Set<LegacyToleratedDaemonOp>();
+
+/**
+ * Say — once per op per process, and outside DEBUG — that a tolerated op fell
+ * back. The fallback is accepted, never silent: a debug-only line is how a
+ * degraded heal went unnoticed until someone read DuckDB by hand.
+ */
+function warnLegacyDaemonOpOnce(op: LegacyToleratedDaemonOp): void {
+  if (warnedLegacyDaemonOps.has(op)) return;
+  warnedLegacyDaemonOps.add(op);
+  console.error(
+    `[tea-rags] codegraph daemon is from an older build without "${op}" — using its legacy ` +
+      "fallback until the daemon is restarted from the current build",
+  );
+}
 
 /**
  * Thrown when a daemon-internal op is invoked on the daemon client. In daemon
@@ -43,17 +138,6 @@ import { encodeFrame, type DaemonHandshakeResult, type DaemonOp, type DaemonResp
  * runs daemon-side via `computeAndPersistCyclesAndSignals`, so the adjacency
  * stream must NOT cross IPC and still throws this error if called on the client.
  */
-/**
- * Does this rejection mean "the daemon on the other end is from a build that
- * has no such op"? The daemon's dispatcher answers an op it does not know with
- * exactly this message (daemon/server.ts) — the deliberate fall-through kept
- * for protocol evolution — so the match is on that one sentence and nothing
- * else. Anything wider would swallow real DuckDB failures.
- */
-function isUnknownDaemonOp(err: unknown): boolean {
-  return err instanceof Error && err.message.startsWith("unknown daemon op:");
-}
-
 export class UnsupportedDaemonReadError extends Error {
   constructor(op: string) {
     super(`DaemonGraphDbClient is write-only; read op "${op}" must use the in-process RO handle`);
@@ -220,15 +304,50 @@ export class DaemonGraphDbClient implements GraphDbClient {
     }
   }
 
+  /**
+   * Send one request and await its response. A daemon that answers the op as
+   * unknown is from an older build: that rejection becomes a typed
+   * `CodegraphDaemonBuildSkewError` naming the op (bd tea-rags-mcp-39xca.4), so
+   * it surfaces as build skew rather than a generic failure. The few ops allowed
+   * to degrade go through `callTolerated`, which catches exactly that type.
+   */
   private async call(op: DaemonOp, params: Record<string, unknown>): Promise<unknown> {
     const { sock } = this;
     if (!sock) throw new Error("DaemonGraphDbClient.call before init() / after close()");
     const id = this.nextId++;
     const frame = encodeFrame({ id, op, params: { collection: this.collection, ...params } } as never);
-    return new Promise((resolve, reject) => {
-      this.pending.set(id, { resolve, reject, frame, retried: false });
-      sock.write(frame);
-    });
+    try {
+      return await new Promise((resolve, reject) => {
+        this.pending.set(id, { resolve, reject, frame, retried: false });
+        sock.write(frame);
+      });
+    } catch (err) {
+      if (!isUnknownDaemonOp(err)) throw err;
+      throw new CodegraphDaemonBuildSkewError({ socketPath: this.socketPath, missingOps: [op] }, err);
+    }
+  }
+
+  /**
+   * `call` for an op in `LEGACY_TOLERATED_OPS`. A daemon from an older build that
+   * answers it as unknown gets `fallback()` instead of a failure, plus one
+   * non-debug warning per op per process — the degrade is accepted, never
+   * silent. Any other error, a real daemon failure included, propagates.
+   */
+  private async callTolerated<T>(
+    op: LegacyToleratedDaemonOp,
+    params: Record<string, unknown>,
+    decode: (result: unknown) => T,
+    fallback: () => T | Promise<T>,
+  ): Promise<T> {
+    let result: unknown;
+    try {
+      result = await this.call(op, params);
+    } catch (err) {
+      if (!(err instanceof CodegraphDaemonBuildSkewError)) throw err;
+      warnLegacyDaemonOpOnce(op);
+      return fallback();
+    }
+    return decode(result);
   }
 
   async close(): Promise<void> {
@@ -444,44 +563,31 @@ export class DaemonGraphDbClient implements GraphDbClient {
 
   /**
    * Record the current signals as the baseline for the next run's drift diff
-   * (bd tea-rags-mcp-a2ddb). Silently degrades on a daemon that predates the op:
-   * that daemon has not run migration 023 either, so there is no baseline to
-   * refresh and the heal this pairs with has already degraded to a no-op.
+   * (bd tea-rags-mcp-a2ddb). A tolerated legacy op: a daemon that predates it
+   * has not run migration 023 either, so there is no baseline to refresh.
    */
   async refreshSymbolSignalsPrev(): Promise<void> {
-    try {
-      await this.call("refreshSymbolSignalsPrev", {});
-    } catch (err) {
-      if (!isUnknownDaemonOp(err)) throw err;
-      this.warnDriftUnsupported("refreshSymbolSignalsPrev");
-    }
+    await this.callTolerated(
+      "refreshSymbolSignalsPrev",
+      {},
+      () => undefined,
+      () => undefined,
+    );
   }
 
   /**
    * Symbols and files whose derived signals moved since the baseline
-   * (bd tea-rags-mcp-a2ddb).
-   *
-   * A daemon from a build that predates the op degrades to "nothing moved" —
-   * the behaviour before this mechanism existed — rather than failing the run.
-   * Claiming everything moved would be the other option and is worse: a stale
-   * daemon has no `cg_symbol_signals_prev` to read, so the heal would rewrite
-   * the whole corpus on every run and never converge.
+   * (bd tea-rags-mcp-a2ddb). A tolerated legacy op: a daemon that predates it
+   * answers "nothing moved" — why that and not "everything moved" is recorded
+   * on `LEGACY_TOLERATED_OPS`.
    */
   async diffSymbolSignals(): Promise<CodegraphSignalDrift> {
-    try {
-      return (await this.call("diffSymbolSignals", {})) as CodegraphSignalDrift;
-    } catch (err) {
-      if (!isUnknownDaemonOp(err)) throw err;
-      this.warnDriftUnsupported("diffSymbolSignals");
-      return { symbols: [], files: [] };
-    }
-  }
-
-  /** One stderr line per degraded drift op, on debug only — same shape as `fileMetricsPerFile`. */
-  private warnDriftUnsupported(op: string): void {
-    if (isDebug()) {
-      process.stderr.write(`[tea-rags] codegraph daemon predates ${op} — payload heal skipped this run\n`);
-    }
+    return this.callTolerated(
+      "diffSymbolSignals",
+      {},
+      (result) => result as CodegraphSignalDrift,
+      () => ({ symbols: [], files: [] }),
+    );
   }
 
   // ── reads (proxied over the socket) ──
@@ -556,21 +662,16 @@ export class DaemonGraphDbClient implements GraphDbClient {
   }
 
   async getSymbolLineRangesBulk(relPaths: readonly RelPath[]): Promise<Map<RelPath, SymbolLineRange[]>> {
-    try {
-      // Server serialises the Map as `[key, value][]` entries — rebuild here.
-      const entries = (await this.call("getSymbolLineRangesBulk", { relPaths })) as [RelPath, SymbolLineRange[]][];
-      return new Map(entries);
-    } catch (err) {
-      if (!isUnknownDaemonOp(err)) throw err;
-      // A daemon from an older build (the pool tolerates one, see
-      // `fileMetricsPerFile`) has no ranges to give. Answering "none" is the
-      // same as a pre-024 row: the chunk-owner rule keeps each chunk's own
-      // payload symbolId, i.e. the heal behaves as it did before the ranges.
-      if (isDebug()) {
-        process.stderr.write("[tea-rags] codegraph daemon predates getSymbolLineRangesBulk — no symbol ranges\n");
-      }
-      return new Map();
-    }
+    // Server serialises the Map as `[key, value][]` entries — rebuild here. A
+    // tolerated legacy op: a daemon that predates it has no ranges to give, and
+    // "none" is the same as a pre-024 row — the chunk-owner rule keeps each
+    // chunk's own payload symbolId, the heal as it was before ranges.
+    return this.callTolerated(
+      "getSymbolLineRangesBulk",
+      { relPaths },
+      (result) => new Map(result as [RelPath, SymbolLineRange[]][]),
+      () => new Map<RelPath, SymbolLineRange[]>(),
+    );
   }
 
   async hasData(): Promise<boolean> {
@@ -602,27 +703,26 @@ export class DaemonGraphDbClient implements GraphDbClient {
   }
 
   async getFileMetricsBulk(relPaths: readonly RelPath[], maxDepth?: number): Promise<Map<RelPath, FileGraphMetrics>> {
-    try {
-      // Server serialises the Map as `[key, value][]` entries — rebuild here
-      // (same pattern as getChunkSignalsBulk / getCalleeEdges). The caller
-      // bounds `relPaths`: this array IS the request frame, and the daemon's
-      // reply frame carries one entry per root it knows about.
-      const entries = (await this.call("getFileMetricsBulk", { relPaths, maxDepth })) as [RelPath, FileGraphMetrics][];
-      return new Map(entries);
-    } catch (err) {
-      if (!isUnknownDaemonOp(err)) throw err;
-      return this.fileMetricsPerFile(relPaths, maxDepth);
-    }
+    // Server serialises the Map as `[key, value][]` entries — rebuild here
+    // (same pattern as getChunkSignalsBulk / getCalleeEdges). The caller
+    // bounds `relPaths`: this array IS the request frame, and the daemon's
+    // reply frame carries one entry per root it knows about.
+    return this.callTolerated(
+      "getFileMetricsBulk",
+      { relPaths, maxDepth },
+      (result) => new Map(result as [RelPath, FileGraphMetrics][]),
+      async () => this.fileMetricsPerFile(relPaths, maxDepth),
+    );
   }
 
   /**
-   * Legacy-daemon degrade for `getFileMetricsBulk`. A pool with no respawn hook
-   * TOLERATES a daemon built from other source rather than draining it
-   * (pool.ts — worker-thread pools cannot cold-spawn one), so a client from
-   * this build can meet a daemon that never heard of the setwise op. Rather
-   * than failing the whole finalize pass, walk the same roots through the three
-   * per-file reads the op replaces and assemble the identical map: absent means
-   * all-zero, so a root with nothing in either direction is left out.
+   * Legacy-daemon fallback for `getFileMetricsBulk`, a tolerated legacy op. A
+   * pool tolerates a daemon from another build while it advertises every
+   * REQUIRED op (pool.ts), so a client from this build can meet a daemon that
+   * never heard of the setwise op. Rather than failing the whole finalize pass,
+   * walk the same roots through the three per-file reads the op replaces and
+   * assemble the identical map: absent means all-zero, so a root with nothing
+   * in either direction is left out.
    *
    * Deliberately serialized and deliberately slow — this is the pre-setwise
    * cost, on a path that only has to stay CORRECT until the daemon is
@@ -632,9 +732,6 @@ export class DaemonGraphDbClient implements GraphDbClient {
     relPaths: readonly RelPath[],
     maxDepth?: number,
   ): Promise<Map<RelPath, FileGraphMetrics>> {
-    if (isDebug()) {
-      process.stderr.write("[tea-rags] codegraph daemon predates getFileMetricsBulk — per-file read-back\n");
-    }
     const out = new Map<RelPath, FileGraphMetrics>();
     for (const relPath of relPaths) {
       const fanIn = await this.getFanIn(relPath);

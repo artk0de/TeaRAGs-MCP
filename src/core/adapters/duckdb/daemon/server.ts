@@ -1,8 +1,8 @@
 import type { CollectionGraphHandle, GraphDbClientPool } from "../pool.js";
 import { getBuildFingerprint } from "./build-fingerprint.js";
 import type { DaemonMemoryGovernor } from "./memory-governor.js";
-import { DAEMON_OP_COMMANDS, type DaemonOpCommand } from "./op-commands.js";
-import type { DaemonRequest, DaemonResponse } from "./protocol.js";
+import { DAEMON_OP_COMMANDS, type DaemonOpCommand, type DaemonOpCommandTable } from "./op-commands.js";
+import type { DaemonOp, DaemonRequest, DaemonResponse } from "./protocol.js";
 
 /**
  * In-process request handler for the codegraph daemon. Owns the internal
@@ -22,6 +22,9 @@ import type { DaemonRequest, DaemonResponse } from "./protocol.js";
  * notification, and the never-throw response envelope.
  */
 export class CodegraphDaemonServer {
+  /** Keys of the table this server dispatches on — what its handshake advertises. */
+  private readonly supportedOps: readonly DaemonOp[];
+
   constructor(
     private readonly pool: GraphDbClientPool,
     /**
@@ -38,7 +41,16 @@ export class CodegraphDaemonServer {
      * the governor is write-burst-scoped by design.
      */
     private readonly governor?: DaemonMemoryGovernor,
-  ) {}
+    /**
+     * The op table this server dispatches on, and therefore the capability
+     * list its handshake advertises (bd tea-rags-mcp-39xca.4) — one source, so
+     * the two cannot disagree. Defaults to the full `DAEMON_OP_COMMANDS`; tests
+     * inject a trimmed table to stand in for a daemon from an older build.
+     */
+    private readonly commands: DaemonOpCommandTable = DAEMON_OP_COMMANDS,
+  ) {
+    this.supportedOps = Object.keys(commands) as DaemonOp[];
+  }
 
   /**
    * Acquire the pooled handle for a WRITE op and notify the memory governor
@@ -65,13 +77,19 @@ export class CodegraphDaemonServer {
   private async dispatch(req: DaemonRequest): Promise<unknown> {
     // `req.op` is typed, but the wire is not: an op this build does not know
     // arrives as a plain string and must fall through to the same error the
-    // switch's `default` produced.
-    const command = DAEMON_OP_COMMANDS[req.op] as DaemonOpCommand | undefined;
+    // switch's `default` produced. `hasOwn`, so a prototype key such as
+    // `toString` is unknown too rather than a function mistaken for a command.
+    const command: DaemonOpCommand | undefined = Object.hasOwn(this.commands, req.op)
+      ? this.commands[req.op]
+      : undefined;
     if (!command) throw new Error(`unknown daemon op: ${String(req.op)}`);
 
     const p = req.params as Record<string, unknown>;
     if (command.access === "daemon") {
-      return command.run({ pool: this.pool, buildFingerprint: this.buildFingerprint }, p);
+      return command.run(
+        { pool: this.pool, buildFingerprint: this.buildFingerprint, supportedOps: this.supportedOps },
+        p,
+      );
     }
 
     const collection = p.collection as string;

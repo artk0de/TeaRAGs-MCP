@@ -37,6 +37,7 @@ import {
 } from "./lifecycle.js";
 import { DaemonMemoryGovernor, DEFAULT_MEMORY_LIMIT_BASE, DEFAULT_MEMORY_LIMIT_MAX } from "./memory-governor.js";
 import { NoopGlobalSymbolTable } from "./noop-symbol-table.js";
+import type { DaemonOpCommandTable } from "./op-commands.js";
 import { encodeFrame, type DaemonRequest } from "./protocol.js";
 import { CodegraphDaemonServer } from "./server.js";
 
@@ -75,6 +76,13 @@ export interface DaemonRuntimeOptions {
    * TEA_RAGS_CODEGRAPH_BUILD_FINGERPRINT).
    */
   buildFingerprint?: string;
+  /**
+   * Op table the daemon dispatches on — and advertises in its handshake
+   * (bd tea-rags-mcp-39xca.4). Defaults to the full `DAEMON_OP_COMMANDS`; tests
+   * inject a trimmed table to run a REAL daemon standing in for one from an
+   * older build.
+   */
+  opCommands?: DaemonOpCommandTable;
   /**
    * Process-exit hook invoked after the graceful drain completes — both by
    * the idle watcher and by a client-requested `shutdown` op. Defaults to
@@ -257,7 +265,7 @@ export async function runDaemon(
     baseLimit: options.resources?.memoryLimit ?? DEFAULT_MEMORY_LIMIT_BASE,
     maxLimit: options.resources?.memoryLimitMax ?? DEFAULT_MEMORY_LIMIT_MAX,
   });
-  const handler = new CodegraphDaemonServer(pool, options.buildFingerprint, governor);
+  const handler = new CodegraphDaemonServer(pool, options.buildFingerprint, governor, options.opCommands);
 
   // Holders so the connection handler / `shutdown` can reference values that
   // are only constructed after them (mirrors the watcherRef pattern; avoids
