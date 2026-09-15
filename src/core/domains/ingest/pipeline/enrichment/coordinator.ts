@@ -1298,6 +1298,11 @@ export class EnrichmentCoordinator {
       resolveDone = resolve;
       rejectDone = reject;
     });
+    // Handled at creation (bd tea-rags-mcp-qiu3o). A failed run is reported
+    // through its terminal markers, and `whenComplete` only ever attaches to the
+    // CURRENT run — so a run superseded by a newer `beginRun` rejected with no
+    // listener, which the CLI worker's crash guard turned into exit 1.
+    void donePromise.catch(() => undefined);
 
     return {
       runId: randomUUID().slice(0, 8),

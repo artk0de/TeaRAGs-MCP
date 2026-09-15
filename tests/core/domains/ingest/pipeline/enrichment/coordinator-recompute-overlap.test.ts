@@ -274,9 +274,6 @@ describe("EnrichmentCoordinator.recomputeEnrichments — previous run still comp
 
     coordinator.beginRun("/repo", "coll");
     const syncLeg = coordinator.awaitCompletion("coll").catch((error: unknown) => error);
-    // The failed completion also rejects run A's done-promise; observe it while
-    // A is still the current run, the way a waiting caller would.
-    void coordinator.whenComplete();
     const recompute = coordinator.recomputeEnrichments("coll", "/repo", ["codegraph"]);
     await settle();
     held.open();
