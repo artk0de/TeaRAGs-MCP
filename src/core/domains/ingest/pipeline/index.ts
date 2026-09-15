@@ -10,8 +10,10 @@ export { ChunkPipeline } from "./chunk-pipeline.js";
 export type { ChunkPipelineConfig } from "./chunk-pipeline.js";
 export { BatchAccumulator } from "./infra/batch-accumulator.js";
 // Marker liveness — read by `infra/collection-build-lease` to tell a half-built
-// collection apart from an abandoned one, so it crosses the subdomain boundary.
+// collection apart from an abandoned one, and by `infra/collection-indexing-lock`
+// to age a lock on the same cadence and threshold, so it crosses the subdomain boundary.
 export {
+  INDEXING_HEARTBEAT_INTERVAL_MS,
   indexingRunHeartbeatAt,
   isIndexingRunStale,
   parseMarkerPayload,

@@ -30,6 +30,7 @@ import { ChunkerPool } from "./chunker/infra/pool.js";
 import type { EnrichmentCoordinator } from "./enrichment/coordinator.js";
 import { reindexRunSpec, type EnrichmentRunSpec, type StreamedEnrichmentRunInput } from "./enrichment/run-spec.js";
 import { ChunkPipeline } from "./index.js";
+import { INDEXING_HEARTBEAT_INTERVAL_MS } from "./indexing-marker-codec.js";
 import { updateHeartbeat } from "./indexing-marker.js";
 import { pipelineLog } from "./infra/debug-logger.js";
 import { defaultChunkerPoolSize } from "./infra/pool-defaults.js";
@@ -67,9 +68,6 @@ const DEFAULT_TUNING: PipelineTuning = {
   chunkerPoolSize: defaultChunkerPoolSize(),
   fileConcurrency: 50,
 };
-
-/** Heartbeat interval: how often (ms) to update lastHeartbeat in the indexing marker */
-const HEARTBEAT_INTERVAL_MS = 30_000; // 30 seconds
 
 /** Optional collaborators wired by the facade — kept out of the long positional list. */
 export interface PipelineRegistryDeps {
@@ -152,7 +150,7 @@ export abstract class BaseIndexingPipeline {
     this.heartbeatTimer = setInterval(
       /* v8 ignore next -- interval callback: same as immediate call above, untestable without real timer */
       () => void updateHeartbeat(this.qdrant, collectionName),
-      HEARTBEAT_INTERVAL_MS,
+      INDEXING_HEARTBEAT_INTERVAL_MS,
     );
   }
 

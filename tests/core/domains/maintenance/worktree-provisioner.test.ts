@@ -1,14 +1,16 @@
-import { mkdtempSync, realpathSync, rmSync, symlinkSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { existsSync, mkdtempSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { hostname, tmpdir } from "node:os";
 import { join } from "node:path";
 
 import { afterEach, describe, expect, it, vi } from "vitest";
 
+import { CollectionIndexingLock } from "../../../../src/core/domains/ingest/infra/collection-indexing-lock.js";
 import {
   WorktreeCollectionExistsError,
   WorktreeNotFoundError,
   WorktreeSourceNotFoundError,
 } from "../../../../src/core/domains/maintenance/errors.js";
+import { CollectionFootprintFactory } from "../../../../src/core/domains/maintenance/footprint/factory.js";
 import { WorktreeProvisioner } from "../../../../src/core/domains/maintenance/worktree/worktree-provisioner.js";
 import { resolveCollectionName } from "../../../../src/core/infra/collection-name.js";
 
@@ -373,6 +375,82 @@ describe("WorktreeProvisioner.remove with git cleanup", () => {
     await ops.remove({ name: "feat", force: false, keepGit: false });
 
     expect(removeGitWorktree).not.toHaveBeenCalled();
+  });
+});
+
+describe("WorktreeProvisioner.remove indexing lock", () => {
+  const DEAD_PID = 4242;
+  const LIVE_PID = 5151;
+  let dir: string;
+
+  afterEach(() => {
+    rmSync(dir, { recursive: true, force: true });
+  });
+
+  /** The real artifact saga over fakes, except the indexing lock: a real file under real rules. */
+  function footprintWithRealLock(snapshotBaseDir: string) {
+    const qdrant = {
+      aliases: { deleteAlias: vi.fn(async () => undefined) },
+      deleteCollection: vi.fn(async () => undefined),
+    };
+    const footprintFactory = new CollectionFootprintFactory({
+      qdrant: qdrant as never,
+      pool: {
+        cloneDatabase: vi.fn(async () => undefined),
+        removeCollection: vi.fn(async () => true),
+        listCollectionDbNames: vi.fn(() => []),
+      },
+      statsCache: { clone: vi.fn(), invalidate: vi.fn() } as never,
+      snapshotBaseDir,
+      snapshotStoreFactory: () => ({ cloneTo: vi.fn(async () => undefined), delete: vi.fn(async () => undefined) }),
+      quarantineStoreFactory: () => ({
+        cloneTo: vi.fn(async () => undefined),
+        clearAll: vi.fn(async () => undefined),
+      }),
+      indexingLockStoreFactory: (baseDir, logicalName) => ({
+        removeIfStale: async () =>
+          new CollectionIndexingLock({ lockDir: baseDir, isProcessAlive: (pid) => pid !== DEAD_PID }).removeIfStale(
+            logicalName,
+          ),
+      }),
+    });
+    return { footprintFactory, qdrant };
+  }
+
+  it.each([
+    ["removes the lock a dead run left", DEAD_PID, false],
+    ["leaves a live run's lock in place", LIVE_PID, true],
+  ])("tears the clone down and %s", async (_label, pid, lockSurvives) => {
+    dir = mkdtempSync(join(tmpdir(), "wt-lock-"));
+    const lockFile = join(dir, "code_dst.indexing.lock");
+    const now = new Date().toISOString();
+    writeFileSync(
+      lockFile,
+      JSON.stringify({ pid, hostname: hostname(), startedAt: now, heartbeatAt: now, operation: "index-codebase" }),
+    );
+    const worktreeEntry = {
+      collectionName: "code_dst",
+      worktreeOf: "code_src",
+      worktreeName: "feat",
+      path: "/wt",
+      name: "proj-worktree-feat",
+      embeddingModel: "j",
+      embeddingDimensions: 768,
+      qdrantUrl: "http://h",
+      codegraphEnabled: false,
+    };
+    const { deps } = makeDeps();
+    deps.registry.findWorktree = vi.fn(() => worktreeEntry);
+    deps.qdrant.aliases.resolveActive = vi.fn(async (name: string) => `${name}_v1`);
+    const { footprintFactory, qdrant } = footprintWithRealLock(dir);
+
+    const ops = new WorktreeProvisioner({ ...(deps as object), footprintFactory } as never);
+    const result = await ops.remove({ name: "feat", force: false, keepGit: true });
+
+    expect(result.removed).toBe(true);
+    expect(qdrant.deleteCollection).toHaveBeenCalledWith("code_dst_v1");
+    expect(deps.registry.remove).toHaveBeenCalledWith("code_dst");
+    expect(existsSync(lockFile)).toBe(lockSurvives);
   });
 });
 

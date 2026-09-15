@@ -1,4 +1,4 @@
-# domains/maintenance/footprint — the five per-collection artifacts, cloned and removed as one saga
+# domains/maintenance/footprint — the six per-collection artifacts, cloned and removed as one saga
 
 ## Invariants
 
@@ -8,11 +8,11 @@
   so every artifact states its side in `readonly addressing`
   (`ArtifactAddressing`, `artifact.ts`). Qdrant points and the codegraph DuckDB
   file are `"physical"` (the versioned `_vN`, so one exists PER GENERATION); the
-  file-hash snapshot, the stats cache and the quarantine store are `"logical"`
-  (the stable alias, one per collection, surviving a version bump). A new
-  artifact picks its side in that field, not by convention. Why: getting it
-  wrong diverges silently rather than erroring — the measured case is the
-  shadow-DuckDB defect (bd 6goqa), told in full by
+  file-hash snapshot, the stats cache, the quarantine store and the indexing
+  lock are `"logical"` (the stable alias, one per collection, surviving a
+  version bump). A new artifact picks its side in that field, not by convention.
+  Why: getting it wrong diverges silently rather than erroring — the measured
+  case is the shadow-DuckDB defect (bd 6goqa), told in full by
   `../../ingest/operations/CLAUDE.md` — and the field is what lets
   `CollectionFootprintPurger` sweep every generation without re-encoding the
   split as a list of artifact ids somewhere else.
@@ -72,6 +72,17 @@
   the artifact contract (`artifact.ts`) says an implementation MAY throw and
   SHOULD attempt every step internally; that is not the same as swallowing
   everything, and reading it that way costs the only diagnostic the purge has.
+- **`IndexingLockArtifact#remove` is the one teardown that refuses, and it
+  refuses only the lock.** It deletes `<logical>.indexing.lock` when the run
+  holding it is dead and throws `IndexingLockHeldError` when that run is live
+  (the liveness rules live in `CollectionIndexingLock`,
+  `domains/ingest/infra/collection-indexing-lock.ts`); `clone` copies nothing.
+  Neither orchestrator treats the refusal as a veto: the purge records it as a
+  failure naming the holder, the worktree teardown swallows it, and both still
+  delete every other artifact — Qdrant generations included — under the live
+  run. Why: the lock is keyed by the LOGICAL name because a force reindex moves
+  the alias mid-run, so it is swept once, not per generation; and blocking the
+  whole teardown on a live run is a separate decision that has not been made.
 
 ## See also
 

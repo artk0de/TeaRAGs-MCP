@@ -20,7 +20,11 @@ import type { PayloadSignalDescriptor, ScoreBackground } from "../../../contract
 import type { Reranker } from "../../../domains/explore/reranker.js";
 import { IndexingAlreadyInProgressError, NotIndexedError } from "../../../domains/ingest/errors.js";
 import { computeCollectionStats } from "../../../domains/ingest/infra/collection-stats.js";
-import { isCollectionIndexingInFlight } from "../../../domains/ingest/infra/index.js";
+import {
+  isCollectionIndexingInFlight,
+  type CollectionIndexingLock,
+  type HeldCollectionIndexingLock,
+} from "../../../domains/ingest/infra/index.js";
 import { resolveAliasTargetCollection } from "../../../domains/ingest/operations/index.js";
 import type { IndexPipeline } from "../../../domains/ingest/operations/indexing.js";
 import type { ReindexPipeline } from "../../../domains/ingest/operations/reindexing.js";
@@ -120,6 +124,13 @@ export interface IndexingOpsDeps {
    * (bd tea-rags-mcp-dxa9w). Defaults to the hash.
    */
   resolveCollectionForPath?: PathCollectionResolver;
+  /**
+   * The machine-wide claim on a collection (bd tea-rags-mcp-39xca.13): an
+   * exclusive lock file taken before any indexing work and checked before the
+   * Qdrant markers. `IngestFacade` always wires it over the snapshots dir; a
+   * direct construction without it keeps only the in-process and Qdrant checks.
+   */
+  indexingLock?: CollectionIndexingLock;
 }
 
 /** The one registry mutation this ops layer performs. */
@@ -169,6 +180,9 @@ export class IndexingOps {
   private readonly indexingSettledAt = new Map<string, number>();
   /** Collection holds still waiting on the enrichment their operation detached. */
   private readonly pendingCollectionReleases = new Set<Promise<void>>();
+  private readonly indexingLock?: CollectionIndexingLock;
+  /** Lock files this process's operations hold, keyed like `indexingCollections`. */
+  private readonly heldIndexingLocks = new Map<string, HeldCollectionIndexingLock>();
 
   constructor(deps: IndexingOpsDeps) {
     this.qdrant = deps.qdrant;
@@ -204,6 +218,7 @@ export class IndexingOps {
     this.collectionRegistry = deps.collectionRegistry;
     this.languageCodeVersions = deps.languageCodeVersions;
     this.driftReporter = deps.driftReporter;
+    this.indexingLock = deps.indexingLock;
   }
 
   /**
@@ -229,7 +244,7 @@ export class IndexingOps {
   ): Promise<IndexStats> {
     // Claimed before anything shared is touched: a refused call must not reset
     // the profiler or swap the progress sink out from under the running one.
-    const collectionName = await this.claimCollectionForIndexing(path);
+    const collectionName = await this.claimCollectionForIndexing(path, options);
     let heldUntilEnrichmentSettles = false;
     try {
       const stats = await this.runClaimed(path, options, progressCallback, enrichmentProgress);
@@ -239,7 +254,7 @@ export class IndexingOps {
       void release.finally(() => this.pendingCollectionReleases.delete(release));
       return stats;
     } finally {
-      if (!heldUntilEnrichmentSettles) this.releaseCollectionForIndexing(collectionName);
+      if (!heldUntilEnrichmentSettles) await this.releaseCollectionForIndexing(collectionName);
     }
   }
 
@@ -275,27 +290,47 @@ export class IndexingOps {
   }
 
   /**
-   * Take the collection for one index operation, or refuse (bd
-   * tea-rags-mcp-62pgi). The in-process check and the claim are adjacent with no
-   * await between them, so two calls racing here cannot both pass. The persisted
-   * state is read BEFORE this operation writes a marker of its own, so the
-   * operation can never mistake itself for another session.
+   * Take the collection for one index operation, or refuse (bd tea-rags-mcp-62pgi,
+   * tea-rags-mcp-39xca.13). Three checks, most local first:
+   *
+   * 1. This process — the in-process set. Check and claim are adjacent with no
+   *    await between them, so two calls racing here cannot both pass.
+   * 2. This machine — the exclusive indexing lock file, created before any
+   *    indexing work. It closes the window in which an incremental run has
+   *    published nothing to Qdrant yet (no marker until it closes, no `_run`
+   *    until enrichment begins), and it separates two facades of one server.
+   *    Keyed by the resolved LOGICAL name, like the set, never the alias target:
+   *    a first index creates the alias and a force reindex moves it to a new
+   *    `_vN` while the operation still runs, so a target-keyed lock would change
+   *    identity under a live claim.
+   * 3. Anywhere — the persisted Qdrant markers, for a Qdrant shared across
+   *    machines. Read BEFORE this operation writes a marker of its own, so the
+   *    operation can never mistake itself for another session.
+   *
+   * A refusal at 2 or 3 gives back everything already taken.
    */
-  private async claimCollectionForIndexing(path: string): Promise<string> {
+  private async claimCollectionForIndexing(path: string, options: IndexOptions | undefined): Promise<string> {
     const collectionName = await this.resolveCollectionForPath(await validatePath(path));
     if (this.indexingCollections.has(collectionName)) throw new IndexingAlreadyInProgressError(path);
     this.indexingCollections.add(collectionName);
 
-    let inFlightElsewhere = false;
     try {
-      inFlightElsewhere = await isCollectionIndexingInFlight(this.qdrant, collectionName, {
+      if (this.indexingLock) {
+        const held = await this.indexingLock.tryAcquire(collectionName, describeIndexOperation(options));
+        if (!held) throw new IndexingAlreadyInProgressError(path);
+        this.heldIndexingLocks.set(collectionName, held);
+      }
+      const inFlightElsewhere = await isCollectionIndexingInFlight(this.qdrant, collectionName, {
         ownRunsSettledAt: this.indexingSettledAt.get(collectionName),
       });
-    } finally {
-      if (inFlightElsewhere) this.indexingCollections.delete(collectionName);
+      if (inFlightElsewhere) throw new IndexingAlreadyInProgressError(path);
+      return collectionName;
+    } catch (error) {
+      const lockReleased = this.releaseIndexingLock(collectionName);
+      this.indexingCollections.delete(collectionName);
+      await lockReleased;
+      throw error;
     }
-    if (inFlightElsewhere) throw new IndexingAlreadyInProgressError(path);
-    return collectionName;
   }
 
   /**
@@ -313,13 +348,39 @@ export class IndexingOps {
       }
       await this.enrichment.whenCompletionsSettled(runCollection);
     } finally {
-      this.releaseCollectionForIndexing(collectionName);
+      await this.releaseCollectionForIndexing(collectionName);
     }
   }
 
-  private releaseCollectionForIndexing(collectionName: string): void {
+  /**
+   * Let go of the collection in the same tick the operation ended — the instant
+   * `indexingSettledAt` must record — and only then wait for the lock file to be
+   * unlinked. Releasing a lock drops this process's hold on it synchronously, so
+   * an operation this process admits next takes the file over instead of meeting
+   * its predecessor's lock.
+   */
+  private async releaseCollectionForIndexing(collectionName: string): Promise<void> {
+    const lockReleased = this.releaseIndexingLock(collectionName);
     this.indexingCollections.delete(collectionName);
     this.indexingSettledAt.set(collectionName, Date.now());
+    await lockReleased;
+  }
+
+  /**
+   * A failed release is logged, not thrown: it must not replace the operation's
+   * own result or error. The lock it leaves is no longer held by this process, so
+   * this process's next claim takes it over; another process finds it stale once
+   * this one exits, or once its stopped heartbeat ages out.
+   */
+  private async releaseIndexingLock(collectionName: string): Promise<void> {
+    const held = this.heldIndexingLocks.get(collectionName);
+    if (!held) return;
+    this.heldIndexingLocks.delete(collectionName);
+    try {
+      await held.release();
+    } catch (error) {
+      console.error(`[IndexingOps] could not release the indexing lock of ${collectionName}:`, error);
+    }
   }
 
   /**
@@ -900,6 +961,13 @@ function toIndexStats(changeStats: ChangeStats): IndexStats {
  */
 function isCodegraphSelector(selector: string): boolean {
   return selector === "all" || selector === "codegraph" || selector.startsWith("codegraph.");
+}
+
+/** What an index operation is doing, as its indexing lock tells whoever finds the collection held. */
+function describeIndexOperation(options: IndexOptions | undefined): string {
+  if (isEnrichmentRecompute(options)) return "force-enrichments";
+  if (options?.forceReindex) return "force-reindex";
+  return "index-codebase";
 }
 
 export function applyLanguageFilter(options: IndexOptions | undefined): IndexOptions | undefined {

@@ -38,6 +38,7 @@ import type { SymbolChunkResolver } from "../core/contracts/types/codegraph.js";
 import type { IndexRunDaemonGuard } from "../core/contracts/types/enrichment-executor.js";
 import type { WorkerEnrichmentDescriptor } from "../core/contracts/types/provider.js";
 import type { PayloadKeyOwner } from "../core/contracts/types/trajectory.js";
+import { CollectionIndexingLock } from "../core/domains/ingest/infra/index.js";
 import { WorkerPoolEnrichmentExecutor } from "../core/domains/ingest/pipeline/enrichment/executor/index.js";
 import { initDebugLogger, pipelineLog } from "../core/domains/ingest/pipeline/infra/debug-logger.js";
 import { buildPipelineConfig } from "../core/domains/ingest/pipeline/types.js";
@@ -988,6 +989,9 @@ export async function createAppContext(config: AppConfig, hooks?: AppContextHook
     // the footprint domain depends only on the contracts interfaces, never ingest.
     snapshotStoreFactory: (baseDir, logicalName) => new ShardedSnapshotManager(baseDir, logicalName),
     quarantineStoreFactory: (baseDir, logicalName) => new QuarantineStore(baseDir, logicalName),
+    indexingLockStoreFactory: (baseDir, logicalName) => ({
+      removeIfStale: async () => new CollectionIndexingLock({ lockDir: baseDir }).removeIfStale(logicalName),
+    }),
   });
   const worktreeProvisioner = new WorktreeProvisioner({
     registry: collectionRegistry,

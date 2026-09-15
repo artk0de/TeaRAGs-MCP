@@ -1,13 +1,16 @@
-import { existsSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { hostname, tmpdir } from "node:os";
 import { join } from "node:path";
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+import { CollectionIndexingLock } from "../../../../src/core/domains/ingest/infra/collection-indexing-lock.js";
 import { QuarantineStore } from "../../../../src/core/domains/ingest/sync/quarantine-store.js";
 import { ShardedSnapshotManager } from "../../../../src/core/domains/ingest/sync/snapshot/sharded-snapshot.js";
+import { IndexingLockHeldError } from "../../../../src/core/domains/maintenance/errors.js";
 import { CodegraphArtifact } from "../../../../src/core/domains/maintenance/footprint/codegraph-artifact.js";
 import { CollectionFootprintFactory } from "../../../../src/core/domains/maintenance/footprint/factory.js";
+import { IndexingLockArtifact } from "../../../../src/core/domains/maintenance/footprint/indexing-lock-artifact.js";
 import { QdrantArtifact } from "../../../../src/core/domains/maintenance/footprint/qdrant-artifact.js";
 import { QuarantineArtifact } from "../../../../src/core/domains/maintenance/footprint/quarantine-artifact.js";
 import { SnapshotArtifact } from "../../../../src/core/domains/maintenance/footprint/snapshot-artifact.js";
@@ -34,6 +37,9 @@ describe("CollectionFootprintFactory", () => {
     snapshotBaseDir: "/snap",
     snapshotStoreFactory: (b: string, l: string) => new ShardedSnapshotManager(b, l),
     quarantineStoreFactory: (b: string, l: string) => new QuarantineStore(b, l),
+    indexingLockStoreFactory: (b: string, l: string) => ({
+      removeIfStale: async () => new CollectionIndexingLock({ lockDir: b }).removeIfStale(l),
+    }),
   };
 
   it("builds artifacts in clone order and exposes a context", () => {
@@ -42,7 +48,14 @@ describe("CollectionFootprintFactory", () => {
       resolved(),
       resolved({ logicalName: "code_dst", physicalName: "code_dst_v1" }),
     );
-    expect(artifacts.map((a) => a.id)).toEqual(["qdrant", "codegraph", "snapshot", "stats", "quarantine"]);
+    expect(artifacts.map((a) => a.id)).toEqual([
+      "qdrant",
+      "codegraph",
+      "snapshot",
+      "stats",
+      "quarantine",
+      "indexing-lock",
+    ]);
     expect(context.target.logicalName).toBe("code_dst");
   });
 });
@@ -294,5 +307,75 @@ describe("QuarantineArtifact", () => {
     };
     await artifact.remove(ctx);
     expect(existsSync(join(dir, "code_dst.quarantine.json"))).toBe(false);
+  });
+});
+
+describe("IndexingLockArtifact", () => {
+  const DEAD_PID = 4242;
+  const LIVE_PID = 5151;
+  let dir: string;
+  beforeEach(() => {
+    dir = mkdtempSync(join(tmpdir(), "lock-art-"));
+  });
+  afterEach(() => {
+    rmSync(dir, { recursive: true, force: true });
+  });
+
+  const lockPath = (logicalName: string): string => join(dir, `${logicalName}.indexing.lock`);
+
+  function writeLock(logicalName: string, pid: number): void {
+    const now = new Date().toISOString();
+    writeFileSync(
+      lockPath(logicalName),
+      JSON.stringify({ pid, hostname: hostname(), startedAt: now, heartbeatAt: now, operation: "force-reindex" }),
+    );
+  }
+
+  function artifact(): IndexingLockArtifact {
+    return new IndexingLockArtifact(dir, (baseDir, logicalName) => ({
+      removeIfStale: async () =>
+        new CollectionIndexingLock({ lockDir: baseDir, isProcessAlive: (pid) => pid !== DEAD_PID }).removeIfStale(
+          logicalName,
+        ),
+    }));
+  }
+
+  const ctx = () => ({
+    source: resolved(),
+    target: resolved({ logicalName: "code_dst", physicalName: "code_dst_v1" }),
+  });
+
+  it("keys on the logical name — one lock per collection, whichever generation is being built", () => {
+    expect(artifact().addressing).toBe("logical");
+  });
+
+  it("clone: never copies a lock — the clone is not being indexed", async () => {
+    writeLock("code_src", LIVE_PID);
+
+    await artifact().clone(ctx());
+
+    expect(existsSync(lockPath("code_dst"))).toBe(false);
+  });
+
+  it("remove: deletes the target's lock when the run that held it is dead", async () => {
+    writeLock("code_dst", DEAD_PID);
+
+    await artifact().remove(ctx());
+
+    expect(existsSync(lockPath("code_dst"))).toBe(false);
+  });
+
+  it("remove: refuses a live run's lock, leaving it in place and naming the holder", async () => {
+    writeLock("code_dst", LIVE_PID);
+
+    const removal = artifact().remove(ctx());
+
+    await expect(removal).rejects.toBeInstanceOf(IndexingLockHeldError);
+    await expect(removal).rejects.toThrow(/pid 5151/);
+    expect((JSON.parse(readFileSync(lockPath("code_dst"), "utf8")) as { pid: number }).pid).toBe(LIVE_PID);
+  });
+
+  it("remove: is a no-op when the target has no lock", async () => {
+    await expect(artifact().remove(ctx())).resolves.toBeUndefined();
   });
 });

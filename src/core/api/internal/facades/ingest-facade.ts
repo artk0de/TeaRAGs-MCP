@@ -23,6 +23,7 @@ import type { StatsAccumulatorDescriptor } from "../../../contracts/types/stats-
 import type { PayloadSignalDescriptor } from "../../../contracts/types/trajectory.js";
 import type { Reranker } from "../../../domains/explore/reranker.js";
 import type { SynchronizerTuning } from "../../../domains/ingest/factory.js";
+import { CollectionIndexingLock } from "../../../domains/ingest/infra/index.js";
 import { IndexPipeline } from "../../../domains/ingest/operations/indexing.js";
 import { ReindexPipeline } from "../../../domains/ingest/operations/reindexing.js";
 import type { PipelineRegistryDeps, PipelineTuning } from "../../../domains/ingest/pipeline/base.js";
@@ -190,6 +191,9 @@ export class IngestFacade {
       languageCodeVersions: deps.languageCodeVersions,
       driftReporter: deps.driftReporter,
       ...(resolveCollectionForPath ? { resolveCollectionForPath } : {}),
+      // Beside the collection's other per-collection files, so every process
+      // sharing this data dir contends on the same path (bd tea-rags-mcp-39xca.13).
+      indexingLock: new CollectionIndexingLock({ lockDir: snapshotDir }),
     });
 
     // Stats refresh when chunk enrichment finishes. Awaited so the
