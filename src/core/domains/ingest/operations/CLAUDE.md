@@ -33,18 +33,25 @@
 
 ## Gotchas
 
-- **Anything opened by LITERAL name must be addressed by the alias TARGET, not
-  the alias.** Qdrant resolves aliases server-side, so Qdrant calls work either
-  way — which is exactly why the bug hid. Path- and handle-deriving consumers do
-  not: above all the codegraph DuckDB file, whose path
-  `GraphDbClientPool#pathFor` builds straight from the string it is handed
-  (`adapters/duckdb/pool.ts`). Passing the alias produced a shadow
-  `<alias>.duckdb` no reader ever opened (7 of 44 projects, incl. taxdome and
-  tea-rags itself; 6goqa). Route through `resolveAliasTargetCollection`
-  (`version-resolver.ts`, used in `ReindexPipeline#prepareReindexContext`). Its
-  sibling `findAliasTarget` returns `undefined` distinctly from "points at
-  itself" because the force path needs "no alias yet" to not collapse to the
-  base name (`IndexPipeline#setupCollection`). Why: the failure is silent and
+- **Collection identity is a TYPE, not a convention: `PhysicalCollectionName`
+  versus `CollectionAlias`** (`contracts/types/collection-identity.ts`, bd
+  tea-rags-mcp-39xca.1). Qdrant resolves aliases server-side, so Qdrant calls
+  work with either name — which is exactly why handing the alias to the
+  codegraph pool hid until it produced a shadow `<alias>.duckdb` no reader ever
+  opened (7 of 44 projects, incl. taxdome and tea-rags itself; 6goqa). Every
+  storage boundary now requires the physical brand, and only
+  `infra/collection-name.ts` mints it — `resolvePhysicalCollection` (used in
+  `ReindexPipeline#prepareReindexContext` and `IndexingOps`),
+  `versionedPhysicalCollectionName` (`claimVersionedCollection`), or a read-back
+  from storage; lint rejects the cast anywhere else, and
+  `CodegraphDbFiles#writablePathFor` is the runtime backstop. Two ingest-local
+  facts the types do not carry: `findAliasTarget` returns `undefined` distinctly
+  from "points at itself" because the force path needs "no alias yet" to not
+  collapse to the base name (`IndexPipeline#setupCollection`); and
+  `resolvePhysicalCollection(name, [])` — resolving against no aliases — is only
+  for a name already known concrete (a legacy unversioned collection being
+  migrated, a name Qdrant just deleted) or a lookup that failed, never a way
+  around a resolution that could have run. Why: the failure is silent and
   one-directional — writes land in a file nobody reads, so recall degrades with
   no error, and every incremental run re-creates the shadow.
 

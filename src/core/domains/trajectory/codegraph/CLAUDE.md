@@ -54,14 +54,19 @@
   stamps over 52k taxdome chunks (fxio5) and persisted anchor owners (71n0p). A
   producer that calls the rule without the settlement reintroduces both.
 - **The graph DB is addressed by the PHYSICAL versioned collection name, and
-  heals only per re-extracted file.** `GraphDbClientPool#pathFor`
-  (`adapters/duckdb/pool.ts`) resolves whatever string it is handed, literally,
-  so passing the alias opens a second shadow database — which artifact keys on
+  heals only per re-extracted file.** Every `GraphDbClientPool` and
+  `CodegraphDbFiles` method that derives a DuckDB path takes a
+  `PhysicalCollectionName`, so an alias there does not compile.
+  `CodegraphDbFiles#writablePathFor` is the runtime backstop for a name that
+  reached the pool by other means: it refuses to CREATE `<base>.duckdb` beside
+  `<base>_v<N>` generations (`CodegraphShadowDatabaseRefusedError`) and still
+  opens a file that exists. It cannot recognise an alias whose generations have
+  no graph file yet — only the brand catches that one. Which artifact keys on
   the alias and which on the versioned name is
-  `../../maintenance/footprint/CLAUDE.md`, the caller-side rule and the measured
-  incident are `../../ingest/operations/CLAUDE.md`. Edges are reconciled per
-  source file — `DuckDbFileGraphStore#writeFileRowsGroup` diffs each file's
-  `source_rel_path` slice of `cg_symbols_edges_file|_method`,
+  `../../maintenance/footprint/CLAUDE.md`; where the brand is minted and the
+  measured incident are `../../ingest/operations/CLAUDE.md`. Edges are
+  reconciled per source file — `DuckDbFileGraphStore#writeFileRowsGroup` diffs
+  each file's `source_rel_path` slice of `cg_symbols_edges_file|_method`,
   `cg_symbols_inheritance` and `cg_ambiguous_fanout` (plus its `rel_path` slice
   of `cg_pass1_aggregates`) against the rows the walk produced, so only
   genuinely obsolete rows are deleted; derived tables (cycles, metrics) are
