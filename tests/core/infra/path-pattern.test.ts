@@ -32,6 +32,20 @@ describe("compilePathPatternMatcher (bd tea-rags-mcp-xf01b)", () => {
     expect(matches("src/c/z.ts")).toBe(false);
   });
 
+  // The Qdrant pre-filter lowering expands `{x}` to its one alternative; picomatch
+  // alone reads it as the literal text "{x}". A brace list built over a set of
+  // edited files degenerates to `{file}` when the set has one member.
+  it("reads a single-alternative brace group as its content, as the pre-filter does", () => {
+    expect(matcherFor("{src/a.ts}")("src/a.ts")).toBe(true);
+    expect(matcherFor("**/{services}/**")("app/services/x.rb")).toBe(true);
+    expect(matcherFor("{src/a/**,{src/b.ts}}")("src/b.ts")).toBe(true);
+    expect(matcherFor("{src/a.ts}")("src/b.ts")).toBe(false);
+  });
+
+  it("keeps brace ranges intact", () => {
+    expect(matcherFor("src/v{1..3}.ts")("src/v2.ts")).toBe(true);
+  });
+
   it("negates the whole pattern on a leading !", () => {
     const matches = matcherFor("!**/tests/**");
     expect(matches("src/a.ts")).toBe(true);
