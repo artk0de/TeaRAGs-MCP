@@ -1,6 +1,6 @@
 # Search Cascade Benchmark
 
-Last updated: 2026-05-16 (post-split routing regression) Original: 2026-03-29
+Last updated: 2026-09-15 (outline / TOC drill-down) Original: 2026-03-29
 
 ## Summary
 
@@ -656,7 +656,7 @@ Single new section `## Filters` inserted before `## Filter Level: file vs chunk`
 ## 2026-06-19 — Deferred-loading audit fixes (Opus 4.8)
 
 **Driver:** audit of tea-rags MCP surfaces against deferred-tool-loading best
-practices (Opus 4.8 loads tool *names* only; full schema fetched on demand via
+practices (Opus 4.8 loads tool _names_ only; full schema fetched on demand via
 ToolSearch). Plus a user observation: the agent "almost never uses
 `find_symbol`'s `path` param" despite it yielding a documentation TOC.
 
@@ -669,11 +669,11 @@ exact-name→ToolSearch mapping only, not a duplicate of the system reminder.
 
 ### Results (paper eval — describe first tool, no execution)
 
-| Condition  | Pass |
-| ---------- | ---- |
+| Condition  | Pass         |
+| ---------- | ------------ |
 | After-fix  | 10/10 (100%) |
 | Before-fix | 10/10 (100%) |
-| No-rule    | 7/10 (70%) |
+| No-rule    | 7/10 (70%)   |
 
 - Delta cascade-vs-nothing: **+30pp** (no-rule defaults `Read` for doc TOC
   Eval-1/9, `hybrid_search` for intent Eval-7).
@@ -681,13 +681,13 @@ exact-name→ToolSearch mapping only, not a duplicate of the system reminder.
 
 ### Changes
 
-| # | Fix | Severity |
-| - | --- | -------- |
-| 1 | "Tool Invocation Under Deferred Loading" note (`mcp__tea-rags__<name>` / `mcp__ripgrep__search`) | CRITICAL |
-| 2 | Unified "find_symbol — the navigation workhorse" section: symbol-mode table + **relativePath-mode "USE THIS MORE" for doc TOC** + graph precedence + optimal routes | MAJOR + user req |
-| 3 | Decision-tree "Yes" branch rewritten on DEFINITION/USAGES/INTENT axis; removed redundant dup-route branches | MAJOR |
-| 4 | Graph tree-branch → pointer to unified section (de-dup) | — |
-| 5 | "Portability" section (Claude-Code vs portable MCP resources) | MINOR |
+| #   | Fix                                                                                                                                                                 | Severity         |
+| --- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------- |
+| 1   | "Tool Invocation Under Deferred Loading" note (`mcp__tea-rags__<name>` / `mcp__ripgrep__search`)                                                                    | CRITICAL         |
+| 2   | Unified "find_symbol — the navigation workhorse" section: symbol-mode table + **relativePath-mode "USE THIS MORE" for doc TOC** + graph precedence + optimal routes | MAJOR + user req |
+| 3   | Decision-tree "Yes" branch rewritten on DEFINITION/USAGES/INTENT axis; removed redundant dup-route branches                                                         | MAJOR            |
+| 4   | Graph tree-branch → pointer to unified section (de-dup)                                                                                                             | —                |
+| 5   | "Portability" section (Claude-Code vs portable MCP resources)                                                                                                       | MINOR            |
 
 Companion (same branch, outside cascade): `prime/format.ts` thresholds collapsed
 to 1 line/signal (TDD red→green, 80 prime tests pass); `document.ts`
@@ -705,3 +705,78 @@ it DOES prove: **no regression** (after-fix holds 100%) + cascade standalone
 value (+30pp). Measuring the prominence effect needs a live low-attention A/B.
 
 Eval cases + per-case grades: `evals.json` (this run).
+
+## 2026-09-15 — Outline / TOC drill-down (bead tea-rags-mcp-u74dj)
+
+Field report (taxdome session): after `find_symbol` returned a class outline or
+a doc TOC, the agent did not read individual members/sections via `find_symbol`.
+It grepped a 57 KB persisted dump and fell back to `Read`. Diagnosis split the
+report into instruction defects and product defects.
+
+### Root causes
+
+| Kind        | Defect                                                                                                                                                 | Evidence                                             |
+| ----------- | ------------------------------------------------------------------------------------------------------------------------------------------------------ | ---------------------------------------------------- |
+| Instruction | Mode A table + After-Search row: class lookup returns "outline + all method bodies". Real outline = member symbolIds only                              | `CodeChunkGrouper.group` content = name + member ids |
+| Instruction | Doc chunk row: `parentSymbolId` is `doc:<hash>`. Real value = doc path                                                                                 | payload of any doc chunk                             |
+| Instruction | No rule for outline lines as addresses, none for saved tool-output dumps                                                                               | no-rule E6 greps the dump                            |
+| Product     | `resolveSymbols` rendered a TOC whenever >1 doc chunks shared a parent → multi-chunk section lookup lost its content, TOC listed only the queried hash | `doc:447d443a09c8`: 5 chunks, 5.8 KB → 2-line TOC    |
+| Product     | Class outline required a class-level chunk; member-only scroll returned bodies                                                                         | TS `StatsCache` → 6 bodies                           |
+| Product     | Class query merged all RSpec chunks with `parentSymbolId` = class; oversized split gave every example one shared symbolId                              | taxdome `worker_spec.rb`: 16 chunks, one id, ~52 KB  |
+
+### Results
+
+| Suite                   | Pass  | Pct  |
+| ----------------------- | ----- | ---- |
+| no-rule (hook-injected) | 12/14 | 86%  |
+| before-fix (HEAD)       | 12/14 | 86%  |
+| after-fix               | 14/14 | 100% |
+
+- before-fix FAIL E3, E8 — both caused by the stale "all method bodies" claim
+  (agent expected bodies inline, drilled only conditionally).
+- no-rule FAIL E6 (Grep on the saved dump — the field-report behaviour), C2
+  (ripgrep on an identifier).
+- Delta +14pp, below the +50pp target: clean prompts that hand over an outline
+  are solved without rules. The failure mode that produced the report lived in
+  product defects no instruction can route around; those were fixed in code
+  (TDD) in the same branch.
+
+### Changes (guidance)
+
+| Surface                                        | Change                                                                                                                                                                                                               |
+| ---------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `rules/search-cascade.md`                      | After-Search rows (class outline without tests, doc path, outline drill, saved dump, class tests via `hybrid_search` `testFile: "only"`); Mode A; "Outline / TOC = map" paragraph; decision tree; prohibited pattern |
+| `scripts/enforce-tearags-search.sh`            | class → outline, drill-by-id bullet, doc TOC via relativePath                                                                                                                                                        |
+| `rules/references/subagent-injection.md`       | mirror of the hook block                                                                                                                                                                                             |
+| `skills/analytics-rerank/SKILL.md`             | `doc:<hash>` = one section; parentSymbolId = doc path                                                                                                                                                                |
+| `src/mcp/tools/explore.ts` (tool schema)       | class/module → OUTLINE only, doc:<hash> → section content, lines are addresses                                                                                                                                       |
+| `src/mcp/resources/registry.ts` (search-guide) | class outline without bodies, drill recipe                                                                                                                                                                           |
+
+Measurement is paper-style; the hook appends the INSTALLED pre-fix subagent
+suffix to every eval prompt, so the after-fix subagent still saw the old "parent
+is doc:<hash>" line there and flagged the conflict. Cases + grades:
+`evals/2026-09-15-outline-drill-evals.json`.
+
+### Iteration 2 — tests out of the class outline (option a)
+
+The first cut listed a class's specs as `tests: <symbolId>` lines inside its
+outline and gave every oversized-split test example its own symbolId. Rejected
+on review: the class→spec link rests on `parentSymbolId` equalling the top-level
+`describe` constant, so string describes, nested describes and shared examples
+never appear — an incomplete list that reads as complete — and the per-example
+ids moved the chunk set (`chunking` 1 → 2 for ruby + typescript), which the
+drift monitor routes to `--force` on every Ruby/TS index.
+
+Now: a class query returns source members only, test chunks excluded; tests of a
+class go through `hybrid_search` with `testFile: "only"`. Chunker change
+reverted, no version bump, no reindex. Per-example test addressing across all
+test-chunking languages is epic `tea-rags-mcp-phftd` (one shared chunking bump).
+
+| Suite                                  | Pass | Pct  |
+| -------------------------------------- | ---- | ---- |
+| after-fix v2 (E3, E5, E6, E11, C1, C4) | 6/6  | 100% |
+
+E6 rewritten (outline carries no test lines → `hybrid_search`
+`testFile: "only"`), E11 new (subagent asks for the specs of a method). Known
+limitation: `find_symbol("<Top>.<scope>")` on an oversized split scope still
+merges every part — the epic's target.
