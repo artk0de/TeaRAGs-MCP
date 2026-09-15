@@ -36,6 +36,7 @@ import { posix } from "node:path";
 
 import type { CallContext, GlobalSymbolTable, RelPath } from "../../../../contracts/types/codegraph.js";
 import type { ImportFileMapper, ImportFileTarget } from "../../../../contracts/types/language.js";
+import { RunScopedMemo } from "../../kernel/run-scoped-memo.js";
 import { PYTHON_STDLIB_MODULES } from "../vocabulary/stdlib-modules.js";
 import { lookupPythonSymbolsByShortName } from "./strategies/shared.js";
 
@@ -53,9 +54,10 @@ const MISS: ImportPathProbe = { kind: "miss" };
 
 /**
  * The TABLE-scoped half of the memo: every answer derived from symbol-table
- * MEMBERSHIP alone. Keyed by table IDENTITY and invalidated when `size()`
- * moves, which is the same shape the TS path mapper uses for its `existsSync`
- * memo — pass 1 grows the table, pass 2 does not.
+ * MEMBERSHIP alone. Keyed by table identity beneath `ctx.runScope` and
+ * invalidated when `size()` moves — pass 1 grows the table, pass 2 does not.
+ * The scope is what retires a pooled table's answers once its content moved
+ * without its size moving (bd tea-rags-mcp-39xca.6).
  *
  * `answers` belongs here rather than in the run half (bd tea-rags-mcp-11qqk):
  * `mapImportToFile` reads `ctx` for the symbol table and for nothing else, so
@@ -89,10 +91,10 @@ interface ImportMapperTableMemo {
  * `ctx.moduleReexports`, which is a RUN-global channel and not a property of
  * the table.
  *
- * Keyed by the IDENTITY of that channel, because that identity IS the run:
- * `CodegraphRunState` reassigns `moduleReexports = {}` at every reset and
- * `CallEdgeResolutionRunner#buildResolverInputs` hands the one object to every
- * call of a run. Keying these two by the TABLE instead was the defect: the
+ * Keyed by `ctx.runScope` and, beneath it, the IDENTITY of that channel (bd
+ * tea-rags-mcp-39xca.6). The channel alone was not the run:
+ * `CodegraphRunState#absorb` replaces a re-walked file's entry on the SAME
+ * object. Keying these two by the TABLE was the original defect: the
  * provider outlives a run (`LanguageFactory` caches it) and so does the table
  * (`GraphDbClientPool` keeps one per collection), so an `__init__.py` whose
  * re-export target moved without adding or removing a symbol kept resolving
@@ -130,8 +132,8 @@ interface ImportMapperRunMemo {
 const MAX_REEXPORT_HOPS = 3;
 
 export class PythonImportFileMapper implements ImportFileMapper {
-  private readonly tableMemos = new WeakMap<GlobalSymbolTable, ImportMapperTableMemo>();
-  private readonly runMemos = new WeakMap<object, ImportMapperRunMemo>();
+  private readonly tableMemos = new RunScopedMemo<GlobalSymbolTable, ImportMapperTableMemo>();
+  private readonly runMemos = new RunScopedMemo<object, ImportMapperRunMemo>();
   /**
    * The run key for a context carrying NO re-export channel — a non-Python run
    * reaching a shared strategy, and most unit tests. Per-mapper rather than
@@ -146,7 +148,7 @@ export class PythonImportFileMapper implements ImportFileMapper {
     if (head.length === 0) return UNKNOWN;
 
     const table = ctx.symbolTable;
-    const memo = this.tableMemoFor(table);
+    const memo = this.tableMemoFor(ctx);
     const fromDir = posix.dirname(fromFile);
     const key = `${fromDir} ${head}`;
     const cached = memo.answers.get(key);
@@ -303,8 +305,9 @@ export class PythonImportFileMapper implements ImportFileMapper {
     return target.relPath;
   }
 
-  private tableMemoFor(table: GlobalSymbolTable): ImportMapperTableMemo {
-    const existing = this.tableMemos.get(table);
+  private tableMemoFor(ctx: CallContext): ImportMapperTableMemo {
+    const table = ctx.symbolTable;
+    const existing = this.tableMemos.get(ctx.runScope, table);
     const size = table.size();
     // A grown table can turn `external` into `project`; a stale memo would
     // freeze the cold-pass answer for the whole run.
@@ -317,7 +320,7 @@ export class PythonImportFileMapper implements ImportFileMapper {
       containingRoots: new Map(),
       answers: new Map(),
     };
-    this.tableMemos.set(table, fresh);
+    this.tableMemos.set(ctx.runScope, table, fresh);
     return fresh;
   }
 
@@ -329,10 +332,10 @@ export class PythonImportFileMapper implements ImportFileMapper {
     const table = ctx.symbolTable;
     const size = table.size();
     const key = ctx.moduleReexports ?? this.channellessRunKey;
-    const existing = this.runMemos.get(key);
+    const existing = this.runMemos.get(ctx.runScope, key);
     if (existing?.table === table && existing.size === size) return existing;
     const fresh: ImportMapperRunMemo = { table, size, declarers: new Map(), moduleAliases: new Map() };
-    this.runMemos.set(key, fresh);
+    this.runMemos.set(ctx.runScope, key, fresh);
     return fresh;
   }
 }

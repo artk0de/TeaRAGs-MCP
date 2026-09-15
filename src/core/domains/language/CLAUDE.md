@@ -295,12 +295,13 @@
   neither side carries is never materialised. The per-channel rulebook is a
   mapped type over `keyof FileExtraction` / `keyof ChunkExtraction`, so a new
   channel is a compile error until it gets a row. Why: precedence inversions
-  live INSIDE a monolith (`ruby/walker/type-channels.ts:44` has YARD `@return`
-  overwrite body inference; `:79` has body inference NOT overwrite the store) —
-  a pass that could overwrite would silently re-order them, an empty channel
-  reaching the NDJSON spill moves the payload the schema-drift guard compares,
-  and the identity return is what makes wiring a language through the engine a
-  relocation rather than a behaviour change.
+  live INSIDE a monolith (`attachRubyTypeChannels` in
+  `ruby/walker/type-channels.ts` has YARD `@return` overwrite body inference in
+  `functionReturnTypes`, and body inference NOT overwrite the store in
+  `structuredReturnTypes`) — a pass that could overwrite would silently re-order
+  them, an empty channel reaching the NDJSON spill moves the payload the
+  schema-drift guard compares, and the identity return is what makes wiring a
+  language through the engine a relocation rather than a behaviour change.
 
 - **Type facts: kernel store, language-owned ranks.** `kernel/type-facts.ts`
   declares `TypeFact` / `InlineTypeSource<TInput>` / `SidecarTypeSource`,
@@ -315,12 +316,13 @@
   `sources → TypeFactStore.fromFacts(facts, PYTHON_TYPE_SOURCE_ORDER) → typeFactChannels`
   inside one `ExtractionFacetPass`. Ruby does NOT use `typeFactChannels` —
   `ruby/walker/type-channels.ts` folds two more sources in around the store
-  (YARD `@return` overwrites body inference at `:44`; owner-qualified body
-  inference fills only where the store was silent at `:79`), and those
-  inversions stay inside the monolith. Why: a kernel default order would
-  silently hand one language another's precedence, and moving Ruby onto the
-  plain projection would turn "annotation wins" into "whichever the merge saw
-  first" — a behaviour change wearing a refactor's clothes.
+  (YARD `@return` overwrites body inference in `functionReturnTypes`;
+  owner-qualified body inference fills `structuredReturnTypes` only where the
+  store was silent), and those inversions stay inside the monolith. Why: a
+  kernel default order would silently hand one language another's precedence,
+  and moving Ruby onto the plain projection would turn "annotation wins" into
+  "whichever the merge saw first" — a behaviour change wearing a refactor's
+  clothes.
 
 - **Python publishes type facts on THREE channels, not the kernel's four.**
   `python/walker/passes/annotation-type-facts.ts` is the only entry in
@@ -330,19 +332,19 @@
   `PYTHON_TYPE_SOURCE_ORDER` → `pythonTypeChannels`, which wraps
   `typeFactChannels` and re-keys its output. `ivarTypes` becomes
   `classFieldTypes` keyed by class SHORT name, because that is what
-  `python-self-field.ts:34` reads and Python has no `@ivar` receiver;
-  `structuredReturnTypes` keys are re-spelled with `.` so a key IS the callee's
-  symbolId; `functionReturnTypes` is dropped entirely. A `param` / `local` /
-  `ivar` fact is emitted only when `pythonNominalReceiverName` answers — one
-  reachable arm — and only for annotation shapes `extractTypeName`
-  (`walker/walker.ts:447`) declines. Why: `LocalBinding.type` is a bare string
-  that flattens a container to its element and a union to its first member, so
-  `xs: list[Foo]` would type the LIST as a `Foo`; `mergeLocalBindings`
-  concatenates rather than dedupes, so re-emitting a shape the walker already
-  bound doubles the payload on every annotated def; and the bare-name
-  `functionReturnTypes` map is absorbed run-global with last-write-wins, where
-  at Python's annotation density one `-> Foo` would speak for every same-named
-  method in the corpus.
+  `PythonSelfFieldSymbolResolutionStrategy` reads and Python has no `@ivar`
+  receiver; `structuredReturnTypes` keys are re-spelled with `.` so a key IS the
+  callee's symbolId; `functionReturnTypes` is dropped entirely. A `param` /
+  `local` / `ivar` fact is emitted only when `pythonNominalReceiverName` answers
+  — one reachable arm — and only for annotation shapes `extractTypeName`
+  (`python/walker/walker.ts`) declines. Why: `LocalBinding.type` is a bare
+  string that flattens a container to its element and a union to its first
+  member, so `xs: list[Foo]` would type the LIST as a `Foo`;
+  `mergeLocalBindings` concatenates rather than dedupes, so re-emitting a shape
+  the walker already bound doubles the payload on every annotated def; and the
+  bare-name `functionReturnTypes` map is absorbed run-global with
+  last-write-wins, where at Python's annotation density one `-> Foo` would speak
+  for every same-named method in the corpus.
 
 ## Gotchas
 

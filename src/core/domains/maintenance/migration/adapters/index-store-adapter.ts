@@ -6,28 +6,22 @@
  */
 
 import type { QdrantManager } from "../../../../adapters/qdrant/client.js";
+import { SchemaMetadataPointStore } from "../../../../adapters/qdrant/schema-metadata-point.js";
 import type { IndexStore } from "../types.js";
 
-/** Reserved point ID for schema metadata storage. */
-const SCHEMA_METADATA_ID = "__schema_metadata__";
-
-interface SchemaMetadata {
-  _type: "schema_metadata";
-  schemaVersion: number;
-  migratedAt: string;
-  indexes: string[];
-  sparseVersion?: number;
-}
-
 export class IndexStoreAdapter implements IndexStore {
-  constructor(private readonly qdrant: QdrantManager) {}
+  private readonly metadataPoint: SchemaMetadataPointStore;
+
+  constructor(private readonly qdrant: QdrantManager) {
+    this.metadataPoint = new SchemaMetadataPointStore(qdrant);
+  }
 
   async getSchemaVersion(collection: string): Promise<number> {
     try {
-      const point = await this.qdrant.getPoint(collection, SCHEMA_METADATA_ID);
+      const metadata = await this.metadataPoint.read(collection);
 
-      if (point?.payload?._type === "schema_metadata") {
-        return (point.payload as unknown as SchemaMetadata).schemaVersion ?? 0;
+      if (metadata) {
+        return metadata.schemaVersion ?? 0;
       }
 
       // No metadata point — check if relativePath index exists (manually migrated collection)
@@ -52,66 +46,13 @@ export class IndexStoreAdapter implements IndexStore {
 
   async storeSchemaVersion(collection: string, version: number, indexes: string[]): Promise<void> {
     try {
-      const info = await this.qdrant.getCollectionInfo(collection);
-      const zeroVector = new Array<number>(info.vectorSize).fill(0);
-
-      // Merge onto what is stored — a Qdrant upsert REPLACES the point's payload,
-      // and this point is shared with two other writers: `SchemaManager` stamps
-      // `sparseVersion` onto it when the collection is created, `SparseStoreAdapter`
-      // updates that field afterwards. Writing only the schema fields dropped the
-      // sibling stamp, so the next sync read `sparseVersion: 0` and paid for a full
-      // BM25 rebuild over an index whose sparse vectors were already correct
-      // (bd tea-rags-mcp-vy26b).
-      const existing = await this.getSchemaMetadata(collection);
-      const payload: SchemaMetadata = {
-        ...existing,
-        _type: "schema_metadata",
-        schemaVersion: version,
-        migratedAt: new Date().toISOString(),
-        indexes,
-      };
-
-      if (info.hybridEnabled) {
-        await this.qdrant.addPointsWithSparse(collection, [
-          {
-            id: SCHEMA_METADATA_ID,
-            vector: zeroVector,
-            sparseVector: { indices: [], values: [] },
-            payload: payload as unknown as Record<string, unknown>,
-          },
-        ]);
-      } else {
-        await this.qdrant.addPoints(collection, [
-          {
-            id: SCHEMA_METADATA_ID,
-            vector: zeroVector,
-            payload: payload as unknown as Record<string, unknown>,
-          },
-        ]);
-      }
+      // The point is shared with the sparse pipeline's stamp; the store merges
+      // onto what is stored so this write cannot erase it (bd tea-rags-mcp-vy26b,
+      // tea-rags-mcp-906df).
+      await this.metadataPoint.setSchemaVersion(collection, version, indexes);
     } catch (error) {
       // Non-fatal: schema metadata write failure should not abort migration
       console.error("Failed to store schema metadata:", error);
-    }
-  }
-
-  /**
-   * The stored metadata point, or null when the collection has none yet.
-   *
-   * Read-before-write for {@link storeSchemaVersion}. {@link getSchemaVersion}
-   * keeps its own read because it answers a different question: it falls back to
-   * probing for the `relativePath` index and reporting version 6 when the point
-   * is missing, so it never has the payload this write has to merge onto.
-   */
-  private async getSchemaMetadata(collection: string): Promise<SchemaMetadata | null> {
-    try {
-      const point = await this.qdrant.getPoint(collection, SCHEMA_METADATA_ID);
-      if (point?.payload?._type === "schema_metadata") {
-        return point.payload as unknown as SchemaMetadata;
-      }
-      return null;
-    } catch {
-      return null;
     }
   }
 

@@ -40,6 +40,7 @@ vi.mock("../../../src/core/domains/ingest/pipeline/enrichment/coordinator.js", (
     runRecovery = vi.fn().mockResolvedValue(undefined);
     setEnrichmentProgress = vi.fn();
     whenComplete = vi.fn().mockResolvedValue(undefined);
+    whenCompletionsSettled = vi.fn().mockResolvedValue(undefined);
   },
 }));
 

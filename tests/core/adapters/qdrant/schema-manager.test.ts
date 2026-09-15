@@ -21,6 +21,9 @@ const LATEST_SCHEMA_VERSION = new SchemaMigrator(
 const mockQdrant = {
   getCollectionInfo: vi.fn(),
   createPayloadIndex: vi.fn(),
+  // The metadata stamp merges onto the stored point, so it reads first; a new
+  // collection has none.
+  getPoint: vi.fn(),
   addPoints: vi.fn(),
   addPointsWithSparse: vi.fn(),
 };

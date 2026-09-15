@@ -44,15 +44,15 @@
   Source roots and the import→file answers derived from them are keyed by
   symbol-table identity and invalidated on `size()`; the re-export halves
   (`resolveExportedName` / `resolveExportedModule`) are keyed by the IDENTITY of
-  `ctx.moduleReexports`, which is what a run is — the state reassigns the object
-  at every reset and hands the one object to every call of a run. Both provider
-  and table outlive a run, so keying the re-export answers by the table let run
-  N+1 read run N's declarers whenever `size()` had not moved: an `__init__.py`
-  whose re-export target changed without adding or removing a symbol resolved
-  through the old file forever (bd tea-rags-mcp-11qqk). The run half carries the
-  table and its size as a generation stamp, because those answers ALSO read
-  membership and a cold pass-1 refusal must not outlive the growth that turns it
-  into a hit.
+  `ctx.moduleReexports`. Both halves sit beneath `ctx.runScope`, which is what a
+  run is — neither object is (bd tea-rags-mcp-39xca.6; the lifetime rule lives
+  in `../../trajectory/codegraph/CLAUDE.md`). Both provider and table outlive a
+  run, so keying the re-export answers by the table let run N+1 read run N's
+  declarers whenever `size()` had not moved: an `__init__.py` whose re-export
+  target changed without adding or removing a symbol resolved through the old
+  file forever (bd tea-rags-mcp-11qqk). The run half carries the table and its
+  size as a generation stamp, because those answers ALSO read membership and a
+  cold pass-1 refusal must not outlive the growth that turns it into a hit.
 - **The mapper answers TWO different questions, and only the second one follows
   re-exports.** `mapImportToFile` says which file a MODULE names;
   `resolveExportedName` says which file DECLARES a name, walking the file's own
@@ -367,12 +367,13 @@
   once per run behind `PythonAncestorLinearizerCache`.
   `createPythonAncestorPolicy` resolves the spellings and `mro.ts` merges them;
   the driver is the kernel's.
-- **"Once per run" is keyed by the IDENTITY of `classAncestors`, never by the
-  symbol table** (bd tea-rags-mcp-z99hp). The cache and the pooled table both
-  outlive a run, and the kernel linearizer memoises against the ctx it captured,
-  so a table key handed run N+1 every one of run N's MROs. The table and its
-  `size()` still STAMP the entry: base spellings resolve through membership, so
-  a cold pass-1 refusal must not outlive the growth that turns it into a pin.
+- **"Once per run" is keyed by `ctx.runScope` and, beneath it, the IDENTITY of
+  `classAncestors` — never by the symbol table** (bd tea-rags-mcp-z99hp, bd
+  tea-rags-mcp-39xca.6). The cache and the pooled table both outlive a run, and
+  the kernel linearizer memoises against the ctx it captured, so a table key
+  handed run N+1 every one of run N's MROs. The table and its `size()` still
+  STAMP the entry: base spellings resolve through membership, so a cold pass-1
+  refusal must not outlive the growth that turns it into a pin.
 - **The ancestor policy asks `resolveExportedModule` for a base spelling that
   mapped NOWHERE, and only on the `unknown` branch.** `..components.datatable`
   is a package module ALIAS — `from . import _datatable as datatable` in the
@@ -611,13 +612,13 @@
 ### Mechanics
 
 - **Two coordinate conventions live side by side.** `classFieldTypes` is keyed
-  by class SHORT name with a bare member name (`walker/walker.ts:201` and the
-  pass's `pythonTypeChannels` both write that shape); `structuredReturnTypes` is
-  keyed by the callee's full symbolId for a CLASS member (`Outer.Inner#method`)
-  and by `` `${relPath}::${name}` `` for a MODULE-LEVEL def
-  (`pythonModuleReturnKey`, bd tea-rags-mcp-1v12o.1.7). The channel re-keying
-  that reconciles them with the kernel store's Ruby-shaped output is in
-  `passes/python-type-channels.ts`, and the reasoning is in
+  by class SHORT name with a bare member name (`collectPythonClassFieldTypes` in
+  `walker/walker.ts` and the pass's `pythonTypeChannels` both write that shape);
+  `structuredReturnTypes` is keyed by the callee's full symbolId for a CLASS
+  member (`Outer.Inner#method`) and by `` `${relPath}::${name}` `` for a
+  MODULE-LEVEL def (`pythonModuleReturnKey`, bd tea-rags-mcp-1v12o.1.7). The
+  channel re-keying that reconciles them with the kernel store's Ruby-shaped
+  output is in `passes/python-type-channels.ts`, and the reasoning is in
   `domains/language/CLAUDE.md` → Mechanics. The field facts are ALSO written
   under a third, file-qualified key — what that address is for is a Resolver
   bullet above, and both writers share one reader so the two cannot disagree.

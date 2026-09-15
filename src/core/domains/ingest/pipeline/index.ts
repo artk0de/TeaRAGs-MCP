@@ -11,8 +11,16 @@ export type { ChunkPipelineConfig } from "./chunk-pipeline.js";
 export { BatchAccumulator } from "./infra/batch-accumulator.js";
 // Marker liveness — read by `infra/collection-build-lease` to tell a half-built
 // collection apart from an abandoned one, so it crosses the subdomain boundary.
-export { isIndexingRunStale, parseMarkerPayload, STALE_INDEXING_THRESHOLD_MS } from "./indexing-marker-codec.js";
+export {
+  indexingRunHeartbeatAt,
+  isIndexingRunStale,
+  parseMarkerPayload,
+  STALE_INDEXING_THRESHOLD_MS,
+} from "./indexing-marker-codec.js";
 export type { IndexingMarkerPayload } from "./indexing-marker-codec.js";
+// Enrichment-run liveness — the same lease reads it to tell a collection whose
+// background enrichment is still running from one that is idle (bd 62pgi).
+export { isEnrichmentRunLive } from "./enrichment/health-mapper.js";
 export { pipelineLog } from "./infra/debug-logger.js";
 export { WorkerPool } from "./infra/worker-pool.js";
 export { PipelineManager, createQdrantPipeline } from "./pipeline-manager.js";

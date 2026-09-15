@@ -16,9 +16,7 @@
 
 import type { QdrantManager } from "../qdrant/client.js";
 import { TEXT_INDEXED_KEYS } from "./filters/text-indexed-exact.js";
-
-/** Reserved ID for storing schema metadata in the collection */
-const SCHEMA_METADATA_ID = "__schema_metadata__";
+import { SchemaMetadataPointStore } from "./schema-metadata-point.js";
 
 /**
  * Qdrant payload field-schema type accepted by `createPayloadIndex`.
@@ -108,61 +106,29 @@ export const ENRICHMENT_SCAN_INDEXES: readonly { readonly path: string; readonly
 ];
 
 /**
- * Schema metadata stored in collection
- */
-interface SchemaMetadata {
-  _type: "schema_metadata";
-  schemaVersion: number;
-  migratedAt: string;
-  indexes: string[];
-  sparseVersion?: number;
-}
-
-/**
  * SchemaManager - Handles collection schema versioning and migrations
  */
 export class SchemaManager {
+  private readonly metadataPoint: SchemaMetadataPointStore;
+
   constructor(
     private readonly qdrant: QdrantManager,
     private readonly schemaVersion: number,
     private readonly sparseVersion = 0,
-  ) {}
+  ) {
+    this.metadataPoint = new SchemaMetadataPointStore(qdrant);
+  }
 
   /**
-   * Store schema metadata in collection
+   * Stamp the creation versions onto the collection's schema metadata point.
    */
   private async storeSchemaMetadata(collectionName: string, version: number, indexes: string[]): Promise<void> {
     try {
-      // Get collection info to create appropriate zero vector
-      const info = await this.qdrant.getCollectionInfo(collectionName);
-      const zeroVector: number[] = new Array<number>(info.vectorSize).fill(0);
-
-      const payload: SchemaMetadata = {
-        _type: "schema_metadata",
+      await this.metadataPoint.setCreationVersions(collectionName, {
         schemaVersion: version,
         sparseVersion: this.sparseVersion,
-        migratedAt: new Date().toISOString(),
         indexes,
-      };
-
-      if (info.hybridEnabled) {
-        await this.qdrant.addPointsWithSparse(collectionName, [
-          {
-            id: SCHEMA_METADATA_ID,
-            vector: zeroVector,
-            sparseVector: { indices: [], values: [] },
-            payload: payload as unknown as Record<string, unknown>,
-          },
-        ]);
-      } else {
-        await this.qdrant.addPoints(collectionName, [
-          {
-            id: SCHEMA_METADATA_ID,
-            vector: zeroVector,
-            payload: payload as unknown as Record<string, unknown>,
-          },
-        ]);
-      }
+      });
     } catch (error) {
       // Non-fatal: log but don't fail
       console.error("Failed to store schema metadata:", error);

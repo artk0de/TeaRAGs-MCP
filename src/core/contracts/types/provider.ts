@@ -592,8 +592,7 @@ export interface EnrichmentProvider {
   readonly workerDescriptor?: WorkerEnrichmentDescriptor;
   /**
    * Optional release hook the worker calls when the executor signals
-   * `releaseCollection(name)` after `EnrichmentCoordinator.awaitCompletion`
-   * resolves. The provider drops per-collection in-memory state held on the
+   * `releaseRun(handle)` at the end of the latest run on the collection. The provider drops per-collection in-memory state held on the
    * cached instance (codegraph: `symbolTable` / `chunkSymbolByLine` via
    * `clearRunState`; git: no-op — no cross-call state). Failures are
    * swallowed by the worker (bounded memory wins over perfect cleanup): the

@@ -139,8 +139,14 @@ export interface IngestFacadeDeps {
 
 export class IngestFacade {
   private readonly indexingOps: IndexingOps;
-  /** Provider keys `forceEnrichments` selectors are validated against. */
-  private readonly enrichmentProviderKeys: string[];
+  /**
+   * Provider keys this slice enriches with — the list `forceEnrichments`
+   * selectors are validated against AND the frame this slice's
+   * `getIndexStatus` reports enrichment health on (bd tea-rags-mcp-x2u65). It
+   * is read, per path, by `get_index_metrics` too, so both surfaces frame on
+   * the same project slice (bd tea-rags-mcp-uebug).
+   */
+  readonly enrichmentProviderKeys: string[];
 
   constructor(deps: IngestFacadeDeps) {
     this.enrichmentProviderKeys = (deps.enrichmentProviders ?? []).map((p) => p.key);

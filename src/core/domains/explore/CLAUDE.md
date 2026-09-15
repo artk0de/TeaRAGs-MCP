@@ -3,13 +3,12 @@
 ## Invariants
 
 - **Vector strategies rerank under the literal presetSet `"semantic_search"`** —
-  `#postProcess` of `BaseExploreStrategy` (strategies/base.ts:65),
-  `SymbolSearchStrategy` (symbol.ts:160) and `FileOutlineStrategy`
-  (file-outline.ts:80), whatever tool called. A preset reaches any vector-family
-  tool iff `tools` holds `"semantic_search"`; other entries gate only MCP enums
-  and `getSchemaDescriptors`. Separate: `rank_chunks`, `trace_path`. Why:
-  `tools: ["find_similar"]` validates but misses `matchesTool` in
-  `Reranker#resolveMode` → silent `{ similarity: 1.0 }`.
+  `BaseExploreStrategy#postProcess`, `SymbolSearchStrategy#postProcess` and
+  `FileOutlineStrategy#postProcess`, whatever tool called. A preset reaches any
+  vector-family tool iff `tools` holds `"semantic_search"`; other entries gate
+  only MCP enums and `getSchemaDescriptors`. Separate: `rank_chunks`,
+  `trace_path`. Why: `tools: ["find_similar"]` validates but misses
+  `matchesTool` in `Reranker#resolveMode` → silent `{ similarity: 1.0 }`.
 - **Scores are batch-relative, never collection-relative.**
   `computeScoreRange` + `normalizeSimilarityScore` min-max over returned
   candidates; `Reranker#computeAdaptiveBounds` takes batch p95 floored with
@@ -36,11 +35,12 @@
 
 - **`"relevance"` never reaches the reranker; similarity-only weights skip the
   stats backfill.** Live comparison in `BaseExploreStrategy` only:
-  `applyDefaults` (base.ts:46) drops overfetch 4→2, `postProcess` (base.ts:64)
-  skips `Reranker#rerank`; the twin pair in `post-process.ts` is DEAD code.
-  Symbol/file-outline never guard on it — their weights hit `isSimilarityOnly`
-  (reranker.ts:170-172), returning BEFORE `ensureNeededPercentiles()`. Why:
-  editing `post-process.ts` changes nothing; similarity-only skips the backfill.
+  `BaseExploreStrategy#applyDefaults` drops overfetch 4→2,
+  `BaseExploreStrategy#postProcess` skips `Reranker#rerank`; the twin pair in
+  `post-process.ts` is DEAD code. Symbol/file-outline never guard on it — their
+  weights hit `isSimilarityOnly` (checked in `Reranker#rerank`), returning
+  BEFORE `ensureNeededPercentiles()`. Why: editing `post-process.ts` changes
+  nothing; similarity-only skips the backfill.
 - **Preset override is keyed on `(tool, name)`** —
   `rerank/presets/index.ts#resolvePresets` indexes each preset once per `tools`
   entry, composite after registry, de-duped by identity, so two objects can
@@ -65,9 +65,10 @@
 - **The explore→ingest ESLint guard does not fire on relative imports.** Its
   zone in `eslint.config.js` lists fully-qualified globs
   (`**/domains/ingest/**`, …) while relative specifiers carry no `domains/`
-  segment — live violations (reranker.ts:30, queries/index-metrics.ts:15-17)
-  with a clean lint run. Why: the linter is not the guard here, and tightening
-  to bare-segment globs (as `domains/language` does) is a failing change today.
+  segment — live violations (the `../ingest/` imports of `reranker.ts` and
+  `queries/index-metrics.ts`) with a clean lint run. Why: the linter is not the
+  guard here, and tightening to bare-segment globs (as `domains/language` does)
+  is a failing change today.
 - **rank_chunks `order_by` hard-codes a `git.` prefix.**
   `RankModule#resolvePayloadField` emits `` `git.${source}` `` for
   level-prefixed sources, so codegraph signals (`chunk.pageRank`, `file.fanIn`)
@@ -86,15 +87,15 @@
 - **Mass-signal thresholds are floored per language:
   `threshold = max(percentile, floor)`, source scope only.** `moduleLines` /
   `moduleMethodCount` / `memberCount` pass through `applySignalFloors`
-  (signal-floors.ts:40-60), keyed by LABEL name from
+  (`explore/signal-floors.ts`), keyed by LABEL name from
   `domains/language/<lang>/signal-floors.ts` (TS `moduleLines` 300/600, Ruby
-  100/250) and aggregated by `LanguageFactory#signalFloors`
-  (language/factory.ts:144); a language with no module keeps pure percentiles, a
-  label whose percentile was never computed is not invented, and test scope
-  stays percentile-only (reranker.ts:648-655). Why: percentiles are relative — a
-  tidy codebase still names a p95 "god-module", a monolith's p50 sits above
-  every published limit. Tests are exempt because one floor would collapse them
-  into the top tier.
+  100/250) and aggregated by `LanguageFactory#signalFloors`; a language with no
+  module keeps pure percentiles, a label whose percentile was never computed is
+  not invented, and test scope stays percentile-only
+  (`Reranker#applyLabelResolution`). Why: percentiles are relative — a tidy
+  codebase still names a p95 "god-module", a monolith's p50 sits above every
+  published limit. Tests are exempt because one floor would collapse them into
+  the top tier.
 - **Search confidence is dense-cosine-only, by measurement.**
   `computeSearchConfidence` = 0.75 × z-score of mean result score against
   `ScoreBackground` + 0.25 × directory entropy, semantic_search only.

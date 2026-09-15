@@ -5,7 +5,11 @@ import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { AUTO_UPDATE_EXIT, runUpdater, type RunUpdaterDeps } from "../../../src/cli/auto-update/run-updater.js";
-import { CollectionRegistry, type CollectionEntry } from "../../../src/core/api/public/index.js";
+import {
+  CollectionRegistry,
+  IndexingAlreadyInProgressError,
+  type CollectionEntry,
+} from "../../../src/core/api/public/index.js";
 
 const NOW = 1_700_000_000_000;
 
@@ -147,6 +151,27 @@ describe("runUpdater", () => {
     });
     expect(await runUpdater("code_abc", d)).toBe(AUTO_UPDATE_EXIT.ok);
     expect(d.recorded()).toMatchObject({ outcome: "no-op", filesChanged: 0 });
+  });
+
+  it("lock-held, one quiet log line, when the index call is rejected as already in progress (62pgi)", async () => {
+    // The status probe above cannot see every overlap (background enrichment of
+    // an incremental run leaves no indexing marker), so the run itself refuses —
+    // and that refusal is the lock doing its job, not an updater failure.
+    const lines: string[] = [];
+    const d = deps({
+      app: {
+        indexCodebase: async () => {
+          throw new IndexingAlreadyInProgressError("/repo/a");
+        },
+      },
+    });
+    d.log = (line) => lines.push(line);
+
+    expect(await runUpdater("code_abc", d)).toBe(AUTO_UPDATE_EXIT.lockHeld);
+    expect(d.recorded()).toMatchObject({ outcome: "lock-held", filesChanged: 0 });
+    const afterStart = lines.filter((line) => !line.includes("reindexing"));
+    expect(afterStart).toHaveLength(1);
+    expect(afterStart[0]).toMatch(/already in progress — lock-held/);
   });
 
   it("failed records a trimmed error and exits 1", async () => {

@@ -131,7 +131,7 @@ export function resolveNarrowedFanout(
   }
   if (survivors.length === 1) return { kind: "edges", edges: [edgeFor(survivors[0], 1.0, edgeKind)] };
   // The policy cap is the ceiling; a language may only ask for a TIGHTER one.
-  const policyCap = dispatchFanoutPolicyFor(ctx.symbolTable).cap;
+  const policyCap = dispatchFanoutPolicyFor(ctx.symbolTable, { runScope: ctx.runScope }).cap;
   const cap = opts.cap === undefined ? policyCap : Math.min(opts.cap, policyCap);
   if (survivors.length > cap) {
     return { kind: "ambiguous", member: call.member, candidateCount: survivors.length };

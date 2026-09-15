@@ -112,9 +112,9 @@ describe("ChunkLookupEntry.symbolId producers (bd tea-rags-mcp-9i2ow)", () => {
     // deferred pass clears the map it dispatched once it settles.
     const passed: unknown[] = [];
     const start = coordinator.startChunkEnrichment.bind(coordinator);
-    vi.spyOn(coordinator, "startChunkEnrichment").mockImplementation((coll, path, map) => {
+    vi.spyOn(coordinator, "startChunkEnrichment").mockImplementation((run, map) => {
       passed.push(...structuredClone([...map.values()].flat()));
-      start(coll, path, map);
+      start(run, map);
     });
 
     await coordinator.recomputeEnrichments("coll", "/repo", ["codegraph"]);

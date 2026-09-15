@@ -36,6 +36,7 @@ function makeDeps(scroll: ReturnType<typeof vi.fn>, save: ReturnType<typeof vi.f
     enrichment: {
       setEnrichmentProgress: vi.fn(),
       whenComplete: vi.fn(),
+      whenCompletionsSettled: vi.fn().mockResolvedValue(undefined),
       runRecovery: vi.fn(),
     } as never,
     snapshotDir: "/tmp/snap",
