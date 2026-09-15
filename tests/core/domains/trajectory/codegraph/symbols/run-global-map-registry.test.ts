@@ -58,7 +58,7 @@ const EXPECTED_POLICY = {
   hierarchyView: "batchOnly",
   selfDispatchTemplates: "batchOnly",
   selfInstantiatingClassMethods: "batchOnly",
-  schemaTables: "batchOnly",
+  schemaTables: "hydrate",
   instantiatedTypes: "batchOnly",
   ivarTypes: "batchOnly",
   classFieldCallResults: "batchOnly",
@@ -88,6 +88,9 @@ const PERSISTED_KEY_ORDER = [
   "functionReturnTypes",
   "classFieldTypesByClassKey",
   "moduleReexports",
+  // Appended LAST (bd tea-rags-mcp-39xca.9): a row written before it keeps its
+  // bytes, so only rows that carry an override are rewritten.
+  "classSchemaTables",
 ];
 
 const RELPATH = "app/models/account.rb";
@@ -109,6 +112,7 @@ function everyChannelExtraction(): FileExtraction {
     functionReturnTypes: { build_account: "Account" },
     classFieldTypesByClassKey: { [`${RELPATH}::Account`]: { firm: "Firm" } },
     moduleReexports: [{ exportedName: "Account", sourceModule: ".", sourceName: "Account" }],
+    classSchemaTables: { Account: "billing_accounts" },
     // Batch-only facts: present on the extraction, absent from the slice.
     ivarTypes: { Account: { "@firm": "Firm" } },
     instantiatedTypes: ["Account"],

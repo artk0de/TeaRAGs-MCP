@@ -247,6 +247,57 @@ describe("CodegraphRunState.seal hydrates the Python run-global channels", () =>
   });
 });
 
+/**
+ * bd tea-rags-mcp-39xca.9 measured the Ruby `self.table_name` overrides on
+ * taxdome with `scripts/spikes/incremental-runglobal-delta.ts`. When the model
+ * files were not walked, 1182 of 3351 column-accessor edges disappeared, and
+ * handing the full run's overrides to the incremental run brought the loss to 0.
+ * The schema-column pre-pass reads this map at the barrier, so it has to hold
+ * the project's overrides, not only the batch's.
+ */
+describe("CodegraphRunState.seal hydrates the Ruby schema-table overrides", () => {
+  const rubyFile = (relPath: string, extra: Partial<FileExtraction> = {}): FileExtraction =>
+    walkedFile(relPath, { language: "ruby", ...extra } as Partial<FileExtraction>);
+
+  const rubySlice = (relPath: string, classSchemaTables: Record<string, string>): CodegraphPass1FileAggregates => ({
+    relPath,
+    language: "ruby",
+    classSchemaTables,
+  });
+
+  it("absorbs an override declared only in a file this run did not walk", async () => {
+    const runState = new CodegraphRunState();
+    runState.absorb(rubyFile("app/services/report.rb"), []);
+
+    await runState.seal(noopTable, async () => [
+      rubySlice("app/models/tax_preparation/juno/client.rb", { "TaxPreparation::Juno::Client": "juno_clients" }),
+    ]);
+
+    expect(runState.schemaTables).toEqual({ "TaxPreparation::Juno::Client": "juno_clients" });
+  });
+
+  it("never lets a hydrated override displace the one this run walked", async () => {
+    const runState = new CodegraphRunState();
+    runState.absorb(
+      rubyFile("app/models/firm.rb", { classSchemaTables: { Firm: "companies" } } as Partial<FileExtraction>),
+      [],
+    );
+
+    await runState.seal(noopTable, async () => [rubySlice("app/models/legacy.rb", { Firm: "firms" })]);
+
+    expect(runState.schemaTables).toEqual({ Firm: "companies" });
+  });
+
+  it("skips the row of a re-walked file, so a removed override stays gone", async () => {
+    const runState = new CodegraphRunState();
+    runState.absorb(rubyFile("app/models/firm.rb"), []);
+
+    await runState.seal(noopTable, async () => [rubySlice("app/models/firm.rb", { Firm: "companies" })]);
+
+    expect(runState.schemaTables).toEqual({});
+  });
+});
+
 describe("CodegraphRunState.absorb collects the Python run-global channels", () => {
   it("unions class-key-addressed field types across files without conflating same-named classes", () => {
     const runState = new CodegraphRunState();

@@ -184,4 +184,22 @@ export interface CodegraphPass1FileAggregates {
    */
   classFieldTypesByClassKey?: Record<string, Record<string, string>>;
   moduleReexports?: readonly ModuleReexport[];
+  /**
+   * Ruby `self.table_name` overrides, `class FQ → table` (bd tea-rags-mcp-39xca.9).
+   * The schema-column pre-pass reads them at the barrier to map `db/schema.rb`
+   * tables onto models.
+   *
+   * Measured offline on taxdome with `scripts/spikes/incremental-runglobal-delta.ts`
+   * (9372 files, 342 override classes). With every file walked except the 342
+   * that declare an override, the incremental run lost 1182 of 3351
+   * column-accessor edges across 71 models, and 796 of those calls went to a
+   * different target. `--ablate schema` brought the loss to 0. Most of the loss
+   * is not on the override models themselves: once `TaxPreparation::Juno::Client`
+   * loses its override it joins `Client`'s inflection bucket, the `clients`
+   * table becomes ambiguous, and `Client` loses 562 edges.
+   *
+   * Cost: 342 entries, each riding on a row the model's `classAncestors` already
+   * earns. Persisted LAST, so rows without an override keep their bytes.
+   */
+  classSchemaTables?: Record<string, string>;
 }

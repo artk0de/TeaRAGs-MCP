@@ -130,6 +130,33 @@ describe("synthesizeSchemaColumnDefs (bd tea-rags-mcp-8l5fo)", () => {
     expect(stats.ambiguous).toBe(1);
   });
 
+  // bd tea-rags-mcp-39xca.9: `schemaTables` now hydrates, so the model order the
+  // barrier hands in is walked files first, then persisted slices. An owner that
+  // depended on that order would differ between a full run and an incremental
+  // one over the same tree.
+  it("gives a table two models declare the same answer in either model order", () => {
+    const firm = model("Firm", "app/models/firm.rb", ["Firm"], "firms");
+    const legacyFirm = model("Legacy::Firm", "app/models/legacy/firm.rb", ["Legacy", "Firm"], "firms");
+    const forward = synthesizeSchemaColumnDefs([firmsTable], [firm, legacyFirm], modelNameForTable);
+    const reverse = synthesizeSchemaColumnDefs([firmsTable], [legacyFirm, firm], modelNameForTable);
+    expect(forward.definitions).toEqual(reverse.definitions);
+    expect(forward.returnTypes).toEqual(reverse.returnTypes);
+  });
+
+  it("stays silent on a table two models declare, instead of picking one", () => {
+    const { definitions, stats } = synthesizeSchemaColumnDefs(
+      [firmsTable],
+      [
+        model("Firm", "app/models/firm.rb", ["Firm"], "firms"),
+        model("Legacy::Firm", "app/models/legacy/firm.rb", ["Legacy", "Firm"], "firms"),
+      ],
+      modelNameForTable,
+    );
+    expect(definitions).toEqual([]);
+    expect(stats.mappedExplicit).toBe(0);
+    expect(stats.ambiguous).toBe(1);
+  });
+
   it("stays silent for a table no model claims", () => {
     const { definitions, stats } = synthesizeSchemaColumnDefs(
       [{ table: "ar_internal_metadata", accessors: ["key"] }],

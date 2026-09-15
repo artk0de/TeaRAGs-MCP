@@ -27,7 +27,11 @@ export const capability: LanguageCapability = {
   // recompute. The kernel relocations in 63832af60..main stayed byte-identical on Ruby — both the
   // walker's extraction and the resolver's targets, measured cross-checkout against 63832af60
   // (bd tea-rags-mcp-e8wbs; the numbers live in that commit body, not here).
-  versions: { chunking: 1, walker: 2, codegraphSchema: 2 },
+  // walker 3 (bd tea-rags-mcp-39xca.9): `self.table_name` overrides are now persisted in each
+  // file's pass-1 slice and hydrated at the barrier. Rows written earlier do not carry them,
+  // and only a re-walk can backfill them, so the recompute is what makes incremental runs see
+  // the overrides.
+  versions: { chunking: 1, walker: 3, codegraphSchema: 2 },
   notes:
     "Codegraph trust is corpus-dependent: high untyped, maximum YARD-annotated; un-annotated Rails drops (a prime number, not a language property).",
 };
