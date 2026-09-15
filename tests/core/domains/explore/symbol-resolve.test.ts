@@ -1,6 +1,15 @@
 import { describe, expect, it } from "vitest";
 
 import { resolveSymbols } from "../../../../src/core/domains/explore/symbol-resolve.js";
+import {
+  INDEX_FRESHNESS_PATH,
+  INDEX_FRESHNESS_TOC,
+  indexFreshnessChunks,
+  SEARCH_CASCADE_PATH,
+  SEARCH_CASCADE_TOC,
+  searchCascadeChunks,
+  tocDocIds,
+} from "./__fixtures__/doc-toc-chunks.js";
 
 describe("resolveSymbols", () => {
   describe("function merge strategy", () => {
@@ -1316,6 +1325,25 @@ describe("resolveSymbols", () => {
       const byPath = new Map(results.map((r) => [r.payload?.relativePath, r.payload?.symbolId]));
       expect(byPath.get(workerSpec)).toBe(describeWorker);
       expect(byPath.get(otherSpec)).toBe(`${workerFqn}.RSpec.describe ${workerFqn}, "retries"`);
+    });
+  });
+
+  // tea-rags-mcp-mypsl: a document-path query renders the same TOC as the
+  // relativePath mode, so an ancestor heading must not borrow a section id.
+  describe("doc TOC ids name each heading's own section (tea-rags-mcp-mypsl)", () => {
+    it("renders an ancestor-only heading without its first descendant's id for a document-path query", () => {
+      const results = resolveSymbols(searchCascadeChunks(), SEARCH_CASCADE_PATH);
+
+      expect(results).toHaveLength(1);
+      expect(results[0].payload?.content).toBe(SEARCH_CASCADE_TOC);
+      const ids = tocDocIds(results[0].payload?.content as string);
+      expect(new Set(ids).size).toBe(ids.length);
+    });
+
+    it("keeps the id of a document H1 that owns intro text", () => {
+      const results = resolveSymbols(indexFreshnessChunks(), INDEX_FRESHNESS_PATH);
+
+      expect(results[0].payload?.content).toBe(INDEX_FRESHNESS_TOC);
     });
   });
 });

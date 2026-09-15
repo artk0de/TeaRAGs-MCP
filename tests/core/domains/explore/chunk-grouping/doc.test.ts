@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vitest";
 
+import {
+  INDEX_FRESHNESS_TOC,
+  indexFreshnessChunks,
+  searchCascadeChunks,
+  tocDocIds,
+} from "../__fixtures__/doc-toc-chunks.js";
 import { DocChunkGrouper } from "../../../../../src/core/domains/explore/chunk-grouping/doc.js";
 import type { ScrollChunk } from "../../../../../src/core/domains/explore/chunk-grouping/types.js";
 
@@ -158,8 +164,10 @@ describe("DocChunkGrouper", () => {
       const content = result.payload?.content as string;
       const lines = content.split("\n");
       expect(lines).toHaveLength(2);
-      // First chunk introduces both headings
-      expect(lines[0]).toBe("# API Reference  chunk-0");
+      // "API Reference" owns no chunk — it is only an ancestor in both
+      // headingPaths — so its TOC line carries no id (tea-rags-mcp-mypsl: it
+      // used to borrow chunk-0, listing one section under two headings).
+      expect(lines[0]).toBe("# API Reference");
       expect(lines[1]).toBe("  ## Methods  chunk-0");
     });
 
@@ -185,6 +193,60 @@ describe("DocChunkGrouper", () => {
       expect(result.payload?.headingPath).toEqual([]);
       expect(result.payload?.content).toBe("");
       expect(result.payload?.chunkCount).toBe(1);
+    });
+  });
+
+  // tea-rags-mcp-mypsl: `# Search Cascade` owns no chunk, and the TOC used to
+  // hand it the id of its first descendant, so two lines named one section and
+  // drilling the H1 returned `## Principles`.
+  describe("group — a TOC id names the heading's own section (tea-rags-mcp-mypsl)", () => {
+    it("lists a heading that is only an ancestor of other sections, without an id", () => {
+      const toc = DocChunkGrouper.group(searchCascadeChunks()).payload?.content as string;
+
+      expect(toc.split("\n")).toEqual([
+        "# Search Cascade",
+        "  ## Principles  doc:1e20e341ac6b",
+        "  ## Tool Invocation Under Deferred Loading  doc:695db51d8cf6",
+        "  ## After-Search Navigation (READ BEFORE FINISHING ANY SEARCH)  doc:447d443a09c8",
+        "    ### find_symbol — the navigation workhorse (two addressing modes)  doc:cc3d89fa37bb",
+      ]);
+    });
+
+    it("never puts one doc id on two TOC lines", () => {
+      const ids = tocDocIds(DocChunkGrouper.group(searchCascadeChunks()).payload?.content as string);
+
+      expect(ids).toHaveLength(4);
+      expect(new Set(ids).size).toBe(ids.length);
+    });
+
+    it("keeps the id of a heading that owns a chunk, whatever order the scroll returns", () => {
+      const toc = DocChunkGrouper.group([...indexFreshnessChunks()].reverse()).payload?.content as string;
+
+      expect(toc).toBe(INDEX_FRESHNESS_TOC);
+    });
+
+    it("lists the ancestors of a lone subsection without borrowing its id", () => {
+      const subsection = searchCascadeChunks().filter((c) => c.payload.symbolId === "doc:cc3d89fa37bb");
+
+      const toc = DocChunkGrouper.group(subsection).payload?.content as string;
+
+      expect(toc.split("\n")).toEqual([
+        "# Search Cascade",
+        "  ## After-Search Navigation (READ BEFORE FINISHING ANY SEARCH)",
+        "    ### find_symbol — the navigation workhorse (two addressing modes)  doc:cc3d89fa37bb",
+      ]);
+    });
+
+    it("keeps the merged heading hierarchy unchanged", () => {
+      const headingPath = DocChunkGrouper.group(searchCascadeChunks()).payload?.headingPath;
+
+      expect(headingPath).toEqual([
+        { depth: 1, text: "Search Cascade" },
+        { depth: 2, text: "Principles" },
+        { depth: 2, text: "Tool Invocation Under Deferred Loading" },
+        { depth: 2, text: "After-Search Navigation (READ BEFORE FINISHING ANY SEARCH)" },
+        { depth: 3, text: "find_symbol — the navigation workhorse (two addressing modes)" },
+      ]);
     });
   });
 });
