@@ -59,7 +59,6 @@ const EMPTY_METRICS: EnrichmentMetrics = {
   missedPathSamples: [],
 };
 
-/** No-op keep-alive guard: used when codegraph is disabled or in tests. */
 /**
  * File-phase dispatch size for a whole-index recompute. Matches the live
  * pipeline's batching intent: a repo-sized single dispatch would blow worker
@@ -70,35 +69,25 @@ const RECOMPUTE_BATCH_SIZE = 500;
 /** Runaway backstop for the recompute scroll — not a working cap. */
 const RECOMPUTE_SCROLL_HARD_CAP = 1_000_000;
 
+/** No-op keep-alive guard: used when codegraph is disabled or in tests. */
 const NOOP_RELEASE: IndexRunDaemonRelease = async () => {};
 const NOOP_DAEMON_GUARD: IndexRunDaemonGuard = { begin: async () => NOOP_RELEASE };
 
 /**
- * Delay before each successive re-read of the unenriched count, in ms. The
- * length is the number of RE-reads, so the total number of reads is
- * `length + 1` and the total sleep is the sum — 3.75s (bd tea-rags-mcp-9dg6s).
+ * Delay before each successive re-read of the unenriched count, in ms (bd
+ * tea-rags-mcp-9dg6s). Reads = `length + 1`; total sleep = the sum (3.75s).
  *
- * The wait exists because `batchSetPayload` writes with `wait: false`, so
- * Qdrant's payload-filter index lags the actual point payloads and the first
- * count after `Promise.allSettled` can report points that are already written.
- * It used to be ONE re-poll after a hardcoded 500ms, which is a guess and was
- * demonstrably short: taxdome wrote its terminal marker with
- * `unenrichedChunks: 7462` while a direct count immediately afterwards returned
- * 0, with typescript's `enrichedAt` moving 26548 → 31882 in between — 5334
- * points of real settling the marker never saw. The machine was in heavy swap
- * (18.8 GB of 19.4 GB), which is exactly when a constant fails.
+ * `batchSetPayload` writes with `wait: false`, so Qdrant's payload-filter index
+ * lags the points and a first count can include points already written. The wait
+ * is therefore a CONDITION — read until two consecutive reads agree — and this
+ * schedule only bounds it:
  *
- * So the wait is a CONDITION — read until two consecutive reads agree — and
- * this schedule only bounds it. Shape of the numbers:
- *
- * - 250ms first, because a count that is NOT moving converges on the second
- *   read. Genuine damage therefore costs one short delay, not the whole budget;
- *   only an actively-settling index spends more, which is precisely when
- *   waiting is the right thing to do.
- * - Growing delays (250 → 2000) give a swapping Qdrant progressively more room
- *   per attempt without paying that room on a host that does not need it.
- * - The sum is a hard ceiling. This runs on the completion path of EVERY ingest
- *   run and per (provider, level), so it must terminate whatever Qdrant does.
+ * - 250ms first: a count that is NOT moving converges on the second read, so
+ *   genuine damage costs one short delay, not the whole budget.
+ * - Growing delays give a swapping Qdrant more room per attempt without charging
+ *   a host that does not need it.
+ * - The sum is a hard ceiling: this runs on EVERY run's completion, per
+ *   (provider, level), and must terminate whatever Qdrant does.
  */
 export const SETTLE_POLL_DELAYS_MS: readonly number[] = [250, 500, 1000, 2000];
 
@@ -126,36 +115,26 @@ interface RunState {
   /** Epoch ms of the last heartbeat write — throttles `_run.lastProgressAt` updates. */
   lastHeartbeatAt: number;
   /**
-   * Fire-and-forget keep-alive acquired in `beginRun`. Holds the codegraph
-   * daemon alive across chunk-write + enrichment (the daemon idle-dies after
-   * 30s, but chunk-write can exceed that). `awaitCompletion` awaits this and
-   * calls the release in its finally so the daemon resumes idle shutdown.
-   * Resolves to a no-op release when codegraph is off or the keep-alive failed.
+   * Fire-and-forget keep-alive acquired in `beginRun`, holding the codegraph
+   * daemon (30s idle exit) alive across chunk-write + enrichment. Released in
+   * `awaitCompletion`'s finally; a no-op release when codegraph is off or the
+   * keep-alive failed.
    */
   daemonReleasePromise: Promise<IndexRunDaemonRelease>;
   /**
-   * yl9tv Task 5b — true on the full-index path when the chunk pass feeds each
+   * yl9tv Task 5b — true on the full-index path, where the chunk pass feeds each
    * file's codegraph `FileExtraction` into the provider input spill. Threaded
-   * into every `FileSignalOptions` via `FilePhase`, so the off-thread worker's
-   * `streamFileBatch` no-ops the re-parse and `finalizeSignals` drains the spill.
-   * `reindex_changes` always leaves it false (worker keeps `extractOneFile`).
+   * into every `FileSignalOptions` via `FilePhase`, so the worker's
+   * `streamFileBatch` skips the re-parse and `finalizeSignals` drains the spill.
+   * `reindex_changes` always leaves it false.
    */
   crossPass: boolean;
   /**
    * Languages this run was restricted to, empty when it spans the whole
-   * collection (bd tea-rags-mcp-9dg6s).
-   *
-   * A restricted run must be JUDGED on the same set it was asked to process.
-   * `recomputeEnrichments` already narrows its scroll, but the terminal
-   * unenriched count went on spanning everything, so a `--languages ruby` run
-   * that settled every Ruby point still reported `degraded` — on chunks it had
-   * been told to skip. It recurs on every narrowed run, because the
-   * working-tree sync that precedes the recompute is NOT language-restricted
-   * and keeps minting fresh unsettled points in the other languages.
-   *
-   * Per-run, not per-coordinator, for the same reason everything else here is:
-   * a stale closure from a previous run must not be able to widen or narrow
-   * the count this run is judged by.
+   * collection (bd tea-rags-mcp-9dg6s). A restricted run is JUDGED on the same
+   * set it processed: the terminal unenriched count must not include languages it
+   * was told to skip, which the unrestricted working-tree sync keeps re-dirtying.
+   * Per-run, so a stale closure cannot widen or narrow the count.
    */
   languages: readonly string[];
   /**
@@ -178,19 +157,15 @@ interface RunState {
    * CLI progress bookkeeping, per run so a late batch or extraction of a
    * replaced run cannot move the current run's bars (bd tea-rags-mcp-39xca.3).
    *
-   * `grandFileCount` is the file-level denominator — the spec's `fileCount`,
-   * known up front from the scan. `chunkTotalAccumulated` sums stored chunks
-   * across batches, the chunk-level fallback denominator. `chunkTotal` is the
-   * embedding chunk total (`chunksQueued`) pushed through `setChunkTotal` — the
-   * SAME denominator the embeddings bar uses, so git chunk tracks embeddings
-   * instead of its own lagging stored count (which produced the misleading
-   * 1005/1024 = 98% bar); 0 until the first push. `deferredStartEmitted` guards
-   * the one-time indeterminate start bars for deferred providers, which build
-   * their graph during embedding but apply only after finalize.
-   * `codegraphSymbolsApplied` counts accepted cross-pass `FileExtraction`s —
-   * the numerator of the synthetic `codegraph.symbols:symbols` event (yl9tv
-   * Task 3). `progress` is the last emitted applied value per
-   * `${providerKey}:${level}`; the applier already emits cumulative values.
+   * `grandFileCount` is the file-level denominator (the spec's `fileCount`).
+   * `chunkTotalAccumulated` sums stored chunks, the chunk-level fallback
+   * denominator. `chunkTotal` is the embedding chunk total pushed through
+   * `setChunkTotal` — the SAME denominator the embeddings bar uses, so git chunk
+   * tracks embeddings instead of its own lagging stored count; 0 until the first
+   * push. `deferredStartEmitted` guards the one-time indeterminate start bars of
+   * deferred providers. `codegraphSymbolsApplied` counts accepted cross-pass
+   * `FileExtraction`s (yl9tv Task 3). `progress` is the last emitted applied
+   * value per `${providerKey}:${level}`; the applier already emits cumulative values.
    */
   grandFileCount: number;
   chunkTotalAccumulated: number;
@@ -222,9 +197,8 @@ export class EnrichmentCoordinator {
   private readonly providers: EnrichmentProvider[];
   /**
    * Dispatch seam between the enrichment phases and provider execution.
-   * Default: `InlineEnrichmentExecutor` (today's main-thread behavior). A
-   * worker-pool executor can be injected (Phase 2 of the worker-pool spec)
-   * without any other coordinator/phase changes.
+   * Default: `InlineEnrichmentExecutor` (main-thread); a worker-pool executor is
+   * injected without any other coordinator/phase change.
    */
   private readonly executor: EnrichmentExecutor;
 
@@ -237,62 +211,27 @@ export class EnrichmentCoordinator {
 
   /**
    * Per-file SHA256 for the current run, reused by the normal file phase (bd
-   * tea-rags-mcp-6goqa). Every path that writes provider rows must stamp the
-   * hash, otherwise the path that does not keeps resetting rows to NULL and the
-   * repair set never converges.
-   *
-   * Two suppliers, because the two ingest paths learn the hashes differently:
-   * `runRepairPass` projects them off the incremental scan it just diffed, and
+   * tea-rags-mcp-6goqa). Every path that writes provider rows must stamp it, or
+   * that path keeps resetting rows to NULL and the repair set never converges.
+   * Two suppliers: `runRepairPass` projects them off its incremental scan, and
    * `beginRun` takes them from the caller on the streaming path (first index /
-   * `--force`), which has no scan of its own. The streaming path went unstamped
-   * until bd tea-rags-mcp-o317j — it wrote NULL for the whole corpus, so the
-   * next run repaired every file.
+   * `--force`), which has no scan of its own (bd tea-rags-mcp-o317j).
    */
   private runContentHashes?: ReadonlyMap<string, string>;
 
   /**
-   * Diagnostic-only: treat every eligible file as drifted in the repair pass,
-   * so a run resolves the whole corpus instead of the handful that changed.
-   * Read ONCE per coordinator, `CODEGRAPH_FORCE_RESOLVE=1|true`, off otherwise —
-   * same parse and same read-once discipline as `CODEGRAPH_BULK_FILES`
-   * (`trajectory/codegraph/symbols/graph-finalizer.ts`) and the pool tunables in
-   * `../infra/pool-defaults.ts`.
-   *
-   * Why it lives here and not in the codegraph provider: pass-2 resolves every
-   * line of the spill unconditionally, so the only lever on WHAT gets resolved
-   * is which files reach pass-1 — and for an already-current graph that is
-   * decided by `computeExtractionRepair` below, nowhere else. The name is
-   * codegraph-scoped because codegraph is the only provider that implements
-   * `readPersistedFileHashes`; a second one would make it a misnomer.
-   *
-   * Costs a full re-resolve of the project — 35 minutes on the corpus that
-   * motivated it — which is exactly the workload
-   * `ENRICHMENT_WORKER_CPU_PROFILE_DIR` needs to sample and could not otherwise
-   * reach on demand (bd tea-rags-mcp-bij2m). It rewrites no state a normal
-   * resolve of those files would not rewrite: the same paths go through the same
-   * `runFileBatch` seam with the same run hashes, so each row is re-stamped
-   * with its CURRENT hash and the next ordinary run sees a converged store.
+   * Diagnostic-only `CODEGRAPH_FORCE_RESOLVE=1|true`: treat every eligible file
+   * as drifted in the repair pass, so a run resolves the whole corpus (read once
+   * per coordinator). It lives here because pass-2 resolves every spilled line,
+   * so which files reach pass-1 — decided by `computeExtractionRepair` — is the
+   * only lever on WHAT resolves. It exists so `ENRICHMENT_WORKER_CPU_PROFILE_DIR`
+   * can sample a full resolve on demand (bd tea-rags-mcp-bij2m), and rewrites
+   * nothing a normal resolve of those files would not: same `runFileBatch` seam,
+   * same run hashes, so the next ordinary run sees a converged store.
    */
   private readonly forceResolveAll =
     process.env.CODEGRAPH_FORCE_RESOLVE === "1" || process.env.CODEGRAPH_FORCE_RESOLVE === "true";
 
-  /**
-   * Optional callback fired after enrichment milestones. Invoked at most twice
-   * per run:
-   * 1. After ChunkPhase streaming + initial chunk enrichment settles.
-   * 2. After CompletionRunner finishes file backfill + chunk backfill (only
-   *    when backfill produced overlays).
-   *
-   * Both fires receive the collectionName. Errors in the callback are caught
-   * and logged — they do not affect enrichment. Listeners must be idempotent
-   * (e.g. IngestFacade.refreshStatsByCollection overwrites stats cache, so a
-   * second call simply supersedes the first).
-   *
-   * Bound to the current RunState's chunkPhase on assignment; subsequent
-   * prefetch() calls re-bind to the new run's chunkPhase. The 896f343c
-   * contract is preserved: the first fire still awaits streaming work inside
-   * ChunkPhase before invoking the callback.
-   */
   /**
    * Per-run enrichment progress sink (CLI only). When set, every apply batch
    * (via `applier.onApply`) accumulates a cumulative per-(provider, level)
@@ -301,6 +240,14 @@ export class EnrichmentCoordinator {
    */
   private progressCb?: EnrichmentProgressCallback;
 
+  /**
+   * Optional callback fired after enrichment milestones, at most twice per run:
+   * after ChunkPhase streaming + initial chunk enrichment settles, and after
+   * CompletionRunner's backfill when it produced overlays. Receives the
+   * collectionName; errors are caught and logged, and listeners must be
+   * idempotent. Bound to the current run's chunkPhase on assignment and re-bound
+   * by every `beginRun`; the first fire still awaits ChunkPhase's streaming work.
+   */
   private _onChunkEnrichmentComplete?: (collectionName: string) => Promise<void>;
   get onChunkEnrichmentComplete(): ((collectionName: string) => Promise<void>) | undefined {
     return this._onChunkEnrichmentComplete;
@@ -348,74 +295,35 @@ export class EnrichmentCoordinator {
   }
 
   /**
-   * Notify all providers that a set of files has been removed from the
-   * project. Fans out to every provider implementing `handleDeletedPaths`;
-   * providers without the hook are silently skipped. Errors from one
-   * provider don't block others — failures are caught + logged so that
-   * a single provider's cleanup glitch doesn't strand the rest of the
-   * delete pipeline.
-   *
-   * Called by the sync layer BEFORE qdrant.deletePoints so provider-owned
-   * state (codegraph edges, symbol-table entries, etc.) is consistent
-   * even if Qdrant deletion itself fails. Orphan graph edges are silent
-   * corruption; orphan Qdrant points are just clutter — better the
-   * latter than the former.
-   */
-  /**
    * Bring each provider's per-file store back in line with the code before the
    * run's own enrichment starts (bd tea-rags-mcp-6goqa).
    *
-   * A store drifts whenever a run writes somewhere the readers never look, and
-   * a file only ever heals when it is itself re-extracted — so without this,
-   * stale rows outlive every reindex once their file stops changing. Each
-   * provider that can report what it persisted gets diffed against the run's
-   * eligible files: what drifted or went missing is re-extracted through the
-   * SAME `runFileBatch` seam the live run's own file phase uses — repair runs
-   * inside this run, not as a standalone sweep, so it shares the run's sink
-   * instead of `runFileSignalsRecovery`'s isolated whole-set path (that one is
-   * for the backfiller and recovery, which run outside any live run) — and
-   * rows for files that are no longer eligible are pruned.
+   * A file only heals when it is itself re-extracted, so stale rows outlive every
+   * reindex once their file stops changing. Each provider that can report what it
+   * persisted is diffed against the run's eligible files: drifted or missing files
+   * are re-extracted through the SAME `runFileBatch` seam the live file phase uses
+   * (inside this run, sharing its sink), and rows for no-longer-eligible files are
+   * pruned. Silent by design; one read per provider when the store already
+   * matches. Providers with no per-file store (git) are skipped, not assumed clean.
    *
-   * Silent by design: a repair shows up as extra time, nothing else. Costs one
-   * read per provider when the store already matches. Providers with no
-   * per-file store (git) are skipped rather than assumed clean.
+   * Returns how many files were re-extracted: a run with no file changes would
+   * otherwise take its early return and skip the finalize that recomputes the
+   * derived tables, so a repair-only run has to be recognised as real work.
    *
-   * Returns how many files were re-extracted across all providers. The caller
-   * needs that number: a run with no file changes would otherwise take its
-   * early return and skip the finalize that recomputes the derived tables, so a
-   * repair-only run has to be recognised as real work.
+   * A DRIFT check only — `--force-enrichments` does not widen it: that flag's
+   * forced re-extraction is `recomputeEnrichments`, the leg right after this one,
+   * and forcing here too bought a duplicate pass-1 + pass-2 (bd tea-rags-mcp-6aytq).
+   * `CODEGRAPH_FORCE_RESOLVE` still widens it from outside, for profiling.
    *
-   * The repair is a DRIFT check and nothing more — `--force-enrichments` does
-   * not widen it. That flag's forced re-extraction is owned by
-   * `recomputeEnrichments`, the leg that runs right after this one on the same
-   * invocation and re-extracts every stored file unconditionally; forcing here
-   * as well bought a second full pass-1 + pass-2 over the same corpus, whose
-   * result the recompute then rebuilt from scratch (bd tea-rags-mcp-6aytq —
-   * taxdome 2026-08-14, 113s+ of duplicate work inside a 330s budget). The
-   * `IndexingOps#recomputeEnrichments` call site carries the measurement.
-   * `CODEGRAPH_FORCE_RESOLVE` still widens the check from outside, for
-   * profiling a resolve that an already-current graph would otherwise skip.
-   *
-   * The compare is sound, and the leg is not a lesser resolve (bd
-   * tea-rags-mcp-sz1y0, spike gl96z). Both legs carry ONE hash — the
-   * synchronizer's sha256 over utf-8-decoded content
-   * (`ParallelFileSynchronizer#hashFile`): the scan hands it in as `scanned`,
-   * the write leg stamps `runState.contentHashes.get(relPath)` off that same
-   * map, so a row can only ever carry the string the scan produced and a
-   * mismatch means a changed file or no row at all, never two spellings of the
-   * same bytes. The honest repair set on a converged store is therefore 0
-   * (taxdome 482 → 0 once eligibility stopped asking for files no walker
-   * covers, bd tea-rags-mcp-65bkl, 2026-08-17; harness 0 after a first index
-   * and after `--force`), the one surviving forever-repair class being files
-   * past `MAX_EDGES_PER_FILE`, which never get a row to compare (bd
-   * tea-rags-mcp-ihq7y). Pass-2 then runs inside THIS run's finalize with the
-   * project root bound, so TypeScript Program admission is decided by the same
-   * count-based rule as a live run (`CallEdgeResolutionRunner#prepareResolvePass`
-   * → `TSProgramCache#primeForExpectedEntries`): a repair of at least
-   * `TS_PROGRAM_WHOLE_MIN_ENTRIES_DEFAULT` (200) files builds the whole Program,
-   * a smaller one per-entry Programs on demand — slower per file, not less
-   * precise. The leg is not checker-off; only `CODEGRAPH_TS_TYPECHECKER=0` or a
-   * heap-admission refusal is.
+   * The compare is sound (bd tea-rags-mcp-sz1y0): both legs carry ONE hash, the
+   * synchronizer's sha256 (`ParallelFileSynchronizer#hashFile`) — the scan hands
+   * it in as `scanned` and the write leg stamps `runState.contentHashes` off that
+   * map — so a mismatch means a changed file or no row. A converged store repairs
+   * 0 files, except files past `MAX_EDGES_PER_FILE`, which never get a row (bd
+   * tea-rags-mcp-ihq7y). Pass-2 runs inside THIS run's finalize with the root
+   * bound, so TypeScript Program admission follows the live count rule
+   * (`CallEdgeResolutionRunner#prepareResolvePass`): a repair is slower per file
+   * when small, never less precise.
    */
   async runRepairPass(
     collectionName: string,
@@ -445,9 +353,8 @@ export class EnrichmentCoordinator {
       try {
         persisted = await readPersisted.call(provider, collectionName);
       } catch (err) {
-        // A store we cannot read is not a reason to abort the run; the next one
-        // retries. Staying quiet here would hide a permanently broken provider,
-        // so it goes to the pipeline log.
+        // An unreadable store does not abort the run (the next one retries), but
+        // a permanently broken provider must not stay silent: pipeline log.
         pipelineLog.enrichmentPhase("REPAIR_READ_FAILED", {
           provider: provider.key,
           collection: collectionName,
@@ -473,26 +380,18 @@ export class EnrichmentCoordinator {
           collection: collectionName,
           repaired: repair.length,
           orphaned: orphans.length,
-          // Stamped into the log so a profile can be attributed to a forced run
-          // rather than to a coincidentally large changeset. Omitted when off,
-          // keeping the ordinary run's log line byte-identical.
+          // Attributes a profile to a forced run; omitted when off, keeping the
+          // ordinary run's log line byte-identical.
           ...(this.forceResolveAll ? { forcedResolve: true } : {}),
           // Files walked only because recovery handed their chunks to this run
           // (bd tea-rags-mcp-fxio5). Omitted when none, for the same reason.
           ...(handedOff.length > 0 ? { handedOff: handedOff.length } : {}),
         });
-        // `runFileBatch` (NOT `runFileSignalsRecovery`): repair runs INSIDE the live
-        // run this coordinator is orchestrating, same as file-phase's own
-        // streamed batches — it needs the run-shared, `runBatchChains`-
-        // serialized sink (`ensureRunSink`/`extracted`-Set) so a repaired
-        // file that ALSO reaches the run through another path is deduped,
-        // not double-resolved. `runFileSignalsRecovery` was built for backfill/
-        // recovery's deliberately isolated whole-set semantics (see
-        // enrichment-executor.ts) — those run OUTSIDE any live run and must
-        // NOT touch its shared sink; repair has no such requirement, and its
-        // return value (per-file overlays) was already discarded here, so
-        // routing through `runFileSignalsRecovery`'s standalone `buildFileSignals`
-        // paid for a whole-graph overlay read per repaired file for nothing.
+        // `runFileBatch`, NOT `runFileSignalsRecovery`: repair runs INSIDE the live
+        // run and must share its `runBatchChains`-serialized sink, so a repaired
+        // file that also reaches the run another way is deduped, not resolved
+        // twice. The recovery path is isolated by design (enrichment-executor.ts)
+        // and would pay a whole-graph overlay read per file this caller discards.
         await this.executor.runFileBatch(provider, root, repair, { collectionName, contentHashes: scanned });
         repaired += repair.length;
       }
@@ -504,19 +403,11 @@ export class EnrichmentCoordinator {
    * Drive the completion sequence for a pass that never opened a chunk pipeline
    * (bd tea-rags-mcp-gvw8h).
    *
-   * A repair does not merely write rows — it OPENS a run on every provider it
-   * touches: run-global resolution state, per-run counters, the markers that
-   * describe what the pass did. On the reindex path that ends in a chunk pass
-   * the pipeline's own finalize closes that run. A reindex that takes an early
-   * return has no chunk pass and so had no closer, which is why the repair used
-   * to be skipped there and a repository where nothing changed never healed.
-   *
-   * Closing it is the whole job here: begin a run, run the same
-   * `CompletionRunner` sequence the chunk path ends with, let it settle. Every
-   * step keyed off stored chunks — the backfill, the deferred chunk pass —
-   * reads an empty chunk map and no-ops by itself, so nothing needs a
-   * "were there chunks?" flag. The one exception is a recovery handoff: its
-   * chunks are seeded into that map, and the deferred chunk pass computes them.
+   * A repair OPENS a run on every provider it touches (run-global resolution
+   * state, counters, markers); a reindex that takes an early return has no chunk
+   * pass to close it. So: begin a run, run the same `CompletionRunner` sequence,
+   * let it settle. Steps keyed off stored chunks read an empty map and no-op —
+   * except a recovery handoff, whose chunks are seeded and computed.
    *
    * Callers gate this on the repair having found work. An untouched repository
    * must not pay for a completion pass it has no use for.
@@ -580,21 +471,15 @@ export class EnrichmentCoordinator {
 
   /**
    * The files a provider's repair may re-extract, keyed to their run hash.
+   * Narrowed per provider HERE — one pre-filtered set would make each provider's
+   * orphan list wrong for the others (codegraph declines tests, git takes them).
    *
-   * Eligibility is per provider, so it is narrowed HERE rather than by the
-   * caller: codegraph declines tests and generated files, git takes them.
-   * Handing one pre-filtered set to every provider would make each provider's
-   * orphan list wrong for the others.
-   *
-   * Two narrowings, and they answer different questions. `shouldEnrich` says
-   * whether a POINT is owed a payload block; `filterExtractablePaths` says
-   * whether the provider's STORE can ever hold a row for the file. Codegraph
-   * answers "full" for a `tsconfig.json` (it gets an all-zero codegraph block)
-   * while its walk has no parser for one — so a diff run over the payload set
-   * alone re-lists every JSON/Markdown/YAML file the index carries on every run,
-   * at `repaired=482` in perpetuity on taxdome, with no run able to settle it
-   * (bd tea-rags-mcp-65bkl). A provider that persists whatever it is asked for
-   * omits the hook and keeps the wider set.
+   * Two narrowings answering different questions: `shouldEnrich` says whether a
+   * POINT is owed a payload block; `filterExtractablePaths` says whether the
+   * provider's STORE can ever hold a row for the file. Without the second, every
+   * JSON/Markdown/YAML file codegraph answers "full" for is re-listed forever (bd
+   * tea-rags-mcp-65bkl). A provider that persists whatever it is asked for omits
+   * the hook and keeps the wider set.
    */
   private repairEligibleFiles(provider: EnrichmentProvider, scanned: ReadonlyMap<string, string>): Map<string, string> {
     const eligible = new Map<string, string>();
@@ -605,18 +490,21 @@ export class EnrichmentCoordinator {
     return eligible;
   }
 
+  /**
+   * Notify every provider implementing `handleDeletedPaths` that files were
+   * removed. One provider's failure is logged and never blocks the others.
+   * Called by the sync layer BEFORE `qdrant.deletePoints`: orphan graph edges are
+   * silent corruption, orphan Qdrant points only clutter.
+   */
   async notifyDeletions(paths: string[], collectionName?: string): Promise<void> {
     if (paths.length === 0) return;
     await Promise.all(
       this.providers.map(async (provider) => {
         if (!provider.handleDeletedPaths) return;
         try {
-          // Forward the active collection name so collection-scoped
-          // providers (codegraph) prune the right per-collection DB.
-          // Falls back to undefined when the caller (legacy test
-          // fixture, or a flow that never had a collection in hand)
-          // doesn't supply one — provider is responsible for failing
-          // loud in pool mode.
+          // Forward the collection so collection-scoped providers (codegraph)
+          // prune the right per-collection DB; without one, a pool-mode provider
+          // fails loud.
           await provider.handleDeletedPaths(paths, collectionName ? { collectionName } : undefined);
         } catch (err) {
           pipelineLog.enrichmentPhase("DELETE_HOOK_FAILED", {
@@ -640,19 +528,15 @@ export class EnrichmentCoordinator {
    */
   async runRecovery(collectionName: string, absolutePath: string): Promise<DeferredChunkRecoveryHandoff | undefined> {
     if (!this.recovery) return undefined;
-    // Recovery needs its OWN keep-alive: it runs before `beginRun`, so the
-    // run-scoped window has not opened yet, and its batches reach the codegraph
-    // daemon through a worker — which is connect-only and cannot spawn a daemon
-    // that idle-exited or died. Without this, recovery on an otherwise idle
-    // repo fails with ENOENT on the daemon socket and the provider is reported
-    // `failed` (observed on taxdome: 104 files / 686 chunks left unenriched).
+    // Recovery needs its OWN keep-alive: it runs before `beginRun`, and its
+    // batches reach the codegraph daemon through a connect-only worker that
+    // cannot spawn a daemon that idle-exited — the provider would report `failed`.
     // begin never rejects per the guard contract; the catch keeps a stray
     // rejection from going unhandled.
     const release = await this.daemonGuard.begin(collectionName).catch(() => NOOP_RELEASE);
     try {
-      // Recovery uses a transient context map seeded from providers — no
-      // persistent RunState needed (recovery completes synchronously per
-      // collection, before any prefetch).
+      // A transient context map suffices: recovery completes per collection
+      // before any run opens, so no RunState is needed.
       const contexts = new Map<string, ProviderContext>(
         this.providers.map((p) => [p.key, { key: p.key, provider: p, effectiveRoot: null, ignoreFilter: null }]),
       );
@@ -666,20 +550,12 @@ export class EnrichmentCoordinator {
   /**
    * Rebuild enrichment payload for EVERY point of the selected providers.
    *
-   * This is a full enrichment RUN, not a repair — the distinction matters.
-   * Recovery heals points that were MISSED and deliberately runs outside a run
-   * window; a recompute rebuilds payload that is present but stale, which is
-   * the same work an ordinary index run does. Driving it through recovery
-   * therefore skipped everything that hangs off the run lifecycle:
-   * `finalizeSignals` never fired, so codegraph never wrote `cg_run_stats` and
-   * its resolve breakdown could not be measured afterwards, and the RunState
-   * metrics reported zero work on a run that had rewritten the whole index.
-   *
-   * So it takes the streamed path instead, with the chunk set read back from
-   * the index rather than produced by a fresh chunking pass: begin a run over
-   * the selected providers, feed the stored chunks through the file phase in
-   * batches, run the chunk phase, then let the normal completion sequence
-   * close it.
+   * A full enrichment RUN, not a repair: recovery heals MISSED points outside any
+   * run window, while a recompute rebuilds stale payload, so it must go through
+   * the run lifecycle — otherwise `finalizeSignals` never fires (no
+   * `cg_run_stats`) and RunState metrics report zero work. It takes the streamed
+   * path with the chunk set read back from the index: begin a run, feed stored
+   * chunks through the file phase in batches, run the chunk phase, complete.
    *
    * Selectors resolve through the shared provider-selector rules, so
    * `codegraph` reaches every provider under that namespace. A selector
@@ -692,9 +568,8 @@ export class EnrichmentCoordinator {
     selectors: readonly string[],
     /**
      * Restrict the recompute to points of these languages. Omitted (or empty)
-     * means the whole index, which is what every caller did before the
-     * `--languages` flag existed. Validation against the languages actually
-     * present happens in the facade — by here the list is already known-good.
+     * means the whole index. Validation against the languages actually present
+     * happens in the facade — by here the list is already known-good.
      */
     languages?: readonly string[],
   ): Promise<EnrichmentMetrics> {
@@ -702,12 +577,11 @@ export class EnrichmentCoordinator {
     if (matched.length === 0) return EMPTY_METRICS;
 
     // Neither read the chunk set nor open this run while the previous run is
-    // still completing (bd tea-rags-mcp-71n0p / u3e77). On `--force-enrichments`
-    // that is the sync leg's run, left completing in the background. Its tail
-    // releases the collection, which on the worker pool evicts the provider
-    // state this run's deferred chunk pass reads, and writes a terminal chunk
-    // marker that would otherwise land under this run's `_run` pointer. A run
-    // whose completion never started has nothing to wait for.
+    // still completing (bd tea-rags-mcp-71n0p / u3e77) — on `--force-enrichments`,
+    // the sync leg's. Its release would evict the worker-side provider state this
+    // run's deferred chunk pass reads, and its terminal chunk marker would land
+    // under this run's `_run` pointer. A run whose completion never started has
+    // nothing to wait for.
     const previousCompletion = this.currentRun?.inFlightCompletion;
     if (previousCompletion) {
       const waitStartedAt = Date.now();
@@ -718,14 +592,10 @@ export class EnrichmentCoordinator {
       });
     }
 
-    // Re-derive the chunk set from the index itself. The points are already
-    // stored — this pass rewrites their payload, so the ids and line ranges
-    // come from Qdrant rather than from a fresh chunking pass.
-    //
-    // Timed and reported because it is a single blocking read of the WHOLE
-    // selected corpus with nothing else running: on taxdome 2026-08-14 it sat
-    // for 37s between the sync leg's last line and this run's first, and a
-    // silent phase that long reads as a hang (bd tea-rags-mcp-6aytq).
+    // Re-derive the chunk set from the index: the points are stored, this pass
+    // rewrites their payload. Timed and reported because it is one blocking read
+    // of the whole selected corpus, and a silent phase that long reads as a hang
+    // (bd tea-rags-mcp-6aytq).
     const scrollStartedAt = Date.now();
     const stored = await this.scrollStoredChunks(collectionName, absolutePath, languages);
     pipelineLog.enrichmentPhase("RECOMPUTE_SCROLL", {
@@ -830,15 +700,12 @@ export class EnrichmentCoordinator {
   }
 
   /**
-   * Begin a new enrichment run and hand back its handle. Non-blocking. Call
-   * before pipeline.start().
-   *
-   * There is no whole-repo prefetch anymore — file enrichment streams per batch
-   * via onChunksStored. beginRun only builds a fresh RunState, inits the phases,
-   * and writes the initial markStart marker. The returned handle is the run's
-   * only address: every per-run entry takes it, so a call made for this run
-   * reaches this run even after a newer `beginRun` (bd tea-rags-mcp-39xca.3).
-   * `whenComplete` alone still speaks for "the latest run".
+   * Begin a new enrichment run and hand back its handle. Non-blocking; call
+   * before pipeline.start(). Builds a fresh RunState, inits the phases and writes
+   * the `_run` pointer — there is no whole-repo prefetch, file enrichment streams
+   * per batch via onChunksStored. The handle is the run's only address: a call
+   * made for this run reaches it even after a newer `beginRun` (bd
+   * tea-rags-mcp-39xca.3); `whenComplete` alone still speaks for the latest run.
    *
    * What the run is asked to do comes from `spec`; build it with the factory
    * for the entry point that opens the run (`run-spec.ts`).
@@ -901,12 +768,10 @@ export class EnrichmentCoordinator {
       for (const provider of this.providers) provider.beginExtractionRun?.(collectionName);
     }
 
-    // The executor's own run-start seam — the dispatch layer's mirror of the
-    // provider reset above. The worker-pool executor drops the pass-1 fan-out's
-    // per-run set of already-extracted paths here, so a previous run that ended
-    // without releasing cannot make this one skip files. `fileCount` travels
-    // with it because the fan-out's WIDTH is a property of the run, not of the
-    // process: a small recompute must not inherit a whole-repo index's threads.
+    // The executor's run-start seam, mirror of the provider reset above: the
+    // worker-pool executor drops the pass-1 fan-out's per-run extracted-path set,
+    // so a previous run that never released cannot make this one skip files.
+    // `fileCount` travels with it because the fan-out WIDTH is a property of the run.
     this.executor.beginRun?.(runState.handle, fileCount);
 
     runState.filePhase.init(
@@ -962,17 +827,12 @@ export class EnrichmentCoordinator {
       run.chunkTotalAccumulated += items.length;
     }
 
-    // One-time per run: create every enrichment bar up front in a STABLE order so
-    // the list reads embeddings → streaming providers (git) → deferred providers
-    // (codegraph). Streaming bars start as real determinate 0% bars (their applies
-    // fill them); deferred bars start as indeterminate glyphs (they build their
-    // graph overlapped with embedding but only apply after finalize, so without
-    // this they pop up at 100% right before completion). Two passes guarantee
-    // streaming-before-deferred regardless of provider registration order.
-    // Only needed when a deferred provider is present — that is the case where a
-    // deferred bar would otherwise jump in at 100% out of order. With streaming
-    // providers alone there is nothing to order, so we leave their event stream
-    // untouched (no synthetic applied=0 start event).
+    // One-time per run, only when a deferred provider is present: create every
+    // enrichment bar up front in a STABLE order — streaming providers (git) as
+    // determinate 0% bars, then deferred ones (codegraph) as indeterminate
+    // glyphs, which otherwise pop in at 100% right before completion. Two passes
+    // keep streaming-before-deferred regardless of registration order; with
+    // streaming providers alone the event stream stays untouched.
     const hasDeferred = [...run.contexts.values()].some((ctx) => ctx.provider.defersChunkEnrichment);
     if (!run.deferredStartEmitted && this.progressCb && hasDeferred) {
       run.deferredStartEmitted = true;
@@ -990,20 +850,14 @@ export class EnrichmentCoordinator {
       }
     }
 
-    // Sequence file→chunk PER PROVIDER: a provider's buildChunkSignals reads the
-    // batch's file result its own streamFileBatch populated (git blame needs
-    // this), so each chunk dispatch must wait for the SAME provider's file work.
-    // It must NOT wait on other providers — gating git chunk on codegraph's
-    // (cold, serialized-DuckDB) file extraction starved git chunk (wy5i). The
-    // per-provider map keeps git.file→git.chunk and codegraph.file→codegraph.chunk
-    // fully concurrent across providers.
+    // Sequence file→chunk PER PROVIDER: a provider's chunk dispatch waits for its
+    // OWN file work (git chunk reads the batch's blame), never for another
+    // provider's — gating git chunk on codegraph's file extraction starved it (wy5i).
     //
-    // bd tea-rags-mcp-7gnre: hand the batch to the chunk dispatcher AT ARRIVAL
-    // with the provider's file work as the dispatch gate — ChunkPhase marks
-    // streaming coverage synchronously (so the post-flush snapshot excludes
-    // this batch) and defers only the walk until fileDone resolves. Deferring
-    // the whole onBatchProvider call behind fileDone left late batches
-    // unmarked at snapshot time → walked twice (mega-walk + own dispatch).
+    // bd tea-rags-mcp-7gnre: hand the batch to the chunk dispatcher AT ARRIVAL,
+    // with the file work as the dispatch gate. ChunkPhase marks streaming coverage
+    // synchronously (so the post-flush snapshot excludes this batch) and defers
+    // only the walk; deferring the whole call left late batches walked twice.
     const fileWorkByProvider = run.filePhase.onBatch(collectionName, absolutePath, items);
     for (const [providerKey, fileDone] of fileWorkByProvider) {
       run.chunkPhase.onBatchProvider(providerKey, collectionName, absolutePath, items, fileDone);
@@ -1015,20 +869,16 @@ export class EnrichmentCoordinator {
   }
 
   /**
-   * yl9tv cross-pass — called per file by the ingest chunk pass (via the
-   * file-processor's `onFileExtraction` hook) with the codegraph `FileExtraction`
-   * the chunker worker produced from its SINGLE parse. Fan it out to every
-   * provider that accepts one (only the codegraph provider does); the provider
-   * writes it to its run spill so its `streamFileBatch` skips the main-thread
-   * re-parse. Fire-and-forget: extraction writes are serialized inside the
-   * provider per collection; failures are swallowed there (best-effort spill).
+   * yl9tv cross-pass — called per file by the chunk pass (the file-processor's
+   * `onFileExtraction` hook) with the `FileExtraction` of the chunker worker's
+   * SINGLE parse. Fans it out to every accepting provider (codegraph), which
+   * spills it so its `streamFileBatch` skips the re-parse. Fire-and-forget:
+   * writes are serialized and failures swallowed inside the provider.
    *
-   * yl9tv Task 3 — after the fan-out, on a cross-pass run with a codegraph
-   * provider present (`acceptsExtractions()`), bumps `codegraphSymbolsApplied`
-   * and emits a `codegraph.symbols:symbols` progress event through the SAME
-   * `progressCb` sink the applier uses — no new transport. Always
-   * `totalFinal: false` (indeterminate): the eager node write has no fixed
-   * denominator until the cross-pass finishes.
+   * yl9tv Task 3 — on a cross-pass run with an accepting provider, also bumps
+   * `codegraphSymbolsApplied` and emits a `codegraph.symbols:symbols` event through
+   * the same `progressCb`. Always `totalFinal: false`: the eager node write has no
+   * fixed denominator until the cross-pass finishes.
    */
   onFileExtraction(handle: EnrichmentRunHandle, extraction: FileExtraction): void {
     const run = this.runStates.get(handle);
@@ -1202,15 +1052,11 @@ export class EnrichmentCoordinator {
         run.startedAt,
         run.runId,
       );
-      // Phase 2 of unified-enrichment-worker-pool plan: signal the executor
-      // to release any per-collection state it cached. For Inline executor
-      // this is a no-op (shared provider, can't safely call onRelease across
-      // concurrent runs). For WorkerPoolEnrichmentExecutor this fans out a
-      // `release` envelope per worker-descriptor provider and drops the
-      // ThreadPool affinity binding — unless a newer run on the collection has
+      // Release per-collection executor state: a no-op inline (one shared
+      // provider across concurrent runs); the worker pool fans out `release` and
+      // drops the affinity binding — unless a newer run on the collection has
       // begun, which still reads that state (bd tea-rags-mcp-39xca.3). Failures
-      // are swallowed inside the executor — release MUST NOT regress an
-      // otherwise-successful run.
+      // are swallowed inside the executor: release MUST NOT regress a good run.
       const providers = Array.from(run.contexts.values()).map((ctx) => ctx.provider);
       await this.executor.releaseRun(providers, run.handle);
       run.resolveDone(metrics);
@@ -1250,10 +1096,9 @@ export class EnrichmentCoordinator {
       resolveDone = resolve;
       rejectDone = reject;
     });
-    // Handled at creation (bd tea-rags-mcp-qiu3o). A failed run is reported
-    // through its terminal markers, and `whenComplete` only ever attaches to the
-    // CURRENT run — so a run superseded by a newer `beginRun` rejected with no
-    // listener, which the CLI worker's crash guard turned into exit 1.
+    // Handled at creation (bd tea-rags-mcp-qiu3o): a failed run reports through its
+    // terminal markers, and `whenComplete` attaches only to the CURRENT run, so a
+    // superseded run's rejection would otherwise be unhandled (CLI exit 1).
     void donePromise.catch(() => undefined);
 
     const runId = randomUUID().slice(0, 8);
@@ -1290,19 +1135,9 @@ export class EnrichmentCoordinator {
    * Count chunks the marker should call unenriched, waiting for the count to
    * SETTLE rather than for a fixed grace period (bd tea-rags-mcp-9dg6s).
    *
-   * `batchSetPayload` writes during enrichment use `wait: false`, so Qdrant's
-   * payload-filter index lags the actual point payloads and the first count
-   * after `Promise.allSettled` can report chunks that are already written. The
-   * previous fix re-polled ONCE after a hardcoded 500ms — right about the
-   * cause, wrong about the remedy: a constant cannot describe how long an
-   * arbitrary Qdrant under arbitrary memory pressure takes to catch up, and on
-   * taxdome it was short by 5334 points.
-   *
-   * So: read until two consecutive reads agree (or a read comes back 0, which
-   * is already ground truth), bounded by {@link SETTLE_POLL_DELAYS_MS} — that
-   * constant carries the delay schedule and why it is shaped the way it is. A
-   * count that is not moving therefore costs exactly one extra read, and only
-   * an actively-settling index spends the rest of the budget.
+   * Reads until two consecutive reads agree (or one reads 0, already ground
+   * truth), bounded by {@link SETTLE_POLL_DELAYS_MS}, which carries the schedule
+   * and its rationale. A count that is not moving costs one extra read.
    *
    * A read that throws degrades rather than aborts: it yields the last good
    * value, which also ends the loop (the values agree). Completion must not
