@@ -57,6 +57,7 @@
 
 import { exactMatchOnTextIndexed } from "../../../../adapters/qdrant/filters/text-indexed-exact.js";
 import type { CodegraphSignalDrift } from "../../../../contracts/types/codegraph.js";
+import type { PhysicalCollectionName } from "../../../../contracts/types/collection-identity.js";
 import { pipelineLog } from "../infra/debug-logger.js";
 import { batchSetPayloadWithRetry, type BatchPayloadOp } from "./batch-write.js";
 
@@ -189,7 +190,7 @@ export interface CodegraphPayloadHealOutcome {
  */
 export interface CodegraphPayloadHealRunner {
   run: (
-    collectionName: string,
+    collectionName: PhysicalCollectionName,
     skipRelPaths: ReadonlySet<string>,
     enrichedAt?: string,
   ) => Promise<CodegraphPayloadHealOutcome>;

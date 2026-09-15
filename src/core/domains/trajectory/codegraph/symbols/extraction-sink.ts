@@ -41,6 +41,7 @@ import type {
   GlobalSymbolTable,
   SymbolDefinition,
 } from "../../../../contracts/types/codegraph.js";
+import type { PhysicalCollectionName } from "../../../../contracts/types/collection-identity.js";
 import { CodegraphMetricsError, CodegraphSpillIoError } from "../../errors.js";
 import { normalizeInheritanceEdges } from "./inheritance-edges.js";
 import type { SymbolNodeFlushQueue } from "./node-flush.js";
@@ -49,7 +50,7 @@ import { extractSelfDispatchMethods } from "./self-dispatch-discovery.js";
 
 export interface CodegraphSinkDeps {
   /** Resolve the in-memory symbol table for the active collection. */
-  resolveSymbolTable: (collectionName?: string) => Promise<GlobalSymbolTable>;
+  resolveSymbolTable: (collectionName?: PhysicalCollectionName) => Promise<GlobalSymbolTable>;
   /**
    * Read back every persisted per-file pass-1 aggregate slice for the active
    * collection (bd tea-rags-mcp-znxg8). Absorbed at the barrier for the files
@@ -58,7 +59,7 @@ export interface CodegraphSinkDeps {
    * asymmetry that degraded concrete service entry calls onto the shared
    * template they inherit.
    */
-  loadPersistedPass1Aggregates: (collectionName?: string) => Promise<CodegraphPass1FileAggregates[]>;
+  loadPersistedPass1Aggregates: (collectionName?: PhysicalCollectionName) => Promise<CodegraphPass1FileAggregates[]>;
   runState: CodegraphRunState;
   nodeFlush: SymbolNodeFlushQueue;
   /** Map a `FileExtraction` to the 9-field `SymbolDefinition` shape. */
@@ -73,8 +74,8 @@ export interface CodegraphSinkDeps {
    * Pass-2 stages. Passed as callbacks rather than a finalizer handle so the
    * provider stays the single place that decides how pass-2 is dispatched.
    */
-  resolveAndUpsert: (spillPath: string, collectionName?: string) => Promise<void>;
-  recomputeMetrics: (collectionName?: string) => Promise<void>;
+  resolveAndUpsert: (spillPath: string, collectionName?: PhysicalCollectionName) => Promise<void>;
+  recomputeMetrics: (collectionName?: PhysicalCollectionName) => Promise<void>;
 }
 
 /**
@@ -94,7 +95,7 @@ export interface CodegraphSinkDeps {
 export function createCodegraphExtractionSink(
   deps: CodegraphSinkDeps,
   runId: string,
-  collectionName?: string,
+  collectionName?: PhysicalCollectionName,
   skipDurableNodeWrite = false,
 ): ExtractionSink {
   // The spill path is `<dataDir>/codegraph/.spill/<coll>-<runId>.ndjson` —

@@ -35,6 +35,7 @@ import { ProjectRegistryOps } from "../core/api/internal/ops/project-registry-op
 import { TracePathOps } from "../core/api/internal/ops/trace-path-ops.js";
 import { WorktreeOps } from "../core/api/internal/ops/worktree-ops.js";
 import type { SymbolChunkResolver } from "../core/contracts/types/codegraph.js";
+import type { PhysicalCollectionName } from "../core/contracts/types/collection-identity.js";
 import type { IndexRunDaemonGuard } from "../core/contracts/types/enrichment-executor.js";
 import type { WorkerEnrichmentDescriptor } from "../core/contracts/types/provider.js";
 import type { PayloadKeyOwner } from "../core/contracts/types/trajectory.js";
@@ -452,10 +453,10 @@ export function createIndexRunDaemonGuard(deps: {
   /** The daemon socket the keep-alive connects to. */
   socketPath: string;
   /** Respawn-capable handshake for the run's collection — the main-thread pool's `acquireWrite`. */
-  verifyDaemonBuild: (collectionName: string) => Promise<unknown>;
+  verifyDaemonBuild: (collectionName: PhysicalCollectionName) => Promise<unknown>;
 }): IndexRunDaemonGuard {
   return {
-    begin: async (collectionName: string) => {
+    begin: async (collectionName: PhysicalCollectionName) => {
       try {
         deps.ensure();
         await deps.verifyDaemonBuild(collectionName);
@@ -490,7 +491,7 @@ export function wireCodegraph(
    * `createAppContext`. Optional: the wireCodegraph unit test omits it (reads
    * then address by literal collection, no alias indirection needed).
    */
-  resolveActiveCollection?: (collectionName: string) => Promise<string>,
+  resolveActiveCollection?: (collectionName: string) => Promise<PhysicalCollectionName>,
 ): CodegraphContext | undefined {
   // Defensive: legacy/mocked configs may omit the codegraph section
   // entirely. Treat that as "disabled" so the `codegraph.enabled` config
@@ -621,12 +622,12 @@ export function wireCodegraph(
     });
   };
   const originalAcquireWrite = pool.acquireWrite.bind(pool);
-  pool.acquireWrite = async (collectionName: string) => {
+  pool.acquireWrite = async (collectionName: PhysicalCollectionName) => {
     ensure();
     return originalAcquireWrite(collectionName);
   };
   const originalAcquireReader = pool.acquireReader.bind(pool);
-  pool.acquireReader = async (collectionName: string) => {
+  pool.acquireReader = async (collectionName: PhysicalCollectionName) => {
     ensure();
     return originalAcquireReader(collectionName);
   };
@@ -829,7 +830,8 @@ export async function createAppContext(config: AppConfig, hooks?: AppContextHook
   // is deferred until later — registry construction alone is side-effect
   // free, so creating it early costs nothing.
   const collectionRegistry = new CollectionRegistry(config.paths.appData);
-  const resolveActiveCollection = async (name: string): Promise<string> => infra.qdrant.aliases.resolveActive(name);
+  const resolveActiveCollection = async (name: string): Promise<PhysicalCollectionName> =>
+    infra.qdrant.aliases.resolveActive(name);
   const codegraphContext = wireCodegraph(config, zodConfig, collectionRegistry, resolveActiveCollection);
   const composition = wireComposition(zodConfig, config.trajectoryIngest, codegraphContext?.deps);
 

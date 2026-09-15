@@ -23,6 +23,7 @@ import type {
   PersistedSymbolLineRanges,
   SymbolId,
 } from "../../../contracts/types/codegraph.js";
+import type { PhysicalCollectionName } from "../../../contracts/types/collection-identity.js";
 import type { ChunkSignalOverlay } from "../../../contracts/types/provider.js";
 import {
   CodegraphPayloadHealer,
@@ -74,7 +75,7 @@ export interface CodegraphPayloadHealRunnerDeps {
    * (the 6goqa / snbzk class of incident) and the diff comes back saying
    * nothing ever changed.
    */
-  acquireGraphDb: (collectionName: string) => Promise<GraphDbClient>;
+  acquireGraphDb: (collectionName: PhysicalCollectionName) => Promise<GraphDbClient>;
   /** The codegraph provider's own key, so the heal addresses the same payload subtree the applier does. */
   providerKey: string;
 }
@@ -87,7 +88,7 @@ export interface CodegraphPayloadHealRunnerDeps {
 export function createCodegraphPayloadHealRunner(deps: CodegraphPayloadHealRunnerDeps): CodegraphPayloadHealRunner {
   return {
     run: async (
-      collectionName: string,
+      collectionName: PhysicalCollectionName,
       skipRelPaths: ReadonlySet<string>,
       enrichedAt?: string,
     ): Promise<CodegraphPayloadHealOutcome> => {

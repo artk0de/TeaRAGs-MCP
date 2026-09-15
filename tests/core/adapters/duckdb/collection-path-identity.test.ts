@@ -9,7 +9,7 @@
  * with a shadow DB nobody read.
  *
  * Both directions are resolved here the way production resolves them: the write
- * path through `resolveAliasTargetCollection` (ingest), the read path through
+ * path through `resolvePhysicalCollection` (ingest), the read path through
  * the alias expansion `GraphFacade` performs before touching the pool. They
  * must land on the same path, and neither may land on the unversioned name
  * while the collection is a live alias.
@@ -22,7 +22,7 @@ import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import { GraphDbClientPool } from "../../../../src/core/adapters/duckdb/pool.js";
-import { resolveAliasTargetCollection } from "../../../../src/core/domains/ingest/operations/version-resolver.js";
+import { resolvePhysicalCollection } from "../../../../src/core/domains/ingest/operations/version-resolver.js";
 import { createDatabaseMigrationApplier } from "../../../../src/core/domains/maintenance/migration/database/index.js";
 import { InMemoryGlobalSymbolTable } from "../../../../src/core/domains/trajectory/codegraph/symbols/symbol-table.js";
 
@@ -55,14 +55,14 @@ describe("collection path identity", () => {
   });
 
   it("write and read resolve the same DuckDB file for an aliased collection", () => {
-    const writePath = pool.pathFor(resolveAliasTargetCollection("code_x", ALIASES));
+    const writePath = pool.pathFor(resolvePhysicalCollection("code_x", ALIASES));
     const readPath = pool.pathFor(readPathName("code_x"));
 
     expect(writePath).toBe(readPath);
   });
 
   it("never derives the unversioned path while the collection is a live alias", () => {
-    const writePath = pool.pathFor(resolveAliasTargetCollection("code_x", ALIASES));
+    const writePath = pool.pathFor(resolvePhysicalCollection("code_x", ALIASES));
 
     expect(writePath).toBe(join(tmp, "codegraph", "code_x_v52.duckdb"));
     expect(writePath).not.toBe(join(tmp, "codegraph", "code_x.duckdb"));
@@ -72,7 +72,7 @@ describe("collection path identity", () => {
     // Migration-era projects address a real, unversioned collection. Both sides
     // must keep resolving to the literal name — the fix must not push those
     // onto a versioned path that does not exist.
-    const writePath = pool.pathFor(resolveAliasTargetCollection("code_plain", ALIASES));
+    const writePath = pool.pathFor(resolvePhysicalCollection("code_plain", ALIASES));
     const readPath = pool.pathFor(readPathName("code_plain"));
 
     expect(writePath).toBe(readPath);

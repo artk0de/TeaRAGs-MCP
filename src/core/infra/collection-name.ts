@@ -95,6 +95,16 @@ export function physicalCollectionNameFromDaemonRequest(value: unknown): Physica
 }
 
 /**
+ * Names the storage itself reports as its own per-generation containers:
+ * Qdrant's collection listing (aliases are listed separately and never appear
+ * in it) and the `<name>.duckdb` stems in the codegraph directory. Read back,
+ * not supplied by a caller — so there is nothing left to resolve.
+ */
+export function physicalCollectionNamesListedByStorage(names: readonly string[]): PhysicalCollectionName[] {
+  return names.map((name) => name as PhysicalCollectionName);
+}
+
+/**
  * Validate path — resolves to realpath if exists, absolute path otherwise.
  */
 export async function validatePath(path: string): Promise<string> {
@@ -127,12 +137,22 @@ export function validatePathSync(path: string): string {
 }
 
 /**
- * Generate deterministic collection name from codebase path.
+ * Generate deterministic collection name from codebase path — the project's
+ * LOGICAL name, which becomes its alias once the collection is versioned.
  */
-export function resolveCollectionName(path: string): string {
+export function resolveCollectionName(path: string): CollectionAlias {
   const absolutePath = resolve(path);
   const hash = createHash("md5").update(absolutePath).digest("hex");
-  return `code_${hash.substring(0, 8)}`;
+  return `code_${hash.substring(0, 8)}` as CollectionAlias;
+}
+
+/**
+ * The logical name a registered project was recorded under. Registry entries
+ * are written from the path rule above or from a project's first index, never
+ * from a versioned generation, so the name an entry carries is an alias.
+ */
+export function collectionAliasOfRegistryEntry(entry: { collectionName: string }): CollectionAlias {
+  return entry.collectionName as CollectionAlias;
 }
 
 /**
@@ -147,6 +167,6 @@ export function resolveCollectionName(path: string): string {
  * registry and falls back to exactly this. Hashing a path the registry has
  * re-pointed elsewhere addresses a collection nobody ever wrote.
  */
-export async function hashCollectionForPath(path: string): Promise<string> {
+export async function hashCollectionForPath(path: string): Promise<CollectionAlias> {
   return resolveCollectionName(await validatePath(path));
 }

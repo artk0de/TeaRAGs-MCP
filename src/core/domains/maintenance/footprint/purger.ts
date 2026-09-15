@@ -1,5 +1,7 @@
 import type { QdrantManager } from "../../../adapters/qdrant/client.js";
+import type { PhysicalCollectionName } from "../../../contracts/types/collection-identity.js";
 import type { CollectionEntry } from "../../../contracts/types/registry.js";
+import { resolvePhysicalCollection } from "../../../infra/collection-name.js";
 import type { ArtifactId, FootprintContext, ResolvedCollection } from "./artifact.js";
 import type { CollectionFootprintFactory } from "./factory.js";
 
@@ -27,7 +29,7 @@ export interface CollectionFootprintPurgerDeps {
   /** Builds the artifact saga; the purge drives the same artifacts a worktree teardown does. */
   footprintFactory: CollectionFootprintFactory;
   /** Enumerates codegraph DB generations on disk (the pool's `listCollectionDbNames`). */
-  listCodegraphDbs: (baseCollectionName: string) => string[];
+  listCodegraphDbs: (baseCollectionName: string) => PhysicalCollectionName[];
   /** Used only to name worktree clones derived from the purged project — never mutated. */
   registry?: { listWorktrees: () => CollectionEntry[] };
   daemon?: CodegraphDaemonLiveness;
@@ -113,7 +115,13 @@ export class CollectionFootprintPurger {
 
     // The alias-keyed artifacts are one per collection, so they are torn down
     // once — after the generations, mirroring the reverse-order saga.
-    const logicalContext = this.contextFor(logical, aliasTarget ?? generations[0] ?? logical, input.path);
+    // The logical artifacts never read the physical half; with no generation
+    // left to name, the logical name resolved against no aliases stands in.
+    const logicalContext = this.contextFor(
+      logical,
+      aliasTarget ?? generations[0] ?? resolvePhysicalCollection(logical, []),
+      input.path,
+    );
     const clearedStores = await this.removeArtifacts("logical", logicalContext, logical, failures);
 
     return {
@@ -139,17 +147,17 @@ export class CollectionFootprintPurger {
   private async enumerateQdrant(
     logical: string,
     failures: CollectionPurgeFailure[],
-  ): Promise<{ qdrantTargets: string[]; aliasTarget: string | null }> {
+  ): Promise<{ qdrantTargets: PhysicalCollectionName[]; aliasTarget: PhysicalCollectionName | null }> {
     const pattern = new RegExp(`^${escapeRegExp(logical)}(?:_v\\d+)?$`);
-    let listed: string[];
+    let listed: PhysicalCollectionName[];
     try {
       listed = (await this.deps.qdrant.listCollections()).filter((name) => pattern.test(name));
     } catch (err) {
       failures.push({ artifact: "qdrant", target: logical, reason: describe(err) });
-      listed = [logical];
+      listed = [resolvePhysicalCollection(logical, [])];
     }
 
-    let aliasTarget: string | null = null;
+    let aliasTarget: PhysicalCollectionName | null = null;
     try {
       const aliases = await this.deps.qdrant.aliases.listAliases();
       aliasTarget = aliases.find((a) => a.aliasName === logical)?.collectionName ?? null;
@@ -162,7 +170,7 @@ export class CollectionFootprintPurger {
     return { qdrantTargets, aliasTarget };
   }
 
-  private enumerateCodegraph(logical: string, failures: CollectionPurgeFailure[]): string[] {
+  private enumerateCodegraph(logical: string, failures: CollectionPurgeFailure[]): PhysicalCollectionName[] {
     try {
       return this.deps.listCodegraphDbs(logical);
     } catch (err) {
@@ -200,7 +208,7 @@ export class CollectionFootprintPurger {
    * the same collection here — there is no other side to a purge. Fields the
    * removal path does not read carry neutral values.
    */
-  private contextFor(logicalName: string, physicalName: string, path?: string): FootprintContext {
+  private contextFor(logicalName: string, physicalName: PhysicalCollectionName, path?: string): FootprintContext {
     const resolved: ResolvedCollection = {
       logicalName,
       physicalName,

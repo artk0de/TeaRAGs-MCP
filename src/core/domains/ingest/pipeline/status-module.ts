@@ -17,6 +17,7 @@ import { SchemaMetadataPointStore } from "../../../adapters/qdrant/schema-metada
 import { chunkPointsFilter } from "../../../adapters/qdrant/service-points.js";
 import { INDEXING_METADATA_ID } from "../../../contracts/constants.js";
 import type { EdgeKindCount, MethodEdgeKind, ResolveRunStatsRow } from "../../../contracts/types/codegraph.js";
+import type { PhysicalCollectionName } from "../../../contracts/types/collection-identity.js";
 import type { PathCollectionResolver } from "../../../contracts/types/registry.js";
 import { hashCollectionForPath, validatePath } from "../../../infra/collection-name.js";
 import { isDebug } from "../../../infra/runtime.js";
@@ -321,13 +322,12 @@ export class StatusModule {
     const base = collection.replace(/_v\d+$/, "");
     const dbNames = this.codegraphPool.listCollectionDbNames(base);
     if (dbNames.length === 0) return undefined;
-    let target: string | undefined;
-    if (dbNames.includes(collection)) {
-      target = collection;
-    } else {
+    // Every candidate comes off the directory listing, so whatever is chosen is a
+    // name a database was actually opened under (bd tea-rags-mcp-39xca.1).
+    let target: PhysicalCollectionName | undefined = dbNames.find((name) => name === collection);
+    if (!target) {
       const aliasTarget = await this.getAliasTarget(base).catch(() => undefined);
-      target =
-        aliasTarget && dbNames.includes(aliasTarget) ? aliasTarget : dbNames.length === 1 ? dbNames[0] : undefined;
+      target = dbNames.find((name) => name === aliasTarget) ?? (dbNames.length === 1 ? dbNames[0] : undefined);
     }
     if (!target) return undefined;
     try {

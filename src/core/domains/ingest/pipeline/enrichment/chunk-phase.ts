@@ -17,6 +17,7 @@
  */
 
 import type { BlobBatchReader } from "../../../../adapters/vcs/types.js";
+import type { PhysicalCollectionName } from "../../../../contracts/types/collection-identity.js";
 import type { EnrichmentExecutor } from "../../../../contracts/types/enrichment-executor.js";
 import type { ChunkSignalOptions, ChunkSignalOverlay } from "../../../../contracts/types/provider.js";
 import { CommitDiffMemo } from "../../../../infra/commit-diff-memo.js";
@@ -111,7 +112,7 @@ export class ChunkPhase {
   private readonly semaphore = new Semaphore(CHUNK_ENRICHMENT_CONCURRENCY);
   private contexts: Map<string, ProviderContext> = new Map();
   private runStartedAt = "";
-  private onComplete?: (coll: string) => Promise<void>;
+  private onComplete?: (coll: PhysicalCollectionName) => Promise<void>;
   /**
    * One batch blob reader for the whole run, shared across every per-batch
    * chunk walk so the backend (git pack / repository handle) is opened once
@@ -158,7 +159,7 @@ export class ChunkPhase {
     private readonly blobReaderFactory?: BlobReaderFactory,
   ) {}
 
-  init(contexts: ReadonlyMap<string, ProviderContext>, _coll: string, runStartedAt: string): void {
+  init(contexts: ReadonlyMap<string, ProviderContext>, _coll: PhysicalCollectionName, runStartedAt: string): void {
     this.contexts = new Map(contexts);
     this.runStartedAt = runStartedAt;
     this.states.clear();
@@ -173,7 +174,7 @@ export class ChunkPhase {
     this.runChurnWalkThread = undefined;
   }
 
-  setOnComplete(cb: (coll: string) => Promise<void>): void {
+  setOnComplete(cb: (coll: PhysicalCollectionName) => Promise<void>): void {
     this.onComplete = cb;
   }
 
@@ -183,7 +184,7 @@ export class ChunkPhase {
    * No-op if no callback is bound. Errors are caught and logged with the same
    * semantics as the streaming-end fire site.
    */
-  async fireOnComplete(coll: string): Promise<void> {
+  async fireOnComplete(coll: PhysicalCollectionName): Promise<void> {
     const cb = this.onComplete;
     if (!cb) return;
     try {
@@ -210,7 +211,7 @@ export class ChunkPhase {
    * drives providers individually via onBatchProvider so each provider's chunk
    * work gates only on its own file work.
    */
-  onBatch(coll: string, absolutePath: string, items: ChunkItem[]): void {
+  onBatch(coll: PhysicalCollectionName, absolutePath: string, items: ChunkItem[]): void {
     for (const ctx of this.contexts.values()) {
       this.onBatchProvider(ctx.key, coll, absolutePath, items);
     }
@@ -233,7 +234,7 @@ export class ChunkPhase {
    */
   onBatchProvider(
     providerKey: string,
-    coll: string,
+    coll: PhysicalCollectionName,
     absolutePath: string,
     items: ChunkItem[],
     fileWorkGate?: Promise<void>,
@@ -292,7 +293,7 @@ export class ChunkPhase {
   }
 
   /** Post-flush catch-up entry — applied to files NOT covered by streaming. */
-  enrichRemaining(coll: string, absolutePath: string, chunkMap: Map<string, ChunkLookupEntry[]>): void {
+  enrichRemaining(coll: PhysicalCollectionName, absolutePath: string, chunkMap: Map<string, ChunkLookupEntry[]>): void {
     const providerPromises: Promise<boolean>[] = [];
 
     for (const ctx of this.contexts.values()) {
@@ -422,7 +423,7 @@ export class ChunkPhase {
    * resolved edges as the graph grows would let part of this overlap embedding.
    */
   async runDeferredChunk(
-    coll: string,
+    coll: PhysicalCollectionName,
     ctx: ProviderContext,
     root: string,
     chunkMap: Map<string, ChunkLookupEntry[]>,
@@ -542,7 +543,7 @@ export class ChunkPhase {
   private async runChunkSignals(
     ctx: ProviderContext,
     state: ChunkPhaseState,
-    coll: string,
+    coll: PhysicalCollectionName,
     root: string,
     inputChunkMap: Map<string, ChunkLookupEntry[]>,
     useSemaphore: boolean,
@@ -683,7 +684,7 @@ export class ChunkPhase {
    * joins `chunkWork` so `drain` awaits it.
    */
   private stampDeclinedChunks(
-    coll: string,
+    coll: PhysicalCollectionName,
     ctx: ProviderContext,
     state: ChunkPhaseState,
     map: ReadonlyMap<string, ChunkLookupEntry[]>,

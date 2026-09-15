@@ -7,6 +7,7 @@
 
 import type { QdrantManager } from "../../../../adapters/qdrant/client.js";
 import { servicePointExclusions } from "../../../../adapters/qdrant/service-points.js";
+import type { PhysicalCollectionName } from "../../../../contracts/types/collection-identity.js";
 import type { EnrichmentExecutor } from "../../../../contracts/types/enrichment-executor.js";
 import type { ChunkLookupEntry } from "../../../../types.js";
 import type { ChunkItem } from "../types.js";
@@ -163,7 +164,7 @@ export class EnrichmentRecovery {
    * for the traversal this shares with the chunk level.
    */
   async recoverFileLevel(
-    collectionName: string,
+    collectionName: PhysicalCollectionName,
     absolutePath: string,
     provider: EnrichmentProvider,
     enrichedAt: string,
@@ -221,7 +222,7 @@ export class EnrichmentRecovery {
    * them (bd tea-rags-mcp-fxio5).
    */
   async recoverChunkLevel(
-    collectionName: string,
+    collectionName: PhysicalCollectionName,
     absolutePath: string,
     provider: EnrichmentProvider,
     enrichedAt: string,
@@ -410,7 +411,7 @@ export class EnrichmentRecovery {
    * see `recoverChunkLevel` and `DeferredChunkRecoveryHandoff`.
    */
   async recoverAll(
-    coll: string,
+    coll: PhysicalCollectionName,
     absolutePath: string,
     contexts: ReadonlyMap<string, ProviderContext>,
     markerStore: EnrichmentMarkerStore,

@@ -29,13 +29,14 @@
  */
 
 import type { BulkSymbolUpsertEntry, GraphDbClient, SymbolDefinition } from "../../../../contracts/types/codegraph.js";
+import type { PhysicalCollectionName } from "../../../../contracts/types/collection-identity.js";
 import { isDebug } from "../../../../infra/runtime.js";
 
 /**
  * Resolve the graph client for a collection. The queue never learns about pool
  * vs direct routing — the provider passes its own store resolver in.
  */
-export type GraphDbResolver = (collectionName?: string) => Promise<{ graphDb: GraphDbClient }>;
+export type GraphDbResolver = (collectionName?: PhysicalCollectionName) => Promise<{ graphDb: GraphDbClient }>;
 
 export class SymbolNodeFlushQueue {
   private readonly pending = new Map<string, BulkSymbolUpsertEntry[]>();
@@ -62,7 +63,7 @@ export class SymbolNodeFlushQueue {
     relPath: BulkSymbolUpsertEntry["relPath"],
     defs: SymbolDefinition[],
     key: string,
-    collectionName?: string,
+    collectionName?: PhysicalCollectionName,
   ): void {
     const buf = this.pending.get(key) ?? [];
     buf.push({ relPath, definitions: defs });
@@ -77,7 +78,7 @@ export class SymbolNodeFlushQueue {
    * sub-threshold changeset (the common incremental case) to the finalize
    * remainder, losing the overlap the former per-file `upsertSymbols` had.
    */
-  flushPending(key: string, collectionName?: string): void {
+  flushPending(key: string, collectionName?: PhysicalCollectionName): void {
     const batch = this.pending.get(key)?.splice(0) ?? [];
     if (batch.length > 0) this.chainFlush(batch, key, collectionName);
   }
@@ -90,7 +91,7 @@ export class SymbolNodeFlushQueue {
    * cross-pass `endExtractionRun`, whose remainder sits on a DIFFERENT instance
    * from the one that runs pass-2, and the input-spill drain.
    */
-  async flushRemainder(key: string, collectionName?: string): Promise<void> {
+  async flushRemainder(key: string, collectionName?: PhysicalCollectionName): Promise<void> {
     this.dispatchRemainder(key, collectionName);
     await this.settle();
   }
@@ -104,7 +105,7 @@ export class SymbolNodeFlushQueue {
    * and then issues its own writes to the same session never queues more than a
    * single pending node write ahead of them.
    */
-  dispatchRemainder(key: string, collectionName?: string): void {
+  dispatchRemainder(key: string, collectionName?: PhysicalCollectionName): void {
     const remainder = this.pending.get(key)?.splice(0) ?? [];
     if (remainder.length > 0) this.chainFlush(remainder, key, collectionName);
   }
@@ -148,7 +149,7 @@ export class SymbolNodeFlushQueue {
    * accept→drain window and, on Node >=22 with no `unhandledRejection` handler,
    * terminate the indexer process.
    */
-  private chainFlush(batch: BulkSymbolUpsertEntry[], key: string, collectionName?: string): void {
+  private chainFlush(batch: BulkSymbolUpsertEntry[], key: string, collectionName?: PhysicalCollectionName): void {
     this.chain = this.chain
       .then(async () => this.flushBatch(batch, key, collectionName))
       .catch((e: unknown) => {
@@ -162,7 +163,11 @@ export class SymbolNodeFlushQueue {
    * Records the flushed relPaths per collection (once-per-file invariant +
    * honest cumulative count) and emits a DEBUG-gated flush log.
    */
-  private async flushBatch(batch: BulkSymbolUpsertEntry[], key: string, collectionName?: string): Promise<void> {
+  private async flushBatch(
+    batch: BulkSymbolUpsertEntry[],
+    key: string,
+    collectionName?: PhysicalCollectionName,
+  ): Promise<void> {
     if (batch.length === 0) return;
     const { graphDb } = await this.resolveStore(collectionName);
     await graphDb.upsertSymbolsBulk(batch);

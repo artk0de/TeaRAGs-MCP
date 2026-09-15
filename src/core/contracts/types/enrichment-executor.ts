@@ -30,6 +30,7 @@
  */
 
 import type { ChunkLookupEntry } from "./chunker.js";
+import type { PhysicalCollectionName } from "./collection-identity.js";
 import type {
   ChunkSignalOptions,
   ChunkSignalOverlay,
@@ -45,8 +46,8 @@ import type {
  */
 export interface EnrichmentRunHandle {
   readonly runId: string;
-  /** The collection the run writes, exactly as its caller addressed it. */
-  readonly collection: string;
+  /** The PHYSICAL collection the run writes — its markers, heartbeat and per-generation stores. */
+  readonly collection: PhysicalCollectionName;
   /** The project root the run resolves provider roots against. */
   readonly absolutePath: string;
 }
@@ -173,5 +174,5 @@ export interface IndexRunDaemonGuard {
    * and logs, so it never blocks indexing. The returned release MUST be called
    * when the run ends (success, error, or crash) or the daemon never idle-dies.
    */
-  begin: (collectionName: string) => Promise<IndexRunDaemonRelease>;
+  begin: (collectionName: PhysicalCollectionName) => Promise<IndexRunDaemonRelease>;
 }

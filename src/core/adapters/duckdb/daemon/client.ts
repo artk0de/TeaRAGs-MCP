@@ -30,6 +30,7 @@ import type {
   SymbolDefinition,
   SymbolId,
 } from "../../../contracts/types/codegraph.js";
+import type { PhysicalCollectionName } from "../../../contracts/types/collection-identity.js";
 import { isDebug } from "../../../infra/runtime.js";
 import { CodegraphDaemonBuildSkewError, CodegraphDaemonUnreachableError } from "../errors.js";
 import { DaemonFrameDecoder } from "./frame-decoder.js";
@@ -218,7 +219,7 @@ export class DaemonGraphDbClient implements GraphDbClient {
 
   constructor(
     private readonly socketPath: string,
-    private readonly collection: string,
+    private readonly collection: PhysicalCollectionName,
     opts?: DaemonClientOptions,
   ) {
     this.connectTimeoutMs = opts?.connectTimeoutMs ?? DEFAULT_CONNECT_TIMEOUT_MS;

@@ -12,6 +12,7 @@ import type {
   SymbolDefinition,
   SymbolId,
 } from "../../../contracts/types/codegraph.js";
+import { physicalCollectionNameFromDaemonRequest } from "../../../infra/collection-name.js";
 import type { GraphDbClientPool } from "../pool.js";
 import { computeAndPersistCyclesAndSignals } from "./graph-analysis.js";
 import type { DaemonHandshakeResult, DaemonOp } from "./protocol.js";
@@ -90,7 +91,7 @@ export const DAEMON_OP_COMMANDS: Readonly<Record<DaemonOp, DaemonOpCommand>> = {
       // daemon — do NOT open/migrate the DB with stale code first. Legacy
       // clients (no fingerprint) keep the original open-on-handshake path.
       if (clientFingerprint === undefined || clientFingerprint === ctx.buildFingerprint) {
-        await ctx.pool.acquire(p.collection as string); // opens + migrates + hydrates
+        await ctx.pool.acquire(physicalCollectionNameFromDaemonRequest(p.collection)); // opens + migrates + hydrates
       }
       // Capabilities ride every handshake, matched or not: a client from another
       // build decides from them whether it may proceed (bd tea-rags-mcp-39xca.4).
@@ -117,7 +118,7 @@ export const DAEMON_OP_COMMANDS: Readonly<Record<DaemonOp, DaemonOpCommand>> = {
     // collection it shadowed. `removeCollection` closes any pooled handle
     // first, then unlinks the file — crash-safe: old stays intact until swap.
     run: async (ctx, p) => {
-      await ctx.pool.removeCollection(p.oldVersion as string);
+      await ctx.pool.removeCollection(physicalCollectionNameFromDaemonRequest(p.oldVersion));
       return null;
     },
   },

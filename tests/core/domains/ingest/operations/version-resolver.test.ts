@@ -5,7 +5,7 @@ import {
   findAliasTarget,
   maxVersionedCollection,
   parseCollectionVersion,
-  resolveAliasTargetCollection,
+  resolvePhysicalCollection,
 } from "../../../../../src/core/domains/ingest/operations/version-resolver.js";
 
 const BASE = "code_abc";
@@ -96,10 +96,10 @@ describe("computeNewVersion", () => {
   });
 });
 
-describe("resolveAliasTargetCollection", () => {
+describe("resolvePhysicalCollection", () => {
   it("resolves an alias to the collection it points at", () => {
     expect(
-      resolveAliasTargetCollection(BASE, [
+      resolvePhysicalCollection(BASE, [
         { aliasName: "code_other", collectionName: "code_other_v3" },
         { aliasName: BASE, collectionName: `${BASE}_v52` },
       ]),
@@ -107,13 +107,11 @@ describe("resolveAliasTargetCollection", () => {
   });
 
   it("falls back to the literal name when no alias matches", () => {
-    expect(resolveAliasTargetCollection(BASE, [{ aliasName: "code_other", collectionName: "code_other_v3" }])).toBe(
-      BASE,
-    );
+    expect(resolvePhysicalCollection(BASE, [{ aliasName: "code_other", collectionName: "code_other_v3" }])).toBe(BASE);
   });
 
   it("falls back to the literal name when there are no aliases at all", () => {
-    expect(resolveAliasTargetCollection(BASE, [])).toBe(BASE);
+    expect(resolvePhysicalCollection(BASE, [])).toBe(BASE);
   });
 });
 

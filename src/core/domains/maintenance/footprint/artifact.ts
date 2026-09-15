@@ -1,3 +1,5 @@
+import type { PhysicalCollectionName } from "../../../contracts/types/collection-identity.js";
+
 export type ArtifactId = "qdrant" | "codegraph" | "snapshot" | "stats" | "quarantine" | "indexing-lock";
 
 /**
@@ -20,7 +22,7 @@ export type ArtifactAddressing = "physical" | "logical";
 
 export interface ResolvedCollection {
   logicalName: string;
-  physicalName: string;
+  physicalName: PhysicalCollectionName;
   path: string;
   embeddingModel: string;
   embeddingDimensions: number;

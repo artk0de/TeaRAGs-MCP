@@ -26,6 +26,7 @@
  */
 
 import type { CodegraphPass1FileAggregates } from "../../../../contracts/types/codegraph.js";
+import type { PhysicalCollectionName } from "../../../../contracts/types/collection-identity.js";
 import type { EnrichmentExecutor } from "../../../../contracts/types/enrichment-executor.js";
 import type { EnrichmentMetrics } from "../../../../types.js";
 import { pipelineLog } from "../infra/debug-logger.js";
@@ -58,7 +59,11 @@ export interface CompletionRunnerDeps {
  * EnrichmentRecovery) — passed as a callback so CompletionRunner stays
  * decoupled from Recovery. Resolves to 0 when recovery is unavailable.
  */
-export type UnenrichedReader = (coll: string, provider: EnrichmentProvider, level: "file" | "chunk") => Promise<number>;
+export type UnenrichedReader = (
+  coll: PhysicalCollectionName,
+  provider: EnrichmentProvider,
+  level: "file" | "chunk",
+) => Promise<number>;
 
 /**
  * What the out-of-window backfill (step 3) left behind. The terminal FILE
@@ -174,7 +179,7 @@ export class CompletionRunner {
   }
 
   async run(
-    coll: string,
+    coll: PhysicalCollectionName,
     contexts: ReadonlyMap<string, ProviderContext>,
     startTime: number,
     unenrichedReader?: UnenrichedReader,
@@ -292,7 +297,7 @@ export class CompletionRunner {
    * chunk), whatever they had reached when the step threw.
    */
   private async settleUnwrittenTerminalsAsFailed(
-    coll: string,
+    coll: PhysicalCollectionName,
     contexts: ReadonlyMap<string, ProviderContext>,
     readUnenriched: UnenrichedReader,
     runId: string,
@@ -340,7 +345,7 @@ export class CompletionRunner {
   /** The failure path's unenriched count: 0 when the read throws, synchronously or not. */
   private async readUnenrichedOrZero(
     readUnenriched: UnenrichedReader,
-    coll: string,
+    coll: PhysicalCollectionName,
     provider: EnrichmentProvider,
     level: "file" | "chunk",
   ): Promise<number> {
@@ -356,7 +361,10 @@ export class CompletionRunner {
    * apply them through the accumulated chunkMap. Runs CONCURRENTLY with the
    * out-of-window backfill; see the 2‖3 note in `run`.
    */
-  private async applyFileFinalize(coll: string, contexts: ReadonlyMap<string, ProviderContext>): Promise<void> {
+  private async applyFileFinalize(
+    coll: PhysicalCollectionName,
+    contexts: ReadonlyMap<string, ProviderContext>,
+  ): Promise<void> {
     const { filePhase, chunkPhase, executor } = this.deps;
     for (const ctx of contexts.values()) {
       // Method-existence is no longer guarded here: runFinalize returns an
@@ -425,7 +433,7 @@ export class CompletionRunner {
    * unhealed diff still stands for the next run to retry.
    */
   async runCodegraphHeal(
-    coll: string,
+    coll: PhysicalCollectionName,
     deferredPass: DeferredChunkPassOutcome,
     runStartedAt: string,
   ): Promise<CodegraphHealStepOutcome> {
@@ -461,7 +469,7 @@ export class CompletionRunner {
    * recorded: absence is not a failure.
    */
   private async readPass1Aggregates(
-    coll: string,
+    coll: PhysicalCollectionName,
     ctx: ProviderContext,
   ): Promise<readonly CodegraphPass1FileAggregates[] | undefined> {
     const read = ctx.provider.readPersistedPass1Aggregates;
@@ -500,7 +508,7 @@ export class CompletionRunner {
    * running before the backfill settles. Times itself (see `timedStep`).
    */
   private async markFileTerminals(
-    coll: string,
+    coll: PhysicalCollectionName,
     contexts: ReadonlyMap<string, ProviderContext>,
     readUnenriched: UnenrichedReader,
     runId: string,
@@ -588,7 +596,7 @@ export class CompletionRunner {
    * count even though its pass is skipped. See `DeferredChunkPassOutcome`.
    */
   async runDeferredChunkPass(
-    coll: string,
+    coll: PhysicalCollectionName,
     contexts: ReadonlyMap<string, ProviderContext>,
   ): Promise<DeferredChunkPassOutcome> {
     const { filePhase, chunkPhase } = this.deps;
@@ -616,7 +624,7 @@ export class CompletionRunner {
    * Times itself (see `timedStep`).
    */
   private async markChunkTerminals(
-    coll: string,
+    coll: PhysicalCollectionName,
     contexts: ReadonlyMap<string, ProviderContext>,
     readUnenriched: UnenrichedReader,
     runId: string,
@@ -665,7 +673,7 @@ export class CompletionRunner {
    * `backfiller.runFor` is internally try/caught, so this never rejects.
    */
   private async runBackfills(
-    coll: string,
+    coll: PhysicalCollectionName,
     contexts: ReadonlyMap<string, ProviderContext>,
     runStartedAt: string,
   ): Promise<OutOfWindowBackfillOutcome> {

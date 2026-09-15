@@ -34,7 +34,6 @@ export function parseCollectionVersion(collectionName: string, name: string | un
  */
 export type { CollectionAliasEntry } from "../../../contracts/types/collection-identity.js";
 export { findAliasTarget, resolvePhysicalCollection } from "../../../infra/collection-name.js";
-export { resolvePhysicalCollection as resolveAliasTargetCollection } from "../../../infra/collection-name.js";
 
 /**
  * Highest `_vN` among `allCollections` for the given base. 0 if none exist.

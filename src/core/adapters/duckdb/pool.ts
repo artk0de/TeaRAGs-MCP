@@ -13,6 +13,7 @@ import { mkdirSync } from "node:fs";
 import { dirname, join } from "node:path";
 
 import type { CallResolver, GlobalSymbolTable, GraphDbClient } from "../../contracts/types/codegraph.js";
+import type { PhysicalCollectionName } from "../../contracts/types/collection-identity.js";
 import type { DatabaseMigrationApplier } from "../../contracts/types/migration.js";
 import { isDebug } from "../../infra/runtime.js";
 import { DuckDbGraphClient } from "./client.js";
@@ -71,7 +72,7 @@ function describeDaemonSkew(verdict: DaemonCapabilityVerdict, clientFingerprint:
  * the in-memory symbol-table implementation.
  */
 export type CollectionInitHook = (args: {
-  collectionName: string;
+  collectionName: PhysicalCollectionName;
   graphDb: GraphDbClient;
   symbolTable: GlobalSymbolTable;
 }) => Promise<void>;
@@ -212,7 +213,7 @@ export class GraphDbClientPool {
   }
 
   /** Resolve the disk path for a given collection name. Exposed for tests. */
-  pathFor(collectionName: string): string {
+  pathFor(collectionName: PhysicalCollectionName): string {
     return this.dbFiles.pathFor(collectionName);
   }
 
@@ -225,7 +226,7 @@ export class GraphDbClientPool {
    * whose graph is there but unreadable (lock held, daemon down, corruption),
    * where an empty edge list would be a false statement about the code.
    */
-  hasDatabase(collectionName: string): boolean {
+  hasDatabase(collectionName: PhysicalCollectionName): boolean {
     return this.dbFiles.has(collectionName);
   }
 
@@ -236,7 +237,7 @@ export class GraphDbClientPool {
    * sweep itself skips the active alias target and live Qdrant collections.
    * Scoped to `^<base>(_v\d+)?$`; empty when the codegraph dir is missing.
    */
-  listCollectionDbNames(baseCollectionName: string): string[] {
+  listCollectionDbNames(baseCollectionName: string): PhysicalCollectionName[] {
     return this.dbFiles.listCollectionDbNames(baseCollectionName);
   }
 
@@ -271,7 +272,7 @@ export class GraphDbClientPool {
    * against a collection that was never written to does NOT open a fresh
    * DB just to return an empty result.
    */
-  peek(collectionName: string): CollectionGraphHandle | undefined {
+  peek(collectionName: PhysicalCollectionName): CollectionGraphHandle | undefined {
     return this.clients.get(collectionName);
   }
 
@@ -281,7 +282,7 @@ export class GraphDbClientPool {
    * to hydrate the symbol table, then caches the result. Concurrent
    * first-callers share one open pass via the inflight map.
    */
-  async acquire(collectionName: string): Promise<CollectionGraphHandle> {
+  async acquire(collectionName: PhysicalCollectionName): Promise<CollectionGraphHandle> {
     const cached = this.clients.get(collectionName);
     if (cached) return cached;
     const inflight = this.inflight.get(collectionName);
@@ -299,7 +300,7 @@ export class GraphDbClientPool {
    * processes) when `daemonSocketPath` is configured, else the in-process RW
    * handle (`acquire`).
    */
-  async acquireWrite(collectionName: string): Promise<CollectionGraphHandle> {
+  async acquireWrite(collectionName: PhysicalCollectionName): Promise<CollectionGraphHandle> {
     if (this.options.daemonSocketPath) {
       return this.acquireDaemonHandle(collectionName);
     }
@@ -311,7 +312,7 @@ export class GraphDbClientPool {
    * `close()` is a no-op: the pool owns the socket (`closeAll`), and a caller's
    * `finally` close must not tear it down under other in-flight callers.
    */
-  private async acquireDaemonHandle(collectionName: string): Promise<CollectionGraphHandle> {
+  private async acquireDaemonHandle(collectionName: PhysicalCollectionName): Promise<CollectionGraphHandle> {
     const entry = await this.acquireDaemonClient(collectionName);
     return { graphDb: entry.wrapped, symbolTable: entry.symbolTable };
   }
@@ -321,7 +322,7 @@ export class GraphDbClientPool {
    * collection (plus its stable no-op-close wrapper). Concurrent first-callers
    * share one init pass via `daemonInflight`.
    */
-  private async acquireDaemonClient(collectionName: string): Promise<DaemonClientEntry> {
+  private async acquireDaemonClient(collectionName: PhysicalCollectionName): Promise<DaemonClientEntry> {
     const cached = this.daemonClients.get(collectionName);
     if (cached?.client.isConnected()) return cached;
     if (cached) {
@@ -377,7 +378,10 @@ export class GraphDbClientPool {
    * thrash them and could livelock two sessions; `CodegraphDaemonExitTimeoutError`
    * from the drain is never retried.
    */
-  private async connectWithBuildHandshake(socketPath: string, collectionName: string): Promise<DaemonGraphDbClient> {
+  private async connectWithBuildHandshake(
+    socketPath: string,
+    collectionName: PhysicalCollectionName,
+  ): Promise<DaemonGraphDbClient> {
     // Dynamic so direct/test mode never loads the node:net socket code.
     const { DaemonGraphDbClient, assessDaemonCapability } = await import("./daemon/client.js");
     const restart = this.options.daemonRestart;
@@ -508,7 +512,7 @@ export class GraphDbClientPool {
    * `DuckDbOpenFailedError`, like the RW path — optional read consumers
    * degrade on that class, not on driver message text (bd tea-rags-mcp-a43tr).
    */
-  async acquireRead(collectionName: string): Promise<CollectionGraphHandle> {
+  async acquireRead(collectionName: PhysicalCollectionName): Promise<CollectionGraphHandle> {
     const dbPath = this.pathFor(collectionName);
     const graphDb = new DuckDbGraphClient({ path: dbPath, accessMode: "READ_ONLY" });
     try {
@@ -527,14 +531,14 @@ export class GraphDbClientPool {
    * attaches READ_ONLY in-process (`acquireRead`). Calling `close()` is safe
    * either way (a no-op in daemon mode).
    */
-  async acquireReader(collectionName: string): Promise<CollectionGraphHandle> {
+  async acquireReader(collectionName: PhysicalCollectionName): Promise<CollectionGraphHandle> {
     if (this.options.daemonSocketPath) {
       return this.acquireDaemonHandle(collectionName);
     }
     return this.acquireRead(collectionName);
   }
 
-  private async openCollection(collectionName: string): Promise<CollectionGraphHandle> {
+  private async openCollection(collectionName: PhysicalCollectionName): Promise<CollectionGraphHandle> {
     // The one read-write open in the codebase — the daemon's pool reaches it too —
     // so this is where a shadow `<alias>.duckdb` would be created. Refused there.
     const dbPath = this.dbFiles.writablePathFor(collectionName);
@@ -580,7 +584,7 @@ export class GraphDbClientPool {
    * Drop the cached client for a collection (close + forget), e.g. to release the
    * file lock between test scenarios. Returns true when an entry was evicted.
    */
-  async release(collectionName: string): Promise<boolean> {
+  async release(collectionName: PhysicalCollectionName): Promise<boolean> {
     const entry = this.clients.get(collectionName);
     if (!entry) return false;
     this.clients.delete(collectionName);
@@ -599,7 +603,10 @@ export class GraphDbClientPool {
    * checkpoints only this pool's cached client; a daemon-held database keeps an
    * unflushed WAL, which is why the sidecar is copied rather than assumed empty.
    */
-  async cloneDatabase(sourceCollection: string, targetCollection: string): Promise<void> {
+  async cloneDatabase(
+    sourceCollection: PhysicalCollectionName,
+    targetCollection: PhysicalCollectionName,
+  ): Promise<void> {
     await this.release(sourceCollection);
     await this.dbFiles.cloneDatabase(sourceCollection, targetCollection);
   }
@@ -618,7 +625,7 @@ export class GraphDbClientPool {
    *
    * Returns true when a cached entry was evicted; disk cleanup runs regardless.
    */
-  async removeCollection(collectionName: string): Promise<boolean> {
+  async removeCollection(collectionName: PhysicalCollectionName): Promise<boolean> {
     const dbPath = this.pathFor(collectionName);
     const entry = this.clients.get(collectionName);
     let evicted = false;

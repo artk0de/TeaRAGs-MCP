@@ -1,3 +1,5 @@
+import type { PhysicalCollectionName } from "../../../contracts/types/collection-identity.js";
+import { physicalCollectionNameFromDaemonRequest } from "../../../infra/collection-name.js";
 import type { CollectionGraphHandle, GraphDbClientPool } from "../pool.js";
 import { getBuildFingerprint } from "./build-fingerprint.js";
 import type { DaemonMemoryGovernor } from "./memory-governor.js";
@@ -58,7 +60,7 @@ export class CodegraphDaemonServer {
    * burst). `finalizeReindex` does NOT route through here: it only unlinks the
    * superseded DB file, so there is no open handle to govern.
    */
-  private async acquireForWrite(collection: string): Promise<CollectionGraphHandle> {
+  private async acquireForWrite(collection: PhysicalCollectionName): Promise<CollectionGraphHandle> {
     const handle = await this.pool.acquire(collection);
     await this.governor?.onWrite(collection, handle.graphDb);
     return handle;
@@ -92,7 +94,8 @@ export class CodegraphDaemonServer {
       );
     }
 
-    const collection = p.collection as string;
+    // The client held a PhysicalCollectionName; the wire erased the brand.
+    const collection = physicalCollectionNameFromDaemonRequest(p.collection);
     const { graphDb } =
       command.access === "write" ? await this.acquireForWrite(collection) : await this.pool.acquire(collection);
     return command.run(graphDb, p);

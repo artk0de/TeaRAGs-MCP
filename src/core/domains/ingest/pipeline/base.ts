@@ -15,6 +15,7 @@ import type { EmbeddingProvider } from "../../../adapters/embeddings/base.js";
 import type { QdrantManager } from "../../../adapters/qdrant/client.js";
 import { EMBEDDED_MARKER } from "../../../adapters/qdrant/embedded/daemon.js";
 import { chunkPointsFilter } from "../../../adapters/qdrant/service-points.js";
+import type { CollectionAlias, PhysicalCollectionName } from "../../../contracts/types/collection-identity.js";
 import type { EnrichmentRunHandle } from "../../../contracts/types/enrichment-executor.js";
 import type {
   CollectionRegistryPort,
@@ -187,7 +188,7 @@ export abstract class BaseIndexingPipeline {
    */
   protected async resolveContext(path: string): Promise<{
     absolutePath: string;
-    collectionName: string;
+    collectionName: CollectionAlias;
   }> {
     const absolutePath = await validatePath(path);
     const collectionName = await this.resolveCollectionForPath(absolutePath);
@@ -219,7 +220,7 @@ export abstract class BaseIndexingPipeline {
   // ── Processing lifecycle ─────────────────────────────────
 
   protected initProcessing(
-    collectionName: string,
+    collectionName: PhysicalCollectionName,
     absolutePath: string,
     scanner: FileScanner,
     chunkSizeOverride?: number,

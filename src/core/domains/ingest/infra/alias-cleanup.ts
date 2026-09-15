@@ -1,4 +1,5 @@
 import type { QdrantManager } from "../../../adapters/qdrant/client.js";
+import type { PhysicalCollectionName } from "../../../contracts/types/collection-identity.js";
 import { isDebug } from "../../../infra/runtime.js";
 import { isCollectionBuildInFlight } from "./collection-build-lease.js";
 
@@ -8,7 +9,7 @@ import { isCollectionBuildInFlight } from "./collection-build-lease.js";
  * pool's `removeCollection`; omitted when codegraph is disabled. Keeps the ingest
  * domain free of any DuckDB-path knowledge — the pool owns path resolution.
  */
-export type CodegraphDbRemover = (collectionName: string) => Promise<void>;
+export type CodegraphDbRemover = (collectionName: PhysicalCollectionName) => Promise<void>;
 
 /**
  * Enumerates the versioned codegraph DB collection names on disk for a base
@@ -17,7 +18,7 @@ export type CodegraphDbRemover = (collectionName: string) => Promise<void>;
  * codegraph is disabled. Keeps the ingest domain free of any DuckDB-path
  * knowledge — the pool owns directory enumeration.
  */
-export type CodegraphDbLister = (baseCollectionName: string) => string[];
+export type CodegraphDbLister = (baseCollectionName: string) => PhysicalCollectionName[];
 
 /**
  * Deletes versioned collections that are no longer pointed to by an alias.
@@ -49,7 +50,7 @@ export async function cleanupOrphanedVersions(
   // Deleting it kills the run that owns it — the foreground reindex fails on its
   // next upload with "Collection … doesn't exist" while the run that deleted it
   // reports success (bd tea-rags-mcp-nrylk).
-  const orphans: string[] = [];
+  const orphans: PhysicalCollectionName[] = [];
   for (const candidate of candidates) {
     if (await isCollectionBuildInFlight(qdrant, candidate)) {
       if (isDebug()) {
@@ -115,7 +116,7 @@ export async function cleanupOrphanedVersions(
 export async function discardFailedCollectionBuild(
   qdrant: QdrantManager,
   collectionName: string,
-  targetCollection: string,
+  targetCollection: PhysicalCollectionName,
   removeCodegraphDb?: CodegraphDbRemover,
 ): Promise<boolean> {
   try {

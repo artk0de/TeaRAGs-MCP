@@ -11,6 +11,7 @@
 
 import { relative } from "node:path";
 
+import type { PhysicalCollectionName } from "../../../../contracts/types/collection-identity.js";
 import type { EnrichmentExecutor } from "../../../../contracts/types/enrichment-executor.js";
 import type { EnrichmentRunCoverage, FileSignalOverlay } from "../../../../contracts/types/provider.js";
 import { pipelineLog } from "../infra/debug-logger.js";
@@ -83,7 +84,8 @@ export interface FilePhaseMetrics {
 export class FilePhase {
   private readonly states = new Map<string, FilePhaseState>();
   private contexts: Map<string, ProviderContext> = new Map();
-  private coll = "";
+  /** The run's physical collection; `""` until `init` binds one. */
+  private coll: PhysicalCollectionName | "" = "";
   private runId = "";
   private runStartedAt = "";
   private crossPass = false;
@@ -110,7 +112,7 @@ export class FilePhase {
 
   init(
     contexts: ReadonlyMap<string, ProviderContext>,
-    coll: string,
+    coll: PhysicalCollectionName,
     runId: string,
     runStartedAt: string,
     crossPass = false,
@@ -178,7 +180,7 @@ export class FilePhase {
    * apply the (empty) result and do NOT miss-track — file overlays are read
    * back once the graph is finalized via finalizeSignals → applyFinalize.
    */
-  onBatch(coll: string, absolutePath: string, items: ChunkItem[]): Map<string, Promise<void>> {
+  onBatch(coll: PhysicalCollectionName, absolutePath: string, items: ChunkItem[]): Map<string, Promise<void>> {
     const perProvider = new Map<string, Promise<void>>();
     for (const ctx of this.contexts.values()) {
       const state = this.states.get(ctx.key);
@@ -275,7 +277,7 @@ export class FilePhase {
 
   /** Stream this batch's file signals for a non-deferring provider and apply them. */
   private async startStreamingApply(
-    coll: string,
+    coll: PhysicalCollectionName,
     ctx: ProviderContext,
     state: FilePhaseState,
     root: string,
@@ -324,7 +326,7 @@ export class FilePhase {
    * accumulated chunkMap (relPath → ChunkLookupEntry[]) from ChunkPhase.
    */
   async applyFinalize(
-    coll: string,
+    coll: PhysicalCollectionName,
     ctx: ProviderContext,
     fileOverlays: Map<string, FileSignalOverlay>,
     chunkMap: ReadonlyMap<
@@ -454,7 +456,7 @@ export class FilePhase {
    *   undefined when the batch has nothing declined.
    */
   private stampDeclinedFiles(
-    coll: string,
+    coll: PhysicalCollectionName,
     ctx: ProviderContext,
     items: ChunkItem[],
     root: string,

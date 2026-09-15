@@ -8,6 +8,8 @@
  * stay mutually isolated and the composition root wires the concretes (DIP).
  */
 
+import type { PhysicalCollectionName } from "./collection-identity.js";
+
 /** Per-collection sharded-snapshot store the snapshot artifact clones / removes. */
 export interface SnapshotArtifactStore {
   cloneTo: (targetLogicalName: string, targetPath: string) => Promise<void>;
@@ -30,10 +32,10 @@ export interface QuarantineArtifactStore {
  * side effects at construction.
  */
 export interface CodegraphFootprintStore {
-  cloneDatabase: (sourceCollection: string, targetCollection: string) => Promise<void>;
-  removeCollection: (collectionName: string) => Promise<boolean>;
+  cloneDatabase: (sourceCollection: PhysicalCollectionName, targetCollection: PhysicalCollectionName) => Promise<void>;
+  removeCollection: (collectionName: PhysicalCollectionName) => Promise<boolean>;
   /** Every `<base>.duckdb` / `<base>_v<N>.duckdb` on disk, as collection names. */
-  listCollectionDbNames: (baseCollectionName: string) => string[];
+  listCollectionDbNames: (baseCollectionName: string) => PhysicalCollectionName[];
 }
 
 /** The run holding a live indexing lock — enough for a teardown to say why it left the lock in place. */
