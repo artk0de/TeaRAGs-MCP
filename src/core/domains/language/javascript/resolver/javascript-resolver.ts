@@ -79,6 +79,13 @@ export class JavascriptCallResolver implements CallResolver {
         }
       }
     }
+    // Global short-name fallback is for BARE calls only (bd tea-rags-mcp-hwwtw).
+    // A JavaScript receiver carries no type, so a member call on one has only the
+    // member's name to go on, and a name that happens to be unique in the project
+    // is a coincidence: measured on this repo, all 34 receiver-bearing edges the
+    // fallback produced were fabricated (`console.error` → a renderer's `error`,
+    // `perFile[f].set` on a Map → `CommitDiffMemo#set`), none real.
+    if (call.receiver !== null) return null;
     const fallback = ctx.symbolTable.lookupByShortName(call.member);
     const target = pickSingleCandidate(fallback, this.mode);
     if (target) return { targetRelPath: target.relPath, targetSymbolId: target.symbolId };
