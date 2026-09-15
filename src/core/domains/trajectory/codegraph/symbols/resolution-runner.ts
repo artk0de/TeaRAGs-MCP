@@ -58,6 +58,8 @@ export interface ResolverInputs {
   classFieldTypesByClassKey: CallContext["classFieldTypesByClassKey"];
   classFieldCallResults: CallContext["classFieldCallResults"];
   moduleReexports: CallContext["moduleReexports"];
+  /** The run's identity (bd tea-rags-mcp-39xca.6) — always the run state's, never per file. */
+  runScope: NonNullable<CallContext["runScope"]>;
 }
 
 /**
@@ -100,6 +102,9 @@ export function resolverInputChannels(inputs: ResolverInputs): Partial<CallConte
     // walk past a package `__init__.py` that re-exports a name or a SUBMODULE
     // instead of declaring it. Empty ⇒ the mapper stops exactly where it did.
     moduleReexports: inputs.moduleReexports,
+    // bd tea-rags-mcp-39xca.6 — resolver memos scope their entries to this
+    // token rather than to the pooled symbol table's identity.
+    runScope: inputs.runScope,
   };
 }
 
@@ -321,6 +326,7 @@ export class CallEdgeResolutionRunner {
       // asked about a package the CALLER does not own, so this file's own list
       // could never answer. An empty map reads as absent to its only reader.
       moduleReexports: state.moduleReexports,
+      runScope: state.runScope,
     };
   }
 
