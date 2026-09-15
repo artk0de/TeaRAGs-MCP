@@ -197,8 +197,11 @@ describe("first index / --force stamps real content hashes (bd tea-rags-mcp-o317
     );
   });
 
+  // Each run below waits for the previous one's enrichment: a run on a
+  // collection still enriching is refused (bd tea-rags-mcp-62pgi).
   it("leaves the next incremental nothing to repair", async () => {
     await ingest.indexCodebase(codebaseDir);
+    await ingest.whenEnrichmentComplete();
     extractedPaths.length = 0;
 
     await ingest.indexCodebase(codebaseDir);
@@ -208,7 +211,9 @@ describe("first index / --force stamps real content hashes (bd tea-rags-mcp-o317
 
   it("leaves the next incremental nothing to repair after a --force rebuild", async () => {
     await ingest.indexCodebase(codebaseDir);
+    await ingest.whenEnrichmentComplete();
     await ingest.indexCodebase(codebaseDir, { forceReindex: true });
+    await ingest.whenEnrichmentComplete();
     extractedPaths.length = 0;
 
     await ingest.indexCodebase(codebaseDir);
@@ -220,6 +225,7 @@ describe("first index / --force stamps real content hashes (bd tea-rags-mcp-o317
     // The control: a stamp that matched everything unconditionally would satisfy
     // the assertions above while disabling drift detection entirely.
     await ingest.indexCodebase(codebaseDir);
+    await ingest.whenEnrichmentComplete();
     await createTestFile(codebaseDir, "app.ts", sourceOf("appEdited"));
     extractedPaths.length = 0;
 

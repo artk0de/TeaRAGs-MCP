@@ -51,6 +51,7 @@ function makeDeps(aliases: readonly { aliasName: string; collectionName: string 
     enrichment: {
       setEnrichmentProgress: vi.fn(),
       whenComplete: vi.fn().mockResolvedValue(undefined),
+      whenCompletionsSettled: vi.fn().mockResolvedValue(undefined),
       runRecovery: vi.fn().mockResolvedValue(undefined),
       recomputeEnrichments: vi.fn().mockResolvedValue(undefined),
     } as never,

@@ -150,10 +150,13 @@ describe("--force-enrichments with --languages — repair-pass scope (bd tea-rag
     await createTestFile(codebaseDir, "app.ts", "export const app = 1;\nconsole.log('App');");
     await createTestFile(codebaseDir, "worker.rb", "class Worker\n  def run\n    1\n  end\nend\n");
     await ingest.indexCodebase(codebaseDir);
+    // A run on a collection still enriching is refused (bd tea-rags-mcp-62pgi).
+    await ingest.whenEnrichmentComplete();
     // One plain incremental brings the store current: until then every file
     // reads as drifted and the repair pass extracts the corpus for a reason
     // that has nothing to do with the flag under test.
     await ingest.indexCodebase(codebaseDir);
+    await ingest.whenEnrichmentComplete();
 
     // The recompute leg reads its own chunk set back from Qdrant under a
     // language filter that `coordinator-recompute-languages.test.ts` already

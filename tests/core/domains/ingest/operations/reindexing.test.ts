@@ -900,6 +900,8 @@ console.log('This file has secrets');`,
         Array.from({ length: 60 }, (_, i) => `export const appValue${i} = ${i};`).join("\n"),
       );
       await graphIngest.indexCodebase(codebaseDir);
+      // A run on a collection still enriching is refused (bd tea-rags-mcp-62pgi).
+      await graphIngest.whenEnrichmentComplete();
       // A plain incremental so the store is current: the handed-off file's
       // persisted hash matches, and only the handoff can put it back in repair.
       await graphIngest.indexCodebase(codebaseDir);

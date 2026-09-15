@@ -12,6 +12,7 @@ export type IngestErrorCode =
   | "INGEST_NOT_INDEXED"
   | "INGEST_COLLECTION_EXISTS"
   | "INGEST_VERSION_CLAIM_FAILED"
+  | "INGEST_INDEXING_IN_PROGRESS"
   | "INGEST_SNAPSHOT_MISSING"
   | "INGEST_SNAPSHOT_CORRUPTED"
   | "INGEST_MIGRATION_FAILED"
@@ -79,6 +80,26 @@ export class VersionedCollectionClaimError extends IngestError {
       code: "INGEST_VERSION_CLAIM_FAILED",
       message: `Versions v${firstVersion}..v${firstVersion + attempts - 1} of "${baseCollectionName}" are all held by live indexing runs`,
       hint: "Wait for the runs in flight to finish, then retry. If nothing is actually indexing, the markers are stale and will age out within 10 minutes.",
+      httpStatus: 409,
+    });
+  }
+}
+
+/**
+ * An index operation reached a collection that is already being indexed — by an
+ * earlier operation in this process whose background enrichment has not settled,
+ * or by a run in another process whose markers are still fresh
+ * (bd tea-rags-mcp-62pgi). Rejected, never queued: two runs on one collection
+ * overwrite each other's run pointer and terminal markers.
+ */
+export class IndexingAlreadyInProgressError extends IngestError {
+  constructor(path: string) {
+    super({
+      code: "INGEST_INDEXING_IN_PROGRESS",
+      message:
+        `Indexing of "${path}" is already running — in the background or in another session. ` +
+        "Retry after it finishes; get_index_status shows its progress.",
+      hint: "Wait until get_index_status no longer reports indexing or enrichment in progress, then retry.",
       httpStatus: 409,
     });
   }

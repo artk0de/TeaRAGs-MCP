@@ -172,6 +172,13 @@ export class EnrichmentCoordinator {
   private static readonly HEARTBEAT_THROTTLE_MS = 30_000;
   private readonly markerStore: EnrichmentMarkerStore;
   private currentRun: RunState | null = null;
+  /**
+   * Completions in flight, keyed by the collection each one closes (bd
+   * tea-rags-mcp-62pgi). Unlike `currentRun`, a newer run does not hide an older
+   * run's completion here, and a run whose completion never started is never in
+   * it — so `whenCompletionsSettled` can neither miss work nor wait forever.
+   */
+  private readonly inFlightCompletionsByCollection = new Map<string, Set<Promise<void>>>();
   private readonly providers: EnrichmentProvider[];
   /**
    * Dispatch seam between the enrichment phases and provider execution.
@@ -1196,11 +1203,36 @@ export class EnrichmentCoordinator {
       () => undefined,
     );
     run.inFlightCompletion = inFlight;
+    this.trackInFlightCompletion(collectionName, inFlight);
     try {
       return await completion;
     } finally {
       if (run.inFlightCompletion === inFlight) run.inFlightCompletion = undefined;
     }
+  }
+
+  /**
+   * Resolve once every completion in flight on `collectionName` has settled —
+   * executor and daemon releases included. Never rejects, and resolves at once
+   * when none is in flight, including for a run whose completion never started
+   * (bd tea-rags-mcp-62pgi). An index operation holds its collection until this
+   * settles for the collection it wrote.
+   */
+  async whenCompletionsSettled(collectionName: string): Promise<void> {
+    const inFlight = this.inFlightCompletionsByCollection.get(collectionName);
+    if (inFlight) await Promise.all([...inFlight]);
+  }
+
+  private trackInFlightCompletion(collectionName: string, inFlight: Promise<void>): void {
+    const completions = this.inFlightCompletionsByCollection.get(collectionName) ?? new Set<Promise<void>>();
+    completions.add(inFlight);
+    this.inFlightCompletionsByCollection.set(collectionName, completions);
+    void inFlight.then(() => {
+      completions.delete(inFlight);
+      if (completions.size === 0 && this.inFlightCompletionsByCollection.get(collectionName) === completions) {
+        this.inFlightCompletionsByCollection.delete(collectionName);
+      }
+    });
   }
 
   /** The completion sequence proper for `run`, ending with the executor and daemon releases. */

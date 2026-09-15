@@ -46,9 +46,18 @@ export const STALE_INDEXING_THRESHOLD_MS = 10 * 60 * 1000; // 10 minutes
  * collection forever.
  */
 export function isIndexingRunStale(marker: IndexingMarkerPayload, now: number = Date.now()): boolean {
+  const heartbeatAt = indexingRunHeartbeatAt(marker);
+  if (heartbeatAt === undefined) return true;
+  return now - heartbeatAt > STALE_INDEXING_THRESHOLD_MS;
+}
+
+/**
+ * Epoch ms of the marker's last sign of life — `lastHeartbeat`, else `startedAt`
+ * for markers written before heartbeats existed. Undefined when it has neither.
+ */
+export function indexingRunHeartbeatAt(marker: IndexingMarkerPayload): number | undefined {
   const referenceTime = marker.lastHeartbeat ?? marker.startedAt;
-  if (referenceTime === undefined) return true;
-  return now - new Date(referenceTime).getTime() > STALE_INDEXING_THRESHOLD_MS;
+  return referenceTime === undefined ? undefined : new Date(referenceTime).getTime();
 }
 
 /** Parse raw Qdrant payload into typed IndexingMarkerPayload. */

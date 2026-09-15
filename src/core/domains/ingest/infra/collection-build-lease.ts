@@ -18,7 +18,13 @@ import { CollectionAlreadyExistsError } from "../../../adapters/qdrant/errors.js
 import { INDEXING_METADATA_ID } from "../../../contracts/constants.js";
 import { isDebug } from "../../../infra/runtime.js";
 import { VersionedCollectionClaimError } from "../errors.js";
-import { isIndexingRunStale, parseMarkerPayload } from "../pipeline/index.js";
+import {
+  indexingRunHeartbeatAt,
+  isEnrichmentRunLive,
+  isIndexingRunStale,
+  parseMarkerPayload,
+  type IndexingMarkerPayload,
+} from "../pipeline/index.js";
 
 /**
  * Is a live indexing run building this collection right now?
@@ -31,11 +37,60 @@ import { isIndexingRunStale, parseMarkerPayload } from "../pipeline/index.js";
  * is worse than the behaviour that preceded the lease being read at all.
  */
 export async function isCollectionBuildInFlight(qdrant: QdrantManager, collection: string): Promise<boolean> {
+  const marker = await readIndexingMarker(qdrant, collection);
+  return marker !== undefined && isBuildLive(marker, Date.now(), Number.NEGATIVE_INFINITY);
+}
+
+/**
+ * Is ANY indexing of this collection in flight — a build publishing a fresh
+ * indexing marker, or a background enrichment run the `_run` pointer names that
+ * has not reached its terminal markers (bd tea-rags-mcp-62pgi)?
+ *
+ * The same lease as `isCollectionBuildInFlight`, widened by the two places a run
+ * can be invisible from the served collection alone: a force build fills a
+ * `<collection>_v<N>` off to the side until it switches the alias, and an
+ * incremental run's enrichment writes no indexing marker at all, only `_run`.
+ * Staleness is each marker's own: a crashed run stops being "in flight" when its
+ * evidence ages out, so it never locks the project.
+ *
+ * `ownRunsSettledAt` (epoch ms) discounts evidence stamped at or before it — the
+ * caller's own operation on this collection wrote that and has since ended, so a
+ * retry after a failed run is not refused on its dead heartbeat. Read failures
+ * answer "no", for the same reason as above.
+ */
+export async function isCollectionIndexingInFlight(
+  qdrant: QdrantManager,
+  collection: string,
+  options: { ownRunsSettledAt?: number; now?: number } = {},
+): Promise<boolean> {
+  const now = options.now ?? Date.now();
+  const evidenceAfter = options.ownRunsSettledAt ?? Number.NEGATIVE_INFINITY;
+
+  const served = await readIndexingMarker(qdrant, collection);
+  if (served && isBuildLive(served, now, evidenceAfter)) return true;
+  if (served?.enrichment && isEnrichmentRunLive(served.enrichment, { now, progressAfter: evidenceAfter })) {
+    return true;
+  }
+
+  for (const version of await listVersionsOf(qdrant, collection)) {
+    const marker = await readIndexingMarker(qdrant, version);
+    if (marker && isBuildLive(marker, now, evidenceAfter)) return true;
+  }
+  return false;
+}
+
+function isBuildLive(marker: IndexingMarkerPayload, now: number, evidenceAfter: number): boolean {
+  if (marker.indexingComplete || isIndexingRunStale(marker, now)) return false;
+  return (indexingRunHeartbeatAt(marker) ?? Number.NEGATIVE_INFINITY) > evidenceAfter;
+}
+
+async function readIndexingMarker(
+  qdrant: QdrantManager,
+  collection: string,
+): Promise<IndexingMarkerPayload | undefined> {
   try {
     const point = await qdrant.getPoint(collection, INDEXING_METADATA_ID);
-    if (!point?.payload) return false;
-    const marker = parseMarkerPayload(point.payload);
-    return !marker.indexingComplete && !isIndexingRunStale(marker);
+    return point?.payload ? parseMarkerPayload(point.payload) : undefined;
   } catch (err) {
     if (isDebug()) {
       console.error(
@@ -43,7 +98,19 @@ export async function isCollectionBuildInFlight(qdrant: QdrantManager, collectio
         err,
       );
     }
-    return false;
+    return undefined;
+  }
+}
+
+/** Every `<collection>_v<N>` Qdrant reports — the builds a force reindex fills off to the side. */
+async function listVersionsOf(qdrant: QdrantManager, collection: string): Promise<string[]> {
+  try {
+    const prefix = `${collection}_v`;
+    return (await qdrant.listCollections()).filter(
+      (name) => name.startsWith(prefix) && /^\d+$/.test(name.slice(prefix.length)),
+    );
+  } catch {
+    return [];
   }
 }
 
