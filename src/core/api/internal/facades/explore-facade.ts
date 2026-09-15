@@ -50,10 +50,12 @@ export interface ExploreFacadeDeps {
   /** Per-language structural-signal floors, threaded through to IndexMetricsQuery. */
   signalFloors?: ReadonlyMap<string, SignalFloors>;
   /**
-   * Provider keys of the running composition, threaded through to
-   * IndexMetricsQuery — the frame of `get_index_metrics`' enrichment health.
+   * The frame of `get_index_metrics`' enrichment health for a path: the
+   * provider keys of the ingest slice that serves that project, threaded
+   * through to IndexMetricsQuery. Resolved per request because the slice is
+   * per project (bd tea-rags-mcp-uebug).
    */
-  activeEnrichmentProviders?: readonly string[];
+  enrichmentHealthFrameForPath?: (path: string) => readonly string[];
 }
 
 export class ExploreFacade {
@@ -73,7 +75,7 @@ export class ExploreFacade {
       modelGuard: deps.modelGuard,
       chunkResolver: deps.chunkResolver,
       signalFloors: deps.signalFloors,
-      activeEnrichmentProviders: deps.activeEnrichmentProviders,
+      enrichmentHealthFrameForPath: deps.enrichmentHealthFrameForPath,
     });
   }
 

@@ -259,12 +259,16 @@ export function createApp(deps: AppDeps): App {
     findSymbol: async (req) => facades.explore.findSymbol(req),
 
     // -- Indexing — delegate to IngestFacade. The index run resolves its facade
-    // per path so the project's registry env governs it; every other ingest
-    // method stays on the process-wide facade (status/clear read no tuning).
+    // per path so the project's registry env governs it. Status does too: its
+    // enrichment health is framed on the slice's provider list, which a
+    // project's registry env can narrow (a disabled trajectory has no row), and
+    // `get_index_metrics` frames on that same per-path slice
+    // (bd tea-rags-mcp-uebug). Clear reads no composition and stays on the
+    // process-wide facade.
     indexCodebase: async (path, options, progress, enrichmentProgress) =>
       (deps.ingestForPath?.(path) ?? facades.ingest).indexCodebase(path, options, progress, enrichmentProgress),
     whenEnrichmentComplete: async () => facades.ingest.whenEnrichmentComplete(),
-    getIndexStatus: async (path) => facades.ingest.getIndexStatus(path),
+    getIndexStatus: async (path) => (deps.ingestForPath?.(path) ?? facades.ingest).getIndexStatus(path),
     clearIndex: async (path) => facades.ingest.clearIndex(path),
 
     // -- Collections — delegate to CollectionOps --

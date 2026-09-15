@@ -1009,19 +1009,15 @@ export async function createAppContext(config: AppConfig, hooks?: AppContextHook
     modelGuard: infra.modelGuard,
     chunkResolver: createSymbolChunkResolver(codegraphContext?.graphFacade),
     signalFloors: composition.signalFloors,
-    // The frame of `get_index_metrics`' enrichment health: providers the SERVER
-    // composition runs, not the providers the last run happened to touch
-    // (bd tea-rags-mcp-x2u65). Scope differs from the status path on purpose —
-    // ExploreFacade is built once, here, while `createIngestFacade` re-runs
-    // `wireComposition` per registry env and ProjectIngestFactory rebuilds the
-    // ingest slice per project, so StatusModule frames on the PROJECT's active
-    // list. A project whose registry env disables git therefore still shows a
-    // git row in `get_index_metrics` while `get_index_status` omits it — bead
-    // "get_index_metrics frames health on the server composition, not the
-    // project's".
-    activeEnrichmentProviders: activeEnrichmentProviders(composition.registry, config.trajectoryIngest).map(
-      (p) => p.key,
-    ),
+    // The frame of `get_index_metrics`' enrichment health: the providers the
+    // composition runs, not the ones the last run happened to touch
+    // (bd tea-rags-mcp-x2u65), and the PROJECT's composition, not this server's.
+    // ExploreFacade is built once, here, but the ingest slice is per project
+    // (`createIngestFacade` re-runs `wireComposition` per registry env), so the
+    // frame is resolved per request from the same `ProjectIngestFactory#forPath`
+    // slice `App.getIndexStatus` reads. A project whose registry env disables
+    // git then has no git row on either surface (bd tea-rags-mcp-uebug).
+    enrichmentHealthFrameForPath: (path) => projectIngestFactory.forPath(path).enrichmentProviderKeys,
   });
   const app = createApp({
     qdrant: infra.qdrant,
