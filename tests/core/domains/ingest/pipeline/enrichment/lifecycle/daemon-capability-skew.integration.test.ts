@@ -50,10 +50,17 @@ describe("enrichment run against a daemon from another build — real worker poo
     // ...and the collection never claims the run went through.
     const marker = await harness.readEnrichmentMarker();
     const codegraph = (marker.codegraph as Record<string, any> | undefined)?.symbols as
-      | Record<string, { status?: string } | undefined>
+      | Record<string, { status?: string; errorMessage?: string } | undefined>
       | undefined;
     expect(codegraph?.file?.status).not.toBe("completed");
     expect(codegraph?.chunk?.status).not.toBe("completed");
+    // It settles as failed with the cause at both levels (bd tea-rags-mcp-39xca.11):
+    // a run whose completion threw used to leave only `enrichment._run` behind, so
+    // status read in_progress / stalled instead of failed.
+    for (const level of [codegraph?.file, codegraph?.chunk]) {
+      expect(level?.status).toBe("failed");
+      expect(level?.errorMessage).toMatch(/runs an older build without op listAllPass1Aggregates/);
+    }
   });
 
   it("degrades on a tolerated op the daemon lacks — the run completes with its signals — and warns once for that op", async () => {
