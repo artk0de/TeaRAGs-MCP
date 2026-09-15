@@ -611,13 +611,13 @@
 ### Mechanics
 
 - **Two coordinate conventions live side by side.** `classFieldTypes` is keyed
-  by class SHORT name with a bare member name (`walker/walker.ts:201` and the
-  pass's `pythonTypeChannels` both write that shape); `structuredReturnTypes` is
-  keyed by the callee's full symbolId for a CLASS member (`Outer.Inner#method`)
-  and by `` `${relPath}::${name}` `` for a MODULE-LEVEL def
-  (`pythonModuleReturnKey`, bd tea-rags-mcp-1v12o.1.7). The channel re-keying
-  that reconciles them with the kernel store's Ruby-shaped output is in
-  `passes/python-type-channels.ts`, and the reasoning is in
+  by class SHORT name with a bare member name (`collectPythonClassFieldTypes` in
+  `walker/walker.ts` and the pass's `pythonTypeChannels` both write that shape);
+  `structuredReturnTypes` is keyed by the callee's full symbolId for a CLASS
+  member (`Outer.Inner#method`) and by `` `${relPath}::${name}` `` for a
+  MODULE-LEVEL def (`pythonModuleReturnKey`, bd tea-rags-mcp-1v12o.1.7). The
+  channel re-keying that reconciles them with the kernel store's Ruby-shaped
+  output is in `passes/python-type-channels.ts`, and the reasoning is in
   `domains/language/CLAUDE.md` → Mechanics. The field facts are ALSO written
   under a third, file-qualified key — what that address is for is a Resolver
   bullet above, and both writers share one reader so the two cannot disagree.
