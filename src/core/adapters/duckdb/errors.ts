@@ -32,6 +32,36 @@ export class DuckDbOpenFailedError extends InfraError {
 }
 
 /**
+ * The codegraph store refused to CREATE `<base>.duckdb` because
+ * `<base>_v<N>.duckdb` generations already sit beside it (bd tea-rags-mcp-39xca.1).
+ *
+ * That shape is a shadow database: the file an alias-addressed write opens when
+ * it should have opened the versioned physical collection — the 6goqa, snbzk
+ * and xjkvw class, where writes landed in a file no reader opens and recall
+ * degraded with no error. The brand on `PhysicalCollectionName` keeps an alias
+ * away from the pool at compile time; this is the runtime backstop for the one
+ * place that could still create the wrong file. A caller bug, not an outage —
+ * hence 500, and deliberately outside `CodegraphUnavailableError`, so no
+ * optional consumer degrades on it quietly.
+ */
+export class CodegraphShadowDatabaseRefusedError extends InfraError {
+  constructor(shadow: { collectionName: string; dbPath: string; generations: readonly string[] }, cause?: Error) {
+    super({
+      code: "INFRA_CODEGRAPH_SHADOW_DATABASE_REFUSED",
+      message:
+        `Refused to create codegraph database ${shadow.dbPath}: "${shadow.collectionName}" already has ` +
+        `versioned generations (${shadow.generations.join(", ")}), so it names an alias base, not a physical collection`,
+      hint:
+        "The codegraph is keyed by the PHYSICAL versioned collection. Resolve the name with " +
+        "resolvePhysicalCollection before acquiring the pool — an alias here writes a shadow database " +
+        "no reader ever opens. Nothing was created.",
+      httpStatus: 500,
+      cause,
+    });
+  }
+}
+
+/**
  * The codegraph daemon still presents a DIFFERENT build fingerprint after every
  * bounded drain-restart attempt (bd tea-rags-mcp-ji56r, bound widened by
  * tea-rags-mcp-ryoqn).

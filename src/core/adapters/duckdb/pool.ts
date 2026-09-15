@@ -535,7 +535,9 @@ export class GraphDbClientPool {
   }
 
   private async openCollection(collectionName: string): Promise<CollectionGraphHandle> {
-    const dbPath = this.pathFor(collectionName);
+    // The one read-write open in the codebase — the daemon's pool reaches it too —
+    // so this is where a shadow `<alias>.duckdb` would be created. Refused there.
+    const dbPath = this.dbFiles.writablePathFor(collectionName);
     const graphDb = new DuckDbGraphClient({
       path: dbPath,
       resources: {

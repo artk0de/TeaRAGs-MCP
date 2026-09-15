@@ -20,6 +20,8 @@ import { existsSync, mkdirSync, readdirSync } from "node:fs";
 import { copyFile, unlink } from "node:fs/promises";
 import { dirname, join } from "node:path";
 
+import { CodegraphShadowDatabaseRefusedError } from "./errors.js";
+
 /**
  * Sanitise the collection name to a filesystem-safe leaf. The Qdrant
  * collection names tea-rags uses today (`code_<hex>` + ad-hoc CLI names)
@@ -50,6 +52,30 @@ export class CodegraphDbFiles {
   /** Resolve the disk path for a given collection name. */
   pathFor(collectionName: string): string {
     return join(this.dir, `${sanitiseCollectionName(collectionName)}.duckdb`);
+  }
+
+  /**
+   * The path of a database about to be opened read-write or copied onto —
+   * refusing to CREATE a shadow (bd tea-rags-mcp-39xca.1).
+   *
+   * A file that already exists is returned as is: the orphan sweep reclaims
+   * shadows through the pool, and an existing database is never the defect. A
+   * missing one is refused when `<name>_v<N>.duckdb` generations exist, because
+   * then `<name>` is an alias base and the write belongs to a generation. The
+   * evidence is the codegraph directory itself, so the rule holds identically in
+   * the daemon, a worker thread and the main process — none of which may be
+   * able to ask Qdrant. It cannot see an alias whose generations have no graph
+   * file yet; the `PhysicalCollectionName` brand is what covers that.
+   */
+  writablePathFor(collectionName: string): string {
+    const dbPath = this.pathFor(collectionName);
+    if (existsSync(dbPath)) return dbPath;
+    const base = sanitiseCollectionName(collectionName);
+    const generations = this.listCollectionDbNames(collectionName).filter((name) => name !== base);
+    if (generations.length > 0) {
+      throw new CodegraphShadowDatabaseRefusedError({ collectionName, dbPath, generations });
+    }
+    return dbPath;
   }
 
   /** Whether a graph database file exists for this collection. */
@@ -104,7 +130,7 @@ export class CodegraphDbFiles {
   async cloneDatabase(sourceCollection: string, targetCollection: string): Promise<void> {
     const from = this.pathFor(sourceCollection);
     if (!existsSync(from)) return;
-    const to = this.pathFor(targetCollection);
+    const to = this.writablePathFor(targetCollection);
     mkdirSync(dirname(to), { recursive: true });
     await copyFile(from, to);
     if (existsSync(`${from}.wal`)) await copyFile(`${from}.wal`, `${to}.wal`);
