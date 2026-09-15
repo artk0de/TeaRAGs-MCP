@@ -63,8 +63,8 @@ relativeChurn), one-sentence observation why it's the root cause.
 Use exact `relativePath` values from search results joined with braces:
 
 - GOOD: `{app/services/batch_create.rb,app/services/jobs/create.rb}`
-- BAD: `**/services/{batch_create,jobs/create}**` (slashes inside braces =
-  broken glob)
+- BAD: `**/services/{batch_create,jobs/create}**` (`**` glued to a name acts as
+  `*` → also matches `batch_create_old.rb`)
 
 ## Signal triage
 

@@ -278,7 +278,7 @@ function searchCommonFields(filterSchema: z.ZodTypeAny) {
       .optional()
       .describe(
         "Glob pattern for filtering by file path (client-side via picomatch). " +
-          "Examples: '**/workflow/**', 'src/**/*.ts', '{models,services}/**'.",
+          "Examples: '**/workflow/**', 'src/**/*.ts', '**/{models,services}/**'.",
       ),
   };
 }
@@ -356,7 +356,7 @@ export function createSearchSchemas(schemaBuilder: SchemaBuilder) {
       .optional()
       .describe(
         "Glob pattern for filtering by file path (client-side via picomatch). " +
-          "Examples: '**/workflow/**', 'src/**/*.ts', '{models,services}/**'.",
+          "Examples: '**/workflow/**', 'src/**/*.ts', '**/{models,services}/**'.",
       ),
     ...typedFilterFields(),
     rerank: searchCodeRerankSchema
@@ -380,7 +380,7 @@ export function createSearchSchemas(schemaBuilder: SchemaBuilder) {
       .optional()
       .describe(
         "Glob pattern for filtering by file path (client-side via picomatch). " +
-          "Examples: 'src/core/ingest/**', '**/*.ts'",
+          "Examples: 'src/core/domains/ingest/**', '**/*.ts'",
       ),
     ...paginationFields(true),
     offset: z.coerce

@@ -162,10 +162,10 @@ excluding certain paths. Simpler than building a Qdrant filter for path
 matching.
 
 ```yaml
-pathPattern: "**/workflow/**"        # All files in workflow directories
-pathPattern: "src/**/*.ts"           # TypeScript files in src/
-pathPattern: "{models,services}/**"  # Multiple directories at once
-pathPattern: "!**/test/**"           # Exclude test directories
+pathPattern: "**/workflow/**"           # All files in workflow directories
+pathPattern: "src/**/*.ts"              # TypeScript files in src/
+pathPattern: "**/{models,services}/**"  # Several directory names at any depth
+pathPattern: "!**/test/**"              # Exclude test directories
 ```
 
 <AiQuery>Search for request validation in the API directory</AiQuery>
