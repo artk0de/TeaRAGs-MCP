@@ -37,6 +37,7 @@ import {
   MockEmbeddingProvider,
   MockQdrantManager,
 } from "../__helpers__/test-helpers.js";
+import { chunkPointsFilter } from "../../../../../src/core/adapters/qdrant/service-points.js";
 import { IngestFacade } from "../../../../../src/core/api/index.js";
 import type { RecordEntryInput } from "../../../../../src/core/contracts/types/registry.js";
 import { CollectionRegistry } from "../../../../../src/core/domains/maintenance/registry/collection-registry.js";
@@ -140,9 +141,13 @@ describe("ReindexingOperations.reindexChanges — registry stamp on quiet runs (
     return status.collectionName!;
   }
 
-  /** Points the fake Qdrant holds for the alias right now — what the stamp must equal. */
+  /**
+   * Chunks the fake Qdrant holds for the alias right now — what the stamp must
+   * equal. Service points (indexing marker, schema metadata) are not chunks
+   * (bd tea-rags-mcp-39xca.12).
+   */
   async function livePointCount(collectionName: string): Promise<number> {
-    return qdrant.countPoints(collectionName);
+    return qdrant.countPoints(collectionName, chunkPointsFilter());
   }
 
   function expectStampedEntry(entry: RecordEntryInput, collectionName: string): void {

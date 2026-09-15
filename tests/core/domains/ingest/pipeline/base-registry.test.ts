@@ -110,6 +110,56 @@ describe("BaseIndexingPipeline.finalizeProcessing — registry write", () => {
     expect(entry!.teaRagsVersion).toMatch(/^\d+\.\d+\.\d+/);
   });
 
+  // bd tea-rags-mcp-39xca.12 — the stamp counts chunks, not the service points
+  // stored beside them. get_index_status and get_index_metrics both leave the
+  // indexing marker and the schema metadata point out; the registry must agree.
+  it("records chunksCount as the real chunks, leaving both service points out", async () => {
+    // Module-sized bodies so each file survives chunking as a point of its own.
+    for (const name of ["alpha", "beta"]) {
+      await createTestFile(
+        codebaseDir,
+        `${name}.ts`,
+        [
+          `export const ${name}Config = {`,
+          "  port: 3000,",
+          "  host: 'localhost',",
+          "  debug: true,",
+          "  apiUrl: 'https://api.example.com',",
+          "  timeout: 5000,",
+          "};",
+          `export function ${name}Describe(): string {`,
+          `  return JSON.stringify(${name}Config);`,
+          "}",
+          `console.log('${name} loaded', ${name}Describe());`,
+        ].join("\n"),
+      );
+    }
+    await ingest.indexCodebase(codebaseDir);
+    const collectionName = (await ingest.getIndexStatus(codebaseDir)).collectionName!;
+    // The run writes the marker itself; the schema metadata point lands through
+    // the migration sweep, which this in-memory setup may not reach. Seed it so
+    // both service points are provably present when the stamp is taken.
+    if (!(await qdrant.getPoint(collectionName, "__schema_metadata__"))) {
+      await qdrant.addPoints(collectionName, [
+        {
+          id: "__schema_metadata__",
+          vector: new Array(384).fill(0),
+          payload: { _type: "schema_metadata", schemaVersion: 14, indexes: [], migratedAt: new Date().toISOString() },
+        },
+      ]);
+    }
+
+    // A zero-change reindex re-stamps the entry against the collection as it now stands.
+    await ingest.reindexChanges(codebaseDir);
+
+    const points = await qdrant.scrollFiltered(collectionName, {}, 10_000);
+    const serviceTypes = points.map((p) => p.payload._type).filter((t) => t !== undefined);
+    expect([...serviceTypes].sort()).toEqual(["indexing_metadata", "schema_metadata"]);
+    const chunkCount = points.length - serviceTypes.length;
+    expect(chunkCount).toBeGreaterThan(0);
+    expect(registry.get(collectionName)?.chunksCount).toBe(chunkCount);
+  });
+
   it("records the collection's real vector size, not the provider's configured guess", async () => {
     // embeddingDimensions is persisted metadata that outlives the process, and
     // register_project already writes the true width read back from Qdrant. The
