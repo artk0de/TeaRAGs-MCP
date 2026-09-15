@@ -3,9 +3,10 @@
  * rule over the ranges persisted in `cg_symbols` (bd tea-rags-mcp-9i2ow).
  *
  * The healer runs outside any walk, so the ranges come from
- * `getSymbolLineRangesBulk`; a file whose rows predate migration 024 has none,
- * and then every point keeps its own payload symbolId (`#partN` stripped) —
- * the heal as it was before the ranges existed.
+ * `getSymbolLineRangesBulk`. A file whose rows predate migration 024 has symbol
+ * rows but no ranges; its points are left as they are and counted, never
+ * written against the anchor owner, which is how stale owners got persisted
+ * (bd tea-rags-mcp-39xca.2).
  */
 
 import { describe, expect, it, vi } from "vitest";
@@ -17,7 +18,7 @@ import {
 import type {
   CodegraphSignalDrift,
   GraphDbClient,
-  SymbolLineRange,
+  PersistedSymbolLineRanges,
 } from "../../../../../src/core/contracts/types/codegraph.js";
 import type { BatchPayloadOp } from "../../../../../src/core/domains/ingest/pipeline/enrichment/batch-write.js";
 
@@ -63,7 +64,7 @@ const SIGNALS = new Map([
   ["collectPythonInheritanceEdges.walkScope", { fanIn: 3, fanOut: 6, pageRank: 0.3 }],
 ]);
 
-function graphDbStub(drift: CodegraphSignalDrift, ranges: Map<string, SymbolLineRange[]>) {
+function graphDbStub(drift: CodegraphSignalDrift, ranges: Map<string, PersistedSymbolLineRanges>) {
   return {
     diffSymbolSignals: vi.fn().mockResolvedValue(drift),
     refreshSymbolSignalsPrev: vi.fn().mockResolvedValue(undefined),
@@ -87,13 +88,16 @@ async function heal(points: StoredPoint[], graphDb: ReturnType<typeof graphDbStu
   return qdrant;
 }
 
-const WALKER_RANGES = new Map<string, SymbolLineRange[]>([
+const WALKER_RANGES = new Map<string, PersistedSymbolLineRanges>([
   [
     REL,
-    [
-      { symbolId: "collectPythonInheritanceEdges", startLine: 240, endLine: 320 },
-      { symbolId: "collectPythonInheritanceEdges.walkScope", startLine: 257, endLine: 300 },
-    ],
+    {
+      ranges: [
+        { symbolId: "collectPythonInheritanceEdges", startLine: 240, endLine: 320 },
+        { symbolId: "collectPythonInheritanceEdges.walkScope", startLine: 257, endLine: 300 },
+      ],
+      rowsWithoutRanges: 0,
+    },
   ],
 ]);
 
@@ -116,7 +120,18 @@ describe("createCodegraphPayloadHealRunner chunk owner (bd tea-rags-mcp-9i2ow)",
     ]);
   });
 
-  it("falls back to each point's own payload symbolId, `#part` stripped, when the file has no ranges", async () => {
+  it("leaves a file's points unwritten when its rows predate migration 024, instead of anchor owners", async () => {
+    const graphDb = graphDbStub(
+      { symbols: [{ relPath: REL, symbolId: "collectPythonInheritanceEdges" }], files: [] },
+      new Map([[REL, { ranges: [], rowsWithoutRanges: 2 }]]),
+    );
+
+    const qdrant = await heal(POINTS, graphDb);
+
+    expect(qdrant.chunkWrites()).toEqual([]);
+  });
+
+  it("leaves a file's points unwritten when the graph holds no symbol rows for it", async () => {
     const graphDb = graphDbStub(
       { symbols: [{ relPath: REL, symbolId: "collectPythonInheritanceEdges" }], files: [] },
       new Map(),
@@ -124,13 +139,7 @@ describe("createCodegraphPayloadHealRunner chunk owner (bd tea-rags-mcp-9i2ow)",
 
     const qdrant = await heal(POINTS, graphDb);
 
-    expect(
-      qdrant
-        .chunkWrites()
-        .flatMap((op) => op.points)
-        .sort(),
-    ).toEqual(["head", "nested"]);
-    for (const op of qdrant.chunkWrites()) expect(op.payload).toEqual({ fanIn: 1, fanOut: 1, pageRank: 0.1 });
+    expect(qdrant.chunkWrites()).toEqual([]);
   });
 
   it("reads the ranges once per run, for the files whose symbols moved", async () => {

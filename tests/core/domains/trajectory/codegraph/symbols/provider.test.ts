@@ -1134,11 +1134,11 @@ describe("CodegraphEnrichmentProvider", () => {
     expect(overlays.get("src/never-walked.ts")?.size).toBe(0);
   });
 
-  it("buildChunkSignals skips chunks whose startLine has no containing indexed line", async () => {
+  it("buildChunkSignals settles chunks whose startLine has no containing indexed line without signals", async () => {
     // Containment loop returns undefined when no indexed startLine
     // satisfies line<=startLine&&line<=endLine. Exercises the
-    // `best` stays undefined path through the loop, then the
-    // `if (!symbolId) continue` skip in buildChunkSignals.
+    // `best` stays undefined path through the loop: the chunk is unowned,
+    // which the settlement writes as an EMPTY overlay (bd tea-rags-mcp-39xca.2).
     const sink = provider.asExtractionSink();
     await sink.write({
       relPath: "src/big.ts",
@@ -1155,9 +1155,10 @@ describe("CodegraphEnrichmentProvider", () => {
       ["src/big.ts", [{ chunkId: "chunk-orphan", startLine: 5, endLine: 8 }]],
     ]);
     const overlays = await provider.buildChunkSignals("/", chunkMap);
-    // Map for the file exists but no per-chunk entry because the
-    // lookup was skipped.
-    expect(overlays.get("src/big.ts")?.has("chunk-orphan")).toBe(false);
+    // The provider settles chunks explicitly: an omitted chunk would be one it
+    // could NOT settle, so an unowned chunk rides as an empty overlay — no
+    // signal values, stamped bare by the applier exactly as before.
+    expect(overlays.get("src/big.ts")?.get("chunk-orphan")).toEqual({});
   });
 
   // Slice 2 / B2 — sink.finish recomputes Tarjan SCC after the batch

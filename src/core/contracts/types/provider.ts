@@ -479,6 +479,15 @@ export interface EnrichmentProvider {
    */
   readonly defersChunkEnrichment?: boolean;
   /**
+   * When true, `buildChunkSignals` settles chunks EXPLICITLY: every chunk it
+   * settles has an entry in the returned map — an EMPTY overlay settles it
+   * without signal values — and a requested chunk it leaves out is one it could
+   * not settle, so no caller may stamp `enrichedAt` on it (codegraph, bd
+   * tea-rags-mcp-39xca.2). Absent / false ⇒ callers stamp every requested chunk
+   * the map omits (git: a chunk with no commits).
+   */
+  readonly settlesChunksExplicitly?: boolean;
+  /**
    * Per-file content hashes this provider has already persisted for
    * `collectionName`, as `relPath -> hash`, with `null` for a row written
    * before the provider stored hashes at all (bd tea-rags-mcp-6goqa).

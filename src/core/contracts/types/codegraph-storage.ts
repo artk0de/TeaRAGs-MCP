@@ -79,14 +79,27 @@ export interface SymbolChunkLocation {
 
 /**
  * A symbol's walker range (1-based, inclusive) — the input of the chunk-owner
- * rule both writers of `codegraph.symbols.chunk.*` resolve through (bd
- * tea-rags-mcp-9i2ow). Persisted as `cg_symbols.start_line` / `end_line`
- * (migration 024) and read back by {@link GraphDbClient.getSymbolLineRangesBulk}.
+ * rule every producer of `codegraph.symbols.chunk.*` settles through (bd
+ * tea-rags-mcp-9i2ow, 39xca.2). Persisted as `cg_symbols.start_line` /
+ * `end_line` (migration 024) and read back by
+ * {@link GraphDbClient.getSymbolLineRangesBulk}.
  */
 export interface SymbolLineRange {
   symbolId: SymbolId;
   startLine: number;
   endLine: number;
+}
+
+/**
+ * What `cg_symbols` holds for one file's symbol ranges: every ranged row, and
+ * how many rows carry a NULL range (written before migration 024). The count is
+ * what tells "rows the chunk-owner rule cannot place" from "no rows at all" — a
+ * file with no row is absent from the read — and the two settle differently
+ * (bd tea-rags-mcp-39xca.2).
+ */
+export interface PersistedSymbolLineRanges {
+  ranges: SymbolLineRange[];
+  rowsWithoutRanges: number;
 }
 
 /**
@@ -385,16 +398,17 @@ export interface GraphDbClient {
   findSymbolChunk: (symbolId: SymbolId) => Promise<SymbolChunkLocation | null>;
 
   /**
-   * Line ranges of every RANGED symbol of each requested file (bd
-   * tea-rags-mcp-9i2ow) — the input the payload healer gives the chunk-owner
-   * rule, which the deferred chunk pass feeds from the walk instead. Rows with a
-   * NULL range (written before migration 024) are left out, and a path with no
-   * ranged row is absent from the map; both read as "no range row", so the
-   * chunk keeps its own payload symbolId. Empty input is a no-op.
+   * Each requested file's persisted symbol ranges (bd tea-rags-mcp-9i2ow) — the
+   * `persisted` range source the payload heal settles chunks against, where the
+   * deferred chunk pass uses the walk instead. Every ranged row comes back, and
+   * rows with a NULL range (written before migration 024) are COUNTED, so "rows
+   * the owner rule cannot place" stays distinguishable from "no rows"; a path
+   * with no row at all is absent (bd tea-rags-mcp-39xca.2). Empty input is a
+   * no-op.
    *
    * Callers bound the set themselves — one call is one IPC frame on the daemon.
    */
-  getSymbolLineRangesBulk: (relPaths: readonly RelPath[]) => Promise<Map<RelPath, SymbolLineRange[]>>;
+  getSymbolLineRangesBulk: (relPaths: readonly RelPath[]) => Promise<Map<RelPath, PersistedSymbolLineRanges>>;
 
   // ── Tier 2 graph metrics (Slice 2 / B1) ──
 

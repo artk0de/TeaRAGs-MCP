@@ -12,7 +12,9 @@ import { relative } from "node:path";
 
 import type { QdrantManager } from "../../../../adapters/qdrant/client.js";
 import type {
+  ChunkLookupEntry,
   ChunkSignalOverlay,
+  EnrichmentProvider,
   FileSignalOverlay,
   FileSignalTransform,
 } from "../../../../contracts/types/provider.js";
@@ -25,6 +27,26 @@ import type { MissedFileChunk } from "./types.js";
 
 const BATCH_SIZE = 100;
 const MISSED_PATH_SAMPLE_LIMIT = 10;
+
+/**
+ * The requested chunks a caller hands `applyChunkSignals` as
+ * `allRequestedChunkIds` — the ones stamped bare when the overlay map omits
+ * them. A provider that settles chunks explicitly omits only chunks it could
+ * NOT settle, so none of its chunks may be stamped that way: undefined. Any
+ * other provider (git) omits a chunk because it found nothing for it, and
+ * relies on the stamp to take it out of recovery (bd tea-rags-mcp-39xca.2).
+ */
+export function bareStampableChunkIds(
+  provider: Pick<EnrichmentProvider, "settlesChunksExplicitly">,
+  chunkMap: ReadonlyMap<string, readonly ChunkLookupEntry[]>,
+): Set<string> | undefined {
+  if (provider.settlesChunksExplicitly) return undefined;
+  const ids = new Set<string>();
+  for (const entries of chunkMap.values()) {
+    for (const entry of entries) ids.add(entry.chunkId);
+  }
+  return ids;
+}
 
 /**
  * Payload batches in flight during the deferred FILE finalize apply

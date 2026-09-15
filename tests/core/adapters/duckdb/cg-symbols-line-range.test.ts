@@ -128,11 +128,35 @@ describe("cg_symbols — line range round trip", () => {
       const ranges = await client.getSymbolLineRangesBulk(["walker.ts", "other.ts", "absent.ts"]);
 
       expect([...ranges.keys()].sort()).toEqual(["other.ts", "walker.ts"]);
-      expect(ranges.get("walker.ts")?.sort((a, b) => a.startLine - b.startLine)).toEqual([
+      expect(ranges.get("walker.ts")?.ranges.sort((a, b) => a.startLine - b.startLine)).toEqual([
         { symbolId: "collectPythonInheritanceEdges", startLine: 240, endLine: 320 },
         { symbolId: "collectPythonInheritanceEdges.walkScope", startLine: 257, endLine: 300 },
       ]);
-      expect(ranges.get("other.ts")).toEqual([{ symbolId: "Other", startLine: 1, endLine: 5 }]);
+      expect(ranges.get("walker.ts")?.rowsWithoutRanges).toBe(1);
+      expect(ranges.get("other.ts")).toEqual({
+        ranges: [{ symbolId: "Other", startLine: 1, endLine: 5 }],
+        rowsWithoutRanges: 0,
+      });
+    });
+
+    it("reports a file whose rows all predate the ranges as rows without ranges, not as an absent file", async () => {
+      // bd tea-rags-mcp-39xca.2 — "symbol rows, no ranges" and "no symbol rows"
+      // must stay distinguishable: the first is a pre-024 file the chunk-owner
+      // rule cannot place, the second a file the graph holds nothing for.
+      await client.upsertSymbols("a.ts", [def("a.ts", "NoLines")]);
+      await client.run(
+        "INSERT INTO cg_symbols (rel_path, symbol_id, fq_name, short_name, scope_json) VALUES (?, ?, ?, ?, ?)",
+        ["legacy.ts", "Legacy", "Legacy", "Legacy", "[]"],
+      );
+
+      const ranges = await client.getSymbolLineRangesBulk(["a.ts", "legacy.ts", "absent.ts"]);
+
+      expect(ranges).toEqual(
+        new Map([
+          ["a.ts", { ranges: [], rowsWithoutRanges: 1 }],
+          ["legacy.ts", { ranges: [], rowsWithoutRanges: 1 }],
+        ]),
+      );
     });
 
     it("is a no-op returning an empty map for no paths", async () => {

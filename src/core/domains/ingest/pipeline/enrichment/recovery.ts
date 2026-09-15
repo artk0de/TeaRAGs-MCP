@@ -9,7 +9,7 @@ import type { QdrantManager } from "../../../../adapters/qdrant/client.js";
 import type { EnrichmentExecutor } from "../../../../contracts/types/enrichment-executor.js";
 import type { ChunkLookupEntry } from "../../../../types.js";
 import type { ChunkItem } from "../types.js";
-import type { EnrichmentApplier } from "./applier.js";
+import { bareStampableChunkIds, type EnrichmentApplier } from "./applier.js";
 import { InlineEnrichmentExecutor } from "./executor/index.js";
 import type { EnrichmentMarkerStore } from "./marker-store.js";
 import { enrichmentSkipReason, type EnrichmentSkipReason } from "./policy.js";
@@ -264,10 +264,10 @@ export class EnrichmentRecovery {
           if (chunkMap.size === 0) return { files: 0, chunks: 0, handedOff };
         }
 
-        const batchChunkIds = new Set<string>();
-        for (const entries of chunkMap.values()) {
-          for (const entry of entries) batchChunkIds.add(entry.chunkId);
-        }
+        // The deferred pass's bare-stamp rule (bd tea-rags-mcp-39xca.2):
+        // codegraph settles these non-extractable chunks explicitly, so a
+        // chunk it omits is not stamped here either.
+        const batchChunkIds = bareStampableChunkIds(provider, chunkMap);
         const chunkSignals = await this.executor.runChunkBatch(provider, root, chunkMap, { collectionName });
         const applied = await this.applier.applyChunkSignals(
           collectionName,

@@ -104,8 +104,8 @@
   so healing there stamped `enrichedAt` over empty overlays, and a
   payload-`symbolId` fallback resolved `#part` chunks to the outer symbol where
   the deferred pass picks the nested one (bd tea-rags-mcp-fxio5). A seeded chunk
-  whose file the run never walks gets the same empty stamp, which is why the
-  narrowing and the forced walk promise the same set.
+  whose file the run never walks is left unsettled — owed, not stamped — which
+  is why the narrowing and the forced walk promise the same set.
 - **Codegraph is pinned to one worker thread by `routingKey = collectionName`**
   — the ONLY provider declaring a `workerDescriptor`
   (`dispatch: "collection-affinity"`, `wireCodegraph` in

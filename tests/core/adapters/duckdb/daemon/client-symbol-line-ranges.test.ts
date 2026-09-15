@@ -4,8 +4,9 @@
  * The payload healer reads symbol ranges through whatever graph client the pool
  * hands it, and in production that is the daemon proxy. Two things must hold on
  * that path: the Map survives the JSON round trip, and a daemon from an OLDER
- * build — which the pool tolerates — degrades to "no ranges" (every chunk keeps
- * its own payload symbolId, the pre-ranges heal) instead of failing the heal.
+ * build — which the pool tolerates — degrades to "no rows known", which leaves
+ * the heal's chunk writes unsettled (bd tea-rags-mcp-39xca.2) instead of failing
+ * the heal.
  */
 
 import { mkdtempSync, rmSync } from "node:fs";
@@ -81,7 +82,12 @@ describe("DaemonGraphDbClient.getSymbolLineRangesBulk (bd tea-rags-mcp-9i2ow)", 
     await fakeDaemon(socketPath, (r) => {
       seen.push(r);
       if (r.op !== "getSymbolLineRangesBulk") return null;
-      return [["walker.ts", [{ symbolId: "outer.walkScope", startLine: 257, endLine: 300 }]]];
+      return [
+        [
+          "walker.ts",
+          { ranges: [{ symbolId: "outer.walkScope", startLine: 257, endLine: 300 }], rowsWithoutRanges: 1 },
+        ],
+      ];
     });
 
     const client = new DaemonGraphDbClient(socketPath, "code_x_v1");
@@ -89,7 +95,14 @@ describe("DaemonGraphDbClient.getSymbolLineRangesBulk (bd tea-rags-mcp-9i2ow)", 
     const ranges = await client.getSymbolLineRangesBulk(["walker.ts", "other.ts"]);
     await client.close();
 
-    expect(ranges).toEqual(new Map([["walker.ts", [{ symbolId: "outer.walkScope", startLine: 257, endLine: 300 }]]]));
+    expect(ranges).toEqual(
+      new Map([
+        [
+          "walker.ts",
+          { ranges: [{ symbolId: "outer.walkScope", startLine: 257, endLine: 300 }], rowsWithoutRanges: 1 },
+        ],
+      ]),
+    );
     expect(seen.find((r) => r.op === "getSymbolLineRangesBulk")?.params).toMatchObject({
       collection: "code_x_v1",
       relPaths: ["walker.ts", "other.ts"],
@@ -144,7 +157,9 @@ describe("DaemonGraphDbClient.getSymbolLineRangesBulk (bd tea-rags-mcp-9i2ow)", 
       const command = DAEMON_OP_COMMANDS.getSymbolLineRangesBulk;
       expect(command.access).toBe("read");
       const result = command.access === "read" ? await command.run(graphDb, { relPaths: ["walker.ts"] }) : undefined;
-      expect(result).toEqual([["walker.ts", [{ symbolId: "outer", startLine: 1, endLine: 9 }]]]);
+      expect(result).toEqual([
+        ["walker.ts", { ranges: [{ symbolId: "outer", startLine: 1, endLine: 9 }], rowsWithoutRanges: 0 }],
+      ]);
     } finally {
       await graphDb.close();
     }
