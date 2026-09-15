@@ -492,13 +492,20 @@ export class IndexingOps {
     const collectionName = await this.resolveCollectionForPath(path);
     this.modelGuard?.invalidate(collectionName);
     await this.status.clearIndex(path);
-    // Drop the per-collection codegraph DuckDB file once Qdrant has
-    // released its collection. Order matters: Qdrant first — if it
-    // fails, retaining the DuckDB file is safe (still shadows a live
-    // collection); after Qdrant succeeds, the DuckDB file is orphaned
-    // and removed here. Non-fatal when codegraph is disabled.
+    // Drop the codegraph databases once Qdrant has released the collection.
+    // Order matters: Qdrant first — if it fails, keeping the databases is safe
+    // (they still shadow live collections); once it succeeds they are orphans.
+    //
+    // EVERY database on disk for the name, not the one named after it
+    // (bd tea-rags-mcp-39xca.1): `clearIndex` deletes every `<name>_v<N>`
+    // generation, and each generation has its own database. Removing only
+    // `<name>.duckdb` — at most a shadow for a versioned collection — left them
+    // all behind, and an index that later reclaimed a version number reopened
+    // its old graph. Non-fatal when codegraph is disabled.
     if (this.codegraphPool) {
-      await this.codegraphPool.removeCollection(collectionName);
+      for (const generation of this.codegraphPool.listCollectionDbNames(collectionName)) {
+        await this.codegraphPool.removeCollection(generation);
+      }
     }
   }
 
