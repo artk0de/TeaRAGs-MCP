@@ -423,13 +423,7 @@ export function buildCodegraphDaemonSpawnEnv(
  * would double-count (the connections already counted) and pin `refs` above 0
  * forever — the exact bug that kept the daemon holding the lock.
  */
-function ensureCodegraphDaemon(
-  paths: CodegraphDaemonPaths,
-  rootDir: string,
-  resources: CodegraphDaemonSpawnSettings["resources"],
-  /** This process's resolved `core.debug`, handed to the daemon it spawns. */
-  debug: boolean,
-): void {
+function ensureCodegraphDaemon(paths: CodegraphDaemonPaths, settings: CodegraphDaemonSpawnSettings): void {
   if (isCodegraphDaemonAlive(paths)) return;
   const lock = codegraphDaemonLock.acquire(paths.lockFile);
   if (!lock) return; // another process is spawning; it will own the daemon
@@ -448,7 +442,7 @@ function ensureCodegraphDaemon(
       const child = spawn(process.execPath, [entryPath], {
         detached: true,
         stdio: ["ignore", logFd, logFd],
-        env: buildCodegraphDaemonSpawnEnv({ rootDir, storageDir: paths.storageDir, resources, debug }),
+        env: buildCodegraphDaemonSpawnEnv(settings),
       });
       child.unref();
     } finally {
@@ -569,6 +563,29 @@ export function wireCodegraph(
   // map to thread (the legacy adapter that consumed one was removed by
   // tea-rags-mcp-jh40).
 
+  // The ONE place the daemon's spawn settings are built. Both spawn paths — the
+  // lazy first-use `ensure` below and the pool's stale-build
+  // `daemonRestart.respawn` — go through it, so a field added to the spawn
+  // settings reaches both (bd tea-rags-mcp-8qzyb: respawn once dropped
+  // `memoryLimitMax`, and a replaced daemon's governor ran on the default
+  // ceiling).
+  const spawnCodegraphDaemon = (): void => {
+    ensureCodegraphDaemon(daemonPaths, {
+      rootDir,
+      storageDir: daemonPaths.storageDir,
+      resources: {
+        memoryLimit: codegraph.dbMemoryLimit,
+        // Governor ceiling rides the spawn env to the daemon; the in-process
+        // pool below intentionally stays at the base limit (daemon-only raise).
+        memoryLimitMax: codegraph.dbMemoryLimitMax,
+        threads: codegraph.dbThreads,
+      },
+      // Read here, at spawn time, not at wire time: the wireCodegraph unit
+      // test wires a config slice without `core` and never spawns.
+      debug: zodConfig.core.debug,
+    });
+  };
+
   const pool = new GraphDbClientPool({
     rootDir,
     symbolTableFactory: () => new InMemoryGlobalSymbolTable(),
@@ -593,21 +610,12 @@ export function wireCodegraph(
     // Build-version handshake restart (bd tea-rags-mcp-ji56r): when the pool's
     // handshake finds a daemon from a DIFFERENT build (stale after `npm run
     // build && npm link`), it drains that daemon gracefully and cold-spawns a
-    // fresh one from THIS build via ensureCodegraphDaemon — the same lazy
-    // spawn path as the first write (alive-check + cross-process DaemonLock
-    // single-flight make it safe to call again after the stale exit).
+    // fresh one from THIS build via spawnCodegraphDaemon — the same lazy
+    // spawn path, with the same settings, as the first write (alive-check +
+    // cross-process DaemonLock single-flight make it safe to call again after
+    // the stale exit).
     daemonRestart: {
-      respawn: () => {
-        ensureCodegraphDaemon(
-          daemonPaths,
-          rootDir,
-          {
-            memoryLimit: codegraph.dbMemoryLimit,
-            threads: codegraph.dbThreads,
-          },
-          zodConfig.core.debug,
-        );
-      },
+      respawn: spawnCodegraphDaemon,
     },
     // Hydrate the per-collection symbol table from disk on first open.
     // Without this, an incremental reindex of file A cannot resolve
@@ -650,20 +658,7 @@ export function wireCodegraph(
   const ensure = (): void => {
     if (ensured) return;
     ensured = true;
-    ensureCodegraphDaemon(
-      daemonPaths,
-      rootDir,
-      {
-        memoryLimit: codegraph.dbMemoryLimit,
-        // Governor ceiling rides the spawn env to the daemon; the in-process
-        // pool above intentionally stays at the base limit (daemon-only raise).
-        memoryLimitMax: codegraph.dbMemoryLimitMax,
-        threads: codegraph.dbThreads,
-      },
-      // Read here, at spawn time, not at wire time: the wireCodegraph unit
-      // test wires a config slice without `core` and never spawns.
-      zodConfig.core.debug,
-    );
+    spawnCodegraphDaemon();
   };
   const originalAcquireWrite = pool.acquireWrite.bind(pool);
   pool.acquireWrite = async (collectionName: PhysicalCollectionName) => {
