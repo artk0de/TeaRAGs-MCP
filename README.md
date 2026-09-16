@@ -207,8 +207,27 @@ The right column shows what runs under the hood.
 
 ## 📦 Installation
 
-Requires **Node.js 24+**, **git** and **[Ollama](https://ollama.com)** with the
-code-embedding model:
+### 💻 System requirements
+
+|                | Requirement                                                                                             |
+| -------------- | ------------------------------------------------------------------------------------------------------- |
+| **OS**         | macOS (arm64, x64) · Linux (x64, arm64) · Windows (x64)                                                 |
+| **Node.js**    | 22+ supported, 24+ recommended                                                                          |
+| **git**        | Required — churn, ownership and bug-fix signals come from the repository's history                      |
+| **Embeddings** | [Ollama](https://ollama.com) with the code-embedding model (322 MB), or an OpenAI, Cohere or Voyage key |
+| **Disk**       | 66 MB for the Qdrant binary, plus the per-project indexes below                                         |
+
+Disk taken by real indexes (turbo quantization, dense + sparse vectors):
+
+| Codebase                                | Indexed                                                     | Vector index (Qdrant) | Call graph (DuckDB) |
+| --------------------------------------- | ----------------------------------------------------------- | --------------------- | ------------------- |
+| Production monolith (Ruby + TypeScript) | **3M+ LoC + 118K lines of docs** · ~33k files · 140k chunks | 1.3 GB                | 1.1 GB              |
+| TeaRAGs itself (TypeScript)             | 433K LoC + 36K lines of docs · ~2.4k files · 25k chunks     | 1.2 GB                | 42 MB               |
+
+The call graph grows with the code; the vector index barely does — a codebase
+seven times smaller still takes 1.2 GB.
+
+Pull the code-embedding model:
 
 ```bash
 ollama pull unclemusclez/jina-embeddings-v2-base-code:latest
