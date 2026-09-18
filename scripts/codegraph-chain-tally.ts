@@ -533,7 +533,6 @@ function rubyCallContext(
     ivarTypes: channels.ivarTypes,
     compactDeclaredClasses: channels.compactDeclaredClasses,
     associationTypes: extraction.associationTypes,
-    localCallBindings: chunk.localCallBindings,
     gemfileContent: channels.gemfileContent,
     projectRoot: channels.projectRoot,
   };
@@ -547,10 +546,15 @@ function buildCallContext(
   hierarchy: HierarchyView,
   ruby: RubyRunGlobalChannels | null = null,
   declaredDependencies: ReadonlySet<string> | undefined = undefined,
+  projectRoot: string | undefined = undefined,
 ): CallContext {
   return {
     hierarchy,
     declaredDependencies,
+    // Every language, as production threads it: Go reads the corpus's go.mod
+    // module map through it (bd tea-rags-mcp-e6xx), TypeScript binds to it and
+    // gets the same root the factory already carries, Python and Java never read it.
+    projectRoot,
     instantiatedTypes: channels.instantiatedTypes,
     callerFile: extraction.relPath,
     callerScope: chunk.scope,
@@ -559,6 +563,11 @@ function buildCallContext(
     symbolTable,
     classFieldTypes: extraction.classFieldTypes,
     localBindings: chunk.localBindings,
+    // Per-chunk for EVERY language, as `CallEdgeResolutionRunner#buildCallContext`
+    // threads it: Go's `returnTypeBinding` reads nothing else, and a Ruby-only
+    // thread left that pass unable to fire (bd tea-rags-mcp-e6xx). Python and
+    // Java walkers never emit it, so their contexts are unchanged.
+    localCallBindings: chunk.localCallBindings,
     callResultBindings: chunk.callResultBindings,
     classExtends: channels.classExtends,
     structuredReturnTypes: channels.structuredReturnTypes,
@@ -829,6 +838,7 @@ export async function run(
         hierarchy,
         rubyChannels,
         declaredDependencies,
+        root,
       );
       for (const call of chunk.calls ?? []) {
         if (call.dispatch !== undefined) {

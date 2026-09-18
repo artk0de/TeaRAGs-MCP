@@ -143,7 +143,14 @@ function collectGoImports(root: AstNode): ImportRef[] {
     const path = node.childForFieldName("path");
     if (!path) return;
     const literal = path.text.replace(/^["`]|["`]$/g, "");
-    out.push({ importText: literal, startLine: node.startPosition.row + 1 });
+    const ref: ImportRef = { importText: literal, startLine: node.startPosition.row + 1 };
+    // bd tea-rags-mcp-e6xx — the name the import binds, when the source spells
+    // one: an alias is the only name a qualified call can use, `.` puts the
+    // package's names in this file's scope, `_` binds nothing. A plain import
+    // binds the package's own name, which the resolver reads off the path.
+    const name = node.childForFieldName("name");
+    if (name) ref.importedNames = [name.text];
+    out.push(ref);
   });
   return out;
 }
@@ -151,6 +158,20 @@ function collectGoImports(root: AstNode): ImportRef[] {
 function collectGoCalls(root: AstNode): CallRef[] {
   const out: CallRef[] = [];
   walk(root, (node) => {
+    // bd tea-rags-mcp-e6xx — a generic function called with ONE value argument
+    // (`pair[int](x)`, `pkg.Pair[int](x)`) parses as a conversion to an
+    // instantiated generic type; the grammar cannot tell the two apart. It is
+    // emitted as a bare call whose member is the instantiated name as written —
+    // the shape an index-expression callee (`getTyped[string](c, key)`) already
+    // has — and the resolver decides whether the operand names a generic
+    // declaration. A conversion to any other type (`[]byte(s)`) is left alone.
+    if (node.type === "type_conversion_expression") {
+      const type = node.childForFieldName("type");
+      if (type?.type === "generic_type") {
+        out.push({ callText: node.text, receiver: null, member: type.text, startLine: node.startPosition.row + 1 });
+      }
+      return;
+    }
     if (node.type !== "call_expression") return;
     const fn = node.childForFieldName("function");
     if (!fn) return;
@@ -194,6 +215,9 @@ function walk(node: AstNode, visit: (n: AstNode) => void): void {
  *      `x := Foo{}` (`composite_literal`) and `x := &Foo{}`
  *      (`unary_expression` wrapping `composite_literal`) →
  *      `{ x: "Foo" }`. bd tea-rags-mcp-6g9c.
+ *   5. Function-literal parameters — `return func(c *Context) { ... }` binds
+ *      `c` for the literal's lines only; see `bindFuncLiteralParams`. bd
+ *      tea-rags-mcp-e6xx.
  *
  * Function-return short decls `x := New()` are captured into the SEPARATE
  * `calls` map (varName → called func short name), NOT `types` — the walker
@@ -249,11 +273,20 @@ function collectGoLocalBindingsForChunk(
     }
   }
 
+  // Function-literal parameters whose type binds nothing, settled AFTER the
+  // walk: whether one must shadow depends on bindings the walk has not reached
+  // yet (a `c := New()` later in the body is still an outer `c`).
+  const untypedLiteralParams: UntypedLiteralParam[] = [];
+
   // Local variable declarations inside the body — `var x Foo`, `x :=
   // Foo{}`, `x := &Foo{}` (bd tea-rags-mcp-6g9c). Walk the target
   // declaration's descendants; both forms are nested in the function's
   // `block` / `statement_list` regardless of nesting depth.
   walk(target as AstNode, (node) => {
+    if (node.type === "func_literal") {
+      bindFuncLiteralParams(node, bindings, untypedLiteralParams);
+      return;
+    }
     if (node.type === "var_declaration") {
       for (const spec of node.children) {
         if (spec.type !== "var_spec") continue;
@@ -291,7 +324,55 @@ function collectGoLocalBindingsForChunk(
       }
     }
   });
+  // An untyped literal parameter shadows only a name that means something else
+  // in the chunk — a typed binding or a call binding (`c := New()`). With no
+  // namesake it records nothing, so no binding key appears that was not there.
+  for (const param of untypedLiteralParams) {
+    if (bindings[param.name] === undefined && callBindings[param.name] === undefined) continue;
+    (bindings[param.name] ??= []).push(param.shadow);
+  }
   return { types: bindings, calls: callBindings };
+}
+
+/** A function-literal parameter whose type binds nothing, and the shadow it would record. */
+interface UntypedLiteralParam {
+  name: string;
+  shadow: LocalBinding;
+}
+
+/**
+ * Bind a `func_literal`'s parameters for the literal's own lines (bd
+ * tea-rags-mcp-e6xx) — gin's middlewares are `return func(c *Context) { ... }`,
+ * and every call on that `c` went unresolved without it.
+ *
+ * Each binding carries `scopeEndLine` = the literal's last line, so the shared
+ * lookup skips it past the literal and the name denotes whatever it denoted
+ * before — a typed outer binding, the `c := New()` call binding, or nothing.
+ *
+ * A parameter whose type binds nothing (`w http.ResponseWriter`,
+ * `c interface{ Use() }`) is a local of UNKNOWN type for the literal's lines: it
+ * is recorded with the EMPTY type, which Go's readers take as "a local no pass
+ * can type" — so neither an outer binding, a call binding of the same name, nor
+ * an import it shadows speaks for it. Whether it needs recording at all is
+ * settled after the walk (`untypedLiteralParams`).
+ */
+function bindFuncLiteralParams(
+  literal: AstNode,
+  bindings: Record<string, LocalBinding[]>,
+  untypedLiteralParams: UntypedLiteralParam[],
+): void {
+  const params = literal.childForFieldName("parameters");
+  if (!params) return;
+  const scopeEndLine = literal.endPosition.row + 1;
+  for (const param of params.children) {
+    if (param.type !== "parameter_declaration") continue;
+    const name = readParamName(param);
+    if (!name) continue;
+    const line = param.startPosition.row + 1;
+    const type = readParamBareType(param);
+    if (type) (bindings[name] ??= []).push({ line, type, scopeEndLine });
+    else untypedLiteralParams.push({ name, shadow: { line, type: "", scopeEndLine } });
+  }
 }
 
 /**

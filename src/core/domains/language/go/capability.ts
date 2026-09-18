@@ -11,5 +11,7 @@ export const capability: LanguageCapability = {
   tests: { tier: "medium", detection: "*_test.go", tech: "generic AST" },
   codegraph: { tier: "moderate", tech: "6-strategy; explicit interfaces (no poly dispatch)" },
   // codegraphSchema 2: bd tea-rags-mcp-ex28m — see typescript/capability.ts.
-  versions: { chunking: 1, walker: 1, codegraphSchema: 2 },
+  // walker 2: bd tea-rags-mcp-e6xx — struct-field facet + method promotion
+  // through embedding; indexed Go projects need `--force-enrichments codegraph`.
+  versions: { chunking: 1, walker: 2, codegraphSchema: 2 },
 };

@@ -2,6 +2,7 @@ import Parser from "tree-sitter";
 import GoLang from "tree-sitter-go";
 import { describe, expect, it } from "vitest";
 
+import { resolveLocalBindingType } from "../../../../../../src/core/contracts/types/codegraph.js";
 import { extractFromGoFile } from "../../../../../../src/core/domains/language/go/walker/walker.js";
 
 function parse(src: string) {
@@ -27,6 +28,29 @@ describe("extractFromGoFile — imports", () => {
     const src = 'package main\nimport alias "foo/bar"\n';
     const r = extractFromGoFile({ tree: parse(src), code: src, relPath: "main.go", language: "go", chunks: [] });
     expect(r.imports.map((i) => i.importText)).toEqual(["foo/bar"]);
+  });
+
+  // bd tea-rags-mcp-e6xx — the name an import binds in the file. An alias is
+  // the only name a package-qualified call can use; `.` puts the package's
+  // names in the file's own scope, where a bare call resolves; `_` binds none.
+  it("records an explicit import name — alias, dot or blank — and nothing for a plain import", () => {
+    const src = [
+      "package main",
+      "import (",
+      '\tal "b/alias"',
+      '\t. "a/dot"',
+      '\t_ "c/blank"',
+      '\t"d/plain"',
+      ")",
+      "",
+    ].join("\n");
+    const r = extractFromGoFile({ tree: parse(src), code: src, relPath: "main.go", language: "go", chunks: [] });
+    expect(r.imports.map((i) => [i.importText, i.importedNames])).toEqual([
+      ["b/alias", ["al"]],
+      ["a/dot", ["."]],
+      ["c/blank", ["_"]],
+      ["d/plain", undefined],
+    ]);
   });
 
   it("records startLine per import", () => {
@@ -97,6 +121,43 @@ describe("extractFromGoFile — call dispatch", () => {
     const helper = r.chunks[0].calls.find((c) => c.member === "helper");
     expect(pkgFunc?.receiver).toBe("pkg");
     expect(helper?.receiver).toBeNull();
+  });
+});
+
+// bd tea-rags-mcp-e6xx — a generic function called with ONE value argument,
+// `pair[int](x)`, parses as a `type_conversion_expression` (the grammar cannot
+// tell it from a conversion to an instantiated generic type), so the call was
+// never collected. It is emitted as a bare call whose member is the
+// instantiated name as written — the same shape an index-expression callee
+// (`getTyped[string](c, key)`) already has — and the resolver decides whether
+// the operand names a generic declaration. Conversions to a non-generic
+// composite type (`[]byte(s)`, `map[string]int(m)`) stay uncollected, as before.
+describe("extractFromGoFile — single-argument generic calls", () => {
+  function callsOf(body: string) {
+    const src = ["package main", "func main() {", body, "}", ""].join("\n");
+    return extractFromGoFile({
+      tree: parse(src),
+      code: src,
+      relPath: "main.go",
+      language: "go",
+      chunks: [{ symbolId: "main", scope: [], startLine: 2, endLine: 4 }],
+    }).chunks[0].calls.map((c) => [c.receiver, c.member]);
+  }
+
+  it("collects `pair[int](x)` as a bare call of `pair[int]`", () => {
+    expect(callsOf("\t_ = pair[int](x)")).toEqual([[null, "pair[int]"]]);
+  });
+
+  it("collects several type arguments the same way", () => {
+    expect(callsOf("\t_ = pair[int, string](x)")).toEqual([[null, "pair[int, string]"]]);
+  });
+
+  it("collects a package-qualified one with its qualifier, for the resolver to split", () => {
+    expect(callsOf("\t_ = pkg.Pair[int](x)")).toEqual([[null, "pkg.Pair[int]"]]);
+  });
+
+  it("leaves a conversion to a non-generic type uncollected", () => {
+    expect(callsOf("\t_ = []byte(s)\n\t_ = map[string]int(m)")).toEqual([]);
   });
 });
 
@@ -413,5 +474,127 @@ describe("extractFromGoFile — innermost-chunk call attribution", () => {
     });
     expect(r.chunks[0].calls.map((c) => c.member)).toEqual(["boot"]);
     expect(r.chunks[1].calls.map((c) => c.member)).toEqual(["helper"]);
+  });
+});
+
+// bd tea-rags-mcp-e6xx — function-literal parameters. gin's middlewares return
+// `func(c *Context) { ... c.JSON(...) ... }`: the receiver `c` is a parameter
+// of the LITERAL, not of the enclosing declaration, so it carried no binding
+// and every call on it went unresolved (logger.go's `c.JSON(-1, errors)` among
+// them). A literal parameter is scoped to the literal: it binds inside, and the
+// binding in effect before the literal comes back after it — typed, or
+// untyped when there was none. Read through the contract's position-aware
+// lookup, which is what the resolver reads.
+describe("extractFromGoFile — function-literal parameters", () => {
+  function bindingsOf(src: string, endLine: number) {
+    const r = extractFromGoFile({
+      tree: parse(src),
+      code: src,
+      relPath: "logger.go",
+      language: "go",
+      chunks: [{ symbolId: "Logger", scope: [], startLine: 2, endLine }],
+    });
+    return r.chunks[0].localBindings;
+  }
+
+  it("binds a literal's typed parameter inside the literal (gin middleware shape)", () => {
+    const src = [
+      "package gin",
+      "func Logger() HandlerFunc {",
+      "\treturn func(c *Context) {",
+      "\t\tc.JSON(-1, errors)",
+      "\t}",
+      "}",
+      "",
+    ].join("\n");
+    expect(resolveLocalBindingType(bindingsOf(src, 6), "c", 4)).toBe("Context");
+  });
+
+  it("restores the enclosing binding after the literal ends", () => {
+    const src = [
+      "package gin",
+      "func (c *Engine) Run() {",
+      "\tc.Start()",
+      "\tgo func(c *Context) {",
+      "\t\tc.Next()",
+      "\t}(nil)",
+      "\tc.Stop()",
+      "}",
+      "",
+    ].join("\n");
+    const bindings = bindingsOf(src, 8);
+    expect(resolveLocalBindingType(bindings, "c", 3)).toBe("Engine");
+    expect(resolveLocalBindingType(bindings, "c", 5)).toBe("Context");
+    expect(resolveLocalBindingType(bindings, "c", 7)).toBe("Engine");
+  });
+
+  it("leaves the name untyped after the literal when nothing bound it before", () => {
+    const src = [
+      "package gin",
+      "func Logger() {",
+      "\tuse(func(c *Context) {",
+      "\t\tc.Next()",
+      "\t})",
+      "\tc := lookup()",
+      "\tc.Next()",
+      "}",
+      "",
+    ].join("\n");
+    const bindings = bindingsOf(src, 8);
+    expect(resolveLocalBindingType(bindings, "c", 4)).toBe("Context");
+    expect(resolveLocalBindingType(bindings, "c", 7)).toBeFalsy();
+  });
+
+  it("shadows a typed outer name with an UNTYPED literal parameter, then restores it", () => {
+    // `w http.ResponseWriter` binds no project type, but inside the literal
+    // `w` is no longer the outer `*Writer`.
+    const src = [
+      "package gin",
+      "func (w *Writer) Serve() {",
+      "\thandle(func(w http.ResponseWriter) {",
+      "\t\tw.Write(nil)",
+      "\t})",
+      "\tw.Flush()",
+      "}",
+      "",
+    ].join("\n");
+    const bindings = bindingsOf(src, 7);
+    expect(resolveLocalBindingType(bindings, "w", 4)).toBeFalsy();
+    expect(resolveLocalBindingType(bindings, "w", 6)).toBe("Writer");
+  });
+
+  it("scopes nested literals independently", () => {
+    const src = [
+      "package gin",
+      "func Wrap() {",
+      "\tf := func(c *Context) {",
+      "\t\tg := func(c *Engine) {",
+      "\t\t\tc.Run()",
+      "\t\t}",
+      "\t\tc.Next()",
+      "\t}",
+      "}",
+      "",
+    ].join("\n");
+    const bindings = bindingsOf(src, 9);
+    expect(resolveLocalBindingType(bindings, "c", 5)).toBe("Engine");
+    expect(resolveLocalBindingType(bindings, "c", 7)).toBe("Context");
+  });
+
+  it("records nothing for an untyped literal parameter with no outer namesake", () => {
+    // Nothing to bind and nothing to shadow: the literal must not materialise
+    // a binding key that the resolver would then read as a typed local.
+    const src = [
+      "package gin",
+      "func Serve() {",
+      "\thttp.HandleFunc(path, func(w http.ResponseWriter, r *http.Request) {",
+      "\t\tw.Write(nil)",
+      "\t})",
+      "}",
+      "",
+    ].join("\n");
+    const keys = Object.keys(bindingsOf(src, 6) ?? {});
+    expect(keys).not.toContain("w");
+    expect(keys).not.toContain("r");
   });
 });

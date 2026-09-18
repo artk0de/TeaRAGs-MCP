@@ -53,4 +53,29 @@ describe("resolveLocalBindingType — position-aware local binding lookup", () =
     expect(resolveLocalBindingType(bindings, "x", 2)).toBe("Foo");
     expect(resolveLocalBindingType(bindings, "x", 100)).toBe("Baz");
   });
+
+  // bd tea-rags-mcp-e6xx — a binding SCOPED to a block (a Go function
+  // literal's parameter) is visible only through its scope's last line; past it
+  // the name denotes whatever it denoted before the block.
+  describe("scopeEndLine", () => {
+    const bindings: Record<string, LocalBinding[]> = {
+      c: [
+        { line: 2, type: "Engine" },
+        { line: 4, type: "Context", scopeEndLine: 6 },
+      ],
+    };
+
+    it("sees the scoped binding inside its scope, its last line included", () => {
+      expect(resolveLocalBindingType(bindings, "c", 5)).toBe("Context");
+      expect(resolveLocalBindingType(bindings, "c", 6)).toBe("Context");
+    });
+
+    it("skips it past the scope, so the enclosing binding is visible again", () => {
+      expect(resolveLocalBindingType(bindings, "c", 7)).toBe("Engine");
+    });
+
+    it("leaves the name unbound past the scope when nothing bound it before", () => {
+      expect(resolveLocalBindingType({ w: [{ line: 3, type: "", scopeEndLine: 5 }] }, "w", 9)).toBeUndefined();
+    });
+  });
 });
