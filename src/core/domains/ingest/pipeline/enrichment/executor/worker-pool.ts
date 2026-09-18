@@ -16,6 +16,11 @@
  *       worker's per-thread provider cache then maintains the in-memory
  *       symbolTable / chunkSymbolByLine across streamFileBatch →
  *       finalizeSignals → deferred buildChunkSignals.
+ *     * …or, for a provider declaring `languageAffinity` and a run that
+ *       declared its files, routingKey = `<collection>::<language partition>`:
+ *       one pinned worker per partition, each absorbing every record and owning
+ *       its own (bd tea-rags-mcp-sgo8v). The plan is `language-affinity-plan.ts`,
+ *       the finalize barrier and the chunk split `language-affinity-dispatch.ts`.
  *   - Providers WITHOUT `workerDescriptor` (git) are dispatched inline via an
  *     internal `InlineEnrichmentExecutor`. Git's FILE/BLAME phases run
  *     in-process on the composition-root instance: blame cache reuse is
@@ -53,6 +58,7 @@ import type {
 } from "../../../../../contracts/index.js";
 import { isDebug } from "../../../../../infra/runtime.js";
 import type { ChunkLookupEntry } from "../../../../../types.js";
+import { pipelineLog } from "../../infra/debug-logger.js";
 import {
   defaultEnrichmentFilesPerThread,
   defaultEnrichmentWorkerCpuProfileDir,
@@ -62,6 +68,7 @@ import {
   defaultExtractionFanoutEnabled,
   defaultExtractionFanoutShardSize,
   defaultExtractionFanoutWorkers,
+  defaultLanguageAffinityEnabled,
 } from "../../infra/pool-defaults.js";
 import { ThreadTransport } from "../../infra/thread-transport.js";
 import { WorkerDispatchPool } from "../../infra/worker-dispatch-pool.js";
@@ -74,6 +81,8 @@ import type {
 } from "../infra/worker-protocol.js";
 import { ExtractionFanoutDispatcher } from "./extraction-fanout.js";
 import { InlineEnrichmentExecutor } from "./inline.js";
+import { LanguageAffinityDispatcher } from "./language-affinity-dispatch.js";
+import { planLanguageAffinity, type LanguageAffinityPlan } from "./language-affinity-plan.js";
 
 /**
  * Batches smaller than this go to the affinity worker whole. Splitting a handful
@@ -89,6 +98,22 @@ const MIN_PATHS_TO_FAN_OUT = 16;
  * one batch extracts while the previous one absorbs.
  */
 const MAX_IN_FLIGHT_EXTRACTION_BATCHES = 2;
+
+/**
+ * Language partitions one collection may be split into (bd tea-rags-mcp-sgo8v):
+ * the largest language alone, everything else together. Every partition holds
+ * a full copy of the run's pass-1 state, and the window it buys is bounded by
+ * the largest language's pass-2 either way — a third partition would split
+ * only the side that already finishes first.
+ *
+ * Two pinned threads do not cost pass-1 a thread at the default pool of 4: a
+ * partition worker is idle between its absorbs, and the pool hands an
+ * extraction shard to a free PINNED thread when no unpinned one is free
+ * (`findFreeStatelessThread`). Measured on a mastodon checkout (1.3k Ruby, 655
+ * TypeScript, 181 JavaScript files) on a quiet machine: batch phase 6.2 s with
+ * one worker, 5.4 s with two partitions — so the pool default stays 4.
+ */
+const MAX_LANGUAGE_AFFINITY_PARTITIONS = 2;
 
 /** Compute the routingKey for a provider based on its dispatch mode. */
 export function routingKeyFor(descriptor: WorkerEnrichmentDescriptor, collectionName?: string): string | undefined {
@@ -137,9 +162,25 @@ export class WorkerPoolEnrichmentExecutor implements EnrichmentExecutor {
    * every run on that collection; only the latest run's release may evict it.
    */
   private readonly latestRunIdByCollection = new Map<string, string>();
+  /**
+   * Per-language affinity (bd tea-rags-mcp-sgo8v): the finalize barrier, the
+   * chunk-pass split and the partition releases. File batches go through the
+   * fan-out's partitioned mode.
+   */
+  private readonly languageAffinity: LanguageAffinityDispatcher;
+  /** `CODEGRAPH_LANGUAGE_AFFINITY`, read once like the fan-out's own switch. */
+  private readonly languageAffinityEnabled = defaultLanguageAffinityEnabled();
+  /** The file set a run declared at `beginRun`, per collection — the plan's only input. */
+  private readonly runRelPathsByCollection = new Map<string, readonly string[]>();
+  /**
+   * The plan the collection's current run was given, decided on its FIRST
+   * dispatch and kept for the run: a run that began partitioned must finalize,
+   * chunk and release partitioned. `null` = collection affinity.
+   */
+  private readonly languagePlanByCollection = new Map<string, LanguageAffinityPlan | null>();
 
   constructor(
-    poolSize: number,
+    private readonly poolSize: number,
     workerPath: string,
     /**
      * Files the run must have per extraction thread before the fan-out spins
@@ -196,6 +237,9 @@ export class WorkerPoolEnrichmentExecutor implements EnrichmentExecutor {
             minPathsToFanOut: MIN_PATHS_TO_FAN_OUT,
           })
         : null;
+    this.languageAffinity = new LanguageAffinityDispatcher(async (request, routingKey) =>
+      this.pool.dispatch(request, routingKey),
+    );
   }
 
   /**
@@ -204,9 +248,13 @@ export class WorkerPoolEnrichmentExecutor implements EnrichmentExecutor {
    * extraction worker. Clearing it HERE rather than at release means an aborted
    * run cannot leave a set behind that would make the next run skip files.
    */
-  beginRun(run: EnrichmentRunHandle, fileCount?: number): void {
+  beginRun(run: EnrichmentRunHandle, fileCount?: number, runRelPaths?: readonly string[]): void {
     this.latestRunIdByCollection.set(run.collection, run.runId);
     this.extractionFanout?.beginRun(run.collection, fileCount);
+    // A new run plans afresh: the partitions are a property of ITS file set.
+    this.languagePlanByCollection.delete(run.collection);
+    if (runRelPaths) this.runRelPathsByCollection.set(run.collection, runRelPaths);
+    else this.runRelPathsByCollection.delete(run.collection);
   }
 
   async runFileBatch(
@@ -223,13 +271,69 @@ export class WorkerPoolEnrichmentExecutor implements EnrichmentExecutor {
       paths,
       options,
     });
+    const plan = this.languagePlanFor(provider.workerDescriptor, options);
     const routingKey = routingKeyFor(provider.workerDescriptor, collectionName);
     const fanout = this.canFanOutExtraction(provider.workerDescriptor, options) ? this.extractionFanout : null;
-    const response = fanout
-      ? await fanout.runFileBatch(request, routingKey)
-      : await this.pool.dispatch(request, routingKey);
+    let response: EnrichmentWorkerResponse;
+    if (plan && fanout) response = await fanout.runPartitionedFileBatch(request, plan);
+    else if (fanout) response = await fanout.runFileBatch(request, routingKey);
+    else response = await this.pool.dispatch(request, routingKey);
     this.throwIfErr(response);
     return response.fileOverlay ?? new Map();
+  }
+
+  /**
+   * The language-affinity plan for this call's collection, or `null` for
+   * collection affinity (bd tea-rags-mcp-sgo8v). Decided on the run's FIRST
+   * dispatch and cached for the rest of it, so the finalize, the chunk pass and
+   * the release of a run that absorbed partitioned are partitioned too.
+   *
+   * Partitioned only when everything lines up: the kill-switch is off; the
+   * provider declared `languageAffinity` on top of a usable extraction fan-out
+   * (the partitions are fed by its records); the call is not cross-pass (the
+   * chunker already parsed, there are no records); the run declared its files;
+   * and the plan finds two sides worth a worker each.
+   */
+  private languagePlanFor(
+    descriptor: WorkerEnrichmentDescriptor,
+    options?: FileSignalOptions | ChunkSignalOptions,
+  ): LanguageAffinityPlan | null {
+    const collectionName = options?.collectionName;
+    const affinity = descriptor.languageAffinity;
+    // The cache is per collection, so a provider that never declared language
+    // affinity must not pick up the plan another provider's first call made.
+    if (collectionName === undefined || affinity === undefined) return null;
+    const cached = this.languagePlanByCollection.get(collectionName);
+    if (cached !== undefined) return cached;
+    const runRelPaths = this.runRelPathsByCollection.get(collectionName);
+    const eligible =
+      this.languageAffinityEnabled &&
+      runRelPaths !== undefined &&
+      this.canFanOutExtraction(descriptor, options as FileSignalOptions | undefined);
+    const plan =
+      eligible && runRelPaths
+        ? planLanguageAffinity({
+            collectionName,
+            runRelPaths,
+            partitionByExtension: affinity.partitionByExtension,
+            minFilesPerPartition: this.filesPerThread,
+            maxPartitions: Math.min(MAX_LANGUAGE_AFFINITY_PARTITIONS, this.poolSize),
+          })
+        : null;
+    this.languagePlanByCollection.set(collectionName, plan);
+    if (eligible) {
+      pipelineLog.enrichmentPhase("CODEGRAPH_LANGUAGE_AFFINITY", {
+        collection: collectionName,
+        partitions: plan
+          ? plan.partitions.map((p) => ({
+              label: p.label,
+              files: p.fileCount,
+              completionOwner: p === plan.completionOwner,
+            }))
+          : [],
+      });
+    }
+    return plan;
   }
 
   /**
@@ -287,8 +391,10 @@ export class WorkerPoolEnrichmentExecutor implements EnrichmentExecutor {
       chunkMap,
       options,
     });
-    const routingKey = routingKeyFor(provider.workerDescriptor, collectionName);
-    const response = await this.pool.dispatch(request, routingKey);
+    const plan = this.languagePlanFor(provider.workerDescriptor, options);
+    const response = plan
+      ? await this.languageAffinity.runChunkBatch(request, plan)
+      : await this.pool.dispatch(request, routingKeyFor(provider.workerDescriptor, collectionName));
     this.throwIfErr(response);
     return response.chunkOverlay ?? new Map();
   }
@@ -303,8 +409,10 @@ export class WorkerPoolEnrichmentExecutor implements EnrichmentExecutor {
     }
     const collectionName = options?.collectionName;
     const request = buildCallRequest(provider.workerDescriptor, "runFinalize", root, collectionName, { options });
-    const routingKey = routingKeyFor(provider.workerDescriptor, collectionName);
-    const response = await this.pool.dispatch(request, routingKey);
+    const plan = this.languagePlanFor(provider.workerDescriptor, options);
+    const response = plan
+      ? await this.languageAffinity.runFinalize(request, plan)
+      : await this.pool.dispatch(request, routingKeyFor(provider.workerDescriptor, collectionName));
     this.throwIfErr(response);
     return response.fileOverlay ?? new Map();
   }
@@ -316,6 +424,9 @@ export class WorkerPoolEnrichmentExecutor implements EnrichmentExecutor {
     // evicting it now would hand that run an empty symbol table mid-flight.
     if (latestRunId !== undefined && latestRunId !== run.runId) return;
     this.latestRunIdByCollection.delete(collection);
+    const plan = this.languagePlanByCollection.get(collection) ?? null;
+    this.languagePlanByCollection.delete(collection);
+    this.runRelPathsByCollection.delete(collection);
     await Promise.all(
       providers.map(async (provider) => {
         const descriptor = provider.workerDescriptor;
@@ -324,6 +435,15 @@ export class WorkerPoolEnrichmentExecutor implements EnrichmentExecutor {
         // no-op rationale (shared instance across collections — wiping
         // state would break concurrent runs). Skip entirely.
         if (!descriptor) return;
+        // A partitioned run pinned one worker per partition and never the
+        // collection key itself, so it releases exactly those — dispatching a
+        // release to the unbound collection key would pin (and spawn) a worker
+        // only to evict nothing.
+        if (plan && descriptor.languageAffinity) {
+          await this.languageAffinity.release(descriptor.providerModulePath, collection, plan);
+          for (const partition of plan.partitions) this.pool.releaseAffinity(partition.routingKey);
+          return;
+        }
         const request: EnrichmentReleaseRequest = {
           type: "release",
           providerModulePath: descriptor.providerModulePath,

@@ -120,6 +120,26 @@ export function defaultExtractionFanoutEnabled(): boolean {
 }
 
 /**
+ * Whether a provider that declares `workerDescriptor.languageAffinity` may serve
+ * one collection with one pinned worker PER LANGUAGE PARTITION instead of one
+ * for the whole collection (bd tea-rags-mcp-sgo8v). ON by default.
+ *
+ * `CODEGRAPH_LANGUAGE_AFFINITY=0` (or `false` / `off`) is the kill-switch: every
+ * run then keeps the single collection-affinity worker exactly as before —
+ * every file absorbed, resolved and finalized on one thread, the language
+ * windows summed rather than overlapped. Same shape and parsing as
+ * `CODEGRAPH_PASS1_FANOUT`, which language affinity rides on: with the fan-out
+ * off there are no extraction records to hand the partitions, and the executor
+ * falls back to collection affinity on its own.
+ */
+export function defaultLanguageAffinityEnabled(): boolean {
+  const raw = process.env.CODEGRAPH_LANGUAGE_AFFINITY;
+  if (raw === undefined || raw.trim() === "") return true;
+  const value = raw.trim().toLowerCase();
+  return value !== "0" && value !== "false" && value !== "off";
+}
+
+/**
  * Workers one batch's extraction may be spread over.
  *
  * `poolSize - 1` by default: the affinity worker is reserved for the absorb

@@ -28,6 +28,7 @@ import type { FileExtraction } from "../../../../../contracts/types/codegraph.js
 import type {
   ChunkSignalOptions,
   ChunkSignalOverlay,
+  FileExtractionAbsorbRole,
   FileExtractionFanoutBatch,
   FileExtractionPass1Telemetry,
   FileSignalOptions,
@@ -61,6 +62,13 @@ export interface EnrichmentCallRequest {
   serializableConfig: unknown;
   /** Routing key. For stateless providers may be undefined; cache then uses "" suffix. */
   collectionName?: string;
+  /**
+   * The language partition this call belongs to, under per-language affinity
+   * (bd tea-rags-mcp-sgo8v). Part of the worker's provider-cache key: two
+   * partitions of one collection are two provider instances even when the pool
+   * pins both to the same thread. Absent for collection-wide calls.
+   */
+  affinityPartition?: string;
   method: EnrichmentMethod;
   root: string;
   /** runFileBatch / runFileSignalsRecovery payload. */
@@ -75,6 +83,11 @@ export interface EnrichmentCallRequest {
   extractions?: FileExtraction[];
   /** absorbExtractedFiles payload — merged pass-1 attribution of the units above. */
   pass1ByLanguage?: Record<string, FileExtractionPass1Telemetry>;
+  /**
+   * absorbExtractedFiles payload under per-language affinity — which of
+   * `extractions` this partition owns, index for index (bd tea-rags-mcp-sgo8v).
+   */
+  absorbRoles?: FileExtractionAbsorbRole[];
   /** Method-specific options object. Provider reads only the fields it cares about. */
   options?: FileSignalOptions | ChunkSignalOptions;
 }
@@ -89,6 +102,8 @@ export interface EnrichmentReleaseRequest {
   type: "release";
   providerModulePath: string;
   collectionName: string;
+  /** The language partition whose provider instance to evict (see `EnrichmentCallRequest.affinityPartition`). */
+  affinityPartition?: string;
 }
 
 /** Shutdown envelope — close port, exit thread cleanly (mirrors chunker worker). */

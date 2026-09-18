@@ -38,6 +38,7 @@
  *      chained in the order batches were ADMITTED, reproducing exactly the
  *      order the single-threaded path had.
  */
+import type { FileExtraction } from "../../../../../contracts/types/codegraph.js";
 import type { FileExtractionPass1Telemetry } from "../../../../../contracts/types/provider.js";
 import { Semaphore } from "../../../../../infra/semaphore.js";
 import type {
@@ -45,6 +46,7 @@ import type {
   EnrichmentWorkerRequest,
   EnrichmentWorkerResponse,
 } from "../infra/worker-protocol.js";
+import type { LanguageAffinityPartition, LanguageAffinityPlan } from "./language-affinity-plan.js";
 
 /** The pool dispatch the fan-out drives. Injected so the split logic is testable without threads. */
 export type ExtractionFanoutDispatch = (
@@ -140,8 +142,13 @@ export function mergePass1Telemetry(
 export class ExtractionFanoutDispatcher {
   /** Paths already handed out for extraction this run, per collection. */
   private readonly dispatchedPaths = new Map<string, Set<string>>();
-  /** Tail of the per-collection absorb chain — reserved at call time, not at completion. */
-  private readonly absorbChains = new Map<string, Promise<void>>();
+  /**
+   * Tail of each absorb chain, per collection — reserved at call time, not at
+   * completion. A collection-affinity run has one chain, keyed by the
+   * collection; a language-partitioned run has one per partition, keyed by the
+   * partition's routing key, so a partition never waits on another's absorb.
+   */
+  private readonly absorbChains = new Map<string, Map<string, Promise<void>>>();
   private readonly slots: Semaphore;
   /**
    * Extraction workers the CURRENT run may use — the configured ceiling bounded
@@ -204,20 +211,52 @@ export class ExtractionFanoutDispatcher {
       return this.dispatch({ ...request, paths: fresh }, routingKey);
     }
 
-    const prior = this.absorbChains.get(keyOf(request.collectionName)) ?? Promise.resolve();
+    const chainKey = routingKey ?? keyOf(request.collectionName);
+    const prior = this.chainTail(request.collectionName, chainKey);
     const unit = this.runFanoutUnit(request, fresh, routingKey, prior);
     // Reserve this unit's place in the absorb order NOW, before any await, so
     // the sequence follows admission order rather than whichever shard set
     // happens to finish first. A failed unit must not poison the chain — the
     // next batch still absorbs.
-    this.absorbChains.set(
-      keyOf(request.collectionName),
+    this.reserveChain(
+      request.collectionName,
+      chainKey,
       unit.then(
         () => undefined,
         () => undefined,
       ),
     );
     return unit;
+  }
+
+  /**
+   * A file batch of a LANGUAGE-PARTITIONED run (bd tea-rags-mcp-sgo8v): parse on
+   * any free worker as above, then absorb the records on EVERY partition of the
+   * plan — each partition owns its own files and mirrors the rest, which is
+   * what keeps its symbol table and run-global maps equal to a single worker's.
+   *
+   * Never passed through unsplit, however small the batch: the records are the
+   * one thing every partition needs, and a `runFileBatch` would parse the batch
+   * on one partition only. Each partition keeps its own admission-ordered absorb
+   * chain, so a partition busy with one unit never holds back another's.
+   */
+  async runPartitionedFileBatch(
+    request: EnrichmentCallRequest,
+    plan: LanguageAffinityPlan,
+  ): Promise<EnrichmentWorkerResponse> {
+    const fresh = this.takeFreshPaths(request.collectionName, request.paths ?? []);
+    if (fresh.length === 0) return {};
+    // Every partition's place in ITS absorb order is reserved now, before any
+    // await — admission order, as on the single-worker path.
+    const absorbed: SettledSignal[] = [];
+    const priors: Promise<void>[] = [];
+    for (const partition of plan.partitions) {
+      const signal = settledSignal();
+      priors.push(this.chainTail(request.collectionName, partition.routingKey));
+      this.reserveChain(request.collectionName, partition.routingKey, signal.settled);
+      absorbed.push(signal);
+    }
+    return this.runPartitionedUnit(request, fresh, plan, priors, absorbed);
   }
 
   /** Extract in parallel, then absorb once the prior unit's absorb has landed. */
@@ -229,32 +268,7 @@ export class ExtractionFanoutDispatcher {
   ): Promise<EnrichmentWorkerResponse> {
     const release = await this.slots.acquire();
     try {
-      // `options` is deliberately NOT forwarded to the extraction shards. It is
-      // absorb-side data — `contentHashes` alone is one entry per file in the
-      // repository, and structured-cloning that map into every shard of every
-      // batch would cost more than the parse it accompanies (the same reason
-      // o317j stopped attaching it to cross-pass batch calls). Extraction reads
-      // nothing from it; `collectionName` it does need is a top-level field.
-      const { options: _absorbOnly, ...extractBase } = request;
-      const shards = splitExtractionShards(fresh, this.runWorkerCount, this.options.shardSize);
-      const responses = await Promise.all(
-        shards.map(async (shard) =>
-          // No routingKey: this is the whole point — the pool hands it to a
-          // worker the affinity binding has NOT pinned.
-          this.dispatch({ ...extractBase, method: "extractFileBatch", paths: shard }, undefined),
-        ),
-      );
-
-      const extractions = [];
-      const pass1ByLanguage: Record<string, FileExtractionPass1Telemetry> = {};
-      for (const response of responses) {
-        if (response.error) throw new Error(`extraction fan-out: ${response.error}`);
-        const batch = response.extractionBatch;
-        if (!batch) continue;
-        extractions.push(...batch.extractions);
-        mergePass1Telemetry(pass1ByLanguage, batch.pass1ByLanguage);
-      }
-
+      const { extractions, pass1ByLanguage } = await this.extractShards(request, fresh);
       await prior;
       return await this.dispatch(
         { ...request, method: "absorbExtractedFiles", paths: fresh, extractions, pass1ByLanguage },
@@ -263,6 +277,102 @@ export class ExtractionFanoutDispatcher {
     } finally {
       release();
     }
+  }
+
+  /**
+   * One partitioned unit: extract once, then absorb on every partition in
+   * parallel, each after that partition's previous unit. The slot is held until
+   * the LAST partition absorbed, so the records resident at once stay bounded
+   * by `maxInFlightBatches` exactly as on the single-worker path.
+   */
+  private async runPartitionedUnit(
+    request: EnrichmentCallRequest,
+    fresh: string[],
+    plan: LanguageAffinityPlan,
+    priors: Promise<void>[],
+    absorbed: SettledSignal[],
+  ): Promise<EnrichmentWorkerResponse> {
+    const release = await this.slots.acquire();
+    try {
+      const { extractions, pass1ByLanguage } = await this.extractShards(request, fresh);
+      const responses = await Promise.all(
+        plan.partitions.map(async (partition, index) => {
+          try {
+            await priors[index];
+            return await this.dispatch(
+              {
+                ...request,
+                method: "absorbExtractedFiles",
+                affinityPartition: partition.label,
+                paths: fresh,
+                extractions,
+                absorbRoles: extractions.map((e) => (plan.partitionOfPath(e.relPath) === partition ? "own" : "mirror")),
+                pass1ByLanguage: telemetryOwnedBy(pass1ByLanguage, partition, plan),
+              },
+              partition.routingKey,
+            );
+          } finally {
+            absorbed[index].settle();
+          }
+        }),
+      );
+      return responses.find((response) => response.error !== undefined) ?? {};
+    } finally {
+      // An extraction failure never reaches the absorbs above, so the chains are
+      // released here too — a doomed unit must not strand the units behind it.
+      for (const signal of absorbed) signal.settle();
+      release();
+    }
+  }
+
+  /**
+   * Parse `fresh` over the run's extraction width and gather the records, in
+   * the batch's own path order, with their merged pass-1 attribution.
+   */
+  private async extractShards(
+    request: EnrichmentCallRequest,
+    fresh: string[],
+  ): Promise<{ extractions: FileExtraction[]; pass1ByLanguage: Record<string, FileExtractionPass1Telemetry> }> {
+    // `options` is deliberately NOT forwarded to the extraction shards. It is
+    // absorb-side data — `contentHashes` alone is one entry per file in the
+    // repository, and structured-cloning that map into every shard of every
+    // batch would cost more than the parse it accompanies (the same reason
+    // o317j stopped attaching it to cross-pass batch calls). Extraction reads
+    // nothing from it; `collectionName` it does need is a top-level field.
+    const { options: _absorbOnly, ...extractBase } = request;
+    const shards = splitExtractionShards(fresh, Math.max(1, this.runWorkerCount), this.options.shardSize);
+    const responses = await Promise.all(
+      shards.map(async (shard) =>
+        // No routingKey: this is the whole point — the pool hands it to a
+        // worker the affinity binding has NOT pinned.
+        this.dispatch({ ...extractBase, method: "extractFileBatch", paths: shard }, undefined),
+      ),
+    );
+
+    const extractions: FileExtraction[] = [];
+    const pass1ByLanguage: Record<string, FileExtractionPass1Telemetry> = {};
+    for (const response of responses) {
+      if (response.error) throw new Error(`extraction fan-out: ${response.error}`);
+      const batch = response.extractionBatch;
+      if (!batch) continue;
+      extractions.push(...batch.extractions);
+      mergePass1Telemetry(pass1ByLanguage, batch.pass1ByLanguage);
+    }
+    return { extractions, pass1ByLanguage };
+  }
+
+  private async chainTail(collectionName: string | undefined, chainKey: string): Promise<void> {
+    return this.absorbChains.get(keyOf(collectionName))?.get(chainKey) ?? Promise.resolve();
+  }
+
+  private reserveChain(collectionName: string | undefined, chainKey: string, tail: Promise<void>): void {
+    const key = keyOf(collectionName);
+    let chains = this.absorbChains.get(key);
+    if (!chains) {
+      chains = new Map();
+      this.absorbChains.set(key, chains);
+    }
+    chains.set(chainKey, tail);
   }
 
   /** Paths of this batch not yet handed out this run, marking them as handed out. */
@@ -285,4 +395,36 @@ export class ExtractionFanoutDispatcher {
 
 function keyOf(collectionName?: string): string {
   return collectionName ?? NO_COLLECTION;
+}
+
+/** A promise that only ever resolves, settled explicitly — an absorb chain link. */
+interface SettledSignal {
+  settled: Promise<void>;
+  settle: () => void;
+}
+
+function settledSignal(): SettledSignal {
+  let settle!: () => void;
+  const settled = new Promise<void>((resolveSettled) => {
+    settle = resolveSettled;
+  });
+  return { settled, settle };
+}
+
+/**
+ * The share of a unit's pass-1 attribution a partition reports: its own
+ * languages, plus — for the completion owner — any language no partition
+ * claims. Each language is then reported by exactly one partition, the way a
+ * single worker reported all of them.
+ */
+function telemetryOwnedBy(
+  pass1ByLanguage: Record<string, FileExtractionPass1Telemetry>,
+  partition: LanguageAffinityPartition,
+  plan: LanguageAffinityPlan,
+): Record<string, FileExtractionPass1Telemetry> {
+  const owned: Record<string, FileExtractionPass1Telemetry> = {};
+  for (const [language, telemetry] of Object.entries(pass1ByLanguage)) {
+    if (plan.partitionOfLanguage(language) === partition) owned[language] = telemetry;
+  }
+  return owned;
 }

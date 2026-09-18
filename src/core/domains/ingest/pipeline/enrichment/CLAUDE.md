@@ -142,6 +142,30 @@
   batches; the provider's own `extracted` guard used to absorb that redundancy
   AFTER the parse, and once the parse moved off-thread, dedup had to move BEFORE
   dispatch or the same file is parsed once per batch it appears in.
+- **A mixed-language run that DECLARED its files is served by one pinned worker
+  per language partition — and every partition absorbs every file.** A provider
+  opts in with `workerDescriptor.languageAffinity` (codegraph does, in
+  `wireCodegraph`, from `CODEGRAPH_LANGUAGE_BY_EXTENSION`); a run qualifies only
+  when it handed its file set to `executor.beginRun` (only the recompute does —
+  `recomputeRunSpec`), is not cross-pass, and `planLanguageAffinity`
+  (`executor/language-affinity-plan.ts`) finds two sides that each clear
+  `INGEST_TUNE_ENRICHMENT_FILES_PER_THREAD`: the largest language alone,
+  everything else together, completion on the smaller side. Routing key
+  `<collection>::<label>`, and the worker's provider cache key carries the label
+  (`enrichmentProviderCacheKey`, `infra/worker-invoke.ts`).
+  `ExtractionFanoutDispatcher#runPartitionedFileBatch` hands each unit's records
+  to EVERY partition in admission order, tagged `own` / `mirror`;
+  `LanguageAffinityDispatcher#runFinalize` runs `resolve` on all, then
+  `readBack` on the others, then on the completion owner LAST and ALONE (it
+  recomputes cycles + PageRank); the chunk pass goes to the partition that
+  walked each file. `CODEGRAPH_LANGUAGE_AFFINITY=0` keeps collection affinity.
+  Why the mirror: the symbol table and the run-global maps are language-blind —
+  TypeScript's short-name lookups see Ruby definitions, `ancestors` is keyed by
+  bare class name — so a partition that absorbed only its own language resolves
+  DIFFERENT edges (`provider-language-partition.test.ts` pins it). Why alone: a
+  DuckDB stream is invalidated by any other statement on its connection, which
+  every partition shares — probed, 3000 edges drained alone, 2048 beside one
+  concurrent read, no error either way.
 - **`INGEST_TUNE_ENRICHMENT_POOL_SIZE` is a CEILING, not an allocation.** A
   slot's worker is spawned by its FIRST dispatch (this pool is the only one that
   passes `WorkerDispatchPool`'s `spawnOnDemand`; the chunker stays eager), and a

@@ -51,6 +51,13 @@ export interface EnrichmentRunSpec {
    */
   readonly contentHashes?: ReadonlyMap<string, string>;
   readonly ignoreFilter?: Ignore;
+  /**
+   * Every repo-relative path the run will feed, when the entry point knows it
+   * before the first batch — only the recompute does (bd tea-rags-mcp-sgo8v).
+   * Handed to the executor's run-start seam, where per-language affinity plans
+   * its partitions from it; absent, the run keeps collection affinity.
+   */
+  readonly runRelPaths?: readonly string[];
 }
 
 /** A run's coverage is its scope's kind — derived, never set beside it, so the two cannot disagree. */
@@ -84,6 +91,8 @@ export function recomputeRunSpec(input: {
   fileCount: number;
   onlyProviderKeys: readonly string[];
   languages: readonly string[];
+  /** The stored files read back for the run — see `EnrichmentRunSpec.runRelPaths`. */
+  runRelPaths?: readonly string[];
 }): EnrichmentRunSpec {
   const { languages, ...rest } = input;
   return { ...rest, crossPass: false, scope: { kind: "wholeCorpus", languages } };
