@@ -83,6 +83,10 @@ import {
   type CallRef,
 } from "../../../../../contracts/types/codegraph.js";
 import type { SymbolResolutionOutcome, SymbolResolutionStrategy } from "../../../../../contracts/types/language.js";
+import {
+  lookupEcmascriptSymbols,
+  lookupEcmascriptSymbolsByShortName,
+} from "../../../shared/ecmascript-symbol-lookup.js";
 import type { TSProgramCache } from "../ts-program-cache.js";
 import type { ResolverConfig } from "./shared.js";
 import { composeSymbolId, findCallExpression } from "./ts-type-checker-fallback.js";
@@ -150,10 +154,12 @@ function pinDeclaredSymbol(
   const composed = composeSymbolId(declaration);
   if (composed === null) return null;
 
-  const exact = ctx.symbolTable.lookup(composed.symbolId).filter((def) => def.relPath === targetRelPath);
+  const exact = lookupEcmascriptSymbols(ctx, composed.symbolId).filter((def) => def.relPath === targetRelPath);
   if (exact.length > 0) return exact[0].symbolId;
 
-  const inFile = ctx.symbolTable.lookupByShortName(composed.shortName).filter((def) => def.relPath === targetRelPath);
+  const inFile = lookupEcmascriptSymbolsByShortName(ctx, composed.shortName).filter(
+    (def) => def.relPath === targetRelPath,
+  );
   return pickSingleCandidate(inFile, mode)?.symbolId ?? null;
 }
 

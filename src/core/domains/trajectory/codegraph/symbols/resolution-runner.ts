@@ -720,8 +720,12 @@ export function classifyResolveMiss(
   if (resolver.targetsExternalImport?.(call, ctx) ?? false) return "externalSkipped";
   // Genuine miss whose member has NO in-project definition — it can never
   // produce an in-project edge (gem/core/runtime-generated/dynamic), so it is
-  // excluded from the inProjectEdgeRecall denominator.
-  if (symbolTable.lookupByShortName(call.member).length === 0) return "noInProjectDef";
+  // excluded from the inProjectEdgeRecall denominator. A resolver that never
+  // targets another language's files answers for itself (bd tea-rags-mcp-t5cji):
+  // the table is polyglot, and a foreign namesake is no edge this call can have.
+  const declared =
+    resolver.hasInProjectDefinition?.(call, ctx) ?? symbolTable.lookupByShortName(call.member).length > 0;
+  if (!declared) return "noInProjectDef";
   // tea-rags-mcp-83cl7 — CORE HOMONYM. The member IS defined somewhere in the
   // project (the branch above did not fire), but it is a core / runtime name on
   // an UNTYPED receiver (`row.cells.each`), so the real callee is

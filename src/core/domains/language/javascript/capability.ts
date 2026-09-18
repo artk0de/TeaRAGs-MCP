@@ -19,6 +19,10 @@ export const capability: LanguageCapability = {
   // walker 3: bd tea-rags-mcp-x9qsh — a `.ts` / `.tsx` / `.mts` / `.cts` /
   // `.json` specifier maps to that file instead of `<file>.ts.js`, and file
   // edges come from the import mapper instead of the call path, which dropped
-  // every explicit-extension import (`./lib/render-changelog.js`).
+  // every explicit-extension import (`./lib/render-changelog.js`). Also bd
+  // tea-rags-mcp-t5cji (same unreleased bump): lookups are restricted to
+  // TypeScript / JavaScript files, so the bare-call fallback and `super` no
+  // longer land on a Ruby or Python namesake, and such a call counts as
+  // `noInProjectDef`.
   versions: { chunking: 1, walker: 3, codegraphSchema: 2 },
 };

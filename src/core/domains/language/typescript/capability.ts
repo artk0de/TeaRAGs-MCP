@@ -35,6 +35,11 @@ export const capability: LanguageCapability = {
   // used to get `.ts` appended and land on a path no file row matches; under
   // `allowJs` a `.js`-family specifier with no TypeScript source falls back to
   // the JavaScript file the probe confirms; `.json` maps as written; import
-  // basename matching strips `.mts` / `.cts` and their declarations.
+  // basename matching strips `.mts` / `.cts` and their declarations. Also bd
+  // tea-rags-mcp-t5cji (same unreleased bump): every symbol-table lookup is
+  // restricted to TypeScript / JavaScript files, so no edge lands on a Ruby or
+  // Python namesake, a foreign namesake no longer suppresses a TS answer (super,
+  // cone, barrel hop, cardinality gates), and a bare call whose only namesake is
+  // foreign counts as `noInProjectDef`.
   versions: { chunking: 1, walker: 6, codegraphSchema: 2 },
 };

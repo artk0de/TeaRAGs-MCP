@@ -6,6 +6,10 @@ import {
   type SymbolResolutionTarget,
 } from "../../../../../contracts/types/codegraph.js";
 import type { SymbolResolutionOutcome, SymbolResolutionStrategy } from "../../../../../contracts/types/language.js";
+import {
+  lookupEcmascriptSymbols,
+  lookupEcmascriptSymbolsByShortName,
+} from "../../../shared/ecmascript-symbol-lookup.js";
 import type { ResolverConfig } from "./shared.js";
 
 /**
@@ -62,13 +66,13 @@ export class TSSuperSymbolResolutionStrategy implements SymbolResolutionStrategy
       // instance-method dispatches by definition. Static fallback covers the
       // unusual `super.staticHelper()` shape.
       const instanceFq = `${current}#${member}`;
-      const instanceHit = ctx.symbolTable.lookup(instanceFq);
+      const instanceHit = lookupEcmascriptSymbols(ctx, instanceFq);
       const instanceTarget = pickSingleCandidate(instanceHit, this.cfg.mode);
       if (instanceTarget) {
         return { targetRelPath: instanceTarget.relPath, targetSymbolId: instanceTarget.symbolId };
       }
       const staticFq = `${current}.${member}`;
-      const staticHit = ctx.symbolTable.lookup(staticFq);
+      const staticHit = lookupEcmascriptSymbols(ctx, staticFq);
       const staticTarget = pickSingleCandidate(staticHit, this.cfg.mode);
       if (staticTarget) {
         return { targetRelPath: staticTarget.relPath, targetSymbolId: staticTarget.symbolId };
@@ -85,16 +89,16 @@ export class TSSuperSymbolResolutionStrategy implements SymbolResolutionStrategy
       // top-level symbol whose `shortName === current` (e.g. fqName `Base`).
       if (fileOnlyFallback === null) {
         const ancestorShort = lastSegment(current);
-        const ancestorDef = ctx.symbolTable
-          .lookupByShortName(ancestorShort)
-          .find((def) => def.scope.length === 0 && def.shortName === ancestorShort);
+        const ancestorDef = lookupEcmascriptSymbolsByShortName(ctx, ancestorShort).find(
+          (def) => def.scope.length === 0 && def.shortName === ancestorShort,
+        );
         if (ancestorDef) {
           fileOnlyFallback = { targetRelPath: ancestorDef.relPath, targetSymbolId: null };
         } else {
           // Fall back to the file of any method whose scope is the ancestor —
           // covers files that only have method symbols (the class declaration
           // itself wasn't indexed as a top-level symbol, only its methods).
-          for (const def of ctx.symbolTable.lookupByShortName(member)) {
+          for (const def of lookupEcmascriptSymbolsByShortName(ctx, member)) {
             if (def.scope[def.scope.length - 1] === current) {
               fileOnlyFallback = { targetRelPath: def.relPath, targetSymbolId: null };
               break;
@@ -105,7 +109,7 @@ export class TSSuperSymbolResolutionStrategy implements SymbolResolutionStrategy
             // `current`. Captures the case where the parent class has arbitrary
             // indexed members (constructor, fields, etc.) but no match for
             // `member` and no top-level Base symbol.
-            const scopeProbe = ctx.symbolTable.lookupByShortName("constructor");
+            const scopeProbe = lookupEcmascriptSymbolsByShortName(ctx, "constructor");
             for (const def of scopeProbe) {
               if (def.scope[def.scope.length - 1] === current) {
                 fileOnlyFallback = { targetRelPath: def.relPath, targetSymbolId: null };

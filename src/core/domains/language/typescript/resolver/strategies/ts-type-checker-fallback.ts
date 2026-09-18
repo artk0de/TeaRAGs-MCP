@@ -32,6 +32,10 @@ import ts from "typescript";
 import { CONTINUE, resolved } from "../../../../../contracts/resolution.js";
 import { pickSingleCandidate, type CallContext, type CallRef } from "../../../../../contracts/types/codegraph.js";
 import type { SymbolResolutionOutcome, SymbolResolutionStrategy } from "../../../../../contracts/types/language.js";
+import {
+  lookupEcmascriptSymbols,
+  lookupEcmascriptSymbolsByShortName,
+} from "../../../shared/ecmascript-symbol-lookup.js";
 import type { TSProgramCache } from "../ts-program-cache.js";
 import type { ResolverConfig } from "./shared.js";
 import { callSiteAt, memberSeparator, prefixWithNamespaces } from "./ts-type-checker-shared.js";
@@ -59,7 +63,7 @@ export type TSTypeCheckerFallbackCase = "generic" | "overload";
  */
 export function classifyTypeCheckerFallbackCase(call: CallRef, ctx: CallContext): TSTypeCheckerFallbackCase | null {
   if (hasExplicitTypeArguments(call.callText, call.member)) return "generic";
-  if (ctx.symbolTable.lookupByShortName(call.member).length >= 2) return "overload";
+  if (lookupEcmascriptSymbolsByShortName(ctx, call.member).length >= 2) return "overload";
   return null;
 }
 
@@ -103,12 +107,12 @@ export class TSTypeCheckerFallbackSymbolResolutionStrategy implements SymbolReso
     const composed = composeSymbolId(declaration);
     if (composed === null) return null;
 
-    const exact = ctx.symbolTable.lookup(composed.symbolId).filter((def) => def.relPath === targetRelPath);
+    const exact = lookupEcmascriptSymbols(ctx, composed.symbolId).filter((def) => def.relPath === targetRelPath);
     if (exact.length > 0) return exact[0].symbolId;
 
-    const byShortName = ctx.symbolTable
-      .lookupByShortName(composed.shortName)
-      .filter((def) => def.relPath === targetRelPath);
+    const byShortName = lookupEcmascriptSymbolsByShortName(ctx, composed.shortName).filter(
+      (def) => def.relPath === targetRelPath,
+    );
     return pickSingleCandidate(byShortName, this.cfg.mode)?.symbolId ?? null;
   }
 }

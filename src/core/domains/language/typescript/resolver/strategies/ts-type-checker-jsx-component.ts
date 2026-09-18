@@ -48,6 +48,10 @@ import ts from "typescript";
 import { CONTINUE, resolved } from "../../../../../contracts/resolution.js";
 import { pickSingleCandidate, type CallContext, type CallRef } from "../../../../../contracts/types/codegraph.js";
 import type { SymbolResolutionOutcome, SymbolResolutionStrategy } from "../../../../../contracts/types/language.js";
+import {
+  lookupEcmascriptSymbols,
+  lookupEcmascriptSymbolsByShortName,
+} from "../../../shared/ecmascript-symbol-lookup.js";
 import type { TSProgramCache } from "../ts-program-cache.js";
 import type { ResolverConfig } from "./shared.js";
 
@@ -125,11 +129,11 @@ export class TSTypeCheckerJsxComponentSymbolResolutionStrategy implements Symbol
   ): string | null {
     const name = declarationName(declaration);
     const inFile = (candidateName: string): string | null => {
-      const exact = ctx.symbolTable.lookup(candidateName).filter((def) => def.relPath === targetRelPath);
+      const exact = lookupEcmascriptSymbols(ctx, candidateName).filter((def) => def.relPath === targetRelPath);
       if (exact.length > 0) return exact[0].symbolId;
-      const byShortName = ctx.symbolTable
-        .lookupByShortName(candidateName)
-        .filter((def) => def.relPath === targetRelPath);
+      const byShortName = lookupEcmascriptSymbolsByShortName(ctx, candidateName).filter(
+        (def) => def.relPath === targetRelPath,
+      );
       return pickSingleCandidate(byShortName, this.cfg.mode)?.symbolId ?? null;
     };
 

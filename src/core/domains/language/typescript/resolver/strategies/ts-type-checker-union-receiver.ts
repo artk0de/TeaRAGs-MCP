@@ -56,6 +56,7 @@ import {
   type SymbolId,
 } from "../../../../../contracts/types/codegraph.js";
 import type { DispatchResolverComponent } from "../../../../../contracts/types/language.js";
+import { lookupEcmascriptSymbolsByShortName } from "../../../shared/ecmascript-symbol-lookup.js";
 import type { TSProgramCache } from "../ts-program-cache.js";
 import { CONE_MAX_DEFAULT, type ResolverConfig } from "./shared.js";
 import { declarationOwnerName, findReceiverExpression } from "./ts-type-checker-shared.js";
@@ -176,9 +177,9 @@ export class TSTypeCheckerUnionReceiverDispatchResolver implements DispatchResol
     if (targetRelPath === null) return null;
 
     const ownerName = declarationOwnerName(declaration);
-    const candidates = ctx.symbolTable
-      .lookupByShortName(member)
-      .filter((def) => def.relPath === targetRelPath && (ownerName === null || def.scope.at(-1) === ownerName));
+    const candidates = lookupEcmascriptSymbolsByShortName(ctx, member).filter(
+      (def) => def.relPath === targetRelPath && (ownerName === null || def.scope.at(-1) === ownerName),
+    );
 
     const hit = pickSingleCandidate(candidates, this.cfg.mode);
     return hit ? { targetRelPath: hit.relPath, targetSymbolId: hit.symbolId } : null;

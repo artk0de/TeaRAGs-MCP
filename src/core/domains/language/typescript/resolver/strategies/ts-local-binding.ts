@@ -7,6 +7,7 @@ import {
   type SymbolResolutionTarget,
 } from "../../../../../contracts/types/codegraph.js";
 import type { SymbolResolutionOutcome, SymbolResolutionStrategy } from "../../../../../contracts/types/language.js";
+import { lookupEcmascriptSymbols } from "../../../shared/ecmascript-symbol-lookup.js";
 import type { ResolverConfig } from "./shared.js";
 
 /**
@@ -43,10 +44,10 @@ export class TSLocalBindingSymbolResolutionStrategy implements SymbolResolutionS
    * which biases toward the concrete implementer the caller imports.
    */
   private resolveByLocalType(typeName: string, member: string, ctx: CallContext): SymbolResolutionTarget | null {
-    const instanceCandidates = ctx.symbolTable.lookup(`${typeName}#${member}`);
+    const instanceCandidates = lookupEcmascriptSymbols(ctx, `${typeName}#${member}`);
     const instanceHit = pickSingleCandidate(instanceCandidates, this.cfg.mode);
     if (instanceHit) return { targetRelPath: instanceHit.relPath, targetSymbolId: instanceHit.symbolId };
-    const staticCandidates = ctx.symbolTable.lookup(`${typeName}.${member}`);
+    const staticCandidates = lookupEcmascriptSymbols(ctx, `${typeName}.${member}`);
     const staticHit = pickSingleCandidate(staticCandidates, this.cfg.mode);
     if (staticHit) return { targetRelPath: staticHit.relPath, targetSymbolId: staticHit.symbolId };
     return null;

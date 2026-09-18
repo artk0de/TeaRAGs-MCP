@@ -5,6 +5,7 @@ import {
   type SymbolResolutionTarget,
 } from "../../../../../contracts/types/codegraph.js";
 import type { ConeTypeLocator } from "../../../../../contracts/types/language.js";
+import { lookupEcmascriptSymbolsByShortName } from "../../../shared/ecmascript-symbol-lookup.js";
 import { mapImportToFile } from "../ts-path-mapper.js";
 import { collectImportedFiles, type ResolverConfig } from "./shared.js";
 
@@ -32,7 +33,10 @@ export class TSConeTypeLocator implements ConeTypeLocator {
 
   /** Resolve a type name to its declaring file via symbol table + import disambiguation, or null. */
   resolveTypeFile(typeName: string, ctx: CallContext): RelPath | null {
-    const matches = ctx.symbolTable.lookupByShortName(typeName).filter((def) => def.scope.length === 0);
+    // Family-filtered (bd tea-rags-mcp-t5cji): the hierarchy is keyed by bare
+    // class name across every language, so a Ruby `class Circle` beside the
+    // TypeScript one made this ambiguous and the cone lost the implementer.
+    const matches = lookupEcmascriptSymbolsByShortName(ctx, typeName).filter((def) => def.scope.length === 0);
     if (matches.length === 1) return matches[0].relPath;
     if (matches.length > 1) {
       const importedFiles = collectImportedFiles(ctx, this.cfg.tsOptions, this.cfg.fileExists);
@@ -58,7 +62,7 @@ export class TSConeTypeLocator implements ConeTypeLocator {
   findDirectMethod(typeName: string, member: string, ctx: CallContext): SymbolResolutionTarget | null {
     const file = this.resolveTypeFile(typeName, ctx);
     if (!file) return null;
-    const candidates = ctx.symbolTable.lookupByShortName(member).filter((def) => {
+    const candidates = lookupEcmascriptSymbolsByShortName(ctx, member).filter((def) => {
       if (def.relPath !== file) return false;
       return def.scope[def.scope.length - 1] === typeName;
     });

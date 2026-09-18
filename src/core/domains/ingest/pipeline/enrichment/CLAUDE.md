@@ -159,13 +159,15 @@
   `readBack` on the others, then on the completion owner LAST and ALONE (it
   recomputes cycles + PageRank); the chunk pass goes to the partition that
   walked each file. `CODEGRAPH_LANGUAGE_AFFINITY=0` keeps collection affinity.
-  Why the mirror: the symbol table and the run-global maps are language-blind —
-  TypeScript's short-name lookups see Ruby definitions, `ancestors` is keyed by
-  bare class name — so a partition that absorbed only its own language resolves
-  DIFFERENT edges (`provider-language-partition.test.ts` pins it). Why alone: a
-  DuckDB stream is invalidated by any other statement on its connection, which
-  every partition shares — probed, 3000 edges drained alone, 2048 beside one
-  concurrent read, no error either way.
+  Why the mirror: the symbol table and the run-global maps span every language —
+  TypeScript legitimately resolves into JavaScript files another partition owns,
+  and `ancestors` / `classExtends` are keyed by bare class name — so a partition
+  that absorbed only its own language resolves DIFFERENT edges
+  (`provider-language-partition.test.ts` pins it). Resolvers filter the table to
+  their own language family (bd tea-rags-mcp-t5cji); the maps they read are not
+  filtered. Why alone: a DuckDB stream is invalidated by any other statement on
+  its connection, which every partition shares — probed, 3000 edges drained
+  alone, 2048 beside one concurrent read, no error either way.
 - **`INGEST_TUNE_ENRICHMENT_POOL_SIZE` is a CEILING, not an allocation.** A
   slot's worker is spawned by its FIRST dispatch (this pool is the only one that
   passes `WorkerDispatchPool`'s `spawnOnDemand`; the chunker stays eager), and a

@@ -1,6 +1,7 @@
 import { CONTINUE, resolved } from "../../../../../contracts/resolution.js";
 import { pickSingleCandidate, type CallContext, type CallRef } from "../../../../../contracts/types/codegraph.js";
 import type { SymbolResolutionOutcome, SymbolResolutionStrategy } from "../../../../../contracts/types/language.js";
+import { lookupEcmascriptSymbolsByShortName } from "../../../shared/ecmascript-symbol-lookup.js";
 import { targetsExternalImport } from "../ts-external-call.js";
 import { calleeIsLocalValueBinding } from "../ts-local-callee.js";
 import { receiverIsUnpinnableLocalValueBinding } from "../ts-local-receiver.js";
@@ -50,7 +51,7 @@ export class TSImportNarrowedFallbackSymbolResolutionStrategy implements SymbolR
     if (targetsExternalImport(call, ctx, this.cfg.tsOptions, this.programCache, this.cfg.fileExists)) return CONTINUE;
     if (calleeIsLocalValueBinding(call, ctx, this.programCache)) return CONTINUE;
     if (receiverIsUnpinnableLocalValueBinding(call, ctx, this.programCache)) return CONTINUE;
-    const fallback = ctx.symbolTable.lookupByShortName(call.member);
+    const fallback = lookupEcmascriptSymbolsByShortName(ctx, call.member);
     if (fallback.length <= 1 || ctx.imports.length === 0) return CONTINUE;
 
     const importedFiles = collectImportedFiles(ctx, this.cfg.tsOptions, this.cfg.fileExists);

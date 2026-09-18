@@ -362,6 +362,16 @@
   ESM form — produced no edge (bd tea-rags-mcp-x9qsh). Why: a new language on
   the default emits wrong or missing file-level import edges, surfacing as an
   unstable `provider.test.ts` count, not as anything naming the resolver.
+- **Filtering a resolver's lookups does not filter its DENOMINATOR.** The miss
+  classifier (`classifyResolveMiss` in `resolution-runner.ts`) asks
+  `hasInProjectDefinition` when the resolver answers it and falls back to the
+  unfiltered `lookupByShortName(member).length > 0` otherwise. TypeScript and
+  JavaScript answer it (bd tea-rags-mcp-t5cji); Ruby and Python filter their
+  chains but not this gate, so their unresolved call with only a foreign
+  namesake still counts as a miss. Adding the hook to them moves their rate —
+  their own walker bump. Why: a chain-only filter turns every former
+  cross-language edge into a charged miss, which reads as a recall regression
+  the resolver cannot fix.
 - **The capability drift-guard is one-sided.**
   `tests/core/domains/language/capability/drift-guard.test.ts` only checks
   renders of `LanguageFactory#capabilities` against the committed artefacts — it

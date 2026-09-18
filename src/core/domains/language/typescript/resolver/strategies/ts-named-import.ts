@@ -1,6 +1,7 @@
 import { CONTINUE, deferred, resolved } from "../../../../../contracts/resolution.js";
 import { pickSingleCandidate, type CallContext, type CallRef } from "../../../../../contracts/types/codegraph.js";
 import type { SymbolResolutionOutcome, SymbolResolutionStrategy } from "../../../../../contracts/types/language.js";
+import { lookupEcmascriptSymbolsByShortName } from "../../../shared/ecmascript-symbol-lookup.js";
 import { targetsExternalImport } from "../ts-external-call.js";
 import { mapImportToFile } from "../ts-path-mapper.js";
 import { reexportOriginFile, type ResolverConfig } from "./shared.js";
@@ -45,13 +46,13 @@ export class TSNamedImportSymbolResolutionStrategy implements SymbolResolutionSt
     if (!importedFile) return CONTINUE;
     const targetFile = reexportOriginFile(call.receiver, importedFile, ctx, this.cfg.mode) ?? importedFile;
 
-    const scopedCandidates = ctx.symbolTable
-      .lookupByShortName(call.member)
-      .filter((def) => def.relPath === targetFile && def.scope[def.scope.length - 1] === call.receiver);
+    const scopedCandidates = lookupEcmascriptSymbolsByShortName(ctx, call.member).filter(
+      (def) => def.relPath === targetFile && def.scope[def.scope.length - 1] === call.receiver,
+    );
     const scopedHit = pickSingleCandidate(scopedCandidates, this.cfg.mode);
     if (scopedHit) return resolved({ targetRelPath: scopedHit.relPath, targetSymbolId: scopedHit.symbolId });
 
-    const candidates = ctx.symbolTable.lookupByShortName(call.member).filter((def) => def.relPath === targetFile);
+    const candidates = lookupEcmascriptSymbolsByShortName(ctx, call.member).filter((def) => def.relPath === targetFile);
     const target = pickSingleCandidate(candidates, this.cfg.mode);
     if (target) return resolved({ targetRelPath: target.relPath, targetSymbolId: target.symbolId });
 
@@ -67,4 +68,3 @@ export class TSNamedImportSymbolResolutionStrategy implements SymbolResolutionSt
     return deferred({ targetRelPath: targetFile, targetSymbolId: null });
   }
 }
-

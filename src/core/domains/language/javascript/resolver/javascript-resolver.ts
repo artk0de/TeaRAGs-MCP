@@ -32,6 +32,7 @@ import {
   type SymbolResolutionTarget,
 } from "../../../../contracts/types/codegraph.js";
 import { ECMASCRIPT_GLOBALS } from "../../shared/ecmascript-globals.js";
+import { lookupEcmascriptSymbols, lookupEcmascriptSymbolsByShortName } from "../../shared/ecmascript-symbol-lookup.js";
 
 /**
  * Suffixes that make a relative specifier name its file as written. The
@@ -68,12 +69,14 @@ export class JavascriptCallResolver implements CallResolver {
       if (ctx.callerScope.length > 0) {
         const enclosing = ctx.callerScope[ctx.callerScope.length - 1];
         const fqName = `${enclosing}#${call.member}`;
-        const direct = ctx.symbolTable.lookup(fqName).find((def) => def.relPath === ctx.callerFile);
+        const direct = lookupEcmascriptSymbols(ctx, fqName).find((def) => def.relPath === ctx.callerFile);
         if (direct) return { targetRelPath: direct.relPath, targetSymbolId: direct.symbolId };
         const staticFqName = `${enclosing}.${call.member}`;
-        const staticHit = ctx.symbolTable.lookup(staticFqName).find((def) => def.relPath === ctx.callerFile);
+        const staticHit = lookupEcmascriptSymbols(ctx, staticFqName).find((def) => def.relPath === ctx.callerFile);
         if (staticHit) return { targetRelPath: staticHit.relPath, targetSymbolId: staticHit.symbolId };
-        const sameFile = ctx.symbolTable.lookupByShortName(call.member).find((def) => def.relPath === ctx.callerFile);
+        const sameFile = lookupEcmascriptSymbolsByShortName(ctx, call.member).find(
+          (def) => def.relPath === ctx.callerFile,
+        );
         if (sameFile) return { targetRelPath: sameFile.relPath, targetSymbolId: sameFile.symbolId };
       }
     }
@@ -82,7 +85,9 @@ export class JavascriptCallResolver implements CallResolver {
       if (match) {
         const targetFile = mapJavascriptImportToFile(match.importText, ctx.callerFile);
         if (targetFile) {
-          const candidates = ctx.symbolTable.lookupByShortName(call.member).filter((def) => def.relPath === targetFile);
+          const candidates = lookupEcmascriptSymbolsByShortName(ctx, call.member).filter(
+            (def) => def.relPath === targetFile,
+          );
           const target = pickSingleCandidate(candidates, this.mode);
           if (target) return { targetRelPath: target.relPath, targetSymbolId: target.symbolId };
           return { targetRelPath: targetFile, targetSymbolId: null };
@@ -96,7 +101,9 @@ export class JavascriptCallResolver implements CallResolver {
     // fallback produced were fabricated (`console.error` → a renderer's `error`,
     // `perFile[f].set` on a Map → `CommitDiffMemo#set`), none real.
     if (call.receiver !== null) return null;
-    const fallback = ctx.symbolTable.lookupByShortName(call.member);
+    // ECMAScript family only (bd tea-rags-mcp-t5cji): a bare `ping()` whose one
+    // project namesake is Ruby's `Worker#ping` is not a call into Ruby.
+    const fallback = lookupEcmascriptSymbolsByShortName(ctx, call.member);
     const target = pickSingleCandidate(fallback, this.mode);
     if (target) return { targetRelPath: target.relPath, targetSymbolId: target.symbolId };
     return null;
@@ -137,13 +144,13 @@ export class JavascriptCallResolver implements CallResolver {
       // are instance-method dispatches by definition. Static fallback
       // covers the unusual `super.staticHelper()` shape.
       const instanceFq = `${current}#${member}`;
-      const instanceHit = ctx.symbolTable.lookup(instanceFq);
+      const instanceHit = lookupEcmascriptSymbols(ctx, instanceFq);
       const instanceTarget = pickSingleCandidate(instanceHit, this.mode);
       if (instanceTarget) {
         return { targetRelPath: instanceTarget.relPath, targetSymbolId: instanceTarget.symbolId };
       }
       const staticFq = `${current}.${member}`;
-      const staticHit = ctx.symbolTable.lookup(staticFq);
+      const staticHit = lookupEcmascriptSymbols(ctx, staticFq);
       const staticTarget = pickSingleCandidate(staticHit, this.mode);
       if (staticTarget) {
         return { targetRelPath: staticTarget.relPath, targetSymbolId: staticTarget.symbolId };
@@ -156,20 +163,20 @@ export class JavascriptCallResolver implements CallResolver {
       // node_modules outside the index).
       if (fileOnlyFallback === null) {
         const ancestorShort = lastSegment(current);
-        const ancestorDef = ctx.symbolTable
-          .lookupByShortName(ancestorShort)
-          .find((def) => def.scope.length === 0 && def.shortName === ancestorShort);
+        const ancestorDef = lookupEcmascriptSymbolsByShortName(ctx, ancestorShort).find(
+          (def) => def.scope.length === 0 && def.shortName === ancestorShort,
+        );
         if (ancestorDef) {
           fileOnlyFallback = { targetRelPath: ancestorDef.relPath, targetSymbolId: null };
         } else {
-          for (const def of ctx.symbolTable.lookupByShortName(member)) {
+          for (const def of lookupEcmascriptSymbolsByShortName(ctx, member)) {
             if (def.scope[def.scope.length - 1] === current) {
               fileOnlyFallback = { targetRelPath: def.relPath, targetSymbolId: null };
               break;
             }
           }
           if (fileOnlyFallback === null) {
-            const scopeProbe = ctx.symbolTable.lookupByShortName("constructor");
+            const scopeProbe = lookupEcmascriptSymbolsByShortName(ctx, "constructor");
             for (const def of scopeProbe) {
               if (def.scope[def.scope.length - 1] === current) {
                 fileOnlyFallback = { targetRelPath: def.relPath, targetSymbolId: null };
@@ -237,6 +244,15 @@ export class JavascriptCallResolver implements CallResolver {
       }
     }
     return false;
+  }
+
+  /**
+   * The miss classifier's `noInProjectDef` gate in the ECMAScript family (bd
+   * tea-rags-mcp-t5cji) — the TypeScript resolver's twin. A member only Ruby or
+   * Python declares is no edge this resolver can produce.
+   */
+  hasInProjectDefinition(call: CallRef, ctx: CallContext): boolean {
+    return lookupEcmascriptSymbolsByShortName(ctx, call.member).length > 0;
   }
 }
 

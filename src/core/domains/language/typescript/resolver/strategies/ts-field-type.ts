@@ -1,6 +1,7 @@
 import { CONTINUE, resolved } from "../../../../../contracts/resolution.js";
 import { pickSingleCandidate, type CallContext, type CallRef } from "../../../../../contracts/types/codegraph.js";
 import type { SymbolResolutionOutcome, SymbolResolutionStrategy } from "../../../../../contracts/types/language.js";
+import { lookupEcmascriptSymbols } from "../../../shared/ecmascript-symbol-lookup.js";
 import type { ResolverConfig } from "./shared.js";
 
 /**
@@ -27,12 +28,12 @@ export class TSFieldTypeSymbolResolutionStrategy implements SymbolResolutionStra
     // Instance form first — most common dispatch shape. Strict mode drops the
     // edge when more than one type shares the method name across files; legacy
     // `first` mode keeps the first hit.
-    const instanceCandidates = ctx.symbolTable.lookup(`${typeName}#${call.member}`);
+    const instanceCandidates = lookupEcmascriptSymbols(ctx, `${typeName}#${call.member}`);
     const instanceHit = pickSingleCandidate(instanceCandidates, this.cfg.mode);
     if (instanceHit) return resolved({ targetRelPath: instanceHit.relPath, targetSymbolId: instanceHit.symbolId });
 
     // Static fallback — `this.helper.staticMethod()` shape.
-    const staticCandidates = ctx.symbolTable.lookup(`${typeName}.${call.member}`);
+    const staticCandidates = lookupEcmascriptSymbols(ctx, `${typeName}.${call.member}`);
     const staticHit = pickSingleCandidate(staticCandidates, this.cfg.mode);
     if (staticHit) return resolved({ targetRelPath: staticHit.relPath, targetSymbolId: staticHit.symbolId });
 

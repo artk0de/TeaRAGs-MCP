@@ -30,6 +30,7 @@ import {
   ECMASCRIPT_CONTAINER_PROTOTYPE_METHODS,
   ECMASCRIPT_GLOBALS,
 } from "../../shared/ecmascript-globals.js";
+import { lookupEcmascriptSymbols, lookupEcmascriptSymbolsByShortName } from "../../shared/ecmascript-symbol-lookup.js";
 import { findCallExpression } from "./strategies/ts-type-checker-fallback.js";
 import { findReceiverExpression } from "./strategies/ts-type-checker-shared.js";
 import { importSpecifierNamesReceiver } from "./ts-import-basename-match.js";
@@ -213,7 +214,7 @@ function checkerResolvesCalleeOutsideProject(
   programCache: TSProgramCache | null,
 ): boolean {
   if (programCache === null || call.member.length === 0) return false;
-  if (ctx.symbolTable.lookupByShortName(call.member).length === 0) return false;
+  if (lookupEcmascriptSymbolsByShortName(ctx, call.member).length === 0) return false;
   const handle = programCache.acquire(ctx.callerFile);
   if (handle === null) return false;
   const node = findCallExpression(handle.sourceFile, call.startLine, call.member);
@@ -252,7 +253,7 @@ function receiverIsImportedBuiltinContainer(call: CallRef, ctx: CallContext): bo
   const receiver = call.receiver ?? null;
   if (receiver === null || receiver.length === 0 || receiver === "this" || receiver === "super") return false;
   if (!ECMASCRIPT_CONTAINER_PROTOTYPE_METHODS.has(call.member)) return false;
-  if (ctx.symbolTable.lookup(receiver).length > 0) return false;
+  if (lookupEcmascriptSymbols(ctx, receiver).length > 0) return false;
   return ctx.imports.some(
     (imp) => imp.importedNames?.includes(receiver) || importSpecifierNamesReceiver(imp.importText, receiver),
   );
@@ -376,7 +377,7 @@ function receiverIsExternalInstance(
     // rest on.
     const origin = annotationOrigin(typeName, ctx, tsOptions, fileExists);
     if (origin !== "unbound") return origin === "package";
-    if (ctx.symbolTable.lookup(typeName).length > 0) return false;
+    if (lookupEcmascriptSymbols(ctx, typeName).length > 0) return false;
   } else if (ECMASCRIPT_BUILTIN_PROTOTYPE_METHODS.has(call.member)) {
     return true;
   }
@@ -524,7 +525,7 @@ function typeDeclaredOutsideProject(checker: ts.TypeChecker, type: ts.Type, prog
  * trade a fabricated edge for a lost one.
  */
 function receiverNamesTypeLevelOperator(typeName: string, ctx: CallContext): boolean {
-  return TS_UTILITY_TYPES.has(typeName) && ctx.symbolTable.lookup(typeName).length === 0;
+  return TS_UTILITY_TYPES.has(typeName) && lookupEcmascriptSymbols(ctx, typeName).length === 0;
 }
 
 /**

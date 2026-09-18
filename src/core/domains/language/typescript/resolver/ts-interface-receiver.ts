@@ -36,6 +36,7 @@
 import ts from "typescript";
 
 import type { CallContext, CallRef, SymbolDefinition } from "../../../../contracts/types/codegraph.js";
+import { lookupEcmascriptSymbolsByShortName } from "../../shared/ecmascript-symbol-lookup.js";
 import { findReceiverExpression } from "./strategies/ts-type-checker-shared.js";
 import type { TSProgramCache } from "./ts-program-cache.js";
 import { typeConstituents } from "./ts-type-constituents.js";
@@ -48,7 +49,7 @@ export function receiverProjectInterfaceNames(
   const { receiver } = call;
   if (programCache === null || receiver === null || receiver.length === 0) return [];
   if (receiver === "this" || receiver === "super" || call.member.length === 0) return [];
-  if (ctx.symbolTable.lookupByShortName(call.member).length === 0) return [];
+  if (lookupEcmascriptSymbolsByShortName(ctx, call.member).length === 0) return [];
   const handle = programCache.acquire(ctx.callerFile);
   if (handle === null) return [];
   const node = findReceiverExpression(handle.sourceFile, call.startLine, call.member);

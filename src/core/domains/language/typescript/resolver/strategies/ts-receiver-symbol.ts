@@ -1,6 +1,10 @@
 import { CONTINUE, deferred, resolved } from "../../../../../contracts/resolution.js";
 import { pickSingleCandidate, type CallContext, type CallRef } from "../../../../../contracts/types/codegraph.js";
 import type { SymbolResolutionOutcome, SymbolResolutionStrategy } from "../../../../../contracts/types/language.js";
+import {
+  lookupEcmascriptSymbols,
+  lookupEcmascriptSymbolsByShortName,
+} from "../../../shared/ecmascript-symbol-lookup.js";
 import { collectImportedFiles, type ResolverConfig } from "./shared.js";
 
 /**
@@ -19,7 +23,7 @@ export class TSReceiverSymbolSymbolResolutionStrategy implements SymbolResolutio
 
   attempt(call: CallRef, ctx: CallContext): SymbolResolutionOutcome {
     if (!call.receiver) return CONTINUE;
-    const receiverHits = ctx.symbolTable.lookup(call.receiver);
+    const receiverHits = lookupEcmascriptSymbols(ctx, call.receiver);
     if (receiverHits.length === 0) return CONTINUE;
 
     const importedFiles = collectImportedFiles(ctx, this.cfg.tsOptions, this.cfg.fileExists);
@@ -30,9 +34,9 @@ export class TSReceiverSymbolSymbolResolutionStrategy implements SymbolResolutio
     if (receiverFiles.size !== 1) return CONTINUE;
 
     const targetFile = receiverFiles.values().next().value as string;
-    const candidates = ctx.symbolTable
-      .lookupByShortName(call.member)
-      .filter((def) => def.relPath === targetFile && def.scope[def.scope.length - 1] === call.receiver);
+    const candidates = lookupEcmascriptSymbolsByShortName(ctx, call.member).filter(
+      (def) => def.relPath === targetFile && def.scope[def.scope.length - 1] === call.receiver,
+    );
     const target = pickSingleCandidate(candidates, this.cfg.mode);
     if (target) return resolved({ targetRelPath: target.relPath, targetSymbolId: target.symbolId });
     // Method not indexed yet — file-only edge so fan-graph stays accurate even
