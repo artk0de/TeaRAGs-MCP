@@ -163,7 +163,8 @@ describe("stale CLIENT meets the up-to-date daemon (bd tea-rags-mcp-1wr7p)", () 
   it("fails fast with the typed client-stale error when the new daemon lacks an op this client requires", async () => {
     const paths = makePaths();
     const client = rebuiltUnderClient();
-    const daemonExit = await startDaemon(paths, client.readOnDisk() as string, withoutOps("listAllPass1Aggregates"));
+    const onDisk = client.readOnDisk() as string;
+    const daemonExit = await startDaemon(paths, onDisk, withoutOps("listAllPass1Aggregates"));
 
     const requestShutdown = vi.spyOn(DaemonGraphDbClient.prototype, "requestShutdown");
     const respawn = vi.fn();
@@ -178,6 +179,7 @@ describe("stale CLIENT meets the up-to-date daemon (bd tea-rags-mcp-1wr7p)", () 
     expect(stale.missingOps).toEqual(["listAllPass1Aggregates"]);
     expect(stale.message).toContain("/mcp reconnect");
     expect(stale.message).toContain(client.loaded);
+    expect(stale.message).toContain(onDisk);
     // Optional codegraph consumers degrade on it like the rest of the family.
     expect(isCodegraphUnavailableError(err)).toBe(true);
 

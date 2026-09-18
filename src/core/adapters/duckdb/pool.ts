@@ -66,10 +66,11 @@ function refusesDaemon(verdict: DaemonCapabilityVerdict): boolean {
  * The CLIENT is the stale side of a build mismatch (bd tea-rags-mcp-1wr7p): the
  * daemon runs the build on disk NOW, which this process's loaded code predates.
  * Draining cannot converge — every respawn launches that same on-disk build — so
- * the daemon is never drained for it. An unreadable on-disk build proves nothing.
+ * the daemon is never drained for it. Callers ask only with a READABLE on-disk
+ * fingerprint: an unreadable one proves nothing.
  */
-function isClientStale(verdict: DaemonCapabilityVerdict, onDiskFingerprint: string | undefined): boolean {
-  return verdict.buildMismatch && onDiskFingerprint !== undefined && verdict.daemonFingerprint === onDiskFingerprint;
+function isClientStale(verdict: DaemonCapabilityVerdict, onDiskFingerprint: string): boolean {
+  return verdict.buildMismatch && verdict.daemonFingerprint === onDiskFingerprint;
 }
 
 /** Debug-line reason a handshake did not settle. */
@@ -500,8 +501,9 @@ export class GraphDbClientPool {
     if (!needsDaemonReplacement(verdict)) return first;
     // Asked BEFORE the respawn question: a pool without the hook must name the
     // stale side correctly too when it refuses.
-    if (isClientStale(verdict, readOnDisk())) {
-      return this.settleWithStaleClient(first, verdict, socketPath, localFingerprint);
+    const onDisk = readOnDisk();
+    if (onDisk !== undefined && isClientStale(verdict, onDisk)) {
+      return this.settleWithStaleClient(first, verdict, { socketPath, clientFingerprint: localFingerprint, onDisk });
     }
 
     // No respawn hook (worker-thread pools rebuilt from serializable config):
@@ -565,8 +567,13 @@ export class GraphDbClientPool {
       // The respawn launched the on-disk build and this process predates it:
       // from here the daemon is the up-to-date peer, and another drain would
       // take it down for every session already on it (bd tea-rags-mcp-1wr7p).
-      if (isClientStale(nextVerdict, readOnDisk())) {
-        return this.settleWithStaleClient(next, nextVerdict, socketPath, localFingerprint);
+      const nextOnDisk = readOnDisk();
+      if (nextOnDisk !== undefined && isClientStale(nextVerdict, nextOnDisk)) {
+        return this.settleWithStaleClient(next, nextVerdict, {
+          socketPath,
+          clientFingerprint: localFingerprint,
+          onDisk: nextOnDisk,
+        });
       }
       if (nextVerdict.daemonFingerprint !== undefined) observedDaemonFingerprints.push(nextVerdict.daemonFingerprint);
       lastVerdict = nextVerdict;
@@ -599,26 +606,26 @@ export class GraphDbClientPool {
    * op this client requires — the same bar a pool without a respawn hook
    * applies — else close and fail fast with `CodegraphClientStaleBuildError`.
    * Reloading this process is the only remedy; tea-rags does not restart it.
+   * `builds.onDisk` is what `isClientStale` matched the daemon's fingerprint
+   * against, so it names the daemon's build too.
    */
   private async settleWithStaleClient(
     client: DaemonGraphDbClient,
     verdict: DaemonCapabilityVerdict,
-    socketPath: string,
-    clientFingerprint: string,
+    builds: { socketPath: string; clientFingerprint: string; onDisk: string },
   ): Promise<DaemonGraphDbClient> {
     if (refusesDaemon(verdict)) {
       await client.close();
       throw new CodegraphClientStaleBuildError({
-        socketPath,
-        clientFingerprint,
-        /* v8 ignore next -- a stale-client verdict always carries the daemon fingerprint */
-        daemonFingerprint: verdict.daemonFingerprint ?? "unknown",
+        socketPath: builds.socketPath,
+        clientFingerprint: builds.clientFingerprint,
+        daemonFingerprint: builds.onDisk,
         missingOps: verdict.missingRequiredOps,
       });
     }
     if (isDebug()) {
       process.stderr.write(
-        `[tea-rags] codegraph daemon ${describeDaemonSkew(verdict, clientFingerprint)} — this process predates ` +
+        `[tea-rags] codegraph daemon ${describeDaemonSkew(verdict, builds.clientFingerprint)} — this process predates ` +
           "the build on disk the daemon runs; proceeding without a restart (it advertises every required op). " +
           "Reconnect the MCP server to load the current build\n",
       );

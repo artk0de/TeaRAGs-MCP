@@ -87,9 +87,15 @@ export const DAEMON_OP_COMMANDS: Readonly<Record<DaemonOp, DaemonOpCommand>> = {
     access: "daemon",
     run: async (ctx, p) => {
       const clientFingerprint = p.buildFingerprint as string | undefined;
-      // A client from a DIFFERENT build is about to drain-restart this
-      // daemon — do NOT open/migrate the DB with stale code first. Legacy
-      // clients (no fingerprint) keep the original open-on-handshake path.
+      // A client from a DIFFERENT build may be about to drain-restart this
+      // daemon — do NOT open/migrate the DB with code that may be the stale
+      // side. It may equally proceed against this daemon instead: a client
+      // that predates the on-disk build this daemon runs (bd
+      // tea-rags-mcp-1wr7p), or a pool without a respawn hook. Such a client
+      // relies on the lazy `pool.acquire` that `CodegraphDaemonServer#handle`
+      // runs for every read/write op, so its first op opens + migrates with
+      // THIS daemon's code. Legacy clients (no
+      // fingerprint) keep the original open-on-handshake path.
       if (clientFingerprint === undefined || clientFingerprint === ctx.buildFingerprint) {
         await ctx.pool.acquire(physicalCollectionNameFromDaemonRequest(p.collection)); // opens + migrates + hydrates
       }

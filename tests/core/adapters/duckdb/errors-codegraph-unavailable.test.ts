@@ -44,6 +44,25 @@ describe("CodegraphDaemonStaleBuildError — remedy in the message (a43tr S4)", 
 
     expect(err.hint).toContain("/mcp reconnect");
   });
+
+  // bd tea-rags-mcp-1wr7p: a server that merely predates the on-disk build is
+  // now told apart BEFORE any drain, so a build that keeps coming back is
+  // someone else's tree — the 2026-08-17 two-builds fight over one daemon.
+  it("the same-build hint blames another build tree contending for the daemon, not a lone stale binary", () => {
+    const err = new CodegraphDaemonStaleBuildError("/tmp/cg/daemon.sock", "CLIENT", "OTHER-TREE", [
+      "OTHER-TREE",
+      "OTHER-TREE",
+      "OTHER-TREE",
+    ]);
+
+    expect(err.hint).toMatch(/same build came back/i);
+    expect(err.hint).toMatch(/another build tree/i);
+    expect(err.hint).toMatch(/respawns its daemon after each drain/i);
+    expect(err.hint).toContain("npm link");
+    expect(err.hint).toContain("npm i -g");
+    expect(err.hint).toMatch(/could not be read/i);
+    expect(err.hint).not.toMatch(/no other session is racing/i);
+  });
 });
 
 describe("CodegraphClientStaleBuildError (bd tea-rags-mcp-1wr7p)", () => {
