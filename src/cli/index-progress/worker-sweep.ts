@@ -31,7 +31,7 @@ import type { IndexWorkerRecord, IndexWorkerRegistry } from "./worker-registry.j
 
 export type IndexWorkerSweepVerdict = "attached" | "detached" | "orphaned" | "stalled" | "gone";
 
-export type IndexWorkerSweepAction = "kept" | "killed" | "pruned" | "would-kill" | "kill-failed";
+export type IndexWorkerSweepAction = "kept" | "killed" | "pruned" | "would-kill" | "would-prune" | "kill-failed";
 
 export interface IndexWorkerSweepOutcome {
   record: IndexWorkerRecord;
@@ -116,7 +116,11 @@ export async function sweepIndexWorkers(
     const outcome = { record, verdict };
 
     if (verdict === "gone") {
-      if (!options.dryRun) registry.unregister(record.pid);
+      if (options.dryRun) {
+        outcomes.push({ ...outcome, action: "would-prune" });
+        continue;
+      }
+      registry.unregister(record.pid);
       outcomes.push({ ...outcome, action: "pruned" });
       continue;
     }
