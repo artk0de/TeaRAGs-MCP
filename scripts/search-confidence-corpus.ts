@@ -34,7 +34,7 @@ import { QdrantManager } from "../src/core/adapters/qdrant/client.js";
 import { sampleVectors } from "../src/core/adapters/qdrant/scroll.js";
 import type { ScoreBackground } from "../src/core/contracts/types/trajectory.js";
 import { computeSearchConfidence } from "../src/core/domains/explore/confidence.js";
-import { computeScoreBackground } from "../src/core/domains/ingest/infra/score-background.js";
+import { computeScoreBackground } from "../src/core/infra/score-background.js";
 
 // ---------------------------------------------------------------------------
 // Configuration

@@ -1,7 +1,7 @@
 import { CONTINUE, DROP, resolved } from "../../../../../contracts/resolution.js";
 import type { CallContext, CallRef, SymbolResolutionTarget } from "../../../../../contracts/types/codegraph.js";
 import type { SymbolResolutionOutcome, SymbolResolutionStrategy } from "../../../../../contracts/types/language.js";
-import { SUPER_RECEIVER_SENTINEL } from "../../walker/walker.js";
+import { SUPER_RECEIVER_SENTINEL } from "../../super-receiver-sentinel.js";
 import { linearizeAncestors } from "../ancestor-linearization.js";
 import { resolveInstanceMethodInClassChain, resolveViaIncludingClasses, type ResolverConfig } from "./shared.js";
 

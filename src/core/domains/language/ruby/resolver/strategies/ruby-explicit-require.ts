@@ -3,7 +3,7 @@ import { posix } from "node:path";
 import { CONTINUE, deferred, resolved } from "../../../../../contracts/resolution.js";
 import { pickSingleCandidate, type CallContext, type CallRef } from "../../../../../contracts/types/codegraph.js";
 import type { SymbolResolutionOutcome, SymbolResolutionStrategy } from "../../../../../contracts/types/language.js";
-import { ZEITWERK_PREFIX } from "../../walker/walker.js";
+import { ZEITWERK_PREFIX } from "../../zeitwerk-import-marker.js";
 import { collectKnownPaths, lookupRubySymbolsByShortName, type ResolverConfig } from "./shared.js";
 
 /**

@@ -2,11 +2,12 @@
  * Pure core for the Python codegraph oracle (bd tea-rags-mcp-xumwz).
  *
  * The shared verdicts, the diff and the tally come from
- * `ts-codegraph-typechecker-oracle.ts` by IMPORT — its `main` is guarded by
- * `import.meta.url === file://argv[1]`, so importing the module runs nothing and
- * there is no reason to relocate or copy it. What lives here is only what
- * Python adds: two extra verdicts, an origin vocabulary with a venv in it, the
- * missed-shape categories, degraded-row handling, and seeded sampling.
+ * `codegraph-oracle-core.ts`, the language-neutral core the TypeScript oracle
+ * scores with too. They used to be imported from the entry-point script
+ * `ts-codegraph-typechecker-oracle.ts` itself, a library depending on a script
+ * (bd tea-rags-mcp-xuywm). What lives here is only what Python adds: two extra
+ * verdicts, an origin vocabulary with a venv in it, the missed-shape
+ * categories, degraded-row handling, and seeded sampling.
  *
  * Everything is a pure function over in-memory values. The harness owns the
  * corpus, the subprocess and the clock.
@@ -20,7 +21,7 @@ import {
   type OracleRow,
   type OracleTally,
   type OracleVerdict,
-} from "../ts-codegraph-typechecker-oracle.js";
+} from "./codegraph-oracle-core.js";
 
 export type PyOracleVerdict = OracleVerdict | "skippedInProject" | "parseFailed" | "oracleNonCallable";
 

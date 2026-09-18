@@ -15,6 +15,7 @@
     "test:coverage": "vitest --coverage",
     "test:providers": "node scripts/verify-providers.js",
     "type-check": "tsc --noEmit",
+    "type-check:scripts": "tsc -p tsconfig.scripts.json",
     "gen:lang-compat": "tsx scripts/gen-language-compatibility.ts",
     "gen:migration-sql": "tsx scripts/gen-migration-sql.ts",
     "pin:lang-versions": "tsx scripts/pin-language-versions.ts",

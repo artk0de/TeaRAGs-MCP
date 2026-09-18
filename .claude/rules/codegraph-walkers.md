@@ -3,6 +3,7 @@ paths:
   - "src/core/domains/language/*/walker/**"
   - "src/core/domains/language/*/resolver/**"
   - "src/core/domains/trajectory/codegraph/symbols/provider.ts"
+  - "src/core/domains/trajectory/codegraph/symbols/file-extractor.ts"
   - "tests/core/domains/language/*/walker/**"
   - "tests/core/domains/language/*/resolver/**"
 ---
@@ -11,10 +12,11 @@ paths:
 
 "Walker" = pure fn, consumes tree-sitter `Tree` for one file in target language,
 returns `FileExtraction`. Lives at
-`src/core/domains/ingest/pipeline/chunker/extraction/<lang>-walker.ts`.
-Companion **resolver** translates extracted imports + call receivers into graph
-edges; lives at
-`src/core/domains/trajectory/codegraph/symbols/resolvers/<lang>/`.
+`src/core/domains/language/<lang>/walker/walker.ts`, with its passes as siblings
+in the same directory. Companion **resolver** translates extracted imports +
+call receivers into graph edges; lives at
+`src/core/domains/language/<lang>/resolver/` (entry `<lang>-resolver.ts`, e.g.
+`ruby/resolver/ruby-resolver.ts`; TypeScript's is `ts-resolver.ts`).
 
 ## When you add a new language
 
@@ -26,39 +28,47 @@ see misleading overlays, no missing-data signal.
 
 Required pieces, in order:
 
-1. **`<lang>-walker.ts`** under `extraction/`. Exports
-   `extractFrom<Lang>File(input): FileExtraction`. Same input shape as
-   typescript-walker.
+1. **`<lang>/walker/walker.ts`**. Exports
+   `extractFrom<Lang>File(input): FileExtraction`. Same input shape as the
+   TypeScript walker.
 
-2. **`<lang>NameOf(node)`** in `provider.ts` (or local to the walker). Returns
-   `{ name, descendsInto }` for top-level symbol declarations; `null` otherwise.
+2. **`<lang>NameOf(node)`** in `<lang>/walker/name-of.ts` (`rbNameOf`,
+   `goNameOf`, …) — the `LanguageWalker.nameOf` contract in
+   `contracts/types/language.ts`: `NamedSymbol | NamedSymbol[]` for a symbol
+   declaration, `null` otherwise.
 
-3. **Entry in `LANGUAGES` map** in `provider.ts`:
+3. **A native `LanguageProvider`** in `<lang>/index.ts` exposing `walker`
+   (walk + `nameOf`) and `resolver`, constructed in ONE branch of
+   `LanguageFactory#build` (`domains/language/factory.ts`) — see
+   `.claude/rules/domains-language.md` rule 1.
+
+4. **Entry in `CODEGRAPH_LANGUAGES`** in
+   `domains/trajectory/codegraph/symbols/file-extractor.ts`. The row carries the
+   grammar and the scope separator only; the walk and `nameOf` come from
+   `factory.create(lang).walker`:
 
    ```ts
    ".rb": {
      language: "ruby",
      loadParser: () => RbLang as Parser.Language,
-     walker: extractFromRubyFile,
-     nameOf: rbNameOf,
      scopeSeparator: "::",
    },
    ```
 
-4. **`resolvers/<lang>/<lang>-resolver.ts`** implementing `CallResolver`.
-   Registered in `bootstrap/factory.ts` `resolvers` map with the language string
-   matching what the walker emits.
+5. **`<lang>/resolver/<lang>-resolver.ts`** implementing `CallResolver`, handed
+   out as the provider's `resolver` with the language string matching what the
+   walker emits.
 
-5. **Two test files** (mandatory comprehensive coverage — see below):
-   - `tests/core/domains/ingest/pipeline/chunker/extraction/<lang>-walker.test.ts`
-   - `tests/core/domains/trajectory/codegraph/symbols/resolvers/<lang>/<lang>-resolver.test.ts`
+6. **Two test directories** (mandatory comprehensive coverage — see below):
+   - `tests/core/domains/language/<lang>/walker/`
+   - `tests/core/domains/language/<lang>/resolver/`
 
 ## Walker output shape
 
 ```ts
 interface FileExtraction {
   relPath: string;
-  language: string; // matches LanguageConfig.language
+  language: string; // matches CodegraphLanguageConfig.language
   imports: ImportRef[];
   chunks: ChunkExtraction[];
   fileScope: string[]; // top-level symbols this file DEFINES
@@ -77,8 +87,14 @@ Zeitwerk constant uses). Two shapes:
 - **Convention-based** — for implicit-import languages (Zeitwerk, classpath,
   etc.), use **prefix marker** so resolver distinguishes channels. Example:
   ruby-walker uses `zeitwerk:` prefix. Pick prefix that can't appear in real
-  import path; export the constant from walker so resolver imports it, not
-  duplicates string.
+  import path. Define it ONCE, in a zero-import leaf module at the language
+  root, and have walker and resolver both import it from there — never duplicate
+  the string, and never make the resolver import it from the walker (a stable
+  resolver hub then depends on the walker orchestrator for a string). Example:
+  `ruby/zeitwerk-import-marker.ts` (`ZEITWERK_PREFIX`); the same holds for any
+  walker↔resolver marker, e.g. `ruby/super-receiver-sentinel.ts`
+  (`SUPER_RECEIVER_SENTINEL`). The walker's entry module may re-export it for
+  existing importers.
 
 `startLine` is 1-indexed (`node.startPosition.row + 1`).
 
@@ -152,13 +168,13 @@ Reference layouts: python-walker tests (17 cases) + ruby-walker tests (23 cases)
 
 ## Anti-patterns
 
-- **Hardcoding `.ts` extension** in shared codegraph code. `LANGUAGES` map =
-  single source of truth — add a row, not an `if extension === ".rb"` branch.
+- **Hardcoding `.ts` extension** in shared codegraph code. `CODEGRAPH_LANGUAGES`
+  = single source of truth — add a row, not an `if extension === ".rb"` branch.
 - **Calling symbol table from inside walker.** Walkers extract, don't resolve —
   resolution is resolver's job; walker emits raw `importText`, resolver decides.
 - **Smuggling resolver knowledge into walker output.** If walker knows Zeitwerk
   maps `User` to `app/models/user.rb`, that belongs in
-  `resolvers/<lang>/zeitwerk.ts`, not the walker.
+  `<lang>/resolver/zeitwerk.ts` (`ruby/resolver/zeitwerk.ts`), not the walker.
 - **One walker dispatching by content sniffing.** Each language gets own walker
-  file. Cross-language dispatch at provider level (`LANGUAGES` lookup by
-  extension).
+  file. Cross-language dispatch at provider level (`CODEGRAPH_LANGUAGES` lookup
+  by extension).

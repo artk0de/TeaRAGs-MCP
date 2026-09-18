@@ -522,11 +522,22 @@ function discoverRubyFiles(root: string, languageFactory: LanguageFactory): stri
 // ---------------------------------------------------------------------------
 // Real dependency wiring (identical to what bootstrap injects for codegraph).
 // ---------------------------------------------------------------------------
+
+/**
+ * `LanguageProvider.walker` / `.resolver` are optional because a doc-only
+ * language carries neither; Ruby always has both. Failing here names the
+ * missing part at load instead of at the first call site that reaches it.
+ */
+function requireRubyProviderPart<T>(part: T | undefined, name: string): T {
+  if (part === undefined) throw new Error(`LanguageFactory.create("ruby") returned no ${name}`);
+  return part;
+}
+
 const factory = new LanguageFactory(); // ambiguousResolveMode defaults to "strict"
 const composer = new DefaultSymbolIdComposer();
 const ruby = factory.create("ruby");
-const { walker } = ruby;
-const { resolver } = ruby;
+const walker = requireRubyProviderPart(ruby.walker, "walker");
+const resolver = requireRubyProviderPart(ruby.resolver, "resolver");
 const rbConfig = CODEGRAPH_LANGUAGES[RUBY_EXT];
 
 const gemfileContent =
@@ -2479,7 +2490,7 @@ function evaluateDuckVariant(
       patients.filter((g) => duckFires(predOf.get(g) ?? null, 1.5)),
       (g) => {
         const p = predOf.get(g);
-        return p === undefined ? "" : idx.classes[p.classIdx];
+        return p === undefined || p === null ? "" : idx.classes[p.classIdx];
       },
       15,
     ),
@@ -2505,7 +2516,7 @@ function runDuckOracle(): void {
     const hits = idx.byLastSegment.get(duckLastSegment(norm)) ?? [];
     return hits.length > 0 ? hits[0] : null;
   };
-  const resolvableSet = new Set(gtGroups.filter((g) => g.gtType !== undefined && classKnown(g.gtType) !== null));
+  const resolvableSet = new Set(gtGroups.filter((g) => g.gtType !== null && classKnown(g.gtType) !== null));
   const gtResolvable = [...resolvableSet];
 
   const patientByKey = new Map<string, DuckVarCallSet>();
@@ -3187,6 +3198,7 @@ function fxStrHash(s: string): number {
 function fxTypeKey(t: RubyTypeRef): string {
   if (t.form === "container") return `c(${fxTypeKey(t.element)})`;
   if (t.form === "union") return `u(${t.members.map(fxTypeKey).join(",")})`;
+  if (t.form === "nil") return "nil";
   return `${t.form}:${t.name}`;
 }
 
@@ -14557,7 +14569,7 @@ function c2SimulatedFanoutTargets(call: CallRef, ctx: CallContext): Set<string> 
  * evidence that exists, not the population under change.
  */
 function c2NoteEdgeTruth(call: CallRef, ctx: CallContext, relPath: string): void {
-  const receiver = call.receiver;
+  const { receiver } = call;
   if (receiver === null) return;
   // Cheap first: the convention's own regex rejects most receivers outright.
   // The convention only ever yields the `instance` form; narrowing keeps that a
@@ -14690,7 +14702,9 @@ function noteC2CollapseCall(
       ? c2RsClassName(bare, ctx)
       : undefined;
   const rsTargetId =
-    rsKlass === undefined ? null : (resolveTypeInstanceMethod(rsKlass, call.member, ctx, C2_CFG.mode)?.targetSymbolId ?? null);
+    rsKlass === undefined
+      ? null
+      : (resolveTypeInstanceMethod(rsKlass, call.member, ctx, C2_CFG.mode)?.targetSymbolId ?? null);
 
   // ── the production gate, asked of the production pass ────────────────────
   const target = c2ConventionTarget(call, ctx);
@@ -14722,13 +14736,17 @@ function noteC2CollapseCall(
   // ── cut 2: containment ───────────────────────────────────────────────────
   const contains = edges.some((e) => e.targetSymbolId === targetId);
   c2KeptTargets.add(targetId);
-  for (const e of edges) if (e.targetSymbolId !== null && e.targetSymbolId !== targetId) c2RemovedTargets.add(e.targetSymbolId);
+  for (const e of edges) {
+    if (e.targetSymbolId !== null && e.targetSymbolId !== targetId) c2RemovedTargets.add(e.targetSymbolId);
+  }
   if (contains) {
     c2Contains += 1;
     c2ContainsEdges += edges.length;
     kindRow.contains += 1;
     if (c2ContainsExamples.length < C2_EXAMPLE_CAP) {
-      c2ContainsExamples.push(`${relPath}:${call.startLine}  ${receiver}.${call.member}  ${edges.length} -> ${targetId}`);
+      c2ContainsExamples.push(
+        `${relPath}:${call.startLine}  ${receiver}.${call.member}  ${edges.length} -> ${targetId}`,
+      );
     }
   } else {
     c2Lacks += 1;
@@ -14791,7 +14809,9 @@ function runC2CollapseOracle(): void {
 
   L("");
   L("─── (2) containment: is the convention edge already one of the N? ──");
-  L(`convention edge IS in the fan-out:  ${c2Contains}  (${c2ContainsEdges} edges -> ${c2Contains}; strict subtraction)`);
+  L(
+    `convention edge IS in the fan-out:  ${c2Contains}  (${c2ContainsEdges} edges -> ${c2Contains}; strict subtraction)`,
+  );
   L(`convention edge is NOT in it:       ${c2Lacks}  (${c2LacksEdges} edges -> ${c2Lacks}; SWAP)`);
   L(`distinct targets kept: ${c2KeptTargets.size}   distinct targets extinguished: ${c2RemovedTargets.size}`);
   for (const e of c2ContainsExamples.slice(0, 8)) L(`    ${e}`);
@@ -14809,7 +14829,9 @@ function runC2CollapseOracle(): void {
 
   L("");
   L("─── (4) recall risk ────────────────────────────────────────────────");
-  L(`firing sites of the \`dispatch\` shape (NO chain fallback -> LOSS): ${c2DispatchShapeSites}  (${c2DispatchShapeEdges} edges)`);
+  L(
+    `firing sites of the \`dispatch\` shape (NO chain fallback -> LOSS): ${c2DispatchShapeSites}  (${c2DispatchShapeEdges} edges)`,
+  );
   L(`over-cap "ambiguous" fan-outs the gate would also defer (GAIN):   ${c2AmbiguousWouldDefer}`);
   L("  (production emits nothing at an over-cap site and does NOT fall back to the");
   L("   chain; this harness does, so the A/B below does not credit those.)");
@@ -14841,12 +14863,18 @@ function runC2CollapseOracle(): void {
       `  (${emitted} emitting samples)`,
   );
   L("  crossed with fan-out containment of the TRUE target:");
-  L(`      truth IS in the removable fan-out: right=${c2TruthInFanout.rightTarget} same=${c2TruthInFanout.sameTarget} wrong=${c2TruthInFanout.wrongTarget}`);
-  L(`      truth NOT in the fan-out:          right=${c2TruthNoFanout.rightTarget} same=${c2TruthNoFanout.sameTarget} wrong=${c2TruthNoFanout.wrongTarget}`);
+  L(
+    `      truth IS in the removable fan-out: right=${c2TruthInFanout.rightTarget} same=${c2TruthInFanout.sameTarget} wrong=${c2TruthInFanout.wrongTarget}`,
+  );
+  L(
+    `      truth NOT in the fan-out:          right=${c2TruthNoFanout.rightTarget} same=${c2TruthNoFanout.sameTarget} wrong=${c2TruthNoFanout.wrongTarget}`,
+  );
   L("  only `wrong AND truth-in-fan-out` LOSES a true edge; `wrong AND not-in-fan-out`");
   L("  swaps one wrong edge set for one wrong edge and costs nothing.");
   const lossRate = emitted === 0 ? 0 : c2TruthInFanout.wrongTarget / emitted;
-  L(`  measured loss rate: ${fmtPct(lossRate)}  ->  projected onto ${c2Sites} firing sites: ${(lossRate * c2Sites).toFixed(1)} calls`);
+  L(
+    `  measured loss rate: ${fmtPct(lossRate)}  ->  projected onto ${c2Sites} firing sites: ${(lossRate * c2Sites).toFixed(1)} calls`,
+  );
   for (const e of c2WrongExamples.slice(0, 10)) L(`    ${e}`);
 
   L("");
@@ -14867,8 +14895,12 @@ function runC2CollapseOracle(): void {
       `  (${ivarEmitted} emitting samples)`,
   );
   L("  crossed with fan-out containment of the TRUE target:");
-  L(`      truth IS in the removable fan-out: right=${c2IvarTruthInFanout.rightTarget} same=${c2IvarTruthInFanout.sameTarget} wrong=${c2IvarTruthInFanout.wrongTarget}`);
-  L(`      truth NOT in the fan-out:          right=${c2IvarTruthNoFanout.rightTarget} same=${c2IvarTruthNoFanout.sameTarget} wrong=${c2IvarTruthNoFanout.wrongTarget}`);
+  L(
+    `      truth IS in the removable fan-out: right=${c2IvarTruthInFanout.rightTarget} same=${c2IvarTruthInFanout.sameTarget} wrong=${c2IvarTruthInFanout.wrongTarget}`,
+  );
+  L(
+    `      truth NOT in the fan-out:          right=${c2IvarTruthNoFanout.rightTarget} same=${c2IvarTruthNoFanout.sameTarget} wrong=${c2IvarTruthNoFanout.wrongTarget}`,
+  );
   const ivarLossRate = ivarEmitted === 0 ? 0 : c2IvarTruthInFanout.wrongTarget / ivarEmitted;
   L(
     `  measured loss rate: ${fmtPct(ivarLossRate)}  ->  projected onto ${c2Sites} firing sites: ` +
@@ -15258,7 +15290,9 @@ function icNoteTypedIvar(call: CallRef, ctx: CallContext, relPath: string): void
   icEdge.wrongTarget += 1;
   rsBump(icEdgeWrongBy, `${receiver}.${call.member} → guess ${guessTarget}, fact ${factTarget ?? "(none)"}`);
   if (icEdgeWrongExample.length < IC_EXAMPLE_CAP) {
-    icEdgeWrongExample.push(`${relPath}:${call.startLine}  ${receiver}.${call.member}  ${guessTarget} vs ${factTarget}`);
+    icEdgeWrongExample.push(
+      `${relPath}:${call.startLine}  ${receiver}.${call.member}  ${guessTarget} vs ${factTarget}`,
+    );
   }
 }
 

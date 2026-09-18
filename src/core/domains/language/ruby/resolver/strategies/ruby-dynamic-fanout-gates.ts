@@ -26,7 +26,7 @@
 
 import type { AmbiguousResolveMode, CallContext, CallRef } from "../../../../../contracts/types/codegraph.js";
 import { isExternalQualifiedMember } from "../../dsl/index.js";
-import { SUPER_RECEIVER_SENTINEL } from "../../walker/walker.js";
+import { SUPER_RECEIVER_SENTINEL } from "../../super-receiver-sentinel.js";
 import { typeOfReceiver } from "../type-propagation.js";
 import { receiverLooksLikeArRelationChain } from "./ruby-ar-relation-guard.js";
 import { resolveConventionReceiverTarget } from "./ruby-convention-receiver.js";

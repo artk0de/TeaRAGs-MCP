@@ -25,17 +25,25 @@
 
 import { relative, resolve as resolvePath } from "node:path";
 
-import ts from "typescript";
+import type ts from "typescript";
 
-import type { CallRef, FileExtraction, RelPath } from "../../src/core/contracts/types/codegraph.js";
+import type { FileExtraction } from "../../src/core/contracts/types/codegraph.js";
 import { DefaultSymbolIdComposer, LanguageFactory } from "../../src/core/domains/language/index.js";
 import { loadTsConfig, TSCallResolver } from "../../src/core/domains/language/typescript/index.js";
 import { findCallExpression } from "../../src/core/domains/language/typescript/resolver/strategies/ts-type-checker-fallback.js";
 import { findReceiverExpression } from "../../src/core/domains/language/typescript/resolver/strategies/ts-type-checker-shared.js";
 import type { TSProgramCache } from "../../src/core/domains/language/typescript/resolver/ts-program-cache.js";
 import { classifyReceiverKind } from "../../src/core/domains/trajectory/codegraph/symbols/receiver-kind.js";
+import { classifyResolveMiss } from "../../src/core/domains/trajectory/codegraph/symbols/resolution-runner.js";
 import { InMemoryGlobalSymbolTable } from "../../src/core/domains/trajectory/codegraph/symbols/symbol-table.js";
-import { buildCallContext, buildSymbolDefs, collectSourceFiles, extractFile } from "../ts-codegraph-typechecker-oracle.js";
+import {
+  buildCallContext,
+  buildCorpusExclusionFilter,
+  buildSymbolDefs,
+  collectSourceFiles,
+  extractFile,
+  readCorpusDeclaredDependencies,
+} from "../ts-codegraph-typechecker-oracle.js";
 
 /** Where the checker says the CALL's selected signature is declared. */
 type SignatureEvidence = "outsideProject" | "inProject" | "noDeclaration" | "nodeNotLocated" | "noProgram";
@@ -65,7 +73,9 @@ const emptyReport = (): KindReport => ({
   samples: [],
 });
 
-const bump = <K>(m: Map<K, number>, k: K): void => m.set(k, (m.get(k) ?? 0) + 1);
+const bump = <K>(m: Map<K, number>, k: K): void => {
+  m.set(k, (m.get(k) ?? 0) + 1);
+};
 
 function argOf(argv: readonly string[], flag: string, fallback: string): string {
   const i = argv.indexOf(flag);
@@ -133,11 +143,18 @@ async function main(): Promise<void> {
   if (cache === null) throw new Error("CODEGRAPH_TS_TYPECHECKER is off — the probe has nothing to ask");
   const symbolTable = new InMemoryGlobalSymbolTable();
 
-  const files: RelPath[] = await collectSourceFiles(repoRoot, resolvePath(repoRoot, targetArg));
+  // Production's corpus: both exclusion layers and the declared-dependency gate,
+  // exactly as the oracle applies them.
+  const selection = await collectSourceFiles(
+    repoRoot,
+    resolvePath(repoRoot, targetArg),
+    await buildCorpusExclusionFilter(repoRoot, factory),
+  );
+  const declaredDependencies = readCorpusDeclaredDependencies(repoRoot, factory);
   const extractions: FileExtraction[] = [];
   const classExtends: Record<string, string> = {};
-  for (const relPath of files) {
-    const extraction = extractFile(repoRoot, relPath, composer, factory);
+  for (const relPath of selection.kept) {
+    const extraction = extractFile(repoRoot, relPath, composer, factory, declaredDependencies);
     if (extraction === null) continue;
     symbolTable.upsertFile(relPath, buildSymbolDefs(extraction));
     Object.assign(classExtends, extraction.classExtends ?? {});
@@ -159,13 +176,11 @@ async function main(): Promise<void> {
   for (const extraction of scope) {
     for (const chunk of extraction.chunks) {
       const ctx = buildCallContext(extraction, chunk, classExtends, symbolTable);
-      for (const call of (chunk.calls ?? []) as CallRef[]) {
+      for (const call of chunk.calls ?? []) {
         if (call.dispatch !== undefined) continue;
         if (resolver.resolve(call, ctx)) continue;
-        if (call.dynamicSend === true) continue;
-        if (resolver.targetsExternalImport?.(call, ctx)) continue;
-        if (symbolTable.lookupByShortName(call.member).length === 0) continue;
-        if (resolver.targetsCoreAmbiguousMember?.(call, ctx)) continue;
+        // The residual is exactly production's `missWithInProjectDef` bucket.
+        if (classifyResolveMiss(call, ctx, resolver, symbolTable) !== "missWithInProjectDef") continue;
 
         const report = reportFor(classifyReceiverKind(call, chunk.localBindings));
         report.residual += 1;
@@ -185,7 +200,7 @@ async function main(): Promise<void> {
           bump(report.signature, "noDeclaration");
           continue;
         }
-        const fileName = declaration.getSourceFile().fileName;
+        const { fileName } = declaration.getSourceFile();
         const outside = !cache.isProjectSourceFile(fileName);
         bump(report.signature, outside ? "outsideProject" : "inProject");
         if (!outside) continue;
@@ -211,7 +226,9 @@ async function main(): Promise<void> {
   }
 
   const kinds = [...byKind.entries()].sort((a, b) => b[1].residual - a[1].residual);
-  process.stdout.write(`\nRESIDUAL EVIDENCE — ${targetArg}${resolvePrefix ? ` / ${resolvePrefix}` : ""} @ ${repoRoot}\n\n`);
+  process.stdout.write(
+    `\nRESIDUAL EVIDENCE — ${targetArg}${resolvePrefix ? ` / ${resolvePrefix}` : ""} @ ${repoRoot}\n\n`,
+  );
   process.stdout.write(
     "kind         residual  sigOutside  recvUnion  recvDeep  recvProject  sigInProject  sigNoDecl  noNode  noProgram\n",
   );
