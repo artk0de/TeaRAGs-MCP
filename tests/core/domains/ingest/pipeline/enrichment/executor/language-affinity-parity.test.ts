@@ -65,8 +65,8 @@ import { InMemoryGlobalSymbolTable } from "../../../../../../../src/core/domains
 import {
   cycleMemberSets,
   dumpCodegraphTables,
+  expectSamePageRanks,
   ORDER_SENSITIVE_ANALYTICS_TABLES,
-  PAGE_RANK_EPSILON,
   pageRanksBySymbol,
 } from "../../../../trajectory/codegraph/__helpers__/graph-db-dump.js";
 import { buildTestCodegraphDeps } from "../../../../trajectory/codegraph/__helpers__/language-factory.js";
@@ -198,13 +198,6 @@ async function languageAffinityRun(
     fileOverlays: finalized.fileOverlay ?? new Map(),
     chunkOverlays: chunks.chunkOverlay ?? new Map(),
   };
-}
-
-function expectSamePageRanks(actual: Map<string, number>, expected: Map<string, number>): void {
-  expect([...actual.keys()].sort()).toEqual([...expected.keys()].sort());
-  for (const [key, value] of expected) {
-    expect(Math.abs((actual.get(key) ?? Number.NaN) - value), key).toBeLessThanOrEqual(PAGE_RANK_EPSILON);
-  }
 }
 
 function withoutPageRank(

@@ -1,3 +1,5 @@
+import { expect } from "vitest";
+
 import type { DuckDbGraphClient } from "../../../../../../src/core/adapters/duckdb/client.js";
 
 /**
@@ -60,6 +62,17 @@ export function pageRanksBySymbol(rows: readonly string[]): Map<string, number> 
     out.set(row.symbol_id, Number(row.page_rank));
   }
   return out;
+}
+
+/**
+ * Two PageRank maps (symbol or chunk keyed) hold the same keys, and every value
+ * agrees within {@link PAGE_RANK_EPSILON}.
+ */
+export function expectSamePageRanks(actual: Map<string, number>, expected: Map<string, number>): void {
+  expect([...actual.keys()].sort()).toEqual([...expected.keys()].sort());
+  for (const [key, value] of expected) {
+    expect(Math.abs((actual.get(key) ?? Number.NaN) - value), key).toBeLessThanOrEqual(PAGE_RANK_EPSILON);
+  }
 }
 
 function stableRow(row: Record<string, unknown>): string {

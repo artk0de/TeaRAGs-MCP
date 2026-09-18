@@ -11,7 +11,9 @@
  *    node write, no spill line, no pass-2, no overlay, no count;
  *  - the finalize split into `resolve` (pass-2 of the owned files) and
  *    `readBack` (collection metrics on the one owner, then owned overlays)
- *    leaves the graph exactly as the one-call finalize does.
+ *    leaves the graph the one-call finalize leaves — byte for byte, except
+ *    cycles and PageRank, which follow edge STORAGE order and are compared as
+ *    member sets and within `PAGE_RANK_EPSILON`.
  *
  * That the partitions TOGETHER reproduce the single-worker graph is the
  * executor-level parity test (`language-affinity-parity.test.ts`).
@@ -23,7 +25,13 @@ import { fileURLToPath } from "node:url";
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { dumpCodegraphTables } from "../__helpers__/graph-db-dump.js";
+import {
+  cycleMemberSets,
+  dumpCodegraphTables,
+  expectSamePageRanks,
+  ORDER_SENSITIVE_ANALYTICS_TABLES,
+  pageRanksBySymbol,
+} from "../__helpers__/graph-db-dump.js";
 import { buildTestCodegraphDeps } from "../__helpers__/language-factory.js";
 import { writeMixedLanguageCorpus } from "../__helpers__/mixed-language-corpus.js";
 import { DuckDbGraphClient } from "../../../../../../src/core/adapters/duckdb/client.js";
@@ -176,10 +184,24 @@ describe("CodegraphEnrichmentProvider — staged finalize", () => {
     // Overlays need the whole graph, which only exists once every partition has
     // resolved — so the resolve stage reports none.
     expect(resolved.size).toBe(0);
+    // File overlays only (fan, instability, hub/leaf, impact): no PageRank rides
+    // on them, so they compare exactly.
     expect(twoOverlays).toEqual(oneOverlays);
     const stagedDump = await dumpCodegraphTables(staged.client);
-    expect(stagedDump).toEqual(await dumpCodegraphTables(single.client));
-    // The corpus is built to have both, so the equality above is not vacuous.
+    const singleDump = await dumpCodegraphTables(single.client);
+    expect(Object.keys(stagedDump)).toEqual(Object.keys(singleDump));
+    for (const table of Object.keys(singleDump)) {
+      if (ORDER_SENSITIVE_ANALYTICS_TABLES.includes(table)) continue;
+      expect(stagedDump[table], table).toEqual(singleDump[table]);
+    }
+    // Cycles and PageRank walk the edge tables in STORAGE order, which the two
+    // finalize shapes do not share: compare them by meaning.
+    expect(cycleMemberSets(stagedDump.cg_symbols_cycles)).toEqual(cycleMemberSets(singleDump.cg_symbols_cycles));
+    expectSamePageRanks(
+      pageRanksBySymbol(stagedDump.cg_symbols_metrics),
+      pageRanksBySymbol(singleDump.cg_symbols_metrics),
+    );
+    // The corpus is built to have both, so the comparisons above are not vacuous.
     expect(stagedDump.cg_symbols_cycles.length).toBeGreaterThan(0);
     expect(stagedDump.cg_symbols_metrics.length).toBeGreaterThan(0);
   });
