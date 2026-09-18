@@ -145,9 +145,9 @@ describe("stale CLIENT meets the up-to-date daemon (bd tea-rags-mcp-1wr7p)", () 
     const pool = makePool(paths, client, { respawn });
 
     const handle = await pool.acquireWrite("code_cstale_ok_v1");
-    // Live against the running daemon — a real write+read round-trip.
-    await handle.graphDb.upsertFile({ relPath: "a.ts", language: "typescript" }, { fileEdges: [], methodEdges: [] });
-    expect(await handle.graphDb.hasData()).toBe(true);
+    // Live against the running daemon — a real read round-trip. It proceeds
+    // READ-ONLY: writes are pinned by the read-only test below.
+    expect(await handle.graphDb.hasData()).toBe(false);
 
     expect(requestShutdown).not.toHaveBeenCalled();
     expect(respawn).not.toHaveBeenCalled();
@@ -156,6 +156,52 @@ describe("stale CLIENT meets the up-to-date daemon (bd tea-rags-mcp-1wr7p)", () 
     // Under DEBUG the decision says which side is stale.
     const lines = stderr.mock.calls.map((c) => String(c[0])).join("");
     expect(lines).toMatch(/this process predates the build on disk/i);
+  });
+
+  // The capability table checks op NAMES only; a write whose payload shape
+  // moved under an unchanged name would land in the store unnoticed. So a
+  // client that proceeds against a newer daemon may read, never write.
+  it("a stale client that proceeds is read-only: graph reads work, every write throws the typed stale-client error", async () => {
+    const paths = makePaths();
+    const client = rebuiltUnderClient();
+    const onDisk = client.readOnDisk() as string;
+    await startDaemon(paths, onDisk);
+    const pool = makePool(paths, client, { respawn: vi.fn() });
+
+    const { graphDb } = await pool.acquireWrite("code_cstale_ro_v1");
+
+    // The reads get_callers / get_callees / trace_path / find_cycles issue.
+    await expect(graphDb.getCallers("a.ts#f")).resolves.toEqual([]);
+    await expect(graphDb.getCallees("a.ts#f")).resolves.toEqual([]);
+    await expect(graphDb.findCycles("file")).resolves.toEqual([]);
+    await expect(graphDb.getSymbolRelPaths([])).resolves.toEqual(new Map());
+
+    const err = await graphDb
+      .upsertFile({ relPath: "a.ts", language: "typescript" }, { fileEdges: [], methodEdges: [] })
+      .catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(CodegraphClientStaleBuildError);
+    expect(isCodegraphUnavailableError(err)).toBe(true);
+    const stale = err as CodegraphClientStaleBuildError;
+    expect(stale.message).toContain("upsertFile");
+    expect(stale.message).toContain(client.loaded);
+    expect(stale.message).toContain(onDisk);
+    expect(stale.message).toContain("/mcp reconnect");
+    await expect(graphDb.computeAndPersistCyclesAndSignals?.()).rejects.toBeInstanceOf(CodegraphClientStaleBuildError);
+    await expect(graphDb.checkpoint()).rejects.toBeInstanceOf(CodegraphClientStaleBuildError);
+
+    // Nothing reached the store.
+    expect(await graphDb.hasData()).toBe(false);
+  });
+
+  it("a client of the daemon's own build keeps writing", async () => {
+    const paths = makePaths();
+    const client = rebuiltUnderClient();
+    await startDaemon(paths, client.loaded);
+    const pool = makePool(paths, { loaded: client.loaded, readOnDisk: () => client.loaded });
+
+    const { graphDb } = await pool.acquireWrite("code_cstale_fresh_v1");
+    await graphDb.upsertFile({ relPath: "a.ts", language: "typescript" }, { fileEdges: [], methodEdges: [] });
+    expect(await graphDb.hasData()).toBe(true);
   });
 
   it("fails fast with the typed client-stale error when the new daemon lacks an op this client requires", async () => {
@@ -222,8 +268,8 @@ describe("stale CLIENT meets the up-to-date daemon (bd tea-rags-mcp-1wr7p)", () 
     });
 
     const handle = await pool.acquireWrite("code_cstale_foreign_v1");
-    await handle.graphDb.upsertFile({ relPath: "a.ts", language: "typescript" }, { fileEdges: [], methodEdges: [] });
-    expect(await handle.graphDb.hasData()).toBe(true);
+    // A live read round-trip; the stale client proceeds read-only.
+    expect(await handle.graphDb.hasData()).toBe(false);
 
     expect(respawns).toBe(1);
     expect(requestShutdown).toHaveBeenCalledTimes(1);

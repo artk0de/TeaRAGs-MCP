@@ -286,6 +286,42 @@ describe("DaemonGraphDbClient — a refused replay releases the connection (f924
     expect(client.isConnected()).toBe(false);
   });
 
+  // bd tea-rags-mcp-1wr7p: the common way a long-lived process meets a newer
+  // daemon is exactly this — its daemon went away and the respawn launched the
+  // rebuilt tree. The replay settles it the way the pool's handshake does:
+  // proceed, read-only.
+  it("replays only the reads when the replacement runs the build on disk this process predates", async () => {
+    const socketPath = tempSocket();
+    const first = await daemon(socketPath, dyingAfterHandshake);
+    let replacement: { received: string[] } | undefined;
+    const client = track(
+      new DaemonGraphDbClient(socketPath, "code_x", {
+        retryDelayMs: 5,
+        connectTimeoutMs: 2000,
+        readOnDiskBuildFingerprint: () => "fp-B",
+        onConnectionLost: async () => {
+          await shutdown(first.server);
+          replacement = await daemon(socketPath, (r) =>
+            r.op === "handshake" ? { buildFingerprint: "fp-B", supportedOps: FULL_OPS } : true,
+          );
+        },
+      }),
+    );
+    await client.init();
+    await client.handshake("fp-A");
+
+    const write = client.checkpoint().catch((e: unknown) => e);
+    const read = client.hasData();
+
+    expect(await write).toBeInstanceOf(CodegraphClientStaleBuildError);
+    await expect(read).resolves.toBe(true);
+    expect(replacement?.received).toEqual(["handshake", "hasData"]);
+    // From here on the client stays read-only.
+    await expect(client.checkpoint()).rejects.toBeInstanceOf(CodegraphClientStaleBuildError);
+    await expect(client.hasData()).resolves.toBe(true);
+    expect(replacement?.received).toEqual(["handshake", "hasData", "hasData"]);
+  });
+
   it("the pool runs the build handshake again on the next acquire instead of reusing the refused client", async () => {
     const socketPath = tempSocket();
     const d1 = await daemon(socketPath, dyingAfterHandshake);

@@ -138,7 +138,13 @@ export class CodegraphDaemonStaleBuildError extends InfraError {
  * Raised by the pool's build handshake, and by a client whose replay after a
  * lost connection meets such a daemon (`DaemonGraphDbClient#describeRefusal`).
  *
- * `missingOps` is empty when the daemon advertises no op list at all.
+ * The same class refuses each WRITE of a stale client that did proceed
+ * (`refusedWriteOp`): proceeding is read-only, because the capability check
+ * matches op names and a write whose payload shape moved under an unchanged
+ * name would land in the store unnoticed.
+ *
+ * `missingOps` is empty when the daemon advertises no op list at all, and for
+ * a refused write.
  */
 export class CodegraphClientStaleBuildError extends InfraError {
   readonly missingOps: readonly string[];
@@ -149,13 +155,17 @@ export class CodegraphClientStaleBuildError extends InfraError {
       clientFingerprint: string;
       daemonFingerprint: string;
       missingOps: readonly string[];
+      /** The write refused because this client proceeded read-only. */
+      refusedWriteOp?: string;
     },
     cause?: Error,
   ) {
     const unserved =
-      skew.missingOps.length > 0
-        ? `lacks op${skew.missingOps.length === 1 ? "" : "s"} ${skew.missingOps.join(", ")} this process requires`
-        : "does not advertise the ops it serves";
+      skew.refusedWriteOp !== undefined
+        ? `serves this process read-only, so write op ${skew.refusedWriteOp} was refused`
+        : skew.missingOps.length > 0
+          ? `lacks op${skew.missingOps.length === 1 ? "" : "s"} ${skew.missingOps.join(", ")} this process requires`
+          : "does not advertise the ops it serves";
     super({
       code: "INFRA_CODEGRAPH_CLIENT_STALE_BUILD",
       // The remedy rides the message (bd tea-rags-mcp-a43tr): optional consumers

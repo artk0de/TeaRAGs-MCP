@@ -59,7 +59,17 @@ export type DaemonOpCommand =
        */
       readonly run: (graphDb: GraphDbClient, p: DaemonOpParams, signal?: AbortSignal) => Promise<unknown>;
     }
-  | { readonly access: "daemon"; readonly run: (ctx: DaemonOpContext, p: DaemonOpParams) => Promise<unknown> };
+  | {
+      readonly access: "daemon";
+      /**
+       * Whether the op changes what the daemon holds on the caller's behalf —
+       * a collection's files, or the daemon's own lifecycle. `read`/`write`
+       * say it for the graph ops; a daemon op states it here, so
+       * `isDaemonWriteOp` covers every op from this one table.
+       */
+      readonly mutates: boolean;
+      readonly run: (ctx: DaemonOpContext, p: DaemonOpParams) => Promise<unknown>;
+    };
 
 /**
  * A dispatch table a `CodegraphDaemonServer` serves. Partial because a daemon
@@ -95,6 +105,10 @@ function read(run: (graphDb: GraphDbClient, p: DaemonOpParams) => Promise<unknow
 export const DAEMON_OP_COMMANDS: Readonly<Record<DaemonOp, DaemonOpCommand>> = {
   handshake: {
     access: "daemon",
+    // Opens + migrates only for a client of THIS daemon's build — the daemon's
+    // own code at work; the caller supplies a fingerprint, no data. A client
+    // from another build leaves the store untouched.
+    mutates: false,
     run: async (ctx, p) => {
       const clientFingerprint = p.buildFingerprint as string | undefined;
       // A client from a DIFFERENT build may be about to drain-restart this
@@ -119,6 +133,8 @@ export const DAEMON_OP_COMMANDS: Readonly<Record<DaemonOp, DaemonOpCommand>> = {
   },
   shutdown: {
     access: "daemon",
+    // Drains the daemon every session on the machine shares.
+    mutates: true,
     // Transport-level op: daemon/entry.ts acks it and reuses the
     // idle-watcher drain/exit path. Reaching the dispatcher means the
     // transport interception is miswired — a caller bug, not a user error.
@@ -130,10 +146,13 @@ export const DAEMON_OP_COMMANDS: Readonly<Record<DaemonOp, DaemonOpCommand>> = {
   // is the proof that the daemon's event loop is running.
   ping: {
     access: "daemon",
+    mutates: false,
     run: async () => null,
   },
   finalizeReindex: {
     access: "daemon",
+    // Deletes a collection's DuckDB file.
+    mutates: true,
     // The Qdrant alias swap (adapters/qdrant/aliases.ts:switchAlias) has
     // already flipped readers onto newVersion; delete the superseded
     // oldVersion DuckDB file (+ WAL sidecar) so it does not outlive the
@@ -247,3 +266,18 @@ export const DAEMON_OP_COMMANDS: Readonly<Record<DaemonOp, DaemonOpCommand>> = {
   // Map-returning reads above.
   diffSymbolSignals: read(async (graphDb) => graphDb.diffSymbolSignals()),
 };
+
+/**
+ * Whether `op` changes what the daemon holds — the graph store, a collection's
+ * files, or the daemon itself. Read from `DAEMON_OP_COMMANDS`, the table the
+ * server dispatches on, so a new op is classified the moment it is added.
+ *
+ * A client whose build predates the daemon's may only send ops this answers
+ * `false` for (bd tea-rags-mcp-1wr7p): the capability table matches op NAMES,
+ * and a write whose payload shape moved under an unchanged name would land in
+ * the store unnoticed.
+ */
+export function isDaemonWriteOp(op: DaemonOp): boolean {
+  const command = DAEMON_OP_COMMANDS[op];
+  return command.access === "daemon" ? command.mutates : command.access === "write";
+}
