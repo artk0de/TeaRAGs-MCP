@@ -373,6 +373,18 @@ export class QdrantManager {
     return this.points.batchSetPayload(collectionName, operations, options);
   }
 
+  /** Remove payload keys from explicit points — one `delete_payload` operation per key set. */
+  async batchDeletePayload(
+    collectionName: string,
+    operations: { keys: string[]; points: (string | number)[] }[],
+    options: {
+      wait?: boolean;
+      ordering?: "weak" | "medium" | "strong";
+    } = {},
+  ): Promise<void> {
+    return this.points.batchDeletePayload(collectionName, operations, options);
+  }
+
   /** Delete payload keys from all points (or filtered subset). */
   async deletePayloadKeys(collectionName: string, keys: string[], filter?: Record<string, unknown>): Promise<void> {
     return this.points.deletePayloadKeys(collectionName, keys, filter);

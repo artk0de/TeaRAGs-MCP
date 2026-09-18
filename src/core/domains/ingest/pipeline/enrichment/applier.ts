@@ -17,11 +17,13 @@ import type {
   EnrichmentProvider,
   FileSignalOverlay,
   FileSignalTransform,
+  OptionalOverlayKeys,
 } from "../../../../contracts/types/provider.js";
 import { pipelineLog } from "../infra/debug-logger.js";
 import type { ChunkItem } from "../types.js";
-import { batchSetPayloadWithRetry, type BatchWriteRetryOptions } from "./batch-write.js";
+import { batchDeletePayloadWithRetry, batchSetPayloadWithRetry, type BatchWriteRetryOptions } from "./batch-write.js";
 import { MissedFileTracker } from "./missed-file-tracker.js";
+import { OmittedOverlayKeyCollector } from "./omitted-overlay-keys.js";
 import type { EnrichmentSkipReason } from "./policy.js";
 import type { MissedFileChunk } from "./types.js";
 
@@ -197,10 +199,50 @@ export class EnrichmentApplier {
    */
   onApply?: (event: EnrichmentApplyEvent) => void;
 
+  /** Each provider's declared optional overlay keys, keyed by provider key. */
+  private readonly optionalOverlayKeys: ReadonlyMap<string, OptionalOverlayKeys>;
+
   constructor(
     private readonly qdrant: QdrantManager,
     private readonly retryOptions?: BatchWriteRetryOptions,
-  ) {}
+    /**
+     * The providers whose overlays this applier writes, for the one thing it
+     * needs to know about them: which overlay keys each may OMIT
+     * (`EnrichmentProvider.optionalOverlayKeys`). An overlay write deletes the
+     * declared keys it omits, so a key an earlier run wrote does not outlive
+     * the data (bd tea-rags-mcp-9mwny). A provider absent here — or no list at
+     * all — gets no delete, which is the behaviour before it existed.
+     */
+    overlayKeyOwners: readonly Pick<EnrichmentProvider, "key" | "optionalOverlayKeys">[] = [],
+  ) {
+    this.optionalOverlayKeys = new Map(
+      overlayKeyOwners.flatMap((owner) =>
+        owner.optionalOverlayKeys ? [[owner.key, owner.optionalOverlayKeys] as const] : [],
+      ),
+    );
+  }
+
+  /** A fresh omission collector for one apply call's `<provider>.<level>` overlay writes. */
+  private omissionCollector(providerKey: string, level: "file" | "chunk"): OmittedOverlayKeyCollector {
+    return new OmittedOverlayKeyCollector(
+      `${providerKey}.${level}`,
+      this.optionalOverlayKeys.get(providerKey)?.[level] ?? [],
+    );
+  }
+
+  /**
+   * One request for the whole apply call, issued after its set batches — the
+   * deleted keys are exactly the ones those batches did not write, so the two
+   * never address the same leaf and their order does not matter. A failed
+   * delete is not routed anywhere: the stale key stays, as it did before.
+   */
+  private async deleteOmittedOverlayKeys(
+    collectionName: string,
+    omissions: OmittedOverlayKeyCollector,
+    unlanded: ReadonlySet<string | number>,
+  ): Promise<void> {
+    await batchDeletePayloadWithRetry(this.qdrant, collectionName, omissions.toOps(unlanded), this.retryOptions);
+  }
 
   /** Count of unique files that received enrichment across all apply passes. */
   get matchedFiles(): number {
@@ -309,7 +351,7 @@ export class EnrichmentApplier {
   ): Promise<void> {
     const applyStart = Date.now();
     const byFile = this.groupItemsByFile(items);
-    const { operations, opResidual } = this.buildFilePayloadOps(
+    const { operations, opResidual, omissions } = this.buildFilePayloadOps(
       byFile,
       pathBase,
       providerKey,
@@ -318,7 +360,8 @@ export class EnrichmentApplier {
       enrichedAt,
       isIgnored,
     );
-    await this.flushFileOps(collectionName, providerKey, pathBase, byFile, operations, opResidual);
+    const unlanded = await this.flushFileOps(collectionName, providerKey, pathBase, byFile, operations, opResidual);
+    await this.deleteOmittedOverlayKeys(collectionName, omissions, unlanded);
     pipelineLog.addStageTime("enrichApply", Date.now() - applyStart);
   }
 
@@ -352,7 +395,7 @@ export class EnrichmentApplier {
     transform: FileSignalTransform | undefined,
     enrichedAt: string | undefined,
     isIgnored: ((relativePath: string, level: "file" | "chunk") => boolean) | undefined,
-  ): { operations: FilePayloadOp[]; opResidual: FileOpResidual[] } {
+  ): { operations: FilePayloadOp[]; opResidual: FileOpResidual[]; omissions: OmittedOverlayKeyCollector } {
     const entries: FileOpEntry[] = [];
 
     for (const [filePath, fileItems] of byFile) {
@@ -365,7 +408,14 @@ export class EnrichmentApplier {
       );
     }
 
-    return { operations: entries.map((e) => e.op), opResidual: entries.map((e) => e.residual) };
+    // Only a MATCHED op writes an overlay — the residual is null exactly for the
+    // bare-stamp ops, which carry no overlay and must not trigger a delete.
+    const omissions = this.omissionCollector(providerKey, "file");
+    for (const { op, residual } of entries) {
+      if (residual !== null) omissions.add(op.payload, op.points);
+    }
+
+    return { operations: entries.map((e) => e.op), opResidual: entries.map((e) => e.residual), omissions };
   }
 
   /**
@@ -451,6 +501,8 @@ export class EnrichmentApplier {
    * tracking, and onApply emission. A failed batch routes its matched residual
    * into the missed-file tracker so backfill re-applies it. Moved verbatim from
    * applyFileSignals.
+   *
+   * @returns the points of batches that never landed.
    */
   private async flushFileOps(
     collectionName: string,
@@ -459,7 +511,8 @@ export class EnrichmentApplier {
     byFile: Map<string, ChunkItem[]>,
     operations: FilePayloadOp[],
     opResidual: FileOpResidual[],
-  ): Promise<void> {
+  ): Promise<Set<string | number>> {
+    const unlanded = new Set<string | number>();
     // Track every file that was processed in this batch (including missed/ignored
     // paths that produced no overlay — they were still seen). Do this BEFORE the
     // early-return so the file count advances even for stamp-only batches.
@@ -479,16 +532,20 @@ export class EnrichmentApplier {
       if (seenNewFiles) {
         this.onApply?.({ providerKey, level: "file", applied: providerFileSet.size });
       }
-      return;
+      return unlanded;
     }
 
     for (let i = 0; i < operations.length; i += BATCH_SIZE) {
       const batch = operations.slice(i, i + BATCH_SIZE);
       const ok = await batchSetPayloadWithRetry(this.qdrant, collectionName, batch, this.retryOptions);
-      if (!ok) this.trackResidualBatch(opResidual.slice(i, i + BATCH_SIZE));
+      if (!ok) {
+        this.trackResidualBatch(opResidual.slice(i, i + BATCH_SIZE));
+        for (const op of batch) for (const point of op.points) unlanded.add(point);
+      }
     }
 
     this.onApply?.({ providerKey, level: "file", applied: providerFileSet.size });
+    return unlanded;
   }
 
   /**
@@ -534,6 +591,7 @@ export class EnrichmentApplier {
     // per file. Same points, same payloads, fewer operations for the terminal
     // file marker's barrier to drain.
     const coalescer = new PayloadOpCoalescer();
+    const omissions = this.omissionCollector(providerKey, "file");
     let appliedFiles = 0;
 
     for (const [relPath, entries] of chunkMap) {
@@ -578,10 +636,9 @@ export class EnrichmentApplier {
       // ONE operation for the whole file: every chunk of it takes the SAME
       // payload under the SAME key, so a per-chunk operation only multiplies
       // the request body and the number of round-trips it takes to drain.
-      coalescer.add(
-        payload,
-        entries.map((e) => e.chunkId),
-      );
+      const points = entries.map((e) => e.chunkId);
+      coalescer.add(payload, points);
+      omissions.add(payload, points);
       appliedFiles++;
       this.matchedPaths.add(relPath);
     }
@@ -607,13 +664,17 @@ export class EnrichmentApplier {
       batches.push(ops.slice(i, i + BATCH_SIZE));
     }
     let cursor = 0;
+    const unlanded = new Set<string | number>();
     await Promise.all(
       Array.from({ length: Math.min(FINALIZE_WRITE_CONCURRENCY, batches.length) }, async () => {
         for (let i = cursor++; i < batches.length; i = cursor++) {
-          await batchSetPayloadWithRetry(this.qdrant, collectionName, batches[i], this.retryOptions);
+          if (!(await batchSetPayloadWithRetry(this.qdrant, collectionName, batches[i], this.retryOptions))) {
+            for (const op of batches[i]) for (const point of op.points) unlanded.add(point);
+          }
         }
       }),
     );
+    await this.deleteOmittedOverlayKeys(collectionName, omissions, unlanded);
 
     if (chunkMap.size > 0) this.onApply?.({ providerKey, level: "file", applied: finalizeFileSet.size });
     return appliedFiles;
@@ -657,6 +718,7 @@ export class EnrichmentApplier {
     // however many points it settles. Group first, write second: the operation
     // count is what the terminal chunk marker's barrier drains.
     const coalescer = new PayloadOpCoalescer();
+    const omissions = this.omissionCollector(providerKey, "chunk");
     let applied = 0;
 
     for (const [, overlayMap] of chunkMetadata) {
@@ -671,6 +733,7 @@ export class EnrichmentApplier {
           ? { ...(overlay as Record<string, unknown>), enrichedAt }
           : (overlay as Record<string, unknown>);
         coalescer.add(payload, [chunkId]);
+        omissions.add(payload, [chunkId]);
       }
     }
 
@@ -689,14 +752,18 @@ export class EnrichmentApplier {
     }
 
     const ops = coalescer.toOps(`${providerKey}.chunk`);
+    const unlanded = new Set<string | number>();
     for (let i = 0; i < ops.length; i += BATCH_SIZE) {
       const batch = ops.slice(i, i + BATCH_SIZE);
       if (await batchSetPayloadWithRetry(this.qdrant, collectionName, batch, this.retryOptions)) {
         // POINTS, not operations — one op now settles many chunks, and the
         // cumulative figure this feeds is a chunk count.
         for (const op of batch) applied += op.points.length;
+      } else {
+        for (const op of batch) for (const point of op.points) unlanded.add(point);
       }
     }
+    await this.deleteOmittedOverlayKeys(collectionName, omissions, unlanded);
 
     if (applied > 0) {
       const cumulative = (this.chunksByProvider.get(providerKey) ?? 0) + applied;

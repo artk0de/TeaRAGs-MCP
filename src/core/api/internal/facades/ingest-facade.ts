@@ -306,7 +306,9 @@ export class IngestFacade {
     const enrichmentExecutor = deps.enrichmentExecutor ?? new InlineEnrichmentExecutor();
     const recovery =
       providers.length > 0
-        ? new EnrichmentRecovery(qdrant, new EnrichmentApplier(qdrant), { executor: enrichmentExecutor })
+        ? new EnrichmentRecovery(qdrant, new EnrichmentApplier(qdrant, undefined, providers), {
+            executor: enrichmentExecutor,
+          })
         : undefined;
     const { codegraphPool } = deps;
     // bd tea-rags-mcp-a2ddb — rewrites `codegraph.symbols.*` for points a run

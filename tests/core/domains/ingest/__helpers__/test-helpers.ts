@@ -361,6 +361,10 @@ export class MockQdrantManager implements Partial<QdrantManager> {
     const points = this.points.get(resolved);
     if (!points) return;
     for (const op of operations) {
+      // The payload as it reaches Qdrant: JSON drops an `undefined` value, so a
+      // key the caller left undefined keeps whatever the point already carried
+      // — it is NOT cleared (bd tea-rags-mcp-9mwny).
+      const wirePayload = JSON.parse(JSON.stringify(op.payload)) as Record<string, any>;
       for (const id of op.points) {
         const point = points.find((p) => p.id === id);
         if (!point) continue;
@@ -372,9 +376,36 @@ export class MockQdrantManager implements Partial<QdrantManager> {
             node[seg] = { ...(node[seg] as Record<string, any> | undefined) };
             node = node[seg];
           }
-          Object.assign(node, op.payload);
+          Object.assign(node, wirePayload);
         } else {
-          point.payload = { ...point.payload, ...op.payload };
+          point.payload = { ...point.payload, ...wirePayload };
+        }
+      }
+    }
+  }
+
+  batchDeletePayloadCalls: { collectionName: string; operations: { keys: string[]; points: (string | number)[] }[] }[] =
+    [];
+
+  /** Model Qdrant `delete_payload` by point: each dotted key removes one nested leaf. */
+  async batchDeletePayload(
+    collectionName: string,
+    operations: { keys: string[]; points: (string | number)[] }[],
+    _options?: any,
+  ): Promise<void> {
+    this.batchDeletePayloadCalls.push({ collectionName, operations });
+    const points = this.points.get(this.resolve(collectionName));
+    if (!points) return;
+    for (const op of operations) {
+      for (const id of op.points) {
+        const point = points.find((p) => p.id === id);
+        if (!point?.payload) continue;
+        for (const key of op.keys) {
+          const segments = key.split(".");
+          const leaf = segments.pop() as string;
+          let node: Record<string, any> | undefined = point.payload;
+          for (const seg of segments) node = node?.[seg] as Record<string, any> | undefined;
+          if (node && typeof node === "object") delete node[leaf];
         }
       }
     }

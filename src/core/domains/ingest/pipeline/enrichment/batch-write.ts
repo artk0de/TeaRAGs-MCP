@@ -24,6 +24,12 @@ export interface BatchPayloadOp {
   key?: string;
 }
 
+/** One `delete_payload` operation: full dotted `keys` removed from every point in `points`. */
+export interface BatchPayloadKeyDeleteOp {
+  keys: string[];
+  points: (string | number)[];
+}
+
 export interface BatchWriteRetryOptions {
   /** Total attempt budget (first try + retries). MUST be ≥ 1. Default 3. */
   maxAttempts?: number;
@@ -40,18 +46,44 @@ export async function batchSetPayloadWithRetry(
   operations: BatchPayloadOp[],
   opts: BatchWriteRetryOptions = {},
 ): Promise<boolean> {
+  return writeWithRetry("batchSetPayload", async () => qdrant.batchSetPayload(collectionName, operations), opts);
+}
+
+/**
+ * The delete counterpart of {@link batchSetPayloadWithRetry}: same attempt
+ * budget, backoff and boolean contract. A delete that never lands leaves the
+ * stale keys where they were — the behaviour before deletes existed, not a new
+ * failure mode.
+ */
+export async function batchDeletePayloadWithRetry(
+  qdrant: {
+    batchDeletePayload: (collectionName: string, operations: BatchPayloadKeyDeleteOp[]) => Promise<void>;
+  },
+  collectionName: string,
+  operations: BatchPayloadKeyDeleteOp[],
+  opts: BatchWriteRetryOptions = {},
+): Promise<boolean> {
+  if (operations.length === 0) return true;
+  return writeWithRetry("batchDeletePayload", async () => qdrant.batchDeletePayload(collectionName, operations), opts);
+}
+
+async function writeWithRetry(
+  label: string,
+  write: () => Promise<void>,
+  opts: BatchWriteRetryOptions,
+): Promise<boolean> {
   const maxAttempts = Math.max(1, opts.maxAttempts ?? DEFAULT_MAX_ATTEMPTS);
   const baseDelayMs = opts.baseDelayMs ?? DEFAULT_BASE_DELAY_MS;
 
   for (let attempt = 0; attempt < maxAttempts; attempt++) {
     try {
-      await qdrant.batchSetPayload(collectionName, operations);
+      await write();
       return true;
     } catch (error) {
       const isLast = attempt === maxAttempts - 1;
       if (isLast) {
         if (isDebug()) {
-          console.error(`[Enrichment] batchSetPayload failed after ${maxAttempts} attempts:`, error);
+          console.error(`[Enrichment] ${label} failed after ${maxAttempts} attempts:`, error);
         }
         return false;
       }
