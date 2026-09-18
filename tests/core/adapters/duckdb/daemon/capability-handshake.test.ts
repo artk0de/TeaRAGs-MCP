@@ -199,6 +199,8 @@ describe("daemon capability handshake (bd tea-rags-mcp-39xca.4)", () => {
       "diffSymbolSignals",
       "getFileMetricsBulk",
       "getSymbolLineRangesBulk",
+      // The liveness probe (f924y): an older daemon's "unknown op" answer is the proof of life it asks for.
+      "ping",
       "refreshSymbolSignalsPrev",
     ]);
     expect(new Set([...REQUIRED_DAEMON_OPS, ...LEGACY_TOLERATED_OPS])).toEqual(new Set(DAEMON_OPS));

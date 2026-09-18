@@ -120,6 +120,12 @@ export const DAEMON_OP_COMMANDS: Readonly<Record<DaemonOp, DaemonOpCommand>> = {
       throw new Error("shutdown is handled by the daemon transport (entry.ts), not the request dispatcher");
     },
   },
+  // Liveness probe (bd tea-rags-mcp-f924y). Touches nothing: the answer itself
+  // is the proof that the daemon's event loop is running.
+  ping: {
+    access: "daemon",
+    run: async () => null,
+  },
   finalizeReindex: {
     access: "daemon",
     // The Qdrant alias swap (adapters/qdrant/aliases.ts:switchAlias) has

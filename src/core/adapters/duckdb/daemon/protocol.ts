@@ -32,6 +32,11 @@ export const DAEMON_OPS = [
   // (daemon/entry.ts) — acked first, then the daemon reuses the idle-watcher
   // drain/exit path — so it never reaches the request dispatcher.
   "shutdown",
+  // Liveness probe (bd tea-rags-mcp-f924y): a client with calls pending sends it
+  // when the daemon has gone quiet. Any answer proves the daemon alive — even the
+  // "unknown daemon op" of a daemon from before the op existed, which is why it
+  // is a tolerated legacy op (`LEGACY_TOLERATED_OPS`).
+  "ping",
   "finalizeReindex",
   // ── writes ──
   "upsertFile",
@@ -102,7 +107,7 @@ export interface DaemonRequest {
   id: number;
   op: DaemonOp;
   params:
-    | { collection: string } // checkpoint | rebuildEdgeFileTargetIndex | computeAndPersistCyclesAndSignals | hasData | getRunStats | listAllSymbols | listFileContentHashes | getChunkSignalsBulk | diffSymbolSignals | refreshSymbolSignalsPrev | shutdown
+    | { collection: string } // checkpoint | rebuildEdgeFileTargetIndex | computeAndPersistCyclesAndSignals | hasData | getRunStats | listAllSymbols | listFileContentHashes | getChunkSignalsBulk | diffSymbolSignals | refreshSymbolSignalsPrev | shutdown | ping
     | { collection: string; buildFingerprint?: string } // handshake (fingerprint absent on legacy peers)
     | { collection: string; node: GraphFileNode; edges: GraphEdges } // upsertFile
     | { collection: string; relPath: RelPath } // removeFile | removeSymbolsForFile | getFanIn | getFanOut

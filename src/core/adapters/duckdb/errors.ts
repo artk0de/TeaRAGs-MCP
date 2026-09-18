@@ -217,6 +217,27 @@ export class CodegraphDaemonUnreachableError extends InfraError {
 }
 
 /**
+ * The daemon went silent with calls pending (bd tea-rags-mcp-f924y): nothing —
+ * no response, no answer to a liveness probe — arrived within the liveness
+ * bound. A slow op does not trip this; a live daemon answers probes while it
+ * works. A wedged daemon, or a connection that died without closing, does.
+ */
+export class CodegraphDaemonUnresponsiveError extends InfraError {
+  constructor(target: { socketPath: string; silentForMs: number; pendingCalls: number }) {
+    super({
+      code: "INFRA_CODEGRAPH_DAEMON_UNRESPONSIVE",
+      message:
+        `Codegraph daemon at ${target.socketPath} answered nothing for ${target.silentForMs}ms — ` +
+        `not even a liveness probe — with ${target.pendingCalls} call(s) pending`,
+      hint:
+        "The daemon is wedged or its connection is dead. Its pid is in codegraph-daemon.pid next to the " +
+        "socket and its output in codegraph-daemon.log; stopping it lets the next run spawn a fresh one.",
+      httpStatus: 503,
+    });
+  }
+}
+
+/**
  * The daemon stopped a request because the connection that sent it closed
  * (bd tea-rags-mcp-f924y) — a write still queued behind another client's, or a
  * graph analysis at its next phase boundary. Nobody reads the response of a
@@ -250,6 +271,7 @@ export type CodegraphUnavailableError =
   | CodegraphDaemonBuildSkewError
   | CodegraphDaemonExitTimeoutError
   | CodegraphDaemonUnreachableError
+  | CodegraphDaemonUnresponsiveError
   | DuckDbOpenFailedError;
 
 export function isCodegraphUnavailableError(err: unknown): err is CodegraphUnavailableError {
@@ -258,6 +280,7 @@ export function isCodegraphUnavailableError(err: unknown): err is CodegraphUnava
     err instanceof CodegraphDaemonBuildSkewError ||
     err instanceof CodegraphDaemonExitTimeoutError ||
     err instanceof CodegraphDaemonUnreachableError ||
+    err instanceof CodegraphDaemonUnresponsiveError ||
     err instanceof DuckDbOpenFailedError
   );
 }
