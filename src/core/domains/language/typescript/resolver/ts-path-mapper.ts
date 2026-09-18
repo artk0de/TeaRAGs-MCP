@@ -155,6 +155,15 @@ function resolveAliasMatch(
 }
 
 /**
+ * A relative specifier as `tsc` defines one (`pathIsRelative`): `.` or `..`,
+ * alone or followed by a separator. A specifier that merely starts with a dot
+ * — `.storybook/blocks/…` — is bare and resolves through `paths`; joining it to
+ * the caller's directory named a path that cannot exist (bd
+ * tea-rags-mcp-unt4v).
+ */
+const RELATIVE_SPECIFIER = /^\.\.?(?:\/|$)/;
+
+/**
  * Repo-relative path of the file `importText` points at, or `null` when the
  * specifier does not name a project file: bare npm packages, `node:` builtins,
  * and an ASSET import — a stylesheet, an image, a JSON module the probe finds
@@ -173,7 +182,7 @@ export function mapImportToFile(
   options: TsCompilerOptions,
   fileExists?: ProjectFileProbe,
 ): string | null {
-  if (importText.startsWith(".")) {
+  if (RELATIVE_SPECIFIER.test(importText)) {
     const dir = posix.dirname(callerFile);
     const joined = posix.normalize(posix.join(dir, importText));
     return resolveTsSourcePath(joined, fileExists);

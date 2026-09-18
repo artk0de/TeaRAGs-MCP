@@ -101,4 +101,11 @@ describe("JavascriptImportFileMapper", () => {
     expect(mapper.mapImportToFile("lodash", "src/main.js", ctx)).toEqual({ kind: "external" });
     expect(mapper.mapImportToFile("node:path", "src/main.js", ctx)).toEqual({ kind: "external" });
   });
+
+  it("treats only `.` / `..` and what follows them as relative, never a dot-named directory", () => {
+    const ctx = ctxWith(["src/index.js", "src/.storybook/x.js"]);
+    expect(mapper.mapImportToFile(".storybook/x", "src/main.js", ctx)).toEqual({ kind: "external" });
+    expect(mapper.mapImportToFile(".", "src/main.js", ctx)).toEqual({ kind: "project", relPath: "src/index.js" });
+    expect(mapper.mapImportToFile("..", "src/lib/util.js", ctx)).toEqual({ kind: "project", relPath: "src/index.js" });
+  });
 });

@@ -357,6 +357,49 @@ describe("mapImportToFile JSON modules (bd tea-rags-mcp-x9qsh)", () => {
  * extensions: the as-written path is the LAST candidate, after every source,
  * so a dotted source basename (`user.service` → `user.service.ts`) still wins.
  */
+/**
+ * What counts as RELATIVE is `tsc`'s own test: `.` or `..`, alone or followed
+ * by a separator. A specifier that merely starts with a dot — taxdome's
+ * `.storybook/blocks/…`, resolved through its `"*"` catch-all — is a bare
+ * specifier; joined to the caller's directory it named
+ * `.storybook/blocks/X/.storybook/blocks/…`, a path that cannot exist (bd
+ * tea-rags-mcp-unt4v: 7 of its 1,922 dangling asset edges, plus 3 source
+ * edges, came from this).
+ */
+describe("mapImportToFile relative specifiers", () => {
+  const CATCH_ALL = { baseUrl: ".", paths: { "*": ["./app/javascript/*"] } };
+
+  it("resolves a dot-named directory specifier through `paths`, not against the caller", () => {
+    const exists = (rel: string) =>
+      rel === "app/javascript/.storybook/blocks/Links/elements/Link/Link.tsx" ||
+      rel === "app/javascript/.storybook/DocumentationTemplate.mdx";
+    expect(
+      mapImportToFile(
+        ".storybook/blocks/Links/elements/Link/Link",
+        "app/javascript/.storybook/blocks/Links/Links.tsx",
+        CATCH_ALL,
+        exists,
+      ),
+    ).toBe("app/javascript/.storybook/blocks/Links/elements/Link/Link.tsx");
+    // …and reaches the asset verdict for what it names.
+    expect(
+      mapImportToFile(
+        ".storybook/DocumentationTemplate.mdx",
+        "app/javascript/.storybook/preview.tsx",
+        CATCH_ALL,
+        exists,
+      ),
+    ).toBeNull();
+    expect(mapImportToFile(".storybook/blocks/x", "src/app.ts", NO_ALIASES, () => true)).toBeNull();
+  });
+
+  it("still treats `.` and `..` alone as relative", () => {
+    const exists = (rel: string) => rel === "src/components/index.ts" || rel === "src/index.ts";
+    expect(mapImportToFile(".", "src/components/Button.tsx", NO_ALIASES, exists)).toBe("src/components/index.ts");
+    expect(mapImportToFile("..", "src/components/Button.tsx", NO_ALIASES, exists)).toBe("src/index.ts");
+  });
+});
+
 describe("mapImportToFile asset imports (bd tea-rags-mcp-unt4v)", () => {
   it("answers null for a specifier naming an existing stylesheet, image or document", () => {
     const assets = new Set([

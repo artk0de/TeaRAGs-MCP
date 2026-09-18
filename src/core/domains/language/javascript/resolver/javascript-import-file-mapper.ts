@@ -58,6 +58,13 @@ const EXPLICIT_MODULE_EXTENSIONS: readonly string[] = [
  */
 const EXTENSIONLESS_MODULE_EXTENSIONS: readonly string[] = [".js", ".jsx", ".ts", ".tsx"];
 
+/**
+ * A relative specifier: `.` or `..`, alone or followed by a separator — Node's
+ * rule and `tsc`'s. `.storybook/x` merely starts with a dot; it is bare (bd
+ * tea-rags-mcp-unt4v).
+ */
+const RELATIVE_SPECIFIER = /^\.\.?(?:\/|$)/;
+
 /** Basename of the module a directory stands for: `"./config"` → `config/index.js`. */
 const DIRECTORY_MODULE_STEM = "index";
 
@@ -73,7 +80,7 @@ const DIRECTORY_MODULE_STEM = "index";
  * too, and reaches `foo.service.js`.
  */
 export function javascriptImportPathCandidates(importText: string, callerFile: RelPath): readonly RelPath[] | null {
-  if (!importText.startsWith(".")) return null;
+  if (!RELATIVE_SPECIFIER.test(importText)) return null;
   const joined = posix.normalize(posix.join(posix.dirname(callerFile), importText));
   if (EXPLICIT_MODULE_EXTENSIONS.some((extension) => joined.endsWith(extension))) return [joined];
   return [
