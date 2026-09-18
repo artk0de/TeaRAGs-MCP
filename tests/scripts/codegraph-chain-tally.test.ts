@@ -119,3 +119,55 @@ describe("codegraph-chain-tally run-global field channel", () => {
     expect(result.chainDrift).toEqual(0);
   });
 });
+
+/**
+ * `localCallBindings` is a PER-CHUNK channel production threads for every
+ * language (`CallEdgeResolutionRunner#buildCallContext`), and Go's
+ * `returnTypeBinding` pass reads nothing else. A tally that threads it for Ruby
+ * alone measures a Go chain whose second pass can never fire, so gin's
+ * `engine := New(); engine.Use(...)` read as a miss production does not have
+ * (bd tea-rags-mcp-e6xx).
+ */
+describe("codegraph-chain-tally per-chunk call bindings", () => {
+  let corpus: string;
+  let result: RunResult;
+
+  function write(relPath: string, content: string): void {
+    const absolute = join(corpus, relPath);
+    mkdirSync(dirname(absolute), { recursive: true });
+    writeFileSync(absolute, content, "utf8");
+  }
+
+  beforeEach(async () => {
+    corpus = mkdtempSync(join(tmpdir(), "chain-tally-go-"));
+    write(
+      "gin.go",
+      [
+        "package gin",
+        "",
+        "type Engine struct{}",
+        "",
+        "func New() *Engine { return &Engine{} }",
+        "",
+        "func (engine *Engine) Use() {}",
+        "",
+        "func Default() *Engine {",
+        "\tengine := New()",
+        "\tengine.Use()",
+        "\treturn engine",
+        "}",
+        "",
+      ].join("\n"),
+    );
+    result = await run(corpus, "go", null, Number.MAX_SAFE_INTEGER, true, true, { timeOnly: true });
+  }, 30_000);
+
+  afterEach(() => {
+    rmSync(corpus, { recursive: true, force: true });
+  });
+
+  it("resolves a Go var bound to a function's declared return type, as production does", () => {
+    const row = result.rows.find((r) => r.receiver === "engine" && r.member === "Use");
+    expect(row?.runnerAnswer).toEqual({ targetRelPath: "gin.go", targetSymbolId: "Engine#Use" });
+  });
+});

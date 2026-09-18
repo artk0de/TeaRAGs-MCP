@@ -533,7 +533,6 @@ function rubyCallContext(
     ivarTypes: channels.ivarTypes,
     compactDeclaredClasses: channels.compactDeclaredClasses,
     associationTypes: extraction.associationTypes,
-    localCallBindings: chunk.localCallBindings,
     gemfileContent: channels.gemfileContent,
     projectRoot: channels.projectRoot,
   };
@@ -559,6 +558,11 @@ function buildCallContext(
     symbolTable,
     classFieldTypes: extraction.classFieldTypes,
     localBindings: chunk.localBindings,
+    // Per-chunk for EVERY language, as `CallEdgeResolutionRunner#buildCallContext`
+    // threads it: Go's `returnTypeBinding` reads nothing else, and a Ruby-only
+    // thread left that pass unable to fire (bd tea-rags-mcp-e6xx). Python and
+    // Java walkers never emit it, so their contexts are unchanged.
+    localCallBindings: chunk.localCallBindings,
     callResultBindings: chunk.callResultBindings,
     classExtends: channels.classExtends,
     structuredReturnTypes: channels.structuredReturnTypes,
