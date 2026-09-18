@@ -268,6 +268,59 @@ describe("mapImportToFile allowJs fallback to the JavaScript file (bd tea-rags-m
 });
 
 /**
+ * An EXTENSIONLESS specifier that names a JavaScript module (bd
+ * tea-rags-mcp-x9qsh). A mixed TS/JS project writes `import "./legacy"` for
+ * `legacy.js` and `import "./widgets"` for `widgets/index.js`; the mapper tried
+ * only the TypeScript sources and named `legacy.ts`, a path no file row
+ * matches. The JavaScript files close each form's list — after the TypeScript
+ * candidates, taken only when the probe confirms them.
+ */
+describe("mapImportToFile extensionless JavaScript module (bd tea-rags-mcp-x9qsh)", () => {
+  it("maps an extensionless specifier to its .js / .jsx file when no TypeScript source exists", () => {
+    expect(mapImportToFile("./legacy", "src/app.ts", NO_ALIASES, (rel) => rel === "src/legacy.js")).toBe(
+      "src/legacy.js",
+    );
+    expect(mapImportToFile("./view", "src/app.tsx", NO_ALIASES, (rel) => rel === "src/view.jsx")).toBe("src/view.jsx");
+  });
+
+  it("maps an extensionless specifier to its directory's index.js / index.jsx", () => {
+    expect(mapImportToFile("./widgets", "src/app.ts", NO_ALIASES, (rel) => rel === "src/widgets/index.js")).toBe(
+      "src/widgets/index.js",
+    );
+    expect(mapImportToFile("./widgets", "src/app.ts", NO_ALIASES, (rel) => rel === "src/widgets/index.jsx")).toBe(
+      "src/widgets/index.jsx",
+    );
+  });
+
+  it("prefers every TypeScript candidate of a form over its JavaScript one", () => {
+    const both = (rel: string) => rel === "src/legacy.ts" || rel === "src/legacy.js";
+    expect(mapImportToFile("./legacy", "src/app.ts", NO_ALIASES, both)).toBe("src/legacy.ts");
+    const declared = (rel: string) => rel === "src/legacy.d.ts" || rel === "src/legacy.js";
+    expect(mapImportToFile("./legacy", "src/app.ts", NO_ALIASES, declared)).toBe("src/legacy.d.ts");
+    const indexes = (rel: string) => rel === "src/widgets/index.tsx" || rel === "src/widgets/index.js";
+    expect(mapImportToFile("./widgets", "src/app.ts", NO_ALIASES, indexes)).toBe("src/widgets/index.tsx");
+  });
+
+  it("still resolves the file form before the directory form", () => {
+    const exists = (rel: string) => rel === "src/legacy.js" || rel === "src/legacy/index.ts";
+    expect(mapImportToFile("./legacy", "src/app.ts", NO_ALIASES, exists)).toBe("src/legacy.js");
+  });
+
+  it("never names the JavaScript file without a probe confirming it", () => {
+    expect(mapImportToFile("./legacy", "src/app.ts", NO_ALIASES)).toBe("src/legacy.ts");
+    expect(mapImportToFile("./legacy", "src/app.ts", NO_ALIASES, () => false)).toBe("src/legacy.ts");
+  });
+
+  it("answers the bare catch-all with a JavaScript module the probe confirms", () => {
+    const catchAll = { baseUrl: ".", paths: { "*": ["./app/javascript/*"] } };
+    const exists = (rel: string) => rel === "app/javascript/legacy/util.js";
+    expect(mapImportToFile("legacy/util", "app/javascript/Page.tsx", catchAll, exists)).toBe(
+      "app/javascript/legacy/util.js",
+    );
+  });
+});
+
+/**
  * A JSON module (`resolveJsonModule`) is the file the specifier writes; tsc
  * never reads `"./data.json"` as `data.json.ts` (bd tea-rags-mcp-x9qsh). The
  * codegraph does not walk JSON, so the edge joins no file row — it is kept

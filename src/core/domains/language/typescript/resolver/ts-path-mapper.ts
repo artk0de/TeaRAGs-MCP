@@ -216,8 +216,17 @@ function namesFileAsWritten(path: string): boolean {
   return AS_WRITTEN_EXTENSIONS.some((extension) => path.endsWith(extension));
 }
 
-/** Extensions tried for a specifier that writes no suffix at all (`"./foo"`). */
-const EXTENSIONLESS_CANDIDATES: readonly string[] = [".ts", ".tsx", ".d.ts"];
+/**
+ * Extensions tried for a specifier that writes no suffix at all (`"./foo"`),
+ * for the file form and again for the directory's `index` module.
+ *
+ * `.js` / `.jsx` close each list, the order a bundler resolves a mixed TS/JS
+ * project in: `import "./legacy"` for `legacy.js`, `import "./widgets"` for
+ * `widgets/index.js` (bd tea-rags-mcp-x9qsh). Last, so every TypeScript source
+ * and declaration of the same form wins; never first, so the unverified
+ * fallback — the head of the list — stays the TypeScript source.
+ */
+const EXTENSIONLESS_CANDIDATES: readonly string[] = [".ts", ".tsx", ".d.ts", ".js", ".jsx"];
 
 /**
  * Basename of the module file a directory stands for. `"./components"` is a
