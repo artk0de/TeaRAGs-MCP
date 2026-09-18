@@ -25,7 +25,11 @@ import {
   encodeFrame,
   type DaemonRequest,
 } from "../../../../../src/core/adapters/duckdb/daemon/protocol.js";
-import { CodegraphDaemonBuildSkewError } from "../../../../../src/core/adapters/duckdb/errors.js";
+import {
+  CodegraphClientStaleBuildError,
+  CodegraphDaemonBuildSkewError,
+  isCodegraphUnavailableError,
+} from "../../../../../src/core/adapters/duckdb/errors.js";
 import { GraphDbClientPool } from "../../../../../src/core/adapters/duckdb/pool.js";
 import { createDatabaseMigrationApplier } from "../../../../../src/core/domains/maintenance/migration/database/index.js";
 import { InMemoryGlobalSymbolTable } from "../../../../../src/core/domains/trajectory/codegraph/symbols/symbol-table.js";
@@ -237,6 +241,49 @@ describe("DaemonGraphDbClient — a refused replay releases the connection (f924
     expect(client.isConnected()).toBe(false);
     // The refused daemon sees the connection close — nothing holds it open.
     await expect.poll(() => replacementConnections, { timeout: 2000 }).toBe(0);
+  });
+
+  // Which side a refusal blames (bd tea-rags-mcp-1wr7p): the replacement runs
+  // the build on disk NOW, so when that is not this client's build, THIS
+  // process is the stale peer — "the daemon runs an older build" would send the
+  // operator after the wrong process.
+  it.each([
+    {
+      side: "the client, when the replacement runs the build on disk this process predates",
+      onDisk: "fp-B",
+      expected: CodegraphClientStaleBuildError,
+    },
+    {
+      side: "the daemon, when the replacement is not the build on disk",
+      onDisk: "fp-A",
+      expected: CodegraphDaemonBuildSkewError,
+    },
+  ])("names the stale side of a refused replay: $side", async ({ onDisk, expected }) => {
+    const socketPath = tempSocket();
+    const first = await daemon(socketPath, dyingAfterHandshake);
+    const client = track(
+      new DaemonGraphDbClient(socketPath, "code_x", {
+        retryDelayMs: 5,
+        connectTimeoutMs: 2000,
+        readOnDiskBuildFingerprint: () => onDisk,
+        onConnectionLost: async () => {
+          await shutdown(first.server);
+          await daemon(socketPath, (r) =>
+            r.op === "handshake"
+              ? { buildFingerprint: "fp-B", supportedOps: FULL_OPS.filter((op) => op !== "hasData") }
+              : true,
+          );
+        },
+      }),
+    );
+    await client.init();
+    await client.handshake("fp-A");
+
+    const err = await client.hasData().catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(expected);
+    expect(isCodegraphUnavailableError(err)).toBe(true);
+    expect((err as { missingOps: readonly string[] }).missingOps).toEqual(["hasData"]);
+    expect(client.isConnected()).toBe(false);
   });
 
   it("the pool runs the build handshake again on the next acquire instead of reusing the refused client", async () => {

@@ -135,6 +135,9 @@ export class CodegraphDaemonStaleBuildError extends InfraError {
  * only reloading this process helps. When the daemon DOES advertise every
  * required op the pool proceeds and this error is never raised.
  *
+ * Raised by the pool's build handshake, and by a client whose replay after a
+ * lost connection meets such a daemon (`DaemonGraphDbClient#describeRefusal`).
+ *
  * `missingOps` is empty when the daemon advertises no op list at all.
  */
 export class CodegraphClientStaleBuildError extends InfraError {

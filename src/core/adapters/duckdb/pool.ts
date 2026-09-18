@@ -52,17 +52,6 @@ function needsDaemonReplacement(verdict: DaemonCapabilityVerdict): boolean {
   return verdict.buildMismatch || verdict.missingRequiredOps.length > 0;
 }
 
-/**
- * The CLIENT is the stale side of a build mismatch (bd tea-rags-mcp-1wr7p): the
- * daemon runs the build on disk NOW, which this process's loaded code predates.
- * Draining cannot converge — every respawn launches that same on-disk build — so
- * the daemon is never drained for it. Callers ask only with a READABLE on-disk
- * fingerprint: an unreadable one proves nothing.
- */
-function isClientStale(verdict: DaemonCapabilityVerdict, onDiskFingerprint: string): boolean {
-  return verdict.buildMismatch && verdict.daemonFingerprint === onDiskFingerprint;
-}
-
 /** Debug-line reason a handshake did not settle. */
 function describeDaemonSkew(verdict: DaemonCapabilityVerdict, clientFingerprint: string): string {
   const builds = `(daemon=${verdict.daemonFingerprint ?? "unknown"}, client=${clientFingerprint})`;
@@ -475,7 +464,7 @@ export class GraphDbClientPool {
     collectionName: PhysicalCollectionName,
   ): Promise<DaemonGraphDbClient> {
     // Dynamic so direct/test mode never loads the node:net socket code.
-    const { DaemonGraphDbClient, assessDaemonCapability, isDaemonRefusedWithoutRespawn } =
+    const { DaemonGraphDbClient, assessDaemonCapability, isClientStale, isDaemonRefusedWithoutRespawn } =
       await import("./daemon/client.js");
     const restart = this.options.daemonRestart;
     const localFingerprint = restart?.buildFingerprint ?? getBuildFingerprint();
@@ -484,8 +473,10 @@ export class GraphDbClientPool {
     // The respawn hook doubles as crash recovery (bd tea-rags-mcp-8l8d3): a
     // daemon killed by a native abort cannot report it, so the client respawns
     // and replays in-flight requests. Pools without the hook reject them instead.
-    const onConnectionLost = restart?.respawn;
-    const first = new DaemonGraphDbClient(socketPath, collectionName, { onConnectionLost });
+    // The on-disk reader goes along so a refused replay names the stale side
+    // the way this handshake does (bd tea-rags-mcp-1wr7p).
+    const clientOptions = { onConnectionLost: restart?.respawn, readOnDiskBuildFingerprint: readOnDisk };
+    const first = new DaemonGraphDbClient(socketPath, collectionName, clientOptions);
     await first.init();
     const verdict = assessDaemonCapability(await first.handshake(localFingerprint), localFingerprint);
     // Same build serving every required op, or a legacy pre-fingerprint peer.
@@ -551,7 +542,7 @@ export class GraphDbClientPool {
 
       // Reconnect (init retries the connect while the fresh daemon boots) and
       // re-verify build and capabilities.
-      const next = new DaemonGraphDbClient(socketPath, collectionName, { onConnectionLost });
+      const next = new DaemonGraphDbClient(socketPath, collectionName, clientOptions);
       await next.init();
       const nextVerdict = assessDaemonCapability(await next.handshake(localFingerprint), localFingerprint);
       if (!needsDaemonReplacement(nextVerdict)) return next;

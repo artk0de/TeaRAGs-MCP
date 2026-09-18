@@ -33,11 +33,12 @@ import type {
 import type { PhysicalCollectionName } from "../../../contracts/types/collection-identity.js";
 import { isDebug } from "../../../infra/runtime.js";
 import {
+  CodegraphClientStaleBuildError,
   CodegraphDaemonBuildSkewError,
   CodegraphDaemonUnreachableError,
   CodegraphDaemonUnresponsiveError,
 } from "../errors.js";
-import { getBuildFingerprint } from "./build-fingerprint.js";
+import { getBuildFingerprint, readOnDiskBuildFingerprint } from "./build-fingerprint.js";
 import { DaemonFrameDecoder } from "./frame-decoder.js";
 import { getDaemonLogPath } from "./lifecycle.js";
 import { DAEMON_OPS, encodeFrame, type DaemonHandshakeResult, type DaemonOp, type DaemonResponse } from "./protocol.js";
@@ -136,6 +137,18 @@ export function isDaemonRefusedWithoutRespawn(verdict: DaemonCapabilityVerdict):
   return verdict.missingRequiredOps.length > 0 || (verdict.predatesCapabilityList && verdict.buildMismatch);
 }
 
+/**
+ * The CLIENT is the stale side of a build mismatch (bd tea-rags-mcp-1wr7p): the
+ * daemon runs the build on disk NOW, which this process's loaded code predates.
+ * Draining cannot converge — every respawn launches that same on-disk build — so
+ * the daemon is never drained for it, and a refusal names this process, not the
+ * daemon. Callers ask only with a READABLE on-disk fingerprint: an unreadable
+ * one proves nothing.
+ */
+export function isClientStale(verdict: DaemonCapabilityVerdict, onDiskFingerprint: string): boolean {
+  return verdict.buildMismatch && verdict.daemonFingerprint === onDiskFingerprint;
+}
+
 /** Tolerated ops already reported missing in this process — the warning is once per op. */
 const warnedLegacyDaemonOps = new Set<LegacyToleratedDaemonOp>();
 
@@ -212,6 +225,12 @@ export interface DaemonClientOptions {
   livenessTimeoutMs?: number;
   /** How long a silence with calls pending lasts before the client probes the daemon. */
   livenessProbeIntervalMs?: number;
+  /**
+   * Reader of the build on disk NOW — what a respawned daemon reports. The
+   * replay path asks it which side a refusal blames (bd tea-rags-mcp-1wr7p).
+   * Defaults to `readOnDiskBuildFingerprint`; the pool passes its own override.
+   */
+  readOnDiskBuildFingerprint?: () => string | undefined;
 }
 
 const DEFAULT_CONNECT_TIMEOUT_MS = 5000;
@@ -265,6 +284,7 @@ export class DaemonGraphDbClient implements GraphDbClient {
   private handshakeFingerprint?: string;
   private readonly livenessTimeoutMs: number;
   private readonly livenessProbeIntervalMs: number;
+  private readonly readOnDisk: () => string | undefined;
   /** When the daemon was last heard from — any bytes on the socket, or the connect itself. */
   private lastHeardAt = 0;
   /** Runs only while calls are pending — see `watchLiveness`. */
@@ -280,6 +300,7 @@ export class DaemonGraphDbClient implements GraphDbClient {
     this.onConnectionLost = opts?.onConnectionLost;
     this.livenessTimeoutMs = opts?.livenessTimeoutMs ?? DEFAULT_LIVENESS_TIMEOUT_MS;
     this.livenessProbeIntervalMs = opts?.livenessProbeIntervalMs ?? DEFAULT_LIVENESS_PROBE_INTERVAL_MS;
+    this.readOnDisk = opts?.readOnDiskBuildFingerprint ?? readOnDiskBuildFingerprint;
   }
 
   /**
@@ -548,8 +569,8 @@ export class DaemonGraphDbClient implements GraphDbClient {
    * THAT session's build, and a replay onto it unverified sends ops it may not
    * know or read with a payload shape that moved. It is held to the bar a client
    * that cannot replace the daemon applies (`isDaemonRefusedWithoutRespawn`):
-   * refused, every pending request fails with `CodegraphDaemonBuildSkewError`
-   * and nothing is replayed. Draining it is not this client's call — that
+   * refused, every pending request fails with the error naming the stale side
+   * (`describeRefusal`) and nothing is replayed. Draining it is not this client's call — that
    * decision belongs to the pool's handshake, so the client also lets go of
    * the connection: the pool runs that handshake only for a client that is no
    * longer connected.
@@ -572,12 +593,7 @@ export class DaemonGraphDbClient implements GraphDbClient {
       return;
     }
     if (isDaemonRefusedWithoutRespawn(verdict)) {
-      const skew = new CodegraphDaemonBuildSkewError({
-        socketPath: this.socketPath,
-        missingOps: verdict.missingRequiredOps,
-        clientFingerprint: fingerprint,
-        daemonFingerprint: verdict.daemonFingerprint,
-      });
+      const refusal = this.describeRefusal(verdict, fingerprint);
       // Let go of the refused daemon before telling anyone. Kept connected,
       // this client would read as healthy, the pool would keep handing it back
       // and its build handshake — the one place allowed to drain or respawn —
@@ -586,7 +602,7 @@ export class DaemonGraphDbClient implements GraphDbClient {
       this.releaseSocket();
       this.settlePending(
         () => true,
-        () => skew,
+        () => refusal,
       );
       return;
     }
@@ -608,6 +624,31 @@ export class DaemonGraphDbClient implements GraphDbClient {
       p.retried = true;
       sock.write(p.frame);
     }
+  }
+
+  /**
+   * The error a refused replay settles with, naming the stale side the way the
+   * pool's handshake does (bd tea-rags-mcp-1wr7p): when the replacement runs the
+   * build on disk that this process predates, the fault is THIS process —
+   * `CodegraphClientStaleBuildError`, remedied by reloading it. Otherwise the
+   * daemon is the one behind: `CodegraphDaemonBuildSkewError`.
+   */
+  private describeRefusal(verdict: DaemonCapabilityVerdict, clientFingerprint: string): Error {
+    const onDisk = verdict.buildMismatch ? this.readOnDisk() : undefined;
+    if (onDisk !== undefined && isClientStale(verdict, onDisk)) {
+      return new CodegraphClientStaleBuildError({
+        socketPath: this.socketPath,
+        clientFingerprint,
+        daemonFingerprint: onDisk,
+        missingOps: verdict.missingRequiredOps,
+      });
+    }
+    return new CodegraphDaemonBuildSkewError({
+      socketPath: this.socketPath,
+      missingOps: verdict.missingRequiredOps,
+      clientFingerprint,
+      daemonFingerprint: verdict.daemonFingerprint,
+    });
   }
 
   /**
