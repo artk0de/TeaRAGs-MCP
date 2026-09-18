@@ -13,6 +13,12 @@ import type {
 export const DEFAULT_SDP_TOLERANCE = 0.2;
 
 /**
+ * What the no-symbol exclusion (`StableDependenciesExclusionCounts.noSymbolEndpoints`)
+ * catches, named for a report: not only re-export barrels.
+ */
+export const NO_SYMBOL_ENDPOINT_REASON = "no-symbol endpoint: barrel, type-only or object-literal module";
+
+/**
  * Default `StableDependenciesOptions.minConnectionCount`: the static
  * `confidence.score.threshold` the `codegraph.file.instability` descriptor
  * declares. At connectionCount 1 the ratio swings 0↔1 on a single edge; the
@@ -44,16 +50,22 @@ const NO_EDGES: MartinInstability = { instability: 0, connectionCount: 0 };
  * 1. it is a self-edge;
  * 2. an endpoint was never walked: the graph holds no fan-out for it, so its
  *    instability is an artifact of never having been extracted;
- * 3. either endpoint is a PASS-THROUGH — a walked file that defines no symbol
- *    and carries no call: a re-export barrel (or a data-only module). Its
- *    instability describes no code of its own — its fanOut is its re-export
- *    count. As a SOURCE the barrel reads stable (its importers are really the
- *    dependents of what it re-exports) and every file it re-exports reads
- *    unstable by construction; as a TARGET it reads as unstable as its
- *    re-export count over its importers, which flags a consumer for using a
- *    module's public surface exactly as intended. Measured on tea-rags before
- *    the target side was excluded: 4 of 15 violations were a file importing a
- *    barrel, `mcp/tools/schemas.ts → core/api/public/index.ts` among them;
+ * 3. either endpoint is a NO-SYMBOL file (`NO_SYMBOL_ENDPOINT_REASON`) — a
+ *    walked file that defines no symbol and carries no call. The rule is aimed
+ *    at the re-export barrel. Its instability describes no code of its own —
+ *    its fanOut is its re-export count. As a SOURCE the barrel reads stable
+ *    (its importers are really the dependents of what it re-exports) and every
+ *    file it re-exports reads unstable by construction; as a TARGET it reads as
+ *    unstable as its re-export count over its importers, which flags a consumer
+ *    for using a module's public surface exactly as intended. Measured on
+ *    tea-rags before the target side was excluded: 4 of 15 violations were a
+ *    file importing a barrel, `mcp/tools/schemas.ts → core/api/public/index.ts`
+ *    among them. The same criterion also matches a type-only module and a
+ *    module whose code lives in an object literal (command handlers as object
+ *    members), which have code of their own: on the self-index it took out
+ *    276 of 1102 files and 891 of 2314 edges. Whether those belong is the SDP
+ *    premise review's decision, so the report names every file it excluded
+ *    (`noSymbolEndpointFiles`) instead of changing the criterion here;
  * 4. either endpoint's connectionCount is below `minConnectionCount`.
  *
  * Test files are not filtered here because they never reach the graph: the
@@ -71,11 +83,12 @@ export function detectStableDependencyViolations(
   const minConnectionCount = options.minConnectionCount ?? DEFAULT_SDP_MIN_CONNECTION_COUNT;
   const instabilities = computeFileInstabilities(graph);
   const walkedFiles = new Set<RelPath>(graph.files.map((f) => f.relPath));
-  const passThroughFiles = findPassThroughFiles(graph);
+  const noSymbolFiles = findNoSymbolFiles(graph);
+  const excludedByNoSymbolFile = new Map<RelPath, number>();
   const excluded: StableDependenciesExclusionCounts = {
     selfEdges: 0,
     unwalkedEndpoints: 0,
-    passThroughEndpoints: 0,
+    noSymbolEndpoints: 0,
     lowConnectionCount: 0,
   };
   const violations: StableDependencyViolation[] = [];
@@ -88,8 +101,13 @@ export function detectStableDependencyViolations(
       excluded.selfEdges++;
     } else if (!walkedFiles.has(edge.sourceRelPath) || !walkedFiles.has(edge.targetRelPath)) {
       excluded.unwalkedEndpoints++;
-    } else if (passThroughFiles.has(edge.sourceRelPath) || passThroughFiles.has(edge.targetRelPath)) {
-      excluded.passThroughEndpoints++;
+    } else if (noSymbolFiles.has(edge.sourceRelPath) || noSymbolFiles.has(edge.targetRelPath)) {
+      excluded.noSymbolEndpoints++;
+      for (const endpoint of [edge.sourceRelPath, edge.targetRelPath]) {
+        if (noSymbolFiles.has(endpoint)) {
+          excludedByNoSymbolFile.set(endpoint, (excludedByNoSymbolFile.get(endpoint) ?? 0) + 1);
+        }
+      }
     } else if (source.connectionCount < minConnectionCount || target.connectionCount < minConnectionCount) {
       excluded.lowConnectionCount++;
     } else {
@@ -122,20 +140,23 @@ export function detectStableDependencyViolations(
       violationCount: violations.length,
       excluded,
     },
+    noSymbolEndpointFiles: [...excludedByNoSymbolFile]
+      .map(([relPath, excludedEdgeCount]) => ({ relPath, excludedEdgeCount }))
+      .sort((a, b) => b.excludedEdgeCount - a.excludedEdgeCount || compareCodePoints(a.relPath, b.relPath)),
   };
 }
 
 /** Walked files that define no symbol and carry no outgoing call. */
-function findPassThroughFiles(graph: FileDependencyGraph): Set<RelPath> {
+function findNoSymbolFiles(graph: FileDependencyGraph): Set<RelPath> {
   const outgoingCallWeight = new Map<RelPath, number>();
   for (const edge of graph.edges) {
     outgoingCallWeight.set(edge.sourceRelPath, (outgoingCallWeight.get(edge.sourceRelPath) ?? 0) + edge.callWeight);
   }
-  const passThrough = new Set<RelPath>();
+  const noSymbol = new Set<RelPath>();
   for (const file of graph.files) {
-    if (file.symbolCount === 0 && (outgoingCallWeight.get(file.relPath) ?? 0) === 0) passThrough.add(file.relPath);
+    if (file.symbolCount === 0 && (outgoingCallWeight.get(file.relPath) ?? 0) === 0) noSymbol.add(file.relPath);
   }
-  return passThrough;
+  return noSymbol;
 }
 
 function bySeverity(a: StableDependencyViolation, b: StableDependencyViolation): number {

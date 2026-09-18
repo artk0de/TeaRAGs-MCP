@@ -19,6 +19,7 @@ import {
   DEFAULT_SDP_MIN_CONNECTION_COUNT,
   DEFAULT_SDP_TOLERANCE,
   detectStableDependencyViolations,
+  NO_SYMBOL_ENDPOINT_REASON,
 } from "../../../../../../../src/core/domains/trajectory/codegraph/symbols/boundary-diagnostics/index.js";
 import { CODEGRAPH_SYMBOLS_FILE_SIGNALS } from "../../../../../../../src/core/domains/trajectory/codegraph/symbols/payload-signals.js";
 
@@ -165,7 +166,7 @@ describe("detectStableDependencyViolations", () => {
     const report = detectStableDependencyViolations(barrel);
     expect(report.violations).toEqual([]);
     // The re-export edge, and the 6 client edges INTO the barrel.
-    expect(report.summary.excluded.passThroughEndpoints).toBe(1 + 6);
+    expect(report.summary.excluded.noSymbolEndpoints).toBe(1 + 6);
 
     // Same topology, but the symbol-less file CALLS into its target: not a pass-through.
     const calling: FileDependencyGraph = {
@@ -209,7 +210,7 @@ describe("detectStableDependencyViolations", () => {
 
     expect(report.violations).toEqual([]);
     // Its 4 re-export edges (as source) and its 3 inbound edges (as target).
-    expect(report.summary.excluded.passThroughEndpoints).toBe(4 + barrelAsTarget);
+    expect(report.summary.excluded.noSymbolEndpoints).toBe(4 + barrelAsTarget);
   });
 
   it("never judges a self-edge", () => {
@@ -255,8 +256,40 @@ describe("detectStableDependencyViolations", () => {
       edgeCount: 10,
       consideredEdgeCount: 1,
       violationCount: 1,
-      excluded: { selfEdges: 0, unwalkedEndpoints: 0, passThroughEndpoints: 0, lowConnectionCount: 9 },
+      excluded: { selfEdges: 0, unwalkedEndpoints: 0, noSymbolEndpoints: 0, lowConnectionCount: 9 },
     });
+    expect(report.noSymbolEndpointFiles).toEqual([]);
+  });
+
+  // The no-symbol rule is aimed at re-export barrels, but "defines no symbol and
+  // calls nothing" is also true of a type-only module and of a module whose code
+  // lives in an object literal. The report names the files it excluded, so a
+  // reader can see which of those it actually caught.
+  it("names every file the no-symbol rule excluded, with how many edges it took out, most first", () => {
+    const graph = merge(
+      {
+        files: [walked("lib/index.ts", 0), walked("lib/types.ts", 0), walked("lib/impl.ts"), walked("app/main.ts")],
+        edges: [
+          // A barrel re-exporting impl, imported by main.
+          edge("lib/index.ts", "lib/impl.ts", 0),
+          edge("app/main.ts", "lib/index.ts", 0),
+          // A type-only module both of them import: no symbols, no calls.
+          edge("lib/impl.ts", "lib/types.ts", 0),
+          edge("app/main.ts", "lib/types.ts", 0),
+          edge("lib/index.ts", "lib/types.ts", 0),
+        ],
+      },
+      importersOf("lib/types.ts", 3, "other/t"),
+    );
+
+    const report = detectStableDependencyViolations(graph, { minConnectionCount: 0 });
+
+    expect(report.summary.excluded.noSymbolEndpoints).toBe(8);
+    expect(report.noSymbolEndpointFiles).toEqual([
+      { relPath: "lib/types.ts", excludedEdgeCount: 6 },
+      { relPath: "lib/index.ts", excludedEdgeCount: 3 },
+    ]);
+    expect(NO_SYMBOL_ENDPOINT_REASON).toBe("no-symbol endpoint: barrel, type-only or object-literal module");
   });
 });
 
