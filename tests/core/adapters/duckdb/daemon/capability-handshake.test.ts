@@ -29,6 +29,7 @@ import { runDaemon } from "../../../../../src/core/adapters/duckdb/daemon/entry.
 import { getDaemonPaths, type CodegraphDaemonPaths } from "../../../../../src/core/adapters/duckdb/daemon/lifecycle.js";
 import {
   DAEMON_OP_COMMANDS,
+  isDaemonWriteOp,
   type DaemonOpCommand,
 } from "../../../../../src/core/adapters/duckdb/daemon/op-commands.js";
 import {
@@ -205,6 +206,34 @@ describe("daemon capability handshake (bd tea-rags-mcp-39xca.4)", () => {
     expect(REQUIRED_DAEMON_OPS.filter((op) => LEGACY_TOLERATED_OPS.has(op))).toEqual([]);
     // The weno4 op — its silent degrade is what corrupted a live run.
     expect(REQUIRED_DAEMON_OPS).toContain("listAllPass1Aggregates");
+  });
+
+  // bd tea-rags-mcp-1wr7p: a client whose build predates the daemon's may only
+  // read. Which ops count as writes comes from the table the server dispatches
+  // on — never from a second list that could miss a new op.
+  it("classifies every protocol op as a write or not, from the dispatch table's access", () => {
+    for (const op of DAEMON_OPS) {
+      const { access } = DAEMON_OP_COMMANDS[op];
+      if (access === "write") expect(isDaemonWriteOp(op), op).toBe(true);
+      if (access === "read") expect(isDaemonWriteOp(op), op).toBe(false);
+    }
+    // Of the ops acting on the daemon itself, only the connection's own
+    // handshake and liveness probe leave everything as it was.
+    const daemonOps = DAEMON_OPS.filter((op) => DAEMON_OP_COMMANDS[op].access === "daemon");
+    expect(daemonOps.filter((op) => !isDaemonWriteOp(op)).sort()).toEqual(["handshake", "ping"]);
+    expect(daemonOps.filter((op) => isDaemonWriteOp(op)).sort()).toEqual(["finalizeReindex", "shutdown"]);
+    // The reads behind get_callers / get_callees / trace_path / find_cycles.
+    for (const op of [
+      "getCallers",
+      "getAmbiguousCallersByMember",
+      "getCallees",
+      "findSymbolChunk",
+      "findCycles",
+      "getCalleeEdgesScoped",
+      "getSymbolRelPaths",
+    ] as const) {
+      expect(isDaemonWriteOp(op), op).toBe(false);
+    }
   });
 
   it("a pool without a respawn hook refuses a daemon lacking a required op, before handing out a handle", async () => {

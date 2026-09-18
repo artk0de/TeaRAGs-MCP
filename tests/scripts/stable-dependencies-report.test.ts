@@ -6,14 +6,20 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import {
   assertNotLiveCodegraphDatabase,
+  buildStableDependenciesJson,
   collectStableDependencies,
   parseArgs,
   renderStableDependenciesReport,
 } from "../../scripts/stable-dependencies-report.js";
 import { DuckDbGraphClient } from "../../src/core/adapters/duckdb/client.js";
-import type { RelPath } from "../../src/core/contracts/types/codegraph.js";
+import type {
+  FileDependencyGraph,
+  FileDependencyGraphFile,
+  RelPath,
+} from "../../src/core/contracts/types/codegraph.js";
 import { DATABASE_MIGRATIONS } from "../../src/core/domains/maintenance/migration/database/migrations/index.js";
 import { runMigrations } from "../../src/core/domains/maintenance/migration/database/runner.js";
+import { detectStableDependencyViolations } from "../../src/core/domains/trajectory/codegraph/symbols/boundary-diagnostics/index.js";
 
 describe("parseArgs", () => {
   it("requires --db and defaults the rest to the detector's own defaults", () => {
@@ -75,7 +81,7 @@ describe("collectStableDependencies + renderStableDependenciesReport", () => {
     await db.init();
     await runMigrations(db, DATABASE_MIGRATIONS);
     // Every file defines one symbol: a symbol-less, call-less file is a
-    // pass-through the detector deliberately never judges.
+    // no-symbol endpoint the detector deliberately never judges.
     const importsFrom = async (source: RelPath, targets: RelPath[]): Promise<void> => {
       await db.upsertFile(
         { relPath: source, language: "typescript" },
@@ -109,5 +115,56 @@ describe("collectStableDependencies + renderStableDependenciesReport", () => {
     expect(text).toContain("0.633");
     expect(text).toMatch(/violations\s+1/);
     expect(text).toMatch(/disjoint\s+1/);
+  });
+});
+
+/**
+ * The no-symbol exclusion (bd tea-rags-mcp-thc7s) catches barrels, type-only
+ * modules and object-literal modules alike — on the self-index 276 of 1102
+ * files and 891 of 2314 edges. The report says what the rule is and which files
+ * it took out, so the SDP premise review can judge the rule, not just a count.
+ */
+describe("the no-symbol exclusion in the report", () => {
+  function file(relPath: string, symbolCount = 1): FileDependencyGraphFile {
+    return { relPath, language: "typescript", symbolCount };
+  }
+
+  /** Two no-symbol files: `lib/types.ts` excludes 3 edges, `lib/index.ts` 2. */
+  function graph(): FileDependencyGraph {
+    return {
+      files: [file("lib/index.ts", 0), file("lib/types.ts", 0), file("lib/impl.ts"), file("a.ts"), file("b.ts")],
+      edges: [
+        { sourceRelPath: "lib/index.ts", targetRelPath: "lib/impl.ts", callWeight: 0 },
+        { sourceRelPath: "a.ts", targetRelPath: "lib/index.ts", callWeight: 0 },
+        { sourceRelPath: "a.ts", targetRelPath: "lib/types.ts", callWeight: 0 },
+        { sourceRelPath: "b.ts", targetRelPath: "lib/types.ts", callWeight: 0 },
+        { sourceRelPath: "lib/impl.ts", targetRelPath: "lib/types.ts", callWeight: 0 },
+      ],
+    };
+  }
+
+  it("prints the reason as what it is, the excluded-file count and the top files by edges excluded", () => {
+    const g = graph();
+    const text = renderStableDependenciesReport(detectStableDependencyViolations(g), g, 1);
+
+    expect(text).not.toMatch(/pass-through/);
+    expect(text).toMatch(/no-symbol endpoint\s+5/);
+    expect(text).toContain("no-symbol endpoint: barrel, type-only or object-literal module");
+    expect(text).toMatch(/files excluded\s+2/);
+    expect(text).toMatch(/3\s+lib\/types\.ts/);
+    // --top 1: the sample stops at the file that excluded the most.
+    expect(text).not.toMatch(/2\s+lib\/index\.ts/);
+  });
+
+  it("carries the same count and sample in the --json document", () => {
+    const g = graph();
+    const json = buildStableDependenciesJson(detectStableDependencyViolations(g), g, "/tmp/copy.duckdb", 1);
+
+    expect(json.summary.excluded.noSymbolEndpoints).toBe(5);
+    expect(json.noSymbolEndpointFiles).toEqual({
+      reason: "no-symbol endpoint: barrel, type-only or object-literal module",
+      count: 2,
+      sample: [{ relPath: "lib/types.ts", excludedEdgeCount: 3 }],
+    });
   });
 });

@@ -33,13 +33,15 @@ import type {
 import type { PhysicalCollectionName } from "../../../contracts/types/collection-identity.js";
 import { isDebug } from "../../../infra/runtime.js";
 import {
+  CodegraphClientStaleBuildError,
   CodegraphDaemonBuildSkewError,
   CodegraphDaemonUnreachableError,
   CodegraphDaemonUnresponsiveError,
 } from "../errors.js";
-import { getBuildFingerprint } from "./build-fingerprint.js";
+import { getBuildFingerprint, readOnDiskBuildFingerprint } from "./build-fingerprint.js";
 import { DaemonFrameDecoder } from "./frame-decoder.js";
 import { getDaemonLogPath } from "./lifecycle.js";
+import { isDaemonWriteOp } from "./op-commands.js";
 import { DAEMON_OPS, encodeFrame, type DaemonHandshakeResult, type DaemonOp, type DaemonResponse } from "./protocol.js";
 
 /**
@@ -136,6 +138,18 @@ export function isDaemonRefusedWithoutRespawn(verdict: DaemonCapabilityVerdict):
   return verdict.missingRequiredOps.length > 0 || (verdict.predatesCapabilityList && verdict.buildMismatch);
 }
 
+/**
+ * The CLIENT is the stale side of a build mismatch (bd tea-rags-mcp-1wr7p): the
+ * daemon runs the build on disk NOW, which this process's loaded code predates.
+ * Draining cannot converge — every respawn launches that same on-disk build — so
+ * the daemon is never drained for it, and a refusal names this process, not the
+ * daemon. Callers ask only with a READABLE on-disk fingerprint: an unreadable
+ * one proves nothing.
+ */
+export function isClientStale(verdict: DaemonCapabilityVerdict, onDiskFingerprint: string): boolean {
+  return verdict.buildMismatch && verdict.daemonFingerprint === onDiskFingerprint;
+}
+
 /** Tolerated ops already reported missing in this process — the warning is once per op. */
 const warnedLegacyDaemonOps = new Set<LegacyToleratedDaemonOp>();
 
@@ -212,6 +226,12 @@ export interface DaemonClientOptions {
   livenessTimeoutMs?: number;
   /** How long a silence with calls pending lasts before the client probes the daemon. */
   livenessProbeIntervalMs?: number;
+  /**
+   * Reader of the build on disk NOW — what a respawned daemon reports. The
+   * replay path asks it which side a refusal blames (bd tea-rags-mcp-1wr7p).
+   * Defaults to `readOnDiskBuildFingerprint`; the pool passes its own override.
+   */
+  readOnDiskBuildFingerprint?: () => string | undefined;
 }
 
 const DEFAULT_CONNECT_TIMEOUT_MS = 5000;
@@ -233,10 +253,21 @@ const DEFAULT_LIVENESS_PROBE_INTERVAL_MS = 15_000;
  * replacement; `retried` bounds that to one attempt (bd tea-rags-mcp-8l8d3).
  */
 interface PendingDaemonCall {
+  readonly op: DaemonOp;
   readonly resolve: (v: unknown) => void;
   readonly reject: (e: Error) => void;
   readonly frame: string;
   retried: boolean;
+}
+
+/**
+ * The two builds of a client that proceeds against a daemon of the on-disk
+ * build its own code predates (bd tea-rags-mcp-1wr7p) — what its refused
+ * writes name.
+ */
+export interface StaleClientBuilds {
+  readonly clientFingerprint: string;
+  readonly daemonFingerprint: string;
 }
 
 /** ENOENT (socket file not created yet) / ECONNREFUSED (server not listening yet). */
@@ -263,8 +294,15 @@ export class DaemonGraphDbClient implements GraphDbClient {
    * (bd tea-rags-mcp-f924y).
    */
   private handshakeFingerprint?: string;
+  /**
+   * Set once this client proceeds against a daemon of the on-disk build its
+   * own code predates (bd tea-rags-mcp-1wr7p). From then on it is READ-ONLY:
+   * every write-class op (`isDaemonWriteOp`) throws before it is sent.
+   */
+  private staleBuilds?: StaleClientBuilds;
   private readonly livenessTimeoutMs: number;
   private readonly livenessProbeIntervalMs: number;
+  private readonly readOnDisk: () => string | undefined;
   /** When the daemon was last heard from — any bytes on the socket, or the connect itself. */
   private lastHeardAt = 0;
   /** Runs only while calls are pending — see `watchLiveness`. */
@@ -280,6 +318,7 @@ export class DaemonGraphDbClient implements GraphDbClient {
     this.onConnectionLost = opts?.onConnectionLost;
     this.livenessTimeoutMs = opts?.livenessTimeoutMs ?? DEFAULT_LIVENESS_TIMEOUT_MS;
     this.livenessProbeIntervalMs = opts?.livenessProbeIntervalMs ?? DEFAULT_LIVENESS_PROBE_INTERVAL_MS;
+    this.readOnDisk = opts?.readOnDiskBuildFingerprint ?? readOnDiskBuildFingerprint;
   }
 
   /**
@@ -378,6 +417,7 @@ export class DaemonGraphDbClient implements GraphDbClient {
     params: Record<string, unknown>,
     options: { replayable?: boolean } = {},
   ): Promise<unknown> {
+    if (this.staleBuilds && isDaemonWriteOp(op)) throw this.refuseStaleWrite(op, this.staleBuilds);
     const { sock } = this;
     if (!sock) throw new Error("DaemonGraphDbClient.call before init() / after close()");
     const id = this.nextId++;
@@ -387,7 +427,7 @@ export class DaemonGraphDbClient implements GraphDbClient {
     const retried = options.replayable === false;
     try {
       return await new Promise((resolve, reject) => {
-        this.pending.set(id, { resolve, reject, frame, retried });
+        this.pending.set(id, { op, resolve, reject, frame, retried });
         this.watchLiveness();
         sock.write(frame);
       });
@@ -435,6 +475,27 @@ export class DaemonGraphDbClient implements GraphDbClient {
    */
   isConnected(): boolean {
     return this.sock !== undefined;
+  }
+
+  /**
+   * Make this client READ-ONLY for the rest of its life (bd
+   * tea-rags-mcp-1wr7p): it proceeds against a daemon of the on-disk build its
+   * own code predates. The graph reads keep working; every write-class op
+   * throws `CodegraphClientStaleBuildError` before it reaches the socket. The
+   * pool's handshake calls it; the replay path applies it to itself.
+   */
+  restrictToReads(builds: StaleClientBuilds): void {
+    this.staleBuilds = builds;
+  }
+
+  private refuseStaleWrite(op: DaemonOp, builds: StaleClientBuilds): CodegraphClientStaleBuildError {
+    return new CodegraphClientStaleBuildError({
+      socketPath: this.socketPath,
+      clientFingerprint: builds.clientFingerprint,
+      daemonFingerprint: builds.daemonFingerprint,
+      missingOps: [],
+      refusedWriteOp: op,
+    });
   }
 
   /**
@@ -548,9 +609,14 @@ export class DaemonGraphDbClient implements GraphDbClient {
    * THAT session's build, and a replay onto it unverified sends ops it may not
    * know or read with a payload shape that moved. It is held to the bar a client
    * that cannot replace the daemon applies (`isDaemonRefusedWithoutRespawn`):
-   * refused, every pending request fails with `CodegraphDaemonBuildSkewError`
-   * and nothing is replayed. Draining it is not this client's call — that
-   * decision belongs to the pool's handshake.
+   * refused, every pending request fails with the error naming the stale side
+   * (`describeRefusal`) and nothing is replayed. Draining it is not this client's call — that
+   * decision belongs to the pool's handshake, so the client also lets go of
+   * the connection: the pool runs that handshake only for a client that is no
+   * longer connected. A replacement that is NOT refused but runs the on-disk
+   * build this process predates is settled as the pool settles it (bd
+   * tea-rags-mcp-1wr7p): the client turns read-only, its pending writes fail
+   * with `CodegraphClientStaleBuildError` and only the reads are replayed.
    */
   private async reconnectAndReplay(reason: string): Promise<void> {
     const fingerprint = this.handshakeFingerprint ?? getBuildFingerprint();
@@ -569,18 +635,31 @@ export class DaemonGraphDbClient implements GraphDbClient {
       this.abandon(`${reason} and could not be recovered: ${cause}`);
       return;
     }
+    const staleAgainst = this.onDiskBuildIfClientStale(verdict);
     if (isDaemonRefusedWithoutRespawn(verdict)) {
-      const skew = new CodegraphDaemonBuildSkewError({
-        socketPath: this.socketPath,
-        missingOps: verdict.missingRequiredOps,
-        clientFingerprint: fingerprint,
-        daemonFingerprint: verdict.daemonFingerprint,
-      });
+      const refusal = this.describeRefusal(verdict, fingerprint, staleAgainst);
+      // Let go of the refused daemon before telling anyone. Kept connected,
+      // this client would read as healthy, the pool would keep handing it back
+      // and its build handshake — the one place allowed to drain or respawn —
+      // would never run again; the open connection would also hold the refused
+      // daemon up against its idle exit.
+      this.releaseSocket();
       this.settlePending(
         () => true,
-        () => skew,
+        () => refusal,
       );
       return;
+    }
+    if (staleAgainst !== undefined) {
+      // Proceed as the pool's handshake would: read-only. The pending writes
+      // fail here instead of being replayed onto a build whose payload shapes
+      // this code may not match; the reads go on.
+      const builds: StaleClientBuilds = { clientFingerprint: fingerprint, daemonFingerprint: staleAgainst };
+      this.restrictToReads(builds);
+      this.settlePending(
+        (p) => isDaemonWriteOp(p.op),
+        (p) => this.refuseStaleWrite(p.op, builds),
+      );
     }
     const { sock } = this;
     /* v8 ignore next 4 -- init() either sets the socket or throws; a resolved
@@ -603,6 +682,56 @@ export class DaemonGraphDbClient implements GraphDbClient {
   }
 
   /**
+   * The build on disk, when the daemon this client just handshook runs it and
+   * this client's own code predates it (`isClientStale`); else undefined —
+   * including when the on-disk build cannot be read, which proves nothing.
+   */
+  private onDiskBuildIfClientStale(verdict: DaemonCapabilityVerdict): string | undefined {
+    const onDisk = verdict.buildMismatch ? this.readOnDisk() : undefined;
+    return onDisk !== undefined && isClientStale(verdict, onDisk) ? onDisk : undefined;
+  }
+
+  /**
+   * The error a refused replay settles with, naming the stale side the way the
+   * pool's handshake does (bd tea-rags-mcp-1wr7p): when the replacement runs the
+   * build on disk that this process predates, the fault is THIS process —
+   * `CodegraphClientStaleBuildError`, remedied by reloading it. Otherwise the
+   * daemon is the one behind: `CodegraphDaemonBuildSkewError`.
+   */
+  private describeRefusal(
+    verdict: DaemonCapabilityVerdict,
+    clientFingerprint: string,
+    staleAgainst: string | undefined,
+  ): Error {
+    if (staleAgainst !== undefined) {
+      return new CodegraphClientStaleBuildError({
+        socketPath: this.socketPath,
+        clientFingerprint,
+        daemonFingerprint: staleAgainst,
+        missingOps: verdict.missingRequiredOps,
+      });
+    }
+    return new CodegraphDaemonBuildSkewError({
+      socketPath: this.socketPath,
+      missingOps: verdict.missingRequiredOps,
+      clientFingerprint,
+      daemonFingerprint: verdict.daemonFingerprint,
+    });
+  }
+
+  /**
+   * Forget the socket and close our end of it, so `isConnected()` turns false
+   * and the daemon sees the connection go. Its `close` event still reaches
+   * `handleConnectionLoss`, which finds nothing left to recover once the caller
+   * has settled `pending`.
+   */
+  private releaseSocket(): void {
+    const { sock } = this;
+    this.sock = undefined;
+    sock?.end();
+  }
+
+  /**
    * Drop the socket and settle everything waiting on it. Idempotent — the
    * socket's own `close` event fires after an explicit `close()` too, and by
    * then `pending` is already empty, so the second pass is a no-op.
@@ -616,11 +745,11 @@ export class DaemonGraphDbClient implements GraphDbClient {
   }
 
   /** Reject — and forget — every pending call `which` selects. */
-  private settlePending(which: (p: PendingDaemonCall) => boolean, error: () => Error): void {
+  private settlePending(which: (p: PendingDaemonCall) => boolean, error: (p: PendingDaemonCall) => Error): void {
     for (const [id, p] of [...this.pending.entries()]) {
       if (!which(p)) continue;
       this.pending.delete(id);
-      p.reject(error());
+      p.reject(error(p));
     }
   }
 

@@ -32,7 +32,9 @@ import { DuckDbGraphClient } from "../src/core/adapters/duckdb/client.js";
 import type { FileDependencyGraph } from "../src/core/contracts/types/codegraph.js";
 import {
   detectStableDependencyViolations,
+  NO_SYMBOL_ENDPOINT_REASON,
   type DependencyDirectoryRelation,
+  type NoSymbolEndpointFile,
   type StableDependenciesOptions,
   type StableDependenciesReport,
   type StableDependencyViolation,
@@ -170,13 +172,19 @@ export function renderStableDependenciesReport(
     `  edges read          ${summary.edgeCount}`,
     `    self-edges          ${summary.excluded.selfEdges}`,
     `    unwalked endpoint   ${summary.excluded.unwalkedEndpoints}`,
-    `    pass-through end    ${summary.excluded.passThroughEndpoints}`,
+    `    no-symbol endpoint  ${summary.excluded.noSymbolEndpoints}`,
     `    low connectionCount ${summary.excluded.lowConnectionCount}`,
     `  edges judged        ${summary.consideredEdgeCount}`,
     `  violations          ${summary.violationCount}`,
     "",
-    "by directory relation",
+    NO_SYMBOL_ENDPOINT_REASON,
+    `  files excluded      ${report.noSymbolEndpointFiles.length}`,
+    `  top ${top} by edges excluded`,
   ];
+  for (const { relPath, excludedEdgeCount } of report.noSymbolEndpointFiles.slice(0, top)) {
+    lines.push(`  ${String(excludedEdgeCount).padStart(6)}  ${relPath}`);
+  }
+  lines.push("", "by directory relation");
   const byRelation = countBy(violations, (v) => v.directoryRelation);
   for (const relation of DIRECTORY_RELATIONS) {
     lines.push(`  ${relation.padEnd(12)} ${byRelation.get(relation) ?? 0}`);
@@ -203,19 +211,40 @@ async function main(): Promise<void> {
   const { graph, report } = await collectStableDependencies(args.dbPath, options);
   process.stdout.write(renderStableDependenciesReport(report, graph, args.top));
   if (args.jsonOut) {
-    const languages = languageIndex(graph);
-    const json = {
-      dbPath: resolve(args.dbPath),
-      summary: report.summary,
-      byDirectoryRelation: Object.fromEntries(countBy(report.violations, (v) => v.directoryRelation)),
-      violations: report.violations.map((v) => ({
-        ...v,
-        sourceLanguage: languages.get(v.sourceRelPath),
-        targetLanguage: languages.get(v.targetRelPath),
-      })),
-    };
+    const json = buildStableDependenciesJson(report, graph, args.dbPath, args.top);
     writeFileSync(args.jsonOut, `${JSON.stringify(json, null, 2)}\n`);
   }
+}
+
+/** The `--json` document: the text report's facts, violations in full, the no-symbol sample capped at `top`. */
+export function buildStableDependenciesJson(
+  report: StableDependenciesReport,
+  graph: FileDependencyGraph,
+  dbPath: string,
+  top: number,
+): {
+  dbPath: string;
+  summary: StableDependenciesReport["summary"];
+  noSymbolEndpointFiles: { reason: string; count: number; sample: NoSymbolEndpointFile[] };
+  byDirectoryRelation: Record<string, number>;
+  violations: (StableDependencyViolation & { sourceLanguage?: string; targetLanguage?: string })[];
+} {
+  const languages = languageIndex(graph);
+  return {
+    dbPath: resolve(dbPath),
+    summary: report.summary,
+    noSymbolEndpointFiles: {
+      reason: NO_SYMBOL_ENDPOINT_REASON,
+      count: report.noSymbolEndpointFiles.length,
+      sample: report.noSymbolEndpointFiles.slice(0, top),
+    },
+    byDirectoryRelation: Object.fromEntries(countBy(report.violations, (v) => v.directoryRelation)),
+    violations: report.violations.map((v) => ({
+      ...v,
+      sourceLanguage: languages.get(v.sourceRelPath),
+      targetLanguage: languages.get(v.targetRelPath),
+    })),
+  };
 }
 
 if (process.argv[1] && import.meta.url.endsWith(process.argv[1].split(sep).pop() ?? "")) {

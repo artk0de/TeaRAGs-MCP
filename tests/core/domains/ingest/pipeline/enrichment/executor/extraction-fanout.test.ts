@@ -396,6 +396,46 @@ describe("ExtractionFanoutDispatcher — telemetry and failures", () => {
     expect(absorbCalls(calls)).toHaveLength(0);
   });
 
+  // bd tea-rags-mcp-sgo8v: a shard whose dispatch REJECTS (a worker that died,
+  // not one that answered with an error) must not free the batch's slot while
+  // its sibling shards still parse — `maxInFlightBatches` bounds the parses
+  // running at once, failing batches included.
+  it("holds a failing batch's slot until every one of its shards settled", async () => {
+    let releaseSlowShard!: () => void;
+    const slowShardHeld = new Promise<void>((resolveHeld) => {
+      releaseSlowShard = resolveHeld;
+    });
+    const extracting: string[] = [];
+    const { dispatch } = recordingDispatch(async ({ request }) => {
+      if (request.type !== "call" || request.method !== "extractFileBatch") return;
+      const first = request.paths?.[0] ?? "";
+      extracting.push(first);
+      if (first === "a-0.ts") throw new Error("extraction worker died");
+      if (first === "a-2.ts") await slowShardHeld;
+    });
+    const fanout = new ExtractionFanoutDispatcher(dispatch, {
+      workerCount: 2,
+      shardSize: 2,
+      maxInFlightBatches: 1,
+      minPathsToFanOut: 2,
+    });
+
+    let failedSettled = false;
+    const failed = fanout.runFileBatch(baseRequest(paths(4, "a-")), COLLECTION).finally(() => {
+      failedSettled = true;
+    });
+    const next = fanout.runFileBatch(baseRequest(paths(4, "b-")), COLLECTION);
+    await new Promise((resolveTick) => setTimeout(resolveTick, 20));
+
+    expect(failedSettled).toBe(false);
+    expect(extracting.filter((p) => p.startsWith("b-"))).toEqual([]);
+
+    releaseSlowShard();
+    await expect(failed).rejects.toThrow("extraction worker died");
+    await next;
+    expect(extracting.some((p) => p.startsWith("b-"))).toBe(true);
+  });
+
   it("keeps absorbing later batches after one batch failed", async () => {
     let failNext = true;
     const calls: RecordedDispatch[] = [];

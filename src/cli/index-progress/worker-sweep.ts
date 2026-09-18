@@ -22,6 +22,9 @@
  *   stalled  — handed off, no progress for `stalledAfterMs`. Reported; stopped
  *              only with `killStalled`, since a long daemon-side phase reports
  *              nothing either.
+ *   unverified — a worker's command line under the pid, but its start time
+ *              could not be read, so step 2 cannot be proven either way.
+ *              Kept, record and process both.
  *   gone     — no such worker any more. Record dropped.
  */
 
@@ -29,7 +32,7 @@ import { execFileSync } from "node:child_process";
 
 import type { IndexWorkerRecord, IndexWorkerRegistry } from "./worker-registry.js";
 
-export type IndexWorkerSweepVerdict = "attached" | "detached" | "orphaned" | "stalled" | "gone";
+export type IndexWorkerSweepVerdict = "attached" | "detached" | "orphaned" | "stalled" | "unverified" | "gone";
 
 export type IndexWorkerSweepAction = "kept" | "killed" | "pruned" | "would-kill" | "would-prune" | "kill-failed";
 
@@ -43,7 +46,8 @@ export interface IndexWorkerSweepOutcome {
 export interface IndexWorkerProcessSnapshot {
   ppid: number;
   pgid: number;
-  startedAtMs: number;
+  /** Undefined when `ps` printed a start time that could not be read. */
+  startedAtMs: number | undefined;
   command: string;
 }
 
@@ -88,18 +92,26 @@ export function classifyIndexWorker(
   nowMs: number,
   stalledAfterMs: number = INDEX_WORKER_STALLED_AFTER_MS,
 ): IndexWorkerSweepVerdict {
-  if (!snapshot || !isSameWorkerProcess(record, snapshot)) return "gone";
+  if (!snapshot) return "gone";
+  const identity = workerIdentity(record, snapshot);
+  if (identity === "other") return "gone";
+  if (identity === "unknown") return "unverified";
   if (snapshot.ppid === record.supervisorPid) return "attached";
   if (record.handedOffAtMs === undefined) return "orphaned";
   return nowMs - record.lastProgressAtMs > stalledAfterMs ? "stalled" : "detached";
 }
 
-function isSameWorkerProcess(record: IndexWorkerRecord, snapshot: IndexWorkerProcessSnapshot): boolean {
-  return (
-    snapshot.command.includes("index-codebase") &&
-    snapshot.command.includes("--__worker") &&
-    Math.abs(snapshot.startedAtMs - record.startedAtMs) <= START_TIME_TOLERANCE_MS
-  );
+/**
+ * Is the process under the record's pid the worker that registered it? `other`
+ * — its command line is not an index worker's, or it started at another time: a
+ * reused pid. `unknown` — a worker's command line whose start time could not be
+ * read, so a reused pid cannot be ruled out, nor can the worker be.
+ */
+function workerIdentity(record: IndexWorkerRecord, snapshot: IndexWorkerProcessSnapshot): "same" | "other" | "unknown" {
+  if (!snapshot.command.includes("index-codebase") || !snapshot.command.includes("--__worker")) return "other";
+  const { startedAtMs } = snapshot;
+  if (startedAtMs === undefined || !Number.isFinite(startedAtMs)) return "unknown";
+  return Math.abs(startedAtMs - record.startedAtMs) <= START_TIME_TOLERANCE_MS ? "same" : "other";
 }
 
 export async function sweepIndexWorkers(
@@ -172,17 +184,38 @@ async function waitUntilGone(
   const deadline = Date.now() + graceMs;
   for (;;) {
     const snapshot = probe.inspect(record.pid);
-    if (!snapshot || !isSameWorkerProcess(record, snapshot)) return true;
+    // An unreadable start time with the worker's command line is still there.
+    if (!snapshot || workerIdentity(record, snapshot) === "other") return true;
     if (Date.now() >= deadline) return false;
     await new Promise<void>((resolve) => setTimeout(resolve, KILL_POLL_INTERVAL_MS));
   }
 }
 
 /**
+ * One line of `ps -o ppid=,pgid=,lstart=,command=`. In the C locale `lstart` is
+ * five tokens (`Fri Sep 18 14:03:12 2026`, local time). A start time that does
+ * not parse — another locale's `lstart` has a different shape and token count —
+ * comes back as `undefined` rather than dropping the process: the rest of the
+ * line then stands in as `command`, which is all the identity check reads from
+ * it (a date never contains a worker's argv markers).
+ */
+export function parsePsWorkerLine(line: string): IndexWorkerProcessSnapshot | undefined {
+  const tokens = line.trim().split(/\s+/);
+  if (tokens.length < 3) return undefined;
+  const ppid = Number(tokens[0]);
+  const pgid = Number(tokens[1]);
+  const startedAtMs = tokens.length >= 8 ? Date.parse(tokens.slice(2, 7).join(" ")) : Number.NaN;
+  if (Number.isFinite(startedAtMs)) return { ppid, pgid, startedAtMs, command: tokens.slice(7).join(" ") };
+  return { ppid, pgid, startedAtMs: undefined, command: tokens.slice(2).join(" ") };
+}
+
+/**
  * `ps -o ppid=,pgid=,lstart=,command= -p <pid>` — the same columns on macOS and
- * Linux. `lstart` is five tokens (`Fri Sep 18 14:03:12 2026`, local time). A
- * zombie reports as `<defunct>`, which fails the command check and so reads as
- * gone. Not available on Windows, where the sweep is not offered.
+ * Linux. `ps` runs under `LC_ALL=C`: macOS prints `lstart` in the caller's
+ * locale, and a Russian one (`суббота, 19 сентября 2026 г. 00:53:00`) is not
+ * something `Date.parse` reads. A zombie reports as `<defunct>`, which fails the
+ * command check and so reads as gone. Not available on Windows, where the sweep
+ * is not offered.
  */
 export const psIndexWorkerProcessProbe: IndexWorkerProcessProbe = {
   inspect: (pid) => {
@@ -191,20 +224,12 @@ export const psIndexWorkerProcessProbe: IndexWorkerProcessProbe = {
       out = execFileSync("ps", ["-o", "ppid=,pgid=,lstart=,command=", "-p", String(pid)], {
         encoding: "utf8",
         stdio: ["ignore", "pipe", "ignore"],
+        env: { ...process.env, LC_ALL: "C", LANG: "C" },
       });
     } catch {
       return undefined;
     }
-    const tokens = out.trim().split(/\s+/);
-    if (tokens.length < 8) return undefined;
-    const startedAtMs = Date.parse(tokens.slice(2, 7).join(" "));
-    if (!Number.isFinite(startedAtMs)) return undefined;
-    return {
-      ppid: Number(tokens[0]),
-      pgid: Number(tokens[1]),
-      startedAtMs,
-      command: tokens.slice(7).join(" "),
-    };
+    return parsePsWorkerLine(out);
   },
   kill: (target, signal) => {
     process.kill(target, signal);

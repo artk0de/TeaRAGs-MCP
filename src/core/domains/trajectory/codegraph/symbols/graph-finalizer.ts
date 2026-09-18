@@ -34,6 +34,7 @@ import {
   CodegraphMetricsError,
   CodegraphResolveError,
   CodegraphSpillIoError,
+  type CodegraphMetricsStage,
 } from "../../errors.js";
 import { CodegraphPhaseTimings } from "./phase-timings.js";
 import type { CallEdgeResolutionRunner } from "./resolution-runner.js";
@@ -501,8 +502,17 @@ export class GraphBuildFinalizer {
     // method (DaemonGraphDbClient) delegate and return; the in-process
     // DuckDbGraphClient leaves it undefined, falling through to the inline
     // path below (direct/test mode).
+    //
+    // Both routes fail the same way — a staged `CodegraphMetricsError` — so the
+    // best-effort contract holds in either mode: a daemon-side failure (a
+    // stream closed by a daemon teardown, bd tea-rags-mcp-sgo8v) leaves the
+    // metrics stale instead of failing the run.
     if (graphDb.computeAndPersistCyclesAndSignals) {
-      await graphDb.computeAndPersistCyclesAndSignals();
+      try {
+        await graphDb.computeAndPersistCyclesAndSignals();
+      } catch (err) {
+        throw metricsFailure("daemon", err);
+      }
       return;
     }
     try {
@@ -520,16 +530,19 @@ export class GraphBuildFinalizer {
       const rankResult = pageRank(methodAdj.adjacency, { weights: methodAdj.edgeWeights });
       await graphDb.replacePageRanks(rankResult.ranks);
     } catch (err) {
-      // Non-fatal: data is consistent up to here, only metrics tables
-      // may be stale. Surface as a typed error so the caller's debug
-      // log carries the stage; the prefetch path catches and proceeds.
-      if (process.env.DEBUG === "true") {
-        process.stderr.write(`[codegraph] post-extract metric recompute failed: ${(err as Error).message}\n`);
-      }
-      throw new CodegraphMetricsError(
-        err instanceof CodegraphMetricsError ? "pagerank" : "tarjan",
-        err instanceof Error ? err : undefined,
-      );
+      throw metricsFailure(err instanceof CodegraphMetricsError ? "pagerank" : "tarjan", err);
     }
   }
+}
+
+/**
+ * Non-fatal: data is consistent up to here, only metrics tables may be stale.
+ * Surface as a typed error so the caller's debug log carries the stage; the
+ * best-effort callers catch it and proceed.
+ */
+function metricsFailure(stage: CodegraphMetricsStage, err: unknown): CodegraphMetricsError {
+  if (process.env.DEBUG === "true") {
+    process.stderr.write(`[codegraph] post-extract metric recompute failed: ${(err as Error).message}\n`);
+  }
+  return new CodegraphMetricsError(stage, err instanceof Error ? err : undefined);
 }

@@ -241,6 +241,12 @@ function describeSweptWorker(outcome: IndexWorkerSweepOutcome, nowMs: number): s
       if (verdict === "stalled") {
         return `[WARN] pid ${record.pid} stalled — ${why}; re-run with --include-stalled to stop it${where}`;
       }
+      if (verdict === "unverified") {
+        return (
+          `[WARN] pid ${record.pid} unverified — its start time could not be read, so it cannot be proven to be ` +
+          `the worker that registered; kept, record and process${where}`
+        );
+      }
       if (verdict === "detached") {
         return (
           `[OK]   pid ${record.pid} detached — enriching in the background, ` +

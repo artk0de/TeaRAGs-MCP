@@ -51,10 +51,12 @@ export class LanguageAffinityDispatcher {
     await this.onEach(plan.partitions, async (partition) => this.finalizeStage(request, plan, partition, "resolve"));
     // The other partitions read back first, and the completion owner LAST and
     // ALONE: its readBack recomputes cycles and PageRank by draining the edge
-    // tables through a streaming read, and a DuckDB stream is invalidated by any
-    // other statement on its connection — which every partition shares. Probed:
-    // 3000 edges drained alone, 2048 with one concurrent read, no error either
-    // way. Running it last also keeps its timing line the run's closing one.
+    // tables through a streaming read. That drain no longer shares a connection
+    // — `DuckDbGraphSession#streamRows` runs on its own, inside a snapshot, and
+    // throws `DuckDbStreamIncompleteError` when it comes up short — and the
+    // daemon admits a collection's writes one at a time
+    // (`CodegraphDaemonServer#admitWrite`), so this ordering is defence in
+    // depth. It also keeps the owner's timing line the run's closing one.
     const others = plan.partitions.filter((partition) => partition !== plan.completionOwner);
     const readBacks = await this.onEach(others, async (partition) =>
       this.finalizeStage(request, plan, partition, "readBack"),

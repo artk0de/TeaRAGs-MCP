@@ -52,8 +52,13 @@ export interface StableDependenciesExclusionCounts {
   selfEdges: number;
   /** An endpoint the codegraph walk never extracted (outside the index, excluded from the graph, unresolved). */
   unwalkedEndpoints: number;
-  /** An endpoint defines no symbol and calls nothing — a re-export barrel or a data-only module. */
-  passThroughEndpoints: number;
+  /**
+   * An endpoint defines no symbol and calls nothing (`NO_SYMBOL_ENDPOINT_REASON`):
+   * a re-export barrel, which is what the rule is for — but a type-only module
+   * or a module whose code lives in an object literal matches it just the same.
+   * `StableDependenciesReport.noSymbolEndpointFiles` names the files.
+   */
+  noSymbolEndpoints: number;
   /** An endpoint's connectionCount is below `minConnectionCount`. */
   lowConnectionCount: number;
 }
@@ -69,8 +74,21 @@ export interface StableDependenciesSummary {
   excluded: StableDependenciesExclusionCounts;
 }
 
+/** A file the no-symbol rule excluded, and how many edges it took out of judgement. */
+export interface NoSymbolEndpointFile {
+  relPath: RelPath;
+  /** Edges not judged because this file is an endpoint (counted for both ends of a no-symbol → no-symbol edge). */
+  excludedEdgeCount: number;
+}
+
 export interface StableDependenciesReport {
   /** Most severe first: delta, then call weight, then path. */
   violations: StableDependencyViolation[];
   summary: StableDependenciesSummary;
+  /**
+   * Every file that took at least one edge out under `noSymbolEndpoints`, most
+   * edges first, then path — what the rule actually caught, for a reader to
+   * judge whether it caught only barrels.
+   */
+  noSymbolEndpointFiles: NoSymbolEndpointFile[];
 }

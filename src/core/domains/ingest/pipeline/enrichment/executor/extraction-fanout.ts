@@ -284,6 +284,11 @@ export class ExtractionFanoutDispatcher {
    * parallel, each after that partition's previous unit. The slot is held until
    * the LAST partition absorbed, so the records resident at once stay bounded
    * by `maxInFlightBatches` exactly as on the single-worker path.
+   *
+   * That holds for a failing unit too: the absorbs are awaited until every one
+   * has settled, and only then does the first rejection surface. Rejecting on
+   * the first failure would run the `finally` below — slot released, every
+   * partition's chain place given back — while a sibling was still absorbing.
    */
   private async runPartitionedUnit(
     request: EnrichmentCallRequest,
@@ -295,7 +300,7 @@ export class ExtractionFanoutDispatcher {
     const release = await this.slots.acquire();
     try {
       const { extractions, pass1ByLanguage } = await this.extractShards(request, fresh);
-      const responses = await Promise.all(
+      const responses = await allSettledOrFirstRejection(
         plan.partitions.map(async (partition, index) => {
           try {
             await priors[index];
@@ -341,7 +346,10 @@ export class ExtractionFanoutDispatcher {
     // nothing from it; `collectionName` it does need is a top-level field.
     const { options: _absorbOnly, ...extractBase } = request;
     const shards = splitExtractionShards(fresh, Math.max(1, this.runWorkerCount), this.options.shardSize);
-    const responses = await Promise.all(
+    // Every shard settles before a failure surfaces: the caller frees the
+    // unit's slot on the way out, and a sibling still parsing would then run
+    // outside `maxInFlightBatches`.
+    const responses = await allSettledOrFirstRejection(
       shards.map(async (shard) =>
         // No routingKey: this is the whole point — the pool hands it to a
         // worker the affinity binding has NOT pinned.
@@ -409,6 +417,21 @@ function settledSignal(): SettledSignal {
     settle = resolveSettled;
   });
   return { settled, settle };
+}
+
+/**
+ * `Promise.all`, except that it waits for EVERY promise to settle before it
+ * rejects — with the first rejection, in input order. What runs after it may
+ * then free what those promises were still using.
+ */
+async function allSettledOrFirstRejection<T>(promises: readonly Promise<T>[]): Promise<T[]> {
+  const outcomes = await Promise.allSettled(promises);
+  const values: T[] = [];
+  for (const outcome of outcomes) {
+    if (outcome.status === "rejected") throw outcome.reason;
+    values.push(outcome.value);
+  }
+  return values;
 }
 
 /**
