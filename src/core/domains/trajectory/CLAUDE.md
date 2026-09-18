@@ -48,7 +48,9 @@ carry their own navigators.
   mandatory `requires` is a registered trajectory KEY — the codegraph key is
   `"codegraph.symbols"`, not `"codegraph"` (`decomposition` / `godModule`
   require it alone, `bugHunt` requires `["codegraph.symbols", "git"]`). A
-  dropped composite falls back to the same-named provider preset. The switch is
+  dropped composite falls back to the same-named provider preset, so a shadowing
+  composite must repeat that preset's default `filter` or the name changes scope
+  with the flag (`decomposition` lost `coreLogic` this way). The switch is
   `CODEGRAPH_ENABLED=true` (`buildEnvInputs` in `bootstrap/config/parse.ts`),
   default off. Why: `ENABLE_CODEGRAPH` exists nowhere in `src/`, and
   `requires: ["codegraph"]` gates on nothing — either literal ranks differently
@@ -72,11 +74,15 @@ carry their own navigators.
   an explicit `{}` clears the default outright. Typed params (`language`,
   `minAgeDays`, `documentation`, …) AND on top of whichever won — except that a
   DEFAULT excluding what the typed params select (tests, docs, a chunk type) is
-  dropped (`presetDefaultExcludesCallerScope`, same file). `RelevancePreset`
-  ships no `filter`; `CriticalPathPreset` (`composite/presets/critical-path.ts`)
-  ships `{ presets: "production" }`. Why: a preset's narrowing disappears the
-  moment a caller passes any filter of their own — the two do not compose — so a
-  default filter on a general-purpose preset changes every unqualified search.
+  dropped (`presetDefaultExcludesCallerScope`, same file). Scopes that compile
+  to no visible condition count too, read from the caller's params: an explicit
+  `testFile` / `documentation` `"include"` and a documentation `language`
+  (`DOCUMENTATION_LANGUAGES`). They fire only when passed — the search schemas
+  give neither param a default. `RelevancePreset` ships no `filter`;
+  `CriticalPathPreset` (`composite/presets/critical-path.ts`) ships
+  `{ presets: "production" }`. Why: a preset's narrowing disappears the moment a
+  caller passes any filter of their own — the two do not compose — so a default
+  filter on a general-purpose preset changes every unqualified search.
 - **`occur: "should"` compiles to a nested `must: [{ should: [...] }]`, never a
   top-level `should`.** `compileFilterPreset` buckets by `occur` and pushes one
   nested clause; worked example `git/filter-presets/panic-zone.ts`

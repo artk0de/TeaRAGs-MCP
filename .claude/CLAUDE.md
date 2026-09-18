@@ -482,3 +482,8 @@ mcp__tea-rags__index_codebase project=<other-project-alias>             # other 
 # 3. Merge. Do NOT relink main (parallel sessions own their own links).
 #    Leave indices as-is (main's payload schema matches the worktree after merge).
 ```
+
+A FIRST non-force `index-codebase` of a fresh worktree alias is SEEDED from the
+sibling working tree's index — payload and codegraph DB for every unchanged file
+— so live-validating an unbumped chunker/walker change there measures the
+sibling's data; pass `--force` or `--no-worktree-seed`.

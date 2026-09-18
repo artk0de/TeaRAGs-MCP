@@ -120,6 +120,26 @@ describe("SchemaManager", () => {
       );
     });
 
+    // bd tea-rags-mcp-9mwny — the age filters and modifiedAfter/Before range
+    // over these whole-second timestamps; unindexed, each such query is a full
+    // payload scan.
+    it("should create integer indexes on both last-commit timestamps for new collections", async () => {
+      mockQdrant.createPayloadIndex.mockResolvedValue(undefined);
+
+      await schemaManager.initializeSchema("new-collection");
+
+      expect(mockQdrant.createPayloadIndex).toHaveBeenCalledWith(
+        "new-collection",
+        "git.file.lastModifiedAt",
+        "integer",
+      );
+      expect(mockQdrant.createPayloadIndex).toHaveBeenCalledWith(
+        "new-collection",
+        "git.chunk.lastModifiedAt",
+        "integer",
+      );
+    });
+
     it("should create text index on symbolId for new collections", async () => {
       mockQdrant.createPayloadIndex.mockResolvedValue(undefined);
 
@@ -285,6 +305,14 @@ describe("SchemaManager", () => {
       expect(payloadFieldIndexSchema("isTest", "boolean")).toBe("bool");
       expect(payloadFieldIndexSchema("chunkType", "string")).toBe("keyword");
       expect(payloadFieldIndexSchema("git.file.taskIds", "string[]")).toBe("keyword");
+    });
+
+    // A schema-managed timestamp key is the exception to the `timestamp`
+    // decline below: its stored format (whole seconds) is pinned by the
+    // schema manager, which owns its index.
+    it("gives the schema-managed last-commit timestamps their integer schema", () => {
+      expect(payloadFieldIndexSchema("git.file.lastModifiedAt", "timestamp")).toBe("integer");
+      expect(payloadFieldIndexSchema("git.chunk.lastModifiedAt", "timestamp")).toBe("integer");
     });
 
     it("declines a type whose stored value format nothing pins", () => {

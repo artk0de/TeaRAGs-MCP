@@ -196,14 +196,18 @@ function typedFilterFields() {
       .optional()
       .describe(
         "Documentation filter mode. 'only' = documentation chunks only, " +
-          "'exclude' = no documentation chunks, 'include' = all chunks (default).",
+          "'exclude' = no documentation chunks, 'include' = all chunks. " +
+          "Omitted → no doc filter of its own, but a rerank preset's default filter may exclude docs; " +
+          "explicit 'only' / 'include' drops such a default.",
       ),
     testFile: z
       .enum(["only", "exclude", "include"])
       .optional()
       .describe(
         "Test file filter mode. 'only' = test files only, " +
-          "'exclude' = no test files, 'include' = all files (default).",
+          "'exclude' = no test files, 'include' = all files. " +
+          "Omitted → no test filter of its own, but a rerank preset's default filter may exclude tests; " +
+          "explicit 'only' / 'include' drops such a default.",
       ),
     author: z
       .string()
@@ -211,6 +215,14 @@ function typedFilterFields() {
       .describe(
         "Filter by blame-dominant author — owner of most live lines (git blame HEAD), exact name. " +
           "File-level by default; level 'chunk' → owner of the chunk's own lines. Example: 'John Doe'",
+      ),
+    recentAuthor: z
+      .string()
+      .optional()
+      .describe(
+        "Filter by recent-activity dominant author — most commits to the FILE in git log window (not blame). " +
+          "Exact full name OR email. File-level at any `level`. 'What did X work on' → recentAuthor + modifiedAfter. " +
+          "Example: 'john@acme.com'",
       ),
     modifiedAfter: z
       .string()
@@ -330,8 +342,8 @@ function levelField() {
           "each result carries payload.members, an outline of what matched inside that file " +
           "(markdown files get their heading TOC), in the same format find_symbol(relativePath) returns. " +
           "Also sets payload scope of level-aware filters; unset → each filter's own default " +
-          "(minAgeDays/maxAgeDays/minCommitCount: chunk; taskId/minFanIn/minFanOut: file). " +
-          "modifiedAfter/modifiedBefore file-level regardless. " +
+          "(minAgeDays/maxAgeDays/minCommitCount: chunk; taskId/author/minFanIn/minFanOut: file). " +
+          "modifiedAfter/modifiedBefore/recentAuthor file-level regardless. " +
           "Default: determined by preset signalLevel. Explicit value overrides preset.",
       ),
   };

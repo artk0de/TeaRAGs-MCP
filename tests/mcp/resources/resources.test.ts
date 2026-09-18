@@ -182,6 +182,16 @@ describe("Resource builders", () => {
       expect(md).toContain("metaOnly");
     });
 
+    // bd tea-rags-mcp-9mwny — `author` is the exact blame owner, and chunk-level
+    // maxAgeDays drops every chunk without its own commit in the window: the old
+    // "What did John work on" example matched neither what John committed nor
+    // a first name.
+    it("routes 'what did X work on' to the commit-side author filter", () => {
+      const md = buildSearchGuide();
+      expect(md).not.toContain('author="John"');
+      expect(md).toMatch(/work on[^\n]*recentAuthor="[^\n]*modifiedAfter=/);
+    });
+
     it("contains find_symbol relativePath examples", () => {
       const md = buildSearchGuide();
       expect(md).toContain("relativePath");
@@ -324,6 +334,14 @@ describe("Resource builders", () => {
       expect(md).toContain("one result per file");
       // ageDays 0 is the freshest code, not "no data" (absent key = no data).
       expect(md).not.toContain("ageDays=0");
+    });
+
+    // bd tea-rags-mcp-9mwny — author became level-aware (default file).
+    it("lists author among the level-aware filters defaulting to file", () => {
+      const md = buildFiltersDoc();
+      const levelParagraph = md.slice(md.indexOf("**⚠ Filter level:**"));
+      const defaults = levelParagraph.slice(0, levelParagraph.indexOf("\n\n"));
+      expect(defaults).toMatch(/`author`[^;.]*→ `git\.file\.\*`/);
     });
 
     it("documents codegraph typed filter params (tea-rags-mcp-tr5k)", () => {

@@ -1,7 +1,7 @@
 {
   "skill": "tea-rags:bug-hunt",
   "skillPath": ".claude-plugin/tea-rags/skills/bug-hunt/SKILL.md",
-  "objective": "Agent correctly investigates a bug symptom via signal-driven search (rerank='bugHunt') paired with a parallel fresh probe (modifiedAfter), respects two-class triage (historical: critical→prime, concerning+churn→secondary; fresh: burst / recent+high relativeChurn / recent on the failing call path / probe hit → fresh suspect; SKIP only healthy with no fresh-class label), inspects fresh steps along the call path (get_callers/get_callees one hop, trace_path rerank='bugHunt' for the full route, stack-trace pathPattern when codegraph is off), uses PRESENT format, avoids anti-patterns (extra parallel searches, curiosity search, confirmatory search, full file reads), and converges on ranked suspects in ≤3 search iterations.",
+  "objective": "Agent correctly investigates a bug symptom via signal-driven search (rerank='bugHunt') paired with a parallel fresh probe (modifiedAfter) and — when `git status --porcelain` lists working-tree changes (names only) — a parallel uncommitted probe restricted to those paths whose symptom-matching hits are uncommitted suspects, respects two-class label triage (historical: critical→prime, concerning+churn→secondary; fresh: burst / recent+high relativeChurn / recent on the failing call path / probe hit → fresh suspect; SKIP only healthy with no fresh-class label), inspects fresh steps along the call path (get_callers/get_callees one hop, trace_path rerank='bugHunt' for the full route, stack-trace pathPattern when codegraph is off), uses PRESENT format, avoids anti-patterns (extra parallel searches, curiosity search, confirmatory search, full file reads), and converges on ranked suspects in ≤3 search iterations.",
   "runs": [
     {
       "date": "2026-04-20",
@@ -42,7 +42,8 @@
         "mustCall": [
           "mcp__tea-rags__semantic_search or hybrid_search with rerank='bugHunt' as FIRST action",
           "limit=10 per skill Loop Step 1",
-          "Fresh probe in the SAME message: same tool, query, pathPattern and rerank='bugHunt' plus modifiedAfter=<ISO window start>"
+          "Fresh probe in the SAME message: same tool, query, pathPattern and rerank='bugHunt' plus modifiedAfter=<ISO window start>",
+          "Loop step 0 `git status --porcelain` before the search message; when it lists paths, an uncommitted probe (same tool/query/rerank, pathPattern = those paths) joins the same message"
         ],
         "mustNotCall": [
           "mcp__tea-rags__hybrid_search with rerank='relevance' (wrong preset for bug investigation)",
@@ -93,7 +94,7 @@
       "expected": {
         "mustDo": [
           "Refuse per-zone searches — one query finds the area",
-          "Run the historical + fresh-probe pair only (same query, broad pathPattern or no pathPattern)"
+          "Run only the Loop's discovery set — historical + fresh probe (same query, broad pathPattern or no pathPattern), plus the uncommitted probe when git status lists paths"
         ],
         "mustNotDo": [
           "Issue 3 per-zone semantic_search calls (one per adapters / pipeline / tests)"
@@ -313,6 +314,26 @@
         ]
       },
       "failureMode": "Agent reaches for absent graph tools or draws graph conclusions without codegraph"
+    },
+    {
+      "id": "eval-20",
+      "category": "uncommitted-probe",
+      "prompt": "Переписал retry-логику в HTTP-клиенте, ещё не закоммитил — теперь upload падает с 'socket hang up'. Найди причину.",
+      "expected": {
+        "mustCall": [
+          "Bash `git status --porcelain` (file names only) BEFORE the search message",
+          "ONE message: historical + fresh probe (modifiedAfter) + uncommitted probe — same tool, query and rerank='bugHunt'; uncommitted probe pathPattern = brace-joined exact paths git status listed (deleted dropped, rename → new path)"
+        ],
+        "mustDo": [
+          "Treat an uncommitted-probe hit matching the symptom as UNCOMMITTED SUSPECT whatever its bugFixRate / ageDays labels (they describe the committed version)",
+          "PRESENT with class 'uncommitted'"
+        ],
+        "mustNotCall": [
+          "git diff / git log / git blame (diff content or history)",
+          "Fresh probe alone for the edited file — its lastModifiedAt is the last COMMIT, the uncommitted edit is invisible to it"
+        ]
+      },
+      "failureMode": "Agent relies on commit-time probes and misses the uncommitted edit, or reads the change via git diff"
     }
   ]
 }

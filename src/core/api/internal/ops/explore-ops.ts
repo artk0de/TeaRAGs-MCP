@@ -44,6 +44,7 @@ import {
 } from "../../../domains/explore/strategies/index.js";
 import { NotIndexedError } from "../../../domains/ingest/errors.js";
 import { StatsRecomputeService } from "../../../domains/ingest/infra/stats-recompute.js";
+import { DOCUMENTATION_LANGUAGES } from "../../../domains/ingest/pipeline/chunker/config.js";
 import { formatIndexDriftReport, type IndexDriftReporter } from "../../../domains/maintenance/drift/index.js";
 import type { CollectionRegistry } from "../../../domains/maintenance/registry/index.js";
 import { compileFilterPreset } from "../../../domains/trajectory/filter-presets/compiler.js";
@@ -348,8 +349,9 @@ export class ExploreOps {
    * percentile thresholds.
    *
    * A preset DEFAULT that excludes what the caller's typed params explicitly
-   * select (tests, docs, a chunk type) is dropped — see
-   * `presetDefaultExcludesCallerScope`. An explicit `filter` is never touched.
+   * select (tests, docs, a chunk type, an explicit "include", a documentation
+   * language) is dropped — see `presetDefaultExcludesCallerScope`. An explicit
+   * `filter` is never touched.
    */
   private buildFilter(
     request: Record<string, unknown> | { filter?: Record<string, unknown> },
@@ -364,7 +366,7 @@ export class ExploreOps {
     if (
       req.filter === undefined &&
       presetDefault !== undefined &&
-      presetDefaultExcludesCallerScope(resolved, this.registry.buildFilter(req, level))
+      presetDefaultExcludesCallerScope(resolved, this.registry.buildFilter(req, level), req)
     ) {
       resolved = undefined;
     }
@@ -496,18 +498,33 @@ const TEST_CHUNK_TYPES: ReadonlySet<unknown> = new Set(["test", "test_setup"]);
  * caller's scope, and the WHOLE default is dropped (the same replace, never
  * compose, rule an explicit `filter` already follows). Selections the default
  * does not touch (chunkType "function" under `production`) keep it.
+ *
+ * Some scope choices compile to no condition the typed filter can show, so
+ * they are read from the caller's params: `testFile: "include"` /
+ * `documentation: "include"` ("all files" — compiles to nothing) admit
+ * isTest=true / isDocumentation=true, and a documentation `language`
+ * (markdown) selects isDocumentation=true through a condition on another key.
+ * Only a param the caller actually passed counts — the search schemas give
+ * `testFile` / `documentation` no default, so an omitted one is absent here.
  */
 export function presetDefaultExcludesCallerScope(
   compiledDefault: Record<string, unknown> | undefined,
   typedFilter: QdrantFilter | undefined,
+  callerParams: Record<string, unknown> = {},
 ): boolean {
-  if (!compiledDefault || !typedFilter?.must) return false;
+  if (!compiledDefault) return false;
   const selections = new Map<string, unknown>();
-  for (const condition of typedFilter.must) {
+  for (const condition of typedFilter?.must ?? []) {
     const exact = exactMatchCondition(condition);
     if (exact) selections.set(exact.key, exact.value);
   }
   if (TEST_CHUNK_TYPES.has(selections.get("chunkType"))) selections.set("isTest", true);
+  if (callerParams.testFile === "include") selections.set("isTest", true);
+  if (callerParams.documentation === "include") selections.set("isDocumentation", true);
+  if (typeof callerParams.language === "string" && DOCUMENTATION_LANGUAGES.has(callerParams.language)) {
+    selections.set("isDocumentation", true);
+  }
+  if (selections.size === 0) return false;
 
   const defaultMust = (compiledDefault.must ?? []) as unknown[];
   const defaultMustNot = (compiledDefault.must_not ?? []) as unknown[];

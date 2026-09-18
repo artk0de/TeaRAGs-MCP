@@ -14,7 +14,8 @@ STARTS; an architecture answer needs both:
 This IS the Explore Flow ORIENT step, absorbed here — architecture phrasing
 routes to this pattern before the flow, orientation must not be lost. Same
 small-utility bias as entry-point-pattern.md — post-filter tiny `chunkSize` /
-pass `minFanOut`, state the filter applied.
+pass `minFanOut` + `level: "chunk"` (else `minFanOut` = file import count),
+state the filter applied.
 
 ## Step 1 — backbone (hubs)
 

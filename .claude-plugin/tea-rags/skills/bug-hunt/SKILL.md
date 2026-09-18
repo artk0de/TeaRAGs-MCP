@@ -2,22 +2,25 @@
 name: bug-hunt
 description:
   Find source of concrete failure — rank historically buggy code (high
-  bugFixRate + churn) AND freshly changed never-fixed code against symptom.
-  Triggers on "debug X", "why does Y fail", "test fails", "stack trace says Z",
-  "падает", "почему не работает". NOT for code health scanning without a
-  specific symptom — use risk-assessment for that.
+  bugFixRate + churn) AND freshly changed never-fixed code (committed or still
+  uncommitted) against symptom. Triggers on "debug X", "why does Y fail", "test
+  fails", "stack trace says Z", "падает", "почему не работает". NOT for code
+  health scanning without a specific symptom — use risk-assessment for that.
 argument-hint: [bug description or symptom]
 ---
 
 # Bug Hunt
 
-Signal-driven root-cause investigation via TeaRAGs git signals. Two suspect
-populations: code with bug-fix history, fresh code too young to have one.
+Signal-driven root-cause investigation via TeaRAGs git signals. Three suspect
+populations: code with bug-fix history, fresh code too young to have one,
+uncommitted edits with no git signal yet.
 
 ## Rules
 
 1. **Execute YOURSELF** — no subagents.
 2. **No `git log`, `git diff`, `git blame`** — overlay has git signals.
+   `git status --porcelain` allowed: working-tree state (file NAMES), not code
+   history or content — feeds Uncommitted probe only.
 3. **No built-in Search/Grep for code discovery** — TeaRAGs + ripgrep MCP only.
 4. **Search results contain code.** `metaOnly=false` (default) returns chunk
    content + startLine/endLine. Evaluate checkpoint from results BEFORE any Read
@@ -25,17 +28,21 @@ populations: code with bug-fix history, fresh code too young to have one.
 5. **Partial reads only.**
    `Read(path, offset=startLine, limit=endLine-startLine)` using coordinates
    from results. Never read full files.
-6. **Labels are triage, not verdict.** Two suspect classes (Signal triage).
+6. **Labels are triage, not verdict.** Three suspect classes (Signal triage).
    `bugFixRate` `healthy` alone never drops a chunk. Filled checkpoint →
    PRESENT, whatever the labels.
 
 ## Loop
 
 ```
-1. Search — ONE message, TWO parallel calls. Same tool (search-cascade),
-   same query, same pathPattern, rerank="bugHunt", limit=10:
-   a. Historical — no time filter.
-   b. Fresh probe — + modifiedAfter=<window start> (see Fresh probe).
+0. `git status --porcelain` → uncommitted paths (see Uncommitted probe).
+
+1. Search — ONE message, parallel calls. Same tool (search-cascade),
+   same query, rerank="bugHunt", limit=10:
+   a. Historical — scope pathPattern, no time filter.
+   b. Fresh probe — scope pathPattern + modifiedAfter=<window start>
+      (see Fresh probe).
+   c. Uncommitted probe — pathPattern = step-0 paths. Step 0 empty → skip.
 
 2. CHECKPOINT — fill from ALL available info:
    - Suspect file(s): ___
@@ -69,23 +76,44 @@ population to recently changed files so it surfaces.
 - **Window start:** symptom onset if known (last green run, release, date user
   names); else today − N days, N = `recent` bound of `git.file.ageDays` in prime
   `## Signal thresholds`.
-- Untracked / never-committed files carry `lastModifiedAt` 0 → outside every
-  time filter. Historical search (no filter) still covers them.
+- Committed history only: walk emits committed files → untracked /
+  never-committed file carries NO `lastModifiedAt` → outside every time filter.
+  Uncommitted edit to committed file → timestamp = last COMMIT → probe misses
+  edit. Both → Uncommitted probe.
 - Probe hit whose code matches symptom = **fresh suspect** — triage by fresh
   class, not by `bugFixRate`.
+
+## Uncommitted probe
+
+**Why:** git signals = commit history. Working-tree edits (modified, staged,
+untracked) have none → fresh probe misses them, historical search ranks them by
+pre-edit history. "Broke after my change" = edit not yet committed.
+
+- **Source:** `git status --porcelain` — path column only, never diff content.
+  Working-tree state, not history → Rule 2 intact.
+- **pathPattern:** each path brace-joined as exact relativePath (pathPattern
+  rules). Rename `old -> new` → `new`; deleted (`D`) → drop. Git root ≠ indexed
+  root → strip prefix. Search scope set → keep paths inside it.
+- Same tool + query + rerank + limit as a/b, same message.
+- Hit matching symptom = **uncommitted suspect** — labels describe committed
+  version; symptom fit decides.
+- Probe reads INDEXED content: edits after last index invisible → zero hits ≠
+  clean. Prime stale → incremental `index_codebase` first (index-freshness).
 
 ## PRESENT
 
 Ranked suspect list, ranked by symptom fit. Per suspect: file:line, class
-(historical | fresh), signal labels (`bugFixRate`, `relativeChurn`, `ageDays`,
-`recencyWeightedFreq`), trace position when from Call path (`entry → … → step`),
-one-sentence observation why it's the root cause.
+(historical | fresh | uncommitted), signal labels (`bugFixRate`,
+`relativeChurn`, `ageDays`, `recencyWeightedFreq`), trace position when from
+Call path (`entry → … → step`), one-sentence observation why it's the root
+cause.
 
 ## Anti-patterns
 
-- **Extra parallel searches in discovery.** Historical + fresh probe pair IS the
-  discovery — no third query variant. ONE query finds the area. Returns
-  batch_create AND jobs/create — both suspects already found.
+- **Extra parallel searches in discovery.** Historical + fresh probe (+
+  uncommitted probe when `git status` lists paths) IS the discovery — no other
+  query variant. ONE query finds the area. Returns batch_create AND jobs/create
+  — both suspects already found.
 - **SKIP on `healthy` alone.** Young code label-capped at `healthy` (Signal
   triage) — fresh class decides.
 - **Curiosity search.** "How does the other path work?" → Read or LSP, not
@@ -105,7 +133,7 @@ Use exact `relativePath` values from search results joined with braces:
 ## Signal triage
 
 Overlay labels (search `rankingOverlay`, trace step `dangerOverlay`) sort each
-chunk into a class. Keep chunk when it fits EITHER class.
+chunk into a class. Keep chunk when it fits ANY class.
 
 **Historical class — fix history:**
 
@@ -120,6 +148,9 @@ chunk into a class. Keep chunk when it fits EITHER class.
 - `ageDays` `recent` + on the failing call path (trace step, stack-trace frame)
   → **fresh suspect** — path membership replaces churn corroboration
 - fresh-probe hit matching symptom → **fresh suspect**
+
+**Uncommitted class:** uncommitted-probe hit matching symptom → **uncommitted
+suspect**, whatever its labels.
 
 **SKIP** only: `bugFixRate` `healthy` + no fresh-class label + not a probe hit.
 

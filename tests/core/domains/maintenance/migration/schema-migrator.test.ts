@@ -105,7 +105,7 @@ describe("SchemaMigrator", () => {
     expect(migrator.getMigrations().find((m) => m.version === 16)?.name).toBe(
       "schema-v16-drop-undeclared-payload-indexes",
     );
-    expect(migrator.latestVersion).toBe(16);
+    expect(migrator.latestVersion).toBe(17);
   });
 
   it("does not register v16 from an empty declared key set", () => {
@@ -114,6 +114,24 @@ describe("SchemaMigrator", () => {
       declaredPayloadKeys: new Set(),
     });
     expect(migrator.getMigrations().find((m) => m.version === 16)).toBeUndefined();
+    expect(migrator.latestVersion).toBe(15);
+  });
+
+  // bd tea-rags-mcp-9mwny — v17 ensures the last-commit timestamp indexes.
+  it("registers v17 after v16 when the declared keys are supplied", () => {
+    const migrator = new SchemaMigrator(COLLECTION, createMockIndexStore(), {
+      enableHybrid: false,
+      declaredPayloadKeys: new Set(["git.chunk.ageDays"]),
+    });
+    expect(migrator.getMigrations().find((m) => m.version === 17)?.name).toBe("schema-v17-last-commit-time-indexes");
+  });
+
+  // Any migration above 16 stamps the collection past 16: registering v17
+  // without v16 would skip the undeclared-index drop on that collection for
+  // good. Without the declared keys the runner stays at 15, as before v17.
+  it("does not register v17 when v16 cannot be registered", () => {
+    const migrator = new SchemaMigrator(COLLECTION, createMockIndexStore(), { enableHybrid: false });
+    expect(migrator.getMigrations().find((m) => m.version === 17)).toBeUndefined();
     expect(migrator.latestVersion).toBe(15);
   });
 

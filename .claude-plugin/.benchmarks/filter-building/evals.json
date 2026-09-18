@@ -156,8 +156,9 @@
       "id": "T1",
       "audit_finding": "implicit author + time-window + domain (no word 'filter')",
       "prompt": "What did Alice ship in payments last week?",
-      "expected": "author: 'Alice' + modifiedAfter: <last week ISO> + pathPattern: '**/payments/**' (no level needed)",
-      "expected_NOT": "level: 'file' added for modifiedAfter; raw filter; missing author typed sugar",
+      "expected": "recentAuthor: '<Alice's full name or email>' + modifiedAfter: <last week ISO> + pathPattern: '**/payments/**' (no level needed)",
+      "expected_NOT": "level: 'file' added for modifiedAfter; raw filter; missing author typed sugar; author (exact blame owner — what she ships is the commit side, recentAuthor)",
+      "expectation_change": "9mwny: author became the exact blame owner, so 'what did X ship' moved to recentAuthor (exposed as an MCP typed param in the same change). Result below predates the change — not re-run.",
       "failure_mode": "Agent fails to detect implicit scope (author/time/domain) and runs unfiltered search",
       "result": {
         "with_rule": "PASS",
