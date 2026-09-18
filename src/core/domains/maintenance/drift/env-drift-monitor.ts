@@ -10,7 +10,10 @@
  * replay keeps the stamped value and the next run stays consistent with the
  * index (spec decision 6). Comparing against the bare server-process snapshot
  * instead would report permanent phantom drift for every project whose
- * registry env differs from the server's.
+ * registry env differs from the server's. For the same reason "outer env"
+ * inside an MCP server excludes the spawn env's index-shaping groups — that env
+ * is every project's default, not this one's override — and the injected
+ * resolver carries the process's `AmbientEnvRole` (tea-rags-mcp-o0qsw).
  *
  * Only keys present on BOTH sides can drift: a legacy entry without the key
  * and an unset optional carry no claim. `runtime` groups are skipped entirely

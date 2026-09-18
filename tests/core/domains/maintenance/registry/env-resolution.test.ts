@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import type { CollectionEntry } from "../../../../../src/core/contracts/types/registry.js";
 import {
+  outerEnvForRegistryEntry,
   pickRegistryEntry,
   resolveRegistryEnv,
 } from "../../../../../src/core/domains/maintenance/registry/env-resolution.js";
@@ -123,6 +124,63 @@ describe("resolveRegistryEnv", () => {
   it("keeps localhost (non-127.0.0.1) literal for a legacy entry — shim is scoped to the daemon's 127.0.0.1 shape", () => {
     const env = resolveRegistryEnv(entry({ qdrantUrl: "http://localhost:6334", qdrantEmbedded: undefined }));
     expect(env.QDRANT_URL).toBe("http://localhost:6334");
+  });
+});
+
+describe("resolveRegistryEnv — the ambient env's role (tea-rags-mcp-o0qsw)", () => {
+  const taxdome = entry({
+    embeddingModel: "jina-v2",
+    env: { INGEST_CHUNK_SIZE: "4500", INGEST_TUNE_CHUNKER_POOL_SIZE: "4" },
+  });
+  const serverEnv = { CODE_CHUNK_SIZE: "2000", INGEST_TUNE_CHUNKER_POOL_SIZE: "8", EMBEDDING_MODEL: "nomic" };
+
+  it("keeps letting an invocation env win by default — the CLI's precedence is unchanged", () => {
+    const env = resolveRegistryEnv(taxdome, serverEnv);
+
+    expect(env.INGEST_CHUNK_SIZE).toBeUndefined();
+    expect(env.EMBEDDING_MODEL).toBeUndefined();
+  });
+
+  it("replays the stamped index shape over a server env that sets it differently", () => {
+    const env = resolveRegistryEnv(taxdome, serverEnv, "server");
+
+    expect(env.INGEST_CHUNK_SIZE).toBe("4500");
+    expect(env.INGEST_TUNE_CHUNKER_POOL_SIZE).toBeUndefined();
+  });
+
+  it("reaches the identity keys composed from dedicated entry fields too", () => {
+    expect(resolveRegistryEnv(taxdome, serverEnv, "server").EMBEDDING_MODEL).toBe("jina-v2");
+  });
+});
+
+describe("outerEnvForRegistryEntry (tea-rags-mcp-o0qsw)", () => {
+  // A process a server detaches to index a project — the auto-update run —
+  // replays as an invocation, so it must inherit the server env the way the
+  // server itself would treat it, not the raw spawn env.
+  const taxdome = entry({
+    embeddingModel: "jina-v2",
+    env: { INGEST_CHUNK_SIZE: "4500", INGEST_TUNE_CHUNKER_POOL_SIZE: "4" },
+  });
+  const serverEnv = { CODE_CHUNK_SIZE: "2000", INGEST_TUNE_CHUNKER_POOL_SIZE: "8", EMBEDDING_MODEL: "nomic" };
+
+  it("drops the index-shaping groups the entry stamps differently, identity keys included", () => {
+    expect(outerEnvForRegistryEntry(taxdome, serverEnv, "server")).toEqual({ INGEST_TUNE_CHUNKER_POOL_SIZE: "8" });
+  });
+
+  it("never reads the Qdrant backend — an entry whose backend cannot resolve still yields its env", () => {
+    const contradictory = entry({
+      qdrantUrl: "http://192.168.1.71:6333",
+      qdrantEmbedded: true,
+      teaRagsVersion: "1.33.0",
+      env: { INGEST_CHUNK_SIZE: "4500" },
+    });
+    expect(() => resolveRegistryEnv(contradictory, serverEnv, "server")).toThrow(RegistryQdrantBackendUnresolvedError);
+
+    expect(outerEnvForRegistryEntry(contradictory, serverEnv, "server").CODE_CHUNK_SIZE).toBeUndefined();
+  });
+
+  it("hands the ambient env back unchanged for a missing entry", () => {
+    expect(outerEnvForRegistryEntry(null, serverEnv, "server")).toBe(serverEnv);
   });
 });
 

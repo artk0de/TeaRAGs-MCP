@@ -15,6 +15,7 @@ import { join } from "node:path";
 
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
+import { parseAppConfigZod } from "../../src/bootstrap/config/parse.js";
 import { ProjectIngestFactory } from "../../src/bootstrap/project-ingest-factory.js";
 import type { CollectionEntry } from "../../src/core/contracts/types/registry.js";
 
@@ -213,6 +214,89 @@ describe("ProjectIngestFactory", () => {
     expect(processEnvDuringRun["/repo/alpha"]).toBeUndefined();
     expect(processEnvDuringRun["/repo/beta"]).toBeUndefined();
     expect(process.env.INGEST_CHUNK_OVERLAP).toBeUndefined();
+  });
+});
+
+describe("ProjectIngestFactory in an MCP server process (tea-rags-mcp-o0qsw)", () => {
+  // The server's spawn env is configured once for every project it serves, so
+  // it is every project's DEFAULT, not this project's override. Before the fix
+  // a server started with CODE_CHUNK_SIZE=2000 re-chunked a project stamped at
+  // 4500 on its next incremental run — a mixed chunk set with no error.
+  const SERVER_ENV = {
+    EMBEDDING_MODEL: "jina-v2",
+    QDRANT_URL: "http://127.0.0.1:6333",
+    CODE_CHUNK_SIZE: "2000",
+    TRAJECTORY_GIT_SQUASH_AWARE_SESSIONS: "true",
+    INGEST_TUNE_CHUNKER_POOL_SIZE: "8",
+  };
+
+  function serverFactoryFor(
+    entries: CollectionEntry[],
+    serverEnv: NodeJS.ProcessEnv = SERVER_ENV,
+  ): { factory: ProjectIngestFactory; seen: Record<string, string>[] } {
+    const seen: Record<string, string>[] = [];
+    const factory = new ProjectIngestFactory({
+      registry: registryOf(entries),
+      processIngest: facade("process") as never,
+      buildIngest: (env) => {
+        seen.push(env);
+        return facade(`scoped-${seen.length}`) as never;
+      },
+      ambientEnv: serverEnv,
+      ambientEnvRole: "server",
+    });
+    return { factory, seen };
+  }
+
+  it("builds a registered project with its own stamped index shape, and the server's runtime tuning", () => {
+    const { factory, seen } = serverFactoryFor([
+      entry({
+        path: "/repo/taxdome",
+        env: {
+          INGEST_CHUNK_SIZE: "4500",
+          TRAJECTORY_GIT_SQUASH_AWARE_SESSIONS: "false",
+          INGEST_TUNE_CHUNKER_POOL_SIZE: "4",
+        },
+      }),
+    ]);
+
+    factory.forPath("/repo/taxdome");
+    const config = parseAppConfigZod(seen[0]);
+
+    expect(config.ingest.chunkSize).toBe(4500);
+    expect(config.trajectoryGit.squashAwareSessions).toBe(false);
+    expect(config.ingest.tune.chunkerPoolSize).toBe(8);
+  });
+
+  it("lets a legacy alias spelling in the stamp beat the server's canonical one", () => {
+    const { factory, seen } = serverFactoryFor(
+      [entry({ path: "/repo/legacy", tuning: { CODE_CHUNK_OVERLAP: "300" } })],
+      { INGEST_CHUNK_OVERLAP: "450" },
+    );
+
+    factory.forPath("/repo/legacy");
+
+    expect(parseAppConfigZod(seen[0]).ingest.chunkOverlap).toBe(300);
+  });
+
+  it("keeps handing out the process facade when the server env already carries every stamped value", () => {
+    const { factory, seen } = serverFactoryFor([
+      entry({
+        path: "/repo/tea-rags",
+        env: { INGEST_CHUNK_SIZE: "2000", TRAJECTORY_GIT_SQUASH_AWARE_SESSIONS: "true" },
+      }),
+    ]);
+
+    expect(factory.forPath("/repo/tea-rags")).toEqual(facade("process"));
+    expect(seen).toHaveLength(0);
+  });
+
+  it("lets the server env win over a BORROWED seed — only a project's own stamp outranks it", () => {
+    const { factory, seen } = serverFactoryFor([entry({ path: "/repo/taxdome", env: { INGEST_CHUNK_SIZE: "4500" } })]);
+
+    factory.forPath("/repo/brand-new");
+
+    expect(parseAppConfigZod(seen[0] ?? SERVER_ENV).ingest.chunkSize).toBe(2000);
   });
 });
 

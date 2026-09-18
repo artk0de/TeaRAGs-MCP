@@ -21,6 +21,20 @@ describe("spawnDetachedUpdater", () => {
     expect(child.unref).toHaveBeenCalled();
   });
 
+  it("hands the child the env it is given, and inherits the parent's when given none (tea-rags-mcp-o0qsw)", () => {
+    const child = { unref: vi.fn() };
+    const spawnImpl = vi.fn(() => child);
+    const env = { INGEST_TUNE_CHUNKER_POOL_SIZE: "8" };
+
+    spawnDetachedUpdater({ project: "p", logFd: 3, spawnImpl: spawnImpl as never, env });
+    spawnDetachedUpdater({ project: "p", logFd: 3, spawnImpl: spawnImpl as never });
+
+    const optsOf = (call: number) =>
+      (spawnImpl.mock.calls[call] as unknown as [string, string[], { env?: unknown }])[2];
+    expect(optsOf(0).env).toBe(env);
+    expect("env" in optsOf(1)).toBe(false);
+  });
+
   it("resolves the CLI entry from its own install root when not overridden", () => {
     const child = { unref: vi.fn() };
     const spawnImpl = vi.fn(() => child);

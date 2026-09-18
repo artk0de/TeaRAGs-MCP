@@ -1,6 +1,9 @@
 import { describe, expect, it } from "vitest";
 
-import { replayRegistryEnv } from "../../../../../src/core/domains/maintenance/registry/env-replay.js";
+import {
+  outerEnvForRegistryStamp,
+  replayRegistryEnv,
+} from "../../../../../src/core/domains/maintenance/registry/env-replay.js";
 
 describe("replayRegistryEnv", () => {
   it("fills unset target keys from the tuning snapshot (registry fills the gaps)", () => {
@@ -102,5 +105,70 @@ describe("replayRegistryEnv", () => {
       replayRegistryEnv({ FUTURE_ENV_KNOB: "7" }, target, {});
       expect(target.FUTURE_ENV_KNOB).toBe("7");
     });
+  });
+});
+
+describe("outerEnvForRegistryStamp", () => {
+  // A long-lived MCP server's spawn env is configured once for every project it
+  // serves — the tea-rags-mcp session sets CODE_CHUNK_SIZE=2000 for its OWN
+  // index — so it must not re-shape a project whose stamp says otherwise
+  // (tea-rags-mcp-o0qsw). A CLI invocation's env is still a deliberate override.
+  const STAMP = {
+    INGEST_CHUNK_SIZE: "4500",
+    TRAJECTORY_GIT_SQUASH_AWARE_SESSIONS: "false",
+    INGEST_TUNE_CHUNKER_POOL_SIZE: "4",
+  };
+  const SERVER_ENV = {
+    CODE_CHUNK_SIZE: "2000",
+    TRAJECTORY_GIT_SQUASH_AWARE_SESSIONS: "true",
+    INGEST_TUNE_CHUNKER_POOL_SIZE: "8",
+    DEBUG: "1",
+  };
+
+  it("hands an invocation env back whole — a CLI run's env overrides every group", () => {
+    expect(outerEnvForRegistryStamp(STAMP, SERVER_ENV, "invocation")).toEqual(SERVER_ENV);
+  });
+
+  it("drops every spelling of an index-shaping group a server env sets differently from the stamp", () => {
+    expect(outerEnvForRegistryStamp(STAMP, SERVER_ENV, "server")).toEqual({
+      INGEST_TUNE_CHUNKER_POOL_SIZE: "8",
+      DEBUG: "1",
+    });
+  });
+
+  it("keeps a server's runtime groups — they decide how a run executes, never what it writes", () => {
+    expect(outerEnvForRegistryStamp(STAMP, SERVER_ENV, "server").INGEST_TUNE_CHUNKER_POOL_SIZE).toBe("8");
+  });
+
+  it("keeps an index-shaping value the server env shares with the stamp — the process facade stays reusable", () => {
+    expect(outerEnvForRegistryStamp({ INGEST_CHUNK_SIZE: "2000" }, SERVER_ENV, "server").CODE_CHUNK_SIZE).toBe("2000");
+  });
+
+  it("keeps an index-shaping group the stamp does not pin — there is nothing to stay consistent with", () => {
+    expect(outerEnvForRegistryStamp({}, SERVER_ENV, "server").CODE_CHUNK_SIZE).toBe("2000");
+  });
+
+  it("reads a legacy deprecated spelling in the stamp as its whole group", () => {
+    const outer = outerEnvForRegistryStamp({ CODE_CHUNK_OVERLAP: "300" }, { INGEST_CHUNK_OVERLAP: "450" }, "server");
+
+    expect(outer.INGEST_CHUNK_OVERLAP).toBeUndefined();
+  });
+
+  it("treats the two enable flags like any other enrichment group — the project's stamp owns what its index carries", () => {
+    const outer = outerEnvForRegistryStamp({ CODEGRAPH_ENABLED: "true" }, { CODEGRAPH_ENABLED: "false" }, "server");
+
+    expect(outer.CODEGRAPH_ENABLED).toBeUndefined();
+  });
+
+  it("never writes to the env it was handed", () => {
+    const ambient = { ...SERVER_ENV };
+
+    outerEnvForRegistryStamp(STAMP, ambient, "server");
+
+    expect(ambient).toEqual(SERVER_ENV);
+  });
+
+  it("hands a server env back as the same object when it overrides nothing — a caller can tell nothing was dropped", () => {
+    expect(outerEnvForRegistryStamp({ INGEST_CHUNK_SIZE: "2000" }, SERVER_ENV, "server")).toBe(SERVER_ENV);
   });
 });

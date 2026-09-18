@@ -147,6 +147,43 @@ describe("buildMcpAutoUpdateTrigger request resolution", () => {
     expect(vi.mocked(closeAutoUpdateLog)).toHaveBeenCalledTimes(1);
   });
 
+  it("hands the detached updater the server env minus the index shape the project stamped (tea-rags-mcp-o0qsw)", () => {
+    // The updater replays the registry as a CLI invocation would, so a raw
+    // inherited CODE_CHUNK_SIZE=2000 from the server would re-chunk a project
+    // stamped at 4500 on every auto-update run.
+    const dataDir = tmpDir("mcp-hint-data-");
+    const repo = writeRepoOnMaster();
+    const registry = new CollectionRegistry(dataDir);
+    registry.record({
+      collectionName: "code_stamped",
+      path: repo,
+      embeddingModel: "m",
+      embeddingDimensions: 384,
+      qdrantUrl: "http://localhost:6333",
+      indexedAt: "2026-08-06T00:00:00.000Z",
+      teaRagsVersion: "1.0.0",
+      chunksCount: 1,
+      env: { INGEST_CHUNK_SIZE: "4500" },
+    });
+    registry.setName("code_stamped", "stamped");
+    registry.setAutoUpdate("code_stamped", { enabled: true, targetBranch: "master" });
+
+    const had = Object.hasOwn(process.env, "CODE_CHUNK_SIZE");
+    const previous = process.env.CODE_CHUNK_SIZE;
+    try {
+      process.env.CODE_CHUNK_SIZE = "2000";
+      expect(buildMcpAutoUpdateTrigger(dataDir).hintFor({ project: "stamped" })).toBe("index updating in background");
+    } finally {
+      if (had) process.env.CODE_CHUNK_SIZE = previous;
+      else delete process.env.CODE_CHUNK_SIZE;
+    }
+
+    const [options] = vi.mocked(spawnDetachedUpdater).mock.calls[0] ?? [];
+    expect(options?.env).toBeDefined();
+    expect(options?.env?.CODE_CHUNK_SIZE).toBeUndefined();
+    expect(options?.env?.PATH).toBe(process.env.PATH);
+  });
+
   it("resolves a path request through the shared resolver and reports why auto-update is paused", () => {
     const dataDir = tmpDir("mcp-hint-data-");
     // HEAD is on master, but the index was configured to follow main.

@@ -62,6 +62,19 @@ describe("buildEffectiveIndexEnvSnapshot", () => {
     expect(effective.TRAJECTORY_GIT_LOG_MAX_AGE_MONTHS).toBe("3");
   });
 
+  it("keeps the stamp over a server env that shapes the index differently — its spawn env is every project's default (tea-rags-mcp-o0qsw)", () => {
+    const effective = buildEffectiveIndexEnvSnapshot(
+      STAMP,
+      COLLECTION,
+      { CODEGRAPH_AMBIGUOUS_RESOLVE_MODE: "first", GIT_LOG_MAX_AGE_MONTHS: "3", INGEST_TUNE_CHUNKER_POOL_SIZE: "2" },
+      "server",
+    );
+
+    expect(effective.CODEGRAPH_AMBIGUOUS_RESOLVE_MODE).toBe("strict");
+    expect(effective.TRAJECTORY_GIT_LOG_MAX_AGE_MONTHS).toBe("12");
+    expect(effective.INGEST_TUNE_CHUNKER_POOL_SIZE).toBe("2");
+  });
+
   it("materializes code defaults for keys neither side set", () => {
     const effective = buildEffectiveIndexEnvSnapshot({}, COLLECTION, {});
 
@@ -201,6 +214,29 @@ describe("the two current sides wired into EnvDriftMonitor", () => {
         note: "explains any codegraph.* payload-key drift — restore the flag instead of rebuilding",
       },
     ]);
+  });
+
+  it("reports nothing on a project stamped differently from the server's own index shape (the taxdome phantom, tea-rags-mcp-o0qsw)", () => {
+    // The server was spawned with the tea-rags-mcp session's env, tuned for the
+    // self-index; taxdome was stamped at 4500 without squash-aware sessions.
+    const serverEnv = {
+      CODEGRAPH_ENABLED: "true",
+      CODE_CHUNK_SIZE: "2000",
+      TRAJECTORY_GIT_SQUASH_AWARE_SESSIONS: "true",
+    };
+    const taxdome = {
+      get: () => ({
+        env: { ...STAMP, INGEST_CHUNK_SIZE: "4500", TRAJECTORY_GIT_SQUASH_AWARE_SESSIONS: "false" },
+        codegraphEnabled: true,
+      }),
+    } as never;
+    const monitor = new EnvDriftMonitor(
+      taxdome,
+      (stored, collectionName) => buildEffectiveIndexEnvSnapshot(stored, collectionName, serverEnv, "server"),
+      buildRunningIndexEnvSnapshot(parseAppConfigZod(serverEnv)),
+    );
+
+    expect(monitor.check(COLLECTION)).toEqual([]);
   });
 
   it("attributes it the same way when the reading process sets it to false", () => {

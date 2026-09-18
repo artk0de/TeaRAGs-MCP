@@ -15,7 +15,12 @@
 import { homedir } from "node:os";
 import { join } from "node:path";
 
-import { CollectionRegistry, IndexFreshnessCheck, resolveCollection } from "../../core/api/public/index.js";
+import {
+  CollectionRegistry,
+  IndexFreshnessCheck,
+  outerEnvForRegistryEntry,
+  resolveCollection,
+} from "../../core/api/public/index.js";
 import type { McpAutoUpdateTrigger } from "../../mcp/tools/explore.js";
 import { spawnDetachedUpdater } from "./spawner.js";
 import { AutoUpdateTrigger } from "./trigger.js";
@@ -65,7 +70,12 @@ export function buildMcpAutoUpdateTrigger(
       ((project) => {
         const entry = registry.get(project);
         const log = openAutoUpdateLog(dataDir, entry?.name ?? project);
-        spawnDetachedUpdater({ project, logFd: log.fd });
+        // The updater is this server's index run by delegation, but it replays
+        // the registry as a CLI invocation — so it gets the server env the way
+        // the server itself treats it, with the project's stamped index shape
+        // carved out (tea-rags-mcp-o0qsw). Nothing carved → plain inheritance.
+        const env = outerEnvForRegistryEntry(entry, process.env, "server");
+        spawnDetachedUpdater({ project, logFd: log.fd, ...(env === process.env ? {} : { env }) });
         closeAutoUpdateLog(log);
       }),
     clock: () => Date.now(),

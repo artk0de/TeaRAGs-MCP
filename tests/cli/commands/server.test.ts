@@ -58,6 +58,12 @@ describe("server command", () => {
     expect(createAppContext).toHaveBeenCalledOnce();
   });
 
+  it("declares a server process, so a registered project's stamp outranks the spawn env (tea-rags-mcp-o0qsw)", async () => {
+    await runServer({ http: false });
+
+    expect(vi.mocked(createAppContext).mock.calls[0]?.[1]).toEqual({ ambientEnvRole: "server" });
+  });
+
   it("should start stdio server by default", async () => {
     await runServer({ http: false });
 

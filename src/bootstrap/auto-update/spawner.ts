@@ -26,6 +26,13 @@ export interface SpawnDetachedUpdaterOptions {
   project: string;
   /** Open fd of the per-project auto-update log (see cli/auto-update/updater-log). */
   logFd: number;
+  /**
+   * Env for the child. Omitted, it inherits this process's env. The MCP server
+   * passes its spawn env with the project's stamped index shape carved out, or
+   * the child — replaying the registry as a CLI invocation — would let the
+   * server env override that shape (tea-rags-mcp-o0qsw).
+   */
+  env?: NodeJS.ProcessEnv;
   spawnImpl?: typeof nodeSpawn;
   /** Test override; default resolves build/cli/index.js from this install. */
   cliEntryPath?: string;
@@ -50,6 +57,7 @@ export function spawnDetachedUpdater(opts: SpawnDetachedUpdaterOptions): void {
     const child = spawnImpl(process.execPath, [cliEntry, "auto-update", "run", "--project", opts.project], {
       detached: true,
       stdio: ["ignore", opts.logFd, opts.logFd],
+      ...(opts.env ? { env: opts.env } : {}),
     });
     child.unref();
   } catch {

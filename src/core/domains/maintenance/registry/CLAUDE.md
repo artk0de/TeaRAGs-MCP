@@ -86,6 +86,21 @@
   and shadows an externally-passed deprecated spelling (`OLLAMA_URL`,
   `EMBEDDING_CONCURRENCY`), so an explicit operator override LOSES and the run
   goes to the wrong backend without an error.
+- **The ambient env's role is DECLARED by the entry point, never detected.**
+  `resolveRegistryEnv` and `buildEffectiveIndexEnvSnapshot` default to
+  `invocation`, where the process env beats a project's stamp in every group;
+  only `createAppContext(config, { ambientEnvRole: "server" })` — called by
+  `runServer` (`cli/commands/server.ts`) and `main` (`src/index.ts`) — narrows a
+  server's spawn env to the `runtime` groups through `outerEnvForRegistryStamp`
+  (`env-replay.ts`). A process the server DETACHES replays as an invocation, so
+  it must be handed the already-narrowed env: `buildMcpAutoUpdateTrigger`
+  (`bootstrap/auto-update/mcp-hint.ts`) spawns the updater with
+  `outerEnvForRegistryEntry(entry, process.env, "server")`. Why: a new MCP entry
+  point that omits the option, or a new server-side spawn that lets the child
+  inherit `process.env`, compiles, passes every test, and brings back
+  tea-rags-mcp-o0qsw — a server spawned with one project's `CODE_CHUNK_SIZE`
+  re-chunks every other registered project on its next index run, and the env
+  drift axis reports a finding its own `--force` remedy can never clear.
 - **`ADAPTIVE_DEFAULT_ENV_KEYS` (`env-groups.ts`) is a fourth coupling.** Those
   four keys are materialized into the snapshot only when the config layer's
   `userSet*` flags say the user set them explicitly. Why: pinning a

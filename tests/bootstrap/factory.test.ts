@@ -5,7 +5,9 @@ import { describe, expect, it, vi } from "vitest";
 
 import type { AppConfig, getZodConfig } from "../../src/bootstrap/config/index.js";
 import { createAppContext, createConfiguredServer, loadPrompts, wireCodegraph } from "../../src/bootstrap/factory.js";
+import type { ProjectIngestFactory as ProjectIngestFactoryType } from "../../src/bootstrap/project-ingest-factory.js";
 import type { WorkerEnrichmentDescriptor } from "../../src/core/contracts/types/provider.js";
+import type { EnvDriftMonitor as EnvDriftMonitorType } from "../../src/core/domains/maintenance/drift/env-drift-monitor.js";
 import { CollectionRegistry } from "../../src/core/domains/maintenance/registry/index.js";
 import type { GitTrajectory as GitTrajectoryType } from "../../src/core/domains/trajectory/git.js";
 import { loadPromptsConfig } from "../../src/mcp/prompts/index.js";
@@ -32,6 +34,44 @@ vi.mock("../../src/core/domains/trajectory/git.js", async (importOriginal) => {
       ) {
         super(config, squashOpts, workerDescriptor);
         captured.gitWorkerDescriptor = workerDescriptor;
+      }
+    },
+  };
+});
+
+// The two consumers of the ambient env role (tea-rags-mcp-o0qsw). The real
+// classes still run — only what composition hands each one is recorded, so a
+// test can prove both were wired from the ONE role createAppContext received.
+const capturedEnvRoleWiring = vi.hoisted(() => ({
+  ingestFactoryRole: undefined as string | undefined,
+  effectiveSnapshotFor: undefined as
+    | ((stored: Readonly<Record<string, string>>, collectionName: string) => Readonly<Record<string, string>>)
+    | undefined,
+}));
+
+vi.mock("../../src/bootstrap/project-ingest-factory.js", async (importOriginal) => {
+  const mod = await (importOriginal as () => Promise<{ ProjectIngestFactory: typeof ProjectIngestFactoryType }>)();
+  const OrigProjectIngestFactory = mod.ProjectIngestFactory;
+  return {
+    ...mod,
+    ProjectIngestFactory: class extends OrigProjectIngestFactory {
+      constructor(deps: ConstructorParameters<typeof OrigProjectIngestFactory>[0]) {
+        super(deps);
+        capturedEnvRoleWiring.ingestFactoryRole = deps.ambientEnvRole;
+      }
+    },
+  };
+});
+
+vi.mock("../../src/core/domains/maintenance/drift/env-drift-monitor.js", async (importOriginal) => {
+  const mod = await (importOriginal as () => Promise<{ EnvDriftMonitor: typeof EnvDriftMonitorType }>)();
+  const OrigEnvDriftMonitor = mod.EnvDriftMonitor;
+  return {
+    ...mod,
+    EnvDriftMonitor: class extends OrigEnvDriftMonitor {
+      constructor(...args: ConstructorParameters<typeof OrigEnvDriftMonitor>) {
+        super(...args);
+        capturedEnvRoleWiring.effectiveSnapshotFor = args[1];
       }
     },
   };
@@ -217,6 +257,37 @@ describe("createAppContext", () => {
     captured.gitWorkerDescriptor = undefined;
     await createAppContext(makeConfig());
     expect(captured.gitWorkerDescriptor).toBeUndefined();
+  });
+
+  describe("the ambient env role (tea-rags-mcp-o0qsw)", () => {
+    // What the env drift axis resolves a stamped CODEGRAPH_AMBIGUOUS_RESOLVE_MODE
+    // to while this process's env sets it differently.
+    function effectiveModeUnderOuterOverride(): string | undefined {
+      const had = Object.hasOwn(process.env, "CODEGRAPH_AMBIGUOUS_RESOLVE_MODE");
+      const previous = process.env.CODEGRAPH_AMBIGUOUS_RESOLVE_MODE;
+      try {
+        process.env.CODEGRAPH_AMBIGUOUS_RESOLVE_MODE = "first";
+        return capturedEnvRoleWiring.effectiveSnapshotFor?.({ CODEGRAPH_AMBIGUOUS_RESOLVE_MODE: "strict" }, "code_x")
+          .CODEGRAPH_AMBIGUOUS_RESOLVE_MODE;
+      } finally {
+        if (had) process.env.CODEGRAPH_AMBIGUOUS_RESOLVE_MODE = previous;
+        else delete process.env.CODEGRAPH_AMBIGUOUS_RESOLVE_MODE;
+      }
+    }
+
+    it("wires a declared server role into the ingest factory AND the env drift axis alike", async () => {
+      await createAppContext(makeConfig(), { ambientEnvRole: "server" });
+
+      expect(capturedEnvRoleWiring.ingestFactoryRole).toBe("server");
+      expect(effectiveModeUnderOuterOverride()).toBe("strict");
+    });
+
+    it("treats an undeclared process as an invocation — a CLI's own env keeps overriding the stamp", async () => {
+      await createAppContext(makeConfig());
+
+      expect(capturedEnvRoleWiring.ingestFactoryRole ?? "invocation").toBe("invocation");
+      expect(effectiveModeUnderOuterOverride()).toBe("first");
+    });
   });
 });
 
