@@ -38,6 +38,7 @@ import {
   type CallResolver,
   type DispatchFanoutOutcome,
   type FileExtraction,
+  type GraphEdges,
   type SymbolResolutionTarget,
 } from "../../../contracts/types/codegraph.js";
 import type {
@@ -141,6 +142,12 @@ export class JavaScriptLanguage implements LanguageProvider {
       resolve: (call: CallRef, ctx: CallContext): SymbolResolutionTarget | null => callResolver.resolve(call, ctx),
       resolveDispatch: (call: CallRef, ctx: CallContext): DispatchFanoutOutcome =>
         callResolver.resolveDispatch?.(call, ctx) ?? emptyDispatchFanout(),
+      // Forwarded so imports map through `JavascriptImportFileMapper` rather
+      // than through the provider's synthesised-call loop, which dropped every
+      // explicit-extension import (bd tea-rags-mcp-x9qsh). Omitting it here is
+      // what left the resolver's own method dead in production.
+      resolveFileEdges: (extraction: FileExtraction, ctx: CallContext): GraphEdges["fileEdges"] =>
+        callResolver.resolveFileEdges?.(extraction, ctx) ?? [],
       targetsExternalImport: (call: CallRef, ctx: CallContext): boolean =>
         callResolver.targetsExternalImport?.(call, ctx) ?? false,
     };
@@ -150,5 +157,5 @@ export class JavaScriptLanguage implements LanguageProvider {
 export { javascriptKernel } from "./kernel.js";
 export { JsChunkClassifier, javascriptHooks, jsChunkSymbols } from "./chunking/index.js";
 export { extractFromJavascriptFile, jsNameOf } from "./walker/index.js";
-export { JavascriptCallResolver, mapJavascriptImportToFile } from "./resolver/index.js";
+export { JavascriptCallResolver, JavascriptImportFileMapper, mapJavascriptImportToFile } from "./resolver/index.js";
 export type { FileExtraction, JsExtractInput };
