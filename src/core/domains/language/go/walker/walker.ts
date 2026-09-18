@@ -21,12 +21,13 @@
  */
 
 import type { AstNode, MaterializedTree } from "../../../../contracts/types/ast.js";
-import type {
-  CallRef,
-  ChunkExtraction,
-  FileExtraction,
-  ImportRef,
-  LocalBinding,
+import {
+  resolveLocalBinding,
+  type CallRef,
+  type ChunkExtraction,
+  type FileExtraction,
+  type ImportRef,
+  type LocalBinding,
 } from "../../../../contracts/types/codegraph.js";
 import { assignCallsToInnermostChunks } from "../../kernel/assign-calls-to-chunks.js";
 
@@ -194,6 +195,9 @@ function walk(node: AstNode, visit: (n: AstNode) => void): void {
  *      `x := Foo{}` (`composite_literal`) and `x := &Foo{}`
  *      (`unary_expression` wrapping `composite_literal`) →
  *      `{ x: "Foo" }`. bd tea-rags-mcp-6g9c.
+ *   5. Function-literal parameters — `return func(c *Context) { ... }` binds
+ *      `c` for the literal's lines only; see `bindFuncLiteralParams`. bd
+ *      tea-rags-mcp-e6xx.
  *
  * Function-return short decls `x := New()` are captured into the SEPARATE
  * `calls` map (varName → called func short name), NOT `types` — the walker
@@ -249,11 +253,27 @@ function collectGoLocalBindingsForChunk(
     }
   }
 
+  // Scope exits of function-literal parameters, appended AFTER the walk so a
+  // statement that rebinds the name on the literal's closing-line+1 keeps the
+  // first slot at that line (`resolveLocalBinding` takes the first entry at the
+  // greatest line). Read during the walk through `bindingBefore`.
+  const literalExits: { name: string; binding: LocalBinding }[] = [];
+  const bindingBefore = (name: string, atLine: number): string | undefined =>
+    resolveLocalBinding(
+      { [name]: [...(bindings[name] ?? []), ...literalExits.filter((e) => e.name === name).map((e) => e.binding)] },
+      name,
+      atLine,
+    )?.type;
+
   // Local variable declarations inside the body — `var x Foo`, `x :=
   // Foo{}`, `x := &Foo{}` (bd tea-rags-mcp-6g9c). Walk the target
   // declaration's descendants; both forms are nested in the function's
   // `block` / `statement_list` regardless of nesting depth.
   walk(target as AstNode, (node) => {
+    if (node.type === "func_literal") {
+      bindFuncLiteralParams(node, bindings, bindingBefore, literalExits);
+      return;
+    }
     if (node.type === "var_declaration") {
       for (const spec of node.children) {
         if (spec.type !== "var_spec") continue;
@@ -291,7 +311,47 @@ function collectGoLocalBindingsForChunk(
       }
     }
   });
+  for (const exit of literalExits) (bindings[exit.name] ??= []).push(exit.binding);
   return { types: bindings, calls: callBindings };
+}
+
+/**
+ * Bind a `func_literal`'s parameters for the literal's own lines (bd
+ * tea-rags-mcp-e6xx) — gin's middlewares are `return func(c *Context) { ... }`,
+ * and every call on that `c` went unresolved without it.
+ *
+ * `localBindings` carries no scope end, so the scope is expressed in lines: the
+ * parameter binds at its own line, and an exit binding one line past the
+ * literal re-establishes whatever `bindingBefore` saw in effect at the
+ * literal's start. When nothing was in effect the exit carries the EMPTY type,
+ * which every reader treats as "no type" (`resolveLocalBindingType` answers a
+ * falsy value), so a literal's `c *Context` cannot leak onto a later,
+ * differently-typed `c` of the enclosing function.
+ *
+ * A parameter whose type binds nothing (`w http.ResponseWriter`) still SHADOWS
+ * an outer typed namesake with an empty binding; with no outer namesake it
+ * records nothing at all, so no binding key appears that was not there before.
+ */
+function bindFuncLiteralParams(
+  literal: AstNode,
+  bindings: Record<string, LocalBinding[]>,
+  bindingBefore: (name: string, atLine: number) => string | undefined,
+  literalExits: { name: string; binding: LocalBinding }[],
+): void {
+  const params = literal.childForFieldName("parameters");
+  if (!params) return;
+  const startLine = literal.startPosition.row + 1;
+  const exitLine = literal.endPosition.row + 2;
+  for (const param of params.children) {
+    if (param.type !== "parameter_declaration") continue;
+    const name = readParamName(param);
+    if (!name) continue;
+    const outer = bindingBefore(name, startLine) ?? "";
+    const type = readParamBareType(param);
+    if (!type && !outer) continue;
+    (bindings[name] ??= []).push({ line: param.startPosition.row + 1, type: type ?? "" });
+    literalExits.push({ name, binding: { line: exitLine, type: outer } });
+  }
 }
 
 /**
