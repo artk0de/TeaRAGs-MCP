@@ -7,6 +7,7 @@ import {
   type SymbolResolutionTarget,
 } from "../../../../../contracts/types/codegraph.js";
 import type { SymbolResolutionOutcome, SymbolResolutionStrategy } from "../../../../../contracts/types/language.js";
+import { lookupGoSymbols } from "../go-symbol-lookup.js";
 import { goPackageDirOf, resolveImportedPackageMember, type ResolverConfig } from "./shared.js";
 
 /**
@@ -63,9 +64,7 @@ export class GoGenericInstantiationSymbolResolutionStrategy implements SymbolRes
 
   private samePackageDeclaration(name: string, ctx: CallContext): SymbolResolutionTarget | null {
     const callerPackage = goPackageDirOf(ctx.callerFile);
-    const candidates = ctx.symbolTable
-      .lookup(name)
-      .filter((def) => def.relPath.endsWith(".go") && goPackageDirOf(def.relPath) === callerPackage);
+    const candidates = lookupGoSymbols(ctx, name).filter((def) => goPackageDirOf(def.relPath) === callerPackage);
     const target = pickSingleCandidate(candidates, this.cfg.mode);
     return target ? { targetRelPath: target.relPath, targetSymbolId: target.symbolId } : null;
   }

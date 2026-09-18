@@ -1,6 +1,7 @@
 import { CONTINUE, resolved } from "../../../../../contracts/resolution.js";
 import { pickSingleCandidate, type CallContext, type CallRef } from "../../../../../contracts/types/codegraph.js";
 import type { SymbolResolutionOutcome, SymbolResolutionStrategy } from "../../../../../contracts/types/language.js";
+import { lookupGoSymbolsByShortName } from "../go-symbol-lookup.js";
 import { goImportPackageDir, goPackageDirOf, type ResolverConfig } from "./shared.js";
 
 /**
@@ -26,11 +27,9 @@ export class GoGlobalShortNameSymbolResolutionStrategy implements SymbolResoluti
   attempt(call: CallRef, ctx: CallContext): SymbolResolutionOutcome {
     if (call.receiver) return CONTINUE;
     const scope = this.bareCallPackageDirs(ctx);
-    const candidates = ctx.symbolTable
-      .lookupByShortName(call.member)
-      .filter(
-        (def) => def.symbolId === call.member && def.relPath.endsWith(".go") && scope.has(goPackageDirOf(def.relPath)),
-      );
+    const candidates = lookupGoSymbolsByShortName(ctx, call.member).filter(
+      (def) => def.symbolId === call.member && scope.has(goPackageDirOf(def.relPath)),
+    );
     const target = pickSingleCandidate(candidates, this.cfg.mode);
     if (target) return resolved({ targetRelPath: target.relPath, targetSymbolId: target.symbolId });
     return CONTINUE;
