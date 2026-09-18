@@ -16,10 +16,18 @@
  *                          guard: resolves or drops, bd tea-rags-mcp-e6xx)
  *   2. returnTypeBinding (Step 0b — `localCallBindings` + `functionReturnTypes`
  *                          with the concrete-type gate, bd tea-rags-mcp-6g9c)
- *   3. importMatch       (Step 1 — receiver matches an import's last segment)
- *   4. receiverDrop      (Step 2 — receiver matched nothing; terminal drop,
+ *   3. receiverChain     (Step 0c — dotted receiver typed through struct
+ *                          fields; guard: resolves or drops, bd tea-rags-mcp-e6xx)
+ *   4. importMatch       (Step 1 — receiver matches an import's last segment)
+ *   5. receiverDrop      (Step 2 — receiver matched nothing; terminal drop,
  *                          bd tea-rags-mcp-m46z)
- *   5. globalShortName   (Step 3 — no receiver: global short-name fallback)
+ *   6. globalShortName   (Step 3 — no receiver: global short-name fallback)
+ *
+ * The three typed passes share `resolveByLocalType`, so method promotion
+ * through struct embedding (`engine.GET` → `RouterGroup#GET`) applies to each.
+ * `receiverChain` sits before `importMatch` only for reading order: it answers
+ * dotted receivers alone, and a dotted receiver never equals an import's last
+ * segment, so the two passes never compete for a call.
  *
  * Go imports are package paths ("foo/bar"). Without GOPATH / module config we
  * can only resolve project-local packages via basename heuristic. Cross-module
@@ -41,6 +49,7 @@ import {
   GoGlobalShortNameSymbolResolutionStrategy,
   GoImportMatchSymbolResolutionStrategy,
   GoLocalBindingSymbolResolutionStrategy,
+  GoReceiverChainSymbolResolutionStrategy,
   GoReceiverDropSymbolResolutionStrategy,
   GoReturnTypeBindingSymbolResolutionStrategy,
   type ResolverConfig,
@@ -62,6 +71,7 @@ export class GoCallResolver implements CallResolver {
     this.strategies = [
       new GoLocalBindingSymbolResolutionStrategy(cfg),
       new GoReturnTypeBindingSymbolResolutionStrategy(cfg),
+      new GoReceiverChainSymbolResolutionStrategy(cfg),
       new GoImportMatchSymbolResolutionStrategy(cfg),
       new GoReceiverDropSymbolResolutionStrategy(cfg),
       new GoGlobalShortNameSymbolResolutionStrategy(cfg),
