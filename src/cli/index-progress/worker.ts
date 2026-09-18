@@ -161,11 +161,15 @@ export async function runIndexWorker(
   // enrichment, so the supervisor's default mode can print it and detach.
   const earlyStatus = await app.getIndexStatus(path);
   const earlyCodegraphSizeBytes = resolveCodegraphSizeBytes(earlyStatus.collectionName);
+  // The seed outcome is a fact of THIS run, like its enrichment metrics: status
+  // reads never carry it, so it rides every status message from here.
+  const worktreeSeed = indexStats.worktreeSeed ? { worktreeSeed: indexStats.worktreeSeed } : {};
   send({
     type: "status",
     status: {
       ...earlyStatus,
       enrichmentMetrics: indexStats.enrichmentMetrics,
+      ...worktreeSeed,
       ...(earlyCodegraphSizeBytes !== undefined ? { codegraphSizeBytes: earlyCodegraphSizeBytes } : {}),
     },
   });
@@ -187,6 +191,7 @@ export async function runIndexWorker(
   const enrichedFinalStatus: IndexStatus = {
     ...finalStatus,
     enrichmentMetrics: indexStats.enrichmentMetrics,
+    ...worktreeSeed,
     ...(finalCodegraphSizeBytes !== undefined ? { codegraphSizeBytes: finalCodegraphSizeBytes } : {}),
   };
   send({ type: "status", status: enrichedFinalStatus });

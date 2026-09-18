@@ -4,7 +4,12 @@
  * string. Mirrors the styling conventions of `cli/prime/format.ts`.
  */
 
-import type { EnrichmentLevelHealth, EnrichmentMetrics, IndexStatus } from "../../core/api/public/index.js";
+import {
+  formatWorktreeSeedReport,
+  type EnrichmentLevelHealth,
+  type EnrichmentMetrics,
+  type IndexStatus,
+} from "../../core/api/public/index.js";
 import type { Colorizer } from "../infra/color.js";
 import type { EnrichmentOutcome } from "./ipc-protocol.js";
 
@@ -86,6 +91,13 @@ export function formatIndexStatus(status: IndexStatus, colors: Colorizer, opts?:
     lines.push(`  total       ${m.totalDurationMs}ms`);
   }
 
+  // Seed outcome of a first index (injected from IndexStats like the metrics above).
+  const seedLines = status.worktreeSeed ? formatWorktreeSeedReport(status.worktreeSeed) : [];
+  if (seedLines.length > 0) {
+    lines.push(colors.bold("Worktree seed"));
+    for (const line of seedLines) lines.push(`  ${line}`);
+  }
+
   return lines.join("\n");
 }
 
@@ -160,6 +172,10 @@ export function formatIndexStatusJson(status: IndexStatus, extra: FormatIndexSta
       prefetchDurationMs: m.prefetchDurationMs,
       chunkChurnDurationMs: m.chunkChurnDurationMs,
     };
+  }
+
+  if (status.worktreeSeed) {
+    base.worktreeSeed = status.worktreeSeed;
   }
 
   return base;
