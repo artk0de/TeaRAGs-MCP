@@ -1,5 +1,6 @@
 import type { PhysicalCollectionName } from "../../../contracts/types/collection-identity.js";
 import { physicalCollectionNameFromDaemonRequest } from "../../../infra/collection-name.js";
+import { CodegraphDaemonRequestAbortedError } from "../errors.js";
 import type { CollectionGraphHandle, GraphDbClientPool } from "../pool.js";
 import { getBuildFingerprint } from "./build-fingerprint.js";
 import type { DaemonMemoryGovernor } from "./memory-governor.js";
@@ -66,9 +67,14 @@ export class CodegraphDaemonServer {
     return handle;
   }
 
-  async handle(req: DaemonRequest): Promise<DaemonResponse> {
+  /**
+   * `signal` is the requesting connection's, aborted when its socket closes
+   * (bd tea-rags-mcp-f924y). The transport always passes one; a caller that
+   * does not is treated as a connection that never closes.
+   */
+  async handle(req: DaemonRequest, signal?: AbortSignal): Promise<DaemonResponse> {
     try {
-      const result = await this.dispatch(req);
+      const result = await this.dispatch(req, signal);
       return { id: req.id, ok: true, result };
     } catch (err) {
       const e = err instanceof Error ? err : new Error(String(err));
@@ -76,7 +82,45 @@ export class CodegraphDaemonServer {
     }
   }
 
-  private async dispatch(req: DaemonRequest): Promise<unknown> {
+  /**
+   * Tail of each collection's write queue. Writes to one collection already run
+   * one at a time — they share the collection's single DuckDB connection and its
+   * transaction queue — so admitting them here, in arrival order, costs nothing
+   * and gives the daemon the one point where a write has not started yet.
+   */
+  private readonly writeTails = new Map<PhysicalCollectionName, Promise<void>>();
+
+  /**
+   * Run a write once every earlier write to the collection has settled — and
+   * drop it instead, with `CodegraphDaemonRequestAbortedError`, when its
+   * connection closed while it waited (bd tea-rags-mcp-f924y). A killed CLI
+   * worker used to leave its queued writes running for nobody, ahead of the
+   * next session's.
+   */
+  private async admitWrite<T>(
+    collection: PhysicalCollectionName,
+    op: string,
+    signal: AbortSignal | undefined,
+    write: () => Promise<T>,
+  ): Promise<T> {
+    const previous = this.writeTails.get(collection) ?? Promise.resolve();
+    let finished!: () => void;
+    const settled = new Promise<void>((resolve) => {
+      finished = resolve;
+    });
+    const tail = previous.then(async () => settled);
+    this.writeTails.set(collection, tail);
+    try {
+      await previous;
+      if (signal?.aborted) throw new CodegraphDaemonRequestAbortedError(op);
+      return await write();
+    } finally {
+      finished();
+      if (this.writeTails.get(collection) === tail) this.writeTails.delete(collection);
+    }
+  }
+
+  private async dispatch(req: DaemonRequest, signal: AbortSignal | undefined): Promise<unknown> {
     // `req.op` is typed, but the wire is not: an op this build does not know
     // arrives as a plain string and must fall through to the same error the
     // switch's `default` produced. `hasOwn`, so a prototype key such as
@@ -96,8 +140,13 @@ export class CodegraphDaemonServer {
 
     // The client held a PhysicalCollectionName; the wire erased the brand.
     const collection = physicalCollectionNameFromDaemonRequest(p.collection);
-    const { graphDb } =
-      command.access === "write" ? await this.acquireForWrite(collection) : await this.pool.acquire(collection);
-    return command.run(graphDb, p);
+    if (command.access === "write") {
+      return this.admitWrite(collection, req.op, signal, async () => {
+        const { graphDb } = await this.acquireForWrite(collection);
+        return command.run(graphDb, p, signal);
+      });
+    }
+    const { graphDb } = await this.pool.acquire(collection);
+    return command.run(graphDb, p, signal);
   }
 }

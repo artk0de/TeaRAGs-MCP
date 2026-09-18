@@ -50,7 +50,15 @@ export interface DaemonOpContext {
  * - `daemon` — no handle at all; the op acts on the daemon itself
  */
 export type DaemonOpCommand =
-  | { readonly access: "read" | "write"; readonly run: (graphDb: GraphDbClient, p: DaemonOpParams) => Promise<unknown> }
+  | {
+      readonly access: "read" | "write";
+      /**
+       * `signal` aborts once the requesting connection closes (bd
+       * tea-rags-mcp-f924y). Only an op long enough to be worth stopping
+       * midway reads it; the server itself drops a write that has not started.
+       */
+      readonly run: (graphDb: GraphDbClient, p: DaemonOpParams, signal?: AbortSignal) => Promise<unknown>;
+    }
   | { readonly access: "daemon"; readonly run: (ctx: DaemonOpContext, p: DaemonOpParams) => Promise<unknown> };
 
 /**
@@ -61,11 +69,13 @@ export type DaemonOpCommand =
 export type DaemonOpCommandTable = Readonly<Partial<Record<DaemonOp, DaemonOpCommand>>>;
 
 /** A write op: governed handle, and the wire result is always a `null` ack. */
-function write(run: (graphDb: GraphDbClient, p: DaemonOpParams) => Promise<void>): DaemonOpCommand {
+function write(
+  run: (graphDb: GraphDbClient, p: DaemonOpParams, signal?: AbortSignal) => Promise<void>,
+): DaemonOpCommand {
   return {
     access: "write",
-    run: async (graphDb, p) => {
-      await run(graphDb, p);
+    run: async (graphDb, p, signal) => {
+      await run(graphDb, p, signal);
       return null;
     },
   };
@@ -155,7 +165,9 @@ export const DAEMON_OP_COMMANDS: Readonly<Record<DaemonOp, DaemonOpCommand>> = {
   rebuildEdgeFileTargetIndex: write(async (graphDb) => graphDb.rebuildEdgeFileTargetIndex()),
   recordRunStats: write(async (graphDb, p) => graphDb.recordRunStats(p.rows as ResolveRunStatsRow[])),
   recordFileResolveStats: write(async (graphDb, p) => graphDb.recordFileResolveStats(p.write as FileResolveStatsWrite)),
-  computeAndPersistCyclesAndSignals: write(async (graphDb) => computeAndPersistCyclesAndSignals(graphDb)),
+  computeAndPersistCyclesAndSignals: write(async (graphDb, _p, signal) =>
+    computeAndPersistCyclesAndSignals(graphDb, signal),
+  ),
   // bd tea-rags-mcp-a2ddb — the baseline the next run's drift diff reads. A
   // write, so it goes through the governed handle like every other one.
   refreshSymbolSignalsPrev: write(async (graphDb) => graphDb.refreshSymbolSignalsPrev()),

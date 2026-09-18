@@ -217,6 +217,27 @@ export class CodegraphDaemonUnreachableError extends InfraError {
 }
 
 /**
+ * The daemon stopped a request because the connection that sent it closed
+ * (bd tea-rags-mcp-f924y) — a write still queued behind another client's, or a
+ * graph analysis at its next phase boundary. Nobody reads the response of a
+ * closed connection, so this never reaches a client; it exists so the daemon's
+ * never-throw envelope names why the op did not run. Deliberately outside
+ * `CodegraphUnavailableError`: it says nothing about whether the store is up.
+ */
+export class CodegraphDaemonRequestAbortedError extends InfraError {
+  constructor(op: string) {
+    super({
+      code: "INFRA_CODEGRAPH_DAEMON_REQUEST_ABORTED",
+      message: `Codegraph daemon dropped "${op}": the client connection that sent it closed`,
+      hint:
+        "The requesting process exited or closed its socket before the op ran to completion. " +
+        "The next index run redoes the work; nothing needs to be done by hand.",
+      httpStatus: 499,
+    });
+  }
+}
+
+/**
  * The codegraph store cannot be reached from this process right now: the daemon
  * runs another build (stale / skewed), is wedged or unreachable, or the DuckDB
  * file will not open (lock held, unreadable). One family, so a consumer whose
