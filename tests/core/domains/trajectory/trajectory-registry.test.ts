@@ -188,7 +188,12 @@ describe("TrajectoryRegistry (Trajectory interface)", () => {
 
   // --- buildFilter ---
 
-  it("builds filter using default chunk level", () => {
+  // Rewritten for tea-rags-mcp-9mwny: the registry used to default `level` to
+  // "chunk" and pass it to EVERY descriptor, so a descriptor's own default
+  // (taskId → file, codegraph minFanIn → file) never applied. Invariant now:
+  // no level given → the descriptor receives none and its own default rules.
+  it("passes no level when none is given, so each descriptor's own default applies", () => {
+    const received: (string | undefined)[] = [];
     const filters: FilterDescriptor[] = [
       {
         param: "author",
@@ -200,17 +205,31 @@ describe("TrajectoryRegistry (Trajectory interface)", () => {
         param: "minAge",
         description: "Min age",
         type: "number",
-        toCondition: (v, level) => ({ must: [{ key: `git.${level}.ageDays`, range: { gte: v as number } }] }),
+        toCondition: (v, level = "chunk") => ({
+          must: [{ key: `git.${level}.ageDays`, range: { gte: v as number } }],
+        }),
+      },
+      {
+        param: "ticket",
+        description: "Ticket",
+        type: "string",
+        toCondition: (v, level) => {
+          received.push(level);
+          return { must: [{ key: `git.${level ?? "file"}.taskIds`, match: { any: [v as string] } }] };
+        },
       },
     ];
     const registry = new TrajectoryRegistry();
     registry.register(mockTrajectory({ key: "git", filters }));
 
-    const filter = registry.buildFilter({ author: "alice", minAge: 30 });
+    const filter = registry.buildFilter({ author: "alice", minAge: 30, ticket: "T-1" });
     expect(filter).toBeDefined();
-    expect(filter!.must).toHaveLength(2);
-    expect(filter!.must![0]).toEqual({ key: "git.file.recentDominantAuthor", match: { value: "alice" } });
-    expect(filter!.must![1]).toEqual({ key: "git.chunk.ageDays", range: { gte: 30 } });
+    expect(filter!.must).toEqual([
+      { key: "git.file.recentDominantAuthor", match: { value: "alice" } },
+      { key: "git.chunk.ageDays", range: { gte: 30 } },
+      { key: "git.file.taskIds", match: { any: ["T-1"] } },
+    ]);
+    expect(received).toEqual([undefined]);
   });
 
   it("builds filter with explicit file level", () => {

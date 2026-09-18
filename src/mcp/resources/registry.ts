@@ -229,8 +229,9 @@ export function buildFiltersDoc(): string {
   md += "log window (TRAJECTORY_GIT_LOG_MAX_AGE_MONTHS); `blameDominantAuthor*` = who owns ";
   md += "the live lines in HEAD via git blame. Use the latter for true ownership / silo detection.\n\n";
   md += "**⚠ Filter level:** `level` does two things. (1) Scope of level-aware typed filters: ";
-  md += "`minAgeDays` / `maxAgeDays` / `minCommitCount` / `taskId` read `git.chunk.*` unless effective ";
-  md += 'level `"file"` (explicit `level`, else rerank preset `signalLevel`). `modifiedAfter` / ';
+  md += "effective level (explicit `level`, else rerank preset `signalLevel`) re-scopes all of them; ";
+  md += "unset → each filter's default: `minAgeDays` / `maxAgeDays` / `minCommitCount` → `git.chunk.*`, ";
+  md += "`taskId` → `git.file.*`, codegraph `minFanIn` / `minFanOut` → file. `modifiedAfter` / ";
   md += "`modifiedBefore` always read `git.file.lastModifiedAt`, any `level`. (2) Result granularity: ";
   md += '`level: "file"` → one result per file (`payload.members`). `git.chunk.ageDays` absent on ';
   md += "chunks with no commit in chunk churn walk (all doc chunks) → chunk age filters drop them. ";

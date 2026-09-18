@@ -174,10 +174,14 @@ export class TrajectoryRegistry {
    * exists in `params` with a defined, non-null value, calls
    * `filter.toCondition(value, level)` and collects conditions into `must`.
    *
-   * @param level - Payload level for level-aware filters (default: "chunk")
+   * @param level - Payload level for level-aware filters. Omitted → each
+   *   descriptor receives none and applies its OWN default (taskId and
+   *   codegraph minFanIn/minFanOut → file, age/commit filters → chunk). A
+   *   registry-wide default here would silently override those per-descriptor
+   *   defaults (tea-rags-mcp-9mwny).
    * @returns `{ must: [...conditions] }` or `undefined` if no conditions generated
    */
-  buildFilter(params: Record<string, unknown>, level: FilterLevel = "chunk"): QdrantFilter | undefined {
+  buildFilter(params: Record<string, unknown>, level?: FilterLevel): QdrantFilter | undefined {
     const allFilters = this.getAllFilters();
     const mustConditions: QdrantFilterCondition[] = [];
     const mustNotConditions: QdrantFilterCondition[] = [];
@@ -207,7 +211,7 @@ export class TrajectoryRegistry {
   buildMergedFilter(
     typedParams: Record<string, unknown>,
     rawFilter?: Record<string, unknown>,
-    level: FilterLevel = "chunk",
+    level?: FilterLevel,
   ): Record<string, unknown> | undefined {
     const typed = this.buildFilter(typedParams, level);
     return mergeQdrantFilters(typed, rawFilter as QdrantFilter | undefined) as Record<string, unknown> | undefined;

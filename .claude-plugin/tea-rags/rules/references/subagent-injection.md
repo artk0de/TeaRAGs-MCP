@@ -109,8 +109,8 @@ for raw `filter`:**
   `git.file.ageDays` BUT also one result per file. Old code, chunk results →
   `modifiedBefore`, not chunk-level `minAgeDays`
 - Drop one-offs: `minCommitCount: 5` (or higher)
-- Ticket linkage: `taskId: "JIRA-123"` (chunk's own commits; `level: "file"` →
-  any commit of the file, file-grouped results)
+- Ticket linkage: `taskId: "JIRA-123"` (any commit of the file, matches
+  git.file.taskIds; `level: "chunk"` → chunk's own commits)
 - Author dominance: `author: "Alice"` (blame-based)
 
 Raw `filter: { must: [...] }` only when typed fields cannot express it. For

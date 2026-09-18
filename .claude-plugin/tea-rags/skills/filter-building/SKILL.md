@@ -112,17 +112,18 @@ language added → update this table in lock-step with the matching block in
 
 `level` does TWO things at once — set it for one, get both.
 
-1. **Scope of level-aware typed filters.**
-   - `minAgeDays`, `maxAgeDays`, `minCommitCount`, `taskId` → `git.chunk.*`;
-     effective level `"file"` → `git.file.*`.
+1. **Scope of level-aware typed filters.** No effective level → each filter's
+   OWN default: `minAgeDays`, `maxAgeDays`, `minCommitCount` → `git.chunk.*`;
+   `taskId` → `git.file.*`. Effective level set → every level-aware filter
+   follows it.
    - `modifiedAfter` / `modifiedBefore` → ALWAYS `git.file.lastModifiedAt`, any
      `level`. Never need `level: "file"`.
 2. **Result granularity.** `level: "file"` → one result per file
    (`payload.members` outline), git signals blended at file level only.
-   `"chunk"` → individual chunks.
+   `"chunk"` or none → individual chunks.
 
 Effective level = explicit `level`, else rerank preset `signalLevel` (e.g.
-`ownership`, `proven` = file), else chunk. `search_code` has no `level` param —
+`ownership`, `proven` = file), else none. `search_code` has no `level` param —
 only its preset sets it.
 
 **NEVER set `level: "file"` just to make a time filter file-level** → unwanted
@@ -148,17 +149,17 @@ absent). Point not re-enriched keeps old `ageDays`; `modifiedAfter` /
 
 ## Sugar filter pairing examples
 
-| Sugar field                        | Resolves to                                           | Pair with                                  |
-| ---------------------------------- | ----------------------------------------------------- | ------------------------------------------ |
-| `minAgeDays` / `maxAgeDays`        | `git.<effective level>.ageDays` range (chunk default) | `level: "file"` only for a file list       |
-| `minCommitCount`                   | `git.<effective level>.commitCount` lower bound       | drop one-off scripts                       |
-| `modifiedAfter` / `modifiedBefore` | `git.file.lastModifiedAt` range, at any level         | nothing — no `level` needed                |
-| `author`                           | blame-dominant author equals                          | ownership analysis                         |
-| `taskId`                           | `git.<effective level>.taskIds` array contains        | `level: "file"` for any commit of the file |
-| `testFile`                         | `"only" \| "exclude" \| "include"`                    | scope to prod vs test                      |
-| `documentation`                    | `"only" \| "exclude" \| "include"`                    | scope to docs vs code                      |
-| `fileExtension`                    | one or more extensions                                | language-adjacent constraints              |
-| `language`                         | one language                                          | polyglot scoping                           |
+| Sugar field                        | Resolves to                                           | Pair with                                |
+| ---------------------------------- | ----------------------------------------------------- | ---------------------------------------- |
+| `minAgeDays` / `maxAgeDays`        | `git.<effective level>.ageDays` range (chunk default) | `level: "file"` only for a file list     |
+| `minCommitCount`                   | `git.<effective level>.commitCount` (chunk default)   | drop one-off scripts                     |
+| `modifiedAfter` / `modifiedBefore` | `git.file.lastModifiedAt` range, at any level         | nothing — no `level` needed              |
+| `author`                           | blame-dominant author equals                          | ownership analysis                       |
+| `taskId`                           | `git.<effective level>.taskIds` (file default)        | `level: "chunk"` for chunk's own commits |
+| `testFile`                         | `"only" \| "exclude" \| "include"`                    | scope to prod vs test                    |
+| `documentation`                    | `"only" \| "exclude" \| "include"`                    | scope to docs vs code                    |
+| `fileExtension`                    | one or more extensions                                | language-adjacent constraints            |
+| `language`                         | one language                                          | polyglot scoping                         |
 
 Concrete payload examples:
 

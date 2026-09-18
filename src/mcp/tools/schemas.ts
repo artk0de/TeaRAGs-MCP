@@ -237,7 +237,8 @@ function typedFilterFields() {
       .string()
       .optional()
       .describe(
-        "Filter by task/issue ID from commit messages. Supports JIRA (TD-1234), GitHub (#567), Azure DevOps (AB#890).",
+        "Filter by task/issue ID from commit messages. Supports JIRA (TD-1234), GitHub (#567), Azure DevOps (AB#890). " +
+          "Level-aware: any commit of the file by default; level 'chunk' → the chunk's own commits.",
       ),
     symbolId: z
       .string()
@@ -319,8 +320,9 @@ function levelField() {
           "'file' = rank files as aggregated units — use for tech debt and ownership analysis; " +
           "each result carries payload.members, an outline of what matched inside that file " +
           "(markdown files get their heading TOC), in the same format find_symbol(relativePath) returns. " +
-          "Also sets payload scope of level-aware filters (minAgeDays, maxAgeDays, minCommitCount, taskId: " +
-          "git.chunk.* unless effective level 'file'); modifiedAfter/modifiedBefore file-level regardless. " +
+          "Also sets payload scope of level-aware filters; unset → each filter's own default " +
+          "(minAgeDays/maxAgeDays/minCommitCount: chunk; taskId/minFanIn/minFanOut: file). " +
+          "modifiedAfter/modifiedBefore file-level regardless. " +
           "Default: determined by preset signalLevel. Explicit value overrides preset.",
       ),
   };
