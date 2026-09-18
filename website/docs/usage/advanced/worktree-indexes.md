@@ -125,6 +125,11 @@ reports no drift that a fresh index would not.
 Runtime settings — endpoints, pool sizes, batch sizes, timeouts — do not take
 part: they change how a run executes, not what it writes.
 
+A sibling whose registry entry carries no env stamp at all (an entry written
+before tea-rags recorded one) is refused with `index-env`: none of its index
+settings can be compared, so the run indexes from scratch instead. Any index
+run on that sibling records the stamp and makes it eligible again.
+
 The sibling is claimed for the duration of the clone the same way an index run
 claims its own collection (in-process set, the `<collection>.indexing.lock`
 file, the Qdrant in-flight markers). A sibling that is being indexed, or whose

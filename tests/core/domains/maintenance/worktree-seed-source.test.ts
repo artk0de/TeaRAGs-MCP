@@ -171,6 +171,20 @@ describe("checkWorktreeSeedCompatibility", () => {
     expect(rejection?.detail).toContain("CODEGRAPH_ENABLED");
   });
 
+  it("rejects a sibling whose registry entry records no env stamp — no index setting can be compared", () => {
+    // Accepting it would clone data built with an unknown chunk size, hybrid
+    // flag and git windows; a fresh index is the only safe answer.
+    const rejection = checkWorktreeSeedCompatibility(source({ env: undefined, tuning: undefined }), build());
+    expect(rejection?.reason).toBe("index-env");
+    expect(rejection?.detail).toContain("no env stamp");
+  });
+
+  it("does not compare env when this run records no env snapshot of its own", () => {
+    expect(
+      checkWorktreeSeedCompatibility(source({ env: undefined, tuning: undefined }), build({ envSnapshot: undefined })),
+    ).toBeUndefined();
+  });
+
   it("reads a legacy sibling's env from the deprecated `tuning` field", () => {
     const rejection = checkWorktreeSeedCompatibility(
       source({ env: undefined, tuning: { INGEST_CHUNK_SIZE: "4000" } }),
