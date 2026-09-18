@@ -124,6 +124,43 @@ describe("extractFromGoFile — call dispatch", () => {
   });
 });
 
+// bd tea-rags-mcp-e6xx — a generic function called with ONE value argument,
+// `pair[int](x)`, parses as a `type_conversion_expression` (the grammar cannot
+// tell it from a conversion to an instantiated generic type), so the call was
+// never collected. It is emitted as a bare call whose member is the
+// instantiated name as written — the same shape an index-expression callee
+// (`getTyped[string](c, key)`) already has — and the resolver decides whether
+// the operand names a generic declaration. Conversions to a non-generic
+// composite type (`[]byte(s)`, `map[string]int(m)`) stay uncollected, as before.
+describe("extractFromGoFile — single-argument generic calls", () => {
+  function callsOf(body: string) {
+    const src = ["package main", "func main() {", body, "}", ""].join("\n");
+    return extractFromGoFile({
+      tree: parse(src),
+      code: src,
+      relPath: "main.go",
+      language: "go",
+      chunks: [{ symbolId: "main", scope: [], startLine: 2, endLine: 4 }],
+    }).chunks[0].calls.map((c) => [c.receiver, c.member]);
+  }
+
+  it("collects `pair[int](x)` as a bare call of `pair[int]`", () => {
+    expect(callsOf("\t_ = pair[int](x)")).toEqual([[null, "pair[int]"]]);
+  });
+
+  it("collects several type arguments the same way", () => {
+    expect(callsOf("\t_ = pair[int, string](x)")).toEqual([[null, "pair[int, string]"]]);
+  });
+
+  it("collects a package-qualified one with its qualifier, for the resolver to split", () => {
+    expect(callsOf("\t_ = pkg.Pair[int](x)")).toEqual([[null, "pkg.Pair[int]"]]);
+  });
+
+  it("leaves a conversion to a non-generic type uncollected", () => {
+    expect(callsOf("\t_ = []byte(s)\n\t_ = map[string]int(m)")).toEqual([]);
+  });
+});
+
 // bd tea-rags-mcp-e6xx — per-chunk localBindings (receiver + parameters).
 // The resolver consumes `ctx.localBindings[receiver]` to turn a typed-call
 // like `c.JSON(...)` inside `(c *Context) Render(...)` into the qualified

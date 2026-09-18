@@ -73,6 +73,15 @@ describe("GoCallResolver — explicit generic instantiation", () => {
     expect(resolver.resolve(bare("handlers[i]"), local)).toBeNull();
   });
 
+  it("resolves a single-argument call `pair[int](x)` the walker collects from a type conversion", () => {
+    const t = new InMemoryGlobalSymbolTable();
+    t.upsertFile("pair.go", [sym("pair", "pair.go")]);
+    expect(
+      resolver.resolve({ callText: "pair[int](x)", receiver: null, member: "pair[int]", startLine: 3 }, ctx(t))
+        ?.targetSymbolId,
+    ).toBe("pair");
+  });
+
   it("NEGATIVE: two same-named declarations in the package (build-tag twins) stay ambiguous", () => {
     const t = new InMemoryGlobalSymbolTable();
     t.upsertFile("typed.go", [sym("getTyped", "typed.go")]);

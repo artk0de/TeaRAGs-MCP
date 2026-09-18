@@ -158,6 +158,20 @@ function collectGoImports(root: AstNode): ImportRef[] {
 function collectGoCalls(root: AstNode): CallRef[] {
   const out: CallRef[] = [];
   walk(root, (node) => {
+    // bd tea-rags-mcp-e6xx — a generic function called with ONE value argument
+    // (`pair[int](x)`, `pkg.Pair[int](x)`) parses as a conversion to an
+    // instantiated generic type; the grammar cannot tell the two apart. It is
+    // emitted as a bare call whose member is the instantiated name as written —
+    // the shape an index-expression callee (`getTyped[string](c, key)`) already
+    // has — and the resolver decides whether the operand names a generic
+    // declaration. A conversion to any other type (`[]byte(s)`) is left alone.
+    if (node.type === "type_conversion_expression") {
+      const type = node.childForFieldName("type");
+      if (type?.type === "generic_type") {
+        out.push({ callText: node.text, receiver: null, member: type.text, startLine: node.startPosition.row + 1 });
+      }
+      return;
+    }
     if (node.type !== "call_expression") return;
     const fn = node.childForFieldName("function");
     if (!fn) return;
