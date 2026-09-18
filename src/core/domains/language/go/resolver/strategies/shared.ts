@@ -23,6 +23,7 @@ import {
 } from "../../../../../contracts/types/codegraph.js";
 import type { SymbolIdComposer } from "../../../../../contracts/types/language.js";
 import { goImportBoundName } from "../../import-binding.js";
+import { preferGoDefaultBuild } from "../go-build-constraints.js";
 import type { GoModuleMap, GoModuleMapCache } from "../go-module-map.js";
 import { lookupGoSymbols, lookupGoSymbolsByShortName } from "../go-symbol-lookup.js";
 import { selectGoMember } from "../struct-member-selection.js";
@@ -58,10 +59,10 @@ export function resolveByLocalType(
 ): SymbolResolutionTarget | null {
   const instanceForm = cfg.composer.compose(typeName, member, { methodKind: "instance" });
   const staticForm = cfg.composer.compose(typeName, member, { methodKind: "static" });
-  const instanceHits = lookupGoSymbols(ctx, instanceForm);
+  const instanceHits = preferGoDefaultBuild(lookupGoSymbols(ctx, instanceForm), ctx);
   const instance = pickSingleCandidate(instanceHits, cfg.mode);
   if (instance) return { targetRelPath: instance.relPath, targetSymbolId: instance.symbolId };
-  const staticHits = lookupGoSymbols(ctx, staticForm);
+  const staticHits = preferGoDefaultBuild(lookupGoSymbols(ctx, staticForm), ctx);
   const staticHit = pickSingleCandidate(staticHits, cfg.mode);
   if (staticHit) return { targetRelPath: staticHit.relPath, targetSymbolId: staticHit.symbolId };
   if (instanceHits.length > 0 || staticHits.length > 0) return null;
@@ -144,6 +145,6 @@ export function resolveImportedPackageMember(
   const candidates = lookupGoSymbolsByShortName(ctx, member).filter(
     (def) => def.symbolId === member && goPackageDirOf(def.relPath) === packageDir,
   );
-  const target = pickSingleCandidate(candidates, cfg.mode);
+  const target = pickSingleCandidate(preferGoDefaultBuild(candidates, ctx), cfg.mode);
   return target ? { targetRelPath: target.relPath, targetSymbolId: target.symbolId } : null;
 }

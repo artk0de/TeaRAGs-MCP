@@ -7,6 +7,7 @@ import {
 } from "../../../../../contracts/types/codegraph.js";
 import type { SymbolResolutionOutcome, SymbolResolutionStrategy } from "../../../../../contracts/types/language.js";
 import { goLocalAt } from "../../local-scope.js";
+import { preferGoDefaultBuild } from "../go-build-constraints.js";
 import { lookupGoSymbols } from "../go-symbol-lookup.js";
 import { goPackageDirOf, resolveImportedPackageMember, type ResolverConfig } from "./shared.js";
 
@@ -40,7 +41,8 @@ const GO_INDEXED_CALLEE = /^(?:([\p{L}_][\p{L}\p{N}_]*)\.)?([\p{L}_][\p{L}\p{N}_
  * A local in effect under the operand's name (the bare name, or the qualifier)
  * shadows the declaration or the package — the walker records one for every
  * local the chunk calls through this way, a slice or func parameter included;
- * two declarations (build-tag twins) stay ambiguous. A call the walker tagged
+ * build-tag twins narrow to the one the default build compiles
+ * (`preferGoDefaultBuild`), and any other two declarations stay ambiguous. A call the walker tagged
  * `dynamicSend` has a VALUE in its brackets (`loadAll[0]()`) and is no
  * instantiation at all.
  *
@@ -68,7 +70,7 @@ export class GoGenericInstantiationSymbolResolutionStrategy implements SymbolRes
   private samePackageDeclaration(name: string, ctx: CallContext): SymbolResolutionTarget | null {
     const callerPackage = goPackageDirOf(ctx.callerFile);
     const candidates = lookupGoSymbols(ctx, name).filter((def) => goPackageDirOf(def.relPath) === callerPackage);
-    const target = pickSingleCandidate(candidates, this.cfg.mode);
+    const target = pickSingleCandidate(preferGoDefaultBuild(candidates, ctx), this.cfg.mode);
     return target ? { targetRelPath: target.relPath, targetSymbolId: target.symbolId } : null;
   }
 }

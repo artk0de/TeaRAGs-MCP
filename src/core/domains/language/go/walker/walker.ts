@@ -88,7 +88,27 @@ export function extractFromGoFile(input: GoExtractInput): FileExtraction {
     fileScope: [],
   };
   if (Object.keys(functionReturnTypes).length > 0) extraction.functionReturnTypes = functionReturnTypes;
+  const buildConstraint = readGoBuildConstraint(input.tree.rootNode);
+  if (buildConstraint !== undefined) extraction.buildConstraint = buildConstraint;
   return extraction;
+}
+
+const GO_BUILD_DIRECTIVE = /^\/\/go:build[ \t]+/;
+
+/**
+ * The file's `//go:build` expression, verbatim (bd tea-rags-mcp-e6xx): a
+ * constraint is a line comment ABOVE the package clause, so the scan stops at
+ * the clause and a directive-shaped comment below it is ordinary text. The
+ * resolver evaluates it to tell build-tag twins apart.
+ */
+function readGoBuildConstraint(root: AstNode): string | undefined {
+  for (const node of root.children) {
+    if (node.type === "package_clause") return undefined;
+    if (node.type !== "comment" || !GO_BUILD_DIRECTIVE.test(node.text)) continue;
+    const expression = node.text.replace(GO_BUILD_DIRECTIVE, "").trim();
+    return expression === "" ? undefined : expression;
+  }
+  return undefined;
 }
 
 /**

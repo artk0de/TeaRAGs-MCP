@@ -63,6 +63,7 @@ const EXPECTED_POLICY = {
   instantiatedTypes: "batchOnly",
   ivarTypes: "batchOnly",
   classFieldCallResults: "batchOnly",
+  buildConstraintsByFile: "batchOnly",
   dispatchTables: "batchOnly",
   callbackParams: "batchOnly",
   knownTargetCallArgs: "batchOnly",

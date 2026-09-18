@@ -114,6 +114,11 @@ export const RUN_GLOBAL_MAP_PERSISTENCE = {
     policy: "batchOnly",
     reason: "rides walker 5's unreleased delta; an index without it resolves exactly as before",
   },
+  buildConstraintsByFile: {
+    policy: "batchOnly",
+    reason:
+      "Go build-tag twin tie-breaker (bd e6xx); an unwalked file's constraint reads as unknown, which keeps its twins ambiguous exactly as before the channel",
+  },
   dispatchTables: { policy: "batchOnly", reason: "measured zero recovered edges (bd 8qyax, bd 4yvms)" },
   callbackParams: { policy: "batchOnly", reason: "measured zero recovered edges (bd 8qyax, bd 4yvms)" },
   knownTargetCallArgs: { policy: "batchOnly", reason: "param family; measured zero recovered edges (bd 8qyax)" },

@@ -325,6 +325,17 @@ export interface FileExtraction {
    * no `from` import, and for languages whose walkers do not collect them.
    */
   moduleReexports?: readonly ModuleReexport[];
+  /**
+   * The file's build constraint as written (bd tea-rags-mcp-e6xx) — Go: the
+   * expression of the `//go:build` line above the package clause
+   * (`!nomsgpack`, `linux && amd64`). The resolver evaluates it to tell
+   * build-tag twins apart: two same-package declarations of one name, each
+   * compiled under a different tag set, of which the default build compiles one.
+   *
+   * Undefined for a file without one and for languages without file-level
+   * build constraints.
+   */
+  buildConstraint?: string;
 }
 
 /**

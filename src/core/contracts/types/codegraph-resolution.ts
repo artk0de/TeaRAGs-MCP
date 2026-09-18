@@ -280,6 +280,15 @@ export interface CallContext {
    */
   moduleReexports?: Record<string, readonly ModuleReexport[]>;
   /**
+   * `FileExtraction.buildConstraint` collected RUN-GLOBAL, keyed by relPath (bd
+   * tea-rags-mcp-e6xx). Go's resolver reads it only to break a tie between
+   * same-package declarations of one name that ALL carry a build constraint,
+   * preferring the one file the default build compiles. A file the run did not
+   * walk has no entry, which reads as "unknown" and keeps its twins ambiguous —
+   * the pre-channel answer.
+   */
+  buildConstraintsByFile?: Readonly<Record<string, string>>;
+  /**
    * Optional per-class Rails association map (`className → accessor →
    * modelType`) propagated from `FileExtraction.associationTypes`. The walker
    * consumes it directly to type compound-receiver chains into `localBindings`;

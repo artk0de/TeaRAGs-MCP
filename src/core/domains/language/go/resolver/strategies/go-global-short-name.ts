@@ -2,6 +2,7 @@ import { CONTINUE, resolved } from "../../../../../contracts/resolution.js";
 import { pickSingleCandidate, type CallContext, type CallRef } from "../../../../../contracts/types/codegraph.js";
 import type { SymbolResolutionOutcome, SymbolResolutionStrategy } from "../../../../../contracts/types/language.js";
 import { goLocalAt } from "../../local-scope.js";
+import { preferGoDefaultBuild } from "../go-build-constraints.js";
 import { lookupGoSymbolsByShortName } from "../go-symbol-lookup.js";
 import { goImportPackageDir, goPackageDirOf, type ResolverConfig } from "./shared.js";
 
@@ -16,9 +17,10 @@ import { goImportPackageDir, goPackageDirOf, type ResolverConfig } from "./share
  * root package's `responseWriter#WriteString`).
  *
  * `pickSingleCandidate(mode)` returns the sole hit (strict) or the first hit
- * (legacy `first` mode); two in-scope declarations — build-tag twins such as
- * gin's `binding.go` / `binding_nomsgpack.go` `validate` — stay ambiguous under
- * strict mode. A receiver-present call never reaches here — it CONTINUEs. A
+ * (legacy `first` mode). Build-tag twins — gin's `binding.go` /
+ * `binding_nomsgpack.go` `validate` — are first narrowed to the one the default
+ * build compiles (`preferGoDefaultBuild`); any other pair of in-scope
+ * declarations stays ambiguous under strict mode. A receiver-present call never reaches here — it CONTINUEs. A
  * non-decisive result also CONTINUEs; exhausting the chain returns null.
  *
  * A local in scope under the called name — `helper := func() {}; helper()`, a
@@ -37,7 +39,7 @@ export class GoGlobalShortNameSymbolResolutionStrategy implements SymbolResoluti
     const candidates = lookupGoSymbolsByShortName(ctx, call.member).filter(
       (def) => def.symbolId === call.member && scope.has(goPackageDirOf(def.relPath)),
     );
-    const target = pickSingleCandidate(candidates, this.cfg.mode);
+    const target = pickSingleCandidate(preferGoDefaultBuild(candidates, ctx), this.cfg.mode);
     if (target) return resolved({ targetRelPath: target.relPath, targetSymbolId: target.symbolId });
     return CONTINUE;
   }
