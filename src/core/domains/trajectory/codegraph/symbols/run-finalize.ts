@@ -139,9 +139,16 @@ export async function persistRunResolveStats(
   // the last real measurement (bd tea-rags-mcp-snbzk). It must NOT gate the
   // per-file write below — a file whose calls were all removed must replace its
   // rows with none, or the aggregate keeps counting calls that no longer exist.
+  //
+  // It decides PER LANGUAGE, the grain the table is replaced at (bd
+  // tea-rags-mcp-sgo8v). Run-wide, a call-free language was zeroed when it
+  // shared a run with one that had calls and kept when it ran alone — so under
+  // per-language affinity the table depended on how the collection was split.
   if (wholeCorpus) {
     const rows = runState.toResolveRunStatsRows();
-    if (rows.some((r) => r.attempted > 0)) await graphDb.recordRunStats(rows);
+    const measured = new Set(rows.filter((r) => r.attempted > 0).map((r) => r.language));
+    const replacing = rows.filter((r) => measured.has(r.language));
+    if (replacing.length > 0) await graphDb.recordRunStats(replacing);
   }
 
   // Every resolved file's rows, plus — for a whole-corpus run only — the
