@@ -27,20 +27,19 @@ test** — whenever project has DSL test chunks indexed:
 
 Correct filter (`chunkType: "test"`/`"test_setup"`, NOT file-level
 `testFile: "only"`) + correct rerank (`"proven"` — battle-tested patterns) +
-correct params (`filter: {}` — clears `proven`'s default
-`{ presets: "production" }`, which excludes EVERY test chunk → 0 results;
-`level: "chunk"` — `proven` is file-level and would regroup chunks per file;
-`metaOnly: false` to see actual test content) + correct ordering (search BEFORE
-draft) = core value.
+correct params (`level: "chunk"` — `proven` is file-level and would regroup
+chunks per file; `metaOnly: false` to see actual test content) + correct
+ordering (search BEFORE draft) = core value. No `filter` needed: the server
+skips `proven`'s production default when `chunkType` / `testFile` select tests
+(tea-rags server predating that → 0 results → add `filter: {}`).
 
 If `Skill(tea-rags:tests-as-context)` Step 0 preflight returns SKIP (DSL test
 chunks absent — primary language has no DSL test chunker; **currently supported:
 TypeScript (Vitest/Jest/Mocha) and Ruby (RSpec)** — see
 `src/core/domains/ingest/pipeline/chunker/hooks/<lang>/test-scope-chunker.ts`
 and `rspec-scope-chunker.ts` for canonical list), fall back to single
-`mcp__tea-rags__semantic_search` with `testFile: "only"` + `rerank: "proven"` +
-`filter: {}` and state "file-level fallback — DSL test chunks unavailable for
-this language".
+`mcp__tea-rags__semantic_search` with `testFile: "only"` + `rerank: "proven"`
+and state "file-level fallback — DSL test chunks unavailable for this language".
 
 > **Maintainers:** when new language gains DSL test chunker, update the
 > supported-languages list above AND the same lists in
@@ -90,9 +89,9 @@ intent: <Step 1 intent, focused on the SETUP shape this test will need>
 ```
 
 Recipe internally issues `mcp__tea-rags__semantic_search` with
-`chunkType: "test_setup"` + `rerank: "proven"` + `filter: {}` +
-`level: "chunk"` + `metaOnly: false` (limit 6), returns top-K setup chunks with
-file:line + content excerpt.
+`chunkType: "test_setup"` + `rerank: "proven"` + `level: "chunk"` +
+`metaOnly: false` (limit 6), returns top-K setup chunks with file:line + content
+excerpt.
 
 If recipe returns SKIP (DSL test chunks absent), fall back to ONE
 `mcp__tea-rags__semantic_search` call:
@@ -104,7 +103,6 @@ query:       <intent from Step 1>
 pathPattern: <pathHint optional>
 testFile:    "only"                ← FILE-LEVEL fallback when no DSL chunks
 rerank:      "proven"              ← stable + old + low-bugFix
-filter:      {}                    ← clears proven's production default (excludes tests)
 level:       "chunk"               ← proven is file-level; keep chunk content
 limit:       8
 metaOnly:    false
@@ -122,7 +120,6 @@ query:       <intent from Step 1>
 pathPattern: <pathHint optional>
 chunkType:   "test"                ← DSL leaf scenarios
 rerank:      "proven"              ← battle-tested conventions
-filter:      {}                    ← clears proven's production default (excludes tests)
 level:       "chunk"               ← proven is file-level; keep DSL leaves
 limit:       8
 metaOnly:    false
@@ -162,15 +159,11 @@ Do NOT pass:
 
 - `metaOnly: true` — need actual test body to extract conventions (mock setup,
   assertion style, helper calls); signal-only payload useless for TDD
-- `filter` with path conditions — `chunkType` handles granularity; path filters
-  restrict too tight. The ONLY filter to pass is the empty `filter: {}`: an
-  explicit `filter` REPLACES the preset default, `{}` clears it
-- omit `filter: {}` — `proven` then applies `{ presets: "production" }`
-  (`must_not isTest`) and both queries return 0 on ANY project; 0 here is the
-  missing clear, not "no existing tests"
+- `filter` on test file paths — `chunkType` handles granularity; path filters
+  restrict too tight
 
-If both queries return 0 results WITH `filter: {}` passed (no existing tests, or
-none matching area): report "no existing test patterns found — falling back to
+If both queries return 0 results (no existing tests, or none matching area):
+report "no existing test patterns found — falling back to
 `superpowers:test-driven-development` direct". Do NOT invent conventions.
 
 ## Step 3 — Extract pattern block
@@ -213,8 +206,8 @@ This wrapper does not replace it — grounds RED draft in local conventions.
 
 ## Red Flags — STOP and restart from Step 2
 
-- 0 results and `filter: {}` missing from the call → `proven`'s production
-  default excluded every test chunk; add `filter: {}` + `level: "chunk"`, redo
+- File-grouped results (`level: "file"` in the response) → `level: "chunk"`
+  missing; redo
 - "I know how tests look in this project" → run Step 2 anyway; memory stale
   across files
 - "First test of a new module, no patterns needed" → if project has ANY tests,

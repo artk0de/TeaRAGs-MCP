@@ -63,6 +63,15 @@ describe("SchemaBuilder.buildFilterSchema", () => {
     expect(schema.description).toContain("coreLogic");
   });
 
+  it("states when a rerank preset's default filter applies (tea-rags-mcp-9mwny)", () => {
+    const builder = new SchemaBuilder(createMockReranker(["production"]) as Reranker);
+    const description = builder.buildFilterSchema().description ?? "";
+
+    expect(description).toContain("default filter");
+    expect(description).toContain("{}");
+    expect(description).toContain('testFile "only"');
+  });
+
   it("omits the named-presets hint when no filter presets are registered", () => {
     const builder = new SchemaBuilder(createMockReranker([]) as Reranker);
     const schema = builder.buildFilterSchema();

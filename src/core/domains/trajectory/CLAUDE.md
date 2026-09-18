@@ -70,12 +70,13 @@ carry their own navigators.
   must never declare one.** `resolveFilterSpec`
   (`api/internal/ops/explore-ops.ts`): `effective = spec ?? presetDefault`, and
   an explicit `{}` clears the default outright. Typed params (`language`,
-  `minAgeDays`, `documentation`, …) AND on top of whichever won.
-  `RelevancePreset` ships no `filter`; `CriticalPathPreset`
-  (`composite/presets/critical-path.ts`) ships `{ presets: "production" }`. Why:
-  a preset's narrowing disappears the moment a caller passes any filter of their
-  own — the two do not compose — so a default filter on a general-purpose preset
-  changes every unqualified search.
+  `minAgeDays`, `documentation`, …) AND on top of whichever won — except that a
+  DEFAULT excluding what the typed params select (tests, docs, a chunk type) is
+  dropped (`presetDefaultExcludesCallerScope`, same file). `RelevancePreset`
+  ships no `filter`; `CriticalPathPreset` (`composite/presets/critical-path.ts`)
+  ships `{ presets: "production" }`. Why: a preset's narrowing disappears the
+  moment a caller passes any filter of their own — the two do not compose — so a
+  default filter on a general-purpose preset changes every unqualified search.
 - **`occur: "should"` compiles to a nested `must: [{ should: [...] }]`, never a
   top-level `should`.** `compileFilterPreset` buckets by `occur` and pushes one
   nested clause; worked example `git/filter-presets/panic-zone.ts`

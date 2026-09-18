@@ -346,6 +346,10 @@ export class ExploreOps {
    * which AND-merges it with the typed params. Collection stats (loaded by
    * `ensureStats` before this runs) feed the preset compiler's adaptive
    * percentile thresholds.
+   *
+   * A preset DEFAULT that excludes what the caller's typed params explicitly
+   * select (tests, docs, a chunk type) is dropped — see
+   * `presetDefaultExcludesCallerScope`. An explicit `filter` is never touched.
    */
   private buildFilter(
     request: Record<string, unknown> | { filter?: Record<string, unknown> },
@@ -356,7 +360,14 @@ export class ExploreOps {
     const presetName = typeof req.rerank === "string" ? req.rerank : undefined;
     const presetDefault = presetName ? this.reranker.getFullPreset(presetName, tool)?.filter : undefined;
     const stats = this.reranker.getCollectionStats();
-    const resolved = resolveFilterSpec(req.filter, presetDefault, stats, level ?? "chunk", this.registry);
+    let resolved = resolveFilterSpec(req.filter, presetDefault, stats, level ?? "chunk", this.registry);
+    if (
+      req.filter === undefined &&
+      presetDefault !== undefined &&
+      presetDefaultExcludesCallerScope(resolved, this.registry.buildFilter(req, level))
+    ) {
+      resolved = undefined;
+    }
     return this.registry.buildMergedFilter(req, resolved, level);
   }
 
@@ -461,6 +472,67 @@ interface FilterPresetLookup {
 /** Narrow a FilterSpec to its `{presets}` variant (string `presets` field present). */
 function isPresetsSpec(spec: FilterSpec): spec is { presets: string } {
   return typeof (spec as { presets?: unknown }).presets === "string";
+}
+
+/**
+ * Chunk types the DSL test chunker emits — they live in test files, so
+ * selecting one selects `isTest: true` as well.
+ */
+const TEST_CHUNK_TYPES: ReadonlySet<unknown> = new Set(["test", "test_setup"]);
+
+/**
+ * Does a compiled preset DEFAULT filter exclude the population the caller's
+ * typed params explicitly select? (tea-rags-mcp-9mwny)
+ *
+ * Preset defaults are hygiene for UNSCOPED searches (`production`: no tests,
+ * docs or block chunks; `coreLogic`: function/class only). A caller who
+ * scopes to tests / docs / a chunk type has made the choice the default was
+ * guessing at; AND-ing both returned 0 results by construction. Rule: each
+ * exact `must` selection of the typed filter (`testFile: "only"` →
+ * isTest=true, `documentation: "only"` → isDocumentation=true, `chunkType` →
+ * chunkType=X, a test chunk type also implying isTest=true) is checked
+ * against the default — a `must_not` on the same key+value, or a `must` on the
+ * same key that admits a different value, means the default excludes the
+ * caller's scope, and the WHOLE default is dropped (the same replace, never
+ * compose, rule an explicit `filter` already follows). Selections the default
+ * does not touch (chunkType "function" under `production`) keep it.
+ */
+export function presetDefaultExcludesCallerScope(
+  compiledDefault: Record<string, unknown> | undefined,
+  typedFilter: QdrantFilter | undefined,
+): boolean {
+  if (!compiledDefault || !typedFilter?.must) return false;
+  const selections = new Map<string, unknown>();
+  for (const condition of typedFilter.must) {
+    const exact = exactMatchCondition(condition);
+    if (exact) selections.set(exact.key, exact.value);
+  }
+  if (TEST_CHUNK_TYPES.has(selections.get("chunkType"))) selections.set("isTest", true);
+
+  const defaultMust = (compiledDefault.must ?? []) as unknown[];
+  const defaultMustNot = (compiledDefault.must_not ?? []) as unknown[];
+  for (const [key, value] of selections) {
+    if (defaultMustNot.some((c) => exactMatchCondition(c)?.key === key && exactMatchCondition(c)?.value === value)) {
+      return true;
+    }
+    if (defaultMust.some((c) => admitsOnlyOtherValues(c, key, value))) return true;
+  }
+  return false;
+}
+
+function exactMatchCondition(condition: unknown): { key: string; value: unknown } | undefined {
+  const c = condition as { key?: unknown; match?: { value?: unknown } };
+  if (typeof c?.key !== "string" || !c.match || !("value" in c.match)) return undefined;
+  return { key: c.key, value: c.match.value };
+}
+
+/** A `must` leaf on `key` that cannot match `value` (exact value or any-of list). */
+function admitsOnlyOtherValues(condition: unknown, key: string, value: unknown): boolean {
+  const c = condition as { key?: unknown; match?: { value?: unknown; any?: unknown[] } };
+  if (c?.key !== key || !c.match) return false;
+  if ("value" in c.match) return c.match.value !== value;
+  if (Array.isArray(c.match.any)) return !c.match.any.includes(value);
+  return false;
 }
 
 /**

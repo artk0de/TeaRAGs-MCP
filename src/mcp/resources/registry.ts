@@ -272,7 +272,8 @@ export function buildFiltersDoc(): string {
   md += "**Inventory vs query rule:** hard specific presets (panicZone, abandonedHotspots, …) suit ";
   md += "query-absent inventory scans where an empty result is a valid answer; query-driven triage should ";
   md += "rank broadly (no hard specific filter) to preserve recall. Hygiene presets (production/coreLogic) ";
-  md += "are safe in any mode and are the rerank-preset defaults.\n";
+  md += "are safe in any mode and are the rerank-preset defaults (when that default applies: see the ";
+  md += "`filter` param description).\n";
   return md;
 }
 
