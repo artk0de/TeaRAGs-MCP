@@ -65,6 +65,7 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 import { DuckDbGraphClient } from "../../src/core/adapters/duckdb/client.js";
 import { runDaemon } from "../../src/core/adapters/duckdb/daemon/entry.js";
 import { getDaemonPaths } from "../../src/core/adapters/duckdb/daemon/lifecycle.js";
+import type { PhysicalCollectionName } from "../../src/core/contracts/types/collection-identity.js";
 import type { EnrichmentRunHandle } from "../../src/core/contracts/types/enrichment-executor.js";
 import type {
   ChunkLookupEntry,
@@ -79,6 +80,7 @@ import {
   CODEGRAPH_LANGUAGE_BY_EXTENSION,
   type CodegraphWorkerConfig,
 } from "../../src/core/domains/trajectory/codegraph/index.js";
+import { resolvePhysicalCollection } from "../../src/core/infra/collection-name.js";
 
 const __dirname = fileURLToPath(new URL(".", import.meta.url));
 const REPO_ROOT = resolve(__dirname, "../..");
@@ -190,8 +192,17 @@ function batched(paths: string[], size: number): string[][] {
   return out;
 }
 
-function runHandle(collection: string): EnrichmentRunHandle {
-  return { runId: `profile-${collection}`, collection, absolutePath: "" } as EnrichmentRunHandle;
+/**
+ * A scratch collection of this profile. Every mode builds its graph DB from
+ * nothing under its own scratch root, so no alias can name it and resolving it
+ * against none yields the physical name — minted the production way, not cast.
+ */
+function scratchCollection(name: string): PhysicalCollectionName {
+  return resolvePhysicalCollection(name, []);
+}
+
+function runHandle(collection: PhysicalCollectionName): EnrichmentRunHandle {
+  return { runId: `profile-${collection}`, collection, absolutePath: "" };
 }
 
 /**
@@ -276,7 +287,7 @@ async function warmWorkers(
   poolSize: number,
 ): Promise<void> {
   const warmPaths = corpus.slice(0, 2);
-  const collections = Array.from({ length: poolSize }, (_, i) => `code_pass1_warm_${i}`);
+  const collections = Array.from({ length: poolSize }, (_, i) => scratchCollection(`code_pass1_warm_${i}`));
   await Promise.all(
     collections.map(async (collectionName) => exec.runFileBatch(provider, root, warmPaths, { collectionName })),
   );
@@ -301,7 +312,7 @@ async function runFanoutMode(mode: string, root: string, corpus: string[], args:
     },
     FANOUT_MODES[mode].fanout,
   );
-  const collectionName = `code_pass1_${mode}`;
+  const collectionName = scratchCollection(`code_pass1_${mode}`);
   await warmWorkers(exec, provider, root, corpus, args.pool);
   exec.beginRun(runHandle(collectionName), corpus.length);
 
@@ -441,7 +452,7 @@ async function runAffinityMode(mode: AffinityMode, root: string, corpus: string[
     },
     true,
   );
-  const collectionName = `code_affinity_${mode}`;
+  const collectionName = scratchCollection(`code_affinity_${mode}`);
   const run = runHandle(collectionName);
   try {
     exec.beginRun(run, corpus.length, corpus);
@@ -530,8 +541,9 @@ function chunkPageRanks(overlays: Map<string, Map<string, ChunkSignalOverlay>>):
 
 function stableJson(value: unknown): string {
   return JSON.stringify(value, (_k, v: unknown) => {
-    if (v instanceof Map)
+    if (v instanceof Map) {
       return [...(v as Map<unknown, unknown>)].sort(([a], [b]) => String(a).localeCompare(String(b)));
+    }
     return v;
   });
 }
