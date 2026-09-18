@@ -1,6 +1,7 @@
 import { CONTINUE, resolved } from "../../../../../contracts/resolution.js";
 import { pickSingleCandidate, type CallContext, type CallRef } from "../../../../../contracts/types/codegraph.js";
 import type { SymbolResolutionOutcome, SymbolResolutionStrategy } from "../../../../../contracts/types/language.js";
+import { goLocalBindingAt } from "../../local-scope.js";
 import { lookupGoSymbolsByShortName } from "../go-symbol-lookup.js";
 import { goImportPackageDir, goPackageDirOf, type ResolverConfig } from "./shared.js";
 
@@ -19,6 +20,11 @@ import { goImportPackageDir, goPackageDirOf, type ResolverConfig } from "./share
  * gin's `binding.go` / `binding_nomsgpack.go` `validate` — stay ambiguous under
  * strict mode. A receiver-present call never reaches here — it CONTINUEs. A
  * non-decisive result also CONTINUEs; exhausting the chain returns null.
+ *
+ * A local in scope under the called name — `helper := func() {}; helper()`, a
+ * func-typed parameter — makes the call one of a function VALUE, and no
+ * package-level declaration answers it (bd tea-rags-mcp-e6xx): it CONTINUEs
+ * with no candidate lookup at all.
  */
 export class GoGlobalShortNameSymbolResolutionStrategy implements SymbolResolutionStrategy {
   readonly name = "globalShortName";
@@ -26,6 +32,7 @@ export class GoGlobalShortNameSymbolResolutionStrategy implements SymbolResoluti
 
   attempt(call: CallRef, ctx: CallContext): SymbolResolutionOutcome {
     if (call.receiver) return CONTINUE;
+    if (goLocalBindingAt(ctx.localBindings, call.member, call.startLine)) return CONTINUE;
     const scope = this.bareCallPackageDirs(ctx);
     const candidates = lookupGoSymbolsByShortName(ctx, call.member).filter(
       (def) => def.symbolId === call.member && scope.has(goPackageDirOf(def.relPath)),

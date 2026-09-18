@@ -38,8 +38,11 @@ const GO_INDEXED_CALLEE = /^(?:([\p{L}_][\p{L}\p{N}_]*)\.)?([\p{L}_][\p{L}\p{N}_
  *     generic methods, so a qualifier that names no import — a value, as in
  *     `c.handlers[c.index](c)` — makes it an index.
  * A local in effect under the operand's name (the bare name, or the qualifier)
- * shadows the declaration or the package; two declarations (build-tag twins)
- * stay ambiguous.
+ * shadows the declaration or the package — the walker records one for every
+ * local the chunk calls through this way, a slice or func parameter included;
+ * two declarations (build-tag twins) stay ambiguous. A call the walker tagged
+ * `dynamicSend` has a VALUE in its brackets (`loadAll[0]()`) and is no
+ * instantiation at all.
  *
  * Non-guard: anything else CONTINUEs to `globalShortName`, which finds nothing
  * for a bracketed member — exactly the pre-pass outcome.
@@ -49,7 +52,7 @@ export class GoGenericInstantiationSymbolResolutionStrategy implements SymbolRes
   constructor(private readonly cfg: ResolverConfig) {}
 
   attempt(call: CallRef, ctx: CallContext): SymbolResolutionOutcome {
-    if (call.receiver) return CONTINUE;
+    if (call.receiver || call.dynamicSend === true) return CONTINUE;
     const match = GO_INDEXED_CALLEE.exec(call.member);
     if (match === null) return CONTINUE;
     const [, qualifier, name] = match;

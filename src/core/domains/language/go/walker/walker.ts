@@ -42,7 +42,7 @@ export interface GoExtractInput {
 export function extractFromGoFile(input: GoExtractInput): FileExtraction {
   const imports = collectGoImports(input.tree.rootNode);
   const importNames = goImportBoundNames(imports);
-  const calls = collectGoCalls(input.tree.rootNode);
+  const { calls, bareCalleeHeads } = collectGoCalls(input.tree.rootNode);
   const functionReturnTypes = collectGoFunctionReturnTypes(input.tree.rootNode);
   // bd tea-rags-mcp-f11nz — ONE owning chunk per call site: the smallest
   // containing range, ties broken by deeper scope. The pure-containment filter
@@ -71,7 +71,7 @@ export function extractFromGoFile(input: GoExtractInput): FileExtraction {
       input.tree.rootNode,
       c.startLine,
       c.endLine,
-      importNames,
+      goShadowedNames(importNames, base.calls, bareCalleeHeads),
     );
     if (Object.keys(types).length > 0) base.localBindings = types;
     if (Object.keys(callBindings).length > 0) base.localCallBindings = callBindings;
@@ -172,8 +172,52 @@ function goImportBoundNames(imports: readonly ImportRef[]): ReadonlySet<string> 
   return names;
 }
 
-function collectGoCalls(root: AstNode): CallRef[] {
+/**
+ * Index node types that can never be a type argument: literals, and
+ * expressions no type is spelled as. `loadAll[0]()` is a call through a slice
+ * element, not an instantiation. An identifier or selector (`f[T]`,
+ * `f[pkg.T]`) may be either, and stays a candidate.
+ */
+const GO_NON_TYPE_INDEX_NODE_TYPES: ReadonlySet<string> = new Set([
+  "int_literal",
+  "float_literal",
+  "imaginary_literal",
+  "rune_literal",
+  "interpreted_string_literal",
+  "raw_string_literal",
+  "true",
+  "false",
+  "nil",
+  "iota",
+  "binary_expression",
+  "call_expression",
+  "slice_expression",
+  "type_assertion_expression",
+  "composite_literal",
+  "func_literal",
+]);
+
+/** Unary operators no type is spelled with — `*T` is a pointer type, `-1` and `&x` are values. */
+const GO_VALUE_UNARY_OPERATORS: ReadonlySet<string> = new Set(["-", "+", "!", "^", "&", "<-"]);
+
+/** Whether an index expression's `index` is certainly a value, so the callee is no instantiation. */
+function isGoValueIndex(index: AstNode | null): boolean {
+  if (!index) return false;
+  if (GO_NON_TYPE_INDEX_NODE_TYPES.has(index.type)) return true;
+  if (index.type !== "unary_expression") return false;
+  const operator = index.childForFieldName("operator")?.text;
+  return operator !== undefined && GO_VALUE_UNARY_OPERATORS.has(operator);
+}
+
+/** The file's call sites, and for each bare one the identifier it calls through (`helper`, `loadAll` in `loadAll[0]()`). */
+interface GoCallSites {
+  calls: CallRef[];
+  bareCalleeHeads: Map<CallRef, string>;
+}
+
+function collectGoCalls(root: AstNode): GoCallSites {
   const out: CallRef[] = [];
+  const bareCalleeHeads = new Map<CallRef, string>();
   walk(root, (node) => {
     // bd tea-rags-mcp-e6xx — a generic function called with ONE value argument
     // (`pair[int](x)`, `pkg.Pair[int](x)`) parses as a conversion to an
@@ -185,7 +229,15 @@ function collectGoCalls(root: AstNode): CallRef[] {
     if (node.type === "type_conversion_expression") {
       const type = node.childForFieldName("type");
       if (type?.type === "generic_type") {
-        out.push({ callText: node.text, receiver: null, member: type.text, startLine: node.startPosition.row + 1 });
+        const ref: CallRef = {
+          callText: node.text,
+          receiver: null,
+          member: type.text,
+          startLine: node.startPosition.row + 1,
+        };
+        out.push(ref);
+        const base = type.childForFieldName("type");
+        if (base?.type === "type_identifier") bareCalleeHeads.set(ref, base.text);
       }
       return;
     }
@@ -198,11 +250,43 @@ function collectGoCalls(root: AstNode): CallRef[] {
       const field = fn.childForFieldName("field");
       if (!operand || !field) return;
       out.push({ callText: node.text, receiver: operand.text, member: field.text, startLine });
-    } else {
-      out.push({ callText: node.text, receiver: null, member: fn.text, startLine });
+      return;
     }
+    const ref: CallRef = { callText: node.text, receiver: null, member: fn.text, startLine };
+    if (fn.type === "identifier") bareCalleeHeads.set(ref, fn.text);
+    if (fn.type === "index_expression") {
+      const operand = fn.childForFieldName("operand");
+      if (operand?.type === "identifier") bareCalleeHeads.set(ref, operand.text);
+      // bd tea-rags-mcp-e6xx — `loadAll[0]()` calls whatever a slice element
+      // holds: no instantiation candidate, and statically undeterminable (the
+      // accounting TypeScript gives `obj[key]()`).
+      if (isGoValueIndex(fn.childForFieldName("index"))) ref.dynamicSend = true;
+    }
+    out.push(ref);
   });
-  return out;
+  return { calls: out, bareCalleeHeads };
+}
+
+/**
+ * The names a local of this chunk must shadow even when nothing types it: the
+ * file's import-bound names, and every identifier the chunk calls bare or
+ * through an index (`helper()`, `loadAll[0]()`) — a local of that name makes
+ * the call one of a function VALUE, never of the package-level declaration
+ * the resolver would otherwise pick.
+ */
+function goShadowedNames(
+  importNames: ReadonlySet<string>,
+  chunkCalls: readonly CallRef[],
+  bareCalleeHeads: ReadonlyMap<CallRef, string>,
+): ReadonlySet<string> {
+  let names: Set<string> | undefined;
+  for (const call of chunkCalls) {
+    const head = bareCalleeHeads.get(call);
+    if (head === undefined || importNames.has(head)) continue;
+    names ??= new Set(importNames);
+    names.add(head);
+  }
+  return names ?? importNames;
 }
 
 function walk(node: AstNode, visit: (n: AstNode) => void): void {
@@ -235,12 +319,14 @@ function walk(node: AstNode, visit: (n: AstNode) => void): void {
  *   5. Function-literal parameters — `return func(c *Context) { ... }` binds
  *      `c` for the literal's lines only; see `bindFuncLiteralParams`. bd
  *      tea-rags-mcp-e6xx.
- *   6. Import shadows (bd tea-rags-mcp-e6xx) — any other local or parameter
- *      whose name an import binds (`config, err := loadTwo()`,
- *      `func f(render io.Writer)`, `for _, render := range rs`) records an
- *      EMPTY-typed binding: a value no pass can type, never the package. A
- *      statement-declared one carries `endLine` (in scope only after its
- *      statement — `goLocalBindingAt`).
+ *   6. Shadows (bd tea-rags-mcp-e6xx) — any other local or parameter whose
+ *      name an import binds (`config, err := loadTwo()`,
+ *      `func f(render io.Writer)`, `for _, render := range rs`) or the chunk
+ *      calls bare (`helper := func() {}; helper()`,
+ *      `func f(loadAll []func()) { loadAll[0]() }`) records an EMPTY-typed
+ *      binding: a value no pass can type, never the package or the
+ *      package-level declaration. A statement-declared one carries `endLine`
+ *      (in scope only after its statement — `goLocalBindingAt`).
  *
  * A binding declared inside a block narrower than the function body carries
  * that block's last line as `scopeEndLine`.
@@ -259,7 +345,7 @@ function collectGoLocalBindingsForChunk(
   root: AstNode,
   startLine: number,
   endLine: number,
-  importNames: ReadonlySet<string>,
+  shadowedNames: ReadonlySet<string>,
 ): { types: Record<string, LocalBinding[]>; calls: Record<string, string> } {
   const bindings: Record<string, LocalBinding[]> = {};
   const callBindings: Record<string, string> = {};
@@ -278,7 +364,7 @@ function collectGoLocalBindingsForChunk(
   });
   if (!target) return { types: bindings, calls: callBindings };
 
-  const sink: GoBindingSink = { types: bindings, calls: callBindings, shadowed: importNames };
+  const sink: GoBindingSink = { types: bindings, calls: callBindings, shadowed: shadowedNames };
 
   // Method receiver.
   const receiver = (target as AstNode).childForFieldName("receiver");
@@ -301,18 +387,18 @@ function collectGoLocalBindingsForChunk(
   const untypedLiteralParams: UntypedLiteralParam[] = [];
 
   // Local declarations inside the body — `var x Foo`, `x := Foo{}`,
-  // `x := &Foo{}` (bd tea-rags-mcp-6g9c), and every other declared name the
-  // file's imports make ambiguous (bd tea-rags-mcp-e6xx), each scoped to the
-  // block that declares it.
+  // `x := &Foo{}` (bd tea-rags-mcp-6g9c), and every other declared name an
+  // import or a bare call makes ambiguous (bd tea-rags-mcp-e6xx), each scoped
+  // to the block that declares it.
   const body = (target as AstNode).childForFieldName("body");
   if (body) visitGoScopes(body, undefined, body, sink, untypedLiteralParams);
   // An untyped literal parameter shadows only a name that means something else
-  // in the chunk — a typed binding, a call binding (`c := New()`), or an
-  // imported package. With no namesake it records nothing, so no binding key
-  // appears that was not there.
+  // in the chunk — a typed binding, a call binding (`c := New()`), an imported
+  // package, or a declaration the chunk calls bare. With no namesake it records
+  // nothing, so no binding key appears that was not there.
   for (const param of untypedLiteralParams) {
     const shadows =
-      bindings[param.name] !== undefined || callBindings[param.name] !== undefined || importNames.has(param.name);
+      bindings[param.name] !== undefined || callBindings[param.name] !== undefined || shadowedNames.has(param.name);
     if (shadows) (bindings[param.name] ??= []).push(param.shadow);
   }
   return { types: bindings, calls: callBindings };
@@ -323,9 +409,11 @@ interface GoBindingSink {
   readonly types: Record<string, LocalBinding[]>;
   readonly calls: Record<string, string>;
   /**
-   * The names the file's imports bind (`goImportBoundName`). A local of one of
-   * these names records an EMPTY-typed binding even when nothing types it, so
-   * no reader takes the receiver for the package it shadows.
+   * The names the file's imports bind (`goImportBoundName`) and the chunk
+   * calls bare (`goShadowedNames`). A local of one of these names records an
+   * EMPTY-typed binding even when nothing types it, so no reader takes the
+   * receiver for the package, or the bare call for the declaration, it
+   * shadows.
    */
   readonly shadowed: ReadonlySet<string>;
 }
@@ -416,7 +504,8 @@ function scopedTo(binding: LocalBinding, scopeEnd: number | undefined): LocalBin
 
 /**
  * A local of a type the walker cannot know: recorded, with the EMPTY type,
- * only when its name is one an import binds. `statement` is the declaring
+ * only when its name is one the sink watches (`GoBindingSink.shadowed`) —
+ * everywhere else nothing reads it. `statement` is the declaring
  * statement — the local is in scope only after it ends (`endLine`, read by
  * `goLocalBindingAt`), so its own right-hand side still names the package.
  * A parameter has no statement and is in scope from its line.
@@ -448,7 +537,7 @@ function shadowGoLocals(
 /**
  * The declaring function's own parameters: every name of a declaration
  * (`a, b *Engine` binds both), typed when the type is one nominal type, else
- * a shadow when the name is an import's. A variadic parameter is a slice and
+ * a shadow when the name is watched. A variadic parameter is a slice and
  * types nothing.
  */
 function bindParameterList(params: AstNode, sink: GoBindingSink): void {
@@ -466,7 +555,7 @@ function bindParameterList(params: AstNode, sink: GoBindingSink): void {
 /**
  * `var x Foo`, `var a, b Foo`, `var x = expr`, and the grouped `var ( … )`:
  * every name is typed when the spec declares one nominal type (bd
- * tea-rags-mcp-6g9c), else shadowed when an import binds it.
+ * tea-rags-mcp-6g9c), else shadowed when its name is watched.
  */
 function bindVarDeclaration(node: AstNode, scopeEnd: number | undefined, sink: GoBindingSink): void {
   const specs = node.children.flatMap((c) =>
@@ -491,8 +580,8 @@ function bindVarDeclaration(node: AstNode, scopeEnd: number | undefined, sink: G
  * / `x := pkg.New()` records the called function for the resolver to pair
  * with its declared return type. Only a single-LHS, single-value declaration
  * can be paired var↔value; every other name it declares — `a, err := f()`,
- * `x := y`, `x := pkg.Build().With()` — is a local of unknown type, shadowed
- * when an import binds its name (bd tea-rags-mcp-e6xx).
+ * `x := y`, `x := func() {}` — is a local of unknown type, shadowed when its
+ * name is watched (bd tea-rags-mcp-e6xx).
  */
 function bindShortVarDeclaration(node: AstNode, scopeEnd: number | undefined, sink: GoBindingSink): void {
   const left = node.childForFieldName("left");
