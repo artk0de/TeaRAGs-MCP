@@ -182,12 +182,39 @@ export function mapImportToFile(
  * The suffix a specifier writes, and the source extensions it can stand for,
  * in TypeScript's own precedence order. `.js` is the NodeNext convention —
  * source writes `import "./foo.js"` while the file on disk is `foo.ts` (or,
- * in a React project, `foo.tsx`).
+ * in a React project, `foo.tsx`). `.mjs` / `.cjs` are the same convention for
+ * the ESM- and CJS-only formats, whose sources are `.mts` / `.cts`.
+ *
+ * Each list ends with the specifier's own JavaScript file, where `tsc` under
+ * `allowJs` ends too: a TypeScript file importing a module that really is
+ * JavaScript (bd tea-rags-mcp-x9qsh). Last, so a TypeScript source or
+ * declaration beside it always wins, and never first, so the unverified
+ * fallback — the head of the list — stays the TypeScript source.
  */
 const SOURCE_EXTENSION_CANDIDATES: readonly { suffix: string; extensions: readonly string[] }[] = [
-  { suffix: ".js", extensions: [".ts", ".tsx", ".d.ts"] },
-  { suffix: ".jsx", extensions: [".tsx", ".ts"] },
+  { suffix: ".js", extensions: [".ts", ".tsx", ".d.ts", ".js"] },
+  { suffix: ".jsx", extensions: [".tsx", ".ts", ".jsx"] },
+  { suffix: ".mjs", extensions: [".mts", ".d.mts", ".mjs"] },
+  { suffix: ".cjs", extensions: [".cts", ".d.cts", ".cjs"] },
 ];
+
+/**
+ * Suffixes that name the target file itself, so a specifier ending in one is
+ * the file as written (bd tea-rags-mcp-x9qsh):
+ *
+ *   - a TypeScript file, declarations included (`.d.ts` / `.d.mts` / `.d.cts`
+ *     end in one of these) — `allowImportingTsExtensions`, `node
+ *     --experimental-strip-types` and tsx all let source spell it, and
+ *     appending another source extension would name `worker.mts.ts`, a file
+ *     that cannot exist;
+ *   - a JSON module (`resolveJsonModule`), which `tsc` resolves as written and
+ *     never as `data.json.ts`.
+ */
+const AS_WRITTEN_EXTENSIONS: readonly string[] = [".ts", ".tsx", ".mts", ".cts", ".json"];
+
+function namesFileAsWritten(path: string): boolean {
+  return AS_WRITTEN_EXTENSIONS.some((extension) => path.endsWith(extension));
+}
 
 /** Extensions tried for a specifier that writes no suffix at all (`"./foo"`). */
 const EXTENSIONLESS_CANDIDATES: readonly string[] = [".ts", ".tsx", ".d.ts"];
@@ -203,7 +230,8 @@ const DIRECTORY_MODULE_STEM = "index";
  * Rewrite a mapped path's suffix to the TypeScript source file it stands for,
  * so graph edges land on paths that match the codegraph file table.
  *
- * `.ts` / `.tsx` / `.d.ts` are already explicit and pass through untouched.
+ * A suffix in {@link AS_WRITTEN_EXTENSIONS} is already explicit and passes
+ * through untouched.
  * Everything else has candidates, and `fileExists` picks among them — the
  * FIRST candidate that exists wins, so a project holding both `foo.ts` and
  * `foo.tsx` resolves the way `tsc` would.
@@ -223,11 +251,11 @@ const DIRECTORY_MODULE_STEM = "index";
  * codebase defers rather than fabricates (see `MethodEdgeKind`).
  */
 function resolveTsSourcePath(path: string, fileExists?: ProjectFileProbe): string {
-  // An explicit `.ts` / `.tsx` specifier has nothing to choose between, and
+  // A specifier that names its file has nothing to choose between, and
   // this returns BEFORE the probe on purpose: the probe's cache is what keeps
   // a resolve pass off one syscall per import per call site, and a lookup whose
   // answer cannot change the result is pure cost.
-  if (path.endsWith(".ts") || path.endsWith(".tsx")) return path;
+  if (namesFileAsWritten(path)) return path;
   const candidates = tsSourcePathCandidates(path);
   return candidates.find((candidate) => fileExists?.(candidate)) ?? candidates[0];
 }
@@ -249,7 +277,7 @@ function verifiedTsSourcePath(path: string, fileExists?: ProjectFileProbe): stri
 
 /** Source files a mapped specifier could stand for, in `tsc`'s resolution order. */
 function tsSourcePathCandidates(path: string): readonly string[] {
-  if (path.endsWith(".ts") || path.endsWith(".tsx")) return [path];
+  if (namesFileAsWritten(path)) return [path];
 
   const rule = SOURCE_EXTENSION_CANDIDATES.find((entry) => path.endsWith(entry.suffix));
   const stem = rule ? path.slice(0, -rule.suffix.length) : path;

@@ -352,10 +352,14 @@
   `trajectory/codegraph/symbols/resolution-runner.ts` synthesises
   `{ receiver: basename, member: basename }` per import — `member` is a
   FILENAME, so a member-keyed pass answering it points `import './bar'` at
-  whichever file declares `Other.bar`. TS and Ruby override `resolveFileEdges`
-  via their real specifier→file mapper (`mapImportToFile` / Zeitwerk). Why: a
-  new language on the default emits wrong file-level import edges, surfacing as
-  an unstable `provider.test.ts` count, not as anything naming the resolver.
+  whichever file declares `Other.bar`. TS, JavaScript and Ruby override
+  `resolveFileEdges` via their real specifier→file mapper (`mapImportToFile` /
+  `mapJavascriptImportToFile` / Zeitwerk). JavaScript's default failed the other
+  way: `importMatchesReceiver` strips `.js` from the import but not from the
+  synthesised receiver, so every explicit-extension import — the ordinary Node
+  ESM form — produced no edge (bd tea-rags-mcp-x9qsh). Why: a new language on
+  the default emits wrong or missing file-level import edges, surfacing as an
+  unstable `provider.test.ts` count, not as anything naming the resolver.
 - **The capability drift-guard is one-sided.**
   `tests/core/domains/language/capability/drift-guard.test.ts` only checks
   renders of `LanguageFactory#capabilities` against the committed artefacts — it

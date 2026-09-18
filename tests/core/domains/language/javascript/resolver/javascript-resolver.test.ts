@@ -1,10 +1,13 @@
 import { describe, expect, it } from "vitest";
 
-import type { CallContext } from "../../../../../../src/core/contracts/types/codegraph.js";
+import type { CallContext, FileExtraction } from "../../../../../../src/core/contracts/types/codegraph.js";
+import type { LanguageFactoryDescriptor } from "../../../../../../src/core/contracts/types/language.js";
 import {
   JavascriptCallResolver,
   mapJavascriptImportToFile,
 } from "../../../../../../src/core/domains/language/javascript/resolver/index.js";
+import { CallEdgeResolutionRunner } from "../../../../../../src/core/domains/trajectory/codegraph/symbols/resolution-runner.js";
+import { CodegraphRunState } from "../../../../../../src/core/domains/trajectory/codegraph/symbols/run-state.js";
 import { InMemoryGlobalSymbolTable } from "../../../../../../src/core/domains/trajectory/codegraph/symbols/symbol-table.js";
 
 function ctx(
@@ -34,6 +37,89 @@ describe("mapJavascriptImportToFile", () => {
 
   it("returns null for bare specifiers (npm packages)", () => {
     expect(mapJavascriptImportToFile("lodash", "x.js")).toBeNull();
+  });
+
+  it("maps a TypeScript-extension specifier to the file as written (bd tea-rags-mcp-x9qsh)", () => {
+    // A JS entry point loading TS source directly — `node
+    // --experimental-strip-types`, tsx — writes the `.ts` it means. Appending
+    // `.js` produced `worker.ts.js`, a path no file table row matches.
+    expect(mapJavascriptImportToFile("./ts-live-resolve-worker.ts", "scripts/spikes/boot.js")).toBe(
+      "scripts/spikes/ts-live-resolve-worker.ts",
+    );
+    expect(mapJavascriptImportToFile("../ui/view.tsx", "scripts/spikes/boot.js")).toBe("scripts/ui/view.tsx");
+    expect(mapJavascriptImportToFile("./worker.mts", "scripts/boot.mjs")).toBe("scripts/worker.mts");
+    expect(mapJavascriptImportToFile("./worker.cts", "scripts/boot.cjs")).toBe("scripts/worker.cts");
+    expect(mapJavascriptImportToFile("./types.d.ts", "scripts/boot.js")).toBe("scripts/types.d.ts");
+  });
+
+  it("maps a JSON module to the file as written (bd tea-rags-mcp-x9qsh)", () => {
+    // `require("../package.json")` names the JSON file, not `package.json.js`.
+    expect(mapJavascriptImportToFile("../package.json", "scripts/postinstall.js")).toBe("package.json");
+    expect(mapJavascriptImportToFile("./data/fixtures.json", "src/main.mjs")).toBe("src/data/fixtures.json");
+  });
+});
+
+describe("JavaScript import file edges (bd tea-rags-mcp-x9qsh)", () => {
+  /** File-edge targets the provider's pass-2 runner persists for one JS file. */
+  function fileEdgeTargets(relPath: string, importTexts: string[]): string[] {
+    const factory = {
+      supported: () => ["javascript"],
+      create: () => ({ resolver: new JavascriptCallResolver() }),
+    } as unknown as LanguageFactoryDescriptor;
+    const runner = new CallEdgeResolutionRunner(factory, new CodegraphRunState());
+    const extraction: FileExtraction = {
+      relPath,
+      language: "javascript",
+      imports: importTexts.map((importText, index) => ({ importText, startLine: index + 1 })),
+      chunks: [],
+      fileScope: [],
+    };
+    return runner.resolve(extraction, new InMemoryGlobalSymbolTable()).fileEdges.map((edge) => edge.targetRelPath);
+  }
+
+  it("persists a JS import of a TypeScript file as an edge to that file", () => {
+    // The live defect, end to end through the file-edge seam the provider
+    // runs: `scripts/spikes/ts-live-resolve-worker-boot.js` doing
+    // `await import("./ts-live-resolve-worker.ts")` was stored with target
+    // `ts-live-resolve-worker.ts.js`, so the edge pointed at nothing.
+    expect(fileEdgeTargets("scripts/spikes/ts-live-resolve-worker-boot.js", ["./ts-live-resolve-worker.ts"])).toEqual([
+      "scripts/spikes/ts-live-resolve-worker.ts",
+    ]);
+  });
+
+  it("persists an import that writes its .js extension as an edge to that file", () => {
+    // Node ESM requires the extension, so this is the ordinary JS import. The
+    // synthesised-call fallback matched the import by basename: receiver
+    // `render-changelog.js` against the import's stripped `render-changelog`,
+    // a mismatch that dropped every such edge (6 on this repo's own scripts).
+    expect(fileEdgeTargets("scripts/retro-changelog.js", ["./lib/render-changelog.js"])).toEqual([
+      "scripts/lib/render-changelog.js",
+    ]);
+    expect(fileEdgeTargets("scripts/postinstall.mjs", ["./install-fish-completion.mjs"])).toEqual([
+      "scripts/install-fish-completion.mjs",
+    ]);
+  });
+
+  it("keeps one edge per imported file when two imports share a basename", () => {
+    // Basename matching sent both `util` imports to whichever came first.
+    expect(fileEdgeTargets("src/main.js", ["./a/util", "./b/util.js"])).toEqual(["src/a/util.js", "src/b/util.js"]);
+  });
+
+  it("maps an extensionless import or require to the .js file", () => {
+    expect(fileEdgeTargets("src/main.js", ["./config", "../shared/log"])).toEqual(["src/config.js", "shared/log.js"]);
+  });
+
+  it("emits no edge for a bare package specifier", () => {
+    expect(fileEdgeTargets("src/main.js", ["lodash", "node:path", "@scope/pkg/sub"])).toEqual([]);
+  });
+
+  it("keeps an edge to a relative target the index does not hold, as TypeScript does", () => {
+    // `import("../build/...")` names a real module in a directory the index
+    // skips. Unverified like the TypeScript file edge: the mapper answers from
+    // the specifier alone and the edge simply joins no file row.
+    expect(fileEdgeTargets("scripts/verify-providers.js", ["../build/core/adapters/embeddings/factory.js"])).toEqual([
+      "build/core/adapters/embeddings/factory.js",
+    ]);
   });
 });
 

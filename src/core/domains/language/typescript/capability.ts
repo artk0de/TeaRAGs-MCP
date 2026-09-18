@@ -30,5 +30,11 @@ export const capability: LanguageCapability = {
   // walker 5: bd tea-rags-mcp-hwwtw. Interface-typed receivers the walker binds
   // no type to now dispatch through the CHA cone off the checker's declared
   // interface, and `globalShortName` no longer answers them by name uniqueness.
-  versions: { chunking: 1, walker: 5, codegraphSchema: 2 },
+  // walker 6: bd tea-rags-mcp-x9qsh. `.mts` / `.cts` specifiers map to the file
+  // as written and `.mjs` / `.cjs` to their `.mts` / `.cts` source, where both
+  // used to get `.ts` appended and land on a path no file row matches; under
+  // `allowJs` a `.js`-family specifier with no TypeScript source falls back to
+  // the JavaScript file the probe confirms; `.json` maps as written; import
+  // basename matching strips `.mts` / `.cts` and their declarations.
+  versions: { chunking: 1, walker: 6, codegraphSchema: 2 },
 };

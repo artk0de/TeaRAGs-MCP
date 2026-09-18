@@ -7,8 +7,8 @@
  * Plain JS (no tsconfig paths, no .ts extension games). Imports are
  * either:
  *   - relative paths: `./foo`, `../foo/bar` — resolved against the
- *     caller's directory, with `.js`/`.jsx`/`.mjs`/`.cjs` extension
- *     guessing.
+ *     caller's directory; an explicit JS or TS extension is kept as
+ *     written, an extensionless specifier defaults to `.js`.
  *   - bare specifiers (`react`, `lodash`) — out of scope; only matter
  *     for node_modules which codegraph excludes.
  *
@@ -27,11 +27,21 @@ import {
   type CallContext,
   type CallRef,
   type CallResolver,
+  type FileExtraction,
+  type GraphEdges,
   type SymbolResolutionTarget,
 } from "../../../../contracts/types/codegraph.js";
 import { ECMASCRIPT_GLOBALS } from "../../shared/ecmascript-globals.js";
 
-const JS_EXTS = [".js", ".jsx", ".mjs", ".cjs"];
+/**
+ * Suffixes that make a relative specifier name its file as written. The
+ * TypeScript ones are what a JS entry point writes when it loads TS source
+ * directly (`node --experimental-strip-types`, tsx); appending `.js` to them
+ * named `worker.ts.js`, a file that cannot exist (bd tea-rags-mcp-x9qsh).
+ * `.d.ts` / `.d.mts` / `.d.cts` are covered by their last segment. `.json` is
+ * the JSON module `require("../package.json")` names.
+ */
+const EXPLICIT_MODULE_EXTENSIONS = [".js", ".jsx", ".mjs", ".cjs", ".ts", ".tsx", ".mts", ".cts", ".json"];
 
 export class JavascriptCallResolver implements CallResolver {
   readonly language = "javascript";
@@ -177,6 +187,34 @@ export class JavascriptCallResolver implements CallResolver {
   }
 
   /**
+   * Import → file edges, mapped directly by {@link mapJavascriptImportToFile}
+   * instead of through the call path (bd tea-rags-mcp-x9qsh).
+   *
+   * The provider's fallback synthesises `{ receiver: basename, member:
+   * basename }` per import and keeps whatever `resolve` answers. `resolve`
+   * finds the import by `importMatchesReceiver`, which strips the JS extension
+   * from the IMPORT but not from the synthesised receiver, so every
+   * `"./render-changelog.js"` compared `render-changelog` with
+   * `render-changelog.js` and produced no edge — the ordinary Node ESM import
+   * never reached the file graph. Basename matching also sent two imports of
+   * different `util` modules to whichever was declared first.
+   *
+   * Every relative specifier maps, and the edge is pushed unverified, the
+   * TypeScript precedent (`TSCallResolver#resolveFileEdges`): the mapper
+   * answers from the specifier alone, and a target the index does not hold
+   * (`../build/...`) joins no file row. A bare package specifier maps to
+   * nothing and yields no edge.
+   */
+  resolveFileEdges(extraction: FileExtraction, _ctx: CallContext): GraphEdges["fileEdges"] {
+    const fileEdges: GraphEdges["fileEdges"] = [];
+    for (const imp of extraction.imports) {
+      const targetRelPath = mapJavascriptImportToFile(imp.importText, extraction.relPath);
+      if (targetRelPath) fileEdges.push({ targetRelPath, importText: imp.importText });
+    }
+    return fileEdges;
+  }
+
+  /**
    * tea-rags-mcp-ykj7 — external-import classifier for an UNRESOLVED call.
    * `true` when the receiver is an ECMAScript ambient global (`console.log`,
    * `Math.max` — no import), or matches an import whose specifier is BARE
@@ -218,7 +256,7 @@ export function mapJavascriptImportToFile(importText: string, callerFile: string
   const joined = posix.normalize(posix.join(callerDir, importText));
   // If the import already carries an extension, keep it (Node modern
   // ESM requires explicit extensions). Otherwise default to `.js`.
-  for (const ext of JS_EXTS) {
+  for (const ext of EXPLICIT_MODULE_EXTENSIONS) {
     if (joined.endsWith(ext)) return joined;
   }
   return `${joined}.js`;

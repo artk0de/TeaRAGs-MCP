@@ -16,5 +16,9 @@ export const capability: LanguageCapability = {
   // codegraphSchema 2: bd tea-rags-mcp-ex28m — see typescript/capability.ts.
   // walker 2: bd tea-rags-mcp-hwwtw — receiver-bearing calls no longer fall
   // through to the global short-name lookup.
-  versions: { chunking: 1, walker: 2, codegraphSchema: 2 },
+  // walker 3: bd tea-rags-mcp-x9qsh — a `.ts` / `.tsx` / `.mts` / `.cts` /
+  // `.json` specifier maps to that file instead of `<file>.ts.js`, and file
+  // edges come from the import mapper instead of the call path, which dropped
+  // every explicit-extension import (`./lib/render-changelog.js`).
+  versions: { chunking: 1, walker: 3, codegraphSchema: 2 },
 };
