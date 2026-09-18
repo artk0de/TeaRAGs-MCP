@@ -95,11 +95,23 @@ describe("BaseExploreStrategy", () => {
       expect(output).toHaveLength(5);
     });
 
-    it("trims output to minimum limit of 5 when requested limit is 2", async () => {
+    // tea-rags-mcp-9mwny: the returned page used to be floored at 5 (limit 1/2/3
+    // → 5 results on semantic_search / hybrid_search / find_similar). The floor
+    // belongs to the FETCH (overfetch for rerank), never to the page the caller
+    // asked for; only a missing / non-positive limit falls back to 5.
+    it("returns exactly the requested limit when it is below 5", async () => {
       const results = makeResults(30);
       const strategy = new TestStrategy(createMockQdrant(), createMockReranker(), EMPTY_SIGNALS, EMPTY_KEYS, results);
       const output = await strategy.execute({ collectionName: "col", limit: 2 });
-      expect(output).toHaveLength(5);
+      expect(output).toHaveLength(2);
+    });
+
+    it("returns a single result for limit 1 with a rerank preset, still overfetching for the rerank", async () => {
+      const results = makeResults(30);
+      const strategy = new TestStrategy(createMockQdrant(), createMockReranker(), EMPTY_SIGNALS, EMPTY_KEYS, results);
+      const output = await strategy.execute({ collectionName: "col", limit: 1, rerank: "techDebt" });
+      expect(output).toHaveLength(1);
+      expect(strategy.lastCtx?.limit).toBeGreaterThanOrEqual(20);
     });
   });
 
