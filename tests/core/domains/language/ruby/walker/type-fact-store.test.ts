@@ -99,7 +99,7 @@ describe("RubyTypeFactStore parity", () => {
   it("skips param facts with line === undefined", () => {
     const store = RubyTypeFactStore.fromFacts([
       // A fact with no `line` field (line is undefined)
-      { kind: "param", symbolScope: [], name: "x", type: { form: "instance", name: "User" } } as RubyTypeFact,
+      { kind: "param", symbolScope: [], name: "x", type: { form: "instance", name: "User" } },
     ]);
     expect(store.localBindingsForChunk(1, 99)).toEqual({});
   });

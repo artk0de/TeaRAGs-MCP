@@ -109,7 +109,7 @@ export interface LanguageConfig {
  */
 export const LANGUAGE_DEFINITIONS: Record<string, LanguageDefinition> = {
   typescript: {
-    loadModule: async () => import("tree-sitter-typescript") as Promise<TreeSitterLanguageModule>,
+    loadModule: async () => import("tree-sitter-typescript"),
     extractLanguage: (mod: TreeSitterLanguageModule) => {
       if (typeof mod.default === "object" && mod.default !== null && "typescript" in mod.default) {
         return (mod.default as Record<string, unknown>).typescript;
@@ -143,7 +143,7 @@ export const LANGUAGE_DEFINITIONS: Record<string, LanguageDefinition> = {
     // (the native provider owns it).
   },
   javascript: {
-    loadModule: async () => import("tree-sitter-javascript") as Promise<TreeSitterLanguageModule>,
+    loadModule: async () => import("tree-sitter-javascript"),
     extractLanguage: (mod: TreeSitterLanguageModule) => mod.default ?? mod,
     // `expression_statement` / `lexical_declaration` / `variable_declaration`
     // are kept ONLY when they carry a function value — the
@@ -172,7 +172,7 @@ export const LANGUAGE_DEFINITIONS: Record<string, LanguageDefinition> = {
     // field is intentionally absent (the native provider owns it).
   },
   python: {
-    loadModule: async () => import("tree-sitter-python") as Promise<TreeSitterLanguageModule>,
+    loadModule: async () => import("tree-sitter-python"),
     extractLanguage: (mod: TreeSitterLanguageModule) => mod.default ?? mod,
     chunkableTypes: ["function_definition", "class_definition", "decorated_definition"],
     // bd tea-rags-mcp-t6sr — emit class methods as separate chunks so
@@ -199,7 +199,7 @@ export const LANGUAGE_DEFINITIONS: Record<string, LanguageDefinition> = {
     // childChunkTypes / alwaysExtractChildren / scopeContainerTypes here 1:1.
   },
   go: {
-    loadModule: async () => import("tree-sitter-go") as Promise<TreeSitterLanguageModule>,
+    loadModule: async () => import("tree-sitter-go"),
     extractLanguage: (mod: TreeSitterLanguageModule) => mod.default ?? mod,
     chunkableTypes: ["function_declaration", "method_declaration", "type_declaration", "interface_declaration"],
     // NOTE: Go is now a NATIVE `domains/language/go` provider
@@ -211,7 +211,7 @@ export const LANGUAGE_DEFINITIONS: Record<string, LanguageDefinition> = {
     // provider's `chunkerHooks` mirrors the chunkableTypes here 1:1.
   },
   rust: {
-    loadModule: async () => import("tree-sitter-rust") as Promise<TreeSitterLanguageModule>,
+    loadModule: async () => import("tree-sitter-rust"),
     extractLanguage: (mod: TreeSitterLanguageModule) => mod.default ?? mod,
     // bd tea-rags-mcp-fwa1 / 2hbd / h82m / lk6i — emit impl-block methods
     // as separate chunks so `find_symbol("Searcher#new")` resolves to the
@@ -276,7 +276,7 @@ export const LANGUAGE_DEFINITIONS: Record<string, LanguageDefinition> = {
     // scopeContainerTypes + scopeSeparator.
   },
   java: {
-    loadModule: async () => import("tree-sitter-java") as Promise<TreeSitterLanguageModule>,
+    loadModule: async () => import("tree-sitter-java"),
     extractLanguage: (mod: TreeSitterLanguageModule) => mod.default ?? mod,
     chunkableTypes: [
       "method_declaration",
@@ -341,7 +341,7 @@ export const LANGUAGE_DEFINITIONS: Record<string, LanguageDefinition> = {
     // carries scopeContainerTypes + disambiguateOverloads.
   },
   bash: {
-    loadModule: async () => import("tree-sitter-bash") as Promise<TreeSitterLanguageModule>,
+    loadModule: async () => import("tree-sitter-bash"),
     extractLanguage: (mod: TreeSitterLanguageModule) => mod.default ?? mod,
     chunkableTypes: ["function_definition", "command"],
     // NOTE: Bash is now a NATIVE `domains/language/bash` provider
@@ -354,7 +354,7 @@ export const LANGUAGE_DEFINITIONS: Record<string, LanguageDefinition> = {
     // carries scopeSeparator. Two extensions (.sh / .bash), one grammar.
   },
   ruby: {
-    loadModule: async () => import("tree-sitter-ruby") as Promise<TreeSitterLanguageModule>,
+    loadModule: async () => import("tree-sitter-ruby"),
     extractLanguage: (mod: TreeSitterLanguageModule) => mod.default ?? mod,
     chunkableTypes: [
       "method", // def method_name ... end

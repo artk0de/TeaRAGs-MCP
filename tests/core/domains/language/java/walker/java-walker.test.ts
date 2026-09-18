@@ -6,7 +6,7 @@ import { extractFromJavaFile } from "../../../../../../src/core/domains/language
 
 function parse(src: string) {
   const p = new Parser();
-  p.setLanguage(JavaLang as unknown as Parser.Language);
+  p.setLanguage(JavaLang);
   return p.parse(src);
 }
 

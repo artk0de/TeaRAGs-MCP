@@ -23,7 +23,7 @@ interface MockPort {
 }
 
 const state = vi.hoisted(() => ({
-  workerData: {} as unknown,
+  workerData: {},
   port: null as MockPort | null,
 }));
 

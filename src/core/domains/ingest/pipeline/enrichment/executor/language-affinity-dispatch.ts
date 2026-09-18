@@ -126,7 +126,7 @@ export class LanguageAffinityDispatcher {
     finalizeStage: "resolve" | "readBack",
   ): Promise<EnrichmentWorkerResponse> {
     const options: FileSignalOptions = {
-      ...(request.options as FileSignalOptions | undefined),
+      ...request.options,
       finalizeStage,
       ownsCollectionCompletion: partition === plan.completionOwner,
     };

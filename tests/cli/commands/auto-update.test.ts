@@ -34,7 +34,7 @@ function deps(over: Partial<AutoUpdateCliDeps> = {}) {
       findByName: (name: string) => (name === "proj" ? entry : null),
       get: (cn: string) => (cn === "code_x" ? entry : null),
       setAutoUpdate,
-    } as AutoUpdateCliDeps["registry"],
+    },
     freshness: { check: () => ({ kind: "eligible", entry }) },
     detectBranch: () => "main",
     logPathFor: (label: string) => `/data/logs/auto-update-${label}.log`,
@@ -70,7 +70,7 @@ describe("runAutoUpdateCliCommand", () => {
         findByName: () => withRun,
         get: () => withRun,
         setAutoUpdate: vi.fn(),
-      } as AutoUpdateCliDeps["registry"],
+      },
     });
     await runAutoUpdateCliCommand("enable", { project: "proj" }, d.base);
     expect(d.base.registry.setAutoUpdate).toHaveBeenCalledWith("code_x", {
@@ -88,7 +88,7 @@ describe("runAutoUpdateCliCommand", () => {
         findByName: () => configured,
         get: () => configured,
         setAutoUpdate,
-      } as AutoUpdateCliDeps["registry"],
+      },
     });
     await runAutoUpdateCliCommand("disable", { project: "proj" }, d.base);
     expect(setAutoUpdate).toHaveBeenCalledWith("code_x", { enabled: false, targetBranch: "trunk" });
@@ -117,7 +117,7 @@ describe("runAutoUpdateCliCommand", () => {
         findByName: () => configured,
         get: () => configured,
         setAutoUpdate: vi.fn(),
-      } as AutoUpdateCliDeps["registry"],
+      },
       freshness: { check: () => ({ kind: "branch-mismatch", head: "feature-x", targetBranch: "main" }) },
     });
     await runAutoUpdateCliCommand("status", { project: "proj" }, d.base);

@@ -565,7 +565,7 @@ describe("installWorkerCrashGuard (tea-rags-mcp-0ej8v)", () => {
     const send = vi.fn();
     const errSpy = vi.spyOn(console, "error").mockImplementation(() => {});
     try {
-      installWorkerCrashGuard(proc as never, send);
+      installWorkerCrashGuard(proc, send);
       proc.emit("uncaughtException", new Error("finalize boom"));
 
       expect(send).toHaveBeenCalledWith({
@@ -587,7 +587,7 @@ describe("installWorkerCrashGuard (tea-rags-mcp-0ej8v)", () => {
     const send = vi.fn();
     const errSpy = vi.spyOn(console, "error").mockImplementation(() => {});
     try {
-      installWorkerCrashGuard(proc as never, send);
+      installWorkerCrashGuard(proc, send);
       proc.emit("unhandledRejection", "string reason");
 
       expect(send).toHaveBeenCalledWith({

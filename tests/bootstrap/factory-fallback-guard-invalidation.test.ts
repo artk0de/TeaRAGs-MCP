@@ -39,9 +39,9 @@ const CANARY_VECTOR = [1, 0, 0, 0];
 // hoisted above the imports, so these must be declared through vi.hoisted to be
 // in scope at that point — the same idiom as the GitTrajectory spy in
 // factory.test.ts.
-const captured = vi.hoisted(() => ({
-  embeddings: undefined as unknown,
-  guard: undefined as unknown,
+const captured = vi.hoisted((): { embeddings: unknown; guard: unknown; primaryAlive: boolean } => ({
+  embeddings: undefined,
+  guard: undefined,
   primaryAlive: true,
 }));
 const qdrantSpies = vi.hoisted(() => ({ getPoint: vi.fn(), setPayload: vi.fn() }));

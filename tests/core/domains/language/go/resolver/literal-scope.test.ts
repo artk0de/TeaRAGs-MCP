@@ -26,7 +26,7 @@ const sym = (symbolId: string, relPath: string): NamedSymbol => ({
 
 function parse(src: string) {
   const p = new Parser();
-  p.setLanguage(GoLang as unknown as Parser.Language);
+  p.setLanguage(GoLang);
   return p.parse(src);
 }
 

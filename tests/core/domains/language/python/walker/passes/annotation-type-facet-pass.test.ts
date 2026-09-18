@@ -40,7 +40,7 @@ const CHUNKS = [
 
 function extract(): FileExtraction {
   const parser = new Parser();
-  parser.setLanguage(PyLang as unknown as Parser.Language);
+  parser.setLanguage(PyLang);
   return new PythonLanguage().walker.walk({
     tree: parser.parse(SOURCE),
     code: SOURCE,

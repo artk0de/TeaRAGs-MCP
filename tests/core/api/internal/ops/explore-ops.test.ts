@@ -120,7 +120,7 @@ describe("ExploreOps.findSymbol", () => {
 
     // Act: findSymbol with collection (bypasses registry lookup) + a symbol
     // that has no Qdrant chunks (scroll → []) so the codegraph fallback runs.
-    await ops.findSymbol({ symbol: "Foo#bar", collection: "code_test_col" } as never);
+    await ops.findSymbol({ symbol: "Foo#bar", collection: "code_test_col" });
 
     // Assert: the resolver was consulted with the collection name and the
     // exact symbol string the caller passed in.

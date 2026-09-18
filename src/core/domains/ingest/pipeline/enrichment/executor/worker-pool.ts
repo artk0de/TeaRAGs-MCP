@@ -307,9 +307,7 @@ export class WorkerPoolEnrichmentExecutor implements EnrichmentExecutor {
     if (cached !== undefined) return cached;
     const runRelPaths = this.runRelPathsByCollection.get(collectionName);
     const eligible =
-      this.languageAffinityEnabled &&
-      runRelPaths !== undefined &&
-      this.canFanOutExtraction(descriptor, options as FileSignalOptions | undefined);
+      this.languageAffinityEnabled && runRelPaths !== undefined && this.canFanOutExtraction(descriptor, options);
     const plan =
       eligible && runRelPaths
         ? planLanguageAffinity({

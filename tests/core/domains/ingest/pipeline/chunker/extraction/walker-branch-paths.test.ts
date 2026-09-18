@@ -26,13 +26,13 @@ import { extractFromTypescriptFile } from "../../../../../../../src/core/domains
 
 function parseTs(src: string): Parser.Tree {
   const parser = new Parser();
-  parser.setLanguage(TsLang as unknown as Parser.Language);
+  parser.setLanguage(TsLang);
   return parser.parse(src);
 }
 
 function parseJs(src: string): Parser.Tree {
   const parser = new Parser();
-  parser.setLanguage(JsLang as unknown as Parser.Language);
+  parser.setLanguage(JsLang);
   return parser.parse(src);
 }
 
@@ -42,13 +42,13 @@ function topLevel(tree: Parser.Tree, type: string): Parser.SyntaxNode | undefine
 
 function parsePy(src: string): Parser.Tree {
   const parser = new Parser();
-  parser.setLanguage(PyLang as unknown as Parser.Language);
+  parser.setLanguage(PyLang);
   return parser.parse(src);
 }
 
 function parseRb(src: string): Parser.Tree {
   const parser = new Parser();
-  parser.setLanguage(RbLang as unknown as Parser.Language);
+  parser.setLanguage(RbLang);
   return parser.parse(src);
 }
 

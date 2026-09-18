@@ -13,9 +13,9 @@ import { collectSymbols } from "../../../../../src/core/domains/language/kernel/
 import { DefaultSymbolIdComposer } from "../../../../../src/core/domains/language/kernel/symbol-id.js";
 import { TSCallResolver } from "../../../../../src/core/domains/language/typescript/resolver/ts-resolver.js";
 import { extractFromTypescriptFile } from "../../../../../src/core/domains/language/typescript/walker/walker.js";
+import { runMigrations } from "../../../../../src/core/domains/maintenance/migration/database/runner.js";
 import { CodegraphEnrichmentProvider } from "../../../../../src/core/domains/trajectory/codegraph/symbols/provider.js";
 import { InMemoryGlobalSymbolTable } from "../../../../../src/core/domains/trajectory/codegraph/symbols/symbol-table.js";
-import { runMigrations } from "../../../../../src/core/domains/maintenance/migration/database/runner.js";
 import { buildTestCodegraphDeps } from "./__helpers__/language-factory.js";
 
 const __dirname = fileURLToPath(new URL(".", import.meta.url));
@@ -26,7 +26,7 @@ const MIG_DIR = resolve(__dirname, "../../../../../src/core/domains/maintenance/
 // symbol reaches cg_symbols; the walker extracts inheritanceEdges from the parse.
 function walk(relPath: string, src: string): FileExtraction {
   const parser = new Parser();
-  parser.setLanguage(TsLang as unknown as Parser.Language);
+  parser.setLanguage(TsLang);
   const tree = parser.parse(src);
   const name = /(?:class|interface)\s+(\w+)/.exec(src)?.[1] ?? "X";
   return extractFromTypescriptFile({

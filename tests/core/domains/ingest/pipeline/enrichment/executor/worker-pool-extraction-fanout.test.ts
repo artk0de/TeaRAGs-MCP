@@ -89,7 +89,7 @@ function fanoutProvider(modulePath: string): EnrichmentProvider {
     buildChunkSignals: async () => new Map(),
     streamFileBatch: async () => new Map(),
     workerDescriptor: descriptor,
-  } as unknown as EnrichmentProvider;
+  };
 }
 
 function paths(count: number): string[] {

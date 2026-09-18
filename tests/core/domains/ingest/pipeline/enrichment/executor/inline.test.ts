@@ -25,7 +25,7 @@ function fakeProvider(overrides: Partial<EnrichmentProvider> = {}): EnrichmentPr
     streamFileBatch: vi.fn(async () => new Map([["a.ts", { s: 3 }]])),
     finalizeSignals: vi.fn(async () => new Map([["a.ts", { f: 4 }]])),
     ...overrides,
-  } as unknown as EnrichmentProvider;
+  };
 }
 
 describe("InlineEnrichmentExecutor", () => {

@@ -41,7 +41,7 @@ function heldProvider(held: Promise<void>): EnrichmentProvider {
       await held;
       return new Map();
     }),
-  } as unknown as EnrichmentProvider;
+  };
 }
 
 function gate(): { open: () => void; opened: Promise<void> } {

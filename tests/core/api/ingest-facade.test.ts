@@ -110,7 +110,7 @@ describe("IngestFacade", () => {
         getProviderName: vi.fn().mockReturnValue("mock"),
       } as any,
       config: {} as any,
-      trajectoryConfig: { enableGitMetadata: false } as any,
+      trajectoryConfig: { enableGitMetadata: false },
       statsCache: statsCache as any,
       allPayloadSignals: payloadSignals as any,
       reranker: reranker as any,
@@ -141,7 +141,7 @@ describe("IngestFacade", () => {
         getProviderName: vi.fn().mockReturnValue("mock"),
       } as any,
       config: {} as any,
-      trajectoryConfig: { enableGitMetadata: true } as any,
+      trajectoryConfig: { enableGitMetadata: true },
       enrichmentProviders: [stubA, stubB],
     });
     const coordinator = mockCoordinatorInstances.at(-1);
@@ -163,7 +163,7 @@ describe("IngestFacade", () => {
       config: {} as any,
       // Even with enableGitMetadata: true, the facade no longer constructs
       // a GitEnrichmentProvider inline — bootstrap owns that decision now.
-      trajectoryConfig: { enableGitMetadata: true } as any,
+      trajectoryConfig: { enableGitMetadata: true },
     });
     const coordinator = mockCoordinatorInstances.at(-1);
     expect(coordinator.providers).toEqual([]);
@@ -276,7 +276,7 @@ describe("IngestFacade", () => {
         getFallbackBaseUrl: vi.fn().mockReturnValue("http://127.0.0.1:11434"),
       } as any,
       config: {} as any,
-      trajectoryConfig: { enableGitMetadata: false } as any,
+      trajectoryConfig: { enableGitMetadata: false },
     });
 
     const status = await facade.getIndexStatus("/tmp/test-project");
@@ -313,7 +313,7 @@ describe("IngestFacade", () => {
         getFallbackBaseUrl: vi.fn().mockReturnValue(undefined),
       } as any,
       config: {} as any,
-      trajectoryConfig: { enableGitMetadata: false } as any,
+      trajectoryConfig: { enableGitMetadata: false },
     });
 
     const status = await facade.getIndexStatus("/tmp/test-project");
@@ -429,7 +429,7 @@ describe("IngestFacade", () => {
         getProviderName: vi.fn().mockReturnValue("mock"),
       } as any,
       config: {} as any,
-      trajectoryConfig: { enableGitMetadata: false } as any,
+      trajectoryConfig: { enableGitMetadata: false },
     });
     const result = await facade.indexCodebase("/tmp/test-project");
 
@@ -462,7 +462,7 @@ describe("IngestFacade", () => {
         getProviderName: vi.fn().mockReturnValue("mock"),
       } as any,
       config: {} as any,
-      trajectoryConfig: { enableGitMetadata: false } as any,
+      trajectoryConfig: { enableGitMetadata: false },
     });
     const result = await facade.indexCodebase("/tmp/test-project");
 
@@ -497,7 +497,7 @@ describe("IngestFacade", () => {
         qdrant: { collectionExists: vi.fn(), checkHealth: vi.fn(), url: "http://localhost:6333" } as any,
         embeddings: { embed: vi.fn(), checkHealth: vi.fn(), getProviderName: vi.fn() } as any,
         config: config as any,
-        trajectoryConfig: { enableGitMetadata: false } as any,
+        trajectoryConfig: { enableGitMetadata: false },
       });
       return facade;
     }
@@ -585,7 +585,7 @@ describe("IngestFacade", () => {
           resolveModelInfo: resolveModelInfoMock,
         } as any,
         config: { chunkSize: 2500 } as any,
-        trajectoryConfig: { enableGitMetadata: false } as any,
+        trajectoryConfig: { enableGitMetadata: false },
       });
 
       return { facade, getPoint, setPayload, resolveModelInfoMock };
@@ -653,7 +653,7 @@ describe("IngestFacade", () => {
           resolveModelInfo: resolveModelInfoMock,
         } as any,
         config: { chunkSize: 2500 } as any,
-        trajectoryConfig: { enableGitMetadata: false } as any,
+        trajectoryConfig: { enableGitMetadata: false },
       });
 
       await facade.indexCodebase("/tmp/test-project");
@@ -709,7 +709,7 @@ describe("IngestFacade", () => {
           getProviderName: vi.fn().mockReturnValue("mock"),
         } as any,
         config: {} as any,
-        trajectoryConfig: { enableGitMetadata: false } as any,
+        trajectoryConfig: { enableGitMetadata: false },
       });
 
       // Recovery takes real time and flips the flag only when it completes.
@@ -745,7 +745,7 @@ describe("IngestFacade", () => {
           getProviderName: vi.fn().mockReturnValue("mock"),
         } as any,
         config: {} as any,
-        trajectoryConfig: { enableGitMetadata: false } as any,
+        trajectoryConfig: { enableGitMetadata: false },
       });
 
       const coordinator = mockCoordinatorInstances.at(-1);
@@ -788,7 +788,7 @@ describe("IngestFacade", () => {
           getProviderName: vi.fn().mockReturnValue("mock"),
         } as any,
         config: {} as any,
-        trajectoryConfig: { enableGitMetadata: false } as any,
+        trajectoryConfig: { enableGitMetadata: false },
       });
       await expect(facade.indexCodebase("/tmp/test-project")).rejects.toThrow(OllamaUnavailableError);
     });

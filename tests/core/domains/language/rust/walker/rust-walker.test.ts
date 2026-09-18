@@ -6,7 +6,7 @@ import { extractFromRustFile } from "../../../../../../src/core/domains/language
 
 function parse(src: string) {
   const p = new Parser();
-  p.setLanguage(RustLang as unknown as Parser.Language);
+  p.setLanguage(RustLang);
   return p.parse(src);
 }
 

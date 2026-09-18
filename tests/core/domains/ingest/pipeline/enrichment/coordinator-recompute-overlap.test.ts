@@ -110,7 +110,7 @@ function heldProvider(held: Promise<void>, failFirstFinalize = false): Enrichmen
       }
       return new Map();
     }),
-  } as unknown as EnrichmentProvider;
+  };
 }
 
 function gate(): { open: () => void; opened: Promise<void> } {

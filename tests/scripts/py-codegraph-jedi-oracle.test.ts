@@ -277,11 +277,11 @@ describe("countEnclosingBases", () => {
   });
 
   it("reports zero for a class the walker recorded no base for", () => {
-    expect(countEnclosingBases({ ...multiBaseCtx, classAncestors: {} } as CallContext)).toBe(0);
+    expect(countEnclosingBases({ ...multiBaseCtx, classAncestors: {} })).toBe(0);
   });
 
   it("returns undefined outside a class, so a module-level site cannot be gated on arity", () => {
-    expect(countEnclosingBases({ ...multiBaseCtx, callerScope: [] } as CallContext)).toBeUndefined();
+    expect(countEnclosingBases({ ...multiBaseCtx, callerScope: [] })).toBeUndefined();
     expect(countEnclosingBases(ctx)).toBeUndefined();
   });
 

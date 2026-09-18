@@ -18,7 +18,7 @@ function provider(key: string): EnrichmentProvider {
     resolveRoot: (p: string) => p,
     buildFileSignals: vi.fn().mockResolvedValue(new Map()),
     buildChunkSignals: vi.fn().mockResolvedValue(new Map()),
-  } as unknown as EnrichmentProvider;
+  };
 }
 
 function qdrantDouble(): Record<string, unknown> {

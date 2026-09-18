@@ -8,7 +8,7 @@ describe("batchSetPayloadWithRetry", () => {
   it("returns true on first-attempt success (single call)", async () => {
     const qdrant = { batchSetPayload: vi.fn().mockResolvedValue(undefined) };
 
-    const ok = await batchSetPayloadWithRetry(qdrant as any, "coll", OPS, { baseDelayMs: 0 });
+    const ok = await batchSetPayloadWithRetry(qdrant, "coll", OPS, { baseDelayMs: 0 });
 
     expect(ok).toBe(true);
     expect(qdrant.batchSetPayload).toHaveBeenCalledTimes(1);
@@ -22,7 +22,7 @@ describe("batchSetPayloadWithRetry", () => {
       batchSetPayload: vi.fn().mockRejectedValueOnce(new Error("ETIMEDOUT")).mockResolvedValueOnce(undefined),
     };
 
-    const ok = await batchSetPayloadWithRetry(qdrant as any, "coll", OPS, { baseDelayMs: 0 });
+    const ok = await batchSetPayloadWithRetry(qdrant, "coll", OPS, { baseDelayMs: 0 });
 
     expect(ok).toBe(true);
     expect(qdrant.batchSetPayload).toHaveBeenCalledTimes(2);
@@ -31,7 +31,7 @@ describe("batchSetPayloadWithRetry", () => {
   it("returns false after exhausting maxAttempts on persistent failure", async () => {
     const qdrant = { batchSetPayload: vi.fn().mockRejectedValue(new Error("down")) };
 
-    const ok = await batchSetPayloadWithRetry(qdrant as any, "coll", OPS, { maxAttempts: 3, baseDelayMs: 0 });
+    const ok = await batchSetPayloadWithRetry(qdrant, "coll", OPS, { maxAttempts: 3, baseDelayMs: 0 });
 
     expect(ok).toBe(false);
     expect(qdrant.batchSetPayload).toHaveBeenCalledTimes(3);

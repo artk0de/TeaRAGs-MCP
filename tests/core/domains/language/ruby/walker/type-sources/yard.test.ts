@@ -292,7 +292,7 @@ describe("@!method directive does not leak onto the following def (bd tea-rags-m
     // Real tree: the directive sits on a comment line, so its scope comes from
     // the class range, not from a def line.
     const parser = new Parser();
-    parser.setLanguage(RbLang as unknown as Parser.Language);
+    parser.setLanguage(RbLang);
     const input = { ...makeInput(taxdomeShape), tree: parser.parse(taxdomeShape) } as RubyExtractInput;
     const facts = rubyYardTypeSource.extract(input).filter((f) => f.kind === "return");
     expect(facts).toHaveLength(1);

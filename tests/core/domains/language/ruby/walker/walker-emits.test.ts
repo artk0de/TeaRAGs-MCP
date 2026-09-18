@@ -40,7 +40,7 @@ const CANCAN_CHECK_VERBS = new Set([
 
 function parse(src: string) {
   const parser = new Parser();
-  parser.setLanguage(RbLang as unknown as Parser.Language);
+  parser.setLanguage(RbLang);
   return parser.parse(src);
 }
 

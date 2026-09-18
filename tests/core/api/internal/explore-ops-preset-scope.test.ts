@@ -27,9 +27,9 @@ import { StaticTrajectory } from "../../../../src/core/domains/trajectory/static
 import { DecompositionPreset } from "../../../../src/core/domains/trajectory/static/rerank/presets/decomposition.js";
 
 const PRESETS: Record<string, RerankPreset> = {
-  bugHunt: new BugHuntCompositePreset() as unknown as RerankPreset,
+  bugHunt: new BugHuntCompositePreset(),
   techDebt: new TechDebtPreset(),
-  ownership: new OwnershipCompositePreset() as unknown as RerankPreset,
+  ownership: new OwnershipCompositePreset(),
   // The static decomposition preset ships the coreLogic default (function/class only).
   decomposition: new DecompositionPreset(),
 };
@@ -74,7 +74,7 @@ function makeFacade() {
 
 async function sentFilter(request: Record<string, unknown>): Promise<any> {
   const { facade, sentFilters } = makeFacade();
-  await facade.semanticSearch({ collection: "col", query: "q", ...request } as any);
+  await facade.semanticSearch({ collection: "col", query: "q", ...request });
   expect(sentFilters).toHaveLength(1);
   return sentFilters[0];
 }

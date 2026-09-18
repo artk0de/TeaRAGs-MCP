@@ -86,9 +86,7 @@ function rebuiltUnderClient(): BuildFingerprintCapture {
 
 /** The real op table minus `ops` — a build that dropped them. */
 function withoutOps(...ops: DaemonOp[]): Partial<Record<DaemonOp, DaemonOpCommand>> {
-  return Object.fromEntries(
-    Object.entries(DAEMON_OP_COMMANDS).filter(([op]) => !ops.includes(op as DaemonOp)),
-  ) as Partial<Record<DaemonOp, DaemonOpCommand>>;
+  return Object.fromEntries(Object.entries(DAEMON_OP_COMMANDS).filter(([op]) => !ops.includes(op as DaemonOp)));
 }
 
 /** Real in-process daemon; returns its exit hook, which a drain ends in. */

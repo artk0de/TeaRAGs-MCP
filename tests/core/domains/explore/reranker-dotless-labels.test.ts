@@ -65,7 +65,7 @@ function statsFor(entries: [string, Record<number, number>][]): CollectionSignal
       othersCount: 0,
     },
     computedAt: 1,
-  } as CollectionSignalStats;
+  };
 }
 
 function resultWith(payload: Record<string, unknown>): RerankableResult {
@@ -79,7 +79,7 @@ function resultWith(payload: Record<string, unknown>): RerankableResult {
       chunkType: "block",
       ...payload,
     },
-  } as RerankableResult;
+  };
 }
 
 describe("Reranker — overlay labels for dotless payload keys", () => {

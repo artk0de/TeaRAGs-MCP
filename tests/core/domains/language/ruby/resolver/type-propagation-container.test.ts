@@ -52,7 +52,7 @@ const arrContainerBinding = {
 
 function makeInput(code: string): RubyExtractInput {
   const parser = new Parser();
-  parser.setLanguage(RbLang as unknown as Parser.Language);
+  parser.setLanguage(RbLang);
   const tree = parser.parse(code);
   return { tree, code, relPath: "test.rb", language: "ruby", chunks: [] };
 }

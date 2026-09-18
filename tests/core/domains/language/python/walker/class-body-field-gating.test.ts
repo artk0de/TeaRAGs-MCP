@@ -36,7 +36,7 @@ const MODEL = [
 
 function parse(src: string): Parser.Tree {
   const parser = new Parser();
-  parser.setLanguage(PyLang as unknown as Parser.Language);
+  parser.setLanguage(PyLang);
   return parser.parse(src);
 }
 

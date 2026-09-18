@@ -31,7 +31,7 @@ interface TreeSitterLanguageModule {
 }
 
 export const javascriptKernel: LanguageKernel = {
-  loadModule: async () => import("tree-sitter-javascript") as Promise<TreeSitterLanguageModule>,
+  loadModule: async () => import("tree-sitter-javascript"),
   extractLanguage: (mod: TreeSitterLanguageModule) => mod.default ?? mod,
   isInstanceMethod: (node: AstNode) => classifyMethod(node) === "instance",
 };

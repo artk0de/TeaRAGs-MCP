@@ -100,7 +100,7 @@ function spyProvider(modulePath: string, affinity = true): EnrichmentProvider {
     buildChunkSignals: async () => new Map(),
     streamFileBatch: async () => new Map(),
     workerDescriptor: descriptor,
-  } as unknown as EnrichmentProvider;
+  };
 }
 
 function run(collection: string): EnrichmentRunHandle {

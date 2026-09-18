@@ -65,7 +65,7 @@ describe("BaseIndexingPipeline.finalizeProcessing — registry write", () => {
     ({ tempDir, codebaseDir } = await createTempTestDir());
     registryDir = mkdtempSync(join(tmpdir(), "tea-rags-registry-"));
     registry = new CollectionRegistry(registryDir);
-    qdrant = new MockQdrantManager() as any;
+    qdrant = new MockQdrantManager();
     Object.defineProperty(qdrant, "url", { value: "http://localhost:6333", configurable: true });
     embeddings = new MockEmbeddingProvider();
     config = defaultTestConfig();

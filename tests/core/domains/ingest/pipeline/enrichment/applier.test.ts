@@ -351,7 +351,7 @@ describe("EnrichmentApplier", () => {
       }
       const chunkMetadata = new Map([["src/big.ts", overlays]]);
 
-      const applied = await applier.applyChunkSignals("test-collection", "git", chunkMetadata as any);
+      const applied = await applier.applyChunkSignals("test-collection", "git", chunkMetadata);
 
       // Should have 2 batchSetPayload calls: one at 100, one for the remaining 50
       expect(mockQdrant.batchSetPayload).toHaveBeenCalledTimes(2);
@@ -371,7 +371,7 @@ describe("EnrichmentApplier", () => {
       }
       const chunkMetadata = new Map([["src/big.ts", overlays]]);
 
-      const applied = await applier.applyChunkSignals("test-collection", "git", chunkMetadata as any);
+      const applied = await applier.applyChunkSignals("test-collection", "git", chunkMetadata);
 
       // batch1: fail + retry-success (2 calls), batch2: success (1 call) = 3 total
       expect(mockQdrant.batchSetPayload).toHaveBeenCalledTimes(3);

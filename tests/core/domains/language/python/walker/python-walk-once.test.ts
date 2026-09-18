@@ -46,7 +46,7 @@ const SOURCE = [
 
 function materialize(src: string): AstNode {
   const parser = new Parser();
-  parser.setLanguage(PyLang as unknown as Parser.Language);
+  parser.setLanguage(PyLang);
   return materializeTree(parser.parse(src).rootNode, src);
 }
 

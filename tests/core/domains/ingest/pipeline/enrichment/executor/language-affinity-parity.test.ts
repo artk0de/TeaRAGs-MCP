@@ -36,11 +36,7 @@ import { fileURLToPath } from "node:url";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import { DuckDbGraphClient } from "../../../../../../../src/core/adapters/duckdb/client.js";
-import type {
-  ChunkSignalOverlay,
-  EnrichmentProvider,
-  FileSignalOverlay,
-} from "../../../../../../../src/core/contracts/types/provider.js";
+import type { ChunkSignalOverlay, FileSignalOverlay } from "../../../../../../../src/core/contracts/types/provider.js";
 import { ExtractionFanoutDispatcher } from "../../../../../../../src/core/domains/ingest/pipeline/enrichment/executor/extraction-fanout.js";
 import { LanguageAffinityDispatcher } from "../../../../../../../src/core/domains/ingest/pipeline/enrichment/executor/language-affinity-dispatch.js";
 import {
@@ -118,7 +114,7 @@ function inProcessPool(client: DuckDbGraphClient): {
     }
     // Yield first, as a postMessage would: a dispatch never runs inside its caller's turn.
     await Promise.resolve();
-    return invokeEnrichmentMethod(provider as EnrichmentProvider, structuredClone(request));
+    return invokeEnrichmentMethod(provider, structuredClone(request));
   };
   return { dispatch };
 }

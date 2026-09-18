@@ -7,7 +7,7 @@ import { jsNameOf } from "../../../../../../src/core/domains/language/javascript
 // Helper: parse JS source and return the tree root's named children.
 function parse(src: string) {
   const parser = new Parser();
-  parser.setLanguage(JsLang as unknown as Parser.Language);
+  parser.setLanguage(JsLang);
   return parser.parse(src);
 }
 

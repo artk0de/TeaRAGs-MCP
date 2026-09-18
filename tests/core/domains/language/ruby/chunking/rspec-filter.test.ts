@@ -7,7 +7,7 @@ import { rspecFilterHook } from "../../../../../../src/core/domains/language/rub
 // Helper: parse Ruby code and find all `call` nodes at any depth
 function parseAndFindCalls(code: string): { node: Parser.SyntaxNode; code: string }[] {
   const parser = new Parser();
-  parser.setLanguage(Ruby as unknown as Parser.Language);
+  parser.setLanguage(Ruby);
   const tree = parser.parse(code);
   const calls: Parser.SyntaxNode[] = [];
   const traverse = (n: Parser.SyntaxNode) => {
@@ -22,7 +22,7 @@ describe("rspecFilterHook", () => {
   describe("filterNode", () => {
     it("should return undefined for non-call nodes", () => {
       const parser = new Parser();
-      parser.setLanguage(Ruby as unknown as Parser.Language);
+      parser.setLanguage(Ruby);
       const tree = parser.parse("class Foo; end");
       const classNode = tree.rootNode.children[0];
       expect(classNode.type).toBe("class");

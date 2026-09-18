@@ -69,7 +69,7 @@ const collection = resolveCollectionName(process.cwd());
 describe("IndexingOps — language version stamping", () => {
   it("stamps every axis after a full reindex", async () => {
     const collectionRegistry = makeRegistry();
-    const ops = new IndexingOps(makeDeps({ collectionRegistry: collectionRegistry as never }));
+    const ops = new IndexingOps(makeDeps({ collectionRegistry }));
 
     await ops.run(process.cwd(), { forceReindex: true });
 
@@ -82,7 +82,7 @@ describe("IndexingOps — language version stamping", () => {
   it("stamps every axis on a first index", async () => {
     const collectionRegistry = makeRegistry();
     const deps = makeDeps({
-      collectionRegistry: collectionRegistry as never,
+      collectionRegistry,
       qdrant: {
         collectionExists: vi.fn().mockResolvedValue(false),
         aliases: { listAliases: vi.fn().mockResolvedValue([]) },
@@ -96,7 +96,7 @@ describe("IndexingOps — language version stamping", () => {
 
   it("stamps only the codegraph axes after a codegraph enrichment recompute", async () => {
     const collectionRegistry = makeRegistry();
-    const ops = new IndexingOps(makeDeps({ collectionRegistry: collectionRegistry as never }));
+    const ops = new IndexingOps(makeDeps({ collectionRegistry }));
 
     await ops.run(process.cwd(), { forceEnrichments: ["codegraph"] });
 
@@ -108,7 +108,7 @@ describe("IndexingOps — language version stamping", () => {
 
   it("narrows the stamp to the requested languages", async () => {
     const collectionRegistry = makeRegistry();
-    const ops = new IndexingOps(makeDeps({ collectionRegistry: collectionRegistry as never }));
+    const ops = new IndexingOps(makeDeps({ collectionRegistry }));
 
     await ops.run(process.cwd(), { forceEnrichments: ["codegraph"], languages: ["typescript"] });
 
@@ -119,7 +119,7 @@ describe("IndexingOps — language version stamping", () => {
 
   it("leaves the stamp alone after a git-only recompute — no language layer was rebuilt", async () => {
     const collectionRegistry = makeRegistry();
-    const ops = new IndexingOps(makeDeps({ collectionRegistry: collectionRegistry as never }));
+    const ops = new IndexingOps(makeDeps({ collectionRegistry }));
 
     await ops.run(process.cwd(), { forceEnrichments: ["git"] });
 
@@ -129,7 +129,7 @@ describe("IndexingOps — language version stamping", () => {
   it("leaves the stamp alone on a plain incremental — nothing was rebuilt corpus-wide", async () => {
     const collectionRegistry = makeRegistry();
     const deps = makeDeps({
-      collectionRegistry: collectionRegistry as never,
+      collectionRegistry,
       reindex: { reindexChanges: vi.fn().mockResolvedValue(changeStats) } as never,
     });
 

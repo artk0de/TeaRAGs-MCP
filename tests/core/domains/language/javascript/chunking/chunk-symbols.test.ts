@@ -24,7 +24,7 @@ import { jsChunkSymbols } from "../../../../../../src/core/domains/language/java
 
 function parse(src: string): Parser.Tree {
   const parser = new Parser();
-  parser.setLanguage(JsLang as unknown as Parser.Language);
+  parser.setLanguage(JsLang);
   return parser.parse(src);
 }
 

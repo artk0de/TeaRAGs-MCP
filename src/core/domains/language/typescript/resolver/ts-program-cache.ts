@@ -479,6 +479,26 @@ interface CacheEntry {
  * `react/jsx-runtime` declaration to exist nor cares which runtime the project
  * targets, and the checker resolves tag names identically under all of them
  * (bd tea-rags-mcp-b4pvp).
+ *
+ * The last four are the TypeScript 5 DEFAULTS, spelled out because TypeScript
+ * 6.0 flipped every one of them and each flip re-types what the resolver
+ * strategies read (bd tea-rags-mcp-noc7):
+ *
+ * - `strict: false` — strict mode turns on `strictNullChecks`, so `x?.m()`
+ *   types `x` as `T | undefined` and the union-receiver path answers where the
+ *   single-type path used to, and `useUnknownInCatchVariables`, which types a
+ *   catch binding `unknown` instead of `any`.
+ * - `alwaysStrict: false` — forced strict mode scopes a function declared in a
+ *   block of a non-module `.js` script to that block.
+ * - `esModuleInterop: false` — interop turns `import * as e from "express"`
+ *   into a synthesized module object with no call signatures.
+ * - `libReplacement: true` — the `@typescript/lib-*` override lookup.
+ *
+ * TypeScript 6.0 reports `alwaysStrict: false`, `esModuleInterop: false` and
+ * `baseUrl` as deprecated. The report is a program diagnostic, which nothing
+ * here reads, and 6.0 still honours all three. Measured over this repo's own
+ * corpus, the 6.0 defaults moved 101 edge rows against the 5.9 run; with these
+ * values pinned the edge set is identical.
  */
 function buildCompilerOptions(repoRoot: string, tsOptions: TsCompilerOptions): ts.CompilerOptions {
   return {
@@ -493,6 +513,10 @@ function buildCompilerOptions(repoRoot: string, tsOptions: TsCompilerOptions): t
     baseUrl: resolvePath(repoRoot, tsOptions.baseUrl || "."),
     paths: tsOptions.paths,
     types: [],
+    strict: false,
+    alwaysStrict: false,
+    esModuleInterop: false,
+    libReplacement: true,
   };
 }
 

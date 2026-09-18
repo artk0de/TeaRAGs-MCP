@@ -5,7 +5,7 @@ import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 
 import { DuckDbGraphClient } from "../../../../src/core/adapters/duckdb/client.js";
-import type { RelPath, SymbolId } from "../../../../src/core/contracts/types/codegraph.js";
+import type { RelPath } from "../../../../src/core/contracts/types/codegraph.js";
 import { DATABASE_MIGRATIONS } from "../../../../src/core/domains/maintenance/migration/database/migrations/index.js";
 import { runMigrations } from "../../../../src/core/domains/maintenance/migration/database/runner.js";
 
@@ -54,14 +54,14 @@ describe("DuckDbGraphClient — chunk_id read/write", () => {
     const rel = "app/models/foo.rb" as RelPath;
     await client.upsertSymbols(rel, [
       {
-        symbolId: "Foo" as SymbolId,
+        symbolId: "Foo",
         fqName: "Foo",
         shortName: "Foo",
         relPath: rel,
         scope: [],
       },
       {
-        symbolId: "Foo#bar" as SymbolId,
+        symbolId: "Foo#bar",
         fqName: "Foo#bar",
         shortName: "bar",
         relPath: rel,
@@ -70,21 +70,21 @@ describe("DuckDbGraphClient — chunk_id read/write", () => {
     ]);
 
     // Before backfill: no covering chunk → null.
-    expect(await client.findSymbolChunk("Foo#bar" as SymbolId)).toBeNull();
+    expect(await client.findSymbolChunk("Foo#bar")).toBeNull();
 
     // Empty map is a no-op (early return, no transaction).
     await client.updateSymbolChunkIds(rel, new Map());
 
-    await client.updateSymbolChunkIds(rel, new Map([["Foo#bar" as SymbolId, "chunk_abc123def456"]]));
+    await client.updateSymbolChunkIds(rel, new Map([["Foo#bar", "chunk_abc123def456"]]));
 
-    expect(await client.findSymbolChunk("Foo#bar" as SymbolId)).toEqual({
+    expect(await client.findSymbolChunk("Foo#bar")).toEqual({
       relPath: rel,
       chunkId: "chunk_abc123def456",
     });
     // Symbol with no backfilled chunk_id stays null.
-    expect(await client.findSymbolChunk("Foo" as SymbolId)).toBeNull();
+    expect(await client.findSymbolChunk("Foo")).toBeNull();
     // Unknown symbol → null.
-    expect(await client.findSymbolChunk("Nope#x" as SymbolId)).toBeNull();
+    expect(await client.findSymbolChunk("Nope#x")).toBeNull();
 
     await client.close();
   });
@@ -109,31 +109,28 @@ describe("DuckDbGraphClient — findSymbolChunk last-segment fallback (DSL symbo
     const concern = "app/models/concerns/account/suspensions.rb" as RelPath;
     await client.upsertSymbols(concern, [
       {
-        symbolId: "Account::Suspensions" as SymbolId,
+        symbolId: "Account::Suspensions",
         fqName: "Account::Suspensions",
         shortName: "Suspensions",
         relPath: concern,
         scope: ["Account"],
       },
       {
-        symbolId: "Account::Suspensions.suspended" as SymbolId,
+        symbolId: "Account::Suspensions.suspended",
         fqName: "Account::Suspensions.suspended",
         shortName: "suspended",
         relPath: concern,
         scope: ["Account", "Suspensions"],
       },
     ]);
-    await client.updateSymbolChunkIds(
-      concern,
-      new Map([["Account::Suspensions.suspended" as SymbolId, "chunk_scope_suspended"]]),
-    );
+    await client.updateSymbolChunkIds(concern, new Map([["Account::Suspensions.suspended", "chunk_scope_suspended"]]));
     return client;
   }
 
   it("resolves a bare last-segment query to the DSL symbol's covering chunk", async () => {
     const client = await seed();
 
-    expect(await client.findSymbolChunk("suspended" as SymbolId)).toEqual({
+    expect(await client.findSymbolChunk("suspended")).toEqual({
       relPath: "app/models/concerns/account/suspensions.rb",
       chunkId: "chunk_scope_suspended",
     });
@@ -146,7 +143,7 @@ describe("DuckDbGraphClient — findSymbolChunk last-segment fallback (DSL symbo
 
     // The benchmark form — the scope is USED as `Account.suspended` though it
     // lives in the concern `Account::Suspensions`.
-    expect(await client.findSymbolChunk("Account.suspended" as SymbolId)).toEqual({
+    expect(await client.findSymbolChunk("Account.suspended")).toEqual({
       relPath: "app/models/concerns/account/suspensions.rb",
       chunkId: "chunk_scope_suspended",
     });
@@ -157,7 +154,7 @@ describe("DuckDbGraphClient — findSymbolChunk last-segment fallback (DSL symbo
   it("still resolves the canonical exact FQN via the exact tier", async () => {
     const client = await seed();
 
-    expect(await client.findSymbolChunk("Account::Suspensions.suspended" as SymbolId)).toEqual({
+    expect(await client.findSymbolChunk("Account::Suspensions.suspended")).toEqual({
       relPath: "app/models/concerns/account/suspensions.rb",
       chunkId: "chunk_scope_suspended",
     });
@@ -170,17 +167,17 @@ describe("DuckDbGraphClient — findSymbolChunk last-segment fallback (DSL symbo
     const other = "app/models/other.rb" as RelPath;
     await client.upsertSymbols(other, [
       {
-        symbolId: "Other#suspended" as SymbolId,
+        symbolId: "Other#suspended",
         fqName: "Other#suspended",
         shortName: "suspended",
         relPath: other,
         scope: ["Other"],
       },
     ]);
-    await client.updateSymbolChunkIds(other, new Map([["Other#suspended" as SymbolId, "chunk_other_suspended"]]));
+    await client.updateSymbolChunkIds(other, new Map([["Other#suspended", "chunk_other_suspended"]]));
 
     // Exact query must hit its own chunk, never the same-tail neighbour.
-    expect(await client.findSymbolChunk("Other#suspended" as SymbolId)).toEqual({
+    expect(await client.findSymbolChunk("Other#suspended")).toEqual({
       relPath: "app/models/other.rb",
       chunkId: "chunk_other_suspended",
     });
@@ -197,19 +194,19 @@ describe("DuckDbGraphClient — findSymbolChunk last-segment fallback (DSL symbo
     const rel = "app/models/account_filter.rb" as RelPath;
     await client.upsertSymbols(rel, [
       {
-        symbolId: "AccountFilter#status_scope" as SymbolId,
+        symbolId: "AccountFilter#status_scope",
         fqName: "AccountFilter#status_scope",
         shortName: "status_scope",
         relPath: rel,
         scope: ["AccountFilter"],
       },
     ]);
-    await client.updateSymbolChunkIds(rel, new Map([["AccountFilter#status_scope" as SymbolId, "chunk_status_scope"]]));
+    await client.updateSymbolChunkIds(rel, new Map([["AccountFilter#status_scope", "chunk_status_scope"]]));
 
     // `_` must match a literal underscore only — `statusXscope` must NOT hit.
-    expect(await client.findSymbolChunk("statusXscope" as SymbolId)).toBeNull();
+    expect(await client.findSymbolChunk("statusXscope")).toBeNull();
     // The literal underscore form resolves.
-    expect(await client.findSymbolChunk("status_scope" as SymbolId)).toEqual({
+    expect(await client.findSymbolChunk("status_scope")).toEqual({
       relPath: "app/models/account_filter.rb",
       chunkId: "chunk_status_scope",
     });
@@ -220,7 +217,7 @@ describe("DuckDbGraphClient — findSymbolChunk last-segment fallback (DSL symbo
   it("returns null when no symbol shares the query's last segment", async () => {
     const client = await seed();
 
-    expect(await client.findSymbolChunk("nonexistent_member" as SymbolId)).toBeNull();
+    expect(await client.findSymbolChunk("nonexistent_member")).toBeNull();
 
     await client.close();
   });

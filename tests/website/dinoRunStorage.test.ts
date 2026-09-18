@@ -35,7 +35,7 @@ function createMockStorage(): Storage {
       return store.size;
     },
     key: (_i: number) => null,
-  } as Storage;
+  };
 }
 
 // ===========================================================================

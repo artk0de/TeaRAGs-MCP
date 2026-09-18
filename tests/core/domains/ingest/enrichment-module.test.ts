@@ -49,7 +49,7 @@ describe("EnrichmentModule", () => {
 
   beforeEach(async () => {
     ({ tempDir, codebaseDir } = await createTempTestDir());
-    qdrant = new MockQdrantManager() as any;
+    qdrant = new MockQdrantManager();
     embeddings = new MockEmbeddingProvider();
     config = defaultTestConfig();
     ingest = new IngestFacade({

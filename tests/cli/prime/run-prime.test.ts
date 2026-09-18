@@ -22,7 +22,7 @@ beforeEach(() => {
   writeMock.mockClear();
   pingMock.mockReset();
   createAppContextMock.mockReset();
-  process.stdout.write = writeMock as unknown as typeof process.stdout.write;
+  process.stdout.write = writeMock;
 });
 afterEach(() => {
   process.stdout.write = stdoutOriginal;

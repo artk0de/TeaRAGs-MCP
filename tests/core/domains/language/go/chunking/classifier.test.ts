@@ -1,6 +1,6 @@
 import Parser from "tree-sitter";
 import GoLang from "tree-sitter-go";
-import { describe, it, expect, beforeAll } from "vitest";
+import { beforeAll, describe, expect, it } from "vitest";
 
 import { GoChunkClassifier } from "../../../../../../src/core/domains/language/go/chunking/classifier.js";
 
@@ -8,7 +8,7 @@ let parser: Parser;
 const classifier = new GoChunkClassifier();
 beforeAll(() => {
   parser = new Parser();
-  parser.setLanguage(GoLang as Parser.Language);
+  parser.setLanguage(GoLang);
 });
 
 function firstOfType(code: string, type: string): Parser.SyntaxNode {
@@ -48,7 +48,7 @@ describe("GoChunkClassifier.classifyNode", () => {
     });
   });
   it("emits function chunkType + Receiver#Method for a method", () => {
-    const node = firstOfType("func (c *Context) Query() string { return \"\" }", "method_declaration");
+    const node = firstOfType('func (c *Context) Query() string { return "" }', "method_declaration");
     expect(classifier.classifyNode(node)).toEqual({
       kind: "emit",
       chunks: [{ name: "Context#Query", symbolId: "Context#Query", chunkType: "function" }],

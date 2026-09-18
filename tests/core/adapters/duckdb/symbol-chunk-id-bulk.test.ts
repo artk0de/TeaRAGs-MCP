@@ -62,8 +62,8 @@ describe("DuckDbGraphClient.updateSymbolChunkIdsBulk", () => {
     await seedFile("src/b.ts", ["A#run", "B#go"]);
 
     await client.updateSymbolChunkIdsBulk([
-      { relPath: "src/a.ts" as RelPath, chunkIds: new Map([["A#run" as SymbolId, "chunk_a_run"]]) },
-      { relPath: "src/b.ts" as RelPath, chunkIds: new Map([["B#go" as SymbolId, "chunk_b_go"]]) },
+      { relPath: "src/a.ts", chunkIds: new Map([["A#run", "chunk_a_run"]]) },
+      { relPath: "src/b.ts", chunkIds: new Map([["B#go", "chunk_b_go"]]) },
     ]);
 
     const rows = await client.queryAll<{ rel_path: string; symbol_id: string; chunk_id: string | null }>(
@@ -83,7 +83,7 @@ describe("DuckDbGraphClient.updateSymbolChunkIdsBulk", () => {
     await seedFile("src/a.ts", ["A#run"]);
 
     await client.updateSymbolChunkIdsBulk([]);
-    await client.updateSymbolChunkIdsBulk([{ relPath: "src/a.ts" as RelPath, chunkIds: new Map() }]);
+    await client.updateSymbolChunkIdsBulk([{ relPath: "src/a.ts", chunkIds: new Map() }]);
 
     const rows = await client.queryAll<{ chunk_id: string | null }>("SELECT chunk_id FROM cg_symbols");
     expect(rows).toEqual([{ chunk_id: null }]);
@@ -111,23 +111,23 @@ describe("DuckDbGraphClient.updateSymbolChunkIdsBulk", () => {
       "SELECT count(*)::INTEGER AS n FROM cg_symbols WHERE chunk_id IS NOT NULL",
     );
     expect(joined[0].n).toBe(500);
-    expect(await client.findSymbolChunk("F249#c" as SymbolId)).toEqual({
+    expect(await client.findSymbolChunk("F249#c")).toEqual({
       relPath: "src/f249.ts",
       chunkId: "chunk_249_c",
     });
     // The symbol left out of every entry keeps its prior NULL.
-    expect(await client.findSymbolChunk("F249#b" as SymbolId)).toBeNull();
+    expect(await client.findSymbolChunk("F249#b")).toBeNull();
   });
 
   it("keeps the last write when one call carries the same symbol twice", async () => {
     await seedFile("src/a.ts", ["A#run"]);
 
     await client.updateSymbolChunkIdsBulk([
-      { relPath: "src/a.ts" as RelPath, chunkIds: new Map([["A#run" as SymbolId, "chunk_first"]]) },
-      { relPath: "src/a.ts" as RelPath, chunkIds: new Map([["A#run" as SymbolId, "chunk_last"]]) },
+      { relPath: "src/a.ts", chunkIds: new Map([["A#run", "chunk_first"]]) },
+      { relPath: "src/a.ts", chunkIds: new Map([["A#run", "chunk_last"]]) },
     ]);
 
-    expect(await client.findSymbolChunk("A#run" as SymbolId)).toEqual({
+    expect(await client.findSymbolChunk("A#run")).toEqual({
       relPath: "src/a.ts",
       chunkId: "chunk_last",
     });

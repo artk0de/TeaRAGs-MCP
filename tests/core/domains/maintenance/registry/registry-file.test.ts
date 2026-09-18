@@ -279,7 +279,7 @@ describe("mergeRegistryDelta — three-way merge against the base snapshot", () 
     const base = entry({ collectionName: "code_a", autoUpdate: { enabled: true, targetBranch: "main" } });
     const disk: RegistryFileV1 = { version: 1, collections: { code_a: { ...base } } };
     const { autoUpdate: _dropped, ...withoutAutoUpdate } = base;
-    const delta = new Map([["code_a", withoutAutoUpdate as CollectionEntry]]);
+    const delta = new Map([["code_a", withoutAutoUpdate]]);
 
     const merged = mergeRegistryDelta(disk, delta, undefined, new Map([["code_a", base]]));
 

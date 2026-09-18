@@ -7,7 +7,7 @@ const originalFetch = globalThis.fetch;
 
 beforeEach(() => {
   fetchMock.mockReset();
-  globalThis.fetch = fetchMock as unknown as typeof globalThis.fetch;
+  globalThis.fetch = fetchMock;
 });
 
 afterEach(() => {

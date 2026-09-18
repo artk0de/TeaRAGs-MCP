@@ -45,7 +45,7 @@ function fakeSession(): {
     },
   };
   return {
-    session: session as never,
+    session,
     posted,
     connected: () => connects,
     disconnected: () => disconnects,
@@ -67,10 +67,10 @@ function fakeDeps(overrides: Partial<ChunkedCpuProfilerDeps> = {}): {
     writeFile: async (path, data) => {
       written.push({ path, data });
     },
-    setInterval: ((handler: () => void) => {
+    setInterval: (handler: () => void) => {
       tick = handler;
       return { unref } as unknown as NodeJS.Timeout;
-    }) as unknown as ChunkedCpuProfilerDeps["setInterval"],
+    },
     clearInterval: () => undefined,
     threadId: 7,
     ...overrides,

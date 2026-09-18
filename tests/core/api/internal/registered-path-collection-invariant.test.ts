@@ -138,7 +138,7 @@ describe("indexing a relocated project", () => {
     canonicalPath = await seedRelocatedProject({ dataDir, projectDir });
     registry = new CollectionRegistry(dataDir);
 
-    qdrant = new MockQdrantManager() as never;
+    qdrant = new MockQdrantManager();
     Object.defineProperty(qdrant, "url", { value: "http://localhost:6333", configurable: true });
     const config: IngestCodeConfig = defaultTestConfig();
     ingest = new IngestFacade({
@@ -195,7 +195,7 @@ describe("prime at a relocated project's path", () => {
     writeMock.mockClear();
     pingMock.mockReset();
     createAppContextMock.mockReset();
-    process.stdout.write = writeMock as unknown as typeof process.stdout.write;
+    process.stdout.write = writeMock;
     prevDataDir = process.env.TEA_RAGS_DATA_DIR;
   });
 

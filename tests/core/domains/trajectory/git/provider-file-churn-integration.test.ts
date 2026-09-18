@@ -198,7 +198,7 @@ describe("GitEnrichmentProvider file-churn wiring — incremental range read (re
     // Spy calls through to the real impl — records the (sinceDate, range) args.
     numstatSpy = vi.spyOn(realAdapter, "readCommitFileNumstat");
     // The provider builds its adapter via the factory; hand it the spied real one.
-    vi.spyOn(VcsAdapterFactory, "create").mockResolvedValue(realAdapter as never);
+    vi.spyOn(VcsAdapterFactory, "create").mockResolvedValue(realAdapter);
 
     provider = new GitEnrichmentProvider();
   });

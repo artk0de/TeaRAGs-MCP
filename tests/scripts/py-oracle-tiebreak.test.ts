@@ -387,13 +387,15 @@ describe("the identity gate, in miniature", () => {
     row({ verdict: "missed", chainOutput: "none", chain: undefined }),
     row({ verdict: "phantom" }),
   ];
-  const staged = base.map((entry, index) => ({
-    ...entry,
-    tiebreak: (index === 0 ? "agreesWithChain" : "notAsked") as PyTiebreakClass,
-    verdictTiebroken: index === 0 ? ("match" as PyOracleVerdict) : entry.verdict,
-    pyrightTargetRelPath: "customer/repository.py",
-    pyrightTargetSymbolId: "CustomerRepository#update",
-  }));
+  const staged = base.map(
+    (entry, index): PyOracleRow => ({
+      ...entry,
+      tiebreak: index === 0 ? "agreesWithChain" : "notAsked",
+      verdictTiebroken: index === 0 ? "match" : entry.verdict,
+      pyrightTargetRelPath: "customer/repository.py",
+      pyrightTargetSymbolId: "CustomerRepository#update",
+    }),
+  );
 
   it("leaves the legacy and merged tallies byte-identical with the stage's fields present", () => {
     expect(tallyPyRows(staged, (entry) => [entry.receiverKind])).toEqual(

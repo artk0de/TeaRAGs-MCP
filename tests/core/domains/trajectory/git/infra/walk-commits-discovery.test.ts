@@ -63,7 +63,7 @@ async function walkOnce(
   blobReader: ReturnType<typeof fakeBlobReader>,
   discovery?: WalkCommitDiscovery,
 ): Promise<Map<string, Map<string, { commitCount: number; bugFixRate: number }>>> {
-  return (await buildChunkChurnMapUncached(
+  return await buildChunkChurnMapUncached(
     new GitCliAdapter("/fake/repo"),
     chunkMapFor(file),
     {},
@@ -78,7 +78,7 @@ async function walkOnce(
     blobReader as never,
     undefined,
     discovery,
-  )) as never;
+  );
 }
 
 describe("walkCommits run-scoped commit discovery (bd tea-rags-mcp-82va1)", () => {

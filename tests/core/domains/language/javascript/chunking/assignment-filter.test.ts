@@ -21,7 +21,7 @@ import { jsAssignmentFilterHook } from "../../../../../../src/core/domains/langu
 
 function parse(src: string): Parser.Tree {
   const p = new Parser();
-  p.setLanguage(JsLang as unknown as Parser.Language);
+  p.setLanguage(JsLang);
   return p.parse(src);
 }
 

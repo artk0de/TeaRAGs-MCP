@@ -87,9 +87,7 @@ function makePaths(): CodegraphDaemonPaths {
 
 /** The real op table minus `ops` — a daemon from a build that never had them. */
 function withoutOps(...ops: DaemonOp[]): Partial<Record<DaemonOp, DaemonOpCommand>> {
-  return Object.fromEntries(
-    Object.entries(DAEMON_OP_COMMANDS).filter(([op]) => !ops.includes(op as DaemonOp)),
-  ) as Partial<Record<DaemonOp, DaemonOpCommand>>;
+  return Object.fromEntries(Object.entries(DAEMON_OP_COMMANDS).filter(([op]) => !ops.includes(op as DaemonOp)));
 }
 
 /** Real daemon (socket + server + DuckDB pool) with an injected identity and op table. */

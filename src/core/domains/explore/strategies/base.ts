@@ -8,7 +8,6 @@
  */
 
 import type { QdrantManager } from "../../../adapters/qdrant/client.js";
-import type { SignalLevel } from "../../../contracts/types/reranker.js";
 import type { PayloadSignalDescriptor } from "../../../contracts/types/trajectory.js";
 import { filterMetaOnly } from "../post-process.js";
 import type { Reranker, RerankMode } from "../reranker.js";
@@ -76,7 +75,7 @@ export abstract class BaseExploreStrategy implements ExploreStrategy {
     let filtered =
       rerank && rerank !== "relevance"
         ? await this.reranker.rerank(results, rerank, "semantic_search", {
-            signalLevel: originalCtx.level as SignalLevel | undefined,
+            signalLevel: originalCtx.level,
             query: originalCtx.query,
           })
         : results;

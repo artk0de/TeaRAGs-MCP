@@ -115,7 +115,7 @@ function fakeInlineProvider(): EnrichmentProvider {
     resolveRoot: (p) => p,
     buildFileSignals: vi.fn(async () => new Map([["inline.ts", { via: "inline-build" }]])),
     buildChunkSignals: vi.fn(async () => new Map([["inline.ts", new Map([["c1", { via: "inline-chunk" }]])]])),
-  } as unknown as EnrichmentProvider;
+  };
 }
 
 function workerProvider(modulePath: string, dispatch: "stateless" | "collection-affinity"): EnrichmentProvider {
@@ -135,7 +135,7 @@ function workerProvider(modulePath: string, dispatch: "stateless" | "collection-
     buildFileSignals: async () => new Map(),
     buildChunkSignals: async () => new Map(),
     workerDescriptor: descriptor,
-  } as unknown as EnrichmentProvider;
+  };
 }
 
 describe("WorkerPoolEnrichmentExecutor", () => {

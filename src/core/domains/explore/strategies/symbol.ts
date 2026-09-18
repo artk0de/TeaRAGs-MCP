@@ -160,7 +160,7 @@ export class SymbolSearchStrategy extends BaseExploreStrategy {
         id: point.id,
         score: 1,
         payload,
-      } as ExploreResult,
+      },
     ];
   }
 
@@ -238,11 +238,7 @@ export class SymbolSearchStrategy extends BaseExploreStrategy {
     const filter: Record<string, unknown> = { must };
     if (!this.input.pathPattern) return filter;
 
-    const extra = this.registry.buildMergedFilter(
-      { pathPattern: this.input.pathPattern } as Record<string, unknown>,
-      undefined,
-      "chunk",
-    );
+    const extra = this.registry.buildMergedFilter({ pathPattern: this.input.pathPattern }, undefined, "chunk");
     if (!extra) return filter;
 
     const extraMust = extra.must as Record<string, unknown>[] | undefined;

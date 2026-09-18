@@ -42,7 +42,7 @@ describe("CLI 'doctor' command", () => {
         { json: false, recoverRegistry: false },
         {
           qdrant: fakeQdrant as never,
-          embeddings: fakeEmbeddings as never,
+          embeddings: fakeEmbeddings,
         },
       );
       const out = stdout.mock.calls.map((c) => String(c[0])).join("");
@@ -72,7 +72,7 @@ describe("CLI 'doctor' command", () => {
         { json: false, recoverRegistry: false },
         {
           qdrant: fakeQdrant as never,
-          embeddings: fakeEmbeddings as never,
+          embeddings: fakeEmbeddings,
         },
       );
       const out = stdout.mock.calls.map((c) => String(c[0])).join("");
@@ -100,7 +100,7 @@ describe("CLI 'doctor' command", () => {
         { json: false, recoverRegistry: false },
         {
           qdrant: fakeQdrant as never,
-          embeddings: fakeEmbeddings as never,
+          embeddings: fakeEmbeddings,
         },
       );
       const out = stdout.mock.calls.map((c) => String(c[0])).join("");
@@ -209,7 +209,7 @@ describe("CLI 'doctor' command", () => {
         { json: false, recoverRegistry: false },
         {
           qdrant: fakeQdrant as never,
-          embeddings: fakeEmbeddings as never,
+          embeddings: fakeEmbeddings,
         },
       );
       const out = stdout.mock.calls.map((c) => String(c[0])).join("");
@@ -237,7 +237,7 @@ describe("CLI 'doctor' command", () => {
         { json: true, recoverRegistry: false },
         {
           qdrant: fakeQdrant as never,
-          embeddings: fakeEmbeddings as never,
+          embeddings: fakeEmbeddings,
         },
       );
       const out = stdout.mock.calls.map((c) => String(c[0])).join("");
@@ -259,9 +259,9 @@ describe("CLI 'doctor' command", () => {
   it("doctorCommand yargs handler wires defaultDeps via bootstrap modules", async () => {
     const stdout = vi.spyOn(process.stdout, "write").mockImplementation(() => true);
     const stderr = vi.spyOn(process.stderr, "write").mockImplementation(() => true);
-    const exitSpy = vi.spyOn(process, "exit").mockImplementation((() => {
+    const exitSpy = vi.spyOn(process, "exit").mockImplementation(() => {
       throw new Error("process.exit called");
-    }) as (code?: number) => never);
+    });
 
     vi.doMock("../../../src/bootstrap/config/index.js", () => ({
       parseAppConfig: () => ({
@@ -335,9 +335,9 @@ describe("CLI 'doctor' command", () => {
   it("yargs handler passes --recover-registry through (flag accepted, ignored in T5)", async () => {
     const stdout = vi.spyOn(process.stdout, "write").mockImplementation(() => true);
     const stderr = vi.spyOn(process.stderr, "write").mockImplementation(() => true);
-    const exitSpy = vi.spyOn(process, "exit").mockImplementation((() => {
+    const exitSpy = vi.spyOn(process, "exit").mockImplementation(() => {
       throw new Error("process.exit called");
-    }) as (code?: number) => never);
+    });
 
     vi.doMock("../../../src/bootstrap/config/index.js", () => ({
       parseAppConfig: () => ({
@@ -429,8 +429,8 @@ describe("CLI 'doctor' command", () => {
         await runDoctor(
           { json: false, recoverRegistry: true },
           {
-            qdrant: fakeQdrant as never,
-            embeddings: fakeEmbeddings as never,
+            qdrant: fakeQdrant,
+            embeddings: fakeEmbeddings,
           },
         );
 
@@ -469,8 +469,8 @@ describe("CLI 'doctor' command", () => {
         await runDoctor(
           { json: true, recoverRegistry: true },
           {
-            qdrant: fakeQdrant as never,
-            embeddings: fakeEmbeddings as never,
+            qdrant: fakeQdrant,
+            embeddings: fakeEmbeddings,
           },
         );
         const out = stdout.mock.calls.map((c) => String(c[0])).join("");
@@ -507,7 +507,7 @@ describe("CLI 'doctor' command", () => {
           { json: false, recoverRegistry: false },
           {
             qdrant: fakeQdrant as never,
-            embeddings: fakeEmbeddings as never,
+            embeddings: fakeEmbeddings,
           },
         );
         const out = stdout.mock.calls.map((c) => String(c[0])).join("");
@@ -541,7 +541,7 @@ describe("CLI 'doctor' command", () => {
           { json: true, recoverRegistry: false },
           {
             qdrant: fakeQdrant as never,
-            embeddings: fakeEmbeddings as never,
+            embeddings: fakeEmbeddings,
           },
         );
         const out = stdout.mock.calls.map((c) => String(c[0])).join("");
@@ -573,7 +573,7 @@ describe("CLI 'doctor' command", () => {
           { json: true, recoverRegistry: false },
           {
             qdrant: fakeQdrant as never,
-            embeddings: fakeEmbeddings as never,
+            embeddings: fakeEmbeddings,
           },
         );
         const out = stdout.mock.calls.map((c) => String(c[0])).join("");

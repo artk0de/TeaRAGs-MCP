@@ -10,10 +10,10 @@ describe("runPrime — project not registered", () => {
   it("writes a path-not-found placeholder mentioning the unknown project", async () => {
     const writes: string[] = [];
     const orig = process.stdout.write;
-    process.stdout.write = ((m: string) => {
+    process.stdout.write = (m: string) => {
       writes.push(String(m));
       return true;
-    }) as never;
+    };
     try {
       await runPrime({ project: "this-project-does-not-exist-anywhere" });
     } finally {

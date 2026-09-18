@@ -308,7 +308,7 @@ describe("IndexDriftReporter — every axis at once", () => {
         // `navigation` is chunker-owned and unattributed — the one finding that
         // escalates the whole report to the full reindex.
         new SchemaDriftMonitor(statsCache as never, ["language", "navigation"]),
-        new LanguageVersionDriftMonitor(registry as never, statsCache as never, currentVersions),
+        new LanguageVersionDriftMonitor(registry, statsCache, currentVersions),
         new EnvDriftMonitor(registry as never, () => ({ CODEGRAPH_ENABLED: "true" }), {
           CODEGRAPH_ENABLED: "false",
         }),

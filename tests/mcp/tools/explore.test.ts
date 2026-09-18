@@ -105,7 +105,7 @@ describe("registerSearchTools", () => {
       semanticSearch: vi.fn().mockResolvedValue({
         results: [],
         confidence: { value: 0.23, label: "low" },
-      } as ExploreResponse),
+      }),
     });
     const tool = captured.find((t) => t.name === "semantic_search");
 
@@ -151,7 +151,7 @@ describe("registerSearchTools — codegraphWarning", () => {
 
   it("find_symbol passes codegraphWarning through to structuredContent", async () => {
     const { captured } = makeHarness({
-      findSymbol: vi.fn().mockResolvedValue({ results: [], codegraphWarning: warning } as ExploreResponse),
+      findSymbol: vi.fn().mockResolvedValue({ results: [], codegraphWarning: warning }),
     });
     const tool = captured.find((t) => t.name === "find_symbol");
 

@@ -145,11 +145,11 @@ describe("ExploreOps — search confidence on the response envelope", () => {
       const strong = await makeOps(makeMockQdrant({ search: vi.fn().mockResolvedValue(STRONG) })).semanticSearch({
         query: "reranker adaptive bounds",
         collection: "code_test_col",
-      } as never);
+      });
       const weak = await makeOps(makeMockQdrant({ search: vi.fn().mockResolvedValue(WEAK) })).semanticSearch({
         query: "quantum blockchain orchestration",
         collection: "code_test_col",
-      } as never);
+      });
 
       expect(weak.confidence?.label).toBe("low");
       expect(strong.confidence?.label).not.toBe("low");
@@ -160,7 +160,7 @@ describe("ExploreOps — search confidence on the response envelope", () => {
       const noBackground = makeMockReranker({ getCollectionStats: vi.fn().mockReturnValue(undefined) });
       const ops = makeOps(makeMockQdrant({ search: vi.fn().mockResolvedValue(STRONG) }), noBackground);
 
-      const response = await ops.semanticSearch({ query: "anything", collection: "code_test_col" } as never);
+      const response = await ops.semanticSearch({ query: "anything", collection: "code_test_col" });
 
       expect(response.confidence).toBeUndefined();
       expect(response.results).toHaveLength(STRONG.length);
@@ -185,7 +185,7 @@ describe("ExploreOps — search confidence on the response envelope", () => {
       const response = await makeOps(makeMockQdrant({ hybridSearch: vi.fn().mockResolvedValue(STRONG) })).hybridSearch({
         query: "reranker adaptive bounds",
         collection: "code_test_col",
-      } as never);
+      });
 
       expect(response.confidence).toBeUndefined();
     });
@@ -194,7 +194,7 @@ describe("ExploreOps — search confidence on the response envelope", () => {
       const response = await makeOps(makeMockQdrant({ scrollAll: vi.fn().mockResolvedValue(WEAK) })).rankChunks({
         rerank: "techDebt",
         collection: "code_test_col",
-      } as never);
+      });
 
       expect(response.confidence).toBeUndefined();
     });
@@ -203,7 +203,7 @@ describe("ExploreOps — search confidence on the response envelope", () => {
       const response = await makeOps(makeMockQdrant({ scrollFiltered: vi.fn().mockResolvedValue(STRONG) })).findSymbol({
         symbol: "Reranker",
         collection: "code_test_col",
-      } as never);
+      });
 
       expect(response.confidence).toBeUndefined();
     });
@@ -214,7 +214,7 @@ describe("ExploreOps — search confidence on the response envelope", () => {
       const response = await makeOps(makeMockQdrant({ search: vi.fn().mockResolvedValue(WEAK) })).semanticSearch({
         query: "quantum blockchain orchestration",
         collection: "code_test_col",
-      } as never);
+      });
 
       expect(response.confidence!.label).toBe("low");
       expect(response.results).toHaveLength(WEAK.length);

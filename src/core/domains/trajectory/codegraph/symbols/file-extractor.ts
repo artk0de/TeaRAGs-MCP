@@ -79,44 +79,44 @@ export const CODEGRAPH_LANGUAGES: Record<string, CodegraphLanguageConfig> = {
   },
   ".py": {
     language: "python",
-    loadParser: () => PyLang as Parser.Language,
+    loadParser: () => PyLang,
     scopeSeparator: ".",
   },
   ".rb": {
     language: "ruby",
-    loadParser: () => RbLang as Parser.Language,
+    loadParser: () => RbLang,
     scopeSeparator: "::",
   },
   // JavaScript variants — the single `tree-sitter-javascript` grammar serves all
   // four extensions.
   ".js": {
     language: "javascript",
-    loadParser: () => JsLang as Parser.Language,
+    loadParser: () => JsLang,
     scopeSeparator: ".",
   },
   ".jsx": {
     language: "javascript",
-    loadParser: () => JsLang as Parser.Language,
+    loadParser: () => JsLang,
     scopeSeparator: ".",
   },
   ".mjs": {
     language: "javascript",
-    loadParser: () => JsLang as Parser.Language,
+    loadParser: () => JsLang,
     scopeSeparator: ".",
   },
   ".cjs": {
     language: "javascript",
-    loadParser: () => JsLang as Parser.Language,
+    loadParser: () => JsLang,
     scopeSeparator: ".",
   },
   ".go": {
     language: "go",
-    loadParser: () => GoLang as Parser.Language,
+    loadParser: () => GoLang,
     scopeSeparator: ".",
   },
   ".java": {
     language: "java",
-    loadParser: () => JavaLang as Parser.Language,
+    loadParser: () => JavaLang,
     scopeSeparator: ".",
     // bd tea-rags-mcp-a466 — each Java overload needs its own symbolId so
     // `get_callers` / `get_callees` can pin the right body.
@@ -124,19 +124,19 @@ export const CODEGRAPH_LANGUAGES: Record<string, CodegraphLanguageConfig> = {
   },
   ".rs": {
     language: "rust",
-    loadParser: () => RustLang as Parser.Language,
+    loadParser: () => RustLang,
     scopeSeparator: "::",
   },
   // Bash — two extensions, one grammar (`.sh` and `.bash` share the single
   // BashLang).
   ".sh": {
     language: "bash",
-    loadParser: () => BashLang as Parser.Language,
+    loadParser: () => BashLang,
     scopeSeparator: ".",
   },
   ".bash": {
     language: "bash",
-    loadParser: () => BashLang as Parser.Language,
+    loadParser: () => BashLang,
     scopeSeparator: ".",
   },
 };

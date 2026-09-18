@@ -1,7 +1,6 @@
 import { describe, expect, it } from "vitest";
 
 import { ChunkerPool } from "../../../../../../../src/core/domains/ingest/pipeline/chunker/infra/pool.js";
-import type { ChunkerConfig } from "../../../../../../../src/core/types.js";
 
 /**
  * rdv7d repro — ruby codegraph callsAttempted jitters ~7% run-to-run on huginn
@@ -71,7 +70,7 @@ describe("ChunkerPool ruby jitter repro (size 8, N distinct files)", () => {
         chunkSize: 1500,
         chunkOverlap: 0,
         maxChunkSize: 3000,
-      } as ChunkerConfig);
+      });
 
       try {
         // Baseline (iteration 0).

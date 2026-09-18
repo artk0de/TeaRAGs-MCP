@@ -381,7 +381,7 @@ export class DaemonGraphDbClient implements GraphDbClient {
     const { sock } = this;
     if (!sock) throw new Error("DaemonGraphDbClient.call before init() / after close()");
     const id = this.nextId++;
-    const frame = encodeFrame({ id, op, params: { collection: this.collection, ...params } } as never);
+    const frame = encodeFrame({ id, op, params: { collection: this.collection, ...params } });
     // A non-replayable call starts out as if already retried: a connection loss
     // settles it rather than re-sending it.
     const retried = options.replayable === false;

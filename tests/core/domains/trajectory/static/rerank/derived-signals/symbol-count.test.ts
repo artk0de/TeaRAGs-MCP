@@ -28,7 +28,7 @@ describe("SymbolCountSignal", () => {
   it("contributes nothing — never NaN — when the payload predates the signal", () => {
     expect(signal.extract({}, { bounds: { moduleMethodCount: 40 } })).toBe(0);
     expect(signal.extract({ moduleMethodCount: undefined })).toBe(0);
-    expect(signal.extract({ moduleMethodCount: "many" as unknown as number })).toBe(0);
+    expect(signal.extract({ moduleMethodCount: "many" })).toBe(0);
     expect(signal.extract({ moduleMethodCount: 0 })).toBe(0);
   });
 

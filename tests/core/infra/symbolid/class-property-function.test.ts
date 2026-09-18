@@ -18,12 +18,12 @@ import TsLang from "tree-sitter-typescript";
 import { describe, expect, it } from "vitest";
 
 import type { AstNode } from "../../../../src/core/contracts/types/ast.js";
-import { classPropertyFunction } from "../../../../src/core/infra/symbolid/class-property-function.js";
 import { materializeTree } from "../../../../src/core/infra/materialize.js";
+import { classPropertyFunction } from "../../../../src/core/infra/symbolid/class-property-function.js";
 
 function parse(src: string): AstNode {
   const parser = new Parser();
-  parser.setLanguage(TsLang.typescript as unknown as Parser.Language);
+  parser.setLanguage(TsLang.typescript);
   return materializeTree(parser.parse(src).rootNode, src);
 }
 

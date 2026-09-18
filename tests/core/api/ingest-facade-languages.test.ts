@@ -6,7 +6,7 @@ import type { IndexOptions } from "../../../src/core/api/public/dto/ingest.js";
 const SUPPORTED = ["typescript", "ruby", "python"];
 
 function options(over: Partial<IndexOptions>): IndexOptions {
-  return over as IndexOptions;
+  return over;
 }
 
 /** The rejection message, so a test can assert on what it names. */

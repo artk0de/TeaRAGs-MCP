@@ -273,7 +273,7 @@ describe("IngestFacade + ExploreFacade Integration Tests", () => {
     codebaseDir = join(tempDir, "codebase");
     await fs.mkdir(codebaseDir, { recursive: true });
 
-    qdrant = new MockQdrantManager() as any;
+    qdrant = new MockQdrantManager();
     embeddings = new MockEmbeddingProvider();
     const resolvedPresets = resolvePresets([...STATIC_PRESETS, ...GIT_PRESETS], []);
     reranker = new Reranker([...gitDerivedSignals, ...staticDerivedSignals], resolvedPresets);

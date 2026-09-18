@@ -669,7 +669,7 @@ describe("ChunkPhase", () => {
 
       // …and backfill re-fetches file AND chunk overlays despite the arrival mark.
       const backfiller = new EnrichmentBackfiller(applier, qdrant as any, executor);
-      await backfiller.runFor("coll", ctx as any, "t0");
+      await backfiller.runFor("coll", ctx, "t0");
 
       const point = (await qdrant.getPoint("coll", "c1"))!;
       expect((point.payload as any).git.file.commitCount).toBe(2);
@@ -771,7 +771,7 @@ describe("ChunkPhase", () => {
         } as any,
       ]);
       await phase.drain();
-      await phase.runDeferredChunk("coll", ctx as any, "/repo", phase.getDeferredChunkMap("git"));
+      await phase.runDeferredChunk("coll", ctx, "/repo", phase.getDeferredChunkMap("git"));
 
       const dispatched = buildChunkSignals.mock.calls[0][1] as Map<string, unknown>;
       expect([...dispatched.keys()]).toEqual(["src/a.ts"]);

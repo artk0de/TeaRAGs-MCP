@@ -49,7 +49,7 @@ function fakeDiscovery(entries: { commit: CommitInfo; changedFiles: string[] }[]
   return {
     commitsForFiles: vi.fn().mockResolvedValue(entries),
     getBugFixShas: vi.fn().mockResolvedValue(new Set<string>()),
-  } as never;
+  };
 }
 
 const chunkMapFor = (file: string) =>
@@ -62,7 +62,7 @@ async function walkOnce(
   blobReader: ReturnType<typeof fakeBlobReader>,
   discovery: WalkCommitDiscovery,
 ): Promise<Map<string, Map<string, { commitCount: number }>>> {
-  return (await buildChunkChurnMapUncached(
+  return await buildChunkChurnMapUncached(
     new GitCliAdapter("/fake/repo"),
     chunkMapFor(file),
     {},
@@ -77,7 +77,7 @@ async function walkOnce(
     blobReader as never,
     undefined,
     discovery,
-  )) as never;
+  );
 }
 
 describe("walkCommits parents-from-matrix (bd tea-rags-mcp-iqpuu)", () => {

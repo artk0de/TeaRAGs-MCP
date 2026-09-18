@@ -211,7 +211,7 @@ describe("IngestFacade — first index of a git worktree seeded from its indexed
       allPayloadSignals: [],
       footprintFactory: new CollectionFootprintFactory({
         qdrant: qdrant as never,
-        pool: { cloneDatabase: vi.fn(), removeCollection: vi.fn(), listCollectionDbNames: vi.fn(() => []) } as never,
+        pool: { cloneDatabase: vi.fn(), removeCollection: vi.fn(), listCollectionDbNames: vi.fn(() => []) },
         statsCache,
         snapshotBaseDir: snapshotDir,
         snapshotStoreFactory: (baseDir, logicalName) => new ShardedSnapshotManager(baseDir, logicalName),

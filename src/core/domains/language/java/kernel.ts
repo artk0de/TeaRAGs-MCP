@@ -37,7 +37,7 @@ interface TreeSitterLanguageModule {
 }
 
 export const javaKernel: LanguageKernel = {
-  loadModule: async () => import("tree-sitter-java") as Promise<TreeSitterLanguageModule>,
+  loadModule: async () => import("tree-sitter-java"),
   extractLanguage: (mod: TreeSitterLanguageModule) => mod.default ?? mod,
   scopeSeparator: ".",
   scopeContainerTypes: [

@@ -11,7 +11,7 @@ import {
 
 function parseRuby(code: string): Parser.Tree {
   const parser = new Parser();
-  parser.setLanguage(Ruby as unknown as Parser.Language);
+  parser.setLanguage(Ruby);
   return parser.parse(code);
 }
 

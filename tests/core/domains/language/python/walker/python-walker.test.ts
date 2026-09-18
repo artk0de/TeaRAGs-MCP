@@ -13,7 +13,7 @@ import { extractFromPythonFile } from "../../../../../../src/core/domains/langua
 
 function parse(src: string) {
   const parser = new Parser();
-  parser.setLanguage(PyLang as unknown as Parser.Language);
+  parser.setLanguage(PyLang);
   return parser.parse(src);
 }
 

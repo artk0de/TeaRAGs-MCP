@@ -51,7 +51,7 @@ async function buildHarness(options: { defers: boolean; heal?: CodegraphPayloadH
     applier,
     markerStore: marker,
     executor: new InlineEnrichmentExecutor(),
-    codegraphHeal: { run: heal } as CodegraphPayloadHealRunner,
+    codegraphHeal: { run: heal },
   });
 
   const ctx = {
@@ -78,7 +78,7 @@ async function buildHarness(options: { defers: boolean; heal?: CodegraphPayloadH
     chunkItem("/repo", "src/changed.ts", "c1"),
   ] as never);
 
-  return { runner, contexts: contexts as Map<string, unknown>, heal, chunkPhase, marker };
+  return { runner, contexts, heal, chunkPhase, marker };
 }
 
 // bd tea-rags-mcp-39xca.5 — the completion tail's step dependencies are values, not

@@ -289,7 +289,7 @@ describe("EnrichmentCoordinator.runFinalizeOnly seeded deferred chunks (bd tea-r
     await coordinator.runFinalizeOnly("/repo", "code_x_v1", handoff);
 
     expect(runChunkBatch).toHaveBeenCalledTimes(1);
-    const [, root] = runChunkBatch.mock.calls[0] as [unknown, string, Map<string, unknown[]>];
+    const [, root] = runChunkBatch.mock.calls[0];
     expect(root).toBe("/repo");
     expect(dispatched[0]?.get("src/app.ts")).toEqual(entries);
     // The walk fills the line map the deferred pass reads, so it must come first.

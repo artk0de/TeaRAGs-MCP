@@ -9,31 +9,31 @@ import { validateFindSimilarRequest } from "../../../../../src/core/api/internal
 describe("validateFindSimilarRequest", () => {
   it("accepts request with positive ids only", () => {
     expect(() => {
-      validateFindSimilarRequest({ positiveIds: ["a"] } as any);
+      validateFindSimilarRequest({ positiveIds: ["a"] });
     }).not.toThrow();
   });
 
   it("accepts request with negative ids only (default best_score strategy)", () => {
     expect(() => {
-      validateFindSimilarRequest({ negativeIds: ["a"] } as any);
+      validateFindSimilarRequest({ negativeIds: ["a"] });
     }).not.toThrow();
   });
 
   it("accepts request with positive code blocks", () => {
     expect(() => {
-      validateFindSimilarRequest({ positiveCode: ["function foo() {}"] } as any);
+      validateFindSimilarRequest({ positiveCode: ["function foo() {}"] });
     }).not.toThrow();
   });
 
   it("rejects when both positive and negative are empty/missing", () => {
     expect(() => {
-      validateFindSimilarRequest({} as any);
+      validateFindSimilarRequest({});
     }).toThrow(/At least one positive or negative input/);
   });
 
   it("rejects when positive code blocks are all whitespace-only", () => {
     expect(() => {
-      validateFindSimilarRequest({ positiveCode: ["   ", ""] } as any);
+      validateFindSimilarRequest({ positiveCode: ["   ", ""] });
     }).toThrow(/At least one positive or negative input/);
   });
 

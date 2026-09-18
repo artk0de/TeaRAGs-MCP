@@ -21,12 +21,12 @@ import { extractFromPythonFile } from "../../../../../../src/core/domains/langua
 
 function parse(src: string): Parser.Tree {
   const parser = new Parser();
-  parser.setLanguage(PyLang as unknown as Parser.Language);
+  parser.setLanguage(PyLang);
   return parser.parse(src);
 }
 
 function signaturesOf(src: string) {
-  return collectPythonDefSignatures(parse(src).rootNode as never);
+  return collectPythonDefSignatures(parse(src).rootNode);
 }
 
 /** The first `call` node in source order — every call case below has exactly one. */
@@ -34,7 +34,7 @@ function shapeOf(src: string) {
   const stack: Parser.SyntaxNode[] = [parse(src).rootNode];
   while (stack.length > 0) {
     const node = stack.shift() as Parser.SyntaxNode;
-    if (node.type === "call") return pythonCallShape(node as never);
+    if (node.type === "call") return pythonCallShape(node);
     stack.push(...node.children);
   }
   throw new Error("no call node");
@@ -148,7 +148,7 @@ describe("extractFromPythonFile — signature join", () => {
 
   it("carries the def signature onto the method chunk", () => {
     const out = extractFromPythonFile({
-      tree: parse(src) as never,
+      tree: parse(src),
       code: src,
       relPath: "app/c.py",
       language: "python",
@@ -160,7 +160,7 @@ describe("extractFromPythonFile — signature join", () => {
 
   it("carries the call shape onto the CallRef", () => {
     const out = extractFromPythonFile({
-      tree: parse(src) as never,
+      tree: parse(src),
       code: src,
       relPath: "app/c.py",
       language: "python",
@@ -173,7 +173,7 @@ describe("extractFromPythonFile — signature join", () => {
 
   it("leaves a class chunk with no signature at all", () => {
     const out = extractFromPythonFile({
-      tree: parse(src) as never,
+      tree: parse(src),
       code: src,
       relPath: "app/c.py",
       language: "python",

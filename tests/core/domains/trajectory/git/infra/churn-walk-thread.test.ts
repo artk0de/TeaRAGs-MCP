@@ -131,7 +131,7 @@ describe("ChunkChurnWalkPool equivalence (bd tea-rags-mcp-iqpuu, real git)", () 
     const inlineProvider = new GitEnrichmentProvider();
     const inline = await inlineProvider.buildChunkSignals(repo, fixtureChunkMap(), {
       skipCache: true,
-      commitDiscovery: freshDiscovery() as never,
+      commitDiscovery: freshDiscovery(),
     });
 
     const thread = new ChunkChurnWalkPool(2);
@@ -139,8 +139,8 @@ describe("ChunkChurnWalkPool equivalence (bd tea-rags-mcp-iqpuu, real git)", () 
       const offProvider = new GitEnrichmentProvider();
       const off = await offProvider.buildChunkSignals(repo, fixtureChunkMap(), {
         skipCache: true,
-        commitDiscovery: freshDiscovery() as never,
-        churnWalkThread: thread as never,
+        commitDiscovery: freshDiscovery(),
+        churnWalkThread: thread,
       });
 
       expect(inline.size).toBe(2);
@@ -157,7 +157,7 @@ describe("ChunkChurnWalkPool equivalence (bd tea-rags-mcp-iqpuu, real git)", () 
     await inlineProvider.streamFileBatch(repo, ["f1.ts", "f2.ts"]);
     const inline = await inlineProvider.buildChunkSignals(repo, fixtureChunkMap(), {
       skipCache: true,
-      commitDiscovery: freshDiscovery() as never,
+      commitDiscovery: freshDiscovery(),
     });
 
     const thread = new ChunkChurnWalkPool(2);
@@ -166,8 +166,8 @@ describe("ChunkChurnWalkPool equivalence (bd tea-rags-mcp-iqpuu, real git)", () 
       await offProvider.streamFileBatch(repo, ["f1.ts", "f2.ts"]);
       const off = await offProvider.buildChunkSignals(repo, fixtureChunkMap(), {
         skipCache: true,
-        commitDiscovery: freshDiscovery() as never,
-        churnWalkThread: thread as never,
+        commitDiscovery: freshDiscovery(),
+        churnWalkThread: thread,
       });
 
       expect(canonical(off)).toBe(canonical(inline));
@@ -186,8 +186,8 @@ describe("ChunkChurnWalkPool equivalence (bd tea-rags-mcp-iqpuu, real git)", () 
       const onWalkStats = vi.fn();
       await provider.buildChunkSignals(repo, fixtureChunkMap(), {
         skipCache: true,
-        commitDiscovery: freshDiscovery() as never,
-        churnWalkThread: thread as never,
+        commitDiscovery: freshDiscovery(),
+        churnWalkThread: thread,
         onWalkStats,
       });
 
@@ -212,8 +212,8 @@ describe("ChunkChurnWalkPool equivalence (bd tea-rags-mcp-iqpuu, real git)", () 
     const provider = new GitEnrichmentProvider();
     await provider.buildChunkSignals(repo, fixtureChunkMap(), {
       skipCache: true,
-      commitDiscovery: freshDiscovery() as never,
-      churnWalkThread: thread as never,
+      commitDiscovery: freshDiscovery(),
+      churnWalkThread: thread,
     });
     await expect(thread.close()).resolves.toBeUndefined();
     await expect(thread.close()).resolves.toBeUndefined();
@@ -225,7 +225,7 @@ describe("ChunkChurnWalkPool equivalence (bd tea-rags-mcp-iqpuu, real git)", () 
     const inline = canonical(
       await inlineProvider.buildChunkSignals(repo, fixtureChunkMap(), {
         skipCache: true,
-        commitDiscovery: freshDiscovery() as never,
+        commitDiscovery: freshDiscovery(),
       }),
     );
 
@@ -238,8 +238,8 @@ describe("ChunkChurnWalkPool equivalence (bd tea-rags-mcp-iqpuu, real git)", () 
           const p = new GitEnrichmentProvider();
           return p.buildChunkSignals(repo, fixtureChunkMap(), {
             skipCache: true,
-            commitDiscovery: freshDiscovery() as never,
-            churnWalkThread: pool as never,
+            commitDiscovery: freshDiscovery(),
+            churnWalkThread: pool,
           });
         }),
       );

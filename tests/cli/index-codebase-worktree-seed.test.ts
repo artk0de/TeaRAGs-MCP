@@ -47,13 +47,13 @@ describe("--no-worktree-seed", () => {
   });
 
   it("leaves the default (seed when a sibling allows it) untouched when absent", () => {
-    const options = buildIndexOptions(parse(["index-codebase", "/repo/wt"]) as never);
+    const options = buildIndexOptions(parse(["index-codebase", "/repo/wt"]));
     expect(options).not.toHaveProperty("seedFromWorktree");
   });
 
   it("keeps the other flags mapping as before", () => {
     const options = buildIndexOptions(
-      parse(["index-codebase", "--force-enrichments", "git,codegraph", "--languages", "ruby"]) as never,
+      parse(["index-codebase", "--force-enrichments", "git,codegraph", "--languages", "ruby"]),
     );
     expect(options).toEqual({ forceReindex: false, forceEnrichments: ["git", "codegraph"], languages: ["ruby"] });
   });

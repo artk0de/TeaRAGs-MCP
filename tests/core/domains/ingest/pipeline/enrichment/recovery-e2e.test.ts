@@ -47,7 +47,7 @@ describe("Enrichment recovery E2E", () => {
 
   beforeEach(async () => {
     ({ tempDir, codebaseDir } = await createTempTestDir());
-    qdrant = new MockQdrantManager() as any;
+    qdrant = new MockQdrantManager();
     embeddings = new MockEmbeddingProvider();
     ingest = new IngestFacade({
       qdrant: qdrant as any,

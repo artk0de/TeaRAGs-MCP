@@ -58,7 +58,7 @@ describe("runPrime — registry-first embedding endpoint override", () => {
     pingMock.mockReset();
     createAppContextMock.mockReset();
     parseAppConfigMock.mockReset();
-    process.stdout.write = writeMock as unknown as typeof process.stdout.write;
+    process.stdout.write = writeMock;
   });
 
   afterEach(() => {

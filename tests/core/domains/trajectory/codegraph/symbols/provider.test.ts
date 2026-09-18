@@ -1282,10 +1282,10 @@ describe("CodegraphEnrichmentProvider", () => {
     process.env.DEBUG = "true";
     const writes: string[] = [];
     const origWrite = process.stderr.write.bind(process.stderr);
-    process.stderr.write = ((chunk: string | Uint8Array, ...rest: unknown[]): boolean => {
+    process.stderr.write = (chunk: string | Uint8Array, ...rest: unknown[]): boolean => {
       writes.push(typeof chunk === "string" ? chunk : Buffer.from(chunk).toString("utf8"));
-      return origWrite(chunk as never, ...(rest as []));
-    }) as typeof process.stderr.write;
+      return origWrite(chunk, ...(rest as []));
+    };
     try {
       await expect(sink.finish()).resolves.toBeUndefined();
     } finally {

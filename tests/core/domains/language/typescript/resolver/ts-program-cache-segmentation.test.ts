@@ -141,7 +141,7 @@ describe("TSProgramCache whole-Program segmentation (bd tea-rags-mcp-6aytq)", ()
     forceGc();
     forceGc();
 
-    expect((retired as unknown as WeakRef<object>).deref()).toBeUndefined();
+    expect(retired.deref()).toBeUndefined();
   });
 
   it("reuses the shared parses across the rebuild rather than re-reading the corpus", () => {

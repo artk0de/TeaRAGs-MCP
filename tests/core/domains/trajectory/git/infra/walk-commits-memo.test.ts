@@ -62,7 +62,7 @@ async function walkOnce(
   blobReader: ReturnType<typeof fakeBlobReader>,
   memo: CommitDiffMemo,
 ): Promise<Map<string, Map<string, { commitCount: number }>>> {
-  return (await buildChunkChurnMapUncached(
+  return await buildChunkChurnMapUncached(
     new GitCliAdapter("/fake/repo"),
     chunkMapFor(file),
     {},
@@ -76,7 +76,7 @@ async function walkOnce(
     undefined,
     blobReader as never,
     memo,
-  )) as never;
+  );
 }
 
 describe("walkCommits run-scoped diff memo (bd tea-rags-mcp-7gnre)", () => {

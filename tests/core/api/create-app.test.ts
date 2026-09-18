@@ -208,14 +208,14 @@ describe("createApp", () => {
     it("delegates findSimilar to ExploreFacade", async () => {
       const app = createApp(deps);
       const req = { positive: ["x"], collection: "c" };
-      await app.findSimilar(req as never);
+      await app.findSimilar(req);
       expect(deps.explore.findSimilar).toHaveBeenCalledWith(req);
     });
 
     it("delegates findSymbol to ExploreFacade", async () => {
       const app = createApp(deps);
       const req = { symbol: "Foo.bar", collection: "c" };
-      await app.findSymbol(req as never);
+      await app.findSymbol(req);
       expect(deps.explore.findSymbol).toHaveBeenCalledWith(req);
     });
 
@@ -473,7 +473,7 @@ describe("createApp", () => {
     });
 
     it("returns empty result when codegraph (tracePathOps) is absent", async () => {
-      const app = createApp({ ...deps, tracePathOps: undefined } as never);
+      const app = createApp({ ...deps, tracePathOps: undefined });
       const res = await app.tracePath({ collection: "c", from: "A", to: "B" });
       expect(res).toEqual({ paths: [], truncated: false });
     });

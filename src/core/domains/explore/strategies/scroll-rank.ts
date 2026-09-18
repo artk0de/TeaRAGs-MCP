@@ -165,7 +165,7 @@ export class ScrollRankStrategy extends BaseExploreStrategy {
       return {
         id: r.id,
         score: r.score,
-        payload: r.payload as Record<string, unknown> | undefined,
+        payload: r.payload,
         rankingOverlay: withOverlay.rankingOverlay,
       };
     });

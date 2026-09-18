@@ -25,7 +25,7 @@ function entry(over: Partial<CollectionEntry>): CollectionEntry {
     chunksCount: 100,
     name: "proj",
     ...over,
-  } as CollectionEntry;
+  };
 }
 
 describe("cli/commands/projects-format", () => {

@@ -79,7 +79,7 @@ function ctxWith(parts: CtxParts = {}): CallContext {
     classFieldTypes: parts.classFieldTypes,
     classFieldTypesByClassKey: parts.classFieldTypesByClassKey,
     structuredReturnTypes: parts.structuredReturnTypes,
-  } as CallContext;
+  };
 }
 
 /** A linearizer standing in for a run's real hierarchy: it answers exactly this order. */

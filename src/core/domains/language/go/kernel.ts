@@ -33,7 +33,7 @@ interface TreeSitterLanguageModule {
 }
 
 export const goKernel: LanguageKernel = {
-  loadModule: async () => import("tree-sitter-go") as Promise<TreeSitterLanguageModule>,
+  loadModule: async () => import("tree-sitter-go"),
   extractLanguage: (mod: TreeSitterLanguageModule) => mod.default ?? mod,
   scopeSeparator: ".",
   isInstanceMethod: (node: AstNode) => classifyMethod(node) === "instance",

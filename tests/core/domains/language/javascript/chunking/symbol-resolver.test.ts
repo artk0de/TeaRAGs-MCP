@@ -33,7 +33,7 @@ import {
 
 function parse(src: string): Parser.Tree {
   const parser = new Parser();
-  parser.setLanguage(JsLang as unknown as Parser.Language);
+  parser.setLanguage(JsLang);
   return parser.parse(src);
 }
 

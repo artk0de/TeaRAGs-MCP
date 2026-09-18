@@ -35,7 +35,7 @@ describe("createShutdown — bounded daemon teardown", () => {
     const cleanup = vi.fn();
     const shutdown = createShutdown({
       server: fakeServer(closesCleanly) as never,
-      pool: { closeAll: vi.fn().mockResolvedValue(undefined) } as never,
+      pool: { closeAll: vi.fn().mockResolvedValue(undefined) },
       cleanup,
       timeoutMs: 3000,
     });
@@ -48,7 +48,7 @@ describe("createShutdown — bounded daemon teardown", () => {
     const shutdown = createShutdown({
       server: fakeServer(closesCleanly) as never,
       // closeAll never resolves — simulates a wedged DuckDB driver close.
-      pool: { closeAll: hangsForever } as never,
+      pool: { closeAll: hangsForever },
       cleanup,
       timeoutMs: 50,
     });
@@ -64,7 +64,7 @@ describe("createShutdown — bounded daemon teardown", () => {
     const shutdown = createShutdown({
       // server.close hangs (callback never fires).
       server: fakeServer(neverCloses) as never,
-      pool: { closeAll: vi.fn().mockResolvedValue(undefined) } as never,
+      pool: { closeAll: vi.fn().mockResolvedValue(undefined) },
       cleanup,
       timeoutMs: 50,
     });
@@ -76,7 +76,7 @@ describe("createShutdown — bounded daemon teardown", () => {
     const cleanup = vi.fn();
     const shutdown = createShutdown({
       server: fakeServer(closesCleanly) as never,
-      pool: { closeAll: vi.fn().mockResolvedValue(undefined) } as never,
+      pool: { closeAll: vi.fn().mockResolvedValue(undefined) },
       cleanup,
       timeoutMs: 3000,
     });
@@ -89,7 +89,7 @@ describe("createShutdown — bounded daemon teardown", () => {
     const cleanup = vi.fn();
     const shutdown = createShutdown({
       server: fakeServer(closesCleanly) as never,
-      pool: { closeAll: vi.fn().mockRejectedValue(new Error("close failed")) } as never,
+      pool: { closeAll: vi.fn().mockRejectedValue(new Error("close failed")) },
       cleanup,
       timeoutMs: 3000,
     });

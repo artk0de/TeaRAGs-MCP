@@ -116,7 +116,7 @@ describe("ReindexingOperations.reindexChanges — registry stamp on quiet runs (
       recorded.push(entry);
     });
 
-    qdrant = new MockQdrantManager() as any;
+    qdrant = new MockQdrantManager();
     Object.defineProperty(qdrant, "url", { value: "http://localhost:6333", configurable: true });
     embeddings = new MockEmbeddingProvider();
     config = defaultTestConfig();

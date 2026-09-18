@@ -757,6 +757,11 @@ function fingerprintCell(value: unknown): string {
   // branch is the real one. An object would be a driver surprise: serialise it
   // rather than let it stringify to `[object Object]` and compare equal to
   // every other object.
-  const text = typeof value === "object" ? JSON.stringify(value) : String(value as string | number | boolean | bigint);
+  if (typeof value === "object") {
+    const serialised = JSON.stringify(value);
+    return `${serialised.length}:${serialised}`;
+  }
+  const scalar = value as string | number | boolean | bigint;
+  const text = String(scalar);
   return `${text.length}:${text}`;
 }

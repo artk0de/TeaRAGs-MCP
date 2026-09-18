@@ -90,7 +90,7 @@ function graphProvider(): EnrichmentProvider {
     streamFileBatch: vi.fn().mockResolvedValue(new Map()),
     readPersistedFileHashes: vi.fn(async () => new Map<string, string | null>(persistedHashes)),
     handleDeletedPaths: vi.fn().mockResolvedValue(undefined),
-  } as unknown as EnrichmentProvider;
+  };
 }
 
 function recordingExecutor(): EnrichmentExecutor {
@@ -110,7 +110,7 @@ function recordingExecutor(): EnrichmentExecutor {
     runFinalize: vi.fn().mockResolvedValue(new Map()),
     releaseRun: vi.fn().mockResolvedValue(undefined),
     shutdown: vi.fn().mockResolvedValue(undefined),
-  } as unknown as EnrichmentExecutor;
+  };
 }
 
 /** A file big enough for the chunker to emit points for. */
@@ -136,7 +136,7 @@ describe("--force-enrichments — one extraction cycle per provider (bd tea-rags
     extractedPaths.length = 0;
     persistedHashes.clear();
     ({ tempDir, codebaseDir } = await createTempTestDir());
-    qdrant = new MockQdrantManager() as never;
+    qdrant = new MockQdrantManager();
     config = { ...defaultTestConfig(), supportedExtensions: [".ts"] };
     ingest = new IngestFacade({
       qdrant: qdrant as never,

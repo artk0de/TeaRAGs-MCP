@@ -22,7 +22,6 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { buildTestCodegraphDeps } from "../__helpers__/language-factory.js";
 import { DuckDbGraphClient } from "../../../../../../src/core/adapters/duckdb/client.js";
-import type { SymbolId } from "../../../../../../src/core/contracts/types/codegraph.js";
 import { collectSymbols } from "../../../../../../src/core/domains/language/kernel/collect-symbols.js";
 import { DefaultSymbolIdComposer } from "../../../../../../src/core/domains/language/kernel/symbol-id.js";
 import { TSCallResolver } from "../../../../../../src/core/domains/language/typescript/resolver/ts-resolver.js";
@@ -100,11 +99,11 @@ describe("CodegraphEnrichmentProvider.buildChunkSignals — symbol/chunk join wr
       ]),
     );
 
-    expect(await client.findSymbolChunk("A#run" as SymbolId)).toEqual({
+    expect(await client.findSymbolChunk("A#run")).toEqual({
       relPath: "src/a.ts",
       chunkId: "chunk-a",
     });
-    expect(await client.findSymbolChunk("C#run" as SymbolId)).toEqual({
+    expect(await client.findSymbolChunk("C#run")).toEqual({
       relPath: "src/c.ts",
       chunkId: "chunk-c",
     });

@@ -1,6 +1,6 @@
 import Parser from "tree-sitter";
 import JsLang from "tree-sitter-javascript";
-import { describe, it, expect, beforeAll } from "vitest";
+import { beforeAll, describe, expect, it } from "vitest";
 
 import { JsChunkClassifier } from "../../../../../../src/core/domains/language/javascript/chunking/classifier.js";
 
@@ -8,7 +8,7 @@ let parser: Parser;
 const classifier = new JsChunkClassifier();
 beforeAll(() => {
   parser = new Parser();
-  parser.setLanguage(JsLang as Parser.Language);
+  parser.setLanguage(JsLang);
 });
 
 function firstOfType(code: string, type: string): Parser.SyntaxNode {

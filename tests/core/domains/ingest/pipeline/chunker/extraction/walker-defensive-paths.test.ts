@@ -22,37 +22,37 @@ import RbLang from "tree-sitter-ruby";
 import { typescript as TsLang } from "tree-sitter-typescript";
 import { describe, expect, it } from "vitest";
 
-import { extractFromJavascriptFile } from "../../../../../../../src/core/domains/language/javascript/walker/walker.js";
-import { extractFromPythonFile } from "../../../../../../../src/core/domains/language/python/walker/walker.js";
-import { extractFromRubyFile } from "../../../../../../../src/core/domains/language/ruby/walker/walker.js";
-import { extractFromTypescriptFile } from "../../../../../../../src/core/domains/language/typescript/walker/walker.js";
 import {
   extractJsAssignmentSymbol,
   extractJsForEachDispatchSymbols,
   extractJsNestedDefinePropertyThisSymbols,
 } from "../../../../../../../src/core/domains/language/javascript/chunking/symbol-resolver.js";
+import { extractFromJavascriptFile } from "../../../../../../../src/core/domains/language/javascript/walker/walker.js";
+import { extractFromPythonFile } from "../../../../../../../src/core/domains/language/python/walker/walker.js";
+import { extractFromRubyFile } from "../../../../../../../src/core/domains/language/ruby/walker/walker.js";
+import { extractFromTypescriptFile } from "../../../../../../../src/core/domains/language/typescript/walker/walker.js";
 
 function parseJs(src: string): Parser.Tree {
   const parser = new Parser();
-  parser.setLanguage(JsLang as unknown as Parser.Language);
+  parser.setLanguage(JsLang);
   return parser.parse(src);
 }
 
 function parsePy(src: string): Parser.Tree {
   const parser = new Parser();
-  parser.setLanguage(PyLang as unknown as Parser.Language);
+  parser.setLanguage(PyLang);
   return parser.parse(src);
 }
 
 function parseRb(src: string): Parser.Tree {
   const parser = new Parser();
-  parser.setLanguage(RbLang as unknown as Parser.Language);
+  parser.setLanguage(RbLang);
   return parser.parse(src);
 }
 
 function parseTs(src: string): Parser.Tree {
   const parser = new Parser();
-  parser.setLanguage(TsLang as unknown as Parser.Language);
+  parser.setLanguage(TsLang);
   return parser.parse(src);
 }
 

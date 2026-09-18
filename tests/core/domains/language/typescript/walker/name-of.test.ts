@@ -21,7 +21,7 @@ const composer = new DefaultSymbolIdComposer();
  */
 function collect(src: string): CollectedSymbolRange[] {
   const parser = new Parser();
-  parser.setLanguage(TsLang.typescript as unknown as Parser.Language);
+  parser.setLanguage(TsLang.typescript);
   const native = parser.parse(src);
   const root = materializeTree(native.rootNode, src);
   return collectSymbols(

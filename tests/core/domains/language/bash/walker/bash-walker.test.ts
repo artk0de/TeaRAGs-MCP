@@ -6,7 +6,7 @@ import { extractFromBashFile } from "../../../../../../src/core/domains/language
 
 function parse(src: string) {
   const p = new Parser();
-  p.setLanguage(BashLang as unknown as Parser.Language);
+  p.setLanguage(BashLang);
   return p.parse(src);
 }
 

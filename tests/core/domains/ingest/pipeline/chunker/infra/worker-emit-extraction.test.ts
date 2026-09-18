@@ -77,7 +77,7 @@ describe("worker single-parse extraction equivalence (yl9tv)", () => {
 
     // extractOneFile path: a fresh, independent parse of the same source.
     const parser = new Parser();
-    parser.setLanguage(RbLang as unknown as Parser.Language);
+    parser.setLanguage(RbLang);
     const fromFreshParse = extractFromTree(factory, composer, parser.parse(RUBY), RUBY, RELPATH, "ruby");
 
     expect(fromChunkerParse).toEqual(fromFreshParse);

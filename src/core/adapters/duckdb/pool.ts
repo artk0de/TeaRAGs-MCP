@@ -836,7 +836,7 @@ function wrapNoopClose(client: DaemonGraphDbClient): GraphDbClient {
       const value = Reflect.get(target, prop, receiver) as unknown;
       return typeof value === "function" ? (value as (...args: unknown[]) => unknown).bind(target) : value;
     },
-  }) as unknown as GraphDbClient;
+  });
 }
 
 /**

@@ -31,7 +31,7 @@ import { materializeTree } from "../../../../../../../src/core/infra/materialize
 
 function parse(src: string): AstNode {
   const parser = new Parser();
-  parser.setLanguage(PyLang as unknown as Parser.Language);
+  parser.setLanguage(PyLang);
   return materializeTree(parser.parse(src).rootNode, src);
 }
 

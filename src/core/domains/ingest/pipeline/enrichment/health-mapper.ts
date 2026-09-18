@@ -109,9 +109,7 @@ export function isEnrichmentRunLive(
   const run = markerMap._run;
   if (!run) return false;
   const owesTerminal = (run.providers ?? []).some((providerKey) => {
-    const entry = getNested(markerMap as LevelRecord, providerKey) as
-      | { file?: LevelRecord; chunk?: LevelRecord }
-      | undefined;
+    const entry = getNested(markerMap, providerKey) as { file?: LevelRecord; chunk?: LevelRecord } | undefined;
     return !isTerminalForRun(entry?.file, run) || !isTerminalForRun(entry?.chunk, run);
   });
   if (!owesTerminal) return false;
@@ -135,9 +133,7 @@ function mapWithRunPointer(
   const coveredByRun = new Set(run.providers ?? []);
   let hasAny = false;
   for (const providerKey of activeEnrichmentProviders) {
-    const entry = getNested(markerMap as LevelRecord, providerKey) as
-      | { file?: LevelRecord; chunk?: LevelRecord }
-      | undefined;
+    const entry = getNested(markerMap, providerKey) as { file?: LevelRecord; chunk?: LevelRecord } | undefined;
     if (coveredByRun.has(providerKey)) {
       hasAny = true;
       health[providerKey] = {

@@ -126,9 +126,9 @@ describe("readWorkingTreeDirty", () => {
 
   it("false (conservative) when git spawn fails", () => {
     expect(
-      readWorkingTreeDirty("/x", (() => {
+      readWorkingTreeDirty("/x", () => {
         throw new Error("no git");
-      }) as never),
+      }),
     ).toBe(false);
   });
 });
@@ -144,9 +144,9 @@ describe("detectDefaultBranch", () => {
       ".git/refs/heads/main": "abc\n",
     });
     expect(
-      detectDefaultBranch(dir, (() => {
+      detectDefaultBranch(dir, () => {
         throw new Error("no origin");
-      }) as never),
+      }),
     ).toBe("main");
   });
 
@@ -156,9 +156,9 @@ describe("detectDefaultBranch", () => {
       ".git/refs/heads/master": "abc\n",
     });
     expect(
-      detectDefaultBranch(dir, (() => {
+      detectDefaultBranch(dir, () => {
         throw new Error("no origin");
-      }) as never),
+      }),
     ).toBe("master");
   });
 
@@ -168,17 +168,17 @@ describe("detectDefaultBranch", () => {
       ".git/packed-refs": "abc refs/heads/master\n",
     });
     expect(
-      detectDefaultBranch(dir, (() => {
+      detectDefaultBranch(dir, () => {
         throw new Error("no origin");
-      }) as never),
+      }),
     ).toBe("master");
   });
 
   it('final fallback is "main"', () => {
     expect(
-      detectDefaultBranch(emptyDir(), (() => {
+      detectDefaultBranch(emptyDir(), () => {
         throw new Error("no origin");
-      }) as never),
+      }),
     ).toBe("main");
   });
 });

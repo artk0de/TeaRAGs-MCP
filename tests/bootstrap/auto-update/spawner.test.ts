@@ -48,7 +48,7 @@ describe("spawnDetachedUpdater", () => {
       throw new Error("EPERM");
     });
     expect(() => {
-      spawnDetachedUpdater({ project: "p", logFd: 3, spawnImpl: spawnImpl as never });
+      spawnDetachedUpdater({ project: "p", logFd: 3, spawnImpl });
     }).not.toThrow();
   });
 });

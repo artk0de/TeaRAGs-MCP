@@ -209,7 +209,7 @@ export class SourceFileIngestor {
 
       // Send chunk to pipeline immediately
       const chunkId = generateChunkId(chunk);
-      chunkPipeline.addChunk(baseChunk as CodeChunk, chunkId, basePath);
+      chunkPipeline.addChunk(baseChunk, chunkId, basePath);
       result.chunksCreated++;
       chunksAdded++;
 

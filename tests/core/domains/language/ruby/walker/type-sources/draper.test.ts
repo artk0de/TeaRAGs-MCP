@@ -24,7 +24,7 @@ import type { RubyExtractInput } from "../../../../../../../src/core/domains/lan
 
 function parse(src: string) {
   const parser = new Parser();
-  parser.setLanguage(RbLang as unknown as Parser.Language);
+  parser.setLanguage(RbLang);
   return parser.parse(src);
 }
 
@@ -60,13 +60,9 @@ describe("rubyDraperTypeSource — delegate_all decorators", () => {
   });
 
   it("attributes facts to the FULL lexical scope of a namespaced decorator", () => {
-    const src = [
-      "module Admin",
-      "  class UserDecorator < Draper::Decorator",
-      "    delegate_all",
-      "  end",
-      "end",
-    ].join("\n");
+    const src = ["module Admin", "  class UserDecorator < Draper::Decorator", "    delegate_all", "  end", "end"].join(
+      "\n",
+    );
     const facts = returnFacts(src);
     expect(facts[0]?.symbolScope).toEqual(["Admin", "UserDecorator"]);
     expect(facts[0]?.type).toEqual({ form: "instance", name: "User" });
@@ -108,13 +104,9 @@ describe("rubyDraperTypeSource — silence", () => {
   });
 
   it("does not leak the outer decorator's model into a NESTED class", () => {
-    const src = [
-      "class UserDecorator < Draper::Decorator",
-      "  delegate_all",
-      "  class Inner",
-      "  end",
-      "end",
-    ].join("\n");
+    const src = ["class UserDecorator < Draper::Decorator", "  delegate_all", "  class Inner", "  end", "end"].join(
+      "\n",
+    );
     for (const fact of returnFacts(src)) expect(fact.symbolScope).toEqual(["UserDecorator"]);
   });
 });

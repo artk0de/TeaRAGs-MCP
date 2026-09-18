@@ -173,7 +173,7 @@ describe("doctor --sweep-workers routing (f924y)", () => {
       json: false,
       _: [],
       $0: "tea-rags",
-    } as never);
+    });
 
     expect(out).toMatch(/No index workers registered/);
   });

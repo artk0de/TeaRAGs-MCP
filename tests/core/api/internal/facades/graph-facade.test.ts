@@ -3,7 +3,6 @@ import { describe, expect, it, vi } from "vitest";
 import type { GraphDbClientPool } from "../../../../../src/core/adapters/duckdb/pool.js";
 import { CollectionNotProvidedError, ProjectNotRegisteredError } from "../../../../../src/core/api/errors.js";
 import { GraphFacade } from "../../../../../src/core/api/internal/facades/graph-facade.js";
-import type { SymbolId } from "../../../../../src/core/contracts/types/codegraph.js";
 import type { CollectionRegistry } from "../../../../../src/core/domains/maintenance/registry/index.js";
 
 /**
@@ -454,7 +453,7 @@ describe("GraphFacade#resolveSymbolChunk", () => {
       resolveActiveCollection: async (c: string) => c,
     });
 
-    const res = await facade.resolveSymbolChunk({ collection: "col" }, "Foo#bar" as SymbolId);
+    const res = await facade.resolveSymbolChunk({ collection: "col" }, "Foo#bar");
     expect(res).toEqual({ relPath: "a.rb", chunkId: "chunk_x" });
     expect(graphDb.findSymbolChunk).toHaveBeenCalledWith("Foo#bar");
   });
@@ -471,6 +470,6 @@ describe("GraphFacade#resolveSymbolChunk", () => {
       collectionRegistry: {} as never,
       resolveActiveCollection: async (c: string) => c,
     });
-    expect(await facade.resolveSymbolChunk({ collection: "col" }, "Foo#bar" as SymbolId)).toBeNull();
+    expect(await facade.resolveSymbolChunk({ collection: "col" }, "Foo#bar")).toBeNull();
   });
 });

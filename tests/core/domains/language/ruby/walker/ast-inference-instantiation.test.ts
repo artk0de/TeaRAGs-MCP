@@ -7,7 +7,7 @@ import { extractFromRubyFile } from "../../../../../../src/core/domains/language
 
 function parse(code: string): Parser.Tree {
   const p = new Parser();
-  p.setLanguage(Ruby as Parser.Language);
+  p.setLanguage(Ruby);
   return p.parse(code);
 }
 

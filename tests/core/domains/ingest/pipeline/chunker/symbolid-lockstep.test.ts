@@ -47,7 +47,7 @@ interface LockstepLanguage {
 const TYPESCRIPT: LockstepLanguage = {
   language: "typescript",
   extension: "ts",
-  grammar: TsLang.typescript as unknown as Parser.Language,
+  grammar: TsLang.typescript,
   kernel: typescriptKernel,
   nameOf: tsNameOf,
 };
@@ -55,7 +55,7 @@ const TYPESCRIPT: LockstepLanguage = {
 const JAVASCRIPT: LockstepLanguage = {
   language: "javascript",
   extension: "js",
-  grammar: JsLang as unknown as Parser.Language,
+  grammar: JsLang,
   kernel: javascriptKernel,
   nameOf: jsNameOf,
 };

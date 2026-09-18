@@ -131,8 +131,8 @@ export class WorkerDispatchPool<Req, Res> {
       pt.pending = null;
       this.clearTimer(pt); // normal completion — no leaked timer
       if (pending) {
-        if (message && typeof message === "object" && "error" in message && (message as { error: string }).error) {
-          pending.reject(new Error(`Worker error: ${(message as { error: string }).error}`));
+        if (message && typeof message === "object" && "error" in message && message.error) {
+          pending.reject(new Error(`Worker error: ${message.error}`));
         } else {
           pending.resolve(message as Res);
         }

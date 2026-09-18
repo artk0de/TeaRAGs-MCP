@@ -54,7 +54,7 @@ describe("runPrime — registry-first codegraph enablement override", () => {
     pingMock.mockReset();
     createAppContextMock.mockReset();
     parseAppConfigMock.mockReset();
-    process.stdout.write = writeMock as unknown as typeof process.stdout.write;
+    process.stdout.write = writeMock;
   });
 
   afterEach(() => {

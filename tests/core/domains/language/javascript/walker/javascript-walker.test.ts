@@ -6,7 +6,7 @@ import { extractFromJavascriptFile } from "../../../../../../src/core/domains/la
 
 function parse(src: string) {
   const parser = new Parser();
-  parser.setLanguage(JsLang as unknown as Parser.Language);
+  parser.setLanguage(JsLang);
   return parser.parse(src);
 }
 

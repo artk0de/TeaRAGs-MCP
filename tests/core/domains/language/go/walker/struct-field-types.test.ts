@@ -6,7 +6,7 @@ import { GoLanguage } from "../../../../../../src/core/domains/language/go/index
 
 function parse(src: string) {
   const p = new Parser();
-  p.setLanguage(GoLang as unknown as Parser.Language);
+  p.setLanguage(GoLang);
   return p.parse(src);
 }
 

@@ -282,7 +282,7 @@ describe("filterMetaOnly", () => {
         rankingOverlay: {
           preset: "stable",
           // No file/chunk entries — hasOverlayData returns false.
-        } as any,
+        },
       },
     ];
     const meta = filterMetaOnly(results, payloadSignals, []);

@@ -148,7 +148,7 @@ function chunkItemOf({ id, relativePath, startLine, endLine, symbolId }: StoredC
         ...(symbolId !== undefined ? { symbolId } : {}),
       },
     },
-  } as ChunkItem;
+  };
 }
 
 describe("codegraph chunk signal producers × range sources (bd tea-rags-mcp-39xca.2)", () => {
@@ -232,8 +232,8 @@ describe("codegraph chunk signal producers × range sources (bd tea-rags-mcp-39x
     "deferred chunk pass": async (provider) => {
       const ctx = contextFor(provider);
       const phase = new ChunkPhase(new EnrichmentApplier(qdrant as never), new InlineEnrichmentExecutor());
-      phase.init(new Map([[ctx.key, ctx]]) as never, COLL, ENRICHED_AT);
-      await phase.runDeferredChunk(COLL, ctx as never, ROOT, chunkMapOf(STORED));
+      phase.init(new Map([[ctx.key, ctx]]), COLL, ENRICHED_AT);
+      await phase.runDeferredChunk(COLL, ctx, ROOT, chunkMapOf(STORED));
       return [];
     },
     backfiller: async (provider) => {
@@ -250,7 +250,7 @@ describe("codegraph chunk signal producers × range sources (bd tea-rags-mcp-39x
       };
       await new EnrichmentBackfiller(applier, qdrant as never, executor as never).runFor(
         COLL,
-        contextFor(provider) as never,
+        contextFor(provider),
         ENRICHED_AT,
       );
       return [];
@@ -286,7 +286,7 @@ describe("codegraph chunk signal producers × range sources (bd tea-rags-mcp-39x
           qdrant.batchSetPayload(collectionName, operations),
       };
       await createCodegraphPayloadHealRunner({
-        qdrant: healQdrant as never,
+        qdrant: healQdrant,
         acquireGraphDb: async () => Promise.resolve(graphDb as unknown as GraphDbClient),
         providerKey: PROVIDER_KEY,
       }).run(COLL, new Set(), ENRICHED_AT);

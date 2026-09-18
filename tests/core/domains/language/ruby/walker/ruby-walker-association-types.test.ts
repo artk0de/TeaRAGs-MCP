@@ -17,7 +17,7 @@ import { collectRubyAssociationTypes } from "../../../../../../src/core/domains/
 
 function assocTypes(src: string): Record<string, Record<string, string>> {
   const parser = new Parser();
-  parser.setLanguage(RbLang as unknown as Parser.Language);
+  parser.setLanguage(RbLang);
   return collectRubyAssociationTypes(parser.parse(src).rootNode);
 }
 

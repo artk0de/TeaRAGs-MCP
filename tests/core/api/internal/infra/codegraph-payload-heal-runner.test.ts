@@ -119,7 +119,7 @@ function makeRunner(qdrant: PagedQdrantStub, graphDb: ReturnType<typeof graphDbS
   const deps: CodegraphPayloadHealRunnerDeps = {
     // Structurally compatible on everything the healer calls; cast so a future
     // member on the port (see PagedQdrantStub) does not break the fake.
-    qdrant: qdrant as unknown as CodegraphPayloadHealRunnerDeps["qdrant"],
+    qdrant,
     acquireGraphDb: vi.fn(async () => Promise.resolve(graphDb as unknown as GraphDbClient)),
     providerKey: PROVIDER_KEY,
   };

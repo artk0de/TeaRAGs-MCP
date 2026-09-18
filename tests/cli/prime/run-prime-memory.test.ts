@@ -81,7 +81,7 @@ describe("runPrime — collection memory report", () => {
     pingMock.mockReset();
     createAppContextMock.mockReset();
     parseAppConfigMock.mockReset();
-    process.stdout.write = writeMock as unknown as typeof process.stdout.write;
+    process.stdout.write = writeMock;
     pingMock.mockResolvedValue(true);
     parseAppConfigMock.mockReturnValue({ debug: false });
   });

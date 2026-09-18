@@ -68,10 +68,10 @@ describe("updateSymbolChunkIdsBulk — replace semantics per named file", () => 
     await seedFile("src/a.ts", ["A#idle", "A#run"]);
     await client.updateSymbolChunkIdsBulk([
       {
-        relPath: "src/a.ts" as RelPath,
+        relPath: "src/a.ts",
         chunkIds: new Map([
-          ["A#run" as SymbolId, "chunk_run_v1"],
-          ["A#idle" as SymbolId, "chunk_idle_v1"],
+          ["A#run", "chunk_run_v1"],
+          ["A#idle", "chunk_idle_v1"],
         ]),
       },
     ]);
@@ -83,20 +83,16 @@ describe("updateSymbolChunkIdsBulk — replace semantics per named file", () => 
 
     // Re-chunking moved A#idle out of every chunk's line range: this run's
     // mapping covers A#run only.
-    await client.updateSymbolChunkIdsBulk([
-      { relPath: "src/a.ts" as RelPath, chunkIds: new Map([["A#run" as SymbolId, "chunk_run_v2"]]) },
-    ]);
+    await client.updateSymbolChunkIdsBulk([{ relPath: "src/a.ts", chunkIds: new Map([["A#run", "chunk_run_v2"]]) }]);
 
     expect(await chunkIdsOf("src/a.ts")).toEqual({ "A#idle": null, "A#run": "chunk_run_v2" });
   });
 
   it("clears a named file whose fresh mapping is empty", async () => {
     await seedFile("src/a.ts", ["A#run"]);
-    await client.updateSymbolChunkIdsBulk([
-      { relPath: "src/a.ts" as RelPath, chunkIds: new Map([["A#run" as SymbolId, "chunk_run"]]) },
-    ]);
+    await client.updateSymbolChunkIdsBulk([{ relPath: "src/a.ts", chunkIds: new Map([["A#run", "chunk_run"]]) }]);
 
-    await client.updateSymbolChunkIdsBulk([{ relPath: "src/a.ts" as RelPath, chunkIds: new Map() }]);
+    await client.updateSymbolChunkIdsBulk([{ relPath: "src/a.ts", chunkIds: new Map() }]);
 
     expect(await chunkIdsOf("src/a.ts")).toEqual({ "A#run": null });
   });
@@ -105,15 +101,13 @@ describe("updateSymbolChunkIdsBulk — replace semantics per named file", () => 
     await seedFile("src/a.ts", ["A#run"]);
     await seedFile("src/b.ts", ["B#go"]);
     await client.updateSymbolChunkIdsBulk([
-      { relPath: "src/a.ts" as RelPath, chunkIds: new Map([["A#run" as SymbolId, "chunk_a"]]) },
-      { relPath: "src/b.ts" as RelPath, chunkIds: new Map([["B#go" as SymbolId, "chunk_b"]]) },
+      { relPath: "src/a.ts", chunkIds: new Map([["A#run", "chunk_a"]]) },
+      { relPath: "src/b.ts", chunkIds: new Map([["B#go", "chunk_b"]]) },
     ]);
 
     // An incremental pass re-derives only src/a.ts. src/b.ts was not re-chunked,
     // so its join is still valid and must survive.
-    await client.updateSymbolChunkIdsBulk([
-      { relPath: "src/a.ts" as RelPath, chunkIds: new Map([["A#run" as SymbolId, "chunk_a_v2"]]) },
-    ]);
+    await client.updateSymbolChunkIdsBulk([{ relPath: "src/a.ts", chunkIds: new Map([["A#run", "chunk_a_v2"]]) }]);
 
     expect(await chunkIdsOf("src/a.ts")).toEqual({ "A#run": "chunk_a_v2" });
     expect(await chunkIdsOf("src/b.ts")).toEqual({ "B#go": "chunk_b" });
@@ -141,8 +135,8 @@ describe("updateSymbolChunkIdsBulk — replace semantics per named file", () => 
     await client.updateSymbolChunkIdsBulk(fresh);
 
     expect((await client.queryAll<{ n: number }>(SQL_JOINED))[0].n).toBe(250);
-    expect(await client.findSymbolChunk("F249#b" as SymbolId)).toBeNull();
-    expect(await client.findSymbolChunk("F249#a" as SymbolId)).toEqual({
+    expect(await client.findSymbolChunk("F249#b")).toBeNull();
+    expect(await client.findSymbolChunk("F249#a")).toEqual({
       relPath: "src/f249.ts",
       chunkId: "chunk_249_a",
     });

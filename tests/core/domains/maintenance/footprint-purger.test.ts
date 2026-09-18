@@ -100,8 +100,8 @@ function buildPurger(over: PurgerHarnessOverrides = {}) {
     pool: codegraph as never,
     statsCache: stores.statsCache as never,
     snapshotBaseDir: "/snap",
-    snapshotStoreFactory: stores.snapshotStoreFactory as never,
-    quarantineStoreFactory: stores.quarantineStoreFactory as never,
+    snapshotStoreFactory: stores.snapshotStoreFactory,
+    quarantineStoreFactory: stores.quarantineStoreFactory,
     indexingLockStoreFactory: (over.indexingLockStoreFactory ?? stores.indexingLockStoreFactory) as never,
   });
   const purger = new CollectionFootprintPurger({
