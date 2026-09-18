@@ -19,6 +19,7 @@ import { dirname } from "node:path";
 
 import { DuckDBInstance, type DuckDBConnection, type DuckDBValue } from "@duckdb/node-api";
 
+import { DuckDbStreamIncompleteError } from "./errors.js";
 import { asBindable, bindParams } from "./sql-binding.js";
 
 /**
@@ -113,6 +114,11 @@ export class DuckDbGraphSession {
   private readonly nativeCallsSettled: (() => void)[] = [];
   /** Set by `close` once queued transactional writes settled — later calls are refused. */
   private refusingCalls = false;
+  /**
+   * The private connections of streams still being drained (see `streamRows`).
+   * `close` ends them before the instance, so none outlives it.
+   */
+  private readonly streamConnections = new Set<DuckDBConnection>();
   private closing?: Promise<void>;
 
   constructor(private readonly options: DuckDbGraphSessionOptions) {}
@@ -258,6 +264,11 @@ export class DuckDbGraphSession {
         this.nativeCallsSettled.push(resolve);
       });
     }
+    // A stream suspended between chunks holds no native call, so it does not
+    // keep the close open; its connection goes here, and its next fetch
+    // throws `DuckDbStreamIncompleteError` instead of ending quietly.
+    for (const streamConn of this.streamConnections) streamConn.closeSync();
+    this.streamConnections.clear();
     const { conn, instance } = this;
     this.conn = undefined;
     this.instance = undefined;
@@ -282,10 +293,7 @@ export class DuckDbGraphSession {
     try {
       return await call(conn);
     } finally {
-      this.runningNativeCalls -= 1;
-      if (this.runningNativeCalls === 0) {
-        for (const resolve of this.nativeCallsSettled.splice(0)) resolve();
-      }
+      this.settleNativeCall();
     }
   }
 
@@ -383,20 +391,92 @@ export class DuckDbGraphSession {
 
   /**
    * Yield result rows one DuckDB chunk at a time (no whole-result
-   * materialisation). `connection.stream` returns a result whose
-   * `fetchChunk()` pulls the next ~2048-row vector, returning null when
-   * drained. Each chunk's column arrays are read via `getRows()` and
-   * released before the next fetch.
+   * materialisation), all of them or an error (bd tea-rags-mcp-sgo8v).
+   *
+   * A DuckDB streaming result is invalidated by any other statement on its
+   * connection, and its `fetchChunk` then answers `null` — the answer it gives
+   * at the true end; the driver exposes no error for it. On the shared
+   * connection every concurrent caller (in the daemon: every client of the
+   * collection) could cut a drain short without a trace — probed, 3000 rows
+   * alone, 2048 beside one concurrent read. So a stream runs on a connection of
+   * its OWN, inside a read transaction whose snapshot a closing `count(*)`
+   * checks the drain against: a short drain throws `DuckDbStreamIncompleteError`
+   * instead of returning. A session close while the stream is still being
+   * drained throws the same, never a quiet end.
+   *
+   * The connection is released on every exit, including a consumer that stops
+   * iterating early.
    */
   async *streamRows(sql: string): AsyncIterableIterator<DuckDBValue[]> {
-    const result = await this.onConnection(async (conn) => conn.stream(sql));
-    let chunk = await this.onConnection(async () => result.fetchChunk());
-    while (chunk && chunk.rowCount > 0) {
-      const rows = chunk.getRows();
-      for (const row of rows) {
-        yield row;
+    const conn = await this.openStreamConnection();
+    let yielded = 0;
+    try {
+      // One snapshot for the stream AND its count, whatever commits meanwhile.
+      await this.onStreamConnection(conn, yielded, async (c) => c.run("BEGIN TRANSACTION"));
+      const result = await this.onStreamConnection(conn, yielded, async (c) => c.stream(sql));
+      for (;;) {
+        const chunk = await this.onStreamConnection(conn, yielded, async () => result.fetchChunk());
+        if (!chunk || chunk.rowCount === 0) break;
+        for (const row of chunk.getRows()) {
+          yielded += 1;
+          yield row;
+        }
       }
-      chunk = await this.onConnection(async () => result.fetchChunk());
+      // Only after the drain: a count issued mid-stream would itself end it.
+      const expected = await this.onStreamConnection(conn, yielded, async (c) => {
+        const reader = await c.runAndReadAll(`SELECT count(*) AS n FROM (${sql}) AS streamed`);
+        return Number(reader.getRowObjects()[0]?.n ?? 0);
+      });
+      if (yielded !== expected) {
+        throw new DuckDbStreamIncompleteError(this.options.path, { reason: "truncated", yielded, expected });
+      }
+      await this.onStreamConnection(conn, yielded, async (c) => c.run("COMMIT"));
+    } finally {
+      // Disconnecting ends the read transaction if the drain never reached COMMIT.
+      if (this.streamConnections.delete(conn)) conn.closeSync();
+    }
+  }
+
+  /** A fresh connection on this session's instance, tracked so `close` can end it. */
+  private async openStreamConnection(): Promise<DuckDBConnection> {
+    this.requireConn();
+    const { instance } = this;
+    if (!instance) throw new Error("DuckDbGraphClient: init() must be called before use");
+    this.runningNativeCalls += 1;
+    try {
+      const conn = await instance.connect();
+      this.streamConnections.add(conn);
+      return conn;
+    } finally {
+      this.settleNativeCall();
+    }
+  }
+
+  /**
+   * One native call on a stream's own connection, counted like `onConnection`
+   * so `close` waits it out. A stream whose connection the session already
+   * closed is INCOMPLETE, and says so — it must not read as a finished one.
+   */
+  private async onStreamConnection<T>(
+    conn: DuckDBConnection,
+    yielded: number,
+    call: (conn: DuckDBConnection) => Promise<T>,
+  ): Promise<T> {
+    if (this.refusingCalls || !this.streamConnections.has(conn)) {
+      throw new DuckDbStreamIncompleteError(this.options.path, { reason: "closed", yielded });
+    }
+    this.runningNativeCalls += 1;
+    try {
+      return await call(conn);
+    } finally {
+      this.settleNativeCall();
+    }
+  }
+
+  private settleNativeCall(): void {
+    this.runningNativeCalls -= 1;
+    if (this.runningNativeCalls === 0) {
+      for (const resolve of this.nativeCallsSettled.splice(0)) resolve();
     }
   }
 

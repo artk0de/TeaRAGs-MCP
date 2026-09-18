@@ -67,11 +67,18 @@ export interface EnrichmentExecutor {
    * fan-out with it, so a run too small to keep extra threads busy never spins
    * them up. Zero/undefined means "not counted", which is NOT the same as small.
    *
+   * `runRelPaths` is the run's complete file set, declared by an entry point
+   * that knows it before the first batch (the `--force-enrichments` recompute).
+   * It is what per-language affinity plans from (bd tea-rags-mcp-sgo8v): every
+   * partition must absorb every file of the run from the first batch on, so the
+   * partitions have to exist before any file arrives. Absent, the run keeps
+   * collection affinity.
+   *
    * The run's handle travels with it so the executor knows which run on a
    * collection is the latest — the only one whose `releaseRun` may evict that
    * collection's worker-side state (bd tea-rags-mcp-39xca.3).
    */
-  beginRun?: (run: EnrichmentRunHandle, fileCount?: number) => void;
+  beginRun?: (run: EnrichmentRunHandle, fileCount?: number, runRelPaths?: readonly string[]) => void;
 
   /**
    * Per-batch file enrichment for the streaming file phase.

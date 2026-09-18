@@ -345,6 +345,39 @@ export function isCodegraphUnavailableError(err: unknown): err is CodegraphUnava
 }
 
 /**
+ * A streamed DuckDB result ended before the rows it had to deliver (bd
+ * tea-rags-mcp-sgo8v). The driver cannot say so itself: a streaming result
+ * whose connection ran another statement, or was closed, answers `fetchChunk`
+ * with `null` — the same answer as the true end — and the C API's
+ * `duckdb_result_error` is not exposed to Node. Consumers of a stream
+ * (`streamAdjacency` → cycles + PageRank) would otherwise compute and persist
+ * metrics over the first chunk of the graph with no error anywhere.
+ *
+ * `reason: "truncated"` — the drain yielded fewer rows than the same query
+ * counts in the stream's own snapshot; `"closed"` — the session closed while
+ * the stream was still being drained.
+ */
+export class DuckDbStreamIncompleteError extends InfraError {
+  constructor(
+    dbPath: string,
+    detail: { reason: "truncated" | "closed"; yielded: number; expected?: number },
+    cause?: Error,
+  ) {
+    const count =
+      detail.expected === undefined ? `${detail.yielded} rows` : `${detail.yielded} of ${detail.expected} rows`;
+    super({
+      code: "INFRA_DUCKDB_STREAM_INCOMPLETE",
+      message: `DuckDB stream on ${dbPath} ended ${detail.reason === "closed" ? "by a session close" : "early"} after ${count}`,
+      hint:
+        "A streamed read stopped before its result was complete, so nothing computed from it was " +
+        "persisted. Re-run the operation; if it repeats, inspect cause for the driver message.",
+      httpStatus: 500,
+      cause,
+    });
+  }
+}
+
+/**
  * DuckDB connection close failed while evicting a cached pool entry.
  * Distinct from open failure: the file already exists and the driver
  * rejected the close (rare — usually a hung connection). Unlink errors

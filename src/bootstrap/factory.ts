@@ -58,7 +58,11 @@ import {
 } from "../core/domains/maintenance/migration/database/index.js";
 import { CollectionRegistry, type AmbientEnvRole } from "../core/domains/maintenance/registry/index.js";
 import { WorktreeProvisioner } from "../core/domains/maintenance/worktree/index.js";
-import type { CodegraphDeps, CodegraphWorkerConfig } from "../core/domains/trajectory/codegraph/index.js";
+import {
+  CODEGRAPH_LANGUAGE_BY_EXTENSION,
+  type CodegraphDeps,
+  type CodegraphWorkerConfig,
+} from "../core/domains/trajectory/codegraph/index.js";
 import { InMemoryGlobalSymbolTable } from "../core/domains/trajectory/codegraph/symbols/symbol-table.js";
 import { setDebug } from "../core/infra/runtime.js";
 import { StatsCache } from "../core/infra/stats-cache.js";
@@ -754,6 +758,11 @@ export function wireCodegraph(
     // flat while the other three sat 99.96% idle. Everything stateful still
     // rides the affinity binding above; `CODEGRAPH_PASS1_FANOUT=0` opts out.
     extractionFanout: true,
+    // …and a mixed-language run may be served by one pinned worker per language
+    // partition, so the languages' pass-2 windows overlap instead of adding up
+    // (bd tea-rags-mcp-sgo8v). Partitioned by the SAME table the walk stamps
+    // `FileExtraction.language` from. `CODEGRAPH_LANGUAGE_AFFINITY=0` opts out.
+    languageAffinity: { partitionByExtension: CODEGRAPH_LANGUAGE_BY_EXTENSION },
     serializableConfig: codegraphWorkerConfig,
   };
 

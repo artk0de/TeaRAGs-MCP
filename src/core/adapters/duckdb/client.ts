@@ -126,11 +126,22 @@ export class DuckDbGraphClient implements GraphDbClient {
     return this.fileGraph.hasData();
   }
 
-  /** See `GraphDbClient.rebuildEdgeFileTargetIndex` (contracts/types/codegraph-storage.ts). */
+  /**
+   * See `GraphDbClient.rebuildEdgeFileTargetIndex` (contracts/types/codegraph-storage.ts).
+   *
+   * Queued behind every transactional write, like `checkpoint` (bd
+   * tea-rags-mcp-sgo8v). Every writer of this database shares ONE connection —
+   * the daemon's per-collection client — so a DDL issued directly would execute
+   * inside whichever writer's BEGIN happened to be open: the node-flush chain
+   * during pass-2, and with one pass-2 per language partition, the other
+   * partition's `upsertFilesBulk` into the very table being re-indexed.
+   */
   async rebuildEdgeFileTargetIndex(): Promise<void> {
-    await this.session.exec(
-      "DROP INDEX IF EXISTS idx_cg_symbols_edges_file_target; " +
-        "CREATE INDEX idx_cg_symbols_edges_file_target ON cg_symbols_edges_file (target_rel_path);",
+    await this.session.serialize(async () =>
+      this.session.exec(
+        "DROP INDEX IF EXISTS idx_cg_symbols_edges_file_target; " +
+          "CREATE INDEX idx_cg_symbols_edges_file_target ON cg_symbols_edges_file (target_rel_path);",
+      ),
     );
   }
 

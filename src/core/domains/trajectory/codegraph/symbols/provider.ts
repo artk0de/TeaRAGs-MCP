@@ -22,7 +22,6 @@ import type { Ignore } from "ignore";
 import type { GraphDbClientPool } from "../../../../adapters/duckdb/pool.js";
 import type {
   CodegraphPass1FileAggregates,
-  ExtractionSink,
   FileExtraction,
   GlobalSymbolTable,
   GraphDbClient,
@@ -44,6 +43,7 @@ import type {
   EnrichmentProvider,
   EnrichmentRunCoverage,
   EnrichmentScope,
+  FileExtractionAbsorbRole,
   FileExtractionFanoutBatch,
   FileExtractionPass1Telemetry,
   FileSignalOptions,
@@ -61,7 +61,12 @@ import {
   type CodegraphExclusionOptions,
 } from "../exclusion.js";
 import { CodegraphChunkSignalPass } from "./chunk-signal-pass.js";
-import { createCodegraphExtractionSink, type CodegraphSinkDeps } from "./extraction-sink.js";
+import {
+  createCodegraphExtractionSink,
+  recomputeCodegraphMetricsBestEffort,
+  type CodegraphExtractionSink,
+  type CodegraphSinkDeps,
+} from "./extraction-sink.js";
 import { CodegraphFileExtractor } from "./file-extractor.js";
 import { GraphBuildFinalizer } from "./graph-finalizer.js";
 import { SymbolNodeFlushQueue } from "./node-flush.js";
@@ -78,6 +83,9 @@ import { lastSegment } from "./symbol-name.js";
  */
 export { CODEGRAPH_LANGUAGES, type CodegraphLanguageConfig } from "./file-extractor.js";
 export { computeSymbolChunkIds } from "./chunk-signal-pass.js";
+
+/** `CallEdgeResolutionRunner#resolverDiagnostics`: each language resolver's run-scoped cache report. */
+type ResolverDiagnosticsByLanguage = ReturnType<CallEdgeResolutionRunner["resolverDiagnostics"]>;
 
 /**
  * Strip one `_v<digits>` versioning suffix from a collection name
@@ -184,13 +192,19 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
    * first pass-1 writer, finished + consumed + deleted by `finalizeSignals`, so
    * streamed batches accumulate into one graph build.
    */
-  private readonly runSinks = new Map<string, ExtractionSink>();
+  private readonly runSinks = new Map<string, CodegraphExtractionSink>();
   /**
    * Repo-relative paths extracted via `streamFileBatch` per collection key.
    * `finalizeSignals` reads back file overlays for exactly these paths when the
    * caller doesn't pass an explicit `options.paths` subset.
    */
   private readonly runExtractedPaths = new Map<string, Set<string>>();
+  /**
+   * A language partition's resolver block, captured when its `resolve` ends —
+   * the run state it is read from is cleared there — for the timing line the
+   * completion owner emits after its `readBack` recompute (bd tea-rags-mcp-sgo8v).
+   */
+  private readonly resolverDiagnosticsForReadBack = new Map<string, ResolverDiagnosticsByLanguage>();
   /**
    * Per-collection serialization tail for `streamFileBatch` (bd tea-rags-mcp-svhqp
    * layer 3): the file phase fires batches without awaiting, and the shared spill
@@ -468,7 +482,7 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
    * skips the durable `cg_symbols` write already issued by the eager flush
    * (`drainInputSpill` passes true).
    */
-  asExtractionSink(collectionName?: PhysicalCollectionName, skipDurableNodeWrite = false): ExtractionSink {
+  asExtractionSink(collectionName?: PhysicalCollectionName, skipDurableNodeWrite = false): CodegraphExtractionSink {
     return createCodegraphExtractionSink(this.sinkDeps, randomUUID(), collectionName, skipDurableNodeWrite);
   }
 
@@ -519,21 +533,38 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
    * Recompute Tarjan SCC for both scopes and PageRank over the method graph once
    * pass-2 settles (`GraphBuildFinalizer#recomputeMetrics`).
    */
-  private async recomputeGraphMetricsStreaming(collectionName?: PhysicalCollectionName): Promise<void> {
+  private async recomputeGraphMetricsStreaming(
+    collectionName?: PhysicalCollectionName,
+    resolvers?: ResolverDiagnosticsByLanguage,
+  ): Promise<void> {
     try {
       await this.graphFinalizer.recomputeMetrics(collectionName);
     } finally {
       // The recompute is the last pass-2 stage, so this is the run's closing
       // wall-clock statement (bd tea-rags-mcp-6aytq) — from `finally`, because the
-      // sink treats a metrics failure as best-effort. The resolver block is the
-      // run's one record of which Program strategy it took.
-      if (isDebug()) {
-        console.error(
-          "[GitEnrich] PHASE: CODEGRAPH_PHASE_TIMINGS",
-          JSON.stringify({ ...this.phaseTimings.toSummary(), resolvers: this.resolutionRunner.resolverDiagnostics() }),
-        );
-      }
+      // sink treats a metrics failure as best-effort.
+      this.logPhaseTimings(resolvers);
     }
+  }
+
+  /**
+   * The run's wall-clock attribution (bd tea-rags-mcp-6aytq). The resolver block
+   * is the run's one record of which Program strategy it took. Emitted once per
+   * provider instance per run: after the metric recompute, or — for a language
+   * partition that does not own collection completion — after its pass-2.
+   *
+   * `resolvers` is passed when the run state it is read from is already gone:
+   * a language partition's `readBack` logs after `resolve` cleared it, so the
+   * block is captured at `resolve` (bd tea-rags-mcp-sgo8v).
+   */
+  private logPhaseTimings(
+    resolvers: ResolverDiagnosticsByLanguage = this.resolutionRunner.resolverDiagnostics(),
+  ): void {
+    if (!isDebug()) return;
+    console.error(
+      "[GitEnrich] PHASE: CODEGRAPH_PHASE_TIMINGS",
+      JSON.stringify({ ...this.phaseTimings.toSummary(), resolvers }),
+    );
   }
 
   /**
@@ -722,16 +753,30 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
    * Per-file writes are keyed by `relPath`, so their SET is order-independent; the
    * run-global aggregates are last-write-wins, so the executor still feeds batches
    * in admission order to keep a run byte-reproducible.
+   *
+   * Under language affinity (bd tea-rags-mcp-sgo8v) every partition absorbs every
+   * record in that same order, and `absorbRoles` says which it OWNS: a `mirror`
+   * merges the file's pass-1 state only (`CodegraphExtractionSink#mirror`), so this
+   * partition resolves its own files against the project a single worker would
+   * have assembled — the symbol table and the run-global maps are language-blind.
    */
   absorbExtractedFiles = async (
     root: string,
     extractions: FileExtraction[],
-    options?: FileSignalOptions & { pass1ByLanguage?: Record<string, FileExtractionPass1Telemetry> },
+    options?: FileSignalOptions & {
+      pass1ByLanguage?: Record<string, FileExtractionPass1Telemetry>;
+      absorbRoles?: readonly FileExtractionAbsorbRole[];
+    },
   ): Promise<void> => {
     const key = this.collectionKey(options?.collectionName);
     this.bindRunState(root, options);
     const { sink, extracted } = this.ensureRunSink(key, options?.collectionName);
-    for (const extraction of extractions) {
+    for (const [index, extraction] of extractions.entries()) {
+      if (options?.absorbRoles?.[index] === "mirror") {
+        if (this.runState.mirroredRelPaths.has(extraction.relPath)) continue;
+        await sink.mirror(extraction);
+        continue;
+      }
       // Same guard as the serial path: a file whose chunks span several batches
       // is extracted once per run, or its calls are tallied per spill and
       // `resolveSuccessRate` jitters with batch composition (svhqp).
@@ -760,11 +805,15 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
     key: string,
     collectionName?: PhysicalCollectionName,
     skipDurableNodeWrite = false,
-  ): { sink: ExtractionSink; extracted: Set<string> } {
+  ): { sink: CodegraphExtractionSink; extracted: Set<string> } {
     let sink = this.runSinks.get(key);
     if (!sink) {
       this.chunkSymbolByLine.delete(key);
       this.runState.resetTally();
+      // A partition's `resolve` keeps its owned paths for the `readBack` that
+      // follows (bd tea-rags-mcp-sgo8v); a run that never got that far must not
+      // hand them to this one.
+      this.runExtractedPaths.delete(key);
       sink = this.asExtractionSink(collectionName, skipDurableNodeWrite);
       this.runSinks.set(key, sink);
     }
@@ -882,8 +931,16 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
    * coordinator's post-finalize `buildChunkSignals` pass (`defersChunkEnrichment`).
    * Does NOT clear `chunkSymbolByLine`: the deferred chunk pass still needs it
    * to resolve symbolIds; it is reset at the next run's first streamFileBatch.
+   *
+   * Under language affinity (bd tea-rags-mcp-sgo8v) the executor drives this in
+   * two halves across every partition of the collection — see
+   * `PartitionedFinalizeStage`. `resolve` does everything above except the
+   * metric recompute and the read-back, and keeps the owned paths for `readBack`,
+   * which the executor issues only once EVERY partition has resolved.
    */
   finalizeSignals = async (_root: string, options?: FileSignalOptions): Promise<Map<string, FileSignalOverlay>> => {
+    if (options?.finalizeStage === "readBack") return this.readBackPartition(options);
+    const partitioned = options?.finalizeStage === "resolve";
     const key = this.collectionKey(options?.collectionName);
     const file = new Map<string, FileSignalOverlay>();
     // Seed the hash stamped onto every row pass-2 writes, BEFORE the drain and
@@ -896,29 +953,73 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
     // BEFORE `sink.finish()`, which runs the barrier — their only reader. Absent
     // for direct/test callers, which keep the graphDb read.
     if (options?.pass1Aggregates) this.runState.injectedPass1Aggregates = options.pass1Aggregates;
+    let keepOwnedPathsForReadBack = false;
     try {
       // yl9tv Task 5b — cross-pass: pass-1 is deferred to here, so drain the
       // main-written input spill before `sink.finish()` resolves pass-2.
       // Non-cross-pass runs already populated the sink via streamFileBatch.
       if (options?.crossPass) await this.drainInputSpill(key, options?.collectionName);
       const sink = this.runSinks.get(key);
-      if (sink) await sink.finish();
+      // A partition's pass-2 ends while others may still be writing, so cycles
+      // and PageRank wait for the completion owner's `readBack`.
+      if (sink) await sink.finish(partitioned ? { recomputeMetrics: false } : undefined);
       const { graphDb } = await this.getStore(options?.collectionName);
-      const paths =
-        options?.paths && options.paths.length > 0 ? options.paths : [...(this.runExtractedPaths.get(key) ?? [])];
-      await readCodegraphFileOverlays(graphDb, paths, file);
+      if (!partitioned) {
+        const paths =
+          options?.paths && options.paths.length > 0 ? options.paths : [...(this.runExtractedPaths.get(key) ?? [])];
+        await readCodegraphFileOverlays(graphDb, paths, file);
+      }
       // Persist the resolve breakdown (bd tea-rags-mcp-2jet-D) after
-      // `sink.finish()`, so every resolved call is already counted.
+      // `sink.finish()`, so every resolved call is already counted. A partition
+      // persists only its own languages, which the store scopes its writes by.
       await this.recordRunStats(graphDb, options?.runCoverage);
+      // The completion owner reports the run's timings after the recompute —
+      // with the resolver block captured NOW, before the run state it is read
+      // from is cleared below; any other partition reports here, or its pass-2
+      // would leave no record at all.
+      if (partitioned && options?.ownsCollectionCompletion === true) {
+        this.resolverDiagnosticsForReadBack.set(key, this.resolutionRunner.resolverDiagnostics());
+      } else if (partitioned) {
+        this.logPhaseTimings();
+      }
+      keepOwnedPathsForReadBack = partitioned;
     } finally {
       this.runSinks.delete(key);
-      this.runExtractedPaths.delete(key);
+      if (!keepOwnedPathsForReadBack) this.runExtractedPaths.delete(key);
       this.runBatchChains.delete(key);
       this.xpassWritten.delete(key);
       this.clearRunState(key);
     }
     return file;
   };
+
+  /**
+   * The second half of a partitioned finalize (bd tea-rags-mcp-sgo8v), issued
+   * once every partition of the collection has resolved: the graph is whole,
+   * so the completion owner recomputes cycles and PageRank over it, and every
+   * partition reads back the file overlays of the files it owns — a file's
+   * fan-in may have been written by another partition's pass-2.
+   */
+  private async readBackPartition(options: FileSignalOptions): Promise<Map<string, FileSignalOverlay>> {
+    const key = this.collectionKey(options.collectionName);
+    const file = new Map<string, FileSignalOverlay>();
+    const resolvers = this.resolverDiagnosticsForReadBack.get(key);
+    this.resolverDiagnosticsForReadBack.delete(key);
+    try {
+      if (options.ownsCollectionCompletion === true) {
+        await recomputeCodegraphMetricsBestEffort(async () =>
+          this.recomputeGraphMetricsStreaming(options.collectionName, resolvers),
+        );
+      }
+      const { graphDb } = await this.getStore(options.collectionName);
+      const paths =
+        options.paths && options.paths.length > 0 ? options.paths : [...(this.runExtractedPaths.get(key) ?? [])];
+      await readCodegraphFileOverlays(graphDb, paths, file);
+    } finally {
+      this.runExtractedPaths.delete(key);
+    }
+    return file;
+  }
 
   /**
    * Persist the run's resolve tally (`persistRunResolveStats`). The tally is NOT
@@ -970,6 +1071,7 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
     this.chunkSymbolByLine.clear();
     this.runSinks.clear();
     this.runExtractedPaths.clear();
+    this.resolverDiagnosticsForReadBack.clear();
     this.runBatchChains.clear();
     this.xpassWritten.clear();
     this.runState.clearAll();

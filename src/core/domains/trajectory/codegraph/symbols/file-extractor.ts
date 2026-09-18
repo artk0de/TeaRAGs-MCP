@@ -144,6 +144,17 @@ export const CODEGRAPH_LANGUAGES: Record<string, CodegraphLanguageConfig> = {
 /** Extensions with a {@link CODEGRAPH_LANGUAGES} row — the only files the walk can parse. */
 export const CODEGRAPH_SUPPORTED_EXTENSIONS: ReadonlySet<string> = new Set(Object.keys(CODEGRAPH_LANGUAGES));
 
+/**
+ * Extension → the language a file of it is walked as — the same table, reduced
+ * to plain data. It is what the provider declares as
+ * `workerDescriptor.languageAffinity.partitionByExtension` (bd
+ * tea-rags-mcp-sgo8v), so the executor partitions a run by exactly the
+ * languages the walk will stamp on its records.
+ */
+export const CODEGRAPH_LANGUAGE_BY_EXTENSION: Readonly<Record<string, string>> = Object.freeze(
+  Object.fromEntries(Object.entries(CODEGRAPH_LANGUAGES).map(([extension, config]) => [extension, config.language])),
+);
+
 /** The path's extension including the dot, or `""` when it has none. */
 export function extensionOf(path: string): string {
   const dot = path.lastIndexOf(".");

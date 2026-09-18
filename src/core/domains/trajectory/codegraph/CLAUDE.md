@@ -207,6 +207,32 @@
   first `PASS2_PROGRESS` on a taxdome Ruby recompute, which is what turned the
   pass-1 fan-out's 18.8s → 9.1s into a 51.9s → 59.9s window REGRESSION.
 
+- **A language partition's provider resolves only what it OWNS, against state
+  built from EVERYTHING — and the mirror is the same merge as the write.** Under
+  per-language affinity (the executor side is
+  `../../ingest/pipeline/enrichment/CLAUDE.md`) `absorbExtractedFiles` gets
+  `absorbRoles`; a `mirror` record goes through
+  `CodegraphExtractionSink#mirror`, which shares `absorbPass1State` with `write`
+  — symbol-table entry, run-global merge, inheritance rows — and skips the node
+  write, the walk ranges, the spill line and every count. `RunState#absorb`
+  records a mirror in `mirroredRelPaths`, NOT in `extractedFilesByLanguage`, and
+  `seal` treats it as walked. `finalizeSignals` with `finalizeStage: "resolve"`
+  finishes the sink with `recomputeMetrics: false`, persists this partition's
+  run stats and keeps the owned paths; `"readBack"` recomputes metrics only with
+  `ownsCollectionCompletion`, then reads the owned overlays. Three things an
+  edit must keep: a mirror that skipped the run-global merge would leave the
+  last-write-wins maps different from a single worker's; a mirror counted in
+  `extractedFilesByLanguage` would make a Ruby partition prime TypeScript's
+  whole-project `ts.Program`; and a mirrored file missing from the hydration
+  walked set would resurrect its previous slice. Why: parity with collection
+  affinity is exact only because every partition's state equals the single
+  worker's (`language-affinity-parity.test.ts`, and end to end
+  `lifecycle/language-affinity.integration.test.ts`). Cycles and PageRank are
+  the exception by construction: both walk the edge tables in STORAGE order, two
+  interleaved writers store the same rows in another order, so Tarjan's
+  numbering and the last DOUBLE bits differ — compare them as member sets and
+  within the adapter's `PAGE_RANK_EPSILON`.
+
 - **Resolve stats are per caller FILE and aggregated at read; `cg_run_stats` is
   only the legacy fallback.** Finalize writes each resolved file's tally to
   `cg_file_resolve_stats` (migration 025) — replaced per file, dropped by

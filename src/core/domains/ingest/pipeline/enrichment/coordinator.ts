@@ -623,6 +623,9 @@ export class EnrichmentCoordinator {
         fileCount: stored.fileCount,
         onlyProviderKeys: matched,
         languages: languages ?? ALL_LANGUAGES,
+        // Known before the first batch — the one run that can say so, which is
+        // what lets the executor split it by language (bd tea-rags-mcp-sgo8v).
+        runRelPaths: [...stored.chunkMap.keys()],
       }),
     );
     // File phase, in the same bounded batches the live pipeline uses, so a
@@ -772,8 +775,9 @@ export class EnrichmentCoordinator {
     // The executor's run-start seam, mirror of the provider reset above: the
     // worker-pool executor drops the pass-1 fan-out's per-run extracted-path set,
     // so a previous run that never released cannot make this one skip files.
-    // `fileCount` travels with it because the fan-out WIDTH is a property of the run.
-    this.executor.beginRun?.(runState.handle, fileCount);
+    // `fileCount` travels with it because the fan-out WIDTH is a property of the run,
+    // and a declared file set because the language partitions are too.
+    this.executor.beginRun?.(runState.handle, fileCount, spec.runRelPaths);
 
     runState.filePhase.init(
       runState.contexts,

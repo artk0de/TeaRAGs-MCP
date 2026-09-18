@@ -9,6 +9,7 @@ import type { ProjectIngestFactory as ProjectIngestFactoryType } from "../../src
 import type { WorkerEnrichmentDescriptor } from "../../src/core/contracts/types/provider.js";
 import type { EnvDriftMonitor as EnvDriftMonitorType } from "../../src/core/domains/maintenance/drift/env-drift-monitor.js";
 import { CollectionRegistry } from "../../src/core/domains/maintenance/registry/index.js";
+import { CODEGRAPH_LANGUAGE_BY_EXTENSION } from "../../src/core/domains/trajectory/codegraph/index.js";
 import type { GitTrajectory as GitTrajectoryType } from "../../src/core/domains/trajectory/git.js";
 import { loadPromptsConfig } from "../../src/mcp/prompts/index.js";
 
@@ -357,5 +358,17 @@ describe("wireCodegraph", () => {
     expect(ctx).toBeDefined();
     const socketPath = (ctx!.pool as unknown as { options: { daemonSocketPath?: string } }).options.daemonSocketPath;
     expect(socketPath).toMatch(/codegraph-daemon\.sock$/);
+  });
+
+  it("declares per-language affinity over exactly the languages the walk stamps (bd tea-rags-mcp-sgo8v)", () => {
+    // The executor partitions a run by extension; the partitions only line up
+    // with the records' `language` if both come from the one language table.
+    const ctx = wireCodegraph(makeConfig(), zodConfigWithCodegraph());
+    const descriptor = ctx?.deps.workerDescriptor;
+
+    expect(descriptor?.extractionFanout).toBe(true);
+    expect(descriptor?.languageAffinity?.partitionByExtension).toEqual(CODEGRAPH_LANGUAGE_BY_EXTENSION);
+    expect(descriptor?.languageAffinity?.partitionByExtension[".tsx"]).toBe("typescript");
+    expect(descriptor?.languageAffinity?.partitionByExtension[".rb"]).toBe("ruby");
   });
 });

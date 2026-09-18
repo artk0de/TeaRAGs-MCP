@@ -36,7 +36,7 @@ import type {
   RubyTypeRef,
   SchemaColumnAccessorSource,
 } from "../../../../contracts/types/language.js";
-import type { ProviderRunMetrics } from "../../../../contracts/types/provider.js";
+import type { FileExtractionAbsorbRole, ProviderRunMetrics } from "../../../../contracts/types/provider.js";
 import { readDeclaredDependencies } from "../../../../infra/dependency-manifests.js";
 import { isDebug } from "../../../../infra/runtime.js";
 import { MapHierarchyView } from "../hierarchy-view.js";
@@ -331,6 +331,18 @@ export class CodegraphRunState {
    * include set misses files the run resolves. Released at both clear seams.
    */
   readonly extractedRelPathsByLanguage = new Map<string, RelPath[]>();
+
+  /**
+   * Files this run walked that ANOTHER language partition owns (bd
+   * tea-rags-mcp-sgo8v): absorbed as `mirror` records, so their pass-1 state is
+   * current in the maps above while their graph rows are another worker's to
+   * write. Kept apart from the two maps before this one because those count and
+   * list what THIS partition resolves — the TypeScript `ts.Program` is rooted on
+   * that list, and a Ruby partition that mirrored TypeScript must not build one.
+   * Still a walked file for hydration: its persisted slice describes the
+   * previous content (see `seal`). Released at both clear seams.
+   */
+  readonly mirroredRelPaths = new Set<RelPath>();
 
   /**
    * Per-file SHA256 for the run, threaded in from `FileSignalOptions`
@@ -874,7 +886,7 @@ export class CodegraphRunState {
       );
       return;
     }
-    const walked = new Set<string>();
+    const walked = new Set<string>(this.mirroredRelPaths);
     for (const relPaths of this.extractedRelPathsByLanguage.values()) for (const p of relPaths) walked.add(p);
     const hydratable = selectHydratablePass1Aggregates(persisted, walked);
     if (hydratable.length === 0) return;
@@ -1197,6 +1209,7 @@ export class CodegraphRunState {
     this.ancestors = {};
     this.extractedFilesByLanguage.clear();
     this.extractedRelPathsByLanguage.clear();
+    this.mirroredRelPaths.clear();
     this.compactClasses = new Set();
     this.gemfileContent = undefined;
     this.gemfileLoaded = false;
@@ -1240,6 +1253,7 @@ export class CodegraphRunState {
     this.ancestors = {};
     this.extractedFilesByLanguage.clear();
     this.extractedRelPathsByLanguage.clear();
+    this.mirroredRelPaths.clear();
     this.compactClasses = new Set();
     this.gemfileContent = undefined;
     this.gemfileLoaded = false;
@@ -1277,12 +1291,23 @@ export class CodegraphRunState {
    * extraction sink's `write` for every file walked in pass-1. Last-write-wins
    * on duplicate keys — same-class declarations across files are rare, and when
    * they happen the later definition is what the runtime would see too.
+   *
+   * A `mirror` file (bd tea-rags-mcp-sgo8v) merges exactly the same aggregates —
+   * in the same absorb order, which is what keeps the last-write-wins keys equal
+   * to a single worker's — but is recorded as walked-elsewhere rather than
+   * counted as this partition's extraction.
    */
-  absorb(extraction: FileExtraction, selfDispatchMethods: SelfDispatchMethod[]): void {
+  absorb(
+    extraction: FileExtraction,
+    selfDispatchMethods: SelfDispatchMethod[],
+    role: FileExtractionAbsorbRole = "own",
+  ): void {
     // Counted here, not beside `stats.extractedFiles` in the sink, because this is
     // a run-global aggregate the barrier reads. The defensive empty extraction
     // carries `language: ""` and is not a file any resolver will be handed.
-    if (extraction.language !== "") {
+    if (role === "mirror") {
+      this.mirroredRelPaths.add(extraction.relPath);
+    } else if (extraction.language !== "") {
       this.extractedFilesByLanguage.set(
         extraction.language,
         (this.extractedFilesByLanguage.get(extraction.language) ?? 0) + 1,

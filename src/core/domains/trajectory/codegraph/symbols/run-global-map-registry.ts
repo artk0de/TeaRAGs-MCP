@@ -97,6 +97,10 @@ export const RUN_GLOBAL_MAP_PERSISTENCE = {
     policy: "batchOnly",
     reason: "the walked set itself: hydration skips these files and the deferred chunk pass maps them",
   },
+  mirroredRelPaths: {
+    policy: "batchOnly",
+    reason: "files another language partition owns and this one walked as mirrors; hydration skips them too",
+  },
   includedBy: { policy: "batchOnly", reason: "derived at seal from the hydrated ancestor maps" },
   hierarchyView: { policy: "batchOnly", reason: "derived at seal from the hydrated inheritance rows" },
   selfDispatchTemplates: { policy: "batchOnly", reason: "derived at seal from the hydrated self-dispatch methods" },

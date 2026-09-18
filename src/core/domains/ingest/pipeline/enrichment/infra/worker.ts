@@ -14,11 +14,12 @@
  *
  * Provider lifecycle per worker thread:
  *
- *   1. First `call` envelope for (providerModulePath, collectionName) →
- *      dynamic-import the module, look up `providerFactoryExport`, await
- *      `factory(serializableConfig)`, cache the result.
- *   2. Subsequent `call` envelopes with the SAME (providerModulePath,
- *      collectionName) → reuse the cached instance. `serializableConfig` of
+ *   1. First `call` envelope for (providerModulePath, collectionName,
+ *      affinityPartition) → dynamic-import the module, look up
+ *      `providerFactoryExport`, await `factory(serializableConfig)`, cache the
+ *      result. The partition is absent except under per-language affinity.
+ *   2. Subsequent `call` envelopes with the SAME key → reuse the cached
+ *      instance. What a call does with it is `./worker-invoke.ts`. `serializableConfig` of
  *      later envelopes is IGNORED — the descriptor carried it on the first
  *      build; mutating it across calls would break codegraph's per-run
  *      symbolTable accumulation.
@@ -34,21 +35,12 @@
 import { getHeapStatistics } from "node:v8";
 import { parentPort, resourceLimits, workerData } from "node:worker_threads";
 
-import type {
-  ChunkSignalOptions,
-  EnrichmentProvider,
-  FileSignalOptions,
-} from "../../../../../contracts/types/provider.js";
-import type { ChunkLookupEntry } from "../../../../../types.js";
+import type { EnrichmentProvider } from "../../../../../contracts/types/provider.js";
 import { applyWorkerDebug } from "../../infra/worker-debug.js";
 import { chunkedCpuProfilerConfigFromEnv, startChunkedCpuProfiler } from "./chunked-cpu-profiler.js";
 import { describeUnenforcedHeapCeiling } from "./heap-ceiling-enforcement.js";
-import type {
-  EnrichmentCallRequest,
-  EnrichmentReleaseRequest,
-  EnrichmentWorkerRequest,
-  EnrichmentWorkerResponse,
-} from "./worker-protocol.js";
+import { enrichmentProviderCacheKey, invokeEnrichmentMethod } from "./worker-invoke.js";
+import type { EnrichmentReleaseRequest, EnrichmentWorkerRequest, EnrichmentWorkerResponse } from "./worker-protocol.js";
 
 // A worker thread starts with its own module registry, so the debug flag is
 // false here until the pool's init payload says otherwise. Without this, every
@@ -96,29 +88,25 @@ const chunkedCpuProfiler = startChunkedCpuProfiler(chunkedCpuProfilerConfigFromE
 /**
  * Factory shape — providers expose this as the named export referenced by
  * `WorkerEnrichmentDescriptor.providerFactoryExport`. Worker calls it once per
- * (providerModulePath, collectionName) and caches the result.
+ * cache key (`enrichmentProviderCacheKey`) and caches the result.
  */
 type EnrichmentProviderFactory = (config: unknown) => Promise<EnrichmentProvider>;
-
-/** Cache key composes module path with collection name; stateless gets "". */
-function cacheKey(modulePath: string, collectionName?: string): string {
-  return `${modulePath}::${collectionName ?? ""}`;
-}
 
 /** Per-thread provider cache. Survives across calls within the worker lifetime. */
 const providerCache = new Map<string, Promise<EnrichmentProvider>>();
 
 /**
- * Lazily build (or reuse) the provider for the given (modulePath, collectionName)
- * pair. Returns a Promise so concurrent calls for the same key share one build.
+ * Lazily build (or reuse) the provider for the given cache key. Returns a
+ * Promise so concurrent calls for the same key share one build.
  */
 async function getProvider(
   modulePath: string,
   factoryExport: string,
   serializableConfig: unknown,
   collectionName?: string,
+  affinityPartition?: string,
 ): Promise<EnrichmentProvider> {
-  const key = cacheKey(modulePath, collectionName);
+  const key = enrichmentProviderCacheKey(modulePath, collectionName, affinityPartition);
   const existing = providerCache.get(key);
   if (existing) return existing;
 
@@ -142,92 +130,13 @@ async function getProvider(
 }
 
 /**
- * Strip the non-serializable `concurrencySemaphore` from chunk options.
- *
- * `ChunkSignalOptions.concurrencySemaphore` is a `Semaphore` CLASS INSTANCE on
- * the main thread (a coordinator-shared git-blame limiter). It cannot survive
- * `postMessage`: structured clone copies its enumerable fields but DROPS the
- * prototype `acquire()` method, so it arrives here as a method-less plain
- * object. Passing it through would make the git chunk path call `.acquire()` on
- * a non-function and throw "acquire is not a function" (tea-rags-mcp-2qja).
- *
- * Each worker thread is an independent process of execution, so a cross-batch
- * shared limiter is meaningless here anyway — the provider rebuilds its own
- * in-thread limiter (bounded by its serializable `chunkConcurrency`) when no
- * semaphore is supplied. Removing the field selects exactly that fallback.
- */
-function stripWorkerChunkOptions(options: unknown): ChunkSignalOptions | undefined {
-  if (options === undefined) return undefined;
-  const { concurrencySemaphore: _drop, ...rest } = options as ChunkSignalOptions;
-  return rest;
-}
-
-/** Dispatch the named EnrichmentExecutor method on the resolved provider. */
-async function invokeMethod(
-  provider: EnrichmentProvider,
-  request: EnrichmentCallRequest,
-): Promise<EnrichmentWorkerResponse> {
-  const { method, root, paths, chunkMap, extractions, pass1ByLanguage, options } = request;
-  switch (method) {
-    case "extractFileBatch": {
-      // Pass-1 fan-out, extraction half. Dispatched WITHOUT a routing key, so
-      // this can be any worker — including one that has never seen this
-      // collection. That is safe precisely because the method is pure: it
-      // parses and returns records, touching no store and no run state.
-      if (!provider.extractFileBatch) {
-        return { extractionBatch: { extractions: [], pass1ByLanguage: {} } };
-      }
-      const fileOptions = options as FileSignalOptions | undefined;
-      return { extractionBatch: await provider.extractFileBatch(root, paths ?? [], fileOptions) };
-    }
-    case "absorbExtractedFiles": {
-      // …and the absorb half, which the executor pins to the collection's
-      // worker. A provider that declared the fan-out without this method would
-      // silently drop the run's extractions, so say so instead.
-      if (!provider.absorbExtractedFiles) {
-        throw new Error("enrichment worker: provider declared extractionFanout but has no absorbExtractedFiles");
-      }
-      const fileOptions = options as FileSignalOptions | undefined;
-      await provider.absorbExtractedFiles(root, extractions ?? [], { ...fileOptions, pass1ByLanguage });
-      return { fileOverlay: new Map() };
-    }
-    case "runFileBatch": {
-      const fileOptions = options as FileSignalOptions | undefined;
-      const pathList = paths ?? [];
-      const overlay = provider.streamFileBatch
-        ? await provider.streamFileBatch(root, pathList, fileOptions)
-        : await provider.buildFileSignals(root, { ...fileOptions, paths: pathList });
-      return { fileOverlay: overlay };
-    }
-    case "runFileSignalsRecovery": {
-      const fileOptions = options as FileSignalOptions | undefined;
-      const overlay = await provider.buildFileSignals(root, { ...fileOptions, paths: paths ?? [] });
-      return { fileOverlay: overlay };
-    }
-    case "runChunkBatch": {
-      const map = chunkMap ?? new Map<string, ChunkLookupEntry[]>();
-      const overlay = await provider.buildChunkSignals(root, map, stripWorkerChunkOptions(options));
-      return { chunkOverlay: overlay };
-    }
-    case "runFinalize": {
-      const fileOptions = options as FileSignalOptions | undefined;
-      if (!provider.finalizeSignals) {
-        return { fileOverlay: new Map() };
-      }
-      const overlay = await provider.finalizeSignals(root, fileOptions);
-      return { fileOverlay: overlay };
-    }
-  }
-}
-
-/**
- * Release the cached provider entry for (modulePath, collectionName). Invokes
- * `provider.onRelease?.()` first; swallows any throw (bounded memory wins over
- * perfect cleanup — spec section 5). Idempotent: returns `released: false`
- * when the entry was not in the cache.
+ * Release the cached provider entry for (modulePath, collectionName,
+ * affinityPartition). Invokes `provider.onRelease?.()` first; swallows any throw
+ * (bounded memory wins over perfect cleanup — spec section 5). Idempotent:
+ * returns `released: false` when the entry was not in the cache.
  */
 async function releaseEntry(request: EnrichmentReleaseRequest): Promise<EnrichmentWorkerResponse> {
-  const key = cacheKey(request.providerModulePath, request.collectionName);
+  const key = enrichmentProviderCacheKey(request.providerModulePath, request.collectionName, request.affinityPartition);
   const pending = providerCache.get(key);
   if (!pending) return { released: false };
   providerCache.delete(key);
@@ -252,8 +161,9 @@ async function handle(request: EnrichmentWorkerRequest): Promise<EnrichmentWorke
     request.providerFactoryExport,
     request.serializableConfig,
     request.collectionName,
+    request.affinityPartition,
   );
-  return invokeMethod(provider, request);
+  return invokeEnrichmentMethod(provider, request);
 }
 
 if (parentPort) {
