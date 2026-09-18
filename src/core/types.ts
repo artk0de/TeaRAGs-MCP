@@ -12,6 +12,7 @@
 
 import type { EnrichmentHealthMap } from "./contracts/types/enrichment.js";
 import type { ProviderRunMetrics } from "./contracts/types/provider.js";
+import type { WorktreeSeedReport } from "./contracts/types/worktree.js";
 
 // Back-compat re-exports of types relocated into contracts/.
 export type { IngestCodeConfig } from "./contracts/types/ingest-config.js";
@@ -102,6 +103,14 @@ export interface IndexOptions {
    * in `api/public/dto/ingest.ts`.
    */
   languages?: string[];
+
+  /**
+   * First index only: may the new collection be seeded from a registered
+   * sibling working tree of the same repository (bd tea-rags-mcp-k8gac)?
+   * Defaults to true; `false` forces an ordinary first index. Mirrors the
+   * public DTO in `api/public/dto/ingest.ts`.
+   */
+  seedFromWorktree?: boolean;
 }
 
 export interface IndexStats {
@@ -130,6 +139,8 @@ export interface IndexStats {
     /** Previously-quarantined files re-attempted this pass (unchanged content). */
     filesRetried: number;
   };
+  /** First index only: whether the collection was seeded from a sibling working tree, and why not. */
+  worktreeSeed?: WorktreeSeedReport;
 }
 
 export interface ChangeStats {
@@ -436,6 +447,12 @@ export interface IndexStatus {
    * from IndexStats.enrichmentMetrics returned by the live indexing run instead.
    */
   enrichmentMetrics?: EnrichmentMetrics;
+  /**
+   * Seed outcome of the live indexing run, carried like `enrichmentMetrics`:
+   * never read at status time, attached by the CLI worker from
+   * `IndexStats.worktreeSeed` so `--json` reports it.
+   */
+  worktreeSeed?: WorktreeSeedReport;
   /**
    * Registered project alias for this collection, when one exists.
    * Intentionally unset in StatusModule to keep it registry-free (domain-boundary

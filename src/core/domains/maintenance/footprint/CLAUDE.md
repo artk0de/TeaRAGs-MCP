@@ -23,9 +23,11 @@
 - **The factory array IS the saga order, and `remove` runs against targets that
   may never have been cloned.** `CollectionFootprintFactory#build` (comment
   `// Order = clone order; rollback / remove walk it in reverse`) fixes the
-  order; `WorktreeProvisioner#create` pushes each artifact into its `done` list
-  BEFORE calling `clone` (`// C2`), deliberately, so the artifact that threw
-  participates in its own rollback, and teardown does the same reversed sweep
+  order; `cloneCollectionFootprint` (`clone-saga.ts` — the one copy path, run by
+  `WorktreeProvisioner#create` and by the first-index worktree seed
+  `WorktreeSeedOps`) pushes each artifact into its `done` list BEFORE calling
+  `clone`, deliberately, so the artifact that threw participates in its own
+  rollback, and teardown does the same reversed sweep
   (`WorktreeProvisioner#remove`). Every `remove` addresses `ctx.target`, never
   `ctx.source`. Why: a new `CollectionArtifact.remove` (contract spelled out in
   the `CollectionArtifact` docblock, `artifact.ts`) must tolerate a target that

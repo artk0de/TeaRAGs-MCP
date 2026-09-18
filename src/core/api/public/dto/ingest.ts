@@ -4,6 +4,7 @@
  * App-facing types only. Internal pipeline types stay in core/types.ts.
  */
 
+import type { WorktreeSeedReport } from "../../../contracts/types/worktree.js";
 import type { EnrichmentHealthMap } from "../../../domains/ingest/pipeline/enrichment/types.js";
 import type {
   CodegraphResolveSummary,
@@ -54,6 +55,18 @@ export interface IndexOptions {
    * everything else, not an oversight.
    */
   languages?: string[];
+
+  /**
+   * First index only: may the new collection be seeded from a registered
+   * sibling working tree of the same repository (bd tea-rags-mcp-k8gac)?
+   *
+   * When the path has no collection yet and another working tree of the same
+   * repository is indexed with stamps identical to this run's, the sibling's
+   * footprint is cloned and the ordinary incremental sync embeds only the files
+   * that differ — the embedding phase is ~92% of a first index. Defaults to
+   * true; `false` forces an ordinary first index. Ignored on every other run.
+   */
+  seedFromWorktree?: boolean;
 }
 
 /**
@@ -113,6 +126,8 @@ export interface IndexStats {
     /** Previously-quarantined files re-attempted this pass (unchanged content). */
     filesRetried: number;
   };
+  /** First index only: whether the collection was seeded from a sibling working tree, and why not. */
+  worktreeSeed?: WorktreeSeedReport;
 }
 
 export interface ChangeStats {
@@ -181,6 +196,12 @@ export interface IndexStatus {
    * from IndexStats.enrichmentMetrics returned by the live indexing run instead.
    */
   enrichmentMetrics?: EnrichmentMetrics;
+  /**
+   * Seed outcome of the live indexing run, carried like `enrichmentMetrics`:
+   * never read at status time, attached by the CLI worker from
+   * `IndexStats.worktreeSeed` so `--json` reports it.
+   */
+  worktreeSeed?: WorktreeSeedReport;
   /**
    * Registered project alias for this collection, when one exists.
    * Intentionally unset in StatusModule to keep it registry-free (domain-boundary
