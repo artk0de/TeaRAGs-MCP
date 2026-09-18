@@ -96,6 +96,11 @@ fi
 if [ -n "$RUN_TYPECHECK" ]; then
   echo "🔍 Running type check..."
   npm run type-check || { echo "❌ Type check failed"; exit 1; }
+  # scripts/ sit outside tsconfig.json's src/ root, so `type-check` never sees
+  # them — a src/ rename broke a script import unnoticed (xuywm). Gated on any
+  # staged TS file, not only scripts/**: a src/ change is what breaks a script.
+  echo "🔍 Running scripts type check..."
+  npm run type-check:scripts || { echo "❌ Scripts type check failed"; exit 1; }
 fi
 
 if [ -n "$RUN_TESTS" ]; then

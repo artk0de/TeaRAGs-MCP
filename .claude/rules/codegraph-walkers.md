@@ -11,12 +11,19 @@ paths:
 # Codegraph Walkers — Per-Language Contract
 
 "Walker" = pure fn, consumes tree-sitter `Tree` for one file in target language,
-returns `FileExtraction`. Lives at
-`src/core/domains/language/<lang>/walker/walker.ts`, with its passes as siblings
-in the same directory. Companion **resolver** translates extracted imports +
-call receivers into graph edges; lives at
-`src/core/domains/language/<lang>/resolver/` (entry `<lang>-resolver.ts`, e.g.
-`ruby/resolver/ruby-resolver.ts`; TypeScript's is `ts-resolver.ts`).
+returns `FileExtraction`. Every `src/core/domains/language/<lang>/walker/` holds
+the same four top-level files: `walker.ts` (the native `extractFrom<Lang>File`
+monolith), `name-of.ts`, `index.ts`, and `passes.ts` — the ordered
+`<LANG>_EXTRACTION_PASSES` list that `composeExtractionWalker`
+(`kernel/extraction-passes.ts`) folds in after the monolith, empty for most
+languages. Facet-pass modules live under `walker/passes/` (Go, Python; Python's
+monolith also imports shared helpers from there). Any other helper of the
+monolith sits beside `walker.ts` (Ruby, TypeScript), and Ruby groups two
+families in `walker/structured/` and `walker/type-sources/`. Companion
+**resolver** translates extracted imports + call receivers into graph edges;
+lives at `src/core/domains/language/<lang>/resolver/` (entry
+`<lang>-resolver.ts`, e.g. `ruby/resolver/ruby-resolver.ts`; TypeScript's is
+`ts-resolver.ts`).
 
 ## When you add a new language
 
