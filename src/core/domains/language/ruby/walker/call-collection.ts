@@ -18,21 +18,12 @@
 import type { AstNode } from "../../../../contracts/types/ast.js";
 import type { CallRef } from "../../../../contracts/types/codegraph.js";
 import { FULL_RUBY_CATALOGUE, type RubyDslCatalogue } from "../dsl/index.js";
+import { SUPER_RECEIVER_SENTINEL } from "../super-receiver-sentinel.js";
 import { readScopeResolution } from "./ast-utils.js";
 import { collectMethodLocalBindings, isBareIdentifierCallSite } from "./bare-call-detection.js";
 import { emitDslEdges } from "./dsl-edge-emitters.js";
 import { computeArgCount, computeCallKwargs, computeCallPassesBlock } from "./method-signatures.js";
 import { emitRegistryConstantRefs, exprToRubyDispatchRef } from "./registry-dispatch.js";
-
-/**
- * Sentinel receiver value emitted by the walker for synthetic CallRefs
- * representing the Ruby `super` keyword (bd tea-rags-mcp-brp1). The token
- * begins with `<` — invalid in real Ruby identifiers — so the resolver
- * can branch on it unambiguously without colliding with any actual
- * receiver text. Mirrors the `zeitwerk:` prefix discipline: a single
- * exported constant is the contract between walker and resolver.
- */
-export const SUPER_RECEIVER_SENTINEL = "<super>";
 
 /**
  * Methods that are dynamic-dispatch wrappers — when the first argument

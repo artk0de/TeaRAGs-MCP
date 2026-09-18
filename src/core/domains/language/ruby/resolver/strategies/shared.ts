@@ -59,9 +59,9 @@ export const DYNAMIC_RECEIVER_CONFIDENCE_DEFAULT = 0.5;
 /**
  * The language-filtered short-name lookup, re-exported so `strategies/shared.js`
  * stays the one import path the strategies use. It is DEFINED one level up, in
- * the leaf `../short-name-lookup.js`, because this file reaches
- * `walker/walker.js` and the walker's inline type sources reach back into
- * `resolver/type-propagation.ts` — see there for the cycle.
+ * the leaf `../short-name-lookup.js`, so the modules the walker's inline type
+ * sources reach through `resolver/type-propagation.ts` can use it without a
+ * path back into the walker — see there.
  */
 export { isRubyPath, lookupRubySymbolsByShortName } from "../short-name-lookup.js";
 

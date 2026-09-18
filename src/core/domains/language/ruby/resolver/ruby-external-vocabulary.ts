@@ -2,7 +2,7 @@ import type { CallContext } from "../../../../contracts/types/codegraph.js";
 import type { ExternalVocabulary } from "../../../../contracts/types/language.js";
 import { isCoreAmbiguousMember, isExternalQualifiedMember } from "../dsl/index.js";
 import { catalogueForGemfile } from "../gemfile.js";
-import { SUPER_RECEIVER_SENTINEL } from "../walker/walker.js";
+import { SUPER_RECEIVER_SENTINEL } from "../super-receiver-sentinel.js";
 import {
   collectAncestorChain,
   receiverChainTailIsExternal,
