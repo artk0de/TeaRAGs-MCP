@@ -54,27 +54,66 @@ describe("mapJavascriptImportToFile", () => {
 });
 
 describe("JavaScript import file edges (bd tea-rags-mcp-x9qsh)", () => {
-  it("persists a JS import of a TypeScript file as an edge to that file", () => {
-    // The live defect, end to end through the file-edge seam the provider
-    // runs: `scripts/spikes/ts-live-resolve-worker-boot.js` doing
-    // `await import("./ts-live-resolve-worker.ts")` was stored with target
-    // `ts-live-resolve-worker.ts.js`, so the edge pointed at nothing.
+  /** File-edge targets the provider's pass-2 runner persists for one JS file. */
+  function fileEdgeTargets(relPath: string, importTexts: string[]): string[] {
     const factory = {
       supported: () => ["javascript"],
       create: () => ({ resolver: new JavascriptCallResolver() }),
     } as unknown as LanguageFactoryDescriptor;
     const runner = new CallEdgeResolutionRunner(factory, new CodegraphRunState());
     const extraction: FileExtraction = {
-      relPath: "scripts/spikes/ts-live-resolve-worker-boot.js",
+      relPath,
       language: "javascript",
-      imports: [{ importText: "./ts-live-resolve-worker.ts", startLine: 20 }],
+      imports: importTexts.map((importText, index) => ({ importText, startLine: index + 1 })),
       chunks: [],
       fileScope: [],
     };
+    return runner.resolve(extraction, new InMemoryGlobalSymbolTable()).fileEdges.map((edge) => edge.targetRelPath);
+  }
 
-    const edges = runner.resolve(extraction, new InMemoryGlobalSymbolTable());
+  it("persists a JS import of a TypeScript file as an edge to that file", () => {
+    // The live defect, end to end through the file-edge seam the provider
+    // runs: `scripts/spikes/ts-live-resolve-worker-boot.js` doing
+    // `await import("./ts-live-resolve-worker.ts")` was stored with target
+    // `ts-live-resolve-worker.ts.js`, so the edge pointed at nothing.
+    expect(fileEdgeTargets("scripts/spikes/ts-live-resolve-worker-boot.js", ["./ts-live-resolve-worker.ts"])).toEqual([
+      "scripts/spikes/ts-live-resolve-worker.ts",
+    ]);
+  });
 
-    expect(edges.fileEdges.map((edge) => edge.targetRelPath)).toEqual(["scripts/spikes/ts-live-resolve-worker.ts"]);
+  it("persists an import that writes its .js extension as an edge to that file", () => {
+    // Node ESM requires the extension, so this is the ordinary JS import. The
+    // synthesised-call fallback matched the import by basename: receiver
+    // `render-changelog.js` against the import's stripped `render-changelog`,
+    // a mismatch that dropped every such edge (6 on this repo's own scripts).
+    expect(fileEdgeTargets("scripts/retro-changelog.js", ["./lib/render-changelog.js"])).toEqual([
+      "scripts/lib/render-changelog.js",
+    ]);
+    expect(fileEdgeTargets("scripts/postinstall.mjs", ["./install-fish-completion.mjs"])).toEqual([
+      "scripts/install-fish-completion.mjs",
+    ]);
+  });
+
+  it("keeps one edge per imported file when two imports share a basename", () => {
+    // Basename matching sent both `util` imports to whichever came first.
+    expect(fileEdgeTargets("src/main.js", ["./a/util", "./b/util.js"])).toEqual(["src/a/util.js", "src/b/util.js"]);
+  });
+
+  it("maps an extensionless import or require to the .js file", () => {
+    expect(fileEdgeTargets("src/main.js", ["./config", "../shared/log"])).toEqual(["src/config.js", "shared/log.js"]);
+  });
+
+  it("emits no edge for a bare package specifier", () => {
+    expect(fileEdgeTargets("src/main.js", ["lodash", "node:path", "@scope/pkg/sub"])).toEqual([]);
+  });
+
+  it("keeps an edge to a relative target the index does not hold, as TypeScript does", () => {
+    // `import("../build/...")` names a real module in a directory the index
+    // skips. Unverified like the TypeScript file edge: the mapper answers from
+    // the specifier alone and the edge simply joins no file row.
+    expect(fileEdgeTargets("scripts/verify-providers.js", ["../build/core/adapters/embeddings/factory.js"])).toEqual([
+      "build/core/adapters/embeddings/factory.js",
+    ]);
   });
 });
 

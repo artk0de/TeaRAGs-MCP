@@ -27,6 +27,8 @@ import {
   type CallContext,
   type CallRef,
   type CallResolver,
+  type FileExtraction,
+  type GraphEdges,
   type SymbolResolutionTarget,
 } from "../../../../contracts/types/codegraph.js";
 import { ECMASCRIPT_GLOBALS } from "../../shared/ecmascript-globals.js";
@@ -181,6 +183,34 @@ export class JavascriptCallResolver implements CallResolver {
       current = ctx.classExtends[current];
     }
     return fileOnlyFallback;
+  }
+
+  /**
+   * Import → file edges, mapped directly by {@link mapJavascriptImportToFile}
+   * instead of through the call path (bd tea-rags-mcp-x9qsh).
+   *
+   * The provider's fallback synthesises `{ receiver: basename, member:
+   * basename }` per import and keeps whatever `resolve` answers. `resolve`
+   * finds the import by `importMatchesReceiver`, which strips the JS extension
+   * from the IMPORT but not from the synthesised receiver, so every
+   * `"./render-changelog.js"` compared `render-changelog` with
+   * `render-changelog.js` and produced no edge — the ordinary Node ESM import
+   * never reached the file graph. Basename matching also sent two imports of
+   * different `util` modules to whichever was declared first.
+   *
+   * Every relative specifier maps, and the edge is pushed unverified, the
+   * TypeScript precedent (`TSCallResolver#resolveFileEdges`): the mapper
+   * answers from the specifier alone, and a target the index does not hold
+   * (`../build/...`) joins no file row. A bare package specifier maps to
+   * nothing and yields no edge.
+   */
+  resolveFileEdges(extraction: FileExtraction, _ctx: CallContext): GraphEdges["fileEdges"] {
+    const fileEdges: GraphEdges["fileEdges"] = [];
+    for (const imp of extraction.imports) {
+      const targetRelPath = mapJavascriptImportToFile(imp.importText, extraction.relPath);
+      if (targetRelPath) fileEdges.push({ targetRelPath, importText: imp.importText });
+    }
+    return fileEdges;
   }
 
   /**
