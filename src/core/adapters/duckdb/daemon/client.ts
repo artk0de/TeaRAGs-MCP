@@ -33,6 +33,7 @@ import type {
 import type { PhysicalCollectionName } from "../../../contracts/types/collection-identity.js";
 import { isDebug } from "../../../infra/runtime.js";
 import { CodegraphDaemonBuildSkewError, CodegraphDaemonUnreachableError } from "../errors.js";
+import { getBuildFingerprint } from "./build-fingerprint.js";
 import { DaemonFrameDecoder } from "./frame-decoder.js";
 import { getDaemonLogPath } from "./lifecycle.js";
 import { DAEMON_OPS, encodeFrame, type DaemonHandshakeResult, type DaemonOp, type DaemonResponse } from "./protocol.js";
@@ -113,6 +114,21 @@ export function assessDaemonCapability(
       supportedOps === undefined ? [] : REQUIRED_DAEMON_OPS.filter((op) => !supportedOps.includes(op)),
     predatesCapabilityList: daemonFingerprint !== undefined && supportedOps === undefined,
   };
+}
+
+/**
+ * The bar a client that cannot replace the daemon holds it to (bd
+ * tea-rags-mcp-39xca.4): it refuses a daemon lacking a required op, or one from
+ * another build too old to say what it serves. A daemon from another build that
+ * advertises every required op is tolerated. The replay path applies it too (bd
+ * tea-rags-mcp-f924y).
+ *
+ * Merge seam: `pool.ts` states the same rule as its private `refusesDaemon`,
+ * which the 1wr7p branch also calls from `settleWithStaleClient`. Once that
+ * branch lands, the pool should call this instead of keeping its own copy.
+ */
+export function isDaemonRefusedWithoutRespawn(verdict: DaemonCapabilityVerdict): boolean {
+  return verdict.missingRequiredOps.length > 0 || (verdict.predatesCapabilityList && verdict.buildMismatch);
 }
 
 /** Tolerated ops already reported missing in this process — the warning is once per op. */
@@ -216,6 +232,12 @@ export class DaemonGraphDbClient implements GraphDbClient {
   private closedByCaller = false;
   /** One recovery at a time — every pending call shares the reconnect. */
   private recovering?: Promise<void>;
+  /**
+   * The build this client last handshook as. A replacement daemon is
+   * handshaken under the same identity before anything is replayed onto it
+   * (bd tea-rags-mcp-f924y).
+   */
+  private handshakeFingerprint?: string;
 
   constructor(
     private readonly socketPath: string,
@@ -316,14 +338,21 @@ export class DaemonGraphDbClient implements GraphDbClient {
    * it surfaces as build skew rather than a generic failure. The few ops allowed
    * to degrade go through `callTolerated`, which catches exactly that type.
    */
-  private async call(op: DaemonOp, params: Record<string, unknown>): Promise<unknown> {
+  private async call(
+    op: DaemonOp,
+    params: Record<string, unknown>,
+    options: { replayable?: boolean } = {},
+  ): Promise<unknown> {
     const { sock } = this;
     if (!sock) throw new Error("DaemonGraphDbClient.call before init() / after close()");
     const id = this.nextId++;
     const frame = encodeFrame({ id, op, params: { collection: this.collection, ...params } } as never);
+    // A non-replayable call starts out as if already retried: a connection loss
+    // settles it rather than re-sending it.
+    const retried = options.replayable === false;
     try {
       return await new Promise((resolve, reject) => {
-        this.pending.set(id, { resolve, reject, frame, retried: false });
+        this.pending.set(id, { resolve, reject, frame, retried });
         sock.write(frame);
       });
     } catch (err) {
@@ -393,11 +422,14 @@ export class DaemonGraphDbClient implements GraphDbClient {
       this.abandon(reason);
       return;
     }
-    const replayable = [...this.pending.values()].filter((p) => !p.retried);
-    if (replayable.length === 0) {
-      this.abandon(reason);
-      return;
-    }
+    // A call that was already re-sent once — or was never replayable, like the
+    // recovery handshake itself — is settled now. Left pending, nothing would
+    // ever settle it: the replay below skips it (bd tea-rags-mcp-f924y).
+    this.settlePending(
+      (p) => p.retried,
+      () => new Error(`DaemonGraphDbClient ${reason}`),
+    );
+    if (this.pending.size === 0) return;
     this.recovering ??= this.reconnectAndReplay(reason).finally(() => {
       this.recovering = undefined;
     });
@@ -416,14 +448,44 @@ export class DaemonGraphDbClient implements GraphDbClient {
    *
    * Each request is replayed at most once (`retried`), so a daemon that dies on
    * every attempt surfaces the failure instead of looping.
+   *
+   * The replacement is handshaken first (bd tea-rags-mcp-f924y). A daemon that
+   * died because another session's build handshake drained it comes back as
+   * THAT session's build, and a replay onto it unverified sends ops it may not
+   * know or read with a payload shape that moved. It is held to the bar a client
+   * that cannot replace the daemon applies (`isDaemonRefusedWithoutRespawn`):
+   * refused, every pending request fails with `CodegraphDaemonBuildSkewError`
+   * and nothing is replayed. Draining it is not this client's call — that
+   * decision belongs to the pool's handshake.
    */
   private async reconnectAndReplay(reason: string): Promise<void> {
+    const fingerprint = this.handshakeFingerprint ?? getBuildFingerprint();
+    let verdict: DaemonCapabilityVerdict;
     try {
       await this.onConnectionLost?.();
       await this.init();
+      const handshake = (await this.call(
+        "handshake",
+        { buildFingerprint: fingerprint },
+        { replayable: false },
+      )) as DaemonHandshakeResult | null;
+      verdict = assessDaemonCapability(handshake, fingerprint);
     } catch (err) {
       const cause = err instanceof Error ? err.message : String(err);
       this.abandon(`${reason} and could not be recovered: ${cause}`);
+      return;
+    }
+    if (isDaemonRefusedWithoutRespawn(verdict)) {
+      const skew = new CodegraphDaemonBuildSkewError({
+        socketPath: this.socketPath,
+        missingOps: verdict.missingRequiredOps,
+        clientFingerprint: fingerprint,
+        daemonFingerprint: verdict.daemonFingerprint,
+      });
+      this.settlePending(
+        () => true,
+        () => skew,
+      );
       return;
     }
     const { sock } = this;
@@ -453,10 +515,19 @@ export class DaemonGraphDbClient implements GraphDbClient {
    */
   private abandon(reason: string): void {
     this.sock = undefined;
-    if (this.pending.size === 0) return;
-    const pending = [...this.pending.values()];
-    this.pending.clear();
-    for (const p of pending) p.reject(new Error(`DaemonGraphDbClient ${reason}`));
+    this.settlePending(
+      () => true,
+      () => new Error(`DaemonGraphDbClient ${reason}`),
+    );
+  }
+
+  /** Reject — and forget — every pending call `which` selects. */
+  private settlePending(which: (p: PendingDaemonCall) => boolean, error: () => Error): void {
+    for (const [id, p] of [...this.pending.entries()]) {
+      if (!which(p)) continue;
+      this.pending.delete(id);
+      p.reject(error());
+    }
   }
 
   // ── build-version handshake (bd tea-rags-mcp-ji56r) ──
@@ -468,6 +539,7 @@ export class DaemonGraphDbClient implements GraphDbClient {
    * legacy peer the daemon also opens + migrates + hydrates the collection.
    */
   async handshake(buildFingerprint?: string): Promise<DaemonHandshakeResult | null> {
+    if (buildFingerprint !== undefined) this.handshakeFingerprint = buildFingerprint;
     // `undefined` vanishes in JSON serialisation — a legacy-shaped request.
     return (await this.call("handshake", { buildFingerprint })) as DaemonHandshakeResult | null;
   }
