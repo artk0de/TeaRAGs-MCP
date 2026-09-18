@@ -256,3 +256,31 @@ describe("IndexCodebaseSchema — project field", () => {
     expect(result.project).toBeUndefined();
   });
 });
+
+// ---------------------------------------------------------------------------
+// Author filters (bd tea-rags-mcp-9mwny)
+// ---------------------------------------------------------------------------
+
+// `author` is the exact blame owner; "what did X work on" needs the commit
+// side, `recentAuthor` (the file's dominant committer in the git log window).
+// The git trajectory declares that filter, but a param the tool schema does not
+// list is stripped by Zod before the handler runs — the search silently comes
+// back unfiltered.
+describe("recentAuthor typed filter", () => {
+  it("survives semantic_search parsing", () => {
+    const result = parseSemanticSearch({ query: "q", path: "/tmp", recentAuthor: "john@acme.com" });
+    expect(result.recentAuthor).toBe("john@acme.com");
+  });
+
+  it("survives search_code parsing", () => {
+    const result = parseSearchCode({ query: "q", path: "/tmp", recentAuthor: "John Doe" });
+    expect(result.recentAuthor).toBe("John Doe");
+  });
+});
+
+describe("level description lists every level-aware filter's default", () => {
+  it("names author among the file-default filters", () => {
+    const description = (SemanticSearchSchema.level as z.ZodTypeAny).description ?? "";
+    expect(description).toMatch(/\bauthor[^;.]*: file/);
+  });
+});

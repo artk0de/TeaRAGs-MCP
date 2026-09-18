@@ -111,7 +111,9 @@ for raw `filter`:**
 - Drop one-offs: `minCommitCount: 5` (or higher)
 - Ticket linkage: `taskId: "JIRA-123"` (any commit of the file, matches
   git.file.taskIds; `level: "chunk"` → chunk's own commits)
-- Author dominance: `author: "Alice"` (blame-based)
+- Author dominance: `author: "Alice Smith"` (blame-based, exact name)
+- Recent committer ("what did Alice work on"): `recentAuthor` (name or email) +
+  `modifiedAfter`
 
 Raw `filter: { must: [...] }` only when typed fields cannot express it. For
 syntax and payload keys, fetch on demand:

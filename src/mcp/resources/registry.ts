@@ -99,7 +99,8 @@ parameter examples per tool.
 ## search_code Examples
 
 - "Complex code not touched in 30+ days" → query="complex logic", modifiedBefore="<ISO date 30 days ago>"
-- "What did John work on last week?" → author="John", maxAgeDays=7
+- "What did John work on last week?" → recentAuthor="<full name or email>", modifiedAfter="<ISO date 7 days ago>"
+- "Payments code Alice owns" → query="payments", author="<exact blame name, e.g. Alice Smith>"
 - "High-churn authentication code" → query="authentication", minCommitCount=5
 - "Code related to ticket TD-1234" → taskId="TD-1234"
 
@@ -232,8 +233,9 @@ export function buildFiltersDoc(): string {
   md += "**⚠ Filter level:** `level` does two things. (1) Scope of level-aware typed filters: ";
   md += "effective level (explicit `level`, else rerank preset `signalLevel`) re-scopes all of them; ";
   md += "unset → each filter's default: `minAgeDays` / `maxAgeDays` / `minCommitCount` → `git.chunk.*`, ";
-  md += "`taskId` → `git.file.*`, codegraph `minFanIn` / `minFanOut` → file. `modifiedAfter` / ";
-  md += "`modifiedBefore` always read `git.file.lastModifiedAt`, any `level`. (2) Result granularity: ";
+  md += "`taskId` / `author` → `git.file.*`, codegraph `minFanIn` / `minFanOut` → file. `modifiedAfter` / ";
+  md += "`modifiedBefore` always read `git.file.lastModifiedAt`, `recentAuthor` always ";
+  md += "`git.file.recentDominantAuthor*`, any `level`. (2) Result granularity: ";
   md += '`level: "file"` → one result per file (`payload.members`). `minAgeDays` / `maxAgeDays` ';
   md += "compare `git.<level>.lastModifiedAt` with query-time now (no drift); chunk timestamp 0 / absent ";
   md += "on chunks with no commit in chunk churn walk (all doc chunks) → chunk age filters drop them. ";
