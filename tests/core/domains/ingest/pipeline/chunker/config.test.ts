@@ -10,7 +10,7 @@ describe("LANGUAGE_DEFINITIONS", () => {
       // mod.default exists but does NOT have a "typescript" key
       const mod = { default: "not-an-object", typescript: fakeLang };
 
-      const result = extractLanguage(mod as any);
+      const result = extractLanguage(mod);
       expect(result).toBe(fakeLang);
     });
 
@@ -19,7 +19,7 @@ describe("LANGUAGE_DEFINITIONS", () => {
       const fakeLang = { parse: () => {} };
       const mod = { default: { typescript: fakeLang } };
 
-      const result = extractLanguage(mod as any);
+      const result = extractLanguage(mod);
       expect(result).toBe(fakeLang);
     });
   });

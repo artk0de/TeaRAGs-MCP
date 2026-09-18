@@ -187,6 +187,6 @@ describe("CommitDriftMonitor", () => {
   });
 
   it("is silent when the collection is not registered at all", () => {
-    expect(new CommitDriftMonitor({ get: () => null } as never, () => null).check("c")).toEqual([]);
+    expect(new CommitDriftMonitor({ get: () => null }, () => null).check("c")).toEqual([]);
   });
 });

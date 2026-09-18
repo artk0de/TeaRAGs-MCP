@@ -52,7 +52,7 @@ describe("EnrichmentApplier.applyFinalizeFile (bd tea-rags-mcp-6aytq)", () => {
       ["src/b.ts", { fanIn: 0, fanOut: 7 }],
     ]);
 
-    const applied = await applier.applyFinalizeFile("coll", "codegraph.symbols", overlays as never, chunkMap);
+    const applied = await applier.applyFinalizeFile("coll", "codegraph.symbols", overlays, chunkMap);
 
     expect(applied).toBe(2);
     const ops = allOps();
@@ -99,9 +99,9 @@ describe("EnrichmentApplier.applyFinalizeFile (bd tea-rags-mcp-6aytq)", () => {
     await applier.applyFinalizeFile(
       "coll",
       "codegraph.symbols",
-      overlays as never,
+      overlays,
       chunkMap,
-      (overlay, maxEndLine) => ({ ...(overlay as object), maxEndLine }) as never,
+      (overlay, maxEndLine) => ({ ...(overlay as object), maxEndLine }),
       "2026-08-14T00:00:00Z",
       (relPath) => relPath.startsWith("spec/"),
     );
@@ -127,7 +127,7 @@ describe("EnrichmentApplier.applyFinalizeFile (bd tea-rags-mcp-6aytq)", () => {
     const chunkMap = new Map(Array.from({ length: 400 }, (_, i) => [`src/f${i}.ts`, entries(1, `f${i}`)]));
     const overlays = new Map(Array.from({ length: 400 }, (_, i) => [`src/f${i}.ts`, { fanIn: i, fanOut: 0 }]));
 
-    await applier.applyFinalizeFile("coll", "codegraph.symbols", overlays as never, chunkMap);
+    await applier.applyFinalizeFile("coll", "codegraph.symbols", overlays, chunkMap);
 
     expect(mockQdrant.batchSetPayload).toHaveBeenCalledTimes(4);
     expect(peak).toBeGreaterThan(1);

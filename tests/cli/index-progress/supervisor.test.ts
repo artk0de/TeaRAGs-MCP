@@ -29,7 +29,7 @@ describe("superviseIndexing — default mode (no wait)", () => {
     const child = fakeChild();
     const renderer = fakeRenderer();
     const out: string[] = [];
-    const p = superviseIndexing(child as never, {
+    const p = superviseIndexing(child, {
       renderer,
       waitEnrichments: false,
       colors: plain,
@@ -54,7 +54,7 @@ describe("superviseIndexing — default mode (no wait)", () => {
         callOrder.push("stop");
       }),
     };
-    const p = superviseIndexing(child as never, {
+    const p = superviseIndexing(child, {
       renderer,
       waitEnrichments: false,
       colors: plain,
@@ -75,7 +75,7 @@ describe("superviseIndexing — default mode (no wait)", () => {
   it("forwards progress messages to the renderer", async () => {
     const child = fakeChild();
     const renderer = fakeRenderer();
-    const p = superviseIndexing(child as never, {
+    const p = superviseIndexing(child, {
       renderer,
       waitEnrichments: false,
       colors: plain,
@@ -95,7 +95,7 @@ describe("superviseIndexing — wait mode", () => {
   it("waits for done and resolves 0 when no provider failed", async () => {
     const child = fakeChild();
     const renderer = fakeRenderer();
-    const p = superviseIndexing(child as never, {
+    const p = superviseIndexing(child, {
       renderer,
       waitEnrichments: true,
       colors: plain,
@@ -114,7 +114,7 @@ describe("superviseIndexing — wait mode", () => {
     const child = fakeChild();
     const renderer = fakeRenderer();
     const out: string[] = [];
-    const p = superviseIndexing(child as never, {
+    const p = superviseIndexing(child, {
       renderer,
       waitEnrichments: true,
       colors: plain,
@@ -133,7 +133,7 @@ describe("superviseIndexing — wait mode", () => {
     const child = fakeChild();
     const renderer = fakeRenderer();
     const out: string[] = [];
-    const p = superviseIndexing(child as never, {
+    const p = superviseIndexing(child, {
       renderer,
       waitEnrichments: true,
       colors: plain,
@@ -156,7 +156,7 @@ describe("superviseIndexing — ETA and outcome formatting", () => {
 
     // Use a real monotonic clock injection so eta tracker accumulates progress
     let t = 0;
-    const p = superviseIndexing(child as never, {
+    const p = superviseIndexing(child, {
       renderer,
       waitEnrichments: false,
       colors: plain,
@@ -199,7 +199,7 @@ describe("superviseIndexing — ETA and outcome formatting", () => {
     const child = fakeChild();
     const renderer = fakeRenderer();
     const out: string[] = [];
-    const p = superviseIndexing(child as never, {
+    const p = superviseIndexing(child, {
       renderer,
       waitEnrichments: true,
       colors: plain,
@@ -222,7 +222,7 @@ describe("superviseIndexing — overall timer + phase-done", () => {
     let t = 0;
     const child = fakeChild();
     const renderer = fakeRenderer();
-    const p = superviseIndexing(child as never, {
+    const p = superviseIndexing(child, {
       renderer,
       waitEnrichments: true,
       colors: plain,
@@ -244,7 +244,7 @@ describe("superviseIndexing — overall timer + phase-done", () => {
     const out: string[] = [];
     const child = fakeChild();
     const renderer = fakeRenderer();
-    const p = superviseIndexing(child as never, {
+    const p = superviseIndexing(child, {
       renderer,
       waitEnrichments: true,
       colors: plain,
@@ -269,7 +269,7 @@ describe("superviseIndexing — child exit event", () => {
   it("resolves 0 when the child exits with code 0 before any terminal message", async () => {
     const child = fakeChild();
     const renderer = fakeRenderer();
-    const p = superviseIndexing(child as never, {
+    const p = superviseIndexing(child, {
       renderer,
       waitEnrichments: false,
       colors: plain,
@@ -286,7 +286,7 @@ describe("superviseIndexing — child exit event", () => {
   it("resolves 1 when the child crashes (non-zero exit) before any terminal message", async () => {
     const child = fakeChild();
     const renderer = fakeRenderer();
-    const p = superviseIndexing(child as never, {
+    const p = superviseIndexing(child, {
       renderer,
       waitEnrichments: false,
       colors: plain,
@@ -303,7 +303,7 @@ describe("superviseIndexing — child exit event", () => {
   it("ignores a second exit event after the promise already settled via a status message", async () => {
     const child = fakeChild();
     const renderer = fakeRenderer();
-    const p = superviseIndexing(child as never, {
+    const p = superviseIndexing(child, {
       renderer,
       waitEnrichments: false,
       colors: plain,
@@ -329,7 +329,7 @@ describe("superviseIndexing — JSON mode", () => {
     const child = fakeChild();
     const renderer = new JsonProgressRenderer();
     const out: string[] = [];
-    const p = superviseIndexing(child as never, {
+    const p = superviseIndexing(child, {
       renderer,
       waitEnrichments: false,
       colors: plain,
@@ -355,7 +355,7 @@ describe("superviseIndexing — JSON mode", () => {
     const child = fakeChild();
     const renderer = new JsonProgressRenderer();
     const out: string[] = [];
-    const p = superviseIndexing(child as never, {
+    const p = superviseIndexing(child, {
       renderer,
       waitEnrichments: true,
       colors: plain,
@@ -386,7 +386,7 @@ describe("superviseIndexing — JSON mode", () => {
     const child = fakeChild();
     const renderer = new JsonProgressRenderer();
     const out: string[] = [];
-    const p = superviseIndexing(child as never, {
+    const p = superviseIndexing(child, {
       renderer,
       waitEnrichments: true,
       colors: plain,
@@ -418,7 +418,7 @@ describe("superviseIndexing — JSON mode", () => {
     const child = fakeChild();
     const renderer = new JsonProgressRenderer();
     const out: string[] = [];
-    const p = superviseIndexing(child as never, {
+    const p = superviseIndexing(child, {
       renderer,
       waitEnrichments: true,
       colors: plain,
@@ -449,7 +449,7 @@ describe("superviseIndexing — JSON mode", () => {
     const child = fakeChild();
     const renderer = new JsonProgressRenderer();
     const out: string[] = [];
-    const p = superviseIndexing(child as never, {
+    const p = superviseIndexing(child, {
       renderer,
       waitEnrichments: true,
       colors: plain,
@@ -468,7 +468,7 @@ describe("superviseIndexing — JSON mode", () => {
     const child = fakeChild();
     const renderer = new JsonProgressRenderer();
     const out: string[] = [];
-    const p = superviseIndexing(child as never, {
+    const p = superviseIndexing(child, {
       renderer,
       waitEnrichments: true,
       colors: plain,
@@ -489,7 +489,7 @@ describe("superviseIndexing — JSON mode", () => {
     const child = fakeChild();
     const renderer = fakeRenderer();
     const out: string[] = [];
-    const p = superviseIndexing(child as never, {
+    const p = superviseIndexing(child, {
       renderer,
       waitEnrichments: true,
       colors: plain,
@@ -509,7 +509,7 @@ describe("superviseIndexing — qdrant-state (2nfdm: recovery wait surfaced befo
     const child = fakeChild();
     const renderer = fakeRenderer();
     const out: string[] = [];
-    const p = superviseIndexing(child as never, {
+    const p = superviseIndexing(child, {
       renderer,
       waitEnrichments: false,
       colors: plain,

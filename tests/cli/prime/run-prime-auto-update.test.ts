@@ -43,7 +43,7 @@ beforeEach(() => {
   writeMock.mockClear();
   pingMock.mockReset();
   createAppContextMock.mockReset();
-  process.stdout.write = writeMock as unknown as typeof process.stdout.write;
+  process.stdout.write = writeMock;
   dataDir = mkdtempSync(join(tmpdir(), "prime-auto-update-"));
   prevDataDir = process.env.TEA_RAGS_DATA_DIR;
   process.env.TEA_RAGS_DATA_DIR = dataDir;

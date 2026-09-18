@@ -80,7 +80,7 @@ function graphDbStub(drift: CodegraphSignalDrift, ranges: Map<string, PersistedS
 async function heal(points: StoredPoint[], graphDb: ReturnType<typeof graphDbStub>): Promise<OnePageQdrantStub> {
   const qdrant = new OnePageQdrantStub(points);
   const deps: CodegraphPayloadHealRunnerDeps = {
-    qdrant: qdrant as unknown as CodegraphPayloadHealRunnerDeps["qdrant"],
+    qdrant,
     acquireGraphDb: async () => Promise.resolve(graphDb as unknown as GraphDbClient),
     providerKey: PROVIDER_KEY,
   };

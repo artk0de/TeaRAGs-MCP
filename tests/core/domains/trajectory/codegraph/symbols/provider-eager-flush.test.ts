@@ -210,7 +210,7 @@ async function runCrossPass(
   ).mockImplementation(async function (this: ProviderRunGlobals, g: unknown) {
     runGlobalSnapshot = snapshotRunGlobals(this);
     return realRecord.call(this, g);
-  } as (g: unknown) => Promise<void>);
+  });
 
   cleanups.push(async () => {
     await client.close();

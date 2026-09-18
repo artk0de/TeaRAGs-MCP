@@ -53,7 +53,7 @@ function ctxWith(table: InMemoryGlobalSymbolTable, moduleReexports?: Record<stri
     imports: [],
     symbolTable: table,
     moduleReexports,
-  } as CallContext;
+  };
 }
 
 describe("PythonImportFileMapper.resolveExportedName refuses rather than guesses", () => {

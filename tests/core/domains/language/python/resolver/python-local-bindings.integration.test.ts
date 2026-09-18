@@ -31,7 +31,7 @@ import { InMemoryGlobalSymbolTable } from "../../../../../../src/core/domains/tr
 
 function parsePy(src: string): Parser.Tree {
   const parser = new Parser();
-  parser.setLanguage(PyLang as unknown as Parser.Language);
+  parser.setLanguage(PyLang);
   return parser.parse(src);
 }
 

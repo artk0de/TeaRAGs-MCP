@@ -157,7 +157,7 @@ describe("get_index_status — drift block", () => {
     // second get_index_status read "clean" and steal the warning from the next
     // search in the same process.
     const checkIndexDrift = vi.fn().mockResolvedValue("Payload keys:\n  navigation: absent → declared");
-    const { handler } = makeStatusHarness(checkIndexDrift as unknown as App["checkIndexDrift"]);
+    const { handler } = makeStatusHarness(checkIndexDrift);
 
     const first = await handler({ path: "/repo" }, {});
     const second = await handler({ path: "/repo" }, {});
@@ -169,7 +169,7 @@ describe("get_index_status — drift block", () => {
   });
 
   it("appends nothing when nothing moved", async () => {
-    const { handler } = makeStatusHarness(vi.fn().mockResolvedValue(null) as unknown as App["checkIndexDrift"]);
+    const { handler } = makeStatusHarness(vi.fn().mockResolvedValue(null));
 
     const result = await handler({ path: "/repo" }, {});
 

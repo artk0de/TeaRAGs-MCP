@@ -12,7 +12,7 @@ import { extractFromRubyFile } from "../../../../../../src/core/domains/language
 
 function tablesOf(src: string): Record<string, string> | undefined {
   const parser = new Parser();
-  parser.setLanguage(RbLang as unknown as Parser.Language);
+  parser.setLanguage(RbLang);
   const tree = parser.parse(src);
   return extractFromRubyFile({ tree, code: src, relPath: "app/models/firm.rb", language: "ruby", chunks: [] })
     .classSchemaTables;

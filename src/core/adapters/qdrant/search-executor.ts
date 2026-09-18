@@ -306,13 +306,13 @@ export class QdrantSearchExecutor {
           limit: fetchLimit,
           filter: qdrantFilter,
           with_payload: true,
-        } as Parameters<QdrantClient["query"]>[1]),
+        }),
       );
 
       return (response.points ?? []).map((point) => ({
         id: point.id,
         score: point.score ?? 0,
-        payload: (point.payload as Record<string, unknown> | null | undefined) ?? undefined,
+        payload: point.payload ?? undefined,
       }));
     } catch (error: unknown) {
       if (error instanceof QdrantUnavailableError) throw error;

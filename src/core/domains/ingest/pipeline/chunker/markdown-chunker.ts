@@ -239,7 +239,7 @@ export class MarkdownChunker {
       }
       if ("children" in node && Array.isArray(node.children)) {
         for (const child of node.children) {
-          collect(child as Content);
+          collect(child);
         }
       }
     };

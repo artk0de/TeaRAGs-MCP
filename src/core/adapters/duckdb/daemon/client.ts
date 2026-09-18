@@ -320,7 +320,7 @@ export class DaemonGraphDbClient implements GraphDbClient {
     const { sock } = this;
     if (!sock) throw new Error("DaemonGraphDbClient.call before init() / after close()");
     const id = this.nextId++;
-    const frame = encodeFrame({ id, op, params: { collection: this.collection, ...params } } as never);
+    const frame = encodeFrame({ id, op, params: { collection: this.collection, ...params } });
     try {
       return await new Promise((resolve, reject) => {
         this.pending.set(id, { resolve, reject, frame, retried: false });

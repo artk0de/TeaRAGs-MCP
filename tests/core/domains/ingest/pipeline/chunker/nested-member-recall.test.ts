@@ -149,7 +149,7 @@ describe("nested-member recall — chunks exist for callables inside a claimed c
   /** Ids the CODEGRAPH side persists into `cg_symbols` for this JavaScript source. */
   function javascriptCodegraphIds(src: string): string[] {
     const parser = new Parser();
-    parser.setLanguage(JsLang as unknown as Parser.Language);
+    parser.setLanguage(JsLang);
     const root = materializeTree(parser.parse(src).rootNode, src);
     return collectSymbols(
       { rootNode: root },

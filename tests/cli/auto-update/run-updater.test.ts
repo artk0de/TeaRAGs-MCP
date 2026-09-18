@@ -39,7 +39,7 @@ function deps(over: DepsOverrides = {}): RunUpdaterDeps & { recorded: () => unkn
       get: () => entry,
       recordAutoUpdateRun,
       ...over.registry,
-    } as RunUpdaterDeps["registry"],
+    },
     app: {
       getIndexStatus: async () => ({ isIndexed: true, status: "indexed" as const }),
       indexCodebase: async () => ({

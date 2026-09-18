@@ -34,11 +34,7 @@
 import { getHeapStatistics } from "node:v8";
 import { parentPort, resourceLimits, workerData } from "node:worker_threads";
 
-import type {
-  ChunkSignalOptions,
-  EnrichmentProvider,
-  FileSignalOptions,
-} from "../../../../../contracts/types/provider.js";
+import type { ChunkSignalOptions, EnrichmentProvider } from "../../../../../contracts/types/provider.js";
 import type { ChunkLookupEntry } from "../../../../../types.js";
 import { applyWorkerDebug } from "../../infra/worker-debug.js";
 import { chunkedCpuProfilerConfigFromEnv, startChunkedCpuProfiler } from "./chunked-cpu-profiler.js";
@@ -177,7 +173,7 @@ async function invokeMethod(
       if (!provider.extractFileBatch) {
         return { extractionBatch: { extractions: [], pass1ByLanguage: {} } };
       }
-      const fileOptions = options as FileSignalOptions | undefined;
+      const fileOptions = options;
       return { extractionBatch: await provider.extractFileBatch(root, paths ?? [], fileOptions) };
     }
     case "absorbExtractedFiles": {
@@ -187,12 +183,12 @@ async function invokeMethod(
       if (!provider.absorbExtractedFiles) {
         throw new Error("enrichment worker: provider declared extractionFanout but has no absorbExtractedFiles");
       }
-      const fileOptions = options as FileSignalOptions | undefined;
+      const fileOptions = options;
       await provider.absorbExtractedFiles(root, extractions ?? [], { ...fileOptions, pass1ByLanguage });
       return { fileOverlay: new Map() };
     }
     case "runFileBatch": {
-      const fileOptions = options as FileSignalOptions | undefined;
+      const fileOptions = options;
       const pathList = paths ?? [];
       const overlay = provider.streamFileBatch
         ? await provider.streamFileBatch(root, pathList, fileOptions)
@@ -200,7 +196,7 @@ async function invokeMethod(
       return { fileOverlay: overlay };
     }
     case "runFileSignalsRecovery": {
-      const fileOptions = options as FileSignalOptions | undefined;
+      const fileOptions = options;
       const overlay = await provider.buildFileSignals(root, { ...fileOptions, paths: paths ?? [] });
       return { fileOverlay: overlay };
     }
@@ -210,7 +206,7 @@ async function invokeMethod(
       return { chunkOverlay: overlay };
     }
     case "runFinalize": {
-      const fileOptions = options as FileSignalOptions | undefined;
+      const fileOptions = options;
       if (!provider.finalizeSignals) {
         return { fileOverlay: new Map() };
       }

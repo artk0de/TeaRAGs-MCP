@@ -25,7 +25,7 @@ function mockBlobReads(): ReturnType<typeof vi.fn> {
   vi.spyOn(gitClient, "createCatFileBatch").mockReturnValue({
     read,
     close: vi.fn().mockResolvedValue(undefined),
-  } as unknown as ReturnType<typeof gitClient.createCatFileBatch>);
+  });
   return read;
 }
 
@@ -700,9 +700,7 @@ describe("buildChunkChurnMapUncached — injected blobReader", () => {
     ]);
     const read = vi.fn().mockResolvedValueOnce("old\n").mockResolvedValueOnce("new\nextra\n");
     const close = vi.fn().mockResolvedValue(undefined);
-    const spawnSpy = vi
-      .spyOn(gitClient, "createCatFileBatch")
-      .mockReturnValue({ read, close } as unknown as ReturnType<typeof gitClient.createCatFileBatch>);
+    const spawnSpy = vi.spyOn(gitClient, "createCatFileBatch").mockReturnValue({ read, close });
 
     const chunkMap = new Map<string, { chunkId: string; startLine: number; endLine: number }[]>();
     chunkMap.set("src/a.ts", [

@@ -151,7 +151,7 @@ describe("OID-keyed blame cache (bd tea-rags-mcp-v2mlw, real git, sequential)", 
 
     const overlays = await provider.buildChunkSignals(repo, fixtureChunkMap(), {
       skipCache: true,
-      commitDiscovery: freshDiscovery() as never,
+      commitDiscovery: freshDiscovery(),
     });
     const c3 = overlays.get("f2.ts")?.get("c3") as { blameDominantAuthor: string } | undefined;
     expect(c3?.blameDominantAuthor).toBe("Test");
@@ -171,7 +171,7 @@ describe("OID-keyed blame cache (bd tea-rags-mcp-v2mlw, real git, sequential)", 
 
     const overlays = await provider.buildChunkSignals(repo, fixtureChunkMap(), {
       skipCache: true,
-      commitDiscovery: freshDiscovery() as never,
+      commitDiscovery: freshDiscovery(),
     });
     expect(coldCanonical).not.toBe("");
     expect(canonical(overlays)).toBe(coldCanonical);
@@ -201,7 +201,7 @@ describe("OID-keyed blame cache (bd tea-rags-mcp-v2mlw, real git, sequential)", 
 
     const overlays = await provider.buildChunkSignals(repo, fixtureChunkMap(), {
       skipCache: true,
-      commitDiscovery: freshDiscovery() as never,
+      commitDiscovery: freshDiscovery(),
     });
     const c3 = overlays.get("f2.ts")?.get("c3") as { blameDominantAuthor: string } | undefined;
     expect(c3?.blameDominantAuthor).toBe("Test");

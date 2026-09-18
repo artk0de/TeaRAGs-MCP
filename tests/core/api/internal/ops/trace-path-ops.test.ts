@@ -103,7 +103,7 @@ describe("TracePathOps.tracePath", () => {
         r.map((x) => ({ ...(x as object), score: 0, rankingOverlay: { preset: "bugHunt" } })),
       ),
     };
-    const ops = makeOps({ reranker: reranker as never });
+    const ops = makeOps({ reranker });
     await ops.tracePath({ collection: "c", from: "A", to: "C", rerank: "bugHunt" });
     expect(reranker.rerank).toHaveBeenCalledWith(
       expect.anything(),
@@ -150,7 +150,7 @@ describe("TracePathOps.tracePath", () => {
 
   it("WITHOUT rerank returns lean steps with no danger overlay and no danger fields", async () => {
     const reranker = { rerank: vi.fn() };
-    const ops = makeOps({ reranker: reranker as never });
+    const ops = makeOps({ reranker });
     const res = await ops.tracePath({ collection: "c", from: "A", to: "C" });
 
     expect(res.paths).toHaveLength(1);
@@ -163,7 +163,7 @@ describe("TracePathOps.tracePath", () => {
 
   it("WITHOUT rerank does NOT invoke the reranker", async () => {
     const reranker = { rerank: vi.fn() };
-    const ops = makeOps({ reranker: reranker as never });
+    const ops = makeOps({ reranker });
     await ops.tracePath({ collection: "c", from: "A", to: "C" });
     expect(reranker.rerank).not.toHaveBeenCalled();
   });

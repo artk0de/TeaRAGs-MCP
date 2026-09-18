@@ -36,7 +36,7 @@ function fixtureSource(): string {
 
 function materialize(src: string): { rootNode: AstNode } {
   const parser = new Parser();
-  parser.setLanguage(PyLang as unknown as Parser.Language);
+  parser.setLanguage(PyLang);
   return { rootNode: materializeTree(parser.parse(src).rootNode, src) };
 }
 

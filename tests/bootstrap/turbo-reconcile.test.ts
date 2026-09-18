@@ -52,7 +52,7 @@ describe("reconcileTurbo", () => {
   it("calls updateCollectionQuantization when collection lacks turbo", async () => {
     manager.getQuantizationConfig.mockResolvedValue(undefined);
 
-    await reconcileTurbo(manager as never, ["col"]);
+    await reconcileTurbo(manager, ["col"]);
 
     expect(manager.updateCollectionQuantization).toHaveBeenCalledWith("col");
   });
@@ -60,7 +60,7 @@ describe("reconcileTurbo", () => {
   it("is a no-op when collection already has turbo bits4", async () => {
     manager.getQuantizationConfig.mockResolvedValue(TURBO_CONFIG);
 
-    await reconcileTurbo(manager as never, ["col"]);
+    await reconcileTurbo(manager, ["col"]);
 
     expect(manager.updateCollectionQuantization).not.toHaveBeenCalled();
   });
@@ -69,7 +69,7 @@ describe("reconcileTurbo", () => {
     manager.listCollections.mockResolvedValue(["a", "b"]);
     manager.getQuantizationConfig.mockResolvedValue(undefined);
 
-    await reconcileTurbo(manager as never);
+    await reconcileTurbo(manager);
 
     expect(manager.listCollections).toHaveBeenCalledTimes(1);
     expect(manager.updateCollectionQuantization).toHaveBeenCalledWith("a");
@@ -209,7 +209,7 @@ describe("reconcileStrictMode", () => {
   it("updates a collection whose live strict config differs from desired", async () => {
     const manager = makeStrictManager();
 
-    await reconcileStrictMode(manager as never, { maxResidentMemoryPercent: 90 }, ["col"]);
+    await reconcileStrictMode(manager, { maxResidentMemoryPercent: 90 }, ["col"]);
 
     expect(manager.updateCollectionStrictMode).toHaveBeenCalledWith("col", { maxResidentMemoryPercent: 90 });
   });
@@ -219,7 +219,7 @@ describe("reconcileStrictMode", () => {
       getStrictModeConfig: vi.fn().mockResolvedValue({ enabled: true, max_resident_memory_percent: 90 }),
     });
 
-    await reconcileStrictMode(manager as never, { maxResidentMemoryPercent: 90 }, ["col"]);
+    await reconcileStrictMode(manager, { maxResidentMemoryPercent: 90 }, ["col"]);
 
     expect(manager.updateCollectionStrictMode).not.toHaveBeenCalled();
   });
@@ -227,7 +227,7 @@ describe("reconcileStrictMode", () => {
   it("is a no-op when desired is empty (both fields unset)", async () => {
     const manager = makeStrictManager();
 
-    await reconcileStrictMode(manager as never, {}, ["col"]);
+    await reconcileStrictMode(manager, {}, ["col"]);
 
     expect(manager.getStrictModeConfig).not.toHaveBeenCalled();
     expect(manager.updateCollectionStrictMode).not.toHaveBeenCalled();
@@ -236,7 +236,7 @@ describe("reconcileStrictMode", () => {
   it("lists collections itself when no explicit list is passed", async () => {
     const manager = makeStrictManager({ listCollections: vi.fn().mockResolvedValue(["a", "b"]) });
 
-    await reconcileStrictMode(manager as never, { maxResidentMemoryPercent: 70 });
+    await reconcileStrictMode(manager, { maxResidentMemoryPercent: 70 });
 
     expect(manager.listCollections).toHaveBeenCalledTimes(1);
     expect(manager.updateCollectionStrictMode).toHaveBeenCalledWith("a", { maxResidentMemoryPercent: 70 });

@@ -20,7 +20,7 @@ import {
 } from "../../../../../../src/core/domains/trajectory/codegraph/symbols/pass1-aggregates.js";
 
 function extraction(relPath: string, extra: Partial<FileExtraction> = {}): FileExtraction {
-  return { relPath, language: "python", imports: [], fileScope: [], chunks: [], ...extra } as unknown as FileExtraction;
+  return { relPath, language: "python", imports: [], fileScope: [], chunks: [], ...extra };
 }
 
 describe("buildPass1Aggregates", () => {
@@ -34,7 +34,7 @@ describe("buildPass1Aggregates", () => {
         classAncestors: {},
         classFieldTypesByClassKey: {},
         moduleReexports: [],
-      } as Partial<FileExtraction>),
+      }),
       [],
     );
 
@@ -45,7 +45,7 @@ describe("buildPass1Aggregates", () => {
     const slice = buildPass1Aggregates(
       extraction("app/models.py", {
         classFieldTypesByClassKey: { "app/models.py::Site": { objects: "SiteQuerySet" } },
-      } as Partial<FileExtraction>),
+      }),
       [],
     );
 
@@ -58,10 +58,7 @@ describe("buildPass1Aggregates", () => {
 
   it("carries the re-export list on its own, for a package that declares nothing else", () => {
     const reexports = [{ exportedName: "ObjectType", sourceModule: ".object_types", sourceName: "ObjectType" }];
-    const slice = buildPass1Aggregates(
-      extraction("core/models/__init__.py", { moduleReexports: reexports } as Partial<FileExtraction>),
-      [],
-    );
+    const slice = buildPass1Aggregates(extraction("core/models/__init__.py", { moduleReexports: reexports }), []);
 
     expect(slice).toEqual({
       relPath: "core/models/__init__.py",

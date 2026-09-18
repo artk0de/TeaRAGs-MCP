@@ -47,9 +47,9 @@ describe("CLI 'projects' command group", () => {
     });
 
     it("exits with code 1 when path does not exist", async () => {
-      const exit = vi.spyOn(process, "exit").mockImplementation((() => {
+      const exit = vi.spyOn(process, "exit").mockImplementation(() => {
         throw new Error("exit");
-      }) as (code?: number) => never);
+      });
       const stderr = vi.spyOn(process.stderr, "write").mockImplementation(() => true);
       try {
         await expect(runRegister({ path: join(dir, "missing"), name: "ghost" })).rejects.toThrow("exit");
@@ -62,9 +62,9 @@ describe("CLI 'projects' command group", () => {
     });
 
     it("exits with code 1 when name violates regex", async () => {
-      const exit = vi.spyOn(process, "exit").mockImplementation((() => {
+      const exit = vi.spyOn(process, "exit").mockImplementation(() => {
         throw new Error("exit");
-      }) as (code?: number) => never);
+      });
       const stderr = vi.spyOn(process.stderr, "write").mockImplementation(() => true);
       try {
         await expect(runRegister({ path: repo, name: "BAD NAME!" })).rejects.toThrow("exit");
@@ -212,9 +212,9 @@ describe("CLI 'projects' command group", () => {
     });
 
     it("exits with code 1 for unknown name", () => {
-      const exit = vi.spyOn(process, "exit").mockImplementation((() => {
+      const exit = vi.spyOn(process, "exit").mockImplementation(() => {
         throw new Error("exit");
-      }) as (code?: number) => never);
+      });
       const stderr = vi.spyOn(process.stderr, "write").mockImplementation(() => true);
       try {
         expect(() => {
@@ -261,7 +261,7 @@ describe("CLI 'projects' command group", () => {
           countPoints: vi.fn().mockResolvedValue(123),
         };
         const { runOrphans } = await import("../../../src/cli/commands/projects.js");
-        await runOrphans({ json: false }, fakeQdrant as never);
+        await runOrphans({ json: false }, fakeQdrant);
         const out = stdout.mock.calls.map((c) => String(c[0])).join("");
         expect(out).toContain("code_orphan_1");
         expect(out).toContain("code_orphan_2");
@@ -290,7 +290,7 @@ describe("CLI 'projects' command group", () => {
           countPoints: vi.fn().mockResolvedValue(0),
         };
         const { runOrphans } = await import("../../../src/cli/commands/projects.js");
-        await runOrphans({ json: false }, fakeQdrant as never);
+        await runOrphans({ json: false }, fakeQdrant);
         const out = stdout.mock.calls.map((c) => String(c[0])).join("");
         expect(out).toContain("(no orphan collections)");
       } finally {
@@ -306,7 +306,7 @@ describe("CLI 'projects' command group", () => {
           countPoints: vi.fn().mockResolvedValue(99),
         };
         const { runOrphans } = await import("../../../src/cli/commands/projects.js");
-        await runOrphans({ json: true }, fakeQdrant as never);
+        await runOrphans({ json: true }, fakeQdrant);
         const out = stdout.mock.calls.map((c) => String(c[0])).join("");
         const parsed = JSON.parse(out.trim());
         expect(Array.isArray(parsed)).toBe(true);
@@ -324,7 +324,7 @@ describe("CLI 'projects' command group", () => {
           countPoints: vi.fn().mockRejectedValue(new Error("boom")),
         };
         const { runOrphans } = await import("../../../src/cli/commands/projects.js");
-        await runOrphans({ json: false }, fakeQdrant as never);
+        await runOrphans({ json: false }, fakeQdrant);
         const out = stdout.mock.calls.map((c) => String(c[0])).join("");
         expect(out).toMatch(/^code_broken\t0$/m);
       } finally {
@@ -363,7 +363,7 @@ describe("CLI 'projects' command group", () => {
         };
 
         const { runOrphans } = await import("../../../src/cli/commands/projects.js");
-        await runOrphans({ json: false }, fakeQdrant as never);
+        await runOrphans({ json: false }, fakeQdrant);
 
         const out = stdout.mock.calls.map((c) => String(c[0])).join("");
         // Aliased-to physical must be hidden.
@@ -388,7 +388,7 @@ describe("CLI 'projects' command group", () => {
           countPoints: vi.fn().mockResolvedValue(0),
         };
         const { runOrphans } = await import("../../../src/cli/commands/projects.js");
-        await runOrphans({ json: false }, fakeQdrant as never);
+        await runOrphans({ json: false }, fakeQdrant);
         const out = stdout.mock.calls.map((c) => String(c[0])).join("");
         // Without alias info, both appear (best-effort fallback).
         expect(out).toContain("code_a");

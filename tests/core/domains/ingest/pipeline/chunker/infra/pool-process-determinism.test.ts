@@ -1,7 +1,6 @@
 import { describe, expect, it } from "vitest";
 
 import { ChunkerPool } from "../../../../../../../src/core/domains/ingest/pipeline/chunker/infra/pool.js";
-import type { ChunkerConfig } from "../../../../../../../src/core/types.js";
 
 // A non-trivial Ruby source with many classes/methods so the AST is large
 // enough that a corrupt parse would diverge in chunk count or extraction.
@@ -26,7 +25,7 @@ describe("ChunkerPool process determinism (size 4)", () => {
       chunkSize: 1500,
       chunkOverlap: 0,
       maxChunkSize: 3000,
-    } as ChunkerConfig);
+    });
     try {
       const runs = await Promise.all(
         Array.from({ length: 24 }, async () => pool.processFile("w.rb", RUBY, "ruby", true)),

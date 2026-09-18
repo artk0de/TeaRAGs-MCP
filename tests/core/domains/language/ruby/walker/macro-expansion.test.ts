@@ -14,7 +14,7 @@ import {
 
 function parse(src: string): Parser.Tree {
   const parser = new Parser();
-  parser.setLanguage(RbLang as unknown as Parser.Language);
+  parser.setLanguage(RbLang);
   return parser.parse(src);
 }
 

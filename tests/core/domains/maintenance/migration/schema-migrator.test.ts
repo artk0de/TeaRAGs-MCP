@@ -52,7 +52,7 @@ describe("SchemaMigrator", () => {
       COLLECTION,
       createMockIndexStore(),
       { enableHybrid: false, providerKey: "git" },
-      mockEnrichmentStore as any,
+      mockEnrichmentStore,
     );
     const migrations = migrator.getMigrations();
     expect(migrations).toHaveLength(12);
@@ -88,7 +88,7 @@ describe("SchemaMigrator", () => {
       COLLECTION,
       createMockIndexStore(),
       { enableHybrid: false, providerKey: "git" },
-      mockEnrichmentStore as any,
+      mockEnrichmentStore,
     );
     expect(migrator.latestVersion).toBe(15);
   });

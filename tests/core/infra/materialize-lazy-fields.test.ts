@@ -37,7 +37,7 @@ const FIXTURE = [
 
 function parseNative(src: string): Parser.SyntaxNode {
   const parser = new Parser();
-  parser.setLanguage(PyLang as unknown as Parser.Language);
+  parser.setLanguage(PyLang);
   return parser.parse(src).rootNode;
 }
 

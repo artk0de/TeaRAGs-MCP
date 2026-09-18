@@ -24,8 +24,8 @@ describe("daemon protocol framing", () => {
   });
 
   it("decodes multiple frames and leaves a partial tail in rest", () => {
-    const a = encodeFrame({ id: 1, op: "checkpoint", params: { collection: "c" } } as DaemonRequest);
-    const b = encodeFrame({ id: 2, op: "checkpoint", params: { collection: "c" } } as DaemonRequest);
+    const a = encodeFrame({ id: 1, op: "checkpoint", params: { collection: "c" } });
+    const b = encodeFrame({ id: 2, op: "checkpoint", params: { collection: "c" } });
     const buf = a + b.slice(0, b.length - 3); // truncate second frame
     const { frames, rest } = decodeFrames(buf);
     expect(frames).toHaveLength(1);

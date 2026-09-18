@@ -14,7 +14,7 @@
  * intermediate site list nor the innermost-chunk attribution rules.
  */
 
-import type { CallRef, ChunkExtraction, LocalBinding } from "../../../../contracts/types/codegraph.js";
+import type { CallRef, ChunkExtraction } from "../../../../contracts/types/codegraph.js";
 import { assignCallsToInnermostChunks } from "../../kernel/assign-calls-to-chunks.js";
 import type { RubyDslCatalogue } from "../dsl/index.js";
 import type { RubyFileTypeEnv } from "./file-type-env.js";
@@ -85,7 +85,7 @@ export function buildRubyChunkExtractions(
       // types are already established in localBindings before chain resolution.
       if (Object.keys(associationTypes).length > 0) {
         const push = (name: string, type: string, line: number): void => {
-          (localBindings[name] ??= []).push({ line, type } as LocalBinding);
+          (localBindings[name] ??= []).push({ line, type });
         };
         bindCompoundReceiverChains(input.tree.rootNode, c.startLine, c.endLine, associationTypes, localBindings, push);
       }

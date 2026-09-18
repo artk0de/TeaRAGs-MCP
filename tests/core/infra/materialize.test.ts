@@ -8,7 +8,7 @@ const SRC = `module M\n  class C < Base\n    def run(x, y = {})\n      acc = x.m
 
 function parse(code: string): Parser.SyntaxNode {
   const p = new Parser();
-  p.setLanguage(Ruby as unknown as Parser.Language);
+  p.setLanguage(Ruby);
   return p.parse(code).rootNode;
 }
 

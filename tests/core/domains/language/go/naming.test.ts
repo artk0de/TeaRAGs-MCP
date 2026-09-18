@@ -1,13 +1,13 @@
 import Parser from "tree-sitter";
 import GoLang from "tree-sitter-go";
-import { describe, it, expect, beforeAll } from "vitest";
+import { beforeAll, describe, expect, it } from "vitest";
 
 import { goSymbolOf } from "../../../../../src/core/domains/language/go/naming.js";
 
 let parser: Parser;
 beforeAll(() => {
   parser = new Parser();
-  parser.setLanguage(GoLang as Parser.Language);
+  parser.setLanguage(GoLang);
 });
 
 function firstOfType(code: string, type: string): Parser.SyntaxNode {
@@ -26,7 +26,7 @@ function firstOfType(code: string, type: string): Parser.SyntaxNode {
 
 describe("goSymbolOf", () => {
   it("composes Receiver#Method for a pointer-receiver method", () => {
-    const node = firstOfType("func (c *Context) Query(k string) string { return \"\" }", "method_declaration");
+    const node = firstOfType('func (c *Context) Query(k string) string { return "" }', "method_declaration");
     expect(goSymbolOf(node)).toEqual({ name: "Context#Query", symbolId: "Context#Query", instanceMethod: true });
   });
   // Ported from the removed chunker hooks/go/symbol-resolver.test.ts

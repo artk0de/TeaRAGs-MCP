@@ -54,7 +54,7 @@ const sourceKernels = {
 describe("LanguageKernel.isInstanceMethod", () => {
   it("ruby kernel classifies a plain `def` node as an instance method", () => {
     const parser = new Parser();
-    parser.setLanguage(RbLang as unknown as Parser.Language);
+    parser.setLanguage(RbLang);
     const tree = parser.parse("class C\n  def greet\n  end\nend\n");
     const methodNode = findFirst(tree, "method");
     expect(rubyKernel.isInstanceMethod(methodNode)).toBe(true);
@@ -62,7 +62,7 @@ describe("LanguageKernel.isInstanceMethod", () => {
 
   it("ruby kernel classifies a `def self.foo` singleton_method as NOT an instance method", () => {
     const parser = new Parser();
-    parser.setLanguage(RbLang as unknown as Parser.Language);
+    parser.setLanguage(RbLang);
     const tree = parser.parse("class C\n  def self.build\n  end\nend\n");
     const methodNode = findFirst(tree, "singleton_method");
     expect(rubyKernel.isInstanceMethod(methodNode)).toBe(false);
@@ -70,7 +70,7 @@ describe("LanguageKernel.isInstanceMethod", () => {
 
   it("ruby kernel classifies a non-method node (class) as NOT an instance method", () => {
     const parser = new Parser();
-    parser.setLanguage(RbLang as unknown as Parser.Language);
+    parser.setLanguage(RbLang);
     const tree = parser.parse("class C\nend\n");
     const classNode = findFirst(tree, "class");
     expect(rubyKernel.isInstanceMethod(classNode)).toBe(false);
@@ -80,7 +80,7 @@ describe("LanguageKernel.isInstanceMethod", () => {
     "%s kernel's isInstanceMethod returns false for a non-method ruby node (cross-language detection is conservative)",
     (_lang, kernel) => {
       const parser = new Parser();
-      parser.setLanguage(RbLang as unknown as Parser.Language);
+      parser.setLanguage(RbLang);
       const tree = parser.parse("1 + 1\n");
       const node = tree.rootNode;
       expect(kernel.isInstanceMethod(node)).toBe(false);
@@ -89,7 +89,7 @@ describe("LanguageKernel.isInstanceMethod", () => {
 
   it("markdown kernel's isInstanceMethod returns false for a non-method node (moot — markdown has no walker)", () => {
     const parser = new Parser();
-    parser.setLanguage(RbLang as unknown as Parser.Language);
+    parser.setLanguage(RbLang);
     const tree = parser.parse("1 + 1\n");
     expect(markdownKernel.isInstanceMethod(tree.rootNode)).toBe(false);
   });

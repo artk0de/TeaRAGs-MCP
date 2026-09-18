@@ -54,7 +54,7 @@ describe("EnrichmentApplier.applyChunkSignals — payload coalescing (bd tea-rag
       ],
     ]);
 
-    const applied = await applier.applyChunkSignals("coll", "codegraph.symbols", chunkMetadata as never);
+    const applied = await applier.applyChunkSignals("coll", "codegraph.symbols", chunkMetadata);
 
     // Four points, two distinct payloads.
     expect(applied).toBe(4);
@@ -78,7 +78,7 @@ describe("EnrichmentApplier.applyChunkSignals — payload coalescing (bd tea-rag
     const applied = await applier.applyChunkSignals(
       "coll",
       "codegraph.symbols",
-      chunkMetadata as never,
+      chunkMetadata,
       "2026-08-14T00:00:00Z",
       new Set(["c1", "c2", "c3", "c4"]),
     );
@@ -120,7 +120,7 @@ describe("EnrichmentApplier.applyChunkSignals — payload coalescing (bd tea-rag
     const applied = await applier.applyChunkSignals(
       "coll",
       "codegraph.symbols",
-      chunkMetadata as never,
+      chunkMetadata,
       "2026-08-14T00:00:00Z",
       new Set(["c1", "declined"]),
       new Set(["declined"]),

@@ -19,15 +19,13 @@ let testFilter: Ignore | undefined;
 
 function getGeneratedFilter(): Ignore {
   if (!generatedFilter) {
-    generatedFilter = ignore()
-      .add(GENERATED_PATTERNS as string[])
-      .add(USER_GENERATED_PATTERNS as string[]);
+    generatedFilter = ignore().add(GENERATED_PATTERNS).add(USER_GENERATED_PATTERNS);
   }
   return generatedFilter;
 }
 
 function getTestFilter(): Ignore {
-  if (!testFilter) testFilter = ignore().add(TEST_PATTERNS as string[]);
+  if (!testFilter) testFilter = ignore().add(TEST_PATTERNS);
   return testFilter;
 }
 

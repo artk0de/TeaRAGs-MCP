@@ -22,7 +22,7 @@ import {
 
 function parse(src: string): AstNode {
   const parser = new Parser();
-  parser.setLanguage(TsLang.typescript as unknown as Parser.Language);
+  parser.setLanguage(TsLang.typescript);
   return materializeTree(parser.parse(src).rootNode, src);
 }
 

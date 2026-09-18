@@ -160,7 +160,7 @@ describe("toWorktreeInfo", () => {
       qdrantUrl: "http://h",
       indexedAt: "t",
       teaRagsVersion: "1",
-    } as never);
+    });
     expect(info).toEqual({
       isWorktree: true,
       collectionName: "code_wt",

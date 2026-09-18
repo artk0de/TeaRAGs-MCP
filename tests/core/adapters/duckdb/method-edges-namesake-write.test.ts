@@ -85,7 +85,7 @@ describe("method-edge write path keeps namesake sources apart (ex28m)", () => {
             },
           ],
         },
-      })) as never,
+      })),
     );
 
     const rows = await db.queryAll<{ n: number | bigint }>(

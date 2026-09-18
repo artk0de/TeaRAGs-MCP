@@ -124,7 +124,7 @@ describe("FileChurnDiscovery", () => {
     const freshIso = new Date(legacySinceMs(12)).toISOString();
     const store = fakeStore({
       loadLatest: vi.fn().mockReturnValue(persisted(PRIOR_HEAD, freshIso, [c2, c1])),
-    } as never);
+    });
     const warmAdapter = fakeAdapter({
       head: HEAD,
       isAncestor: true,
@@ -171,7 +171,7 @@ describe("FileChurnDiscovery", () => {
     const freshIso = new Date(legacySinceMs(12)).toISOString();
     const store = fakeStore({
       loadLatest: vi.fn().mockReturnValue(persisted(PRIOR_HEAD, freshIso, [B, A])),
-    } as never);
+    });
     const warmAdapter = fakeAdapter({
       head: HEAD,
       isAncestor: true,
@@ -197,7 +197,7 @@ describe("FileChurnDiscovery", () => {
     const freshIso = new Date(legacySinceMs(1)).toISOString();
     const store = fakeStore({
       load: vi.fn().mockReturnValue(persisted(HEAD, freshIso, [within, aged])),
-    } as never);
+    });
     const adapter = fakeAdapter({ head: HEAD });
 
     const churn = await new FileChurnDiscovery(asAdapter(adapter), {
@@ -230,7 +230,7 @@ describe("FileChurnDiscovery", () => {
     const freshIso = new Date(legacySinceMs(1)).toISOString();
     const store = fakeStore({
       load: vi.fn().mockReturnValue(persisted(HEAD, freshIso, [rebased])),
-    } as never);
+    });
     const adapter = fakeAdapter({ head: HEAD });
 
     const churn = await new FileChurnDiscovery(asAdapter(adapter), {
@@ -292,7 +292,7 @@ describe("FileChurnDiscovery", () => {
         .mockReturnValue(
           persisted(PRIOR_HEAD, freshIso, [fileEntry("2".repeat(40), [{ path: "a.ts", added: 1, deleted: 0 }])]),
         ),
-    } as never);
+    });
     const adapter = fakeAdapter({
       head: HEAD,
       isAncestor: false, // rewrite — prior.head is NOT an ancestor of head
@@ -313,7 +313,7 @@ describe("FileChurnDiscovery", () => {
     const store = fakeStore({
       load: vi.fn().mockReturnValue(persisted(HEAD, driftedIso, stale)),
       loadLatest: vi.fn().mockReturnValue(persisted(HEAD, driftedIso, stale)),
-    } as never);
+    });
     const adapter = fakeAdapter({
       head: HEAD,
       readCommitFileNumstat: async () => [fileEntry("3".repeat(40), [{ path: "a.ts", added: 2, deleted: 0 }])],

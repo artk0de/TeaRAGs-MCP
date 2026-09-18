@@ -32,7 +32,7 @@ describe("RubyTypeFact contract", () => {
         },
       ],
     };
-    const facts: RubyTypeFact[] = src.extract({} as never);
+    const facts: RubyTypeFact[] = src.extract({});
     expect(facts[0]).toMatchObject({ kind: "param", name: "id", line: 10 });
   });
 });

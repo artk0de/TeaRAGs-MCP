@@ -28,6 +28,6 @@ export function createExploreStrategy(
     case "scroll-rank":
       return new ScrollRankStrategy(qdrant, reranker, payloadSignals, essentialKeys);
     default:
-      throw new InvalidStrategyError(type as string);
+      throw new InvalidStrategyError(type);
   }
 }

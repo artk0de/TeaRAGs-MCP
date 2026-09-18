@@ -80,9 +80,7 @@ describe("EnvDriftMonitor", () => {
       ),
     ).toEqual([]);
     expect(
-      new EnvDriftMonitor({ get: () => null } as never, () => ({ INGEST_CHUNK_SIZE: "2000" }), NO_RUNNING_FLAGS).check(
-        "c",
-      ),
+      new EnvDriftMonitor({ get: () => null }, () => ({ INGEST_CHUNK_SIZE: "2000" }), NO_RUNNING_FLAGS).check("c"),
     ).toEqual([]);
   });
 

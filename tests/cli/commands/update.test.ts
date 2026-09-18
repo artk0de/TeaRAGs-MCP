@@ -27,8 +27,8 @@ beforeEach(() => {
   stdoutMock.mockReset();
   stderrMock.mockReset();
   exitMock.mockReset();
-  process.stdout.write = stdoutMock as unknown as typeof process.stdout.write;
-  process.stderr.write = stderrMock as unknown as typeof process.stderr.write;
+  process.stdout.write = stdoutMock;
+  process.stderr.write = stderrMock;
 });
 
 afterEach(() => {
@@ -59,7 +59,7 @@ function makeSpawn(behavior: { exitCode?: number | null; errorEvent?: Error }) {
 describe("runUpdateCommand", () => {
   it("prints up-to-date message and exits 0", async () => {
     await runUpdateCommand({
-      service: makeService(upToDate("1.23.1") as unknown as ReturnType<typeof available>),
+      service: makeService(upToDate("1.23.1")),
       spawn: makeSpawn({}),
       exit: exitMock,
     });
@@ -100,7 +100,7 @@ describe("runUpdateCommand", () => {
 
   it("on 'unavailable', prints to stderr and exits 1", async () => {
     await runUpdateCommand({
-      service: makeService(unavailable("network") as unknown as ReturnType<typeof available>),
+      service: makeService(unavailable("network")),
       spawn: makeSpawn({}),
       exit: exitMock,
     });
@@ -122,7 +122,7 @@ describe("runUpdateCommand", () => {
   });
 
   it("calls service with allowNetwork=true and preferCache=false (live HTTP)", async () => {
-    const svc = makeService(upToDate("1.23.1") as unknown as ReturnType<typeof available>);
+    const svc = makeService(upToDate("1.23.1"));
     await runUpdateCommand({
       service: svc,
       spawn: makeSpawn({}),

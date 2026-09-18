@@ -58,7 +58,7 @@ async function walk(
   chunkMap: Map<string, { chunkId: string; startLine: number; endLine: number }[]>,
   discovery?: GitCommitDiscovery,
 ): Promise<ChurnResult> {
-  return (await buildChunkChurnMapUncached(
+  return await buildChunkChurnMapUncached(
     new GitCliAdapter(repo),
     chunkMap,
     {},
@@ -73,7 +73,7 @@ async function walk(
     undefined,
     undefined,
     discovery,
-  )) as never;
+  );
 }
 
 describe("commit-discovery equivalence pin (bd tea-rags-mcp-82va1)", () => {

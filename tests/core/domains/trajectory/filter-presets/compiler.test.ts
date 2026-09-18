@@ -8,7 +8,7 @@ import { compileFilterPreset } from "../../../../../src/core/domains/trajectory/
 function makeStats(entries: [string, Partial<SignalStats>][]): CollectionSignalStats {
   const perSignal = new Map<string, SignalStats>();
   for (const [key, stats] of entries) {
-    perSignal.set(key, { count: 100, min: 0, max: 100, percentiles: {}, ...stats } as SignalStats);
+    perSignal.set(key, { count: 100, min: 0, max: 100, percentiles: {}, ...stats });
   }
   return { perSignal } as unknown as CollectionSignalStats;
 }

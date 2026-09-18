@@ -23,7 +23,7 @@ function provider(key: string, extra: Partial<EnrichmentProvider> = {}): Enrichm
     buildFileSignals: vi.fn().mockResolvedValue(new Map()),
     buildChunkSignals: vi.fn().mockResolvedValue(new Map()),
     ...extra,
-  } as unknown as EnrichmentProvider;
+  };
 }
 
 /** Qdrant double serving one page of already-indexed points. */

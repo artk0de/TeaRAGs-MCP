@@ -211,7 +211,7 @@ export const autoUpdateCommand: CommandModule<object, AutoUpdateArgv> = {
       .option("branch", {
         type: "string",
         describe: "Target branch for enable (default: autodetected default branch)",
-      }) as never,
+      }),
   handler: async (argv) => {
     await runAutoUpdateCliCommand(
       argv.action as AutoUpdateCliAction,

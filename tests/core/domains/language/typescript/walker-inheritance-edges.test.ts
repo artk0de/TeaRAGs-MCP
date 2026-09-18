@@ -6,7 +6,7 @@ import { extractFromTypescriptFile } from "../../../../../src/core/domains/langu
 
 function edges(src: string): string[] {
   const parser = new Parser();
-  parser.setLanguage(TsLang as unknown as Parser.Language);
+  parser.setLanguage(TsLang);
   const tree = parser.parse(src);
   const out = extractFromTypescriptFile({ tree, code: src, relPath: "x.ts", language: "typescript", chunks: [] });
   return (out.inheritanceEdges ?? []).map((e) => `${e.source}:${e.ancestor}:${e.kind}`);
@@ -27,7 +27,7 @@ describe("TS walker inheritanceEdges", () => {
 
   it("ordinal reflects declaration order of the implements list", () => {
     const parser = new Parser();
-    parser.setLanguage(TsLang as unknown as Parser.Language);
+    parser.setLanguage(TsLang);
     const src = `class C implements A, B {}`;
     const out = extractFromTypescriptFile({
       tree: parser.parse(src),
@@ -62,7 +62,7 @@ describe("TS walker inheritanceEdges", () => {
 
   it("still populates the legacy classExtends Record (phased — not removed)", () => {
     const parser = new Parser();
-    parser.setLanguage(TsLang as unknown as Parser.Language);
+    parser.setLanguage(TsLang);
     const src = `class Dog extends Animal {}`;
     const out = extractFromTypescriptFile({
       tree: parser.parse(src),

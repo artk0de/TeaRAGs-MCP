@@ -210,6 +210,6 @@ export class TrajectoryRegistry {
     level: FilterLevel = "chunk",
   ): Record<string, unknown> | undefined {
     const typed = this.buildFilter(typedParams, level);
-    return mergeQdrantFilters(typed, rawFilter as QdrantFilter | undefined) as Record<string, unknown> | undefined;
+    return mergeQdrantFilters(typed, rawFilter) as Record<string, unknown> | undefined;
   }
 }

@@ -44,9 +44,9 @@ describe("CLI 'project exist' command", () => {
 
   describe("--path lookup", () => {
     it("exits 0 for a registered path", () => {
-      const exit = vi.spyOn(process, "exit").mockImplementation((() => {
+      const exit = vi.spyOn(process, "exit").mockImplementation(() => {
         throw new Error("process.exit called");
-      }) as (code?: number) => never);
+      });
       try {
         expect(() => {
           runProjectExist({ path: projectPath });
@@ -58,9 +58,9 @@ describe("CLI 'project exist' command", () => {
     });
 
     it("exits 1 for an unregistered path", () => {
-      const exit = vi.spyOn(process, "exit").mockImplementation((() => {
+      const exit = vi.spyOn(process, "exit").mockImplementation(() => {
         throw new Error("process.exit called");
-      }) as (code?: number) => never);
+      });
       try {
         expect(() => {
           runProjectExist({ path: "/no/such/path" });
@@ -72,9 +72,9 @@ describe("CLI 'project exist' command", () => {
     });
 
     it("prints the alias with --print-name on match", () => {
-      const exit = vi.spyOn(process, "exit").mockImplementation((() => {
+      const exit = vi.spyOn(process, "exit").mockImplementation(() => {
         throw new Error("process.exit called");
-      }) as (code?: number) => never);
+      });
       const stdout = vi.spyOn(process.stdout, "write").mockImplementation(() => true);
       try {
         expect(() => {
@@ -89,9 +89,9 @@ describe("CLI 'project exist' command", () => {
     });
 
     it("prints nothing and exits 1 with --print-name on no match", () => {
-      const exit = vi.spyOn(process, "exit").mockImplementation((() => {
+      const exit = vi.spyOn(process, "exit").mockImplementation(() => {
         throw new Error("process.exit called");
-      }) as (code?: number) => never);
+      });
       const stdout = vi.spyOn(process.stdout, "write").mockImplementation(() => true);
       try {
         expect(() => {
@@ -108,9 +108,9 @@ describe("CLI 'project exist' command", () => {
 
   describe("--name lookup", () => {
     it("exits 0 for a registered name", () => {
-      const exit = vi.spyOn(process, "exit").mockImplementation((() => {
+      const exit = vi.spyOn(process, "exit").mockImplementation(() => {
         throw new Error("process.exit called");
-      }) as (code?: number) => never);
+      });
       try {
         expect(() => {
           runProjectExist({ name: "demo" });
@@ -122,9 +122,9 @@ describe("CLI 'project exist' command", () => {
     });
 
     it("exits 1 for an unregistered name", () => {
-      const exit = vi.spyOn(process, "exit").mockImplementation((() => {
+      const exit = vi.spyOn(process, "exit").mockImplementation(() => {
         throw new Error("process.exit called");
-      }) as (code?: number) => never);
+      });
       try {
         expect(() => {
           runProjectExist({ name: "ghost" });
@@ -137,9 +137,7 @@ describe("CLI 'project exist' command", () => {
   });
 
   it("projectCommand top-level handler is a no-op", () => {
-    const result = projectCommand.handler({ _: [], $0: "tea-rags" } as unknown as Parameters<
-      typeof projectCommand.handler
-    >[0]);
+    const result = projectCommand.handler({ _: [], $0: "tea-rags" });
     expect(result).toBeUndefined();
   });
 
@@ -149,9 +147,9 @@ describe("CLI 'project exist' command", () => {
     let stderrSpy: ReturnType<typeof vi.spyOn>;
 
     beforeEach(() => {
-      exitSpy = vi.spyOn(process, "exit").mockImplementation((() => {
+      exitSpy = vi.spyOn(process, "exit").mockImplementation(() => {
         throw new Error("process.exit called");
-      }) as (code?: number) => never);
+      });
       stdoutSpy = vi.spyOn(process.stdout, "write").mockImplementation(() => true);
       stderrSpy = vi.spyOn(process.stderr, "write").mockImplementation(() => true);
     });
@@ -204,9 +202,9 @@ describe("CLI 'project exist' command", () => {
 
   describe("--json output", () => {
     it("emits {exists:true,name:'demo'} on match", () => {
-      const exit = vi.spyOn(process, "exit").mockImplementation((() => {
+      const exit = vi.spyOn(process, "exit").mockImplementation(() => {
         throw new Error("process.exit called");
-      }) as (code?: number) => never);
+      });
       const stdout = vi.spyOn(process.stdout, "write").mockImplementation(() => true);
       try {
         expect(() => {
@@ -222,9 +220,9 @@ describe("CLI 'project exist' command", () => {
     });
 
     it("emits {exists:false,name:null} on no match", () => {
-      const exit = vi.spyOn(process, "exit").mockImplementation((() => {
+      const exit = vi.spyOn(process, "exit").mockImplementation(() => {
         throw new Error("process.exit called");
-      }) as (code?: number) => never);
+      });
       const stdout = vi.spyOn(process.stdout, "write").mockImplementation(() => true);
       try {
         expect(() => {

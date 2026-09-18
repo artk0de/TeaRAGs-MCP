@@ -137,7 +137,7 @@ describe("DaemonGraphDbClient", () => {
     expect(cycles).toEqual([{ cycleId: 0, scope: "file", members: ["a.ts", "b.ts"] }]);
     // Each read op carries the client-injected collection + its query param.
     expect(seen.map((r) => r.op)).toEqual(["getCallers", "getCallees", "findCycles"]);
-    expect(seen.every((r) => (r.params as { collection: string }).collection === "code_x_v1")).toBe(true);
+    expect(seen.every((r) => r.params.collection === "code_x_v1")).toBe(true);
     expect((seen[0].params as { symbolId: string }).symbolId).toBe("B#help");
     expect((seen[2].params as { scope: string }).scope).toBe("file");
   });
@@ -207,7 +207,7 @@ describe("DaemonGraphDbClient", () => {
       "finalizeReindex",
     ]);
     // Every request carries the client-injected collection.
-    expect(seen.every((r) => (r.params as { collection: string }).collection === "code_x_v9")).toBe(true);
+    expect(seen.every((r) => r.params.collection === "code_x_v9")).toBe(true);
     // finalizeReindex threads both versions through params.
     const fin = seen.find((r) => r.op === "finalizeReindex");
     expect(fin?.params).toMatchObject({ oldVersion: "code_x_v8", newVersion: "code_x_v9" });
@@ -265,7 +265,7 @@ describe("DaemonGraphDbClient", () => {
     expect(bulk?.params).toMatchObject({ relPaths: ["a.ts", "b.ts"], maxDepth: 5 });
     const fanIn = seen.find((r) => r.op === "getFanIn");
     expect((fanIn?.params as { relPath: string }).relPath).toBe("a.ts");
-    expect(seen.every((r) => (r.params as { collection: string }).collection === "code_x_v1")).toBe(true);
+    expect(seen.every((r) => r.params.collection === "code_x_v1")).toBe(true);
   });
 
   it("degrades getFileMetricsBulk to the per-file reads when the daemon predates the op", async () => {
@@ -345,7 +345,7 @@ describe("DaemonGraphDbClient", () => {
       "replaceCycles",
       "replacePageRanks",
     ]);
-    expect(seen.every((r) => (r.params as { collection: string }).collection === "code_w_v1")).toBe(true);
+    expect(seen.every((r) => r.params.collection === "code_w_v1")).toBe(true);
     const upsert = seen.find((r) => r.op === "upsertSymbols");
     expect((upsert?.params as { relPath: string }).relPath).toBe("a.ts");
     const chunkIds = seen.find((r) => r.op === "updateSymbolChunkIds");
@@ -604,7 +604,7 @@ describe("DaemonGraphDbClient", () => {
 
     const client = new DaemonGraphDbClient(socketPath, "code_x_v1");
     await client.init();
-    await expect(client.getCallers("Foo#bar" as never)).rejects.toThrow(/connection/i);
+    await expect(client.getCallers("Foo#bar")).rejects.toThrow(/connection/i);
   });
 
   // Once the socket is gone the client must say so immediately rather than
@@ -628,10 +628,10 @@ describe("DaemonGraphDbClient", () => {
     const client = new DaemonGraphDbClient(socketPath, "code_x_v1");
     await client.init();
     expect(client.isConnected()).toBe(true);
-    await expect(client.getCallers("Foo#bar" as never)).rejects.toThrow();
+    await expect(client.getCallers("Foo#bar")).rejects.toThrow();
 
     expect(client.isConnected()).toBe(false);
-    await expect(client.getCallers("Foo#bar" as never)).rejects.toThrow(/before init\(\) \/ after close\(\)/);
+    await expect(client.getCallers("Foo#bar")).rejects.toThrow(/before init\(\) \/ after close\(\)/);
   });
 
   it("round-trips a response larger than one socket chunk with non-ASCII content intact", async () => {

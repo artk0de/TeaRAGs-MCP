@@ -6,7 +6,7 @@ import { extractFromGoFile } from "../../../../../../src/core/domains/language/g
 
 function parse(src: string) {
   const p = new Parser();
-  p.setLanguage(GoLang as unknown as Parser.Language);
+  p.setLanguage(GoLang);
   return p.parse(src);
 }
 

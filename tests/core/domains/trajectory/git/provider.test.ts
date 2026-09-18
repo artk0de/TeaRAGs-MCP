@@ -104,7 +104,7 @@ describe("GitEnrichmentProvider", () => {
   it("has fileSignalTransform that calls computeFileSignals", () => {
     expect(typeof provider.fileSignalTransform).toBe("function");
     // Call with minimal FileChurnData shape to exercise the arrow function
-    const result = provider.fileSignalTransform({ commits: [], recentAuthors: [] } as any, 10);
+    const result = provider.fileSignalTransform({ commits: [], recentAuthors: [] }, 10);
     expect(result).toBeDefined();
   });
 
@@ -182,7 +182,7 @@ describe("GitEnrichmentProvider", () => {
         ["src/b.ts", [{ chunkId: "cb", startLine: 1, endLine: 5 }]],
         ["src/c.ts", [{ chunkId: "cc", startLine: 1, endLine: 5 }]],
       ]);
-      await provider.buildChunkSignals("/repo", chunkMap as any);
+      await provider.buildChunkSignals("/repo", chunkMap);
 
       const lastCall = vi.mocked(buildChunkChurnMap).mock.calls.at(-1);
       const blameByPathArg = lastCall?.[12] as Map<string, unknown>;
@@ -233,10 +233,7 @@ describe("GitEnrichmentProvider", () => {
       expect(read().size).toBeGreaterThan(0); // populated by the file pass
 
       vi.mocked(buildChunkChurnMap).mockResolvedValue(new Map());
-      await provider.buildChunkSignals(
-        "/repo",
-        new Map([["src/a.ts", [{ chunkId: "ca", startLine: 1, endLine: 5 }]]]) as never,
-      );
+      await provider.buildChunkSignals("/repo", new Map([["src/a.ts", [{ chunkId: "ca", startLine: 1, endLine: 5 }]]]));
 
       // Re-read: buildChunkSignals swaps in a fresh empty map (the consumed one
       // is released for GC), so the live field holds nothing afterwards.
@@ -252,7 +249,7 @@ describe("GitEnrichmentProvider", () => {
       // After buildFileSignals, lastFileResult is cached internally
       // — confirmed by the fact that buildChunkSignals uses it
       const chunkMap = new Map([["src/a.ts", [{ chunkId: "c1", startLine: 1, endLine: 10 }]]]);
-      await provider.buildChunkSignals("/repo", chunkMap as any);
+      await provider.buildChunkSignals("/repo", chunkMap);
 
       expect(buildChunkChurnMap).toHaveBeenCalledWith(
         expect.objectContaining({ repoRoot: "/repo" }),
@@ -348,7 +345,7 @@ describe("GitEnrichmentProvider", () => {
       vi.mocked(buildChunkChurnMap).mockResolvedValue(fakeResult as any);
 
       const chunkMap = new Map([["src/a.ts", [{ chunkId: "c1", startLine: 1, endLine: 10 }]]]);
-      const result = await provider.buildChunkSignals("/repo", chunkMap as any);
+      const result = await provider.buildChunkSignals("/repo", chunkMap);
 
       expect(result.size).toBe(1);
       expect(result.has("src/a.ts")).toBe(true);
@@ -442,9 +439,7 @@ describe("GitEnrichmentProvider", () => {
         check: vi.fn().mockResolvedValue(null),
         close: vi.fn().mockRejectedValue(new Error("closeB failed")),
       };
-      vi.mocked(createCatFileBatchCheck)
-        .mockReturnValueOnce(readerA as any)
-        .mockReturnValueOnce(readerB as any);
+      vi.mocked(createCatFileBatchCheck).mockReturnValueOnce(readerA).mockReturnValueOnce(readerB);
 
       vi.mocked(buildFileSignalsForPaths).mockResolvedValueOnce(
         new Map([["src/a.ts", { commits: [], recentAuthors: [] }]]) as never,
@@ -543,15 +538,11 @@ describe("GitEnrichmentProvider", () => {
       const walkThread = { walk: vi.fn().mockResolvedValue({ overlays: new Map(), stats: {} }) };
       const chunkMap = new Map([["/repo/src/a.ts", [{ chunkId: "c1", startLine: 1, endLine: 5 }]]]);
 
-      await provider.buildChunkSignals(
-        "/repo",
-        chunkMap as never,
-        {
-          churnWalkThread: walkThread,
-          commitDiscovery: discovery,
-          skipCache: true,
-        } as never,
-      );
+      await provider.buildChunkSignals("/repo", chunkMap, {
+        churnWalkThread: walkThread,
+        commitDiscovery: discovery,
+        skipCache: true,
+      } as never);
 
       expect(walkThread.walk).toHaveBeenCalledWith(expect.objectContaining({ gitAdapter: "git" }));
     });
@@ -577,7 +568,7 @@ describe("GitEnrichmentProvider", () => {
         check: vi.fn().mockRejectedValue(new Error("cat-file batch-check crashed")),
         close: vi.fn().mockResolvedValue(undefined),
       };
-      vi.mocked(createCatFileBatchCheck).mockReturnValueOnce(brokenReader as any);
+      vi.mocked(createCatFileBatchCheck).mockReturnValueOnce(brokenReader);
       vi.mocked(buildFileSignalsForPaths).mockResolvedValueOnce(
         new Map([["src/a.ts", { commits: [], recentAuthors: [] }]]) as never,
       );
@@ -617,15 +608,11 @@ describe("GitEnrichmentProvider", () => {
       };
       const chunkMap = new Map([["/repo/src/a.ts", [{ chunkId: "c1", startLine: 1, endLine: 5 }]]]);
 
-      const result = await provider.buildChunkSignals(
-        "/repo",
-        chunkMap as any,
-        {
-          churnWalkThread: walkThread,
-          commitDiscovery: discovery,
-          skipCache: true,
-        } as any,
-      );
+      const result = await provider.buildChunkSignals("/repo", chunkMap, {
+        churnWalkThread: walkThread,
+        commitDiscovery: discovery,
+        skipCache: true,
+      } as any);
 
       // Both the commit-discovery slice AND the bug-fix-sha lookup fail — the
       // walk must still run (with empty commitEntries/bugFixShas) instead of

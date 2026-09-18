@@ -69,11 +69,8 @@ export function fromCgPass1Row(row: CgPass1AggregatesRow): CodegraphPass1FileAgg
 function parsePayload(json: string): Pass1AggregatesPayload {
   try {
     const parsed = JSON.parse(json) as unknown;
-    return parsed !== null && typeof parsed === "object" && !Array.isArray(parsed)
-      ? (parsed as Pass1AggregatesPayload)
-      : {};
+    return parsed !== null && typeof parsed === "object" && !Array.isArray(parsed) ? parsed : {};
   } catch {
     return {};
   }
 }
-

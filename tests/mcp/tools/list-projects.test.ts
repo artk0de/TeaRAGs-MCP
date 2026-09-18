@@ -76,7 +76,7 @@ describe("registerProjectTools — list_projects", () => {
 
   it("returns empty projects list when registry is empty", async () => {
     const listProjects = vi.fn().mockResolvedValue({ projects: [] });
-    const { captured } = makeHarness(listProjects as unknown as App["listProjects"]);
+    const { captured } = makeHarness(listProjects);
     const tool = captured.find((t) => t.name === "list_projects")!;
     const result = (await tool.handler({}, {})) as { content: { type: string; text: string }[] };
     const parsed = JSON.parse(result.content[0].text) as { projects: unknown[] };

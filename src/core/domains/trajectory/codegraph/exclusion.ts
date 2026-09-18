@@ -77,20 +77,20 @@ export function buildCodegraphExclusionFilter(
 ): Ignore {
   const ig = ignore();
   // Generated and test files are always excluded — invariants, not configurable.
-  ig.add(CODEGRAPH_GENERATED_PATTERNS as string[]);
-  ig.add(CODEGRAPH_TEST_PATTERNS as string[]);
+  ig.add(CODEGRAPH_GENERATED_PATTERNS);
+  ig.add(CODEGRAPH_TEST_PATTERNS);
   // Per-language non-app-code globs, owned by each language provider. Aggregated
   // here so no language-specific pattern leaks into this generic engine.
   if (languageFactory) {
     for (const lang of languageFactory.supported()) {
       const globs = languageFactory.create(lang).codegraphExclusionGlobs;
       if (globs && globs.length > 0) {
-        ig.add(globs as string[]);
+        ig.add(globs);
       }
     }
   }
   if (options.customPatterns.length > 0) {
-    ig.add(options.customPatterns as string[]);
+    ig.add(options.customPatterns);
   }
   return ig;
 }

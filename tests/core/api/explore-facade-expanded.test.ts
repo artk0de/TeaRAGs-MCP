@@ -1,6 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-import type { HybridSearchRequest, RankChunksRequest, SemanticSearchRequest } from "../../../src/core/api/index.js";
 import { ExploreFacade } from "../../../src/core/api/internal/facades/explore-facade.js";
 
 // ---------------------------------------------------------------------------
@@ -190,7 +189,7 @@ describe("ExploreFacade — expanded methods", () => {
     it("throws when neither collection nor path provided", async () => {
       const { facade } = makeFacade();
 
-      await expect(facade.semanticSearch({ query: "test" } as SemanticSearchRequest)).rejects.toThrow();
+      await expect(facade.semanticSearch({ query: "test" })).rejects.toThrow();
     });
 
     it("throws when collection does not exist", async () => {
@@ -372,7 +371,7 @@ describe("ExploreFacade — expanded methods", () => {
     it("throws when neither collection nor path provided", async () => {
       const { facade } = makeFacade();
 
-      await expect(facade.hybridSearch({ query: "test" } as HybridSearchRequest)).rejects.toThrow();
+      await expect(facade.hybridSearch({ query: "test" })).rejects.toThrow();
     });
 
     it("throws when collection does not exist", async () => {
@@ -467,7 +466,7 @@ describe("ExploreFacade — expanded methods", () => {
         facade.rankChunks({
           rerank: "techDebt",
           level: "chunk",
-        } as RankChunksRequest),
+        }),
       ).rejects.toThrow();
     });
 

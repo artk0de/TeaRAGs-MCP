@@ -690,9 +690,7 @@ describe("DuckDbGraphClient", () => {
       // Passing an object/array would otherwise reach bindVarchar with
       // a value that stringifies to "[object Object]" — silently wrong.
       // The guard throws synchronously inside the helper.
-      await expect(client.run("SELECT ?", [{ unsupported: true } as unknown as string])).rejects.toThrow(
-        /unsupported bind param type/,
-      );
+      await expect(client.run("SELECT ?", [{ unsupported: true }])).rejects.toThrow(/unsupported bind param type/);
     });
 
     it("upsertSymbols tolerates a malformed scope_json round-trip via parseScope catch", async () => {

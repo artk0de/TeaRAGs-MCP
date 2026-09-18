@@ -153,7 +153,7 @@ describe("ChunkLookupEntry.symbolId producers (bd tea-rags-mcp-9i2ow)", () => {
         } as any,
         effectiveRoot: "/repo",
         ignoreFilter: null,
-      } as any,
+      },
       "2026-01-01T00:00:00Z",
     );
 

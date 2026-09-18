@@ -16,7 +16,7 @@ const EMBEDDING_BAD_INPUT_STATUSES = new Set([400, 413, 422]);
 
 function errorCode(error: unknown): string | undefined {
   if (typeof error === "object" && error !== null && "code" in error) {
-    const { code } = error as { code: unknown };
+    const { code } = error;
     return typeof code === "string" ? code : undefined;
   }
   return undefined;
@@ -24,7 +24,7 @@ function errorCode(error: unknown): string | undefined {
 
 function responseStatus(error: unknown): number | undefined {
   if (typeof error === "object" && error !== null && "responseStatus" in error) {
-    const { responseStatus: status } = error as { responseStatus: unknown };
+    const { responseStatus: status } = error;
     return typeof status === "number" ? status : undefined;
   }
   return undefined;
@@ -35,7 +35,7 @@ const FS_READ_ERROR_CODES = new Set(["ENOENT", "EACCES", "EPERM", "EISDIR", "ENO
 
 function fsErrorCode(error: unknown): string | undefined {
   if (typeof error === "object" && error !== null && "code" in error) {
-    const { code } = error as { code: unknown };
+    const { code } = error;
     return typeof code === "string" ? code : undefined;
   }
   return undefined;

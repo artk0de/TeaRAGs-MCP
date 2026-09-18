@@ -73,7 +73,7 @@ function ctxWith(parts: Partial<CallContext> & Pick<CallContext, "callerFile">):
     imports: [],
     symbolTable: TWO_MAKERS,
     ...parts,
-  } as CallContext;
+  };
 }
 
 const bindingType = (callee: string, ctx: CallContext): TypeRef | undefined => {
@@ -135,15 +135,14 @@ describe("pythonCallBindingType — `-> Self` binds the RECEIVER's class", () =>
   // subclass SPELLS it — module text, resolved through the import mapper.
   const ANCESTORS = { "repo/sub.py::CustomerRepository": ["repo.base::RepositoryBase"] };
 
-  const selfCtx = (extra: Partial<CallContext>): CallContext =>
-    ({
-      callerFile: "svc/use.py",
-      callerScope: [],
-      imports: [importOf("repo.sub", "CustomerRepository")],
-      symbolTable: SELF_TABLE,
-      classAncestors: ANCESTORS,
-      ...extra,
-    }) as CallContext;
+  const selfCtx = (extra: Partial<CallContext>): CallContext => ({
+    callerFile: "svc/use.py",
+    callerScope: [],
+    imports: [importOf("repo.sub", "CustomerRepository")],
+    symbolTable: SELF_TABLE,
+    classAncestors: ANCESTORS,
+    ...extra,
+  });
 
   it("substitutes the CLASS a class-form receiver names, not the declaring one", () => {
     const ctx = selfCtx({ structuredReturnTypes: { "RepositoryBase.from_session": instance("Self") } });

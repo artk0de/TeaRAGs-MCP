@@ -92,7 +92,7 @@ describe("CodegraphRunState tracks which run-global maps a run contributed to (b
         classAncestors: {},
         classExtends: {},
         ivarTypes: {},
-      } as unknown as FileExtraction,
+      },
       [],
     );
 

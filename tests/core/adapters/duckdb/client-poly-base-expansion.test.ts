@@ -5,12 +5,7 @@ import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import { DuckDbGraphClient } from "../../../../src/core/adapters/duckdb/client.js";
-import type {
-  InheritanceEdgeRow,
-  RelPath,
-  SymbolDefinition,
-  SymbolId,
-} from "../../../../src/core/contracts/types/codegraph.js";
+import type { InheritanceEdgeRow, SymbolDefinition } from "../../../../src/core/contracts/types/codegraph.js";
 import { DATABASE_MIGRATIONS } from "../../../../src/core/domains/maintenance/migration/database/migrations/index.js";
 import { runMigrations } from "../../../../src/core/domains/maintenance/migration/database/runner.js";
 
@@ -164,7 +159,7 @@ describe("DuckDbGraphClient — poly-base query-time expansion (2jet-E)", () => 
         ],
       },
     );
-    const callers = await db.getCallers("Sub1#check" as SymbolId);
+    const callers = await db.getCallers("Sub1#check");
     const fromCaller = callers.filter((c) => c.sourceSymbolId === "Caller#run");
     // Must appear exactly once — not duplicated even though two query paths surface it.
     expect(fromCaller).toHaveLength(1);
@@ -191,27 +186,27 @@ describe("DuckDbGraphClient — poly-base expansion with bare top-level target (
     // A poly-base edge whose targetSymbolId is a bare top-level name (no '#' or '.')
     // cannot be expanded — splitMethodSymbol returns null and expandPolyBaseCallees
     // returns [] immediately (L838). The base edge itself must still be returned.
-    await db.upsertSymbols("top.rb" as RelPath, [
+    await db.upsertSymbols("top.rb", [
       {
-        symbolId: "TopLevelFunction" as SymbolId,
+        symbolId: "TopLevelFunction",
         fqName: "TopLevelFunction",
         shortName: "TopLevelFunction",
-        relPath: "top.rb" as RelPath,
+        relPath: "top.rb",
         scope: [],
       },
     ]);
-    await db.upsertSymbols("caller.rb" as RelPath, [
+    await db.upsertSymbols("caller.rb", [
       {
-        symbolId: "Caller#run" as SymbolId,
+        symbolId: "Caller#run",
         fqName: "Caller#run",
         shortName: "run",
-        relPath: "caller.rb" as RelPath,
+        relPath: "caller.rb",
         scope: ["Caller"],
       },
     ]);
-    await db.upsertFile({ relPath: "top.rb" as RelPath, language: "ruby" }, { fileEdges: [], methodEdges: [] });
+    await db.upsertFile({ relPath: "top.rb", language: "ruby" }, { fileEdges: [], methodEdges: [] });
     await db.upsertFile(
-      { relPath: "caller.rb" as RelPath, language: "ruby" },
+      { relPath: "caller.rb", language: "ruby" },
       {
         fileEdges: [],
         methodEdges: [
@@ -226,7 +221,7 @@ describe("DuckDbGraphClient — poly-base expansion with bare top-level target (
         ],
       },
     );
-    const callees = await db.getCallees("Caller#run" as SymbolId);
+    const callees = await db.getCallees("Caller#run");
     // expandPolyBaseCallees bails early (no member separator on "TopLevelFunction").
     // The base poly-base edge must still be present, and no phantom expansion rows.
     expect(callees.map((c) => c.targetSymbolId)).toEqual(["TopLevelFunction"]);

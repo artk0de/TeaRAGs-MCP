@@ -110,7 +110,7 @@ function graphProvider(): EnrichmentProvider {
     endExtractionRun: vi.fn().mockResolvedValue(undefined),
     readPersistedFileHashes: vi.fn(async () => new Map<string, string | null>(persistedRows)),
     handleDeletedPaths: vi.fn().mockResolvedValue(undefined),
-  } as unknown as EnrichmentProvider;
+  };
 }
 
 /**
@@ -139,7 +139,7 @@ function recordingExecutor(): EnrichmentExecutor {
     }),
     releaseRun: vi.fn().mockResolvedValue(undefined),
     shutdown: vi.fn().mockResolvedValue(undefined),
-  } as unknown as EnrichmentExecutor;
+  };
 }
 
 /** A file big enough for the chunker to emit points for. */
@@ -166,7 +166,7 @@ describe("first index / --force stamps real content hashes (bd tea-rags-mcp-o317
     persistedRows.clear();
     runContentHashes = undefined;
     ({ tempDir, codebaseDir } = await createTempTestDir());
-    qdrant = new MockQdrantManager() as never;
+    qdrant = new MockQdrantManager();
     config = { ...defaultTestConfig(), supportedExtensions: [".ts", ".rb"] };
     ingest = new IngestFacade({
       qdrant: qdrant as never,

@@ -183,7 +183,7 @@ export class PointsAccumulator {
           ordering: this.config.ordering,
         });
       } else {
-        await this.qdrant.addPointsOptimized(this.collectionName, batch as DensePoint[], {
+        await this.qdrant.addPointsOptimized(this.collectionName, batch, {
           wait: waitForResult,
           ordering: this.config.ordering,
         });

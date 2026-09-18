@@ -21,7 +21,7 @@ import {
 
 function parse(src: string) {
   const parser = new Parser();
-  parser.setLanguage(RbLang as unknown as Parser.Language);
+  parser.setLanguage(RbLang);
   return parser.parse(src).rootNode;
 }
 
@@ -76,7 +76,7 @@ describe("bindCompoundReceiverChains (direct export)", () => {
     const pushed: { name: string; type: string; line: number }[] = [];
     const push = (name: string, type: string, line: number): void => {
       pushed.push({ name, type, line });
-      (out[name] ??= []).push({ line, type } as LocalBinding);
+      (out[name] ??= []).push({ line, type });
     };
     const associationTypes: Record<string, Record<string, string>> = {
       Event: { user: "User" },
@@ -111,7 +111,7 @@ describe("bindCompoundReceiverChains (direct export)", () => {
     const pushed: string[] = [];
     const push = (name: string, type: string, line: number): void => {
       pushed.push(name);
-      (out[name] ??= []).push({ line, type } as LocalBinding);
+      (out[name] ??= []).push({ line, type });
     };
     const associationTypes = { Event: { user: "User" } };
     bindCompoundReceiverChains(root, 2, 4, associationTypes, out, push);
@@ -126,7 +126,7 @@ describe("bindCompoundReceiverChains (direct export)", () => {
     const pushed: string[] = [];
     const push = (name: string, type: string, line: number): void => {
       pushed.push(name);
-      (out[name] ??= []).push({ line, type } as LocalBinding);
+      (out[name] ??= []).push({ line, type });
     };
     // Category.subcategories → Category (self-referential)
     const associationTypes = { Category: { subcategories: "Category" } };
@@ -339,21 +339,20 @@ describe("collectRubyScopedBodyReturnTypes", () => {
   });
 
   it("stays SILENT when the memoized local is assigned twice in the body", () => {
-    const src = [
-      "class Panel",
-      "  def build",
-      "    widget = other",
-      "    widget ||= Widget.new",
-      "  end",
-      "end",
-    ].join("\n");
+    const src = ["class Panel", "  def build", "    widget = other", "    widget ||= Widget.new", "  end", "end"].join(
+      "\n",
+    );
     expect(collectRubyScopedBodyReturnTypes(parse(`${src}\n`))["Panel#build"]).toBeUndefined();
   });
 
   it("stays SILENT on an opaque RHS — 108 of the census misses look like this", () => {
-    const src = ["class Panel", "  def current_firm", "    @current_firm ||= HostHelper.current_firm(host)", "  end", "end"].join(
-      "\n",
-    );
+    const src = [
+      "class Panel",
+      "  def current_firm",
+      "    @current_firm ||= HostHelper.current_firm(host)",
+      "  end",
+      "end",
+    ].join("\n");
     expect(collectRubyScopedBodyReturnTypes(parse(`${src}\n`))["Panel#current_firm"]).toBeUndefined();
   });
 

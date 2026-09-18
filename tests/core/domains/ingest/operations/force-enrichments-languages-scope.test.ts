@@ -99,7 +99,7 @@ function graphProvider(): EnrichmentProvider {
     handleDeletedPaths: vi.fn(async (paths: string[]) => {
       prunedPaths.push(...paths);
     }),
-  } as unknown as EnrichmentProvider;
+  };
 }
 
 function recordingExecutor(): EnrichmentExecutor {
@@ -119,7 +119,7 @@ function recordingExecutor(): EnrichmentExecutor {
     runFinalize: vi.fn().mockResolvedValue(new Map()),
     releaseRun: vi.fn().mockResolvedValue(undefined),
     shutdown: vi.fn().mockResolvedValue(undefined),
-  } as unknown as EnrichmentExecutor;
+  };
 }
 
 describe("--force-enrichments with --languages — repair-pass scope (bd tea-rags-mcp-df1rn)", () => {
@@ -134,7 +134,7 @@ describe("--force-enrichments with --languages — repair-pass scope (bd tea-rag
     prunedPaths.length = 0;
     persistedHashes.clear();
     ({ tempDir, codebaseDir } = await createTempTestDir());
-    qdrant = new MockQdrantManager() as never;
+    qdrant = new MockQdrantManager();
     // Two languages in one corpus is the whole fixture: the default helper
     // config scans neither ruby nor anything else that could stand in for it.
     config = { ...defaultTestConfig(), supportedExtensions: [".ts", ".rb"] };

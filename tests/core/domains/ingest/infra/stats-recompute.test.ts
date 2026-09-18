@@ -97,7 +97,7 @@ describe("StatsRecomputeService.ensureCoverage", () => {
           percentiles: { 10: 1, 25: 3, 50: 6, 75: 14, 95: 28 },
           mean: 7,
           stddev: 4,
-        } as SignalStats,
+        },
       ],
     ]);
     const qdrant = makeQdrant([]);
@@ -122,7 +122,7 @@ describe("StatsRecomputeService.ensureCoverage", () => {
           percentiles: { ...initialPercentiles },
           mean: 7,
           stddev: 4,
-        } as SignalStats,
+        },
       ],
     ]);
     const points = Array.from({ length: 11 }, (_, i) => ({ "git.file.commitCount": i + 1 }));
@@ -148,7 +148,7 @@ describe("StatsRecomputeService.ensureCoverage", () => {
 
   it("uses ONE scroll regardless of how many missing percentiles the same signal needs", async () => {
     const stats = makeStats([
-      ["git.file.commitCount", { count: 100, min: 1, max: 50, percentiles: { 50: 6 }, mean: 7 } as SignalStats],
+      ["git.file.commitCount", { count: 100, min: 1, max: 50, percentiles: { 50: 6 }, mean: 7 }],
     ]);
     const points = Array.from({ length: 11 }, (_, i) => ({ "git.file.commitCount": i + 1 }));
     const qdrant = makeQdrant(points);
@@ -168,8 +168,8 @@ describe("StatsRecomputeService.ensureCoverage", () => {
 
   it("saves stats-cache exactly once at the end, even with multiple signals backfilled", async () => {
     const stats = makeStats([
-      ["git.file.commitCount", { count: 100, min: 1, max: 50, percentiles: { 50: 6 }, mean: 7 } as SignalStats],
-      ["git.chunk.commitCount", { count: 200, min: 1, max: 30, percentiles: { 50: 4 }, mean: 5 } as SignalStats],
+      ["git.file.commitCount", { count: 100, min: 1, max: 50, percentiles: { 50: 6 }, mean: 7 }],
+      ["git.chunk.commitCount", { count: 200, min: 1, max: 30, percentiles: { 50: 4 }, mean: 5 }],
     ]);
     const points = [
       ...Array.from({ length: 11 }, (_, i) => ({ "git.file.commitCount": i + 1, "git.chunk.commitCount": i + 1 })),
@@ -186,7 +186,7 @@ describe("StatsRecomputeService.ensureCoverage", () => {
 
   it("deduplicates concurrent ensureCoverage calls to ONE scroll per (collection, signal)", async () => {
     const stats = makeStats([
-      ["git.file.commitCount", { count: 100, min: 1, max: 50, percentiles: { 50: 6 }, mean: 7 } as SignalStats],
+      ["git.file.commitCount", { count: 100, min: 1, max: 50, percentiles: { 50: 6 }, mean: 7 }],
     ]);
     const points = Array.from({ length: 11 }, (_, i) => ({ "git.file.commitCount": i + 1 }));
     const qdrant = makeQdrant(points);
@@ -203,9 +203,7 @@ describe("StatsRecomputeService.ensureCoverage", () => {
   });
 
   it("does not save when scroll returns no positive values", async () => {
-    const stats = makeStats([
-      ["git.file.commitCount", { count: 0, min: 0, max: 0, percentiles: { 50: 0 }, mean: 0 } as SignalStats],
-    ]);
+    const stats = makeStats([["git.file.commitCount", { count: 0, min: 0, max: 0, percentiles: { 50: 0 }, mean: 0 }]]);
     const qdrant = makeQdrant([{ "git.file.commitCount": 0 }, { "git.file.commitCount": null }]);
     const statsCache = makeStatsCache();
     const service = new StatsRecomputeService(qdrant, statsCache);
@@ -231,7 +229,7 @@ describe("StatsRecomputeService.ensureCoverage", () => {
 
   it("degrades gracefully on Qdrant scroll error: warns, no save, no mutation", async () => {
     const stats = makeStats([
-      ["git.file.commitCount", { count: 100, min: 1, max: 50, percentiles: { 50: 6 }, mean: 7 } as SignalStats],
+      ["git.file.commitCount", { count: 100, min: 1, max: 50, percentiles: { 50: 6 }, mean: 7 }],
     ]);
     const qdrant = {
       client: { scroll: vi.fn().mockRejectedValue(new Error("qdrant down")) },
@@ -250,7 +248,7 @@ describe("StatsRecomputeService.ensureCoverage", () => {
 
   it("warns but does not throw when stats-cache persist fails after a successful compute", async () => {
     const stats = makeStats([
-      ["git.file.commitCount", { count: 100, min: 1, max: 50, percentiles: { 50: 6 }, mean: 7 } as SignalStats],
+      ["git.file.commitCount", { count: 100, min: 1, max: 50, percentiles: { 50: 6 }, mean: 7 }],
     ]);
     const points = Array.from({ length: 11 }, (_, i) => ({ "git.file.commitCount": i + 1 }));
     const qdrant = makeQdrant(points);
@@ -270,7 +268,7 @@ describe("StatsRecomputeService.ensureCoverage", () => {
 
   it("forwards payloadFieldKeys to statsCache.save when provided", async () => {
     const stats = makeStats([
-      ["git.file.commitCount", { count: 100, min: 1, max: 50, percentiles: { 50: 6 }, mean: 7 } as SignalStats],
+      ["git.file.commitCount", { count: 100, min: 1, max: 50, percentiles: { 50: 6 }, mean: 7 }],
     ]);
     const points = Array.from({ length: 11 }, (_, i) => ({ "git.file.commitCount": i + 1 }));
     const qdrant = makeQdrant(points);
@@ -315,7 +313,7 @@ describe("StatsRecomputeService.ensureCoverage", () => {
     // Qdrant payloads can be nested ({git: {file: {commitCount: N}}}) instead
     // of flat ({"git.file.commitCount": N}). The service must handle both.
     const stats = makeStats([
-      ["git.file.commitCount", { count: 100, min: 1, max: 50, percentiles: { 50: 6 }, mean: 7 } as SignalStats],
+      ["git.file.commitCount", { count: 100, min: 1, max: 50, percentiles: { 50: 6 }, mean: 7 }],
     ]);
     const points = Array.from({ length: 11 }, (_, i) => ({
       git: { file: { commitCount: i + 1 } },
@@ -336,7 +334,7 @@ describe("StatsRecomputeService.ensureCoverage", () => {
     // Some points have non-object intermediate keys — readPayloadPath must
     // return undefined for those and continue.
     const stats = makeStats([
-      ["git.file.commitCount", { count: 100, min: 1, max: 50, percentiles: { 50: 6 }, mean: 7 } as SignalStats],
+      ["git.file.commitCount", { count: 100, min: 1, max: 50, percentiles: { 50: 6 }, mean: 7 }],
     ]);
     const points = [
       { git: null }, // null intermediate
@@ -359,7 +357,7 @@ describe("StatsRecomputeService.ensureCoverage", () => {
 
   it("respects the failure backoff window: after a failure, a subsequent ensureCoverage call skips the scroll", async () => {
     const stats = makeStats([
-      ["git.file.commitCount", { count: 100, min: 1, max: 50, percentiles: { 50: 6 }, mean: 7 } as SignalStats],
+      ["git.file.commitCount", { count: 100, min: 1, max: 50, percentiles: { 50: 6 }, mean: 7 }],
     ]);
     const qdrant = {
       client: {
@@ -409,7 +407,7 @@ describe("StatsRecomputeService.ensureCoverage", () => {
       // All percentiles present; numeric rules are not percentile references.
       [
         "git.file.commitCount",
-        { count: 100, min: 1, max: 50, percentiles: { 10: 1, 25: 3, 50: 6, 75: 14, 95: 28 }, mean: 7 } as SignalStats,
+        { count: 100, min: 1, max: 50, percentiles: { 10: 1, 25: 3, 50: 6, 75: 14, 95: 28 }, mean: 7 },
       ],
     ]);
     const qdrant = makeQdrant([]);
@@ -456,7 +454,7 @@ describe("StatsRecomputeService.ensureCoverage", () => {
       },
     } as unknown as PayloadSignalDescriptor;
     const stats = makeStats([
-      ["git.file.commitCount", { count: 100, min: 1, max: 50, percentiles: { 50: 6 }, mean: 7 } as SignalStats],
+      ["git.file.commitCount", { count: 100, min: 1, max: 50, percentiles: { 50: 6 }, mean: 7 }],
     ]);
     const qdrant = makeQdrant([]);
     const statsCache = makeStatsCache();
@@ -487,7 +485,7 @@ describe("StatsRecomputeService.ensureCoverage", () => {
       },
     } as unknown as PayloadSignalDescriptor;
     const stats = makeStats([
-      ["git.file.commitCount", { count: 100, min: 1, max: 50, percentiles: { 50: 6 }, mean: 7 } as SignalStats],
+      ["git.file.commitCount", { count: 100, min: 1, max: 50, percentiles: { 50: 6 }, mean: 7 }],
     ]);
     const qdrant = makeQdrant([]);
     const statsCache = makeStatsCache();
@@ -521,7 +519,7 @@ describe("StatsRecomputeService.ensureCoverage", () => {
       },
     } as unknown as PayloadSignalDescriptor;
     const stats = makeStats([
-      ["git.file.commitCount", { count: 100, min: 1, max: 50, percentiles: { 50: 6 }, mean: 7 } as SignalStats],
+      ["git.file.commitCount", { count: 100, min: 1, max: 50, percentiles: { 50: 6 }, mean: 7 }],
     ]);
     const qdrant = makeQdrant([]);
     const statsCache = makeStatsCache();
@@ -541,7 +539,7 @@ describe("StatsRecomputeService.ensureCoverage", () => {
       // File support present (used by score path); but chunk support NOT in stats.
       [
         "git.file.commitCount",
-        { count: 100, min: 1, max: 50, percentiles: { 10: 1, 25: 3, 50: 6, 75: 14, 95: 28 }, mean: 7 } as SignalStats,
+        { count: 100, min: 1, max: 50, percentiles: { 10: 1, 25: 3, 50: 6, 75: 14, 95: 28 }, mean: 7 },
       ],
     ]);
     const qdrant = makeQdrant([]);

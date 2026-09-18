@@ -253,7 +253,7 @@ function collectGoLocalBindingsForChunk(
   // Foo{}`, `x := &Foo{}` (bd tea-rags-mcp-6g9c). Walk the target
   // declaration's descendants; both forms are nested in the function's
   // `block` / `statement_list` regardless of nesting depth.
-  walk(target as AstNode, (node) => {
+  walk(target, (node) => {
     if (node.type === "var_declaration") {
       for (const spec of node.children) {
         if (spec.type !== "var_spec") continue;

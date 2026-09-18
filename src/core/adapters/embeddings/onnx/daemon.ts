@@ -367,7 +367,7 @@ export class OnnxDaemon {
     } else {
       /* v8 ignore next 2 -- real Worker path, tested via e2e */
       const workerPath = join(dirname(fileURLToPath(import.meta.url)), "worker.js");
-      this.worker = new Worker(workerPath) as unknown as WorkerLike;
+      this.worker = new Worker(workerPath);
     }
 
     const { worker } = this;

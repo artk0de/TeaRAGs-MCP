@@ -47,9 +47,9 @@ describe("createCli — yargs --get-yargs-completions integration", () => {
    */
   async function runCompletion(argv: string[]): Promise<string[]> {
     const lines: string[] = [];
-    logSpy.mockImplementation(((...args: unknown[]): void => {
+    logSpy.mockImplementation((...args: unknown[]): void => {
       lines.push(args.map(String).join(" "));
-    }) as never);
+    });
 
     const cli = createCli(argv);
     cli.exitProcess(false);
@@ -84,9 +84,9 @@ describe("createCli — yargs --get-yargs-completions integration", () => {
     // back to `this.exit(0)` after emitting completions; `exitProcess(false)`
     // in `runCompletion` keeps yargs from actually invoking process.exit, but
     // we belt-and-suspenders here.
-    exitSpy = vi.spyOn(process, "exit").mockImplementation(((code?: number | string | null) => {
+    exitSpy = vi.spyOn(process, "exit").mockImplementation((code?: number | string | null) => {
       throw new Error(`process.exit(${String(code)}) called unexpectedly`);
-    }) as never);
+    });
   });
 
   afterEach(() => {

@@ -14,10 +14,10 @@ describe("runUpdateCommand — spawn error branches", () => {
     const exit = vi.fn();
     const stderrWrites: string[] = [];
     const origStderr = process.stderr.write;
-    process.stderr.write = ((m: string) => {
+    process.stderr.write = (m: string) => {
       stderrWrites.push(String(m));
       return true;
-    }) as never;
+    };
 
     const service = {
       checkForUpdate: vi.fn().mockResolvedValue({

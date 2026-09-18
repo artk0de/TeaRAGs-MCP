@@ -2545,7 +2545,7 @@ describe("EnrichmentCoordinator — RunState isolation", () => {
     // The orphaned RunState's donePromise rejects too — attach a handler so the
     // rejection isn't reported as unhandled.
     const orphanDone = runState1!.donePromise.catch(() => undefined);
-    vi.spyOn(runState1!.completion, "run" as never).mockRejectedValue(new Error("run 1 failed") as never);
+    vi.spyOn(runState1!.completion, "run" as never).mockRejectedValue(new Error("run 1 failed"));
     await expect(coordinator.awaitCompletion(run1)).rejects.toThrow("run 1 failed");
     await orphanDone;
 
@@ -3380,7 +3380,7 @@ describe("EnrichmentCoordinator — per-(provider,level) enrichment progress", (
         Array.from({ length: 60 }, (_, i) => ({ chunkId: `c-b-${i}`, startLine: i * 10, endLine: i * 10 + 9 })),
       ],
     ]);
-    coordinator.startChunkEnrichment(run, chunkMap as any);
+    coordinator.startChunkEnrichment(run, chunkMap);
 
     await coordinator.awaitCompletion(run);
 
@@ -3451,7 +3451,7 @@ describe("EnrichmentCoordinator — per-(provider,level) enrichment progress", (
     mockProvider.buildFileSignals.mockResolvedValue(new Map([["src/a.ts", { x: 1 }]]));
 
     const run = coordinator.beginRun(runSpec("/repo", "test-col"));
-    coordinator.startChunkEnrichment(run, chunkMap as any);
+    coordinator.startChunkEnrichment(run, chunkMap);
     coordinator.onChunksStored(run, [
       { chunkId: "c1", chunk: { metadata: { filePath: "/repo/src/a.ts" }, endLine: 10 } } as any,
     ]);
@@ -3513,7 +3513,7 @@ describe("EnrichmentCoordinator — per-(provider,level) enrichment progress", (
       ],
       ["src/b.ts", [{ chunkId: "c3", startLine: 1, endLine: 9 }]],
     ]);
-    coordinator.startChunkEnrichment(run, chunkMap as any);
+    coordinator.startChunkEnrichment(run, chunkMap);
 
     await coordinator.awaitCompletion(run);
   });
@@ -3667,7 +3667,7 @@ describe("EnrichmentCoordinator — per-(provider,level) enrichment progress", (
         ],
       ],
     ]);
-    coordinator.startChunkEnrichment(run, chunkMap as any);
+    coordinator.startChunkEnrichment(run, chunkMap);
 
     await coordinator.awaitCompletion(run);
 
@@ -3805,7 +3805,7 @@ describe("EnrichmentCoordinator — per-(provider,level) enrichment progress", (
       { chunkId: "c1", chunk: { metadata: { filePath: "/repo/src/a.ts" }, endLine: 9 } } as any,
     ]);
     const chunkMap = new Map([["src/a.ts", [{ chunkId: "c1", startLine: 1, endLine: 9 }]]]);
-    coordinator.startChunkEnrichment(run, chunkMap as any);
+    coordinator.startChunkEnrichment(run, chunkMap);
     await coordinator.awaitCompletion(run);
 
     const chunkEvents = events.filter((e) => e.level === "chunk");
@@ -3830,7 +3830,7 @@ describe("EnrichmentCoordinator — per-(provider,level) enrichment progress", (
       { chunkId: "c1", chunk: { metadata: { filePath: "/repo/src/a.ts" }, endLine: 9 } } as any,
     ]);
     const chunkMap = new Map([["src/a.ts", [{ chunkId: "c1", startLine: 1, endLine: 9 }]]]);
-    coordinator.startChunkEnrichment(run, chunkMap as any);
+    coordinator.startChunkEnrichment(run, chunkMap);
     await coordinator.awaitCompletion(run);
 
     const chunkEvents = events.filter((e) => e.level === "chunk");
@@ -3862,7 +3862,7 @@ describe("EnrichmentCoordinator — per-(provider,level) enrichment progress", (
       { chunkId: "c2", chunk: { metadata: { filePath: "/repo/src/a.ts" }, endLine: 9 } } as any,
     ]);
     const chunkMap = new Map([["src/a.ts", [{ chunkId: "c2", startLine: 1, endLine: 9 }]]]);
-    coordinator.startChunkEnrichment(run2, chunkMap as any);
+    coordinator.startChunkEnrichment(run2, chunkMap);
     await coordinator.awaitCompletion(run2);
 
     const chunkEvents = run2Events.filter((e) => e.level === "chunk");

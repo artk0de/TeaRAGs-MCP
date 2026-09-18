@@ -73,7 +73,7 @@ export class FileOutlineStrategy extends BaseExploreStrategy {
 
     const isDoc = chunks.some((c) => c.payload.isDocumentation);
     const grouped = isDoc ? [DocChunkGrouper.group(chunks)] : [CodeChunkGrouper.groupFile(chunks)];
-    return grouped as ExploreResult[];
+    return grouped;
   }
 
   /**

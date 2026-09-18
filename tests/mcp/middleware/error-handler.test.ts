@@ -4,7 +4,6 @@
 
 import { describe, expect, it, vi } from "vitest";
 
-import type { ErrorCode } from "../../../src/core/contracts/errors.js";
 import { TeaRagsError, UnknownError } from "../../../src/core/infra/errors.js";
 import type { McpToolResult } from "../../../src/mcp/format.js";
 import {
@@ -18,7 +17,7 @@ import {
 class TestError extends TeaRagsError {
   constructor(message: string) {
     super({
-      code: "TEST_ERROR" as ErrorCode,
+      code: "TEST_ERROR",
       message,
       hint: "This is a test hint",
       httpStatus: 400,
@@ -99,7 +98,7 @@ describe("errorHandlerMiddleware", () => {
 class InfraOllamaError extends TeaRagsError {
   constructor() {
     super({
-      code: "INFRA_OLLAMA_UNAVAILABLE" as ErrorCode,
+      code: "INFRA_OLLAMA_UNAVAILABLE",
       message: "Ollama is not reachable at http://primary:11434",
       hint: "Start Ollama",
       httpStatus: 503,
@@ -110,7 +109,7 @@ class InfraOllamaError extends TeaRagsError {
 class InfraQdrantError extends TeaRagsError {
   constructor() {
     super({
-      code: "INFRA_QDRANT_UNAVAILABLE" as ErrorCode,
+      code: "INFRA_QDRANT_UNAVAILABLE",
       message: "Qdrant is not reachable at http://localhost:6333",
       hint: "Start Qdrant",
       httpStatus: 503,
@@ -121,7 +120,7 @@ class InfraQdrantError extends TeaRagsError {
 class InfraQdrantStartingError extends TeaRagsError {
   constructor() {
     super({
-      code: "INFRA_QDRANT_STARTING" as ErrorCode,
+      code: "INFRA_QDRANT_STARTING",
       message: "Qdrant daemon is starting up",
       hint: "Wait a few seconds and retry",
       httpStatus: 503,
@@ -132,7 +131,7 @@ class InfraQdrantStartingError extends TeaRagsError {
 class InfraQdrantRecoveringError extends TeaRagsError {
   constructor() {
     super({
-      code: "INFRA_QDRANT_RECOVERING" as ErrorCode,
+      code: "INFRA_QDRANT_RECOVERING",
       message: "Qdrant is recovering from snapshot",
       hint: "Retry once recovery completes",
       httpStatus: 503,

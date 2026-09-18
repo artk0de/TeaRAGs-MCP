@@ -10,7 +10,6 @@ import { describe, expect, it, vi } from "vitest";
 
 import { CodegraphDaemonStaleBuildError } from "../../../../../src/core/adapters/duckdb/errors.js";
 import { GraphFacade } from "../../../../../src/core/api/internal/facades/graph-facade.js";
-import type { SymbolId } from "../../../../../src/core/contracts/types/codegraph.js";
 
 describe("GraphFacade — stale daemon build with an existing graph database (a43tr S2)", () => {
   const stale = new CodegraphDaemonStaleBuildError("/tmp/cg/daemon.sock", "CLIENT-OLD", "DAEMON-NEW", [
@@ -42,6 +41,6 @@ describe("GraphFacade — stale daemon build with an existing graph database (a4
   it("resolveSymbolChunk keeps the shared rethrow — degradation belongs to the optional caller", async () => {
     const facade = makeFacade();
 
-    await expect(facade.resolveSymbolChunk({ collection: "code_x" }, "A#b" as SymbolId)).rejects.toBe(stale);
+    await expect(facade.resolveSymbolChunk({ collection: "code_x" }, "A#b")).rejects.toBe(stale);
   });
 });

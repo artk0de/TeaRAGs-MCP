@@ -99,9 +99,9 @@ describe("reranker", () => {
       const results = [
         createResult(0.8, 30, 5, false, {
           blameDominantAuthorPct: 90,
-          blameAuthors: ["alice", "bob", "charlie"] as any,
+          blameAuthors: ["alice", "bob", "charlie"],
         }),
-        createResult(0.8, 30, 5, false, { blameDominantAuthorPct: 30, blameAuthors: ["a", "b", "c", "d"] as any }),
+        createResult(0.8, 30, 5, false, { blameDominantAuthorPct: 30, blameAuthors: ["a", "b", "c", "d"] }),
       ];
       const reranked = await reranker.rerank(results, "ownership", "semantic_search");
       // 90% live-line ownership should rank higher
@@ -185,12 +185,12 @@ describe("reranker", () => {
         createResult(0.8, 30, 5, false, {
           blameContributorCount: 5,
           blameDominantAuthorPct: 80,
-          blameAuthors: ["a", "b", "c", "d", "e"] as any,
+          blameAuthors: ["a", "b", "c", "d", "e"],
         }),
         createResult(0.8, 30, 5, false, {
           blameContributorCount: 1,
           blameDominantAuthorPct: 80,
-          blameAuthors: ["alice"] as any,
+          blameAuthors: ["alice"],
         }),
       ];
       const reranked = await reranker.rerank(
@@ -394,8 +394,8 @@ describe("reranker", () => {
 
     it("should not dampen ownership when commitCount >= 5 (ownership threshold)", async () => {
       const results = [
-        createResult(0.8, 30, 6, false, { blameDominantAuthorPct: 30, blameAuthors: ["a", "b", "c", "d"] as any }),
-        createResult(0.8, 30, 6, false, { blameDominantAuthorPct: 90, blameAuthors: ["alice", "bob"] as any }),
+        createResult(0.8, 30, 6, false, { blameDominantAuthorPct: 30, blameAuthors: ["a", "b", "c", "d"] }),
+        createResult(0.8, 30, 6, false, { blameDominantAuthorPct: 90, blameAuthors: ["alice", "bob"] }),
       ];
       const reranked = await reranker.rerank(results, { custom: { ownership: 1.0 } }, "semantic_search");
       expect(reranked[0].payload?.git?.blameDominantAuthorPct).toBe(90);
@@ -724,7 +724,7 @@ describe("reranker", () => {
           bugFixRate: 40,
           churnVolatility: 20,
           ...git,
-        } as any,
+        },
       },
     });
 
@@ -1038,7 +1038,7 @@ describe("reranker", () => {
     });
 
     it("should handle unknown preset gracefully", async () => {
-      const result = await reranker.rerank([createResult(0.9, 10, 5)], "unknownPreset" as any, "semantic_search");
+      const result = await reranker.rerank([createResult(0.9, 10, 5)], "unknownPreset", "semantic_search");
       // Should fall back to relevance
       expect(result).toHaveLength(1);
     });

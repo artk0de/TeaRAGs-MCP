@@ -70,7 +70,7 @@ export class StatsCache {
         for (const [lang, signals] of Object.entries(data.perLanguage ?? {})) {
           const langMap = new Map<string, ScopedSignalStats>();
           for (const [key, val] of Object.entries(signals)) {
-            langMap.set(key, val as ScopedSignalStats);
+            langMap.set(key, val);
           }
           perLanguage.set(lang, langMap);
         }
@@ -101,7 +101,7 @@ export class StatsCache {
       perLanguageObj[lang] = signalObj;
     }
     const content: StatsFileContentV6 = {
-      version: CURRENT_VERSION as 6,
+      version: CURRENT_VERSION,
       collectionName,
       computedAt: stats.computedAt,
       perSignal: Object.fromEntries(stats.perSignal),

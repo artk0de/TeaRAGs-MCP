@@ -21,7 +21,7 @@ import { catalogueFor, composeRubyCatalogue, type RubyDslCatalogue } from "./dsl
  */
 export function gemfileGemNames(content: string): Set<string> {
   const parser = new Parser();
-  parser.setLanguage(RbLang as unknown as Parser.Language);
+  parser.setLanguage(RbLang);
   const tree = parser.parse(content);
   const gems = new Set<string>();
 

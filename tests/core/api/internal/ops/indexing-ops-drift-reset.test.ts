@@ -91,7 +91,7 @@ describe("IndexingOps — drift consumption reset", () => {
     const ops = new IndexingOps(
       makeDeps({
         driftReporter: run.driftReporter,
-        collectionRegistry: run.collectionRegistry as never,
+        collectionRegistry: run.collectionRegistry,
         languageCodeVersions,
       }),
     );
@@ -105,7 +105,7 @@ describe("IndexingOps — drift consumption reset", () => {
     const run = makeRun();
     const deps = makeDeps({
       driftReporter: run.driftReporter,
-      collectionRegistry: run.collectionRegistry as never,
+      collectionRegistry: run.collectionRegistry,
       languageCodeVersions,
       qdrant: {
         collectionExists: vi.fn().mockResolvedValue(false),
@@ -123,7 +123,7 @@ describe("IndexingOps — drift consumption reset", () => {
     const ops = new IndexingOps(
       makeDeps({
         driftReporter: run.driftReporter,
-        collectionRegistry: run.collectionRegistry as never,
+        collectionRegistry: run.collectionRegistry,
         languageCodeVersions,
       }),
     );
@@ -138,7 +138,7 @@ describe("IndexingOps — drift consumption reset", () => {
     const ops = new IndexingOps(
       makeDeps({
         driftReporter: run.driftReporter,
-        collectionRegistry: run.collectionRegistry as never,
+        collectionRegistry: run.collectionRegistry,
         languageCodeVersions,
       }),
     );
@@ -231,7 +231,7 @@ describe("IndexingOps — drift consumption reset", () => {
       const ops = new IndexingOps(
         makeDeps({
           driftReporter: run.driftReporter,
-          collectionRegistry: run.collectionRegistry as never,
+          collectionRegistry: run.collectionRegistry,
           languageCodeVersions,
           resolveCollectionForPath,
         }),
@@ -247,7 +247,7 @@ describe("IndexingOps — drift consumption reset", () => {
       const ops = new IndexingOps(
         makeDeps({
           driftReporter: run.driftReporter,
-          collectionRegistry: run.collectionRegistry as never,
+          collectionRegistry: run.collectionRegistry,
           languageCodeVersions,
           resolveCollectionForPath,
         }),
@@ -266,7 +266,7 @@ describe("IndexingOps — drift consumption reset", () => {
       const run = makeRun();
       const deps = makeDeps({
         driftReporter: run.driftReporter,
-        collectionRegistry: run.collectionRegistry as never,
+        collectionRegistry: run.collectionRegistry,
         languageCodeVersions,
         resolveCollectionForPath,
         qdrant: {

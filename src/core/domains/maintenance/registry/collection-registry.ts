@@ -186,7 +186,7 @@ export class CollectionRegistry {
     }
     if (config === null) {
       const { autoUpdate: _dropped, ...rest } = entry;
-      map.set(collectionName, rest as CollectionEntry);
+      map.set(collectionName, rest);
     } else {
       map.set(collectionName, { ...entry, autoUpdate: config });
     }

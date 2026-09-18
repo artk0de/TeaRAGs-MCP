@@ -38,7 +38,7 @@ function walkedFile(relPath: string, extra: Partial<FileExtraction> = {}): FileE
     fileScope: [],
     chunks: [],
     ...extra,
-  } as unknown as FileExtraction;
+  };
 }
 
 /** One persisted row for a file this run did not walk. */
@@ -81,7 +81,7 @@ describe("CodegraphRunState.seal hydrates the pass-1 aggregates of files this ru
       walkedFile("app/models.py", {
         classAncestors: { "app/models.py::Site": ["AbstractModel"] },
         classExtends: { Site: "AbstractModel" },
-      } as Partial<FileExtraction>),
+      }),
       [],
     );
 
@@ -131,7 +131,7 @@ describe("CodegraphRunState.seal hydrates the pass-1 aggregates of files this ru
     runState.absorb(
       walkedFile("app/models.py", {
         classAncestors: { "app/models.py::Site": ["NetBoxModel"] },
-      } as Partial<FileExtraction>),
+      }),
       [],
     );
 
@@ -178,7 +178,7 @@ describe("CodegraphRunState.seal hydrates the Python run-global channels", () =>
     runState.absorb(
       walkedFile("app/models.py", {
         classFieldTypesByClassKey: { "app/models.py::SyncServiceBase": { client: "AsyncClient" } },
-      } as Partial<FileExtraction>),
+      }),
       [],
     );
 
@@ -229,7 +229,7 @@ describe("CodegraphRunState.seal hydrates the Python run-global channels", () =>
   it("guards the re-export merge on the declaring relPath, not on an exported name", async () => {
     const runState = new CodegraphRunState();
     const walked = [{ exportedName: "Site", sourceModule: ".site", sourceName: "Site" }];
-    runState.absorb(walkedFile("core/models/__init__.py", { moduleReexports: walked } as Partial<FileExtraction>), []);
+    runState.absorb(walkedFile("core/models/__init__.py", { moduleReexports: walked }), []);
 
     // Same relPath, stale content. The SKIP filter already drops a walked file's
     // own row; the guard is what makes "the walked list is the whole truth"
@@ -257,7 +257,7 @@ describe("CodegraphRunState.seal hydrates the Python run-global channels", () =>
  */
 describe("CodegraphRunState.seal hydrates the Ruby schema-table overrides", () => {
   const rubyFile = (relPath: string, extra: Partial<FileExtraction> = {}): FileExtraction =>
-    walkedFile(relPath, { language: "ruby", ...extra } as Partial<FileExtraction>);
+    walkedFile(relPath, { language: "ruby", ...extra });
 
   const rubySlice = (relPath: string, classSchemaTables: Record<string, string>): CodegraphPass1FileAggregates => ({
     relPath,
@@ -278,10 +278,7 @@ describe("CodegraphRunState.seal hydrates the Ruby schema-table overrides", () =
 
   it("never lets a hydrated override displace the one this run walked", async () => {
     const runState = new CodegraphRunState();
-    runState.absorb(
-      rubyFile("app/models/firm.rb", { classSchemaTables: { Firm: "companies" } } as Partial<FileExtraction>),
-      [],
-    );
+    runState.absorb(rubyFile("app/models/firm.rb", { classSchemaTables: { Firm: "companies" } }), []);
 
     await runState.seal(noopTable, async () => [rubySlice("app/models/legacy.rb", { Firm: "firms" })]);
 
@@ -305,7 +302,7 @@ describe("CodegraphRunState.absorb collects the Python run-global channels", () 
     runState.absorb(
       walkedFile("app/models.py", {
         classFieldTypesByClassKey: { "app/models.py::Site": { objects: "SiteQuerySet" } },
-      } as Partial<FileExtraction>),
+      }),
       [],
     );
     runState.absorb(
@@ -316,7 +313,7 @@ describe("CodegraphRunState.absorb collects the Python run-global channels", () 
           // Same key as above, a second field — must merge, not replace.
           "app/models.py::Site": { tags: "TagManager" },
         },
-      } as Partial<FileExtraction>),
+      }),
       [],
     );
 
@@ -330,18 +327,12 @@ describe("CodegraphRunState.absorb collects the Python run-global channels", () 
     const runState = new CodegraphRunState();
     const reexports = [{ exportedName: "*", sourceModule: ".object_types" }];
 
-    runState.absorb(
-      walkedFile("core/models/__init__.py", { moduleReexports: reexports } as Partial<FileExtraction>),
-      [],
-    );
+    runState.absorb(walkedFile("core/models/__init__.py", { moduleReexports: reexports }), []);
     expect(runState.moduleReexports).toEqual({ "core/models/__init__.py": reexports });
 
     // The file is re-walked and now re-exports only one module.
     const narrowed = [{ exportedName: "*", sourceModule: ".jobs" }];
-    runState.absorb(
-      walkedFile("core/models/__init__.py", { moduleReexports: narrowed } as Partial<FileExtraction>),
-      [],
-    );
+    runState.absorb(walkedFile("core/models/__init__.py", { moduleReexports: narrowed }), []);
 
     expect(runState.moduleReexports).toEqual({ "core/models/__init__.py": narrowed });
   });

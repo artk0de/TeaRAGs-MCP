@@ -208,7 +208,7 @@ export class QdrantScroller {
         if (point.payload !== null && point.payload !== undefined) {
           results.push({
             id: point.id,
-            payload: point.payload as Record<string, unknown>,
+            payload: point.payload,
           });
         }
       }

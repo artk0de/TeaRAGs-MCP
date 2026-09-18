@@ -44,7 +44,7 @@ function fakeDiscovery(entries: { commit: CommitInfo; changedFiles: string[] }[]
   return {
     commitsForFiles: vi.fn().mockResolvedValue(entries),
     getBugFixShas: vi.fn().mockResolvedValue(new Set<string>()),
-  } as never;
+  };
 }
 
 const chunkMapFor = (file: string) =>

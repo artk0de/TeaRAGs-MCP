@@ -96,7 +96,7 @@ describe("createApp", () => {
   it("delegates semanticSearch to explore facade", async () => {
     const { explore, ...rest } = makeDeps();
     const app = createApp({ explore, ...rest } as never);
-    await app.semanticSearch({ query: "test", path: "/x" } as never);
+    await app.semanticSearch({ query: "test", path: "/x" });
     expect(explore.semanticSearch).toHaveBeenCalledTimes(1);
   });
 
@@ -129,7 +129,7 @@ describe("createApp", () => {
     // fallback branch must surface empties rather than crash the MCP tool.
     const deps = makeDeps();
     const app = createApp(deps as never);
-    await expect(app.getCallees({ symbolId: "X" } as never)).resolves.toEqual({ callees: [] });
+    await expect(app.getCallees({ symbolId: "X" })).resolves.toEqual({ callees: [] });
     await expect(app.findCycles({ scope: "file" } as never)).resolves.toEqual({ cycles: [] });
   });
 

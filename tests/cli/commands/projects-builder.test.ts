@@ -30,9 +30,9 @@ describe("projectsCommand yargs builder/handler wiring", () => {
     // Replace process.exit with a throwing stub so any unexpected exit
     // (yargs error path, unknown subcommand, validation failure) surfaces
     // as a test failure instead of killing the vitest worker.
-    exitSpy = vi.spyOn(process, "exit").mockImplementation((() => {
+    exitSpy = vi.spyOn(process, "exit").mockImplementation(() => {
       throw new Error("process.exit called");
-    }) as (code?: number) => never);
+    });
     stdoutSpy = vi.spyOn(process.stdout, "write").mockImplementation(() => true);
     stderrSpy = vi.spyOn(process.stderr, "write").mockImplementation(() => true);
   });

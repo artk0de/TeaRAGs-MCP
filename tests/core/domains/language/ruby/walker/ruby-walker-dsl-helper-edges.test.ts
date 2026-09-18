@@ -25,7 +25,7 @@ type Chunk = { symbolId: string; scope: string[]; startLine: number; endLine: nu
 
 function extract(src: string, chunks: Chunk[]): FileExtraction {
   const parser = new Parser();
-  parser.setLanguage(RbLang as unknown as Parser.Language);
+  parser.setLanguage(RbLang);
   return extractFromRubyFile({ tree: parser.parse(src), code: src, relPath: "x.rb", language: "ruby", chunks });
 }
 
@@ -54,7 +54,7 @@ describe("ruby-walker DSL helper edges — synthetic CallRefs", () => {
     expect(calls).toContainEqual({ receiver: "Admin::StatusPolicy", member: "edit?" });
   });
 
-  it("route `get \"/x\", to: \"posts#index\"` → `PostsController#index`", () => {
+  it('route `get "/x", to: "posts#index"` → `PostsController#index`', () => {
     const calls = callsOf("Rails.application.routes.draw do\n  get '/x', to: 'posts#index'\nend\n", [
       { symbolId: "routes", scope: [], startLine: 1, endLine: 3 },
     ]);
@@ -77,7 +77,7 @@ describe("ruby-walker DSL helper edges — synthetic CallRefs", () => {
     expect(calls).toContainEqual({ receiver: null, member: "upcase" });
   });
 
-  it("`require \"foo\"` emits an explicit-require ImportRef", () => {
+  it('`require "foo"` emits an explicit-require ImportRef', () => {
     const r = extract("require 'foo'\n", [{ symbolId: "top", scope: [], startLine: 1, endLine: 1 }]);
     expect(r.imports.map((i) => i.importText)).toContain("foo");
   });

@@ -124,7 +124,7 @@ describe("CallEdgeResolutionRunner picks its run-global inputs in constant time 
         functionReturnTypes,
         ivarTypes,
         structuredReturnTypes,
-      } as unknown as FileExtraction,
+      },
       [],
     );
   }
@@ -155,11 +155,11 @@ describe("CallEdgeResolutionRunner picks its run-global inputs in constant time 
       runState.structuredReturnTypes,
     ]);
     let keysAllocated = 0;
-    Object.keys = ((target: object): string[] => {
+    Object.keys = (target: object): string[] => {
       const keys = originalKeys(target);
       if (runGlobals.has(target)) keysAllocated += keys.length;
       return keys;
-    }) as typeof Object.keys;
+    };
 
     for (let i = 0; i < 10; i++) runner.resolve(emptyExtraction(`app/models/m${i}.rb`), noSymbols);
 
@@ -216,7 +216,7 @@ describe("CallEdgeResolutionRunner picks its run-global inputs in constant time 
     // The field is PRESENT but contributes no entry — `Object.keys().length > 0`
     // reads false here, and a flag set on field presence rather than on an
     // actual write would read true.
-    runState.absorb({ ...emptyExtraction("app/models/empty.rb"), classAncestors: {} } as unknown as FileExtraction, []);
+    runState.absorb({ ...emptyExtraction("app/models/empty.rb"), classAncestors: {} }, []);
     const captured: CallContext[] = [];
     const resolver = {
       resolve: () => null,

@@ -69,7 +69,7 @@ function gitProvider(): EnrichmentProvider {
     resolveRoot: (p: string) => p,
     buildFileSignals: vi.fn().mockResolvedValue(new Map()),
     buildChunkSignals: vi.fn().mockResolvedValue(new Map()),
-  } as unknown as EnrichmentProvider;
+  };
 }
 
 describe("chunk counts — status, metrics and the recompute agree on one collection", () => {

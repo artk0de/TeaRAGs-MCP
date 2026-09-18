@@ -17,7 +17,7 @@ import { extractFromPythonFile } from "../../../../../../src/core/domains/langua
 
 function importsOf(src: string, relPath = "pkg/a.py") {
   const parser = new Parser();
-  parser.setLanguage(PyLang as unknown as Parser.Language);
+  parser.setLanguage(PyLang);
   const tree = parser.parse(src);
   return extractFromPythonFile({
     tree,

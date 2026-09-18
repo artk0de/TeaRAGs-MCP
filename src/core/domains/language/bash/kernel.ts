@@ -37,7 +37,7 @@ interface TreeSitterLanguageModule {
 }
 
 export const bashKernel: LanguageKernel = {
-  loadModule: async () => import("tree-sitter-bash") as Promise<TreeSitterLanguageModule>,
+  loadModule: async () => import("tree-sitter-bash"),
   extractLanguage: (mod: TreeSitterLanguageModule) => mod.default ?? mod,
   scopeSeparator: ".",
   isInstanceMethod: (node: AstNode) => classifyMethod(node) === "instance",

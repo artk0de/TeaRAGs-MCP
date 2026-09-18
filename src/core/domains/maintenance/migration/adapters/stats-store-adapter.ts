@@ -17,8 +17,6 @@ import type { StatsStore } from "../types.js";
 /** Matches the sample size the indexing path uses, so both paths agree. */
 export const SCORE_BACKGROUND_SAMPLE = 1200;
 
-type SampleFn = (qdrant: QdrantManager, collection: string, maxVectors: number) => Promise<number[][]>;
-
 export class StatsStoreAdapter implements StatsStore {
   constructor(
     private readonly qdrant: QdrantManager,
@@ -26,7 +24,7 @@ export class StatsStoreAdapter implements StatsStore {
     private readonly sampleSize: number = SCORE_BACKGROUND_SAMPLE,
     /** Injected for tests; production always samples the live collection. */
     private readonly sample: (collection: string, maxVectors: number) => Promise<number[][]> = async (c, n) =>
-      (sampleVectors as SampleFn)(this.qdrant, c, n),
+      sampleVectors(this.qdrant, c, n),
   ) {}
 
   async getBackgroundState(collection: string): Promise<"none" | "missing-background" | "complete"> {

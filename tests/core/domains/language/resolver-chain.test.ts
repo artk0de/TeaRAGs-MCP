@@ -14,8 +14,7 @@ import type {
 } from "../../../../src/core/contracts/types/language.js";
 import { resolveDispatchViaComponents, resolveViaChain } from "../../../../src/core/domains/language/resolver-chain.js";
 
-const target = (id: string): SymbolResolutionTarget =>
-  ({ targetRelPath: "a.ts", targetSymbolId: id }) as unknown as SymbolResolutionTarget;
+const target = (id: string): SymbolResolutionTarget => ({ targetRelPath: "a.ts", targetSymbolId: id });
 const strategy = (name: string, outcome: SymbolResolutionOutcome): SymbolResolutionStrategy => ({
   name,
   attempt: vi.fn().mockReturnValue(outcome),
@@ -80,14 +79,13 @@ describe("resolveViaChain", () => {
   });
 });
 
-const edge = (rel: string): DispatchEdge =>
-  ({
-    sourceSymbolId: null,
-    targetRelPath: rel,
-    targetSymbolId: null,
-    edgeKind: "dynamic",
-    confidence: 1,
-  }) as DispatchEdge;
+const edge = (rel: string): DispatchEdge => ({
+  sourceSymbolId: null,
+  targetRelPath: rel,
+  targetSymbolId: null,
+  edgeKind: "dynamic",
+  confidence: 1,
+});
 const component = (edges: DispatchEdge[]): DispatchResolverComponent => ({
   resolveDispatch: () => ({ kind: "edges", edges }),
 });

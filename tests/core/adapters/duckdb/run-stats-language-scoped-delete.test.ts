@@ -29,7 +29,7 @@ function row(language: string, receiverKind: string): ResolveRunStatsRow {
     resolved: 7,
     externalSkipped: 1,
     unresolvable: 2,
-  } as ResolveRunStatsRow;
+  };
 }
 
 describe("DuckDbRunStatsStore#recordRunStats — language-scoped overwrite", () => {

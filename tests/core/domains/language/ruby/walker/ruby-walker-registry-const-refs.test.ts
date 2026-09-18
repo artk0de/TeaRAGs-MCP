@@ -17,7 +17,7 @@ type Chunk = { symbolId: string; scope: string[]; startLine: number; endLine: nu
 
 function refsOf(src: string, chunks: Chunk[]): { receiver: string | null; member: string }[] {
   const parser = new Parser();
-  parser.setLanguage(RbLang as unknown as Parser.Language);
+  parser.setLanguage(RbLang);
   const tree = parser.parse(src);
   const r = extractFromRubyFile({ tree, code: src, relPath: "x.rb", language: "ruby", chunks });
   return r.chunks.flatMap((c) => c.calls).map((c) => ({ receiver: c.receiver, member: c.member }));

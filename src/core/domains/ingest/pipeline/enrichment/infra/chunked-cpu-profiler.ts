@@ -83,7 +83,7 @@ export function chunkedCpuProfilerConfigFromEnv(
 
 function defaultDeps(): ChunkedCpuProfilerDeps {
   return {
-    createSession: () => new Session() as unknown as InspectorSessionLike,
+    createSession: () => new Session(),
     mkdir: async (path) => {
       await mkdir(path, { recursive: true });
     },

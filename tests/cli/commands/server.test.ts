@@ -42,7 +42,7 @@ describe("server command", () => {
     vi.mocked(createConfiguredServer).mockReturnValue({ sendLoggingMessage: vi.fn() } as any);
     vi.mocked(loadPrompts).mockReturnValue({} as any);
     vi.mocked(startStdioServer).mockResolvedValue(undefined);
-    vi.mocked(startHttpServer).mockResolvedValue(undefined as any);
+    vi.mocked(startHttpServer).mockResolvedValue(undefined);
   });
 
   it("should call migrateHomeDir on startup", async () => {

@@ -4,14 +4,7 @@
 
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 
-import type {
-  ExploreResponse,
-  FindSimilarRequest,
-  FindSymbolRequest,
-  HybridSearchRequest,
-  RankChunksRequest,
-  SemanticSearchRequest,
-} from "../../core/api/public/dto/explore.js";
+import type { ExploreResponse, HybridSearchRequest, SemanticSearchRequest } from "../../core/api/public/dto/explore.js";
 import type { App, SchemaBuilder } from "../../core/api/public/index.js";
 import { appendAutoUpdateHint, sanitizeRerank, type McpToolResult } from "../format.js";
 import type { RegisterToolFn } from "../middleware/error-handler.js";
@@ -90,7 +83,7 @@ const SEARCH_TOOLS: readonly SearchToolDef[] = [
       app.rankChunks({
         ...rest,
         rerank: sanitizeRerank(rerank as RerankParam) as string | { custom: Record<string, number> },
-      } as RankChunksRequest),
+      }),
   },
   {
     name: "find_similar",
@@ -110,7 +103,7 @@ const SEARCH_TOOLS: readonly SearchToolDef[] = [
       app.findSimilar({
         ...rest,
         rerank: sanitizeRerank(rerank as RerankParam),
-      } as FindSimilarRequest),
+      }),
   },
   {
     name: "find_symbol",
@@ -133,7 +126,7 @@ const SEARCH_TOOLS: readonly SearchToolDef[] = [
       app.findSymbol({
         ...rest,
         rerank: sanitizeRerank(rerank as RerankParam),
-      } as FindSymbolRequest),
+      }),
   },
 ];
 

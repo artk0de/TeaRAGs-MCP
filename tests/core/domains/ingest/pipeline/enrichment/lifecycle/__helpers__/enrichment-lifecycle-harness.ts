@@ -329,9 +329,7 @@ export class ObservedEnrichmentExecutor extends WorkerPoolEnrichmentExecutor {
 
 /** The daemon's full op table minus `ops` — a real daemon standing in for one from an older build. */
 export function daemonOpsWithout(...ops: DaemonOp[]): DaemonOpCommandTable {
-  return Object.fromEntries(
-    Object.entries(DAEMON_OP_COMMANDS).filter(([op]) => !ops.includes(op as DaemonOp)),
-  ) as DaemonOpCommandTable;
+  return Object.fromEntries(Object.entries(DAEMON_OP_COMMANDS).filter(([op]) => !ops.includes(op as DaemonOp)));
 }
 
 export interface CodegraphFixtureOptions {

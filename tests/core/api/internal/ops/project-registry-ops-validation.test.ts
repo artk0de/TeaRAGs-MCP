@@ -240,7 +240,7 @@ describe("Project registry — additional coverage for merged branches", () => {
         getBaseUrl: () => "http://gpu-server:11434",
         getFallbackBaseUrl: () => "http://127.0.0.1:11434",
       };
-      const ops = new ProjectRegistryOps({ registry, embeddings: embeddings as never });
+      const ops = new ProjectRegistryOps({ registry, embeddings });
 
       const { collectionName } = await ops.register({ path: dir, name: "primary-tracked" });
       const entry = registry.get(collectionName);
@@ -260,7 +260,7 @@ describe("Project registry — additional coverage for merged branches", () => {
         getBaseUrl: () => "http://127.0.0.1:11434",
         getFallbackBaseUrl: () => undefined,
       };
-      const ops = new ProjectRegistryOps({ registry, embeddings: embeddings as never });
+      const ops = new ProjectRegistryOps({ registry, embeddings });
 
       const { collectionName } = await ops.register({ path: dir, name: "no-fallback" });
       const entry = registry.get(collectionName);

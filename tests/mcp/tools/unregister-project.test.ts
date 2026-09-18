@@ -63,7 +63,7 @@ describe("registerUnregisterProjectTool — unregister_project", () => {
 
   it("returns removed:false when project was not registered (idempotent)", async () => {
     const unregister = vi.fn().mockResolvedValue({ removed: false });
-    const { captured } = makeHarness(unregister as unknown as App["unregisterProject"]);
+    const { captured } = makeHarness(unregister);
     const tool = captured.find((t) => t.name === "unregister_project")!;
     const result = (await tool.handler({ name: "missing" }, {})) as {
       content: { type: string; text: string }[];

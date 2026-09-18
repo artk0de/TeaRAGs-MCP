@@ -156,7 +156,7 @@ describe("TSCallResolver — wrapper-exported JSX components pin a symbol (bd te
         },
       ],
       symbolTable: symbolTable(),
-    } as CallContext;
+    };
   }
 
   function jsxCall(member: string, startLine: number): CallRef {

@@ -14,7 +14,6 @@ import type { VcsGitAdapter } from "../../../adapters/vcs/git/adapter.js";
 import { resolveRepoRoot } from "../../../adapters/vcs/git/git-cli/client.js";
 import type {
   BlameLine,
-  BlobBatchReader,
   CommitInfo,
   FileChurnData,
   GitAdapterKind,
@@ -180,13 +179,7 @@ export class GitEnrichmentProvider implements EnrichmentProvider {
     this.fileSignalTransform = (data, maxEndLine) => {
       const churnData = data as unknown as FileChurnData;
       const blameLines = this.blameByChurnData.get(churnData);
-      return assembleFileSignals(
-        churnData,
-        maxEndLine,
-        this.squashOpts,
-        this.bugFixShas,
-        blameLines,
-      ) as unknown as FileSignalOverlay;
+      return assembleFileSignals(churnData, maxEndLine, this.squashOpts, this.bugFixShas, blameLines);
     };
   }
 
@@ -605,7 +598,7 @@ export class GitEnrichmentProvider implements EnrichmentProvider {
         this.blameByRelPath,
         // kc93: run-scoped reader shared across batches when ChunkPhase injects
         // one. The duck-typed contract shape is structurally BlobBatchReader.
-        options?.blobReader as BlobBatchReader | undefined,
+        options?.blobReader,
         // 7gnre: run-scoped (commitSha, filePath) → hunks memo shared across
         // batches — the same sweep commits are otherwise re-diffed per batch.
         options?.diffMemo,
@@ -629,7 +622,7 @@ export class GitEnrichmentProvider implements EnrichmentProvider {
     for (const [filePath, overlayMap] of rawResult) {
       const chunkEntries = new Map<string, ChunkSignalOverlay>();
       for (const [chunkId, overlay] of overlayMap) {
-        chunkEntries.set(chunkId, overlay as unknown as ChunkSignalOverlay);
+        chunkEntries.set(chunkId, overlay);
       }
       result.set(filePath, chunkEntries);
     }
@@ -661,10 +654,7 @@ export class GitEnrichmentProvider implements EnrichmentProvider {
     let commitEntries: { commit: CommitInfo; changedFiles: string[] }[];
     try {
       // The contract duck type's commit shape is structurally CommitInfo.
-      commitEntries = (await discovery.commitsForFiles([...relativeChunkMap.keys()])) as {
-        commit: CommitInfo;
-        changedFiles: string[];
-      }[];
+      commitEntries = await discovery.commitsForFiles([...relativeChunkMap.keys()]);
     } catch (error) {
       if (isDebug()) {
         console.error(
