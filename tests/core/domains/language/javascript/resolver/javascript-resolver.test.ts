@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import type { CallContext, FileExtraction } from "../../../../../../src/core/contracts/types/codegraph.js";
 import type { LanguageFactoryDescriptor } from "../../../../../../src/core/contracts/types/language.js";
+import { JavaScriptLanguage } from "../../../../../../src/core/domains/language/javascript/index.js";
 import {
   JavascriptCallResolver,
   mapJavascriptImportToFile,
@@ -60,11 +61,18 @@ describe("mapJavascriptImportToFile", () => {
 });
 
 describe("JavaScript import file edges (bd tea-rags-mcp-x9qsh)", () => {
-  /** File-edge targets the provider's pass-2 runner persists for one JS file. */
-  function fileEdgeTargets(relPath: string, importTexts: string[]): string[] {
+  /**
+   * File-edge targets the provider's pass-2 runner persists for one JS file,
+   * through the PRODUCTION seam — `JavaScriptLanguage#resolver`, the object
+   * the codegraph provider's language factory hands the runner — over an index
+   * holding `projectFiles`. Driving a bare `JavascriptCallResolver` instead is
+   * what let a resolver method the facade never forwarded pass here while the
+   * provider fell back to the synthesised-call loop.
+   */
+  function fileEdgeTargets(relPath: string, importTexts: string[], projectFiles: string[]): string[] {
     const factory = {
       supported: () => ["javascript"],
-      create: () => ({ resolver: new JavascriptCallResolver() }),
+      create: () => new JavaScriptLanguage(),
     } as unknown as LanguageFactoryDescriptor;
     const runner = new CallEdgeResolutionRunner(factory, new CodegraphRunState());
     const extraction: FileExtraction = {
@@ -74,7 +82,9 @@ describe("JavaScript import file edges (bd tea-rags-mcp-x9qsh)", () => {
       chunks: [],
       fileScope: [],
     };
-    return runner.resolve(extraction, new InMemoryGlobalSymbolTable()).fileEdges.map((edge) => edge.targetRelPath);
+    const table = new InMemoryGlobalSymbolTable();
+    table.hydrateFiles([relPath, ...projectFiles]);
+    return runner.resolve(extraction, table).fileEdges.map((edge) => edge.targetRelPath);
   }
 
   it("persists a JS import of a TypeScript file as an edge to that file", () => {
@@ -82,9 +92,13 @@ describe("JavaScript import file edges (bd tea-rags-mcp-x9qsh)", () => {
     // runs: `scripts/spikes/ts-live-resolve-worker-boot.js` doing
     // `await import("./ts-live-resolve-worker.ts")` was stored with target
     // `ts-live-resolve-worker.ts.js`, so the edge pointed at nothing.
-    expect(fileEdgeTargets("scripts/spikes/ts-live-resolve-worker-boot.js", ["./ts-live-resolve-worker.ts"])).toEqual([
-      "scripts/spikes/ts-live-resolve-worker.ts",
-    ]);
+    expect(
+      fileEdgeTargets(
+        "scripts/spikes/ts-live-resolve-worker-boot.js",
+        ["./ts-live-resolve-worker.ts"],
+        ["scripts/spikes/ts-live-resolve-worker.ts"],
+      ),
+    ).toEqual(["scripts/spikes/ts-live-resolve-worker.ts"]);
   });
 
   it("persists an import that writes its .js extension as an edge to that file", () => {
@@ -92,34 +106,54 @@ describe("JavaScript import file edges (bd tea-rags-mcp-x9qsh)", () => {
     // synthesised-call fallback matched the import by basename: receiver
     // `render-changelog.js` against the import's stripped `render-changelog`,
     // a mismatch that dropped every such edge (6 on this repo's own scripts).
-    expect(fileEdgeTargets("scripts/retro-changelog.js", ["./lib/render-changelog.js"])).toEqual([
-      "scripts/lib/render-changelog.js",
-    ]);
-    expect(fileEdgeTargets("scripts/postinstall.mjs", ["./install-fish-completion.mjs"])).toEqual([
-      "scripts/install-fish-completion.mjs",
-    ]);
+    expect(
+      fileEdgeTargets("scripts/retro-changelog.js", ["./lib/render-changelog.js"], ["scripts/lib/render-changelog.js"]),
+    ).toEqual(["scripts/lib/render-changelog.js"]);
+    expect(
+      fileEdgeTargets(
+        "scripts/postinstall.mjs",
+        ["./install-fish-completion.mjs"],
+        ["scripts/install-fish-completion.mjs"],
+      ),
+    ).toEqual(["scripts/install-fish-completion.mjs"]);
   });
 
   it("keeps one edge per imported file when two imports share a basename", () => {
     // Basename matching sent both `util` imports to whichever came first.
-    expect(fileEdgeTargets("src/main.js", ["./a/util", "./b/util.js"])).toEqual(["src/a/util.js", "src/b/util.js"]);
+    expect(fileEdgeTargets("src/main.js", ["./a/util", "./b/util.js"], ["src/a/util.js", "src/b/util.js"])).toEqual([
+      "src/a/util.js",
+      "src/b/util.js",
+    ]);
   });
 
   it("maps an extensionless import or require to the .js file", () => {
-    expect(fileEdgeTargets("src/main.js", ["./config", "../shared/log"])).toEqual(["src/config.js", "shared/log.js"]);
+    expect(fileEdgeTargets("src/main.js", ["./config", "../shared/log"], ["src/config.js", "shared/log.js"])).toEqual([
+      "src/config.js",
+      "shared/log.js",
+    ]);
+  });
+
+  it("maps an extensionless import to its directory's index module when that is the file, never a dangling .js", () => {
+    expect(fileEdgeTargets("src/main.js", ["./config"], ["src/config/index.js"])).toEqual(["src/config/index.js"]);
   });
 
   it("emits no edge for a bare package specifier", () => {
-    expect(fileEdgeTargets("src/main.js", ["lodash", "node:path", "@scope/pkg/sub"])).toEqual([]);
+    expect(fileEdgeTargets("src/main.js", ["lodash", "node:path", "@scope/pkg/sub"], [])).toEqual([]);
   });
 
-  it("keeps an edge to a relative target the index does not hold, as TypeScript does", () => {
-    // `import("../build/...")` names a real module in a directory the index
-    // skips. Unverified like the TypeScript file edge: the mapper answers from
-    // the specifier alone and the edge simply joins no file row.
-    expect(fileEdgeTargets("scripts/verify-providers.js", ["../build/core/adapters/embeddings/factory.js"])).toEqual([
-      "build/core/adapters/embeddings/factory.js",
-    ]);
+  it("emits no edge to a relative target the index does not hold", () => {
+    // `import("../build/...")` names a module in a directory the index skips,
+    // and `./styles/static.scss` (taxdome) a stylesheet: neither has a file
+    // row, so an edge would dangle — counted into the source's fanOut against
+    // a target nothing can read.
+    expect(
+      fileEdgeTargets("scripts/verify-providers.js", ["../build/core/adapters/embeddings/factory.js"], []),
+    ).toEqual([]);
+    expect(fileEdgeTargets("app/javascript/static/index.js", ["./styles/static.scss"], [])).toEqual([]);
+  });
+
+  it("emits no self-edge for a module that imports its own directory", () => {
+    expect(fileEdgeTargets("src/index.js", [".", "./index.js"], [])).toEqual([]);
   });
 });
 

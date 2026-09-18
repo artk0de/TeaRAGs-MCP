@@ -445,6 +445,11 @@ export const LANGUAGE_MAP: Record<string, string> = {
   // TypeScript/JavaScript
   ".ts": "typescript",
   ".tsx": "typescript",
+  // The ESM / CJS module formats of TypeScript (bd tea-rags-mcp-1y13c). The
+  // codegraph walks them too (`CODEGRAPH_LANGUAGES`); the two tables move
+  // together, or a file has a graph node and no chunks, or the reverse.
+  ".mts": "typescript",
+  ".cts": "typescript",
   ".js": "javascript",
   ".jsx": "javascript",
 

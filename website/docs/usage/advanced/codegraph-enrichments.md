@@ -78,18 +78,18 @@ enabling so payloads carry the new signals.
 
 ## Supported Languages
 
-Graph extraction runs for **8 languages** across 12 extensions:
+Graph extraction runs for **8 languages** across 15 extensions:
 
-| Language   | Extensions                  |
-| ---------- | --------------------------- |
-| TypeScript | `.ts`, `.tsx`               |
+| Language   | Extensions                    |
+| ---------- | ----------------------------- |
+| TypeScript | `.ts`, `.tsx`, `.mts`, `.cts` |
 | JavaScript | `.js`, `.jsx`, `.mjs`, `.cjs` |
-| Python     | `.py`                       |
-| Ruby       | `.rb`                       |
-| Go         | `.go`                       |
-| Java       | `.java`                     |
-| Rust       | `.rs`                       |
-| Bash       | `.sh`, `.bash`              |
+| Python     | `.py`                         |
+| Ruby       | `.rb`                         |
+| Go         | `.go`                         |
+| Java       | `.java`                       |
+| Rust       | `.rs`                         |
+| Bash       | `.sh`, `.bash`                |
 
 Files in other languages are still indexed and embedded by tea-rags — they just
 carry no codegraph signals.

@@ -45,8 +45,10 @@ import { typeConstituents } from "./ts-type-constituents.js";
  *   1. the receiver is an ECMAScript ambient global (`Math.max`, `console.log`
  *      — no import to match);
  *   2. the receiver / member binds to an import whose specifier does NOT map to
- *      a project file (`node:fs`, bare npm packages) — `mapImportToFile`
- *      returns `null` for exactly those (relative + tsconfig-`paths` resolve);
+ *      a project file (`node:fs`, bare npm packages, and an asset import such
+ *      as `./Button.module.css`, relative or not — bd tea-rags-mcp-unt4v) —
+ *      `mapImportToFile` returns `null` for exactly those (relative +
+ *      tsconfig-`paths` resolve);
  *   3. the receiver's declared TYPE is an ECMAScript runtime builtin (`Map`,
  *      `Set`, `Promise`, typed arrays, …): `m.get()`, `this.pending.set()`,
  *      `p.then()` target the JS runtime instance method, not an in-repo symbol;

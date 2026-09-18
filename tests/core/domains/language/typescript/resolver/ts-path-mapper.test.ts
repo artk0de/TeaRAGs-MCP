@@ -268,17 +268,69 @@ describe("mapImportToFile allowJs fallback to the JavaScript file (bd tea-rags-m
 });
 
 /**
+ * An EXTENSIONLESS specifier that names a JavaScript module (bd
+ * tea-rags-mcp-x9qsh). A mixed TS/JS project writes `import "./legacy"` for
+ * `legacy.js` and `import "./widgets"` for `widgets/index.js`; the mapper tried
+ * only the TypeScript sources and named `legacy.ts`, a path no file row
+ * matches. The JavaScript files close each form's list — after the TypeScript
+ * candidates, taken only when the probe confirms them.
+ */
+describe("mapImportToFile extensionless JavaScript module (bd tea-rags-mcp-x9qsh)", () => {
+  it("maps an extensionless specifier to its .js / .jsx file when no TypeScript source exists", () => {
+    expect(mapImportToFile("./legacy", "src/app.ts", NO_ALIASES, (rel) => rel === "src/legacy.js")).toBe(
+      "src/legacy.js",
+    );
+    expect(mapImportToFile("./view", "src/app.tsx", NO_ALIASES, (rel) => rel === "src/view.jsx")).toBe("src/view.jsx");
+  });
+
+  it("maps an extensionless specifier to its directory's index.js / index.jsx", () => {
+    expect(mapImportToFile("./widgets", "src/app.ts", NO_ALIASES, (rel) => rel === "src/widgets/index.js")).toBe(
+      "src/widgets/index.js",
+    );
+    expect(mapImportToFile("./widgets", "src/app.ts", NO_ALIASES, (rel) => rel === "src/widgets/index.jsx")).toBe(
+      "src/widgets/index.jsx",
+    );
+  });
+
+  it("prefers every TypeScript candidate of a form over its JavaScript one", () => {
+    const both = (rel: string) => rel === "src/legacy.ts" || rel === "src/legacy.js";
+    expect(mapImportToFile("./legacy", "src/app.ts", NO_ALIASES, both)).toBe("src/legacy.ts");
+    const declared = (rel: string) => rel === "src/legacy.d.ts" || rel === "src/legacy.js";
+    expect(mapImportToFile("./legacy", "src/app.ts", NO_ALIASES, declared)).toBe("src/legacy.d.ts");
+    const indexes = (rel: string) => rel === "src/widgets/index.tsx" || rel === "src/widgets/index.js";
+    expect(mapImportToFile("./widgets", "src/app.ts", NO_ALIASES, indexes)).toBe("src/widgets/index.tsx");
+  });
+
+  it("still resolves the file form before the directory form", () => {
+    const exists = (rel: string) => rel === "src/legacy.js" || rel === "src/legacy/index.ts";
+    expect(mapImportToFile("./legacy", "src/app.ts", NO_ALIASES, exists)).toBe("src/legacy.js");
+  });
+
+  it("never names the JavaScript file without a probe confirming it", () => {
+    expect(mapImportToFile("./legacy", "src/app.ts", NO_ALIASES)).toBe("src/legacy.ts");
+    expect(mapImportToFile("./legacy", "src/app.ts", NO_ALIASES, () => false)).toBe("src/legacy.ts");
+  });
+
+  it("answers the bare catch-all with a JavaScript module the probe confirms", () => {
+    const catchAll = { baseUrl: ".", paths: { "*": ["./app/javascript/*"] } };
+    const exists = (rel: string) => rel === "app/javascript/legacy/util.js";
+    expect(mapImportToFile("legacy/util", "app/javascript/Page.tsx", catchAll, exists)).toBe(
+      "app/javascript/legacy/util.js",
+    );
+  });
+});
+
+/**
  * A JSON module (`resolveJsonModule`) is the file the specifier writes; tsc
- * never reads `"./data.json"` as `data.json.ts` (bd tea-rags-mcp-x9qsh). The
- * codegraph does not walk JSON, so the edge joins no file row — it is kept
- * unverified like every other file edge the mapper answers.
+ * never reads `"./data.json"` as `data.json.ts` (bd tea-rags-mcp-x9qsh). A JSON
+ * file is not a source the codegraph walks, so one the probe finds is an ASSET
+ * import (bd tea-rags-mcp-unt4v) and names no project file; one it cannot find
+ * keeps its as-written name as the unverified answer.
  */
 describe("mapImportToFile JSON modules (bd tea-rags-mcp-x9qsh)", () => {
-  it("maps a .json specifier to the file as written, without probing", () => {
-    const exists = vi.fn(() => false);
-    expect(mapImportToFile("./data.json", "src/app.ts", NO_ALIASES, exists)).toBe("src/data.json");
+  it("maps a .json specifier the probe cannot find to the file as written", () => {
+    expect(mapImportToFile("./data.json", "src/app.ts", NO_ALIASES, () => false)).toBe("src/data.json");
     expect(mapImportToFile("../package.json", "src/app.ts", NO_ALIASES)).toBe("package.json");
-    expect(exists).not.toHaveBeenCalled();
   });
 
   it("maps a .json specifier behind a tsconfig alias as written", () => {
@@ -287,13 +339,121 @@ describe("mapImportToFile JSON modules (bd tea-rags-mcp-x9qsh)", () => {
     );
   });
 
-  it("answers a catch-all .json specifier only when the file exists", () => {
+  it("answers null for a JSON module the probe finds — an asset import, not a project file", () => {
+    expect(mapImportToFile("./data.json", "src/app.ts", NO_ALIASES, (rel) => rel === "src/data.json")).toBeNull();
     const catchAll = { baseUrl: ".", paths: { "*": ["./app/javascript/*"] } };
     const exists = (rel: string) => rel === "app/javascript/config/settings.json";
-    expect(mapImportToFile("config/settings.json", "app/javascript/Page.tsx", catchAll, exists)).toBe(
-      "app/javascript/config/settings.json",
-    );
+    expect(mapImportToFile("config/settings.json", "app/javascript/Page.tsx", catchAll, exists)).toBeNull();
     expect(mapImportToFile("config/missing.json", "app/javascript/Page.tsx", catchAll, exists)).toBeNull();
+  });
+});
+
+/**
+ * An ASSET import — a specifier whose as-written path names an existing file
+ * that is not a source (bd tea-rags-mcp-unt4v). The mapper appended a source
+ * extension to it: taxdome persisted 1,874 `./X.module.css` imports as
+ * `X.module.css.ts`, plus `.png.ts`, `.svg.ts`, `.mdx.ts` — edges no file row
+ * can match. The verdict comes from the probe, never from a list of asset
+ * extensions: the as-written path is the LAST candidate, after every source,
+ * so a dotted source basename (`user.service` → `user.service.ts`) still wins.
+ */
+/**
+ * What counts as RELATIVE is `tsc`'s own test: `.` or `..`, alone or followed
+ * by a separator. A specifier that merely starts with a dot — taxdome's
+ * `.storybook/blocks/…`, resolved through its `"*"` catch-all — is a bare
+ * specifier; joined to the caller's directory it named
+ * `.storybook/blocks/X/.storybook/blocks/…`, a path that cannot exist (bd
+ * tea-rags-mcp-unt4v: 7 of its 1,922 dangling asset edges, plus 3 source
+ * edges, came from this).
+ */
+describe("mapImportToFile relative specifiers", () => {
+  const CATCH_ALL = { baseUrl: ".", paths: { "*": ["./app/javascript/*"] } };
+
+  it("resolves a dot-named directory specifier through `paths`, not against the caller", () => {
+    const exists = (rel: string) =>
+      rel === "app/javascript/.storybook/blocks/Links/elements/Link/Link.tsx" ||
+      rel === "app/javascript/.storybook/DocumentationTemplate.mdx";
+    expect(
+      mapImportToFile(
+        ".storybook/blocks/Links/elements/Link/Link",
+        "app/javascript/.storybook/blocks/Links/Links.tsx",
+        CATCH_ALL,
+        exists,
+      ),
+    ).toBe("app/javascript/.storybook/blocks/Links/elements/Link/Link.tsx");
+    // …and reaches the asset verdict for what it names.
+    expect(
+      mapImportToFile(
+        ".storybook/DocumentationTemplate.mdx",
+        "app/javascript/.storybook/preview.tsx",
+        CATCH_ALL,
+        exists,
+      ),
+    ).toBeNull();
+    expect(mapImportToFile(".storybook/blocks/x", "src/app.ts", NO_ALIASES, () => true)).toBeNull();
+  });
+
+  it("still treats `.` and `..` alone as relative", () => {
+    const exists = (rel: string) => rel === "src/components/index.ts" || rel === "src/index.ts";
+    expect(mapImportToFile(".", "src/components/Button.tsx", NO_ALIASES, exists)).toBe("src/components/index.ts");
+    expect(mapImportToFile("..", "src/components/Button.tsx", NO_ALIASES, exists)).toBe("src/index.ts");
+  });
+});
+
+describe("mapImportToFile asset imports (bd tea-rags-mcp-unt4v)", () => {
+  it("answers null for a specifier naming an existing stylesheet, image or document", () => {
+    const assets = new Set([
+      "src/Button.module.css",
+      "src/theme.scss",
+      "assets/logo.png",
+      "src/visa.svg",
+      "src/Intro.mdx",
+    ]);
+    const exists = (rel: string) => assets.has(rel);
+    expect(mapImportToFile("./Button.module.css", "src/Button.tsx", NO_ALIASES, exists)).toBeNull();
+    expect(mapImportToFile("./theme.scss", "src/Button.tsx", NO_ALIASES, exists)).toBeNull();
+    expect(mapImportToFile("../assets/logo.png", "src/Button.tsx", NO_ALIASES, exists)).toBeNull();
+    expect(mapImportToFile("./visa.svg", "src/Button.tsx", NO_ALIASES, exists)).toBeNull();
+    expect(mapImportToFile("./Intro.mdx", "src/Button.tsx", NO_ALIASES, exists)).toBeNull();
+  });
+
+  it("maps a dotted source basename to its source, never to an asset", () => {
+    expect(mapImportToFile("./user.service", "src/app.ts", NO_ALIASES, (rel) => rel === "src/user.service.ts")).toBe(
+      "src/user.service.ts",
+    );
+    // A `.css.ts` module (vanilla-extract) is imported as `./theme.css`: the
+    // source candidate comes first, so a stylesheet beside it cannot shadow it.
+    const both = (rel: string) => rel === "src/theme.css.ts" || rel === "src/theme.css";
+    expect(mapImportToFile("./theme.css", "src/app.ts", NO_ALIASES, both)).toBe("src/theme.css.ts");
+  });
+
+  it("keeps the unverified source answer when the probe finds neither a source nor the asset", () => {
+    expect(mapImportToFile("./gone.module.css", "src/app.ts", NO_ALIASES, () => false)).toBe("src/gone.module.css.ts");
+    expect(mapImportToFile("./gone.module.css", "src/app.ts", NO_ALIASES)).toBe("src/gone.module.css.ts");
+  });
+
+  it("answers null for an asset behind a tsconfig alias and under the catch-all", () => {
+    const exists = (rel: string) => rel === "src/assets/logo.png" || rel === "app/javascript/images/icon.svg";
+    expect(
+      mapImportToFile("@/assets/logo.png", "src/app.ts", { baseUrl: ".", paths: { "@/*": ["src/*"] } }, exists),
+    ).toBeNull();
+    const catchAll = { baseUrl: ".", paths: { "*": ["./app/javascript/*"] } };
+    expect(mapImportToFile("images/icon.svg", "app/javascript/Page.tsx", catchAll, exists)).toBeNull();
+  });
+
+  it("tells an asset from a directory against a real project tree", () => {
+    const repoRoot = mkdtempSync(join(tmpdir(), "ts-path-mapper-asset-"));
+    mkdirSync(join(repoRoot, "src", "widgets"), { recursive: true });
+    writeFileSync(join(repoRoot, "src", "Button.module.css"), ".root {}\n");
+    try {
+      const probe = createProjectFileProbe(repoRoot);
+      expect(mapImportToFile("./Button.module.css", "src/Button.tsx", NO_ALIASES, probe)).toBeNull();
+      // A directory with no index module is not a file, so not an asset: the
+      // unverified source answer stands.
+      expect(mapImportToFile("./widgets", "src/Button.tsx", NO_ALIASES, probe)).toBe("src/widgets.ts");
+    } finally {
+      rmSync(repoRoot, { recursive: true, force: true });
+    }
   });
 });
 

@@ -5,8 +5,9 @@ import { extensionsForLanguages } from "../../../../../../src/core/domains/inges
 describe("extensionsForLanguages", () => {
   it("returns every extension a language owns", () => {
     // A language is not one extension: restricting a run to typescript that
-    // forgot .tsx would silently skip most of a React codebase.
-    expect(extensionsForLanguages(["typescript"]).sort()).toEqual([".ts", ".tsx"]);
+    // forgot .tsx would silently skip most of a React codebase, and the
+    // ESM/CJS module extensions .mts / .cts are TypeScript too (bd 1y13c).
+    expect(extensionsForLanguages(["typescript"]).sort()).toEqual([".cts", ".mts", ".ts", ".tsx"]);
   });
 
   it("unions the extensions of several languages", () => {

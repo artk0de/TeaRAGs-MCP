@@ -10,17 +10,18 @@
  *                                           `chunkSymbols` capability — CommonJS /
  *                                           prototype / dispatch / defineProperty shapes)
  *   walker        ← ./walker/              (extractFromJavascriptFile + jsNameOf)
- *   resolver      ← ./resolver/            (JavascriptCallResolver — relative-import chain)
+ *   resolver      ← ./resolver/            (JavascriptCallResolver — relative-import chain,
+ *                                           JavascriptImportFileMapper for file edges)
  *
  * Created per-context by `LanguageFactoryDescriptor` (each owns its own tree-sitter
  * `Parser`, spec §5). The capability logic here is stateless, so the only
  * per-instance cost is the Parser the chunker/codegraph engines build.
  *
- * One grammar, four extensions: `.js` / `.jsx` / `.mjs` / `.cjs` all map to
- * language "javascript" (`LANGUAGE_MAP`). Both the CHUNKER and the CODEGRAPH
- * engine use the single `tree-sitter-javascript` grammar (the codegraph
- * `CODEGRAPH_LANGUAGES` entries all share `loadParser: () => JsLang`), so unlike
- * TypeScript there is no per-extension grammar split.
+ * One grammar: the codegraph walks `.js` / `.jsx` / `.mjs` / `.cjs` as language
+ * "javascript" (`CODEGRAPH_LANGUAGES`, every entry `loadParser: () => JsLang`),
+ * and ingest's `LANGUAGE_MAP` routes `.js` / `.jsx` to the same
+ * `tree-sitter-javascript` grammar — `.mjs` / `.cjs` are not in the ingest
+ * tables. Unlike TypeScript there is no per-extension grammar split.
  *
  * symbolId coverage convergence: the chunker emits the CommonJS / pre-class
  * assignment shapes via the `chunkSymbols` capability (engine
@@ -38,6 +39,7 @@ import {
   type CallResolver,
   type DispatchFanoutOutcome,
   type FileExtraction,
+  type GraphEdges,
   type SymbolResolutionTarget,
 } from "../../../contracts/types/codegraph.js";
 import type {
@@ -141,6 +143,12 @@ export class JavaScriptLanguage implements LanguageProvider {
       resolve: (call: CallRef, ctx: CallContext): SymbolResolutionTarget | null => callResolver.resolve(call, ctx),
       resolveDispatch: (call: CallRef, ctx: CallContext): DispatchFanoutOutcome =>
         callResolver.resolveDispatch?.(call, ctx) ?? emptyDispatchFanout(),
+      // Forwarded so imports map through `JavascriptImportFileMapper` rather
+      // than through the provider's synthesised-call loop, which dropped every
+      // explicit-extension import (bd tea-rags-mcp-x9qsh). Omitting it here is
+      // what left the resolver's own method dead in production.
+      resolveFileEdges: (extraction: FileExtraction, ctx: CallContext): GraphEdges["fileEdges"] =>
+        callResolver.resolveFileEdges?.(extraction, ctx) ?? [],
       targetsExternalImport: (call: CallRef, ctx: CallContext): boolean =>
         callResolver.targetsExternalImport?.(call, ctx) ?? false,
     };
@@ -150,5 +158,5 @@ export class JavaScriptLanguage implements LanguageProvider {
 export { javascriptKernel } from "./kernel.js";
 export { JsChunkClassifier, javascriptHooks, jsChunkSymbols } from "./chunking/index.js";
 export { extractFromJavascriptFile, jsNameOf } from "./walker/index.js";
-export { JavascriptCallResolver, mapJavascriptImportToFile } from "./resolver/index.js";
+export { JavascriptCallResolver, JavascriptImportFileMapper, mapJavascriptImportToFile } from "./resolver/index.js";
 export type { FileExtraction, JsExtractInput };

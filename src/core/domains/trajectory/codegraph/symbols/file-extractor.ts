@@ -77,6 +77,21 @@ export const CODEGRAPH_LANGUAGES: Record<string, CodegraphLanguageConfig> = {
     loadParser: () => (TsLang as { typescript: Parser.Language; tsx: Parser.Language }).tsx,
     scopeSeparator: ".",
   },
+  // The ESM / CJS module formats (bd tea-rags-mcp-1y13c): the `typescript`
+  // grammar, since neither admits JSX. The import mappers name these files as
+  // targets, so a missing row left every such edge without a file to land on.
+  // Ingest lists them in `LANGUAGE_MAP` / `DEFAULT_CODE_EXTENSIONS` — the tables
+  // move together.
+  ".mts": {
+    language: "typescript",
+    loadParser: () => (TsLang as { typescript: Parser.Language; tsx: Parser.Language }).typescript,
+    scopeSeparator: ".",
+  },
+  ".cts": {
+    language: "typescript",
+    loadParser: () => (TsLang as { typescript: Parser.Language; tsx: Parser.Language }).typescript,
+    scopeSeparator: ".",
+  },
   ".py": {
     language: "python",
     loadParser: () => PyLang,

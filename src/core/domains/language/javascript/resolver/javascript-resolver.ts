@@ -18,8 +18,6 @@
  * receiver list here only contains real method calls.
  */
 
-import { posix } from "node:path";
-
 import {
   DEFAULT_AMBIGUOUS_RESOLVE_MODE,
   pickSingleCandidate,
@@ -31,20 +29,15 @@ import {
   type GraphEdges,
   type SymbolResolutionTarget,
 } from "../../../../contracts/types/codegraph.js";
+import { resolveImportFileEdges } from "../../import-file-edges.js";
 import { ECMASCRIPT_GLOBALS } from "../../shared/ecmascript-globals.js";
-
-/**
- * Suffixes that make a relative specifier name its file as written. The
- * TypeScript ones are what a JS entry point writes when it loads TS source
- * directly (`node --experimental-strip-types`, tsx); appending `.js` to them
- * named `worker.ts.js`, a file that cannot exist (bd tea-rags-mcp-x9qsh).
- * `.d.ts` / `.d.mts` / `.d.cts` are covered by their last segment. `.json` is
- * the JSON module `require("../package.json")` names.
- */
-const EXPLICIT_MODULE_EXTENSIONS = [".js", ".jsx", ".mjs", ".cjs", ".ts", ".tsx", ".mts", ".cts", ".json"];
+import { JavascriptImportFileMapper, javascriptImportPathCandidates } from "./javascript-import-file-mapper.js";
 
 export class JavascriptCallResolver implements CallResolver {
   readonly language = "javascript";
+
+  /** Stateless — one per resolver so every file edge asks the same mapper. */
+  private readonly importFileMapper = new JavascriptImportFileMapper();
 
   constructor(private readonly mode: AmbiguousResolveMode = DEFAULT_AMBIGUOUS_RESOLVE_MODE) {}
 
@@ -187,8 +180,8 @@ export class JavascriptCallResolver implements CallResolver {
   }
 
   /**
-   * Import → file edges, mapped directly by {@link mapJavascriptImportToFile}
-   * instead of through the call path (bd tea-rags-mcp-x9qsh).
+   * Import → file edges, mapped by {@link JavascriptImportFileMapper} instead
+   * of through the call path (bd tea-rags-mcp-x9qsh).
    *
    * The provider's fallback synthesises `{ receiver: basename, member:
    * basename }` per import and keeps whatever `resolve` answers. `resolve`
@@ -199,19 +192,14 @@ export class JavascriptCallResolver implements CallResolver {
    * never reached the file graph. Basename matching also sent two imports of
    * different `util` modules to whichever was declared first.
    *
-   * Every relative specifier maps, and the edge is pushed unverified, the
-   * TypeScript precedent (`TSCallResolver#resolveFileEdges`): the mapper
-   * answers from the specifier alone, and a target the index does not hold
-   * (`../build/...`) joins no file row. A bare package specifier maps to
-   * nothing and yields no edge.
+   * Only a `project` answer becomes an edge, so every target is a file the
+   * index holds: `"./config"` reaches `config/index.js` when that is the file,
+   * and a specifier the index holds nothing for — `../build/...`, a
+   * stylesheet — yields no edge rather than one no file row can match. The
+   * shared builder also drops a self-edge (`require(".")` from `index.js`).
    */
-  resolveFileEdges(extraction: FileExtraction, _ctx: CallContext): GraphEdges["fileEdges"] {
-    const fileEdges: GraphEdges["fileEdges"] = [];
-    for (const imp of extraction.imports) {
-      const targetRelPath = mapJavascriptImportToFile(imp.importText, extraction.relPath);
-      if (targetRelPath) fileEdges.push({ targetRelPath, importText: imp.importText });
-    }
-    return fileEdges;
+  resolveFileEdges(extraction: FileExtraction, ctx: CallContext): GraphEdges["fileEdges"] {
+    return resolveImportFileEdges(extraction, this.importFileMapper, ctx);
   }
 
   /**
@@ -247,19 +235,16 @@ function lastSegment(qualified: string): string {
   return dot >= 0 ? qualified.slice(dot + 1) : qualified;
 }
 
+/**
+ * The file a JavaScript specifier most likely names, UNVERIFIED: the head of
+ * {@link javascriptImportPathCandidates} — the path as written when it carries
+ * an extension, `<path>.js` when it does not, `null` for a bare package
+ * specifier. The call path reads it; the file graph asks
+ * {@link JavascriptImportFileMapper}, which only answers with a file the index
+ * holds.
+ */
 export function mapJavascriptImportToFile(importText: string, callerFile: string): string | null {
-  // Only relative imports resolve to project-local files. Bare
-  // specifiers (npm packages) are out of scope — codegraph excludes
-  // node_modules from the walk.
-  if (!importText.startsWith(".")) return null;
-  const callerDir = posix.dirname(callerFile);
-  const joined = posix.normalize(posix.join(callerDir, importText));
-  // If the import already carries an extension, keep it (Node modern
-  // ESM requires explicit extensions). Otherwise default to `.js`.
-  for (const ext of EXPLICIT_MODULE_EXTENSIONS) {
-    if (joined.endsWith(ext)) return joined;
-  }
-  return `${joined}.js`;
+  return javascriptImportPathCandidates(importText, callerFile)?.[0] ?? null;
 }
 
 function importMatchesReceiver(importText: string, receiver: string): boolean {

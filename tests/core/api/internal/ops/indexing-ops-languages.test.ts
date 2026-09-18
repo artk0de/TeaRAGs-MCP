@@ -77,7 +77,7 @@ describe("IndexingOps — languages on the full-reindex branch", () => {
     await new IndexingOps(deps).run(process.cwd(), { forceReindex: true, languages: ["typescript"] });
 
     const passedOptions = (deps.indexing.indexCodebase as ReturnType<typeof vi.fn>).mock.calls[0][1];
-    expect(passedOptions.extensions.sort()).toEqual([".ts", ".tsx"]);
+    expect(passedOptions.extensions.sort()).toEqual([".cts", ".mts", ".ts", ".tsx"]);
   });
 
   it("unions the extensions of several languages", async () => {
