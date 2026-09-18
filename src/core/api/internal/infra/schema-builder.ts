@@ -110,6 +110,10 @@ export class SchemaBuilder {
     if (names.length > 0) {
       description += ` Named filter presets: ${names.join(", ")}. Use { presets: "name,name2" }.`;
     }
+    description +=
+      " Omitted → the rerank preset's default filter applies (most: production = no tests/docs/block); " +
+      "any explicit filter replaces it, {} clears it; skipped automatically when typed params select what " +
+      'it excludes (testFile "only", chunkType test/test_setup, documentation "only").';
 
     return z.union([rawFilterSchema, presetsSchema]).describe(description);
   }

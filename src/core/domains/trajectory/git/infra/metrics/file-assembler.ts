@@ -32,15 +32,16 @@ export function assembleFileSignals(
   const { commits } = churnData;
 
   if (commits.length === 0) {
+    // No history → no lastModifiedAt / ageDays at all (mirrors
+    // assembleChunkSignals). A 0 here would read as "committed < 1 day ago"
+    // to anything that treats ageDays 0 or a timestamp as data.
     return {
       recentDominantAuthor: "unknown",
       recentDominantAuthorEmail: "",
       recentAuthors: [],
       recentDominantAuthorPct: 0,
-      lastModifiedAt: 0,
       firstCreatedAt: 0,
       lastCommitHash: "",
-      ageDays: 0,
       commitCount: 0,
       linesAdded: churnData.linesAdded,
       linesDeleted: churnData.linesDeleted,

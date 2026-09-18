@@ -58,6 +58,21 @@ describe("HybridSearchStrategy", () => {
     expect(results[0].score).toBe(0.85);
   });
 
+  it("honours a requested limit below 5 (tea-rags-mcp-9mwny)", async () => {
+    const many = Array.from({ length: 30 }, (_, i) => ({
+      id: String(i),
+      score: 1 - i * 0.01,
+      payload: { relativePath: `src/f${i}.ts` },
+    }));
+    const results = await createStrategy(createMockQdrant(true, many)).execute({
+      collectionName: "test_col",
+      embedding: [0.1],
+      query: "q",
+      limit: 3,
+    });
+    expect(results).toHaveLength(3);
+  });
+
   it("generates sparse vector from query when not provided", async () => {
     const qdrant = createMockQdrant(true, []);
     const strategy = createStrategy(qdrant);

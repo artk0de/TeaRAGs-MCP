@@ -62,9 +62,10 @@ population to recently changed files so it surfaces.
   (file-level) whatever `level` says; absolute timestamp, not index-time age.
 - **Do NOT pass `level: "file"`.** `level` also sets result granularity — `file`
   regroups results into files; probe needs chunks (methods).
-- **Do NOT use `maxAgeDays`.** Default chunk level reads `git.chunk.ageDays`;
-  both levels drop `ageDays` 0 = committed < 1 day before indexing = the
-  freshest code.
+- **`maxAgeDays: <N>`** (default chunk level) = narrower method-grain probe:
+  chunks whose OWN last commit ≤ N days before QUERY time (`0` = within a day).
+  Misses chunks without chunk-level commit data (see `filter-building` chunk age
+  caveat) → `modifiedAfter` stays default probe.
 - **Window start:** symptom onset if known (last green run, release, date user
   names); else today − N days, N = `recent` bound of `git.file.ageDays` in prime
   `## Signal thresholds`.

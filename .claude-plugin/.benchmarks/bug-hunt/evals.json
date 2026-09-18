@@ -49,7 +49,7 @@
           "Built-in Grep for error string",
           "git log --grep / git blame (overlay has git signals)",
           "Read full file without chunk coordinates",
-          "Fresh probe via maxAgeDays (drops ageDays 0 = the freshest code) or with level='file' (regroups results into files)"
+          "Fresh probe ONLY via chunk-level maxAgeDays (misses chunks without chunk-level commit data; modifiedAfter is the default probe) or with level='file' (regroups results into files)"
         ]
       },
       "failureMode": "Agent skips bugHunt preset or falls back to grep/git"

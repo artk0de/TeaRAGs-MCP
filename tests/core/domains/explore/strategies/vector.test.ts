@@ -49,6 +49,20 @@ describe("VectorSearchStrategy", () => {
     expect(results[0].score).toBe(0.9);
   });
 
+  it("honours a requested limit below 5 (tea-rags-mcp-9mwny)", async () => {
+    const many = Array.from({ length: 30 }, (_, i) => ({
+      id: String(i),
+      score: 1 - i * 0.01,
+      payload: { relativePath: `src/f${i}.ts` },
+    }));
+    const results = await createStrategy(createMockQdrant(many)).execute({
+      collectionName: "test_col",
+      embedding: [0.1],
+      limit: 2,
+    });
+    expect(results).toHaveLength(2);
+  });
+
   it("throws if embedding is missing", async () => {
     const strategy = createStrategy();
     await expect(strategy.execute({ collectionName: "test_col", limit: 5 })).rejects.toThrow("requires an embedding");

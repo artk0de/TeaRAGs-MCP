@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import type { Trajectory } from "../../../../src/core/contracts/types/trajectory.js";
 import { codegraphFilters } from "../../../../src/core/domains/trajectory/codegraph/symbols/filters.js";
+import { gitFilters } from "../../../../src/core/domains/trajectory/git/filters.js";
 import { TrajectoryRegistry } from "../../../../src/core/domains/trajectory/index.js";
 import { StaticTrajectory } from "../../../../src/core/domains/trajectory/static/index.js";
 
@@ -32,6 +33,58 @@ describe("TrajectoryRegistry.buildMergedFilter", () => {
     const registry = new TrajectoryRegistry();
     const result = registry.buildMergedFilter({});
     expect(result).toBeUndefined();
+  });
+
+  describe("level defaults (tea-rags-mcp-9mwny)", () => {
+    // Mirrors ExploreOps: the effective level is undefined when the caller
+    // passes no `level` and the rerank preset declares no signalLevel.
+    function registerGitAndCodegraph(): TrajectoryRegistry {
+      const registry = new TrajectoryRegistry();
+      const stub = (key: string, filters: Trajectory["filters"]): Trajectory => ({
+        key,
+        name: `${key}-stub`,
+        description: "stub for level-default routing",
+        payloadSignals: [],
+        derivedSignals: [],
+        filters,
+        presets: [],
+      });
+      registry.register(stub("git", gitFilters));
+      registry.register(stub("codegraph.symbols", codegraphFilters));
+      return registry;
+    }
+
+    it("lets each descriptor's own default apply when no level is given", () => {
+      const filter = registerGitAndCodegraph().buildMergedFilter({ taskId: "T-1", minFanIn: 3, minCommitCount: 2 });
+      expect(filter).toEqual({
+        must: [
+          { key: "git.chunk.commitCount", range: { gte: 2 } },
+          { key: "git.file.taskIds", match: { any: ["T-1"] } },
+          { key: "codegraph.symbols.file.fanIn", range: { gte: 3 } },
+        ],
+      });
+    });
+
+    it("the MCP `author` param compiles to a blame-owner condition instead of being dropped", () => {
+      expect(registerGitAndCodegraph().buildMergedFilter({ author: "Nobody At All" })).toEqual({
+        must: [{ key: "git.file.blameDominantAuthor", match: { value: "Nobody At All" } }],
+      });
+    });
+
+    it("an explicit level still overrides every level-aware descriptor", () => {
+      const filter = registerGitAndCodegraph().buildMergedFilter(
+        { taskId: "T-1", minFanIn: 3, minCommitCount: 2 },
+        undefined,
+        "chunk",
+      );
+      expect(filter).toEqual({
+        must: [
+          { key: "git.chunk.commitCount", range: { gte: 2 } },
+          { key: "git.chunk.taskIds", match: { any: ["T-1"] } },
+          { key: "codegraph.symbols.chunk.fanIn", range: { gte: 3 } },
+        ],
+      });
+    });
   });
 
   describe("codegraph typed filters (tea-rags-mcp-tr5k)", () => {

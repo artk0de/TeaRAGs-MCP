@@ -75,6 +75,16 @@ describe("ScrollRankStrategy", () => {
     expect(reranker.rerank).toHaveBeenCalled();
   });
 
+  it("returns exactly one result for limit 1 — rank_chunks has no page floor (tea-rags-mcp-9mwny)", async () => {
+    const results = await createStrategy().execute({
+      collectionName: "test_col",
+      weights: { chunkSize: 1.0 },
+      level: "chunk",
+      limit: 1,
+    });
+    expect(results).toHaveLength(1);
+  });
+
   it("throws when weights are missing", async () => {
     const strategy = createStrategy();
     await expect(strategy.execute({ collectionName: "test_col", limit: 5 })).rejects.toThrow("requires weights");

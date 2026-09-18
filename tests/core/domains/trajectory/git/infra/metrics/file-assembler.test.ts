@@ -55,6 +55,17 @@ describe("assembleFileSignals", () => {
     expect(result.taskIds).toEqual([]);
   });
 
+  it("leaves ageDays / lastModifiedAt absent for a file without commits — no fake zero-age sentinel (9mwny)", () => {
+    // ageDays 0 means "committed less than a day ago" and lastModifiedAt feeds
+    // the age filters' timestamp ranges; a history-less file must carry
+    // neither, exactly like assembleChunkSignals does for a chunk.
+    const result = assembleFileSignals({ commits: [], linesAdded: 0, linesDeleted: 0 }, 100);
+    expect(result.ageDays).toBeUndefined();
+    expect(result.lastModifiedAt).toBeUndefined();
+    expect(JSON.parse(JSON.stringify(result))).not.toHaveProperty("ageDays");
+    expect(JSON.parse(JSON.stringify(result))).not.toHaveProperty("lastModifiedAt");
+  });
+
   it("preserves linesAdded/linesDeleted from churn data", () => {
     const churnData: FileChurnData = {
       commits: [{ sha: "a1", author: "alice", authorEmail: "a@x.com", timestamp: 1700000000, body: "feat: TD-123" }],

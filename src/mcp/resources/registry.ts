@@ -98,7 +98,7 @@ parameter examples per tool.
 
 ## search_code Examples
 
-- "Complex code not touched in 30+ days" → query="complex logic", minAgeDays=30
+- "Complex code not touched in 30+ days" → query="complex logic", modifiedBefore="<ISO date 30 days ago>"
 - "What did John work on last week?" → author="John", maxAgeDays=7
 - "High-churn authentication code" → query="authentication", minCommitCount=5
 - "Code related to ticket TD-1234" → taskId="TD-1234"
@@ -106,7 +106,7 @@ parameter examples per tool.
 ## semantic_search Examples
 
 - Ownership analysis → rerank="ownership", metaOnly=true
-- Tech debt discovery → rerank="techDebt", minAgeDays=90
+- Tech debt discovery → rerank="techDebt", level="file", minAgeDays=90
 - Security audit → rerank="securityAudit", pathPattern="**/auth/**"
 
 ## hybrid_search Examples
@@ -185,6 +185,7 @@ export function buildIndexingGuide(): string {
 Set \`CODE_ENABLE_GIT_METADATA=true\` before indexing.
 
 Enables filters:
+- author — blame-dominant author (owner of most live lines, git blame HEAD); file-level default, level "chunk" → chunk's own lines
 - recentAuthor — filter by recent-activity dominant author (commit-count based, log window)
 - blameOwner — filter by live-line owner (git blame HEAD)
 - modifiedAfter/modifiedBefore — date range (ISO 8601 format)
@@ -228,9 +229,16 @@ export function buildFiltersDoc(): string {
   md += "**Ownership semantics:** `recentDominantAuthor*` = recent commit activity within the ";
   md += "log window (TRAJECTORY_GIT_LOG_MAX_AGE_MONTHS); `blameDominantAuthor*` = who owns ";
   md += "the live lines in HEAD via git blame. Use the latter for true ownership / silo detection.\n\n";
-  md += '**⚠ Filter level:** Filters apply to `git.chunk.*` by default. Use `level: "file"` ';
-  md += "param for file-level filters. Time-based filters (maxAgeDays/minAgeDays): ";
-  md += "prefer `level: \"file\"` — chunk-level ageDays=0 means 'no data', not 'recent'.\n\n";
+  md += "**⚠ Filter level:** `level` does two things. (1) Scope of level-aware typed filters: ";
+  md += "effective level (explicit `level`, else rerank preset `signalLevel`) re-scopes all of them; ";
+  md += "unset → each filter's default: `minAgeDays` / `maxAgeDays` / `minCommitCount` → `git.chunk.*`, ";
+  md += "`taskId` → `git.file.*`, codegraph `minFanIn` / `minFanOut` → file. `modifiedAfter` / ";
+  md += "`modifiedBefore` always read `git.file.lastModifiedAt`, any `level`. (2) Result granularity: ";
+  md += '`level: "file"` → one result per file (`payload.members`). `minAgeDays` / `maxAgeDays` ';
+  md += "compare `git.<level>.lastModifiedAt` with query-time now (no drift); chunk timestamp 0 / absent ";
+  md += "on chunks with no commit in chunk churn walk (all doc chunks) → chunk age filters drop them. ";
+  md += "Payload `ageDays` = enrichment-time stamp (`0` = < 1 day then, not no-data); stale on points ";
+  md += "not re-enriched — raw `ageDays` ranges and ageDays filter presets inherit that lag.\n\n";
   md += "**Imports:** imports[] — file-level imports\n\n";
   md += "**Codegraph metadata** (requires codegraph indexing — typed filter params, not raw Qdrant keys):\n\n";
   md += "File-level (default level): `minFanIn`, `minFanOut`, `minInstability`, `minTransitiveImpact`, ";
@@ -264,7 +272,8 @@ export function buildFiltersDoc(): string {
   md += "**Inventory vs query rule:** hard specific presets (panicZone, abandonedHotspots, …) suit ";
   md += "query-absent inventory scans where an empty result is a valid answer; query-driven triage should ";
   md += "rank broadly (no hard specific filter) to preserve recall. Hygiene presets (production/coreLogic) ";
-  md += "are safe in any mode and are the rerank-preset defaults.\n";
+  md += "are safe in any mode and are the rerank-preset defaults (when that default applies: see the ";
+  md += "`filter` param description).\n";
   return md;
 }
 

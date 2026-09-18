@@ -14,6 +14,19 @@ import { filterMetaOnly } from "../post-process.js";
 import type { Reranker, RerankMode } from "../reranker.js";
 import type { ExploreContext, ExploreResult, ExploreStrategy } from "./types.js";
 
+/** Page size when the caller gives no (or a non-positive) limit. */
+const FALLBACK_PAGE_SIZE = 5;
+
+/**
+ * The page size the CALLER asked for. A positive limit is honoured exactly —
+ * the overfetch floor lives in `applyDefaults`' fetch size, never in the page
+ * (tea-rags-mcp-9mwny: a `Math.max(limit, 5)` here returned 5 results for
+ * limit 1/2/3 on every strategy that inherits postProcess).
+ */
+function requestedPageSize(limit: number | undefined): number {
+  return limit !== undefined && limit > 0 ? limit : FALLBACK_PAGE_SIZE;
+}
+
 export abstract class BaseExploreStrategy implements ExploreStrategy {
   abstract readonly type: "vector" | "hybrid" | "scroll-rank" | "similar";
 
@@ -36,11 +49,11 @@ export abstract class BaseExploreStrategy implements ExploreStrategy {
 
   /**
    * Apply defaults to context before passing to executeExplore.
-   * - Enforces minimum limit of 5
-   * - Computes overfetch limit when non-relevance rerank present
+   * - Computes the FETCH size: overfetch ×4 with a non-relevance rerank, ×2
+   *   otherwise, never below 20 — so a small page still reranks a real pool
    */
   protected applyDefaults(ctx: ExploreContext): ExploreContext {
-    const requestedLimit = Math.max(ctx.limit ?? 0, 5);
+    const requestedLimit = requestedPageSize(ctx.limit);
     const effectiveOffset = ctx.offset || 0;
     const rerank = ctx.rerank as RerankMode<string> | undefined;
     const needsOverfetch = Boolean(rerank && rerank !== "relevance");
@@ -56,7 +69,7 @@ export abstract class BaseExploreStrategy implements ExploreStrategy {
    *   3. metaOnly formatting (if ctx.metaOnly)
    */
   protected async postProcess(results: ExploreResult[], originalCtx: ExploreContext): Promise<ExploreResult[]> {
-    const requestedLimit = Math.max(originalCtx.limit ?? 0, 5);
+    const requestedLimit = requestedPageSize(originalCtx.limit);
     const rerank = originalCtx.rerank as RerankMode<string> | undefined;
 
     // 1. Rerank

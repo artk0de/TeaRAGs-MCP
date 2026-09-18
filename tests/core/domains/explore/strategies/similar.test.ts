@@ -58,6 +58,19 @@ describe("SimilarSearchStrategy", () => {
     expect(createStrategy().type).toBe("similar");
   });
 
+  it("honours a requested limit below 5 (tea-rags-mcp-9mwny)", async () => {
+    const many = Array.from({ length: 30 }, (_, i) => ({
+      id: `r${i}`,
+      score: 1 - i * 0.01,
+      payload: { relativePath: `src/f${i}.ts` },
+    }));
+    const results = await createStrategy({ qdrant: createMockQdrant(many) }).execute({
+      collectionName: "col",
+      limit: 1,
+    });
+    expect(results).toHaveLength(1);
+  });
+
   it("passes positiveIds directly to qdrant.query", async () => {
     const qdrant = createMockQdrant([{ id: "r1", score: 0.9, payload: { relativePath: "a.ts" } }]);
     const strategy = createStrategy({ qdrant, positiveIds: ["uuid-1", "uuid-2"] });

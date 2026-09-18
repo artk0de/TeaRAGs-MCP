@@ -102,11 +102,15 @@ for raw `filter`:**
 - Tests vs production: `testFile: "only" | "exclude" | "include"` (string enum,
   not boolean)
 - Docs vs code: `documentation: "only" | "exclude" | "include"`
-- Time window: `modifiedAfter` / `modifiedBefore` (ISO date) +
-  `level: "file"` (chunk-level git times are unreliable)
-- Min age: `minAgeDays` / `maxAgeDays` + `level: "file"`
+- Time window: `modifiedAfter` / `modifiedBefore` (ISO date) — file's last
+  commit (`git.file.lastModifiedAt`) at any level; needs NO `level`
+- Age: `minAgeDays` / `maxAgeDays` → chunk last-commit time vs query-time now
+  (none on docs + chunks with no commit in chunk git window → dropped);
+  `level: "file"` → file last commit BUT also one result per file. Old code,
+  chunk results → `modifiedBefore`, not chunk-level `minAgeDays`
 - Drop one-offs: `minCommitCount: 5` (or higher)
-- Ticket linkage: `taskId: "JIRA-123"` (matches git.file.taskIds)
+- Ticket linkage: `taskId: "JIRA-123"` (any commit of the file, matches
+  git.file.taskIds; `level: "chunk"` → chunk's own commits)
 - Author dominance: `author: "Alice"` (blame-based)
 
 Raw `filter: { must: [...] }` only when typed fields cannot express it. For

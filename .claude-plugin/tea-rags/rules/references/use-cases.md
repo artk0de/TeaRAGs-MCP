@@ -90,11 +90,11 @@ another project. Full schema + `get_index_status.infraHealth` health probe:
 
 ## Sugar filters
 
-Full typed-sugar field catalog + `level: "file"` enforcement rule for time
-filters (`modifiedAfter`/`Before`, `minAgeDays`/`maxAgeDays`):
-**`tea-rags:filter-building`**. Invoke that skill whenever search needs a SCOPE
-(language, time window, author, testFile, taskId, `minCommitCount`, doc/code
-split, etc.).
+Full typed-sugar field catalog + which time filters honor `level`
+(`minAgeDays`/`maxAgeDays` yes, `modifiedAfter`/`Before` never) + what
+`level: "file"` does to result granularity: **`tea-rags:filter-building`**.
+Invoke that skill whenever search needs a SCOPE (language, time window, author,
+testFile, taskId, `minCommitCount`, doc/code split, etc.).
 
 ## Named filter presets (`filter: { presets }`)
 

@@ -204,11 +204,15 @@ export class AuthService {
   // === TEST 7: Search filter by age ===
   log("info", "Testing age filters...");
 
-  // maxAgeDays filter requires `git.file.ageDays > 0 AND <= N`. Files committed
-  // less than 24h ago report ageDays=0 (day-rounded) — the strict gt:0 check
-  // excludes them. To verify "recent code" semantics in a fast test, use
-  // modifiedAfter (timestamp resolution) instead. The "T8: date range" block
-  // below already covers that scenario; here we just smoke-test minAgeDays.
+  // Files committed moments ago are the freshest code; maxAgeDays compares
+  // their last-commit timestamp with query-time now, so it must include them
+  // (tea-rags-mcp-9mwny).
+  const freshResults = await semanticSearch(explore, gitTestDir, "service", {
+    maxAgeDays: 7,
+    level: "file",
+  });
+  assert(freshResults.length > 0, `maxAgeDays includes just-committed code: ${freshResults.length} results`);
+
   const oldResults = await semanticSearch(explore, gitTestDir, "service", {
     minAgeDays: 100,
     level: "file",
@@ -283,8 +287,6 @@ export class NewService {
   assert(noMatchAuthor.length === 0, `No results for nonexistent author: ${noMatchAuthor.length}`);
 
   // Corner case 2: Combined filters (author + date range).
-  // Use modifiedAfter for the "recent" half — maxAgeDays would exclude
-  // just-committed files (see T7 explanation).
   const yesterdayCombined = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
   const combinedFilters = await semanticSearch(explore, gitTestDir, "service", {
     recentAuthor: "Test User",

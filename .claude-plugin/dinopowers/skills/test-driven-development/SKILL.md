@@ -27,8 +27,11 @@ test** — whenever project has DSL test chunks indexed:
 
 Correct filter (`chunkType: "test"`/`"test_setup"`, NOT file-level
 `testFile: "only"`) + correct rerank (`"proven"` — battle-tested patterns) +
-correct params (`metaOnly: false` to see actual test content) + correct ordering
-(search BEFORE draft) = core value.
+correct params (`level: "chunk"` — `proven` is file-level and would regroup
+chunks per file; `metaOnly: false` to see actual test content) + correct
+ordering (search BEFORE draft) = core value. No `filter` needed: the server
+skips `proven`'s production default when `chunkType` / `testFile` select tests
+(tea-rags server predating that → 0 results → add `filter: {}`).
 
 If `Skill(tea-rags:tests-as-context)` Step 0 preflight returns SKIP (DSL test
 chunks absent — primary language has no DSL test chunker; **currently supported:
@@ -86,8 +89,9 @@ intent: <Step 1 intent, focused on the SETUP shape this test will need>
 ```
 
 Recipe internally issues `mcp__tea-rags__semantic_search` with
-`chunkType: "test_setup"` + `rerank: "proven"` + `metaOnly: false` (limit 6),
-returns top-K setup chunks with file:line + content excerpt.
+`chunkType: "test_setup"` + `rerank: "proven"` + `level: "chunk"` +
+`metaOnly: false` (limit 6), returns top-K setup chunks with file:line + content
+excerpt.
 
 If recipe returns SKIP (DSL test chunks absent), fall back to ONE
 `mcp__tea-rags__semantic_search` call:
@@ -99,6 +103,7 @@ query:       <intent from Step 1>
 pathPattern: <pathHint optional>
 testFile:    "only"                ← FILE-LEVEL fallback when no DSL chunks
 rerank:      "proven"              ← stable + old + low-bugFix
+level:       "chunk"               ← proven is file-level; keep chunk content
 limit:       8
 metaOnly:    false
 ```
@@ -115,6 +120,7 @@ query:       <intent from Step 1>
 pathPattern: <pathHint optional>
 chunkType:   "test"                ← DSL leaf scenarios
 rerank:      "proven"              ← battle-tested conventions
+level:       "chunk"               ← proven is file-level; keep DSL leaves
 limit:       8
 metaOnly:    false
 ```
@@ -200,6 +206,8 @@ This wrapper does not replace it — grounds RED draft in local conventions.
 
 ## Red Flags — STOP and restart from Step 2
 
+- File-grouped results (`level: "file"` in the response) → `level: "chunk"`
+  missing; redo
 - "I know how tests look in this project" → run Step 2 anyway; memory stale
   across files
 - "First test of a new module, no patterns needed" → if project has ANY tests,

@@ -16,16 +16,16 @@
   returned.** `BaseExploreStrategy#execute` does
   `applyDefaults(ctx) → executeExplore(prepared) → postProcess(rawResults, ctx)`.
   Everything `applyDefaults` computed is invisible downstream and must be
-  re-derived: the base repeats `Math.max(limit, 5)`
-  (`BaseExploreStrategy#postProcess`), `ScrollRankStrategy` repeats
-  `metaOnly !== false` in both halves (`ScrollRankStrategy#applyDefaults` and
-  `#postProcess`). So `ctx.limit` means the inflated fetch limit inside
-  `executeExplore` and the user's requested limit inside `postProcess`. Why: a
-  default added to `applyDefaults` and read in `postProcess` arrives
-  `undefined`, and the bug presents as a defaulting error rather than a plumbing
-  one. Strategies overriding `applyDefaults` to identity
-  (`SymbolSearchStrategy#applyDefaults`, `FileOutlineStrategy#applyDefaults`)
-  invert the meaning of `ctx.limit` again.
+  re-derived: the base calls `requestedPageSize(limit)` in both halves
+  (`BaseExploreStrategy#applyDefaults` and `#postProcess`), `ScrollRankStrategy`
+  repeats `metaOnly !== false` in both halves
+  (`ScrollRankStrategy#applyDefaults` and `#postProcess`). So `ctx.limit` means
+  the inflated fetch limit inside `executeExplore` and the user's requested
+  limit inside `postProcess`. Why: a default added to `applyDefaults` and read
+  in `postProcess` arrives `undefined`, and the bug presents as a defaulting
+  error rather than a plumbing one. Strategies overriding `applyDefaults` to
+  identity (`SymbolSearchStrategy#applyDefaults`,
+  `FileOutlineStrategy#applyDefaults`) invert the meaning of `ctx.limit` again.
 
 ## Boundaries
 

@@ -36,7 +36,12 @@ skills.
 4. **Filter is `chunkType`, not `testFile`** — `chunkType: "test"` and
    `chunkType: "test_setup"` are chunk-level DSL filters. `testFile: "only"` =
    file-level fallback, only when DSL chunks absent.
-5. **Agentic-only** — `user-invocable: false` in frontmatter. Recipes = building
+5. **`proven` → `level: "chunk"`** — `proven` is file-level
+   (`signalLevel: "file"`) → without it DSL chunks regroup per file. Test-scoped
+   calls need no `filter`: server skips a preset's production default when
+   `chunkType` / `testFile` select tests (rule: `filter` param description).
+   Server predating that rule returns 0 → add `filter: {}`.
+6. **Agentic-only** — `user-invocable: false` in frontmatter. Recipes = building
    blocks consumed by other skills, not surfaced to user.
 
 ## Step 0 — Preflight
@@ -159,6 +164,7 @@ mcp__tea-rags__semantic_search:
   query:       <intent>
   chunkType:   "test_setup"
   rerank:      "proven"               ← stable + old + low-bugFix + multi-author
+  level:       "chunk"                ← proven is file-level; keep setup chunks (Iron Rule 5)
   limit:       6
   metaOnly:    false                  ← need setup content
 ```

@@ -26,14 +26,14 @@ export interface GitFileSignals extends FileSignalOverlay {
   recentDominantAuthorPct: number;
 
   // Temporal:
-  /** Unix timestamp of most recent commit */
-  lastModifiedAt: number;
+  /** Unix timestamp of most recent commit. Undefined when the file has no commits. */
+  lastModifiedAt?: number;
   /** Unix timestamp of first commit */
   firstCreatedAt: number;
   /** Commit hash of the most recent change */
   lastCommitHash: string;
-  /** Days since last modification */
-  ageDays: number;
+  /** Days since last modification, at enrichment time. Undefined when the file has no commits. */
+  ageDays?: number;
 
   // Real churn (from git log):
   /** Total commits touching this file */

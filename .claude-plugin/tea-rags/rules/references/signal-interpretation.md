@@ -32,7 +32,7 @@ Two ownership signal families coexist — answer different questions:
 | `chunkChurn`                            |          | chunk's share of file churn                                                                                                                              |
 | `burstActivity`                         |          | recent concentrated change bursts                                                                                                                        |
 | `bugFixRate`                            |          | share of commits tagged as fixes                                                                                                                         |
-| `ageDays`                               |          | file age (at file level only — chunk age≈0)                                                                                                              |
+| `ageDays`                               |          | days since last commit, stamped at enrichment (lags on points not re-enriched); `0` = < 1 day. Chunk value absent where chunk walk found no commit       |
 | `recentDominantAuthor`                  | `recent` | top recent committer (string, file-level)                                                                                                                |
 | `recentDominantAuthorPct`               | `recent` | top recent committer's share of recent commits                                                                                                           |
 | `recentAuthors`                         | `recent` | recent committer set (top-N, capped)                                                                                                                     |
@@ -315,18 +315,22 @@ alone knows the invariants.
 
 **Disambiguators:**
 
-- **Confidence-clamped label suppresses small-N matches automatically.** When
-  unified `stats.confidence` mechanism active, `bugFixRate.label` for files with
-  `commitCount < 5` clamped to `healthy`, `< 10` to `concerning`. Noise-only
-  file (e.g. 2 fix commits of 3) does NOT satisfy the `bugFixRate concerning+`
-  floor — gets `healthy`, falls out of Fragile silo. Correct: real risk tier
-  requires structural evidence, not small-N noise.
-- **Edge band `commitCount` 5..9.** Raw `bugFixRate` ≥ critical threshold
+- **Confidence-clamped label suppresses small-N matches automatically.**
+  `bugFixRate` overlay label capped by SAME-scope `commitCount` (file label ←
+  `git.file.commitCount`, chunk label ← `git.chunk.commitCount`) against
+  ADAPTIVE cut-offs = this collection's p10 / p25 of that `commitCount`, read
+  from collection stats at query time. Below p10 → at most `healthy`; below p25
+  → at most `concerning`. Fixed `5` / `10` = cold-start fallbacks only (index
+  lacks the percentile) — never assume them. Clamp only lowers a label, never
+  raises; raw `value` unclamped. Noise-only file (e.g. 2 fix commits of 3) below
+  p10 → `healthy` → out of Fragile silo. Correct: real risk tier needs
+  structural evidence, not small-N noise.
+- **Edge band `commitCount` p10..p25.** Raw `bugFixRate` ≥ critical threshold
   clamped to `concerning`, which DOES match. Mark such classifications "moderate
   confidence" in risk reports.
 - **If reading raw values not labels:** apply anti-pattern #8 (class-level
-  small-N rule). Don't conclude "Fragile silo" from raw `value: 63%` alone if
-  `commitCount < 5`.
+  small-N rule). No "Fragile silo" from raw `value: 63%` alone when
+  `commitCount` sibling labelled `low`.
 - **Upgrade paths:** if `bugFixRate concerning+` AND `commitCount high+` →
   upgrade to **Bug attractor** when `imports ↓`, or **Toxic silo** when churn
   rises with it.
@@ -428,11 +432,10 @@ Agents consistently make these mistakes reading overlay:
    → insufficient evidence. Say so instead of guessing a class.
 8. **"label severity = signal severity"** — incomplete when signal declares a
    `stats.confidence` block. Any signal whose descriptor names a `support`
-   sibling (`bugFixRate → commitCount`,
-   `blameDominantAuthorPct → blameContributorCount`, etc.) is a ratio/aggregate
-   whose reliability depends on that sibling. When `support` is low, label and
-   raw value mean **less** than identical values with high support —
-   small-sample noise looks like structural signal.
+   sibling (`bugFixRate → commitCount`, `instability → connectionCount`) is a
+   ratio/aggregate whose reliability depends on that sibling. When `support` is
+   low, label and raw value mean **less** than identical values with high
+   support — small-sample noise looks like structural signal.
 
    Concrete: `commitCount=3` with 2 fix commits → `bugFixRate = 67%`, looks
    identical to `200/300 = 67%`. First is noise; second is structural. Overlay's
