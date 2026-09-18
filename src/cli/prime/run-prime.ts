@@ -170,8 +170,17 @@ export async function runPrime(input: {
   const updateService = (ctx as { updateService?: UpdateCheckService }).updateService ?? buildUpdateService();
 
   try {
-    const [status, metricsResult, drift, update] = await Promise.allSettled([
-      ctx.app.getIndexStatus(path),
+    const statusRequest = ctx.app.getIndexStatus(path);
+    // The memory report addresses the collection the status resolved, so it
+    // chains on status and still overlaps the reads below. A report that cannot
+    // be read settles rejected or null — the digest just drops the section.
+    const memoryRequest = statusRequest.then(async (resolved) =>
+      resolved.status === "indexed" && resolved.collectionName
+        ? ctx.app.getCollectionMemory(resolved.collectionName)
+        : null,
+    );
+    const [status, metricsResult, drift, update, memory] = await Promise.allSettled([
+      statusRequest,
       ctx.app.getIndexMetrics(path),
       // Inspection, like get_index_status — the digest must read the same way
       // every time it is rendered, and the once-per-session warning belongs to
@@ -184,6 +193,7 @@ export async function runPrime(input: {
         timeoutMs: 1500,
         preferCache: true,
       }),
+      memoryRequest,
     ]);
 
     if (status.status !== "fulfilled") {
@@ -207,6 +217,7 @@ export async function runPrime(input: {
       metrics: metricsResult.status === "fulfilled" ? metricsResult.value : null,
       drift: drift.status === "fulfilled" ? drift.value : null,
       update: update.status === "fulfilled" ? update.value : null,
+      memory: memory.status === "fulfilled" ? memory.value : null,
       autoUpdateOutcome,
       ...(registryEntry
         ? { autoUpdateLogPath: autoUpdateLogPath(resolveDataDir(), registryEntry.name ?? registryEntry.collectionName) }

@@ -32,7 +32,12 @@ import type { QdrantClient } from "@qdrant/js-client-rest";
 
 import type { PhysicalCollectionName } from "../../contracts/types/collection-identity.js";
 import type { QdrantAliasManager } from "./aliases.js";
-import { QdrantCollectionAdmin, type CollectionInfo } from "./collection-admin.js";
+import {
+  QdrantCollectionAdmin,
+  type CollectionInfo,
+  type QdrantCollectionMemoryUsage,
+  type QdrantMemoryUsage,
+} from "./collection-admin.js";
 import { QdrantConnection, type EmbeddedDaemonProbe } from "./connection.js";
 import { QdrantPayloadIndexManager } from "./payload-index.js";
 import { QdrantPointStore } from "./point-store.js";
@@ -41,7 +46,14 @@ import { QdrantSearchExecutor, type SearchResult } from "./search-executor.js";
 import { QdrantSnapshotStore } from "./snapshots.js";
 import type { SparseVector } from "./types.js";
 
-export type { CollectionInfo, EmbeddedDaemonProbe, SearchResult, SparseVector };
+export type {
+  CollectionInfo,
+  EmbeddedDaemonProbe,
+  QdrantCollectionMemoryUsage,
+  QdrantMemoryUsage,
+  SearchResult,
+  SparseVector,
+};
 
 export class QdrantManager {
   private readonly connection: QdrantConnection;
@@ -196,6 +208,11 @@ export class QdrantManager {
   /** On-disk bytes for an EMBEDDED collection; `undefined` for external Qdrant or on any error. */
   async getCollectionDiskBytes(collectionName: string): Promise<number | undefined> {
     return this.collections.getCollectionDiskBytes(collectionName);
+  }
+
+  /** Server-side memory report (disk / RAM / page cache per component); `undefined` when unavailable. */
+  async getCollectionMemoryUsage(collectionName: string): Promise<QdrantCollectionMemoryUsage | undefined> {
+    return this.collections.getCollectionMemoryUsage(collectionName);
   }
 
   // ── Payload field indexes ──

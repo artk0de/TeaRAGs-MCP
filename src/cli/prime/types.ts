@@ -1,5 +1,5 @@
 import type { AutoUpdateTriggerOutcome } from "../../bootstrap/auto-update/trigger.js";
-import type { IndexMetrics, IndexStatus } from "../../core/api/public/dto/index.js";
+import type { CollectionMemoryMetrics, IndexMetrics, IndexStatus } from "../../core/api/public/dto/index.js";
 import type { CollectionEntry } from "../../core/api/public/index.js";
 import type { UpdateStatus } from "../update-check/types.js";
 
@@ -26,6 +26,12 @@ export interface PrimeData {
   /** Rendered `IndexDriftReport` — every axis, one `Run:` line. Null = nothing moved. */
   drift: string | null;
   update: UpdateStatus | null;
+  /**
+   * The Qdrant server's memory report for the indexed collection. Absent/null =
+   * not indexed, or the server could not report it (no endpoint on an older
+   * Qdrant, read failed): the digest then renders no `## Memory` section.
+   */
+  memory?: CollectionMemoryMetrics | null;
   /**
    * Outcome of the auto-update trigger fired for this prime run (hpg2) —
    * verdict kind or "in-memory-debounced". Absent/null = trigger not fired

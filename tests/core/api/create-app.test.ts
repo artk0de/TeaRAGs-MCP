@@ -311,6 +311,17 @@ describe("createApp", () => {
       expect(result.name).toBe("test");
     });
 
+    it("delegates getCollectionMemory to CollectionOps, null when the server reports none", async () => {
+      const getCollectionMemoryUsage = vi.fn().mockResolvedValue(undefined);
+      Object.assign(deps.qdrant, { getCollectionMemoryUsage });
+      const app = createApp(deps);
+
+      const result = await app.getCollectionMemory("test");
+
+      expect(getCollectionMemoryUsage).toHaveBeenCalledWith("test");
+      expect(result).toBeNull();
+    });
+
     it("delegates deleteCollection to CollectionOps", async () => {
       const app = createApp(deps);
       await app.deleteCollection("test");

@@ -56,6 +56,9 @@ function createRestClient(url: string, apiKey?: string): QdrantClient {
   return new QdrantClient({ url, apiKey, checkCompatibility: false });
 }
 
+/** Upper bound on one best-effort REST probe — a status read must never stall on a hung server. */
+const REST_PROBE_TIMEOUT_MS = 3000;
+
 export interface EmbeddedDaemonProbe {
   /** Current startup phase of the embedded daemon, or null if daemon is dead / not an embedded daemon. */
   startupPhase: () => StartupPhase | null;
@@ -203,17 +206,30 @@ export class QdrantConnection {
    * probe and MUST NOT throw, so it can never break `get_index_status`.
    */
   async getServerVersion(): Promise<string | undefined> {
+    const body = (await this.probeRestJson("/")) as { version?: unknown } | null | undefined;
+    const raw = body?.version;
+    return typeof raw === "string" ? raw : undefined;
+  }
+
+  /**
+   * Best-effort raw REST GET for an endpoint the typed SDK does not expose —
+   * the server root, `/collections/{name}/memory`. Reads the live `url` (an
+   * embedded daemon can move ports) and sends the configured API key.
+   *
+   * Resolves to the parsed JSON body, or `undefined` on ANY failure: transport
+   * error, timeout, a non-2xx answer — an older server answers a route it does
+   * not have with 404, which is how callers gate a newer endpoint on the
+   * response rather than on an assumed version — or a body that is not JSON.
+   * Deliberately NOT routed through {@link call}: a probe reports what it sees
+   * and must never set off reconnect or corrupt-collection quarantine.
+   */
+  async probeRestJson(path: string, timeoutMs = REST_PROBE_TIMEOUT_MS): Promise<unknown> {
     try {
       const headers: Record<string, string> = {};
       if (this.apiKey) headers["api-key"] = this.apiKey;
-      const res = await fetch(`${this.url}/`, {
-        headers,
-        signal: AbortSignal.timeout(3000),
-      });
+      const res = await fetch(`${this.url}${path}`, { headers, signal: AbortSignal.timeout(timeoutMs) });
       if (!res.ok) return undefined;
-      const body = (await res.json()) as { version?: unknown } | null;
-      const raw = body?.version;
-      return typeof raw === "string" ? raw : undefined;
+      return (await res.json()) as unknown;
     } catch {
       return undefined;
     }
