@@ -1022,3 +1022,151 @@ describe("TSProgramCache degrades to null when ts.createProgram itself throws (b
     expect(cache.acquire("src/a.ts")).not.toBeNull();
   });
 });
+
+/** First node in `sourceFile` (depth-first) that satisfies `match`. */
+function findNode<T extends ts.Node>(sourceFile: ts.SourceFile, match: (node: ts.Node) => node is T): T {
+  let found: T | undefined;
+  const visit = (node: ts.Node): void => {
+    if (found !== undefined) return;
+    if (match(node)) {
+      found = node;
+      return;
+    }
+    ts.forEachChild(node, visit);
+  };
+  visit(sourceFile);
+  if (found === undefined) throw new Error(`no matching node in ${sourceFile.fileName}`);
+  return found;
+}
+
+/** The receiver expression of the first `<receiver>.<member>` access. */
+function receiverOf(sourceFile: ts.SourceFile, member: string): ts.Expression {
+  return findNode(
+    sourceFile,
+    (node): node is ts.PropertyAccessExpression => ts.isPropertyAccessExpression(node) && node.name.text === member,
+  ).expression;
+}
+
+/** The first call whose callee is the bare identifier `callee`. */
+function callOf(sourceFile: ts.SourceFile, callee: string): ts.CallExpression {
+  return findNode(
+    sourceFile,
+    (node): node is ts.CallExpression =>
+      ts.isCallExpression(node) && ts.isIdentifier(node.expression) && node.expression.text === callee,
+  );
+}
+
+describe("TSProgramCache type-checks with the option semantics codegraph was measured under (bd tea-rags-mcp-noc7)", () => {
+  // TypeScript 6.0 flipped the defaults of `strict` (and every flag it
+  // implies), `alwaysStrict`, `esModuleInterop` and `libReplacement`. The
+  // Programs the resolver strategies read never set them, so an upgrade alone
+  // would re-type receivers and move edges — measured on this repo's own
+  // corpus: 101 edge rows changed (`x?.m()` sites went from `exact` to `cone`,
+  // 68 calls left `externalSkipped`). Each case below is a checker answer that
+  // flips under the TypeScript 6 defaults.
+  let repoRoot: string;
+  let cache: TSProgramCache;
+
+  beforeEach(() => {
+    repoRoot = realpathSync(mkdtempSync(join(tmpdir(), "ts-program-cache-")));
+    cache = new TSProgramCache({ repoRoot, tsOptions: { baseUrl: ".", paths: {} } });
+  });
+
+  afterEach(() => {
+    rmSync(repoRoot, { recursive: true, force: true });
+  });
+
+  it("types an optional receiver as its declared class, not a union with undefined", () => {
+    writeSource(repoRoot, "src/store.ts", `export class Store {\n  save(): void {}\n}\n`);
+    writeSource(
+      repoRoot,
+      "src/caller.ts",
+      `import type { Store } from "./store.js";\n\nexport function run(store: Store | undefined): void {\n  store?.save();\n}\n`,
+    );
+
+    const handle = cache.acquire("src/caller.ts");
+    expect(handle).not.toBeNull();
+    const { checker, sourceFile } = handle!;
+
+    // strictNullChecks off: `null` / `undefined` are absorbed, so the union
+    // receiver strategy never sees a second constituent (ts-external-call.ts
+    // `typeDeclaredOutsideProject` depends on exactly this).
+    expect(checker.typeToString(checker.getTypeAtLocation(receiverOf(sourceFile, "save")))).toBe("Store");
+  });
+
+  it("types a catch binding as any, not unknown", () => {
+    writeSource(
+      repoRoot,
+      "src/caller.ts",
+      `export function run(): void {\n  try {\n    work();\n  } catch (error) {\n    error.report();\n  }\n}\n\ndeclare function work(): void;\n`,
+    );
+
+    const handle = cache.acquire("src/caller.ts");
+    expect(handle).not.toBeNull();
+    const { checker, sourceFile } = handle!;
+
+    expect(checker.typeToString(checker.getTypeAtLocation(receiverOf(sourceFile, "report")))).toBe("any");
+  });
+
+  it("keeps the call signature of a namespace-imported `export =` function", () => {
+    // The express shape: a function merged with a namespace, exported with
+    // `export =`. With esModuleInterop the namespace import becomes a
+    // synthesized module object with no call signatures, and `legacy()`
+    // resolves to nothing.
+    writeSource(repoRoot, "node_modules/legacy-fn/package.json", `{ "name": "legacy-fn", "types": "index.d.ts" }\n`);
+    const declarationFile = writeSource(
+      repoRoot,
+      "node_modules/legacy-fn/index.d.ts",
+      `declare function legacy(): void;\ndeclare namespace legacy {\n  const version: string;\n}\nexport = legacy;\n`,
+    );
+    writeSource(
+      repoRoot,
+      "src/caller.ts",
+      `import * as legacy from "legacy-fn";\n\nexport function run(): void {\n  legacy();\n}\n`,
+    );
+
+    const handle = cache.acquire("src/caller.ts");
+    expect(handle).not.toBeNull();
+    const { checker, sourceFile } = handle!;
+
+    const declaration = checker.getResolvedSignature(callOf(sourceFile, "legacy"))?.declaration;
+    expect(declaration?.getSourceFile().fileName).toBe(declarationFile);
+  });
+
+  it("binds a block-level function in a JavaScript script to the enclosing function scope", () => {
+    // Sloppy-mode script semantics: without `alwaysStrict` a non-module .js
+    // file is not strict, so a function declared inside a block is visible
+    // after it. Forced strict mode scopes it to the block and the call below
+    // resolves to nothing.
+    writeSource(
+      repoRoot,
+      "src/legacy.js",
+      `if (globalThis.enabled) {\n  function helper() {\n    return 1;\n  }\n}\nhelper();\n`,
+    );
+
+    const handle = cache.acquire("src/legacy.js");
+    expect(handle).not.toBeNull();
+    const { checker, sourceFile } = handle!;
+
+    const declaration = checker.getResolvedSignature(callOf(sourceFile, "helper"))?.declaration;
+    expect(declaration !== undefined && ts.isFunctionDeclaration(declaration) ? declaration.name?.text : null).toBe(
+      "helper",
+    );
+  });
+
+  it("keeps the TypeScript 5 option values the checker answers above depend on", () => {
+    // `libReplacement` has no in-repo fixture: the `@typescript/lib-*` lookup
+    // is anchored at the compiler host's current directory, not at the
+    // project root, so it is pinned by value alongside the others.
+    writeSource(repoRoot, "src/a.ts", `export const a = 1;\n`);
+
+    const handle = cache.acquire("src/a.ts");
+
+    expect(handle?.program.getCompilerOptions()).toMatchObject({
+      strict: false,
+      alwaysStrict: false,
+      esModuleInterop: false,
+      libReplacement: true,
+    });
+  });
+});
