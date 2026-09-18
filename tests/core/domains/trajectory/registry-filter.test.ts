@@ -65,6 +65,12 @@ describe("TrajectoryRegistry.buildMergedFilter", () => {
       });
     });
 
+    it("the MCP `author` param compiles to a blame-owner condition instead of being dropped", () => {
+      expect(registerGitAndCodegraph().buildMergedFilter({ author: "Nobody At All" })).toEqual({
+        must: [{ key: "git.file.blameDominantAuthor", match: { value: "Nobody At All" } }],
+      });
+    });
+
     it("an explicit level still overrides every level-aware descriptor", () => {
       const filter = registerGitAndCodegraph().buildMergedFilter(
         { taskId: "T-1", minFanIn: 3, minCommitCount: 2 },

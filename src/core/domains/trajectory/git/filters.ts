@@ -7,7 +7,12 @@
  * default level "chunk".
  */
 
-import type { FilterDescriptor, FilterLevel } from "../../../contracts/index.js";
+import type { FilterConditionResult, FilterDescriptor, FilterLevel } from "../../../contracts/index.js";
+
+/** Exact match on the blame-dominant (live-line) author at the given level. */
+function blameOwnerCondition(value: unknown, level: FilterLevel): FilterConditionResult {
+  return { must: [{ key: `git.${level}.blameDominantAuthor`, match: { value: value as string } }] };
+}
 
 export const gitFilters: FilterDescriptor[] = [
   {
@@ -31,9 +36,18 @@ export const gitFilters: FilterDescriptor[] = [
     param: "blameOwner",
     description: "Filter by live-line owner — author of most lines in HEAD via git blame",
     type: "string",
-    toCondition: (value: unknown) => ({
-      must: [{ key: "git.file.blameDominantAuthor", match: { value: value as string } }],
-    }),
+    toCondition: (value: unknown) => blameOwnerCondition(value, "file"),
+  },
+  {
+    // The MCP-facing name (`author` in the tool schema): same blame-owner
+    // semantics as blameOwner, but level-aware so `level: "chunk"` narrows to
+    // the chunk's own live lines. Without this descriptor the registry had no
+    // param "author" and silently dropped the filter (tea-rags-mcp-9mwny).
+    param: "author",
+    description:
+      "Filter by blame-dominant author — owner of most live lines (git blame HEAD). Level-aware, default file.",
+    type: "string",
+    toCondition: (value: unknown, level: FilterLevel = "file") => blameOwnerCondition(value, level),
   },
   {
     param: "minRecentContributors",

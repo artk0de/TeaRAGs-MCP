@@ -176,12 +176,13 @@ Concrete payload examples:
   "minCommitCount": 5
 }
 
-// Code linked to a Jira ticket, author-scoped:
+// Code linked to a Jira ticket, author-scoped. `author` = exact blame-owner
+// NAME (git blame author name, not email); taskId + author both file-level by
+// default, so no `level` needed:
 {
   "query": "retry logic",
   "taskId": "JIRA-1234",
-  "author": "alice@example.com",
-  "level": "file"
+  "author": "Alice Smith"
 }
 ```
 

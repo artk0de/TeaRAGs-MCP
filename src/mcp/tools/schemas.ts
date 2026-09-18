@@ -202,7 +202,10 @@ function typedFilterFields() {
     author: z
       .string()
       .optional()
-      .describe("Filter by dominant author (the author with most lines in chunk). Example: 'John Doe'"),
+      .describe(
+        "Filter by blame-dominant author — owner of most live lines (git blame HEAD), exact name. " +
+          "File-level by default; level 'chunk' → owner of the chunk's own lines. Example: 'John Doe'",
+      ),
     modifiedAfter: z
       .string()
       .optional()

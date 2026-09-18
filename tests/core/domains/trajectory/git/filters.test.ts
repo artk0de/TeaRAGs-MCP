@@ -8,9 +8,52 @@ import { gitPayloadSignalDescriptors } from "../../../../../src/core/domains/tra
 
 const findFilter = (param: string) => gitFilters.find((f) => f.param === param)!;
 
+/**
+ * Minimal Qdrant filter evaluator for the shapes git filters compile to —
+ * must / must_not / nested should, leaves match.value, match.any, range and
+ * is_empty. A missing key fails match and range (Qdrant semantics).
+ */
+type FilterNode = Record<string, any>;
+function payloadAt(payload: Record<string, any>, key: string): unknown {
+  let node: any = payload;
+  for (const segment of key.split(".")) {
+    if (node === null || typeof node !== "object") return undefined;
+    node = node[segment];
+  }
+  return node;
+}
+function matchesNode(payload: Record<string, any>, node: FilterNode): boolean {
+  if (node.should) return (node.should as FilterNode[]).some((n) => matchesNode(payload, n));
+  if (node.must || node.must_not) return matchesQdrantFilter(payload, node);
+  if (node.is_empty) {
+    const v = payloadAt(payload, node.is_empty.key);
+    return v === undefined || v === null || (Array.isArray(v) && v.length === 0);
+  }
+  const value = payloadAt(payload, node.key);
+  if (node.match && "value" in node.match) return value === node.match.value;
+  if (node.match?.any) return (node.match.any as unknown[]).includes(value);
+  if (node.range) {
+    if (typeof value !== "number") return false;
+    const { gt, gte, lt, lte } = node.range;
+    return (
+      (gt === undefined || value > gt) &&
+      (gte === undefined || value >= gte) &&
+      (lt === undefined || value < lt) &&
+      (lte === undefined || value <= lte)
+    );
+  }
+  return false;
+}
+function matchesQdrantFilter(payload: Record<string, any>, filter: FilterNode | undefined): boolean {
+  if (!filter) return true;
+  const must = (filter.must ?? []) as FilterNode[];
+  const mustNot = (filter.must_not ?? []) as FilterNode[];
+  return must.every((n) => matchesNode(payload, n)) && !mustNot.some((n) => matchesNode(payload, n));
+}
+
 describe("git filter descriptors", () => {
-  it("exports 10 filter descriptors", () => {
-    expect(gitFilters).toHaveLength(10);
+  it("exports 11 filter descriptors", () => {
+    expect(gitFilters).toHaveLength(11);
   });
 
   it("each filter has required fields", () => {
@@ -39,6 +82,33 @@ describe("git filter descriptors", () => {
     expect(result.must![0]).toEqual({
       key: "git.file.blameDominantAuthor",
       match: { value: "alice" },
+    });
+  });
+
+  describe("author (tea-rags-mcp-9mwny: the MCP param had no descriptor and was dropped)", () => {
+    const points = [
+      { git: { file: { blameDominantAuthor: "Alice" }, chunk: { blameDominantAuthor: "Bob" } } },
+      { git: { file: { blameDominantAuthor: "Carol" }, chunk: { blameDominantAuthor: "Alice" } } },
+    ];
+
+    it("compiles to the blame-dominant author, file level by default", () => {
+      expect(findFilter("author").toCondition("Alice").must).toEqual([
+        { key: "git.file.blameDominantAuthor", match: { value: "Alice" } },
+      ]);
+    });
+
+    it("level 'chunk' reads the chunk's own live-line owner", () => {
+      expect(findFilter("author").toCondition("Alice", "chunk").must).toEqual([
+        { key: "git.chunk.blameDominantAuthor", match: { value: "Alice" } },
+      ]);
+    });
+
+    it("a nonexistent author matches no point; a real one matches only its files", () => {
+      const nobody = findFilter("author").toCondition("Nobody At All");
+      expect(points.filter((p) => matchesQdrantFilter(p, nobody))).toHaveLength(0);
+
+      const alice = findFilter("author").toCondition("Alice");
+      expect(points.filter((p) => matchesQdrantFilter(p, alice))).toEqual([points[0]]);
     });
   });
 
