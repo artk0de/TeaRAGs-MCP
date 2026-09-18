@@ -1,6 +1,5 @@
 import { CONTINUE, DROP, resolved } from "../../../../../contracts/resolution.js";
-import { resolveLocalBindingType } from "../../../../../contracts/types/codegraph.js";
-import type { CallContext, CallRef } from "../../../../../contracts/types/codegraph.js";
+import { resolveLocalBindingType, type CallContext, type CallRef } from "../../../../../contracts/types/codegraph.js";
 import type { SymbolResolutionOutcome, SymbolResolutionStrategy } from "../../../../../contracts/types/language.js";
 import { resolveByLocalType, type ResolverConfig } from "./shared.js";
 
