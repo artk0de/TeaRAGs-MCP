@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 
 import type { PayloadSignalDescriptor } from "../../../../../src/core/contracts/types/trajectory.js";
+import { compileFilterPreset } from "../../../../../src/core/domains/trajectory/filter-presets/compiler.js";
+import { freshLegacyEditsFilterPreset } from "../../../../../src/core/domains/trajectory/git/filter-presets/fresh-legacy-edits.js";
 import { gitFilters } from "../../../../../src/core/domains/trajectory/git/filters.js";
 import { gitPayloadSignalDescriptors } from "../../../../../src/core/domains/trajectory/git/payload-signals.js";
 
@@ -86,11 +88,14 @@ describe("git filter descriptors", () => {
 });
 
 describe("level-aware filters", () => {
+  // ageDays 0 = last commit less than 24h before enrichment (day-floored), NOT
+  // "no git data": both assemblers leave the key absent when there is no
+  // history, and the is_empty guard below is what excludes those points.
   it("minAgeDays uses level-aware key with is_empty guard", () => {
     const chunkLevel = findFilter("minAgeDays").toCondition(30);
     expect(chunkLevel.must![0]).toEqual({
       key: "git.chunk.ageDays",
-      range: { gt: 0, gte: 30 },
+      range: { gte: 30 },
     });
     // Guard: exclude points where field is missing (Qdrant skips range on undefined)
     expect(chunkLevel.must_not![0]).toEqual({ is_empty: { key: "git.chunk.ageDays" } });
@@ -104,13 +109,24 @@ describe("level-aware filters", () => {
     const chunkLevel = findFilter("maxAgeDays").toCondition(90);
     expect(chunkLevel.must![0]).toEqual({
       key: "git.chunk.ageDays",
-      range: { gt: 0, lte: 90 },
+      range: { lte: 90 },
     });
     expect(chunkLevel.must_not![0]).toEqual({ is_empty: { key: "git.chunk.ageDays" } });
 
     const fileLevel = findFilter("maxAgeDays").toCondition(7, "file");
     expect(fileLevel.must![0].key).toBe("git.file.ageDays");
     expect(fileLevel.must_not![0]).toEqual({ is_empty: { key: "git.file.ageDays" } });
+  });
+
+  it("maxAgeDays admits ageDays 0 — code committed less than a day before enrichment is the freshest, not unknown", () => {
+    const fileLevel = findFilter("maxAgeDays").toCondition(7, "file");
+    expect(fileLevel.must).toEqual([{ key: "git.file.ageDays", range: { lte: 7 } }]);
+  });
+
+  it("maxAgeDays compiles the same chunk range as the freshLegacyEdits filter preset", () => {
+    const presetFilter = compileFilterPreset(freshLegacyEditsFilterPreset, undefined, "chunk");
+    const presetChunkAge = presetFilter.must!.find((c) => "key" in c && c.key === "git.chunk.ageDays");
+    expect(findFilter("maxAgeDays").toCondition(7).must![0]).toEqual(presetChunkAge);
   });
 
   it("minCommitCount defaults to chunk level", () => {

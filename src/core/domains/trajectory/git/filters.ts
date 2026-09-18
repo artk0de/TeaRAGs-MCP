@@ -73,12 +73,17 @@ export const gitFilters: FilterDescriptor[] = [
       ],
     }),
   },
+  // Age filters: ageDays 0 is the freshest code (last commit < 24h before
+  // enrichment, day-floored), never a no-data sentinel — both assemblers leave
+  // the key ABSENT when there is no history (assembleChunkSignals writes
+  // undefined; a file without commits gets no overlay at all). So no `gt: 0`
+  // guard: the is_empty guard alone excludes the no-data points.
   {
     param: "minAgeDays",
     description: "Filter code older than N days",
     type: "number",
     toCondition: (value: unknown, level: FilterLevel = "chunk") => ({
-      must: [{ key: `git.${level}.ageDays`, range: { gt: 0, gte: value as number } }],
+      must: [{ key: `git.${level}.ageDays`, range: { gte: value as number } }],
       must_not: [{ is_empty: { key: `git.${level}.ageDays` } }],
     }),
   },
@@ -87,7 +92,7 @@ export const gitFilters: FilterDescriptor[] = [
     description: "Filter code newer than N days",
     type: "number",
     toCondition: (value: unknown, level: FilterLevel = "chunk") => ({
-      must: [{ key: `git.${level}.ageDays`, range: { gt: 0, lte: value as number } }],
+      must: [{ key: `git.${level}.ageDays`, range: { lte: value as number } }],
       must_not: [{ is_empty: { key: `git.${level}.ageDays` } }],
     }),
   },
