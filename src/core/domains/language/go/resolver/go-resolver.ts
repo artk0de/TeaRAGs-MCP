@@ -21,7 +21,9 @@
  *   4. importMatch       (Step 1 — receiver matches an import's last segment)
  *   5. receiverDrop      (Step 2 — receiver matched nothing; terminal drop,
  *                          bd tea-rags-mcp-m46z)
- *   6. globalShortName   (Step 3 — no receiver: global short-name fallback)
+ *   6. genericInstantiation (Step 2b — bare `f[T](…)`: the same-package
+ *                          declaration `f`, bd tea-rags-mcp-e6xx)
+ *   7. globalShortName   (Step 3 — no receiver: global short-name fallback)
  *
  * The three typed passes share `resolveByLocalType`, so method promotion
  * through struct embedding (`engine.GET` → `RouterGroup#GET`) applies to each.
@@ -48,6 +50,7 @@ import type { SymbolIdComposer, SymbolResolutionStrategy } from "../../../../con
 import { resolveViaChain } from "../../resolver-chain.js";
 import { GoModuleMapCache } from "./go-module-map.js";
 import {
+  GoGenericInstantiationSymbolResolutionStrategy,
   GoGlobalShortNameSymbolResolutionStrategy,
   GoImportMatchSymbolResolutionStrategy,
   GoLocalBindingSymbolResolutionStrategy,
@@ -78,6 +81,7 @@ export class GoCallResolver implements CallResolver {
       new GoReceiverChainSymbolResolutionStrategy(cfg),
       new GoImportMatchSymbolResolutionStrategy(cfg),
       new GoReceiverDropSymbolResolutionStrategy(cfg),
+      new GoGenericInstantiationSymbolResolutionStrategy(cfg),
       new GoGlobalShortNameSymbolResolutionStrategy(cfg),
     ];
   }

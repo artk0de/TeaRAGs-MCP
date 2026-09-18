@@ -12,6 +12,8 @@
  * factored here so they live once.
  */
 
+import { posix } from "node:path";
+
 import {
   pickSingleCandidate,
   type AmbiguousResolveMode,
@@ -76,6 +78,12 @@ export function resolveByLocalType(
 export function isKnownTypeSymbol(typeName: string, ctx: CallContext): boolean {
   if (ctx.symbolTable.lookup(typeName).length > 0) return true;
   return ctx.symbolTable.lookupByShortName(typeName).length > 0;
+}
+
+/** The package directory of a Go file: its directory, `""` at the root. A Go package is exactly one directory. */
+export function goPackageDirOf(relPath: string): string {
+  const dir = posix.dirname(relPath);
+  return dir === "." ? "" : dir;
 }
 
 /** `importText`'s last `/`-segment equals the bare receiver. */

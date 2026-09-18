@@ -3,5 +3,6 @@ export { GoReturnTypeBindingSymbolResolutionStrategy } from "./go-return-type-bi
 export { GoReceiverChainSymbolResolutionStrategy } from "./go-receiver-chain.js";
 export { GoImportMatchSymbolResolutionStrategy } from "./go-import-match.js";
 export { GoReceiverDropSymbolResolutionStrategy } from "./go-receiver-drop.js";
+export { GoGenericInstantiationSymbolResolutionStrategy } from "./go-generic-instantiation.js";
 export { GoGlobalShortNameSymbolResolutionStrategy } from "./go-global-short-name.js";
 export { importMatchesReceiver, isKnownTypeSymbol, resolveByLocalType, type ResolverConfig } from "./shared.js";

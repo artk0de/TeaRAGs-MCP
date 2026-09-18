@@ -1,10 +1,8 @@
-import { posix } from "node:path";
-
 import { CONTINUE, resolved } from "../../../../../contracts/resolution.js";
 import { pickSingleCandidate, type CallContext, type CallRef } from "../../../../../contracts/types/codegraph.js";
 import type { SymbolResolutionOutcome, SymbolResolutionStrategy } from "../../../../../contracts/types/language.js";
 import type { GoModuleMap } from "../go-module-map.js";
-import { importMatchesReceiver, type ResolverConfig } from "./shared.js";
+import { goPackageDirOf, importMatchesReceiver, type ResolverConfig } from "./shared.js";
 
 /**
  * Step 1 — the receiver names an imported package (`bytesconv.StringToBytes`,
@@ -54,10 +52,4 @@ export class GoImportMatchSymbolResolutionStrategy implements SymbolResolutionSt
 function goImportPackageDir(importText: string, modules: GoModuleMap | undefined): string | undefined {
   if (modules?.declaresModules) return modules.packageDirOf(importText);
   return importText.replace(/^\.\//, "");
-}
-
-/** The package directory of a Go file: its directory, `""` at the root. */
-function goPackageDirOf(relPath: string): string {
-  const dir = posix.dirname(relPath);
-  return dir === "." ? "" : dir;
 }
