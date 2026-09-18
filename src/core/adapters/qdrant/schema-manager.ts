@@ -106,6 +106,28 @@ export const ENRICHMENT_SCAN_INDEXES: readonly { readonly path: string; readonly
   { path: "codegraph.symbols.chunk.skippedAs", schema: "keyword" },
 ];
 
+/**
+ * The last-commit timestamps the git time filters range over:
+ * `minAgeDays` / `maxAgeDays` compile to `git.<level>.lastModifiedAt` bounds
+ * computed from query-time now (either level), `modifiedAfter` /
+ * `modifiedBefore` to `git.file.lastModifiedAt` (bd tea-rags-mcp-9mwny). The
+ * value is a whole-second commit timestamp, so `integer` serves the range.
+ *
+ * Unindexed, the filters still answer correctly — Qdrant reads the payload of
+ * every candidate — at a measured cost on the 24.6k-point self-index of
+ * 1.4–1.9 ms → 304–441 ms per count and 1.0–1.3 ms → 516–544 ms per filtered
+ * vector query, the latter on every bug-hunt fresh probe.
+ *
+ * Mirrored from `gitFilters` for the same layer reason as
+ * {@link CODEGRAPH_FILTER_INDEXES}; `tests/…/last-commit-time-filter-index-parity.test.ts`
+ * compares both directions. `schema-v17-last-commit-time-indexes` applies the
+ * list to collections that already exist.
+ */
+export const LAST_COMMIT_TIME_FILTER_INDEXES: readonly { readonly path: string; readonly schema: IndexSchema }[] = [
+  { path: "git.file.lastModifiedAt", schema: "integer" },
+  { path: "git.chunk.lastModifiedAt", schema: "integer" },
+];
+
 /** Payload keys filtered by exact value, each carrying a `keyword` index (schema v6). */
 export const KEYWORD_FILTER_INDEX_KEYS = ["language", "fileExtension", "chunkType"] as const;
 
@@ -125,6 +147,7 @@ export const SCHEMA_MANAGED_PAYLOAD_INDEX_KEYS: readonly string[] = [
   ...KEYWORD_FILTER_INDEX_KEYS,
   ...CODEGRAPH_FILTER_INDEXES.map(({ path }) => path),
   ...ENRICHMENT_SCAN_INDEXES.map(({ path }) => path),
+  ...LAST_COMMIT_TIME_FILTER_INDEXES.map(({ path }) => path),
 ];
 
 /** A Qdrant payload field-index schema this project creates. */
@@ -139,6 +162,7 @@ const SCHEMA_MANAGED_PAYLOAD_INDEX_SCHEMAS: ReadonlyMap<string, PayloadFieldInde
   ...KEYWORD_FILTER_INDEX_KEYS.map((key): [string, PayloadFieldIndexSchema] => [key, "keyword"]),
   ...CODEGRAPH_FILTER_INDEXES.map(({ path, schema }): [string, PayloadFieldIndexSchema] => [path, schema]),
   ...ENRICHMENT_SCAN_INDEXES.map(({ path, schema }): [string, PayloadFieldIndexSchema] => [path, schema]),
+  ...LAST_COMMIT_TIME_FILTER_INDEXES.map(({ path, schema }): [string, PayloadFieldIndexSchema] => [path, schema]),
 ]);
 
 /**
@@ -150,9 +174,10 @@ const SCHEMA_MANAGED_PAYLOAD_INDEX_SCHEMAS: ReadonlyMap<string, PayloadFieldInde
  * a lazy caller would guess. Every other key's schema follows its declared
  * type: a `number` is `float`, because Qdrant's float index serves integer
  * values while an integer index silently skips a fractional one (the
- * self-index's `methodDensity` float index covers its integer values). A
- * `timestamp` returns `undefined`: no descriptor pins how its value is stored,
- * so no index is safe to create.
+ * self-index's `methodDensity` float index covers its integer values). An
+ * unmanaged `timestamp` returns `undefined`: no descriptor pins how its value
+ * is stored, so no index is safe to create — the schema-managed
+ * {@link LAST_COMMIT_TIME_FILTER_INDEXES} are the pinned exception.
  *
  * Replaces the `/count|days|lines/` name heuristic rank_chunks used, which gave
  * the bool `git.file.isHub` a float index (bd tea-rags-mcp-q34ic).
@@ -251,6 +276,12 @@ export class SchemaManager {
     // That is what happened to taxdome's `_v13`: schemaVersion 13, zero
     // enrichedAt indexes, every unenriched scan a full payload scan.
     for (const { path, schema } of ENRICHMENT_SCAN_INDEXES) {
+      await this.qdrant.createPayloadIndex(collectionName, path, schema);
+      indexes.push(path);
+    }
+
+    // Create indexes the git time filters range over (age, modifiedAfter/Before).
+    for (const { path, schema } of LAST_COMMIT_TIME_FILTER_INDEXES) {
       await this.qdrant.createPayloadIndex(collectionName, path, schema);
       indexes.push(path);
     }

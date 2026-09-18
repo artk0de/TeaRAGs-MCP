@@ -21,6 +21,8 @@ function recordingIndexStore(seen: Set<IndexKey>): IndexStore {
     scrollAllPayload: async () => [],
     batchSetPayload: async () => undefined,
     deletePayloadKeys: async () => undefined,
+    listPayloadIndexes: async () => [],
+    dropPayloadIndex: async () => undefined,
   };
 }
 
@@ -37,14 +39,18 @@ function stubEnrichmentStore(): EnrichmentStore {
  * Run one migrator end to end and report every index it ensured. Passing an
  * enrichment store changes WHICH migrations exist: the runner drops the
  * enrichment-gated ones (SchemaV9 today) when it has no store and no provider
- * key, so a single construction never sees the whole set.
+ * key, so a single construction never sees the whole set. The declared payload
+ * keys gate v16 and every migration above it; production always supplies them.
  */
-async function indexesFromMigrations(enrichmentStore?: EnrichmentStore): Promise<Set<IndexKey>> {
+async function indexesFromMigrations(
+  enrichmentStore?: EnrichmentStore,
+  declaredPayloadKeys?: ReadonlySet<string>,
+): Promise<Set<IndexKey>> {
   const seen = new Set<IndexKey>();
   const migrator = new SchemaMigrator(
     "c",
     recordingIndexStore(seen),
-    { enableHybrid: true, ...(enrichmentStore && { providerKey: "git" }) },
+    { enableHybrid: true, ...(enrichmentStore && { providerKey: "git" }), declaredPayloadKeys },
     enrichmentStore,
   );
   for (const migration of migrator.getMigrations()) await migration.apply();
@@ -74,6 +80,7 @@ describe("initializeSchema ⟺ schema migrations parity", () => {
     const fromMigrations = new Set<IndexKey>([
       ...(await indexesFromMigrations()),
       ...(await indexesFromMigrations(stubEnrichmentStore())),
+      ...(await indexesFromMigrations(stubEnrichmentStore(), new Set(["git.chunk.ageDays"]))),
     ]);
 
     expect([...fromInit].sort()).toEqual([...fromMigrations].sort());

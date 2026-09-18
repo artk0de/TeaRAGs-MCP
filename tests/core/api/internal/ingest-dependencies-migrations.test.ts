@@ -131,6 +131,7 @@ describe("createIngestDependencies — schema v16 reconciliation", () => {
         .fn()
         .mockResolvedValue(SELF_INDEX_PAYLOAD_SCHEMA.map(([field, dataType, points]) => ({ field, dataType, points }))),
       deletePayloadIndex: vi.fn().mockResolvedValue(undefined),
+      ensurePayloadIndex: vi.fn().mockResolvedValue(true),
     };
   }
 
@@ -156,10 +157,33 @@ describe("createIngestDependencies — schema v16 reconciliation", () => {
       "git.file.isHub",
       "git.file.transitiveImpact",
     ]);
-    expect(summary).toMatchObject({ fromVersion: 15, toVersion: 16 });
+    expect(summary).toMatchObject({ fromVersion: 15, toVersion: 17 });
   });
 
-  it("stamps new collections at the version that includes v16", async () => {
+  // bd tea-rags-mcp-9mwny — the same sweep then gives the self-index the
+  // last-commit timestamp indexes the age / modifiedAfter filters range over.
+  it("ensures both last-commit timestamp indexes after the drop", async () => {
+    const qdrant = selfIndexQdrant();
+    const deps = createIngestDependencies(
+      qdrant as unknown as QdrantManager,
+      snapshotDir,
+      {} as PayloadBuilder,
+      undefined,
+      false,
+      undefined,
+    );
+
+    const summary = await deps.createMigrator("code_8b243ffe", "/project").run("schema");
+
+    expect(summary.steps.map((step) => step.name)).toEqual([
+      "schema-v16-drop-undeclared-payload-indexes",
+      "schema-v17-last-commit-time-indexes",
+    ]);
+    expect(qdrant.ensurePayloadIndex).toHaveBeenCalledWith("code_8b243ffe", "git.file.lastModifiedAt", "integer");
+    expect(qdrant.ensurePayloadIndex).toHaveBeenCalledWith("code_8b243ffe", "git.chunk.lastModifiedAt", "integer");
+  });
+
+  it("stamps new collections at the latest version, which includes v16 and v17", async () => {
     const qdrant = { ...selfIndexQdrant(), getPoint: vi.fn().mockResolvedValue(null), createPayloadIndex: vi.fn() };
     const deps = createIngestDependencies(
       qdrant as unknown as QdrantManager,
@@ -173,7 +197,7 @@ describe("createIngestDependencies — schema v16 reconciliation", () => {
     await deps.createSchemaManager("code_new").initializeSchema("code_new");
 
     expect(qdrant.addPoints).toHaveBeenCalledWith("code_new", [
-      expect.objectContaining({ payload: expect.objectContaining({ schemaVersion: 16 }) }),
+      expect.objectContaining({ payload: expect.objectContaining({ schemaVersion: 17 }) }),
     ]);
   });
 });

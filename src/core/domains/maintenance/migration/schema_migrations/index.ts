@@ -11,3 +11,4 @@ export { SchemaV13RenameOwnershipPayload } from "./schema-v13-rename-ownership-p
 export { SchemaV14EnrichmentScanIndexes } from "./schema-v14-enrichment-scan-indexes.js";
 export { SchemaV15CodegraphFilterIndexes } from "./schema-v15-codegraph-filter-indexes.js";
 export { SchemaV16DropUndeclaredPayloadIndexes } from "./schema-v16-drop-undeclared-payload-indexes.js";
+export { SchemaV17LastCommitTimeIndexes } from "./schema-v17-last-commit-time-indexes.js";

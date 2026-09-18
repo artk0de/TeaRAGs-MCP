@@ -25,7 +25,10 @@ function blameOwnerCondition(value: unknown, level: FilterLevel): FilterConditio
  * floor(days)). `gt: 0` excludes the chunk no-commit sentinel: the chunk
  * assembler writes `lastModifiedAt: 0` for a chunk no commit touched, and a
  * doc chunk or a file without history carries no timestamp at all (the
- * is_empty guard).
+ * is_empty guard). Every timestamp key a filter here ranges over needs an
+ * integer payload index — `LAST_COMMIT_TIME_FILTER_INDEXES` in the Qdrant
+ * schema manager, pinned both ways by its parity test; unindexed, the filter is
+ * a silent full payload scan.
  */
 function lastCommitAgeCondition(key: string, range: { gt: number; lte?: number }): FilterConditionResult {
   return {

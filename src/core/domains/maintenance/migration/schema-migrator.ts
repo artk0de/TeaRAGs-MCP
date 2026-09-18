@@ -12,6 +12,7 @@ import {
   SchemaV14EnrichmentScanIndexes,
   SchemaV15CodegraphFilterIndexes,
   SchemaV16DropUndeclaredPayloadIndexes,
+  SchemaV17LastCommitTimeIndexes,
 } from "./schema_migrations/index.js";
 import type { EnrichmentStore, IndexStore, Migration, MigrationRunner, SnapshotStore } from "./types.js";
 
@@ -25,8 +26,10 @@ export interface SchemaMigratorOptions {
    *
    * v16 exists only when this set is non-empty: absent keys mean nothing to
    * judge an index against, so the collection stays below 16 and the next run
-   * that has them performs the drop. Production always supplies it, so there
-   * the latest schema version is 16; a construction without it reports 15.
+   * that has them performs the drop. Every migration ABOVE 16 rides the same
+   * gate — applying one stamps the collection past 16, and the drop would never
+   * run there. Production always supplies the set, so there the latest schema
+   * version is 17; a construction without it reports 15.
    */
   declaredPayloadKeys?: ReadonlySet<string>;
 }
@@ -75,6 +78,7 @@ export class SchemaMigrator implements MigrationRunner {
               indexStore as IndexStore & Required<Pick<IndexStore, "listPayloadIndexes" | "dropPayloadIndex">>,
               options.declaredPayloadKeys,
             ),
+            new SchemaV17LastCommitTimeIndexes(collection, indexStore),
           ]
         : []),
     ];
