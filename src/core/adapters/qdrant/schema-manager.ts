@@ -14,6 +14,7 @@
  * - v8: Added text index on `symbolId` for partial match filtering
  */
 
+import type { PayloadSignalDescriptor } from "../../contracts/types/trajectory.js";
 import type { QdrantManager } from "../qdrant/client.js";
 import { TEXT_INDEXED_KEYS } from "./filters/text-indexed-exact.js";
 import { SchemaMetadataPointStore } from "./schema-metadata-point.js";
@@ -105,6 +106,76 @@ export const ENRICHMENT_SCAN_INDEXES: readonly { readonly path: string; readonly
   { path: "codegraph.symbols.chunk.skippedAs", schema: "keyword" },
 ];
 
+/** Payload keys filtered by exact value, each carrying a `keyword` index (schema v6). */
+export const KEYWORD_FILTER_INDEX_KEYS = ["language", "fileExtension", "chunkType"] as const;
+
+/**
+ * Every payload field {@link SchemaManager.initializeSchema} indexes — and,
+ * by the initializeSchema ⟺ migrations parity, every field a schema migration
+ * ensures on an existing collection.
+ *
+ * `schema-v16-drop-undeclared-payload-indexes` treats these as declared no
+ * matter what the trajectories declare: they are the schema pipeline's own
+ * indexes, several of them on keys no payload signal descriptor names
+ * (`_type`, the `enrichedAt` / `skippedAs` bookkeeping fields). Pinned against
+ * initializeSchema by `tests/core/adapters/qdrant/schema-manager.test.ts`.
+ */
+export const SCHEMA_MANAGED_PAYLOAD_INDEX_KEYS: readonly string[] = [
+  ...TEXT_INDEXED_KEYS,
+  ...KEYWORD_FILTER_INDEX_KEYS,
+  ...CODEGRAPH_FILTER_INDEXES.map(({ path }) => path),
+  ...ENRICHMENT_SCAN_INDEXES.map(({ path }) => path),
+];
+
+/** A Qdrant payload field-index schema this project creates. */
+export type PayloadFieldIndexSchema = IndexSchema | "text";
+
+/** The schema each {@link SCHEMA_MANAGED_PAYLOAD_INDEX_KEYS} entry is created with. */
+const SCHEMA_MANAGED_PAYLOAD_INDEX_SCHEMAS: ReadonlyMap<string, PayloadFieldIndexSchema> = new Map<
+  string,
+  PayloadFieldIndexSchema
+>([
+  ...TEXT_INDEXED_KEYS.map((key): [string, PayloadFieldIndexSchema] => [key, "text"]),
+  ...KEYWORD_FILTER_INDEX_KEYS.map((key): [string, PayloadFieldIndexSchema] => [key, "keyword"]),
+  ...CODEGRAPH_FILTER_INDEXES.map(({ path, schema }): [string, PayloadFieldIndexSchema] => [path, schema]),
+  ...ENRICHMENT_SCAN_INDEXES.map(({ path, schema }): [string, PayloadFieldIndexSchema] => [path, schema]),
+]);
+
+/**
+ * The index schema a DECLARED payload field needs, for a caller about to create
+ * one lazily (rank_chunks' order_by index).
+ *
+ * A key the schema manager owns gets exactly the schema `initializeSchema`
+ * creates it with — `codegraph.symbols.file.fanIn` is `integer`, not whatever
+ * a lazy caller would guess. Every other key's schema follows its declared
+ * type: a `number` is `float`, because Qdrant's float index serves integer
+ * values while an integer index silently skips a fractional one (the
+ * self-index's `methodDensity` float index covers its integer values). A
+ * `timestamp` returns `undefined`: no descriptor pins how its value is stored,
+ * so no index is safe to create.
+ *
+ * Replaces the `/count|days|lines/` name heuristic rank_chunks used, which gave
+ * the bool `git.file.isHub` a float index (bd tea-rags-mcp-q34ic).
+ */
+export function payloadFieldIndexSchema(
+  field: string,
+  declaredType: PayloadSignalDescriptor["type"],
+): PayloadFieldIndexSchema | undefined {
+  const managed = SCHEMA_MANAGED_PAYLOAD_INDEX_SCHEMAS.get(field);
+  if (managed) return managed;
+  switch (declaredType) {
+    case "number":
+      return "float";
+    case "boolean":
+      return "bool";
+    case "string":
+    case "string[]":
+      return "keyword";
+    case "timestamp":
+      return undefined;
+  }
+}
+
 /**
  * SchemaManager - Handles collection schema versioning and migrations
  */
@@ -160,7 +231,7 @@ export class SchemaManager {
     }
 
     // Create keyword indexes on frequently filtered fields
-    for (const field of ["language", "fileExtension", "chunkType"] as const) {
+    for (const field of KEYWORD_FILTER_INDEX_KEYS) {
       await this.qdrant.createPayloadIndex(collectionName, field, "keyword");
       indexes.push(field);
     }

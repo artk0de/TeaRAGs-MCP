@@ -69,6 +69,7 @@ collections/snapshots/caches already contain:
 | Backfill payload fields                               | `schema`   | Set `enrichedAt` on old points                             |
 | Qdrant collection config change                       | `schema`   | Modify vector params                                       |
 | Index added to `initializeSchema` for NEW collections | `schema`   | The parity test fails until the same index has a migration |
+| Payload signal removed or renamed                     | `schema`   | Drop its index — v16's undeclared-index drop is one-shot   |
 | Sparse vector rebuild after BM25 change               | `sparse`   | Regenerate BM25 vectors                                    |
 | BM25 tokenizer / vocabulary change in `sparse.ts`     | `sparse`   | Bump `sparseVersion`; rebuild sparse vectors               |
 | Snapshot format change                                | `snapshot` | Add new fields to snapshot entries                         |

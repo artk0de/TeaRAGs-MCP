@@ -1,6 +1,11 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-import { ENRICHMENT_SCAN_INDEXES, SchemaManager } from "../../../../src/core/adapters/qdrant/schema-manager.js";
+import {
+  ENRICHMENT_SCAN_INDEXES,
+  payloadFieldIndexSchema,
+  SCHEMA_MANAGED_PAYLOAD_INDEX_KEYS,
+  SchemaManager,
+} from "../../../../src/core/adapters/qdrant/schema-manager.js";
 import { SchemaMigrator } from "../../../../src/core/domains/maintenance/migration/schema-migrator.js";
 import { SparseMigrator } from "../../../../src/core/domains/maintenance/migration/sparse-migrator.js";
 
@@ -244,6 +249,46 @@ describe("SchemaManager", () => {
           }),
         ]),
       );
+    });
+  });
+
+  // bd tea-rags-mcp-q34ic — schema-v16 keeps every key in this list no matter
+  // what the trajectories declare. An index initializeSchema creates but the
+  // list omits would be dropped on the next migration sweep.
+  describe("SCHEMA_MANAGED_PAYLOAD_INDEX_KEYS", () => {
+    it("names exactly the fields initializeSchema indexes", async () => {
+      mockQdrant.createPayloadIndex.mockResolvedValue(undefined);
+
+      await schemaManager.initializeSchema("new-collection");
+
+      const created = mockQdrant.createPayloadIndex.mock.calls.map(([, field]) => field as string);
+      expect([...SCHEMA_MANAGED_PAYLOAD_INDEX_KEYS].sort()).toEqual([...new Set(created)].sort());
+    });
+  });
+
+  // bd tea-rags-mcp-q34ic — the index a declared payload key needs, derived
+  // from its declaration rather than guessed from its name.
+  describe("payloadFieldIndexSchema", () => {
+    it("gives a schema-managed key the schema initializeSchema creates it with", () => {
+      expect(payloadFieldIndexSchema("codegraph.symbols.file.fanIn", "number")).toBe("integer");
+      expect(payloadFieldIndexSchema("codegraph.symbols.chunk.pageRank", "number")).toBe("float");
+      expect(payloadFieldIndexSchema("codegraph.symbols.file.isHub", "boolean")).toBe("bool");
+      expect(payloadFieldIndexSchema("relativePath", "string")).toBe("text");
+      expect(payloadFieldIndexSchema("language", "string")).toBe("keyword");
+    });
+
+    it("derives every other key's schema from its declared type", () => {
+      // float, not integer: a float index serves integer values, an integer
+      // index silently skips a fractional one.
+      expect(payloadFieldIndexSchema("git.chunk.ageDays", "number")).toBe("float");
+      expect(payloadFieldIndexSchema("git.file.bugFixRate", "number")).toBe("float");
+      expect(payloadFieldIndexSchema("isTest", "boolean")).toBe("bool");
+      expect(payloadFieldIndexSchema("chunkType", "string")).toBe("keyword");
+      expect(payloadFieldIndexSchema("git.file.taskIds", "string[]")).toBe("keyword");
+    });
+
+    it("declines a type whose stored value format nothing pins", () => {
+      expect(payloadFieldIndexSchema("some.timestamp", "timestamp")).toBeUndefined();
     });
   });
 

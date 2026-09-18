@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 
 import type { QdrantManager } from "../../../../../src/core/adapters/qdrant/client.js";
 import type { DerivedSignalDescriptor, RerankableResult } from "../../../../../src/core/contracts/types/reranker.js";
+import type { PayloadSignalDescriptor } from "../../../../../src/core/contracts/types/trajectory.js";
 import type { Reranker } from "../../../../../src/core/domains/explore/reranker.js";
 import { ScrollRankStrategy } from "../../../../../src/core/domains/explore/strategies/scroll-rank.js";
 
@@ -41,10 +42,17 @@ function createMockQdrant(): QdrantManager {
   } as unknown as QdrantManager;
 }
 
+/** chunkSizeDesc orders by `methodLines`; rank_chunks only orders by a declared field. */
+const METHOD_LINES_SIGNAL: PayloadSignalDescriptor = {
+  key: "methodLines",
+  type: "number",
+  description: "method lines",
+};
+
 function createStrategy(qdrant?: QdrantManager, reranker?: Reranker) {
   const q = qdrant ?? createMockQdrant();
   const r = reranker ?? createMockReranker();
-  return new ScrollRankStrategy(q, r, [], []);
+  return new ScrollRankStrategy(q, r, [METHOD_LINES_SIGNAL], []);
 }
 
 describe("ScrollRankStrategy", () => {
@@ -323,6 +331,56 @@ describe("ScrollRankStrategy", () => {
       expect.any(Number),
       undefined,
     );
+  });
+
+  // bd tea-rags-mcp-q34ic — rank_chunks creates the payload index a scroll
+  // orders by. It used to pick integer/float from the key's NAME and index any
+  // key it was handed, which is how `git.file.isHub` got a float index on a key
+  // no point carries.
+  describe("order_by payload indexes", () => {
+    const signal = (name: string, sources: string[]): DerivedSignalDescriptor => ({
+      name,
+      description: name,
+      sources,
+      defaultBound: 1,
+      extract: () => 0,
+    });
+
+    async function rankBy(weights: Record<string, number>, payloadSignals: PayloadSignalDescriptor[]) {
+      const reranker = createMockReranker();
+      vi.mocked(reranker.getDescriptors).mockReturnValue([
+        signal("recency", ["chunk.ageDays"]),
+        signal("chunkFanIn", ["chunk.fanIn"]),
+        signal("fanIn", ["file.fanIn"]),
+      ]);
+      const qdrant = createMockQdrant();
+      const strategy = new ScrollRankStrategy(qdrant, reranker, payloadSignals, []);
+      await strategy.execute({ collectionName: "test_col", weights, level: "chunk", limit: 5, metaOnly: false });
+      return qdrant;
+    }
+
+    it("indexes a declared number the schema manager does not own as float — it serves integer values too", async () => {
+      const qdrant = await rankBy({ recency: 1 }, [
+        { key: "git.chunk.ageDays", type: "number", description: "chunk age" },
+      ]);
+
+      expect(qdrant.ensurePayloadIndex).toHaveBeenCalledWith("test_col", "git.chunk.ageDays", "float");
+    });
+
+    it("indexes a schema-managed key with the schema the schema manager declares for it", async () => {
+      const qdrant = await rankBy({ chunkFanIn: 1 }, [
+        { key: "codegraph.chunk.fanIn", type: "number", description: "call sites" },
+      ]);
+
+      expect(qdrant.ensurePayloadIndex).toHaveBeenCalledWith("test_col", "codegraph.symbols.chunk.fanIn", "integer");
+    });
+
+    it("creates no index and scrolls nothing for a source no payload descriptor declares", async () => {
+      const qdrant = await rankBy({ fanIn: 1 }, [METHOD_LINES_SIGNAL]);
+
+      expect(qdrant.ensurePayloadIndex).not.toHaveBeenCalled();
+      expect(qdrant.scrollOrdered).not.toHaveBeenCalled();
+    });
   });
 
   it("stops re-fetching when data is exhausted (fewer unique files than limit)", async () => {

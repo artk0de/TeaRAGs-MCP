@@ -11,12 +11,24 @@ import {
   SchemaV13RenameOwnershipPayload,
   SchemaV14EnrichmentScanIndexes,
   SchemaV15CodegraphFilterIndexes,
+  SchemaV16DropUndeclaredPayloadIndexes,
 } from "./schema_migrations/index.js";
 import type { EnrichmentStore, IndexStore, Migration, MigrationRunner, SnapshotStore } from "./types.js";
 
 export interface SchemaMigratorOptions {
   enableHybrid: boolean;
   providerKey?: string;
+  /**
+   * Physical payload keys the FULL trajectory registry declares — every
+   * trajectory this build can register, not only the ones this process did.
+   * Built by the api composition root (`createIngestDependencies`).
+   *
+   * v16 exists only when this set is non-empty: absent keys mean nothing to
+   * judge an index against, so the collection stays below 16 and the next run
+   * that has them performs the drop. Production always supplies it, so there
+   * the latest schema version is 16; a construction without it reports 15.
+   */
+  declaredPayloadKeys?: ReadonlySet<string>;
 }
 
 export class SchemaMigrator implements MigrationRunner {
@@ -56,6 +68,15 @@ export class SchemaMigrator implements MigrationRunner {
       ),
       new SchemaV14EnrichmentScanIndexes(collection, indexStore),
       new SchemaV15CodegraphFilterIndexes(collection, indexStore),
+      ...(options.declaredPayloadKeys && options.declaredPayloadKeys.size > 0
+        ? [
+            new SchemaV16DropUndeclaredPayloadIndexes(
+              collection,
+              indexStore as IndexStore & Required<Pick<IndexStore, "listPayloadIndexes" | "dropPayloadIndex">>,
+              options.declaredPayloadKeys,
+            ),
+          ]
+        : []),
     ];
     this.latestVersion = Math.max(...this.migrations.map((m) => m.version));
   }

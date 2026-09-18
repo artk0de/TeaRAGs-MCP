@@ -10,6 +10,7 @@
 
 import type { QdrantManager } from "../../adapters/qdrant/client.js";
 import { SchemaManager } from "../../adapters/qdrant/schema-manager.js";
+import { toPhysicalPayloadKey } from "../../contracts/signal-utils.js";
 import type { PayloadBuilder } from "../../contracts/types/provider.js";
 import type { IngestDependencies, SynchronizerTuning } from "../../domains/ingest/factory.js";
 import { ParallelFileSynchronizer } from "../../domains/ingest/sync/parallel-synchronizer.js";
@@ -25,6 +26,7 @@ import { SnapshotMigrator } from "../../domains/maintenance/migration/snapshot-m
 import { SparseMigrator } from "../../domains/maintenance/migration/sparse-migrator.js";
 import { StatsMigrator } from "../../domains/maintenance/migration/stats-migrator.js";
 import { StatsCache } from "../../infra/stats-cache.js";
+import { fullRegistryPayloadSignalDescriptors } from "./composition.js";
 
 export function createIngestDependencies(
   qdrant: QdrantManager,
@@ -34,6 +36,15 @@ export function createIngestDependencies(
   enableHybrid = false,
   providerKey?: string,
 ): IngestDependencies {
+  // What a stored payload index is judged against by schema-v16: the physical
+  // key of every payload signal the FULL registry declares, whatever this
+  // process's trajectory flags are (bd tea-rags-mcp-q34ic). Both SchemaMigrator
+  // constructions below take it, so the version a new collection is stamped at
+  // and the migrations an existing one runs agree.
+  const declaredPayloadKeys: ReadonlySet<string> = new Set(
+    fullRegistryPayloadSignalDescriptors().map((descriptor) => toPhysicalPayloadKey(descriptor.key)),
+  );
+
   return {
     createSchemaManager: (collectionName: string) => {
       const indexStore = new IndexStoreAdapter(qdrant);
@@ -42,7 +53,7 @@ export function createIngestDependencies(
       const schemaMigrator = new SchemaMigrator(
         collectionName,
         indexStore,
-        { enableHybrid, providerKey },
+        { enableHybrid, providerKey, declaredPayloadKeys },
         enrichmentStore,
       );
       const sparseMigrator = new SparseMigrator(collectionName, sparseStore, enableHybrid);
@@ -71,7 +82,7 @@ export function createIngestDependencies(
         schema: new SchemaMigrator(
           collectionName,
           indexStore,
-          { enableHybrid, providerKey },
+          { enableHybrid, providerKey, declaredPayloadKeys },
           enrichmentStore,
           snapshotStore,
         ),
