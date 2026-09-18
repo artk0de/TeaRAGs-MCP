@@ -5,9 +5,10 @@
  * `cg_run_stats` is the only supported read path for the per-receiver-kind
  * breakdown, and it is overwritten by every finalize — so the numbers behind a
  * measurement evaporate as soon as anything else indexes. This walks the same
- * corpus with the same walker, the same `TSCallResolver`, and the same miss
- * classifiers `resolution-runner.classifyMiss` uses, in the same order, so the
- * per-kind tally it prints is the one a real run would persist.
+ * corpus (production's two exclusion layers and its declared-dependency gate,
+ * as the oracle applies them) with the same walker, the same `TSCallResolver`,
+ * and production's own miss classifier, `classifyResolveMiss` — called, not
+ * copied — so the per-kind tally it prints is the one a real run would persist.
  *
  * It also splits the residual (the recall hole) by how many candidates the
  * global short-name index holds for the callee, which is what decides whether
@@ -21,12 +22,20 @@
 
 import { relative, resolve as resolvePath } from "node:path";
 
-import type { CallRef, FileExtraction, RelPath } from "../../src/core/contracts/types/codegraph.js";
+import type { FileExtraction } from "../../src/core/contracts/types/codegraph.js";
 import { DefaultSymbolIdComposer, LanguageFactory } from "../../src/core/domains/language/index.js";
 import { loadTsConfig, TSCallResolver } from "../../src/core/domains/language/typescript/index.js";
 import { classifyReceiverKind } from "../../src/core/domains/trajectory/codegraph/symbols/receiver-kind.js";
+import { classifyResolveMiss } from "../../src/core/domains/trajectory/codegraph/symbols/resolution-runner.js";
 import { InMemoryGlobalSymbolTable } from "../../src/core/domains/trajectory/codegraph/symbols/symbol-table.js";
-import { buildCallContext, buildSymbolDefs, collectSourceFiles, extractFile } from "../ts-codegraph-typechecker-oracle.js";
+import {
+  buildCallContext,
+  buildCorpusExclusionFilter,
+  buildSymbolDefs,
+  collectSourceFiles,
+  extractFile,
+  readCorpusDeclaredDependencies,
+} from "../ts-codegraph-typechecker-oracle.js";
 
 interface Tally {
   attempted: number;
@@ -34,7 +43,7 @@ interface Tally {
   externalSkipped: number;
   noInProjectDef: number;
   coreAmbiguous: number;
-  /** The residual — `classifyMiss` fell through every branch. */
+  /** The residual — `classifyResolveMiss` answered `missWithInProjectDef`. */
   residual: number;
   /** Residual split by `lookupByShortName(member).length`. */
   residualByCandidates: Map<number, number>;
@@ -56,7 +65,9 @@ const emptyTally = (): Tally => ({
   noDefNames: new Map(),
 });
 
-const bump = <K>(m: Map<K, number>, k: K): void => m.set(k, (m.get(k) ?? 0) + 1);
+const bump = <K>(m: Map<K, number>, k: K): void => {
+  m.set(k, (m.get(k) ?? 0) + 1);
+};
 
 async function main(): Promise<void> {
   const argv = process.argv.slice(2);
@@ -72,19 +83,20 @@ async function main(): Promise<void> {
   const symbolTable = new InMemoryGlobalSymbolTable();
 
   // Pass 1 — whole symbol table first, exactly as production does.
-  const all: RelPath[] = await collectSourceFiles(repoRoot, target);
-  const files = all.filter((f) => !skips.some((s) => f.startsWith(s)));
+  const selection = await collectSourceFiles(repoRoot, target, await buildCorpusExclusionFilter(repoRoot, factory));
+  const files = selection.kept.filter((f) => !skips.some((s) => f.startsWith(s)));
+  const declaredDependencies = readCorpusDeclaredDependencies(repoRoot, factory);
   const extractions: FileExtraction[] = [];
   const classExtends: Record<string, string> = {};
   for (const relPath of files) {
-    const extraction = extractFile(repoRoot, relPath, composer, factory);
+    const extraction = extractFile(repoRoot, relPath, composer, factory, declaredDependencies);
     if (extraction === null) continue;
     symbolTable.upsertFile(relPath, buildSymbolDefs(extraction));
     Object.assign(classExtends, extraction.classExtends ?? {});
     extractions.push(extraction);
   }
 
-  // Pass 2 — resolve, then classify every miss in `classifyMiss` order.
+  // Pass 2 — resolve, then classify every miss with production's classifier.
   const byKind = new Map<string, Tally>();
   const tallyFor = (kind: string): Tally => {
     const existing = byKind.get(kind);
@@ -97,7 +109,7 @@ async function main(): Promise<void> {
   for (const extraction of extractions) {
     for (const chunk of extraction.chunks) {
       const ctx = buildCallContext(extraction, chunk, classExtends, symbolTable);
-      for (const call of (chunk.calls ?? []) as CallRef[]) {
+      for (const call of chunk.calls ?? []) {
         if (call.dispatch !== undefined) continue; // fan-out contract, not single-target
         const kind = classifyReceiverKind(call, chunk.localBindings);
         const t = tallyFor(kind);
@@ -107,25 +119,25 @@ async function main(): Promise<void> {
           t.resolved += 1;
           continue;
         }
-        // classifyMiss order is load-bearing — first match wins.
-        if (call.dynamicSend === true) continue; // `unresolvable`, Ruby-only
-        if (resolver.targetsExternalImport?.(call, ctx)) {
-          t.externalSkipped += 1;
-          continue;
+        switch (classifyResolveMiss(call, ctx, resolver, symbolTable)) {
+          case "unresolvable": // dynamic send — Ruby-only, outside every bucket here
+            break;
+          case "externalSkipped":
+            t.externalSkipped += 1;
+            break;
+          case "noInProjectDef":
+            t.noInProjectDef += 1;
+            bump(t.noDefNames, call.member);
+            break;
+          case "coreAmbiguous":
+            t.coreAmbiguous += 1;
+            break;
+          case "missWithInProjectDef":
+            t.residual += 1;
+            bump(t.residualByCandidates, Math.min(symbolTable.lookupByShortName(call.member).length, 5));
+            bump(t.residualNames, call.member);
+            break;
         }
-        const candidates = symbolTable.lookupByShortName(call.member).length;
-        if (candidates === 0) {
-          t.noInProjectDef += 1;
-          bump(t.noDefNames, call.member);
-          continue;
-        }
-        if (resolver.targetsCoreAmbiguousMember?.(call, ctx)) {
-          t.coreAmbiguous += 1;
-          continue;
-        }
-        t.residual += 1;
-        bump(t.residualByCandidates, Math.min(candidates, 5));
-        bump(t.residualNames, call.member);
       }
     }
   }
@@ -152,9 +164,9 @@ async function main(): Promise<void> {
     const spread = [...t.residualByCandidates.entries()].sort((a, b) => a[0] - b[0]);
     process.stdout.write(
       `\n${kind} residual ${t.residual} by short-name candidate count ` +
-        `(strict pickSingleCandidate can only pick when count === 1):\n  ` +
-        spread.map(([n, c]) => `${n === 5 ? "5+" : n}:${c}`).join("  ") +
-        "\n",
+        `(strict pickSingleCandidate can only pick when count === 1):\n  ${spread
+          .map(([n, c]) => `${n === 5 ? "5+" : n}:${c}`)
+          .join("  ")}\n`,
     );
     const top = [...t.residualNames.entries()].sort((a, b) => b[1] - a[1]).slice(0, 12);
     process.stdout.write(`  top callees: ${top.map(([n, c]) => `${n}(${c})`).join(", ")}\n`);

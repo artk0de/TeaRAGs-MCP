@@ -254,7 +254,7 @@ function receiverTypeName(
   if (attribution.binding === "paramAnnotated") {
     const def = enclosingPythonDef(src, row.startLine);
     const annotation = def?.params.find((p) => p.name === row.receiver)?.annotation;
-    return annotation === undefined ? null : annotationNominal(annotation);
+    return annotation === undefined || annotation === null ? null : annotationNominal(annotation);
   }
   if (attribution.binding === "assignCallProject" || attribution.binding === "assignCallExternal") {
     const nominal = calleeReturnNominal(attribution.detail, view);
