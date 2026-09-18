@@ -550,7 +550,9 @@ export class DaemonGraphDbClient implements GraphDbClient {
    * that cannot replace the daemon applies (`isDaemonRefusedWithoutRespawn`):
    * refused, every pending request fails with `CodegraphDaemonBuildSkewError`
    * and nothing is replayed. Draining it is not this client's call — that
-   * decision belongs to the pool's handshake.
+   * decision belongs to the pool's handshake, so the client also lets go of
+   * the connection: the pool runs that handshake only for a client that is no
+   * longer connected.
    */
   private async reconnectAndReplay(reason: string): Promise<void> {
     const fingerprint = this.handshakeFingerprint ?? getBuildFingerprint();
@@ -576,6 +578,12 @@ export class DaemonGraphDbClient implements GraphDbClient {
         clientFingerprint: fingerprint,
         daemonFingerprint: verdict.daemonFingerprint,
       });
+      // Let go of the refused daemon before telling anyone. Kept connected,
+      // this client would read as healthy, the pool would keep handing it back
+      // and its build handshake — the one place allowed to drain or respawn —
+      // would never run again; the open connection would also hold the refused
+      // daemon up against its idle exit.
+      this.releaseSocket();
       this.settlePending(
         () => true,
         () => skew,
@@ -600,6 +608,18 @@ export class DaemonGraphDbClient implements GraphDbClient {
       p.retried = true;
       sock.write(p.frame);
     }
+  }
+
+  /**
+   * Forget the socket and close our end of it, so `isConnected()` turns false
+   * and the daemon sees the connection go. Its `close` event still reaches
+   * `handleConnectionLoss`, which finds nothing left to recover once the caller
+   * has settled `pending`.
+   */
+  private releaseSocket(): void {
+    const { sock } = this;
+    this.sock = undefined;
+    sock?.end();
   }
 
   /**

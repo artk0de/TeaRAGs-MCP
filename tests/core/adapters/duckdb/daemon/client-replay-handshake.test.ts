@@ -18,6 +18,7 @@ import { join } from "node:path";
 
 import { afterEach, describe, expect, it } from "vitest";
 
+import { fixturePhysicalCollectionName } from "../../../__helpers__/collection-identity.js";
 import { DaemonGraphDbClient, REQUIRED_DAEMON_OPS } from "../../../../../src/core/adapters/duckdb/daemon/client.js";
 import {
   decodeFrames,
@@ -25,10 +26,14 @@ import {
   type DaemonRequest,
 } from "../../../../../src/core/adapters/duckdb/daemon/protocol.js";
 import { CodegraphDaemonBuildSkewError } from "../../../../../src/core/adapters/duckdb/errors.js";
+import { GraphDbClientPool } from "../../../../../src/core/adapters/duckdb/pool.js";
+import { createDatabaseMigrationApplier } from "../../../../../src/core/domains/maintenance/migration/database/index.js";
+import { InMemoryGlobalSymbolTable } from "../../../../../src/core/domains/trajectory/codegraph/symbols/symbol-table.js";
 
 let dir: string;
 const servers: Server[] = [];
 const clients: DaemonGraphDbClient[] = [];
+const pools: GraphDbClientPool[] = [];
 const accepted = new Map<Server, Socket[]>();
 
 async function shutdown(srv: Server): Promise<void> {
@@ -42,6 +47,7 @@ async function shutdown(srv: Server): Promise<void> {
 }
 
 afterEach(async () => {
+  for (const p of pools.splice(0)) await p.closeAll().catch(() => undefined);
   for (const c of clients.splice(0)) await c.close();
   for (const s of servers.splice(0)) await shutdown(s);
   if (dir) rmSync(dir, { recursive: true, force: true });
@@ -189,4 +195,94 @@ describe("DaemonGraphDbClient — replay only after a handshake with the replace
 
     await expect(client.hasData()).rejects.toThrow(/could not be recovered/);
   }, 15_000);
+});
+
+/**
+ * A refused replacement must not keep the connection (bd tea-rags-mcp-f924y).
+ * The replay path may not drain or respawn — that decision belongs to the
+ * pool's build handshake, which runs only for a client that is not connected.
+ * A refusal that left the socket open kept the pool handing back the same
+ * client forever, and its open connection held the refused daemon alive
+ * against its idle exit.
+ */
+describe("DaemonGraphDbClient — a refused replay releases the connection (f924y)", () => {
+  it("reports itself disconnected after refusing the replacement daemon", async () => {
+    const socketPath = tempSocket();
+    const first = await daemon(socketPath, dyingAfterHandshake);
+    let replacementConnections = 0;
+    const client = track(
+      new DaemonGraphDbClient(socketPath, "code_x", {
+        retryDelayMs: 5,
+        connectTimeoutMs: 2000,
+        onConnectionLost: async () => {
+          await shutdown(first.server);
+          const replacement = await daemon(socketPath, (r) =>
+            r.op === "handshake"
+              ? { buildFingerprint: "fp-B", supportedOps: FULL_OPS.filter((op) => op !== "hasData") }
+              : true,
+          );
+          replacement.server.on("connection", (sock) => {
+            replacementConnections++;
+            sock.on("close", () => {
+              replacementConnections--;
+            });
+          });
+        },
+      }),
+    );
+    await client.init();
+    await client.handshake("fp-A");
+
+    await expect(client.hasData()).rejects.toBeInstanceOf(CodegraphDaemonBuildSkewError);
+    expect(client.isConnected()).toBe(false);
+    // The refused daemon sees the connection close — nothing holds it open.
+    await expect.poll(() => replacementConnections, { timeout: 2000 }).toBe(0);
+  });
+
+  it("the pool runs the build handshake again on the next acquire instead of reusing the refused client", async () => {
+    const socketPath = tempSocket();
+    const d1 = await daemon(socketPath, dyingAfterHandshake);
+    // Each respawn retires the daemon currently listening and brings up the next.
+    const next: ((r: DaemonRequest) => unknown)[] = [
+      // Replacement the replay meets: another build without `hasData` — refused.
+      (r) =>
+        r.op === "handshake"
+          ? { buildFingerprint: "fp-B", supportedOps: FULL_OPS.filter((op) => op !== "hasData") }
+          : true,
+      // What the next acquire's handshake meets: this client's own build.
+      (r) => (r.op === "handshake" ? { buildFingerprint: "fp-A", supportedOps: FULL_OPS } : true),
+    ];
+    const started: { server: Server; received: string[] }[] = [d1];
+    const swapDaemon = async (): Promise<void> => {
+      const answer = next.shift();
+      if (!answer) return;
+      // `shutdown` stops the listener synchronously; the client's connect
+      // retries until the next daemon listens.
+      await shutdown((started.at(-1) as { server: Server }).server);
+      started.push(await daemon(socketPath, answer));
+    };
+    const pool = new GraphDbClientPool({
+      rootDir: dir,
+      symbolTableFactory: () => new InMemoryGlobalSymbolTable(),
+      applyMigrations: createDatabaseMigrationApplier(),
+      daemonSocketPath: socketPath,
+      daemonRestart: {
+        buildFingerprint: "fp-A",
+        readOnDiskBuildFingerprint: () => undefined,
+        respawn: () => {
+          void swapDaemon();
+        },
+      },
+    });
+    pools.push(pool);
+    const collection = fixturePhysicalCollectionName("code_x");
+
+    const handle = await pool.acquireWrite(collection);
+    await expect(handle.graphDb.hasData()).rejects.toBeInstanceOf(CodegraphDaemonBuildSkewError);
+
+    const again = await pool.acquireWrite(collection);
+    await expect(again.graphDb.hasData()).resolves.toBe(true);
+    expect(started).toHaveLength(3);
+    expect(started[2]?.received).toEqual(["handshake", "hasData"]);
+  });
 });
