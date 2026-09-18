@@ -55,8 +55,13 @@ export function pickRegistryEntry(
   return newest(sameRepo.length > 0 ? sameRepo : all);
 }
 
-/** Entries whose path is a working tree of the same repository as `path`. */
-function entriesSharingRepo(entries: CollectionEntry[], path: string): CollectionEntry[] {
+/**
+ * Entries whose path is a working tree of the same repository as `path` — the
+ * one sibling rule, shared by the env borrow above and by the worktree seed
+ * (`findWorktreeSeedCandidates`), so a new worktree seeds from the same family
+ * it borrowed its config from.
+ */
+export function entriesSharingRepo(entries: CollectionEntry[], path: string): CollectionEntry[] {
   const identity = resolveGitCommonDir(path);
   // Not a repo → `resolveGitCommonDir` echoes the path back; an echo would
   // match only itself, and that case is already handled by `findByPath`.

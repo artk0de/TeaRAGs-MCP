@@ -18,6 +18,7 @@ import type { PhysicalCollectionName } from "../../../contracts/types/collection
 import type { LanguageCodeVersions } from "../../../contracts/types/language.js";
 import type { StatsAccumulatorDescriptor } from "../../../contracts/types/stats-accumulator.js";
 import type { PayloadSignalDescriptor, ScoreBackground } from "../../../contracts/types/trajectory.js";
+import type { WorktreeSeedReport } from "../../../contracts/types/worktree.js";
 import type { Reranker } from "../../../domains/explore/reranker.js";
 import { IndexingAlreadyInProgressError, NotIndexedError } from "../../../domains/ingest/errors.js";
 import { computeCollectionStats } from "../../../domains/ingest/infra/collection-stats.js";
@@ -35,6 +36,7 @@ import type { DeferredChunkRecoveryHandoff } from "../../../domains/ingest/pipel
 import { parseMarkerPayload } from "../../../domains/ingest/pipeline/indexing-marker-codec.js";
 import { pipelineLog } from "../../../domains/ingest/pipeline/infra/debug-logger.js";
 import { StatusModule } from "../../../domains/ingest/pipeline/status-module.js";
+import type { WorktreeSeedBuildIdentity } from "../../../domains/maintenance/worktree/worktree-seed-source.js";
 import { hashCollectionForPath, validatePath } from "../../../infra/collection-name.js";
 import { computeScoreBackground } from "../../../infra/score-background.js";
 import type { StatsCache } from "../../../infra/stats-cache.js";
@@ -49,6 +51,7 @@ import type {
 } from "../../../types.js";
 import { isEnrichmentRecompute } from "../../public/dto/ingest.js";
 import type { PathCollectionResolver } from "../collection-resolver.js";
+import type { WorktreeSeedAttempt, WorktreeSeedOps, WorktreeSeedSourceRelease } from "./worktree-seed-ops.js";
 
 type ModelInfo = { model: string; contextLength: number; dimensions: number };
 
@@ -132,6 +135,17 @@ export interface IndexingOpsDeps {
    * direct construction without it keeps only the in-process and Qdrant checks.
    */
   indexingLock?: CollectionIndexingLock;
+  /**
+   * Seeds a first index from a registered sibling working tree of the same
+   * repository (bd tea-rags-mcp-k8gac). Omitted → every first index is an
+   * ordinary one.
+   */
+  worktreeSeed?: Pick<WorktreeSeedOps, "seed">;
+  /**
+   * The env snapshot this slice's runs record into the registry — what the seed
+   * gate compares a sibling's stamp against. Omitted → that axis is not compared.
+   */
+  envSnapshot?: Record<string, string>;
 }
 
 /** The one registry mutation this ops layer performs. */
@@ -184,6 +198,15 @@ export class IndexingOps {
   private readonly indexingLock?: CollectionIndexingLock;
   /** Lock files this process's operations hold, keyed like `indexingCollections`. */
   private readonly heldIndexingLocks = new Map<string, HeldCollectionIndexingLock>();
+  private readonly worktreeSeed?: Pick<WorktreeSeedOps, "seed">;
+  private readonly envSnapshot?: Record<string, string>;
+  /**
+   * Enrichment an operation started AFTER its pipeline run, keyed like
+   * `indexingCollections` — today only the git rebuild of a seeded collection.
+   * The collection stays claimed until it settles, exactly like the run's own
+   * background enrichment. Never rejects.
+   */
+  private readonly trailingEnrichment = new Map<string, Promise<void>>();
 
   constructor(deps: IndexingOpsDeps) {
     this.qdrant = deps.qdrant;
@@ -220,6 +243,8 @@ export class IndexingOps {
     this.languageCodeVersions = deps.languageCodeVersions;
     this.driftReporter = deps.driftReporter;
     this.indexingLock = deps.indexingLock;
+    this.worktreeSeed = deps.worktreeSeed;
+    this.envSnapshot = deps.envSnapshot;
   }
 
   /**
@@ -275,9 +300,14 @@ export class IndexingOps {
     if (isEnrichmentRecompute(options)) {
       return this.recomputeEnrichments(path, options.forceEnrichments, options.languages, progressCallback);
     }
+    let worktreeSeed: WorktreeSeedReport | undefined;
     if (!options?.forceReindex) {
       const incremental = await this.tryIncrementalIndex(path, progressCallback);
       if (incremental) return incremental;
+      // No collection yet: a first index, which a sibling working tree may seed.
+      const seeded = await this.trySeedFromWorktree(path, options, progressCallback);
+      if (seeded?.stats) return seeded.stats;
+      worktreeSeed = seeded?.report;
     }
     // Force-reindex: drop the codegraph DB named after the LOGICAL collection
     // before the pipeline rebuilds. A versioned build writes `<name>_v<N>.duckdb`,
@@ -296,7 +326,8 @@ export class IndexingOps {
         .find((name: string) => name === logicalName);
       if (logicalDb) await this.codegraphPool.removeCollection(logicalDb);
     }
-    return this.fullIndex(path, options, progressCallback);
+    const stats = await this.fullIndex(path, options, progressCallback);
+    return worktreeSeed ? { ...stats, worktreeSeed } : stats;
   }
 
   /**
@@ -321,26 +352,61 @@ export class IndexingOps {
    */
   private async claimCollectionForIndexing(path: string, options: IndexOptions | undefined): Promise<string> {
     const collectionName = await this.resolveCollectionForPath(await validatePath(path));
-    if (this.indexingCollections.has(collectionName)) throw new IndexingAlreadyInProgressError(path);
+    if (!(await this.tryClaimCollection(collectionName, describeIndexOperation(options)))) {
+      throw new IndexingAlreadyInProgressError(path);
+    }
+    return collectionName;
+  }
+
+  /**
+   * The three checks of {@link claimCollectionForIndexing}, answering instead of
+   * throwing, so a claim on a collection the caller does not index — a seed
+   * source — takes the very same locks. `false` gives back everything taken.
+   */
+  private async tryClaimCollection(collectionName: string, operation: string): Promise<boolean> {
+    if (this.indexingCollections.has(collectionName)) return false;
     this.indexingCollections.add(collectionName);
 
     try {
       if (this.indexingLock) {
-        const held = await this.indexingLock.tryAcquire(collectionName, describeIndexOperation(options));
-        if (!held) throw new IndexingAlreadyInProgressError(path);
+        const held = await this.indexingLock.tryAcquire(collectionName, operation);
+        if (!held) return await this.abandonClaim(collectionName);
         this.heldIndexingLocks.set(collectionName, held);
       }
       const inFlightElsewhere = await isCollectionIndexingInFlight(this.qdrant, collectionName, {
         ownRunsSettledAt: this.indexingSettledAt.get(collectionName),
       });
-      if (inFlightElsewhere) throw new IndexingAlreadyInProgressError(path);
-      return collectionName;
+      if (inFlightElsewhere) return await this.abandonClaim(collectionName);
+      return true;
     } catch (error) {
-      const lockReleased = this.releaseIndexingLock(collectionName);
-      this.indexingCollections.delete(collectionName);
-      await lockReleased;
+      await this.abandonClaim(collectionName);
       throw error;
     }
+  }
+
+  /** Give back a claim no operation ran under; always `false`, for the caller to return. */
+  private async abandonClaim(collectionName: string): Promise<false> {
+    const lockReleased = this.releaseIndexingLock(collectionName);
+    this.indexingCollections.delete(collectionName);
+    await lockReleased;
+    return false;
+  }
+
+  /**
+   * Hold a seed SOURCE for the clone's duration (bd tea-rags-mcp-k8gac): the
+   * same claim an index run takes, so a run on the sibling — here, in another
+   * session, or on another machine sharing the Qdrant — can neither be under
+   * way while its snapshot is taken nor start before the clone is done.
+   *
+   * Released without stamping `indexingSettledAt`: that instant discounts
+   * marker evidence as this process's OWN finished run, and the seed wrote
+   * none on the sibling.
+   */
+  private async claimSeedSource(collectionName: string): Promise<WorktreeSeedSourceRelease | undefined> {
+    if (!(await this.tryClaimCollection(collectionName, "worktree-seed-source"))) return undefined;
+    return async () => {
+      await this.abandonClaim(collectionName);
+    };
   }
 
   /**
@@ -357,7 +423,12 @@ export class IndexingOps {
         // No alias listing: the run addressed the collection under this name.
       }
       await this.enrichment.whenCompletionsSettled(runCollection);
+      // Awaited only when there is one: the release must land in the same tick
+      // as before for every run that started nothing afterwards.
+      const trailing = this.trailingEnrichment.get(collectionName);
+      if (trailing) await trailing;
     } finally {
+      this.trailingEnrichment.delete(collectionName);
       await this.releaseCollectionForIndexing(collectionName);
     }
   }
@@ -416,7 +487,12 @@ export class IndexingOps {
     // profiler here too so "embed-warmup" survives to the stage summary (csyve).
     pipelineLog.resetProfiler();
     await this.checkEmbeddingHealth();
-    const result = await this.reindex.reindexChanges(path, progressCallback);
+    const collectionName = await this.resolveCollectionForPath(await validatePath(path));
+    const result = await this.reindex.reindexChanges(
+      path,
+      progressCallback,
+      await this.syncChunkingOverrides(collectionName),
+    );
     await this.refreshStats(path);
     return result;
   }
@@ -545,7 +621,7 @@ export class IndexingOps {
       const stats = computeCollectionStats(points, this.allPayloadSignals, this.statsAccumulators, this.gitTimePeriods);
       const scoreBackground = await this.measureScoreBackground(collectionName);
       if (scoreBackground) stats.scoreBackground = scoreBackground;
-      const payloadFieldKeys = [...this.allPayloadSignals.map((d) => d.key), "navigation"];
+      const payloadFieldKeys = payloadFieldKeysOf(this.allPayloadSignals);
       const cacheKey = await this.resolveAliasForCache(collectionName);
       this.statsCache.save(cacheKey, stats, payloadFieldKeys);
       this.reranker?.invalidateStats();
@@ -634,9 +710,7 @@ export class IndexingOps {
     await this.modelGuard?.ensureMatch(collectionName);
     await this.checkEmbeddingHealth();
 
-    const modelInfo = await this.resolveOrBackfillModelInfo(collectionName);
-    const effectiveChunkSize = this.resolveEffectiveChunkSize(modelInfo);
-    const overrides = { chunkSize: effectiveChunkSize, modelInfo };
+    const overrides = await this.syncChunkingOverrides(collectionName);
 
     // Await recovery BEFORE the reindex (not fire-and-forget). Recovery
     // re-enriches stale/unenriched points left by prior runs; running it first
@@ -680,6 +754,144 @@ export class IndexingOps {
     // name leaves the one it actually consumed still spent.
     this.driftReporter?.reset(collectionName);
     return toIndexStats(changeStats);
+  }
+
+  /**
+   * A first index seeded from a sibling working tree of the same repository
+   * (bd tea-rags-mcp-k8gac). `undefined` when seeding is not wired; `report`
+   * alone when an ordinary first index has to run; `stats` when the run is done.
+   *
+   * Once `WorktreeSeedOps` has cloned the sibling's footprint the run IS the
+   * ordinary incremental one: it diffs this tree against the cloned snapshot by
+   * content hash and re-embeds only what differs, which is the whole saving —
+   * embeddings are ~92% of a first index. Three things it would not do on its
+   * own, done here:
+   *
+   * - **Stamp the language versions.** An incremental never stamps, and an
+   *   unstamped collection reports version drift. The seed gate proved the
+   *   sibling's data was built by exactly this build for every language it
+   *   holds, and this run embedded everything else, so the stamp a fresh index
+   *   writes is true here too.
+   * - **Rebuild the git layer.** Vectors, chunker payload and the codegraph are
+   *   functions of file CONTENT, which the hash match proves identical — and the
+   *   cloned graph is repaired by the incremental exactly as any incremental
+   *   repairs it. Git signals are not: they are read from the history reachable
+   *   from THIS worktree's HEAD, which may differ from the sibling's, and age
+   *   with the clock since the sibling was enriched. So the git layer is
+   *   recomputed for every point, as the run's background enrichment — minutes,
+   *   against the embedding hours this saves, and served from the git caches the
+   *   worktrees already share by common dir.
+   * - **Leave nothing behind on failure.** A run that fails over a fresh seed
+   *   drops the seeded collection, so the next attempt seeds again instead of
+   *   inheriting a clone that no completed run ever stamped.
+   */
+  private async trySeedFromWorktree(
+    path: string,
+    options: IndexOptions | undefined,
+    progressCallback?: ProgressCallback,
+  ): Promise<
+    { stats: IndexStats; report?: undefined } | { stats?: undefined; report: WorktreeSeedReport } | undefined
+  > {
+    if (!this.worktreeSeed || !this.allPayloadSignals) return undefined;
+    if (options?.seedFromWorktree === false) return { report: skippedWorktreeSeed("disabled") };
+    // The sibling holds what ITS runs selected; a run narrowed to other
+    // extensions or patterns would inherit files it never asked for.
+    if ((options?.extensions?.length ?? 0) > 0 || (options?.ignorePatterns?.length ?? 0) > 0) {
+      return { report: skippedWorktreeSeed("restricted-run") };
+    }
+
+    const absolutePath = await validatePath(path);
+    const collectionName = await this.resolveCollectionForPath(absolutePath);
+    const attempt = await this.worktreeSeed.seed({
+      targetPath: absolutePath,
+      targetCollection: collectionName,
+      build: this.seedBuildIdentity(this.allPayloadSignals),
+      claimSource: async (source) => this.claimSeedSource(source),
+    });
+    if (attempt.status === "skipped") return { report: attempt };
+
+    let stats: IndexStats | undefined;
+    try {
+      stats = await this.tryIncrementalIndex(path, progressCallback);
+    } catch (error) {
+      await this.dropFailedSeed(path, collectionName);
+      throw error;
+    }
+    if (!stats) {
+      // The clone reported success yet no collection answers for the path —
+      // index from scratch rather than trust it.
+      return {
+        report: {
+          status: "skipped",
+          reason: "no-compatible-sibling",
+          rejected: [
+            ...attempt.rejected,
+            {
+              ...attempt.source,
+              reason: "clone-failed",
+              detail: "the seeded collection is not visible after the clone",
+            },
+          ],
+        },
+      };
+    }
+
+    this.stampLanguageVersions(collectionName, undefined, "all");
+    this.driftReporter?.reset(collectionName);
+    const gitRefresh = this.startSeedGitRefresh(path, absolutePath, collectionName);
+    return { stats: { ...stats, worktreeSeed: seededWorktreeReport(attempt, stats, gitRefresh) } };
+  }
+
+  /** What this run would stamp onto a collection it indexed from scratch — the seed gate's reference. */
+  private seedBuildIdentity(allPayloadSignals: readonly PayloadSignalDescriptor[]): WorktreeSeedBuildIdentity {
+    return {
+      payloadFieldKeys: payloadFieldKeysOf(allPayloadSignals),
+      ...(this.languageCodeVersions ? { languageCodeVersions: this.languageCodeVersions } : {}),
+      ...(this.envSnapshot ? { envSnapshot: this.envSnapshot } : {}),
+      embeddingModel: this.embeddings.getModel(),
+      codegraphEnabled: this.codegraphPool !== undefined,
+      qdrant: { embedded: this.qdrant.isEmbedded, url: this.qdrant.url },
+    };
+  }
+
+  /** Best-effort: the run's own error is what the caller must see. */
+  private async dropFailedSeed(path: string, collectionName: string): Promise<void> {
+    try {
+      await this.clear(path);
+    } catch (error) {
+      console.error(`[IndexingOps] could not drop the seeded collection ${collectionName} after a failed run:`, error);
+    }
+  }
+
+  /**
+   * Start the git rebuild of a seeded collection and tie it to the collection's
+   * claim — `releaseCollectionWhenEnrichmentSettles` waits for it — so the
+   * rebuild is this run's background enrichment in every respect: the call
+   * returns once the index is searchable, and nothing else indexes the
+   * collection until the rebuild is done.
+   */
+  private startSeedGitRefresh(
+    path: string,
+    absolutePath: string,
+    collectionName: string,
+  ): "background" | "not-applicable" {
+    if (!this.enrichment.providerKeys.includes("git")) return "not-applicable";
+    this.trailingEnrichment.set(collectionName, this.refreshSeededGitLayer(path, absolutePath, collectionName));
+    return "background";
+  }
+
+  /** Never rejects: a failed rebuild is reported through the terminal markers and the log. */
+  private async refreshSeededGitLayer(path: string, absolutePath: string, collectionName: string): Promise<void> {
+    try {
+      // Physical, never the alias — the recompute's run state and any codegraph
+      // read address the generation by its literal name (bd tea-rags-mcp-snbzk).
+      const physical = resolvePhysicalCollection(collectionName, await this.qdrant.aliases.listAliases());
+      await this.enrichment.recomputeEnrichments(physical, absolutePath, ["git"]);
+      await this.refreshStats(path);
+      this.driftReporter?.reset(collectionName);
+    } catch (error) {
+      console.error(`[IndexingOps] git rebuild of the seeded collection ${collectionName} failed:`, error);
+    }
   }
 
   /**
@@ -743,7 +955,15 @@ export class IndexingOps {
     // The sync keeps its ORDINARY drift repair (unchanged, hash-diffed), which
     // is what still heals a provider store that fell behind — including rows for
     // eligible files carrying no chunks, the one set the recompute cannot see.
-    const changeStats = await this.reindex.reindexChanges(path, progressCallback);
+    //
+    // It DOES carry the chunking overrides every other sync carries: a file the
+    // tree changed is re-chunked here, and chunked at another size its
+    // boundaries — and point ids — would disagree with every other file's.
+    const changeStats = await this.reindex.reindexChanges(
+      path,
+      progressCallback,
+      await this.syncChunkingOverrides(aliasName),
+    );
     const startedAt = Date.now();
     const enrichmentMetrics = await this.enrichment.recomputeEnrichments(
       collectionName,
@@ -880,6 +1100,22 @@ export class IndexingOps {
   }
 
   /**
+   * What every sync of an EXISTING collection hands the pipeline, so a file it
+   * re-chunks gets the size a full index gave every other file: the model's
+   * info and the chunk size derived from it (`resolveEffectiveChunkSize`).
+   * The one place the pair is built — the incremental run, the
+   * `--force-enrichments` sync leg and the deprecated explicit reindex all take
+   * it from here, because a sync that fell back to `config.chunkSize` chunked
+   * its changed files at another size than the rest of the index.
+   */
+  private async syncChunkingOverrides(
+    collectionName: string,
+  ): Promise<{ chunkSize: number; modelInfo: ModelInfo | undefined }> {
+    const modelInfo = await this.resolveOrBackfillModelInfo(collectionName);
+    return { chunkSize: this.resolveEffectiveChunkSize(modelInfo), modelInfo };
+  }
+
+  /**
    * Try existing marker first to skip the Ollama round-trip. Fall back to a
    * live resolve and backfill the marker so subsequent runs are free.
    */
@@ -935,6 +1171,44 @@ export class IndexingOps {
       return new Map();
     }
   }
+}
+
+/**
+ * The payload keys a stats refresh records for this build. One definition for
+ * the writer (`refreshStatsByCollection`) and for the seed gate that compares a
+ * sibling's recorded keys against it, so the two can never disagree.
+ */
+function payloadFieldKeysOf(signals: readonly PayloadSignalDescriptor[]): string[] {
+  return [...signals.map((d) => d.key), "navigation"];
+}
+
+/** A first index that ran without a seed, and why. */
+function skippedWorktreeSeed(reason: "disabled" | "restricted-run"): WorktreeSeedReport {
+  return { status: "skipped", reason, rejected: [] };
+}
+
+/**
+ * The report of a seeded first index, from the incremental run over it. A file
+ * of the sibling's snapshot was copied verbatim unless this run re-embedded it
+ * (modified) or dropped it (deleted, newly ignored).
+ */
+function seededWorktreeReport(
+  attempt: Extract<WorktreeSeedAttempt, { status: "seeded" }>,
+  stats: IndexStats,
+  gitRefresh: "background" | "not-applicable",
+): WorktreeSeedReport {
+  const change = stats.changeDetails;
+  const modified = change?.filesModified ?? 0;
+  const removed = (change?.filesDeleted ?? 0) + (change?.filesNewlyIgnored ?? 0);
+  return {
+    status: "seeded",
+    source: attempt.source,
+    filesCopied: Math.max(0, attempt.sourceFiles - modified - removed),
+    filesIndexed: (change?.filesAdded ?? 0) + modified,
+    filesRemoved: removed,
+    gitRefresh,
+    rejected: attempt.rejected,
+  };
 }
 
 function toIndexStats(changeStats: ChangeStats): IndexStats {

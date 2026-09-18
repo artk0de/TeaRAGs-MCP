@@ -759,6 +759,12 @@ interface IngestSliceDeps {
   reranker: CompositionContext["reranker"];
   /** Re-armed after every index run, so a later drift is reported again. */
   driftReporter: IndexDriftReporter;
+  /**
+   * The per-collection footprint — what a first index seeds from a sibling
+   * working tree with (bd tea-rags-mcp-k8gac). Process-wide like the Qdrant and
+   * codegraph handles it wraps.
+   */
+  footprintFactory: CollectionFootprintFactory;
 }
 
 /**
@@ -848,6 +854,7 @@ function createIngestFacade(
     codegraphPool: shared.codegraphPool,
     indexRunDaemonGuard: shared.indexRunDaemonGuard,
     enrichmentExecutor: shared.enrichmentExecutor,
+    footprintFactory: shared.footprintFactory,
     healthCheckRetryAttempts: zodConfig.embedding.tune.healthCheckRetryAttempts,
     healthCheckRetryDelayMs: zodConfig.embedding.tune.healthCheckRetryDelayMs,
   });
@@ -985,6 +992,32 @@ export async function createAppContext(config: AppConfig, options?: AppContextOp
     zodConfig.ingest.tune.enrichmentFilesPerThread,
   );
 
+  // Per-collection footprint (domains/maintenance): the artifacts a worktree
+  // clone copies, which is also what seeds a first index from a sibling working
+  // tree (bd tea-rags-mcp-k8gac) — so it is built ahead of the ingest slice.
+  // Reuses the live codegraph pool when enabled; falls back to a throwaway pool
+  // (codegraph artifact is a no-op when codegraphEnabled is false) so the
+  // footprint factory always has a pool to delegate to.
+  const footprintFactory = new CollectionFootprintFactory({
+    qdrant: infra.qdrant,
+    pool:
+      codegraphContext?.pool ??
+      new GraphDbClientPool({
+        rootDir: config.paths.appData,
+        symbolTableFactory: () => new InMemoryGlobalSymbolTable(),
+        applyMigrations: createDatabaseMigrationApplier(),
+      }),
+    statsCache,
+    snapshotBaseDir: config.paths.snapshots,
+    // Wire the ingest-owned per-collection stores into the footprint via DIP —
+    // the footprint domain depends only on the contracts interfaces, never ingest.
+    snapshotStoreFactory: (baseDir, logicalName) => new ShardedSnapshotManager(baseDir, logicalName),
+    quarantineStoreFactory: (baseDir, logicalName) => new QuarantineStore(baseDir, logicalName),
+    indexingLockStoreFactory: (baseDir, logicalName) => ({
+      removeIfStale: async () => new CollectionIndexingLock({ lockDir: baseDir }).removeIfStale(logicalName),
+    }),
+  });
+
   const ingestSlice: IngestSliceDeps = {
     qdrant: infra.qdrant,
     embeddings: infra.embeddings,
@@ -1000,6 +1033,7 @@ export async function createAppContext(config: AppConfig, options?: AppContextOp
     statsAccumulators: composition.allStatsAccumulators,
     reranker: composition.reranker,
     driftReporter,
+    footprintFactory,
   };
   const ingest = createIngestFacade(zodConfig, config, ingestSlice);
 
@@ -1022,29 +1056,6 @@ export async function createAppContext(config: AppConfig, options?: AppContextOp
     qdrant: infra.qdrant,
     embeddings: infra.embeddings,
     snapshotDir: config.paths.snapshots,
-  });
-  // Worktree index cloning (domains/maintenance). Reuses the live codegraph
-  // pool when enabled; falls back to a throwaway pool (codegraph artifact is a
-  // no-op when codegraphEnabled is false) so the footprint factory always has
-  // a pool to delegate to.
-  const footprintFactory = new CollectionFootprintFactory({
-    qdrant: infra.qdrant,
-    pool:
-      codegraphContext?.pool ??
-      new GraphDbClientPool({
-        rootDir: config.paths.appData,
-        symbolTableFactory: () => new InMemoryGlobalSymbolTable(),
-        applyMigrations: createDatabaseMigrationApplier(),
-      }),
-    statsCache,
-    snapshotBaseDir: config.paths.snapshots,
-    // Wire the ingest-owned per-collection stores into the footprint via DIP —
-    // the footprint domain depends only on the contracts interfaces, never ingest.
-    snapshotStoreFactory: (baseDir, logicalName) => new ShardedSnapshotManager(baseDir, logicalName),
-    quarantineStoreFactory: (baseDir, logicalName) => new QuarantineStore(baseDir, logicalName),
-    indexingLockStoreFactory: (baseDir, logicalName) => ({
-      removeIfStale: async () => new CollectionIndexingLock({ lockDir: baseDir }).removeIfStale(logicalName),
-    }),
   });
   const worktreeProvisioner = new WorktreeProvisioner({
     registry: collectionRegistry,

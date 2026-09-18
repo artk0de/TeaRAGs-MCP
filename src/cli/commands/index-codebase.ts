@@ -28,6 +28,8 @@ export interface IndexCodebaseArgs {
   /** Comma-separated enrichment provider selectors, or `all`. */
   "force-enrichments"?: string;
   languages?: string;
+  /** `--no-worktree-seed` sets this false: never seed a first index from a sibling working tree. */
+  "worktree-seed"?: boolean;
   json?: boolean;
   /** Hidden: marks the forked child as the detached indexing worker. */
   __worker?: boolean;
@@ -133,6 +135,22 @@ export function parseLanguageSelectors(raw: string | undefined): string[] | unde
 }
 
 /**
+ * The run's `IndexOptions`, from the parsed flags. `seedFromWorktree` is set
+ * only when `--no-worktree-seed` turned it off, so the core default (seed a first
+ * index when a sibling working tree allows it) stays the one source of truth.
+ */
+export function buildIndexOptions(argv: IndexCodebaseArgs): IndexOptions {
+  const forceEnrichments = parseEnrichmentSelectors(argv["force-enrichments"]);
+  const languages = parseLanguageSelectors(argv.languages);
+  return {
+    forceReindex: Boolean(argv.force),
+    ...(forceEnrichments ? { forceEnrichments } : {}),
+    ...(languages ? { languages } : {}),
+    ...(argv["worktree-seed"] === false ? { seedFromWorktree: false } : {}),
+  };
+}
+
+/**
  * Resolve the registered project alias for the given resolved path.
  * Uses `findByPath` for exact path match, then falls back to `get(collectionName)`
  * when collectionName is known. Returns null when no alias is registered.
@@ -213,6 +231,14 @@ export const indexCodebaseCommand: CommandModule<object, IndexCodebaseArgs> = {
           "collection contains ONLY them. Not valid on a plain incremental run, whose scope is " +
           "already the set of changed files.",
       })
+      .option("worktree-seed", {
+        type: "boolean",
+        default: true,
+        describe:
+          "First index only: when another working tree of the same git repository is already indexed " +
+          "with the same model and settings, clone its index and embed only the files that differ. " +
+          "Pass --no-worktree-seed to index from scratch.",
+      })
       // NOT `.conflicts()`: `--force` declares `default: false`, and yargs
       // treats a key carrying a default as PRESENT, so `.conflicts()` rejected
       // every `--force-enrichments` run even when `--force` was never typed.
@@ -241,14 +267,8 @@ export const indexCodebaseCommand: CommandModule<object, IndexCodebaseArgs> = {
 
     const resolved = applyProjectDefaults(argv);
     const path = resolve(resolved.path ?? process.cwd());
-    const forceEnrichments = parseEnrichmentSelectors(argv["force-enrichments"]);
-    const languages = parseLanguageSelectors(argv.languages);
-    const options: IndexOptions = {
-      forceReindex: Boolean(argv.force),
-      ...(forceEnrichments ? { forceEnrichments } : {}),
-      ...(languages ? { languages } : {}),
-    };
-    const waitEnrichments = resolveWaitEnrichments(Boolean(argv["wait-enrichments"]), forceEnrichments);
+    const options = buildIndexOptions(argv);
+    const waitEnrichments = resolveWaitEnrichments(Boolean(argv["wait-enrichments"]), options.forceEnrichments);
     const jsonMode = Boolean(argv.json);
 
     const dataDir = resolveDataDir();

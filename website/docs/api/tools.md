@@ -25,7 +25,7 @@ sidebar_position: 1
 
 | Tool               | Description                                                                |
 | ------------------ | -------------------------------------------------------------------------- |
-| `index_codebase`   | Index a codebase for semantic code search with AST-aware chunking. **Incremental by default** — re-running it diffs the file-hash snapshot and processes only added/modified/deleted files; `forceReindex: true` rebuilds from scratch |
+| `index_codebase`   | Index a codebase for semantic code search with AST-aware chunking. **Incremental by default** — re-running it diffs the file-hash snapshot and processes only added/modified/deleted files; `forceReindex: true` rebuilds from scratch. The first index of a git worktree is [seeded](/usage/advanced/worktree-indexes#automatic-seeding-on-first-index) from an indexed sibling working tree when one matches; `seedFromWorktree: false` opts out |
 | `search_code`      | Search indexed codebase using natural language queries                     |
 | `get_index_status` | Get indexing status and statistics for a codebase                          |
 | `clear_index`      | Delete all indexed data for a codebase                                     |

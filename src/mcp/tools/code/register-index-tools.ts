@@ -4,7 +4,7 @@
 
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 
-import type { App } from "../../../core/api/public/index.js";
+import { formatWorktreeSeedReport, type App } from "../../../core/api/public/index.js";
 import type { RegisterToolFn } from "../../middleware/error-handler.js";
 import { formatEnrichmentStatus } from "../formatters/enrichment.js";
 import * as schemas from "../schemas.js";
@@ -26,11 +26,21 @@ export function registerIndexTools(server: McpServer, deps: { app: App; register
       inputSchema: schemas.IndexCodebaseSchema,
       annotations: { idempotentHint: true },
     },
-    async ({ path: pathArg, project, forceReindex, extensions, ignorePatterns }) => {
+    async ({ path: pathArg, project, forceReindex, extensions, ignorePatterns, seedFromWorktree }) => {
       const path = await resolvePathFromProject({ path: pathArg, project }, app);
-      const stats = await app.indexCodebase(path, { forceReindex, extensions, ignorePatterns }, (progress) => {
-        console.error(`[${progress.phase}] ${progress.percentage}% - ${progress.message}`);
-      });
+      const stats = await app.indexCodebase(
+        path,
+        { forceReindex, extensions, ignorePatterns, ...(seedFromWorktree === false ? { seedFromWorktree } : {}) },
+        (progress) => {
+          console.error(`[${progress.phase}] ${progress.percentage}% - ${progress.message}`);
+        },
+      );
+
+      // A seeded first index runs the incremental path, so the change summary
+      // below reads like a re-index — the seed line says where it started from.
+      const seedLines = stats.worktreeSeed ? formatWorktreeSeedReport(stats.worktreeSeed) : [];
+      const seedMessage =
+        seedLines.length > 0 ? `Worktree seed:\n${seedLines.map((l) => `  ${l}`).join("\n")}\n\n` : "";
 
       let statusMessage: string;
       if (stats.changeDetails) {
@@ -59,7 +69,7 @@ export function registerIndexTools(server: McpServer, deps: { app: App; register
         path,
         stats.enrichmentMetrics,
       );
-      statusMessage += enrichmentMessage;
+      statusMessage = seedMessage + statusMessage + enrichmentMessage;
 
       if (stats.status === "partial") {
         statusMessage += `\n\nWarnings:\n${stats.errors?.join("\n")}`;

@@ -107,6 +107,12 @@ export const IndexCodebaseSchema = {
     .array(z.string())
     .optional()
     .describe("Additional patterns to ignore (e.g., ['**/test/**', '**/*.test.ts'])"),
+  seedFromWorktree: coerceBoolean()
+    .optional()
+    .describe(
+      "First index only (default true): sibling git worktree of same repo already indexed w/ same model + " +
+        "settings → clone its index, embed only differing files. false = index from scratch.",
+    ),
 };
 
 export const GetIndexStatusSchema = {

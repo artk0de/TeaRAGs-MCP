@@ -34,6 +34,7 @@ import { EnrichmentCoordinator } from "../../../domains/ingest/pipeline/enrichme
 import { InlineEnrichmentExecutor } from "../../../domains/ingest/pipeline/enrichment/executor/index.js";
 import { EnrichmentRecovery } from "../../../domains/ingest/pipeline/enrichment/recovery.js";
 import type { DeletionConfig } from "../../../domains/ingest/sync/deletion/strategy.js";
+import type { CollectionFootprintFactory } from "../../../domains/maintenance/footprint/index.js";
 import type { CollectionRegistry } from "../../../domains/maintenance/registry/collection-registry.js";
 import { StaticPayloadBuilder } from "../../../domains/trajectory/static/provider.js";
 import type { StatsCache } from "../../../infra/stats-cache.js";
@@ -52,6 +53,7 @@ import { createPathCollectionResolver, type PathCollectionResolver } from "../co
 import { createCodegraphPayloadHealRunner } from "../infra/codegraph-payload-heal-runner.js";
 import { createIngestDependencies } from "../ingest-dependencies.js";
 import { IndexingOps, type IndexDriftConsumptionResetter } from "../ops/indexing-ops.js";
+import { WorktreeSeedOps } from "../ops/worktree-seed-ops.js";
 
 type ModelInfo = { model: string; contextLength: number; dimensions: number };
 
@@ -136,6 +138,13 @@ export interface IngestFacadeDeps {
   healthCheckRetryAttempts?: number;
   /** Pause between health-probe attempts (ms). Forwarded to IndexingOps. */
   healthCheckRetryDelayMs?: number;
+  /**
+   * The per-collection footprint the worktree clone copies — lets a first index
+   * seed from a registered sibling working tree (bd tea-rags-mcp-k8gac). Seeding
+   * is wired only when this, the registry, the stats cache and the payload
+   * descriptors are all present; omitted → every first index is an ordinary one.
+   */
+  footprintFactory?: Pick<CollectionFootprintFactory, "build">;
 }
 
 export class IngestFacade {
@@ -194,6 +203,19 @@ export class IngestFacade {
       // Beside the collection's other per-collection files, so every process
       // sharing this data dir contends on the same path (bd tea-rags-mcp-39xca.13).
       indexingLock: new CollectionIndexingLock({ lockDir: snapshotDir }),
+      ...(deps.envSnapshot ? { envSnapshot: deps.envSnapshot } : {}),
+      ...(deps.footprintFactory && deps.collectionRegistry && deps.statsCache && deps.allPayloadSignals
+        ? {
+            worktreeSeed: new WorktreeSeedOps({
+              registry: deps.collectionRegistry,
+              qdrant: deps.qdrant,
+              statsCache: deps.statsCache,
+              footprintFactory: deps.footprintFactory,
+              snapshotDir,
+              ...(deps.modelGuard ? { modelGuard: deps.modelGuard } : {}),
+            }),
+          }
+        : {}),
     });
 
     // Stats refresh when chunk enrichment finishes. Awaited so the

@@ -40,6 +40,17 @@
   bumps the version, so an assumed `_v1` would sweep the wrong physical
   collection.
 
+- **A first index seeded from a sibling worktree is an ORDINARY project, not a
+  clone.** `WorktreeSeedOps` (`api/internal/ops/worktree-seed-ops.ts`, bd
+  tea-rags-mcp-k8gac) runs the same `cloneCollectionFootprint` as `create`, but
+  writes no registry entry, no project name and no `worktreeOf`: the incremental
+  run `IndexingOps#trySeedFromWorktree` starts over the clone records the entry,
+  and `worktree remove` must keep refusing it. Which sibling may seed is
+  `checkWorktreeSeedCompatibility` (`worktree-seed-source.ts`) — a pure compare
+  of the stamps the drift monitors read. Why: a seed that differs from a fresh
+  index on any of those stamps reports drift a fresh index would not; adding a
+  drift axis without adding it to that gate reopens exactly that.
+
 ## Boundaries
 
 - **The command surface is consumed by a shell hook and by plugin skills outside

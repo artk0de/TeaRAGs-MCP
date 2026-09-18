@@ -152,6 +152,9 @@ export type {
   WorktreeRemoveInput,
   WorktreeCreateResult,
   WorktreeInfo,
+  WorktreeSeedCandidateRejection,
+  WorktreeSeedReport,
+  WorktreeSeedSourceRef,
 } from "../../contracts/types/worktree.js";
 
 // ── Adapter-owned types/runtime consumed by cli ────────────────────
@@ -178,6 +181,9 @@ export { ProjectRegistryOps } from "../internal/ops/project-registry-ops.js";
 // commands and uses the registry-backed query helpers for list/info, all via
 // `api/public` so cli stays out of api/internal and domains/maintenance.
 export { WorktreeOps, toWorktreeInfo, listWorktreeInfos, worktreeInfoForPath } from "../internal/ops/worktree-ops.js";
+// The one wording of a first index's worktree seed outcome — CLI status block
+// and MCP `index_codebase` response both render it (bd tea-rags-mcp-k8gac).
+export { formatWorktreeSeedReport } from "../../domains/maintenance/worktree/worktree-seed-report.js";
 
 // ── SchemaBuilder (used by mcp tool registration) ─────────────────────
 // Concrete class lives in api/internal/infra; re-exporting through public
