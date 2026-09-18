@@ -147,15 +147,19 @@ function resolveAliasMatch(
   if (substituted.length === 0) return null;
 
   for (const path of substituted) {
-    const verified = verifiedTsSourcePath(path, fileExists);
-    if (verified !== null) return verified;
+    const probed = probeImportPath(path, fileExists);
+    if (probed.kind === "source") return probed.relPath;
+    if (probed.kind === "asset") return null;
   }
   return match.catchAll ? null : resolveTsSourcePath(substituted[0], fileExists);
 }
 
 /**
  * Repo-relative path of the file `importText` points at, or `null` when the
- * specifier does not name a project file (bare npm packages, `node:` builtins).
+ * specifier does not name a project file: bare npm packages, `node:` builtins,
+ * and an ASSET import — a stylesheet, an image, a JSON module the probe finds
+ * (bd tea-rags-mcp-unt4v). `null` is what every consumer reads as "outside the
+ * project": no file edge, and a call on the import's binding is external.
  *
  * `fileExists` lets the mapper pick the extension that is actually on disk
  * instead of committing to `.ts`; omit it and the mapper keeps its `.ts`-only
@@ -199,21 +203,24 @@ const SOURCE_EXTENSION_CANDIDATES: readonly { suffix: string; extensions: readon
 ];
 
 /**
- * Suffixes that name the target file itself, so a specifier ending in one is
- * the file as written (bd tea-rags-mcp-x9qsh):
- *
- *   - a TypeScript file, declarations included (`.d.ts` / `.d.mts` / `.d.cts`
- *     end in one of these) — `allowImportingTsExtensions`, `node
- *     --experimental-strip-types` and tsx all let source spell it, and
- *     appending another source extension would name `worker.mts.ts`, a file
- *     that cannot exist;
- *   - a JSON module (`resolveJsonModule`), which `tsc` resolves as written and
- *     never as `data.json.ts`.
+ * Suffixes that name a TypeScript source as written, declarations included
+ * (`.d.ts` / `.d.mts` / `.d.cts` end in one of these) — `allowImportingTsExtensions`,
+ * `node --experimental-strip-types` and tsx all let source spell it, and
+ * appending another source extension would name `worker.mts.ts`, a file that
+ * cannot exist (bd tea-rags-mcp-x9qsh).
  */
-const AS_WRITTEN_EXTENSIONS: readonly string[] = [".ts", ".tsx", ".mts", ".cts", ".json"];
+const TS_SOURCE_AS_WRITTEN_EXTENSIONS: readonly string[] = [".ts", ".tsx", ".mts", ".cts"];
 
-function namesFileAsWritten(path: string): boolean {
-  return AS_WRITTEN_EXTENSIONS.some((extension) => path.endsWith(extension));
+/**
+ * A JSON module (`resolveJsonModule`) is spelled as written too — `tsc` never
+ * reads `"./data.json"` as `data.json.ts` — but it is not a source, so it has
+ * no source candidate at all: the probe finds it as an asset, or the
+ * as-written path stands as the unverified answer (bd tea-rags-mcp-x9qsh).
+ */
+const JSON_MODULE_EXTENSION = ".json";
+
+function namesTsSourceAsWritten(path: string): boolean {
+  return TS_SOURCE_AS_WRITTEN_EXTENSIONS.some((extension) => path.endsWith(extension));
 }
 
 /**
@@ -237,10 +244,11 @@ const DIRECTORY_MODULE_STEM = "index";
 
 /**
  * Rewrite a mapped path's suffix to the TypeScript source file it stands for,
- * so graph edges land on paths that match the codegraph file table.
+ * so graph edges land on paths that match the codegraph file table — or `null`
+ * when the probe finds the path to be an ASSET (see {@link probeImportPath}).
  *
- * A suffix in {@link AS_WRITTEN_EXTENSIONS} is already explicit and passes
- * through untouched.
+ * A suffix in {@link TS_SOURCE_AS_WRITTEN_EXTENSIONS} is already explicit and
+ * passes through untouched.
  * Everything else has candidates, and `fileExists` picks among them — the
  * FIRST candidate that exists wins, so a project holding both `foo.ts` and
  * `foo.tsx` resolves the way `tsc` would.
@@ -253,40 +261,60 @@ const DIRECTORY_MODULE_STEM = "index";
  * form is spelled, so probing `components.js/index.ts` would invent a module
  * nothing referenced.
  *
- * With no probe, or when no candidate exists, the first candidate is returned
- * unverified. That is deliberate: it is the pre-probe behaviour, and it is
+ * With no probe, or when the probe confirms nothing, the first candidate is
+ * returned unverified (a JSON module, which has none, keeps its as-written
+ * path). That is deliberate: it is the pre-probe behaviour, and it is
  * recall-negative only — a path no file table entry matches drops the edge,
  * where a guessed `.tsx` would fabricate a `wrongFile` edge instead. This
  * codebase defers rather than fabricates (see `MethodEdgeKind`).
  */
-function resolveTsSourcePath(path: string, fileExists?: ProjectFileProbe): string {
-  // A specifier that names its file has nothing to choose between, and
+function resolveTsSourcePath(path: string, fileExists?: ProjectFileProbe): string | null {
+  // A specifier that names its source has nothing to choose between, and
   // this returns BEFORE the probe on purpose: the probe's cache is what keeps
   // a resolve pass off one syscall per import per call site, and a lookup whose
   // answer cannot change the result is pure cost.
-  if (namesFileAsWritten(path)) return path;
-  const candidates = tsSourcePathCandidates(path);
-  return candidates.find((candidate) => fileExists?.(candidate)) ?? candidates[0];
+  if (namesTsSourceAsWritten(path)) return path;
+  const probed = probeImportPath(path, fileExists);
+  if (probed.kind === "source") return probed.relPath;
+  if (probed.kind === "asset") return null;
+  return tsSourcePathCandidates(path)[0] ?? path;
 }
 
+/** What the probe made of one mapped path (see {@link probeImportPath}). */
+type ProbedImportPath = { kind: "source"; relPath: string } | { kind: "asset" } | { kind: "unconfirmed" };
+
+const ASSET_IMPORT: ProbedImportPath = { kind: "asset" };
+const UNCONFIRMED_IMPORT: ProbedImportPath = { kind: "unconfirmed" };
+
 /**
- * The candidate a probe CONFIRMED, or `null` when none exists — the same walk
- * as {@link resolveTsSourcePath} without its unverified fallback.
+ * Walk a mapped path's source candidates against the probe and, LAST, the path
+ * as written: a file there that no source candidate named is an ASSET — a CSS
+ * module, an image, a JSON module (bd tea-rags-mcp-unt4v). The mapper used to
+ * append a source extension to those and name `X.module.css.ts`, a file no row
+ * can match; taxdome carried 1,922 such edges.
  *
- * Split out because one caller needs to tell "found it" from "guessed it", and
- * a return value that conflates them cannot express that: a bare `"*"` pattern
- * may only answer with a path a file backs (see {@link resolveAliasMatch}).
- * No probe means nothing can be confirmed, so the answer is `null` rather than
- * a guess.
+ * The verdict comes from the probe alone, never from a list of asset
+ * extensions: `user.service` is a dotted TypeScript basename, not an asset, and
+ * the only thing that tells the two apart is that `user.service.ts` exists.
+ * Order is what makes that safe — every source spelling of the path is a
+ * candidate ahead of the as-written check, so reaching it means the file is
+ * not a source. A directory is not a file, so it is never an asset.
+ *
+ * Split out because callers must tell "found it" from "guessed it": a bare
+ * `"*"` pattern may only answer with a path a file backs (see
+ * {@link resolveAliasMatch}). No probe confirms nothing.
  */
-function verifiedTsSourcePath(path: string, fileExists?: ProjectFileProbe): string | null {
-  if (fileExists === undefined) return null;
-  return tsSourcePathCandidates(path).find((candidate) => fileExists(candidate)) ?? null;
+function probeImportPath(path: string, fileExists?: ProjectFileProbe): ProbedImportPath {
+  if (fileExists === undefined) return UNCONFIRMED_IMPORT;
+  const source = tsSourcePathCandidates(path).find((candidate) => fileExists(candidate));
+  if (source !== undefined) return { kind: "source", relPath: source };
+  return fileExists(path) ? ASSET_IMPORT : UNCONFIRMED_IMPORT;
 }
 
 /** Source files a mapped specifier could stand for, in `tsc`'s resolution order. */
 function tsSourcePathCandidates(path: string): readonly string[] {
-  if (namesFileAsWritten(path)) return [path];
+  if (namesTsSourceAsWritten(path)) return [path];
+  if (path.endsWith(JSON_MODULE_EXTENSION)) return [];
 
   const rule = SOURCE_EXTENSION_CANDIDATES.find((entry) => path.endsWith(entry.suffix));
   const stem = rule ? path.slice(0, -rule.suffix.length) : path;
