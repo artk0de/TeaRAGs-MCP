@@ -601,3 +601,116 @@ describe("installWorkerCrashGuard (tea-rags-mcp-0ej8v)", () => {
     }
   });
 });
+
+describe("trackIndexWorker — the worker's record for the orphan sweep (f924y)", () => {
+  let dir: string;
+  const identity = {
+    pid: 777,
+    supervisorPid: 776,
+    startedAtMs: 1_000,
+    entryScript: "/checkout/build/cli/index.js",
+    projectPath: "/repo",
+  };
+
+  beforeEach(() => {
+    dir = mkdtempSync(join(tmpdir(), "worker-tracking-"));
+  });
+
+  afterEach(() => {
+    rmSync(dir, { recursive: true, force: true });
+  });
+
+  it("registers the worker, stamps its hand-off, and drops the record on release", async () => {
+    const { trackIndexWorker } = await import("../../../src/cli/index-progress/worker.js");
+    const { IndexWorkerRegistry } = await import("../../../src/cli/index-progress/worker-registry.js");
+    const registry = new IndexWorkerRegistry(join(dir, "workers"));
+    let clock = 1_000;
+
+    const tracker = trackIndexWorker(registry, identity, () => clock);
+    expect(registry.list()).toEqual([{ ...identity, lastProgressAtMs: 1_000 }]);
+
+    clock = 2_000;
+    tracker.handedOff();
+    expect(registry.list()).toEqual([{ ...identity, lastProgressAtMs: 1_000, handedOffAtMs: 2_000 }]);
+
+    tracker.release();
+    expect(registry.list()).toEqual([]);
+  });
+
+  it("records progress at most once per window, so a busy run does not rewrite its record per message", async () => {
+    const { trackIndexWorker, WORKER_PROGRESS_RECORD_INTERVAL_MS } =
+      await import("../../../src/cli/index-progress/worker.js");
+    const { IndexWorkerRegistry } = await import("../../../src/cli/index-progress/worker-registry.js");
+    const registry = new IndexWorkerRegistry(join(dir, "workers"));
+    let clock = 1_000;
+    const tracker = trackIndexWorker(registry, identity, () => clock);
+
+    clock = 1_000 + WORKER_PROGRESS_RECORD_INTERVAL_MS - 1;
+    tracker.progressed();
+    expect(registry.list()[0]?.lastProgressAtMs).toBe(1_000);
+
+    clock = 1_000 + WORKER_PROGRESS_RECORD_INTERVAL_MS;
+    tracker.progressed();
+    expect(registry.list()[0]?.lastProgressAtMs).toBe(1_000 + WORKER_PROGRESS_RECORD_INTERVAL_MS);
+  });
+
+  it("never stops indexing over a registry it cannot write", async () => {
+    const { trackIndexWorker } = await import("../../../src/cli/index-progress/worker.js");
+    const { IndexWorkerRegistry } = await import("../../../src/cli/index-progress/worker-registry.js");
+    const blocker = join(dir, "not-a-directory");
+    writeFileSync(blocker, "");
+    const registry = new IndexWorkerRegistry(join(blocker, "workers"));
+    const errSpy = vi.spyOn(process.stderr, "write").mockReturnValue(true);
+    try {
+      const tracker = trackIndexWorker(registry, identity, () => 1_000);
+      expect(() => {
+        tracker.handedOff();
+        tracker.progressed();
+        tracker.release();
+      }).not.toThrow();
+    } finally {
+      errSpy.mockRestore();
+    }
+  });
+});
+
+describe("main — registers itself for the orphan sweep (f924y)", () => {
+  let originalEnv: string | undefined;
+  let exitSpy: ReturnType<typeof vi.spyOn>;
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mainFakeApp.indexCodebase.mockImplementation(async () => ({ status: "completed" }));
+    mainFakeApp.getIndexStatus.mockResolvedValue({ isIndexed: true, status: "indexed", enrichment: {} });
+    mainFakeApp.whenEnrichmentComplete.mockResolvedValue(undefined);
+    originalEnv = process.env.TEA_RAGS_INDEX_WORKER;
+    process.env.TEA_RAGS_INDEX_WORKER = JSON.stringify({ path: "/registered-repo", options: {} });
+    exitSpy = vi.spyOn(process, "exit").mockImplementation((() => undefined) as never);
+    (process as { send?: unknown }).send = vi.fn(() => true);
+  });
+
+  afterEach(async () => {
+    if (originalEnv !== undefined) process.env.TEA_RAGS_INDEX_WORKER = originalEnv;
+    else delete process.env.TEA_RAGS_INDEX_WORKER;
+    exitSpy.mockRestore();
+    delete (process as { send?: unknown }).send;
+    const { IndexWorkerRegistry, indexWorkerRegistryDir } =
+      await import("../../../src/cli/index-progress/worker-registry.js");
+    new IndexWorkerRegistry(indexWorkerRegistryDir()).unregister(process.pid);
+  });
+
+  it("writes a record naming its supervisor, project and entry script", async () => {
+    const { main } = await import("../../../src/cli/index-progress/worker.js");
+    const { IndexWorkerRegistry, indexWorkerRegistryDir } =
+      await import("../../../src/cli/index-progress/worker-registry.js");
+
+    await main();
+
+    const own = new IndexWorkerRegistry(indexWorkerRegistryDir()).list().find((r) => r.pid === process.pid);
+    expect(own).toMatchObject({
+      supervisorPid: process.ppid,
+      projectPath: "/registered-repo",
+      entryScript: expect.any(String),
+    });
+  });
+});

@@ -10,12 +10,14 @@
  * bootstrap entry the forked process executes.
  */
 
-import { readdirSync, statSync } from "node:fs";
+import { readdirSync, realpathSync, statSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 
 import { isEnrichmentRecompute, type App, type IndexOptions, type IndexStatus } from "../../core/api/public/index.js";
 import type { EnrichmentOutcome, WorkerMessage } from "./ipc-protocol.js";
+import { installParentDeathGuard } from "./parent-death-guard.js";
+import { IndexWorkerRegistry, indexWorkerRegistryDir, type IndexWorkerRecord } from "./worker-registry.js";
 
 /** Structural subset of App the worker needs — keeps test fakes minimal. */
 export interface IndexWorkerApp {
@@ -263,6 +265,82 @@ export function installWorkerCrashGuard(proc: WorkerCrashGuardProcess, send: (me
   proc.on("unhandledRejection", report("unhandledRejection"));
 }
 
+/** Who a worker is, as its registry record states it. */
+export type IndexWorkerIdentity = Omit<IndexWorkerRecord, "handedOffAtMs" | "lastProgressAtMs">;
+
+/** What the worker tells its registry record over its life. */
+export interface IndexWorkerTracker {
+  /** The supervisor granted "outlive". */
+  handedOff: () => void;
+  /** The worker sent a progress message (recorded at most once per window). */
+  progressed: () => void;
+  /** The worker is exiting. */
+  release: () => void;
+}
+
+/** A busy run sends many messages a second; its record needs a fresh stamp far less often. */
+export const WORKER_PROGRESS_RECORD_INTERVAL_MS = 15_000;
+
+/**
+ * Register this worker for the orphan sweep (bd tea-rags-mcp-f924y) and keep its
+ * record current. Best-effort throughout: a registry that cannot be written
+ * costs the sweep its evidence, never the run its index — each failure is
+ * reported once on stderr and otherwise ignored.
+ */
+export function trackIndexWorker(
+  registry: IndexWorkerRegistry,
+  identity: IndexWorkerIdentity,
+  now: () => number = Date.now,
+): IndexWorkerTracker {
+  let reported = false;
+  const bestEffort = (step: () => void): void => {
+    try {
+      step();
+    } catch (error) {
+      if (reported) return;
+      reported = true;
+      process.stderr.write(
+        `[tea-rags] worker registry at ${registry.dir} is not writable (${(error as Error).message}) — ` +
+          "`tea-rags doctor --sweep-workers` will not see this worker\n",
+      );
+    }
+  };
+  let lastRecordedAtMs = now();
+  bestEffort(() => {
+    registry.register({ ...identity, lastProgressAtMs: lastRecordedAtMs });
+  });
+  return {
+    handedOff: () => {
+      bestEffort(() => {
+        registry.markHandedOff(identity.pid, now());
+      });
+    },
+    progressed: () => {
+      const at = now();
+      if (at - lastRecordedAtMs < WORKER_PROGRESS_RECORD_INTERVAL_MS) return;
+      lastRecordedAtMs = at;
+      bestEffort(() => {
+        registry.recordProgress(identity.pid, at);
+      });
+    },
+    release: () => {
+      bestEffort(() => {
+        registry.unregister(identity.pid);
+      });
+    },
+  };
+}
+
+/** The CLI entry this worker runs, symlinks resolved — which checkout's build it is. */
+function resolveEntryScript(): string {
+  const entry = process.argv[1] ?? "";
+  try {
+    return realpathSync(entry);
+  } catch {
+    return entry;
+  }
+}
+
 /** Bootstrap entry executed by the forked worker process. */
 export async function main(): Promise<void> {
   const raw = process.env.TEA_RAGS_INDEX_WORKER;
@@ -272,28 +350,37 @@ export async function main(): Promise<void> {
   }
   const { path, options } = JSON.parse(raw) as WorkerParams;
 
-  // Parent-death guard. The worker runs in its OWN process group (detached
-  // fork), so killing the parent (CLI foreground OR MCP host) never reaches the
-  // git children (blame / log / cat-file, incl. those spawned inside blame/walk
-  // worker threads) — they orphan. On a CLEAN background hand-off the supervisor
-  // sends {type:"outlive"} then disconnects; on an INTERRUPT/kill the parent
-  // dies WITHOUT that message and the IPC disconnects with no outlive flag —
-  // then SIGKILL our whole process group so the git children die with us.
-  let outliveParent = false;
-  process.on("message", (m: unknown) => {
-    if (m && typeof m === "object" && (m as { type?: unknown }).type === "outlive") outliveParent = true;
+  // The record the orphan sweep proves this process by (bd tea-rags-mcp-f924y).
+  const tracker = trackIndexWorker(new IndexWorkerRegistry(indexWorkerRegistryDir()), {
+    pid: process.pid,
+    supervisorPid: process.ppid,
+    startedAtMs: Math.round(Date.now() - process.uptime() * 1000),
+    entryScript: resolveEntryScript(),
+    projectPath: path,
   });
-  process.on("disconnect", () => {
-    if (outliveParent) return;
-    try {
-      process.kill(-process.pid, "SIGKILL");
-    } catch {
-      // Not a process-group leader (inline/test invocation) — nothing to group-kill.
-    }
-    process.exit(1);
+  process.on("exit", tracker.release);
+
+  // Parent-death guard: the worker runs in its OWN process group, so a killed
+  // supervisor never reaches it or its git / chunker children. Without an
+  // outlive grant, the supervisor's disconnect takes the whole group down.
+  installParentDeathGuard(process, {
+    onOutlive: tracker.handedOff,
+    onOrphaned: () => {
+      tracker.release();
+      try {
+        process.kill(-process.pid, "SIGKILL");
+      } catch {
+        // Not a process-group leader (inline/test invocation) — nothing to group-kill.
+      }
+      process.exit(1);
+    },
   });
 
-  const send = createSupervisorSend(process);
+  const toSupervisor = createSupervisorSend(process);
+  const send = (message: WorkerMessage): void => {
+    toSupervisor(message);
+    tracker.progressed();
+  };
 
   // A crash anywhere past this point must surface over IPC + stderr instead of
   // a bare silent exit 1 (tea-rags-mcp-0ej8v).
