@@ -10,7 +10,8 @@ import {
   versionedPhysicalCollectionName,
 } from "../../../infra/collection-name.js";
 import { WorktreeCollectionExistsError, WorktreeNotFoundError, WorktreeSourceNotFoundError } from "../errors.js";
-import type { CollectionArtifact, CollectionFootprintFactory, ResolvedCollection } from "../footprint/index.js";
+import { cloneCollectionFootprint } from "../footprint/clone-saga.js";
+import type { CollectionFootprintFactory, ResolvedCollection } from "../footprint/index.js";
 import type { CollectionRegistry } from "../registry/index.js";
 import {
   ensureGitWorktree as defaultEnsureGitWorktree,
@@ -104,16 +105,10 @@ export class WorktreeProvisioner {
       ? this.ensureGitWorktree(sourceEntry.path, input.name, worktreePath, input.branch)
       : false;
 
-    const { context, artifacts } = footprintFactory.build(source, target);
-    const done: CollectionArtifact[] = [];
     try {
-      for (const a of artifacts) {
-        // C2: push BEFORE clone so the failing artifact participates in rollback.
-        done.push(a);
-        await a.clone(context);
-      }
+      // C2 lives in the saga: each artifact joins the rollback BEFORE its clone.
+      await cloneCollectionFootprint(footprintFactory, source, target);
     } catch (err) {
-      for (const a of [...done].reverse()) await a.remove(context).catch(() => undefined);
       // C1: roll back the git worktree if we created it.
       if (gitCreated) {
         try {
