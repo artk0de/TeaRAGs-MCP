@@ -114,8 +114,8 @@ language added → update this table in lock-step with the matching block in
 
 1. **Scope of level-aware typed filters.** No effective level → each filter's
    OWN default: `minAgeDays`, `maxAgeDays`, `minCommitCount` → `git.chunk.*`;
-   `taskId` → `git.file.*`. Effective level set → every level-aware filter
-   follows it.
+   `taskId`, `author` → `git.file.*`. Effective level set → every level-aware
+   filter follows it.
    - `modifiedAfter` / `modifiedBefore` → ALWAYS `git.file.lastModifiedAt`, any
      `level`. Never need `level: "file"`.
 2. **Result granularity.** `level: "file"` → one result per file
@@ -129,37 +129,42 @@ only its preset sets it.
 **NEVER set `level: "file"` just to make a time filter file-level** → unwanted
 file-grouped results. Pick time filter by intent:
 
-| Intent                                        | Use                                           | Reads                                 |
-| --------------------------------------------- | --------------------------------------------- | ------------------------------------- |
-| File changed since date (sprint, "this week") | `modifiedAfter: <ISO>`                        | file last-commit time, any level      |
-| File untouched since date (old / legacy code) | `modifiedBefore: <ISO>`                       | file last-commit time, any level      |
-| Old / fresh FILES as file list                | `minAgeDays` / `maxAgeDays` + `level: "file"` | `git.file.ageDays`, one result / file |
-| Chunks whose OWN lines changed in last N days | `maxAgeDays: <N>` (default chunk)             | `git.chunk.ageDays`                   |
+| Intent                                        | Use                                           | Reads                                    |
+| --------------------------------------------- | --------------------------------------------- | ---------------------------------------- |
+| File changed since date (sprint, "this week") | `modifiedAfter: <ISO>`                        | file last-commit time, any level         |
+| File untouched since date (old / legacy code) | `modifiedBefore: <ISO>`                       | file last-commit time, any level         |
+| Old / fresh FILES as file list                | `minAgeDays` / `maxAgeDays` + `level: "file"` | file last-commit time, one result / file |
+| Chunks whose OWN lines changed in last N days | `maxAgeDays: <N>` (default chunk)             | chunk last-commit time                   |
 
-**Chunk age caveat.** `git.chunk.ageDays` exists only where chunk churn walk
+Age filters compute age at QUERY time from last-commit timestamp — no drift;
+`maxAgeDays: 0` = last commit within a day.
+
+**Chunk age caveat.** Chunk last-commit time exists only where chunk churn walk
 attributed a commit inside its window (`TRAJECTORY_GIT_CHUNK_MAX_AGE_MONTHS`,
-default 6). ABSENT on every doc chunk + chunks untouched in window → chunk age
-filters drop them. Chunk-level `minAgeDays` never finds code older than window →
-old code: `modifiedBefore` or `level: "file"`.
+default 6); `0` / absent on every doc chunk + chunks untouched in window → chunk
+age filters drop them. Chunk-level `minAgeDays` never finds code older than
+window → old code: `modifiedBefore` or `level: "file"`.
 
-**Reading `ageDays`.** Whole days, floored, at enrichment time. `0` = last
-commit < 1 day before enrichment = FRESHEST code, not "no data" (no data = key
-absent). Point not re-enriched keeps old `ageDays`; `modifiedAfter` /
-`modifiedBefore` compare absolute timestamp, no drift.
+**Reading overlay `ageDays`.** Payload stamp: whole days, floored, at ENRICHMENT
+time. `0` = last commit < 1 day before enrichment = freshest, not "no data" (no
+data = key absent). Point not re-enriched keeps old stamp → overlay value, `age`
+/ `recency` rerank and `ageDays` filter presets (`freshLegacyEdits`,
+`battleTested`, `abandonedHotspots`) can lag; typed age filters and
+`modifiedAfter` / `modifiedBefore` do not.
 
 ## Sugar filter pairing examples
 
-| Sugar field                        | Resolves to                                           | Pair with                                |
-| ---------------------------------- | ----------------------------------------------------- | ---------------------------------------- |
-| `minAgeDays` / `maxAgeDays`        | `git.<effective level>.ageDays` range (chunk default) | `level: "file"` only for a file list     |
-| `minCommitCount`                   | `git.<effective level>.commitCount` (chunk default)   | drop one-off scripts                     |
-| `modifiedAfter` / `modifiedBefore` | `git.file.lastModifiedAt` range, at any level         | nothing — no `level` needed              |
-| `author`                           | blame-dominant author equals                          | ownership analysis                       |
-| `taskId`                           | `git.<effective level>.taskIds` (file default)        | `level: "chunk"` for chunk's own commits |
-| `testFile`                         | `"only" \| "exclude" \| "include"`                    | scope to prod vs test                    |
-| `documentation`                    | `"only" \| "exclude" \| "include"`                    | scope to docs vs code                    |
-| `fileExtension`                    | one or more extensions                                | language-adjacent constraints            |
-| `language`                         | one language                                          | polyglot scoping                         |
+| Sugar field                        | Resolves to                                                              | Pair with                                |
+| ---------------------------------- | ------------------------------------------------------------------------ | ---------------------------------------- |
+| `minAgeDays` / `maxAgeDays`        | `git.<effective level>.lastModifiedAt` vs query-time now (chunk default) | `level: "file"` only for a file list     |
+| `minCommitCount`                   | `git.<effective level>.commitCount` (chunk default)                      | drop one-off scripts                     |
+| `modifiedAfter` / `modifiedBefore` | `git.file.lastModifiedAt` range, at any level                            | nothing — no `level` needed              |
+| `author`                           | `git.<effective level>.blameDominantAuthor` (file default)               | exact blame NAME, not email              |
+| `taskId`                           | `git.<effective level>.taskIds` (file default)                           | `level: "chunk"` for chunk's own commits |
+| `testFile`                         | `"only" \| "exclude" \| "include"`                                       | scope to prod vs test                    |
+| `documentation`                    | `"only" \| "exclude" \| "include"`                                       | scope to docs vs code                    |
+| `fileExtension`                    | one or more extensions                                                   | language-adjacent constraints            |
+| `language`                         | one language                                                             | polyglot scoping                         |
 
 Concrete payload examples:
 

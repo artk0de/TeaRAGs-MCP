@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { PayloadSignalDescriptor } from "../../../../../src/core/contracts/types/trajectory.js";
 import { compileFilterPreset } from "../../../../../src/core/domains/trajectory/filter-presets/compiler.js";
@@ -158,45 +158,84 @@ describe("git filter descriptors", () => {
 });
 
 describe("level-aware filters", () => {
-  // ageDays 0 = last commit less than 24h before enrichment (day-floored), NOT
-  // "no git data": both assemblers leave the key absent when there is no
-  // history, and the is_empty guard below is what excludes those points.
-  it("minAgeDays uses level-aware key with is_empty guard", () => {
-    const chunkLevel = findFilter("minAgeDays").toCondition(30);
-    expect(chunkLevel.must![0]).toEqual({
-      key: "git.chunk.ageDays",
-      range: { gte: 30 },
-    });
-    // Guard: exclude points where field is missing (Qdrant skips range on undefined)
-    expect(chunkLevel.must_not![0]).toEqual({ is_empty: { key: "git.chunk.ageDays" } });
+  // Age filters are drift-free (tea-rags-mcp-9mwny): they compare the stored
+  // last-commit timestamp against QUERY-time now, never the `ageDays` stamp,
+  // which is frozen at enrichment time and goes stale on points not
+  // re-enriched. Day semantics match the old ageDays = floor(days) contract:
+  // minAgeDays N ⟺ age ≥ N days; maxAgeDays N ⟺ age < N + 1 days.
+  const DAY = 86_400;
+  const NOW = Date.UTC(2026, 8, 18, 12, 0, 0);
+  const nowSec = NOW / 1000;
+  /** A payload whose last commit was `daysAgo` before NOW, at the given level. */
+  const committed = (level: "file" | "chunk", daysAgo: number, staleAgeDays?: number) => ({
+    git: {
+      [level]: {
+        lastModifiedAt: nowSec - Math.round(daysAgo * DAY),
+        ...(staleAgeDays !== undefined ? { ageDays: staleAgeDays } : {}),
+      },
+    },
+  });
 
+  beforeEach(() => {
+    vi.useFakeTimers();
+    vi.setSystemTime(NOW);
+  });
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it("minAgeDays compiles to a query-time lastModifiedAt cutoff, level-aware, chunk by default", () => {
+    expect(findFilter("minAgeDays").toCondition(30)).toEqual({
+      must: [{ key: "git.chunk.lastModifiedAt", range: { gt: 0, lte: nowSec - 30 * DAY } }],
+      must_not: [{ is_empty: { key: "git.chunk.lastModifiedAt" } }],
+    });
     const fileLevel = findFilter("minAgeDays").toCondition(30, "file");
-    expect(fileLevel.must![0].key).toBe("git.file.ageDays");
-    expect(fileLevel.must_not![0]).toEqual({ is_empty: { key: "git.file.ageDays" } });
+    expect(fileLevel.must![0].key).toBe("git.file.lastModifiedAt");
+    expect(fileLevel.must_not![0]).toEqual({ is_empty: { key: "git.file.lastModifiedAt" } });
   });
 
-  it("maxAgeDays uses level-aware key with is_empty guard", () => {
-    const chunkLevel = findFilter("maxAgeDays").toCondition(90);
-    expect(chunkLevel.must![0]).toEqual({
-      key: "git.chunk.ageDays",
-      range: { lte: 90 },
+  it("maxAgeDays compiles to a query-time lastModifiedAt cutoff, level-aware, chunk by default", () => {
+    expect(findFilter("maxAgeDays").toCondition(7)).toEqual({
+      must: [{ key: "git.chunk.lastModifiedAt", range: { gt: nowSec - 8 * DAY } }],
+      must_not: [{ is_empty: { key: "git.chunk.lastModifiedAt" } }],
     });
-    expect(chunkLevel.must_not![0]).toEqual({ is_empty: { key: "git.chunk.ageDays" } });
-
     const fileLevel = findFilter("maxAgeDays").toCondition(7, "file");
-    expect(fileLevel.must![0].key).toBe("git.file.ageDays");
-    expect(fileLevel.must_not![0]).toEqual({ is_empty: { key: "git.file.ageDays" } });
+    expect(fileLevel.must![0].key).toBe("git.file.lastModifiedAt");
+    expect(fileLevel.must_not![0]).toEqual({ is_empty: { key: "git.file.lastModifiedAt" } });
   });
 
-  it("maxAgeDays admits ageDays 0 — code committed less than a day before enrichment is the freshest, not unknown", () => {
-    const fileLevel = findFilter("maxAgeDays").toCondition(7, "file");
-    expect(fileLevel.must).toEqual([{ key: "git.file.ageDays", range: { lte: 7 } }]);
+  it("maxAgeDays admits code committed less than a day ago and keeps the whole-day boundary", () => {
+    const week = findFilter("maxAgeDays").toCondition(7, "file");
+    expect(matchesQdrantFilter(committed("file", 2 / 24), week)).toBe(true);
+    expect(matchesQdrantFilter(committed("file", 7.5), week)).toBe(true); // floor(7.5) = 7 ≤ 7
+    expect(matchesQdrantFilter(committed("file", 8.5), week)).toBe(false);
+    expect(matchesQdrantFilter(committed("file", 2 / 24), findFilter("maxAgeDays").toCondition(0, "file"))).toBe(true);
   });
 
-  it("maxAgeDays compiles the same chunk range as the freshLegacyEdits filter preset", () => {
+  it("ignores the enrichment-time ageDays stamp — a stale value never decides the match", () => {
+    // Enriched when 1 day old; the last commit is now 56 days back.
+    const stale = committed("file", 56, 1);
+    expect(matchesQdrantFilter(stale, findFilter("maxAgeDays").toCondition(7, "file"))).toBe(false);
+    expect(matchesQdrantFilter(stale, findFilter("minAgeDays").toCondition(30, "file"))).toBe(true);
+  });
+
+  it("no git history never matches: lastModifiedAt absent or the chunk no-commit sentinel 0", () => {
+    const noCommitChunk = { git: { chunk: { lastModifiedAt: 0, commitCount: 0 } } };
+    const docChunk = { git: { file: { lastModifiedAt: nowSec - 3 * DAY } } };
+    for (const payload of [noCommitChunk, docChunk, {}]) {
+      expect(matchesQdrantFilter(payload, findFilter("minAgeDays").toCondition(0))).toBe(false);
+      expect(matchesQdrantFilter(payload, findFilter("maxAgeDays").toCondition(365))).toBe(false);
+    }
+  });
+
+  it("maxAgeDays agrees with the freshLegacyEdits preset on a freshly enriched point", () => {
+    // Both admit a chunk committed two hours ago whose stamp is still current
+    // (ageDays 0); the preset reads the stamp, the typed filter the timestamp.
+    const fresh = committed("chunk", 2 / 24, 0);
     const presetFilter = compileFilterPreset(freshLegacyEditsFilterPreset, undefined, "chunk");
-    const presetChunkAge = presetFilter.must!.find((c) => "key" in c && c.key === "git.chunk.ageDays");
-    expect(findFilter("maxAgeDays").toCondition(7).must![0]).toEqual(presetChunkAge);
+    const presetChunkAge = { must: presetFilter.must!.filter((c) => "key" in c && c.key === "git.chunk.ageDays") };
+    expect(matchesQdrantFilter(fresh, presetChunkAge)).toBe(true);
+    expect(matchesQdrantFilter(fresh, findFilter("maxAgeDays").toCondition(7))).toBe(true);
   });
 
   it("minCommitCount defaults to chunk level", () => {

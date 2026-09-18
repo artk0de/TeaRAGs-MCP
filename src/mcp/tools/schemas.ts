@@ -223,14 +223,14 @@ function typedFilterFields() {
     minAgeDays: coerceNumber()
       .optional()
       .describe(
-        "Filter code older than N days since last commit. Level-aware: git.chunk.ageDays by default " +
-          "(absent → dropped on docs + chunks with no commit in chunk git window); " +
-          "level 'file' → git.file.ageDays, results grouped per file.",
+        "Filter code whose last commit is ≥ N days old, age computed at query time from lastModifiedAt. " +
+          "Level-aware: chunk last commit by default (none → dropped: docs + chunks with no commit in " +
+          "chunk git window); level 'file' → file last commit, results grouped per file.",
       ),
     maxAgeDays: coerceNumber()
       .optional()
       .describe(
-        "Filter code newer than N days since last commit (0 = under a day, counted at enrichment). " +
+        "Filter code whose last commit is ≤ N whole days old, query time (0 = within a day). " +
           "Level-aware like minAgeDays. File-level recency at chunk granularity → modifiedAfter.",
       ),
     minCommitCount: coerceNumber()

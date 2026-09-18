@@ -234,9 +234,11 @@ export function buildFiltersDoc(): string {
   md += "unset → each filter's default: `minAgeDays` / `maxAgeDays` / `minCommitCount` → `git.chunk.*`, ";
   md += "`taskId` → `git.file.*`, codegraph `minFanIn` / `minFanOut` → file. `modifiedAfter` / ";
   md += "`modifiedBefore` always read `git.file.lastModifiedAt`, any `level`. (2) Result granularity: ";
-  md += '`level: "file"` → one result per file (`payload.members`). `git.chunk.ageDays` absent on ';
-  md += "chunks with no commit in chunk churn walk (all doc chunks) → chunk age filters drop them. ";
-  md += "`ageDays: 0` = last commit < 1 day before enrichment (freshest, not no-data).\n\n";
+  md += '`level: "file"` → one result per file (`payload.members`). `minAgeDays` / `maxAgeDays` ';
+  md += "compare `git.<level>.lastModifiedAt` with query-time now (no drift); chunk timestamp 0 / absent ";
+  md += "on chunks with no commit in chunk churn walk (all doc chunks) → chunk age filters drop them. ";
+  md += "Payload `ageDays` = enrichment-time stamp (`0` = < 1 day then, not no-data); stale on points ";
+  md += "not re-enriched — raw `ageDays` ranges and ageDays filter presets inherit that lag.\n\n";
   md += "**Imports:** imports[] — file-level imports\n\n";
   md += "**Codegraph metadata** (requires codegraph indexing — typed filter params, not raw Qdrant keys):\n\n";
   md += "File-level (default level): `minFanIn`, `minFanOut`, `minInstability`, `minTransitiveImpact`, ";

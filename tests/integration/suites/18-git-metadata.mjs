@@ -204,9 +204,9 @@ export class AuthService {
   // === TEST 7: Search filter by age ===
   log("info", "Testing age filters...");
 
-  // Files committed less than 24h before enrichment report ageDays=0
-  // (day-floored). That is the freshest code, not "no data" (no data = absent
-  // key), so maxAgeDays must include it (tea-rags-mcp-9mwny).
+  // Files committed moments ago are the freshest code; maxAgeDays compares
+  // their last-commit timestamp with query-time now, so it must include them
+  // (tea-rags-mcp-9mwny).
   const freshResults = await semanticSearch(explore, gitTestDir, "service", {
     maxAgeDays: 7,
     level: "file",

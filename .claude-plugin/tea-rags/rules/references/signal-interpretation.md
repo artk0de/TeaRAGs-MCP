@@ -32,7 +32,7 @@ Two ownership signal families coexist — answer different questions:
 | `chunkChurn`                            |          | chunk's share of file churn                                                                                                                              |
 | `burstActivity`                         |          | recent concentrated change bursts                                                                                                                        |
 | `bugFixRate`                            |          | share of commits tagged as fixes                                                                                                                         |
-| `ageDays`                               |          | days since last commit, at enrichment; `0` = < 1 day. Chunk value absent where chunk walk found no commit in its window                                  |
+| `ageDays`                               |          | days since last commit, stamped at enrichment (lags on points not re-enriched); `0` = < 1 day. Chunk value absent where chunk walk found no commit       |
 | `recentDominantAuthor`                  | `recent` | top recent committer (string, file-level)                                                                                                                |
 | `recentDominantAuthorPct`               | `recent` | top recent committer's share of recent commits                                                                                                           |
 | `recentAuthors`                         | `recent` | recent committer set (top-N, capped)                                                                                                                     |
