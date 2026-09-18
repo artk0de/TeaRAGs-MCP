@@ -429,6 +429,16 @@ export const CODE_LANGUAGES: ReadonlySet<string> = new Set(
 );
 
 /**
+ * Language identifiers whose every chunk is documentation (`isDocumentation`
+ * true) — the complement of {@link CODE_LANGUAGES}. A `language` filter naming
+ * one selects documentation chunks, which is how the search path tells that a
+ * rerank preset's docs-excluding default filter contradicts the caller.
+ */
+export const DOCUMENTATION_LANGUAGES: ReadonlySet<string> = new Set(
+  Object.keys(LANGUAGE_DEFINITIONS).filter((lang) => LANGUAGE_DEFINITIONS[lang].isDocumentation),
+);
+
+/**
  * Maps file extensions to language identifiers used by tree-sitter and chunker.
  */
 export const LANGUAGE_MAP: Record<string, string> = {

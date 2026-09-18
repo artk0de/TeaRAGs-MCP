@@ -13,7 +13,9 @@
  */
 
 import { describe, expect, it, vi } from "vitest";
+import { z } from "zod";
 
+import type { SchemaBuilder } from "../../../../src/core/api/index.js";
 import { ExploreFacade } from "../../../../src/core/api/internal/facades/explore-facade.js";
 import type { RerankPreset } from "../../../../src/core/contracts/types/reranker.js";
 import {
@@ -25,6 +27,7 @@ import { TrajectoryRegistry } from "../../../../src/core/domains/trajectory/inde
 import { STATIC_FILTER_PRESETS } from "../../../../src/core/domains/trajectory/static/filter-presets/index.js";
 import { StaticTrajectory } from "../../../../src/core/domains/trajectory/static/index.js";
 import { DecompositionPreset } from "../../../../src/core/domains/trajectory/static/rerank/presets/decomposition.js";
+import { createSearchSchemas } from "../../../../src/mcp/tools/schemas.js";
 
 const PRESETS: Record<string, RerankPreset> = {
   bugHunt: new BugHuntCompositePreset(),
@@ -121,5 +124,77 @@ describe("preset default filter yields to an explicit test / docs scope", () => 
     const filter = await sentFilter({ rerank: "techDebt", testFile: "only", filter: { presets: "production" } });
     expect(filter.must).toContainEqual(SELECT_TESTS);
     expect(filter.must_not).toContainEqual(EXCLUDE_TESTS);
+  });
+});
+
+// bd tea-rags-mcp-9mwny follow-up — `testFile: "include"` / `documentation:
+// "include"` are documented as "all files", and `language: "markdown"` selects
+// documentation chunks, yet none of them compiles to a condition the rule above
+// can see ("include" compiles to nothing; a language condition sits on another
+// key). Under a production default they still returned no tests / docs.
+// Invariant: an EXPLICITLY passed include, or a documentation language, is a
+// caller scope choice that drops a default excluding that population.
+describe("explicit include / documentation language yield the preset default", () => {
+  const EXCLUDE_DOCS = { key: "isDocumentation", match: { value: true } };
+
+  it("testFile 'include' drops a default that excludes tests", async () => {
+    const filter = await sentFilter({ rerank: "techDebt", testFile: "include" });
+    expect(filter?.must_not ?? []).not.toContainEqual(EXCLUDE_TESTS);
+  });
+
+  it("documentation 'include' drops a default that excludes documentation", async () => {
+    const filter = await sentFilter({ rerank: "bugHunt", documentation: "include" });
+    expect(filter?.must_not ?? []).not.toContainEqual(EXCLUDE_DOCS);
+  });
+
+  it("language 'markdown' drops a default that excludes documentation", async () => {
+    const filter = await sentFilter({ rerank: "techDebt", language: "markdown" });
+    expect(filter.must).toContainEqual({ key: "language", match: { value: "markdown" } });
+    expect(filter.must_not ?? []).not.toContainEqual(EXCLUDE_DOCS);
+  });
+
+  it("a code language keeps the default", async () => {
+    const filter = await sentFilter({ rerank: "techDebt", language: "typescript" });
+    expect(filter.must_not).toContainEqual(EXCLUDE_TESTS);
+  });
+
+  it("testFile 'exclude' agrees with the default and keeps it", async () => {
+    const filter = await sentFilter({ rerank: "techDebt", testFile: "exclude" });
+    expect(filter.must_not).toContainEqual(EXCLUDE_DOCS);
+  });
+
+  it("an include the default does not constrain keeps it (documentation 'include' + coreLogic)", async () => {
+    const filter = await sentFilter({ rerank: "decomposition", documentation: "include" });
+    expect(filter.must).toContainEqual({ key: "chunkType", match: { any: ["function", "class"] } });
+  });
+
+  // The rule must fire on what the CALLER passed, never on a value a schema
+  // default filled in. The MCP search schemas declare testFile / documentation
+  // as optional enums with no Zod default, so an omitted param stays absent all
+  // the way into the facade — proven here through the real schema.
+  describe("through the MCP search schema", () => {
+    const { SemanticSearchSchema } = createSearchSchemas({
+      buildRerankSchema: () => z.string(),
+      buildFilterSchema: () => z.record(z.string(), z.any()),
+    } as unknown as SchemaBuilder);
+    const parse = (input: Record<string, unknown>) => z.object(SemanticSearchSchema).parse(input);
+
+    it("an omitted testFile / documentation stays absent and the default applies", async () => {
+      const parsed = parse({ collection: "col", query: "q", rerank: "techDebt" });
+      expect("testFile" in parsed).toBe(false);
+      expect("documentation" in parsed).toBe(false);
+
+      const { facade, sentFilters } = makeFacade();
+      await facade.semanticSearch(parsed as never);
+      expect((sentFilters[0] as any).must_not).toContainEqual(EXCLUDE_TESTS);
+    });
+
+    it("an explicit testFile 'include' survives parsing and drops the default", async () => {
+      const parsed = parse({ collection: "col", query: "q", rerank: "techDebt", testFile: "include" });
+
+      const { facade, sentFilters } = makeFacade();
+      await facade.semanticSearch(parsed as never);
+      expect((sentFilters[0] as any)?.must_not ?? []).not.toContainEqual(EXCLUDE_TESTS);
+    });
   });
 });

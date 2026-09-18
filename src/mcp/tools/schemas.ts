@@ -196,14 +196,18 @@ function typedFilterFields() {
       .optional()
       .describe(
         "Documentation filter mode. 'only' = documentation chunks only, " +
-          "'exclude' = no documentation chunks, 'include' = all chunks (default).",
+          "'exclude' = no documentation chunks, 'include' = all chunks. " +
+          "Omitted → no doc filter of its own, but a rerank preset's default filter may exclude docs; " +
+          "explicit 'only' / 'include' drops such a default.",
       ),
     testFile: z
       .enum(["only", "exclude", "include"])
       .optional()
       .describe(
         "Test file filter mode. 'only' = test files only, " +
-          "'exclude' = no test files, 'include' = all files (default).",
+          "'exclude' = no test files, 'include' = all files. " +
+          "Omitted → no test filter of its own, but a rerank preset's default filter may exclude tests; " +
+          "explicit 'only' / 'include' drops such a default.",
       ),
     author: z
       .string()
