@@ -20,9 +20,12 @@ preset over codegraph fan-graph signals, not content matching.
 `entryPoint` weights `fanIn` negatively (entry points are called by few). A
 zero-fan-in one-line utility can therefore rank top despite being noise.
 Mitigate by **post-filtering tiny chunks**: drop results whose `chunkSize` is
-below a small threshold (a few lines), or pass `minFanOut` so a real entry
-(which fans out into the flow) survives but a leaf utility doesn't. State the
-filter you applied.
+below a small threshold (a few lines), or pass `minFanOut` + `level: "chunk"` so
+a real entry (which fans out into the flow) survives but a leaf utility doesn't.
+`level: "chunk"` mandatory: `minFanOut` defaults to FILE level (file's import
+count) — chunk level = symbol's own outgoing calls. Here `level` only re-scopes
+the filter; ranking + result shape unchanged (chunks). State the filter you
+applied.
 
 ## Tail-suggestion (trace the flow)
 

@@ -430,7 +430,7 @@
           "type": "routing"
         },
         {
-          "text": "Applies small-utility mitigation (chunkSize/minFanOut) and states it",
+          "text": "Applies small-utility mitigation (chunkSize post-filter, or minFanOut WITH level='chunk' — minFanOut alone scopes to the file's import count) and states it",
           "type": "parameters"
         }
       ]
