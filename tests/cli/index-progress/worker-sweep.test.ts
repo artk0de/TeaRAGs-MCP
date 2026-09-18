@@ -20,8 +20,10 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { IndexWorkerRegistry, type IndexWorkerRecord } from "../../../src/cli/index-progress/worker-registry.js";
 import {
   INDEX_WORKER_STALLED_AFTER_MS,
+  parsePsWorkerLine,
   psIndexWorkerProcessProbe,
   sweepIndexWorkers,
+  type IndexWorkerProcessProbe,
 } from "../../../src/cli/index-progress/worker-sweep.js";
 
 const WORKER_ARGV = ["-e", "setInterval(() => {}, 1000)", "index-codebase", "--__worker"];
@@ -193,4 +195,68 @@ describe("sweepIndexWorkers against real processes (f924y)", () => {
     expect(isAlive(orphan.pid)).toBe(true);
     expect(registry.list()).toHaveLength(1);
   }, 30_000);
+
+  // macOS `ps -o lstart=` follows the locale: under `LC_ALL=ru_RU.UTF-8` it
+  // prints `суббота, 19 сентября 2026 г. 00:53:00`, which `Date.parse` cannot
+  // read. Every live worker then read as gone and lost its record on the next
+  // prebuild sweep, so `doctor --sweep-workers` never saw an orphan.
+  it("reads a worker's start time whatever locale the sweeping process runs in", () => {
+    const attached = spawnAttachedWorker();
+    const saved = { LC_ALL: process.env.LC_ALL, LANG: process.env.LANG };
+    process.env.LC_ALL = "ru_RU.UTF-8";
+    process.env.LANG = "ru_RU.UTF-8";
+    try {
+      const snapshot = psIndexWorkerProcessProbe.inspect(attached.pid);
+      expect(snapshot?.command).toContain("--__worker");
+      expect(Math.abs((snapshot?.startedAtMs ?? Number.NaN) - attached.startedAtMs)).toBeLessThanOrEqual(5_000);
+    } finally {
+      for (const [key, value] of Object.entries(saved)) {
+        if (value === undefined) Reflect.deleteProperty(process.env, key);
+        else process.env[key] = value;
+      }
+    }
+  }, 30_000);
+
+  it("keeps the record of a worker whose start time cannot be read — never prunes or stops it", async () => {
+    const attached = spawnAttachedWorker();
+    // Registered as orphaned, so only the start-time proof stands between it and a kill.
+    register({ ...attached, supervisorPid: 1 });
+    const unreadableStart: IndexWorkerProcessProbe = {
+      inspect: (pid) => {
+        const snapshot = psIndexWorkerProcessProbe.inspect(pid);
+        return snapshot ? { ...snapshot, startedAtMs: undefined } : undefined;
+      },
+      kill: psIndexWorkerProcessProbe.kill,
+    };
+
+    const outcomes = await sweepIndexWorkers(registry, unreadableStart, { killGraceMs: 5_000 });
+
+    expect(outcomes).toEqual([expect.objectContaining({ verdict: "unverified", action: "kept" })]);
+    expect(isAlive(attached.pid)).toBe(true);
+    expect(registry.list()).toHaveLength(1);
+  }, 30_000);
+});
+
+describe("parsePsWorkerLine (f924y)", () => {
+  it("keeps the process with an unknown start time when lstart is not in the C locale", () => {
+    const line = "77493 53518 суббота, 19 сентября 2026 г. 00:53:00 node /b/cli/index.js index-codebase --__worker\n";
+
+    const snapshot = parsePsWorkerLine(line);
+
+    expect(snapshot).toMatchObject({ ppid: 77493, pgid: 53518, startedAtMs: undefined });
+    expect(snapshot?.command).toContain("index-codebase --__worker");
+  });
+
+  it("reads the C-locale start time and command", () => {
+    const snapshot = parsePsWorkerLine(
+      "1 42 Sat Sep 19 00:53:00 2026     node /b/cli/index.js index-codebase --__worker",
+    );
+
+    expect(snapshot).toEqual({
+      ppid: 1,
+      pgid: 42,
+      startedAtMs: new Date(2026, 8, 19, 0, 53, 0).getTime(),
+      command: "node /b/cli/index.js index-codebase --__worker",
+    });
+  });
 });

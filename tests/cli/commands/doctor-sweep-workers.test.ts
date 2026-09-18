@@ -101,6 +101,16 @@ describe("runWorkerSweepDoctor (f924y)", () => {
     expect(registry.list().map((r) => r.pid)).toEqual([201]);
   });
 
+  it("warns about a worker whose start time could not be read, and keeps it and its record", async () => {
+    const { probe, killed } = fakeProcessTable({ 101: { ...workerSnapshot(1, 0, 101), startedAtMs: undefined } });
+
+    await runWorkerSweepDoctor({}, { registry, probe, now: () => NOW, platform: "darwin" });
+
+    expect(killed).toEqual([]);
+    expect(out).toMatch(/\[WARN\] pid 101 unverified — its start time could not be read.*\/repo-orphan/);
+    expect(registry.list().map((r) => r.pid)).toContain(101);
+  });
+
   it("stops the stalled worker too with --include-stalled", async () => {
     const { probe, killed } = processTable();
 

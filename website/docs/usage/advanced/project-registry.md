@@ -508,6 +508,7 @@ chunker children and none of the shared daemons.
 | `detached` | Handed off to finish enrichment in the background, still progressing. | Kept                                |
 | `orphaned` | Its CLI died before handing it off.                                    | Stopped                             |
 | `stalled`  | Handed off, but no progress for 30 minutes.                            | Kept; stopped with `--include-stalled` |
+| `unverified` | An `index-codebase` worker holds the pid, but `ps` gave a start time the sweep could not read, so it cannot prove this is the worker that registered. | Kept, record and process |
 | `gone`     | No such worker any more.                                               | Record removed                      |
 
 `--include-stalled` is opt-in because a long daemon-side phase (cycles and
