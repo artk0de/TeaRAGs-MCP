@@ -274,6 +274,48 @@ export class CodegraphDaemonUnreachableError extends InfraError {
 }
 
 /**
+ * The daemon went silent with calls pending (bd tea-rags-mcp-f924y): nothing —
+ * no response, no answer to a liveness probe — arrived within the liveness
+ * bound. A slow op does not trip this; a live daemon answers probes while it
+ * works. A wedged daemon, or a connection that died without closing, does.
+ */
+export class CodegraphDaemonUnresponsiveError extends InfraError {
+  constructor(target: { socketPath: string; silentForMs: number; pendingCalls: number }) {
+    super({
+      code: "INFRA_CODEGRAPH_DAEMON_UNRESPONSIVE",
+      message:
+        `Codegraph daemon at ${target.socketPath} answered nothing for ${target.silentForMs}ms — ` +
+        `not even a liveness probe — with ${target.pendingCalls} call(s) pending`,
+      hint:
+        "The daemon is wedged or its connection is dead. Its pid is in codegraph-daemon.pid next to the " +
+        "socket and its output in codegraph-daemon.log; stopping it lets the next run spawn a fresh one.",
+      httpStatus: 503,
+    });
+  }
+}
+
+/**
+ * The daemon stopped a request because the connection that sent it closed
+ * (bd tea-rags-mcp-f924y) — a write still queued behind another client's, or a
+ * graph analysis at its next phase boundary. Nobody reads the response of a
+ * closed connection, so this never reaches a client; it exists so the daemon's
+ * never-throw envelope names why the op did not run. Deliberately outside
+ * `CodegraphUnavailableError`: it says nothing about whether the store is up.
+ */
+export class CodegraphDaemonRequestAbortedError extends InfraError {
+  constructor(op: string) {
+    super({
+      code: "INFRA_CODEGRAPH_DAEMON_REQUEST_ABORTED",
+      message: `Codegraph daemon dropped "${op}": the client connection that sent it closed`,
+      hint:
+        "The requesting process exited or closed its socket before the op ran to completion. " +
+        "The next index run redoes the work; nothing needs to be done by hand.",
+      httpStatus: 499,
+    });
+  }
+}
+
+/**
  * The codegraph store cannot be reached from this process right now: the daemon
  * runs another build (stale / skewed), is wedged or unreachable, or the DuckDB
  * file will not open (lock held, unreadable). One family, so a consumer whose
@@ -287,6 +329,7 @@ export type CodegraphUnavailableError =
   | CodegraphDaemonBuildSkewError
   | CodegraphDaemonExitTimeoutError
   | CodegraphDaemonUnreachableError
+  | CodegraphDaemonUnresponsiveError
   | DuckDbOpenFailedError;
 
 export function isCodegraphUnavailableError(err: unknown): err is CodegraphUnavailableError {
@@ -296,6 +339,7 @@ export function isCodegraphUnavailableError(err: unknown): err is CodegraphUnava
     err instanceof CodegraphDaemonBuildSkewError ||
     err instanceof CodegraphDaemonExitTimeoutError ||
     err instanceof CodegraphDaemonUnreachableError ||
+    err instanceof CodegraphDaemonUnresponsiveError ||
     err instanceof DuckDbOpenFailedError
   );
 }

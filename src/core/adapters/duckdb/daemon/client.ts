@@ -32,7 +32,12 @@ import type {
 } from "../../../contracts/types/codegraph.js";
 import type { PhysicalCollectionName } from "../../../contracts/types/collection-identity.js";
 import { isDebug } from "../../../infra/runtime.js";
-import { CodegraphDaemonBuildSkewError, CodegraphDaemonUnreachableError } from "../errors.js";
+import {
+  CodegraphDaemonBuildSkewError,
+  CodegraphDaemonUnreachableError,
+  CodegraphDaemonUnresponsiveError,
+} from "../errors.js";
+import { getBuildFingerprint } from "./build-fingerprint.js";
 import { DaemonFrameDecoder } from "./frame-decoder.js";
 import { getDaemonLogPath } from "./lifecycle.js";
 import { DAEMON_OPS, encodeFrame, type DaemonHandshakeResult, type DaemonOp, type DaemonResponse } from "./protocol.js";
@@ -53,6 +58,7 @@ const LEGACY_TOLERATED_OP_LIST = [
   "getSymbolLineRangesBulk",
   "diffSymbolSignals",
   "refreshSymbolSignalsPrev",
+  "ping",
 ] as const satisfies readonly DaemonOp[];
 
 type LegacyToleratedDaemonOp = (typeof LEGACY_TOLERATED_OP_LIST)[number];
@@ -74,6 +80,8 @@ type LegacyToleratedDaemonOp = (typeof LEGACY_TOLERATED_OP_LIST)[number];
  *   moved" would be worse: such a daemon has no `cg_symbol_signals_prev`, so the
  *   heal would rewrite the corpus on every run and never converge.
  * - `refreshSymbolSignalsPrev` — that daemon has no baseline table to refresh.
+ * - `ping` — the liveness probe (bd tea-rags-mcp-f924y). An older daemon's
+ *   "unknown daemon op" answer is itself the proof of life the probe asks for.
  *
  * An op whose fallback is wrong data stays required — weno4's
  * `listAllPass1Aggregates` degraded a live repair to a batch-scoped registry.
@@ -113,6 +121,21 @@ export function assessDaemonCapability(
       supportedOps === undefined ? [] : REQUIRED_DAEMON_OPS.filter((op) => !supportedOps.includes(op)),
     predatesCapabilityList: daemonFingerprint !== undefined && supportedOps === undefined,
   };
+}
+
+/**
+ * The bar a client that cannot replace the daemon holds it to (bd
+ * tea-rags-mcp-39xca.4): it refuses a daemon lacking a required op, or one from
+ * another build too old to say what it serves. A daemon from another build that
+ * advertises every required op is tolerated. The replay path applies it too (bd
+ * tea-rags-mcp-f924y).
+ *
+ * Merge seam: `pool.ts` states the same rule as its private `refusesDaemon`,
+ * which the 1wr7p branch also calls from `settleWithStaleClient`. Once that
+ * branch lands, the pool should call this instead of keeping its own copy.
+ */
+export function isDaemonRefusedWithoutRespawn(verdict: DaemonCapabilityVerdict): boolean {
+  return verdict.missingRequiredOps.length > 0 || (verdict.predatesCapabilityList && verdict.buildMismatch);
 }
 
 /** Tolerated ops already reported missing in this process — the warning is once per op. */
@@ -181,10 +204,30 @@ export interface DaemonClientOptions {
    * cannot turn it into an error response, because it never becomes a JS throw.
    */
   onConnectionLost?: () => void | Promise<void>;
+  /**
+   * How long the daemon may stay completely silent while calls are pending
+   * before every pending call fails with `CodegraphDaemonUnresponsiveError`
+   * (bd tea-rags-mcp-f924y). Not an op timeout: a live daemon answers liveness
+   * probes while a long op runs, so only a wedged daemon — or a connection that
+   * died without closing — reaches it.
+   */
+  livenessTimeoutMs?: number;
+  /** How long a silence with calls pending lasts before the client probes the daemon. */
+  livenessProbeIntervalMs?: number;
 }
 
 const DEFAULT_CONNECT_TIMEOUT_MS = 5000;
 const DEFAULT_RETRY_DELAY_MS = 75;
+
+/**
+ * Five minutes of total silence. A live daemon still pauses its event loop for
+ * synchronous work — Tarjan and PageRank over the whole method graph, parsing a
+ * large bulk-write frame — and answers no probe meanwhile; those pauses run to
+ * seconds, so the bound clears them with a wide margin and still turns the
+ * observed "waited 12+ minutes, then forever" into a failure.
+ */
+const DEFAULT_LIVENESS_TIMEOUT_MS = 5 * 60_000;
+const DEFAULT_LIVENESS_PROBE_INTERVAL_MS = 15_000;
 
 /**
  * One request waiting on the daemon. The encoded `frame` is retained so a
@@ -216,6 +259,18 @@ export class DaemonGraphDbClient implements GraphDbClient {
   private closedByCaller = false;
   /** One recovery at a time — every pending call shares the reconnect. */
   private recovering?: Promise<void>;
+  /**
+   * The build this client last handshook as. A replacement daemon is
+   * handshaken under the same identity before anything is replayed onto it
+   * (bd tea-rags-mcp-f924y).
+   */
+  private handshakeFingerprint?: string;
+  private readonly livenessTimeoutMs: number;
+  private readonly livenessProbeIntervalMs: number;
+  /** When the daemon was last heard from — any bytes on the socket, or the connect itself. */
+  private lastHeardAt = 0;
+  /** Runs only while calls are pending — see `watchLiveness`. */
+  private livenessTimer?: NodeJS.Timeout;
 
   constructor(
     private readonly socketPath: string,
@@ -225,6 +280,8 @@ export class DaemonGraphDbClient implements GraphDbClient {
     this.connectTimeoutMs = opts?.connectTimeoutMs ?? DEFAULT_CONNECT_TIMEOUT_MS;
     this.retryDelayMs = opts?.retryDelayMs ?? DEFAULT_RETRY_DELAY_MS;
     this.onConnectionLost = opts?.onConnectionLost;
+    this.livenessTimeoutMs = opts?.livenessTimeoutMs ?? DEFAULT_LIVENESS_TIMEOUT_MS;
+    this.livenessProbeIntervalMs = opts?.livenessProbeIntervalMs ?? DEFAULT_LIVENESS_PROBE_INTERVAL_MS;
   }
 
   /**
@@ -274,6 +331,7 @@ export class DaemonGraphDbClient implements GraphDbClient {
       sock.once("connect", () => {
         sock.removeListener("error", onError);
         this.sock = sock;
+        this.lastHeardAt = Date.now();
         // A retried connect must not inherit a half-assembled frame from the
         // attempt that failed.
         this.frames = new DaemonFrameDecoder();
@@ -299,6 +357,7 @@ export class DaemonGraphDbClient implements GraphDbClient {
   }
 
   private onData(chunk: Buffer): void {
+    this.lastHeardAt = Date.now();
     for (const f of this.frames.push(chunk)) {
       const res = JSON.parse(f) as DaemonResponse;
       const p = this.pending.get(res.id);
@@ -316,14 +375,22 @@ export class DaemonGraphDbClient implements GraphDbClient {
    * it surfaces as build skew rather than a generic failure. The few ops allowed
    * to degrade go through `callTolerated`, which catches exactly that type.
    */
-  private async call(op: DaemonOp, params: Record<string, unknown>): Promise<unknown> {
+  private async call(
+    op: DaemonOp,
+    params: Record<string, unknown>,
+    options: { replayable?: boolean } = {},
+  ): Promise<unknown> {
     const { sock } = this;
     if (!sock) throw new Error("DaemonGraphDbClient.call before init() / after close()");
     const id = this.nextId++;
     const frame = encodeFrame({ id, op, params: { collection: this.collection, ...params } } as never);
+    // A non-replayable call starts out as if already retried: a connection loss
+    // settles it rather than re-sending it.
+    const retried = options.replayable === false;
     try {
       return await new Promise((resolve, reject) => {
-        this.pending.set(id, { resolve, reject, frame, retried: false });
+        this.pending.set(id, { resolve, reject, frame, retried });
+        this.watchLiveness();
         sock.write(frame);
       });
     } catch (err) {
@@ -357,6 +424,7 @@ export class DaemonGraphDbClient implements GraphDbClient {
 
   async close(): Promise<void> {
     this.closedByCaller = true;
+    this.stopLivenessWatch();
     this.sock?.end();
     this.abandon("closed before response arrived");
   }
@@ -369,6 +437,63 @@ export class DaemonGraphDbClient implements GraphDbClient {
    */
   isConnected(): boolean {
     return this.sock !== undefined;
+  }
+
+  /**
+   * Watch the daemon's liveness while calls are pending (bd tea-rags-mcp-f924y).
+   * `call` sets no op timeout on purpose — cycles/PageRank legitimately run for
+   * minutes — so this is the only bound on a daemon that is alive but wedged, or
+   * a connection that died without a close. The silence clock starts with the
+   * first pending call; `checkLiveness` owns every tick.
+   */
+  private watchLiveness(): void {
+    if (this.livenessTimer) return;
+    this.lastHeardAt = Date.now();
+    this.livenessTimer = setInterval(() => {
+      this.checkLiveness();
+    }, this.livenessProbeIntervalMs);
+    this.livenessTimer.unref();
+  }
+
+  private stopLivenessWatch(): void {
+    clearInterval(this.livenessTimer);
+    this.livenessTimer = undefined;
+  }
+
+  /**
+   * One tick: nothing pending → stop; silent past the bound → fail every pending
+   * call with `CodegraphDaemonUnresponsiveError` and drop the socket; silent for
+   * a probe interval → ping. The probe is fire-and-forget, with no pending entry
+   * of its own, so it is never replayed and never holds up a recovery; its
+   * answer — like any bytes, including an older daemon's "unknown op" — only
+   * refreshes `lastHeardAt`. No probe goes out while a recovery has no socket.
+   */
+  private checkLiveness(): void {
+    if (this.pending.size === 0) {
+      this.stopLivenessWatch();
+      return;
+    }
+    const silentForMs = Date.now() - this.lastHeardAt;
+    if (silentForMs >= this.livenessTimeoutMs) {
+      this.stopLivenessWatch();
+      const unresponsive = new CodegraphDaemonUnresponsiveError({
+        socketPath: this.socketPath,
+        silentForMs,
+        pendingCalls: this.pending.size,
+      });
+      const { sock } = this;
+      this.sock = undefined;
+      // Settled before the socket goes, so its `close` finds nothing to recover.
+      this.settlePending(
+        () => true,
+        () => unresponsive,
+      );
+      sock?.destroy();
+      return;
+    }
+    if (silentForMs >= this.livenessProbeIntervalMs) {
+      this.sock?.write(encodeFrame({ id: this.nextId++, op: "ping", params: { collection: this.collection } }));
+    }
   }
 
   /**
@@ -393,11 +518,14 @@ export class DaemonGraphDbClient implements GraphDbClient {
       this.abandon(reason);
       return;
     }
-    const replayable = [...this.pending.values()].filter((p) => !p.retried);
-    if (replayable.length === 0) {
-      this.abandon(reason);
-      return;
-    }
+    // A call that was already re-sent once — or was never replayable, like the
+    // recovery handshake itself — is settled now. Left pending, nothing would
+    // ever settle it: the replay below skips it (bd tea-rags-mcp-f924y).
+    this.settlePending(
+      (p) => p.retried,
+      () => new Error(`DaemonGraphDbClient ${reason}`),
+    );
+    if (this.pending.size === 0) return;
     this.recovering ??= this.reconnectAndReplay(reason).finally(() => {
       this.recovering = undefined;
     });
@@ -416,14 +544,44 @@ export class DaemonGraphDbClient implements GraphDbClient {
    *
    * Each request is replayed at most once (`retried`), so a daemon that dies on
    * every attempt surfaces the failure instead of looping.
+   *
+   * The replacement is handshaken first (bd tea-rags-mcp-f924y). A daemon that
+   * died because another session's build handshake drained it comes back as
+   * THAT session's build, and a replay onto it unverified sends ops it may not
+   * know or read with a payload shape that moved. It is held to the bar a client
+   * that cannot replace the daemon applies (`isDaemonRefusedWithoutRespawn`):
+   * refused, every pending request fails with `CodegraphDaemonBuildSkewError`
+   * and nothing is replayed. Draining it is not this client's call — that
+   * decision belongs to the pool's handshake.
    */
   private async reconnectAndReplay(reason: string): Promise<void> {
+    const fingerprint = this.handshakeFingerprint ?? getBuildFingerprint();
+    let verdict: DaemonCapabilityVerdict;
     try {
       await this.onConnectionLost?.();
       await this.init();
+      const handshake = (await this.call(
+        "handshake",
+        { buildFingerprint: fingerprint },
+        { replayable: false },
+      )) as DaemonHandshakeResult | null;
+      verdict = assessDaemonCapability(handshake, fingerprint);
     } catch (err) {
       const cause = err instanceof Error ? err.message : String(err);
       this.abandon(`${reason} and could not be recovered: ${cause}`);
+      return;
+    }
+    if (isDaemonRefusedWithoutRespawn(verdict)) {
+      const skew = new CodegraphDaemonBuildSkewError({
+        socketPath: this.socketPath,
+        missingOps: verdict.missingRequiredOps,
+        clientFingerprint: fingerprint,
+        daemonFingerprint: verdict.daemonFingerprint,
+      });
+      this.settlePending(
+        () => true,
+        () => skew,
+      );
       return;
     }
     const { sock } = this;
@@ -453,10 +611,19 @@ export class DaemonGraphDbClient implements GraphDbClient {
    */
   private abandon(reason: string): void {
     this.sock = undefined;
-    if (this.pending.size === 0) return;
-    const pending = [...this.pending.values()];
-    this.pending.clear();
-    for (const p of pending) p.reject(new Error(`DaemonGraphDbClient ${reason}`));
+    this.settlePending(
+      () => true,
+      () => new Error(`DaemonGraphDbClient ${reason}`),
+    );
+  }
+
+  /** Reject — and forget — every pending call `which` selects. */
+  private settlePending(which: (p: PendingDaemonCall) => boolean, error: () => Error): void {
+    for (const [id, p] of [...this.pending.entries()]) {
+      if (!which(p)) continue;
+      this.pending.delete(id);
+      p.reject(error());
+    }
   }
 
   // ── build-version handshake (bd tea-rags-mcp-ji56r) ──
@@ -468,6 +635,7 @@ export class DaemonGraphDbClient implements GraphDbClient {
    * legacy peer the daemon also opens + migrates + hydrates the collection.
    */
   async handshake(buildFingerprint?: string): Promise<DaemonHandshakeResult | null> {
+    if (buildFingerprint !== undefined) this.handshakeFingerprint = buildFingerprint;
     // `undefined` vanishes in JSON serialisation — a legacy-shaped request.
     return (await this.call("handshake", { buildFingerprint })) as DaemonHandshakeResult | null;
   }

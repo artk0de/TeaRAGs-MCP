@@ -12,12 +12,22 @@ import {
   validatePath,
   type EmbeddingProvider,
 } from "../../core/api/public/index.js";
+import { IndexWorkerRegistry, indexWorkerRegistryDir } from "../index-progress/worker-registry.js";
+import {
+  psIndexWorkerProcessProbe,
+  sweepIndexWorkers,
+  type IndexWorkerProcessProbe,
+  type IndexWorkerSweepOutcome,
+} from "../index-progress/worker-sweep.js";
 
 interface DoctorArgs {
   json?: boolean;
   recoverRegistry?: boolean;
   quarantine?: boolean;
   path?: string;
+  "sweep-workers"?: boolean;
+  "include-stalled"?: boolean;
+  "dry-run"?: boolean;
 }
 
 /**
@@ -190,6 +200,114 @@ export async function runQuarantineDoctor(args: { path: string; json?: boolean }
   );
 }
 
+export interface WorkerSweepDoctorArgs {
+  json?: boolean;
+  /** Also stop handed-off workers with no progress for `INDEX_WORKER_STALLED_AFTER_MS`. */
+  includeStalled?: boolean;
+  /** Report what would be stopped; stop and forget nothing. */
+  dryRun?: boolean;
+}
+
+export interface WorkerSweepDoctorDeps {
+  registry: IndexWorkerRegistry;
+  probe: IndexWorkerProcessProbe;
+  now: () => number;
+  platform: NodeJS.Platform;
+}
+
+function minutesSince(nowMs: number, thenMs: number): string {
+  return `${Math.max(0, Math.round((nowMs - thenMs) / 60_000))}m`;
+}
+
+function describeSweptWorker(outcome: IndexWorkerSweepOutcome, nowMs: number): string {
+  const { record, verdict, action } = outcome;
+  const where = ` · ${record.projectPath}`;
+  const why =
+    verdict === "stalled"
+      ? `no progress for ${minutesSince(nowMs, record.lastProgressAtMs)}`
+      : `supervisor ${record.supervisorPid} died before handing it off`;
+  switch (action) {
+    case "killed":
+      return `[KILL] pid ${record.pid} ${verdict} — ${why}; stopped${where}`;
+    case "would-kill":
+      return `[DRY]  pid ${record.pid} ${verdict} — ${why}; would be stopped${where}`;
+    case "kill-failed":
+      return `[FAIL] pid ${record.pid} ${verdict} — did not exit after SIGKILL${where}`;
+    case "pruned":
+      return `[OK]   pid ${record.pid} gone — stale record removed`;
+    case "would-prune":
+      return `[DRY]  pid ${record.pid} gone — stale record would be removed`;
+    case "kept":
+      if (verdict === "stalled") {
+        return `[WARN] pid ${record.pid} stalled — ${why}; re-run with --include-stalled to stop it${where}`;
+      }
+      if (verdict === "detached") {
+        return (
+          `[OK]   pid ${record.pid} detached — enriching in the background, ` +
+          `last progress ${minutesSince(nowMs, record.lastProgressAtMs)} ago${where}`
+        );
+      }
+      return `[OK]   pid ${record.pid} ${verdict} — supervisor ${record.supervisorPid} is running${where}`;
+  }
+}
+
+/**
+ * `tea-rags doctor --sweep-workers` — stop `index-codebase` workers left behind
+ * by a killed foreground CLI (bd tea-rags-mcp-f924y). What may be stopped, and
+ * how a pid is proven to be such a worker, is `sweepIndexWorkers`; this renders
+ * the outcome. Needs no Qdrant or embeddings, so it works while they are down.
+ */
+export async function runWorkerSweepDoctor(
+  args: WorkerSweepDoctorArgs,
+  deps: WorkerSweepDoctorDeps = {
+    registry: new IndexWorkerRegistry(indexWorkerRegistryDir(resolveDataDir())),
+    probe: psIndexWorkerProcessProbe,
+    now: Date.now,
+    platform: process.platform,
+  },
+): Promise<void> {
+  if (deps.platform === "win32") {
+    const message = "worker sweep is not supported on win32 — there is no ps to prove a pid is an index worker";
+    process.stdout.write(
+      args.json ? `${JSON.stringify({ error: { code: "UNSUPPORTED_PLATFORM", message } })}\n` : `[WARN] ${message}\n`,
+    );
+    return;
+  }
+  const outcomes = await sweepIndexWorkers(deps.registry, deps.probe, {
+    now: deps.now,
+    killStalled: args.includeStalled === true,
+    dryRun: args.dryRun === true,
+  });
+  const nowMs = deps.now();
+
+  if (args.json) {
+    const workers = outcomes.map(({ record, verdict, action }) => ({
+      pid: record.pid,
+      supervisorPid: record.supervisorPid,
+      projectPath: record.projectPath,
+      entryScript: record.entryScript,
+      verdict,
+      action,
+      startedAt: new Date(record.startedAtMs).toISOString(),
+      lastProgressAt: new Date(record.lastProgressAtMs).toISOString(),
+      ...(record.handedOffAtMs !== undefined ? { handedOffAt: new Date(record.handedOffAtMs).toISOString() } : {}),
+    }));
+    process.stdout.write(`${JSON.stringify({ workers }, null, 2)}\n`);
+    return;
+  }
+
+  if (outcomes.length === 0) {
+    process.stdout.write("No index workers registered.\n");
+    return;
+  }
+  for (const outcome of outcomes) process.stdout.write(`${describeSweptWorker(outcome, nowMs)}\n`);
+  const stopped = outcomes.filter((o) => o.action === "killed").length;
+  const pruned = outcomes.filter((o) => o.action === "pruned").length;
+  process.stdout.write(
+    `Swept ${outcomes.length} worker record(s): ${stopped} stopped, ${pruned} stale record(s) removed.\n`,
+  );
+}
+
 /**
  * Build the same QdrantManager + EmbeddingProvider the MCP server would use.
  * Mirrors the construction path in src/bootstrap/factory.ts:resolveInfrastructure,
@@ -241,8 +359,32 @@ export const doctorCommand: CommandModule<unknown, DoctorArgs> = {
         type: "boolean",
         default: false,
         describe: "List poison-pill files that broke indexing (skipped, retried automatically)",
+      })
+      .option("sweep-workers", {
+        type: "boolean",
+        default: false,
+        describe:
+          "Stop index-codebase workers whose CLI died before handing them off (they keep the collection locked)",
+      })
+      .option("include-stalled", {
+        type: "boolean",
+        default: false,
+        describe: "With --sweep-workers: also stop handed-off workers with no progress for 30 minutes",
+      })
+      .option("dry-run", {
+        type: "boolean",
+        default: false,
+        describe: "With --sweep-workers: report what would be stopped without stopping anything",
       }),
   handler: async (argv) => {
+    if (argv["sweep-workers"]) {
+      await runWorkerSweepDoctor({
+        json: argv.json,
+        includeStalled: Boolean(argv["include-stalled"]),
+        dryRun: Boolean(argv["dry-run"]),
+      });
+      return;
+    }
     if (argv.quarantine) {
       await runQuarantineDoctor({ path: argv.path ?? ".", json: argv.json });
       return;

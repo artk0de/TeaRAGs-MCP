@@ -90,3 +90,67 @@ describe("createIndexRunDaemonGuard", () => {
     expect(logged).toMatch(/keep-alive failed for code_guard_skew_v1: daemon build skew/);
   });
 });
+
+describe("createIndexRunDaemonGuard — a daemon that never answers cannot hold the run open (f924y)", () => {
+  // The run's completion awaits this release in its `finally`, and the CLI
+  // worker waits for that completion before it exits. An unbounded `begin` is
+  // therefore a worker that never exits and keeps its indexing lock alive.
+  it("settles with a no-op release once the handshake outlasts its bound", async () => {
+    const stderr = vi.spyOn(process.stderr, "write").mockReturnValue(true);
+    const guard = createIndexRunDaemonGuard({
+      socketPath: "/nonexistent/codegraph-daemon.sock",
+      ensure: () => undefined,
+      verifyDaemonBuild: async () => new Promise<never>(() => undefined),
+      beginTimeoutMs: 50,
+    });
+
+    const release = await guard.begin("code_guard_hung_v1");
+
+    await expect(release()).resolves.toBeUndefined();
+    const logged = stderr.mock.calls.map((c) => String(c[0])).join("");
+    expect(logged).toMatch(/keep-alive for code_guard_hung_v1 timed out after 50ms/);
+  });
+
+  it("closes the keep-alive socket a late handshake opens after the bound expired", async () => {
+    vi.spyOn(process.stderr, "write").mockReturnValue(true);
+    dir = mkdtempSync(join(tmpdir(), "cg-guard-late-"));
+    const socketPath = join(dir, "d.sock");
+    let opened = 0;
+    let closed = 0;
+    srv = createServer((sock) => {
+      opened++;
+      sock.on("close", () => {
+        closed++;
+      });
+      sock.on("error", () => {
+        sock.destroy();
+      });
+    });
+    srv.unref();
+    const server = srv;
+    await new Promise<void>((res) => {
+      server.listen(socketPath, () => {
+        res();
+      });
+    });
+
+    const guard = createIndexRunDaemonGuard({
+      socketPath,
+      ensure: () => undefined,
+      verifyDaemonBuild: async () =>
+        new Promise<void>((res) => {
+          setTimeout(res, 150);
+        }),
+      beginTimeoutMs: 20,
+    });
+
+    await guard.begin("code_guard_late_v1");
+
+    // The acquisition finishes on its own after the bound; the socket it opens
+    // must not stay behind as a ref nobody will ever release.
+    await vi.waitFor(() => {
+      expect(opened).toBe(1);
+      expect(closed).toBe(1);
+    });
+  });
+});

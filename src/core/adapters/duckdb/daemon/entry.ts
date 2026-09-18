@@ -217,6 +217,10 @@ export function createConnectionHandler(
     // replacePageRanks) arrive as one frame split over many socket chunks, so
     // the decoder must scan each chunk once rather than the whole accumulator.
     const frames = new DaemonFrameDecoder();
+    // Aborted when this connection closes, so the server stops working for a
+    // client that is gone (bd tea-rags-mcp-f924y): a write still queued is
+    // dropped, and a graph analysis stops at its next phase boundary.
+    const connection = new AbortController();
     sock.on("data", (chunk: Buffer) => {
       for (const frame of frames.push(chunk)) {
         const req = JSON.parse(frame) as DaemonRequest;
@@ -225,12 +229,13 @@ export function createConnectionHandler(
           onShutdownRequest?.();
           continue;
         }
-        void server.handle(req).then((res) => {
+        void server.handle(req, connection.signal).then((res) => {
           if (!sock.destroyed) sock.write(encodeFrame(res));
         });
       }
     });
     sock.on("close", () => {
+      connection.abort();
       decrementRefs(paths);
     });
     // A socket error (peer crash) is treated like a close — never crash the

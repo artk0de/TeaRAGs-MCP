@@ -7,6 +7,7 @@
     "tea-rags": "build/cli/index.js"
   },
   "scripts": {
+    "prebuild": "tsx scripts/prebuild-worker-sweep.ts",
     "build": "tsc && chmod +x build/cli/index.js",
     "dev": "tsx src/index.ts",
     "test": "vitest",

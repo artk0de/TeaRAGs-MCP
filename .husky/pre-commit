@@ -100,14 +100,26 @@ fi
 
 if [ -n "$RUN_TESTS" ]; then
   echo "📦 Running affected tests (fast, no coverage — full suite + coverage run on CI)..."
-  # Pre-commit runs ONLY the tests affected by the staged changes (--changed)
-  # WITHOUT coverage — a full --coverage run takes ~20min and blocks commits.
-  # The full suite AND the 90% coverage thresholds are enforced on CI (ci.yml).
+  # Pre-commit runs ONLY the tests affected by the staged changes WITHOUT
+  # coverage — a full --coverage run takes ~20min and blocks commits. The full
+  # suite AND the 90% coverage thresholds are enforced on CI (ci.yml).
+  # `vitest related <staged files>`, not `--changed`: `--changed` also takes
+  # the UNTRACKED and unstaged files of the working tree, so a test file not
+  # part of the commit — a parked red test, another session's work in progress —
+  # failed it. Over the staged list, `related` selects exactly what `--changed`
+  # did: the staged test files, every test whose imports reach a staged file,
+  # and the whole suite when a staged file is a force-rerun trigger
+  # (package.json, the vitest config). The list is the one `--changed` read
+  # itself — `git diff --cached --name-only`, deletions included.
   # File-backed capture is robust across shells and shell modes (husky's
   # `sh -e` wrapper + lint-staged context breaks $(...) capture unreliably).
   TEST_LOG=$(mktemp -t tea-rags-pre-commit.XXXXXX)
-  npm test -- --run --changed --reporter=dot >"$TEST_LOG" 2>&1
-  TEST_EXIT=$?
+  TESTED_FILES=$(git diff --cached --name-only)
+  # `|| TEST_EXIT=$?`: husky runs this hook under `sh -e`, which exits on the
+  # failing command itself — before the summary below could say what failed.
+  TEST_EXIT=0
+  # shellcheck disable=SC2086 # word splitting IS the argument list
+  npm test -- related --run --reporter=dot $TESTED_FILES >"$TEST_LOG" 2>&1 || TEST_EXIT=$?
   if [ $TEST_EXIT -ne 0 ]; then
     grep -E "FAIL|×|Error|failed" "$TEST_LOG" | head -20
     echo ""
