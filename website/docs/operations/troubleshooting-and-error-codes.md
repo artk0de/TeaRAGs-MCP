@@ -38,6 +38,7 @@ sidebar_position: 3
 | **Slow indexing**              | —                           | Use Ollama (local) for faster indexing, or increase `EMBEDDING_BATCH_SIZE` |
 | **Files not found**            | —                           | Check `.gitignore` and `.contextignore` patterns                           |
 | **Out of memory during index** | —                           | Reduce `INGEST_CHUNK_SIZE` or `EMBEDDING_BATCH_SIZE`                       |
+| **Refused as already in progress, but nothing is indexing** | `INGEST_INDEXING_IN_PROGRESS` | A killed `index-codebase` can leave its detached worker behind, still holding the collection. `tea-rags doctor --sweep-workers` stops workers whose CLI died before handing them off; `--dry-run` previews, `--include-stalled` also stops handed-off workers with no progress for 30 minutes. `npm run build` runs the same sweep for the checkout it rebuilds. |
 
 ## Explore Issues
 

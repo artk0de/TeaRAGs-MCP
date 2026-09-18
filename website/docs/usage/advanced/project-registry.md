@@ -477,6 +477,45 @@ field, useful for scripts:
 }
 ```
 
+### `tea-rags doctor --sweep-workers`
+
+`tea-rags index-codebase` hands the actual indexing to a detached worker
+process. When the foreground CLI is killed before it hands the worker off, the
+worker normally notices and exits with its children. A worker that did not —
+one from an older build, or one wedged past reacting — keeps holding the
+collection, and every later run on it is refused with
+`INGEST_INDEXING_IN_PROGRESS`. This flag finds and stops such workers.
+
+```bash
+tea-rags doctor --sweep-workers
+# [KILL] pid 51136 orphaned — supervisor 51120 died before handing it off; stopped · /Users/me/project
+# [WARN] pid 48211 stalled — no progress for 42m; re-run with --include-stalled to stop it · /Users/me/other
+# [OK]   pid 47001 gone — stale record removed
+# Swept 3 worker record(s): 1 stopped, 1 stale record(s) removed.
+```
+
+Each worker registers itself under `~/.tea-rags/workers/` while it runs. The
+sweep stops a process only when it can prove the pid is still that worker —
+its command line is an `index-codebase` worker that started when the record
+says — and its CLI is gone. A pid now held by some other process only loses
+its stale record; it is never signalled. Stopping sends `SIGTERM`, then
+`SIGKILL`, to the worker's own process group, which holds its `git` and
+chunker children and none of the shared daemons.
+
+| Verdict    | Meaning                                                                | Action                              |
+| ---------- | ---------------------------------------------------------------------- | ----------------------------------- |
+| `attached` | Its CLI is still running.                                              | Kept                                |
+| `detached` | Handed off to finish enrichment in the background, still progressing. | Kept                                |
+| `orphaned` | Its CLI died before handing it off.                                    | Stopped                             |
+| `stalled`  | Handed off, but no progress for 30 minutes.                            | Kept; stopped with `--include-stalled` |
+| `gone`     | No such worker any more.                                               | Record removed                      |
+
+`--include-stalled` is opt-in because a long daemon-side phase (cycles and
+PageRank on a large graph) reports no progress either. `--dry-run` reports
+what would be stopped without stopping or removing anything, and `--json`
+emits one entry per worker. Not available on Windows. `npm run build` runs the
+same sweep, limited to orphaned workers of the checkout it rebuilds.
+
 ### `tea-rags projects orphans`
 
 Read-only listing of Qdrant collections that have no registry entry. This
