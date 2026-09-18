@@ -376,7 +376,10 @@
   `Versions: unchanged — <why>` in the commit body). `capability.ts` is excluded
   because it HOLDS the numbers: digesting it would make every bump invalidate
   its own pin. `codegraphSchema` has no digest; it is judged by hand. Sources
-  per axis: `capability/version-axes.ts`.
+  per axis: `capability/version-axes.ts`. The pin script runs the hook's
+  lint-staged commands over pending `src/` sources BEFORE digesting
+  (`scripts/lib/lint-staged-format.ts`). Why: `eslint --fix` / prettier rewrite
+  bytes at commit time, and a pin taken before them fails its own test.
 - **`kernel/capability.ts` is the version of everything shared.**
   `sharedVersions` stamps the pseudo-language `*`: `walker` covers `kernel/**`
   (minus this file, which holds the numbers), `resolver-chain.ts`,
