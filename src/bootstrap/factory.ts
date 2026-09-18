@@ -472,6 +472,14 @@ function ensureCodegraphDaemon(paths: CodegraphDaemonPaths, settings: CodegraphD
  * required op, so the replacement has to land before the first worker
  * connects. The keep-alive socket itself skips the handshake: it only holds a
  * ref.
+ *
+ * Bounded (bd tea-rags-mcp-f924y). The handshake is a daemon call with no
+ * timeout of its own, and the run's completion awaits this release in its
+ * `finally` — which the CLI worker awaits before it exits. A daemon that
+ * accepts the connection and never answers therefore kept the worker alive
+ * forever, heartbeating its indexing lock. Past `beginTimeoutMs` the run gets a
+ * no-op release; an acquisition that finishes later closes its own socket so it
+ * never becomes a ref nobody releases.
  */
 export function createIndexRunDaemonGuard(deps: {
   /** Spawn the daemon if it is not alive (single-flighted). */
@@ -480,30 +488,72 @@ export function createIndexRunDaemonGuard(deps: {
   socketPath: string;
   /** Respawn-capable handshake for the run's collection — the main-thread pool's `acquireWrite`. */
   verifyDaemonBuild: (collectionName: PhysicalCollectionName) => Promise<unknown>;
+  /** Upper bound on `begin`; defaults to `INDEX_RUN_DAEMON_GUARD_BEGIN_TIMEOUT_MS`. */
+  beginTimeoutMs?: number;
 }): IndexRunDaemonGuard {
+  const timeoutMs = deps.beginTimeoutMs ?? INDEX_RUN_DAEMON_GUARD_BEGIN_TIMEOUT_MS;
+  const noopRelease = async (): Promise<void> => {};
+
+  const acquireKeepAlive = async (collectionName: PhysicalCollectionName): Promise<DaemonKeepAliveSocket> => {
+    deps.ensure();
+    await deps.verifyDaemonBuild(collectionName);
+    const { DaemonGraphDbClient } = await import("../core/adapters/duckdb/daemon/client.js");
+    const client = new DaemonGraphDbClient(deps.socketPath, collectionName);
+    await client.init(); // bounded 5s connect retry absorbs the spawn race
+    return client;
+  };
+
   return {
     begin: async (collectionName: PhysicalCollectionName) => {
+      const acquisition = acquireKeepAlive(collectionName);
+      let timer: NodeJS.Timeout | undefined;
+      const expired = new Promise<"expired">((resolve) => {
+        timer = setTimeout(() => {
+          resolve("expired");
+        }, timeoutMs);
+        timer.unref();
+      });
       try {
-        deps.ensure();
-        await deps.verifyDaemonBuild(collectionName);
-        const { DaemonGraphDbClient } = await import("../core/adapters/duckdb/daemon/client.js");
-        const client = new DaemonGraphDbClient(deps.socketPath, collectionName);
-        await client.init(); // bounded 5s connect retry absorbs the spawn race
-        return async () => {
-          try {
-            await client.close();
-          } catch {
-            /* close-of-already-closed is a no-op; never mask the run outcome */
-          }
-        };
+        const outcome = await Promise.race([acquisition, expired]);
+        if (outcome === "expired") {
+          process.stderr.write(
+            `[tea-rags] codegraph daemon keep-alive for ${collectionName} timed out after ${timeoutMs}ms — ` +
+              "the run continues without it\n",
+          );
+          void acquisition.then(closeKeepAliveSocket, () => undefined);
+          return noopRelease;
+        }
+        return async () => closeKeepAliveSocket(outcome);
       } catch (err) {
         process.stderr.write(
           `[tea-rags] codegraph daemon keep-alive failed for ${collectionName}: ${(err as Error).message}\n`,
         );
-        return async () => {};
+        return noopRelease;
+      } finally {
+        clearTimeout(timer);
       }
     },
   };
+}
+
+/**
+ * Ceiling on `IndexRunDaemonGuard#begin`. Generous on purpose: the handshake it
+ * waits on opens and migrates the collection daemon-side. What it rules out is
+ * the unbounded wait, not a slow one.
+ */
+export const INDEX_RUN_DAEMON_GUARD_BEGIN_TIMEOUT_MS = 120_000;
+
+/** The one thing the keep-alive does with its client once connected: close it. */
+interface DaemonKeepAliveSocket {
+  close: () => Promise<void>;
+}
+
+async function closeKeepAliveSocket(socket: DaemonKeepAliveSocket): Promise<void> {
+  try {
+    await socket.close();
+  } catch {
+    /* close-of-already-closed is a no-op; never mask the run outcome */
+  }
 }
 
 export function wireCodegraph(
@@ -643,21 +693,25 @@ export function wireCodegraph(
     },
   });
 
-  // Lazy spawn-on-demand: the daemon process is started the FIRST time a write
-  // OR a read is acquired, not at wire time — so `wireCodegraph` stays
-  // side-effect-free (the unit test exercises only the wire step and never
-  // spawns). `ensureCodegraphDaemon` is single-flighted across processes via
-  // DaemonLock and refcounts each MCP client; `ensured` makes the in-process
-  // wrap fire once. The subsequent `DaemonGraphDbClient.init()` retries the
-  // socket connect with bounded backoff, absorbing the detached-spawn → connect
-  // race. BOTH `acquireWrite` and `acquireReader` must ensure the daemon
-  // because in daemon mode the `DaemonGraphDbClient` is the sole accessor for
-  // reads too — a query issued before any write would otherwise fail to
-  // connect, and GraphFacade.withReadHandle would silently return empty.
-  let ensured = false;
+  // Lazy spawn-on-demand: the daemon process is started when a write OR a read
+  // is acquired, not at wire time — so `wireCodegraph` stays side-effect-free
+  // (the unit test exercises only the wire step and never spawns). The
+  // subsequent `DaemonGraphDbClient.init()` retries the socket connect with
+  // bounded backoff, absorbing the detached-spawn → connect race. BOTH
+  // `acquireWrite` and `acquireReader` must ensure the daemon because in daemon
+  // mode the `DaemonGraphDbClient` is the sole accessor for reads too — a query
+  // issued before any write would otherwise fail to connect, and
+  // GraphFacade.withReadHandle would silently return empty.
+  //
+  // Checked on EVERY acquire, not once per process (bd tea-rags-mcp-f924y). The
+  // daemon idle-exits after 30s and another session's build handshake can drain
+  // it, so the daemon this process spawned first is routinely gone by a later
+  // acquire. A once-per-process flag turned that into a connect against a socket
+  // that no longer existed — 5s of retries, then an unreachable-daemon failure —
+  // for every collection the pool had not cached yet. `ensureCodegraphDaemon` is
+  // alive-checked first and single-flighted across processes by DaemonLock, so
+  // while a daemon runs this is a pid-file probe.
   const ensure = (): void => {
-    if (ensured) return;
-    ensured = true;
     spawnCodegraphDaemon();
   };
   const originalAcquireWrite = pool.acquireWrite.bind(pool);
