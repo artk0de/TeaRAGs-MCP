@@ -193,12 +193,20 @@ export class CodegraphCheckpointError extends TrajectoryCodegraphError {
 }
 
 /**
+ * Where a metrics recompute failed. `daemon` is the daemon-routed recompute
+ * (`computeAndPersistCyclesAndSignals`): adjacency, Tarjan and PageRank run as
+ * one op there, and the error crossing the socket does not say which of them
+ * threw — its message and name ride along as `cause`.
+ */
+export type CodegraphMetricsStage = "tarjan" | "pagerank" | "adjacency" | "daemon";
+
+/**
  * Tarjan SCC / PageRank recompute failed at the end of an extraction
  * pass. Non-fatal — the graph itself is consistent, only cycle freshness
  * and rerank-time pagerank lookups are stale. Next sink.finish() retries.
  */
 export class CodegraphMetricsError extends TrajectoryCodegraphError {
-  constructor(stage: "tarjan" | "pagerank" | "adjacency", cause?: Error) {
+  constructor(stage: CodegraphMetricsStage, cause?: Error) {
     super({
       code: "TRAJECTORY_CODEGRAPH_METRICS_FAILED",
       message: `Codegraph metrics recompute failed at ${stage}`,

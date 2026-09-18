@@ -25,6 +25,7 @@ import type {
   GraphDbClient,
   GraphEdges,
 } from "../../../../../../src/core/contracts/types/codegraph.js";
+import { recomputeCodegraphMetricsBestEffort } from "../../../../../../src/core/domains/trajectory/codegraph/symbols/extraction-sink.js";
 import {
   GraphBuildFinalizer,
   type GraphStoreResolver,
@@ -416,6 +417,31 @@ describe("GraphBuildFinalizer.recomputeMetrics", () => {
       expect((err as Error).message).toContain("pagerank");
       expect((err as CodegraphMetricsError).cause).toBe(inner);
     }
+  });
+
+  // bd tea-rags-mcp-sgo8v: in daemon mode a stream that ends early — `closed`
+  // during a daemon teardown — comes back over the socket as a plain Error
+  // named after the class. It must degrade to stale metrics exactly as the
+  // in-process route does, not fail the finalize.
+  it("wraps a daemon-side failure as a staged CodegraphMetricsError, so best-effort callers degrade instead of failing", async () => {
+    const overTheWire = Object.assign(new Error("DuckDB stream on /x.duckdb ended by a session close after 0 rows"), {
+      name: "DuckDbStreamIncompleteError",
+    });
+    const graphDb = makeGraphDb({
+      computeAndPersistCyclesAndSignals: async () => {
+        throw overTheWire;
+      },
+    });
+    const finalizer = makeFinalizer(graphDb);
+
+    const err = await finalizer.recomputeMetrics().catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(CodegraphMetricsError);
+    expect((err as Error).message).toContain("daemon");
+    expect((err as CodegraphMetricsError).cause).toBe(overTheWire);
+
+    await expect(
+      recomputeCodegraphMetricsBestEffort(async () => finalizer.recomputeMetrics()),
+    ).resolves.toBeUndefined();
   });
 
   it("wraps a plain DuckDB failure from the Tarjan stage as stage 'tarjan'", async () => {
