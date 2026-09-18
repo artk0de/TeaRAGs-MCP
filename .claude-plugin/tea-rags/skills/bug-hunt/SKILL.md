@@ -2,16 +2,17 @@
 name: bug-hunt
 description:
   Find source of concrete failure — rank historically buggy code (high
-  bugFixRate + churn) against symptom. Triggers on "debug X", "why does Y fail",
-  "test fails", "stack trace says Z", "падает", "почему не работает". NOT for
-  code health scanning without a specific symptom — use risk-assessment for
-  that.
+  bugFixRate + churn) AND freshly changed never-fixed code against symptom.
+  Triggers on "debug X", "why does Y fail", "test fails", "stack trace says Z",
+  "падает", "почему не работает". NOT for code health scanning without a
+  specific symptom — use risk-assessment for that.
 argument-hint: [bug description or symptom]
 ---
 
 # Bug Hunt
 
-Signal-driven root-cause investigation via TeaRAGs git signals.
+Signal-driven root-cause investigation via TeaRAGs git signals. Two suspect
+populations: code with bug-fix history, fresh code too young to have one.
 
 ## Rules
 
@@ -24,12 +25,17 @@ Signal-driven root-cause investigation via TeaRAGs git signals.
 5. **Partial reads only.**
    `Read(path, offset=startLine, limit=endLine-startLine)` using coordinates
    from results. Never read full files.
-6. **Labels are triage.** bugFixRate "healthy" → SKIP. Trust it.
+6. **Labels are triage, not verdict.** Two suspect classes (Signal triage).
+   `bugFixRate` `healthy` alone never drops a chunk. Filled checkpoint →
+   PRESENT, whatever the labels.
 
 ## Loop
 
 ```
-1. Search (search-cascade, rerank="bugHunt", limit=10).
+1. Search — ONE message, TWO parallel calls. Same tool (search-cascade),
+   same query, same pathPattern, rerank="bugHunt", limit=10:
+   a. Historical — no time filter.
+   b. Fresh probe — + modifiedAfter=<window start> (see Fresh probe).
 
 2. CHECKPOINT — fill from ALL available info:
    - Suspect file(s): ___
@@ -39,19 +45,48 @@ Signal-driven root-cause investigation via TeaRAGs git signals.
    All filled? → PRESENT. STOP.
    "Not sure" ≠ "don't know" — present with confidence note.
 
-3. ONLY IF checkpoint incomplete — ONE action for what's missing.
-   Search-cascade for tool selection. Go to step 2.
+3. ONLY IF checkpoint incomplete — ONE action for what's missing:
+   - Symptom names entry point or failure site → Call path (below).
+   - Otherwise search-cascade for tool selection.
+   Go to step 2.
 ```
+
+## Fresh probe
+
+**Why:** `bugHunt` confidence-dampens `volatility` / `relativeChurnNorm` /
+`bugFix` by `commitCount`. Code with 1–2 fresh commits ranks low in the
+historical search — fresh bug drowns under old hotspots. Probe restricts
+population to recently changed files so it surfaces.
+
+- **`modifiedAfter: "<ISO date>"`** — always filters `git.file.lastModifiedAt`
+  (file-level) whatever `level` says; absolute timestamp, not index-time age.
+- **Do NOT pass `level: "file"`.** `level` also sets result granularity — `file`
+  regroups results into files; probe needs chunks (methods).
+- **Do NOT use `maxAgeDays`.** Default chunk level reads `git.chunk.ageDays`;
+  both levels drop `ageDays` 0 = committed < 1 day before indexing = the
+  freshest code.
+- **Window start:** symptom onset if known (last green run, release, date user
+  names); else today − N days, N = `recent` bound of `git.file.ageDays` in prime
+  `## Signal thresholds`.
+- Untracked / never-committed files carry `lastModifiedAt` 0 → outside every
+  time filter. Historical search (no filter) still covers them.
+- Probe hit whose code matches symptom = **fresh suspect** — triage by fresh
+  class, not by `bugFixRate`.
 
 ## PRESENT
 
-Ranked suspect list. Per suspect: file:line, signal labels (bugFixRate,
-relativeChurn), one-sentence observation why it's the root cause.
+Ranked suspect list, ranked by symptom fit. Per suspect: file:line, class
+(historical | fresh), signal labels (`bugFixRate`, `relativeChurn`, `ageDays`,
+`recencyWeightedFreq`), trace position when from Call path (`entry → … → step`),
+one-sentence observation why it's the root cause.
 
 ## Anti-patterns
 
-- **Parallel searches in discovery.** ONE search finds the area. Returns
+- **Extra parallel searches in discovery.** Historical + fresh probe pair IS the
+  discovery — no third query variant. ONE query finds the area. Returns
   batch_create AND jobs/create — both suspects already found.
+- **SKIP on `healthy` alone.** Young code label-capped at `healthy` (Signal
+  triage) — fresh class decides.
 - **Curiosity search.** "How does the other path work?" → Read or LSP, not
   search. You already know WHERE the code is.
 - **Confirmatory search.** Checkpoint has a candidate — present it. Don't search
@@ -68,92 +103,114 @@ Use exact `relativePath` values from search results joined with braces:
 
 ## Signal triage
 
-rank_chunks returns overlay labels:
+Overlay labels (search `rankingOverlay`, trace step `dangerOverlay`) sort each
+chunk into a class. Keep chunk when it fits EITHER class.
 
-- file.bugFixRate "critical" → **prime suspect**
-- file.bugFixRate "concerning" + relativeChurn high → **secondary suspect**
-- file.bugFixRate "healthy" → **SKIP**
+**Historical class — fix history:**
+
+- `bugFixRate` `critical` → **prime suspect**
+- `bugFixRate` `concerning` + `relativeChurn` `high` → **secondary suspect**
+
+**Fresh class — changed recently, no fix history yet:**
+
+- `recencyWeightedFreq` `burst` → **fresh suspect** (being edited right now)
+- `ageDays` `recent` + `relativeChurn` `high` → **fresh suspect** (young,
+  rewritten heavily for its size)
+- `ageDays` `recent` + on the failing call path (trace step, stack-trace frame)
+  → **fresh suspect** — path membership replaces churn corroboration
+- fresh-probe hit matching symptom → **fresh suspect**
+
+**SKIP** only: `bugFixRate` `healthy` + no fresh-class label + not a probe hit.
+
+`healthy` on low-`commitCount` code = too little history to judge, NOT clean:
+confidence clamp caps `bugFixRate` label at `healthy` when `commitCount` below
+collection p10 (`concerning` below p25). Young code cannot reach `critical`.
+Pattern reading (e.g. "new method, bursty"): `signal-interpretation.md`.
 
 **High bugFixRate + high `imports`/`fanIn` (fan-in):** suspect may be a coupling
 point propagating bugs from upstream, not the origin. Check callers before
-fixing here — when codegraph on, `get_callers` (see Codegraph fault-chain
-navigation below) names the exact upstream origins. See
-`signal-interpretation.md` (bug attractor vs coupling; codegraph `fanIn`
-supersedes the `imports` proxy).
+fixing here — when codegraph on, `get_callers` (see Call path below) names the
+exact upstream origins. See `signal-interpretation.md` (bug attractor vs
+coupling; codegraph `fanIn` supersedes the `imports` proxy).
 
-## Trace the chain between suspects
+## Call path — fresh steps between entry and failure
 
-Signal triage gives a **flat** list — WHAT is historically buggy. `trace_path`
-turns it into a **causal chain** — WHICH step on the route from an entry point
-to a suspect is riskiest.
+Signal triage gives a **flat** list — WHAT is suspect. Call path gives the
+**causal chain** — WHICH step on the executed route from entry to failure is
+riskiest. Step with `ageDays` `recent` on that route = fresh suspect even at
+`bugFixRate` `healthy` (Signal triage): new code on the failing path, never
+fixed yet.
 
-**Requires codegraph** (prime shows `codegraph.symbols`). Codegraph off →
-`trace_path` not registered — skip the chain step, report the flat suspect list
-only, noting call-chain ranking unavailable without codegraph.
+**Requires codegraph** (prime `## Enrichment` lists `codegraph.symbols`).
+Codegraph off → graph tools not registered — use Codegraph off below; never read
+an absent tool as a fact.
 
-**Use when** a suspect surfaced but the symptom enters elsewhere (handler,
-controller, job) — you need the danger-ranked call path between them, not just
-the endpoints.
+**Endpoints:**
 
-```text
-trace_path(from=<entry point>, to=<suspect>, rerank="bugHunt")
-```
+- **entry** = outermost in-project frame named in stack trace / symptom — test
+  function, handler, public API. None named →
+  `semantic_search rerank="entryPoint" pathPattern=<scope>` surfaces flow
+  entries (high fan-out / low fan-in drivers); pick one reaching the failure.
+- **failure site** = innermost in-project frame, or suspect from triage.
+- Resolve each to exact symbolId with `find_symbol` first (`Class#method` vs
+  `Class.method`); search chunk already carries `symbolId` + `relativePath`.
+  Entry `find_symbol` cannot resolve (anonymous test block) → first named frame
+  it calls.
 
-Component codebases (React etc.): top-level names are namesakes by construction
-(`BaseTable` may denote several files). Pin endpoints with
-`fromPath=<relativePath>` / `toPath=<relativePath>` — the suspect chunk from
-triage already carries `relativePath`. Response `namesakes: { from, to }` =
-endpoint matched several files; trace already fanned out per candidate, paths
-never cross namesake boundaries.
+**Escalate cheap → full** (search-cascade Graph navigation precedence):
 
-Per-step `dangerOverlay` carries the same git signals as triage (bugFixRate,
-relativeChurn) for every hop on the path. Read the response top-down:
+1. **One endpoint known → one hop.**
+   - `get_callers symbolId=<failure site>` — who feeds it. Suspect looks like a
+     victim (bad input/state arrives from elsewhere) → bug may originate one hop
+     up.
+   - `get_callees symbolId=<entry or suspect>` — what it drives; where corrupted
+     state propagates next, to pick the next checkpoint.
+   - Hops carry no git overlay → triage a hop with
+     `find_symbol(symbol: <id>, rerank: "bugHunt")` (attaches `rankingOverlay`).
+2. **Both endpoints known + whole route matters → trace.**
 
-- `dangerRanking[0]` → **inspect-first step** — the riskiest hop on the route.
-- each step's `dangerOverlay` → triage that hop exactly like the flat list
-  (`critical` → prime, `concerning` + churn → secondary, `healthy` → SKIP).
-- `aggregateDanger` → ranks competing paths when `maxPaths > 1`; the
-  highest-danger route is the one to walk first.
-- **Empty result: check `namesakes` FIRST.** Present → your `fromPath`/`toPath`
-  matched no candidate file — fix the path (real candidates listed), not the
-  suspect. Absent → genuinely **no static call path** from `from` to `to`:
-  suspect not reachable from that entry — wrong entry, dynamic dispatch, or
-  wrong suspect. Re-pick before reading code.
+   ```text
+   trace_path(from=<entry>, to=<failure site>, rerank="bugHunt")
+   ```
 
-**Fresh-regression bisect:** `rerank="recent"` instead of `bugHunt` ranks the
-path by recency, surfacing the step that changed most recently — the likely
-regression on a route that worked before.
+   Pass `rerank` explicitly — without it trace is lean, no overlay. Per-step
+   `dangerOverlay` = same `bugHunt` overlay as search → apply Signal triage to
+   EVERY step, both classes.
 
-Curated danger presets for `trace_path` (pass explicitly — no default; without
-`rerank` the trace is lean, no danger ranking): `bugHunt`, `dangerous`,
-`hotspots`, `recent`, `ownership`, `blastRadius`, `securityAudit`, `techDebt`,
-`codeReview`. Use `bugHunt` for general fault-tracing. Bound the search with
-`maxDepth` / `maxPaths`.
+**Read trace response:**
 
-## Codegraph fault-chain navigation
+- `dangerRanking[0]` → **inspect-first step** — riskiest hop on the route.
+- Fresh-class step anywhere on the path → suspect, even when `dangerRanking`
+  puts an old hotspot first.
+- `aggregateDanger` → ranks competing paths when `maxPaths > 1`; walk the
+  highest-danger route first. Bound with `maxDepth` / `maxPaths`; `truncated`
+  true → more paths exist, pin endpoints before raising limits.
+- Namesake endpoints (component codebases: `BaseTable` in several files) → pin
+  `fromPath` / `toPath` with the chunk's `relativePath`; semantics in
+  search-cascade Graph navigation.
+- **Empty `paths`: check `namesakes` FIRST.** Present → `fromPath`/`toPath`
+  matched no candidate — fix the path (real candidates listed), not the suspect.
+  Absent → no static call path — wrong entry, dynamic dispatch, or wrong
+  suspect. Re-pick before reading code.
+- **Regression bisect:** route worked before, broke now → `rerank="recent"`
+  orders steps by recency. Its overlay lacks `bugFixRate` — cannot separate
+  fresh-never-fixed from fresh-fix; `bugHunt` stays default. Other presets:
+  `rerank` enum in tool schema.
 
-**Requires codegraph** (prime shows `codegraph.symbols`). Codegraph off → these
-tools not registered — skip this section, stay with the flat suspect list +
-manual reasoning; never read an absent tool as a fact.
+**State-loop / re-entrancy smell (`find_cycles`).** Symptom is infinite loop,
+runaway recursion, repeated re-entry →
+`find_cycles scope=method pathPattern=<scope>` surfaces circular call paths — a
+cycle through the suspect is the structural form of that hypothesis.
 
-- **Upstream origin (`get_callers`).** Suspect looks like a victim (bad
-  input/state arrives from elsewhere) → `get_callers symbolId=<suspect>` names
-  who feeds it — bug may originate one hop up. Resolve the exact id with
-  `find_symbol` first (`Class#method` vs `Class.method`).
-- **Downstream blast (`get_callees`).** What the suspect calls — where corrupted
-  state propagates next, to pick the next checkpoint.
-- **Find the entry point (`entryPoint`).** Have a suspect but no `from` for
-  `trace_path` → `semantic_search rerank="entryPoint" pathPattern=<scope>`
-  surfaces flow entries (high fan-out / low fan-in drivers) — pick the entry
-  that reaches the suspect, then trace from it.
-- **State-loop / re-entrancy smell (`find_cycles`).** Symptom is an infinite
-  loop, runaway recursion, or repeated re-entry →
-  `find_cycles scope=method pathPattern=<scope>` surfaces circular call paths —
-  a cycle through the suspect is the structural form of that hypothesis.
+### Codegraph off
 
-These are ONE-hop / structural lookups; `trace_path` is the full danger-ranked
-chain. Start with `get_callers`/`get_callees` (cheap), escalate to `trace_path`
-only when the whole route matters.
+Route per search-cascade "When codegraph is off" table. Bug-hunt specifics:
+
+- Stack trace frames = executed path. Fresh probe with `pathPattern` =
+  brace-joined relativePaths of in-project frames (project root stripped) →
+  fresh chunks along the route, no graph needed.
+- No stack trace → semantic/hybrid + manual reading; say plainly "no static path
+  tool". Never claim "no path" / "unreachable" / "no cycles".
 
 ## Audit mode (optional)
 

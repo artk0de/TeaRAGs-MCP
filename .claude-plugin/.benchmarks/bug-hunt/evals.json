@@ -1,7 +1,7 @@
 {
   "skill": "tea-rags:bug-hunt",
   "skillPath": ".claude-plugin/tea-rags/skills/bug-hunt/SKILL.md",
-  "objective": "Agent correctly investigates a bug symptom via signal-driven search (rerank='bugHunt'), respects triage ladder (critical→prime, concerning+churn→secondary, healthy→SKIP), uses PRESENT format, avoids anti-patterns (parallel searches, curiosity search, confirmatory search, full file reads), and converges on ranked suspects in ≤3 search iterations.",
+  "objective": "Agent correctly investigates a bug symptom via signal-driven search (rerank='bugHunt') paired with a parallel fresh probe (modifiedAfter), respects two-class triage (historical: critical→prime, concerning+churn→secondary; fresh: burst / recent+high relativeChurn / recent on the failing call path / probe hit → fresh suspect; SKIP only healthy with no fresh-class label), inspects fresh steps along the call path (get_callers/get_callees one hop, trace_path rerank='bugHunt' for the full route, stack-trace pathPattern when codegraph is off), uses PRESENT format, avoids anti-patterns (extra parallel searches, curiosity search, confirmatory search, full file reads), and converges on ranked suspects in ≤3 search iterations.",
   "runs": [
     {
       "date": "2026-04-20",
@@ -41,13 +41,15 @@
       "expected": {
         "mustCall": [
           "mcp__tea-rags__semantic_search or hybrid_search with rerank='bugHunt' as FIRST action",
-          "limit=10 per skill Loop Step 1"
+          "limit=10 per skill Loop Step 1",
+          "Fresh probe in the SAME message: same tool, query, pathPattern and rerank='bugHunt' plus modifiedAfter=<ISO window start>"
         ],
         "mustNotCall": [
           "mcp__tea-rags__hybrid_search with rerank='relevance' (wrong preset for bug investigation)",
           "Built-in Grep for error string",
           "git log --grep / git blame (overlay has git signals)",
-          "Read full file without chunk coordinates"
+          "Read full file without chunk coordinates",
+          "Fresh probe via maxAgeDays (drops ageDays 0 = the freshest code) or with level='file' (regroups results into files)"
         ]
       },
       "failureMode": "Agent skips bugHunt preset or falls back to grep/git"
@@ -71,15 +73,18 @@
     {
       "id": "eval-3",
       "category": "triage-healthy-skip",
-      "prompt": "search вернул 5 кандидатов. Topmost — src/utils/uuid.ts bugFixRate='healthy'. User: 'проверь там'.",
+      "prompt": "search вернул 5 кандидатов. Topmost — src/utils/uuid.ts bugFixRate='healthy', ageDays='old', recencyWeightedFreq='normal', relativeChurn='normal'; fresh probe его не вернул. User: 'проверь там'.",
       "expected": {
         "mustDo": [
-          "SKIP healthy file per triage ladder",
-          "Surface 'healthy — trust the signal, skipping' explanation if user pushes back"
+          "SKIP: healthy bugFixRate AND no fresh-class label AND not a probe hit",
+          "Surface 'healthy, old, not fresh — neither suspect class, skipping' explanation if user pushes back"
         ],
-        "mustNotDo": ["Read healthy file anyway", "Override triage silently"]
+        "mustNotDo": [
+          "Read healthy old file anyway",
+          "Override triage silently"
+        ]
       },
-      "failureMode": "Agent re-investigates healthy files, violating trust-the-label rule"
+      "failureMode": "Agent re-investigates a file that fits neither suspect class"
     },
     {
       "id": "eval-4",
@@ -87,12 +92,14 @@
       "prompt": "Timeout on upsert. Проверь сразу три зоны — adapters, pipeline, и tests — чтобы не упустить ничего.",
       "expected": {
         "mustDo": [
-          "Refuse parallel searches — one search finds the area",
-          "Run ONE search with broad pathPattern or no pathPattern"
+          "Refuse per-zone searches — one query finds the area",
+          "Run the historical + fresh-probe pair only (same query, broad pathPattern or no pathPattern)"
         ],
-        "mustNotDo": ["Issue 3 parallel semantic_search calls"]
+        "mustNotDo": [
+          "Issue 3 per-zone semantic_search calls (one per adapters / pipeline / tests)"
+        ]
       },
-      "failureMode": "Agent complies with parallel-search request, violating anti-pattern rule"
+      "failureMode": "Agent complies with per-zone parallel-search request, violating anti-pattern rule"
     },
     {
       "id": "eval-5",
@@ -239,6 +246,73 @@
         "acceptable": ["Route to tea-rags:explore"]
       },
       "failureMode": "Agent triggers bug-hunt for exploration"
+    },
+    {
+      "id": "eval-16",
+      "category": "triage-fresh-healthy-keep",
+      "prompt": "Checkout падает с TypeError после вчерашнего релиза. Search вернул src/checkout/price-calc.ts:88 — bugFixRate='healthy', ageDays='recent', recencyWeightedFreq='burst', commitCount 2. Скипаем, раз healthy?",
+      "expected": {
+        "mustDo": [
+          "Keep as FRESH SUSPECT — burst (and recent) = fresh class; healthy on low-commitCount code is too little history, not clean",
+          "Evaluate the chunk against the symptom; filled checkpoint → PRESENT with class 'fresh'"
+        ],
+        "mustNotDo": [
+          "SKIP on bugFixRate='healthy' alone",
+          "Demote below historical suspects on label alone"
+        ]
+      },
+      "failureMode": "Agent drops fresh never-fixed code because bugFixRate is healthy"
+    },
+    {
+      "id": "eval-17",
+      "category": "call-path-fresh-step",
+      "prompt": "Stack trace (codegraph on): SignupController#create → AccountService#provision → QuotaPolicy#check → TypeError at QuotaPolicy#check. Search не дал явного suspect'а. Найди причину.",
+      "expected": {
+        "mustCall": [
+          "find_symbol to resolve exact endpoint ids (Class#method) when not already carried by a search chunk",
+          "mcp__tea-rags__trace_path from='SignupController#create' to='QuotaPolicy#check' with rerank='bugHunt'"
+        ],
+        "mustDo": [
+          "Apply two-class triage to EVERY step's dangerOverlay",
+          "Treat a step with ageDays='recent' as fresh suspect even at bugFixRate='healthy'"
+        ],
+        "mustNotDo": [
+          "trace_path without rerank (lean trace, no overlay)",
+          "Ignore a fresh step because dangerRanking[0] is an old hotspot"
+        ]
+      },
+      "failureMode": "Agent traces without danger overlay or skips fresh never-fixed steps on the path"
+    },
+    {
+      "id": "eval-18",
+      "category": "call-path-one-hop-first",
+      "prompt": "Известно только место падения: ReportExporter#serialize получает undefined. Откуда оно приходит? (codegraph on)",
+      "expected": {
+        "mustCall": [
+          "mcp__tea-rags__get_callers symbolId='ReportExporter#serialize' (one hop, cheap) before any trace_path",
+          "find_symbol(symbol: <caller id>, rerank: 'bugHunt') to read a caller's labels (get_callers carries no git overlay)"
+        ],
+        "mustNotCall": [
+          "trace_path with a guessed entry point as the first graph call"
+        ]
+      },
+      "failureMode": "Agent escalates to trace_path with only one endpoint known"
+    },
+    {
+      "id": "eval-19",
+      "category": "call-path-codegraph-off",
+      "prompt": "prime ## Enrichment: git only (no codegraph.symbols). Stack trace: src/api/orders.ts → src/services/order-service.ts → src/lib/money.ts (RangeError). Найди причину.",
+      "expected": {
+        "mustDo": [
+          "Fresh probe with pathPattern='{src/api/orders.ts,src/services/order-service.ts,src/lib/money.ts}' + modifiedAfter + rerank='bugHunt'",
+          "State plainly that no static path tool is available"
+        ],
+        "mustNotDo": [
+          "Call get_callers / get_callees / trace_path (not registered)",
+          "Claim 'no path' / 'unreachable' / 'no cycles' from an absent graph tool"
+        ]
+      },
+      "failureMode": "Agent reaches for absent graph tools or draws graph conclusions without codegraph"
     }
   ]
 }
