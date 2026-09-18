@@ -19,6 +19,7 @@ import {
   type SymbolResolutionTarget,
 } from "../../../../../contracts/types/codegraph.js";
 import type { SymbolIdComposer } from "../../../../../contracts/types/language.js";
+import { selectGoMember } from "../struct-member-selection.js";
 
 export interface ResolverConfig {
   composer: SymbolIdComposer;
@@ -30,6 +31,12 @@ export interface ResolverConfig {
  * `Type.member` (static form). Returns `null` — never a global short-name
  * fallback — when neither form exists; the calling strategy turns that `null`
  * into a guard DROP. Mirrors the python-resolver step 0 contract.
+ *
+ * When `Type` declares the member in NEITHER form, the member may still be
+ * PROMOTED from a struct `Type` embeds — gin's `engine.GET(...)` is
+ * `RouterGroup#GET` (bd tea-rags-mcp-e6xx). `selectGoMember` answers that with
+ * Go's shallowest-depth rule; it runs only on an empty direct lookup, so a type
+ * that declares the member itself resolves exactly as it did before.
  */
 export function resolveByLocalType(
   cfg: ResolverConfig,
@@ -45,7 +52,9 @@ export function resolveByLocalType(
   const staticHits = ctx.symbolTable.lookup(staticForm);
   const staticHit = pickSingleCandidate(staticHits, cfg.mode);
   if (staticHit) return { targetRelPath: staticHit.relPath, targetSymbolId: staticHit.symbolId };
-  return null;
+  if (instanceHits.length > 0 || staticHits.length > 0) return null;
+  const promoted = selectGoMember(typeName, member, ctx, cfg.composer);
+  return promoted?.kind === "method" ? promoted.target : null;
 }
 
 /**

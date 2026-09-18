@@ -136,7 +136,10 @@ describe("seeded support versions", () => {
       // and javascript walker 2: bd tea-rags-mcp-hwwtw stopped deciding member
       // calls by global short-name uniqueness — typescript dispatches a
       // checker-typed interface receiver through the cone, javascript keeps the
-      // global fallback for bare calls only.
+      // global fallback for bare calls only. go walker 2: bd tea-rags-mcp-e6xx
+      // publishes struct field facts on `classFieldTypesByClassKey` and resolves
+      // promoted methods through embedding, so an index built by walker 1 holds
+      // none of the `engine.GET` → `RouterGroup#GET` edges this one emits.
       // Every other language is still at its seed.
       const WALKER_BUMPED = new Map([
         ["typescript", 5],
@@ -145,6 +148,7 @@ describe("seeded support versions", () => {
         ["ruby", 3],
         ["java", 2],
         ["rust", 2],
+        ["go", 2],
       ]);
       const expectedWalker = WALKER_BUMPED.get(language) ?? 1;
       const expectedCodegraph = NO_CALL_GRAPH.has(language) ? 1 : 2;

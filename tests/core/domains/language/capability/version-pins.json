@@ -21,8 +21,8 @@
       "digest": "sha256:b27a367c9390c6a73806fe5a23e8cd45552c0de52ffe9755ed71bd5ec86965b9"
     },
     "walker": {
-      "version": 1,
-      "digest": "sha256:2bedb5a1eccefe43d25d2e0cf575067596a92b86e66197bfbb9796dcaf009bf7"
+      "version": 2,
+      "digest": "sha256:bc4036916249e642486f965d363a18c09910cf2809d98b73278506ce226e9548"
     }
   },
   "java": {

@@ -19,6 +19,9 @@
  *
  * Python is absent by design: `PYTHON_EXTRACTION_PASSES` carries the annotation
  * type-fact facet, so identity does NOT hold there — the merge is the point.
+ * Go left the identity set the same way when `GO_EXTRACTION_PASSES` gained the
+ * struct-field facet (bd tea-rags-mcp-e6xx); its wiring is pinned below as
+ * "the native extraction plus exactly that facet's channel".
  */
 
 import Parser from "tree-sitter";
@@ -74,13 +77,6 @@ const CASES: readonly LanguageCase[] = [
     code: 'const { helper } = require("./helper.js");\n\nclass Svc {\n  run() {\n    return helper();\n  }\n}\n\nmodule.exports = { Svc };\n',
     passes: JAVASCRIPT_EXTRACTION_PASSES,
     native: extractFromJavascriptFile,
-  },
-  {
-    language: "go",
-    relPath: "svc.go",
-    code: 'package main\n\nimport "fmt"\n\ntype Svc struct{}\n\nfunc (s Svc) Run() string {\n\treturn fmt.Sprint("x")\n}\n',
-    passes: GO_EXTRACTION_PASSES,
-    native: extractFromGoFile,
   },
   {
     language: "java",
@@ -153,4 +149,43 @@ describe("native walkers composed through the extraction pass-runner", () => {
       expect(viaFactory.chunks.length).toBeGreaterThan(0);
     });
   }
+});
+
+/**
+ * Go carries one facet, so the composed extraction is the monolith's PLUS that
+ * facet's channel and nothing else: a pass that touched any other channel, or a
+ * `walk` wired to something other than `extractFromGoFile`, fails here.
+ */
+describe("go walker composed through the extraction pass-runner", () => {
+  const GO_CASE: LanguageCase = {
+    language: "go",
+    relPath: "svc.go",
+    code: 'package main\n\nimport "fmt"\n\ntype Svc struct{}\n\nfunc (s Svc) Run() string {\n\treturn fmt.Sprint("x")\n}\n',
+    passes: GO_EXTRACTION_PASSES,
+    native: extractFromGoFile,
+  };
+  const STRUCT_FACET = { classFieldTypesByClassKey: { "svc.go::Svc": {} } };
+  let input: WalkInput;
+
+  beforeAll(async () => {
+    input = await buildInput(GO_CASE);
+  });
+
+  it("go: the composer merges the struct-field facet onto the native extraction and nothing else", () => {
+    const sentinel = extractFromGoFile(input);
+    const composed = composeExtractionWalker({
+      walk: () => sentinel,
+      nameOf: () => null,
+      passes: GO_EXTRACTION_PASSES,
+    });
+
+    expect(composed.walk(input)).toEqual({ ...sentinel, ...STRUCT_FACET });
+  });
+
+  it("go: the factory's walker extracts the native monolith's output plus the struct-field facet", () => {
+    const viaFactory = factory.create("go").walker.walk(input);
+
+    expect(viaFactory).toEqual({ ...extractFromGoFile(input), ...STRUCT_FACET });
+    expect(viaFactory.chunks.length).toBeGreaterThan(0);
+  });
 });
