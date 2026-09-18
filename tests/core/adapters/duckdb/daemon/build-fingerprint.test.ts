@@ -8,15 +8,18 @@
  * different package version => different fingerprint.
  */
 
+import type * as NodeFs from "node:fs";
 import { mkdirSync, mkdtempSync, rmSync, utimesSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 import {
+  captureBuildFingerprint,
   computeBuildFingerprint,
   getBuildFingerprint,
+  readOnDiskBuildFingerprint,
 } from "../../../../../src/core/adapters/duckdb/daemon/build-fingerprint.js";
 
 let dir: string;
@@ -69,6 +72,63 @@ describe("computeBuildFingerprint", () => {
 
   it("defaults to fingerprinting its own module (no arg) and stays stable", () => {
     expect(computeBuildFingerprint()).toBe(computeBuildFingerprint());
+  });
+});
+
+// bd tea-rags-mcp-1wr7p — a long-lived process keeps executing the code it
+// LOADED while a rebuild / `npm link` / `npm i -g` rewrites the build under it.
+// Telling "this process is stale" from "the daemon is stale" needs both views:
+// the fingerprint of what was loaded, and the one on disk right now.
+describe("captureBuildFingerprint", () => {
+  it("keeps the loaded fingerprint fixed while readOnDisk follows a rebuild of the module file", () => {
+    const { moduleFile } = makeBuildTree("1.2.3");
+    const capture = captureBuildFingerprint(moduleFile);
+    expect(capture.loaded).toBe(computeBuildFingerprint(moduleFile));
+
+    const future = new Date(Date.now() + 2_000);
+    utimesSync(moduleFile, future, future);
+
+    expect(capture.loaded).not.toBe(computeBuildFingerprint(moduleFile));
+    expect(capture.readOnDisk()).toBe(computeBuildFingerprint(moduleFile));
+  });
+
+  it("reads undefined on disk once the module file is gone — nothing to compare against", () => {
+    const { moduleFile } = makeBuildTree("1.2.3");
+    const capture = captureBuildFingerprint(moduleFile);
+    rmSync(moduleFile);
+    expect(capture.readOnDisk()).toBeUndefined();
+  });
+});
+
+describe("process build fingerprint (bd tea-rags-mcp-1wr7p)", () => {
+  afterEach(() => {
+    vi.doUnmock("node:fs");
+    vi.resetModules();
+  });
+
+  // A process that made no graph call before a rebuild used to fingerprint the
+  // NEW build on its first handshake while still running the OLD code — the
+  // handshake then passed and the skew was invisible.
+  it("is captured at module load, not on first use, and the on-disk view re-reads the rewritten module", async () => {
+    let mtimeMs = 1_000;
+    vi.resetModules();
+    vi.doMock("node:fs", async (importOriginal) => {
+      const actual = await importOriginal<typeof NodeFs>();
+      return { ...actual, statSync: () => ({ mtimeMs }) };
+    });
+    const mod = await import("../../../../../src/core/adapters/duckdb/daemon/build-fingerprint.js");
+
+    mtimeMs = 2_000; // the build is rewritten before this process's first handshake
+
+    expect(mod.getBuildFingerprint()).toMatch(/\|1000$/);
+    expect(mod.readOnDiskBuildFingerprint()).toMatch(/\|2000$/);
+  });
+
+  it("the on-disk view honours the env override too — a forced identity has no stale side", () => {
+    process.env.TEA_RAGS_CODEGRAPH_BUILD_FINGERPRINT = "forced-fp";
+    expect(readOnDiskBuildFingerprint()).toBe("forced-fp");
+    delete process.env.TEA_RAGS_CODEGRAPH_BUILD_FINGERPRINT;
+    expect(readOnDiskBuildFingerprint()).toBe(getBuildFingerprint());
   });
 });
 
