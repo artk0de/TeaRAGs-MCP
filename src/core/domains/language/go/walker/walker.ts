@@ -29,6 +29,7 @@ import type {
   LocalBinding,
 } from "../../../../contracts/types/codegraph.js";
 import { assignCallsToInnermostChunks } from "../../kernel/assign-calls-to-chunks.js";
+import { goImportBoundName } from "../import-binding.js";
 
 export interface GoExtractInput {
   tree: MaterializedTree;
@@ -40,6 +41,7 @@ export interface GoExtractInput {
 
 export function extractFromGoFile(input: GoExtractInput): FileExtraction {
   const imports = collectGoImports(input.tree.rootNode);
+  const importNames = goImportBoundNames(imports);
   const calls = collectGoCalls(input.tree.rootNode);
   const functionReturnTypes = collectGoFunctionReturnTypes(input.tree.rootNode);
   // bd tea-rags-mcp-f11nz — ONE owning chunk per call site: the smallest
@@ -65,7 +67,12 @@ export function extractFromGoFile(input: GoExtractInput): FileExtraction {
     // the return type can't be known in-chunk; the resolver pairs it with
     // the file-level `functionReturnTypes`. The resolver consults both to
     // turn typed/return-typed calls into qualified `Type#method` targets.
-    const { types, calls: callBindings } = collectGoLocalBindingsForChunk(input.tree.rootNode, c.startLine, c.endLine);
+    const { types, calls: callBindings } = collectGoLocalBindingsForChunk(
+      input.tree.rootNode,
+      c.startLine,
+      c.endLine,
+      importNames,
+    );
     if (Object.keys(types).length > 0) base.localBindings = types;
     if (Object.keys(callBindings).length > 0) base.localCallBindings = callBindings;
     return base;
@@ -155,6 +162,16 @@ function collectGoImports(root: AstNode): ImportRef[] {
   return out;
 }
 
+/** The qualifiers the file's imports bind — the names a local can shadow. */
+function goImportBoundNames(imports: readonly ImportRef[]): ReadonlySet<string> {
+  const names = new Set<string>();
+  for (const imp of imports) {
+    const name = goImportBoundName(imp);
+    if (name) names.add(name);
+  }
+  return names;
+}
+
 function collectGoCalls(root: AstNode): CallRef[] {
   const out: CallRef[] = [];
   walk(root, (node) => {
@@ -218,6 +235,15 @@ function walk(node: AstNode, visit: (n: AstNode) => void): void {
  *   5. Function-literal parameters — `return func(c *Context) { ... }` binds
  *      `c` for the literal's lines only; see `bindFuncLiteralParams`. bd
  *      tea-rags-mcp-e6xx.
+ *   6. Import shadows (bd tea-rags-mcp-e6xx) — any other local or parameter
+ *      whose name an import binds (`config, err := loadTwo()`,
+ *      `func f(render io.Writer)`, `for _, render := range rs`) records an
+ *      EMPTY-typed binding: a value no pass can type, never the package. A
+ *      statement-declared one carries `endLine` (in scope only after its
+ *      statement — `goLocalBindingAt`).
+ *
+ * A binding declared inside a block narrower than the function body carries
+ * that block's last line as `scopeEndLine`.
  *
  * Function-return short decls `x := New()` are captured into the SEPARATE
  * `calls` map (varName → called func short name), NOT `types` — the walker
@@ -233,6 +259,7 @@ function collectGoLocalBindingsForChunk(
   root: AstNode,
   startLine: number,
   endLine: number,
+  importNames: ReadonlySet<string>,
 ): { types: Record<string, LocalBinding[]>; calls: Record<string, string> } {
   const bindings: Record<string, LocalBinding[]> = {};
   const callBindings: Record<string, string> = {};
@@ -251,6 +278,8 @@ function collectGoLocalBindingsForChunk(
   });
   if (!target) return { types: bindings, calls: callBindings };
 
+  const sink: GoBindingSink = { types: bindings, calls: callBindings, shadowed: importNames };
+
   // Method receiver.
   const receiver = (target as AstNode).childForFieldName("receiver");
   if (receiver) {
@@ -264,74 +293,231 @@ function collectGoLocalBindingsForChunk(
 
   // Parameter list.
   const params = (target as AstNode).childForFieldName("parameters");
-  if (params) {
-    for (const param of params.children) {
-      if (param.type !== "parameter_declaration") continue;
-      const name = readParamName(param);
-      const typeName = readParamBareType(param);
-      if (name && typeName) (bindings[name] ??= []).push({ line: param.startPosition.row + 1, type: typeName });
-    }
-  }
+  if (params) bindParameterList(params, sink);
 
   // Function-literal parameters whose type binds nothing, settled AFTER the
   // walk: whether one must shadow depends on bindings the walk has not reached
   // yet (a `c := New()` later in the body is still an outer `c`).
   const untypedLiteralParams: UntypedLiteralParam[] = [];
 
-  // Local variable declarations inside the body — `var x Foo`, `x :=
-  // Foo{}`, `x := &Foo{}` (bd tea-rags-mcp-6g9c). Walk the target
-  // declaration's descendants; both forms are nested in the function's
-  // `block` / `statement_list` regardless of nesting depth.
-  walk(target, (node) => {
-    if (node.type === "func_literal") {
-      bindFuncLiteralParams(node, bindings, untypedLiteralParams);
-      return;
-    }
-    if (node.type === "var_declaration") {
-      for (const spec of node.children) {
-        if (spec.type !== "var_spec") continue;
-        const name = spec.childForFieldName("name");
-        const typeNode = spec.childForFieldName("type");
-        const typeName = readBareTypeNode(typeNode);
-        if (name && typeName) (bindings[name.text] ??= []).push({ line: name.startPosition.row + 1, type: typeName });
-      }
-      return;
-    }
-    if (node.type === "short_var_declaration") {
-      const left = node.childForFieldName("left");
-      const right = node.childForFieldName("right");
-      if (!left || !right) return;
-      // Single-LHS only: `a, b := f(), g()` can't be paired var↔value
-      // unambiguously. tree-sitter emits one `expression_list` per side;
-      // require exactly one identifier on the left and one value on the right.
-      const lhsIdents = left.children.filter((c) => c.type === "identifier");
-      const rhsValues = right.children.filter((c) => c.type !== "," && c.type !== ":=");
-      if (lhsIdents.length !== 1 || rhsValues.length !== 1) return;
-      const name = lhsIdents[0];
-      const value = rhsValues[0];
-      // `x := Foo{}` / `x := &Foo{}` — directly-knowable type literal.
-      if (value.type === "composite_literal" || value.type === "unary_expression") {
-        const typeName = readCompositeLiteralType(value);
-        if (typeName) (bindings[name.text] ??= []).push({ line: name.startPosition.row + 1, type: typeName });
-        return;
-      }
-      // `x := New()` / `x := pkg.New()` — function-return assignment. Record
-      // the called function's short name; the resolver maps it to the
-      // declared return type. bd tea-rags-mcp-6g9c.
-      if (value.type === "call_expression") {
-        const funcName = readCalledFunctionName(value);
-        if (funcName) callBindings[name.text] = funcName;
-      }
-    }
-  });
+  // Local declarations inside the body — `var x Foo`, `x := Foo{}`,
+  // `x := &Foo{}` (bd tea-rags-mcp-6g9c), and every other declared name the
+  // file's imports make ambiguous (bd tea-rags-mcp-e6xx), each scoped to the
+  // block that declares it.
+  const body = (target as AstNode).childForFieldName("body");
+  if (body) visitGoScopes(body, undefined, body, sink, untypedLiteralParams);
   // An untyped literal parameter shadows only a name that means something else
-  // in the chunk — a typed binding or a call binding (`c := New()`). With no
-  // namesake it records nothing, so no binding key appears that was not there.
+  // in the chunk — a typed binding, a call binding (`c := New()`), or an
+  // imported package. With no namesake it records nothing, so no binding key
+  // appears that was not there.
   for (const param of untypedLiteralParams) {
-    if (bindings[param.name] === undefined && callBindings[param.name] === undefined) continue;
-    (bindings[param.name] ??= []).push(param.shadow);
+    const shadows =
+      bindings[param.name] !== undefined || callBindings[param.name] !== undefined || importNames.has(param.name);
+    if (shadows) (bindings[param.name] ??= []).push(param.shadow);
   }
   return { types: bindings, calls: callBindings };
+}
+
+/** The per-chunk binding maps under construction, and the names an untyped local must shadow. */
+interface GoBindingSink {
+  readonly types: Record<string, LocalBinding[]>;
+  readonly calls: Record<string, string>;
+  /**
+   * The names the file's imports bind (`goImportBoundName`). A local of one of
+   * these names records an EMPTY-typed binding even when nothing types it, so
+   * no reader takes the receiver for the package it shadows.
+   */
+  readonly shadowed: ReadonlySet<string>;
+}
+
+/**
+ * Node types that open a Go block below the function body: an explicit
+ * `{ … }`, the implicit block of an `if` / `for` / `switch` / `select` (its
+ * header declarations live in it), and each clause of a `switch` / `select`.
+ * A local declared inside one is out of scope past the block's last line (Go
+ * spec, "Blocks").
+ */
+const GO_SCOPE_NODE_TYPES: ReadonlySet<string> = new Set([
+  "block",
+  "for_statement",
+  "if_statement",
+  "expression_switch_statement",
+  "type_switch_statement",
+  "select_statement",
+  "expression_case",
+  "default_case",
+  "type_case",
+  "communication_case",
+]);
+
+/**
+ * Walk a function body, binding each declaration against the innermost block
+ * that holds it: `scopeEnd` is that block's last line, `undefined` directly in
+ * the function body (the chunk is the scope, as every binding before block
+ * scoping read it).
+ */
+function visitGoScopes(
+  node: AstNode,
+  scopeEnd: number | undefined,
+  functionBody: AstNode,
+  sink: GoBindingSink,
+  untypedLiteralParams: UntypedLiteralParam[],
+): void {
+  bindGoDeclaration(node, scopeEnd, sink, untypedLiteralParams);
+  const inner = node !== functionBody && GO_SCOPE_NODE_TYPES.has(node.type) ? node.endPosition.row + 1 : scopeEnd;
+  for (const child of node.children) visitGoScopes(child, inner, functionBody, sink, untypedLiteralParams);
+}
+
+/** Bind the names `node` declares, if it is a declaration. */
+function bindGoDeclaration(
+  node: AstNode,
+  scopeEnd: number | undefined,
+  sink: GoBindingSink,
+  untypedLiteralParams: UntypedLiteralParam[],
+): void {
+  switch (node.type) {
+    case "func_literal":
+      bindFuncLiteralParams(node, sink, untypedLiteralParams);
+      break;
+    case "var_declaration":
+      bindVarDeclaration(node, scopeEnd, sink);
+      break;
+    case "short_var_declaration":
+      bindShortVarDeclaration(node, scopeEnd, sink);
+      break;
+    case "range_clause":
+    case "receive_statement":
+      // `for k, v := range m` / `case v := <-ch:` — declared only with `:=`.
+      if (declaresWithShortVarToken(node)) shadowGoLocals(node.childForFieldName("left"), node, scopeEnd, sink);
+      break;
+    case "type_switch_statement":
+      // `switch v := x.(type)` — `v` lives in every clause, i.e. the statement.
+      shadowGoLocals(
+        node.childForFieldName("alias"),
+        node.childForFieldName("value") ?? node,
+        node.endPosition.row + 1,
+        sink,
+      );
+      break;
+    default:
+      break;
+  }
+}
+
+function declaresWithShortVarToken(node: AstNode): boolean {
+  return node.children.some((c) => c.type === ":=");
+}
+
+/** `binding`, visible only up to `scopeEnd` when the declaring block is narrower than the chunk. */
+function scopedTo(binding: LocalBinding, scopeEnd: number | undefined): LocalBinding {
+  if (scopeEnd !== undefined) binding.scopeEndLine = scopeEnd;
+  return binding;
+}
+
+/**
+ * A local of a type the walker cannot know: recorded, with the EMPTY type,
+ * only when its name is one an import binds. `statement` is the declaring
+ * statement — the local is in scope only after it ends (`endLine`, read by
+ * `goLocalBindingAt`), so its own right-hand side still names the package.
+ * A parameter has no statement and is in scope from its line.
+ */
+function shadowGoLocal(
+  ident: AstNode,
+  statement: AstNode | null,
+  scopeEnd: number | undefined,
+  sink: GoBindingSink,
+): void {
+  const name = ident.text;
+  if (!sink.shadowed.has(name)) return;
+  const binding: LocalBinding = { line: ident.startPosition.row + 1, type: "" };
+  if (statement) binding.endLine = statement.endPosition.row + 1;
+  (sink.types[name] ??= []).push(scopedTo(binding, scopeEnd));
+}
+
+/** {@link shadowGoLocal} for every identifier of a declaration's left-hand `expression_list`. */
+function shadowGoLocals(
+  left: AstNode | null,
+  statement: AstNode,
+  scopeEnd: number | undefined,
+  sink: GoBindingSink,
+): void {
+  if (!left) return;
+  for (const ident of left.children) if (ident.type === "identifier") shadowGoLocal(ident, statement, scopeEnd, sink);
+}
+
+/**
+ * The declaring function's own parameters: every name of a declaration
+ * (`a, b *Engine` binds both), typed when the type is one nominal type, else
+ * a shadow when the name is an import's. A variadic parameter is a slice and
+ * types nothing.
+ */
+function bindParameterList(params: AstNode, sink: GoBindingSink): void {
+  for (const param of params.children) {
+    if (param.type !== "parameter_declaration" && param.type !== "variadic_parameter_declaration") continue;
+    const typeName = param.type === "parameter_declaration" ? readParamBareType(param) : null;
+    const line = param.startPosition.row + 1;
+    for (const ident of readParamNames(param)) {
+      if (typeName) (sink.types[ident.text] ??= []).push({ line, type: typeName });
+      else shadowGoLocal(ident, null, undefined, sink);
+    }
+  }
+}
+
+/**
+ * `var x Foo`, `var a, b Foo`, `var x = expr`, and the grouped `var ( … )`:
+ * every name is typed when the spec declares one nominal type (bd
+ * tea-rags-mcp-6g9c), else shadowed when an import binds it.
+ */
+function bindVarDeclaration(node: AstNode, scopeEnd: number | undefined, sink: GoBindingSink): void {
+  const specs = node.children.flatMap((c) =>
+    c.type === "var_spec" ? [c] : c.type === "var_spec_list" ? c.children.filter((s) => s.type === "var_spec") : [],
+  );
+  for (const spec of specs) {
+    const typeName = readBareTypeNode(spec.childForFieldName("type"));
+    for (const ident of spec.children) {
+      if (ident.type !== "identifier" || ident.text === "_") continue;
+      if (typeName) {
+        const binding = scopedTo({ line: ident.startPosition.row + 1, type: typeName }, scopeEnd);
+        (sink.types[ident.text] ??= []).push(binding);
+      } else {
+        shadowGoLocal(ident, spec, scopeEnd, sink);
+      }
+    }
+  }
+}
+
+/**
+ * `x := Foo{}` / `x := &Foo{}` types `x` (bd tea-rags-mcp-6g9c); `x := New()`
+ * / `x := pkg.New()` records the called function for the resolver to pair
+ * with its declared return type. Only a single-LHS, single-value declaration
+ * can be paired var↔value; every other name it declares — `a, err := f()`,
+ * `x := y`, `x := pkg.Build().With()` — is a local of unknown type, shadowed
+ * when an import binds its name (bd tea-rags-mcp-e6xx).
+ */
+function bindShortVarDeclaration(node: AstNode, scopeEnd: number | undefined, sink: GoBindingSink): void {
+  const left = node.childForFieldName("left");
+  const right = node.childForFieldName("right");
+  if (!left || !right) return;
+  const lhsIdents = left.children.filter((c) => c.type === "identifier");
+  const rhsValues = right.children.filter((c) => c.type !== "," && c.type !== ":=");
+  if (lhsIdents.length === 1 && rhsValues.length === 1) {
+    const name = lhsIdents[0];
+    const value = rhsValues[0];
+    if (value.type === "composite_literal" || value.type === "unary_expression") {
+      const typeName = readCompositeLiteralType(value);
+      if (typeName) {
+        (sink.types[name.text] ??= []).push(scopedTo({ line: name.startPosition.row + 1, type: typeName }, scopeEnd));
+        return;
+      }
+    } else if (value.type === "call_expression") {
+      const funcName = readCalledFunctionName(value);
+      if (funcName) {
+        sink.calls[name.text] = funcName;
+        return;
+      }
+    }
+  }
+  for (const ident of lhsIdents) shadowGoLocal(ident, node, scopeEnd, sink);
 }
 
 /** A function-literal parameter whose type binds nothing, and the shadow it would record. */
@@ -354,24 +540,26 @@ interface UntypedLiteralParam {
  * is recorded with the EMPTY type, which Go's readers take as "a local no pass
  * can type" — so neither an outer binding, a call binding of the same name, nor
  * an import it shadows speaks for it. Whether it needs recording at all is
- * settled after the walk (`untypedLiteralParams`).
+ * settled after the walk (`untypedLiteralParams`). Every name of a
+ * declaration binds (`func(w, render io.Writer)`).
  */
 function bindFuncLiteralParams(
   literal: AstNode,
-  bindings: Record<string, LocalBinding[]>,
+  sink: GoBindingSink,
   untypedLiteralParams: UntypedLiteralParam[],
 ): void {
   const params = literal.childForFieldName("parameters");
   if (!params) return;
   const scopeEndLine = literal.endPosition.row + 1;
   for (const param of params.children) {
-    if (param.type !== "parameter_declaration") continue;
-    const name = readParamName(param);
-    if (!name) continue;
+    if (param.type !== "parameter_declaration" && param.type !== "variadic_parameter_declaration") continue;
     const line = param.startPosition.row + 1;
-    const type = readParamBareType(param);
-    if (type) (bindings[name] ??= []).push({ line, type, scopeEndLine });
-    else untypedLiteralParams.push({ name, shadow: { line, type: "", scopeEndLine } });
+    const type = param.type === "parameter_declaration" ? readParamBareType(param) : null;
+    for (const ident of readParamNames(param)) {
+      const name = ident.text;
+      if (type) (sink.types[name] ??= []).push({ line, type, scopeEndLine });
+      else untypedLiteralParams.push({ name, shadow: { line, type: "", scopeEndLine } });
+    }
   }
 }
 
@@ -437,14 +625,19 @@ function readCompositeLiteralType(node: AstNode): string | null {
   return typeNode?.type === "type_identifier" ? typeNode.text : null;
 }
 
+/** The receiver's name — the first identifier of its declaration. */
 function readParamName(param: AstNode): string | null {
-  // Go tree-sitter places multi-name `parameter_declaration` (e.g.
-  // `func f(a, b int)`) with several `identifier` children before the
-  // `type` field. Take the first identifier — multiple bindings of the
-  // same type are uncommon for typed-receiver patterns and overlap
-  // doesn't change resolution semantics.
   const ident = param.children.find((c) => c.type === "identifier");
   return ident?.text ?? null;
+}
+
+/**
+ * Every name of a parameter declaration: tree-sitter-go puts `func f(a, b int)`
+ * in ONE `parameter_declaration` with several `identifier` children before the
+ * `type` field. The blank `_` declares nothing.
+ */
+function readParamNames(param: AstNode): AstNode[] {
+  return param.children.filter((c) => c.type === "identifier" && c.text !== "_");
 }
 
 function readParamBareType(param: AstNode): string | null {

@@ -22,13 +22,14 @@
  * frozen, so the fold allocates nothing per call site.
  */
 
-import { resolveLocalBinding, type CallContext } from "../../../../contracts/types/codegraph.js";
+import type { CallContext } from "../../../../contracts/types/codegraph.js";
 import type { SymbolIdComposer, TypeRef } from "../../../../contracts/types/language.js";
 import {
   CHAIN_MAX_HOPS_DEFAULT,
   splitReceiverHops,
   type ReceiverTypePorts,
 } from "../../kernel/receiver-type-propagation.js";
+import { goLocalBindingAt } from "../local-scope.js";
 import { isKnownTypeSymbol } from "./strategies/shared.js";
 import { selectGoMember } from "./struct-member-selection.js";
 
@@ -42,7 +43,7 @@ function goIdentifierType(receiver: string, atLine: number, ctx: CallContext): T
   if (!GO_IDENTIFIER.test(receiver)) return undefined;
   // A binding in effect speaks for the name even when its type is EMPTY — a
   // function-literal parameter no pass can type, shadowing any call binding.
-  const local = resolveLocalBinding(ctx.localBindings, receiver, atLine);
+  const local = goLocalBindingAt(ctx.localBindings, receiver, atLine);
   if (local) return local.type ? instanceOf(local.type) : undefined;
   const calledFunc = ctx.localCallBindings?.[receiver];
   const returnType = calledFunc ? ctx.functionReturnTypes?.[calledFunc] : undefined;

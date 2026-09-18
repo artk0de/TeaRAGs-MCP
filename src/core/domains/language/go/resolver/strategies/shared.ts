@@ -22,6 +22,7 @@ import {
   type SymbolResolutionTarget,
 } from "../../../../../contracts/types/codegraph.js";
 import type { SymbolIdComposer } from "../../../../../contracts/types/language.js";
+import { goImportBoundName } from "../../import-binding.js";
 import type { GoModuleMap, GoModuleMapCache } from "../go-module-map.js";
 import { lookupGoSymbols, lookupGoSymbolsByShortName } from "../go-symbol-lookup.js";
 import { selectGoMember } from "../struct-member-selection.js";
@@ -90,17 +91,12 @@ export function goPackageDirOf(relPath: string): string {
 }
 
 /**
- * Whether `receiver` is the name `imp` binds in the importing file: the alias
- * the walker recorded when the source spells one (bd tea-rags-mcp-e6xx — once
- * aliased, the path's last segment is NOT in scope), else the path's last
- * `/`-segment. A dot or blank import binds no qualifier at all.
+ * Whether `receiver` is the name `imp` binds in the importing file
+ * (`goImportBoundName`: the alias when the source spells one, else the path's
+ * last `/`-segment; a dot or blank import binds no qualifier at all).
  */
 export function importMatchesReceiver(imp: ImportRef, receiver: string): boolean {
-  const explicit = imp.importedNames?.[0];
-  if (explicit !== undefined) return explicit === receiver && explicit !== "." && explicit !== "_";
-  const segments = imp.importText.split("/");
-  const last = segments[segments.length - 1] ?? "";
-  return last === receiver;
+  return goImportBoundName(imp) === receiver;
 }
 
 /**

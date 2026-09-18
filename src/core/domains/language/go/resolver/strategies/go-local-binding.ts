@@ -1,6 +1,7 @@
 import { CONTINUE, DROP, resolved } from "../../../../../contracts/resolution.js";
-import { resolveLocalBinding, type CallContext, type CallRef } from "../../../../../contracts/types/codegraph.js";
+import type { CallContext, CallRef } from "../../../../../contracts/types/codegraph.js";
 import type { SymbolResolutionOutcome, SymbolResolutionStrategy } from "../../../../../contracts/types/language.js";
+import { goLocalBindingAt } from "../../local-scope.js";
 import { resolveByLocalType, type ResolverConfig } from "./shared.js";
 
 /**
@@ -16,9 +17,12 @@ import { resolveByLocalType, type ResolverConfig } from "./shared.js";
  * fabricate a false-positive edge to an unrelated same-named symbol.
  *
  * A binding in effect with the EMPTY type is a local no pass can type — a
- * function-literal parameter of an unbindable type shadowing its name (bd
- * tea-rags-mcp-e6xx). It DROPS too: the call binding (`c := New()`) and the
- * import the parameter shadows would both speak for the wrong variable.
+ * function-literal parameter of an unbindable type shadowing its name, or any
+ * local or parameter named like an import (`config, err := loadTwo()`,
+ * `func f(render io.Writer)`; bd tea-rags-mcp-e6xx). It DROPS too: the call
+ * binding (`c := New()`) and the import it shadows would both speak for the
+ * wrong variable. "In effect" is Go's scope rule (`goLocalBindingAt`): a local
+ * a statement declares is not yet in scope on that statement's own lines.
  */
 export class GoLocalBindingSymbolResolutionStrategy implements SymbolResolutionStrategy {
   readonly name = "localBinding";
@@ -26,7 +30,7 @@ export class GoLocalBindingSymbolResolutionStrategy implements SymbolResolutionS
 
   attempt(call: CallRef, ctx: CallContext): SymbolResolutionOutcome {
     if (!call.receiver) return CONTINUE;
-    const binding = resolveLocalBinding(ctx.localBindings, call.receiver, call.startLine);
+    const binding = goLocalBindingAt(ctx.localBindings, call.receiver, call.startLine);
     if (!binding) return CONTINUE;
     if (!binding.type) return DROP;
     const target = resolveByLocalType(this.cfg, binding.type, call.member, ctx);

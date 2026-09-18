@@ -1,12 +1,12 @@
 import { CONTINUE, resolved } from "../../../../../contracts/resolution.js";
 import {
   pickSingleCandidate,
-  resolveLocalBinding,
   type CallContext,
   type CallRef,
   type SymbolResolutionTarget,
 } from "../../../../../contracts/types/codegraph.js";
 import type { SymbolResolutionOutcome, SymbolResolutionStrategy } from "../../../../../contracts/types/language.js";
+import { goLocalBindingAt } from "../../local-scope.js";
 import { lookupGoSymbols } from "../go-symbol-lookup.js";
 import { goPackageDirOf, resolveImportedPackageMember, type ResolverConfig } from "./shared.js";
 
@@ -54,7 +54,7 @@ export class GoGenericInstantiationSymbolResolutionStrategy implements SymbolRes
     if (match === null) return CONTINUE;
     const [, qualifier, name] = match;
     // Any local in effect shadows the declaration or the package — typed or not.
-    if (resolveLocalBinding(ctx.localBindings, qualifier ?? name, call.startLine)) return CONTINUE;
+    if (goLocalBindingAt(ctx.localBindings, qualifier ?? name, call.startLine)) return CONTINUE;
     const target =
       qualifier === undefined
         ? this.samePackageDeclaration(name, ctx)

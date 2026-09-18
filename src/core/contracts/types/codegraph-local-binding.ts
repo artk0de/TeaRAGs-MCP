@@ -50,7 +50,9 @@ export interface LocalBinding {
    * `line..endLine` the variable still denotes whatever it denoted above the
    * statement. netbox's `layout = layout.Layout(\n    layout.Row(…))` is that
    * shape: the inner receivers name the imported MODULE, not the class being
-   * constructed. Only a consumer that knows the extent can say so.
+   * constructed. Only a consumer that knows the extent can say so. Go's
+   * walker sets it on the locals a statement declares (Go scopes them from
+   * the statement's END), and Go reads it through `goLocalBindingAt`.
    *
    * ABSENT means "unknown, treat as `line`" — every index written before this
    * field existed, and every binding that is not an establishing statement
