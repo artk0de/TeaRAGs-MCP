@@ -182,12 +182,29 @@ export function mapImportToFile(
  * The suffix a specifier writes, and the source extensions it can stand for,
  * in TypeScript's own precedence order. `.js` is the NodeNext convention —
  * source writes `import "./foo.js"` while the file on disk is `foo.ts` (or,
- * in a React project, `foo.tsx`).
+ * in a React project, `foo.tsx`). `.mjs` / `.cjs` are the same convention for
+ * the ESM- and CJS-only formats, whose sources are `.mts` / `.cts`.
  */
 const SOURCE_EXTENSION_CANDIDATES: readonly { suffix: string; extensions: readonly string[] }[] = [
   { suffix: ".js", extensions: [".ts", ".tsx", ".d.ts"] },
   { suffix: ".jsx", extensions: [".tsx", ".ts"] },
+  { suffix: ".mjs", extensions: [".mts", ".d.mts"] },
+  { suffix: ".cjs", extensions: [".cts", ".d.cts"] },
 ];
+
+/**
+ * Suffixes that already name a TypeScript file, declarations included
+ * (`.d.ts` / `.d.mts` / `.d.cts` end in one of them). A specifier ending in one
+ * is the file as written — `allowImportingTsExtensions`, `node
+ * --experimental-strip-types` and tsx all let source spell it — so appending
+ * another source extension would name `worker.mts.ts`, a file that cannot
+ * exist (bd tea-rags-mcp-x9qsh).
+ */
+const TS_SOURCE_EXTENSIONS: readonly string[] = [".ts", ".tsx", ".mts", ".cts"];
+
+function namesTsSourceFile(path: string): boolean {
+  return TS_SOURCE_EXTENSIONS.some((extension) => path.endsWith(extension));
+}
 
 /** Extensions tried for a specifier that writes no suffix at all (`"./foo"`). */
 const EXTENSIONLESS_CANDIDATES: readonly string[] = [".ts", ".tsx", ".d.ts"];
@@ -203,7 +220,8 @@ const DIRECTORY_MODULE_STEM = "index";
  * Rewrite a mapped path's suffix to the TypeScript source file it stands for,
  * so graph edges land on paths that match the codegraph file table.
  *
- * `.ts` / `.tsx` / `.d.ts` are already explicit and pass through untouched.
+ * A suffix in {@link TS_SOURCE_EXTENSIONS} is already explicit and passes
+ * through untouched.
  * Everything else has candidates, and `fileExists` picks among them — the
  * FIRST candidate that exists wins, so a project holding both `foo.ts` and
  * `foo.tsx` resolves the way `tsc` would.
@@ -223,11 +241,11 @@ const DIRECTORY_MODULE_STEM = "index";
  * codebase defers rather than fabricates (see `MethodEdgeKind`).
  */
 function resolveTsSourcePath(path: string, fileExists?: ProjectFileProbe): string {
-  // An explicit `.ts` / `.tsx` specifier has nothing to choose between, and
+  // An explicit TypeScript specifier has nothing to choose between, and
   // this returns BEFORE the probe on purpose: the probe's cache is what keeps
   // a resolve pass off one syscall per import per call site, and a lookup whose
   // answer cannot change the result is pure cost.
-  if (path.endsWith(".ts") || path.endsWith(".tsx")) return path;
+  if (namesTsSourceFile(path)) return path;
   const candidates = tsSourcePathCandidates(path);
   return candidates.find((candidate) => fileExists?.(candidate)) ?? candidates[0];
 }
@@ -249,7 +267,7 @@ function verifiedTsSourcePath(path: string, fileExists?: ProjectFileProbe): stri
 
 /** Source files a mapped specifier could stand for, in `tsc`'s resolution order. */
 function tsSourcePathCandidates(path: string): readonly string[] {
-  if (path.endsWith(".ts") || path.endsWith(".tsx")) return [path];
+  if (namesTsSourceFile(path)) return [path];
 
   const rule = SOURCE_EXTENSION_CANDIDATES.find((entry) => path.endsWith(entry.suffix));
   const stem = rule ? path.slice(0, -rule.suffix.length) : path;

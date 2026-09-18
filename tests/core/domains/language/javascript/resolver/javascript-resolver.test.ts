@@ -1,10 +1,13 @@
 import { describe, expect, it } from "vitest";
 
-import type { CallContext } from "../../../../../../src/core/contracts/types/codegraph.js";
+import type { CallContext, FileExtraction } from "../../../../../../src/core/contracts/types/codegraph.js";
+import type { LanguageFactoryDescriptor } from "../../../../../../src/core/contracts/types/language.js";
 import {
   JavascriptCallResolver,
   mapJavascriptImportToFile,
 } from "../../../../../../src/core/domains/language/javascript/resolver/index.js";
+import { CallEdgeResolutionRunner } from "../../../../../../src/core/domains/trajectory/codegraph/symbols/resolution-runner.js";
+import { CodegraphRunState } from "../../../../../../src/core/domains/trajectory/codegraph/symbols/run-state.js";
 import { InMemoryGlobalSymbolTable } from "../../../../../../src/core/domains/trajectory/codegraph/symbols/symbol-table.js";
 
 function ctx(
@@ -34,6 +37,44 @@ describe("mapJavascriptImportToFile", () => {
 
   it("returns null for bare specifiers (npm packages)", () => {
     expect(mapJavascriptImportToFile("lodash", "x.js")).toBeNull();
+  });
+
+  it("maps a TypeScript-extension specifier to the file as written (bd tea-rags-mcp-x9qsh)", () => {
+    // A JS entry point loading TS source directly — `node
+    // --experimental-strip-types`, tsx — writes the `.ts` it means. Appending
+    // `.js` produced `worker.ts.js`, a path no file table row matches.
+    expect(mapJavascriptImportToFile("./ts-live-resolve-worker.ts", "scripts/spikes/boot.js")).toBe(
+      "scripts/spikes/ts-live-resolve-worker.ts",
+    );
+    expect(mapJavascriptImportToFile("../ui/view.tsx", "scripts/spikes/boot.js")).toBe("scripts/ui/view.tsx");
+    expect(mapJavascriptImportToFile("./worker.mts", "scripts/boot.mjs")).toBe("scripts/worker.mts");
+    expect(mapJavascriptImportToFile("./worker.cts", "scripts/boot.cjs")).toBe("scripts/worker.cts");
+    expect(mapJavascriptImportToFile("./types.d.ts", "scripts/boot.js")).toBe("scripts/types.d.ts");
+  });
+});
+
+describe("JavaScript import file edges (bd tea-rags-mcp-x9qsh)", () => {
+  it("persists a JS import of a TypeScript file as an edge to that file", () => {
+    // The live defect, end to end through the file-edge seam the provider
+    // runs: `scripts/spikes/ts-live-resolve-worker-boot.js` doing
+    // `await import("./ts-live-resolve-worker.ts")` was stored with target
+    // `ts-live-resolve-worker.ts.js`, so the edge pointed at nothing.
+    const factory = {
+      supported: () => ["javascript"],
+      create: () => ({ resolver: new JavascriptCallResolver() }),
+    } as unknown as LanguageFactoryDescriptor;
+    const runner = new CallEdgeResolutionRunner(factory, new CodegraphRunState());
+    const extraction: FileExtraction = {
+      relPath: "scripts/spikes/ts-live-resolve-worker-boot.js",
+      language: "javascript",
+      imports: [{ importText: "./ts-live-resolve-worker.ts", startLine: 20 }],
+      chunks: [],
+      fileScope: [],
+    };
+
+    const edges = runner.resolve(extraction, new InMemoryGlobalSymbolTable());
+
+    expect(edges.fileEdges.map((edge) => edge.targetRelPath)).toEqual(["scripts/spikes/ts-live-resolve-worker.ts"]);
   });
 });
 

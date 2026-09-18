@@ -152,6 +152,66 @@ describe("mapImportToFile .tsx probing (bd tea-rags-mcp-f3zcy)", () => {
   });
 });
 
+/**
+ * A specifier that already names a TypeScript file is the file (bd
+ * tea-rags-mcp-x9qsh). `allowImportingTsExtensions`, `node
+ * --experimental-strip-types` and tsx all let source write `"./worker.mts"`;
+ * appending another source extension produced `worker.mts.ts`, a path no file
+ * table row matches, so the edge and both ends' fan counts were lost.
+ *
+ * The ESM/CJS output suffixes are the NodeNext convention one module format
+ * over: `"./esm.mjs"` is `esm.mts` on disk exactly as `"./foo.js"` is `foo.ts`.
+ */
+describe("mapImportToFile explicit TypeScript extensions (bd tea-rags-mcp-x9qsh)", () => {
+  it("maps .mts / .cts specifiers to the file as written, without probing", () => {
+    const exists = vi.fn(() => false);
+    expect(mapImportToFile("./worker.mts", "src/boot.ts", NO_ALIASES, exists)).toBe("src/worker.mts");
+    expect(mapImportToFile("./worker.cts", "src/boot.ts", NO_ALIASES, exists)).toBe("src/worker.cts");
+    expect(mapImportToFile("./types.d.mts", "src/boot.ts", NO_ALIASES, exists)).toBe("src/types.d.mts");
+    expect(exists).not.toHaveBeenCalled();
+  });
+
+  it("maps .mts / .cts specifiers as written when no probe is supplied", () => {
+    expect(mapImportToFile("../lib/worker.mts", "src/app/boot.ts", NO_ALIASES)).toBe("src/lib/worker.mts");
+    expect(mapImportToFile("../lib/worker.cts", "src/app/boot.ts", NO_ALIASES)).toBe("src/lib/worker.cts");
+  });
+
+  it("rewrites NodeNext .mjs / .cjs specifiers to their .mts / .cts source", () => {
+    expect(mapImportToFile("./esm.mjs", "src/boot.ts", NO_ALIASES)).toBe("src/esm.mts");
+    expect(mapImportToFile("./common.cjs", "src/boot.ts", NO_ALIASES)).toBe("src/common.cts");
+    expect(mapImportToFile("./esm.mjs", "src/boot.ts", NO_ALIASES, () => false)).toBe("src/esm.mts");
+  });
+
+  it("falls back to the .d.mts / .d.cts declaration the probe finds", () => {
+    const exists = (rel: string) => rel === "src/esm.d.mts" || rel === "src/common.d.cts";
+    expect(mapImportToFile("./esm.mjs", "src/boot.ts", NO_ALIASES, exists)).toBe("src/esm.d.mts");
+    expect(mapImportToFile("./common.cjs", "src/boot.ts", NO_ALIASES, exists)).toBe("src/common.d.cts");
+  });
+
+  it("does NOT treat a .mjs specifier as a directory", () => {
+    const exists = (rel: string) => rel === "src/esm/index.ts";
+    expect(mapImportToFile("./esm.mjs", "src/boot.ts", NO_ALIASES, exists)).toBe("src/esm.mts");
+  });
+
+  it("maps explicit TypeScript extensions behind a tsconfig alias as written", () => {
+    const aliases = { baseUrl: ".", paths: { "@/*": ["src/*"] } };
+    expect(mapImportToFile("@/lib/worker.mts", "src/boot.ts", aliases)).toBe("src/lib/worker.mts");
+    expect(mapImportToFile("@/lib/worker.ts", "src/boot.ts", aliases)).toBe("src/lib/worker.ts");
+    expect(mapImportToFile("@/lib/esm.mjs", "src/boot.ts", aliases)).toBe("src/lib/esm.mts");
+  });
+
+  it("answers a catch-all alias with an explicit-extension file only when it exists", () => {
+    // The bare `*` may only answer with a path a file backs (bd t6ycg) — an
+    // explicit extension is no exception, it is simply the one candidate.
+    const catchAll = { baseUrl: ".", paths: { "*": ["./app/javascript/*"] } };
+    const exists = (rel: string) => rel === "app/javascript/workers/sync.mts";
+    expect(mapImportToFile("workers/sync.mts", "app/javascript/Page.tsx", catchAll, exists)).toBe(
+      "app/javascript/workers/sync.mts",
+    );
+    expect(mapImportToFile("workers/missing.mts", "app/javascript/Page.tsx", catchAll, exists)).toBeNull();
+  });
+});
+
 describe("mapImportToFile directory/index resolution (bd tea-rags-mcp-hzsxy)", () => {
   it("maps an extensionless specifier to the directory's index.tsx", () => {
     // The barrel-style directory module every React/TS project writes:

@@ -7,8 +7,8 @@
  * Plain JS (no tsconfig paths, no .ts extension games). Imports are
  * either:
  *   - relative paths: `./foo`, `../foo/bar` — resolved against the
- *     caller's directory, with `.js`/`.jsx`/`.mjs`/`.cjs` extension
- *     guessing.
+ *     caller's directory; an explicit JS or TS extension is kept as
+ *     written, an extensionless specifier defaults to `.js`.
  *   - bare specifiers (`react`, `lodash`) — out of scope; only matter
  *     for node_modules which codegraph excludes.
  *
@@ -31,7 +31,14 @@ import {
 } from "../../../../contracts/types/codegraph.js";
 import { ECMASCRIPT_GLOBALS } from "../../shared/ecmascript-globals.js";
 
-const JS_EXTS = [".js", ".jsx", ".mjs", ".cjs"];
+/**
+ * Suffixes that make a relative specifier name its file as written. The
+ * TypeScript ones are what a JS entry point writes when it loads TS source
+ * directly (`node --experimental-strip-types`, tsx); appending `.js` to them
+ * named `worker.ts.js`, a file that cannot exist (bd tea-rags-mcp-x9qsh).
+ * `.d.ts` / `.d.mts` / `.d.cts` are covered by their last segment.
+ */
+const EXPLICIT_MODULE_EXTENSIONS = [".js", ".jsx", ".mjs", ".cjs", ".ts", ".tsx", ".mts", ".cts"];
 
 export class JavascriptCallResolver implements CallResolver {
   readonly language = "javascript";
@@ -218,7 +225,7 @@ export function mapJavascriptImportToFile(importText: string, callerFile: string
   const joined = posix.normalize(posix.join(callerDir, importText));
   // If the import already carries an extension, keep it (Node modern
   // ESM requires explicit extensions). Otherwise default to `.js`.
-  for (const ext of JS_EXTS) {
+  for (const ext of EXPLICIT_MODULE_EXTENSIONS) {
     if (joined.endsWith(ext)) return joined;
   }
   return `${joined}.js`;

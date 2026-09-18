@@ -136,11 +136,14 @@ describe("seeded support versions", () => {
       // and javascript walker 2: bd tea-rags-mcp-hwwtw stopped deciding member
       // calls by global short-name uniqueness — typescript dispatches a
       // checker-typed interface receiver through the cone, javascript keeps the
-      // global fallback for bare calls only.
+      // global fallback for bare calls only. typescript walker 6 and javascript
+      // walker 3: bd tea-rags-mcp-x9qsh maps a specifier that already names a
+      // TypeScript file to that file, so an index built before it holds file
+      // edges to `<file>.ts.js` / `<file>.mts.ts` paths no file row matches.
       // Every other language is still at its seed.
       const WALKER_BUMPED = new Map([
-        ["typescript", 5],
-        ["javascript", 2],
+        ["typescript", 6],
+        ["javascript", 3],
         ["python", 8],
         ["ruby", 3],
         ["java", 2],
