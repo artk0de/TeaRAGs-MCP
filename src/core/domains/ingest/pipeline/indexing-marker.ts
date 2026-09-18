@@ -8,6 +8,7 @@
 import type { EmbeddingProvider } from "../../../adapters/embeddings/base.js";
 import type { QdrantManager } from "../../../adapters/qdrant/client.js";
 import { INDEXING_METADATA_ID } from "../../../contracts/constants.js";
+import { parseMarkerPayload, type WorktreeSeedPending } from "./indexing-marker-codec.js";
 
 /**
  * Store or update the indexing metadata marker in a collection.
@@ -139,5 +140,53 @@ export async function updateHeartbeat(qdrant: QdrantManager, collectionName: str
     );
   } catch {
     // Non-fatal: heartbeat failure should not abort indexing
+  }
+}
+
+/**
+ * Record what a seeded first index still owes its collection (bd
+ * tea-rags-mcp-k8gac) — see {@link WorktreeSeedPending}. Throws: a seed that
+ * cannot persist this has no way to finish after a crash, so the caller drops
+ * it rather than keep a clone nothing can complete.
+ */
+export async function markWorktreeSeedPending(
+  qdrant: QdrantManager,
+  collectionName: string,
+  pending: WorktreeSeedPending,
+): Promise<void> {
+  await qdrant.setPayload(
+    collectionName,
+    { worktreeSeedPending: pending },
+    { points: [INDEXING_METADATA_ID], wait: true },
+  );
+}
+
+/**
+ * The seed a collection still owes, or `undefined`. A failed read answers
+ * `undefined`: the marker stays, so the next run resumes instead of this one.
+ */
+export async function readWorktreeSeedPending(
+  qdrant: QdrantManager,
+  collectionName: string,
+): Promise<WorktreeSeedPending | undefined> {
+  try {
+    const point = await qdrant.getPoint(collectionName, INDEXING_METADATA_ID);
+    return point?.payload ? parseMarkerPayload(point.payload).worktreeSeedPending : undefined;
+  } catch (error) {
+    console.error(`[IndexingMarker] could not read the pending worktree seed of ${collectionName}:`, error);
+    return undefined;
+  }
+}
+
+/** The seed is settled. A failed clear only means the next run redoes the stamp and the git rebuild. */
+export async function clearWorktreeSeedPending(qdrant: QdrantManager, collectionName: string): Promise<void> {
+  try {
+    await qdrant.batchDeletePayload(
+      collectionName,
+      [{ keys: ["worktreeSeedPending"], points: [INDEXING_METADATA_ID] }],
+      { wait: true },
+    );
+  } catch (error) {
+    console.error(`[IndexingMarker] could not clear the pending worktree seed of ${collectionName}:`, error);
   }
 }

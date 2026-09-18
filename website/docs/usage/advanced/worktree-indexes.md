@@ -160,6 +160,12 @@ is nothing to rebuild.
 If the run over a fresh seed fails, the seeded collection is dropped, so the
 next attempt starts from a clean slate instead of an unstamped clone.
 
+If the process dies instead — killed during the seeded run, or an MCP server
+restarted while the git rebuild was still going — the collection remembers
+what it still owes: the version stamps and the git rebuild. The next index run
+on it (an ordinary incremental one) finishes both, again with the git rebuild
+in the background. A git rebuild that fails is retried the same way.
+
 ### Seeded collections are ordinary projects
 
 Automatic seeding writes no worktree provenance. The collection is registered

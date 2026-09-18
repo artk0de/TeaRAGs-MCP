@@ -50,6 +50,20 @@
   of the stamps the drift monitors read. Why: a seed that differs from a fresh
   index on any of those stamps reports drift a fresh index would not; adding a
   drift axis without adding it to that gate reopens exactly that.
+- **What a seed still owes lives on the collection's indexing marker, not in the
+  registry.** Right after the clone `IndexingOps#trySeedFromWorktree` writes
+  `worktreeSeedPending` (`WorktreeSeedPending`, `indexing-marker-codec.ts`: the
+  SEEDING build's language-version stamp) onto the marker point; it is cleared
+  only once that stamp is written AND the git rebuild finished
+  (`IndexingOps#refreshSeededGitLayer`), and any later incremental run that
+  finds it settles both (`IndexingOps#resumePendingWorktreeSeed`). Why: the
+  debts outlive the seeding process — a kill during the seeded incremental left
+  an unstamped clone that reports version drift and steers to `--force`, and a
+  restart during the rebuild left the sibling's git signals behind an
+  `enrichedAt` recovery never revisits. The registry cannot hold it: a seeded
+  collection has no entry until its first incremental records one, which is
+  exactly the window a kill must survive — the marker is cloned and dropped with
+  the collection itself.
 
 ## Boundaries
 

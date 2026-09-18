@@ -1,7 +1,11 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { INDEXING_METADATA_ID } from "../../../../../src/core/contracts/constants.js";
-import { storeIndexingMarker } from "../../../../../src/core/domains/ingest/pipeline/indexing-marker.js";
+import {
+  clearWorktreeSeedPending,
+  readWorktreeSeedPending,
+  storeIndexingMarker,
+} from "../../../../../src/core/domains/ingest/pipeline/indexing-marker.js";
 
 describe("storeIndexingMarker", () => {
   let mockQdrant: any;
@@ -212,5 +216,25 @@ describe("storeIndexingMarker", () => {
       mockQdrant.getCollectionInfo.mockRejectedValue(new Error("connection refused"));
       await expect(storeIndexingMarker(mockQdrant, mockEmbeddings, "col", false)).resolves.toBeUndefined();
     });
+  });
+});
+
+describe("pending worktree seed on the marker (bd k8gac)", () => {
+  it("answers undefined when the marker cannot be read — the next run resumes instead", async () => {
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    const qdrant = { getPoint: vi.fn().mockRejectedValue(new Error("qdrant down")) };
+    await expect(readWorktreeSeedPending(qdrant as never, "col")).resolves.toBeUndefined();
+  });
+
+  it("clears only the pending key on the marker point, and never throws when that fails", async () => {
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    const qdrant = { batchDeletePayload: vi.fn().mockRejectedValue(new Error("qdrant down")) };
+
+    await expect(clearWorktreeSeedPending(qdrant as never, "col")).resolves.toBeUndefined();
+    expect(qdrant.batchDeletePayload).toHaveBeenCalledWith(
+      "col",
+      [{ keys: ["worktreeSeedPending"], points: [INDEXING_METADATA_ID] }],
+      { wait: true },
+    );
   });
 });

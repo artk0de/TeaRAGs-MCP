@@ -82,6 +82,9 @@ function harness(
       },
       listCollections: vi.fn(async () => []),
       getPoint: vi.fn(async () => null),
+      // The seed's pending marker (write after the clone, clear once settled).
+      setPayload: vi.fn().mockResolvedValue(undefined),
+      batchDeletePayload: vi.fn().mockResolvedValue(undefined),
     } as never,
     embeddings: {
       embed: vi.fn().mockResolvedValue([0]),
