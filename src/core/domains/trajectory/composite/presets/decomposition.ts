@@ -16,10 +16,14 @@ import type { CompositeRerankPreset, OverlayMask, SignalLevel } from "../../../.
  * `instability` out of `architecturalHub`'s weights (Santos 2017).
  *
  * `groupBy: "parentSymbolId"` is preserved from the static preset so
- * rank_chunks still reports one row per owning class.
+ * rank_chunks still reports one row per owning class, and so is its
+ * `coreLogic` default filter (function/class chunks, no tests): this class
+ * replaces the static one by name whenever codegraph is on, so dropping the
+ * default would silently widen `decomposition` to every chunk type.
  */
 export class DecompositionCompositePreset implements CompositeRerankPreset {
   readonly name = "decomposition";
+  readonly filter = { presets: "coreLogic" } as const;
   readonly description = "Large, dense, over-connected methods — decomposition candidates ranked with call-graph load";
   readonly signalLevel: SignalLevel = "chunk";
   readonly tools = ["semantic_search", "hybrid_search", "rank_chunks", "find_similar"];

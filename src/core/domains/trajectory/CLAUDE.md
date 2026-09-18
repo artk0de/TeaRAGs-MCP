@@ -48,7 +48,9 @@ carry their own navigators.
   mandatory `requires` is a registered trajectory KEY — the codegraph key is
   `"codegraph.symbols"`, not `"codegraph"` (`decomposition` / `godModule`
   require it alone, `bugHunt` requires `["codegraph.symbols", "git"]`). A
-  dropped composite falls back to the same-named provider preset. The switch is
+  dropped composite falls back to the same-named provider preset, so a shadowing
+  composite must repeat that preset's default `filter` or the name changes scope
+  with the flag (`decomposition` lost `coreLogic` this way). The switch is
   `CODEGRAPH_ENABLED=true` (`buildEnvInputs` in `bootstrap/config/parse.ts`),
   default off. Why: `ENABLE_CODEGRAPH` exists nowhere in `src/`, and
   `requires: ["codegraph"]` gates on nothing — either literal ranks differently

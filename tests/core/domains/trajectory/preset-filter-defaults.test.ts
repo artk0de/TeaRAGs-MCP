@@ -1,13 +1,16 @@
 import { describe, expect, it } from "vitest";
 
 import type { RerankPreset } from "../../../../src/core/contracts/types/reranker.js";
+import { CODEGRAPH_SYMBOLS_PRESETS } from "../../../../src/core/domains/trajectory/codegraph/symbols/rerank/presets/index.js";
 import {
   ArchitecturalHubPreset,
   BlastRadiusPreset,
   BugHuntCompositePreset,
+  buildCompositePresets,
   CodeReviewCompositePreset,
   CriticalPathPreset,
   DangerousCompositePreset,
+  DecompositionCompositePreset,
   EntryPointPreset,
   HotspotsCompositePreset,
   OwnershipCompositePreset,
@@ -80,5 +83,34 @@ describe("rerank preset hygiene defaults", () => {
   it("dual-defined codeReview has undefined filter on BOTH git and composite", () => {
     expect(findIn(GIT_PRESETS, "codeReview")?.filter).toBeUndefined();
     expect(findIn(COMPOSITE_PRESETS, "codeReview")?.filter).toBeUndefined();
+  });
+});
+
+// A composite REPLACES the provider preset of the same name once its
+// trajectories are registered (codegraph on). Its default filter is part of
+// what the name promises: `decomposition` ranking function/class chunks
+// (coreLogic) with codegraph off and every chunk type with it on is a silent
+// behaviour switch no caller asked for.
+describe("a composite that shadows a provider preset keeps its default filter", () => {
+  const PROVIDER_PRESETS: RerankPreset[] = [...GIT_PRESETS, ...STATIC_PRESETS, ...CODEGRAPH_SYMBOLS_PRESETS];
+  const shadowing = buildCompositePresets(new Set(["git", "codegraph.symbols"])).filter((composite) =>
+    PROVIDER_PRESETS.some((provider) => provider.name === composite.name),
+  );
+
+  it("covers the structural composites", () => {
+    expect(shadowing.map((p) => p.name)).toEqual(expect.arrayContaining(["decomposition", "godModule"]));
+  });
+
+  it.each(shadowing.map((composite) => [composite.name, composite] as const))(
+    "%s carries the same default as the provider preset it replaces",
+    (name, composite) => {
+      for (const provider of PROVIDER_PRESETS.filter((p) => p.name === name)) {
+        expect(composite.filter).toEqual(provider.filter);
+      }
+    },
+  );
+
+  it("decomposition keeps the coreLogic hygiene default under codegraph", () => {
+    expect(new DecompositionCompositePreset().filter).toEqual({ presets: "coreLogic" });
   });
 });
