@@ -59,7 +59,7 @@ import { assembleFileSignals } from "./infra/metrics/file-assembler.js";
 import { gitPayloadSignalDescriptors } from "./payload-signals.js";
 import { gitDerivedSignals } from "./rerank/derived-signals/index.js";
 import { GIT_PRESETS } from "./rerank/presets/index.js";
-import type { ChunkChurnOverlay } from "./types.js";
+import { GIT_OPTIONAL_OVERLAY_KEYS, type ChunkChurnOverlay } from "./types.js";
 
 /** Subset of TrajectoryGitConfig used by the provider at runtime, plus the
  *  VCS adapter kind (`config.vcs.adapter`) the per-root adapters are built with. */
@@ -113,6 +113,9 @@ export class GitEnrichmentProvider implements EnrichmentProvider {
   readonly derivedSignals = gitDerivedSignals;
   readonly filters: FilterDescriptor[] = gitFilters;
   readonly presets: RerankPreset[] = GIT_PRESETS;
+
+  // ── Ingest-side contract ──
+  readonly optionalOverlayKeys = GIT_OPTIONAL_OVERLAY_KEYS;
 
   private readonly squashOpts?: SquashOptions;
   private readonly config: GitProviderConfig;

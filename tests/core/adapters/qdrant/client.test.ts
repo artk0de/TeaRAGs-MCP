@@ -2555,6 +2555,41 @@ describe("QdrantManager", () => {
     });
   });
 
+  describe("batchDeletePayload", () => {
+    it("should early return on empty operations", async () => {
+      await manager.batchDeletePayload("test-collection", []);
+
+      expect(mockClient.batchUpdate).not.toHaveBeenCalled();
+    });
+
+    it("folds every delete into ONE batchUpdate of delete_payload operations addressed by point", async () => {
+      await manager.batchDeletePayload("test-collection", [
+        { keys: ["git.chunk.ageDays"], points: ["id-1", "id-2"] },
+        { keys: ["git.file.lastModifiedAt", "git.file.ageDays"], points: ["id-3"] },
+      ]);
+
+      expect(mockClient.batchUpdate).toHaveBeenCalledTimes(1);
+      expect(mockClient.batchUpdate).toHaveBeenCalledWith("test-collection", {
+        operations: [
+          { delete_payload: { keys: ["git.chunk.ageDays"], points: [expect.any(String), expect.any(String)] } },
+          { delete_payload: { keys: ["git.file.lastModifiedAt", "git.file.ageDays"], points: [expect.any(String)] } },
+        ],
+        wait: false,
+        ordering: "weak",
+      });
+    });
+
+    it("splits into sub-batches of 100 operations", async () => {
+      const operations = Array.from({ length: 150 }, (_, i) => ({ keys: [`k${i}`], points: [`id-${i}`] }));
+
+      await manager.batchDeletePayload("test-collection", operations);
+
+      expect(mockClient.batchUpdate).toHaveBeenCalledTimes(2);
+      expect(mockClient.batchUpdate.mock.calls[0][1].operations).toHaveLength(100);
+      expect(mockClient.batchUpdate.mock.calls[1][1].operations).toHaveLength(50);
+    });
+  });
+
   describe("deletePayloadKeys", () => {
     it("should call client.deletePayload with keys and empty filter by default", async () => {
       await manager.deletePayloadKeys("test-collection", ["parentName"]);

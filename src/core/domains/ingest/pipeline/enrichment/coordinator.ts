@@ -1080,7 +1080,7 @@ export class EnrichmentCoordinator {
   }
 
   private createRunState(spec: EnrichmentRunSpec): RunState {
-    const applier = new EnrichmentApplier(this.qdrant);
+    const applier = new EnrichmentApplier(this.qdrant, undefined, this.providers);
     const chunkPhase = new ChunkPhase(applier, this.executor, this.blobReaderFactory);
     const filePhase = new FilePhase(applier, this.markerStore, this.executor);
     filePhase.bindChunkPhase(chunkPhase);

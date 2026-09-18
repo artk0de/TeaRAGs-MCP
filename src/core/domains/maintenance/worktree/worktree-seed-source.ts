@@ -167,6 +167,11 @@ function checkLanguageVersions(
  * sides carry can disagree, as in `EnvDriftMonitor`. The codegraph flag lives in
  * a dedicated entry field and is compared strictly: an unstamped sibling had it
  * off, and a graph it never built cannot be cloned.
+ *
+ * A sibling with NO env stamp at all is refused whenever this run has one to
+ * compare. Letting it through would accept every axis unchecked — chunk size,
+ * hybrid, git windows — and a clone that differs on any of them reports drift a
+ * fresh index would not. Only this run omitting its own snapshot skips the axis.
  */
 function checkIndexEnv(entry: CollectionEntry, build: WorktreeSeedBuildIdentity): WorktreeSeedRejection | undefined {
   const sourceCodegraph = entry.codegraphEnabled ?? false;
@@ -178,7 +183,13 @@ function checkIndexEnv(entry: CollectionEntry, build: WorktreeSeedBuildIdentity)
   }
   const stamped = entry.env ?? entry.tuning;
   const current = build.envSnapshot;
-  if (!stamped || !current) return undefined;
+  if (!current) return undefined;
+  if (!stamped) {
+    return {
+      reason: "index-env",
+      detail: "the sibling's registry entry records no env stamp (`env` / `tuning`) to compare index settings against",
+    };
+  }
   const moved: string[] = [];
   for (const group of REGISTRY_ENV_GROUPS) {
     if (group.consequence === "runtime") continue;

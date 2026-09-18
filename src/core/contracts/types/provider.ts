@@ -44,6 +44,31 @@ export interface ChunkSignalOverlay {
   [key: string]: unknown;
 }
 
+/**
+ * Bare inner keys a provider's overlay at a level MAY leave out, meaning "no
+ * data" — see {@link EnrichmentProvider.optionalOverlayKeys}.
+ */
+export interface OptionalOverlayKeys {
+  readonly file?: readonly string[];
+  readonly chunk?: readonly string[];
+}
+
+/** The keys an overlay interface NAMES — its `[key: string]` base signature excluded. */
+type NamedOverlayKey<T> = Extract<
+  keyof { [K in keyof T as string extends K ? never : number extends K ? never : K]: T[K] },
+  keyof T
+>;
+
+/**
+ * The keys an overlay interface declares optional (`ageDays?: number`). A
+ * provider builds its {@link OptionalOverlayKeys} from a
+ * `Record<OptionalOverlayKey<Overlay>, true>`, so the compiler rejects both a
+ * missing optional key and a required one listed by mistake.
+ */
+export type OptionalOverlayKey<T> = {
+  [K in NamedOverlayKey<T>]-?: Record<never, never> extends Pick<T, K> ? K : never;
+}[NamedOverlayKey<T>];
+
 // --- Scoring weights ---
 
 export interface ScoringWeights {
@@ -503,6 +528,17 @@ export interface EnrichmentProvider {
   resolveRoot: (absolutePath: string) => string;
   /** Optional per-file transform applied at write time. */
   readonly fileSignalTransform?: FileSignalTransform;
+  /**
+   * Overlay keys this provider leaves OUT to say "no data" (git: a file or chunk
+   * with no commit carries no `ageDays`). An overlay write MERGES into the
+   * stored `<key>.<level>` object, so an omitted key would keep the value an
+   * earlier run wrote; the enrichment writers therefore delete every key listed
+   * here that the written overlay omits (bd tea-rags-mcp-9mwny). Bare inner
+   * keys, per level; absent ⇒ the provider always writes its whole overlay and
+   * nothing is deleted. A bare `enrichedAt` stamp is not an overlay and never
+   * triggers the delete.
+   */
+  readonly optionalOverlayKeys?: OptionalOverlayKeys;
   /** File-level signal enrichment (prefetch at T=0, or backfill for specific paths) */
   buildFileSignals: (root: string, options?: FileSignalOptions) => Promise<Map<string, FileSignalOverlay>>;
   /** Chunk-level signal enrichment (streaming per-batch or post-flush). */

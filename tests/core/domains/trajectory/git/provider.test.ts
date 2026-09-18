@@ -101,6 +101,13 @@ describe("GitEnrichmentProvider", () => {
     expect(typeof provider.resolveRoot).toBe("function");
   });
 
+  it("declares the overlay keys it omits for 'no commit' as optional, so a re-enrichment clears them (bd 9mwny)", () => {
+    // file: assembleFileSignals leaves both out for a file without history;
+    // chunk: assembleChunkSignals leaves ageDays out when no commit touched the
+    // chunk (its lastModifiedAt stays, as the 0 sentinel).
+    expect(provider.optionalOverlayKeys).toEqual({ file: ["lastModifiedAt", "ageDays"], chunk: ["ageDays"] });
+  });
+
   it("has fileSignalTransform that calls computeFileSignals", () => {
     expect(typeof provider.fileSignalTransform).toBe("function");
     // Call with minimal FileChurnData shape to exercise the arrow function

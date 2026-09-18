@@ -7,7 +7,12 @@
  * - Research-backed churn metrics (Nagappan & Ball 2005)
  */
 
-import type { ChunkSignalOverlay, FileSignalOverlay } from "../../../contracts/index.js";
+import type {
+  ChunkSignalOverlay,
+  FileSignalOverlay,
+  OptionalOverlayKey,
+  OptionalOverlayKeys,
+} from "../../../contracts/index.js";
 
 /**
  * File-level git signals (stored in vector DB for all chunks of a file)
@@ -114,3 +119,27 @@ export interface ChunkChurnOverlay extends ChunkSignalOverlay {
   /** Distinct authors of the chunk's live lines */
   blameContributorCount: number;
 }
+
+/** `GitFileSignals` keys a file without history leaves out (`assembleFileSignals`). */
+const FILE_OPTIONAL_OVERLAY_KEYS: Record<OptionalOverlayKey<GitFileSignals>, true> = {
+  lastModifiedAt: true,
+  ageDays: true,
+};
+
+/** `ChunkChurnOverlay` keys a chunk no commit touched leaves out (`assembleChunkSignals`). */
+const CHUNK_OPTIONAL_OVERLAY_KEYS: Record<OptionalOverlayKey<ChunkChurnOverlay>, true> = {
+  ageDays: true,
+};
+
+/**
+ * What `GitEnrichmentProvider.optionalOverlayKeys` declares: the overlay keys
+ * git omits to say "no commit", which a re-enrichment must therefore DELETE
+ * rather than merge around (bd tea-rags-mcp-9mwny). Derived from the optional
+ * fields of the two overlay interfaces through `Record<OptionalOverlayKey<…>,
+ * true>`, so making another field optional without listing it here — or
+ * listing a required one — fails to compile.
+ */
+export const GIT_OPTIONAL_OVERLAY_KEYS: OptionalOverlayKeys = {
+  file: Object.keys(FILE_OPTIONAL_OVERLAY_KEYS),
+  chunk: Object.keys(CHUNK_OPTIONAL_OVERLAY_KEYS),
+};

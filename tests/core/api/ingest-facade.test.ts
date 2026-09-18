@@ -44,8 +44,16 @@ vi.mock("../../../src/core/domains/ingest/pipeline/enrichment/coordinator.js", (
   },
 }));
 
+const mockRecoveryInstances: { applier: any }[] = [];
 vi.mock("../../../src/core/domains/ingest/pipeline/enrichment/recovery.js", () => ({
-  EnrichmentRecovery: class {},
+  EnrichmentRecovery: class {
+    constructor(
+      _qdrant: any,
+      public applier: any,
+    ) {
+      mockRecoveryInstances.push(this);
+    }
+  },
 }));
 
 vi.mock("../../../src/core/domains/ingest/factory.js", () => ({
@@ -146,6 +154,38 @@ describe("IngestFacade", () => {
     });
     const coordinator = mockCoordinatorInstances.at(-1);
     expect(coordinator.providers).toEqual([stubA, stubB]);
+  });
+
+  it("hands recovery an applier that knows each provider's optional overlay keys (bd 9mwny)", async () => {
+    // Recovery re-enriches points through its OWN applier; built without the
+    // providers it would merge around the keys an overlay omits and keep them.
+    const deletes: unknown[] = [];
+    const qdrant = {
+      collectionExists: vi.fn().mockResolvedValue(false),
+      checkHealth: vi.fn().mockResolvedValue(true),
+      url: "http://localhost:6333",
+      batchSetPayload: vi.fn().mockResolvedValue(undefined),
+      batchDeletePayload: vi.fn(async (_collection: string, ops: unknown[]) => {
+        deletes.push(...ops);
+        return Promise.resolve();
+      }),
+    };
+    new IngestFacade({
+      qdrant: qdrant as any,
+      embeddings: {
+        embed: vi.fn(),
+        checkHealth: vi.fn().mockResolvedValue(true),
+        getProviderName: vi.fn().mockReturnValue("mock"),
+      } as any,
+      config: {} as any,
+      trajectoryConfig: { enableGitMetadata: true },
+      enrichmentProviders: [{ key: "git", optionalOverlayKeys: { chunk: ["ageDays"] } } as any],
+    });
+
+    const { applier } = mockRecoveryInstances.at(-1)!;
+    await applier.applyChunkSignals("coll", "git", new Map([["a.ts", new Map([["c1", { commitCount: 0 }]])]]), "t1");
+
+    expect(deletes).toEqual([{ keys: ["git.chunk.ageDays"], points: ["c1"] }]);
   });
 
   it("registers zero providers when enrichmentProviders omitted (no inline git construction)", () => {

@@ -66,6 +66,25 @@ describe("parseMarkerPayload", () => {
     expect(parsed.enrichment).toBeUndefined();
   });
 
+  it("reads a pending worktree seed and round-trips it (bd k8gac)", () => {
+    const worktreeSeedPending = {
+      seededAt: "2026-09-19T00:00:00.000Z",
+      languageVersions: { typescript: { walker: 2, chunking: 1 } },
+    };
+    const parsed = parseMarkerPayload({ indexingComplete: true, worktreeSeedPending });
+    expect(parsed.worktreeSeedPending).toEqual(worktreeSeedPending);
+    expect(serializeMarkerPayload(parsed).worktreeSeedPending).toEqual(worktreeSeedPending);
+  });
+
+  it("drops a malformed pending worktree seed, and reads missing versions as an empty stamp", () => {
+    expect(parseMarkerPayload({ worktreeSeedPending: "yes" }).worktreeSeedPending).toBeUndefined();
+    expect(parseMarkerPayload({ worktreeSeedPending: { languageVersions: {} } }).worktreeSeedPending).toBeUndefined();
+    expect(parseMarkerPayload({ worktreeSeedPending: { seededAt: "t" } }).worktreeSeedPending).toEqual({
+      seededAt: "t",
+      languageVersions: {},
+    });
+  });
+
   it("parses modelInfo from raw payload", () => {
     const raw = {
       indexingComplete: false,

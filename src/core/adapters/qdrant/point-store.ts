@@ -581,6 +581,41 @@ export class QdrantPointStore {
     }
   }
 
+  /**
+   * Remove payload keys from explicit points, several key sets per request —
+   * the per-point counterpart of {@link deletePayloadKeys}, and the delete half
+   * of {@link batchSetPayload}: same `batchUpdate` request shape, same 100-op
+   * sub-batches, same `wait` / `ordering` defaults. `keys` are full dotted paths
+   * (`git.chunk.ageDays`), which Qdrant resolves into nested payload objects.
+   */
+  async batchDeletePayload(
+    collectionName: string,
+    operations: { keys: string[]; points: (string | number)[] }[],
+    options: {
+      wait?: boolean;
+      ordering?: "weak" | "medium" | "strong";
+    } = {},
+  ): Promise<void> {
+    if (operations.length === 0) return;
+
+    const { wait = false, ordering = "weak" } = options;
+    const BATCH_SIZE = 100;
+    for (let i = 0; i < operations.length; i += BATCH_SIZE) {
+      const batch = operations.slice(i, i + BATCH_SIZE);
+      const isLast = i + BATCH_SIZE >= operations.length;
+      const updateOps = batch.map((op) => ({
+        delete_payload: { keys: op.keys, points: op.points.map((id) => this.normalizeId(id)) },
+      }));
+      await this.connection.call(async () =>
+        this.connection.client.batchUpdate(collectionName, {
+          operations: updateOps,
+          wait: isLast ? wait : false,
+          ordering,
+        }),
+      );
+    }
+  }
+
   /** Delete payload keys from all points (or filtered subset). */
   async deletePayloadKeys(collectionName: string, keys: string[], filter?: Record<string, unknown>): Promise<void> {
     await this.connection.call(async () =>

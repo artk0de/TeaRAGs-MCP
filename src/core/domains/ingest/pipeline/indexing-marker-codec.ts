@@ -4,7 +4,28 @@
  * into a single canonical format.
  */
 
+import type { LanguageCodeVersions } from "../../../contracts/types/language.js";
 import type { EnrichmentMarkerMap } from "./enrichment/types.js";
+
+/**
+ * What a first index seeded from a sibling worktree still owes its collection
+ * (bd tea-rags-mcp-k8gac). Written right after the clone, removed once the
+ * seed's language-version stamp AND its git rebuild are done; a run that finds
+ * it resumes both. It lives on the marker because the marker is cloned and
+ * dropped WITH the collection — a seeded collection has no registry entry until
+ * its first incremental run records one, which is exactly the window a kill
+ * must survive.
+ */
+export interface WorktreeSeedPending {
+  /** When the sibling's footprint was cloned (ISO). */
+  seededAt: string;
+  /**
+   * The stamp the seed owes the registry: the SEEDING build's versions. A
+   * later process may run another build, and stamping its versions would claim
+   * the cloned data as its own.
+   */
+  languageVersions: Record<string, Partial<LanguageCodeVersions>>;
+}
 
 export interface IndexingMarkerPayload {
   indexingComplete: boolean;
@@ -18,6 +39,7 @@ export interface IndexingMarkerPayload {
     dimensions: number;
   };
   enrichment?: EnrichmentMarkerMap;
+  worktreeSeedPending?: WorktreeSeedPending;
 }
 
 /**
@@ -81,6 +103,7 @@ export function parseMarkerPayload(raw: Record<string, unknown>): IndexingMarker
       raw.enrichment !== null && raw.enrichment !== undefined && typeof raw.enrichment === "object"
         ? (raw.enrichment as EnrichmentMarkerMap)
         : undefined,
+    worktreeSeedPending: parseWorktreeSeedPending(raw.worktreeSeedPending),
   };
 }
 
@@ -99,7 +122,22 @@ export function serializeMarkerPayload(marker: IndexingMarkerPayload): Record<st
   }
   if (marker.modelInfo !== undefined) result.modelInfo = marker.modelInfo;
   if (marker.enrichment !== undefined) result.enrichment = marker.enrichment;
+  if (marker.worktreeSeedPending !== undefined) result.worktreeSeedPending = marker.worktreeSeedPending;
   return result;
+}
+
+function parseWorktreeSeedPending(value: unknown): WorktreeSeedPending | undefined {
+  if (typeof value !== "object" || value === null) return undefined;
+  const obj = value as Record<string, unknown>;
+  if (typeof obj.seededAt !== "string") return undefined;
+  const versions = obj.languageVersions;
+  return {
+    seededAt: obj.seededAt,
+    languageVersions:
+      typeof versions === "object" && versions !== null
+        ? (versions as Record<string, Partial<LanguageCodeVersions>>)
+        : {},
+  };
 }
 
 function parseModelInfoField(value: unknown): { model: string; contextLength: number; dimensions: number } | undefined {

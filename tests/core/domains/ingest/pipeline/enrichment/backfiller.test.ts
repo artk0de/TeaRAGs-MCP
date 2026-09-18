@@ -62,6 +62,48 @@ describe("EnrichmentBackfiller", () => {
     expect(buildChunkSignals).toHaveBeenCalledTimes(1);
   });
 
+  it("clears the optional keys a backfilled overlay omits, at both levels (bd tea-rags-mcp-9mwny)", async () => {
+    const qdrant = new MockQdrantManager();
+    await qdrant.createCollection("coll", 4);
+    // An earlier run's overlays: a file with history, a chunk a commit touched.
+    await qdrant.addPoints("coll", [
+      {
+        id: "c1",
+        vector: [0, 0, 0, 0],
+        payload: {
+          git: {
+            file: { commitCount: 9, lastModifiedAt: 1_700_000_000, ageDays: 30 },
+            chunk: { commitCount: 2, lastModifiedAt: 1_700_000_000, ageDays: 20 },
+          },
+        },
+      },
+    ]);
+    const provider = {
+      key: "git",
+      optionalOverlayKeys: { file: ["lastModifiedAt", "ageDays"], chunk: ["ageDays"] },
+      // No commit in either window this time: both overlays say "no data" by omission.
+      buildFileSignals: vi.fn().mockResolvedValue(new Map([["src/a.ts", { commitCount: 0 }]])),
+      buildChunkSignals: vi
+        .fn()
+        .mockResolvedValue(
+          new Map([["src/a.ts", new Map([["c1", { commitCount: 0, lastModifiedAt: 0, ageDays: undefined }]])]]),
+        ),
+    };
+    const applier = new EnrichmentApplier(qdrant as any, { baseDelayMs: 0 }, [provider]);
+    await applier.applyFileSignals("coll", "git", new Map(), "/repo", [makeChunkItem("c1", "/repo/src/a.ts", 1, 10)]);
+    const backfiller = new EnrichmentBackfiller(applier, qdrant as any, new InlineEnrichmentExecutor());
+
+    await backfiller.runFor(
+      "coll",
+      { key: "git", provider: provider as any, effectiveRoot: "/repo", ignoreFilter: null },
+      "2026-09-19T00:00:00Z",
+    );
+
+    const git = (await qdrant.getPoint("coll", "c1"))?.payload.git;
+    expect(git.file).toEqual({ commitCount: 0, enrichedAt: "2026-09-19T00:00:00Z" });
+    expect(git.chunk).toEqual({ commitCount: 0, lastModifiedAt: 0, enrichedAt: "2026-09-19T00:00:00Z" });
+  });
+
   it("is a no-op when no files are missed", async () => {
     const qdrant = new MockQdrantManager();
     const applier = new EnrichmentApplier(qdrant as any);

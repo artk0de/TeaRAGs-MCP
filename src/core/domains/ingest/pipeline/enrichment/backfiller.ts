@@ -20,11 +20,34 @@ import type { ChunkSignalOverlay, FileSignalOverlay } from "../../../../contract
 import type { ChunkLookupEntry } from "../../../../types.js";
 import { pipelineLog } from "../infra/debug-logger.js";
 import type { EnrichmentApplier } from "./applier.js";
-import { batchSetPayloadWithRetry } from "./batch-write.js";
+import { batchDeletePayloadWithRetry, batchSetPayloadWithRetry, type BatchPayloadOp } from "./batch-write.js";
+import { OmittedOverlayKeyCollector } from "./omitted-overlay-keys.js";
 import { filterChunkEnrichMap, filterFileEnrichPaths } from "./policy.js";
 import type { ProviderContext } from "./types.js";
 
 const BATCH_SIZE = 100;
+
+/**
+ * Write overlay ops, then delete the optional keys they omit — the applier's
+ * overlay contract, for the one writer that builds its own ops (bd
+ * tea-rags-mcp-9mwny). Every op here IS an overlay: the backfill writes no bare
+ * stamps. Points of a batch that never landed keep their old overlay whole.
+ */
+async function writeOverlayOps(
+  qdrant: QdrantManager,
+  coll: PhysicalCollectionName,
+  ops: BatchPayloadOp[],
+  levelKey: string,
+  optionalKeys: readonly string[] | undefined,
+): Promise<void> {
+  const omissions = new OmittedOverlayKeyCollector(levelKey, optionalKeys ?? []);
+  for (let i = 0; i < ops.length; i += BATCH_SIZE) {
+    const batch = ops.slice(i, i + BATCH_SIZE);
+    if (!(await batchSetPayloadWithRetry(qdrant, coll, batch))) continue;
+    for (const op of batch) omissions.add(op.payload, op.points);
+  }
+  await batchDeletePayloadWithRetry(qdrant, coll, omissions.toOps());
+}
 
 export class EnrichmentBackfiller {
   constructor(
@@ -92,11 +115,7 @@ export class EnrichmentBackfiller {
       backfilledPaths.push(relPath);
     }
 
-    if (ops.length > 0) {
-      for (let i = 0; i < ops.length; i += BATCH_SIZE) {
-        await batchSetPayloadWithRetry(this.qdrant, coll, ops.slice(i, i + BATCH_SIZE));
-      }
-    }
+    await writeOverlayOps(this.qdrant, coll, ops, fileKey, ctx.provider.optionalOverlayKeys?.file);
 
     this.applier.markBackfilled(backfilledPaths);
 
@@ -180,11 +199,7 @@ export class EnrichmentBackfiller {
       }
     }
 
-    if (ops.length > 0) {
-      for (let i = 0; i < ops.length; i += BATCH_SIZE) {
-        await batchSetPayloadWithRetry(this.qdrant, coll, ops.slice(i, i + BATCH_SIZE));
-      }
-    }
+    await writeOverlayOps(this.qdrant, coll, ops, chunkKey, ctx.provider.optionalOverlayKeys?.chunk);
 
     pipelineLog.enrichmentPhase("CHUNK_BACKFILL_COMPLETE", {
       provider: ctx.key,

@@ -16,6 +16,26 @@
   `<provider>.file` onto every chunk id of a file, `#applyChunkSignals` writes
   `<provider>.chunk` onto those same ids. A root write erases the sibling level,
   the run still reports success, and the loss surfaces at query time.
+- **An overlay write DELETES the optional keys it omits; a bare stamp deletes
+  nothing.** The `op.key` merge above keeps every stored key the new overlay
+  does not name, and an `undefined` value never reaches the wire — so a key an
+  overlay leaves out to mean "no data" kept an earlier run's value (286
+  self-index chunks carried `lastModifiedAt: 0` beside an `ageDays` of 13–37, bd
+  tea-rags-mcp-9mwny). A provider lists such keys per level in
+  `EnrichmentProvider.optionalOverlayKeys`; `OmittedOverlayKeyCollector`
+  (`omitted-overlay-keys.ts`) folds "omitted by the overlay written to these
+  points" into one `delete_payload` op per distinct key set under the writer's
+  own `<provider>.<level>`, for points whose set batch landed, sent as ONE
+  `batchDeletePayload` after the apply call's sets. Both overlay writers run it:
+  `EnrichmentApplier`, which learns the declarations from the provider list its
+  constructor takes (`EnrichmentCoordinator#createRunState` and the facade's
+  recovery applier pass it), and `EnrichmentBackfiller` (`writeOverlayOps`).
+  Why: an applier built without that list deletes nothing while every test of
+  the applier alone still passes, and a new overlay writer that skips the
+  collector reopens the stale key. A point that gets only the bare `enrichedAt`
+  stamp (`EnrichmentApplier#unmatchedFileEntries`, the no-signal chunk stamp)
+  keeps its previous overlay whole — that case is not an omission and is not
+  cleared here.
 - **`CodegraphPayloadHealer` is the SECOND writer of
   `codegraph.symbols.{chunk,file}.*`** (`codegraph-payload-heal.ts`). It
   rewrites points OUTSIDE the run's `chunkMap` whose derived signals moved

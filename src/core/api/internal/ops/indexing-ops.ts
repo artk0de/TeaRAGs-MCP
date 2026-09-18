@@ -33,7 +33,15 @@ import type { ReindexPipeline } from "../../../domains/ingest/operations/reindex
 import { extensionsForLanguages } from "../../../domains/ingest/pipeline/chunker/config.js";
 import type { EnrichmentCoordinator } from "../../../domains/ingest/pipeline/enrichment/coordinator.js";
 import type { DeferredChunkRecoveryHandoff } from "../../../domains/ingest/pipeline/enrichment/recovery.js";
-import { parseMarkerPayload } from "../../../domains/ingest/pipeline/indexing-marker-codec.js";
+import {
+  parseMarkerPayload,
+  type WorktreeSeedPending,
+} from "../../../domains/ingest/pipeline/indexing-marker-codec.js";
+import {
+  clearWorktreeSeedPending,
+  markWorktreeSeedPending,
+  readWorktreeSeedPending,
+} from "../../../domains/ingest/pipeline/indexing-marker.js";
 import { pipelineLog } from "../../../domains/ingest/pipeline/infra/debug-logger.js";
 import { StatusModule } from "../../../domains/ingest/pipeline/status-module.js";
 import type { WorktreeSeedBuildIdentity } from "../../../domains/maintenance/worktree/worktree-seed-source.js";
@@ -303,7 +311,10 @@ export class IndexingOps {
     let worktreeSeed: WorktreeSeedReport | undefined;
     if (!options?.forceReindex) {
       const incremental = await this.tryIncrementalIndex(path, progressCallback);
-      if (incremental) return incremental;
+      if (incremental) {
+        await this.resumePendingWorktreeSeed(path);
+        return incremental;
+      }
       // No collection yet: a first index, which a sibling working tree may seed.
       const seeded = await this.trySeedFromWorktree(path, options, progressCallback);
       if (seeded?.stats) return seeded.stats;
@@ -810,8 +821,13 @@ export class IndexingOps {
     });
     if (attempt.status === "skipped") return { report: attempt };
 
+    const pending: WorktreeSeedPending = {
+      seededAt: new Date().toISOString(),
+      languageVersions: this.languageVersionsStamp(undefined, "all"),
+    };
     let stats: IndexStats | undefined;
     try {
+      await markWorktreeSeedPending(this.qdrant, collectionName, pending);
       stats = await this.tryIncrementalIndex(path, progressCallback);
     } catch (error) {
       await this.dropFailedSeed(path, collectionName);
@@ -836,10 +852,42 @@ export class IndexingOps {
       };
     }
 
-    this.stampLanguageVersions(collectionName, undefined, "all");
-    this.driftReporter?.reset(collectionName);
-    const gitRefresh = this.startSeedGitRefresh(path, absolutePath, collectionName);
+    const gitRefresh = this.settleWorktreeSeed(path, absolutePath, collectionName, pending);
     return { stats: { ...stats, worktreeSeed: seededWorktreeReport(attempt, stats, gitRefresh) } };
+  }
+
+  /**
+   * Finish a seed a run found still pending on its collection's marker (bd
+   * tea-rags-mcp-k8gac): the process that seeded it died during the seeded
+   * incremental, or during the background git rebuild. Either way the
+   * collection is an unstamped clone whose points still carry the sibling's git
+   * signals, and this run's incremental changed neither — so it owes the same
+   * two things the seeding run owed, and does them the same way.
+   */
+  private async resumePendingWorktreeSeed(path: string): Promise<void> {
+    const absolutePath = await validatePath(path);
+    const collectionName = await this.resolveCollectionForPath(absolutePath);
+    const pending = await readWorktreeSeedPending(this.qdrant, collectionName);
+    if (!pending) return;
+    this.settleWorktreeSeed(path, absolutePath, collectionName, pending);
+  }
+
+  /**
+   * The two things a seed owes after its incremental run: the language-version
+   * stamp it carries (the seeding build's — see `WorktreeSeedPending`) and the
+   * git rebuild. The pending marker is cleared only once both are done.
+   */
+  private settleWorktreeSeed(
+    path: string,
+    absolutePath: string,
+    collectionName: string,
+    pending: WorktreeSeedPending,
+  ): "background" | "not-applicable" {
+    if (this.collectionRegistry && Object.keys(pending.languageVersions).length > 0) {
+      this.collectionRegistry.stampLanguageVersions(collectionName, pending.languageVersions);
+    }
+    this.driftReporter?.reset(collectionName);
+    return this.startSeedGitRefresh(path, absolutePath, collectionName);
   }
 
   /** What this run would stamp onto a collection it indexed from scratch — the seed gate's reference. */
@@ -875,12 +923,20 @@ export class IndexingOps {
     absolutePath: string,
     collectionName: string,
   ): "background" | "not-applicable" {
-    if (!this.enrichment.providerKeys.includes("git")) return "not-applicable";
+    if (!this.enrichment.providerKeys.includes("git")) {
+      // Nothing to rebuild, so the stamp just written was the seed's last debt.
+      this.trailingEnrichment.set(collectionName, clearWorktreeSeedPending(this.qdrant, collectionName));
+      return "not-applicable";
+    }
     this.trailingEnrichment.set(collectionName, this.refreshSeededGitLayer(path, absolutePath, collectionName));
     return "background";
   }
 
-  /** Never rejects: a failed rebuild is reported through the terminal markers and the log. */
+  /**
+   * Never rejects: a failed rebuild is reported through the terminal markers and
+   * the log. The seed stays pending unless the rebuild completed, so a failed or
+   * interrupted one is retried by the next run on the collection.
+   */
   private async refreshSeededGitLayer(path: string, absolutePath: string, collectionName: string): Promise<void> {
     try {
       // Physical, never the alias — the recompute's run state and any codegraph
@@ -891,7 +947,9 @@ export class IndexingOps {
       this.driftReporter?.reset(collectionName);
     } catch (error) {
       console.error(`[IndexingOps] git rebuild of the seeded collection ${collectionName} failed:`, error);
+      return;
     }
+    await clearWorktreeSeedPending(this.qdrant, collectionName);
   }
 
   /**
@@ -1040,17 +1098,27 @@ export class IndexingOps {
     languages: readonly string[] | undefined,
     scope: "all" | "codegraph",
   ): void {
+    if (!this.collectionRegistry) return;
+    const stamp = this.languageVersionsStamp(languages, scope);
+    if (Object.keys(stamp).length > 0) this.collectionRegistry.stampLanguageVersions(collectionName, stamp);
+  }
+
+  /** The stamp {@link stampLanguageVersions} writes — empty when this build declares no versions. */
+  private languageVersionsStamp(
+    languages: readonly string[] | undefined,
+    scope: "all" | "codegraph",
+  ): Record<string, Partial<LanguageCodeVersions>> {
     const versions = this.languageCodeVersions;
-    if (!this.collectionRegistry || !versions) return;
-    const selected = languages && languages.length > 0 ? languages : [...versions.keys()];
     const stamp: Record<string, Partial<LanguageCodeVersions>> = {};
+    if (!versions) return stamp;
+    const selected = languages && languages.length > 0 ? languages : [...versions.keys()];
     for (const language of selected) {
       const current = versions.get(language);
       if (!current) continue;
       stamp[language] =
         scope === "all" ? { ...current } : { walker: current.walker, codegraphSchema: current.codegraphSchema };
     }
-    if (Object.keys(stamp).length > 0) this.collectionRegistry.stampLanguageVersions(collectionName, stamp);
+    return stamp;
   }
 
   // ---------------------------------------------------------------------------

@@ -38,7 +38,11 @@ export const myPayloadSignalDescriptors: PayloadSignalDescriptor[] = [
 
 ### Checklist (ALL steps mandatory)
 
-1. **Add type field** to provider's file/chunk signal interface in `types.ts`
+1. **Add type field** to provider's file/chunk signal interface in `types.ts`. A
+   field the overlay OMITS to mean "no data" is declared optional (`?:`) and
+   listed in the provider's `optionalOverlayKeys`, so a re-enrichment deletes it
+   instead of merging around it (git: `GIT_OPTIONAL_OVERLAY_KEYS` is built from
+   `Record<OptionalOverlayKey<…>, true>`, so the compiler demands it)
 2. **Add computation** in provider's `computeFileSignals()` or
    `computeChunkSignals()`
 3. **Add descriptor** to payload signal descriptors array
