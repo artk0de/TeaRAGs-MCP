@@ -21,7 +21,7 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { dumpCodegraphTables } from "../__helpers__/graph-db-dump.js";
 import { buildTestCodegraphDeps } from "../__helpers__/language-factory.js";
@@ -182,6 +182,32 @@ describe("CodegraphEnrichmentProvider — staged finalize", () => {
     // The corpus is built to have both, so the equality above is not vacuous.
     expect(stagedDump.cg_symbols_cycles.length).toBeGreaterThan(0);
     expect(stagedDump.cg_symbols_metrics.length).toBeGreaterThan(0);
+  });
+
+  it("each partition's timing line names the resolvers of the files it resolved", async () => {
+    // The completion owner reports AFTER its readBack recompute, and the run
+    // state its resolver block is read from was cleared when `resolve` ended.
+    const phaseLines: { resolvers: Record<string, unknown> }[] = [];
+    const debug = vi.spyOn(console, "error").mockImplementation((...args: unknown[]) => {
+      if (String(args[0]).includes("CODEGRAPH_PHASE_TIMINGS")) phaseLines.push(JSON.parse(String(args[1])));
+    });
+    try {
+      for (const ownsCollectionCompletion of [false, true]) {
+        const provider = providerOn(staged.client);
+        const batch = await provider.extractFileBatch(root, corpus);
+        const absorbRoles: FileExtractionAbsorbRole[] = batch.extractions.map((e) =>
+          isTypeScript(e.relPath) ? "own" : "mirror",
+        );
+        await provider.absorbExtractedFiles(root, batch.extractions, { absorbRoles });
+        await provider.finalizeSignals(root, { finalizeStage: "resolve", ownsCollectionCompletion });
+        await provider.finalizeSignals(root, { finalizeStage: "readBack", ownsCollectionCompletion });
+      }
+    } finally {
+      debug.mockRestore();
+    }
+
+    expect(phaseLines).toHaveLength(2);
+    for (const line of phaseLines) expect(Object.keys(line.resolvers)).toEqual(["typescript"]);
   });
 
   it("only the partition that owns collection completion recomputes cycles and PageRank", async () => {

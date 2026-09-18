@@ -84,6 +84,9 @@ import { lastSegment } from "./symbol-name.js";
 export { CODEGRAPH_LANGUAGES, type CodegraphLanguageConfig } from "./file-extractor.js";
 export { computeSymbolChunkIds } from "./chunk-signal-pass.js";
 
+/** `CallEdgeResolutionRunner#resolverDiagnostics`: each language resolver's run-scoped cache report. */
+type ResolverDiagnosticsByLanguage = ReturnType<CallEdgeResolutionRunner["resolverDiagnostics"]>;
+
 /**
  * Strip one `_v<digits>` versioning suffix from a collection name
  * (`code_x_v6` → `code_x`); any other shape is returned unchanged. No production
@@ -196,6 +199,12 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
    * caller doesn't pass an explicit `options.paths` subset.
    */
   private readonly runExtractedPaths = new Map<string, Set<string>>();
+  /**
+   * A language partition's resolver block, captured when its `resolve` ends —
+   * the run state it is read from is cleared there — for the timing line the
+   * completion owner emits after its `readBack` recompute (bd tea-rags-mcp-sgo8v).
+   */
+  private readonly resolverDiagnosticsForReadBack = new Map<string, ResolverDiagnosticsByLanguage>();
   /**
    * Per-collection serialization tail for `streamFileBatch` (bd tea-rags-mcp-svhqp
    * layer 3): the file phase fires batches without awaiting, and the shared spill
@@ -524,14 +533,17 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
    * Recompute Tarjan SCC for both scopes and PageRank over the method graph once
    * pass-2 settles (`GraphBuildFinalizer#recomputeMetrics`).
    */
-  private async recomputeGraphMetricsStreaming(collectionName?: PhysicalCollectionName): Promise<void> {
+  private async recomputeGraphMetricsStreaming(
+    collectionName?: PhysicalCollectionName,
+    resolvers?: ResolverDiagnosticsByLanguage,
+  ): Promise<void> {
     try {
       await this.graphFinalizer.recomputeMetrics(collectionName);
     } finally {
       // The recompute is the last pass-2 stage, so this is the run's closing
       // wall-clock statement (bd tea-rags-mcp-6aytq) — from `finally`, because the
       // sink treats a metrics failure as best-effort.
-      this.logPhaseTimings();
+      this.logPhaseTimings(resolvers);
     }
   }
 
@@ -540,12 +552,18 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
    * is the run's one record of which Program strategy it took. Emitted once per
    * provider instance per run: after the metric recompute, or — for a language
    * partition that does not own collection completion — after its pass-2.
+   *
+   * `resolvers` is passed when the run state it is read from is already gone:
+   * a language partition's `readBack` logs after `resolve` cleared it, so the
+   * block is captured at `resolve` (bd tea-rags-mcp-sgo8v).
    */
-  private logPhaseTimings(): void {
+  private logPhaseTimings(
+    resolvers: ResolverDiagnosticsByLanguage = this.resolutionRunner.resolverDiagnostics(),
+  ): void {
     if (!isDebug()) return;
     console.error(
       "[GitEnrich] PHASE: CODEGRAPH_PHASE_TIMINGS",
-      JSON.stringify({ ...this.phaseTimings.toSummary(), resolvers: this.resolutionRunner.resolverDiagnostics() }),
+      JSON.stringify({ ...this.phaseTimings.toSummary(), resolvers }),
     );
   }
 
@@ -955,9 +973,15 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
       // `sink.finish()`, so every resolved call is already counted. A partition
       // persists only its own languages, which the store scopes its writes by.
       await this.recordRunStats(graphDb, options?.runCoverage);
-      // The completion owner reports the run's timings after the recompute; any
-      // other partition's pass-2 would otherwise leave no record at all.
-      if (partitioned && options?.ownsCollectionCompletion !== true) this.logPhaseTimings();
+      // The completion owner reports the run's timings after the recompute —
+      // with the resolver block captured NOW, before the run state it is read
+      // from is cleared below; any other partition reports here, or its pass-2
+      // would leave no record at all.
+      if (partitioned && options?.ownsCollectionCompletion === true) {
+        this.resolverDiagnosticsForReadBack.set(key, this.resolutionRunner.resolverDiagnostics());
+      } else if (partitioned) {
+        this.logPhaseTimings();
+      }
       keepOwnedPathsForReadBack = partitioned;
     } finally {
       this.runSinks.delete(key);
@@ -979,10 +1003,12 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
   private async readBackPartition(options: FileSignalOptions): Promise<Map<string, FileSignalOverlay>> {
     const key = this.collectionKey(options.collectionName);
     const file = new Map<string, FileSignalOverlay>();
+    const resolvers = this.resolverDiagnosticsForReadBack.get(key);
+    this.resolverDiagnosticsForReadBack.delete(key);
     try {
       if (options.ownsCollectionCompletion === true) {
         await recomputeCodegraphMetricsBestEffort(async () =>
-          this.recomputeGraphMetricsStreaming(options.collectionName),
+          this.recomputeGraphMetricsStreaming(options.collectionName, resolvers),
         );
       }
       const { graphDb } = await this.getStore(options.collectionName);
@@ -1045,6 +1071,7 @@ export class CodegraphEnrichmentProvider implements EnrichmentProvider {
     this.chunkSymbolByLine.clear();
     this.runSinks.clear();
     this.runExtractedPaths.clear();
+    this.resolverDiagnosticsForReadBack.clear();
     this.runBatchChains.clear();
     this.xpassWritten.clear();
     this.runState.clearAll();
