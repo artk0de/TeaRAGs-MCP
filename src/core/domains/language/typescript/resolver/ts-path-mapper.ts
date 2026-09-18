@@ -199,17 +199,21 @@ const SOURCE_EXTENSION_CANDIDATES: readonly { suffix: string; extensions: readon
 ];
 
 /**
- * Suffixes that already name a TypeScript file, declarations included
- * (`.d.ts` / `.d.mts` / `.d.cts` end in one of them). A specifier ending in one
- * is the file as written — `allowImportingTsExtensions`, `node
- * --experimental-strip-types` and tsx all let source spell it — so appending
- * another source extension would name `worker.mts.ts`, a file that cannot
- * exist (bd tea-rags-mcp-x9qsh).
+ * Suffixes that name the target file itself, so a specifier ending in one is
+ * the file as written (bd tea-rags-mcp-x9qsh):
+ *
+ *   - a TypeScript file, declarations included (`.d.ts` / `.d.mts` / `.d.cts`
+ *     end in one of these) — `allowImportingTsExtensions`, `node
+ *     --experimental-strip-types` and tsx all let source spell it, and
+ *     appending another source extension would name `worker.mts.ts`, a file
+ *     that cannot exist;
+ *   - a JSON module (`resolveJsonModule`), which `tsc` resolves as written and
+ *     never as `data.json.ts`.
  */
-const TS_SOURCE_EXTENSIONS: readonly string[] = [".ts", ".tsx", ".mts", ".cts"];
+const AS_WRITTEN_EXTENSIONS: readonly string[] = [".ts", ".tsx", ".mts", ".cts", ".json"];
 
-function namesTsSourceFile(path: string): boolean {
-  return TS_SOURCE_EXTENSIONS.some((extension) => path.endsWith(extension));
+function namesFileAsWritten(path: string): boolean {
+  return AS_WRITTEN_EXTENSIONS.some((extension) => path.endsWith(extension));
 }
 
 /** Extensions tried for a specifier that writes no suffix at all (`"./foo"`). */
@@ -226,7 +230,7 @@ const DIRECTORY_MODULE_STEM = "index";
  * Rewrite a mapped path's suffix to the TypeScript source file it stands for,
  * so graph edges land on paths that match the codegraph file table.
  *
- * A suffix in {@link TS_SOURCE_EXTENSIONS} is already explicit and passes
+ * A suffix in {@link AS_WRITTEN_EXTENSIONS} is already explicit and passes
  * through untouched.
  * Everything else has candidates, and `fileExists` picks among them — the
  * FIRST candidate that exists wins, so a project holding both `foo.ts` and
@@ -247,11 +251,11 @@ const DIRECTORY_MODULE_STEM = "index";
  * codebase defers rather than fabricates (see `MethodEdgeKind`).
  */
 function resolveTsSourcePath(path: string, fileExists?: ProjectFileProbe): string {
-  // An explicit TypeScript specifier has nothing to choose between, and
+  // A specifier that names its file has nothing to choose between, and
   // this returns BEFORE the probe on purpose: the probe's cache is what keeps
   // a resolve pass off one syscall per import per call site, and a lookup whose
   // answer cannot change the result is pure cost.
-  if (namesTsSourceFile(path)) return path;
+  if (namesFileAsWritten(path)) return path;
   const candidates = tsSourcePathCandidates(path);
   return candidates.find((candidate) => fileExists?.(candidate)) ?? candidates[0];
 }
@@ -273,7 +277,7 @@ function verifiedTsSourcePath(path: string, fileExists?: ProjectFileProbe): stri
 
 /** Source files a mapped specifier could stand for, in `tsc`'s resolution order. */
 function tsSourcePathCandidates(path: string): readonly string[] {
-  if (namesTsSourceFile(path)) return [path];
+  if (namesFileAsWritten(path)) return [path];
 
   const rule = SOURCE_EXTENSION_CANDIDATES.find((entry) => path.endsWith(entry.suffix));
   const stem = rule ? path.slice(0, -rule.suffix.length) : path;

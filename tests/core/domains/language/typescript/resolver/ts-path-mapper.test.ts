@@ -267,6 +267,36 @@ describe("mapImportToFile allowJs fallback to the JavaScript file (bd tea-rags-m
   });
 });
 
+/**
+ * A JSON module (`resolveJsonModule`) is the file the specifier writes; tsc
+ * never reads `"./data.json"` as `data.json.ts` (bd tea-rags-mcp-x9qsh). The
+ * codegraph does not walk JSON, so the edge joins no file row — it is kept
+ * unverified like every other file edge the mapper answers.
+ */
+describe("mapImportToFile JSON modules (bd tea-rags-mcp-x9qsh)", () => {
+  it("maps a .json specifier to the file as written, without probing", () => {
+    const exists = vi.fn(() => false);
+    expect(mapImportToFile("./data.json", "src/app.ts", NO_ALIASES, exists)).toBe("src/data.json");
+    expect(mapImportToFile("../package.json", "src/app.ts", NO_ALIASES)).toBe("package.json");
+    expect(exists).not.toHaveBeenCalled();
+  });
+
+  it("maps a .json specifier behind a tsconfig alias as written", () => {
+    expect(mapImportToFile("@/config/settings.json", "src/app.ts", { baseUrl: ".", paths: { "@/*": ["src/*"] } })).toBe(
+      "src/config/settings.json",
+    );
+  });
+
+  it("answers a catch-all .json specifier only when the file exists", () => {
+    const catchAll = { baseUrl: ".", paths: { "*": ["./app/javascript/*"] } };
+    const exists = (rel: string) => rel === "app/javascript/config/settings.json";
+    expect(mapImportToFile("config/settings.json", "app/javascript/Page.tsx", catchAll, exists)).toBe(
+      "app/javascript/config/settings.json",
+    );
+    expect(mapImportToFile("config/missing.json", "app/javascript/Page.tsx", catchAll, exists)).toBeNull();
+  });
+});
+
 describe("mapImportToFile directory/index resolution (bd tea-rags-mcp-hzsxy)", () => {
   it("maps an extensionless specifier to the directory's index.tsx", () => {
     // The barrel-style directory module every React/TS project writes:

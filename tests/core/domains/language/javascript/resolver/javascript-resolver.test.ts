@@ -51,6 +51,12 @@ describe("mapJavascriptImportToFile", () => {
     expect(mapJavascriptImportToFile("./worker.cts", "scripts/boot.cjs")).toBe("scripts/worker.cts");
     expect(mapJavascriptImportToFile("./types.d.ts", "scripts/boot.js")).toBe("scripts/types.d.ts");
   });
+
+  it("maps a JSON module to the file as written (bd tea-rags-mcp-x9qsh)", () => {
+    // `require("../package.json")` names the JSON file, not `package.json.js`.
+    expect(mapJavascriptImportToFile("../package.json", "scripts/postinstall.js")).toBe("package.json");
+    expect(mapJavascriptImportToFile("./data/fixtures.json", "src/main.mjs")).toBe("src/data/fixtures.json");
+  });
 });
 
 describe("JavaScript import file edges (bd tea-rags-mcp-x9qsh)", () => {

@@ -38,9 +38,10 @@ import { ECMASCRIPT_GLOBALS } from "../../shared/ecmascript-globals.js";
  * TypeScript ones are what a JS entry point writes when it loads TS source
  * directly (`node --experimental-strip-types`, tsx); appending `.js` to them
  * named `worker.ts.js`, a file that cannot exist (bd tea-rags-mcp-x9qsh).
- * `.d.ts` / `.d.mts` / `.d.cts` are covered by their last segment.
+ * `.d.ts` / `.d.mts` / `.d.cts` are covered by their last segment. `.json` is
+ * the JSON module `require("../package.json")` names.
  */
-const EXPLICIT_MODULE_EXTENSIONS = [".js", ".jsx", ".mjs", ".cjs", ".ts", ".tsx", ".mts", ".cts"];
+const EXPLICIT_MODULE_EXTENSIONS = [".js", ".jsx", ".mjs", ".cjs", ".ts", ".tsx", ".mts", ".cts", ".json"];
 
 export class JavascriptCallResolver implements CallResolver {
   readonly language = "javascript";
