@@ -1689,9 +1689,16 @@ describe("extractFromRubyFile — send/public_send/__send__ unwrap (no-receiver 
       language: "ruby",
       chunks: [{ symbolId: "f", scope: ["f"], startLine: 1, endLine: 3 }],
     });
+    // Same defined-check + calls dump as the bare `public_send` case above, so a
+    // missing call is not reported as "expected undefined to be null".
+    const calls = JSON.stringify(r.chunks[0].calls);
     const c = r.chunks[0].calls.find((cr) => cr.member === "helper");
-    expect(c?.receiver).toBeNull();
-    expect(r.chunks[0].calls.find((cr) => cr.member === "__send__")).toBeUndefined();
+    expect(c, `no "helper" call; calls=${calls}`).toBeDefined();
+    expect(c?.receiver, `calls=${calls}`).toBeNull();
+    expect(
+      r.chunks[0].calls.find((cr) => cr.member === "__send__"),
+      `calls=${calls}`,
+    ).toBeUndefined();
   });
 
   it("keeps bare `send(var)` with non-literal arg as a literal send call", () => {
