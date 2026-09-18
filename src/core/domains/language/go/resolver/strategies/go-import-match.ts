@@ -1,7 +1,7 @@
 import { CONTINUE, resolved } from "../../../../../contracts/resolution.js";
-import { pickSingleCandidate, type CallContext, type CallRef } from "../../../../../contracts/types/codegraph.js";
+import type { CallContext, CallRef } from "../../../../../contracts/types/codegraph.js";
 import type { SymbolResolutionOutcome, SymbolResolutionStrategy } from "../../../../../contracts/types/language.js";
-import { goImportPackageDir, goPackageDirOf, importMatchesReceiver, type ResolverConfig } from "./shared.js";
+import { resolveImportedPackageMember, type ResolverConfig } from "./shared.js";
 
 /**
  * Step 1 — the receiver names an imported package (`bytesconv.StringToBytes`:
@@ -30,20 +30,8 @@ export class GoImportMatchSymbolResolutionStrategy implements SymbolResolutionSt
   constructor(private readonly cfg: ResolverConfig) {}
 
   attempt(call: CallRef, ctx: CallContext): SymbolResolutionOutcome {
-    const { receiver } = call;
-    if (!receiver) return CONTINUE;
-    const match = ctx.imports.find((imp) => importMatchesReceiver(imp, receiver));
-    if (!match) return CONTINUE;
-    const packageDir = goImportPackageDir(match.importText, this.cfg.moduleMaps?.forRoot(ctx.projectRoot));
-    if (packageDir === undefined) return CONTINUE;
-    const candidates = ctx.symbolTable
-      .lookupByShortName(call.member)
-      .filter(
-        (def) =>
-          def.symbolId === call.member && def.relPath.endsWith(".go") && goPackageDirOf(def.relPath) === packageDir,
-      );
-    const target = pickSingleCandidate(candidates, this.cfg.mode);
-    if (target) return resolved({ targetRelPath: target.relPath, targetSymbolId: target.symbolId });
-    return CONTINUE;
+    if (!call.receiver) return CONTINUE;
+    const target = resolveImportedPackageMember(this.cfg, call.receiver, call.member, ctx);
+    return target ? resolved(target) : CONTINUE;
   }
 }

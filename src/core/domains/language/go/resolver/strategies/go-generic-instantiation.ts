@@ -4,31 +4,44 @@ import {
   resolveLocalBinding,
   type CallContext,
   type CallRef,
+  type SymbolResolutionTarget,
 } from "../../../../../contracts/types/codegraph.js";
 import type { SymbolResolutionOutcome, SymbolResolutionStrategy } from "../../../../../contracts/types/language.js";
-import { goPackageDirOf, type ResolverConfig } from "./shared.js";
+import { goPackageDirOf, resolveImportedPackageMember, type ResolverConfig } from "./shared.js";
 
-/** `name[...]` — an identifier followed by one bracketed group, captured bare. */
-const GO_INDEXED_CALLEE = /^([\p{L}_][\p{L}\p{N}_]*)\[.*\]$/su;
+/**
+ * `name[...]` or `qualifier.name[...]` — a (possibly package-qualified)
+ * identifier followed by one bracketed group; the qualifier and the name are
+ * captured bare.
+ */
+const GO_INDEXED_CALLEE = /^(?:([\p{L}_][\p{L}\p{N}_]*)\.)?([\p{L}_][\p{L}\p{N}_]*)\[.*\]$/su;
 
 /**
  * Step 2b (bd tea-rags-mcp-e6xx) — an explicitly instantiated generic function
- * called by its bare name: gin's `getTyped[string](c, key)`.
+ * or type, called by its bare or package-qualified name: gin's
+ * `getTyped[string](c, key)`, `slices.Map[int](xs, f)`, and the one-argument
+ * forms `pair[int](x)` / `pkg.Pair[int](x)` the walker collects from a
+ * conversion to a generic type.
  *
- * The walker reports a non-selector callee verbatim, so the call arrives as
- * member `getTyped[string]` and no pass could look it up. Syntax cannot tell
- * the instantiation from `fs[i](x)` — both are an `index_expression` — but the
- * symbol table can: indexing a FUNCTION is not legal Go, so when the operand
- * names a function (or type, for `Box[int](x)`) declared in the caller's own
- * package, the brackets are type arguments and the call is a call of that
- * declaration. A bare identifier resolves in its own package, so a namesake in
- * another package is not in scope; a typed local of the operand's name shadows
- * the declaration; two declarations (build-tag twins) are ambiguous.
+ * The walker reports such a callee verbatim, so the call arrives as a BARE call
+ * whose member is the whole instantiated name, and no pass could look it up.
+ * Syntax cannot tell the instantiation from an index (`fs[i](x)`,
+ * `c.handlers[c.index](c)`), but the symbol table can: indexing a FUNCTION is
+ * not legal Go, so when the operand names a declaration the brackets are type
+ * arguments and the call is a call of that declaration.
+ *   - Bare `f[T]`: a bare identifier resolves in its own package, so only a
+ *     declaration in the caller's package directory counts.
+ *   - Qualified `pkg.F[T]`: with the type arguments stripped it is the call
+ *     `pkg.F`, answered by the same import lookup `importMatch` uses (module
+ *     path, alias, one directory, package-level declaration). Go has no
+ *     generic methods, so a qualifier that names no import — a value, as in
+ *     `c.handlers[c.index](c)` — makes it an index.
+ * A local in effect under the operand's name (the bare name, or the qualifier)
+ * shadows the declaration or the package; two declarations (build-tag twins)
+ * stay ambiguous.
  *
  * Non-guard: anything else CONTINUEs to `globalShortName`, which finds nothing
- * for a bracketed member — exactly the pre-pass outcome. A method cannot carry
- * type parameters in Go, so a selector operand (`x.f[i](…)`) is never an
- * instantiation and never reaches here with a receiver.
+ * for a bracketed member — exactly the pre-pass outcome.
  */
 export class GoGenericInstantiationSymbolResolutionStrategy implements SymbolResolutionStrategy {
   readonly name = "genericInstantiation";
@@ -36,15 +49,24 @@ export class GoGenericInstantiationSymbolResolutionStrategy implements SymbolRes
 
   attempt(call: CallRef, ctx: CallContext): SymbolResolutionOutcome {
     if (call.receiver) return CONTINUE;
-    const operand = GO_INDEXED_CALLEE.exec(call.member)?.[1];
-    if (operand === undefined) return CONTINUE;
-    // Any local in effect shadows the declaration — typed or not.
-    if (resolveLocalBinding(ctx.localBindings, operand, call.startLine)) return CONTINUE;
+    const match = GO_INDEXED_CALLEE.exec(call.member);
+    if (match === null) return CONTINUE;
+    const [, qualifier, name] = match;
+    // Any local in effect shadows the declaration or the package — typed or not.
+    if (resolveLocalBinding(ctx.localBindings, qualifier ?? name, call.startLine)) return CONTINUE;
+    const target =
+      qualifier === undefined
+        ? this.samePackageDeclaration(name, ctx)
+        : resolveImportedPackageMember(this.cfg, qualifier, name, ctx);
+    return target ? resolved(target) : CONTINUE;
+  }
+
+  private samePackageDeclaration(name: string, ctx: CallContext): SymbolResolutionTarget | null {
     const callerPackage = goPackageDirOf(ctx.callerFile);
     const candidates = ctx.symbolTable
-      .lookup(operand)
+      .lookup(name)
       .filter((def) => def.relPath.endsWith(".go") && goPackageDirOf(def.relPath) === callerPackage);
     const target = pickSingleCandidate(candidates, this.cfg.mode);
-    return target ? resolved({ targetRelPath: target.relPath, targetSymbolId: target.symbolId }) : CONTINUE;
+    return target ? { targetRelPath: target.relPath, targetSymbolId: target.symbolId } : null;
   }
 }

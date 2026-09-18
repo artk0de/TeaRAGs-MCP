@@ -66,10 +66,13 @@ async function main(): Promise<void> {
 
   // A bare `foo()` in Go names the caller's OWN package (or a dot-import), so a
   // bare-call edge landing in another directory is a fabrication unless a
-  // dot-import explains it — listed, so every one can be checked by hand.
+  // dot-import explains it — listed, so every one can be checked by hand. A
+  // package-qualified generic call (`pkg.F[T](x)`) arrives receiver-less too,
+  // with the qualifier in its member; it crosses packages by construction.
   const crossPackage = result.rows.filter(
     (row) =>
       row.receiver === null &&
+      !/^[^[]*\./.test(row.member) &&
       row.runnerAnswer !== null &&
       posix.dirname(row.relPath) !== posix.dirname(row.runnerAnswer.targetRelPath),
   );

@@ -112,3 +112,30 @@ export function goImportPackageDir(importText: string, modules: GoModuleMap | un
   if (modules?.declaresModules) return modules.packageDirOf(importText);
   return importText.replace(/^\.\//, "");
 }
+
+/**
+ * `qualifier.member` where `qualifier` names an imported project package: the
+ * package-level declaration `member` (`symbolId` equal to it — a method is
+ * never package-qualified) in that package's one directory, `null` when the
+ * qualifier names no import, the import is no project package, or the
+ * directory declares no single such name. Shared by `importMatch` and the
+ * package-qualified generic instantiation (bd tea-rags-mcp-e6xx).
+ */
+export function resolveImportedPackageMember(
+  cfg: ResolverConfig,
+  qualifier: string,
+  member: string,
+  ctx: CallContext,
+): SymbolResolutionTarget | null {
+  const match = ctx.imports.find((imp) => importMatchesReceiver(imp, qualifier));
+  if (!match) return null;
+  const packageDir = goImportPackageDir(match.importText, cfg.moduleMaps?.forRoot(ctx.projectRoot));
+  if (packageDir === undefined) return null;
+  const candidates = ctx.symbolTable
+    .lookupByShortName(member)
+    .filter(
+      (def) => def.symbolId === member && def.relPath.endsWith(".go") && goPackageDirOf(def.relPath) === packageDir,
+    );
+  const target = pickSingleCandidate(candidates, cfg.mode);
+  return target ? { targetRelPath: target.relPath, targetSymbolId: target.symbolId } : null;
+}
