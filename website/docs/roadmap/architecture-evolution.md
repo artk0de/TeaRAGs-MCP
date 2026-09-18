@@ -57,10 +57,9 @@ Replace the manual `"command": "node /path/to/build/index.js"` MCP config entry 
 
 Dependency bumps that require breaking-change handling, tracked as an epic because they tend to cascade through tests and types:
 
-- **TypeScript 5.9 → 6.x** (`tea-rags-mcp-noc7`) — new compiler options, possible type narrowing regressions.
 - **`@qdrant/js-client-rest` 1.16 → 1.17** (`tea-rags-mcp-doe6`) — aligns with server-side features like [MMR reranking](/roadmap/future-layers#mmr-and-multi-preset-reranking) and 2-hop ACORN filters.
 
-Already landed under the same epic: ESLint 10.x, Zod 4.x, OpenAI SDK 6.x, `--detect-async-leaks` for vitest.
+Already landed under the same epic: ESLint 10.x, Zod 4.x, OpenAI SDK 6.x, `--detect-async-leaks` for vitest, TypeScript 6.0 (`tea-rags-mcp-noc7` — the codegraph type checker keeps the TypeScript 5 option semantics, so resolution output is unchanged).
 
 **Why it matters:** keeps the project on a supported stack and unlocks server-side Qdrant features that need the newer client.
 

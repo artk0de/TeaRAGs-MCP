@@ -89,7 +89,7 @@
     "tree-sitter-ruby": "^0.23.1",
     "tree-sitter-rust": "^0.24.0",
     "tree-sitter-typescript": "^0.23.2",
-    "typescript": "^5.7.2",
+    "typescript": "~6.0.3",
     "yaml": "^2.8.3",
     "yargs": "^18.0.0",
     "zod": "^4.3.6"
@@ -121,7 +121,7 @@
     "prettier": "^3.8.1",
     "semantic-release": "^25.0.3",
     "tsx": "^4.21.0",
-    "typescript-eslint": "^8.57.2",
+    "typescript-eslint": "^8.70.0",
     "vitest": "^4.1.2"
   },
   "lint-staged": {
