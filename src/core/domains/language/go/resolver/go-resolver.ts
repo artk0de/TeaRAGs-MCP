@@ -41,10 +41,12 @@ import {
   type CallContext,
   type CallRef,
   type CallResolver,
+  type SymbolResolutionPassPlan,
   type SymbolResolutionTarget,
 } from "../../../../contracts/types/codegraph.js";
 import type { SymbolIdComposer, SymbolResolutionStrategy } from "../../../../contracts/types/language.js";
 import { resolveViaChain } from "../../resolver-chain.js";
+import { GoModuleMapCache } from "./go-module-map.js";
 import {
   GoGlobalShortNameSymbolResolutionStrategy,
   GoImportMatchSymbolResolutionStrategy,
@@ -58,6 +60,8 @@ import {
 export class GoCallResolver implements CallResolver {
   readonly language = "go";
   private readonly strategies: SymbolResolutionStrategy[];
+  /** The project's go.mod module map, read once per root and re-read at every pass start. */
+  private readonly moduleMaps = new GoModuleMapCache();
 
   /**
    * `composer` builds the `Type#member` / `Type.member` candidate ids per the
@@ -67,7 +71,7 @@ export class GoCallResolver implements CallResolver {
    * mapper in the same `domains/language` domain) and passes it here.
    */
   constructor(composer: SymbolIdComposer, mode: AmbiguousResolveMode = DEFAULT_AMBIGUOUS_RESOLVE_MODE) {
-    const cfg: ResolverConfig = { composer, mode };
+    const cfg: ResolverConfig = { composer, mode, moduleMaps: this.moduleMaps };
     this.strategies = [
       new GoLocalBindingSymbolResolutionStrategy(cfg),
       new GoReturnTypeBindingSymbolResolutionStrategy(cfg),
@@ -80,5 +84,15 @@ export class GoCallResolver implements CallResolver {
 
   resolve(call: CallRef, ctx: CallContext): SymbolResolutionTarget | null {
     return resolveViaChain(this.strategies, call, ctx);
+  }
+
+  /**
+   * Re-read the project's go.mod files before pass-2's first call (bd
+   * tea-rags-mcp-e6xx), so a long-lived process never resolves a run against
+   * the module paths of an earlier one. A resolve with a root this pass never
+   * announced still reads it lazily.
+   */
+  prepareResolvePass(plan: SymbolResolutionPassPlan): void {
+    this.moduleMaps.reload(plan.projectRoot);
   }
 }

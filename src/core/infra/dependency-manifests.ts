@@ -96,7 +96,61 @@ export function readDeclaredDependencies(
   const declared = new Set<string>();
   let found = false;
 
-  const visit = (dir: string, depth: number): void => {
+  walkManifestFiles(
+    root,
+    (fileName) => sources.some((s) => s.matchesManifestFile(fileName)),
+    (dir, _relDir, fileName) => {
+      const source = sources.find((s) => s.matchesManifestFile(fileName));
+      if (source === undefined) return;
+      found = true;
+      let content: string;
+      try {
+        content = readFileSync(join(dir, fileName), "utf8");
+      } catch {
+        return;
+      }
+      for (const name of source.parseDeclaredDependencies(fileName, content)) declared.add(name);
+    },
+  );
+  return found ? Object.freeze(declared) : undefined;
+}
+
+/** One manifest file the walk found: where it sits, and what it says. */
+export interface ManifestFile {
+  /** Repo-relative directory holding the file, `/`-separated; `""` is the root. */
+  readonly relDir: string;
+  readonly fileName: string;
+  readonly content: string;
+}
+
+/**
+ * Every file under `root` that `matchesManifestFile` accepts, with its location
+ * — the same walk, bounds and ignore list as {@link readDeclaredDependencies}.
+ *
+ * For a manifest whose meaning depends on WHERE it sits rather than on a union
+ * of names (bd tea-rags-mcp-e6xx): a Go `go.mod` declares the module path of
+ * its own directory tree, and a multi-module repository has one per nested
+ * module. Total: an unreadable directory or file is skipped, never thrown.
+ */
+export function readManifestFiles(root: string, matchesManifestFile: (fileName: string) => boolean): ManifestFile[] {
+  const found: ManifestFile[] = [];
+  walkManifestFiles(root, matchesManifestFile, (dir, relDir, fileName) => {
+    try {
+      found.push({ relDir, fileName, content: readFileSync(join(dir, fileName), "utf8") });
+    } catch {
+      // unreadable: skipped, like every other failure of the walk
+    }
+  });
+  return found;
+}
+
+/** The bounded, ignore-aware directory walk both readers share. */
+function walkManifestFiles(
+  root: string,
+  matchesManifestFile: (fileName: string) => boolean,
+  onManifest: (dir: string, relDir: string, fileName: string) => void,
+): void {
+  const visit = (dir: string, relDir: string, depth: number): void => {
     let entries;
     try {
       entries = readdirSync(dir, { withFileTypes: true });
@@ -107,23 +161,12 @@ export function readDeclaredDependencies(
       if (entry.isDirectory()) {
         if (depth >= MAX_MANIFEST_WALK_DEPTH) continue;
         if (DEPENDENCY_MANIFEST_IGNORED_DIRS.has(entry.name)) continue;
-        visit(join(dir, entry.name), depth + 1);
+        visit(join(dir, entry.name), relDir === "" ? entry.name : `${relDir}/${entry.name}`, depth + 1);
         continue;
       }
-      if (!entry.isFile()) continue;
-      const source = sources.find((s) => s.matchesManifestFile(entry.name));
-      if (source === undefined) continue;
-      found = true;
-      let content: string;
-      try {
-        content = readFileSync(join(dir, entry.name), "utf8");
-      } catch {
-        continue;
-      }
-      for (const name of source.parseDeclaredDependencies(entry.name, content)) declared.add(name);
+      if (!entry.isFile() || !matchesManifestFile(entry.name)) continue;
+      onManifest(dir, relDir, entry.name);
     }
   };
-
-  visit(root, 0);
-  return found ? Object.freeze(declared) : undefined;
+  visit(root, "", 0);
 }

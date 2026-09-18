@@ -45,6 +45,7 @@ import {
   type CallResolver,
   type DispatchFanoutOutcome,
   type FileExtraction,
+  type SymbolResolutionPassPlan,
   type SymbolResolutionTarget,
 } from "../../../contracts/types/codegraph.js";
 import type {
@@ -100,6 +101,9 @@ export class GoLanguage implements LanguageProvider {
       resolve: (call: CallRef, ctx: CallContext): SymbolResolutionTarget | null => callResolver.resolve(call, ctx),
       resolveDispatch: (call: CallRef, ctx: CallContext): DispatchFanoutOutcome =>
         callResolver.resolveDispatch?.(call, ctx) ?? emptyDispatchFanout(),
+      // The pass-start seam re-reads the project's go.mod module map (bd
+      // tea-rags-mcp-e6xx) before the first package-qualified call resolves.
+      prepareResolvePass: (plan: SymbolResolutionPassPlan): void => callResolver.prepareResolvePass?.(plan),
     };
   }
 }

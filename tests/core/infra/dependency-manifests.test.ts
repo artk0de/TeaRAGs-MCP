@@ -22,7 +22,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import type { DependencyManifestSource } from "../../../src/core/contracts/types/language.js";
 import { PYTHON_DEPENDENCY_MANIFEST } from "../../../src/core/domains/language/python/manifest.js";
-import { readDeclaredDependencies } from "../../../src/core/infra/dependency-manifests.js";
+import { readDeclaredDependencies, readManifestFiles } from "../../../src/core/infra/dependency-manifests.js";
 
 const SOURCES: readonly DependencyManifestSource[] = [PYTHON_DEPENDENCY_MANIFEST];
 
@@ -105,5 +105,37 @@ describe("readDeclaredDependencies", () => {
     write("pyproject.toml", '[project]\ndependencies = ["django"]\n');
     const declared = readDeclaredDependencies(root, SOURCES);
     expect(Object.isFrozen(declared)).toBe(true);
+  });
+});
+
+/**
+ * The same walk, handing back each manifest's LOCATION and content rather than
+ * a union of names (bd tea-rags-mcp-e6xx). Go's `go.mod` is not a dependency
+ * list the vocabulary gate consumes: what a Go resolver needs is which module
+ * path each directory tree declares, and a multi-module repository declares one
+ * per nested `go.mod`, so the answer has to say where each file sits.
+ */
+describe("readManifestFiles", () => {
+  const isGoMod = (name: string): boolean => name === "go.mod";
+
+  it("returns each matching file with its repo-relative directory, the root as ''", () => {
+    write("go.mod", "module example.com/app\n");
+    write(join("tools", "lint", "go.mod"), "module example.com/app/tools/lint\n");
+    write(join("tools", "lint", "main.go"), "package main\n");
+    const found = readManifestFiles(root, isGoMod).sort((a, b) => a.relDir.localeCompare(b.relDir));
+    expect(found).toEqual([
+      { relDir: "", fileName: "go.mod", content: "module example.com/app\n" },
+      { relDir: "tools/lint", fileName: "go.mod", content: "module example.com/app/tools/lint\n" },
+    ]);
+  });
+
+  it("shares the walk's bounds: no vendored trees, no deeper than 4 levels", () => {
+    write(join("node_modules", "x", "go.mod"), "module vendored\n");
+    write(join("a", "b", "c", "d", "e", "go.mod"), "module too.deep\n");
+    expect(readManifestFiles(root, isGoMod)).toEqual([]);
+  });
+
+  it("answers an empty list for a root that does not exist, rather than throwing", () => {
+    expect(readManifestFiles(join(root, "nope"), isGoMod)).toEqual([]);
   });
 });

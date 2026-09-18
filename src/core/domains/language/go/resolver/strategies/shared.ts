@@ -19,11 +19,18 @@ import {
   type SymbolResolutionTarget,
 } from "../../../../../contracts/types/codegraph.js";
 import type { SymbolIdComposer } from "../../../../../contracts/types/language.js";
+import type { GoModuleMapCache } from "../go-module-map.js";
 import { selectGoMember } from "../struct-member-selection.js";
 
 export interface ResolverConfig {
   composer: SymbolIdComposer;
   mode: AmbiguousResolveMode;
+  /**
+   * The project's go.mod module map, read per root (bd tea-rags-mcp-e6xx).
+   * Absent — a strategy built on its own in a test — means no module is known,
+   * and import paths match GOPATH-style, as the package's exact directory.
+   */
+  moduleMaps?: GoModuleMapCache;
 }
 
 /**

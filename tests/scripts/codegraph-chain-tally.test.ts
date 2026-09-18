@@ -171,3 +171,56 @@ describe("codegraph-chain-tally per-chunk call bindings", () => {
     expect(row?.runnerAnswer).toEqual({ targetRelPath: "gin.go", targetSymbolId: "Engine#Use" });
   });
 });
+
+/**
+ * `projectRoot` is threaded to every call context in production
+ * (`CallEdgeResolutionRunner#buildCallContext`); the tally threaded it for
+ * Ruby's Zeitwerk alone. Go reads the project's go.mod module map through it,
+ * so without it every module-path import measured as a miss (bd
+ * tea-rags-mcp-e6xx).
+ */
+describe("codegraph-chain-tally project root", () => {
+  let corpus: string;
+  let result: RunResult;
+
+  function write(relPath: string, content: string): void {
+    const absolute = join(corpus, relPath);
+    mkdirSync(dirname(absolute), { recursive: true });
+    writeFileSync(absolute, content, "utf8");
+  }
+
+  beforeEach(async () => {
+    corpus = mkdtempSync(join(tmpdir(), "chain-tally-gomod-"));
+    write("go.mod", "module github.com/gin-gonic/gin\n");
+    write(
+      "internal/bytesconv/bytesconv.go",
+      "package bytesconv\n\nfunc StringToBytes(s string) []byte { return nil }\n",
+    );
+    write(
+      "auth.go",
+      [
+        "package gin",
+        "",
+        'import "github.com/gin-gonic/gin/internal/bytesconv"',
+        "",
+        "func authorizationHeader(user string) []byte {",
+        "\treturn bytesconv.StringToBytes(user)",
+        "}",
+        "",
+      ].join("\n"),
+    );
+    result = await run(corpus, "go", null, Number.MAX_SAFE_INTEGER, true, true, { timeOnly: true });
+  }, 30_000);
+
+  afterEach(() => {
+    rmSync(corpus, { recursive: true, force: true });
+  });
+
+  it("resolves a module-path import through the corpus's go.mod, as production does", () => {
+    const row = result.rows.find((r) => r.receiver === "bytesconv" && r.member === "StringToBytes");
+    expect(row?.runnerAnswer).toEqual({
+      targetRelPath: "internal/bytesconv/bytesconv.go",
+      targetSymbolId: "StringToBytes",
+    });
+  });
+});
