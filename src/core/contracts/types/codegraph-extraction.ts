@@ -461,11 +461,10 @@ export interface ChunkExtraction {
    * resolver looks the called name up in `CallContext.functionReturnTypes` to
    * obtain the return type, then resolves `varName.method()` against it.
    *
-   * Populated by the Go walker for single-LHS short-var-decls whose RHS is a
-   * call to a plain identifier (`New()`) or a package selector (`pkg.New()` →
-   * records the bare last segment `New`). Multi-LHS (`a, b := f(), g()`) and
-   * chained-call RHS (`New().Configure()`) are OMITTED — the var↔return pairing
-   * is not unambiguous. bd tea-rags-mcp-6g9c.
+   * Populated by the Ruby walker (bd tea-rags-mcp-6g9c). It is CHUNK-WIDE — one
+   * entry per name, no position — which is why Go moved its call bindings to
+   * the position-aware `callResultBindings` (bd tea-rags-mcp-e6xx); the Go
+   * resolver still reads an entry here as a binding in scope on every line.
    *
    * Plain Record (NOT Map) for NDJSON-spill round-trip, same as localBindings.
    */
@@ -479,7 +478,10 @@ export interface ChunkExtraction {
    *
    * Populated by the Python walker under `CODEGRAPH_PY_LOCAL_TYPE_TRACKING`,
    * for single-identifier targets only: tuple unpacking, a chained or
-   * subscripted callee, and a module-level assignment are all omitted.
+   * subscripted callee, and a module-level assignment are all omitted. And by
+   * the Go walker (bd tea-rags-mcp-e6xx) for a single-LHS short var decl whose
+   * RHS calls a plain identifier or a package selector (`x := New()`,
+   * `x := pkg.New()`), with `endLine` / `scopeEndLine` carrying Go's scope.
    *
    * Plain Record (NOT Map) for NDJSON-spill round-trip, same as localBindings.
    */

@@ -304,7 +304,8 @@ export interface CallContext {
    * `ChunkExtraction.localCallBindings`. Resolvers combine this with
    * `functionReturnTypes` to bind `x := New(); x.method()` to
    * `<New's return type>#method`. Set by the provider per-call from the
-   * caller chunk's `localCallBindings`. bd tea-rags-mcp-6g9c.
+   * caller chunk's `localCallBindings`. bd tea-rags-mcp-6g9c. Chunk-wide: Go
+   * records its call bindings positionally in `callResultBindings` instead.
    */
   localCallBindings?: Record<string, string>;
   /**

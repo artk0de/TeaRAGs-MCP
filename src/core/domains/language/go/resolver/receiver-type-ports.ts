@@ -5,9 +5,10 @@
  * field declaration, and the call lands on `responseWriter#reset`.
  *
  *   - `singleHopType` — a plain identifier, typed exactly as the two binding
- *     passes type it: its local binding (an empty one is untyped), else the
- *     declared return type of the function it was assigned from, behind the
- *     same known-type gate. Anything else (`f()`, `xs[i]`) is untyped.
+ *     passes type it: the local `goLocalAt` finds in scope — a value binding
+ *     (an empty one is untyped), or a call binding typed through its callee's
+ *     declared return type behind the same known-type gate. Anything else
+ *     (`f()`, `xs[i]`) is untyped.
  *   - `seedHead` — none. A Go chain head is a value or a package, and a package
  *     is the import pass's business.
  *   - `memberTypeOf` — a FIELD hop only, read through `selectGoMember`, so a
@@ -29,8 +30,8 @@ import {
   splitReceiverHops,
   type ReceiverTypePorts,
 } from "../../kernel/receiver-type-propagation.js";
-import { goLocalBindingAt } from "../local-scope.js";
-import { isKnownTypeSymbol } from "./strategies/shared.js";
+import { goLocalAt } from "../local-scope.js";
+import { goCallResultType } from "./strategies/shared.js";
 import { selectGoMember } from "./struct-member-selection.js";
 
 const GO_IDENTIFIER = /^[\p{L}_][\p{L}\p{N}_]*$/u;
@@ -41,13 +42,13 @@ function instanceOf(name: string): TypeRef {
 
 function goIdentifierType(receiver: string, atLine: number, ctx: CallContext): TypeRef | undefined {
   if (!GO_IDENTIFIER.test(receiver)) return undefined;
-  // A binding in effect speaks for the name even when its type is EMPTY — a
-  // function-literal parameter no pass can type, shadowing any call binding.
-  const local = goLocalBindingAt(ctx.localBindings, receiver, atLine);
-  if (local) return local.type ? instanceOf(local.type) : undefined;
-  const calledFunc = ctx.localCallBindings?.[receiver];
-  const returnType = calledFunc ? ctx.functionReturnTypes?.[calledFunc] : undefined;
-  return returnType && isKnownTypeSymbol(returnType, ctx) ? instanceOf(returnType) : undefined;
+  // The local in scope speaks for the name even when its type is EMPTY — a
+  // value no pass can type, shadowing any earlier binding of the name.
+  const local = goLocalAt(ctx, receiver, atLine);
+  if (local === undefined) return undefined;
+  if (local.kind === "value") return local.binding.type ? instanceOf(local.binding.type) : undefined;
+  const returnType = goCallResultType(local.callee, ctx);
+  return returnType ? instanceOf(returnType) : undefined;
 }
 
 export function createGoReceiverTypePorts(composer: SymbolIdComposer): ReceiverTypePorts {

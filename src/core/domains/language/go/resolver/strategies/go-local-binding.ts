@@ -1,7 +1,7 @@
 import { CONTINUE, DROP, resolved } from "../../../../../contracts/resolution.js";
 import type { CallContext, CallRef } from "../../../../../contracts/types/codegraph.js";
 import type { SymbolResolutionOutcome, SymbolResolutionStrategy } from "../../../../../contracts/types/language.js";
-import { goLocalBindingAt } from "../../local-scope.js";
+import { goLocalAt } from "../../local-scope.js";
 import { resolveByLocalType, type ResolverConfig } from "./shared.js";
 
 /**
@@ -21,8 +21,10 @@ import { resolveByLocalType, type ResolverConfig } from "./shared.js";
  * local or parameter named like an import (`config, err := loadTwo()`,
  * `func f(render io.Writer)`; bd tea-rags-mcp-e6xx). It DROPS too: the call
  * binding (`c := New()`) and the import it shadows would both speak for the
- * wrong variable. "In effect" is Go's scope rule (`goLocalBindingAt`): a local
- * a statement declares is not yet in scope on that statement's own lines.
+ * wrong variable. "In effect" is Go's scope rule (`goLocalAt`): a local a
+ * statement declares is not yet in scope on that statement's own lines, and
+ * of the locals in scope the one declared last wins — a call binding declared
+ * after this one (`e := New()` in a nested block) is `returnTypeBinding`'s.
  */
 export class GoLocalBindingSymbolResolutionStrategy implements SymbolResolutionStrategy {
   readonly name = "localBinding";
@@ -30,10 +32,10 @@ export class GoLocalBindingSymbolResolutionStrategy implements SymbolResolutionS
 
   attempt(call: CallRef, ctx: CallContext): SymbolResolutionOutcome {
     if (!call.receiver) return CONTINUE;
-    const binding = goLocalBindingAt(ctx.localBindings, call.receiver, call.startLine);
-    if (!binding) return CONTINUE;
-    if (!binding.type) return DROP;
-    const target = resolveByLocalType(this.cfg, binding.type, call.member, ctx);
+    const local = goLocalAt(ctx, call.receiver, call.startLine);
+    if (local?.kind !== "value") return CONTINUE;
+    if (!local.binding.type) return DROP;
+    const target = resolveByLocalType(this.cfg, local.binding.type, call.member, ctx);
     return target ? resolved(target) : DROP;
   }
 }

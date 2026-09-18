@@ -1,7 +1,7 @@
 import { CONTINUE, resolved } from "../../../../../contracts/resolution.js";
 import { pickSingleCandidate, type CallContext, type CallRef } from "../../../../../contracts/types/codegraph.js";
 import type { SymbolResolutionOutcome, SymbolResolutionStrategy } from "../../../../../contracts/types/language.js";
-import { goLocalBindingAt } from "../../local-scope.js";
+import { goLocalAt } from "../../local-scope.js";
 import { lookupGoSymbolsByShortName } from "../go-symbol-lookup.js";
 import { goImportPackageDir, goPackageDirOf, type ResolverConfig } from "./shared.js";
 
@@ -32,7 +32,7 @@ export class GoGlobalShortNameSymbolResolutionStrategy implements SymbolResoluti
 
   attempt(call: CallRef, ctx: CallContext): SymbolResolutionOutcome {
     if (call.receiver) return CONTINUE;
-    if (goLocalBindingAt(ctx.localBindings, call.member, call.startLine)) return CONTINUE;
+    if (goLocalAt(ctx, call.member, call.startLine)) return CONTINUE;
     const scope = this.bareCallPackageDirs(ctx);
     const candidates = lookupGoSymbolsByShortName(ctx, call.member).filter(
       (def) => def.symbolId === call.member && scope.has(goPackageDirOf(def.relPath)),

@@ -1,6 +1,7 @@
 import { CONTINUE, resolved } from "../../../../../contracts/resolution.js";
 import type { CallContext, CallRef } from "../../../../../contracts/types/codegraph.js";
 import type { SymbolResolutionOutcome, SymbolResolutionStrategy } from "../../../../../contracts/types/language.js";
+import { goLocalAt } from "../../local-scope.js";
 import { resolveImportedPackageMember, type ResolverConfig } from "./shared.js";
 
 /**
@@ -24,6 +25,12 @@ import { resolveImportedPackageMember, type ResolverConfig } from "./shared.js";
  * Only a package-level declaration answers — `symbolId` equal to the member —
  * so a method of the same name in that package is not picked. Non-guard: a
  * miss CONTINUEs to the receiver-present drop.
+ *
+ * A receiver that names a LOCAL in scope (`goLocalAt`) is a value, never the
+ * package it shadows (bd tea-rags-mcp-e6xx): `config := config.LoadAny();
+ * config.Validate()` is a method call on whatever `LoadAny` returned, even when
+ * no pass could type it. The declaring statement's own right-hand side is not
+ * yet in the local's scope, so `config.LoadAny()` itself still matches.
  */
 export class GoImportMatchSymbolResolutionStrategy implements SymbolResolutionStrategy {
   readonly name = "importMatch";
@@ -31,6 +38,7 @@ export class GoImportMatchSymbolResolutionStrategy implements SymbolResolutionSt
 
   attempt(call: CallRef, ctx: CallContext): SymbolResolutionOutcome {
     if (!call.receiver) return CONTINUE;
+    if (goLocalAt(ctx, call.receiver, call.startLine)) return CONTINUE;
     const target = resolveImportedPackageMember(this.cfg, call.receiver, call.member, ctx);
     return target ? resolved(target) : CONTINUE;
   }

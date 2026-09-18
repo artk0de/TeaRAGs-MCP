@@ -121,9 +121,10 @@ describe("codegraph-chain-tally run-global field channel", () => {
 });
 
 /**
- * `localCallBindings` is a PER-CHUNK channel production threads for every
- * language (`CallEdgeResolutionRunner#buildCallContext`), and Go's
- * `returnTypeBinding` pass reads nothing else. A tally that threads it for Ruby
+ * The call-binding channels (`localCallBindings`, and `callResultBindings`
+ * where Go records them positionally) are PER-CHUNK channels production
+ * threads for every language (`CallEdgeResolutionRunner#buildCallContext`), and
+ * Go's `returnTypeBinding` pass reads nothing else. A tally that threads them for Ruby
  * alone measures a Go chain whose second pass can never fire, so gin's
  * `engine := New(); engine.Use(...)` read as a miss production does not have
  * (bd tea-rags-mcp-e6xx).

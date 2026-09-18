@@ -66,6 +66,7 @@ function resolveAll(body: string[]): Map<string, string | null> {
     symbolTable: projectTable(),
     localBindings: chunk.localBindings,
     localCallBindings: chunk.localCallBindings,
+    callResultBindings: chunk.callResultBindings,
   };
   const out = new Map<string, string | null>();
   for (const call of chunk.calls) {

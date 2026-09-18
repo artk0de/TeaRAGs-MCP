@@ -77,6 +77,50 @@ describe("Go walker — block-scoped local bindings", () => {
     expect(goLocalBindingAt(bindings, "config", 7)).toEqual({ line: 4, type: "", endLine: 6 });
   });
 
+  it("positions a call binding at its statement and scopes it to its block", () => {
+    const src = [
+      "package app",
+      "func f(ok bool) {",
+      "\tif ok {",
+      "\t\te := New(",
+      "\t\t\t1,",
+      "\t\t)",
+      "\t\te.Use()",
+      "\t}",
+      "}",
+    ];
+    const text = `${src.join("\n")}\n`;
+    const r = extractFromGoFile({
+      tree: parse(text),
+      code: text,
+      relPath: "app/app.go",
+      language: "go",
+      chunks: [{ symbolId: "f", scope: [], startLine: 2, endLine: src.length }],
+    });
+    expect(r.chunks[0].callResultBindings?.e).toEqual([{ line: 4, callee: "New", endLine: 6, scopeEndLine: 8 }]);
+    expect(r.chunks[0].localCallBindings).toBeUndefined();
+  });
+
+  it("records no call binding a var↔return pairing cannot back", () => {
+    const src = [
+      "package app",
+      "func f() {",
+      "\ta, b := New(), Other()",
+      "\tx := New().Configure()",
+      "\t_, _, _ = a, b, x",
+      "}",
+    ];
+    const text = `${src.join("\n")}\n`;
+    const r = extractFromGoFile({
+      tree: parse(text),
+      code: text,
+      relPath: "app/app.go",
+      language: "go",
+      chunks: [{ symbolId: "f", scope: [], startLine: 2, endLine: src.length }],
+    });
+    expect(r.chunks[0].callResultBindings).toBeUndefined();
+  });
+
   it("records no shadow for a local whose name no import binds", () => {
     const bindings = bindingsOf([
       "package app",

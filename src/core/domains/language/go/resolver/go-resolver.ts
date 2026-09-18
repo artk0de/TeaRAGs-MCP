@@ -14,8 +14,9 @@
  * The pass order (each `name` in parens), mirroring PythonCallResolver step 0:
  *   1. localBinding      (Step 0 — `localBindings[receiver]` typed receiver;
  *                          guard: resolves or drops, bd tea-rags-mcp-e6xx)
- *   2. returnTypeBinding (Step 0b — `localCallBindings` + `functionReturnTypes`
- *                          with the concrete-type gate, bd tea-rags-mcp-6g9c)
+ *   2. returnTypeBinding (Step 0b — call bindings (`callResultBindings`) +
+ *                          `functionReturnTypes` with the concrete-type gate,
+ *                          bd tea-rags-mcp-6g9c)
  *   3. receiverChain     (Step 0c — dotted receiver typed through struct
  *                          fields; guard: resolves or drops, bd tea-rags-mcp-e6xx)
  *   4. importMatch       (Step 1 — receiver matches an import's last segment)

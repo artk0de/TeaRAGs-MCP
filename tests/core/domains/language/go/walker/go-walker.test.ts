@@ -357,7 +357,7 @@ describe("extractFromGoFile — functionReturnTypes (file-level)", () => {
 });
 
 describe("extractFromGoFile — localCallBindings (per-chunk var := Call())", () => {
-  it("captures `engine := New()` → localCallBindings { engine: 'New' }", () => {
+  it("captures `engine := New()` → a call binding { engine: callee 'New' }", () => {
     const src = ["package gin", "func Default() {", "  engine := New()", "  engine.Use()", "}", ""].join("\n");
     const r = extractFromGoFile({
       tree: parse(src),
@@ -366,12 +366,12 @@ describe("extractFromGoFile — localCallBindings (per-chunk var := Call())", ()
       language: "go",
       chunks: [{ symbolId: "Default", scope: [], startLine: 2, endLine: 5 }],
     });
-    expect(r.chunks[0].localCallBindings?.engine).toBe("New");
+    expect(r.chunks[0].callResultBindings?.engine?.map((b) => b.callee)).toEqual(["New"]);
     // Walker must NOT pre-resolve the type — that's the resolver's job.
     expect(r.chunks[0].localBindings?.engine).toBeUndefined();
   });
 
-  it("captures `e := pkg.New()` → localCallBindings { e: 'New' } (selector func, bare last segment)", () => {
+  it("captures `e := pkg.New()` → a call binding { e: callee 'pkg.New' } (selector func)", () => {
     const src = ["package gin", "func Default() {", "  e := pkg.New()", "  e.Use()", "}", ""].join("\n");
     const r = extractFromGoFile({
       tree: parse(src),
@@ -380,7 +380,7 @@ describe("extractFromGoFile — localCallBindings (per-chunk var := Call())", ()
       language: "go",
       chunks: [{ symbolId: "Default", scope: [], startLine: 2, endLine: 5 }],
     });
-    expect(r.chunks[0].localCallBindings?.e).toBe("New");
+    expect(r.chunks[0].callResultBindings?.e?.map((b) => b.callee)).toEqual(["pkg.New"]);
   });
 
   it("does NOT record multi-LHS `a, b := New(), Other()` (can't pair var↔return)", () => {

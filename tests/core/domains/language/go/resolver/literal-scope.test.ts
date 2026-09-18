@@ -50,6 +50,7 @@ function resolveAll(src: string, table: InMemoryGlobalSymbolTable): Map<number, 
     symbolTable: table,
     localBindings: chunk.localBindings,
     localCallBindings: chunk.localCallBindings,
+    callResultBindings: chunk.callResultBindings,
     // Run-global in production: `New` is declared in another file of gin.
     functionReturnTypes: { New: "Engine" },
   };

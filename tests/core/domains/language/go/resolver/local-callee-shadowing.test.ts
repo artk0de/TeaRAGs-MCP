@@ -63,6 +63,7 @@ function walkAndResolve(body: string[]): Walked {
     symbolTable: packageTable(),
     localBindings: chunk.localBindings,
     localCallBindings: chunk.localCallBindings,
+    callResultBindings: chunk.callResultBindings,
   };
   const resolved = new Map<string, string | null>();
   for (const call of chunk.calls) {

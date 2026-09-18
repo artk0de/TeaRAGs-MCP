@@ -23,6 +23,7 @@
 import type { AstNode, MaterializedTree } from "../../../../contracts/types/ast.js";
 import type {
   CallRef,
+  CallResultBinding,
   ChunkExtraction,
   FileExtraction,
   ImportRef,
@@ -63,10 +64,10 @@ export function extractFromGoFile(input: GoExtractInput): FileExtraction {
     };
     // bd tea-rags-mcp-e6xx / 6g9c — per-chunk bindings. `localBindings`
     // (varName → TYPE) covers receivers, params, `var x Foo`, `x := Foo{}`.
-    // `localCallBindings` (varName → CALLED FUNC) covers `x := New()` where
-    // the return type can't be known in-chunk; the resolver pairs it with
-    // the file-level `functionReturnTypes`. The resolver consults both to
-    // turn typed/return-typed calls into qualified `Type#method` targets.
+    // `callResultBindings` (varName → positioned CALLED FUNC) covers
+    // `x := New()` where the return type can't be known in-chunk; the resolver
+    // pairs it with the run-global `functionReturnTypes`. The resolver consults
+    // both to turn typed/return-typed calls into qualified `Type#method` targets.
     const { types, calls: callBindings } = collectGoLocalBindingsForChunk(
       input.tree.rootNode,
       c.startLine,
@@ -74,7 +75,7 @@ export function extractFromGoFile(input: GoExtractInput): FileExtraction {
       goShadowedNames(importNames, base.calls, bareCalleeHeads),
     );
     if (Object.keys(types).length > 0) base.localBindings = types;
-    if (Object.keys(callBindings).length > 0) base.localCallBindings = callBindings;
+    if (Object.keys(callBindings).length > 0) base.callResultBindings = callBindings;
     return base;
   });
   const extraction: FileExtraction = {
@@ -104,7 +105,7 @@ export function extractFromGoFile(input: GoExtractInput): FileExtraction {
  *   - `func f()`            → no `result` field → SKIP.
  *
  * Methods are keyed by the method name (`Build`), matching how the resolver
- * reads `localCallBindings` short names. Last-write-wins on duplicate names;
+ * reads a call binding's bare callee name. Last-write-wins on duplicate names;
  * resolver-side ambiguity is gated by the symbol-table existence check.
  */
 function collectGoFunctionReturnTypes(root: AstNode): Record<string, string> {
@@ -332,12 +333,16 @@ function walk(node: AstNode, visit: (n: AstNode) => void): void {
  * that block's last line as `scopeEndLine`.
  *
  * Function-return short decls `x := New()` are captured into the SEPARATE
- * `calls` map (varName → called func short name), NOT `types` — the walker
- * can't know the return type from the chunk alone (the function may be
- * declared elsewhere). The resolver pairs `calls` with the file-level
+ * `calls` map (varName → `CallResultBinding[]`: the callee as written, and the
+ * same `endLine` / `scopeEndLine` positions), NOT `types` — the walker can't
+ * know the return type from the chunk alone (the function may be declared
+ * elsewhere). The resolver pairs the callee with the run-global
  * `functionReturnTypes` map and applies the symbol-table existence gate; this
  * is SAFE because declared return types are static, not guesses, and only
  * concrete struct types that exist in the table ever bind. bd tea-rags-mcp-6g9c.
+ * Each declaration is its own positioned entry (bd tea-rags-mcp-e6xx) — the
+ * chunk-wide `localCallBindings` map this replaces spoke for the name on every
+ * line, the declaring statement's own right-hand side included.
  * Go has no `self`/`this`: receivers, local vars, AND return-typed vars are
  * the only static type hints for `engine.Use()`-style calls.
  */
@@ -346,9 +351,9 @@ function collectGoLocalBindingsForChunk(
   startLine: number,
   endLine: number,
   shadowedNames: ReadonlySet<string>,
-): { types: Record<string, LocalBinding[]>; calls: Record<string, string> } {
+): { types: Record<string, LocalBinding[]>; calls: Record<string, CallResultBinding[]> } {
   const bindings: Record<string, LocalBinding[]> = {};
-  const callBindings: Record<string, string> = {};
+  const callBindings: Record<string, CallResultBinding[]> = {};
   // Find the function/method declaration node whose span matches the
   // chunk's [startLine, endLine] range. Tree-sitter rows are 0-indexed;
   // we use the start row as the match anchor (chunks are anchored at
@@ -407,7 +412,7 @@ function collectGoLocalBindingsForChunk(
 /** The per-chunk binding maps under construction, and the names an untyped local must shadow. */
 interface GoBindingSink {
   readonly types: Record<string, LocalBinding[]>;
-  readonly calls: Record<string, string>;
+  readonly calls: Record<string, CallResultBinding[]>;
   /**
    * The names the file's imports bind (`goImportBoundName`) and the chunk
    * calls bare (`goShadowedNames`). A local of one of these names records an
@@ -599,9 +604,15 @@ function bindShortVarDeclaration(node: AstNode, scopeEnd: number | undefined, si
         return;
       }
     } else if (value.type === "call_expression") {
-      const funcName = readCalledFunctionName(value);
-      if (funcName) {
-        sink.calls[name.text] = funcName;
+      const callee = readCalledFunctionName(value);
+      if (callee) {
+        const binding: CallResultBinding = {
+          line: name.startPosition.row + 1,
+          callee,
+          endLine: node.endPosition.row + 1,
+          ...(scopeEnd === undefined ? {} : { scopeEndLine: scopeEnd }),
+        };
+        (sink.calls[name.text] ??= []).push(binding);
         return;
       }
     }
@@ -653,12 +664,13 @@ function bindFuncLiteralParams(
 }
 
 /**
- * Read the called function's short name from a `call_expression` RHS, but
- * ONLY for the two statically-pairable shapes:
+ * Read the called function's spelling from a `call_expression` RHS, but ONLY
+ * for the two statically-pairable shapes:
  *   - `New()`      → `function` field is an `identifier` → "New"
  *   - `pkg.New()`  → `function` field is a `selector_expression` whose
  *                    operand is a plain `identifier` (package qualifier) →
- *                    bare last segment "New".
+ *                    "pkg.New"; the resolver keys `functionReturnTypes` by the
+ *                    bare last segment.
  * Returns null for chained calls (`New().Configure()` — selector operand is
  * itself a `call_expression`) and any other shape; the var↔return pairing is
  * only sound when the RHS is a direct call to a named function.
@@ -672,7 +684,7 @@ function readCalledFunctionName(call: AstNode): string | null {
     const field = fn.childForFieldName("field");
     // Only `pkg.New()` (operand is a bare package identifier), not
     // `New().Configure()` (operand is a call) nor `a.b.New()` (chained).
-    if (operand?.type === "identifier" && field?.type === "field_identifier") return field.text;
+    if (operand?.type === "identifier" && field?.type === "field_identifier") return `${operand.text}.${field.text}`;
   }
   return null;
 }

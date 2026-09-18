@@ -84,6 +84,18 @@ export function isKnownTypeSymbol(typeName: string, ctx: CallContext): boolean {
   return lookupGoSymbolsByShortName(ctx, typeName).length > 0;
 }
 
+/**
+ * The type a call-bound local holds (`x := New()`, `x := pkg.New()`): the
+ * callee's declared return type from the run-global `functionReturnTypes`,
+ * keyed by the callee's bare name, and only when it names a known Go type
+ * (`isKnownTypeSymbol`). `undefined` when either is missing.
+ */
+export function goCallResultType(callee: string, ctx: CallContext): string | undefined {
+  const dot = callee.lastIndexOf(".");
+  const returnType = ctx.functionReturnTypes?.[dot === -1 ? callee : callee.slice(dot + 1)];
+  return returnType !== undefined && isKnownTypeSymbol(returnType, ctx) ? returnType : undefined;
+}
+
 /** The package directory of a Go file: its directory, `""` at the root. A Go package is exactly one directory. */
 export function goPackageDirOf(relPath: string): string {
   const dir = posix.dirname(relPath);
