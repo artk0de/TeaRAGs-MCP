@@ -36,7 +36,12 @@ skills.
 4. **Filter is `chunkType`, not `testFile`** — `chunkType: "test"` and
    `chunkType: "test_setup"` are chunk-level DSL filters. `testFile: "only"` =
    file-level fallback, only when DSL chunks absent.
-5. **Agentic-only** — `user-invocable: false` in frontmatter. Recipes = building
+5. **Named preset → `filter: {}`** — `proven`, `hotspots` (and `bugHunt`,
+   `techDebt`, …) ship default filter `{ presets: "production" }` = excludes
+   every test chunk → 0 results. Explicit `filter` REPLACES preset default; `{}`
+   clears it. `proven` is also file-level (`signalLevel: "file"`) → pass
+   `level: "chunk"` to keep DSL chunks. Custom-weight recipes need neither.
+6. **Agentic-only** — `user-invocable: false` in frontmatter. Recipes = building
    blocks consumed by other skills, not surfaced to user.
 
 ## Step 0 — Preflight
@@ -159,6 +164,8 @@ mcp__tea-rags__semantic_search:
   query:       <intent>
   chunkType:   "test_setup"
   rerank:      "proven"               ← stable + old + low-bugFix + multi-author
+  filter:      {}                     ← clears proven's production default (Iron Rule 5)
+  level:       "chunk"                ← proven is file-level; keep setup chunks
   limit:       6
   metaOnly:    false                  ← need setup content
 ```
@@ -235,6 +242,7 @@ mcp__tea-rags__semantic_search:
   chunkType:   "test" if target=="scenarios" else "test_setup"
   pathPattern: <subjectPath if provided, else omit>
   rerank:      "hotspots"
+  filter:      {}                     ← clears hotspots' production default (Iron Rule 5)
   limit:       10
   metaOnly:    true
 ```
