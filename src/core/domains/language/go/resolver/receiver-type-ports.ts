@@ -22,7 +22,7 @@
  * frozen, so the fold allocates nothing per call site.
  */
 
-import { resolveLocalBindingType, type CallContext } from "../../../../contracts/types/codegraph.js";
+import { resolveLocalBinding, type CallContext } from "../../../../contracts/types/codegraph.js";
 import type { SymbolIdComposer, TypeRef } from "../../../../contracts/types/language.js";
 import {
   CHAIN_MAX_HOPS_DEFAULT,
@@ -40,8 +40,10 @@ function instanceOf(name: string): TypeRef {
 
 function goIdentifierType(receiver: string, atLine: number, ctx: CallContext): TypeRef | undefined {
   if (!GO_IDENTIFIER.test(receiver)) return undefined;
-  const local = resolveLocalBindingType(ctx.localBindings, receiver, atLine);
-  if (local) return instanceOf(local);
+  // A binding in effect speaks for the name even when its type is EMPTY — a
+  // function-literal parameter no pass can type, shadowing any call binding.
+  const local = resolveLocalBinding(ctx.localBindings, receiver, atLine);
+  if (local) return local.type ? instanceOf(local.type) : undefined;
   const calledFunc = ctx.localCallBindings?.[receiver];
   const returnType = calledFunc ? ctx.functionReturnTypes?.[calledFunc] : undefined;
   return returnType && isKnownTypeSymbol(returnType, ctx) ? instanceOf(returnType) : undefined;

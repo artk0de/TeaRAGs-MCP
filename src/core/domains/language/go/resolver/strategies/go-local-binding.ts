@@ -1,5 +1,5 @@
 import { CONTINUE, DROP, resolved } from "../../../../../contracts/resolution.js";
-import { resolveLocalBindingType, type CallContext, type CallRef } from "../../../../../contracts/types/codegraph.js";
+import { resolveLocalBinding, type CallContext, type CallRef } from "../../../../../contracts/types/codegraph.js";
 import type { SymbolResolutionOutcome, SymbolResolutionStrategy } from "../../../../../contracts/types/language.js";
 import { resolveByLocalType, type ResolverConfig } from "./shared.js";
 
@@ -14,6 +14,11 @@ import { resolveByLocalType, type ResolverConfig } from "./shared.js";
  * call is owned here — it either resolves (`Type#member` / `Type.member`) or
  * **drops**. It must NOT fall through to a global short-name lookup, which would
  * fabricate a false-positive edge to an unrelated same-named symbol.
+ *
+ * A binding in effect with the EMPTY type is a local no pass can type — a
+ * function-literal parameter of an unbindable type shadowing its name (bd
+ * tea-rags-mcp-e6xx). It DROPS too: the call binding (`c := New()`) and the
+ * import the parameter shadows would both speak for the wrong variable.
  */
 export class GoLocalBindingSymbolResolutionStrategy implements SymbolResolutionStrategy {
   readonly name = "localBinding";
@@ -21,9 +26,10 @@ export class GoLocalBindingSymbolResolutionStrategy implements SymbolResolutionS
 
   attempt(call: CallRef, ctx: CallContext): SymbolResolutionOutcome {
     if (!call.receiver) return CONTINUE;
-    const localType = resolveLocalBindingType(ctx.localBindings, call.receiver, call.startLine);
-    if (!localType) return CONTINUE;
-    const target = resolveByLocalType(this.cfg, localType, call.member, ctx);
+    const binding = resolveLocalBinding(ctx.localBindings, call.receiver, call.startLine);
+    if (!binding) return CONTINUE;
+    if (!binding.type) return DROP;
+    const target = resolveByLocalType(this.cfg, binding.type, call.member, ctx);
     return target ? resolved(target) : DROP;
   }
 }

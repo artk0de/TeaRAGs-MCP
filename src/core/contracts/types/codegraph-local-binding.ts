@@ -57,6 +57,18 @@ export interface LocalBinding {
    * (a `def` parameter hint records none).
    */
   endLine?: number;
+  /**
+   * 1-based LAST line the binding is visible on — for a binding scoped to a
+   * block narrower than the chunk (bd tea-rags-mcp-e6xx: a Go function
+   * literal's parameter, which shadows its name for the literal's lines only).
+   * Past it the lookups skip the binding, so the name denotes whatever it
+   * denoted before the block, or nothing.
+   *
+   * Not {@link LocalBinding.endLine}, which is where the ESTABLISHING statement
+   * ends. ABSENT means visible to the end of the chunk — every binding every
+   * other language records.
+   */
+  scopeEndLine?: number;
 }
 
 /**
@@ -93,6 +105,9 @@ export function resolveLocalBinding(
   if (!list || list.length === 0) return undefined;
   let best: LocalBinding | undefined;
   for (const binding of list) {
+    // Out of its block's scope (bd tea-rags-mcp-e6xx) — `scopeEndLine` is
+    // absent on every binding not scoped narrower than the chunk.
+    if (binding.scopeEndLine !== undefined && binding.scopeEndLine < atLine) continue;
     if (binding.line <= atLine && (best === undefined || binding.line > best.line)) best = binding;
   }
   return best;

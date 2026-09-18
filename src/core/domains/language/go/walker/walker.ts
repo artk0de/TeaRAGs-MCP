@@ -21,13 +21,12 @@
  */
 
 import type { AstNode, MaterializedTree } from "../../../../contracts/types/ast.js";
-import {
-  resolveLocalBinding,
-  type CallRef,
-  type ChunkExtraction,
-  type FileExtraction,
-  type ImportRef,
-  type LocalBinding,
+import type {
+  CallRef,
+  ChunkExtraction,
+  FileExtraction,
+  ImportRef,
+  LocalBinding,
 } from "../../../../contracts/types/codegraph.js";
 import { assignCallsToInnermostChunks } from "../../kernel/assign-calls-to-chunks.js";
 
@@ -253,17 +252,10 @@ function collectGoLocalBindingsForChunk(
     }
   }
 
-  // Scope exits of function-literal parameters, appended AFTER the walk so a
-  // statement that rebinds the name on the literal's closing-line+1 keeps the
-  // first slot at that line (`resolveLocalBinding` takes the first entry at the
-  // greatest line). Read during the walk through `bindingBefore`.
-  const literalExits: { name: string; binding: LocalBinding }[] = [];
-  const bindingBefore = (name: string, atLine: number): string | undefined =>
-    resolveLocalBinding(
-      { [name]: [...(bindings[name] ?? []), ...literalExits.filter((e) => e.name === name).map((e) => e.binding)] },
-      name,
-      atLine,
-    )?.type;
+  // Function-literal parameters whose type binds nothing, settled AFTER the
+  // walk: whether one must shadow depends on bindings the walk has not reached
+  // yet (a `c := New()` later in the body is still an outer `c`).
+  const untypedLiteralParams: UntypedLiteralParam[] = [];
 
   // Local variable declarations inside the body — `var x Foo`, `x :=
   // Foo{}`, `x := &Foo{}` (bd tea-rags-mcp-6g9c). Walk the target
@@ -271,7 +263,7 @@ function collectGoLocalBindingsForChunk(
   // `block` / `statement_list` regardless of nesting depth.
   walk(target as AstNode, (node) => {
     if (node.type === "func_literal") {
-      bindFuncLiteralParams(node, bindings, bindingBefore, literalExits);
+      bindFuncLiteralParams(node, bindings, untypedLiteralParams);
       return;
     }
     if (node.type === "var_declaration") {
@@ -311,8 +303,20 @@ function collectGoLocalBindingsForChunk(
       }
     }
   });
-  for (const exit of literalExits) (bindings[exit.name] ??= []).push(exit.binding);
+  // An untyped literal parameter shadows only a name that means something else
+  // in the chunk — a typed binding or a call binding (`c := New()`). With no
+  // namesake it records nothing, so no binding key appears that was not there.
+  for (const param of untypedLiteralParams) {
+    if (bindings[param.name] === undefined && callBindings[param.name] === undefined) continue;
+    (bindings[param.name] ??= []).push(param.shadow);
+  }
   return { types: bindings, calls: callBindings };
+}
+
+/** A function-literal parameter whose type binds nothing, and the shadow it would record. */
+interface UntypedLiteralParam {
+  name: string;
+  shadow: LocalBinding;
 }
 
 /**
@@ -320,37 +324,33 @@ function collectGoLocalBindingsForChunk(
  * tea-rags-mcp-e6xx) — gin's middlewares are `return func(c *Context) { ... }`,
  * and every call on that `c` went unresolved without it.
  *
- * `localBindings` carries no scope end, so the scope is expressed in lines: the
- * parameter binds at its own line, and an exit binding one line past the
- * literal re-establishes whatever `bindingBefore` saw in effect at the
- * literal's start. When nothing was in effect the exit carries the EMPTY type,
- * which every reader treats as "no type" (`resolveLocalBindingType` answers a
- * falsy value), so a literal's `c *Context` cannot leak onto a later,
- * differently-typed `c` of the enclosing function.
+ * Each binding carries `scopeEndLine` = the literal's last line, so the shared
+ * lookup skips it past the literal and the name denotes whatever it denoted
+ * before — a typed outer binding, the `c := New()` call binding, or nothing.
  *
- * A parameter whose type binds nothing (`w http.ResponseWriter`) still SHADOWS
- * an outer typed namesake with an empty binding; with no outer namesake it
- * records nothing at all, so no binding key appears that was not there before.
+ * A parameter whose type binds nothing (`w http.ResponseWriter`,
+ * `c interface{ Use() }`) is a local of UNKNOWN type for the literal's lines: it
+ * is recorded with the EMPTY type, which Go's readers take as "a local no pass
+ * can type" — so neither an outer binding, a call binding of the same name, nor
+ * an import it shadows speaks for it. Whether it needs recording at all is
+ * settled after the walk (`untypedLiteralParams`).
  */
 function bindFuncLiteralParams(
   literal: AstNode,
   bindings: Record<string, LocalBinding[]>,
-  bindingBefore: (name: string, atLine: number) => string | undefined,
-  literalExits: { name: string; binding: LocalBinding }[],
+  untypedLiteralParams: UntypedLiteralParam[],
 ): void {
   const params = literal.childForFieldName("parameters");
   if (!params) return;
-  const startLine = literal.startPosition.row + 1;
-  const exitLine = literal.endPosition.row + 2;
+  const scopeEndLine = literal.endPosition.row + 1;
   for (const param of params.children) {
     if (param.type !== "parameter_declaration") continue;
     const name = readParamName(param);
     if (!name) continue;
-    const outer = bindingBefore(name, startLine) ?? "";
+    const line = param.startPosition.row + 1;
     const type = readParamBareType(param);
-    if (!type && !outer) continue;
-    (bindings[name] ??= []).push({ line: param.startPosition.row + 1, type: type ?? "" });
-    literalExits.push({ name, binding: { line: exitLine, type: outer } });
+    if (type) (bindings[name] ??= []).push({ line, type, scopeEndLine });
+    else untypedLiteralParams.push({ name, shadow: { line, type: "", scopeEndLine } });
   }
 }
 

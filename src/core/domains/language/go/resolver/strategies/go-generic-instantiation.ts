@@ -1,7 +1,7 @@
 import { CONTINUE, resolved } from "../../../../../contracts/resolution.js";
 import {
   pickSingleCandidate,
-  resolveLocalBindingType,
+  resolveLocalBinding,
   type CallContext,
   type CallRef,
 } from "../../../../../contracts/types/codegraph.js";
@@ -38,7 +38,8 @@ export class GoGenericInstantiationSymbolResolutionStrategy implements SymbolRes
     if (call.receiver) return CONTINUE;
     const operand = GO_INDEXED_CALLEE.exec(call.member)?.[1];
     if (operand === undefined) return CONTINUE;
-    if (resolveLocalBindingType(ctx.localBindings, operand, call.startLine)) return CONTINUE;
+    // Any local in effect shadows the declaration — typed or not.
+    if (resolveLocalBinding(ctx.localBindings, operand, call.startLine)) return CONTINUE;
     const callerPackage = goPackageDirOf(ctx.callerFile);
     const candidates = ctx.symbolTable
       .lookup(operand)
