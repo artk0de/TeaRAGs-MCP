@@ -1,7 +1,8 @@
 /**
  * Codegraph graph value types — the persisted graph itself, independent of the
  * client that reads or writes it: the file node, its outgoing file / method /
- * inheritance edges, the edge-provenance vocabulary (`MethodEdgeKind`), the SCC
+ * inheritance edges, the edge-provenance vocabulary (`MethodEdgeKind`), the
+ * whole-graph file dependency snapshot the boundary diagnostics read, the SCC
  * scope and cycle rows, the per-symbol signal triple, and the two run-level
  * aggregate rows (`EdgeKindCount`, `ResolveRunStatsRow`).
  *
@@ -35,6 +36,46 @@ export interface FileGraphMetrics {
   fanIn: number;
   fanOut: number;
   transitiveImpact: number;
+}
+
+/**
+ * One walked file of the {@link FileDependencyGraph} — a `cg_symbols_files` row.
+ */
+export interface FileDependencyGraphFile {
+  relPath: RelPath;
+  language: string;
+  /**
+   * `cg_symbols` rows defined in this file. 0 means the walk found no symbol
+   * definition — a re-export barrel, a data-only module.
+   */
+  symbolCount: number;
+}
+
+/**
+ * One file → file dependency: a `cg_symbols_edges_file` row, the edge set
+ * `codegraph.file.fanIn` / `fanOut` / `instability` are counted over.
+ */
+export interface FileDependencyEdge {
+  sourceRelPath: RelPath;
+  targetRelPath: RelPath;
+  /**
+   * Confidence-weighted sum of the resolved method-call edges from
+   * `sourceRelPath` into `targetRelPath` — the weighting `codegraph.chunk.fanIn`
+   * uses, so an m-way dynamic fan-out adds ~1, not m. 0 when the dependency
+   * carries no resolved call (a constant, a type used as a value, a JSX
+   * element, a re-export).
+   */
+  callWeight: number;
+}
+
+/**
+ * The persisted file dependency graph, whole: every walked file and every file
+ * edge — including an edge whose endpoint the walk never extracted, because
+ * that edge still counts toward the other endpoint's fan.
+ */
+export interface FileDependencyGraph {
+  files: FileDependencyGraphFile[];
+  edges: FileDependencyEdge[];
 }
 
 export type CycleScope = "file" | "method";

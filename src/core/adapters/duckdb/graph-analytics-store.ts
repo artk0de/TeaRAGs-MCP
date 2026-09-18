@@ -8,12 +8,17 @@
  * path, pre-bucketed for older callers), then atomically replace
  * `cg_symbols_cycles` / `cg_symbols_metrics` with the computed result.
  *
+ * The file dependency graph read (`readFileDependencyGraph`) follows the same
+ * split: this module returns edges and call weights, and the boundary
+ * diagnostics in `domains/trajectory/codegraph/symbols/boundary-diagnostics/`
+ * own the judgement.
+ *
  * The one piece of logic that IS here is cycle path filtering: a `CycleEntry`
  * carries members, not paths, so matching a glob against a method-scope cycle
  * means resolving each symbol back to its file through the edge table.
  */
 
-import type { CycleEntry, CycleScope, SymbolId } from "../../contracts/types/codegraph.js";
+import type { CycleEntry, CycleScope, FileDependencyGraph, SymbolId } from "../../contracts/types/codegraph.js";
 import { compilePathPatternMatcher } from "../../infra/path-pattern.js";
 import type { DuckDbGraphSession } from "./graph-session.js";
 
@@ -86,6 +91,61 @@ export class DuckDbGraphAnalyticsStore {
       else map.set(row.sym, [row.path]);
     }
     return map;
+  }
+
+  /**
+   * The whole file dependency graph in two statements: every walked file with
+   * its symbol count, and every `cg_symbols_edges_file` row weighted by the
+   * resolved calls crossing it (bd tea-rags-mcp-thc7s).
+   *
+   * The edge set is the FILE table, never pairs derived from method edges: it
+   * is the relation `codegraph.file.instability` is counted over, so judging an
+   * edge by its endpoints' instability is only meaningful on it. The method
+   * graph disagrees with it heavily — measured, 41% of tea-rags' and 57% of
+   * taxdome's cross-file call pairs have no file edge (a call resolved through
+   * a re-export barrel, a Ruby call on a typed receiver whose constant the file
+   * never names) — so a call pair with no file edge contributes no weight
+   * anywhere rather than inventing an edge neither endpoint's fan counted.
+   *
+   * No endpoint filter: an edge to a file the walk never extracted still counts
+   * toward its source's fanOut, exactly as `getFileMetricsBulk` counts it, and
+   * dropping it here would move that file's instability. Deciding which edges
+   * to judge is the caller's.
+   */
+  async readFileDependencyGraph(): Promise<FileDependencyGraph> {
+    const fileRows = await this.session.queryAll<{ rel_path: string; language: string; symbol_count: number | string }>(
+      `SELECT f.rel_path, f.language, COUNT(s.symbol_id) AS symbol_count
+       FROM cg_symbols_files f
+       LEFT JOIN cg_symbols s ON s.rel_path = f.rel_path
+       GROUP BY f.rel_path, f.language
+       ORDER BY f.rel_path`,
+    );
+    // Weighted like chunk fanIn: SUM of per-edge dispatch confidence, legacy
+    // NULL rows as 1.0. `target_symbol_id IS NOT NULL` mirrors every other
+    // method-edge read — an unpinned call is not a resolved one.
+    const edgeRows = await this.session.queryAll<{
+      source_rel_path: string;
+      target_rel_path: string;
+      call_weight: number | string;
+    }>(
+      `SELECT e.source_rel_path, e.target_rel_path, COALESCE(c.call_weight, 0) AS call_weight
+       FROM cg_symbols_edges_file e
+       LEFT JOIN (
+         SELECT source_rel_path, target_rel_path, SUM(COALESCE(confidence, 1.0)) AS call_weight
+         FROM cg_symbols_edges_method
+         WHERE target_symbol_id IS NOT NULL
+         GROUP BY source_rel_path, target_rel_path
+       ) c ON c.source_rel_path = e.source_rel_path AND c.target_rel_path = e.target_rel_path
+       ORDER BY e.source_rel_path, e.target_rel_path`,
+    );
+    return {
+      files: fileRows.map((r) => ({ relPath: r.rel_path, language: r.language, symbolCount: Number(r.symbol_count) })),
+      edges: edgeRows.map((r) => ({
+        sourceRelPath: r.source_rel_path,
+        targetRelPath: r.target_rel_path,
+        callWeight: Number(r.call_weight),
+      })),
+    };
   }
 
   /**
