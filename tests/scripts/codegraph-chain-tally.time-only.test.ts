@@ -14,8 +14,8 @@ import {
  * had walked all of it (bd E6.0a).
  */
 describe("scoredExtensionsFor", () => {
-  it("gives TypeScript both grammars", () => {
-    expect([...scoredExtensionsFor("typescript")].sort()).toEqual([".ts", ".tsx"]);
+  it("gives TypeScript both grammars and the ESM/CJS module extensions (bd 1y13c)", () => {
+    expect([...scoredExtensionsFor("typescript")].sort()).toEqual([".cts", ".mts", ".ts", ".tsx"]);
   });
 
   it("gives Ruby and Python their single extension", () => {

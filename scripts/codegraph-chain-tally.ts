@@ -189,7 +189,7 @@ const CHAINS: Record<string, ChainSpec> = {
  * why: a hand-list that forgets it silently scores half a TypeScript corpus and
  * reports the wall as if it walked all of it. The map also settles which leg
  * `.js`/`.jsx` belong to — `javascript`, not `typescript` — so the TypeScript
- * leg is `.ts`/`.tsx` and JavaScript gets a leg of its own for free.
+ * leg is `.ts`/`.tsx`/`.mts`/`.cts` and JavaScript gets a leg of its own for free.
  */
 export function scoredExtensionsFor(lang: string): readonly string[] {
   const exts = Object.entries(CODEGRAPH_LANGUAGES)

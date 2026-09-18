@@ -4,6 +4,8 @@
 export const DEFAULT_CODE_EXTENSIONS = [
   ".ts",
   ".tsx",
+  ".mts",
+  ".cts",
   ".js",
   ".jsx",
   ".py",
