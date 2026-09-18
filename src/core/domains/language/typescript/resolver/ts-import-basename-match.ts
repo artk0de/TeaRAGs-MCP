@@ -47,14 +47,28 @@ function normalizeIdentifier(value: string): string {
   return out;
 }
 
+/**
+ * Recognised TS / JS source suffixes, longest first so a declaration suffix
+ * wins over the source suffix it ends in (`.d.mts` before `.mts` before `.ts`).
+ * `.mts` / `.cts` and their declarations are what an ESM- or CJS-only
+ * TypeScript module is imported as (bd tea-rags-mcp-x9qsh).
+ */
+const SOURCE_SUFFIXES: readonly string[] = [
+  ".d.mts",
+  ".d.cts",
+  ".d.ts",
+  ".tsx",
+  ".jsx",
+  ".mts",
+  ".cts",
+  ".mjs",
+  ".cjs",
+  ".ts",
+  ".js",
+];
+
 function stripSourceExtension(value: string): string {
-  // Recognised TS / JS source suffixes. `.d.ts` is checked before the
-  // single-extension variants so the longer suffix wins.
   const lowered = value.toLowerCase();
-  if (lowered.endsWith(".d.ts")) return value.slice(0, -5);
-  if (lowered.endsWith(".tsx") || lowered.endsWith(".jsx") || lowered.endsWith(".mjs") || lowered.endsWith(".cjs")) {
-    return value.slice(0, -4);
-  }
-  if (lowered.endsWith(".ts") || lowered.endsWith(".js")) return value.slice(0, -3);
-  return value;
+  const suffix = SOURCE_SUFFIXES.find((candidate) => lowered.endsWith(candidate));
+  return suffix === undefined ? value : value.slice(0, -suffix.length);
 }
