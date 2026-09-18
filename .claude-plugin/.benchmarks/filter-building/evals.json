@@ -2,6 +2,7 @@
   "skill_name": "filter-building",
   "topic": "tea-rags filter construction beyond pathPattern — typed sugar, level=file/chunk, picomatch negation, raw filter escape hatch, trigger-coverage for implicit scopes",
   "created": "2026-05-16",
+  "expectations_revised": "2026-09-18 (tea-rags-mcp-9mwny): E7, E12, T1, T4, T6 expectations moved to the corrected level guidance — modifiedAfter/modifiedBefore are file-level at any level, level 'file' also regroups results, chunk-level age filters cannot reach code older than the chunk git window. The recorded `result` fields predate the revision and were not re-run.",
   "context": "New agent-only skill (user-invocable: false) extracted from search-cascade.md. Two eval coverages: (1) execution_coverage — agent receives an explicit filter intent and must build the correct shape; (2) trigger_coverage — agent receives a prompt that does NOT use the word 'filter' but where a SCOPE is implicit (domain, language, author, time window, ticket, prod-vs-test), and the agent must self-trigger the skill and translate the scope into typed sugar. Trigger coverage is the harder probe because it tests whether the description and Implicit-signals table reliably steer the agent.",
   "skill_path": ".claude-plugin/tea-rags/skills/filter-building/SKILL.md",
   "summary": {
@@ -88,11 +89,11 @@
     },
     {
       "id": "E7",
-      "audit_finding": "level=file enforcement for minAgeDays",
+      "audit_finding": "old-code intent: file-level age without forcing file-grouped results",
       "prompt": "Find code at least 90 days old in payments.",
-      "expected": "minAgeDays: 90 + level: 'file' + pathPattern: '**/payments/**'",
-      "expected_NOT": "missing level=file (chunk ageDays=0 means no data)",
-      "failure_mode": "Default chunk level silently drops chunks without git data",
+      "expected": "modifiedBefore: <ISO date 90 days ago> + pathPattern: '**/payments/**' (chunk results, no level) — OR minAgeDays: 90 + level: 'file' when a file list is the goal",
+      "expected_NOT": "chunk-level minAgeDays: 90 (chunk last-commit time exists only inside the chunk git window → drops the oldest code)",
+      "failure_mode": "Chunk-level age filter silently drops exactly the long-untouched chunks",
       "result": { "with_rule": "PASS", "note": "minAgeDays + level=file" }
     },
     {
@@ -141,8 +142,8 @@
       "id": "E12",
       "audit_finding": "subagent context — absolute path + testFile=exclude + modifiedAfter",
       "prompt": "[subagent: task-agent] Find usages of paymentService function in /Users/me/proj/src/payments/. Exclude test files. Code modified after 2026-02-01.",
-      "expected": "hybrid_search with query + pathPattern: '/Users/me/proj/src/payments/**' + testFile: 'exclude' + modifiedAfter: '2026-02-01' + level: 'file'",
-      "expected_NOT": "ripgrep on identifier; missing level=file",
+      "expected": "hybrid_search with query + pathPattern: 'src/payments/**' (project-relative, not absolute) + testFile: 'exclude' + modifiedAfter: '2026-02-01' (no level — modifiedAfter is file-level at any level)",
+      "expected_NOT": "ripgrep on identifier; absolute pathPattern; level: 'file' added for modifiedAfter (regroups results into files, hides the individual usages)",
       "failure_mode": "Subagent context strips skill rules; without skill the typed sugar is missed",
       "result": {
         "with_rule": "PASS",
@@ -155,8 +156,8 @@
       "id": "T1",
       "audit_finding": "implicit author + time-window + domain (no word 'filter')",
       "prompt": "What did Alice ship in payments last week?",
-      "expected": "author: 'Alice' + modifiedAfter: <last week ISO> + level: 'file' + pathPattern: '**/payments/**'",
-      "expected_NOT": "missing level=file; raw filter; missing author typed sugar",
+      "expected": "author: 'Alice' + modifiedAfter: <last week ISO> + pathPattern: '**/payments/**' (no level needed)",
+      "expected_NOT": "level: 'file' added for modifiedAfter; raw filter; missing author typed sugar",
       "failure_mode": "Agent fails to detect implicit scope (author/time/domain) and runs unfiltered search",
       "result": {
         "with_rule": "PASS",
@@ -192,11 +193,11 @@
     },
     {
       "id": "T4",
-      "audit_finding": "implicit modifiedAfter + level=file from 'this sprint'",
+      "audit_finding": "implicit modifiedAfter from 'this sprint'",
       "prompt": "What's new in the auth module this sprint?",
-      "expected": "modifiedAfter: <sprint window ISO> + level: 'file' + pathPattern: '**/auth/**'",
-      "expected_NOT": "raw filter; missing level=file",
-      "failure_mode": "Time-based filter on chunk level rejects all chunks",
+      "expected": "modifiedAfter: <sprint window ISO> + pathPattern: '**/auth/**' (no level needed)",
+      "expected_NOT": "raw filter; level: 'file' added just for the time window (unwanted file grouping)",
+      "failure_mode": "Agent misses the time scope, or forces file-grouped results for a filter that is file-level anyway",
       "result": {
         "with_rule": "PASS",
         "without_rule": "FAIL",
@@ -218,11 +219,11 @@
     },
     {
       "id": "T6",
-      "audit_finding": "implicit minAgeDays + level=file from 'old, untouched'",
+      "audit_finding": "implicit old-code scope from 'old, untouched'",
       "prompt": "Old, untouched parts of the ingest domain.",
-      "expected": "minAgeDays: 180 + level: 'file' + pathPattern: '**/ingest/**'",
-      "expected_NOT": "raw filter; missing level=file",
-      "failure_mode": "Time-based on chunk level drops chunks",
+      "expected": "modifiedBefore: <ISO date ~180 days ago> + pathPattern: '**/ingest/**' (chunk results) — OR minAgeDays: 180 + level: 'file' for a file list",
+      "expected_NOT": "raw filter; chunk-level minAgeDays: 180 (never reaches code older than the chunk git window)",
+      "failure_mode": "Chunk-level age filter drops exactly the untouched code",
       "result": {
         "with_rule": "PASS",
         "without_rule": "FAIL",
