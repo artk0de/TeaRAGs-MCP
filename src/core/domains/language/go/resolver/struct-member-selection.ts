@@ -57,6 +57,13 @@ export function goTransparentStructFields(
  * Select `member` on a value of Go type `typeName` — the shallowest unique
  * method or field, `undefined` when the selection is ambiguous, blocked by an
  * opaque type, or finds nothing.
+ *
+ * A method hit is only as good as the type NAME it was composed from: symbol
+ * ids carry no package, so when two Go declarations share that name (`app.Base`
+ * embedded here, `other.Base` elsewhere) `Base#Reset` may be the other
+ * package's method. Such a hit makes its level AMBIGUOUS — no edge — rather
+ * than a winner (bd tea-rags-mcp-e6xx). A local guard: Go type lookup itself
+ * stays package-blind.
  */
 export function selectGoMember(
   typeName: string,
@@ -70,11 +77,14 @@ export function selectGoMember(
     const hits: GoSelectedMember[] = [];
     const next: string[] = [];
     let opaque = false;
+    let namesakeMethodHit = false;
     for (const type of level) {
       const methodId = composer.compose(type, member, { methodKind: "instance" });
-      for (const def of lookupGoSymbols(ctx, methodId)) {
+      const methodDefs = lookupGoSymbols(ctx, methodId);
+      for (const def of methodDefs) {
         hits.push({ kind: "method", target: { targetRelPath: def.relPath, targetSymbolId: def.symbolId } });
       }
+      if (methodDefs.length > 0 && lookupGoSymbols(ctx, type).length > 1) namesakeMethodHit = true;
       const fields = goTransparentStructFields(type, ctx);
       if (fields === undefined) {
         opaque = true;
@@ -88,6 +98,7 @@ export function selectGoMember(
         next.push(embedded);
       }
     }
+    if (namesakeMethodHit) return undefined;
     if (hits.length === 1) return hits[0];
     if (hits.length > 1 || opaque) return undefined;
     level = next;
