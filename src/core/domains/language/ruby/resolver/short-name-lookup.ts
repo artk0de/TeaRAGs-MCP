@@ -4,13 +4,14 @@
  * `isPythonSourcePath` on the Python side.
  *
  * A LEAF module by construction — it imports the codegraph contracts and
- * nothing else. `strategies/shared.ts` would be the natural home (it is where
- * Python keeps its half), but that file reaches `walker/walker.js` for
- * `ZEITWERK_PREFIX`, and the walker's inline type sources reach back into
- * `resolver/type-propagation.ts`. Putting the lookup here is what lets
- * `ruby-return-facts.ts` and `ruby-unbound-receiver-types.ts` — both on that
- * walker-facing side — use it without closing the cycle. `shared.ts` re-exports
- * both names, so every existing `isRubyPath` import keeps its path.
+ * nothing else. The walker's inline type sources reach into
+ * `resolver/type-propagation.ts`, so `ruby-return-facts.ts` and
+ * `ruby-unbound-receiver-types.ts` sit on that walker-facing side and must not
+ * import anything that leads back into the walker. `strategies/shared.ts` (where
+ * Python keeps its half) used to: it reached `walker/walker.js` for
+ * `ZEITWERK_PREFIX` until that constant moved to the `ruby/zeitwerk-import-marker.ts`
+ * leaf (bd tea-rags-mcp-xuywm). `shared.ts` re-exports both names, so every
+ * existing `isRubyPath` import keeps its path.
  */
 
 import type { CallContext, SymbolDefinition, SymbolLookupOptions } from "../../../../contracts/types/codegraph.js";

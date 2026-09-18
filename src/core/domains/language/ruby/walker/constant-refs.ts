@@ -16,10 +16,8 @@
 
 import type { AstNode } from "../../../../contracts/types/ast.js";
 import type { ImportRef } from "../../../../contracts/types/codegraph.js";
+import { ZEITWERK_PREFIX } from "../zeitwerk-import-marker.js";
 import { readScopeResolution, walk } from "./ast-utils.js";
-
-/** Prefix marker the resolver uses to recognise Zeitwerk constant refs. */
-export const ZEITWERK_PREFIX = "zeitwerk:";
 
 /**
  * `require 'foo'`, `require_relative './foo'`. Tree-sitter-ruby emits

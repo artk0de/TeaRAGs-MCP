@@ -37,15 +37,14 @@
   `ruby-return-facts.ts`, `length > 0` in `ruby-unbound-receiver-types.ts`) and
   suppresses a valid Ruby answer. Measured on mastodon with its `.contextignore`
   skipped (`ruby-resolver-parity.ts --polyglot`): 11 sites picked a
-  `.jsx`/`.tsx` component for a serializer association. The helper lives one
-  level ABOVE `strategies/shared.ts` because that file reaches
-  `walker/walker.js` and the walker's inline type sources reach back into
-  `resolver/type-propagation.ts` — defining it in `shared.ts` closes that cycle
-  and leaves `INLINE_TYPE_SOURCES` undefined at module-eval time. `shared.ts`
-  re-exports it, so strategies still import from one address. Why:
-  `resolveConstant` pins most candidate lists to a file, which reads as
-  already-safe — but it reaches that file through the equally language-blind
-  `symbolTable.lookup(fq)`.
+  `.jsx`/`.tsx` component for a serializer association. The helper is a
+  contracts-only leaf one level ABOVE `strategies/shared.ts`: the walker's
+  inline type sources reach into `resolver/type-propagation.ts`, so anything
+  that path imports must not lead back into `walker/walker.js`, or
+  `INLINE_TYPE_SOURCES` is undefined at module-eval time. `shared.ts` re-exports
+  it, so strategies still import from one address. Why: `resolveConstant` pins
+  most candidate lists to a file, which reads as already-safe — but it reaches
+  that file through the equally language-blind `symbolTable.lookup(fq)`.
 - **`resolver/type-propagation.ts` is still the ADDRESS every consumer imports,
   but the chain WALK is not in it.** Its exports are unchanged —
   `typeOfReceiver`, `ivarTypeName`, `CHAIN_MAX_HOPS_DEFAULT` and the five

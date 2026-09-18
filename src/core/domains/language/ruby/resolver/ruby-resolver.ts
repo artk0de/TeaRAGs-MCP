@@ -48,7 +48,7 @@ import {
 import type { DispatchResolverComponent, SymbolResolutionStrategy } from "../../../../contracts/types/language.js";
 import { ExternalCallClassifier } from "../../external-classifier.js";
 import { resolveDispatchViaComponents, resolveViaChain } from "../../resolver-chain.js";
-import { ZEITWERK_PREFIX } from "../walker/walker.js";
+import { ZEITWERK_PREFIX } from "../zeitwerk-import-marker.js";
 import { RubyExternalVocabulary } from "./ruby-external-vocabulary.js";
 import {
   CONE_MAX_DEFAULT,

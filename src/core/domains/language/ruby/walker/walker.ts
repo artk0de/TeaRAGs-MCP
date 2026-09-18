@@ -129,5 +129,5 @@ export {
   RUBY_ASSOCIATION_MACROS,
 } from "./association-types.js";
 export { SUPER_RECEIVER_SENTINEL } from "./call-collection.js";
-export { ZEITWERK_PREFIX } from "./constant-refs.js";
+export { ZEITWERK_PREFIX } from "../zeitwerk-import-marker.js";
 export { isRubyCallbackMacro } from "./dsl-edge-emitters.js";

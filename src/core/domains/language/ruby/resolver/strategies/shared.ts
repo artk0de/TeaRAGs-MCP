@@ -18,7 +18,7 @@ import {
   type SymbolDefinition,
   type SymbolResolutionTarget,
 } from "../../../../../contracts/types/codegraph.js";
-import { ZEITWERK_PREFIX } from "../../walker/walker.js";
+import { ZEITWERK_PREFIX } from "../../zeitwerk-import-marker.js";
 import { linearizeAncestors } from "../ancestor-linearization.js";
 import { isRubyPath, lookupRubySymbolsByShortName } from "../short-name-lookup.js";
 import { resolveZeitwerkConstant } from "../zeitwerk.js";
