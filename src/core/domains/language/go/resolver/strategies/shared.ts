@@ -22,7 +22,10 @@ import {
   type SymbolResolutionTarget,
 } from "../../../../../contracts/types/codegraph.js";
 import type { SymbolIdComposer } from "../../../../../contracts/types/language.js";
+import { goImportBoundName } from "../../import-binding.js";
+import { preferGoDefaultBuild } from "../go-build-constraints.js";
 import type { GoModuleMap, GoModuleMapCache } from "../go-module-map.js";
+import { lookupGoSymbols, lookupGoSymbolsByShortName } from "../go-symbol-lookup.js";
 import { selectGoMember } from "../struct-member-selection.js";
 
 export interface ResolverConfig {
@@ -56,10 +59,10 @@ export function resolveByLocalType(
 ): SymbolResolutionTarget | null {
   const instanceForm = cfg.composer.compose(typeName, member, { methodKind: "instance" });
   const staticForm = cfg.composer.compose(typeName, member, { methodKind: "static" });
-  const instanceHits = ctx.symbolTable.lookup(instanceForm);
+  const instanceHits = preferGoDefaultBuild(lookupGoSymbols(ctx, instanceForm), ctx);
   const instance = pickSingleCandidate(instanceHits, cfg.mode);
   if (instance) return { targetRelPath: instance.relPath, targetSymbolId: instance.symbolId };
-  const staticHits = ctx.symbolTable.lookup(staticForm);
+  const staticHits = preferGoDefaultBuild(lookupGoSymbols(ctx, staticForm), ctx);
   const staticHit = pickSingleCandidate(staticHits, cfg.mode);
   if (staticHit) return { targetRelPath: staticHit.relPath, targetSymbolId: staticHit.symbolId };
   if (instanceHits.length > 0 || staticHits.length > 0) return null;
@@ -74,11 +77,24 @@ export function resolveByLocalType(
  * (`string`, `error`), and external `pkg.Type`s have no project-local type
  * symbol, so they SKIP rather than fabricate an edge. Matched by exact fqName
  * first (top-level type, `Engine`), then by short name (nested / scoped type
- * declarations) — either match means a real type symbol was extracted.
+ * declarations) — either match means a real type symbol was extracted. Only a
+ * GO declaration counts: a TypeScript `Widget` is no evidence about a Go one.
  */
 export function isKnownTypeSymbol(typeName: string, ctx: CallContext): boolean {
-  if (ctx.symbolTable.lookup(typeName).length > 0) return true;
-  return ctx.symbolTable.lookupByShortName(typeName).length > 0;
+  if (lookupGoSymbols(ctx, typeName).length > 0) return true;
+  return lookupGoSymbolsByShortName(ctx, typeName).length > 0;
+}
+
+/**
+ * The type a call-bound local holds (`x := New()`, `x := pkg.New()`): the
+ * callee's declared return type from the run-global `functionReturnTypes`,
+ * keyed by the callee's bare name, and only when it names a known Go type
+ * (`isKnownTypeSymbol`). `undefined` when either is missing.
+ */
+export function goCallResultType(callee: string, ctx: CallContext): string | undefined {
+  const dot = callee.lastIndexOf(".");
+  const returnType = ctx.functionReturnTypes?.[dot === -1 ? callee : callee.slice(dot + 1)];
+  return returnType !== undefined && isKnownTypeSymbol(returnType, ctx) ? returnType : undefined;
 }
 
 /** The package directory of a Go file: its directory, `""` at the root. A Go package is exactly one directory. */
@@ -88,17 +104,12 @@ export function goPackageDirOf(relPath: string): string {
 }
 
 /**
- * Whether `receiver` is the name `imp` binds in the importing file: the alias
- * the walker recorded when the source spells one (bd tea-rags-mcp-e6xx — once
- * aliased, the path's last segment is NOT in scope), else the path's last
- * `/`-segment. A dot or blank import binds no qualifier at all.
+ * Whether `receiver` is the name `imp` binds in the importing file
+ * (`goImportBoundName`: the alias when the source spells one, else the path's
+ * last `/`-segment; a dot or blank import binds no qualifier at all).
  */
 export function importMatchesReceiver(imp: ImportRef, receiver: string): boolean {
-  const explicit = imp.importedNames?.[0];
-  if (explicit !== undefined) return explicit === receiver && explicit !== "." && explicit !== "_";
-  const segments = imp.importText.split("/");
-  const last = segments[segments.length - 1] ?? "";
-  return last === receiver;
+  return goImportBoundName(imp) === receiver;
 }
 
 /**
@@ -131,11 +142,9 @@ export function resolveImportedPackageMember(
   if (!match) return null;
   const packageDir = goImportPackageDir(match.importText, cfg.moduleMaps?.forRoot(ctx.projectRoot));
   if (packageDir === undefined) return null;
-  const candidates = ctx.symbolTable
-    .lookupByShortName(member)
-    .filter(
-      (def) => def.symbolId === member && def.relPath.endsWith(".go") && goPackageDirOf(def.relPath) === packageDir,
-    );
-  const target = pickSingleCandidate(candidates, cfg.mode);
+  const candidates = lookupGoSymbolsByShortName(ctx, member).filter(
+    (def) => def.symbolId === member && goPackageDirOf(def.relPath) === packageDir,
+  );
+  const target = pickSingleCandidate(preferGoDefaultBuild(candidates, ctx), cfg.mode);
   return target ? { targetRelPath: target.relPath, targetSymbolId: target.symbolId } : null;
 }

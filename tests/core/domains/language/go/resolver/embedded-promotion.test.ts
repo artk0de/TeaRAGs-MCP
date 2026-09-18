@@ -199,6 +199,37 @@ describe("GoCallResolver — method promotion through struct embedding", () => {
     expect(resolver.resolve(call("a", "Missing"), ctx)).toBeNull();
   });
 
+  it("NEGATIVE: a method found on an embedded type with a namesake in another package is ambiguous", () => {
+    // `app.Engine2` embeds `app.Base`, which embeds `app.Inner` (the real
+    // definer of `Reset`). `other.Base` also exists and declares `Reset`: the
+    // id `Base#Reset` cannot tell the two `Base`s apart, so the depth-1 hit is
+    // as likely the other package's method as a promotion of this one.
+    const t = ginTable([
+      [
+        "app/app.go",
+        [
+          sym("Engine2", "app/app.go"),
+          sym("Base", "app/app.go"),
+          sym("Inner", "app/app.go"),
+          sym("Inner#Reset", "app/app.go"),
+        ],
+      ],
+      ["other/other.go", [sym("Base", "other/other.go"), sym("Base#Reset", "other/other.go")]],
+    ]);
+    const ctx = engineCtx({
+      symbolTable: t,
+      callerFile: "app/app.go",
+      localBindings: { e: [{ line: 1, type: "Engine2" }] },
+      classFieldTypesByClassKey: {
+        "app/app.go::Engine2": { Base: "Base", "embedded:Base": "Base" },
+        "app/app.go::Base": { Inner: "Inner", "embedded:Inner": "Inner" },
+        "app/app.go::Inner": {},
+        "other/other.go::Base": {},
+      },
+    });
+    expect(resolver.resolve(call("e", "Reset"), ctx)).toBeNull();
+  });
+
   it("NEGATIVE: a namesake class key another language published is never read as a Go struct", () => {
     // A Python `Engine` class with a field map at `engine.py::Engine` — the
     // symbol table has its `Engine` too. Only `.go` declarations count.

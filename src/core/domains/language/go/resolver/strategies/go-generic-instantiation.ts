@@ -1,12 +1,14 @@
 import { CONTINUE, resolved } from "../../../../../contracts/resolution.js";
 import {
   pickSingleCandidate,
-  resolveLocalBinding,
   type CallContext,
   type CallRef,
   type SymbolResolutionTarget,
 } from "../../../../../contracts/types/codegraph.js";
 import type { SymbolResolutionOutcome, SymbolResolutionStrategy } from "../../../../../contracts/types/language.js";
+import { goLocalAt } from "../../local-scope.js";
+import { preferGoDefaultBuild } from "../go-build-constraints.js";
+import { lookupGoSymbols } from "../go-symbol-lookup.js";
 import { goPackageDirOf, resolveImportedPackageMember, type ResolverConfig } from "./shared.js";
 
 /**
@@ -37,8 +39,12 @@ const GO_INDEXED_CALLEE = /^(?:([\p{L}_][\p{L}\p{N}_]*)\.)?([\p{L}_][\p{L}\p{N}_
  *     generic methods, so a qualifier that names no import — a value, as in
  *     `c.handlers[c.index](c)` — makes it an index.
  * A local in effect under the operand's name (the bare name, or the qualifier)
- * shadows the declaration or the package; two declarations (build-tag twins)
- * stay ambiguous.
+ * shadows the declaration or the package — the walker records one for every
+ * local the chunk calls through this way, a slice or func parameter included;
+ * build-tag twins narrow to the one the default build compiles
+ * (`preferGoDefaultBuild`), and any other two declarations stay ambiguous. A call the walker tagged
+ * `dynamicSend` has a VALUE in its brackets (`loadAll[0]()`) and is no
+ * instantiation at all.
  *
  * Non-guard: anything else CONTINUEs to `globalShortName`, which finds nothing
  * for a bracketed member — exactly the pre-pass outcome.
@@ -48,12 +54,12 @@ export class GoGenericInstantiationSymbolResolutionStrategy implements SymbolRes
   constructor(private readonly cfg: ResolverConfig) {}
 
   attempt(call: CallRef, ctx: CallContext): SymbolResolutionOutcome {
-    if (call.receiver) return CONTINUE;
+    if (call.receiver || call.dynamicSend === true) return CONTINUE;
     const match = GO_INDEXED_CALLEE.exec(call.member);
     if (match === null) return CONTINUE;
     const [, qualifier, name] = match;
     // Any local in effect shadows the declaration or the package — typed or not.
-    if (resolveLocalBinding(ctx.localBindings, qualifier ?? name, call.startLine)) return CONTINUE;
+    if (goLocalAt(ctx, qualifier ?? name, call.startLine)) return CONTINUE;
     const target =
       qualifier === undefined
         ? this.samePackageDeclaration(name, ctx)
@@ -63,10 +69,8 @@ export class GoGenericInstantiationSymbolResolutionStrategy implements SymbolRes
 
   private samePackageDeclaration(name: string, ctx: CallContext): SymbolResolutionTarget | null {
     const callerPackage = goPackageDirOf(ctx.callerFile);
-    const candidates = ctx.symbolTable
-      .lookup(name)
-      .filter((def) => def.relPath.endsWith(".go") && goPackageDirOf(def.relPath) === callerPackage);
-    const target = pickSingleCandidate(candidates, this.cfg.mode);
+    const candidates = lookupGoSymbols(ctx, name).filter((def) => goPackageDirOf(def.relPath) === callerPackage);
+    const target = pickSingleCandidate(preferGoDefaultBuild(candidates, ctx), this.cfg.mode);
     return target ? { targetRelPath: target.relPath, targetSymbolId: target.symbolId } : null;
   }
 }

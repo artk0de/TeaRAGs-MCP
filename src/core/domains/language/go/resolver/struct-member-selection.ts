@@ -18,13 +18,14 @@
  * descending past it: selecting a deeper definer the compiler would never pick
  * is a fabricated edge, while stopping is a silence a later pass can still fill.
  *
- * Every lookup is restricted to `.go` declarations — the table is one polyglot
+ * Every lookup goes through `lookupGoSymbols` — the table is one polyglot
  * index, and a Python `Engine` must not answer for a Go one.
  */
 
-import type { CallContext, SymbolDefinition, SymbolResolutionTarget } from "../../../../contracts/types/codegraph.js";
+import type { CallContext, SymbolResolutionTarget } from "../../../../contracts/types/codegraph.js";
 import type { SymbolIdComposer } from "../../../../contracts/types/language.js";
 import { goDeclaredFieldType, goEmbeddedFieldTypes, goStructClassKey } from "../struct-fields.js";
+import { lookupGoSymbols } from "./go-symbol-lookup.js";
 
 /** What `x.member` selects on a Go struct type. */
 export type GoSelectedMember =
@@ -38,12 +39,6 @@ export type GoSelectedMember =
  */
 const GO_EMBEDDING_MAX_DEPTH = 8;
 
-const GO_SOURCE_EXTENSION = ".go";
-
-function isGoDeclaration(def: SymbolDefinition): boolean {
-  return def.relPath.endsWith(GO_SOURCE_EXTENSION);
-}
-
 /**
  * The field map of `typeName` when it is TRANSPARENT — exactly one Go
  * declaration, and that declaration a struct the walker described — else
@@ -53,7 +48,7 @@ export function goTransparentStructFields(
   typeName: string,
   ctx: CallContext,
 ): Readonly<Record<string, string>> | undefined {
-  const declarations = ctx.symbolTable.lookup(typeName).filter(isGoDeclaration);
+  const declarations = lookupGoSymbols(ctx, typeName);
   if (declarations.length !== 1) return undefined;
   return ctx.classFieldTypesByClassKey?.[goStructClassKey(declarations[0].relPath, typeName)];
 }
@@ -62,6 +57,13 @@ export function goTransparentStructFields(
  * Select `member` on a value of Go type `typeName` — the shallowest unique
  * method or field, `undefined` when the selection is ambiguous, blocked by an
  * opaque type, or finds nothing.
+ *
+ * A method hit is only as good as the type NAME it was composed from: symbol
+ * ids carry no package, so when two Go declarations share that name (`app.Base`
+ * embedded here, `other.Base` elsewhere) `Base#Reset` may be the other
+ * package's method. Such a hit makes its level AMBIGUOUS — no edge — rather
+ * than a winner (bd tea-rags-mcp-e6xx). A local guard: Go type lookup itself
+ * stays package-blind.
  */
 export function selectGoMember(
   typeName: string,
@@ -75,11 +77,14 @@ export function selectGoMember(
     const hits: GoSelectedMember[] = [];
     const next: string[] = [];
     let opaque = false;
+    let namesakeMethodHit = false;
     for (const type of level) {
       const methodId = composer.compose(type, member, { methodKind: "instance" });
-      for (const def of ctx.symbolTable.lookup(methodId).filter(isGoDeclaration)) {
+      const methodDefs = lookupGoSymbols(ctx, methodId);
+      for (const def of methodDefs) {
         hits.push({ kind: "method", target: { targetRelPath: def.relPath, targetSymbolId: def.symbolId } });
       }
+      if (methodDefs.length > 0 && lookupGoSymbols(ctx, type).length > 1) namesakeMethodHit = true;
       const fields = goTransparentStructFields(type, ctx);
       if (fields === undefined) {
         opaque = true;
@@ -93,6 +98,7 @@ export function selectGoMember(
         next.push(embedded);
       }
     }
+    if (namesakeMethodHit) return undefined;
     if (hits.length === 1) return hits[0];
     if (hits.length > 1 || opaque) return undefined;
     level = next;

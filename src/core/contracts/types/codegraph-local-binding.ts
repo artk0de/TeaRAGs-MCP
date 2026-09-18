@@ -50,7 +50,9 @@ export interface LocalBinding {
    * `line..endLine` the variable still denotes whatever it denoted above the
    * statement. netbox's `layout = layout.Layout(\n    layout.Row(…))` is that
    * shape: the inner receivers name the imported MODULE, not the class being
-   * constructed. Only a consumer that knows the extent can say so.
+   * constructed. Only a consumer that knows the extent can say so. Go's
+   * walker sets it on the locals a statement declares (Go scopes them from
+   * the statement's END), and Go reads it through `goLocalBindingAt`.
    *
    * ABSENT means "unknown, treat as `line`" — every index written before this
    * field existed, and every binding that is not an establishing statement
@@ -136,6 +138,20 @@ export interface CallResultBinding {
   readonly line: number;
   /** The callee as written, arguments stripped: `Repo.from_session`, `self.factory.build`, `make`. */
   readonly callee: string;
+  /**
+   * 1-based last line of the assigning statement — {@link LocalBinding.endLine}'s
+   * meaning. Go's walker sets it (bd tea-rags-mcp-e6xx): a Go local is in scope
+   * only after its declaring statement, so `config := config.Load()` still
+   * calls the package on its own right-hand side. ABSENT (every Python
+   * binding) means "treat as `line`".
+   */
+  readonly endLine?: number;
+  /**
+   * 1-based last line the binding is visible on — {@link LocalBinding.scopeEndLine}'s
+   * meaning: set by Go's walker for a local declared in a block narrower than
+   * the chunk. ABSENT means visible to the end of the chunk.
+   */
+  readonly scopeEndLine?: number;
 }
 
 /**

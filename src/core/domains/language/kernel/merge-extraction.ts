@@ -111,6 +111,8 @@ const FILE_EXTRACTION_MERGE_RULEBOOK: ExtractionMergeRulebook<FileExtraction> = 
   // File identity. A disagreement is caught by `assertSameFile` before the loop.
   relPath: (base) => base,
   language: (base) => base,
+  // A file-level scalar: the native walker's reading wins.
+  buildConstraint: (base, pass) => base ?? pass,
   // Append-only arrays: native entries first, pass entries after, order kept.
   imports: (base, pass) => [...base, ...pass],
   fileScope: (base, pass) => [...base, ...pass],

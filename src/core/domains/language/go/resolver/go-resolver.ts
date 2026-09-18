@@ -14,27 +14,38 @@
  * The pass order (each `name` in parens), mirroring PythonCallResolver step 0:
  *   1. localBinding      (Step 0 — `localBindings[receiver]` typed receiver;
  *                          guard: resolves or drops, bd tea-rags-mcp-e6xx)
- *   2. returnTypeBinding (Step 0b — `localCallBindings` + `functionReturnTypes`
- *                          with the concrete-type gate, bd tea-rags-mcp-6g9c)
- *   3. receiverChain     (Step 0c — dotted receiver typed through struct
- *                          fields; guard: resolves or drops, bd tea-rags-mcp-e6xx)
- *   4. importMatch       (Step 1 — receiver matches an import's last segment)
+ *   2. returnTypeBinding (Step 0b — call bindings (`callResultBindings`) +
+ *                          `functionReturnTypes` with the concrete-type gate,
+ *                          bd tea-rags-mcp-6g9c)
+ *   3. receiverChain     (Step 0c — dotted or call-result receiver typed
+ *                          through struct fields / the callee's return type;
+ *                          guard: resolves or drops, bd tea-rags-mcp-e6xx)
+ *   4. importMatch       (Step 1 — receiver is the name an import binds, and
+ *                          no local in scope shadows it)
  *   5. receiverDrop      (Step 2 — receiver matched nothing; terminal drop,
  *                          bd tea-rags-mcp-m46z)
  *   6. genericInstantiation (Step 2b — bare `f[T](…)`: the same-package
  *                          declaration `f`, bd tea-rags-mcp-e6xx)
- *   7. globalShortName   (Step 3 — no receiver: global short-name fallback)
+ *   7. globalShortName   (Step 3 — no receiver: a package-level declaration
+ *                          of the caller's package or a dot-import)
  *
  * The three typed passes share `resolveByLocalType`, so method promotion
  * through struct embedding (`engine.GET` → `RouterGroup#GET`) applies to each.
  * `receiverChain` sits before `importMatch` only for reading order: it answers
- * dotted receivers alone, and a dotted receiver never equals an import's last
- * segment, so the two passes never compete for a call.
+ * dotted and call-result receivers alone, and neither ever equals an import's
+ * name, so the two passes never compete for a call. Every pass reads a
+ * receiver's local through `goLocalAt` (Go's statement and block scope) and
+ * the symbol table through `go-symbol-lookup.ts` (Go declarations only).
  *
- * Go imports are package paths ("foo/bar"). Without GOPATH / module config we
- * can only resolve project-local packages via basename heuristic. Cross-module
- * imports (third-party) are out of scope; codegraph excludes `vendor/` and the
- * dependency directories the walker doesn't see.
+ * Go imports are package paths. With go.mod files in the project an import
+ * maps to a project package through the module map (`go-module-map.ts`,
+ * re-read at every pass start): `<module>/<subpath>` is `<subpath>` beneath
+ * that go.mod, nested modules by longest prefix, and an import under no
+ * project module — the standard library, a dependency — is no project
+ * package. Without any go.mod (GOPATH-shaped trees) the import path is the
+ * package's directory. Either way the match is the package's exact directory.
+ * Codegraph excludes `vendor/`, and the module map never reads a go.mod under
+ * it.
  */
 
 import {

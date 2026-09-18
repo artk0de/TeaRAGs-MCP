@@ -28,9 +28,11 @@ import type { DependencyManifestSource, LanguageFactoryDescriptor } from "../con
 
 /**
  * Directories the walk never descends into. Vendored dependency trees
- * (`.venv`, `venv`, `site-packages`, `node_modules`), build output (`build`,
- * `dist`) and git's own store — none of them hold a manifest that says anything
- * about what the PROJECT declares.
+ * (`.venv`, `venv`, `site-packages`, `node_modules`, `vendor`), build output
+ * (`build`, `dist`) and git's own store — none of them hold a manifest that
+ * says anything about what the PROJECT declares. Go's `vendor/` is one: `go mod
+ * vendor` under a go directive below 1.17 copies every dependency's go.mod
+ * there, and the Go module map would read each as a project module.
  */
 export const DEPENDENCY_MANIFEST_IGNORED_DIRS: ReadonlySet<string> = new Set([
   ".git",
@@ -40,6 +42,7 @@ export const DEPENDENCY_MANIFEST_IGNORED_DIRS: ReadonlySet<string> = new Set([
   "build",
   "dist",
   "site-packages",
+  "vendor",
 ]);
 
 /**

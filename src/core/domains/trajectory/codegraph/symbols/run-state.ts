@@ -472,6 +472,14 @@ export class CodegraphRunState {
   moduleReexports: Record<string, readonly ModuleReexport[]> = {};
 
   /**
+   * Per-run `FileExtraction.buildConstraint`, keyed by the relPath that declared
+   * it (bd tea-rags-mcp-e6xx) — Go's tie-breaker between build-tag twins. A
+   * re-walk REPLACES the file's entry, and a walk that finds no constraint
+   * deletes it: the file no longer carries one.
+   */
+  buildConstraintsByFile: Record<string, string> = {};
+
+  /**
    * Per-run aggregation of `FileExtraction.dispatchTables` keyed by table NAME
    * (bd tea-rags-mcp-n0zj); several files may declare one name, and the resolver
    * disambiguates by the caller's import map. Re-walking a file replaces its own
@@ -1044,6 +1052,7 @@ export class CodegraphRunState {
       this.classFieldTypesByClassKey = {};
       this.classFieldCallResults = {};
       this.moduleReexports = {};
+      this.buildConstraintsByFile = {};
       this.structuredReturnTypes = {};
       this.dispatchTables = {};
       this.callbackParams = {};
@@ -1231,6 +1240,7 @@ export class CodegraphRunState {
     this.classFieldTypesByClassKey = {};
     this.classFieldCallResults = {};
     this.moduleReexports = {};
+    this.buildConstraintsByFile = {};
     this.structuredReturnTypes = {};
     this.dispatchTables = {};
     this.callbackParams = {};
@@ -1274,6 +1284,7 @@ export class CodegraphRunState {
     this.classFieldTypesByClassKey = {};
     this.classFieldCallResults = {};
     this.moduleReexports = {};
+    this.buildConstraintsByFile = {};
     this.structuredReturnTypes = {};
     this.dispatchTables = {};
     this.callbackParams = {};
@@ -1389,6 +1400,13 @@ export class CodegraphRunState {
     // resurrect a statement the file no longer has.
     if (extraction.moduleReexports) {
       this.moduleReexports[extraction.relPath] = extraction.moduleReexports;
+    }
+    // The file's build constraint under its own path (bd tea-rags-mcp-e6xx):
+    // replaced on a re-walk, and dropped when the file no longer declares one.
+    if (extraction.buildConstraint !== undefined) {
+      this.buildConstraintsByFile[extraction.relPath] = extraction.buildConstraint;
+    } else if (extraction.relPath in this.buildConstraintsByFile) {
+      delete this.buildConstraintsByFile[extraction.relPath];
     }
     // Program-wide instantiation set for the cone resolver's RTA pruning (bd
     // tea-rags-mcp-pffv), regardless of which file instantiates the type.

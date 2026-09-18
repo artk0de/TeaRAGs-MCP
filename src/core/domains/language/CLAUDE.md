@@ -17,9 +17,14 @@
   (`cone-dispatch.ts` plus five per-language strategies) or
   `resolveLocalBinding` when `valueKind` is needed (Ruby `localType`); greatest
   `line <= atLine` wins, skipping a binding whose optional `scopeEndLine` is
-  already past (Go's function-literal parameters). Why: direct indexing loses
-  flow sensitivity — the first binding of a reassigned variable types every
-  later call — and bypasses the block scope.
+  already past (Go's function-literal parameters and block-scoped locals). Go
+  reads through its own `goLocalAt` (`go/local-scope.ts`), which adds Go's
+  declaration rule — a binding carrying `endLine` is in scope only AFTER its
+  declaring statement, so `config := config.Load()` still calls the package —
+  and answers across BOTH of Go's channels (`localBindings`, and the positioned
+  call bindings in `callResultBindings`) with the local declared last. Why:
+  direct indexing loses flow sensitivity — the first binding of a reassigned
+  variable types every later call — and bypasses the block scope.
 - **`DefaultSymbolIdComposer.compose` (`kernel/symbol-id.ts`) yields the BASE
   id; `#partN` is chunker-only** — appended by `enforceMaxChunkSize`
   (`chunker/tree-sitter.ts`), never seen by the walker. Doc languages diverge

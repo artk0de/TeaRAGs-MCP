@@ -147,7 +147,25 @@ conclude absence from a graph the index says is incomplete.
   every chain-vs-oracle disagreement arbitrated by a third pyright vote: the
   `tiebroken` column that stage publishes is the precision figure to quote, and
   `legacy` stays beside it as the regression gate
-- **Go** — 6-strategy; explicit interfaces (no poly dispatch)
+- **Go** — 7-pass chain (localBinding, returnTypeBinding, receiverChain,
+  importMatch, receiverDrop, genericInstantiation, globalShortName) + typed
+  locals under Go's scope rules (a statement-declared local is in scope after
+  its statement, block locals end with their block, function-literal parameters
+  with the literal; a local named like an import or a called package-level
+  function is a value, never the package or the function) + call-bound locals
+  and bare call-result heads typed through declared return types (functions and
+  package-level func-valued vars, `sync.OnceValue` included) behind a known-type
+  gate + dotted receivers typed hop by hop through struct fields + methods and
+  fields promoted through struct embedding (shallowest depth wins; an opaque or
+  namesake type blocks the walk) + go.mod module-path import mapping (nested
+  modules by longest prefix; the standard library and dependencies map to no
+  project package) + bare calls scoped to the caller's package and dot-imports +
+  build-tag twins (one name declared per `//go:build` / GOOS-GOARCH file
+  variant) narrowed to the file the default build compiles, the indexing host's
+  GOOS/GOARCH standing in for the platform + explicit generic instantiation +
+  Go-only symbol lookups in polyglot repositories. Interfaces are not dispatched
+  (no CHA cone), a method call's result types nothing, and type lookup is
+  package-blind
 - **Java** — 6-strategy + java.lang stdlib whitelist + overload disambiguation
 - **Rust** — 6-strategy; trait-based dispatch
 - **Ruby** — 15-strategy chain + 4 dispatch components

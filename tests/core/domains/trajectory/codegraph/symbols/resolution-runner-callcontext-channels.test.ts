@@ -48,6 +48,7 @@ const CHANNEL_DESTINATION = {
   classFieldTypesByClassKey: "classFieldTypesByClassKey",
   classFieldCallResults: "classFieldCallResults",
   moduleReexports: "moduleReexports",
+  buildConstraintsByFile: "buildConstraintsByFile",
   runScope: "runScope",
 } as const satisfies Record<keyof ResolverInputs, keyof CallContext>;
 
@@ -79,6 +80,7 @@ function seededRunState(): CodegraphRunState {
       classFieldTypesByClassKey: { [CLASS_KEY]: { client: "Client" } },
       classFieldCallResults: { [CLASS_KEY]: { repo: "from_session" } },
       moduleReexports: [{ exportedName: "svc", sourceModule: ".", sourceName: "_svc" }],
+      buildConstraint: "linux",
     },
     [],
   );
@@ -135,7 +137,7 @@ describe("CallEdgeResolutionRunner run-global channel threading", () => {
   const channels = Object.entries(CHANNEL_DESTINATION) as [keyof ResolverInputs, keyof CallContext][];
 
   it("enumerates every ResolverInputs channel, so a new one cannot be skipped", () => {
-    expect(channels).toHaveLength(13);
+    expect(channels).toHaveLength(14);
   });
 
   it.each(channels)("threads %s into the call-site CallContext as %s", (_input, destination) => {
@@ -158,6 +160,7 @@ describe("CallEdgeResolutionRunner run-global channel threading", () => {
     expect(callSite.classFieldTypesByClassKey?.[CLASS_KEY]).toEqual({ client: "Client" });
     expect(callSite.classFieldCallResults?.[CLASS_KEY]).toEqual({ repo: "from_session" });
     expect(callSite.moduleReexports?.["src/pkg/svc.py"]).toHaveLength(1);
+    expect(callSite.buildConstraintsByFile?.["src/pkg/svc.py"]).toBe("linux");
     expect(callSite.functionReturnTypes).toEqual({ get_client: "Client" });
     expect(fileEdge.classFieldTypesByClassKey?.[CLASS_KEY]).toEqual({ client: "Client" });
     expect(fileEdge.instantiatedTypes?.has("Svc")).toBe(true);

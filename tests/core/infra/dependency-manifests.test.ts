@@ -131,6 +131,9 @@ describe("readManifestFiles", () => {
 
   it("shares the walk's bounds: no vendored trees, no deeper than 4 levels", () => {
     write(join("node_modules", "x", "go.mod"), "module vendored\n");
+    // `go mod vendor` under a go directive below 1.17 copies each dependency's
+    // go.mod into vendor/; reading one would make a dependency a project module.
+    write(join("vendor", "github.com", "dep", "go.mod"), "module github.com/dep\n");
     write(join("a", "b", "c", "d", "e", "go.mod"), "module too.deep\n");
     expect(readManifestFiles(root, isGoMod)).toEqual([]);
   });
