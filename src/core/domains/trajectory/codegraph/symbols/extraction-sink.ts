@@ -42,6 +42,7 @@ import type {
   SymbolDefinition,
 } from "../../../../contracts/types/codegraph.js";
 import type { PhysicalCollectionName } from "../../../../contracts/types/collection-identity.js";
+import type { FileExtractionAbsorbRole } from "../../../../contracts/types/provider.js";
 import { CodegraphMetricsError, CodegraphSpillIoError } from "../../errors.js";
 import { normalizeInheritanceEdges } from "./inheritance-edges.js";
 import type { SymbolNodeFlushQueue } from "./node-flush.js";
@@ -79,6 +80,34 @@ export interface CodegraphSinkDeps {
 }
 
 /**
+ * What `finish` is asked to close besides pass-2 (bd tea-rags-mcp-sgo8v).
+ *
+ * `recomputeMetrics: false` leaves cycles and PageRank to the caller: under
+ * language affinity several sinks resolve into ONE graph concurrently, and a
+ * metric computed when THIS sink's pass-2 ends is computed over whatever the
+ * other partitions have not written yet. Absent means the one-sink run, which
+ * recomputes as it always did.
+ */
+export interface CodegraphSinkFinishOptions {
+  recomputeMetrics?: boolean;
+}
+
+/**
+ * The codegraph run sink: the `ExtractionSink` contract plus the two things
+ * only a language partition needs from it (bd tea-rags-mcp-sgo8v).
+ */
+export interface CodegraphExtractionSink extends ExtractionSink {
+  /**
+   * Absorb the pass-1 STATE of a file another partition owns — symbol-table
+   * entry, run-global aggregates, inheritance rows — and nothing it would own:
+   * no node write, no walk ranges, no spill line, no count. The same merge
+   * `write` performs, so the two cannot drift apart.
+   */
+  mirror: (extraction: FileExtraction) => Promise<void>;
+  finish: (options?: CodegraphSinkFinishOptions) => Promise<void>;
+}
+
+/**
  * Build an `ExtractionSink` bound to the active collection. The sink captures
  * the per-collection routing so all downstream `write`/`finish` calls land in
  * the right DuckDB file.
@@ -97,7 +126,7 @@ export function createCodegraphExtractionSink(
   runId: string,
   collectionName?: PhysicalCollectionName,
   skipDurableNodeWrite = false,
-): ExtractionSink {
+): CodegraphExtractionSink {
   // The spill path is `<dataDir>/codegraph/.spill/<coll>-<runId>.ndjson` —
   // `runId` is unique per sink so concurrent ingest passes (rare but possible
   // across collections) get unique files. Spill files left by a CRASHED run are
@@ -141,13 +170,56 @@ export function createCodegraphExtractionSink(
     await rm(spillLiveMarkerPath(spillPath), { force: true }).catch(() => undefined);
   };
 
+  const assertOpen = (method: string): void => {
+    if (finished) {
+      // Caller bug — write after finish. Surface as a programming error so
+      // the test path catches it; a typed error is overkill for an invariant.
+      throw new Error(`CodegraphEnrichmentProvider sink: ${method}() called after finish()`);
+    }
+  };
+
+  /**
+   * The pass-1 STATE of one file, shared by `write` (a file this sink owns) and
+   * `mirror` (a file another language partition owns): the in-memory symbol
+   * table entry, the run-global aggregates and the inheritance rows. Everything
+   * pass-2 resolves AGAINST, and nothing it writes.
+   */
+  const absorbPass1State = (
+    extraction: FileExtraction,
+    symbolTable: GlobalSymbolTable,
+    defs: SymbolDefinition[],
+    role: FileExtractionAbsorbRole,
+  ): void => {
+    // The in-memory table is the resolver's source of truth during the run;
+    // the durable copy (`write` buffers it) exists for a later run's hydration.
+    symbolTable.upsertFile(extraction.relPath, defs);
+    // Merge this file's pass-1 aggregates (ancestors, return types, dispatch
+    // tables, instantiations, …) into the run-global state so pass-2 resolves
+    // against the whole run regardless of which file declared what. Ruby-only
+    // for the self-dispatch candidates (DEFECT 2) — the entry strategy that
+    // consumes the discovered map is Ruby.
+    deps.runState.absorb(
+      extraction,
+      extraction.language === "ruby" ? extractSelfDispatchMethods(extraction.chunks) : [],
+      role,
+    );
+    // Accumulate this file's inheritance edges run-global (bd tea-rags-mcp-o17v2)
+    // so the pass-1→pass-2 barrier can build a complete hierarchy view for the
+    // CHA cone resolver. Resolving ancestor symbol_ids against the now-partial
+    // table is unnecessary here — the cone reads by fqName — so pass a null
+    // resolver and let the per-file persist (pass-2) own symbol_id binding.
+    const inheritanceRows = normalizeInheritanceEdges(extraction, () => null);
+    if (inheritanceRows.length > 0) deps.runState.inheritanceRows.push(...inheritanceRows);
+  };
+
   return {
+    mirror: async (extraction) => {
+      assertOpen("mirror");
+      const symbolTable = await deps.resolveSymbolTable(collectionName);
+      absorbPass1State(extraction, symbolTable, deps.buildSymbolDefs(extraction), "mirror");
+    },
     write: async (extraction) => {
-      if (finished) {
-        // Caller bug — write after finish. Surface as a programming error so
-        // the test path catches it; a typed error is overkill for an invariant.
-        throw new Error("CodegraphEnrichmentProvider sink: write() called after finish()");
-      }
+      assertOpen("write");
       const symbolTable = await deps.resolveSymbolTable(collectionName);
       const defs = deps.buildSymbolDefs(extraction);
       // Persist defs to both the in-memory table (for in-pass resolver lookups)
@@ -161,27 +233,11 @@ export function createCodegraphExtractionSink(
       // eager batched flush, so `skipDurableNodeWrite` suppresses the
       // (idempotent) per-file re-write here; the in-memory table build stays
       // unconditional (the resolver needs it in this context).
-      symbolTable.upsertFile(extraction.relPath, defs);
+      absorbPass1State(extraction, symbolTable, defs, "own");
       if (!skipDurableNodeWrite) {
         deps.nodeFlush.buffer(extraction.relPath, defs, deps.collectionKey(collectionName), collectionName);
       }
       deps.indexChunkSymbolsByLine(collectionName, extraction);
-      // Merge this file's pass-1 aggregates (ancestors, return types, dispatch
-      // tables, instantiations, …) into the run-global state so pass-2 resolves
-      // against the whole run regardless of which file declared what. Ruby-only
-      // for the self-dispatch candidates (DEFECT 2) — the entry strategy that
-      // consumes the discovered map is Ruby.
-      deps.runState.absorb(
-        extraction,
-        extraction.language === "ruby" ? extractSelfDispatchMethods(extraction.chunks) : [],
-      );
-      // Accumulate this file's inheritance edges run-global (bd tea-rags-mcp-o17v2)
-      // so the pass-1→pass-2 barrier can build a complete hierarchy view for the
-      // CHA cone resolver. Resolving ancestor symbol_ids against the now-partial
-      // table is unnecessary here — the cone reads by fqName — so pass a null
-      // resolver and let the per-file persist (pass-2) own symbol_id binding.
-      const inheritanceRows = normalizeInheritanceEdges(extraction, () => null);
-      if (inheritanceRows.length > 0) deps.runState.inheritanceRows.push(...inheritanceRows);
 
       const stream = await ensureSpillStream();
       const line = `${JSON.stringify(extraction)}\n`;
@@ -199,7 +255,7 @@ export function createCodegraphExtractionSink(
       spillWriteCount += 1;
       deps.runState.stats.extractedFiles += 1;
     },
-    finish: async () => {
+    finish: async (options) => {
       finished = true;
       const key = deps.collectionKey(collectionName);
       // Hand the buffered node defs to the flush chain. Owning it here makes the
@@ -261,11 +317,10 @@ export function createCodegraphExtractionSink(
         // is at stake. A failure there degrades find_cycles and rerank rather
         // than aborting the index pass, so we swallow CodegraphMetricsError
         // after the debug log the helper itself emits. Other error types (spill
-        // IO, resolve) DO propagate from the stage above.
-        try {
-          await deps.recomputeMetrics(collectionName);
-        } catch (err) {
-          if (!(err instanceof CodegraphMetricsError)) throw err;
+        // IO, resolve) DO propagate from the stage above. A language partition
+        // leaves the recompute to the collection's completion owner.
+        if (options?.recomputeMetrics !== false) {
+          await recomputeCodegraphMetricsBestEffort(async () => deps.recomputeMetrics(collectionName));
         }
       } finally {
         // A dispatched node write must never outlive `finish`. On the success
@@ -280,4 +335,20 @@ export function createCodegraphExtractionSink(
       }
     },
   };
+}
+
+/**
+ * Recompute cycles and PageRank, best-effort: a `CodegraphMetricsError` is
+ * swallowed (the helper already logged the failing stage) because only metric
+ * FRESHNESS is at stake — the edges it reads are already durable. Any other
+ * error propagates. Shared by the one-sink `finish` and the language
+ * partition that owns collection completion (bd tea-rags-mcp-sgo8v), so the
+ * two cannot disagree on what "best effort" means.
+ */
+export async function recomputeCodegraphMetricsBestEffort(recompute: () => Promise<void>): Promise<void> {
+  try {
+    await recompute();
+  } catch (err) {
+    if (!(err instanceof CodegraphMetricsError)) throw err;
+  }
 }

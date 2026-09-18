@@ -225,6 +225,38 @@ export interface ChunkSignalOptions {
 export type EnrichmentRunCoverage = "wholeCorpus" | "subset";
 
 /**
+ * The two halves of a finalize whose collection is split across language
+ * partitions (bd tea-rags-mcp-sgo8v), in the order the executor drives them:
+ *
+ *   - `resolve` — every partition, concurrently: pass-2 over the files it owns
+ *     and its share of the resolve tally. Reads back nothing: the graph is not
+ *     whole until the LAST partition's pass-2 lands.
+ *   - `readBack` — every partition again, after all of them resolved: the one
+ *     that {@link FileSignalOptions.ownsCollectionCompletion owns completion}
+ *     recomputes cycles and PageRank, then each returns the file overlays of
+ *     the files it owns.
+ *
+ * The barrier between them is the point: a file's fan-in may be written by
+ * another partition (a TypeScript file importing a JavaScript one), and a
+ * metric computed before every pass-2 finished is computed over half a graph.
+ */
+export type PartitionedFinalizeStage = "resolve" | "readBack";
+
+/**
+ * What a language partition does with one extraction record it absorbs (bd
+ * tea-rags-mcp-sgo8v):
+ *
+ *   - `own` — the record's file belongs to this partition: everything
+ *     `absorbExtractedFiles` does today — durable node defs, the chunk-owner
+ *     walk ranges, run-global merge, spill append, and later pass-2.
+ *   - `mirror` — another partition owns the file: merge its pass-1 STATE only
+ *     (symbol-table entry, run-global aggregates, inheritance rows) so this
+ *     partition resolves against exactly the project a single worker would
+ *     have seen. Nothing durable, nothing counted, never resolved here.
+ */
+export type FileExtractionAbsorbRole = "own" | "mirror";
+
+/**
  * Options for buildFileSignals — symmetric to ChunkSignalOptions but the
  * shape is simpler (no concurrency / cache concerns at file level today).
  * Carries the active collection name so collection-scoped providers
@@ -299,6 +331,21 @@ export interface FileSignalOptions {
    * pass-1 store (git) ignore it.
    */
   pass1Aggregates?: readonly CodegraphPass1FileAggregates[];
+  /**
+   * Which half of a finalize split across language partitions this call is
+   * (bd tea-rags-mcp-sgo8v) — see {@link PartitionedFinalizeStage}. Absent is
+   * the one-call finalize every other caller makes. Set only by an executor
+   * running the provider under `workerDescriptor.languageAffinity`. Primitive —
+   * survives the worker-pool `structuredClone` boundary.
+   */
+  finalizeStage?: PartitionedFinalizeStage;
+  /**
+   * True on exactly ONE partition of a collection: the one whose `readBack`
+   * recomputes the collection-global products (cycles, PageRank) over the
+   * graph every partition's `resolve` finished. Read only together with
+   * {@link FileSignalOptions.finalizeStage}.
+   */
+  ownsCollectionCompletion?: boolean;
   /** Per-blame-pass instrumentation (bd tea-rags-mcp-v2mlw): invoked once per
    *  populateBlameMap pass with cache hit/miss counters and wall duration;
    *  the file phase binds it to the pipeline debug log ([GitEnrich] BLAME
@@ -370,6 +417,21 @@ export interface WorkerEnrichmentDescriptor {
    * chunk work and release all stay on the one pinned thread.
    */
   extractionFanout?: boolean;
+  /**
+   * Opt in to per-LANGUAGE affinity (bd tea-rags-mcp-sgo8v): the executor may
+   * serve one collection with one pinned worker per language partition instead
+   * of one worker for the whole collection, so the pass-2 of each partition runs
+   * concurrently rather than back to back. Only meaningful together with
+   * `extractionFanout` — the partitions are fed by the same extract/absorb
+   * split, every partition absorbing every record (see
+   * {@link FileExtractionAbsorbRole}).
+   *
+   * `partitionByExtension` maps a file extension (with its dot) to the language
+   * label the provider walks it as; a file whose extension is absent belongs to
+   * no language and is served by the partition that owns collection
+   * completion. Plain data — the executor reads it on the main thread.
+   */
+  languageAffinity?: { partitionByExtension: Readonly<Record<string, string>> };
   /**
    * Per-provider structured-clone-safe payload. Each provider declares its
    * own typed config inside its own module; ingest treats it as opaque
@@ -668,11 +730,18 @@ export interface EnrichmentProvider {
    * `pass1ByLanguage` is the merged attribution of the extraction units that
    * produced these records, folded into the provider's phase timings here
    * because the pinned worker is the one that reports the run.
+   *
+   * `absorbRoles`, aligned index-for-index with `extractions`, is set only under
+   * `workerDescriptor.languageAffinity` (bd tea-rags-mcp-sgo8v); absent, every
+   * record is `own`.
    */
   absorbExtractedFiles?: (
     root: string,
     extractions: FileExtraction[],
-    options?: FileSignalOptions & { pass1ByLanguage?: Record<string, FileExtractionPass1Telemetry> },
+    options?: FileSignalOptions & {
+      pass1ByLanguage?: Record<string, FileExtractionPass1Telemetry>;
+      absorbRoles?: readonly FileExtractionAbsorbRole[];
+    },
   ) => Promise<void>;
 }
 

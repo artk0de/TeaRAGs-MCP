@@ -54,6 +54,7 @@ const EXPECTED_POLICY = {
   moduleReexports: "hydrate",
   extractedFilesByLanguage: "batchOnly",
   extractedRelPathsByLanguage: "batchOnly",
+  mirroredRelPaths: "batchOnly",
   includedBy: "batchOnly",
   hierarchyView: "batchOnly",
   selfDispatchTemplates: "batchOnly",

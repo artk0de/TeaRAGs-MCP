@@ -50,6 +50,7 @@ export function createSymbolsTrajectory(deps: SymbolsTrajectoryDeps): Trajectory
 
 export { CodegraphEnrichmentProvider } from "./provider.js";
 export { CODEGRAPH_LANGUAGES, type CodegraphLanguageConfig } from "./provider.js";
+export { CODEGRAPH_LANGUAGE_BY_EXTENSION } from "./file-extractor.js";
 export { InMemoryGlobalSymbolTable } from "./symbol-table.js";
 export { CODEGRAPH_SYMBOLS_FILE_SIGNALS, CODEGRAPH_SYMBOLS_CHUNK_SIGNALS } from "./payload-signals.js";
 export { codegraphFilters } from "./filters.js";
