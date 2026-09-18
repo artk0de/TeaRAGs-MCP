@@ -3,8 +3,8 @@
  * explicit imports (bd tea-rags-mcp-9fgdi, E2 seam 1).
  *
  * Replaces `defaultImportFileEdges`'s fake-call trick
- * (`trajectory/codegraph/symbols/resolution-runner.ts:67-84`) for languages
- * that supply an `ImportFileMapper`: instead of synthesising a call per import
+ * (`trajectory/codegraph/symbols/resolution-runner.ts`) for languages that
+ * supply an `ImportFileMapper`: instead of synthesising a call per import
  * and reading whatever the resolver chain happens to commit, ask the mapper
  * directly. The chain answers "what does this CALL reach"; a file edge asks
  * "what does this IMPORT name" — different questions that only accidentally
@@ -40,8 +40,8 @@ export function resolveImportFileEdges(
     });
   }
   // NOT deduped here. `CallEdgeResolutionRunner#buildFileEdges` applies
-  // `dedupeFileEdgesByTarget` to whatever either branch returns
-  // (`resolution-runner.ts:296`), because the uniqueness is a property of the
-  // persisted EDGE, not of any one language's import loop.
+  // `dedupeFileEdgesByTarget` to whatever either branch returns, because the
+  // uniqueness is a property of the persisted EDGE, not of any one language's
+  // import loop.
   return fileEdges;
 }

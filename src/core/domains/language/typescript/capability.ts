@@ -34,7 +34,13 @@ export const capability: LanguageCapability = {
   // as written and `.mjs` / `.cjs` to their `.mts` / `.cts` source, where both
   // used to get `.ts` appended and land on a path no file row matches; under
   // `allowJs` a `.js`-family specifier with no TypeScript source falls back to
-  // the JavaScript file the probe confirms; `.json` maps as written; import
-  // basename matching strips `.mts` / `.cts` and their declarations.
+  // the JavaScript file the probe confirms, and so does an extensionless
+  // specifier (`./legacy` → `legacy.js`, `./widgets` → `widgets/index.js`);
+  // import basename matching strips `.mts` / `.cts` and their declarations.
+  // Same bump, bd tea-rags-mcp-unt4v: an ASSET import — the as-written path is
+  // an existing file no source candidate named (a CSS module, an image, a JSON
+  // module) — maps to nothing instead of `<asset>.ts`, so it has no file edge
+  // and a call on its binding is external; a JSON module the probe cannot find
+  // maps as written.
   versions: { chunking: 1, walker: 6, codegraphSchema: 2 },
 };

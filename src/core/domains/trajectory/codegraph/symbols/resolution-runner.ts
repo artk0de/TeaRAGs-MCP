@@ -118,9 +118,11 @@ type CallResolutionOutcome = "resolved" | "unresolved" | "ambiguous";
 /**
  * Generic import→file-edge resolution: synthesise a "call-shaped" lookup per
  * import so the same resolver contract handles import-to-file resolution. Used
- * for every language whose `CallResolver` does NOT implement `resolveFileEdges`
- * (TS/Python/Go/Java/Rust/JS) — their file graph comes purely from explicit
- * imports. Ruby overrides this via `resolveFileEdges` to add the Zeitwerk
+ * for every language whose `LanguageSymbolResolver` facade does NOT expose
+ * `resolveFileEdges` — Go, Java, Rust and Bash, whose file graph comes purely
+ * from explicit imports. TypeScript, JavaScript and Python override it with
+ * their import→file mappers (`member` here is a filename, so a member-keyed
+ * pass can answer it with an unrelated file), and Ruby to add the Zeitwerk
  * constant channel and inheritance edges.
  */
 function defaultImportFileEdges(
@@ -333,9 +335,10 @@ export class CallEdgeResolutionRunner {
   /**
    * File-level edges. A resolver that implements `resolveFileEdges` owns its
    * language's full set of file-coupling channels (Ruby: require + Zeitwerk
-   * constants + inheritance/mixins). Resolvers that don't fall back to the
-   * generic synthesised-call import loop — correct for languages whose file
-   * graph comes purely from explicit imports (TS/Python/Go/Java/Rust/JS).
+   * constants + inheritance/mixins; TS / JS / Python: their import→file
+   * mappers). Resolvers that don't fall back to the generic synthesised-call
+   * import loop — Go, Java, Rust and Bash, whose file graph comes purely from
+   * explicit imports.
    *
    * Both branches emit one candidate edge per IMPORT STATEMENT, so a file
    * importing the same target twice (default + named import of the same

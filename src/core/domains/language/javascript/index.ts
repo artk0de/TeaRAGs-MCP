@@ -10,17 +10,18 @@
  *                                           `chunkSymbols` capability — CommonJS /
  *                                           prototype / dispatch / defineProperty shapes)
  *   walker        ← ./walker/              (extractFromJavascriptFile + jsNameOf)
- *   resolver      ← ./resolver/            (JavascriptCallResolver — relative-import chain)
+ *   resolver      ← ./resolver/            (JavascriptCallResolver — relative-import chain,
+ *                                           JavascriptImportFileMapper for file edges)
  *
  * Created per-context by `LanguageFactoryDescriptor` (each owns its own tree-sitter
  * `Parser`, spec §5). The capability logic here is stateless, so the only
  * per-instance cost is the Parser the chunker/codegraph engines build.
  *
- * One grammar, four extensions: `.js` / `.jsx` / `.mjs` / `.cjs` all map to
- * language "javascript" (`LANGUAGE_MAP`). Both the CHUNKER and the CODEGRAPH
- * engine use the single `tree-sitter-javascript` grammar (the codegraph
- * `CODEGRAPH_LANGUAGES` entries all share `loadParser: () => JsLang`), so unlike
- * TypeScript there is no per-extension grammar split.
+ * One grammar: the codegraph walks `.js` / `.jsx` / `.mjs` / `.cjs` as language
+ * "javascript" (`CODEGRAPH_LANGUAGES`, every entry `loadParser: () => JsLang`),
+ * and ingest's `LANGUAGE_MAP` routes `.js` / `.jsx` to the same
+ * `tree-sitter-javascript` grammar — `.mjs` / `.cjs` are not in the ingest
+ * tables. Unlike TypeScript there is no per-extension grammar split.
  *
  * symbolId coverage convergence: the chunker emits the CommonJS / pre-class
  * assignment shapes via the `chunkSymbols` capability (engine

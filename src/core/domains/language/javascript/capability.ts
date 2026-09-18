@@ -16,9 +16,15 @@ export const capability: LanguageCapability = {
   // codegraphSchema 2: bd tea-rags-mcp-ex28m — see typescript/capability.ts.
   // walker 2: bd tea-rags-mcp-hwwtw — receiver-bearing calls no longer fall
   // through to the global short-name lookup.
-  // walker 3: bd tea-rags-mcp-x9qsh — a `.ts` / `.tsx` / `.mts` / `.cts` /
-  // `.json` specifier maps to that file instead of `<file>.ts.js`, and file
-  // edges come from the import mapper instead of the call path, which dropped
-  // every explicit-extension import (`./lib/render-changelog.js`).
+  // walker 3: bd tea-rags-mcp-x9qsh — file edges come from
+  // `JavascriptImportFileMapper` through the shared `resolveImportFileEdges`,
+  // which the `JavaScriptLanguage` facade now forwards, instead of the
+  // synthesised-call default, which dropped every explicit-extension import
+  // (`./lib/render-changelog.js`) and sent two same-basename imports to one
+  // file. An edge is emitted only to a file the index holds: `./config`
+  // reaches `config/index.js`, a `.ts` / `.tsx` / `.mts` / `.cts` specifier its
+  // file as written, and `../build/…` or a stylesheet no edge at all where the
+  // default named `<file>.js` / `<file>.ts.js`. The call path still maps a
+  // `.ts`-family or `.json` specifier as written rather than `<file>.ts.js`.
   versions: { chunking: 1, walker: 3, codegraphSchema: 2 },
 };

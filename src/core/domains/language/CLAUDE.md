@@ -42,8 +42,17 @@
   namespace package answers `unknown` because a directory is not a legal
   file-edge target. `unknown` is NOT `external`: a consumer keeps its pre-seam
   fallback there, which is why the vocabulary still runs its own directory probe
-  for namespace packages. TypeScript keeps `ts-path-mapper` for now (it probes
-  disk); migrating it is a follow-up. Chain index 5, `importedName`, is the last
+  for namespace packages. JavaScript's `resolveFileEdges` delegates there too,
+  through `JavascriptImportFileMapper` (the same `hasFile` membership), so a JS
+  file edge lands only on a file the index holds; its call path still reads the
+  unverified head, `mapJavascriptImportToFile`. TypeScript keeps
+  `ts-path-mapper` for now (it probes disk); migrating it is a follow-up. There
+  an ASSET import — an existing as-written file no source candidate named (a CSS
+  module, an image, JSON) — maps to `null`: no file edge, and a call on its
+  binding is external. The verdict is the probe's, checked after every source
+  candidate; never add an asset-extension list, because `user.service` is a
+  dotted TypeScript basename and only the probe tells it from an asset (bd
+  tea-rags-mcp-unt4v). Chain index 5, `importedName`, is the last
   import-consulting pass: it reads the binding the walker recorded. The pass
   that guessed the bound name from the module's trailing segment, `importMatch`,
   was removed once the oracle measured its residual (bd tea-rags-mcp-rw1qk).
@@ -288,15 +297,16 @@
 - **An extraction pass never re-slices a native walker, and with no passes the
   composed walker returns the monolith's own object.**
   `kernel/extraction-passes.ts` runs `<lang>/walker/walker.ts` first, then the
-  language's `<LANG>_EXTRACTION_PASSES` (`<lang>/walker/passes.ts`, empty for
-  Ruby and Python today), folding each pass's `Partial<FileExtraction>` in
-  through `kernel/merge-extraction.ts`. That merge is append-only: arrays concat
-  base-first, set-like arrays dedupe on the first occurrence, Records union with
-  the BASE's value kept on a conflict, Record-of-arrays union KEYS only, chunks
-  merge by `symbolId` with `localBindings` re-sorted by line, and a channel
-  neither side carries is never materialised. The per-channel rulebook is a
-  mapped type over `keyof FileExtraction` / `keyof ChunkExtraction`, so a new
-  channel is a compile error until it gets a row. Why: precedence inversions
+  language's `<LANG>_EXTRACTION_PASSES` (`<lang>/walker/passes.ts`, empty except
+  Python's `pythonAnnotationTypeFacetPass` and Go's
+  `goStructFieldTypesFacetPass`), folding each pass's `Partial<FileExtraction>`
+  in through `kernel/merge-extraction.ts`. That merge is append-only: arrays
+  concat base-first, set-like arrays dedupe on the first occurrence, Records
+  union with the BASE's value kept on a conflict, Record-of-arrays union KEYS
+  only, chunks merge by `symbolId` with `localBindings` re-sorted by line, and a
+  channel neither side carries is never materialised. The per-channel rulebook
+  is a mapped type over `keyof FileExtraction` / `keyof ChunkExtraction`, so a
+  new channel is a compile error until it gets a row. Why: precedence inversions
   live INSIDE a monolith (`attachRubyTypeChannels` in
   `ruby/walker/type-channels.ts` has YARD `@return` overwrite body inference in
   `functionReturnTypes`, and body inference NOT overwrite the store in
@@ -354,14 +364,20 @@
   `trajectory/codegraph/symbols/resolution-runner.ts` synthesises
   `{ receiver: basename, member: basename }` per import — `member` is a
   FILENAME, so a member-keyed pass answering it points `import './bar'` at
-  whichever file declares `Other.bar`. TS, JavaScript and Ruby override
-  `resolveFileEdges` via their real specifier→file mapper (`mapImportToFile` /
-  `mapJavascriptImportToFile` / Zeitwerk). JavaScript's default failed the other
-  way: `importMatchesReceiver` strips `.js` from the import but not from the
-  synthesised receiver, so every explicit-extension import — the ordinary Node
-  ESM form — produced no edge (bd tea-rags-mcp-x9qsh). Why: a new language on
-  the default emits wrong or missing file-level import edges, surfacing as an
-  unstable `provider.test.ts` count, not as anything naming the resolver.
+  whichever file declares `Other.bar`. TS, JavaScript, Python and Ruby override
+  `resolveFileEdges` — TS via `mapImportToFile`, JavaScript and Python via
+  `resolveImportFileEdges` over their `ImportFileMapper`, Ruby via Zeitwerk plus
+  inheritance; Go, Java, Rust and Bash still take the default. The override
+  counts only when the language's `LanguageSymbolResolver` facade
+  (`<lang>/index.ts`) FORWARDS it: the runner reads the facade, never the
+  `CallResolver`. JavaScript's resolver carried the method for a round while its
+  facade did not, so production kept the default, whose `importMatchesReceiver`
+  strips `.js` from the import but not from the synthesised receiver — every
+  explicit-extension import, the ordinary Node ESM form, produced no edge —
+  while a unit test driving the bare resolver passed (bd tea-rags-mcp-x9qsh).
+  Why: a new language on the default emits wrong or missing file-level import
+  edges, surfacing as an unstable `provider.test.ts` count, not as anything
+  naming the resolver.
 - **The capability drift-guard is one-sided.**
   `tests/core/domains/language/capability/drift-guard.test.ts` only checks
   renders of `LanguageFactory#capabilities` against the committed artefacts — it
