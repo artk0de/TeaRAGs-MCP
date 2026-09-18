@@ -10,3 +10,4 @@ export { SchemaV12EnrichmentPayloadIndexes } from "./schema-v12-enrichment-paylo
 export { SchemaV13RenameOwnershipPayload } from "./schema-v13-rename-ownership-payload.js";
 export { SchemaV14EnrichmentScanIndexes } from "./schema-v14-enrichment-scan-indexes.js";
 export { SchemaV15CodegraphFilterIndexes } from "./schema-v15-codegraph-filter-indexes.js";
+export { SchemaV16DropUndeclaredPayloadIndexes } from "./schema-v16-drop-undeclared-payload-indexes.js";

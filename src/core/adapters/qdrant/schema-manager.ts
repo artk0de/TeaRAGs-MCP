@@ -105,6 +105,27 @@ export const ENRICHMENT_SCAN_INDEXES: readonly { readonly path: string; readonly
   { path: "codegraph.symbols.chunk.skippedAs", schema: "keyword" },
 ];
 
+/** Payload keys filtered by exact value, each carrying a `keyword` index (schema v6). */
+export const KEYWORD_FILTER_INDEX_KEYS = ["language", "fileExtension", "chunkType"] as const;
+
+/**
+ * Every payload field {@link SchemaManager.initializeSchema} indexes — and,
+ * by the initializeSchema ⟺ migrations parity, every field a schema migration
+ * ensures on an existing collection.
+ *
+ * `schema-v16-drop-undeclared-payload-indexes` treats these as declared no
+ * matter what the trajectories declare: they are the schema pipeline's own
+ * indexes, several of them on keys no payload signal descriptor names
+ * (`_type`, the `enrichedAt` / `skippedAs` bookkeeping fields). Pinned against
+ * initializeSchema by `tests/core/adapters/qdrant/schema-manager.test.ts`.
+ */
+export const SCHEMA_MANAGED_PAYLOAD_INDEX_KEYS: readonly string[] = [
+  ...TEXT_INDEXED_KEYS,
+  ...KEYWORD_FILTER_INDEX_KEYS,
+  ...CODEGRAPH_FILTER_INDEXES.map(({ path }) => path),
+  ...ENRICHMENT_SCAN_INDEXES.map(({ path }) => path),
+];
+
 /**
  * SchemaManager - Handles collection schema versioning and migrations
  */
@@ -160,7 +181,7 @@ export class SchemaManager {
     }
 
     // Create keyword indexes on frequently filtered fields
-    for (const field of ["language", "fileExtension", "chunkType"] as const) {
+    for (const field of KEYWORD_FILTER_INDEX_KEYS) {
       await this.qdrant.createPayloadIndex(collectionName, field, "keyword");
       indexes.push(field);
     }

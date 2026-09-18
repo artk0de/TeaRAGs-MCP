@@ -6,6 +6,8 @@
  * Migrator = top-level router dispatching run() to the correct runner.
  */
 
+import type { PayloadFieldIndex } from "../../../adapters/qdrant/payload-index.js";
+
 /** Single migration. One class = one file. */
 export interface Migration {
   readonly name: string;
@@ -74,6 +76,10 @@ export interface IndexStore {
   ) => Promise<void>;
   /** Delete payload keys from all points. */
   deletePayloadKeys?: (collection: string, keys: string[]) => Promise<void>;
+  /** Every payload field index on the collection. A read failure propagates — never an empty list. */
+  listPayloadIndexes?: (collection: string) => Promise<PayloadFieldIndex[]>;
+  /** Drop one payload field index; the payload values stay. */
+  dropPayloadIndex?: (collection: string, field: string) => Promise<void>;
 }
 
 /** DIP: Sparse vector operations. */

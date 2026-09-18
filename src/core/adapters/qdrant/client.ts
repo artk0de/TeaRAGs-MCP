@@ -34,7 +34,7 @@ import type { PhysicalCollectionName } from "../../contracts/types/collection-id
 import type { QdrantAliasManager } from "./aliases.js";
 import { QdrantCollectionAdmin, type CollectionInfo } from "./collection-admin.js";
 import { QdrantConnection, type EmbeddedDaemonProbe } from "./connection.js";
-import { QdrantPayloadIndexManager } from "./payload-index.js";
+import { QdrantPayloadIndexManager, type PayloadFieldIndex } from "./payload-index.js";
 import { QdrantPointStore } from "./point-store.js";
 import { QdrantScroller } from "./scroller.js";
 import { QdrantSearchExecutor, type SearchResult } from "./search-executor.js";
@@ -219,6 +219,15 @@ export class QdrantManager {
     fieldSchema: "keyword" | "integer" | "float" | "bool" | "geo" | "datetime" | "text" | "uuid",
   ): Promise<boolean> {
     return this.payloadIndexes.ensurePayloadIndex(collectionName, fieldName, fieldSchema);
+  }
+
+  /** Every payload field index on the collection; a read failure propagates. */
+  async listPayloadIndexes(collectionName: string): Promise<PayloadFieldIndex[]> {
+    return this.payloadIndexes.listPayloadIndexes(collectionName);
+  }
+
+  async deletePayloadIndex(collectionName: string, fieldName: string): Promise<void> {
+    return this.payloadIndexes.deletePayloadIndex(collectionName, fieldName);
   }
 
   // ── Points + payloads ──

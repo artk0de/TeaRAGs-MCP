@@ -93,6 +93,30 @@ describe("SchemaMigrator", () => {
     expect(migrator.latestVersion).toBe(15);
   });
 
+  // bd tea-rags-mcp-q34ic — v16 drops indexes nothing declares, so it exists
+  // only when the caller hands over the declared key set. Without one there is
+  // no migration to stamp past: the collection stays at 15 and the next run
+  // that has the set performs the drop.
+  it("registers v16 when the declared trajectory payload keys are supplied", () => {
+    const migrator = new SchemaMigrator(COLLECTION, createMockIndexStore(), {
+      enableHybrid: false,
+      declaredPayloadKeys: new Set(["git.chunk.ageDays"]),
+    });
+    expect(migrator.getMigrations().find((m) => m.version === 16)?.name).toBe(
+      "schema-v16-drop-undeclared-payload-indexes",
+    );
+    expect(migrator.latestVersion).toBe(16);
+  });
+
+  it("does not register v16 from an empty declared key set", () => {
+    const migrator = new SchemaMigrator(COLLECTION, createMockIndexStore(), {
+      enableHybrid: false,
+      declaredPayloadKeys: new Set(),
+    });
+    expect(migrator.getMigrations().find((m) => m.version === 16)).toBeUndefined();
+    expect(migrator.latestVersion).toBe(15);
+  });
+
   it("stores version via IndexStore after migrations", async () => {
     const store = createMockIndexStore(7);
     const migrator = new SchemaMigrator(COLLECTION, store, { enableHybrid: false });

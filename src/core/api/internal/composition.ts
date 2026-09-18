@@ -19,10 +19,15 @@ import { resolveLanguageCodeVersions } from "../../domains/language/capability/v
 import { LanguageFactory } from "../../domains/language/index.js";
 import { createCodegraphTrajectories, type CodegraphDeps } from "../../domains/trajectory/codegraph/index.js";
 import { CODEGRAPH_FILTER_PRESETS } from "../../domains/trajectory/codegraph/symbols/filter-presets/index.js";
+import {
+  CODEGRAPH_SYMBOLS_CHUNK_SIGNALS,
+  CODEGRAPH_SYMBOLS_FILE_SIGNALS,
+} from "../../domains/trajectory/codegraph/symbols/index.js";
 import { buildCompositeFilterPresets } from "../../domains/trajectory/composite/filter-presets/index.js";
 import { buildCompositePresets } from "../../domains/trajectory/composite/presets/index.js";
 import { GitTrajectory } from "../../domains/trajectory/git.js";
 import { GIT_FILTER_PRESETS } from "../../domains/trajectory/git/filter-presets/index.js";
+import { gitPayloadSignalDescriptors } from "../../domains/trajectory/git/index.js";
 import type { SquashOptions } from "../../domains/trajectory/git/infra/metrics.js";
 import type { GitProviderConfig } from "../../domains/trajectory/git/provider.js";
 import { TrajectoryRegistry } from "../../domains/trajectory/index.js";
@@ -107,6 +112,29 @@ export function assembleFilterPresets(registeredKeys: ReadonlySet<string>): Filt
     ...(registeredKeys.has("git") ? GIT_FILTER_PRESETS : []),
     ...(registeredKeys.has("codegraph.symbols") ? CODEGRAPH_FILTER_PRESETS : []),
     ...buildCompositeFilterPresets(registeredKeys),
+  ];
+}
+
+/**
+ * Every payload signal descriptor any trajectory of THIS BUILD declares — the
+ * full registry, regardless of which trajectories this process registers.
+ *
+ * `createComposition` registers codegraph only when its deps are supplied
+ * (`CODEGRAPH_ENABLED`), so `allPayloadSignalDescriptors` answers "what this
+ * process reads", not "what the index may carry". Judging a stored payload
+ * index by the former would make a codegraph-off run treat codegraph's keys as
+ * orphans; schema-v16 judges by this instead (bd tea-rags-mcp-q34ic).
+ *
+ * A trajectory added to `createComposition` must be added here too —
+ * `tests/core/api/composition-full-registry-payload-signals.test.ts` fails
+ * until it is.
+ */
+export function fullRegistryPayloadSignalDescriptors(): PayloadSignalDescriptor[] {
+  return [
+    ...new StaticTrajectory().payloadSignals,
+    ...gitPayloadSignalDescriptors,
+    ...CODEGRAPH_SYMBOLS_FILE_SIGNALS,
+    ...CODEGRAPH_SYMBOLS_CHUNK_SIGNALS,
   ];
 }
 

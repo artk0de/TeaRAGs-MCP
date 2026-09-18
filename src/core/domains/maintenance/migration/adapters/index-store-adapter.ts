@@ -6,6 +6,7 @@
  */
 
 import type { QdrantManager } from "../../../../adapters/qdrant/client.js";
+import type { PayloadFieldIndex } from "../../../../adapters/qdrant/payload-index.js";
 import { SchemaMetadataPointStore } from "../../../../adapters/qdrant/schema-metadata-point.js";
 import type { IndexStore } from "../types.js";
 
@@ -86,5 +87,13 @@ export class IndexStoreAdapter implements IndexStore {
 
   async deletePayloadKeys(collection: string, keys: string[]): Promise<void> {
     await this.qdrant.deletePayloadKeys(collection, keys);
+  }
+
+  async listPayloadIndexes(collection: string): Promise<PayloadFieldIndex[]> {
+    return this.qdrant.listPayloadIndexes(collection);
+  }
+
+  async dropPayloadIndex(collection: string, field: string): Promise<void> {
+    await this.qdrant.deletePayloadIndex(collection, field);
   }
 }

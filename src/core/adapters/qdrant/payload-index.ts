@@ -11,8 +11,21 @@
  * caller to reassemble.
  */
 
+import { InfraError } from "../errors.js";
 import type { QdrantConnection } from "./connection.js";
-import { QdrantUnavailableError } from "./errors.js";
+import { QdrantOperationError, QdrantUnavailableError } from "./errors.js";
+
+/**
+ * One payload field index as Qdrant reports it in a collection's
+ * `payload_schema`. `points` counts the points whose payload carries a value
+ * under the key — zero for an index nothing writes into, which is NOT the same
+ * as an index nothing needs (`git.file.skippedAs` is legitimately empty).
+ */
+export interface PayloadFieldIndex {
+  field: string;
+  dataType: string;
+  points: number;
+}
 
 export class QdrantPayloadIndexManager {
   constructor(private readonly connection: QdrantConnection) {}
@@ -67,5 +80,49 @@ export class QdrantPayloadIndexManager {
     }
     await this.createPayloadIndex(collectionName, fieldName, fieldSchema);
     return true;
+  }
+
+  /**
+   * Every payload field index the collection carries.
+   *
+   * Unlike {@link hasPayloadIndex}, a failure propagates: a caller deciding
+   * which indexes to drop must never read "the schema was unreadable" as "the
+   * collection has no indexes".
+   */
+  async listPayloadIndexes(collectionName: string): Promise<PayloadFieldIndex[]> {
+    const info = await this.callTyped("listPayloadIndexes", collectionName, async () =>
+      this.connection.client.getCollection(collectionName),
+    );
+    return Object.entries(info.payload_schema ?? {}).map(([field, schema]) => ({
+      field,
+      dataType: String(schema?.data_type),
+      points: schema?.points ?? 0,
+    }));
+  }
+
+  /** Drop the index on one payload field; the payload values themselves are untouched. */
+  async deletePayloadIndex(collectionName: string, fieldName: string): Promise<void> {
+    await this.callTyped("deletePayloadIndex", collectionName, async () =>
+      this.connection.client.deletePayloadIndex(collectionName, fieldName, { wait: true }),
+    );
+  }
+
+  /**
+   * Run a client call through the connection, keeping a typed infra failure
+   * (unavailable / starting / recovering) as it is and turning anything else
+   * the client raised into a {@link QdrantOperationError}.
+   */
+  private async callTyped<T>(operation: string, collectionName: string, fn: () => Promise<T>): Promise<T> {
+    try {
+      return await this.connection.call(fn);
+    } catch (error: unknown) {
+      if (error instanceof InfraError) throw error;
+      const cause = error instanceof Error ? error : undefined;
+      throw new QdrantOperationError(
+        operation,
+        `collection "${collectionName}": ${String(cause?.message ?? error)}`,
+        cause,
+      );
+    }
   }
 }

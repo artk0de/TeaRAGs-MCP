@@ -103,7 +103,8 @@ function excludedByMustNot(point: any, filter: any): boolean {
 export class MockQdrantManager implements Partial<QdrantManager> {
   private collections = new Map<string, any>();
   private points = new Map<string, any[]>();
-  private payloadIndexes = new Map<string, Set<string>>();
+  /** collection → (field → schema) */
+  private payloadIndexes = new Map<string, Map<string, string>>();
   readonly aliases = new MockAliasManager();
 
   /** Resolve alias to real collection name (like real Qdrant does transparently) */
@@ -123,12 +124,22 @@ export class MockQdrantManager implements Partial<QdrantManager> {
     return indexes?.has(fieldName) ?? false;
   }
 
-  async createPayloadIndex(collectionName: string, fieldName: string, _fieldSchema: string): Promise<void> {
+  async createPayloadIndex(collectionName: string, fieldName: string, fieldSchema: string): Promise<void> {
     const resolved = this.resolve(collectionName);
     if (!this.payloadIndexes.has(resolved)) {
-      this.payloadIndexes.set(resolved, new Set());
+      this.payloadIndexes.set(resolved, new Map());
     }
-    this.payloadIndexes.get(resolved)!.add(fieldName);
+    this.payloadIndexes.get(resolved)!.set(fieldName, fieldSchema);
+  }
+
+  async listPayloadIndexes(collectionName: string): Promise<{ field: string; dataType: string; points: number }[]> {
+    // Indexed-point counts are not tracked here; nothing reading this mock needs them.
+    const indexes = this.payloadIndexes.get(this.resolve(collectionName)) ?? new Map<string, string>();
+    return [...indexes].map(([field, dataType]) => ({ field, dataType, points: 0 }));
+  }
+
+  async deletePayloadIndex(collectionName: string, fieldName: string): Promise<void> {
+    this.payloadIndexes.get(this.resolve(collectionName))?.delete(fieldName);
   }
 
   async ensurePayloadIndex(collectionName: string, fieldName: string, fieldSchema: string): Promise<boolean> {

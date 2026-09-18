@@ -1,6 +1,10 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-import { ENRICHMENT_SCAN_INDEXES, SchemaManager } from "../../../../src/core/adapters/qdrant/schema-manager.js";
+import {
+  ENRICHMENT_SCAN_INDEXES,
+  SCHEMA_MANAGED_PAYLOAD_INDEX_KEYS,
+  SchemaManager,
+} from "../../../../src/core/adapters/qdrant/schema-manager.js";
 import { SchemaMigrator } from "../../../../src/core/domains/maintenance/migration/schema-migrator.js";
 import { SparseMigrator } from "../../../../src/core/domains/maintenance/migration/sparse-migrator.js";
 
@@ -244,6 +248,20 @@ describe("SchemaManager", () => {
           }),
         ]),
       );
+    });
+  });
+
+  // bd tea-rags-mcp-q34ic — schema-v16 keeps every key in this list no matter
+  // what the trajectories declare. An index initializeSchema creates but the
+  // list omits would be dropped on the next migration sweep.
+  describe("SCHEMA_MANAGED_PAYLOAD_INDEX_KEYS", () => {
+    it("names exactly the fields initializeSchema indexes", async () => {
+      mockQdrant.createPayloadIndex.mockResolvedValue(undefined);
+
+      await schemaManager.initializeSchema("new-collection");
+
+      const created = mockQdrant.createPayloadIndex.mock.calls.map(([, field]) => field as string);
+      expect([...SCHEMA_MANAGED_PAYLOAD_INDEX_KEYS].sort()).toEqual([...new Set(created)].sort());
     });
   });
 

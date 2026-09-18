@@ -350,6 +350,25 @@ describe("IndexStoreAdapter", () => {
       expect(qdrant.deletePointsByFilter).toHaveBeenCalledWith("col", filter);
     });
   });
+
+  describe("listPayloadIndexes", () => {
+    it("delegates to qdrant.listPayloadIndexes", async () => {
+      const indexes = [{ field: "git.file.fanIn", dataType: "float", points: 0 }];
+      const qdrant = makeQdrant({ listPayloadIndexes: vi.fn().mockResolvedValue(indexes) });
+      const adapter = new IndexStoreAdapter(qdrant as any);
+      expect(await adapter.listPayloadIndexes("col")).toEqual(indexes);
+      expect(qdrant.listPayloadIndexes).toHaveBeenCalledWith("col");
+    });
+  });
+
+  describe("dropPayloadIndex", () => {
+    it("delegates to qdrant.deletePayloadIndex", async () => {
+      const qdrant = makeQdrant({ deletePayloadIndex: vi.fn().mockResolvedValue(undefined) });
+      const adapter = new IndexStoreAdapter(qdrant as any);
+      await adapter.dropPayloadIndex("col", "git.file.fanIn");
+      expect(qdrant.deletePayloadIndex).toHaveBeenCalledWith("col", "git.file.fanIn");
+    });
+  });
 });
 
 // ── EnrichmentStoreAdapter ────────────────────────────────────────────────────
