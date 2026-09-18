@@ -5,7 +5,9 @@
  * and postProcess (offset slicing, own limit logic — no overfetch).
  */
 
+import { payloadFieldIndexSchema, type PayloadFieldIndexSchema } from "../../../adapters/qdrant/schema-manager.js";
 import { scrollOrderedBy } from "../../../adapters/qdrant/scroll.js";
+import { toPhysicalPayloadKey } from "../../../contracts/signal-utils.js";
 import type { RankingOverlay, RerankableResult } from "../../../contracts/types/reranker.js";
 import { compilePathPatternMatcher } from "../../../infra/path-pattern.js";
 import { FileLevelGrouper } from "../chunk-grouping/index.js";
@@ -23,10 +25,23 @@ const FILE_OVERFETCH_MAX_ROUNDS = 3;
 export class ScrollRankStrategy extends BaseExploreStrategy {
   readonly type = "scroll-rank" as const;
   private readonly rankModule: RankModule;
+  /**
+   * Stored payload path → index schema, for every payload signal this strategy
+   * reads. These descriptors are a subset of the full registry schema-v16
+   * judges indexes against, so every index rank_chunks creates is one v16 keeps.
+   */
+  private readonly orderByIndexSchemas: ReadonlyMap<string, PayloadFieldIndexSchema>;
 
   constructor(...args: ConstructorParameters<typeof BaseExploreStrategy>) {
     super(...args);
     this.rankModule = new RankModule(this.reranker, this.reranker.getDescriptors(), this.payloadSignals);
+    const schemas = new Map<string, PayloadFieldIndexSchema>();
+    for (const { key, type } of this.payloadSignals) {
+      const field = toPhysicalPayloadKey(key);
+      const schema = payloadFieldIndexSchema(field, type);
+      if (schema) schemas.set(field, schema);
+    }
+    this.orderByIndexSchemas = schemas;
   }
 
   protected override applyDefaults(ctx: ExploreContext): ExploreContext {
@@ -88,9 +103,14 @@ export class ScrollRankStrategy extends BaseExploreStrategy {
       return keepPathPatternMatches(points, matcher);
     };
 
+    // Only a DECLARED field gets an index, with the schema its declaration
+    // implies. RankModule never orders by an undeclared one, so the miss arm is
+    // a second line: a guessed key must never be minted into a payload index
+    // that no reconciliation would ever keep (bd tea-rags-mcp-q34ic).
     const ensureIndexFn = async (col: string, fieldName: string) => {
-      const isInteger = /count|days|lines/i.test(fieldName);
-      await this.qdrant.ensurePayloadIndex(col, fieldName, isInteger ? "integer" : "float");
+      const schema = this.orderByIndexSchemas.get(fieldName);
+      if (!schema) return;
+      await this.qdrant.ensurePayloadIndex(col, fieldName, schema);
     };
 
     const baseOpts = {

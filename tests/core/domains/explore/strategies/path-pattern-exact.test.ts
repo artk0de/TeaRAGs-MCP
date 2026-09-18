@@ -15,6 +15,7 @@ import { describe, expect, it, vi } from "vitest";
 import type { EmbeddingProvider } from "../../../../../src/core/adapters/embeddings/base.js";
 import type { CollectionInfo, QdrantManager } from "../../../../../src/core/adapters/qdrant/client.js";
 import type { DerivedSignalDescriptor, RerankableResult } from "../../../../../src/core/contracts/types/reranker.js";
+import type { PayloadSignalDescriptor } from "../../../../../src/core/contracts/types/trajectory.js";
 import type { Reranker } from "../../../../../src/core/domains/explore/reranker.js";
 import { HybridSearchStrategy } from "../../../../../src/core/domains/explore/strategies/hybrid.js";
 import { ScrollRankStrategy } from "../../../../../src/core/domains/explore/strategies/scroll-rank.js";
@@ -312,7 +313,9 @@ describe("ScrollRankStrategy — exact pathPattern", () => {
       scrollOrdered,
       ensurePayloadIndex: vi.fn().mockResolvedValue(true),
     } as unknown as QdrantManager;
-    return new ScrollRankStrategy(qdrant, reranker, [], []);
+    // rank_chunks orders only by a declared field (bd tea-rags-mcp-q34ic).
+    const methodLines: PayloadSignalDescriptor = { key: "methodLines", type: "number", description: "method lines" };
+    return new ScrollRankStrategy(qdrant, reranker, [methodLines], []);
   }
 
   function point(id: string, relativePath: string) {

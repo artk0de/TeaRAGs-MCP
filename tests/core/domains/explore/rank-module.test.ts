@@ -40,6 +40,19 @@ const recencyDesc: DerivedSignalDescriptor = {
   },
 };
 
+/**
+ * The payload fields the descriptors above read. RankModule orders only by a
+ * field a payload descriptor declares, so every source a test orders by is
+ * declared here (bd tea-rags-mcp-q34ic).
+ */
+const PAYLOAD_SIGNALS: PayloadSignalDescriptor[] = [
+  { key: "methodLines", type: "number", description: "method lines" },
+  { key: "git.file.commitCount", type: "number", description: "file commits" },
+  { key: "git.chunk.commitCount", type: "number", description: "chunk commits" },
+  { key: "git.file.ageDays", type: "number", description: "file age" },
+  { key: "git.chunk.ageDays", type: "number", description: "chunk age" },
+];
+
 function createMockScrollFn(data: Map<string, { id: string | number; payload: Record<string, unknown> }[]>) {
   return vi.fn().mockImplementation(async (_col: string, orderBy: { key: string }) => {
     return Promise.resolve(data.get(orderBy.key) ?? []);
@@ -59,7 +72,7 @@ function createMockReranker(): Reranker {
 describe("RankModule", () => {
   describe("resolveOrderByFields", () => {
     it("resolves chunk-level fields from sources and inverted flag", () => {
-      const module = new RankModule(createMockReranker(), [chunkSizeDesc, churnDesc, recencyDesc]);
+      const module = new RankModule(createMockReranker(), [chunkSizeDesc, churnDesc, recencyDesc], PAYLOAD_SIGNALS);
 
       const fields = module.resolveOrderByFields({ chunkSize: 0.5, churn: 0.3, recency: 0.2 }, "chunk");
 
@@ -71,7 +84,7 @@ describe("RankModule", () => {
     });
 
     it("resolves file-level fields when level=file", () => {
-      const module = new RankModule(createMockReranker(), [churnDesc]);
+      const module = new RankModule(createMockReranker(), [churnDesc], PAYLOAD_SIGNALS);
 
       const fields = module.resolveOrderByFields({ churn: 1.0 }, "file");
 
@@ -79,7 +92,7 @@ describe("RankModule", () => {
     });
 
     it("skips similarity weight", () => {
-      const module = new RankModule(createMockReranker(), [chunkSizeDesc]);
+      const module = new RankModule(createMockReranker(), [chunkSizeDesc], PAYLOAD_SIGNALS);
 
       const fields = module.resolveOrderByFields({ similarity: 0.5, chunkSize: 0.5 }, "chunk");
 
@@ -88,7 +101,7 @@ describe("RankModule", () => {
     });
 
     it("returns empty for unknown descriptors", () => {
-      const module = new RankModule(createMockReranker(), []);
+      const module = new RankModule(createMockReranker(), [], PAYLOAD_SIGNALS);
 
       const fields = module.resolveOrderByFields({ unknown: 1.0 }, "chunk");
 
@@ -110,7 +123,7 @@ describe("RankModule", () => {
 
       const mockScroll = createMockScrollFn(scrollData);
       const mockReranker = createMockReranker();
-      const module = new RankModule(mockReranker, [chunkSizeDesc]);
+      const module = new RankModule(mockReranker, [chunkSizeDesc], PAYLOAD_SIGNALS);
 
       const results = await module.rankChunks("test-col", {
         weights: { chunkSize: 1.0 },
@@ -144,7 +157,7 @@ describe("RankModule", () => {
 
       const mockScroll = createMockScrollFn(scrollData);
       const mockReranker = createMockReranker();
-      const module = new RankModule(mockReranker, [chunkSizeDesc, churnDesc]);
+      const module = new RankModule(mockReranker, [chunkSizeDesc, churnDesc], PAYLOAD_SIGNALS);
 
       await module.rankChunks("test-col", {
         weights: { chunkSize: 0.5, churn: 0.5 },
@@ -162,7 +175,7 @@ describe("RankModule", () => {
 
       const mockScroll = createMockScrollFn(scrollData);
       const mockReranker = createMockReranker();
-      const module = new RankModule(mockReranker, [chunkSizeDesc]);
+      const module = new RankModule(mockReranker, [chunkSizeDesc], PAYLOAD_SIGNALS);
 
       await module.rankChunks("test-col", {
         weights: { similarity: 0.5, chunkSize: 0.5 },
@@ -179,7 +192,7 @@ describe("RankModule", () => {
 
     it("returns empty when all weights are similarity", async () => {
       const mockScroll = vi.fn();
-      const module = new RankModule(createMockReranker(), [chunkSizeDesc]);
+      const module = new RankModule(createMockReranker(), [chunkSizeDesc], PAYLOAD_SIGNALS);
 
       const results = await module.rankChunks("test-col", {
         weights: { similarity: 1.0 },
@@ -195,7 +208,7 @@ describe("RankModule", () => {
     it("uses overfetch factor of 3x", async () => {
       const scrollData = new Map([["methodLines", [{ id: "a", payload: { methodLines: 200 } }]]]);
       const mockScroll = createMockScrollFn(scrollData);
-      const module = new RankModule(createMockReranker(), [chunkSizeDesc]);
+      const module = new RankModule(createMockReranker(), [chunkSizeDesc], PAYLOAD_SIGNALS);
 
       await module.rankChunks("test-col", {
         weights: { chunkSize: 1.0 },
@@ -211,7 +224,7 @@ describe("RankModule", () => {
     it("passes filter to scroll function", async () => {
       const scrollData = new Map([["methodLines", [{ id: "a", payload: { methodLines: 200 } }]]]);
       const mockScroll = createMockScrollFn(scrollData);
-      const module = new RankModule(createMockReranker(), [chunkSizeDesc]);
+      const module = new RankModule(createMockReranker(), [chunkSizeDesc], PAYLOAD_SIGNALS);
       const filter = { must: [{ key: "language", match: { value: "typescript" } }] };
 
       await module.rankChunks("test-col", {
@@ -231,7 +244,7 @@ describe("RankModule", () => {
       // an empty rerank input.
       const mockScroll = vi.fn().mockResolvedValue([]);
       const mockReranker = createMockReranker();
-      const module = new RankModule(mockReranker, [chunkSizeDesc]);
+      const module = new RankModule(mockReranker, [chunkSizeDesc], PAYLOAD_SIGNALS);
 
       const results = await module.rankChunks("test-col", {
         weights: { chunkSize: 1.0 },
@@ -244,10 +257,10 @@ describe("RankModule", () => {
       expect(mockReranker.rerank).not.toHaveBeenCalled();
     });
 
-    it("falls back to the first source with git prefix when level-prefixed and unprefixed forms are absent", async () => {
+    it("orders by the first source when none matches the requested level or is unprefixed", async () => {
       // Descriptor whose sources are all level-prefixed but for a DIFFERENT level
-      // (file.X when asking for chunk) — neither rule 1 nor rule 2 matches,
-      // so resolvePayloadField uses the third fallback branch.
+      // (file.X when asking for chunk) — neither the level candidate nor the
+      // unprefixed one exists, so resolvePayloadField takes the first source.
       const fileOnlyDesc: DerivedSignalDescriptor = {
         name: "fileOnly",
         description: "file-only signal",
@@ -260,11 +273,11 @@ describe("RankModule", () => {
       };
       const scrollData = new Map([["git.file.commitCount", [{ id: "x", payload: {} }]]]);
       const mockScroll = createMockScrollFn(scrollData);
-      const module = new RankModule(createMockReranker(), [fileOnlyDesc]);
+      const module = new RankModule(createMockReranker(), [fileOnlyDesc], PAYLOAD_SIGNALS);
 
       const fields = module.resolveOrderByFields({ fileOnly: 1.0 }, "chunk");
 
-      // Fallback rule: `git.${sources[0]}` → "git.file.commitCount"
+      // sources[0] = "file.commitCount", declared as git.file.commitCount
       expect(fields).toEqual([{ key: "git.file.commitCount", direction: "desc" }]);
       // Behaviorally: scroll is called against that fallback field.
       await module.rankChunks("test-col", {
@@ -281,6 +294,30 @@ describe("RankModule", () => {
       );
     });
 
+    // bd tea-rags-mcp-q34ic — a `git.` guess for an undeclared source is how
+    // `git.file.fanIn` & co. were minted as payload indexes: the scroll ordered
+    // by the guessed key and rank_chunks indexed it first. A source no payload
+    // descriptor declares orders nothing, like an unknown weight key; the
+    // signal still scores the pooled candidates in the rerank.
+    it("orders by nothing for sources no payload descriptor declares", () => {
+      const undeclared = (name: string, sources: string[]): DerivedSignalDescriptor => ({
+        name,
+        description: name,
+        sources,
+        defaultBound: 1,
+        extract: () => 0,
+      });
+      const module = new RankModule(
+        createMockReranker(),
+        [undeclared("fanIn", ["file.fanIn"]), undeclared("pageRank", ["chunk.pageRank"]), undeclared("mass", ["mass"])],
+        PAYLOAD_SIGNALS,
+      );
+
+      for (const level of ["chunk", "file"] as const) {
+        expect(module.resolveOrderByFields({ fanIn: 1, pageRank: 1, mass: 1 }, level)).toEqual([]);
+      }
+    });
+
     it("skips descriptors whose sources list is empty (resolvePayloadField returns undefined)", async () => {
       // Edge case: a descriptor with no sources at all — all three resolve
       // branches return undefined. resolveOrderByFields filters that entry.
@@ -291,7 +328,7 @@ describe("RankModule", () => {
         defaultBound: 1,
         extract: () => 0,
       };
-      const module = new RankModule(createMockReranker(), [sourcelessDesc]);
+      const module = new RankModule(createMockReranker(), [sourcelessDesc], PAYLOAD_SIGNALS);
 
       const fields = module.resolveOrderByFields({ sourceless: 1.0 }, "chunk");
       expect(fields).toEqual([]);

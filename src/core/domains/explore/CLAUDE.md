@@ -74,12 +74,16 @@
   through `buildSignalKeyMap` to its logical key, then `toPhysicalPayloadKey`
   (`codegraph.chunk.pageRank` → `codegraph.symbols.chunk.pageRank`); a
   non-`number` descriptor (`isHub`, `isLeaf`) orders nothing and scores only the
-  candidates the numeric legs pooled; a source no descriptor declares falls back
-  to `` `git.${source}` ``. `ScrollRankStrategy` must hand `RankModule` the
-  strategy's `payloadSignals`. Why: without them every codegraph source became a
-  phantom `git.` key — `hotMethod` / `criticalMethod` / `godMethod` returned
-  `[]`, composites pooled candidates from their git legs only (bd
-  tea-rags-mcp-xf01b).
+  candidates the numeric legs pooled; a source no descriptor declares orders
+  nothing. `ScrollRankStrategy` must hand `RankModule` the strategy's
+  `payloadSignals`, and its `ensureIndexFn` creates an order_by index only for a
+  field those descriptors declare, with the schema `payloadFieldIndexSchema`
+  (`adapters/qdrant/schema-manager.ts`) derives from the declaration. Why: a
+  `git.` guess for an undeclared codegraph source ordered by a phantom key —
+  `hotMethod` / `criticalMethod` / `godMethod` returned `[]` (bd
+  tea-rags-mcp-xf01b) — and rank_chunks indexed every guess before scrolling,
+  leaving payload indexes on keys no point carries until schema-v16 dropped them
+  (bd tea-rags-mcp-q34ic).
 
 ## Boundaries
 

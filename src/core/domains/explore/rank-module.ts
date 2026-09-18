@@ -47,10 +47,10 @@ export class RankModule {
     private readonly descriptors: DerivedSignalDescriptor[],
     /**
      * The payload signal descriptors the reranker reads — the only record of which
-     * trajectory stores a source and where. Without them every level-qualified
-     * source falls back to the `git.` convention.
+     * trajectory stores a source and where. A source none of them declares
+     * orders nothing.
      */
-    payloadSignals: PayloadSignalDescriptor[] = [],
+    payloadSignals: PayloadSignalDescriptor[],
   ) {
     this.descriptorMap = new Map();
     for (const d of descriptors) {
@@ -136,8 +136,13 @@ export class RankModule {
    * descriptor's logical key mapped to its physical path (`codegraph.chunk.pageRank`
    * → `codegraph.symbols.chunk.pageRank`); a non-numeric one (`isHub`) orders
    * nothing, since Qdrant `order_by` needs a numeric range index — the signal still
-   * scores the pooled candidates in the rerank. Only when no descriptor declares any
-   * candidate does the `git.` convention apply.
+   * scores the pooled candidates in the rerank.
+   *
+   * A candidate no descriptor declares orders nothing either, exactly like an
+   * unknown weight key. There is no naming convention to fall back on: a `git.`
+   * guess is how codegraph signals once ordered by `git.file.fanIn`, a key no
+   * point carries, and rank_chunks indexed every such guess before scrolling (bd
+   * tea-rags-mcp-q34ic).
    */
   private resolvePayloadField(sources: string[], level: "chunk" | "file"): string | undefined {
     const levelSource = sources.find((s) => s.startsWith(`${level}.`));
@@ -149,9 +154,7 @@ export class RankModule {
       return this.payloadSignalTypes.get(logicalKey) === "number" ? toPhysicalPayloadKey(logicalKey) : undefined;
     }
 
-    if (levelSource) return `git.${levelSource}`;
-    if (unprefixed) return unprefixed;
-    return sources[0] ? `git.${sources[0]}` : undefined;
+    return undefined;
   }
 
   private removeAndNormalize(weights: Record<string, number>): Record<string, number> {

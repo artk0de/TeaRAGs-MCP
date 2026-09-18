@@ -64,6 +64,29 @@ describe("fullRegistryPayloadSignalDescriptors", () => {
   // payload index on whatever key it was about to order by. Every order_by key a
   // registered composition can produce must be a declared key, or rank_chunks
   // is still minting orphan indexes.
+  // The historical shape of the bug: codegraph's derived signals resolved
+  // without codegraph's payload descriptors. RankModule used to guess
+  // `git.file.fanIn` there; it must order by nothing instead.
+  it("orders by nothing when a derived signal's payload descriptors are absent", () => {
+    const withCodegraph = compositionWithEveryTrajectory();
+    const withoutCodegraph = createComposition();
+    const codegraphOnly = withCodegraph.allDerivedSignals.filter(
+      (signal) => !withoutCodegraph.allDerivedSignals.some((other) => other.name === signal.name),
+    );
+    const rankModule = new RankModule(
+      withCodegraph.reranker,
+      codegraphOnly,
+      withoutCodegraph.allPayloadSignalDescriptors,
+    );
+
+    expect(codegraphOnly.length).toBeGreaterThan(0);
+    for (const signal of codegraphOnly) {
+      for (const level of ["chunk", "file"] as const) {
+        expect(rankModule.resolveOrderByFields({ [signal.name]: 1 }, level), `${signal.name} @${level}`).toEqual([]);
+      }
+    }
+  });
+
   it("leaves rank_chunks no order_by key outside the declared set, codegraph on or off", () => {
     const declared = physicalKeys(fullRegistryPayloadSignalDescriptors());
 
