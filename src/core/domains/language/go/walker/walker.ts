@@ -31,6 +31,7 @@ import type {
 } from "../../../../contracts/types/codegraph.js";
 import { assignCallsToInnermostChunks } from "../../kernel/assign-calls-to-chunks.js";
 import { goImportBoundName } from "../import-binding.js";
+import { goLocalAt, type GoLocalChannels } from "../local-scope.js";
 
 export interface GoExtractInput {
   tree: MaterializedTree;
@@ -76,6 +77,7 @@ export function extractFromGoFile(input: GoExtractInput): FileExtraction {
     );
     if (Object.keys(types).length > 0) base.localBindings = types;
     if (Object.keys(callBindings).length > 0) base.callResultBindings = callBindings;
+    tagGoFuncValueCalls(base.calls, bareCalleeHeads, { localBindings: types, callResultBindings: callBindings });
     return base;
   });
   const extraction: FileExtraction = {
@@ -333,6 +335,26 @@ function collectGoCalls(root: AstNode): GoCallSites {
     out.push(ref);
   });
   return { calls: out, bareCalleeHeads };
+}
+
+/**
+ * Tag every bare call made through a LOCAL in scope at its line — a func-typed
+ * parameter (gin's `handle(c, rec)`), `helper := func() {}; helper()`, a
+ * call-bound local, an indexed slice of funcs — `dynamicSend` (bd
+ * tea-rags-mcp-e6xx). It calls a function VALUE, which no pass resolves; the
+ * tag is what the miss classifier reads as statically undeterminable, so it
+ * leaves the recall denominator instead of counting as a miss whenever some
+ * type declares a METHOD of that name, which a bare Go call can never reach.
+ */
+function tagGoFuncValueCalls(
+  chunkCalls: readonly CallRef[],
+  bareCalleeHeads: ReadonlyMap<CallRef, string>,
+  locals: GoLocalChannels,
+): void {
+  for (const call of chunkCalls) {
+    const head = bareCalleeHeads.get(call);
+    if (head !== undefined && goLocalAt(locals, head, call.startLine)) call.dynamicSend = true;
+  }
 }
 
 /**
