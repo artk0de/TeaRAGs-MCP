@@ -121,6 +121,13 @@ scratch.
 }
 ```
 
+The first call on a git worktree whose repository has another indexed working
+tree with the same model and settings is **seeded** from it: the sibling's index
+is cloned and only differing files are embedded. The response then opens with a
+`Worktree seed:` block naming the sibling and the copied / embedded file counts.
+Pass `seedFromWorktree: false` to index from scratch instead. See
+[Automatic Seeding on First Index](/usage/advanced/worktree-indexes#automatic-seeding-on-first-index).
+
 See [Indexing Repositories](/usage/indexing-repositories) for full workflow.
 
 ### `get_index_status`

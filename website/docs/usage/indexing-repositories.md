@@ -193,6 +193,24 @@ exits **before** any indexing work starts — text by default, or a parseable
 already-indexed source, use `tea-rags worktree create` instead — it registers the
 alias with worktree provenance.
 
+### First Index of a Git Worktree
+
+When the path is a git worktree and another working tree of the same repository
+is already indexed with the same model and settings, the first index **seeds**
+from it: the sibling's index is cloned and only the files that differ are
+embedded. Git signals are then rebuilt against the worktree's own history in the
+background. The run's result reports it under `worktreeSeed` — which sibling,
+how many files were copied and how many embedded, or why no sibling qualified.
+
+```bash
+tea-rags index-codebase --name my-feature /path/to/worktree       # seeds when a sibling qualifies
+tea-rags index-codebase --no-worktree-seed /path/to/worktree      # always index from scratch
+```
+
+Over MCP the opt-out is `seedFromWorktree: false` on `index_codebase`. Checks,
+what is copied and what is recomputed:
+[Automatic Seeding on First Index](/usage/advanced/worktree-indexes#automatic-seeding-on-first-index).
+
 ### Incremental Reindex
 
 After the initial index, `/tea-rags:index` auto-detects and runs an incremental
