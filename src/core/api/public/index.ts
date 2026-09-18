@@ -41,6 +41,8 @@ export type {
   // Collection DTOs
   CreateCollectionRequest,
   CollectionInfo,
+  CollectionMemoryBytes,
+  CollectionMemoryMetrics,
   // Document DTOs
   AddDocumentsRequest,
   DeleteDocumentsRequest,

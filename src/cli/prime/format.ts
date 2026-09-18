@@ -1,3 +1,4 @@
+import type { CollectionMemoryBytes, CollectionMemoryMetrics } from "../../core/api/public/dto/collection.js";
 import type { IndexStatus } from "../../core/api/public/dto/ingest.js";
 import type { IndexMetrics } from "../../core/api/public/dto/metrics.js";
 import { formatForPrime } from "../update-check/format.js";
@@ -47,7 +48,7 @@ function formatDigest(data: PrimeData, now: Date, debug: boolean): string {
   lines.push(`# tea-rags prime — ${data.path}`);
   lines.push("");
   lines.push("## Status");
-  lines.push(formatStatusLine(data.status, now));
+  lines.push(formatStatusLine(data.status, now, data.memory ?? null));
 
   const registryParams = data.registry ? formatRegistryParamsLine(data.registry) : null;
   if (data.projectName || registryParams) {
@@ -98,6 +99,11 @@ function formatDigest(data: PrimeData, now: Date, debug: boolean): string {
   lines.push("");
   lines.push("## Drift");
   lines.push(data.drift ?? "none");
+
+  if (data.memory) {
+    lines.push("");
+    lines.push(...formatMemorySection(data.memory, debug));
+  }
 
   if (data.status.infraHealth) {
     lines.push("");
@@ -272,7 +278,7 @@ function formatBytes(bytes: number): string {
   return `${(bytes / (1024 * 1024 * 1024)).toFixed(1)} GB`;
 }
 
-function formatStatusLine(status: IndexStatus, now: Date): string {
+function formatStatusLine(status: IndexStatus, now: Date, memory: CollectionMemoryMetrics | null): string {
   switch (status.status) {
     case "not_indexed":
       return "not indexed. Run `/tea-rags:index` to index this codebase.";
@@ -290,7 +296,7 @@ function formatStatusLine(status: IndexStatus, now: Date): string {
           ? `${status.filesCount} files / ${status.chunksCount ?? 0} chunks`
           : `${status.chunksCount ?? 0} chunks`;
       const qdrant = status.infraHealth?.qdrant;
-      const size = qdrant?.indexSizeBytes !== undefined ? ` · ${formatBytes(qdrant.indexSizeBytes)} on disk` : "";
+      const size = formatSizeFigure(qdrant?.indexSizeBytes, memory);
       const quant =
         qdrant?.quantization !== undefined
           ? ` · ${qdrant.quantization === "turbo" ? "turbo (8x)" : qdrant.quantization} quant`
@@ -302,6 +308,70 @@ function formatStatusLine(status: IndexStatus, now: Date): string {
     case "unavailable":
       return "index unavailable.";
   }
+}
+
+/**
+ * The digest's ONE disk figure (bd tea-rags-mcp-h4iy). Two measures exist and
+ * disagree by design: the allocated blocks tea-rags sums over the embedded
+ * storage dir (what the disk actually loses, what `du` reports) and the file
+ * sizes in the server's memory report, which count Qdrant's sparsely
+ * preallocated mmap space — 1.2 GB vs 2.07 GB on the self-index. Allocated wins
+ * whenever it exists; file sizes stand in only where tea-rags cannot see the
+ * disk (external Qdrant), labelled `apparent size` so they never read as the
+ * same quantity.
+ */
+function formatSizeFigure(indexSizeBytes: number | undefined, memory: CollectionMemoryMetrics | null): string {
+  if (indexSizeBytes !== undefined) return ` · ${formatBytes(indexSizeBytes)} on disk`;
+  if (memory) return ` · ${formatBytes(memory.total.apparentDiskBytes)} apparent size`;
+  return "";
+}
+
+/** Payload field indexes listed by name under DEBUG — the rest collapse into `+N more`. */
+const MEMORY_TOP_PAYLOAD_INDEXES = 5;
+
+/**
+ * `## Memory` — the server's memory report. Default: one line of collection
+ * totals, RAM (heap, not evictable) and page cache (evictable mmap pages) against
+ * what the server wants cached. DEBUG adds the per-component breakdown in the
+ * report's own unit, file size, labelled apparent: its rows sum above the Status
+ * line's on-disk figure, and the note says why rather than printing a second
+ * total.
+ */
+function formatMemorySection(memory: CollectionMemoryMetrics, debug: boolean): string[] {
+  const { ramBytes, cachedBytes, expectedCacheBytes } = memory.total;
+  const wanted = expectedCacheBytes > 0 ? ` / ${formatBytes(expectedCacheBytes)} wanted` : "";
+  const lines = ["## Memory", `RAM ${formatBytes(ramBytes)} · page cache ${formatBytes(cachedBytes)}${wanted}`];
+  if (!debug) return lines;
+
+  lines.push(
+    "per component — apparent size / RAM / page cache (apparent counts preallocated mmap space, sums above on-disk):",
+  );
+  for (const vector of memory.vectors) {
+    // Tea-rags names the dense vector "dense" on hybrid collections; the
+    // unnamed default vector of a dense-only collection is the same thing.
+    const name = vector.name || "dense";
+    lines.push(formatMemoryRow(`${name} storage`, vector.storage));
+    lines.push(formatMemoryRow(`${name} index`, vector.index));
+    if (vector.quantized) lines.push(formatMemoryRow(`${name} quantized`, vector.quantized));
+  }
+  for (const sparse of memory.sparseVectors) {
+    const name = sparse.name ? `sparse ${sparse.name}` : "sparse";
+    lines.push(formatMemoryRow(`${name} storage`, sparse.storage));
+    lines.push(formatMemoryRow(`${name} index`, sparse.index));
+  }
+  lines.push(formatMemoryRow("payload", memory.payload));
+  const { payloadIndexes } = memory;
+  lines.push(formatMemoryRow(`payload indexes (${payloadIndexes.count})`, payloadIndexes.total));
+  const listed = payloadIndexes.byField.slice(0, MEMORY_TOP_PAYLOAD_INDEXES);
+  for (const index of listed) lines.push(`  ${formatMemoryRow(index.field, index.bytes)}`);
+  const unlisted = payloadIndexes.count - listed.length;
+  if (unlisted > 0) lines.push(`  - +${unlisted} more`);
+  lines.push(formatMemoryRow("other", memory.other));
+  return lines;
+}
+
+function formatMemoryRow(label: string, bytes: CollectionMemoryBytes): string {
+  return `- ${label}: ${formatBytes(bytes.apparentDiskBytes)} / ${formatBytes(bytes.ramBytes)} / ${formatBytes(bytes.cachedBytes)}`;
 }
 
 /**

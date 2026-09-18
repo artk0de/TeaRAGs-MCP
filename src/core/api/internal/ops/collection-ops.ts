@@ -4,10 +4,15 @@
 
 import type { GraphDbClientPool } from "../../../adapters/duckdb/pool.js";
 import type { EmbeddingProvider } from "../../../adapters/embeddings/base.js";
-import type { QdrantManager } from "../../../adapters/qdrant/client.js";
+import type { QdrantCollectionMemoryUsage, QdrantManager, QdrantMemoryUsage } from "../../../adapters/qdrant/client.js";
 import type { EmbeddingModelGuard } from "../../../adapters/qdrant/embedding-model-guard.js";
 import { resolvePhysicalCollection } from "../../../infra/collection-name.js";
-import type { CollectionInfo, CreateCollectionRequest } from "../../public/dto/index.js";
+import type {
+  CollectionInfo,
+  CollectionMemoryBytes,
+  CollectionMemoryMetrics,
+  CreateCollectionRequest,
+} from "../../public/dto/index.js";
 
 export class CollectionOps {
   constructor(
@@ -59,6 +64,16 @@ export class CollectionOps {
   }
 
   /**
+   * The server's memory/storage report for a collection or alias, framed for
+   * consumers — null when the server cannot report it (no endpoint, missing
+   * collection, unreachable). Never throws: callers render or omit.
+   */
+  async getMemory(name: string): Promise<CollectionMemoryMetrics | null> {
+    const usage = await this.qdrant.getCollectionMemoryUsage(name);
+    return usage ? buildCollectionMemoryMetrics(name, usage) : null;
+  }
+
+  /**
    * Delete a collection in Qdrant AND drop the per-collection codegraph
    * DuckDB file (when codegraph is wired). Order matters: Qdrant first
    * — if it fails we keep the DuckDB file so a retry doesn't lose
@@ -76,4 +91,55 @@ export class CollectionOps {
       await this.codegraphPool.removeCollection(resolvePhysicalCollection(name, []));
     }
   }
+}
+
+/**
+ * Raw memory report → consumer frame. File sizes are renamed to what they are
+ * (apparent, not allocated); payload field indexes fold into one row that keeps
+ * each field, largest first, and the server's remaining structures fold into
+ * one `other` row.
+ */
+function buildCollectionMemoryMetrics(collection: string, usage: QdrantCollectionMemoryUsage): CollectionMemoryMetrics {
+  const byField = usage.payloadIndexes
+    .map(({ name, usage: fieldUsage }) => ({ field: name, bytes: toMemoryBytes(fieldUsage) }))
+    .sort((a, b) => b.bytes.apparentDiskBytes - a.bytes.apparentDiskBytes);
+  return {
+    collection,
+    total: toMemoryBytes(usage.total),
+    vectors: usage.vectors.map(({ name, storage, index, quantized }) => ({
+      name,
+      storage: toMemoryBytes(storage),
+      index: toMemoryBytes(index),
+      ...(quantized ? { quantized: toMemoryBytes(quantized) } : {}),
+    })),
+    sparseVectors: usage.sparseVectors.map(({ name, storage, index }) => ({
+      name,
+      storage: toMemoryBytes(storage),
+      index: toMemoryBytes(index),
+    })),
+    payload: toMemoryBytes(usage.payload),
+    payloadIndexes: { count: byField.length, total: sumMemoryBytes(byField.map((f) => f.bytes)), byField },
+    other: sumMemoryBytes(usage.other.map((o) => toMemoryBytes(o.usage))),
+  };
+}
+
+function toMemoryBytes(usage: QdrantMemoryUsage): CollectionMemoryBytes {
+  return {
+    apparentDiskBytes: usage.diskBytes,
+    ramBytes: usage.ramBytes,
+    cachedBytes: usage.cachedBytes,
+    expectedCacheBytes: usage.expectedCacheBytes,
+  };
+}
+
+function sumMemoryBytes(parts: CollectionMemoryBytes[]): CollectionMemoryBytes {
+  return parts.reduce(
+    (sum, part) => ({
+      apparentDiskBytes: sum.apparentDiskBytes + part.apparentDiskBytes,
+      ramBytes: sum.ramBytes + part.ramBytes,
+      cachedBytes: sum.cachedBytes + part.cachedBytes,
+      expectedCacheBytes: sum.expectedCacheBytes + part.expectedCacheBytes,
+    }),
+    { apparentDiskBytes: 0, ramBytes: 0, cachedBytes: 0, expectedCacheBytes: 0 },
+  );
 }

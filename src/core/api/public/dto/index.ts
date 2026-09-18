@@ -39,6 +39,8 @@ export type {
   // Collection
   CreateCollectionRequest,
   CollectionInfo,
+  CollectionMemoryBytes,
+  CollectionMemoryMetrics,
 } from "./collection.js";
 
 export type {

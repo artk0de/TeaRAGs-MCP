@@ -31,6 +31,7 @@ import type { TracePathOps } from "../internal/ops/trace-path-ops.js";
 import type {
   AddDocumentsRequest,
   CollectionInfo,
+  CollectionMemoryMetrics,
   CreateCollectionRequest,
   DeleteDocumentsRequest,
   EnrichmentProgressCallback,
@@ -91,6 +92,12 @@ export interface App {
   createCollection: (request: CreateCollectionRequest) => Promise<CollectionInfo>;
   listCollections: () => Promise<string[]>;
   getCollectionInfo: (name: string) => Promise<CollectionInfo>;
+  /**
+   * The server's memory/storage report for a collection or alias — disk, RAM
+   * and page-cache bytes per component. Null when the server cannot report it
+   * (Qdrant without the endpoint, missing collection, unreachable); never throws.
+   */
+  getCollectionMemory: (name: string) => Promise<CollectionMemoryMetrics | null>;
   deleteCollection: (name: string) => Promise<void>;
 
   // -- Documents (→ internal/ops/document-ops.ts) --
@@ -275,6 +282,7 @@ export function createApp(deps: AppDeps): App {
     createCollection: async (req) => ops.collection.create(req),
     listCollections: async () => ops.collection.list(),
     getCollectionInfo: async (name) => ops.collection.getInfo(name),
+    getCollectionMemory: async (name) => ops.collection.getMemory(name),
     deleteCollection: async (name) => ops.collection.delete(name),
 
     // -- Documents — delegate to DocumentOps --

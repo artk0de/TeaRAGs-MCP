@@ -41,6 +41,38 @@ export interface CollectionInfo {
   quantization: "turbo" | "scalar" | "none";
 }
 
+/**
+ * One cell of Qdrant's per-collection memory report, in bytes — the four ways
+ * the server accounts a part of a collection.
+ */
+export interface QdrantMemoryUsage {
+  /**
+   * Sum of the part's FILE SIZES (`disk_bytes`) — apparent size. Qdrant
+   * preallocates its mmap files sparsely, so this counts space never written and
+   * runs well above the blocks the filesystem actually allocated.
+   */
+  diskBytes: number;
+  /** Non-evictable heap memory (`ram_bytes`). */
+  ramBytes: number;
+  /** Evictable mmap pages currently resident in the OS page cache (`cached_bytes`). */
+  cachedBytes: number;
+  /** Bytes Qdrant wants resident in page cache for full-speed search (`expected_cache_bytes`). */
+  expectedCacheBytes: number;
+}
+
+/** Qdrant's `GET /collections/{name}/memory` report, camel-cased; named parts keep their names. */
+export interface QdrantCollectionMemoryUsage {
+  total: QdrantMemoryUsage;
+  /** Dense vectors, one entry per named vector (`""` = the unnamed default vector). */
+  vectors: { name: string; storage: QdrantMemoryUsage; index: QdrantMemoryUsage; quantized?: QdrantMemoryUsage }[];
+  sparseVectors: { name: string; storage: QdrantMemoryUsage; index: QdrantMemoryUsage }[];
+  payload: QdrantMemoryUsage;
+  /** One entry per payload FIELD index, in server order. */
+  payloadIndexes: { name: string; usage: QdrantMemoryUsage }[];
+  /** Remaining structures the server accounts separately (e.g. `id_tracker`). */
+  other: { name: string; usage: QdrantMemoryUsage }[];
+}
+
 export class QdrantCollectionAdmin {
   constructor(private readonly connection: QdrantConnection) {}
 
@@ -360,6 +392,100 @@ export class QdrantCollectionAdmin {
       return undefined;
     }
   }
+
+  /**
+   * Best-effort read of the collection's memory report — disk / RAM / page-cache
+   * bytes per component, as the SERVER accounts them — via a raw GET on
+   * `/collections/{name}/memory` (Qdrant 1.18, not in the typed SDK). Works for
+   * embedded and external Qdrant alike, and accepts an alias.
+   *
+   * `undefined` on ANY failure: a server without the endpoint (404), a missing
+   * collection, an unreachable or slow server, or a body without a usable
+   * `total`. Gated by the response, never by an assumed server version — and it
+   * never throws, so a status read can always omit the report and carry on.
+   */
+  async getCollectionMemoryUsage(collectionName: string): Promise<QdrantCollectionMemoryUsage | undefined> {
+    const body = await this.connection.probeRestJson(`/collections/${encodeURIComponent(collectionName)}/memory`);
+    return parseCollectionMemoryUsage(body);
+  }
+}
+
+const ZERO_MEMORY_USAGE: QdrantMemoryUsage = { diskBytes: 0, ramBytes: 0, cachedBytes: 0, expectedCacheBytes: 0 };
+
+/**
+ * Parse the `/collections/{name}/memory` body. The report is display-only, so a
+ * partly unexpected shape degrades rather than fails: absent numbers read 0,
+ * entries without a usage cell are skipped, absent arrays are empty. Only a body
+ * without a `result.total` cell is rejected — there is nothing honest to show.
+ */
+function parseCollectionMemoryUsage(body: unknown): QdrantCollectionMemoryUsage | undefined {
+  const result = asRecord(asRecord(body)?.result);
+  const total = parseMemoryUsage(result?.total);
+  if (!result || !total) return undefined;
+  const vectors: QdrantCollectionMemoryUsage["vectors"] = [];
+  for (const raw of asArray(result.vectors)) {
+    const entry = asRecord(raw);
+    const storage = parseMemoryUsage(entry?.storage);
+    const index = parseMemoryUsage(entry?.index);
+    if (!entry || !storage || !index) continue;
+    const quantized = parseMemoryUsage(entry.quantized);
+    vectors.push({ name: asName(entry.name), storage, index, ...(quantized ? { quantized } : {}) });
+  }
+  const sparseVectors: QdrantCollectionMemoryUsage["sparseVectors"] = [];
+  for (const raw of asArray(result.sparse_vectors)) {
+    const entry = asRecord(raw);
+    const storage = parseMemoryUsage(entry?.storage);
+    const index = parseMemoryUsage(entry?.index);
+    if (entry && storage && index) sparseVectors.push({ name: asName(entry.name), storage, index });
+  }
+  const payloadIndexes: QdrantCollectionMemoryUsage["payloadIndexes"] = [];
+  for (const raw of asArray(result.payload_index)) {
+    const entry = asRecord(raw);
+    const usage = parseMemoryUsage(entry?.usage);
+    if (entry && usage) payloadIndexes.push({ name: asName(entry.name), usage });
+  }
+  const other: QdrantCollectionMemoryUsage["other"] = [];
+  for (const [name, raw] of Object.entries(asRecord(result.other) ?? {})) {
+    const usage = parseMemoryUsage(raw);
+    if (usage) other.push({ name, usage });
+  }
+  return {
+    total,
+    vectors,
+    sparseVectors,
+    payload: parseMemoryUsage(result.payload) ?? ZERO_MEMORY_USAGE,
+    payloadIndexes,
+    other,
+  };
+}
+
+/** One usage cell, or `undefined` when `raw` is not an object carrying any of its four numbers. */
+function parseMemoryUsage(raw: unknown): QdrantMemoryUsage | undefined {
+  const cell = asRecord(raw);
+  if (!cell) return undefined;
+  const keys = ["disk_bytes", "ram_bytes", "cached_bytes", "expected_cache_bytes"] as const;
+  if (!keys.some((key) => typeof cell[key] === "number")) return undefined;
+  const bytes = (key: (typeof keys)[number]): number => (typeof cell[key] === "number" ? cell[key] : 0);
+  return {
+    diskBytes: bytes("disk_bytes"),
+    ramBytes: bytes("ram_bytes"),
+    cachedBytes: bytes("cached_bytes"),
+    expectedCacheBytes: bytes("expected_cache_bytes"),
+  };
+}
+
+function asRecord(value: unknown): Record<string, unknown> | undefined {
+  return typeof value === "object" && value !== null && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : undefined;
+}
+
+function asArray(value: unknown): unknown[] {
+  return Array.isArray(value) ? value : [];
+}
+
+function asName(value: unknown): string {
+  return typeof value === "string" ? value : "";
 }
 
 /**
