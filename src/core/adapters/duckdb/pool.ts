@@ -21,10 +21,11 @@ import type { DatabaseMigrationApplier } from "../../contracts/types/migration.j
 import { isDebug } from "../../infra/runtime.js";
 import { DuckDbGraphClient } from "./client.js";
 import { CodegraphDbFiles, sanitiseCollectionName } from "./codegraph-db-files.js";
-import { getBuildFingerprint } from "./daemon/build-fingerprint.js";
+import { getBuildFingerprint, readOnDiskBuildFingerprint } from "./daemon/build-fingerprint.js";
 import type { DaemonCapabilityVerdict, DaemonGraphDbClient } from "./daemon/client.js";
 import { DEFAULT_EXIT_TIMEOUT_MS, getDaemonPaths, readDaemonPid, waitForDaemonExit } from "./daemon/lifecycle.js";
 import {
+  CodegraphClientStaleBuildError,
   CodegraphDaemonBuildSkewError,
   CodegraphDaemonExitTimeoutError,
   CodegraphDaemonStaleBuildError,
@@ -59,6 +60,16 @@ function needsDaemonReplacement(verdict: DaemonCapabilityVerdict): boolean {
  */
 function refusesDaemon(verdict: DaemonCapabilityVerdict): boolean {
   return verdict.missingRequiredOps.length > 0 || (verdict.predatesCapabilityList && verdict.buildMismatch);
+}
+
+/**
+ * The CLIENT is the stale side of a build mismatch (bd tea-rags-mcp-1wr7p): the
+ * daemon runs the build on disk NOW, which this process's loaded code predates.
+ * Draining cannot converge — every respawn launches that same on-disk build — so
+ * the daemon is never drained for it. An unreadable on-disk build proves nothing.
+ */
+function isClientStale(verdict: DaemonCapabilityVerdict, onDiskFingerprint: string | undefined): boolean {
+  return verdict.buildMismatch && onDiskFingerprint !== undefined && verdict.daemonFingerprint === onDiskFingerprint;
 }
 
 /** Debug-line reason a handshake did not settle. */
@@ -126,14 +137,21 @@ export interface GraphDbClientPoolOptions {
    * tea-rags-mcp-ji56r, 39xca.4). A daemon from another build, or one missing a
    * required op, is drained, its exit awaited, `respawn` invoked and the
    * connection retried up to `maxRestartAttempts`. A pre-fingerprint peer
-   * proceeds unchanged. Without `respawn` the pool never drains — see
-   * `connectWithBuildHandshake`.
+   * proceeds unchanged, and so does a daemon of the build on disk that this
+   * process predates (bd tea-rags-mcp-1wr7p). Without `respawn` the pool never
+   * drains — see `connectWithBuildHandshake`.
    */
   daemonRestart?: {
     /** Cold-spawn hook — wired to `ensureCodegraphDaemon` by the bootstrap factory. */
     respawn?: () => void;
-    /** Override the module-computed local fingerprint (tests). */
+    /** Override the module-captured loaded fingerprint (tests). */
     buildFingerprint?: string;
+    /**
+     * Override the reader of the build fingerprint on disk NOW (tests) — what a
+     * daemon respawned from this process's build tree would report. Defaults to
+     * `readOnDiskBuildFingerprint`.
+     */
+    readOnDiskBuildFingerprint?: () => string | undefined;
     /** Bound on the wait for the stale daemon's exit (default 10s). */
     exitTimeoutMs?: number;
     /** Lifecycle-file poll interval while waiting for the exit. */
@@ -448,8 +466,11 @@ export class GraphDbClientPool {
   /**
    * Connect and run the build + capability handshake (bd tea-rags-mcp-ji56r,
    * 39xca.4). A daemon of this build serving every required op, or a
-   * pre-fingerprint peer, is returned as is. Otherwise a respawn-capable pool
-   * drains, respawns and reconnects up to `maxRestartAttempts`, then throws
+   * pre-fingerprint peer, is returned as is. A daemon of the build on disk that
+   * THIS process predates is never drained (bd tea-rags-mcp-1wr7p): it is
+   * returned when it serves every required op, else
+   * `CodegraphClientStaleBuildError`. Otherwise a respawn-capable pool drains,
+   * respawns and reconnects up to `maxRestartAttempts`, then throws
    * `CodegraphDaemonBuildSkewError` (its own build still short of an op) or
    * `CodegraphDaemonStaleBuildError`.
    *
@@ -466,6 +487,7 @@ export class GraphDbClientPool {
     const { DaemonGraphDbClient, assessDaemonCapability } = await import("./daemon/client.js");
     const restart = this.options.daemonRestart;
     const localFingerprint = restart?.buildFingerprint ?? getBuildFingerprint();
+    const readOnDisk = restart?.readOnDiskBuildFingerprint ?? readOnDiskBuildFingerprint;
 
     // The respawn hook doubles as crash recovery (bd tea-rags-mcp-8l8d3): a
     // daemon killed by a native abort cannot report it, so the client respawns
@@ -476,6 +498,11 @@ export class GraphDbClientPool {
     const verdict = assessDaemonCapability(await first.handshake(localFingerprint), localFingerprint);
     // Same build serving every required op, or a legacy pre-fingerprint peer.
     if (!needsDaemonReplacement(verdict)) return first;
+    // Asked BEFORE the respawn question: a pool without the hook must name the
+    // stale side correctly too when it refuses.
+    if (isClientStale(verdict, readOnDisk())) {
+      return this.settleWithStaleClient(first, verdict, socketPath, localFingerprint);
+    }
 
     // No respawn hook (worker-thread pools rebuilt from serializable config):
     // never drain — the daemon is shared machine-wide and this pool could not
@@ -535,6 +562,12 @@ export class GraphDbClientPool {
       await next.init();
       const nextVerdict = assessDaemonCapability(await next.handshake(localFingerprint), localFingerprint);
       if (!needsDaemonReplacement(nextVerdict)) return next;
+      // The respawn launched the on-disk build and this process predates it:
+      // from here the daemon is the up-to-date peer, and another drain would
+      // take it down for every session already on it (bd tea-rags-mcp-1wr7p).
+      if (isClientStale(nextVerdict, readOnDisk())) {
+        return this.settleWithStaleClient(next, nextVerdict, socketPath, localFingerprint);
+      }
       if (nextVerdict.daemonFingerprint !== undefined) observedDaemonFingerprints.push(nextVerdict.daemonFingerprint);
       lastVerdict = nextVerdict;
       stale = next;
@@ -558,6 +591,39 @@ export class GraphDbClientPool {
       lastVerdict.daemonFingerprint ?? "unknown",
       observedDaemonFingerprints,
     );
+  }
+
+  /**
+   * Settle a handshake whose stale side is THIS process (bd tea-rags-mcp-1wr7p):
+   * never drain, never respawn. Proceed against the daemon when it serves every
+   * op this client requires — the same bar a pool without a respawn hook
+   * applies — else close and fail fast with `CodegraphClientStaleBuildError`.
+   * Reloading this process is the only remedy; tea-rags does not restart it.
+   */
+  private async settleWithStaleClient(
+    client: DaemonGraphDbClient,
+    verdict: DaemonCapabilityVerdict,
+    socketPath: string,
+    clientFingerprint: string,
+  ): Promise<DaemonGraphDbClient> {
+    if (refusesDaemon(verdict)) {
+      await client.close();
+      throw new CodegraphClientStaleBuildError({
+        socketPath,
+        clientFingerprint,
+        /* v8 ignore next -- a stale-client verdict always carries the daemon fingerprint */
+        daemonFingerprint: verdict.daemonFingerprint ?? "unknown",
+        missingOps: verdict.missingRequiredOps,
+      });
+    }
+    if (isDebug()) {
+      process.stderr.write(
+        `[tea-rags] codegraph daemon ${describeDaemonSkew(verdict, clientFingerprint)} — this process predates ` +
+          "the build on disk the daemon runs; proceeding without a restart (it advertises every required op). " +
+          "Reconnect the MCP server to load the current build\n",
+      );
+    }
+    return client;
   }
 
   /**

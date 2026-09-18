@@ -117,6 +117,55 @@ export class CodegraphDaemonStaleBuildError extends InfraError {
 }
 
 /**
+ * THIS process is the stale side of a build mismatch, and the up-to-date daemon
+ * cannot serve every op its old code requires (bd tea-rags-mcp-1wr7p).
+ *
+ * The daemon reports the build that is on disk now; this process loaded an
+ * older one before a rebuild, `npm link` or `npm i -g` upgrade. Draining cannot
+ * converge — every respawn launches that same on-disk build — and each drain
+ * would cut every session already on it, so the daemon is left running and
+ * only reloading this process helps. When the daemon DOES advertise every
+ * required op the pool proceeds and this error is never raised.
+ *
+ * `missingOps` is empty when the daemon advertises no op list at all.
+ */
+export class CodegraphClientStaleBuildError extends InfraError {
+  readonly missingOps: readonly string[];
+
+  constructor(
+    skew: {
+      socketPath: string;
+      clientFingerprint: string;
+      daemonFingerprint: string;
+      missingOps: readonly string[];
+    },
+    cause?: Error,
+  ) {
+    const unserved =
+      skew.missingOps.length > 0
+        ? `lacks op${skew.missingOps.length === 1 ? "" : "s"} ${skew.missingOps.join(", ")} this process requires`
+        : "does not advertise the ops it serves";
+    super({
+      code: "INFRA_CODEGRAPH_CLIENT_STALE_BUILD",
+      // The remedy rides the message (bd tea-rags-mcp-a43tr): optional consumers
+      // quote the message when they degrade.
+      message:
+        `This tea-rags process runs build ${skew.clientFingerprint}, but the build on disk and the ` +
+        `codegraph daemon at ${skew.socketPath} are ${skew.daemonFingerprint}, and that daemon ${unserved} — ` +
+        "restart the tea-rags MCP server (`/mcp reconnect`) to load the current build",
+      hint:
+        "This process predates the last rebuild, `npm link` or `npm i -g` upgrade; the daemon is the " +
+        "up-to-date peer, so it was left running — draining it would only respawn the same build and " +
+        "disconnect every session already on it. tea-rags does not restart its own server process: " +
+        "reconnect the MCP server (`/mcp reconnect`) or restart the client that launched it.",
+      httpStatus: 503,
+      cause,
+    });
+    this.missingOps = skew.missingOps;
+  }
+}
+
+/**
  * The codegraph daemon cannot serve an op this client may need, and nothing
  * here can replace it (bd tea-rags-mcp-39xca.4).
  *
@@ -226,6 +275,7 @@ export class CodegraphDaemonUnreachableError extends InfraError {
  */
 export type CodegraphUnavailableError =
   | CodegraphDaemonStaleBuildError
+  | CodegraphClientStaleBuildError
   | CodegraphDaemonBuildSkewError
   | CodegraphDaemonExitTimeoutError
   | CodegraphDaemonUnreachableError
@@ -234,6 +284,7 @@ export type CodegraphUnavailableError =
 export function isCodegraphUnavailableError(err: unknown): err is CodegraphUnavailableError {
   return (
     err instanceof CodegraphDaemonStaleBuildError ||
+    err instanceof CodegraphClientStaleBuildError ||
     err instanceof CodegraphDaemonBuildSkewError ||
     err instanceof CodegraphDaemonExitTimeoutError ||
     err instanceof CodegraphDaemonUnreachableError ||
