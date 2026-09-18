@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest";
 
 import type { CallContext, LocalBinding } from "../../../../../../src/core/contracts/types/codegraph.js";
-import { DefaultSymbolIdComposer } from "../../../../../../src/core/domains/language/kernel/symbol-id.js";
 import { GoCallResolver } from "../../../../../../src/core/domains/language/go/resolver/go-resolver.js";
+import { DefaultSymbolIdComposer } from "../../../../../../src/core/domains/language/kernel/symbol-id.js";
 import { InMemoryGlobalSymbolTable } from "../../../../../../src/core/domains/trajectory/codegraph/symbols/symbol-table.js";
 
 function ctx(
