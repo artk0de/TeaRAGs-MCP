@@ -2,7 +2,7 @@ import { CONTINUE, DROP, resolved } from "../../../../../contracts/resolution.js
 import type { CallContext, CallRef } from "../../../../../contracts/types/codegraph.js";
 import type { SymbolResolutionOutcome, SymbolResolutionStrategy } from "../../../../../contracts/types/language.js";
 import { propagateReceiverType, type ReceiverTypePorts } from "../../../kernel/receiver-type-propagation.js";
-import { createGoReceiverTypePorts } from "../receiver-type-ports.js";
+import { createGoReceiverTypePorts, goBareCallHead } from "../receiver-type-ports.js";
 import { resolveByLocalType, type ResolverConfig } from "./shared.js";
 
 /**
@@ -18,6 +18,11 @@ import { resolveByLocalType, type ResolverConfig } from "./shared.js";
  * nowhere left to go but the terminal drop, so the chain's outcome for every
  * receiver this pass cannot type is what it was before the pass existed.
  *
+ * A receiver that is one bare call's result (`engine().GET(...)`, gin's
+ * `ginS` wrappers) is a head the fold types too — through the callee's
+ * declared return type (bd tea-rags-mcp-e6xx) — and is owned the same way; it
+ * matches no import either, so an untyped one still ends at the terminal drop.
+ *
  * A single-identifier receiver is the binding passes' own case and CONTINUEs
  * untouched.
  */
@@ -31,7 +36,7 @@ export class GoReceiverChainSymbolResolutionStrategy implements SymbolResolution
 
   attempt(call: CallRef, ctx: CallContext): SymbolResolutionOutcome {
     const { receiver } = call;
-    if (!receiver?.includes(".")) return CONTINUE;
+    if (!receiver || (!receiver.includes(".") && goBareCallHead(receiver) === undefined)) return CONTINUE;
     const type = propagateReceiverType(receiver, call.startLine, ctx, this.ports);
     if (type?.form !== "instance") return CONTINUE;
     const target = resolveByLocalType(this.cfg, type.name, call.member, ctx);

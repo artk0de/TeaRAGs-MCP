@@ -7,8 +7,9 @@
  *   - `singleHopType` — a plain identifier, typed exactly as the two binding
  *     passes type it: the local `goLocalAt` finds in scope — a value binding
  *     (an empty one is untyped), or a call binding typed through its callee's
- *     declared return type behind the same known-type gate. Anything else
- *     (`f()`, `xs[i]`) is untyped.
+ *     declared return type behind the same known-type gate. A bare call's
+ *     result (`engine()`) is typed the same way, through the caller-package
+ *     declaration it calls. Anything else (`xs[i]`, `f(a)(b)`) is untyped.
  *   - `seedHead` — none. A Go chain head is a value or a package, and a package
  *     is the import pass's business.
  *   - `memberTypeOf` — a FIELD hop only, read through `selectGoMember`, so a
@@ -31,16 +32,60 @@ import {
   type ReceiverTypePorts,
 } from "../../kernel/receiver-type-propagation.js";
 import { goLocalAt } from "../local-scope.js";
-import { goCallResultType } from "./strategies/shared.js";
+import { lookupGoSymbolsByShortName } from "./go-symbol-lookup.js";
+import { goCallResultType, goPackageDirOf } from "./strategies/shared.js";
 import { selectGoMember } from "./struct-member-selection.js";
 
 const GO_IDENTIFIER = /^[\p{L}_][\p{L}\p{N}_]*$/u;
+const GO_IDENTIFIER_PREFIX = /^[\p{L}_][\p{L}\p{N}_]*/u;
 
 function instanceOf(name: string): TypeRef {
   return { form: "instance", name };
 }
 
+/**
+ * The callee of a receiver that is ONE call of a bare identifier — `engine()`,
+ * `load(cfg, "x")` → `engine` / `load` — else `undefined`: the argument list
+ * must open right after the name and close at the receiver's last character,
+ * so `f(a)(b)` (calling a call's result) and `f(a).x` are not one.
+ */
+export function goBareCallHead(receiver: string): string | undefined {
+  const name = GO_IDENTIFIER_PREFIX.exec(receiver)?.[0];
+  if (name === undefined || receiver[name.length] !== "(" || !receiver.endsWith(")")) return undefined;
+  let depth = 0;
+  for (let i = name.length; i < receiver.length; i++) {
+    const ch = receiver[i];
+    if (ch === "(") depth++;
+    else if (ch === ")" && --depth === 0) return i === receiver.length - 1 ? name : undefined;
+  }
+  return undefined;
+}
+
+/**
+ * The type a bare call's result holds (bd tea-rags-mcp-e6xx): the callee's
+ * recorded return type (`functionReturnTypes` — a declared function's, or what
+ * calling a package-level func-valued var yields, like gin's
+ * `var engine = sync.OnceValue(func() *gin.Engine {…})`), behind the
+ * known-type gate. A bare call names the caller's own package, so no local
+ * function value of that name may be in scope, and when package-level
+ * functions of that name exist the caller's package must declare one — a
+ * namesake declared only elsewhere is whose return type the run-global map
+ * may hold. A var is no symbol, so a name nothing declares passes that check.
+ */
+function goBareCallResultType(callee: string, atLine: number, ctx: CallContext): TypeRef | undefined {
+  if (goLocalAt(ctx, callee, atLine)) return undefined;
+  const declarations = lookupGoSymbolsByShortName(ctx, callee).filter((def) => def.symbolId === callee);
+  const callerPackage = goPackageDirOf(ctx.callerFile);
+  if (declarations.length > 0 && !declarations.some((def) => goPackageDirOf(def.relPath) === callerPackage)) {
+    return undefined;
+  }
+  const returnType = goCallResultType(callee, ctx);
+  return returnType ? instanceOf(returnType) : undefined;
+}
+
 function goIdentifierType(receiver: string, atLine: number, ctx: CallContext): TypeRef | undefined {
+  const callee = goBareCallHead(receiver);
+  if (callee !== undefined) return goBareCallResultType(callee, atLine, ctx);
   if (!GO_IDENTIFIER.test(receiver)) return undefined;
   // The local in scope speaks for the name even when its type is EMPTY — a
   // value no pass can type, shadowing any earlier binding of the name.

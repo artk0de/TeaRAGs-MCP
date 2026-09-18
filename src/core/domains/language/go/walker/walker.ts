@@ -44,7 +44,7 @@ export function extractFromGoFile(input: GoExtractInput): FileExtraction {
   const imports = collectGoImports(input.tree.rootNode);
   const importNames = goImportBoundNames(imports);
   const { calls, bareCalleeHeads } = collectGoCalls(input.tree.rootNode);
-  const functionReturnTypes = collectGoFunctionReturnTypes(input.tree.rootNode);
+  const functionReturnTypes = collectGoFunctionReturnTypes(input.tree.rootNode, imports);
   // bd tea-rags-mcp-f11nz — ONE owning chunk per call site: the smallest
   // containing range, ties broken by deeper scope. The pure-containment filter
   // this replaces gave a call to EVERY chunk spanning its line, so any enclosing
@@ -108,7 +108,7 @@ export function extractFromGoFile(input: GoExtractInput): FileExtraction {
  * reads a call binding's bare callee name. Last-write-wins on duplicate names;
  * resolver-side ambiguity is gated by the symbol-table existence check.
  */
-function collectGoFunctionReturnTypes(root: AstNode): Record<string, string> {
+function collectGoFunctionReturnTypes(root: AstNode, imports: readonly ImportRef[]): Record<string, string> {
   const out: Record<string, string> = {};
   walk(root, (node) => {
     if (node.type !== "function_declaration" && node.type !== "method_declaration") return;
@@ -118,7 +118,72 @@ function collectGoFunctionReturnTypes(root: AstNode): Record<string, string> {
     const typeName = readReturnTypeNode(result);
     if (typeName) out[name.text] = typeName;
   });
+  collectGoFuncValueVarReturnTypes(root, imports, out);
   return out;
+}
+
+/** The standard library's lazy-singleton wrapper: `sync.OnceValue(f)` returns a func yielding what `f` returns. */
+const GO_ONCE_VALUE_IMPORT_PATH = "sync";
+const GO_ONCE_VALUE_FUNC = "OnceValue";
+
+/**
+ * What CALLING a package-level func-valued var returns, recorded beside the
+ * declared functions' return types (bd tea-rags-mcp-e6xx) — gin's
+ * `var engine = sync.OnceValue(func() *gin.Engine {…})` is called as
+ * `engine().GET(…)` exactly like a function. Three shapes, single-name specs
+ * only:
+ *   - `var f func(…) T`                         — a var of a func type;
+ *   - `var f = func(…) T {…}`                   — a function literal;
+ *   - `var f = sync.OnceValue(func() T {…})`    — the standard library's
+ *     `func OnceValue[T any](f func() T) func() T`, and only when `sync` is
+ *     the file's import of the standard `sync` package.
+ * A declared function of the same name keeps its entry.
+ */
+function collectGoFuncValueVarReturnTypes(
+  root: AstNode,
+  imports: readonly ImportRef[],
+  out: Record<string, string>,
+): void {
+  const onceValueQualifier = imports.find((imp) => imp.importText === GO_ONCE_VALUE_IMPORT_PATH);
+  const syncName = onceValueQualifier ? goImportBoundName(onceValueQualifier) : undefined;
+  for (const declaration of root.children) {
+    if (declaration.type !== "var_declaration") continue;
+    const specs = declaration.children.flatMap((c) =>
+      c.type === "var_spec" ? [c] : c.type === "var_spec_list" ? c.children.filter((s) => s.type === "var_spec") : [],
+    );
+    for (const spec of specs) {
+      const names = spec.children.filter((c) => c.type === "identifier");
+      if (names.length !== 1 || out[names[0].text] !== undefined) continue;
+      const typeName = readFuncValueVarResultType(spec, syncName);
+      if (typeName) out[names[0].text] = typeName;
+    }
+  }
+}
+
+function readFuncValueVarResultType(spec: AstNode, syncName: string | undefined): string | null {
+  const declared = spec.childForFieldName("type");
+  if (declared) return declared.type === "function_type" ? readFuncResultType(declared) : null;
+  const values = spec.childForFieldName("value")?.namedChildren ?? [];
+  if (values.length !== 1) return null;
+  const [value] = values;
+  if (value.type === "func_literal") return readFuncResultType(value);
+  if (value.type !== "call_expression" || syncName === undefined) return null;
+  const fn = value.childForFieldName("function");
+  if (fn?.type !== "selector_expression") return null;
+  if (
+    fn.childForFieldName("operand")?.text !== syncName ||
+    fn.childForFieldName("field")?.text !== GO_ONCE_VALUE_FUNC
+  ) {
+    return null;
+  }
+  const args = value.childForFieldName("arguments")?.namedChildren ?? [];
+  return args.length === 1 && args[0].type === "func_literal" ? readFuncResultType(args[0]) : null;
+}
+
+/** The single nominal result type of a `function_type` / `func_literal`, else null. */
+function readFuncResultType(fn: AstNode): string | null {
+  const result = fn.childForFieldName("result");
+  return result ? readReturnTypeNode(result) : null;
 }
 
 /**
@@ -131,8 +196,10 @@ function collectGoFunctionReturnTypes(root: AstNode): Record<string, string> {
 function readReturnTypeNode(result: AstNode): string | null {
   if (result.type === "type_identifier") return result.text;
   if (result.type === "pointer_type") {
-    const inner = result.children.find((c) => c.type === "type_identifier");
-    return inner?.text ?? null;
+    // `*Foo` → `Foo`; `*pkg.Foo` → `Foo`, exactly as the bare `pkg.Foo` reads
+    // (bd tea-rags-mcp-e6xx — gin's `func() *gin.Engine` fell through).
+    const inner = result.children.find((c) => c.type === "type_identifier" || c.type === "qualified_type");
+    return inner ? readReturnTypeNode(inner) : null;
   }
   if (result.type === "qualified_type") {
     const name = result.childForFieldName("name");
