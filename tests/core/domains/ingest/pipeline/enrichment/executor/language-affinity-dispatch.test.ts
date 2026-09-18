@@ -201,6 +201,59 @@ describe("ExtractionFanoutDispatcher — partitioned file batches", () => {
     expect(rest.routingKey).not.toBe(lead.routingKey);
   });
 
+  // One partition's absorb failing must not let the unit give its slot and its
+  // chain places back while a sibling partition is still absorbing: the next
+  // unit would then parse while this one's records are still resident
+  // (`maxInFlightBatches`) and absorb on the slow partition ahead of it.
+  it("holds the slot and every partition's place until all absorbs settled, then surfaces the failure", async () => {
+    const plan = mixedPlan();
+    const [lead, rest] = plan.partitions;
+    let releaseRestFirst!: () => void;
+    const restFirstHeld = new Promise<void>((resolveHeld) => {
+      releaseRestFirst = resolveHeld;
+    });
+    const events: string[] = [];
+    let restAbsorbs = 0;
+    const { dispatch } = fakePool(async ({ request, routingKey }) => {
+      if (request.type !== "call" || request.method !== "absorbExtractedFiles") return {};
+      const unit = request.extractions?.[0]?.relPath ?? "";
+      if (routingKey === lead.routingKey && unit === "web/a.ts") throw new Error("lead absorb failed");
+      if (routingKey === rest.routingKey && restAbsorbs++ === 0) await restFirstHeld;
+      events.push(`${routingKey === lead.routingKey ? "lead" : "rest"}:${unit}`);
+      return {};
+    });
+    const fanout = new ExtractionFanoutDispatcher(
+      async (request, routingKey) => {
+        if (request.type === "call" && request.method === "extractFileBatch") {
+          for (const path of request.paths ?? []) events.push(`extract:${path}`);
+        }
+        return dispatch(request, routingKey);
+      },
+      { workerCount: 2, shardSize: 128, maxInFlightBatches: 1, minPathsToFanOut: 16 },
+    );
+
+    let firstSettled = false;
+    const first = fanout
+      .runPartitionedFileBatch(call("runFileBatch", { paths: ["web/a.ts", "app/a.rb"] }), plan)
+      .finally(() => {
+        firstSettled = true;
+      });
+    const second = fanout.runPartitionedFileBatch(call("runFileBatch", { paths: ["web/b.ts", "app/b.rb"] }), plan);
+    await new Promise((resolveTick) => setTimeout(resolveTick, 20));
+
+    // The lead partition failed, the rest partition is still absorbing unit 1:
+    // unit 1 has not settled, and unit 2 has not even been parsed.
+    expect(firstSettled).toBe(false);
+    expect(events.filter((e) => e.includes("/b."))).toEqual([]);
+
+    releaseRestFirst();
+    await expect(first).rejects.toThrow("lead absorb failed");
+    await second;
+    const unitTwoStarts = events.findIndex((e) => e.includes("/b."));
+    expect(events.indexOf("rest:web/a.ts")).toBeLessThan(unitTwoStarts);
+    expect(events.filter((e) => e.startsWith("rest:"))).toEqual(["rest:web/a.ts", "rest:web/b.ts"]);
+  });
+
   it("parses a path once per run whichever partitions it feeds", async () => {
     const plan = mixedPlan();
     const { dispatch, calls: recorded } = fakePool();
