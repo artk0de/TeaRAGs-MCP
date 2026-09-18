@@ -37,7 +37,11 @@ import type { EmbeddingConfig, QdrantTuneConfig, TrajectoryGitConfig, VcsConfig 
 // Deep import, not the registry barrel: `env-replay.js` depends on nothing but
 // the group table, while the barrel reaches the qdrant-daemon and vcs adapters
 // through `env-resolution.js`.
-import { replayRegistryEnv } from "../../core/domains/maintenance/registry/env-replay.js";
+import {
+  outerEnvForRegistryStamp,
+  replayRegistryEnv,
+  type AmbientEnvRole,
+} from "../../core/domains/maintenance/registry/env-replay.js";
 import { isDebug } from "../../core/infra/runtime.js";
 import { parseAppConfigZod } from "./parse.js";
 import type { CodegraphConfig, IngestConfig } from "./schemas.js";
@@ -162,8 +166,10 @@ export function buildRunningIndexEnvSnapshot(config: RegistryEnvSnapshotSource):
  * decision 6).
  *
  * The same resolution `ProjectIngestFactory#forPath` performs before it builds
- * an ingest facade — outer env > stored registry env > code default — expressed
- * as a snapshot so it can be diffed against the stamp key for key. It lives
+ * an ingest facade — outer env > stored registry env > code default, where a
+ * `server` role narrows the outer env to what `outerEnvForRegistryStamp` lets
+ * it override — expressed as a snapshot so it can be diffed against the stamp
+ * key for key. It lives
  * here rather than in the monitor because `core/` must not import `bootstrap/`,
  * and because this is where the snapshot vocabulary already lives. Replay
  * writes onto a COPY of `ambient`; `process.env` is never mutated.
@@ -181,9 +187,15 @@ export function buildEffectiveIndexEnvSnapshot(
   stored: Readonly<Record<string, string>>,
   collectionName: string,
   ambient: NodeJS.ProcessEnv = process.env,
+  /**
+   * Where `ambient` came from — the same role `ProjectIngestFactory` resolves a
+   * real run with, or the axis reports what no run would do. A server's spawn
+   * env yields every index-shaping group the stamp pins (tea-rags-mcp-o0qsw).
+   */
+  role: AmbientEnvRole = "invocation",
 ): Readonly<Record<string, string>> {
   try {
-    const env: NodeJS.ProcessEnv = { ...ambient };
+    const env: NodeJS.ProcessEnv = { ...outerEnvForRegistryStamp(stored, ambient, role) };
     replayRegistryEnv(stored, env);
     return buildRunningIndexEnvSnapshot(parseAppConfigZod(env));
   } catch (error) {

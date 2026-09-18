@@ -52,6 +52,15 @@ on a different branch, `current` carries the new one — `0123456 (feature)`, wi
 the note `HEAD moved to feature since the last index run` and the same
 `(dirty)` suffix rule on the indexed side.
 
+An Indexing env finding means the next index run started from the process that
+printed it would write something different. Where that process's environment
+came from matters. A shell export in front of `tea-rags prime` or
+`tea-rags index-codebase` is an override, so it is reported. The MCP server's
+environment is a default shared by every project it serves, so it never
+overrides a project's recorded index shape (see
+[Configuration Variables](/config/environment-variables)), and a server started
+with another project's chunk size reports nothing for this one.
+
 ## Reading a report
 
 A finding is one line — `subject: indexed → current` — grouped under its axis,

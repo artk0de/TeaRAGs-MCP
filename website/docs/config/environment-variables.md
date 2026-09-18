@@ -8,6 +8,17 @@ sidebar_position: 5
 TeaRAGs is configured via environment variables passed to the MCP server. All
 variables are optional unless specified otherwise.
 
+Every index run records the indexing settings it used in the project registry,
+and later runs on that project replay them. The MCP server's environment is the
+default for every project it serves, so it never changes the index shape of a
+project that already has a recorded value: chunk size, AST or hybrid mode, git
+windows, codegraph resolution and the enable flags stay as recorded, while
+runtime tuning (pool sizes, batch sizes, timeouts, endpoints) follows the
+server. To change a recorded index-shaping value, export it in front of
+`tea-rags index-codebase --project <alias>` — a CLI invocation's environment
+overrides the registry for every setting — together with the `--force` or
+`--force-enrichments` the change needs.
+
 ## Server
 
 | Variable                 | Description                             | Default        |

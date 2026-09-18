@@ -17,7 +17,7 @@
 import { EMBEDDED_MARKER } from "../../../adapters/qdrant/embedded/daemon.js";
 import { resolveGitCommonDir } from "../../../adapters/vcs/git/common-dir.js";
 import type { CollectionEntry } from "../../../contracts/types/registry.js";
-import { replayRegistryEnv } from "./env-replay.js";
+import { outerEnvForRegistryStamp, replayRegistryEnv, type AmbientEnvRole } from "./env-replay.js";
 import { resolveRegistryQdrantBackend } from "./qdrant-backend-resolution.js";
 
 /** Structural subset of CollectionRegistry used here — keeps tests fake-friendly. */
@@ -90,25 +90,61 @@ function entriesSharingRepo(entries: CollectionEntry[], path: string): Collectio
 export function resolveRegistryEnv(
   entry: CollectionEntry | null,
   ambient: NodeJS.ProcessEnv | Record<string, string> = process.env,
+  /**
+   * Where `ambient` came from (`AmbientEnvRole`). Pass `server` only for a
+   * project's OWN entry in a long-lived server — a borrowed seed has no stamp
+   * of this project's index to stay consistent with.
+   */
+  role: AmbientEnvRole = "invocation",
 ): Record<string, string> {
   if (!entry) return {};
   // ONE replay set, ONE rule (outer env > registry env > code default):
-  // identity keys from their dedicated CollectionEntry fields composed with
-  // the general env snapshot (`entry.env`; legacy entries stored it as
-  // `entry.tuning`), then applied through the single alias-group-aware
-  // replay — an externally-set deprecated spelling (OLLAMA_URL,
-  // EMBEDDING_CONCURRENCY) beats the stored canonical key instead of being
-  // shadowed after the later `{...env, ...process.env}` merge.
-  const replaySet: Record<string, string> = { ...(entry.env ?? entry.tuning) };
-  if (entry.embeddingModel) replaySet.EMBEDDING_MODEL = entry.embeddingModel;
-  if (entry.embeddingBaseUrl) replaySet.EMBEDDING_BASE_URL = entry.embeddingBaseUrl;
-  if (entry.embeddingFallbackUrl) replaySet.EMBEDDING_FALLBACK_URL = entry.embeddingFallbackUrl;
+  // the entry's stamp plus the Qdrant backend, then applied through the single
+  // alias-group-aware replay — an externally-set deprecated spelling
+  // (OLLAMA_URL, EMBEDDING_CONCURRENCY) beats the stored canonical key instead
+  // of being shadowed after the later `{...env, ...process.env}` merge.
+  const replaySet = registryStampOf(entry);
   const backend = resolveRegistryQdrantBackend(entry);
   if (backend.kind === "embedded") replaySet.QDRANT_URL = EMBEDDED_MARKER;
   else if (backend.kind === "external") replaySet.QDRANT_URL = backend.url;
-  if (entry.codegraphEnabled) replaySet.CODEGRAPH_ENABLED = "true";
 
   const env: Record<string, string> = {};
-  replayRegistryEnv(replaySet, env, ambient);
+  replayRegistryEnv(replaySet, env, outerEnvForRegistryStamp(replaySet, ambient, role));
   return env;
+}
+
+/**
+ * The env a process DETACHED by a long-lived server must inherit to index
+ * `entry`'s project the way the server itself would (tea-rags-mcp-o0qsw).
+ *
+ * The auto-update run a server spawns replays the registry as a CLI
+ * invocation, so a raw inherited spawn env would override the project's
+ * stamped index shape all over again. Handing it this env instead leaves the
+ * replay nothing to lose. Returns `ambient` itself when nothing is dropped, so
+ * the spawner can keep plain inheritance for that case.
+ *
+ * Never throws: the Qdrant backend, the one part of the replay set that can,
+ * is a runtime group and plays no part here.
+ */
+export function outerEnvForRegistryEntry(
+  entry: CollectionEntry | null,
+  ambient: NodeJS.ProcessEnv | Record<string, string>,
+  role: AmbientEnvRole,
+): NodeJS.ProcessEnv | Record<string, string> {
+  return entry ? outerEnvForRegistryStamp(registryStampOf(entry), ambient, role) : ambient;
+}
+
+/**
+ * What the entry recorded about its last run: identity keys from their
+ * dedicated CollectionEntry fields composed with the general env snapshot
+ * (`entry.env`; legacy entries stored it as `entry.tuning`). The Qdrant backend
+ * is left to `resolveRegistryEnv`, which weighs it separately.
+ */
+function registryStampOf(entry: CollectionEntry): Record<string, string> {
+  const stamp: Record<string, string> = { ...(entry.env ?? entry.tuning) };
+  if (entry.embeddingModel) stamp.EMBEDDING_MODEL = entry.embeddingModel;
+  if (entry.embeddingBaseUrl) stamp.EMBEDDING_BASE_URL = entry.embeddingBaseUrl;
+  if (entry.embeddingFallbackUrl) stamp.EMBEDDING_FALLBACK_URL = entry.embeddingFallbackUrl;
+  if (entry.codegraphEnabled) stamp.CODEGRAPH_ENABLED = "true";
+  return stamp;
 }

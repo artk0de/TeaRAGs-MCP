@@ -10,7 +10,10 @@
  * emits one CANONICAL key per group at its parsed effective value — code
  * defaults materialized — and replay (`cli/registry-env-replay.ts`) skips a
  * whole group when ANY spelling is set in the ambient env, so an externally
- * passed deprecated alias still overrides the stored canonical key.
+ * passed deprecated alias still overrides the stored canonical key. Which
+ * ambient env counts as "outer" depends on its role — a long-lived server's
+ * spawn env yields the non-runtime groups a project stamps
+ * (`outerEnvForRegistryStamp` in `env-replay.ts`, tea-rags-mcp-o0qsw).
  *
  * The ONLY env kinds outside this mechanism:
  * - secrets (OPENAI/COHERE/VOYAGE/QDRANT API keys) — never persisted;

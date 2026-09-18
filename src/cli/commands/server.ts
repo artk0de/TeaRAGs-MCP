@@ -18,7 +18,9 @@ export async function runServer(args: ServerArgs): Promise<void> {
 
   const config = parseAppConfig();
   const zodConfig = getZodConfig();
-  const ctx = await createAppContext(config);
+  // A server's env is every served project's default, not an override of any
+  // one project's stamped index shape (tea-rags-mcp-o0qsw).
+  const ctx = await createAppContext(config, { ambientEnvRole: "server" });
   const promptsConfig = loadPrompts(config);
 
   // Log deprecation warnings

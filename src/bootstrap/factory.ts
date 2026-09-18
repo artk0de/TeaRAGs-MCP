@@ -56,7 +56,7 @@ import {
   createDatabaseMigrationApplier,
   DATABASE_MIGRATIONS_MODULE_URL,
 } from "../core/domains/maintenance/migration/database/index.js";
-import { CollectionRegistry } from "../core/domains/maintenance/registry/index.js";
+import { CollectionRegistry, type AmbientEnvRole } from "../core/domains/maintenance/registry/index.js";
 import { WorktreeProvisioner } from "../core/domains/maintenance/worktree/index.js";
 import type { CodegraphDeps, CodegraphWorkerConfig } from "../core/domains/trajectory/codegraph/index.js";
 import { InMemoryGlobalSymbolTable } from "../core/domains/trajectory/codegraph/symbols/symbol-table.js";
@@ -853,17 +853,25 @@ function createIngestFacade(
   });
 }
 
-/** Optional bootstrap hooks the CLI wires to surface startup progress over IPC. */
-export interface AppContextHooks {
-  /** Notified while a startup TurboQuant collection migration's optimizer pass runs. */
+/** What the entry point building an AppContext declares about its own process. */
+export interface AppContextOptions {
+  /** Notified while a startup TurboQuant collection migration's optimizer pass runs (CLI, over IPC). */
   onTurboMigration?: TurboMigrationListener;
+  /**
+   * Where this process's env came from. The MCP server entry points declare
+   * `server`, so a registered project's stamped index shape outranks the spawn
+   * env in BOTH the index run and the env drift axis (tea-rags-mcp-o0qsw).
+   * Everything else is an `invocation` whose shell env overrides the stamp.
+   */
+  ambientEnvRole?: AmbientEnvRole;
 }
 
-export async function createAppContext(config: AppConfig, hooks?: AppContextHooks): Promise<AppContext> {
+export async function createAppContext(config: AppConfig, options?: AppContextOptions): Promise<AppContext> {
   const zodConfig = getZodConfig();
   setDebug(zodConfig.core.debug);
+  const ambientEnvRole = options?.ambientEnvRole ?? "invocation";
 
-  const infra = await resolveInfrastructure(config, zodConfig, hooks?.onTurboMigration);
+  const infra = await resolveInfrastructure(config, zodConfig, options?.onTurboMigration);
   // Registry must exist before wireCodegraph because GraphFacade resolves
   // the `{ collection, project, path }` triad through it. startWatching()
   // is deferred until later — registry construction alone is side-effect
@@ -920,15 +928,18 @@ export async function createAppContext(config: AppConfig, hooks?: AppContextHook
   // Third axis: the indexing env. The resolver it takes builds what the NEXT
   // run on that collection would use, the way `ProjectIngestFactory#forPath`
   // builds it for a real run — so a finding means the outer env explicitly
-  // overrides the stamp, not that a code default moved. The third argument is
-  // THIS process's resolved env, built from the very config the composition
-  // above was wired from: the two enable flags are compared against that, since
-  // replay would restore a stamped flag and hide the flip that explains a
-  // payload-key family going missing. It cannot vary per collection, so it is
-  // built once, here.
+  // overrides the stamp, not that a code default moved. It resolves under the
+  // SAME ambient env role the ingest factory below is handed: were the two to
+  // differ, a server's spawn env would be reported as overriding a stamp that no
+  // index run of that server would actually override (tea-rags-mcp-o0qsw). The
+  // third argument is THIS process's resolved env, built from the very config
+  // the composition above was wired from: the two enable flags are compared
+  // against that, since replay would restore a stamped flag and hide the flip
+  // that explains a payload-key family going missing. It cannot vary per
+  // collection, so it is built once, here.
   const envDriftMonitor = new EnvDriftMonitor(
     collectionRegistry,
-    buildEffectiveIndexEnvSnapshot,
+    (stored, collectionName) => buildEffectiveIndexEnvSnapshot(stored, collectionName, process.env, ambientEnvRole),
     buildRunningIndexEnvSnapshot(zodConfig),
   );
   // One reporter over every axis, built HERE — ahead of the ingest slice —
@@ -999,6 +1010,7 @@ export async function createAppContext(config: AppConfig, hooks?: AppContextHook
   // runs on different projects stay isolated (tea-rags-mcp-pmfm4).
   const projectIngestFactory = new ProjectIngestFactory({
     registry: collectionRegistry,
+    ambientEnvRole,
     processIngest: ingest,
     buildIngest: (env) => {
       const projectZodConfig = parseAppConfigZod(env);

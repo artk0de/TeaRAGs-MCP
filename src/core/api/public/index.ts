@@ -86,7 +86,13 @@ export { CollectionRegistry } from "../../domains/maintenance/registry/index.js"
 export { PROJECT_NAME_RE } from "../../domains/maintenance/registry/index.js";
 export { REGISTRY_ENV_ALLOWLIST, REGISTRY_ENV_GROUPS } from "../../domains/maintenance/registry/index.js";
 export { canonicalRegistryEnvKeys, registryEnvGroupMembers } from "../../domains/maintenance/registry/index.js";
-export { pickRegistryEntry, replayRegistryEnv, resolveRegistryEnv } from "../../domains/maintenance/registry/index.js";
+export {
+  outerEnvForRegistryEntry,
+  pickRegistryEntry,
+  replayRegistryEnv,
+  resolveRegistryEnv,
+} from "../../domains/maintenance/registry/index.js";
+export type { AmbientEnvRole } from "../../domains/maintenance/registry/index.js";
 export {
   RegistryQdrantBackendUnresolvedError,
   resolveRegistryQdrantBackend,
