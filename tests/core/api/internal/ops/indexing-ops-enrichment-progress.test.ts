@@ -100,7 +100,10 @@ describe("IndexingOps csyve stage instrumentation", () => {
     // pipelineLog.resetProfiler() + checkEmbeddingHealth (embed-warmup finally) ran;
     // the function returns the converted IndexStats shape.
     expect(result.status).toBe("completed");
-    expect(deps.reindex.reindexChanges).toHaveBeenCalledWith("/repo", undefined);
+    expect(deps.reindex.reindexChanges).toHaveBeenCalledWith("/repo", undefined, {
+      chunkSize: 1000,
+      modelInfo: undefined,
+    });
   });
 
   it("embed-warmup finally block runs even when embed succeeds on first attempt", async () => {

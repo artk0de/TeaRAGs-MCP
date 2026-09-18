@@ -487,7 +487,12 @@ export class IndexingOps {
     // profiler here too so "embed-warmup" survives to the stage summary (csyve).
     pipelineLog.resetProfiler();
     await this.checkEmbeddingHealth();
-    const result = await this.reindex.reindexChanges(path, progressCallback);
+    const collectionName = await this.resolveCollectionForPath(await validatePath(path));
+    const result = await this.reindex.reindexChanges(
+      path,
+      progressCallback,
+      await this.syncChunkingOverrides(collectionName),
+    );
     await this.refreshStats(path);
     return result;
   }
@@ -705,9 +710,7 @@ export class IndexingOps {
     await this.modelGuard?.ensureMatch(collectionName);
     await this.checkEmbeddingHealth();
 
-    const modelInfo = await this.resolveOrBackfillModelInfo(collectionName);
-    const effectiveChunkSize = this.resolveEffectiveChunkSize(modelInfo);
-    const overrides = { chunkSize: effectiveChunkSize, modelInfo };
+    const overrides = await this.syncChunkingOverrides(collectionName);
 
     // Await recovery BEFORE the reindex (not fire-and-forget). Recovery
     // re-enriches stale/unenriched points left by prior runs; running it first
@@ -952,7 +955,15 @@ export class IndexingOps {
     // The sync keeps its ORDINARY drift repair (unchanged, hash-diffed), which
     // is what still heals a provider store that fell behind — including rows for
     // eligible files carrying no chunks, the one set the recompute cannot see.
-    const changeStats = await this.reindex.reindexChanges(path, progressCallback);
+    //
+    // It DOES carry the chunking overrides every other sync carries: a file the
+    // tree changed is re-chunked here, and chunked at another size its
+    // boundaries — and point ids — would disagree with every other file's.
+    const changeStats = await this.reindex.reindexChanges(
+      path,
+      progressCallback,
+      await this.syncChunkingOverrides(aliasName),
+    );
     const startedAt = Date.now();
     const enrichmentMetrics = await this.enrichment.recomputeEnrichments(
       collectionName,
@@ -1086,6 +1097,22 @@ export class IndexingOps {
     } catch {
       return undefined;
     }
+  }
+
+  /**
+   * What every sync of an EXISTING collection hands the pipeline, so a file it
+   * re-chunks gets the size a full index gave every other file: the model's
+   * info and the chunk size derived from it (`resolveEffectiveChunkSize`).
+   * The one place the pair is built — the incremental run, the
+   * `--force-enrichments` sync leg and the deprecated explicit reindex all take
+   * it from here, because a sync that fell back to `config.chunkSize` chunked
+   * its changed files at another size than the rest of the index.
+   */
+  private async syncChunkingOverrides(
+    collectionName: string,
+  ): Promise<{ chunkSize: number; modelInfo: ModelInfo | undefined }> {
+    const modelInfo = await this.resolveOrBackfillModelInfo(collectionName);
+    return { chunkSize: this.resolveEffectiveChunkSize(modelInfo), modelInfo };
   }
 
   /**

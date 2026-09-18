@@ -110,7 +110,13 @@ describe("IndexingOps — forceEnrichments", () => {
 
     await ops.run("/repo", { forceEnrichments: ["codegraph"] });
 
-    expect(deps.reindex.reindexChanges).toHaveBeenCalledWith("/repo", undefined);
+    // Exact arity: no provider selectors reach the sync — only the chunking
+    // overrides every sync carries (model-derived size; config size here, as
+    // the provider reports no model info).
+    expect(deps.reindex.reindexChanges).toHaveBeenCalledWith("/repo", undefined, {
+      chunkSize: 1000,
+      modelInfo: undefined,
+    });
   });
 
   it("hands --languages to the recompute, which owns the scoping (bd tea-rags-mcp-df1rn)", async () => {
@@ -125,7 +131,11 @@ describe("IndexingOps — forceEnrichments", () => {
 
     await ops.run("/repo", { forceEnrichments: ["codegraph"], languages: ["typescript"] });
 
-    expect(deps.reindex.reindexChanges).toHaveBeenCalledWith("/repo", undefined);
+    // Exact arity and exact overrides: no language filter reaches the sync.
+    expect(deps.reindex.reindexChanges).toHaveBeenCalledWith("/repo", undefined, {
+      chunkSize: 1000,
+      modelInfo: undefined,
+    });
     expect(deps.enrichment.recomputeEnrichments).toHaveBeenCalledWith(
       expect.any(String),
       expect.any(String),
