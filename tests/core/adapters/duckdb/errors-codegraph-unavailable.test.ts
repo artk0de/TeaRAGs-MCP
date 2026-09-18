@@ -11,6 +11,7 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  CodegraphClientStaleBuildError,
   CodegraphDaemonBuildSkewError,
   CodegraphDaemonExitTimeoutError,
   CodegraphDaemonStaleBuildError,
@@ -43,6 +44,60 @@ describe("CodegraphDaemonStaleBuildError — remedy in the message (a43tr S4)", 
 
     expect(err.hint).toContain("/mcp reconnect");
   });
+
+  // bd tea-rags-mcp-1wr7p: a server that merely predates the on-disk build is
+  // now told apart BEFORE any drain, so a build that keeps coming back is
+  // someone else's tree — the 2026-08-17 two-builds fight over one daemon.
+  it("the same-build hint blames another build tree contending for the daemon, not a lone stale binary", () => {
+    const err = new CodegraphDaemonStaleBuildError("/tmp/cg/daemon.sock", "CLIENT", "OTHER-TREE", [
+      "OTHER-TREE",
+      "OTHER-TREE",
+      "OTHER-TREE",
+    ]);
+
+    expect(err.hint).toMatch(/same build came back/i);
+    expect(err.hint).toMatch(/another build tree/i);
+    expect(err.hint).toMatch(/respawns its daemon after each drain/i);
+    expect(err.hint).toContain("npm link");
+    expect(err.hint).toContain("npm i -g");
+    expect(err.hint).toMatch(/could not be read/i);
+    expect(err.hint).not.toMatch(/no other session is racing/i);
+  });
+});
+
+describe("CodegraphClientStaleBuildError (bd tea-rags-mcp-1wr7p)", () => {
+  it("names both builds, the missing ops and the reconnect remedy, and says the daemon was left running", () => {
+    const err = new CodegraphClientStaleBuildError({
+      socketPath: "/tmp/cg/daemon.sock",
+      clientFingerprint: "CLIENT-OLD",
+      daemonFingerprint: "DISK-NEW",
+      missingOps: ["listAllPass1Aggregates"],
+    });
+
+    expect(err).toBeInstanceOf(InfraError);
+    expect(err.code).toBe("INFRA_CODEGRAPH_CLIENT_STALE_BUILD");
+    expect(err.httpStatus).toBe(503);
+    expect(err.message).toContain("CLIENT-OLD");
+    expect(err.message).toContain("DISK-NEW");
+    expect(err.message).toContain("listAllPass1Aggregates");
+    expect(err.message).toContain("/mcp reconnect");
+    expect(err.hint).toMatch(/left running/i);
+    // Restarting its own server process is not something tea-rags does.
+    expect(err.hint).toMatch(/does not restart/i);
+  });
+
+  it("covers a daemon that advertises no op list at all", () => {
+    const err = new CodegraphClientStaleBuildError({
+      socketPath: "/tmp/cg/daemon.sock",
+      clientFingerprint: "CLIENT-OLD",
+      daemonFingerprint: "DISK-OTHER",
+      missingOps: [],
+    });
+
+    expect(err.missingOps).toEqual([]);
+    expect(err.message).toMatch(/does not advertise/i);
+    expect(err.message).toContain("/mcp reconnect");
+  });
 });
 
 describe("CodegraphDaemonUnreachableError", () => {
@@ -71,6 +126,15 @@ describe("CodegraphDaemonUnreachableError", () => {
 describe("isCodegraphUnavailableError", () => {
   const family: readonly [string, Error][] = [
     ["stale build", new CodegraphDaemonStaleBuildError("/s", "a", "b", ["b"])],
+    [
+      "client stale build",
+      new CodegraphClientStaleBuildError({
+        socketPath: "/s",
+        clientFingerprint: "a",
+        daemonFingerprint: "b",
+        missingOps: ["op"],
+      }),
+    ],
     ["build skew", new CodegraphDaemonBuildSkewError({ socketPath: "/s", missingOps: ["op"] })],
     ["exit timeout", new CodegraphDaemonExitTimeoutError("/s", 3000)],
     [

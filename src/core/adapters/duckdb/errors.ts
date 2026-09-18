@@ -70,8 +70,11 @@ export class CodegraphShadowDatabaseRefusedError extends InfraError {
  * AFTER each restart tell them apart. A different build each time means other
  * live sessions keep winning the cross-process spawn lock and cold-spawning
  * from their own trees — transient, worth retrying. The same build every time
- * means nobody is racing us: our own respawn hook keeps launching one stale
- * binary, which retrying will never fix.
+ * means one other session on another build tree respawns its daemon after each
+ * drain — two builds contending for one daemon, which retrying will never fix.
+ * A client that merely predates the on-disk build never reaches this error
+ * (bd tea-rags-mcp-1wr7p): the handshake detects it before draining, unless
+ * its own build tree could not be read.
  */
 export class CodegraphDaemonStaleBuildError extends InfraError {
   constructor(
@@ -103,16 +106,70 @@ export class CodegraphDaemonStaleBuildError extends InfraError {
             "signature of a transient multi-process race, not a wedged daemon. Retry once the " +
             "other session finishes, or re-run `npm run build && npm link` so every session " +
             "shares one build, then restart the MCP server (`/mcp reconnect`)."
-          : `The same build came back after every restart (${distinct.join(", ")}), so no other ` +
-            "session is racing us. Either this MCP server process predates the last build — the " +
-            "respawn hook launches the rebuilt daemon while this process keeps the old fingerprint, " +
-            "so retrying can never converge: restart the MCP server (`/mcp reconnect`) — or the " +
-            "respawn hook launches a stale binary (a `build/` that was never rebuilt, or an " +
-            "`npm link` pointing at another checkout): re-run `npm run build && npm link` in the " +
-            "checkout you intend to use, then reconnect.",
+          : `The same build came back after every restart (${distinct.join(", ")}), and it is not ` +
+            "the build on disk under this process — a server that merely predates the last rebuild " +
+            "is detected before any drain and never gets here. The usual cause is another live " +
+            "tea-rags session running from another build tree (a different checkout or worktree) " +
+            "that respawns its daemon after each drain: two builds contending for the one " +
+            "machine-wide daemon. `npm link` re-pointed at another checkout, or `npm i -g` over an " +
+            "active link, splits sessions the same way — a running process keeps the tree it " +
+            "resolved at start while new sessions launch from the new one. Let the other session " +
+            "finish, or point every session at one build (`npm run build && npm link` in the " +
+            "checkout you intend to use) and restart the MCP server (`/mcp reconnect`). Only when " +
+            "this process's own build tree could not be read (removed or mid-rewrite) can this " +
+            "server itself be the stale side — reconnecting it covers that case too.",
       httpStatus: 503,
       cause,
     });
+  }
+}
+
+/**
+ * THIS process is the stale side of a build mismatch, and the up-to-date daemon
+ * cannot serve every op its old code requires (bd tea-rags-mcp-1wr7p).
+ *
+ * The daemon reports the build that is on disk now; this process loaded an
+ * older one before a rebuild, `npm link` or `npm i -g` upgrade. Draining cannot
+ * converge — every respawn launches that same on-disk build — and each drain
+ * would cut every session already on it, so the daemon is left running and
+ * only reloading this process helps. When the daemon DOES advertise every
+ * required op the pool proceeds and this error is never raised.
+ *
+ * `missingOps` is empty when the daemon advertises no op list at all.
+ */
+export class CodegraphClientStaleBuildError extends InfraError {
+  readonly missingOps: readonly string[];
+
+  constructor(
+    skew: {
+      socketPath: string;
+      clientFingerprint: string;
+      daemonFingerprint: string;
+      missingOps: readonly string[];
+    },
+    cause?: Error,
+  ) {
+    const unserved =
+      skew.missingOps.length > 0
+        ? `lacks op${skew.missingOps.length === 1 ? "" : "s"} ${skew.missingOps.join(", ")} this process requires`
+        : "does not advertise the ops it serves";
+    super({
+      code: "INFRA_CODEGRAPH_CLIENT_STALE_BUILD",
+      // The remedy rides the message (bd tea-rags-mcp-a43tr): optional consumers
+      // quote the message when they degrade.
+      message:
+        `This tea-rags process runs build ${skew.clientFingerprint}, but the build on disk and the ` +
+        `codegraph daemon at ${skew.socketPath} are ${skew.daemonFingerprint}, and that daemon ${unserved} — ` +
+        "restart the tea-rags MCP server (`/mcp reconnect`) to load the current build",
+      hint:
+        "This process predates the last rebuild, `npm link` or `npm i -g` upgrade; the daemon is the " +
+        "up-to-date peer, so it was left running — draining it would only respawn the same build and " +
+        "disconnect every session already on it. tea-rags does not restart its own server process: " +
+        "reconnect the MCP server (`/mcp reconnect`) or restart the client that launched it.",
+      httpStatus: 503,
+      cause,
+    });
+    this.missingOps = skew.missingOps;
   }
 }
 
@@ -226,6 +283,7 @@ export class CodegraphDaemonUnreachableError extends InfraError {
  */
 export type CodegraphUnavailableError =
   | CodegraphDaemonStaleBuildError
+  | CodegraphClientStaleBuildError
   | CodegraphDaemonBuildSkewError
   | CodegraphDaemonExitTimeoutError
   | CodegraphDaemonUnreachableError
@@ -234,6 +292,7 @@ export type CodegraphUnavailableError =
 export function isCodegraphUnavailableError(err: unknown): err is CodegraphUnavailableError {
   return (
     err instanceof CodegraphDaemonStaleBuildError ||
+    err instanceof CodegraphClientStaleBuildError ||
     err instanceof CodegraphDaemonBuildSkewError ||
     err instanceof CodegraphDaemonExitTimeoutError ||
     err instanceof CodegraphDaemonUnreachableError ||
