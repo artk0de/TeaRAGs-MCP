@@ -58,6 +58,11 @@ and unset it prints nothing, because the default is true.
 5. If the finding's cause has a rule (`language-capability-sync.md`,
    `index-format-versions.md`, `migrations.md`), link it from the finding's
    `note`, do not restate it.
+6. Add the same stamp to `checkWorktreeSeedCompatibility`
+   (`maintenance/worktree/worktree-seed-source.ts`). A first index seeded from a
+   sibling worktree inherits the sibling's data, so an axis the seed gate does
+   not compare is drift the seed silently copies — why and how:
+   `src/core/domains/maintenance/worktree/CLAUDE.md`.
 
 ## Why not `teaRagsVersion`
 
