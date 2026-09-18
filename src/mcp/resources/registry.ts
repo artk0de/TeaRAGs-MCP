@@ -98,7 +98,7 @@ parameter examples per tool.
 
 ## search_code Examples
 
-- "Complex code not touched in 30+ days" → query="complex logic", minAgeDays=30
+- "Complex code not touched in 30+ days" → query="complex logic", modifiedBefore="<ISO date 30 days ago>"
 - "What did John work on last week?" → author="John", maxAgeDays=7
 - "High-churn authentication code" → query="authentication", minCommitCount=5
 - "Code related to ticket TD-1234" → taskId="TD-1234"
@@ -106,7 +106,7 @@ parameter examples per tool.
 ## semantic_search Examples
 
 - Ownership analysis → rerank="ownership", metaOnly=true
-- Tech debt discovery → rerank="techDebt", minAgeDays=90
+- Tech debt discovery → rerank="techDebt", level="file", minAgeDays=90
 - Security audit → rerank="securityAudit", pathPattern="**/auth/**"
 
 ## hybrid_search Examples
@@ -228,9 +228,13 @@ export function buildFiltersDoc(): string {
   md += "**Ownership semantics:** `recentDominantAuthor*` = recent commit activity within the ";
   md += "log window (TRAJECTORY_GIT_LOG_MAX_AGE_MONTHS); `blameDominantAuthor*` = who owns ";
   md += "the live lines in HEAD via git blame. Use the latter for true ownership / silo detection.\n\n";
-  md += '**⚠ Filter level:** Filters apply to `git.chunk.*` by default. Use `level: "file"` ';
-  md += "param for file-level filters. Time-based filters (maxAgeDays/minAgeDays): ";
-  md += "prefer `level: \"file\"` — chunk-level ageDays=0 means 'no data', not 'recent'.\n\n";
+  md += "**⚠ Filter level:** `level` does two things. (1) Scope of level-aware typed filters: ";
+  md += "`minAgeDays` / `maxAgeDays` / `minCommitCount` / `taskId` read `git.chunk.*` unless effective ";
+  md += 'level `"file"` (explicit `level`, else rerank preset `signalLevel`). `modifiedAfter` / ';
+  md += "`modifiedBefore` always read `git.file.lastModifiedAt`, any `level`. (2) Result granularity: ";
+  md += '`level: "file"` → one result per file (`payload.members`). `git.chunk.ageDays` absent on ';
+  md += "chunks with no commit in chunk churn walk (all doc chunks) → chunk age filters drop them. ";
+  md += "`ageDays: 0` = last commit < 1 day before enrichment (freshest, not no-data).\n\n";
   md += "**Imports:** imports[] — file-level imports\n\n";
   md += "**Codegraph metadata** (requires codegraph indexing — typed filter params, not raw Qdrant keys):\n\n";
   md += "File-level (default level): `minFanIn`, `minFanOut`, `minInstability`, `minTransitiveImpact`, ";

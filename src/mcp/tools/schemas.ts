@@ -206,10 +206,30 @@ function typedFilterFields() {
     modifiedAfter: z
       .string()
       .optional()
-      .describe("Filter code modified after this date. ISO format: '2024-01-01' or '2024-01-01T00:00:00Z'"),
-    modifiedBefore: z.string().optional().describe("Filter code modified before this date. ISO format: '2024-12-31'"),
-    minAgeDays: coerceNumber().optional().describe("Filter code older than N days (since last modification)."),
-    maxAgeDays: coerceNumber().optional().describe("Filter code newer than N days (since last modification)."),
+      .describe(
+        "Filter code whose file's last commit (git.file.lastModifiedAt) is on/after this date. " +
+          "File-level at any `level` — no level 'file' needed. ISO format: '2024-01-01' or '2024-01-01T00:00:00Z'",
+      ),
+    modifiedBefore: z
+      .string()
+      .optional()
+      .describe(
+        "Filter code whose file's last commit (git.file.lastModifiedAt) is on/before this date. " +
+          "File-level at any `level`. ISO format: '2024-12-31'",
+      ),
+    minAgeDays: coerceNumber()
+      .optional()
+      .describe(
+        "Filter code older than N days since last commit. Level-aware: git.chunk.ageDays by default " +
+          "(absent → dropped on docs + chunks with no commit in chunk git window); " +
+          "level 'file' → git.file.ageDays, results grouped per file.",
+      ),
+    maxAgeDays: coerceNumber()
+      .optional()
+      .describe(
+        "Filter code newer than N days since last commit (0 = under a day, counted at enrichment). " +
+          "Level-aware like minAgeDays. File-level recency at chunk granularity → modifiedAfter.",
+      ),
     minCommitCount: coerceNumber()
       .optional()
       .describe("Filter by minimum number of commits touching the chunk (churn indicator)."),
@@ -299,6 +319,8 @@ function levelField() {
           "'file' = rank files as aggregated units — use for tech debt and ownership analysis; " +
           "each result carries payload.members, an outline of what matched inside that file " +
           "(markdown files get their heading TOC), in the same format find_symbol(relativePath) returns. " +
+          "Also sets payload scope of level-aware filters (minAgeDays, maxAgeDays, minCommitCount, taskId: " +
+          "git.chunk.* unless effective level 'file'); modifiedAfter/modifiedBefore file-level regardless. " +
           "Default: determined by preset signalLevel. Explicit value overrides preset.",
       ),
   };

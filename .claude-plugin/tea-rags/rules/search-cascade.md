@@ -311,9 +311,9 @@ Beyond `query` + `pathPattern`, tea-rags accepts typed sugar fields (`language`,
 `testFile`, `documentation`, `author`, `taskId`, `minAgeDays`/`maxAgeDays`,
 `minCommitCount`, `modifiedAfter`/`modifiedBefore`, `fileExtension`,
 `chunkType`, `symbolId`) and a raw `filter:` escape hatch. For full guidance on
-field selection, `level: "file" | "chunk"` (mandatory for time-based fields),
-pathPattern picomatch negation, and raw filter syntax — invoke
-`/tea-rags:filter-building`.
+field selection, `level: "file" | "chunk"` (filter scope AND result granularity
+— `modifiedAfter`/`modifiedBefore` never need it), pathPattern picomatch
+negation, and raw filter syntax — invoke `/tea-rags:filter-building`.
 
 For filter syntax and the full payload-key list, read the resource on demand:
 

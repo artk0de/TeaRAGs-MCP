@@ -318,7 +318,12 @@ describe("Resource builders", () => {
     it("warns about filter level for time-based filters", () => {
       const md = buildFiltersDoc();
       expect(md).toContain("level");
-      expect(md).toContain("ageDays=0");
+      // modifiedAfter/modifiedBefore are file-level whatever `level` says;
+      // `level: "file"` also regroups results one per file.
+      expect(md).toContain("git.file.lastModifiedAt");
+      expect(md).toContain("one result per file");
+      // ageDays 0 is the freshest code, not "no data" (absent key = no data).
+      expect(md).not.toContain("ageDays=0");
     });
 
     it("documents codegraph typed filter params (tea-rags-mcp-tr5k)", () => {
