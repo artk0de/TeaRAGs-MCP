@@ -143,7 +143,14 @@ function collectGoImports(root: AstNode): ImportRef[] {
     const path = node.childForFieldName("path");
     if (!path) return;
     const literal = path.text.replace(/^["`]|["`]$/g, "");
-    out.push({ importText: literal, startLine: node.startPosition.row + 1 });
+    const ref: ImportRef = { importText: literal, startLine: node.startPosition.row + 1 };
+    // bd tea-rags-mcp-e6xx — the name the import binds, when the source spells
+    // one: an alias is the only name a qualified call can use, `.` puts the
+    // package's names in this file's scope, `_` binds nothing. A plain import
+    // binds the package's own name, which the resolver reads off the path.
+    const name = node.childForFieldName("name");
+    if (name) ref.importedNames = [name.text];
+    out.push(ref);
   });
   return out;
 }

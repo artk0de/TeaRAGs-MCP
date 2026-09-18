@@ -18,10 +18,11 @@ import {
   pickSingleCandidate,
   type AmbiguousResolveMode,
   type CallContext,
+  type ImportRef,
   type SymbolResolutionTarget,
 } from "../../../../../contracts/types/codegraph.js";
 import type { SymbolIdComposer } from "../../../../../contracts/types/language.js";
-import type { GoModuleMapCache } from "../go-module-map.js";
+import type { GoModuleMap, GoModuleMapCache } from "../go-module-map.js";
 import { selectGoMember } from "../struct-member-selection.js";
 
 export interface ResolverConfig {
@@ -86,9 +87,28 @@ export function goPackageDirOf(relPath: string): string {
   return dir === "." ? "" : dir;
 }
 
-/** `importText`'s last `/`-segment equals the bare receiver. */
-export function importMatchesReceiver(importText: string, receiver: string): boolean {
-  const segments = importText.split("/");
+/**
+ * Whether `receiver` is the name `imp` binds in the importing file: the alias
+ * the walker recorded when the source spells one (bd tea-rags-mcp-e6xx — once
+ * aliased, the path's last segment is NOT in scope), else the path's last
+ * `/`-segment. A dot or blank import binds no qualifier at all.
+ */
+export function importMatchesReceiver(imp: ImportRef, receiver: string): boolean {
+  const explicit = imp.importedNames?.[0];
+  if (explicit !== undefined) return explicit === receiver && explicit !== "." && explicit !== "_";
+  const segments = imp.importText.split("/");
   const last = segments[segments.length - 1] ?? "";
   return last === receiver;
+}
+
+/**
+ * The repo-relative package directory an import names, `undefined` when it is
+ * not a project package (bd tea-rags-mcp-e6xx). With go.mod modules declared
+ * the module map answers — `<module>/<subpath>` is `<subpath>` beneath that
+ * go.mod, and the standard library or a dependency is no project package;
+ * without one (GOPATH-shaped fixtures) the import path is the directory.
+ */
+export function goImportPackageDir(importText: string, modules: GoModuleMap | undefined): string | undefined {
+  if (modules?.declaresModules) return modules.packageDirOf(importText);
+  return importText.replace(/^\.\//, "");
 }

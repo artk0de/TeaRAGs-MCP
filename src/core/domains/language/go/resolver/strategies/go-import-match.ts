@@ -1,13 +1,13 @@
 import { CONTINUE, resolved } from "../../../../../contracts/resolution.js";
 import { pickSingleCandidate, type CallContext, type CallRef } from "../../../../../contracts/types/codegraph.js";
 import type { SymbolResolutionOutcome, SymbolResolutionStrategy } from "../../../../../contracts/types/language.js";
-import type { GoModuleMap } from "../go-module-map.js";
-import { goPackageDirOf, importMatchesReceiver, type ResolverConfig } from "./shared.js";
+import { goImportPackageDir, goPackageDirOf, importMatchesReceiver, type ResolverConfig } from "./shared.js";
 
 /**
- * Step 1 — the receiver names an imported package (`bytesconv.StringToBytes`,
- * the import's last path segment equals the receiver). The call resolves to a
- * package-level declaration of that name in the package's OWN directory.
+ * Step 1 — the receiver names an imported package (`bytesconv.StringToBytes`:
+ * the import's alias when the source spells one, else its last path segment).
+ * The call resolves to a package-level declaration of that name in the
+ * package's OWN directory.
  *
  * Which directory an import names (bd tea-rags-mcp-e6xx):
  *   - the project declares go.mod modules → `<module>/<subpath>` is `<subpath>`
@@ -32,7 +32,7 @@ export class GoImportMatchSymbolResolutionStrategy implements SymbolResolutionSt
   attempt(call: CallRef, ctx: CallContext): SymbolResolutionOutcome {
     const { receiver } = call;
     if (!receiver) return CONTINUE;
-    const match = ctx.imports.find((imp) => importMatchesReceiver(imp.importText, receiver));
+    const match = ctx.imports.find((imp) => importMatchesReceiver(imp, receiver));
     if (!match) return CONTINUE;
     const packageDir = goImportPackageDir(match.importText, this.cfg.moduleMaps?.forRoot(ctx.projectRoot));
     if (packageDir === undefined) return CONTINUE;
@@ -46,10 +46,4 @@ export class GoImportMatchSymbolResolutionStrategy implements SymbolResolutionSt
     if (target) return resolved({ targetRelPath: target.relPath, targetSymbolId: target.symbolId });
     return CONTINUE;
   }
-}
-
-/** The repo-relative package directory an import names, `undefined` when it is not a project package. */
-function goImportPackageDir(importText: string, modules: GoModuleMap | undefined): string | undefined {
-  if (modules?.declaresModules) return modules.packageDirOf(importText);
-  return importText.replace(/^\.\//, "");
 }

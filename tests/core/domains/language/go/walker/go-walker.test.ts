@@ -30,6 +30,29 @@ describe("extractFromGoFile — imports", () => {
     expect(r.imports.map((i) => i.importText)).toEqual(["foo/bar"]);
   });
 
+  // bd tea-rags-mcp-e6xx — the name an import binds in the file. An alias is
+  // the only name a package-qualified call can use; `.` puts the package's
+  // names in the file's own scope, where a bare call resolves; `_` binds none.
+  it("records an explicit import name — alias, dot or blank — and nothing for a plain import", () => {
+    const src = [
+      "package main",
+      "import (",
+      '\tal "b/alias"',
+      '\t. "a/dot"',
+      '\t_ "c/blank"',
+      '\t"d/plain"',
+      ")",
+      "",
+    ].join("\n");
+    const r = extractFromGoFile({ tree: parse(src), code: src, relPath: "main.go", language: "go", chunks: [] });
+    expect(r.imports.map((i) => [i.importText, i.importedNames])).toEqual([
+      ["b/alias", ["al"]],
+      ["a/dot", ["."]],
+      ["c/blank", ["_"]],
+      ["d/plain", undefined],
+    ]);
+  });
+
   it("records startLine per import", () => {
     const src = 'package main\nimport (\n  "a"\n  "b"\n)\n';
     const r = extractFromGoFile({ tree: parse(src), code: src, relPath: "x.go", language: "go", chunks: [] });

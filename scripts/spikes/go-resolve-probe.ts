@@ -21,7 +21,7 @@
  *     --corpus <abs path to gin> [--member JSON,GET,...] [--residual 40]
  */
 
-import { resolve as resolvePath } from "node:path";
+import { posix, resolve as resolvePath } from "node:path";
 
 import type { SymbolResolutionTarget } from "../../src/core/contracts/types/codegraph.js";
 import { formatKindStatsBlock, run } from "../codegraph-chain-tally.js";
@@ -62,6 +62,20 @@ async function main(): Promise<void> {
         `    ${row.relPath}:${row.startLine} ${String(row.receiver)}.${row.member} → ${describeTarget(row.runnerAnswer)}`,
       );
     }
+  }
+
+  // A bare `foo()` in Go names the caller's OWN package (or a dot-import), so a
+  // bare-call edge landing in another directory is a fabrication unless a
+  // dot-import explains it — listed, so every one can be checked by hand.
+  const crossPackage = result.rows.filter(
+    (row) =>
+      row.receiver === null &&
+      row.runnerAnswer !== null &&
+      posix.dirname(row.relPath) !== posix.dirname(row.runnerAnswer.targetRelPath),
+  );
+  out.push("", `BARE-CALL EDGES CROSSING A PACKAGE BOUNDARY: ${crossPackage.length}`);
+  for (const row of crossPackage) {
+    out.push(`    ${row.relPath}:${row.startLine} ${row.member} → ${describeTarget(row.runnerAnswer)}`);
   }
 
   // Residual unresolved sites keyed by receiver text: the head of the list is
