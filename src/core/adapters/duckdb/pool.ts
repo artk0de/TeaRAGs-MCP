@@ -53,16 +53,6 @@ function needsDaemonReplacement(verdict: DaemonCapabilityVerdict): boolean {
 }
 
 /**
- * A pool that cannot respawn refuses a daemon lacking a required op, or one from
- * another build too old to say what it supports — proceeding against either
- * turns missing ops into missing data (bd tea-rags-mcp-39xca.4). A daemon from
- * another build that advertises every required op is still tolerated.
- */
-function refusesDaemon(verdict: DaemonCapabilityVerdict): boolean {
-  return verdict.missingRequiredOps.length > 0 || (verdict.predatesCapabilityList && verdict.buildMismatch);
-}
-
-/**
  * The CLIENT is the stale side of a build mismatch (bd tea-rags-mcp-1wr7p): the
  * daemon runs the build on disk NOW, which this process's loaded code predates.
  * Draining cannot converge — every respawn launches that same on-disk build — so
@@ -485,7 +475,8 @@ export class GraphDbClientPool {
     collectionName: PhysicalCollectionName,
   ): Promise<DaemonGraphDbClient> {
     // Dynamic so direct/test mode never loads the node:net socket code.
-    const { DaemonGraphDbClient, assessDaemonCapability } = await import("./daemon/client.js");
+    const { DaemonGraphDbClient, assessDaemonCapability, isDaemonRefusedWithoutRespawn } =
+      await import("./daemon/client.js");
     const restart = this.options.daemonRestart;
     const localFingerprint = restart?.buildFingerprint ?? getBuildFingerprint();
     const readOnDisk = restart?.readOnDiskBuildFingerprint ?? readOnDiskBuildFingerprint;
@@ -512,7 +503,7 @@ export class GraphDbClientPool {
     // op; refuse one lacking an op, or too old to say (bd tea-rags-mcp-39xca.4).
     const respawn = restart?.respawn;
     if (!respawn) {
-      if (refusesDaemon(verdict)) {
+      if (isDaemonRefusedWithoutRespawn(verdict)) {
         await first.close();
         throw new CodegraphDaemonBuildSkewError({
           socketPath,
@@ -614,7 +605,8 @@ export class GraphDbClientPool {
     verdict: DaemonCapabilityVerdict,
     builds: { socketPath: string; clientFingerprint: string; onDisk: string },
   ): Promise<DaemonGraphDbClient> {
-    if (refusesDaemon(verdict)) {
+    const { isDaemonRefusedWithoutRespawn } = await import("./daemon/client.js");
+    if (isDaemonRefusedWithoutRespawn(verdict)) {
       await client.close();
       throw new CodegraphClientStaleBuildError({
         socketPath: builds.socketPath,

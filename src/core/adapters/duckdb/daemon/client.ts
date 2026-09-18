@@ -127,12 +127,10 @@ export function assessDaemonCapability(
  * The bar a client that cannot replace the daemon holds it to (bd
  * tea-rags-mcp-39xca.4): it refuses a daemon lacking a required op, or one from
  * another build too old to say what it serves. A daemon from another build that
- * advertises every required op is tolerated. The replay path applies it too (bd
- * tea-rags-mcp-f924y).
- *
- * Merge seam: `pool.ts` states the same rule as its private `refusesDaemon`,
- * which the 1wr7p branch also calls from `settleWithStaleClient`. Once that
- * branch lands, the pool should call this instead of keeping its own copy.
+ * advertises every required op is tolerated — proceeding against either refused
+ * shape turns missing ops into missing data. The pool's hookless path and its
+ * stale-client settle (bd tea-rags-mcp-1wr7p) and the replay path (bd
+ * tea-rags-mcp-f924y) all apply this one rule.
  */
 export function isDaemonRefusedWithoutRespawn(verdict: DaemonCapabilityVerdict): boolean {
   return verdict.missingRequiredOps.length > 0 || (verdict.predatesCapabilityList && verdict.buildMismatch);
