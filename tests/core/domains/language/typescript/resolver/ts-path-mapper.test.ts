@@ -212,6 +212,61 @@ describe("mapImportToFile explicit TypeScript extensions (bd tea-rags-mcp-x9qsh)
   });
 });
 
+/**
+ * `allowJs`: a TypeScript file importing a module that IS JavaScript (bd
+ * tea-rags-mcp-x9qsh). tsc tries the TypeScript sources and declarations first
+ * and the specifier's own JavaScript file last; the mapper stopped before the
+ * last step and named a `.ts` that does not exist. The JavaScript answer is
+ * taken only when the probe confirms it — never as the unverified fallback.
+ */
+describe("mapImportToFile allowJs fallback to the JavaScript file (bd tea-rags-mcp-x9qsh)", () => {
+  it("maps a .js / .mjs / .cjs / .jsx specifier to its JavaScript file when no TS source exists", () => {
+    const exists = (rel: string) =>
+      rel === "src/legacy.js" || rel === "src/esm.mjs" || rel === "src/common.cjs" || rel === "src/view.jsx";
+    expect(mapImportToFile("./legacy.js", "src/app.ts", NO_ALIASES, exists)).toBe("src/legacy.js");
+    expect(mapImportToFile("./esm.mjs", "src/app.ts", NO_ALIASES, exists)).toBe("src/esm.mjs");
+    expect(mapImportToFile("./common.cjs", "src/app.ts", NO_ALIASES, exists)).toBe("src/common.cjs");
+    expect(mapImportToFile("./view.jsx", "src/app.tsx", NO_ALIASES, exists)).toBe("src/view.jsx");
+  });
+
+  it("prefers the TypeScript source and the declaration over the JavaScript file", () => {
+    expect(mapImportToFile("./legacy.js", "src/app.ts", NO_ALIASES, () => true)).toBe("src/legacy.ts");
+    const declared = (rel: string) => rel === "src/legacy.d.ts" || rel === "src/legacy.js";
+    expect(mapImportToFile("./legacy.js", "src/app.ts", NO_ALIASES, declared)).toBe("src/legacy.d.ts");
+    const esmDeclared = (rel: string) => rel === "src/esm.d.mts" || rel === "src/esm.mjs";
+    expect(mapImportToFile("./esm.mjs", "src/app.ts", NO_ALIASES, esmDeclared)).toBe("src/esm.d.mts");
+  });
+
+  it("never names the JavaScript file without a probe confirming it", () => {
+    expect(mapImportToFile("./legacy.js", "src/app.ts", NO_ALIASES)).toBe("src/legacy.ts");
+    expect(mapImportToFile("./legacy.js", "src/app.ts", NO_ALIASES, () => false)).toBe("src/legacy.ts");
+    expect(mapImportToFile("./esm.mjs", "src/app.ts", NO_ALIASES, () => false)).toBe("src/esm.mts");
+  });
+
+  it("maps a JavaScript module behind a tsconfig alias and the bare catch-all", () => {
+    const exists = (rel: string) => rel === "src/lib/legacy.js" || rel === "app/javascript/legacy/util.js";
+    expect(
+      mapImportToFile("@/lib/legacy.js", "src/app.ts", { baseUrl: ".", paths: { "@/*": ["src/*"] } }, exists),
+    ).toBe("src/lib/legacy.js");
+    const catchAll = { baseUrl: ".", paths: { "*": ["./app/javascript/*"] } };
+    expect(mapImportToFile("legacy/util.js", "app/javascript/Page.tsx", catchAll, exists)).toBe(
+      "app/javascript/legacy/util.js",
+    );
+  });
+
+  it("resolves a JavaScript module against a real project tree", () => {
+    const repoRoot = mkdtempSync(join(tmpdir(), "ts-path-mapper-allowjs-"));
+    mkdirSync(join(repoRoot, "src"), { recursive: true });
+    writeFileSync(join(repoRoot, "src", "legacy.js"), "export const legacy = 1;\n");
+    try {
+      const probe = createProjectFileProbe(repoRoot);
+      expect(mapImportToFile("./legacy.js", "src/app.ts", NO_ALIASES, probe)).toBe("src/legacy.js");
+    } finally {
+      rmSync(repoRoot, { recursive: true, force: true });
+    }
+  });
+});
+
 describe("mapImportToFile directory/index resolution (bd tea-rags-mcp-hzsxy)", () => {
   it("maps an extensionless specifier to the directory's index.tsx", () => {
     // The barrel-style directory module every React/TS project writes:

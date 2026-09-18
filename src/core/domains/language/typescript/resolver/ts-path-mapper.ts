@@ -184,12 +184,18 @@ export function mapImportToFile(
  * source writes `import "./foo.js"` while the file on disk is `foo.ts` (or,
  * in a React project, `foo.tsx`). `.mjs` / `.cjs` are the same convention for
  * the ESM- and CJS-only formats, whose sources are `.mts` / `.cts`.
+ *
+ * Each list ends with the specifier's own JavaScript file, where `tsc` under
+ * `allowJs` ends too: a TypeScript file importing a module that really is
+ * JavaScript (bd tea-rags-mcp-x9qsh). Last, so a TypeScript source or
+ * declaration beside it always wins, and never first, so the unverified
+ * fallback — the head of the list — stays the TypeScript source.
  */
 const SOURCE_EXTENSION_CANDIDATES: readonly { suffix: string; extensions: readonly string[] }[] = [
-  { suffix: ".js", extensions: [".ts", ".tsx", ".d.ts"] },
-  { suffix: ".jsx", extensions: [".tsx", ".ts"] },
-  { suffix: ".mjs", extensions: [".mts", ".d.mts"] },
-  { suffix: ".cjs", extensions: [".cts", ".d.cts"] },
+  { suffix: ".js", extensions: [".ts", ".tsx", ".d.ts", ".js"] },
+  { suffix: ".jsx", extensions: [".tsx", ".ts", ".jsx"] },
+  { suffix: ".mjs", extensions: [".mts", ".d.mts", ".mjs"] },
+  { suffix: ".cjs", extensions: [".cts", ".d.cts", ".cjs"] },
 ];
 
 /**
