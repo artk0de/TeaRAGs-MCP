@@ -41,6 +41,7 @@ import type {
   CycleEntry,
   CycleScope,
   EdgeKindCount,
+  FileDependencyGraph,
   FileGraphMetrics,
   FileResolveStatsWrite,
   FileScopedSymbolId,
@@ -330,6 +331,17 @@ export class DuckDbGraphClient implements GraphDbClient {
 
   streamAdjacency(scope: CycleScope): AsyncIterableIterator<[source: string, target: string, weight?: number]> {
     return this.analytics.streamAdjacency(scope);
+  }
+
+  /**
+   * Whole-graph read for the boundary diagnostics (bd tea-rags-mcp-thc7s).
+   * In-process only for now: it is not on `GraphDbClient`, so no daemon op
+   * proxies it — the report script opens a file copy directly. Exposing it
+   * through an MCP tool means adding it to the contract and the daemon op
+   * table together (bd tea-rags-mcp-94hd9).
+   */
+  async readFileDependencyGraph(): Promise<FileDependencyGraph> {
+    return this.analytics.readFileDependencyGraph();
   }
 
   async replacePageRanks(ranks: ReadonlyMap<string, number>): Promise<void> {

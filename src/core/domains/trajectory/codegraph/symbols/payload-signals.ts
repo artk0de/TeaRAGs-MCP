@@ -165,18 +165,36 @@ export const CODEGRAPH_SYMBOLS_CHUNK_SIGNALS: PayloadSignalDescriptor[] = [
  */
 export function buildCodegraphFileSignals(metrics: FileGraphMetrics, fanInP95: number): FileSignalOverlay {
   const { fanIn, fanOut, transitiveImpact } = metrics;
-  const connectionCount = fanIn + fanOut;
+  const { instability, connectionCount } = computeMartinInstability(fanIn, fanOut);
   return {
     fanIn,
     fanOut,
-    // Martin instability, with the zero-edge case pinned to 0 rather than NaN —
-    // a NaN here reaches Qdrant and every range filter over it stops matching.
-    instability: connectionCount === 0 ? 0 : fanOut / connectionCount,
+    instability,
     connectionCount,
     isHub: fanIn > fanInP95,
     isLeaf: fanOut === 0 && fanIn > 0,
     transitiveImpact,
   };
+}
+
+/** `codegraph.file.instability` and its confidence support, `connectionCount`. */
+export interface MartinInstability {
+  instability: number;
+  connectionCount: number;
+}
+
+/**
+ * Martin instability I = fanOut / (fanIn + fanOut) and its support. The ONE
+ * copy of this arithmetic: {@link buildCodegraphFileSignals} writes it to the
+ * payload, and the boundary diagnostics judge dependency edges by it
+ * (`boundary-diagnostics/file-instability.ts`) — a detector computing its own
+ * variant would flag edges by a number no payload carries.
+ */
+export function computeMartinInstability(fanIn: number, fanOut: number): MartinInstability {
+  const connectionCount = fanIn + fanOut;
+  // The zero-edge case is pinned to 0 rather than NaN — a NaN here reaches
+  // Qdrant and every range filter over it stops matching.
+  return { instability: connectionCount === 0 ? 0 : fanOut / connectionCount, connectionCount };
 }
 
 /**
