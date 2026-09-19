@@ -33,12 +33,12 @@
   },
   "javascript": {
     "chunking": {
-      "version": 1,
-      "digest": "sha256:a298f46eff45b5d389c066d8046ae9461ef32c0f93e08ae709262ac0d3bf5380"
+      "version": 2,
+      "digest": "sha256:93a865e0486d9bb62f627c1fc9393818759c634f5773487521ae28198ee66540"
     },
     "walker": {
       "version": 3,
-      "digest": "sha256:3fdcc99858356dd1a80c540480ef2c309b1f30f4ba8d174029e247c8e0a25b5c"
+      "digest": "sha256:6dfe72da095b5a9590ac4c11b56376afc025185a0b5aaaab9495ea4f8f909feb"
     }
   },
   "markdown": {

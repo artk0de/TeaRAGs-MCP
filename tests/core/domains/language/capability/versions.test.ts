@@ -164,9 +164,15 @@ describe("seeded support versions", () => {
         ["go", 3],
       ]);
       const expectedWalker = WALKER_BUMPED.get(language) ?? 1;
+      // javascript chunking 2: bd tea-rags-mcp-1etj8 composed the test-scope
+      // chunker into the JS hook chain and listed `call_expression` among the
+      // chunkable/child chunk types, so `.js` / `.jsx` test files now emit
+      // `chunkType: "test"` / `"test_setup"` chunks an index built by
+      // chunking 1 never held — the advertised tests-high tier is implemented.
+      const CHUNKING_BUMPED = new Map([["javascript", 2]]);
       const expectedCodegraph = NO_CALL_GRAPH.has(language) ? 1 : 2;
       expect(v.walker, `walker version for ${language}`).toBe(expectedWalker);
-      expect(v.chunking, `chunking version for ${language}`).toBe(1);
+      expect(v.chunking, `chunking version for ${language}`).toBe(CHUNKING_BUMPED.get(language) ?? 1);
       expect(v.codegraphSchema, `codegraph schema version for ${language}`).toBe(expectedCodegraph);
     }
   });

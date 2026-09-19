@@ -8,11 +8,18 @@ export const capability: LanguageCapability = {
     grammarPackage: "tree-sitter-javascript",
     hooks: [
       { name: "jsAssignmentFilter", short: "assignment chunking" },
+      { name: "testScopeChunker", short: "describe/it scopes" },
       { name: "JsChunkClassifier", short: "module/class split" },
     ],
   },
   tests: { tier: "high", detection: "*.test.js / *.spec.jsx", tech: "testScopeChunker (describe/it scopes)" },
   codegraph: { tier: "high", tech: "6-strategy; CommonJS/ESM require resolution (dynamic gaps)" },
+  // chunking 2: bd tea-rags-mcp-1etj8 — `jsTestDslFilterHook` +
+  // `jsTestScopeChunkerHook` composed into the hook chain and
+  // `call_expression` added to chunkable/child chunk types, so the already
+  // advertised tests-high tier is actually implemented: `.js` / `.jsx` test
+  // files now emit `chunkType: "test"` / `"test_setup"` scope chunks. Chunk
+  // set moves → `--force` reindex for indexed projects with JS tests.
   // codegraphSchema 2: bd tea-rags-mcp-ex28m — see typescript/capability.ts.
   // walker 2: bd tea-rags-mcp-hwwtw — receiver-bearing calls no longer fall
   // through to the global short-name lookup.
@@ -30,5 +37,5 @@ export const capability: LanguageCapability = {
   // to TypeScript / JavaScript files, so the bare-call fallback and `super` no
   // longer land on a Ruby or Python namesake, and such a call counts as
   // `noInProjectDef`.
-  versions: { chunking: 1, walker: 3, codegraphSchema: 2 },
+  versions: { chunking: 2, walker: 3, codegraphSchema: 2 },
 };
