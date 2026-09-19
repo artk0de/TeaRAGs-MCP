@@ -43,6 +43,67 @@ function ambiguousFetchTable(): InMemoryGlobalSymbolTable {
   return symbolTable;
 }
 
+/** One definition of `fetch` — before bd tea-rags-mcp-05uhs this declined the fallback gate. */
+function singleFetchTable(): InMemoryGlobalSymbolTable {
+  const symbolTable = new InMemoryGlobalSymbolTable();
+  symbolTable.upsertFile("src/user-repo.ts", [
+    {
+      symbolId: "UserRepo#fetch",
+      fqName: "UserRepo#fetch",
+      shortName: "fetch",
+      relPath: "src/user-repo.ts",
+      scope: ["UserRepo"],
+    },
+  ]);
+  return symbolTable;
+}
+
+/**
+ * The taxdome residual shape (bd tea-rags-mcp-05uhs): `client` is a property of
+ * an object literal, so the run's symbol table carries NO definition of it at
+ * all — the evidence guard has no candidate to confirm and the old gate saw
+ * zero namesakes. Only the checker knows `guards.client()` lives in guards.ts.
+ */
+function writeGuardsFixture(repoRoot: string): void {
+  writeSource(
+    repoRoot,
+    "src/guards.ts",
+    [
+      `export function isClient(): boolean {`,
+      `  return true;`,
+      `}`,
+      ``,
+      `export const useResolverGuards = { client: isClient };`,
+      ``,
+    ].join("\n"),
+  );
+  writeSource(
+    repoRoot,
+    "src/caller.ts",
+    [
+      `import { useResolverGuards } from "./guards.js";`,
+      ``,
+      `const guards = useResolverGuards;`,
+      ``,
+      `export function check(): boolean {`,
+      `  return guards.client();`,
+      `}`,
+      ``,
+    ].join("\n"),
+  );
+}
+
+const GUARDS_CALL: CallRef = { callText: "guards.client()", receiver: "guards", member: "client", startLine: 6 };
+
+function guardsContext(): CallContext {
+  return {
+    callerFile: "src/caller.ts",
+    callerScope: [],
+    imports: [{ importText: "./guards.js", startLine: 1, importedNames: ["useResolverGuards"] }],
+    symbolTable: new InMemoryGlobalSymbolTable(),
+  };
+}
+
 /**
  * `repo` is bound to the result of a generic factory call, so no tree-sitter
  * pass can type it; `fetch` is declared on two classes, so strict mode drops the
@@ -118,12 +179,41 @@ describe("TSTypeCheckerFallbackSymbolResolutionStrategy routes only checker-wort
     expect(classifyTypeCheckerFallbackCase(call, inferredReceiverContext(ambiguousFetchTable()))).toBe("overload");
   });
 
-  it("declines an unambiguous non-generic call as not worth the checker cost", () => {
+  // bd tea-rags-mcp-05uhs: the namesake-count pre-filter cost recall — a
+  // receiver-bearing call the earlier passes declined gets NO answer at all
+  // when its member has one definition, so every receiver-bearing declined
+  // call reaches the checker regardless of namesake count.
+  it("routes a receiver-bearing call to the checker even with a single project definition", () => {
     const symbolTable = new InMemoryGlobalSymbolTable();
     symbolTable.upsertFile("src/a.ts", [
       { symbolId: "A#run", fqName: "A#run", shortName: "run", relPath: "src/a.ts", scope: ["A"] },
     ]);
     const call: CallRef = { callText: "x.run()", receiver: "x", member: "run", startLine: 1 };
+
+    expect(
+      classifyTypeCheckerFallbackCase(call, { callerFile: "src/b.ts", callerScope: [], imports: [], symbolTable }),
+    ).toBe("receiver");
+  });
+
+  it("routes a receiver-bearing call with zero project namesakes to the checker", () => {
+    const call: CallRef = { callText: "guards.client()", receiver: "guards", member: "client", startLine: 1 };
+
+    expect(
+      classifyTypeCheckerFallbackCase(call, {
+        callerFile: "src/b.ts",
+        callerScope: [],
+        imports: [],
+        symbolTable: new InMemoryGlobalSymbolTable(),
+      }),
+    ).toBe("receiver");
+  });
+
+  it("declines a bare non-generic call as not worth the checker cost", () => {
+    const symbolTable = new InMemoryGlobalSymbolTable();
+    symbolTable.upsertFile("src/a.ts", [
+      { symbolId: "A#run", fqName: "A#run", shortName: "run", relPath: "src/a.ts", scope: ["A"] },
+    ]);
+    const call: CallRef = { callText: "run()", receiver: null, member: "run", startLine: 1 };
 
     expect(
       classifyTypeCheckerFallbackCase(call, { callerFile: "src/b.ts", callerScope: [], imports: [], symbolTable }),
@@ -218,6 +308,34 @@ describe("TSTypeCheckerFallbackSymbolResolutionStrategy resolves the signature t
     expect(outcome).toEqual({
       kind: "resolved",
       target: { targetRelPath: "src/registry.ts", targetSymbolId: "Registry.make" },
+    });
+  });
+
+  // bd tea-rags-mcp-05uhs: a single-definition member used to be declined by
+  // the gate before the checker ran, so the call site got no answer at all.
+  it("answers a receiver-bearing call whose member has a single project definition", () => {
+    writeInferredReceiverFixture(repoRoot);
+
+    const outcome = buildStrategy().attempt(INFERRED_RECEIVER_CALL, inferredReceiverContext(singleFetchTable()));
+
+    expect(outcome).toEqual({
+      kind: "resolved",
+      target: { targetRelPath: "src/user-repo.ts", targetSymbolId: "UserRepo#fetch" },
+    });
+  });
+
+  // bd tea-rags-mcp-05uhs: zero symbol-table namesakes — an object-literal
+  // member — still reaches the checker, which names the file the answer lives
+  // in even though no symbol exists to pin (the file-only edge the 05uhs
+  // taxdome A/B recovered 203 of).
+  it("answers a receiver-bearing object-literal member the symbol table has never heard of", () => {
+    writeGuardsFixture(repoRoot);
+
+    const outcome = buildStrategy().attempt(GUARDS_CALL, guardsContext());
+
+    expect(outcome).toEqual({
+      kind: "resolved",
+      target: { targetRelPath: "src/guards.ts", targetSymbolId: null },
     });
   });
 
@@ -358,23 +476,19 @@ describe("TSTypeCheckerFallbackSymbolResolutionStrategy resolves the signature t
     expect(outcome).toEqual({ kind: "continue" });
   });
 
-  it("continues on a call shape no checker case covers, without building a Program", () => {
+  // bd tea-rags-mcp-05uhs: bare calls stay outside the gate — a declined bare
+  // call is usually dynamic, and the whole point of the widening is the
+  // receiver, which names a type the checker can follow.
+  it("continues on a bare call no checker case covers, without building a Program", () => {
     writeInferredReceiverFixture(repoRoot);
-    const symbolTable = new InMemoryGlobalSymbolTable();
-    symbolTable.upsertFile("src/user-repo.ts", [
-      {
-        symbolId: "UserRepo#fetch",
-        fqName: "UserRepo#fetch",
-        shortName: "fetch",
-        relPath: "src/user-repo.ts",
-        scope: ["UserRepo"],
-      },
-    ]);
     const tsOptions = { baseUrl: ".", paths: {} };
     const cache = new TSProgramCache({ repoRoot, tsOptions });
     const strategy = new TSTypeCheckerFallbackSymbolResolutionStrategy({ tsOptions, mode: "strict" }, cache);
 
-    const outcome = strategy.attempt(INFERRED_RECEIVER_CALL, inferredReceiverContext(symbolTable));
+    const outcome = strategy.attempt(
+      { callText: "run(items)", receiver: null, member: "run", startLine: 10 },
+      inferredReceiverContext(new InMemoryGlobalSymbolTable()),
+    );
 
     expect(outcome).toEqual({ kind: "continue" });
     expect(cache.size).toBe(0);
@@ -400,6 +514,18 @@ describe("TSCallResolver runs the type-checker fallback after every tree-sitter 
     const target = resolver.resolve(INFERRED_RECEIVER_CALL, inferredReceiverContext(ambiguousFetchTable()));
 
     expect(target).toEqual({ targetRelPath: "src/user-repo.ts", targetSymbolId: "UserRepo#fetch" });
+  });
+
+  // bd tea-rags-mcp-05uhs: through the WHOLE chain — every earlier pass
+  // declines the object-literal member (no candidate to confirm), and the
+  // fallback now turns that decline into the checker's file edge.
+  it("gives a declined object-literal member call the checker's file edge", () => {
+    writeGuardsFixture(repoRoot);
+    const resolver = new TSCallResolver({ baseUrl: ".", paths: {} }, "strict", repoRoot);
+
+    const target = resolver.resolve(GUARDS_CALL, guardsContext());
+
+    expect(target?.targetRelPath).toBe("src/guards.ts");
   });
 
   it("leaves the same call unresolved when CODEGRAPH_TS_TYPECHECKER disables the fallback", () => {
