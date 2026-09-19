@@ -275,8 +275,12 @@ how concentrated knowledge is — pick the family that matches your intent.
 
 You can also use the dedicated MCP filter parameters:
 
-- `blameOwner` — matches `git.file.blameDominantAuthor` (live-line owner).
-- `recentAuthor` — matches `git.file.recentDominantAuthor` (recent committer).
+- `author` — matches `git.file.blameDominantAuthor` (live-line owner, exact
+  git blame author name). Level-aware: file by default, `level: "chunk"`
+  matches the chunk's own live lines (`git.chunk.blameDominantAuthor`). This is
+  the live-line-owner filter; there is no separate `blameOwner` parameter.
+- `recentAuthor` — matches `git.file.recentDominantAuthor` or its email
+  (recent committer).
 
 <AiQuery>Find code with a single dominant blame owner</AiQuery>
 
