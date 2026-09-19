@@ -86,9 +86,7 @@ Tech debt is not just "old code." It's old code that **keeps requiring patches**
 {
   "query": "core domain logic",
   "rerank": "techDebt",
-  "filter": {
-    "must": [{ "key": "git.ageDays", "range": { "gte": 60 } }]
-  },
+  "minAgeDays": 60,
   "metaOnly": true,
   "limit": 30
 }
