@@ -159,6 +159,10 @@ describe("seeded support versions", () => {
       // channel by the declaring package, so an index built by walker 2 holds
       // bare-keyed entries its resolver cannot read — namesake `New()`s
       // resolve to nothing until the recompute rewrites them.
+      // go walker 4: bd tea-rags-mcp-fov8f emits every spec of a grouped
+      // `type ( ... )` declaration, so an index built by walker 3 holds only
+      // the group's FIRST type — every later spec resolves to nothing until
+      // the recompute rewrites it.
       // Every other language is still at its seed.
       const WALKER_BUMPED = new Map([
         ["typescript", 8],
@@ -167,7 +171,7 @@ describe("seeded support versions", () => {
         ["ruby", 3],
         ["java", 2],
         ["rust", 2],
-        ["go", 3],
+        ["go", 4],
       ]);
       const expectedWalker = WALKER_BUMPED.get(language) ?? 1;
       // javascript chunking 2: bd tea-rags-mcp-1etj8 composed the test-scope
