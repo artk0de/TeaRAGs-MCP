@@ -20,9 +20,10 @@
  *
  * A LITERAL rather than a read of the registry, for the reason
  * `PYTHON_SOURCE_EXTENSIONS` gives: `CODEGRAPH_LANGUAGES` lives in
- * `domains/trajectory/`, and `language` may not import a sibling domain. It is
- * a superset of that registry's TypeScript and JavaScript rows — `.mts` / `.cts`
- * are ECMAScript sources no walk emits today, and admitting them costs nothing.
+ * `domains/trajectory/`, and `language` may not import a sibling domain. It
+ * lists exactly that registry's TypeScript and JavaScript rows — `.mts` / `.cts`
+ * among them since bd tea-rags-mcp-1y13c walks the ESM / CJS module formats —
+ * so a new ECMAScript extension there needs a matching line here.
  * `.d.ts` / `.d.mts` / `.d.cts` are covered by their last segment.
  */
 

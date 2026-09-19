@@ -390,12 +390,12 @@
   classifier (`classifyResolveMiss` in `resolution-runner.ts`) asks
   `hasInProjectDefinition` when the resolver answers it and falls back to the
   unfiltered `lookupByShortName(member).length > 0` otherwise. TypeScript and
-  JavaScript answer it (bd tea-rags-mcp-t5cji); Ruby and Python filter their
-  chains but not this gate, so their unresolved call with only a foreign
-  namesake still counts as a miss. Adding the hook to them moves their rate —
-  their own walker bump. Why: a chain-only filter turns every former
-  cross-language edge into a charged miss, which reads as a recall regression
-  the resolver cannot fix.
+  JavaScript answer it (bd tea-rags-mcp-t5cji); Ruby, Python and Go (through
+  `go-symbol-lookup.ts`) filter their chains but not this gate, so their
+  unresolved call with only a foreign namesake still counts as a miss. Adding
+  the hook to them moves their rate — their own walker bump. Why: a chain-only
+  filter turns every former cross-language edge into a charged miss, which reads
+  as a recall regression the resolver cannot fix.
 - **A TypeScript member call is never committed by a unique short name alone.**
   `globalShortName` and `importNarrowedFallback` accept a candidate for a
   receiver the walker did not type — `this` included, once `thisMember` missed —
