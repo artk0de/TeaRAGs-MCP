@@ -22,14 +22,17 @@
  * site (`getSymbolAtLocation`), which follows unions and inheritance the way the
  * compiler does; a re-export alias it stops at is followed on to the symbol it
  * stands for ({@link calledMemberSymbol}). The candidate is accounted for when
- * one of that symbol's declarations sits in the candidate's own file — or in the
- * `.d.ts` beside the candidate's JavaScript ({@link declarationFileTypes}) — or
- * when the member is declared on a supertype — an interface, an abstract base — that the
- * candidate's owner descends from in the run hierarchy (the hwwtw rule for an
- * interface receiver's implementer, kept). Anything else declines: no Program
- * (`CODEGRAPH_TS_TYPECHECKER=0`), no locatable property access, an `any` /
- * `unknown` / error receiver whose property has no symbol, or a declaration in a
- * file the candidate is not in.
+ * one of that symbol's declarations is the candidate's own — declared by the
+ * candidate's owner in the candidate's file or in the `.d.ts` beside its
+ * JavaScript ({@link declarationFileTypes}), or, having no named owner, lying
+ * inside the candidate's lines — or when the member is declared on a supertype
+ * (an interface, an abstract base) the candidate's owner descends from in the
+ * run hierarchy (the hwwtw rule for an interface receiver's implementer, kept);
+ * see {@link declarationAccountsFor}. Anything else declines: no locatable
+ * property access, an `any` / `unknown` / error receiver whose property has no
+ * symbol, or a declaration the candidate does not own. With no Program at all
+ * (`CODEGRAPH_TS_TYPECHECKER=0`, heap admission's `typecheckerOff`) only
+ * structural import evidence remains ({@link importBindingAccountsFor}).
  *
  * Declining is not deciding: the call falls through to the checker passes,
  * which pin what the compiler resolved — a file-only edge to `copy.ts` where the
@@ -40,12 +43,17 @@ import ts from "typescript";
 
 import type { CallContext, CallRef, SymbolDefinition } from "../../../../contracts/types/codegraph.js";
 import { lookupEcmascriptSymbolsByShortName } from "../../shared/ecmascript-symbol-lookup.js";
+import { reexportOriginFile, type ResolverConfig } from "./strategies/shared.js";
 import { declarationOwnerName, findReceiverExpression } from "./strategies/ts-type-checker-shared.js";
 import { receiverTypeName } from "./ts-external-call.js";
+import { mapImportToFile } from "./ts-path-mapper.js";
 import type { TSProgramCache } from "./ts-program-cache.js";
 
 /** What the guard reads off a short-name candidate: where it lives, whose it is, which lines it spans. */
 type EvidenceCandidate = Pick<SymbolDefinition, "relPath" | "scope" | "startLine" | "endLine">;
+
+/** The resolver config the import-evidence arm maps specifiers and barrels with. */
+type EvidenceConfig = Pick<ResolverConfig, "tsOptions" | "mode" | "fileExists">;
 
 /**
  * `true` when `call` has a receiver the walker did not type and the type
@@ -71,6 +79,7 @@ type EvidenceCandidate = Pick<SymbolDefinition, "relPath" | "scope" | "startLine
 export function memberCandidateLacksReceiverEvidence(
   call: CallRef,
   ctx: CallContext,
+  cfg: EvidenceConfig,
   programCache: TSProgramCache | null,
   candidate: EvidenceCandidate,
 ): boolean {
@@ -86,9 +95,10 @@ export function memberCandidateLacksReceiverEvidence(
   ) {
     return false;
   }
-  if (programCache === null) return true;
-  const handle = programCache.acquire(ctx.callerFile);
-  if (handle === null) return true;
+  const handle = programCache?.acquire(ctx.callerFile) ?? null;
+  if (programCache === null || handle === null) {
+    return !importBindingAccountsFor(receiver, call.member, ctx, cfg, candidate);
+  }
   const node = findReceiverExpression(handle.sourceFile, call.startLine, call.member);
   const access = node?.parent;
   if (node === null || access === undefined || !ts.isPropertyAccessExpression(access) || access.expression !== node) {
@@ -96,6 +106,58 @@ export function memberCandidateLacksReceiverEvidence(
   }
   const declarations = calledMemberSymbol(handle.checker, access.name)?.getDeclarations() ?? [];
   return !declarations.some((declaration) => declarationAccountsFor(declaration, candidate, ctx, programCache));
+}
+
+/**
+ * The evidence left when there is no Program to ask (`CODEGRAPH_TS_TYPECHECKER=0`,
+ * heap admission's `typecheckerOff`, a file no Program serves): the receiver is
+ * an IMPORT BINDING, and the file that declares what it binds declares the
+ * candidate. Structural, never a name coincidence — a local value, a
+ * parameter, an `any`, an object literal and `this` bind no import and decline.
+ *
+ *   - `import * as H`, a default import, `const H = require(…)`: the binding is
+ *     the MODULE, so the candidate is a top-level declaration of the mapped
+ *     file, or of the file its barrel re-exports the member from — the same
+ *     symbol-table hop `namedImport` makes ({@link reexportOriginFile}, bound to
+ *     the ECMAScript family's lookup). A default-imported class answers for its
+ *     own members too: the candidate's owner is the binding's name.
+ *   - `import { X }` / `{ X as Y }`: the binding is ONE exported class or module
+ *     object, so the candidate must be X's member (by the EXPORTED name) in the
+ *     file X is declared in, barrel hop included.
+ *
+ * It is deliberately NOT a return to name uniqueness, and it does not buy back
+ * what the checker-off mode lost to this guard: on this repo's own sources that
+ * was 951 edges over 915 sites (687 of them the checker's own answer), and
+ * every one had a local, a parameter, a `this.field` chain or a `new X()`
+ * expression for a receiver — none an import binding. What it answers is the
+ * namespace-through-a-barrel shape, which no name-free pass reaches.
+ *
+ * A default import and a `* as` namespace are the same `ImportRef` shape, so the
+ * barrel hop is taken for both. For a namespace it is sound — a member the
+ * module does not declare must be one it re-exports. For a default-exported
+ * INSTANCE it is not (`import api from "./api"; api.get()` enters the instance's
+ * class), and what stands between that and a wrong edge is the candidate having
+ * to be the project's unique short name AND the unique top-level declaration
+ * the hop can name.
+ */
+function importBindingAccountsFor(
+  receiver: string,
+  member: string,
+  ctx: CallContext,
+  cfg: EvidenceConfig,
+  candidate: EvidenceCandidate,
+): boolean {
+  const binding = ctx.imports.find((imp) => imp.importedNames?.includes(receiver));
+  if (binding === undefined) return false;
+  const mappedFile = mapImportToFile(binding.importText, ctx.callerFile, cfg.tsOptions, cfg.fileExists);
+  if (mappedFile === null) return false;
+  const declaringFileOf = (name: string): string => reexportOriginFile(name, mappedFile, ctx, cfg.mode) ?? mappedFile;
+  const exportedName = binding.importedBindings?.[receiver];
+  if (exportedName !== undefined) {
+    return candidate.scope.at(-1) === exportedName && declaringFileOf(exportedName) === candidate.relPath;
+  }
+  if (candidate.scope.length === 0) return declaringFileOf(member) === candidate.relPath;
+  return candidate.scope.at(-1) === receiver && declaringFileOf(receiver) === candidate.relPath;
 }
 
 /**

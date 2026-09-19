@@ -398,15 +398,18 @@
   the resolver cannot fix.
 - **A TypeScript member call is never committed by a unique short name alone.**
   `globalShortName` and `importNarrowedFallback` accept a candidate for a
-  receiver the walker did not type only when the checker resolves the member to
-  the candidate's file, or to a supertype member its owner descends from
-  (`memberCandidateLacksReceiverEvidence`, bd tea-rags-mcp-t5cji). No Program —
-  `CODEGRAPH_TS_TYPECHECKER=0`, heap admission's `typecheckerOff` — means no
-  evidence, so those calls decline, the way JavaScript's tail declines every
-  receiver-bearing call (bd tea-rags-mcp-hwwtw). Why: once Ruby namesakes
-  stopped making `title` / `filter` / `request` ambiguous, taxdome committed ~89
-  object-literal, `any` and generated-class calls to the lone TS symbol of that
-  name.
+  receiver the walker did not type — `this` included, once `thisMember` missed —
+  only when the checker's declaration of the member is the candidate's own
+  (declared by the candidate's owner in its file or sibling `.d.ts`, or
+  ownerless inside the candidate's lines) or a supertype member its owner
+  descends from (`memberCandidateLacksReceiverEvidence`, bd tea-rags-mcp-t5cji).
+  No Program — `CODEGRAPH_TS_TYPECHECKER=0`, heap admission's `typecheckerOff` —
+  leaves only structural import evidence: the receiver is an import binding
+  whose module, through its barrel, declares the candidate. Every other receiver
+  declines, the way JavaScript's tail declines every receiver-bearing call (bd
+  tea-rags-mcp-hwwtw). Why: once Ruby namesakes stopped making `title` /
+  `filter` / `request` ambiguous, taxdome committed ~89 object-literal, `any`
+  and generated-class calls to the lone TS symbol of that name.
 - **The capability drift-guard is one-sided.**
   `tests/core/domains/language/capability/drift-guard.test.ts` only checks
   renders of `LanguageFactory#capabilities` against the committed artefacts — it

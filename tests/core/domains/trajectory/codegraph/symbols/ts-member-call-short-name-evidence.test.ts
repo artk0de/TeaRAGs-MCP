@@ -158,3 +158,82 @@ describe("TS member calls need the checker's agreement, not a unique short name 
     expect(await targetsOf("request()")).toEqual(["web/api-client.ts::request"]);
   });
 });
+
+/**
+ * With NO Program (`CODEGRAPH_TS_TYPECHECKER=0`, or heap admission's
+ * `typecheckerOff`) the checker's agreement cannot be had, and the only evidence
+ * left is structural: the receiver is an import binding whose module — through
+ * its barrel — declares the candidate (bd tea-rags-mcp-t5cji). A value no import
+ * binds stays declined, as it does with the checker on.
+ */
+describe("TS member calls with the checker OFF take import evidence only (bd tea-rags-mcp-t5cji)", () => {
+  const NO_CHECKER_CORPUS: Readonly<Record<string, string>> = {
+    "web/helpers/foo-helper.ts": ["export function fooHelperFn(): number {", "  return 1;", "}", ""].join("\n"),
+    "web/helpers/index.ts": ['export { fooHelperFn } from "./foo-helper";', ""].join("\n"),
+    "web/ns-caller.ts": [
+      'import * as H from "./helpers";',
+      "export function viaNamespace(): number {",
+      "  return H.fooHelperFn();",
+      "}",
+      "export function viaValue(box: any): number {",
+      "  return box.fooHelperFn();",
+      "}",
+      "",
+    ].join("\n"),
+  };
+
+  let tmp: string;
+  let root: string;
+  let client: DuckDbGraphClient;
+  let previousTypechecker: string | undefined;
+
+  beforeEach(async () => {
+    previousTypechecker = process.env.CODEGRAPH_TS_TYPECHECKER;
+    process.env.CODEGRAPH_TS_TYPECHECKER = "0";
+    tmp = mkdtempSync(join(tmpdir(), "cg-ts-member-evidence-off-db-"));
+    root = mkdtempSync(join(tmpdir(), "cg-ts-member-evidence-off-repo-"));
+    for (const [relPath, source] of Object.entries(NO_CHECKER_CORPUS)) {
+      mkdirSync(dirname(join(root, relPath)), { recursive: true });
+      writeFileSync(join(root, relPath), source);
+    }
+    client = new DuckDbGraphClient({ path: join(tmp, "g.duckdb") });
+    await client.init();
+    await runMigrations(client, MIG_DIR);
+    const provider = new CodegraphEnrichmentProvider({
+      graphDb: client,
+      symbolTable: new InMemoryGlobalSymbolTable(),
+      ...buildTestCodegraphDeps(),
+      composer: new DefaultSymbolIdComposer(),
+      collectSymbols,
+    });
+    const batch = await provider.extractFileBatch(root, Object.keys(NO_CHECKER_CORPUS).sort());
+    await provider.absorbExtractedFiles(root, batch.extractions);
+    await provider.finalizeSignals(root);
+  });
+
+  afterEach(async () => {
+    await client.close();
+    rmSync(tmp, { recursive: true, force: true });
+    rmSync(root, { recursive: true, force: true });
+    if (previousTypechecker === undefined) delete process.env.CODEGRAPH_TS_TYPECHECKER;
+    else process.env.CODEGRAPH_TS_TYPECHECKER = previousTypechecker;
+  });
+
+  const targetsOf = async (callExpression: string): Promise<string[]> =>
+    (
+      await client.queryAll<MethodEdgeRow>(
+        "SELECT source_symbol_id, call_expression, target_rel_path, target_symbol_id FROM cg_symbols_edges_method",
+      )
+    )
+      .filter((edge) => edge.call_expression === callExpression)
+      .map((edge) => `${edge.target_rel_path}::${edge.target_symbol_id ?? ""}`)
+      .sort();
+
+  it("resolves a namespace-import member through the barrel to the file that declares it", async () => {
+    expect(await targetsOf("H.fooHelperFn()")).toEqual(["web/helpers/foo-helper.ts::fooHelperFn"]);
+  });
+
+  it("still declines the same member on a value no import binds", async () => {
+    expect(await targetsOf("box.fooHelperFn()")).toEqual([]);
+  });
+});

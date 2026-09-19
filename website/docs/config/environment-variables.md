@@ -119,6 +119,25 @@ Codegraph enrichment (call graph + import graph signals) is **beta** and
 | `CODEGRAPH_DB_THREADS`              | DuckDB worker threads per project                                            | `2`        |
 | `CODEGRAPH_CUSTOM_EXCLUDE`          | Comma-separated `.gitignore`-shaped patterns to exclude from the graph        | _(empty)_  |
 | `CODEGRAPH_AMBIGUOUS_RESOLVE_MODE`  | Short-name call resolution: `strict` (drop ambiguous) or `first` (pick first) | `strict`   |
+| `CODEGRAPH_TS_TYPECHECKER`          | TypeScript type checker for call resolution; `0` / `false` turns it off (see below) | on         |
+
+**`CODEGRAPH_TS_TYPECHECKER`.** TypeScript call resolution builds a
+`ts.Program` and asks the type checker what a call's receiver is. Setting it to
+`0` (or `false`) skips the Program entirely, so the resolve path reads no extra
+files and holds no checker heap, and recall pays for it. Without a Program a
+member call on a receiver the walker did not type resolves only through import
+evidence: a namespace or named import whose module (or the barrel it goes
+through) declares the member. A call on an untyped local, a parameter or an
+inherited `this` member stays unresolved, and JSX components, generics,
+overloads and structural types lose their checker passes. On tea-rags' own
+1,138 TypeScript / JavaScript files that is 15,928 call edges with the checker
+and 12,745 without (−20%).
+
+The checker can go off without this variable. Before building a Program the
+indexer projects its heap need against the enrichment worker's V8 heap ceiling,
+and a project too large for it runs with the checker off and logs one
+`TypeScript type checker DISABLED for this run` line. Raise
+`ENRICHMENT_WORKER_MEMORY_LIMIT_MB` to keep it.
 
 ## Debug
 

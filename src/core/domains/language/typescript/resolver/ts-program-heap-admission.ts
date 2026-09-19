@@ -211,7 +211,10 @@ export function describeTSProgramTypecheckerDowngrade(assessment: TSProgramAdmis
     `projects ${assessment.coverageProjectionMb} MB and needs ${assessment.coverageRequiredMb} MB with headroom ` +
     `(the whole-project strategy projects ${assessment.wholeProjectionMb} MB and needs ` +
     `${assessment.wholeRequiredMb} MB). Building it would kill this worker with ERR_WORKER_OUT_OF_MEMORY and ` +
-    `lose every codegraph signal in the run, so codegraph TypeScript edges resolve without type information. ` +
+    `lose every codegraph signal in the run, so this run resolves TypeScript without it: a member call on a ` +
+    `receiver the walker did not type resolves only through import evidence (a namespace or named import whose ` +
+    `module declares the member), so one on an untyped local, a parameter or an inherited \`this\` member ` +
+    `stays unresolved. ` +
     `Raise ENRICHMENT_WORKER_MEMORY_LIMIT_MB, or retune CODEGRAPH_TS_PROGRAM_HEAP_BASE_MB / ` +
     `CODEGRAPH_TS_PROGRAM_HEAP_PER_1K_ROOTS_MB / CODEGRAPH_TS_PROGRAM_HEAP_CHECKER_PER_1K_FILES_MB / ` +
     `CODEGRAPH_TS_PROGRAM_HEAP_USABLE_PCT / CODEGRAPH_TS_PROGRAM_WHOLE_SEGMENT_FILES.`

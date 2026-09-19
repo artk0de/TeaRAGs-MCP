@@ -4,13 +4,16 @@ import { dirname, join } from "node:path";
 
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
-import type {
-  CallContext,
-  CallRef,
-  InheritanceEdgeRow,
-  InheritanceKind,
-  SymbolDefinition,
+import {
+  DEFAULT_AMBIGUOUS_RESOLVE_MODE,
+  type CallContext,
+  type CallRef,
+  type ImportRef,
+  type InheritanceEdgeRow,
+  type InheritanceKind,
+  type SymbolDefinition,
 } from "../../../../../../src/core/contracts/types/codegraph.js";
+import type { ResolverConfig } from "../../../../../../src/core/domains/language/typescript/resolver/strategies/index.js";
 import { TSProgramCache } from "../../../../../../src/core/domains/language/typescript/resolver/ts-program-cache.js";
 import { memberCandidateLacksReceiverEvidence } from "../../../../../../src/core/domains/language/typescript/resolver/ts-receiver-member-evidence.js";
 import { MapHierarchyView } from "../../../../../../src/core/domains/trajectory/codegraph/hierarchy-view.js";
@@ -18,6 +21,7 @@ import { buildHierarchySnapshot } from "../../../../../../src/core/domains/traje
 import { InMemoryGlobalSymbolTable } from "../../../../../../src/core/domains/trajectory/codegraph/symbols/symbol-table.js";
 
 const tsOptions = { baseUrl: ".", paths: {} };
+const cfg: ResolverConfig = { tsOptions, mode: DEFAULT_AMBIGUOUS_RESOLVE_MODE };
 
 function writeSource(repoRoot: string, relPath: string, lines: string[]): void {
   const abs = join(repoRoot, relPath);
@@ -83,7 +87,7 @@ describe("memberCandidateLacksReceiverEvidence — the checker's declaration mus
   });
 
   const lacks = (call: CallRef, ctx: CallContext, candidate: Candidate): boolean =>
-    memberCandidateLacksReceiverEvidence(call, ctx, new TSProgramCache({ repoRoot, tsOptions }), candidate);
+    memberCandidateLacksReceiverEvidence(call, ctx, cfg, new TSProgramCache({ repoRoot, tsOptions }), candidate);
 
   describe("a namespace import through a NAMED re-export barrel", () => {
     // `getSymbolAtLocation` answers the barrel's `ExportSpecifier` — an alias —
@@ -474,7 +478,137 @@ describe("memberCandidateLacksReceiverEvidence — the checker's declaration mus
 
     it("declines a `this` member with no Program to ask — no import binds `this`", () => {
       writeFormFixture();
-      expect(memberCandidateLacksReceiverEvidence(SET_STATE, formCtx(["Form"]), null, RUN_SET_STATE)).toBe(true);
+      expect(memberCandidateLacksReceiverEvidence(SET_STATE, formCtx(["Form"]), cfg, null, RUN_SET_STATE)).toBe(true);
     });
+  });
+});
+
+/**
+ * No Program — `CODEGRAPH_TS_TYPECHECKER=0`, or heap admission's
+ * `typecheckerOff` — leaves only STRUCTURAL evidence the name cannot fake: the
+ * receiver is an import binding and the module it binds (or the file a barrel
+ * re-exports the name from) declares the candidate (bd tea-rags-mcp-t5cji).
+ * Nothing here touches the disk: the mapper's conservative `.js` → `.ts`
+ * mapping and the symbol table are the whole input.
+ */
+describe("memberCandidateLacksReceiverEvidence — structural import evidence without a Program (bd tea-rags-mcp-t5cji)", () => {
+  const FOO_HELPER = def("fooHelperFn", "fooHelperFn", "src/helpers/foo-helper.ts", [], [1, 3]);
+  const PLAIN_FN = def("doThingNow", "doThingNow", "src/plainfns.ts", [], [1, 3]);
+  const ACCOUNT = def("Account", "Account", "src/models/account.ts", [], [1, 6]);
+  const ACCOUNT_OPEN = def("Account.open", "open", "src/models/account.ts", ["Account"], [2, 4]);
+  const LEDGER_OPEN = def("Ledger.open", "open", "src/models/account.ts", ["Ledger"], [8, 10]);
+  const SLUGIFY = def("slugify", "slugify", "src/utils.ts", [], [1, 3]);
+  const PANEL_STOP = def("Panel#stopItNow", "stopItNow", "src/helpers/foo-helper.ts", ["Panel"], [5, 7]);
+
+  const table = (): InMemoryGlobalSymbolTable =>
+    tableOf(FOO_HELPER, PLAIN_FN, ACCOUNT, ACCOUNT_OPEN, LEDGER_OPEN, SLUGIFY, PANEL_STOP);
+
+  const ctxWith = (imports: ImportRef[]): CallContext => ({
+    callerFile: "src/caller.ts",
+    callerScope: ["caller"],
+    imports,
+    symbolTable: table(),
+  });
+
+  const noProgram = (call: CallRef, ctx: CallContext, candidate: Candidate): boolean =>
+    memberCandidateLacksReceiverEvidence(call, ctx, cfg, null, candidate);
+
+  const NS_BARREL: ImportRef = { importText: "./helpers/index.js", startLine: 1, importedNames: ["H"] };
+  const H_CALL: CallRef = { callText: "H.fooHelperFn()", receiver: "H", member: "fooHelperFn", startLine: 3 };
+
+  it("accepts a namespace-import member a barrel re-exports from the candidate's file", () => {
+    expect(noProgram(H_CALL, ctxWith([NS_BARREL]), FOO_HELPER)).toBe(false);
+  });
+
+  it("accepts a namespace-import member the imported module declares itself", () => {
+    const call: CallRef = { callText: "P.doThingNow()", receiver: "P", member: "doThingNow", startLine: 3 };
+    const imp: ImportRef = { importText: "./plainfns.js", startLine: 1, importedNames: ["P"] };
+    expect(noProgram(call, ctxWith([imp]), PLAIN_FN)).toBe(false);
+  });
+
+  it("accepts a default-imported module object's top-level member", () => {
+    const call: CallRef = { callText: "utils.slugify(s)", receiver: "utils", member: "slugify", startLine: 3 };
+    const imp: ImportRef = { importText: "./utils.js", startLine: 1, importedNames: ["utils"] };
+    expect(noProgram(call, ctxWith([imp]), SLUGIFY)).toBe(false);
+  });
+
+  it("accepts a static member of a class named-imported through a barrel", () => {
+    const call: CallRef = { callText: "Account.open()", receiver: "Account", member: "open", startLine: 3 };
+    const imp: ImportRef = {
+      importText: "./models/index.js",
+      startLine: 1,
+      importedNames: ["Account"],
+      importedBindings: { Account: "Account" },
+    };
+    expect(noProgram(call, ctxWith([imp]), ACCOUNT_OPEN)).toBe(false);
+  });
+
+  it("accepts it under a local alias — the member belongs to the EXPORTED name", () => {
+    const call: CallRef = { callText: "Acc.open()", receiver: "Acc", member: "open", startLine: 3 };
+    const imp: ImportRef = {
+      importText: "./models/index.js",
+      startLine: 1,
+      importedNames: ["Acc"],
+      importedBindings: { Acc: "Account" },
+    };
+    expect(noProgram(call, ctxWith([imp]), ACCOUNT_OPEN)).toBe(false);
+  });
+
+  it("declines another class's member in the named import's declaring file", () => {
+    const call: CallRef = { callText: "Account.open()", receiver: "Account", member: "open", startLine: 3 };
+    const imp: ImportRef = {
+      importText: "./models/account.js",
+      startLine: 1,
+      importedNames: ["Account"],
+      importedBindings: { Account: "Account" },
+    };
+    expect(noProgram(call, ctxWith([imp]), LEDGER_OPEN)).toBe(true);
+  });
+
+  it("declines a class member for a namespace import — the binding is the module, not the class", () => {
+    const call: CallRef = { callText: "H.stopItNow()", receiver: "H", member: "stopItNow", startLine: 3 };
+    const imp: ImportRef = { importText: "./helpers/foo-helper.js", startLine: 1, importedNames: ["H"] };
+    expect(noProgram(call, ctxWith([imp]), PANEL_STOP)).toBe(true);
+  });
+
+  it("declines a namespace import whose module declares its own namesake — the member is that one", () => {
+    const call: CallRef = { callText: "U.doThingNow()", receiver: "U", member: "doThingNow", startLine: 3 };
+    const imp: ImportRef = { importText: "./utils.js", startLine: 1, importedNames: ["U"] };
+    const own = def("doThingNow", "doThingNow", "src/utils.ts", [], [5, 7]);
+    const ctx: CallContext = { ...ctxWith([imp]), symbolTable: tableOf(PLAIN_FN, SLUGIFY, own) };
+    expect(noProgram(call, ctx, PLAIN_FN)).toBe(true);
+  });
+
+  it("declines a namesake outside the barrel's own package", () => {
+    const elsewhere = def("fooHelperFn", "fooHelperFn", "src/other/foo-helper.ts", [], [1, 3]);
+    const ctx: CallContext = { ...ctxWith([NS_BARREL]), symbolTable: tableOf(FOO_HELPER, elsewhere) };
+    expect(noProgram(H_CALL, ctx, elsewhere)).toBe(true);
+  });
+
+  it("declines a namespace import of a package", () => {
+    const call: CallRef = { callText: "fs.doThingNow()", receiver: "fs", member: "doThingNow", startLine: 3 };
+    const imp: ImportRef = { importText: "node:fs", startLine: 1, importedNames: ["fs"] };
+    expect(noProgram(call, ctxWith([imp]), PLAIN_FN)).toBe(true);
+  });
+
+  it("declines a local value binding no import names", () => {
+    const call: CallRef = {
+      callText: "helpers.fooHelperFn()",
+      receiver: "helpers",
+      member: "fooHelperFn",
+      startLine: 3,
+    };
+    expect(noProgram(call, ctxWith([NS_BARREL]), FOO_HELPER)).toBe(true);
+  });
+
+  it("takes the same evidence when a Program exists but serves no Program for the caller (heap admission)", () => {
+    const emptyRoot = realpathSync(mkdtempSync(join(tmpdir(), "ts-member-evidence-no-file-")));
+    try {
+      const cache = new TSProgramCache({ repoRoot: emptyRoot, tsOptions });
+      expect(cache.acquire("src/caller.ts")).toBeNull();
+      expect(memberCandidateLacksReceiverEvidence(H_CALL, ctxWith([NS_BARREL]), cfg, cache, FOO_HELPER)).toBe(false);
+    } finally {
+      rmSync(emptyRoot, { recursive: true, force: true });
+    }
   });
 });

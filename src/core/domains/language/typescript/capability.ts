@@ -47,9 +47,11 @@ export const capability: LanguageCapability = {
   // Python namesake, a foreign namesake no longer suppresses a TS answer (super,
   // cone, barrel hop, cardinality gates), and a bare call whose only namesake is
   // foreign counts as `noInProjectDef`. And (same bump) a member call on a
-  // receiver the walker did not type is committed by `globalShortName` /
-  // `importNarrowedFallback` only when the checker resolves the member to the
-  // candidate — never by a unique short name alone. And an unresolved `super`
+  // receiver the walker did not type (`this` included) is committed by
+  // `globalShortName` / `importNarrowedFallback` only when the checker's
+  // declaration of the member is the candidate's own or a supertype's — with no
+  // Program, only when an import binding's module declares it — never by a
+  // unique short name alone. And an unresolved `super`
   // call whose base the checker declares outside the project (`extends Error`,
   // a dependency's class) counts as `externalSkipped`, not a miss.
   versions: { chunking: 1, walker: 6, codegraphSchema: 2 },
