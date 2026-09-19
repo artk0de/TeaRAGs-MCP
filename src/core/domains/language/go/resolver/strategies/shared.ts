@@ -93,8 +93,16 @@ export function isKnownTypeSymbol(typeName: string, ctx: CallContext): boolean {
 /**
  * The PROJECT type a recorded return type denotes (`../../type-name.ts`), bare,
  * or `undefined` when it denotes none (bd tea-rags-mcp-e6xx):
- *   - a bare name (a type of the declaring package) passes the known-type gate
- *     (`isKnownTypeSymbol`), exactly as before;
+ *   - a bare name is a type of the package that declares the function
+ *     (`calleePackageDir`, `undefined` for a method, whose package the
+ *     resolver cannot know) — or of a package some file dot-imports, which the
+ *     record cannot tell apart (G2-3: under `. "net/http"`, `func mk() *Client`
+ *     records the bare `Client` of `http.Client`). It counts when the callee's
+ *     package declares it. Otherwise, in a caller file that dot-imports
+ *     anything, it types nothing — the callee is almost always of the caller's
+ *     own file or package, and a dot-imported type is indistinguishable from a
+ *     project namesake; and elsewhere it passes the package-blind known-type
+ *     gate (`isKnownTypeSymbol`), as before;
  *   - a package-qualified one (`net/http.Client`) counts only when its import
  *     path names a PROJECT package (module map, else GOPATH-shaped) whose
  *     directory declares that type. The standard library and every dependency
@@ -102,28 +110,86 @@ export function isKnownTypeSymbol(typeName: string, ctx: CallContext): boolean {
  * The bare name is what comes back: symbol ids carry no package, and every
  * lookup downstream composes from it.
  */
-export function goProjectTypeName(recorded: string, cfg: ResolverConfig, ctx: CallContext): string | undefined {
+export function goProjectTypeName(
+  recorded: string,
+  cfg: ResolverConfig,
+  ctx: CallContext,
+  calleePackageDir: string | undefined,
+): string | undefined {
   const { importPath, typeName } = splitGoRecordedTypeName(recorded);
-  if (importPath === undefined) return isKnownTypeSymbol(typeName, ctx) ? typeName : undefined;
+  if (importPath === undefined) {
+    if (calleePackageDir !== undefined && goPackageDeclaresType(typeName, calleePackageDir, ctx)) return typeName;
+    if (ctx.imports.some((imp) => imp.importedNames?.[0] === GO_DOT_IMPORT_NAME)) return undefined;
+    return isKnownTypeSymbol(typeName, ctx) ? typeName : undefined;
+  }
   const packageDir = goImportPackageDir(importPath, cfg.moduleMaps?.forRoot(ctx.projectRoot));
   if (packageDir === undefined) return undefined;
-  const declared = lookupGoSymbols(ctx, typeName).some((def) => goPackageDirOf(def.relPath) === packageDir);
-  return declared ? typeName : undefined;
+  return goPackageDeclaresType(typeName, packageDir, ctx) ? typeName : undefined;
+}
+
+/** Whether the Go package in `packageDir` declares the type `typeName`. */
+function goPackageDeclaresType(typeName: string, packageDir: string, ctx: CallContext): boolean {
+  return lookupGoSymbols(ctx, typeName).some((def) => goPackageDirOf(def.relPath) === packageDir);
+}
+
+/** The import name that puts a package's names in the importing file's own scope. */
+const GO_DOT_IMPORT_NAME = ".";
+
+/**
+ * The package directories a bare identifier of the caller's file may name a
+ * declaration of: the caller's own package first, then every dot-imported
+ * PROJECT package. A bare name is never another package's (bd
+ * tea-rags-mcp-e6xx).
+ */
+export function goBareNamePackageDirs(cfg: ResolverConfig, ctx: CallContext): string[] {
+  const dirs = [goPackageDirOf(ctx.callerFile)];
+  for (const imp of ctx.imports) {
+    if (imp.importedNames?.[0] !== GO_DOT_IMPORT_NAME) continue;
+    const dir = goImportPackageDir(imp.importText, cfg.moduleMaps?.forRoot(ctx.projectRoot));
+    if (dir !== undefined && !dirs.includes(dir)) dirs.push(dir);
+  }
+  return dirs;
+}
+
+/**
+ * The package a BARE callee (`New()`, `engine()`) belongs to: the first of
+ * `goBareNamePackageDirs` that declares a package-level function of that name;
+ * the caller's own package when none of the whole project does (a
+ * package-level func-valued var, gin's `var engine = sync.OnceValue(…)`, is no
+ * symbol); `null` when a local function value of that name is in scope, or
+ * when only packages the caller cannot name bare declare it — a namesake
+ * declared elsewhere is whose return type the run-global map may hold.
+ */
+function goBareCalleePackageDir(callee: string, cfg: ResolverConfig, ctx: CallContext, atLine: number): string | null {
+  if (goLocalAt(ctx, callee, atLine)) return null;
+  const declaredIn = new Set(
+    lookupGoSymbolsByShortName(ctx, callee)
+      .filter((def) => def.symbolId === callee)
+      .map((def) => goPackageDirOf(def.relPath)),
+  );
+  const inScope = goBareNamePackageDirs(cfg, ctx);
+  if (declaredIn.size === 0) return inScope[0];
+  return inScope.find((dir) => declaredIn.has(dir)) ?? null;
 }
 
 /**
  * The type a call-bound local holds (`x := New()`, `x := pkg.New()`,
- * `x := v.Method()`): the callee's recorded return type from the run-global
- * `functionReturnTypes`, keyed by the callee's bare name, when it denotes a
- * project type (`goProjectTypeName`). `undefined` when either is missing.
- * `atLine` is where the callee is evaluated — the call binding's own line.
+ * `x := v.Method()`) or a bare call's result (`engine().GET`): the callee's
+ * recorded return type from the run-global `functionReturnTypes`, keyed by the
+ * callee's bare name, when it denotes a project type of the callee's package
+ * (`goProjectTypeName`). `undefined` when either is missing. `atLine` is where
+ * the callee is evaluated — the call binding's own line, or the call's.
+ *
+ * A bare callee belongs to the package `goBareCalleePackageDir` finds for it
+ * (G2-3); none — a local function value, a namesake only another package
+ * declares — types nothing.
  *
  * A qualified callee's qualifier is read as Go reads it (bd tea-rags-mcp-e6xx,
  * G2-1):
  *   - a LOCAL in scope on `atLine` (`goLocalAt` — a local, parameter, named
  *     result or receiver, the one that shadows any import of its name) makes
  *     it a method call on a value, and a method's return type is keyed by the
- *     method name, so the map is read by bare name;
+ *     method name, so the map is read by bare name — with no package known;
  *   - else an IMPORT binding it names a package, which answers only when it is
  *     a project package declaring the function: the run-global map is keyed by
  *     bare name, so without the check a standard-library constructor took the
@@ -141,16 +207,22 @@ export function goCallResultType(
 ): string | undefined {
   const dot = callee.lastIndexOf(".");
   const name = dot === -1 ? callee : callee.slice(dot + 1);
-  if (dot !== -1) {
+  let calleePackageDir: string | undefined;
+  if (dot === -1) {
+    const packageDir = goBareCalleePackageDir(name, cfg, ctx, atLine);
+    if (packageDir === null) return undefined;
+    calleePackageDir = packageDir;
+  } else {
     const qualifier = callee.slice(0, dot);
     if (goLocalAt(ctx, qualifier, atLine) === undefined) {
       const packageDir = importedPackageDirOf(cfg, qualifier, ctx);
       if (packageDir === undefined || packageDir === null) return undefined;
       if (packageLevelDeclarations(name, packageDir, ctx).length === 0) return undefined;
+      calleePackageDir = packageDir;
     }
   }
   const returnType = ctx.functionReturnTypes?.[name];
-  return returnType === undefined ? undefined : goProjectTypeName(returnType, cfg, ctx);
+  return returnType === undefined ? undefined : goProjectTypeName(returnType, cfg, ctx, calleePackageDir);
 }
 
 /** The package directory of a Go file: its directory, `""` at the root. A Go package is exactly one directory. */

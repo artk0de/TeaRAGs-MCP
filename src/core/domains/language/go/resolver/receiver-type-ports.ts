@@ -8,8 +8,9 @@
  *     passes type it: the local `goLocalAt` finds in scope — a value binding
  *     (an empty one is untyped), or a call binding typed through its callee's
  *     declared return type behind the same known-type gate. A bare call's
- *     result (`engine()`) is typed the same way, through the caller-package
- *     declaration it calls. Anything else (`xs[i]`, `f(a)(b)`) is untyped.
+ *     result (`engine()`) is typed the same way, through the declaration it
+ *     calls in the caller's own or a dot-imported package. Anything else
+ *     (`xs[i]`, `f(a)(b)`) is untyped.
  *   - `seedHead` — none. A Go chain head is a value or a package, and a package
  *     is the import pass's business.
  *   - `memberTypeOf` — a FIELD hop only, read through `selectGoMember`, so a
@@ -33,8 +34,7 @@ import {
   type ReceiverTypePorts,
 } from "../../kernel/receiver-type-propagation.js";
 import { goLocalAt } from "../local-scope.js";
-import { lookupGoSymbolsByShortName } from "./go-symbol-lookup.js";
-import { goCallResultType, goPackageDirOf, type ResolverConfig } from "./strategies/shared.js";
+import { goCallResultType, type ResolverConfig } from "./strategies/shared.js";
 import { selectGoMember } from "./struct-member-selection.js";
 
 const GO_IDENTIFIER = /^[\p{L}_][\p{L}\p{N}_]*$/u;
@@ -66,14 +66,11 @@ export function goBareCallHead(receiver: string): string | undefined {
  * The type a bare call's result holds (bd tea-rags-mcp-e6xx): the callee's
  * recorded return type (`functionReturnTypes` — a declared function's, or what
  * calling a package-level func-valued var yields, like gin's
- * `var engine = sync.OnceValue(func() *gin.Engine {…})`), behind the
- * known-type gate — a package-qualified return type (`*http.Client`) only
- * from a project package (`goProjectTypeName`). A bare call names the
- * caller's own package, so no local function value of that name may be in
- * scope, and when package-level functions of that name exist the caller's
- * package must declare one — a namesake declared only elsewhere is whose
- * return type the run-global map may hold. A var is no symbol, so a name
- * nothing declares passes that check.
+ * `var engine = sync.OnceValue(func() *gin.Engine {…})`), read exactly as a
+ * call-bound local's is (`goCallResultType`): a bare call names the caller's
+ * own package or a dot-imported one, never a local function value in scope nor
+ * a namesake declared only elsewhere, and its result type counts only as a
+ * project type of the callee's package.
  */
 function goBareCallResultType(
   cfg: ResolverConfig,
@@ -81,12 +78,6 @@ function goBareCallResultType(
   atLine: number,
   ctx: CallContext,
 ): TypeRef | undefined {
-  if (goLocalAt(ctx, callee, atLine)) return undefined;
-  const declarations = lookupGoSymbolsByShortName(ctx, callee).filter((def) => def.symbolId === callee);
-  const callerPackage = goPackageDirOf(ctx.callerFile);
-  if (declarations.length > 0 && !declarations.some((def) => goPackageDirOf(def.relPath) === callerPackage)) {
-    return undefined;
-  }
   const returnType = goCallResultType(callee, cfg, ctx, atLine);
   return returnType ? instanceOf(returnType) : undefined;
 }

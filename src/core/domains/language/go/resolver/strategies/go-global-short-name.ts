@@ -4,7 +4,7 @@ import type { SymbolResolutionOutcome, SymbolResolutionStrategy } from "../../..
 import { goLocalAt } from "../../local-scope.js";
 import { preferGoDefaultBuild } from "../go-build-constraints.js";
 import { lookupGoSymbolsByShortName } from "../go-symbol-lookup.js";
-import { goImportPackageDir, goPackageDirOf, type ResolverConfig } from "./shared.js";
+import { goBareNamePackageDirs, goPackageDirOf, type ResolverConfig } from "./shared.js";
 
 /**
  * Step 3 — no receiver: a bare `Util()`. In Go a bare identifier names a
@@ -35,23 +35,12 @@ export class GoGlobalShortNameSymbolResolutionStrategy implements SymbolResoluti
   attempt(call: CallRef, ctx: CallContext): SymbolResolutionOutcome {
     if (call.receiver) return CONTINUE;
     if (goLocalAt(ctx, call.member, call.startLine)) return CONTINUE;
-    const scope = this.bareCallPackageDirs(ctx);
+    const scope = goBareNamePackageDirs(this.cfg, ctx);
     const candidates = lookupGoSymbolsByShortName(ctx, call.member).filter(
-      (def) => def.symbolId === call.member && scope.has(goPackageDirOf(def.relPath)),
+      (def) => def.symbolId === call.member && scope.includes(goPackageDirOf(def.relPath)),
     );
     const target = pickSingleCandidate(preferGoDefaultBuild(candidates, ctx), this.cfg.mode);
     if (target) return resolved({ targetRelPath: target.relPath, targetSymbolId: target.symbolId });
     return CONTINUE;
-  }
-
-  /** The caller's package directory plus every dot-imported project package's. */
-  private bareCallPackageDirs(ctx: CallContext): Set<string> {
-    const dirs = new Set([goPackageDirOf(ctx.callerFile)]);
-    for (const imp of ctx.imports) {
-      if (imp.importedNames?.[0] !== ".") continue;
-      const dir = goImportPackageDir(imp.importText, this.cfg.moduleMaps?.forRoot(ctx.projectRoot));
-      if (dir !== undefined) dirs.add(dir);
-    }
-    return dirs;
   }
 }
