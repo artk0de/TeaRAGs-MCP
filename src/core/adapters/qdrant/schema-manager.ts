@@ -128,6 +128,24 @@ export const LAST_COMMIT_TIME_FILTER_INDEXES: readonly { readonly path: string; 
   { path: "git.chunk.lastModifiedAt", schema: "integer" },
 ];
 
+/**
+ * The recent-window author list the `contributor` typed filter matches on:
+ * `match.any` over `git.file.recentAuthors` — every author who committed to the
+ * file in the log window, not only the dominant one (bd tea-rags-mcp-y1870).
+ * The payload value is the author NAME array, so `keyword` serves the
+ * membership test.
+ *
+ * Mirrored from `gitFilters` for the same layer reason as
+ * {@link CODEGRAPH_FILTER_INDEXES};
+ * `tests/…/schema-v18-recent-authors-index.test.ts` pins the list against the
+ * key the `contributor` descriptor emits in both directions.
+ * `schema-v18-recent-authors-index` applies the list to collections that
+ * already exist.
+ */
+export const RECENT_AUTHORS_FILTER_INDEXES: readonly { readonly path: string; readonly schema: IndexSchema }[] = [
+  { path: "git.file.recentAuthors", schema: "keyword" },
+];
+
 /** Payload keys filtered by exact value, each carrying a `keyword` index (schema v6). */
 export const KEYWORD_FILTER_INDEX_KEYS = ["language", "fileExtension", "chunkType"] as const;
 
@@ -148,6 +166,7 @@ export const SCHEMA_MANAGED_PAYLOAD_INDEX_KEYS: readonly string[] = [
   ...CODEGRAPH_FILTER_INDEXES.map(({ path }) => path),
   ...ENRICHMENT_SCAN_INDEXES.map(({ path }) => path),
   ...LAST_COMMIT_TIME_FILTER_INDEXES.map(({ path }) => path),
+  ...RECENT_AUTHORS_FILTER_INDEXES.map(({ path }) => path),
 ];
 
 /** A Qdrant payload field-index schema this project creates. */
@@ -163,6 +182,7 @@ const SCHEMA_MANAGED_PAYLOAD_INDEX_SCHEMAS: ReadonlyMap<string, PayloadFieldInde
   ...CODEGRAPH_FILTER_INDEXES.map(({ path, schema }): [string, PayloadFieldIndexSchema] => [path, schema]),
   ...ENRICHMENT_SCAN_INDEXES.map(({ path, schema }): [string, PayloadFieldIndexSchema] => [path, schema]),
   ...LAST_COMMIT_TIME_FILTER_INDEXES.map(({ path, schema }): [string, PayloadFieldIndexSchema] => [path, schema]),
+  ...RECENT_AUTHORS_FILTER_INDEXES.map(({ path, schema }): [string, PayloadFieldIndexSchema] => [path, schema]),
 ]);
 
 /**
@@ -282,6 +302,13 @@ export class SchemaManager {
 
     // Create indexes the git time filters range over (age, modifiedAfter/Before).
     for (const { path, schema } of LAST_COMMIT_TIME_FILTER_INDEXES) {
+      await this.qdrant.createPayloadIndex(collectionName, path, schema);
+      indexes.push(path);
+    }
+
+    // Create the keyword index the `contributor` typed filter matches on
+    // (git.file.recentAuthors — every recent-window committer, dominant or not).
+    for (const { path, schema } of RECENT_AUTHORS_FILTER_INDEXES) {
       await this.qdrant.createPayloadIndex(collectionName, path, schema);
       indexes.push(path);
     }

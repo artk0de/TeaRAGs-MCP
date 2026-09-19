@@ -11,7 +11,8 @@ const mockSchemaBuilder = {
   buildFilterSchema: () => z.record(z.string(), z.any()),
 } as unknown as SchemaBuilder;
 
-const { SearchCodeSchema, SemanticSearchSchema, HybridSearchSchema } = createSearchSchemas(mockSchemaBuilder);
+const { SearchCodeSchema, SemanticSearchSchema, HybridSearchSchema, RankChunksSchema } =
+  createSearchSchemas(mockSchemaBuilder);
 
 // ---------------------------------------------------------------------------
 // Helpers: wrap plain schema objects into z.object() for parsing
@@ -22,6 +23,7 @@ const parseIndexCodebase = (input: unknown) => z.object(IndexCodebaseSchema).par
 const parseSearchCode = (input: unknown) => z.object(SearchCodeSchema).parse(input);
 const parseSemanticSearch = (input: unknown) => z.object(SemanticSearchSchema).parse(input);
 const parseHybridSearch = (input: unknown) => z.object(HybridSearchSchema).parse(input);
+const parseRankChunks = (input: unknown) => z.object(RankChunksSchema).parse(input);
 
 // ---------------------------------------------------------------------------
 // Static schemas
@@ -275,6 +277,37 @@ describe("recentAuthor typed filter", () => {
   it("survives search_code parsing", () => {
     const result = parseSearchCode({ query: "q", path: "/tmp", recentAuthor: "John Doe" });
     expect(result.recentAuthor).toBe("John Doe");
+  });
+});
+
+// `recentAuthor` matches only files where the person is the TOP recent
+// committer. "Everything X touched" needs every file X committed to in the
+// window — the `contributor` param (bd tea-rags-mcp-y1870). Same four tools
+// as recentAuthor.
+describe("contributor typed filter", () => {
+  it("survives semantic_search parsing", () => {
+    const result = parseSemanticSearch({ query: "q", path: "/tmp", contributor: "John Doe" });
+    expect(result.contributor).toBe("John Doe");
+  });
+
+  it("survives hybrid_search parsing", () => {
+    const result = parseHybridSearch({ query: "q", path: "/tmp", contributor: "john@acme.com" });
+    expect(result.contributor).toBe("john@acme.com");
+  });
+
+  it("survives search_code parsing", () => {
+    const result = parseSearchCode({ query: "q", path: "/tmp", contributor: "John Doe" });
+    expect(result.contributor).toBe("John Doe");
+  });
+
+  it("survives rank_chunks parsing", () => {
+    const result = parseRankChunks({ rerank: "ownership", path: "/tmp", contributor: "John Doe" });
+    expect(result.contributor).toBe("John Doe");
+  });
+
+  it("stays optional — omitting it filters nothing", () => {
+    const result = parseSemanticSearch({ query: "q", path: "/tmp" });
+    expect(result.contributor).toBeUndefined();
   });
 });
 

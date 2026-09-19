@@ -100,6 +100,7 @@ parameter examples per tool.
 
 - "Complex code not touched in 30+ days" → query="complex logic", modifiedBefore="<ISO date 30 days ago>"
 - "What did John work on last week?" → recentAuthor="<full name or email>", modifiedAfter="<ISO date 7 days ago>"
+- "Everything John touched (even files he doesn't dominate)" → contributor="<exact git name>"
 - "Payments code Alice owns" → query="payments", author="<exact blame name, e.g. Alice Smith>"
 - "High-churn authentication code" → query="authentication", minCommitCount=5
 - "Code related to ticket TD-1234" → taskId="TD-1234"
@@ -188,6 +189,7 @@ Set \`CODE_ENABLE_GIT_METADATA=true\` before indexing.
 Enables filters:
 - author — blame-dominant author (owner of most live lines, git blame HEAD); file-level default, level "chunk" → chunk's own lines. The live-line-owner filter — there is no separate blameOwner param
 - recentAuthor — filter by recent-activity dominant author (commit-count based, log window)
+- contributor — filter to files the person committed to in the log window (any recent-window committer; superset of recentAuthor)
 - modifiedAfter/modifiedBefore — date range (ISO 8601 format)
 - minAgeDays/maxAgeDays — code age
 - minCommitCount — churn frequency
@@ -257,7 +259,8 @@ export function buildFiltersDoc(payloadSignals: PayloadSignalDescriptor[]): stri
   md += "unset → each filter's default: `minAgeDays` / `maxAgeDays` / `minCommitCount` → `git.chunk.*`, ";
   md += "`taskId` / `author` → `git.file.*`, codegraph `minFanIn` / `minFanOut` → file. `modifiedAfter` / ";
   md += "`modifiedBefore` always read `git.file.lastModifiedAt`, `recentAuthor` always ";
-  md += "`git.file.recentDominantAuthor*`, any `level`. (2) Result granularity: ";
+  md += "`git.file.recentDominantAuthor*`, `contributor` always `git.file.recentAuthors`, any ";
+  md += "`level`. (2) Result granularity: ";
   md += '`level: "file"` → one result per file (`payload.members`). `minAgeDays` / `maxAgeDays` ';
   md += "compare `git.<level>.lastModifiedAt` with query-time now (no drift); chunk timestamp 0 / absent ";
   md += "on chunks with no commit in chunk churn walk (all doc chunks) → chunk age filters drop them. ";

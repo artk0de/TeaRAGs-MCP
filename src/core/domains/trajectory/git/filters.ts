@@ -60,6 +60,19 @@ export const gitFilters: FilterDescriptor[] = [
     }),
   },
   {
+    // recentAuthor answers "where X dominates"; this answers "everything X
+    // touched" — every file X committed to in the window, dominant or not
+    // (tea-rags-mcp-y1870). recentAuthors stores NAMES only (no email list in
+    // the payload), so one match.any arm, file level only.
+    param: "contributor",
+    description:
+      "Filter to files the person committed to in the git log window (any recent-window committer, not only the dominant one). Exact name.",
+    type: "string",
+    toCondition: (value: unknown) => ({
+      must: [{ key: "git.file.recentAuthors", match: { any: [value as string] } }],
+    }),
+  },
+  {
     param: "blameOwner",
     description: "Filter by live-line owner — author of most lines in HEAD via git blame",
     type: "string",

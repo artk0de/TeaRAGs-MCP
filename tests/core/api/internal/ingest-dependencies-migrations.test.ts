@@ -157,11 +157,13 @@ describe("createIngestDependencies — schema v16 reconciliation", () => {
       "git.file.isHub",
       "git.file.transitiveImpact",
     ]);
-    expect(summary).toMatchObject({ fromVersion: 15, toVersion: 17 });
+    expect(summary).toMatchObject({ fromVersion: 15, toVersion: 18 });
   });
 
   // bd tea-rags-mcp-9mwny — the same sweep then gives the self-index the
-  // last-commit timestamp indexes the age / modifiedAfter filters range over.
+  // last-commit timestamp indexes the age / modifiedAfter filters range over,
+  // and bd tea-rags-mcp-y1870 the recentAuthors keyword index the `contributor`
+  // typed filter matches on.
   it("ensures both last-commit timestamp indexes after the drop", async () => {
     const qdrant = selfIndexQdrant();
     const deps = createIngestDependencies(
@@ -178,12 +180,14 @@ describe("createIngestDependencies — schema v16 reconciliation", () => {
     expect(summary.steps.map((step) => step.name)).toEqual([
       "schema-v16-drop-undeclared-payload-indexes",
       "schema-v17-last-commit-time-indexes",
+      "schema-v18-recent-authors-index",
     ]);
     expect(qdrant.ensurePayloadIndex).toHaveBeenCalledWith("code_8b243ffe", "git.file.lastModifiedAt", "integer");
     expect(qdrant.ensurePayloadIndex).toHaveBeenCalledWith("code_8b243ffe", "git.chunk.lastModifiedAt", "integer");
+    expect(qdrant.ensurePayloadIndex).toHaveBeenCalledWith("code_8b243ffe", "git.file.recentAuthors", "keyword");
   });
 
-  it("stamps new collections at the latest version, which includes v16 and v17", async () => {
+  it("stamps new collections at the latest version, which includes v16 through v18", async () => {
     const qdrant = { ...selfIndexQdrant(), getPoint: vi.fn().mockResolvedValue(null), createPayloadIndex: vi.fn() };
     const deps = createIngestDependencies(
       qdrant as unknown as QdrantManager,
@@ -197,7 +201,7 @@ describe("createIngestDependencies — schema v16 reconciliation", () => {
     await deps.createSchemaManager("code_new").initializeSchema("code_new");
 
     expect(qdrant.addPoints).toHaveBeenCalledWith("code_new", [
-      expect.objectContaining({ payload: expect.objectContaining({ schemaVersion: 17 }) }),
+      expect.objectContaining({ payload: expect.objectContaining({ schemaVersion: 18 }) }),
     ]);
   });
 });
