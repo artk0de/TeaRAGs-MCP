@@ -53,6 +53,17 @@ describe("mapJavascriptImportToFile", () => {
     expect(mapJavascriptImportToFile("./types.d.ts", "scripts/boot.js")).toBe("scripts/types.d.ts");
   });
 
+  it("maps a directory-only specifier to the directory's index.js, never to a file", () => {
+    // `.` / `..` as the last segment, or a trailing slash, names a directory
+    // only (Node's `require`, `tsc`): the head used to be `pkg.js` for `.` and
+    // `pkg/.js` for `./`.
+    expect(mapJavascriptImportToFile(".", "pkg/main.js")).toBe("pkg/index.js");
+    expect(mapJavascriptImportToFile("./", "pkg/main.js")).toBe("pkg/index.js");
+    expect(mapJavascriptImportToFile("..", "pkg/sub/x.js")).toBe("pkg/index.js");
+    expect(mapJavascriptImportToFile("../", "pkg/sub/x.js")).toBe("pkg/index.js");
+    expect(mapJavascriptImportToFile("./lib/", "pkg/main.js")).toBe("pkg/lib/index.js");
+  });
+
   it("maps a JSON module to the file as written (bd tea-rags-mcp-x9qsh)", () => {
     // `require("../package.json")` names the JSON file, not `package.json.js`.
     expect(mapJavascriptImportToFile("../package.json", "scripts/postinstall.js")).toBe("package.json");

@@ -65,6 +65,16 @@ const EXTENSIONLESS_MODULE_EXTENSIONS: readonly string[] = [".js", ".jsx", ".ts"
  */
 const RELATIVE_SPECIFIER = /^\.\.?(?:\/|$)/;
 
+/**
+ * A relative specifier that can only name a DIRECTORY: `.` / `..` as its last
+ * segment, or a trailing slash. Node's `require` treats all three as a
+ * directory and never tries them as a file, and `tsc` agrees
+ * (`normalizePathForCJSResolution`): `require(".")` from
+ * `src/components/b.js` is `src/components/index.js`, not `src/components.js`,
+ * and `"./"` is never `src/components/.js`.
+ */
+const DIRECTORY_ONLY_SPECIFIER = /(?:^|\/)\.\.?$|\/$/;
+
 /** Basename of the module a directory stands for: `"./config"` → `config/index.js`. */
 const DIRECTORY_MODULE_STEM = "index";
 
@@ -73,20 +83,29 @@ const DIRECTORY_MODULE_STEM = "index";
  * or `null` for a bare package specifier (npm packages, `node:` builtins —
  * codegraph excludes `node_modules` from the walk).
  *
- * A specifier that writes an extension names exactly one file. One that writes
- * none is a file first and then a directory, via its `index` module — the order
- * Node's `require` and every bundler resolve them in. A dotted basename
- * (`./foo.service`) writes no extension the list knows, so it is extensionless
- * too, and reaches `foo.service.js`.
+ * A specifier that writes an extension names exactly one file, and one that
+ * names a directory ({@link DIRECTORY_ONLY_SPECIFIER}) only that directory's
+ * `index` module. One that writes neither is a file first and then a directory
+ * — the order Node's `require` and every bundler resolve them in. A dotted
+ * basename (`./foo.service`) writes no extension the list knows, so it is
+ * extensionless too, and reaches `foo.service.js`.
  */
 export function javascriptImportPathCandidates(importText: string, callerFile: RelPath): readonly RelPath[] | null {
   if (!RELATIVE_SPECIFIER.test(importText)) return null;
   const joined = posix.normalize(posix.join(posix.dirname(callerFile), importText));
+  if (DIRECTORY_ONLY_SPECIFIER.test(importText)) return directoryModuleCandidates(joined);
   if (EXPLICIT_MODULE_EXTENSIONS.some((extension) => joined.endsWith(extension))) return [joined];
   return [
     ...EXTENSIONLESS_MODULE_EXTENSIONS.map((extension) => `${joined}${extension}`),
-    ...EXTENSIONLESS_MODULE_EXTENSIONS.map((extension) => `${joined}/${DIRECTORY_MODULE_STEM}${extension}`),
+    ...directoryModuleCandidates(joined),
   ];
+}
+
+/** The `index` modules a directory can stand for, `posix.join`ed so `"./"` at the root is `index.js`. */
+function directoryModuleCandidates(directory: RelPath): RelPath[] {
+  return EXTENSIONLESS_MODULE_EXTENSIONS.map((extension) =>
+    posix.join(directory, `${DIRECTORY_MODULE_STEM}${extension}`),
+  );
 }
 
 export class JavascriptImportFileMapper implements ImportFileMapper {
