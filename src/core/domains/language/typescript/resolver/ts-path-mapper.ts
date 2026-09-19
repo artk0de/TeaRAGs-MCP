@@ -164,6 +164,24 @@ function resolveAliasMatch(
 const RELATIVE_SPECIFIER = /^\.\.?(?:\/|$)/;
 
 /**
+ * A relative specifier that can only name a DIRECTORY: `.` / `..` as its last
+ * segment, or a trailing separator. `tsc` gives such a path a trailing
+ * separator (`normalizePathForCJSResolution`) and then skips the file probe for
+ * it, and Node's `require` does the same, so `import "."` from
+ * `src/components/Button.tsx` is `src/components/index.ts` — never
+ * `src/components.ts`, and `"./"` never `src/components/.ts`.
+ */
+const DIRECTORY_ONLY_SPECIFIER = /(?:^|\/)\.\.?$|\/$/;
+
+/**
+ * The mapped path in its directory form — ending in a separator, which is how
+ * {@link tsSourcePathCandidates} tells a directory from a file.
+ */
+function asDirectoryPath(path: string): string {
+  return path.endsWith("/") ? path : `${path}/`;
+}
+
+/**
  * Repo-relative path of the file `importText` points at, or `null` when the
  * specifier does not name a project file: bare npm packages, `node:` builtins,
  * and an ASSET import — a stylesheet, an image, a JSON module the probe finds
@@ -185,7 +203,10 @@ export function mapImportToFile(
   if (RELATIVE_SPECIFIER.test(importText)) {
     const dir = posix.dirname(callerFile);
     const joined = posix.normalize(posix.join(dir, importText));
-    return resolveTsSourcePath(joined, fileExists);
+    return resolveTsSourcePath(
+      DIRECTORY_ONLY_SPECIFIER.test(importText) ? asDirectoryPath(joined) : joined,
+      fileExists,
+    );
   }
   const match = selectAliasPattern(importText, options.paths);
   return match === null ? null : resolveAliasMatch(match, options, fileExists);
@@ -320,8 +341,16 @@ function probeImportPath(path: string, fileExists?: ProjectFileProbe): ProbedImp
   return fileExists(path) ? ASSET_IMPORT : UNCONFIRMED_IMPORT;
 }
 
-/** Source files a mapped specifier could stand for, in `tsc`'s resolution order. */
+/**
+ * Source files a mapped specifier could stand for, in `tsc`'s resolution order.
+ * A path ending in a separator is a directory and nothing else (see
+ * {@link DIRECTORY_ONLY_SPECIFIER}; a `paths` substitution keeps a trailing
+ * slash the same way), so only its `index` module is a candidate.
+ */
 function tsSourcePathCandidates(path: string): readonly string[] {
+  if (path.endsWith("/")) {
+    return EXTENSIONLESS_CANDIDATES.map((extension) => posix.join(path, `${DIRECTORY_MODULE_STEM}${extension}`));
+  }
   if (namesTsSourceAsWritten(path)) return [path];
   if (path.endsWith(JSON_MODULE_EXTENSION)) return [];
 

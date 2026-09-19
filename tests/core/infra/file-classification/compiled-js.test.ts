@@ -36,6 +36,12 @@ describe("isJsFamilyPath", () => {
     }
   });
 
+  it("matches TypeScript's ESM / CJS module formats, which ingest indexes as TypeScript (bd tea-rags-mcp-1y13c)", () => {
+    for (const p of ["a.mts", "a.cts", "dir/B.MTS"]) {
+      expect(isJsFamilyPath(p)).toBe(true);
+    }
+  });
+
   it("does not match non-JS-family extensions", () => {
     for (const p of ["a.rb", "a.py", "a.go", "a.json", "a.css", "README.md", "noext"]) {
       expect(isJsFamilyPath(p)).toBe(false);

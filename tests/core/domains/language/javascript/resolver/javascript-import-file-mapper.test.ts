@@ -108,4 +108,39 @@ describe("JavascriptImportFileMapper", () => {
     expect(mapper.mapImportToFile(".", "src/main.js", ctx)).toEqual({ kind: "project", relPath: "src/index.js" });
     expect(mapper.mapImportToFile("..", "src/lib/util.js", ctx)).toEqual({ kind: "project", relPath: "src/index.js" });
   });
+
+  // `.` / `..` as the last segment, or a trailing slash, names a DIRECTORY
+  // only — Node's `require` and `tsc` never try it as a file. The mapper tried
+  // `.` as `src/components.js` first, and `./` as `src/components/.js`.
+  it("maps `.` and `..` to the directory's index even when a same-named sibling file exists", () => {
+    const ctx = ctxWith(["src/components.js", "src/components/index.js"]);
+    expect(mapper.mapImportToFile(".", "src/components/b.js", ctx)).toEqual({
+      kind: "project",
+      relPath: "src/components/index.js",
+    });
+    expect(mapper.mapImportToFile("..", "src/components/x/b.js", ctx)).toEqual({
+      kind: "project",
+      relPath: "src/components/index.js",
+    });
+  });
+
+  it("maps `./` and `../` to the directory's index module", () => {
+    const ctx = ctxWith(["src/components.js", "src/components/index.js"]);
+    expect(mapper.mapImportToFile("./", "src/components/b.js", ctx)).toEqual({
+      kind: "project",
+      relPath: "src/components/index.js",
+    });
+    expect(mapper.mapImportToFile("../", "src/components/x/b.js", ctx)).toEqual({
+      kind: "project",
+      relPath: "src/components/index.js",
+    });
+  });
+
+  it("maps `./dir/` to that directory's index module, never to a sibling file", () => {
+    const ctx = ctxWith(["src/widgets.js", "src/widgets/index.ts"]);
+    expect(mapper.mapImportToFile("./widgets/", "src/main.js", ctx)).toEqual({
+      kind: "project",
+      relPath: "src/widgets/index.ts",
+    });
+  });
 });

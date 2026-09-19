@@ -1,5 +1,7 @@
 import picomatch from "picomatch";
 
+import { TEST_PATTERNS_BY_LANGUAGE } from "./file-classification/patterns.js";
+
 export type ChunkScope = "source" | "test" | null;
 
 export interface ScopeDetectionConfig {
@@ -7,10 +9,20 @@ export interface ScopeDetectionConfig {
   languageTestChunkCounts: Map<string, number>;
 }
 
+/** Root-level test directories shared by the TypeScript and JavaScript entries. */
+const ECMASCRIPT_TEST_DIRECTORIES = ["tests/**", "test/**", "__tests__/**"];
+
+/**
+ * TypeScript and JavaScript take their test-file SUFFIXES from
+ * `TEST_PATTERNS_BY_LANGUAGE`, the classifier's per-language source, rather
+ * than a copy: the copy here missed `.mts` / `.cts` once TypeScript owned them
+ * (bd tea-rags-mcp-1y13c), so a `worker.test.mts` chunk scored as source and
+ * went through the secrets gate as real code.
+ */
 const DEFAULT_TEST_PATHS: Record<string, string[]> = {
   ruby: ["spec/**", "test/**"],
-  typescript: ["tests/**", "test/**", "__tests__/**", "**/*.test.ts", "**/*.test.tsx", "**/*.spec.ts", "**/*.spec.tsx"],
-  javascript: ["tests/**", "test/**", "__tests__/**", "**/*.test.js", "**/*.test.jsx", "**/*.spec.js", "**/*.spec.jsx"],
+  typescript: [...ECMASCRIPT_TEST_DIRECTORIES, ...TEST_PATTERNS_BY_LANGUAGE.typescript],
+  javascript: [...ECMASCRIPT_TEST_DIRECTORIES, ...TEST_PATTERNS_BY_LANGUAGE.javascript],
   python: ["tests/**", "test/**", "**/test_*.py", "**/*_test.py"],
   go: ["**/*_test.go"],
   java: ["src/test/**", "**/test/**"],

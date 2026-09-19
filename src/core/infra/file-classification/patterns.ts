@@ -40,7 +40,18 @@ export const GENERATED_PATTERNS: readonly string[] = [
  */
 export const TEST_PATTERNS_BY_LANGUAGE: Readonly<Record<string, readonly string[]>> = {
   common: ["**/tests/**", "**/test/**", "**/__tests__/**", "**/spec/**"],
-  typescript: ["**/*.test.ts", "**/*.test.tsx", "**/*.spec.ts", "**/*.spec.tsx"],
+  // `.mts` / `.cts` are indexed as TypeScript (bd tea-rags-mcp-1y13c); without
+  // them here `worker.test.mts` entered the codegraph as production code.
+  typescript: [
+    "**/*.test.ts",
+    "**/*.test.tsx",
+    "**/*.test.mts",
+    "**/*.test.cts",
+    "**/*.spec.ts",
+    "**/*.spec.tsx",
+    "**/*.spec.mts",
+    "**/*.spec.cts",
+  ],
   javascript: [
     "**/*.test.js",
     "**/*.test.jsx",

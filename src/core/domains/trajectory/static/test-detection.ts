@@ -1,8 +1,15 @@
 import { basename } from "node:path";
 
+/**
+ * `.test` / `.spec` before any TypeScript or JavaScript extension, the ESM /
+ * CJS module formats included — `.mts` / `.cts` are indexed as TypeScript (bd
+ * tea-rags-mcp-1y13c).
+ */
+const ECMASCRIPT_TEST_FILE = /\.(test|spec)\.(ts|tsx|mts|cts|js|jsx|mjs|cjs)$/;
+
 const TEST_PATTERNS: Record<string, RegExp> = {
-  typescript: /\.(test|spec)\.(ts|tsx|js|jsx)$/,
-  javascript: /\.(test|spec)\.(ts|tsx|js|jsx)$/,
+  typescript: ECMASCRIPT_TEST_FILE,
+  javascript: ECMASCRIPT_TEST_FILE,
   python: /(^|[\\/])test_.*\.py$|_test\.py$/,
   java: /(Test|IT)\.java$/,
   go: /_test\.go$/,

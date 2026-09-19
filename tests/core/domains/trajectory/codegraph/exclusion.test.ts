@@ -53,6 +53,18 @@ describe("buildCodegraphExclusionFilter", () => {
     expect(ig.ignores("crate/src/parser_test.rs")).toBe(true);
   });
 
+  it("keeps a test file in TypeScript's ESM / CJS module formats out of the graph (bd tea-rags-mcp-1y13c)", () => {
+    // The codegraph walks `.mts` / `.cts` as TypeScript, so without their test
+    // suffixes `worker.test.mts` entered the graph as production code.
+    const ig = buildCodegraphExclusionFilter({ customPatterns: [] });
+    expect(ig.ignores("src/worker.test.mts")).toBe(true);
+    expect(ig.ignores("src/worker.spec.mts")).toBe(true);
+    expect(ig.ignores("src/loader.test.cts")).toBe(true);
+    expect(ig.ignores("src/loader.spec.cts")).toBe(true);
+    expect(ig.ignores("src/worker.mts")).toBe(false);
+    expect(ig.ignores("src/loader.cts")).toBe(false);
+  });
+
   it("does NOT match production source paths", () => {
     const ig = buildCodegraphExclusionFilter({ customPatterns: [] });
     expect(ig.ignores("src/service.ts")).toBe(false);

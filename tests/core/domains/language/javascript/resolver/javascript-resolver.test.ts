@@ -53,6 +53,17 @@ describe("mapJavascriptImportToFile", () => {
     expect(mapJavascriptImportToFile("./types.d.ts", "scripts/boot.js")).toBe("scripts/types.d.ts");
   });
 
+  it("maps a directory-only specifier to the directory's index.js, never to a file", () => {
+    // `.` / `..` as the last segment, or a trailing slash, names a directory
+    // only (Node's `require`, `tsc`): the head used to be `pkg.js` for `.` and
+    // `pkg/.js` for `./`.
+    expect(mapJavascriptImportToFile(".", "pkg/main.js")).toBe("pkg/index.js");
+    expect(mapJavascriptImportToFile("./", "pkg/main.js")).toBe("pkg/index.js");
+    expect(mapJavascriptImportToFile("..", "pkg/sub/x.js")).toBe("pkg/index.js");
+    expect(mapJavascriptImportToFile("../", "pkg/sub/x.js")).toBe("pkg/index.js");
+    expect(mapJavascriptImportToFile("./lib/", "pkg/main.js")).toBe("pkg/lib/index.js");
+  });
+
   it("maps a JSON module to the file as written (bd tea-rags-mcp-x9qsh)", () => {
     // `require("../package.json")` names the JSON file, not `package.json.js`.
     expect(mapJavascriptImportToFile("../package.json", "scripts/postinstall.js")).toBe("package.json");
@@ -183,6 +194,24 @@ describe("JavascriptCallResolver", () => {
       ctx("pkg/main.js", [{ importText: "./foo.js", startLine: 1 }], t),
     );
     expect(target?.targetRelPath).toBe("pkg/foo.js");
+  });
+
+  it("matches import basename ignoring a TypeScript-family extension (bd tea-rags-mcp-1y13c)", () => {
+    // A JS entry point loading TS source directly (`node
+    // --experimental-strip-types`, tsx) writes the `.ts` / `.mts` / `.cts` /
+    // `.tsx` it means. Stripping only the JS suffixes compared `worker.ts` with
+    // receiver `worker`, so every call on such an import resolved to nothing.
+    for (const extension of [".ts", ".tsx", ".mts", ".cts"]) {
+      const r = new JavascriptCallResolver();
+      const t = new InMemoryGlobalSymbolTable();
+      const targetFile = `pkg/worker${extension}`;
+      t.upsertFile(targetFile, [{ symbolId: "run", fqName: "run", shortName: "run", relPath: targetFile, scope: [] }]);
+      const target = r.resolve(
+        { callText: "worker.run()", receiver: "worker", member: "run", startLine: 3 },
+        ctx("pkg/main.js", [{ importText: `./worker${extension}`, startLine: 1 }], t),
+      );
+      expect(target, extension).toEqual({ targetRelPath: targetFile, targetSymbolId: "run" });
+    }
   });
 
   it("falls back to global short-name when no receiver", () => {

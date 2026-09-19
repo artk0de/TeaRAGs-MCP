@@ -38,7 +38,7 @@
     },
     "walker": {
       "version": 3,
-      "digest": "sha256:11c7a652fa5fc67fdd755935cf31f3e643f755adb245fc330e4779545096dc7f"
+      "digest": "sha256:95cc3a198fd2180820f93c511200f0ad15a4fb50247217d493cf66e5d9393f2b"
     }
   },
   "markdown": {
@@ -76,7 +76,7 @@
     },
     "walker": {
       "version": 6,
-      "digest": "sha256:b3145a91db448556567030dae7a14a56864356ed04bcb1a87c68409d6afa9f42"
+      "digest": "sha256:1f5262bbfc49743eb626280c1b760ff541df1315110d553198debc5536628d52"
     }
   }
 }

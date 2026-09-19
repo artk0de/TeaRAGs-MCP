@@ -400,6 +400,58 @@ describe("mapImportToFile relative specifiers", () => {
   });
 });
 
+/**
+ * A specifier that can only name a DIRECTORY: `.` / `..` as its last segment,
+ * or a trailing separator. `tsc` (`normalizePathForCJSResolution`, then no file
+ * probe on a trailing separator) and Node's `require` resolve these to the
+ * directory's `index` module and never as a file. The mapper tried them as a
+ * file first — `import "."` from `src/components/Button.tsx` named
+ * `src/components.ts` — and a trailing slash produced `src/components/.ts`.
+ */
+describe("mapImportToFile directory-only specifiers", () => {
+  const SIBLING_AND_INDEX = (rel: string) => rel === "src/components.ts" || rel === "src/components/index.ts";
+
+  it("maps `.` to the directory's index even when a same-named sibling file exists", () => {
+    expect(mapImportToFile(".", "src/components/Button.tsx", NO_ALIASES, SIBLING_AND_INDEX)).toBe(
+      "src/components/index.ts",
+    );
+  });
+
+  it("maps `..` to the parent directory's index even when a same-named sibling file exists", () => {
+    expect(mapImportToFile("..", "src/components/x/Y.tsx", NO_ALIASES, SIBLING_AND_INDEX)).toBe(
+      "src/components/index.ts",
+    );
+  });
+
+  it("maps `./` and `../` to the directory's index, never to a `.ts` file named by the slash", () => {
+    expect(mapImportToFile("./", "src/components/Button.tsx", NO_ALIASES, SIBLING_AND_INDEX)).toBe(
+      "src/components/index.ts",
+    );
+    expect(mapImportToFile("../", "src/components/x/Y.tsx", NO_ALIASES, SIBLING_AND_INDEX)).toBe(
+      "src/components/index.ts",
+    );
+  });
+
+  it("maps `./dir/` to that directory's index module", () => {
+    const exists = (rel: string) => rel === "src/widgets.ts" || rel === "src/widgets/index.tsx";
+    expect(mapImportToFile("./widgets/", "src/app.ts", NO_ALIASES, exists)).toBe("src/widgets/index.tsx");
+  });
+
+  it("answers the unverified directory index when nothing on disk confirms it", () => {
+    expect(mapImportToFile(".", "src/components/Button.tsx", NO_ALIASES, () => false)).toBe("src/components/index.ts");
+    expect(mapImportToFile("./", "src/components/Button.tsx", NO_ALIASES)).toBe("src/components/index.ts");
+    // At the repository root the directory is the root itself.
+    expect(mapImportToFile("..", "src/app.ts", NO_ALIASES)).toBe("index.ts");
+  });
+
+  it("maps a trailing-slash specifier behind a tsconfig alias to the directory's index", () => {
+    const exists = (rel: string) => rel === "src/components.ts" || rel === "src/components/index.tsx";
+    expect(mapImportToFile("@/components/", "src/app.ts", { baseUrl: ".", paths: { "@/*": ["src/*"] } }, exists)).toBe(
+      "src/components/index.tsx",
+    );
+  });
+});
+
 describe("mapImportToFile asset imports (bd tea-rags-mcp-unt4v)", () => {
   it("answers null for a specifier naming an existing stylesheet, image or document", () => {
     const assets = new Set([
