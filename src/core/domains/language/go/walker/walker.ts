@@ -30,7 +30,7 @@ import type {
   LocalBinding,
 } from "../../../../contracts/types/codegraph.js";
 import { assignCallsToInnermostChunks } from "../../kernel/assign-calls-to-chunks.js";
-import { goImportBoundName, goImportPathElementName } from "../import-binding.js";
+import { goImportBoundName, goImportNameClaims, goImportsByClaimedName } from "../import-binding.js";
 import { goLocalAt, type GoLocalChannels } from "../local-scope.js";
 import { goQualifiedTypeName } from "../type-name.js";
 
@@ -149,19 +149,18 @@ function collectGoFunctionReturnTypes(root: AstNode, imports: readonly ImportRef
 
 /**
  * The import path each qualifier the file's imports bind names (`http` →
- * `net/http`, an alias → its path). A path element an import may bind instead
- * of its assumed name (`goImportPathElementName` — `v1` of `…/core/v1`) maps
- * too, below every bound name: a qualifier in a TYPE is always a package, and
- * the recorded path is checked against the module map before it types anything.
+ * `net/http`, an alias → its path), by the most certain claim any import has
+ * to it (`goImportsByClaimedName`, bd tea-rags-mcp-e6xx F3-3). The walker
+ * cannot read a package clause, so an alias outranks a path's verbatim last
+ * element, which outranks a name derived from a path — `core` of
+ * `example.com/proj/core` over the `core` assumed for `k8s.io/api/core/v1`,
+ * whichever is listed first — and a name two imports tie for maps to nothing.
+ * A qualifier in a TYPE is always a package, and the recorded path is checked
+ * against the module map before it types anything.
  */
 function goImportPathsByBoundName(imports: readonly ImportRef[]): ReadonlyMap<string, string> {
   const paths = new Map<string, string>();
-  for (const nameOf of [goImportBoundName, goImportPathElementName]) {
-    for (const imp of imports) {
-      const name = nameOf(imp);
-      if (name && !paths.has(name)) paths.set(name, imp.importText);
-    }
-  }
+  for (const [name, imp] of goImportsByClaimedName(imports, goImportNameClaims)) paths.set(name, imp.importText);
   return paths;
 }
 
@@ -288,15 +287,12 @@ function collectGoImports(root: AstNode): ImportRef[] {
 
 /**
  * The qualifiers the file's imports may bind — the names a local can shadow:
- * each import's bound name, and the path element it may bind instead
- * (`goImportPathElementName`), since shadowing a name no import binds costs
- * only an unread binding.
+ * every name any import claims (`goImportNameClaims`), however uncertain the
+ * claim, since shadowing a name no import binds costs only an unread binding.
  */
 function goImportBoundNames(imports: readonly ImportRef[]): ReadonlySet<string> {
   const names = new Set<string>();
-  for (const imp of imports) {
-    for (const name of [goImportBoundName(imp), goImportPathElementName(imp)]) if (name) names.add(name);
-  }
+  for (const imp of imports) for (const claim of goImportNameClaims(imp)) names.add(claim.name);
   return names;
 }
 
@@ -566,7 +562,7 @@ interface GoBindingSink {
   readonly types: Record<string, LocalBinding[]>;
   readonly calls: Record<string, CallResultBinding[]>;
   /**
-   * The names the file's imports bind (`goImportBoundName`) and the chunk
+   * The names the file's imports may bind (`goImportBoundNames`) and the chunk
    * calls bare (`goShadowedNames`). A local of one of these names records an
    * EMPTY-typed binding even when nothing types it, so no reader takes the
    * receiver for the package, or the bare call for the declaration, it

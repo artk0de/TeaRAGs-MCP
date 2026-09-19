@@ -21,7 +21,12 @@ import {
   type SymbolResolutionTarget,
 } from "../../../../../contracts/types/codegraph.js";
 import type { SymbolIdComposer } from "../../../../../contracts/types/language.js";
-import { goImportBoundName, goImportPathElementName } from "../../import-binding.js";
+import {
+  GO_IMPORT_NAME_EVIDENCE,
+  goImportNameClaims,
+  goImportsByClaimedName,
+  type GoImportNameClaim,
+} from "../../import-binding.js";
 import { goLocalAt } from "../../local-scope.js";
 import { splitGoRecordedTypeName } from "../../type-name.js";
 import { preferGoDefaultBuild } from "../go-build-constraints.js";
@@ -239,30 +244,36 @@ export function goCallResultType(
 
 /**
  * The import the qualifier `qualifier` names in the caller's file, `undefined`
- * when none binds it (bd tea-rags-mcp-e6xx, G2-1). The name an import binds is
+ * when none binds it (bd tea-rags-mcp-e6xx, G2-1). An import claims a name by
  * its alias when the source spells one; else, for a PROJECT package whose
- * directory the module map can read, the name its own `package` clause
- * declares (`GoModuleMap#packageNameOf` — `api/v1` may be `package v1`); else
- * the name Go's tooling assumes from the path (`goImportBoundName`: `/v4`
- * dropped, `yaml.v3` → `yaml`, `go-json` → `json`). Only when no import binds
- * it that way does an import whose clause is unread answer for its last path
- * element (`goImportPathElementName`), the name such a package may declare
- * instead. A dot or blank import binds no qualifier at all.
+ * directory the module map can read, by the name its own `package` clause
+ * declares (`GoModuleMap#packageNameOf` — `api/v1` may be `package v1`) and by
+ * nothing else; else by its path's last element verbatim and by the name Go's
+ * tooling assumes from the path (`/v4` dropped, `yaml.v3` → `yaml`, `go-json`
+ * → `json`) — `goImportNameClaims`. The qualifier names the import with the
+ * most certain claim to it, in that order, and none when two imports tie for it
+ * (`goImportsByClaimedName`, F3-3): listed first, the `core` assumed for
+ * `k8s.io/api/core/v1` took `core.New()` from the project's `core`. A dot or
+ * blank import binds no qualifier at all.
  */
 export function goImportNamedBy(cfg: ResolverConfig, qualifier: string, ctx: CallContext): ImportRef | undefined {
   const modules = cfg.moduleMaps?.forRoot(ctx.projectRoot);
-  const unreadClauses: ImportRef[] = [];
-  for (const imp of ctx.imports) {
-    if (imp.importedNames?.[0] !== undefined) {
-      if (goImportBoundName(imp) === qualifier) return imp;
-      continue;
-    }
+  return goImportsByClaimedName(ctx.imports, (imp) => goResolverImportNameClaims(imp, modules)).get(qualifier);
+}
+
+/**
+ * The names `imp` may bind as the resolver reads them: an unaliased import of a
+ * project package whose `package` clause the module map reads claims that name
+ * alone, at `packageClause` certainty; any other import claims what its
+ * spelling tells (`goImportNameClaims`).
+ */
+function goResolverImportNameClaims(imp: ImportRef, modules: GoModuleMap | undefined): readonly GoImportNameClaim[] {
+  if (imp.importedNames?.[0] === undefined) {
     const packageDir = goImportPackageDir(imp.importText, modules);
     const declared = packageDir === undefined ? undefined : modules?.packageNameOf(packageDir);
-    if (declared === undefined) unreadClauses.push(imp);
-    if ((declared ?? goImportBoundName(imp)) === qualifier) return imp;
+    if (declared !== undefined) return [{ name: declared, evidence: GO_IMPORT_NAME_EVIDENCE.packageClause }];
   }
-  return unreadClauses.find((imp) => goImportPathElementName(imp) === qualifier);
+  return goImportNameClaims(imp);
 }
 
 /**

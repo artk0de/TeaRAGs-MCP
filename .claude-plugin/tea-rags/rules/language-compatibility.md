@@ -165,8 +165,10 @@ conclude absence from a graph the index says is incomplete.
   namesake type blocks the walk) + go.mod module-path import mapping (nested
   modules by longest prefix; the standard library and dependencies map to no
   project package; an import binds its alias, else a project package's own
-  `package` clause, else the name Go assumes from the path, `/vN` dropped and
-  `go-` and `.vN` cut; cross-package typing needs a go.mod module root, without
+  `package` clause, else its path's last element or the name Go assumes from the
+  path (`/vN` dropped, `go-` and `.vN` cut), and a name two imports claim goes
+  to the more certain claim in that order, never to the one listed first, and to
+  neither on a tie; cross-package typing needs a go.mod module root, without
   which an import path is read as a repository directory) + bare calls scoped to
   the caller's package and dot-imports + build-tag twins (one name declared per
   `//go:build` / GOOS-GOARCH file variant) narrowed to the file the default
