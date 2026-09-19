@@ -110,8 +110,9 @@ Practical tool with sensible defaults and shorthand filters:
 # Basic search
 /mcp__tea-rags__search_code /path/to/project "authentication middleware"
 
-# Filter by file type
-/mcp__tea-rags__search_code /path "error handling" --fileExtension .ts,.tsx
+# Filter by file extension — one string, or an array for several
+# (fileExtension: [".ts", ".tsx"]); a comma-joined string matches nothing
+/mcp__tea-rags__search_code /path "error handling" --fileExtension .ts
 
 # Filter by path pattern
 /mcp__tea-rags__search_code /path "validation" --pathPattern src/api/**
