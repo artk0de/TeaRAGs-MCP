@@ -36,6 +36,7 @@ uncommitted edits with no git signal yet.
 
 ```
 0. `git status --porcelain` → uncommitted paths (see Uncommitted probe).
+   Paths listed → `index_codebase` (incremental, no consent) BEFORE step 1.
 
 1. Search — ONE message, parallel calls. Same tool (search-cascade),
    same query, rerank="bugHunt", limit=10:
@@ -97,8 +98,12 @@ pre-edit history. "Broke after my change" = edit not yet committed.
 - Same tool + query + rerank + limit as a/b, same message.
 - Hit matching symptom = **uncommitted suspect** — labels describe committed
   version; symptom fit decides.
-- Probe reads INDEXED content: edits after last index invisible → zero hits ≠
-  clean. Prime stale → incremental `index_codebase` first (index-freshness).
+- Probe reads INDEXED content → step 0 listed paths → incremental
+  `index_codebase` BEFORE the search message, always (no consent —
+  index-freshness). Never wait for prime stale: prime staleness is time-based,
+  blind to working-tree edits → edit an hour after last index = probe returns
+  pre-edit chunks at stale line ranges, Rule 4 judges old code. Reindex failed →
+  say so; zero hits ≠ clean.
 
 ## PRESENT
 
