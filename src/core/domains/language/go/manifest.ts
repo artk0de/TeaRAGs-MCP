@@ -16,6 +16,15 @@
 export const GO_MODULE_MANIFEST_FILE = "go.mod";
 
 /**
+ * Directories the go.mod walk skips on top of the shared manifest walk's own
+ * ignore list (bd tea-rags-mcp-e6xx). `vendor/`: `go mod vendor` under a go
+ * directive below 1.17 copies every dependency's go.mod there, and the module
+ * map would read each as a project module. It is Go's alone — the shared list
+ * also serves Python's dependency walk, which reads `vendor/` as it always has.
+ */
+export const GO_MODULE_WALK_IGNORED_DIRS: ReadonlySet<string> = new Set(["vendor"]);
+
+/**
  * The module path of a `go.mod`, or `undefined` when it has no `module`
  * directive. Handles a quoted path and a trailing `//` comment; the manifest
  * is not source code, so a line scan is the parser (`go mod edit -json` is the

@@ -97,6 +97,16 @@ describe("GoModuleMapCache", () => {
     expect(cache.forRoot(root)).toBe(first);
   });
 
+  it("never takes a vendored dependency's go.mod for a project module", () => {
+    // `go mod vendor` under a go directive below 1.17 copies each dependency's
+    // go.mod into vendor/; reading one would make a dependency a project module.
+    write("go.mod", "module example.com/app\n");
+    write(join("vendor", "github.com", "dep", "go.mod"), "module github.com/dep\n");
+    const map = new GoModuleMapCache().forRoot(root);
+    expect(map?.packageDirOf("github.com/dep/x")).toBeUndefined();
+    expect(map?.packageDirOf("example.com/app/x")).toBe("x");
+  });
+
   it("re-reads on reload, so a new pass sees an edited go.mod", () => {
     write("go.mod", "module example.com/old\n");
     const cache = new GoModuleMapCache();

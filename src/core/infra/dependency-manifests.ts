@@ -28,11 +28,15 @@ import type { DependencyManifestSource, LanguageFactoryDescriptor } from "../con
 
 /**
  * Directories the walk never descends into. Vendored dependency trees
- * (`.venv`, `venv`, `site-packages`, `node_modules`, `vendor`), build output
- * (`build`, `dist`) and git's own store — none of them hold a manifest that
- * says anything about what the PROJECT declares. Go's `vendor/` is one: `go mod
- * vendor` under a go directive below 1.17 copies every dependency's go.mod
- * there, and the Go module map would read each as a project module.
+ * (`.venv`, `venv`, `site-packages`, `node_modules`), build output (`build`,
+ * `dist`) and git's own store — none of them hold a manifest that says anything
+ * about what the PROJECT declares.
+ *
+ * A directory only ONE consumer must skip is that consumer's to name
+ * ({@link readManifestFiles}' `extraIgnoredDirs`), never an entry here: this
+ * set is shared by every language's walk, so growing it moves a language's
+ * output with no version axis of that language moving (bd tea-rags-mcp-e6xx —
+ * Go's `vendor/` briefly lived here and changed Python's walk).
  */
 export const DEPENDENCY_MANIFEST_IGNORED_DIRS: ReadonlySet<string> = new Set([
   ".git",
@@ -42,8 +46,9 @@ export const DEPENDENCY_MANIFEST_IGNORED_DIRS: ReadonlySet<string> = new Set([
   "build",
   "dist",
   "site-packages",
-  "vendor",
 ]);
+
+const NO_EXTRA_IGNORED_DIRS: ReadonlySet<string> = new Set();
 
 /**
  * How far below the root the walk descends, root itself being depth 0.
@@ -133,17 +138,29 @@ export interface ManifestFile {
  * For a manifest whose meaning depends on WHERE it sits rather than on a union
  * of names (bd tea-rags-mcp-e6xx): a Go `go.mod` declares the module path of
  * its own directory tree, and a multi-module repository has one per nested
- * module. Total: an unreadable directory or file is skipped, never thrown.
+ * module. `extraIgnoredDirs` are directory names THIS caller also skips, on
+ * top of the shared set — Go's module map names `vendor/`, where `go mod
+ * vendor` leaves dependencies' go.mod files. Total: an unreadable directory or
+ * file is skipped, never thrown.
  */
-export function readManifestFiles(root: string, matchesManifestFile: (fileName: string) => boolean): ManifestFile[] {
+export function readManifestFiles(
+  root: string,
+  matchesManifestFile: (fileName: string) => boolean,
+  extraIgnoredDirs: ReadonlySet<string> = NO_EXTRA_IGNORED_DIRS,
+): ManifestFile[] {
   const found: ManifestFile[] = [];
-  walkManifestFiles(root, matchesManifestFile, (dir, relDir, fileName) => {
-    try {
-      found.push({ relDir, fileName, content: readFileSync(join(dir, fileName), "utf8") });
-    } catch {
-      // unreadable: skipped, like every other failure of the walk
-    }
-  });
+  walkManifestFiles(
+    root,
+    matchesManifestFile,
+    (dir, relDir, fileName) => {
+      try {
+        found.push({ relDir, fileName, content: readFileSync(join(dir, fileName), "utf8") });
+      } catch {
+        // unreadable: skipped, like every other failure of the walk
+      }
+    },
+    extraIgnoredDirs,
+  );
   return found;
 }
 
@@ -152,6 +169,7 @@ function walkManifestFiles(
   root: string,
   matchesManifestFile: (fileName: string) => boolean,
   onManifest: (dir: string, relDir: string, fileName: string) => void,
+  extraIgnoredDirs: ReadonlySet<string> = NO_EXTRA_IGNORED_DIRS,
 ): void {
   const visit = (dir: string, relDir: string, depth: number): void => {
     let entries;
@@ -163,7 +181,7 @@ function walkManifestFiles(
     for (const entry of entries) {
       if (entry.isDirectory()) {
         if (depth >= MAX_MANIFEST_WALK_DEPTH) continue;
-        if (DEPENDENCY_MANIFEST_IGNORED_DIRS.has(entry.name)) continue;
+        if (DEPENDENCY_MANIFEST_IGNORED_DIRS.has(entry.name) || extraIgnoredDirs.has(entry.name)) continue;
         visit(join(dir, entry.name), relDir === "" ? entry.name : `${relDir}/${entry.name}`, depth + 1);
         continue;
       }

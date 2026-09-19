@@ -73,6 +73,15 @@ describe("readDeclaredDependencies", () => {
     expect([...(readDeclaredDependencies(root, SOURCES) ?? [])]).toEqual(["flask"]);
   });
 
+  it("descends into `vendor/` — skipping it is the Go module map's own rule, not the shared walk's", () => {
+    // A Python repository's manifests under vendor/ (a vendored framework
+    // facet) are read exactly as before the Go module map existed: the Go
+    // consumer asks for the skip, the shared default never grew it.
+    write("pyproject.toml", '[project]\ndependencies = ["flask"]\n');
+    write(join("vendor", "requirements.txt"), "django==6.0.3\n");
+    expect([...(readDeclaredDependencies(root, SOURCES) ?? [])].sort()).toEqual(["django", "flask"]);
+  });
+
   it("descends 4 levels and no further — the bound that keeps a root of `/` finite", () => {
     // 2 is the deepest a real corpus puts one (polar's sdk/generator), so the
     // bound has to clear that; the 5th level is what a caller handing the walk
@@ -131,11 +140,14 @@ describe("readManifestFiles", () => {
 
   it("shares the walk's bounds: no vendored trees, no deeper than 4 levels", () => {
     write(join("node_modules", "x", "go.mod"), "module vendored\n");
-    // `go mod vendor` under a go directive below 1.17 copies each dependency's
-    // go.mod into vendor/; reading one would make a dependency a project module.
-    write(join("vendor", "github.com", "dep", "go.mod"), "module github.com/dep\n");
     write(join("a", "b", "c", "d", "e", "go.mod"), "module too.deep\n");
     expect(readManifestFiles(root, isGoMod)).toEqual([]);
+  });
+
+  it("skips the extra directories its caller names, and only for that caller", () => {
+    write(join("vendor", "github.com", "dep", "go.mod"), "module github.com/dep\n");
+    expect(readManifestFiles(root, isGoMod, new Set(["vendor"]))).toEqual([]);
+    expect(readManifestFiles(root, isGoMod).map((file) => file.relDir)).toEqual(["vendor/github.com/dep"]);
   });
 
   it("answers an empty list for a root that does not exist, rather than throwing", () => {
