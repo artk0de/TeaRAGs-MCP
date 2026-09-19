@@ -178,6 +178,54 @@ describe("GoModuleMapCache", () => {
     expect(map?.packageNameOf("gated")).toBeUndefined();
   });
 
+  /**
+   * F4 / N1 — the clause is a file's first token past its comments. A doc.go
+   * block comment whose prose starts a line with "package" is no clause: read
+   * as one (`package being`), it disagreed with the package's real files and
+   * left the clause unread (the re-validator's `f4c/lib5`: dir `lib5`, package
+   * `eps`, so `eps.New()` bound nothing).
+   */
+  it("reads the clause past a block comment whose prose starts a line with `package`", () => {
+    write("go.mod", "module example.com/app\n");
+    const doc = (name: string) =>
+      `/*\nPackage ${name} drives an analysis over the\npackage being analyzed, and reports what it finds.\n*/\npackage ${name}\n`;
+    write(join("lib5", "api.go"), "package eps\n\nfunc New() {}\n");
+    write(join("lib5", "doc.go"), doc("eps"));
+    write(join("zeta", "doc.go"), doc("zeta"));
+    write(join("zeta", "zeta.go"), "package zeta\n");
+    write(
+      join("lines", "doc.go"),
+      "// Package lines is documented by line comments.\n//\n// package lines is not a clause here.\npackage lines\n",
+    );
+    const map = new GoModuleMapCache().forRoot(root);
+    expect(map?.packageNameOf("lib5")).toBe("eps");
+    expect(map?.packageNameOf("zeta")).toBe("zeta");
+    expect(map?.packageNameOf("lines")).toBe("lines");
+  });
+
+  /**
+   * The header a build constraint sits in is the comments BEFORE the clause,
+   * and only its `//` lines: a `//go:build` spelled inside a block comment
+   * constrains nothing, so `open/a.go` answers beside a truly ignored file.
+   */
+  it("reads a build constraint only off the `//` lines of the header", () => {
+    write("go.mod", "module example.com/app\n");
+    write(join("open", "a.go"), "/*\n//go:build ignore\n*/\npackage open\n");
+    write(join("open", "b_gen.go"), "//go:build ignore\n\npackage gen\n");
+    write(join("spaced", "a.go"), "\t//go:build ignore\n\npackage gen\n");
+    write(join("spaced", "b.go"), "package spaced\n");
+    const map = new GoModuleMapCache().forRoot(root);
+    expect(map?.packageNameOf("open")).toBe("open");
+    expect(map?.packageNameOf("spaced")).toBe("spaced");
+  });
+
+  it("NEGATIVE: a file whose first token is no `package` clause declares nothing", () => {
+    write("go.mod", "module example.com/app\n");
+    write(join("broken", "a.go"), "/* unterminated\npackage broken\n");
+    write(join("broken", "b.go"), "func x() {}\npackage broken\n");
+    expect(new GoModuleMapCache().forRoot(root)?.packageNameOf("broken")).toBeUndefined();
+  });
+
   it("knows no package name without a root to read from", () => {
     expect(GoModuleMap.fromManifests([{ relDir: "", content: "module example.com/app\n" }]).packageNameOf("")).toBe(
       undefined,

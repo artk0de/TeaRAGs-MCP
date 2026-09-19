@@ -42,8 +42,10 @@ const GO_INDEXED_CALLEE = /^(?:([\p{L}_][\p{L}\p{N}_]*)\.)?([\p{L}_][\p{L}\p{N}_
  * A local in effect under the operand's name (the bare name, or the qualifier)
  * shadows the declaration or the package — the walker records one for every
  * local the chunk calls through this way, a slice or func parameter included;
- * build-tag twins narrow to the one the default build compiles
- * (`preferGoDefaultBuild`), and any other two declarations stay ambiguous. A call the walker tagged
+ * build-tag twins narrow to the one the default build compiles, a namesake in
+ * a file the default build excludes drops out for a caller it compiles
+ * (`preferGoDefaultBuild`), and
+ * any other two declarations stay ambiguous. A call the walker tagged
  * `dynamicSend` has a VALUE in its brackets (`loadAll[0]()`) and is no
  * instantiation at all.
  *

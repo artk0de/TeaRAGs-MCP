@@ -284,6 +284,75 @@ describe("a PROJECT package beside a build-ignored file of another package (f3c)
 });
 
 /**
+ * F4 / N1 (the re-validator's corpora `f4c/lib5`, `f4d/zeta`) — a doc.go block
+ * comment whose prose starts a line with "package" is no package clause. Read
+ * as one, `package being` disagreed with the package's real files and the
+ * clause went unread: under dir `lib5`, package `eps`, nothing bound `eps`
+ * (regression); under dir `zeta`, package `zeta`, only the assumed name
+ * rescued the call (converse — it must keep resolving).
+ */
+describe("a PROJECT package documented by a block comment that mentions `package` (f4c, f4d)", () => {
+  const doc = (name: string): string =>
+    [
+      "/*",
+      `Package ${name} drives an analysis over the`,
+      "package being analyzed, and reports what it finds.",
+      "*/",
+      `package ${name}`,
+      "",
+    ].join("\n");
+  const engine = (name: string): string =>
+    [
+      `package ${name}`,
+      "",
+      "type Engine struct{}",
+      "",
+      "func New() *Engine { return &Engine{} }",
+      "",
+      "func (e *Engine) Run() {}",
+      "",
+    ].join("\n");
+  const corpus = {
+    "go.mod": "module example.com/proj\n\ngo 1.22\n",
+    "app/app.go": [
+      "package app",
+      "",
+      "import (",
+      '\t"example.com/proj/lib5"',
+      '\t"example.com/proj/zeta"',
+      ")",
+      "",
+      "func c5() {",
+      "\te := eps.New()",
+      "\te.Run()",
+      "}",
+      "",
+      "func z1() {",
+      "\te := zeta.New()",
+      "\te.Run()",
+      "}",
+      "",
+    ].join("\n"),
+    "lib5/api.go": engine("eps"),
+    "lib5/doc.go": doc("eps"),
+    "zeta/doc.go": doc("zeta"),
+    "zeta/zeta.go": engine("zeta"),
+  };
+
+  it("binds the qualifier the package clause declares past the doc comment (dir `lib5`, package `eps`)", () => {
+    const sites = resolveGoFiles(corpus);
+    expect(sites.get("app/app.go:9 eps.New")).toBe("New @ lib5/api.go");
+    expect(sites.get("app/app.go:10 e.Run")).toBe("Engine#Run @ lib5/api.go");
+  });
+
+  it("control: a package named after its directory keeps binding (dir `zeta`, package `zeta`)", () => {
+    const sites = resolveGoFiles(corpus);
+    expect(sites.get("app/app.go:14 zeta.New")).toBe("New @ zeta/zeta.go");
+    expect(sites.get("app/app.go:15 e.Run")).toBe("Engine#Run @ zeta/zeta.go");
+  });
+});
+
+/**
  * A repository with NO go.mod (g2e): an import path is read as a repository
  * directory, which a GOPATH-era project's host-prefixed self-import never
  * names. Precision over recall — cross-package typing needs a module root, so

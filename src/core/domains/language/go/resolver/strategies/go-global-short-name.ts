@@ -20,7 +20,9 @@ import { goBareNamePackageDirs, type ResolverConfig } from "./shared.js";
  * `pickSingleCandidate(mode)` returns the sole hit (strict) or the first hit
  * (legacy `first` mode). Build-tag twins — gin's `binding.go` /
  * `binding_nomsgpack.go` `validate` — are first narrowed to the one the default
- * build compiles (`preferGoDefaultBuild`); any other pair of in-scope
+ * build compiles, and a namesake in a file the default build excludes
+ * (`//go:build ignore`) drops out for a caller it compiles
+ * (`preferGoDefaultBuild`); any other pair of in-scope
  * declarations stays ambiguous under strict mode. A receiver-present call never reaches here — it CONTINUEs. A
  * non-decisive result also CONTINUEs; exhausting the chain returns null.
  *
