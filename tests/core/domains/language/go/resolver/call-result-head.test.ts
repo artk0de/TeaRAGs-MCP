@@ -4,7 +4,7 @@ import { join } from "node:path";
 
 import Parser from "tree-sitter";
 import GoLang from "tree-sitter-go";
-import { describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 import type { CallContext, CallRef, NamedSymbol } from "../../../../../../src/core/contracts/types/codegraph.js";
 import { GoLanguage } from "../../../../../../src/core/domains/language/go/index.js";
@@ -37,13 +37,31 @@ function ginTable(): InMemoryGlobalSymbolTable {
   return t;
 }
 
+/**
+ * gin's root: its go.mod makes `github.com/gin-gonic/gin` the root package, the
+ * one declaring `Engine` — what the walker's recorded `engine` result names.
+ */
+let ginRoot: string;
+
+beforeAll(() => {
+  ginRoot = mkdtempSync(join(tmpdir(), "tea-rags-go-gin-root-"));
+  writeFileSync(join(ginRoot, "go.mod"), "module github.com/gin-gonic/gin\n\ngo 1.26.0\n", "utf8");
+});
+
+afterAll(() => {
+  rmSync(ginRoot, { recursive: true, force: true });
+});
+
 function ginsCtx(over: Partial<CallContext> = {}): CallContext {
   return {
     callerFile: "ginS/gins.go",
     callerScope: [],
     imports: [],
     symbolTable: ginTable(),
-    functionReturnTypes: { engine: "Engine" },
+    projectRoot: ginRoot,
+    // What the walker records for `var engine = sync.OnceValue(func() *gin.Engine {…})`
+    // (asserted below): the import path and the type, not a bare `Engine`.
+    functionReturnTypes: { engine: "github.com/gin-gonic/gin.Engine" },
     classFieldTypesByClassKey: {
       "gin.go::Engine": { RouterGroup: "RouterGroup", "embedded:RouterGroup": "RouterGroup" },
       "routergroup.go::RouterGroup": {},

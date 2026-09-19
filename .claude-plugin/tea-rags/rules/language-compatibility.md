@@ -156,29 +156,31 @@ conclude absence from a graph the index says is incomplete.
   and bare call-result heads typed through declared return types (functions and
   package-level func-valued vars, `sync.OnceValue` included) behind a known-type
   gate (a package-qualified return type or callee counts only when its import
-  path maps to a project package that declares it; an unqualified return type is
-  placed in its callee's package when that package declares it, and in a file
-  with a dot import types nothing otherwise; a callee qualifier that is neither
-  an import nor a local in scope, a package-level var included, types nothing) +
-  dotted receivers typed hop by hop through struct fields + methods and fields
-  promoted through struct embedding (shallowest depth wins; an opaque or
-  namesake type blocks the walk) + go.mod module-path import mapping (nested
-  modules by longest prefix; the standard library and dependencies map to no
-  project package; an import binds its alias, else a project package's own
-  `package` clause, else its path's last element or the name Go assumes from the
-  path (`/vN` dropped, `go-` and `.vN` cut), and a name two imports claim goes
-  to the more certain claim in that order, never to the one listed first, and to
-  neither on a tie; cross-package typing needs a go.mod module root, without
-  which an import path is read as a repository directory) + bare calls scoped to
-  the caller's package and dot-imports + build-tag twins (one name declared per
-  `//go:build` / GOOS-GOARCH file variant) narrowed to the file the default
-  build compiles, the indexing host's GOOS/GOARCH standing in for the platform +
-  explicit generic instantiation + Go-only symbol lookups in polyglot
-  repositories. Interfaces are not dispatched (no CHA cone); a method's result
-  types only a call-bound local (`x := v.M()`, read by the method's name alone),
-  never a chained call (`v.M().X()`); a placed return type's members are looked
-  up in its own package alone (a project alias of an external type has none),
-  every other type's package-blind
+  path maps to a project package that declares it; a function's unqualified
+  return type counts only when the callee's package declares it, and is placed
+  there (a type dot-imported in the callee's file types nothing); a method's
+  counts when some project type of that name exists and the caller's file has no
+  dot import; a callee qualifier that is neither an import nor a local in scope,
+  a package-level var included, types nothing) + dotted receivers typed hop by
+  hop through struct fields + methods and fields promoted through struct
+  embedding (shallowest depth wins; an opaque or namesake type blocks the
+  walk) + go.mod module-path import mapping (nested modules by longest prefix;
+  the standard library and dependencies map to no project package; an import
+  binds its alias, else a project package's own `package` clause, else its
+  path's last element or the name Go assumes from the path (`/vN` dropped, `go-`
+  and `.vN` cut), and a name two imports claim goes to the more certain claim in
+  that order, never to the one listed first, and to neither on a tie;
+  cross-package typing needs a go.mod module root, without which an import path
+  is read as a repository directory) + bare calls scoped to the caller's package
+  and dot-imports + build-tag twins (one name declared per `//go:build` /
+  GOOS-GOARCH file variant) narrowed to the file the default build compiles, the
+  indexing host's GOOS/GOARCH standing in for the platform + explicit generic
+  instantiation + Go-only symbol lookups in polyglot repositories. Interfaces
+  are not dispatched (no CHA cone); a method's result types only a call-bound
+  local (`x := v.M()`, read by the method's name alone), never a chained call
+  (`v.M().X()`); a placed return type's members are looked up in its own package
+  alone (a project alias of an external type has none), every other type's
+  package-blind
 - **Java** — 6-strategy + java.lang stdlib whitelist + overload disambiguation
 - **Rust** — 6-strategy; trait-based dispatch
 - **Ruby** — 15-strategy chain + 4 dispatch components

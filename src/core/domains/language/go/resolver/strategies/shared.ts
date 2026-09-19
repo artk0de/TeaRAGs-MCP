@@ -108,14 +108,16 @@ export function isKnownTypeSymbol(typeName: string, ctx: CallContext): boolean {
  * or `undefined` when it denotes none (bd tea-rags-mcp-e6xx):
  *   - a bare name is a type of the package that declares the function
  *     (`calleePackageDir`, `undefined` for a method, whose package the
- *     resolver cannot know) — or of a package some file dot-imports, which the
- *     record cannot tell apart (G2-3: under `. "net/http"`, `func mk() *Client`
- *     records the bare `Client` of `http.Client`). It counts when the callee's
- *     package declares it. Otherwise, in a caller file that dot-imports
- *     anything, it types nothing — the callee is almost always of the caller's
- *     own file or package, and a dot-imported type is indistinguishable from a
- *     project namesake; and elsewhere it passes the package-blind known-type
- *     gate (`isKnownTypeSymbol`), as before;
+ *     resolver cannot know) — or of a package the callee's FILE dot-imports,
+ *     which the record cannot tell apart (G2-3: under `. "net/http"`,
+ *     `func mk() *Client` records the bare `Client` of `http.Client`). With the
+ *     callee's package known it counts only when that package declares it: a
+ *     type it does not declare is a builtin (no symbol) or dot-imported in the
+ *     callee's file — a sibling of the caller's, or another package's (F3-2) —
+ *     and a project namesake elsewhere is never it. A method's result, its
+ *     package unknown, types nothing in a caller file that dot-imports anything
+ *     (a dot-imported type is indistinguishable from a namesake) and elsewhere
+ *     passes the package-blind known-type gate (`isKnownTypeSymbol`);
  *   - a package-qualified one (`net/http.Client`) counts only when its import
  *     path names a PROJECT package (module map, else GOPATH-shaped) whose
  *     directory declares that type. The standard library and every dependency
@@ -133,8 +135,10 @@ export function goProjectTypeName(
 ): GoProjectType | undefined {
   const { importPath, typeName } = splitGoRecordedTypeName(recorded);
   if (importPath === undefined) {
-    if (calleePackageDir !== undefined && goPackageDeclaresType(typeName, calleePackageDir, ctx)) {
-      return { typeName, packageDir: calleePackageDir };
+    if (calleePackageDir !== undefined) {
+      return goPackageDeclaresType(typeName, calleePackageDir, ctx)
+        ? { typeName, packageDir: calleePackageDir }
+        : undefined;
     }
     if (ctx.imports.some((imp) => imp.importedNames?.[0] === GO_DOT_IMPORT_NAME)) return undefined;
     return isKnownTypeSymbol(typeName, ctx) ? { typeName } : undefined;
