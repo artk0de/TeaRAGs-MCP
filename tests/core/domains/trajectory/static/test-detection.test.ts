@@ -23,6 +23,18 @@ describe("detectTestFile", () => {
     it("rejects files with test in directory but not filename", () => {
       expect(detectTestFile("tests/helpers/setup.ts", "typescript")).toBe(false);
     });
+
+    it("detects test files in the ESM / CJS module formats (bd tea-rags-mcp-1y13c)", () => {
+      expect(detectTestFile("src/worker.test.mts", "typescript")).toBe(true);
+      expect(detectTestFile("src/worker.spec.mts", "typescript")).toBe(true);
+      expect(detectTestFile("src/loader.test.cts", "typescript")).toBe(true);
+      expect(detectTestFile("src/loader.spec.cts", "typescript")).toBe(true);
+    });
+
+    it("rejects non-test .mts / .cts files", () => {
+      expect(detectTestFile("src/worker.mts", "typescript")).toBe(false);
+      expect(detectTestFile("src/loader.cts", "typescript")).toBe(false);
+    });
   });
 
   describe("javascript", () => {
@@ -36,6 +48,11 @@ describe("detectTestFile", () => {
 
     it("rejects non-test .js files", () => {
       expect(detectTestFile("src/app.js", "javascript")).toBe(false);
+    });
+
+    it("detects test files in the ESM / CJS module formats", () => {
+      expect(detectTestFile("src/app.test.mjs", "javascript")).toBe(true);
+      expect(detectTestFile("src/app.spec.cjs", "javascript")).toBe(true);
     });
   });
 

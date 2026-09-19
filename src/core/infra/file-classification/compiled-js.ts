@@ -23,8 +23,20 @@ import { extname } from "node:path";
 /** Default longest-line length above which JS content is treated as minified. */
 export const DEFAULT_MINIFIED_LINE_LENGTH = 50_000;
 
-/** JS-family extensions the content gate applies to. */
-const JS_FAMILY_EXTENSIONS: ReadonlySet<string> = new Set([".js", ".jsx", ".mjs", ".cjs", ".ts", ".tsx"]);
+/**
+ * JS-family extensions the content gate applies to — TypeScript's ESM / CJS
+ * module formats included, since ingest indexes them (bd tea-rags-mcp-1y13c).
+ */
+const JS_FAMILY_EXTENSIONS: ReadonlySet<string> = new Set([
+  ".js",
+  ".jsx",
+  ".mjs",
+  ".cjs",
+  ".ts",
+  ".tsx",
+  ".mts",
+  ".cts",
+]);
 
 /**
  * Source-map comment, anchored to line start (optionally indented). Matches both

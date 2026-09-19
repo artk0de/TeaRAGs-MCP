@@ -247,10 +247,19 @@ export function mapJavascriptImportToFile(importText: string, callerFile: string
   return javascriptImportPathCandidates(importText, callerFile)?.[0] ?? null;
 }
 
+/**
+ * A module suffix a JavaScript specifier may write: the JavaScript family, and
+ * the TypeScript one a JS entry point writes when it loads TS source directly
+ * (`node --experimental-strip-types`, tsx). Stripping only the JavaScript half
+ * compared `worker.ts` with receiver `worker`, so every call on such an import
+ * resolved to nothing (bd tea-rags-mcp-1y13c).
+ */
+const MODULE_SUFFIX = /\.(js|jsx|mjs|cjs|ts|tsx|mts|cts)$/;
+
 function importMatchesReceiver(importText: string, receiver: string): boolean {
   const segments = importText.split("/");
   const last = segments[segments.length - 1] ?? "";
   // Strip extension if any so `./foo.js` matches receiver `foo`.
-  const cleaned = last.replace(/\.(js|jsx|mjs|cjs)$/, "");
+  const cleaned = last.replace(MODULE_SUFFIX, "");
   return cleaned.toLowerCase() === receiver.toLowerCase();
 }

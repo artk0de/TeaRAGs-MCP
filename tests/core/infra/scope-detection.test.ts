@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
-import { detectScope, getDefaultTestPaths } from "../../../src/core/infra/scope-detection.js";
+import { TEST_PATTERNS_BY_LANGUAGE } from "../../../src/core/infra/file-classification/patterns.js";
+import { detectScope, getDefaultTestPaths, isTestPath } from "../../../src/core/infra/scope-detection.js";
 
 describe("detectScope", () => {
   const noTestChunks = new Map<string, number>();
@@ -64,6 +65,35 @@ describe("getDefaultTestPaths", () => {
   it("returns typescript-specific paths for typescript", () => {
     const paths = getDefaultTestPaths("typescript");
     expect(paths).toContain("__tests__/**");
+  });
+
+  it("gives TypeScript's ESM / CJS module formats the TypeScript test suffixes (bd tea-rags-mcp-1y13c)", () => {
+    // `.mts` / `.cts` are indexed as `typescript`, so a `worker.test.mts` chunk
+    // scored as source and the secrets gate treated its fixtures as real code.
+    for (const relPath of [
+      "src/worker.test.mts",
+      "src/worker.spec.mts",
+      "src/loader.test.cts",
+      "src/loader.spec.cts",
+    ]) {
+      expect(isTestPath(relPath, "typescript"), relPath).toBe(true);
+      expect(detectScope("function", relPath, "typescript", { languageTestChunkCounts: new Map() }), relPath).toBe(
+        "test",
+      );
+    }
+    expect(isTestPath("src/worker.mts", "typescript")).toBe(false);
+    expect(isTestPath("src/loader.cts", "typescript")).toBe(false);
+  });
+
+  it("agrees with the file classifier on every TypeScript and JavaScript test suffix", () => {
+    // Every suffix the file classifier calls a test in these languages is a
+    // test path here too — one fact, so the two answers cannot drift apart.
+    for (const language of ["typescript", "javascript"]) {
+      for (const pattern of TEST_PATTERNS_BY_LANGUAGE[language]) {
+        const relPath = pattern.replace("**/*", "src/sample");
+        expect(isTestPath(relPath, language), `${language} ${relPath}`).toBe(true);
+      }
+    }
   });
 
   it("returns fallback paths for unknown language", () => {

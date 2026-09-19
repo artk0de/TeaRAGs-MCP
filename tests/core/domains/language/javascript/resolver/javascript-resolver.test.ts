@@ -185,6 +185,24 @@ describe("JavascriptCallResolver", () => {
     expect(target?.targetRelPath).toBe("pkg/foo.js");
   });
 
+  it("matches import basename ignoring a TypeScript-family extension (bd tea-rags-mcp-1y13c)", () => {
+    // A JS entry point loading TS source directly (`node
+    // --experimental-strip-types`, tsx) writes the `.ts` / `.mts` / `.cts` /
+    // `.tsx` it means. Stripping only the JS suffixes compared `worker.ts` with
+    // receiver `worker`, so every call on such an import resolved to nothing.
+    for (const extension of [".ts", ".tsx", ".mts", ".cts"]) {
+      const r = new JavascriptCallResolver();
+      const t = new InMemoryGlobalSymbolTable();
+      const targetFile = `pkg/worker${extension}`;
+      t.upsertFile(targetFile, [{ symbolId: "run", fqName: "run", shortName: "run", relPath: targetFile, scope: [] }]);
+      const target = r.resolve(
+        { callText: "worker.run()", receiver: "worker", member: "run", startLine: 3 },
+        ctx("pkg/main.js", [{ importText: `./worker${extension}`, startLine: 1 }], t),
+      );
+      expect(target, extension).toEqual({ targetRelPath: targetFile, targetSymbolId: "run" });
+    }
+  });
+
   it("falls back to global short-name when no receiver", () => {
     const r = new JavascriptCallResolver();
     const t = new InMemoryGlobalSymbolTable();

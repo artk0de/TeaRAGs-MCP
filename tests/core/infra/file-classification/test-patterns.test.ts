@@ -4,7 +4,10 @@ import { TEST_PATTERNS, TEST_PATTERNS_BY_LANGUAGE } from "../../../../src/core/i
 
 // The canonical pre-relocation flat TEST_PATTERNS set. The per-language
 // reorganization MUST stay lossless against this — no test-file shape dropped,
-// none added (substrate spec backward-compat invariant).
+// none added (substrate spec backward-compat invariant). One deliberate
+// addition since: TypeScript's ESM / CJS module formats (`.mts` / `.cts`),
+// which ingest and the codegraph index as TypeScript (bd tea-rags-mcp-1y13c),
+// carry TypeScript's own test suffixes.
 const CANONICAL_TEST_PATTERNS = [
   "**/tests/**",
   "**/test/**",
@@ -14,12 +17,16 @@ const CANONICAL_TEST_PATTERNS = [
   "**/*.test.jsx",
   "**/*.test.ts",
   "**/*.test.tsx",
+  "**/*.test.mts",
+  "**/*.test.cts",
   "**/*.test.mjs",
   "**/*.test.cjs",
   "**/*.spec.js",
   "**/*.spec.jsx",
   "**/*.spec.ts",
   "**/*.spec.tsx",
+  "**/*.spec.mts",
+  "**/*.spec.cts",
   "**/*.spec.mjs",
   "**/*.spec.cjs",
   "**/test_*.py",
