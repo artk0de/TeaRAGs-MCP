@@ -23,7 +23,8 @@ import {
   type SymbolResolutionTarget,
 } from "../../../../../contracts/types/codegraph.js";
 import type { SymbolIdComposer } from "../../../../../contracts/types/language.js";
-import { goImportBoundName } from "../../import-binding.js";
+import { goImportBoundName, goImportPathElementName } from "../../import-binding.js";
+import { goLocalAt } from "../../local-scope.js";
 import { splitGoRecordedTypeName } from "../../type-name.js";
 import { preferGoDefaultBuild } from "../go-build-constraints.js";
 import type { GoModuleMap, GoModuleMapCache } from "../go-module-map.js";
@@ -111,26 +112,42 @@ export function goProjectTypeName(recorded: string, cfg: ResolverConfig, ctx: Ca
 }
 
 /**
- * The type a call-bound local holds (`x := New()`, `x := pkg.New()`): the
- * callee's recorded return type from the run-global `functionReturnTypes`,
- * keyed by the callee's bare name, when it denotes a project type
- * (`goProjectTypeName`). `undefined` when either is missing.
+ * The type a call-bound local holds (`x := New()`, `x := pkg.New()`,
+ * `x := v.Method()`): the callee's recorded return type from the run-global
+ * `functionReturnTypes`, keyed by the callee's bare name, when it denotes a
+ * project type (`goProjectTypeName`). `undefined` when either is missing.
+ * `atLine` is where the callee is evaluated — the call binding's own line.
  *
- * A callee qualified by an IMPORTED package (`httptest.NewServer`) answers only
- * when that package is a project package declaring the function (bd
- * tea-rags-mcp-e6xx): the run-global map is keyed by bare name, so without the
- * check a standard-library constructor took the return type of any project
- * function of the same name. A qualifier naming no import is a value
- * (`b.Build()`), and a method's return type is keyed by the method name, so
- * that call keeps reading the map by bare name.
+ * A qualified callee's qualifier is read as Go reads it (bd tea-rags-mcp-e6xx,
+ * G2-1):
+ *   - a LOCAL in scope on `atLine` (`goLocalAt` — a local, parameter, named
+ *     result or receiver, the one that shadows any import of its name) makes
+ *     it a method call on a value, and a method's return type is keyed by the
+ *     method name, so the map is read by bare name;
+ *   - else an IMPORT binding it names a package, which answers only when it is
+ *     a project package declaring the function: the run-global map is keyed by
+ *     bare name, so without the check a standard-library constructor took the
+ *     return type of any project function of the same name;
+ *   - else it is neither, and it types nothing. The bare-name read here is how
+ *     `echo.New()` — a package whose bound name the resolver once failed to
+ *     derive — took the project's `New() *Server`. A package-level var is a
+ *     value too, but no channel carries one, so it fails closed with the rest.
  */
-export function goCallResultType(callee: string, cfg: ResolverConfig, ctx: CallContext): string | undefined {
+export function goCallResultType(
+  callee: string,
+  cfg: ResolverConfig,
+  ctx: CallContext,
+  atLine: number,
+): string | undefined {
   const dot = callee.lastIndexOf(".");
   const name = dot === -1 ? callee : callee.slice(dot + 1);
   if (dot !== -1) {
-    const packageDir = importedPackageDirOf(cfg, callee.slice(0, dot), ctx);
-    if (packageDir === null) return undefined;
-    if (packageDir !== undefined && packageLevelDeclarations(name, packageDir, ctx).length === 0) return undefined;
+    const qualifier = callee.slice(0, dot);
+    if (goLocalAt(ctx, qualifier, atLine) === undefined) {
+      const packageDir = importedPackageDirOf(cfg, qualifier, ctx);
+      if (packageDir === undefined || packageDir === null) return undefined;
+      if (packageLevelDeclarations(name, packageDir, ctx).length === 0) return undefined;
+    }
   }
   const returnType = ctx.functionReturnTypes?.[name];
   return returnType === undefined ? undefined : goProjectTypeName(returnType, cfg, ctx);
@@ -143,12 +160,31 @@ export function goPackageDirOf(relPath: string): string {
 }
 
 /**
- * Whether `receiver` is the name `imp` binds in the importing file
- * (`goImportBoundName`: the alias when the source spells one, else the path's
- * last `/`-segment; a dot or blank import binds no qualifier at all).
+ * The import the qualifier `qualifier` names in the caller's file, `undefined`
+ * when none binds it (bd tea-rags-mcp-e6xx, G2-1). The name an import binds is
+ * its alias when the source spells one; else, for a PROJECT package whose
+ * directory the module map can read, the name its own `package` clause
+ * declares (`GoModuleMap#packageNameOf` — `api/v1` may be `package v1`); else
+ * the name Go's tooling assumes from the path (`goImportBoundName`: `/v4`
+ * dropped, `yaml.v3` → `yaml`, `go-json` → `json`). Only when no import binds
+ * it that way does an import whose clause is unread answer for its last path
+ * element (`goImportPathElementName`), the name such a package may declare
+ * instead. A dot or blank import binds no qualifier at all.
  */
-export function importMatchesReceiver(imp: ImportRef, receiver: string): boolean {
-  return goImportBoundName(imp) === receiver;
+export function goImportNamedBy(cfg: ResolverConfig, qualifier: string, ctx: CallContext): ImportRef | undefined {
+  const modules = cfg.moduleMaps?.forRoot(ctx.projectRoot);
+  const unreadClauses: ImportRef[] = [];
+  for (const imp of ctx.imports) {
+    if (imp.importedNames?.[0] !== undefined) {
+      if (goImportBoundName(imp) === qualifier) return imp;
+      continue;
+    }
+    const packageDir = goImportPackageDir(imp.importText, modules);
+    const declared = packageDir === undefined ? undefined : modules?.packageNameOf(packageDir);
+    if (declared === undefined) unreadClauses.push(imp);
+    if ((declared ?? goImportBoundName(imp)) === qualifier) return imp;
+  }
+  return unreadClauses.find((imp) => goImportPathElementName(imp) === qualifier);
 }
 
 /**
@@ -190,7 +226,7 @@ export function resolveImportedPackageMember(
  * import it binds is no project package (`goImportPackageDir`).
  */
 function importedPackageDirOf(cfg: ResolverConfig, qualifier: string, ctx: CallContext): string | null | undefined {
-  const match = ctx.imports.find((imp) => importMatchesReceiver(imp, qualifier));
+  const match = goImportNamedBy(cfg, qualifier, ctx);
   if (!match) return undefined;
   return goImportPackageDir(match.importText, cfg.moduleMaps?.forRoot(ctx.projectRoot)) ?? null;
 }

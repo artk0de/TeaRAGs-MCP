@@ -87,7 +87,7 @@ function goBareCallResultType(
   if (declarations.length > 0 && !declarations.some((def) => goPackageDirOf(def.relPath) === callerPackage)) {
     return undefined;
   }
-  const returnType = goCallResultType(callee, cfg, ctx);
+  const returnType = goCallResultType(callee, cfg, ctx, atLine);
   return returnType ? instanceOf(returnType) : undefined;
 }
 
@@ -105,7 +105,7 @@ function goIdentifierType(
   const local = goLocalAt(ctx, receiver, atLine);
   if (local === undefined) return undefined;
   if (local.kind === "value") return local.binding.type ? instanceOf(local.binding.type) : undefined;
-  const returnType = goCallResultType(local.callee, cfg, ctx);
+  const returnType = goCallResultType(local.callee, cfg, ctx, local.line ?? atLine);
   return returnType ? instanceOf(returnType) : undefined;
 }
 

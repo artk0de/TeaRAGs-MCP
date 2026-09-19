@@ -30,7 +30,7 @@ import type {
   LocalBinding,
 } from "../../../../contracts/types/codegraph.js";
 import { assignCallsToInnermostChunks } from "../../kernel/assign-calls-to-chunks.js";
-import { goImportBoundName } from "../import-binding.js";
+import { goImportBoundName, goImportPathElementName } from "../import-binding.js";
 import { goLocalAt, type GoLocalChannels } from "../local-scope.js";
 import { goQualifiedTypeName } from "../type-name.js";
 
@@ -147,12 +147,20 @@ function collectGoFunctionReturnTypes(root: AstNode, imports: readonly ImportRef
   return out;
 }
 
-/** The import path each qualifier the file's imports bind names (`http` → `net/http`, an alias → its path). */
+/**
+ * The import path each qualifier the file's imports bind names (`http` →
+ * `net/http`, an alias → its path). A path element an import may bind instead
+ * of its assumed name (`goImportPathElementName` — `v1` of `…/core/v1`) maps
+ * too, below every bound name: a qualifier in a TYPE is always a package, and
+ * the recorded path is checked against the module map before it types anything.
+ */
 function goImportPathsByBoundName(imports: readonly ImportRef[]): ReadonlyMap<string, string> {
   const paths = new Map<string, string>();
-  for (const imp of imports) {
-    const name = goImportBoundName(imp);
-    if (name && !paths.has(name)) paths.set(name, imp.importText);
+  for (const nameOf of [goImportBoundName, goImportPathElementName]) {
+    for (const imp of imports) {
+      const name = nameOf(imp);
+      if (name && !paths.has(name)) paths.set(name, imp.importText);
+    }
   }
   return paths;
 }
@@ -278,12 +286,16 @@ function collectGoImports(root: AstNode): ImportRef[] {
   return out;
 }
 
-/** The qualifiers the file's imports bind — the names a local can shadow. */
+/**
+ * The qualifiers the file's imports may bind — the names a local can shadow:
+ * each import's bound name, and the path element it may bind instead
+ * (`goImportPathElementName`), since shadowing a name no import binds costs
+ * only an unread binding.
+ */
 function goImportBoundNames(imports: readonly ImportRef[]): ReadonlySet<string> {
   const names = new Set<string>();
   for (const imp of imports) {
-    const name = goImportBoundName(imp);
-    if (name) names.add(name);
+    for (const name of [goImportBoundName(imp), goImportPathElementName(imp)]) if (name) names.add(name);
   }
   return names;
 }
@@ -851,10 +863,11 @@ function goNamedResultList(fn: AstNode): AstNode | null {
  * for the two statically-pairable shapes:
  *   - `New()`      → `function` field is an `identifier` → "New"
  *   - `pkg.New()`  → `function` field is a `selector_expression` whose
- *                    operand is a plain `identifier` (package qualifier) →
- *                    "pkg.New"; the resolver keys `functionReturnTypes` by the
- *                    bare last segment, once an imported `pkg` is known to be
- *                    a project package declaring `New` (`goCallResultType`).
+ *                    operand is a plain `identifier` (a package qualifier or
+ *                    a value) → "pkg.New"; the resolver keys
+ *                    `functionReturnTypes` by the bare last segment, once
+ *                    `pkg` is known to be a local in scope or an imported
+ *                    project package declaring `New` (`goCallResultType`).
  * Returns null for chained calls (`New().Configure()` — selector operand is
  * itself a `call_expression`) and any other shape; the var↔return pairing is
  * only sound when the RHS is a direct call to a named function.
