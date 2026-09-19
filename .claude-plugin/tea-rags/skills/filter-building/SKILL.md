@@ -97,17 +97,19 @@ Two test-related filters address different granularity. They compose freely.
 **`chunkType: "test"` and `chunkType: "test_setup"` require DSL test chunking.**
 Currently supported:
 
-| Language   | Frameworks          | Hook file                                                                         |
-| ---------- | ------------------- | --------------------------------------------------------------------------------- |
-| TypeScript | Vitest, Jest, Mocha | `src/core/domains/ingest/pipeline/chunker/hooks/typescript/test-scope-chunker.ts` |
-| Ruby       | RSpec               | `src/core/domains/ingest/pipeline/chunker/hooks/ruby/rspec-scope-chunker.ts`      |
+| Language   | Frameworks          | Chunker                                                               |
+| ---------- | ------------------- | --------------------------------------------------------------------- |
+| TypeScript | Vitest, Jest, Mocha | `src/core/domains/language/typescript/chunking/test-scope-chunker.ts` |
+| Ruby       | RSpec               | `src/core/domains/language/ruby/chunking/rspec-scope-chunker.ts`      |
 
-For Python / Go / others, file-level `testFile: "only"` is the only option.
-Detect availability via prime digest: DSL chunks absent if no `git.chunk.*`
-signal shows a `test:` threshold row. Recipes depending on DSL chunks, see
-`tea-rags:tests-as-context` (Step 0 preflight handles this automatically). New
-language added → update this table in lock-step with the matching block in
-`tea-rags:tests-as-context` and `dinopowers:test-driven-development` — see
+For Python / Go / others, file-level `testFile: "only"` is the only option. Full
+per-language support: `.claude-plugin/tea-rags/rules/language-compatibility.md`
+(GENERATED — never restate it here). Detect availability via prime digest: DSL
+chunks absent if no `git.chunk.*` signal shows a `test:` threshold row. Recipes
+depending on DSL chunks, see `tea-rags:tests-as-context` (Step 0 preflight
+handles this automatically). New language added → update this table in lock-step
+with the matching block in `tea-rags:tests-as-context` and
+`dinopowers:test-driven-development` — see
 `.claude/rules/test-spec-chunking.md`.
 
 ## Filter level vs result granularity
