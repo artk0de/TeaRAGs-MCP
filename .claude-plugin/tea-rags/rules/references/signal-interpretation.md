@@ -114,6 +114,12 @@ Presets `ownership` and `knowledgeSilo` consume `blame*`; preset
 `recentActivityConcentration` consumes `recent*`. Custom weights mirror this
 split — see "Custom rerank weights" below.
 
+**Filtering the search to one person** (vs reading the overlay) → typed params,
+not raw signal filters: `author` = blame owner ("whose code is this" / bus
+factor), `recentAuthor` = dominant recent committer ("what did X work on" → +
+`modifiedAfter`), `contributor` = everything they touched. Same blame/recent
+split as above. Intent map: `tea-rags:filter-building`.
+
 ## Pair diagnostics
 
 Pairs/triples map to architectural patterns. Single → ambiguous; pair → likely;

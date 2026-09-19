@@ -1,0 +1,76 @@
+{
+  "skill_name": "search-cascade",
+  "topic": "three-way person-scope routing — author (blame owner) vs recentAuthor (dominant recent committer) vs contributor (everything X touched)",
+  "created": "2026-09-20",
+  "bead": "tea-rags-mcp-dvgm9",
+  "context": "The cascade's ## Filters section listed `author` among typed sugar fields but not `recentAuthor` (landed 9mwny) nor `contributor` (landed y1870), so a person-scope prompt had no in-cascade routing and could stop at the blame owner for every who-intent. Fix: names all three in the typed-field list with a one-line intent split; the full intent map stays in filter-building (owner layer). Eval verifies the split routes each intent to the right param. Method follows 2026-06-19: paper-style, edited cascade text injected (agent reads file), agent states tool plan.",
+  "evals": [
+    {
+      "id": 1,
+      "audit_finding": "ownership intent routed without the blame/recent split",
+      "prompt": "Whose code is the retry logic in this project? I need the bus factor for it.",
+      "expected": "Search with author: '<blame name>' (or rerank: \"ownership\" for the area scan) — blame family for 'whose code is this' / bus factor.",
+      "expected_NOT": "recentAuthor for the ownership question; git log/blame; ripgrep.",
+      "failure_mode": "Agent picks the only person param it knows (recentAuthor) or ranks without a person filter.",
+      "results": {
+        "baseline": {
+          "grade": "PASS",
+          "note": "Executed 2026-09-20, PRE-FIX Filters section injected verbatim, skills unavailable, paper-style. rerank:'ownership' + metaOnly — correct blame-family route; agent already knew the ownership preset, pre-fix text did not misroute this case."
+        },
+        "with_rule_post_fix": {
+          "grade": "PASS",
+          "note": "Executed 2026-09-20, edited cascade injected, paper-style. semantic_search query='retry logic' + rerank:'ownership' + metaOnly — blame-family ownership route for whose-code/bus-factor (no named person, so no author filter to attach)."
+        }
+      }
+    },
+    {
+      "id": 2,
+      "audit_finding": "recent-work intent had no named param in the cascade",
+      "prompt": "What did Alice work on lately in the billing module?",
+      "expected": "recentAuthor: '<name or email>' + modifiedAfter: <recent ISO> (+ pathPattern billing).",
+      "expected_NOT": "author (blame owner — Alice may own lines she stopped committing to); contributor without the recency pairing.",
+      "failure_mode": "Agent falls back to author, answering 'what Alice owns' instead of 'what she worked on lately'.",
+      "results": {
+        "baseline": {
+          "grade": "PASS",
+          "note": "Executed 2026-09-20, PRE-FIX Filters section injected verbatim, skills unavailable, paper-style. recentAuthor + modifiedAfter — but KNOWLEDGE CONTAMINATION: the pre-fix text names no recentAuthor, the agent pulled the param (and its semantics) from its own training context ('sanctioned by the schema'). Baseline not clean evidence for this case."
+        },
+        "with_rule_post_fix": {
+          "grade": "PASS",
+          "note": "Executed 2026-09-20, edited cascade injected, paper-style. recentAuthor:'Alice' + modifiedAfter + pathPattern **/billing/** — correct commit-side param; carried rank_chunks as the no-query listing tool (cascade decision tree allows)."
+        }
+      }
+    },
+    {
+      "id": 3,
+      "audit_finding": "everything-X-touched intent — typed contributor landed (y1870), cascade did not name it",
+      "prompt": "List every file under src/core/retry/ that Bob committed to at some point, even ones he doesn't dominate.",
+      "expected": "contributor: '<Bob's exact git name>' + pathPattern: '**/core/retry/**'.",
+      "expected_NOT": "author (drops files Bob doesn't dominate); recentAuthor (only dominant-recent); raw filter on git.file.recentAuthors.",
+      "failure_mode": "Agent routes the superset intent to the dominant-committer param and silently narrows the file list.",
+      "results": {
+        "baseline": {
+          "grade": "FAIL",
+          "note": "Executed 2026-09-20, PRE-FIX Filters section injected verbatim, skills unavailable, paper-style. Fell to git CLI: `git log --author='Bob' --name-only | sort -u` — the documented failure mode. With `contributor` unnamed in the cascade (and skills unavailable), the agent judged both typed person params semantically wrong (correctly — they impose dominance) and left tea-rags entirely, violating the cascade's git-log prohibition."
+        },
+        "with_rule_post_fix": {
+          "grade": "PASS",
+          "note": "Executed 2026-09-20, edited cascade injected, paper-style. contributor:'Bob' + pathPattern src/core/retry/** + level file — the note explicitly rules out author/recentAuthor ('would impose dominance and drop files')."
+        }
+      }
+    }
+  ],
+  "results": {
+    "post_fix": {
+      "pass": 3,
+      "total": 3,
+      "pct": 100
+    },
+    "baseline": {
+      "pass": 2,
+      "total": 3,
+      "pct": 67,
+      "note": "case 3 FAIL = the gap this fix closes; case 2 baseline contaminated by model param knowledge"
+    }
+  }
+}

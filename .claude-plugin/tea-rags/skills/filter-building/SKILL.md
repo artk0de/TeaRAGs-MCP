@@ -8,14 +8,16 @@ description:
   code", "Alice's work", "modified this week", "for ticket RAGS-142",
   "production code"). Translate every scope into correct typed sugar field
   (`language`, `testFile`, `documentation`, `author`, `recentAuthor`,
-  `taskId`, `minAgeDays` / `maxAgeDays`, `minCommitCount`, `modifiedAfter` /
-  `modifiedBefore`, `fileExtension`, `chunkType`, `symbolId`), the
+  `contributor`, `taskId`, `minAgeDays` / `maxAgeDays`, `minCommitCount`,
+  `modifiedAfter` / `modifiedBefore`, `fileExtension`, `chunkType`,
+  `symbolId`), the
   `level: "file" | "chunk"` switch (sets BOTH filter scope AND result
   granularity; `modifiedAfter` / `modifiedBefore` never need it), picomatch
   negation in `pathPattern` (`!**/test/**`), or raw `filter` escape hatch
   (Qdrant `must`/`should`/`must_not`) for payload keys without typed sugar.
   Cases: "tests of AuthService" → implicit `testFile: "only"`; "Alice's recent
-  code" → `recentAuthor + modifiedAfter`; "old payments code" →
+  code" → `recentAuthor + modifiedAfter`; "everything Alice touched" →
+  `contributor`; "old payments code" →
   `modifiedBefore`; "what's new this week" → `modifiedAfter`; "production
   code, not tests" → `testFile: "exclude"`; "code linked to JIRA-1234" →
   `taskId`; "exclude vendor dir" → `pathPattern: "!**/vendor/**"`. NOT for picking a
@@ -34,24 +36,25 @@ right mechanism — they compose.
 Triggers in agent reasoning chain. If thinking any of these BEFORE composing a
 tea-rags search, this skill applies — translate the SCOPE into typed sugar:
 
-| User said... (paraphrased)                         | Filter to add                                    |
-| -------------------------------------------------- | ------------------------------------------------ |
-| "in the X domain / module / area"                  | `pathPattern: "**/X/**"`                         |
-| "tests of X" / "test coverage of X"                | `testFile: "only"` (+ symbolId or query)         |
-| "production code for X" / "actual implementation"  | `testFile: "exclude"`                            |
-| "Ruby / TypeScript / Python code"                  | `language: "<lang>"` (NOT pathPattern `**/*.rb`) |
-| "modified recently" / "changed this week"          | `modifiedAfter: <ISO>` (no `level` needed)       |
-| "old code" / "legacy" / "untouched for a while"    | `modifiedBefore: <ISO>` (no `level` needed)      |
-| "what's new" / "fresh additions" / "sprint review" | `modifiedAfter: <ISO>` (no `level` needed)       |
-| "Alice's code" (lines she owns)                    | `author: "Alice Smith"` (exact blame name)       |
-| "what did Alice work on" / "Alice's recent work"   | `recentAuthor` (name/email) + `modifiedAfter`    |
-| "related to ticket JIRA-X" / "for issue #N"        | `taskId: "JIRA-X"`                               |
-| "drop one-off scripts" / "real code, not snippets" | `minCommitCount: 5`+                             |
-| "docs about X" / "what's documented"               | `documentation: "only"`                          |
-| "code, not docs"                                   | `documentation: "exclude"`                       |
-| "AuthService class" (specific class)               | `symbolId: "AuthService"` OR `hybrid_search`     |
-| "in /full/abs/path/" (subagent context)            | `pathPattern: "<path from project root>/**"`     |
-| "exclude vendor / generated / migrations"          | `pathPattern: "!**/vendor/**"` (no typed sugar)  |
+| User said... (paraphrased)                          | Filter to add                                    |
+| --------------------------------------------------- | ------------------------------------------------ |
+| "in the X domain / module / area"                   | `pathPattern: "**/X/**"`                         |
+| "tests of X" / "test coverage of X"                 | `testFile: "only"` (+ symbolId or query)         |
+| "production code for X" / "actual implementation"   | `testFile: "exclude"`                            |
+| "Ruby / TypeScript / Python code"                   | `language: "<lang>"` (NOT pathPattern `**/*.rb`) |
+| "modified recently" / "changed this week"           | `modifiedAfter: <ISO>` (no `level` needed)       |
+| "old code" / "legacy" / "untouched for a while"     | `modifiedBefore: <ISO>` (no `level` needed)      |
+| "what's new" / "fresh additions" / "sprint review"  | `modifiedAfter: <ISO>` (no `level` needed)       |
+| "Alice's code" (lines she owns)                     | `author: "Alice Smith"` (exact blame name)       |
+| "what did Alice work on" / "Alice's recent work"    | `recentAuthor` (name/email) + `modifiedAfter`    |
+| "everything Alice touched" / files she committed to | `contributor: "Alice Smith"` (exact name)        |
+| "related to ticket JIRA-X" / "for issue #N"         | `taskId: "JIRA-X"`                               |
+| "drop one-off scripts" / "real code, not snippets"  | `minCommitCount: 5`+                             |
+| "docs about X" / "what's documented"                | `documentation: "only"`                          |
+| "code, not docs"                                    | `documentation: "exclude"`                       |
+| "AuthService class" (specific class)                | `symbolId: "AuthService"` OR `hybrid_search`     |
+| "in /full/abs/path/" (subagent context)             | `pathPattern: "<path from project root>/**"`     |
+| "exclude vendor / generated / migrations"           | `pathPattern: "!**/vendor/**"` (no typed sugar)  |
 
 **Rule of thumb:** user almost never says "filter". They name a SCOPE — domain,
 language, author, time window, ticket, prod-vs-test. Translate the scope into
@@ -65,22 +68,23 @@ Top-level params on every search request. Prefer over raw `filter:` whenever a
 typed field expresses the constraint — intent-clear, schema-checked, survives
 directory restructures.
 
-| Field            | Values / type                          | When to use                              |
-| ---------------- | -------------------------------------- | ---------------------------------------- |
-| `language`       | string (e.g. `"ruby"`, `"typescript"`) | scope to one language layer              |
-| `fileExtension`  | string \| string[]                     | constrain by file extension(s)           |
-| `chunkType`      | string (e.g. `"method"`, `"class"`)    | only chunks of this type                 |
-| `documentation`  | `"only" \| "exclude" \| "include"`     | docs vs code (string enum, not boolean)  |
-| `testFile`       | `"only" \| "exclude" \| "include"`     | tests vs production (string enum)        |
-| `symbolId`       | string                                 | scope to one symbol                      |
-| `author`         | string                                 | files where this author dominates blame  |
-| `recentAuthor`   | string (full name OR email)            | files this author committed most, lately |
-| `modifiedAfter`  | ISO date string \| Date                | recent changes (file-level, any level)   |
-| `modifiedBefore` | ISO date string \| Date                | exclude recent changes (file-level)      |
-| `minAgeDays`     | number                                 | min age — level-aware, see below         |
-| `maxAgeDays`     | number                                 | max age — level-aware, see below         |
-| `minCommitCount` | number                                 | drop one-off scripts                     |
-| `taskId`         | string (e.g. `"RAGS-142"`)             | code linked to a ticket via git.taskIds  |
+| Field            | Values / type                          | When to use                                                                   |
+| ---------------- | -------------------------------------- | ----------------------------------------------------------------------------- |
+| `language`       | string (e.g. `"ruby"`, `"typescript"`) | scope to one language layer                                                   |
+| `fileExtension`  | string \| string[]                     | constrain by file extension(s)                                                |
+| `chunkType`      | string (e.g. `"method"`, `"class"`)    | only chunks of this type                                                      |
+| `documentation`  | `"only" \| "exclude" \| "include"`     | docs vs code (string enum, not boolean)                                       |
+| `testFile`       | `"only" \| "exclude" \| "include"`     | tests vs production (string enum)                                             |
+| `symbolId`       | string                                 | scope to one symbol                                                           |
+| `author`         | string                                 | files where this author dominates blame                                       |
+| `recentAuthor`   | string (full name OR email)            | files this author committed most, lately                                      |
+| `contributor`    | string (exact git name)                | files this person committed to in the log window — superset of `recentAuthor` |
+| `modifiedAfter`  | ISO date string \| Date                | recent changes (file-level, any level)                                        |
+| `modifiedBefore` | ISO date string \| Date                | exclude recent changes (file-level)                                           |
+| `minAgeDays`     | number                                 | min age — level-aware, see below                                              |
+| `maxAgeDays`     | number                                 | max age — level-aware, see below                                              |
+| `minCommitCount` | number                                 | drop one-off scripts                                                          |
+| `taskId`         | string (e.g. `"RAGS-142"`)             | code linked to a ticket via git.taskIds                                       |
 
 ## Test filter levels (file vs chunk granularity)
 
@@ -121,8 +125,8 @@ with the matching block in `tea-rags:tests-as-context` and
    `taskId`, `author`, codegraph `minFanIn` / `minFanOut` → file. Effective
    level set → every level-aware filter follows it.
    - `modifiedAfter` / `modifiedBefore` → ALWAYS `git.file.lastModifiedAt`,
-     `recentAuthor` → ALWAYS `git.file.recentDominantAuthor*`, any `level`.
-     Never need `level: "file"`.
+     `recentAuthor` → ALWAYS `git.file.recentDominantAuthor*`, `contributor` →
+     ALWAYS `git.file.recentAuthors`, any `level`. Never need `level: "file"`.
 2. **Result granularity.** `level: "file"` → one result per file
    (`payload.members` outline), git signals blended at file level only.
    `"chunk"` or none → individual chunks.
@@ -159,18 +163,19 @@ data = key absent). Point not re-enriched keeps old stamp → overlay value, `ag
 
 ## Sugar filter pairing examples
 
-| Sugar field                        | Resolves to                                                              | Pair with                                |
-| ---------------------------------- | ------------------------------------------------------------------------ | ---------------------------------------- |
-| `minAgeDays` / `maxAgeDays`        | `git.<effective level>.lastModifiedAt` vs query-time now (chunk default) | `level: "file"` only for a file list     |
-| `minCommitCount`                   | `git.<effective level>.commitCount` (chunk default)                      | drop one-off scripts                     |
-| `modifiedAfter` / `modifiedBefore` | `git.file.lastModifiedAt` range, at any level                            | nothing — no `level` needed              |
-| `author`                           | `git.<effective level>.blameDominantAuthor` (file default)               | exact blame NAME, not email              |
-| `recentAuthor`                     | `git.file.recentDominantAuthor` OR `…Email`, at any level                | `modifiedAfter` — "what did X work on"   |
-| `taskId`                           | `git.<effective level>.taskIds` (file default)                           | `level: "chunk"` for chunk's own commits |
-| `testFile`                         | `"only" \| "exclude" \| "include"`                                       | scope to prod vs test                    |
-| `documentation`                    | `"only" \| "exclude" \| "include"`                                       | scope to docs vs code                    |
-| `fileExtension`                    | one or more extensions                                                   | language-adjacent constraints            |
-| `language`                         | one language                                                             | polyglot scoping                         |
+| Sugar field                        | Resolves to                                                              | Pair with                                           |
+| ---------------------------------- | ------------------------------------------------------------------------ | --------------------------------------------------- |
+| `minAgeDays` / `maxAgeDays`        | `git.<effective level>.lastModifiedAt` vs query-time now (chunk default) | `level: "file"` only for a file list                |
+| `minCommitCount`                   | `git.<effective level>.commitCount` (chunk default)                      | drop one-off scripts                                |
+| `modifiedAfter` / `modifiedBefore` | `git.file.lastModifiedAt` range, at any level                            | nothing — no `level` needed                         |
+| `author`                           | `git.<effective level>.blameDominantAuthor` (file default)               | exact blame NAME, not email                         |
+| `recentAuthor`                     | `git.file.recentDominantAuthor` OR `…Email`, at any level                | `modifiedAfter` — "what did X work on"              |
+| `contributor`                      | `git.file.recentAuthors` match.any, at any level                         | superset of `recentAuthor` — "everything X touched" |
+| `taskId`                           | `git.<effective level>.taskIds` (file default)                           | `level: "chunk"` for chunk's own commits            |
+| `testFile`                         | `"only" \| "exclude" \| "include"`                                       | scope to prod vs test                               |
+| `documentation`                    | `"only" \| "exclude" \| "include"`                                       | scope to docs vs code                               |
+| `fileExtension`                    | one or more extensions                                                   | language-adjacent constraints                       |
+| `language`                         | one language                                                             | polyglot scoping                                    |
 
 Concrete payload examples:
 
@@ -376,8 +381,8 @@ but apply it manually whenever a single scan is dominated by one directory.
 - `level` re-scopes only level-aware typed fields (`minAgeDays`, `maxAgeDays`,
   `minCommitCount`, `taskId`, `author`, `minFanIn`, `minFanOut`);
   `modifiedAfter` / `modifiedBefore` stay on `git.file.lastModifiedAt`,
-  `recentAuthor` on `git.file.*`. Raw `filter` names own payload path
-  (`git.file.*` vs `git.chunk.*`), ignores `level`.
+  `recentAuthor` / `contributor` on `git.file.*`. Raw `filter` names own payload
+  path (`git.file.*` vs `git.chunk.*`), ignores `level`.
 - File-level age at chunk granularity → `modifiedAfter` / `modifiedBefore`
   (absolute date vs `git.file.lastModifiedAt`, any level). NEVER a raw range on
   `git.file.ageDays` — enrichment-time stamp, lags (Reading overlay `ageDays`).
