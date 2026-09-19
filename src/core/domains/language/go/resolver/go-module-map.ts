@@ -16,7 +16,7 @@
  */
 
 import { readManifestFiles } from "../../../../infra/dependency-manifests.js";
-import { GO_MODULE_MANIFEST_FILE, parseGoModulePath } from "../manifest.js";
+import { GO_MODULE_MANIFEST_FILE, GO_MODULE_WALK_IGNORED_DIRS, parseGoModulePath } from "../manifest.js";
 
 interface GoModuleRoot {
   readonly modulePath: string;
@@ -80,7 +80,11 @@ export class GoModuleMapCache {
 
   reload(root: string | undefined): void {
     if (root === undefined) return;
-    const files = readManifestFiles(root, (fileName) => fileName === GO_MODULE_MANIFEST_FILE);
+    const files = readManifestFiles(
+      root,
+      (fileName) => fileName === GO_MODULE_MANIFEST_FILE,
+      GO_MODULE_WALK_IGNORED_DIRS,
+    );
     this.bound = { root, map: GoModuleMap.fromManifests(files) };
   }
 }

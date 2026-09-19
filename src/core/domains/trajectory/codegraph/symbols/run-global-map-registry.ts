@@ -88,6 +88,7 @@ export const RUN_GLOBAL_MAP_PERSISTENCE = {
   classFieldTypesByClassKey: { policy: "hydrate", sliceField: "classFieldTypesByClassKey" },
   moduleReexports: { policy: "hydrate", sliceField: "moduleReexports" },
   schemaTables: { policy: "hydrate", sliceField: "classSchemaTables" },
+  buildConstraintsByFile: { policy: "hydrate", sliceField: "buildConstraint" },
 
   extractedFilesByLanguage: {
     policy: "batchOnly",
@@ -113,11 +114,6 @@ export const RUN_GLOBAL_MAP_PERSISTENCE = {
   classFieldCallResults: {
     policy: "batchOnly",
     reason: "rides walker 5's unreleased delta; an index without it resolves exactly as before",
-  },
-  buildConstraintsByFile: {
-    policy: "batchOnly",
-    reason:
-      "Go build-tag twin tie-breaker (bd e6xx); an unwalked file's constraint reads as unknown, which keeps its twins ambiguous exactly as before the channel",
   },
   dispatchTables: { policy: "batchOnly", reason: "measured zero recovered edges (bd 8qyax, bd 4yvms)" },
   callbackParams: { policy: "batchOnly", reason: "measured zero recovered edges (bd 8qyax, bd 4yvms)" },

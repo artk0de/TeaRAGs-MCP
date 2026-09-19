@@ -20,12 +20,13 @@
  *   - `splitReceiverHops` — the bracket-aware scan, so the dots inside
  *     `template.New("").Delims(r.Delims.Left, …)` are not hops.
  *
- * Built ONCE per resolver (the composer is the only thing it closes over) and
+ * Built ONCE per resolver (it closes over the resolver's config — the composer,
+ * and the module map a package-qualified return type is checked against) and
  * frozen, so the fold allocates nothing per call site.
  */
 
 import type { CallContext } from "../../../../contracts/types/codegraph.js";
-import type { SymbolIdComposer, TypeRef } from "../../../../contracts/types/language.js";
+import type { TypeRef } from "../../../../contracts/types/language.js";
 import {
   CHAIN_MAX_HOPS_DEFAULT,
   splitReceiverHops,
@@ -33,7 +34,7 @@ import {
 } from "../../kernel/receiver-type-propagation.js";
 import { goLocalAt } from "../local-scope.js";
 import { lookupGoSymbolsByShortName } from "./go-symbol-lookup.js";
-import { goCallResultType, goPackageDirOf } from "./strategies/shared.js";
+import { goCallResultType, goPackageDirOf, type ResolverConfig } from "./strategies/shared.js";
 import { selectGoMember } from "./struct-member-selection.js";
 
 const GO_IDENTIFIER = /^[\p{L}_][\p{L}\p{N}_]*$/u;
@@ -66,43 +67,56 @@ export function goBareCallHead(receiver: string): string | undefined {
  * recorded return type (`functionReturnTypes` — a declared function's, or what
  * calling a package-level func-valued var yields, like gin's
  * `var engine = sync.OnceValue(func() *gin.Engine {…})`), behind the
- * known-type gate. A bare call names the caller's own package, so no local
- * function value of that name may be in scope, and when package-level
- * functions of that name exist the caller's package must declare one — a
- * namesake declared only elsewhere is whose return type the run-global map
- * may hold. A var is no symbol, so a name nothing declares passes that check.
+ * known-type gate — a package-qualified return type (`*http.Client`) only
+ * from a project package (`goProjectTypeName`). A bare call names the
+ * caller's own package, so no local function value of that name may be in
+ * scope, and when package-level functions of that name exist the caller's
+ * package must declare one — a namesake declared only elsewhere is whose
+ * return type the run-global map may hold. A var is no symbol, so a name
+ * nothing declares passes that check.
  */
-function goBareCallResultType(callee: string, atLine: number, ctx: CallContext): TypeRef | undefined {
+function goBareCallResultType(
+  cfg: ResolverConfig,
+  callee: string,
+  atLine: number,
+  ctx: CallContext,
+): TypeRef | undefined {
   if (goLocalAt(ctx, callee, atLine)) return undefined;
   const declarations = lookupGoSymbolsByShortName(ctx, callee).filter((def) => def.symbolId === callee);
   const callerPackage = goPackageDirOf(ctx.callerFile);
   if (declarations.length > 0 && !declarations.some((def) => goPackageDirOf(def.relPath) === callerPackage)) {
     return undefined;
   }
-  const returnType = goCallResultType(callee, ctx);
+  const returnType = goCallResultType(callee, cfg, ctx);
   return returnType ? instanceOf(returnType) : undefined;
 }
 
-function goIdentifierType(receiver: string, atLine: number, ctx: CallContext): TypeRef | undefined {
+function goIdentifierType(
+  cfg: ResolverConfig,
+  receiver: string,
+  atLine: number,
+  ctx: CallContext,
+): TypeRef | undefined {
   const callee = goBareCallHead(receiver);
-  if (callee !== undefined) return goBareCallResultType(callee, atLine, ctx);
+  if (callee !== undefined) return goBareCallResultType(cfg, callee, atLine, ctx);
   if (!GO_IDENTIFIER.test(receiver)) return undefined;
   // The local in scope speaks for the name even when its type is EMPTY — a
   // value no pass can type, shadowing any earlier binding of the name.
   const local = goLocalAt(ctx, receiver, atLine);
   if (local === undefined) return undefined;
   if (local.kind === "value") return local.binding.type ? instanceOf(local.binding.type) : undefined;
-  const returnType = goCallResultType(local.callee, ctx);
+  const returnType = goCallResultType(local.callee, cfg, ctx);
   return returnType ? instanceOf(returnType) : undefined;
 }
 
-export function createGoReceiverTypePorts(composer: SymbolIdComposer): ReceiverTypePorts {
+export function createGoReceiverTypePorts(cfg: ResolverConfig): ReceiverTypePorts {
   return Object.freeze({
-    singleHopType: goIdentifierType,
+    singleHopType: (receiver: string, atLine: number, ctx: CallContext): TypeRef | undefined =>
+      goIdentifierType(cfg, receiver, atLine, ctx),
     seedHead: () => undefined,
     memberTypeOf: (recv: TypeRef, member: string, ctx: CallContext): TypeRef | undefined => {
       if (recv.form !== "instance") return undefined;
-      const selected = selectGoMember(recv.name, member, ctx, composer);
+      const selected = selectGoMember(recv.name, member, ctx, cfg.composer);
       return selected?.kind === "field" && selected.type !== "" ? instanceOf(selected.type) : undefined;
     },
     maxHops: () => CHAIN_MAX_HOPS_DEFAULT,

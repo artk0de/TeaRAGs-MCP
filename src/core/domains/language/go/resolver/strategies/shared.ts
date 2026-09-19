@@ -19,10 +19,12 @@ import {
   type AmbiguousResolveMode,
   type CallContext,
   type ImportRef,
+  type SymbolDefinition,
   type SymbolResolutionTarget,
 } from "../../../../../contracts/types/codegraph.js";
 import type { SymbolIdComposer } from "../../../../../contracts/types/language.js";
 import { goImportBoundName } from "../../import-binding.js";
+import { splitGoRecordedTypeName } from "../../type-name.js";
 import { preferGoDefaultBuild } from "../go-build-constraints.js";
 import type { GoModuleMap, GoModuleMapCache } from "../go-module-map.js";
 import { lookupGoSymbols, lookupGoSymbolsByShortName } from "../go-symbol-lookup.js";
@@ -73,9 +75,11 @@ export function resolveByLocalType(
 /**
  * Safety gate for function-return-type binding: a declared return type only
  * binds when it names a concrete type that EXISTS as a symbol in the table
- * (`type Engine struct {...}` → symbol `Engine`). Interfaces, builtins
- * (`string`, `error`), and external `pkg.Type`s have no project-local type
- * symbol, so they SKIP rather than fabricate an edge. Matched by exact fqName
+ * (`type Engine struct {...}` → symbol `Engine`). Builtins (`string`,
+ * `error`) have no project-local type symbol, so they SKIP rather than
+ * fabricate an edge. It answers for a BARE name only: a package-qualified one
+ * is `goProjectTypeName`'s, because "some type of that name exists" is no
+ * evidence about another package's type. Matched by exact fqName
  * first (top-level type, `Engine`), then by short name (nested / scoped type
  * declarations) — either match means a real type symbol was extracted. Only a
  * GO declaration counts: a TypeScript `Widget` is no evidence about a Go one.
@@ -86,15 +90,50 @@ export function isKnownTypeSymbol(typeName: string, ctx: CallContext): boolean {
 }
 
 /**
- * The type a call-bound local holds (`x := New()`, `x := pkg.New()`): the
- * callee's declared return type from the run-global `functionReturnTypes`,
- * keyed by the callee's bare name, and only when it names a known Go type
- * (`isKnownTypeSymbol`). `undefined` when either is missing.
+ * The PROJECT type a recorded return type denotes (`../../type-name.ts`), bare,
+ * or `undefined` when it denotes none (bd tea-rags-mcp-e6xx):
+ *   - a bare name (a type of the declaring package) passes the known-type gate
+ *     (`isKnownTypeSymbol`), exactly as before;
+ *   - a package-qualified one (`net/http.Client`) counts only when its import
+ *     path names a PROJECT package (module map, else GOPATH-shaped) whose
+ *     directory declares that type. The standard library and every dependency
+ *     name no project package, so a project namesake never stands in for them.
+ * The bare name is what comes back: symbol ids carry no package, and every
+ * lookup downstream composes from it.
  */
-export function goCallResultType(callee: string, ctx: CallContext): string | undefined {
+export function goProjectTypeName(recorded: string, cfg: ResolverConfig, ctx: CallContext): string | undefined {
+  const { importPath, typeName } = splitGoRecordedTypeName(recorded);
+  if (importPath === undefined) return isKnownTypeSymbol(typeName, ctx) ? typeName : undefined;
+  const packageDir = goImportPackageDir(importPath, cfg.moduleMaps?.forRoot(ctx.projectRoot));
+  if (packageDir === undefined) return undefined;
+  const declared = lookupGoSymbols(ctx, typeName).some((def) => goPackageDirOf(def.relPath) === packageDir);
+  return declared ? typeName : undefined;
+}
+
+/**
+ * The type a call-bound local holds (`x := New()`, `x := pkg.New()`): the
+ * callee's recorded return type from the run-global `functionReturnTypes`,
+ * keyed by the callee's bare name, when it denotes a project type
+ * (`goProjectTypeName`). `undefined` when either is missing.
+ *
+ * A callee qualified by an IMPORTED package (`httptest.NewServer`) answers only
+ * when that package is a project package declaring the function (bd
+ * tea-rags-mcp-e6xx): the run-global map is keyed by bare name, so without the
+ * check a standard-library constructor took the return type of any project
+ * function of the same name. A qualifier naming no import is a value
+ * (`b.Build()`), and a method's return type is keyed by the method name, so
+ * that call keeps reading the map by bare name.
+ */
+export function goCallResultType(callee: string, cfg: ResolverConfig, ctx: CallContext): string | undefined {
   const dot = callee.lastIndexOf(".");
-  const returnType = ctx.functionReturnTypes?.[dot === -1 ? callee : callee.slice(dot + 1)];
-  return returnType !== undefined && isKnownTypeSymbol(returnType, ctx) ? returnType : undefined;
+  const name = dot === -1 ? callee : callee.slice(dot + 1);
+  if (dot !== -1) {
+    const packageDir = importedPackageDirOf(cfg, callee.slice(0, dot), ctx);
+    if (packageDir === null) return undefined;
+    if (packageDir !== undefined && packageLevelDeclarations(name, packageDir, ctx).length === 0) return undefined;
+  }
+  const returnType = ctx.functionReturnTypes?.[name];
+  return returnType === undefined ? undefined : goProjectTypeName(returnType, cfg, ctx);
 }
 
 /** The package directory of a Go file: its directory, `""` at the root. A Go package is exactly one directory. */
@@ -138,13 +177,27 @@ export function resolveImportedPackageMember(
   member: string,
   ctx: CallContext,
 ): SymbolResolutionTarget | null {
-  const match = ctx.imports.find((imp) => importMatchesReceiver(imp, qualifier));
-  if (!match) return null;
-  const packageDir = goImportPackageDir(match.importText, cfg.moduleMaps?.forRoot(ctx.projectRoot));
-  if (packageDir === undefined) return null;
-  const candidates = lookupGoSymbolsByShortName(ctx, member).filter(
-    (def) => def.symbolId === member && goPackageDirOf(def.relPath) === packageDir,
-  );
+  const packageDir = importedPackageDirOf(cfg, qualifier, ctx);
+  if (packageDir === undefined || packageDir === null) return null;
+  const candidates = packageLevelDeclarations(member, packageDir, ctx);
   const target = pickSingleCandidate(preferGoDefaultBuild(candidates, ctx), cfg.mode);
   return target ? { targetRelPath: target.relPath, targetSymbolId: target.symbolId } : null;
+}
+
+/**
+ * The package directory the qualifier `qualifier` names in the caller's file:
+ * `undefined` when no import binds it (a value, or nothing), `null` when the
+ * import it binds is no project package (`goImportPackageDir`).
+ */
+function importedPackageDirOf(cfg: ResolverConfig, qualifier: string, ctx: CallContext): string | null | undefined {
+  const match = ctx.imports.find((imp) => importMatchesReceiver(imp, qualifier));
+  if (!match) return undefined;
+  return goImportPackageDir(match.importText, cfg.moduleMaps?.forRoot(ctx.projectRoot)) ?? null;
+}
+
+/** The package-level Go declarations of `name` (`symbolId` equal to it — never a method) in `packageDir`. */
+function packageLevelDeclarations(name: string, packageDir: string, ctx: CallContext): SymbolDefinition[] {
+  return lookupGoSymbolsByShortName(ctx, name).filter(
+    (def) => def.symbolId === name && goPackageDirOf(def.relPath) === packageDir,
+  );
 }

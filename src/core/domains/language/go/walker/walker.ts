@@ -32,6 +32,7 @@ import type {
 import { assignCallsToInnermostChunks } from "../../kernel/assign-calls-to-chunks.js";
 import { goImportBoundName } from "../import-binding.js";
 import { goLocalAt, type GoLocalChannels } from "../local-scope.js";
+import { goQualifiedTypeName } from "../type-name.js";
 
 export interface GoExtractInput {
   tree: MaterializedTree;
@@ -119,9 +120,10 @@ function readGoBuildConstraint(root: AstNode): string | undefined {
  * tree-sitter-go shapes of the `result` field:
  *   - `func f() Foo`        → `type_identifier` (read text)
  *   - `func f() *Foo`       → `pointer_type` (unwrap to inner type_identifier)
- *   - `func f() pkg.Foo`    → `qualified_type` (read its `name` field — bare
- *                             last segment; pkg-qualified externals naturally
- *                             miss the symbol table at resolve time)
+ *   - `func f() pkg.Foo`    → `qualified_type` → the import path `pkg` binds
+ *                             and the type (`../type-name.ts`), so the resolver
+ *                             can tell a project package from any other; a
+ *                             qualifier no import binds records nothing.
  *   - `func f() (A, B)`     → `parameter_list` (multi-return) → SKIP: we don't
  *                             guess which return value feeds the variable.
  *   - `func f()`            → no `result` field → SKIP.
@@ -132,16 +134,27 @@ function readGoBuildConstraint(root: AstNode): string | undefined {
  */
 function collectGoFunctionReturnTypes(root: AstNode, imports: readonly ImportRef[]): Record<string, string> {
   const out: Record<string, string> = {};
+  const qualifiers = goImportPathsByBoundName(imports);
   walk(root, (node) => {
     if (node.type !== "function_declaration" && node.type !== "method_declaration") return;
     const name = node.childForFieldName("name");
     const result = node.childForFieldName("result");
     if (!name || !result) return;
-    const typeName = readReturnTypeNode(result);
+    const typeName = readReturnTypeNode(result, qualifiers);
     if (typeName) out[name.text] = typeName;
   });
-  collectGoFuncValueVarReturnTypes(root, imports, out);
+  collectGoFuncValueVarReturnTypes(root, imports, qualifiers, out);
   return out;
+}
+
+/** The import path each qualifier the file's imports bind names (`http` → `net/http`, an alias → its path). */
+function goImportPathsByBoundName(imports: readonly ImportRef[]): ReadonlyMap<string, string> {
+  const paths = new Map<string, string>();
+  for (const imp of imports) {
+    const name = goImportBoundName(imp);
+    if (name && !paths.has(name)) paths.set(name, imp.importText);
+  }
+  return paths;
 }
 
 /** The standard library's lazy-singleton wrapper: `sync.OnceValue(f)` returns a func yielding what `f` returns. */
@@ -164,6 +177,7 @@ const GO_ONCE_VALUE_FUNC = "OnceValue";
 function collectGoFuncValueVarReturnTypes(
   root: AstNode,
   imports: readonly ImportRef[],
+  qualifiers: ReadonlyMap<string, string>,
   out: Record<string, string>,
 ): void {
   const onceValueQualifier = imports.find((imp) => imp.importText === GO_ONCE_VALUE_IMPORT_PATH);
@@ -176,19 +190,23 @@ function collectGoFuncValueVarReturnTypes(
     for (const spec of specs) {
       const names = spec.children.filter((c) => c.type === "identifier");
       if (names.length !== 1 || out[names[0].text] !== undefined) continue;
-      const typeName = readFuncValueVarResultType(spec, syncName);
+      const typeName = readFuncValueVarResultType(spec, syncName, qualifiers);
       if (typeName) out[names[0].text] = typeName;
     }
   }
 }
 
-function readFuncValueVarResultType(spec: AstNode, syncName: string | undefined): string | null {
+function readFuncValueVarResultType(
+  spec: AstNode,
+  syncName: string | undefined,
+  qualifiers: ReadonlyMap<string, string>,
+): string | null {
   const declared = spec.childForFieldName("type");
-  if (declared) return declared.type === "function_type" ? readFuncResultType(declared) : null;
+  if (declared) return declared.type === "function_type" ? readFuncResultType(declared, qualifiers) : null;
   const values = spec.childForFieldName("value")?.namedChildren ?? [];
   if (values.length !== 1) return null;
   const [value] = values;
-  if (value.type === "func_literal") return readFuncResultType(value);
+  if (value.type === "func_literal") return readFuncResultType(value, qualifiers);
   if (value.type !== "call_expression" || syncName === undefined) return null;
   const fn = value.childForFieldName("function");
   if (fn?.type !== "selector_expression") return null;
@@ -199,33 +217,41 @@ function readFuncValueVarResultType(spec: AstNode, syncName: string | undefined)
     return null;
   }
   const args = value.childForFieldName("arguments")?.namedChildren ?? [];
-  return args.length === 1 && args[0].type === "func_literal" ? readFuncResultType(args[0]) : null;
+  return args.length === 1 && args[0].type === "func_literal" ? readFuncResultType(args[0], qualifiers) : null;
 }
 
 /** The single nominal result type of a `function_type` / `func_literal`, else null. */
-function readFuncResultType(fn: AstNode): string | null {
+function readFuncResultType(fn: AstNode, qualifiers: ReadonlyMap<string, string>): string | null {
   const result = fn.childForFieldName("result");
-  return result ? readReturnTypeNode(result) : null;
+  return result ? readReturnTypeNode(result, qualifiers) : null;
 }
 
 /**
- * Read the bare type name from a function/method `result` field node. Returns
- * null for multi-return (`parameter_list`) and any non-named-type shape — the
- * caller treats null as "not statically bindable". Multi-return is the key
- * SKIP: `func New() (*Engine, error)` must not bind, because we can't tell
- * which return value the variable receives.
+ * Read the recorded type name from a function/method `result` field node:
+ * bare for a type of the declaring package, the import path and the type for
+ * a package-qualified one (`qualifiers` maps each name the file's imports
+ * bind to its path). Returns null for multi-return (`parameter_list`), any
+ * non-named-type shape, and a qualifier no import binds — the caller treats
+ * null as "not statically bindable". Multi-return is the key SKIP:
+ * `func New() (*Engine, error)` must not bind, because we can't tell which
+ * return value the variable receives.
  */
-function readReturnTypeNode(result: AstNode): string | null {
+function readReturnTypeNode(result: AstNode, qualifiers: ReadonlyMap<string, string>): string | null {
   if (result.type === "type_identifier") return result.text;
   if (result.type === "pointer_type") {
-    // `*Foo` → `Foo`; `*pkg.Foo` → `Foo`, exactly as the bare `pkg.Foo` reads
-    // (bd tea-rags-mcp-e6xx — gin's `func() *gin.Engine` fell through).
+    // `*Foo` → `Foo`; `*pkg.Foo` reads as `pkg.Foo` does (bd tea-rags-mcp-e6xx
+    // — gin's `func() *gin.Engine` fell through).
     const inner = result.children.find((c) => c.type === "type_identifier" || c.type === "qualified_type");
-    return inner ? readReturnTypeNode(inner) : null;
+    return inner ? readReturnTypeNode(inner, qualifiers) : null;
   }
   if (result.type === "qualified_type") {
+    // The package KEPT (bd tea-rags-mcp-e6xx): folded to the bare `Client`, a
+    // `*http.Client` result typed its callers as the project's own `Client`.
     const name = result.childForFieldName("name");
-    return name?.type === "type_identifier" ? name.text : null;
+    const importPath = qualifiers.get(result.childForFieldName("package")?.text ?? "");
+    return name?.type === "type_identifier" && importPath !== undefined
+      ? goQualifiedTypeName(importPath, name.text)
+      : null;
   }
   // `parameter_list` (multi-return), `interface_type`, `map_type`,
   // `slice_type`, `func_type`, generics with no single base — not bindable.
@@ -418,7 +444,8 @@ function walk(node: AstNode, visit: (n: AstNode) => void): void {
  *      is a `type_identifier` (e.g. value receivers / value params) are
  *      ALSO captured because Go method dispatch on a value receiver
  *      resolves the same way — `var s Service; s.Open()` should resolve
- *      to `Service#Open`.
+ *      to `Service#Open`. Named results (`func f() (e *Engine)`) bind the
+ *      same way: they are locals of the body (`goNamedResultList`).
  *   3. Local `var x Type` declarations (`var_declaration` → `var_spec`
  *      with a `type` field) — `func Default() { var engine Engine }` →
  *      `{ engine: "Engine" }`. bd tea-rags-mcp-6g9c.
@@ -435,8 +462,9 @@ function walk(node: AstNode, visit: (n: AstNode) => void): void {
  *      calls bare (`helper := func() {}; helper()`,
  *      `func f(loadAll []func()) { loadAll[0]() }`) records an EMPTY-typed
  *      binding: a value no pass can type, never the package or the
- *      package-level declaration. A statement-declared one carries `endLine`
- *      (in scope only after its statement — `goLocalBindingAt`).
+ *      package-level declaration. A statement-declared one whose right-hand
+ *      side names it carries `endLine` (in scope only after its statement —
+ *      `goDeclarationEndLine`, read by `goLocalBindingAt`).
  *
  * A binding declared inside a block narrower than the function body carries
  * that block's last line as `scopeEndLine`.
@@ -451,7 +479,7 @@ function walk(node: AstNode, visit: (n: AstNode) => void): void {
  * concrete struct types that exist in the table ever bind. bd tea-rags-mcp-6g9c.
  * Each declaration is its own positioned entry (bd tea-rags-mcp-e6xx) — the
  * chunk-wide `localCallBindings` map this replaces spoke for the name on every
- * line, the declaring statement's own right-hand side included.
+ * line, a `config := config.Load()` right-hand side included.
  * Go has no `self`/`this`: receivers, local vars, AND return-typed vars are
  * the only static type hints for `engine.Use()`-style calls.
  */
@@ -491,9 +519,12 @@ function collectGoLocalBindingsForChunk(
     }
   }
 
-  // Parameter list.
+  // Parameter list, then the named results (`func f() (render io.Writer)`),
+  // which are locals of the body exactly as parameters are.
   const params = (target as AstNode).childForFieldName("parameters");
   if (params) bindParameterList(params, sink);
+  const namedResults = goNamedResultList(target);
+  if (namedResults) bindParameterList(namedResults, sink);
 
   // Function-literal parameters whose type binds nothing, settled AFTER the
   // walk: whether one must shadow depends on bindings the walk has not reached
@@ -590,16 +621,13 @@ function bindGoDeclaration(
     case "range_clause":
     case "receive_statement":
       // `for k, v := range m` / `case v := <-ch:` — declared only with `:=`.
-      if (declaresWithShortVarToken(node)) shadowGoLocals(node.childForFieldName("left"), node, scopeEnd, sink);
+      if (declaresWithShortVarToken(node)) {
+        shadowGoLocals(node.childForFieldName("left"), node.childForFieldName("right"), scopeEnd, sink);
+      }
       break;
     case "type_switch_statement":
       // `switch v := x.(type)` — `v` lives in every clause, i.e. the statement.
-      shadowGoLocals(
-        node.childForFieldName("alias"),
-        node.childForFieldName("value") ?? node,
-        node.endPosition.row + 1,
-        sink,
-      );
+      shadowGoLocals(node.childForFieldName("alias"), node.childForFieldName("value"), node.endPosition.row + 1, sink);
       break;
     default:
       break;
@@ -616,36 +644,67 @@ function scopedTo(binding: LocalBinding, scopeEnd: number | undefined): LocalBin
   return binding;
 }
 
+/** Node types whose text names an identifier in scope — a value, a package qualifier, or a type. */
+const GO_NAME_REFERENCE_NODE_TYPES: ReadonlySet<string> = new Set([
+  "identifier",
+  "package_identifier",
+  "type_identifier",
+]);
+
+/** Whether `node`'s subtree names `name` (a field selected on something else, `x.name`, does not). */
+function goNodeNamesIdentifier(node: AstNode, name: string): boolean {
+  if (GO_NAME_REFERENCE_NODE_TYPES.has(node.type)) return node.text === name;
+  return node.children.some((child) => goNodeNamesIdentifier(child, name));
+}
+
+/**
+ * The `endLine` a statement-declared local carries (bd tea-rags-mcp-e6xx): the
+ * last line of the right-hand side `rhs` the declaring statement evaluates —
+ * but ONLY when `rhs` names the identifier being declared, else `undefined`.
+ *
+ * Go scopes such a local from the END of its statement, so in
+ * `config := config.Load()` the right-hand `config` is still the package, and
+ * `goLocalBindingAt` reads `endLine` to keep the local out of those lines. A
+ * call site carries a line and no column, though, so the same bound would also
+ * hide the local from the rest of its line — and an `if` / `switch` / `for`
+ * header uses its init declaration on that very line
+ * (`if e := NewEngine(); e.Ready() {`). The bound is therefore set only where
+ * the right-hand side can refer to the name at all; everywhere else the local
+ * is visible from its `line`, which is what the header needs. What stays
+ * unexpressible is the case holding both — `if config := config.Load();
+ * config.Ok() {` reads the condition's `config` as the package.
+ */
+function goDeclarationEndLine(rhs: AstNode | null, name: string): number | undefined {
+  return rhs !== null && goNodeNamesIdentifier(rhs, name) ? rhs.endPosition.row + 1 : undefined;
+}
+
 /**
  * A local of a type the walker cannot know: recorded, with the EMPTY type,
  * only when its name is one the sink watches (`GoBindingSink.shadowed`) —
- * everywhere else nothing reads it. `statement` is the declaring
- * statement — the local is in scope only after it ends (`endLine`, read by
- * `goLocalBindingAt`), so its own right-hand side still names the package.
- * A parameter has no statement and is in scope from its line.
+ * everywhere else nothing reads it. `rhs` is what the declaring statement
+ * evaluates before the local exists: when it names the local, the local is in
+ * scope only after it ends (`goDeclarationEndLine`), so its own right-hand
+ * side still names the package. A parameter has no right-hand side and is in
+ * scope from its line.
  */
-function shadowGoLocal(
-  ident: AstNode,
-  statement: AstNode | null,
-  scopeEnd: number | undefined,
-  sink: GoBindingSink,
-): void {
+function shadowGoLocal(ident: AstNode, rhs: AstNode | null, scopeEnd: number | undefined, sink: GoBindingSink): void {
   const name = ident.text;
   if (!sink.shadowed.has(name)) return;
   const binding: LocalBinding = { line: ident.startPosition.row + 1, type: "" };
-  if (statement) binding.endLine = statement.endPosition.row + 1;
+  const endLine = goDeclarationEndLine(rhs, name);
+  if (endLine !== undefined) binding.endLine = endLine;
   (sink.types[name] ??= []).push(scopedTo(binding, scopeEnd));
 }
 
 /** {@link shadowGoLocal} for every identifier of a declaration's left-hand `expression_list`. */
 function shadowGoLocals(
   left: AstNode | null,
-  statement: AstNode,
+  rhs: AstNode | null,
   scopeEnd: number | undefined,
   sink: GoBindingSink,
 ): void {
   if (!left) return;
-  for (const ident of left.children) if (ident.type === "identifier") shadowGoLocal(ident, statement, scopeEnd, sink);
+  for (const ident of left.children) if (ident.type === "identifier") shadowGoLocal(ident, rhs, scopeEnd, sink);
 }
 
 /**
@@ -683,7 +742,7 @@ function bindVarDeclaration(node: AstNode, scopeEnd: number | undefined, sink: G
         const binding = scopedTo({ line: ident.startPosition.row + 1, type: typeName }, scopeEnd);
         (sink.types[ident.text] ??= []).push(binding);
       } else {
-        shadowGoLocal(ident, spec, scopeEnd, sink);
+        shadowGoLocal(ident, spec.childForFieldName("value"), scopeEnd, sink);
       }
     }
   }
@@ -715,10 +774,11 @@ function bindShortVarDeclaration(node: AstNode, scopeEnd: number | undefined, si
     } else if (value.type === "call_expression") {
       const callee = readCalledFunctionName(value);
       if (callee) {
+        const endLine = goDeclarationEndLine(right, name.text);
         const binding: CallResultBinding = {
           line: name.startPosition.row + 1,
           callee,
-          endLine: node.endPosition.row + 1,
+          ...(endLine === undefined ? {} : { endLine }),
           ...(scopeEnd === undefined ? {} : { scopeEndLine: scopeEnd }),
         };
         (sink.calls[name.text] ??= []).push(binding);
@@ -726,7 +786,7 @@ function bindShortVarDeclaration(node: AstNode, scopeEnd: number | undefined, si
       }
     }
   }
-  for (const ident of lhsIdents) shadowGoLocal(ident, node, scopeEnd, sink);
+  for (const ident of lhsIdents) shadowGoLocal(ident, right, scopeEnd, sink);
 }
 
 /** A function-literal parameter whose type binds nothing, and the shadow it would record. */
@@ -736,7 +796,8 @@ interface UntypedLiteralParam {
 }
 
 /**
- * Bind a `func_literal`'s parameters for the literal's own lines (bd
+ * Bind a `func_literal`'s parameters — and its named results, locals of the
+ * literal's body just the same — for the literal's own lines (bd
  * tea-rags-mcp-e6xx) — gin's middlewares are `return func(c *Context) { ... }`,
  * and every call on that `c` went unresolved without it.
  *
@@ -757,19 +818,32 @@ function bindFuncLiteralParams(
   sink: GoBindingSink,
   untypedLiteralParams: UntypedLiteralParam[],
 ): void {
-  const params = literal.childForFieldName("parameters");
-  if (!params) return;
   const scopeEndLine = literal.endPosition.row + 1;
-  for (const param of params.children) {
-    if (param.type !== "parameter_declaration" && param.type !== "variadic_parameter_declaration") continue;
-    const line = param.startPosition.row + 1;
-    const type = param.type === "parameter_declaration" ? readParamBareType(param) : null;
-    for (const ident of readParamNames(param)) {
-      const name = ident.text;
-      if (type) (sink.types[name] ??= []).push({ line, type, scopeEndLine });
-      else untypedLiteralParams.push({ name, shadow: { line, type: "", scopeEndLine } });
+  for (const params of [literal.childForFieldName("parameters"), goNamedResultList(literal)]) {
+    for (const param of params?.children ?? []) {
+      if (param.type !== "parameter_declaration" && param.type !== "variadic_parameter_declaration") continue;
+      const line = param.startPosition.row + 1;
+      const type = param.type === "parameter_declaration" ? readParamBareType(param) : null;
+      for (const ident of readParamNames(param)) {
+        const name = ident.text;
+        if (type) (sink.types[name] ??= []).push({ line, type, scopeEndLine });
+        else untypedLiteralParams.push({ name, shadow: { line, type: "", scopeEndLine } });
+      }
     }
   }
+}
+
+/**
+ * The `result` field of a function, method or function literal when it is a
+ * parameter list (`(render io.Writer)`, `(n int, err error)`), else `null` — a
+ * single result type (`func f() io.Writer`) names no local. A NAMED result is
+ * a local of the body, declared like a parameter, so it shadows an import or a
+ * package-level function of its name the same way (bd tea-rags-mcp-e6xx); an
+ * unnamed list (`(A, B)`) holds no names and binds nothing.
+ */
+function goNamedResultList(fn: AstNode): AstNode | null {
+  const result = fn.childForFieldName("result");
+  return result?.type === "parameter_list" ? result : null;
 }
 
 /**
@@ -779,7 +853,8 @@ function bindFuncLiteralParams(
  *   - `pkg.New()`  → `function` field is a `selector_expression` whose
  *                    operand is a plain `identifier` (package qualifier) →
  *                    "pkg.New"; the resolver keys `functionReturnTypes` by the
- *                    bare last segment.
+ *                    bare last segment, once an imported `pkg` is known to be
+ *                    a project package declaring `New` (`goCallResultType`).
  * Returns null for chained calls (`New().Configure()` — selector operand is
  * itself a `call_expression`) and any other shape; the var↔return pairing is
  * only sound when the RHS is a direct call to a named function.

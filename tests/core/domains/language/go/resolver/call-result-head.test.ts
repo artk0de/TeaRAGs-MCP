@@ -1,3 +1,7 @@
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+
 import Parser from "tree-sitter";
 import GoLang from "tree-sitter-go";
 import { describe, expect, it } from "vitest";
@@ -116,12 +120,18 @@ describe("Go walker — what calling a package-level func-valued var returns", (
       "\treturn gin.Default()",
       "})",
     ]);
-    expect(types?.engine).toBe("Engine");
+    expect(types?.engine).toBe("github.com/gin-gonic/gin.Engine");
   });
 
-  it("records a pointer to a package-qualified type by its bare name, as the unqualified form reads", () => {
-    const types = walkReturnTypes(["package app", "func Build() *render.JSON { return nil }"]);
-    expect(types?.Build).toBe("JSON");
+  it("records a pointer to a package-qualified type as the qualified form reads: the import path, then the type", () => {
+    const types = walkReturnTypes([
+      "package app",
+      'import "example.com/app/render"',
+      "func Build() *render.JSON { return nil }",
+      "func Value() render.JSON { return render.JSON{} }",
+    ]);
+    expect(types?.Build).toBe("example.com/app/render.JSON");
+    expect(types?.Build).toBe(types?.Value);
   });
 
   it("records a var initialized by a function literal, and a var of a func type", () => {
@@ -171,11 +181,20 @@ describe("Go walker — what calling a package-level func-valued var returns", (
     const table = ginTable();
     table.upsertFile("ginS/gins.go", [sym("GET", "ginS/gins.go")]);
     const [site] = extraction.chunks[0].calls;
-    const target = go.resolver.resolve(site, {
-      ...ginsCtx({ symbolTable: table }),
-      imports: extraction.imports,
-      functionReturnTypes: extraction.functionReturnTypes,
-    });
-    expect(target?.targetSymbolId).toBe("RouterGroup#GET");
+    // The run's project root, as production hands it over: gin's go.mod makes
+    // `github.com/gin-gonic/gin` the root package, the one declaring `Engine`.
+    const root = mkdtempSync(join(tmpdir(), "tea-rags-go-gins-"));
+    try {
+      writeFileSync(join(root, "go.mod"), "module github.com/gin-gonic/gin\n\ngo 1.26.0\n", "utf8");
+      const target = go.resolver.resolve(site, {
+        ...ginsCtx({ symbolTable: table }),
+        imports: extraction.imports,
+        functionReturnTypes: extraction.functionReturnTypes,
+        projectRoot: root,
+      });
+      expect(target?.targetSymbolId).toBe("RouterGroup#GET");
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
   });
 });

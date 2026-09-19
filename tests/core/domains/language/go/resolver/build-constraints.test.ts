@@ -2,7 +2,15 @@ import Parser from "tree-sitter";
 import GoLang from "tree-sitter-go";
 import { describe, expect, it } from "vitest";
 
-import type { CallContext, CallRef, NamedSymbol } from "../../../../../../src/core/contracts/types/codegraph.js";
+import { fromCgPass1Row, toCgPass1Row } from "../../../../../../src/core/adapters/duckdb/cg-pass1-aggregates-row.js";
+import { NoopGlobalSymbolTable } from "../../../../../../src/core/adapters/duckdb/daemon/noop-symbol-table.js";
+import type {
+  CallContext,
+  CallRef,
+  FileExtraction,
+  GlobalSymbolTable,
+  NamedSymbol,
+} from "../../../../../../src/core/contracts/types/codegraph.js";
 import {
   goBuildContextForHost,
   goFileBuildsByDefault,
@@ -10,6 +18,8 @@ import {
 import { GoCallResolver } from "../../../../../../src/core/domains/language/go/resolver/go-resolver.js";
 import { extractFromGoFile } from "../../../../../../src/core/domains/language/go/walker/walker.js";
 import { DefaultSymbolIdComposer } from "../../../../../../src/core/domains/language/kernel/symbol-id.js";
+import { buildPass1Aggregates } from "../../../../../../src/core/domains/trajectory/codegraph/symbols/pass1-aggregates.js";
+import { CodegraphRunState } from "../../../../../../src/core/domains/trajectory/codegraph/symbols/run-state.js";
 import { InMemoryGlobalSymbolTable } from "../../../../../../src/core/domains/trajectory/codegraph/symbols/symbol-table.js";
 
 /**
@@ -103,6 +113,18 @@ function bindingCtx(over: Partial<CallContext> = {}): CallContext {
 
 const resolver = new GoCallResolver(new DefaultSymbolIdComposer());
 
+/** The barrier resolves a table only for schema columns / self-dispatch; neither is in play here. */
+const noopTable = async (): Promise<GlobalSymbolTable> => new NoopGlobalSymbolTable();
+
+const goFile = (relPath: string, buildConstraint?: string): FileExtraction => ({
+  relPath,
+  language: "go",
+  imports: [],
+  fileScope: [],
+  chunks: [],
+  ...(buildConstraint === undefined ? {} : { buildConstraint }),
+});
+
 describe("GoCallResolver — build-tag twins", () => {
   it("resolves a bare call to the twin the default build compiles (gin's `validate`)", () => {
     expect(resolver.resolve(bare, bindingCtx())).toEqual({
@@ -117,9 +139,39 @@ describe("GoCallResolver — build-tag twins", () => {
     expect(resolver.resolve(call, ctx)?.targetRelPath).toBe("binding/binding.go");
   });
 
-  it("NEGATIVE: stays ambiguous when a twin's constraint is unknown (not walked this run)", () => {
-    const ctx = bindingCtx({ buildConstraintsByFile: { "binding/binding.go": "!nomsgpack" } });
-    expect(resolver.resolve(bare, ctx)).toBeNull();
+  /**
+   * An incremental run walks only what changed — edit `binding/json.go` and
+   * neither twin is re-read. Their constraints come back from the persisted
+   * pass-1 slice (`cg_pass1_aggregates`), so the incremental graph is the full
+   * one: before the channel was hydrated, both twins read as "unknown", the
+   * call stayed ambiguous, and the edge vanished until the next full run.
+   */
+  it("an incremental run that re-walks only the caller resolves the twin exactly as a full run does", async () => {
+    const twin = goFile("binding/binding.go", "!nomsgpack");
+    const otherTwin = goFile("binding/binding_nomsgpack.go", "nomsgpack");
+    const caller = goFile("binding/json.go");
+
+    // Full run: every file walked. Its pass-1 slices are the rows the index persists.
+    const full = new CodegraphRunState();
+    for (const file of [twin, otherTwin, caller]) full.absorb(file, []);
+    await full.seal(noopTable, async () => []);
+    const persisted = [twin, otherTwin, caller].flatMap((file) => {
+      const slice = buildPass1Aggregates(file, []);
+      if (slice === undefined) return [];
+      const [relPath, language, json] = toCgPass1Row(slice) as [string, string, string];
+      return [fromCgPass1Row({ rel_path: relPath, language, aggregates_json: json })];
+    });
+
+    // Incremental run: only the caller was edited, so only it is walked.
+    const incremental = new CodegraphRunState();
+    incremental.absorb(caller, []);
+    await incremental.seal(noopTable, async () => persisted);
+
+    expect(incremental.buildConstraintsByFile).toEqual(full.buildConstraintsByFile);
+    const resolveUnder = (state: CodegraphRunState) =>
+      resolver.resolve(bare, bindingCtx({ buildConstraintsByFile: state.buildConstraintsByFile }));
+    expect(resolveUnder(incremental)).toEqual(resolveUnder(full));
+    expect(resolveUnder(incremental)?.targetRelPath).toBe("binding/binding.go");
   });
 
   it("NEGATIVE: stays ambiguous when both twins build by default", () => {

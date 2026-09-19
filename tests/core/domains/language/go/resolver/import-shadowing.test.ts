@@ -113,6 +113,26 @@ describe("Go locals that shadow an imported package name", () => {
     expect(resolved.get("1:render.Write")).toBeNull();
   });
 
+  it("NEGATIVE: a named RESULT parameter is not the package it shadows", () => {
+    const resolved = resolveAll(["func f() (render io.Writer) {", "\trender.Write(nil)", "\treturn", "}"]);
+    expect(resolved.get("1:render.Write")).toBeNull();
+  });
+
+  it("NEGATIVE: a function literal's named result shadows for the literal's lines only", () => {
+    const resolved = resolveAll([
+      "func f() {",
+      "\tg := func() (render io.Writer) {",
+      "\t\trender.Write(nil)",
+      "\t\treturn",
+      "\t}",
+      "\trender.Write(nil)",
+      "\t_ = g",
+      "}",
+    ]);
+    expect(resolved.get("2:render.Write")).toBeNull();
+    expect(resolved.get("5:render.Write")).toBe("Write @ app/render/render.go");
+  });
+
   it("NEGATIVE: an untyped function-literal parameter shadows for the literal's lines only", () => {
     const resolved = resolveAll([
       "func f() {",

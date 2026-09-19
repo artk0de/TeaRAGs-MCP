@@ -31,7 +31,7 @@ export class GoReceiverChainSymbolResolutionStrategy implements SymbolResolution
   private readonly ports: ReceiverTypePorts;
 
   constructor(private readonly cfg: ResolverConfig) {
-    this.ports = createGoReceiverTypePorts(cfg.composer);
+    this.ports = createGoReceiverTypePorts(cfg);
   }
 
   attempt(call: CallRef, ctx: CallContext): SymbolResolutionOutcome {

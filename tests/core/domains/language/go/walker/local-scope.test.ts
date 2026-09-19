@@ -97,7 +97,9 @@ describe("Go walker — block-scoped local bindings", () => {
       language: "go",
       chunks: [{ symbolId: "f", scope: [], startLine: 2, endLine: src.length }],
     });
-    expect(r.chunks[0].callResultBindings?.e).toEqual([{ line: 4, callee: "New", endLine: 6, scopeEndLine: 8 }]);
+    // No `endLine`: the right-hand side does not name `e`, so the binding is
+    // visible from its own line (a header's `if e := New(); e.Ok()` reads it).
+    expect(r.chunks[0].callResultBindings?.e).toEqual([{ line: 4, callee: "New", scopeEndLine: 8 }]);
     expect(r.chunks[0].localCallBindings).toBeUndefined();
   });
 

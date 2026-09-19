@@ -35,13 +35,22 @@ function projectTable(): InMemoryGlobalSymbolTable {
     sym("Merge", cfg),
     sym("Default", cfg),
     sym("Validate", cfg),
+    sym("Ready", cfg),
   ]);
   t.upsertFile("app/engine.go", [
     sym("Engine", "app/engine.go"),
     sym("Engine#Use", "app/engine.go"),
+    sym("Engine#Ready", "app/engine.go"),
     sym("New", "app/engine.go"),
+    sym("NewEngine", "app/engine.go"),
     sym("Plugin", "app/engine.go"),
     sym("Plugin#Use", "app/engine.go"),
+  ]);
+  t.upsertFile("app/iter.go", [
+    sym("Iterator", "app/iter.go"),
+    sym("Iterator#Valid", "app/iter.go"),
+    sym("Iterator#Next", "app/iter.go"),
+    sym("NewIterator", "app/iter.go"),
   ]);
   return t;
 }
@@ -73,7 +82,13 @@ function resolveAll(body: string[]): Map<string, string | null> {
     localCallBindings: chunk.localCallBindings,
     callResultBindings: chunk.callResultBindings,
     // Run-global in production: declared in other files.
-    functionReturnTypes: { Load: "Config", Merge: "Config", New: "Engine" },
+    functionReturnTypes: {
+      Load: "Config",
+      Merge: "Config",
+      New: "Engine",
+      NewEngine: "Engine",
+      NewIterator: "Iterator",
+    },
   };
   const out = new Map<string, string | null>();
   for (const call of chunk.calls) {
@@ -136,5 +151,51 @@ describe("Go call bindings are in scope after their statement, within their bloc
     ]);
     expect(resolved.get("3:e.Use")).toBe("Engine#Use @ app/engine.go");
     expect(resolved.get("5:e.Use")).toBe("Plugin#Use @ app/engine.go");
+  });
+});
+
+/**
+ * An init declaration in an `if` / `switch` / `for` header is in scope for the
+ * REST of that header — `if e := NewEngine(); e.Ready() {` calls `Ready` on the
+ * local, on the declaration's own line. A call site carries a line and no
+ * column, so the statement-end rule above can only be applied where it is
+ * needed: when the right-hand side names the very identifier being declared
+ * (`config := config.Load()`). Anywhere else the local is visible from its line.
+ */
+describe("Go header init declarations are visible on their own line", () => {
+  it("`if e := NewEngine(); e.Ready() {` types the condition's receiver", () => {
+    const resolved = resolveAll(["func f() {", "\tif e := NewEngine(); e.Ready() {", "\t\te.Use()", "\t}", "}"]);
+    expect(resolved.get("1:e.Ready")).toBe("Engine#Ready @ app/engine.go");
+    expect(resolved.get("2:e.Use")).toBe("Engine#Use @ app/engine.go");
+  });
+
+  it("`switch e := NewEngine(); e.Ready() {` types the tag's receiver", () => {
+    const resolved = resolveAll([
+      "func f() {",
+      "\tswitch e := NewEngine(); e.Ready() {",
+      "\tcase true:",
+      "\t\te.Use()",
+      "\t}",
+      "}",
+    ]);
+    expect(resolved.get("1:e.Ready")).toBe("Engine#Ready @ app/engine.go");
+    expect(resolved.get("3:e.Use")).toBe("Engine#Use @ app/engine.go");
+  });
+
+  it("the iterator idiom types both the condition and the post statement", () => {
+    const resolved = resolveAll(["func f() {", "\tfor it := NewIterator(); it.Valid(); it.Next() {", "\t}", "}"]);
+    expect(resolved.get("1:it.Valid")).toBe("Iterator#Valid @ app/iter.go");
+    expect(resolved.get("1:it.Next")).toBe("Iterator#Next @ app/iter.go");
+  });
+
+  it("NEGATIVE: a header local shadowing an import is the local on its own line, never the package", () => {
+    const resolved = resolveAll([
+      "func f() {",
+      "\tif config, err := loadTwo(); config.Ready() {",
+      "\t\t_ = err",
+      "\t}",
+      "}",
+    ]);
+    expect(resolved.get("1:config.Ready")).toBeNull();
   });
 });

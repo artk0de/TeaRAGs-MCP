@@ -11,9 +11,12 @@
  * (ShortVarDecl for short variable declarations)" (Go spec, Declarations and
  * scope). So in `config, err := config.LoadTwo()` the right-hand `config` is
  * still the imported package. The walker marks such a binding with `endLine`,
- * the statement's last line; a binding without one (a parameter, a receiver,
- * and every typed binding recorded before this rule) is in scope from its
- * `line`, exactly as the shared lookup reads it.
+ * the statement's last line — but only when the right-hand side names the
+ * declared identifier (`goDeclarationEndLine`): a call site has no column, so
+ * the bound would otherwise hide an `if e := New(); e.Ok() {` header's local
+ * from the rest of its own line. A binding without one (a parameter, a
+ * receiver, a header's init declaration, and every typed binding) is in scope
+ * from its `line`, exactly as the shared lookup reads it.
  *
  * A Go local lives on one of two channels: `localBindings` (typed, or EMPTY
  * for a value no pass can type) and `callResultBindings` (`x := New()`, typed

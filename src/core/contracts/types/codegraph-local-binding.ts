@@ -51,8 +51,11 @@ export interface LocalBinding {
    * statement. netbox's `layout = layout.Layout(\n    layout.Row(…))` is that
    * shape: the inner receivers name the imported MODULE, not the class being
    * constructed. Only a consumer that knows the extent can say so. Go's
-   * walker sets it on the locals a statement declares (Go scopes them from
-   * the statement's END), and Go reads it through `goLocalBindingAt`.
+   * walker sets it on a local a statement declares when that statement's
+   * right-hand side names it (Go scopes the local from the statement's END; a
+   * right-hand side that cannot refer to it leaves the local visible from its
+   * line, which an `if e := New(); e.Ok() {` header needs), and Go reads it
+   * through `goLocalBindingAt`.
    *
    * ABSENT means "unknown, treat as `line`" — every index written before this
    * field existed, and every binding that is not an establishing statement
@@ -140,10 +143,11 @@ export interface CallResultBinding {
   readonly callee: string;
   /**
    * 1-based last line of the assigning statement — {@link LocalBinding.endLine}'s
-   * meaning. Go's walker sets it (bd tea-rags-mcp-e6xx): a Go local is in scope
-   * only after its declaring statement, so `config := config.Load()` still
-   * calls the package on its own right-hand side. ABSENT (every Python
-   * binding) means "treat as `line`".
+   * meaning. Go's walker sets it (bd tea-rags-mcp-e6xx) when the right-hand
+   * side names the declared identifier: a Go local is in scope only after its
+   * declaring statement, so `config := config.Load()` still calls the package
+   * on its own right-hand side. ABSENT (every Python binding, and a Go one
+   * whose right-hand side cannot refer to it) means "treat as `line`".
    */
   readonly endLine?: number;
   /**
