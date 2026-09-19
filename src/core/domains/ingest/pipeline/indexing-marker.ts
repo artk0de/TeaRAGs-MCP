@@ -193,13 +193,15 @@ export async function readWorktreeSeedPending(
  * The seed a collection still owes, or `undefined` when the marker records
  * none. A failed read throws {@link WorktreeSeedMarkerUnreadableError}: for a
  * `--force-enrichments` recompute, "unknown" read as "none" leaves the seed's
- * full-axis stamp behind to roll its own newer stamp back later.
+ * full-axis stamp behind to roll its own newer stamp back later. The read goes
+ * through `getPointOrThrow`, not `getPoint`: the lenient read answers `null`
+ * for a 5xx or a timeout, which is exactly that "none".
  */
 export async function readWorktreeSeedPendingOrThrow(
   qdrant: QdrantManager,
   collectionName: string,
 ): Promise<WorktreeSeedPending | undefined> {
-  const point = await qdrant.getPoint(collectionName, INDEXING_METADATA_ID).catch((error: unknown) => {
+  const point = await qdrant.getPointOrThrow(collectionName, INDEXING_METADATA_ID).catch((error: unknown) => {
     throw new WorktreeSeedMarkerUnreadableError(collectionName, error instanceof Error ? error : undefined);
   });
   return point?.payload ? parseMarkerPayload(point.payload).worktreeSeedPending : undefined;

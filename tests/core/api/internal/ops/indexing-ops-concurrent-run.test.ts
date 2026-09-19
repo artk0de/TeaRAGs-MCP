@@ -39,13 +39,14 @@ const minutesAgo = (minutes: number): string => new Date(Date.now() - minutes * 
 type MarkerPayloads = Record<string, Record<string, unknown>>;
 
 function makeQdrant(markers: MarkerPayloads, collections: string[] = []) {
+  const readPoint = async (collection: string) =>
+    Promise.resolve(markers[collection] ? { payload: markers[collection] } : null);
   return {
     collectionExists: vi.fn().mockResolvedValue(true),
     aliases: { listAliases: vi.fn().mockResolvedValue([]) },
     listCollections: vi.fn(async () => Promise.resolve(collections)),
-    getPoint: vi.fn(async (collection: string) =>
-      Promise.resolve(markers[collection] ? { payload: markers[collection] } : null),
-    ),
+    getPoint: vi.fn(readPoint),
+    getPointOrThrow: vi.fn(readPoint),
   };
 }
 

@@ -603,9 +603,8 @@ describe("IngestFacade", () => {
       markerPayload?: Record<string, unknown> | null;
       resolveModelInfo?: () => Promise<any>;
     }) {
-      const getPoint = vi
-        .fn()
-        .mockResolvedValue(opts.markerPayload !== null ? { payload: opts.markerPayload ?? {} } : null);
+      const marker = opts.markerPayload !== null ? { payload: opts.markerPayload ?? {} } : null;
+      const getPoint = vi.fn().mockResolvedValue(marker);
       const setPayload = vi.fn().mockResolvedValue(undefined);
       const resolveModelInfoMock = opts.resolveModelInfo ?? vi.fn().mockResolvedValue(undefined);
 
@@ -614,6 +613,7 @@ describe("IngestFacade", () => {
           collectionExists: vi.fn().mockResolvedValue(true),
           checkHealth: vi.fn().mockResolvedValue(true),
           getPoint,
+          getPointOrThrow: vi.fn().mockResolvedValue(marker),
           setPayload,
           aliases: { listAliases: vi.fn().mockResolvedValue([]) },
           url: "http://localhost:6333",

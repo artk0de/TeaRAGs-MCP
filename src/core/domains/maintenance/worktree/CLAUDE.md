@@ -89,9 +89,12 @@
   recompute reads through `readWorktreeSeedPendingOrThrow` and throws
   `WorktreeSeedMarkerUnreadableError` before its rebuild and before any stamp;
   the incremental resume reads through `readWorktreeSeedPending`, which answers
-  `undefined` and leaves the seed to the next run. Why: read as "no seed", a
-  transient `getPoint` failure let the recompute stamp its axes over a marker
-  still carrying the full seed stamp — the rollback above by another route.
+  `undefined` and leaves the seed to the next run. The strict read must stay on
+  `QdrantManager#getPointOrThrow`: `QdrantManager#getPoint` answers `null` for
+  every failure but a refused connection — a 5xx, a timeout, a daemon still
+  starting or recovering — and `null` is "no seed". Why: read as "no seed", a
+  transient Qdrant failure let the recompute stamp its axes over a marker still
+  carrying the full seed stamp — the rollback above by another route.
 
 ## Boundaries
 
