@@ -186,9 +186,8 @@ export function buildIndexingGuide(): string {
 Set \`CODE_ENABLE_GIT_METADATA=true\` before indexing.
 
 Enables filters:
-- author — blame-dominant author (owner of most live lines, git blame HEAD); file-level default, level "chunk" → chunk's own lines
+- author — blame-dominant author (owner of most live lines, git blame HEAD); file-level default, level "chunk" → chunk's own lines. The live-line-owner filter — there is no separate blameOwner param
 - recentAuthor — filter by recent-activity dominant author (commit-count based, log window)
-- blameOwner — filter by live-line owner (git blame HEAD)
 - modifiedAfter/modifiedBefore — date range (ISO 8601 format)
 - minAgeDays/maxAgeDays — code age
 - minCommitCount — churn frequency

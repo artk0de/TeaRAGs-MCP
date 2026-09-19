@@ -15,10 +15,10 @@ description:
   negation in `pathPattern` (`!**/test/**`), or raw `filter` escape hatch
   (Qdrant `must`/`should`/`must_not`) for payload keys without typed sugar.
   Cases: "tests of AuthService" → implicit `testFile: "only"`; "Alice's recent
-  code" → `author + modifiedAfter`; "old payments code" → `modifiedBefore`;
-  "what's new this week" → `modifiedAfter`; "production code, not tests" →
-  `testFile: "exclude"`; "code linked to JIRA-1234" → `taskId`;
-  "exclude vendor dir" → `pathPattern: "!**/vendor/**"`. NOT for picking a
+  code" → `recentAuthor + modifiedAfter`; "old payments code" →
+  `modifiedBefore`; "what's new this week" → `modifiedAfter`; "production
+  code, not tests" → `testFile: "exclude"`; "code linked to JIRA-1234" →
+  `taskId`; "exclude vendor dir" → `pathPattern: "!**/vendor/**"`. NOT for picking a
   rerank preset — use `tea-rags:analytics-rerank`. NOT for general project
   exploration — use `tea-rags:explore`.
 user-invocable: false
@@ -308,7 +308,9 @@ OR-of-conditions across different fields, range on a non-typed numeric field.
       { "key": "language", "match": { "value": "ruby" } },
       { "key": "language", "match": { "value": "typescript" } },
     ],
-    "must_not": [{ "key": "git.file.ageDays", "range": { "lt": 30 } }],
+    "must_not": [
+      { "key": "git.file.blameContributorCount", "range": { "lt": 2 } },
+    ],
   },
 }
 ```
@@ -373,9 +375,13 @@ but apply it manually whenever a single scan is dominated by one directory.
   `minCommitCount`, `taskId`, `author`, `minFanIn`, `minFanOut`);
   `modifiedAfter` / `modifiedBefore` stay on `git.file.lastModifiedAt`,
   `recentAuthor` on `git.file.*`. Raw `filter` names own payload path
-  (`git.file.*` vs `git.chunk.*`), ignores `level` → file-level age at chunk
-  granularity = raw range on `git.file.ageDays`, or `modifiedAfter` /
-  `modifiedBefore`.
+  (`git.file.*` vs `git.chunk.*`), ignores `level`.
+- File-level age at chunk granularity → `modifiedAfter` / `modifiedBefore`
+  (absolute date vs `git.file.lastModifiedAt`, any level). NEVER a raw range on
+  `git.file.ageDays` — enrichment-time stamp, lags (Reading overlay `ageDays`).
+  `minAgeDays` / `maxAgeDays` also compare at query time, but are level-aware:
+  chunk age by default, file age only at effective level `file` — explicit
+  `level: "file"` regroups results into files.
 
 ## When this skill does NOT apply
 

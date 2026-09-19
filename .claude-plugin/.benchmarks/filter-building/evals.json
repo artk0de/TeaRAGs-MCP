@@ -149,6 +149,18 @@
         "with_rule": "PASS",
         "note": "hybrid_search + absolute path + testFile + modifiedAfter + level=file"
       }
+    },
+    {
+      "id": "E13",
+      "audit_finding": "file-level age at chunk granularity — query-time filter, not the enrichment-time ageDays stamp",
+      "prompt": "In payments, show me the individual functions whose FILE hasn't been touched in the last 30 days — I want methods, not a file list.",
+      "expected": "modifiedBefore: <ISO date 30 days ago> + pathPattern: '**/payments/**' (no level — chunk results, file-level timestamp)",
+      "expected_NOT": "raw filter range on git.file.ageDays (enrichment-time stamp, lags on points not re-enriched); minAgeDays: 30 + level: 'file' (regroups into a file list); chunk-level minAgeDays: 30 (the chunk's own age, not the file's)",
+      "failure_mode": "Agent follows the old composition rule and builds a raw git.file.ageDays range, which drifts as the index ages",
+      "result": {
+        "with_rule": "NOT RUN",
+        "note": "Added with the 9mwny composition-rule fix; not yet executed."
+      }
     }
   ],
   "trigger_coverage": [
@@ -281,6 +293,18 @@
         "with_rule": "PASS",
         "without_rule": "FAIL",
         "without_rule_note": "testFile: false — boolean again."
+      }
+    },
+    {
+      "id": "T11",
+      "audit_finding": "description case 'Alice's recent code' — the phrase routing reads — maps to the commit-side author",
+      "prompt": "Show me Alice's recent code in the billing module.",
+      "expected": "recentAuthor: '<Alice's full name or email>' + modifiedAfter: <recent-window ISO> + pathPattern: '**/billing/**' (no level needed)",
+      "expected_NOT": "author (exact blame owner of the live lines — what she recently committed is recentAuthor); level: 'file' added for modifiedAfter",
+      "failure_mode": "The skill description said author + modifiedAfter for this exact phrase, contradicting the body row and T1, so routing picked the blame owner",
+      "result": {
+        "with_rule": "NOT RUN",
+        "note": "Added with the 9mwny description fix; not yet executed."
       }
     }
   ]

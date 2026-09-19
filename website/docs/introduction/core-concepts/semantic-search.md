@@ -118,8 +118,9 @@ Practical tool with sensible defaults and shorthand filters:
 
 # Filter by git metadata (requires TRAJECTORY_GIT_ENABLED=true)
 /mcp__tea-rags__search_code /path "recent changes" --recentAuthor alice@example.com
-# Filter by live-line owner (git blame HEAD)
-/mcp__tea-rags__search_code /path "recent changes" --blameOwner alice@example.com
+# Filter by live-line owner (git blame HEAD): `author` takes the exact blame
+# author name and is level-aware (file by default)
+/mcp__tea-rags__search_code /path "payments" --author "Alice Smith"
 
 # Documentation only
 /mcp__tea-rags__search_code /path "setup guide" --documentationOnly true

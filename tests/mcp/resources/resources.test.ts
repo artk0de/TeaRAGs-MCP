@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
+import { z } from "zod";
 
+import type { SchemaBuilder } from "../../../src/core/api/index.js";
 import type { PresetDescriptors } from "../../../src/core/api/public/dto/explore.js";
 import type { PayloadSignalDescriptor } from "../../../src/core/contracts/types/trajectory.js";
 import {
@@ -11,6 +13,7 @@ import {
   buildSignalLabelsGuide,
   buildSignalsDoc,
 } from "../../../src/mcp/resources/index.js";
+import { createSearchSchemas } from "../../../src/mcp/tools/schemas.js";
 
 const mockPayloadSignals: PayloadSignalDescriptor[] = [
   {
@@ -360,6 +363,78 @@ describe("Resource builders", () => {
       // The doc must explain that raw Qdrant filter keys won't resolve
       // (the bug users hit before the typed-filter wiring).
       expect(md).toContain("codegraph.symbols");
+    });
+  });
+
+  // bd tea-rags-mcp-9mwny — a param no search-tool schema lists is stripped by
+  // Zod before the handler runs, so a search built from the resource comes back
+  // silently unfiltered. recentAuthor had that bug; the indexing guide then
+  // still advertised blameOwner. Every param a resource advertises must be a
+  // real key of the schema of the tool it is advertised for.
+  describe("advertised params exist in the MCP tool schemas", () => {
+    const schemaBuilder = {
+      buildRerankSchema: () => z.string(),
+      buildFilterSchema: () => z.record(z.string(), z.any()),
+    } as unknown as SchemaBuilder;
+    const schemas = createSearchSchemas(schemaBuilder);
+    // The tools that spread the typed filter params.
+    const typedFilterTools: Record<string, Record<string, unknown>> = {
+      semantic_search: schemas.SemanticSearchSchema,
+      hybrid_search: schemas.HybridSearchSchema,
+      search_code: schemas.SearchCodeSchema,
+      rank_chunks: schemas.RankChunksSchema,
+    };
+    const exampleSectionTools: Record<string, Record<string, unknown>> = {
+      ...typedFilterTools,
+      find_similar: schemas.FindSimilarSchema,
+      find_symbol: schemas.FindSymbolSchema,
+    };
+
+    const missingFrom = (schema: Record<string, unknown>, params: string[]) =>
+      params.filter((param) => !Object.keys(schema).includes(param));
+
+    const expectEveryTypedFilterToolAccepts = (params: string[]) => {
+      expect(params.length).toBeGreaterThan(0);
+      for (const [tool, schema] of Object.entries(typedFilterTools)) {
+        expect(missingFrom(schema, params), `${tool} schema lacks`).toEqual([]);
+      }
+    };
+
+    it("every filter the indexing guide enables is a param of each typed-filter search tool", () => {
+      const md = buildIndexingGuide();
+      const list = md.slice(md.indexOf("Enables filters:"));
+      const params = list
+        .slice(0, list.indexOf("\n\n"))
+        .split("\n")
+        .filter((line) => line.startsWith("- "))
+        .flatMap((line) => line.slice(2).split(" — ")[0].split("/"))
+        .map((param) => param.trim());
+      expectEveryTypedFilterToolAccepts(params);
+    });
+
+    it("every codegraph typed filter the filters doc lists is a param of each typed-filter search tool", () => {
+      const md = buildFiltersDoc();
+      const section = md.slice(md.indexOf("**Codegraph metadata**"));
+      const paramLines = section
+        .slice(0, section.indexOf("\nNote:"))
+        .split("\n")
+        .filter((line) => line.startsWith("File-level") || line.startsWith("Chunk-level"));
+      const params = paramLines.flatMap((line) => [...line.matchAll(/`([A-Za-z]+)`/g)].map((m) => m[1]));
+      expectEveryTypedFilterToolAccepts(params);
+    });
+
+    it("every param a search-guide example section names is a param of that section's tool", () => {
+      const md = buildSearchGuide();
+      for (const [tool, schema] of Object.entries(exampleSectionTools)) {
+        const start = md.indexOf(`## ${tool} Examples`);
+        expect(start, `${tool} example section`).toBeGreaterThanOrEqual(0);
+        const rest = md.slice(start + 1);
+        const nextHeading = rest.indexOf("\n## ");
+        const section = nextHeading === -1 ? rest : rest.slice(0, nextHeading);
+        const params = [...new Set([...section.matchAll(/\b([A-Za-z]+)=/g)].map((m) => m[1]))];
+        expect(params.length, `${tool} example params`).toBeGreaterThan(0);
+        expect(missingFrom(schema, params), `${tool} schema lacks`).toEqual([]);
+      }
     });
   });
 });

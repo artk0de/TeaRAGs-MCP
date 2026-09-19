@@ -19,8 +19,8 @@ uncommitted edits with no git signal yet.
 
 1. **Execute YOURSELF** — no subagents.
 2. **No `git log`, `git diff`, `git blame`** — overlay has git signals.
-   `git status --porcelain` allowed: working-tree state (file NAMES), not code
-   history or content — feeds Uncommitted probe only.
+   `git status --porcelain -uall` allowed: working-tree state (file NAMES), not
+   code history or content — feeds Uncommitted probe only.
 3. **No built-in Search/Grep for code discovery** — TeaRAGs + ripgrep MCP only.
 4. **Search results contain code.** `metaOnly=false` (default) returns chunk
    content + startLine/endLine. Evaluate checkpoint from results BEFORE any Read
@@ -35,7 +35,8 @@ uncommitted edits with no git signal yet.
 ## Loop
 
 ```
-0. `git status --porcelain` → uncommitted paths (see Uncommitted probe).
+0. `git status --porcelain -uall` → uncommitted paths (see Uncommitted probe).
+   Paths listed → `index_codebase` (incremental, no consent) BEFORE step 1.
 
 1. Search — ONE message, parallel calls. Same tool (search-cascade),
    same query, rerank="bugHunt", limit=10:
@@ -89,16 +90,22 @@ population to recently changed files so it surfaces.
 untracked) have none → fresh probe misses them, historical search ranks them by
 pre-edit history. "Broke after my change" = edit not yet committed.
 
-- **Source:** `git status --porcelain` — path column only, never diff content.
-  Working-tree state, not history → Rule 2 intact.
+- **Source:** `git status --porcelain -uall` — path column only, never diff
+  content. Working-tree state, not history → Rule 2 intact. `-uall` lists every
+  file of a new untracked dir; without it → one `?? dir/` line, matches no file
+  as exact brace entry → new module invisible.
 - **pathPattern:** each path brace-joined as exact relativePath (pathPattern
   rules). Rename `old -> new` → `new`; deleted (`D`) → drop. Git root ≠ indexed
   root → strip prefix. Search scope set → keep paths inside it.
 - Same tool + query + rerank + limit as a/b, same message.
 - Hit matching symptom = **uncommitted suspect** — labels describe committed
   version; symptom fit decides.
-- Probe reads INDEXED content: edits after last index invisible → zero hits ≠
-  clean. Prime stale → incremental `index_codebase` first (index-freshness).
+- Probe reads INDEXED content → step 0 listed paths → incremental
+  `index_codebase` BEFORE the search message, always (no consent —
+  index-freshness). Never wait for prime stale: prime staleness is time-based,
+  blind to working-tree edits → edit an hour after last index = probe returns
+  pre-edit chunks at stale line ranges, Rule 4 judges old code. Reindex failed →
+  say so; zero hits ≠ clean.
 
 ## PRESENT
 
