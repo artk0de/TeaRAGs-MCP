@@ -26,16 +26,23 @@
   (`omitted-overlay-keys.ts`) folds "omitted by the overlay written to these
   points" into one `delete_payload` op per distinct key set under the writer's
   own `<provider>.<level>`, for points whose set batch landed, sent as ONE
-  `batchDeletePayload` after the apply call's sets. Both overlay writers run it:
-  `EnrichmentApplier`, which learns the declarations from the provider list its
-  constructor takes (`EnrichmentCoordinator#createRunState` and the facade's
-  recovery applier pass it), and `EnrichmentBackfiller` (`writeOverlayOps`).
-  Why: an applier built without that list deletes nothing while every test of
-  the applier alone still passes, and a new overlay writer that skips the
-  collector reopens the stale key. A point that gets only the bare `enrichedAt`
-  stamp (`EnrichmentApplier#unmatchedFileEntries`, the no-signal chunk stamp)
-  keeps its previous overlay whole — that case is not an omission and is not
-  cleared here.
+  `batchDeletePayload` after the apply call's sets. The applier and the
+  backfiller run it: `EnrichmentApplier`, which learns the declarations from the
+  provider list its constructor takes (`EnrichmentCoordinator#createRunState`
+  and the facade's recovery applier pass it), and `EnrichmentBackfiller`
+  (`writeOverlayOps`). `CodegraphPayloadHealer` (next bullet) is the one overlay
+  writer that does NOT: it rewrites `codegraph.symbols.*` through raw
+  `batchSetPayload`. That holds only while the codegraph provider declares no
+  `optionalOverlayKeys` — its overlays are always whole — and
+  `tests/core/domains/trajectory/codegraph/symbols/provider-optional-overlay-keys.test.ts`
+  fails the moment it declares one; the healer must delete the optional keys its
+  rewrite omits before that declaration can land. Why: an applier built without
+  that list deletes nothing while every test of the applier alone still passes,
+  and a new overlay writer that skips the collector reopens the stale key. A
+  point that gets only the bare `enrichedAt` stamp
+  (`EnrichmentApplier#unmatchedFileEntries`, the no-signal chunk stamp) keeps
+  its previous overlay whole — that case is not an omission and is not cleared
+  here.
 - **`CodegraphPayloadHealer` is the SECOND writer of
   `codegraph.symbols.{chunk,file}.*`** (`codegraph-payload-heal.ts`). It
   rewrites points OUTSIDE the run's `chunkMap` whose derived signals moved
