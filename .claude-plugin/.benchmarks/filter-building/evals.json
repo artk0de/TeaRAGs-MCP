@@ -2,7 +2,7 @@
   "skill_name": "filter-building",
   "topic": "tea-rags filter construction beyond pathPattern — typed sugar, level=file/chunk, picomatch negation, raw filter escape hatch, trigger-coverage for implicit scopes",
   "created": "2026-05-16",
-  "expectations_revised": "2026-09-18 (tea-rags-mcp-9mwny): E7, E12, T1, T4, T6 expectations moved to the corrected level guidance — modifiedAfter/modifiedBefore are file-level at any level, level 'file' also regroups results, chunk-level age filters cannot reach code older than the chunk git window. The recorded `result` fields predate the revision and were not re-run.",
+  "expectations_revised": "2026-09-18 (tea-rags-mcp-9mwny): E1, E7, E12, T1, T4, T6 expectations moved to the corrected level guidance — modifiedAfter/modifiedBefore are file-level at any level, level 'file' also regroups results, chunk-level age filters cannot reach code older than the chunk git window. The recorded `result` fields predate the revision and were not re-run.",
   "context": "New agent-only skill (user-invocable: false) extracted from search-cascade.md. Two eval coverages: (1) execution_coverage — agent receives an explicit filter intent and must build the correct shape; (2) trigger_coverage — agent receives a prompt that does NOT use the word 'filter' but where a SCOPE is implicit (domain, language, author, time window, ticket, prod-vs-test), and the agent must self-trigger the skill and translate the scope into typed sugar. Trigger coverage is the harder probe because it tests whether the description and Implicit-signals table reliably steer the agent.",
   "skill_path": ".claude-plugin/tea-rags/skills/filter-building/SKILL.md",
   "summary": {
@@ -26,11 +26,12 @@
   "execution_coverage": [
     {
       "id": "E1",
-      "audit_finding": "typed-sugar selection for modifiedAfter + level=file",
+      "audit_finding": "typed-sugar selection for modifiedAfter (file-level at any level)",
       "prompt": "In the payments domain, find code modified after 2026-03-01 for sprint review.",
-      "expected": "semantic_search/hybrid_search with modifiedAfter + level=file + pathPattern: '**/payments/**'",
-      "expected_NOT": "raw filter on git.file.modifiedAt; chunk-level time filter; ripgrep",
-      "failure_mode": "Agent omits level=file (chunk-level time filter rejects all chunks)",
+      "expected": "semantic_search/hybrid_search with modifiedAfter + pathPattern: '**/payments/**' (no level needed)",
+      "expected_NOT": "raw filter on git.file.modifiedAt or git.file.ageDays; level: 'file' added for modifiedAfter (regroups results into files); ripgrep",
+      "expectation_change": "9mwny: modifiedAfter/modifiedBefore always filter git.file.lastModifiedAt at any level, and level 'file' regroups results into files — the old 'omits level=file' failure mode no longer exists. Result below predates the change — not re-run.",
+      "failure_mode": "Agent adds level=file for a time filter (results regrouped into files) or falls back to a raw ageDays range",
       "result": {
         "with_rule": "PASS",
         "note": "modifiedAfter + level=file + pathPattern, correct shape"

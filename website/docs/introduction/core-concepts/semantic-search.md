@@ -111,7 +111,7 @@ Practical tool with sensible defaults and shorthand filters:
 /mcp__tea-rags__search_code /path/to/project "authentication middleware"
 
 # Filter by file type
-/mcp__tea-rags__search_code /path "error handling" --fileTypes .ts,.tsx
+/mcp__tea-rags__search_code /path "error handling" --fileExtension .ts,.tsx
 
 # Filter by path pattern
 /mcp__tea-rags__search_code /path "validation" --pathPattern src/api/**
@@ -123,7 +123,7 @@ Practical tool with sensible defaults and shorthand filters:
 /mcp__tea-rags__search_code /path "payments" --author "Alice Smith"
 
 # Documentation only
-/mcp__tea-rags__search_code /path "setup guide" --documentationOnly true
+/mcp__tea-rags__search_code /path "setup guide" --documentation only
 
 # Rerank for stable code
 /mcp__tea-rags__search_code /path "database pool" --rerank stable

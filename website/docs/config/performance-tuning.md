@@ -309,7 +309,7 @@ Even at 156 ch/s (remote GPU), embedding is **40x slower** than storage. Invest 
 
 ### For Slow Search
 
-- ✅ Use filters: `fileTypes`, `pathPattern` to narrow scope
+- ✅ Use filters: `fileExtension`, `language`, `pathPattern` to narrow scope
 - ✅ Limit results to needed count
 - ✅ Enable hybrid search for technical queries
 - ✅ Verify Qdrant has payload indexes
