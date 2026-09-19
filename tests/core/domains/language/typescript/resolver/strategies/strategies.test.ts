@@ -4,6 +4,7 @@ import {
   DEFAULT_AMBIGUOUS_RESOLVE_MODE,
   type CallContext,
   type CallRef,
+  type HierarchyView,
   type NamedSymbol,
 } from "../../../../../../../src/core/contracts/types/codegraph.js";
 import {
@@ -98,6 +99,81 @@ describe("TSThisMemberSymbolResolutionStrategy", () => {
     const symbolTable = tableWith(["src/other.ts", [sym("Other#read", "read", "src/other.ts", ["Other"])]]);
     const outcome = strat.attempt(call, ctx({ symbolTable, callerFile: "src/store.ts", callerScope: ["Store"] }));
     expect(outcome.kind).toBe("continue");
+  });
+
+  // bd tea-rags-mcp-nj8i6: the same-file short-name fallback discarded WHO the
+  // receiver is — `Form`'s `this.setState` landed on `Panel#setState` when both
+  // classes sat in one file. The fallback may only answer for the enclosing
+  // class or a file-anchored `extends` ancestor (the L3
+  // `thisHierarchyAccountsFor` rule), so an unrelated namesake declines.
+  it("does not resolve `this.X()` to ANOTHER class's same-file method", () => {
+    const symbolTable = tableWith([
+      "src/widgets.ts",
+      [
+        sym("Form#submit", "submit", "src/widgets.ts", ["Form"]),
+        sym("Panel#setState", "setState", "src/widgets.ts", ["Panel"]),
+        sym("Form", "Form", "src/widgets.ts", []),
+        sym("Panel", "Panel", "src/widgets.ts", []),
+      ],
+    ]);
+    const outcome = strat.attempt(
+      { callText: "this.setState()", receiver: "this", member: "setState", startLine: 7 },
+      ctx({ symbolTable, callerFile: "src/widgets.ts", callerScope: ["Form"] }),
+    );
+    expect(outcome.kind).toBe("continue");
+  });
+
+  // The recall half of the same rule: an ancestor anchored to the caller's file
+  // by the run hierarchy still answers — `Form extends Panel` declared together.
+  it("resolves `this.X()` to a file-anchored extends ancestor's same-file method", () => {
+    const symbolTable = tableWith([
+      "src/widgets.ts",
+      [
+        sym("Form#submit", "submit", "src/widgets.ts", ["Form"]),
+        sym("Panel#setState", "setState", "src/widgets.ts", ["Panel"]),
+        sym("Form", "Form", "src/widgets.ts", []),
+        sym("Panel", "Panel", "src/widgets.ts", []),
+      ],
+    ]);
+    const hierarchy: HierarchyView = {
+      getAncestors: (fqName) =>
+        fqName === "Form"
+          ? [{ sourceFqName: "Form", ancestorFqName: "Panel", ancestorSymbolId: "Panel", kind: "super", depth: 1 }]
+          : [],
+      getDescendants: () => [],
+    };
+    const outcome = strat.attempt(
+      { callText: "this.setState()", receiver: "this", member: "setState", startLine: 7 },
+      ctx({ symbolTable, callerFile: "src/widgets.ts", callerScope: ["Form"], hierarchy }),
+    );
+    expect(outcome).toEqual({
+      kind: "resolved",
+      target: { targetRelPath: "src/widgets.ts", targetSymbolId: "Panel#setState" },
+    });
+  });
+
+  // bd tea-rags-mcp-nj8i6: a CLASS-BODY chunk (a field initializer) has an empty
+  // `callerScope`, but its `callerSymbolId` IS the class. Reading it lets the
+  // enclosing class be known, so an ambiguous member name resolves to the
+  // class's own method instead of being lost to the ambiguity.
+  it("resolves a class-body `this.X()` with an ambiguous member name via the chunk's own class id", () => {
+    const symbolTable = tableWith([
+      "src/widgets.ts",
+      [
+        sym("Form#setState", "setState", "src/widgets.ts", ["Form"]),
+        sym("Panel#setState", "setState", "src/widgets.ts", ["Panel"]),
+        sym("Form", "Form", "src/widgets.ts", []),
+        sym("Panel", "Panel", "src/widgets.ts", []),
+      ],
+    ]);
+    const outcome = strat.attempt(
+      { callText: "this.setState()", receiver: "this", member: "setState", startLine: 3 },
+      ctx({ symbolTable, callerFile: "src/widgets.ts", callerScope: [], callerSymbolId: "Form" }),
+    );
+    expect(outcome).toEqual({
+      kind: "resolved",
+      target: { targetRelPath: "src/widgets.ts", targetSymbolId: "Form#setState" },
+    });
   });
 });
 

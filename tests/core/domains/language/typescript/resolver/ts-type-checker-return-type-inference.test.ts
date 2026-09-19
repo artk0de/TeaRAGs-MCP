@@ -86,6 +86,40 @@ function writeDirectFactoryFixture(repoRoot: string): void {
 
 const DIRECT_CALL: CallRef = { callText: "x.method()", receiver: "x", member: "method", startLine: 6 };
 
+/**
+ * The probe C12 shape (bd tea-rags-mcp-nj8i6): `e` is typed by a type literal
+ * declared in the SAME file as an unrelated `Panel#stopItNow`. The literal's
+ * member has no symbol of its own, so the only same-file `stopItNow` the table
+ * carries is Panel's — the misattribution the owner rule exists to refuse.
+ */
+function writeTypeLiteralFixture(repoRoot: string): void {
+  writeSource(
+    repoRoot,
+    "src/caller.ts",
+    [
+      `type PanelEvent = {`,
+      `  stopItNow(): void;`,
+      `};`,
+      ``,
+      `export function makeEvent(): PanelEvent {`,
+      `  return { stopItNow() {} };`,
+      `}`,
+      ``,
+      `export function run(): void {`,
+      `  const e = makeEvent();`,
+      `  e.stopItNow();`,
+      `}`,
+      ``,
+      `export class Panel {`,
+      `  stopItNow(): void {}`,
+      `}`,
+      ``,
+    ].join("\n"),
+  );
+}
+
+const TYPE_LITERAL_CALL: CallRef = { callText: "e.stopItNow()", receiver: "e", member: "stopItNow", startLine: 11 };
+
 function callerContext(symbolTable: InMemoryGlobalSymbolTable, overrides: Partial<CallContext> = {}): CallContext {
   return {
     callerFile: "src/caller.ts",
@@ -449,7 +483,11 @@ describe("TSTypeCheckerReturnTypeInferenceSymbolResolutionStrategy types a recei
     expect(outcome).toEqual({ kind: "resolved", target: { targetRelPath: "src/foo.ts", targetSymbolId: null } });
   });
 
-  it("drops to a file-only target when one file declares the short name twice under strict mode", () => {
+  // INVARIANT CHANGE (bd tea-rags-mcp-nj8i6, rule-4 rewrite): the same-file
+  // short-name narrowing is filtered through the evidence guard's owner rule,
+  // so a same-file namesake the declaring owner does not account for no longer
+  // manufactures a strict-mode ambiguity — the owner's own spelling survives.
+  it("pins the owner's own spelling when a same-file namesake the owner does not account for is declined", () => {
     writeDirectFactoryFixture(repoRoot);
     const symbolTable = new InMemoryGlobalSymbolTable();
     symbolTable.upsertFile("src/foo.ts", [
@@ -465,7 +503,10 @@ describe("TSTypeCheckerReturnTypeInferenceSymbolResolutionStrategy types a recei
 
     const outcome = buildStrategy("strict").attempt(DIRECT_CALL, callerContext(symbolTable));
 
-    expect(outcome).toEqual({ kind: "resolved", target: { targetRelPath: "src/foo.ts", targetSymbolId: null } });
+    expect(outcome).toEqual({
+      kind: "resolved",
+      target: { targetRelPath: "src/foo.ts", targetSymbolId: "Foo.method" },
+    });
   });
 
   it("takes the first same-file candidate under legacy `first` mode", () => {
@@ -488,6 +529,33 @@ describe("TSTypeCheckerReturnTypeInferenceSymbolResolutionStrategy types a recei
       kind: "resolved",
       target: { targetRelPath: "src/foo.ts", targetSymbolId: "Foo.method" },
     });
+  });
+
+  // bd tea-rags-mcp-nj8i6: the short-name fallback narrowed to the declaring
+  // FILE only, and a file declares more than one owner — the type literal's
+  // member landed on the unrelated `Panel#stopItNow` further down the same
+  // file. The evidence guard's owner rule (declarationAccountsFor) must apply
+  // here too: an ownerless declaration accounts only for a candidate whose own
+  // line range contains it, so this degrades to the file-only edge the contract
+  // keeps for "the file is certain, the member is not".
+  it("does not land a type-literal receiver's member on an unrelated same-file class's method", () => {
+    writeTypeLiteralFixture(repoRoot);
+    const symbolTable = new InMemoryGlobalSymbolTable();
+    symbolTable.upsertFile("src/caller.ts", [
+      {
+        symbolId: "Panel#stopItNow",
+        fqName: "Panel#stopItNow",
+        shortName: "stopItNow",
+        relPath: "src/caller.ts",
+        scope: ["Panel"],
+        startLine: 15,
+        endLine: 15,
+      },
+    ]);
+
+    const outcome = buildStrategy().attempt(TYPE_LITERAL_CALL, callerContext(symbolTable, { imports: [] }));
+
+    expect(outcome).toEqual({ kind: "resolved", target: { targetRelPath: "src/caller.ts", targetSymbolId: null } });
   });
 });
 

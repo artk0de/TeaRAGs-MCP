@@ -449,7 +449,15 @@ describe("TSCallResolver", () => {
   // getter / decorator / mixin" comment in the resolver. The short-name
   // match must be CONSTRAINED to the caller's file so a same-shortName
   // symbol in another file doesn't misroute.
-  it("falls back to same-file short-name lookup when neither Class#X nor Class.X is in the table", () => {
+  //
+  // INVARIANT CHANGE (bd tea-rags-mcp-nj8i6, rule-4 rewrite): the fallback
+  // also applied the evidence guard's owner rule — a candidate must be the
+  // enclosing class's own (or a file-anchored `extends` ancestor's), the same
+  // `thisHierarchyAccountsFor` verdict the guard has given `this` members
+  // since t5cji. An OWNERLESS same-file spelling (`read`, no owner) was
+  // committed on the name alone — the exact coincidence class that guard
+  // exists for — and is now declined, consistently.
+  it("declines an ownerless same-file spelling the enclosing class does not account for", () => {
     const symbolTable = new InMemoryGlobalSymbolTable();
     // Caller file declares `read` but NOT under a Store-scoped fqName —
     // simulates a getter / decorator-generated symbol whose composed
@@ -485,8 +493,9 @@ describe("TSCallResolver", () => {
         symbolTable,
       },
     );
-    // Must pick the same-file `read`, not the cross-file `Other#read`.
-    expect(result).toEqual({ targetRelPath: "src/store.ts", targetSymbolId: "read" });
+    // The ownerless same-file `read` is nobody's Store member; committing it
+    // rested on the name alone, so the call is declined like the guard does.
+    expect(result).toBeNull();
   });
 
   // Interface-dispatch recall recovery (bd tea-rags-mcp-2qp6). When a

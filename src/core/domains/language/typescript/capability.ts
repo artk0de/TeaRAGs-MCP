@@ -64,5 +64,15 @@ export const capability: LanguageCapability = {
   // (taxdome A/B: 203 file-only edges + 37 symbol-precise edges recovered).
   // Bare calls still need explicit type arguments or two-plus project
   // namesakes to earn a check.
-  versions: { chunking: 1, walker: 7, codegraphSchema: 2 },
+  // walker 8: bd tea-rags-mcp-nj8i6. The same-file fallbacks are owner-ruled,
+  // protecting the receiver traffic 05uhs widened: `typeCheckerReturnType`'s
+  // short-name narrowing filters candidates through the evidence guard's
+  // owner rule (a same-file type-literal receiver's member no longer lands on
+  // an unrelated same-file class's method), `thisMember`'s same-file fallback
+  // accepts only the enclosing class or a file-anchored `extends` ancestor
+  // (`Form`'s `this.setState` no longer lands on `Panel#setState`), and
+  // `thisMember` reads a class-body chunk's `callerSymbolId` so an ambiguous
+  // member on `this` in a field initializer resolves to the class's own
+  // method.
+  versions: { chunking: 1, walker: 8, codegraphSchema: 2 },
 };

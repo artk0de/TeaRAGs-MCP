@@ -145,6 +145,12 @@ describe("seeded support versions", () => {
       // namesake count, so an index built before it holds neither the 203
       // file-only checker edges nor the 37 symbol-precise ones the taxdome A/B
       // measured at the old gate.
+      // typescript walker 8: bd tea-rags-mcp-nj8i6 owner-rules the same-file
+      // fallbacks (typeCheckerReturnType's short-name narrowing, thisMember's
+      // same-file fallback) and reads a class-body chunk's callerSymbolId, so
+      // an index built before it holds the C12-class misattributed edges the
+      // owner rule declines and misses the class-body `this.m()` edges the
+      // read recovers.
       // go walker 2: bd tea-rags-mcp-e6xx publishes struct field facts on
       // `classFieldTypesByClassKey` and resolves promoted methods through
       // embedding, so an index built by walker 1 holds none of the
@@ -155,7 +161,7 @@ describe("seeded support versions", () => {
       // resolve to nothing until the recompute rewrites them.
       // Every other language is still at its seed.
       const WALKER_BUMPED = new Map([
-        ["typescript", 7],
+        ["typescript", 8],
         ["javascript", 3],
         ["python", 8],
         ["ruby", 3],

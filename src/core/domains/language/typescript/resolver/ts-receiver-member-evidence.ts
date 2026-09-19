@@ -40,6 +40,12 @@
  * Declining is not deciding: the call falls through to the checker passes,
  * which pin what the compiler resolved — a file-only edge to `copy.ts` where the
  * member is an object-literal arrow the table carries no symbol for.
+ *
+ * The two owner-rule arms are EXPORTED for the passes that own their own
+ * short-name narrowing, so the rule lives here once (bd tea-rags-mcp-nj8i6):
+ * {@link declarationAccountsFor} is what `typeCheckerReturnType`'s same-file
+ * fallback filters its candidates through, and {@link thisHierarchyAccountsFor}
+ * is what `thisMember`'s same-file fallback applies to its own.
  */
 
 import ts from "typescript";
@@ -53,7 +59,7 @@ import { mapImportToFile } from "./ts-path-mapper.js";
 import type { TSProgramCache } from "./ts-program-cache.js";
 
 /** What the guard reads off a short-name candidate: where it lives, whose it is, which lines it spans. */
-type EvidenceCandidate = Pick<SymbolDefinition, "relPath" | "scope" | "startLine" | "endLine">;
+export type EvidenceCandidate = Pick<SymbolDefinition, "relPath" | "scope" | "startLine" | "endLine">;
 
 /** The resolver config the import-evidence arm maps specifiers and barrels with. */
 type EvidenceConfig = Pick<ResolverConfig, "tsOptions" | "mode" | "fileExists">;
@@ -139,8 +145,13 @@ interface AnchoredClass {
  * The enclosing class is the caller's innermost scope; a CLASS-BODY chunk (a
  * field initializer) has none, and there the chunk's own id, which carries no
  * member separator, is the class.
+ *
+ * Exported for `TSThisMemberSymbolResolutionStrategy`, whose same-file
+ * short-name fallback applies this same rule to its own candidates — without it
+ * `Form`'s `this.setState` landed on `Panel#setState` when both classes sat in
+ * one file (bd tea-rags-mcp-nj8i6).
  */
-function thisHierarchyAccountsFor(
+export function thisHierarchyAccountsFor(
   member: string,
   ctx: CallContext,
   cfg: EvidenceConfig,
@@ -155,7 +166,7 @@ function thisHierarchyAccountsFor(
 }
 
 /** A class-body chunk's id is the bare class name; a method's or function's carries `#` / `.`. */
-function classBodyChunkClass(callerSymbolId: string | undefined): string | undefined {
+export function classBodyChunkClass(callerSymbolId: string | undefined): string | undefined {
   return callerSymbolId === undefined || /[#.]/u.test(callerSymbolId) ? undefined : callerSymbolId;
 }
 
@@ -292,8 +303,14 @@ function importBindingAccountsFor(
  *   - a declaration with NO named owner (a type literal, an object literal, an
  *     anonymous class, a top-level function) accounts only for the candidate
  *     whose own line range contains it ({@link candidateEnclosesDeclaration}).
+ *
+ * Exported for `TSTypeCheckerReturnTypeInferenceSymbolResolutionStrategy`'s
+ * `pinSymbol`, whose same-file short-name fallback filtered by FILE alone and so
+ * handed a type-literal receiver's member to the unrelated `Panel#stopItNow`
+ * declared further down the same file (bd tea-rags-mcp-nj8i6). The same rule
+ * filters its candidates before the cardinality pick.
  */
-function declarationAccountsFor(
+export function declarationAccountsFor(
   declaration: ts.Declaration,
   candidate: EvidenceCandidate,
   ctx: CallContext,
