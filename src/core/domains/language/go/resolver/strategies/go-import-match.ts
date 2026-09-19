@@ -6,7 +6,8 @@ import { resolveImportedPackageMember, type ResolverConfig } from "./shared.js";
 
 /**
  * Step 1 — the receiver names an imported package (`bytesconv.StringToBytes`:
- * the import's alias when the source spells one, else its last path segment).
+ * the import's alias when the source spells one, else the package's own name —
+ * `goImportNamedBy`, bd tea-rags-mcp-e6xx G2-1).
  * The call resolves to a package-level declaration of that name in the
  * package's OWN directory.
  *

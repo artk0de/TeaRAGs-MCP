@@ -47,10 +47,14 @@ export interface GoLocalChannels {
   readonly localCallBindings?: Readonly<Record<string, string>>;
 }
 
-/** What a name denotes on a line: a value binding (typed, or `""` for unknown) or a call-result binding. */
+/**
+ * What a name denotes on a line: a value binding (typed, or `""` for unknown)
+ * or a call-result binding — with the line of its declaration, where its
+ * callee is evaluated, `undefined` for a chunk-wide binding that carries none.
+ */
 export type GoLocalAtLine =
   | { readonly kind: "value"; readonly binding: LocalBinding }
-  | { readonly kind: "call"; readonly callee: string };
+  | { readonly kind: "call"; readonly callee: string; readonly line?: number };
 
 /** Whether `position` is in scope on `atLine`. */
 export function goBindingInScopeAt(position: GoScopedPosition, atLine: number): boolean {
@@ -90,7 +94,7 @@ export function goLocalAt(channels: GoLocalChannels, name: string, atLine: numbe
   const value = goLocalBindingAt(channels.localBindings, name, atLine);
   const call = latestInScope(channels.callResultBindings?.[name], atLine);
   if (value !== undefined && (call === undefined || value.line > call.line)) return { kind: "value", binding: value };
-  if (call !== undefined) return { kind: "call", callee: call.callee };
+  if (call !== undefined) return { kind: "call", callee: call.callee, line: call.line };
   const chunkWide = channels.localCallBindings?.[name];
   return chunkWide === undefined ? undefined : { kind: "call", callee: chunkWide };
 }

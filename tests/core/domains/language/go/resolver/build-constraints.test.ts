@@ -174,6 +174,17 @@ describe("GoCallResolver — build-tag twins", () => {
     expect(resolveUnder(incremental)?.targetRelPath).toBe("binding/binding.go");
   });
 
+  /**
+   * The contract on `CallContext.buildConstraintsByFile`: a file with no entry
+   * — a row persisted before the channel existed — reads as "unknown", and one
+   * unknown twin keeps the pair ambiguous. Knowing the other twin builds by
+   * default is no evidence: the unknown one may build by default too.
+   */
+  it("NEGATIVE: stays ambiguous when one twin's constraint is known and the other's is unknown", () => {
+    const ctx = bindingCtx({ buildConstraintsByFile: { "binding/binding.go": "!nomsgpack" } });
+    expect(resolver.resolve(bare, ctx)).toBeNull();
+  });
+
   it("NEGATIVE: stays ambiguous when both twins build by default", () => {
     const ctx = bindingCtx({
       buildConstraintsByFile: { "binding/binding.go": "!nomsgpack", "binding/binding_nomsgpack.go": "!other" },

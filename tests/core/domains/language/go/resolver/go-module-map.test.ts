@@ -116,4 +116,36 @@ describe("GoModuleMapCache", () => {
     expect(cache.forRoot(root)?.packageDirOf("example.com/new/a")).toBe("a");
     expect(cache.forRoot(root)?.packageDirOf("example.com/old/a")).toBeUndefined();
   });
+
+  /**
+   * G2-1 — a project package's name is its own `package` clause, which the
+   * importing file never spells: `api/v1` may declare `package v1`,
+   * `internal/json-iter` `package jsoniter`.
+   */
+  it("reads a project package's name off its own `package` clause", () => {
+    write("go.mod", "module example.com/app\n");
+    write(join("api", "v1", "types.go"), "// Package v1 is the v1 API.\npackage v1\n");
+    write(join("internal", "json-iter", "iter.go"), "package jsoniter\n");
+    const map = new GoModuleMapCache().forRoot(root);
+    expect(map?.packageNameOf("api/v1")).toBe("v1");
+    expect(map?.packageNameOf("internal/json-iter")).toBe("jsoniter");
+  });
+
+  it("reads past `_test.go` files and `package main` generators; a directory with neither declares nothing", () => {
+    write("go.mod", "module example.com/app\n");
+    write(join("widget", "a_test.go"), "package widget_test\n");
+    write(join("widget", "gen.go"), "//go:build ignore\n\npackage main\n");
+    write(join("widget", "widget.go"), "package widget\n");
+    write(join("tests", "x_test.go"), "package tests\n");
+    const map = new GoModuleMapCache().forRoot(root);
+    expect(map?.packageNameOf("widget")).toBe("widget");
+    expect(map?.packageNameOf("tests")).toBeUndefined();
+    expect(map?.packageNameOf("missing")).toBeUndefined();
+  });
+
+  it("knows no package name without a root to read from", () => {
+    expect(GoModuleMap.fromManifests([{ relDir: "", content: "module example.com/app\n" }]).packageNameOf("")).toBe(
+      undefined,
+    );
+  });
 });

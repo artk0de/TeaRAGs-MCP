@@ -22,9 +22,10 @@
  * index, and a Python `Engine` must not answer for a Go one.
  */
 
-import type { CallContext, SymbolResolutionTarget } from "../../../../contracts/types/codegraph.js";
+import type { CallContext, SymbolDefinition, SymbolResolutionTarget } from "../../../../contracts/types/codegraph.js";
 import type { SymbolIdComposer } from "../../../../contracts/types/language.js";
 import { goDeclaredFieldType, goEmbeddedFieldTypes, goStructClassKey } from "../struct-fields.js";
+import { goPackageDirOf, type GoProjectType } from "./go-project-type.js";
 import { lookupGoSymbols } from "./go-symbol-lookup.js";
 
 /** What `x.member` selects on a Go struct type. */
@@ -40,52 +41,69 @@ export type GoSelectedMember =
 const GO_EMBEDDING_MAX_DEPTH = 8;
 
 /**
- * The field map of `typeName` when it is TRANSPARENT — exactly one Go
- * declaration, and that declaration a struct the walker described — else
- * `undefined`.
+ * The Go declarations of `type`: every one of its name, or — for a type placed
+ * in its package (`go-project-type.ts`) — only that package's.
  */
-export function goTransparentStructFields(
-  typeName: string,
-  ctx: CallContext,
-): Readonly<Record<string, string>> | undefined {
-  const declarations = lookupGoSymbols(ctx, typeName);
-  if (declarations.length !== 1) return undefined;
-  return ctx.classFieldTypesByClassKey?.[goStructClassKey(declarations[0].relPath, typeName)];
+function goTypeDeclarations(type: GoProjectType, symbolId: string, ctx: CallContext): SymbolDefinition[] {
+  const declarations = lookupGoSymbols(ctx, symbolId);
+  const { packageDir } = type;
+  return packageDir === undefined
+    ? declarations
+    : declarations.filter((def) => goPackageDirOf(def.relPath) === packageDir);
 }
 
 /**
- * Select `member` on a value of Go type `typeName` — the shallowest unique
- * method or field, `undefined` when the selection is ambiguous, blocked by an
- * opaque type, or finds nothing.
+ * The field map of `type` when it is TRANSPARENT — exactly one Go declaration
+ * (in its package, when placed), and that declaration a struct the walker
+ * described — else `undefined`. A type alias is never one: the walker
+ * describes only `type T struct {…}`.
+ */
+export function goTransparentStructFields(
+  type: GoProjectType,
+  ctx: CallContext,
+): Readonly<Record<string, string>> | undefined {
+  const declarations = goTypeDeclarations(type, type.typeName, ctx);
+  if (declarations.length !== 1) return undefined;
+  return ctx.classFieldTypesByClassKey?.[goStructClassKey(declarations[0].relPath, type.typeName)];
+}
+
+/**
+ * Select `member` on a value of Go type `type` — the shallowest unique method
+ * or field, `undefined` when the selection is ambiguous, blocked by an opaque
+ * type, or finds nothing.
  *
  * A method hit is only as good as the type NAME it was composed from: symbol
  * ids carry no package, so when two Go declarations share that name (`app.Base`
  * embedded here, `other.Base` elsewhere) `Base#Reset` may be the other
  * package's method. Such a hit makes its level AMBIGUOUS — no edge — rather
- * than a winner (bd tea-rags-mcp-e6xx). A local guard: Go type lookup itself
- * stays package-blind.
+ * than a winner (bd tea-rags-mcp-e6xx). A type PLACED in its package (G2-4)
+ * is the exception at depth 0: its methods and struct are read from that
+ * package alone, so a namesake elsewhere is neither a hit nor an ambiguity.
+ * Embedded types stay package-blind behind the guard.
  */
 export function selectGoMember(
-  typeName: string,
+  type: GoProjectType,
   member: string,
   ctx: CallContext,
   composer: SymbolIdComposer,
 ): GoSelectedMember | undefined {
-  const visited = new Set<string>([typeName]);
-  let level = [typeName];
+  const visited = new Set<string>([type.typeName]);
+  let level: GoProjectType[] = [type];
   for (let depth = 0; depth <= GO_EMBEDDING_MAX_DEPTH && level.length > 0; depth++) {
     const hits: GoSelectedMember[] = [];
-    const next: string[] = [];
+    const next: GoProjectType[] = [];
     let opaque = false;
     let namesakeMethodHit = false;
-    for (const type of level) {
-      const methodId = composer.compose(type, member, { methodKind: "instance" });
-      const methodDefs = lookupGoSymbols(ctx, methodId);
+    for (const levelType of level) {
+      const methodId = composer.compose(levelType.typeName, member, { methodKind: "instance" });
+      const methodDefs = goTypeDeclarations(levelType, methodId, ctx);
       for (const def of methodDefs) {
         hits.push({ kind: "method", target: { targetRelPath: def.relPath, targetSymbolId: def.symbolId } });
       }
-      if (methodDefs.length > 0 && lookupGoSymbols(ctx, type).length > 1) namesakeMethodHit = true;
-      const fields = goTransparentStructFields(type, ctx);
+      if (methodDefs.length > 0 && goTypeDeclarations(levelType, levelType.typeName, ctx).length > 1) {
+        namesakeMethodHit = true;
+      }
+      const fields = goTransparentStructFields(levelType, ctx);
       if (fields === undefined) {
         opaque = true;
         continue;
@@ -95,7 +113,7 @@ export function selectGoMember(
       for (const embedded of goEmbeddedFieldTypes(fields)) {
         if (visited.has(embedded)) continue;
         visited.add(embedded);
-        next.push(embedded);
+        next.push({ typeName: embedded });
       }
     }
     if (namesakeMethodHit) return undefined;
