@@ -32,7 +32,11 @@ import {
 } from "../../shared/ecmascript-globals.js";
 import { lookupEcmascriptSymbols, lookupEcmascriptSymbolsByShortName } from "../../shared/ecmascript-symbol-lookup.js";
 import { findCallExpression } from "./strategies/ts-type-checker-fallback.js";
-import { findReceiverExpression, findSuperKeyword } from "./strategies/ts-type-checker-shared.js";
+import {
+  calledMemberDeclarations,
+  findReceiverExpression,
+  findSuperKeyword,
+} from "./strategies/ts-type-checker-shared.js";
 import { importSpecifierNamesReceiver } from "./ts-import-basename-match.js";
 import { calleeIsExternalLocalBinding } from "./ts-local-callee.js";
 import { mapImportToFile, type ProjectFileProbe, type TsCompilerOptions } from "./ts-path-mapper.js";
@@ -41,7 +45,7 @@ import { typeConstituents } from "./ts-type-constituents.js";
 
 /**
  * `true` when the call provably — or, for an untyped receiver, near-certainly —
- * targets something outside the project. Four cases:
+ * targets something outside the project. The cases:
  *
  *   1. the receiver is an ECMAScript ambient global (`Math.max`, `console.log`
  *      — no import to match);
@@ -81,7 +85,11 @@ import { typeConstituents } from "./ts-type-constituents.js";
  *      declared outside the project — the only arm that asks about the CALLEE
  *      rather than the receiver, which is what lets it answer a call on a
  *      project-typed receiver into a dependency's inherited member. See
- *      {@link checkerResolvesCalleeOutsideProject} (bd tea-rags-mcp-6o7bi).
+ *      {@link checkerResolvesCalleeOutsideProject} (bd tea-rags-mcp-6o7bi);
+ *   9. a `super` call whose base the checker declares outside the project — see
+ *      {@link superBaseDeclaredOutsideProject} (bd tea-rags-mcp-t5cji);
+ *  10. a `this` member the checker declares outside the project — see
+ *      {@link thisMemberDeclaredOutsideProject} (bd tea-rags-mcp-t5cji).
  *
  * PRECISION: cases 3 and 4 are mutually exclusive BY CONSTRUCTION, and that is
  * the load-bearing detail. A receiver whose type IS known decides the question
@@ -129,8 +137,10 @@ export function targetsExternalImport(
   // Case 6 is LAST because it is the only arm a BARE call can reach — the two
   // before it return early without a receiver — so ordering it here costs a
   // receiver-bearing call nothing. Case 9 answers `super` alone, which every
-  // other arm declines by construction.
+  // other arm declines by construction. Case 10 is asked first for `this`, whose
+  // only other verdicts come from the arms below, which it can only ADD to.
   if (receiver === "super") return superBaseDeclaredOutsideProject(call, ctx, programCache);
+  if (receiver === "this" && thisMemberDeclaredOutsideProject(call, ctx, programCache)) return true;
   return (
     receiverIsImportedBuiltinContainer(call, ctx) ||
     receiverIsExternalInstance(call, ctx, tsOptions, programCache, fileExists) ||
@@ -500,6 +510,46 @@ function superBaseDeclaredOutsideProject(
   const keyword = findSuperKeyword(handle.sourceFile, call.startLine);
   if (keyword === null) return false;
   return typeDeclaredOutsideProject(handle.checker, handle.checker.getTypeAtLocation(keyword), programCache);
+}
+
+/**
+ * Case 10 (bd tea-rags-mcp-t5cji): a `this.m()` whose member the checker
+ * declares entirely outside the project — React's `setState` on a class
+ * extending `Component`, `hasOwnProperty` off the default lib's `Object`. The
+ * `this` twin of case 9.
+ *
+ * The short-name passes stopped committing these to a project namesake once
+ * `this` needed evidence (the checker places the member in the dependency, which
+ * no project candidate is), and with nothing else to answer them they were
+ * charged as internal misses: taxdome's TS dynamic rate fell 0.8980 → 0.8815.
+ * The call leaves the project; the denominator should say so.
+ *
+ * The evidence is the member NAME's declarations ({@link calledMemberDeclarations}),
+ * not the receiver's type: `this` is the project's own class, so a receiver arm
+ * would call it internal — the recall guard case 8 keeps for a project class
+ * extending a dependency's. One in-project declaration keeps the call internal,
+ * as does a project class overriding the member. No Program, no locatable
+ * member access, or a member the checker names no symbol for is no evidence.
+ *
+ * Gated on a project symbol of that name, as case 8 is: without one the call is
+ * already outside the denominator as `noInProjectDef`, no short-name pass can
+ * emit for it, and the gate keeps the checker off every `this` call the chain
+ * could never have mismatched.
+ */
+function thisMemberDeclaredOutsideProject(
+  call: CallRef,
+  ctx: CallContext,
+  programCache: TSProgramCache | null,
+): boolean {
+  if (programCache === null || call.member.length === 0) return false;
+  if (lookupEcmascriptSymbolsByShortName(ctx, call.member).length === 0) return false;
+  const handle = programCache.acquire(ctx.callerFile);
+  if (handle === null) return false;
+  const declarations = calledMemberDeclarations(handle.sourceFile, handle.checker, call.startLine, call.member);
+  return (
+    declarations.length > 0 &&
+    declarations.every((declaration) => !programCache.isProjectSourceFile(declaration.getSourceFile().fileName))
+  );
 }
 
 /**

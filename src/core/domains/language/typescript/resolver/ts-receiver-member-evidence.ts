@@ -21,7 +21,7 @@
  * The evidence is the checker's own resolution of the property NAME at the call
  * site (`getSymbolAtLocation`), which follows unions and inheritance the way the
  * compiler does; a re-export alias it stops at is followed on to the symbol it
- * stands for ({@link calledMemberSymbol}). The candidate is accounted for when
+ * stands for ({@link calledMemberDeclarations}). The candidate is accounted for when
  * one of that symbol's declarations is the candidate's own — declared by the
  * candidate's owner in the candidate's file or in the `.d.ts` beside its
  * JavaScript ({@link declarationFileTypes}), or, having no named owner, lying
@@ -47,7 +47,7 @@ import ts from "typescript";
 import type { CallContext, CallRef, SymbolDefinition } from "../../../../contracts/types/codegraph.js";
 import { lookupEcmascriptSymbols, lookupEcmascriptSymbolsByShortName } from "../../shared/ecmascript-symbol-lookup.js";
 import { reexportOriginFile, type ResolverConfig } from "./strategies/shared.js";
-import { declarationOwnerName, findReceiverExpression } from "./strategies/ts-type-checker-shared.js";
+import { calledMemberDeclarations, declarationOwnerName } from "./strategies/ts-type-checker-shared.js";
 import { receiverTypeName } from "./ts-external-call.js";
 import { mapImportToFile } from "./ts-path-mapper.js";
 import type { TSProgramCache } from "./ts-program-cache.js";
@@ -104,12 +104,7 @@ export function memberCandidateLacksReceiverEvidence(
     if (receiver === "this") return !thisHierarchyAccountsFor(call.member, ctx, cfg, candidate);
     return !importBindingAccountsFor(receiver, call.member, ctx, cfg, candidate);
   }
-  const node = findReceiverExpression(handle.sourceFile, call.startLine, call.member);
-  const access = node?.parent;
-  const declarations =
-    node !== null && access !== undefined && ts.isPropertyAccessExpression(access) && access.expression === node
-      ? (calledMemberSymbol(handle.checker, access.name)?.getDeclarations() ?? [])
-      : [];
+  const declarations = calledMemberDeclarations(handle.sourceFile, handle.checker, call.startLine, call.member);
   if (declarations.length > 0) {
     return !declarations.some((declaration) => declarationAccountsFor(declaration, candidate, ctx, programCache));
   }
@@ -280,23 +275,6 @@ function importBindingAccountsFor(
   }
   if (candidate.scope.length === 0) return declaringFileOf(member) === candidate.relPath;
   return candidate.scope.at(-1) === receiver && declaringFileOf(receiver) === candidate.relPath;
-}
-
-/**
- * The symbol the called member NAME resolves to, with an import/export alias
- * followed to what it stands for.
- *
- * Through a named re-export barrel (`import * as H from "./helpers"`, where
- * `helpers/index.ts` says `export { f } from "./f"`) `getSymbolAtLocation`
- * answers the barrel's `ExportSpecifier` — an ALIAS whose only declaration sits
- * in the barrel, which declares nothing — so a correct candidate in `f.ts` was
- * declined. A `export *` barrel never showed it: the checker hands back the
- * function's own symbol there.
- */
-function calledMemberSymbol(checker: ts.TypeChecker, name: ts.MemberName): ts.Symbol | undefined {
-  const symbol = checker.getSymbolAtLocation(name);
-  if (symbol === undefined || (symbol.flags & ts.SymbolFlags.Alias) === 0) return symbol;
-  return checker.getAliasedSymbol(symbol);
 }
 
 /**

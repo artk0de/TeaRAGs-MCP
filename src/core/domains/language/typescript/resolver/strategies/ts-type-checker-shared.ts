@@ -164,6 +164,40 @@ export function findReceiverExpression(
 }
 
 /**
+ * The declarations the checker gives the MEMBER NAME of the call to `member` on
+ * `startLine` — `m` in `recv.m()` — or `[]` when no property-access call is
+ * locatable there or the checker names no symbol for it (an `any` receiver, an
+ * error type).
+ *
+ * An import/export alias is followed to what it stands for. Through a named
+ * re-export barrel (`import * as H from "./helpers"`, where `helpers/index.ts`
+ * says `export { f } from "./f"`) `getSymbolAtLocation` answers the barrel's
+ * `ExportSpecifier` — an ALIAS whose only declaration sits in the barrel, which
+ * declares nothing. A `export *` barrel never showed it: the checker hands back
+ * the function's own symbol there.
+ *
+ * Two questions read it (bd tea-rags-mcp-t5cji): whether the declaration is a
+ * short-name candidate's own (`memberCandidateLacksReceiverEvidence`), and
+ * whether a `this` member lives outside the project (`targetsExternalImport`,
+ * case 10).
+ */
+export function calledMemberDeclarations(
+  sourceFile: ts.SourceFile,
+  checker: ts.TypeChecker,
+  startLine: number,
+  member: string,
+): readonly ts.Declaration[] {
+  const receiver = findReceiverExpression(sourceFile, startLine, member);
+  const access = receiver?.parent;
+  if (receiver === null || access === undefined || !ts.isPropertyAccessExpression(access)) return [];
+  if (access.expression !== receiver) return [];
+  const symbol = checker.getSymbolAtLocation(access.name);
+  const target =
+    symbol !== undefined && (symbol.flags & ts.SymbolFlags.Alias) !== 0 ? checker.getAliasedSymbol(symbol) : symbol;
+  return target?.getDeclarations() ?? [];
+}
+
+/**
  * The first `super` keyword on 1-based `startLine` — the callee of `super(...)`
  * or the object of `super.m()` — or `null`. {@link callSiteAt} does not index
  * it: a `super(...)` callee is a keyword, not a name, and every pass that reads
