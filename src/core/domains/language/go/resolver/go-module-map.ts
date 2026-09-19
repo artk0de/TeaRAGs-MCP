@@ -34,17 +34,62 @@ interface GoModuleRoot {
   readonly dir: string;
 }
 
-/** A `package` clause at the start of a line — the one place a Go file names its package. */
-const GO_PACKAGE_CLAUSE = /^package[ \t]+([\p{L}_][\p{L}\p{Nd}_]*)/mu;
+/** A `package` clause — the first token of a Go file past its comments, the one place it names its package. */
+const GO_PACKAGE_CLAUSE = /^package[ \t]+([\p{L}_][\p{L}\p{Nd}_]*)/u;
 
 /** `package main` is a command, never an importable package. */
 const GO_COMMAND_PACKAGE = "main";
 
 /**
- * A build constraint line — `//go:build <expr>`, or the legacy `// +build
+ * A build constraint comment — `//go:build <expr>`, or the legacy `// +build
  * <tags>` — which Go reads only in a file's header, above its package clause.
  */
-const GO_BUILD_CONSTRAINT_LINE = /^\/\/(?:go:build|[ \t]*\+build)[ \t]/m;
+const GO_BUILD_CONSTRAINT_COMMENT = /^\/\/(?:go:build|[ \t]*\+build)[ \t]/;
+
+/** What a Go file's head declares: its package, and whether its header constrains the build. */
+interface GoFileHead {
+  readonly packageName: string;
+  readonly constrained: boolean;
+}
+
+/**
+ * The package clause a Go file opens with, `undefined` when its first token
+ * past the comments is no `package` clause (bd tea-rags-mcp-e6xx, F4 N1). The
+ * comments before that token — `//` lines and `/* … *\/` blocks — are the
+ * header, and a build constraint is a `//` comment that starts its line: a
+ * `//go:build` spelled inside a block comment constrains nothing, and a doc
+ * comment's prose that starts a line with "package" (`package being
+ * analyzed`) is no clause — read as one, it disagreed with the package's real
+ * files and left the clause unread (`f4c/lib5`, package `eps`).
+ */
+function readGoFileHead(content: string): GoFileHead | undefined {
+  let at = 0;
+  let lineStart = true;
+  let constrained = false;
+  while (at < content.length) {
+    const char = content[at];
+    if (char === "\n") {
+      lineStart = true;
+      at++;
+    } else if (char === " " || char === "\t" || char === "\r") {
+      at++;
+    } else if (content.startsWith("//", at)) {
+      const newline = content.indexOf("\n", at);
+      const end = newline < 0 ? content.length : newline;
+      if (lineStart && GO_BUILD_CONSTRAINT_COMMENT.test(content.slice(at, end))) constrained = true;
+      at = end;
+    } else if (content.startsWith("/*", at)) {
+      const close = content.indexOf("*/", at + 2);
+      if (close < 0) return undefined;
+      lineStart = false;
+      at = close + 2;
+    } else {
+      break;
+    }
+  }
+  const packageName = GO_PACKAGE_CLAUSE.exec(content.slice(at))?.[1];
+  return packageName === undefined ? undefined : { packageName, constrained };
+}
 
 /**
  * The name `dir`'s package declares: the one `package` clause its non-test
@@ -59,6 +104,7 @@ const GO_BUILD_CONSTRAINT_LINE = /^\/\/(?:go:build|[ \t]*\+build)[ \t]/m;
  * file is (a package of `_linux` / `_windows` variants); and when the files
  * that answer still disagree, the clause is left unread — the importing reader
  * falls back to the name the path suggests rather than trust one of them.
+ * Each file's clause and constraint come from its head (`readGoFileHead`).
  */
 function readGoPackageName(dir: string): string | undefined {
   let files: string[];
@@ -78,11 +124,9 @@ function readGoPackageName(dir: string): string | undefined {
     } catch {
       continue;
     }
-    const clause = GO_PACKAGE_CLAUSE.exec(content);
-    const name = clause?.[1];
-    if (clause === null || name === undefined || name === GO_COMMAND_PACKAGE) continue;
-    const header = content.slice(0, clause.index);
-    (GO_BUILD_CONSTRAINT_LINE.test(header) ? constrained : unconstrained).add(name);
+    const head = readGoFileHead(content);
+    if (head === undefined || head.packageName === GO_COMMAND_PACKAGE) continue;
+    (head.constrained ? constrained : unconstrained).add(head.packageName);
   }
   const answering = unconstrained.size > 0 ? unconstrained : constrained;
   const [agreed] = answering;
