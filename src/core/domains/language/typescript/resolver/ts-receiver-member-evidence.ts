@@ -19,8 +19,9 @@
  * has a checker, so it can ask instead.
  *
  * The evidence is the checker's own resolution of the property NAME at the call
- * site (`getSymbolAtLocation`), which follows unions, inheritance and aliases the
- * way the compiler does. The candidate is accounted for when one of that
+ * site (`getSymbolAtLocation`), which follows unions and inheritance the way the
+ * compiler does; a re-export alias it stops at is followed on to the symbol it
+ * stands for ({@link calledMemberSymbol}). The candidate is accounted for when one of that
  * symbol's declarations sits in the candidate's own file, or when the member is
  * declared on a supertype — an interface, an abstract base — that the
  * candidate's owner descends from in the run hierarchy (the hwwtw rule for an
@@ -81,8 +82,25 @@ export function memberCandidateLacksReceiverEvidence(
   if (node === null || access === undefined || !ts.isPropertyAccessExpression(access) || access.expression !== node) {
     return true;
   }
-  const declarations = handle.checker.getSymbolAtLocation(access.name)?.getDeclarations() ?? [];
+  const declarations = calledMemberSymbol(handle.checker, access.name)?.getDeclarations() ?? [];
   return !declarations.some((declaration) => declarationAccountsFor(declaration, candidate, ctx, programCache));
+}
+
+/**
+ * The symbol the called member NAME resolves to, with an import/export alias
+ * followed to what it stands for.
+ *
+ * Through a named re-export barrel (`import * as H from "./helpers"`, where
+ * `helpers/index.ts` says `export { f } from "./f"`) `getSymbolAtLocation`
+ * answers the barrel's `ExportSpecifier` — an ALIAS whose only declaration sits
+ * in the barrel, which declares nothing — so a correct candidate in `f.ts` was
+ * declined. A `export *` barrel never showed it: the checker hands back the
+ * function's own symbol there.
+ */
+function calledMemberSymbol(checker: ts.TypeChecker, name: ts.MemberName): ts.Symbol | undefined {
+  const symbol = checker.getSymbolAtLocation(name);
+  if (symbol === undefined || (symbol.flags & ts.SymbolFlags.Alias) === 0) return symbol;
+  return checker.getAliasedSymbol(symbol);
 }
 
 /**
