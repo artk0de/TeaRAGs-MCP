@@ -452,6 +452,11 @@ export const LANGUAGE_MAP: Record<string, string> = {
   ".cts": "typescript",
   ".js": "javascript",
   ".jsx": "javascript",
+  // The ESM / CJS module formats of JavaScript (bd tea-rags-mcp-oxodb). The
+  // codegraph already walks them (`CODEGRAPH_LANGUAGES`); the two tables move
+  // together, or a file has a graph node and no chunks, or the reverse.
+  ".mjs": "javascript",
+  ".cjs": "javascript",
 
   // Backend languages
   ".py": "python",

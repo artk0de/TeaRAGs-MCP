@@ -8,6 +8,8 @@ export const DEFAULT_CODE_EXTENSIONS = [
   ".cts",
   ".js",
   ".jsx",
+  ".mjs",
+  ".cjs",
   ".py",
   ".go",
   ".rs",
