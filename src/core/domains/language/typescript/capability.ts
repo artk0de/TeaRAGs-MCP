@@ -43,6 +43,8 @@ export const capability: LanguageCapability = {
   // foreign counts as `noInProjectDef`. And (same bump) a member call on a
   // receiver the walker did not type is committed by `globalShortName` /
   // `importNarrowedFallback` only when the checker resolves the member to the
-  // candidate — never by a unique short name alone.
+  // candidate — never by a unique short name alone. And an unresolved `super`
+  // call whose base the checker declares outside the project (`extends Error`,
+  // a dependency's class) counts as `externalSkipped`, not a miss.
   versions: { chunking: 1, walker: 6, codegraphSchema: 2 },
 };
