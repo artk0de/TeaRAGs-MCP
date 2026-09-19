@@ -91,10 +91,11 @@ describe("TSCallResolver", () => {
         symbolTable,
       },
     );
-    // No class scope -> intra-class branch skipped -> short-name
-    // fallback finds 1 match -> resolves there. Not the bug case;
-    // documents the non-class behaviour.
-    expect(result).toEqual({ targetRelPath: "src/store.ts", targetSymbolId: "Store.read" });
+    // No class scope -> intra-class branch skipped. The short-name fallback
+    // finds 1 match, but a `this` member is no longer committed by its name
+    // alone — nothing (no checker, no class) says `this` is a `Store` (bd
+    // tea-rags-mcp-t5cji), so the call stays unresolved rather than misrouted.
+    expect(result).toBeNull();
   });
 
   it("resolves Foo.bar() via the imports list", () => {

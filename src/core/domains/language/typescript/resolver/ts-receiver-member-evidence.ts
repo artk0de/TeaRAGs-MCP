@@ -52,13 +52,21 @@ type EvidenceCandidate = Pick<SymbolDefinition, "relPath" | "scope" | "startLine
  * checker does not resolve its member to `candidate` — so committing the
  * candidate would rest on its short name alone.
  *
- * `false` for a bare call, for `this` / `super` (earlier passes own them), and
- * for a receiver the walker typed as a PROJECT type — one the table declares, or
- * the candidate's own owner — which the typed passes and their own guards decide
+ * `false` for a bare call, for `super` (its pass is terminal), and for a
+ * receiver the walker typed as a PROJECT type — one the table declares, or the
+ * candidate's own owner — which the typed passes and their own guards decide
  * (`importNarrowedFallback`'s interface recovery among them). A walker type the
  * table does not know is no evidence: taxdome's `fetcher.request()` on a
  * generated `…Fetcher` kept landing on the lone free `request` until this said
  * so.
+ *
+ * `this` is NOT exempt. `thisMember` answers every member the enclosing class
+ * declares in its own file, so a `this` call arriving here is one it could not
+ * pin — inherited, or not the class's at all — and needs the same evidence: an
+ * inherited project member is accepted through the checker's declaration, while
+ * taxdome's `this.state` (React declares it; the walker records the argument as
+ * a call) used to land on the project's lone `state`, a nested function in a
+ * `.mjs` artifact.
  */
 export function memberCandidateLacksReceiverEvidence(
   call: CallRef,
@@ -67,7 +75,7 @@ export function memberCandidateLacksReceiverEvidence(
   candidate: EvidenceCandidate,
 ): boolean {
   const { receiver } = call;
-  if (!receiver || receiver === "this" || receiver === "super") return false;
+  if (!receiver || receiver === "super") return false;
   // A walker type the PROJECT declares belongs to the typed passes. One the
   // table has never heard of — a generated `…Fetcher`, an npm class — says
   // nothing about which members exist, so it needs the checker like any other.

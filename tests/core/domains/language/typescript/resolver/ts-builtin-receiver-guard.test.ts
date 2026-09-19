@@ -176,13 +176,19 @@ describe("TSGlobalShortNameSymbolResolutionStrategy — builtin-receiver guard (
     expect(outcome).toEqual({ kind: "resolved", target: { targetRelPath: "src/queue.ts", targetSymbolId: "push" } });
   });
 
+  // bd tea-rags-mcp-t5cji: `this` is no longer exempt from the member-evidence
+  // guard, so `globalShortName` alone no longer commits a `this` call; the
+  // self-call is `thisMember`'s, which runs first. What the builtin vocabulary
+  // owes it is unchanged — it does not claim it — and the resolver still lands
+  // it on the class's own method.
   it("STILL resolves a `this` self-call sharing a builtin member name (this.push(x))", () => {
     const call: CallRef = { callText: "this.push(x)", receiver: "this", member: "push", startLine: 9 };
     const symbolTable = tableWith(["src/queue.ts", [sym("Queue#push", "push", "src/queue.ts", ["Queue"])]]);
-    const outcome = strat.attempt(call, ctx({ symbolTable, callerFile: "src/queue.ts", callerScope: ["Queue"] }));
-    expect(outcome).toEqual({
-      kind: "resolved",
-      target: { targetRelPath: "src/queue.ts", targetSymbolId: "Queue#push" },
+    const queueCtx = ctx({ symbolTable, callerFile: "src/queue.ts", callerScope: ["Queue"] });
+    expect(targetsExternalImport(call, queueCtx, cfg.tsOptions, null)).toBe(false);
+    expect(new TSCallResolver(cfg.tsOptions).resolve(call, queueCtx)).toEqual({
+      targetRelPath: "src/queue.ts",
+      targetSymbolId: "Queue#push",
     });
   });
 });

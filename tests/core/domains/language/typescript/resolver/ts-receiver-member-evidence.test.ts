@@ -385,4 +385,96 @@ describe("memberCandidateLacksReceiverEvidence — the checker's declaration mus
       expect(lacks(AREA, callerCtx([]), CIRCLE_AREA)).toBe(true);
     });
   });
+
+  describe("a `this` member the same-file `thisMember` pass could not pin", () => {
+    // taxdome's `UploadDocumentFormOld` passes `this.state` as an argument; the
+    // walker records it as a call on `this`, `thisMember` finds no `state` in the
+    // file (React declares it), and the project's lone `state` — a nested
+    // function in a `.mjs` artifact — was committed because `this` was exempt.
+    function writeFormFixture(): void {
+      writeSource(repoRoot, "node_modules/ext-base/package.json", [
+        JSON.stringify({ name: "ext-base", version: "1.0.0", types: "index.d.ts" }),
+      ]);
+      writeSource(repoRoot, "node_modules/ext-base/index.d.ts", [
+        "export declare class Component<S> {",
+        "  state: S;",
+        "  setState(next: S): void;",
+        "}",
+      ]);
+      writeSource(repoRoot, "src/base.ts", [
+        "export class Base {",
+        "  inheritedRun(): number {",
+        "    return 1;",
+        "  }",
+        "}",
+      ]);
+      writeSource(repoRoot, "src/form.ts", [
+        'import { Component } from "ext-base";',
+        'import { Base } from "./base.js";',
+        "export class Form extends Component<{ n: number }> {",
+        "  submit(): void {",
+        "    this.setState(this.state);",
+        "  }",
+        "}",
+        "export class Job extends Base {",
+        "  go(): number {",
+        "    return this.inheritedRun();",
+        "  }",
+        "}",
+      ]);
+    }
+
+    const RUN_STATE = def("run.state", "state", "src/verify-fixes.ts", ["run"], [3, 5]);
+    const RUN_SET_STATE = def("run.setState", "setState", "src/verify-fixes.ts", ["run"], [6, 8]);
+    const BASE_RUN = def("Base#inheritedRun", "inheritedRun", "src/base.ts", ["Base"], [2, 4]);
+
+    const formCtx = (callerScope: string[]): CallContext => ({
+      callerFile: "src/form.ts",
+      callerScope,
+      imports: [
+        {
+          importText: "ext-base",
+          startLine: 1,
+          importedNames: ["Component"],
+          importedBindings: { Component: "Component" },
+        },
+        { importText: "./base.js", startLine: 2, importedNames: ["Base"], importedBindings: { Base: "Base" } },
+      ],
+      symbolTable: tableOf(RUN_STATE, RUN_SET_STATE, BASE_RUN),
+    });
+
+    const SET_STATE: CallRef = {
+      callText: "this.setState(this.state)",
+      receiver: "this",
+      member: "setState",
+      startLine: 5,
+    };
+    const STATE_ARG: CallRef = { callText: "this.state", receiver: "this", member: "state", startLine: 5 };
+    const INHERITED: CallRef = {
+      callText: "this.inheritedRun()",
+      receiver: "this",
+      member: "inheritedRun",
+      startLine: 10,
+    };
+
+    it("declines a member the checker places in the dependency the class extends", () => {
+      writeFormFixture();
+      expect(lacks(SET_STATE, formCtx(["Form"]), RUN_SET_STATE)).toBe(true);
+    });
+
+    it("declines a `this` member reference the walker recorded as a call (this.state as an argument)", () => {
+      writeFormFixture();
+      expect(lacks(STATE_ARG, formCtx(["Form"]), RUN_STATE)).toBe(true);
+    });
+
+    it("accepts a member inherited from a project base in another file", () => {
+      writeFormFixture();
+      expect(lacks(INHERITED, formCtx(["Job"]), BASE_RUN)).toBe(false);
+    });
+
+    it("declines a `this` member with no Program to ask — no import binds `this`", () => {
+      writeFormFixture();
+      expect(memberCandidateLacksReceiverEvidence(SET_STATE, formCtx(["Form"]), null, RUN_SET_STATE)).toBe(true);
+    });
+  });
 });
