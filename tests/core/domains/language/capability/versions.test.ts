@@ -140,13 +140,18 @@ describe("seeded support versions", () => {
       // walker 3: bd tea-rags-mcp-x9qsh maps a specifier that already names a
       // TypeScript file to that file, so an index built before it holds file
       // edges to `<file>.ts.js` / `<file>.mts.ts` paths no file row matches.
+      // typescript walker 7: bd tea-rags-mcp-05uhs lets every receiver-bearing
+      // call the chain declined reach the typeCheckerFallback regardless of
+      // namesake count, so an index built before it holds neither the 203
+      // file-only checker edges nor the 37 symbol-precise ones the taxdome A/B
+      // measured at the old gate.
       // go walker 2: bd tea-rags-mcp-e6xx publishes struct field facts on
       // `classFieldTypesByClassKey` and resolves promoted methods through
       // embedding, so an index built by walker 1 holds none of the
       // `engine.GET` → `RouterGroup#GET` edges this one emits.
       // Every other language is still at its seed.
       const WALKER_BUMPED = new Map([
-        ["typescript", 6],
+        ["typescript", 7],
         ["javascript", 3],
         ["python", 8],
         ["ruby", 3],
