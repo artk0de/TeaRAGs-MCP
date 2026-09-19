@@ -814,21 +814,24 @@ export class IndexingOps {
 
     const absolutePath = await validatePath(path);
     const collectionName = await this.resolveCollectionForPath(absolutePath);
-    const attempt = await this.worktreeSeed.seed({
-      targetPath: absolutePath,
-      targetCollection: collectionName,
-      build: this.seedBuildIdentity(this.allPayloadSignals),
-      claimSource: async (source) => this.claimSeedSource(source),
-    });
-    if (attempt.status === "skipped") return { report: attempt };
-
+    // What the seed will owe, recorded by the clone itself on the target's
+    // marker before the target is addressable — a death at any later point
+    // leaves a clone the next run resumes (`resumePendingWorktreeSeed`).
     const pending: WorktreeSeedPending = {
       seededAt: new Date().toISOString(),
       languageVersions: this.languageVersionsStamp(undefined, "all"),
     };
+    const attempt = await this.worktreeSeed.seed({
+      targetPath: absolutePath,
+      targetCollection: collectionName,
+      build: this.seedBuildIdentity(this.allPayloadSignals),
+      pending,
+      claimSource: async (source) => this.claimSeedSource(source),
+    });
+    if (attempt.status === "skipped") return { report: attempt };
+
     let stats: IndexStats | undefined;
     try {
-      await markWorktreeSeedPending(this.qdrant, collectionName, pending);
       stats = await this.tryIncrementalIndex(path, progressCallback);
     } catch (error) {
       await this.dropFailedSeed(path, collectionName);

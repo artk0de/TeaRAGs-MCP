@@ -144,21 +144,30 @@ export async function updateHeartbeat(qdrant: QdrantManager, collectionName: str
 }
 
 /**
- * Record what a seeded first index still owes its collection (bd
- * tea-rags-mcp-k8gac) — see {@link WorktreeSeedPending}. Throws: a seed that
- * cannot persist this has no way to finish after a crash, so the caller drops
- * it rather than keep a clone nothing can complete.
+ * The marker payload that records a pending seed — the one spelling both of its
+ * writers share: the seed's clone, which lands it before the clone is
+ * addressable (`FootprintContext.targetIndexingMarkerPatch`), and
+ * {@link markWorktreeSeedPending}.
+ */
+export function worktreeSeedPendingMarkerPatch(pending: WorktreeSeedPending): Record<string, unknown> {
+  return { worktreeSeedPending: pending };
+}
+
+/**
+ * Rewrite what a seeded first index still owes its collection (bd
+ * tea-rags-mcp-k8gac) — see {@link WorktreeSeedPending}. The first record rides
+ * the seed's clone; this is the later rewrite, once part of the debt is paid.
+ * Throws: a debt that cannot be persisted must not be treated as settled.
  */
 export async function markWorktreeSeedPending(
   qdrant: QdrantManager,
   collectionName: string,
   pending: WorktreeSeedPending,
 ): Promise<void> {
-  await qdrant.setPayload(
-    collectionName,
-    { worktreeSeedPending: pending },
-    { points: [INDEXING_METADATA_ID], wait: true },
-  );
+  await qdrant.setPayload(collectionName, worktreeSeedPendingMarkerPatch(pending), {
+    points: [INDEXING_METADATA_ID],
+    wait: true,
+  });
 }
 
 /**

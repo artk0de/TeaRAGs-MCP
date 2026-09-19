@@ -34,7 +34,11 @@ import type {
   WorktreeSeedRejectionReason,
   WorktreeSeedSourceRef,
 } from "../../../contracts/types/worktree.js";
-import { parseMarkerPayload } from "../../../domains/ingest/pipeline/indexing-marker-codec.js";
+import {
+  parseMarkerPayload,
+  type WorktreeSeedPending,
+} from "../../../domains/ingest/pipeline/indexing-marker-codec.js";
+import { worktreeSeedPendingMarkerPatch } from "../../../domains/ingest/pipeline/indexing-marker.js";
 import { ShardedSnapshotManager } from "../../../domains/ingest/sync/snapshot/sharded-snapshot.js";
 import {
   cloneCollectionFootprint,
@@ -69,6 +73,14 @@ export interface WorktreeSeedRequest {
   /** The logical collection the run writes for `targetPath`; it does not exist yet. */
   targetCollection: CollectionAlias;
   build: WorktreeSeedBuildIdentity;
+  /**
+   * What the seeded collection will owe until its stamp and git rebuild are
+   * done. The clone records it on the target's marker BEFORE the target is
+   * addressable, so a process that dies anywhere after that — mid-saga, or
+   * between the saga and the seeded incremental — leaves a clone the next run
+   * resumes instead of one it mistakes for a settled index.
+   */
+  pending: WorktreeSeedPending;
   /**
    * Take the sibling the way an index run takes its own collection, for the
    * clone's duration. `undefined` means it is busy. Owned by the caller: the
@@ -167,7 +179,12 @@ export class WorktreeSeedOps {
         physicalName: versionedPhysicalCollectionName(request.targetCollection, 1),
         path: request.targetPath,
       };
-      await cloneCollectionFootprint(this.deps.footprintFactory, source, target);
+      await cloneCollectionFootprint(
+        this.deps.footprintFactory,
+        source,
+        target,
+        worktreeSeedPendingMarkerPatch(request.pending),
+      );
     } catch (error) {
       return { reason: "clone-failed", detail: messageOf(error) };
     }

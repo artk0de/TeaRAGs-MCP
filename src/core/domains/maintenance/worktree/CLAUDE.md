@@ -51,19 +51,26 @@
   index on any of those stamps reports drift a fresh index would not; adding a
   drift axis without adding it to that gate reopens exactly that.
 - **What a seed still owes lives on the collection's indexing marker, not in the
-  registry.** Right after the clone `IndexingOps#trySeedFromWorktree` writes
+  registry, and the CLONE records it.** `IndexingOps#trySeedFromWorktree` hands
   `worktreeSeedPending` (`WorktreeSeedPending`, `indexing-marker-codec.ts`: the
-  SEEDING build's language-version stamp) onto the marker point; it is cleared
-  only once that stamp is written AND the git rebuild finished
-  (`IndexingOps#refreshSeededGitLayer`), and any later incremental run that
-  finds it settles both (`IndexingOps#resumePendingWorktreeSeed`). Why: the
-  debts outlive the seeding process — a kill during the seeded incremental left
-  an unstamped clone that reports version drift and steers to `--force`, and a
-  restart during the rebuild left the sibling's git signals behind an
-  `enrichedAt` recovery never revisits. The registry cannot hold it: a seeded
-  collection has no entry until its first incremental records one, which is
-  exactly the window a kill must survive — the marker is cloned and dropped with
-  the collection itself.
+  SEEDING build's language-version stamp) to the seed as
+  `WorktreeSeedRequest.pending`; `WorktreeSeedOps` passes it to
+  `cloneCollectionFootprint` as the target marker patch, and
+  `QdrantArtifact#clone` writes it after the recover and BEFORE `createAlias`
+  makes the clone addressable. It is cleared only once that stamp is written AND
+  the git rebuild finished (`IndexingOps#refreshSeededGitLayer`), and any later
+  incremental run that finds it settles both
+  (`IndexingOps#resumePendingWorktreeSeed`). Why: the debts outlive the seeding
+  process — a kill during the seeded incremental left an unstamped clone that
+  reports version drift and steers to `--force`, and a restart during the
+  rebuild left the sibling's git signals behind an `enrichedAt` recovery never
+  revisits. Written after the saga instead, a kill anywhere between the alias
+  and that write — the rest of the saga's artifact copies included — left a
+  visible clone with no marker. The registry cannot hold it: a seeded collection
+  has no entry until its first incremental records one, which is exactly the
+  window a kill must survive — the marker is cloned and dropped with the
+  collection itself, and a failed write rolls back with the Qdrant artifact like
+  any other clone failure.
 - **A `--force-enrichments` run that finds a pending seed pays its stamp
   FIRST.** After its sync leg, `IndexingOps#recomputeEnrichments` stamps the
   seed's versions and rewrites the marker with `languageVersions` emptied

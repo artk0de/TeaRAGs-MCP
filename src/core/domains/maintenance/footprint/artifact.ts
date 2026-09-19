@@ -33,6 +33,16 @@ export interface ResolvedCollection {
 export interface FootprintContext {
   source: ResolvedCollection;
   target: ResolvedCollection;
+  /**
+   * Payload merged onto the TARGET's indexing marker point by the Qdrant clone,
+   * after the recover and BEFORE the alias makes the target addressable by its
+   * logical name (bd tea-rags-mcp-k8gac). The first-index worktree seed passes
+   * the debt its collection will owe (`worktreeSeedPending`), so no instant
+   * exists at which a run can see the clone without it. Rolled back with the
+   * collection like everything else the Qdrant artifact wrote. Omitted → the
+   * clone carries the source's marker unchanged (`WorktreeProvisioner#create`).
+   */
+  targetIndexingMarkerPatch?: Readonly<Record<string, unknown>>;
 }
 
 export interface CollectionArtifact {

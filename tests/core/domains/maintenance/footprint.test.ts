@@ -4,6 +4,7 @@ import { join } from "node:path";
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+import { INDEXING_METADATA_ID } from "../../../../src/core/contracts/constants.js";
 import { CollectionIndexingLock } from "../../../../src/core/domains/ingest/infra/collection-indexing-lock.js";
 import { QuarantineStore } from "../../../../src/core/domains/ingest/sync/quarantine-store.js";
 import { ShardedSnapshotManager } from "../../../../src/core/domains/ingest/sync/snapshot/sharded-snapshot.js";
@@ -111,6 +112,52 @@ describe("QdrantArtifact", () => {
       target: resolved({ logicalName: "d", physicalName: "dv1" }),
     };
     await expect(artifact.clone(ctx)).rejects.toThrow("recover failed");
+    expect(qdrant.deleteSnapshot).toHaveBeenCalledOnce();
+  });
+
+  // bd tea-rags-mcp-k8gac — what a seeded first index still owes must be on the
+  // clone's marker from the first instant a run can address the clone by its
+  // logical name, i.e. before the alias exists.
+  it("clone: writes the target marker patch onto the recovered collection BEFORE the alias exposes it", async () => {
+    const qdrant = { ...makeQdrant(), setPayload: vi.fn().mockResolvedValue(undefined) };
+    const callOrder: string[] = [];
+    qdrant.recoverFromSnapshot.mockImplementation(async () => {
+      callOrder.push("recoverFromSnapshot");
+    });
+    qdrant.setPayload.mockImplementation(async () => {
+      callOrder.push("setPayload");
+    });
+    qdrant.aliases.createAlias.mockImplementation(async () => {
+      callOrder.push("createAlias");
+    });
+    const artifact = new QdrantArtifact(qdrant as never);
+    const patch = { worktreeSeedPending: { seededAt: "2026-09-19T00:00:00Z", languageVersions: {} } };
+
+    await artifact.clone({
+      source: resolved(),
+      target: resolved({ logicalName: "code_dst", physicalName: "code_dst_v1" }),
+      targetIndexingMarkerPatch: patch,
+    });
+
+    expect(callOrder).toEqual(["recoverFromSnapshot", "setPayload", "createAlias"]);
+    expect(qdrant.setPayload).toHaveBeenCalledWith("code_dst_v1", patch, {
+      points: [INDEXING_METADATA_ID],
+      wait: true,
+    });
+  });
+
+  it("clone: a failed marker write never creates the alias and still deletes the snapshot", async () => {
+    const qdrant = { ...makeQdrant(), setPayload: vi.fn().mockRejectedValue(new Error("marker write refused")) };
+    const artifact = new QdrantArtifact(qdrant as never);
+
+    await expect(
+      artifact.clone({
+        source: resolved(),
+        target: resolved({ logicalName: "code_dst", physicalName: "code_dst_v1" }),
+        targetIndexingMarkerPatch: { worktreeSeedPending: { seededAt: "t", languageVersions: {} } },
+      }),
+    ).rejects.toThrow("marker write refused");
+    expect(qdrant.aliases.createAlias).not.toHaveBeenCalled();
     expect(qdrant.deleteSnapshot).toHaveBeenCalledOnce();
   });
 

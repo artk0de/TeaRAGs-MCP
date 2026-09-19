@@ -19,7 +19,10 @@ import { resolve } from "node:path";
 import { describe, expect, it, vi } from "vitest";
 
 import { IndexingOps, type IndexingOpsDeps } from "../../../../../src/core/api/internal/ops/indexing-ops.js";
-import type { WorktreeSeedAttempt } from "../../../../../src/core/api/internal/ops/worktree-seed-ops.js";
+import type {
+  WorktreeSeedAttempt,
+  WorktreeSeedRequest,
+} from "../../../../../src/core/api/internal/ops/worktree-seed-ops.js";
 import { INDEXING_METADATA_ID } from "../../../../../src/core/contracts/constants.js";
 import type { LanguageCodeVersions } from "../../../../../src/core/contracts/types/language.js";
 import type { ChangeStats } from "../../../../../src/core/types.js";
@@ -97,13 +100,24 @@ function sharedStores() {
       }
     }),
   };
-  /** The seed clones the sibling's footprint — its completed marker included. */
-  const seed = vi.fn(async () => {
+  /**
+   * The seed clones the sibling's footprint — its completed marker included —
+   * and, like the real Qdrant clone, records the debt the run handed it on the
+   * clone's marker before the collection becomes visible.
+   */
+  const cloneSibling = (request: WorktreeSeedRequest): void => {
     collections.add("code_wt");
-    markers.set("code_wt", { indexingComplete: true, completedAt: "2026-09-01T00:00:00Z" });
+    markers.set("code_wt", {
+      indexingComplete: true,
+      completedAt: "2026-09-01T00:00:00Z",
+      worktreeSeedPending: request.pending,
+    });
+  };
+  const seed = vi.fn(async (request: WorktreeSeedRequest) => {
+    cloneSibling(request);
     return Promise.resolve(SEEDED);
   });
-  return { collections, markers, registry, stampLanguageVersions, qdrant, seed };
+  return { collections, markers, registry, stampLanguageVersions, qdrant, seed, cloneSibling };
 }
 
 type Stores = ReturnType<typeof sharedStores>;
@@ -159,6 +173,30 @@ describe("IndexingOps — a seed left pending by a dead process is resumed", () 
 
     expect(stores.markers.get("code_wt")?.worktreeSeedPending).toMatchObject({ languageVersions: SEED_STAMP });
     expect(stores.stampLanguageVersions).not.toHaveBeenCalled();
+  });
+
+  it("killed inside the seed, once the clone is visible: the next run finds the pending seed and settles it", async () => {
+    const stores = sharedStores();
+    // The clone is addressable, and the process dies before the seed returns —
+    // the window the pending marker used to miss, when it was written only after.
+    stores.seed.mockImplementationOnce(async (request: WorktreeSeedRequest) => {
+      stores.cloneSibling(request);
+      return never();
+    });
+    const killed = processOver(stores);
+    void killed.ops.run(TARGET);
+    await vi.waitFor(() => {
+      expect(stores.collections.has("code_wt")).toBe(true);
+    });
+
+    const next = processOver(stores);
+    await next.ops.run(TARGET);
+    await next.ops.whenEnrichmentComplete();
+
+    expect(stores.seed).toHaveBeenCalledTimes(1);
+    expect(stores.registry.get("code_wt")).toEqual(SEED_STAMP);
+    expect(next.deps.enrichment.recomputeEnrichments).toHaveBeenCalledWith("code_wt_v1", TARGET, ["git"]);
+    expect(stores.markers.get("code_wt")).not.toHaveProperty("worktreeSeedPending");
   });
 
   it("killed during the seeded incremental: the next run stamps the versions and rebuilds the git layer", async () => {
