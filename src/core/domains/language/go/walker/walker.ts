@@ -435,8 +435,9 @@ function walk(node: AstNode, visit: (n: AstNode) => void): void {
  *      calls bare (`helper := func() {}; helper()`,
  *      `func f(loadAll []func()) { loadAll[0]() }`) records an EMPTY-typed
  *      binding: a value no pass can type, never the package or the
- *      package-level declaration. A statement-declared one carries `endLine`
- *      (in scope only after its statement — `goLocalBindingAt`).
+ *      package-level declaration. A statement-declared one whose right-hand
+ *      side names it carries `endLine` (in scope only after its statement —
+ *      `goDeclarationEndLine`, read by `goLocalBindingAt`).
  *
  * A binding declared inside a block narrower than the function body carries
  * that block's last line as `scopeEndLine`.
@@ -451,7 +452,7 @@ function walk(node: AstNode, visit: (n: AstNode) => void): void {
  * concrete struct types that exist in the table ever bind. bd tea-rags-mcp-6g9c.
  * Each declaration is its own positioned entry (bd tea-rags-mcp-e6xx) — the
  * chunk-wide `localCallBindings` map this replaces spoke for the name on every
- * line, the declaring statement's own right-hand side included.
+ * line, a `config := config.Load()` right-hand side included.
  * Go has no `self`/`this`: receivers, local vars, AND return-typed vars are
  * the only static type hints for `engine.Use()`-style calls.
  */
@@ -590,16 +591,13 @@ function bindGoDeclaration(
     case "range_clause":
     case "receive_statement":
       // `for k, v := range m` / `case v := <-ch:` — declared only with `:=`.
-      if (declaresWithShortVarToken(node)) shadowGoLocals(node.childForFieldName("left"), node, scopeEnd, sink);
+      if (declaresWithShortVarToken(node)) {
+        shadowGoLocals(node.childForFieldName("left"), node.childForFieldName("right"), scopeEnd, sink);
+      }
       break;
     case "type_switch_statement":
       // `switch v := x.(type)` — `v` lives in every clause, i.e. the statement.
-      shadowGoLocals(
-        node.childForFieldName("alias"),
-        node.childForFieldName("value") ?? node,
-        node.endPosition.row + 1,
-        sink,
-      );
+      shadowGoLocals(node.childForFieldName("alias"), node.childForFieldName("value"), node.endPosition.row + 1, sink);
       break;
     default:
       break;
@@ -616,36 +614,67 @@ function scopedTo(binding: LocalBinding, scopeEnd: number | undefined): LocalBin
   return binding;
 }
 
+/** Node types whose text names an identifier in scope — a value, a package qualifier, or a type. */
+const GO_NAME_REFERENCE_NODE_TYPES: ReadonlySet<string> = new Set([
+  "identifier",
+  "package_identifier",
+  "type_identifier",
+]);
+
+/** Whether `node`'s subtree names `name` (a field selected on something else, `x.name`, does not). */
+function goNodeNamesIdentifier(node: AstNode, name: string): boolean {
+  if (GO_NAME_REFERENCE_NODE_TYPES.has(node.type)) return node.text === name;
+  return node.children.some((child) => goNodeNamesIdentifier(child, name));
+}
+
+/**
+ * The `endLine` a statement-declared local carries (bd tea-rags-mcp-e6xx): the
+ * last line of the right-hand side `rhs` the declaring statement evaluates —
+ * but ONLY when `rhs` names the identifier being declared, else `undefined`.
+ *
+ * Go scopes such a local from the END of its statement, so in
+ * `config := config.Load()` the right-hand `config` is still the package, and
+ * `goLocalBindingAt` reads `endLine` to keep the local out of those lines. A
+ * call site carries a line and no column, though, so the same bound would also
+ * hide the local from the rest of its line — and an `if` / `switch` / `for`
+ * header uses its init declaration on that very line
+ * (`if e := NewEngine(); e.Ready() {`). The bound is therefore set only where
+ * the right-hand side can refer to the name at all; everywhere else the local
+ * is visible from its `line`, which is what the header needs. What stays
+ * unexpressible is the case holding both — `if config := config.Load();
+ * config.Ok() {` reads the condition's `config` as the package.
+ */
+function goDeclarationEndLine(rhs: AstNode | null, name: string): number | undefined {
+  return rhs !== null && goNodeNamesIdentifier(rhs, name) ? rhs.endPosition.row + 1 : undefined;
+}
+
 /**
  * A local of a type the walker cannot know: recorded, with the EMPTY type,
  * only when its name is one the sink watches (`GoBindingSink.shadowed`) —
- * everywhere else nothing reads it. `statement` is the declaring
- * statement — the local is in scope only after it ends (`endLine`, read by
- * `goLocalBindingAt`), so its own right-hand side still names the package.
- * A parameter has no statement and is in scope from its line.
+ * everywhere else nothing reads it. `rhs` is what the declaring statement
+ * evaluates before the local exists: when it names the local, the local is in
+ * scope only after it ends (`goDeclarationEndLine`), so its own right-hand
+ * side still names the package. A parameter has no right-hand side and is in
+ * scope from its line.
  */
-function shadowGoLocal(
-  ident: AstNode,
-  statement: AstNode | null,
-  scopeEnd: number | undefined,
-  sink: GoBindingSink,
-): void {
+function shadowGoLocal(ident: AstNode, rhs: AstNode | null, scopeEnd: number | undefined, sink: GoBindingSink): void {
   const name = ident.text;
   if (!sink.shadowed.has(name)) return;
   const binding: LocalBinding = { line: ident.startPosition.row + 1, type: "" };
-  if (statement) binding.endLine = statement.endPosition.row + 1;
+  const endLine = goDeclarationEndLine(rhs, name);
+  if (endLine !== undefined) binding.endLine = endLine;
   (sink.types[name] ??= []).push(scopedTo(binding, scopeEnd));
 }
 
 /** {@link shadowGoLocal} for every identifier of a declaration's left-hand `expression_list`. */
 function shadowGoLocals(
   left: AstNode | null,
-  statement: AstNode,
+  rhs: AstNode | null,
   scopeEnd: number | undefined,
   sink: GoBindingSink,
 ): void {
   if (!left) return;
-  for (const ident of left.children) if (ident.type === "identifier") shadowGoLocal(ident, statement, scopeEnd, sink);
+  for (const ident of left.children) if (ident.type === "identifier") shadowGoLocal(ident, rhs, scopeEnd, sink);
 }
 
 /**
@@ -683,7 +712,7 @@ function bindVarDeclaration(node: AstNode, scopeEnd: number | undefined, sink: G
         const binding = scopedTo({ line: ident.startPosition.row + 1, type: typeName }, scopeEnd);
         (sink.types[ident.text] ??= []).push(binding);
       } else {
-        shadowGoLocal(ident, spec, scopeEnd, sink);
+        shadowGoLocal(ident, spec.childForFieldName("value"), scopeEnd, sink);
       }
     }
   }
@@ -715,10 +744,11 @@ function bindShortVarDeclaration(node: AstNode, scopeEnd: number | undefined, si
     } else if (value.type === "call_expression") {
       const callee = readCalledFunctionName(value);
       if (callee) {
+        const endLine = goDeclarationEndLine(right, name.text);
         const binding: CallResultBinding = {
           line: name.startPosition.row + 1,
           callee,
-          endLine: node.endPosition.row + 1,
+          ...(endLine === undefined ? {} : { endLine }),
           ...(scopeEnd === undefined ? {} : { scopeEndLine: scopeEnd }),
         };
         (sink.calls[name.text] ??= []).push(binding);
@@ -726,7 +756,7 @@ function bindShortVarDeclaration(node: AstNode, scopeEnd: number | undefined, si
       }
     }
   }
-  for (const ident of lhsIdents) shadowGoLocal(ident, node, scopeEnd, sink);
+  for (const ident of lhsIdents) shadowGoLocal(ident, right, scopeEnd, sink);
 }
 
 /** A function-literal parameter whose type binds nothing, and the shadow it would record. */
