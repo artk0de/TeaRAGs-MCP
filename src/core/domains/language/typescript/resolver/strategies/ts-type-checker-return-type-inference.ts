@@ -77,6 +77,7 @@ import {
   lookupEcmascriptSymbolsByShortName,
 } from "../../../shared/ecmascript-symbol-lookup.js";
 import type { TSProgramCache } from "../ts-program-cache.js";
+import { declarationAccountsFor } from "../ts-receiver-member-evidence.js";
 import type { ResolverConfig } from "./shared.js";
 import { memberSeparator, prefixWithNamespaces } from "./ts-type-checker-shared.js";
 
@@ -140,10 +141,14 @@ export class TSTypeCheckerReturnTypeInferenceSymbolResolutionStrategy implements
   /**
    * Confirm the checker's member declaration against the run's symbol table,
    * which is the vocabulary every other edge is phrased in. Exact composed id
-   * first; then the member's short name narrowed to that one file — which
-   * recovers the cases where the chunker composed the id differently. Failing
-   * both, the FILE is still certain from a real type resolution, so a file-only
-   * edge is emitted rather than nothing.
+   * first; then the member's short name narrowed to that one file AND passed
+   * through the evidence guard's owner rule ({@link declarationAccountsFor}) —
+   * a file declares more than one owner, so the file alone is not evidence: an
+   * ownerless declaration (a type literal, an object literal) accounts only for
+   * the candidate whose own line range contains it, and a named one only for
+   * its own spelling or a run-hierarchy descendant. Failing both, the FILE is
+   * still certain from a real type resolution, so a file-only edge is emitted
+   * rather than nothing.
    */
   private pinSymbol(
     declaration: ts.Declaration,
@@ -156,7 +161,9 @@ export class TSTypeCheckerReturnTypeInferenceSymbolResolutionStrategy implements
       const exact = lookupEcmascriptSymbols(ctx, composed).filter((def) => def.relPath === targetRelPath);
       if (exact.length > 0) return exact[0].symbolId;
     }
-    const byShortName = lookupEcmascriptSymbolsByShortName(ctx, member).filter((def) => def.relPath === targetRelPath);
+    const byShortName = lookupEcmascriptSymbolsByShortName(ctx, member).filter(
+      (def) => def.relPath === targetRelPath && declarationAccountsFor(declaration, def, ctx, this.programCache),
+    );
     return pickSingleCandidate(byShortName, this.cfg.mode)?.symbolId ?? null;
   }
 }
