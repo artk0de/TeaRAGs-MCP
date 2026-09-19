@@ -144,6 +144,10 @@ describe("seeded support versions", () => {
       // `classFieldTypesByClassKey` and resolves promoted methods through
       // embedding, so an index built by walker 1 holds none of the
       // `engine.GET` → `RouterGroup#GET` edges this one emits.
+      // go walker 3: bd tea-rags-mcp-7h6j0 keys the run-global return-type
+      // channel by the declaring package, so an index built by walker 2 holds
+      // bare-keyed entries its resolver cannot read — namesake `New()`s
+      // resolve to nothing until the recompute rewrites them.
       // Every other language is still at its seed.
       const WALKER_BUMPED = new Map([
         ["typescript", 6],
@@ -152,7 +156,7 @@ describe("seeded support versions", () => {
         ["ruby", 3],
         ["java", 2],
         ["rust", 2],
-        ["go", 2],
+        ["go", 3],
       ]);
       const expectedWalker = WALKER_BUMPED.get(language) ?? 1;
       const expectedCodegraph = NO_CALL_GRAPH.has(language) ? 1 : 2;

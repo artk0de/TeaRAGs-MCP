@@ -28,7 +28,7 @@ import {
   type GoImportNameClaim,
 } from "../../import-binding.js";
 import { goLocalAt } from "../../local-scope.js";
-import { splitGoRecordedTypeName } from "../../type-name.js";
+import { goFunctionReturnTypesKey, splitGoRecordedTypeName } from "../../type-name.js";
 import { preferGoDefaultBuild } from "../go-build-constraints.js";
 import type { GoModuleMap, GoModuleMapCache } from "../go-module-map.js";
 import { goPackageDirOf, type GoProjectType } from "../go-project-type.js";
@@ -196,14 +196,17 @@ function goBareCalleePackageDir(callee: string, cfg: ResolverConfig, ctx: CallCo
 /**
  * The type a call-bound local holds (`x := New()`, `x := pkg.New()`,
  * `x := v.Method()`) or a bare call's result (`engine().GET`): the callee's
- * recorded return type from the run-global `functionReturnTypes`, keyed by the
- * callee's bare name, when it denotes a project type of the callee's package
- * (`goProjectTypeName`). `undefined` when either is missing. `atLine` is where
- * the callee is evaluated — the call binding's own line, or the call's.
+ * recorded return type from the run-global `functionReturnTypes`, when it
+ * denotes a project type of the callee's package (`goProjectTypeName`).
+ * `undefined` when either is missing. `atLine` is where the callee is
+ * evaluated — the call binding's own line, or the call's.
  *
  * A bare callee belongs to the package `goBareCalleePackageDir` finds for it
  * (G2-3); none — a local function value, a namesake only another package
- * declares — types nothing.
+ * declares — types nothing. Package-level entries are read under that
+ * package's key (`goFunctionReturnTypesKey`): keyed bare, two packages'
+ * namesake `New()`s crossed return types, and which one won depended on which
+ * files a run walked (bd tea-rags-mcp-7h6j0).
  *
  * A qualified callee's qualifier is read as Go reads it (bd tea-rags-mcp-e6xx,
  * G2-1):
@@ -212,12 +215,10 @@ function goBareCalleePackageDir(callee: string, cfg: ResolverConfig, ctx: CallCo
  *     it a method call on a value, and a method's return type is keyed by the
  *     method name, so the map is read by bare name — with no package known;
  *   - else an IMPORT binding it names a package, which answers only when it is
- *     a project package declaring the function: the run-global map is keyed by
- *     bare name, so without the check a standard-library constructor took the
- *     return type of any project function of the same name;
- *   - else it is neither, and it types nothing. The bare-name read here is how
- *     `echo.New()` — a package whose bound name the resolver once failed to
- *     derive — took the project's `New() *Server`. A package-level var is a
+ *     a project package declaring the function: the map is read under THAT
+ *     package's key, so a namesake in another package can never answer, and a
+ *     standard-library constructor takes no project function's return type;
+ *   - else it is neither, and it types nothing. A package-level var is a
  *     value too, but no channel carries one, so it fails closed with the rest.
  */
 export function goCallResultType(
@@ -242,7 +243,12 @@ export function goCallResultType(
       calleePackageDir = packageDir;
     }
   }
-  const returnType = ctx.functionReturnTypes?.[name];
+  // A method call on an untyped local (`x := v.Method()`) leaves the package
+  // unknown, and reads the method's bare-keyed entry package-blind.
+  const returnType =
+    calleePackageDir === undefined
+      ? ctx.functionReturnTypes?.[name]
+      : ctx.functionReturnTypes?.[goFunctionReturnTypesKey(calleePackageDir, name)];
   return returnType === undefined ? undefined : goProjectTypeName(returnType, cfg, ctx, calleePackageDir);
 }
 

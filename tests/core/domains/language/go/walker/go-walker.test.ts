@@ -317,16 +317,18 @@ describe("extractFromGoFile — local var bindings", () => {
 // The resolver later composes (b)+(a) → `engine → "Engine"` and feeds the
 // existing resolveByLocalType. The walker stays pure — no resolution here.
 describe("extractFromGoFile — functionReturnTypes (file-level)", () => {
-  it("captures pointer return `func New() *Engine` → { New: 'Engine' }", () => {
+  // Package-level functions are keyed by the declaring package (bd
+  // tea-rags-mcp-7h6j0); `gin.go` at the repo root spells `""`, so `::New`.
+  it("captures pointer return `func New() *Engine` → { '::New': 'Engine' }", () => {
     const src = ["package gin", "func New() *Engine { return &Engine{} }", ""].join("\n");
     const r = extractFromGoFile({ tree: parse(src), code: src, relPath: "gin.go", language: "go", chunks: [] });
-    expect(r.functionReturnTypes?.New).toBe("Engine");
+    expect(r.functionReturnTypes?.["::New"]).toBe("Engine");
   });
 
-  it("captures value return `func Make() Engine` → { Make: 'Engine' }", () => {
+  it("captures value return `func Make() Engine` → { '::Make': 'Engine' }", () => {
     const src = ["package gin", "func Make() Engine { return Engine{} }", ""].join("\n");
     const r = extractFromGoFile({ tree: parse(src), code: src, relPath: "gin.go", language: "go", chunks: [] });
-    expect(r.functionReturnTypes?.Make).toBe("Engine");
+    expect(r.functionReturnTypes?.["::Make"]).toBe("Engine");
   });
 
   it("captures method return `func (c *Context) Build() *Result` keyed by method name → { Build: 'Result' }", () => {
@@ -338,7 +340,7 @@ describe("extractFromGoFile — functionReturnTypes (file-level)", () => {
   it("does NOT record multi-return `func New() (*Engine, error)` (ambiguous which return feeds the var)", () => {
     const src = ["package gin", "func New() (*Engine, error) { return nil, nil }", ""].join("\n");
     const r = extractFromGoFile({ tree: parse(src), code: src, relPath: "gin.go", language: "go", chunks: [] });
-    expect(r.functionReturnTypes?.New).toBeUndefined();
+    expect(r.functionReturnTypes?.["::New"]).toBeUndefined();
   });
 
   it("does NOT record a function with no return type `func run()`", () => {
@@ -354,7 +356,7 @@ describe("extractFromGoFile — functionReturnTypes (file-level)", () => {
     // import naming `pkg` there is no package to record, so nothing is.
     const src = ["package gin", "func Pkg() pkg.Thing { return pkg.Thing{} }", ""].join("\n");
     const r = extractFromGoFile({ tree: parse(src), code: src, relPath: "gin.go", language: "go", chunks: [] });
-    expect(r.functionReturnTypes?.Pkg).toBeUndefined();
+    expect(r.functionReturnTypes?.["::Pkg"]).toBeUndefined();
   });
 });
 

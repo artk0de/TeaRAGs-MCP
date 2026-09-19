@@ -111,7 +111,7 @@ describe("GoCallResolver — receivers typed through struct fields", () => {
     const ctx = contextCtx({
       localBindings: undefined,
       localCallBindings: { e: "New" },
-      functionReturnTypes: { New: "Engine" },
+      functionReturnTypes: { "::New": "Engine" },
     });
     expect(resolver.resolve(call("e.trees", "get"), ctx)?.targetSymbolId).toBe("methodTrees#get");
   });

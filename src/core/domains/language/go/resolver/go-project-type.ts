@@ -17,15 +17,13 @@
  * as `goStructClassKey`), and a package-blind one as its bare name.
  */
 
-import { posix } from "node:path";
-
 import type { TypeRef } from "../../../../contracts/types/language.js";
 
-/** The package directory of a Go file: its directory, `""` at the root. A Go package is exactly one directory. */
-export function goPackageDirOf(relPath: string): string {
-  const dir = posix.dirname(relPath);
-  return dir === "." ? "" : dir;
-}
+// The package directory lives in `../type-name.ts` beside the map key that
+// spells it (`goFunctionReturnTypesKey`), so the walker can derive a package
+// from its `relPath` without reaching into the resolver layer; re-exported here
+// for this module's existing importers (bd tea-rags-mcp-7h6j0).
+export { goPackageDirOf } from "../type-name.js";
 
 export interface GoProjectType {
   readonly typeName: string;
