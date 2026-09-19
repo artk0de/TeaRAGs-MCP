@@ -347,12 +347,14 @@ describe("extractFromGoFile — functionReturnTypes (file-level)", () => {
     expect(r.functionReturnTypes?.run).toBeUndefined();
   });
 
-  it("records the bare type for a qualified return `func Pkg() pkg.Thing` → { Pkg: 'Thing' }", () => {
-    // pkg.Thing is an external type that won't be in the symbol table, so the
-    // resolver naturally drops it — but the walker still records the bare name.
+  it("records NOTHING for a qualified return `func Pkg() pkg.Thing` whose qualifier no import binds", () => {
+    // A qualified result keeps its package, spelled as the import path the
+    // qualifier binds (bd tea-rags-mcp-e6xx): the bare `Thing` would let ANY
+    // project type named `Thing` stand in for another package's. With no
+    // import naming `pkg` there is no package to record, so nothing is.
     const src = ["package gin", "func Pkg() pkg.Thing { return pkg.Thing{} }", ""].join("\n");
     const r = extractFromGoFile({ tree: parse(src), code: src, relPath: "gin.go", language: "go", chunks: [] });
-    expect(r.functionReturnTypes?.Pkg).toBe("Thing");
+    expect(r.functionReturnTypes?.Pkg).toBeUndefined();
   });
 });
 

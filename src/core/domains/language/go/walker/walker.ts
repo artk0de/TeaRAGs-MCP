@@ -32,6 +32,7 @@ import type {
 import { assignCallsToInnermostChunks } from "../../kernel/assign-calls-to-chunks.js";
 import { goImportBoundName } from "../import-binding.js";
 import { goLocalAt, type GoLocalChannels } from "../local-scope.js";
+import { goQualifiedTypeName } from "../type-name.js";
 
 export interface GoExtractInput {
   tree: MaterializedTree;
@@ -119,9 +120,10 @@ function readGoBuildConstraint(root: AstNode): string | undefined {
  * tree-sitter-go shapes of the `result` field:
  *   - `func f() Foo`        → `type_identifier` (read text)
  *   - `func f() *Foo`       → `pointer_type` (unwrap to inner type_identifier)
- *   - `func f() pkg.Foo`    → `qualified_type` (read its `name` field — bare
- *                             last segment; pkg-qualified externals naturally
- *                             miss the symbol table at resolve time)
+ *   - `func f() pkg.Foo`    → `qualified_type` → the import path `pkg` binds
+ *                             and the type (`../type-name.ts`), so the resolver
+ *                             can tell a project package from any other; a
+ *                             qualifier no import binds records nothing.
  *   - `func f() (A, B)`     → `parameter_list` (multi-return) → SKIP: we don't
  *                             guess which return value feeds the variable.
  *   - `func f()`            → no `result` field → SKIP.
@@ -132,16 +134,27 @@ function readGoBuildConstraint(root: AstNode): string | undefined {
  */
 function collectGoFunctionReturnTypes(root: AstNode, imports: readonly ImportRef[]): Record<string, string> {
   const out: Record<string, string> = {};
+  const qualifiers = goImportPathsByBoundName(imports);
   walk(root, (node) => {
     if (node.type !== "function_declaration" && node.type !== "method_declaration") return;
     const name = node.childForFieldName("name");
     const result = node.childForFieldName("result");
     if (!name || !result) return;
-    const typeName = readReturnTypeNode(result);
+    const typeName = readReturnTypeNode(result, qualifiers);
     if (typeName) out[name.text] = typeName;
   });
-  collectGoFuncValueVarReturnTypes(root, imports, out);
+  collectGoFuncValueVarReturnTypes(root, imports, qualifiers, out);
   return out;
+}
+
+/** The import path each qualifier the file's imports bind names (`http` → `net/http`, an alias → its path). */
+function goImportPathsByBoundName(imports: readonly ImportRef[]): ReadonlyMap<string, string> {
+  const paths = new Map<string, string>();
+  for (const imp of imports) {
+    const name = goImportBoundName(imp);
+    if (name && !paths.has(name)) paths.set(name, imp.importText);
+  }
+  return paths;
 }
 
 /** The standard library's lazy-singleton wrapper: `sync.OnceValue(f)` returns a func yielding what `f` returns. */
@@ -164,6 +177,7 @@ const GO_ONCE_VALUE_FUNC = "OnceValue";
 function collectGoFuncValueVarReturnTypes(
   root: AstNode,
   imports: readonly ImportRef[],
+  qualifiers: ReadonlyMap<string, string>,
   out: Record<string, string>,
 ): void {
   const onceValueQualifier = imports.find((imp) => imp.importText === GO_ONCE_VALUE_IMPORT_PATH);
@@ -176,19 +190,23 @@ function collectGoFuncValueVarReturnTypes(
     for (const spec of specs) {
       const names = spec.children.filter((c) => c.type === "identifier");
       if (names.length !== 1 || out[names[0].text] !== undefined) continue;
-      const typeName = readFuncValueVarResultType(spec, syncName);
+      const typeName = readFuncValueVarResultType(spec, syncName, qualifiers);
       if (typeName) out[names[0].text] = typeName;
     }
   }
 }
 
-function readFuncValueVarResultType(spec: AstNode, syncName: string | undefined): string | null {
+function readFuncValueVarResultType(
+  spec: AstNode,
+  syncName: string | undefined,
+  qualifiers: ReadonlyMap<string, string>,
+): string | null {
   const declared = spec.childForFieldName("type");
-  if (declared) return declared.type === "function_type" ? readFuncResultType(declared) : null;
+  if (declared) return declared.type === "function_type" ? readFuncResultType(declared, qualifiers) : null;
   const values = spec.childForFieldName("value")?.namedChildren ?? [];
   if (values.length !== 1) return null;
   const [value] = values;
-  if (value.type === "func_literal") return readFuncResultType(value);
+  if (value.type === "func_literal") return readFuncResultType(value, qualifiers);
   if (value.type !== "call_expression" || syncName === undefined) return null;
   const fn = value.childForFieldName("function");
   if (fn?.type !== "selector_expression") return null;
@@ -199,33 +217,41 @@ function readFuncValueVarResultType(spec: AstNode, syncName: string | undefined)
     return null;
   }
   const args = value.childForFieldName("arguments")?.namedChildren ?? [];
-  return args.length === 1 && args[0].type === "func_literal" ? readFuncResultType(args[0]) : null;
+  return args.length === 1 && args[0].type === "func_literal" ? readFuncResultType(args[0], qualifiers) : null;
 }
 
 /** The single nominal result type of a `function_type` / `func_literal`, else null. */
-function readFuncResultType(fn: AstNode): string | null {
+function readFuncResultType(fn: AstNode, qualifiers: ReadonlyMap<string, string>): string | null {
   const result = fn.childForFieldName("result");
-  return result ? readReturnTypeNode(result) : null;
+  return result ? readReturnTypeNode(result, qualifiers) : null;
 }
 
 /**
- * Read the bare type name from a function/method `result` field node. Returns
- * null for multi-return (`parameter_list`) and any non-named-type shape — the
- * caller treats null as "not statically bindable". Multi-return is the key
- * SKIP: `func New() (*Engine, error)` must not bind, because we can't tell
- * which return value the variable receives.
+ * Read the recorded type name from a function/method `result` field node:
+ * bare for a type of the declaring package, the import path and the type for
+ * a package-qualified one (`qualifiers` maps each name the file's imports
+ * bind to its path). Returns null for multi-return (`parameter_list`), any
+ * non-named-type shape, and a qualifier no import binds — the caller treats
+ * null as "not statically bindable". Multi-return is the key SKIP:
+ * `func New() (*Engine, error)` must not bind, because we can't tell which
+ * return value the variable receives.
  */
-function readReturnTypeNode(result: AstNode): string | null {
+function readReturnTypeNode(result: AstNode, qualifiers: ReadonlyMap<string, string>): string | null {
   if (result.type === "type_identifier") return result.text;
   if (result.type === "pointer_type") {
-    // `*Foo` → `Foo`; `*pkg.Foo` → `Foo`, exactly as the bare `pkg.Foo` reads
-    // (bd tea-rags-mcp-e6xx — gin's `func() *gin.Engine` fell through).
+    // `*Foo` → `Foo`; `*pkg.Foo` reads as `pkg.Foo` does (bd tea-rags-mcp-e6xx
+    // — gin's `func() *gin.Engine` fell through).
     const inner = result.children.find((c) => c.type === "type_identifier" || c.type === "qualified_type");
-    return inner ? readReturnTypeNode(inner) : null;
+    return inner ? readReturnTypeNode(inner, qualifiers) : null;
   }
   if (result.type === "qualified_type") {
+    // The package KEPT (bd tea-rags-mcp-e6xx): folded to the bare `Client`, a
+    // `*http.Client` result typed its callers as the project's own `Client`.
     const name = result.childForFieldName("name");
-    return name?.type === "type_identifier" ? name.text : null;
+    const importPath = qualifiers.get(result.childForFieldName("package")?.text ?? "");
+    return name?.type === "type_identifier" && importPath !== undefined
+      ? goQualifiedTypeName(importPath, name.text)
+      : null;
   }
   // `parameter_list` (multi-return), `interface_type`, `map_type`,
   // `slice_type`, `func_type`, generics with no single base — not bindable.
@@ -827,7 +853,8 @@ function goNamedResultList(fn: AstNode): AstNode | null {
  *   - `pkg.New()`  → `function` field is a `selector_expression` whose
  *                    operand is a plain `identifier` (package qualifier) →
  *                    "pkg.New"; the resolver keys `functionReturnTypes` by the
- *                    bare last segment.
+ *                    bare last segment, once an imported `pkg` is known to be
+ *                    a project package declaring `New` (`goCallResultType`).
  * Returns null for chained calls (`New().Configure()` — selector operand is
  * itself a `call_expression`) and any other shape; the var↔return pairing is
  * only sound when the RHS is a direct call to a named function.

@@ -10,9 +10,12 @@ import { goCallResultType, resolveByLocalType, type ResolverConfig } from "./sha
  * binding carries the called function and `functionReturnTypes` carries that
  * function's DECLARED return type. Bind the receiver to that type ONLY when
  * the return type is a single concrete struct/type symbol that EXISTS in the
- * table — interfaces, builtins (`string`, `error`), and external `pkg.Type`s
- * have no type symbol and SKIP (CONTINUE), falling through to the import /
- * drop path. This is SAFE: declared return types are static, not guesses.
+ * table — builtins (`string`, `error`) have no type symbol, and a
+ * package-qualified type (`*http.Client`) or a qualified callee
+ * (`httptest.NewServer`) counts only from a PROJECT package
+ * (`goCallResultType`, bd tea-rags-mcp-e6xx); anything else SKIPs (CONTINUE),
+ * falling through to the import / drop path. This is SAFE: declared return
+ * types are static, not guesses.
  *
  * The call binding is the one `goLocalAt` answers with — in scope only after
  * its declaring statement and within its block (bd tea-rags-mcp-e6xx), and
@@ -30,7 +33,7 @@ export class GoReturnTypeBindingSymbolResolutionStrategy implements SymbolResolu
     if (!call.receiver) return CONTINUE;
     const local = goLocalAt(ctx, call.receiver, call.startLine);
     if (local?.kind !== "call") return CONTINUE;
-    const returnType = goCallResultType(local.callee, ctx);
+    const returnType = goCallResultType(local.callee, this.cfg, ctx);
     if (!returnType) return CONTINUE;
     const target = resolveByLocalType(this.cfg, returnType, call.member, ctx);
     return target ? resolved(target) : DROP;
