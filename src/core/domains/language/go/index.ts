@@ -90,7 +90,7 @@ export class GoLanguage implements LanguageProvider {
   readonly walker: LanguageWalker = composeExtractionWalker({
     walk: (input) => extractFromGoFile(input),
     nameOf: (node) => goNameOf(node),
-    // Empty today — see ./walker/passes.ts for why that is the design, not a gap.
+    // The struct-field facet; ./walker/passes.ts says what a new facet must be.
     passes: GO_EXTRACTION_PASSES,
   });
   readonly resolver: LanguageSymbolResolver;

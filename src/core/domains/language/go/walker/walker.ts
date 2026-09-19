@@ -418,7 +418,8 @@ function walk(node: AstNode, visit: (n: AstNode) => void): void {
  *      is a `type_identifier` (e.g. value receivers / value params) are
  *      ALSO captured because Go method dispatch on a value receiver
  *      resolves the same way — `var s Service; s.Open()` should resolve
- *      to `Service#Open`.
+ *      to `Service#Open`. Named results (`func f() (e *Engine)`) bind the
+ *      same way: they are locals of the body (`goNamedResultList`).
  *   3. Local `var x Type` declarations (`var_declaration` → `var_spec`
  *      with a `type` field) — `func Default() { var engine Engine }` →
  *      `{ engine: "Engine" }`. bd tea-rags-mcp-6g9c.
@@ -492,9 +493,12 @@ function collectGoLocalBindingsForChunk(
     }
   }
 
-  // Parameter list.
+  // Parameter list, then the named results (`func f() (render io.Writer)`),
+  // which are locals of the body exactly as parameters are.
   const params = (target as AstNode).childForFieldName("parameters");
   if (params) bindParameterList(params, sink);
+  const namedResults = goNamedResultList(target);
+  if (namedResults) bindParameterList(namedResults, sink);
 
   // Function-literal parameters whose type binds nothing, settled AFTER the
   // walk: whether one must shadow depends on bindings the walk has not reached
@@ -766,7 +770,8 @@ interface UntypedLiteralParam {
 }
 
 /**
- * Bind a `func_literal`'s parameters for the literal's own lines (bd
+ * Bind a `func_literal`'s parameters — and its named results, locals of the
+ * literal's body just the same — for the literal's own lines (bd
  * tea-rags-mcp-e6xx) — gin's middlewares are `return func(c *Context) { ... }`,
  * and every call on that `c` went unresolved without it.
  *
@@ -787,19 +792,32 @@ function bindFuncLiteralParams(
   sink: GoBindingSink,
   untypedLiteralParams: UntypedLiteralParam[],
 ): void {
-  const params = literal.childForFieldName("parameters");
-  if (!params) return;
   const scopeEndLine = literal.endPosition.row + 1;
-  for (const param of params.children) {
-    if (param.type !== "parameter_declaration" && param.type !== "variadic_parameter_declaration") continue;
-    const line = param.startPosition.row + 1;
-    const type = param.type === "parameter_declaration" ? readParamBareType(param) : null;
-    for (const ident of readParamNames(param)) {
-      const name = ident.text;
-      if (type) (sink.types[name] ??= []).push({ line, type, scopeEndLine });
-      else untypedLiteralParams.push({ name, shadow: { line, type: "", scopeEndLine } });
+  for (const params of [literal.childForFieldName("parameters"), goNamedResultList(literal)]) {
+    for (const param of params?.children ?? []) {
+      if (param.type !== "parameter_declaration" && param.type !== "variadic_parameter_declaration") continue;
+      const line = param.startPosition.row + 1;
+      const type = param.type === "parameter_declaration" ? readParamBareType(param) : null;
+      for (const ident of readParamNames(param)) {
+        const name = ident.text;
+        if (type) (sink.types[name] ??= []).push({ line, type, scopeEndLine });
+        else untypedLiteralParams.push({ name, shadow: { line, type: "", scopeEndLine } });
+      }
     }
   }
+}
+
+/**
+ * The `result` field of a function, method or function literal when it is a
+ * parameter list (`(render io.Writer)`, `(n int, err error)`), else `null` — a
+ * single result type (`func f() io.Writer`) names no local. A NAMED result is
+ * a local of the body, declared like a parameter, so it shadows an import or a
+ * package-level function of its name the same way (bd tea-rags-mcp-e6xx); an
+ * unnamed list (`(A, B)`) holds no names and binds nothing.
+ */
+function goNamedResultList(fn: AstNode): AstNode | null {
+  const result = fn.childForFieldName("result");
+  return result?.type === "parameter_list" ? result : null;
 }
 
 /**
