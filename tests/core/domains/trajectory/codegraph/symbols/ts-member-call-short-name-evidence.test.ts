@@ -237,3 +237,89 @@ describe("TS member calls with the checker OFF take import evidence only (bd tea
     expect(await targetsOf("box.fooHelperFn()")).toEqual([]);
   });
 });
+
+/**
+ * The REAL interface-typed parameter (bd tea-rags-mcp-2qp6, re-validator probe
+ * C14). A TypeScript `interface` never enters the symbol table — `tsNameOf`
+ * does not name `interface_declaration` — so the walker's `h: Handler2`
+ * binding is not the evidence the short-name passes' abstract-class fixtures
+ * model. What answers it is the CHA cone, which runs before the chain: the
+ * walker-bound interface is the base type, the run hierarchy's `implements`
+ * edges are the cone, and every implementer gets an edge — including the one
+ * the caller never imports.
+ */
+describe("an interface-typed parameter dispatches through the cone to every implementer (bd tea-rags-mcp-2qp6)", () => {
+  const INTERFACE_CORPUS: Readonly<Record<string, string>> = {
+    "web/res/contract.ts": ["export interface Handler2 {", "  handleIt(x: number): number;", "}", ""].join("\n"),
+    "web/res/impl-a.ts": [
+      'import type { Handler2 } from "./contract";',
+      "export class ImplA implements Handler2 {",
+      "  handleIt(x: number): number {",
+      "    return x;",
+      "  }",
+      "}",
+      "",
+    ].join("\n"),
+    "web/res/impl-b.ts": [
+      'import type { Handler2 } from "./contract";',
+      "export class ImplB implements Handler2 {",
+      "  handleIt(x: number): number {",
+      "    return x + 1;",
+      "  }",
+      "}",
+      "",
+    ].join("\n"),
+    "web/res/caller.ts": [
+      'import type { Handler2 } from "./contract";',
+      'import { ImplA } from "./impl-a";',
+      "export function cFourteen(h: Handler2): number {",
+      "  void ImplA;",
+      "  return h.handleIt(1);",
+      "}",
+      "",
+    ].join("\n"),
+  };
+
+  let tmp: string;
+  let root: string;
+  let client: DuckDbGraphClient;
+
+  beforeEach(async () => {
+    tmp = mkdtempSync(join(tmpdir(), "cg-ts-interface-param-db-"));
+    root = mkdtempSync(join(tmpdir(), "cg-ts-interface-param-repo-"));
+    for (const [relPath, source] of Object.entries(INTERFACE_CORPUS)) {
+      mkdirSync(dirname(join(root, relPath)), { recursive: true });
+      writeFileSync(join(root, relPath), source);
+    }
+    client = new DuckDbGraphClient({ path: join(tmp, "g.duckdb") });
+    await client.init();
+    await runMigrations(client, MIG_DIR);
+    const provider = new CodegraphEnrichmentProvider({
+      graphDb: client,
+      symbolTable: new InMemoryGlobalSymbolTable(),
+      ...buildTestCodegraphDeps(),
+      composer: new DefaultSymbolIdComposer(),
+      collectSymbols,
+    });
+    const batch = await provider.extractFileBatch(root, Object.keys(INTERFACE_CORPUS).sort());
+    await provider.absorbExtractedFiles(root, batch.extractions);
+    await provider.finalizeSignals(root);
+  });
+
+  afterEach(async () => {
+    await client.close();
+    rmSync(tmp, { recursive: true, force: true });
+    rmSync(root, { recursive: true, force: true });
+  });
+
+  it("emits a cone edge to each implementer, not just the imported one", async () => {
+    const rows = await client.queryAll<MethodEdgeRow & { edge_kind: string; confidence: number }>(
+      "SELECT source_symbol_id, call_expression, target_rel_path, target_symbol_id, edge_kind, confidence FROM cg_symbols_edges_method",
+    );
+    const edges = rows
+      .filter((edge) => edge.call_expression === "h.handleIt(1)")
+      .map((edge) => `${edge.target_rel_path}::${edge.target_symbol_id ?? ""} ${edge.edge_kind}`)
+      .sort();
+    expect(edges).toEqual(["web/res/impl-a.ts::ImplA#handleIt cone", "web/res/impl-b.ts::ImplB#handleIt cone"]);
+  });
+});

@@ -240,16 +240,18 @@ describe("TSImportNarrowedFallbackSymbolResolutionStrategy — builtin-receiver 
     expect(outcome.kind).toBe("continue");
   });
 
-  it("STILL narrows an ordinary interface-dispatch receiver to the imported implementer (impl.handle(req))", () => {
+  it("STILL narrows an abstract-base-typed receiver to the imported implementer (impl.handle(req))", () => {
     const call: CallRef = { callText: "impl.handle(req)", receiver: "impl", member: "handle", startLine: 9 };
     const symbolTable = tableWith(
       ["src/impl-a.ts", [sym("ImplA#handle", "handle", "src/impl-a.ts", ["ImplA"])]],
       ["src/impl-b.ts", [sym("ImplB#handle", "handle", "src/impl-b.ts", ["ImplB"])]],
       ["src/handler.ts", [sym("Handler", "Handler", "src/handler.ts", [])]],
     );
-    // `impl: Handler` — the receiver typed by a project interface that this pass
-    // recovers. The binding is what makes it one: an UNTYPED receiver is no
-    // longer narrowed by name (bd tea-rags-mcp-t5cji).
+    // `impl: Handler` — the receiver typed by a project ABSTRACT CLASS that this
+    // pass recovers. The binding is what makes it one: an UNTYPED receiver is no
+    // longer narrowed by name (bd tea-rags-mcp-t5cji). A class, because only a
+    // type the table holds is the walker's evidence; an `interface` never enters
+    // the table, and an interface-typed parameter dispatches through the cone.
     const outcome = strat.attempt(
       call,
       ctx({
