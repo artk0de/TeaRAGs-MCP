@@ -41,12 +41,24 @@ const GO_PACKAGE_CLAUSE = /^package[ \t]+([\p{L}_][\p{L}\p{Nd}_]*)/mu;
 const GO_COMMAND_PACKAGE = "main";
 
 /**
- * The name `dir`'s package declares: the `package` clause of its first non-test
- * `.go` file (by name) that declares one, `undefined` when none does. One file
- * answers for the package — the compiler rejects a directory whose files
- * disagree — except for the two that are not the package at all: a `_test.go`
- * file may be the external `<name>_test` package, and a `package main` file is
- * a `//go:build ignore` generator.
+ * A build constraint line — `//go:build <expr>`, or the legacy `// +build
+ * <tags>` — which Go reads only in a file's header, above its package clause.
+ */
+const GO_BUILD_CONSTRAINT_LINE = /^\/\/(?:go:build|[ \t]*\+build)[ \t]/m;
+
+/**
+ * The name `dir`'s package declares: the one `package` clause its non-test
+ * `.go` files agree on, `undefined` when none declares one or they disagree.
+ * The compiler rejects a directory whose BUILT files disagree, but not every
+ * file is built: a `_test.go` file may be the external `<name>_test` package,
+ * a `package main` file is a command, and a file under a build constraint —
+ * `//go:build ignore` on a generator or a tools file — may declare anything
+ * (bd tea-rags-mcp-e6xx, F3-4: `lib/a_tools.go`'s `package tools`, sorted
+ * ahead of `lib/lib.go`, named the package `tools`). So the files without a
+ * constraint answer when there are any, the constrained ones only when every
+ * file is (a package of `_linux` / `_windows` variants); and when the files
+ * that answer still disagree, the clause is left unread — the importing reader
+ * falls back to the name the path suggests rather than trust one of them.
  */
 function readGoPackageName(dir: string): string | undefined {
   let files: string[];
@@ -57,6 +69,8 @@ function readGoPackageName(dir: string): string | undefined {
   } catch {
     return undefined;
   }
+  const unconstrained = new Set<string>();
+  const constrained = new Set<string>();
   for (const file of files) {
     let content: string;
     try {
@@ -64,10 +78,15 @@ function readGoPackageName(dir: string): string | undefined {
     } catch {
       continue;
     }
-    const name = GO_PACKAGE_CLAUSE.exec(content)?.[1];
-    if (name !== undefined && name !== GO_COMMAND_PACKAGE) return name;
+    const clause = GO_PACKAGE_CLAUSE.exec(content);
+    const name = clause?.[1];
+    if (clause === null || name === undefined || name === GO_COMMAND_PACKAGE) continue;
+    const header = content.slice(0, clause.index);
+    (GO_BUILD_CONSTRAINT_LINE.test(header) ? constrained : unconstrained).add(name);
   }
-  return undefined;
+  const answering = unconstrained.size > 0 ? unconstrained : constrained;
+  const [agreed] = answering;
+  return answering.size === 1 ? agreed : undefined;
 }
 
 export class GoModuleMap {

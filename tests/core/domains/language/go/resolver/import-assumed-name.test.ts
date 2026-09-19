@@ -217,6 +217,73 @@ describe("a PROJECT package whose package clause is not the assumed name", () =>
 });
 
 /**
+ * F3-4 (the re-validator's corpus `f3c`) — a build-ignored file in a package
+ * directory may declare another package (`lib/a_tools.go`, `//go:build
+ * ignore` + `package tools`). Read as the package's clause, it bound the
+ * import to `tools`, and the clause read being certain, the assumed `lib` no
+ * longer applied.
+ */
+describe("a PROJECT package beside a build-ignored file of another package (f3c)", () => {
+  const corpus = {
+    "go.mod": "module example.com/proj\n\ngo 1.22\n",
+    "app/app.go": [
+      "package app",
+      "",
+      "import (",
+      '\t"example.com/proj/internal/go-foo-bar"',
+      '\t"example.com/proj/lib"',
+      ")",
+      "",
+      "// Z1: lib's first file (by name) is a build-ignored `package tools`.",
+      "func z1() {",
+      "\te := lib.New()",
+      "\te.Run()",
+      "}",
+      "",
+      "// Z2: directory go-foo-bar declares `package foobar` (assumed name would be `foo`).",
+      "func z2() {",
+      "\tt := foobar.Make()",
+      "\tt.Go()",
+      "}",
+      "",
+    ].join("\n"),
+    "internal/go-foo-bar/x.go": [
+      "package foobar",
+      "",
+      "type Thing struct{}",
+      "",
+      "func Make() *Thing { return &Thing{} }",
+      "",
+      "func (t *Thing) Go() {}",
+      "",
+    ].join("\n"),
+    "lib/a_tools.go": ["//go:build ignore", "", "package tools", "", "func Gen() {}", ""].join("\n"),
+    "lib/lib.go": [
+      "package lib",
+      "",
+      "type Engine struct{}",
+      "",
+      "func New() *Engine { return &Engine{} }",
+      "",
+      "func (e *Engine) Run() {}",
+      "",
+    ].join("\n"),
+  };
+
+  it("binds the qualifier the package's buildable files declare", () => {
+    const sites = resolveGoFiles(corpus);
+    expect(sites.get("app/app.go:10 lib.New")).toBe("New @ lib/lib.go");
+    expect(sites.get("app/app.go:11 e.Run")).toBe("Engine#Run @ lib/lib.go");
+  });
+
+  it("control: a clause that differs from the assumed name still binds", () => {
+    const sites = resolveGoFiles(corpus);
+    expect(sites.get("app/app.go:16 foobar.Make")).toBe("Make @ internal/go-foo-bar/x.go");
+    expect(sites.get("app/app.go:17 t.Go")).toBe("Thing#Go @ internal/go-foo-bar/x.go");
+  });
+});
+
+/**
  * A repository with NO go.mod (g2e): an import path is read as a repository
  * directory, which a GOPATH-era project's host-prefixed self-import never
  * names. Precision over recall — cross-package typing needs a module root, so
