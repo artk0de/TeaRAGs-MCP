@@ -33,6 +33,8 @@ function makeDeps(overrides: Partial<IndexingOpsDeps> = {}): IndexingOpsDeps {
     qdrant: {
       collectionExists: vi.fn().mockResolvedValue(true),
       aliases: { listAliases: vi.fn().mockResolvedValue([]) },
+      // The marker read a recompute makes for a pending worktree seed: none here.
+      getPoint: vi.fn().mockResolvedValue(null),
     } as never,
     embeddings: {
       embed: vi.fn().mockResolvedValue([0]),
@@ -205,6 +207,7 @@ describe("IndexingOps — forceEnrichments", () => {
         aliases: {
           listAliases: vi.fn().mockResolvedValue([{ aliasName: alias, collectionName: `${alias}_v62` }]),
         },
+        getPoint: vi.fn().mockResolvedValue(null),
       } as never,
     });
     const ops = new IndexingOps(deps);

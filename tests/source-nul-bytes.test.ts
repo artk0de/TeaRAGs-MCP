@@ -1,5 +1,5 @@
 /**
- * Tracked TypeScript never carries a raw NUL byte (bd tea-rags-mcp-k8gac).
+ * No tracked text file carries a raw NUL byte (bd tea-rags-mcp-k8gac).
  *
  * A composite-key separator written as the literal 0x00 character instead of
  * the escape `"\0"` compiles to the same string, so no test notices. What
@@ -17,51 +17,50 @@
  * always mechanical. `"\0"` is safe only when the next character is not a
  * digit (`"\01"` is a legacy octal escape, and a syntax error in a template
  * literal); spell it `"\x00"` there.
+ *
+ * Every tracked text file, not only TypeScript: the same incident put the byte
+ * into two plan documents, and a `.md`, `.mjs`, `.sh` or `.json` file turns
+ * binary to git just the same. "Text" is every path `isNulGuardedPath` does not
+ * name as a binary format (`scripts/lib/nul-bytes.ts` says why git's own
+ * classification cannot be used). This scan runs in the full suite; the
+ * per-commit check is `scripts/check-staged-nul-bytes.ts` in `.husky/pre-commit`,
+ * because `vitest related` never selects this file for a commit that does not
+ * stage it.
  */
 import { execFileSync } from "node:child_process";
-import { existsSync, readFileSync } from "node:fs";
+import { lstatSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 
 import { describe, expect, it } from "vitest";
 
+import {
+  describeNulByteOffense,
+  findRawNulBytes,
+  isNulGuardedPath,
+  NUL_BYTE_FIX_HINT,
+} from "../scripts/lib/nul-bytes.js";
+
 const ROOT = join(import.meta.dirname, "..");
 
-/** Trees whose tracked `*.ts` files the guard scans. */
-const SCANNED_ROOTS = ["src/", "tests/", "scripts/"] as const;
-
 const NUL = 0x00;
-const LINE_FEED = 0x0a;
 
-interface NulByteOffense {
-  /** 1-based line holding the byte. */
-  line: number;
-  /** 1-based byte column of the byte within that line. */
-  column: number;
-}
-
-/** Every raw NUL byte in `content`, in file order. */
-function findRawNulBytes(content: Uint8Array): NulByteOffense[] {
-  const offenses: NulByteOffense[] = [];
-  let line = 1;
-  let lineStart = 0;
-  for (let offset = 0; offset < content.length; offset++) {
-    const byte = content[offset];
-    if (byte === NUL) offenses.push({ line, column: offset - lineStart + 1 });
-    if (byte === LINE_FEED) {
-      line++;
-      lineStart = offset + 1;
-    }
-  }
-  return offenses;
-}
-
-/** Tracked `*.ts` files under {@link SCANNED_ROOTS}, repo-relative with POSIX separators. */
-function trackedTypeScriptFiles(): string[] {
-  const listing = execFileSync("git", ["ls-files", "-z", "--", "*.ts"], { cwd: ROOT, encoding: "utf8" });
+/**
+ * Tracked text files present on disk, repo-relative with POSIX separators. A
+ * symlink is skipped: git records its target path, and reading it would follow
+ * the link to an untracked file (`bin/tea-rags` → the build output).
+ */
+function trackedTextFiles(): string[] {
+  const listing = execFileSync("git", ["ls-files", "-z"], { cwd: ROOT, encoding: "utf8" });
   return listing
     .split(String.fromCharCode(NUL))
-    .filter((path) => SCANNED_ROOTS.some((root) => path.startsWith(root)))
-    .filter((path) => existsSync(join(ROOT, path)))
+    .filter((path) => path !== "" && isNulGuardedPath(path))
+    .filter((path) => {
+      try {
+        return lstatSync(join(ROOT, path)).isFile();
+      } catch {
+        return false; // deleted in the working tree
+      }
+    })
     .sort();
 }
 
@@ -91,22 +90,30 @@ describe("findRawNulBytes", () => {
   });
 });
 
-describe("tracked TypeScript sources", () => {
-  it("finds the files to scan", () => {
-    expect(trackedTypeScriptFiles().length).toBeGreaterThan(0);
+describe("tracked text files", () => {
+  it("finds the files to scan — every text kind, no binary one", () => {
+    const files = trackedTextFiles();
+    for (const path of [
+      "src/core/domains/ingest/errors.ts",
+      ".husky/pre-commit",
+      ".claude-plugin/tea-rags/rules/search-cascade.md",
+      "package.json",
+      ".claude-plugin/tea-rags/scripts/inject-rules.sh",
+    ]) {
+      expect(files).toContain(path);
+    }
+    expect(files.some((path) => path.startsWith("docs/superpowers/plans/"))).toBe(true);
+    expect(files.some((path) => path.endsWith(".mjs"))).toBe(true);
+    expect(files).not.toContain("public/logo.png");
+    expect(files).not.toContain("bin/tea-rags");
   });
 
   it("carry no raw NUL byte — write the separator as an escape", () => {
-    const offenses = trackedTypeScriptFiles().flatMap((path) =>
-      findRawNulBytes(readFileSync(join(ROOT, path))).map(
-        (offense) => `${path} line ${offense.line}, byte ${offense.column}`,
-      ),
+    const offenses = trackedTextFiles().flatMap((path) =>
+      findRawNulBytes(readFileSync(join(ROOT, path))).map((offense) => describeNulByteOffense({ path, ...offense })),
     );
     // Joined, not compared as an array: vitest truncates a long array diff to its
     // length, and the whole point of the failure is the list of places to fix.
-    expect(
-      offenses.join("\n"),
-      `${offenses.length} raw NUL byte(s); git treats each file as binary — use "\\0" (or "\\x00" before a digit)`,
-    ).toBe("");
+    expect(offenses.join("\n"), `${offenses.length} raw NUL byte(s); ${NUL_BYTE_FIX_HINT}`).toBe("");
   });
 });

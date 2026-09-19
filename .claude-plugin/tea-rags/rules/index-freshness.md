@@ -8,6 +8,7 @@ conditions below (signals from **prime** digest layer); reindex when one fires.
 | ------------------------------------------------------------------------------------------ | --------------------------------------------------------------- | -------------------------- |
 | Prime banner `⚠ Index is stale (last updated Nd ago)`                                      | `index_codebase` (incremental)                                  | no — reindex silently      |
 | Files created/modified this session (`Write`/`Edit`, incl. by a subagent), not yet indexed | `index_codebase` (incremental)                                  | no — reindex silently      |
+| Uncommitted edits the index has not seen (`git status` lists paths), before searching them | `index_codebase` (incremental)                                  | no — reindex silently      |
 | Prime `## Drift` whose `Run:` line is the plain incremental (no flag)                      | `tea-rags index-codebase --project <alias>` — exactly that line | no — reindex silently      |
 | Prime `## Drift` whose `Run:` line carries `--force-enrichments` or `--force`              | the `Run:` command the section names                            | **YES — explicit consent** |
 
@@ -65,7 +66,10 @@ backstop dropping its footprint.
 You (or subagent) ran `Write`/`Edit` this turn and NEXT step searches
 _different_ question → index does not yet see edits. Run `index_codebase`
 (incremental) first. Skip when: zero files edited, continuing same
-implementation task without re-searching, or next step uses ripgrep only.
+implementation task without re-searching, or next step uses ripgrep only. Edits
+made outside this session count the same: `git status --porcelain -uall` listing
+paths you are about to search fires the uncommitted-edits row. Prime staleness
+is time-based and never sees them.
 
 In worktree plan, explicit per-task REINDEX (above) keeps clone fresh between
 tasks. Code edited but NOT yet committed → run `index_codebase` (incremental)

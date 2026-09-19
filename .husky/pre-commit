@@ -27,6 +27,17 @@ if ! npx lint-staged 2>&1; then
   exit 1
 fi
 
+# ─── Raw NUL bytes in staged text files (bd tea-rags-mcp-k8gac) ───────────────
+# Every commit, after lint-staged has rewritten what it formats: reads the staged
+# blobs, not the working tree. Not left to the test run below — `vitest related`
+# selects tests by import, and tests/source-nul-bytes.test.ts imports nothing a
+# commit stages, so it ran only when it was itself staged.
+if ! npx tsx scripts/check-staged-nul-bytes.ts; then
+  echo ""
+  echo "❌ Raw NUL byte(s) in staged files — replace each with an escape, re-stage, retry."
+  exit 1
+fi
+
 # Get list of staged files
 STAGED_FILES=$(git diff --cached --name-only --diff-filter=ACMR)
 

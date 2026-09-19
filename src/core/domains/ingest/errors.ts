@@ -27,7 +27,8 @@ export type IngestErrorCode =
   | "INGEST_PAYLOAD_TOO_LARGE"
   | "INGEST_FILE_PARSE_FAILED"
   | "INGEST_FILE_READ_FAILED"
-  | "INGEST_WORKER_TIMEOUT";
+  | "INGEST_WORKER_TIMEOUT"
+  | "INGEST_SEED_MARKER_UNREADABLE";
 
 /**
  * Phase of the indexing pipeline in which a file failed. Carried by
@@ -305,6 +306,26 @@ export class WorkerTimeoutError extends IngestError {
       message: `${poolName} worker did not respond for "${requestLabel}" within ${timeoutMs}ms`,
       hint: "The hung worker was recycled and the pool recovered capacity. A genuinely large file may need a higher CHUNKER_WORKER_TIMEOUT_MS; otherwise this is a worker crash/deadlock worth reporting.",
       httpStatus: 504,
+    });
+  }
+}
+
+/**
+ * The indexing marker could not be read, so whether a worktree seed is still
+ * pending is unknown (bd tea-rags-mcp-k8gac). Thrown only where "unknown" and
+ * "none" lead to different writes: a `--force-enrichments` recompute about to
+ * stamp newer edge axes. Read as "none", the seed's full-axis stamp stays on
+ * the marker and the next incremental settles it on top of the recompute's,
+ * rolling those axes back. Nothing has been stamped when it is thrown.
+ */
+export class WorktreeSeedMarkerUnreadableError extends IngestError {
+  constructor(collectionName: string, cause?: Error) {
+    super({
+      code: "INGEST_SEED_MARKER_UNREADABLE",
+      message: `Could not read the indexing marker of "${collectionName}" to check for a pending worktree seed`,
+      hint: "Nothing was stamped or rebuilt. Retry the run once Qdrant answers; the recompute re-reads the marker before it rebuilds anything.",
+      httpStatus: 503,
+      cause,
     });
   }
 }

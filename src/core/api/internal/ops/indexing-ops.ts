@@ -42,6 +42,7 @@ import {
   clearWorktreeSeedPending,
   markWorktreeSeedPending,
   readWorktreeSeedPending,
+  readWorktreeSeedPendingOrThrow,
 } from "../../../domains/ingest/pipeline/indexing-marker.js";
 import { pipelineLog } from "../../../domains/ingest/pipeline/infra/debug-logger.js";
 import { StatusModule } from "../../../domains/ingest/pipeline/status-module.js";
@@ -918,9 +919,17 @@ export class IndexingOps {
    *
    * The marker is rewritten with the stamp removed before anything newer is
    * stamped, so a death at any later point leaves only the git debt behind.
+   *
+   * A failed marker read THROWS here (`WorktreeSeedMarkerUnreadableError`),
+   * where the resume defers: read as "no seed", the recompute would stamp its
+   * axes over a marker still carrying the full seed stamp — the rollback above,
+   * reached through a transient Qdrant error. Failing is the visible and safe
+   * answer: it lands before the rebuild and before any stamp, so the retry
+   * starts from the same state. Skipping only the codegraph stamp instead would
+   * report success while drift kept demanding the re-walk this run had done.
    */
   private async payPendingSeedStamp(collectionName: string): Promise<WorktreeSeedPending | undefined> {
-    const pending = await readWorktreeSeedPending(this.qdrant, collectionName);
+    const pending = await readWorktreeSeedPendingOrThrow(this.qdrant, collectionName);
     if (!pending) return undefined;
     if (Object.keys(pending.languageVersions).length === 0) return pending;
     this.stampWorktreeSeed(collectionName, pending);

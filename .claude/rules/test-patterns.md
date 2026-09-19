@@ -30,6 +30,11 @@ branches.
 - Setup file: `tests/vitest.setup.ts`
 - Env: `DEBUG=true`, `MAX_TOTAL_CHUNKS=1000`, `CHUNKER_POOL_SIZE=1`
 - Temp dir: `$TEA_RAGS_DATA_DIR` (auto-cleaned)
+- Raw NUL bytes (bd k8gac): `.husky/pre-commit` runs
+  `scripts/check-staged-nul-bytes.ts` over the STAGED blobs of every commit;
+  `tests/source-nul-bytes.test.ts` scans every tracked text file, but only in
+  the full suite — `vitest related` selects by import and never picks it. Build
+  a fixture NUL at runtime (`String.fromCharCode(0)`), never type one.
 
 ## Test helpers
 

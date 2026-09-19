@@ -25,6 +25,7 @@ import type {
 } from "../../../../../src/core/api/internal/ops/worktree-seed-ops.js";
 import { INDEXING_METADATA_ID } from "../../../../../src/core/contracts/constants.js";
 import type { LanguageCodeVersions } from "../../../../../src/core/contracts/types/language.js";
+import { WorktreeSeedMarkerUnreadableError } from "../../../../../src/core/domains/ingest/errors.js";
 import type { ChangeStats } from "../../../../../src/core/types.js";
 
 const TARGET = resolve("/repo/wt");
@@ -375,6 +376,83 @@ describe("IndexingOps — a --force-enrichments recompute over a pending seed", 
     expect(stores.registry.get("code_wt")).toEqual(SEED_STAMP);
     expect(next.deps.enrichment.recomputeEnrichments).toHaveBeenCalledWith("code_wt_v1", TARGET, ["git"]);
     expect(stores.markers.get("code_wt")).not.toHaveProperty("worktreeSeedPending");
+  });
+
+  /**
+   * The marker read fails once the sync leg is done — the read a pending seed is
+   * found by. Anything read before it (the claim's in-flight check) still works.
+   */
+  function failMarkerReadsAfterSync(stores: Stores): {
+    restore: () => void;
+    reindexChanges: () => Promise<ChangeStats>;
+  } {
+    const read = stores.qdrant.getPoint.getMockImplementation();
+    return {
+      reindexChanges: async () => {
+        stores.qdrant.getPoint.mockImplementation(async () => Promise.reject(new Error("qdrant timeout")));
+        return Promise.resolve(changeStats);
+      },
+      restore: () => {
+        if (read) stores.qdrant.getPoint.mockImplementation(read);
+      },
+    };
+  }
+
+  it("a codegraph recompute that cannot read the marker fails before it stamps anything", async () => {
+    const errors = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    const stores = sharedStores();
+    await killDuringSeededIncremental(stores);
+
+    // Read as "no seed", the recompute stamped its newer edge axes and left the
+    // full seed stamp pending — which the next incremental then settled on top,
+    // rolling walker 3 back to 2 so drift demanded the re-walk just done.
+    const flaky = failMarkerReadsAfterSync(stores);
+    const recompute = processOver(stores, {
+      languageCodeVersions: UPGRADED_BUILD,
+      reindexChanges: flaky.reindexChanges,
+    });
+    await expect(recompute.ops.run(TARGET, { forceEnrichments: ["codegraph"] })).rejects.toBeInstanceOf(
+      WorktreeSeedMarkerUnreadableError,
+    );
+    flaky.restore();
+
+    expect(recompute.deps.enrichment.recomputeEnrichments).not.toHaveBeenCalled();
+    expect(stores.stampLanguageVersions).not.toHaveBeenCalled();
+    expect(stores.markers.get("code_wt")?.worktreeSeedPending).toMatchObject({ languageVersions: SEED_STAMP });
+
+    // The retry reads the marker, pays the seed first, and nothing rolls it back.
+    const retry = processOver(stores, { languageCodeVersions: UPGRADED_BUILD });
+    await retry.ops.run(TARGET, { forceEnrichments: ["codegraph"] });
+    await retry.ops.whenEnrichmentComplete();
+    const next = processOver(stores, { languageCodeVersions: UPGRADED_BUILD });
+    await next.ops.run(TARGET);
+    await next.ops.whenEnrichmentComplete();
+
+    expect(stores.registry.get("code_wt")).toEqual(UPGRADED_STAMP);
+    expect(stores.markers.get("code_wt")).not.toHaveProperty("worktreeSeedPending");
+    errors.mockRestore();
+  });
+
+  it("an incremental that cannot read the marker still succeeds and leaves the seed to the next run", async () => {
+    const errors = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    const stores = sharedStores();
+    await killDuringSeededIncremental(stores);
+
+    const flaky = failMarkerReadsAfterSync(stores);
+    const incremental = processOver(stores, { reindexChanges: flaky.reindexChanges });
+    await incremental.ops.run(TARGET);
+    await incremental.ops.whenEnrichmentComplete();
+    flaky.restore();
+
+    expect(stores.stampLanguageVersions).not.toHaveBeenCalled();
+    expect(stores.markers.get("code_wt")?.worktreeSeedPending).toMatchObject({ languageVersions: SEED_STAMP });
+
+    const next = processOver(stores);
+    await next.ops.run(TARGET);
+    await next.ops.whenEnrichmentComplete();
+    expect(stores.registry.get("code_wt")).toEqual(SEED_STAMP);
+    expect(stores.markers.get("code_wt")).not.toHaveProperty("worktreeSeedPending");
+    errors.mockRestore();
   });
 
   it("a recompute over a collection with no pending seed stamps only its own axes", async () => {
