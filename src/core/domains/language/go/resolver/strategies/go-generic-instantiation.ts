@@ -8,8 +8,9 @@ import {
 import type { SymbolResolutionOutcome, SymbolResolutionStrategy } from "../../../../../contracts/types/language.js";
 import { goLocalAt } from "../../local-scope.js";
 import { preferGoDefaultBuild } from "../go-build-constraints.js";
+import { goPackageDirOf } from "../go-project-type.js";
 import { lookupGoSymbols } from "../go-symbol-lookup.js";
-import { goPackageDirOf, resolveImportedPackageMember, type ResolverConfig } from "./shared.js";
+import { resolveImportedPackageMember, type ResolverConfig } from "./shared.js";
 
 /**
  * `name[...]` or `qualifier.name[...]` — a (possibly package-qualified)

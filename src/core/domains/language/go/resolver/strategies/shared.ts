@@ -12,8 +12,6 @@
  * factored here so they live once.
  */
 
-import { posix } from "node:path";
-
 import {
   pickSingleCandidate,
   type AmbiguousResolveMode,
@@ -28,6 +26,7 @@ import { goLocalAt } from "../../local-scope.js";
 import { splitGoRecordedTypeName } from "../../type-name.js";
 import { preferGoDefaultBuild } from "../go-build-constraints.js";
 import type { GoModuleMap, GoModuleMapCache } from "../go-module-map.js";
+import { goPackageDirOf, type GoProjectType } from "../go-project-type.js";
 import { lookupGoSymbols, lookupGoSymbolsByShortName } from "../go-symbol-lookup.js";
 import { selectGoMember } from "../struct-member-selection.js";
 
@@ -53,23 +52,32 @@ export interface ResolverConfig {
  * `RouterGroup#GET` (bd tea-rags-mcp-e6xx). `selectGoMember` answers that with
  * Go's shallowest-depth rule; it runs only on an empty direct lookup, so a type
  * that declares the member itself resolves exactly as it did before.
+ *
+ * A type PLACED in its package (`type.packageDir`, G2-4) is looked up there
+ * alone, promotion included: `Widget#Paint` of another package never answers
+ * for this one's `Widget`, and a type alias of an external type — on which Go
+ * forbids declaring methods — selects no project member at all. A type the
+ * resolver could not place is looked up package-blind (`go-project-type.ts`).
  */
 export function resolveByLocalType(
   cfg: ResolverConfig,
-  typeName: string,
+  type: GoProjectType,
   member: string,
   ctx: CallContext,
 ): SymbolResolutionTarget | null {
+  const { typeName, packageDir } = type;
+  const inPackage = (def: SymbolDefinition): boolean =>
+    packageDir === undefined || goPackageDirOf(def.relPath) === packageDir;
   const instanceForm = cfg.composer.compose(typeName, member, { methodKind: "instance" });
   const staticForm = cfg.composer.compose(typeName, member, { methodKind: "static" });
-  const instanceHits = preferGoDefaultBuild(lookupGoSymbols(ctx, instanceForm), ctx);
+  const instanceHits = preferGoDefaultBuild(lookupGoSymbols(ctx, instanceForm).filter(inPackage), ctx);
   const instance = pickSingleCandidate(instanceHits, cfg.mode);
   if (instance) return { targetRelPath: instance.relPath, targetSymbolId: instance.symbolId };
-  const staticHits = preferGoDefaultBuild(lookupGoSymbols(ctx, staticForm), ctx);
+  const staticHits = preferGoDefaultBuild(lookupGoSymbols(ctx, staticForm).filter(inPackage), ctx);
   const staticHit = pickSingleCandidate(staticHits, cfg.mode);
   if (staticHit) return { targetRelPath: staticHit.relPath, targetSymbolId: staticHit.symbolId };
   if (instanceHits.length > 0 || staticHits.length > 0) return null;
-  const promoted = selectGoMember(typeName, member, ctx, cfg.composer);
+  const promoted = selectGoMember(type, member, ctx, cfg.composer);
   return promoted?.kind === "method" ? promoted.target : null;
 }
 
@@ -107,24 +115,28 @@ export function isKnownTypeSymbol(typeName: string, ctx: CallContext): boolean {
  *     path names a PROJECT package (module map, else GOPATH-shaped) whose
  *     directory declares that type. The standard library and every dependency
  *     name no project package, so a project namesake never stands in for them.
- * The bare name is what comes back: symbol ids carry no package, and every
- * lookup downstream composes from it.
+ * What comes back is the bare name — symbol ids carry no package, and every
+ * lookup downstream composes from it — PLACED in the package the check found
+ * it declared in (G2-4), so the member lookup stays there; the package-blind
+ * gate places nothing.
  */
 export function goProjectTypeName(
   recorded: string,
   cfg: ResolverConfig,
   ctx: CallContext,
   calleePackageDir: string | undefined,
-): string | undefined {
+): GoProjectType | undefined {
   const { importPath, typeName } = splitGoRecordedTypeName(recorded);
   if (importPath === undefined) {
-    if (calleePackageDir !== undefined && goPackageDeclaresType(typeName, calleePackageDir, ctx)) return typeName;
+    if (calleePackageDir !== undefined && goPackageDeclaresType(typeName, calleePackageDir, ctx)) {
+      return { typeName, packageDir: calleePackageDir };
+    }
     if (ctx.imports.some((imp) => imp.importedNames?.[0] === GO_DOT_IMPORT_NAME)) return undefined;
-    return isKnownTypeSymbol(typeName, ctx) ? typeName : undefined;
+    return isKnownTypeSymbol(typeName, ctx) ? { typeName } : undefined;
   }
   const packageDir = goImportPackageDir(importPath, cfg.moduleMaps?.forRoot(ctx.projectRoot));
   if (packageDir === undefined) return undefined;
-  return goPackageDeclaresType(typeName, packageDir, ctx) ? typeName : undefined;
+  return goPackageDeclaresType(typeName, packageDir, ctx) ? { typeName, packageDir } : undefined;
 }
 
 /** Whether the Go package in `packageDir` declares the type `typeName`. */
@@ -204,7 +216,7 @@ export function goCallResultType(
   cfg: ResolverConfig,
   ctx: CallContext,
   atLine: number,
-): string | undefined {
+): GoProjectType | undefined {
   const dot = callee.lastIndexOf(".");
   const name = dot === -1 ? callee : callee.slice(dot + 1);
   let calleePackageDir: string | undefined;
@@ -223,12 +235,6 @@ export function goCallResultType(
   }
   const returnType = ctx.functionReturnTypes?.[name];
   return returnType === undefined ? undefined : goProjectTypeName(returnType, cfg, ctx, calleePackageDir);
-}
-
-/** The package directory of a Go file: its directory, `""` at the root. A Go package is exactly one directory. */
-export function goPackageDirOf(relPath: string): string {
-  const dir = posix.dirname(relPath);
-  return dir === "." ? "" : dir;
 }
 
 /**

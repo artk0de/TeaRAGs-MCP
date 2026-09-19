@@ -35,7 +35,8 @@ export class GoLocalBindingSymbolResolutionStrategy implements SymbolResolutionS
     const local = goLocalAt(ctx, call.receiver, call.startLine);
     if (local?.kind !== "value") return CONTINUE;
     if (!local.binding.type) return DROP;
-    const target = resolveByLocalType(this.cfg, local.binding.type, call.member, ctx);
+    // A local's declared type is not placed in a package (`go-project-type.ts`).
+    const target = resolveByLocalType(this.cfg, { typeName: local.binding.type }, call.member, ctx);
     return target ? resolved(target) : DROP;
   }
 }

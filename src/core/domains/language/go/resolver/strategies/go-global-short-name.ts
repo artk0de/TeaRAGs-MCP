@@ -3,8 +3,9 @@ import { pickSingleCandidate, type CallContext, type CallRef } from "../../../..
 import type { SymbolResolutionOutcome, SymbolResolutionStrategy } from "../../../../../contracts/types/language.js";
 import { goLocalAt } from "../../local-scope.js";
 import { preferGoDefaultBuild } from "../go-build-constraints.js";
+import { goPackageDirOf } from "../go-project-type.js";
 import { lookupGoSymbolsByShortName } from "../go-symbol-lookup.js";
-import { goBareNamePackageDirs, goPackageDirOf, type ResolverConfig } from "./shared.js";
+import { goBareNamePackageDirs, type ResolverConfig } from "./shared.js";
 
 /**
  * Step 3 — no receiver: a bare `Util()`. In Go a bare identifier names a

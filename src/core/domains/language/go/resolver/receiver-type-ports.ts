@@ -21,6 +21,11 @@
  *   - `splitReceiverHops` — the bracket-aware scan, so the dots inside
  *     `template.New("").Delims(r.Delims.Left, …)` are not hops.
  *
+ * A head typed through a declared function's result is PLACED in the package
+ * that declares its type (G2-4) and crosses the fold as `goProjectTypeRef`
+ * spells it, so the first member lookup stays in that package; a local's
+ * declared type and every field hop's type cross unplaced (package-blind).
+ *
  * Built ONCE per resolver (it closes over the resolver's config — the composer,
  * and the module map a package-qualified return type is checked against) and
  * frozen, so the fold allocates nothing per call site.
@@ -34,14 +39,16 @@ import {
   type ReceiverTypePorts,
 } from "../../kernel/receiver-type-propagation.js";
 import { goLocalAt } from "../local-scope.js";
+import { goProjectTypeOfRefName, goProjectTypeRef } from "./go-project-type.js";
 import { goCallResultType, type ResolverConfig } from "./strategies/shared.js";
 import { selectGoMember } from "./struct-member-selection.js";
 
 const GO_IDENTIFIER = /^[\p{L}_][\p{L}\p{N}_]*$/u;
 const GO_IDENTIFIER_PREFIX = /^[\p{L}_][\p{L}\p{N}_]*/u;
 
-function instanceOf(name: string): TypeRef {
-  return { form: "instance", name };
+/** A type the resolver could not place in a package: a local's declared type, a struct field's. */
+function unplacedTypeRef(typeName: string): TypeRef {
+  return goProjectTypeRef({ typeName });
 }
 
 /**
@@ -79,7 +86,7 @@ function goBareCallResultType(
   ctx: CallContext,
 ): TypeRef | undefined {
   const returnType = goCallResultType(callee, cfg, ctx, atLine);
-  return returnType ? instanceOf(returnType) : undefined;
+  return returnType ? goProjectTypeRef(returnType) : undefined;
 }
 
 function goIdentifierType(
@@ -95,9 +102,9 @@ function goIdentifierType(
   // value no pass can type, shadowing any earlier binding of the name.
   const local = goLocalAt(ctx, receiver, atLine);
   if (local === undefined) return undefined;
-  if (local.kind === "value") return local.binding.type ? instanceOf(local.binding.type) : undefined;
+  if (local.kind === "value") return local.binding.type ? unplacedTypeRef(local.binding.type) : undefined;
   const returnType = goCallResultType(local.callee, cfg, ctx, local.line ?? atLine);
-  return returnType ? instanceOf(returnType) : undefined;
+  return returnType ? goProjectTypeRef(returnType) : undefined;
 }
 
 export function createGoReceiverTypePorts(cfg: ResolverConfig): ReceiverTypePorts {
@@ -107,8 +114,8 @@ export function createGoReceiverTypePorts(cfg: ResolverConfig): ReceiverTypePort
     seedHead: () => undefined,
     memberTypeOf: (recv: TypeRef, member: string, ctx: CallContext): TypeRef | undefined => {
       if (recv.form !== "instance") return undefined;
-      const selected = selectGoMember(recv.name, member, ctx, cfg.composer);
-      return selected?.kind === "field" && selected.type !== "" ? instanceOf(selected.type) : undefined;
+      const selected = selectGoMember(goProjectTypeOfRefName(recv.name), member, ctx, cfg.composer);
+      return selected?.kind === "field" && selected.type !== "" ? unplacedTypeRef(selected.type) : undefined;
     },
     maxHops: () => CHAIN_MAX_HOPS_DEFAULT,
     splitReceiverHops,
