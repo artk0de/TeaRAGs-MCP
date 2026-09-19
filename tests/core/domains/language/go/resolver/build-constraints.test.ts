@@ -2,6 +2,7 @@ import Parser from "tree-sitter";
 import GoLang from "tree-sitter-go";
 import { describe, expect, it } from "vitest";
 
+import { resolveGoFiles } from "../__helpers__/go-corpus.js";
 import { fromCgPass1Row, toCgPass1Row } from "../../../../../../src/core/adapters/duckdb/cg-pass1-aggregates-row.js";
 import { NoopGlobalSymbolTable } from "../../../../../../src/core/adapters/duckdb/daemon/noop-symbol-table.js";
 import type {
@@ -190,5 +191,117 @@ describe("GoCallResolver — build-tag twins", () => {
       buildConstraintsByFile: { "binding/binding.go": "!nomsgpack", "binding/binding_nomsgpack.go": "!other" },
     });
     expect(resolver.resolve(bare, ctx)).toBeNull();
+  });
+});
+
+/**
+ * F4 / N2 (the re-validator's corpus `f4e`) — a
+ * package's declaration beside a namesake in a file the default build
+ * EXCLUDES (`//go:build ignore` on a generator or a tools file). The two are
+ * no twin set — one file carries no constraint at all — so the tie-breaker
+ * left the list untouched and `lib.New()` stayed ambiguous. A file whose
+ * recorded constraint is false under the default build is never the target,
+ * and a file without one always compiles: dropping the excluded candidates
+ * decides the call whenever exactly one remains.
+ */
+describe("GoCallResolver — a namesake in a file the default build excludes", () => {
+  function libTable(files: readonly string[]): InMemoryGlobalSymbolTable {
+    const t = new InMemoryGlobalSymbolTable();
+    for (const relPath of files) t.upsertFile(relPath, [sym("New", relPath)]);
+    return t;
+  }
+
+  const bareNew: CallRef = { callText: "New()", receiver: null, member: "New", startLine: 5 };
+  const qualifiedNew: CallRef = { callText: "lib.New()", receiver: "lib", member: "New", startLine: 5 };
+
+  function libCtx(files: readonly string[], constraints: Record<string, string>): CallContext {
+    return {
+      callerFile: "lib/use.go",
+      callerScope: [],
+      imports: [],
+      symbolTable: libTable(files),
+      buildConstraintsByFile: constraints,
+    };
+  }
+
+  it("resolves a bare call past a `//go:build ignore` namesake to the file without a constraint", () => {
+    const ctx = libCtx(["lib/a_tools.go", "lib/lib.go"], { "lib/a_tools.go": "ignore" });
+    expect(resolver.resolve(bareNew, ctx)).toEqual({ targetRelPath: "lib/lib.go", targetSymbolId: "New" });
+  });
+
+  it("resolves a package-qualified call past an excluded namesake (custom tag, GOOS file name)", () => {
+    const ctx = {
+      ...libCtx(["lib/a_tools.go", "lib/lib.go", "lib/new_plan9.go"], { "lib/a_tools.go": "tools && !release" }),
+      callerFile: "app/app.go",
+      imports: [{ importText: "lib", startLine: 1 }],
+    };
+    expect(resolver.resolve(qualifiedNew, ctx)?.targetRelPath).toBe("lib/lib.go");
+  });
+
+  it("resolves f4e end to end: `lib.New()` beside the ignored tools file's `New`", () => {
+    const sites = resolveGoFiles({
+      "go.mod": "module example.com/proj\n\ngo 1.22\n",
+      "app/app.go": [
+        "package app",
+        "",
+        'import "example.com/proj/lib"',
+        "",
+        "func e1() {",
+        "\te := lib.New()",
+        "\te.Run()",
+        "}",
+        "",
+      ].join("\n"),
+      "lib/a_tools.go": ["//go:build ignore", "", "package tools", "", "func New() {}", ""].join("\n"),
+      "lib/lib.go": [
+        "package lib",
+        "",
+        "type Engine struct{}",
+        "",
+        "func New() *Engine { return &Engine{} }",
+        "",
+        "func (e *Engine) Run() {}",
+        "",
+      ].join("\n"),
+    });
+    expect(sites.get("app/app.go:6 lib.New")).toBe("New @ lib/lib.go");
+    expect(sites.get("app/app.go:7 e.Run")).toBe("Engine#Run @ lib/lib.go");
+  });
+
+  it("NEGATIVE: stays ambiguous when the constrained namesake builds by default too", () => {
+    const ctx = libCtx(["lib/a_extra.go", "lib/lib.go"], { "lib/a_extra.go": "!nomsgpack" });
+    expect(resolver.resolve(bareNew, ctx)).toBeNull();
+  });
+
+  it("NEGATIVE: stays ambiguous when more than one candidate survives the excluded one", () => {
+    const ctx = libCtx(["lib/a_tools.go", "lib/lib.go", "lib/other.go"], { "lib/a_tools.go": "ignore" });
+    expect(resolver.resolve(bareNew, ctx)).toBeNull();
+  });
+
+  /**
+   * The default build decides only for a caller it compiles. A `//go:build
+   * ignore` generator is its own `package main` program: stdlib's
+   * `math/rand/gen_cooked.go` calls ITS `seedrand`, not `rng.go`'s, and
+   * `runtime/mkpreempt.go` its own `p`, not `runtime2.go`'s `type p`.
+   */
+  it("NEGATIVE: a caller the default build excludes keeps the excluded namesake (math/rand `seedrand`)", () => {
+    const files = ["math/rand/gen_cooked.go", "math/rand/rng.go"];
+    const table = new InMemoryGlobalSymbolTable();
+    for (const relPath of files) table.upsertFile(relPath, [sym("seedrand", relPath)]);
+    const seedrand: CallRef = { callText: "seedrand(x)", receiver: null, member: "seedrand", startLine: 5 };
+    const ctx = (callerFile: string): CallContext => ({
+      callerFile,
+      callerScope: [],
+      imports: [],
+      symbolTable: table,
+      buildConstraintsByFile: { "math/rand/gen_cooked.go": "ignore" },
+    });
+    expect(resolver.resolve(seedrand, ctx("math/rand/gen_cooked.go"))).toBeNull();
+    expect(resolver.resolve(seedrand, ctx("math/rand/rng.go"))?.targetRelPath).toBe("math/rand/rng.go");
+  });
+
+  it("NEGATIVE: an unparsable constraint excludes nothing", () => {
+    const ctx = libCtx(["lib/a_tools.go", "lib/lib.go"], { "lib/a_tools.go": "ignore &&" });
+    expect(resolver.resolve(bareNew, ctx)).toBeNull();
   });
 });

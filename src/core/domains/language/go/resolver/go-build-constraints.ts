@@ -21,13 +21,28 @@
  * is as good a representative as any. The approximation moves no edge between
  * gin's twins, which are told apart by a custom tag.
  *
- * `preferGoDefaultBuild` is a TIE-BREAKER only. It narrows a candidate list
- * whose members all sit in ONE package directory and ALL carry a constraint —
- * valid Go cannot declare one name twice in a package unless constraints keep
- * the two apart, so a candidate without one (or one this run never walked,
- * whose `//go:build` line is unknown) means the list is not a twin set, and it
- * is returned untouched. It keeps exactly the one candidate whose file the
- * default build compiles, or none.
+ * `preferGoDefaultBuild` is a TIE-BREAKER only, over a candidate list whose
+ * members all sit in ONE package directory. Valid Go declares one name twice
+ * in a package only when constraints keep the two apart: build-tag twins, or a
+ * package's declaration beside a namesake in a file no default build compiles
+ * (`//go:build ignore` on a generator or a tools file — F4 N2, f4e's
+ * `lib/a_tools.go` `New` beside `lib/lib.go`'s). So it drops every candidate
+ * whose file the default build EXCLUDES — a constraint, by line or by name,
+ * that evaluates false — and keeps the rest: a file that builds by default,
+ * and one with no constraint (which always compiles), an unknown one (a file
+ * this run never walked) or one that does not parse, since nothing says the
+ * default build leaves it out. Exactly one kept candidate is the target;
+ * otherwise the list is returned untouched — a twin known to build beside an
+ * unknown one stays ambiguous, the unknown one may build too.
+ *
+ * A list with an unconstrained member is decided so only for a caller the
+ * default build compiles. A caller it excludes builds with another file set —
+ * a `//go:build ignore` generator is its own `package main` program, and the
+ * namesake the default build drops is the one it calls: stdlib's
+ * `math/rand/gen_cooked.go` calls its own `seedrand`, not `rng.go`'s, and
+ * `runtime/mkpreempt.go` its own `p`, not `runtime2.go`'s `type p`. A twin set
+ * (every member constrained) is decided for every caller, the host's build
+ * standing in for the platform as above.
  */
 
 import { posix } from "node:path";
@@ -225,8 +240,9 @@ export function goFileBuildsByDefault(
 }
 
 /**
- * Narrow same-package build-tag twins to the one the default build compiles,
- * else return `candidates` untouched (see the module docblock).
+ * Narrow a same-package candidate list to the one candidate the default build
+ * does not exclude, else return `candidates` untouched (see the module
+ * docblock).
  */
 export function preferGoDefaultBuild(
   candidates: SymbolDefinition[],
@@ -236,11 +252,10 @@ export function preferGoDefaultBuild(
   if (candidates.length < 2) return candidates;
   const packageDir = posix.dirname(candidates[0].relPath);
   if (candidates.some((def) => posix.dirname(def.relPath) !== packageDir)) return candidates;
-  const kept: SymbolDefinition[] = [];
-  for (const def of candidates) {
-    const builds = goFileBuildsByDefault(def.relPath, ctx.buildConstraintsByFile?.[def.relPath], context);
-    if (builds === undefined) return candidates;
-    if (builds) kept.push(def);
-  }
+  const buildsByDefault = (relPath: string): boolean | undefined =>
+    goFileBuildsByDefault(relPath, ctx.buildConstraintsByFile?.[relPath], context);
+  const builds = candidates.map((def) => buildsByDefault(def.relPath));
+  if (builds.includes(undefined) && buildsByDefault(ctx.callerFile) === false) return candidates;
+  const kept = candidates.filter((_, index) => builds[index] !== false);
   return kept.length === 1 ? kept : candidates;
 }
