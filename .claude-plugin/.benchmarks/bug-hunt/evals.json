@@ -1,7 +1,7 @@
 {
   "skill": "tea-rags:bug-hunt",
   "skillPath": ".claude-plugin/tea-rags/skills/bug-hunt/SKILL.md",
-  "objective": "Agent correctly investigates a bug symptom via signal-driven search (rerank='bugHunt') paired with a parallel fresh probe (modifiedAfter) and — when `git status --porcelain` lists working-tree changes (names only) — an incremental index_codebase before the search message and a parallel uncommitted probe restricted to those paths whose symptom-matching hits are uncommitted suspects, respects two-class label triage (historical: critical→prime, concerning+churn→secondary; fresh: burst / recent+high relativeChurn / recent on the failing call path / probe hit → fresh suspect; SKIP only healthy with no fresh-class label), inspects fresh steps along the call path (get_callers/get_callees one hop, trace_path rerank='bugHunt' for the full route, stack-trace pathPattern when codegraph is off), uses PRESENT format, avoids anti-patterns (extra parallel searches, curiosity search, confirmatory search, full file reads), and converges on ranked suspects in ≤3 search iterations.",
+  "objective": "Agent correctly investigates a bug symptom via signal-driven search (rerank='bugHunt') paired with a parallel fresh probe (modifiedAfter) and — when `git status --porcelain -uall` lists working-tree changes (names only) — an incremental index_codebase before the search message and a parallel uncommitted probe restricted to those paths whose symptom-matching hits are uncommitted suspects, respects two-class label triage (historical: critical→prime, concerning+churn→secondary; fresh: burst / recent+high relativeChurn / recent on the failing call path / probe hit → fresh suspect; SKIP only healthy with no fresh-class label), inspects fresh steps along the call path (get_callers/get_callees one hop, trace_path rerank='bugHunt' for the full route, stack-trace pathPattern when codegraph is off), uses PRESENT format, avoids anti-patterns (extra parallel searches, curiosity search, confirmatory search, full file reads), and converges on ranked suspects in ≤3 search iterations.",
   "runs": [
     {
       "date": "2026-04-20",
@@ -43,7 +43,7 @@
           "mcp__tea-rags__semantic_search or hybrid_search with rerank='bugHunt' as FIRST action",
           "limit=10 per skill Loop Step 1",
           "Fresh probe in the SAME message: same tool, query, pathPattern and rerank='bugHunt' plus modifiedAfter=<ISO window start>",
-          "Loop step 0 `git status --porcelain` before the search message; when it lists paths, an incremental index_codebase runs before the search message and an uncommitted probe (same tool/query/rerank, pathPattern = those paths) joins the same message"
+          "Loop step 0 `git status --porcelain -uall` before the search message; when it lists paths, an incremental index_codebase runs before the search message and an uncommitted probe (same tool/query/rerank, pathPattern = those paths) joins the same message"
         ],
         "mustNotCall": [
           "mcp__tea-rags__hybrid_search with rerank='relevance' (wrong preset for bug investigation)",
@@ -54,7 +54,7 @@
         ]
       },
       "failureMode": "Agent skips bugHunt preset or falls back to grep/git",
-      "expectation_change": "9mwny: step 0 listing paths now also triggers an incremental index_codebase before the search message — prime staleness is time-based and never flags an uncommitted edit, so the probe searched pre-edit chunks. Not re-run."
+      "expectation_change": "9mwny: step 0 listing paths now also triggers an incremental index_codebase before the search message — prime staleness is time-based and never flags an uncommitted edit, so the probe searched pre-edit chunks. Step 0 then gained `-uall` (a plain status collapses a new untracked directory to `?? dir/`, which matches no file as an exact brace entry). Not re-run."
     },
     {
       "id": "eval-2",
@@ -322,7 +322,7 @@
       "prompt": "Переписал retry-логику в HTTP-клиенте, ещё не закоммитил — теперь upload падает с 'socket hang up'. Найди причину.",
       "expected": {
         "mustCall": [
-          "Bash `git status --porcelain` (file names only) BEFORE the search message",
+          "Bash `git status --porcelain -uall` (file names only) BEFORE the search message",
           "mcp__tea-rags__index_codebase (incremental, no consent asked) AFTER git status lists paths and BEFORE the search message",
           "ONE message: historical + fresh probe (modifiedAfter) + uncommitted probe — same tool, query and rerank='bugHunt'; uncommitted probe pathPattern = brace-joined exact paths git status listed (deleted dropped, rename → new path)"
         ],
@@ -338,7 +338,27 @@
         ]
       },
       "failureMode": "Agent relies on commit-time probes and misses the uncommitted edit, or reads the change via git diff",
-      "expectation_change": "9mwny: index_codebase joined mustCall (and skipping it joined mustNotCall). The probe reads indexed content and prime staleness is time-based — an edit an hour after the last index never trips it, so the old 'prime stale → reindex' gate let the probe return pre-edit chunks at stale line ranges. Not re-run."
+      "expectation_change": "9mwny: index_codebase joined mustCall (and skipping it joined mustNotCall). The probe reads indexed content and prime staleness is time-based — an edit an hour after the last index never trips it, so the old 'prime stale → reindex' gate let the probe return pre-edit chunks at stale line ranges. The git status call then gained `-uall` (see eval-21). Not re-run."
+    },
+    {
+      "id": "eval-21",
+      "category": "uncommitted-probe",
+      "prompt": "Добавил новый модуль src/payments/refunds/ (три файла, в git ещё не добавлял) — теперь checkout падает с 'refund policy not found'. Найди причину.",
+      "expected": {
+        "mustCall": [
+          "Bash `git status --porcelain -uall` BEFORE the search message — every file of the new untracked directory listed on its own line",
+          "mcp__tea-rags__index_codebase (incremental) before the search message — the new files were never indexed",
+          "Uncommitted probe pathPattern = brace-joined exact relativePaths of each file under src/payments/refunds/ (one entry per file), in the same message as the historical and fresh probes"
+        ],
+        "mustDo": [
+          "Treat an uncommitted-probe hit from the new module matching the symptom as UNCOMMITTED SUSPECT"
+        ],
+        "mustNotCall": [
+          "Plain `git status --porcelain` whose collapsed `?? src/payments/refunds/` line becomes a brace entry — a directory entry matches no file as an exact path, so the probe returns nothing",
+          "git diff / git log / git blame (diff content or history)"
+        ]
+      },
+      "failureMode": "Agent lets git status collapse the new untracked directory to one `dir/` entry, the uncommitted probe matches nothing, and the new module is judged clean"
     }
   ]
 }

@@ -19,8 +19,8 @@ uncommitted edits with no git signal yet.
 
 1. **Execute YOURSELF** — no subagents.
 2. **No `git log`, `git diff`, `git blame`** — overlay has git signals.
-   `git status --porcelain` allowed: working-tree state (file NAMES), not code
-   history or content — feeds Uncommitted probe only.
+   `git status --porcelain -uall` allowed: working-tree state (file NAMES), not
+   code history or content — feeds Uncommitted probe only.
 3. **No built-in Search/Grep for code discovery** — TeaRAGs + ripgrep MCP only.
 4. **Search results contain code.** `metaOnly=false` (default) returns chunk
    content + startLine/endLine. Evaluate checkpoint from results BEFORE any Read
@@ -35,7 +35,7 @@ uncommitted edits with no git signal yet.
 ## Loop
 
 ```
-0. `git status --porcelain` → uncommitted paths (see Uncommitted probe).
+0. `git status --porcelain -uall` → uncommitted paths (see Uncommitted probe).
    Paths listed → `index_codebase` (incremental, no consent) BEFORE step 1.
 
 1. Search — ONE message, parallel calls. Same tool (search-cascade),
@@ -90,8 +90,10 @@ population to recently changed files so it surfaces.
 untracked) have none → fresh probe misses them, historical search ranks them by
 pre-edit history. "Broke after my change" = edit not yet committed.
 
-- **Source:** `git status --porcelain` — path column only, never diff content.
-  Working-tree state, not history → Rule 2 intact.
+- **Source:** `git status --porcelain -uall` — path column only, never diff
+  content. Working-tree state, not history → Rule 2 intact. `-uall` lists every
+  file of a new untracked dir; without it → one `?? dir/` line, matches no file
+  as exact brace entry → new module invisible.
 - **pathPattern:** each path brace-joined as exact relativePath (pathPattern
   rules). Rename `old -> new` → `new`; deleted (`D`) → drop. Git root ≠ indexed
   root → strip prefix. Search scope set → keep paths inside it.
