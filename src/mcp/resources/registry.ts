@@ -203,7 +203,32 @@ Git enrichment runs in background after indexing. Check \`get_index_status\` for
 `;
 }
 
-export function buildFiltersDoc(): string {
+/**
+ * Git payload keys the filters resource names that the trajectory WRITES to the
+ * payload but does NOT declare as payload signal descriptors — verified at the
+ * writers (`domains/trajectory/git/infra/metrics/file-assembler.ts`); both are
+ * read back by the git filters (`filters.ts`: modifiedAfter/Before, age ranges)
+ * and the git stats accumulators. The git field enumeration in buildFiltersDoc
+ * is GENERATED from the descriptors, so a key appears there either because a
+ * descriptor declares it or because it is listed here explicitly. Anything else
+ * is a stale name (the schema-v13 contributorCount/authors drift) and the
+ * key-existence test in tests/mcp/resources/resources.test.ts fails on it.
+ */
+export const FILTERS_DOC_WRITTEN_BUT_UNDECLARED_KEYS = ["git.file.lastModifiedAt", "git.file.firstCreatedAt"] as const;
+
+/** Render the field enumeration line for one git payload level from the descriptors. */
+function gitFilterFields(payloadSignals: PayloadSignalDescriptor[], prefix: string): string {
+  const field = (key: string) => {
+    const name = key.slice(prefix.length);
+    const isArray = payloadSignals.find((s) => s.key === key)?.type === "string[]";
+    return isArray ? `${name}[]` : name;
+  };
+  const declared = payloadSignals.filter((s) => s.key.startsWith(prefix)).map((s) => field(s.key));
+  const undeclared = FILTERS_DOC_WRITTEN_BUT_UNDECLARED_KEYS.filter((key) => key.startsWith(prefix)).map(field);
+  return [...declared, ...undeclared].join(", ");
+}
+
+export function buildFiltersDoc(payloadSignals: PayloadSignalDescriptor[]): string {
   let md = "# Qdrant Filter Syntax\n\n";
   md += "## Operators\n\n";
   md += '- `match: {value: "exact"}` — exact string/number match\n';
@@ -219,13 +244,11 @@ export function buildFiltersDoc(): string {
   md += "chunkIndex, isDocumentation, name, chunkType, parentSymbolId ";
   md += "(class name for code, relative path for docs), parentType, symbolId, navigation, headingPath\n\n";
   md += "**Git metadata** (requires enrichment, two levels):\n\n";
-  md += "File-level (`git.file.*`): ageDays, commitCount, recentDominantAuthor, recentDominantAuthorPct, ";
-  md += "contributorCount, authors[], lastModifiedAt, firstCreatedAt, taskIds[], ";
-  md += "bugFixRate, relativeChurn, changeDensity, churnVolatility, recencyWeightedFreq, ";
-  md += "blameDominantAuthor, blameDominantAuthorPct, blameAuthors[], blameContributorCount\n\n";
-  md += "Chunk-level (`git.chunk.*`): ageDays, commitCount, bugFixRate, churnRatio, ";
-  md += "contributorCount, relativeChurn, changeDensity, churnVolatility, recencyWeightedFreq, ";
-  md += "blameDominantAuthor, blameDominantAuthorPct, blameAuthors[], blameContributorCount\n\n";
+  // Field lists GENERATED from the payload signal descriptors (single source of
+  // truth) — do not hand-edit; a renamed descriptor key updates this doc through
+  // the registry (bd tea-rags-mcp-yd6zp).
+  md += `File-level (\`git.file.*\`): ${gitFilterFields(payloadSignals, "git.file.")}\n\n`;
+  md += `Chunk-level (\`git.chunk.*\`): ${gitFilterFields(payloadSignals, "git.chunk.")}\n\n`;
   md += "**Ownership semantics:** `recentDominantAuthor*` = recent commit activity within the ";
   md += "log window (TRAJECTORY_GIT_LOG_MAX_AGE_MONTHS); `blameDominantAuthor*` = who owns ";
   md += "the live lines in HEAD via git blame. Use the latter for true ownership / silo detection.\n\n";
@@ -503,7 +526,13 @@ export function registerAllResources(server: McpServer, app: App): void {
       mimeType: "text/markdown",
     },
     async (uri) => ({
-      contents: [{ uri: uri.href, mimeType: "text/markdown", text: buildFiltersDoc() }],
+      contents: [
+        {
+          uri: uri.href,
+          mimeType: "text/markdown",
+          text: buildFiltersDoc(app.getSchemaDescriptors().payloadSignals),
+        },
+      ],
     }),
   );
 
