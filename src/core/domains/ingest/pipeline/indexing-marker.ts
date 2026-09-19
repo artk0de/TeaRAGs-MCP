@@ -8,6 +8,7 @@
 import type { EmbeddingProvider } from "../../../adapters/embeddings/base.js";
 import type { QdrantManager } from "../../../adapters/qdrant/client.js";
 import { INDEXING_METADATA_ID } from "../../../contracts/constants.js";
+import { WorktreeSeedMarkerUnreadableError } from "../errors.js";
 import { parseMarkerPayload, type WorktreeSeedPending } from "./indexing-marker-codec.js";
 
 /**
@@ -173,18 +174,35 @@ export async function markWorktreeSeedPending(
 /**
  * The seed a collection still owes, or `undefined`. A failed read answers
  * `undefined`: the marker stays, so the next run resumes instead of this one.
+ * Right for a reader whose only move is to settle the seed; a reader that
+ * stamps something of its own needs {@link readWorktreeSeedPendingOrThrow}.
  */
 export async function readWorktreeSeedPending(
   qdrant: QdrantManager,
   collectionName: string,
 ): Promise<WorktreeSeedPending | undefined> {
   try {
-    const point = await qdrant.getPoint(collectionName, INDEXING_METADATA_ID);
-    return point?.payload ? parseMarkerPayload(point.payload).worktreeSeedPending : undefined;
+    return await readWorktreeSeedPendingOrThrow(qdrant, collectionName);
   } catch (error) {
     console.error(`[IndexingMarker] could not read the pending worktree seed of ${collectionName}:`, error);
     return undefined;
   }
+}
+
+/**
+ * The seed a collection still owes, or `undefined` when the marker records
+ * none. A failed read throws {@link WorktreeSeedMarkerUnreadableError}: for a
+ * `--force-enrichments` recompute, "unknown" read as "none" leaves the seed's
+ * full-axis stamp behind to roll its own newer stamp back later.
+ */
+export async function readWorktreeSeedPendingOrThrow(
+  qdrant: QdrantManager,
+  collectionName: string,
+): Promise<WorktreeSeedPending | undefined> {
+  const point = await qdrant.getPoint(collectionName, INDEXING_METADATA_ID).catch((error: unknown) => {
+    throw new WorktreeSeedMarkerUnreadableError(collectionName, error instanceof Error ? error : undefined);
+  });
+  return point?.payload ? parseMarkerPayload(point.payload).worktreeSeedPending : undefined;
 }
 
 /** The seed is settled. A failed clear only means the next run redoes the stamp and the git rebuild. */

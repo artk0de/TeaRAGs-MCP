@@ -37,6 +37,8 @@ function makeDeps(overrides: Partial<IndexingOpsDeps> = {}): IndexingOpsDeps {
     qdrant: {
       collectionExists: vi.fn().mockResolvedValue(true),
       aliases: { listAliases: vi.fn().mockResolvedValue([]) },
+      // The marker read a recompute makes for a pending worktree seed: none here.
+      getPoint: vi.fn().mockResolvedValue(null),
     } as never,
     embeddings: {
       embed: vi.fn().mockResolvedValue([0]),

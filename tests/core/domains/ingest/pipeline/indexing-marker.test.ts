@@ -1,9 +1,11 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { INDEXING_METADATA_ID } from "../../../../../src/core/contracts/constants.js";
+import { WorktreeSeedMarkerUnreadableError } from "../../../../../src/core/domains/ingest/errors.js";
 import {
   clearWorktreeSeedPending,
   readWorktreeSeedPending,
+  readWorktreeSeedPendingOrThrow,
   storeIndexingMarker,
 } from "../../../../../src/core/domains/ingest/pipeline/indexing-marker.js";
 
@@ -224,6 +226,27 @@ describe("pending worktree seed on the marker (bd k8gac)", () => {
     vi.spyOn(console, "error").mockImplementation(() => {});
     const qdrant = { getPoint: vi.fn().mockRejectedValue(new Error("qdrant down")) };
     await expect(readWorktreeSeedPending(qdrant as never, "col")).resolves.toBeUndefined();
+  });
+
+  it("the strict read throws a typed error on a failed read — unknown is not the same answer as none", async () => {
+    const cause = new Error("qdrant down");
+    const qdrant = { getPoint: vi.fn().mockRejectedValue(cause) };
+
+    const read = readWorktreeSeedPendingOrThrow(qdrant as never, "col");
+
+    await expect(read).rejects.toBeInstanceOf(WorktreeSeedMarkerUnreadableError);
+    await expect(read).rejects.toMatchObject({ code: "INGEST_SEED_MARKER_UNREADABLE", cause });
+  });
+
+  it("the strict read answers the pending seed, or undefined when the marker records none", async () => {
+    const pending = { seededAt: "2026-09-01T00:00:00Z", languageVersions: { typescript: { walker: 2 } } };
+    const withSeed = { getPoint: vi.fn().mockResolvedValue({ id: 1, payload: { worktreeSeedPending: pending } }) };
+    const withoutSeed = { getPoint: vi.fn().mockResolvedValue({ id: 1, payload: { indexingComplete: true } }) };
+    const noMarker = { getPoint: vi.fn().mockResolvedValue(null) };
+
+    await expect(readWorktreeSeedPendingOrThrow(withSeed as never, "col")).resolves.toEqual(pending);
+    await expect(readWorktreeSeedPendingOrThrow(withoutSeed as never, "col")).resolves.toBeUndefined();
+    await expect(readWorktreeSeedPendingOrThrow(noMarker as never, "col")).resolves.toBeUndefined();
   });
 
   it("clears only the pending key on the marker point, and never throws when that fails", async () => {

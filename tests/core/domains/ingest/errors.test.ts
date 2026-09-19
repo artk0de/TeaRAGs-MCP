@@ -16,6 +16,7 @@ import {
   ReindexFailedError,
   SnapshotCorruptedError,
   SnapshotMissingError,
+  WorktreeSeedMarkerUnreadableError,
 } from "../../../../src/core/domains/ingest/errors.js";
 import { createDeletionOutcome } from "../../../../src/core/domains/ingest/sync/deletion/outcome.js";
 import { TeaRagsError } from "../../../../src/core/infra/errors.js";
@@ -109,6 +110,19 @@ describe("IngestError hierarchy", () => {
       expect(err.code).toBe("INGEST_REINDEX_FAILED");
       expect(err.httpStatus).toBe(500);
       expect(err.message).toContain("/path");
+      expect(err.cause).toBe(cause);
+      expect(err).toBeInstanceOf(IngestError);
+    });
+  });
+
+  describe("WorktreeSeedMarkerUnreadableError", () => {
+    it("is a transient 503 naming the collection, with the raw failure only in cause", () => {
+      const cause = new Error("socket hang up");
+      const err = new WorktreeSeedMarkerUnreadableError("code_wt_v1", cause);
+      expect(err.code).toBe("INGEST_SEED_MARKER_UNREADABLE");
+      expect(err.httpStatus).toBe(503);
+      expect(err.message).toContain("code_wt_v1");
+      expect(err.message).not.toContain("socket hang up");
       expect(err.cause).toBe(cause);
       expect(err).toBeInstanceOf(IngestError);
     });
