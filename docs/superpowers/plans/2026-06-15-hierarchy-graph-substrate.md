@@ -1238,7 +1238,7 @@ export function normalizeInheritanceEdges(
   resolveAncestor: AncestorResolver,
 ): InheritanceEdgeRow[] {
   const out: InheritanceEdgeRow[] = [];
-  const seen = new Set<string>(); // `${source} ${ancestor} ${kind}` dedup
+  const seen = new Set<string>(); // `${source}\0${ancestor}\0${kind}` dedup
 
   const push = (
     source: string,
@@ -1246,7 +1246,7 @@ export function normalizeInheritanceEdges(
     kind: InheritanceKind,
     ordinal: number,
   ): void => {
-    const key = `${source} ${ancestor} ${kind}`;
+    const key = `${source}\0${ancestor}\0${kind}`;
     if (seen.has(key)) return;
     seen.add(key);
     out.push({

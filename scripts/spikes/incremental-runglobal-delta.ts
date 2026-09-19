@@ -316,7 +316,7 @@ type CallSiteAnswers = Map<string, Map<string, string>>;
 
 function indexCallEdges(relPath: string, edges: GraphEdges, into: CallSiteAnswers): void {
   for (const edge of edges.methodEdges) {
-    const site = `${relPath} ${edge.sourceSymbolId} ${edge.callExpression}`;
+    const site = `${relPath}\0${edge.sourceSymbolId}\0${edge.callExpression}`;
     const target = edge.targetSymbolId ?? `@${edge.targetRelPath}`;
     let answers = into.get(site);
     if (answers === undefined) {

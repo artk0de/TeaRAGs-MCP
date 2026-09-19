@@ -39,17 +39,22 @@
   failure-path contract.
 - **Qdrant is the one artifact that is NOT a file copy, and the asymmetry is a
   decision.** `QdrantArtifact#clone` goes `createSnapshot(source.physicalName)`
-  → snapshot download URL → `recoverFromSnapshot(target.physicalName)` →
-  `aliases.createAlias`, over HTTP, with `deleteSnapshot` in a `finally`. The
-  other four clone by file/store copy. A cold `cp -r` of the collection
-  directory was rejected: the embedded Qdrant daemon is refcounted and shared
-  across sessions (`adapters/qdrant/embedded/daemon.ts`) and does not hot-rescan
-  its storage dir, so picking up a copied collection needs a daemon restart that
-  tears down every parallel worktree session — and copying mmap'd segments
-  mid-write is inconsistent anyway. Scroll+upsert over the network was rejected
-  as slower and not file-level. Why: the natural "simplify this, make Qdrant
-  look like the other four" instinct costs a parallel session its daemon
-  mid-run, and the `finally` is what stops a failed recover leaking a snapshot.
+  → snapshot download URL → `recoverFromSnapshot(target.physicalName)` → the
+  optional `FootprintContext.targetIndexingMarkerPatch` onto the target's marker
+  point → `aliases.createAlias`, over HTTP, with `deleteSnapshot` in a
+  `finally`. The patch goes BEFORE the alias because until the alias exists no
+  run can address the clone — the worktree seed rides its pending debt there
+  (`../worktree/CLAUDE.md`); it needs no compensation of its own, since it lives
+  on the collection this artifact's `remove` deletes. The other four clone by
+  file/store copy. A cold `cp -r` of the collection directory was rejected: the
+  embedded Qdrant daemon is refcounted and shared across sessions
+  (`adapters/qdrant/embedded/daemon.ts`) and does not hot-rescan its storage
+  dir, so picking up a copied collection needs a daemon restart that tears down
+  every parallel worktree session — and copying mmap'd segments mid-write is
+  inconsistent anyway. Scroll+upsert over the network was rejected as slower and
+  not file-level. Why: the natural "simplify this, make Qdrant look like the
+  other four" instinct costs a parallel session its daemon mid-run, and the
+  `finally` is what stops a failed recover leaking a snapshot.
 
 - **Two orchestrators drive `remove`, and they disagree about scope on
   purpose.** `WorktreeProvisioner#remove` sweeps ONE generation — the clone's

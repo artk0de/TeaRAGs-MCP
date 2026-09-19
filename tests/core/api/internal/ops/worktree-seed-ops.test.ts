@@ -19,7 +19,10 @@ import { EMBEDDED_MARKER } from "../../../../../src/core/adapters/qdrant/embedde
 import { WorktreeSeedOps } from "../../../../../src/core/api/internal/ops/worktree-seed-ops.js";
 import { INDEXING_METADATA_ID } from "../../../../../src/core/contracts/constants.js";
 import type { CollectionEntry } from "../../../../../src/core/contracts/types/registry.js";
+import type { WorktreeSeedPending } from "../../../../../src/core/domains/ingest/pipeline/indexing-marker-codec.js";
 import { ShardedSnapshotManager } from "../../../../../src/core/domains/ingest/sync/snapshot/sharded-snapshot.js";
+import type { CollectionFootprintFactory } from "../../../../../src/core/domains/maintenance/footprint/index.js";
+import { QdrantArtifact } from "../../../../../src/core/domains/maintenance/footprint/qdrant-artifact.js";
 import type { WorktreeSeedBuildIdentity } from "../../../../../src/core/domains/maintenance/worktree/worktree-seed-source.js";
 
 const TEST_TIMEOUT = 60000;
@@ -54,6 +57,72 @@ const BUILD: WorktreeSeedBuildIdentity = {
   codegraphEnabled: false,
   qdrant: { embedded: true, url: "http://127.0.0.1:6333" },
 };
+
+/** What the seeded collection will owe until its stamp and git rebuild are done. */
+const PENDING: WorktreeSeedPending = {
+  seededAt: "2026-09-19T00:00:00Z",
+  languageVersions: { typescript: { grammar: "0.23.2", chunking: 1, walker: 2, codegraphSchema: 1 } },
+};
+
+const never = async (): Promise<never> => new Promise<never>(() => undefined);
+
+/**
+ * A Qdrant that remembers what a clone leaves behind: collections by physical
+ * name (each with its marker point's payload) and aliases. The source's marker
+ * is copied by the snapshot recover, exactly like the real one.
+ */
+function cloneTrackingQdrant(options: { markerWriteFails?: boolean } = {}) {
+  const markers = new Map<string, Record<string, unknown>>();
+  const aliases = new Map<string, string>();
+  const calls: string[] = [];
+  const qdrant = {
+    createSnapshot: vi.fn(async () => Promise.resolve("snap-1")),
+    snapshotDownloadUrl: vi.fn(() => "http://127.0.0.1:6333/snap-1"),
+    recoverFromSnapshot: vi.fn(async (name: string) => {
+      calls.push(`recover:${name}`);
+      markers.set(name, { indexingComplete: true, completedAt: "2026-09-10T00:00:00Z" });
+      return Promise.resolve();
+    }),
+    setPayload: vi.fn(
+      async (name: string, payload: Record<string, unknown>, opts: { points?: (string | number)[] }) => {
+        calls.push(`setPayload:${name}`);
+        if (options.markerWriteFails) throw new Error("marker write refused");
+        if (opts.points?.includes(INDEXING_METADATA_ID)) markers.set(name, { ...markers.get(name), ...payload });
+        return Promise.resolve();
+      },
+    ),
+    deleteSnapshot: vi.fn(async () => Promise.resolve()),
+    deleteCollection: vi.fn(async (name: string) => {
+      markers.delete(name);
+      return Promise.resolve();
+    }),
+    aliases: {
+      createAlias: vi.fn(async (alias: string, name: string) => {
+        calls.push(`alias:${alias}`);
+        aliases.set(alias, name);
+        return Promise.resolve();
+      }),
+      deleteAlias: vi.fn(async (alias: string) => {
+        aliases.delete(alias);
+        return Promise.resolve();
+      }),
+    },
+  };
+  return { qdrant, markers, aliases, calls };
+}
+
+/** The real saga order's first step, the real Qdrant clone, then an artifact whose clone never returns (the kill). */
+function killedAfterQdrantClone(qdrant: unknown): Pick<CollectionFootprintFactory, "build"> {
+  return {
+    build: (source, target) => ({
+      context: { source, target },
+      artifacts: [
+        new QdrantArtifact(qdrant as never),
+        { id: "codegraph", addressing: "physical", clone: never, remove: async () => Promise.resolve() },
+      ],
+    }),
+  };
+}
 
 describe("WorktreeSeedOps", () => {
   let root: string;
@@ -103,7 +172,7 @@ describe("WorktreeSeedOps", () => {
   let cloneFails: boolean;
   let modelGuard: { ensureMatch: ReturnType<typeof vi.fn> };
 
-  function ops() {
+  function ops(footprintFactory?: Pick<CollectionFootprintFactory, "build">) {
     return new WorktreeSeedOps({
       registry: { list: () => entries },
       qdrant: {
@@ -118,24 +187,26 @@ describe("WorktreeSeedOps", () => {
       statsCache: {
         load: vi.fn(() => ({ payloadFieldKeys: PAYLOAD_KEYS, distributions: { language: { typescript: 3 } } })),
       } as never,
-      footprintFactory: {
-        build: vi.fn((source: Record<string, unknown>, target: Record<string, unknown>) => {
-          builds.push({ source, target });
-          return {
-            context: { source, target },
-            artifacts: [
-              {
-                id: "qdrant",
-                addressing: "physical",
-                clone: async () => {
-                  if (cloneFails) throw new Error("snapshot recover refused");
+      footprintFactory:
+        footprintFactory ??
+        ({
+          build: vi.fn((source: Record<string, unknown>, target: Record<string, unknown>) => {
+            builds.push({ source, target });
+            return {
+              context: { source, target },
+              artifacts: [
+                {
+                  id: "qdrant",
+                  addressing: "physical",
+                  clone: async () => {
+                    if (cloneFails) throw new Error("snapshot recover refused");
+                  },
+                  remove: async () => undefined,
                 },
-                remove: async () => undefined,
-              },
-            ],
-          };
-        }),
-      } as never,
+              ],
+            };
+          }),
+        } as never),
       snapshotDir,
       modelGuard: modelGuard as never,
     });
@@ -146,6 +217,7 @@ describe("WorktreeSeedOps", () => {
       targetPath: newWorktree,
       targetCollection: fixtureCollectionAlias("code_new"),
       build: BUILD,
+      pending: PENDING,
       claimSource: vi.fn(async (name: string) => {
         claims.push(name);
         if (busy.has(name)) return undefined;
@@ -283,5 +355,44 @@ describe("WorktreeSeedOps", () => {
       ],
     });
     expect(releases).toEqual(["code_main", "code_other"]);
+  });
+
+  /**
+   * bd tea-rags-mcp-k8gac, residual window: the pending seed used to be written
+   * only after the whole saga returned, so a process killed anywhere between
+   * the alias creation and that write left a VISIBLE clone with no marker — the
+   * unstamped clone with the sibling's git signals that the marker exists to
+   * prevent. It now rides the Qdrant clone, before the alias.
+   */
+  it("a process killed after the Qdrant clone leaves a visible clone that already records the pending seed", async () => {
+    const tracked = cloneTrackingQdrant();
+
+    void ops(killedAfterQdrantClone(tracked.qdrant)).seed(request());
+    await vi.waitFor(() => {
+      expect(tracked.aliases.get("code_new")).toBe("code_new_v1");
+    });
+
+    expect(tracked.calls).toEqual(["recover:code_new_v1", "setPayload:code_new_v1", "alias:code_new"]);
+    expect(tracked.markers.get("code_new_v1")).toMatchObject({ indexingComplete: true, worktreeSeedPending: PENDING });
+  });
+
+  it("a pending seed that cannot be recorded rolls the clone back — nothing is exposed, the sibling is refused", async () => {
+    const tracked = cloneTrackingQdrant({ markerWriteFails: true });
+    entries = [entry("code_main", mainCheckout, "2026-09-10T00:00:00Z")];
+
+    const attempt = await ops({
+      build: (source, target) => ({
+        context: { source, target },
+        artifacts: [new QdrantArtifact(tracked.qdrant as never)],
+      }),
+    }).seed(request());
+
+    expect(attempt).toMatchObject({
+      status: "skipped",
+      rejected: [{ collectionName: "code_main", reason: "clone-failed", detail: "marker write refused" }],
+    });
+    expect(tracked.aliases.size).toBe(0);
+    expect(tracked.markers.has("code_new_v1")).toBe(false);
+    expect(releases).toEqual(["code_main"]);
   });
 });

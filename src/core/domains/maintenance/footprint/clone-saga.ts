@@ -1,4 +1,4 @@
-import type { CollectionArtifact, ResolvedCollection } from "./artifact.js";
+import type { CollectionArtifact, FootprintContext, ResolvedCollection } from "./artifact.js";
 import type { CollectionFootprintFactory } from "./factory.js";
 
 /**
@@ -13,16 +13,25 @@ import type { CollectionFootprintFactory } from "./factory.js";
  * list in reverse and swallows each teardown's failure, because one dead step
  * must not abandon the rest (the `CollectionArtifact.remove` contract). The
  * clone's own error is what the caller receives.
+ *
+ * `targetIndexingMarkerPatch` reaches every artifact's context; the Qdrant
+ * clone writes it before the target becomes addressable (see
+ * `FootprintContext.targetIndexingMarkerPatch`). It adds no compensation of its
+ * own: it lives on the collection the Qdrant artifact's rollback removes.
  */
 export async function cloneCollectionFootprint(
   factory: Pick<CollectionFootprintFactory, "build">,
   source: ResolvedCollection,
   target: ResolvedCollection,
+  targetIndexingMarkerPatch?: Readonly<Record<string, unknown>>,
 ): Promise<void> {
-  const { context, artifacts } = factory.build(source, target);
+  const built = factory.build(source, target);
+  const context: FootprintContext = targetIndexingMarkerPatch
+    ? { ...built.context, targetIndexingMarkerPatch }
+    : built.context;
   const done: CollectionArtifact[] = [];
   try {
-    for (const artifact of artifacts) {
+    for (const artifact of built.artifacts) {
       done.push(artifact);
       await artifact.clone(context);
     }

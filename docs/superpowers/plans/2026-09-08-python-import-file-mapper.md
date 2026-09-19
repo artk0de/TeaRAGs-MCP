@@ -1013,7 +1013,7 @@ the same arithmetic, verdicts from the table.
    IDENTITY, invalidated when `size()` changes — the invalidation shape the TS
    path mapper uses for its `existsSync` memo
    (`typescript/resolver/ts-path-mapper.ts:30-100`), minus the disk. `cache` is
-   keyed `${fromFileDir} ${importText}`: two files in different directories can
+   keyed `${fromFileDir}\0${importText}`: two files in different directories can
    legitimately give the same import text different answers.
 
 **The fixture — corpus shapes, inline**

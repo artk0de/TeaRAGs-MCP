@@ -1519,8 +1519,8 @@ function runOracle(elapsedMs: number, files: number): void {
     console.log(s);
   };
   const inProjectDef = (member: string): number => symbolTable.lookupByShortName(member).length;
-  const missKey = new Set(misses.map((m) => `${m.relPath} ${m.line} ${m.member}`));
-  const isMiss = (s: OracleSite): boolean => missKey.has(`${s.relPath} ${s.line} ${s.member}`);
+  const missKey = new Set(misses.map((m) => `${m.relPath}\0${m.line}\0${m.member}`));
+  const isMiss = (s: OracleSite): boolean => missKey.has(`${s.relPath}\0${s.line}\0${s.member}`);
   const inIncludedDo = (relPath: string, line: number): boolean =>
     (includedDoRanges.get(relPath) ?? []).some(([s, e]) => line >= s && line <= e);
 
@@ -3291,7 +3291,7 @@ function fxRunWaves(useKwargs: boolean): { env: FxEnv; waves: FxWaveStat[]; conv
 
     const ctxCache = new Map<string, CallContext>();
     const ctxFor = (relPath: string, chunkId: string, scope: readonly string[]): CallContext => {
-      const key = `${relPath} ${chunkId}`;
+      const key = `${relPath}\0${chunkId}`;
       let ctx = ctxCache.get(key);
       if (ctx === undefined) {
         ctx = fxCtx(relPath, chunkId, scope, fieldsByFile, mergedReturns);

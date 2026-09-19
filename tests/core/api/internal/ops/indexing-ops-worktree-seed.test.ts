@@ -140,6 +140,18 @@ describe("IndexingOps — first index seeded from a sibling worktree", () => {
     });
   });
 
+  it("hands the seed what the clone will owe, so the clone records it before it is visible (k8gac)", async () => {
+    const { deps, seed } = harness(seedsSibling);
+    await new IndexingOps(deps).run(TARGET);
+
+    expect(seed.mock.calls[0][0]).toMatchObject({
+      pending: {
+        seededAt: expect.any(String),
+        languageVersions: { typescript: { grammar: "0.23.2", chunking: 1, walker: 2, codegraphSchema: 1 } },
+      },
+    });
+  });
+
   it("runs the incremental path over the seeded collection instead of a full first index", async () => {
     const { deps } = harness(seedsSibling);
     const stats = await new IndexingOps(deps).run(TARGET);

@@ -1,4 +1,5 @@
 import type { QdrantManager } from "../../../adapters/qdrant/client.js";
+import { INDEXING_METADATA_ID } from "../../../contracts/constants.js";
 import type { CollectionArtifact, FootprintContext } from "./artifact.js";
 
 export class QdrantArtifact implements CollectionArtifact {
@@ -11,6 +12,15 @@ export class QdrantArtifact implements CollectionArtifact {
     try {
       const location = this.qdrant.snapshotDownloadUrl(ctx.source.physicalName, snapshotName);
       await this.qdrant.recoverFromSnapshot(ctx.target.physicalName, location);
+      // Before the alias: until it exists no run can address the clone, so the
+      // patch is on the marker from the first instant one can.
+      if (ctx.targetIndexingMarkerPatch) {
+        await this.qdrant.setPayload(
+          ctx.target.physicalName,
+          { ...ctx.targetIndexingMarkerPatch },
+          { points: [INDEXING_METADATA_ID], wait: true },
+        );
+      }
       await this.qdrant.aliases.createAlias(ctx.target.logicalName, ctx.target.physicalName);
     } finally {
       await this.qdrant.deleteSnapshot(ctx.source.physicalName, snapshotName).catch(() => undefined);

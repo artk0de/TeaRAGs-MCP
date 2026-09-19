@@ -9,12 +9,13 @@ import type { EnrichmentMarkerMap } from "./enrichment/types.js";
 
 /**
  * What a first index seeded from a sibling worktree still owes its collection
- * (bd tea-rags-mcp-k8gac). Written right after the clone, removed once the
- * seed's language-version stamp AND its git rebuild are done; a run that finds
- * it resumes both. It lives on the marker because the marker is cloned and
- * dropped WITH the collection — a seeded collection has no registry entry until
- * its first incremental run records one, which is exactly the window a kill
- * must survive.
+ * (bd tea-rags-mcp-k8gac). Written by the clone itself, before the clone is
+ * addressable under its alias (`FootprintContext.targetIndexingMarkerPatch`);
+ * removed once the seed's language-version stamp AND its git rebuild are done;
+ * a run that finds it resumes both. It lives on the marker because the marker
+ * is cloned and dropped WITH the collection — a seeded collection has no
+ * registry entry until its first incremental run records one, which is exactly
+ * the window a kill must survive.
  */
 export interface WorktreeSeedPending {
   /** When the sibling's footprint was cloned (ISO). */
@@ -22,7 +23,10 @@ export interface WorktreeSeedPending {
   /**
    * The stamp the seed owes the registry: the SEEDING build's versions. A
    * later process may run another build, and stamping its versions would claim
-   * the cloned data as its own.
+   * the cloned data as its own. Empty once paid while the git rebuild is still
+   * owed — a `--force-enrichments` run pays it ahead of its own, newer stamp,
+   * so the later settlement cannot roll that stamp back — and empty from the
+   * start for a build that declares no versions.
    */
   languageVersions: Record<string, Partial<LanguageCodeVersions>>;
 }
