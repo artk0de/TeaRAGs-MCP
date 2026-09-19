@@ -37,6 +37,7 @@ export interface TypedFilterParams {
   // Git trajectory filters
   author?: string;
   recentAuthor?: string;
+  contributor?: string;
   modifiedAfter?: string | Date;
   modifiedBefore?: string | Date;
   minAgeDays?: number;

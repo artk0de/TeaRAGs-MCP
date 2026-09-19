@@ -52,8 +52,8 @@ function matchesQdrantFilter(payload: Record<string, any>, filter: FilterNode | 
 }
 
 describe("git filter descriptors", () => {
-  it("exports 11 filter descriptors", () => {
-    expect(gitFilters).toHaveLength(11);
+  it("exports 12 filter descriptors", () => {
+    expect(gitFilters).toHaveLength(12);
   });
 
   it("each filter has required fields", () => {
@@ -154,6 +154,24 @@ describe("git filter descriptors", () => {
       key: "git.chunk.taskIds",
       match: { any: ["JIRA-123"] },
     });
+  });
+});
+
+describe("contributor (tea-rags-mcp-y1870: any recent-window committer, not only the dominant one)", () => {
+  // recentAuthor matches only the TOP recent committer (recentDominantAuthor*),
+  // so "what did X work on" misses every file X committed to without dominating.
+  // contributor compiles to the complete answer: match.any over
+  // git.file.recentAuthors — the same shape the taskId filter uses for taskIds.
+  it("compiles to a match.any over git.file.recentAuthors, file level", () => {
+    expect(findFilter("contributor").toCondition("Alice")).toEqual({
+      must: [{ key: "git.file.recentAuthors", match: { any: ["Alice"] } }],
+    });
+  });
+
+  it("is file-only — the level param changes nothing", () => {
+    expect(findFilter("contributor").toCondition("Alice", "chunk")).toEqual(
+      findFilter("contributor").toCondition("Alice"),
+    );
   });
 });
 

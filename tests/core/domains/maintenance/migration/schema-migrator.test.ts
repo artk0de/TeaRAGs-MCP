@@ -105,7 +105,7 @@ describe("SchemaMigrator", () => {
     expect(migrator.getMigrations().find((m) => m.version === 16)?.name).toBe(
       "schema-v16-drop-undeclared-payload-indexes",
     );
-    expect(migrator.latestVersion).toBe(17);
+    expect(migrator.latestVersion).toBe(18);
   });
 
   it("does not register v16 from an empty declared key set", () => {
@@ -124,6 +124,16 @@ describe("SchemaMigrator", () => {
       declaredPayloadKeys: new Set(["git.chunk.ageDays"]),
     });
     expect(migrator.getMigrations().find((m) => m.version === 17)?.name).toBe("schema-v17-last-commit-time-indexes");
+  });
+
+  // bd tea-rags-mcp-y1870 — v18 ensures the recentAuthors keyword index the
+  // `contributor` typed filter matches on.
+  it("registers v18 after v17 when the declared keys are supplied", () => {
+    const migrator = new SchemaMigrator(COLLECTION, createMockIndexStore(), {
+      enableHybrid: false,
+      declaredPayloadKeys: new Set(["git.chunk.ageDays"]),
+    });
+    expect(migrator.getMigrations().find((m) => m.version === 18)?.name).toBe("schema-v18-recent-authors-index");
   });
 
   // Any migration above 16 stamps the collection past 16: registering v17

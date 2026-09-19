@@ -12,3 +12,4 @@ export { SchemaV14EnrichmentScanIndexes } from "./schema-v14-enrichment-scan-ind
 export { SchemaV15CodegraphFilterIndexes } from "./schema-v15-codegraph-filter-indexes.js";
 export { SchemaV16DropUndeclaredPayloadIndexes } from "./schema-v16-drop-undeclared-payload-indexes.js";
 export { SchemaV17LastCommitTimeIndexes } from "./schema-v17-last-commit-time-indexes.js";
+export { SchemaV18RecentAuthorsIndex } from "./schema-v18-recent-authors-index.js";

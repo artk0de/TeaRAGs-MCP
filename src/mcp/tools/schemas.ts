@@ -224,6 +224,14 @@ function typedFilterFields() {
           "Exact full name OR email. File-level at any `level`. 'What did X work on' → recentAuthor + modifiedAfter. " +
           "Example: 'john@acme.com'",
       ),
+    contributor: z
+      .string()
+      .optional()
+      .describe(
+        "Filter to files the person COMMITTED to in git log window (any recent-window committer, not only the dominant one). " +
+          "Superset of recentAuthor — 'everything X touched' → contributor, 'where X dominates' → recentAuthor. " +
+          "Exact name as git records it. File-level at any `level`. Example: 'John Doe'",
+      ),
     modifiedAfter: z
       .string()
       .optional()
