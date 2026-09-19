@@ -142,7 +142,7 @@ Full-featured tool with native Qdrant filters and metadata-only mode:
   "filter": {
     "must": [
       { "key": "language", "match": { "value": "typescript" } },
-      { "key": "git.commitCount", "range": { "gte": 3 } }
+      { "key": "git.file.commitCount", "range": { "gte": 3 } }
     ]
   },
   "rerank": "ownership",
