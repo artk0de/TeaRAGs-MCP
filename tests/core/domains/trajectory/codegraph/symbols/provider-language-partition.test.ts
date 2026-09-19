@@ -112,10 +112,12 @@ describe("CodegraphEnrichmentProvider — language partition roles", () => {
   });
 
   it("a mirrored file's symbols are visible to the owned files' resolution", async () => {
-    // `web/main.ts` calls `create()` bare. TypeScript declares one and Ruby
-    // declares another; the global short-name fallback is language-blind, so
-    // whether the call resolves depends on whether Ruby's `create` is in the
-    // table — which, for a TypeScript partition, only a mirror can put there.
+    // `web/main.ts` calls `legacyInit()`, which `web/legacy.js` declares.
+    // TypeScript resolves into JavaScript, and JavaScript rides in the other
+    // partition, so whether the call pins its symbol depends on whether the JS
+    // file is in the table — which, for a TypeScript partition, only a mirror
+    // can put there. (Ruby's `create` / `call` no longer reach a TypeScript
+    // caller at all, bd tea-rags-mcp-t5cji.)
     const withMirror = providerOn(graph.client);
     const batch = await withMirror.extractFileBatch(root, corpus);
     const absorbRoles: FileExtractionAbsorbRole[] = batch.extractions.map((e) =>

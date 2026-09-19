@@ -82,4 +82,25 @@ describe("reexportOriginFile", () => {
     });
     expect(reexportOriginFile("Button", "ui-kit/index.ts", ctx, "first")).toBe("legacy/Button.tsx");
   });
+
+  describe("with the caller language's own lookup (bd tea-rags-mcp-t5cji)", () => {
+    const tsOnly = (ctx: CallContext, name: string): SymbolDefinition[] =>
+      ctx.symbolTable.lookup(name).filter((d) => d.relPath.endsWith(".tsx") || d.relPath.endsWith(".ts"));
+
+    it("never follows a barrel onto a foreign-language namesake", () => {
+      // The component is a `forwardRef` the walker does not name, so the only
+      // declaration of `Widget` in the table is a Ruby class.
+      const ctx = ctxWith({ Widget: [def("Widget", "app/models/widget.rb")] });
+      expect(reexportOriginFile("Widget", "ui-kit/index.ts", ctx, "strict", tsOnly)).toBeNull();
+    });
+
+    it("lets a foreign namesake neither make the answer ambiguous nor count as a candidate", () => {
+      const ctx = ctxWith({
+        Button: [def("Button", "app/models/button.rb"), def("Button", "shared/components/Button.tsx")],
+      });
+      expect(reexportOriginFile("Button", "ui-kit/index.ts", ctx, "strict", tsOnly)).toBe(
+        "shared/components/Button.tsx",
+      );
+    });
+  });
 });

@@ -10,6 +10,7 @@ import {
   TSGlobalShortNameSymbolResolutionStrategy,
   type ResolverConfig,
 } from "../../../../../../src/core/domains/language/typescript/resolver/strategies/index.js";
+import { targetsExternalImport } from "../../../../../../src/core/domains/language/typescript/resolver/ts-external-call.js";
 import { TSCallResolver } from "../../../../../../src/core/domains/language/typescript/resolver/ts-resolver.js";
 import { InMemoryGlobalSymbolTable } from "../../../../../../src/core/domains/trajectory/codegraph/symbols/symbol-table.js";
 
@@ -96,14 +97,14 @@ describe("TSGlobalShortNameSymbolResolutionStrategy — TS utility-type receiver
     expect(outcome.kind).toBe("continue");
   });
 
-  it("STILL resolves an `Awaited`-annotated receiver whose member is ordinary project vocabulary (job.handle(req))", () => {
+  it("does not call an `Awaited`-annotated receiver external when its member is ordinary project vocabulary (job.handle(req))", () => {
     const call: CallRef = { callText: "job.handle(req)", receiver: "job", member: "handle", startLine: 9 };
     const symbolTable = tableWith(["src/svc.ts", [sym("Service#handle", "handle", "src/svc.ts", ["Service"])]]);
-    const outcome = strat.attempt(call, ctx({ symbolTable, localBindings: { job: [{ line: 2, type: "Awaited" }] } }));
-    expect(outcome).toEqual({
-      kind: "resolved",
-      target: { targetRelPath: "src/svc.ts", targetSymbolId: "Service#handle" },
-    });
+    const context = ctx({ symbolTable, localBindings: { job: [{ line: 2, type: "Awaited" }] } });
+    expect(targetsExternalImport(call, context, cfg.tsOptions, null)).toBe(false);
+    // `Awaited` names no type the project declares, so it is no evidence for the
+    // unique `handle` either — the name pass declines (bd tea-rags-mcp-t5cji).
+    expect(strat.attempt(call, context).kind).toBe("continue");
   });
 
   /**

@@ -1,6 +1,7 @@
 import { CONTINUE, deferred, resolved } from "../../../../../contracts/resolution.js";
 import { pickSingleCandidate, type CallContext, type CallRef } from "../../../../../contracts/types/codegraph.js";
 import type { SymbolResolutionOutcome, SymbolResolutionStrategy } from "../../../../../contracts/types/language.js";
+import { lookupEcmascriptSymbolsByShortName } from "../../../shared/ecmascript-symbol-lookup.js";
 import { targetsExternalImport } from "../ts-external-call.js";
 import { importSpecifierNamesReceiver } from "../ts-import-basename-match.js";
 import { mapImportToFile } from "../ts-path-mapper.js";
@@ -47,7 +48,7 @@ export class TSImportBasenameSymbolResolutionStrategy implements SymbolResolutio
     const targetFile = mapImportToFile(match.importText, ctx.callerFile, this.cfg.tsOptions, this.cfg.fileExists);
     if (!targetFile) return CONTINUE;
 
-    const candidates = ctx.symbolTable.lookupByShortName(call.member).filter((def) => def.relPath === targetFile);
+    const candidates = lookupEcmascriptSymbolsByShortName(ctx, call.member).filter((def) => def.relPath === targetFile);
     const target = pickSingleCandidate(candidates, this.cfg.mode);
     if (target) return resolved({ targetRelPath: target.relPath, targetSymbolId: target.symbolId });
     // Same guard, and the same placement rationale, as `namedImport` (bd

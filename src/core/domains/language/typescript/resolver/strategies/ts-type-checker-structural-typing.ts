@@ -52,6 +52,10 @@ import {
 import type { SymbolResolutionOutcome, SymbolResolutionStrategy } from "../../../../../contracts/types/language.js";
 import { INSTANCE_METHOD_SEPARATOR } from "../../../../../infra/symbolid/index.js";
 import { ECMASCRIPT_BUILTIN_TYPES, ECMASCRIPT_GLOBALS } from "../../../shared/ecmascript-globals.js";
+import {
+  lookupEcmascriptSymbols,
+  lookupEcmascriptSymbolsByShortName,
+} from "../../../shared/ecmascript-symbol-lookup.js";
 import { mapImportToFile, type ProjectFileProbe, type TsCompilerOptions } from "../ts-path-mapper.js";
 import type { TSProgramCache } from "../ts-program-cache.js";
 import type { ResolverConfig } from "./shared.js";
@@ -202,7 +206,7 @@ export class TSStructuralTypingSymbolResolutionStrategy implements SymbolResolut
       const symbolId = ownerExactSymbolId(site, member, ctx);
       if (symbolId !== null) return symbolId;
     }
-    const byShortName = ctx.symbolTable.lookupByShortName(member).filter((def) => def.relPath === targetRelPath);
+    const byShortName = lookupEcmascriptSymbolsByShortName(ctx, member).filter((def) => def.relPath === targetRelPath);
     return pickSingleCandidate(byShortName, this.cfg.mode)?.symbolId ?? null;
   }
 }
@@ -240,7 +244,9 @@ function ownerExactSymbolId(site: DeclarationSite, member: string, ctx: CallCont
   const owner = declarationOwnerName(site.declaration);
   if (owner === null) return null;
   for (const separator of [INSTANCE_METHOD_SEPARATOR, TS_SCOPE_SEPARATOR]) {
-    const hits = ctx.symbolTable.lookup(`${owner}${separator}${member}`).filter((def) => def.relPath === site.relPath);
+    const hits = lookupEcmascriptSymbols(ctx, `${owner}${separator}${member}`).filter(
+      (def) => def.relPath === site.relPath,
+    );
     if (hits.length > 0) return hits[0].symbolId;
   }
   return null;

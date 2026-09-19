@@ -72,6 +72,10 @@ import {
 } from "../../../../../contracts/types/codegraph.js";
 import type { SymbolResolutionOutcome, SymbolResolutionStrategy } from "../../../../../contracts/types/language.js";
 import { ECMASCRIPT_GLOBALS } from "../../../shared/ecmascript-globals.js";
+import {
+  lookupEcmascriptSymbols,
+  lookupEcmascriptSymbolsByShortName,
+} from "../../../shared/ecmascript-symbol-lookup.js";
 import type { TSProgramCache } from "../ts-program-cache.js";
 import type { ResolverConfig } from "./shared.js";
 import { memberSeparator, prefixWithNamespaces } from "./ts-type-checker-shared.js";
@@ -149,10 +153,10 @@ export class TSTypeCheckerReturnTypeInferenceSymbolResolutionStrategy implements
   ): string | null {
     const composed = composeMemberSymbolId(declaration, member);
     if (composed !== null) {
-      const exact = ctx.symbolTable.lookup(composed).filter((def) => def.relPath === targetRelPath);
+      const exact = lookupEcmascriptSymbols(ctx, composed).filter((def) => def.relPath === targetRelPath);
       if (exact.length > 0) return exact[0].symbolId;
     }
-    const byShortName = ctx.symbolTable.lookupByShortName(member).filter((def) => def.relPath === targetRelPath);
+    const byShortName = lookupEcmascriptSymbolsByShortName(ctx, member).filter((def) => def.relPath === targetRelPath);
     return pickSingleCandidate(byShortName, this.cfg.mode)?.symbolId ?? null;
   }
 }

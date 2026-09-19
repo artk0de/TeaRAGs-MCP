@@ -30,8 +30,9 @@ import {
   ECMASCRIPT_CONTAINER_PROTOTYPE_METHODS,
   ECMASCRIPT_GLOBALS,
 } from "../../shared/ecmascript-globals.js";
+import { lookupEcmascriptSymbols, lookupEcmascriptSymbolsByShortName } from "../../shared/ecmascript-symbol-lookup.js";
 import { findCallExpression } from "./strategies/ts-type-checker-fallback.js";
-import { findReceiverExpression } from "./strategies/ts-type-checker-shared.js";
+import { findReceiverExpression, findSuperKeyword } from "./strategies/ts-type-checker-shared.js";
 import { importSpecifierNamesReceiver } from "./ts-import-basename-match.js";
 import { calleeIsExternalLocalBinding } from "./ts-local-callee.js";
 import { mapImportToFile, type ProjectFileProbe, type TsCompilerOptions } from "./ts-path-mapper.js";
@@ -127,7 +128,9 @@ export function targetsExternalImport(
   // predicates, so the order changes only what gets paid for, never the answer.
   // Case 6 is LAST because it is the only arm a BARE call can reach — the two
   // before it return early without a receiver — so ordering it here costs a
-  // receiver-bearing call nothing.
+  // receiver-bearing call nothing. Case 9 answers `super` alone, which every
+  // other arm declines by construction.
+  if (receiver === "super") return superBaseDeclaredOutsideProject(call, ctx, programCache);
   return (
     receiverIsImportedBuiltinContainer(call, ctx) ||
     receiverIsExternalInstance(call, ctx, tsOptions, programCache, fileExists) ||
@@ -215,7 +218,7 @@ function checkerResolvesCalleeOutsideProject(
   programCache: TSProgramCache | null,
 ): boolean {
   if (programCache === null || call.member.length === 0) return false;
-  if (ctx.symbolTable.lookupByShortName(call.member).length === 0) return false;
+  if (lookupEcmascriptSymbolsByShortName(ctx, call.member).length === 0) return false;
   const handle = programCache.acquire(ctx.callerFile);
   if (handle === null) return false;
   const node = findCallExpression(handle.sourceFile, call.startLine, call.member);
@@ -254,7 +257,7 @@ function receiverIsImportedBuiltinContainer(call: CallRef, ctx: CallContext): bo
   const receiver = call.receiver ?? null;
   if (receiver === null || receiver.length === 0 || receiver === "this" || receiver === "super") return false;
   if (!ECMASCRIPT_CONTAINER_PROTOTYPE_METHODS.has(call.member)) return false;
-  if (ctx.symbolTable.lookup(receiver).length > 0) return false;
+  if (lookupEcmascriptSymbols(ctx, receiver).length > 0) return false;
   return ctx.imports.some(
     (imp) => imp.importedNames?.includes(receiver) || importSpecifierNamesReceiver(imp.importText, receiver),
   );
@@ -378,7 +381,7 @@ function receiverIsExternalInstance(
     // rest on.
     const origin = annotationOrigin(typeName, ctx, tsOptions, fileExists);
     if (origin !== "unbound") return origin === "package";
-    if (ctx.symbolTable.lookup(typeName).length > 0) return false;
+    if (lookupEcmascriptSymbols(ctx, typeName).length > 0) return false;
   } else if (ECMASCRIPT_BUILTIN_PROTOTYPE_METHODS.has(call.member)) {
     return true;
   }
@@ -501,6 +504,38 @@ function checkerTypesReceiverOutsideProject(call: CallRef, ctx: CallContext, pro
  * project that declares its own `class Map` still keeps its edges: the checker
  * resolves that receiver to the project declaration and this returns `false`.
  */
+/**
+ * Case 9 (bd tea-rags-mcp-t5cji): a `super(...)` / `super.m()` whose base class
+ * the checker declares entirely outside the project — the default lib's
+ * `Error`, a dependency's `Component` or `EventEmitter`.
+ *
+ * The `super` pass is terminal: it walks `classExtends` and DROPs when no
+ * ancestor the project declares owns the member, which is exactly right for
+ * the edge and wrong for the denominator — the call is not a miss the resolver
+ * could fix, it leaves the project. On taxdome the 16 `extends Error`
+ * constructors used to hide behind a fabricated edge onto a Ruby `Error`
+ * model; once the family filter dropped it they were charged as misses.
+ *
+ * The evidence is the `super` keyword's own type, read with the same
+ * declaration-site test the out-of-project receiver arm uses
+ * ({@link typeDeclaredOutsideProject}): in a constructor it is the base's
+ * static side, in a method its instance side, and either way its declarations
+ * say where the class lives. No Program, no `super` on the recorded line, or a
+ * type with no declarations is no evidence — the call stays an internal miss.
+ */
+function superBaseDeclaredOutsideProject(
+  call: CallRef,
+  ctx: CallContext,
+  programCache: TSProgramCache | null,
+): boolean {
+  if (programCache === null) return false;
+  const handle = programCache.acquire(ctx.callerFile);
+  if (handle === null) return false;
+  const keyword = findSuperKeyword(handle.sourceFile, call.startLine);
+  if (keyword === null) return false;
+  return typeDeclaredOutsideProject(handle.checker, handle.checker.getTypeAtLocation(keyword), programCache);
+}
+
 function typeDeclaredOutsideProject(checker: ts.TypeChecker, type: ts.Type, programCache: TSProgramCache): boolean {
   for (const constituent of typeConstituents(checker, type)) {
     const symbol = constituent.getSymbol();
@@ -526,7 +561,7 @@ function typeDeclaredOutsideProject(checker: ts.TypeChecker, type: ts.Type, prog
  * trade a fabricated edge for a lost one.
  */
 function receiverNamesTypeLevelOperator(typeName: string, ctx: CallContext): boolean {
-  return TS_UTILITY_TYPES.has(typeName) && ctx.symbolTable.lookup(typeName).length === 0;
+  return TS_UTILITY_TYPES.has(typeName) && lookupEcmascriptSymbols(ctx, typeName).length === 0;
 }
 
 /**
@@ -538,8 +573,11 @@ function receiverNamesTypeLevelOperator(typeName: string, ctx: CallContext): boo
  *     `this.a.b.x()` is out of scope (one level only).
  *   - bare `<name>.x()` → walker-bound local type via `resolveLocalBindingType`
  *     (mirrors `TSLocalBindingSymbolResolutionStrategy`).
+ *
+ * Exported for `memberCandidateLacksReceiverEvidence`, which exempts exactly
+ * these receivers: a walker-typed receiver belongs to the typed passes.
  */
-function receiverTypeName(call: CallRef, ctx: CallContext): string | undefined {
+export function receiverTypeName(call: CallRef, ctx: CallContext): string | undefined {
   const receiver = call.receiver ?? "";
   if (receiver.startsWith("this.")) {
     const fieldSegment = receiver.slice("this.".length);

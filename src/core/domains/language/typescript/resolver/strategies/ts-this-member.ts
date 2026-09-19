@@ -1,6 +1,10 @@
 import { CONTINUE, resolved } from "../../../../../contracts/resolution.js";
 import type { CallContext, CallRef } from "../../../../../contracts/types/codegraph.js";
 import type { SymbolResolutionOutcome, SymbolResolutionStrategy } from "../../../../../contracts/types/language.js";
+import {
+  lookupEcmascriptSymbols,
+  lookupEcmascriptSymbolsByShortName,
+} from "../../../shared/ecmascript-symbol-lookup.js";
 import type { ResolverConfig } from "./shared.js";
 
 /**
@@ -20,19 +24,19 @@ export class TSThisMemberSymbolResolutionStrategy implements SymbolResolutionStr
     const enclosing = ctx.callerScope[ctx.callerScope.length - 1];
 
     const fqName = `${enclosing}#${call.member}`;
-    const direct = ctx.symbolTable.lookup(fqName).find((def) => def.relPath === ctx.callerFile);
+    const direct = lookupEcmascriptSymbols(ctx, fqName).find((def) => def.relPath === ctx.callerFile);
     if (direct) return resolved({ targetRelPath: direct.relPath, targetSymbolId: direct.symbolId });
 
     // Static dispatch within the class — `this.staticHelper` is unusual but
     // legal; the target symbolId then uses `.`.
     const staticFqName = `${enclosing}.${call.member}`;
-    const staticHit = ctx.symbolTable.lookup(staticFqName).find((def) => def.relPath === ctx.callerFile);
+    const staticHit = lookupEcmascriptSymbols(ctx, staticFqName).find((def) => def.relPath === ctx.callerFile);
     if (staticHit) return resolved({ targetRelPath: staticHit.relPath, targetSymbolId: staticHit.symbolId });
 
     // Class instance shadowed via getter / decorator / mixin: fall back to
     // short-name lookup within the same file, which still beats global
     // ambiguity.
-    const sameFile = ctx.symbolTable.lookupByShortName(call.member).find((def) => def.relPath === ctx.callerFile);
+    const sameFile = lookupEcmascriptSymbolsByShortName(ctx, call.member).find((def) => def.relPath === ctx.callerFile);
     if (sameFile) return resolved({ targetRelPath: sameFile.relPath, targetSymbolId: sameFile.symbolId });
 
     return CONTINUE;

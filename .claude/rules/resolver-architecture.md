@@ -5,6 +5,7 @@ paths:
   - "src/core/domains/language/cone-dispatch.ts"
   - "src/core/domains/language/*/resolver/**"
   - "src/core/domains/language/*/dsl/**"
+  - "src/core/domains/language/shared/**"
   - "src/core/contracts/types/language.ts"
   - "tests/core/domains/language/*/resolver/**"
 ---
@@ -50,7 +51,14 @@ Every per-language short-name lookup must go through that language's filtered
 helper (`lookupPythonSymbolsByShortName`, `lookupRubySymbolsByShortName`), never
 `symbolTable.lookupByShortName` directly — the table is one polyglot index with
 no `language` field, so a bare lookup lets a foreign namesake be picked or trip
-a cardinality gate.
+a cardinality gate. The fully-qualified `symbolTable.lookup(fq)` is no safer:
+Ruby spells `Report#render` exactly as TypeScript does. TypeScript and
+JavaScript are one FAMILY — they resolve into each other (`allowJs`, `.d.ts`) —
+and share `lookupEcmascriptSymbolsByShortName` / `lookupEcmascriptSymbols`
+(`shared/ecmascript-symbol-lookup.ts`) for both. A kernel engine that looks
+symbols up takes the caller's lookup as a port (`reexportOriginFile`), and a
+resolver answers the miss classifier's `noInProjectDef` question through
+`hasInProjectDefinition` in its own language.
 
 ## 3. Registry is a typed array, not self-registration
 

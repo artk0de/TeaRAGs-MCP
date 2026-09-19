@@ -18,6 +18,7 @@ import {
   pickSingleCandidate,
   type AmbiguousResolveMode,
   type CallContext,
+  type SymbolDefinition,
 } from "../../../contracts/types/codegraph.js";
 
 /**
@@ -89,14 +90,24 @@ import {
  * imported-callee pass (bd tea-rags-mcp-w65s7): both map a specifier to a file
  * and then have to ask the same barrel question of it, and two copies of these
  * three gates would drift.
+ *
+ * `lookupDeclarations` is the caller language's own way into the table (bd
+ * tea-rags-mcp-t5cji). The table is one polyglot index with no `language`
+ * field, so the default `ctx.symbolTable.lookup` lets a Ruby `class Widget`
+ * answer a TypeScript barrel whose `Widget` is a `forwardRef` the walker never
+ * names — the hop then lands the import on a `.rb` file — and lets a foreign
+ * namesake beside the real declaration make the answer ambiguous. The kernel
+ * stays language-neutral: TypeScript passes `lookupEcmascriptSymbols`; a
+ * caller that passes nothing keeps the unfiltered lookup it always had.
  */
 export function reexportOriginFile(
   name: string,
   importedFile: string,
   ctx: CallContext,
   mode: AmbiguousResolveMode,
+  lookupDeclarations: (ctx: CallContext, name: string) => SymbolDefinition[] = (c, n) => c.symbolTable.lookup(n),
 ): string | null {
-  const declarations = ctx.symbolTable.lookup(name);
+  const declarations = lookupDeclarations(ctx, name);
   if (declarations.length === 0) return null;
   if (declarations.some((def) => def.relPath === importedFile)) return null;
   const candidates = [...new Set(declarations.map((def) => def.relPath))];

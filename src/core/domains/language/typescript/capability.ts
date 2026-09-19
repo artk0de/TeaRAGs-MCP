@@ -41,6 +41,16 @@ export const capability: LanguageCapability = {
   // an existing file no source candidate named (a CSS module, an image, a JSON
   // module) — maps to nothing instead of `<asset>.ts`, so it has no file edge
   // and a call on its binding is external; a JSON module the probe cannot find
-  // maps as written.
+  // maps as written. Also bd
+  // tea-rags-mcp-t5cji (same unreleased bump): every symbol-table lookup is
+  // restricted to TypeScript / JavaScript files, so no edge lands on a Ruby or
+  // Python namesake, a foreign namesake no longer suppresses a TS answer (super,
+  // cone, barrel hop, cardinality gates), and a bare call whose only namesake is
+  // foreign counts as `noInProjectDef`. And (same bump) a member call on a
+  // receiver the walker did not type is committed by `globalShortName` /
+  // `importNarrowedFallback` only when the checker resolves the member to the
+  // candidate — never by a unique short name alone. And an unresolved `super`
+  // call whose base the checker declares outside the project (`extends Error`,
+  // a dependency's class) counts as `externalSkipped`, not a miss.
   versions: { chunking: 1, walker: 6, codegraphSchema: 2 },
 };

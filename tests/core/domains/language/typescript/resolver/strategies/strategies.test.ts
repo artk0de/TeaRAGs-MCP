@@ -432,8 +432,19 @@ describe("TSImportNarrowedFallbackSymbolResolutionStrategy", () => {
     const symbolTable = tableWith(
       ["src/impl-a.ts", [sym("ImplA#handle", "handle", "src/impl-a.ts", ["ImplA"])]],
       ["src/impl-b.ts", [sym("ImplB#handle", "handle", "src/impl-b.ts", ["ImplB"])]],
+      ["src/handler.ts", [sym("Handler", "Handler", "src/handler.ts", [])]],
     );
-    const outcome = strat.attempt(call, ctx({ symbolTable, imports: [{ importText: "./impl-a.js" }] }));
+    // `impl: Handler` — the receiver the walker typed by a project interface,
+    // which this pass recovers; an untyped one is no longer narrowed by name (bd
+    // tea-rags-mcp-t5cji).
+    const outcome = strat.attempt(
+      call,
+      ctx({
+        symbolTable,
+        imports: [{ importText: "./impl-a.js" }],
+        localBindings: { impl: [{ line: 1, type: "Handler" }] },
+      }),
+    );
     expect(outcome).toEqual({
       kind: "resolved",
       target: { targetRelPath: "src/impl-a.ts", targetSymbolId: "ImplA#handle" },

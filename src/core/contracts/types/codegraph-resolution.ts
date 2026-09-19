@@ -158,6 +158,16 @@ export interface CallResolver {
    * keep every such call in the denominator.
    */
   targetsCoreAmbiguousMember?: (call: CallRef, ctx: CallContext) => boolean;
+  /**
+   * Optional: does the project declare ANY definition of `call.member` this
+   * resolver could target? (bd tea-rags-mcp-t5cji). Asked by the miss
+   * classifier's `noInProjectDef` gate for an UNRESOLVED call, in place of the
+   * language-blind `lookupByShortName(member).length > 0` — a foreign-language
+   * namesake is a definition no edge of this resolver can reach. Mirrors
+   * `LanguageSymbolResolver.hasInProjectDefinition`; resolvers that omit it keep
+   * the unfiltered gate.
+   */
+  hasInProjectDefinition?: (call: CallRef, ctx: CallContext) => boolean;
 }
 
 /**

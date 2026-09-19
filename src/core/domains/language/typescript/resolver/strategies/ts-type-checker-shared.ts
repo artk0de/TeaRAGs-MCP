@@ -163,6 +163,32 @@ export function findReceiverExpression(
   return callSiteAt(sourceFile, startLine, member)?.receiver ?? null;
 }
 
+/**
+ * The first `super` keyword on 1-based `startLine` — the callee of `super(...)`
+ * or the object of `super.m()` — or `null`. {@link callSiteAt} does not index
+ * it: a `super(...)` callee is a keyword, not a name, and every pass that reads
+ * that index asks about names. Only the external classifier asks about `super`
+ * (bd tea-rags-mcp-t5cji), and only for a call the `super` pass left
+ * unresolved, so a pruned walk per question is cheaper than widening an index
+ * every call site pays for.
+ */
+export function findSuperKeyword(sourceFile: ts.SourceFile, startLine: number): ts.Node | null {
+  let found: ts.Node | null = null;
+  const visit = (node: ts.Node): void => {
+    if (found !== null) return;
+    const first = sourceFile.getLineAndCharacterOfPosition(node.getStart(sourceFile)).line + 1;
+    const last = sourceFile.getLineAndCharacterOfPosition(node.getEnd()).line + 1;
+    if (last < startLine || first > startLine) return;
+    if (node.kind === ts.SyntaxKind.SuperKeyword && first === startLine) {
+      found = node;
+      return;
+    }
+    ts.forEachChild(node, visit);
+  };
+  ts.forEachChild(sourceFile, visit);
+  return found;
+}
+
 /** `#` for instance members, `.` for `static` ones — the universal convention. */
 export function memberSeparator(declaration: ts.Declaration): string {
   const isStatic = ts.canHaveModifiers(declaration)

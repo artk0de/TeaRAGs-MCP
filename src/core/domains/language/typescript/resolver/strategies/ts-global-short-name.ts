@@ -1,12 +1,14 @@
 import { CONTINUE, resolved } from "../../../../../contracts/resolution.js";
 import { pickSingleCandidate, type CallContext, type CallRef } from "../../../../../contracts/types/codegraph.js";
 import type { SymbolResolutionOutcome, SymbolResolutionStrategy } from "../../../../../contracts/types/language.js";
+import { lookupEcmascriptSymbolsByShortName } from "../../../shared/ecmascript-symbol-lookup.js";
 import { targetsExternalImport } from "../ts-external-call.js";
 import { checkerDeclaresCalleeIn, importBoundProjectFile } from "../ts-import-bound-callee.js";
 import { interfaceReceiverExcludesCandidate } from "../ts-interface-receiver.js";
 import { calleeIsLocalValueBinding } from "../ts-local-callee.js";
 import { receiverBoundToProjectType, receiverIsUnpinnableLocalValueBinding } from "../ts-local-receiver.js";
 import type { TSProgramCache } from "../ts-program-cache.js";
+import { memberCandidateLacksReceiverEvidence } from "../ts-receiver-member-evidence.js";
 import type { ResolverConfig } from "./shared.js";
 
 /**
@@ -68,6 +70,13 @@ import type { ResolverConfig } from "./shared.js";
  * {@link interfaceReceiverExcludesCandidate} for the rule and for why a
  * structural implementer with no `implements` clause is not accepted on name.
  *
+ * Any OTHER receiver the walker did not type needs the checker's agreement,
+ * not just a unique name (bd tea-rags-mcp-t5cji): see
+ * {@link memberCandidateLacksReceiverEvidence}. Once the family filter stopped
+ * Ruby namesakes from making `title` / `filter` / `request` ambiguous, this
+ * pass committed `COPY.title(...)` on an object literal to the project's lone
+ * `Message#title`. A bare call is exempt — its name IS the callee.
+ *
  * The guard reads the resolver's `TSProgramCache` when one exists (bd
  * tea-rags-mcp-335eu), which is what lets it decline a receiver only the checker
  * could type — `const map = readRegistry(); map.set(k, v)`. The cache arrives as
@@ -88,11 +97,12 @@ export class TSGlobalShortNameSymbolResolutionStrategy implements SymbolResoluti
     if (targetsExternalImport(call, ctx, this.cfg.tsOptions, this.programCache, this.cfg.fileExists)) return CONTINUE;
     if (calleeIsLocalValueBinding(call, ctx, this.programCache)) return CONTINUE;
     if (receiverIsUnpinnableLocalValueBinding(call, ctx, this.programCache)) return CONTINUE;
-    const fallback = ctx.symbolTable.lookupByShortName(call.member);
+    const fallback = lookupEcmascriptSymbolsByShortName(ctx, call.member);
     const hit = pickSingleCandidate(fallback, this.cfg.mode);
     if (!hit) return CONTINUE;
     // After the pick, so the checker is asked only when a match would commit.
     if (interfaceReceiverExcludesCandidate(call, ctx, this.programCache, hit)) return CONTINUE;
+    if (memberCandidateLacksReceiverEvidence(call, ctx, this.programCache, hit)) return CONTINUE;
     if (this.importContradictsCandidate(call, ctx, hit.relPath)) return CONTINUE;
     return resolved({ targetRelPath: hit.relPath, targetSymbolId: hit.symbolId });
   }

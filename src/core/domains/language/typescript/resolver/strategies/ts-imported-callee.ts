@@ -6,6 +6,7 @@ import {
   type SymbolResolutionTarget,
 } from "../../../../../contracts/types/codegraph.js";
 import type { SymbolResolutionOutcome, SymbolResolutionStrategy } from "../../../../../contracts/types/language.js";
+import { lookupEcmascriptSymbolsByShortName } from "../../../shared/ecmascript-symbol-lookup.js";
 import { mapImportToFile } from "../ts-path-mapper.js";
 import { reexportOriginFile, type ResolverConfig } from "./shared.js";
 
@@ -93,7 +94,7 @@ export class TSImportedCalleeSymbolResolutionStrategy implements SymbolResolutio
    * continues down the chain unanswered rather than picking a side.
    */
   private pinInFile(exportedName: string, targetFile: string, ctx: CallContext): SymbolResolutionTarget | null {
-    const inFile = ctx.symbolTable.lookupByShortName(exportedName).filter((def) => def.relPath === targetFile);
+    const inFile = lookupEcmascriptSymbolsByShortName(ctx, exportedName).filter((def) => def.relPath === targetFile);
     const topLevel = pickSingleCandidate(
       inFile.filter((def) => def.scope.length === 0),
       this.cfg.mode,

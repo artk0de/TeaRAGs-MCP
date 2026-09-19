@@ -26,5 +26,9 @@ export const capability: LanguageCapability = {
   // file as written, and `../build/…` or a stylesheet no edge at all where the
   // default named `<file>.js` / `<file>.ts.js`. The call path still maps a
   // `.ts`-family or `.json` specifier as written rather than `<file>.ts.js`.
+  // Also bd tea-rags-mcp-t5cji (same unreleased bump): lookups are restricted
+  // to TypeScript / JavaScript files, so the bare-call fallback and `super` no
+  // longer land on a Ruby or Python namesake, and such a call counts as
+  // `noInProjectDef`.
   versions: { chunking: 1, walker: 3, codegraphSchema: 2 },
 };

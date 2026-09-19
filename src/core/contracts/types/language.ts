@@ -620,6 +620,19 @@ export interface LanguageSymbolResolver {
    * a real miss). Mirrors `CallResolver.targetsCoreAmbiguousMember`.
    */
   targetsCoreAmbiguousMember?: (call: CallRef, ctx: CallContext) => boolean;
+  /**
+   * Optional: does the project declare ANY definition of `call.member` this
+   * language could resolve the call to? (bd tea-rags-mcp-t5cji). The miss
+   * classifier's `noInProjectDef` gate asks it of an UNRESOLVED call; `false`
+   * moves the call out of the `resolveSuccessRate` denominator. The symbol
+   * table is one polyglot index with no `language` field, so a language whose
+   * resolver never targets another language's files answers through its own
+   * filtered lookup — otherwise a TypeScript `perform()` whose only namesake is
+   * Ruby's `Worker#perform` is charged as a miss the resolver can never fix.
+   * Mirrors `CallResolver.hasInProjectDefinition`; languages that omit it keep
+   * the unfiltered `lookupByShortName(member).length > 0`.
+   */
+  hasInProjectDefinition?: (call: CallRef, ctx: CallContext) => boolean;
 }
 
 /**

@@ -88,6 +88,7 @@ import {
 import type { SymbolResolutionStrategy } from "../../../../contracts/types/language.js";
 import { ConeDispatchResolver } from "../../cone-dispatch.js";
 import { resolveViaChain } from "../../resolver-chain.js";
+import { lookupEcmascriptSymbolsByShortName } from "../../shared/ecmascript-symbol-lookup.js";
 import {
   collectImportedFiles,
   CONE_MAX_DEFAULT,
@@ -534,6 +535,17 @@ export class TSCallResolver implements CallResolver {
   }
 
   /**
+   * The miss classifier's `noInProjectDef` gate, asked in this resolver's own
+   * language family (bd tea-rags-mcp-t5cji). Every lookup above is restricted to
+   * TypeScript and JavaScript files, so a member only Ruby or Python declares is
+   * a definition no edge from here can reach — counting it as a miss would
+   * charge the rate for a call the chain is right to leave unresolved.
+   */
+  hasInProjectDefinition(call: CallRef, ctx: CallContext): boolean {
+    return lookupEcmascriptSymbolsByShortName(ctx, call.member).length > 0;
+  }
+
+  /**
    * Fan-out resolution for lookup-table dispatch (bd tea-rags-mcp-n0zj).
    * Returns every edge a dispatching call implies:
    *
@@ -649,7 +661,7 @@ export class TSCallResolver implements CallResolver {
    * wins; on ambiguity the caller's import map narrows; otherwise drop.
    */
   private resolveCandidateName(name: string, ctx: CallContext): SymbolResolutionTarget | null {
-    const candidates = ctx.symbolTable.lookupByShortName(name).filter((def) => def.scope.length === 0);
+    const candidates = lookupEcmascriptSymbolsByShortName(ctx, name).filter((def) => def.scope.length === 0);
     const sole = pickSingleCandidate(candidates, this.mode);
     if (sole) return { targetRelPath: sole.relPath, targetSymbolId: sole.symbolId };
     if (candidates.length > 1) {

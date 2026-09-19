@@ -179,13 +179,15 @@
   `readBack` on the others, then on the completion owner LAST and ALONE (it
   recomputes cycles + PageRank); the chunk pass goes to the partition that
   walked each file. `CODEGRAPH_LANGUAGE_AFFINITY=0` keeps collection affinity.
-  Why the mirror: the symbol table and the run-global maps are language-blind —
-  TypeScript's short-name lookups see Ruby definitions, `ancestors` is keyed by
-  bare class name — so a partition that absorbed only its own language resolves
-  DIFFERENT edges (`provider-language-partition.test.ts` pins it). Why last and
-  alone: defence in depth, plus the closing timing line. The recompute drains
-  the edge tables through `DuckDbGraphSession#streamRows`, which runs on a
-  connection of its own inside a read snapshot and fails loudly
+  Why the mirror: the symbol table and the run-global maps span every language —
+  TypeScript legitimately resolves into JavaScript files another partition owns,
+  and `ancestors` / `classExtends` are keyed by bare class name — so a partition
+  that absorbed only its own language resolves DIFFERENT edges
+  (`provider-language-partition.test.ts` pins it). Resolvers filter the table to
+  their own language family (bd tea-rags-mcp-t5cji); the maps they read are not
+  filtered. Why last and alone: defence in depth, plus the closing timing line.
+  The recompute drains the edge tables through `DuckDbGraphSession#streamRows`,
+  which runs on a connection of its own inside a read snapshot and fails loudly
   (`DuckDbStreamIncompleteError`) if the drain comes up short, and
   `CodegraphDaemonServer#admitWrite` runs a collection's writes one at a time
   (both bd tea-rags-mcp-sgo8v / f924y) — so a concurrent partition statement can

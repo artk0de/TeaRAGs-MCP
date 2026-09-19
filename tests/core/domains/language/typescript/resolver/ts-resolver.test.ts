@@ -245,8 +245,9 @@ describe("TSCallResolver", () => {
         callerScope: ["Coordinator"],
         imports: [],
         symbolTable,
-        // No classFieldTypes → field type unknown. Resolver should fall
-        // through to short-name lookup. `write` is unique → resolves.
+        // No classFieldTypes → field type unknown. The field branch falls
+        // through; the receiver is then untyped, and a unique `write` alone no
+        // longer commits it (bd tea-rags-mcp-t5cji).
         classFieldTypes: undefined,
       };
       const call: CallRef = {
@@ -256,7 +257,7 @@ describe("TSCallResolver", () => {
         startLine: 1,
       };
       const result = resolver.resolve(call, ctx);
-      expect(result).toEqual({ targetRelPath: "src/store.ts", targetSymbolId: "MarkerStore#write" });
+      expect(result).toBeNull();
     });
 
     it("does NOT recurse on chained access (this.a.b.method() is out of scope)", () => {
@@ -279,9 +280,10 @@ describe("TSCallResolver", () => {
         startLine: 1,
       };
       const result = resolver.resolve(call, ctx);
-      // Chained — cross-class branch does NOT engage. Falls through to
-      // short-name lookup; `go` is unique → resolves via fallback path.
-      expect(result).toEqual({ targetRelPath: "src/x.ts", targetSymbolId: "X#go" });
+      // Chained — cross-class branch does NOT engage (it would look `A`'s
+      // member `b` up and find nothing). The receiver is then untyped, and a
+      // unique `go` alone no longer commits it (bd tea-rags-mcp-t5cji).
+      expect(result).toBeNull();
     });
 
     it("survives NDJSON spill — classFieldTypes round-trips through JSON without losing structure", () => {
@@ -349,7 +351,9 @@ describe("TSCallResolver", () => {
 
     it("first mode picks arbitrary candidate (legacy)", () => {
       const resolver = new TSCallResolver({ baseUrl: ".", paths: {} }, "first");
-      const call: CallRef = { callText: "obj.save()", receiver: "obj", member: "save", startLine: 1 };
+      // A BARE call: after bd tea-rags-mcp-t5cji the name decides only where
+      // there is no receiver to type, so that is where the mode is observable.
+      const call: CallRef = { callText: "save()", receiver: null, member: "save", startLine: 1 };
       const ctx: CallContext = {
         callerFile: "src/main.ts",
         callerScope: [],
@@ -518,6 +522,15 @@ describe("TSCallResolver", () => {
           scope: ["PythonCallResolver"],
         },
       ]);
+      symbolTable.upsertFile("src/contracts/call-resolver.ts", [
+        {
+          symbolId: "CallResolver",
+          fqName: "CallResolver",
+          shortName: "CallResolver",
+          relPath: "src/contracts/call-resolver.ts",
+          scope: [],
+        },
+      ]);
       const resolver = new TSCallResolver({ baseUrl: ".", paths: {} });
       // Provider walks a file in src/provider/ that imports only the ruby resolver
       // and calls `resolver.resolve(call, ctx)` on a CallResolver-typed parameter.
@@ -528,6 +541,11 @@ describe("TSCallResolver", () => {
           callerScope: ["CodegraphProvider"],
           imports: [{ importText: "../resolvers/ruby/ruby-resolver", startLine: 1 }],
           symbolTable,
+          // The `CallResolver`-typed parameter the comment above describes —
+          // the walker-typed receiver, of a type the project declares, that this
+          // narrowing exists for. An untyped receiver is no longer narrowed by
+          // name (bd tea-rags-mcp-t5cji).
+          localBindings: { resolver: [{ line: 9, type: "CallResolver" }] },
         },
       );
       expect(result).toEqual({
@@ -702,6 +720,18 @@ describe("TSCallResolver", () => {
           scope: ["PythonCallResolver"],
         },
       ]);
+      // The interface itself IS a project symbol (an `interface_declaration`
+      // chunk), which is what makes the walker's binding evidence the
+      // import-narrowed recovery may act on (bd tea-rags-mcp-t5cji).
+      symbolTable.upsertFile("src/contracts/call-resolver.ts", [
+        {
+          symbolId: "CallResolver",
+          fqName: "CallResolver",
+          shortName: "CallResolver",
+          relPath: "src/contracts/call-resolver.ts",
+          scope: [],
+        },
+      ]);
       const resolver = new TSCallResolver({ baseUrl: ".", paths: {} });
       const result = resolver.resolve(
         { callText: "resolver.resolve()", receiver: "resolver", member: "resolve", startLine: 5 },
@@ -727,8 +757,10 @@ describe("TSCallResolver", () => {
         { symbolId: "helper", fqName: "helper", shortName: "helper", relPath: "src/util.ts", scope: [] },
       ]);
       const resolver = new TSCallResolver({ baseUrl: ".", paths: {} });
-      // `other.helper()` — `other` is not in localBindings, so the typed
-      // path is skipped and global short-name resolves the single match.
+      // `other.helper()` — `other` is not in localBindings, so the typed path
+      // is skipped. Nothing else types it either, and the single project
+      // `helper` is a free function no member call reaches: the name alone no
+      // longer commits it (bd tea-rags-mcp-t5cji).
       const result = resolver.resolve(
         { callText: "other.helper()", receiver: "other", member: "helper", startLine: 1 },
         {
@@ -739,7 +771,7 @@ describe("TSCallResolver", () => {
           localBindings: { resolver: [{ line: 1, type: "CallResolver" }] },
         },
       );
-      expect(result).toEqual({ targetRelPath: "src/util.ts", targetSymbolId: "helper" });
+      expect(result).toBeNull();
     });
   });
 
@@ -1019,14 +1051,17 @@ describe("TSCallResolver", () => {
       // import to its file and, since that file owns the method, pins the
       // member-level edge.
       const symbolTable = new InMemoryGlobalSymbolTable();
-      // mapImportToFile resolves `./rank-module.mjs` under baseUrl "." to a
-      // `.ts` candidate; seed the symbol there so the member resolves.
-      symbolTable.upsertFile("src/rank-module.mjs.ts", [
+      // mapImportToFile resolves `./rank-module.mjs` to its `.mts` source (bd
+      // tea-rags-mcp-x9qsh); seed the symbol there so the member resolves. The
+      // old `.mjs.ts` seed only passed through the receiver-blind short-name
+      // fallback, which no longer commits an untyped receiver (bd
+      // tea-rags-mcp-t5cji) — so this now exercises the path it names.
+      symbolTable.upsertFile("src/rank-module.mts", [
         {
           symbolId: "RankModule#run",
           fqName: "RankModule#run",
           shortName: "run",
-          relPath: "src/rank-module.mjs.ts",
+          relPath: "src/rank-module.mts",
           scope: ["RankModule"],
         },
       ]);
@@ -1042,7 +1077,7 @@ describe("TSCallResolver", () => {
       );
       // The `.mjs` basename normalized to "rankmodule" and matched the
       // receiver, routing the resolver to the imported module's method.
-      expect(result).toEqual({ targetRelPath: "src/rank-module.mjs.ts", targetSymbolId: "RankModule#run" });
+      expect(result).toEqual({ targetRelPath: "src/rank-module.mts", targetSymbolId: "RankModule#run" });
     });
 
     it("resolves new FooBarBaz() via symbol-table FQN fallback when filename does NOT mirror the class name", () => {

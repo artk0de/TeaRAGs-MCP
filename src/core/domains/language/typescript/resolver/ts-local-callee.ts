@@ -40,6 +40,7 @@
 import ts from "typescript";
 
 import type { CallContext, CallRef } from "../../../../contracts/types/codegraph.js";
+import { lookupEcmascriptSymbolsByShortName } from "../../shared/ecmascript-symbol-lookup.js";
 import { findCallExpression } from "./strategies/ts-type-checker-fallback.js";
 import type { TSProgramCache } from "./ts-program-cache.js";
 
@@ -77,7 +78,7 @@ export function calleeIsLocalValueBinding(
   programCache: TSProgramCache | null,
 ): boolean {
   if (call.receiver !== null) return false;
-  if (ctx.symbolTable.lookupByShortName(call.member).length === 0) return false;
+  if (lookupEcmascriptSymbolsByShortName(ctx, call.member).length === 0) return false;
   return classifyLocalCallee(call, ctx, programCache) !== "notLocalBinding";
 }
 

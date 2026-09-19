@@ -138,7 +138,8 @@ export class JavaScriptLanguage implements LanguageProvider {
   readonly resolver: LanguageSymbolResolver;
 
   constructor(mode: AmbiguousResolveMode = DEFAULT_AMBIGUOUS_RESOLVE_MODE) {
-    const callResolver: CallResolver = new JavascriptCallResolver(mode);
+    const javascriptResolver = new JavascriptCallResolver(mode);
+    const callResolver: CallResolver = javascriptResolver;
     this.resolver = {
       resolve: (call: CallRef, ctx: CallContext): SymbolResolutionTarget | null => callResolver.resolve(call, ctx),
       resolveDispatch: (call: CallRef, ctx: CallContext): DispatchFanoutOutcome =>
@@ -151,6 +152,10 @@ export class JavaScriptLanguage implements LanguageProvider {
         callResolver.resolveFileEdges?.(extraction, ctx) ?? [],
       targetsExternalImport: (call: CallRef, ctx: CallContext): boolean =>
         callResolver.targetsExternalImport?.(call, ctx) ?? false,
+      // The miss classifier's `noInProjectDef` gate, asked in the ECMAScript
+      // family (bd tea-rags-mcp-t5cji).
+      hasInProjectDefinition: (call: CallRef, ctx: CallContext): boolean =>
+        javascriptResolver.hasInProjectDefinition(call, ctx),
     };
   }
 }

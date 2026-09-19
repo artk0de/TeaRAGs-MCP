@@ -6,6 +6,7 @@ import {
   type SymbolDefinition,
 } from "../../../../../contracts/types/codegraph.js";
 import type { SymbolResolutionOutcome, SymbolResolutionStrategy } from "../../../../../contracts/types/language.js";
+import { lookupEcmascriptSymbolsByShortName } from "../../../shared/ecmascript-symbol-lookup.js";
 import type { ResolverConfig } from "./shared.js";
 
 // Uppercase-initial receiver == class name, TS convention.
@@ -48,17 +49,15 @@ export class TSSameFileSymbolResolutionStrategy implements SymbolResolutionStrat
 
     if (receiver === null) {
       // bare call: helper()
-      candidates = ctx.symbolTable.lookupByShortName(member).filter((d) => d.relPath === ctx.callerFile);
+      candidates = lookupEcmascriptSymbolsByShortName(ctx, member).filter((d) => d.relPath === ctx.callerFile);
     } else if (member === "constructor" && IS_CLASS_RECEIVER.test(receiver)) {
       // same-file new X(): target X#constructor in the caller file
-      candidates = ctx.symbolTable
-        .lookupByShortName("constructor")
+      candidates = lookupEcmascriptSymbolsByShortName(ctx, "constructor")
         // scope[-1] === receiver: top-level defs (scope=[]) yield undefined !== receiver → filtered out; narrows to enclosing class.
         .filter((d) => d.relPath === ctx.callerFile && d.scope[d.scope.length - 1] === receiver);
     } else if (IS_CLASS_RECEIVER.test(receiver)) {
       // same-file Class.staticMember()
-      candidates = ctx.symbolTable
-        .lookupByShortName(member)
+      candidates = lookupEcmascriptSymbolsByShortName(ctx, member)
         // scope[-1] === receiver: top-level defs (scope=[]) yield undefined !== receiver → filtered out; narrows to enclosing class.
         .filter((d) => d.relPath === ctx.callerFile && d.scope[d.scope.length - 1] === receiver);
     } else {

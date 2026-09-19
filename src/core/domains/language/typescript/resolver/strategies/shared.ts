@@ -8,6 +8,8 @@
  */
 
 import type { AmbiguousResolveMode, CallContext } from "../../../../../contracts/types/codegraph.js";
+import { reexportOriginFile as kernelReexportOriginFile } from "../../../kernel/reexport-origin.js";
+import { lookupEcmascriptSymbols } from "../../../shared/ecmascript-symbol-lookup.js";
 import { mapImportToFile, type ProjectFileProbe, type TsCompilerOptions } from "../ts-path-mapper.js";
 
 export interface ResolverConfig {
@@ -51,8 +53,18 @@ export function collectImportedFiles(
   return files;
 }
 
-// `reexportOriginFile` moved to `kernel/reexport-origin.ts` — Python's package
-// `__init__.py` re-exports need the same hop (bd tea-rags-mcp-9fgdi). Re-exported
-// here so `ts-named-import`, `ts-imported-callee` and `strategies/index.ts` keep
-// importing it from `./shared.js`.
-export { reexportOriginFile } from "../../../kernel/reexport-origin.js";
+/**
+ * The kernel's barrel hop (`kernel/reexport-origin.ts`, relocated there for
+ * Python's `__init__.py` re-exports, bd tea-rags-mcp-9fgdi) bound to the
+ * ECMAScript family's lookup (bd tea-rags-mcp-t5cji), so a TypeScript barrel
+ * can never be followed onto a Ruby or Python namesake. `ts-named-import`,
+ * `ts-imported-callee` and `strategies/index.ts` keep importing it from here.
+ */
+export function reexportOriginFile(
+  name: string,
+  importedFile: string,
+  ctx: CallContext,
+  mode: AmbiguousResolveMode,
+): string | null {
+  return kernelReexportOriginFile(name, importedFile, ctx, mode, lookupEcmascriptSymbols);
+}

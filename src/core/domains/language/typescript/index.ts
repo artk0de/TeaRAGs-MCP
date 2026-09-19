@@ -31,7 +31,6 @@ import {
   type AmbiguousResolveMode,
   type CallContext,
   type CallRef,
-  type CallResolver,
   type DispatchFanoutOutcome,
   type FileExtraction,
   type SymbolResolutionPassPlan,
@@ -120,7 +119,7 @@ export class TypeScriptLanguage implements LanguageProvider {
    * run-global maps), and a `ts.Program` is far too heavy to keep one per root
    * that has ever been seen.
    */
-  private bound: { root: string; resolver: CallResolver } | undefined;
+  private bound: { root: string; resolver: TSCallResolver } | undefined;
 
   /**
    * @param mode Ambiguous-resolution behaviour, matching the legacy adapter's
@@ -152,6 +151,11 @@ export class TypeScriptLanguage implements LanguageProvider {
       resolveFileEdges: (extraction, ctx) => this.resolverFor(ctx).resolveFileEdges?.(extraction, ctx) ?? [],
       targetsExternalImport: (call: CallRef, ctx: CallContext): boolean =>
         this.resolverFor(ctx).targetsExternalImport?.(call, ctx) ?? false,
+      // Forwarded so the miss classifier asks the question in the ECMAScript
+      // family the chain resolves in, not across the polyglot table (bd
+      // tea-rags-mcp-t5cji).
+      hasInProjectDefinition: (call: CallRef, ctx: CallContext): boolean =>
+        this.resolverFor(ctx).hasInProjectDefinition(call, ctx),
       // The one entry point that arrives BEFORE any call site, so it carries
       // the run's root itself (bd tea-rags-mcp-6aytq). Binding on it is the
       // point: the whole-project Program it primes must be built against the
@@ -173,12 +177,12 @@ export class TypeScriptLanguage implements LanguageProvider {
    * fallback resolves files against must be the same directory, or a Program
    * gets built from paths the mapper never produces (bd tea-rags-mcp-uclbn).
    */
-  private resolverFor(ctx: CallContext): CallResolver {
+  private resolverFor(ctx: CallContext): TSCallResolver {
     return this.resolverForRoot(ctx.projectRoot ?? this.repoRoot);
   }
 
   /** {@link resolverFor} keyed by the root directly, for callers with no call site. */
-  private resolverForRoot(root: string): CallResolver {
+  private resolverForRoot(root: string): TSCallResolver {
     if (this.bound?.root !== root) {
       this.bound = { root, resolver: new TSCallResolver(loadTsConfig(root), this.mode, root) };
     }

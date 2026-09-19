@@ -48,6 +48,7 @@
 import ts from "typescript";
 
 import { resolveLocalBindingType, type CallContext, type CallRef } from "../../../../contracts/types/codegraph.js";
+import { lookupEcmascriptSymbolsByShortName } from "../../shared/ecmascript-symbol-lookup.js";
 import { findReceiverExpression } from "./strategies/ts-type-checker-shared.js";
 import { isLocalValueBinding } from "./ts-local-callee.js";
 import type { TSProgramCache } from "./ts-program-cache.js";
@@ -97,7 +98,7 @@ export function receiverBoundToProjectType(call: CallRef, ctx: CallContext): boo
   if (receiver === null) return false;
   const boundType = resolveLocalBindingType(ctx.localBindings, receiver, call.startLine);
   if (boundType === undefined) return false;
-  return ctx.symbolTable.lookupByShortName(boundType).length > 0;
+  return lookupEcmascriptSymbolsByShortName(ctx, boundType).length > 0;
 }
 
 /**
@@ -125,7 +126,7 @@ export function receiverIsUnpinnableLocalValueBinding(
   const { receiver } = call;
   if (programCache === null || receiver === null || call.member.length === 0) return false;
   if (!isBareIdentifierText(receiver)) return false;
-  if (ctx.symbolTable.lookupByShortName(call.member).length === 0) return false;
+  if (lookupEcmascriptSymbolsByShortName(ctx, call.member).length === 0) return false;
   const handle = programCache.acquire(ctx.callerFile);
   if (handle === null) return false;
   const node = findReceiverExpression(handle.sourceFile, call.startLine, call.member);
