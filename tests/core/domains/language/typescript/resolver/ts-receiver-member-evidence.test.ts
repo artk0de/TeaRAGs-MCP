@@ -13,7 +13,10 @@ import {
   type InheritanceKind,
   type SymbolDefinition,
 } from "../../../../../../src/core/contracts/types/codegraph.js";
-import type { ResolverConfig } from "../../../../../../src/core/domains/language/typescript/resolver/strategies/index.js";
+import {
+  TSGlobalShortNameSymbolResolutionStrategy,
+  type ResolverConfig,
+} from "../../../../../../src/core/domains/language/typescript/resolver/strategies/index.js";
 import { TSProgramCache } from "../../../../../../src/core/domains/language/typescript/resolver/ts-program-cache.js";
 import { memberCandidateLacksReceiverEvidence } from "../../../../../../src/core/domains/language/typescript/resolver/ts-receiver-member-evidence.js";
 import { MapHierarchyView } from "../../../../../../src/core/domains/trajectory/codegraph/hierarchy-view.js";
@@ -476,7 +479,7 @@ describe("memberCandidateLacksReceiverEvidence — the checker's declaration mus
       expect(lacks(INHERITED, formCtx(["Job"]), BASE_RUN)).toBe(false);
     });
 
-    it("declines a `this` member with no Program to ask — no import binds `this`", () => {
+    it("declines a `this` member with no Program when no class hierarchy reaches the candidate", () => {
       writeFormFixture();
       expect(memberCandidateLacksReceiverEvidence(SET_STATE, formCtx(["Form"]), cfg, null, RUN_SET_STATE)).toBe(true);
     });
@@ -610,5 +613,208 @@ describe("memberCandidateLacksReceiverEvidence — structural import evidence wi
     } finally {
       rmSync(emptyRoot, { recursive: true, force: true });
     }
+  });
+});
+
+/**
+ * `this` binds no import, so the import arm above can never speak for it; what
+ * it has instead is the CLASS it sits in. A `this` member the checker cannot
+ * answer — no Program at all, a file no Program serves, or a checker that names
+ * no symbol for it — is accounted for by the member its nearest DEFINER
+ * declares: the enclosing class in the caller's file, else the first ancestor
+ * up the `extends` chain that declares it, where every hop is anchored by the
+ * file it is read from — the base is declared there, or (from the caller's file,
+ * the only import list a resolver sees) imported from the file that declares it
+ * (bd tea-rags-mcp-t5cji, L3-1). A class that merely shares the enclosing
+ * class's or a base's name somewhere else is never evidence.
+ */
+describe("memberCandidateLacksReceiverEvidence — a `this` member through the class hierarchy (bd tea-rags-mcp-t5cji)", () => {
+  // src/jobs/base-job.ts — `RootJob` (lines 1-8: `logRun` 2-4, `flushNow` 5-7) and
+  // `BaseJob extends RootJob` (lines 9-16: `retryLater` 10-12, `flushNow` 13-15,
+  // overriding RootJob's). src/jobs/export-job.ts is written out below.
+  const ROOT_JOB = def("RootJob", "RootJob", "src/jobs/base-job.ts", [], [1, 8]);
+  const ROOT_LOG = def("RootJob#logRun", "logRun", "src/jobs/base-job.ts", ["RootJob"], [2, 4]);
+  const ROOT_FLUSH = def("RootJob#flushNow", "flushNow", "src/jobs/base-job.ts", ["RootJob"], [5, 7]);
+  const BASE_JOB = def("BaseJob", "BaseJob", "src/jobs/base-job.ts", [], [9, 16]);
+  const BASE_RETRY = def("BaseJob#retryLater", "retryLater", "src/jobs/base-job.ts", ["BaseJob"], [10, 12]);
+  const BASE_FLUSH = def("BaseJob#flushNow", "flushNow", "src/jobs/base-job.ts", ["BaseJob"], [13, 15]);
+  const EXPORT_CLEANUP = def("ExportJob#cleanupNow", "cleanupNow", "src/jobs/export-job.ts", ["ExportJob"], [12, 14]);
+  const OTHER_BASE_ARCHIVE = def("BaseJob#archiveNow", "archiveNow", "src/other/base-job.ts", ["BaseJob"], [2, 4]);
+  const OTHER_EXPORT_CLEANUP = def(
+    "ExportJob#cleanupNow",
+    "cleanupNow",
+    "src/other/export-job.ts",
+    ["ExportJob"],
+    [2, 4],
+  );
+  const LEGACY_SET_STATE = def("Component#setState", "setState", "src/legacy/component.ts", ["Component"], [2, 4]);
+
+  /** `ExportJob extends BaseJob` (imported), and `BaseJob extends RootJob` inside base-job.ts. */
+  const JOB_HIERARCHY: [source: string, ancestor: string, kind: InheritanceKind][] = [
+    ["ExportJob", "BaseJob", "super"],
+    ["BaseJob", "RootJob", "super"],
+  ];
+
+  const exportJobCtx = (over: Partial<CallContext> = {}): CallContext => ({
+    callerFile: "src/jobs/export-job.ts",
+    callerScope: ["ExportJob"],
+    imports: [
+      {
+        importText: "./base-job.js",
+        startLine: 1,
+        importedNames: ["BaseJob"],
+        importedBindings: { BaseJob: "BaseJob" },
+      },
+    ],
+    symbolTable: tableOf(
+      ROOT_JOB,
+      ROOT_LOG,
+      ROOT_FLUSH,
+      BASE_JOB,
+      BASE_RETRY,
+      BASE_FLUSH,
+      EXPORT_CLEANUP,
+      OTHER_BASE_ARCHIVE,
+      OTHER_EXPORT_CLEANUP,
+      LEGACY_SET_STATE,
+    ),
+    hierarchy: hierarchyOf(JOB_HIERARCHY),
+    ...over,
+  });
+
+  const thisCall = (member: string, startLine: number): CallRef => ({
+    callText: `this.${member}()`,
+    receiver: "this",
+    member,
+    startLine,
+  });
+
+  const noProgram = (call: CallRef, ctx: CallContext, candidate: Candidate): boolean =>
+    memberCandidateLacksReceiverEvidence(call, ctx, cfg, null, candidate);
+
+  it("accepts a member inherited from the base the caller's file imports", () => {
+    expect(noProgram(thisCall("retryLater", 5), exportJobCtx(), BASE_RETRY)).toBe(false);
+  });
+
+  it("accepts a member of an ancestor the base declares in its own file", () => {
+    expect(noProgram(thisCall("logRun", 6), exportJobCtx(), ROOT_LOG)).toBe(false);
+  });
+
+  it("accepts the nearest override and declines the member it overrides", () => {
+    expect(noProgram(thisCall("flushNow", 7), exportJobCtx(), BASE_FLUSH)).toBe(false);
+    expect(noProgram(thisCall("flushNow", 7), exportJobCtx(), ROOT_FLUSH)).toBe(true);
+  });
+
+  it("accepts the enclosing class's own member from a class-body chunk (empty scope, the class as callerSymbolId)", () => {
+    const ctx = exportJobCtx({ callerScope: [], callerSymbolId: "ExportJob" });
+    expect(noProgram(thisCall("cleanupNow", 4), ctx, EXPORT_CLEANUP)).toBe(false);
+  });
+
+  it("declines a class sharing the enclosing class's name in another file", () => {
+    const ctx = exportJobCtx({ callerScope: [], callerSymbolId: "ExportJob" });
+    expect(noProgram(thisCall("cleanupNow", 4), ctx, OTHER_EXPORT_CLEANUP)).toBe(true);
+  });
+
+  it("declines a class sharing the base's name in a file the caller does not import it from", () => {
+    expect(noProgram(thisCall("archiveNow", 5), exportJobCtx(), OTHER_BASE_ARCHIVE)).toBe(true);
+  });
+
+  it("declines a project namesake of a base the caller imports from a package", () => {
+    const ctx: CallContext = {
+      ...exportJobCtx(),
+      callerFile: "src/ui/form.ts",
+      callerScope: ["Form"],
+      imports: [
+        {
+          importText: "ui-pkg",
+          startLine: 1,
+          importedNames: ["Component"],
+          importedBindings: { Component: "Component" },
+        },
+      ],
+      hierarchy: hierarchyOf([["Form", "Component", "super"]]),
+    };
+    expect(noProgram(thisCall("setState", 4), ctx, LEGACY_SET_STATE)).toBe(true);
+  });
+
+  it("declines a member of a class the hierarchy does not connect to the enclosing class", () => {
+    const ctx = exportJobCtx({ callerScope: ["LoneJob"] });
+    expect(noProgram(thisCall("retryLater", 5), ctx, BASE_RETRY)).toBe(true);
+  });
+
+  it("declines an `implements` ancestor — an implemented type contributes no member body", () => {
+    const ctx = exportJobCtx({ hierarchy: hierarchyOf([["ExportJob", "BaseJob", "implements"]]) });
+    expect(noProgram(thisCall("retryLater", 5), ctx, BASE_RETRY)).toBe(true);
+  });
+
+  it("takes the same evidence when a Program exists but serves no Program for the caller (heap admission)", () => {
+    const emptyRoot = realpathSync(mkdtempSync(join(tmpdir(), "ts-member-evidence-this-no-file-")));
+    try {
+      const cache = new TSProgramCache({ repoRoot: emptyRoot, tsOptions });
+      expect(cache.acquire("src/jobs/export-job.ts")).toBeNull();
+      expect(
+        memberCandidateLacksReceiverEvidence(thisCall("retryLater", 5), exportJobCtx(), cfg, cache, BASE_RETRY),
+      ).toBe(false);
+    } finally {
+      rmSync(emptyRoot, { recursive: true, force: true });
+    }
+  });
+
+  it("lets `globalShortName` commit the inherited member with the type checker off", () => {
+    const strategy = new TSGlobalShortNameSymbolResolutionStrategy(cfg, null);
+    expect(strategy.attempt(thisCall("retryLater", 5), exportJobCtx())).toEqual({
+      kind: "resolved",
+      target: { targetRelPath: "src/jobs/base-job.ts", targetSymbolId: "BaseJob#retryLater" },
+    });
+  });
+
+  describe("with a Program for the caller", () => {
+    let repoRoot: string;
+
+    beforeEach(() => {
+      repoRoot = realpathSync(mkdtempSync(join(tmpdir(), "ts-member-evidence-this-")));
+    });
+
+    afterEach(() => {
+      rmSync(repoRoot, { recursive: true, force: true });
+    });
+
+    const withProgram = (call: CallRef, ctx: CallContext, candidate: Candidate): boolean =>
+      memberCandidateLacksReceiverEvidence(call, ctx, cfg, new TSProgramCache({ repoRoot, tsOptions }), candidate);
+
+    /** The caller only: base-job.ts stays off disk, so the checker cannot see `BaseJob`. */
+    function writeExportJob(): void {
+      writeSource(repoRoot, "src/jobs/export-job.ts", [
+        'import { BaseJob } from "./base-job.js";',
+        "export class ExportJob extends BaseJob {",
+        "  run(): void {",
+        "    this.cleanupNow();",
+        "    this.retryLater();",
+        "    this.logRun();",
+        "    this.flushNow();",
+        "    [1].forEach(function (this: { retryLater(): void }) {",
+        "      this.retryLater();",
+        "    });",
+        "  }",
+        "  cleanupNow(): void {",
+        "    return;",
+        "  }",
+        "}",
+      ]);
+    }
+
+    it("falls back to the hierarchy when the checker names no symbol for the member", () => {
+      // `BaseJob` is an unresolved import, so `this.retryLater` has no symbol —
+      // the structure still names the base and its member.
+      writeExportJob();
+      expect(withProgram(thisCall("retryLater", 5), exportJobCtx(), BASE_RETRY)).toBe(false);
+    });
+
+    it("never lets the hierarchy overrule a declaration the checker does name", () => {
+      // Inside a `function` with its own `this` parameter the checker places
+      // `retryLater` on that type literal; the enclosing class's base is not it.
+      writeExportJob();
+      expect(withProgram(thisCall("retryLater", 9), exportJobCtx(), BASE_RETRY)).toBe(true);
+    });
   });
 });

@@ -119,7 +119,14 @@ function writeMemoFixture(repoRoot: string): void {
 const SET_CALL: CallRef = { callText: `memo?.set("a", [])`, receiver: "memo", member: "set", startLine: 9 };
 const GET_CALL: CallRef = { callText: `memo?.get("a")`, receiver: "memo", member: "get", startLine: 10 };
 
-const MEMO_PORT_SYMBOL = sym("MemoPort", "MemoPort", "src/memo-port.ts", []);
+/**
+ * What the walker records for `memo-port.ts`: the FILE, and no symbol in it.
+ * `tsNameOf` names classes, functions and methods, never an
+ * `interface_declaration`, so `MemoPort` is no table row (bd
+ * tea-rags-mcp-t5cji). The receiver is an interface to the checker alone, and
+ * the cone reaches `Memo` through the run hierarchy's `implements` edge.
+ */
+const MEMO_PORT_SYMBOLS: NamedSymbol[] = [];
 const MEMO_SYMBOLS = [
   sym("Memo", "Memo", "src/memo.ts", []),
   sym("Memo#get", "get", "src/memo.ts", ["Memo"]),
@@ -176,7 +183,7 @@ describe("TSCallResolver.resolveDispatch — checker-typed interface receiver (b
   it("resolves memo?.set to the implementing class even when an unrelated namesake set exists", () => {
     writeMemoFixture(repoRoot);
     const table = new InMemoryGlobalSymbolTable();
-    table.upsertFile("src/memo-port.ts", [MEMO_PORT_SYMBOL]);
+    table.upsertFile("src/memo-port.ts", MEMO_PORT_SYMBOLS);
     table.upsertFile("src/memo.ts", MEMO_SYMBOLS);
     table.upsertFile("src/run-memo.ts", RUN_MEMO_SYMBOLS);
 
@@ -188,7 +195,7 @@ describe("TSCallResolver.resolveDispatch — checker-typed interface receiver (b
   it("resolves memo?.get to the implementing class through the same interface", () => {
     writeMemoFixture(repoRoot);
     const table = new InMemoryGlobalSymbolTable();
-    table.upsertFile("src/memo-port.ts", [MEMO_PORT_SYMBOL]);
+    table.upsertFile("src/memo-port.ts", MEMO_PORT_SYMBOLS);
     table.upsertFile("src/memo.ts", MEMO_SYMBOLS);
     table.upsertFile("src/run-memo.ts", RUN_MEMO_SYMBOLS);
 
@@ -200,7 +207,7 @@ describe("TSCallResolver.resolveDispatch — checker-typed interface receiver (b
   it("gives the same answer when set is the only project method of that name — uniqueness is not the evidence", () => {
     writeMemoFixture(repoRoot);
     const table = new InMemoryGlobalSymbolTable();
-    table.upsertFile("src/memo-port.ts", [MEMO_PORT_SYMBOL]);
+    table.upsertFile("src/memo-port.ts", MEMO_PORT_SYMBOLS);
     table.upsertFile("src/memo.ts", MEMO_SYMBOLS);
 
     expect(edgesOf(resolver().resolveDispatch(SET_CALL, walkCtx(table)))).toEqual([
@@ -234,8 +241,9 @@ describe("TSCallResolver.resolveDispatch — checker-typed interface receiver (b
       `}`,
     ]);
     const table = new InMemoryGlobalSymbolTable();
-    table.upsertFile("src/memo-port.ts", [MEMO_PORT_SYMBOL]);
-    table.upsertFile("src/other-port.ts", [sym("OtherPort", "OtherPort", "src/other-port.ts", [])]);
+    table.upsertFile("src/memo-port.ts", MEMO_PORT_SYMBOLS);
+    // Interface-only, like memo-port.ts: the file is recorded, `OtherPort` is not.
+    table.upsertFile("src/other-port.ts", []);
     table.upsertFile("src/memo.ts", MEMO_SYMBOLS);
     table.upsertFile("src/other-memo.ts", [
       sym("OtherMemo", "OtherMemo", "src/other-memo.ts", []),
@@ -265,7 +273,7 @@ describe("TSCallResolver.resolveDispatch — checker-typed interface receiver (b
   it("keeps the pre-existing answer when the type checker is disabled (CODEGRAPH_TS_TYPECHECKER=0)", () => {
     writeMemoFixture(repoRoot);
     const table = new InMemoryGlobalSymbolTable();
-    table.upsertFile("src/memo-port.ts", [MEMO_PORT_SYMBOL]);
+    table.upsertFile("src/memo-port.ts", MEMO_PORT_SYMBOLS);
     table.upsertFile("src/memo.ts", MEMO_SYMBOLS);
     table.upsertFile("src/run-memo.ts", RUN_MEMO_SYMBOLS);
     const previous = process.env.CODEGRAPH_TS_TYPECHECKER;
@@ -311,7 +319,7 @@ describe("TSGlobalShortNameSymbolResolutionStrategy — interface-typed receiver
 
   const lonelyCtx = (): CallContext => {
     const table = new InMemoryGlobalSymbolTable();
-    table.upsertFile("src/memo-port.ts", [MEMO_PORT_SYMBOL]);
+    table.upsertFile("src/memo-port.ts", MEMO_PORT_SYMBOLS);
     table.upsertFile(
       "src/run-memo.ts",
       RUN_MEMO_SYMBOLS.filter((s) => s.shortName !== "get"),

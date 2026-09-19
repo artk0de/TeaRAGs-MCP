@@ -50,9 +50,12 @@ export const capability: LanguageCapability = {
   // receiver the walker did not type (`this` included) is committed by
   // `globalShortName` / `importNarrowedFallback` only when the checker's
   // declaration of the member is the candidate's own or a supertype's — with no
-  // Program, only when an import binding's module declares it — never by a
-  // unique short name alone. And an unresolved `super`
+  // Program, only when an import binding's module declares it, or for `this`
+  // when its nearest definer up the file-anchored `extends` chain does — never
+  // by a unique short name alone. And an unresolved `super`
   // call whose base the checker declares outside the project (`extends Error`,
-  // a dependency's class) counts as `externalSkipped`, not a miss.
+  // a dependency's class) counts as `externalSkipped`, not a miss — and so does
+  // an unresolved `this.m()` whose member it declares only there (React's
+  // `setState`, the default lib's `hasOwnProperty`).
   versions: { chunking: 1, walker: 6, codegraphSchema: 2 },
 };
