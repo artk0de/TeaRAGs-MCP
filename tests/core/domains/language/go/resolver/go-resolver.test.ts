@@ -233,12 +233,12 @@ describe("GoCallResolver", () => {
       ]);
       const useTarget = r.resolve(
         { callText: "engine.Use(mw)", receiver: "engine", member: "Use", startLine: 4 },
-        ctxReturn("gin.go", t, { engine: "New" }, { New: "Engine" }),
+        ctxReturn("gin.go", t, { engine: "New" }, { "::New": "Engine" }),
       );
       expect(useTarget?.targetSymbolId).toBe("Engine#Use");
       const withTarget = r.resolve(
         { callText: "engine.With(mw)", receiver: "engine", member: "With", startLine: 5 },
-        ctxReturn("gin.go", t, { engine: "New" }, { New: "Engine" }),
+        ctxReturn("gin.go", t, { engine: "New" }, { "::New": "Engine" }),
       );
       expect(withTarget?.targetSymbolId).toBe("Engine#With");
     });

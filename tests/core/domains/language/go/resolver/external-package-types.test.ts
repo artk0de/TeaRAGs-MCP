@@ -226,7 +226,9 @@ describe("Go types and callees from a package outside the project", () => {
 /**
  * What the walker records for a package-qualified result: the import path its
  * qualifier binds in the declaring file, then the type name — the one address
- * a resolver in ANY file can check against the module map.
+ * a resolver in ANY file can check against the module map. Entries are keyed
+ * by the declaring package (`app::a`), not the bare name (bd
+ * tea-rags-mcp-7h6j0).
  */
 function walkReturnTypes(lines: string[]): Record<string, string> | undefined {
   return walk("app/app.go", lines).functionReturnTypes;
@@ -240,13 +242,13 @@ describe("Go walker — package-qualified return types keep their package", () =
       "func a() *http.Client { return nil }",
       "func b() http.Client { return http.Client{} }",
     ]);
-    expect(types?.a).toBe("net/http.Client");
-    expect(types?.b).toBe("net/http.Client");
+    expect(types?.["app::a"]).toBe("net/http.Client");
+    expect(types?.["app::b"]).toBe("net/http.Client");
   });
 
   it("reads an aliased import's path, not the alias", () => {
     const types = walkReturnTypes(["package app", 'import h "net/http"', "func a() *h.Client { return nil }"]);
-    expect(types?.a).toBe("net/http.Client");
+    expect(types?.["app::a"]).toBe("net/http.Client");
   });
 
   it("keeps a module-path import whole, dots included (gin's `*gin.Engine`)", () => {
@@ -255,11 +257,11 @@ describe("Go walker — package-qualified return types keep their package", () =
       'import "github.com/gin-gonic/gin"',
       "func engine() *gin.Engine { return nil }",
     ]);
-    expect(types?.engine).toBe("github.com/gin-gonic/gin.Engine");
+    expect(types?.["app::engine"]).toBe("github.com/gin-gonic/gin.Engine");
   });
 
   it("records an unqualified result bare, as before", () => {
     const types = walkReturnTypes(["package app", "func a() *Engine { return nil }"]);
-    expect(types?.a).toBe("Engine");
+    expect(types?.["app::a"]).toBe("Engine");
   });
 });

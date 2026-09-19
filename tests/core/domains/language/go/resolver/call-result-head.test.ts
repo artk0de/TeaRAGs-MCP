@@ -60,8 +60,9 @@ function ginsCtx(over: Partial<CallContext> = {}): CallContext {
     symbolTable: ginTable(),
     projectRoot: ginRoot,
     // What the walker records for `var engine = sync.OnceValue(func() *gin.Engine {…})`
-    // (asserted below): the import path and the type, not a bare `Engine`.
-    functionReturnTypes: { engine: "github.com/gin-gonic/gin.Engine" },
+    // (asserted below): keyed by the declaring package (bd tea-rags-mcp-7h6j0),
+    // the value the import path and the type, not a bare `Engine`.
+    functionReturnTypes: { "ginS::engine": "github.com/gin-gonic/gin.Engine" },
     classFieldTypesByClassKey: {
       "gin.go::Engine": { RouterGroup: "RouterGroup", "embedded:RouterGroup": "RouterGroup" },
       "routergroup.go::RouterGroup": {},
@@ -138,7 +139,7 @@ describe("Go walker — what calling a package-level func-valued var returns", (
       "\treturn gin.Default()",
       "})",
     ]);
-    expect(types?.engine).toBe("github.com/gin-gonic/gin.Engine");
+    expect(types?.["ginS::engine"]).toBe("github.com/gin-gonic/gin.Engine");
   });
 
   it("records a pointer to a package-qualified type as the qualified form reads: the import path, then the type", () => {
@@ -148,8 +149,8 @@ describe("Go walker — what calling a package-level func-valued var returns", (
       "func Build() *render.JSON { return nil }",
       "func Value() render.JSON { return render.JSON{} }",
     ]);
-    expect(types?.Build).toBe("example.com/app/render.JSON");
-    expect(types?.Build).toBe(types?.Value);
+    expect(types?.["ginS::Build"]).toBe("example.com/app/render.JSON");
+    expect(types?.["ginS::Build"]).toBe(types?.["ginS::Value"]);
   });
 
   it("records a var initialized by a function literal, and a var of a func type", () => {
@@ -158,8 +159,8 @@ describe("Go walker — what calling a package-level func-valued var returns", (
       "var build = func() *Engine { return nil }",
       "var factory func(name string) Engine",
     ]);
-    expect(types?.build).toBe("Engine");
-    expect(types?.factory).toBe("Engine");
+    expect(types?.["ginS::build"]).toBe("Engine");
+    expect(types?.["ginS::factory"]).toBe("Engine");
   });
 
   it("NEGATIVE: a wrapper other than the standard library's sync.OnceValue records nothing", () => {
@@ -169,8 +170,8 @@ describe("Go walker — what calling a package-level func-valued var returns", (
       "var a = sync.OnceValue(func() *Engine { return nil })",
       "var b = lazy.OnceValue(func() *Engine { return nil })",
     ]);
-    expect(types?.a).toBeUndefined();
-    expect(types?.b).toBeUndefined();
+    expect(types?.["ginS::a"]).toBeUndefined();
+    expect(types?.["ginS::b"]).toBeUndefined();
   });
 
   it("types gin's `engine().GET(…)` end to end, walker to resolver", () => {
